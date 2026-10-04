@@ -42,7 +42,13 @@
 - 唤醒面：`lib/observe.js` 在 host ctx 常驻——`ctx.on('session/event', {global:true})` 收全局事件进 150 条环形缓冲；`data/whale/watches.json`（盯梢：目标会话 turn/end 时把备注+detail 作为 queue prompt 唤醒她，她自己会话的事件不触发）、`data/whale/schedules.json`（30s tick，到点同样 queue 唤醒），均原子写、重启后重载。
 - 桌面统管：`whale_desktop_*` 经 `desktop-install-control` 同端口 `/desktop/*` 路由调主进程（同一随机 Bearer token，仅注入 Harness 子进程 env）——`GET /desktop/state`、`GET /desktop/marketplace`、`POST /desktop/config`（`normalizeRendererConfigPatch` 白名单）、`POST /desktop/plugin`（install=目录 id 或 `github:` 规格/remove/disable/enable）。插件启停与配置写统一走 `src/main/profile-ops.js`——launcher IPC 与回环通道共用同一条序列化 align 链（写与重启不交错）；install 复用 `isValidGithubSpec`/`normalizeAllowBuilds` 与 curated catalog，remove/disable 走 `isPresetPlugin`/`OFFICIAL_TEMPLATE_BUNDLES`/内置别名守卫（她无法卸载或禁用自己所在包）；装/卸/开关插件与 toggling 内置开关都会重启 Harness——她的会话随之重启，工具描述与人格均明示。
 - `whaleAssistantEnabled` 开关位于主窗 `pet` 设置分区（桌面自有、始终可达——插件未挂载时插件 client 不加载，开关放插件贡献的块里会无法打开）。挂载后插件经 `settings.pet.item` 贡献在同分区「助理」组内提供完整配置——同一角色一页设置，不分两个导航分区。
-- 表情包走「她自己把 markdown 图片语法写进回复」：客户端 `localPathMediaUrl` 只认 `/` 开头目标并重写到同源 `/api/file`，宿主 `isAbsolute` 校验后由 fs 读盘——win32 盘符路径必须写成根锚定形式（`C:\x\y` → `/x/y`，随进程 cwd 盘解析，DSH_HOME 与安装同盘为默认）。不伪造 `assistant/message` image 块（重放校验拒绝），也不把 image 块塞进 `tool/result`（进模型历史白烧 token 且工具卡不渲染）。
+- 表情包由她在回复中粘贴 Markdown 图片语法，经客户端文件图片解析器交给同源 `/api/file`。目标保留 Windows 盘符或 POSIX 根，路径字符经过 URL 编码，跨盘安装与带空格、括号、中文的文件名均指向原文件。桌宠 outbox 仍携带原始绝对路径；客户端不支持的 UNC 图片路径明确报错，不生成浏览器网络 URL。
+
+- 长期记忆通过独立 `dsh-whale:memory` section（order 21）按轮读取 `MEMORY.md`，最多 40000 字符，与人格共用鲸鱼娘身份门控；编辑或 `whale_remember` 写入在下一轮生效，其他会话不注入。
+- 设置页及 `whale_profile_settings` 修改默认模型/推理档时，同时应用到当前常驻会话；模型选择被拒绝则不保存该设置。清空模型选择恢复应用目录的默认路由，不改应用全局默认。选择器按第一个 `/` 分隔供应商，模型 ID 内的 `/` 保留。对话卡选择继续只改当前会话。
+- 人格镜像在旧请求结束后继续发送最新待同步值，旧请求成功不能清除后来的设置。快捷聊天最多 2000 字符，超限明确拒绝；失败或中止的回合即使有部分回复也返回失败，卡片保留部分回复并显示结束错误。
+- 定时任务与会话观察只在助理收件箱接收 prompt 后结算。未送达的观察报告先落盘；失败保留待送状态与 `lastError`，现有 30 秒 tick 继续尝试，列表显示送达错误；每个定时任务独立取得接收结果，避免批量截断和重复在途发送。
+- 用量观察器独立于桌宠可见性运行，隐藏期间继续统计但保留 outbox 未读位置，再次显示才读取通知。`whale_usage_today` 拒绝非当日本地日期的快照。
 
 ## Allowed touch
 

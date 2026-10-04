@@ -216,6 +216,11 @@ export function apply(ctx) {
       const activeMinutes = Number.isFinite(snapshot?.activeMsToday)
         ? Math.round(snapshot.activeMsToday / 60000) : 0;
       const day = typeof snapshot?.day === 'string' ? snapshot.day : '';
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      if (day !== today) {
+        return { ok: false, used: 0, activeMinutes: 0, detail: `Usage snapshot is out of date (${day || 'unknown day'}); today's usage is unavailable.` };
+      }
       return {
         ok: true,
         used,

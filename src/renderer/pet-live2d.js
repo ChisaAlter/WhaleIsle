@@ -1281,7 +1281,12 @@ function holdBubbles(seconds) {
 }
 function enqueueBubble(entry) {
   if (bubbleQueue.length >= BUBBLE_QUEUE_MAX) {
-    bubbleQueue.shift(); // overflow drops the oldest pending line
+    const ordinary = bubbleQueue.findIndex((queued) => !queued.pinned && (queued.priority || 0) < 2);
+    if (ordinary < 0) {
+      if (!entry.pinned && (entry.priority || 0) < 2) return;
+    } else {
+      bubbleQueue.splice(ordinary, 1);
+    }
   }
   entry.seq = bubbleQueueSeq += 1;
   bubbleQueue.push(entry);
@@ -2286,6 +2291,10 @@ function toggleChat(force) {
 async function submitChat(text) {
   const t = String(text || '').trim();
   if (!t || chatBusy) { return; }
+  if (t.length > 2000) {
+    chatAppend('err', '最多发送 2000 字，请缩短后再发送');
+    return;
+  }
   const input = chatPart('#pc-input');
   if (!settings.chatEnabled) {
     say('chatFallback');
@@ -2314,7 +2323,8 @@ async function submitChat(text) {
     // Whale-path failures already get a precise error row — a random quip
     // on top would only muddy it.
     if (res?.via === 'whale') {
-      chatAppend('err', '这轮没跑成——点 ↗ 去会话里看详情');
+      if (res.reply) chatAppend('her', res.reply);
+      chatAppend('err', `这轮没跑成（${res.reason || 'whale-failed'}）——点 ↗ 去会话里看详情`);
       return;
     }
     chatAppend('err', '没连上——稍后再试试');

@@ -39,6 +39,7 @@ const state = {
   wake: null,
   logger: null,
   timer: null,
+  delivering: new Set(),
 };
 
 function file(name) {
@@ -188,10 +189,15 @@ function maybeFireWatches(sessionId, event) {
   const hit = state.watches.filter((w) => w.sessionId === sessionId);
   if (!hit.length) return;
   const detail = describeEvent(event);
-  state.watches = state.watches.filter((w) => w.sessionId !== sessionId || w.once !== true);
+  for (const watch of hit) {
+    // Keep the report on disk until the assistant inbox has accepted it.
+    watch.pending ??= [];
+    if (!watch.once || !watch.pending.length) {
+      watch.pending.push(`（观察回报）会话 ${sessionId} ${detail}${watch.note ? ` —— 你的备注：${watch.note}` : ''}`);
+    }
+  }
   writeJson(WATCHES_FILE, state.watches);
-  const lines = hit.map((w) => `（观察回报）会话 ${sessionId} ${detail}${w.note ? ` —— 你的备注：${w.note}` : ''}`);
-  wake(lines.join('\n'));
+  void deliverWatches().catch((error) => warn(`dsh-whale pulse event delivery failed: ${error?.message ?? error}`));
 }
 
 // ── schedules ──────────────────────────────────────────────────
@@ -272,37 +278,61 @@ export function removeSchedule(id) {
   return { ok: true };
 }
 
-function wake(text) {
+async function wake(text) {
   const deliver = state.wake;
-  if (typeof deliver !== 'function') return;
-  try {
-    Promise.resolve(deliver(trimTo(text, WAKE_TEXT_MAX))).catch((error) => {
-      warn(`dsh-whale pulse wake failed: ${error?.message ?? error}`);
-    });
-  } catch (error) {
-    warn(`dsh-whale pulse wake threw: ${error?.message ?? error}`);
+  if (typeof deliver !== 'function') throw new Error('assistant-unavailable');
+  const result = await deliver(trimTo(text, WAKE_TEXT_MAX));
+  if (result?.ok === false || result?.accepted === false) throw new Error(result.error || 'prompt-not-accepted');
+}
+
+async function deliverWatches() {
+  for (const watch of state.watches.filter((w) => w.pending?.length)) {
+    if (state.delivering.has(watch.id)) continue;
+    state.delivering.add(watch.id);
+    try {
+      while (watch.pending?.length && state.watches.includes(watch)) {
+        await wake(watch.pending[0]);
+        watch.pending.shift();
+        delete watch.lastError;
+        if (watch.once) state.watches = state.watches.filter((w) => w !== watch);
+        // Persist each receipt so a later delivery failure keeps only unsent reports.
+        writeJson(WATCHES_FILE, state.watches);
+      }
+      if (!watch.pending?.length) delete watch.pending;
+    } catch (error) {
+      watch.lastError = String(error?.message ?? error);
+      warn(`dsh-whale pulse wake failed: ${watch.lastError}`);
+    } finally {
+      state.delivering.delete(watch.id);
+      writeJson(WATCHES_FILE, state.watches);
+    }
   }
 }
 
 // Exported so tests can drive the scheduler without waiting on TICK_MS.
-export function tick(now = Date.now()) {
+export async function tick(now = Date.now()) {
   ensureLoaded();
-  if (!state.schedules.length) return;
+  await deliverWatches();
   const due = state.schedules.filter((s) => s.enabled !== false && Number(s.nextRunAt) > 0 && s.nextRunAt <= now);
   if (!due.length) return;
   for (const s of due) {
-    s.runCount = (s.runCount || 0) + 1;
-    if (s.kind === 'once') {
-      s.enabled = false;
-    } else {
-      s.nextRunAt = nextRunAt(s, now);
-    }
-    if (Number.isInteger(s.maxRuns) && s.maxRuns > 0 && s.runCount >= s.maxRuns) {
-      s.enabled = false;
+    if (state.delivering.has(s.id)) continue;
+    state.delivering.add(s.id);
+    try {
+      await wake(`（定时任务 ${s.id} 到点）${s.text}`);
+      s.runCount = (s.runCount || 0) + 1;
+      delete s.lastError;
+      if (s.kind === 'once') s.enabled = false;
+      else s.nextRunAt = nextRunAt(s, now);
+      if (Number.isInteger(s.maxRuns) && s.maxRuns > 0 && s.runCount >= s.maxRuns) s.enabled = false;
+    } catch (error) {
+      s.lastError = String(error?.message ?? error);
+      warn(`dsh-whale pulse wake failed: ${s.lastError}`);
+    } finally {
+      state.delivering.delete(s.id);
+      writeJson(SCHEDULES_FILE, state.schedules);
     }
   }
-  writeJson(SCHEDULES_FILE, state.schedules);
-  wake(due.map((s) => `（定时任务 ${s.id} 到点）${s.text}`).join('\n'));
 }
 
 /**
@@ -311,6 +341,12 @@ export function tick(now = Date.now()) {
  * The wake callback resolves her session and queues the prompt.
  */
 export function startPulse(ctx, { home, getSelfId, wake: deliver, logger } = {}) {
+  if (state.timer) clearInterval(state.timer);
+  if (state.home !== String(home ?? '')) {
+    state.watches = null;
+    state.schedules = null;
+    state.events = [];
+  }
   state.home = String(home ?? '');
   state.getSelfId = typeof getSelfId === 'function' ? getSelfId : null;
   state.wake = typeof deliver === 'function' ? deliver : null;
@@ -327,9 +363,9 @@ export function startPulse(ctx, { home, getSelfId, wake: deliver, logger } = {})
     }
   }, { global: true });
   state.timer = setInterval(() => {
-    try { tick(); } catch (error) {
+    void tick().catch((error) => {
       warn(`dsh-whale pulse tick failed: ${error?.message ?? error}`);
-    }
+    });
   }, TICK_MS);
   state.timer.unref?.();
   ctx.effect?.(() => () => {
