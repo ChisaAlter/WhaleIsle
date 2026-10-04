@@ -23,6 +23,16 @@
 
 同版本已发布、版本不高于 latest、或该 CI 只有文档/工具而没有安装包时不发布。PR 和 fork 的构建不能进入自动分发。现有正式版本与 tag 不覆盖。
 
+## Gitee 国内镜像
+
+[Gitee mirror](../../../.github/workflows/gitee-mirror.yml) 在 main 推送后同步 main 与标签；正式 GitHub Release 发布后同步原始附件。自动 Release 使用 GitHub 内置 token，其发布事件不会启动第二个工作流，因此也监听 Release 的成功完成。手动运行 Gitee mirror，可指定已有正式版本（例如 `v0.3.3`），留空同步 GitHub latest。实现为 `scripts/sync-gitee.mjs`，不重新编译。
+
+仓库 Actions secret `GITEE_TOKEN` 必须具有 `ayase/Deepseek-Harness-Desktop` 的 Git 推送和 Release 写权限。缺凭据、分支或标签冲突、Gitee 容量限制、上传或校验失败会使镜像工作流失败；不强推、不覆盖已有正式版本。GitHub 分发不因 Gitee 故障回滚。
+
+附件包括安装包、blockmap、latest.yml、SHA512SUMS.txt 和 GitHub Release 的其他附件。下载时核对 GitHub 的资产摘要及更新校验清单；Gitee 先创建预发布版本，附件上传后逐个匿名下载核对原始字节的 SHA512，再转为正式版。中断版本保持预发布，重新运行会校验已有附件并补上传缺项。启动器只展示 Gitee 正式版本，按倒序获取最近版本并按版本号选择最新项，避免选中未完成镜像或后补上传的旧版。
+
+实际可用性以 Gitee main/tag、正式 Release 与匿名附件下载结果为准；仅合并工作流或设置 secret 不代表同步成功。
+
 ## 失败处理
 
 开发检查失败时修复对应问题；需要重跑时使用 GitHub 的失败 job 重跑。发布上传失败保留 draft，手动运行 Release 并提供原 Development CI 的 `run_id`，复用原包完成分发。artifact 保留 30 天；过期后需要新的开发构建，不从另一个版本补包。

@@ -156,16 +156,18 @@ async function releaseRaw(route, tag, { timeoutMs } = {}) {
     return null;
   }
   if (tag) {
-    return fetchJson(
+    const release = await fetchJson(
       route,
       `${desc.apiBase}/releases/tags/${encodeURIComponent(String(tag).trim())}`,
       timeoutMs,
     );
+    return route === 'gitee' && release?.prerelease ? null : release;
   }
   if (route === 'gitee') {
-    const list = await fetchJson(route, `${desc.apiBase}/releases?per_page=30`, timeoutMs);
+    const list = await fetchJson(route, `${desc.apiBase}/releases?per_page=30&direction=desc`, timeoutMs);
     return (Array.isArray(list) ? list : [])
-      .find((row) => row && !row.draft && !row.prerelease) || null;
+      .filter((row) => row && !row.draft && !row.prerelease)
+      .sort((a, b) => update.compareVersions(b.tag_name, a.tag_name))[0] || null;
   }
   return fetchJson(route, `${desc.apiBase}/releases/latest`, timeoutMs);
 }
@@ -211,8 +213,9 @@ async function listFor(route, { installedVersion = '', timeoutMs } = {}) {
     return routeSnapshot('github', { status: 'error', releases: [], message: 'unknown-route' });
   }
   try {
-    const list = await fetchJson(route, `${desc.apiBase}/releases?per_page=30`, timeoutMs);
+    const list = await fetchJson(route, `${desc.apiBase}/releases?per_page=30${route === 'gitee' ? '&direction=desc' : ''}`, timeoutMs);
     const releases = (Array.isArray(list) ? list : [])
+      .filter((row) => route !== 'gitee' || !row?.prerelease)
       .map((row) => summarizeForRoute(route, row, installedVersion))
       .filter(Boolean);
     return routeSnapshot(route, { status: 'ok', releases });

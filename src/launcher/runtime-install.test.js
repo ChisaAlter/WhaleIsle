@@ -86,6 +86,7 @@ test('latestFor(gitee) only touches gitee hosts and normalizes download_url asse
     const target = String(url);
     seen.push(target);
     assert.match(target, /gitee\.com/, 'gitee route must not query github');
+    assert.equal(new URL(target).searchParams.get('direction'), 'desc');
     // Gitee's /latest returns prereleases, so the route reads the list and
     // skips draft/prerelease rows — the mock serves a newer prerelease first
     // plus the expected stable row to pin that behavior.
@@ -94,6 +95,7 @@ test('latestFor(gitee) only touches gitee hosts and normalizes download_url asse
       status: 200,
       json: async () => ([
         { tag_name: 'v9.9.9-beta', prerelease: true, assets: [] },
+        { tag_name: 'v1.0.0', prerelease: false, assets: [] },
         {
           tag_name: 'v2.0.0',
           name: 'v2.0.0',
@@ -114,6 +116,18 @@ test('latestFor(gitee) only touches gitee hosts and normalizes download_url asse
   } finally {
     global.fetch = previousFetch;
   }
+});
+
+test('Gitee version list and direct tag lookup hide incomplete prerelease mirrors', async (t) => {
+  const previousFetch = global.fetch;
+  t.after(() => { global.fetch = previousFetch; });
+  global.fetch = async (url) => ({ ok: true, status: 200, json: async () => {
+    if (String(url).includes('/tags/')) return { tag_name: 'v2.0.0', prerelease: true, assets: [] };
+    assert.equal(new URL(url).searchParams.get('direction'), 'desc');
+    return [{ tag_name: 'v2.0.0', prerelease: true, assets: [] }, { tag_name: 'v1.0.0', prerelease: false, assets: [] }];
+  } });
+  assert.equal((await releaseSource.listFor('gitee')).releases.length, 1);
+  assert.equal(await releaseSource.releaseFor('gitee', 'v2.0.0'), null);
 });
 
 test('listFor rows attach delta info only for the installed→to pair', async (t) => {
