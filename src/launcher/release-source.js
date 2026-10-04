@@ -16,21 +16,21 @@ const ROUTES = {
     apiBase: 'https://api.github.com/repos/ChisaAlter/Deepseek-Harness-Desktop',
     page: update.RELEASES_PAGE,
   },
-  gitee: {
-    id: 'gitee',
-    label: 'Gitee',
-    detail: '国内线路 · Gitee 镜像',
-    // Anonymous parity proven (docs/superpowers/evidence/gitee-parity.md):
-    // release metadata, browser_download_url redirect chain and SHA512SUMS
-    // manifest all resolve without credentials.
+  cnb: {
+    id: 'cnb',
+    label: 'CNB',
+    detail: '国内线路 · CNB 镜像',
+    // Public metadata uses cnb.cool; api.cnb.cool requires a token.
+    // v0.3.3 original attachments passed anonymous size and SHA512 parity.
     verified: true,
-    apiBase: 'https://gitee.com/api/v5/repos/ayase/Deepseek-Harness-Desktop',
-    page: 'https://gitee.com/ayase/Deepseek-Harness-Desktop/releases',
+    apiBase: 'https://cnb.cool/ayasealter/WhaleIsle/-',
+    page: 'https://cnb.cool/ayasealter/WhaleIsle/-/releases',
   },
 };
 
 function normalizeRoute(value) {
-  const key = String(value || '').trim().toLowerCase();
+  const saved = String(value || '').trim().toLowerCase();
+  const key = saved === 'gitee' ? 'cnb' : saved;
   return ROUTES[key] ? key : '';
 }
 
@@ -44,19 +44,19 @@ function listRoutes() {
   }));
 }
 
-async function giteeJson(url, timeoutMs = update.CHECK_TIMEOUT_MS) {
+async function cnbJson(url, timeoutMs = update.CHECK_TIMEOUT_MS) {
   let response;
   try {
     response = await fetch(url, {
       headers: {
-        Accept: 'application/json',
+        Accept: 'application/vnd.cnb.api+json',
         'User-Agent': `Deepseek-Harness-Desktop/${update.currentVersion()}`,
       },
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
-      throw new Error(`Gitee 请求超时（${Math.round(timeoutMs / 1000)}s）`);
+      throw new Error(`CNB 请求超时（${Math.round(timeoutMs / 1000)}s）`);
     }
     throw error;
   }
@@ -64,18 +64,16 @@ async function giteeJson(url, timeoutMs = update.CHECK_TIMEOUT_MS) {
     return null;
   }
   if (!response.ok) {
-    throw new Error(`Gitee ${response.status}`);
+    throw new Error(`CNB ${response.status}`);
   }
   return response.json();
 }
 
 function fetchJson(route, url, timeoutMs) {
-  return route === 'gitee' ? giteeJson(url, timeoutMs) : update.githubJson(url, timeoutMs);
+  return route === 'cnb' ? cnbJson(url, timeoutMs) : update.githubJson(url, timeoutMs);
 }
 
-// Gitee release objects mirror GitHub's shape for the fields we use
-// (tag_name, name, body, prerelease, assets[].browser_download_url); tolerate
-// the alternate download_url key just in case.
+// Both providers expose GitHub-shaped release fields.
 function normalizeAssets(release) {
   if (!release || !Array.isArray(release.assets)) {
     return release;
@@ -140,32 +138,33 @@ function routeSnapshot(route, extra = {}) {
   const desc = ROUTES[route];
   return {
     route,
-    repoUrl: desc.page.replace(/\/releases$/, ''),
+    repoUrl: desc.page.replace(/(?:\/-)?\/releases$/, ''),
     releasesUrl: desc.page,
     ...extra,
   };
 }
 
 // Raw release payload with assets intact (releaseFor's summary drops them).
-// Gitee's /releases/latest returns prereleases (GitHub's does not) — proven in
-// the parity evidence — so on gitee the no-tag form picks the first non-draft
-// non-prerelease row of the list instead of trusting /latest.
+// Mirror uploads are staged as prereleases. Select stable versions by version
+// number so a later backfill of an older release does not become the update.
 async function releaseRaw(route, tag, { timeoutMs } = {}) {
   const desc = ROUTES[route];
   if (!desc) {
     return null;
   }
   if (tag) {
-    return fetchJson(
+    const release = await fetchJson(
       route,
       `${desc.apiBase}/releases/tags/${encodeURIComponent(String(tag).trim())}`,
       timeoutMs,
     );
+    return route === 'cnb' && (release?.draft || release?.prerelease) ? null : release;
   }
-  if (route === 'gitee') {
-    const list = await fetchJson(route, `${desc.apiBase}/releases?per_page=30`, timeoutMs);
+  if (route === 'cnb') {
+    const list = await fetchJson(route, `${desc.apiBase}/releases?page_size=30`, timeoutMs);
     return (Array.isArray(list) ? list : [])
-      .find((row) => row && !row.draft && !row.prerelease) || null;
+      .filter((row) => row && !row.draft && !row.prerelease)
+      .sort((a, b) => update.compareVersions(b.tag_name, a.tag_name))[0] || null;
   }
   return fetchJson(route, `${desc.apiBase}/releases/latest`, timeoutMs);
 }
@@ -211,8 +210,9 @@ async function listFor(route, { installedVersion = '', timeoutMs } = {}) {
     return routeSnapshot('github', { status: 'error', releases: [], message: 'unknown-route' });
   }
   try {
-    const list = await fetchJson(route, `${desc.apiBase}/releases?per_page=30`, timeoutMs);
+    const list = await fetchJson(route, `${desc.apiBase}/releases?${route === 'cnb' ? 'page_size' : 'per_page'}=30`, timeoutMs);
     const releases = (Array.isArray(list) ? list : [])
+      .filter((row) => route !== 'cnb' || (!row?.draft && !row?.prerelease))
       .map((row) => summarizeForRoute(route, row, installedVersion))
       .filter(Boolean);
     return routeSnapshot(route, { status: 'ok', releases });

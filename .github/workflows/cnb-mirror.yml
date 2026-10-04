@@ -1,0 +1,52 @@
+name: CNB mirror
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published GitHub stable release to mirror (blank uses latest)
+        type: string
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: cnb-mirror
+  cancel-in-progress: false
+jobs:
+  sync:
+    if: >-
+      github.repository == 'ChisaAlter/WhaleIsle' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'release' && !github.event.release.prerelease && !github.event.release.draft) ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Synchronize source and published bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+          CNB_REPO: ${{ vars.CNB_REPO }}
+          MIRROR_RELEASE: ${{ github.event_name != 'push' && '1' || '0' }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: node scripts/sync-cnb.mjs

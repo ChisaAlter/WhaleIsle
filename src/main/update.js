@@ -804,7 +804,7 @@ module.exports = {
   cancelledError,
   parseSha512Sums,
   verifyAssetChecksum,
-  // Release-source (GitHub/Gitee mirror routes) builds on these primitives.
+  // Release-source (GitHub/CNB mirror routes) builds on these primitives.
   githubJson,
   githubHeaders,
   normalizeVersion,

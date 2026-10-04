@@ -13,7 +13,7 @@ export function selectChecks(paths, { manual = false } = {}) {
         /^\.github\/(ISSUE_TEMPLATE\/|.*\.md$)/.test(path) ||
         /^vendor\/[^/]+\/(docs\/|\.agents\/|\.github\/|[^/]+\.md$)/.test(path)) continue
     if (path.startsWith('scripts/')) scope.tools = true
-    if (/^scripts\/(verify-md-links\.mjs|lib\/gate\.mjs|publish-release\.mjs|release-download\.mjs|ci-scope\.mjs)$/.test(path)) continue
+    if (/^scripts\/(verify-md-links\.mjs|lib\/gate\.mjs|publish-release\.mjs|sync-cnb\.mjs|release-download\.mjs|ci-scope\.mjs)$/.test(path)) continue
     if (/\.test\.(js|mjs)$/.test(path)) {
       if (!path.startsWith('scripts/')) scope.product = true
       if (path.startsWith('vendor/')) scope.vendor = true

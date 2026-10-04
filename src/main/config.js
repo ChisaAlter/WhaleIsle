@@ -291,7 +291,7 @@ function normalizeLauncherSettings(config) {
     quitAfterStart: config.quitAfterStart !== false,
     autoStartDesktop: config.autoStartDesktop !== false,
     askOnUpdate: config.askOnUpdate !== false,
-    downloadRoute: ['github', 'gitee'].includes(config.downloadRoute) ? config.downloadRoute : '',
+    downloadRoute: config.downloadRoute === 'gitee' ? 'cnb' : ['github', 'cnb'].includes(config.downloadRoute) ? config.downloadRoute : '',
     disabledPlugins: normalizeDisabledPlugins(config.disabledPlugins),
   };
 }
@@ -310,8 +310,8 @@ function normalizeLauncherConfigPatch(patch) {
       continue;
     }
     if (key === 'downloadRoute') {
-      if (!['', 'github', 'gitee'].includes(value)) {
-        throw new TypeError('downloadRoute must be "", "github" or "gitee"');
+      if (!['', 'github', 'cnb'].includes(value)) {
+        throw new TypeError('downloadRoute must be "", "github" or "cnb"');
       }
       next[key] = value;
       continue;

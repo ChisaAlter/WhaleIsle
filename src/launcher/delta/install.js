@@ -17,7 +17,7 @@ const manifest = require('./manifest');
 
 // Delta asset enumeration needs the raw assets[] list (releaseFor's summary
 // only carries installer+checksum) — release-source's releaseRaw keeps the
-// route-aware fetch (including gitee's prerelease-skipping latest) in one
+// route-aware fetch (including cnb's prerelease-skipping latest) in one
 // place.
 function fetchRelease(route, tag, deps = {}) {
   if (typeof deps.fetchRelease === 'function') {
