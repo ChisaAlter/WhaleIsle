@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { directoryRemovalScript, directoryTransactionsScript, transactionalUninstallerScript } from './windows-directory-installer.cjs'
+import { directoryRemovalScript, directoryTransactionsScript, transactionalUninstallerScript, silentUninstallFailureScript } from './windows-directory-installer.cjs'
 
 const require = createRequire(import.meta.url)
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -316,4 +316,59 @@ SectionEnd
     assert.equal(existsSync(old), false)
     assert.equal(existsSync(`${old}.rollback.txt`), false)
     assert.equal(readFileSync(join(external, 'sentinel.txt'), 'utf8'), 'user data survives rollback')
+  })
+
+test('silent old-uninstaller failure returns upstream exit 2 and cleans the staged tree',
+  { skip: process.platform !== 'win32' }, async t => {
+    const directory = mkdtempSync(join(tmpdir(), 'whale-nsis-uninstall-result-'))
+    t.after(() => rmSync(directory, { recursive: true, force: true }))
+    const final = join(directory, 'application')
+    const stage = `${final}.new-{54FC1CD3-F7D8-4FBE-8231-FDD9D82FF7B4}`
+    const external = join(directory, 'user-data')
+    for (const tree of [final, stage, external]) mkdirSync(tree)
+    writeFileSync(join(final, 'old.txt'), 'restored old application remains available')
+    writeFileSync(join(stage, 'new.txt'), 'uncommitted new payload')
+    writeFileSync(join(external, 'sentinel.txt'), 'user data survives failed relocation')
+    symlinkSync(final, join(stage, 'installed-runtime'), 'junction')
+    symlinkSync(external, join(stage, 'user-data'), 'junction')
+    const output = join(directory, 'relocation.exe')
+    const source = join(directory, 'fixture.nsi')
+    const marker = join(directory, 'unexpected-success.txt')
+    const directories = join(directory, 'directories.nsh')
+    writeFileSync(directories, directoryTransactionsScript(readFileSync(directoryTemplate, 'utf8')))
+    const { directoryInstallerExits } = await import('../vendor/deepseek-harness/apps/desktop/scripts/windows-directory-installer.mjs')
+    const adapted = silentUninstallFailureScript(directoryInstallerExits(readFileSync(join(templates, 'include/installUtil.nsh'), 'utf8')))
+    const start = adapted.indexOf('Function handleUninstallResult')
+    const end = adapted.indexOf('# http://stackoverflow.com', start)
+    assert.ok(start >= 0 && end > start, 'real handleUninstallResult template')
+    const tool = await compiler()
+    writeFileSync(source, `Unicode true
+Name "Whale Isle failed relocation fixture"
+OutFile "${nsisQuote(output)}"
+RequestExecutionLevel user
+${tool.header}
+LangString uninstallFailed 1033 "Uninstall failed"
+!define DSH_DIRECTORY_INSTALLER_PATH "${nsisQuote(directories)}"
+!include "${nsisQuote(installer)}"
+${adapted.slice(start, end)}
+Section
+  InitPluginsDir
+  StrCpy $dshFinalDirectory "${nsisQuote(final)}"
+  StrCpy $dshNewDirectory "${nsisQuote(stage)}"
+  StrCpy $dshOldDirectory "${nsisQuote(final)}.old-{54FC1CD3-F7D8-4FBE-8231-FDD9D82FF7B4}"
+  StrCpy $INSTDIR $dshFinalDirectory
+  # Stub the old uninstaller's nonzero return; use the actual result handler.
+  StrCpy $R0 2
+  ClearErrors
+  !insertmacro handleUninstallResult "SHELL_CONTEXT"
+  FileOpen $R1 "${nsisQuote(marker)}" w
+  FileClose $R1
+SectionEnd
+`)
+    tool.compile(source)
+    assert.equal(run(output, ['/S']), 2)
+    assert.equal(existsSync(stage), false)
+    assert.equal(existsSync(marker), false)
+    assert.equal(readFileSync(join(final, 'old.txt'), 'utf8'), 'restored old application remains available')
+    assert.equal(readFileSync(join(external, 'sentinel.txt'), 'utf8'), 'user data survives failed relocation')
   })

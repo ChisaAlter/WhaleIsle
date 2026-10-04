@@ -17,6 +17,13 @@ function replaceOnce(source, before, after) {
   return source.replace(before, after);
 }
 
+/** Let a silent relocation failure reach the upstream exit and directory rollback. */
+function silentUninstallFailureScript(source) {
+  return replaceOnce(source,
+    'MessageBox MB_OK|MB_ICONEXCLAMATION "$(uninstallFailed): $R0"',
+    'MessageBox MB_OK|MB_ICONEXCLAMATION "$(uninstallFailed): $R0" /SD IDOK');
+}
+
 /** Commit the new installation before reporting a failed retirement cleanup. */
 function directoryTransactionsScript(source) {
   let adapted = directoryRemovalScript(source.replaceAll('\r\n', '\n'));
@@ -111,7 +118,8 @@ async function installWindowsDirectoryInstaller() {
     let adapted = replaceInclude(source, 'installSection.nsh', section);
     for (const helper of ['allowOnlyOneInstallerInstance.nsh', 'installUtil.nsh']) {
       const target = join(directory, helper);
-      await writeFile(target, official.directoryInstallerExits(await readFile(join(templates, 'include', helper), 'utf8')));
+      const helperSource = official.directoryInstallerExits(await readFile(join(templates, 'include', helper), 'utf8'));
+      await writeFile(target, helper === 'installUtil.nsh' ? silentUninstallFailureScript(helperSource) : helperSource);
       adapted = replaceInclude(adapted, helper, target);
     }
     // Preserve uninstall UI/data policy; recursive removal never follows runtime junctions.
@@ -122,4 +130,4 @@ async function installWindowsDirectoryInstaller() {
   };
 }
 
-module.exports = { directoryRemovalScript, directoryTransactionsScript, transactionalUninstallerScript, installWindowsDirectoryInstaller };
+module.exports = { directoryRemovalScript, directoryTransactionsScript, transactionalUninstallerScript, silentUninstallFailureScript, installWindowsDirectoryInstaller };
