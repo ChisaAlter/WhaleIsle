@@ -144,7 +144,12 @@
     "win": {
       "icon": "assets/icon.ico",
       "files": [
-        "!node_modules/node-pty/prebuilds/!(win32-${arch}){,/**/*}"
+        {
+          "from": ".",
+          "filter": [
+            "!node_modules/node-pty/prebuilds/!(win32-${arch}){,/**/*}"
+          ]
+        }
       ],
       "extraResources": [
         {
@@ -187,7 +192,12 @@
     "mac": {
       "icon": "assets/icon.png",
       "files": [
-        "!node_modules/node-pty/prebuilds/!(darwin-${arch}){,/**/*}"
+        {
+          "from": ".",
+          "filter": [
+            "!node_modules/node-pty/prebuilds/!(darwin-${arch}){,/**/*}"
+          ]
+        }
       ],
       "category": "public.app-category.developer-tools",
       "identity": null,

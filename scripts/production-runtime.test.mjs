@@ -147,29 +147,44 @@ test('native cleanup retains active ConPTY files and notices but removes duplica
   for (const relative of excluded) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
 });
 
-test('Electron builder applies target filters before packaging root node-pty and mobile maps', t => {
+test('normalized Electron builder config keeps the ASAR whitelist and target node-pty filters', t => {
   const { root } = fixture(t);
   const build = require('../package.json').build;
-  const { FileMatcher, getNodeModuleFileMatcher } = require('app-builder-lib/out/fileMatcher');
+  const { doMergeConfigs } = require('app-builder-lib/out/util/config/config');
+  const { getMainFileMatchers, getNodeModuleFileMatcher } = require('app-builder-lib/out/fileMatcher');
   for (const [platform, arch] of [['win', 'x64'], ['mac', 'arm64']]) {
+    const config = doMergeConfigs([structuredClone(build)]);
+    const info = { config, projectDir: root, buildResourcesDir: 'build',
+      isPrepackedAppAsar: false, debugLogger: { isEnabled: false } };
     const expand = value => value.replaceAll('${arch}', arch);
-    const matcher = getNodeModuleFileMatcher(root, root, expand, build[platform],
-      { config: build, debugLogger: { isEnabled: false } });
+    const destination = path.join(root, 'dist', 'app');
+    const mainMatchers = getMainFileMatchers(root, destination, expand, config[platform],
+      { info }, path.join(root, 'dist'), false);
+    const appAllows = relative => mainMatchers.some(matcher =>
+      matcher.createFilter()(path.join(root, relative), { isDirectory: () => false }));
+    assert.ok(appAllows('src/main/index.js'));
+    assert.ok(appAllows('assets/icon.ico'));
+    assert.ok(appAllows('mobile/web/chisacode/daemon-client.bundle.js'));
+    for (const excluded of ['.tmp/current-package-audit.json',
+      'vendor/deepseek-harness/packages/experimental/inspector/lib/devtools/lighthouse_worker.js',
+      'vendor/dsh-im/lib/index.js', 'scripts/production-runtime.js',
+      'mobile/web/chisacode/daemon-client.bundle.js.map']) {
+      assert.equal(appAllows(excluded), false, `${platform}: ${excluded}`);
+    }
+    const matcher = getNodeModuleFileMatcher(root, destination, expand, config[platform], info);
     const filter = matcher.createFilter();
     const allowed = (relative, directory = false) => filter(path.join(root, relative), { isDirectory: () => directory });
     const target = platform === 'win' ? 'win32-x64' : 'darwin-arm64';
     const other = platform === 'win' ? 'darwin-arm64' : 'win32-x64';
     assert.ok(allowed('node_modules/node-pty/prebuilds', true));
     assert.ok(allowed(`node_modules/node-pty/prebuilds/${target}`, true));
-    assert.ok(allowed(`node_modules/node-pty/prebuilds/${target}/conpty/conpty.dll`));
+    assert.ok(allowed(`node_modules/node-pty/prebuilds/${target}/${platform === 'win' ? 'conpty.node' : 'pty.node'}`));
+    assert.ok(allowed(`node_modules/node-pty/prebuilds/${target}/${platform === 'win' ? 'conpty/conpty.dll' : 'spawn-helper'}`));
     assert.ok(allowed('node_modules/node-pty/third_party/LICENSE'));
     assert.equal(allowed(`node_modules/node-pty/prebuilds/${other}`, true), false);
     assert.equal(allowed(`node_modules/node-pty/prebuilds/${target}/conpty.pdb`), false);
     assert.equal(allowed('node_modules/node-pty/third_party/conpty/win10-x64/conpty.dll'), false);
   }
-  const filter = new FileMatcher(root, root, value => value, build.files).createFilter();
-  assert.ok(filter(path.join(root, 'mobile/web/chisacode/daemon-client.bundle.js'), { isDirectory: () => false }));
-  assert.equal(filter(path.join(root, 'mobile/web/chisacode/daemon-client.bundle.js.map'), { isDirectory: () => false }), false);
 });
 
 test('Office trimming keeps Python APIs and source files, binds actual payload bytes, and leaves the source payload untouched', t => {
