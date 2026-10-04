@@ -147,30 +147,36 @@ test('native cleanup retains active ConPTY files and notices but removes duplica
   for (const relative of excluded) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
 });
 
-test('normalized Electron builder config keeps the ASAR whitelist and target node-pty filters', t => {
+test('actual Electron builder collection keeps the ASAR whitelist and native-host node-pty filters', async t => {
   const { root } = fixture(t);
   const build = require('../package.json').build;
   const { doMergeConfigs } = require('app-builder-lib/out/util/config/config');
   const { getMainFileMatchers, getNodeModuleFileMatcher } = require('app-builder-lib/out/fileMatcher');
-  for (const [platform, arch] of [['win', 'x64'], ['mac', 'arm64']]) {
+  const { computeFileSets } = require('app-builder-lib/out/util/appFileCopier');
+  const { expandMacro } = require('app-builder-lib/out/util/macroExpander');
+  const included = ['package.json', 'src/main/index.js', 'assets/icon.ico',
+    'mobile/web/chisacode/daemon-client.bundle.js'];
+  const excluded = ['.tmp/current-package-audit.json',
+    'vendor/deepseek-harness/packages/experimental/inspector/lib/devtools/lighthouse_worker.js',
+    'vendor/dsh-im/lib/index.js', 'scripts/production-runtime.js', 'dist/previous-build.bin',
+    'src/main/index.test.js', 'mobile/web/chisacode/daemon-client.bundle.js.map'];
+  for (const file of [...included, ...excluded]) writeFile(root, file);
+  // Publishing uses native Windows/macOS hosts: ${platform} is the host, not the target's win/mac key.
+  assert.equal(expandMacro('${platform}', process.arch, {}), process.platform);
+  for (const [platform, hostPlatform, arch] of [['win', 'win32', 'x64'], ['mac', 'darwin', 'arm64']]) {
     const config = doMergeConfigs([structuredClone(build)]);
     const info = { config, projectDir: root, buildResourcesDir: 'build',
       isPrepackedAppAsar: false, debugLogger: { isEnabled: false } };
-    const expand = value => value.replaceAll('${arch}', arch);
+    const expand = value => expandMacro(value.replaceAll('${platform}', hostPlatform), arch, {});
     const destination = path.join(root, 'dist', 'app');
     const mainMatchers = getMainFileMatchers(root, destination, expand, config[platform],
       { info }, path.join(root, 'dist'), false);
-    const appAllows = relative => mainMatchers.some(matcher =>
-      matcher.createFilter()(path.join(root, relative), { isDirectory: () => false }));
-    assert.ok(appAllows('src/main/index.js'));
-    assert.ok(appAllows('assets/icon.ico'));
-    assert.ok(appAllows('mobile/web/chisacode/daemon-client.bundle.js'));
-    for (const excluded of ['.tmp/current-package-audit.json',
-      'vendor/deepseek-harness/packages/experimental/inspector/lib/devtools/lighthouse_worker.js',
-      'vendor/dsh-im/lib/index.js', 'scripts/production-runtime.js',
-      'mobile/web/chisacode/daemon-client.bundle.js.map']) {
-      assert.equal(appAllows(excluded), false, `${platform}: ${excluded}`);
-    }
+    assert.equal(mainMatchers.length, 1, 'one root whitelist, without a separate negative matcher');
+    // computeFileSets constructs AppFileWalker, which can prepend **/* before traversing a matcher.
+    const collected = (await computeFileSets(mainMatchers, null, { info }, false))
+      .flatMap(set => set.files.map(file => path.relative(root, file).replaceAll('\\', '/')));
+    assert.deepEqual(collected.sort(), [...included].sort(), `${platform}: actual collected files`);
+    for (const file of excluded) assert.equal(collected.includes(file), false, `${platform}: ${file}`);
     const matcher = getNodeModuleFileMatcher(root, destination, expand, config[platform], info);
     const filter = matcher.createFilter();
     const allowed = (relative, directory = false) => filter(path.join(root, relative), { isDirectory: () => directory });

@@ -79,6 +79,7 @@
       "!mobile/web/**/*.map",
       "!node_modules/node-pty/third_party/**/*.{exe,dll}",
       "!node_modules/node-pty/prebuilds/**/*.pdb",
+      "!node_modules/node-pty/prebuilds/!(${platform}-${arch}){,/**/*}",
       "assets/**/*",
       "package.json"
     ],
@@ -143,14 +144,6 @@
     ],
     "win": {
       "icon": "assets/icon.ico",
-      "files": [
-        {
-          "from": ".",
-          "filter": [
-            "!node_modules/node-pty/prebuilds/!(win32-${arch}){,/**/*}"
-          ]
-        }
-      ],
       "extraResources": [
         {
           "from": "build/office-runtime",
@@ -191,14 +184,6 @@
     },
     "mac": {
       "icon": "assets/icon.png",
-      "files": [
-        {
-          "from": ".",
-          "filter": [
-            "!node_modules/node-pty/prebuilds/!(darwin-${arch}){,/**/*}"
-          ]
-        }
-      ],
       "category": "public.app-category.developer-tools",
       "identity": null,
       "hardenedRuntime": false,

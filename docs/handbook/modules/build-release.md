@@ -11,7 +11,7 @@ Harness 来源由 `vendor/harness-upstream.json` 记录；同步用 `npm run syn
 ## 实际装配
 
 - `scripts/setup-harness.js` 使用锁文件中的 pnpm 和官方 `build:official`。客户端修改后构建该 profile，随后重启桌面。
-- `package.json` 保存 Electron、NSIS、DMG、资源和 afterPack 配置。Windows 经 `scripts/run-electron-builder.cjs` 接入锁定上游的目录事务安装实现；安装器品牌与静默安装行为见[安装器资料](../../features/windows-installer.md)。
+- `package.json` 保存 Electron、NSIS、DMG、资源和 afterPack 配置。根 `build.files` 是应用 ASAR 的唯一白名单；node-pty 平台排除放在该白名单中，`${platform}` 使用构建主机的平台。Windows 和 macOS 发布分别在对应平台原生构建。Windows 经 `scripts/run-electron-builder.cjs` 接入锁定上游的目录事务安装实现；安装器品牌与静默安装行为见[安装器资料](../../features/windows-installer.md)。
 - 根 `.nvmrc` 是 CI 构建 Node 版本来源。Windows 随包 Harness 与 Office 共用 `resources/runtime/primary-runtime/dependencies/node/bin/node.exe`，该独立 Node 由上游 primary-runtime 锁文件准备，不再额外复制构建进程的 Node；其它目标仍由 `afterPack` 复制独立 Node。
 - `scripts/production-runtime.js` 从 `apps/cli` 与 `src/shared/harness-desktop-forks.js` 的 `DESKTOP_PACKAGES` 出发，选择生产依赖、已安装的 optional 与 peer 依赖闭包；不把所有已构建工作区包作为装配根。web 前端单独复制 `apps/web/dist`。生产依赖必须在 manifest 与锁文件中完整声明，实际装配保留消费者的依赖实例共享/隔离关系。实现与理由见[运行时实例布局](../../decisions/implemented/architecture/2026-09-28-runtime-instance-layout.md)。
 - Codex / Claude provider 按其 README 通过 Harness 插件管理或 `dsh plugin --profile web add @deepseek-ai/dsh-subagent-codex` / `@deepseek-ai/dsh-subagent-claude-code` 安装到 profile，不再因复制整个工作区而预装 CLI / SDK。直接可切换的 agent-team、voice、auto-review、inspector 四个官方实验 bundle 仍在生产闭包内。旧配置若仅手写这两个 provider bundle 而没有独立安装，保留原选择并显示补装命令；临时通过现有 `skip-user-plugins` 路径恢复基础界面，补装后可重试完整插件启动。其它无法解析的失效 bundle 仍按原修复行为删除。此次不删除旧 userData 运行时缓存。
