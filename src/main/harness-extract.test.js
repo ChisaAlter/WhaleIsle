@@ -20,6 +20,7 @@ Module._load = function load(request, parent, isMain) {
   return originalLoad.call(this, request, parent, isMain);
 };
 const {
+  packagedHarnessRoot,
   tarCommand,
   hasBuiltHarness,
   canReuseExtractedHarness,
@@ -69,6 +70,17 @@ function packagedFixture(t) {
     logs: [],
   };
 }
+
+test('installed runtime takes precedence over same-version userData without repairing or extracting it', async t => {
+  const fixture = packagedFixture(t);
+  seedBuiltHarness(fixture.loose);
+  seedBuiltHarness(fixture.dest);
+  fs.writeFileSync(path.join(fixture.dest, '.dsh-runtime-links.json'), 'invalid legacy manifest');
+  assert.equal(packagedHarnessRoot(), fixture.loose);
+  assert.equal(await ensurePackagedHarness(line => fixture.logs.push(line)), fixture.loose);
+  assert.deepEqual(fixture.logs, []);
+  assert.equal(fs.readFileSync(path.join(fixture.dest, '.dsh-runtime-links.json'), 'utf8'), 'invalid legacy manifest');
+});
 
 function seedBuiltHarness(root) {
   fs.mkdirSync(path.join(root, 'apps', 'cli', 'lib'), { recursive: true });

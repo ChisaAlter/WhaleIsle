@@ -70,15 +70,14 @@ test('installer languages are Chinese-first with an English fallback', () => {
   assert.deepEqual(nsis.installerLanguages, ['zh_CN', 'en_US']);
 });
 
-test('installer.nsh customizes GUI pages only and stays silent-install (/S) safe', () => {
+test('installer.nsh preserves branded pages and keeps installation work silent-install (/S) safe', () => {
   assert.equal(nsis.include, 'build/installer.nsh');
   const nsh = fs.readFileSync(path.join(ROOT, 'build', 'installer.nsh'), 'utf8');
-  // The three GUI-only extension points plus the scoped customInit registry
-  // hygiene block (incident 2026-09-12). customInit does run during silent
-  // installs — intentionally: it only deletes dead install records and
-  // repairs a poisoned $INSTDIR, never touching UI or exec.
+  // Directory transaction/extraction/removal hooks also run during /S. The
+  // branded pages and registry hygiene remain; work hooks do not open UI.
   const macros = [...nsh.matchAll(/^!macro\s+(\S+)/gm)].map((m) => m[1]);
   assert.deepEqual(macros, [
+    'customRemoveFiles', 'customInstall', 'customInstallerExtract',
     'customWelcomePage', 'customUnWelcomePage', 'customHeader',
     '_DSHD_IS_ABS', '_DSHD_CHECK_UNINSTALL', 'customInit',
   ]);
@@ -104,6 +103,10 @@ test('installer.nsh customizes GUI pages only and stays silent-install (/S) safe
   assert.doesNotMatch(code, /RequestExecutionLevel/i);
   assert.doesNotMatch(code, /^\s*Section\b/im);
   assert.doesNotMatch(code, /ExecWait|ExecShell\b/);
+  const extract = nsh.match(/^!macro customInstallerExtract[^\r\n]*\r?\n([\s\S]*?)^!macroend/m);
+  assert.match(extract[1], /Pop \$R0/);
+  assert.match(extract[1], /\$\{If\} \$R0 == 0/);
+  assert.match(extract[1], /install-harness\.cjs/);
 });
 
 test('customInit purges dead install records and repairs a poisoned $INSTDIR', () => {

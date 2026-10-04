@@ -10,13 +10,16 @@
 ## User paths
 
 1. 双击 Setup（GUI）：欢迎页（品牌侧栏：官方浅色侧栏底 `rgb(249,250,251)` + 鲸鱼娘大头徽标 + 产品名 `Whale Isle` + 细蓝强调线 + 右缘发丝线，MUI 本地化中文/英文文案）→ MIT 许可页 → 安装模式/目录选择（可改目录）→ 安装进度（右上白底鲸鱼娘大头徽标 header）→ 完成页（默认勾选「运行 Whale Isle」+ 产品仓库链接）。
-2. 静默安装 `dsh-setup.exe /S`：跳过全部页面直接装完；同版本 overlay 与覆盖升级保留用户数据（QA TC-INST-009/012、dshbot smoke 依赖）。
+2. 静默安装 `Whale-Isle-Setup-<version>.exe /S`：跳过全部页面直接装完；同版本覆盖与升级通过目录事务替换应用文件，保留用户数据（QA TC-INST-009/012、dshbot smoke 依赖）。
 3. 卸载（设置 → 应用 / 开始菜单）：品牌化卸载向导，灰阶侧栏区分移除语境；不删 `userData`（桌面 dsh-home、会话都在那里）。
 
 ## Invariants
 
 - `oneClick: false`、`allowToChangeInstallationDirectory: true`、桌面 + 开始菜单快捷方式、发行 artifact 名 `Whale-Isle-Setup-${version}.exe` 必须与 release.yml globs、SHA512SUMS 和资产校验器一致；旧版 `Deepseek-Harness-Desktop-Setup-*` 仍可被更新客户端识别。
-- `/S` 静默安装必须保持可用。`build/installer.nsh` 只允许 `customWelcomePage` / `customUnWelcomePage` / `customHeader` 三个 GUI 宏 + 一个窄范围的 `customInit` 注册表净化块（见下条）；禁止 MessageBox、Section、RequestExecutionLevel、ExecWait、customInstall 等影响安装语义的内容。`customUnWelcomePage` 是纯页面声明（替换 electron-builder 模板里的裸 `MUI_UNPAGE_WELCOME` 插入点），必须自己重插 `MUI_UNPAGE_WELCOME` 并重定义 `MUI_WELCOMEPAGE_TITLE_3LINES`——MUI2 每插一页就 UNSET 欢迎页设置，安装侧的 define 到不了卸载器，否则卸载欢迎页标题第三行（「…Uninstall」）被裁。
+- `/S` 静默安装必须保持可用。品牌 GUI 仍由 `customWelcomePage` / `customUnWelcomePage` / `customHeader` 三个宏定义，`customInit` 只负责下述注册表净化。目录事务由上游 `installer-directories.nsh` 与 `scripts/windows-directory-installer.cjs` 接入；`customInstallerExtract` 解压暂存应用并准备 Harness，`customInstall` 在注册完成后清理旧目录。`customUnWelcomePage` 是纯页面声明（替换 electron-builder 模板里的裸 `MUI_UNPAGE_WELCOME` 插入点），必须自己重插 `MUI_UNPAGE_WELCOME` 并重定义 `MUI_WELCOMEPAGE_TITLE_3LINES`——MUI2 每插一页就 UNSET 欢迎页设置，安装侧的 define 到不了卸载器，否则卸载欢迎页标题第三行（「…Uninstall」）被裁。
+- 安装顺序参考锁定的官方桌面实现：在目标目录同卷创建 `.new-<GUID>` 暂存树，7za 解压完成后再关闭旧应用；旧目录改名为 `.old-<GUID>`，新目录晋级到最终路径，再注册安装信息和快捷方式，最后清理旧目录。提取或晋级失败走目录回滚，恢复受阻时保留完整备份；不直接向正在运行的旧目录覆盖文件。保留 Whale Isle 的品牌、AppID、快捷方式及用户数据策略。
+- 暂存树回滚、旧安装目录清理与正常卸载共用 `build/remove-directory.nsh`：递归枚举普通目录，但遇到目录联接或其它目录 reparse point 时只移除联接自身，不进入目标目录。暂存联接可能已指向仍在使用的最终安装目录，旧目录联接也可能在晋级后指向新树，因此不能直接使用会遍历联接目标的递归删除。删除失败保留错误结果，卸载不继续当作成功；用户数据不在应用目录清理范围内。
+- 完整桌面包在暂存目录使用 primary-runtime 的独立 Node 运行 `install-harness.cjs`：核验 `deepseek-harness.tar` 大小与 SHA256，提取到 `resources/vendor/deepseek-harness`，按最终安装路径创建 junction，删除 tar 后才晋级应用。小启动器包没有 Harness 载荷，跳过这一步。安装后首次启动直接使用资源目录中的运行时，不重复提取到 userData；旧 tar 布局仍可由应用启动提取。
 - `customInit` 注册表净化（2026-09-12 事故修复）：在 `.onInit` 内 `initMultiUser` 之后、页面/区段之前运行——**含静默路径，这是有意为之**（坏记录恰恰在 `/S` 升级时造成破坏）。记录存活的条件 = 绝对路径（`X:\`/`\\`，含引号包裹形态）**且** 文件还在盘上：`InstallLocation` 要求 `<dir>\${APP_EXECUTABLE_FILENAME}` 或对应旧版 `<dir>\Deepseek-Harness-Desktop.exe` / `<dir>\Deepseek-Harness-Launcher.exe` 存在，`UninstallString` 要求引号内卸载器存在（`Call GetInQuotes`/`GetFileParent`——它们是 installUtil.nsh 的 Function，`Call` 目标编译期可解析，但其 `!macro` 包装在 .onInit 后才定义，不能直接 `!insertmacro`）。死记录删除：`InstallLocation` 删值、`UninstallString` 死 → 删整个卸载子键。`$INSTDIR` 按序重算：显式 `/D` > 活 `InstallLocation` > 活卸载器父目录（升级回原目录）> `$LocalAppData\Programs\${APP_FILENAME}`；末尾绝对性兜底同时挡掉 mangled `/D`（drive-relative 复位到默认，不落幻影目录）。不得在此宏里加 UI、exec、网络或其它逻辑。
 - 默认 per-user 安装；已有 `%LOCALAPPDATA%\Programs\Deepseek-Harness-Desktop` 安装继续原地升级，不设 `perMachine`，不设 `deleteAppDataOnUninstall`。
 - 位图是经典 24 位无压缩 BMP，几何固定：sidebar 164×314、header 150×57。改品牌图先改 `scripts/render-installer-assets.js` 再 `npm run installer:assets` 重新生成，禁止手改二进制或另起配色——色板是官方浅色表（`src/shared/dsh-webui-tokens.css`）的构建期镜像，与启动器同源：侧栏底 `--dsw-specific-sidebar-fill` `rgb(249,250,251)`、画布 `--dsw-alias-bg-base` 白、文字 `--dsw-alias-label-primary/secondary/tertiary`、强调仅细线用 `--dsw-static-deepseek-500` `rgb(65,118,230)`、发丝线 `rgba(0,0,0,.10)`。品牌标 = `assets/icon.png`（源图 `assets/whale-head.png` 保持原字节；白色圆角方形底板、22% 圆角、头像四边各内缩 4%，保持完整比例），安装页原色、卸载页 `grayscale(0.85)+opacity(0.75)` 弱化。禁止近黑营销面板（第二皮肤）、禁止 `--boot-*` 仪器画布扩散进安装器；卸载侧栏是同一浅色构图的灰阶弱化版。
@@ -31,7 +34,8 @@
 
 - `package.json` 的 `build.nsis` / `build.win` — 安装器配置
 - `assets/whale-head.png`、`assets/icon.svg` / `.png` / `.ico`、`scripts/render-icon.js`；`scripts/render-pet-head.js` 仅解除应用品牌资源写入
-- `build/` — `installer.nsh` 与生成的 BMP
+- `build/` — `installer.nsh`、`remove-directory.nsh` 与生成的 BMP
+- `scripts/windows-directory-installer.cjs`、`scripts/install-harness.cjs`、`scripts/run-electron-builder.cjs` — 上游目录事务适配与安装阶段 Harness 准备
 - `scripts/render-installer-assets.js`、`scripts/run-render-installer-assets.js` — 位图生成
 - `src/main/installer-branding.test.js` — 自动门禁
 - `.github/workflows/test.yml` 构建安装包，`.github/workflows/release.yml` 与 `scripts/publish-release.mjs` 分发原始资产。
@@ -40,7 +44,7 @@
 
 ## Do not touch
 
-- `scripts/after-pack.js` 装配逻辑、SHA512SUMS / 更新器校验流
+- SHA512SUMS / 更新器校验流
 - 资产内容完整性校验与旧版安装目录的原地升级能力
 - mac DMG 打包配置与上传命名；本卡只控制手动工作流是否调度既有 macOS job
 
@@ -58,4 +62,4 @@
 
 - Design: [design-language.md](../design-language.md)（官方浅色表 / 品牌蓝仅强调 / 鲸鱼娘大头徽标；安装器 chrome 对齐「桌面启动器」一节，不是启动页仪器画布），[dsh-webui-tokens.css](../../src/shared/dsh-webui-tokens.css)，`assets/whale-head.png`（用户提供的品牌源图）
 - Spec: electron-builder NSIS 选项（assisted installer 默认无欢迎页、默认 `nsis3-metro.bmp` 侧栏——本卡替换为品牌资产）
-- Implementation entry: `package.json` `build.nsis`、`build/installer.nsh`、`scripts/render-installer-assets.js`
+- Implementation entry: `package.json` `build.nsis`、`build/installer.nsh`、`scripts/windows-directory-installer.cjs`、`scripts/install-harness.cjs`、`scripts/render-installer-assets.js`

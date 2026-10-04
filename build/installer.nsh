@@ -1,9 +1,47 @@
 # Whale Isle NSIS customization (assisted installer only).
+!include "${__FILEDIR__}\remove-directory.nsh"
+!ifdef BUILD_UNINSTALLER
+  !insertmacro dshDefineRemoveDirectory "un."
+!else
+  !insertmacro dshDefineRemoveDirectory ""
+!endif
+!ifndef BUILD_UNINSTALLER
+  # Official stage -> close application -> rename -> register -> retire old directory.
+  !include "${DSH_DIRECTORY_INSTALLER_PATH}"
+!endif
+
+# The directory installer replaces same-path upgrades atomically. For normal
+# removal and relocation, never let upstream un.atomicRMDir traverse junctions.
+!macro customRemoveFiles
+  SetOutPath $TEMP
+  !insertmacro dshRemoveDirectory "un." "$INSTDIR"
+  ${If} ${Errors}
+    SetErrorLevel 2
+    Abort "Cannot remove the application directory. Close running processes and retry."
+  ${EndIf}
+!macroend
+
+!macro customInstall
+  !insertmacro dshFinishDirectories
+!macroend
+
+!macro customInstallerExtract Archive
+  nsExec::ExecToStack '"$PLUGINSDIR\dsh-7za.exe" x -y -bd -bb0 "-o$INSTDIR" "${Archive}"'
+  Pop $R0
+  Pop $R1
+  ${If} $R0 == 0
+    # The small launcher package has no Harness payload.
+    ${If} ${FileExists} "$INSTDIR\resources\runtime\install-harness.cjs"
+      nsExec::ExecToStack '"$INSTDIR\resources\runtime\primary-runtime\dependencies\node\bin\node.exe" "$INSTDIR\resources\runtime\install-harness.cjs" "$INSTDIR\resources" "$dshFinalDirectory\resources"'
+      Pop $R0
+      Pop $R1
+    ${EndIf}
+  ${EndIf}
+!macroend
 #
 # GUI polish (the three page/header macros below) is skipped in silent mode
-# (/S). The single exception is customInit: a registry-hygiene block that also
-# runs during silent installs and upgrades — by design, because the damage it
-# guards against happens silently. It performs no UI, no exec, no sections;
+# (/S). Directory extraction/cleanup and customInit also run during silent
+# installs and upgrades. customInit performs no UI, no exec, no sections;
 # it only deletes install records that are already dead (non-absolute paths
 # can never resolve) and repairs a poisoned $INSTDIR.
 

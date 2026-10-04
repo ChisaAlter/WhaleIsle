@@ -65,6 +65,7 @@ function bundledNodeBin() {
       return null;
     }
     return firstExisting([
+      path.join(process.resourcesPath, 'runtime', 'primary-runtime', 'dependencies', 'node', 'bin', 'node.exe'),
       path.join(process.resourcesPath, 'node.exe'),
       path.join(process.resourcesPath, 'node'),
     ]);

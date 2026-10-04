@@ -47,7 +47,8 @@ function run(executable, args, env) {
       detached: process.platform !== 'win32',
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
+      // Coordinate input and layout transitions require a visible GUI window.
+      windowsHide: false,
     })
     const timer = setTimeout(() => {
       stopProcessTree(child)
