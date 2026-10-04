@@ -267,6 +267,12 @@ function historyFromRecords(records) {
   const out = [];
   for (const rec of records ?? []) {
     const ev = rec?.event ?? rec;
+    if (ev?.type === 'turn/end' && ev.data?.reason?.kind !== 'completed') {
+      const kind = ev.data?.reason?.kind;
+      const text = kind === 'aborted' ? '这轮已中止' : kind === 'error' ? '这轮出错' : '这轮没有完成';
+      out.push({ role: 'err', text: `${text}——点 ↗ 去会话里看详情`, seq: Number(ev.seq) || 0 });
+      continue;
+    }
     if (ev?.type !== 'user/message' && ev?.type !== 'assistant/message') continue;
     // Relayed user/messages (whale tools kind:'plugin', IM bridges) are not
     // the human talking — rendering them as user rows would confuse the card.

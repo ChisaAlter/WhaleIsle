@@ -58,11 +58,18 @@ async function host(t, services = {}) {
 test('partial replies retain error or aborted status through the real pet/chat RPC', async (t) => {
   let instance;
   let kind = 'error';
+  const records = [];
+  const record = (event) => {
+    const next = { ...event, seq: records.length + 1 };
+    records.push(next);
+    instance.emit(next);
+  };
   instance = await host(t, { sessionController: {
+    follow: async function* () { yield { type: 'snapshot', records: records.map((event) => ({ type: 'event', event })) }; },
     prompt: async (request) => {
-      instance.emit({ type: 'user/message', data: { source: { rpcId: request.requestId } } });
-      instance.emit({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '已完成第一步' }] } } });
-      instance.emit({ type: 'turn/end', data: { reason: { kind } } });
+      record({ type: 'user/message', data: { source: { rpcId: request.requestId }, message: { content: [{ type: 'text', text: '执行任务' }] } } });
+      record({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '已完成第一步' }] } } });
+      record({ type: 'turn/end', data: { reason: { kind } } });
       return { accepted: true };
     },
   } });
@@ -72,6 +79,9 @@ test('partial replies retain error or aborted status through the real pet/chat R
     assert.equal(result.value.ok, kind === 'completed');
     assert.equal(result.value.reply, '已完成第一步');
     if (kind !== 'completed') assert.equal(result.value.error, `turn-${kind}`);
+    const state = await instance.rpc('pet/state', { includeCatalog: false });
+    assert.equal(state.value.history.at(-1).role, kind === 'completed' ? 'her' : 'err');
+    if (kind !== 'completed') assert.match(state.value.history.at(-1).text, /这轮/);
   }
   assert.equal((await instance.rpc('pet/chat', { text: '甲'.repeat(2001) })).value.error, 'input-too-long');
 });

@@ -122,7 +122,15 @@ test('failed shared turns display their partial reply and a separate error row',
     petShell.chat = async () => ({ ok: false, via: 'whale', reason: 'turn-error', reply: '第一步完成' });`);
   await pet.run(`submitChat('执行任务')`);
   assert.equal(pet.run('chatLog.some((entry) => entry.role === "her" && entry.text === "第一步完成")'), true);
-  assert.equal(pet.run('chatLog.some((entry) => entry.role === "err" && entry.text.includes("turn-error"))'), true);
+  assert.equal(pet.run('chatLog.some((entry) => entry.role === "err" && entry.text.includes("这轮没有完成"))'), true);
+  pet.run(`chatRenderHistory([
+    { role: 'user', text: '执行任务' }, { role: 'her', text: '第一步完成' },
+    { role: 'err', text: '这轮出错——点 ↗ 去会话里看详情' }
+  ]);`);
+  assert.equal(pet.run('chatLog.filter((entry) => entry.role === "err").length'), 1, 'backfill keeps the persisted error role');
+  pet.run(`chatLog.length = 0; petShell.chat = async () => ({ ok: true, via: 'whale', reply: '' });`);
+  await pet.run(`submitChat('执行工具任务')`);
+  assert.equal(pet.run('chatLog.some((entry) => entry.role === "err")'), false, 'an empty completed turn is not a failed turn');
 });
 
 function loadPet() {
