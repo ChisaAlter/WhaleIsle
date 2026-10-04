@@ -186,14 +186,14 @@ test('a resolved {ok:false} route-save refusal is treated as a failure, not succ
   };
   const hint = [];
   const errText = (e) => `E:${e.message}`;
-  const first = await issueRouteSave(api, 'route-gitee', () => {}, (t) => hint.push(t), errText);
+  const first = await issueRouteSave(api, 'route-cnb', () => {}, (t) => hint.push(t), errText);
   assert.equal(first, false, 'a resolved refusal is not a successful save');
   assert.ok(hint.length > 0, 'the refusal must surface a hint');
   // After maintenance releases, retrying the SAME route must issue a save.
   refuse = false;
-  const second = await issueRouteSave(api, 'route-gitee', () => {}, () => {}, errText);
+  const second = await issueRouteSave(api, 'route-cnb', () => {}, () => {}, errText);
   assert.equal(second, true);
-  assert.deepEqual(saved, ['route-gitee'], 'retry after a refused save must persist');
+  assert.deepEqual(saved, ['route-cnb'], 'retry after a refused save must persist');
 });
 
 test('launcher.html import sub-panes are div[role=tabpanel] with tabindex', () => {

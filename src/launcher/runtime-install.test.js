@@ -30,19 +30,20 @@ function useReleasePlatform(t, platform, arch = process.arch) {
 
 test('normalizeRoute accepts known ids only', () => {
   assert.equal(releaseSource.normalizeRoute('github'), 'github');
-  assert.equal(releaseSource.normalizeRoute('Gitee'), 'gitee');
+  assert.equal(releaseSource.normalizeRoute('CNB'), 'cnb');
+  assert.equal(releaseSource.normalizeRoute('Gitee'), 'cnb');
   assert.equal(releaseSource.normalizeRoute(''), '');
   assert.equal(releaseSource.normalizeRoute('gitlab'), '');
   assert.equal(releaseSource.normalizeRoute(undefined), '');
 });
 
-test('listRoutes exposes both mirrors; both verified after anonymous parity evidence', () => {
+test('listRoutes exposes GitHub and the enabled CNB mirror', () => {
   const routes = releaseSource.listRoutes();
   const github = routes.find((row) => row.id === 'github');
-  const gitee = routes.find((row) => row.id === 'gitee');
+  const cnb = routes.find((row) => row.id === 'cnb');
   assert.equal(github.verified, true);
-  assert.equal(gitee.verified, true);
-  assert.match(gitee.page, /gitee\.com/);
+  assert.equal(cnb.verified, true);
+  assert.match(cnb.page, /cnb\.cool/);
 });
 
 test('latestFor(github) normalizes a release snapshot against installedVersion', async (t) => {
@@ -78,16 +79,18 @@ test('latestFor(github) normalizes a release snapshot against installedVersion',
   }
 });
 
-test('latestFor(gitee) only touches gitee hosts and normalizes download_url assets', async (t) => {
+test('latestFor(cnb) only touches cnb hosts and uses anonymous public JSON metadata', async (t) => {
   useReleasePlatform(t, 'win32');
   const previousFetch = global.fetch;
   const seen = [];
-  global.fetch = async (url) => {
+  global.fetch = async (url, options) => {
+    assert.equal(options.headers.Accept, 'application/vnd.cnb.api+json');
+    assert.equal(options.headers.Authorization, undefined);
     const target = String(url);
     seen.push(target);
-    assert.match(target, /gitee\.com/, 'gitee route must not query github');
-    assert.equal(new URL(target).searchParams.get('direction'), 'desc');
-    // Gitee's /latest returns prereleases, so the route reads the list and
+    assert.match(target, /cnb\.cool/, 'cnb route must not query github');
+    assert.equal(new URL(target).searchParams.get('page_size'), '30');
+    // The mirror route reads the list to skip incomplete staging releases and
     // skips draft/prerelease rows — the mock serves a newer prerelease first
     // plus the expected stable row to pin that behavior.
     return {
@@ -101,33 +104,33 @@ test('latestFor(gitee) only touches gitee hosts and normalizes download_url asse
           name: 'v2.0.0',
           body: '',
           assets: [
-            { name: 'Deepseek-Harness-Desktop-Setup-2.0.0.exe', download_url: 'https://gitee.com/ayase/x/releases/download/v2.0.0/setup.exe' },
+            { name: 'Deepseek-Harness-Desktop-Setup-2.0.0.exe', browser_download_url: 'https://cnb.cool/ayase/x/releases/download/v2.0.0/setup.exe' },
           ],
         },
       ]),
     };
   };
   try {
-    const check = await releaseSource.latestFor('gitee', { installedVersion: '1.0.0' });
+    const check = await releaseSource.latestFor('cnb', { installedVersion: '1.0.0' });
     assert.equal(check.status, 'available');
-    assert.equal(check.route, 'gitee');
-    assert.equal(check.assetUrl, 'https://gitee.com/ayase/x/releases/download/v2.0.0/setup.exe');
-    assert.ok(seen.every((url) => url.includes('gitee.com')));
+    assert.equal(check.route, 'cnb');
+    assert.equal(check.assetUrl, 'https://cnb.cool/ayase/x/releases/download/v2.0.0/setup.exe');
+    assert.ok(seen.every((url) => url.includes('cnb.cool')));
   } finally {
     global.fetch = previousFetch;
   }
 });
 
-test('Gitee version list and direct tag lookup hide incomplete prerelease mirrors', async (t) => {
+test('CNB version list and direct tag lookup hide incomplete prerelease mirrors', async (t) => {
   const previousFetch = global.fetch;
   t.after(() => { global.fetch = previousFetch; });
   global.fetch = async (url) => ({ ok: true, status: 200, json: async () => {
     if (String(url).includes('/tags/')) return { tag_name: 'v2.0.0', prerelease: true, assets: [] };
-    assert.equal(new URL(url).searchParams.get('direction'), 'desc');
+    assert.equal(new URL(url).searchParams.get('page_size'), '30');
     return [{ tag_name: 'v2.0.0', prerelease: true, assets: [] }, { tag_name: 'v1.0.0', prerelease: false, assets: [] }];
   } });
-  assert.equal((await releaseSource.listFor('gitee')).releases.length, 1);
-  assert.equal(await releaseSource.releaseFor('gitee', 'v2.0.0'), null);
+  assert.equal((await releaseSource.listFor('cnb')).releases.length, 1);
+  assert.equal(await releaseSource.releaseFor('cnb', 'v2.0.0'), null);
 });
 
 test('listFor rows attach delta info only for the installed→to pair', async (t) => {
@@ -191,7 +194,7 @@ test('macOS release routes select the matching DMG from mixed-platform assets', 
   assert.equal(latest.status, 'available');
   assert.equal(latest.assetName, 'Whale-Isle-mac-arm64.dmg');
   assert.equal(latest.assetUrl, 'https://example.test/Whale-Isle-mac-arm64.dmg');
-  const list = await releaseSource.listFor('gitee', { installedVersion: '1.0.0' });
+  const list = await releaseSource.listFor('cnb', { installedVersion: '1.0.0' });
   assert.equal(list.releases[0].assetName, latest.assetName);
   assert.equal(list.releases[0].assetUrl, latest.assetUrl);
   assert.equal(list.releases[0].assetSize, 200);

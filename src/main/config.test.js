@@ -416,16 +416,29 @@ test('launcher config patch accepts shell booleans plus downloadRoute', () => {
     quitAfterStart: false,
     autoStartDesktop: false,
     askOnUpdate: false,
-    downloadRoute: 'gitee',
+    downloadRoute: 'cnb',
   }), {
     quitAfterStart: false,
     autoStartDesktop: false,
     askOnUpdate: false,
-    downloadRoute: 'gitee',
+    downloadRoute: 'cnb',
   });
   assert.deepEqual(normalizeLauncherConfigPatch({ downloadRoute: '' }), { downloadRoute: '' });
   assert.throws(() => normalizeLauncherConfigPatch({ downloadRoute: 'gitlab' }));
   assert.throws(() => normalizeLauncherConfigPatch({ quitAfterStart: 'yes' }));
   assert.throws(() => normalizeLauncherConfigPatch({ disabledPlugins: ['evil'] }));
   assert.throws(() => normalizeLauncherConfigPatch({ apiKey: 'sk-stolen' }));
+});
+
+test('saved Gitee route migrates to CNB and remains selected after persistence', () => {
+  const before = loadConfig();
+  try {
+    saveConfig({ downloadRoute: 'gitee' });
+    assert.equal(loadConfig().downloadRoute, 'cnb');
+    assert.equal(publicConfig(loadConfig()).downloadRoute, 'cnb');
+    saveConfig({ downloadRoute: 'cnb' });
+    assert.equal(loadConfig().downloadRoute, 'cnb');
+  } finally {
+    saveConfig({ downloadRoute: before.downloadRoute });
+  }
 });
