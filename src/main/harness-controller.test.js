@@ -210,6 +210,23 @@ test('writes the desktop install plugin before launching Harness', async () => {
   assert.deepEqual(calls, ['ensure']);
 });
 
+test('missing selected optional provider uses visible recovery and resumes after installation', async () => {
+  let installed = false;
+  const provider = '@deepseek-ai/dsh-subagent-claude-code';
+  const f = fixture({
+    healDanglingBundles: () => ({ ok: true, removed: [], requiresInstall: installed ? [] : [provider] }),
+  });
+  await f.controller.start();
+  assert.equal(f.dsh.startCalls, 1);
+  assert.equal(f.dsh.startOptions[0].skipUserPlugins, true);
+  assert.match(f.controller.snapshot().pluginRecovery.reason, /已保留所选 Codex\/Claude 插件配置/);
+  assert.match(f.controller.snapshot().pluginRecovery.reason, /dsh plugin --profile web add @deepseek-ai\/dsh-subagent-claude-code/);
+  installed = true;
+  await f.controller.retryFullPlugins();
+  assert.equal(f.dsh.startOptions.at(-1).skipUserPlugins, false);
+  assert.equal(f.controller.snapshot().pluginRecovery.skipUserPlugins, false);
+});
+
 test('cleans dshmarket preset residue after the desktop install plugin and before Harness start', async () => {
   const order = [];
   const f = fixture({

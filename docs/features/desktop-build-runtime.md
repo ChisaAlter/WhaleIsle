@@ -35,7 +35,8 @@
 - 桌面构建 Node 由根 `.nvmrc` 指定，当前选用 Node 24.21.0 LTS。Windows 随包 Harness 与 Office 共用 primary-runtime 锁定的独立 Node，位于 `resources/runtime/primary-runtime/dependencies/node/bin/node.exe`；其它目标仍单独复制构建时 Node。Electron 内置 Node 不作为该共享解释器。跨主版本后按影响重新执行构建、桌面测试和打包启动验证。
 
 - 每个运行时源 realpath 对应一个物理包目录；消费者经根内链接解析到相同或隔离的源实例。version 1 `.dsh-runtime-links.json` 仅记录相对路径，归档前移除链接；Windows 安装阶段按最终路径准备链接，其它提取路径解压后恢复，实际解析边与发布文件都须通过验证。
-- 内置插件暂存依赖树保留生产、已安装 optional 与 peer 闭包，删除闭包外的包槽位；包内子路径（如 `zod/v4`）仍作为包资源保留。许可文件不随 Markdown 清理删除；运行时筛选排除构建元数据和明确的非目标平台 native 文件。随包 pnpm 只含 `package.json`、`bin`、`dist`、`LICENSE`，不复制 `artifacts/exe` 中的重复 CLI。
+- 内置插件暂存依赖树保留生产、已安装 optional 与 peer 闭包，删除闭包外的包槽位；包内 JS 子路径（如 `zod/v4`）仍作为包资源保留。许可文件和含许可证正文的 README 不随 Markdown 清理删除。运行时筛选仅处理分发副本，排除声明、source map、明确的开发/宣传目录、重复的 web public 与 ConPTY 构建副本，以及非目标平台 native 文件；目标 ConPTY DLL/exe 保留。两份 pnpm 保留各自版本与入口，剔除非目标 reflink；桌面 pnpm 只含 `package.json`、`bin`、`dist`、`LICENSE`，不复制 `artifacts/exe` 中的重复 CLI。
+- Windows Office 分发副本移除 Python 测试/基准目录及有对应源码的 `.pyc`，保留公开 `testing` 模块。裁剪后 `runtime.json.payloadDigest` 绑定实际文件内容和版本元数据，装配检查复算摘要，用户目录中的旧载荷按新的身份正常替换。
 - 账户启动依赖 `ws` 必须在根生产 dependencies 与锁文件中声明，不能依赖本机额外安装。工作区依赖同源拆分与异源合并均阻断打包，字节相同不豁免；删除副本后的依赖树必须复验，正确收拢不能因复制计数不变而失败。
 - `package.json` 必须保留 `scripts`（至少含 start / test / test:tools / setup:harness / sync:harness / pack / dist / docs:check）、`devDependencies`（electron / electron-builder / semver / pnpm）、`dependencies.electron-updater`、engines、overrides 与完整 `build` 块（asarUnpack / electronDist / extraMetadata / afterPack / publish / win / nsis / mac / dmg）。
 - `build.extraResources` 的首个 vendor filter 必须包含全部内置插件目录，含 `dsh-remote/**`；`vendor/chisacode-remote/.tmp/desktop-runtime/node_modules → vendor/dshd-remote/node_modules` 的第二条资源映射不得丢。

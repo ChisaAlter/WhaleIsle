@@ -265,6 +265,8 @@ describe('Tooltip', () => {
     )
 
     it('keeps default focus immediate and cancels a pending hover delay', () => {
+      // Isolate the hover timer from the shared presence enter frames.
+      stubReducedMotion(true)
       render(<Tooltip label="Refresh" delayMs={500}><button>anchor</button></Tooltip>)
       const anchor = screen.getByText('anchor')
       const initialTimers = vi.getTimerCount()

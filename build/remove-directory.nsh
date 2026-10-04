@@ -1,5 +1,19 @@
 !include "LogicLib.nsh"
 
+!macro dshDirectoryPath Directory Result Scratch
+  StrCpy ${Result} "${Directory}"
+  StrCpy ${Scratch} ${Result} 4
+  ${If} ${Scratch} != "\\?\"
+    StrCpy ${Scratch} ${Result} 2
+    ${If} ${Scratch} == "\\"
+      StrCpy ${Result} ${Result} "" 2
+      StrCpy ${Result} "\\?\UNC\${Result}"
+    ${Else}
+      StrCpy ${Result} "\\?\${Result}"
+    ${EndIf}
+  ${EndIf}
+!macroend
+
 # Runtime dependency junctions can point at another install directory during staging.
 # NSIS RMDir /r follows them, so remove each reparse point without walking its target.
 !macro dshDefineRemoveDirectory Prefix
@@ -13,16 +27,7 @@ Function ${Prefix}dshRemoveDirectory
   StrCpy $R4 0
 
   # GetFileAttributes/FindFirst/Delete must support the same long paths as Node.
-  StrCpy $R3 $R0 4
-  ${If} $R3 != "\\?\"
-    StrCpy $R3 $R0 2
-    ${If} $R3 == "\\"
-      StrCpy $R0 $R0 "" 2
-      StrCpy $R0 "\\?\UNC\$R0"
-    ${Else}
-      StrCpy $R0 "\\?\$R0"
-    ${EndIf}
-  ${EndIf}
+  !insertmacro dshDirectoryPath "$R0" $R0 $R3
   System::Call 'kernel32::GetFileAttributesW(w r10) i.r13'
   ${If} $R3 == -1
     System::Call 'kernel32::GetLastError() i.r13'

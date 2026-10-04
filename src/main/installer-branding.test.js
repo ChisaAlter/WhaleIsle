@@ -28,7 +28,7 @@ test('nsis keeps the assisted-installer product contract', () => {
   assert.equal(nsis.shortcutName, 'Whale Isle');
   assert.equal(nsis.artifactName, 'Whale-Isle-Setup-${version}.${ext}');
   // Per-user default install path (%LOCALAPPDATA%\Programs) — TC-INST-013
-  // opens resources\node.exe there; do not flip to perMachine.
+  // uses the shared primary runtime there; do not flip to perMachine.
   assert.equal(nsis.perMachine, undefined);
   // Uninstall must never delete userData (desktop dsh-home lives there).
   assert.equal(nsis.deleteAppDataOnUninstall, undefined);
@@ -74,9 +74,11 @@ test('installer.nsh preserves branded pages and keeps installation work silent-i
   assert.equal(nsis.include, 'build/installer.nsh');
   const nsh = fs.readFileSync(path.join(ROOT, 'build', 'installer.nsh'), 'utf8');
   // Directory transaction/extraction/removal hooks also run during /S. The
-  // branded pages and registry hygiene remain; work hooks do not open UI.
+  // branded pages and registry hygiene remain; operational warnings use
+  // silent defaults so an unattended install cannot wait for a dialog.
   const macros = [...nsh.matchAll(/^!macro\s+(\S+)/gm)].map((m) => m[1]);
   assert.deepEqual(macros, [
+    'dshReportDirectoryCleanup', 'dshReportDirectoryRollback', 'dshRestoreOldInstallation',
     'customRemoveFiles', 'customInstall', 'customInstallerExtract',
     'customWelcomePage', 'customUnWelcomePage', 'customHeader',
     '_DSHD_IS_ABS', '_DSHD_CHECK_UNINSTALL', 'customInit',
@@ -99,7 +101,9 @@ test('installer.nsh preserves branded pages and keeps installation work silent-i
     .split('\n')
     .filter((line) => !line.trim().startsWith('#') && !line.trim().startsWith(';'))
     .join('\n');
-  assert.doesNotMatch(code, /MessageBox/i);
+  const warnings = code.split('\n').filter((line) => /MessageBox/i.test(line));
+  assert.equal(warnings.length, 2, 'only cleanup and rollback warnings');
+  for (const warning of warnings) assert.match(warning, /\/SD IDOK\s*$/);
   assert.doesNotMatch(code, /RequestExecutionLevel/i);
   assert.doesNotMatch(code, /^\s*Section\b/im);
   assert.doesNotMatch(code, /ExecWait|ExecShell\b/);

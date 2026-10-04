@@ -504,7 +504,7 @@ export function deriveArchived(
     if (summary?.origin === 'subagent') continue
     if (summary !== undefined && !listed(summary, accounted, scratchCwd)) continue
     const session: SessionSummary = summary ?? {
-      id, displayTitle: missingTitle, running: false, retainedBy: {}, blank: false, updatedAt: 0,
+      id, title: missingTitle, displayTitle: missingTitle, running: false, retainedBy: {}, blank: false, updatedAt: 0,
     }
     rows.push(sessionNode(session, list, statuses, new Set(), archived))
   }

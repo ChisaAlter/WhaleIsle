@@ -2,22 +2,177 @@
 !include "${__FILEDIR__}\remove-directory.nsh"
 !ifdef BUILD_UNINSTALLER
   !insertmacro dshDefineRemoveDirectory "un."
+  Var dshUninstallSource
+  Var dshUninstallBackup
+  Var dshUninstallBackupPath
 !else
   !insertmacro dshDefineRemoveDirectory ""
 !endif
+# Persist the warning beside the retired tree; cleanup uses this same installer
+# and the same no-follow helper, without stopping the newly installed app.
+!macro dshReportDirectoryCleanup BaseDirectory Directory Setup
+  Push $R0
+  Push $R1
+  Push $R2
+  StrCpy $R2 0
+  StrCpy $R1 '"${Setup}" /S "--cleanup-old=${Directory}" /D=${BaseDirectory}'
+  DetailPrint "Installation removal completed, but cleanup failed: ${Directory}"
+  DetailPrint "Close processes using the retired directory, then run: $R1"
+  ClearErrors
+  FileOpen $R0 "${Directory}.cleanup.txt" w
+  ${IfNot} ${Errors}
+    FileWriteWord $R0 0xfeff
+    FileWriteUTF16LE $R0 "The application operation completed.$\r$\nCannot remove retired directory: ${Directory}$\r$\nClose processes using that directory, then run:$\r$\n$R1$\r$\n"
+    ${If} ${Errors}
+      StrCpy $R2 1
+    ${EndIf}
+    ClearErrors
+    FileClose $R0
+    ${If} ${Errors}
+      StrCpy $R2 1
+    ${EndIf}
+  ${Else}
+    StrCpy $R2 1
+  ${EndIf}
+  ${If} $R2 != 0
+    # The application is committed, but a silent caller must see that even
+    # the cleanup instructions could not be saved.
+    DetailPrint "Cannot save cleanup instructions. Close processes using the retired directory, then run: $R1"
+    StrCpy $R0 "Instructions could not be saved.$\r$\nClose processes using the directory, then run:$\r$\n$R1"
+    SetErrorLevel 3
+    SetErrors
+  ${Else}
+    StrCpy $R0 "Close processes using the directory, then run:$\r$\n$R1$\r$\nInstructions: ${Directory}.cleanup.txt"
+    ClearErrors
+  ${EndIf}
+  MessageBox MB_OK|MB_ICONEXCLAMATION "Cannot remove retired directory: ${Directory}$\r$\n$R0" /SD IDOK
+  Pop $R2
+  Pop $R1
+  Pop $R0
+!macroend
+
+!macro dshReportDirectoryRollback Directory Backup
+  Push $R0
+  Push $R1
+  Push $R2
+  StrCpy $R1 0
+  DetailPrint "Cannot restore the previous application. Incomplete directory: ${Directory}"
+  ${If} $dshOldMoved == "1"
+    DetailPrint "Complete old backup: ${Backup}"
+    StrCpy $R2 "Complete previous application backup: ${Backup}$\r$\nClose programs using these directories. Move ${Directory} aside if it still exists, then rename ${Backup} to ${Directory}."
+  ${Else}
+    StrCpy $R2 "No previous installation backup exists. Close programs using ${Directory}, then run the installer again with /D=${Directory}."
+  ${EndIf}
+  ClearErrors
+  FileOpen $R0 "${Backup}.rollback.txt" w
+  ${IfNot} ${Errors}
+    FileWriteWord $R0 0xfeff
+    FileWriteUTF16LE $R0 "Cannot restore the previous application.$\r$\nIncomplete application directory: ${Directory}$\r$\n$R2$\r$\n"
+    ${If} ${Errors}
+      StrCpy $R1 1
+    ${EndIf}
+    ClearErrors
+    FileClose $R0
+    ${If} ${Errors}
+      StrCpy $R1 1
+    ${EndIf}
+  ${Else}
+    StrCpy $R1 1
+  ${EndIf}
+  ${If} $R1 != 0
+    StrCpy $R0 "Instructions could not be saved."
+  ${Else}
+    StrCpy $R0 "Instructions: ${Backup}.rollback.txt"
+  ${EndIf}
+  MessageBox MB_OK|MB_ICONEXCLAMATION "Cannot restore the previous application.$\r$\nIncomplete directory: ${Directory}$\r$\n$R2$\r$\n$R0" /SD IDOK
+  Pop $R2
+  Pop $R1
+  Pop $R0
+  SetErrorLevel 2
+  SetErrors
+!macroend
+
 !ifndef BUILD_UNINSTALLER
+  # Functions in this include use the reporting macros defined above.
   # Official stage -> close application -> rename -> register -> retire old directory.
   !include "${DSH_DIRECTORY_INSTALLER_PATH}"
 !endif
 
-# The directory installer replaces same-path upgrades atomically. For normal
-# removal and relocation, never let upstream un.atomicRMDir traverse junctions.
+!macro dshRestoreOldInstallation
+  Push ""
+  Call un.restoreFiles
+  Pop $R0
+  ${If} $R0 != 0
+    DetailPrint "Cannot fully restore the old application. Remaining files: $dshUninstallBackup"
+    SetErrorLevel 2
+    Abort "Cannot fully restore the old application. Preserve $dshUninstallBackup and restore its remaining files before retrying."
+  ${EndIf}
+  !insertmacro dshRemoveDirectory "un." "$dshUninstallBackup"
+  SetErrorLevel 2
+  Abort "Cannot remove the application directory. The old application was restored. Close running processes and retry."
+!macroend
+
+# Same-path upgrades use the directory transaction. Relocation still invokes
+# the old uninstaller; move its files first and restore them on any failure.
 !macro customRemoveFiles
   SetOutPath $TEMP
-  !insertmacro dshRemoveDirectory "un." "$INSTDIR"
-  ${If} ${Errors}
-    SetErrorLevel 2
-    Abort "Cannot remove the application directory. Close running processes and retry."
+  ${If} ${isUpdated}
+    System::Call 'ole32::CoCreateGuid(g .r0) i .r1'
+    ${If} $1 != 0
+      SetErrorLevel 2
+      Abort "Cannot prepare the uninstall transaction."
+    ${EndIf}
+    StrCpy $dshUninstallBackup "$INSTDIR.uninstall-$0"
+    !insertmacro dshDirectoryPath "$INSTDIR" $dshUninstallSource $R0
+    !insertmacro dshDirectoryPath "$dshUninstallBackup" $dshUninstallBackupPath $R0
+    System::Call 'kernel32::GetFileAttributesW(w "$dshUninstallSource") i.r10'
+    IntOp $R0 $R0 & 0x400
+    ${If} $R0 != 0
+      # A linked install root is one leaf, never a tree to traverse.
+      ClearErrors
+      Rename $dshUninstallSource $dshUninstallBackupPath
+      ${If} ${Errors}
+        SetErrorLevel 2
+        Abort "Cannot move the linked application directory. Close running processes and retry."
+      ${EndIf}
+    ${Else}
+      ClearErrors
+      CreateDirectory $dshUninstallBackupPath
+      ${If} ${Errors}
+        SetErrorLevel 2
+        Abort "Cannot prepare the uninstall backup directory."
+      ${EndIf}
+      Push ""
+      Call un.atomicRMDir
+      Pop $R0
+      ${If} $R0 != 0
+        !insertmacro dshRestoreOldInstallation
+      ${EndIf}
+      !insertmacro dshRemoveDirectory "un." "$INSTDIR"
+      ${If} ${Errors}
+        !insertmacro dshRestoreOldInstallation
+      ${EndIf}
+    ${EndIf}
+    !insertmacro dshRemoveDirectory "un." "$dshUninstallBackup"
+    ${If} ${Errors}
+      !ifdef APP_INSTALLER_STORE_FILE
+        ${If} $installMode == "all"
+          SetShellVarContext current
+        ${EndIf}
+        !insertmacro dshReportDirectoryCleanup "$INSTDIR" "$dshUninstallBackup" "$LOCALAPPDATA\${APP_INSTALLER_STORE_FILE}"
+        ${If} $installMode == "all"
+          SetShellVarContext all
+        ${EndIf}
+      !else
+        !insertmacro dshReportDirectoryCleanup "$INSTDIR" "$dshUninstallBackup" "$EXEPATH"
+      !endif
+    ${EndIf}
+  ${Else}
+    !insertmacro dshRemoveDirectory "un." "$INSTDIR"
+    ${If} ${Errors}
+      SetErrorLevel 2
+      Abort "Cannot remove the application directory. Close running processes and retry."
+    ${EndIf}
   ${EndIf}
 !macroend
 
@@ -165,6 +320,57 @@
       !insertmacro UAC_RunElevated
       Quit
     ${EndIf}
+  ${EndIf}
+
+  # Explicit cleanup mode is handled before registry hygiene or install work.
+  # /D binds the original installation root even after a directory migration.
+  ${StdUtils.GetParameter} $R9 "cleanup-old" ""
+  ${If} $R9 != ""
+    StrLen $R0 $INSTDIR
+    StrCpy $R1 $R9 $R0
+    ${If} $R1 != $INSTDIR
+      SetErrorLevel 2
+      Quit
+    ${EndIf}
+    StrCpy $R1 $R9 5 $R0
+    ${If} $R1 == ".old-"
+      IntOp $R0 $R0 + 5
+    ${Else}
+      StrCpy $R1 $R9 11 $R0
+      ${If} $R1 != ".uninstall-"
+        SetErrorLevel 2
+        Quit
+      ${EndIf}
+      IntOp $R0 $R0 + 11
+    ${EndIf}
+    StrCpy $R1 $R9 "" $R0
+    StrLen $R0 $R1
+    ${If} $R0 != 38
+      SetErrorLevel 2
+      Quit
+    ${EndIf}
+    StrCpy $R0 $R1 1
+    StrCpy $R2 $R1 1 -1
+    ${If} $R0 != "{"
+    ${OrIf} $R2 != "}"
+      SetErrorLevel 2
+      Quit
+    ${EndIf}
+    System::Call 'ole32::CLSIDFromString(w r11, g .r12) i.r13'
+    ${If} $R3 != 0
+      SetErrorLevel 2
+      Quit
+    ${EndIf}
+    SetOutPath $TEMP
+    !insertmacro dshRemoveDirectory "" "$R9"
+    ${If} ${Errors}
+      DetailPrint "Cannot remove retired directory: $R9"
+      SetErrorLevel 2
+    ${Else}
+      Delete "$R9.cleanup.txt"
+      SetErrorLevel 0
+    ${EndIf}
+    Quit
   ${EndIf}
 
   StrCpy $R1 "0"

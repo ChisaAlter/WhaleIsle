@@ -540,14 +540,23 @@ class HarnessController extends EventEmitter {
       checkCurrent();
       this.dsh.log(`插件清理失败：${errorMessage(error)}`, 'app');
     }
+    let healed;
     try {
-      const healed = this.healDanglingBundles();
+      healed = this.healDanglingBundles();
       if (healed?.removed?.length) {
         this.dsh.log(`已修复悬挂插件 bundle：${healed.removed.join(', ')}`, 'app');
       }
     } catch (error) {
       checkCurrent();
       this.dsh.log(`插件 bundle 修复失败：${errorMessage(error)}`, 'app');
+    }
+    if (healed?.requiresInstall?.length) {
+      const commands = healed.requiresInstall.map(name => `dsh plugin --profile web add ${name}`).join('；');
+      const message = `已保留所选 Codex/Claude 插件配置，但对应插件尚未安装。请补装后重试完整插件：${commands}`;
+      this.dsh.log(message, 'app');
+      if (!skipUserPlugins) {
+        throw Object.assign(new Error(message), { code: 'DSH_OPTIONAL_PROVIDER_NOT_INSTALLED' });
+      }
     }
     const desktopInstall = this.ensureDesktopInstallPlugin();
     if (desktopInstall && desktopInstall.ok === false) {
@@ -917,7 +926,8 @@ class HarnessController extends EventEmitter {
     } catch (error) {
       if (isCancellation(error)) throw error;
       checkCurrent();
-      if (!skipUserPlugins && !this.shuttingDown && !isCancellation(error) && this.looksLikePluginTreeFailure(error)) {
+      if (!skipUserPlugins && !this.shuttingDown && !isCancellation(error)
+          && (error?.code === 'DSH_OPTIONAL_PROVIDER_NOT_INSTALLED' || this.looksLikePluginTreeFailure(error))) {
         await this.dsh.stop().catch(() => {});
         checkCurrent();
         this.writePluginSkip(error);

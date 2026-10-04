@@ -88,6 +88,30 @@ test('applyDisabledBundles drops a user bundle and keeps the official template',
   }
 });
 
+test('missing optional providers keep their explicit selection until installed', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-provider-profile-'));
+  try {
+    const providers = ['@deepseek-ai/dsh-subagent-codex', '@deepseek-ai/dsh-subagent-claude-code'];
+    const file = path.join(home, 'package.json');
+    fs.writeFileSync(file, JSON.stringify({ dsh: { profile: { bundles: providers } } }));
+    const before = fs.readFileSync(file, 'utf8');
+    const missing = healDanglingBundles({ profileDir: home, installAnchor: file });
+    assert.deepEqual(missing.requiresInstall, providers);
+    assert.deepEqual(missing.removed, []);
+    assert.equal(fs.readFileSync(file, 'utf8'), before);
+
+    for (const name of providers) {
+      const directory = path.join(home, 'node_modules', name);
+      fs.mkdirSync(directory, { recursive: true });
+      fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({ name }));
+    }
+    assert.deepEqual(healDanglingBundles({ profileDir: home, installAnchor: file }).requiresInstall, []);
+    assert.equal(fs.readFileSync(file, 'utf8'), before);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 function sourceDir() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-host-'));
   fs.writeFileSync(path.join(dir, 'install-dsh-plugin.mjs'), 'export const name = "dshd-desktop-plugin-install"\n', 'utf8');

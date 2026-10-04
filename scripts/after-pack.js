@@ -10,7 +10,8 @@ const {
 const { DESKTOP_PACKAGES } = require('../src/shared/harness-desktop-forks');
 const { runSkipComposeContract } = require('./check-skip-compose-contract');
 const { assembleRuntimeInstances } = require('./runtime-instance-graph');
-const { selectHarnessRuntimeSources, prunePluginDevDependencies, runtimeFileExclusion } = require('./production-runtime');
+const { selectHarnessRuntimeSources, prunePluginDevDependencies, runtimeFileExclusion,
+  pruneRuntimeFiles, isLicenseDocumentation, pruneOfficeRuntime, officePayloadDigest } = require('./production-runtime');
 const { RUNTIME_LINKS, removeRuntimeLinks } = require('../src/shared/runtime-links');
 const { writeRuntimeArchiveIdentity } = require('../src/shared/harness-runtime-identity');
 const {
@@ -437,7 +438,7 @@ function collectFiles(root, destRoot, expandNested = false, flat = false, omitRo
     if (lstat.isFile()) {
       const base = path.basename(src);
       if (/\.(map|tsbuildinfo|md|d\.ts)$/i.test(base) && !isShippedPresetMarkdown(src, root, base)
-          && !/^(license|licence|notice|third[_-]party[_-]notices)(\.|$)/i.test(base)) {
+          && !isLicenseDocumentation(src)) {
         return;
       }
       if (/^(changelog|changes|authors|contributing)(\.|$)/i.test(base)) {
@@ -1451,7 +1452,7 @@ function copyBundledNode(destDir) {
   return dest;
 }
 
-function copyBundledPnpm(projectDir, destDir) {
+function copyBundledPnpm(projectDir, destDir, target = {}) {
   const src = path.join(projectDir, 'node_modules', 'pnpm');
   if (!fs.existsSync(path.join(src, 'bin', 'pnpm.cjs'))) {
     throw new Error('打包时未找到 pnpm，请先 npm install');
@@ -1463,6 +1464,7 @@ function copyBundledPnpm(projectDir, destDir) {
     const source = path.join(src, name);
     if (fs.existsSync(source)) fs.cpSync(source, path.join(dest, name), { recursive: true, dereference: true });
   }
+  pruneRuntimeFiles(dest, target);
   return dest;
 }
 
@@ -1640,6 +1642,9 @@ function assertOfficeRuntime(resources, harnessDest) {
   if (manifest.platform !== 'win32' || manifest.arch !== 'x64' || typeof manifest.payloadDigest !== 'string') {
     throw new Error(`Office 运行时清单无效：platform=${manifest.platform} arch=${manifest.arch}（需要 win32/x64 + payloadDigest）`);
   }
+  if (manifest.payloadDigest !== officePayloadDigest(payload, manifest)) {
+    throw new Error('Office 运行时内容与裁剪后的载荷摘要不一致');
+  }
   const requiredPayload = [
     path.join(payload, 'dependencies', 'node', 'bin', 'node.exe'),
     path.join(payload, 'dependencies', 'python', 'python.exe'),
@@ -1752,6 +1757,7 @@ module.exports = async function afterPack(context) {
     assertVendoredPluginRuntimeDeps(resources, name);
     console.log(`${name}: removed ${removed} non-production dependency packages`);
   }
+  pruneRuntimeFiles(path.join(resources, 'vendor', 'dshd-remote'), target);
   await assertDshdRemoteRuntime(resources);
   const harnessDest = path.join(resources, 'vendor', 'deepseek-harness');
   const started = Date.now();
@@ -1770,7 +1776,7 @@ module.exports = async function afterPack(context) {
   assertNoDevOnlyPackages(harnessDest);
 
   const nodeDest = copyBundledNode(resources);
-  const pnpmDest = copyBundledPnpm(projectDir, resources);
+  const pnpmDest = copyBundledPnpm(projectDir, resources, target);
   const pin = JSON.parse(fs.readFileSync(path.join(projectDir, 'vendor', 'harness-upstream.json'), 'utf8'));
   fs.mkdirSync(path.join(resources, 'vendor'), { recursive: true });
   fs.writeFileSync(
@@ -1782,6 +1788,7 @@ module.exports = async function afterPack(context) {
   // feature card's limitations); other targets ship without Office and the
   // desktop overlay stays unwritten because the bundled payload is absent.
   if (context.electronPlatformName === 'win32') {
+    pruneOfficeRuntime(path.join(resources, 'runtime', 'primary-runtime'), target);
     assertOfficeRuntime(resources, harnessDest);
   }
   // Skip compose contract against the REAL packaged CLI: unit tests mock

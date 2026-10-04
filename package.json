@@ -76,6 +76,9 @@
       "!src/renderer/pet-live2d/rig/shell-*.png",
       "mobile/web/**/*",
       "!mobile/web/**/*.test.js",
+      "!mobile/web/**/*.map",
+      "!node_modules/node-pty/third_party/**/*.{exe,dll}",
+      "!node_modules/node-pty/prebuilds/**/*.pdb",
       "assets/**/*",
       "package.json"
     ],
@@ -140,6 +143,9 @@
     ],
     "win": {
       "icon": "assets/icon.ico",
+      "files": [
+        "!node_modules/node-pty/prebuilds/!(win32-${arch}){,/**/*}"
+      ],
       "extraResources": [
         {
           "from": "build/office-runtime",
@@ -180,6 +186,9 @@
     },
     "mac": {
       "icon": "assets/icon.png",
+      "files": [
+        "!node_modules/node-pty/prebuilds/!(darwin-${arch}){,/**/*}"
+      ],
       "category": "public.app-category.developer-tools",
       "identity": null,
       "hardenedRuntime": false,

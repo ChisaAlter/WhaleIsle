@@ -90,11 +90,15 @@ describe('Conversation event routing', () => {
       entries: () => events.entries(), fallbackEntry: () => events.fallbackEntry(),
     }, { entries: () => [] })
     assembler.append({ type: 'event', event: turn(1) })
+    expect(table).toHaveBeenCalledOnce()
+    expect(legacy).toHaveBeenCalledOnce()
     assembler.append({ type: 'event', event: {
       type: 'step/start', seq: SessionSeq(2), time: 2, data: { turn: 1, step: 1 },
     } })
-    expect(table).toHaveBeenCalledOnce()
-    expect(legacy).toHaveBeenCalledTimes(2)
+    // The new Step updates the immutable Turn location and backfills its
+    // previously declined match. The table still never receives step/start.
+    expect(table.mock.calls.map(([event]) => event.type)).toEqual(['turn/start', 'turn/start'])
+    expect(legacy.mock.calls.map(([event]) => event.type)).toEqual(['turn/start', 'turn/start', 'step/start'])
   })
 
   it('preserves the Definition receiver of a function-form matcher', () => {
