@@ -2,148 +2,108 @@ package ai.deepseek.harness.mobile
 
 import ai.deepseek.harness.mobile.store.EncryptedDeviceStore
 import ai.deepseek.harness.mobile.ui.DshRoot
-import ai.deepseek.harness.mobile.ui.RemoteWebScreen
+import ai.deepseek.harness.mobile.ui.NativeRemoteScreen
 import ai.deepseek.harness.mobile.ui.ScanScreen
 import ai.deepseek.harness.mobile.ui.theme.DshTheme
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Bundle
 import android.provider.Settings
-import android.webkit.ValueCallback
-import android.webkit.WebChromeClient
-import android.webkit.WebView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 class MainActivity : ComponentActivity() {
     private val store by lazy { EncryptedDeviceStore(applicationContext) }
     private val vm: DshViewModel by viewModels { DshVmFactory(store) }
-    private val fileChooser by lazy {
-        WebFileChooser(this, { vm.webRequestId.takeIf { vm.route == Route.Web } }) {
-            Toast.makeText(this, it, Toast.LENGTH_LONG).show()
-        }
+    private lateinit var images: NativeImagePicker
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) { runOnUiThread { vm.onNetworkAvailable() } }
     }
-
-    private val cameraPermission = registerForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
+    private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         vm.route = if (granted) Route.Scan else Route.Permission
     }
-
-    private val webChromeClient = object : WebChromeClient() {
-        override fun onShowFileChooser(
-            webView: WebView,
-            filePathCallback: ValueCallback<Array<Uri>>,
-            fileChooserParams: WebChromeClient.FileChooserParams,
-        ): Boolean {
-            fileChooser.show(webView, filePathCallback, fileChooserParams)
-            return true
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        // Cold-start entry from the system camera / a browser link
-        // (VIEW http://*:3180). Runs before setContent so the first
-        // composition already lands on the pairing WebView.
-        if (savedInstanceState == null) {
-            vm.openPairingLink(intent?.action, intent?.dataString)
-        } else if (vm.route == Route.Web) {
-            // A restored Activity must not replay a consumed one-time offer.
-            vm.reopenWebApp()
-        }
+        images = NativeImagePicker(this, vm::attachmentOwner, vm::addImage, vm::report)
+        images.restoreState(savedInstanceState)
+        getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
+        if (savedInstanceState == null) vm.openPairingLink(intent?.action, intent?.dataString)
         if (intent?.action == Intent.ACTION_VIEW) intent.data = null
+        if (vm.needsLegacyMigration) lifecycleScope.launch {
+            try { vm.importLegacy(withTimeout(10_000) { readLegacyStorage(this@MainActivity) }) }
+            catch (error: Exception) { vm.error = "旧配对数据迁移失败，原数据仍保留：${error.message}" }
+        } else vm.start()
         setContent {
-            val dark = when (vm.scheme) {
-                "dark" -> true
-                "light" -> false
-                else -> isSystemInDarkTheme()
-            }
+            val dark = when (vm.scheme) { "dark" -> true; "light" -> false; else -> isSystemInDarkTheme() }
+            var attachmentSource by remember { mutableStateOf(false) }
             DisposableEffect(dark) {
-                val insets = WindowCompat.getInsetsController(window, window.decorView)
-                insets.isAppearanceLightStatusBars = !dark
+                WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = !dark
                 onDispose { }
             }
-            DshTheme(dark) {
-                when (vm.route) {
-                    Route.Scan -> ScanScreen(
-                        onFound = vm::onScanned,
-                        onClose = { vm.route = Route.Connect },
-                        onPaste = vm::openPasteEntry,
-                    )
-                    Route.Web -> RemoteWebScreen(
-                        url = vm.webUrl,
-                        requestId = vm.webRequestId,
-                        getCurrentRequestId = { vm.webRequestId.takeIf { vm.route == Route.Web } },
-                        chromeClient = webChromeClient,
-                        onCancelFileChooser = fileChooser::cancel,
-                        onLeave = vm::leaveWebApp,
-                        onRequestScan = ::requestScan,
-                        onFatalLoadError = {
-                            vm.error = it
-                            vm.leaveWebApp()
-                        },
-                        onOpenExternal = {
-                            try {
-                                startActivity(Intent(Intent.ACTION_VIEW, it))
-                            } catch (_: android.content.ActivityNotFoundException) {
-                                Toast.makeText(this, "未找到可打开链接的应用", Toast.LENGTH_LONG).show()
-                            } catch (_: SecurityException) {
-                                Toast.makeText(this, "无法打开此链接", Toast.LENGTH_LONG).show()
-                            }
-                        },
-                    )
-                    else -> DshRoot(
-                        vm = vm,
-                        onRequestScan = ::requestScan,
-                        onOpenAppSettings = {
-                            startActivity(
-                                Intent(
-                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                    Uri.fromParts("package", packageName, null),
-                                ),
-                            )
-                        },
-                    )
+            LaunchedEffect(vm.externalUrl) {
+                if (vm.externalUrl.isNotBlank()) {
+                    try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(vm.externalUrl))) }
+                    catch (_: android.content.ActivityNotFoundException) { vm.report("未找到可打开链接的应用") }
+                    finally { vm.externalUrl = "" }
                 }
+            }
+            DshTheme(dark) {
+                Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                    when (vm.route) {
+                        Route.Scan -> ScanScreen(vm::onScanned, { vm.route = Route.Connect }, vm::openPasteEntry)
+                        Route.Chat -> NativeRemoteScreen(vm) { attachmentSource = true }
+                        else -> DshRoot(vm, ::requestScan, {
+                            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+                        })
+                    }
+                }
+                if (attachmentSource) AlertDialog(onDismissRequest = { attachmentSource = false }, title = { Text("添加图片") },
+                    text = { Column {
+                        TextButton(onClick = { attachmentSource = false; images.selectGallery() }) { Text("从相册选择") }
+                        TextButton(onClick = { attachmentSource = false; images.takePhoto() }) { Text("拍照") }
+                    } }, confirmButton = { TextButton(onClick = { attachmentSource = false }) { Text("取消") } })
             }
         }
     }
-
-    // Warm entry: singleTask reroutes VIEW intents here instead of stacking
-    // a second activity.
+    override fun onStart() { super.onStart(); vm.onForeground() }
+    override fun onStop() { vm.onBackground(); super.onStop() }
+    override fun onDestroy() {
+        getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkCallback)
+        super.onDestroy()
+    }
+    override fun onSaveInstanceState(outState: Bundle) { images.saveState(outState); super.onSaveInstanceState(outState) }
     override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        fileChooser.cancel()
-        setIntent(intent)
+        super.onNewIntent(intent); setIntent(intent)
         vm.openPairingLink(intent.action, intent.dataString)
         if (intent.action == Intent.ACTION_VIEW) intent.data = null
     }
-
     private fun requestScan() {
-        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
-            PackageManager.PERMISSION_GRANTED
-        if (granted) vm.route = Route.Scan else cameraPermission.launch(Manifest.permission.CAMERA)
-    }
-
-    override fun onDestroy() {
-        fileChooser.cancel()
-        super.onDestroy()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) vm.route = Route.Scan
+        else cameraPermission.launch(Manifest.permission.CAMERA)
     }
 }
-
 class DshVmFactory(private val store: EncryptedDeviceStore) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T = DshViewModel(store) as T

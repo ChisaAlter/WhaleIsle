@@ -21,6 +21,19 @@ class EncryptedDeviceStore(context: Context) : DeviceStore {
         get() = prefs.getString("scheme", "system").orEmpty().ifEmpty { "system" }
         set(value) { prefs.edit().putString("scheme", value).apply() }
 
+    override var computersJson: String
+        get() = prefs.getString("nativeComputers", "[]").orEmpty()
+        set(value) { check(prefs.edit().putString("nativeComputers", value).commit()) { "无法保存配对凭据" } }
+    override var draftsJson: String
+        get() = prefs.getString("nativeDrafts", "{}").orEmpty()
+        set(value) { prefs.edit().putString("nativeDrafts", value).apply() }
+    override var selectedComputer: String
+        get() = prefs.getString("nativeSelectedComputer", "").orEmpty()
+        set(value) { prefs.edit().putString("nativeSelectedComputer", value).apply() }
+    override var nativeMigrationDone: Boolean
+        get() = prefs.getBoolean("nativeMigrationDone", false)
+        set(value) { check(prefs.edit().putBoolean("nativeMigrationDone", value).commit()) }
+
     override fun clearLegacyHttpCredentials() {
         if (prefs.getBoolean("httpV1CredentialsCleared", false)) return
         prefs.edit()

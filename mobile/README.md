@@ -1,6 +1,6 @@
 # 手机远程
 
-中文 · 扫桌面 **远程** 弹窗里的二维码。浏览器与 Android 都运行 `mobile/web` 的 dshd 远程 SPA；Android 原生层负责扫码、粘贴、返回、媒体选择与生命周期承载，不另写聊天 UI。它们都不是官方四栏 `dsh web`。
+中文 · 扫桌面 **远程** 弹窗里的二维码。浏览器运行 `mobile/web` SPA；Android 使用 Kotlin 协议客户端与 Jetpack Compose 原生界面，扫码、聊天、工作区、Git、设置与媒体选择均由原生代码负责。它们都不是官方四栏 `dsh web`。
 
 **0.3.0 发布范围：** 默认交付 Windows x64 桌面安装包，不发布 Android APK。本文是源码能力说明，Web 第二客户端与 Android 未纳入本次实机放行范围，不能据此视为手机全流程验收通过。见仓库内的[中文发布说明](../.github/release-notes.md)和[英文发布说明](../.github/release-notes.en.md)。
 
@@ -30,18 +30,20 @@
 
 ## Android
 
-工程在 `mobile/android/`（`applicationId` `ai.deepseek.harness.mobile`，`minSdk` 26）。CameraX 扫描或粘贴同一条 offer v2 URL；严格校验后，`WebViewAssetLoader` 从 `https://appassets.androidplatform.net` 加载 APK 内置的同一份 SPA。Android 不另写协议客户端，也不保存 offer/deviceSecret；后者由稳定 WebView origin 的 localStorage 管理。
+工程在 `mobile/android/`（包名 `ai.deepseek.harness.mobile`，minSdk 26，compileSdk/targetSdk 36，versionCode 3 / versionName 0.2.0）。CameraX 扫码、粘贴与系统 VIEW handoff 解析同一条 offer v2 URL；页面地址仅用于识别配对链接，通信直接连接 offer 的中继。
 
-本机需 Android SDK。当前工程 `compileSdk`/`targetSdk` 为 36。
+Kotlin `protocol` 模块以 OkHttp WebSocket、TweetNaCl Java 的 Curve25519 / XSalsa20-Poly1305、HMAC-SHA256 实现现有桌面 wire 协议，校验消息认证、salt 和单调序号。首次配对保存设备凭据，后续连接用新挑战证明，不重放一次性 token。凭据与文字草稿使用 Android 加密存储，草稿按电脑/会话隔离；图片附件在进程内按同样归属保留。
+
+Compose 提供会话列表、分页历史、运行中的回复更新、原生 Markdown、工具详情、审批、发送/停止、模型/思考、权限与斜杠命令，以及目录浏览/创建、工作区和会话管理、搜索、Git 与外观设置。Files / Diff / MCP / 技能保留与 Web 相同的未接入说明。系统相册/相机通过受控 URI 返回附件；IME 返回先收键盘，前台恢复重新同步或用保存凭据连接。
+
+APK 不内嵌 SPA、JavaScript bundle 或 WebView 传输桥。覆盖升级首次启动时，唯一临时 WebView 只在原稳定 asset origin 的空白页读取旧 localStorage 凭据和文字草稿，禁用网络后迁移至原生加密存储，随后销毁；不运行旧 SPA、不清除旧数据。迁移失败显示错误，不标记成功。
 
 ```text
 cd mobile/android
-./gradlew test
+./gradlew :protocol:test :app:testDebugUnitTest
 ./gradlew :app:assembleDebug
 ```
 
-JVM 测试覆盖 offer/handoff、返回决策和媒体请求归属，不代替 WebView、IME 或相机实机测试。原生返回在键盘打开时先收键盘，再请求当前可信 asset 页的导航决策；相册/拍照使用系统活动和受控 URI，前台恢复通知共享 SPA 检查连接。
+需要 Java 17 和 Android SDK。协议互通测试调用仓库 vendored JavaScript NaCl/加密通道作为独立桌面端观察器，因此开发测试还需要 Node 与 `vendor/chisacode-remote` 依赖；Android 构建及运行不依赖 Node。JVM 测试覆盖配对解析、真实 WebSocket 加密互通、错误凭据/重放/篡改、历史分页、草稿与迟到附件归属、数据迁移；它们不代替真机操作。
 
-Gradle 构建前生成确定性运行资源图，将同一份 `mobile/web` 运行文件逐字节放入 assets，排除测试、开发入口与 sourcemap；构建后须[解包核对清单及 SHA-256](../tools/mobile-web-qa/README.md)。当前 Android 候选为 versionCode `2` / versionName `0.1.1`，包名与 asset origin 不变，不修改桌面版本。
-
-完整验收仍需真实桌面 daemon、中继与设备：扫码 → 配对 → 已有/新建工作区会话 → 模型/权限/审批 → Git → 返回/键盘/媒体选择 → 前后台与冷启动 sticky 重连 → 桌面解除配对。debug 候选不等于正式更新包；生产签名一致性及保留配对/草稿的覆盖升级尚未验证，不得卸载或清数据来制造升级成功。历史验收保留，新轮次未测项不得继承为 Pass。
+覆盖升级必须同签名且 versionCode 递增；使用 `adb install -r` 保留数据。debug APK 不建立正式签名更新的验收结论。实际验证范围和未测项在 PR 中如实说明，历史结果不自动继承。

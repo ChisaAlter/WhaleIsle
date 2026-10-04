@@ -150,6 +150,31 @@ test('openMuxSse reconnects after the socket closes until aborted', async () => 
   await run;
 });
 
+test('Gateway approval waterfall preserves reply identity and cancellation clears the same approval', async () => {
+  FakeSocket.instances = [];
+  const ac = new AbortController();
+  const seen = [];
+  const delegated = [];
+  const run = openMuxSse({ origin: 'http://127.0.0.1:3080', signal: ac.signal, WebSocketImpl: FakeSocket,
+    onEnvelope: frame => seen.push(frame), fetchImpl: async (_url, init) => {
+      const body = JSON.parse(init.body); delegated.push(body.payload.args);
+      return new Response(JSON.stringify({ type: 'server-response', rpcId: body.rpcId, result: { ok: true } }));
+    } });
+  await tick(); const socket = FakeSocket.instances[0]; socket.open();
+  const streamId = socket.sent.find(frame => frame.endpoint === '$events').streamId;
+  socket.item(streamId, { type: 'ready', clientId: 'c1' });
+  socket.item(streamId, { type: 'waterfall', event: 'approval/request', eventId: 'e1', agentId: 's1', request: { requestId: 'a1', toolName: 'Write', reason: 'write a file' } });
+  assert.deepEqual(JSON.parse(seen[0].rpcId.slice('remote-event:'.length)), { clientId: 'c1', eventId: 'e1' });
+  assert.deepEqual(seen[0].payload, { type: 'approval/requested', sessionId: 's1', approvalId: 'a1', toolName: 'Write', reason: 'write a file' });
+  socket.item(streamId, { type: 'cancel', eventId: 'e1' });
+  assert.deepEqual(seen[1].payload, { type: 'approval/resolved', sessionId: 's1', approvalId: 'a1' });
+  socket.item(streamId, { type: 'waterfall', event: 'other/question', eventId: 'e2', agentId: 's1', request: {} });
+  await tick();
+  assert.deepEqual(delegated, [{ clientId: 'c1', eventId: 'e2', outcome: { kind: 'next' } }]);
+  assert.equal(seen.length, 2);
+  ac.abort(); await run;
+});
+
 test('openMuxSse refuses a non-loopback origin without opening a socket', async () => {
   FakeSocket.instances = [];
   await assert.rejects(

@@ -11,6 +11,7 @@ const HOST_RPC_METHODS = new Set([
   'session.search',
   'session.create',
   'session.history',
+  'session.projections',
   'session.models',
   'session.selectModel',
   'session.rename',
@@ -147,6 +148,7 @@ const HOST_RPC_ARG_WIRE = {
   'session.updateQueue': 'request',
   'session.cancel': 'request',
   'session.history': 'request',
+  'session.projections': 'request',
   'workspace.list': 'request',
   'workspace.create': 'request',
   'workspace.rename': 'request',
@@ -492,6 +494,12 @@ async function forwardHostRespond({ origin, rpcId, value, cookie, fetchImpl, sig
   if (typeof rpcId !== 'string' || !rpcId) {
     throw new Error('respond 缺少 rpcId');
   }
+  if (rpcId.startsWith('remote-event:')) {
+    const identity = JSON.parse(rpcId.slice('remote-event:'.length));
+    if (!['allowed-once', 'rejected'].includes(value?.outcome)) throw new Error('approval outcome 无效');
+    return forwardRemoteEventResult({ origin, cookie, fetchImpl, signal, clientId: identity.clientId, eventId: identity.eventId,
+      outcome: { kind: 'result', value: value.outcome } });
+  }
   return postHarnessJson({
     origin,
     path: '/api/respond',
@@ -506,6 +514,19 @@ async function forwardHostRespond({ origin, rpcId, value, cookie, fetchImpl, sig
   });
 }
 
+async function forwardRemoteEventResult({ origin, cookie, clientId, eventId, outcome, fetchImpl, signal }) {
+  if (typeof clientId !== 'string' || !clientId || typeof eventId !== 'string' || !eventId) {
+    throw new Error('Remote event 缺少关联 id');
+  }
+  const rpcId = mintRpcId();
+  const full = await postHarnessJson({ origin, cookie, fetchImpl, signal, path: '/api/$events/result',
+    body: { type: 'client-request', rpcId, method: '$events/result', payload: { args: { clientId, eventId, outcome } } } });
+  if (full?.type !== 'server-response' || full.rpcId !== rpcId || full.result?.ok !== true) {
+    throw new Error(full?.result?.error?.message || 'Remote event 回复失败');
+  }
+  return full;
+}
+
 module.exports = {
   HARNESS_DOWN_MESSAGE,
   HOST_RPC_METHODS,
@@ -518,5 +539,6 @@ module.exports = {
   workspaceListFromFollowFrame,
   forwardHostRpc,
   forwardHostRespond,
+  forwardRemoteEventResult,
   slimHostRpcValue,
 };

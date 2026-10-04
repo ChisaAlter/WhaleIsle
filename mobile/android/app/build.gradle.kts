@@ -4,22 +4,6 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val mobileWebAssets = layout.buildDirectory.dir("generated/mobileWebAssets")
-val stageMobileWebAssets by tasks.registering(Exec::class) {
-    val source = rootProject.file("../web")
-    val tool = rootProject.file("../../tools/mobile-web-qa/runtime-assets.mjs")
-    inputs.dir(source)
-    inputs.file(tool)
-    outputs.dir(mobileWebAssets)
-    commandLine("node", tool.absolutePath, "stage", "--source", source.absolutePath,
-        "--output", mobileWebAssets.get().asFile.absolutePath)
-}
-
-// AGP resolves source-set directories without retaining FileCollection builtBy.
-tasks.named("preBuild") {
-    dependsOn(stageMobileWebAssets)
-}
-
 android {
     namespace = "ai.deepseek.harness.mobile"
     compileSdk = 36
@@ -27,8 +11,9 @@ android {
         applicationId = "ai.deepseek.harness.mobile"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.2.0"
+        testInstrumentationRunner = "ai.deepseek.harness.mobile.NativeUpgradeInstrumentation"
     }
     buildTypes {
         release {
@@ -46,16 +31,6 @@ android {
     buildFeatures {
         compose = true
     }
-    sourceSets {
-        getByName("main") {
-            // Package mobile/web as Android's background E2EE/host-RPC adapter
-            // and explicit legacy work page; Compose owns paired chat.
-            // WebViewAssetLoader serves these files from its secure HTTPS
-            // origin, so sticky relay reconnect does not depend
-            // on the desktop's LAN :3180 server after initial pairing.
-            assets.srcDir(files(mobileWebAssets).builtBy(stageMobileWebAssets))
-        }
-    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -65,6 +40,10 @@ android {
 
 dependencies {
     implementation(project(":protocol"))
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("io.noties.markwon:core:4.6.2")
+    implementation("io.noties.markwon:linkify:4.6.2")
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
@@ -75,7 +54,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    implementation("androidx.webkit:webkit:1.16.0")
     implementation("androidx.camera:camera-core:1.4.1")
     implementation("androidx.camera:camera-camera2:1.4.1")
     implementation("androidx.camera:camera-lifecycle:1.4.1")
@@ -83,5 +61,5 @@ dependencies {
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.json:json:20240303")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
 }
