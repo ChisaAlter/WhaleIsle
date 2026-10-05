@@ -64,10 +64,86 @@ test('home component controls track lifecycle and keep rollback separate; availa
   assert.equal(r.catalogStopped.rowStart, '启动');
   assert.equal(r.update.updateVisible, true);
   assert.equal(r.update.updateCount, 1);
-  assert.equal(r.update.hintHidden, true);
+  assert.equal(r.update.extraFeedbackNodes, 0);
+  assert.equal(r.update.noticeVisible, true);
+  assert.equal(r.update.noticeTitle, '发现新版本');
+  assert.match(r.update.noticeBody, /最新版本 v0\.3\.3/);
   assert.equal(r.removed.hidden, true);
   for (const op of ['component-start', 'component-stop', 'component-open']) assert.equal(r.calls.filter(call => call.op === op).length, 1, op);
   assert.equal(r.calls.filter(call => call.op === 'component-rollback').length, 0, 'cancel preserves the current version');
+});
+
+test('component feedback preserves buttons and layout, shows real modal progress once, and restores focus', { skip: !hasElectron }, async () => {
+  const r = await runBound({ QA_COMPONENT_FEEDBACK: '1' });
+  for (const [before, pending] of [[r.startBefore, r.starting], [r.installBefore, r.installing],
+    [r.updateBefore, r.updating], [r.refreshBefore, r.refreshing], [r.uninstallBefore, r.uninstallReading]]) {
+    assert.equal(pending.sameButton, true, 'operation preserves its original button DOM');
+    assert.equal(pending.caption, before.caption, 'loading does not replace the original caption');
+    assert.equal(pending.width, before.width, 'spinner preserves button width');
+    assert.equal(pending.height, before.height, 'spinner preserves button height');
+    assert.equal(pending.busy, 'true');
+    assert.equal(pending.extraFeedbackNodes, 0, 'no extra inline operation text surface');
+  }
+  assert.equal(r.starting.homeHeight, r.startBefore.homeHeight, 'starting does not grow the home component card');
+  assert.equal(r.failedPhase.homeHeight, r.startBefore.homeHeight, 'a failed progress event does not grow the card');
+  assert.equal(r.starting.controls.every(button => button.disabled), true, 'conflicting controls lock in both views');
+  assert.equal(r.starting.controls.filter(button => button.action === 'start').every(button => button.busy === 'true'), true);
+  assert.equal(r.failedPhase.noticeVisible, false, 'failure phase waits for the operation outcome');
+  assert.equal(r.failedPhase.notices.length, 0);
+  assert.equal(r.failed.notices.length, 1, 'failed phase and failed reply produce one result');
+  assert.equal(r.failed.noticeTitle, '鲸桥操作未完成');
+  assert.match(r.failed.noticeBody, /组件进程启动失败/);
+  assert.equal(r.failed.cancelHidden, true, 'failure result is a single-button notice');
+
+  for (const progress of [r.installing, r.downloading, r.verifying, r.updating]) {
+    assert.equal(progress.noticeVisible, true);
+    assert.equal(progress.loadingDialog, true);
+    assert.equal(progress.okHidden, true);
+    assert.equal(progress.cancelHidden, true);
+    assert.equal(progress.extraFeedbackNodes, 0);
+  }
+  assert.match(r.downloading.noticeBody, /正在下载组件 42%/);
+  assert.match(r.verifying.noticeBody, /正在校验组件 60%/);
+  assert.equal(r.installed.noticeTitle, '鲸桥安装完成');
+  assert.match(r.installed.noticeBody, /当前版本为 v1\.0\.3/);
+  assert.equal(r.installed.loadingDialog, false);
+  assert.match(r.updating.noticeBody, /正在下载组件 51%/);
+  assert.equal(r.updateFailed.noticeTitle, '鲸桥操作未完成');
+  assert.equal(r.updateFailed.notices.filter(notice => notice.body === 'fixture package refused').length, 1);
+  assert.equal(r.updateFailed.notices.length, 3, 'update has one result after the earlier failure and install result');
+
+  assert.equal(r.persistentErrorInline, false, 'catalog error stays available without a raw inline message');
+  assert.equal(r.statusDetails.noticeTitle, '鲸桥状态');
+  assert.equal(r.statusDetails.noticeBody, 'fixture catalog is unavailable');
+  assert.equal(r.refreshed.busy, null);
+  assert.equal(r.refreshed.sameButton, true, 'refresh keeps its static control');
+  assert.equal(r.calls.filter(call => call.op === 'component-list' && call.refresh).length, 1, 'duplicate refresh is not issued');
+
+  assert.match(r.uninstallReading.loadingLabel, /读取鲸桥状态/);
+  assert.equal(r.uninstallReading.noticeVisible, false);
+  assert.equal(r.uninstallReading.controls.every(button => button.disabled), true, 'preflight locks conflicting actions before confirmation');
+  assert.match(r.uninstallConfirm.noticeBody, /当前默认模型使用鲸桥/);
+  assert.equal(r.uninstallsAfterCancel, 0, 'cancelling the first confirmation leaves the component installed');
+  assert.equal(r.uninstallCancelled.noticeVisible, false);
+  assert.equal(r.uninstallCancelled.controls.every(button => !button.disabled), true);
+  assert.equal(r.keepDataConfirm.noticeTitle, '是否同时删除鲸桥配置？');
+  assert.equal(r.keepDataConfirm.cancelHidden, false);
+  const uninstall = r.calls.filter(call => call.op === 'component-uninstall');
+  assert.equal(uninstall.length, 1);
+  assert.deepEqual(uninstall[0].argument, { id: 'whalebridge', removeData: false }, 'keep configuration choice is preserved');
+  assert.equal(r.calls.filter(call => call.op === 'component-uninstall-info').length, 2, 'each intentional uninstall reads status once');
+  assert.equal(r.calls.filter(call => call.op === 'component-start').length, 2, 'double click is guarded; later intentional start still works');
+
+  for (const result of [r.failureDismissed, r.installDismissed, r.updateDismissed, r.uninstallCancelled, r.finalState]) {
+    assert.equal(result.focusConnected, true, 'completed operation focuses current DOM');
+    assert.equal(result.focusVisible, true, 'completed operation never focuses a hidden modal or menu button');
+    assert.equal(result.focusTag, 'BUTTON');
+    assert.equal(Boolean(result.focusAction || result.focusRefresh), true, 'focus returns to an actionable component control');
+  }
+  assert.equal(r.switchedTab.focusTab, 'components', 'completion does not take focus from a user-selected tab');
+  assert.equal(r.switchedTab.noticeVisible, false, 'ordinary start completion is reflected by the persistent state');
+  assert.equal(r.finalState.noticeVisible, false);
+  assert.equal(r.finalState.extraFeedbackNodes, 0);
 });
 
 test('home uses one guarded start action and hides stale diagnostics throughout deferred startup', { skip: !hasElectron }, async () => {
@@ -82,7 +158,7 @@ test('home uses one guarded start action and hides stale diagnostics throughout 
   assert.equal(r.pending.fullDisabled, true);
   assert.equal(r.pending.diagnosticsHidden, true);
   assert.match(r.pending.startText, /启动中/);
-  assert.match(r.pending.progress, /[1-9]\d* 秒/);
+  assert.match(r.pending.status, /[1-9]\d* 秒/);
   assert.doesNotMatch(r.pending.status, /未运行|失败|EEXIST/);
   assert.equal(r.failed.startDisabled, false);
   assert.equal(r.rejected.startDisabled, false);

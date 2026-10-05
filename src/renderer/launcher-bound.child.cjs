@@ -5,6 +5,12 @@
 // the real bind() and the real bridge — not pure functions.
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+
+// All launcher state belongs to the fixture, never the installed application.
+const fixtureUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-launcher-bound-'));
+app.setPath('userData', fixtureUserData);
 
 const LAUNCHER_HTML = path.join(__dirname, 'launcher.html');
 const PRELOAD = path.join(__dirname, '..', 'preload', 'index.js');
@@ -61,14 +67,24 @@ ipcMain.handle('shell:launcher-status', () => ({
 }));
 ipcMain.handle('shell:launcher-check-update', () => process.env.QA_COMPONENTS_HOME === '1' ? { status: 'available', latest: '0.3.3', currentVersion: '0.3.2', hint: '发现正式版 0.3.3。' } : { status: 'none' });
 ipcMain.handle('shell:check-update', () => process.env.QA_COMPONENTS_HOME === '1' ? { status: 'available', latest: '0.3.3', currentVersion: '0.3.2', hint: '发现正式版 0.3.3。' } : { status: 'none' });
-let componentInstalled = false;
+const componentFeedback = process.env.QA_COMPONENT_FEEDBACK === '1';
+let componentInstalled = componentFeedback;
 let componentRunning = false;
-let componentStartResolve, componentStopResolve;
-const componentRow = () => ({ id: 'whalebridge', name: '鲸桥', description: '连接供应商和订阅账号，在鲸屿使用模型。', version: '1.0.3', installedVersion: componentInstalled ? '1.0.3' : '', previousVersion: '1.0.2', state: componentInstalled ? (componentRunning ? 'running' : 'stopped') : 'available', configurable: componentInstalled, source: 'official', kind: 'service' });
-ipcMain.handle('shell:components-list', () => ({ components: process.env.QA_COMPONENTS_HOME === '1' ? [componentRow()] : [] }));
+let componentLatest = '1.0.3';
+let componentVersion = '1.0.3';
+let componentMessage = '';
+let componentStartResolve, componentStopResolve, componentInstallResolve, componentUpdateResolve;
+let componentListResolve, componentUninstallInfoResolve;
+const componentRow = () => ({ id: 'whalebridge', name: '鲸桥', description: '连接供应商和订阅账号，在鲸屿使用模型。', version: componentLatest, installedVersion: componentInstalled ? componentVersion : '', previousVersion: '1.0.2', updateAvailable: componentInstalled && componentVersion !== componentLatest, message: componentMessage, state: componentInstalled ? (componentRunning ? 'running' : 'stopped') : 'available', configurable: componentInstalled, source: 'official', kind: 'service' });
+const componentPayload = () => ({ components: process.env.QA_COMPONENTS_HOME === '1' || componentFeedback ? [componentRow()] : [] });
+ipcMain.handle('shell:components-list', (_event, options) => {
+  results.calls.push({ op: 'component-list', refresh: options?.refresh === true });
+  if (componentFeedback && options?.refresh) return new Promise(resolve => { componentListResolve = () => resolve(componentPayload()); });
+  return componentPayload();
+});
 ipcMain.handle('shell:components-start', (_event, id) => {
   results.calls.push({ op: 'component-start', id });
-  return new Promise(resolve => { componentStartResolve = () => { componentRunning = true; resolve({ ok: true }); }; });
+  return new Promise(resolve => { componentStartResolve = (result = { ok: true }) => { if (result.ok) componentRunning = true; resolve(result); }; });
 });
 ipcMain.handle('shell:components-stop', (_event, id) => {
   results.calls.push({ op: 'component-stop', id });
@@ -76,6 +92,26 @@ ipcMain.handle('shell:components-stop', (_event, id) => {
 });
 ipcMain.handle('shell:components-open', (_event, id) => { results.calls.push({ op: 'component-open', id }); return { ok: true }; });
 ipcMain.handle('shell:components-rollback', (_event, id) => { results.calls.push({ op: 'component-rollback', id }); return { ok: true }; });
+ipcMain.handle('shell:components-install', (_event, id) => {
+  results.calls.push({ op: 'component-install', id });
+  return new Promise(resolve => { componentInstallResolve = () => {
+    componentInstalled = true; componentRunning = true; componentVersion = componentLatest;
+    resolve({ ok: true, component: componentRow() });
+  }; });
+});
+ipcMain.handle('shell:components-update', (_event, id) => {
+  results.calls.push({ op: 'component-update', id });
+  return new Promise(resolve => { componentUpdateResolve = resolve; });
+});
+ipcMain.handle('shell:components-uninstall-info', (_event, id) => {
+  results.calls.push({ op: 'component-uninstall-info', id });
+  return new Promise(resolve => { componentUninstallInfoResolve = resolve; });
+});
+ipcMain.handle('shell:components-uninstall', (_event, argument) => {
+  results.calls.push({ op: 'component-uninstall', argument });
+  componentInstalled = false; componentRunning = false;
+  return { ok: true };
+});
 ipcMain.handle('shell:list-releases', () => ({ status: 'ok', releases: [], installed: { version: '0' } }));
 ipcMain.handle('shell:list-marketplace', () => ({ ok: true, items: [] }));
 ipcMain.handle('shell:list-installed-plugins', () => ({ plugins: [], bundles: [] }));
@@ -121,6 +157,179 @@ app.whenReady().then(async () => {
       readyState: document.readyState,
     })`);
 
+    if (componentFeedback) {
+      const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+      const waitFor = async predicate => {
+        const deadline = Date.now() + 5000;
+        while (!predicate()) {
+          if (Date.now() >= deadline) throw new Error('component fixture IPC did not arrive');
+          await delay(10);
+        }
+      };
+      const waitForDom = expression => win.webContents.executeJavaScript(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 5000;
+        const poll = () => {
+          if (${expression}) return resolve(true);
+          if (Date.now() >= deadline) return reject(new Error('component DOM did not settle: ' + ${JSON.stringify(expression)}));
+          setTimeout(poll, 20);
+        };
+        poll();
+      })`);
+      const rememberButton = selector => win.webContents.executeJavaScript(`(() => {
+        window.qaComponentButton = document.querySelector(${JSON.stringify(selector)});
+        const box = window.qaComponentButton.getBoundingClientRect();
+        return { caption: window.qaComponentButton.textContent, width: box.width, height: box.height,
+          homeHeight: document.querySelector('#home-components').getBoundingClientRect().height };
+      })()`);
+      const readFeedback = () => win.webContents.executeJavaScript(`(() => {
+        const button = window.qaComponentButton;
+        const box = button.getBoundingClientRect();
+        const mask = document.querySelector('#app-confirm');
+        return {
+          sameButton: button.isConnected, caption: button.textContent, width: box.width, height: box.height,
+          busy: button.getAttribute('aria-busy'), loadingLabel: button.getAttribute('aria-label'),
+          homeHeight: document.querySelector('#home-components').getBoundingClientRect().height,
+          controls: [...document.querySelectorAll('[data-comp-id="whalebridge"]')].map(control => ({
+            action: control.dataset.compAction, disabled: control.disabled, busy: control.getAttribute('aria-busy'),
+          })),
+          extraFeedbackNodes: document.querySelectorAll('#hint, [data-comp-hint], #home-components-hint, [data-comp-progress]').length,
+          noticeVisible: !mask.hidden, loadingDialog: mask.classList.contains('is-loading'),
+          noticeTitle: document.querySelector('#app-confirm-title').textContent,
+          noticeBody: document.querySelector('#app-confirm-body').textContent,
+          okHidden: document.querySelector('#app-confirm-ok').hidden,
+          cancelHidden: document.querySelector('#app-confirm-cancel').hidden,
+          notices: window.qaComponentNotices,
+          focusConnected: document.activeElement.isConnected,
+          focusVisible: document.activeElement.checkVisibility(),
+          focusAction: document.activeElement.dataset.compAction || '',
+          focusTab: document.activeElement.dataset.tab || '',
+          focusRefresh: document.activeElement.hasAttribute('data-comp-refresh'),
+          focusTag: document.activeElement.tagName,
+        };
+      })()`);
+      const click = selector => win.webContents.executeJavaScript(`(() => {
+        const button = document.querySelector(${JSON.stringify(selector)});
+        button.focus(); button.click();
+      })()`);
+      const closeNotice = async () => {
+        await click('#app-confirm-ok');
+        await waitForDom('document.querySelector("#app-confirm").hidden');
+      };
+      const componentProgress = payload => win.webContents.send('shell:components-progress', { id: 'whalebridge', ...payload });
+      await waitForDom('!!document.querySelector("#home-components [data-comp-action=start]")');
+      await win.webContents.executeJavaScript(`window.qaComponentNotices = [];
+        const originalNotice = window.appNotice;
+        window.appNotice = options => { window.qaComponentNotices.push(options); return originalNotice(options); };
+        true;`);
+
+      const startBefore = await rememberButton('#home-components [data-comp-action="start"]');
+      await click('#home-components [data-comp-action="start"]');
+      await click('#home-components [data-comp-action="start"]');
+      await waitFor(() => results.calls.some(call => call.op === 'component-start'));
+      const starting = await readFeedback();
+      componentProgress({ phase: 'error', percent: 100, message: 'fixture component startup failed' });
+      await waitForDom('window.qaComponentButton.title.includes("fixture component startup failed")');
+      const failedPhase = await readFeedback();
+      componentStartResolve({ ok: false, error: 'spawn-failed' });
+      await waitForDom('!document.querySelector("#app-confirm").hidden');
+      const failed = await readFeedback();
+      await closeNotice();
+      const failureDismissed = await readFeedback();
+
+      await click('#home-components [data-comp-action="start"]');
+      await waitFor(() => results.calls.filter(call => call.op === 'component-start').length === 2);
+      await click('[data-tab="components"]');
+      componentStartResolve();
+      await waitForDom('!!document.querySelector("#tab-components [data-comp-action=open]")');
+      const switchedTab = await readFeedback();
+
+      componentInstalled = false;
+      await win.webContents.executeJavaScript('window.__launcherComponents.refresh()');
+      await click('[data-tab="components"]');
+      const installBefore = await rememberButton('#tab-components [data-comp-action="install"]');
+      await click('#tab-components [data-comp-action="install"]');
+      await waitFor(() => typeof componentInstallResolve === 'function');
+      await waitForDom('document.querySelector("#app-confirm").classList.contains("is-loading")');
+      const installing = await readFeedback();
+      componentProgress({ phase: 'download', percent: 42 });
+      await waitForDom('document.querySelector("#app-confirm-body").textContent.includes("42%")');
+      const downloading = await readFeedback();
+      componentProgress({ phase: 'verify', percent: 60 });
+      await waitForDom('document.querySelector("#app-confirm-body").textContent.includes("校验")');
+      const verifying = await readFeedback();
+      componentInstallResolve();
+      await waitForDom('document.querySelector("#app-confirm-title").textContent === "鲸桥安装完成"');
+      const installed = await readFeedback();
+      await closeNotice();
+      const installDismissed = await readFeedback();
+
+      componentLatest = '1.0.4';
+      await win.webContents.executeJavaScript('window.__launcherComponents.refresh()');
+      await win.webContents.executeJavaScript('document.querySelector(".comp-manage").open = true');
+      const updateBefore = await rememberButton('#tab-components [data-comp-action="update"]');
+      await click('#tab-components [data-comp-action="update"]');
+      await waitFor(() => typeof componentUpdateResolve === 'function');
+      componentProgress({ phase: 'download', percent: 51 });
+      await waitForDom('document.querySelector("#app-confirm-body").textContent.includes("51%")');
+      const updating = await readFeedback();
+      componentProgress({ phase: 'error', percent: 100, message: 'fixture package refused' });
+      componentUpdateResolve({ ok: false, message: 'fixture package refused' });
+      await waitForDom('document.querySelector("#app-confirm-title").textContent === "鲸桥操作未完成"');
+      const updateFailed = await readFeedback();
+      await closeNotice();
+      const updateDismissed = await readFeedback();
+
+      componentMessage = 'fixture catalog is unavailable';
+      await win.webContents.executeJavaScript('window.__launcherComponents.refresh()');
+      const persistentErrorInline = await win.webContents.executeJavaScript('document.querySelector("[data-comp-list]").innerText.includes("fixture catalog")');
+      await click('#tab-components [data-comp-info="whalebridge"]');
+      await waitForDom('document.querySelector("#app-confirm-title").textContent === "鲸桥状态"');
+      const statusDetails = await readFeedback();
+      await closeNotice();
+
+      const refreshBefore = await rememberButton('[data-comp-refresh]');
+      await click('[data-comp-refresh]');
+      await click('[data-comp-refresh]');
+      await waitFor(() => typeof componentListResolve === 'function');
+      const refreshing = await readFeedback();
+      componentListResolve();
+      await waitForDom('!document.querySelector("[data-comp-refresh]").disabled');
+      const refreshed = await readFeedback();
+
+      await win.webContents.executeJavaScript('document.querySelector(".comp-manage").open = true');
+      const uninstallBefore = await rememberButton('#tab-components [data-comp-action="uninstall"]');
+      await click('#tab-components [data-comp-action="uninstall"]');
+      await click('#tab-components [data-comp-action="uninstall"]');
+      await waitFor(() => results.calls.filter(call => call.op === 'component-uninstall-info').length === 1);
+      const uninstallReading = await readFeedback();
+      componentUninstallInfoResolve({ defaultModel: true });
+      await waitForDom('document.querySelector("#app-confirm-title").textContent.includes("卸载组件")');
+      const uninstallConfirm = await readFeedback();
+      await click('#app-confirm-cancel');
+      await waitForDom('!document.querySelector("[data-comp-action=uninstall]").disabled');
+      const uninstallCancelled = await readFeedback();
+      const uninstallsAfterCancel = results.calls.filter(call => call.op === 'component-uninstall').length;
+
+      await win.webContents.executeJavaScript('document.querySelector(".comp-manage").open = true');
+      await click('#tab-components [data-comp-action="uninstall"]');
+      await waitFor(() => results.calls.filter(call => call.op === 'component-uninstall-info').length === 2);
+      componentUninstallInfoResolve({ defaultModel: true });
+      await waitForDom('document.querySelector("#app-confirm-title").textContent.includes("卸载组件")');
+      await click('#app-confirm-ok');
+      await waitForDom('document.querySelector("#app-confirm-title").textContent === "是否同时删除鲸桥配置？"');
+      const keepDataConfirm = await readFeedback();
+      await click('#app-confirm-cancel');
+      await waitFor(() => results.calls.some(call => call.op === 'component-uninstall'));
+      await waitForDom('!!document.querySelector("#tab-components [data-comp-action=install]")');
+      const finalState = await readFeedback();
+      process.stdout.write('BOUND_RESULT:' + JSON.stringify({ startBefore, starting, failedPhase, failed, failureDismissed, switchedTab,
+        installBefore, installing, downloading, verifying, installed, installDismissed, updateBefore, updating, updateFailed, updateDismissed,
+        persistentErrorInline, statusDetails, refreshBefore, refreshing, refreshed, uninstallBefore,
+        uninstallReading, uninstallConfirm, uninstallCancelled, uninstallsAfterCancel, keepDataConfirm, finalState, calls: results.calls }));
+      app.exit(0);
+      return;
+    }
+
     if (process.env.QA_COMPONENTS_HOME === '1') {
       const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
       const read = () => win.webContents.executeJavaScript(`(() => {
@@ -136,7 +345,10 @@ app.whenReady().then(async () => {
           rowOpen: !!row.querySelector('[data-comp-action="open"]'),
           rollbackVisible: visible(row.querySelector('[data-comp-action="rollback"]')),
           updateVisible: !document.querySelector('#home-update').hidden,
-          hintHidden: document.querySelector('#hint').hidden,
+          extraFeedbackNodes: document.querySelectorAll('#hint, [data-comp-hint], #home-components-hint, [data-comp-progress]').length,
+          noticeVisible: !document.querySelector('#app-confirm').hidden,
+          noticeTitle: document.querySelector('#app-confirm-title').textContent,
+          noticeBody: document.querySelector('#app-confirm-body').textContent,
           updateCount: document.body.innerText.split('可更新至 v0.3.3').length - 1,
           brand: home.querySelector('.comp-brand')?.naturalWidth,
         };
@@ -185,7 +397,6 @@ app.whenReady().then(async () => {
           diagnosticsHidden: get('home-recovery').hidden, diagnosticsOpen: get('home-recovery').open === true,
           visibleText: document.body.innerText,
           status: get('home-status').textContent,
-          progress: get('home-start-progress')?.textContent || '',
           detail: get('home-recovery-verdict').textContent,
         };
       })()`);
