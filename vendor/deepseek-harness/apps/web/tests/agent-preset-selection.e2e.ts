@@ -497,6 +497,57 @@ it.each([false, true])('starts Creator from Plugins with Coding Tools=%s without
     await page.getByRole('button', { name: 'Standard mode', exact: true }).waitFor()
     expect(scaffold.ctx.settings.describe().find(row => row.ns === 'ui-settings')?.value).toMatchObject({ enabled: developerTools })
     expect(scaffold.ctx.agentPresets.defaultId).toBe('standard')
+
+    // An old hero controller is still alive after its Session completes.
+    // Its list updates must not consume the next Creator draft's selection.
+    next.session.append('turn/start', { turn: 1 })
+    next.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Standard fixture completed before creating a plugin.' }], source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    next.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await scaffold.ctx.sessions.flush(next.session)
+    await page.getByText('Standard fixture completed before creating a plugin.', { exact: true }).waitFor()
+    await page.getByRole('navigation', { name: 'Global panels' }).getByRole('button', { name: 'Plugins', exact: true }).click()
+    await page.getByRole('button', { name: 'Choose how to add a plugin', exact: true }).click()
+    await Promise.all([
+      page.waitForResponse('**/api/agentPresets/select'),
+      page.getByRole('menuitem', { name: /^Let the agent create a plugin/ }).click(),
+    ])
+    await picker.waitFor()
+    const fresh = scaffold.ctx.agents.list().find(agent => agent.id !== creator.id && agent.id !== next.id)
+    if (fresh === undefined) throw new Error('Creator entry did not open a new blank Session')
+    expect(scaffold.ctx.agentPresets.composedPreset(fresh.ctx)).toBe('cordis')
+    expect(scaffold.ctx.tools.schemas(fresh).map(tool => tool.name))
+      .toEqual(expect.arrayContaining(['cordis_inspect_list', 'cordis_inspect_query', 'plugin_manager']))
+    expect(fresh.session.snapshotEvents().some(event => event.type === 'user/message' || event.type === 'turn/start')).toBe(false)
+    expect(scaffold.ctx.agentPresets.composedPreset(next.ctx)).toBe('standard')
+    expect(scaffold.ctx.agentPresets.defaultId).toBe('standard')
+
+    const switchedWorkspace = join(scaffold.workspaceCwd, 'creator-workspace-switch')
+    await mkdir(switchedWorkspace, { recursive: true })
+    await page.getByRole('button', { name: 'Choose workspace', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Add workspace…', exact: true }).click()
+    const workspaceDialog = page.getByRole('dialog', { name: 'Select Workspace Directory' })
+    await workspaceDialog.getByRole('button', { name: 'Edit path' }).click()
+    const workspacePath = workspaceDialog.getByRole('textbox', { name: 'Edit path' })
+    await workspacePath.fill(switchedWorkspace)
+    await workspacePath.press('Enter')
+    await workspaceDialog.getByRole('button', { name: 'Open', exact: true }).click()
+    await page.getByRole('button', { name: 'Standard mode', exact: true }).waitFor()
+    const switched = scaffold.ctx.agents.list().find(agent => agent.session.header.cwd === switchedWorkspace)
+    if (switched === undefined) throw new Error('Workspace switch did not resolve its blank Session')
+    const switchedDraft = 'Keep the plugin idea in the newly selected workspace.'
+    await writeComposerDraft(page, composer, switchedDraft)
+    await page.getByRole('navigation', { name: 'Global panels' }).getByRole('button', { name: 'Plugins', exact: true }).click()
+    await page.getByRole('button', { name: 'Choose how to add a plugin', exact: true }).click()
+    await Promise.all([
+      page.waitForResponse('**/api/agentPresets/select'),
+      page.getByRole('menuitem', { name: /^Let the agent create a plugin/ }).click(),
+    ])
+    await picker.waitFor()
+    expect(await composer.innerText()).toBe(switchedDraft)
+    expect(scaffold.ctx.agentPresets.composedPreset(switched.ctx)).toBe('cordis')
+    expect(scaffold.ctx.agentPresets.defaultId).toBe('standard')
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   } finally {

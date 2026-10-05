@@ -24,6 +24,7 @@ import type { AgentPresetSeatInjected } from '../src/client/AgentPresetSeat.tsx'
 import { AgentPresetSeatController } from '../src/client/seat-store.ts'
 import { CreatePluginMenuItem, type CreatePluginMenuItemInjected } from '../src/client/CreatePluginMenuItem.tsx'
 import { AgentPresetSectionController } from '../src/client/section-store.ts'
+import type { StartSessionOptions } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { apply as hostApply } from '../src/index.ts'
 import type { AgentPresetRow } from '@deepseek-ai/dsh-agent-preset-registry/types'
 
@@ -215,9 +216,14 @@ function declareConversation(slots: SlotRegistry): () => void {
 /** A Workspace UI double recording new-session starts. */
 function uiWorkspaceDouble() {
   const starts: unknown[] = []
+  let preparation: StartSessionOptions | undefined
   return {
     starts,
-    startSession: (workspaceId?: unknown) => { starts.push(workspaceId ?? null) },
+    startSession: (workspaceId?: unknown, options?: StartSessionOptions) => {
+      starts.push(workspaceId ?? null)
+      preparation = options
+    },
+    open: (id: SessionId) => { preparation?.beforeOpen?.(id) },
   }
 }
 
@@ -1077,22 +1083,25 @@ describe('ui-agent-preset apply', () => {
     expect(label.hooks.agentPresets.getSnapshot().options).toEqual([{ id: 'standard' }])
   })
 
-  it('stages the creator preset and starts a session from the section', async () => {
+  it('stages the creator preset on the resolved session from the section', async () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
     const conversation = declareConversation(slots)
     ctx.provide('conversation', {} as never)
-    ctx.provide('sessions', sessionsDouble(ctx, { byId: {} }) as never)
+    const state = { current: 's1', byId: { s1: { id: 's1', blank: true } } }
+    ctx.provide('sessions', sessionsDouble(ctx, state) as never)
     const uiWorkspace = uiWorkspaceDouble()
     ctx.provide('uiWorkspace', uiWorkspace as never)
     await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply }).await()
     const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
     const injectSeat = slots.entries('conversation.hero.agentPreset')[0]!
       .inject as unknown as (sessionId?: SessionId) => AgentPresetSeatInjected
-    const seat = injectSeat()
+    const seat = injectSeat(SessionId('s1'))
 
     await section.load()
     section.startCreatorDraft?.()
+    expect(seat.hooks.agentPresetSeat.getSnapshot().current).not.toBe('cordis')
+    uiWorkspace.open(SessionId('s1'))
 
     // The pick is staged on the chip's own controller — the session the
     // workspace start produces is what the stage lands on — and exactly one
@@ -1133,6 +1142,7 @@ describe('ui-agent-preset apply', () => {
     await seat.load()
     await section.load()
     section.startCreatorDraft?.()
+    uiWorkspace.open(SessionId('s1'))
 
     await vi.waitFor(() => { expect(calls).toContain('select:cordis') })
     expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('cordis')
@@ -1156,7 +1166,8 @@ describe('ui-agent-preset apply', () => {
     } = { byId: {} }
     const sessions = sessionsDouble(ctx, state)
     ctx.provide('sessions', sessions as never)
-    ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
+    const uiWorkspace = uiWorkspaceDouble()
+    ctx.provide('uiWorkspace', uiWorkspace as never)
     await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply }).await()
     const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
     const injectSeat = slots.entries('conversation.hero.agentPreset')[0]!
@@ -1168,6 +1179,7 @@ describe('ui-agent-preset apply', () => {
     state.current = 's1'
     state.byId['s1'] = { id: 's1', blank: true }
     sessions.notify()
+    uiWorkspace.open(SessionId('s1'))
     const boundSeat = injectSeat(SessionId('s1'))
     const loading = boundSeat.load()
     await vi.waitFor(() => { expect(calls).toContain('select:cordis') })
@@ -1192,6 +1204,42 @@ describe('ui-agent-preset apply', () => {
     boundSeat.dismissRefusal(boundSeat.hooks.agentPresetSeat.getSnapshot().error)
     expect(boundSeat.hooks.agentPresetSeat.getSnapshot().error).toBe(refused ? 'Creator failed to mount' : null)
     conversation()
+  })
+
+  it.each([false, true, undefined])('selects Creator on the resolved draft despite old main updates (old blank: %s)', async (blank) => {
+    const { ctx, slots } = await bench()
+    declareRoot(slots)
+    declareConversation(slots)
+    ctx.provide('conversation', {} as never)
+    const state = {
+      current: blank === undefined ? '' : 'old',
+      byId: {
+        old: { id: 'old', blank: blank ?? true, projectionValues: { agentPreset: 'standard' } },
+        target: { id: 'target', blank: true, projectionValues: { agentPreset: 'standard' } },
+      },
+    }
+    const sessions = sessionsDouble(ctx, state)
+    ctx.provide('sessions', sessions as never)
+    const uiWorkspace = uiWorkspaceDouble()
+    ctx.provide('uiWorkspace', uiWorkspace as never)
+    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply }).await()
+    const injectSeat = slots.entries('conversation.hero.agentPreset')[0]!
+      .inject as unknown as (sessionId?: SessionId) => AgentPresetSeatInjected
+    const old = injectSeat(blank === undefined ? undefined : SessionId('old'))
+    await old.load()
+    const select = vi.spyOn(ctx.remote.agentPresets, 'select')
+    const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
+    section.startCreatorDraft?.()
+    sessions.notify()
+    expect(select).not.toHaveBeenCalled()
+    state.current = 'target'
+    sessions.notify()
+    uiWorkspace.open(SessionId('target'))
+    await vi.waitFor(() => {
+      expect(select).toHaveBeenCalledExactlyOnceWith(SessionId('target'), 'cordis')
+    })
+    expect(injectSeat(SessionId('target')).hooks.agentPresetSeat.getSnapshot().current).toBe('cordis')
+    expect(state.byId.old.projectionValues.agentPreset).toBe('standard')
   })
 
   it('offers no creator draft while the conversation flow is absent', async () => {

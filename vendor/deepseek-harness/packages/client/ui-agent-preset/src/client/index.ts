@@ -117,16 +117,6 @@ export function apply(ctx: ClientContext): void {
     void unboundSeat.apply()
     for (const seat of seats.values) void seat.apply()
   }), 'ui-agent-preset: Developer tools gate')
-  const mainBlankSeat = (): AgentPresetSeatController | undefined => {
-    const summary = Object.values(ctx.sessions.list.getSnapshot().byId)
-      .find((session) => {
-        /* v8 ignore next -- retained source counts omit zero-valued entries. */
-        return session.blank && (session.retainedBy.mainView ?? 0) > 0
-      })
-    const binding = summary === undefined ? undefined : ctx.sessions.binding(summary.id)
-    return binding === undefined ? undefined : seatFor(binding)
-  }
-
   ctx.effect(() => ctx.locale.register('settings.agentPreset', { zh, en }), 'ui-agent-preset: settings row dictionaries')
 
   ctx.effect(() => {
@@ -199,10 +189,17 @@ export function apply(ctx: ClientContext): void {
     })
 
     const startCreatorDraft = () => {
-      const seat = mainBlankSeat() ?? unboundSeat
-      seat.stage('cordis', true)
-      scope.uiWorkspace.startSession()
-      void seat.apply()
+      scope.uiWorkspace.startSession(undefined, {
+        beforeOpen: (sessionId) => {
+          const binding = scope.sessions.binding(sessionId)
+          if (binding === undefined) throw new Error('Creator draft requires a retained Session')
+          const seat = seatFor(binding)
+          // The old main Session can still publish while navigation resolves.
+          // Stage only on the retained target, then consume the choice there.
+          seat.stage('cordis', true)
+          void seat.apply()
+        },
+      })
     }
 
     scope.effect(() => {

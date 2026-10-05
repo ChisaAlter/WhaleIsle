@@ -857,6 +857,41 @@ describe('UiWorkspaceService', () => {
   })
 
   describe('startSession draft initialization', () => {
+    it('prepares a no-directory draft when no Workspace or Session is selected', async () => {
+      const b = bench({ workspaces: workspaceState(), sessions: sessionState() })
+      const beforeOpen = vi.fn()
+      const open = vi.spyOn(b.uiWorkspace, 'openNoDirectory')
+      b.uiWorkspace.startSession(undefined, { beforeOpen })
+      await open.mock.results[0]!.value
+      expect(beforeOpen).toHaveBeenCalledExactlyOnceWith(sid('created-none'))
+      expect(b.requestDraftInitialization).not.toHaveBeenCalled()
+    })
+
+    it('prepares the retained target without replacing its existing draft', async () => {
+      const b = bench({ workspaces: workspaceState([workspace('a')]), sessions: sessionState() })
+      const beforeOpen = vi.fn((id: SessionId) => {
+        expect(b.sessions.retain).toHaveBeenLastCalledWith(id, { source: 'mainView' })
+      })
+      const open = vi.spyOn(b.uiWorkspace, 'openWorkspace')
+      b.uiWorkspace.startSession(wid('a'), { beforeOpen })
+      await lastOpening(open)
+      expect(beforeOpen).toHaveBeenCalledExactlyOnceWith(sid('created-a'))
+      expect(b.requestDraftInitialization).not.toHaveBeenCalled()
+    })
+
+    it('does not prepare a target superseded by another navigation', async () => {
+      const b = bench({ workspaces: workspaceState([workspace('a')]), sessions: sessionState() })
+      const creation = Promise.withResolvers<SessionId>()
+      b.sessions.create.mockReturnValueOnce(creation.promise)
+      const beforeOpen = vi.fn()
+      const open = vi.spyOn(b.uiWorkspace, 'openWorkspace')
+      b.uiWorkspace.startSession(wid('a'), { beforeOpen })
+      b.uiWorkspace.openSession(sid('chosen'))
+      creation.resolve(sid('created-a'))
+      await lastOpening(open)
+      expect(beforeOpen).not.toHaveBeenCalled()
+    })
+
     it.each<{ name: string; options: DraftInitializationOptions }>([
       { name: 'plain text', options: { prompt: '草稿 🧭\nsecond line', clearPreviousDraft: true } },
       { name: 'empty text', options: { prompt: '' } },

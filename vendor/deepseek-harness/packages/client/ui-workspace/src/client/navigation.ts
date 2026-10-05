@@ -29,7 +29,10 @@ interface MainSelection {
 }
 
 /** Optional content preparation for the resolved target Session. */
-export type StartSessionOptions = DraftInitializationOptions
+export interface StartSessionOptions extends DraftInitializationOptions {
+  /** Prepare the resolved Session after retention and before navigation, unless superseded. */
+  beforeOpen?: (sessionId: SessionId) => void
+}
 
 /** Workspace archive and directory operations consumed by Client UI domains. */
 export interface UiWorkspace {
@@ -272,10 +275,13 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       ? recentWorkspace(workspace.items, sessions.byId)
       : undefined
     const target = workspaceId ?? currentWorkspaceId ?? recent
-    const prepare = initializeDraft ? (id: SessionId) => {
-      const binding = this.sessions.binding(id)
-      if (binding === undefined) this.draftPreparationFailed()
-      this.prepareDraft(binding, draftOptions)
+    const prepare = initializeDraft || draftOptions?.beforeOpen !== undefined ? (id: SessionId) => {
+      if (initializeDraft) {
+        const binding = this.sessions.binding(id)
+        if (binding === undefined) this.draftPreparationFailed()
+        this.prepareDraft(binding, draftOptions)
+      }
+      draftOptions?.beforeOpen?.(id)
     } : undefined
     if (target === undefined) {
       if (prepare === undefined) this.clearMain()
