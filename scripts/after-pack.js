@@ -1524,6 +1524,9 @@ function bundledPosixNode(projectDir) {
 }
 
 function copyBundledNode(destDir, projectDir = process.cwd()) {
+  // Both the Harness host and Office use the locked standalone Windows Node.
+  const shared = path.join(destDir, 'runtime', 'primary-runtime', 'dependencies', 'node', 'bin', 'node.exe');
+  if (process.platform === 'win32' && fs.existsSync(shared)) return shared;
   let src;
   if (process.platform === 'win32') {
     src = [
