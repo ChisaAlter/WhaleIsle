@@ -178,37 +178,23 @@
   position: relative;
   display: inline-flex;
   flex: none;
-  width: calc(14px + var(--dsh-content-font-delta, 0px));
-  height: calc(14px + var(--dsh-content-font-delta, 0px));
+  width: calc(24px + var(--dsh-content-font-delta, 0px));
+  height: calc(24px + var(--dsh-content-font-delta, 0px));
   /* The fixed footprint contains the animation's layout and paint. */
   contain: strict;
   overflow: hidden;
 }
 
-.runningWhaleAnimated {
-  display: none;
+.runningWhaleGirl {
   position: absolute;
   inset: 0;
+  background: url('./running-whale-girl-still.png') center / contain no-repeat;
+  forced-color-adjust: none;
 }
 
-.runningWhaleStill {
-  display: initial;
-}
-
-@supports (mask-mode: alpha) and (mask-image: url('')) {
-  @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
-    .runningWhaleAnimated {
-      display: block;
-      background: currentColor;
-      mask: url('./running-whale@2x.png') center / 100% 100% no-repeat;
-      mask-mode: alpha;
-      /* Keep animated-mask repaints on an icon-sized composited layer. */
-      will-change: transform;
-    }
-
-    .runningWhaleStill {
-      display: none;
-    }
+@media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+  .runningWhaleGirl {
+    background-image: url('./running-whale-girl.webp');
   }
 }
 
