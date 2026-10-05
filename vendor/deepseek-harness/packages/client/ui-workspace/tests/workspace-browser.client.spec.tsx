@@ -167,7 +167,7 @@ describe('WorkspaceBrowser', () => {
       b.store.actions.setGroupExpanded('project', true)
     })
     render(<ShowArchivedListRow {...b.props} />)
-    const toggle = screen.getByRole('switch', { name: '显示已归档列表' })
+    const toggle = screen.getByRole('switch', { name: '显示底部归档管理区' })
     expect((toggle as HTMLInputElement).checked).toBe(true)
     expect(screen.getByRole('treeitem', { name: '已归档' }).getAttribute('aria-expanded')).toBe('false')
     expect(screen.queryByText('archived-history')).toBeNull()
@@ -490,9 +490,10 @@ describe('WorkspaceBrowser', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     expect(screen.getByText('分组方式')).toBeTruthy() // the menu heading label
-    expect(screen.getAllByRole('separator')).toHaveLength(1)
+    expect(screen.getAllByRole('separator')).toHaveLength(2)
     expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
       '按工作区', '按工作区树', '单列表', '手动排序', '最近更新',
+      '隐藏已归档', '全部对话（显示已归档）', '仅显示已归档',
     ])
     expect(screen.getByRole('menuitem', { name: '按工作区' }).querySelector('svg')).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: '手动排序' }).querySelector('svg')).toBeTruthy()
@@ -532,6 +533,75 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByText('kept')).toBeTruthy()
     expect(screen.getByText('stored')).toBeTruthy()
     expect(screen.getByText('stored').closest('[data-row-key="archived-section"]')).toBeTruthy()
+  })
+
+  it.each(['workspace', 'workspace-tree', 'flat'] as const)('filters the main list and keeps archived management inert in %s mode', (mode) => {
+    const b = mount({
+      useSessions: hook(sessionState([summary('active', 2), summary('stored', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['active', 'stored'])], [sid('stored')])),
+    })
+    act(() => {
+      b.store.actions.setGroupBy(mode)
+      b.store.actions.setGroupExpanded('alpha', true)
+      b.store.actions.setShowArchivedList(false)
+    })
+    const choose = (name: string) => {
+      fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+      fireEvent.click(screen.getByRole('menuitem', { name }))
+    }
+    expect(screen.getByText('active')).toBeTruthy()
+    expect(screen.queryByText('stored')).toBeNull()
+    choose('全部对话（显示已归档）')
+    expect(b.store.getSnapshot().archivedFilter).toBe('show')
+    expect(screen.getByText('active')).toBeTruthy()
+    expect(screen.getAllByText('stored')).toHaveLength(1)
+    expect(screen.queryByRole('treeitem', { name: '已归档' })).toBeNull()
+    expect(b.store.getSnapshot().showArchivedList).toBe(false)
+
+    choose('仅显示已归档')
+    expect(screen.queryByText('active')).toBeNull()
+    const stored = screen.getByText('stored').closest('[role="treeitem"]')!
+    expect(stored.getAttribute('draggable')).not.toBe('true')
+    fireEvent.click(stored)
+    fireEvent.doubleClick(screen.getByText('stored'))
+    expect(b.props.open).not.toHaveBeenCalled()
+    expect(b.props.unarchiveSession).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /stored/ }))
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['取消归档', '删除会话'])
+    fireEvent.click(screen.getByRole('menuitem', { name: '取消归档' }))
+    expect(b.props.unarchiveSession).toHaveBeenCalledWith(sid('stored'))
+    expect(b.props.open).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /stored/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除会话' }))
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(b.props.deleteSession).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+
+    act(() => { b.store.actions.setShowArchivedList(true) })
+    expect(b.store.getSnapshot().archivedFilter).toBe('only')
+    choose('隐藏已归档')
+    expect(screen.getByText('active')).toBeTruthy()
+    expect(screen.queryByText('stored')).toBeNull()
+    expect(screen.getByRole('treeitem', { name: '已归档' })).toBeTruthy()
+  })
+
+  it('persists the main-list archive filter independently from the bottom archive preference', () => {
+    const seats = {
+      useSessions: hook(sessionState([summary('active', 2), summary('stored', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['active', 'stored'])], [sid('stored')])),
+    }
+    const b = mount(seats)
+    act(() => {
+      b.store.actions.setGroupBy('flat')
+      b.store.actions.setArchivedFilter('only')
+      b.store.actions.setShowArchivedList(false)
+    })
+    b.view.unmount()
+    const remounted = mount(seats)
+    expect(remounted.store.getSnapshot()).toMatchObject({ archivedFilter: 'only', showArchivedList: false })
+    expect(screen.getByText('stored')).toBeTruthy()
+    expect(screen.queryByText('active')).toBeNull()
   })
 
   it('persists the archive visibility switch while expansion resets on remount', () => {
@@ -1064,10 +1134,14 @@ describe('WorkspaceBrowser', () => {
     expect(b.props.deleteSession).not.toHaveBeenCalled()
   })
 
-  it('keeps a recoverable archived ID visible when its summary is missing', () => {
+  it.each(['default', 'show', 'only'] as const)('keeps a recoverable missing-summary archive manageable under %s', (filter) => {
     const b = mount({
       useSessions: hook(sessionState([])),
       useWorkspaces: hook(workspaceState([], [sid('missing')])),
+    })
+    act(() => {
+      b.store.actions.setArchivedFilter(filter)
+      if (filter !== 'default') b.store.actions.setShowArchivedList(false)
     })
     fireEvent.click(screen.getByRole('treeitem', { name: '已归档' }))
     expect(screen.getByText('缺失会话')).toBeTruthy()
@@ -1085,6 +1159,51 @@ describe('WorkspaceBrowser', () => {
     fireEvent.change(screen.getByPlaceholderText('搜索会话名称'), { target: { value: 'gone' } })
     await act(async () => { await Promise.resolve() })
     expect(within(screen.getByRole('tree', { name: '搜索结果' })).queryByRole('treeitem')).toBeNull()
+  })
+
+  it.each(['default', 'show', 'only'] as const)('applies the %s archive filter to title and content search without exposing unregistered workspaces', async (filter) => {
+    vi.useFakeTimers()
+    try {
+      const b = mount({
+        useSessions: hook(sessionState([
+          summary('title-active', 4), summary('title-archive', 3),
+          summary('content-archive', 2), summary('title-orphan', 1, { cwd: '/projects/removed' }),
+        ])),
+        useWorkspaces: hook(workspaceState([
+          workspace('alpha', ['title-active', 'title-archive', 'content-archive']),
+        ], [sid('title-archive'), sid('content-archive'), sid('title-orphan')])),
+        searchSessions: vi.fn(async () => ({ items: [
+          { sessionId: sid('content-archive'), snippet: 'title in content' },
+        ], hasMore: false })),
+      })
+      act(() => {
+        b.store.actions.setArchivedFilter(filter)
+        b.store.actions.setShowArchivedList(false)
+      })
+      fireEvent.click(screen.getByRole('button', { name: '搜索会话' }))
+      fireEvent.change(screen.getByPlaceholderText('搜索会话名称'), { target: { value: 'title' } })
+      await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+      const results = within(screen.getByRole('tree', { name: '搜索结果' }))
+      expect(results.queryByText('title-active') !== null).toBe(filter !== 'only')
+      expect(results.queryByText('title-archive') !== null).toBe(filter !== 'default')
+      expect(results.queryByText('content-archive') !== null).toBe(filter !== 'default')
+      expect(results.queryByText('title-orphan')).toBeNull()
+      if (filter !== 'default') {
+        fireEvent.click(results.getByText('title-archive'))
+        expect(b.props.open).not.toHaveBeenCalled()
+        expect(b.props.unarchiveSession).not.toHaveBeenCalled()
+        expect(b.props.notifyArchivedNotOpenable).toHaveBeenCalledOnce()
+        fireEvent.click(results.getByRole('button', { name: /title-archive/ }))
+        fireEvent.click(screen.getByRole('menuitem', { name: '取消归档' }))
+        expect(b.props.unarchiveSession).toHaveBeenCalledWith(sid('title-archive'))
+        fireEvent.click(results.getByRole('button', { name: /title-archive/ }))
+        fireEvent.click(screen.getByRole('menuitem', { name: '删除会话' }))
+        expect(screen.getByRole('dialog')).toBeTruthy()
+        expect(b.props.deleteSession).not.toHaveBeenCalled()
+      }
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('renders a fork child as a top-level row without a session twist', () => {

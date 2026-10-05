@@ -24,7 +24,7 @@ const LONG_TOAST_HOLD_MS = 6000
  */
 export function RowActionToast({ useToast, useStore, dismissToast, undoArchive, showArchived, t }: RowToastProps) {
   const toast = useToast(current => current)
-  const archivedRowsVisible = useStore(state => state.showArchivedList ?? true)
+  const archivedRowsVisible = useStore(state => (state.archivedFilter ?? 'default') !== 'default' || (state.showArchivedList ?? true))
   if (toast === null) return null
   if (toast.kind === 'archived' || toast.kind === 'stoppedAndArchived') {
     const { sessionId } = toast

@@ -45,7 +45,8 @@
 - `gitPush`（含 skip）在 `refs/remotes/<primary>/HEAD` 缺失或悬空时补上：先 `git remote set-head <primary> --auto`，失败则指向刚推的分支。这样首发非 `main`/`master` 的仓 `isDefaultRef` 为真，Commit & push 而不是误走 Commit, push & PR。不把 push 失败画成 set-head 失败。
 - Git 可执行解析不止看 PATH：父进程（Explorer/终端）持旧 PATH 快照时，已安装的 Git 对子进程不可见。`runGit` 在 ENOENT 后探测 `%ProgramFiles%\Git\cmd\git.exe`、`%ProgramFiles(x86)%`、`%LOCALAPPDATA%\Programs\Git\cmd\git.exe` 命中即缓存复用；两处均缺时错误文案携带安装指引（`winget install Git.Git` / git-scm 链接），不再是死胡同。探测缓存提供 `resetGitExecutableProbe` 测试接缝，避免污染 spawn 计数断言。（2026-10-03，`git.test.js` 103/103 中本机 1 个 symlink fixture 环境失败与 CI 相同类）
 - 官方 `dsh web` 标题栏 Git 视觉；不另做皮肤。
-- Session 日志胶囊默认不进标题栏：`session-log-download.titlebarAction` 默认 `false`，加载中/远端记忆快照不得闪出；`settings.interface.item` 的「会话日志导出」开关是唯一 opt-in 路径，`/export` 命令不受影响。
+- 普通会话标题行的「更多操作」菜单始终提供「下载 Session 日志」；反馈插件可用时同时提供「反馈」，打开现有反馈表单，不自动提交。该菜单不受标题栏快捷按钮开关或窄窗口尾簇隐藏影响；managed composer 会话保持原有隐藏规则。
+- Session 日志胶囊默认不进标题栏：`session-log-download.titlebarAction` 默认 `false`，加载中/远端记忆快照不得闪出；`settings.interface.item` 的「会话日志导出」开关仅控制额外的标题栏下载快捷按钮。关闭后仍可使用会话「更多操作」菜单和 `/export`；两处下载入口共用同一个控制器与结果对话框。
 - 标题行在 `cozy`/`compact` 密度（或 520px 容器断点）收起 `conversation.session.header.actions` 时，utilities 前必须渲染箭头溢出座席：悬停/聚焦临时展示、点击 pin、Esc/外部 pointerdown/再点收起；密度回到 `full` 座席卸载且状态清零。弹出面板避开 actions 带的 `overflow:hidden`，用菜单表面 token。
 
 ## Allowed touch

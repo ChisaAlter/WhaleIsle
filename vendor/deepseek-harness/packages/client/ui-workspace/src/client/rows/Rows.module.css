@@ -308,6 +308,7 @@
 .projectRow:hover .rowActions,
 .sessionRow:hover .rowActions,
 .searchResultRow:hover .rowActions,
+.searchResultRow.menuOpen .rowActions,
 .projectRow.menuOpen .rowActions,
 .sessionRow.menuOpen .rowActions {
   display: inline-flex;

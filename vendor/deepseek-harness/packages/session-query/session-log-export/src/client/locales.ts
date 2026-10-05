@@ -14,7 +14,7 @@ export const zh = {
   'dialog.close': '关闭',
   'dialog.commandFailed': '无法启动 Session 导出。',
   'settings.titlebarAction.title': '会话日志导出',
-  'settings.titlebarAction.description': '在标题栏显示会话日志按钮。关闭后仍可使用 /export 下载。',
+  'settings.titlebarAction.description': '在标题栏显示额外的会话日志按钮。关闭后仍可从会话的更多操作菜单或 /export 下载。',
 } as const
 
 /** English Session export strings. */
@@ -30,7 +30,7 @@ export const en: Record<keyof typeof zh, string> = {
   'dialog.close': 'Close',
   'dialog.commandFailed': 'Could not start the Session export.',
   'settings.titlebarAction.title': 'Session log export',
-  'settings.titlebarAction.description': 'Show the Session log button in the titlebar. Turning this off still leaves /export available.',
+  'settings.titlebarAction.description': 'Show an extra Session log button in the titlebar. Turning this off still leaves the Session more-actions menu and /export available.',
 }
 
 /** Stable locale keys consumed by the shared modal. */

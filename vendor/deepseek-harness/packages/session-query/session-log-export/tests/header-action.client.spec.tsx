@@ -3,16 +3,18 @@ import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import { SessionLogDownloadController } from '../src/client/controller.ts'
-import { SessionLogDownloadHeaderAction } from '../src/client/HeaderAction.tsx'
+import { SessionLogDownloadHeaderAction, SessionLogDownloadTitlebarAction } from '../src/client/HeaderAction.tsx'
 import type { SessionLogDownloadHeaderProps } from '../src/client/HeaderAction.tsx'
+import type { SessionLogDownloadDialogProps } from '../src/client/Dialog.tsx'
 import { en } from '../src/client/locales.ts'
 
 const SID = 'session-export-header' as SessionId
 const BACKGROUND_SID = 'session-export-background' as SessionId
 
-function sessionList(mainViewId: SessionId | undefined): SessionState {
+function sessionList(mainViewId: SessionId | undefined, managed = false): SessionListState {
   return {
     ids: [SID, BACKGROUND_SID],
     byId: {
@@ -23,6 +25,7 @@ function sessionList(mainViewId: SessionId | undefined): SessionState {
         blank: false,
         retainedBy: mainViewId === SID ? { mainView: 1 } : {},
         updatedAt: 1,
+        ...(managed ? { presentation: { owner: 'plugin', title: 'Managed room', composer: 'managed' as const } } : {}),
       },
       [BACKGROUND_SID]: {
         id: BACKGROUND_SID,
@@ -34,8 +37,7 @@ function sessionList(mainViewId: SessionId | undefined): SessionState {
       },
     },
     phase: 'ready',
-    subagentsByParent: {},
-    jobsBySession: {},
+    projectionsBySession: {},
   }
 }
 
@@ -48,33 +50,52 @@ function bindSnapshot<State>(store: ObservableSnapshot<State>) {
   }
 }
 
-function bench(feedbackAvailable = false) {
-  const controller = new SessionLogDownloadController(async () => new Response('zip'), vi.fn())
+function bench(options: {
+  feedbackAvailable?: boolean
+  titlebarAction?: boolean
+  sessionId?: SessionId | undefined
+  mainViewId?: SessionId | undefined
+  managed?: boolean
+  controller?: SessionLogDownloadController
+} = {}) {
+  const controller = options.controller ?? new SessionLogDownloadController(async () => new Response('zip'), vi.fn())
   const request = vi.fn((sessionId: SessionId) => controller.download(sessionId))
   const dismiss = vi.fn((sessionId: SessionId) => { controller.dismiss(sessionId) })
   const openFeedback = vi.fn()
-  const feedback = createSnapshotStore(feedbackAvailable)
-  const useSessionLogDownload = bindSnapshot(controller.store)
-  const props = {
+  const feedback = createSnapshotStore(options.feedbackAvailable ?? false)
+  const titlebar = createSnapshotStore(options.titlebarAction ?? false)
+  const sessionId = 'sessionId' in options ? options.sessionId : SID
+  const mainViewId = 'mainViewId' in options ? options.mainViewId : sessionId
+  const sessions = createSnapshotStore(sessionList(mainViewId, options.managed))
+  const shared = {
     sessionId,
-    useSessions: (selector: (state: SessionState) => unknown) => selector(sessionList(mainViewId)),
-    useSessionLogDownload,
-    useFeedbackAvailable: bindSnapshot(feedback),
-    openFeedback,
+    useSessions: bindSnapshot(sessions),
+    useSessionLogDownload: bindSnapshot(controller.store),
     request,
     dismiss,
-    managedSession,
     t: (key: keyof typeof en): string => en[key],
+  }
+  const menuProps = {
+    ...shared,
+    useFeedbackAvailable: bindSnapshot(feedback),
+    openFeedback,
   } as unknown as SessionLogDownloadHeaderProps
-  const view = render(<SessionLogDownloadHeaderAction {...props} />)
-  return { controller, request, openFeedback, feedback, view }
+  const titlebarProps = {
+    ...shared,
+    useTitlebarAction: bindSnapshot(titlebar),
+  } as unknown as SessionLogDownloadDialogProps
+  const view = render(<>
+    {sessionId !== undefined && <SessionLogDownloadHeaderAction {...menuProps} />}
+    <SessionLogDownloadTitlebarAction {...titlebarProps} />
+  </>)
+  return { controller, request, openFeedback, feedback, titlebar, sessions, menuProps, titlebarProps, view }
 }
 
 afterEach(cleanup)
 
 describe('Session export Header action', () => {
   it('opens Session feedback and closes the menu without starting a download', () => {
-    const b = bench(true)
+    const b = bench({ feedbackAvailable: true })
     fireEvent.click(b.view.getByRole('button', { name: 'More actions' }))
     fireEvent.click(b.view.getByRole('menuitem', { name: 'Feedback' }))
     expect(b.openFeedback).toHaveBeenCalledWith(SID)
@@ -82,8 +103,9 @@ describe('Session export Header action', () => {
     expect(b.view.queryByRole('menu')).toBeNull()
   })
 
-  it('keeps export available without the feedback plugin', () => {
+  it('keeps export available when the titlebar shortcut is off and feedback is unavailable', () => {
     const b = bench()
+    expect(b.view.queryByRole('button', { name: 'Download session log' })).toBeNull()
     fireEvent.click(b.view.getByRole('button', { name: 'More actions' }))
     expect(b.view.queryByRole('menuitem', { name: 'Feedback' })).toBeNull()
     expect(b.view.getByRole('menuitem', { name: 'Download session log' })).toBeTruthy()
@@ -93,22 +115,19 @@ describe('Session export Header action', () => {
     const b = bench()
     fireEvent.click(b.view.getByRole('button', { name: 'More actions' }))
     expect(b.view.queryByRole('menuitem', { name: 'Feedback' })).toBeNull()
-
     act(() => { b.feedback.set(true) })
     expect(b.view.getByRole('menuitem', { name: 'Feedback' })).toBeTruthy()
     act(() => { b.feedback.set(false) })
     expect(b.view.queryByRole('menuitem', { name: 'Feedback' })).toBeNull()
     expect(b.view.getByRole('menuitem', { name: 'Download session log' })).toBeTruthy()
-
     act(() => { b.feedback.set(true) })
     fireEvent.click(b.view.getByRole('menuitem', { name: 'Feedback' }))
     expect(b.openFeedback).toHaveBeenCalledWith(SID)
     expect(b.request).not.toHaveBeenCalled()
-    expect(b.view.queryByRole('menu')).toBeNull()
   })
 
-  it('opens the more-actions menu and downloads through the shared controller', async () => {
-    const b = bench()
+  it.each([false, true])('downloads through the shared controller with one modal (titlebar shortcut %s)', async (titlebarAction) => {
+    const b = bench({ titlebarAction })
     const button = b.view.getByRole('button', { name: 'More actions' })
     expect(button.querySelector('svg')).not.toBeNull()
     expect(button.getAttribute('aria-expanded')).toBe('false')
@@ -116,7 +135,7 @@ describe('Session export Header action', () => {
     expect(button.getAttribute('aria-expanded')).toBe('true')
     fireEvent.click(b.view.getByRole('menuitem', { name: 'Download session log' }))
     await waitFor(() => { expect(b.request).toHaveBeenCalledWith(SID) })
-    expect(await b.view.findByRole('dialog', { name: 'Session download started' })).toBeTruthy()
+    expect(await b.view.findAllByRole('dialog', { name: 'Session download started' })).toHaveLength(1)
   })
 
   it('closes the menu on Escape without downloading', () => {
@@ -128,56 +147,46 @@ describe('Session export Header action', () => {
     expect(b.request).not.toHaveBeenCalled()
   })
 
-  it('disables the download row while either entry path downloads this Session', async () => {
-    const b = bench(true)
+  it('disables download while either entry path downloads this Session, leaving feedback available', async () => {
     let release!: (response: Response) => void
     const pending = new Promise<Response>((resolve) => { release = resolve })
     const controller = new SessionLogDownloadController(() => pending, vi.fn())
-    const useSessionLogDownload = bindSnapshot(controller.store)
-    b.view.rerender(<SessionLogDownloadHeaderAction {...({
-      sessionId: SID,
-      useSessions: (selector: (state: SessionState) => unknown) => selector(sessionList(SID)),
-      useSessionLogDownload,
-      useFeedbackAvailable: bindSnapshot(b.feedback),
-      openFeedback: b.openFeedback,
-      request: (sessionId: SessionId) => controller.download(sessionId),
-      dismiss: (sessionId: SessionId) => { controller.dismiss(sessionId) },
-      t: (key: keyof typeof en): string => en[key],
-    } as unknown as SessionLogDownloadHeaderProps)} />)
-
-    const download = controller.download(SID)
-    const button = b.view.getByRole('button', { name: 'Download session log' })
+    const b = bench({ feedbackAvailable: true, titlebarAction: true, controller })
+    let download!: Promise<void>
+    act(() => { download = controller.download(SID) })
+    const button = b.view.getByRole('button', { name: 'More actions' })
     await waitFor(() => { expect(button.getAttribute('aria-busy')).toBe('true') })
+    expect(b.view.getByRole('button', { name: 'Download session log' })).toHaveProperty('disabled', true)
     fireEvent.click(button)
-    const item = b.view.getByRole('menuitem', { name: 'Download session log' })
-    expect((item as HTMLButtonElement).disabled).toBe(true)
-    expect((b.view.getByRole('menuitem', { name: 'Feedback' }) as HTMLButtonElement).disabled).toBe(false)
-    release(new Response('zip'))
-    await download
+    expect(b.view.getByRole('menuitem', { name: 'Download session log' })).toHaveProperty('disabled', true)
+    expect(b.view.getByRole('menuitem', { name: 'Feedback' })).toHaveProperty('disabled', false)
+    await act(async () => { release(new Response('zip')); await download })
     await waitFor(() => { expect(button.getAttribute('aria-busy')).toBe('false') })
   })
 
-  it('keeps the capsule mounted when the current session is empty, then enables after a session arrives', async () => {
-    const b = bench(undefined)
-    expect(b.view.getByRole('button', { name: 'Download session log' })).toBeTruthy()
-    b.view.rerender(<SessionLogDownloadHeaderAction {...({
-      ...b.props,
-      sessionId: SID,
-      useSessions: (selector: (state: SessionState) => unknown) => selector(sessionList(SID)),
-    } as unknown as SessionLogDownloadDialogProps)} />)
+  it('keeps the optional shortcut disabled without a current session, then enables for the main view', async () => {
+    const b = bench({ sessionId: undefined, mainViewId: undefined, titlebarAction: true })
+    expect(b.view.getByRole('button', { name: 'Download session log' })).toHaveProperty('disabled', true)
+    act(() => { b.sessions.set(sessionList(SID)) })
     const button = b.view.getByRole('button', { name: 'Download session log' })
+    expect(button).toHaveProperty('disabled', false)
     fireEvent.click(button)
     await waitFor(() => { expect(b.request).toHaveBeenCalledWith(SID) })
   })
 
-  it('drops the visible Session log label at cozy density and keeps the accessible name', () => {
-    const b = bench()
-    b.view.rerender(<SessionLogDownloadHeaderAction {...({
-      ...b.props,
-      density: 'cozy',
-    } as unknown as SessionLogDownloadDialogProps)} />)
+  it('drops the shortcut label at cozy density and keeps the accessible name', () => {
+    const b = bench({ titlebarAction: true })
+    b.view.rerender(<SessionLogDownloadTitlebarAction {...b.titlebarProps} density="cozy" />)
     const button = b.view.getByRole('button', { name: 'Download session log' })
     expect(b.view.queryByText('Download session log')).toBeNull()
     expect(button.querySelector('svg')).not.toBeNull()
+  })
+
+  it('keeps both entries and the download dialog absent for managed sessions', () => {
+    const b = bench({ managed: true, feedbackAvailable: true, titlebarAction: true })
+    act(() => { b.controller.store.set({ bySession: { [SID]: { open: true, status: 'success', error: null } } }) })
+    expect(b.view.queryByRole('button', { name: 'More actions' })).toBeNull()
+    expect(b.view.queryByRole('button', { name: 'Download session log' })).toBeNull()
+    expect(b.view.queryByRole('dialog')).toBeNull()
   })
 })
