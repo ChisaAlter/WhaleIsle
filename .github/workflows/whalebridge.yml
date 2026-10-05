@@ -1,0 +1,58 @@
+name: WhaleBridge
+on:
+  pull_request:
+    paths: ['vendor/whalebridge/**', 'scripts/build-whalebridge.mjs', 'scripts/qa-whalebridge.mjs', 'src/launcher/whalebridge*', '.github/workflows/whalebridge.yml']
+  push:
+    branches: [main]
+    paths: ['vendor/whalebridge/**', 'scripts/build-whalebridge.mjs', 'scripts/qa-whalebridge.mjs', 'src/launcher/whalebridge*', '.github/workflows/whalebridge.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: whalebridge-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: vendor/whalebridge/go.mod
+          cache-dependency-path: vendor/whalebridge/go.sum
+      - run: node scripts/build-whalebridge.mjs
+      - run: node --test src/launcher/whalebridge.test.js
+      - run: node scripts/qa-whalebridge.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: WhaleBridge-windows-x64
+          path: .tmp/whalebridge-package/*
+          retention-days: 30
+  publish:
+    needs: windows
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && github.repository == 'ChisaAlter/WhaleIsle'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: WhaleBridge-windows-x64
+          path: component
+      - name: Publish component version once
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p 'require("./component/WhaleBridge-component.json").version')
+          tag="whalebridge-v$version"
+          if gh release view "$tag" --json tagName >/dev/null 2>&1; then
+            echo "Component version already published"
+            exit 0
+          fi
+          printf '鲸桥 %s。基于 Magpie 精简开发，保留模型供应商与订阅账号，仅接入 DSH。通过鲸屿启动器组件页安装。\n' "$version" > component-notes.txt
+          gh release create "$tag" component/* --target "$GITHUB_SHA" --title "鲸桥 $version" --notes-file component-notes.txt --latest=false

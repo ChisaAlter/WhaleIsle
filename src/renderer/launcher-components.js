@@ -47,6 +47,7 @@
   };
 
   const PHASE_LABELS = {
+    download: '正在下载组件',
     copy: '正在拷贝组件文件',
     verify: '正在校验组件',
     switch: '正在切换版本',
@@ -115,13 +116,14 @@
     if (row.state === 'available') {
       buttons.push(btn('install', '安装', 'primary'));
     } else if (row.state === 'running') {
+      if (row.configurable) buttons.push(btn('open', '打开鲸桥', 'primary'));
       buttons.push(btn('stop', '停止', 'ghost'));
       if (row.updateAvailable) {
         buttons.push(btn('update', '更新', 'ghost'));
       }
       buttons.push(btn('uninstall', '卸载', 'danger'));
     } else {
-      buttons.push(btn('start', row.state === 'error' ? '重试' : '运行', 'primary'));
+      buttons.push(btn(row.configurable ? 'open' : 'start', row.configurable ? '打开鲸桥' : (row.state === 'error' ? '重试' : '运行'), 'primary'));
       if (row.updateAvailable) {
         buttons.push(btn('update', '更新', 'ghost'));
       }
@@ -147,7 +149,7 @@
     host.innerHTML = rows.map((row) => {
       const marks = [
         kindBadge(row),
-        row.source === 'bundled' ? badge('官方签名', 'blue') : '',
+        row.source === 'official' ? badge('官方组件', 'blue') : (row.source === 'bundled' ? badge('内置', 'blue') : ''),
         row.updateAvailable ? badge('可更新') : '',
         row.orphan ? badge('目录外组件', 'warn') : '',
       ].join('');
@@ -156,7 +158,7 @@
         <div class="row-main">
           <span class="comp-icon" aria-hidden="true">${iconGlyph(row)}</span>
           <div class="comp-copy">
-            <div class="row-title">${escapeHtml(row.name || row.id)} ${marks}</div>
+            <div class="row-title">${row.configurable ? `<button type="button" class="ghost small" data-comp-action="open" data-comp-id="${escapeHtml(row.id)}">${escapeHtml(row.name || row.id)}</button>` : escapeHtml(row.name || row.id)} ${marks}</div>
             <div class="row-meta">${rowMeta(row)}</div>
             ${detail ? `<div class="row-meta">${detail}</div>` : ''}
             <p class="progress" data-comp-progress hidden></p>
@@ -196,12 +198,12 @@
     return `${label}${percent}${detail ? `：${detail}` : ''}`;
   }
 
-  async function refresh() {
+  async function refresh(checkUpdates = false) {
     if (!state.shell || typeof state.shell.componentsList !== 'function') {
       return;
     }
     try {
-      renderRows(await state.shell.componentsList());
+      renderRows(await state.shell.componentsList(checkUpdates ? { refresh: true } : undefined));
     } catch (error) {
       setHint(typeof window.dshdErrText === 'function'
         ? window.dshdErrText(error, '组件列表读取失败')
@@ -210,6 +212,7 @@
   }
 
   const ACTION_METHODS = {
+    open: 'componentsOpen',
     install: 'componentsInstall',
     start: 'componentsStart',
     stop: 'componentsStop',
@@ -240,15 +243,27 @@
     }
     const row = state.rows.get(id);
     const name = row?.name || id;
+    let argument = id;
     if (action === 'uninstall' && typeof window.appConfirm === 'function') {
+      let info = {};
+      try { if (id === 'whalebridge') info = await state.shell.componentsUninstallInfo(id); }
+      catch (error) { setHint(error?.message || '无法读取鲸桥状态'); return; }
       const ok = await window.appConfirm({
         title: `卸载组件「${name}」`,
-        body: `将停止并删除组件「${name}」及其程序文件，其配置数据会保留。此操作不可撤销。`,
+        body: `将停止并删除组件「${name}」及其程序文件，其配置数据会保留。${id === 'whalebridge' ? '桌面端的鲸桥渠道会移除，聊天记录和其他渠道会保留。' : ''}${info.defaultModel ? '当前默认模型使用鲸桥，卸载后需要重新选择默认模型。' : ''}`,
         confirmText: '卸载',
         danger: true,
       });
       if (!ok) {
         return;
+      }
+      if (id === 'whalebridge') {
+        const removeData = await window.appConfirm({
+          title: '是否同时删除鲸桥配置？',
+          body: '删除会清除鲸桥的供应商密钥、账户和用量数据。保留后重新安装可继续使用。',
+          confirmText: '删除配置', cancelText: '保留配置', danger: true,
+        });
+        argument = { id, removeData };
       }
     } else if (action === 'rollback' && typeof window.appConfirm === 'function') {
       const ok = await window.appConfirm({
@@ -267,7 +282,7 @@
       progress.textContent = '处理中…';
     }
     try {
-      const result = await state.shell[method](id);
+      const result = await state.shell[method](argument);
       if (result && result.ok === false) {
         const text = ACTION_ERRORS[result.error] || result.message || result.error || '操作失败';
         setHint(`${id}：${text}`);
@@ -323,7 +338,7 @@
         <h2>组件</h2>
         <span class="head-line row-meta" data-comp-route hidden>当前线路 <b class="cur-line"></b></span>
       </header>
-      <p class="lede lede-block">项目维护的独立工具与服务组件；进程独立于桌面端，文件与数据写在启动器自有目录，不进入桌面端插件名单。</p>
+      <p class="lede lede-block">按需安装独立工具与服务。鲸桥可统一管理模型，安装后自动连接桌面端的模型渠道。</p>
       <div class="actions">
         <button type="button" class="ghost" data-comp-refresh>刷新</button>
       </div>
@@ -331,7 +346,7 @@
       <p class="progress" data-comp-hint hidden></p>`;
     state.list = el.querySelector('[data-comp-list]');
     state.hintNode = el.querySelector('[data-comp-hint]');
-    el.querySelector('[data-comp-refresh]').addEventListener('click', () => void refresh());
+    el.querySelector('[data-comp-refresh]').addEventListener('click', () => void refresh(true));
     const routeNode = el.querySelector('[data-comp-route]');
     if (routeNode && state.shell && typeof state.shell.launcherStatus === 'function') {
       void state.shell.launcherStatus().then((status) => {

@@ -6,7 +6,25 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { load } from 'js-yaml'
-import { cnbClient, mirrorRelease, syncSource } from './sync-cnb.mjs'
+import { cnbClient, mirrorRelease, syncSource, validateMirrorAssets } from './sync-cnb.mjs'
+
+test('component mirror validates native bytes against the component manifest', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'cnb-component-'))
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  const binary = Buffer.from('component')
+  const manifest = { id: 'whalebridge', version: '1.0.0', license: 'MIT License', platforms: { 'win32-x64': {
+    asset: 'WhaleBridge-win32-x64.exe', size: binary.length, sha256: createHash('sha256').update(binary).digest('hex'),
+  } } }
+  const bytes = Buffer.from(JSON.stringify(manifest))
+  writeFileSync(join(directory, 'WhaleBridge-component.json'), bytes)
+  writeFileSync(join(directory, 'WhaleBridge-win32-x64.exe'), binary)
+  const release = { tag_name: 'whalebridge-v1.0.0', assets: [
+    { name: 'WhaleBridge-component.json', size: bytes.length }, { name: 'WhaleBridge-win32-x64.exe', size: binary.length },
+  ] }
+  assert.equal((await validateMirrorAssets(release, directory)).length, 2)
+  writeFileSync(join(directory, 'WhaleBridge-win32-x64.exe'), Buffer.from('tampered!'))
+  await assert.rejects(validateMirrorAssets(release, directory), /manifest mismatch/)
+})
 
 const repo = 'ayasealter/WhaleIsle'
 const sha = 'a'.repeat(40)
@@ -161,7 +179,7 @@ test('source mirror pushes real main and tags, and rejects diverged main without
 test('workflow covers main pushes, automatic-token releases and manual backfill without rebuilding', () => {
   const workflow = load(readFileSync(new URL('../.github/workflows/cnb-mirror.yml', import.meta.url), 'utf8'))
   assert.deepEqual(workflow.on.push.branches, ['main'])
-  assert.deepEqual(workflow.on.workflow_run.workflows, ['Release'])
+  assert.deepEqual(workflow.on.workflow_run.workflows, ['Release', 'WhaleBridge'])
   assert.deepEqual(workflow.on.release.types, ['published'])
   assert.ok(workflow.on.workflow_dispatch.inputs.tag)
   assert.equal(workflow.concurrency['cancel-in-progress'], false)

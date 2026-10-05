@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>鲸桥 · WhaleBridge</title><link rel="icon" href="/whale-head.png">
+  <link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/scrollbar.css"><link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script><script src="/accounts.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="鲸桥首页"><img src="/whale-head.png" alt="鲸屿" width="40" height="40"><span><strong>鲸桥</strong><small>WHALEBRIDGE</small></span></a>
+      <div class="sidebar-label">鲸屿 · 模型连接组件</div>
+      <nav aria-label="组件设置">
+        <button data-tab="overview" aria-current="page" aria-selected="true"><svg class="icon" aria-hidden="true"><use href="/icons.svg#overview"></use></svg><span>接入概览</span></button>
+        <button data-tab="providers" aria-selected="false"><svg class="icon" aria-hidden="true"><use href="/icons.svg#providers"></use></svg><span>供应商与账号</span><span class="nav-count" id="provider-count"></span></button>
+        <button data-tab="models" aria-selected="false"><svg class="icon" aria-hidden="true"><use href="/icons.svg#models"></use></svg><span>模型管理</span><span class="nav-count" id="model-count"></span></button>
+        <button data-tab="routing" aria-selected="false"><svg class="icon" aria-hidden="true"><use href="/icons.svg#routing"></use></svg><span>路由组</span></button>
+        <button data-tab="usage" aria-selected="false"><svg class="icon" aria-hidden="true"><use href="/icons.svg#usage"></use></svg><span>用量统计</span></button>
+      </nav>
+      <div class="sidebar-bottom"><button class="help-link" data-tab="help" aria-selected="false"><svg class="icon" aria-hidden="true"><use href="/icons.svg#help"></use></svg><span>使用说明</span></button><div class="sidebar-foot"><span>WHALE ISLE</span><span id="version"></span></div></div>
+    </aside>
+    <div class="workspace">
+      <header class="toolbar"><div class="breadcrumb">鲸桥<span>/</span><strong id="page-label">接入概览</strong></div><div class="toolbar-actions"><span class="connection" id="connection" data-state="loading">正在连接…</span><button class="icon-button" id="refresh" aria-label="刷新当前页面" title="刷新当前页面"><svg class="icon" aria-hidden="true"><use href="/icons.svg#refresh"></use></svg></button></div></header>
+      <main id="main" tabindex="-1"><div class="content-wrap">
+        <div id="message" role="status" hidden><svg class="icon" aria-hidden="true"><use href="/icons.svg#info"></use></svg><span id="message-text"></span><button class="icon-button" id="dismiss-message" aria-label="关闭提示"><svg class="icon" aria-hidden="true"><use href="/icons.svg#close"></use></svg></button></div>
+        <section id="content" aria-live="polite" aria-busy="true"><div class="loading"><img src="/whale-head.png" alt="" width="48" height="48"><p>正在读取鲸桥配置…</p></div></section>
+        <footer><span>鲸屿出品 · 基于 Magpie</span><button class="text-button" data-action="go-help">了解鲸桥</button></footer>
+      </div></main>
+    </div>
+  </div>
+  <dialog id="editor" aria-labelledby="editor-title"><form id="edit-form">
+    <div class="dialog-head"><div><span class="eyebrow">鲸桥 · 配置</span><h2 id="editor-title"></h2></div><button type="button" class="icon-button" id="close-editor" aria-label="关闭"><svg class="icon" aria-hidden="true"><use href="/icons.svg#close"></use></svg></button></div>
+    <div class="dialog-body"><div id="fields"></div><p id="form-error" role="alert" hidden></p></div>
+    <div class="dialog-actions"><span class="dialog-note" id="editor-note">配置保存在本机</span><button type="button" id="cancel-editor">取消</button><button class="primary" id="save" type="submit">保存</button></div>
+  </form></dialog>
+  <dialog id="confirmation" class="confirmation" aria-labelledby="confirm-title"><form id="confirm-form"><div class="dialog-head"><h2 id="confirm-title"></h2><button type="button" class="icon-button" id="close-confirm" aria-label="关闭"><svg class="icon" aria-hidden="true"><use href="/icons.svg#close"></use></svg></button></div><div class="dialog-body"><p id="confirm-body"></p><div id="confirm-input"></div></div><div class="dialog-actions"><button type="button" id="cancel-confirm">取消</button><button class="primary" type="submit" id="accept-confirm">确认</button></div></form></dialog>
+</body></html>

@@ -33,6 +33,12 @@
 
 实际可用性以 CNB main/tag、正式 Release 与匿名附件下载结果为准；仅合并工作流或设置 secret 不代表同步成功。
 
+## 鲸桥组件
+
+`.github/workflows/whalebridge.yml` 单独编译 `vendor/whalebridge` 并验证真实 Windows 程序的生命周期和本机网关。PR 提供开发资产；成功的 main 构建在组件版本尚未发布时自动创建 `whalebridge-v<版本>`，附件为 `WhaleBridge-win32-x64.exe` 和包含大小、SHA256、MIT 版权的 `WhaleBridge-component.json`。组件版本位于 `vendor/whalebridge/upstream.json`，独立于桌面 package.json。
+
+该工作流成功后 CNB mirror 同步组件 tag 与原始资产，按组件清单检查二进制并完成匿名字节校验。GitHub 和 CNB 都保持桌面程序的 latest，不把组件设为最新桌面安装包。源码构建入口为 `node scripts/build-whalebridge.mjs`。
+
 ## 失败处理
 
 开发检查失败时修复对应问题；需要重跑时使用 GitHub 的失败 job 重跑。发布上传失败保留 draft，手动运行 Release 并提供原 Development CI 的 `run_id`，复用原包完成分发。artifact 保留 30 天；过期后需要新的开发构建，不从另一个版本补包。

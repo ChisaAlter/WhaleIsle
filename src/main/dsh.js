@@ -911,6 +911,15 @@ class DshManager extends EventEmitter {
       throw new Error(`工作区不存在：${config.workspace || '(空)'}`);
     }
 
+    // An installed channel must work when the desktop is started directly,
+    // without requiring the launcher or component settings window to be open.
+    // A component failure is reported without preventing other channels.
+    try {
+      await require('../launcher/whalebridge').ensureWhaleBridgeRuntime();
+    } catch (error) {
+      this.log(`鲸桥不可用：${error.message}`, 'app');
+    }
+
     const preparationAbort = new AbortController();
     this.preparationAbort = preparationAbort;
     try {

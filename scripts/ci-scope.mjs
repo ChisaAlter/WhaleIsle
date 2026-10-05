@@ -8,6 +8,9 @@ import { resolve } from 'node:path'
 export function selectChecks(paths, { manual = false } = {}) {
   const scope = { product: manual, vendor: manual, tools: manual, motion: manual }
   for (const path of paths) {
+    // WhaleBridge's Go runtime has its own build and executable QA. It does
+    // not change the vendored Harness/Mobile client or its build dependencies.
+    if (/^(vendor\/whalebridge\/|scripts\/(build-whalebridge|qa-whalebridge)\.mjs$|\.github\/workflows\/whalebridge\.yml$)/.test(path)) continue
     if (/^(docs\/|\.devin\/|\.cursor\/|\.agents\/)/.test(path) ||
         /^[^/]+\.(md|i18n\.yaml)$/.test(path) ||
         /^\.github\/(ISSUE_TEMPLATE\/|.*\.md$)/.test(path) ||
