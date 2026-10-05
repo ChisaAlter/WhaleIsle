@@ -407,6 +407,39 @@ function growthDeps(t, overrides = {}) {
   };
 }
 
+test('usage continues while hidden and outbox waits for the renderer to finish loading', (t) => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const timers = [];
+  t.mock.method(global, 'setInterval', (fn, ms) => { const timer = { fn, ms, unref() {} }; timers.push(timer); return timer; });
+  t.mock.method(global, 'clearInterval', () => {});
+  const { deps } = growthDeps(t);
+  const callbacks = new Map();
+  deps.win.webContents.once = (name, fn) => callbacks.set(name, fn);
+  const home = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'whale-renderer-ready-'));
+  const isolatedSessions = path.join(home, 'sessions');
+  fs.cpSync(deps.sessionsDir, isolatedSessions, { recursive: true });
+  deps.sessionsDir = isolatedSessions;
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const whaleHome = path.join(path.dirname(deps.sessionsDir), 'data/whale');
+  const outbox = path.join(whaleHome, 'pet-outbox.jsonl');
+  fs.mkdirSync(whaleHome, { recursive: true });
+  fs.writeFileSync(outbox, JSON.stringify({ kind: 'notify', text: '重要提醒' }) + '\n');
+  const manager = createLive2dPetManager(deps);
+  t.after(() => manager.dispose());
+  const tick = timers.find((timer) => timer.ms === 2000).fn;
+  tick();
+  assert.equal(JSON.parse(fs.readFileSync(path.join(whaleHome, 'usage-today.json'))).used, 25500);
+  assert.equal(deps.win.sends.some(([channel, payload]) => channel === 'shell:live2d-dsh' && payload.kind === 'notify'), false);
+  manager.show();
+  deps.win.showInactive();
+  tick();
+  assert.equal(deps.win.sends.some(([channel, payload]) => channel === 'shell:live2d-dsh' && payload.kind === 'notify'), false);
+  callbacks.get('did-finish-load')();
+  tick();
+  assert.equal(deps.win.sends.filter(([channel, payload]) => channel === 'shell:live2d-dsh' && payload.kind === 'notify').length, 1);
+});
+
 test('DSH config write retries after save mutates memory then throws', (t) => {
   const fs = require('node:fs');
   const os = require('node:os');
@@ -545,6 +578,29 @@ test('settings-get reads; applySettings persists and pushes the normalized shape
   const reset = manager.applySettings({ reset: true });
   const { lookAvailable: _flag, ...resetSettings } = reset;
   assert.deepEqual(resetSettings, petSettings.defaultSettings());
+});
+
+test('personality edits made during an in-flight mirror reach the assistant', async (t) => {
+  const posts = [];
+  let release;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    posts.push(JSON.parse(init.body).payload.personality);
+    if (posts.length === 1) await new Promise((resolve) => { release = resolve; });
+    return { ok: true, json: async () => ({ result: { ok: true, value: {} } }) };
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const deps = live2dDeps({
+    getHarnessOrigin: () => 'http://127.0.0.1:9', getSessionCookie: () => 'sess=1',
+    loadConfig: () => ({ whaleAssistantEnabled: true }),
+  });
+  const manager = createLive2dPetManager(deps);
+  t.after(() => manager.dispose());
+  manager.applySettings({ patch: { personality: 'poison' } });
+  release();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(posts, ['natural', 'poison']);
+  assert.equal(manager.getSettings().personality, 'poison');
 });
 
 test('personality changes mirror into the whale assistant catalog', async (t) => {

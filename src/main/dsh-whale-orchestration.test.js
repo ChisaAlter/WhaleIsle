@@ -202,11 +202,17 @@ test('apply() registers the persona section so real assembly carries her setting
     };
     const prompt = renderPrompt(await ctx.systemPrompt.assemble({ agent: whaleAgent }));
     assert.match(prompt, /你当前的名字是「吃白饭的」/);
+    const memoryPath = path.join(whalePreset.whaleHomeDir(home), 'MEMORY.md');
+    fs.writeFileSync(memoryPath, '用户喜欢鲸鱼与红茶');
+    assert.match(renderPrompt(await ctx.systemPrompt.assemble({ agent: whaleAgent })), /用户喜欢鲸鱼与红茶/);
+    fs.writeFileSync(memoryPath, '用户改喝绿茶');
+    assert.match(renderPrompt(await ctx.systemPrompt.assemble({ agent: whaleAgent })), /用户改喝绿茶/);
     assert.match(prompt, /最后确认一次：你的名字叫「吃白饭的」，你称呼用户「爸爸」/);
     const foreign = renderPrompt(await ctx.systemPrompt.assemble({
       agent: { id: 'f', session: { id: 'f', header: { agentPreset: 'standard', cwd: 'C:\\elsewhere' } } },
     }));
     assert.doesNotMatch(foreign, /鲸鱼娘|吃白饭的/);
+    assert.doesNotMatch(foreign, /用户改喝绿茶/);
   } finally {
     await ctx.fiber.dispose();
   }
@@ -329,12 +335,12 @@ test('schedule kinds validate inputs and due entries wake her via tick', async (
   assert.equal(once.schedule.kind, 'once');
 
   // One tick just past the interval's due time fires once + interval, not daily.
-  observe.tick(Math.max(once.schedule.nextRunAt, interval.schedule.nextRunAt) + 1);
+  await observe.tick(Math.max(once.schedule.nextRunAt, interval.schedule.nextRunAt) + 1);
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(wakes.length, 1);
-  assert.match(wakes[0], /回来看看/);
-  assert.match(wakes[0], /巡检/);
-  assert.doesNotMatch(wakes[0], /日报/);
+  assert.equal(wakes.length, 2, 'each schedule has its own admission receipt');
+  assert.match(wakes.join('\n'), /回来看看/);
+  assert.match(wakes.join('\n'), /巡检/);
+  assert.doesNotMatch(wakes.join('\n'), /日报/);
 
   // once fired → disabled; interval with maxRuns:1 → disabled too.
   const listed = observe.listSchedules();
@@ -537,7 +543,7 @@ test('whale_watch / whale_schedule tools drive the pulse stores', async () => {
 
 // ── sticker-tools: markdown image picks ────────────────────────
 
-test('whale_sticker returns a paste-ready root-anchored markdown image', async () => {
+test('whale_sticker returns a paste-ready absolute markdown image', async () => {
   const saved = process.env.DSH_HOME;
   process.env.DSH_HOME = tmpHome;
   try {
@@ -550,10 +556,8 @@ test('whale_sticker returns a paste-ready root-anchored markdown image', async (
     assert.equal(picked.ok, true);
     const m = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(picked.markdown);
     assert.ok(m, `markdown shape: ${picked.markdown}`);
-    assert.ok(m[2].startsWith('/'), `root-anchored path: ${m[2]}`);
-    assert.ok(!/^[A-Za-z]:/.test(m[2]), `drive letter stripped: ${m[2]}`);
-    const driveRoot = path.parse(process.cwd()).root;
-    assert.ok(fs.existsSync(path.join(driveRoot, m[2].slice(1))), `file resolves: ${m[2]}`);
+    assert.ok(path.isAbsolute(decodeURIComponent(m[2])), `absolute path: ${m[2]}`);
+    assert.ok(fs.existsSync(decodeURIComponent(m[2])), 'markdown destination identifies the actual bundled image');
 
     assert.ok(picked.detail.includes(picked.markdown), 'detail must carry the paste-able markdown');
 
@@ -585,7 +589,7 @@ test('whale_sticker picks up images dropped into the whale home stickers dir', a
     const tool = tools.get('whale_sticker');
     const hit = await tool.execute({ query: '自制表情' });
     assert.equal(hit.ok, true);
-    assert.match(hit.markdown, /\/data\/whale\/stickers\/自制表情\.png\)$/);
+    assert.match(decodeURIComponent(hit.markdown), /\/data\/whale\/stickers\/自制表情\.png\)$/);
   } finally {
     if (saved === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = saved;

@@ -20,7 +20,7 @@ const settle = async () => {
   for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
 };
 
-function loadPlugin() {
+function loadPlugin({ stateful = false } = {}) {
   const spec = { current: null };
   const window = {
     __ModuleLoader__: { load: (entry) => { spec.current = entry; } },
@@ -35,9 +35,16 @@ function loadPlugin() {
   assert.ok(spec.current, 'client.js must register itself with __ModuleLoader__');
 
   const stateWrites = [];
+  const states = [];
+  let cursor = 0;
   const react = {
     createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }),
-    useState: (init) => [init, (value) => stateWrites.push(value)],
+    useState: (init) => {
+      if (!stateful) return [init, (value) => stateWrites.push(value)];
+      const index = cursor++;
+      if (!(index in states)) states[index] = typeof init === 'function' ? init() : init;
+      return [states[index], (value) => { states[index] = typeof value === 'function' ? value(states[index]) : value; }];
+    },
     useEffect: (fn) => fn(),
     useMemo: (fn) => fn(),
     useCallback: (fn) => fn,
@@ -49,8 +56,36 @@ function loadPlugin() {
     return {};
   };
   const exports = spec.current.factory(require);
-  return { exports, window, stateWrites };
+  return { exports, window, stateWrites, render: (component, props) => { cursor = 0; return component(props); } };
 }
+
+test('the settings model control preserves slashes inside the selected model id', async () => {
+  const plugin = loadPlugin({ stateful: true });
+  const { ctx, registrations } = makeCtx({ specs: ['settings.pet.item'] });
+  plugin.exports.apply(ctx);
+  const component = registrations.find((entry) => entry.decl.name === 'settings.pet.item').component;
+  const calls = [];
+  const props = { t: (key) => key, rpc: async (method, payload) => {
+    calls.push({ method, payload });
+    return { name: '鲸鱼娘', imDefault: true };
+  } };
+  plugin.render(component, props);
+  await settle();
+  const tree = plugin.render(component, props);
+  const find = (node) => {
+    if (!node || typeof node !== 'object') return null;
+    if (node.props?.['aria-label'] === 'field.model') return node;
+    for (const child of (node.children ?? []).flat(Infinity)) { const hit = find(child); if (hit) return hit; }
+    return null;
+  };
+  const control = find(tree);
+  assert.ok(control);
+  control.props.onChange('openrouter/anthropic/claude-fable-5.1');
+  await settle();
+  const saved = calls.find((call) => call.method === 'settings/update').payload;
+  assert.equal(saved.model.provider, 'openrouter');
+  assert.equal(saved.model.model, 'anthropic/claude-fable-5.1');
+});
 
 // Builds the host ctx. `sessionsShape: '0.1.6'` carries catalog methods only
 // (no open); `'0.1.5'` adds open(). `uiWorkspace` may be provided as a direct

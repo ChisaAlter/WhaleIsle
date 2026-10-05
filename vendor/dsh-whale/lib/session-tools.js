@@ -396,7 +396,7 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
         return {
           ok: true,
           detail: watches.length
-            ? watches.map((w) => `- ${w.sessionId}${w.once ? ' (once)' : ''}${w.note ? ` — ${w.note}` : ''}`).join('\n')
+            ? watches.map((w) => `- ${w.sessionId}${w.once ? ' (once)' : ''}${w.pending?.length ? ' (pending delivery)' : ''}${w.lastError ? ` [delivery failed: ${w.lastError}]` : ''}${w.note ? ` — ${w.note}` : ''}`).join('\n')
             : 'No active watches.',
         };
       }
@@ -452,7 +452,7 @@ export function registerSessionTools(ctx, { getSelfId = () => '' } = {}) {
           detail: schedules.length
             ? schedules.map((s) =>
               `- ${s.id} [${s.kind}${s.everyMinutes ? ` ${s.everyMinutes}m` : ''}${s.daily ? ` ${s.daily}` : ''}]`
-              + ` next ${at(s.nextRunAt)}${s.enabled === false ? ' (done)' : ''}: ${s.text}`).join('\n')
+              + ` next ${at(s.nextRunAt)}${s.enabled === false ? ' (done)' : ''}${s.lastError ? ` [delivery failed: ${s.lastError}]` : ''}: ${s.text}`).join('\n')
             : 'No schedules.',
         };
       }

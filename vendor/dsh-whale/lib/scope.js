@@ -22,6 +22,26 @@ function values(source) {
   return result;
 }
 
+/** Apply the profile's model to the resident session before saving the choice. */
+export async function updateWhaleSettings(scope, patch, controller) {
+  const before = scope.get();
+  const next = { ...before, ...patch };
+  const changesModel = ['modelProvider', 'modelModel', 'modelReasoningEffort']
+    .some((key) => Object.prototype.hasOwnProperty.call(patch, key));
+  if (changesModel && next.sessionId) {
+    if (typeof controller?.selectModel !== 'function') throw new Error('session-controller-unavailable');
+    const route = next.modelProvider && next.modelModel
+      ? { provider: next.modelProvider, model: next.modelModel,
+        ...(next.modelReasoningEffort ? { reasoningEffort: next.modelReasoningEffort } : {}) }
+      : (await controller.modelCatalog?.())?.default;
+    if (!route?.provider || !route?.model) throw new Error('default-model-unavailable');
+    await controller.selectModel({ sessionId: next.sessionId, ...route,
+      ...(next.modelReasoningEffort ? { reasoningEffort: next.modelReasoningEffort } : {}), saveAsDefault: false });
+  }
+  await scope.set(next, before);
+  return scope.get();
+}
+
 export function createWhaleScope(home) {
   if (!home) {
     // Missing DSH_HOME must never become a relative-path write: reads

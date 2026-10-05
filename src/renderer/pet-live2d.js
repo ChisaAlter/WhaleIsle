@@ -1281,7 +1281,12 @@ function holdBubbles(seconds) {
 }
 function enqueueBubble(entry) {
   if (bubbleQueue.length >= BUBBLE_QUEUE_MAX) {
-    bubbleQueue.shift(); // overflow drops the oldest pending line
+    const ordinary = bubbleQueue.findIndex((queued) => !queued.pinned && (queued.priority || 0) < 2);
+    if (ordinary < 0) {
+      if (!entry.pinned && (entry.priority || 0) < 2) return;
+    } else {
+      bubbleQueue.splice(ordinary, 1);
+    }
   }
   entry.seq = bubbleQueueSeq += 1;
   bubbleQueue.push(entry);
@@ -1948,7 +1953,7 @@ function chatFocusWindow(on) {
 function chatRenderHistory(list) {
   chatLog.length = 0;
   for (const m of list) {
-    chatLog.push({ role: m.role === 'her' ? 'her' : 'user', text: String(m.text || '') });
+    chatLog.push({ role: m.role === 'her' || m.role === 'err' ? m.role : 'user', text: String(m.text || '') });
   }
   const thread = chatPart('#pc-thread');
   if (!thread || typeof thread.querySelectorAll !== 'function') { return; }
@@ -2286,6 +2291,10 @@ function toggleChat(force) {
 async function submitChat(text) {
   const t = String(text || '').trim();
   if (!t || chatBusy) { return; }
+  if (t.length > 2000) {
+    chatAppend('err', '最多发送 2000 字，请缩短后再发送');
+    return;
+  }
   const input = chatPart('#pc-input');
   if (!settings.chatEnabled) {
     say('chatFallback');
@@ -2311,10 +2320,23 @@ async function submitChat(text) {
       pushBubble({ text: res.reply.slice(0, 120), until: performance.now() + 6000, priority: 1 });
       return;
     }
+    if (res?.ok === true && res.via === 'whale') {
+      // A completed tool-only turn can legitimately have no closing prose.
+      if (chatShared) await Promise.resolve(chatRefreshState()).catch(() => {});
+      return;
+    }
     // Whale-path failures already get a precise error row — a random quip
     // on top would only muddy it.
     if (res?.via === 'whale') {
-      chatAppend('err', '这轮没跑成——点 ↗ 去会话里看详情');
+      if (chatShared) await Promise.resolve(chatRefreshState()).catch(() => {});
+      const replyShown = res.reply && chatLog.slice(-2).some((row) => row.role === 'her'
+        && row.text.slice(0, 60) === res.reply.slice(0, 60));
+      if (res.reply && !replyShown) chatAppend('her', res.reply);
+      if (chatLog[chatLog.length - 1]?.role !== 'err') {
+        const status = res.reason === 'turn-aborted' ? '这轮已中止'
+          : res.reason === 'timeout' ? '等待回复超时' : '这轮没有完成';
+        chatAppend('err', `${status}——点 ↗ 去会话里看详情`);
+      }
       return;
     }
     chatAppend('err', '没连上——稍后再试试');

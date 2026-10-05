@@ -185,6 +185,7 @@ function createDshWatch({
   saveDsh,
   onEvent,
   onState,
+  isPetVisible = () => true,
   now = () => Date.now(),
   rng = Math.random,
   fsImpl = fs,
@@ -334,6 +335,7 @@ function createDshWatch({
     const hadActivityBefore = dsh.lastActiveAt || 0;
     const lastSeenBefore = dsh.lastSeenAt || 0; // feedEvent overwrites it
     for (const file of files) {
+      if (file === outboxFile && !isPetVisible()) continue;
       let stat;
       try {
         stat = fsImpl.statSync(file);

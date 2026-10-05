@@ -11,8 +11,8 @@
     includeRuntimeContext: false
     prefix: ''
 
-# AGENTS.md / MEMORY.md inside the whale home (session cwd) are picked up
-# automatically — that file is her persistent memory.
+# AGENTS.md is loaded from the home cwd; the host's dsh-whale:memory section
+# reads MEMORY.md live on each whale turn.
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
   config:

@@ -227,6 +227,24 @@ function whaleStub(behavior) {
   };
 }
 
+test('chat preserves the text after character 200 and visibly rejects over-limit input', async () => {
+  const { whale, calls } = whaleStub(() => ({ ok: true, value: { ok: true, reply: '收到' } }));
+  const pc = createPetChat({ whale });
+  const text = '甲'.repeat(200) + '重要结尾';
+  assert.equal((await pc.chat({ text })).ok, true);
+  assert.equal(calls[0].payload.text, text);
+  assert.equal((await pc.chat({ text: '甲'.repeat(2001) })).reason, 'input-too-long');
+  assert.equal(calls.length, 1);
+});
+
+test('failed whale turns retain their partial reply without reporting success', async () => {
+  const { whale } = whaleStub(() => ({ ok: true, value: { ok: false, error: 'turn-error', reply: '完成了第一步' } }));
+  const res = await createPetChat({ whale }).chat({ text: '执行任务' });
+  assert.equal(res.ok, false);
+  assert.equal(res.reply, '完成了第一步');
+  assert.equal(res.reason, 'turn-error');
+});
+
 test('whale path: ok reply returns via:whale and never touches fetch', async () => {
   let fetched = false;
   const { whale, calls } = whaleStub(() => ({ ok: true, value: { ok: true, reply: ' 在呢 ' } }));

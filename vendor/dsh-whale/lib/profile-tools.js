@@ -1,5 +1,5 @@
 import { defineTool } from '@deepseek-ai/dsh-tools';
-import { createWhaleScope } from './scope.js';
+import { createWhaleScope, updateWhaleSettings } from './scope.js';
 import { controllerFrom, genericOutput, trimTo } from './shared.js';
 
 const FIELDS = new Set(['name', 'userTitle', 'personaText', 'model']);
@@ -50,7 +50,9 @@ export function registerProfileTools(ctx) {
         next.modelReasoningEffort = trimTo(model.reasoningEffort, 32);
       }
       try {
-        await scope.set(next, before);
+        const changes = Object.fromEntries(Object.keys(next)
+          .filter((key) => next[key] !== before[key]).map((key) => [key, next[key]]));
+        await updateWhaleSettings(scope, changes, controllerFrom(ctx));
       } catch (error) {
         return { ok: false, detail: String(error?.message ?? error) };
       }

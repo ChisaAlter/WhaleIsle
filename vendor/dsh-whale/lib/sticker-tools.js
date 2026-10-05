@@ -31,16 +31,17 @@ function bundledStickerDir() {
 
 /**
  * Spell an absolute path the way the web client's markdown image rule
- * accepts: the destination must start with `/`, then the host serves it
- * through `/api/file` after an `isAbsolute` check. win32 resolves a
- * root-anchored path against the process drive, so 'C:\\x\\y.png' must be
- * written '/x/y.png' — correct whenever the file sits on the same drive as
- * the harness process cwd.
+ * accepts: preserve the Windows drive or POSIX root, and URL-encode path
+ * characters so spaces, parentheses and fragments survive Markdown parsing.
  */
 export function markdownPathFor(absPath) {
   const normalized = String(absPath ?? '').replace(/\\/g, '/');
-  const drive = /^[A-Za-z]:\/(.+)$/.exec(normalized);
-  return `/${drive ? drive[1] : normalized.replace(/^\/+/, '')}`;
+  // The client's authenticated file-image rule explicitly excludes UNC paths.
+  // Never emit //server as Markdown: the browser treats that as a network URL.
+  if (normalized.startsWith('//')) throw new Error('UNC sticker paths are not supported by the client.');
+  return normalized.split('/').map((part, index) => index === 0 && /^[A-Za-z]:$/.test(part) ? part : encodeURIComponent(part)
+    .replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`))
+    .join('/');
 }
 
 /** Bundled pack entries, hydrated from stickers/index.json. */
@@ -152,7 +153,11 @@ export function registerStickerTools(ctx) {
       const { pool, sticker, matched } = pickSticker(home, query);
       if (!sticker) return { ok: false, name: '', markdown: '', detail: 'No stickers are installed.' };
       const alt = sticker.name.replace(/[[\]()!\r\n]/g, '').trim() || '表情包';
-      const markdown = `![${alt}](${markdownPathFor(sticker.path)})`;
+      let destination;
+      try { destination = markdownPathFor(sticker.path); } catch (error) {
+        return { ok: false, name: sticker.name, markdown: '', detail: error.message };
+      }
+      const markdown = `![${alt}](${destination})`;
       const shown = sticker.name || '(未命名)';
       // The desktop pet tails the outbox and pops the image in her speech
       // bubble — the sticker is her expression, not just chat markup.

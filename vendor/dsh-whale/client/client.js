@@ -401,7 +401,10 @@ window.__ModuleLoader__.load({
       // Provider + model + effort are one catalog field — whichever select
       // moved commits all three together.
       const commitModel = (nextModel, nextEffort) => {
-        const [provider = "", model = ""] = String(nextModel || "").split("/");
+        const value = String(nextModel || "");
+        const slash = value.indexOf("/");
+        const provider = slash < 0 ? "" : value.slice(0, slash);
+        const model = slash < 0 ? "" : value.slice(slash + 1);
         void commit({ model: { provider, model, reasoningEffort: nextEffort } });
       };
 

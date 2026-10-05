@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import z from '@deepseek-ai/schemastery';
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm';
-import { createWhaleScope } from './scope.js';
+import { createWhaleScope, updateWhaleSettings } from './scope.js';
 import { buildPersonaText, normalizePersonality, PERSONALITIES } from './persona.js';
 import { startPulse } from './observe.js';
 import {
@@ -228,13 +228,6 @@ function sanitizePatch(input) {
   return patch;
 }
 
-async function applyCatalogPatch(scope, patch) {
-  const previous = scope.get() ?? {};
-  const next = { ...previous, ...patch };
-  await scope.set(next, previous);
-  return scope.get();
-}
-
 function memoryFile() {
   const home = dshHomeDir();
   return home ? path.join(whaleHomeDir(home), 'MEMORY.md') : '';
@@ -274,6 +267,12 @@ function historyFromRecords(records) {
   const out = [];
   for (const rec of records ?? []) {
     const ev = rec?.event ?? rec;
+    if (ev?.type === 'turn/end' && ev.data?.reason?.kind !== 'completed') {
+      const kind = ev.data?.reason?.kind;
+      const text = kind === 'aborted' ? '这轮已中止' : kind === 'error' ? '这轮出错' : '这轮没有完成';
+      out.push({ role: 'err', text: `${text}——点 ↗ 去会话里看详情`, seq: Number(ev.seq) || 0 });
+      continue;
+    }
     if (ev?.type !== 'user/message' && ev?.type !== 'assistant/message') continue;
     // Relayed user/messages (whale tools kind:'plugin', IM bridges) are not
     // the human talking — rendering them as user rows would confuse the card.
@@ -373,13 +372,12 @@ function petSessionTurn(ctx, controller, sessionId, { requestId, matchText, cont
           }
           if (event?.type === 'turn/end') {
             const reply = texts.join('\n').trim();
-            if (reply) {
+            const kind = d.reason?.kind;
+            if (kind === 'completed') {
               finish({ ok: true, reply: trimTo(reply, PET_TEXT_MAX * 4) });
             } else {
-              const kind = d.reason?.kind;
-              finish(kind === 'completed'
-                ? { ok: true, reply: '' }
-                : { ok: false, error: `turn-${typeof kind === 'string' ? kind : 'unknown'}` });
+              finish({ ok: false, error: `turn-${typeof kind === 'string' ? kind : 'unknown'}`,
+                reply: trimTo(reply, PET_TEXT_MAX * 4) });
             }
           }
         } catch { /* one bad frame never kills the turn watcher */ }
@@ -451,10 +449,9 @@ async function petLook(ctx, scope, { provider, model, image }) {
   if (!bytes.length || bytes.length > LOOK_IMAGE_MAX_BYTES) {
     return { ok: false, error: 'bad-image' };
   }
-  // Preferred path: her own session answers the glance in a real turn.
-  // Null means the session route cannot take the picture (or no session
-  // exists) — the standalone look-model call below stays the fallback.
-  const inSession = await lookInSession(ctx, scope, image).catch(() => null);
+  // Use her real session only when it has the exact selected look route
+  // and native image input. Otherwise call that selected route directly.
+  const inSession = await lookInSession(ctx, scope, image, { provider, model }).catch(() => null);
   if (inSession) return inSession;
   let modelInfo;
   try {
@@ -535,15 +532,15 @@ async function petLook(ctx, scope, { provider, model, image }) {
 
 /**
  * Whether the assistant session's current route can carry an image block
- * in derived history: the selected model declares image input, or a
- * vision fallback route is configured to describe it. Unresolvable
+ * in derived history: it matches the requested look route and declares
+ * native image input. A vision fallback can use a different provider and
+ * must not bypass the user's screenshot destination. Unresolvable
  * selections and failed model-info reads count as incapable — a picture
  * admitted anyway would fail every later request on a text-only route.
  */
-async function lookImageAdmissible(ctx, controller, sessionId) {
-  if (ctx.get?.('visionFallback')?.configured?.() === true) return true;
+async function lookImageAdmissible(ctx, controller, sessionId, route) {
   const selected = selectedModelFrom(await sessionSnapshot(controller, sessionId, PET_HISTORY_MAX + 8));
-  if (!selected) return false;
+  if (!selected || selected.provider !== route.provider || selected.model !== route.model) return false;
   const info = await ctx.get?.('llm')?.resolveModelInfo?.(selected.provider, selected.model)
     .catch(() => undefined);
   return info?.inputModalities?.includes('image') === true;
@@ -554,16 +551,16 @@ async function lookImageAdmissible(ctx, controller, sessionId) {
  * prompt — screenshot as a user row, her comment as a real assistant row
  * settled by a real turn. Returns the turn's outcome once admitted;
  * returns null when the session path cannot take the picture (no usable
- * session, or a route without image input and no vision fallback), or
+ * session, a different selected route, or no native image input), or
  * when prompt admission rejects, so the caller can run the standalone
  * glance instead. A turn that was admitted reports its own result —
  * including timeout — because its record already exists in her log.
  */
-async function lookInSession(ctx, scope, imageBase64) {
+async function lookInSession(ctx, scope, imageBase64, route) {
   const controller = controllerFrom(ctx);
   const ensured = await ensureAssistantSession(ctx, scope, controller);
   if (!ensured.ok || typeof controller?.prompt !== 'function') return null;
-  if (!(await lookImageAdmissible(ctx, controller, ensured.sessionId))) return null;
+  if (!(await lookImageAdmissible(ctx, controller, ensured.sessionId, route))) return null;
   const outcome = await petSessionTurn(ctx, controller, ensured.sessionId, {
     requestId: `pet-look-${crypto.randomUUID()}`,
     matchText: LOOK_SESSION_TEXT,
@@ -629,7 +626,7 @@ function registerRpc(ctx, scope) {
       }
       case 'settings/update': {
         const patch = sanitizePatch(input);
-        const next = await applyCatalogPatch(scope, patch);
+        const next = await updateWhaleSettings(scope, patch, controllerFrom(ctx));
         if (patch.name && next.sessionId) {
           const controller = controllerFrom(ctx);
           controller?.setPresentation?.({
@@ -706,8 +703,9 @@ function registerRpc(ctx, scope) {
         return { ok: true, selected: result?.selected ?? { provider, model, reasoningEffort } };
       }
       case 'pet/chat': {
-        const text = trimTo(input?.text, 2000).trim();
+        const text = String(input?.text ?? '').trim();
         if (!text) return { ok: false, error: 'empty-input' };
+        if (text.length > 2000) return { ok: false, error: 'input-too-long' };
         const ensured = await ensureAssistantSession(ctx, scope, controllerFrom(ctx));
         if (!ensured.ok) return ensured;
         const controller = controllerFrom(ctx);
@@ -813,6 +811,16 @@ export function apply(ctx) {
     },
   });
 
+  ctx.systemPrompt.section({
+    name: 'dsh-whale:memory',
+    order: 21,
+    text: (assembleCtx) => {
+      if (!isWhaleAssistantContext(assembleCtx, readSettings(scope), home)) return '';
+      const memory = readMemory();
+      return memory.trim() ? `你的长期记忆（用户与自身保存的记录）：\n${memory}` : '';
+    },
+  });
+
   registerRpc(ctx, scope);
 
   // Current Harness has no `.agent-presets` directory scanner. Register her
@@ -828,8 +836,10 @@ export function apply(ctx) {
         getSelfId: () => String(readSettings(scope).sessionId ?? ''),
         wake: async (text) => {
           const ensured = await ensureAssistantSession(ctx, scope, host.sessionController);
-          if (!ensured.ok || typeof host.sessionController?.prompt !== 'function') return;
-          await host.sessionController.prompt({
+          if (!ensured.ok || typeof host.sessionController?.prompt !== 'function') {
+            throw new Error(ensured.error || 'session-controller-unavailable');
+          }
+          return host.sessionController.prompt({
             requestId: `whale-pulse-${crypto.randomUUID()}`,
             sessionId: ensured.sessionId,
             mode: 'queue',
