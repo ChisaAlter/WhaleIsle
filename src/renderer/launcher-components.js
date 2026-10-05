@@ -14,6 +14,9 @@
     rows: new Map(),
     list: null,
     hintNode: null,
+    homeEl: null,
+    homeList: null,
+    homeHint: null,
   };
 
   function escapeHtml(value) {
@@ -89,17 +92,8 @@
 
   function rowDetail(row) {
     const bits = [];
-    if (row.state === 'running' && row.pid) {
-      bits.push(`PID ${row.pid}`);
-    }
-    if (row.state === 'running' && row.url) {
-      bits.push(row.url);
-    }
     if (row.updateAvailable) {
       bits.push(`有更新 v${row.version}`);
-    }
-    if (row.previousVersion) {
-      bits.push(`可回滚 v${row.previousVersion}`);
     }
     if (row.message) {
       bits.push(row.message);
@@ -115,33 +109,36 @@
     const btn = (action, label, cls) => `<button type="button" class="${cls} small" data-comp-action="${action}" data-comp-id="${escapeHtml(row.id)}">${label}</button>`;
     if (row.state === 'available') {
       buttons.push(btn('install', '安装', 'primary'));
-    } else if (row.state === 'running') {
-      if (row.configurable) buttons.push(btn('open', '打开鲸桥', 'primary'));
-      buttons.push(btn('stop', '停止', 'ghost'));
-      if (row.updateAvailable) {
-        buttons.push(btn('update', '更新', 'ghost'));
-      }
-      buttons.push(btn('uninstall', '卸载', 'danger'));
     } else {
-      buttons.push(btn(row.configurable ? 'open' : 'start', row.configurable ? '打开鲸桥' : (row.state === 'error' ? '重试' : '运行'), 'primary'));
-      if (row.updateAvailable) {
-        buttons.push(btn('update', '更新', 'ghost'));
+      if (row.state === 'running') {
+        if (row.configurable) buttons.push(btn('open', '打开设置', 'primary'));
+        buttons.push(btn('stop', '停止', 'ghost'));
+      } else {
+        buttons.push(btn('start', row.state === 'error' ? '重试启动' : '启动', 'primary'));
       }
-      if (row.previousVersion) {
-        buttons.push(btn('rollback', '回滚', 'ghost'));
-      }
-      buttons.push(btn('uninstall', '卸载', 'danger'));
+      const management = [];
+      if (row.updateAvailable) management.push(btn('update', `更新至 v${escapeHtml(row.version)}`, 'ghost'));
+      if (row.previousVersion) management.push(btn('rollback', `回滚至 v${escapeHtml(row.previousVersion)}`, 'ghost'));
+      management.push(btn('uninstall', '卸载', 'danger'));
+      buttons.push(`<details class="comp-manage"><summary aria-label="管理${escapeHtml(row.name || row.id)}">管理<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg></summary><div class="comp-manage-menu"><span class="row-meta">当前 v${escapeHtml(row.installedVersion || row.version)}</span>${management.join('')}</div></details>`);
     }
     return buttons.join('');
   }
 
   function renderRows(payload) {
+    const rows = payload && Array.isArray(payload.components) ? payload.components : [];
+    state.rows = new Map(rows.map((row) => [row.id, row]));
+    renderHomeRows(rows);
+    const badgeNode = document.getElementById('tab-badge-components');
+    if (badgeNode) {
+      const count = rows.filter(row => row.updateAvailable || row.state === 'error').length;
+      badgeNode.hidden = count === 0;
+      badgeNode.textContent = count ? String(count) : '';
+    }
     const host = state.list;
     if (!host) {
       return;
     }
-    const rows = payload && Array.isArray(payload.components) ? payload.components : [];
-    state.rows = new Map(rows.map((row) => [row.id, row]));
     if (!rows.length) {
       host.innerHTML = '<li><span class="row-meta">暂无可安装的组件。</span></li>';
       return;
@@ -156,9 +153,9 @@
       const detail = rowDetail(row);
       return `<li class="comp-row" data-comp-row="${escapeHtml(row.id)}">
         <div class="row-main">
-          <span class="comp-icon" aria-hidden="true">${iconGlyph(row)}</span>
+          ${componentIcon(row)}
           <div class="comp-copy">
-            <div class="row-title">${row.configurable ? `<button type="button" class="ghost small" data-comp-action="open" data-comp-id="${escapeHtml(row.id)}">${escapeHtml(row.name || row.id)}</button>` : escapeHtml(row.name || row.id)} ${marks}</div>
+            <div class="row-title">${escapeHtml(row.name || row.id)} ${marks}</div>
             <div class="row-meta">${rowMeta(row)}</div>
             ${detail ? `<div class="row-meta">${detail}</div>` : ''}
             <p class="progress" data-comp-progress hidden></p>
@@ -170,6 +167,16 @@
         </div>
       </li>`;
     }).join('');
+    bindActions(host);
+  }
+
+  function componentIcon(row) {
+    return row.id === 'whalebridge'
+      ? '<img class="comp-icon comp-brand" src="../../assets/whale-head.png" alt="鲸屿" width="36" height="36">'
+      : `<span class="comp-icon" aria-hidden="true">${iconGlyph(row)}</span>`;
+  }
+
+  function bindActions(host) {
     host.querySelectorAll('[data-comp-action]').forEach((button) => {
       button.addEventListener('click', () => {
         void runAction(button.dataset.compAction, button.dataset.compId);
@@ -177,16 +184,31 @@
     });
   }
 
-  function setHint(text) {
-    if (!state.hintNode) {
-      return;
-    }
-    state.hintNode.hidden = !text;
-    state.hintNode.textContent = text || '';
+  function renderHomeRows(rows) {
+    if (!state.homeEl || !state.homeList) return;
+    const installed = rows.filter(row => row.installedVersion);
+    state.homeEl.hidden = installed.length === 0;
+    state.homeList.innerHTML = installed.map(row => {
+      const running = row.state === 'running';
+      const pending = state.pending.has(row.id);
+      const name = row.name || row.id;
+      const control = `<button type="button" class="${running ? 'ghost' : 'primary'} small" data-comp-action="${running ? 'stop' : 'start'}" data-comp-id="${escapeHtml(row.id)}"${pending ? ' disabled' : ''}>${pending ? '处理中…' : `${running ? '关闭' : '开启'}${escapeHtml(name)}`}</button>`;
+      const settings = row.configurable && running ? `<button type="button" class="ghost small" data-comp-action="open" data-comp-id="${escapeHtml(row.id)}"${pending ? ' disabled' : ''}>打开设置</button>` : '';
+      return `<article class="home-component" data-comp-row="${escapeHtml(row.id)}"><div class="home-component-head">${componentIcon(row)}<div class="comp-copy"><h4>${escapeHtml(name)}</h4><span class="row-meta">v${escapeHtml(row.installedVersion)}</span></div>${stateBadge(row)}</div><p class="home-component-description">${escapeHtml(row.description || '鲸屿扩展组件')}</p><div class="home-component-controls">${control}${settings}</div><p class="progress" data-comp-progress hidden></p></article>`;
+    }).join('');
+    bindActions(state.homeList);
   }
 
-  function progressNode(id) {
-    return state.el?.querySelector(`[data-comp-row="${CSS.escape(id)}"] [data-comp-progress]`) || null;
+  function setHint(text) {
+    for (const node of [state.hintNode, state.homeHint]) {
+      if (!node) continue;
+      node.hidden = !text;
+      node.textContent = text || '';
+    }
+  }
+
+  function progressNodes(id) {
+    return [state.el, state.homeEl].flatMap(el => el ? [...el.querySelectorAll(`[data-comp-row="${CSS.escape(id)}"] [data-comp-progress]`)] : []);
   }
 
   function progressText(payload) {
@@ -276,8 +298,8 @@
       }
     }
     state.pending.add(id);
-    const progress = progressNode(id);
-    if (progress) {
+    renderRows({ components: [...state.rows.values()] });
+    for (const progress of progressNodes(id)) {
       progress.hidden = false;
       progress.textContent = '处理中…';
     }
@@ -286,7 +308,7 @@
       if (result && result.ok === false) {
         const text = ACTION_ERRORS[result.error] || result.message || result.error || '操作失败';
         setHint(`${id}：${text}`);
-        if (progress) {
+        for (const progress of progressNodes(id)) {
           progress.hidden = false;
           progress.textContent = text;
         }
@@ -299,7 +321,7 @@
         : '操作失败');
     } finally {
       state.pending.delete(id);
-      void refresh();
+      await refresh();
     }
   }
 
@@ -307,12 +329,11 @@
     if (!payload || !payload.id) {
       return;
     }
-    const node = progressNode(payload.id);
-    if (node) {
+    for (const node of progressNodes(payload.id)) {
       node.hidden = false;
       node.textContent = progressText(payload);
     }
-    if (payload.phase === 'done' || payload.phase === 'error') {
+    if (!state.pending.has(payload.id) && (payload.phase === 'done' || payload.phase === 'error')) {
       void refresh();
     }
   }
@@ -326,13 +347,8 @@
       void refresh();
       return;
     }
-    if (state.unsubscribe) {
-      state.unsubscribe();
-      state.unsubscribe = null;
-    }
     state.el = el;
-    state.shell = shell || null;
-    state.pending.clear();
+    connect(shell);
     el.innerHTML = `
       <header class="page-head">
         <h2>组件</h2>
@@ -358,11 +374,22 @@
         }
       }).catch(() => {});
     }
-    if (state.shell && typeof state.shell.onComponentsProgress === 'function') {
-      state.unsubscribe = state.shell.onComponentsProgress(onProgress);
-    }
     void refresh();
   }
 
-  window.__launcherComponents = { mount };
+  function connect(shell) {
+    if (state.shell === shell) return;
+    state.unsubscribe?.();
+    state.shell = shell || null;
+    state.unsubscribe = state.shell?.onComponentsProgress?.(onProgress) || null;
+  }
+
+  function mountHome(el, shell) {
+    state.homeEl = el;
+    state.homeList = el?.querySelector('#home-components-list') || null;
+    state.homeHint = el?.querySelector('#home-components-hint') || null;
+    connect(shell);
+  }
+
+  window.__launcherComponents = { mount, mountHome, refresh };
 })();

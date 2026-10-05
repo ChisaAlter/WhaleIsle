@@ -7,6 +7,7 @@
   <script src="/app.js" defer></script><script src="/accounts.js" defer></script>
 </head>
 <body>
+  <div class="window-drag" aria-hidden="true"></div>
   <div class="app-shell">
     <aside class="sidebar">
       <a class="brand" href="/" aria-label="鲸桥首页"><img src="/whale-head.png" alt="鲸屿" width="40" height="40"><span><strong>鲸桥</strong><small>WHALEBRIDGE</small></span></a>
@@ -21,8 +22,8 @@
       <div class="sidebar-bottom"><button class="help-link" data-tab="help" aria-selected="false"><svg class="icon" aria-hidden="true"><use href="/icons.svg#help"></use></svg><span>使用说明</span></button><div class="sidebar-foot"><span>WHALE ISLE</span><span id="version"></span></div></div>
     </aside>
     <div class="workspace">
-      <header class="toolbar"><div class="breadcrumb">鲸桥<span>/</span><strong id="page-label">接入概览</strong></div><div class="toolbar-actions"><span class="connection" id="connection" data-state="loading">正在连接…</span><button class="icon-button" id="refresh" aria-label="刷新当前页面" title="刷新当前页面"><svg class="icon" aria-hidden="true"><use href="/icons.svg#refresh"></use></svg></button></div></header>
       <main id="main" tabindex="-1"><div class="content-wrap">
+        <div class="toolbar"><div class="breadcrumb">鲸桥<span>/</span><strong id="page-label">接入概览</strong></div><div class="toolbar-actions"><span class="connection" id="connection" data-state="loading">正在连接…</span><button class="icon-button" id="refresh" aria-label="刷新当前页面" title="刷新当前页面"><svg class="icon" aria-hidden="true"><use href="/icons.svg#refresh"></use></svg></button></div></div>
         <div id="message" role="status" hidden><svg class="icon" aria-hidden="true"><use href="/icons.svg#info"></use></svg><span id="message-text"></span><button class="icon-button" id="dismiss-message" aria-label="关闭提示"><svg class="icon" aria-hidden="true"><use href="/icons.svg#close"></use></svg></button></div>
         <section id="content" aria-live="polite" aria-busy="true"><div class="loading"><img src="/whale-head.png" alt="" width="48" height="48"><p>正在读取鲸桥配置…</p></div></section>
         <footer><span>鲸屿出品 · 基于 Magpie</span><button class="text-button" data-action="go-help">了解鲸桥</button></footer>

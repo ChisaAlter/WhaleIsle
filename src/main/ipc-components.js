@@ -10,6 +10,7 @@ let service = null;
 let serviceDeps = null;
 let quitHooked = false;
 let bridgeListed = false;
+let bridgeService = null;
 
 function ensureService() {
   if (!service) {
@@ -24,11 +25,13 @@ function _configureForTest(deps) {
   service = null;
   quitHooked = false;
   bridgeListed = false;
+  bridgeService = null;
 }
 
 function register({ handle, LAUNCHER_ONLY, send, onQuitCommit }) {
   const svc = ensureService();
   const bridge = serviceDeps ? serviceDeps.whaleBridge : require('../launcher/whalebridge').whaleBridgeService();
+  bridgeService = bridge || null;
   const progress = (event, id) => (payload) => send(event, 'shell:components-progress', { id, ...payload });
 
   handle('shell:components-list', LAUNCHER_ONLY, async (_event, options) => {
@@ -108,7 +111,7 @@ function contributeStatus() {
   if (!service) {
     return null;
   }
-  return { components: service.snapshot() };
+  return { components: [...(bridgeService ? [bridgeService.row()] : []), ...service.snapshot()] };
 }
 
 module.exports = { register, contributeStatus, _configureForTest };
