@@ -295,8 +295,14 @@ Section
   StrCpy $dshNewMoved "1"
   StrCpy $dshOldMoved "1"
   Call dshRollbackDirectories
+  StrCpy $R1 "0"
+  \${If} \${Errors}
+    StrCpy $R1 "1"
+  \${EndIf}
+  # Preserve the rollback result before writing the fixture's observation.
+  ClearErrors
   FileOpen $R0 "${nsisQuote(state)}" w
-  FileWrite $R0 "newMoved=$dshNewMoved;oldMoved=$dshOldMoved"
+  FileWrite $R0 "newMoved=$dshNewMoved;oldMoved=$dshOldMoved;error=$R1"
   FileClose $R0
 SectionEnd
 `)
@@ -304,14 +310,14 @@ SectionEnd
     const close = holdFile(join(final, 'locked.txt'))
     try {
       assert.equal(run(output, ['/S']), 2)
-      assert.equal(readFileSync(state, 'utf8'), 'newMoved=1;oldMoved=1')
+      assert.equal(readFileSync(state, 'utf8'), 'newMoved=1;oldMoved=1;error=1')
       assert.equal(readFileSync(join(old, 'old.txt'), 'utf8'), 'complete old application')
       assert.equal(readFileSync(join(external, 'sentinel.txt'), 'utf8'), 'user data survives rollback')
       const instructions = readFileSync(`${old}.rollback.txt`, 'utf16le')
       assert.ok(instructions.includes(old) && instructions.includes(final))
     } finally { close() }
     assert.equal(run(output, ['/S']), 0)
-    assert.equal(readFileSync(state, 'utf8'), 'newMoved=;oldMoved=')
+    assert.equal(readFileSync(state, 'utf8'), 'newMoved=;oldMoved=;error=0')
     assert.equal(readFileSync(join(final, 'old.txt'), 'utf8'), 'complete old application')
     assert.equal(existsSync(old), false)
     assert.equal(existsSync(`${old}.rollback.txt`), false)
