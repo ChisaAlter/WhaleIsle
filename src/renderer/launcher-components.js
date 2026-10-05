@@ -1,10 +1,6 @@
 'use strict';
 
-// Components panel module (lane C, refactor plan §5.0/§5.2). Lane A's
-// launcher.html owns the <section id="panel-components"> container and the
-// <script src="launcher-components.js"> tag; this file owns everything inside
-// the container and mounts via window.__launcherComponents.mount(el, shell).
-// Mounting twice is harmless — the second call just re-renders the list.
+// Component selection, detail actions and the launcher's component overview.
 (function () {
   const state = {
     el: null,
@@ -12,6 +8,9 @@
     unsubscribe: null,
     pending: new Set(),
     rows: new Map(),
+    selected: null,
+    progress: new Map(),
+    detail: null,
     list: null,
     hintNode: null,
   };
@@ -66,7 +65,7 @@
 
   function kindBadge(row) {
     const kind = KIND_LABELS[row.kind] || (row.kind ? [row.kind, ''] : null);
-    return kind ? badge(kind[0], kind[1]) : '';
+    return kind ? badge(kind[0]) : '';
   }
 
   function iconGlyph(row) {
@@ -74,63 +73,71 @@
     return escapeHtml((name[0] || '?').toUpperCase());
   }
 
-  function rowMeta(row) {
-    const bits = [];
-    if (row.description) {
-      bits.push(row.description);
-    }
-    bits.push(`v${row.version || '?'}`);
-    if (row.installedVersion && row.installedVersion !== row.version) {
-      bits.push(`已装 v${row.installedVersion}`);
-    }
-    return escapeHtml(bits.join(' · '));
-  }
-
-  function rowDetail(row) {
-    const bits = [];
-    if (row.state === 'running' && row.pid) {
-      bits.push(`PID ${row.pid}`);
-    }
-    if (row.state === 'running' && row.url) {
-      bits.push(row.url);
-    }
-    if (row.updateAvailable) {
-      bits.push(`有更新 v${row.version}`);
-    }
-    if (row.previousVersion) {
-      bits.push(`可回滚 v${row.previousVersion}`);
-    }
-    if (row.message) {
-      bits.push(row.message);
-    }
-    return bits.length ? escapeHtml(bits.join(' · ')) : '';
-  }
-
   function rowActions(row) {
-    if (state.pending.has(row.id)) {
-      return '<span class="row-meta">操作进行中…</span>';
-    }
+    const disabled = state.pending.has(row.id) ? ' disabled' : '';
     const buttons = [];
-    const btn = (action, label, cls) => `<button type="button" class="${cls} small" data-comp-action="${action}" data-comp-id="${escapeHtml(row.id)}">${label}</button>`;
+    const btn = (action, label, cls) => `<button type="button" class="${cls}" data-comp-action="${action}" data-comp-id="${escapeHtml(row.id)}"${disabled}>${label}</button>`;
     if (row.state === 'available') {
-      buttons.push(btn('install', '安装', 'primary'));
-    } else if (row.state === 'running') {
-      buttons.push(btn('stop', '停止', 'ghost'));
-      if (row.updateAvailable) {
-        buttons.push(btn('update', '更新', 'ghost'));
-      }
-      buttons.push(btn('uninstall', '卸载', 'danger'));
+      buttons.push(btn('install', '安装组件', 'primary'));
     } else {
-      buttons.push(btn('start', row.state === 'error' ? '重试' : '运行', 'primary'));
+      buttons.push(row.state === 'running'
+        ? btn('stop', '停止组件', 'primary')
+        : btn('start', row.state === 'error' ? '重试运行' : '运行组件', 'primary'));
       if (row.updateAvailable) {
         buttons.push(btn('update', '更新', 'ghost'));
       }
-      if (row.previousVersion) {
-        buttons.push(btn('rollback', '回滚', 'ghost'));
-      }
-      buttons.push(btn('uninstall', '卸载', 'danger'));
+      buttons.push(`<details class="more-operations"><summary>更多操作</summary><div class="more-menu">
+        ${row.previousVersion ? btn('rollback', '回滚上一版本', 'ghost small') : ''}
+        ${btn('uninstall', '卸载组件', 'danger small')}</div></details>`);
     }
     return buttons.join('');
+  }
+
+  function renderOverview() {
+    const host = document.getElementById('home-components-list');
+    if (!host) return;
+    const rows = [...state.rows.values()];
+    host.innerHTML = rows.length ? rows.map((row) => `<div class="overview-row">
+      <span class="comp-icon" aria-hidden="true">${iconGlyph(row)}</span>
+      <div><strong>${escapeHtml(row.name || row.id)}</strong><p>${escapeHtml(row.installedVersion ? `已安装 v${row.installedVersion}` : `可安装 v${row.version || '?'}`)}${row.updateAvailable ? ' · 有更新' : ''}</p></div>
+      ${stateBadge(row)}</div>`).join('') : '<p class="row-meta">暂无可用组件。可在组件页刷新列表。</p>';
+    const count = rows.filter((row) => row.updateAvailable || row.state === 'error').length;
+    const badgeNode = document.getElementById('tab-badge-components');
+    if (badgeNode) {
+      badgeNode.hidden = count === 0;
+      badgeNode.textContent = count ? String(count) : '';
+    }
+  }
+
+  function renderDetail() {
+    const row = state.rows.get(state.selected);
+    if (!state.detail) return;
+    if (!row) {
+      state.detail.innerHTML = '<div class="component-empty"><h3>暂无可用组件</h3><p class="row-meta">刷新列表以查看可安装的独立工具与服务。</p></div>';
+      return;
+    }
+    const field = (label, value, wide = false) => `<div${wide ? ' class="wide"' : ''}><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`;
+    const progress = state.progress.get(row.id);
+    state.detail.innerHTML = `<div class="component-detail-body" data-comp-row="${escapeHtml(row.id)}">
+      <div class="component-heading"><div><h3>${escapeHtml(row.name || row.id)}</h3><div class="identity-tags">${kindBadge(row)}${row.source === 'bundled' ? badge('官方签名', 'blue') : badge(row.source || '已安装')}${row.orphan ? badge('目录外组件', 'warn') : ''}</div></div>${stateBadge(row)}</div>
+      <p class="component-description">${escapeHtml(row.description || '由启动器管理的独立组件。')}</p>
+      <dl class="component-metadata">${field('已安装版本', row.installedVersion ? `v${row.installedVersion}` : '尚未安装')}${field('可用版本', `v${row.version || '?'}`)}
+      ${row.state === 'running' && row.pid ? field('进程 PID', row.pid) : ''}
+      ${row.state === 'running' && row.url ? field('服务地址', row.url, true) : ''}</dl>
+      ${row.updateAvailable ? '<p class="component-note">有新版本可用，更新时将停止当前组件进程。</p>' : ''}
+      ${row.message ? `<p class="component-note" role="status">${escapeHtml(row.message)}</p>` : ''}
+      <details class="component-info"><summary>组件详情</summary><dl class="component-metadata">${field('组件标识', row.id, true)}${row.previousVersion ? field('可回滚版本', `v${row.previousVersion}`) : ''}</dl><p class="row-meta">进程独立于桌面端。退出启动器会停止其监管的服务；卸载保留配置数据。</p></details>
+      <p class="progress" data-comp-progress role="status"${progress ? '' : ' hidden'}>${escapeHtml(progress || '')}</p>
+      </div><div class="action-strip">${rowActions(row)}</div>`;
+    state.detail.querySelectorAll('[data-comp-action]').forEach((button) => {
+      button.addEventListener('click', () => void runAction(button.dataset.compAction, button.dataset.compId));
+    });
+    state.detail.querySelector('.more-operations')?.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.currentTarget.open = false;
+        event.currentTarget.querySelector('summary').focus();
+      }
+    });
   }
 
   function renderRows(payload) {
@@ -140,39 +147,20 @@
     }
     const rows = payload && Array.isArray(payload.components) ? payload.components : [];
     state.rows = new Map(rows.map((row) => [row.id, row]));
-    if (!rows.length) {
-      host.innerHTML = '<li><span class="row-meta">暂无可安装的组件。</span></li>';
-      return;
-    }
+    if (!state.rows.has(state.selected)) state.selected = rows[0]?.id || null;
     host.innerHTML = rows.map((row) => {
-      const marks = [
-        kindBadge(row),
-        row.source === 'bundled' ? badge('官方签名', 'blue') : '',
-        row.updateAvailable ? badge('可更新') : '',
-        row.orphan ? badge('目录外组件', 'warn') : '',
-      ].join('');
-      const detail = rowDetail(row);
-      return `<li class="comp-row" data-comp-row="${escapeHtml(row.id)}">
-        <div class="row-main">
-          <span class="comp-icon" aria-hidden="true">${iconGlyph(row)}</span>
-          <div class="comp-copy">
-            <div class="row-title">${escapeHtml(row.name || row.id)} ${marks}</div>
-            <div class="row-meta">${rowMeta(row)}</div>
-            ${detail ? `<div class="row-meta">${detail}</div>` : ''}
-            <p class="progress" data-comp-progress hidden></p>
-          </div>
-        </div>
-        <div class="comp-status">
-          ${stateBadge(row)}
-          <div class="row-actions">${rowActions(row)}</div>
-        </div>
-      </li>`;
+      return `<li><button type="button" class="component-item" data-comp-select="${escapeHtml(row.id)}" aria-pressed="${row.id === state.selected}">
+        <span class="comp-icon" aria-hidden="true">${iconGlyph(row)}</span><span class="comp-copy"><strong>${escapeHtml(row.name || row.id)}</strong><span class="row-meta">${row.updateAvailable ? '有更新可用' : (row.kind === 'tool' ? '独立工具' : '独立服务')}</span>${state.pending.has(row.id) ? badge('处理中') : stateBadge(row)}</span></button></li>`;
     }).join('');
-    host.querySelectorAll('[data-comp-action]').forEach((button) => {
+    host.querySelectorAll('[data-comp-select]').forEach((button) => {
       button.addEventListener('click', () => {
-        void runAction(button.dataset.compAction, button.dataset.compId);
+        state.selected = button.dataset.compSelect;
+        host.querySelectorAll('[data-comp-select]').forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+        renderDetail();
       });
     });
+    renderDetail();
+    renderOverview();
   }
 
   function setHint(text) {
@@ -206,6 +194,8 @@
       setHint(typeof window.dshdErrText === 'function'
         ? window.dshdErrText(error, '组件列表读取失败')
         : '组件列表读取失败');
+      const overview = document.getElementById('home-components-list');
+      if (overview && !state.rows.size) overview.textContent = '组件列表读取失败，可在组件页重试刷新。';
     }
   }
 
@@ -261,6 +251,8 @@
       }
     }
     state.pending.add(id);
+    state.progress.set(id, '处理中…');
+    renderRows({ components: [...state.rows.values()] });
     const progress = progressNode(id);
     if (progress) {
       progress.hidden = false;
@@ -271,6 +263,7 @@
       if (result && result.ok === false) {
         const text = ACTION_ERRORS[result.error] || result.message || result.error || '操作失败';
         setHint(`${id}：${text}`);
+        state.progress.set(id, text);
         if (progress) {
           progress.hidden = false;
           progress.textContent = text;
@@ -282,8 +275,10 @@
       setHint(typeof window.dshdErrText === 'function'
         ? window.dshdErrText(error, '操作失败')
         : '操作失败');
+      state.progress.set(id, state.hintNode.textContent);
     } finally {
       state.pending.delete(id);
+      renderRows({ components: [...state.rows.values()] });
       void refresh();
     }
   }
@@ -292,6 +287,7 @@
     if (!payload || !payload.id) {
       return;
     }
+    state.progress.set(payload.id, progressText(payload));
     const node = progressNode(payload.id);
     if (node) {
       node.hidden = false;
@@ -318,36 +314,36 @@
     state.el = el;
     state.shell = shell || null;
     state.pending.clear();
+    state.progress.clear();
+    state.selected = null;
     el.innerHTML = `
       <header class="page-head">
         <h2>组件</h2>
-        <span class="head-line row-meta" data-comp-route hidden>当前线路 <b class="cur-line"></b></span>
+        <button type="button" class="ghost small" data-comp-refresh>刷新列表</button>
       </header>
-      <p class="lede lede-block">项目维护的独立工具与服务组件；进程独立于桌面端，文件与数据写在启动器自有目录，不进入桌面端插件名单。</p>
-      <div class="actions">
-        <button type="button" class="ghost" data-comp-refresh>刷新</button>
-      </div>
-      <ul class="list" data-comp-list></ul>
-      <p class="progress" data-comp-hint hidden></p>`;
+      <p class="lede lede-block component-lede">管理独立工具与服务，按需安装和运行。</p>
+      <p class="hint" data-comp-hint role="status" hidden></p>
+      <div class="component-layout"><aside class="component-list"><div class="list-label">可用组件</div><ul data-comp-list aria-label="组件列表"></ul><p class="row-meta list-footnote">组件独立于桌面端插件。</p></aside><section class="component-detail" aria-label="组件详情" data-comp-detail><p class="row-meta component-empty">正在读取组件…</p></section></div>`;
     state.list = el.querySelector('[data-comp-list]');
+    state.detail = el.querySelector('[data-comp-detail]');
     state.hintNode = el.querySelector('[data-comp-hint]');
     el.querySelector('[data-comp-refresh]').addEventListener('click', () => void refresh());
-    const routeNode = el.querySelector('[data-comp-route]');
-    if (routeNode && state.shell && typeof state.shell.launcherStatus === 'function') {
-      void state.shell.launcherStatus().then((status) => {
-        const routes = Array.isArray(status?.routes) ? status.routes : [];
-        const current = routes.find((route) => route.id === status?.downloadRoute);
-        if (current) {
-          routeNode.querySelector('.cur-line').textContent = current.label || current.id;
-          routeNode.hidden = false;
-        }
-      }).catch(() => {});
-    }
     if (state.shell && typeof state.shell.onComponentsProgress === 'function') {
       state.unsubscribe = state.shell.onComponentsProgress(onProgress);
     }
     void refresh();
   }
 
-  window.__launcherComponents = { mount };
+  function syncStatus(snapshot) {
+    if (!Array.isArray(snapshot) || !state.rows.size) return;
+    const installed = new Map(snapshot.map((row) => [row.id, row]));
+    const changed = [...state.rows.values()].some((row) => {
+      const current = installed.get(row.id);
+      return current ? row.state !== current.state || row.installedVersion !== current.version : Boolean(row.installedVersion);
+    }) || snapshot.some((row) => !state.rows.has(row.id));
+    if (changed) void refresh();
+    else renderOverview();
+  }
+
+  window.__launcherComponents = { mount, syncStatus };
 })();
