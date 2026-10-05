@@ -54,21 +54,61 @@ test('boot stays opaque underneath the token-driven desktop reveal', () => {
   assert.match(src, /HARNESS_FADE_CSS/);
   assert.match(src, /insertCSS\(HARNESS_FADE_CSS\)/);
   assert.match(src, /data-dshd-harness-fade/);
-  assert.match(src, /calc\(var\(--ds-transition-duration, 0\.2s\) \* 2\)/);
-  assert.match(src, /transitionend/);
+  const revealCss = fs.readFileSync(path.join(__dirname, '../renderer/boot-reveal.css'), 'utf8');
+  assert.match(revealCss, /calc\(var\(--ds-transition-duration, 0\.2s\) \* 3\)/);
+  assert.match(src, /animation\.finished/);
   assert.doesNotMatch(src, /setTimeout\(finish, HARNESS_FADE_MS\)/);
   assert.doesNotMatch(css, /body\[data-harness-fade\] \.scene/);
-  assert.match(src, /prefers-reduced-motion: reduce/);
+  assert.match(revealCss, /prefers-reduced-motion: reduce/);
 });
 
-function revealFixture({ rejectCss = false, chrome = Promise.resolve(), animation = Promise.resolve() } = {}) {
+test('curtain waits for native animation completion instead of a wall-clock cutoff', async () => {
+  const source = fs.readFileSync(path.join(__dirname, 'window.js'), 'utf8');
+  const snippet = source.slice(source.indexOf('const HARNESS_FADE_'), source.indexOf('async function revealHarnessView'));
+  const { script, prepare } = vm.runInNewContext(`${snippet}\n({ script: HARNESS_FADE_SCRIPT, prepare: HARNESS_CURTAIN_PREPARE_SCRIPT })`);
+  const css = fs.readFileSync(path.join(__dirname, '../renderer/boot-reveal.css'), 'utf8');
+  assert.doesNotMatch(css, /clip-path|transition: opacity/);
+  assert.match(css, /will-change: transform/);
+  let sea, curtains, completed = false, removed = false, finish;
+  const finished = new Promise(resolve => { finish = resolve; });
+  const states = [];
+  const root = { setAttribute(_name, state) { states.push(state); }, toggleAttribute() {} };
+  class Image { decode() { return Promise.resolve(); } cloneNode() { return new Image(); } }
+  const document = {
+    documentElement: root, body: { append() {} },
+    getElementById: () => curtains, querySelector: () => sea,
+    createElement() {
+      const element = { setAttribute() {}, append() {}, remove() { removed = true; }, getAnimations: () => [{ finished }] };
+      Object.defineProperty(element, 'id', { set() { curtains = element; } });
+      Object.defineProperty(element, 'className', { set(value) { if (value.includes('-sea')) sea = element; } });
+      return element;
+    },
+  };
+  const context = { document, Image, getComputedStyle: () => ({ transform: 'none' }),
+    requestAnimationFrame: callback => setImmediate(callback), setTimeout, clearTimeout };
+  await vm.runInNewContext(prepare('data:image/png;base64,snapshot', false), context);
+  assert.deepEqual(states, ['ready']);
+  // A pending first frame must not be treated as a completed transition.
+  context.setTimeout = () => { throw new Error('Animation must not use a wall-clock deadline'); };
+  const promise = vm.runInNewContext(script, context).then(() => { completed = true; });
+  await new Promise(setImmediate);
+  assert.equal(completed, false);
+  assert.equal(removed, false);
+  finish();
+  await promise;
+  assert.equal(completed, true);
+  assert.equal(removed, true);
+  assert.deepEqual(states, ['ready', 'in']);
+});
+
+function revealFixture({ rejectCss = false, chrome = Promise.resolve(), animation = Promise.resolve(), reduced = false } = {}) {
   const events = [];
   const view = { webContents: {
     isDestroyed: () => false,
     insertCSS() { events.push('hold-css'); return rejectCss ? Promise.reject(new Error('injection')) : Promise.resolve('css-key'); },
     removeInsertedCSS() { events.push('remove-css'); return Promise.resolve(); },
     executeJavaScript(script) {
-      if (script.includes('transitionend')) { events.push('animate'); return animation; }
+      if (script.includes('matchMedia')) return Promise.resolve(reduced);
       events.push(script.includes('removeAttribute') ? 'clear-hold' : 'hold');
       return Promise.resolve();
     },
@@ -77,13 +117,31 @@ function revealFixture({ rejectCss = false, chrome = Promise.resolve(), animatio
     isDestroyed: () => false,
     getBrowserViews: () => [],
     addBrowserView() { events.push('attach'); },
-    setTopBrowserView() {},
-    webContents: { executeJavaScript: () => Promise.resolve() },
+    setTopBrowserView() {}, isMaximized: () => false, getContentBounds: () => ({width: 1440, height: 920}),
+    removeBrowserView() { events.push('remove-curtain'); },
+    webContents: { executeJavaScript: () => Promise.resolve(), capturePage: () => Promise.resolve({ toDataURL: () => 'data:image/png;base64,snapshot' }) },
   };
   const source = fs.readFileSync(path.join(__dirname, 'window.js'), 'utf8');
   const snippet = source.slice(source.indexOf('const HARNESS_FADE_'), source.indexOf('function watchPluginBoot'));
   const context = {
     harnessView: view, harnessRevealed: false,
+    rendererFile: name => name,
+    BrowserWindow: class {
+      constructor() {
+        events.push('create-curtain');
+        this.webContents = {
+          isDestroyed: () => false, loadFile: () => Promise.resolve(), capturePage() { events.push('paint-curtain'); return Promise.resolve(); }, close() { events.push('close-curtain'); },
+          executeJavaScript(script) {
+            if (script.includes('sea.getAnimations()')) { events.push('animate'); return animation; }
+            events.push('prepare-curtain'); return Promise.resolve();
+          },
+        };
+      }
+      setBounds() {} setIgnoreMouseEvents() {} showInactive() {}
+      loadFile() { return Promise.resolve(); }
+      isDestroyed() { return false; }
+      destroy() { events.push('close-curtain'); }
+    },
     setBootHarnessCovered(_win, covered) { events.push(covered ? 'covered' : 'uncovered'); },
     layoutHarnessView() { events.push('layout'); },
     desktopPet: () => null,
@@ -109,11 +167,20 @@ test('reveal waits for chrome before layout and renderer completion before cover
   chromeReady();
   await new Promise(setImmediate);
   assert.ok(fixture.events.includes('animate'));
+  assert.ok(fixture.events.indexOf('paint-curtain') < fixture.events.indexOf('animate'));
   assert.ok(!fixture.events.includes('covered'));
   fadeDone();
   await outcome;
   assert.ok(fixture.events.indexOf('covered') > fixture.events.indexOf('animate'));
   assert.ok(fixture.events.includes('remove-css'));
+});
+
+test('reduced motion never captures or creates a curtain renderer', async () => {
+  const fixture = revealFixture({ reduced: true });
+  await fixture.reveal(fixture.win);
+  assert.ok(!fixture.events.includes('create-curtain'));
+  assert.ok(!fixture.events.includes('animate'));
+  assert.ok(fixture.events.includes('covered'));
 });
 
 test('failed fade injection still mounts a visible full-size desktop', async () => {

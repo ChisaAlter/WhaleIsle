@@ -175,7 +175,7 @@ composer 上四个浮层共用此时长：加号斜杠菜单、权限 `Menu`、�
 | 产品面 | 行为 | 源 |
 | --- | --- | --- |
 | Toast | 160ms 滑入，停留 3s，再 1s 淡出；组件自己计时卸载 | `Toast.tsx` / `Toast.module.css`。输入栏附件上限、模型选择失败等 |
-| 桌面启动页 | 海平线场景：亮星 `twinkle` 5.5s 呼吸；`brand-sheen` 6s 周期扫掠（2s 扫 + 4s 停）；水下微粒 `drift` 缓沉；启动态省略号三点 `breath` 依次呼吸；ticker 点 `pulse`；日志抽屉 `drawer-fade` 0.18s 遮罩 + `drawer-rise` 0.24s 升起；boot→harness 在窗控与全尺寸布局就绪后，以 `2 × --ds-transition-duration`（默认 400ms）和 `--ds-ease-in-out` 淡入，boot 保持不透明到过渡结束；减弱动效直切，不缩放或模糊 | [`boot.css`](../src/renderer/boot.css)。海平线画布属文档化例外，见 [桌面启动页](design-language.md#桌面启动页) |
+| 桌面启动页 | 海平线场景：亮星 `twinkle` 5.5s 呼吸；`brand-sheen` 6s 周期扫掠（2s 扫 + 4s 停）；水下微粒 `drift` 缓沉；启动态省略号三点 `breath` 依次呼吸；ticker 点 `pulse`；日志抽屉 `drawer-fade` 0.18s 遮罩 + `drawer-rise` 0.24s 升起；boot→harness 在窗控与全尺寸布局就绪后，以 `3 × --ds-transition-duration`（默认 600ms）和 `--ds-ease-in-out` 将启动页快照按 62% 海天线分成上下两片，以 `transform: translateY(-100%) / translateY(100%)` 移出窗口，露出原尺寸主界面；只移动独立透明覆盖窗口中的两片静态图层，不对整个主界面动画裁切，boot 保持不透明到过渡结束；减弱动效直切，不缩放或模糊 | [`boot.css`](../src/renderer/boot.css) / [`boot-reveal.css`](../src/renderer/boot-reveal.css)。海平线画布属文档化例外，见 [桌面启动页](design-language.md#桌面启动页) |
 | 关闭遮罩 | 本地 0.85s 无限旋转；不读 `--ds-motion-*`，也没有减弱动效分支 | [`closing-overlay.js`](../src/main/closing-overlay.js) |
 | dshbot 机器人头像 | 思考时用同命令数路径连续压扁/鼓边/拉长/侧倾（软泥）；眼白眨眼与瞳孔只动 `transform`；上传图 `scale` 脉冲。缓动走 `--ds-ease-in-out`，减弱动效全停 | [`vendor/dshbot/client/client.js`](../vendor/dshbot/client/client.js)。不得扩散到官方 Web UI 弹层 |
 | Agent 预设席位入场 | 图标 150ms / 文案 400ms，`cubic-bezier(0.16, 1, 0.3, 1)` 一次性入场；减弱动效停 | `AgentPresetSeat.module.css` |
