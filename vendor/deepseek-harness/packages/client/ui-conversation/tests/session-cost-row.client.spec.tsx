@@ -883,10 +883,12 @@ describe('subagent summary line', () => {
     const row = disclosureOf()
     const title = row.querySelector<HTMLElement>('[class*="subagentTitle"]')
     expect(title?.textContent).toBe('Subagents (1) · Cost ¥3.00 · Hit 0 (0%) · miss 1M · output 0')
-    // The affordance is the row's last child and directly follows the text, so
-    // the text is what gives way when the row is narrow.
-    expect(row.lastElementChild).toBe(title?.nextElementSibling)
-    expect(row.lastElementChild?.tagName.toLowerCase()).toBe('svg')
+    // TextShimmer wraps the content; the affordance must still directly follow
+    // the title and finish that content, so only the text gives way when narrow.
+    const affordance = title?.nextElementSibling
+    expect(row.lastElementChild?.contains(title!)).toBe(true)
+    expect(title?.parentElement?.lastElementChild).toBe(affordance)
+    expect(affordance?.tagName.toLowerCase()).toBe('svg')
   })
 
   it('carries the one-line guarantee in CSS, where jsdom cannot lay it out', () => {

@@ -18,10 +18,10 @@
 - Windows 主窗与启动器通过 `applyWindowsAppDetails` 先写图标、重启命令和产品名，再仅写 AppID；第二次调用触发读取完整品牌信息的任务栏刷新，两次均在首次显示前完成。
 - 安装版 Windows 在预建窗口前检查旧通知自动生成、与正式 GUI ID 冲突的 `Electron.lnk`。固定当前用户开始菜单路径及普通文件 / Electron 目标 / 空参数 / 默认图标全部匹配后，将原字节移入 userData 唯一 `Electron.lnk.backup` 备份，不保留 `.lnk` 扩展名；读错或身份不符不修改。只有完成移动才异步通知 Shell 该旧路径 → 备份路径（`SHCNE_RENAMEITEM`、`SHCNF_PATHW | SHCNF_FLUSH`），等待事件投递；原生回调最多等待 500ms，通知失败或超时仍保留备份并继续启动。期限只结束启动等待，不取消原生调用，迟到回调不翻转超时结果；投递完成不证明任务栏像素正确。不匹配分支不加载原生桥，不清全局缓存、不重启 Explorer。原始 Electron 源码通知已禁止重新注册，用户固定项及其它快捷方式保留。见[任务栏身份决定](../../decisions/implemented/bug-fix/2026-10-01-windows-taskbar-identity.md)。
 - `HarnessController` 拥有子进程与揭示时机；boot 只消费事件。  
-- 运行时链接的批量检查、恢复与清理由异步文件 API 执行，避免同步循环占住 Electron 主线程；每五秒向既有日志报告完成数/总数。准备阶段可在文件操作之间取消，目录替换开始后完成最终链接或回滚才返回。详见[安装恢复决定](../../decisions/implemented/bug-fix/2026-09-29-installation-recovery.md)。
+- Windows Setup 在暂存安装目录完成 Harness 归档摘要核验、提取和最终路径 junction 准备，应用启动优先使用 `resources/vendor/deepseek-harness`，不重复写入 userData 运行时树。`pack --dir`、macOS 和旧 tar 安装布局仍走启动提取；该路径的链接批量检查、恢复与清理由异步文件 API 执行，每五秒向既有日志报告完成数/总数。准备阶段可在文件操作之间取消，目录替换开始后完成最终链接或回滚才返回。详见[安装恢复决定](../../decisions/implemented/bug-fix/2026-09-29-installation-recovery.md)。
 - 恢复与手动重启共享未完成的 boot 导航；新 Harness 揭示前必须等待旧导航完成，避免迟到的启动页覆盖新界面。
 - 插件装载进度留在 boot，不切官方加载页。  
-- 揭示先持桌面透明，等待窗控注入与全尺寸布局产帧，再按动效 token 淡入；boot 保持不透明，渲染侧报告过渡完成后才遮盖。取消/替换后的旧回调无效，减弱动效直切；失败回退也须挂载并解除透明，而非只隐藏 boot。
+- 揭示先持桌面透明，等待窗控注入与全尺寸布局产帧，捕获启动页快照并按 62% 海天线分为上下两片；主界面在快照后方保持原位，独立透明覆盖窗口中的两片静态图层按三倍基础动效 token 向上下移出窗口；boot 保持不透明，渲染侧报告过渡完成后才遮盖。取消/替换后的旧回调无效，减弱动效直切；失败回退也须挂载并清理快照遮罩与透明状态，而非只隐藏 boot。
 - 无账号或模型密钥也直接揭示工作区，不弹原版欢迎窗；登录和密钥配置留在设置。后台账号观察保留授权外开与 Platform 身份刷新，退出/过期不隐藏工作区。冒烟检测到欢迎窗即失败，不自动点击跳过，见 [desktop-welcome](../../features/desktop-welcome.md)。
 - 主 frame preload 的 `dshDesktop.onboarding: false` 同时关闭首次用途/过程引导，不创建 controller、不写完成标记或默认偏好；通用设置保留这些选项。冒烟不代点继续/稍后配置。
 - 流程详述：[../flows/boot-to-ready.md](../flows/boot-to-ready.md)
@@ -31,7 +31,7 @@
 
 - `src/main/index.js`、`launcher-gate.js`、`harness-controller.js`、`dsh.js`、`harness-extract.js`、`window.js`、`chrome.js`、`../shared/dsh-home.js`、`../shared/themes.js`
 - `src/renderer/launcher.html` / `launcher.js` / `launcher.css`
-- `src/renderer/boot.html` / `boot.js` / `boot.css` / `boot-tokens.css`
+- `src/renderer/boot.html` / `boot.js` / `boot.css` / `boot-tokens.css`；开幕覆盖层 `boot-reveal.html` / `boot-reveal.css`
 
 ## 退出/更新保护（P1）
 
@@ -47,8 +47,8 @@
 - 启动器走官方 `--dsw-alias-*`；`--boot-*` 不得用于启动器 / 设置 / 官方 UI / 关闭遮罩。
 - 启动器浅色/深色跟官方 dsh web 表（`data-ds-dark-theme`），不把 Appearance 壁纸种子写进 token。
 - 桌面家目录见 [dsh-home.md](dsh-home.md)：`userData/dsh-home`，不读官方 `~/.dsh`。
-- 打包运行时目录 `userData/runtime/<version>` 用 pin+归档戳校验；同版本覆盖安装不得沿用旧 Harness 树。
-- 首次/更新后提取在同卷 `.extract-*` 临时目录完成，按未压缩归档的 115% + 256 MiB 预留检查用户数据盘；每五秒记录耗时，十五分钟超时，停止操作会取消 tar。提取进程关闭后才清理半成品，校验通过才替换正式树并重建 Windows junction；`.previous` 保存中断替换的恢复基线。已验证复用路径不要求额外提取空间。
+- 安装目录内可用的 Harness 优先于 `userData/runtime/<version>`，因此同版本覆盖安装不会被旧的 userData 提取树遮蔽。用户插件、会话与配置仍保存在桌面家目录。
+- 启动时提取路径的 `userData/runtime/<version>` 用 pin+归档戳校验；同版本不同归档内容不得沿用旧树。首次/更新后提取在同卷 `.extract-*` 临时目录完成，按未压缩归档的 115% + 256 MiB 预留检查用户数据盘；每五秒记录耗时，十五分钟超时，停止操作会取消 tar。提取进程关闭后才清理半成品，校验通过才替换正式树并重建 Windows junction；`.previous` 保存中断替换的恢复基线。安装目录直接运行和已验证复用路径不要求额外提取空间。
 
 ## 门槛
 

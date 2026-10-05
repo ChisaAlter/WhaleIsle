@@ -216,6 +216,8 @@ function launcherApi(renderer) {
     componentsUpdate: invoke(renderer, 'shell:components-update'),
     componentsRollback: invoke(renderer, 'shell:components-rollback'),
     componentsUninstall: invoke(renderer, 'shell:components-uninstall'),
+    componentsUninstallInfo: invoke(renderer, 'shell:components-uninstall-info'),
+    componentsOpen: invoke(renderer, 'shell:components-open'),
     onComponentsProgress: subscribe(renderer, 'shell:components-progress'),
     skipUserPlugins: invoke(renderer, 'shell:start-desktop-skipped'),
     retryFullPlugins: invoke(renderer, 'shell:retry-full-plugins'),

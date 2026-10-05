@@ -178,3 +178,37 @@ it('keeps an outstanding start open until the request settles', async () => {
   await act(async () => { pending.resolve(undefined); await pending.promise })
   expect(screen.getByRole('button', { name: en.signIn }).hasAttribute('disabled')).toBe(false)
 })
+
+// Workspace login remains outside native welcome analytics even if a caller forwards a sender.
+it('does not report workspace login views or login choices', async () => {
+  const track = vi.fn()
+  const props = { ...dialogProps(null), track }
+  const view = render(<SignInDialog {...props} />)
+  view.rerender(<SignInDialog {...props} colorScheme="light" />)
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.signIn })) })
+  expect(props.start).toHaveBeenCalledOnce()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.addApiKey })) })
+  expect(props.useApiKey).toHaveBeenCalledOnce()
+  expect(track).not.toHaveBeenCalled()
+})
+
+it.each([en, zh])('shows network advice only when the login request received no response', async (copy) => {
+  const props = mount({ id, phase: 'failed', errorCode: 'no-response' }, copy)
+  await expect(`${screen.getByRole('dialog').textContent}\n`).toMatchFileSnapshot(`./expected/login-no-response-${copy === en ? 'en' : 'zh'}.txt`)
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.retry })) })
+  expect(props.start).toHaveBeenCalledOnce()
+})
+
+it.each(['network', 'protocol', 'storage'] as const)('keeps generic copy for %s failures', (errorCode) => {
+  mount({ id, phase: 'failed', errorCode })
+  expect(screen.getByText(en.failed)).toBeTruthy()
+  expect(screen.queryByText(en.noResponse)).toBeNull()
+})
+
+it('does not reuse network advice for a subsequent start failure', async () => {
+  const props = mount({ id, phase: 'failed', errorCode: 'no-response' })
+  props.start.mockRejectedValueOnce(new Error('RPC failed'))
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.retry })) })
+  expect(screen.getByText(en.failed)).toBeTruthy()
+  expect(screen.queryByText(en.noResponse)).toBeNull()
+})

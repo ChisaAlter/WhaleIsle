@@ -55,3 +55,17 @@
 
 - id: pwsh-sandbox
   disabled: true
+
+# Pin the provider too: the default Windows runner adds an ACL diagnosis skill
+# to the recorded context. Reuse the ordinary replay runner to keep this retry
+# scenario's input identical across platforms without changing its assertions.
+- id: sandbox
+  name: '@deepseek-ai/dsh-sandbox-local'
+  config:
+    runnerCommand:
+      - bash
+      - -c
+      - while [ "$1" != "--" ]; do shift; done; shift; exec "$@"
+      - passthrough-runner
+    runnerFailureSignatures:
+      - 'passthrough-runner: profile rejected'

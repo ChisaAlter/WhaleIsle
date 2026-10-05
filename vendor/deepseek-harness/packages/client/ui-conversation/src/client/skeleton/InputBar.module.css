@@ -12,11 +12,21 @@
 
 .dock {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  max-width: 100%;
+  gap: 4px 12px;
+  width: 100%;
+  max-width: calc(var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width)) - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance));
   padding-top: 4px;
+}
+
+.dock[data-composer-footer] {
+  min-height: calc(24px + var(--dsh-content-font-delta-secondary, 0px));
+}
+
+.dock:empty {
+  display: none;
 }
 
 .hero .dock:empty {

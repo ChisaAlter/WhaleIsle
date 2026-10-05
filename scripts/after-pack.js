@@ -10,6 +10,8 @@ const {
 const { DESKTOP_PACKAGES } = require('../src/shared/harness-desktop-forks');
 const { runSkipComposeContract } = require('./check-skip-compose-contract');
 const { assembleRuntimeInstances } = require('./runtime-instance-graph');
+const { selectHarnessRuntimeSources, prunePluginDevDependencies, runtimeFileExclusion,
+  pruneRuntimeFiles, isLicenseDocumentation, pruneOfficeRuntime, officePayloadDigest } = require('./production-runtime');
 const { RUNTIME_LINKS, removeRuntimeLinks } = require('../src/shared/runtime-links');
 const { writeRuntimeArchiveIdentity } = require('../src/shared/harness-runtime-identity');
 const {
@@ -177,7 +179,7 @@ function restoreVendoredPluginNodeModules(projectDir, resources, packageName) {
   if (missing.length === 0) {
     return { restored: false, reason: 'already-present' };
   }
-  fs.cpSync(srcNm, path.join(destPkg, 'node_modules'), { recursive: true, force: true });
+  fs.cpSync(srcNm, path.join(destPkg, 'node_modules'), { recursive: true, force: true, dereference: true });
   // The same closure check decides whether the copy actually repaired the
   // tree; a partial vendored node_modules must not read as a restore.
   const unresolved = missingPluginRuntimeClosure(destPkg);
@@ -370,13 +372,16 @@ function isShippedPresetMarkdown(src, root, base) {
  * - flat: 拍平模式——.pnpm store 条目提升到 node_modules/<pkg>（短路径，避免 NSIS
  *   长路径失败），全部内容保留（不丢包）
  */
-function collectFiles(root, destRoot, expandNested = false, flat = false, omitRootDirs = null) {
+function collectFiles(root, destRoot, expandNested = false, flat = false, omitRootDirs = null, target = {}) {
   const files = [];
+  const manifestFile = path.join(root, 'package.json');
+  const packageName = fs.existsSync(manifestFile) ? JSON.parse(fs.readFileSync(manifestFile, 'utf8')).name : '';
   const ancestors = new Set();
   const visitedDirectories = new Set();
   const topNodeModules = path.join(path.resolve(destRoot), 'node_modules');
 
   function walk(src, dest) {
+    if (runtimeFileExclusion(packageName, path.relative(root, src), target.platform, target.arch)) return;
     if (omitRootDirs && omitRootDirs.has(path.relative(root, src).split(path.sep)[0])) {
       return;
     }
@@ -432,10 +437,11 @@ function collectFiles(root, destRoot, expandNested = false, flat = false, omitRo
 
     if (lstat.isFile()) {
       const base = path.basename(src);
-      if (/\.(map|tsbuildinfo|md|d\.ts)$/i.test(base) && !isShippedPresetMarkdown(src, root, base)) {
+      if (/\.(map|tsbuildinfo|md|d\.ts)$/i.test(base) && !isShippedPresetMarkdown(src, root, base)
+          && !isLicenseDocumentation(src)) {
         return;
       }
-      if (/^(license|licence|changelog|changes|authors|contributing)(\.|$)/i.test(base)) {
+      if (/^(changelog|changes|authors|contributing)(\.|$)/i.test(base)) {
         return;
       }
       files.push({ src, dest });
@@ -523,13 +529,32 @@ async function overlayWorkspaceRuntimePackages(harnessSrc, harnessDest) {
   return { packages, files, sources };
 }
 
+/** 拍平后多个真实目录会映射到同一 dest（collectFiles 只按 src 去重）。并发写同一文件会互相截断，留下「合法内容 + 尾部碎片」的损坏文件 —— 按 dest 取唯一胜出者。pnpm store 路径（.pnpm/**）输给顶层 hoisted 副本；同为顶层则先来者赢。 */
+function pickCopyWinners(files) {
+  const winners = new Map();
+  const isStorePath = (file) => file.split(path.sep).includes('.pnpm');
+  for (const item of files) {
+    const key = path.resolve(item.dest);
+    const prev = winners.get(key);
+    if (!prev || (isStorePath(prev.src) && !isStorePath(item.src))) {
+      winners.set(key, item);
+    }
+  }
+  return [...winners.values()];
+}
+
 /** 并发复制（fs.copyFile 总是解引用链接，复制目标内容；EBUSY 重试以对抗杀软扫描） */
 async function copyFiles(files, limit = 32) {
+  const items = pickCopyWinners(files);
+  const dropped = files.length - items.length;
+  if (dropped > 0) {
+    console.log(`（按目标路径去重：丢弃 ${dropped} 个重复来源）`);
+  }
   let idx = 0;
   let retried = 0;
   const workers = Array.from({ length: limit }, async () => {
-    while (idx < files.length) {
-      const item = files[idx];
+    while (idx < items.length) {
+      const item = items[idx];
       idx += 1;
       fs.mkdirSync(longPath(path.dirname(item.dest)), { recursive: true });
       for (let attempt = 0; ; attempt += 1) {
@@ -551,7 +576,7 @@ async function copyFiles(files, limit = 32) {
   if (retried) {
     console.log(`（EBUSY 重试 ${retried} 次）`);
   }
-  return files.length;
+  return items.length;
 }
 
 function deployCliEntries(deployDir) {
@@ -1190,10 +1215,13 @@ async function repairFlattenedVersionIsolation(harnessSrc, harnessDest, workspac
   throw new Error('工作区运行时依赖隔离未收敛');
 }
 
-function assembleCanonicalRuntime(harnessSrc, harnessDest, sources) {
+function assembleCanonicalRuntime(harnessSrc, harnessDest, sources, target = {}) {
   return assembleRuntimeInstances(harnessSrc, harnessDest, sources, {
-    resolvePackageFrom, runtimeDependencyEntries, collectFiles, copyFiles,
-    runtimeOmitRootDirs, samePublishedPackageFiles, devOnlyNames: DEV_ONLY_WORKSPACE_NAMES,
+    resolvePackageFrom, runtimeDependencyEntries,
+    collectFiles: (...args) => collectFiles(...args, target), copyFiles,
+    runtimeOmitRootDirs,
+    samePublishedPackageFiles: (...args) => samePublishedPackageFiles(...args, target),
+    devOnlyNames: DEV_ONLY_WORKSPACE_NAMES,
   });
 }
 
@@ -1243,11 +1271,11 @@ function runtimeOmitRootDirs(source, harnessSrc) {
   return new Set(['node_modules']);
 }
 
-function samePublishedPackageFiles(source, target, harnessSrc) {
+function samePublishedPackageFiles(source, target, harnessSrc, buildTarget = {}) {
   if (!fs.existsSync(path.join(target, 'package.json'))) { return false; }
   const omit = runtimeOmitRootDirs(source, harnessSrc);
-  const sourceFiles = collectFiles(source, source, false, false, omit);
-  const targetFiles = collectFiles(target, target, false, false, omit);
+  const sourceFiles = collectFiles(source, source, false, false, omit, buildTarget);
+  const targetFiles = collectFiles(target, target, false, false, omit, buildTarget);
   if (sourceFiles.length !== targetFiles.length) { return false; }
   const targetByRel = new Map(targetFiles.map((item) => [path.relative(target, item.src), item.src]));
   for (const item of sourceFiles) {
@@ -1421,13 +1449,95 @@ function resolveResourcesDir(context) {
   return path.join(context.appOutDir, 'resources');
 }
 
-function copyBundledNode(destDir) {
-  const src = [
-    process.env.NODE_BINARY,
-    process.execPath,
-    'C:\\Program Files\\nodejs\\node.exe',
-    'C:\\Program Files (x86)\\nodejs\\node.exe',
-  ].find((candidate) => candidate && fs.existsSync(candidate) && !/electron/i.test(candidate));
+const NODE_DIST_MIRROR = process.env.DSH_NODE_DIST_MIRROR || 'https://nodejs.org/dist';
+
+/** 官方独立 Node 只链系统库；Homebrew/源码装的瘦二进制会列出 libnode 与 homebrew、/opt/*、/usr/local/* 前缀依赖 —— 打进安装包后目标机没有这些前缀库就 SIGABRT。 */
+function nodeBinaryHasExternalDylibs(listing) {
+  return /libnode|\/opt\/|homebrew|\/usr\/local\//i.test(listing);
+}
+
+function probeNodeDylibListing(binPath) {
+  const tool = process.platform === 'darwin' ? 'otool' : 'ldd';
+  const args = process.platform === 'darwin' ? ['-L', binPath] : [binPath];
+  const result = spawnSync(tool, args, { encoding: 'utf8', timeout: 15000 });
+  return result.status === 0 ? result.stdout : null;
+}
+
+function bundledNodePinnedVersion(projectDir) {
+  try {
+    const pinned = fs.readFileSync(path.join(projectDir, '.nvmrc'), 'utf8').trim();
+    const match = /^v?(\d+\.\d+\.\d+)/.exec(pinned);
+    return match ? match[1] : process.versions.node;
+  } catch {
+    return process.versions.node;
+  }
+}
+
+function downloadSelfContainedNode(cacheDir, version) {
+  const tuple = `node-v${version}-${process.platform}-${process.arch}`;
+  const bin = path.join(cacheDir, tuple, 'bin', 'node');
+  if (fs.existsSync(bin)) {
+    return bin;
+  }
+  const stage = path.join(cacheDir, `.tmp-${process.pid}`);
+  fs.rmSync(stage, { recursive: true, force: true });
+  try {
+    fs.mkdirSync(path.join(stage, tuple, 'bin'), { recursive: true });
+    const archive = path.join(stage, `${tuple}.tar.gz`);
+    const url = `${NODE_DIST_MIRROR}/v${version}/${tuple}.tar.gz`;
+    console.log(`本机 node 非自包含（瘦二进制），下载官方构建 ${url}`);
+    execFileSync('curl', ['-fsSL', '--retry', '3', url, '-o', archive], { stdio: 'inherit' });
+    execFileSync('tar', ['-xzf', archive, '-C', stage, `${tuple}/bin/node`], { stdio: 'inherit' });
+    fs.mkdirSync(path.dirname(bin), { recursive: true });
+    fs.renameSync(path.join(stage, tuple, 'bin', 'node'), bin);
+    fs.chmodSync(bin, 0o755);
+    const probe = spawnSync(bin, ['--version'], { encoding: 'utf8' });
+    const actual = (probe.stdout || '').trim();
+    if (probe.status !== 0 || actual !== `v${version}`) {
+      throw new Error(`官方 Node 构建自检失败：期望 v${version}，实际 ${actual || probe.stderr || '无法运行'}`);
+    }
+    return bin;
+  } finally {
+    fs.rmSync(stage, { recursive: true, force: true });
+  }
+}
+
+function bundledPosixNode(projectDir) {
+  const envBinary = process.env.NODE_BINARY;
+  if (envBinary) {
+    if (!fs.existsSync(envBinary)) {
+      throw new Error(`NODE_BINARY 不存在：${envBinary}`);
+    }
+    return envBinary;
+  }
+  if (!/electron/i.test(process.execPath)) {
+    const listing = probeNodeDylibListing(process.execPath);
+    if (listing !== null && !nodeBinaryHasExternalDylibs(listing)) {
+      return process.execPath;
+    }
+  }
+  const version = bundledNodePinnedVersion(projectDir);
+  return downloadSelfContainedNode(
+    path.join(projectDir, 'node_modules', '.cache', 'dshd-node-dist'),
+    version,
+  );
+}
+
+function copyBundledNode(destDir, projectDir = process.cwd()) {
+  // Both the Harness host and Office use the locked standalone Windows Node.
+  const shared = path.join(destDir, 'runtime', 'primary-runtime', 'dependencies', 'node', 'bin', 'node.exe');
+  if (process.platform === 'win32' && fs.existsSync(shared)) return shared;
+  let src;
+  if (process.platform === 'win32') {
+    src = [
+      process.env.NODE_BINARY,
+      process.execPath,
+      'C:\\Program Files\\nodejs\\node.exe',
+      'C:\\Program Files (x86)\\nodejs\\node.exe',
+    ].find((candidate) => candidate && fs.existsSync(candidate) && !/electron/i.test(candidate));
+  } else {
+    src = bundledPosixNode(projectDir);
+  }
   if (!src) {
     throw new Error('打包时未找到 Node.js 可执行文件，安装包将无法启动官方 Web UI');
   }
@@ -1439,13 +1549,19 @@ function copyBundledNode(destDir) {
   return dest;
 }
 
-function copyBundledPnpm(projectDir, destDir) {
+function copyBundledPnpm(projectDir, destDir, target = {}) {
   const src = path.join(projectDir, 'node_modules', 'pnpm');
   if (!fs.existsSync(path.join(src, 'bin', 'pnpm.cjs'))) {
     throw new Error('打包时未找到 pnpm，请先 npm install');
   }
   const dest = path.join(destDir, 'pnpm');
-  fs.cpSync(src, dest, { recursive: true, dereference: true });
+  fs.mkdirSync(dest, { recursive: true });
+  // Match the published pnpm package: artifacts/exe duplicates the CLI bundle.
+  for (const name of ['package.json', 'bin', 'dist', 'LICENSE']) {
+    const source = path.join(src, name);
+    if (fs.existsSync(source)) fs.cpSync(source, path.join(dest, name), { recursive: true, dereference: true });
+  }
+  pruneRuntimeFiles(dest, target);
   return dest;
 }
 
@@ -1527,7 +1643,41 @@ function assertDesktopForkRuntime(harnessDest) {
   }
 }
 
-function assertHarnessRuntime(harnessDest, pin) {
+/** 并发拷贝曾把多个来源写进同一 dest，留下「合法 JSON + 尾部碎片」的损坏 manifest；解析全部 package.json 让该类损坏在打包期 fail-fast。 */
+function assertNodeModulesManifests(harnessDest) {
+  const nmRoot = path.join(harnessDest, 'node_modules');
+  const broken = [];
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.name === 'package.json') {
+        try {
+          JSON.parse(fs.readFileSync(full, 'utf8'));
+        } catch {
+          broken.push(path.relative(nmRoot, full));
+        }
+      }
+    }
+  };
+  if (fs.existsSync(nmRoot)) {
+    walk(nmRoot);
+  }
+  if (broken.length > 0) {
+    const listed = broken.slice(0, 20).join(', ');
+    const suffix = broken.length > 20 ? ` 等 ${broken.length} 个` : '';
+    throw new Error(`安装包 node_modules 存在损坏的 package.json：${listed}${suffix}`);
+  }
+}
+
+function assertHarnessRuntime(harnessDest, pin, platform = process.platform, arch = process.arch) {
   const requiredFiles = [
     path.join('apps', 'cli', 'lib', 'bin.js'),
     path.join('apps', 'web', 'dist', 'index.html'),
@@ -1582,8 +1732,9 @@ function assertHarnessRuntime(harnessDest, pin) {
     throw new Error('安装包的 session Remote 缺少 fork beforeSeq');
   }
   assertHarnessVersions(harnessDest, pin);
-  assertNodePtyPrebuild(harnessDest);
+  assertNodePtyPrebuild(harnessDest, platform, arch);
   assertMcpSdkAjv(harnessDest);
+  assertNodeModulesManifests(harnessDest);
 }
 
 /**
@@ -1622,6 +1773,9 @@ function assertOfficeRuntime(resources, harnessDest) {
   const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
   if (manifest.platform !== 'win32' || manifest.arch !== 'x64' || typeof manifest.payloadDigest !== 'string') {
     throw new Error(`Office 运行时清单无效：platform=${manifest.platform} arch=${manifest.arch}（需要 win32/x64 + payloadDigest）`);
+  }
+  if (manifest.payloadDigest !== officePayloadDigest(payload, manifest)) {
+    throw new Error('Office 运行时内容与裁剪后的载荷摘要不一致');
   }
   const requiredPayload = [
     path.join(payload, 'dependencies', 'node', 'bin', 'node.exe'),
@@ -1701,6 +1855,8 @@ function assertOfficeRuntime(resources, harnessDest) {
 module.exports = async function afterPack(context) {
   const projectDir = context.packager.projectDir;
   const resources = resolveResourcesDir(context);
+  const target = { platform: context.electronPlatformName || process.platform,
+    arch: typeof context.arch === 'number' ? require('builder-util').Arch[context.arch] : context.arch || process.arch };
   restoreVendoredPluginNodeModules(projectDir, resources, 'dsh-usage-panel');
   installPluginRuntimeDeps(path.join(resources, 'vendor', 'dsh-usage-panel'), { skipIfComplete: true });
   assertVendoredPluginRuntimeDeps(resources, 'dsh-usage-panel');
@@ -1727,42 +1883,44 @@ module.exports = async function afterPack(context) {
   // the closure assert still proves the packaged copy ships its lib/.
   assertVendoredPluginRuntimeDeps(resources, 'dsh-task-control');
   assertVendoredPluginRuntimeDeps(resources, 'dsh-platform-session');
+  for (const name of ['dsh-usage-panel', 'dsh-im', 'dshbot', 'dsh-whale', 'dsh-remote']) {
+    const root = path.join(resources, 'vendor', name);
+    const removed = prunePluginDevDependencies(root, resolvePackageFrom, runtimeDependencyEntries, target);
+    assertVendoredPluginRuntimeDeps(resources, name);
+    console.log(`${name}: removed ${removed} non-production dependency packages`);
+  }
+  pruneRuntimeFiles(path.join(resources, 'vendor', 'dshd-remote'), target);
   await assertDshdRemoteRuntime(resources);
   const harnessDest = path.join(resources, 'vendor', 'deepseek-harness');
-  const deployDir = resolveDeployDir(process.env.DSH_DEPLOY_DIR);
   const started = Date.now();
 
-  let copied;
   const harnessSrc = path.join(projectDir, 'vendor', 'deepseek-harness');
-  if (deployDir) {
-    console.log(`使用精简目录 ${deployDir} 组装 resources/vendor`);
-    copied = await assembleFromDeploy(projectDir, deployDir, harnessDest);
-  } else {
-    console.log('使用当前 vendored Harness 全量复制（拍平 .pnpm 到顶层，避免超长路径）');
-    console.log('收集文件清单（解引用 pnpm 链接，跳过循环与 dev-only 包）...');
-    const files = collectFiles(harnessSrc, harnessDest, false, true);
-    console.log(`待复制 ${files.length} 个文件，收集耗时 ${((Date.now() - started) / 1000).toFixed(1)}s（并发复制中）`);
-    copied = await copyFiles(files, 32);
-  }
-  const workspace = await overlayWorkspaceRuntimePackages(harnessSrc, harnessDest);
-  copied += workspace.files;
-  copied += await assembleCanonicalRuntime(harnessSrc, harnessDest, workspace.sources);
+  const sources = selectHarnessRuntimeSources(harnessSrc, resolvePackageFrom, runtimeDependencyEntries);
+  console.log(`装配 CLI 与桌面扩展的生产依赖闭包：${sources.length} 个工作区包`);
+  fs.mkdirSync(harnessDest, { recursive: true });
+  let copied = await copyFiles(['package.json', 'LICENSE'].filter(name => fs.existsSync(path.join(harnessSrc, name)))
+    .map(name => ({ src: path.join(harnessSrc, name), dest: path.join(harnessDest, name) })), 32);
+  copied += await assembleCanonicalRuntime(harnessSrc, harnessDest, sources, target);
+  // The web frontend is a prebuilt asset tree, not an additional dependency root.
+  copied += await copyFiles(collectFiles(path.join(harnessSrc, 'apps', 'web', 'dist'),
+    path.join(harnessDest, 'apps', 'web', 'dist')), 32);
 
   assertNoDevOnlyPackages(harnessDest);
 
-  const nodeDest = copyBundledNode(resources);
-  const pnpmDest = copyBundledPnpm(projectDir, resources);
+  const nodeDest = copyBundledNode(resources, projectDir);
+  const pnpmDest = copyBundledPnpm(projectDir, resources, target);
   const pin = JSON.parse(fs.readFileSync(path.join(projectDir, 'vendor', 'harness-upstream.json'), 'utf8'));
   fs.mkdirSync(path.join(resources, 'vendor'), { recursive: true });
   fs.writeFileSync(
     path.join(resources, 'vendor', 'harness-upstream.json'),
     `${JSON.stringify(pin, null, 2)}\n`,
   );
-  assertHarnessRuntime(harnessDest, pin);
+  assertHarnessRuntime(harnessDest, pin, target.platform, target.arch);
   // Office payload + kit closure is a win-x64 deliverable only (see the
   // feature card's limitations); other targets ship without Office and the
   // desktop overlay stays unwritten because the bundled payload is absent.
   if (context.electronPlatformName === 'win32') {
+    pruneOfficeRuntime(path.join(resources, 'runtime', 'primary-runtime'), target);
     assertOfficeRuntime(resources, harnessDest);
   }
   // Skip compose contract against the REAL packaged CLI: unit tests mock
@@ -1787,6 +1945,16 @@ module.exports = async function afterPack(context) {
   await writeRuntimeArchiveIdentity(archive);
   fs.rmSync(longPath(harnessDest), { recursive: true, force: true });
 
+  if (context.electronPlatformName === 'win32') {
+    const installerRuntime = path.join(resources, 'runtime');
+    fs.mkdirSync(installerRuntime, { recursive: true });
+    for (const [source, name] of [
+      ['scripts/install-harness.cjs', 'install-harness.cjs'],
+      ['src/shared/runtime-links.js', 'runtime-links.js'],
+      ['src/shared/harness-runtime-identity.js', 'harness-runtime-identity.js'],
+    ]) fs.copyFileSync(path.join(projectDir, source), path.join(installerRuntime, name));
+  }
+
   console.log(`已复制 ${copied} 个文件，写入 ${nodeDest} 与 ${pnpmDest}`);
   console.log(`运行时归档 ${((fs.statSync(archive).size / 1048576).toFixed(1))} MB`);
   console.log(`afterPack 完成 ${((Date.now() - started) / 1000).toFixed(1)}s`);
@@ -1800,6 +1968,10 @@ module.exports.assembleCanonicalRuntime = assembleCanonicalRuntime;
 module.exports.assertNoDevOnlyPackages = assertNoDevOnlyPackages;
 module.exports.repairFlattenedCommanderEsm = repairFlattenedCommanderEsm;
 module.exports.copyFiles = copyFiles;
+module.exports.pickCopyWinners = pickCopyWinners;
+module.exports.copyBundledNode = copyBundledNode;
+module.exports.nodeBinaryHasExternalDylibs = nodeBinaryHasExternalDylibs;
+module.exports.assertNodeModulesManifests = assertNodeModulesManifests;
 module.exports.deployCliEntries = deployCliEntries;
 module.exports.resolveDeployDir = resolveDeployDir;
 module.exports.resolveResourcesDir = resolveResourcesDir;

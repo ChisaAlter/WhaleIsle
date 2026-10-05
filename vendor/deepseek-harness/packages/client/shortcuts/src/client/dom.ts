@@ -21,12 +21,12 @@ export function detectEnvironment(document: Document, navigator: Navigator): {
 }
 
 /**
- * Install document composition tracking and application dispatch after local handlers.
+ * Install document composition tracking, modal-cache invalidation, and dispatch after local handlers.
  * @param window - input window owned by the client plugin.
  * @param shortcuts - command registry for this window.
  * @param fixed - optional fixed-sequence consumer after local controls.
  * @param native - native input owns configurable bindings; DOM delivery only feeds fixed actions.
- * @returns disposer releasing every listener.
+ * @returns disposer releasing every listener, the modal observer, and cached nodes.
  */
 export function installKeyboard(window: Window, shortcuts: Pick<ShortcutRegistry, 'dispatch' | 'runtime' | 'platform'>,
   fixed?: (input: ShortcutFixedInput) => void, native = false): () => void {

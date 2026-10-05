@@ -16,4 +16,13 @@ fsPromises.writeFile = async (...args) => {
   }
 }
 
-require('electron-builder/cli.js')
+async function run() {
+  if (process.platform === 'win32') {
+    // The official NSIS decoder uses BCJ; 7za handles the complete staged directory.
+    process.env.ELECTRON_BUILDER_7Z_FILTER = 'BCJ'
+    await require('./windows-directory-installer.cjs').installWindowsDirectoryInstaller()
+  }
+  require('electron-builder/cli.js')
+}
+
+run().catch(error => { console.error(error); process.exitCode = 1 })

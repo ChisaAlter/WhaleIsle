@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <application
@@ -11,8 +12,8 @@
         android:theme="@style/Theme.DshMobile"
         android:usesCleartextTraffic="true">
         <provider
-            android:name=".WebCaptureProvider"
-            android:authorities="${applicationId}.web-capture"
+            android:name=".NativeCaptureProvider"
+            android:authorities="${applicationId}.native-capture"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

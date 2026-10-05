@@ -1,5 +1,6 @@
 .root {
   position: relative;
+  min-width: 28px;
 }
 
 .trigger {
@@ -13,7 +14,22 @@
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
+  line-height: 18px;
+  min-width: 28px;
+  max-width: 100%;
+  white-space: nowrap;
   cursor: pointer;
+}
+
+.trigger svg {
+  flex: none;
+}
+
+.triggerLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .trigger:hover,
@@ -21,12 +37,17 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* Second sacrifice after the preset label: past this title-row width the
-   trigger keeps only its icon. TeamAction reads the collapsed state off this
-   rule to switch from hover-open to click-only. */
-@container (max-width: 480px) {
+/* The row accounts for sidebars and native caption controls. */
+@container (max-width: 520px) {
   .triggerLabel {
     display: none;
+  }
+
+  .trigger {
+    box-sizing: border-box;
+    width: 28px;
+    justify-content: center;
+    padding: 0;
   }
 }
 

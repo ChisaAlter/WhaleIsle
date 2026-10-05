@@ -223,8 +223,8 @@ export function createAssembledRemote(options: AssembledRemoteOptions = {}): Ass
     return ok(undefined)
   })
   mock.unary('session/list', () => ok({ items: structuredClone(sessions) }))
-  // The shipped Web composition mounts the Schedule client, whose catalog and
-  // per-Session list read empty here: these scenarios drive no reminder.
+  // The shipped composition mounts the `ui-schedule` row, so the Schedule
+  // client reads the catalog and the per-Session list over this mock.
   mock.unary('schedule/catalog', () => ok([]))
   mock.unary('schedule/list', () => ok([]))
   mock.unary('session/projections', (request: unknown) => {

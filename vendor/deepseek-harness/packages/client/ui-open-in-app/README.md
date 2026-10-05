@@ -31,6 +31,8 @@ Mount this plugin in the Web composition beside [`dsh-host-open-in-app`](../../h
 
 The Session header uses a 32px-high split button with 18px corners and the same border as the Session-log and Git capsules. The document header keeps its compact 24px height and 9px corners. Both headers show only the icon; their tooltip names the default application or the reveal action. Both show the default action’s icon, mark its application with “(default)” in the menu, disable while their own gesture runs, and report failures through a transient toast. The directory adapter uses the existing cross-platform application catalog and remembers the last successful choice in `dsh.open-in-app.choice`; a missing choice falls back to the first available application.
 
+The file-tree opener targets the displayed directory supplied as `absolutePath` and shares application choice and launch state with the Session header.
+
 The **Open locally** shortcut captures the main Session's directory and the same remembered application as the header button. The effective binding appears in the button tooltip and `aria-keyshortcuts`; Web follows the [shortcut service’s platform defaults](../shortcuts/README.md). The command runs only while the Conversation is selected and the header button has a directory and installed application to open. An in-flight launch also blocks the command. Pointer and keyboard gestures share the controller's launch state, so repeated gestures cannot launch twice or change the remembered choice mid-launch.
 
 File menus list the discovered associated applications without a separate “Open in default app” row. “Show file location” stays in a fixed footer separated from the scrolling applications. A successful query with only one available action renders a single button without a dropdown. Initial file-association loading uses a gray skeleton icon. When the Host identifies a default application the menu marks it “(default)” and the main button opens it; otherwise the first associated application takes that place, so the main button reveals the file only when no application is registered. Directory menus have no reveal row. Choosing a file application does not change the system default. An unpreviewable file uses the same menu in a 40px-high split button with an icon and action text; its label is “Open” or “Show file location” according to the default action.
@@ -45,7 +47,7 @@ Mounted controls with the same association reader and file share one query and i
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The plugin registers the split button on `conversation.session.header.utilities` through the standard slot/inject currency and registers the `open-in-app` dictionaries as one effect. A page-lifetime controller ([`src/client/controller.ts`](src/client/controller.ts)) owns the once-per-page availability read, the persisted choice snapshot store, and the launch POST; the component receives the shared sources through the inject `hooks` compartment, so every Session header shares one truth. Document-relative route forms and wire payload types come from the host package's browser-safe `@deepseek-ai/dsh-host-open-in-app/shared` subpath. The controller guards in-flight launches and publishes their captured directory and status; header controls derive delayed busy and transient error visuals from that source.
+Both directory slots use `OpenInAppAction` with an explicit `absolutePath`. The `conversation.session.header.utilities` registration reads the Session cwd, while `sidebar.right.tab.files.actions` receives the displayed directory from its owner. The plugin registers the `open-in-app` dictionaries as one effect. A page-lifetime controller ([`src/client/controller.ts`](src/client/controller.ts)) owns the once-per-page availability read, the persisted choice snapshot store, and the launch POST; the component receives the shared sources through the inject `hooks` compartment, so every Session header shares one truth. Document-relative route forms and wire payload types come from the host package's browser-safe `@deepseek-ai/dsh-host-open-in-app/shared` subpath. The controller guards in-flight launches and publishes their captured directory and status; header controls derive delayed busy and transient error visuals from that source.
 
 The directory and file adapters supply application metadata and operations to [`OpenTargetButton`](src/client/OpenTargetButton.tsx), which owns menu ordering, default markers, icons, sizing, and gesture feedback. The file header and empty state share `FileOpenTarget`, while `OpenPathInjected.applications` queries `session.workspacePathApplications` through [`open-path.ts`](src/client/open-path.ts). Opening uses `session.openWorkspacePath`; the Host revalidates an explicitly selected handler before launch. The directory adapter keeps the existing catalog routes. `FileRouteAction` supplies the same control to delivery cards and change review through `deliverables.file.actions` and `deliverables.review.file.actions`; their authenticated routes retain Session file authorization. A failed or unavailable file query therefore needs no platform-specific UI implementation.
 
@@ -60,7 +62,7 @@ The directory and file adapters supply application metadata and operations to [`
 - [dsh-session-log-export](../../session-query/session-log-export/README.md) — the sibling Session-header action.
 - [ui-sidebar-documentpreview](../ui-sidebar-documentpreview/README.md) — the document preview declaring the header and empty-state child slots the file controls occupy.
 - [ui-deliverables](../ui-deliverables/README.md) — the delivery cards, which still open declared files through their own routes.
-- [Web client architecture](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.md) — how browser plugin rows load and register slots.
+- [Web client architecture](../../../docs/subsystems/web-client.md) — how browser plugin rows load and register slots.
 
 -----
 
@@ -82,7 +84,7 @@ The Host verifies the path through the composed filesystem before opening or rev
 - **The dictionaries gate the menu.** A host catalog extension without a matching `app.<id>` entry in both dictionaries stays invisible instead of showing a raw id; extending the catalog means extending [`dsh-host-open-in-app`](../../host/open-in-app/README.md) and this package's locales together.
 - **Availability is read once per page.** An application installed while the page is open appears after a reload (and, host-side, after a host restart); the desktop answer behind the file controls is read once per page as well.
 - **One reveal label for every platform.** The Session Remote reports whether a desktop exists, not which file manager it runs, so the menu says "Show file location" rather than naming Finder or File Explorer as the delivery cards do.
-- **The delivery cards keep their own opener.** [`ui-deliverables`](../ui-deliverables/README.md) still opens declared files through its own Session-and-event routes; folding those cards onto the file controls here is deferred to the [Agent Note](../../../.agents/notes/implemented/feature/2026-09-16-open-in-default-app-for-sidebar-files.md).
+- **The delivery cards keep their own opener.** [`ui-deliverables`](../ui-deliverables/README.md) still opens declared files through its own Session-and-event routes; folding those cards onto the file controls here remains deferred.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -90,8 +92,6 @@ The Host verifies the path through the composed filesystem before opening or rev
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-The feature-level decisions, including the split into the host package and this surface, are recorded in the [promotion Agent Note](../../../.agents/notes/implemented/feature/2026-08-25-promote-open-anywhere-plugin.md); the document preview's file controls are recorded in the [default-application Agent Note](../../../.agents/notes/implemented/feature/2026-09-16-open-in-default-app-for-sidebar-files.md).
+The feature-level decisions, including the split into the host package and this surface, are recorded in the [historical promotion Agent Note](../../../.agents/notes/archived/feature/2026-08-25-promote-open-anywhere-plugin.md); the document preview's file controls are recorded in the [historical default-application Agent Note](../../../.agents/notes/archived/feature/2026-09-16-open-in-default-app-for-sidebar-files.md).
 
 </details>
-
-**Runtime invariant:** No companion is published. The plugin registers one dictionary effect and five slot entries whose disposal the HMR-safety spec proves; application availability, the choice, and the desktop answer live in the controllers' snapshot stores with no second copy to diverge.

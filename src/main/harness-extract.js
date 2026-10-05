@@ -203,13 +203,11 @@ function canReuseExtractedHarness(dest, identity) {
 }
 
 function packagedHarnessRoot() {
+  const loose = looseHarnessRoot();
+  if (hasBuiltHarness(loose)) return loose;
   const extracted = extractedHarnessRoot();
   if (hasBuiltHarness(extracted)) {
     return extracted;
-  }
-  const loose = looseHarnessRoot();
-  if (hasBuiltHarness(loose)) {
-    return loose;
   }
   return extracted;
 }
@@ -311,6 +309,10 @@ async function preparePackagedHarness(log = () => {}, { signal } = {}) {
     return null;
   }
   if (signal?.aborted) throw extractionCancelled();
+  // Windows NSIS prepares the immutable runtime and its links before promoting the application.
+  // Prefer it to an older same-version userData extract, without writing to either tree.
+  const installed = looseHarnessRoot();
+  if (hasBuiltHarness(installed)) return installed;
   const dest = extractedHarnessRoot();
   const archive = harnessArchivePath();
   const loose = looseHarnessRoot();

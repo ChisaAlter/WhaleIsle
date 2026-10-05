@@ -35,18 +35,18 @@ function validateRuntimeLinks(root, manifest) {
   });
 }
 
-function materializeRuntimeLinks(root) {
+function materializeRuntimeLinks(root, { targetRoot = root } = {}) {
   const links = readRuntimeLinks(root);
+  const rootReal = fs.realpathSync(root);
   for (const { from, target } of links) {
     const targetReal = fs.realpathSync(target);
-    if (!targetReal.startsWith(fs.realpathSync(root) + path.sep) || !fs.statSync(targetReal).isDirectory()) {
+    if (!targetReal.startsWith(rootReal + path.sep) || !fs.statSync(targetReal).isDirectory()) {
       throw new Error(`Invalid runtime link target: ${target}`);
     }
     // Never follow a parent supplied as a junction to somewhere outside this extract.
     let parent = path.dirname(from);
     while (!fs.existsSync(parent)) parent = path.dirname(parent);
     const parentReal = fs.realpathSync(parent);
-    const rootReal = fs.realpathSync(root);
     if (parentReal !== rootReal && !parentReal.startsWith(rootReal + path.sep)) {
       throw new Error(`Runtime link parent escapes root: ${from}`);
     }
@@ -60,7 +60,10 @@ function materializeRuntimeLinks(root) {
       fs.unlinkSync(from);
     }
     fs.mkdirSync(path.dirname(from), { recursive: true });
-    fs.symlinkSync(process.platform === 'win32' ? targetReal : path.relative(fs.realpathSync(path.dirname(from)), targetReal),
+    // NSIS prepares links in staging for the final installation location.
+    // The validated source target exists here; the final target exists after directory promotion.
+    const installedTarget = path.resolve(targetRoot, path.relative(rootReal, targetReal));
+    fs.symlinkSync(process.platform === 'win32' ? installedTarget : path.relative(fs.realpathSync(path.dirname(from)), installedTarget),
       from, process.platform === 'win32' ? 'junction' : 'dir');
   }
   return links.length;

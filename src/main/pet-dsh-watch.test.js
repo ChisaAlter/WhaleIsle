@@ -330,13 +330,14 @@ test('decodeAppended stops at a torn frame', () => {
   assert.equal(consumed, a.length);
 });
 
-function makeOutboxWatch(t, dir, { now } = {}) {
+function makeOutboxWatch(t, dir, { now, isPetVisible } = {}) {
   const outbox = path.join(dir, 'data', 'whale', 'pet-outbox.jsonl');
   const state = { dsh: {} };
   const events = [];
   const watch = createDshWatch({
     sessionsDir: path.join(dir, 'sessions'),
     outboxFile: outbox,
+    isPetVisible,
     getDsh: () => state.dsh,
     saveDsh: (next) => { state.dsh = next; },
     onEvent: (e) => events.push(e),
@@ -347,6 +348,21 @@ function makeOutboxWatch(t, dir, { now } = {}) {
   });
   return { watch, events, state, outbox };
 }
+
+test('hidden pets keep important outbox notifications unread while usage continues to update', (t) => {
+  const dir = tmpSessions(t);
+  let visible = false;
+  const { watch, events, outbox } = makeOutboxWatch(t, dir, { isPetVisible: () => visible });
+  fs.mkdirSync(path.dirname(outbox), { recursive: true });
+  fs.writeFileSync(outbox, JSON.stringify({ type: 'whale/pet', kind: 'notify', text: '重要提醒' }) + '\n');
+  watch.poll();
+  assert.equal(events.some((event) => event.kind === 'notify'), false);
+  visible = true;
+  watch.poll();
+  assert.equal(events.filter((event) => event.kind === 'notify').length, 1);
+  watch.poll();
+  assert.equal(events.filter((event) => event.kind === 'notify').length, 1);
+});
 
 test('outbox lines emit dshWhale with the text field verbatim', (t) => {
   const dir = tmpSessions(t);

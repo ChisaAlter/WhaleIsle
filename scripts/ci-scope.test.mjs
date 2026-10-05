@@ -4,6 +4,12 @@ import { readFileSync } from 'node:fs'
 import { load } from 'js-yaml'
 import { selectChecks } from './ci-scope.mjs'
 
+test('DSH component source uses its own native workflow without Harness regression builds', () => {
+  assert.deepEqual(selectChecks(['vendor/whalebridge/main.go', 'scripts/build-whalebridge.mjs', '.github/workflows/whalebridge.yml']),
+    { product: false, vendor: false, tools: false, motion: false })
+  assert.equal(selectChecks(['src/main/ipc-components.js']).product, true)
+})
+
 test('documentation and retired governance records do not build the product', () => {
   assert.deepEqual(selectChecks(['docs/features/remote.md', 'AGENTS.md', 'README.i18n.yaml', 'vendor/deepseek-harness/docs/testing.md', '.github/pull_request_template.md']),
     { product: false, tools: false, vendor: false, motion: false })

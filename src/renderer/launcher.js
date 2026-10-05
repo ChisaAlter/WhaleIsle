@@ -1015,10 +1015,10 @@ function renderHomeStatus(status) {
   const desktop = desktopOperation ? { state: desktopOperation.kind } : status?.desktop;
   const recovery = status?.recovery || status?.desktop?.pluginRecovery;
   const installedState = status?.installed;
-  const bits = [launcherPackage
-    ? (version ? `桌面端 v${version} 已安装` : (installedState?.registeredInstall ? '桌面端已安装' : '桌面端未安装'))
-    : `当前版本 ${version || '未知'}`];
-  if (desktop && desktop.state) {
+  const missing = launcherPackage && installedState?.registeredInstall === false;
+  const bits = missing ? ['尚未安装桌面端'] : [];
+  $('home-version').textContent = version ? `v${String(version).replace(/^v/i, '')}` : (missing ? '待安装' : '已安装');
+  if (!missing && desktop && desktop.state) {
     bits.push(`桌面端${desktopStateLabel(desktop.state)}`);
   }
   if (recovery?.skipUserPlugins) {
@@ -1028,6 +1028,7 @@ function renderHomeStatus(status) {
     bits.push('启动或关闭未完成，详见启动诊断');
   }
   $('home-status').textContent = bits.join(' · ');
+  $('home-state-dot').dataset.state = desktopActionBusy() ? 'busy' : (desktopIsRunning(desktop) ? 'running' : 'stopped');
   const progress = $('home-start-progress');
   if (progress) {
     progress.hidden = !desktopActionBusy();
@@ -1134,7 +1135,7 @@ function syncUpdateNotice(check) {
   box.hidden = !show;
   if (show) {
     const current = check?.currentVersion ? `（当前 v${String(check.currentVersion).replace(/^v/i, '')}）` : '';
-    $('home-update-text').textContent = `发现新版本 v${String(latest).replace(/^v/i, '')}${current}`;
+    $('home-update-text').textContent = `可更新至 v${String(latest).replace(/^v/i, '')}${current}`;
   }
 }
 
@@ -1143,12 +1144,13 @@ function renderUpdateCheck(check) {
     lastUpdateCheck = check;
   }
   syncUpdateNotice(check && typeof check === 'object' ? check : lastUpdateCheck);
-  if (check?.hint) {
+  if (check?.status === 'available') {
+    // The home update card owns the available-version message.
+    setHint('');
+  } else if (check?.hint) {
     setHint(check.hint);
   } else if (check?.status === 'error') {
     setHint(`更新检查失败：${check.message || '网络或 GitHub 不可用'}。仍可启动桌面端。`);
-  } else if (check?.status === 'available') {
-    setHint(`发现正式版 ${check.latest || ''}。`);
   } else if (check && (check.status === 'current' || check.status === 'none')) {
     setHint('当前已是最新版本。', { fade: true });
   } else {
@@ -1207,7 +1209,7 @@ function syncDesktopControls() {
   }
   const runBadge = $('home-run-badge');
   if (runBadge) {
-    runBadge.hidden = !running;
+    runBadge.hidden = true;
   }
   const runNote = $('home-running-note');
   if (runNote) {
@@ -1264,6 +1266,7 @@ function activateTab(name) {
   showTab(name);
   if (name === 'home') {
     void refreshStatus();
+    void window.__launcherComponents?.refresh();
   }
   if (name === 'import') {
     void refreshImport({ silent: true });
@@ -2510,6 +2513,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.watchShellTheme();
   }
   bind();
+  window.__launcherComponents?.mountHome($('home-components'), pageShell());
   mountComponents();
   void refreshStatus();
 });

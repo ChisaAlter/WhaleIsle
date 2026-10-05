@@ -90,6 +90,10 @@
   transition: transform var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
 
+.switch[aria-checked='false'] .thumb {
+  background: var(--dsw-alias-switch-thumb);
+}
+
 .switch[aria-checked='true'] .thumb {
   transform: translateX(16px);
 }

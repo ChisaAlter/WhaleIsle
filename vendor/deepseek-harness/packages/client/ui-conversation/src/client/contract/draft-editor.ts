@@ -19,6 +19,21 @@ export interface ReferenceInsert {
   readonly clipboardText: string
 }
 
+/** Persisted reference data without the current editor's occurrence identity. */
+export type DraftReference = Omit<Occurrence, 'occurrenceId'>
+
+/**
+ * Editor-independent content. Reference spans are ordered, non-overlapping UTF-16
+ * ranges whose text equals clipboardText; runtime node identities are excluded.
+ */
+export interface DraftSnapshot {
+  readonly text: string
+  readonly references: readonly DraftReference[]
+}
+
+/** Plain initial text or an existing document with explicit reference identities. */
+export type DraftInput = string | DraftSnapshot
+
 /** Keyboard keys intercepted by an open trigger menu. */
 export type ArbitrateKey = 'up' | 'down' | 'enter' | 'escape' | 'tab' | 'tabBack'
 
@@ -40,7 +55,7 @@ export interface ComposerKeyboard {
   /** The shell-owned Lexical editor the composer binds its contenteditable to. */
   readonly editor: LexicalEditor
   /** Submit with an explicit delivery mode resolved by the submission policy (Enter gestures and the primary Send button). */
-  submit(mode: InputSubmitMode): void
+  submit(mode: InputSubmitMode, source?: 'click' | 'enter'): void
   /**
    * Steer every still-pending queued message into the running turn (the
    * empty-draft accelerated-Enter gesture; the queue dock's per-row steer

@@ -21,7 +21,7 @@ const wid = (id: string) => id as WorkspaceId
 // Unowned fixture sessions default to the scratch cwd so they stay listable;
 // tests about unregistered Workspaces pass an explicit foreign cwd instead.
 const summary = (id: string, updatedAt: number, cwd: string = SCRATCH): SessionSummary => ({
-  id: sid(id), displayTitle: id, running: false, blank: false, updatedAt, cwd,
+  id: sid(id), title: id, displayTitle: id, running: false, blank: false, updatedAt, cwd,
   retainedBy: {},
 })
 const list = (...items: SessionSummary[]): SessionListState => ({
@@ -690,9 +690,9 @@ describe('deriveFlat', () => {
 describe('deriveSearchResults archive filtering', () => {
   it('archived sessions never match — not by title and not via a backend content hit', () => {
     const hit = summary('hit', 2)
-    hit.displayTitle = 'Needle row'
+    hit.title = hit.displayTitle = 'Needle row'
     const gone = summary('gone', 1)
-    gone.displayTitle = 'Needle archived'
+    gone.title = gone.displayTitle = 'Needle archived'
     const result = deriveSearchResults(
       list(hit, gone),
       [],
@@ -709,7 +709,7 @@ describe('deriveSearchResults archive filtering', () => {
 
   it('matches archived sessions and flags them while the view shows them', () => {
     const gone = summary('gone', 1)
-    gone.displayTitle = 'Needle archived'
+    gone.title = gone.displayTitle = 'Needle archived'
     const result = deriveSearchResults(
       list(gone), [], 'needle', archived('gone'), 'show', noAttention, { items: [], hasMore: false }, 10, SCRATCH,
     )
@@ -718,9 +718,9 @@ describe('deriveSearchResults archive filtering', () => {
 
   it('matches only archived sessions under the only filter', () => {
     const hit = summary('hit', 2)
-    hit.displayTitle = 'Needle row'
+    hit.title = hit.displayTitle = 'Needle row'
     const gone = summary('gone', 1)
-    gone.displayTitle = 'Needle archived'
+    gone.title = gone.displayTitle = 'Needle archived'
     const result = deriveSearchResults(
       list(hit, gone), [], 'needle', archived('gone'), 'only', noAttention, { items: [], hasMore: false }, 10, SCRATCH,
     )
@@ -731,9 +731,9 @@ describe('deriveSearchResults archive filtering', () => {
 describe('deriveSearchResults', () => {
   it('merges local title/Workspace matches before ranked content hits and enriches duplicates', () => {
     const titleHit = summary('title-hit', 30, '/projects/a')
-    titleHit.displayTitle = 'Needle title'
+    titleHit.title = titleHit.displayTitle = 'Needle title'
     const workspaceHit = summary('workspace-hit', 20, '/projects/b')
-    workspaceHit.displayTitle = 'Ordinary title'
+    workspaceHit.title = workspaceHit.displayTitle = 'Ordinary title'
     const contentHit = summary('content-hit', 10, SCRATCH)
     const sessions = list(titleHit, workspaceHit, contentHit)
     const result = deriveSearchResults(
@@ -830,7 +830,7 @@ describe('deriveSearchResults', () => {
   it('uses the supplied cap and preserves either local overflow or backend hasMore', () => {
     const rows = Array.from({ length: 5 }, (_, index) => {
       const item = summary(`s-${String(index).padStart(2, '0')}`, index)
-      item.displayTitle = `Needle ${String(index)}`
+      item.title = item.displayTitle = `Needle ${String(index)}`
       return item
     })
     const overflow = deriveSearchResults(
@@ -987,4 +987,12 @@ describe('parent folder membership', () => {
   ])('groups %s under its nearest registered ancestor', (path, parents, expected) => {
     expect(owningParentFolder(path, parents)).toBe(expected)
   })
+})
+
+it('leaves unnamed history titles empty for locale-owned row labels', () => {
+  const item = summary('unnamed', 1, '/work/Default workspace')
+  delete item.title
+  item.displayTitle = 'Default workspace'
+  const sessions = list(item)
+  expect(deriveFlat(sessions, [item.id], noRows, noAttention)[0]?.title).toBe('')
 })

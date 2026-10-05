@@ -1,7 +1,7 @@
 /**
  * Layout plugin, browser half: one register() call contributes AppFrame into
  * the runtime's built-in 'root' slot and, in the same breath, declares the
- * five child slots (declaration = exclusive render authority), seats the
+ * child slots (declaration = exclusive render authority), seats the
  * layout store (panel geometry), and wires the panel-action service face.
  * ctx.layout selects the main panel and controls column geometry; Session
  * selection belongs to the Session Controller. A second effect seats the theme
@@ -55,7 +55,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
   interface SlotMap {
     // The 'root' entry itself is the runtime's built-in slot (declared
-    // there); these five are the frame's children, declared by the same
+    // there); these are the frame's children, declared by the same
     // register() call that contributes AppFrame. Session owners never pass
     // sessionId: the framework injects it as a standard prop.
     /**
@@ -100,6 +100,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * `session-maybe` scope, and `ctx.layout` owns whether the column is open.
      */
     'surfaces': { kind: 'single'; scope: 'session-maybe'; owner: SurfacesOwnerProps }
+    /**
+     * Full-width bottom content below all three columns. Its rendered height
+     * reduces the columns' available height; empty content reserves no space.
+     * The occupant owns its height, visibility, and controls. It receives no
+     * Session binding and remains mounted across main-panel navigation.
+     */
+    'shell.bottom': { kind: 'single'; scope: 'root' }
     /**
      * Frame-wide floating layer, above every column and outside their scroll
      * containers. Deliberately generic and unowned by any feature: a badge, a
@@ -201,7 +208,7 @@ export const inject = ['slots', 'theme', 'locale', 'shortcuts']
 
 /**
  * Client plugin body: provide ctx.layout, then one register() call — AppFrame
- * into 'root' with the five child-slot declarations, the layout store seat,
+ * into 'root' with its child-slot declarations, the layout store seat,
  * and the shared root instance supplying commands and the panel-info source.
  * @param ctx - client root context.
  */
@@ -233,6 +240,7 @@ export function apply(ctx: ClientContext): void {
         'main': { kind: 'keyed', scope: 'root' },
         'rightbar': { kind: 'single', scope: 'root' },
         'surfaces': { kind: 'single', scope: 'session-maybe' },
+        'shell.bottom': { kind: 'single', scope: 'root' },
         'shell.overlay': { kind: 'list', scope: 'root' },
         'shell.titlebar.trailing': { kind: 'list', scope: 'root' },
         'shell.terminalDrawer': { kind: 'single', scope: 'session-maybe' },

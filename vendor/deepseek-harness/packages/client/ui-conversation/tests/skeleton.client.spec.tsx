@@ -198,6 +198,7 @@ function mount(
   const store = createConversationStore().create()
   store.actions.setDraft('ordinary draft')
   const { wiring, sink } = fakeWiring()
+  wiring.setDraft(store.store.getSnapshot().draft)
   const useInput = bindSnapshotSelector(wiring.state)
   const inputActions = wiring.actions
   const stop = vi.fn()
@@ -282,7 +283,7 @@ function mount(
           actions={store.actions}
           renderSlot={renderSlot as never}
           renderSlotChain={renderSessionSlotChain}
-          bindDraftMirror={write => wiring.bindMirror(write)}
+          bindDraftPersistence={write => wiring.bindDraftPersistence(write)}
           openView={(view, focus) => { store.actions.openView(view, focus) }}
         />
       )
@@ -552,7 +553,7 @@ describe('ConversationRoot resident composer', () => {
     const box = b.view.getByRole('textbox')
     expect(b.wiring.snapshot.draft).toBe('ordinary draft')
     act(() => { b.wiring.setDraft('ordinary revised') })
-    expect(b.store.store.getSnapshot().draft).toBe('ordinary revised')
+    expect(b.store.store.getSnapshot().draft).toEqual({ text: 'ordinary revised', references: [] })
     fireEvent.keyDown(box, { key: 'Enter' })
     expect(b.sink).toHaveBeenCalledWith('ordinary revised', [], 'queue', expect.any(AbortSignal))
     expect(b.view.queryByRole('button', { name: 'Child' })).toBeNull()
@@ -651,7 +652,7 @@ describe('ConversationRoot resident composer', () => {
     const box = b.view.getByRole('textbox')
     expect(host?.contains(box)).toBe(true)
     act(() => { b.wiring.setDraft('draft in hero') })
-    expect(b.store.store.getSnapshot().draft).toBe('draft in hero')
+    expect(b.store.store.getSnapshot().draft).toEqual({ text: 'draft in hero', references: [] })
     // Picker: open through the chip; a pick switches to the other
     // workspace's blank session (draft carry is apply-layer wiring).
     fireEvent.click(b.view.getByRole('button', { name: '选择工作区' }))
@@ -756,7 +757,7 @@ describe('ConversationRoot resident composer', () => {
     const after = b.view.getByRole('textbox')
     expect(after).toBe(before)
     expect(b.wiring.snapshot.draft).toBe('kept across flip')
-    expect(b.store.store.getSnapshot().draft).toBe('kept across flip')
+    expect(b.store.store.getSnapshot().draft).toEqual({ text: 'kept across flip', references: [] })
     expect(b.view.container.querySelector('[data-conversation-scroll]')?.contains(after)).toBe(true)
     expect(b.view.queryByTestId('hero-headline')).toBeNull()
     expect(b.view.getByTestId('view-chat')).toBeTruthy()
@@ -1222,43 +1223,14 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.container.querySelector('[data-width-handle]')).toBeNull()
   })
 
-  it('keeps header actions reachable through an overflow seat at cozy density', async () => {
-    document.documentElement.dataset.titlebarDensity = 'cozy'
+  it.each(['full', 'cozy', 'compact'])('keeps one inline action instance at %s density', async density => {
+    document.documentElement.dataset.titlebarDensity = density
     const b = mount(sessionSnapshotOf())
-    const trigger = b.view.getByRole('button', { name: '更多会话操作' })
-    expect(trigger.getAttribute('aria-expanded')).toBe('false')
-
-    // Hover/focus previews the hidden band; the trigger's second role is to pin it.
-    fireEvent.pointerEnter(trigger.parentElement as HTMLElement)
+    expect(b.view.getAllByTestId('view-conversation.session.header.actions')).toHaveLength(1)
+    expect(b.view.queryByRole('button', { name: '更多会话操作' })).toBeNull()
+    act(() => { document.documentElement.dataset.titlebarDensity = 'full' })
     await act(async () => {})
-    const preview = b.view.getByRole('group', { name: '更多会话操作' })
-    expect(preview.querySelector('[data-testid="view-conversation.session.header.actions"]')).not.toBeNull()
-    expect(trigger.getAttribute('aria-expanded')).toBe('true')
-    fireEvent.pointerLeave(trigger.parentElement as HTMLElement)
-    await act(async () => {})
-    expect(b.view.queryByRole('group', { name: '更多会话操作' })).toBeNull()
-
-    // Click pins the popover open until Escape or an outside pointerdown.
-    fireEvent.click(trigger)
-    await act(async () => {})
-    expect(b.view.getByRole('group', { name: '更多会话操作' })).toBeTruthy()
-    fireEvent.pointerLeave(trigger.parentElement as HTMLElement)
-    await act(async () => {})
-    expect(b.view.getByRole('group', { name: '更多会话操作' })).toBeTruthy()
-    fireEvent.keyDown(document, { key: 'Escape' })
-    await act(async () => {})
-    expect(b.view.queryByRole('group', { name: '更多会话操作' })).toBeNull()
+    expect(b.view.getAllByTestId('view-conversation.session.header.actions')).toHaveLength(1)
     delete document.documentElement.dataset.titlebarDensity
-  })
-
-  it('hides the overflow seat at full density and shows it again after a density change', async () => {
-    const b = mount(sessionSnapshotOf())
-    expect(b.view.queryByRole('button', { name: '更多会话操作' })).toBeNull()
-    act(() => { document.documentElement.dataset.titlebarDensity = 'compact' })
-    await act(async () => {})
-    expect(b.view.getByRole('button', { name: '更多会话操作' })).toBeTruthy()
-    act(() => { delete document.documentElement.dataset.titlebarDensity })
-    await act(async () => {})
-    expect(b.view.queryByRole('button', { name: '更多会话操作' })).toBeNull()
   })
 })

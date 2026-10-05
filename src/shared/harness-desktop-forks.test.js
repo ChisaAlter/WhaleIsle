@@ -191,7 +191,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-conversation/src/client/TypingFxLayer.module.css': '@keyframes dsh-typing-fx-drop {}\n@media (prefers-reduced-motion: reduce) {}\n',
       'packages/client/ui-conversation/src/client/skeleton/InputBar.tsx': 'import { TypingFxLayer } from "../TypingFxLayer.tsx"\ndata-typing-fx-caret\n',
       'packages/client/ui-conversation/src/client/input/editor/DraftEditor.tsx': 'data-typing-fx-caret\n',
-      'packages/client/ui-conversation/src/client/skeleton/InputBar.module.css': '.input[data-typing-fx-caret] { caret-color: transparent; }\n',
+      'packages/client/ui-conversation/src/client/skeleton/InputBar.module.css': '.input[data-typing-fx-caret] { caret-color: transparent; }\n.dock { max-width: var(--dsh-composer-resized-width); }\n',
       'packages/client/ui-conversation/src/client/settings/TypingFxRow.tsx': "PropsRuntime<'settings.appearance.item'>\nimport { TypingFxModal } from './TypingFxModal.tsx'\n",
       'packages/client/ui-conversation/src/client/settings/TypingFxModal.tsx': "const TYPING_FX_EXPORT_CORE = 'dsh-typing-fx'\ndata-typing-fx-root\n",
       'packages/client/ui-conversation/tests/typing-fx.client.spec.ts': 'diffInsertedText(\n',

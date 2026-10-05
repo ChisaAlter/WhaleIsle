@@ -16,7 +16,7 @@
 ## User paths
 
 1. 维护者在仓库根执行文档记载的入口（`npm start`、`npm test`、`npm run test:tools`、`npm run setup:harness`、`npm run pack`、`npm run dist`、`npm run docs:check`）都能找到对应脚本；文档链接检查按需执行。
-2. 打包流程按 `build.extraResources` 装配 `vendor/dsh-remote` 等内置插件，`scripts/after-pack.js` 在打包期完成资源断言。
+2. 打包流程按 `build.extraResources` 装配 `vendor/dsh-remote` 等内置插件；`scripts/after-pack.js` 选择 Harness 与桌面扩展的生产闭包、清理插件开发依赖并完成资源断言。
 3. 应用更新读取 `build.publish` 的 GitHub 元数据与 `dependencies.electron-updater`，与安装器 artifact 命名保持一致。
 
 ## Invariants
@@ -25,15 +25,18 @@
 
 - 阶段输入覆盖根构建清单、`scripts/**` 构建 helper、`vendor/**` 源与 native 声明；`vendor/*/lib/**`、`native/system/packages/*/lib/**` 是 host 产物，native 二进制按当前 `platform-arch/bin` 归属。精确产物根不计为源输入；位于 `src/lib/**` 的真实源码仍须失效。
 
-- 提取运行时使用同卷临时树，验证后替换；Windows junction 不随临时目录原样搬迁，正式路径重新构造成功后才写戳。旧运行时通过 `.previous` 保留至切换完成，启动时先恢复中断替换，再清理遗留临时树；空间不足或归档损坏不提前删除旧树。
-- 启动时批量链接校验/修复/清理使用异步文件 I/O，仍逐次验证路径边界；准备阶段可取消，正式目录切换须完成重建或回滚。构建期同步 API 和链接清单格式不变。
-- `afterPack` 对完成的 tar 异步流式计算 SHA-256，随包写 version 1 `vendor/deepseek-harness-runtime.json`（`archiveBytes` + `archiveSha256`）。复用戳必须匹配内容摘要；缺摘要的旧戳刷新一次。同版本、同 upstream pin、同 tar 长度也不得复用不同内容。现代包稳态仅读小摘要清单，替换前流式核验实际归档；无清单的旧布局通过流式摘要兼容。摘要无效或核验失败不替换旧树。
+- Harness 装配根是 `apps/cli` 与 `src/shared/harness-desktop-forks.js` 的 `DESKTOP_PACKAGES`；只沿生产依赖和已安装的 optional、peer 依赖选择闭包，不再把所有已构建工作区包纳入。`apps/web/dist` 单独作为前端资源复制，桌面差异包保留。
+- Windows Setup 复用上游 NSIS 目录事务：暂存新目录并验证运行时 → 关闭旧应用 → 改名晋级 → 注册安装信息 → 清理旧目录。`scripts/install-harness.cjs` 在暂存目录核验 tar 大小和摘要，解压并创建指向最终安装路径的 junction，完成后删除 tar；应用启动优先使用安装目录内的 `resources/vendor/deepseek-harness`。
+- `pack --dir`、macOS 与旧 tar 布局仍保留启动提取。该路径使用同卷临时树，验证后替换；Windows junction 在正式路径重新构造成功后才写戳。旧运行时通过 `.previous` 保留至切换完成，启动时先恢复中断替换，再清理遗留临时树；空间不足或归档损坏不提前删除旧树。启动时批量链接校验/修复/清理使用异步文件 I/O，仍逐次验证路径边界；准备阶段可取消，正式目录切换须完成重建或回滚。
+- `afterPack` 对完成的 tar 异步流式计算 SHA-256，随包写 version 1 `vendor/deepseek-harness-runtime.json`（`archiveBytes` + `archiveSha256`）。Windows 安装阶段核验实际归档；启动提取路径的复用戳必须匹配内容摘要，缺摘要的旧戳刷新一次。同版本、同 upstream pin、同 tar 长度也不得复用不同内容。该路径稳态仅读小摘要清单，替换前流式核验实际归档；无清单的旧布局通过流式摘要兼容。摘要无效或核验失败不替换旧树。
 
 - 窗口圆角/动画桥 `koffi@3.3.2` 是生产依赖，锁文件保留平台闭包；桌面包与 slim 启动器解包 Koffi 及其 `@koromix` 原生模块，Windows 不得缺桥静默改为不透明窗口。见 [window-motion](window-motion.md)。
 
-- 桌面构建与随包 Harness Node 以 `.nvmrc` 为唯一版本源，当前选用 Node 24.21.0 LTS；跨主版本后重新执行构建、桌面测试和打包启动验证。Electron 内置 Node 与 Office 锁定运行时各自独立。
+- 桌面构建 Node 由根 `.nvmrc` 指定，当前选用 Node 24.21.0 LTS。Windows 随包 Harness 与 Office 共用 primary-runtime 锁定的独立 Node，位于 `resources/runtime/primary-runtime/dependencies/node/bin/node.exe`；其它目标仍单独复制构建时 Node。Electron 内置 Node 不作为该共享解释器。跨主版本后按影响重新执行构建、桌面测试和打包启动验证。
 
-- 每个运行时源 realpath 对应一个物理包目录；消费者经根内链接解析到相同或隔离的源实例。version 1 `.dsh-runtime-links.json` 仅记录相对路径，归档前移除链接、解压后恢复，实际解析边与发布文件都须通过验证。
+- 每个运行时源 realpath 对应一个物理包目录；消费者经根内链接解析到相同或隔离的源实例。version 1 `.dsh-runtime-links.json` 仅记录相对路径，归档前移除链接；Windows 安装阶段按最终路径准备链接，其它提取路径解压后恢复，实际解析边与发布文件都须通过验证。
+- 内置插件暂存依赖树保留生产、已安装 optional 与 peer 闭包，删除闭包外的包槽位；包内 JS 子路径（如 `zod/v4`）仍作为包资源保留。许可文件和含许可证正文的 README 不随 Markdown 清理删除。运行时筛选仅处理分发副本，排除声明、source map、明确的开发/宣传目录、重复的 web public 与 ConPTY 构建副本，以及非目标平台 native 文件；目标 ConPTY DLL/exe 保留。两份 pnpm 保留各自版本与入口，剔除非目标 reflink；桌面 pnpm 只含 `package.json`、`bin`、`dist`、`LICENSE`，不复制 `artifacts/exe` 中的重复 CLI。
+- Windows Office 分发副本移除 Python 测试/基准目录及有对应源码的 `.pyc`，保留公开 `testing` 模块。裁剪后 `runtime.json.payloadDigest` 绑定实际文件内容和版本元数据，装配检查复算摘要，用户目录中的旧载荷按新的身份正常替换。
 - 账户启动依赖 `ws` 必须在根生产 dependencies 与锁文件中声明，不能依赖本机额外安装。工作区依赖同源拆分与异源合并均阻断打包，字节相同不豁免；删除副本后的依赖树必须复验，正确收拢不能因复制计数不变而失败。
 - `package.json` 必须保留 `scripts`（至少含 start / test / test:tools / setup:harness / sync:harness / pack / dist / docs:check）、`devDependencies`（electron / electron-builder / semver / pnpm）、`dependencies.electron-updater`、engines、overrides 与完整 `build` 块（asarUnpack / electronDist / extraMetadata / afterPack / publish / win / nsis / mac / dmg）。
 - `build.extraResources` 的首个 vendor filter 必须包含全部内置插件目录，含 `dsh-remote/**`；`vendor/chisacode-remote/.tmp/desktop-runtime/node_modules → vendor/dshd-remote/node_modules` 的第二条资源映射不得丢。
@@ -47,6 +50,7 @@
 ## Allowed touch
 
 - `src/shared/harness-runtime-identity.js`、`.test.js`、`src/main/harness-extract.js`、`.test.js`、`scripts/after-pack.js`、`src/main/after-pack.test.js` — 2026-09-30 用户全面修复授权下的归档内容身份、旧戳迁移与提取前校验。
+- `scripts/production-runtime.js`、`scripts/install-harness.cjs`、`scripts/windows-directory-installer.cjs`、`scripts/run-electron-builder.cjs`、`src/main/dsh.js`、`src/shared/runtime-links.js` — 生产依赖闭包、共享 Node 与 Windows 安装阶段运行时准备。
 - `vendor/deepseek-harness/.agents/notes/implemented/process/2026-09-30-stage-build-input-ownership.md` 与中文配对/sidecar — 阶段凭据输入和产物归属的长期边界。
 
 - `package.json`、`package-lock.json`、`electron-builder.launcher.yml`、`src/main/package-contract.test.js` — 2026-09-29 圆角与动画修复所需 Koffi 生产闭包/原生模块解包。
@@ -98,5 +102,5 @@
 - Decision: [官方构建按阶段验证输入-产物凭据，命中即复用](../decisions/proposed/process/2026-09-21-build-stage-credentials.md)
 - Decision: [打包装配复用已验证的插件依赖树](../decisions/proposed/process/2026-09-22-packaging-plugin-reuse.md)
 - Evidence: [2026-09-19 审计修复计划](../superpowers/plans/2026-09-19-audit-repair-optimization.md)
-- Implementation entry: `package.json`、`scripts/after-pack.js`、`scripts/source-scan.mjs`、`src/main/package-contract.test.js`
+- Implementation entry: `package.json`、`scripts/after-pack.js`、`scripts/production-runtime.js`、`scripts/install-harness.cjs`、`scripts/source-scan.mjs`、`src/main/package-contract.test.js`
 - 相关卡：`windows-installer`（NSIS 品牌）、`remote-workspace`（dsh-remote 资源）、`desktop-launcher`（updater 元数据）

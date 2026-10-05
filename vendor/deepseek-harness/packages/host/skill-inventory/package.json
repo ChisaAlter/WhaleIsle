@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-host-skill-inventory",
   "description": "Host Remote for listing and mutating filesystem-backed skills",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -49,7 +49,6 @@
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-home-paths": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-skill": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
@@ -57,7 +56,6 @@
   },
   "devDependencies": {
     "@deepseek-ai/dsh-home-paths": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-scope": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-skill": "workspace:^",

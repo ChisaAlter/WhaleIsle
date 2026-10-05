@@ -47,8 +47,8 @@ function ruleOf(css, selector) {
 }
 
 test('stats row follows the drag-resized composer card', () => {
-  const css = normalize(readRel(UI_CHAT, 'chat/StatsPills.module.css'));
-  const rule = ruleOf(css, '\\.root');
+  const css = normalize(readRel(UI_CONVERSATION, 'skeleton/InputBar.module.css'));
+  const rule = ruleOf(css, '\\.dock');
   assert.match(rule, FOLLOW);
   assert.match(rule, /var\(--dsh-composer-side-clearance\)/);
 });

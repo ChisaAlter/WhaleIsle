@@ -135,7 +135,7 @@ export function installDraftKeymap(
         g.running,
         accelerated ? 'accelerated' : 'enter',
         g.steeringAvailable,
-      ))
+      ), 'enter')
     },
     intakeFiles: (files, directories) => { gate.current.intakeFiles(files, directories) },
     pasteText: (text) => {

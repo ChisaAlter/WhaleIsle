@@ -1,18 +1,18 @@
 {
   "returned": [
     "Checking for updates…",
-    "No updates available. Current version: V1.0.0",
-    "This is a test build. Checking update requirements needs Feishu sign-in. Signing in does not download or install an update."
+    "You’re up to date!",
+    "Sign in with Feishu to check update requirements for this test build. Signing in will not download or install an update."
   ],
   "cancelled": [
     "Checking for updates…",
-    "No updates available. Current version: V1.0.0",
-    "This is a test build. Checking update requirements needs Feishu sign-in. Signing in does not download or install an update."
+    "You’re up to date!",
+    "Sign in with Feishu to check update requirements for this test build. Signing in will not download or install an update."
   ],
   "failed": [
     "Checking for updates…",
-    "No updates available. Current version: V1.0.0",
-    "This is a test build. Checking update requirements needs Feishu sign-in. Signing in does not download or install an update.",
-    "Test environment sign-in did not complete. Please check your connection and try again."
+    "You’re up to date!",
+    "Sign in with Feishu to check update requirements for this test build. Signing in will not download or install an update.",
+    "Feishu sign-in did not complete. Please try again."
   ]
 }

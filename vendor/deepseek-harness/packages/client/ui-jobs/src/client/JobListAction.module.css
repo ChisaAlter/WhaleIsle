@@ -1,5 +1,6 @@
 .root {
   position: relative;
+  min-width: 28px;
 }
 
 .trigger {
@@ -15,6 +16,9 @@
   font-size: 12px;
   line-height: 18px;
   cursor: pointer;
+  min-width: 28px;
+  max-width: 100%;
+  white-space: nowrap;
 }
 
 .trigger:hover,
@@ -23,6 +27,7 @@
 }
 
 .trigger svg {
+  flex: none;
   transition: transform var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
 
@@ -35,7 +40,45 @@
 }
 
 .count {
+  min-width: 0;
   margin: 0 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jobsIcon {
+  display: none;
+}
+
+@container (max-width: 520px) {
+  .trigger {
+    box-sizing: border-box;
+    width: 28px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .count,
+  .triggerChevron {
+    display: none;
+  }
+
+  .jobsIcon {
+    display: inline-flex;
+  }
+
+  .trigger {
+    position: relative;
+  }
+
+  .triggerDot {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 10px;
+    height: 10px;
+  }
 }
 
 .menu {

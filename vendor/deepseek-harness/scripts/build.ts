@@ -60,6 +60,9 @@ function runScript(script: string, environment: NodeJS.ProcessEnv): void {
  * never violated. `--force` ignores the credentials and re-runs everything.
  */
 async function main(): Promise<void> {
+  if (!process.features.typescript) {
+    throw new Error('build: Node.js TypeScript type stripping is unavailable')
+  }
   const { values } = parseArgs({
     options: { profile: { type: 'string' }, force: { type: 'boolean' } },
     allowPositionals: false,

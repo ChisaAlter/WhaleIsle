@@ -118,10 +118,11 @@ function createPetChat({ getCreds, fetchImpl, model, lookModel, whale, getWhaleS
   // session-level failure is returned honestly so we never fork the
   // conversation into a shadow reply the DSHD side can't see.
   async function chat({ text, personality } = {}) {
-    const t = String(text || '').trim().slice(0, 200);
+    const t = String(text || '').trim();
     if (!t) {
       return { ok: false, reason: 'empty-input' };
     }
+    if (t.length > 2000) return { ok: false, reason: 'input-too-long' };
     if (whale?.enabled?.() && typeof whale.post === 'function') {
       try {
         // Turn wait (120s plugin-side) + harness margin — the fetch must
@@ -131,7 +132,8 @@ function createPetChat({ getCreds, fetchImpl, model, lookModel, whale, getWhaleS
           return { ok: true, reply: res.value.reply.trim().slice(0, CARD_REPLY_CAP), via: 'whale' };
         }
         if (res?.ok && res.value?.ok === false) {
-          return { ok: false, reason: res.value.error || 'whale-failed', via: 'whale' };
+          return { ok: false, reason: res.value.error || 'whale-failed', via: 'whale',
+            reply: typeof res.value.reply === 'string' ? res.value.reply.slice(0, CARD_REPLY_CAP) : '' };
         }
         // The endpoint answered but returned an unparseable shape, or the
         // endpoint itself threw (200 + result.ok:false). Both are session-

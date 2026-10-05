@@ -141,6 +141,8 @@ function createLive2dPetManager(options = {}) {
 
   let state = normalizeLive2dPetState(loadConfig()?.live2dPet);
   let win = null;
+  let petRendererReady = false;
+  let dshActivityState = 'idle';
   let interactive = false;
   let chatFocusWanted = false;
   let surfaceRegionKey = '';
@@ -205,6 +207,7 @@ function createLive2dPetManager(options = {}) {
       } catch {}
     },
     onState: (s) => {
+      dshActivityState = s;
       if (!win || win.isDestroyed?.()) {
         return;
       }
@@ -212,6 +215,7 @@ function createLive2dPetManager(options = {}) {
         win.webContents.send('shell:live2d-dsh', { state: s });
       } catch {}
     },
+    isPetVisible: () => Boolean(petRendererReady && win && !win.isDestroyed?.() && win.isVisible()),
   });
   let stopDshWatch = null;
 
@@ -295,14 +299,15 @@ function createLive2dPetManager(options = {}) {
       return;
     }
     mirrorInFlight = true;
+    const personality = pendingPersonality;
     try {
       // Assistant off → her route is unmounted; park the value and let a
       // later retry deliver it instead of posting a guaranteed 404.
       const res = whaleEnabled() === false
         ? { ok: false, transport: true, reason: 'assistant-disabled' }
-        : await whalePost('settings/update', { personality: pendingPersonality });
+        : await whalePost('settings/update', { personality });
       if (res.ok) {
-        pendingPersonality = null;
+        if (pendingPersonality === personality) pendingPersonality = null;
         mirrorRejectRetries = 0;
       } else if (res.transport === true) {
         scheduleMirrorRetry();
@@ -318,6 +323,9 @@ function createLive2dPetManager(options = {}) {
       }
     } finally {
       mirrorInFlight = false;
+      if (pendingPersonality !== null && pendingPersonality !== personality) {
+        void flushPersonalityMirror();
+      }
     }
   }
   function queuePersonalityMirror(value) {
@@ -743,6 +751,7 @@ function createLive2dPetManager(options = {}) {
   }
 
   function createWindow() {
+    petRendererReady = false;
     const bounds = overlayBounds();
     dbg(`pet: createWindow bounds ${JSON.stringify(bounds)} enabled=${state.enabled}`);
     win = new BrowserWindow({
@@ -791,6 +800,7 @@ function createLive2dPetManager(options = {}) {
     });
     win.once('ready-to-show', () => { dbg('pet: ready-to-show'); win?.showInactive(); });
     win.webContents.once?.('did-finish-load', () => {
+      petRendererReady = true;
       dbg('pet: did-finish-load');
       sendLayout();
       sendPetPosition();
@@ -798,6 +808,7 @@ function createLive2dPetManager(options = {}) {
       // First growth snapshot after the page is up — she learns her level.
       rescanGrowth();
       pushGrowth(growth.snapshot());
+      win.webContents.send('shell:live2d-dsh', { state: dshActivityState });
     });
     win.webContents.on?.('render-process-gone', (_e, details) => {
       dbg(`pet: render-process-gone ${JSON.stringify(details)}`);
@@ -879,9 +890,6 @@ function createLive2dPetManager(options = {}) {
       growthTimer = setInterval(rescanGrowth, 60000);
       growthTimer.unref?.();
     }
-    if (!stopDshWatch && options.sessionsDir) {
-      stopDshWatch = dshWatch.start(2000) || null;
-    }
     startCursorPump();
     if (!win || win.isDestroyed?.()) {
       return createWindow();
@@ -893,13 +901,10 @@ function createLive2dPetManager(options = {}) {
   }
 
   function hide() {
+    petRendererReady = false;
     clearInterval(growthTimer);
     growthTimer = 0;
     stopCursorPump();
-    if (stopDshWatch) {
-      stopDshWatch();
-      stopDshWatch = null;
-    }
     if (win && !win.isDestroyed?.()) {
       win.close();
     }
@@ -1258,6 +1263,10 @@ function createLive2dPetManager(options = {}) {
     mirrorTimer = 0;
     stopCursorPump();
     hide();
+    if (stopDshWatch) {
+      stopDshWatch();
+      stopDshWatch = null;
+    }
     if (handlersRegistered) {
       ipcMain.removeHandler?.('shell:live2d-interactive');
       ipcMain.removeHandler?.('shell:live2d-drag-start');
@@ -1286,6 +1295,8 @@ function createLive2dPetManager(options = {}) {
   }
 
   registerHandlers();
+  // Usage belongs to the assistant even while its visual pet is hidden.
+  if (options.sessionsDir) stopDshWatch = dshWatch.start(2000) || null;
   // One-shot heal on startup: an assistant catalog written before the
   // unified control (or while the pet was off) may hold a divergent
   // personality — re-asserting the pet value closes the gap. Harness not

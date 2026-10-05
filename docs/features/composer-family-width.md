@@ -16,14 +16,14 @@
 
 - 单一事实源：座位（`[data-composer-seat]`）**和**列宿主（`[data-conversation-scroll]`）同值发布 `--dsh-composer-resized-width`；各消费方只读该变量，**不得**另存宽度或自行计算。双发原因：聊天流转列（`.column`）是 seat 的兄弟，读不到只发在 seat 上的变量。
 - 静止回退：`var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width))`，变量缺失时 = 旧值。
-- 关系钉死：StatsPills = 卡宽 − 2×side-clearance；聊天流转列 = 卡宽 − 2×side-clearance；QueueDock = 卡宽 − 2×dock-inset；TodoPanel / GoalBar = 卡宽 − 4×dock-inset。（harness 侧 `PeakValleyRow` 位于 dock 内部随 StatsPills 同宽，无独立上限。）
+- 关系钉死：统计 dock = 卡宽 − 2×side-clearance；聊天流转列 = 卡宽 − 2×side-clearance；QueueDock = 卡宽 − 2×dock-inset；TodoPanel / GoalBar = 卡宽 − 4×dock-inset。0.2.1-alpha.1 起 ActivityPill 与 UsagePill 各自占一个 dock 条目，宽度约定位于 `InputBar.module.css` 的 `.dock`；`PeakValleyRow` 在该容器中独占下一行。
 - Hero 行直接以 `var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width))` 为 `max-width`，在外层 stack 内 `align-self: center`；不得按 stack 满宽留在左缘。
 - vendored 上游 CSS/TS 改动经 `FORK_FILE_MARKERS`（harness-desktop-forks.js）+ `src/shared/composer-family-width.test.js` 双重标记，sync:harness 不得静默丢。
 - 宽高独立：高度拖动不受影响（高度变量不同，家族行不读）。
 
 ## Allowed touch
 
-- `vendor/deepseek-harness/packages/client/ui-chat/src/client/chat/StatsPills.module.css`、`chat/ChatView.module.css`（官方 0.1.2 起 chat/ 位于 `ui-chat` 包；0.1.5-rc.1 起统计行更名为 StatsPills）
+- `vendor/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/InputBar.module.css`（统计 dock 宽度）；`vendor/deepseek-harness/packages/client/ui-chat/src/client/chat/ChatView.module.css`（聊天流宽度）
 - `vendor/deepseek-harness/packages/client/ui-conversation/src/client/queue/QueueDock.module.css`、`skeleton/TodoPanel.module.css`、`skeleton/ComposerResizeHandles.tsx`、`skeleton/ConversationRoot.module.css`
 - `vendor/deepseek-harness/packages/client/ui-conversation/README*.md`
 - `vendor/deepseek-harness/packages/client/ui-goal/src/client/GoalBar.module.css`

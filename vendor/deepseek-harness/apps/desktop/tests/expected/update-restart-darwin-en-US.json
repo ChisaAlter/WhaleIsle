@@ -1,6 +1,6 @@
 {
-  "message": "DeepSeek Harness v0.1.99 downloaded",
-  "detail": "The update package has downloaded. Select “Install and Restart” to restart the app and begin installation.",
+  "message": "Version 0.1.7-alpha.2 is ready to install",
+  "detail": "The app will close during the update and reopen automatically when it is complete.",
   "buttons": [
     "Install and Restart"
   ]

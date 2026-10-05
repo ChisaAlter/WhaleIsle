@@ -38,7 +38,7 @@ import css from './AppFrame.module.css'
 /** Full composed props: runtime share + child-slot render share + store share. */
 export type AppFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'main' | 'rightbar' | 'surfaces' | 'shell.overlay' | 'shell.titlebar.trailing' | 'shell.terminalDrawer'>
+  & PropsRenderSlots<'sidebar' | 'main' | 'rightbar' | 'surfaces' | 'shell.bottom' | 'shell.overlay' | 'shell.titlebar.trailing' | 'shell.terminalDrawer'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & PropsLocale<'common'>
 
@@ -405,7 +405,7 @@ export function AppFrame({
         gridTemplateColumns: phone
           ? `0px minmax(0, 1fr) ${cols.rightbar}px 0px`
           : `${cols.sidebar}px minmax(0, 1fr) ${cols.rightbar}px 0px`,
-        gridTemplateRows: `auto minmax(0, 1fr) ${layoutInfo.terminalDrawer}px`,
+        gridTemplateRows: `auto minmax(0, 1fr) ${layoutInfo.terminalDrawer}px auto`,
         '--dshd-titlebar-conversation-reserve': `${conversationReserve}px`,
       } as CSSProperties}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
@@ -469,6 +469,9 @@ export function AppFrame({
           {renderSlot('rightbar', { width: normal.rightbar, viewportWidth: viewport, canShow: normal.rightbar > 0 })}
         </RightbarColumn>
       </>
+      <div className={css.bottomRow} data-shell-bottom>
+        {renderSlot('shell.bottom', {})}
+      </div>
       <div className={css.overlayLayer} data-shell-overlay>
         {overlays}
       </div>

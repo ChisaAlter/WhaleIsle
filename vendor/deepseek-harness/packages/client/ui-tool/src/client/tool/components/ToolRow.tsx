@@ -40,10 +40,9 @@ export interface ToolRowProps {
   summary: string
   /**
    * Trailing summary fragment rendered outside the ellipsized summary text, so
-   * a narrow row clips the summary before this. For a fragment whose whole
-   * value is surviving that clip — the todo row's parallel-active count.
-   * null/absent = the summary is the whole collapsed content. Dropped on an
-   * error row, whose collapsed summary is the failure line instead.
+   * a narrow row clips the summary before this. Appears before diff totals
+   * when both are present. null/absent omits this fragment. Error and stopped
+   * rows omit both the suffix and diff totals.
    */
   summarySuffix?: string | null | undefined
   /** Original argument JSON formatted only while the row is expanded. */
@@ -56,6 +55,7 @@ export interface ToolRowProps {
   errorSummary?: string | null | undefined
   /** Terminal card; card fields are mutually exclusive and replace text sections. */
   terminal?: TerminalCardModel | null | undefined
+  /** Diff card with inline totals colored on header hover and while expanded. */
   diff?: DiffCardModel | null | undefined
   read?: ReadCardModel | null | undefined
   /**
@@ -182,15 +182,11 @@ export const ToolRow = memo(function ToolRow({
   // amber while retaining the business icon and hidden state announcement.
   const failureLine = state === 'error' ? errorSummary ?? normalSummary : null
   const summaryText = failureLine ?? normalSummary
-  // The tool row keeps the diff's +/- totals visible while its body is collapsed.
-  // An explicit summarySuffix overrides the diff totals.
-  const diffStat = useMemo(() => {
-    if (diffBody === null) return null
-    const { added, removed } = diffTotals(diffBody.card.diffs)
-    return `+${added} -${removed}`
-  }, [diffBody])
+  // Diff totals remain visible after the optional summary suffix.
+  const diffStat = useMemo(() => diffBody === null ? null : diffTotals(diffBody.card.diffs), [diffBody])
   const settledWithCue = state === 'error' || state === 'stopped'
-  const suffix = settledWithCue ? null : summarySuffix ?? diffStat
+  const suffix = settledWithCue ? null : summarySuffix ?? null
+  const totals = settledWithCue ? null : diffStat
   const imageSuffix = settledWithCue || imageBody === null ? null : `${t('image.label')} (${imageBody.images.length})`
   const displayedSuffix = imageSuffix ?? suffix
   const openFile = useMemo(() => filePath !== undefined && onOpenFile !== undefined && !settledWithCue
@@ -216,7 +212,7 @@ export const ToolRow = memo(function ToolRow({
     /* An empty summary drops the separator with it (a row that is only
        its title shows no trailing dot). */
     <>
-      <span className={css.sep} aria-hidden />
+      <span className={css.sep} data-shimmer-decoration aria-hidden />
       {openFile !== undefined ? (
         <button
           type="button"
@@ -224,7 +220,7 @@ export const ToolRow = memo(function ToolRow({
           onClick={openFile}
           onKeyDown={summaryLinkKeyDown}
         >
-          <TextShimmer active={running}>{summaryText}</TextShimmer>
+          <TextShimmer>{summaryText}</TextShimmer>
         </button>
       ) : linkHref !== undefined ? (
         <a
@@ -235,7 +231,7 @@ export const ToolRow = memo(function ToolRow({
           onClick={stopLinkClick}
           onKeyDown={summaryLinkKeyDown}
         >
-          <TextShimmer active={running}>{summaryText}</TextShimmer>
+          <TextShimmer>{summaryText}</TextShimmer>
         </a>
       ) : (
         <span
@@ -245,14 +241,19 @@ export const ToolRow = memo(function ToolRow({
             state === 'stopped' && css.stoppedSummary,
           )}
         >
-          <TextShimmer active={running}>{summaryText}</TextShimmer>
+          <TextShimmer>{summaryText}</TextShimmer>
         </span>
       )}
       {displayedSuffix !== null && (
-        <TextShimmer className={clsx(css.summarySuffix, suffix === diffStat && css.diffStat)} active={running}>{displayedSuffix}</TextShimmer>
+        <TextShimmer className={css.summarySuffix} active={running}>{displayedSuffix}</TextShimmer>
+      )}
+      {totals !== null && (
+        <TextShimmer className={clsx(css.summarySuffix, css.diffStat)}>
+          <span className={css.diffAdded}>{`+${totals.added}`}</span>{' '}<span className={css.diffRemoved}>{`-${totals.removed}`}</span>
+        </TextShimmer>
       )}
     </>
-  ), [diffStat, displayedSuffix, summaryLinkKeyDown, linkHref, openFile, running, state, suffix, summaryText])
+  ), [summaryLinkKeyDown, linkHref, openFile, state, displayedSuffix, totals, summaryText, running])
   const expandedContent = useMemo(() => open ? (
     <div className={clsx(css.bodyWrap, detailsBody !== null && css.detailsBodyWrap)}>
       {askQuestionBody !== null
@@ -363,7 +364,6 @@ export const ToolRow = memo(function ToolRow({
         rowClassName={css.row}
         leadingClassName={css.leading}
         titleClassName={css.title}
-        chevronClassName={css.chevron}
         icon={icon}
         title={title}
         running={running}

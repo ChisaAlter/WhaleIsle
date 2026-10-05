@@ -15,16 +15,16 @@ import type { PluginInstallFailureKind, Registry } from '@deepseek-ai/dsh-api-re
 import {
   Button, IconCheckCircleFillRegular, IconChevronDownOutlineRegular, IconChevronLeftOutlineMedium,
   IconChevronRightOutlineRegular, IconCloseOutlineMedium,
-  IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
-  IconWarningOutlineRegular, Input, Modal,
+  IconDownloadOutlineRegular, IconInfoOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
+  IconWarningOutlineRegular, Input, Menu, MenuItemButton, Modal, pointerModality,
   PluginArtworkDefault, PluginArtworkLoop, PluginArtworkSearch, PluginArtworkSubagent, PluginArtworkTerminal,
-  StateDot, Switch, Tag, TerminalBlock, Toast, useAnchoredPosition, useDismissOnOutsidePointer,
+  StateDot, Switch, Tag, TerminalBlock, Toast, Tooltip, useAnchoredPosition, useDismissOnOutsidePointer,
   type IconProps, type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { createNavigationStore } from './navigation-store.ts'
 import { rowConfigKey, type OfficialItem } from './config-ledger.ts'
-import type { PluginManagerLocaleKey } from './locales.ts'
+import { INSTALL_GIT_EXAMPLE, INSTALL_PATH_EXAMPLE, type PluginManagerLocaleKey } from './locales.ts'
 import {
   asksMirror, githubRecoveryRegistry, isInstallPending, offeredRegistries, rowKey,
   type InstallInputError, type InstallState, type InstallSubject, type PackageRow, type PackageView,
@@ -41,6 +41,7 @@ export type PluginManagerPageProps =
   & PropsLocale<'pluginManager'>
   & PropsRenderSlots<
     | 'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config' | 'plugins.bundle.activation'
+    | 'plugins.add.actions'
     | 'plugins.detail.actions' | 'plugins.detail.badge' | 'plugins.detail.section'
   >
   & InjectFace<PluginManagerFace>
@@ -51,6 +52,44 @@ type RenderConfig = PluginManagerPageProps['renderSlot']
 type ResolveText = PluginManagerFace['resolveText']
 
 type RowPhase = NonNullable<PackageRow['phase']>
+
+/** The primary action installs; the adjacent menu offers every add-plugin path. */
+function AddPluginMenu({ t, disabled, openInstall, renderSlot }: {
+  readonly t: Translate
+  readonly disabled: boolean
+  readonly openInstall: () => void
+  readonly renderSlot: RenderConfig
+}): ReactNode {
+  const [open, setOpen] = useState(false)
+  const onDismiss = (): void => { setOpen(false) }
+  return (
+    <span className={css.addGroup} role="group" aria-label={t('addPlugin')}>
+      <Button variant="primary" size="sm" className={css.addPrimary} icon={<IconPlusOutlineRegular size={13} />}
+        disabled={disabled} onClick={() => { onDismiss(); openInstall() }}>
+        {t('addPlugin')}
+      </Button>
+      <Menu open={open} onClose={onDismiss} align="end" portal autoFocus listClassName={css.addMenu}
+        anchor={(
+          <Button variant="primary" size="sm" className={css.addMore}
+            disabled={disabled} aria-label={t('chooseAddMethod')} aria-haspopup="menu" aria-expanded={open}
+            onClick={() => { setOpen(value => !value) }}
+            onKeyDown={(event) => {
+              if (!open && event.key === 'ArrowDown') { event.preventDefault(); setOpen(true) }
+            }}>
+            <IconChevronDownOutlineRegular size={12} aria-hidden="true" />
+          </Button>
+        )}>
+        <MenuItemButton icon={<IconDownloadOutlineRegular size={14} />} onSelect={() => { onDismiss(); openInstall() }}>
+          <span className={css.addMenuItem}>
+            <span>{t('installExisting')}</span>
+            <span className={css.addMenuDescription}>{t('installExistingDescription')}</span>
+          </span>
+        </MenuItemButton>
+        {renderSlot('plugins.add.actions', { onDismiss })}
+      </Menu>
+    </span>
+  )
+}
 
 /** How long the list marks a package an install just enabled. */
 const HIGHLIGHT_MS = 2_400
@@ -270,6 +309,35 @@ function RowsSection({ rows, t, resolveText, toggle, configure }: {
 }
 
 /**
+ * Where a bundle comes from: the spec that installs it elsewhere, or built in
+ * for one whose loaded copy the installation supplies, and its version. A
+ * selected bundle that neither the profile nor the installation holds has no
+ * section.
+ */
+function SourceSection({ pkg, t }: { readonly pkg: PackageView; readonly t: Translate }): ReactNode {
+  if (pkg.source === undefined && !pkg.installed && !pkg.optional) return null
+  return (
+    <section className={css.detailSection} data-plugin-source>
+      <h4 className={css.sectionTitle}>{t('sourceTitle')}</h4>
+      <dl className={css.facts}>
+        <div>
+          <dt>{t('sourceSpec')}</dt>
+          <dd>{pkg.source === undefined ? t('sourceBuiltIn') : <code>{pkg.source}</code>}</dd>
+        </div>
+        {pkg.version === undefined
+          ? null
+          : (
+            <div>
+              <dt>{t('sourceVersion')}</dt>
+              <dd>{pkg.version}</dd>
+            </div>
+          )}
+      </dl>
+    </section>
+  )
+}
+
+/**
  * A bundle's enable switch on its card and its page: locked, saying why, for
  * one the Host protects; off and locked for one it cannot read.
  */
@@ -320,6 +388,39 @@ function CardHead({ title, t, onOpen, icon, tags, description, end }: {
       </div>
       {end === undefined ? null : <div className={css.cardEnd}>{end}</div>}
     </div>
+  )
+}
+
+/** First-read placeholders share the Official group's card and text-line layout. */
+function ListSkeleton({ label }: { readonly label: string }): ReactNode {
+  return (
+    <section className={css.group} role="status" aria-label={label} data-plugin-loading>
+      <div className={css.groupHead} aria-hidden="true">
+        <span className={`${css.groupTitle} ${css.skeletonText} ${css.skeletonHeading}`}>
+          <span className={`${css.skeletonFill} ${css.skeletonBar}`} />
+        </span>
+      </div>
+      <ul className={css.cards} aria-hidden="true">
+        {[0, 1, 2, 3].map(index => (
+          <li key={index} className={css.card}>
+            <div className={css.cardHead}>
+              <span className={`${css.cardIcon} ${css.skeletonFill} ${css.skeletonIcon}`} />
+              <div className={css.cardMain}>
+                <div className={css.titleRow}>
+                  <span className={`${css.cardTitle} ${css.skeletonText} ${css.skeletonTitle}`}>
+                    <span className={`${css.skeletonFill} ${css.skeletonBar}`} />
+                  </span>
+                </div>
+                <span className={`${css.cardDesc} ${css.skeletonText} ${css.skeletonDescription}`}>
+                  <span className={`${css.skeletonFill} ${css.skeletonBar}`} />
+                </span>
+              </div>
+              <div className={`${css.cardEnd} ${css.skeletonActions}`} />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
@@ -501,11 +602,11 @@ function RowDetail({ pkg, row, t, resolveText, onBack, renderSlot, form }: {
 
 /**
  * One package's page: the crumb back to the list; its icon with its switch
- * and, for a package the profile installed, uninstall; its title beside its
+ * and, for a package the profile installed or a selection the Host can remove, uninstall; its title beside its
  * version tag, its beta tag, and its problem tag; the package name the title
- * stands for, which is what installs it elsewhere; its one-liner; the Host's
- * problem when it reports one; the configuration the bundle registered for
- * itself; and its rows with their switches and configure controls.
+ * stands for; its one-liner; the Host's problem when it reports one; the
+ * configuration the bundle registered for itself; its rows with their switches
+ * and configure controls; and where it comes from.
  */
 function PackageDetail({
   pkg, t, resolveText, busy, rowBusy, configured, configure, renderSlot,
@@ -539,7 +640,7 @@ function PackageDetail({
         actions={(
           <div className={css.detailActions}>
             {renderSlot('plugins.detail.actions', { subject })}
-            {pkg.installed
+            {pkg.installed || pkg.removable
               ? (
                 <Button
                   variant="outline"
@@ -587,6 +688,7 @@ function PackageDetail({
           toggle={pkg.enabled ? { busy: row => busy || rowBusy(row), onSetEnabled: onSetRowEnabled } : undefined}
           configure={configure}
         />
+        <SourceSection pkg={pkg} t={t} />
         {renderSlot('plugins.detail.section', { subject })}
       </div>
     </div>
@@ -620,6 +722,7 @@ function terminalLabels(t: Translate): TerminalBlockLabels {
 const INPUT_PROBLEM_KEYS = {
   'invalid-spec': 'installProblemInvalid',
   'already-installed': 'installProblemInstalled',
+  'shipped': 'installProblemShipped',
   'not-found': 'installProblemNotFound',
   'not-a-package': 'installProblemNotPackage',
   'not-a-bundle': 'installProblemNotBundle',
@@ -635,11 +738,9 @@ interface GuideExample {
   readonly hintKey: PluginManagerLocaleKey
 }
 
-/** The spec forms the install guide shows, each with an example the person can drop into the field. */
+/** The spec form the install guide shows, with an example the person can drop into the field. */
 const GUIDE_EXAMPLES = [
   { key: 'id', titleKey: 'installGuideIdTitle', exampleKey: 'installGuideIdExample', hintKey: 'installGuideIdHint' },
-  { key: 'git', titleKey: 'installGuideGitTitle', exampleKey: 'installGuideGitExample', hintKey: 'installGuideGitHint' },
-  { key: 'path', titleKey: 'installGuidePathTitle', exampleKey: 'installGuidePathExample', hintKey: 'installGuidePathHint' },
 ] as const satisfies readonly GuideExample[]
 
 /** The one-line reading of a classified pnpm failure. */
@@ -681,10 +782,10 @@ function registryList(registries: readonly Registry[], t: Translate, resolved: s
   return registries.map(registry => registryText(registry, t, resolved).name).join(t('registryListSeparator'))
 }
 
-/** An option's label: the registry's name with the host it names, unless the host is the name. */
-function registryOption(registry: Registry, t: Translate, resolved: string | null): string {
+/** An option's name with its host in tertiary text, unless the host is the name. */
+function registryOption(registry: Registry, t: Translate, resolved: string | null): ReactNode {
   const { name, host } = registryText(registry, t, resolved)
-  return name === host ? name : t('registryWithHost', { name, host })
+  return name === host ? name : <>{name}{' '}<span className={css.registryHint}>{host}</span></>
 }
 
 /**
@@ -697,7 +798,8 @@ function failureText(failure: InstallState['failure'], t: Translate, install?: P
   if (failure === null) return t('installFailureGeneric')
   // A compatibility refusal is the package's own answer, whatever pnpm's exit classified the run as.
   if (failure.code === 'incompatible-version') {
-    return managementText({ code: failure.code, ...failure.incompatible === undefined ? {} : { incompatible: failure.incompatible } }, t)
+    const incompatible = failure.incompatible === undefined ? {} : { incompatible: failure.incompatible }
+    return managementText({ code: failure.code, installing: true, ...incompatible }, t)
   }
   // Blocked scripts the Host could not name leave the person to allow them in the profile's pnpm settings by hand.
   if (failure.kind === 'build-blocked' && !failure.pendingBuilds?.length) return t('installFailureBuildBlockedManual')
@@ -726,6 +828,19 @@ function SubjectCard({ subject, t }: { readonly subject: InstallSubject; readonl
   )
 }
 
+/** Track one install field's composition, including Safari's 10ms post-composition Enter window. */
+function useInstallComposition(active: boolean) {
+  const composition = useRef({ active: false, until: 0 })
+  useEffect(() => { composition.current = { active: false, until: 0 } }, [active])
+  return {
+    onCompositionStart: () => { composition.current.active = true },
+    onCompositionEnd: () => { composition.current = { active: false, until: Date.now() + 10 } },
+    onBlur: () => { composition.current = { active: false, until: 0 } },
+    isComposing: (event: KeyboardEvent) => event.isComposing || Reflect.get(event, 'keyCode') === 229
+      || composition.current.active || Date.now() < composition.current.until,
+  }
+}
+
 /**
  * The install dialog: the spec and its check, then the installing, installed,
  * and failed screens over the same subject card. A failed run that left
@@ -752,20 +867,29 @@ function InstallDialog({
   readonly onUseGithubMirror: () => void
 }): ReactNode {
   const errorId = useId()
+  const templateHintId = useId()
   const guideId = useId()
   const approvalId = useId()
   const registryId = useId()
   const registryErrorId = useId()
   const [guideOpen, setGuideOpen] = useState(false)
+  const [customRegistryDraft, setCustomRegistryDraft] = useState('')
   const { phase } = install
   // The registry options float over the dialog from their toggle, so unfolding them never adds to its height;
   // the store folds them when a run starts, so they show at the spec only.
   const registryToggleRef = useRef<HTMLButtonElement | null>(null)
   const registryPanelRef = useRef<HTMLFieldSetElement | null>(null)
+  const registryCustomRef = useRef<HTMLInputElement | null>(null)
   const registryShown = install.registryOpen && phase === 'idle'
+  const specComposition = useInstallComposition(install.open && phase === 'idle')
+  const registryComposition = useInstallComposition(install.open && registryShown)
   const registryPosition = useAnchoredPosition({
     open: registryShown, anchorRef: registryToggleRef, panelRef: registryPanelRef, align: 'end', gap: 6, margin: 12,
   })
+  const registryReady = registryShown && registryPosition !== null
+  useEffect(() => {
+    if (registryReady && install.registryError) registryCustomRef.current?.focus()
+  }, [registryReady, install.registryError])
   // The hook only ever asks to close.
   useDismissOnOutsidePointer(registryToggleRef, registryShown, onToggleRegistry, registryPanelRef)
   useEffect(() => {
@@ -795,7 +919,7 @@ function InstallDialog({
               variant="primary"
               autoFocus
               onClick={() => {
-                // The mirror is already asked, so the form opens with the guide to the other kinds of spec.
+                // The mirror is already asked, so the form opens with the package-name guide.
                 if (anotherWay) setGuideOpen(true)
                 onUseGithubMirror()
               }}
@@ -821,6 +945,9 @@ function InstallDialog({
       : inputProblem.problem === 'network' && askedByCheck.length > 1
         ? t('installProblemNetworkAll', { registries: registryList(askedByCheck, t, resolved) })
         : t(INPUT_PROBLEM_KEYS[inputProblem.problem], { reason: inputProblem.reason })
+    const templateHint = install.spec === INSTALL_GIT_EXAMPLE
+      ? t('installGitTemplateHint')
+      : install.spec === INSTALL_PATH_EXAMPLE ? t('installPathTemplateHint') : null
     return (
       <Modal
         open={install.open}
@@ -831,10 +958,19 @@ function InstallDialog({
         className={css.installDialog as string}
         contentClassName={css.installContent as string}
         footer={(
-          <Button variant="primary" className={css.wide} disabled={checking || empty} aria-busy={checking} onClick={onRun}>
-            {checking ? <StateDot state="ongoing" /> : null}
-            {t(checking ? 'installChecking' : 'installRun')}
-          </Button>
+          <div className={css.installFooter}>
+            <p className={css.installSafety} role="note">
+              <IconWarningOutlineRegular size={14} aria-hidden="true" />
+              <span className={css.installSafetyText}>
+                <span>{t('installGuideSafety')}</span>
+                <span>{t('installUpgradeNotice')}</span>
+              </span>
+            </p>
+            <Button variant="primary" className={css.wide} disabled={checking || empty} aria-busy={checking} onClick={onRun}>
+              {checking ? <StateDot state="ongoing" /> : null}
+              {t(checking ? 'installChecking' : 'installRun')}
+            </Button>
+          </div>
         )}
       >
         <div className={css.installBody}>
@@ -842,19 +978,29 @@ function InstallDialog({
             <input
               type="text"
               autoFocus={install.mirrorRecovery === true}
+              data-modal-autofocus
               value={install.spec}
               placeholder={t('installSpecPlaceholder')}
               disabled={checking}
               aria-label={t(install.mirrorRecovery ? 'installPackageLabel' : 'installSpecLabel')}
               aria-invalid={install.inputError !== null}
-              aria-describedby={install.inputError === null ? undefined : errorId}
+              aria-describedby={inputSentence !== null ? errorId : templateHint !== null ? templateHintId : undefined}
               onChange={(event) => { onEditSpec(event.currentTarget.value) }}
-              onKeyDown={(event) => { if (event.key === 'Enter' && !empty && !checking) onRun() }}
+              onCompositionStart={specComposition.onCompositionStart}
+              onCompositionEnd={specComposition.onCompositionEnd}
+              onBlur={specComposition.onBlur}
+              onKeyDown={(event) => {
+                if (specComposition.isComposing(event.nativeEvent)) return
+                if (event.key === 'Enter' && !empty && !checking) onRun()
+              }}
             />
           </div>
           {inputSentence === null
             ? null
             : <p id={errorId} className={css.inputError} role="alert">{inputSentence}</p>}
+          {inputSentence === null && templateHint !== null
+            ? <p id={templateHintId} className={css.templateHint} role="status">{templateHint}</p>
+            : null}
           <div className={css.optionsRow}>
             <button
               type="button"
@@ -886,9 +1032,8 @@ function InstallDialog({
             ? (
               <div id={guideId} className={css.guide} data-install-guide>
                 <ol className={css.guideList}>
-                  {GUIDE_EXAMPLES.map(({ key, titleKey, exampleKey, hintKey }, index) => (
+                  {GUIDE_EXAMPLES.map(({ key, titleKey, exampleKey, hintKey }) => (
                     <li key={key} className={css.guideItem}>
-                      <span className={css.guideIndex} aria-hidden="true">{index + 1}</span>
                       <div className={css.guideMain}>
                         <span className={css.guideTitle}>{t(titleKey)}</span>
                         <span className={css.guideHint}>{t(hintKey)}</span>
@@ -909,10 +1054,6 @@ function InstallDialog({
                     </li>
                   ))}
                 </ol>
-                <p className={css.guideSafety} role="note">
-                  <IconWarningOutlineRegular size={14} aria-hidden="true" />
-                  <span>{t('installGuideSafety')}</span>
-                </p>
               </div>
             )
             : null}
@@ -925,37 +1066,70 @@ function InstallDialog({
                 style={registryPosition ?? { visibility: 'hidden', left: 0, top: 0 }}
                 data-install-registry
                 aria-label={t('registryLegend')}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Tab' || event.ctrlKey || event.altKey || event.metaKey || event.nativeEvent.isComposing) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  const radio = event.currentTarget.querySelector<HTMLInputElement>('input[type="radio"]:checked')
+                  const field = registryCustomRef.current
+                  if (event.shiftKey && event.target === field) radio?.focus()
+                  else if (!event.shiftKey && event.target !== field) field?.focus()
+                  else {
+                    onToggleRegistry()
+                    registryToggleRef.current?.focus()
+                  }
+                }}
               >
                 {offeredRegistries(install.registries).map((registry) => {
                   const checked = choice.kind === 'offered' && choice.registry === registry
                   return (
                     <label key={registry ?? ''} className={css.registryOption} data-checked={checked}>
-                      <input type="radio" name={registryId} checked={checked} onChange={() => { onChooseRegistry({ kind: 'offered', registry }) }} />
-                      <span className={css.registryTitle}><span>{registryOption(registry, t, resolved)}</span></span>
+                      <input type="radio" name={registryId} checked={checked} onChange={() => {
+                        if (choice.kind === 'custom') setCustomRegistryDraft(choice.url)
+                        onChooseRegistry({ kind: 'offered', registry })
+                      }} />
+                      <span className={css.registryTitle}>{registryOption(registry, t, resolved)}</span>
                     </label>
                   )
                 })}
-                <div className={css.registryOption} data-checked={choice.kind === 'custom'}>
+                <div className={css.registryOption} data-checked={choice.kind === 'custom'}
+                  onClick={(event) => {
+                    // Keep label activation from moving focus back to the radio.
+                    if (!(event.target instanceof HTMLInputElement)) event.preventDefault()
+                    registryCustomRef.current?.focus()
+                  }}>
                   <label className={css.registryCustomPick}>
                     <input
                       type="radio"
                       name={registryId}
                       checked={choice.kind === 'custom'}
-                      onChange={() => { onChooseRegistry({ kind: 'custom', url: '' }) }}
+                      onChange={() => {
+                        onChooseRegistry({ kind: 'custom', url: customRegistryDraft })
+                        registryCustomRef.current?.focus()
+                      }}
                     />
                     <span className={css.registryTitle}><span>{t('registryCustom')}</span></span>
                   </label>
                   <input
+                    ref={registryCustomRef}
                     type="text"
                     className={css.registryCustomField}
                     aria-label={t('registryCustom')}
                     placeholder={t('registryCustomPlaceholder')}
-                    value={choice.kind === 'custom' ? choice.url : ''}
-                    disabled={choice.kind !== 'custom'}
+                    value={choice.kind === 'custom' ? choice.url : customRegistryDraft}
                     aria-invalid={install.registryError}
                     aria-describedby={install.registryError ? registryErrorId : undefined}
+                    onFocus={() => {
+                      if (pointerModality() && choice.kind !== 'custom') onChooseRegistry({ kind: 'custom', url: customRegistryDraft })
+                    }}
                     onChange={(event) => { onChooseRegistry({ kind: 'custom', url: event.currentTarget.value }) }}
-                    onKeyDown={(event) => { if (event.key === 'Enter' && !empty) onRun() }}
+                    onCompositionStart={registryComposition.onCompositionStart}
+                    onCompositionEnd={registryComposition.onCompositionEnd}
+                    onBlur={registryComposition.onBlur}
+                    onKeyDown={(event) => {
+                      if (registryComposition.isComposing(event.nativeEvent)) return
+                      if (event.key === 'Enter' && !empty) onRun()
+                    }}
                   />
                   {install.registryError
                     ? <p id={registryErrorId} className={css.inputError} role="alert">{t('registryCustomInvalid')}</p>
@@ -997,6 +1171,7 @@ function InstallDialog({
     : null
   // Another registry is worth offering only for a failure the Host laid at the one it asked.
   const changeable = phase === 'failed' && !approvable && install.failure?.failedAt === 'registry'
+  const subject = install.subject
   return (
     <Modal open={install.open} onClose={onClose} title={heading} headless className={css.installDialog as string}>
       <div className={css.wizard} data-install-phase={phase}>
@@ -1033,7 +1208,9 @@ function InstallDialog({
             {uncertaintyText === null ? null : <p className={css.wizardSub} role="alert">{uncertaintyText}</p>}
             {phase === 'unknown' ? <p className={css.wizardSub}>{t('installUnknownDescription')}</p> : null}
           </div>
-          {install.subject === null ? null : <SubjectCard subject={install.subject} t={t} />}
+          {subject === null
+            ? null
+            : <SubjectCard subject={phase === 'done' && install.installedVersion !== null ? { ...subject, version: install.installedVersion } : subject} t={t} />}
           {approvable
             ? (
               <section className={css.approval} role="group" aria-labelledby={approvalId} data-install-approval>
@@ -1053,6 +1230,18 @@ function InstallDialog({
             : null}
           {phase === 'done' && install.restartRequired
             ? <p className={css.resultWarn} role="status">{t('installDoneRestart')}</p>
+            : null}
+          {phase === 'done' && subject?.kind === 'registry' && subject.name !== undefined && subject.version !== undefined
+            && install.installedVersion !== null && install.installedVersion !== subject.version
+            // A fallback registry can serve another release than the one inspected, so only a single-registry run is explained.
+            && (install.attempts?.registries.length ?? 1) === 1
+            ? (
+              <p className={css.resultWarn} role="status">
+                {t('installDoneOtherVersion', {
+                  installed: install.installedVersion, version: subject.version, exact: `${subject.name}@${subject.version}`,
+                })}
+              </p>
+            )
             : null}
           {phase === 'done' && install.approvedBuilds.length > 0
             ? <p className={css.result} role="status">{t('installDoneApproved', { names: install.approvedBuilds.join(', ') })}</p>
@@ -1168,7 +1357,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
     const timer = setTimeout(clearHighlight, HIGHLIGHT_MS)
     return () => { clearTimeout(timer) }
   }, [highlight, clearHighlight])
-  const noticeLine = state.notice === null ? null : noticeText(state.notice, t)
+  const noticeLine = state.notice === null || state.notice.kind === 'refresh-failed' ? null : noticeText(state.notice, t)
 
   // The page manages what the person installed, what the installation ships for them to switch on, and a
   // selected name the Host cannot read; the installation's other bundles are inspected in the Settings
@@ -1178,6 +1367,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   const mine = listed.filter(pkg => pkg.installed || !pkg.optional)
   const official = listed.filter(pkg => pkg.optional && !pkg.installed)
   const loaded = state.status === 'ready' || state.status === 'error'
+  const refreshing = state.refreshStatus === 'refreshing'
   const openPkg = view.kind === 'package' || view.kind === 'row' ? listed.find(pkg => pkg.name === view.name) : undefined
   const openItem = view.kind === 'item' ? ledger.items.find(item => item.id === view.id) : undefined
   const openRow = view.kind === 'row' && openPkg !== undefined ? openPkg.rows.find(row => row.rowId === view.rowId) : undefined
@@ -1224,30 +1414,39 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
     )
 
   return (
-    <section className={css.page} data-plugin-panel aria-busy={state.status === 'loading'}>
+    <section className={css.page} data-plugin-panel aria-busy={state.status === 'loading' || refreshing}>
       {showsCards
         ? (
           <header className={css.pageHead} data-window-drag>
             <div>
               <h1 className={css.pageTitle}>{t('title')}</h1>
-              <p className={css.pageIntro}>{t('intro')}</p>
+              <div className={css.pageIntro}>
+                <span>{t('intro')}</span>
+                <Tooltip label={t('infoDescription')} side="bottom" delayMs={300} maxWidth={300} portal openOnClick>
+                  <Button variant="ghost" size="sm" className={css.infoButton} aria-label={t('infoLabel')}>
+                    <IconInfoOutlineRegular size={11} aria-hidden="true" />
+                  </Button>
+                </Tooltip>
+              </div>
             </div>
             <div className={css.toolbar}>
-              <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} disabled={!loaded} onClick={props.refresh}>
-                <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutlineRegular /></span>
-              </button>
-              <Button variant="primary" size="sm" className={css.addButton} icon={<IconPlusOutlineRegular size={13} />} disabled={!loaded} onClick={props.openInstall}>
-                {t(state.install.requestId === undefined ? 'addPlugin' : 'installViewTask')}
-              </Button>
+              <Tooltip label={t('refresh')} delayMs={500} focusDelayMs={500} side="bottom" portal disabled={!loaded || refreshing}>
+                <button type="button" className={css.iconButton} aria-label={t('refresh')} aria-busy={refreshing} disabled={!loaded || refreshing} onClick={props.refresh}>
+                  <span className={css.iconWrap} aria-hidden="true">
+                    {refreshing ? <StateDot state="ongoing" size={18} /> : <IconRefreshOutlineRegular />}
+                  </span>
+                </button>
+              </Tooltip>
+              {state.install.requestId === undefined
+                ? <AddPluginMenu t={t} disabled={!loaded} openInstall={props.openInstall} renderSlot={renderSlot} />
+                : <Button variant="primary" size="sm" className={css.addButton} icon={<IconPlusOutlineRegular size={13} />} disabled={!loaded} onClick={props.openInstall}>
+                  {t('installViewTask')}
+                </Button>}
             </div>
           </header>
         )
         : null}
-      {showsCards && state.status === 'loading' ? (
-        <p className={`${css.status} ${css.statusWithDot}`} role="status">
-          <StateDot state="ongoing" />{t('loading')}
-        </p>
-      ) : null}
+      {showsCards && state.status === 'loading' ? <ListSkeleton label={t('loading')} /> : null}
       {showsCards && state.status === 'unavailable' ? (
         <p className={`${css.status} ${css.statusWithDot}`} role="status">
           <StateDot state="idle" />{t('unavailable')}
@@ -1264,11 +1463,11 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
             onDone={props.dismissNotice}
           />
         )}
-      {!showsCards && state.status === 'error'
+      {!showsCards && state.status === 'error' && !refreshing
         ? (
           <div className={css.failure}>
             <p className={css.statusWithDot} role="alert">
-              <StateDot state="error" />{t('error')}
+              <StateDot state="error" />{t(state.refreshStatus === 'failed' ? 'refreshError' : 'error')}
             </p>
             <Button variant="outline" size="sm" onClick={props.refresh}>{t('retry')}</Button>
           </div>
@@ -1317,11 +1516,11 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
               {renderGroup('bundles', t('bundlesTitle'), mine.map(packageCard))}
               {/* A failed package read trails the groups it left incomplete: right under Official on a
                   first-load failure, and after the kept cards when a refresh fails over stale data. */}
-              {state.status === 'error'
+              {state.status === 'error' && !refreshing
                 ? (
                   <div className={css.failure}>
                     <p className={css.statusWithDot} role="alert">
-                      <StateDot state="error" />{t('error')}
+                      <StateDot state="error" />{t(state.refreshStatus === 'failed' ? 'refreshError' : 'error')}
                     </p>
                     <Button variant="outline" size="sm" onClick={props.refresh}>{t('retry')}</Button>
                   </div>

@@ -8,10 +8,13 @@ const path = require('node:path');
 
 const {
   assertHarnessRuntime,
+  assertNodeModulesManifests,
   assertVendoredPluginRuntimeDeps,
   collectFiles,
   collectPnpmFlattenFiles,
+  copyFiles,
   deployCliEntries,
+  nodeBinaryHasExternalDylibs,
   nodePtyPrebuildRelative,
   repairFlattenedCommanderEsm,
   repairFlattenedVersionIsolation,
@@ -1080,4 +1083,83 @@ test('repairFlattenedCommanderEsm throws when the store lacks the declared range
     () => repairFlattenedCommanderEsm(harnessSrc, harnessDest),
     /commander 不满足 apps\/cli 声明/,
   );
+});
+
+test('copyFiles deduplicates duplicate destinations preferring hoisted sources', async (t) => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'after-pack-dedupe-'));
+  t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+  const storeDir = path.join(workspace, 'src', 'node_modules', '.pnpm', 'pkg@2.0.0', 'node_modules', 'pkg');
+  const hoistedDir = path.join(workspace, 'src', 'apps', 'cli', 'node_modules', 'pkg');
+  fs.mkdirSync(storeDir, { recursive: true });
+  fs.mkdirSync(hoistedDir, { recursive: true });
+  const storeFile = path.join(storeDir, 'package.json');
+  const hoistedFile = path.join(hoistedDir, 'package.json');
+  fs.writeFileSync(storeFile, `{"name":"pkg","version":"2.0.0"}${' '.repeat(64)}\n`);
+  fs.writeFileSync(hoistedFile, '{"name":"pkg","version":"1.0.0"}\n');
+  const dest = path.join(workspace, 'out', 'node_modules', 'pkg', 'package.json');
+
+  // .pnpm store 条目在前：竞态下它曾是最后落笔者，会把 hoisted 内容截成尾部碎片
+  const copied = await copyFiles([
+    { src: storeFile, dest },
+    { src: hoistedFile, dest },
+  ]);
+  assert.equal(copied, 1);
+  assert.equal(fs.readFileSync(dest, 'utf8'), '{"name":"pkg","version":"1.0.0"}\n');
+});
+
+test('copyFiles keeps first hoisted source when duplicate destinations have no store path', async (t) => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'after-pack-dedupe-first-'));
+  t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+  const aDir = path.join(workspace, 'a');
+  const bDir = path.join(workspace, 'b');
+  fs.mkdirSync(aDir, { recursive: true });
+  fs.mkdirSync(bDir, { recursive: true });
+  const aFile = path.join(aDir, 'package.json');
+  const bFile = path.join(bDir, 'package.json');
+  fs.writeFileSync(aFile, '{"name":"pkg","version":"1.0.0"}\n');
+  fs.writeFileSync(bFile, `{"name":"pkg","version":"2.0.0"}${' '.repeat(64)}\n`);
+  const dest = path.join(workspace, 'out', 'node_modules', 'pkg', 'package.json');
+
+  const copied = await copyFiles([
+    { src: aFile, dest },
+    { src: bFile, dest },
+  ]);
+  assert.equal(copied, 1);
+  assert.equal(fs.readFileSync(dest, 'utf8'), '{"name":"pkg","version":"1.0.0"}\n');
+});
+
+test('assertNodeModulesManifests rejects manifests with trailing corruption', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'after-pack-manifests-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const pkgDir = path.join(root, 'node_modules', 'broken');
+  fs.mkdirSync(pkgDir, { recursive: true });
+  fs.writeFileSync(path.join(pkgDir, 'package.json'), '{"name":"ok","version":"1.0.0"}\n{"name":"pk');
+
+  assert.throws(() => assertNodeModulesManifests(root), /损坏的 package\.json/);
+});
+
+test('assertNodeModulesManifests accepts a clean node_modules tree', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'after-pack-manifests-ok-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const pkgDir = path.join(root, 'node_modules', 'pkg');
+  fs.mkdirSync(pkgDir, { recursive: true });
+  fs.writeFileSync(path.join(pkgDir, 'package.json'), '{"name":"pkg","version":"1.0.0"}\n');
+
+  assertNodeModulesManifests(root);
+});
+
+test('nodeBinaryHasExternalDylibs flags shim binaries but not standalone builds', () => {
+  const shim = [
+    '/opt/homebrew/opt/node/bin/node:',
+    '\t/opt/homebrew/opt/node/lib/libnode.137.dylib',
+    '\t/opt/homebrew/opt/icu4c/lib/libicui18n.78.dylib',
+    '\t/usr/lib/libSystem.B.dylib',
+  ].join('\n');
+  const standalone = [
+    'node:',
+    '\t/usr/lib/libSystem.B.dylib',
+    '\t/usr/lib/libc++.1.dylib',
+  ].join('\n');
+  assert.equal(nodeBinaryHasExternalDylibs(shim), true);
+  assert.equal(nodeBinaryHasExternalDylibs(standalone), false);
 });
