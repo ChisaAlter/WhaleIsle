@@ -205,7 +205,7 @@ Browser 空白页、导航工具栏与尚未加载网页的 guest 占位区透�
 
 62% 高度的交接线分上下两半：线上天空（深色=深空，星云、银河带、星尘与亮星闪烁；浅色=高空，积云与天光），线下深海（调暗、表层透光、悬浮微粒、暗角）。交接线是 1px 细线，不加辉光；水下无光束、无涟漪。中央依次是 `Whale Isle` 衬线字标（Didot/Bodoni 系，窄亮带 6s 扫掠）与状态；副标两行：鲸屿字标两侧细线 / BASED ON DEEPSEEK HARNESS（不闪）。启动态只呈现「启动中」与三点呼吸省略号，其余态收起。异常或恢复时动作面回中央（重试 / 取消自动重启 / 下载日志 / 回启动器排查，按 recovery gating）。
 
-日志收进底缘：单行 ticker（脉冲点 + 最新行 + `L NN` +「全部日志」；优先级：恢复/动作回执 > 状态提示 > 最新日志），点击、Enter 或 Space 升起带行号的毛玻璃日志抽屉（上限 400 行），Escape / 遮罩 / × 收回；不自动弹，重要行经 `isImportantBootLog` 标红。进度只展示真实事件；插件加载留在本画布。桌面完成窗控与布局后用双倍基础时长淡入，加载画面保持不透明垫底，完成后才遮盖；减弱动效直切，不缩放或模糊。启动器跳板只在 settled `error` 且恢复非 `scheduled`/`restarting` 时出现。
+日志收进底缘：单行 ticker（脉冲点 + 最新行 + `L NN` +「全部日志」；优先级：恢复/动作回执 > 状态提示 > 最新日志），点击、Enter 或 Space 升起带行号的毛玻璃日志抽屉（上限 400 行），Escape / 遮罩 / × 收回；不自动弹，重要行经 `isImportantBootLog` 标红。进度只展示真实事件；插件加载留在本画布。桌面完成窗控与布局后，从 62% 海天分割线向上下展开主界面，使用三倍基础时长（默认 600ms）与共享缓动；加载画面保持不透明垫底，完成后才遮盖。主界面保持原尺寸与位置，减弱动效直切，不缩放或模糊。启动器跳板只在 settled `error` 且恢复非 `scheduled`/`restarting` 时出现。
 
 色与主题：[`boot-tokens.css`](../src/renderer/boot-tokens.css) 是唯一色表（天空/海面、星场与水下各层、交接线、告警、字标扫光、抽屉面板全部进 token）。`html[data-boot-theme]` 让 [`theme.js`](../src/renderer/theme.js) 只切 `theme.scheme` 明暗半，不写用户主题 `bg` / `accent`。[`boot.css`](../src/renderer/boot.css) 只引用 `--boot-*` 与基线字体、动效 token，不写明暗分支与颜色字面量。`prefers-reduced-motion` 冻结扫光、星闪、微粒、省略号与抽屉动效。
 

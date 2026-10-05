@@ -386,17 +386,38 @@ function layoutHarnessView(win) {
   desktopPet()?.layout(win);
 }
 
-// Keep boot opaque: fading both source-over surfaces exposes the window
-// underneath. Only the prepared desktop fades; its renderer owns completion.
+// Slide two static pieces of boot away from its horizon. Only these image
+// layers move; the live desktop never needs to repaint an animated clip.
 const HARNESS_FADE_CSS = [
-  'html[data-dshd-harness-fade] { opacity: 0 !important; transition: none !important; }',
-  'html[data-dshd-harness-fade="in"] { opacity: 1 !important; transition: opacity calc(var(--ds-transition-duration, 0.2s) * 2) var(--ds-ease-in-out, ease-out) !important; }',
-  '@media (prefers-reduced-motion: reduce) { html[data-dshd-harness-fade] { transition: none !important; } }',
+  'html[data-dshd-harness-fade] { opacity: 0 !important; transition: none !important; pointer-events: none !important; }',
+  'html[data-dshd-harness-fade="ready"], html[data-dshd-harness-fade="in"] { opacity: 1 !important; }',
 ].join('\n');
 
-const HARNESS_FADE_SCRIPT = `(async function () {
+const HARNESS_CURTAIN_PREPARE_SCRIPT = (snapshot, maximized) => `(async function () {
   const root = document.documentElement;
   if (!root) throw new Error('Desktop document is unavailable');
+  root.toggleAttribute('data-window-maximized', ${JSON.stringify(maximized)});
+  let curtains;
+  let sea;
+  {
+    const image = new Image();
+    image.src = ${JSON.stringify(snapshot)};
+    await image.decode();
+    image.alt = '';
+    curtains = document.createElement('div');
+    curtains.id = 'dshd-boot-curtains';
+    curtains.setAttribute('aria-hidden', 'true');
+    const sky = document.createElement('div');
+    sky.className = 'dshd-boot-curtain dshd-boot-curtain-sky';
+    sea = document.createElement('div');
+    sea.className = 'dshd-boot-curtain dshd-boot-curtain-sea';
+    sky.append(image);
+    const seaImage = image.cloneNode();
+    await seaImage.decode();
+    sea.append(seaImage);
+    curtains.append(sky, sea);
+    document.body.append(curtains);
+  }
   const painted = () => new Promise(resolve => {
     let done = false;
     const finish = () => { if (!done) { done = true; clearTimeout(timer); resolve(); } };
@@ -404,28 +425,22 @@ const HARNESS_FADE_SCRIPT = `(async function () {
     const timer = setTimeout(finish, 250);
     requestAnimationFrame(() => requestAnimationFrame(finish));
   });
+  // Upload and paint the static curtains before warming the live desktop.
+  root.setAttribute('data-dshd-harness-fade', 'ready');
   await painted();
+})()`;
+
+const HARNESS_FADE_SCRIPT = `(async function () {
+  const root = document.documentElement;
+  const curtains = document.getElementById('dshd-boot-curtains');
+  const sea = document.querySelector('.dshd-boot-curtain-sea');
   // Commit the non-animated hold before enabling the enter transition.
-  void getComputedStyle(root).opacity;
-  await new Promise(resolve => {
-    let timer;
-    const finish = () => {
-      clearTimeout(timer);
-      root.removeEventListener('transitionend', ended);
-      resolve();
-    };
-    const ended = event => {
-      if (event.target === root && event.propertyName === 'opacity') finish();
-    };
-    root.addEventListener('transitionend', ended);
-    root.setAttribute('data-dshd-harness-fade', 'in');
-    const value = getComputedStyle(root).transitionDuration;
-    const duration = parseFloat(value) * (value.endsWith('ms') ? 1 : 1000) || 0;
-    // An interrupted/no-op transition need not emit transitionend.
-    if (duration > 0) timer = setTimeout(finish, duration + 150);
-    else finish();
-  });
-  await painted();
+  if (sea) void getComputedStyle(sea).transform;
+  root.setAttribute('data-dshd-harness-fade', 'in');
+  // CSS transitions can start after the first compositor frame. Their native
+  // completion tracks that start; a wall-clock deadline can cut motion short.
+  await Promise.all(sea.getAnimations().map(animation => animation.finished.catch(() => {})));
+  curtains?.remove();
 })()`;
 
 async function revealHarnessView(win) {
@@ -447,6 +462,7 @@ async function revealHarnessView(win) {
     }
   };
   let cssKey;
+  let curtainWindow;
   try {
     cssKey = await view.webContents.insertCSS(HARNESS_FADE_CSS);
     if (!current()) return;
@@ -457,11 +473,50 @@ async function revealHarnessView(win) {
     prepareHarnessChrome(win);
     await syncHarnessChrome(win, view.webContents);
     if (!current()) return;
+    const reduced = await view.webContents.executeJavaScript(
+      `matchMedia('(prefers-reduced-motion: reduce)').matches`,
+    );
+    if (!current()) return;
+    const snapshot = reduced ? '' : (await win.webContents.capturePage()).toDataURL();
+    if (!current()) return;
     mount();
-    await view.webContents.executeJavaScript(HARNESS_FADE_SCRIPT);
+    if (!reduced) {
+      // Startup work in Harness cannot block this local renderer's frames.
+      // It has no preload or desktop privileges.
+      curtainWindow = new BrowserWindow({
+        parent: win, show: false, frame: false, transparent: true,
+        backgroundColor: '#00000000', hasShadow: false, skipTaskbar: true, focusable: false,
+        webPreferences: {
+          sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false,
+        },
+      });
+      curtainWindow.setIgnoreMouseEvents(true);
+      curtainWindow.setBounds(win.getContentBounds());
+      await curtainWindow.loadFile(rendererFile('boot-reveal.html'));
+      if (!current()) return;
+      await curtainWindow.webContents.executeJavaScript(HARNESS_CURTAIN_PREPARE_SCRIPT(snapshot, win.isMaximized()));
+      if (!current()) return;
+      curtainWindow.showInactive();
+    }
+    // Warm the desktop while the static curtain still covers it.
+    await view.webContents.executeJavaScript(`(async () => {
+      document.documentElement.setAttribute('data-dshd-harness-fade', 'ready');
+      await new Promise(resolve => {
+        const timer = setTimeout(resolve, 250);
+        requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(timer); resolve(); }));
+      });
+    })()`);
+    if (!current()) return;
+    if (curtainWindow) {
+      // Wait for the whole curtain surface, including both images' raster
+      // tiles. A partial readback leaves other tiles cold when motion starts.
+      await curtainWindow.webContents.capturePage();
+      if (!current()) return;
+      await curtainWindow.webContents.executeJavaScript(HARNESS_FADE_SCRIPT);
+    }
     if (!current()) return;
     await view.webContents.executeJavaScript(
-      `document.documentElement && document.documentElement.removeAttribute('data-dshd-harness-fade')`,
+      `document.getElementById('dshd-boot-curtains')?.remove(); document.documentElement && document.documentElement.removeAttribute('data-dshd-harness-fade')`,
     );
   } catch (error) {
     if (!current()) return;
@@ -476,12 +531,15 @@ async function revealHarnessView(win) {
     if (!current()) return;
     try {
       await view.webContents.executeJavaScript(
-        `document.documentElement && document.documentElement.removeAttribute('data-dshd-harness-fade')`,
+        `document.getElementById('dshd-boot-curtains')?.remove(); document.documentElement && document.documentElement.removeAttribute('data-dshd-harness-fade')`,
       );
       released = true;
     } catch {}
     if (!released) throw error;
   } finally {
+    if (curtainWindow) {
+      if (!curtainWindow.isDestroyed()) curtainWindow.destroy();
+    }
     if (cssKey && !view.webContents.isDestroyed()) {
       await view.webContents.removeInsertedCSS(cssKey).catch(() => {});
     }
