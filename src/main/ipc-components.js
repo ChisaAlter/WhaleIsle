@@ -9,6 +9,8 @@ const { createComponentsService } = require('../launcher/components');
 let service = null;
 let serviceDeps = null;
 let quitHooked = false;
+let bridgeListed = false;
+let bridgeService = null;
 
 function ensureService() {
   if (!service) {
@@ -22,28 +24,66 @@ function _configureForTest(deps) {
   serviceDeps = deps || {};
   service = null;
   quitHooked = false;
+  bridgeListed = false;
+  bridgeService = null;
 }
 
 function register({ handle, LAUNCHER_ONLY, send, onQuitCommit }) {
   const svc = ensureService();
+  const bridge = serviceDeps ? serviceDeps.whaleBridge : require('../launcher/whalebridge').whaleBridgeService();
+  bridgeService = bridge || null;
   const progress = (event, id) => (payload) => send(event, 'shell:components-progress', { id, ...payload });
 
-  handle('shell:components-list', LAUNCHER_ONLY, () => svc.list());
+  handle('shell:components-list', LAUNCHER_ONLY, async (_event, options) => {
+    const list = svc.list();
+    if (!bridge) return list;
+    if (!bridgeListed || options?.refresh === true) { await bridge.refreshCatalog(); bridgeListed = true; }
+    return { ...list, components: [bridge.row(), ...list.components] };
+  });
 
   handle('shell:components-install', LAUNCHER_ONLY, (event, arg) => {
     const id = typeof arg === 'string' ? arg : arg?.id;
-    return svc.install(arg, progress(event, id));
+    return id === 'whalebridge' && bridge ? bridge.install(progress(event, id)) : svc.install(arg, progress(event, id));
   });
 
-  handle('shell:components-start', LAUNCHER_ONLY, (event, id) => svc.start(id, progress(event, id)));
+  handle('shell:components-start', LAUNCHER_ONLY, (event, id) => id === 'whalebridge' && bridge ? bridge.start(progress(event, id)) : svc.start(id, progress(event, id)));
 
-  handle('shell:components-stop', LAUNCHER_ONLY, (event, id) => svc.stop(id, progress(event, id)));
+  handle('shell:components-stop', LAUNCHER_ONLY, async (event, id) => {
+    if (id !== 'whalebridge' || !bridge) return svc.stop(id, progress(event, id));
+    const result = await bridge.stop(progress(event, id));
+    if (result.ok) require('./whalebridge-window').closeWhaleBridgeWindow();
+    return result;
+  });
 
-  handle('shell:components-update', LAUNCHER_ONLY, (event, id) => svc.update(id, progress(event, id)));
+  handle('shell:components-update', LAUNCHER_ONLY, async (event, id) => {
+    if (id !== 'whalebridge' || !bridge) return svc.update(id, progress(event, id));
+    const result = await bridge.update(progress(event, id));
+    if (result.ok) require('./whalebridge-window').closeWhaleBridgeWindow();
+    return result;
+  });
 
-  handle('shell:components-rollback', LAUNCHER_ONLY, (event, id) => svc.rollback(id, progress(event, id)));
+  handle('shell:components-rollback', LAUNCHER_ONLY, async (event, id) => {
+    if (id !== 'whalebridge' || !bridge) return svc.rollback(id, progress(event, id));
+    const result = await bridge.rollback(progress(event, id));
+    if (result.ok) require('./whalebridge-window').closeWhaleBridgeWindow();
+    return result;
+  });
 
-  handle('shell:components-uninstall', LAUNCHER_ONLY, (event, id) => svc.uninstall(id, progress(event, id)));
+  handle('shell:components-uninstall', LAUNCHER_ONLY, async (event, arg) => {
+    const id = typeof arg === 'string' ? arg : arg?.id;
+    if (id !== 'whalebridge' || !bridge) return svc.uninstall(id, progress(event, id));
+    const result = await bridge.uninstall(arg, progress(event, id));
+    if (result.ok) require('./whalebridge-window').closeWhaleBridgeWindow();
+    return result;
+  });
+  handle('shell:components-uninstall-info', LAUNCHER_ONLY, (_event, id) => id === 'whalebridge' && bridge ? bridge.uninstallInfo() : {});
+  handle('shell:components-open', LAUNCHER_ONLY, async (event, id) => {
+    if (id !== 'whalebridge' || !bridge) return { ok: false, error: 'unknown-component' };
+    const result = await bridge.start(progress(event, id));
+    if (!result.ok) return result;
+    require('./whalebridge-window').openWhaleBridgeWindow(result.url);
+    return { ok: true };
+  });
 
   // Services supervised by this launcher die with it (feature card:
   // 退出 Launcher 时停止其监管的服务); closing the window alone keeps them.
@@ -71,7 +111,7 @@ function contributeStatus() {
   if (!service) {
     return null;
   }
-  return { components: service.snapshot() };
+  return { components: [...(bridgeService ? [bridgeService.row()] : []), ...service.snapshot()] };
 }
 
 module.exports = { register, contributeStatus, _configureForTest };

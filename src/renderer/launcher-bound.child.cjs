@@ -59,8 +59,23 @@ ipcMain.handle('shell:launcher-status', () => ({
     { id: 'nightly', label: 'Nightly', verified: false, detail: 'not verified' },
   ],
 }));
-ipcMain.handle('shell:launcher-check-update', () => ({ status: 'none' }));
-ipcMain.handle('shell:check-update', () => ({ status: 'none' }));
+ipcMain.handle('shell:launcher-check-update', () => process.env.QA_COMPONENTS_HOME === '1' ? { status: 'available', latest: '0.3.3', currentVersion: '0.3.2', hint: '发现正式版 0.3.3。' } : { status: 'none' });
+ipcMain.handle('shell:check-update', () => process.env.QA_COMPONENTS_HOME === '1' ? { status: 'available', latest: '0.3.3', currentVersion: '0.3.2', hint: '发现正式版 0.3.3。' } : { status: 'none' });
+let componentInstalled = false;
+let componentRunning = false;
+let componentStartResolve, componentStopResolve;
+const componentRow = () => ({ id: 'whalebridge', name: '鲸桥', description: '连接供应商和订阅账号，在鲸屿使用模型。', version: '1.0.3', installedVersion: componentInstalled ? '1.0.3' : '', previousVersion: '1.0.2', state: componentInstalled ? (componentRunning ? 'running' : 'stopped') : 'available', configurable: componentInstalled, source: 'official', kind: 'service' });
+ipcMain.handle('shell:components-list', () => ({ components: process.env.QA_COMPONENTS_HOME === '1' ? [componentRow()] : [] }));
+ipcMain.handle('shell:components-start', (_event, id) => {
+  results.calls.push({ op: 'component-start', id });
+  return new Promise(resolve => { componentStartResolve = () => { componentRunning = true; resolve({ ok: true }); }; });
+});
+ipcMain.handle('shell:components-stop', (_event, id) => {
+  results.calls.push({ op: 'component-stop', id });
+  return new Promise(resolve => { componentStopResolve = () => { componentRunning = false; resolve({ ok: true }); }; });
+});
+ipcMain.handle('shell:components-open', (_event, id) => { results.calls.push({ op: 'component-open', id }); return { ok: true }; });
+ipcMain.handle('shell:components-rollback', (_event, id) => { results.calls.push({ op: 'component-rollback', id }); return { ok: true }; });
 ipcMain.handle('shell:list-releases', () => ({ status: 'ok', releases: [], installed: { version: '0' } }));
 ipcMain.handle('shell:list-marketplace', () => ({ ok: true, items: [] }));
 ipcMain.handle('shell:list-installed-plugins', () => ({ plugins: [], bundles: [] }));
@@ -105,6 +120,50 @@ app.whenReady().then(async () => {
       routePicker: Boolean(document.getElementById('route-picker')),
       readyState: document.readyState,
     })`);
+
+    if (process.env.QA_COMPONENTS_HOME === '1') {
+      const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+      const read = () => win.webContents.executeJavaScript(`(() => {
+        const home = document.querySelector('#home-components');
+        const row = document.querySelector('#tab-components [data-comp-row="whalebridge"]');
+        const visible = button => !!button && button.checkVisibility();
+        return { hidden: home.hidden, homeText: home.innerText,
+          homeStart: visible(home.querySelector('[data-comp-action="start"]')),
+          homeStop: visible(home.querySelector('[data-comp-action="stop"]')),
+          homeOpen: visible(home.querySelector('[data-comp-action="open"]')),
+          homeDisabled: home.querySelector('button[data-comp-action]')?.disabled,
+          rowStart: row.querySelector('[data-comp-action="start"]')?.textContent,
+          rowOpen: !!row.querySelector('[data-comp-action="open"]'),
+          rollbackVisible: visible(row.querySelector('[data-comp-action="rollback"]')),
+          updateVisible: !document.querySelector('#home-update').hidden,
+          hintHidden: document.querySelector('#hint').hidden,
+          updateCount: document.body.innerText.split('可更新至 v0.3.3').length - 1,
+          brand: home.querySelector('.comp-brand')?.naturalWidth,
+        };
+      })()`);
+      await delay(150);
+      const absent = await read();
+      componentInstalled = true;
+      await win.webContents.executeJavaScript('window.__launcherComponents.refresh()');
+      const stopped = await read();
+      await win.webContents.executeJavaScript(`document.querySelector('#home-components [data-comp-action="start"]').click(); document.querySelector('#home-components [data-comp-action="start"]').click()`);
+      await delay(80);
+      const starting = await read();
+      componentStartResolve(); await delay(100);
+      const running = await read();
+      await win.webContents.executeJavaScript(`document.querySelector('#home-components [data-comp-action="open"]').click()`);await delay(100);
+      await win.webContents.executeJavaScript(`document.querySelector('#home-components [data-comp-action="stop"]').click(); document.querySelector('#home-components [data-comp-action="stop"]').click()`);await delay(80);
+      const stopping = await read();
+      componentStopResolve();await delay(100);
+      const stoppedAgain = await read();
+      await win.webContents.executeJavaScript(`document.querySelector('[data-tab="components"]').click()`);
+      const catalogStopped = await read();
+      await win.webContents.executeJavaScript(`document.querySelector('.comp-manage').open = true; document.querySelector('[data-comp-action="rollback"]').click()`);await delay(80);
+      await win.webContents.executeJavaScript(`document.querySelector('#app-confirm-cancel').click(); document.querySelector('[data-tab="home"]').click(); document.querySelector('#btn-check-update').click()`);await delay(150);
+      const update = await read();
+      componentInstalled = false;await win.webContents.executeJavaScript('window.__launcherComponents.refresh()');const removed = await read();
+      console.log('BOUND_RESULT:' + JSON.stringify({ absent, stopped, starting, running, stopping, stoppedAgain, catalogStopped, update, removed, calls: results.calls }));app.quit();return;
+    }
 
     if (process.env.QA_STARTUP_FLOW === '1') {
       const captureHome = async name => {

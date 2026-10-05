@@ -5,7 +5,7 @@ on:
   release:
     types: [published]
   workflow_run:
-    workflows: [Release]
+    workflows: [Release, WhaleBridge]
     types: [completed]
     branches: [main]
   workflow_dispatch:
@@ -49,4 +49,11 @@ jobs:
           CNB_REPO: ${{ vars.CNB_REPO }}
           MIRROR_RELEASE: ${{ github.event_name != 'push' && '1' || '0' }}
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
-        run: node scripts/sync-cnb.mjs
+        # A component release must not replace the desktop application's
+        # latest release; resolve its own tag from the successfully built pin.
+        run: |
+          if [ "${{ github.event.workflow_run.name }}" = "WhaleBridge" ]; then
+            version=$(git show '${{ github.event.workflow_run.head_sha }}:vendor/whalebridge/upstream.json' | node -e 'let b="";process.stdin.on("data",s=>b+=s);process.stdin.on("end",()=>console.log(JSON.parse(b).version))')
+            export RELEASE_TAG="whalebridge-v$version"
+          fi
+          node scripts/sync-cnb.mjs

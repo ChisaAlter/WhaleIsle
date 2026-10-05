@@ -1,0 +1,134 @@
+/* Official dsh web semantic tokens for shells that cannot import ui-theme.
+   Values match packages/client/ui-theme/src/styles/design-platform.css. */
+
+:root {
+  color-scheme: light;
+  --dsw-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --ds-font-family-code: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas,
+    'Liberation Mono', Menlo, Courier, 'PingFang SC', 'Microsoft YaHei';
+  --ds-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ds-transition-duration: 0.2s;
+  --ds-transition-duration-fast: 0.1s;
+  --ds-motion-duration-overlay: 0.2s;
+  --ds-motion-duration-overlay-out: 0.1s;
+  --ds-motion-distance-overlay: 8px;
+  --ds-motion-scale-overlay: 0.96;
+  --dsw-shadow-lv2: 0 4px 12px 0 rgba(0, 0, 0, 0.02), 0 2px 8px 0 rgba(0, 0, 0, 0.04);
+  --dsw-shadow-lv3:
+    0 0 1px 0 rgba(0, 0, 0, 0.2), 0 0 4px 0 rgba(0, 0, 0, 0.02), 0 12px 32px 0 rgba(0, 0, 0, 0.08);
+  --dsw-mask-blur: blur(2px);
+  /* Radii mirror vendor ui-theme base.css: xs/sm/md/lg/xl/panel. */
+  --dsw-radius-xs: 4px;
+  --dsw-radius-sm: 8px;
+  --dsw-radius-md: 12px;
+  --dsw-radius-lg: 16px;
+  --dsw-radius-xl: 20px;
+  --dsw-radius-panel: 28px;
+  --dsw-alias-glass-opacity: 80%;
+  --dsw-alias-bg-base: rgb(255, 255, 255);
+  --dsw-alias-bg-layer-1: rgb(255, 255, 255);
+  --dsw-alias-bg-layer-2: rgb(255, 255, 255);
+  --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.24);
+  --dsw-alias-bg-module-platform: rgb(245, 246, 247);
+  --dsw-alias-border-l1: rgba(0, 0, 0, 0.04);
+  --dsw-alias-border-l2: rgba(0, 0, 0, 0.1);
+  --dsw-alias-border-l2-darkmode-thin: rgba(0, 0, 0, 0.1);
+  --dsw-alias-border-inverted: rgba(0, 0, 0, 0);
+  --dsw-alias-border-l3: rgba(0, 0, 0, 0.12);
+  --dsw-alias-border-l4: rgba(0, 0, 0, 0.16);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l4);
+  --dsw-alias-brand-primary: rgb(15, 17, 21);
+  --dsw-alias-button-primary-fill: rgb(15, 17, 21);
+  --dsw-alias-button-primary-hover: rgb(67, 69, 74);
+  --dsw-alias-button-info-fill: rgb(65, 118, 230);
+  --dsw-alias-interactive-bg-hover: rgba(38, 49, 72, 0.06);
+  --dsw-alias-interactive-bg-active: rgba(38, 49, 72, 0.1);
+  --dsw-alias-label-primary: rgb(15, 17, 21);
+  --dsw-alias-label-primary-foreground: rgb(255, 255, 255);
+  --dsw-alias-label-secondary: rgb(97, 102, 107);
+  --dsw-alias-label-tertiary: rgb(129, 133, 140);
+  --dsw-alias-label-caption: rgb(173, 178, 184);
+  --dsw-alias-label-dimmed: rgb(225, 229, 238);
+  --dsw-alias-state-business-primary: rgb(65, 118, 230);
+  --dsw-alias-state-error-primary: rgb(236, 19, 19);
+  --dsw-alias-state-success-primary: rgb(34, 197, 94);
+  --dsw-alias-scrollbar-bg-l1: rgb(229, 229, 229);
+  --dsw-alias-scrollbar-hover-l1: rgb(212, 212, 212);
+  --dsw-alias-scrollbar-bg-l2: rgb(229, 229, 229);
+  --dsw-alias-scrollbar-hover-l2: rgb(212, 212, 212);
+  --dsw-static-amber-400: rgb(247, 173, 49);
+  --dsw-specific-bubble: rgb(237, 243, 254);
+  --dsw-specific-input-major: color-mix(in srgb, rgb(255, 255, 255) 80%, transparent);
+  --dsw-specific-menu: color-mix(in srgb, rgb(255, 255, 255) 80%, transparent);
+  --dsw-specific-sidebar-fill: rgb(249, 250, 251);
+  --dsw-specific-sidebar-nav-item-active: rgb(235, 238, 242);
+  --dsw-specific-sidebar-nav-item-active-accent: rgb(228, 237, 253);
+  --dsw-specific-sidebar-nav-item-hover: rgb(241, 243, 245);
+}
+
+/* Derived elevation tokens re-resolve per element so a surface may rebind
+   --dsw-elevation-stroke-color without breaking downstream var() lookups —
+   mirrors vendor gradient-shadow-text.css (`body, body *`). */
+body,
+body * {
+  --dsw-elevation-stroke: 0 0 0 0.5px var(--dsw-elevation-stroke-color);
+  --dsw-elevation-panel:
+    var(--dsw-elevation-stroke), 0 3px 8px 0 rgba(0, 0, 0, 0.03), 0 0 16px 0 rgba(0, 0, 0, 0.02);
+  --dsw-elevation-prominent:
+    var(--dsw-elevation-stroke), 0 3px 8px 0 rgba(0, 0, 0, 0.04), 0 0 20px 0 rgba(0, 0, 0, 0.05);
+  --dsw-elevation-soft:
+    var(--dsw-elevation-stroke), 0 4px 16px 0 rgba(0, 0, 0, 0.02), 0 0 24px 0 rgba(0, 0, 0, 0.02);
+}
+
+html[data-ds-dark-theme],
+body[data-ds-dark-theme] {
+  color-scheme: dark;
+  --dsw-alias-border-l3: rgba(255, 255, 255, 0.16);
+  --dsw-alias-border-l4: rgba(255, 255, 255, 0.2);
+  /* Dark menus lean on a stronger stroke; the soft shadows go near-invisible. */
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
+  --dsw-alias-bg-base: rgb(21, 21, 23);
+  --dsw-alias-bg-layer-1: rgb(35, 35, 36);
+  --dsw-alias-bg-layer-2: rgb(44, 44, 46);
+  --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.5);
+  --dsw-alias-bg-module-platform: rgb(53, 54, 56);
+  --dsw-alias-border-l1: rgba(255, 255, 255, 0.06);
+  --dsw-alias-border-l2: rgba(255, 255, 255, 0.12);
+  --dsw-alias-border-l2-darkmode-thin: rgba(255, 255, 255, 0.06);
+  --dsw-alias-border-inverted: rgba(255, 255, 255, 0.06);
+  --dsw-alias-brand-primary: rgb(249, 250, 251);
+  --dsw-alias-button-primary-fill: rgb(249, 250, 251);
+  --dsw-alias-button-primary-hover: rgb(235, 238, 242);
+  --dsw-alias-button-info-fill: rgb(103, 158, 254);
+  --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.08);
+  --dsw-alias-interactive-bg-active: rgba(255, 255, 255, 0.14);
+  --dsw-alias-label-primary: rgb(249, 250, 251);
+  --dsw-alias-label-primary-foreground: rgb(15, 17, 21);
+  --dsw-alias-label-secondary: rgb(207, 211, 214);
+  --dsw-alias-label-tertiary: rgb(173, 178, 184);
+  --dsw-alias-label-caption: rgb(129, 133, 140);
+  --dsw-alias-label-dimmed: rgb(67, 69, 74);
+  --dsw-alias-state-business-primary: rgb(103, 158, 254);
+  --dsw-alias-state-error-primary: rgb(242, 90, 90);
+  --dsw-alias-scrollbar-bg-l1: rgb(60, 60, 61);
+  --dsw-alias-scrollbar-hover-l1: rgb(84, 85, 87);
+  --dsw-alias-scrollbar-bg-l2: rgb(84, 85, 87);
+  --dsw-alias-scrollbar-hover-l2: rgb(101, 103, 107);
+  --dsw-specific-bubble: rgb(44, 44, 46);
+  --dsw-specific-input-major: color-mix(in srgb, rgb(44, 44, 46) 80%, transparent);
+  --dsw-specific-menu: color-mix(in srgb, rgb(53, 54, 56) 80%, transparent);
+  --dsw-specific-sidebar-fill: rgb(27, 27, 28);
+  --dsw-specific-sidebar-nav-item-active: rgb(67, 69, 74);
+  --dsw-specific-sidebar-nav-item-active-accent: rgb(53, 54, 56);
+  --dsw-specific-sidebar-nav-item-hover: rgb(44, 44, 46);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ds-transition-duration: 0s;
+    --ds-transition-duration-fast: 0s;
+    --ds-motion-duration-overlay: 0s;
+    --ds-motion-duration-overlay-out: 0s;
+  }
+}

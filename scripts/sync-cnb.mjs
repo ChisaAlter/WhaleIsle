@@ -8,9 +8,10 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import semver from 'semver'
 import { validateReleaseAssets } from './check-release-assets.mjs'
+import { validateManifest } from '../src/launcher/whalebridge.js'
 
 const safeRepo = /^[\w.-]+(?:\/[\w.-]+)+$/
-const stableTag = /^v\d+\.\d+\.\d+$/
+const stableTag = /^(?:v|whalebridge-v)\d+\.\d+\.\d+$/
 async function fileHash(file, algorithm = 'sha512') {
   const hash = createHash(algorithm)
   for await (const chunk of createReadStream(file)) hash.update(chunk)
@@ -74,6 +75,14 @@ export async function validateMirrorAssets(release, directory) {
       throw new Error('GitHub asset digest mismatch: ' + asset.name)
     }
     files.push({ file, name: asset.name, size: info.size, sha512: await fileHash(file) })
+  }
+  if (tag.startsWith('whalebridge-v')) {
+    const manifest = validateManifest(JSON.parse(await readFile(join(directory, 'WhaleBridge-component.json'), 'utf8')))
+    const spec = manifest.platforms['win32-x64']
+    if (tag !== 'whalebridge-v' + manifest.version || files.length !== 2 || !names.includes('WhaleBridge-component.json') ||
+        !names.includes(spec.asset) || (await stat(join(directory, spec.asset))).size !== spec.size ||
+        await fileHash(join(directory, spec.asset), 'sha256') !== spec.sha256) throw new Error('WhaleBridge release manifest mismatch')
+    return files
   }
   const version = tag.slice(1)
   const setup = join(directory, 'Whale-Isle-Setup-' + version + '.exe')
@@ -140,7 +149,7 @@ export async function mirrorRelease({ release, directory, sha, request, fetchImp
   }
   if (staged) await request(prefix + '/releases/' + target.id, { method: 'PATCH', body: {
     name: body.name, body: body.body, draft: false, prerelease: false,
-    make_latest: semver.valid(latest?.tag_name) && semver.gt(latest.tag_name, tag) ? 'false' : 'true',
+    make_latest: tag.startsWith('whalebridge-v') || semver.valid(latest?.tag_name) && semver.gt(latest.tag_name, tag) ? 'false' : 'true',
   } })
   const url = 'https://cnb.cool/' + repo + '/-/releases/tag/' + tag
   output('Verified CNB mirror: ' + url)

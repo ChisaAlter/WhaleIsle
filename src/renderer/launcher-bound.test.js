@@ -43,6 +43,33 @@ function runBound(env = {}) {
 
 const hasElectron = Boolean(ELECTRON);
 
+test('home component controls track lifecycle and keep rollback separate; available update appears once', { skip: !hasElectron }, async () => {
+  const r = await runBound({ QA_COMPONENTS_HOME: '1' });
+  assert.equal(r.absent.hidden, true);
+  assert.equal(r.stopped.hidden, false);
+  assert.equal(r.stopped.homeStart, true);
+  assert.equal(r.stopped.rowStart, '启动');
+  assert.equal(r.stopped.rowOpen, false);
+  assert.equal(r.stopped.rollbackVisible, false);
+  assert.ok(r.stopped.brand > 0);
+  assert.equal(r.starting.homeDisabled, true);
+  assert.equal(r.running.homeStart, false);
+  assert.equal(r.running.homeStop, true);
+  assert.equal(r.running.homeOpen, true);
+  assert.equal(r.stopping.homeDisabled, true);
+  assert.equal(r.stoppedAgain.homeStart, true);
+  assert.equal(r.stoppedAgain.homeStop, false);
+  assert.equal(r.stoppedAgain.rowStart, '启动');
+  assert.equal(r.catalogStopped.rollbackVisible, false);
+  assert.equal(r.catalogStopped.rowStart, '启动');
+  assert.equal(r.update.updateVisible, true);
+  assert.equal(r.update.updateCount, 1);
+  assert.equal(r.update.hintHidden, true);
+  assert.equal(r.removed.hidden, true);
+  for (const op of ['component-start', 'component-stop', 'component-open']) assert.equal(r.calls.filter(call => call.op === op).length, 1, op);
+  assert.equal(r.calls.filter(call => call.op === 'component-rollback').length, 0, 'cancel preserves the current version');
+});
+
 test('home uses one guarded start action and hides stale diagnostics throughout deferred startup', { skip: !hasElectron }, async () => {
   const r = await runBound({ QA_STARTUP_FLOW: '1' });
   assert.equal(r.initial.duplicateRetry, false);
