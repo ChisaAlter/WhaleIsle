@@ -10,7 +10,7 @@
 
 ## 当前改造轮次（2026-09-06）
 
-**2026-09-29 原生聊天迁移进行中：** 用户明确要求 Android 已配对聊天从可见 WebView 改为 Kotlin + Compose，并精修输入卡。本轮覆盖连接后会话列表、历史与增量回复、审批、发送／停止；APK 内置同源 JS 客户端暂作为不可见 E2EE 传输适配器，浏览器 Web 路径不变。Git／文件／高级工作区沿用标明的旧版工作页入口，不得把本轮构建验证冒充真机在线链路验收。见 [设计语言手机节](../design-language-mobile.md#android-原生聊天迁移) 与 [迁移决策](../decisions/implemented/product/2026-09-29-mobile-native-chat.md)。
+**2026-10-04 Kotlin 原生迁移：** 用户要求 Android 改为 Kotlin 原生；现有 ChisaCode offer、认证和 E2EE wire 协议保持不变，由 Kotlin 实现通信与加密存储，Compose 接管聊天、工作区/目录/会话、Git 和设置。APK 不再内嵌 SPA，也没有旧版工作页入口；唯一升级读取器在原 asset origin 空白页迁移旧凭据与文字草稿，不执行 SPA、不联网。浏览器 Web 路径不变；实际构建与真机结果见对应 PR，历史验证不能认证本轮。
 
 用户已批准[Web 与 Android 交互改造计划](../superpowers/plans/2026-09-06-mobile-web-android-interaction.md)。该轮的 Web 与 Android 本地候选及「共享网页为唯一聊天实现」属于历史基线；T1 公网 Web、适用 T2 LAN、T3 真机整体验收未完成，历史“Android 不签 / Deferred”不作为原生迁移豁免。[分轨证据](../../tools/mobile-web-qa/results/2026-09-06-interaction/README.md)不继承历史 Pass。浏览器仍用 Web SPA，Android 已配对聊天改由 Compose 绘制；短面板、全屏任务、返回与触控命中区按设计语言手机节执行。
 
@@ -20,13 +20,13 @@
 
 **入口已开放，默认关闭配对：** `REMOTE_FEATURE_ENABLED=true`；远程服务只在用户开启后启动，未配置时默认服务器模式。以下路径仍须针对最终 CI 安装包验收，不能继承历史停放期的 N/A。
 
-1. 桌面开启配对且中继已连接 → 账户菜单「远程」打开 `#offer=` v2 二维码弹窗（账户入口未注册时从原侧栏「远程」行打开；局域网 `http://<LAN>:3180/` 本机 `mobile/web` SPA；外出 `DEFAULT_PUBLIC_APP_BASE_URL` 公网 nginx `https://ayase.cn/dshd/`）。系统相机打开浏览器公网页；App 内扫走 APK 内置 SPA（`appassets.androidplatform.net`），不加载公网 origin。`DaemonClient` 经 `ayase.cn:443` TLS 中继完成 E2EE 握手 → `deviceSecret` 落盘（sticky）→ 已配对态。中继未连接时弹窗只显示状态，不展示二维码 / 复制链接 / 刷新配对码。
+1. 桌面开启配对且中继已连接 → 账户菜单「远程」打开 `#offer=` v2 二维码弹窗（账户入口未注册时从原侧栏「远程」行打开；局域网 `http://<LAN>:3180/` 本机 `mobile/web` SPA；外出 `DEFAULT_PUBLIC_APP_BASE_URL` 公网 nginx `https://ayase.cn/dshd/`）。系统相机打开浏览器公网页；App 内扫由 Kotlin 解析 offer，不加载公网 origin。浏览器 `DaemonClient` 与 Kotlin 客户端 经 `ayase.cn:443` TLS 中继完成 E2EE 握手 → `deviceSecret` 落盘（sticky）→ 已配对态。中继未连接时弹窗只显示状态，不展示二维码 / 复制链接 / 刷新配对码。
 2. 再次打开手机 SPA（无 hash）：用最近一台已存 `deviceSecret` sticky 重连。「已保存的电脑」点选 / 忘记。跨 origin（公网 `/dshd`、LAN `:3180`、APK asset）不互通 sticky。
-3. Android：原生扫码或粘贴完整配对 URL → 同源内置客户端完成握手、保留 sticky → Compose 绘制聊天、会话列表、审批与输入卡；高级工作页通过显式入口暂用内置 SPA。浏览器继续使用同一份 SPA。
+3. Android：原生扫码或粘贴完整配对 URL → Kotlin 客户端完成握手并保存加密凭据 → Compose 绘制聊天、会话列表、审批、工作区、Git 与设置。浏览器继续使用 SPA。
 4. 配对之后 SPA 是正在跑的 `dsh web` 第二客户端（与桌面 BrowserView 同一进程）。LAN 与外出都走隧道（公网页碰不到 loopback）。Harness 未就绪：抽屉明示「桌面端未启动」，禁止画空的「新会话」假装已对齐。
 5. 抽屉对齐桌面侧栏：`session.list` + `workspace.list`；按工作区分组 / 一个列表；搜索 `session.search`（snippet）；行 ⋯ 重命名 / Fork / 上移下移 / 归档；活会话 **没有删除**；已归档取消归档或删除；子智能体只读。
 6. 新会话：已有工作区、无工作区文件夹、浏览本机目录（`host.listDirectory` / `host.createDirectory` / `workspace.create` / `session.create`）。禁止 `host.pickDirectory`、禁止 `createAgent`。
-7. Composer：模型 + 思考 `session.models` / `session.selectModel`；权限与 Plan / 斜杠走 Typert `commands/execute`（`/permission <id>`、`/plan off`）；发送 `session.prompt`、停止 `session.cancel`；附件进 host；审批 `POST /api/respond`（线协议 `respond`）。
+7. Composer：模型 + 思考 `session.models` / `session.selectModel`；权限与 Plan / 斜杠走 Typert `commands/execute`（`/permission <id>`、`/plan off`）；发送 `session.prompt`、停止 `session.cancel`；附件进 host；审批保持线协议 `respond`，由 daemon 将当前 Gateway 的 clientId/eventId 回复到 `/api/$events/result`。
 8. 顶栏 Git 对齐桌面 titlebar：Init、分支搜索/切换/跟踪远端/**创建并检出**、stacked Commit/Push/PR、Publish、View PR。执行走隧道 `shell:git-*`，不是 ACP checkout。
 9. 时间线：`session.history`（`beforeSeq` 向上分页）+ mux 或 1.5s 轮询（running / pending 时）。断线横幅 + 草稿；重连后 `session.list` + 当前 `history`。
 10. Files / Diff / MCP / 技能：**冻结条**（「下一轮接 host/gitDiff；请暂时用电脑端」），禁止空列表装做成功能。
@@ -110,7 +110,7 @@
 - 开放 `/api/*` 代理、恢复 HTTP offer v1、把 `:8411` 当 SPA、官方 `dsh web` 整页当手机 UI
 - 给 daemon 注入 `DSH_HOME`、双写 `dsh-home`
 - PTY 终端、Browser 预览、壁纸图库、市场安装、窗口外观、关闭窗口策略
-- Android Bearer `/api`、复制 E2EE 密钥库或独立设备凭证格式；未接真实 host 的原生假 Git／模型控件
+- Android Bearer `/api`、与桌面 wire 不兼容的 E2EE 或设备凭证格式；未接真实 host 的原生假 Git／模型控件
 - 把 `fetchAgents` / `createAgent` 当产品目录或新会话
 
 ## Invariants
@@ -125,13 +125,13 @@
 - **一码两入口**：同一张 QR——Android App 内扫＝链接设备；相机 / 浏览器扫＝打开落地页自动连入 web 端。
 - Offer v1 / `POST /__remote__/login` / RemoteGateway 配对 **退役**。
 - 远程弹窗 QR 闸门只认 `[data-dsh-remote-qr]`；仅 `enabled && relayConnected && pairingUrl` 时提供二维码、复制与刷新。
-- Android Compose 接管已配对聊天主路径；同源内置 SPA 的 JS 协议层暂为不可见后台传输适配器，浏览器 SPA 和 sticky 密钥仍为原契约。原生桥接只暴露最小会话视图与白名单操作，校验可信 asset origin、请求序号和会话归属，不向 UI 传凭证或 HTML。
+- Android Compose 接管全部已开放移动端界面，Kotlin 直接使用白名单 Host/Git 隧道；设备凭据只进入加密存储与认证层，不传给 UI。异步回复、媒体结果和草稿校验电脑/会话归属。
 - 助手 Markdown 禁止 `innerHTML` 注入：结构化 block → createElement；链接仅 http/https。
 - 时间线向上分页按 seq 去重并保持滚动锚点。打开会话失败必须清掉上一会话 rows。
 - 「已保存的电脑」是纯本地 sticky；「忘记」只清本机 secret。用户可见名称优先使用握手 `server_info.hostname` 并以可选 `computerName` 增量保存；历史 sticky 无名称时显示「我的电脑」，内部 `serverId` 只作连接键且不得显示为电脑名。
 - 保存设备自动 / 手动重连与 offer 首连共用互斥连接入口；连接中显示状态，首次握手失败 / 超时关闭客户端并恢复按钮，不清 sticky。只有成功建立连接后才启用后台自动重连，避免初次失败永久占用选择器。
 - 新 offer 取消未完成的旧连接，旧连接结果不得覆盖新连接。配对认证成功后，当前客户端立即改用 deviceSecret，自动重连不得复用一次性 pairingToken；消费后的 offer 从页面 fragment 清除。认证失败停止后台重试但不静默删除保存凭据。
-- Android WebView 用显式请求序号识别新扫码或重试，不因重组重新插入已消费的 offer；返回前台触发共享 SPA 的连接探测与目录同步。内置资源缺失或主页面加载失败必须可见，不能回落公网下载同名资源。
+- Android 的连接代次隔离迟到回复，Compose 重组不重复配对；返回前台用保存凭据恢复连接与目录同步，不重放一次性 offer。旧 localStorage 迁移失败必须可见，原数据保留。
 - 手机目录转发保留全部 `session.list` 行和原始会话字段，投影只传 `title` / `sessionListMetadata`。模型、权限、计划与用量详情通过打开会话时的 history 按需获取，不能为每次首屏同步重复传输所有会话的详情；history、创建与搜索响应不受目录裁剪影响。目录失败必须可重试，不能假空列表。
 - **非 secure context 兼容**：`http://<LAN-IP>:3180` 禁止裸用 `crypto.randomUUID` / `crypto.subtle`；uuid 走 `getRandomValues` fallback；E2EE 保持 tweetnacl。
 - 已配对页颜色仍只取 `--dsw-alias-*` / `--dsw-specific-*` 同值表，不另起产品皮肤；连接／权限／扫码入口可用文档化的 `--mobile-connect-*` 与 Compose `DshConnectionPalette` 复述鲸屿海天语义，并仅在品牌字标使用展示衬线，禁止读取 `--boot-*` 或把该例外扩散进聊天。已配对页面结构按[设计语言「手机远程交互」](../design-language.md#手机远程交互)的 Claude 式结构：48px 顶栏、浮动输入卡、抽屉只做导航与「最近」、完整会话列表为全屏任务、输入框触发的选择用底部面板、设置为分组卡片。顶栏／行菜单仍是贴近触发器的 Menu，破坏性确认仍是居中 Modal。
@@ -144,7 +144,7 @@
 - `vendor/chisacode-remote/`（线协议 `dshd.host.rpc.*` / `dshd.git.rpc.*` / `dshd.host.mux.*`）、`ui-settings-remote`、本卡、QA 远程条
 - `vendor/deepseek-harness/packages/client/ui-settings/src/client/contract/slots.ts`、`ui-settings-account`、`docs/design-language*`、`docs/handbook/modules/settings.md`、`docs/handbook/modules/mobile-remote.md`、`docs/decisions/` — 账户菜单远程入口、手机视觉合同与原生迁移决策
 - `tools/mobile-web-qa/`、`tools/remote-web-qa/`
-- `mobile/android/`（原生聊天、扫码 handoff、同源后台 WebView 生命周期、内置 SPA 打包与回归；2026-09-29 用户明确要求 Kotlin + Compose 聊天）
+- `mobile/android/`（Kotlin 协议/E2EE、Compose 界面、扫码 handoff、加密存储与升级迁移；2026-10-04 用户要求全部原生）
 
 ## Do not touch
 

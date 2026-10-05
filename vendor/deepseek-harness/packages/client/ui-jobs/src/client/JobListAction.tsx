@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import type { JobsSnapshot, JobView, ObservedJob } from '@deepseek-ai/dsh-api-job-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
-  IconChevronDownOutlineRegular, IconStopFillRegular, StateDot, TerminalBlock, useAnchoredPosition, useDismissOnOutsidePointer,
+  IconChevronDownOutlineRegular, IconStopFillRegular, IconCodeOutlineRegular, StateDot, TerminalBlock, useAnchoredPosition, useDismissOnOutsidePointer,
   type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -492,6 +492,7 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, killJob,
         className={css.trigger}
         aria-expanded={open}
         aria-label={countLabel}
+        title={countLabel}
         onClick={() => {
           // Sample the clock in the same commit that opens the list: the
           // mount-time value predates every job, so the first painted frame
@@ -501,9 +502,10 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, killJob,
           setOpen(current => !current)
         }}
       >
+        <IconCodeOutlineRegular size={14} className={css.jobsIcon} />
         {liveRows.length > 0 ? <StateDot state="ongoing" className={css.triggerDot} /> : null}
         <span className={css.count}>{countLabel}</span>
-        <IconChevronDownOutlineRegular size={12} className={open ? css.triggerOpen : undefined} />
+        <IconChevronDownOutlineRegular size={12} className={`${css.triggerChevron} ${open ? css.triggerOpen : ''}`} />
       </button>
       {open
         ? createPortal((

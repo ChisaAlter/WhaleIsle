@@ -136,10 +136,10 @@ function sleep(ms, signal) {
 /**
  * Keep the catalog streams open until `signal` aborts; reconnect with backoff
  * when the socket closes. Resolves only on abort; rejects only on a bad origin.
- * `fetchImpl` is accepted for call-site compatibility and unused.
+ * Approval waterfalls retain the Gateway event generation for their unary reply.
  */
-async function openMuxSse({ origin, cookie, onEnvelope, signal, WebSocketImpl, reconnectDelayMs = 1_000 }) {
-  const { assertLoopbackHarnessOrigin, sanitizeHarnessCookie } = require('./dshd-host-tunnel.js');
+async function openMuxSse({ origin, cookie, onEnvelope, signal, WebSocketImpl, fetchImpl, reconnectDelayMs = 1_000 }) {
+  const { assertLoopbackHarnessOrigin, sanitizeHarnessCookie, forwardRemoteEventResult } = require('./dshd-host-tunnel.js');
   const originUrl = new URL(assertLoopbackHarnessOrigin(origin));
   const target = new URL('/api/remote.mux', `${originUrl.origin}/`);
   target.protocol = 'ws:';
@@ -154,6 +154,8 @@ async function openMuxSse({ origin, cookie, onEnvelope, signal, WebSocketImpl, r
     const options = { headers: {} };
     if (pair) options.headers.Cookie = pair;
     const socket = new WS(target.href, options);
+    let eventClientId = '';
+    const approvals = new Map();
     let sawItem = false;
 
     await new Promise((resolve) => {
@@ -191,6 +193,31 @@ async function openMuxSse({ origin, cookie, onEnvelope, signal, WebSocketImpl, r
         const endpoint = streamIds.get(frame.streamId);
         if (!endpoint) return;
         sawItem = true;
+        const value = frame.value;
+        if (endpoint === '$events' && value?.type === 'ready') { eventClientId = value.clientId; return; }
+        if (endpoint === '$events' && value?.type === 'waterfall' && eventClientId) {
+          if (value.event === 'approval/request') {
+            const request = value.request || {};
+            const payload = { type: 'approval/requested', sessionId: value.agentId,
+              approvalId: request.requestId || value.eventId, toolName: request.toolName, reason: request.reason || '' };
+            approvals.set(value.eventId, payload);
+            onEnvelope({ type: 'server-request', rpcId: `remote-event:${JSON.stringify({ clientId: eventClientId, eventId: value.eventId })}`, payload });
+          } else {
+            // This client does not present other waterfalls; let another answerer handle them.
+            void forwardRemoteEventResult({ origin, cookie, signal, fetchImpl, clientId: eventClientId,
+              eventId: value.eventId, outcome: { kind: 'next' } }).catch(() => socket.close());
+          }
+          return;
+        }
+        if (endpoint === '$events' && value?.type === 'cancel') {
+          const approval = approvals.get(value.eventId);
+          if (approval) {
+            approvals.delete(value.eventId);
+            onEnvelope({ type: 'server-request', rpcId: `${endpoint}#${++seq}`,
+              payload: { type: 'approval/resolved', sessionId: approval.sessionId, approvalId: approval.approvalId } });
+          }
+          return;
+        }
         const payload = mapRemoteStreamItem(endpoint, frame.value);
         if (!payload) return;
         seq += 1;

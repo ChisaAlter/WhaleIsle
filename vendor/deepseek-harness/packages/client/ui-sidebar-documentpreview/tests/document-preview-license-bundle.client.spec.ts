@@ -56,6 +56,7 @@ describe('published document preview licenses', () => {
       const packed = Array.isArray(packedJson) ? packedJson[0]! : packedJson
       expect(packed.files.map(file => file.path)).toContain('lib/client.js')
       expect(packed.files.map(file => file.path)).toContain('lib/client.pdf.js')
+      expect(packed.files.map(file => file.path)).toContain('lib/client.frontmatter-fields.js')
       expect(packed.files.some(file => file.path.endsWith('pdfjs-NOTICES.txt'))).toBe(false)
 
       // pnpm reports an absolute filename; npm reports a basename written inside
@@ -65,7 +66,7 @@ describe('published document preview licenses', () => {
       const client = run('tar', ['-xOf', basename(tarball), 'package/lib/client.js'], dirname(tarball), task.timeout)
       const pdf = run('tar', ['-xOf', basename(tarball), 'package/lib/client.pdf.js'], dirname(tarball), task.timeout)
       expect([...client.matchAll(/require\.async\("(\.\/client[^"/]*\.js)"\)/gu)].map(match => match[1]))
-        .toEqual(['./client.pdf.js', './client.excel.js'])
+        .toEqual(['./client.frontmatter-fields.js', './client.pdf.js', './client.excel.js'])
       expect(client).not.toMatch(/\brequire\("\.\/client[^"/]*\.js"\)/u)
       expect([...pdf.matchAll(/require\("(\.\/client[^"/]*\.js)"\)/gu)].map(match => match[1]))
         .toEqual([])
@@ -83,6 +84,20 @@ describe('published document preview licenses', () => {
         const license = readFileSync(join(root, 'LICENSE'), 'utf8').trimEnd()
         expect(excel).toContain(license.split('\n').map(line => `// ${line}`).join('\n'))
       }
+      const frontmatter = run('tar', ['-xOf', resolve(packageRoot, packed.filename), 'package/lib/client.frontmatter-fields.js'], packageRoot, task.timeout)
+      expect(frontmatter).not.toMatch(/\brequire\("\.\/client[^"/]*\.js"\)/u)
+      let frontmatterInitialized = false
+      runInNewContext(frontmatter, { window: { __ModuleLoader__: { load: (registration: {
+        factory: (resolve: (specifier: string) => unknown) => { FrontmatterFields: unknown }
+      }) => {
+        const loaded = registration.factory((specifier) => {
+          if (specifier === 'react' || specifier === 'react/jsx-runtime') return require(specifier)
+          throw new Error(`Unexpected browser dependency: ${specifier}`)
+        })
+        expect(typeof loaded.FrontmatterFields).toBe('function')
+        frontmatterInitialized = true
+      } } } })
+      expect(frontmatterInitialized).toBe(true)
       let initialized = false
       runInNewContext(excel, { window: { __ModuleLoader__: { load: (registration: {
         factory: (resolve: (specifier: string) => unknown) => { ExcelBody: unknown }

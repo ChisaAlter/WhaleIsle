@@ -12,6 +12,7 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { MessageImageLoader } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import { PartialArguments } from '@deepseek-ai/dsh-util-values'
 import { zh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 import type { RenderToolImages } from '../src/client/contract/slots.ts'
 import { GenericToolCard, type GenericToolCardProps } from '../src/client/tool/toolviews/GenericToolCard.tsx'
@@ -37,6 +38,7 @@ const settled = (content: ToolResultNode['content'], over: Partial<ToolResultNod
   time: 2_000,
   callId: 'c1',
   call: { name: 'mcp_screenshot', argsRaw: '{"page":"/w/a"}' },
+  args: PartialArguments.fromText('{"page":"/w/a"}'),
   callTime: 1_000,
   content,
   isError: false,
@@ -107,7 +109,7 @@ describe('genericImageCardModel', () => {
 
   it('declines running, error, and image-free results', () => {
     expect(genericImageCardModel({
-      phase: 'start', callId: 'c1', name: 'mcp_screenshot', argsRaw: '{}', turn: 1, step: 1, time: 1, subCalls: [],
+      phase: 'start', callId: 'c1', name: 'mcp_screenshot', argsRaw: '{}', args: PartialArguments.fromText('{}'), turn: 1, step: 1, time: 1, subCalls: [],
     })).toBeNull()
     expect(genericImageCardModel(settled([{ type: 'text', text: 'failed' }], { isError: true }))).toBeNull()
     expect(genericImageCardModel(settled([{ type: 'text', text: 'no image' }]))).toBeNull()

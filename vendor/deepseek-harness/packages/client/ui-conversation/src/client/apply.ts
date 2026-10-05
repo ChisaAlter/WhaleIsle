@@ -1,4 +1,5 @@
 /** Registers the target-neutral Conversation assembly, shell, input, and docks. */
+import type {} from '@deepseek-ai/dsh-client-product-analytics/client'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ISessions, SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -474,7 +475,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       const openCarryingDraft = (nextId: SessionId): void => {
         if (sessionId !== undefined && nextId !== sessionId) {
           const from = inputHub.shell(sessionId)
-          const draft = from.snapshot.draft
+          const draft = from.draftSnapshot
           const attachmentIds = from.snapshot.attachmentIds
           const next = inputHub.shell(nextId)
           if (attachmentIds.length === 0 || next.addAttachments(attachmentIds)) {
@@ -482,7 +483,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
               throw new Error(`ui-conversation: session "${nextId}" resolved no binding`)
             }
             concreteConversation(ctx).rebindDraftFiles(nextId, attachmentIds)
-            if (draft !== '') {
+            if (draft.text !== '') {
               next.setDraft(draft)
               from.setDraft('')
             }
@@ -538,7 +539,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
             },
           },
         },
-        bindDraftMirror: write => inputHub.shell(sessionId).bindMirror(write),
+        bindDraftPersistence: write => inputHub.shell(sessionId).bindDraftPersistence(write),
         openView,
       }
     },
@@ -726,7 +727,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     yield slots.register({
       name: 'conversation.composer.dock',
       id: 'peak-valley',
-      order: 1,
+      order: 2,
       locale: NS,
       inject: (sessionId: SessionId): PeakValleyRowInjected => ({
         hooks: {

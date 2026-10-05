@@ -154,7 +154,7 @@ function tracks(frame: HTMLElement): number[] {
 }
 
 function drawerTrack(frame: HTMLElement): number {
-  const match = /^auto minmax\(0, 1fr\) (\d+)px$/.exec(frame.style.gridTemplateRows)
+  const match = /^auto minmax\(0, 1fr\) (\d+)px auto$/.exec(frame.style.gridTemplateRows)
   if (match === null) throw new Error(`unexpected rows: ${frame.style.gridTemplateRows}`)
   return Number(match[1])
 }
@@ -281,6 +281,7 @@ describe('AppFrame', () => {
     expect(getByTestId('main-content').getAttribute('data-entry-key')).toBe('conversation')
     expect(getByTestId('sidebar-content')).toBeTruthy()
     expect(getByTestId('rightbar-content')).toBeTruthy()
+    expect(getByTestId('shell.bottom-content').parentElement?.hasAttribute('data-shell-bottom')).toBe(true)
     expect(tracks(frame)).toEqual([280, 0, 0])
   })
 

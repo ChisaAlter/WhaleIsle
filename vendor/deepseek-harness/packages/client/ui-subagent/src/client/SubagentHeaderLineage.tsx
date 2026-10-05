@@ -7,7 +7,7 @@ import {
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
-  IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconRefreshOutlineRegular, StateDot, Tooltip,
+  IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconRefreshOutlineRegular, IconUserOutlineRegular, StateDot, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { NS } from './locales.ts'
@@ -657,6 +657,10 @@ function CatalogDropdown({
           : css.trigger}
         aria-haspopup="tree"
         aria-expanded={open}
+        title={variant === 'switcher' ? switcherDisplayTitle : t(
+          runningCount > 0 ? runningCountKey : totalCountKey,
+          { count: runningCount > 0 ? runningCount : directCount },
+        )}
         aria-label={variant === 'switcher'
           ? t('switcher.aria', { title: switcherDisplayTitle })
           : t(
@@ -686,6 +690,7 @@ function CatalogDropdown({
           ? <span className={css.switcherTitle}>{switcherDisplayTitle}</span>
           : (
             <>
+              <IconUserOutlineRegular size={14} className={css.catalogIcon} />
               {runningCount > 0 && (
                 <span className={css.activitySlot}>
                   <StateDot state="ongoing" />
@@ -696,7 +701,7 @@ function CatalogDropdown({
           )}
         {variant === 'switcher'
           ? <SubagentSwitcherIcon />
-          : <IconChevronDownOutlineRegular className={open ? css.triggerOpen : undefined} />}
+          : <IconChevronDownOutlineRegular className={`${css.catalogChevron} ${open ? css.triggerOpen : ''}`} />}
       </button>
       {open && createPortal((
         <div

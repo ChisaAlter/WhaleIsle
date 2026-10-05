@@ -1,44 +1,19 @@
-/* Two icon pills side by side under the composer, 12/20 tertiary text tier
-   with a hover-pill affordance; each pill's click-open panel wears the shared
-   stat-dialog.module.css skin. When the composer card is drag-resized, the
-   seat publishes --dsh-composer-resized-width and this row follows it (same
-   card-minus-clearance relation) so the stats band stays one family with the
-   input card; the fallback keeps the rest axis. */
+/* Icon pills under the composer, each one composer-dock entry laid out by the
+   dock's flex row; 12/20 tertiary text tier with a hover-pill affordance; each
+   pill's click-open panel wears the shared stat-dialog.module.css skin. */
 
-.root {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  min-width: 0;
-  max-width: calc(
-    var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width)) -
-    var(--dsh-composer-side-clearance) -
-    var(--dsh-composer-side-clearance)
-  );
-  width: 100%;
-  margin: 0 auto;
-  box-sizing: border-box;
-  font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
-  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
-}
-
-/* Desktop fork: the row is not unmounted while the first step runs (pending)
-   or while the stats preference is off (hidden) — visibility alone keeps the
-   dock from collapsing under the composer. */
-.root[data-stats-line='hidden'] {
+/* Entry root and dialog anchor: shrink-wraps its pill so the panel clamp
+   measures the pill. */
+.placeholder {
+  min-height: 24px;
   visibility: hidden;
 }
 
-.root[data-stats-line='pending'],
-.root[data-stats-line='hidden']:empty {
-  /* padding-top 4px + line-height 20px; an empty box otherwise collapses. */
-  min-height: 24px;
-}
-
-/* Dialog anchor: shrink-wraps its pill so the panel clamp measures the pill. */
 .anchor {
   display: inline-flex;
   min-width: 0;
+  font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
 }
 
 .pill {

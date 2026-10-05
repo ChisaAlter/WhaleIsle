@@ -1,11 +1,8 @@
 /** Strict per-session header/body content inserted into the resident conversation layout. */
 
 import clsx from 'clsx'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   ConversationSessionHeaderSlotProps, ConversationSessionSlotProps,
 } from '../contract/slots.ts'
@@ -55,113 +52,6 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
       return other !== undefined && item.id === other.id && item.displayTitle === other.displayTitle
         && item.managed === other.managed
     })
-}
-
-/**
- * Density attribute the frame publishes; the actions band hides on cozy and
- * compact through CSS, so this seat offers those actions through a popover
- * instead of dropping them.
- */
-function readTitlebarDensity(): string {
-  return document.documentElement.dataset.titlebarDensity ?? 'full'
-}
-
-function subscribeTitlebarDensity(onChange: () => void): () => void {
-  const observer = new MutationObserver(onChange)
-  observer.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['data-titlebar-density'],
-  })
-  return () => { observer.disconnect() }
-}
-
-/**
- * Overflow entry for the header actions band: while the row is too narrow to
- * paint the actions inline (cozy/compact density), a chevron trigger renders
- * them in a popover. Hover/focus previews them transiently; clicking pins the
- * panel open until Escape, an outside pointerdown, or a second click.
- * @param props - the renderSlot binding plus the trigger's aria label.
- */
-function HeaderActionsOverflow({
-  renderSlot, label,
-}: {
-  renderSlot: ConversationSessionHeaderSlotProps['renderSlot']
-  label: string
-}) {
-  const [density, setDensity] = useState(readTitlebarDensity)
-  const [pinned, setPinned] = useState(false)
-  const [hovering, setHovering] = useState(false)
-  const rootRef = useRef<HTMLSpanElement | null>(null)
-
-  useEffect(() => subscribeTitlebarDensity(() => {
-    setDensity(readTitlebarDensity())
-  }), [])
-
-  const collapsed = density === 'cozy' || density === 'compact'
-  const open = collapsed && (pinned || hovering)
-
-  // Leaving the collapsed range resets the seat so a widened row shows the
-  // inline band again with no stale popover state.
-  useEffect(() => {
-    if (!collapsed) {
-      setPinned(false)
-      setHovering(false)
-    }
-  }, [collapsed])
-
-  useEffect(() => {
-    if (!pinned) return
-    const onPointerDown = (event: PointerEvent): void => {
-      const root = rootRef.current
-      if (root !== null && event.target instanceof Node && !root.contains(event.target)) {
-        setPinned(false)
-      }
-    }
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setPinned(false)
-    }
-    document.addEventListener('pointerdown', onPointerDown, true)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown, true)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [pinned])
-
-  if (!collapsed) return null
-
-  return (
-    <span
-      ref={rootRef}
-      className={css.actionsOverflow}
-      onPointerEnter={() => { setHovering(true) }}
-      onPointerLeave={() => { setHovering(false) }}
-      onFocusCapture={() => { setHovering(true) }}
-      onBlurCapture={(event) => {
-        const root = rootRef.current
-        const next = event.relatedTarget
-        if (root !== null && (!(next instanceof Node) || !root.contains(next))) setHovering(false)
-      }}
-    >
-      <button
-        type="button"
-        className={css.actionsOverflowButton}
-        aria-label={label}
-        aria-expanded={open}
-        data-pinned={pinned || undefined}
-        onClick={() => { setPinned(value => !value) }}
-      >
-        <IconChevronDownOutline14 size={14} />
-      </button>
-      {open && createPortal(
-        <div className={css.actionsOverflowPanel} role="group" aria-label={label}>
-          {renderSlot('conversation.session.header.actions', {}) as ReactNode}
-        </div>,
-        /* v8 ignore next -- open implies the mounted span exists. */
-        rootRef.current as Element,
-      )}
-    </span>
-  )
 }
 
 /**
@@ -266,7 +156,6 @@ export function ConversationSessionHeader({
             </div>
             {!managed && (
               <div className={css.headerUtilities}>
-                <HeaderActionsOverflow renderSlot={renderSlot} label={t('header.actions.more')} />
                 {renderSlot('conversation.session.header.utilities', {})}
               </div>
             )}

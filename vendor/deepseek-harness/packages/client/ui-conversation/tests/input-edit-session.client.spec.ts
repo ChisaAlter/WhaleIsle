@@ -61,6 +61,14 @@ function hungTriggers(overrides: Partial<InputTriggerController> = {}): () => In
 }
 
 describe('composer edit session', () => {
+  it('restores structured references when cancelling an edit', () => {
+    const { shell, spec } = bench()
+    const draft = { text: 'carry @one.ts', references: [{ source: 'reference', ref: '@one.ts', label: 'one.ts', appearance: 'file' as const, clipboardText: '@one.ts', offset: 6, length: 7 }] }
+    shell.setDraft(draft)
+    shell.beginEdit(spec)
+    shell.cancelEdit()
+    expect(shell.draftSnapshot).toEqual(draft)
+  })
   it('publishes edit entry and cancellation even when the seed and stash equal the current draft', () => {
     const { shell, spec } = bench()
     shell.setDraft(spec.seed)
@@ -245,9 +253,9 @@ describe('composer edit session', () => {
   it('holds the persistence mirror through the edit and never mirrors edit text', () => {
     const mirror = vi.fn()
     const { shell, spec } = bench()
-    shell.bindMirror(mirror)
+    shell.bindDraftPersistence(mirror)
     shell.setDraft('persisted draft')
-    expect(mirror).toHaveBeenLastCalledWith('persisted draft')
+    expect(mirror).toHaveBeenLastCalledWith({ text: 'persisted draft', references: [] })
     mirror.mockClear()
 
     shell.beginEdit(spec)

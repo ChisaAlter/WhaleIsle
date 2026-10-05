@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { act, fireEvent, render } from '@testing-library/react'
 import {
   SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages,
@@ -29,6 +29,7 @@ import type { SlotMap } from '@deepseek-ai/dsh-client-ui-slots'
 import type { StatsLineRowInjected } from '../../ui-conversation/src/client/settings/StatsLineRow.tsx'
 import type { ConversationSettings } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../src/chat-settings.ts'
+import { ActivityPill, UsagePill } from '../src/client/chat/StatsPills.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ConversationTurnDataMap {
@@ -155,28 +156,52 @@ describe('Chat apply wiring', () => {
     expect(b.runtime.slots.entries('conversation.chat.node').map(row => row.options.key))
       .toContain('user')
     expect(b.runtime.slots.entries('conversation.composer.dock').map(row => row.options.id))
-      .toEqual(['stats', 'peak-valley'])
+      .toEqual(['activity', 'usage', 'peak-valley'])
     expect(b.runtime.slots.entries('settings.general.item').map(row => row.options.id))
-      .toEqual(['transcript-view', 'performance-usage', 'link-opening', 'composer-enter', 'custom-instructions'])
+      .toEqual(['transcript-view', 'link-opening', 'composer-enter', 'custom-instructions', 'performance-usage'])
     await b.runtime.dispose()
   })
 
-  it('mirrors the Host transcript preference into its Settings row', async () => {
+  it('lets another registrant replace one composer stats pill by id', async () => {
     const b = await bench()
+    onTestFinished(() => b.runtime.dispose())
+    function PluginActivity() { return null }
+    const peakValley = b.runtime.slots.entriesOfSlot('conversation.composer.dock').find(entry => entry.options.id === 'peak-valley')!.component
+    const dispose = b.runtime.ctx.slots.register({
+      name: 'conversation.composer.dock', id: 'activity', order: 0, priority: -1,
+    }, PluginActivity)
+    const winners = (): Record<string, unknown> => Object.fromEntries(
+      b.runtime.slots.entriesOfSlot('conversation.composer.dock')
+        .map((entry): [string, unknown] => [entry.options.id ?? '', entry.component]),
+    )
+    expect(winners()).toEqual({ activity: PluginActivity, usage: UsagePill, 'peak-valley': peakValley })
+    dispose()
+    expect(winners()).toEqual({ activity: ActivityPill, usage: UsagePill, 'peak-valley': peakValley })
+  })
+
+  it.each([
+    { desktop: false, initial: 'detailed', choice: 'standard' },
+    { desktop: true, initial: 'standard', choice: 'detailed' },
+  ] as const)('mirrors the Host transcript preference into its Settings row (desktop: $desktop)', async ({ desktop, initial, choice }) => {
+    if (desktop) {
+      vi.stubGlobal('dshDesktop', {})
+      onTestFinished(() => { vi.unstubAllGlobals() })
+    }
+    const b = await bench()
+    onTestFinished(() => b.runtime.dispose())
     const row = b.runtime.slots.entries('settings.general.item')
       .find(entry => entry.options.id === 'transcript-view')!
     const face = (row.inject as unknown as () => TranscriptViewRowInjected)()
 
-    expect(face.hooks.transcriptView.getSnapshot()).toBe('standard')
-    face.setTranscriptView('detailed')
-    expect(face.hooks.transcriptView.getSnapshot()).toBe('detailed')
-    expect(b.chatSettings.set).toHaveBeenCalledWith('transcriptView', 'detailed')
+    expect(face.hooks.transcriptView.getSnapshot()).toBe(initial)
+    face.setTranscriptView(choice)
+    expect(face.hooks.transcriptView.getSnapshot()).toBe(choice)
+    expect(b.chatSettings.set).toHaveBeenCalledWith('transcriptView', choice)
 
     b.chatSettings.publish({
       status: 'ready', value: { linkOpening: 'sidebar', transcriptView: 'compact', performanceUsage: 'detailed' }, revision: 1, writable: true,
     })
     expect(face.hooks.transcriptView.getSnapshot()).toBe('compact')
-    await b.runtime.dispose()
   })
 
   it('shares the accepted performance preference with settings, composer, and turn tails', async () => {
@@ -189,7 +214,7 @@ describe('Chat apply wiring', () => {
     b.chatSettings.publish({ value: { linkOpening: 'sidebar', transcriptView: 'compact', performanceUsage: 'compact' } })
     expect(face.hooks.performanceUsage.getSnapshot()).toBe('compact')
     for (const entry of [
-      b.runtime.slots.entries('conversation.composer.dock').find(entry => entry.options.id === 'stats')!,
+      ...b.runtime.slots.entries('conversation.composer.dock').filter(entry => entry.options.id !== 'peak-valley'),
       b.runtime.slots.entries('conversation.chat.node').find(entry => entry.options.key === 'turn-tail')!,
     ]) {
       const injected = (entry.inject as () => Pick<PerformanceUsageRowInjected, 'hooks'>)()

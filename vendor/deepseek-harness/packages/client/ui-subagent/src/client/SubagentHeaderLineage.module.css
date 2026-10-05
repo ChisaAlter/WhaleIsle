@@ -28,8 +28,65 @@
   cursor: pointer;
 }
 
+.root:has(> .trigger) {
+  min-width: 28px;
+}
+
 .trigger {
   gap: 4px;
+  min-width: 28px;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.trigger svg {
+  flex: none;
+}
+
+.count {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalogIcon {
+  display: none;
+}
+
+@container (max-width: 520px) {
+  .trigger {
+    box-sizing: border-box;
+    width: 28px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .count,
+  .catalogChevron {
+    display: none;
+  }
+
+  .catalogIcon {
+    display: inline-flex;
+  }
+
+  .trigger {
+    position: relative;
+  }
+
+  .trigger .activitySlot {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 10px;
+    height: 10px;
+  }
+
+  .activitySlot svg {
+    width: 10px;
+    height: 10px;
+  }
 }
 
 .switcherTrigger {

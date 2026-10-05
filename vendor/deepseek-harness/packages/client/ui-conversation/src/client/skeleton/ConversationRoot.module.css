@@ -72,18 +72,18 @@
   display: contents;
 }
 
-/* Desktop caption controls: when the surfaces column is closed the trailing
+/* Desktop caption controls: when the right sidebar is closed the trailing
    cluster's margin clears the caption window controls (--dshd-wco-controls,
    set by the desktop chrome inject, absent in a plain browser), so its left
    edge reaches that much deeper into the row than the measured reserve. The
    published reserve alone left header utilities (header.actions / plugins'
    header.utilities buttons) painting under Session log and Git. Widen the
    same reserve by the controls inset — `max(8px, …)` keeps the plain-browser
-   math identical to the pinned baseline above — and only while surfaces is
-   closed, because an open surfaces column pins the cluster's right edge back
-   to a fixed 8px inset over the details column. The trailing +16px is the
+   math identical to the pinned baseline above — and only while the rightbar is
+   closed, because an open rightbar pins the cluster's right edge back
+   to a fixed 8px inset inside the conversation column. The trailing +16px is the
    corner-seat reach the baseline calc above also absorbs. */
-:global([data-surfaces-collapsed]) .header {
+:global([data-surfaces-collapsed][data-rightbar-collapsed]) .header {
   padding-right: max(
     28px,
     calc(
@@ -99,21 +99,6 @@
     padding-top: max(12px, env(safe-area-inset-top, 0px));
     padding-right: max(16px, env(safe-area-inset-right, 0px));
     padding-left: 56px;
-  }
-}
-
-@media (max-width: 1023px) {
-  .titleRow {
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  .headerActions {
-    min-width: 0;
-  }
-
-  .headerUtilities {
-    display: none;
   }
 }
 
@@ -171,7 +156,6 @@
 .crumbs,
 .headerActions,
 .headerUtilities,
-.actionsOverflow,
 .headerCorner {
   -webkit-app-region: no-drag;
 }
@@ -197,10 +181,6 @@
      containment cannot collapse it. */
   container-type: inline-size;
   display: flex;
-  /* The title row's content box already excludes AppFrame's measured trailing
-     reserve. Query this width for local action priority; changing these
-     actions cannot change the trailing cluster's measured width. */
-  container-type: inline-size;
   align-items: center;
   gap: 0;
   min-height: 30px;
@@ -232,6 +212,7 @@
 
 .crumbs {
   display: flex;
+  flex: 1 1 0;
   align-items: center;
   gap: 4px;
   min-width: 0;
@@ -290,21 +271,21 @@ button.crumb:hover {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  overflow: hidden;
+  max-width: 65%;
 }
 
-/* A wide conversation column can still have a narrow title row after the
-   Session log / Git cluster reserves its real width (notably with surfaces
-   open). Hide the secondary Agent actions before they reach utilities. */
+/* Keep every action reachable. Occupants truncate their own labels, then
+   shed text at this row's actual width, including the trailing reserve. */
 @container (max-width: 520px) {
   .headerActions {
-    display: none;
+    flex: none;
+    gap: 4px;
+    max-width: none;
   }
-}
 
-:global([data-titlebar-density='cozy']) .headerActions,
-:global([data-titlebar-density='compact']) .headerActions {
-  display: none;
+  .titleRow .headerUtilities {
+    margin-left: 8px;
+  }
 }
 
 .headerUtilities {
@@ -317,56 +298,6 @@ button.crumb:hover {
 
 .headerUtilities:empty {
   display: none;
-}
-
-/* Overflow seat for the title-adjacent Agent actions: rendered only while the
-   row density hides the inline band (cozy/compact), so it never duplicates
-   controls that are already visible. */
-.actionsOverflow {
-  position: relative;
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-}
-
-.actionsOverflowButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  border-radius: var(--dsw-radius-md);
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-}
-
-.actionsOverflowButton:hover,
-.actionsOverflowButton[data-pinned] {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.actionsOverflowPanel {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: min(360px, calc(100vw - 48px));
-  padding: 6px 10px;
-  border: 0;
-  border-radius: var(--dsw-radius-md);
-  background: var(--dsw-specific-menu);
-  backdrop-filter: var(--dsw-menu-backdrop-filter);
-  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
-  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-  box-shadow: var(--dsw-elevation-panel);
-  white-space: nowrap;
 }
 
 /* The far-right corner seat reaches 16px into the header's 28px right padding,

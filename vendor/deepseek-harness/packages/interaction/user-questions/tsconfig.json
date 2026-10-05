@@ -21,7 +21,22 @@
       "path": "../../llm/llm"
     },
     {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../core/scope"
+    },
+    {
       "path": "../../core/session"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../session/session-projection"
+    },
+    {
+      "path": "../../../vendor/schemastery"
     }
   ]
 }

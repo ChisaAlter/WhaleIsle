@@ -44,6 +44,8 @@ export const MODULE_PROXIES: Record<string, string> = {
   // Sync-stack AsyncLocalStorage semantics.
   'node:async_hooks': './node/builtin_modules/implemented/async_hooks.ts',
   // Real implementations over browser primitives.
+  'node:assert/strict': './node/builtin_modules/implemented/assert/strict.ts',
+  'assert/strict': './node/builtin_modules/implemented/assert/strict.ts',
   'node:util': './node/builtin_modules/implemented/util.ts',
   'node:util/types': './node/builtin_modules/implemented/util/types.ts',
   'node:events': './node/builtin_modules/implemented/events.ts',
@@ -73,6 +75,7 @@ export const MODULE_PROXIES: Record<string, string> = {
   'sharp': './node/external_packages/sharp.ts',
   'node-pty': './node/external_packages/node-pty.ts',
   'execa': './node/external_packages/execa.ts',
+  'got': './node/external_packages/got.ts',
   '@vscode/ripgrep': './node/external_packages/ripgrep.ts',
   '@earendil-works/pi-ai': './node/external_packages/pi-ai.ts',
   // Constructible fakes whose methods are never reached.

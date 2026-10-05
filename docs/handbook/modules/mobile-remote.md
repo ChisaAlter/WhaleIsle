@@ -2,9 +2,9 @@
 
 ## 职责与非目标
 
-**职责：** LAN / 中继远程、ChisaCode 配对、已配对后将浏览器 `mobile/web` SPA 与 Android 原生 Compose 聊天接到正在跑的 `dsh web`。Android 暂使用内置同源 Web 客户端作后台 E2EE 传输适配器。
+**职责：** LAN / 中继远程、ChisaCode 配对、已配对后将浏览器 `mobile/web` SPA 与 Android 原生 Compose 聊天接到正在跑的 `dsh web`。Android 的协议、存储和界面均由 Kotlin 原生代码负责。
 **入口已开放：** `REMOTE_FEATURE_ENABLED=true`，默认关闭配对；远程服务只在用户开启后启动。
-**非目标：** 不把启动页仪器风或官方 CSS Modules 整树嵌进手机；不把 PTY、Browser、`writeFile`、`host.pickDirectory` 暴露给手机；不重写 ChisaCode 认证和 E2EE 协议，不为 Git／文件画无效原生控件。
+**非目标：** 不把启动页仪器风或官方 CSS Modules 整树嵌进手机；不把 PTY、Browser、`writeFile`、`host.pickDirectory` 暴露给手机；保持 ChisaCode 认证和 E2EE wire 协议，不为 Git／文件画无效原生控件。
 
 ## 用户路径
 
@@ -13,13 +13,14 @@
 ## 架构要点
 
 - 配对：vendored ChisaCode offer v2 / sticky / 中继 E2EE。QR 落地页局域网 `:3180`、外出 `https://ayase.cn/dshd/`；传输走 `ayase.cn:443` 的 `/ws`，不把中继路由当页面。成功握手的 `server_info.hostname` 作为可选 `computerName` 写入手机 sticky，供保存电脑行与已连接主机名称使用；旧 sticky 无此字段时显示「我的电脑」，不得展示内部 `serverId`。
-- 已配对 host：daemon 白名单 unary 转发 loopback `dsh web`（剥 Origin / sec-fetch，Host 钉 loopback）。审批走 `/api/respond`。
+- 已配对 host：daemon 白名单 unary 转发 loopback `dsh web`（剥 Origin / sec-fetch，Host 钉 loopback）。当前 Gateway 审批从 `$events` waterfall 转换为手机审批帧，回复保留 clientId/eventId 经 `/api/$events/result` 返回；旧格式 rpcId 仍走原 `/api/respond`。
+- Android 使用 `session.projections` 读取完整模型、权限及 Plan 投影；历史页不携带这些状态。Host 白名单仅新增这一只读方法。
 - 会话与工作区：`session.list` / `workspace.list` 是目录真相，`session.history` 供时间线；新会话走 `session.create`，目录浏览/创建/登记走 `host.listDirectory` / `host.createDirectory` / `workspace.create`。模型/思考走 `session.models` / `session.selectModel`，权限、Plan 和斜杠走 Typert `commands/execute`，不回退 ACP agents。
 - 已配对 Git：daemon 回调 Electron `git.js`（`dshd-git-dispatch.js`），同一套 `workspace-authority.js`。不在 daemon 里再实现一套 git CLI。
 - Git 用户路径：分支搜索/切换/远端跟踪、创建并检出分支、Commit/Push/PR 组合动作与 Publish 均走 `shell:git-*` 白名单；不是「创建分支请到电脑端」。修复已进入当前本地候选，构建通过不代替整轨行为验收。
 - Web：`mobile/web` + `--dsw-alias-*` tokens。短面板与全屏任务复用 `ui/surfaces.js` 的头部/正文和焦点范围；`ui/navigation.js` 协调网页与原生返回。Files / Diff / MCP / 技能仍为冻结条。
-- Android：`mobile/android` 原生层负责扫码／粘贴、Compose 会话列表／时间线／审批／输入卡、系统键盘与后台 WebView 生命周期。桥接只接可信 asset 主文档，Web 协议客户端保留 sticky 与 E2EE，不保留 Bearer `/api/*` 原生 Chat。IME 打开时先收键盘，后续返回才退当前原生层；恢复通知后台客户端检查连接，不重放一次性 offer。尚未原生迁移的高级工作页有明确的旧版入口。
-- 打包：`stageMobileWebAssets` 在 Android `preBuild` 前验证 ESM/CSS 依赖并生成运行资源清单；APK 不携带测试、开发入口和 sourcemap。`tools/mobile-web-qa/runtime-assets.mjs` 解包比较源码哈希与内嵌清单，debug 构建不建立生产签名/升级兼容性。
+- Android：`mobile/android` 的 Kotlin `protocol` 模块实现 offer、挑战凭据认证与中继 E2EE；Compose 负责聊天、分页/增量历史、审批、工作区/会话/目录、Git 和设置。加密存储按电脑/会话保留凭据与文字草稿，系统媒体请求校验归属。IME 返回先收键盘，前台恢复同步目录和连接；一次性 offer 不用于重连。
+- Android 升级：包名保持稳定，versionCode 3 / versionName 0.2.0；不再打包 Web SPA。唯一临时 WebView 在原 asset origin 的空白页读取旧 localStorage 后销毁，禁止网络，不执行 SPA 或协议，旧数据不删除。迁移完成前不写成功标记。正式签名升级需要独立确认。
 
 ## 实现入口
 
@@ -27,7 +28,7 @@
 - `src/shared/dshd-host-tunnel.js`、`src/main/dshd-git-dispatch.js`
 - `mobile/web/app.js`、`mobile/web/native-bridge.js`、`mobile/web/host/`、`mobile/web/git/`
 - `mobile/web/ui/navigation.js`、`mobile/web/ui/surfaces.js`；交互动效见 [motion 手机 inventory](../../motion.md#手机交互-inventory)
-- `mobile/android/app/src/main/java/ai/deepseek/harness/mobile/` 下的 `ui/RemoteWebScreen.kt`、`ui/NativeChatScreen.kt`、`ui/NativeChatState.kt`、`ui/RemoteWebBack.kt`、`WebFileChooser.kt`；`mobile/android/app/build.gradle.kts`
+- `mobile/android/app/src/main/java/ai/deepseek/harness/mobile/` 下的 `DshViewModel.kt`、`ui/NativeChatScreen.kt`、`ui/NativeHistory.kt`、`ui/NativeRemoteScreen.kt`、`NativeImagePicker.kt`、`LegacyStorageMigration.kt`；`mobile/android/protocol/src/main/kotlin/ai/deepseek/harness/mobile/remote/`；`mobile/android/app/build.gradle.kts`
 - `tools/mobile-web-qa/server.mjs`（支持动态端口与 `/dshd/` 的本地 fixture）、`runtime-assets.mjs`（资源清单/审计）
 - 全量启动内容搜索 overlay：`src/main/session-search-overlay.js`（`--patch`，产品契约见 desktop-launcher）
 - [mobile/README.md](../../../mobile/README.md)
@@ -44,7 +45,7 @@
 
 ## 安全边界（LAN 模式）
 
-LAN 配对静态页使用 HTTP 3180，只分发 `mobile/web` 应用文件；offer 留在 URL fragment，手机会话仍经 offer v2 中继使用端到端加密。中继传输默认 TLS，自定义中继的 TLS 由中继主机配置决定。HTTP 静态页本身没有 TLS，仍只适合可信网络；不可信网络使用 HTTPS 公网页或 APK 内置资源。
+LAN 配对静态页使用 HTTP 3180，只分发 `mobile/web` 应用文件；offer 留在 URL fragment，手机会话仍经 offer v2 中继使用端到端加密。中继传输默认 TLS，自定义中继的 TLS 由中继主机配置决定。HTTP 静态页本身没有 TLS，仍只适合可信网络；不可信网络使用 HTTPS 公网页或 原生 Android 客户端。
 
 - **监听范围**（`remoteBindAddress`）：全部网卡 / 仅本机 `127.0.0.1`（默认）/ 指定网卡 IPv4。仅本机不得转换成通配地址；配对 URL 使用 loopback、所选 NIC 或通配监听下的可达 LAN IP，快照与监听一致。
 - **监听端口**（`remotePort`）：loopback daemon 端口，默认 6767；更改后重启 daemon，静态页仍用 3180。静态页监听范围不会开放无鉴权 daemon。

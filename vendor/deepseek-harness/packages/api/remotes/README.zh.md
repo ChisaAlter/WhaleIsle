@@ -7,6 +7,8 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
+桌面埋点遵循[产品采集策略](../../client/product-analytics/README.zh.md)及其动态应用配置，不包含 Web 使用情况。
+
 ## 概述
 
 为本应用选定的 Host Remote 能力提供双侧 BFF。Host 入口拥有转发事件名单并向 API Gateway 注册应用事件 source；Client 入口以运行时值形式导入生成的 `/remote` 产物，通过 `ctx.remote.$mount()` 挂载每项贡献，并重新导出对应的声明合并。Client 业务包依赖该外观，而不依赖 Gateway 实现或单独的 Remote 运行时入口。
@@ -25,7 +27,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-[`@deepseek-ai/dsh-api-session-controller`](../session-controller/README.zh.md) 拥有 agent（智能体）与会话身份策略，包括供其他 namespace 使用的 Typert lookup 解析器。本包只选择并挂载生成的会话 contribution，不复制激活策略。
+[`@deepseek-ai/dsh-api-session-controller`](../session-controller/README.zh.md) 拥有 agent（智能体）与会话身份策略，包括供其他 namespace 使用的 Typert lookup 解析器。本包选择并挂载生成的会话 contribution，无需直接依赖 `@deepseek-ai/dsh-session` 的运行时；激活策略由会话控制器负责。
 
 Client 组合挂载 Office 转换、Commands、凭据、settings、Goal、Schedule、动态 Cordis、文件与会话引用、只读 Host 插件清单、插件安装源响应比较、消息反馈、权限预设、会话控制器、subagents 和 Workspace 控制器 contribution。`permissionPresets` namespace 返回 current-session 控件使用的完整进程级目录。该组合卸载时，Cordis effect 的所有权机制会撤回所有贡献；`@deepseek-ai/dsh-api-gateway/client` 负责描述符校验、可追踪的 namespace 服务、直接与作用域方法、调用、流与取消。Client 入口通过 Cordis 消费共享的 `TypertClientRemote` 接口，不导入具体 Gateway；它只以 type-only 形式重新导出 Gateway Client face 的声明合并，因此消费端经由本外观取到转发事件词汇时，运行时不会多出一条通往 Gateway 实现的边。
 
@@ -84,7 +86,5 @@ Host entry 为每条 Client 流独立注册一组 allowlist listener 和一个�
 无。
 
 </details>
-
-**运行时不变式：** 不发布伴生入口。被观察的关系由 Typert、agent 注册表和会话注册表负责。
 
 客户端组装包含 account 命名空间，用于登录操作和可重连的账号快照。

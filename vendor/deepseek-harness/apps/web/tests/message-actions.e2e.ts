@@ -14,7 +14,7 @@ import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, parseSeedFixture, renderSeedFixture, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { openSettings, newEnglishPage, saveFailureShot } from './support.ts'
+import { openSettings, newEnglishPage, pinBrowserClock, saveFailureShot, WEB_FIXTURE_TIME } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/message-actions', import.meta.url))
 // Borrowed read-only: this scenario needs any settled user+assistant pair, not
@@ -189,6 +189,7 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
+  let unpinBrowserClock: (() => void) | undefined
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
@@ -201,15 +202,21 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     expect(parseSeedFixture(raw).events.flatMap(event => event.type === 'request/header'
       ? [event.data.reason]
       : []), 'adapted seed must carry an unchanged resume header').toEqual(['initial', 'resume'])
-    await seedSession(scaffold, raw, SEED_ID)
+    // The fixture carries no times of its own, so the seed anchors them at
+    // `Date.now() - 60_000` unless the scenario names the shared fixture day.
+    // 90 s keeps the earliest rows in the `1min` bucket and the later ones,
+    // carried by their stream spans, inside `now` — what the fork golden records.
+    await seedSession(scaffold, raw, SEED_ID, undefined, { createdAt: WEB_FIXTURE_TIME - 90_000 })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
+    unpinBrowserClock = await pinBrowserClock(page)
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   }, 120_000)
 
   afterAll(async () => {
+    unpinBrowserClock?.()
     await browser?.close()
     await scaffold?.close()
   })
@@ -314,9 +321,12 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     await page.getByRole('button', { name: /^Select model, current/ })
       .waitFor({ timeout: 10_000 })
     await page.getByText(/Cache hit \d+%/u).first().waitFor({ timeout: 10_000 })
-    // Keep a footer focused so opacity-hidden actions stay in the a11y tree
-    // as an active/focused control during the capture.
-    await page.getByRole('button', { name: 'Copy' }).first().focus()
+    await page.mouse.move(0, 0)
+    // The golden includes the keyboard-focused action and its visible tooltip.
+    const copy = page.getByRole('button', { name: 'Copy', exact: true }).first()
+    await copy.press('Shift+Tab')
+    await page.keyboard.press('Tab')
+    await page.getByRole('tooltip', { name: 'Copy', exact: true }).waitFor({ state: 'visible', timeout: 5_000 })
     // The edit plugin arms the newest user message; the queued-dock
     // edit button (named Edit queued message) is absent here.
     await expect.poll(() => page.getByRole('button', { name: 'Edit' }).count(), { timeout: 10_000 }).toBe(1)
@@ -331,7 +341,8 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
 
   it.skipIf(MODE === 'record')('persists performance detail and hides statistics in Compact', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-performance-usage'))
-    const stats = page.locator('[data-composer-stats]')
+    const stats = page.locator('[data-composer-stat]')
+    const statsText = async (): Promise<string> => (await stats.allTextContents()).join(' ')
     await openSettings(page, 'en')
     const dialog = page.getByRole('dialog', { name: 'Settings', exact: true })
     const row = dialog.getByText('Performance & usage', { exact: true }).locator('../..')
@@ -340,11 +351,11 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     await expect.poll(() => scaffold.ctx.settings.describe().find(row => row.ns === 'ui-chat')?.value).toMatchObject({ performanceUsage: 'compact' })
     await dialog.getByRole('button', { name: 'Close', exact: true }).click()
     await expect.poll(() => stats.locator('button').count()).toBe(0)
-    expect(await stats.textContent()).not.toContain('turns')
-    expect(await stats.textContent()).toContain('Cache hit')
-    await stats.hover()
+    expect(await statsText()).not.toContain('turns')
+    expect(await statsText()).toContain('Cache hit')
+    await stats.first().hover()
     expect(await page.getByRole('dialog').count()).toBe(0)
-    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'compact.expected.md'), await captureStableAria(page, '[data-composer-stats]', scaffold.workspaceCwd), MODE)
+    await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'compact.expected.md'), await captureStableAria(page, '[data-composer-dock]', scaffold.workspaceCwd), MODE)
     const warningStart = tripwire.warnings.length
     await page.reload()
     await openSettings(page, 'en')

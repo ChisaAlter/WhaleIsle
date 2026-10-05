@@ -5,6 +5,7 @@ import type { ClientRemote, DirectoryListing, RemoteFailure } from '@deepseek-ai
 import type {
   ISessions,
   SessionCreateError,
+  SessionBinding,
   SessionReference,
   SessionTarget,
   SessionListState,
@@ -17,6 +18,7 @@ import type {
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { DraftInitializationOptions } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { RowToast } from './contract/slots.ts'
 import { pinOrderAccounts, pinOrderSource } from './pin-order.ts'
 import type { WorkspaceViewStoreActions } from './stores.ts'
@@ -25,6 +27,9 @@ interface MainSelection {
   readonly sessionId?: SessionId
   readonly subagentAddress?: SubagentAddress
 }
+
+/** Optional content preparation for the resolved target Session. */
+export type StartSessionOptions = DraftInitializationOptions
 
 /** Workspace archive and directory operations consumed by Client UI domains. */
 export interface UiWorkspace {
@@ -46,9 +51,10 @@ export interface UiWorkspace {
   /**
    * Fork a Session without changing the current selection.
    * @param sessionId - source Session.
-   * @returns completion after child creation and inherited-title increment.
+   * @param onCreated - observer before the optional child-title update.
+   * @returns the child SessionId after creation and inherited-title increment.
    */
-  forkSession(sessionId: SessionId): Promise<void>
+  forkSession(sessionId: SessionId, onCreated?: (childId: SessionId) => void): Promise<SessionId>
   /**
    * Resolve the reusable or newly created blank Session for a Workspace.
    * @param workspaceId - target Workspace.
@@ -67,8 +73,9 @@ export interface UiWorkspace {
    * Start a New Session flow and navigate to its Session; a creation the Host
    * refuses is shown through the Workspace notice and leaves the selection as it was.
    * @param workspaceId - explicit target; absent inherits the current or most recent Workspace.
+   * @param options - initial content; existing text or attachments are preserved unless clearPreviousDraft is true.
    */
-  startSession(workspaceId?: WorkspaceId): void
+  startSession(workspaceId?: WorkspaceId, options?: StartSessionOptions): void
   /**
    * Archive a Session and clear it when it is the current selection.
    * @param sessionId - Session to archive.
@@ -247,11 +254,14 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     this.replaceMain(sessionId, navigation, 'reveal', beforeOpen)
   }
 
-  async forkSession(sessionId: SessionId): Promise<void> {
-    await this.sessions.fork({ sessionId, increaseTitle: true })
+  async forkSession(sessionId: SessionId, onCreated?: (childId: SessionId) => void): Promise<SessionId> {
+    return this.sessions.fork({ sessionId, increaseTitle: true, ...onCreated === undefined ? {} : { onCreated } })
   }
 
-  startSession(workspaceId?: WorkspaceId): void {
+  startSession(workspaceId?: WorkspaceId, options?: StartSessionOptions): void {
+    const draftOptions = options === undefined ? undefined : { ...options }
+    const initializeDraft = draftOptions !== undefined
+      && (draftOptions.prompt !== undefined || draftOptions.clearPreviousDraft === true)
     const workspace = this.workspaces.list.getSnapshot()
     const sessions = this.sessions.list.getSnapshot()
     const current = this.mainReference?.sessionId
@@ -262,13 +272,33 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       ? recentWorkspace(workspace.items, sessions.byId)
       : undefined
     const target = workspaceId ?? currentWorkspaceId ?? recent
+    const prepare = initializeDraft ? (id: SessionId) => {
+      const binding = this.sessions.binding(id)
+      if (binding === undefined) this.draftPreparationFailed()
+      this.prepareDraft(binding, draftOptions)
+    } : undefined
     if (target === undefined) {
-      this.clearMain()
+      if (prepare === undefined) this.clearMain()
+      else void this.openNoDirectory(prepare).catch(
+        (reason: unknown) => { console.warn('new no-directory session failed:', reason) },
+      )
       return
     }
-    void this.openWorkspace(target).catch(
+    void this.openWorkspace(target, prepare).catch(
       (reason: unknown) => { console.warn('new session failed:', reason) },
     )
+  }
+
+  private prepareDraft(binding: SessionBinding, options: DraftInitializationOptions): void {
+    const conversation = this.ctx.get('conversation')
+    if (conversation === undefined) this.draftPreparationFailed()
+    if (conversation.input.requestDraftInitialization(binding, options) === 'blocked') this.draftPreparationFailed()
+  }
+
+  private draftPreparationFailed(): never {
+    const message = this.ctx.locale.bind('workspace')('draft.initializationFailed')
+    this.notify({ kind: 'createFailed', message })
+    throw new Error(message)
   }
 
   async archiveSession(sessionId: SessionId, options: { readonly stopActivity?: boolean } = {}): Promise<void> {

@@ -90,7 +90,7 @@ const FORK_FILE_MARKERS = [
   // and the dock cards (queue / todo / goal) consume it so they follow.
   // rc.1 renamed the stats row to StatsPills (stat-dialog pair); the follow
   // contract moved with it.
-  { file: 'packages/client/ui-chat/src/client/chat/StatsPills.module.css', includes: ['dsh-composer-resized-width'] },
+  { file: 'packages/client/ui-conversation/src/client/skeleton/InputBar.module.css', includes: ['dsh-composer-resized-width'] },
   { file: 'packages/client/ui-chat/src/client/chat/ChatView.module.css', includes: ['dsh-composer-resized-width'] },
   { file: 'packages/client/ui-conversation/src/client/skeleton/ComposerResizeHandles.tsx', includes: ['data-conversation-scroll'] },
   { file: 'packages/client/ui-conversation/src/client/queue/QueueDock.module.css', includes: ['dsh-composer-resized-width'] },

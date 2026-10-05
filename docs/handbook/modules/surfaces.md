@@ -17,7 +17,7 @@
 
 - UI 在 harness client；Browser 与独立窗口文件预览栈在 main `preview.js` 及 `preview-*`。独立文件窗复用 `preview-workspace.js` 的工作区 token URL，主进程使用 preview 专属的 `allowScratchCwd` authority + 有界只读适配器，不复制 Files 的编辑 / 保存状态。
 - DSHD 只有一个全高右栏，guide 与内容由 `ui-sidebar-right` 的同一份页签状态承载；`ui-surfaces` 仅适配文件/预览打开请求，不再挂载独立栏体。点卡原位开页、末页关闭原位回到 guide，栏宽和聊天区保持连续。页签关闭控件保留在标题右侧，DockKit 用 flex 交叉轴居中共享标题的实际盒中心；桌面覆盖页签为 24px 高时仍沿用该布局，不继承通用 28px 页签的固定顶部位置。
-- 右栏展开会减少会话标题行的实际内容宽度；`ConversationRoot.module.css` 在扣除 AppFrame 尾簇预留后的标题行上做局部容器查询，窄到 520px 时收起次级 Agent 操作。AppFrame 对尾簇的实测小数宽度向上取整，保留打开方式与尾簇至少 8px 间距。整列宽度决定的尾簇密度不改，以免测量宽度反馈振荡。几何验收用 `node scripts/verify-titlebar-fit.mjs` 连到带 CDP 端口的源码 Electron 普通工作区会话。
+- 右栏展开会减少会话标题行的实际内容宽度；`ConversationRoot.module.css` 在扣除 AppFrame 尾簇预留后的标题行上做局部容器查询，文字保持单行并按空间省略，窄到 520px 时子智能体、团队与后台任务入口只显示图标，保留点击、完整名称提示与运行状态。AppFrame 对尾簇的实测小数宽度向上取整，保留打开方式与尾簇至少 8px 间距。整列宽度决定的尾簇密度不改，以免测量宽度反馈振荡。几何验收用 `node scripts/verify-titlebar-fit.mjs` 连到带 CDP 端口的源码 Electron 普通工作区会话。
 - 无页签时使用 DSHD 原有的居中两列方形入口；终端入口选择 shell。
 - Files 由原生 Sidebar 的 `files` / `desktop-file` 类型承载。文件主体 `keepMounted`，树与搜索携带所属 Session 经 `workspaces.openPath`，HTML/PDF 保持 Files 与 Browser 打开链。插件内 `DesktopFileState` 按 Session 资源地址逐次持久化脏草稿，接管关闭/替换确认；`FileSaveCoordinator` 保留串行保存，确认中的保存失败或新增输入不会关闭页签。Sidebar 的一次性 `proceed()` 回调只提交原 occurrence 的移除，过期确认保留恢复页签的草稿。
 - `files` 提供唯一目录 guide，`desktop-file` 只在打开具体文件时使用。旧查看器的 `sidebar://` 等无文件地址不进入编辑器或文件读取；标准 Files 目录主体与本地化标题原位兼容呈现，Session 来自槽位标准 share。没有替换或持久布局重写，pane、展开与浮窗状态不变；有效文件和草稿保留原身份。理由见 [Files 地址恢复](../../decisions/implemented/bug-fix/2026-10-01-sidebar-files-guide-address.md)。

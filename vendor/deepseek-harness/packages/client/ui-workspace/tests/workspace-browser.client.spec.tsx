@@ -42,7 +42,7 @@ const wid = (id: string) => id as WorkspaceId
 /** Host scratch cwd from the Workspace baseline: unowned fixture sessions live there so they stay listed. */
 const SCRATCH = '/dsh-home/no-workspace'
 const summary = (id: string, updatedAt: number, overrides: Partial<SessionSummary> = {}): SessionSummary => ({
-  id: sid(id), displayTitle: id, running: false, blank: false, updatedAt, cwd: SCRATCH, ...overrides,
+  id: sid(id), title: overrides.displayTitle ?? id, displayTitle: id, running: false, blank: false, updatedAt, cwd: SCRATCH, ...overrides,
   retainedBy: overrides.retainedBy ?? {},
 })
 const sessionState = (

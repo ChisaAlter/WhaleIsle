@@ -387,7 +387,7 @@ export const InputBar = memo(function InputBar({
     }
     if (keyboard === undefined) return // absent machine: the button is disabled
     /* v8 ignore next -- defensive: the primary button is disabled for empty, disabled, and pending-upload states. */
-    if (!empty && !disabled && !machineBusy && !uploadsPending) keyboard.submit(primarySubmitMode)
+    if (!empty && !disabled && !machineBusy && !uploadsPending) keyboard.submit(primarySubmitMode, 'click')
   }
 
   // Claim ghost hint: rendered by CSS as generated content after the last
@@ -617,13 +617,12 @@ export const InputBar = memo(function InputBar({
           </div>
         </div>
       </div>
-      {variant === 'composer' && input !== undefined && sessionId !== undefined
-        ? (
-          <div className={css.footer} data-composer-footer="">
-            {managed ? null : renderSlot('conversation.composer.dock', {})}
-          </div>
-        )
-        : null}
+      <div className={css.dock} data-composer-dock data-composer-footer={variant === 'composer' && !managed ? '' : undefined}>
+        {variant === 'composer' && input !== undefined && sessionId !== undefined
+          ? managed ? null : renderSlot('conversation.composer.dock', {})
+          : null}
+        {managed ? null : <ContextMeter useProjection={useProjection} t={t} />}
+      </div>
     </div>
   )
 })

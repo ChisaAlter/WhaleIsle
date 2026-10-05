@@ -275,6 +275,7 @@ export function TeamAction({
         onMouseEnter={scheduleHoverOpen}
         className={css.trigger}
         aria-label={t('trigger')}
+        title={t('trigger')}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => {

@@ -114,13 +114,14 @@ describe('browser recording', () => {
       getContext: () => ({ drawImage, fillRect, fillStyle: '' }),
     }
     const nativeCreateElement = Document.prototype.createElement
-    vi.spyOn(document, 'createElement').mockImplementation(function createElement(
+    const htmlDocument: { createElement(tag: string, options?: ElementCreationOptions): HTMLElement } = document
+    vi.spyOn(htmlDocument, 'createElement').mockImplementation(function createElement(
       this: Document,
       tag: string,
       options?: ElementCreationOptions,
     ) {
       if (tag === 'canvas') return canvas as unknown as HTMLCanvasElement
-      return nativeCreateElement.call(this, tag, options)
+      return Reflect.apply(nativeCreateElement, this, [tag, options]) as HTMLElement
     })
 
     const started = await startBrowserRecording('pv-1', recordingBridge())

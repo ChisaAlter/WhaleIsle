@@ -313,7 +313,8 @@ beforeEach(() => {
   vi.stubGlobal('MediaRecorder', FakeMediaRecorder as unknown as typeof MediaRecorder)
   vi.stubGlobal('Image', ImmediateImage as unknown as typeof Image)
   const nativeCreateElement = Document.prototype.createElement
-  vi.spyOn(document, 'createElement').mockImplementation(function createElement(
+  const htmlDocument: { createElement(tag: string, options?: ElementCreationOptions): HTMLElement } = document
+  vi.spyOn(htmlDocument, 'createElement').mockImplementation(function createElement(
     this: Document,
     tag: string,
     options?: ElementCreationOptions,
@@ -326,7 +327,7 @@ beforeEach(() => {
         getContext: () => ({ drawImage: vi.fn(), fillRect: vi.fn(), fillStyle: '' }),
       } as unknown as HTMLCanvasElement
     }
-    return nativeCreateElement.call(this, tag, options)
+    return Reflect.apply(nativeCreateElement, this, [tag, options]) as HTMLElement
   })
 })
 

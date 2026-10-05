@@ -6,6 +6,8 @@
 
 .root {
   display: flex;
+  order: 1;
+  flex-basis: 100%;
   /* The box syncs with the composer card's width (see StatsLine.module.css);
      the content centers on the shared axis. */
   align-items: center;

@@ -13,6 +13,8 @@ import {
 } from '../src/wallpaper.ts'
 
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+// These canvas fixtures exercise the browser DOM, not Electron's webview overload.
+const htmlDocument: { createElement(tag: string, options?: ElementCreationOptions): HTMLElement } = document
 
 afterEach(() => {
   // Route teardown through the layer so its module-level applied cache resets.
@@ -153,7 +155,7 @@ describe('applyWallpaperLayer', () => {
     const createElement = Reflect.get(document, 'createElement').bind(document)
     const canvas = createElement('canvas')
     Object.defineProperty(canvas, 'getContext', { value: () => context })
-    vi.spyOn(document, 'createElement').mockImplementation((tag: string) =>
+    vi.spyOn(htmlDocument, 'createElement').mockImplementation((tag: string) =>
       tag === 'canvas' ? canvas : createElement(tag))
 
     // 100% pixelation → factor 20 → bitmap = (viewport + bleed) / 20.
@@ -376,7 +378,7 @@ describe('downscaleWallpaper', () => {
     // String-keyed access keeps the deprecated createElement out of the lint rules.
     const createElement = Reflect.get(document, 'createElement').bind(document)
 
-    const missingContextSpy = vi.spyOn(document, 'createElement')
+    const missingContextSpy = vi.spyOn(htmlDocument, 'createElement')
     missingContextSpy.mockImplementation((tag: string) => {
       if (tag !== 'canvas') return createElement(tag)
       return { getContext: () => null } as unknown as HTMLCanvasElement
@@ -384,7 +386,7 @@ describe('downscaleWallpaper', () => {
     expect(await downscaleWallpaper(PNG)).toBeNull()
     missingContextSpy.mockRestore()
 
-    const throwingSpy = vi.spyOn(document, 'createElement')
+    const throwingSpy = vi.spyOn(htmlDocument, 'createElement')
     throwingSpy.mockImplementation((tag: string) => {
       if (tag !== 'canvas') return createElement(tag)
       return {
@@ -397,7 +399,7 @@ describe('downscaleWallpaper', () => {
     expect(await downscaleWallpaper(PNG)).toBeNull()
     throwingSpy.mockRestore()
 
-    const badExportSpy = vi.spyOn(document, 'createElement')
+    const badExportSpy = vi.spyOn(htmlDocument, 'createElement')
     badExportSpy.mockImplementation((tag: string) => {
       if (tag !== 'canvas') return createElement(tag)
       return {
@@ -410,7 +412,7 @@ describe('downscaleWallpaper', () => {
     expect(await downscaleWallpaper(PNG)).toBeNull()
     badExportSpy.mockRestore()
 
-    const okSpy = vi.spyOn(document, 'createElement')
+    const okSpy = vi.spyOn(htmlDocument, 'createElement')
     okSpy.mockImplementation((tag: string) => {
       if (tag !== 'canvas') return createElement(tag)
       return {

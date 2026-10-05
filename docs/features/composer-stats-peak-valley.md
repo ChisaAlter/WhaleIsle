@@ -15,7 +15,7 @@
 
 ## Invariants
 
-- 「会话统计」开关与 StatsPills 共享 `ComposerSubmissionPolicy.statsLine`，由 `conversation.composer.dock` 槽位注入传递；切换立即隐藏/恢复数字，不等待 Host 写回，关闭保留行间隔。
+- 「会话统计」开关与 `ActivityPill`、`UsagePill` 共享 `ComposerSubmissionPolicy.statsLine`，由 `conversation.composer.dock` 槽位注入传递；切换立即隐藏/恢复数字，不等待 Host 写回，关闭保留行间隔。0.2.1-alpha.1 起两颗统计胶囊分别注册为 activity（order 0）、usage（order 1），峰谷行以 order 2 注册并独占下一行。宽度跟随由 InputBar 的 dock 容器持有。
 - 三个底栏偏好分别保护最新未确认选择，旧配置与旧请求不能回滚；Host 接受且镜像确认后解除保护，最新失败恢复已确认值，销毁后不发布。
 - 峰谷规则：高峰 = 北京时间（UTC+8，Asia/Shanghai 无夏令时）工作日 09:00–12:00 与 14:00–18:00；其余全部时间（含周末）为空闲时段，按各自公布的时段价格计费（两段价格互不推导）。时段计算在 `peak-valley.ts` 纯函数内（Host 侧计费折算的孪生体在 `token-meter/src/billing-window.ts`，两处一起改）。
 - 倒计时与整秒对齐、每秒更新；归零后按重算状态翻转，不显示负值。
@@ -53,5 +53,5 @@
 - Decision: [会话统计即时开关](../decisions/implemented/bug-fix/2026-09-29-session-stats-live-toggle.md)
 
 - Agent Note：[vendor/deepseek-harness/.agents/notes/implemented/feature/2026-08-29-composer-peak-valley-status.md](../../vendor/deepseek-harness/.agents/notes/implemented/feature/2026-08-29-composer-peak-valley-status.md)
-- Implementation entry：`ui-conversation/src/client/chat/PeakValleyRow.tsx`、`chat/peak-valley.ts`、`input/model-facts.ts`、`apply.ts`（settings 行 order 75 / dock 条目 order 1）；`ui-chat/src/client/chat/StatsPills.tsx`
+- Implementation entry：`ui-conversation/src/client/chat/PeakValleyRow.tsx`、`chat/peak-valley.ts`、`input/model-facts.ts`、`apply.ts`（settings 行 order 75 / dock 条目 order 2）；`ui-chat/src/client/chat/StatsPills.tsx`
 - 相关决策：[interface-settings-chrome-visibility](../../vendor/deepseek-harness/.agents/notes/implemented/feature/2026-08-19-interface-settings-chrome-visibility.md)、[projected-token-usage](../../vendor/deepseek-harness/.agents/notes/implemented/architecture/2026-07-29-projected-token-usage-and-request-context.md)

@@ -1,6 +1,6 @@
 /**
  * Conversation header titlebar-crowding contract: reserve the trailing
- * cluster and hide header actions at cozy/compact density.
+ * cluster and preserve actions as the row narrows.
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -34,16 +34,13 @@ describe('ConversationRoot.module.css titlebar crowding', () => {
     expect(declarations('.headerCorner')?.get('margin-right')).toBe('-16px')
   })
 
-  it('hides header actions at cozy and compact density', () => {
-    expect(declarations(":global([data-titlebar-density='cozy']) .headerActions")?.get('display')).toBe('none')
-    expect(declarations(":global([data-titlebar-density='compact']) .headerActions")?.get('display')).toBe('none')
-  })
-
-  it('uses the reserved title-row width to protect utilities when surfaces opens', () => {
+  it('keeps actions inline at every frame density and queries the reserved row width', () => {
     expect(declarations('.titleRow')?.get('container-type')).toBe('inline-size')
-    expect(css).toMatch(/@container \(max-width: 520px\)\s*\{\s*\.headerActions\s*\{\s*display: none;/)
-    expect(declarations('.headerActions')?.get('flex')).toBe('0 1 auto')
-    expect(declarations('.headerActions')?.get('overflow')).toBe('hidden')
+    expect(declarations('.headerActions')?.get('display')).toBe('flex')
+    expect(declarations('.headerActions')?.get('overflow')).toBeUndefined()
+    expect(css).not.toContain("[data-titlebar-density='cozy']")
+    expect(css).not.toContain("[data-titlebar-density='compact']")
+    expect(declarations('.crumbs')?.get('flex')).toBe('1 1 0')
   })
 
   it('marks interactive chrome no-drag and leaves caption rows without a second drag region', () => {

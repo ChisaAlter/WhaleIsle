@@ -66,6 +66,15 @@
   white-space: nowrap;
 }
 
+/* A narrow conversation must still leave room for its session actions. */
+:global([data-titlebar-density='compact']) .primary {
+  padding: 6px 8px;
+}
+
+:global([data-titlebar-density='compact']) .primary > span {
+  display: none;
+}
+
 .chevron {
   width: 28px;
   padding: 0;

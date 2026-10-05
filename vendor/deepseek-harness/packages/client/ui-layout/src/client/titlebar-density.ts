@@ -7,7 +7,7 @@
 /** How titlebar labels collapse when the trailing cluster shares the conversation column. */
 export type TitlebarDensity = 'full' | 'cozy' | 'compact'
 
-/** Center width below which Session log is icon-only and header actions hide. */
+/** Center width below which Session log is icon-only. */
 export const TITLEBAR_DENSITY_COZY = 720
 
 /** Center width below which the branch trigger hides its ref name. */

@@ -296,7 +296,7 @@ fun DshRoot(
                 onUsePaste = vm::openPasteEntry,
                 onOpenAppSettings = onOpenAppSettings,
             )
-            Route.Scan, Route.Web -> Unit
+            Route.Scan, Route.Chat -> Unit
         }
     }
 }
@@ -333,8 +333,8 @@ private fun ConnectScreen(
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             )
         }
-        if (vm.hasRememberedWebApp) {
-            SavedComputerRow(onClick = vm::reopenWebApp)
+        for (computer in vm.computers.sortedByDescending { it.savedAt }) {
+            SavedComputerRow(computer.computerName, onClick = { vm.reopenComputer(computer.serverId) })
         }
         ConnectionButton(
             label = "扫描二维码",
@@ -399,7 +399,7 @@ private fun PermissionScreen(
 }
 
 @Composable
-private fun SavedComputerRow(onClick: () -> Unit) {
+private fun SavedComputerRow(name: String, onClick: () -> Unit) {
     val connection = dsh().connection
     Row(
         Modifier
@@ -414,7 +414,7 @@ private fun SavedComputerRow(onClick: () -> Unit) {
         Box(Modifier.size(7.dp).clip(Capsule).background(connection.mark))
         Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
             Text(
-                "已保存的手机页",
+                name,
                 color = connection.ink,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,

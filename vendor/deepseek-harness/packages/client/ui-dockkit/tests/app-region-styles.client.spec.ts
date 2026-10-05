@@ -26,8 +26,14 @@ const regionRules = [...css.matchAll(/(?<sel>[^{}]+)\{(?<body>[^{}]*)\}/g)]
     /-webkit-app-region:\s*([^;]+);/.exec(body)?.[1]?.trim(),
   ] as const)
 
-describe('app-region subtraction', () => {
-  it('subtracts the chip run, strip-end chrome, pane body, and divider on darwin; never declares drag', () => {
+it('keeps Windows floating headers 20px below the caption, including restored positions', () => {
+  const captionRule = css.split(':global(html[data-windows-titlebar]) .float')[1]?.split('}')[0]
+  expect(captionRule).toContain('--dsh-dockkit-float-top: calc(var(--dsh-windows-titlebar-height) + 20px);')
+  expect(css).toMatch(/:global\(html\[data-windows-titlebar\]\[data-fullscreen\]\) \.float\s*\{\s*--dsh-dockkit-float-top: 20px;/)
+})
+
+describe('macOS app-region ownership', () => {
+  it('subtracts the chip run, strip-end chrome, pane body, and divider, and declares no drag itself', () => {
     // The strip row's drag is the markup mark's job: a sheet that declares it
     // here would drag the same box twice and hide the row from the ownership gate.
     expect(regionRules).toHaveLength(3)

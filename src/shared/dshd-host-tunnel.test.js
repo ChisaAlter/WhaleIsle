@@ -138,6 +138,8 @@ test('forwardHostRpc pins Host, strips Origin/Referer/Cookie/sec-fetch, and refu
 test('hostRpcTarget maps dotted SPA names onto 0.1.2 slash endpoints', () => {
   assert.deepEqual(hostRpcTarget('session.list'), { path: '/api/session/list', wireMethod: 'session/list' });
   assert.deepEqual(hostRpcTarget('session.history'), { path: '/api/session/page', wireMethod: 'session/page' });
+  assert.equal(isAllowedHostMethod('session.projections'), true);
+  assert.deepEqual(hostRpcTarget('session.projections'), { path: '/api/session/projections', wireMethod: 'session/projections' });
   assert.deepEqual(hostRpcTarget('session.models'), { path: '/api/session/modelCatalog', wireMethod: 'session/modelCatalog' });
   assert.deepEqual(hostRpcTarget('host.describe'), { path: '/api/host/describe', wireMethod: 'host/describe' });
   assert.deepEqual(hostRpcTarget('host.listDirectory'), { path: '/api/directoryPicker/list', wireMethod: 'directoryPicker/list' });
@@ -150,6 +152,7 @@ test('hostRpcPayload wraps a bare object as Typert args', () => {
   assert.deepEqual(hostRpcPayload('session.list', {}), { args: { _request: {} } });
   assert.deepEqual(hostRpcPayload('session.search', { query: 'x' }), { args: { request: { query: 'x' } } });
   assert.deepEqual(hostRpcPayload('session.models', { sessionId: 's1' }), { args: {} });
+  assert.deepEqual(hostRpcPayload('session.projections', { sessionId: 's1' }), { args: { request: { sessionId: 's1' } } });
   const prompt = hostRpcPayload('session.prompt', { sessionId: 's1', mode: 'queue', content: [{ type: 'text', text: 'hi' }] });
   assert.equal(prompt.args.request.sessionId, 's1');
   assert.equal(prompt.args.request.mode, 'queue');
@@ -419,6 +422,21 @@ test('forwardHostRespond posts /api/respond without browser Origin', async () =>
   const body = JSON.parse(await seen.clone().text());
   assert.equal(body.type, 'client-response');
   assert.equal(body.rpcId, 'rpc-1');
+});
+
+test('Gateway approval reply carries the active event generation and only its decision', async () => {
+  let request;
+  const rpcId = 'remote-event:' + JSON.stringify({ clientId: 'client-1', eventId: 'event-1', origin: 'http://example.com' });
+  await forwardHostRespond({ origin: 'http://127.0.0.1:3099', cookie: 'dsh-auth-x=test', rpcId,
+    value: { sessionId: 's', approvalId: 'a', outcome: 'allowed-once' },
+    fetchImpl: async (url, init) => {
+      request = { url: String(url), headers: init.headers, body: JSON.parse(init.body) };
+      return new Response(JSON.stringify({ type: 'server-response', rpcId: request.body.rpcId, result: { ok: true } }));
+    } });
+  assert.equal(request.url, 'http://127.0.0.1:3099/api/$events/result');
+  assert.equal(request.body.method, '$events/result');
+  assert.deepEqual(request.body.payload, { args: { clientId: 'client-1', eventId: 'event-1', outcome: { kind: 'result', value: 'allowed-once' } } });
+  await assert.rejects(() => forwardHostRespond({ origin: 'http://127.0.0.1:3099', rpcId, value: { outcome: 'anything' } }), /outcome/);
 });
 
 test('slimHostRpcValue drops assistant/chunk from session.history', () => {

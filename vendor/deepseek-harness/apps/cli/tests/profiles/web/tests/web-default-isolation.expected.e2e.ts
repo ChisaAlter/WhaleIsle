@@ -8,7 +8,7 @@ import { withDefaultWeb, webGet } from './default-web-process.ts'
 
 const experimentalName = '@deepseek-ai/dsh-experimental-client-ui-agent-team'
 
-it('boots default Web without experimental modules, scheduling, time context, or an active built-in Browser', async (test) => {
+it('boots default Web with the shipped Schedule rows, without experimental modules, time context, or an active built-in Browser', async (test) => {
   await withDefaultWeb(test, async ({ url, request }) => {
     const auth = await webGet(url, test.signal)
     const cookie = auth.headers['set-cookie']?.[0]?.split(';', 1)[0]
@@ -29,17 +29,19 @@ it('boots default Web without experimental modules, scheduling, time context, or
     expect(roster.plugins.length).toBeGreaterThan(roster.entries.length)
     expect(roster.modules.some(url => modulePackage(url) === '@deepseek-ai/dsh')).toBe(true)
     expect(roster.client.entries.length).toBeGreaterThan(0)
-    for (const name of [
-      '@deepseek-ai/dsh-client-ui-sidebar-browser',
-      '@deepseek-ai/dsh-time-context',
-      '@deepseek-ai/dsh-schedule',
-      '@deepseek-ai/dsh-client-ui-schedule',
-    ]) {
-      const entry = roster.entries.find(entry => entry.name === name)
-      expect(entry, name).toBeDefined()
-      expect(entry!.state, name).toBeUndefined()
-      expect(delivered.entries.some(entry => entry.id === name), name).toBe(false)
-    }
+    const browser = roster.entries.find(entry => entry.name === '@deepseek-ai/dsh-client-ui-sidebar-browser')
+    expect(browser).toBeDefined()
+    expect(browser!.state).toBeUndefined()
+    expect(delivered.entries.some(entry => entry.id === '@deepseek-ai/dsh-client-ui-sidebar-browser')).toBe(false)
+    // The shipped composition mounts the Host Schedule service and its task
+    // page; the clock stays preset-level, so neither plane carries a row for it.
+    expect(roster.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: '@deepseek-ai/dsh-schedule', state: FiberState.ACTIVE }),
+      expect.objectContaining({ name: '@deepseek-ai/dsh-client-ui-schedule', state: FiberState.ACTIVE }),
+    ]))
+    expect(delivered.entries.some(entry => entry.id === '@deepseek-ai/dsh-client-ui-schedule')).toBe(true)
+    expect(roster.entries.some(entry => entry.name === '@deepseek-ai/dsh-time-context')).toBe(false)
+    expect(delivered.entries.some(entry => entry.id === '@deepseek-ai/dsh-time-context')).toBe(false)
     expect(experimentalRuntimeReferences(roster)).toEqual([])
 
     const contaminated = await request('mount-experimental')

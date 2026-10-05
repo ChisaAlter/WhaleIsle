@@ -486,6 +486,7 @@ export class ClientSessions implements ISessions {
     atSeq?: number
     beforeSeq?: number
     increaseTitle?: boolean
+    onCreated?: (childId: SessionId) => void
   }): Promise<SessionId> {
     const sourceTitle = opts.increaseTitle
       ? this.list.getSnapshot().byId[opts.sessionId]?.title
@@ -497,6 +498,7 @@ export class ClientSessions implements ISessions {
     if (!result.ok) throw new SessionForkError(result.error, opts.sessionId)
     this.projectList()
     const childId = result.value.sessionId
+    opts.onCreated?.(childId)
     if (sourceTitle !== undefined) {
       const renamed = await this.manager.rename(childId, increasedForkTitle(sourceTitle))
       if (!renamed.ok) throw new Error(`fork child rename failed: ${renamed.error.code}: ${renamed.error.message}`)

@@ -994,6 +994,7 @@ function FactoryOutlet({ name, inputProps, slots: selected = EMPTY_FACTORY_SELEC
     () => host.getFactoryVersion(name),
   )
   const definition = host.factoryOf(name)
+  const nextAncestors = useMemo(() => new Set(ancestors).add(name), [ancestors, name])
   if (definition === undefined) return <>{fallback ?? null}</>
   if (ancestors.has(name)) throw new SlotOwnershipError(`recursive render of factory '${name}'`)
   for (const localName of Object.keys(selected)) {
@@ -1001,7 +1002,6 @@ function FactoryOutlet({ name, inputProps, slots: selected = EMPTY_FACTORY_SELEC
       throw new SlotOwnershipError(`local slot '${localName}' is not declared by factory '${name}'`)
     }
   }
-  const nextAncestors = new Set(ancestors).add(name)
   const scopeIdentity = definition.scope === 'root'
     ? 'root'
     : definition.scope === 'session'

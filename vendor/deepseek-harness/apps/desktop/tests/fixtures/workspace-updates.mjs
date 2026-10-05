@@ -218,7 +218,7 @@ async function qualify() {
     const checking = await dialogWith(messages.updateChecking)
     await screenshot(checking, 'checking.png')
     server.release()
-    const current = await dialogWith(messages.updateCurrent.replace('{version}', app.getVersion()))
+    const current = await dialogWith(messages.updateCurrent)
     assert.equal(current, checking)
     await clickText(current, messages.updateAcknowledge)
     assert.equal(server.requests.filter(path => path === '/payload.exe').length, 0)
@@ -227,7 +227,7 @@ async function qualify() {
 
     server.select('healthy', '0.1.6-nightly.1')
     checkMenu.click()
-    const available = await dialogWith(messages.updateAvailable)
+    const available = await dialogWith(messages.updateAvailable.replace('{version}', '0.1.6-nightly.1'))
     server.select('corrupt', '0.1.6-nightly.1')
     await clickText(available, messages.updateDownload)
     await waitFor(() => fixture.coordinator.state.phase === 'error', 'checksum failure')
