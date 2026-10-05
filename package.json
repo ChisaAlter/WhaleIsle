@@ -76,6 +76,10 @@
       "!src/renderer/pet-live2d/rig/shell-*.png",
       "mobile/web/**/*",
       "!mobile/web/**/*.test.js",
+      "!mobile/web/**/*.map",
+      "!node_modules/node-pty/third_party/**/*.{exe,dll}",
+      "!node_modules/node-pty/prebuilds/**/*.pdb",
+      "!node_modules/node-pty/prebuilds/!(${platform}-${arch}){,/**/*}",
       "assets/**/*",
       "package.json"
     ],

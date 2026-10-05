@@ -576,7 +576,6 @@ export const InputBar = memo(function InputBar({
               {managed
                 ? (sessionId === undefined ? null : renderSlot('conversation.input.managed', { locked: modelSeatLocked }))
                 : (sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked }))}
-              {!managed && <ContextMeter useProjection={useProjection} t={t} />}
               {interruptible && (
                 <Tooltip label={t('input.stop')} shortcutKeys={stopKeys} side="top" delayMs={500} disabled={stop === undefined}>
                   <button

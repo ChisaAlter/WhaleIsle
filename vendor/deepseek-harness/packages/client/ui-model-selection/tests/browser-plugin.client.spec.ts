@@ -675,6 +675,10 @@ it.each([false, true])('reports accepted switches with blank=%s and no refused s
   const scope = b.mint('analytics', blank)
   try {
     const face = b.seat().inject!(sid('analytics'))
+    // The real composer loads its directory before the user can select a model.
+    // An unloaded directory has no previous route to report as switch_from.
+    await b.resolver().directoryFor(sid('analytics')).load()
+    expect(face.directory.getSnapshot().current).toMatchObject({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
     await face.select({ provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max' })
     expect(b.track).toHaveBeenCalledWith('model_switch', { ...blank ? {} : { session_id: 'analytics' }, switch_from: 'deepseek-official/deepseek-v4-flash', switch_to: 'deepseek-official/deepseek-v4-pro' })
     b.track.mockClear()

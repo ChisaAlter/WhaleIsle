@@ -28,7 +28,7 @@ test('nsis keeps the assisted-installer product contract', () => {
   assert.equal(nsis.shortcutName, 'Whale Isle');
   assert.equal(nsis.artifactName, 'Whale-Isle-Setup-${version}.${ext}');
   // Per-user default install path (%LOCALAPPDATA%\Programs) — TC-INST-013
-  // opens resources\node.exe there; do not flip to perMachine.
+  // uses the shared primary runtime there; do not flip to perMachine.
   assert.equal(nsis.perMachine, undefined);
   // Uninstall must never delete userData (desktop dsh-home lives there).
   assert.equal(nsis.deleteAppDataOnUninstall, undefined);
@@ -70,15 +70,16 @@ test('installer languages are Chinese-first with an English fallback', () => {
   assert.deepEqual(nsis.installerLanguages, ['zh_CN', 'en_US']);
 });
 
-test('installer.nsh customizes GUI pages only and stays silent-install (/S) safe', () => {
+test('installer.nsh preserves branded pages and keeps installation work silent-install (/S) safe', () => {
   assert.equal(nsis.include, 'build/installer.nsh');
   const nsh = fs.readFileSync(path.join(ROOT, 'build', 'installer.nsh'), 'utf8');
-  // The three GUI-only extension points plus the scoped customInit registry
-  // hygiene block (incident 2026-09-12). customInit does run during silent
-  // installs — intentionally: it only deletes dead install records and
-  // repairs a poisoned $INSTDIR, never touching UI or exec.
+  // Directory transaction/extraction/removal hooks also run during /S. The
+  // branded pages and registry hygiene remain; operational warnings use
+  // silent defaults so an unattended install cannot wait for a dialog.
   const macros = [...nsh.matchAll(/^!macro\s+(\S+)/gm)].map((m) => m[1]);
   assert.deepEqual(macros, [
+    'dshReportDirectoryCleanup', 'dshReportDirectoryRollback', 'dshRestoreOldInstallation',
+    'customRemoveFiles', 'customInstall', 'customInstallerExtract',
     'customWelcomePage', 'customUnWelcomePage', 'customHeader',
     '_DSHD_IS_ABS', '_DSHD_CHECK_UNINSTALL', 'customInit',
   ]);
@@ -100,10 +101,16 @@ test('installer.nsh customizes GUI pages only and stays silent-install (/S) safe
     .split('\n')
     .filter((line) => !line.trim().startsWith('#') && !line.trim().startsWith(';'))
     .join('\n');
-  assert.doesNotMatch(code, /MessageBox/i);
+  const warnings = code.split('\n').filter((line) => /MessageBox/i.test(line));
+  assert.equal(warnings.length, 2, 'only cleanup and rollback warnings');
+  for (const warning of warnings) assert.match(warning, /\/SD IDOK\s*$/);
   assert.doesNotMatch(code, /RequestExecutionLevel/i);
   assert.doesNotMatch(code, /^\s*Section\b/im);
   assert.doesNotMatch(code, /ExecWait|ExecShell\b/);
+  const extract = nsh.match(/^!macro customInstallerExtract[^\r\n]*\r?\n([\s\S]*?)^!macroend/m);
+  assert.match(extract[1], /Pop \$R0/);
+  assert.match(extract[1], /\$\{If\} \$R0 == 0/);
+  assert.match(extract[1], /install-harness\.cjs/);
 });
 
 test('customInit purges dead install records and repairs a poisoned $INSTDIR', () => {

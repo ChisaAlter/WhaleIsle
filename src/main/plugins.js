@@ -86,6 +86,12 @@ const OFFICIAL_TEMPLATE_BUNDLES = new Set([
   '@deepseek-ai/dsh-base',
   '@deepseek-ai/dsh-web-app',
 ]);
+// Older full-runtime installs made these bundles resolvable without a profile
+// install. Preserve an explicit selection when the slim runtime no longer does.
+const OPTIONAL_PROVIDER_BUNDLES = new Set([
+  '@deepseek-ai/dsh-subagent-codex',
+  '@deepseek-ai/dsh-subagent-claude-code',
+]);
 
 function dshHome() {
   return getDesktopDshHome();
@@ -124,7 +130,7 @@ function bundleResolves(packageName, profileDir, installAnchor) {
     .some((anchor) => Boolean(packageDirFromAnchor(anchor, packageName)));
 }
 
-/** Remove only user bundle names that the Loader cannot resolve. */
+/** Repair unresolved bundles while preserving selected optional providers. */
 function healDanglingBundles(options = {}) {
   const profileDir = options.profileDir || webProfileDir();
   const file = path.join(profileDir, 'package.json');
@@ -138,19 +144,21 @@ function healDanglingBundles(options = {}) {
   const current = manifest.dsh?.profile?.bundles;
   if (!Array.isArray(current)) return { ok: true, changed: false, removed: [] };
   const installAnchor = options.installAnchor || defaultInstallAnchor();
-  const removed = current.filter((name) => (
+  const unresolved = current.filter((name) => (
     typeof name === 'string'
     && !OFFICIAL_TEMPLATE_BUNDLES.has(name)
     && !bundleResolves(name, profileDir, installAnchor)
   ));
-  if (removed.length === 0) return { ok: true, changed: false, removed: [] };
+  const requiresInstall = unresolved.filter(name => OPTIONAL_PROVIDER_BUNDLES.has(name));
+  const removed = unresolved.filter(name => !OPTIONAL_PROVIDER_BUNDLES.has(name));
+  if (removed.length === 0) return { ok: true, changed: false, removed: [], requiresInstall };
   const bundles = current.filter((name) => !removed.includes(name));
   manifest.dsh = {
     ...manifest.dsh,
     profile: { ...manifest.dsh.profile, bundles },
   };
   writeAtomic(file, `${JSON.stringify(manifest, null, 2)}\n`);
-  return { ok: true, changed: true, removed };
+  return { ok: true, changed: true, removed, requiresInstall };
 }
 
 function manifestPath() {

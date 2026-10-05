@@ -181,13 +181,17 @@ describe('the new-session chip', () => {
     expect(screen.getByText('mine')).toBeTruthy()
   })
 
-  it('closes the picker immediately when developer tools turn off without changing the staged preset', () => {
+  it('closes the picker immediately when developer tools turn off without changing the staged preset', async () => {
     const actions = renderSeat()
     fireEvent.click(screen.getByRole('button'))
     expect(screen.getByText(en.presetStandardDescription)).toBeTruthy()
+    const menu = screen.getByRole('menu')
     act(() => { actions.developerTools.set(false) })
     expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('false')
-    expect(screen.queryByText(en.presetStandardDescription)).toBeNull()
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(menu.getAttribute('aria-hidden')).toBe('true')
+    expect(menu.hasAttribute('inert')).toBe(true)
+    await waitFor(() => { expect(screen.queryByText(en.presetStandardDescription)).toBeNull() })
     expect(actions.select).not.toHaveBeenCalled()
     act(() => { actions.developerTools.set(true) })
     expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('false')

@@ -66,7 +66,7 @@ async function mountFiles(options: { missingCwd?: boolean } = {}) {
   ;(window as Window & { shell?: typeof ipc }).shell = ipc
   const runtime = await SlotTestRuntime.create()
   runtimes.push(runtime)
-  runtime.ctx.provide('layout', { openRightbar: vi.fn(), closeRightbar: vi.fn(), closeSurfaces: vi.fn() } as never)
+  runtime.ctx.provide('layout', { openRightbar: vi.fn(), closeRightbar: vi.fn(), closeSurfaces: vi.fn(), panelInfo: runtime.panelInfo } as never)
   runtime.ctx.provide('resources', { pin: vi.fn() } as never)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)

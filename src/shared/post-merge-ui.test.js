@@ -55,7 +55,7 @@ const UI_FEATURES = [
   {
     name: 'generic managed composer chrome',
     file: 'packages/client/ui-conversation/src/client/skeleton/InputBar.tsx',
-    includes: ["presentation?.composer === 'managed'", "conversation.input.managed", '!managed && <ContextMeter'],
+    includes: ["presentation?.composer === 'managed'", "conversation.input.managed", 'managed ? null : <ContextMeter'],
     excludes: ["agentPreset === 'dshbot-room'", "origin === 'dshbot'"],
   },
   {
