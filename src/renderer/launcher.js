@@ -1011,8 +1011,6 @@ function renderHomeStatus(status) {
   const version = launcherPackage
     ? (status?.installed?.version || '')
     : (status?.version || status?.config?.appVersion || '');
-  $('home-version').textContent = version ? `v${version}`
-    : (launcherPackage && !status?.installed?.registeredInstall ? '尚未安装' : '已安装 · 版本未知');
   const last = status?.lastStart;
   const desktop = desktopOperation ? { state: desktopOperation.kind } : status?.desktop;
   const recovery = status?.recovery || status?.desktop?.pluginRecovery;
@@ -1226,7 +1224,15 @@ function syncLauncherState(status) {
 }
 
 function syncComponentsBadge() {
-  window.__launcherComponents?.syncStatus(lastStatus?.components);
+  const badgeNode = $('tab-badge-components');
+  if (!badgeNode) {
+    return;
+  }
+  const comps = lastStatus?.components;
+  const rows = Array.isArray(comps?.items) ? comps.items : (Array.isArray(comps) ? comps : []);
+  const count = rows.filter((row) => row && (row.updateAvailable === true || row.state === 'error')).length;
+  badgeNode.hidden = count === 0;
+  badgeNode.textContent = count ? String(count) : '';
 }
 
 function mountComponents() {

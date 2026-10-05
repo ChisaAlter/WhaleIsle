@@ -11,7 +11,7 @@
   <script src="launcher-components.js" defer></script>
 </head>
 <body>
-  <div class="caption"><span class="caption-title">鲸屿启动器</span></div>
+  <div class="caption" aria-hidden="true"></div>
   <div class="window-controls"></div>
   <div class="shell">
     <aside class="rail">
@@ -24,28 +24,28 @@
       </div>
       <nav class="tabs" role="tablist" aria-label="启动器分区" aria-orientation="vertical">
         <button type="button" class="tab is-active" data-tab="home" role="tab" aria-selected="true" id="tab-home" aria-controls="panel-home">
-          <svg class="tab-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m2 7 6-5 6 5v7H9V9H7v5H2Z"/></svg>
+          <svg class="tab-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8.06 1.72a.9.9 0 0 0-.92 0L1.7 5.4A.9.9 0 0 0 1.3 6.2v7.4c0 .7.57 1.28 1.28 1.28h3.4V9.6h3.84v5.28h3.4c.7 0 1.28-.57 1.28-1.28V6.2a.9.9 0 0 0-.4-.8L8.06 1.72Z"/></svg>
           首页
         </button>
         <button type="button" class="tab" data-tab="components" role="tab" aria-selected="false" id="tab-components-btn" aria-controls="tab-components" tabindex="-1">
-          <svg class="tab-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><path d="M9 11.5h5m-2.5-2.5v5"/></svg>
+          <svg class="tab-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 1.5 2.8 4.4v7.2L8 14.5l5.2-2.9V4.4L8 1.5Zm0 1.7 3.4 1.9L8 7 4.6 5.1 8 3.2ZM4.2 6.5l3.2 1.8v4.3l-3.2-1.8V6.5Zm7.6 0v4.3L8.6 12.6V8.3l3.2-1.8Z"/></svg>
           组件
           <span class="tab-badge" id="tab-badge-components" hidden></span>
         </button>
         <button type="button" class="tab" data-tab="versions" role="tab" aria-selected="false" id="tab-versions" aria-controls="panel-versions" tabindex="-1">
-          <svg class="tab-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5a6 6 0 1 1-1 6M3 2v3h3M8 4v4l3 2"/></svg>
+          <svg class="tab-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M3.1 3.2h9.8v1.4H3.1V3.2Zm0 4.1h9.8v1.4H3.1V7.3Zm0 4.1h9.8v1.4H3.1v-1.4ZM1.4 1.5h13.2c.6 0 1.1.5 1.1 1.1v11c0 .6-.5 1.1-1.1 1.1H1.4c-.6 0-1.1-.5-1.1-1.1v-11c0-.6.5-1.1 1.1-1.1Z"/></svg>
           版本
         </button>
         <button type="button" class="tab" data-tab="import" role="tab" aria-selected="false" id="tab-import" aria-controls="panel-import" tabindex="-1">
-          <svg class="tab-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8m-3-3 3 3 3-3M2 11v3h12v-3"/></svg>
+          <svg class="tab-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8.72 9V1.3H7.28v7.7L4.1 6.26 3.08 7.28 7.28 11.5c.2.2.38.37.54.5.2.16.4.28.64.32.16.03.32.03.48 0 .24-.04.44-.16.64-.32.16-.13.34-.3.54-.5l3.58-4.22-1.02-1.02L8.72 9Zm6.65 2.41-.25 1.48A2.1 2.1 0 0 1 12.22 15H3.78a2.1 2.1 0 0 1-2.1-1.71l-.25-1.48 1.42-.24.25 1.48c.12.72.74 1.25 1.48 1.25h8.44c.74 0 1.36-.53 1.48-1.25l.24-1.48 1.43.24Z"/></svg>
           导入
         </button>
         <button type="button" class="tab" data-tab="plugins" role="tab" aria-selected="false" id="tab-plugins" aria-controls="panel-plugins" tabindex="-1">
-          <svg class="tab-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2v3m4-3v3M4 5h8v3a4 4 0 0 1-8 0ZM8 12v3"/></svg>
+          <svg class="tab-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M6.2 1.4h3.6v2.2h2.6c.6 0 1.1.5 1.1 1.1v2.6H16v3.6h-2.5v2.6c0 .6-.5 1.1-1.1 1.1H9.8V16H6.2v-2.5H3.6c-.6 0-1.1-.5-1.1-1.1V9.8H0V6.2h2.5V3.6c0-.6.5-1.1 1.1-1.1h2.6V1.4Zm1.4 1.4v2.2H4.7v3.6H2.5v.8h2.2v3.6h3.6V14h.8v-2.2h3.6V8.2H14v-.8h-2.2V3.8H8.4V2.8H7.6Z"/></svg>
           插件排查
         </button>
         <button type="button" class="tab" data-tab="settings" role="tab" aria-selected="false" id="tab-settings" aria-controls="panel-settings" tabindex="-1">
-          <svg class="tab-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M2 12h12"/><circle cx="5" cy="4" r="2"/><circle cx="11" cy="12" r="2"/></svg>
+          <svg class="tab-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 5.52a2.48 2.48 0 1 0 0 4.96 2.48 2.48 0 0 0 0-4.96ZM6.86 1.7c.14-.11.3-.16.47-.18.54-.05 1.13-.05 1.67 0 .17.02.33.07.47.18l.34.46c.34.46.57 1 .87 1.46.3.41.71.64 1.22.69.59.06 1.2-.02 1.8.03.17.02.33.1.41.21.3.4.58.88.8 1.33.06.13.06.19 0 .32l.23.5c.24.5.58.93.82 1.43-.23.48-.23.98 0 1.46.24.5.58.94.82 1.43l.23.5c.06.13.06.19 0 .32-.22.46-.5.93-.8 1.33-.08.11-.24.19-.41.21-.6.06-1.21-.02-1.8.03-.5.05-.92.28-1.22.69-.3.46-.53 1-.87 1.46l-.34.46c-.14.11-.3.16-.47.18-.54.05-1.13.05-1.67 0-.17-.02-.33-.07-.47-.18l-.34-.46c-.34-.46-.57-1-.87-1.46-.3-.41-.71-.64-1.22-.69-.59-.06-1.2.02-1.8-.03-.17-.02.33-.1.41-.21.3-.4.58-.88.8-1.33.06-.13.06-.19 0-.32l.23.5c.24.5.58.93.82 1.43.23.48.23.98 0 1.46.24.5.58.94.82 1.43L1.7 6.4c-.06.13-.06.19 0-.32.22.45.5.93.8 1.33.08.11.24.19.41.21.6.05 1.21.03 1.8.03.5.05.92.28 1.22.69.3.46.53 1 .87 1.46l.34.46Z"/></svg>
           设置
         </button>
       </nav>
@@ -66,26 +66,16 @@
         <section id="panel-home" class="panel is-active" role="tabpanel" aria-labelledby="tab-home">
           <header class="page-head">
             <h2>首页</h2>
-            <button type="button" class="ghost small" id="btn-check-update">检查更新</button>
           </header>
-          <section class="home-runtime" aria-labelledby="home-runtime-title">
-            <div class="runtime-top">
-              <span class="runtime-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></svg></span>
-              <div class="runtime-copy"><h3 id="home-runtime-title">Whale Isle 桌面端</h3><span class="row-meta" id="home-version">正在读取版本…</span></div>
-              <span class="badge green" id="home-run-badge" hidden>运行中</span>
-            </div>
-            <div class="runtime-body">
-              <p class="lede" id="lede">启动桌面端，开始对话与工作。</p>
-              <p class="status" id="home-status" role="status">正在读取状态…</p>
-              <p class="meta" id="home-start-progress" role="status" hidden></p>
-              <p class="meta" id="home-running-note" hidden>关闭本窗口不影响运行中的桌面端；从托盘可重新打开启动器。</p>
-            </div>
-            <div class="actions action-strip" id="home-actions">
-              <button type="button" class="primary" id="btn-start">启动桌面端</button>
-              <button type="button" class="ghost" id="btn-stop" hidden>停止桌面端</button>
-              <span class="row-meta action-note">桌面端与组件独立运行</span>
-            </div>
-          </section>
+          <p class="lede lede-block" id="lede">启动桌面端，或在左侧管理版本和导入数据。</p>
+          <p class="status"><span id="home-status">正在读取状态…</span><span class="badge green" id="home-run-badge" hidden>运行中</span></p>
+          <p class="meta" id="home-start-progress" role="status" hidden></p>
+          <div class="actions" id="home-actions">
+            <button type="button" class="primary" id="btn-start">启动桌面端</button>
+            <button type="button" class="danger" id="btn-stop" hidden>停止桌面端</button>
+            <button type="button" class="ghost" id="btn-check-update">检查更新</button>
+          </div>
+          <p class="meta" id="home-running-note" hidden>关闭本窗口不影响运行中的桌面端；从托盘可重新打开启动器。</p>
           <div class="notice" id="home-update" hidden>
             <span id="home-update-text"></span>
             <button type="button" class="primary small" id="btn-home-update">立即更新</button>
@@ -110,10 +100,6 @@
               <div class="phases" id="install-progress-phases"></div>
               <p class="progress" id="install-progress"></p>
             </div>
-          </section>
-          <section class="home-components" aria-labelledby="home-components-title">
-            <header class="section-label"><h3 id="home-components-title">组件概览</h3><button type="button" class="linklike" data-goto="components">管理组件 →</button></header>
-            <div id="home-components-list" aria-live="polite"><p class="row-meta">正在读取组件…</p></div>
           </section>
           <details id="home-recovery" class="recovery-board" hidden>
             <summary class="recovery-head"><h3>启动诊断</h3></summary>
