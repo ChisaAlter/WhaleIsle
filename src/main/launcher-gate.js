@@ -36,7 +36,9 @@ const LAST_START_LOG_TAIL = 80;
 // dsh.logs rows are objects ({message}/{line}) in the kernel but sometimes
 // plain strings — normalize to a flat string tail for last-desktop-start.json.
 function kernelLogTail(dsh, limit = LAST_START_LOG_TAIL) {
-  const rows = Array.isArray(dsh?.logs) ? dsh.logs : [];
+  const rows = typeof dsh?.currentStartLogs === 'function'
+    ? dsh.currentStartLogs()
+    : (Array.isArray(dsh?.logs) ? dsh.logs : []);
   return rows
     .slice(-limit)
     .map((row) => (typeof row === 'string' ? row : row?.message || row?.line || String(row)));

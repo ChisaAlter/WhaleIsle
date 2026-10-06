@@ -236,3 +236,139 @@ test('non in-box orphans do not raise the runtime damage flag', () => {
   assert.equal(inspected.desktopRuntimeDamage, false);
   assert.equal(inspected.orphanSuspects[0].inBox, false);
 });
+
+test('the screenshot single-entry web boot audit identifies dsh-tavern and preserves its evidence', () => {
+  const line = 'dsh-tavern: import failed (see console for the import error)';
+  const lastStartError = ['Web UI failed to load: web boot: 1 entry did not activate', line, 'dsh-tavern'].join('\n');
+  assert.deepEqual(extractSuspectNames(lastStartError), ['dsh-tavern']);
+  assert.deepEqual(extractEvidence(lastStartError), [{ name: 'dsh-tavern', line }]);
+  const inspected = inspectPlugins({
+    lastStartError,
+    pluginTreeFailure: true,
+    plugins: [{ name: 'dsh-tavern', spec: '1.0.0' }, { name: 'healthy-plugin' }],
+    bundles: ['dsh-tavern', 'healthy-plugin'],
+  });
+  assert.deepEqual(inspected.suspects, [{ name: 'dsh-tavern' }]);
+  assert.deepEqual(inspected.evidence, [{ name: 'dsh-tavern', line }]);
+  assert.equal(inspected.plugins[0].suspect, true);
+  assert.equal(inspected.plugins[1].suspect, false);
+  assert.equal(inspected.desktopRuntimeDamage, false);
+  assert.deepEqual(inspected.orphanSuspects, []);
+});
+
+test('web boot audits extract recorded imports, pending service dependencies, and non-active states', () => {
+  const lines = [
+    '[dsh] broken-import: import failed: client-modules: bundle script /plugins/broken-import failed to load',
+    '[dsh] single-service: pending (waiting for service: missing)',
+    '[dsh] multiple-services: pending (waiting for services: first, second)',
+    '[dsh] broken-apply: failed',
+    '[dsh] disposed-plugin: disposed',
+    '[dsh] loading-plugin: loading',
+    '[dsh] unloading-plugin: unloading',
+  ];
+  const names = ['broken-import', 'single-service', 'multiple-services', 'broken-apply', 'disposed-plugin', 'loading-plugin', 'unloading-plugin'];
+  const corpus = ['[dsh] web boot: 7 entries did not activate', ...lines].join('\n');
+  assert.deepEqual(extractSuspectNames(corpus), names);
+  assert.deepEqual(extractEvidence(corpus), names.map((name, index) => ({ name, line: lines[index] })));
+});
+
+test('ordinary plugin status logs and rows outside a web boot audit are not suspects', () => {
+  const states = [
+    'plain-import: import failed (see console for the import error)',
+    'plain-pending: pending (waiting for service: missing)',
+    'plain-failed: failed',
+    'plain-disposed: disposed',
+    'plain-loading: loading',
+    'plain-unloading: unloading',
+  ];
+  assert.deepEqual(extractEvidence(states.join('\n')), []);
+  assert.deepEqual(extractSuspectNames([
+    'web boot: 1 entry did not activate',
+    'real-failure: failed',
+    ...states,
+  ].join('\n')), ['real-failure']);
+  assert.deepEqual(extractSuspectNames([
+    'web boot: 2 entries did not activate',
+    'real-failure: failed',
+    '[app] healthy-plugin activated',
+    'plain-failed: failed',
+  ].join('\n')), ['real-failure']);
+});
+
+test('client subpath evidence maps to installed scoped and unscoped profile package roots', () => {
+  const lines = ['dsh-tavern/client: failed', '@acme/widget/client: disposed', 'dsh-tavern: failed'];
+  const inspected = inspectPlugins({
+    lastStartError: ['web boot: 3 entries did not activate', ...lines].join('\n'),
+    plugins: [{ name: 'dsh-tavern' }, { name: '@acme/widget' }],
+    bundles: ['dsh-tavern', '@acme/widget'],
+    disabledPlugins: ['@acme/widget'],
+  });
+  assert.deepEqual(inspected.suspects, [{ name: 'dsh-tavern' }, { name: '@acme/widget' }]);
+  assert.deepEqual(inspected.orphanSuspects, []);
+  assert.equal(inspected.plugins[0].suspect, true);
+  assert.equal(inspected.plugins[1].suspect, true);
+  assert.equal(inspected.plugins[1].disabled, true);
+  assert.deepEqual(inspected.evidence, [
+    { name: 'dsh-tavern', line: lines[0] },
+    { name: '@acme/widget', line: lines[1] },
+    { name: 'dsh-tavern', line: lines[2] },
+  ]);
+});
+
+test('recovery reasons retain plugin attribution even without a current failed last-start marker', () => {
+  const reason = 'web boot: 1 entry did not activate\ndsh-tavern: import failed (see console for the import error)';
+  for (const skipUserPlugins of [true, false]) {
+    const inspected = inspectPlugins({
+      logs: ['[app] Web UI ready'],
+      lastStartError: '',
+      recovery: { skipUserPlugins, reason },
+      plugins: [{ name: 'dsh-tavern' }],
+    });
+    assert.deepEqual(inspected.suspects, [{ name: 'dsh-tavern' }]);
+    assert.equal(inspected.plugins[0].suspect, true);
+    assert.equal(inspected.recovery.reason, reason);
+    assert.deepEqual(inspected.evidence, [{
+      name: 'dsh-tavern',
+      line: 'dsh-tavern: import failed (see console for the import error)',
+    }]);
+  }
+});
+
+test('web boot client failures keep built-in, preset, and official template protections', () => {
+  const builtIn = '@deepseek-ai/dsh-client-ui-settings-market/client';
+  const inspected = inspectPlugins({
+    lastStartError: [
+      'web boot: 3 entries did not activate',
+      `${builtIn}: failed`,
+      'dshbot/client: failed',
+      '@deepseek-ai/dsh-web-app/client: disposed',
+    ].join('\n'),
+    plugins: [{ name: 'dshbot' }, { name: '@deepseek-ai/dsh-web-app' }],
+  });
+  assert.equal(inspected.desktopRuntimeDamage, true);
+  assert.equal(inspected.orphanSuspects[0].name, builtIn);
+  assert.equal(inspected.orphanSuspects[0].inBox, true);
+  assert.equal(inspected.plugins[0].suspect, true);
+  assert.equal(inspected.plugins[0].preset, true);
+  assert.equal(inspected.plugins[1].suspect, true);
+  assert.equal(inspected.plugins[1].officialTemplate, true);
+});
+
+test('generic failure evidence still suppresses plugin blame from web boot audits', () => {
+  const lastStartError = 'web boot: 1 entry did not activate\ndsh-tavern: failed';
+  for (const [reason, cause] of [
+    ['heap out of memory', 'oom'],
+    ['listen EACCES: permission denied 127.0.0.1:3080', 'port-excluded'],
+    ['listen EADDRINUSE: address already in use', 'port-in-use'],
+  ]) {
+    const inspected = inspectPlugins({
+      lastStartError,
+      recovery: { reason },
+      plugins: [{ name: 'dsh-tavern' }],
+    });
+    assert.equal(inspected.genericCause, cause);
+    assert.deepEqual(inspected.suspects, []);
+    assert.equal(inspected.plugins[0].suspect, false);
+    assert.equal(inspected.desktopRuntimeDamage, false);
+  }
+});

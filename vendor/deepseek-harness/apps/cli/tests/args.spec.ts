@@ -240,11 +240,26 @@ describe('parseDshArgs', () => {
 // Desktop fork: --skip-user-plugins boots the shipped bundle template for the
 // launcher recovery path. Absent by default so the shape matches upstream.
 describe('parseDshArgs skipUserPlugins (desktop fork)', () => {
-  it('sets the flag only when asked', () => {
+  it('forwards recovery flags to normal profile boot while retaining overlays and app args', () => {
     expect(parse(['--profile', 'tui', '--skip-user-plugins']))
       .toEqual({ mode: 'profile', profile: 'tui', patches: [], args: [], skipUserPlugins: true })
     expect(parse(['--profile', 'web', '--skip-user-plugins', '--patch', 'x.yml']))
       .toEqual({ mode: 'profile', profile: 'web', patches: ['x.yml'], args: [], skipUserPlugins: true })
+    expect(parse(['web', '--patch', 'desktop.yml', '--skip-user-plugins', '--host', '127.0.0.1', '--port', '8080']))
+      .toEqual({
+        mode: 'profile',
+        profile: 'web',
+        patches: ['desktop.yml'],
+        args: ['--host', '127.0.0.1', '--port', '8080'],
+        skipUserPlugins: true,
+      })
+  })
+
+  it('omits the flag by default and when it belongs to the app', () => {
+    expect(parse(['web'])).not.toHaveProperty('skipUserPlugins')
+    const invocation = parse(['web', '--port', '8080', '--skip-user-plugins'])
+    expect(invocation).not.toHaveProperty('skipUserPlugins')
+    expect(invocation).toMatchObject({ mode: 'profile', args: ['--port', '8080', '--skip-user-plugins'] })
   })
 
   it('rejects combining the flag with a default-only dump', () => {

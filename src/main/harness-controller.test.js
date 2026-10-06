@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('events');
 const { HarnessController } = require('./harness-controller');
+const { DshManager } = require('./dsh');
 
 class FakeClock {
   constructor() {
@@ -497,6 +498,84 @@ test('logs and continues when legacy preset cleanup fails', async () => {
   assert.ok(f.dsh.logs.some((line) => /清理 dshbot 预置残留失败/.test(line) && /locked-preset/.test(line)));
 });
 
+test('current-start evidence opens before preparation and does not revive an old plugin failure', async (t) => {
+  for (const phase of ['preparation', 'window']) {
+    await t.test(phase, async (t) => {
+      const dsh = new DshManager({ loadConfig: () => ({ workspace: 'C:/workspace' }) });
+      const previousError = 'plugin tree failed to load: old-user-pack';
+      dsh.log(previousError, 'dsh');
+      dsh.setState('error', { error: previousError, failure: { phase: 'startup', message: previousError } });
+      let prepares = 0;
+      let windows = 0;
+      let starts = 0;
+      const message = phase === 'window' ? 'window creation failed' : 'invalid workspace path';
+      const assertFreshAttempt = () => {
+        assert.deepEqual(dsh.currentStartLogs(), []);
+        assert.equal(dsh.snapshot().error, '');
+        assert.equal(dsh.snapshot().failure, null);
+      };
+      dsh.start = async () => { starts += 1; return 'http://127.0.0.1:3080'; };
+      const f = fixture({
+        dsh,
+        ...(phase === 'window' ? {
+          createMainWindow: () => {
+            windows += 1;
+            assertFreshAttempt();
+            throw new Error(message);
+          },
+        } : {}),
+        resolveLaunchTarget: async () => {
+          prepares += 1;
+          assertFreshAttempt();
+          dsh.log('preparation failed: invalid workspace path');
+          throw new Error(message);
+        },
+      });
+      t.after(() => f.controller.shutdown());
+      await assert.rejects(f.controller.start(), { message });
+      assert.equal(prepares, phase === 'preparation' ? 1 : 0, 'old plugin evidence must not trigger a skip preparation');
+      assert.equal(windows, phase === 'window' ? 1 : 0, 'window failure must not trigger a second skip attempt');
+      assert.equal(starts, 0);
+      assert.equal(f.controller.pluginRecovery.skipUserPlugins, false);
+      assert.equal(dsh.snapshot().error, message);
+      assert.equal(dsh.snapshot().failure.message, message);
+      assert.ok(dsh.currentStartLogs().some((line) => line.includes(message)));
+      assert.ok(dsh.logs.some((line) => line.includes('old-user-pack')));
+      assert.equal(dsh.currentStartLogs().some((line) => line.includes('old-user-pack')), false);
+    });
+  }
+});
+
+test('current-start evidence retains the failed full boot when skip starts a second log boundary', async (t) => {
+  const report = 'web boot: 1 entry did not activate\nuser-pack: import failed (see console for the import error)';
+  const dsh = new DshManager({ loadConfig: () => ({ workspace: 'C:/workspace' }) });
+  dsh.log('listen EADDRINUSE from an earlier attempt', 'error');
+  const starts = [];
+  dsh.start = async (options) => {
+    starts.push(options.skipUserPlugins);
+    if (!options.skipUserPlugins) {
+      dsh.log(report, 'error');
+      throw new Error(report);
+    }
+    dsh.log('skip boot is healthy');
+    dsh.setState('ready', { baseUrl: 'http://127.0.0.1:3080', error: '', failure: null });
+    return 'http://127.0.0.1:3080';
+  };
+  const f = fixture({ dsh });
+  t.after(() => f.controller.shutdown());
+  await f.controller.start();
+  assert.deepEqual(starts, [false, true]);
+  assert.ok(dsh.currentStartLogs().some((line) => line.includes('skip boot is healthy')));
+  assert.equal(dsh.currentStartLogs().some((line) => line.includes('user-pack')), false);
+  const recovery = f.controller.pluginRecovery;
+  assert.equal(recovery.skipUserPlugins, true);
+  assert.equal(recovery.reason, report);
+  assert.ok(recovery.logTail.includes('web boot: 1 entry did not activate'));
+  assert.ok(recovery.logTail.includes('user-pack: import failed (see console for the import error)'));
+  assert.equal(recovery.logTail.some((line) => line.includes('EADDRINUSE')), false);
+  assert.equal(recovery.logTail.some((line) => line.includes('skip boot is healthy')), false);
+});
+
 test('plugin-tree startup failure retries once with the desktop overlay on both rounds', async () => {
   const first = Object.assign(new Error('dsh exited'), { pluginTree: true });
   const installOverlay = 'C:/profiles/web/desktop-plugins/install-dsh-plugin/desktop-install.patch.yml';
@@ -715,7 +794,7 @@ test('skip start without a desktop-owned overlay passes no patch files', async (
   assert.deepEqual(f.dsh.startOptions[0].patchFiles, []);
 });
 
-test('sticky plugin recovery starts skip mode and retryFullPlugins clears it', async () => {
+test('sticky plugin recovery retains skip mode on restart and clears it only after full retry stops the old Harness', async () => {
   const f2 = fixture({
     appVersion: '1.2.3',
     initialConfig: {
@@ -729,9 +808,59 @@ test('sticky plugin recovery starts skip mode and retryFullPlugins clears it', a
   });
   await f2.controller.start();
   assert.equal(f2.dsh.startOptions[0].skipUserPlugins, true);
-  await f2.controller.retryFullPlugins();
+  await f2.controller.restart();
+  assert.equal(f2.dsh.startOptions.at(-1).skipUserPlugins, true);
+  const marker = f2.controller.snapshot().pluginRecovery;
+  let releaseStop;
+  const stopped = new Promise((resolve) => { releaseStop = resolve; });
+  f2.dsh.stop = async () => { await stopped; f2.dsh.setState('idle'); };
+  const retry = f2.controller.retryFullPlugins();
+  await settle();
+  assert.deepEqual(f2.controller.snapshot().pluginRecovery, marker);
+  assert.deepEqual(f2.controller.loadConfig().pluginRecovery, marker);
+  assert.equal(f2.dsh.startCalls, 2);
+  releaseStop();
+  await retry;
+  assert.deepEqual(f2.dsh.startOptions.map(options => options.skipUserPlugins), [true, true, false]);
   assert.equal(f2.dsh.startOptions.at(-1).skipUserPlugins, false);
   assert.equal(f2.controller.snapshot().pluginRecovery.skipUserPlugins, false);
+  assert.equal(f2.controller.loadConfig().pluginRecovery.skipUserPlugins, false);
+});
+
+test('sticky plugin recovery survives full retry when the old Harness stop fails', async () => {
+  const f = fixture();
+  f.controller.writePluginSkip(new Error('plugin import failed'));
+  await f.controller.start();
+  const marker = f.controller.snapshot().pluginRecovery;
+  f.dsh.stop = async () => { throw new Error('old Harness stop failed'); };
+
+  await assert.rejects(f.controller.retryFullPlugins(), { message: 'old Harness stop failed' });
+
+  assert.deepEqual(f.controller.snapshot().pluginRecovery, marker);
+  assert.deepEqual(f.controller.loadConfig().pluginRecovery, marker);
+  assert.equal(f.dsh.startCalls, 1);
+  assert.equal(f.dsh.startOptions[0].skipUserPlugins, true);
+});
+
+test('sticky plugin recovery survives full retry cancelled while the old Harness stops', async () => {
+  const f = fixture();
+  f.controller.writePluginSkip(new Error('plugin import failed'));
+  await f.controller.start();
+  const marker = f.controller.snapshot().pluginRecovery;
+  let releaseStop;
+  const stopped = new Promise((resolve) => { releaseStop = resolve; });
+  f.dsh.stop = async () => { await stopped; f.dsh.setState('idle'); };
+  const retry = f.controller.retryFullPlugins();
+  const rejected = assert.rejects(retry, { code: 'HARNESS_OPERATION_CANCELLED' });
+  await settle();
+  const cancel = f.controller.stopDesktop();
+  releaseStop();
+  await Promise.all([rejected, cancel]);
+
+  assert.deepEqual(f.controller.snapshot().pluginRecovery, marker);
+  assert.deepEqual(f.controller.loadConfig().pluginRecovery, marker);
+  assert.equal(f.dsh.startCalls, 1);
+  assert.equal(f.dsh.startOptions[0].skipUserPlugins, true);
 });
 
 test('runtime crash returns to boot, disconnects Remote, and schedules one restart', async () => {
