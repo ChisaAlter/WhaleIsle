@@ -52,7 +52,21 @@ const server = http.createServer(async (req, res) => {
         installed = true;
         return json({ ok: true });
       }
-      if (pathname === '/api/subscription/prompt') return json(null);
+      if (pathname === '/api/subscription/prompt') {
+        const inputs = { ...(body.inputs || {}) };
+        if (scenario !== 'prompts') return json({ prompt: null, inputs });
+        if (body.key) {
+          const expected = { tenant: 'fixture-tenant', region: 'eu' }[body.key];
+          if (body.value !== expected) return json({ error: `fixture ${body.key} rejected` });
+          inputs[body.key] = body.value;
+        }
+        const prompt = !inputs.tenant
+          ? { type: 'text', key: 'tenant', message: 'Fixture tenant' }
+          : !inputs.region ? { type: 'select', key: 'region', message: 'Fixture region', options: [
+            { label: 'US', value: 'us' }, { label: 'Europe', value: 'eu' },
+          ] } : null;
+        return json({ prompt, inputs });
+      }
       if (pathname === '/api/signin') return json({ state: 'done' });
       if (pathname === '/api/accounts/cursor') return json([]);
     } else {
@@ -137,14 +151,36 @@ async function run() {
     await js(`document.querySelector('#fields [data-action="add-account"]').click()`);
     await waitFor(`document.querySelector('#f-agent') && !document.querySelector('#save').hidden`);
     const addAccount = await read();
+    await js(`document.querySelector('#cancel-editor').click()`);
+
+    scenario = 'prompts';
+    await open();
+    await js(`(() => {
+      const select = document.querySelector('#f-agent'); select.value = 'cursor-plugin';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      document.querySelector('#save').click();
+    })()`);
+    await waitFor(`document.querySelector('input#f-answer') && !document.querySelector('#save').disabled`);
+    await js(`document.querySelector('#f-answer').value = 'invalid'; document.querySelector('#save').click()`);
+    await waitFor(`!document.querySelector('#form-error').hidden && !document.querySelector('#save').disabled`);
+    const promptValidationError = (await read()).error;
+    await js(`document.querySelector('#f-answer').value = 'fixture-tenant'; document.querySelector('#save').click()`);
+    await waitFor(`document.querySelector('select#f-answer') && !document.querySelector('#save').disabled`);
+    await js(`document.querySelector('#f-answer').value = 'eu'; document.querySelector('#save').click()`);
+    await waitFor(`!document.querySelector('#editor').open && !document.querySelector('#save').disabled`);
+    const promptSignin = calls.find(call => call.scenario === 'prompts' && call.path === '/api/signin')?.body;
 
     return { initial, beforeInstall, installed: installedForm, signin, migrated, failureDefault, failed, failureRefreshes, addAccount, catalogs,
+      promptValidationError, promptSignin,
       installs: calls.filter(call => call.path === '/api/subscription/adapter'),
       prompts: calls.filter(call => call.path === '/api/subscription/prompt'),
     };
   } finally {
     win.destroy();
-    await new Promise(resolve => server.close(resolve));
+    await new Promise(resolve => {
+      server.close(resolve);
+      server.closeAllConnections();
+    });
   }
 }
 

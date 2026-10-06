@@ -20,15 +20,20 @@ function subscriptionKey(){
  if($('#f-key'))$('#f-key').required=true;
 }
 async function beginSubscription(data){
- editor.request ||= data;
- const request=editor.request, s=subscriptions.find(s=>s.id===request.agent);
- editor.inputs ||= {};
- if(editor.prompt)editor.inputs[editor.prompt.key]=data.answer;
+ const current=editor;
+ current.request ||= data;
+ const request=current.request, s=subscriptions.find(s=>s.id===request.agent);
+ current.inputs ||= {};
  if(s.plugin){
-  const question=await api('subscription/prompt',{id:s.pid || s.id,method:Number(request.method || 0),inputs:editor.inputs});
-  if(question){editor.prompt=question;$('#fields').innerHTML=`<p class="muted">${escape(s.name)}</p>`+(question.type==='select'?`<label for="f-answer">${escape(question.message)}</label><select id="f-answer" name="answer">${(question.options || []).map(o=>`<option value="${escape(o.value)}">${escape(o.label)}</option>`).join('')}</select>`:field('answer',escape(question.message),'','text',question.placeholder || ''));$('#save').textContent='继续';return;}
+  const result=await api('subscription/prompt',{id:s.pid || s.id,method:Number(request.method || 0),inputs:current.inputs,...(current.prompt?{key:current.prompt.key,value:data.answer}:{})});
+  if(current!==editor || current.closed)return;
+  if(result.error)throw new Error(result.error);
+  current.inputs=result.inputs;
+  const question=result.prompt;current.prompt=question;
+  if(question){$('#fields').innerHTML=`<p class="muted">${escape(s.name)}</p>`+(question.type==='select'?`<label for="f-answer">${escape(question.message)}</label><select id="f-answer" name="answer">${(question.options || []).map(o=>`<option value="${escape(o.value)}">${escape(o.label)}</option>`).join('')}</select>`:field('answer',escape(question.message),'','text',question.placeholder || ''));$('#save').textContent='继续';return;}
  }
- const st=await api('signin',{agent:s.pid || request.agent,site:request.site,plugin:s.plugin,method:Number(request.method || 0),key:request.key,inputs:editor.inputs});
+ const st=await api('signin',{agent:s.pid || request.agent,site:request.site,plugin:s.plugin,method:Number(request.method || 0),key:request.key,inputs:current.inputs});
+ if(current!==editor || current.closed){if(st.id)await api(`signin/${encodeURIComponent(st.id)}/cancel`,{});return;}
  if(st.state==='done'){ $('#editor').close();message('订阅账号已添加');await load();return; }
  loginFlow=st.id;showLogin(st);pollLogin();
 }
@@ -47,7 +52,7 @@ function pollLogin(){
   }catch(e){loginFlow=null;$('#form-error').textContent=e.message;$('#form-error').hidden=false;}
  },1500);
 }
-$('#editor').addEventListener('close',()=>{clearTimeout(loginTimer);if(loginFlow){const id=loginFlow;loginFlow=null;api(`signin/${encodeURIComponent(id)}/cancel`,{}).catch(e=>message(e.message));}});
+$('#editor').addEventListener('close',()=>{if(editor)editor.closed=true;clearTimeout(loginTimer);if(loginFlow){const id=loginFlow;loginFlow=null;api(`signin/${encodeURIComponent(id)}/cancel`,{}).catch(e=>message(e.message));}});
 async function openAccounts(id){
  const rows=await api(`accounts/${encodeURIComponent(id)}`);editor={type:'accounts',data:{id}};
  $('#editor-title').textContent='订阅账号';
@@ -60,7 +65,7 @@ async function openKeys(id){
 }
 $('#fields').addEventListener('click',async e=>{
  const b=e.target.closest('[data-action]');if(!b)return;const{action,id}=b.dataset;
- if(action==='pick-member')return;
+ if(!['signin-callback','install-adapter','add-account','account-on','account-remove','key-on','key-remove','key-weight'].includes(action))return;
  b.disabled=true;
  try{
   if(action==='signin-callback'){await api(`signin/${encodeURIComponent(loginFlow)}/callback`,{url:$('#f-callback').value});return;}

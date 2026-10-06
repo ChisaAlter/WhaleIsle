@@ -1,19 +1,13 @@
 package whalebridge
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/yetone/magpie/internal/appdir"
-	"github.com/yetone/magpie/internal/catalog"
-	"github.com/yetone/magpie/internal/edit"
-	"github.com/yetone/magpie/internal/gateway"
-	"github.com/yetone/magpie/internal/netproxy"
-	"github.com/yetone/magpie/internal/provider"
-	"github.com/yetone/magpie/internal/usage"
 	"io/fs"
 	"net"
 	"net/http"
@@ -23,6 +17,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/yetone/magpie/internal/appdir"
+	"github.com/yetone/magpie/internal/catalog"
+	"github.com/yetone/magpie/internal/edit"
+	"github.com/yetone/magpie/internal/gateway"
+	"github.com/yetone/magpie/internal/netproxy"
+	"github.com/yetone/magpie/internal/provider"
+	"github.com/yetone/magpie/internal/usage"
 )
 
 //go:embed assets/*
@@ -49,6 +51,8 @@ func Run(version string) error {
 	if os.Getenv("LAUNCHER_COMPONENT_DATA_DIR") == "" || os.Getenv("WHALEBRIDGE_DSH_HOME") == "" {
 		return fmt.Errorf("请从鲸屿启动器安装并打开鲸桥")
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	if err := os.MkdirAll(appdir.Config(), 0700); err != nil {
 		return err
 	}
@@ -104,7 +108,7 @@ func Run(version string) error {
 	accountRoutes(mux)
 	mux.HandleFunc("GET /api/whalebridge/status", func(w http.ResponseWriter, r *http.Request) {
 		models, _ := provider.CatalogFor("dsh")
-		writeJSON(w, map[string]any{"models": len(models), "defaultModel": isDefault(), "version": version, "gateway": gateway.URL(), "pid": os.Getpid()})
+		writeJSON(w, map[string]any{"models": len(models), "defaultModel": isDefault(), "version": version, "gateway": gateway.URL(), "pid": os.Getpid(), "catalog": catalog.Status()})
 	})
 	mux.HandleFunc("POST /api/whalebridge/maintenance", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
@@ -127,23 +131,23 @@ func Run(version string) error {
 			return
 		}
 		type supplier struct {
-			ID         string          `json:"id"`
-			Name       string          `json:"name"`
-			Preset     string          `json:"preset"`
-			Chat       string          `json:"chat"`
-			Responses  string          `json:"responses"`
-			Anthropic  string          `json:"anthropic"`
-			Decide     string          `json:"decide"`
-			HeaderNames []string       `json:"headerNames"`
-			KeySet     bool            `json:"keySet"`
-			Models     []string        `json:"models"`
-			Off        bool            `json:"off"`
-			Routing    string          `json:"routing"`
-			Proxy      string          `json:"proxy"`
-			Fallback   []string        `json:"fallback"`
-			Available  []catalog.Model `json:"available"`
-			ModelCount int             `json:"modelCount"`
-			Account    bool            `json:"account"`
+			ID          string          `json:"id"`
+			Name        string          `json:"name"`
+			Preset      string          `json:"preset"`
+			Chat        string          `json:"chat"`
+			Responses   string          `json:"responses"`
+			Anthropic   string          `json:"anthropic"`
+			Decide      string          `json:"decide"`
+			HeaderNames []string        `json:"headerNames"`
+			KeySet      bool            `json:"keySet"`
+			Models      []string        `json:"models"`
+			Off         bool            `json:"off"`
+			Routing     string          `json:"routing"`
+			Proxy       string          `json:"proxy"`
+			Fallback    []string        `json:"fallback"`
+			Available   []catalog.Model `json:"available"`
+			ModelCount  int             `json:"modelCount"`
+			Account     bool            `json:"account"`
 		}
 		suppliers := []supplier{}
 		for _, p := range provider.All() {
@@ -155,7 +159,7 @@ func Run(version string) error {
 			suppliers = append(suppliers, supplier{ID: p.ID, Name: p.Name, Preset: p.Preset, Chat: p.Chat, Responses: p.Responses, Anthropic: p.Anthropic, Decide: p.Decide, HeaderNames: names, KeySet: p.Key != "", Models: p.Models, Off: p.Off, Routing: p.Routing, Proxy: p.Proxy, Fallback: p.Fallback, Available: p.Available(), ModelCount: len(p.Exposed()), Account: p.Account != nil})
 		}
 		shown, hidden := provider.CatalogFor("dsh")
-		writeJSON(w, map[string]any{"version": version, "gateway": gateway.URL(), "providers": suppliers, "presets": provider.Presets(), "models": shown, "hidden": hidden, "groups": provider.Groups(), "defaultModel": isDefault()})
+		writeJSON(w, map[string]any{"version": version, "gateway": gateway.URL(), "providers": suppliers, "presets": provider.Presets(), "models": shown, "hidden": hidden, "groups": provider.Groups(), "defaultModel": isDefault(), "catalog": catalog.Status()})
 	})
 	mux.HandleFunc("GET /api/usage", func(w http.ResponseWriter, r *http.Request) {
 		period := usage.Period(r.URL.Query().Get("period"))
@@ -171,22 +175,22 @@ func Run(version string) error {
 	})
 	mux.HandleFunc("POST /api/provider", mutate(func(w http.ResponseWriter, r *http.Request) error {
 		var input struct {
-			ID        string   `json:"id"`
-			Preset    string   `json:"preset"`
-			Name      string   `json:"name"`
-			Chat      string   `json:"chat"`
-			Responses string   `json:"responses"`
-			Anthropic string   `json:"anthropic"`
-			Decide    *string  `json:"decide"`
-			Region    string   `json:"region"`
-			Workspace string   `json:"workspace"`
+			ID        string             `json:"id"`
+			Preset    string             `json:"preset"`
+			Name      string             `json:"name"`
+			Chat      string             `json:"chat"`
+			Responses string             `json:"responses"`
+			Anthropic string             `json:"anthropic"`
+			Decide    *string            `json:"decide"`
+			Region    string             `json:"region"`
+			Workspace string             `json:"workspace"`
 			Headers   map[string]*string `json:"headers"`
-			Key       *string  `json:"key"`
-			Models    []string `json:"models"`
-			Off       bool     `json:"off"`
-			Routing   string   `json:"routing"`
-			Proxy     string   `json:"proxy"`
-			Fallback  []string `json:"fallback"`
+			Key       *string            `json:"key"`
+			Models    []string           `json:"models"`
+			Off       bool               `json:"off"`
+			Routing   string             `json:"routing"`
+			Proxy     string             `json:"proxy"`
+			Fallback  []string           `json:"fallback"`
 		}
 		if err := decode(w, r, &input); err != nil {
 			return err
@@ -213,25 +217,41 @@ func Run(version string) error {
 					if region.ID == input.Region {
 						found = true
 						p.Catalog = pr.Catalog
-						if region.Catalog != "" { p.Catalog = region.Catalog }
+						if region.Catalog != "" {
+							p.Catalog = region.Catalog
+						}
 						p.Website, p.KeysURL = pr.Website, pr.KeysURL
-						if region.Website != "" { p.Website = region.Website }
-						if region.KeysURL != "" { p.KeysURL = region.KeysURL }
-						if input.Decide == nil { p.Decide = region.Decide }
+						if region.Website != "" {
+							p.Website = region.Website
+						}
+						if region.KeysURL != "" {
+							p.KeysURL = region.KeysURL
+						}
+						if input.Decide == nil {
+							p.Decide = region.Decide
+						}
 						break
 					}
 				}
 			}
-			if !found { return fmt.Errorf("未知供应商区域或套餐") }
+			if !found {
+				return fmt.Errorf("未知供应商区域或套餐")
+			}
 		}
 		p.Name, p.Chat, p.Responses, p.Anthropic = input.Name, input.Chat, input.Responses, input.Anthropic
-		if input.Decide != nil { p.Decide = *input.Decide }
+		if input.Decide != nil {
+			p.Decide = *input.Decide
+		}
 		if strings.Contains(p.Decide, provider.WorkspaceID) {
-			if strings.TrimSpace(input.Workspace) == "" { return fmt.Errorf("请填写 API 密钥所属的 Workspace ID，或选择 Token Plan") }
+			if strings.TrimSpace(input.Workspace) == "" {
+				return fmt.Errorf("请填写 API 密钥所属的 Workspace ID，或选择 Token Plan")
+			}
 			p.Decide = strings.ReplaceAll(p.Decide, provider.WorkspaceID, strings.TrimSpace(input.Workspace))
 		}
 		if p.Account == nil {
-			if err := patchHeaders(&p, input.Headers); err != nil { return err }
+			if err := patchHeaders(&p, input.Headers); err != nil {
+				return err
+			}
 		}
 		if input.Key != nil {
 			p.Key = *input.Key
@@ -268,19 +288,27 @@ func Run(version string) error {
 	}))
 	mux.HandleFunc("POST /api/models/hidden", mutate(func(w http.ResponseWriter, r *http.Request) error {
 		var b struct {
-			IDs []string `json:"ids"`
-			ID string `json:"id"`
-			Hidden *bool `json:"hidden"`
+			IDs    []string `json:"ids"`
+			ID     string   `json:"id"`
+			Hidden *bool    `json:"hidden"`
 		}
 		if err := decode(w, r, &b); err != nil {
 			return err
 		}
 		if b.Hidden != nil {
-			if strings.TrimSpace(b.ID) == "" { return fmt.Errorf("缺少模型 ID") }
+			if strings.TrimSpace(b.ID) == "" {
+				return fmt.Errorf("缺少模型 ID")
+			}
 			ids := provider.HiddenModels("dsh")
-			if *b.Hidden { ids[b.ID] = true } else { delete(ids, b.ID) }
+			if *b.Hidden {
+				ids[b.ID] = true
+			} else {
+				delete(ids, b.ID)
+			}
 			b.IDs = make([]string, 0, len(ids))
-			for id := range ids { b.IDs = append(b.IDs, id) }
+			for id := range ids {
+				b.IDs = append(b.IDs, id)
+			}
 		}
 		return provider.SetHiddenModels("dsh", b.IDs)
 	}))
@@ -294,18 +322,36 @@ func Run(version string) error {
 		}
 		to := strings.ToLower(strings.TrimSpace(b.ID))
 		from := strings.ToLower(strings.TrimSpace(b.From))
-		if to == "" || to != provider.Slug(to) { return fmt.Errorf("路由 ID 只能包含小写字母、数字和连字符") }
+		if to == "" || to != provider.Slug(to) {
+			return fmt.Errorf("路由 ID 只能包含小写字母、数字和连字符")
+		}
 		if from != to {
 			taken, err := provider.GroupIDTaken(to)
-			if err != nil { return err }
-			if taken { return fmt.Errorf("路由 ID %q 已被使用，请选择其他 ID", to) }
+			if err != nil {
+				return err
+			}
+			if taken {
+				return fmt.Errorf("路由 ID %q 已被使用，请选择其他 ID", to)
+			}
 		}
-		if from == "" { b.ID = to; return provider.SaveGroup(b.Group) }
+		if from == "" {
+			b.ID = to
+			return provider.SaveGroup(b.Group)
+		}
 		found := false
-		for _, g := range provider.Groups() { if g.ID == from && !g.Hidden { found = true; break } }
-		if !found { return fmt.Errorf("原路由组 %q 已不存在，请刷新后再编辑", from) }
+		for _, g := range provider.Groups() {
+			if g.ID == from && !g.Hidden {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("原路由组 %q 已不存在，请刷新后再编辑", from)
+		}
 		b.ID = from
-		if err := provider.SaveGroup(b.Group); err != nil { return err }
+		if err := provider.SaveGroup(b.Group); err != nil {
+			return err
+		}
 		return provider.RenameGroup(from, to)
 	}))
 	mux.HandleFunc("POST /api/group/delete", mutate(func(w http.ResponseWriter, r *http.Request) error {
@@ -358,6 +404,7 @@ func Run(version string) error {
 	}
 	defer os.Remove(filepath.Join(appdir.Config(), "state.json"))
 	go func() { failures <- (&http.Server{Handler: auth, ReadHeaderTimeout: 10 * time.Second}).Serve(listener) }()
+	go provider.StartModelRefresh(ctx)
 	return <-failures
 }
 
@@ -368,11 +415,21 @@ func patchHeaders(p *provider.Provider, changes map[string]*string) error {
 		name := strings.TrimSpace(raw)
 		if name == "" || strings.IndexFunc(name, func(r rune) bool {
 			return r > 127 || !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("!#$%&'*+-.^_`|~", r))
-		}) >= 0 { return fmt.Errorf("HTTP Header 名称无效") }
-		if value != nil && strings.ContainsAny(*value, "\r\n") { return fmt.Errorf("HTTP Header 值不能包含换行") }
-		for existing := range p.Headers { if strings.EqualFold(existing, name) { delete(p.Headers, existing) } }
+		}) >= 0 {
+			return fmt.Errorf("HTTP Header 名称无效")
+		}
+		if value != nil && strings.ContainsAny(*value, "\r\n") {
+			return fmt.Errorf("HTTP Header 值不能包含换行")
+		}
+		for existing := range p.Headers {
+			if strings.EqualFold(existing, name) {
+				delete(p.Headers, existing)
+			}
+		}
 		if value != nil {
-			if p.Headers == nil { p.Headers = map[string]string{} }
+			if p.Headers == nil {
+				p.Headers = map[string]string{}
+			}
 			p.Headers[name] = strings.TrimSpace(*value)
 		}
 	}
