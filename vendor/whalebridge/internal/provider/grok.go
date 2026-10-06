@@ -683,22 +683,20 @@ func withProxy(cmd *exec.Cmd) *exec.Cmd {
 // needs: one that hasn't is the start of a link the CLI wrapped, and the
 // lines after it that are nothing but more of it are joined on.
 func runCLISignIn(s *signInFlow, what string, env []string, using bool, failed func(), identity func() (user, plan string, ok bool), whole func(link string) bool, path string, args ...string) error {
-	ctx, cancel := context.WithCancel(context.Background())
-	cmd := proc.CommandContext(ctx, path, args...)
+	cmd := proc.Command(path, args...)
 	cmd.Dir, _ = os.UserHomeDir()
 	cmd.Env = netproxy.Env(env)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
-		cancel()
 		return err
 	}
 	cmd.Stderr = cmd.Stdout
-	if err := cmd.Start(); err != nil {
-		cancel()
+	tree, err := proc.StartTree(cmd)
+	if err != nil {
 		return err
 	}
 	s.mu.Lock()
-	s.stop = cancel
+	s.stop = tree.Kill
 	s.mu.Unlock()
 	got := make(chan string, 1)
 	var partial struct {
@@ -750,8 +748,7 @@ func runCLISignIn(s *signInFlow, what string, env []string, using bool, failed f
 		if !sent {
 			close(got)
 		}
-		err := cmd.Wait()
-		cancel()
+		err := tree.Wait()
 		forgetAccountCaches()
 		if err == nil {
 			if user, plan, ok := identity(); ok {
@@ -781,7 +778,7 @@ func runCLISignIn(s *signInFlow, what string, env []string, using bool, failed f
 		u = partial.link
 		partial.Unlock()
 		if u == "" {
-			cancel()
+			tree.Kill()
 			return fmt.Errorf("%s gave no link to open", what)
 		}
 	}

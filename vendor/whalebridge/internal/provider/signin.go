@@ -771,6 +771,7 @@ func addLogin(l savedLogin) (using bool, err error) {
 	// sources, but never sign another client into this new account.
 	if os.Getenv("LAUNCHER_COMPONENT_ID") == "whalebridge" {
 		using = false
+		l.Owned = true
 	}
 	if first := claudeStandIn(ls); !signedIn && l.Agent == "claude" && first != "" {
 		// logged out of Claude Code with accounts in magpie: it stays so,

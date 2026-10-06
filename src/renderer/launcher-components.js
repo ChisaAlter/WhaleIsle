@@ -313,7 +313,7 @@
           progress.textContent = text;
         }
       } else {
-        setHint('');
+        setHint(result?.message || '');
       }
     } catch (error) {
       setHint(typeof window.dshdErrText === 'function'

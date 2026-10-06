@@ -204,7 +204,7 @@ func getURLFrom(ctx context.Context, url string, limit int64, mirror bool) ([]by
 		res, err = source.DoOfficial(http.DefaultClient, req)
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: request: %w", url, err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
@@ -212,7 +212,13 @@ func getURLFrom(ctx context.Context, url string, limit int64, mirror bool) ([]by
 	}
 	b, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
 	if err != nil {
-		return nil, err
+		actual := url
+		if res.Request != nil && res.Request.URL != nil {
+			resolved := *res.Request.URL
+			resolved.RawQuery, resolved.Fragment, resolved.User = "", "", nil
+			actual = resolved.String()
+		}
+		return nil, fmt.Errorf("%s (resolved %s): reading response body (HTTP %d, received %d bytes, expected %d): %w", url, actual, res.StatusCode, len(b), res.ContentLength, err)
 	}
 	if int64(len(b)) > limit {
 		return nil, fmt.Errorf("%s: too large", url)

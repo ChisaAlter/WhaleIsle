@@ -224,6 +224,27 @@ func Groups() []Group {
 	return groupsIn(providerEntries())
 }
 
+// GroupIDTaken includes hidden saved groups: a new group must not replace one
+// merely because it is absent from the visible catalog.
+func GroupIDTaken(id string) (bool, error) {
+	f, err := read()
+	if err != nil {
+		return false, err
+	}
+	id = strings.ToLower(strings.TrimSpace(id))
+	for _, g := range f.Groups {
+		if g.ID == id {
+			return true, nil
+		}
+	}
+	for _, g := range Groups() {
+		if g.ID == id {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func groupsIn(entries []Entry) []Group {
 	f := heldOf("file", load)
 	var out []Group

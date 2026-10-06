@@ -2,10 +2,11 @@
 // client's active account or edits that client's model configuration.
 let subscriptions=[];
 const subscriptionNames={claude:'Claude',codex:'Codex',copilot:'GitHub Copilot',cursor:'Cursor',grok:'Grok',devin:'Devin',kiro:'Kiro',zcode:'ZCode',workbuddy:'WorkBuddy','workbuddy-ai':'WorkBuddy AI','commandcode-plan':'Command Code',qoder:'Qoder','qoder-cn':'Qoder 中国版',zed:'Zed',factory:'Factory','mimo-app':'小米 MiMo',gemini:'Google Gemini',antigravity:'Google Antigravity'};
-async function openSubscription(){
+async function openSubscription(adapterId=''){
  subscriptions=(await api('subscriptions')).map(s=>({...s,name:s.plugin?s.name:(subscriptionNames[s.id] || s.name)}));editor={type:'subscription'};
  $('#editor-title').textContent='添加订阅账号';
  $('#fields').innerHTML=`<p class="form-hint">将已有订阅连接到鲸屿。请选择你的供应商，再按对应的登录流程完成授权。</p><label for="f-agent">订阅供应商</label><select name="agent" id="f-agent">${subscriptions.map(s=>`<option value="${escape(s.id)}">${escape(s.name)}</option>`).join('')}</select><div id="signin-options"></div><p class="muted">部分订阅需要供应商的认证工具或适配器，登录时会显示准备进度。模型范围和使用额度由供应商决定。</p>`;
+ if(adapterId)$('#f-agent').value=subscriptions.find(s=>s.plugin&&s.pid===adapterId)?.id || adapterId;
  $('#f-agent').onchange=subscriptionOptions;subscriptionOptions();showEditor();$('#save').textContent='开始登录';
 }
 function subscriptionOptions(){
@@ -63,7 +64,7 @@ $('#fields').addEventListener('click',async e=>{
  b.disabled=true;
  try{
   if(action==='signin-callback'){await api(`signin/${encodeURIComponent(loginFlow)}/callback`,{url:$('#f-callback').value});return;}
-  if(action==='install-adapter'){await api('subscription/adapter',{id});await openSubscription();message('供应商适配器已安装');return;}
+  if(action==='install-adapter'){await api('subscription/adapter',{id});await openSubscription(id);message('供应商适配器已安装');return;}
   if(action==='add-account'){await openSubscription();$('#f-agent').value=id;subscriptionOptions();return;}
   const data=JSON.parse(id);
   if(action==='account-on')await api('accounts/on',data);

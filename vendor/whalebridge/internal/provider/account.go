@@ -601,6 +601,14 @@ func claudeAccount() (Provider, bool) {
 	// flags Active, not served a second time beside itself, and its
 	// allowances and limits are found under its name (#177)
 	user, _ = claudeSignedInUser(c.OAuth.SubscriptionType, statusPlan, user)
+	loginsMu.Lock()
+	owned := slices.ContainsFunc(readLogins(), func(l savedLogin) bool { return l.Agent == "claude" && l.Owned && strings.EqualFold(l.User, user) })
+	loginsMu.Unlock()
+	if owned {
+		acct := &Account{Agent: "claude", User: user, Plan: plan, standIn: true}
+		acct.token = func(context.Context) (string, error) { return claudeSavedDir(user) }
+		return claudeProvider(acct), true
+	}
 	if user == "" {
 		user = "Claude account"
 		if plan != "" {
@@ -809,15 +817,28 @@ func codexAccount(home string) (Provider, bool) {
 	path := filepath.Join(home, ".codex", "auth.json")
 	var a codexAuth
 	if !readJSON(path, &a) || a.Tokens.AccessToken == "" || a.AuthMode == "apikey" {
-		return Provider{}, false
+		return codexStandInAccount()
 	}
 	id := jwtClaims(a.Tokens.IDToken)
 	acct := &Account{Agent: "codex", Stream: true,
 		User: codexUser(id), Plan: claimString(id, "https://api.openai.com/auth", "chatgpt_plan_type")}
 	if acct.User == "" {
-		acct.User = "ChatGPT"
+		acct.User = a.Tokens.AccountID
+		if acct.User == "" {
+			acct.User = "ChatGPT"
+		}
 	}
-	acct.sign = codexSign(func(ctx context.Context) (string, string, error) { return codexToken(ctx, path) })
+	loginsMu.Lock()
+	owned := slices.ContainsFunc(readLogins(), func(l savedLogin) bool { return l.Agent == "codex" && l.Owned && strings.EqualFold(l.User, acct.User) })
+	loginsMu.Unlock()
+	if owned {
+		return codexSavedAccount(acct.User, acct.Plan), true
+	}
+	return codexProvider(acct, func(ctx context.Context) (string, string, error) { return codexToken(ctx, path) }), true
+}
+
+func codexProvider(acct *Account, token func(context.Context) (string, string, error)) Provider {
+	acct.sign = codexSign(token)
 	acct.body = codexBody
 	acct.models = catalog.Codex
 	acct.fetch = func(ctx context.Context) ([]catalog.Model, error) {
@@ -830,7 +851,7 @@ func codexAccount(home string) (Provider, bool) {
 		ms = codexPoolLevels(ms)
 		return ms, catalog.SaveLive("codex", CodexBase, ms)
 	}
-	return Provider{ID: "codex", Name: "Codex", Icon: "codex-color", Responses: CodexBase, Website: "https://chatgpt.com/codex", Account: acct}, true
+	return Provider{ID: "codex", Name: "Codex", Icon: "codex-color", Responses: CodexBase, Website: "https://chatgpt.com/codex", Account: acct}
 }
 
 // codexToken returns a usable access token, refreshing it through OpenAI

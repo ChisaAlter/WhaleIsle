@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -113,7 +114,7 @@ func Run(version string) error {
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		active, ok := gateway.WhaleBridgeMaintenance(b.On)
+		active, ok := server.WhaleBridgeMaintenance(b.On)
 		if !ok {
 			http.Error(w, "DSH 有正在生成的回复，请完成后再操作", 409)
 			return
@@ -132,6 +133,8 @@ func Run(version string) error {
 			Chat       string          `json:"chat"`
 			Responses  string          `json:"responses"`
 			Anthropic  string          `json:"anthropic"`
+			Decide     string          `json:"decide"`
+			HeaderNames []string       `json:"headerNames"`
 			KeySet     bool            `json:"keySet"`
 			Models     []string        `json:"models"`
 			Off        bool            `json:"off"`
@@ -144,7 +147,12 @@ func Run(version string) error {
 		}
 		suppliers := []supplier{}
 		for _, p := range provider.All() {
-			suppliers = append(suppliers, supplier{p.ID, p.Name, p.Preset, p.Chat, p.Responses, p.Anthropic, p.Key != "", p.Models, p.Off, p.Routing, p.Proxy, p.Fallback, p.Available(), len(p.Exposed()), p.Account != nil})
+			names := make([]string, 0, len(p.Headers))
+			for name := range p.Headers {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			suppliers = append(suppliers, supplier{ID: p.ID, Name: p.Name, Preset: p.Preset, Chat: p.Chat, Responses: p.Responses, Anthropic: p.Anthropic, Decide: p.Decide, HeaderNames: names, KeySet: p.Key != "", Models: p.Models, Off: p.Off, Routing: p.Routing, Proxy: p.Proxy, Fallback: p.Fallback, Available: p.Available(), ModelCount: len(p.Exposed()), Account: p.Account != nil})
 		}
 		shown, hidden := provider.CatalogFor("dsh")
 		writeJSON(w, map[string]any{"version": version, "gateway": gateway.URL(), "providers": suppliers, "presets": provider.Presets(), "models": shown, "hidden": hidden, "groups": provider.Groups(), "defaultModel": isDefault()})
@@ -152,9 +160,12 @@ func Run(version string) error {
 	mux.HandleFunc("GET /api/usage", func(w http.ResponseWriter, r *http.Request) {
 		period := usage.Period(r.URL.Query().Get("period"))
 		switch period {
+		case "":
+			period = usage.Today
 		case usage.Today, usage.Week, usage.Month, usage.All:
 		default:
-			period = usage.Today
+			http.Error(w, "未知用量周期", http.StatusBadRequest)
+			return
 		}
 		writeJSON(w, usage.Summarize(period))
 	})
@@ -166,6 +177,10 @@ func Run(version string) error {
 			Chat      string   `json:"chat"`
 			Responses string   `json:"responses"`
 			Anthropic string   `json:"anthropic"`
+			Decide    *string  `json:"decide"`
+			Region    string   `json:"region"`
+			Workspace string   `json:"workspace"`
+			Headers   map[string]*string `json:"headers"`
 			Key       *string  `json:"key"`
 			Models    []string `json:"models"`
 			Off       bool     `json:"off"`
@@ -190,7 +205,34 @@ func Run(version string) error {
 				return err
 			}
 		}
+		if input.Region != "" {
+			pr := provider.Preset(p.Preset)
+			found := false
+			if pr != nil {
+				for _, region := range pr.Regions {
+					if region.ID == input.Region {
+						found = true
+						p.Catalog = pr.Catalog
+						if region.Catalog != "" { p.Catalog = region.Catalog }
+						p.Website, p.KeysURL = pr.Website, pr.KeysURL
+						if region.Website != "" { p.Website = region.Website }
+						if region.KeysURL != "" { p.KeysURL = region.KeysURL }
+						if input.Decide == nil { p.Decide = region.Decide }
+						break
+					}
+				}
+			}
+			if !found { return fmt.Errorf("未知供应商区域或套餐") }
+		}
 		p.Name, p.Chat, p.Responses, p.Anthropic = input.Name, input.Chat, input.Responses, input.Anthropic
+		if input.Decide != nil { p.Decide = *input.Decide }
+		if strings.Contains(p.Decide, provider.WorkspaceID) {
+			if strings.TrimSpace(input.Workspace) == "" { return fmt.Errorf("请填写 API 密钥所属的 Workspace ID，或选择 Token Plan") }
+			p.Decide = strings.ReplaceAll(p.Decide, provider.WorkspaceID, strings.TrimSpace(input.Workspace))
+		}
+		if p.Account == nil {
+			if err := patchHeaders(&p, input.Headers); err != nil { return err }
+		}
 		if input.Key != nil {
 			p.Key = *input.Key
 		}
@@ -227,18 +269,44 @@ func Run(version string) error {
 	mux.HandleFunc("POST /api/models/hidden", mutate(func(w http.ResponseWriter, r *http.Request) error {
 		var b struct {
 			IDs []string `json:"ids"`
+			ID string `json:"id"`
+			Hidden *bool `json:"hidden"`
 		}
 		if err := decode(w, r, &b); err != nil {
 			return err
+		}
+		if b.Hidden != nil {
+			if strings.TrimSpace(b.ID) == "" { return fmt.Errorf("缺少模型 ID") }
+			ids := provider.HiddenModels("dsh")
+			if *b.Hidden { ids[b.ID] = true } else { delete(ids, b.ID) }
+			b.IDs = make([]string, 0, len(ids))
+			for id := range ids { b.IDs = append(b.IDs, id) }
 		}
 		return provider.SetHiddenModels("dsh", b.IDs)
 	}))
 	mux.HandleFunc("POST /api/group", mutate(func(w http.ResponseWriter, r *http.Request) error {
-		var b provider.Group
+		var b struct {
+			provider.Group
+			From string `json:"from"`
+		}
 		if err := decode(w, r, &b); err != nil {
 			return err
 		}
-		return provider.SaveGroup(b)
+		to := strings.ToLower(strings.TrimSpace(b.ID))
+		from := strings.ToLower(strings.TrimSpace(b.From))
+		if to == "" || to != provider.Slug(to) { return fmt.Errorf("路由 ID 只能包含小写字母、数字和连字符") }
+		if from != to {
+			taken, err := provider.GroupIDTaken(to)
+			if err != nil { return err }
+			if taken { return fmt.Errorf("路由 ID %q 已被使用，请选择其他 ID", to) }
+		}
+		if from == "" { b.ID = to; return provider.SaveGroup(b.Group) }
+		found := false
+		for _, g := range provider.Groups() { if g.ID == from && !g.Hidden { found = true; break } }
+		if !found { return fmt.Errorf("原路由组 %q 已不存在，请刷新后再编辑", from) }
+		b.ID = from
+		if err := provider.SaveGroup(b.Group); err != nil { return err }
+		return provider.RenameGroup(from, to)
 	}))
 	mux.HandleFunc("POST /api/group/delete", mutate(func(w http.ResponseWriter, r *http.Request) error {
 		var b struct {
@@ -291,6 +359,30 @@ func Run(version string) error {
 	defer os.Remove(filepath.Join(appdir.Config(), "state.json"))
 	go func() { failures <- (&http.Server{Handler: auth, ReadHeaderTimeout: 10 * time.Second}).Serve(listener) }()
 	return <-failures
+}
+
+// Header values can be credentials: the UI sees names only and patches filled
+// values. A nil value explicitly removes a header; omitted values stay intact.
+func patchHeaders(p *provider.Provider, changes map[string]*string) error {
+	for raw, value := range changes {
+		name := strings.TrimSpace(raw)
+		if name == "" || strings.IndexFunc(name, func(r rune) bool {
+			return r > 127 || !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("!#$%&'*+-.^_`|~", r))
+		}) >= 0 { return fmt.Errorf("HTTP Header 名称无效") }
+		if value != nil && strings.ContainsAny(*value, "\r\n") { return fmt.Errorf("HTTP Header 值不能包含换行") }
+		for existing := range p.Headers { if strings.EqualFold(existing, name) { delete(p.Headers, existing) } }
+		if value != nil {
+			if p.Headers == nil { p.Headers = map[string]string{} }
+			p.Headers[name] = strings.TrimSpace(*value)
+		}
+	}
+	return nil
+}
+
+func syncConfiguration() error {
+	mutations.Lock()
+	defer mutations.Unlock()
+	return syncDSH()
 }
 func mutate(fn func(http.ResponseWriter, *http.Request) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
