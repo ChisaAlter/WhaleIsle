@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('events');
 const { HarnessController } = require('./harness-controller');
+const { DshManager } = require('./dsh');
 
 class FakeClock {
   constructor() {
@@ -495,6 +496,84 @@ test('logs and continues when legacy preset cleanup fails', async () => {
   await f.controller.start();
   assert.equal(f.dsh.startCalls, 1);
   assert.ok(f.dsh.logs.some((line) => /清理 dshbot 预置残留失败/.test(line) && /locked-preset/.test(line)));
+});
+
+test('current-start evidence opens before preparation and does not revive an old plugin failure', async (t) => {
+  for (const phase of ['preparation', 'window']) {
+    await t.test(phase, async (t) => {
+      const dsh = new DshManager({ loadConfig: () => ({ workspace: 'C:/workspace' }) });
+      const previousError = 'plugin tree failed to load: old-user-pack';
+      dsh.log(previousError, 'dsh');
+      dsh.setState('error', { error: previousError, failure: { phase: 'startup', message: previousError } });
+      let prepares = 0;
+      let windows = 0;
+      let starts = 0;
+      const message = phase === 'window' ? 'window creation failed' : 'invalid workspace path';
+      const assertFreshAttempt = () => {
+        assert.deepEqual(dsh.currentStartLogs(), []);
+        assert.equal(dsh.snapshot().error, '');
+        assert.equal(dsh.snapshot().failure, null);
+      };
+      dsh.start = async () => { starts += 1; return 'http://127.0.0.1:3080'; };
+      const f = fixture({
+        dsh,
+        ...(phase === 'window' ? {
+          createMainWindow: () => {
+            windows += 1;
+            assertFreshAttempt();
+            throw new Error(message);
+          },
+        } : {}),
+        resolveLaunchTarget: async () => {
+          prepares += 1;
+          assertFreshAttempt();
+          dsh.log('preparation failed: invalid workspace path');
+          throw new Error(message);
+        },
+      });
+      t.after(() => f.controller.shutdown());
+      await assert.rejects(f.controller.start(), { message });
+      assert.equal(prepares, phase === 'preparation' ? 1 : 0, 'old plugin evidence must not trigger a skip preparation');
+      assert.equal(windows, phase === 'window' ? 1 : 0, 'window failure must not trigger a second skip attempt');
+      assert.equal(starts, 0);
+      assert.equal(f.controller.pluginRecovery.skipUserPlugins, false);
+      assert.equal(dsh.snapshot().error, message);
+      assert.equal(dsh.snapshot().failure.message, message);
+      assert.ok(dsh.currentStartLogs().some((line) => line.includes(message)));
+      assert.ok(dsh.logs.some((line) => line.includes('old-user-pack')));
+      assert.equal(dsh.currentStartLogs().some((line) => line.includes('old-user-pack')), false);
+    });
+  }
+});
+
+test('current-start evidence retains the failed full boot when skip starts a second log boundary', async (t) => {
+  const report = 'web boot: 1 entry did not activate\nuser-pack: import failed (see console for the import error)';
+  const dsh = new DshManager({ loadConfig: () => ({ workspace: 'C:/workspace' }) });
+  dsh.log('listen EADDRINUSE from an earlier attempt', 'error');
+  const starts = [];
+  dsh.start = async (options) => {
+    starts.push(options.skipUserPlugins);
+    if (!options.skipUserPlugins) {
+      dsh.log(report, 'error');
+      throw new Error(report);
+    }
+    dsh.log('skip boot is healthy');
+    dsh.setState('ready', { baseUrl: 'http://127.0.0.1:3080', error: '', failure: null });
+    return 'http://127.0.0.1:3080';
+  };
+  const f = fixture({ dsh });
+  t.after(() => f.controller.shutdown());
+  await f.controller.start();
+  assert.deepEqual(starts, [false, true]);
+  assert.ok(dsh.currentStartLogs().some((line) => line.includes('skip boot is healthy')));
+  assert.equal(dsh.currentStartLogs().some((line) => line.includes('user-pack')), false);
+  const recovery = f.controller.pluginRecovery;
+  assert.equal(recovery.skipUserPlugins, true);
+  assert.equal(recovery.reason, report);
+  assert.ok(recovery.logTail.includes('web boot: 1 entry did not activate'));
+  assert.ok(recovery.logTail.includes('user-pack: import failed (see console for the import error)'));
+  assert.equal(recovery.logTail.some((line) => line.includes('EADDRINUSE')), false);
+  assert.equal(recovery.logTail.some((line) => line.includes('skip boot is healthy')), false);
 });
 
 test('plugin-tree startup failure retries once with the desktop overlay on both rounds', async () => {

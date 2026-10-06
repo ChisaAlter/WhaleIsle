@@ -5,6 +5,7 @@ const path = require('node:path');
 const test = require('node:test');
 const { IPC_ROLES } = require('./ipc-authorization');
 const launcherGate = require('./launcher-gate');
+const pluginForensics = require('./plugin-forensics');
 
 const ipcPath = require.resolve('./ipc');
 // profile-ops is ipc.js's delegate for plugin/config mutations: it is NOT
@@ -107,6 +108,7 @@ function loadIpc(options = {}) {
   const installPluginCalls = [];
   const uninstallCalls = [];
   const saveConfigCalls = [];
+  const disabledBundleCalls = [];
   let startHarnessCalls = 0;
   const installResult = options.installResult || { ok: true };
   const startHarnessImpl = options.startHarness || (async () => {});
@@ -210,6 +212,7 @@ function loadIpc(options = {}) {
     probeDesktopRunning: () => false,
     startExternalDesktop: () => ({ ok: true, external: true }),
     stopExternalDesktop: async () => ({ ok: true, stopped: false }),
+    ...(options.runtimeInstall || {}),
   });
   const scanImportCalls = [];
   const runImportCalls = [];
@@ -235,19 +238,22 @@ function loadIpc(options = {}) {
     journalIsBlocked: options.journalIsBlocked || ((j) => Boolean(j && (j.phase === 'blocked' || j.unreadable === true))),
   });
   stub('./plugin-forensics', {
-    inspectPlugins: () => ({ genericCause: null, suspects: [], plugins: [] }),
+    inspectPlugins: options.inspectPlugins || (() => ({ genericCause: null, suspects: [], plugins: [] })),
     isPresetPlugin: () => false,
   });
   stub('./plugins', {
-    listInstalledPlugins: () => ({ plugins: [], bundles: [] }),
-    applyDisabledBundles: () => ({ ok: true, changed: false, bundles: [] }),
+    listInstalledPlugins: options.listInstalledPlugins || (() => ({ plugins: [], bundles: [] })),
+    applyDisabledBundles: (names) => {
+      disabledBundleCalls.push(names);
+      return { ok: true, changed: false, bundles: [] };
+    },
     setBundleEnabled: () => ({ ok: true, changed: false }),
     OFFICIAL_TEMPLATE_BUNDLES: new Set(['@deepseek-ai/dsh-base']),
   });
   const lastStartWrites = [];
   stub('./launcher-gate', {
     ...launcherGate,
-    readLastDesktopStart: () => ({ ok: true, at: '', error: '' }),
+    readLastDesktopStart: options.readLastDesktopStart || (() => ({ ok: true, at: '', error: '' })),
     recordLastDesktopStart: async (_dir, work) => {
       try {
         const value = await work();
@@ -350,7 +356,7 @@ function loadIpc(options = {}) {
     startDesktop: async (opts) => {
       startDesktopCalls += 1;
       startDesktopArgs.push(opts || {});
-      return { ok: true };
+      return options.startDesktop ? options.startDesktop(opts || {}) : { ok: true };
     },
     stopDesktopCleanup: options.stopDesktopCleanup,
     remote: options.remote === undefined ? null : options.remote,
@@ -389,6 +395,7 @@ function loadIpc(options = {}) {
     installPluginCalls,
     uninstallCalls,
     saveConfigCalls,
+    disabledBundleCalls,
     openedPaths,
     startHarness() {
       return startHarnessCalls;
@@ -1001,6 +1008,8 @@ test('launcher-only import and release channels reject boot and harness senders'
     await assert.rejects(() => ipc.invoke('shell:install-release', harnessEvent(), 'v0.2.6'), unauthorized);
     await assert.rejects(() => ipc.invoke('shell:install-runtime', harnessEvent(), {}), unauthorized);
     await assert.rejects(() => ipc.invoke('shell:cancel-runtime-install', bootEvent()), unauthorized);
+    await assert.rejects(() => ipc.invoke('shell:disable-suspects-and-start', bootEvent(), ['user-pack']), unauthorized);
+    await assert.rejects(() => ipc.invoke('shell:disable-suspects-and-start', harnessEvent(), ['user-pack']), unauthorized);
     await assert.rejects(() => ipc.invoke('shell:list-releases', leftoverMarketplaceEvent()), unauthorized);
   } finally {
     ipc.restore();
@@ -1204,6 +1213,375 @@ test('boot shell:restart writes last-desktop-start ok:false and rethrows on fail
     assert.deepEqual(ipc.lastStartWrites, [{ ok: false, error: 'plugin tree exploded' }]);
   } finally {
     ipc.restore();
+  }
+});
+
+function userPluginFailure(names = ['user-pack']) {
+  return {
+    genericCause: null,
+    desktopRuntimeDamage: false,
+    pluginTreeFailure: true,
+    suspects: names.map((name) => ({ name })),
+    plugins: names.map((name) => ({ name, bundle: true, suspect: true })),
+  };
+}
+
+function recoveryHarness(state, skipUserPlugins = false) {
+  return {
+    pluginRecovery: { skipUserPlugins, reason: skipUserPlugins ? 'user-pack: import failed (see console for the import error)' : '' },
+    cleared: 0,
+    snapshot() { return { state, pluginRecovery: this.pluginRecovery }; },
+    clearPluginRecovery() {
+      this.cleared += 1;
+      this.pluginRecovery = { skipUserPlugins: false, reason: '' };
+    },
+  };
+}
+
+test('disable-suspects-and-start checks the fresh complete set and excludes protected or unrelated plugins', async () => {
+  let forensics = userPluginFailure();
+  const harness = recoveryHarness('error');
+  const ipc = loadIpc({
+    harness,
+    inspectPlugins: () => forensics,
+    readLastDesktopStart: () => ({ ok: false, error: 'user-pack failed' }),
+  });
+  try {
+    const changed = [
+      { names: [], forensics: userPluginFailure() },
+      { names: [null], forensics: userPluginFailure() },
+      { names: ['unrelated-pack'], forensics: userPluginFailure() },
+      { names: ['user-pack', 'unrelated-pack'], forensics: userPluginFailure() },
+      { names: ['user-pack'], forensics: userPluginFailure(['user-pack', 'new-failure']) },
+      ...['disabled', 'orphan', 'inBox', 'preset', 'officialTemplate'].map((flag) => ({
+        names: ['user-pack'],
+        forensics: { ...userPluginFailure(), plugins: [{ name: 'user-pack', suspect: true, [flag]: true }] },
+      })),
+    ];
+    for (const row of changed) {
+      forensics = row.forensics;
+      const result = await ipc.invoke('shell:disable-suspects-and-start', launcherEvent(), row.names);
+      assert.equal(result.ok, false);
+      assert.equal(result.error, 'suspects-changed');
+      assert.deepEqual(result.forensics, forensics);
+    }
+    assert.equal(ipc.disabledBundleCalls.length, 0);
+    assert.equal(ipc.saveConfigCalls.length, 0);
+    assert.equal(ipc.startDesktop(), 0);
+    assert.equal(harness.cleared, 0);
+  } finally {
+    ipc.restore();
+  }
+});
+
+test('disable-suspects-and-start rejects old log suspects after a healthy full start', async () => {
+  const ipc = loadIpc({
+    harness: recoveryHarness('ready'),
+    inspectPlugins: () => userPluginFailure(),
+    readLastDesktopStart: () => ({ ok: true, error: '' }),
+    dsh: { state: 'ready', logs: ['user-pack: import failed (see console for the import error)'] },
+  });
+  try {
+    const result = await ipc.invoke('shell:disable-suspects-and-start', launcherEvent(), ['user-pack']);
+    assert.equal(result.error, 'suspects-changed');
+    assert.equal(ipc.disabledBundleCalls.length, 0);
+    assert.equal(ipc.saveConfigCalls.length, 0);
+    assert.equal(ipc.startDesktop(), 0);
+  } finally {
+    ipc.restore();
+  }
+});
+
+test('plugin recovery attribution ignores historical failures and retains the current failed attempt', async () => {
+  const audit = (name) => `web boot: 1 entry did not activate\n${name}: import failed (see console for the import error)`;
+  const current = audit('user-pack');
+  const history = ['listen EADDRINUSE', 'heap out of memory', audit('healthy-now')];
+  const installed = () => ({ plugins: [{ name: 'user-pack' }, { name: 'healthy-now' }], bundles: ['user-pack', 'healthy-now'] });
+  for (const scenario of ['failed-full', 'sticky-ready', 'cold-failure-record']) {
+    const harness = recoveryHarness(scenario === 'sticky-ready' ? 'ready' : 'error', scenario === 'sticky-ready');
+    if (scenario === 'sticky-ready') {
+      harness.pluginRecovery = { skipUserPlugins: true, reason: 'process exited', logTail: [current] };
+    }
+    const ipc = loadIpc({
+      harness,
+      inspectPlugins: pluginForensics.inspectPlugins,
+      listInstalledPlugins: installed,
+      dsh: {
+        logs: history.concat(scenario === 'cold-failure-record' ? ['launcher peer listening'] : [current]),
+        currentStartLogs: () => scenario === 'cold-failure-record' ? [] : (scenario === 'sticky-ready' ? ['skip boot ready'] : [current]),
+      },
+      readLastDesktopStart: () => ({ ok: scenario !== 'sticky-ready' ? false : true, error: 'process exited', logTail: [current] }),
+    });
+    try {
+      const forensics = await ipc.invoke('shell:plugin-forensics', launcherEvent());
+      assert.equal(forensics.genericCause, null, scenario);
+      assert.deepEqual(forensics.suspects, [{ name: 'user-pack' }], scenario);
+      const stale = await ipc.invoke('shell:disable-suspects-and-start', launcherEvent(), ['user-pack', 'healthy-now']);
+      assert.equal(stale.error, 'suspects-changed');
+      assert.equal(ipc.disabledBundleCalls.length, 0);
+      const currentResult = await ipc.invoke('shell:disable-suspects-and-start', launcherEvent(), ['user-pack']);
+      assert.equal(currentResult.ok, true, scenario);
+      assert.deepEqual(ipc.saveConfigCalls[0].disabledPlugins, ['user-pack']);
+      assert.equal(ipc.startDesktop(), 1);
+    } finally {
+      ipc.restore();
+    }
+  }
+});
+
+test('disable-suspects-and-start does not blame plugins for generic failures or desktop damage', async () => {
+  for (const verdict of [{ genericCause: 'oom' }, { genericCause: 'port-excluded' }, { desktopRuntimeDamage: true }]) {
+    const ipc = loadIpc({
+      harness: recoveryHarness('error'),
+      inspectPlugins: () => ({ ...userPluginFailure(), ...verdict }),
+      readLastDesktopStart: () => ({ ok: false, error: 'startup failed' }),
+    });
+    try {
+      const result = await ipc.invoke('shell:disable-suspects-and-start', launcherEvent(), ['user-pack']);
+      assert.equal(result.error, 'suspects-changed');
+      assert.equal(ipc.disabledBundleCalls.length, 0);
+      assert.equal(ipc.saveConfigCalls.length, 0);
+      assert.equal(ipc.startDesktop(), 0);
+    } finally {
+      ipc.restore();
+    }
+  }
+});
+
+test('disable-suspects-and-start writes once and starts once from idle, error, or sticky ready', async () => {
+  const importGuard = require('./import-guard');
+  for (const state of ['idle', 'error', 'ready']) {
+    const harness = recoveryHarness(state, state === 'ready');
+    let ipc;
+    ipc = loadIpc({
+      harness,
+      config: { disabledPlugins: ['keep-disabled'] },
+      dsh: { state, logs: [], snapshot: () => ({ state }) },
+      inspectPlugins: ({ recovery }) => ({ ...userPluginFailure(), recovery }),
+      readLastDesktopStart: () => ({ ok: state === 'ready', error: 'user-pack failed' }),
+      startDesktop: async (options) => {
+        assert.equal(importGuard.holdsMaintenance(options.maintenanceToken), true);
+        assert.equal(options.maintenanceToken.kind, 'plugin-disable');
+        assert.equal(harness.pluginRecovery.skipUserPlugins, false);
+        assert.deepEqual(ipc.saveConfigCalls, [{ disabledPlugins: ['keep-disabled', 'user-pack'] }]);
+        return { ok: true, state: 'ready' };
+      },
+    });
+    try {
+      const result = await ipc.invoke('shell:disable-suspects-and-start', launcherEvent(), ['user-pack', 'user-pack']);
+      assert.equal(result.ok, true);
+      assert.equal(result.harnessRestarted, true);
+      assert.equal(harness.cleared, 1);
+      assert.equal(ipc.startDesktop(), 1);
+      assert.equal(ipc.startHarness(), 0);
+      assert.equal(ipc.startDesktopArgs[0].forceRestart, true);
+      assert.equal(ipc.startDesktopArgs[0].recoveryLaunch, true);
+      assert.deepEqual(ipc.disabledBundleCalls, [['keep-disabled', 'user-pack']]);
+      assert.equal(importGuard.isMaintenanceHeld(), false);
+    } finally {
+      ipc.restore();
+    }
+  }
+});
+
+test('disable-suspects-and-start keeps the write and truthful partial failure on a refused start', async () => {
+  const importGuard = require('./import-guard');
+  for (const refusal of [{ ok: false, error: 'new web boot failure' }, { ok: false, code: 'cancelled' }, { proceeded: false, code: 'task-protection-busy' }]) {
+    const ipc = loadIpc({
+      harness: recoveryHarness('error'),
+      inspectPlugins: () => userPluginFailure(),
+      readLastDesktopStart: () => ({ ok: false, error: 'user-pack failed' }),
+      startDesktop: async () => refusal,
+    });
+    try {
+      const result = await ipc.invoke('shell:disable-suspects-and-start', launcherEvent(), ['user-pack']);
+      assert.equal(result.ok, true, 'the disable already committed');
+      assert.equal(result.harnessRestarted, false);
+      assert.equal(result.error, refusal.error || refusal.code);
+      assert.deepEqual(ipc.saveConfigCalls, [{ disabledPlugins: ['user-pack'] }]);
+      assert.equal(ipc.startDesktop(), 1, 'do not retry the start after a refusal');
+      assert.equal(ipc.startHarness(), 0);
+      assert.equal(importGuard.isMaintenanceHeld(), false);
+    } finally {
+      ipc.restore();
+    }
+  }
+});
+
+test('disable-suspects-and-start retains the maintenance owner through a deferred start', async () => {
+  const importGuard = require('./import-guard');
+  let release;
+  let entered;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const started = new Promise((resolve) => { entered = resolve; });
+  const ipc = loadIpc({
+    harness: recoveryHarness('error'),
+    inspectPlugins: () => userPluginFailure(),
+    readLastDesktopStart: () => ({ ok: false, error: 'user-pack failed' }),
+    startDesktop: async ({ maintenanceToken }) => {
+      assert.equal(importGuard.holdsMaintenance(maintenanceToken), true);
+      entered();
+      await gate;
+      return { ok: true };
+    },
+  });
+  let pending;
+  try {
+    pending = ipc.invoke('shell:disable-suspects-and-start', launcherEvent(), ['user-pack']);
+    await Promise.race([started, pending.then(() => assert.fail('start callback was not reached'))]);
+    assert.equal(importGuard.isMaintenanceHeld(), true);
+    assert.equal(importGuard.acquireMaintenance('import'), null);
+    const duplicate = await ipc.invoke('shell:disable-suspects-and-start', launcherEvent(), ['user-pack']);
+    assert.equal(duplicate.error, 'operation-in-progress');
+    const start = await ipc.invoke('shell:start-desktop', launcherEvent());
+    assert.equal(start.error, 'operation-in-progress');
+    release();
+    const result = await pending;
+    assert.equal(result.harnessRestarted, true);
+    assert.equal(ipc.startDesktop(), 1);
+    assert.equal(ipc.saveConfigCalls.length, 1);
+    assert.equal(importGuard.isMaintenanceHeld(), false);
+  } finally {
+    release();
+    if (pending) await pending.catch(() => {});
+    ipc.restore();
+  }
+});
+
+test('disable-suspects-and-start refuses a blocked import before the profile write', async () => {
+  const ipc = loadIpc({
+    harness: recoveryHarness('error'),
+    inspectPlugins: () => userPluginFailure(),
+    readLastDesktopStart: () => ({ ok: false, error: 'user-pack failed' }),
+    readImportJournal: () => ({ phase: 'blocked', pendingTxns: ['unresolved-op'] }),
+  });
+  try {
+    const result = await ipc.invoke('shell:disable-suspects-and-start', launcherEvent(), ['user-pack']);
+    assert.equal(result.error, 'import-recovery-blocked');
+    assert.equal(ipc.disabledBundleCalls.length, 0);
+    assert.equal(ipc.saveConfigCalls.length, 0);
+    assert.equal(ipc.startDesktop(), 0);
+  } finally {
+    ipc.restore();
+  }
+});
+
+test('slim disable-suspects-and-start preserves runtime settings and spawns once under the same owner', async () => {
+  const importGuard = require('./import-guard');
+  const { LEGACY_DESKTOP_USER_DATA } = require('../shared/product-identity');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-plugin-recovery-'));
+  const runtimeDir = path.join(root, LEGACY_DESKTOP_USER_DATA);
+  const configFile = path.join(runtimeDir, 'config.json');
+  fs.mkdirSync(runtimeDir);
+  fs.writeFileSync(configFile, JSON.stringify({
+    disabledPlugins: ['keep-disabled'],
+    pluginRecovery: { skipUserPlugins: true, reason: 'user-pack failed' },
+    workspace: 'keep-workspace',
+  }));
+  const previousFlavor = process.env.DSHD_LAUNCHER_PACKAGE;
+  process.env.DSHD_LAUNCHER_PACKAGE = '1';
+  const productPath = require.resolve('../launcher/product');
+  const previousProduct = require.cache[productPath];
+  delete require.cache[productPath];
+  const calls = [];
+  let release;
+  let entered;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const started = new Promise((resolve) => { entered = resolve; });
+  const ipc = loadIpc({
+    getPath: () => root,
+    inspectPlugins: ({ recovery }) => ({ ...userPluginFailure(), recovery }),
+    readLastDesktopStart: () => ({ ok: false, error: 'user-pack failed' }),
+    runtimeInstall: {
+      stopExternalDesktop: async () => { calls.push('stop'); return { ok: true }; },
+      startExternalDesktop: async () => {
+        calls.push('start');
+        assert.equal(importGuard.maintenanceOwner().kind, 'plugin-disable');
+        const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+        assert.deepEqual(config.disabledPlugins, ['keep-disabled', 'user-pack']);
+        assert.equal(config.pluginRecovery.skipUserPlugins, false);
+        assert.equal(config.workspace, 'keep-workspace');
+        entered();
+        await gate;
+        return { ok: true, external: true };
+      },
+    },
+  });
+  let pending;
+  try {
+    pending = ipc.invoke('shell:disable-suspects-and-start', launcherEvent(), ['user-pack']);
+    await Promise.race([started, pending.then(() => assert.fail('external start callback was not reached'))]);
+    assert.equal(importGuard.acquireMaintenance('import'), null);
+    release();
+    const result = await pending;
+    assert.equal(result.ok, true);
+    assert.equal(result.harnessRestarted, true);
+    assert.deepEqual(calls, ['stop', 'start']);
+    assert.equal(ipc.startDesktop(), 0);
+    assert.equal(ipc.startHarness(), 0);
+    assert.equal(ipc.saveConfigCalls.length, 0, 'do not write the slim launcher config');
+    assert.equal(importGuard.isMaintenanceHeld(), false);
+  } finally {
+    release();
+    if (pending) await pending.catch(() => {});
+    ipc.restore();
+    if (previousFlavor === undefined) delete process.env.DSHD_LAUNCHER_PACKAGE;
+    else process.env.DSHD_LAUNCHER_PACKAGE = previousFlavor;
+    delete require.cache[productPath];
+    if (previousProduct) require.cache[productPath] = previousProduct;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('slim disable-suspects-and-start refuses unreadable runtime config without changing profile or config', async () => {
+  const importGuard = require('./import-guard');
+  const { LEGACY_DESKTOP_USER_DATA } = require('../shared/product-identity');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-plugin-invalid-config-'));
+  const runtimeDir = path.join(root, LEGACY_DESKTOP_USER_DATA);
+  const configFile = path.join(runtimeDir, 'config.json');
+  fs.mkdirSync(runtimeDir);
+  const previousFlavor = process.env.DSHD_LAUNCHER_PACKAGE;
+  process.env.DSHD_LAUNCHER_PACKAGE = '1';
+  const productPath = require.resolve('../launcher/product');
+  const previousProduct = require.cache[productPath];
+  delete require.cache[productPath];
+  const calls = [];
+  let ipc;
+  try {
+    ipc = loadIpc({
+      getPath: () => root,
+      inspectPlugins: () => userPluginFailure(),
+      readLastDesktopStart: () => ({ ok: false, error: 'user-pack failed' }),
+      runtimeInstall: {
+        stopExternalDesktop: async () => { calls.push('stop'); return { ok: true }; },
+        startExternalDesktop: async () => { calls.push('start'); return { ok: true, external: true }; },
+      },
+    });
+    for (const raw of ['{"workspace":"keep-workspace",invalid', 'null', '[]', '42']) {
+      fs.writeFileSync(configFile, raw);
+      const result = await ipc.invoke('shell:disable-suspects-and-start', launcherEvent(), ['user-pack']);
+      assert.equal(result.ok, false);
+      assert.equal(result.error, 'config-unreadable');
+      assert.equal(fs.readFileSync(configFile, 'utf8'), raw, 'preserve the original bytes');
+      assert.equal(fs.existsSync(`${configFile}.tmp`), false);
+      assert.equal(importGuard.isMaintenanceHeld(), false);
+    }
+    fs.rmSync(configFile);
+    fs.mkdirSync(configFile);
+    const unreadable = await ipc.invoke('shell:disable-suspects-and-start', launcherEvent(), ['user-pack']);
+    assert.equal(unreadable.error, 'config-unreadable');
+    assert.equal(fs.statSync(configFile).isDirectory(), true);
+    assert.equal(ipc.disabledBundleCalls.length, 0, 'do not change the profile before the strict read');
+    assert.equal(ipc.saveConfigCalls.length, 0);
+    assert.deepEqual(calls, [], 'do not stop or spawn the runtime');
+    assert.equal(importGuard.isMaintenanceHeld(), false);
+  } finally {
+    if (ipc) ipc.restore();
+    if (previousFlavor === undefined) delete process.env.DSHD_LAUNCHER_PACKAGE;
+    else process.env.DSHD_LAUNCHER_PACKAGE = previousFlavor;
+    delete require.cache[productPath];
+    if (previousProduct) require.cache[productPath] = previousProduct;
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
 

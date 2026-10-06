@@ -52,6 +52,18 @@ function loadPreload(argv = ['electron'], electronExtras = {}) {
 
 const { buildShellApi, shellRole, remoteFeatureEnabled } = loadPreload().exports;
 
+test('targeted plugin recovery forwards names only from the launcher surface', async () => {
+  const calls = [];
+  const renderer = { ...fakeRenderer(), invoke: async (...args) => { calls.push(args); return { ok: true }; } };
+  const launcher = buildShellApi('launcher', renderer);
+  assert.equal(typeof launcher.disableSuspectsAndStart, 'function');
+  await launcher.disableSuspectsAndStart(['dsh-tavern']);
+  assert.deepEqual(calls, [['shell:disable-suspects-and-start', ['dsh-tavern']]]);
+  for (const role of ['boot', 'harness', 'pet', 'pet-live2d']) {
+    assert.equal(buildShellApi(role, renderer)?.disableSuspectsAndStart, undefined);
+  }
+});
+
 test('shellRole accepts only explicit desktop roles', () => {
   assert.equal(shellRole(['electron', '--dshd-shell-role=boot']), 'boot');
   assert.equal(shellRole(['electron', '--dshd-shell-role=harness']), 'harness');

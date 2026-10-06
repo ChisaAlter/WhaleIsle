@@ -23,6 +23,8 @@ const EVIDENCE_PATTERNS = [
   { kind: 'module', regex: /err_module_not_found[^\n'"]*['"]([^'"]+)['"]/gi },
   { kind: 'compose', regex: /failed to compose[^\n]*['"](@?[\w./-]+)['"]/gi },
 ];
+const WEB_BOOT_AUDIT_HEADER = /\bweb boot:\s+([1-9]\d*) entr(?:y|ies) did not activate\b/i;
+const WEB_BOOT_AUDIT_ENTRY = /^\s*(?:\[(?:app|error|dsh)\]\s*)?(@?[\w.-]+(?:\/[\w.-]+)*): (?:import failed(?::[^\r\n]*| \(see console for the import error\))|pending \(waiting for services?:[^\r\n]*\)|failed|disposed|loading|unloading)\s*$/i;
 
 // Preset plugins stay here to block `shell:remove-plugin` on a same-named
 // profile row (the built-in itself never appears in the profile list — it
@@ -82,24 +84,8 @@ function classifyGenericFailure(text) {
   return '';
 }
 
-function collectMatches(regex, text) {
-  const names = [];
-  const blob = String(text || '');
-  regex.lastIndex = 0;
-  let match = regex.exec(blob);
-  while (match) {
-    if (match[1]) names.push(match[1]);
-    match = regex.exec(blob);
-  }
-  return names;
-}
-
 function extractSuspectNames(text) {
-  const names = [];
-  for (const { regex } of EVIDENCE_PATTERNS) {
-    names.push(...collectMatches(regex, text));
-  }
-  return [...new Set(names)];
+  return [...new Set(extractEvidence(text).map((row) => row.name))];
 }
 
 function truncateLine(line) {
@@ -119,17 +105,33 @@ function extractEvidence(corpus) {
   const lines = blob.split('\n');
   const evidence = [];
   const seen = new Set();
+  const addEvidence = (name, rawLine) => {
+    const key = `${name}\0${rawLine}`;
+    if (name && !seen.has(key)) {
+      seen.add(key);
+      evidence.push({ name, line: truncateLine(rawLine) });
+    }
+  };
+  let webEntriesRemaining = 0;
   for (const rawLine of lines) {
+    const header = WEB_BOOT_AUDIT_HEADER.exec(rawLine);
+    if (header) {
+      webEntriesRemaining = Number(header[1]);
+    } else if (webEntriesRemaining > 0) {
+      // State labels are evidence only inside the boot audit, not ordinary logs.
+      const entry = WEB_BOOT_AUDIT_ENTRY.exec(rawLine);
+      if (entry) {
+        addEvidence(entry[1], rawLine);
+        webEntriesRemaining -= 1;
+      } else {
+        webEntriesRemaining = 0;
+      }
+    }
     for (const { regex } of EVIDENCE_PATTERNS) {
       regex.lastIndex = 0;
       let match = regex.exec(rawLine);
       while (match) {
-        const name = match[1];
-        const key = `${name}\0${rawLine}`;
-        if (name && !seen.has(key)) {
-          seen.add(key);
-          evidence.push({ name, line: truncateLine(rawLine) });
-        }
+        addEvidence(match[1], rawLine);
         match = regex.exec(rawLine);
       }
     }
@@ -167,13 +169,25 @@ function inspectPlugins({
   disabledPlugins,
 } = {}) {
   const logText = Array.isArray(logs) ? logs.join('\n') : String(logs || '');
-  const corpus = [logText, lastStartError].filter(Boolean).join('\n');
+  const corpus = [logText, lastStartError, recovery?.reason].filter(Boolean).join('\n');
   const genericCause = classifyGenericFailure(corpus);
-  const suspects = genericCause ? [] : extractSuspectNames(corpus);
+  const pluginNames = new Set((plugins || []).map((row) => row.name || row));
+  const seenEvidence = new Set();
+  const evidence = extractEvidence(corpus).map((row) => {
+    // Profile dependencies and disableable bundles use the package root.
+    const root = row.name.endsWith('/client') ? row.name.slice(0, -'/client'.length) : row.name;
+    const name = !pluginNames.has(row.name) && pluginNames.has(root) ? root : row.name;
+    return { ...row, name };
+  }).filter((row) => {
+    const key = `${row.name}\0${row.line}`;
+    if (seenEvidence.has(key)) return false;
+    seenEvidence.add(key);
+    return true;
+  });
+  const suspects = genericCause ? [] : [...new Set(evidence.map((row) => row.name))];
   const suspectSet = new Set(suspects);
   const disabled = new Set(Array.isArray(disabledPlugins) ? disabledPlugins : []);
   const bundleSet = new Set(Array.isArray(bundles) ? bundles : []);
-  const pluginNames = new Set((plugins || []).map((row) => row.name || row));
   const rows = (plugins || []).map((row) => {
     const name = row.name || row;
     return {
@@ -202,7 +216,6 @@ function inspectPlugins({
       // plugin that shadows an in-box name stays a normal disableable row.
       inBox: isInBoxPackageName(name),
     }));
-  const evidence = extractEvidence(corpus);
   const payload = {
     genericCause: genericCause || null,
     desktopRuntimeDamage: orphanSuspects.some((row) => row.inBox),

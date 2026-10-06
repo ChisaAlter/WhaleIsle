@@ -201,6 +201,7 @@ function launcherApi(renderer) {
     pluginForensics: invoke(renderer, 'shell:plugin-forensics'),
     disablePlugin: invoke(renderer, 'shell:disable-plugin'),
     disablePlugins: invoke(renderer, 'shell:disable-plugins'),
+    disableSuspectsAndStart: invoke(renderer, 'shell:disable-suspects-and-start'),
     enablePlugin: invoke(renderer, 'shell:enable-plugin'),
     removePlugin: invoke(renderer, 'shell:remove-plugin'),
     startDesktop: invoke(renderer, 'shell:start-desktop'),

@@ -10,10 +10,16 @@ app.setPath('userData', profile);
 let checkResolve;
 let checkCalls = 0;
 let pluginReject;
+let recoveryResolve;
+let recoveryCalls = 0;
+let recoveryNames;
+let statusReadFails = false;
+let desktopStatus = { version: '0.3.3', desktop: { state: 'ready' }, config: {}, routes: [], forensics: { plugins: [] } };
 const handlers = {
   'shell:get-config': () => ({ themeTokens: { scheme: 'light' } }),
   'shell:window-state': () => ({ maximized: false }),
-  'shell:launcher-status': () => ({ version: '0.3.3', desktop: { state: 'ready' }, config: {}, routes: [], forensics: { plugins: [] } }),
+  'shell:launcher-status': () => { if (statusReadFails) throw new Error('fixture status read failed'); return desktopStatus; },
+  'shell:disable-suspects-and-start': (_event, names) => { recoveryCalls++; recoveryNames = names; return new Promise(resolve => { recoveryResolve = resolve; }); },
   'shell:components-list': () => ({ components: [] }),
   'shell:list-releases': () => ({ status: 'ok', releases: [], installed: { version: '0.3.3' } }),
   'shell:plugin-forensics': () => new Promise((_resolve, reject) => { pluginReject = reject; }),
@@ -122,6 +128,51 @@ app.whenReady().then(async () => {
     await js("document.getElementById('app-confirm-ok').click(); document.querySelector('[data-tab=settings]').click(); document.getElementById('opt-auto').click()");
     await waitFor("!document.getElementById('app-confirm').hidden");
     result.settings = await read();
+    await js("document.getElementById('app-confirm-ok').click(); showTab('home')");
+    desktopStatus = { ...desktopStatus, desktop: { state: 'error' }, lastStart: { ok: false, at: 'failure-1' },
+      forensics: { pluginTreeFailure: true, plugins: [{ name: 'dsh-tavern', suspect: true }, { name: 'healthy-plugin' }] } };
+    win.show();
+    win.focus();
+    await js('refreshStatus()');
+    await waitFor("!document.getElementById('app-confirm').hidden");
+    result.recoveryPrompt = await read();
+    await capture('plugin-recovery-confirm');
+    await js("document.getElementById('app-confirm-cancel').click(); refreshStatus()");
+    await delay(100);
+    result.recoveryCancelled = { ...(await read()), calls: recoveryCalls, guidanceVisible: await js("!document.getElementById('home-plugin-guidance').hidden") };
+    await js("document.getElementById('btn-recover-plugins').click()");
+    await waitFor("!document.getElementById('app-confirm').hidden");
+    await js("document.getElementById('app-confirm-ok').click(); document.getElementById('btn-recover-plugins').click()");
+    await waitFor("document.getElementById('app-confirm').classList.contains('is-loading')");
+    result.recoveryPending = { ...(await read()), calls: recoveryCalls, names: recoveryNames,
+      controlsDisabled: await js("['btn-start', 'btn-stop', 'btn-retry-full', 'btn-disable-suspects', 'btn-recover-plugins'].every(id => document.getElementById(id).disabled)") };
+    desktopStatus = { ...desktopStatus, desktop: { state: 'ready' }, lastStart: { ok: true, at: 'recovered-1' },
+      forensics: { plugins: [{ name: 'dsh-tavern', disabled: true }, { name: 'healthy-plugin' }] } };
+    recoveryResolve({ ok: true, harnessRestarted: true });
+    await waitFor("document.getElementById('app-confirm-title').textContent === '已禁用并启动鲸屿'");
+    result.recoverySuccess = { ...(await read()), guidanceVisible: await js("!document.getElementById('home-plugin-guidance').hidden"), calls: recoveryCalls };
+    await capture('plugin-recovery-success');
+    await js("document.getElementById('app-confirm-ok').click()");
+    desktopStatus = { ...desktopStatus, desktop: { state: 'error' }, lastStart: { ok: false, at: 'failure-2' },
+      forensics: { pluginTreeFailure: true, plugins: [{ name: 'dsh-tavern', suspect: true }] } };
+    await js('refreshStatus()');
+    await waitFor("document.getElementById('app-confirm-title').textContent === '插件加载失败'");
+    await js("document.getElementById('app-confirm-ok').click()");
+    await waitFor("document.getElementById('app-confirm').classList.contains('is-loading')");
+    statusReadFails = true;
+    recoveryResolve({ ok: true, harnessRestarted: true, forensics: { recovery: { skipUserPlugins: true } } });
+    await waitFor("document.getElementById('app-confirm-title').textContent === '插件已禁用，仍需排查'");
+    result.recoveryStillSkipped = await read();
+    statusReadFails = false;
+    await js("document.getElementById('app-confirm-ok').click()");
+    await waitFor("document.getElementById('app-confirm-body').textContent.includes('暂时无法读取桌面状态')");
+    result.statusReadFailure = await read();
+    await js("document.getElementById('app-confirm-ok').click()");
+    desktopStatus = { ...desktopStatus, desktop: { state: 'error' }, lastStart: { ok: false, at: 'generic-1' },
+      forensics: { genericCause: 'port-in-use', pluginTreeFailure: true, plugins: [{ name: 'dsh-tavern', suspect: true }] } };
+    await js('refreshStatus()');
+    await delay(100);
+    result.nonPluginFailure = { ...(await read()), guidanceVisible: await js("!document.getElementById('home-plugin-guidance').hidden") };
     if (evidence) fs.writeFileSync(path.join(evidence, 'feedback.json'), JSON.stringify(result, null, 2));
     process.stdout.write('FEEDBACK_RESULT:' + JSON.stringify(result) + '\n');
     win.destroy();

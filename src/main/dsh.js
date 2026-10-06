@@ -628,6 +628,7 @@ class DshManager extends EventEmitter {
     this.child = null;
     this.state = 'idle';
     this.logs = [];
+    this.startLogIndex = null;
     this.error = '';
     this.failure = null;
     this.baseUrl = '';
@@ -700,9 +701,19 @@ class DshManager extends EventEmitter {
     const entry = `[${source}] ${text}`;
     this.logs.push(entry);
     if (this.logs.length > LOG_LIMIT) {
-      this.logs.splice(0, this.logs.length - LOG_LIMIT);
+      const removed = this.logs.length - LOG_LIMIT;
+      this.logs.splice(0, removed);
+      if (this.startLogIndex !== null) this.startLogIndex = Math.max(0, this.startLogIndex - removed);
     }
     this.emit('log', entry);
+  }
+
+  beginStartLog() {
+    this.startLogIndex = this.logs.length;
+  }
+
+  currentStartLogs() {
+    return this.startLogIndex === null ? [] : this.logs.slice(this.startLogIndex);
   }
 
   async isReachable(baseUrl, guard) {
@@ -890,6 +901,9 @@ class DshManager extends EventEmitter {
       // 与 stop 重叠：等 stop 收尾后再启动，避免互相踩踏
       await this._stopPromise;
     }
+    // The controller opens the boundary before preparation; direct starts
+    // open it here. Keep the full history for diagnostics, not attribution.
+    if (this.state !== 'starting') this.beginStartLog();
     const gen = ++this.generation;
     const isCurrent = () => gen === this.generation;
 

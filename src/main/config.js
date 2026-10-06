@@ -267,6 +267,9 @@ function normalizePluginRecovery(config) {
       reason: typeof value.reason === 'string' ? value.reason.slice(0, 500) : '',
       at: typeof value.at === 'string' ? value.at.slice(0, 80) : '',
       appVersion: typeof value.appVersion === 'string' ? value.appVersion.slice(0, 80) : '',
+      logTail: Array.isArray(value.logTail)
+        ? value.logTail.filter((line) => typeof line === 'string').slice(-80).map((line) => line.slice(0, 240))
+        : [],
     },
   };
 }

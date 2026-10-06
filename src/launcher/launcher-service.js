@@ -15,6 +15,7 @@ const runtimeInstall = require('./runtime-install');
 const forensicsLog = require('./forensics-log');
 const { isLauncherPackage, runtimeTarget, desktopStateDir, desktopUserDataDir } = require('./product');
 const importGuard = require('../main/import-guard');
+const { startupRecoveryGuidance } = require('../shared/launcher-recovery');
 
 // In the slim package this process's config.json is the LAUNCHER's own file —
 // desktop-owned keys (disabledPlugins, pluginRecovery) live in the runtime's
@@ -24,26 +25,35 @@ function desktopConfigFile() {
   return path.join(desktopUserDataDir(app), 'config.json');
 }
 
-function loadPluginConfig() {
+function loadPluginConfig(strict = false) {
   if (!isLauncherPackage()) {
     return loadConfig();
   }
   try {
     const fs = require('fs');
-    return JSON.parse(fs.readFileSync(desktopConfigFile(), 'utf8')) || {};
-  } catch {
+    const config = JSON.parse(fs.readFileSync(desktopConfigFile(), 'utf8'));
+    if (strict && (typeof config !== 'object' || config === null || Array.isArray(config))) {
+      throw new Error('config-unreadable');
+    }
+    return config || {};
+  } catch (error) {
+    if (strict && error.code !== 'ENOENT') {
+      const failure = new Error('config-unreadable');
+      failure.code = 'CONFIG_UNREADABLE';
+      throw failure;
+    }
     return {};
   }
 }
 
-function savePluginConfig(patch) {
+function savePluginConfig(patch, strict = false) {
   if (!isLauncherPackage()) {
     return saveConfig(patch);
   }
   const fs = require('fs');
   const path = require('path');
   const file = desktopConfigFile();
-  const next = { ...loadPluginConfig(), ...patch };
+  const next = { ...loadPluginConfig(strict), ...patch };
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(next, null, 2), 'utf8');
@@ -83,20 +93,26 @@ function createLauncherService(deps) {
     const config = loadPluginConfig();
     const stateDir = desktopStateDir(app);
     const lastStart = readLastDesktopStart(stateDir);
-    // In slim mode dsh.logs is a stub: the captured external-runtime boot log
-    // plus the kernel log tail the runtime stamps into last-desktop-start.json
-    // are what carry plugin loader errors into suspect attribution there.
-    const bootTail = forensicsLog.readBootLogTail(forensicsLog.bootLogPath(stateDir));
-    const logs = (Array.isArray(dsh?.logs)
-      ? dsh.logs.map((row) => (typeof row === 'string' ? row : row.message || row.line || String(row)))
-      : []).concat(bootTail, lastStart.logTail || []);
-    const corpus = [logs.join('\n'), lastStart.error].filter(Boolean).join('\n');
     const recovery = harness?.pluginRecovery && typeof harness.pluginRecovery === 'object'
       ? harness.pluginRecovery
       : (config.pluginRecovery || {});
+    // Historical logs remain available for export, but must never authorize
+    // disabling a plugin. Sticky recovery retains the failed full attempt,
+    // not the subsequent skip boot or an earlier unrelated failure.
+    const currentLogs = typeof dsh?.currentStartLogs === 'function' ? dsh.currentStartLogs() : [];
+    const failedLogs = currentLogs.length ? currentLogs : (lastStart.logTail || []);
+    const logs = recovery.skipUserPlugins
+      ? (recovery.logTail || []).concat(lastStart.ok === false ? failedLogs : [])
+      : (lastStart.ok === false ? failedLogs : currentLogs);
+    if (isLauncherPackage() && lastStart.ok === null && !recovery.skipUserPlugins) {
+      logs.push(...forensicsLog.readBootLogTail(forensicsLog.bootLogPath(stateDir)));
+    }
+    const lastStartError = lastStart.ok === false ? lastStart.error : '';
+    const recoveryReason = typeof recovery.reason === 'string' ? recovery.reason : '';
+    const corpus = [logs.join('\n'), lastStartError, recoveryReason].filter(Boolean).join('\n');
     return inspectPlugins({
       logs,
-      lastStartError: lastStart.error,
+      lastStartError,
       pluginTreeFailure: isPluginTreeFailure(corpus),
       recovery,
       plugins: listed.plugins || [],
@@ -752,6 +768,54 @@ function createLauncherService(deps) {
       }
       const result = await disablePlugins(names, { dsh, startHarness, configIO: pluginConfigIO });
       return result.ok === true ? { ...result, forensics: collectForensics() } : result;
+    },
+
+    async disableSuspectsAndStart(names) {
+      const blocked = blockedStartError();
+      if (blocked) {
+        return blocked;
+      }
+      if (importGuard.isMaintenanceHeld()) {
+        return { ok: false, error: 'operation-in-progress' };
+      }
+      const forensics = collectForensics();
+      const guidance = startupRecoveryGuidance({
+        forensics,
+        desktop: desktopSnapshot(),
+        lastStart: readLastDesktopStart(desktopStateDir(app)),
+        recovery: forensics.recovery,
+      });
+      const suspects = guidance?.kind === 'disable' ? guidance.names : [];
+      const requested = Array.isArray(names) && names.every((name) => typeof name === 'string' && name.trim())
+        ? [...new Set(names.map((name) => name.trim()))]
+        : [];
+      if (!requested.length || requested.length !== suspects.length
+        || requested.some((name) => !suspects.includes(name))) {
+        return { ok: false, error: 'suspects-changed', forensics };
+      }
+      try {
+        const result = await disablePlugins(requested, {
+          dsh,
+          configIO: isLauncherPackage() ? {
+            load: () => loadPluginConfig(true),
+            save: (patch) => savePluginConfig(patch, true),
+          } : pluginConfigIO,
+          startWhenIdle: true,
+          startHarness: async (ownerToken) => {
+            if (isLauncherPackage()) {
+              return retryFullPluginsSlim();
+            }
+            harness.clearPluginRecovery();
+            return startDesktop({ forceRestart: true, recoveryLaunch: true, maintenanceToken: ownerToken });
+          },
+        });
+        return result.ok === true ? { ...result, forensics: collectForensics() } : result;
+      } catch (error) {
+        if (error.code === 'CONFIG_UNREADABLE') {
+          return { ok: false, error: 'config-unreadable' };
+        }
+        throw error;
+      }
     },
 
     async disablePlugin(name) {

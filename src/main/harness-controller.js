@@ -1,6 +1,6 @@
 const EventEmitter = require('events');
 const { isPluginTreeFailure } = require('./plugin-tree-failure');
-const { stickySkipActive } = require('./launcher-gate');
+const { stickySkipActive, kernelLogTail } = require('./launcher-gate');
 const importGuard = require('./import-guard');
 
 const DEFAULT_STABLE_MS = 60_000;
@@ -258,7 +258,7 @@ class HarnessController extends EventEmitter {
       errorMessage(error),
       snapshot?.error,
       snapshot?.failure?.message,
-      ...(Array.isArray(snapshot?.logs) ? snapshot.logs : []),
+      ...kernelLogTail(this.dsh),
     ].some((value) => isPluginTreeFailure(value));
   }
 
@@ -268,6 +268,7 @@ class HarnessController extends EventEmitter {
       reason: errorMessage(error),
       at: new Date(this.now()).toISOString(),
       appVersion: this.appVersion,
+      logTail: kernelLogTail(this.dsh).concat(errorMessage(error).split(/\r?\n/)).slice(-80),
     };
     this.saveConfig({ pluginRecovery: this.pluginRecovery });
     return this.sendState();
@@ -511,12 +512,13 @@ class HarnessController extends EventEmitter {
       assertCurrent();
     };
     checkCurrent();
+    this.dsh.beginStartLog?.();
+    this.dsh.setState('starting', { error: '', failure: null });
     const win = this.createMainWindow();
     if (showBoot) {
       await this.ensureBootVisible(checkCurrent);
     }
     checkCurrent();
-    this.dsh.setState('starting', { error: '', failure: null });
     // One config read for the whole start. Port, disabled list, and every
     // built-in toggle read the *same* snapshot, so a Settings save landing
     // mid-start cannot produce a start that mixes two config versions. If a

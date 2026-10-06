@@ -356,6 +356,67 @@ describe('loadProfile', () => {
       .toEqual([...PROFILE_TEMPLATES.web?.bundles ?? []])
   })
 
+  it('loads only shipped bundles during recovery without changing selected bundles or user patches', () => {
+    const anchor = stageInstallation({
+      '@deepseek-ai/dsh-base': { patch: '[]\n' },
+      '@deepseek-ai/dsh-web-app': { patch: '[]\n' },
+      'user-client': { patch: '- insert:\n    - id: user-client\n      name: user-client\n' },
+    })
+    const home = tmp()
+    const dir = resolveProfileDir('web', home)
+    initProfile(dir, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'user-client'])
+    writeFileSync(join(dir, PROFILE_PATCH_FILENAME), '- insert:\n    - id: user-row\n      name: user-row\n')
+    const manifestBefore = readFileSync(join(dir, 'package.json'), 'utf8')
+    const patchBefore = readFileSync(join(dir, PROFILE_PATCH_FILENAME), 'utf8')
+
+    const recovered = loadProfile('t', 'web', anchor, home, { userLayer: false, bundles: 'template' })
+    expect(recovered.layers.map(layer => layer.packageName)).toEqual(PROFILE_TEMPLATES.web?.bundles)
+    expect(recovered.patches).toEqual([])
+    expect(recovered.skippedBundles).toEqual([])
+    expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(manifestBefore)
+    expect(readFileSync(join(dir, PROFILE_PATCH_FILENAME), 'utf8')).toBe(patchBefore)
+
+    const normal = loadProfile('t', 'web', anchor, home)
+    expect(normal.layers.map(layer => layer.packageName)).toEqual([
+      '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'user-client',
+    ])
+    expect(normal.patches).toHaveLength(1)
+  })
+
+  it('template recovery neither normalizes a retired shipped tuple nor removes retired selections', () => {
+    const anchor = stageInstallation({
+      '@deepseek-ai/dsh-base': { patch: '[]\n' },
+      '@deepseek-ai/dsh-headless': { patch: '[]\n' },
+      '@deepseek-ai/dsh-web-app': { patch: '[]\n' },
+    })
+    const home = tmp()
+    const dir = resolveProfileDir('headless', home)
+    initProfile(dir, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless'])
+    const manifestBefore = readFileSync(join(dir, 'package.json'), 'utf8')
+    expect(loadProfile('t', 'headless', anchor, home, { bundles: 'template' }).layers.map(layer => layer.packageName))
+      .toEqual(PROFILE_TEMPLATES.headless?.bundles)
+    expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(manifestBefore)
+
+    const retiredDir = resolveProfileDir('web', tmp())
+    initProfile(retiredDir, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-experimental-schedule-bundle'])
+    const retiredBefore = readFileSync(join(retiredDir, 'package.json'), 'utf8')
+    expect(loadProfileDirectory('t', retiredDir, anchor, { bundles: 'template' }).layers.map(layer => layer.packageName))
+      .toEqual(PROFILE_TEMPLATES.web?.bundles)
+    expect(readFileSync(join(retiredDir, 'package.json'), 'utf8')).toBe(retiredBefore)
+  })
+
+  it('rejects recovery from a custom profile without a shipped template', () => {
+    const anchor = stageInstallation({ 'user-client': { patch: '[]\n' } })
+    const home = tmp()
+    const dir = resolveProfileDir('custom', home)
+    initProfile(dir, ['user-client'])
+    const manifestBefore = readFileSync(join(dir, 'package.json'), 'utf8')
+    expect(() => loadProfile('t', 'custom', anchor, home, { bundles: 'template' }))
+      .toThrow('profile "custom" has no shipped template; cannot skip user plugins')
+    expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(manifestBefore)
+    expect(loadProfile('t', 'custom', anchor, home).layers.map(layer => layer.packageName)).toEqual(['user-client'])
+  })
+
   it('normalizes only the exact installation-owned headless bundle tuple', () => {
     const anchor = stageInstallation({
       '@deepseek-ai/dsh-base': { patch: '[]\n' },
