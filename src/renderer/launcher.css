@@ -301,8 +301,14 @@ button.primary[aria-busy="true"]::after {
   align-items: center;
   justify-content: center;
   padding: 24px;
+  border-radius: 20px;
+  overflow: hidden;
   background: var(--dsw-alias-bg-mask-1);
   backdrop-filter: var(--dsw-mask-blur);
+}
+
+html[data-window-maximized] .modal-mask {
+  border-radius: 0;
 }
 
 .modal-mask[hidden] {
