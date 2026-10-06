@@ -321,6 +321,10 @@ if (role === 'harness' && isMainFrame) {
       recording: invoke(ipcRenderer, 'shell:shortcuts-recording'),
       subscribe: subscribe(ipcRenderer, 'shell:shortcuts-changed'),
     },
+    whaleBridge: {
+      status: invoke(ipcRenderer, 'shell:whalebridge-status'),
+      open: invoke(ipcRenderer, 'shell:whalebridge-open'),
+    },
     // Upstream DesktopUpdateBridge contract: status/notify only — open()
     // joins the shell-owned update flow (check → confirm → install), never
     // selects artifacts or skips confirmation.

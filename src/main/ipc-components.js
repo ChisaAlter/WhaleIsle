@@ -28,7 +28,7 @@ function _configureForTest(deps) {
   bridgeService = null;
 }
 
-function register({ handle, LAUNCHER_ONLY, send, onQuitCommit }) {
+function register({ handle, LAUNCHER_ONLY, IPC_ROLES, send, onQuitCommit }) {
   const svc = ensureService();
   const bridge = serviceDeps ? serviceDeps.whaleBridge : require('../launcher/whalebridge').whaleBridgeService();
   bridgeService = bridge || null;
@@ -77,13 +77,19 @@ function register({ handle, LAUNCHER_ONLY, send, onQuitCommit }) {
     return result;
   });
   handle('shell:components-uninstall-info', LAUNCHER_ONLY, (_event, id) => id === 'whalebridge' && bridge ? bridge.uninstallInfo() : {});
-  handle('shell:components-open', LAUNCHER_ONLY, async (event, id) => {
-    if (id !== 'whalebridge' || !bridge) return { ok: false, error: 'unknown-component' };
-    const result = await bridge.start(progress(event, id));
+  const openWhaleBridge = async (event) => {
+    if (!bridge) return { ok: false, error: 'unknown-component' };
+    const result = await bridge.start(progress(event, 'whalebridge'));
     if (!result.ok) return result;
     require('./whalebridge-window').openWhaleBridgeWindow(result.url);
     return { ok: true };
+  };
+  handle('shell:components-open', LAUNCHER_ONLY, (event, id) => {
+    if (id !== 'whalebridge') return { ok: false, error: 'unknown-component' };
+    return openWhaleBridge(event);
   });
+  handle('shell:whalebridge-status', [IPC_ROLES.HARNESS], () => ({ installed: Boolean(bridge && bridge.installed()) }));
+  handle('shell:whalebridge-open', [IPC_ROLES.HARNESS], openWhaleBridge);
 
   // Services supervised by this launcher die with it (feature card:
   // 退出 Launcher 时停止其监管的服务); closing the window alone keeps them.

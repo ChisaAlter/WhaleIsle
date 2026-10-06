@@ -48,6 +48,8 @@ Account profile and balance cards share the [settings card material and radius](
 
 The sidebar account menu uses the shared Menu surface and backdrop blur. The signed-in menu keeps the shared row typography; the signed-out menu carries its own wider rows. Both menus label the questionnaire entry Feedback. Its Settings row shows the effective key combination supplied by the shell. Closing Settings returns focus to the sidebar account launcher.
 
+When the desktop exposes the WhaleBridge commands, an installed component contributes a WhaleBridge account-menu action. Installation status is read at registration and on each explicit menu opening, without polling or a release-catalog query; a stopped installation still shows the action. Clicking it opens the component's existing native settings window, starting the installed service if necessary. The desktop owns the authenticated management URL and exposes only installation status and the open result; failures remain visible in the account UI.
+
 The account card’s More account information link has no underline and opens the root of the Host-provided Platform usage URL in the system browser, following `platformOrigin`.
 
 Sign out first queries running account-token tasks and opens a confirmation dialog. The warning describes interruption when such tasks exist; otherwise it explains that data is retained and the account can be signed in again. Cancel, close, and Escape dismiss without signing out. Failed impact queries still open confirmation with an explicit unknown-task warning; failed sign-out keeps the dialog available for retry.

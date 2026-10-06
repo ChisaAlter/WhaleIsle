@@ -50,6 +50,15 @@ function loadPreload(argv = ['electron'], electronExtras = {}) {
   }
 }
 
+function withMainFrame(t, value) {
+  const previous = Object.getOwnPropertyDescriptor(process, 'isMainFrame');
+  Object.defineProperty(process, 'isMainFrame', { configurable: true, value });
+  t.after(() => {
+    if (previous) Object.defineProperty(process, 'isMainFrame', previous);
+    else delete process.isMainFrame;
+  });
+}
+
 const { buildShellApi, shellRole, remoteFeatureEnabled } = loadPreload().exports;
 
 test('shellRole accepts only explicit desktop roles', () => {
@@ -295,6 +304,50 @@ test('harness preload exposes upstream dshDesktop.updates/browser and dshPlatfor
   assert.equal(typeof platform?.open, 'function');
   assert.equal(typeof platform?.setBounds, 'function');
   assert.equal(typeof platform?.close, 'function');
+});
+
+test('harness main-frame preload exposes only WhaleBridge status and open through narrow channels', async (t) => {
+  withMainFrame(t, true);
+  const calls = [];
+  const renderer = {
+    ...fakeRenderer(),
+    invoke: async (channel, ...args) => {
+      calls.push({ channel, args });
+      return channel === 'shell:whalebridge-status' ? { installed: true } : { ok: true };
+    },
+  };
+  const { exposures } = loadPreload(
+    ['electron', '--dshd-shell-role=harness'],
+    { ipcRenderer: renderer },
+  );
+  const bridge = exposures.dshDesktop?.whaleBridge;
+  assert.ok(bridge);
+  assert.deepEqual(Object.keys(bridge).sort(), ['open', 'status']);
+  assert.deepEqual(await bridge.status(), { installed: true });
+  assert.deepEqual(await bridge.open(), { ok: true });
+  assert.deepEqual(calls, [
+    { channel: 'shell:whalebridge-status', args: [] },
+    { channel: 'shell:whalebridge-open', args: [] },
+  ]);
+  for (const action of ['componentsList', 'componentsInstall', 'componentsStart', 'componentsStop',
+    'componentsUpdate', 'componentsRollback', 'componentsUninstall', 'componentsOpen']) {
+    assert.equal(exposures.shell[action], undefined, `${action} must remain launcher-only`);
+  }
+});
+
+test('non-harness roles do not expose the WhaleBridge bridge', (t) => {
+  withMainFrame(t, true);
+  for (const role of ['boot', 'launcher', 'pet', 'pet-live2d', 'admin']) {
+    const { exposures } = loadPreload(['electron', `--dshd-shell-role=${role}`]);
+    assert.equal(exposures.dshDesktop?.whaleBridge, undefined, `unexpected WhaleBridge bridge for ${role}`);
+  }
+});
+
+test('harness subframes do not expose the WhaleBridge bridge or shell privileges', (t) => {
+  withMainFrame(t, false);
+  const { exposures } = loadPreload(['electron', '--dshd-shell-role=harness']);
+  assert.equal(exposures.dshDesktop, undefined);
+  assert.equal(exposures.shell, undefined);
 });
 
 test('non-harness roles do not expose updates/browser/platform bridges', () => {

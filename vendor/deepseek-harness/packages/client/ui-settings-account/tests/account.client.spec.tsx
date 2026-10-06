@@ -12,6 +12,7 @@ import { AccountPlatformHost } from '../src/client/AccountPlatformHost.tsx'
 import { AccountSection, type AccountSectionInjected, type AccountSnapshot } from '../src/client/AccountSection.tsx'
 import type { BonusNotice } from '../src/client/bonus-notices.ts'
 import type { AccountMenuProps } from '../src/client/AccountMenu.tsx'
+import { WhaleBridgeMenuAction, type WhaleBridgeBridge } from '../src/client/WhaleBridgeMenuAction.tsx'
 import type {} from '../src/client/index.ts'
 import { en, zh, type AccountKey } from '../src/client/locales.ts'
 import css from '../src/client/AccountSection.module.css'
@@ -71,6 +72,85 @@ it('opens the contributed Remote action from the account menu and restores focus
   expect(call[2]).toEqual({ only: 'remote' })
   act(() => { (call[1] as { close: () => void }).close() })
   expect(document.activeElement).toBe(accountButton)
+})
+
+async function whaleBridgeMenu(openWhaleBridge: WhaleBridgeBridge['open']) {
+  const operations = operationsOf({ status: 'credential-stored', attempt: null })
+  const refreshLauncherActions = vi.fn(async () => {})
+  const recordSlot = vi.fn()
+  const t: AccountMenuProps['t'] = key => key in zh ? zh[key as AccountKey] : key
+  const renderSlot: AccountMenuProps['renderSlot'] = (key, owner, options) => {
+    recordSlot(key, owner, options)
+    return options?.only === 'whalebridge'
+      ? <WhaleBridgeMenuAction {...({} as GlobalStandardProps)} openWhaleBridge={openWhaleBridge} close={owner.close} t={t} />
+      : <div data-testid="remote-popup" />
+  }
+  const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
+  render(<AccountMenu {...({} as GlobalStandardProps)} {...operations}
+    refreshLauncherActions={refreshLauncherActions}
+    useAccount={selector => selector(operations.hooks.account.getSnapshot())}
+    useTheme={selector => selector(operations.hooks.theme.getSnapshot())}
+    useLauncherActions={selector => selector([{ id: 'remote', order: 50, label: '远程' }, { id: 'whalebridge', order: 60, label: zh.whaleBridge }])}
+    renderSlot={renderSlot} wide settingsOpen={false} openOnboarding={() => {}} openSettings={() => {}} t={t} />)
+  return { operations, recordSlot, refreshLauncherActions, trigger: screen.getByRole('button', { name: zh.menu }) }
+}
+
+it('opens 鲸桥 once per selection, restores focus on success, and preserves Remote and sign-out', async () => {
+  const pending = Promise.withResolvers<Awaited<ReturnType<WhaleBridgeBridge['open']>>>()
+  const open = vi.fn(() => pending.promise)
+  const { operations, recordSlot, refreshLauncherActions, trigger } = await whaleBridgeMenu(open)
+  fireEvent.click(trigger)
+  expect(refreshLauncherActions).toHaveBeenCalledOnce()
+  expect(screen.getAllByRole('menuitem').map(item => item.textContent))
+    .toEqual([zh.settings, '远程', zh.whaleBridge, zh.contactUs, zh.signOut])
+  fireEvent.click(trigger)
+  expect(refreshLauncherActions).toHaveBeenCalledOnce()
+  fireEvent.click(trigger)
+  expect(refreshLauncherActions).toHaveBeenCalledTimes(2)
+  await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: '鲸桥' })) })
+  expect(open).toHaveBeenCalledExactlyOnceWith()
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect(recordSlot.mock.calls.at(-1)![2]).toEqual({ only: 'whalebridge' })
+  await act(async () => { pending.resolve({ ok: true }); await pending.promise })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(document.activeElement).toBe(trigger)
+  expect(open).toHaveBeenCalledOnce()
+
+  fireEvent.click(trigger)
+  fireEvent.click(screen.getByRole('menuitem', { name: '远程' }))
+  expect(screen.getByTestId('remote-popup')).toBeTruthy()
+  const remote = recordSlot.mock.calls.at(-1)!
+  expect(remote[2]).toEqual({ only: 'remote' })
+  act(() => { (remote[1] as { close: () => void }).close() })
+  expect(document.activeElement).toBe(trigger)
+  fireEvent.click(trigger)
+  await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: zh.signOut })) })
+  expect(operations.signOut).not.toHaveBeenCalled()
+  await act(async () => { fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: zh.signOut })) })
+  expect(operations.signOut).toHaveBeenCalledOnce()
+  expect(open).toHaveBeenCalledOnce()
+  expect(refreshLauncherActions).toHaveBeenCalledTimes(4)
+})
+
+it.each([
+  { result: { ok: false, error: 'busy' }, text: zh.whaleBridgeBusy },
+  { result: { ok: false, error: 'stopped' }, text: zh.whaleBridgeOpenFailed },
+  { result: null, text: 'native settings unavailable' },
+])('shows native WhaleBridge opening failure as "$text" and returns focus after feedback', async ({ result, text }) => {
+  vi.useFakeTimers()
+  onTestFinished(() => { vi.useRealTimers() })
+  const open = vi.fn<WhaleBridgeBridge['open']>(() => result === null
+    ? Promise.reject(new Error(text)) : Promise.resolve(result))
+  const { trigger } = await whaleBridgeMenu(open)
+  fireEvent.click(trigger)
+  await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: '鲸桥' })) })
+  expect(open).toHaveBeenCalledExactlyOnceWith()
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect(screen.getByRole('alert').textContent).toBe(text)
+  await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(document.activeElement).toBe(trigger)
+  expect(open).toHaveBeenCalledOnce()
 })
 
 function mount(state: Omit<AccountView, 'links'>, copy: typeof en | typeof zh = en, details?: Partial<AccountDetails>, platform?: PlatformBridge) {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Desktop account operations and ordinary-browser isolation in the shipped client composition. */
-import { afterEach, beforeEach, expect, vi } from 'vitest'
+import { afterEach, beforeEach, expect, onTestFinished, vi } from 'vitest'
 import { ok } from '@deepseek-ai/dsh-remote-mock'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
@@ -21,6 +21,7 @@ import { AccountPlatformHost } from '../src/client/AccountPlatformHost.tsx'
 import type { AccountPlatformHostInjected } from '../src/client/AccountPlatformHost.tsx'
 import { AccountQuotaNotice } from '../src/client/AccountQuotaNotice.tsx'
 import type { AccountQuotaNoticeInjected } from '../src/client/AccountQuotaNotice.tsx'
+import { WhaleBridgeMenuAction, type WhaleBridgeMenuActionInjected } from '../src/client/WhaleBridgeMenuAction.tsx'
 
 const it = createClientTest({ roster: webApp })
 const SELF = '@deepseek-ai/dsh-client-ui-settings-account'
@@ -84,8 +85,66 @@ it('registers account and sign-in UI through the DSHD shell preload', async ({ s
   const c = await start()
   expect(c.ctx.slots.entries('settings.launcher')).toHaveLength(1)
   expect(c.ctx.slots.entries('settings.models.sign-in')).toHaveLength(1)
+  expect(c.ctx.slots.entries('settings.launcher.action').some(entry => entry.options.id === 'whalebridge')).toBe(false)
   expect(mock.log.streams().some(stream => stream.endpoint === 'account/watch')).toBe(true)
   expect(operations(c).hooks.account.getSnapshot().loginVisible).toBe(false)
+}, 60_000)
+
+it('exposes WhaleBridge settings only while installed, including when stopped, and re-reads without polling', async ({ start }) => {
+  const status = vi.fn(async () => ({ installed: true, running: false }))
+  const open = vi.fn(async () => ({ ok: true }))
+  vi.stubGlobal('dshDesktop', { whaleBridge: { status, open } })
+  vi.stubGlobal('__DSH_LOCALE__', { read: async () => ({ languages: ['zh-CN'], preference: null }), onChange: vi.fn() })
+  const c = await start()
+  await c.flush()
+  const actions = operations(c)
+  const entries = () => c.ctx.slots.entries('settings.launcher.action').filter(entry => entry.options.id === 'whalebridge')
+  expect(status).toHaveBeenCalledOnce()
+  expect(entries()).toHaveLength(1)
+  expect(entries()[0]!.component).toBe(WhaleBridgeMenuAction)
+  expect(actions.hooks.launcherActions.getSnapshot()).toContainEqual({ id: 'whalebridge', order: 60, label: '鲸桥' })
+  const injected = injectedOf(entries()[0]!) as WhaleBridgeMenuActionInjected
+  await injected.openWhaleBridge()
+  expect(open).toHaveBeenCalledExactlyOnceWith()
+
+  status.mockResolvedValue({ installed: false, running: false })
+  vi.useFakeTimers()
+  onTestFinished(() => { vi.useRealTimers() })
+  await vi.advanceTimersByTimeAsync(300_000)
+  expect(status).toHaveBeenCalledOnce()
+  expect(entries()).toHaveLength(1)
+  await actions.refreshLauncherActions!()
+  expect(status).toHaveBeenCalledTimes(2)
+  expect(entries()).toHaveLength(0)
+  expect(actions.hooks.launcherActions.getSnapshot().some(row => row.id === 'whalebridge')).toBe(false)
+
+  status.mockResolvedValue({ installed: true, running: true })
+  await actions.refreshLauncherActions!()
+  await actions.refreshLauncherActions!()
+  expect(entries()).toHaveLength(1)
+  expect(status).toHaveBeenCalledTimes(4)
+  await c.unload(SELF)
+  expect(entries()).toHaveLength(0)
+  await actions.refreshLauncherActions!()
+  expect(status).toHaveBeenCalledTimes(4)
+}, 60_000)
+
+it('does not install a WhaleBridge menu action after its pending status read outlives plugin unload', async ({ start }) => {
+  const pending = Promise.withResolvers<{ installed: boolean }>()
+  const status = vi.fn(() => pending.promise)
+  const open = vi.fn(async () => ({ ok: true }))
+  vi.stubGlobal('dshDesktop', { whaleBridge: { status, open } })
+  const c = await start()
+  const actions = operations(c)
+  expect(status).toHaveBeenCalledOnce()
+  expect(c.ctx.slots.entries('settings.launcher.action').some(entry => entry.options.id === 'whalebridge')).toBe(false)
+  await c.unload(SELF)
+  pending.resolve({ installed: true })
+  await c.flush()
+  expect(c.ctx.slots.entries('settings.launcher.action').some(entry => entry.options.id === 'whalebridge')).toBe(false)
+  await actions.refreshLauncherActions!()
+  expect(status).toHaveBeenCalledOnce()
+  expect(open).not.toHaveBeenCalled()
 }, 60_000)
 
 it('keeps Settings available without automatic onboarding when the desktop opts out', async ({ start, mock }) => {

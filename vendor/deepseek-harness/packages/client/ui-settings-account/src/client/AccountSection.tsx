@@ -67,6 +67,8 @@ export interface AccountSectionInjected {
    * @returns after both reads settle.
    */
   refreshAccount: () => Promise<void>
+  /** Re-read installed desktop actions on each explicit account-menu opening. */
+  refreshLauncherActions?: () => Promise<void>
   /** Open the external support questionnaire with the account, build and environment sampled by this click. */
   contactUs: () => void
   /** Open or dismiss the login dialog. */

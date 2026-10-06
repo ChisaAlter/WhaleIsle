@@ -12,6 +12,7 @@ const { createComponentsService } = require('./index');
 const store = require('./store');
 const lifecycle = require('./lifecycle');
 const ipcComponents = require('../../main/ipc-components');
+const { IPC_ROLES, assertIpcSender } = require('../../main/ipc-authorization');
 
 const SAMPLE_FIXTURES = path.resolve(__dirname, '..', '..', '..', 'tests', 'fixtures', 'components');
 
@@ -436,7 +437,7 @@ test('ipc-components mounts the frozen channel set with LAUNCHER_ONLY', async (t
   const sent = [];
   const ctx = {
     LAUNCHER_ONLY: ['launcher'],
-    IPC_ROLES: { LAUNCHER: 'launcher' },
+    IPC_ROLES,
     handle: (channel, roles, listener) => {
       channels.set(channel, { roles, listener });
     },
@@ -453,11 +454,20 @@ test('ipc-components mounts the frozen channel set with LAUNCHER_ONLY', async (t
     'shell:components-update',
     'shell:components-rollback',
     'shell:components-uninstall',
+    'shell:components-uninstall-info',
+    'shell:components-open',
   ];
   for (const name of expected) {
     assert.ok(channels.has(name), `missing channel ${name}`);
     assert.deepEqual(channels.get(name).roles, ['launcher']);
   }
+  for (const name of ['shell:whalebridge-status', 'shell:whalebridge-open']) {
+    assert.deepEqual(channels.get(name).roles, [IPC_ROLES.HARNESS]);
+  }
+  assert.deepEqual(channels.get('shell:whalebridge-status').listener({}), { installed: false });
+  assert.deepEqual(await channels.get('shell:whalebridge-open').listener({}), {
+    ok: false, error: 'unknown-component',
+  });
   const list = await channels.get('shell:components-list').listener({});
   assert.ok(Array.isArray(list.components));
   const install = await channels.get('shell:components-install').listener({}, 'toy');
@@ -466,6 +476,107 @@ test('ipc-components mounts the frozen channel set with LAUNCHER_ONLY', async (t
   const status = ipcComponents.contributeStatus();
   assert.ok(Array.isArray(status.components));
   assert.deepEqual(status.components, [{ id: 'toy', state: 'installed', version: '1.0.0' }]);
+});
+
+test('ipc-components WhaleBridge status is Harness-only, non-secret and independent of runtime or catalog', (t) => {
+  const env = fakeEnv(t);
+  let record = null;
+  let live = null;
+  const bridge = {
+    installed: () => record,
+    state: t.mock.fn(() => live),
+    row: t.mock.fn(() => ({ state: live ? 'running' : 'stopped', url: live?.url })),
+    refreshCatalog: t.mock.fn(),
+  };
+  ipcComponents._configureForTest({ ...env.deps, whaleBridge: bridge });
+  t.after(() => ipcComponents._configureForTest());
+  const contents = (url) => ({ mainFrame: { url }, isDestroyed: () => false });
+  const policy = {
+    surfaces: {
+      harness: contents('http://127.0.0.1:3080/chat'),
+      harnessOrigin: 'http://127.0.0.1:3080',
+      launcher: contents('file:///launcher.html'),
+      boot: contents('file:///boot.html'),
+    },
+    isLauncherUrl: (url) => url === 'file:///launcher.html',
+    isBootUrl: (url) => url === 'file:///boot.html',
+  };
+  const channels = new Map();
+  ipcComponents.register({
+    IPC_ROLES,
+    LAUNCHER_ONLY: [IPC_ROLES.LAUNCHER],
+    handle: (channel, roles, listener) => channels.set(channel, (event, ...args) => {
+      assertIpcSender(event, roles, policy);
+      return listener(event, ...args);
+    }),
+    send() {},
+    onQuitCommit() {},
+  });
+  const event = (sender) => ({ sender, senderFrame: sender.mainFrame });
+  const status = channels.get('shell:whalebridge-status');
+  const harnessEvent = event(policy.surfaces.harness);
+  assert.deepEqual(status(harnessEvent), { installed: false });
+  record = { version: '1.0.4' };
+  assert.deepEqual(status(harnessEvent), { installed: true }, 'stopped installation remains visible');
+  live = { pid: 5001, url: 'http://127.0.0.1:3427/?k=' + 'a'.repeat(32) };
+  assert.deepEqual(status(harnessEvent), { installed: true }, 'running installation exposes no management token');
+  record = null;
+  assert.deepEqual(status(harnessEvent), { installed: false }, 'uninstall is reflected by the next read');
+  for (const sender of [policy.surfaces.launcher, policy.surfaces.boot]) {
+    assert.throws(() => status(event(sender)), { code: 'ERR_DSH_IPC_SENDER' });
+  }
+  assert.throws(() => status({ sender: policy.surfaces.harness, senderFrame: { ...policy.surfaces.harness.mainFrame } }), {
+    code: 'ERR_DSH_IPC_SENDER',
+  });
+  for (const name of ['state', 'row', 'refreshCatalog']) {
+    assert.equal(bridge[name].mock.callCount(), 0, `${name} must not be queried just to display the menu`);
+  }
+});
+
+test('ipc-components WhaleBridge open reuses the settings-window path without returning its URL', async (t) => {
+  const env = fakeEnv(t);
+  const url = 'http://127.0.0.1:3427/?k=' + 'a'.repeat(32);
+  let outcome = { ok: true, url };
+  const bridge = {
+    start: t.mock.fn(async (progress) => {
+      progress({ phase: 'done', percent: 100 });
+      return outcome;
+    }),
+  };
+  const open = t.mock.method(require('../../main/whalebridge-window'), 'openWhaleBridgeWindow', () => {});
+  ipcComponents._configureForTest({ ...env.deps, whaleBridge: bridge });
+  t.after(() => ipcComponents._configureForTest());
+  const channels = new Map();
+  const sent = [];
+  ipcComponents.register({
+    IPC_ROLES,
+    LAUNCHER_ONLY: [IPC_ROLES.LAUNCHER],
+    handle: (channel, roles, listener) => channels.set(channel, { roles, listener }),
+    send: (event, channel, payload) => sent.push({ event, channel, payload }),
+    onQuitCommit() {},
+  });
+  const narrow = channels.get('shell:whalebridge-open');
+  const launcher = channels.get('shell:components-open');
+  assert.deepEqual(narrow.roles, [IPC_ROLES.HARNESS]);
+  assert.deepEqual(launcher.roles, [IPC_ROLES.LAUNCHER]);
+  const event = {};
+  assert.deepEqual(await narrow.listener(event), { ok: true });
+  assert.deepEqual(await launcher.listener(event, 'whalebridge'), { ok: true });
+  assert.equal(bridge.start.mock.callCount(), 2);
+  assert.deepEqual(open.mock.calls.map((call) => call.arguments), [[url], [url]]);
+  assert.ok(sent.every((row) => row.channel === 'shell:components-progress'
+    && row.payload.id === 'whalebridge' && !Object.hasOwn(row.payload, 'url')));
+
+  for (const failure of [
+    { ok: false, error: 'busy' },
+    { ok: false, error: 'whalebridge-failed', message: 'Please install WhaleBridge first' },
+  ]) {
+    outcome = failure;
+    assert.deepEqual(await narrow.listener(event), failure);
+  }
+  assert.equal(open.mock.callCount(), 2, 'failed starts must not open a settings window');
+  assert.deepEqual(await launcher.listener(event, 'other-component'), { ok: false, error: 'unknown-component' });
+  assert.equal(bridge.start.mock.callCount(), 4, 'unknown component must not start WhaleBridge');
 });
 
 // --- real end-to-end over the launcher-notes fixture ----------------------------

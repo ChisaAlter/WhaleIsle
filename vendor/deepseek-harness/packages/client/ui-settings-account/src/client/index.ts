@@ -19,6 +19,7 @@ import { authorizeUrlWithTheme } from './authorize-url.ts'
 import { AccountOnboarding } from './AccountOnboarding.tsx'
 import { AccountPlatformHost, type AccountPlatformHostInjected } from './AccountPlatformHost.tsx'
 import { AccountMenu } from './AccountMenu.tsx'
+import { WhaleBridgeMenuAction, type WhaleBridgeBridge } from './WhaleBridgeMenuAction.tsx'
 import { createPlatformPages, type PlatformPages } from './platform-pages.ts'
 import { AccountSection, type AccountSnapshot, type AccountSectionInjected, type AccountLauncherActionRow } from './AccountSection.tsx'
 import { createBonusNoticeController } from './bonus-notices.ts'
@@ -92,6 +93,7 @@ export function apply(ctx: Context): void {
   let actionsVersion = -1
   let actionsRevision = -1
   let launcherActions: readonly AccountLauncherActionRow[] = []
+  let refreshLauncherActions: (() => Promise<void>) | undefined
   const refresh = (): Promise<void> => {
     if (snapshot.view?.status !== 'credential-stored') return Promise.resolve()
     if (refreshing !== undefined) return refreshing
@@ -186,6 +188,7 @@ export function apply(ctx: Context): void {
     subscribeModelSignInRequired: listener => ctx.remote.$on('deepseek-account/model-sign-in-required', listener),
     ...nativePlatform === undefined ? {} : { openPlatformPage: platformPageOpener(refreshAccount) },
     refreshAccount,
+    refreshLauncherActions: async () => { await refreshLauncherActions?.() },
     contactUs() {
       // Sample the account, build and environment before awaiting native information, so
       // a profile the read outlasts cannot replace the UID this click reported.
@@ -337,6 +340,31 @@ export function apply(ctx: Context): void {
     name: 'settings.launcher', locale: 'settings.account', inject: () => operations,
     children: { 'settings.launcher.action': { kind: 'list', scope: 'root' } },
   }, AccountMenu))
+  const whaleBridge = (globalThis as typeof globalThis & { dshDesktop?: { whaleBridge?: WhaleBridgeBridge } }).dshDesktop?.whaleBridge
+  if (whaleBridge !== undefined) {
+    ctx.slots.inject('settings.launcher.action', () => {
+      let unregister: (() => void) | undefined
+      let disposed = false
+      let revision = 0
+      const injected = { openWhaleBridge: () => whaleBridge.open() }
+      refreshLauncherActions = async () => {
+        const current = ++revision
+        const status = await whaleBridge.status()
+        if (disposed || current !== revision) return
+        if (status.installed) {
+          unregister ??= ctx.slots.register({
+            name: 'settings.launcher.action', id: 'whalebridge', order: 60, label: () => t('whaleBridge'),
+            locale: 'settings.account', inject: () => injected,
+          }, WhaleBridgeMenuAction)
+        } else {
+          unregister?.()
+          unregister = undefined
+        }
+      }
+      void refreshLauncherActions().catch(error => { console.error('WhaleBridge installation status could not be read', error) })
+      return () => { disposed = true; refreshLauncherActions = undefined; unregister?.() }
+    })
+  }
   ctx.slots.inject('settings.section', () => {
     let unregister: (() => void) | undefined
     const update = () => {
