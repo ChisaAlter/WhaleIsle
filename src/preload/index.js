@@ -201,6 +201,7 @@ function launcherApi(renderer) {
     pluginForensics: invoke(renderer, 'shell:plugin-forensics'),
     disablePlugin: invoke(renderer, 'shell:disable-plugin'),
     disablePlugins: invoke(renderer, 'shell:disable-plugins'),
+    disableSuspectsAndStart: invoke(renderer, 'shell:disable-suspects-and-start'),
     enablePlugin: invoke(renderer, 'shell:enable-plugin'),
     removePlugin: invoke(renderer, 'shell:remove-plugin'),
     startDesktop: invoke(renderer, 'shell:start-desktop'),
@@ -320,6 +321,10 @@ if (role === 'harness' && isMainFrame) {
       edit: invoke(ipcRenderer, 'shell:shortcuts-edit'),
       recording: invoke(ipcRenderer, 'shell:shortcuts-recording'),
       subscribe: subscribe(ipcRenderer, 'shell:shortcuts-changed'),
+    },
+    whaleBridge: {
+      status: invoke(ipcRenderer, 'shell:whalebridge-status'),
+      open: invoke(ipcRenderer, 'shell:whalebridge-open'),
     },
     // Upstream DesktopUpdateBridge contract: status/notify only — open()
     // joins the shell-owned update flow (check → confirm → install), never

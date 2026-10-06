@@ -349,6 +349,26 @@ test('saveConfig persists normalized recovery settings', () => {
   assert.equal(loaded.harnessRestartBaseDelayMs, 2000);
 });
 
+test('current-start evidence persists a bounded original plugin recovery tail', () => {
+  const before = loadConfig();
+  const report = 'web boot: 1 entry did not activate\nuser-pack: import failed (see console for the import error)';
+  const lines = Array.from({ length: 85 }, (_, index) => `line-${index}:${'x'.repeat(300)}`);
+  const logTail = [null, ...lines, 42, ...report.split('\n')];
+  const expected = logTail.filter((line) => typeof line === 'string').slice(-80).map((line) => line.slice(0, 240));
+  try {
+    saveConfig({ pluginRecovery: { skipUserPlugins: true, reason: report, at: 'failure-at', appVersion: '1.2.3', logTail } });
+    const recovery = loadConfig().pluginRecovery;
+    assert.equal(recovery.reason, report);
+    assert.equal(recovery.logTail.length, 80);
+    assert.deepEqual(recovery.logTail, expected);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(userData, 'config.json'), 'utf8')).pluginRecovery.logTail, expected);
+    saveConfig({ pluginRecovery: { skipUserPlugins: false } });
+    assert.deepEqual(loadConfig().pluginRecovery.logTail, []);
+  } finally {
+    saveConfig({ pluginRecovery: before.pluginRecovery });
+  }
+});
+
 test('saveConfig rejects out-of-range recovery values before writing', () => {
   saveConfig({
     harnessRestartMaxAttempts: 11,

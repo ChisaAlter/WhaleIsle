@@ -34,3 +34,15 @@ test('isPluginTreeFailure matches Node ESM plugin-resolution failures', () => {
   // Bare "cannot find module" without an importer is app code, not the Loader.
   assert.equal(isPluginTreeFailure("Cannot find module './missing.json'"), false);
 });
+
+test('isPluginTreeFailure recognizes the screenshot web boot audit in singular and plural form', () => {
+  assert.equal(isPluginTreeFailure([
+    'Web UI failed to load: web boot: 1 entry did not activate',
+    'dsh-tavern: import failed (see console for the import error)',
+    'dsh-tavern',
+  ].join('\n')), true);
+  assert.equal(isPluginTreeFailure('web boot: 2 entries did not activate\none: failed\ntwo: disposed'), true);
+  assert.equal(isPluginTreeFailure('dsh-tavern: import failed (see console for the import error)'), false);
+  assert.equal(isPluginTreeFailure('plugin-status: failed'), false);
+  assert.equal(isPluginTreeFailure('listen EACCES: permission denied 127.0.0.1:3080'), false);
+});

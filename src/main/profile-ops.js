@@ -164,8 +164,8 @@ async function alignHarnessAfterProfileChange(startHarness, downError, ownerToke
     // The restart may resolve a refusal rather than reject — e.g. the task
     // protection funnel cancelled, or a foreign maintenance owner blocked it.
     // A resolved non-proceed is not a successful restart.
-    if (outcome && outcome.proceeded === false) {
-      return { harnessRestarted: false, error: outcome.code || downError };
+    if (outcome && (outcome.proceeded === false || outcome.ok === false)) {
+      return { harnessRestarted: false, error: outcome.error || outcome.code || downError };
     }
     return { harnessRestarted: true };
   } catch {
@@ -175,10 +175,11 @@ async function alignHarnessAfterProfileChange(startHarness, downError, ownerToke
 
 /**
  * Disable user plugins: union into disabledPlugins, rewrite the profile
- * bundle list, then realign Harness when a kernel is live. Mirrors the
+ * bundle list, then realign Harness when a kernel is live or a start is
+ * explicitly requested. Mirrors the
  * launcher's shell:disable-plugins / shell:disable-plugin handlers.
  */
-async function disablePlugins(names, { dsh, startHarness, configIO } = {}) {
+async function disablePlugins(names, { dsh, startHarness, configIO, startWhenIdle = false } = {}) {
   const token = acquireMaintenance('plugin-disable');
   if (!token) {
     return { ok: false, error: acquireRefusalReason() || 'maintenance-in-progress', owner: importGuard.maintenanceOwner()?.kind };
@@ -209,7 +210,7 @@ async function disablePlugins(names, { dsh, startHarness, configIO } = {}) {
   const disabled = [...new Set([...(config.disabledPlugins || []), ...list])];
   applyDisabledBundles(disabled);
   io.save({ disabledPlugins: disabled });
-  if (!kernelNeedsAlign(dsh)) {
+  if (!startWhenIdle && !kernelNeedsAlign(dsh)) {
     releaseMaintenance(token);
     return { ok: true, harnessRestarted: false };
   }

@@ -133,8 +133,10 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx', includes: ['selectNoDirectory', 'noDirectorySession'] },
   { file: 'packages/client/ui-conversation/src/client/apply.ts', includes: ['selectNoDirectory', 'openNoDirectory'] },
   { file: 'packages/client/ui-conversation/src/client/locales.ts', includes: ['hero.noDirectory'] },
-  // Desktop launcher recovery flag on the upstream CLI args parser.
-  { file: 'apps/cli/src/args.ts', includes: ['skip-user-plugins'] },
+  // Desktop launcher recovery flag reaches normal profile boot, not only dumps.
+  { file: 'apps/cli/src/args.ts', includes: ['skip-user-plugins', 'patches, skipUserPlugins, args'] },
+  { file: 'packages/boot/app-boot/src/profile.ts', includes: ["options.bundles === 'template'", 'template?.bundles ?? dropRetiredBundles'] },
+  { file: 'packages/boot/app-boot/src/profile-context.ts', includes: ["bundles: context.skipUserPlugins === true ? 'template' : 'manifest'"] },
   { file: 'apps/cli/src/dump-config.ts', includes: ['skipUserPlugins'] },
   { file: 'tsconfig.host.json', includes: ['packages/host/mcp-servers', 'packages/host/skill-inventory', 'packages/llm/llm-vision-fallback', 'packages/mcp/mcp-servers-file'] },
   { file: 'packages/api/workspace-controller/tsconfig.host.json', includes: ['../../util/home-paths'] },

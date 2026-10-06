@@ -146,6 +146,29 @@ function settle(promise) {
   );
 }
 
+test('current-start evidence keeps history separate before an attempt and after ring rotation', () => {
+  const manager = new DshManager();
+  for (let index = 0; index < 410; index += 1) manager.log(`history-${index}`);
+  assert.deepEqual(manager.currentStartLogs(), [], 'initialization logs are not an attempted boot');
+  assert.equal(manager.logs.length, 400);
+  manager.beginStartLog();
+  manager.log('current failure');
+  assert.deepEqual(manager.currentStartLogs(), ['[app] current failure']);
+  assert.ok(manager.logs.includes('[app] history-409'), 'history stays available for export');
+
+  const lines = ['[app] current failure'];
+  for (let index = 0; index < 410; index += 1) {
+    manager.log(`attempt-${index}`);
+    lines.push(`[app] attempt-${index}`);
+  }
+  assert.deepEqual(manager.currentStartLogs(), lines.slice(-400));
+  assert.equal(manager.logs.length, 400);
+  manager.beginStartLog();
+  manager.log('second attempt');
+  assert.deepEqual(manager.currentStartLogs(), ['[app] second attempt']);
+  assert.ok(manager.logs.includes('[app] attempt-409'));
+});
+
 test('正常启动：reachable 后进入 ready、清 failure、写 PID、返回 URL', async (t) => {
   const h = makeHarness();
   t.after(h.cleanup);

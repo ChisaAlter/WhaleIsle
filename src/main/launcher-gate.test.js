@@ -12,6 +12,7 @@ const {
   shouldCloseLauncherAfterDesktopStart,
   readLastDesktopStart,
   writeLastDesktopStart,
+  kernelLogTail,
   recordLastDesktopStart,
   stickySkipActive,
   runColdStartGate,
@@ -22,6 +23,15 @@ const {
   createParkedUpdateDrainer,
   presentUpdateAsk,
 } = require('./launcher-gate');
+
+test('current-start evidence exports only the active attempt with the requested tail bound', () => {
+  const historical = ['old-user-pack failed', 'listen EADDRINUSE'];
+  const current = ['preparation started', { message: 'current-user-pack failed' }, { line: 'current failure ended' }];
+  const dsh = { logs: historical.concat(current), currentStartLogs: () => current };
+  assert.deepEqual(kernelLogTail(dsh, 2), ['current-user-pack failed', 'current failure ended']);
+  assert.deepEqual(kernelLogTail({ logs: historical, currentStartLogs: () => [] }), []);
+  assert.deepEqual(kernelLogTail({ logs: ['legacy last error'] }), ['legacy last error']);
+});
 
 test('shouldPromptUpdate asks only for a newer non-error check when the setting is on', () => {
   assert.equal(shouldPromptUpdate({ askOnUpdate: true, check: { status: 'available' } }), true);

@@ -64,6 +64,44 @@ function desktopRuntimeDamageVerdict(forensics) {
   return `检测到桌面内置组件损坏${names ? `：${names}` : ''}。禁用插件或跳过用户插件都无法修复；请重新安装桌面端安装包（源码运行则执行 npm run setup:harness）。`;
 }
 
+/** Only installed user plugins named by the failure can be disabled for recovery. */
+function disableableSuspectNames(forensics) {
+  if (forensics?.genericCause || forensics?.desktopRuntimeDamage) return [];
+  return [...new Set((forensics?.plugins || [])
+    .filter((row) => row.suspect && !row.disabled && !row.orphan && !row.inBox
+      && !row.preset && !row.officialTemplate)
+    .map((row) => row.name))];
+}
+
+/** A suggested action is not consent; the launcher asks before changing plugins. */
+function startupRecoveryGuidance(status) {
+  const forensics = status?.forensics;
+  if (!forensics || forensics.genericCause || forensics.desktopRuntimeDamage) return null;
+  const recovery = status.recovery || status.desktop?.pluginRecovery || forensics.recovery;
+  if (!recovery?.skipUserPlugins && status.lastStart?.ok !== false && status.desktop?.state !== 'error') return null;
+  if (!recovery?.skipUserPlugins && ['ready', 'running-external'].includes(status.desktop?.state)) return null;
+  const names = disableableSuspectNames(forensics);
+  if (names.length) {
+    return {
+      kind: 'disable',
+      names,
+      title: '插件加载失败',
+      body: `启动日志显示以下用户插件未能加载：${names.join('、')}。可能存在冲突或版本不兼容。\n\n建议禁用这些插件后启动鲸屿，其余插件保持启用。此操作不会卸载插件或删除会话、角色卡等数据；之后可在「插件排查」中重新启用。`,
+      confirmText: '禁用并启动鲸屿',
+    };
+  }
+  if (!recovery?.skipUserPlugins && forensics.pluginTreeFailure) {
+    return {
+      kind: 'skip',
+      names: [],
+      title: '用户插件加载失败',
+      body: '启动日志尚不能确定具体的冲突插件。可先跳过全部用户插件启动鲸屿，再在「插件排查」中逐项排查。\n\n不会卸载插件或删除用户数据；跳过期间，用户插件功能暂不可用。',
+      confirmText: '跳过用户插件并启动',
+    };
+  }
+  return null;
+}
+
 /**
  * @param {{ ok?: boolean|null, error?: string }|null|undefined} lastStart
  * @param {{ skipUserPlugins?: boolean, reason?: string }|null|undefined} recovery
@@ -85,7 +123,10 @@ function recoveryVerdict(lastStart, recovery, forensics) {
     return GENERIC_LABELS['port-excluded'];
   }
   if (recovery?.skipUserPlugins) {
-    return '当前在跳过用户插件模式下运行；完整加载请点「恢复完整插件并启动」。禁用单项不会自动加载全部用户插件。';
+    const names = disableableSuspectNames(forensics);
+    return names.length
+      ? `鲸屿已跳过用户插件启动。失败插件：${names.join('、')}。建议点击「禁用并启动鲸屿」，恢复其余用户插件。`
+      : '当前在跳过用户插件模式下运行；完整加载请点「恢复完整插件并启动」。禁用单项不会自动加载全部用户插件。';
   }
   if (forensics?.genericCause) {
     return GENERIC_LABELS[forensics.genericCause] || String(forensics.genericCause);
@@ -130,6 +171,8 @@ const launcherRecovery = {
   pluginErrorLabel,
   shouldShowRecovery,
   desktopRuntimeDamageVerdict,
+  disableableSuspectNames,
+  startupRecoveryGuidance,
   recoveryVerdict,
   sortPluginRows,
 };

@@ -23,6 +23,7 @@ function isPluginTreeFailure(text) {
   const blob = String(text || '').toLowerCase();
   if (!blob) return false;
   if (PLUGIN_TREE_MARKERS.some((marker) => blob.includes(marker))) return true;
+  if (/\bweb boot:\s+[1-9]\d* entr(?:y|ies) did not activate\b/.test(blob)) return true;
   if (blob.includes('err_module_not_found')) return true;
   if ((blob.includes('cannot find package') || blob.includes('cannot find module'))
     && blob.includes('imported from')) return true;
