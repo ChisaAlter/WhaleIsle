@@ -490,7 +490,7 @@ declare module '@deepseek-ai/dsh-workspace/types' {
 
 describe('RowActionToast', () => {
   /** The notice surface over a test-owned notice source; dismissal clears the notice the way apply does. */
-  function toastSurface(viewState: { showArchivedList?: boolean } = { showArchivedList: false }) {
+  function toastSurface(viewState: { showArchivedList?: boolean; archivedFilter?: 'default' | 'show' | 'only' } = { showArchivedList: false }) {
     const toast = createSnapshotStore<RowToastState | null>(null)
     const instance = createWorkspaceViewStore().create()
     // A v5 snapshot hydrates without the flag; mirror it by dropping the
@@ -498,6 +498,7 @@ describe('RowActionToast', () => {
     const state = { ...instance.store.getSnapshot() }
     if (viewState.showArchivedList === undefined) delete state.showArchivedList
     else state.showArchivedList = viewState.showArchivedList
+    if (viewState.archivedFilter !== undefined) state.archivedFilter = viewState.archivedFilter
     const view = createSnapshotStore(state)
     const dismissToast = vi.fn(() => { toast.set(null) })
     const undoArchive = vi.fn()
@@ -529,7 +530,7 @@ describe('RowActionToast', () => {
   it('the stopped-and-archived notice offers the same undo and filter actions under its own wording', () => {
     const { undoArchive, notify } = toastSurface()
     notify({ kind: 'stoppedAndArchived', sessionId: sid('one') })
-    expect(screen.getByRole('alert').textContent).toBe('已停止并归档，可撤销或显示已归档列表')
+    expect(screen.getByRole('alert').textContent).toBe('已停止并归档，可撤销或查看全部会话')
     fireEvent.click(screen.getByRole('button', { name: '撤销' }))
     expect(undoArchive).toHaveBeenCalledWith(sid('one'))
   })
@@ -537,7 +538,7 @@ describe('RowActionToast', () => {
   it('the archived notice takes itself down, then undoes the archive or shows the archived rows', () => {
     const { dismissToast, undoArchive, showArchived, notify } = toastSurface()
     notify({ kind: 'archived', sessionId: sid('one') })
-    expect(screen.getByRole('alert').textContent).toBe('会话已归档，可撤销或显示已归档列表')
+    expect(screen.getByRole('alert').textContent).toBe('会话已归档，可撤销或查看全部会话')
     fireEvent.click(screen.getByRole('button', { name: '撤销' }))
     expect(dismissToast).toHaveBeenCalledOnce()
     expect(undoArchive).toHaveBeenCalledWith(sid('one'))
@@ -546,7 +547,7 @@ describe('RowActionToast', () => {
     expect(screen.queryByRole('alert')).toBeNull()
 
     notify({ kind: 'archived', sessionId: sid('two') })
-    fireEvent.click(screen.getByRole('button', { name: '显示已归档列表' }))
+    fireEvent.click(screen.getByRole('button', { name: '查看全部会话' }))
     expect(dismissToast).toHaveBeenCalledTimes(2)
     expect(showArchived).toHaveBeenCalledOnce()
     expect(callOrder(dismissToast, 1)).toBeLessThan(callOrder(showArchived))
@@ -558,15 +559,22 @@ describe('RowActionToast', () => {
     const { notify } = toastSurface({})
     notify({ kind: 'archived', sessionId: sid('one') })
     expect(screen.getByRole('alert').textContent).toBe('会话已归档，可撤销')
-    expect(screen.queryByRole('button', { name: '显示已归档列表' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '查看全部会话' })).toBeNull()
   })
 
   it('omits the filter action while the archived list is already shown', () => {
     const { notify } = toastSurface({ showArchivedList: true })
     notify({ kind: 'archived', sessionId: sid('one') })
     expect(screen.getByRole('alert').textContent).toBe('会话已归档，可撤销')
-    expect(screen.queryByRole('button', { name: '显示已归档列表' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '查看全部会话' })).toBeNull()
     expect(screen.getByRole('button', { name: '撤销' })).toBeTruthy()
+  })
+
+  it.each(['show', 'only'] as const)('omits the filter action under %s even when the bottom archive section is hidden', (archivedFilter) => {
+    const { notify } = toastSurface({ showArchivedList: false, archivedFilter })
+    notify({ kind: 'archived', sessionId: sid('one') })
+    expect(screen.getByRole('alert').textContent).toBe('会话已归档，可撤销')
+    expect(screen.queryByRole('button', { name: '查看全部会话' })).toBeNull()
   })
 
   it.each([

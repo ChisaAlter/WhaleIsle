@@ -213,7 +213,7 @@ const FORK_FILE_MARKERS = [
   // client-registered apps/web tsc program so the phantom rootDir chain
   // (scaffold → dsh-session-snapshot → loader-smoke) cannot break build:lib.
   { file: 'apps/web/tsconfig.json', includes: ['composer-resize-dock.e2e.ts'] },
-  // Session log download lives in the desktop titlebar capsule, never in the conversation header.
+  // The conversation header uses More actions; the optional titlebar shortcut keeps the Session log capsule.
   { file: 'apps/web/tests/snapshots/agent-preset-selection/header.expected.md', excludes: ['button "Session log"'] },
   { file: 'package.json', includes: ['copy-ghostty-assets.mjs'] },
   // Composer typing effects (docs/features/composer-typing-fx.md): an

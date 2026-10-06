@@ -4,13 +4,19 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-message-feedback/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { SessionLogDownloadController } from './controller.ts'
 import type { SessionLogDownloadDialogInjected } from './Dialog.tsx'
-import { SessionLogDownloadHeaderAction } from './HeaderAction.tsx'
+import {
+  SessionLogDownloadHeaderAction, SessionLogDownloadTitlebarAction,
+  type SessionLogDownloadHeaderInjected,
+} from './HeaderAction.tsx'
 import type { SessionLogChromeRowInjected } from './SessionLogChromeRow.tsx'
 import { SessionLogChromeRow } from './SessionLogChromeRow.tsx'
 import { ChromeVisibility } from './chrome-visibility.ts'
@@ -40,8 +46,8 @@ export type { SessionLogDownloadEntry, SessionLogDownloadState } from './control
 export const inject = ['slots', 'locale', 'connection', 'remote', 'configForms']
 
 /**
- * Provide the download controller, mount the titlebar capsule, and contribute
- * the Interface Settings visibility row.
+ * Provide the download controller, mount the Session menu and optional titlebar
+ * shortcut with its shared modal, and contribute the Interface Settings visibility row.
  * @param ctx - browser context carrying slots, locale, and settings services.
  */
 export function apply(ctx: ClientContext): void {
@@ -49,6 +55,13 @@ export function apply(ctx: ClientContext): void {
   ctx.provide('sessionLogDownload', controller)
   ctx.effect(() => async () => { await controller.dispose() }, 'session-log-download: browser download lifecycle')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'session-log-download: browser dictionaries')
+  const feedbackAvailable = createSnapshotStore(false)
+  ctx.inject(['feedbackUi'], (scope: ClientContext) => {
+    scope.effect(() => {
+      feedbackAvailable.set(true)
+      return () => { feedbackAvailable.set(false) }
+    }, 'session-log-download: feedback availability')
+  })
   ctx.on('command/executed', (sessionId, commandName, result) => {
     if (commandName === 'export' && result.kind === 'success') void controller.download(sessionId)
   })
@@ -58,6 +71,19 @@ export function apply(ctx: ClientContext): void {
     TITLEBAR_ACTION_FIELD,
     DEFAULT_TITLEBAR_ACTION,
   )
+
+  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
+    name: 'conversation.session.header.utilities',
+    id: 'session-log-download',
+    order: 10,
+    locale: NS,
+    inject: (): SessionLogDownloadHeaderInjected => ({
+      hooks: { sessionLogDownload: controller.store, feedbackAvailable },
+      request: (sessionId: SessionId) => controller.download(sessionId),
+      // Feedback can unload while the menu is open.
+      openFeedback: (sessionId: SessionId) => { ctx.get('feedbackUi')?.openSession(sessionId) },
+    }),
+  }, SessionLogDownloadHeaderAction))
 
   ctx.slots.inject('shell.titlebar.trailing', () => ctx.slots.register({
     name: 'shell.titlebar.trailing',
@@ -69,7 +95,7 @@ export function apply(ctx: ClientContext): void {
       request: (sessionId: SessionId) => controller.download(sessionId),
       dismiss: (sessionId: SessionId) => { controller.dismiss(sessionId) },
     }),
-  }, SessionLogDownloadHeaderAction))
+  }, SessionLogDownloadTitlebarAction))
 
   ctx.slots.inject('settings.interface.item', () => ctx.slots.register({
     name: 'settings.interface.item',

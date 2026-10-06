@@ -4,6 +4,7 @@
 | --- | --- |
 | **id** | `git-titlebar` |
 | **status** | `active` |
+| **last verified (session menu)** | 2026-10-06 — 会话头部恢复「…」中的下载日志与反馈；4 个定向测试文件 18/18 通过。Windows 源码桌面在标题栏快捷按钮默认关闭、窄窗隐藏 trailing 区的情况下完成 ZIP 下载，ZIP 内包含该示例会话日志；反馈只打开现有草稿表单，未提交。 |
 | **last verified (git fallback resolution)** | 2026-10-03 — PATH 剥离后 `gitStatusEntries` 经标准安装目录回退恢复（`C:\Program Files\Git\cmd\git.exe`），真无 Git 时返回带安装指引的错误文案；`git.test.js` 102/103（唯一失败为本机 symlink 权限环境项）。 |
 | **last verified (registry recovery)** | 2026-09-28 — b061501e5b4 的 Windows/macOS 桌面 CI 全绿；漏原生通知的确定性反例先红后绿，去重与停止回归通过。同 SHA 安装树冒烟首次通过；不替代完整生产验收。 |
 | **last verified** | 2026-09-20 — `resolveGitPath` 的包含判定由 `rel.startsWith('..')` 改为 `isPathInside(root, target)`：真实名字 `..notes` / `sub/..cache` 恢复可暂存（新用例 `gitStage stages real names that merely begin with two dots` 断言 `git diff --cached --name-only` 可见，且真穿越仍拒绝）；`git*.test.js` 与 workspace 组合套件、根 `npm test`（1849 项，1847 pass / 0 fail / 2 skipped）通过。此前 2026-08-31 — pin `0.1.2-alpha.2` 工作区自动登记改为 Typert HTTP unary `POST /api/workspace/create` + `{ args: { request: { path } } }`（旧点号 `/api/workspace.create` 404，标题栏「切换分支」一直 disabled）。本机 `smoke:source`：surfaces/branch/git 均打开。此前同日 — `gitPush` 成功或 skip 后补齐 `refs/remotes/<primary>/HEAD`（先 `set-head --auto`，否则刚推的分支），非 main 首发仓 `isDefaultRef` 为真，胶囊走 Commit & push。此前 2026-08-25 — 审查批次 3：首载登记竞态根因修复（主进程 watch `workspace.json` → 推 `shell:git-workspaces-changed` → 标题栏即刻重读状态；含武装间隙补发）；win32 `taskkill` 非零退出回退 `child.kill()`；登记兄弟仓 `gitBranchList` 全链路自动化（TC-WS-006/TC-GIT-001 关键断言的 rehearsal）；禁用行 hint Tooltip 与 `shell:git-branch-list` 抛错接线补测。实机 Electron（Linux/xvfb + CDP）验证：未登记兄弟仓 → 写入登记 → renderer 收到信号 → gitStatus/gitBranchList 即刻授权；`smoke:source` 通过。合并树 `ea659884`（consolidation #39 落地后）：desktop `npm test` 997/0/3 绿（git 链单测在内）+ `qa:source` titlebar/branchMenu/gitMenu/commit 步骤 PASS。实机 Windows 仍未覆盖（验证手册见 [合并收口计划 Phase 5](../superpowers/plans/2026-08-25-post-consolidation-closeout.md)） |；本次 alpha.4：source smoke 与 packaged P0 的 titlebar/Git 命中通过。
@@ -45,7 +46,8 @@
 - `gitPush`（含 skip）在 `refs/remotes/<primary>/HEAD` 缺失或悬空时补上：先 `git remote set-head <primary> --auto`，失败则指向刚推的分支。这样首发非 `main`/`master` 的仓 `isDefaultRef` 为真，Commit & push 而不是误走 Commit, push & PR。不把 push 失败画成 set-head 失败。
 - Git 可执行解析不止看 PATH：父进程（Explorer/终端）持旧 PATH 快照时，已安装的 Git 对子进程不可见。`runGit` 在 ENOENT 后探测 `%ProgramFiles%\Git\cmd\git.exe`、`%ProgramFiles(x86)%`、`%LOCALAPPDATA%\Programs\Git\cmd\git.exe` 命中即缓存复用；两处均缺时错误文案携带安装指引（`winget install Git.Git` / git-scm 链接），不再是死胡同。探测缓存提供 `resetGitExecutableProbe` 测试接缝，避免污染 spawn 计数断言。（2026-10-03，`git.test.js` 103/103 中本机 1 个 symlink fixture 环境失败与 CI 相同类）
 - 官方 `dsh web` 标题栏 Git 视觉；不另做皮肤。
-- Session 日志胶囊默认不进标题栏：`session-log-download.titlebarAction` 默认 `false`，加载中/远端记忆快照不得闪出；`settings.interface.item` 的「会话日志导出」开关是唯一 opt-in 路径，`/export` 命令不受影响。
+- 普通会话标题行的「更多操作」菜单始终提供「下载会话日志」；反馈插件可用时同时提供「反馈」，打开现有反馈表单，不自动提交。该菜单不受标题栏快捷按钮开关或窄窗口尾簇隐藏影响；managed composer 会话保持原有隐藏规则。
+- Session 日志胶囊默认不进标题栏：`session-log-download.titlebarAction` 默认 `false`，加载中/远端记忆快照不得闪出；`settings.interface.item` 的「会话日志导出」开关仅控制额外的标题栏下载快捷按钮。关闭后仍可使用会话「更多操作」菜单和 `/export`；两处下载入口共用同一个控制器与结果对话框。
 - 标题行在 `cozy`/`compact` 密度（或 520px 容器断点）收起 `conversation.session.header.actions` 时，utilities 前必须渲染箭头溢出座席：悬停/聚焦临时展示、点击 pin、Esc/外部 pointerdown/再点收起；密度回到 `full` 座席卸载且状态清零。弹出面板避开 actions 带的 `overflow:hidden`，用菜单表面 token。
 
 ## Allowed touch
