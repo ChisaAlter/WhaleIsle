@@ -1067,7 +1067,8 @@ test('launcher skip-user-plugins writes recovery and force-restarts desktop', as
   }
 });
 
-test('launcher start-desktop force-restarts when clearing sticky skip', async () => {
+test('launcher start-desktop delegates the full retry without clearing sticky skip', async () => {
+  const importGuard = require('./import-guard');
   let cleared = 0;
   const ipc = loadIpc({
     harness: {
@@ -1092,10 +1093,12 @@ test('launcher start-desktop force-restarts when clearing sticky skip', async ()
   try {
     const result = await ipc.invoke('shell:start-desktop', launcherEvent());
     assert.equal(result.ok, true);
-    assert.equal(cleared, 1);
+    assert.equal(cleared, 0, 'only the admitted protected restart may clear sticky');
     assert.equal(ipc.startDesktop(), 1);
     assert.equal(ipc.startDesktopArgs[0].forceRestart, true);
+    assert.equal(ipc.startDesktopArgs[0].fullPluginRetry, true);
     assert.equal(ipc.startDesktopArgs[0].maintenanceToken?.kind, 'start');
+    assert.equal(importGuard.isMaintenanceHeld(), false);
   } finally {
     ipc.restore();
   }
@@ -1120,12 +1123,14 @@ test('launcher start-desktop does not force-restart without sticky skip', async 
     // startOp delegates its acquired 'start' token down for owner-aware
     // nested-restart delegation.
     assert.equal(ipc.startDesktopArgs[0].maintenanceToken?.kind, 'start');
+    assert.equal(ipc.startDesktopArgs[0].fullPluginRetry, undefined);
   } finally {
     ipc.restore();
   }
 });
 
-test('launcher retry-full-plugins clears sticky and uses startDesktop recovery launch', async () => {
+test('launcher retry-full-plugins delegates sticky clearing to the protected recovery launch', async () => {
+  const importGuard = require('./import-guard');
   let cleared = 0;
   const ipc = loadIpc({
     harness: {
@@ -1137,15 +1142,17 @@ test('launcher retry-full-plugins clears sticky and uses startDesktop recovery l
   try {
     const result = await ipc.invoke('shell:retry-full-plugins', launcherEvent());
     assert.equal(result.ok, true);
-    assert.equal(cleared, 1);
+    assert.equal(cleared, 0, 'the launcher must not clear sticky before task protection');
     assert.equal(ipc.startDesktop(), 1);
     // The call delegates the acquired maintenance token down so the nested
     // forced restart is recognized as the same owner (owner-aware
     // delegation), not refused as a foreign caller.
     assert.equal(ipc.startDesktopArgs[0].recoveryLaunch, true);
     assert.equal(ipc.startDesktopArgs[0].forceRestart, true);
+    assert.equal(ipc.startDesktopArgs[0].fullPluginRetry, true);
     assert.equal(ipc.startDesktopArgs[0].maintenanceToken?.kind, 'retry');
     assert.equal(ipc.startHarness(), 0);
+    assert.equal(importGuard.isMaintenanceHeld(), false);
   } finally {
     ipc.restore();
   }
@@ -1362,8 +1369,11 @@ test('disable-suspects-and-start writes once and starts once from idle, error, o
       startDesktop: async (options) => {
         assert.equal(importGuard.holdsMaintenance(options.maintenanceToken), true);
         assert.equal(options.maintenanceToken.kind, 'plugin-disable');
-        assert.equal(harness.pluginRecovery.skipUserPlugins, false);
+        assert.equal(options.fullPluginRetry, true);
+        assert.equal(harness.cleared, 0, 'the service must wait for the protected restart to be admitted');
+        assert.equal(harness.pluginRecovery.skipUserPlugins, state === 'ready');
         assert.deepEqual(ipc.saveConfigCalls, [{ disabledPlugins: ['keep-disabled', 'user-pack'] }]);
+        harness.clearPluginRecovery();
         return { ok: true, state: 'ready' };
       },
     });
@@ -1371,10 +1381,12 @@ test('disable-suspects-and-start writes once and starts once from idle, error, o
       const result = await ipc.invoke('shell:disable-suspects-and-start', launcherEvent(), ['user-pack', 'user-pack']);
       assert.equal(result.ok, true);
       assert.equal(result.harnessRestarted, true);
+      assert.equal(result.forensics.recovery.skipUserPlugins, false);
       assert.equal(harness.cleared, 1);
       assert.equal(ipc.startDesktop(), 1);
       assert.equal(ipc.startHarness(), 0);
       assert.equal(ipc.startDesktopArgs[0].forceRestart, true);
+      assert.equal(ipc.startDesktopArgs[0].fullPluginRetry, true);
       assert.equal(ipc.startDesktopArgs[0].recoveryLaunch, true);
       assert.deepEqual(ipc.disabledBundleCalls, [['keep-disabled', 'user-pack']]);
       assert.equal(importGuard.isMaintenanceHeld(), false);
@@ -1387,11 +1399,28 @@ test('disable-suspects-and-start writes once and starts once from idle, error, o
 test('disable-suspects-and-start keeps the write and truthful partial failure on a refused start', async () => {
   const importGuard = require('./import-guard');
   for (const refusal of [{ ok: false, error: 'new web boot failure' }, { ok: false, code: 'cancelled' }, { proceeded: false, code: 'task-protection-busy' }]) {
+    const harness = recoveryHarness('ready', true);
+    const originalRecovery = {
+      skipUserPlugins: true,
+      reason: 'Web UI load failed: web boot: 1 entry did not activate\nuser-pack: import failed (see console for the import error)',
+      logTail: ['web boot: 1 entry did not activate', 'user-pack: import failed (see console for the import error)'],
+      at: '2026-10-06T10:00:00.000Z',
+      appVersion: '1.2.3',
+    };
+    harness.pluginRecovery = structuredClone(originalRecovery);
     const ipc = loadIpc({
-      harness: recoveryHarness('error'),
-      inspectPlugins: () => userPluginFailure(),
-      readLastDesktopStart: () => ({ ok: false, error: 'user-pack failed' }),
-      startDesktop: async () => refusal,
+      harness,
+      inspectPlugins: pluginForensics.inspectPlugins,
+      listInstalledPlugins: () => ({ plugins: [{ name: 'user-pack' }], bundles: ['user-pack'] }),
+      readLastDesktopStart: () => ({ ok: true, error: '', at: 'skip-start-completed' }),
+      dsh: { state: 'ready', logs: [], currentStartLogs: () => ['skip boot is healthy'] },
+      startDesktop: async ({ fullPluginRetry, maintenanceToken }) => {
+        assert.equal(fullPluginRetry, true);
+        assert.equal(importGuard.holdsMaintenance(maintenanceToken), true);
+        assert.equal(maintenanceToken.kind, 'plugin-disable');
+        assert.deepEqual(harness.pluginRecovery, originalRecovery, 'a refused protected restart must not touch the running skip marker');
+        return refusal;
+      },
     });
     try {
       const result = await ipc.invoke('shell:disable-suspects-and-start', launcherEvent(), ['user-pack']);
@@ -1399,6 +1428,14 @@ test('disable-suspects-and-start keeps the write and truthful partial failure on
       assert.equal(result.harnessRestarted, false);
       assert.equal(result.error, refusal.error || refusal.code);
       assert.deepEqual(ipc.saveConfigCalls, [{ disabledPlugins: ['user-pack'] }]);
+      assert.deepEqual(ipc.disabledBundleCalls, [['user-pack']]);
+      assert.equal(harness.cleared, 0);
+      assert.deepEqual(harness.pluginRecovery, originalRecovery);
+      assert.equal(result.forensics.recovery.skipUserPlugins, true);
+      assert.equal(result.forensics.recovery.reason, originalRecovery.reason);
+      assert.deepEqual(result.forensics.suspects, [{ name: 'user-pack' }]);
+      assert.ok(result.forensics.evidence.some((row) => row.name === 'user-pack' && row.line.includes('import failed')));
+      assert.deepEqual(harness.pluginRecovery.logTail, originalRecovery.logTail);
       assert.equal(ipc.startDesktop(), 1, 'do not retry the start after a refusal');
       assert.equal(ipc.startHarness(), 0);
       assert.equal(importGuard.isMaintenanceHeld(), false);

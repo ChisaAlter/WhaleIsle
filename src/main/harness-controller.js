@@ -441,7 +441,7 @@ class HarnessController extends EventEmitter {
     return this.runOperation((generation) => this.performStart({ showBoot: true, generation }));
   }
 
-  async replaceOperation({ showBoot, assertCurrent = () => {} }) {
+  async replaceOperation({ showBoot, fullPluginRetry = false, assertCurrent = () => {} }) {
     assertCurrent();
     const previousOperation = this.operation;
     const generation = ++this.operationGeneration;
@@ -456,10 +456,11 @@ class HarnessController extends EventEmitter {
     checkCurrent();
     await previousOperation?.catch(() => {});
     checkCurrent();
+    if (fullPluginRetry) this.clearPluginRecovery();
     return this.runOperation((generation) => this.performStart({ showBoot, generation, assertCurrent }));
   }
 
-  restart() {
+  restart({ fullPluginRetry = false } = {}) {
     // Never join an in-flight restart: callers that mutate skip/disabled lists
     // before restart() must get a performStart that re-reads those flags.
     const previous = this.restartOperation;
@@ -475,7 +476,7 @@ class HarnessController extends EventEmitter {
       this.pluginRecoveryTask = null;
       this.clearTimers();
       this.recovery = { status: 'inactive', attempt: 0, nextRetryAt: null, reason: '' };
-      return this.replaceOperation({ showBoot: true });
+      return this.replaceOperation({ showBoot: true, fullPluginRetry });
     })().finally(() => {
       if (this.restartOperation === task) {
         this.restartOperation = null;
@@ -957,8 +958,7 @@ class HarnessController extends EventEmitter {
   }
 
   retryFullPlugins() {
-    this.clearPluginRecovery();
-    return this.restart();
+    return this.restart({ fullPluginRetry: true });
   }
 
   reload() {

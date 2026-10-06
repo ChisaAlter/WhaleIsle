@@ -207,6 +207,37 @@ it('composes current files from profile data and retains launch overlay and tele
   expect(composeEntries([readProfilePatches('test', { ...enabled, overlays: [] })])[0]?.disabled).toBe(false)
 })
 
+it('keeps recovery template on later profile reads without changing user files', () => {
+  const installAnchor = stageInstallation({
+    '@deepseek-ai/dsh-base': { patch: '- insert: [{ id: base, name: base }]\n' },
+    '@deepseek-ai/dsh-web-app': { patch: '- insert: [{ id: web, name: web }]\n' },
+    'user-client': { patch: '- insert: [{ id: user-client, name: user-client }]\n' },
+  })
+  const home = tmp()
+  const dir = resolveProfileDir('web', home)
+  initProfile(dir, ['@deepseek-ai/dsh-base', 'user-client', '@deepseek-ai/dsh-experimental-schedule-bundle'])
+  const manifestPath = join(dir, 'package.json')
+  const patchPath = join(dir, PROFILE_PATCH_FILENAME)
+  const homePatchPath = join(home, PROFILE_PATCH_FILENAME)
+  writeFileSync(patchPath, '- insert: [{ id: user-row, name: user-row }]\n')
+  writeFileSync(homePatchPath, '- insert: [{ id: home-row, name: home-row }]\n')
+  const manifestBefore = readFileSync(manifestPath)
+  const patchBefore = readFileSync(patchPath)
+  const homePatchBefore = readFileSync(homePatchPath)
+  const context = {
+    name: 'web', dir, patchPath, installAnchor, home, cwd: home,
+    startedBundles: [...PROFILE_TEMPLATES.web!.bundles], overlays: [], telemetryDisabledEnv: undefined,
+    skipUserPlugins: true,
+  }
+
+  expect(composeEntries([readProfilePatches('test', context)]).map(row => row.id)).toEqual(['base', 'web'])
+  expect(readFileSync(manifestPath)).toEqual(manifestBefore)
+  expect(readFileSync(patchPath)).toEqual(patchBefore)
+  expect(readFileSync(homePatchPath)).toEqual(homePatchBefore)
+  expect(composeEntries([readProfilePatches('test', { ...context, skipUserPlugins: false })]).map(row => row.id))
+    .toEqual(['base', 'user-client', 'user-row', 'home-row'])
+})
+
 describe('initProfile', () => {
   it('creates manifest, user patch layer, and pnpm workspace once, never overwriting', () => {
     const home = tmp()

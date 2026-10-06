@@ -491,14 +491,14 @@ function createLauncherService(deps) {
         .finally(() => releaseMaintenanceSlot(guard));
     }
     const wasSticky = stickySkipActive(harness);
-    if (harness && typeof harness.clearPluginRecovery === 'function') {
+    if (!wasSticky && harness && typeof harness.clearPluginRecovery === 'function') {
       harness.clearPluginRecovery();
     }
     const start = typeof startDesktop === 'function' ? startDesktop : startHarness;
-    // Clearing sticky while already ready would otherwise early-return with skip mode still live.
+    // A full retry clears sticky only after the protected restart is admitted.
     if (wasSticky) {
       return Promise.resolve()
-        .then(() => start({ forceRestart: true, maintenanceToken: guard }))
+        .then(() => start({ forceRestart: true, fullPluginRetry: true, maintenanceToken: guard }))
         .finally(() => releaseMaintenanceSlot(guard));
     }
     return Promise.resolve()
@@ -805,8 +805,7 @@ function createLauncherService(deps) {
             if (isLauncherPackage()) {
               return retryFullPluginsSlim();
             }
-            harness.clearPluginRecovery();
-            return startDesktop({ forceRestart: true, recoveryLaunch: true, maintenanceToken: ownerToken });
+            return startDesktop({ forceRestart: true, fullPluginRetry: true, recoveryLaunch: true, maintenanceToken: ownerToken });
           },
         });
         return result.ok === true ? { ...result, forensics: collectForensics() } : result;
@@ -863,15 +862,11 @@ function createLauncherService(deps) {
           .then(() => retryFullPluginsSlim())
           .finally(() => releaseMaintenanceSlot(guard));
       }
-      if (harness && typeof harness.clearPluginRecovery === 'function') {
-        harness.clearPluginRecovery();
-      }
       return Promise.resolve()
-        .then(() => startDesktop({ recoveryLaunch: true, forceRestart: true, maintenanceToken: guard }))
+        .then(() => startDesktop({ recoveryLaunch: true, forceRestart: true, fullPluginRetry: true, maintenanceToken: guard }))
         .finally(() => releaseMaintenanceSlot(guard));
       } catch (error) {
-        // clearPluginRecovery / config reads between acquire and the guarded
-        // promise must release on synchronous throw too.
+        // Release the owner if delegation throws before returning a promise.
         releaseMaintenanceSlot(guard);
         throw error;
       }

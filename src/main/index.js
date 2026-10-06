@@ -455,7 +455,7 @@ async function startDesktopFromLauncher(options = {}) {
       // `options.maintenanceToken` delegates the caller's slot ownership so
       // an already-admitted start/retry reaching this restart is recognized
       // as the same operation rather than refused as a foreign caller.
-      const guarded = await restartWithCleanup(options.maintenanceToken);
+      const guarded = await restartWithCleanup(options.maintenanceToken, { fullPluginRetry: options.fullPluginRetry === true });
       if (guarded && guarded.proceeded === false) {
         return { ok: false, cancelled: guarded.code === 'cancelled', code: guarded.code || 'blocked' };
       }
@@ -853,7 +853,7 @@ function cleanupDesktopResources() {
  * restart). Only the live owner token passes — a bare kind string, a stale
  * token, or an unrelated caller still refuses.
  */
-function restartWithCleanup(delegatedToken) {
+function restartWithCleanup(delegatedToken, options = {}) {
   // The shared maintenance slot admits only one mutating operation at a time.
   // An import, install, or start that already holds it owns the destination
   // trees — a restart must refuse rather than prompt and tear down under it,
@@ -888,7 +888,7 @@ function restartWithCleanup(delegatedToken) {
     return taskProtection.coordinate('restart', {
       commit: async () => {
         await cleanupDesktopResources();
-        return recordLastDesktopStart(app.getPath('userData'), () => harness.restart(), () => kernelLogTail(dsh));
+        return recordLastDesktopStart(app.getPath('userData'), () => harness.restart(options), () => kernelLogTail(dsh));
       },
     }).then((result) => (result.proceeded ? undefined : result))
       .finally(releaseAcquired);

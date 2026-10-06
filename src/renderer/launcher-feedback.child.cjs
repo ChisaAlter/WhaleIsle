@@ -129,7 +129,8 @@ app.whenReady().then(async () => {
     await waitFor("!document.getElementById('app-confirm').hidden");
     result.settings = await read();
     await js("document.getElementById('app-confirm-ok').click(); showTab('home')");
-    desktopStatus = { ...desktopStatus, desktop: { state: 'error' }, lastStart: { ok: false, at: 'failure-1' },
+    desktopStatus = { ...desktopStatus, desktop: { state: 'ready' }, lastStart: { ok: false, at: 'failure-1' },
+      recovery: { skipUserPlugins: true, at: 'original-failure-1', reason: 'dsh-tavern failed to load' },
       forensics: { pluginTreeFailure: true, plugins: [{ name: 'dsh-tavern', suspect: true }, { name: 'healthy-plugin' }] } };
     win.show();
     win.focus();
@@ -137,9 +138,12 @@ app.whenReady().then(async () => {
     await waitFor("!document.getElementById('app-confirm').hidden");
     result.recoveryPrompt = await read();
     await capture('plugin-recovery-confirm');
-    await js("document.getElementById('app-confirm-cancel').click(); refreshStatus()");
+    await js("document.getElementById('app-confirm-cancel').click()");
+    desktopStatus = { ...desktopStatus, lastStart: { ok: true, at: 'skip-completed-1' } };
+    await js('refreshStatus()');
     await delay(100);
-    result.recoveryCancelled = { ...(await read()), calls: recoveryCalls, guidanceVisible: await js("!document.getElementById('home-plugin-guidance').hidden") };
+    result.recoveryCancelled = { ...(await read()), calls: recoveryCalls, guidanceVisible: await js("!document.getElementById('home-plugin-guidance').hidden"),
+      lastStartAt: await js('lastStatus.lastStart.at'), recoveryAt: await js('lastStatus.recovery.at') };
     await js("document.getElementById('btn-recover-plugins').click()");
     await waitFor("!document.getElementById('app-confirm').hidden");
     await js("document.getElementById('app-confirm-ok').click(); document.getElementById('btn-recover-plugins').click()");
@@ -147,18 +151,26 @@ app.whenReady().then(async () => {
     result.recoveryPending = { ...(await read()), calls: recoveryCalls, names: recoveryNames,
       controlsDisabled: await js("['btn-start', 'btn-stop', 'btn-retry-full', 'btn-disable-suspects', 'btn-recover-plugins'].every(id => document.getElementById(id).disabled)") };
     desktopStatus = { ...desktopStatus, desktop: { state: 'ready' }, lastStart: { ok: true, at: 'recovered-1' },
+      recovery: { skipUserPlugins: false },
       forensics: { plugins: [{ name: 'dsh-tavern', disabled: true }, { name: 'healthy-plugin' }] } };
     recoveryResolve({ ok: true, harnessRestarted: true });
     await waitFor("document.getElementById('app-confirm-title').textContent === '已禁用并启动鲸屿'");
     result.recoverySuccess = { ...(await read()), guidanceVisible: await js("!document.getElementById('home-plugin-guidance').hidden"), calls: recoveryCalls };
     await capture('plugin-recovery-success');
     await js("document.getElementById('app-confirm-ok').click()");
-    desktopStatus = { ...desktopStatus, desktop: { state: 'error' }, lastStart: { ok: false, at: 'failure-2' },
+    desktopStatus = { ...desktopStatus, desktop: { state: 'ready' }, lastStart: { ok: false, at: 'failure-2' },
+      recovery: { skipUserPlugins: true, at: 'original-failure-2', reason: 'dsh-tavern failed to load' },
       forensics: { pluginTreeFailure: true, plugins: [{ name: 'dsh-tavern', suspect: true }] } };
     await js('refreshStatus()');
     await waitFor("document.getElementById('app-confirm-title').textContent === '插件加载失败'");
+    const callsBeforeStickyRefresh = recoveryCalls;
+    desktopStatus = { ...desktopStatus, lastStart: { ok: true, at: 'skip-completed-2' } };
+    await js('refreshStatus()');
+    result.recoveryStickyRefresh = { ...(await read()), calls: recoveryCalls,
+      lastStartAt: await js('lastStatus.lastStart.at'), recoveryAt: await js('lastStatus.recovery.at') };
     await js("document.getElementById('app-confirm-ok').click()");
     await waitFor("document.getElementById('app-confirm').classList.contains('is-loading')");
+    result.recoveryStickyConfirmed = { callsBefore: callsBeforeStickyRefresh, calls: recoveryCalls, names: recoveryNames };
     statusReadFails = true;
     recoveryResolve({ ok: true, harnessRestarted: true, forensics: { recovery: { skipUserPlugins: true } } });
     await waitFor("document.getElementById('app-confirm-title').textContent === '插件已禁用，仍需排查'");
@@ -169,6 +181,7 @@ app.whenReady().then(async () => {
     result.statusReadFailure = await read();
     await js("document.getElementById('app-confirm-ok').click()");
     desktopStatus = { ...desktopStatus, desktop: { state: 'error' }, lastStart: { ok: false, at: 'generic-1' },
+      recovery: { skipUserPlugins: false },
       forensics: { genericCause: 'port-in-use', pluginTreeFailure: true, plugins: [{ name: 'dsh-tavern', suspect: true }] } };
     await js('refreshStatus()');
     await delay(100);

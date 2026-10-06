@@ -794,7 +794,7 @@ test('skip start without a desktop-owned overlay passes no patch files', async (
   assert.deepEqual(f.dsh.startOptions[0].patchFiles, []);
 });
 
-test('sticky plugin recovery starts skip mode and retryFullPlugins clears it', async () => {
+test('sticky plugin recovery retains skip mode on restart and clears it only after full retry stops the old Harness', async () => {
   const f2 = fixture({
     appVersion: '1.2.3',
     initialConfig: {
@@ -808,9 +808,59 @@ test('sticky plugin recovery starts skip mode and retryFullPlugins clears it', a
   });
   await f2.controller.start();
   assert.equal(f2.dsh.startOptions[0].skipUserPlugins, true);
-  await f2.controller.retryFullPlugins();
+  await f2.controller.restart();
+  assert.equal(f2.dsh.startOptions.at(-1).skipUserPlugins, true);
+  const marker = f2.controller.snapshot().pluginRecovery;
+  let releaseStop;
+  const stopped = new Promise((resolve) => { releaseStop = resolve; });
+  f2.dsh.stop = async () => { await stopped; f2.dsh.setState('idle'); };
+  const retry = f2.controller.retryFullPlugins();
+  await settle();
+  assert.deepEqual(f2.controller.snapshot().pluginRecovery, marker);
+  assert.deepEqual(f2.controller.loadConfig().pluginRecovery, marker);
+  assert.equal(f2.dsh.startCalls, 2);
+  releaseStop();
+  await retry;
+  assert.deepEqual(f2.dsh.startOptions.map(options => options.skipUserPlugins), [true, true, false]);
   assert.equal(f2.dsh.startOptions.at(-1).skipUserPlugins, false);
   assert.equal(f2.controller.snapshot().pluginRecovery.skipUserPlugins, false);
+  assert.equal(f2.controller.loadConfig().pluginRecovery.skipUserPlugins, false);
+});
+
+test('sticky plugin recovery survives full retry when the old Harness stop fails', async () => {
+  const f = fixture();
+  f.controller.writePluginSkip(new Error('plugin import failed'));
+  await f.controller.start();
+  const marker = f.controller.snapshot().pluginRecovery;
+  f.dsh.stop = async () => { throw new Error('old Harness stop failed'); };
+
+  await assert.rejects(f.controller.retryFullPlugins(), { message: 'old Harness stop failed' });
+
+  assert.deepEqual(f.controller.snapshot().pluginRecovery, marker);
+  assert.deepEqual(f.controller.loadConfig().pluginRecovery, marker);
+  assert.equal(f.dsh.startCalls, 1);
+  assert.equal(f.dsh.startOptions[0].skipUserPlugins, true);
+});
+
+test('sticky plugin recovery survives full retry cancelled while the old Harness stops', async () => {
+  const f = fixture();
+  f.controller.writePluginSkip(new Error('plugin import failed'));
+  await f.controller.start();
+  const marker = f.controller.snapshot().pluginRecovery;
+  let releaseStop;
+  const stopped = new Promise((resolve) => { releaseStop = resolve; });
+  f.dsh.stop = async () => { await stopped; f.dsh.setState('idle'); };
+  const retry = f.controller.retryFullPlugins();
+  const rejected = assert.rejects(retry, { code: 'HARNESS_OPERATION_CANCELLED' });
+  await settle();
+  const cancel = f.controller.stopDesktop();
+  releaseStop();
+  await Promise.all([rejected, cancel]);
+
+  assert.deepEqual(f.controller.snapshot().pluginRecovery, marker);
+  assert.deepEqual(f.controller.loadConfig().pluginRecovery, marker);
+  assert.equal(f.dsh.startCalls, 1);
+  assert.equal(f.dsh.startOptions[0].skipUserPlugins, true);
 });
 
 test('runtime crash returns to boot, disconnects Remote, and schedules one restart', async () => {

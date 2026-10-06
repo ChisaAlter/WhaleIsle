@@ -1162,7 +1162,8 @@ async function runDesktopAction(method, kind = 'starting', ...args) {
 
 function pluginFailureKey(status, guidance) {
   const recovery = status?.recovery || status?.desktop?.pluginRecovery || status?.forensics?.recovery;
-  return JSON.stringify([status?.lastStart?.at, recovery?.at, guidance.kind, guidance.names]);
+  const sticky = recovery?.skipUserPlugins === true;
+  return JSON.stringify([sticky ? 'sticky' : 'full', sticky ? recovery.at : status?.lastStart?.at, guidance.kind, guidance.names]);
 }
 
 async function askPluginRecovery(guidance) {
