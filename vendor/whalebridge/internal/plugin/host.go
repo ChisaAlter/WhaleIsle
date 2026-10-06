@@ -1213,6 +1213,20 @@ func Call(ctx context.Context, method string, params, out any) error {
 // Background listings allow the host its own startup budget. The optional
 // timeout begins only after initialization and bounds just the requested RPC.
 func callWithTimeout(ctx context.Context, method string, params, out any, timeout time.Duration) error {
+	switch method {
+	case "providers":
+		// A listing spans several providers. Let each plugin describe an
+		// unavailable identity rather than failing unrelated providers too.
+		_ = prepareNativeAuth(ctx, "cursor", "")
+	case "load", "usage", "check":
+		if p, ok := params.(map[string]any); ok {
+			provider, _ := p["provider"].(string)
+			account, _ := p["account"].(string)
+			if err := prepareNativeAuth(ctx, provider, account); err != nil {
+				return err
+			}
+		}
+	}
 	startup := ctx
 	if timeout > 0 {
 		startup = context.WithoutCancel(ctx)
@@ -1299,6 +1313,9 @@ func hostEnv(env []string) []string {
 // Fetch sends r through the provider's plugin — its loader's fetch, or
 // Bun's own when it gives none — and streams back the reply.
 func Fetch(ctx context.Context, r FetchRequest) (*http.Response, error) {
+	if err := prepareNativeAuth(ctx, r.Provider, r.Account); err != nil {
+		return nil, err
+	}
 	h, err := get(ctx)
 	if err != nil {
 		return nil, err

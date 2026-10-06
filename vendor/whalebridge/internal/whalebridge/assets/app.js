@@ -7,6 +7,8 @@ const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp
 const icon = name => `<svg class="icon" aria-hidden="true"><use href="/icons.svg#${name}"></use></svg>`;
 let state, tab = 'overview', period = 'today', editor, renderEpoch = 0;
 let modelQuery = '', modelFilter = 'all', loginFlow, loginTimer;
+let visibilityWrites = Promise.resolve();
+const visibilityPending = new Map();
 const pageNames = {overview:'接入概览',providers:'供应商与账号',models:'模型管理',routing:'路由组',usage:'用量统计',help:'使用说明'};
 const routes = {'':'智能','order':'按顺序','rotate':'轮换','usage':'最少用量','pace':'按剩余额度','weight':'权重','manual':'固定模型'};
 async function api(path, body) {
@@ -56,11 +58,11 @@ function providers() {
  html += `<div class="provider-grid">${state.providers.map(p=>`<article class="provider-card ${p.off?'disabled':''}"><div class="provider-head"><span class="provider-avatar" aria-hidden="true">${escape(Array.from(p.name || p.id)[0].toUpperCase())}</span><div class="text"><h3 class="title">${escape(p.name)}</h3><p class="caption">${p.account?'订阅账号':'API 供应商'}</p></div>${iconButton(`编辑 ${p.name}`,'edit-provider',p.id,'edit')}</div><div class="provider-detail"><p class="subtitle" title="${escape(p.chat || p.responses || p.anthropic || '')}">${escape(p.chat || p.responses || p.anthropic || '通过供应商订阅登录接入')}</p><div class="provider-meta"><span class="tag ${p.off?'':'business'}">${p.off?'已停用':'已启用'}</span><span class="tag">${p.modelCount || 0} 个模型</span><span class="tag subtle">${escape(routes[p.routing] || '智能')}路由</span></div></div><div class="provider-footer">${button(p.account?'管理账号':'管理密钥',p.account?'accounts':'keys',p.id)}<div class="provider-tools">${iconButton(`刷新 ${p.name} 的模型`,'fetch-provider',p.id,'refresh')}<details class="menu"><summary aria-label="${escape(p.name)} 的更多操作" title="更多操作">${icon('more')}</summary><div class="menu-content">${button(p.off?'启用供应商':'停用供应商','toggle-provider',p.id)}${button(`${icon('trash')}删除供应商`,'delete-provider',p.id,'danger')}</div></details></div></div></article>`).join('')}</div><p class="usage-note">${icon('info')}配置保存后自动同步到鲸屿。供应商密钥保存在本机，管理界面仅显示脱敏信息。</p>`;
  return html;
 }
-function modelRows() { return [...(state.models || []).map(m=>({...m,hidden:false})),...(state.hidden || []).map(m=>({...m,hidden:true}))]; }
+function modelRows() { return [...(state.models || []).map(m=>({...m,hidden:false})),...(state.hidden || []).map(m=>({...m,hidden:true}))].map(m=>visibilityPending.has(m.id)?{...m,hidden:visibilityPending.get(m.id)}:m); }
 function modelList() {
  const query=modelQuery.trim().toLowerCase();
  const rows=modelRows().filter(m=>(modelFilter==='all'||(modelFilter==='hidden')===m.hidden)&&`${m.name || ''} ${m.id}`.toLowerCase().includes(query));
- $('#model-list').innerHTML=rows.length?`<div class="panel"><div class="model-head"><span>模型 / 标识</span><span class="model-context">上下文</span><span>桌面端显示</span></div>${rows.map(m=>`<div class="model-row ${m.hidden?'disabled':''}"><div><div class="model-name">${escape(m.name || m.id)}${m.group?'<span class="tag">路由组</span>':''}${m.images?'<span class="tag subtle">图像</span>':''}</div><div class="model-meta"><code>${escape(m.id)}</code>${m.efforts?.length?`<span class="caption">思考：${escape(m.efforts.join(' / '))}</span>`:''}</div></div><span class="caption model-context">${m.context?short(m.context):'—'}</span><div class="model-visibility"><button type="button" class="switch" role="switch" aria-checked="${!m.hidden}" aria-label="在桌面端显示 ${escape(m.name || m.id)}" title="${m.hidden?'显示模型':'隐藏模型'}" data-action="hide-model" data-id="${escape(m.id)}"></button></div></div>`).join('')}</div>`:empty('没有匹配的模型','试试其他模型名称或标识，或切换显示范围。','','search');
+ $('#model-list').innerHTML=rows.length?`<div class="panel"><div class="model-head"><span>模型 / 标识</span><span class="model-context">上下文</span><span>桌面端显示</span></div>${rows.map(m=>`<div class="model-row ${m.hidden?'disabled':''}"><div><div class="model-name">${escape(m.name || m.id)}${m.group?'<span class="tag">路由组</span>':''}${m.images?'<span class="tag subtle">图像</span>':''}</div><div class="model-meta"><code>${escape(m.id)}</code>${m.efforts?.length?`<span class="caption">思考：${escape(m.efforts.join(' / '))}</span>`:''}</div></div><span class="caption model-context">${m.context?short(m.context):'—'}</span><div class="model-visibility"><button type="button" class="switch" role="switch" aria-checked="${!m.hidden}" aria-label="在桌面端显示 ${escape(m.name || m.id)}" title="${m.hidden?'显示模型':'隐藏模型'}" data-action="hide-model" data-id="${escape(m.id)}" ${visibilityPending.has(m.id)?'disabled aria-busy="true"':''}></button></div></div>`).join('')}</div>`:empty('没有匹配的模型','试试其他模型名称或标识，或切换显示范围。','','search');
  document.querySelectorAll('[data-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.filter===modelFilter)));
 }
 function routingPage() {
@@ -86,7 +88,7 @@ async function render() {
  } else if(tab==='routing')html=routingPage();
  else if(tab==='help')html=helpPage();
  else if(tab==='usage') {
-  html=heading('用量统计','只统计通过鲸桥网关产生的调用，按所选时间范围汇总。',`<select class="usage-select" id="period" aria-label="用量周期">${Object.entries({today:'今天',week:'本周',month:'本月',all:'全部'}).map(([v,l])=>`<option value="${v}" ${v===period?'selected':''}>${l}</option>`).join('')}</select>`);
+  html=heading('用量统计','只统计通过鲸桥网关产生的调用，按所选时间范围汇总。',`<select class="usage-select" id="period" aria-label="用量周期">${Object.entries({today:'今天','7d':'近 7 天','30d':'近 30 天',all:'全部'}).map(([v,l])=>`<option value="${v}" ${v===period?'selected':''}>${l}</option>`).join('')}</select>`);
   $('#content').innerHTML=html+'<div class="loading"><p>正在读取用量…</p></div>';
   const u=await api(`usage?period=${period}`);
   html+=`<div class="stats">${stat('调用请求',short(u.calls),'经鲸桥网关发出','usage')}${stat('Token 总量',short((u.input || 0)+(u.output || 0)),`输入 ${short(u.input)} / 输出 ${short(u.output)}`,'models')}${stat('估算费用',`$${Number(u.cost || 0).toFixed(3)}`,'按已知模型价格估算','info')}</div><div class="section-head"><h2>按模型汇总</h2><span class="caption">${u.models?.length || 0} 个模型</span></div>`;
@@ -104,12 +106,66 @@ async function go(next){tab=next;message('');await render();$('#main').scrollTo(
 function field(name,label,value='',type='text',hint='') { return `<label for="f-${name}">${label}</label><input id="f-${name}" name="${name}" type="${type}" value="${escape(value)}" autocomplete="${type==='password'?'new-password':'off'}" ${hint?`placeholder="${escape(hint)}"`:''}>`; }
 function text(name,label,value='',hint='') { return `<label for="f-${name}">${label}</label><textarea id="f-${name}" name="${name}" placeholder="${escape(hint)}">${escape(value)}</textarea>`; }
 function routing(value,group=false){return `<label for="f-routing">请求分配策略</label><select id="f-routing" name="routing">${Object.entries(routes).filter(([v])=>group?v!=='weight':v!=='manual').map(([v,l])=>`<option value="${v}" ${v===value?'selected':''}>${l}</option>`).join('')}</select><p class="form-hint">按顺序优先使用列表靠前的模型；轮换会在模型间依次分配请求。</p>`;}
+function proxyFields(value=''){
+ const mode=value==='direct'?'direct':value?'custom':'';
+ return `<label for="f-proxyMode">代理策略</label><select id="f-proxyMode" name="proxyMode"><option value="" ${!mode?'selected':''}>跟随全局代理</option><option value="direct" ${mode==='direct'?'selected':''}>直连，不使用代理</option><option value="custom" ${mode==='custom'?'selected':''}>自定义代理</option></select><div id="proxy-address" ${mode==='custom'?'':'hidden'}>${field('proxy','代理地址',mode==='custom'?value:'','text','http://127.0.0.1:7890 或 socks5://127.0.0.1:1080')}</div>`;
+}
+function workspaceOf(template,value){
+ const [before,after]=template.split('{WorkspaceId}');
+ return after!==undefined&&value.startsWith(before)&&value.endsWith(after)?value.slice(before.length,value.length-after.length):null;
+}
+function providerRegion(p,pr){
+ return pr?.regions?.find(r=>r.decide&&(r.decide===p.decide||workspaceOf(r.decide,p.decide || '')!==null)) || pr?.regions?.find(r=>['chat','responses','anthropic'].some(k=>r[k]&&r[k]===p[k]));
+}
+function configurePreset(pr,apply=false){
+ const p=editor.data;
+ const regions=pr?.regions || [], chosen=apply?regions[0]:providerRegion(p,pr);
+ $('#provider-region').innerHTML=regions.length?`<label for="f-region">${escape(pr.regionLabel==='Plan'?'套餐 / 区域':pr.regionLabel || '区域')}</label><select id="f-region" name="region"><option value="">自定义接口地址</option>${regions.map(r=>`<option value="${escape(r.id)}" ${r.id===chosen?.id?'selected':''}>${escape(r.name)}</option>`).join('')}</select>`:'';
+ const fill=r=>{
+  for(const k of ['chat','responses','anthropic','decide'])$(`#f-${k}`).value=r[k] || (k==='decide'?pr?.decide:'') || '';
+  $('#f-models').value=(r.models || pr?.models || []).join('\n');
+  updateWorkspace(pr,r);
+ };
+ if(apply){$('#f-name').value=pr?.name || '';fill(chosen || pr || {});}
+ else updateWorkspace(pr,chosen);
+ $('#f-region')?.addEventListener('change',e=>{const r=regions.find(r=>r.id===e.target.value);if(r)fill(r);else updateWorkspace(pr);});
+ $('#f-decide').oninput=()=>{const r=regions.find(r=>r.id===$('#f-region')?.value);updateWorkspace(pr,r);};
+}
+function updateWorkspace(pr,region){
+ const template=region?.decide || pr?.decide || '', row=$('#workspace-field'), input=$('#f-workspace');
+ row.hidden=!template.includes('{WorkspaceId}');input.required=!row.hidden;
+ if(row.hidden)return;
+ const value=workspaceOf(template,$('#f-decide').value);
+ if(value!==null&&!value.includes('{WorkspaceId}'))input.value=value;
+}
+function headerRow(name='',saved=false,hint=false){
+ const row=document.createElement('div');row.className='header-row';row.dataset.saved=saved?name:'';
+ row.innerHTML=`<input class="header-name" aria-label="Header 名称" placeholder="Header 名称" value="${escape(name)}" ${saved?'readonly':''}><input class="header-value" type="password" autocomplete="new-password" aria-label="${escape(name || 'Header')} 值" placeholder="${saved?'已保存 · 留空保留':hint?'可选，填写后保存':'Header 值'}"><button type="button" class="icon-button danger" data-action="remove-header" aria-label="移除 ${escape(name || 'Header')}">${icon('trash')}</button>`;
+ return row;
+}
+function headerChanges(){
+ const changes=Object.fromEntries((editor.removedHeaders || []).map(name=>[name,null])), names=new Set();
+ for(const row of document.querySelectorAll('.header-row')){
+  const name=row.querySelector('.header-name').value.trim(), value=row.querySelector('.header-value').value;
+  if(!name&&!value)continue;
+  if(!name)throw new Error('请填写 HTTP Header 名称');
+  const lower=name.toLowerCase();if(names.has(lower))throw new Error(`HTTP Header ${name} 重复`);names.add(lower);
+  if(value)changes[name]=value;
+  else if(!row.dataset.saved&&!row.dataset.hint)throw new Error(`请填写 HTTP Header ${name} 的值`);
+ }
+ return changes;
+}
 function openProvider(id) {
- const p=state.providers.find(p=>p.id===id)||{id:'',name:'',models:[],routing:''};editor={type:'provider',data:p};
+ const p=state.providers.find(p=>p.id===id)||{id:'',name:'',models:[],routing:''};editor={type:'provider',data:p,removedHeaders:[]};
  $('#editor-title').textContent=id?'编辑供应商':'添加供应商';
- $('#fields').innerHTML=`<p class="form-hint">${p.account?'此供应商使用订阅账号认证，账号在「管理账号」中维护。':'连接已有的模型服务。选择预设可以自动填入接口地址，再填写你自己的 API 密钥。'}</p>`+(!id?`<label for="f-preset">供应商预设</label><select name="preset" id="f-preset"><option value="">自定义兼容接口</option>${state.presets.map(p=>`<option value="${escape(p.id)}">${escape(p.name)}</option>`).join('')}</select>`:'')+field('name','显示名称',p.name,'text','例如：我的 DeepSeek')+(p.account?'':field('key','API 密钥','','password',p.keySet?'已保存 · 留空保留原密钥':'填写供应商提供的密钥'))+field('chat','Chat Completions 接口地址',p.chat,'url','https://api.example.com/v1')+`<div class="form-section"><h3>提供给鲸屿的模型</h3>${text('models','模型 ID（每行一个）',(p.models || []).join('\n'),'例如 deepseek-chat')}<p class="form-hint">留空使用供应商默认模型。保存后可在供应商卡片刷新模型，在「模型管理」调整显示范围。</p></div><details class="advanced"><summary>高级设置 · 协议、代理与路由</summary><div class="advanced-body">${field('responses','Responses 接口地址',p.responses,'url')}${field('anthropic','Anthropic 接口地址',p.anthropic,'url')}${routing(p.routing)}${field('proxy','代理地址（可选）',p.proxy,'url')}${text('fallback','故障转移模型（每行一个）',(p.fallback || []).join('\n'),'供应商ID/模型ID')}</div></details>`;
+ $('#fields').innerHTML=`<p class="form-hint">${p.account?'此供应商使用订阅账号认证，账号在「管理账号」中维护。':'连接已有的模型服务。选择预设可以自动填入接口地址，再填写你自己的 API 密钥。'}</p>`+(!id?`<label for="f-preset">供应商预设</label><select name="preset" id="f-preset"><option value="">自定义兼容接口</option>${state.presets.map(p=>`<option value="${escape(p.id)}">${escape(p.name)}</option>`).join('')}</select>`:'')+field('name','显示名称',p.name,'text','例如：我的 DeepSeek')+(p.account?'':field('key','API 密钥','','password',p.keySet?'已保存 · 留空保留原密钥':'填写供应商提供的密钥'))+'<div id="provider-region"></div>'+field('chat','Chat Completions 接口地址',p.chat,'url','https://api.example.com/v1')+`<div id="workspace-field" hidden>${field('workspace','Workspace ID','','text','API 密钥所属工作空间，如 ws-…')}<p class="form-hint">Bailian 决策模型按此工作空间接入；Token Plan 无需填写。</p></div><div class="form-section"><h3>提供给鲸屿的模型</h3>${text('models','模型 ID（每行一个）',(p.models || []).join('\n'),'例如 deepseek-chat')}<p class="form-hint">留空使用供应商默认模型。保存后可在供应商卡片刷新模型，在「模型管理」调整显示范围。</p></div><details class="advanced" id="provider-advanced"><summary>高级设置 · 协议、代理与路由</summary><div class="advanced-body">${field('responses','Responses 接口地址',p.responses,'url')}${field('anthropic','Anthropic 接口地址',p.anthropic,'url')}${field('decide','决策接口地址（可选）',p.decide,'text','https://api.typesafe.ai/v1')}<p class="form-hint">仅用于路由决策；Bailian 地址中的 {WorkspaceId} 由工作空间字段填入。</p>${routing(p.routing)}${proxyFields(p.proxy)}${text('fallback','故障转移模型（每行一个）',(p.fallback || []).join('\n'),'供应商ID/模型ID')}${p.account?'':'<div class="form-section"><h3>附加 HTTP Headers</h3><p class="form-hint">可用于供应商的自定义认证。已保存的值不回显；留空保留，点击移除后在保存时删除。</p><div id="header-list"></div><div class="actions-bar">'+button('添加 Header','add-header')+'</div></div>'}</div></details>`;
  $('#f-name').required=true;
- $('#f-preset')?.addEventListener('change',e=>{const p=state.presets.find(p=>p.id===e.target.value);if(!p)return;for(const f of ['name','chat','responses','anthropic'])$(`#f-${f}`).value=p[f] || '';$('#f-models').value=(p.models || []).join('\n');});
+ $('#f-proxyMode').onchange=e=>{$('#proxy-address').hidden=e.target.value!=='custom';$('#f-proxy').required=e.target.value==='custom';};$('#f-proxy').required=$('#f-proxyMode').value==='custom';
+ const pr=state.presets.find(x=>x.id===p.preset);
+ for(const name of p.headerNames || [])$('#header-list')?.append(headerRow(name,true));
+ const hints=pr=>{for(const name of pr?.headerHints || [])if(![...document.querySelectorAll('.header-name')].some(i=>i.value.toLowerCase()===name.toLowerCase())){const row=headerRow(name,false,true);row.dataset.hint='true';$('#header-list')?.append(row);}};
+ hints(pr);configurePreset(pr);
+ $('#f-preset')?.addEventListener('change',e=>{const pr=state.presets.find(p=>p.id===e.target.value);configurePreset(pr,true);hints(pr);if(pr?.decide)$('#provider-advanced').open=true;});
  showEditor();
 }
 function openGroup(id) {
@@ -129,17 +185,19 @@ function showEditor(){
 const lines=value=>value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
 $('#edit-form').addEventListener('invalid',e=>{const details=e.target.closest('details');if(details)details.open=true;},true);
 $('#edit-form').addEventListener('submit',async e=>{
- e.preventDefault();$('#save').disabled=true;const data=Object.fromEntries(new FormData(e.target));
+ e.preventDefault();const current=editor;$('#save').disabled=true;$('#form-error').hidden=true;const data=Object.fromEntries(new FormData(e.target));
  try {
-  if(editor.type==='subscription'){await beginSubscription(data);return;}
-  if(editor.type==='keys'){await api('keys',{id:editor.data.id,action:'add',name:data.name,key:data.key,protocol:data.protocol});await openKeys(editor.data.id);message('密钥已添加');await load();return;}
-  if(editor.type==='provider'){
-   const p=editor.data;const input={...data,id:p.id,off:p.off || false,models:lines(data.models),fallback:lines(data.fallback)};
+  if(current.type==='subscription'){await beginSubscription(data);return;}
+  if(current.type==='keys'){await api('keys',{id:current.data.id,action:'add',name:data.name,key:data.key,protocol:data.protocol});if(current!==editor||current.closed)return;await openKeys(current.data.id);message('密钥已添加');await load();return;}
+  if(current.type==='project'){await api('accounts/project',{id:current.data.id,user:current.data.user,project:data.project});if(current!==editor||current.closed)return;await openAccounts(current.data.id);message('Cloud project 已保存');await load();return;}
+  if(current.type==='provider'){
+   const p=current.data;const input={...data,id:p.id,off:p.off || false,models:lines(data.models),fallback:lines(data.fallback),proxy:data.proxyMode==='direct'?'direct':data.proxyMode==='custom'?data.proxy:'',headers:headerChanges()};
    if(p.account||p.id&&!data.key)delete input.key;
    await api('provider',input);
-  }else{const g=editor.data;await api('group',{...g,...data,id:data.id,members:lines(data.members),match:lines(data.match),firstToken:Number(data.firstToken)});}
+  }else{const g=current.data;await api('group',{...g,...data,from:g.id,id:data.id,members:lines(data.members),match:lines(data.match),firstToken:Number(data.firstToken)});}
+  if(current!==editor||current.closed)return;
   $('#editor').close();message('已保存，模型已同步到鲸屿');await load();
- }catch(e){$('#form-error').textContent=e.message;$('#form-error').hidden=false;}finally{$('#save').disabled=false;}
+ }catch(e){if(current===editor&&!current.closed){$('#form-error').textContent=e.message;$('#form-error').hidden=false;}}finally{if(current===editor&&!current.closed)$('#save').disabled=false;}
 });
 $('#close-editor').onclick=$('#cancel-editor').onclick=()=>$('#editor').close();
 function ask(title,body,accept='确认',number){
@@ -173,11 +231,24 @@ $('.workspace').addEventListener('click',async e=>{
   if(action==='delete-provider'){if(!await ask('删除供应商？','对应的模型会从鲸屿的「鲸桥」渠道中移除。其他供应商和对话记录不受影响。','删除供应商'))return;await api('provider/delete',{id});}
   if(action==='delete-group'){if(!await ask('删除路由组？','这个组会从鲸屿的模型列表中移除，成员模型和供应商配置仍保留。','删除路由组'))return;await api('group/delete',{id});}
   if(action==='toggle-provider'){const p=state.providers.find(p=>p.id===id);await api('provider',{...p,off:!p.off});}
-  if(action==='hide-model'){const ids=new Set((state.hidden || []).map(m=>m.id));if(ids.has(id))ids.delete(id);else ids.add(id);await api('models/hidden',{ids:[...ids]});}
+  if(action==='hide-model'){
+   if(visibilityPending.has(id))return;
+   const hidden=!modelRows().find(m=>m.id===id)?.hidden;
+   visibilityPending.set(id,hidden);modelList();
+   const write=visibilityWrites.then(async()=>{
+    try{await api('models/hidden',{id,hidden});await load();message('模型显示已更新，已同步到鲸屿');}
+    finally{visibilityPending.delete(id);if($('#model-list'))modelList();}
+   });
+   // The API changes one ID under the configuration lock; the queue keeps the
+   // user's click order without reusing an old full-list snapshot.
+   visibilityWrites=write.catch(()=>{});await write;return;
+  }
   message(action==='sync'?'模型已重新同步到鲸屿':'已更新，模型已同步到鲸屿');await load();
  }catch(e){message(e.message,true);}finally{b.disabled=false;}
 });
 $('#fields').addEventListener('click',e=>{
+ const header=e.target.closest('[data-action=add-header],[data-action=remove-header]');
+ if(header){if(header.dataset.action==='add-header'){$('#header-list').append(headerRow());$('#header-list .header-row:last-child .header-name').focus();}else{const row=header.closest('.header-row');if(row.dataset.saved)editor.removedHeaders.push(row.dataset.saved);row.remove();}return;}
  const b=e.target.closest('[data-action=pick-member]');if(!b)return;
  const members=new Set(lines($('#f-members').value));if(members.has(b.dataset.id))members.delete(b.dataset.id);else members.add(b.dataset.id);
  $('#f-members').value=[...members].join('\n');

@@ -165,7 +165,9 @@ function createWhaleBridgeService(deps = {}) {
     const current = state();
     if (current) {
       if (current.version !== version) throw new Error('鲸桥运行版本与安装记录不一致');
-      await api('status', undefined, current); return { ok: true };
+      await api('status', undefined, current);
+      await unfreeze(current);
+      return { ok: true };
     }
     fs.mkdirSync(path.join(root, 'data'), { recursive: true });
     fs.rmSync(stateFile, { force: true });
@@ -250,7 +252,11 @@ function createWhaleBridgeService(deps = {}) {
     return { ok: true, url: state().url };
   }); }
   function stop(progress) { return locked(async () => {
-    const current = await freeze(); terminate(current); emit(progress, 'done', 100); return { ok: true };
+    const current = await freeze();
+    try { terminate(current); }
+    catch (error) { await unfreeze(current); throw error; }
+    emit(progress, 'done', 100);
+    return { ok: true };
   }); }
   async function switchVersion(version, previous, progress) {
     const old = installed(), current = await freeze();
@@ -259,7 +265,12 @@ function createWhaleBridgeService(deps = {}) {
       writeJson(installedFile, { version, previous });
       await startRuntime(version, progress);
     } catch (error) {
-      terminate(state());
+      const live = state();
+      if (live?.pid === current?.pid) {
+        await unfreeze(current);
+        throw error;
+      }
+      terminate(live);
       writeJson(installedFile, old);
       await startRuntime(old.version, progress);
       throw new Error(`更新未生效，已恢复原版本：${error.message}`);
@@ -280,23 +291,43 @@ function createWhaleBridgeService(deps = {}) {
   function uninstall(options = {}, progress) { return locked(async () => {
     const rec = installed(); if (!rec) throw new Error('鲸桥未安装');
     const current = await freeze();
+    const versions = path.join(root, 'versions');
+    const staged = path.join(root, `.uninstall-${process.pid}`);
+    let moved = false;
     try {
-      (deps.execFileSync || execFileSync)(binary(rec.version), ['whalebridge-disconnect'], { env: env(), windowsHide: true, timeout: 15_000, stdio: 'pipe' });
       terminate(current);
-      // Windows can retain the terminated executable's image handle briefly.
-      // Async removal yields to child exit handling and bounds lock retries.
-      await fs.promises.rm(path.join(root, 'versions'), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      // Keep the payload recoverable until the atomic DSH disconnect commits.
+      fs.renameSync(versions, staged);
+      moved = true;
       fs.unlinkSync(installedFile);
+      (deps.execFileSync || execFileSync)(path.join(staged, rec.version, ASSET), ['whalebridge-disconnect'], { env: env(), windowsHide: true, timeout: 15_000, stdio: 'pipe' });
+    } catch (error) {
+      if (moved) fs.renameSync(staged, versions);
+      writeJson(installedFile, rec);
+      if (current) await startRuntime(rec.version);
+      throw error;
+    }
+    let message = '';
+    try {
+      await fs.promises.rm(staged, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
       if (options.removeData === true) fs.rmSync(path.join(root, 'data'), { recursive: true, force: true });
-      emit(progress, 'done', 100);
-      return { ok: true };
-    } catch (error) { await unfreeze(current); throw error; }
+    } catch (error) {
+      message = `鲸桥已卸载并断开 DSH，但文件清理失败：${error.message}`;
+    }
+    emit(progress, 'done', 100, message);
+    return { ok: true, ...(message ? { message } : {}) };
   }); }
   async function uninstallInfo() {
-    if (!installed()) return { defaultModel: false };
-    const result = await start();
-    if (!result.ok) throw new Error(result.message || '鲸桥无法启动');
-    return api('status');
+    const rec = installed();
+    if (!rec) return { defaultModel: false };
+    const current = state();
+    if (current) return api('status', undefined, current);
+    const output = (deps.execFileSync || execFileSync)(binary(rec.version), ['whalebridge-status'], {
+      env: env(), windowsHide: true, timeout: 15_000, encoding: 'utf8', stdio: 'pipe',
+    });
+    const info = JSON.parse(output);
+    if (typeof info.defaultModel !== 'boolean') throw new Error('鲸桥配置状态无效');
+    return info;
   }
   return { row, refreshCatalog, install, start, stop, update, rollback, uninstall, uninstallInfo, installed, state, api };
 }

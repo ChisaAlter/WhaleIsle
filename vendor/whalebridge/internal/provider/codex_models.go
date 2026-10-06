@@ -286,7 +286,7 @@ func (a *Account) Levels(model string) (levels []string, ok bool) {
 func codexPoolLevels(ms []catalog.Model) []catalog.Model {
 	var lists [][]catalog.Model
 	for _, l := range Logins("codex") {
-		if l.Active || !l.On {
+		if l.Active || l.first || !l.On {
 			continue
 		}
 		if live, _, ok := catalog.Live(accountModels("codex", l.User)); ok {

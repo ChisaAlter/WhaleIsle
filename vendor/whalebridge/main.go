@@ -3,9 +3,11 @@ package main
 
 import (
 	"fmt"
+	"os"
+
+	"github.com/yetone/magpie/internal/claudebridge"
 	"github.com/yetone/magpie/internal/provider"
 	"github.com/yetone/magpie/internal/whalebridge"
-	"os"
 )
 
 var version = "dev"
@@ -15,7 +17,9 @@ func main() {
 		return
 	}
 	var err error
-	if len(os.Args) == 2 && os.Args[1] == "whalebridge-disconnect" {
+	if len(os.Args) > 1 && os.Args[1] == "claude-mcp-helper" {
+		err = claudebridge.RunMCP(os.Args[2:])
+	} else if len(os.Args) == 2 && os.Args[1] == "whalebridge-disconnect" {
 		err = whalebridge.Disconnect(os.Getenv("WHALEBRIDGE_DSH_HOME"))
 	} else if len(os.Args) == 2 && os.Args[1] == "whalebridge" {
 		err = whalebridge.Run(version)
