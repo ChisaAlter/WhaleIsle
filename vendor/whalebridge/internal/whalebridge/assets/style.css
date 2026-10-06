@@ -173,6 +173,11 @@ input::placeholder,textarea::placeholder{color:var(--dsw-alias-label-tertiary)}
 textarea{resize:vertical;min-height:88px;font-family:var(--ds-font-family-code);font-size:12px;line-height:20px}
 input[type=checkbox]{accent-color:var(--dsw-alias-state-business-primary)}
 .form-hint{font-size:12px;line-height:20px;color:var(--dsw-alias-label-secondary);margin-top:8px}
+.subscription-adapter-actions{margin-top:12px}
+.connection-success{display:flex;flex-direction:column;align-items:flex-start;gap:12px;overflow-wrap:anywhere}
+.connection-success-icon{display:grid;place-items:center;width:40px;height:40px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;color:var(--dsw-alias-state-success-primary)}
+.connection-success-icon .icon{width:20px;height:20px}
+.dialog-body .connection-success .muted{margin-top:0}
 .form-section{margin-top:24px;padding-top:20px;border-top:1px solid var(--dsw-alias-border-l1)}
 .form-section h3{margin-bottom:16px}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}

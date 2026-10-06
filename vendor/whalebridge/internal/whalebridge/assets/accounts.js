@@ -11,7 +11,7 @@ async function openSubscription(adapterId=''){
 }
 function subscriptionOptions(){
  const s=subscriptions.find(s=>s.id===$('#f-agent').value);if(!s)return;
- $('#signin-options').innerHTML=(s.plugin?`<label for="f-method">登录方式</label><select name="method" id="f-method">${(s.methods || []).map((m,i)=>`<option value="${i}">${escape(m.label)}</option>`).join('')}</select><div id="subscription-key"></div>`:s.id==='zcode'?'<label for="f-site">登录站点</label><select name="site" id="f-site"><option value="">供应商默认</option><option value="zai">Z.ai 全球站</option><option value="bigmodel">智谱中国站</option></select>':'<p class="form-hint">点击「开始登录」后，按供应商页面或认证工具的指引完成授权。</p>')+(s.package?`<p class="muted">此订阅支持社区供应商适配器。</p>${button('安装供应商适配器','install-adapter',s.id)}`:'');
+ $('#signin-options').innerHTML=(s.plugin?`<label for="f-method">登录方式</label><select name="method" id="f-method">${(s.methods || []).map((m,i)=>`<option value="${i}">${escape(m.label)}</option>`).join('')}</select><div id="subscription-key"></div>`:s.id==='zcode'?'<label for="f-site">登录站点</label><select name="site" id="f-site"><option value="">供应商默认</option><option value="zai">Z.ai 全球站</option><option value="bigmodel">智谱中国站</option></select>':'<p class="form-hint">点击「开始登录」后，按供应商页面或认证工具的指引完成授权。</p>')+(s.package?`<p class="muted">此订阅支持社区供应商适配器。</p><div class="subscription-adapter-actions">${button('安装供应商适配器','install-adapter',s.id)}</div>`:'');
  if(s.plugin){$('#f-method').onchange=subscriptionKey;subscriptionKey();}
 }
 function subscriptionKey(){
@@ -34,8 +34,12 @@ async function beginSubscription(data){
  }
  const st=await api('signin',{agent:s.pid || request.agent,site:request.site,plugin:s.plugin,method:Number(request.method || 0),key:request.key,inputs:current.inputs});
  if(current!==editor || current.closed){if(st.id)await api(`signin/${encodeURIComponent(st.id)}/cancel`,{});return;}
- if(st.state==='done'){ $('#editor').close();message('订阅账号已添加');await load();return; }
+ if(st.state==='done'){await completeSubscription(st);return;}
  loginFlow=st.id;showLogin(st);pollLogin();
+}
+async function completeSubscription(st){
+ const s=subscriptions.find(s=>s.id===editor.request.agent);
+ await showConnectionSuccess(st.again?'订阅账号授权已更新':'订阅账号接入成功',`${s.name}${st.user?`（${st.user}）`:''} ${st.again?'登录授权已更新':'订阅账号已添加'}，模型已同步到鲸屿。`);
 }
 function showLogin(st){
  $('#save').hidden=true;$('#fields').innerHTML=`<p>${escape(st.state==='installing'?`正在准备认证工具 ${st.installing || ''}`:'等待供应商登录完成')}</p>${st.instructions?`<p class="muted">${escape(st.instructions)}</p>`:''}${st.url&&/^https?:\/\//.test(st.url)?`<p><a href="${escape(st.url)}" target="_blank" rel="noreferrer">打开供应商登录页面 ↗</a></p>`:''}${st.code?`<p>验证码：<code>${escape(st.code)}</code></p>`:''}${st.pasteCallback||st.pasteCode||st.pasteKey?field('callback','完成登录后粘贴回调地址、验证码或密钥')+button('提交','signin-callback'):''}<p class="muted">关闭对话框会取消尚未完成的登录。</p>`;
@@ -44,7 +48,7 @@ function pollLogin(){
  clearTimeout(loginTimer);const id=loginFlow;if(!id)return;
  loginTimer=setTimeout(async()=>{
   try{const st=await api(`signin/${encodeURIComponent(id)}`);if(loginFlow!==id)return;
-   if(st.state==='done'){loginFlow=null;$('#editor').close();message('订阅账号已添加并同步 DSH');await load();return;}
+   if(st.state==='done'){await completeSubscription(st);return;}
    if(st.state==='failed'||st.state==='canceled'){loginFlow=null;$('#form-error').textContent=st.error || '登录已取消';$('#form-error').hidden=false;return;}
    // Do not replace an input while the user is pasting a callback.
    if(!$('#f-callback') || st.url!==$('#fields a')?.getAttribute('href'))showLogin(st);
