@@ -85,8 +85,9 @@ describe('caption drag regions across client stylesheets', () => {
       .filter(block => !block.selector.includes(':global('))
       .flatMap(block => block.selector.split(',').map(selector => selector.trim()))
     expect(noDragSelectors).toEqual(expect.arrayContaining([
-      '.headerLeading', '.crumbs', '.headerActions', '.headerUtilities', '.headerCorner',
+      '.headerLeading', '.crumbSeg', '.headerActions', '.headerUtilities', '.headerCorner',
     ]))
+    expect(noDragSelectors).not.toContain('.crumbs')
   })
 
   it('subtracts native and custom interactive controls from drag regions on every platform', () => {

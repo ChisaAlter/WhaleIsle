@@ -399,6 +399,10 @@ var cursorRefresh sync.Mutex
 // CursorToken is the token to call Cursor's API with. One about to run
 // out is renewed by cursor-agent, which does that whenever it runs.
 func CursorToken() (string, error) {
+	return cursorTokenContext(context.Background())
+}
+
+func cursorTokenContext(ctx context.Context) (string, error) {
 	tok := readCursorToken()
 	if exp := tokenExpiry(tok); tok != "" && (exp.IsZero() || time.Until(exp) > 5*time.Minute) {
 		return tok, nil
@@ -408,7 +412,7 @@ func CursorToken() (string, error) {
 		if t := cursorTokenOf(true); t != tok && t != "" {
 			tok = t // renewed while this waited
 		} else {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			_ = agentProbe(ctx, path, "status").Run()
 			cancel()
 			tok = cursorTokenOf(true)

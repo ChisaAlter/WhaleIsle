@@ -9,10 +9,12 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, execFileSync } from 'node:child_process';
 import { createWhaleBridgeService } from '../src/launcher/whalebridge.js';
+import { reservePort } from './smoke-workspace.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dir=mkdtempSync(join(tmpdir(),'whalebridge-native-'));
 const data=join(dir,'component'), home=join(dir,'dsh'), pkg=join(dir,'package');
+const gatewayPort=await reservePort();
 mkdirSync(home,{recursive:true});mkdirSync(pkg);
 const upstream=createServer(async(req,res)=>{
   if(req.url==='/v1/models'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:[{id:'qa-model'}]}));return;}
@@ -38,7 +40,7 @@ writeFileSync(join(home,'settings.yaml'),'unrelated: legacy-kept\n');
 writeFileSync(join(home,'.env'),'EXISTING_KEY=keep\n');
 let service;
 try{
- service=createWhaleBridgeService({root:data,dshHome:home,devPackage:pkg,spawn:(file,args,options)=>spawn(file,args,{...options,env:{...options.env,USERPROFILE:dir,HOME:dir,XDG_CONFIG_HOME:join(dir,'config'),CODEX_HOME:join(dir,'codex'),CLAUDE_CONFIG_DIR:join(dir,'claude')}})});
+ service=createWhaleBridgeService({root:data,dshHome:home,devPackage:pkg,spawn:(file,args,options)=>spawn(file,args,{...options,env:{...options.env,MAGPIE_ADDR:`127.0.0.1:${gatewayPort}`,USERPROFILE:dir,HOME:dir,XDG_CONFIG_HOME:join(dir,'config'),CODEX_HOME:join(dir,'codex'),CLAUDE_CONFIG_DIR:join(dir,'claude')}})});
  const installed=await service.install();assert.equal(installed.ok,true,installed.message);
  assert.match(readFileSync(profile,'utf8'),/displayName: 鲸桥/);
  assert.match(readFileSync(profile,'utf8'),/provider: existing/);
@@ -60,7 +62,9 @@ try{
  const busy=await service.stop();assert.equal(busy.ok,false);assert.match(busy.message,/正在生成/);
  const stream=await response.text();assert.match(stream,/鲸桥 QA/);assert.match(stream,/qa_tool/);assert.match(stream,/\[DONE\]/);
  const usage=await api('usage?period=today');assert.equal(usage.calls,1);assert.equal(usage.input,12);assert.equal(usage.output,8);
- assert.equal((await service.stop()).ok,true);assert.equal((await service.start()).ok,true);
+ assert.equal((await service.stop()).ok,true);
+ assert.equal((await service.uninstallInfo()).defaultModel,false);assert.equal(service.state(),null);
+ assert.equal((await service.start()).ok,true);
  assert.equal(readFileSync(join(data,'data/gateway.key'),'utf8').trim(),token);
  assert.match(readFileSync(profile,'utf8'),/qa-vendor\/qa-model/);
  const nextVersion=original.version.replace(/(\d+)$/,n=>String(Number(n)+1));

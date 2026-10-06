@@ -8,29 +8,28 @@ function pageShell() {
   return window.shell;
 }
 
-let hintTimer = 0;
-
-// Transient status line at the top of the stage. Plain completions fade on
-// their own ({fade:true}); progress and errors stay until replaced.
 function setHint(text, opts = {}) {
-  const node = $('hint');
-  if (!node) {
-    return;
-  }
-  clearTimeout(hintTimer);
-  if (!text) {
-    node.hidden = true;
-    node.textContent = '';
-    return;
-  }
-  node.hidden = false;
-  node.textContent = text;
-  if (opts.fade === true) {
-    hintTimer = setTimeout(() => {
-      node.hidden = true;
-      node.textContent = '';
-    }, 4200);
-  }
+  if (text) void appNotice({ title: opts.title || '提示', body: text });
+}
+
+// Keep the original caption in the layout; CSS draws the spinner over it.
+function launcherButtonBusy(button, label = '正在处理…') {
+  if (!button) return () => {};
+  const disabled = button.disabled;
+  const wasFocused = document.activeElement === button;
+  const attributes = ['aria-busy', 'aria-label', 'title'].map((name) => [name, button.getAttribute(name)]);
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  return () => {
+    button.disabled = disabled;
+    for (const [name, value] of attributes) {
+      if (value === null) button.removeAttribute(name);
+      else button.setAttribute(name, value);
+    }
+    if (wasFocused && document.activeElement === document.body && button.isConnected && !button.disabled && button.checkVisibility()) button.focus();
+  };
 }
 
 // Machine codes from launcher-service / runtime-install / update. A bare
@@ -98,8 +97,10 @@ function errText(input, fallback = '操作失败，请重试。') {
 // renderer thread and ignores the design tokens. Cancel is always the safe
 // default focus; destructive confirmations paint the OK button danger.
 let confirmResolve = null;
+let confirmClosed = Promise.resolve();
+let dialogLoading = false;
 
-function appConfirm({ title, body, confirmText = '确定', cancelText = '取消', danger = false }) {
+function appConfirm({ title, body, confirmText = '确定', cancelText = '取消', danger = false, loading = false }) {
   const mask = $('app-confirm');
   if (!mask) {
     return Promise.resolve(false);
@@ -113,13 +114,19 @@ function appConfirm({ title, body, confirmText = '确定', cancelText = '取消'
   const okBtn = $('app-confirm-ok');
   okBtn.textContent = confirmText;
   okBtn.className = danger ? 'danger' : 'primary';
-  $('app-confirm-cancel').textContent = cancelText;
+  okBtn.hidden = loading;
+  const cancelBtn = $('app-confirm-cancel');
+  cancelBtn.textContent = cancelText || '';
+  cancelBtn.hidden = loading || cancelText === null;
+  dialogLoading = loading;
+  mask.classList.toggle('is-loading', loading);
   mask.hidden = false;
   const previousFocus = document.activeElement;
-  $('app-confirm-cancel').focus();
-  return new Promise((resolve) => {
+  (loading ? mask.querySelector('.modal-card') : cancelBtn.hidden ? okBtn : cancelBtn).focus();
+  confirmClosed = new Promise((resolve) => {
     confirmResolve = (ok) => {
       confirmResolve = null;
+      dialogLoading = false;
       mask.hidden = true;
       if (previousFocus && typeof previousFocus.focus === 'function') {
         previousFocus.focus();
@@ -127,15 +134,47 @@ function appConfirm({ title, body, confirmText = '确定', cancelText = '取消'
       resolve(ok);
     };
   });
+  return confirmClosed;
+}
+
+async function appNotice({ title = '提示', body }) {
+  // A background result must not answer or replace a destructive confirmation.
+  while (confirmResolve) await confirmClosed;
+  return appConfirm({ title, body, cancelText: null });
+}
+
+function appProgress({ title, body }) {
+  let owner = null;
+  let closed = false;
+  let text = body;
+  void (async () => {
+    while (confirmResolve) await confirmClosed;
+    if (closed) return;
+    void appConfirm({ title, body: text, loading: true });
+    owner = confirmResolve;
+  })();
+  return {
+    update(value) {
+      text = value;
+      if (owner && confirmResolve === owner) $('app-confirm-body').textContent = value;
+    },
+    close() {
+      closed = true;
+      if (owner && confirmResolve === owner) owner(true);
+    },
+  };
 }
 
 function settleConfirm(ok) {
-  if (confirmResolve) {
+  if (confirmResolve && !dialogLoading) {
     confirmResolve(ok);
   }
 }
 
 window.appConfirm = appConfirm;
+window.appNotice = appNotice;
+window.appProgress = appProgress;
+window.launcherButtonBusy = launcherButtonBusy;
 window.dshdErrText = errText;
 
 function showTab(name) {
@@ -538,13 +577,13 @@ function renderPluginBoard(forensics, options = {}) {
     </li>`;
   }).join('');
   list.querySelectorAll('[data-disable]').forEach((button) => {
-    button.addEventListener('click', () => actPlugin('disablePlugin', button.dataset.disable));
+    button.addEventListener('click', () => actPlugin('disablePlugin', button.dataset.disable, button));
   });
   list.querySelectorAll('[data-enable]').forEach((button) => {
-    button.addEventListener('click', () => actPlugin('enablePlugin', button.dataset.enable));
+    button.addEventListener('click', () => actPlugin('enablePlugin', button.dataset.enable, button));
   });
   list.querySelectorAll('[data-remove]').forEach((button) => {
-    button.addEventListener('click', () => actPlugin('removePlugin', button.dataset.remove));
+    button.addEventListener('click', () => actPlugin('removePlugin', button.dataset.remove, button));
   });
 }
 
@@ -585,37 +624,41 @@ function renderHomeRecovery(status) {
   btn.dataset.names = suspects.join('\0');
 }
 
-async function actPlugin(method, name) {
+async function actPlugin(method, name, button) {
   const api = pageShell();
   if (!api || typeof api[method] !== 'function') {
     return;
   }
   const aligning = method === 'disablePlugin' || method === 'enablePlugin';
   const slimPackage = lastStatus?.launcherPackage === true;
-  if (aligning) {
-    setHint(slimPackage ? '' : '正在重新启动以使插件变更生效…');
-  }
-  const result = await api[method](name);
-  if (result && result.forensics) {
-    renderPlugins(result.forensics);
-    void refreshStatus();
-  }
-  if (result && result.ok === false) {
-    setHint(pluginErrorHint(result.error));
-    return;
-  }
-  if (aligning && result && result.harnessRestarted === false && result.error) {
-    setHint(errText(result));
-    return;
-  }
-  if (method === 'removePlugin' && result && result.kernelStopped) {
-    setHint('桌面端已停止，请在首页重新启动。', { fade: true });
-    void refreshStatus();
-    return;
-  }
-  if (aligning) {
-    setHint(slimPackage ? '已写入运行时配置，下次启动桌面端生效。' : '', { fade: true });
-    void refreshStatus();
+  const restore = launcherButtonBusy(button, aligning ? '正在应用插件变更…' : '正在移除插件…');
+  try {
+    const result = await api[method](name);
+    if (result && result.forensics) {
+      renderPlugins(result.forensics);
+      void refreshStatus();
+    }
+    if (result && result.ok === false) {
+      setHint(pluginErrorHint(result.error));
+      return;
+    }
+    if (aligning && result && result.harnessRestarted === false && result.error) {
+      setHint(errText(result));
+      return;
+    }
+    if (method === 'removePlugin' && result && result.kernelStopped) {
+      setHint('桌面端已停止，请在首页重新启动。');
+      void refreshStatus();
+      return;
+    }
+    if (aligning) {
+      setHint(slimPackage ? '已写入运行时配置，下次启动桌面端生效。' : '');
+      void refreshStatus();
+    }
+  } catch (error) {
+    setHint(errText(error));
+  } finally {
+    restore();
   }
 }
 
@@ -1027,15 +1070,9 @@ function renderHomeStatus(status) {
   if (!desktopActionBusy() && (desktopActionError || (!desktopIsRunning(desktop) && last?.ok === false))) {
     bits.push('启动或关闭未完成，详见启动诊断');
   }
+  if (desktopOperation) bits.push(`已等待 ${Math.floor((Date.now() - desktopOperation.startedAt) / 1000)} 秒`);
   $('home-status').textContent = bits.join(' · ');
   $('home-state-dot').dataset.state = desktopActionBusy() ? 'busy' : (desktopIsRunning(desktop) ? 'running' : 'stopped');
-  const progress = $('home-start-progress');
-  if (progress) {
-    progress.hidden = !desktopActionBusy();
-    const seconds = desktopOperation ? Math.floor((Date.now() - desktopOperation.startedAt) / 1000) : null;
-    const label = desktop?.state === 'stopping' ? '正在关闭桌面端' : '正在准备运行时与插件';
-    progress.textContent = progress.hidden ? '' : `${label}${seconds === null ? '' : ` · 已等待 ${seconds} 秒`}。`;
-  }
 }
 
 async function refreshStatus() {
@@ -1144,18 +1181,20 @@ function renderUpdateCheck(check) {
     lastUpdateCheck = check;
   }
   syncUpdateNotice(check && typeof check === 'object' ? check : lastUpdateCheck);
-  if (check?.status === 'available') {
-    // The home update card owns the available-version message.
-    setHint('');
-  } else if (check?.hint) {
-    setHint(check.hint);
-  } else if (check?.status === 'error') {
-    setHint(`更新检查失败：${check.message || '网络或 GitHub 不可用'}。仍可启动桌面端。`);
-  } else if (check && (check.status === 'current' || check.status === 'none')) {
-    setHint('当前已是最新版本。', { fade: true });
-  } else {
-    setHint('');
+}
+
+function updateCheckNotice(check) {
+  const version = check?.currentVersion || check?.current || (lastStatus?.launcherPackage ? lastStatus?.installed?.version : lastStatus?.version);
+  if (check?.status === 'current') {
+    return { title: '已是最新版本', body: version ? `当前版本 v${String(version).replace(/^v/i, '')}，已是最新版本。` : '当前已是最新版本。' };
   }
+  if (check?.status === 'available') {
+    return { title: '发现新版本', body: `最新版本 v${String(check.latest || check.stableVersion).replace(/^v/i, '')}。可在首页或版本管理中更新。` };
+  }
+  if (check?.status === 'none') {
+    return { title: '暂无可用更新', body: check.hint || '未找到可用的发布版本，请稍后重新检查。' };
+  }
+  return { title: check?.status === 'error' ? '更新检查失败' : '更新检查未完成', body: check?.hint || errText(check, '未能获取更新结果，请检查网络后重试。') };
 }
 
 // --- Runtime state + components --------------------------------------------
@@ -1205,7 +1244,7 @@ function syncDesktopControls() {
     stop.textContent = stopping ? '关闭中…' : '关闭桌面端';
   }
   for (const id of ['btn-skip', 'btn-retry-full', 'btn-disable-suspects']) {
-    if ($(id)) $(id).disabled = busy;
+    if ($(id)) $(id).disabled = busy || $(id).getAttribute('aria-busy') === 'true';
   }
   const runBadge = $('home-run-badge');
   if (runBadge) {
@@ -1285,20 +1324,20 @@ async function checkUpdateNow() {
     return;
   }
   updateCheckBusy = true;
-  setHint('正在检查更新…');
+  const restore = ['btn-check-update', 'btn-check-update-versions'].map((id) => launcherButtonBusy($(id), '正在检查更新…'));
+  let notice;
   try {
     const result = await api.checkUpdate();
-    if (result && typeof result === 'object') {
-      renderUpdateCheck(result);
-    } else {
-      setHint('');
-    }
+    renderUpdateCheck(result);
+    notice = updateCheckNotice(result);
     void refreshStatus();
   } catch (error) {
-    setHint(errText(error, '更新检查失败'));
+    notice = { title: '更新检查失败', body: errText(error, '更新检查失败，请稍后重试。') };
   } finally {
     updateCheckBusy = false;
+    restore.forEach((done) => done());
   }
+  void appNotice(notice);
 }
 
 let importSourceHome;
@@ -1762,10 +1801,8 @@ async function refreshImport(options = {}) {
   const showFeedback = options.silent !== true;
   const savedSelections = captureImportSelections();
   const foldState = captureSessionFoldState();
-  if (showFeedback) {
-    btn.disabled = true;
-    btn.textContent = '扫描中…';
-  }
+  if (btn.disabled) return;
+  const restore = launcherButtonBusy(btn, '正在扫描…');
   try {
     const scan = await api.scanImport(scanOptions());
     importHomeDir = typeof scan?.homeDir === 'string' ? scan.homeDir : '';
@@ -1856,16 +1893,12 @@ async function refreshImport(options = {}) {
     syncSessionClusters();
     syncImportSummary();
     if (showFeedback) {
-      const when = new Date().toLocaleString();
-      $('import-scan-status').textContent = `扫描完成 · 会话 ${sessions.length} · 技能 ${skills.length} · 插件 ${plugins.length} · MCP ${mcp.length} · 设置 ${settings.length} · 预设 ${presets.length} · ${when}`;
+      void appNotice({ title: '扫描完成', body: `会话 ${sessions.length} · 技能 ${skills.length} · 插件 ${plugins.length} · MCP ${mcp.length} · 设置 ${settings.length} · 预设 ${presets.length}` });
     }
   } catch (error) {
     setHint(errText(error));
   } finally {
-    if (showFeedback) {
-      btn.disabled = false;
-      btn.textContent = '重新扫描';
-    }
+    restore();
   }
 }
 
@@ -1875,16 +1908,15 @@ async function refreshReleases() {
     return;
   }
   const btn = $('btn-refresh-releases');
-  btn.disabled = true;
-  btn.textContent = '刷新中…';
+  if (btn.disabled) return;
+  const restore = launcherButtonBusy(btn, '正在刷新版本…');
   try {
     const payload = await api.listReleases();
     renderReleases(payload);
   } catch (error) {
     setHint(errText(error));
   } finally {
-    btn.disabled = false;
-    btn.textContent = '刷新列表';
+    restore();
   }
 }
 
@@ -1894,15 +1926,14 @@ async function refreshPlugins() {
     return;
   }
   const btn = $('btn-refresh-plugins');
-  btn.disabled = true;
-  btn.textContent = '刷新中…';
+  if (btn.disabled) return;
+  const restore = launcherButtonBusy(btn, '正在刷新插件…');
   try {
     renderPlugins(await api.pluginForensics());
   } catch (error) {
     setHint(errText(error));
   } finally {
-    btn.disabled = false;
-    btn.textContent = '刷新';
+    restore();
   }
 }
 
@@ -2207,19 +2238,23 @@ function bind() {
     if (!names.length || !api?.disablePlugins) {
       return;
     }
-    setHint('正在批量禁用可疑插件并重新启动…');
-    const result = await api.disablePlugins(names);
-    if (result && result.ok === false) {
-      setHint(pluginErrorHint(result.error));
-      return;
+    const restore = launcherButtonBusy($('btn-disable-suspects'), '正在禁用可疑插件并重新启动…');
+    try {
+      const result = await api.disablePlugins(names);
+      if (result && result.ok === false) {
+        setHint(pluginErrorHint(result.error));
+        return;
+      }
+      if (result && result.harnessRestarted === false && result.error) {
+        setHint(errText(result));
+      }
+      void refreshStatus();
+      void refreshPlugins();
+    } catch (error) {
+      setHint(errText(error));
+    } finally {
+      restore();
     }
-    if (result && result.harnessRestarted === false && result.error) {
-      setHint(errText(result));
-    } else {
-      setHint('');
-    }
-    void refreshStatus();
-    void refreshPlugins();
   });
   $('btn-pick-source').addEventListener('click', async () => {
     const picked = await api?.pickImportSource();
@@ -2253,7 +2288,7 @@ function bind() {
     if (!ok) {
       return;
     }
-    setHint(usesSettings ? '正在打开应用设置…' : '正在启动卸载程序…');
+    const restore = launcherButtonBusy($('btn-uninstall-app'), usesSettings ? '正在打开应用设置…' : '正在启动卸载程序…');
     try {
       const result = await api?.uninstallApp();
       if (result && result.ok === false) {
@@ -2265,6 +2300,8 @@ function bind() {
         : ''), { fade: true });
     } catch (error) {
       setHint(errText(error, '无法启动卸载程序'));
+    } finally {
+      restore();
     }
   });
   $('app-confirm-ok').addEventListener('click', () => settleConfirm(true));
@@ -2279,7 +2316,8 @@ function bind() {
       event.stopPropagation();
       settleConfirm(false);
     } else if (event.key === 'Tab') {
-      const focusables = [$('app-confirm-cancel'), $('app-confirm-ok')];
+      const focusables = [$('app-confirm-cancel'), $('app-confirm-ok')].filter((button) => !button.hidden && !button.disabled);
+      if (!focusables.length) focusables.push($('app-confirm').querySelector('.modal-card'));
       const idx = focusables.indexOf(document.activeElement);
       const next = event.shiftKey
         ? (idx <= 0 ? focusables.length - 1 : idx - 1)
@@ -2453,6 +2491,7 @@ function bind() {
         // Cold-start gate outcome (failed/incomplete update flow): hints are
         // shown verbatim, everything else falls back to the shared rendering.
         renderUpdateCheck(payload?.check);
+        if (payload?.check?.hint || payload?.check?.status === 'error') void appNotice(updateCheckNotice(payload.check));
       }
       void refreshStatus();
     });

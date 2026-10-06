@@ -258,16 +258,38 @@ html[data-window-maximized] .shell {
   padding: 56px 24px 24px;
 }
 
-.hint {
-  flex: none;
-  margin: 0 0 12px;
-  padding: 7px 12px;
-  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 22%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 7%, transparent);
-  color: var(--dsw-alias-state-business-primary);
-  font-size: 12px;
-  line-height: 18px;
+button[aria-busy="true"] {
+  position: relative;
+  color: transparent;
+  transition: none;
+}
+button[aria-busy="true"] > * { visibility: hidden; }
+button[aria-busy="true"]::after,
+.modal-mask.is-loading .modal-title::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--dsw-alias-label-primary);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: launcher-loading 800ms linear infinite;
+}
+button[aria-busy="true"]::after {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+}
+button.primary[aria-busy="true"]::after {
+  border-color: var(--dsw-alias-label-primary-foreground);
+  border-right-color: transparent;
+}
+.modal-mask.is-loading .modal-title::before { margin-right: 10px; vertical-align: -3px; }
+.modal-mask.is-loading .modal-actions { display: none; }
+@keyframes launcher-loading { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  button[aria-busy="true"]::after,
+  .modal-mask.is-loading .modal-title::before { animation: none; }
 }
 
 /* In-app confirm dialog (replaces window.confirm). */
@@ -279,8 +301,14 @@ html[data-window-maximized] .shell {
   align-items: center;
   justify-content: center;
   padding: 24px;
+  border-radius: 20px;
+  overflow: hidden;
   background: var(--dsw-alias-bg-mask-1);
   backdrop-filter: var(--dsw-mask-blur);
+}
+
+html[data-window-maximized] .modal-mask {
+  border-radius: 0;
 }
 
 .modal-mask[hidden] {
@@ -867,7 +895,6 @@ body[data-launcher-state="downloading"] #route-picker {
 .home-state-dot[data-state=running] { background: var(--dsw-alias-state-success-primary); }
 .home-state-dot[data-state=busy] { background: var(--dsw-alias-state-business-primary); }
 .home-desktop .actions { margin-bottom: 0; }
-.home-desktop #home-start-progress { margin: 12px 0 0; }
 .home-desktop #home-running-note { margin-top: 12px; font-size: 12px; line-height: 18px; }
 .home-update { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--dsw-alias-border-l2); }
 .home-update p { margin: 4px 0 0; font-size: 14px; line-height: 22px; }
@@ -882,7 +909,6 @@ body[data-launcher-state="downloading"] #route-picker {
 .home-component-head .badge { flex: none; }
 .home-component-description { margin: 16px 0 20px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 20px; overflow-wrap: anywhere; }
 .home-component-controls { display: flex; gap: 8px; flex-wrap: wrap; }
-.home-component .progress, #home-components-hint { margin-top: 12px; }
 @media(max-width:760px) {
   .home-desktop { padding: 20px; }
   .home-heading, .home-section-head { align-items: flex-start; flex-wrap: wrap; }
@@ -1602,6 +1628,9 @@ body[data-launcher-state="downloading"] #route-picker {
 
 .import-summary {
   margin: 0;
+  height: 54px;
+  overflow-y: auto;
+  width: 280px;
   max-width: 280px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;

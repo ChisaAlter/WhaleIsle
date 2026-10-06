@@ -64,6 +64,11 @@ func SetLoginOn(agent, user string, on bool) error {
 			live, ok = savedLogin{Agent: agent, User: u}, true
 		}
 	}
+	if !ok && agent == "codex" {
+		if u := codexStandIn(ls); u != "" {
+			live, ok = savedLogin{Agent: agent, User: u}, true
+		}
+	}
 	if ok && strings.EqualFold(live.User, user) {
 		// the account the agent is signed in to stays so: off, it is
 		// paused, passed over while another is on (#263) — the user's

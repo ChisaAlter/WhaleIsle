@@ -46,7 +46,8 @@ describe('ConversationRoot.module.css titlebar crowding', () => {
   it('marks interactive chrome no-drag and leaves caption rows without a second drag region', () => {
     expect(declarations('.titleRow')?.get('-webkit-app-region')).toBeUndefined()
     expect(declarations('.blankCaption')?.get('-webkit-app-region')).toBeUndefined()
-    expect(declarations('.crumbs')?.get('-webkit-app-region')).toBe('no-drag')
+    expect(declarations('.crumbs')?.get('-webkit-app-region')).toBeUndefined()
+    expect(declarations('.crumbSeg')?.get('-webkit-app-region')).toBe('no-drag')
     expect(declarations('.headerActions')?.get('-webkit-app-region')).toBe('no-drag')
     expect(declarations('.headerUtilities')?.get('-webkit-app-region')).toBe('no-drag')
     expect(declarations('.tabs')?.get('-webkit-app-region')).toBeUndefined()

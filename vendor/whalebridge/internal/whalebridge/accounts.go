@@ -15,17 +15,28 @@ func accountRoutes(mux *http.ServeMux) {
 			ID     string            `json:"id"`
 			Method int               `json:"method"`
 			Inputs map[string]string `json:"inputs"`
+			Key string `json:"key"`
+			Value string `json:"value"`
 		}
 		if err := decode(w, r, &b); err != nil {
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		p, err := plugin.NextPrompt(r.Context(), b.ID, b.Method, b.Inputs)
+		ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
+		defer cancel()
+		if b.Inputs == nil { b.Inputs = map[string]string{} }
+		if b.Key != "" {
+			message, err := plugin.Validate(ctx, b.ID, b.Method, b.Key, b.Value)
+			if err != nil { http.Error(w, err.Error(), 400); return }
+			if message != "" { writeJSON(w, map[string]any{"error": message}); return }
+			b.Inputs[b.Key] = b.Value
+		}
+		p, err := plugin.NextPrompt(ctx, b.ID, b.Method, b.Inputs)
 		if err != nil {
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		writeJSON(w, p)
+		writeJSON(w, map[string]any{"prompt": p, "inputs": b.Inputs})
 	})
 	mux.HandleFunc("GET /api/subscriptions", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, provider.WhaleBridgeSubscriptions()) })
 	mux.HandleFunc("POST /api/signin", func(w http.ResponseWriter, r *http.Request) {
@@ -56,7 +67,7 @@ func accountRoutes(mux *http.ServeMux) {
 			return
 		}
 		if st.State == "done" {
-			if err := syncDSH(); err != nil {
+			if err := syncConfiguration(); err != nil {
 				http.Error(w, err.Error(), 500)
 				return
 			}
@@ -70,7 +81,7 @@ func accountRoutes(mux *http.ServeMux) {
 			return
 		}
 		if st.State == "done" {
-			if err := syncDSH(); err != nil {
+			if err := syncConfiguration(); err != nil {
 				http.Error(w, err.Error(), 500)
 				return
 			}
@@ -95,25 +106,45 @@ func accountRoutes(mux *http.ServeMux) {
 		}
 		writeJSON(w, map[string]any{"ok": true})
 	})
-	mux.HandleFunc("POST /api/subscription/adapter", mutate(func(w http.ResponseWriter, r *http.Request) error {
+	mux.HandleFunc("POST /api/subscription/adapter", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
 			ID string `json:"id"`
 		}
 		if err := decode(w, r, &b); err != nil {
-			return err
+			http.Error(w, err.Error(), 400)
+			return
 		}
 		pkg := provider.MovePackage(b.ID)
 		if pkg == "" {
-			return fmt.Errorf("该订阅没有官方适配器")
+			http.Error(w, "该订阅没有官方适配器", 400)
+			return
 		}
-		_, err := plugin.Add(r.Context(), pkg)
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+		defer cancel()
+		_, err := plugin.Add(ctx, pkg)
 		if err != nil {
-			return err
+			http.Error(w, err.Error(), 400)
+			return
 		}
-		_, err = plugin.Providers(r.Context())
-		return err
-	}))
+		if _, err = plugin.Providers(ctx); err != nil { http.Error(w, err.Error(), 400); return }
+		if err = syncConfiguration(); err != nil { http.Error(w, "适配器已安装，但 DSH 渠道同步失败: "+err.Error(), 500); return }
+		writeJSON(w, map[string]any{"ok": true})
+	})
 	mux.HandleFunc("GET /api/accounts/{id}", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, provider.Logins(r.PathValue("id"))) })
+	mux.HandleFunc("GET /api/accounts/{id}/project", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if id != "gemini" && id != "antigravity" { http.Error(w, "只有 Google 账号支持 Cloud project", 400); return }
+		writeJSON(w, map[string]any{"project": provider.GoogleProject(id, r.URL.Query().Get("user"))})
+	})
+	mux.HandleFunc("POST /api/accounts/project", mutate(func(w http.ResponseWriter, r *http.Request) error {
+		var b struct {
+			ID string `json:"id"`
+			User string `json:"user"`
+			Project string `json:"project"`
+		}
+		if err := decode(w, r, &b); err != nil { return err }
+		return provider.SetGoogleProject(b.ID, b.User, b.Project)
+	}))
 	mux.HandleFunc("POST /api/accounts/on", mutate(func(w http.ResponseWriter, r *http.Request) error {
 		var b struct {
 			ID   string `json:"id"`
@@ -141,7 +172,9 @@ func accountRoutes(mux *http.ServeMux) {
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		writeJSON(w, p.KeyList())
+		keys := p.KeyList()
+		if keys == nil { keys = []provider.KeyInfo{} }
+		writeJSON(w, keys)
 	})
 	mux.HandleFunc("POST /api/keys", mutate(func(w http.ResponseWriter, r *http.Request) error {
 		var b struct {

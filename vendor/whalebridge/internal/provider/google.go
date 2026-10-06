@@ -277,6 +277,17 @@ func addGoogleLogin(agent, user, plan string, a googleAuth) error {
 	return addSideLogin(savedLogin{Agent: agent, User: user, Plan: plan, Auth: auth, Project: a.Project}, ownUser, func(savedLogin) {})
 }
 
+// GoogleProject reports the project currently assigned to this account,
+// including the native Gemini client's explicit .env setting.
+func GoogleProject(agent, user string) string {
+	for _, l := range googleLogins(agent) {
+		if strings.EqualFold(l.User, user) {
+			return l.acct.auth.Project
+		}
+	}
+	return ""
+}
+
 // SetGoogleProject names the Google Cloud project an account's requests
 // go to, "" to let Code Assist pick; Code Assist Standard and Enterprise
 // need one.

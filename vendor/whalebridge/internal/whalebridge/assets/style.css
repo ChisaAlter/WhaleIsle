@@ -183,6 +183,9 @@ input[type=checkbox]{accent-color:var(--dsw-alias-state-business-primary)}
 .dialog-body .muted{font-size:12px;line-height:20px;margin-top:12px}
 .dialog-body .row{padding:12px;flex-wrap:wrap}
 .dialog-body .row .actions{flex-wrap:wrap}
+.header-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) 32px;gap:8px;align-items:center;margin:12px 0}
+.header-row input{min-width:0}
+.header-row input[readonly]{color:var(--dsw-alias-label-secondary)}
 #form-error{font-size:12px;line-height:20px;margin-top:16px;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}
 .confirmation{max-width:440px}
 .confirmation .dialog-head h2{margin-top:0}

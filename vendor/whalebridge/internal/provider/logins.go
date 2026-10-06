@@ -69,6 +69,9 @@ type savedLogin struct {
 	// Auth is the agent's credential blob as the agent stores it: Codex's
 	// auth.json, Claude Code's keychain item / .credentials.json.
 	Auth json.RawMessage `json:"auth"`
+	// Owned is a sign-in issued to the component, not a bookmark of the
+	// native client's sign-in. Observing that client must not replace it.
+	Owned bool `json:"owned,omitempty"`
 	// Profile is Claude Code's oauthAccount from .claude.json, which says
 	// whose credentials those are.
 	Profile json.RawMessage `json:"profile,omitempty"`
@@ -186,6 +189,9 @@ func writePrivate(path string, b []byte) error {
 func upsertLogin(ls []savedLogin, l savedLogin) []savedLogin {
 	for i := range ls {
 		if sameLogin(ls[i], l) {
+			if ls[i].Owned && !l.Owned {
+				return ls
+			}
 			// a refused Claude credential stays refused while it is the
 			// one the account has
 			if l.Agent == "claude" && l.Lapsed == "" && ls[i].Refused != "" && ls[i].Refused == claudeLoginVersion(l) {
@@ -227,7 +233,7 @@ func dedupeLogins(ls []savedLogin) []savedLogin {
 		// keep the one seen later, and if either is on or first, keep that too.
 		previous := out[found]
 		keep := previous
-		if l.Seen.After(previous.Seen) {
+		if l.Owned && !previous.Owned || l.Owned == previous.Owned && l.Seen.After(previous.Seen) {
 			keep = l
 		}
 		keep.On = previous.On || l.On
@@ -396,7 +402,7 @@ func savedButSignedOut() []Exclusion {
 	for _, a := range loginAgents {
 		// Claude Code signed out, its saved accounts are served all the
 		// same (claudeStandIn)
-		if saved[a] == 0 || a == "claude" {
+		if saved[a] == 0 || a == "claude" || codexStandIn(readLogins()) != "" {
 			continue
 		}
 		if _, ok := liveLogin(a); ok {
@@ -495,7 +501,9 @@ func rememberLogins(force bool) {
 		l.Seen = time.Now().UTC().Truncate(time.Second)
 		if agent == "claude" {
 			for i := range ls {
-				ls[i].Held = false
+				if ls[i].Agent == agent && !ls[i].Owned {
+					ls[i].Held = false
+				}
 			}
 			l.Held = true
 		}
@@ -593,6 +601,10 @@ func Logins(agent string) []Login {
 	if _, ok := active["claude"]; !ok {
 		standIn = claudeStandIn(ls)
 	}
+	codexFirst := ""
+	if _, ok := active["codex"]; !ok {
+		codexFirst = codexStandIn(ls)
+	}
 	back := map[string]string{}
 	for a, user := range active {
 		if r, ok := loginReturnOf(a, user); ok {
@@ -603,8 +615,8 @@ func Logins(agent string) []Login {
 		if (agent != "" && l.Agent != agent) || sideAgent(l.Agent) || strings.HasPrefix(l.Agent, "plugin:") {
 			continue
 		}
-		using := strings.EqualFold(active[l.Agent], l.User)
-		first := l.Agent == "claude" && strings.EqualFold(standIn, l.User)
+		using := !l.Owned && strings.EqualFold(active[l.Agent], l.User)
+		first := l.Agent == "claude" && strings.EqualFold(standIn, l.User) || l.Agent == "codex" && strings.EqualFold(codexFirst, l.User) || l.Owned && strings.EqualFold(active[l.Agent], l.User)
 		lg := Login{Agent: l.Agent, User: l.User, Plan: l.Plan, Seen: l.Seen, Active: using, On: using || first || l.On,
 			Paused: (using || first) && pausedOwn(ls, l.Agent, l.User), first: first}
 		if l.Agent == "claude" {
@@ -795,6 +807,9 @@ func switchSavedLogin(agent, user string) (from string, _ error) {
 		}
 	}
 	want := *target
+	if os.Getenv("LAUNCHER_COMPONENT_ID") == "whalebridge" && want.Owned {
+		return "", fmt.Errorf("%s is a component-owned sign-in; use it here without switching the native client", user)
+	}
 	if live, ok := liveLogin(agent); ok {
 		if strings.EqualFold(live.User, want.User) {
 			return "", nil
@@ -915,10 +930,11 @@ func ForgetLogin(agent, user string) error {
 	}
 	loginsMu.Lock()
 	defer loginsMu.Unlock()
-	if live, ok := liveLogin(agent); ok && strings.EqualFold(live.User, user) {
+	ls := readLogins()
+	owned := slices.ContainsFunc(ls, func(l savedLogin) bool { return l.Agent == agent && strings.EqualFold(l.User, user) && l.Owned })
+	if live, ok := liveLogin(agent); ok && strings.EqualFold(live.User, user) && !owned {
 		return fmt.Errorf("%s is signed in to %s now; switch to another account first", agent, user)
 	}
-	ls := readLogins()
 	out := ls[:0]
 	found := false
 	for _, l := range ls {

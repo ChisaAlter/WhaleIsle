@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -16,14 +17,15 @@ var whaleBridgeRequests struct {
 
 // Freeze admission atomically before a stop/update. An existing stream keeps
 // its own request, including tool calls; maintenance never cuts it off.
-func WhaleBridgeMaintenance(on bool) (int, bool) {
+func (s *Server) WhaleBridgeMaintenance(on bool) (int, bool) {
 	whaleBridgeRequests.Lock()
 	defer whaleBridgeRequests.Unlock()
-	if on && whaleBridgeRequests.active > 0 {
-		return whaleBridgeRequests.active, false
+	active := whaleBridgeRequests.active + s.subscription.parked()
+	if on && active > 0 {
+		return active, false
 	}
 	whaleBridgeRequests.draining = on
-	return whaleBridgeRequests.active, true
+	return active, true
 }
 
 func (s *Server) Handler() http.Handler {
@@ -32,6 +34,16 @@ func (s *Server) Handler() http.Handler {
 		if r.Method == "GET" && r.URL.Path == "/whalebridge/identity" {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{"pid": os.Getpid(), "version": Version})
+			return
+		}
+		// Claude's stdio helper authenticates with the run's private token.
+		// This internal callback is never available to a remote or browser caller.
+		if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/_magpie/claude-mcp/") {
+			if !local(r) || !loopbackHost(r.Host) || r.Header.Get("Origin") != "" {
+				http.Error(w, "invalid Claude helper callback", http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
 			return
 		}
 		// DSH uses these two APIs. Other Magpie client, MCP, image and

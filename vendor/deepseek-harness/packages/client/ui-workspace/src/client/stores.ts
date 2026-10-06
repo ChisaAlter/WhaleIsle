@@ -8,7 +8,7 @@
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { reconcileManualOrder, type SessionRowState } from './tree.ts'
+import { reconcileManualOrder, type ArchivedFilter, type SessionRowState } from './tree.ts'
 
 /** Browser-local order account for the hierarchy-free flat Session list. */
 export const FLAT_SESSION_ORDER_KEY = '__flat_session_order__'
@@ -28,6 +28,8 @@ type WorkspaceViewState = {
   sessionOrderByAccount: Record<string, string[]>
   /** Whether the sidebar renders its separate Archived section. */
   showArchivedList?: boolean
+  /** Main-list and search visibility; older v5 snapshots default to hiding archived rows. */
+  archivedFilter?: ArchivedFilter
 }
 
 type SessionOrderSource = {
@@ -66,6 +68,7 @@ type WorkspaceViewActions = {
     source: SessionOrderSource,
   ) => void
   setShowArchivedList: (draft: WorkspaceViewState, show: boolean) => void
+  setArchivedFilter: (draft: WorkspaceViewState, filter: ArchivedFilter) => void
 }
 
 /** Copy read-only projections into the persisted mutable store representation. */
@@ -87,6 +90,7 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
       groupExpansion: {},
       sessionOrderByAccount: {},
       showArchivedList: true,
+      archivedFilter: 'default',
     }),
     // v5: showArchivedList. Archived expand is session-local in the browser
     // (not persisted) so reloads always start collapsed.
@@ -128,8 +132,8 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
       },
       setShowArchivedList: (d, show: boolean) => {
         d.showArchivedList = show
-        delete (d as WorkspaceViewState & { archivedFilter?: unknown }).archivedFilter
       },
+      setArchivedFilter: (d, filter: ArchivedFilter) => { d.archivedFilter = filter },
     },
   })
 }

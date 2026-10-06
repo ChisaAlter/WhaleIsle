@@ -10,13 +10,12 @@
     el: null,
     shell: null,
     unsubscribe: null,
-    pending: new Set(),
+    pending: new Map(),
     rows: new Map(),
     list: null,
-    hintNode: null,
     homeEl: null,
     homeList: null,
-    homeHint: null,
+    refreshing: null,
   };
 
   function escapeHtml(value) {
@@ -95,16 +94,10 @@
     if (row.updateAvailable) {
       bits.push(`有更新 v${row.version}`);
     }
-    if (row.message) {
-      bits.push(row.message);
-    }
     return bits.length ? escapeHtml(bits.join(' · ')) : '';
   }
 
   function rowActions(row) {
-    if (state.pending.has(row.id)) {
-      return '<span class="row-meta">操作进行中…</span>';
-    }
     const buttons = [];
     const btn = (action, label, cls) => `<button type="button" class="${cls} small" data-comp-action="${action}" data-comp-id="${escapeHtml(row.id)}">${label}</button>`;
     if (row.state === 'available') {
@@ -122,7 +115,12 @@
       management.push(btn('uninstall', '卸载', 'danger'));
       buttons.push(`<details class="comp-manage"><summary aria-label="管理${escapeHtml(row.name || row.id)}">管理<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg></summary><div class="comp-manage-menu"><span class="row-meta">当前 v${escapeHtml(row.installedVersion || row.version)}</span>${management.join('')}</div></details>`);
     }
+    if (row.message) buttons.push(statusDetailsButton(row));
     return buttons.join('');
+  }
+
+  function statusDetailsButton(row) {
+    return `<button type="button" class="ghost small" data-comp-info="${escapeHtml(row.id)}">状态详情</button>`;
   }
 
   function renderRows(payload) {
@@ -158,7 +156,6 @@
             <div class="row-title">${escapeHtml(row.name || row.id)} ${marks}</div>
             <div class="row-meta">${rowMeta(row)}</div>
             ${detail ? `<div class="row-meta">${detail}</div>` : ''}
-            <p class="progress" data-comp-progress hidden></p>
           </div>
         </div>
         <div class="comp-status">
@@ -168,6 +165,7 @@
       </li>`;
     }).join('');
     bindActions(host);
+    syncPendingButtons();
   }
 
   function componentIcon(row) {
@@ -179,7 +177,15 @@
   function bindActions(host) {
     host.querySelectorAll('[data-comp-action]').forEach((button) => {
       button.addEventListener('click', () => {
-        void runAction(button.dataset.compAction, button.dataset.compId);
+        void runAction(button.dataset.compAction, button.dataset.compId, button);
+      });
+    });
+    host.querySelectorAll('[data-comp-info]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const row = state.rows.get(button.dataset.compInfo);
+        if (row?.message) {
+          void window.appNotice({ title: `${row.name || row.id}状态`, body: errorText(row.message, '无法读取组件状态') });
+        }
       });
     });
   }
@@ -190,25 +196,37 @@
     state.homeEl.hidden = installed.length === 0;
     state.homeList.innerHTML = installed.map(row => {
       const running = row.state === 'running';
-      const pending = state.pending.has(row.id);
       const name = row.name || row.id;
-      const control = `<button type="button" class="${running ? 'ghost' : 'primary'} small" data-comp-action="${running ? 'stop' : 'start'}" data-comp-id="${escapeHtml(row.id)}"${pending ? ' disabled' : ''}>${pending ? '处理中…' : `${running ? '关闭' : '开启'}${escapeHtml(name)}`}</button>`;
-      const settings = row.configurable && running ? `<button type="button" class="ghost small" data-comp-action="open" data-comp-id="${escapeHtml(row.id)}"${pending ? ' disabled' : ''}>打开设置</button>` : '';
-      return `<article class="home-component" data-comp-row="${escapeHtml(row.id)}"><div class="home-component-head">${componentIcon(row)}<div class="comp-copy"><h4>${escapeHtml(name)}</h4><span class="row-meta">v${escapeHtml(row.installedVersion)}</span></div>${stateBadge(row)}</div><p class="home-component-description">${escapeHtml(row.description || '鲸屿扩展组件')}</p><div class="home-component-controls">${control}${settings}</div><p class="progress" data-comp-progress hidden></p></article>`;
+      const control = `<button type="button" class="${running ? 'ghost' : 'primary'} small" data-comp-action="${running ? 'stop' : 'start'}" data-comp-id="${escapeHtml(row.id)}">${running ? '关闭' : '开启'}${escapeHtml(name)}</button>`;
+      const settings = row.configurable && running ? `<button type="button" class="ghost small" data-comp-action="open" data-comp-id="${escapeHtml(row.id)}">打开设置</button>` : '';
+      const details = row.message ? statusDetailsButton(row) : '';
+      return `<article class="home-component" data-comp-row="${escapeHtml(row.id)}"><div class="home-component-head">${componentIcon(row)}<div class="comp-copy"><h4>${escapeHtml(name)}</h4><span class="row-meta">v${escapeHtml(row.installedVersion)}</span></div>${stateBadge(row)}</div><p class="home-component-description">${escapeHtml(row.description || '鲸屿扩展组件')}</p><div class="home-component-controls">${control}${settings}${details}</div></article>`;
     }).join('');
     bindActions(state.homeList);
+    syncPendingButtons();
   }
 
-  function setHint(text) {
-    for (const node of [state.hintNode, state.homeHint]) {
-      if (!node) continue;
-      node.hidden = !text;
-      node.textContent = text || '';
+  function errorText(error, fallback) {
+    return window.dshdErrText(error, fallback);
+  }
+
+  function syncPendingButtons() {
+    for (const [id, pending] of state.pending) {
+      pending.restoreButtons.forEach(restore => restore());
+      pending.restoreButtons = [];
+      for (const host of [state.el, state.homeEl]) {
+        if (!host) continue;
+        host.querySelectorAll(`[data-comp-id="${CSS.escape(id)}"]`).forEach((button) => {
+          if (button.dataset.compAction === pending.action) {
+            pending.restoreButtons.push(window.launcherButtonBusy(button, pending.label));
+          } else {
+            const disabled = button.disabled;
+            button.disabled = true;
+            pending.restoreButtons.push(() => { button.disabled = disabled; });
+          }
+        });
+      }
     }
-  }
-
-  function progressNodes(id) {
-    return [state.el, state.homeEl].flatMap(el => el ? [...el.querySelectorAll(`[data-comp-row="${CSS.escape(id)}"] [data-comp-progress]`)] : []);
   }
 
   function progressText(payload) {
@@ -220,17 +238,24 @@
     return `${label}${percent}${detail ? `：${detail}` : ''}`;
   }
 
-  async function refresh(checkUpdates = false) {
+  function refresh(checkUpdates = false, notifyError = true) {
     if (!state.shell || typeof state.shell.componentsList !== 'function') {
-      return;
+      return Promise.resolve();
     }
-    try {
-      renderRows(await state.shell.componentsList(checkUpdates ? { refresh: true } : undefined));
-    } catch (error) {
-      setHint(typeof window.dshdErrText === 'function'
-        ? window.dshdErrText(error, '组件列表读取失败')
-        : '组件列表读取失败');
-    }
+    if (state.refreshing) return state.refreshing;
+    const button = state.el?.querySelector('[data-comp-refresh]');
+    const restore = button ? window.launcherButtonBusy(button, '正在刷新组件…') : () => {};
+    state.refreshing = Promise.resolve().then(async () => {
+      try {
+        renderRows(await state.shell.componentsList(checkUpdates ? { refresh: true } : undefined));
+      } catch (error) {
+        if (notifyError) void window.appNotice({ title: '组件列表读取失败', body: errorText(error, '无法读取组件列表') });
+      } finally {
+        restore();
+        state.refreshing = null;
+      }
+    });
+    return state.refreshing;
   }
 
   const ACTION_METHODS = {
@@ -258,70 +283,115 @@
     busy: '该组件有操作进行中。',
   };
 
-  async function runAction(action, id) {
+  const ACTION_LOADING = {
+    open: '正在打开组件设置…',
+    install: '正在安装组件…',
+    start: '正在启动组件…',
+    stop: '正在停止组件…',
+    update: '正在更新组件…',
+    rollback: '正在回滚组件…',
+    uninstall: '正在卸载组件…',
+  };
+
+  function canRestoreActionFocus(button, host) {
+    if (!host?.checkVisibility() || !document.getElementById('app-confirm').hidden) return false;
+    const active = document.activeElement;
+    return active === button || active === document.body || active === document.documentElement
+      || Boolean(active?.closest('#app-confirm'));
+  }
+
+  function restoreActionFocus(button, host, action, id) {
+    if (!canRestoreActionFocus(button, host)) return;
+    const buttons = [...host.querySelectorAll(`[data-comp-id="${CSS.escape(id)}"]`)]
+      .filter(control => !control.disabled && control.checkVisibility());
+    const target = buttons.find(control => control.dataset.compAction === action)
+      || buttons[0] || host.querySelector('[data-comp-refresh]');
+    if (target && !target.disabled && target.checkVisibility()) target.focus();
+  }
+
+  async function runAction(action, id, button) {
     const method = ACTION_METHODS[action];
     if (!method || typeof state.shell?.[method] !== 'function' || state.pending.has(id)) {
       return;
     }
     const row = state.rows.get(id);
     const name = row?.name || id;
+    const focusHost = state.homeEl?.contains(button) ? state.homeEl : state.el;
+    const pending = {
+      action,
+      label: action === 'uninstall' && id === 'whalebridge' ? '正在读取鲸桥状态…' : ACTION_LOADING[action],
+      progress: null,
+      restoreButtons: [],
+    };
+    state.pending.set(id, pending);
+    syncPendingButtons();
     let argument = id;
-    if (action === 'uninstall' && typeof window.appConfirm === 'function') {
-      let info = {};
-      try { if (id === 'whalebridge') info = await state.shell.componentsUninstallInfo(id); }
-      catch (error) { setHint(error?.message || '无法读取鲸桥状态'); return; }
-      const ok = await window.appConfirm({
-        title: `卸载组件「${name}」`,
-        body: `将停止并删除组件「${name}」及其程序文件，其配置数据会保留。${id === 'whalebridge' ? '桌面端的鲸桥渠道会移除，聊天记录和其他渠道会保留。' : ''}${info.defaultModel ? '当前默认模型使用鲸桥，卸载后需要重新选择默认模型。' : ''}`,
-        confirmText: '卸载',
-        danger: true,
-      });
-      if (!ok) {
-        return;
-      }
-      if (id === 'whalebridge') {
-        const removeData = await window.appConfirm({
-          title: '是否同时删除鲸桥配置？',
-          body: '删除会清除鲸桥的供应商密钥、账户和用量数据。保留后重新安装可继续使用。',
-          confirmText: '删除配置', cancelText: '保留配置', danger: true,
-        });
-        argument = { id, removeData };
-      }
-    } else if (action === 'rollback' && typeof window.appConfirm === 'function') {
-      const ok = await window.appConfirm({
-        title: `回滚组件「${name}」`,
-        body: `将把组件「${name}」回滚到上一个版本${row?.previousVersion ? `（v${row.previousVersion}）` : ''}，当前进程会先停止。`,
-        confirmText: '回滚',
-      });
-      if (!ok) {
-        return;
-      }
-    }
-    state.pending.add(id);
-    renderRows({ components: [...state.rows.values()] });
-    for (const progress of progressNodes(id)) {
-      progress.hidden = false;
-      progress.textContent = '处理中…';
-    }
+    let failure = '';
+    let completed = false;
+    let completionMessage = '';
     try {
+      if (action === 'uninstall' && typeof window.appConfirm === 'function') {
+        const info = id === 'whalebridge' ? await state.shell.componentsUninstallInfo(id) : {};
+        pending.label = '等待确认卸载…';
+        syncPendingButtons();
+        const ok = await window.appConfirm({
+          title: `卸载组件「${name}」`,
+          body: `将停止并删除组件「${name}」及其程序文件，其配置数据会保留。${id === 'whalebridge' ? '桌面端的鲸桥渠道会移除，聊天记录和其他渠道会保留。' : ''}${info.defaultModel ? '当前默认模型使用鲸桥，卸载后需要重新选择默认模型。' : ''}`,
+          confirmText: '卸载',
+          danger: true,
+        });
+        if (!ok) return;
+        if (id === 'whalebridge') {
+          const removeData = await window.appConfirm({
+            title: '是否同时删除鲸桥配置？',
+            body: '删除会清除鲸桥的供应商密钥、账户和用量数据。保留后重新安装可继续使用。',
+            confirmText: '删除配置', cancelText: '保留配置', danger: true,
+          });
+          argument = { id, removeData };
+        }
+      } else if (action === 'rollback' && typeof window.appConfirm === 'function') {
+        const ok = await window.appConfirm({
+          title: `回滚组件「${name}」`,
+          body: `将把组件「${name}」回滚到上一个版本${row?.previousVersion ? `（v${row.previousVersion}）` : ''}，当前进程会先停止。`,
+          confirmText: '回滚',
+        });
+        if (!ok) return;
+      }
+      pending.label = ACTION_LOADING[action];
+      syncPendingButtons();
+      if (action === 'install' || action === 'update') {
+        pending.progress = window.appProgress({
+          title: `${action === 'install' ? '安装' : '更新'}${name}`,
+          body: '正在获取组件版本…',
+        });
+      }
       const result = await state.shell[method](argument);
       if (result && result.ok === false) {
-        const text = ACTION_ERRORS[result.error] || result.message || result.error || '操作失败';
-        setHint(`${id}：${text}`);
-        for (const progress of progressNodes(id)) {
-          progress.hidden = false;
-          progress.textContent = text;
-        }
+        failure = ACTION_ERRORS[result.error] || errorText(result, '操作失败');
       } else {
-        setHint('');
+        completed = true;
+        completionMessage = result?.message || '';
       }
     } catch (error) {
-      setHint(typeof window.dshdErrText === 'function'
-        ? window.dshdErrText(error, '操作失败')
-        : '操作失败');
+      failure = errorText(error, action === 'uninstall' ? '无法卸载组件' : '操作失败');
     } finally {
+      pending.progress?.close();
+      const restoreFocus = canRestoreActionFocus(button, focusHost);
+      pending.restoreButtons.forEach(restore => restore());
       state.pending.delete(id);
-      await refresh();
+      await refresh(false, !failure);
+      if (restoreFocus) restoreActionFocus(button, focusHost, action, id);
+    }
+    if (failure) {
+      void window.appNotice({ title: `${name}操作未完成`, body: failure });
+    } else if (completed && completionMessage) {
+      void window.appNotice({ title: `${name}操作结果`, body: completionMessage });
+    } else if (completed && (action === 'install' || action === 'update')) {
+      const version = state.rows.get(id)?.installedVersion;
+      void window.appNotice({
+        title: `${name}${action === 'install' ? '安装' : '更新'}完成`,
+        body: version ? `当前版本为 v${version}。` : '组件已就绪。',
+      });
     }
   }
 
@@ -329,11 +399,13 @@
     if (!payload || !payload.id) {
       return;
     }
-    for (const node of progressNodes(payload.id)) {
-      node.hidden = false;
-      node.textContent = progressText(payload);
-    }
-    if (!state.pending.has(payload.id) && (payload.phase === 'done' || payload.phase === 'error')) {
+    const pending = state.pending.get(payload.id);
+    if (pending) {
+      const text = progressText(payload);
+      pending.progress?.update(text);
+      pending.label = text;
+      syncPendingButtons();
+    } else if (payload.phase === 'done' || payload.phase === 'error') {
       void refresh();
     }
   }
@@ -358,10 +430,8 @@
       <div class="actions">
         <button type="button" class="ghost" data-comp-refresh>刷新</button>
       </div>
-      <ul class="list" data-comp-list></ul>
-      <p class="progress" data-comp-hint hidden></p>`;
+      <ul class="list" data-comp-list></ul>`;
     state.list = el.querySelector('[data-comp-list]');
-    state.hintNode = el.querySelector('[data-comp-hint]');
     el.querySelector('[data-comp-refresh]').addEventListener('click', () => void refresh(true));
     const routeNode = el.querySelector('[data-comp-route]');
     if (routeNode && state.shell && typeof state.shell.launcherStatus === 'function') {
@@ -387,7 +457,6 @@
   function mountHome(el, shell) {
     state.homeEl = el;
     state.homeList = el?.querySelector('#home-components-list') || null;
-    state.homeHint = el?.querySelector('#home-components-hint') || null;
     connect(shell);
   }
 

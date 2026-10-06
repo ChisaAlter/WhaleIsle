@@ -151,9 +151,10 @@
 
 /* AppFrame's caption band spans the first 48px on desktop. Its drag region
    must leave the Session header's actual content clickable on every platform;
-   the empty space between these seats remains available for window dragging. */
+   only breadcrumb segments subtract themselves, not the flex-grown navigation's
+   empty space before the actions, which remains available for window dragging. */
 .headerLeading,
-.crumbs,
+.crumbSeg,
 .headerActions,
 .headerUtilities,
 .headerCorner {

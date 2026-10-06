@@ -458,7 +458,7 @@ describe('ui-workspace apply', () => {
     expect(view.getSnapshot().showArchivedList).toBe(true)
     view.actions.setShowArchivedList(false)
     toast.showArchived()
-    expect(view.getSnapshot().showArchivedList).toBe(true)
+    expect(view.getSnapshot()).toMatchObject({ showArchivedList: false, archivedFilter: 'show' })
 
     toast.undoArchive(sid('one'))
     expect(unarchiveSession).toHaveBeenCalledWith('one')

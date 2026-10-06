@@ -61,7 +61,6 @@
       </div>
     </aside>
     <div class="stage">
-      <p class="hint" id="hint" role="status" aria-live="polite" hidden></p>
       <main>
         <section id="panel-home" class="panel is-active" role="tabpanel" aria-labelledby="tab-home">
           <header class="home-heading"><div><h2>首页</h2><p id="lede">桌面端与组件，一处管理。</p></div><button type="button" class="ghost small" data-goto="versions">版本管理</button></header>
@@ -74,7 +73,6 @@
               <button type="button" class="ghost" id="btn-stop" hidden>关闭桌面端</button>
               <button type="button" class="ghost" id="btn-check-update">检查更新</button>
             </div></div>
-            <p class="meta" id="home-start-progress" role="status" hidden></p>
             <p class="meta" id="home-running-note" hidden>关闭启动器窗口后，桌面端继续运行。可从托盘重新打开启动器。</p>
             <div class="home-update" id="home-update" role="status" hidden>
               <div><span class="home-eyebrow">桌面端更新</span><p id="home-update-text"></p></div><div class="home-update-actions"><button type="button" class="primary small" id="btn-home-update">立即更新</button><button type="button" class="ghost small" data-goto="versions">查看版本</button></div>
@@ -102,7 +100,7 @@
           </section>
           <section id="home-components" class="home-components" aria-labelledby="home-components-title" hidden>
             <header class="home-section-head"><div><h3 id="home-components-title">我的组件</h3><p>按需开启，扩展鲸屿的能力。</p></div><button type="button" class="ghost small" data-goto="components">管理组件</button></header>
-            <div class="home-component-grid" id="home-components-list"></div><p class="progress" id="home-components-hint" role="status" hidden></p>
+            <div class="home-component-grid" id="home-components-list"></div>
           </section>
           <details id="home-recovery" class="recovery-board" hidden>
             <summary class="recovery-head"><h3>启动诊断</h3></summary>
@@ -194,7 +192,6 @@
               <button type="button" class="ghost" id="btn-pick-skill">添加技能目录</button>
               <button type="button" class="ghost" id="btn-scan">重新扫描</button>
             </div>
-            <p class="import-source-line" id="import-scan-status"></p>
           </header>
           <div class="import-cats" role="tablist" aria-label="导入类别" aria-orientation="horizontal">
             <button type="button" class="import-cat is-active" data-import-cat="sessions" role="tab" aria-selected="true" id="icat-sessions" aria-controls="import-pane-sessions">会话 <span id="import-sessions-count">0</span></button>
@@ -335,7 +332,7 @@
     </div>
   </div>
   <div class="modal-mask" id="app-confirm" hidden>
-    <div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="app-confirm-title">
+    <div class="modal-card" role="alertdialog" aria-modal="true" aria-labelledby="app-confirm-title" aria-describedby="app-confirm-body" tabindex="-1">
       <h3 class="modal-title" id="app-confirm-title"></h3>
       <p class="modal-body" id="app-confirm-body"></p>
       <div class="modal-actions">

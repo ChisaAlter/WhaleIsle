@@ -16,6 +16,7 @@ const config = () => ({ themeTokens: { scheme }, downloadRoute: 'github' });
 const handlers = {
   'shell:get-config': config,
   'shell:window-state': () => ({ maximized: false }),
+  'shell:components-list': () => ({ components: [] }),
   'shell:launcher-status': () => ({ ok: true, config: config(), downloadRoute: 'github', routes: [], desktop: { state: 'error' }, lastStart: { ok: false, error: 'fixture failure' }, forensics: { plugins: [] } }),
   'shell:scan-import': () => ({ ok: true, sourceHome: 'C:\\fixture\\source', homeDir: 'C:\\fixture\\target', sessions: Array.from({ length: 6 }, (_, i) => ({ rel: `workspace/session-${i}`, title: `会话 ${i}`, cwd: 'C:\\fixture\\workspace' })), skills: [], plugins: [], mcp: [], settings: [], presets: [] }),
   'shell:launcher-check-update': () => ({ status: 'none' }),

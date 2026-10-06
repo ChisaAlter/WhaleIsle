@@ -532,28 +532,32 @@ function SessionHoverContent({ node, now, renderSlot, t }: {
 /**
  * One flat search result: title, Workspace context, and optional content
  * excerpt. Search navigation opens the session only; it does not address an
- * event inside the conversation. Archived rows carry a hover unarchive
- * button, because search is where the filter surfaces them for recovery.
+ * event inside the conversation. Archived rows carry the restore/delete
+ * menu used by archive management, without opening or restoring on row click.
  * @param props.result - merged local/content search row.
  * @param props.currentId - selected session id.
  * @param props.onOpen - open the selected session.
  * @param props.onUnarchive - unarchive an archived result row.
+ * @param props.onDelete - open the confirmation for deleting an archived result.
  * @param props.t - Workspace-browser translation seat.
  * @returns the result row.
  */
-export function SearchResultItem({ result, currentId, onOpen, onUnarchive, t }: {
+export function SearchResultItem({ result, currentId, onOpen, onUnarchive, onDelete, t }: {
   result: SearchResultNode
   currentId: string | undefined
   onOpen: (id: SearchResultNode['id']) => void
   onUnarchive: (id: SearchResultNode['id']) => void
+  onDelete: (id: SearchResultNode['id'], title: string) => void
   t: RowTranslate
 }) {
   const selected = result.id === currentId
   const statuses = sessionStatuses(result, t)
   const primaryStatus = statuses[0]
+  const [menuOpen, setMenuOpen] = useState(false)
+  const title = result.title || t('session.untitled')
   return (
     <div
-      className={clsx(css.searchResultRow, selected && css.selected, result.archived && css.archived)}
+      className={clsx(css.searchResultRow, selected && css.selected, result.archived && css.archived, menuOpen && css.menuOpen)}
       role="treeitem"
       aria-selected={selected}
       aria-description={result.archived ? t('toast.archivedNotOpenable') : undefined}
@@ -568,19 +572,34 @@ export function SearchResultItem({ result, currentId, onOpen, onUnarchive, t }: 
             <SessionStatusDots statuses={statuses} />
           )}
         </span>
-        <span className={css.searchResultTitle}>{result.title || t('session.untitled')}</span>
+        <span className={css.searchResultTitle}>{title}</span>
         {result.archived && (
-          <span className={css.rowActions}>
-            <Tooltip label={t('actions.unarchive')} side="bottom" align="end" delayMs={500}>
-              <button
-                type="button"
-                className={css.iconButton}
-                aria-label={t('menu.unarchiveSession')}
-                onClick={(e) => { e.stopPropagation(); onUnarchive(result.id) }}
-              >
-                <IconUnarchiveOutlineRegular size={14} />
-              </button>
-            </Tooltip>
+          <span className={css.rowActions} onClick={(e) => { e.stopPropagation() }}>
+            <Menu
+              open={menuOpen}
+              onClose={() => { setMenuOpen(false) }}
+              items={[
+                { id: 'unarchive', label: t('menu.unarchiveSession'), icon: <IconUnarchiveOutlineRegular size={16} /> },
+                { id: 'delete', label: t('menu.deleteSession'), icon: <IconTrashOutlineRegular size={16} />, danger: true },
+              ]}
+              onSelect={(id) => {
+                setMenuOpen(false)
+                if (id === 'unarchive') onUnarchive(result.id)
+                if (id === 'delete') onDelete(result.id, title)
+              }}
+              portal
+              closeOnPointerLeave
+              anchor={(
+                <button
+                  type="button"
+                  className={css.iconButton}
+                  aria-label={t('actions.session.aria', { name: title })}
+                  onClick={() => { setMenuOpen(value => !value) }}
+                >
+                  <IconEllipsisOutlineRegular size={16} />
+                </button>
+              )}
+            />
           </span>
         )}
       </span>
@@ -847,9 +866,11 @@ export function ArchivedSessionNodeItem({ node, currentId, now, onUnarchive, onD
   ]
   const ownRow = (
     <div
-      className={clsx(css.sessionRow, selected && css.selected, menuOpen && css.menuOpen)}
+      className={clsx(css.sessionRow, css.archived, selected && css.selected, menuOpen && css.menuOpen)}
+      data-row-key={`session:${node.id}`}
       role="treeitem"
       aria-selected={selected}
+      aria-description={t('toast.archivedNotOpenable')}
     >
       <span className={css.slot}>
         {showStatus && <SessionStatusDots statuses={statuses} />}

@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/yetone/magpie/internal/settings"
+	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/steady"
 )
 
@@ -172,18 +174,25 @@ func Providers(ctx context.Context) ([]Provider, error) {
 func commitProviders(ps []Provider, epoch *uint64) []Provider {
 	// Serialize publishers without blocking Cached on Windows rename retries.
 	provWriteMu.Lock()
-	defer provWriteMu.Unlock()
 	provMu.Lock()
 	if epoch != nil && provEpoch != *epoch {
 		provMu.Unlock()
+		provWriteMu.Unlock()
 		return ps
 	}
 	ps = keepListed(ps, provCache)
 	ps = keepUnloaded(ps, provCache)
+	previous, _ := json.Marshal(provCache)
+	published, _ := json.Marshal(ps)
+	changed := !bytes.Equal(previous, published)
 	provCache, provGood, provTried = ps, true, true
 	provMu.Unlock()
 	if b, err := json.Marshal(ps); err == nil {
 		_ = writeWhole(providersPath(), b)
+	}
+	provWriteMu.Unlock()
+	if changed {
+		catalog.Touched()
 	}
 	return ps
 }

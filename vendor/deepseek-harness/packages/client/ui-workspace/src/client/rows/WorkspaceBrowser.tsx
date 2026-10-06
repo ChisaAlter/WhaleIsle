@@ -17,7 +17,7 @@
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconArchiveOutlineRegular,
+  Button, IconArchiveCheckOutlineRegular, IconArchiveOffOutlineRegular, IconArchiveOutlineRegular,
   IconChevronsUpDownOutlineRegular, IconClockOutlineRegular, IconCloseFillRegular,
   IconFlatListOutlineRegular, IconFolderCloseRegular, IconProjectAddOutlineRegular,
   IconQueueOutlineRegular, IconSearchOutlineRegular, IconSlidersTwoOutlineRegular,
@@ -104,12 +104,14 @@ function useNativeDragAcceptance(active: boolean): void {
   }, [active])
 }
 
-/** Grouping and ordering menu; archived Sessions keep their own section below the list. */
-function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
+/** Grouping, ordering, and archive visibility for the main list and search. */
+function ViewOptionsMenu({ groupBy, orderBy, archivedFilter, onGroupPick, onOrderPick, onArchivedFilterPick, t }: {
   groupBy: SessionGroupBy
   orderBy: SessionOrderBy
+  archivedFilter: ArchivedFilter
   onGroupPick: (mode: SessionGroupBy) => void
   onOrderPick: (mode: SessionOrderBy) => void
+  onArchivedFilterPick: (filter: ArchivedFilter) => void
   t: WorkspaceBrowserProps['t']
 }) {
   const [open, setOpen] = useState(false)
@@ -126,11 +128,23 @@ function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
         { type: 'label' as const, id: 'order-by', text: t('orderBy.label') },
         { id: 'manual', label: t('orderBy.manual'), icon: <IconChevronsUpDownOutlineRegular /> },
         { id: 'updated', label: t('orderBy.updated'), icon: <IconClockOutlineRegular /> },
+        { type: 'separator' as const, id: 'archived-filter-separator' },
+        { type: 'label' as const, id: 'filter-by', text: t('filterBy.label') },
+        { id: 'hide-archived', label: t('viewOptions.hideArchived'), icon: <IconArchiveOffOutlineRegular /> },
+        { id: 'show-archived', label: t('viewOptions.showArchived'), icon: <IconQueueOutlineRegular /> },
+        { id: 'only-archived', label: t('viewOptions.onlyArchived'), icon: <IconArchiveCheckOutlineRegular /> },
       ]}
-      selectedIds={[groupBy, orderBy]}
+      selectedIds={[
+        groupBy,
+        orderBy,
+        { default: 'hide-archived', show: 'show-archived', only: 'only-archived' }[archivedFilter],
+      ]}
       onSelect={(id) => {
         if (id === 'workspace' || id === 'workspace-tree' || id === 'flat') onGroupPick(id)
         else if (id === 'manual' || id === 'updated') onOrderPick(id)
+        else if (id === 'hide-archived') onArchivedFilterPick('default')
+        else if (id === 'show-archived') onArchivedFilterPick('show')
+        else if (id === 'only-archived') onArchivedFilterPick('only')
         setOpen(false)
       }}
       align="end"
@@ -274,9 +288,9 @@ type SessionTreeProps = Pick<
   ungroupedSessionIds: readonly SessionId[]
   /** Whether the current Workspace stream has a complete Host baseline. */
   workspaceReady: boolean
-  /** Grouping and ordering changes replace the view without row motion. */
+  /** Grouping, ordering, and filter changes replace the view without row motion. */
   animationResetKey: string
-  /** Desktop archive rows stay in their own bottom section. */
+  /** Separate archive management rows, excluding archives already shown in the main list. */
   archivedNodes: readonly SessionNode[]
   archivedExpanded: boolean
   onToggleArchived: () => void
@@ -289,7 +303,7 @@ type SessionTreeProps = Pick<
   setGroupExpanded: (key: string, expanded: boolean) => void
   /** Apply a drag to one shared order. */
   setSessionOrder: (accountKey: string, order: readonly string[]) => void
-  /** Registry-global pin and archive sets; ordinary rows hide archives. */
+  /** Registry-global pin and archive sets plus the selected main-list filter. */
   rowState: SessionRowState
   /** Switch the archived filter back to the default hide-archived view. */
   onLeaveArchivedOnly: () => void
@@ -620,6 +634,18 @@ function SessionTree({
               sessionDropCommitted.current = false
             },
           }
+          if (node.archived) return (
+            <ArchivedSessionNodeItem
+              key={node.id}
+              node={node}
+              currentId={current}
+              now={now}
+              onUnarchive={onSessionUnarchive}
+              onDelete={onSessionDeleteRequest}
+              renderSlot={renderSlot}
+              t={t}
+            />
+          )
           return (
             <SessionNodeItem
               key={node.id}
@@ -766,6 +792,18 @@ function FlatList({
         )}
         {rows.map((node) => {
           const active = drag !== null && drag.pinned === node.pinned
+          if (node.archived) return (
+            <ArchivedSessionNodeItem
+              key={node.id}
+              node={node}
+              currentId={currentId}
+              now={now}
+              onUnarchive={onSessionUnarchive}
+              onDelete={onSessionDeleteRequest}
+              renderSlot={renderSlot}
+              t={t}
+            />
+          )
           return (
             <SessionNodeItem
               key={node.id}
@@ -832,6 +870,7 @@ function SearchResults({
   useSessionStatus,
   open,
   onUnarchive,
+  onDelete,
   workspaces,
   scratchCwd,
   archivedSessionIds,
@@ -849,6 +888,8 @@ function SearchResults({
   archivedFilter: ArchivedFilter
   /** Unarchive an archived result row in place. */
   onUnarchive: (id: SessionNode['id']) => void
+  /** Open the same delete confirmation used by archived list rows. */
+  onDelete: (id: SessionNode['id'], title: string) => void
   query: string
   remote: RemoteSearchState
   resultLimit: number
@@ -889,6 +930,7 @@ function SearchResults({
               currentId={currentId}
               onOpen={open}
               onUnarchive={onUnarchive}
+              onDelete={onDelete}
               t={t}
             />
           ))}
@@ -990,6 +1032,7 @@ export function WorkspaceBrowser({
   const groupBy = useStore(s => s.groupBy)
   const orderBy = useStore(s => s.orderBy)
   const showArchivedList = useStore(s => s.showArchivedList ?? true)
+  const archivedFilter = useStore(s => s.archivedFilter ?? 'default')
   const [archivedExpanded, setArchivedExpanded] = useState(false)
   const groupExpansion = useStore(s => s.groupExpansion)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
@@ -1002,7 +1045,7 @@ export function WorkspaceBrowser({
     }
     open(sessionId)
   }
-  const leaveArchivedOnly = (): void => { actions.setShowArchivedList(true) }
+  const leaveArchivedOnly = (): void => { actions.setArchivedFilter('default') }
   const workspaceReady = workspacePhase === 'ready' && workspaceStreamState !== 'loading'
   const mainSessionId = Object.values(list.byId)
     .find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
@@ -1020,14 +1063,17 @@ export function WorkspaceBrowser({
     [archivedSessionIds, pinnedSessionIds],
   )
   const rowState = useMemo<SessionRowState>(
-    () => ({ ...orderState, archivedFilter: 'default' }),
-    [orderState],
+    () => ({ ...orderState, archivedFilter }),
+    [orderState, archivedFilter],
   )
   const archivedNodes = useMemo(
-    () => showArchivedList
-      ? deriveArchived(list, workspaces, archivedSessionIds, scratchCwd, t('archived.missingTitle'))
-      : [],
-    [showArchivedList, list, workspaces, archivedSessionIds, scratchCwd, t],
+    () => {
+      if (archivedFilter === 'default' && !showArchivedList) return []
+      const nodes = deriveArchived(list, workspaces, archivedSessionIds, scratchCwd, t('archived.missingTitle'))
+      // Missing summaries have no main-list slot, but their existing restore/delete path stays available.
+      return archivedFilter === 'default' ? nodes : nodes.filter(node => list.byId[node.id] === undefined)
+    },
+    [archivedFilter, showArchivedList, list, workspaces, archivedSessionIds, scratchCwd, t],
   )
   const flatMemberIds = useMemo(() => sessionMemberIds(list, workspaces, scratchCwd), [list, workspaces, scratchCwd])
   const orderedWorkspaces = useMemo(() => workspaces.map((workspace) => {
@@ -1411,8 +1457,10 @@ export function WorkspaceBrowser({
             <ViewOptionsMenu
               groupBy={groupBy}
               orderBy={orderBy}
+              archivedFilter={archivedFilter}
               onGroupPick={actions.setGroupBy}
               onOrderPick={(mode) => { actions.setOrderBy(mode, activeSessionOrders) }}
+              onArchivedFilterPick={actions.setArchivedFilter}
               t={t}
             />
           )}
@@ -1484,10 +1532,11 @@ export function WorkspaceBrowser({
               useSessionStatus={useSessionStatus}
               open={openSearchResult}
               onUnarchive={onSessionUnarchive}
+              onDelete={onSessionDeleteRequest}
               workspaces={workspaces}
               scratchCwd={scratchCwd}
               archivedSessionIds={archivedSessionIds}
-              archivedFilter="default"
+              archivedFilter={archivedFilter}
               query={normalizedQuery}
               remote={remoteSearch}
               resultLimit={searchResultLimit}
@@ -1503,7 +1552,7 @@ export function WorkspaceBrowser({
                 rowState={rowState}
                 onLeaveArchivedOnly={leaveArchivedOnly}
                 workspaceReady={workspaceReady}
-                animationResetKey={`${groupBy}/${orderBy}`}
+                animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
                 archivedNodes={archivedNodes}
                 archivedExpanded={archivedExpanded}
                 onToggleArchived={() => { setArchivedExpanded(value => !value) }}
@@ -1534,7 +1583,7 @@ export function WorkspaceBrowser({
                 ungroupedSessionIds={orderedUngroupedSessionIds}
                 workspaceReady={workspaceReady}
                 nestWorkspaces={groupBy === 'workspace-tree'}
-                animationResetKey={`${groupBy}/${orderBy}`}
+                animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
                 archivedNodes={archivedNodes}
                 archivedExpanded={archivedExpanded}
                 onToggleArchived={() => { setArchivedExpanded(value => !value) }}
