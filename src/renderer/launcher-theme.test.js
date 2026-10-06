@@ -112,8 +112,9 @@ test('launcher import rescan preserves selections and shows scan feedback', () =
   assert.match(html, /id="btn-scan"/);
   assert.match(js, /captureImportSelections/);
   assert.match(js, /captureSessionFoldState/);
-  assert.match(js, /扫描中…/);
-  assert.match(js, /扫描完成 · 会话/);
+  assert.match(js, /launcherButtonBusy\(btn, '正在扫描…'\)/);
+  assert.match(js, /appNotice\(\{ title: '扫描完成'/);
+  assert.doesNotMatch(html, /id="import-scan-status"/);
   assert.match(js, /importListRendered/);
 });
 
