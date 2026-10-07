@@ -36,8 +36,22 @@ const server = http.createServer(async (req, res) => {
       const body = bytes ? JSON.parse(bytes) : undefined;
       calls.push({ scenario, path: pathname, body });
       if (pathname === '/api/state') return json({
-        version: 'fixture', gateway: 'http://127.0.0.1', presets: [], hidden: [], groups: [], providers,
-        models: providers.flatMap(provider => (provider.models || []).map(id => ({ id: `${provider.id}/${id}` }))),
+        version: 'fixture', gateway: 'http://127.0.0.1',
+        presets: scenario === 'layout' ? [{ id: 'layout-preset', name: 'Fixture region provider', regions: [
+          { id: 'fixture-region', name: 'Fixture region', chat: 'https://fixture.example/v1',
+            decide: 'https://fixture.example/workspaces/{WorkspaceId}/decide', models: ['fixture-model'] },
+        ] }] : [],
+        hidden: [], groups: scenario === 'layout' ? [{ id: 'group/fixture-long-route-identifier',
+          name: 'Fixture route with a longer readable name', routing: 'rotate',
+          members: ['fixture-api/fixture-model', 'fixture-provider/long-model-identifier-that-must-wrap-without-overflow'],
+        }] : [],
+        providers: scenario === 'layout' ? [...providers, { id: 'fixture-layout-provider',
+          name: 'Fixture provider with a longer readable name', chat: 'https://fixture.example/long-provider-endpoint/v1',
+          modelCount: 20, routing: 'rotate', off: true }] : providers,
+        models: [...providers.flatMap(provider => (provider.models || []).map(id => ({ id: `${provider.id}/${id}` }))),
+          ...(scenario === 'layout' ? [{ id: 'fixture-provider/long-model-identifier-that-must-wrap-without-overflow',
+            name: 'Fixture model with a longer readable name', images: true, context: 128000, efforts: ['low', 'medium', 'high'] },
+          { id: 'group/fixture-long-route-identifier', name: 'Fixture route', group: true }] : [])],
       });
       if (pathname === '/api/provider') {
         providers.push({ ...body, id: 'fixture-api', account: false, modelCount: body.models.length });
@@ -97,7 +111,14 @@ const server = http.createServer(async (req, res) => {
           return json({ ...state, state: 'done', user: 'fixture@example.test', again: flow.scenario === 'polled-renewed' });
         }
       }
-      if (pathname === '/api/accounts/cursor') return json([]);
+      if (pathname === '/api/accounts/cursor') return json(scenario === 'layout' ? [
+        { user: 'fixture.long.account.identity@example.test', plan: 'Fixture subscription', active: true },
+        { user: 'second.fixture.account@example.test', plan: 'Fixture subscription', on: true },
+      ] : []);
+      if (pathname === '/api/keys/fixture-api') return json([
+        { id: 'fixture-primary', name: 'Fixture primary key', masked: 'fixture-***-primary', weight: 1, active: true },
+        { id: 'fixture-second', name: 'Fixture second key with a longer name', masked: 'fixture-***-second', weight: 2, on: true },
+      ]);
     } else {
       const name = pathname === '/' ? 'index.html' : pathname.slice(1);
       if (assetNames.has(name)) {
@@ -117,7 +138,15 @@ async function run() {
   const win = new BrowserWindow({ width: 1120, height: 800, show: false,
     webPreferences: { contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, partition: 'whalebridge-accounts-test' },
   });
-  const js = source => win.webContents.executeJavaScript(source);
+  const js = async (source, timeout = 5000) => {
+    let timer;
+    try {
+      return await Promise.race([
+        win.webContents.executeJavaScript(source),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`renderer command did not settle: ${source}`)), timeout); }),
+      ]);
+    } finally { clearTimeout(timer); }
+  };
   const waitFor = async expression => {
     const deadline = Date.now() + 5000;
     do {
@@ -139,16 +168,27 @@ async function run() {
   })()`);
   const readSuccess = () => js(`(() => {
     const get = selector => document.querySelector(selector), success = get('.connection-success');
-    const rect = success?.getBoundingClientRect();
+    const rect = success?.getBoundingClientRect(), status = success?.querySelector('.connection-success-status');
+    const summary = success?.querySelector('.connection-result-head'), statusRect = status?.getBoundingClientRect();
+    const summaryRect = summary?.getBoundingClientRect(), whale = success?.querySelector('.connection-next img');
     return { open: get('#editor').open, title: get('#editor-title').textContent,
       visible: !!rect && rect.width > 0 && rect.height > 0,
-      detail: success?.querySelector('p').textContent || '', instruction: success?.querySelector('.muted').textContent || '',
+      detail: success?.querySelector('.connection-result > p')?.textContent || '',
+      instruction: success?.querySelector('.connection-next .muted')?.textContent || '',
+      sourceName: success?.querySelector('.connection-identity strong')?.textContent || '',
+      identity: success?.querySelector('.connection-identity .caption')?.textContent || '',
+      status: status?.textContent || '', checkedStatus: status?.querySelector('use')?.getAttribute('href') === '/icons.svg#check',
+      statusWithinSummary: !!statusRect && statusRect.width > 0 && statusRect.left >= summaryRect.left &&
+        statusRect.right <= summaryRect.right && statusRect.top >= summaryRect.top && statusRect.bottom <= summaryRect.bottom,
+      nextStep: success?.querySelector('.connection-next h3')?.textContent || '',
+      whaleRendered: !!whale && whale.complete && whale.naturalWidth > 0 && whale.getBoundingClientRect().width > 0,
       primary: get('#save').textContent, primaryHidden: get('#save').hidden, primaryDisabled: get('#save').disabled,
       completion: get('#cancel-editor').textContent, fieldCount: get('#fields').querySelectorAll('input,select,textarea').length,
       error: get('#form-error').hidden ? '' : get('#form-error').textContent };
   })()`);
   const waitForSuccess = async () => {
     await waitFor(`document.querySelector('.connection-success') && !document.querySelector('#refresh').disabled`);
+    await js(`(async () => { await Promise.all(document.querySelector('#editor').getAnimations().map(animation => animation.finished)); })()`);
     return readSuccess();
   };
   // The close event is queued separately from removing the dialog's open state.
@@ -176,6 +216,18 @@ async function run() {
   const install = async () => {
     await js(`document.querySelector('#fields [data-action="install-adapter"]').click()`);
     await waitFor(`!document.querySelector('#message').hidden`);
+  };
+  const screenshots = [];
+  const capture = async name => {
+    if (!process.env.WHALEBRIDGE_QA_SCREENSHOTS) return;
+    const directory = path.resolve(process.env.WHALEBRIDGE_QA_SCREENSHOTS);
+    fs.mkdirSync(directory, { recursive: true });
+    await js(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`);
+    const image = await win.webContents.capturePage();
+    if (image.isEmpty()) throw new Error(`hidden renderer capture is empty: ${name}`);
+    const file = path.join(directory, `${name}.png`);
+    fs.writeFileSync(file, image.toPNG());
+    screenshots.push({ file, ...image.getSize() });
   };
 
   try {
@@ -292,9 +344,163 @@ async function run() {
       await new Promise(resolve => setTimeout(resolve, 20));
     }
 
+    // Layout scenarios use the same production surface and only fixture reads.
+    scenario = 'layout'; installed = true;
+    await js(`load()`);
+    await js(`window.layoutQA = {
+      phase: 'initial',
+      bounded: async (promise, stage) => {
+        let timer;
+        try {
+          return await Promise.race([promise, new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('layout stage did not settle: ' + stage)), 4000);
+          })]);
+        } finally { clearTimeout(timer); }
+      },
+      settle: async () => {
+        for (const dialog of document.querySelectorAll('dialog')) {
+          if (!dialog.open) continue;
+          await layoutQA.bounded(Promise.all(dialog.getAnimations().map(animation => animation.finished)), layoutQA.phase + ' animation');
+        }
+      },
+      close: (selector = '#editor', control = '#cancel-editor') => layoutQA.bounded(new Promise(resolve => {
+        document.querySelector(selector).addEventListener('close', () => resolve(), { once: true });
+        document.querySelector(control).click();
+      }), layoutQA.phase + ' close'),
+      gap: (before, after) => document.querySelector(after).getBoundingClientRect().top - document.querySelector(before).getBoundingClientRect().bottom,
+      advancedGap: () => {
+        const body = document.querySelector('#fields .advanced-body');
+        return body.querySelector('label').getBoundingClientRect().top - body.getBoundingClientRect().top - parseFloat(getComputedStyle(body).borderTopWidth);
+      },
+      dialog: (selector = '#editor') => {
+        const dialog = document.querySelector(selector), body = dialog.querySelector('.dialog-body');
+        body.scrollTop = body.scrollHeight;
+        const bounds = dialog.getBoundingClientRect(), bodyRect = body.getBoundingClientRect();
+        const buttons = [...dialog.querySelectorAll('.dialog-head button,.dialog-actions button')].filter(button => !button.hidden);
+        const inside = rect => rect.width > 0 && rect.height > 0 && rect.left >= bounds.left - 1 &&
+          rect.right <= bounds.right + 1 && rect.top >= bounds.top - 1 && rect.bottom <= bounds.bottom + 1;
+        return { open: dialog.open, width: innerWidth, height: innerHeight, bodyOverflowX: body.scrollWidth - body.clientWidth,
+          bodyScrollable: body.scrollHeight > body.clientHeight, scrollTop: body.scrollTop,
+          buttons: buttons.map(button => ({ text: button.textContent.trim() || button.getAttribute('aria-label'),
+            visibleInside: inside(button.getBoundingClientRect()) })),
+          fieldsInside: [...body.querySelectorAll('input,select,textarea')].filter(field => field.getClientRects().length).every(field => {
+            const rect = field.getBoundingClientRect(); return rect.left >= bodyRect.left - 1 && rect.right <= bodyRect.right + 1;
+          }),
+          dialogInsideViewport: bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= 0 && bounds.bottom <= innerHeight,
+        };
+      },
+      page: () => {
+        const root = document.documentElement, main = document.querySelector('#main'), content = document.querySelector('#content');
+        return { width: innerWidth, documentOverflowX: root.scrollWidth - root.clientWidth,
+          bodyOverflowX: document.body.scrollWidth - document.body.clientWidth,
+          mainOverflowX: main.scrollWidth - main.clientWidth, contentOverflowX: content.scrollWidth - content.clientWidth,
+          overflowingElements: [...document.querySelectorAll('#content *, .sidebar *')].filter(element => {
+            const rect = element.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0 && (rect.left < -1 || rect.right > innerWidth + 1);
+          }).slice(0, 8).map(element => ({ tag: element.tagName, className: element.className,
+            text: element.textContent.slice(0, 80), left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right })),
+        };
+      },
+    }; true`);
+    const layout = { pages: [], subscriptions: [], callbacks: [], accounts: [], keys: [], providers: [], routes: [], successes: [], confirmations: [] };
+    for (const scheme of ['dark', 'light']) {
+      for (const width of [1120, 820, 600, 420, 380]) {
+        win.setContentSize(width, 760);
+        await waitFor(`innerWidth === ${width}`);
+        const label = `${scheme}-${width}`;
+        process.stderr.write(`layout start ${label}\n`);
+        const inspectDialogs = width === 1120 || width === 420;
+        const first = await js(`(async () => {
+          layoutQA.phase = 'pages';
+          document.documentElement.toggleAttribute('data-ds-dark-theme', ${scheme === 'dark'});
+          const pages = [];
+          for (const page of ['overview', 'providers', 'models', 'routing', 'help']) {
+            await go(page); pages.push({ page, ...layoutQA.page() });
+          }
+          if (!${inspectDialogs}) return { pages };
+          layoutQA.phase = 'subscription'; await go('providers'); await openSubscription();
+          document.querySelector('#f-agent').value = 'cursor-plugin';
+          document.querySelector('#f-agent').dispatchEvent(new Event('change', { bubbles: true }));
+          await layoutQA.settle();
+          const methodGap = layoutQA.gap('#f-agent', 'label[for="f-method"]');
+          document.querySelector('#f-method').value = '1';
+          document.querySelector('#f-method').dispatchEvent(new Event('change', { bubbles: true }));
+          return { pages, subscription: { methodGap, keyGap: layoutQA.gap('#f-method', 'label[for="f-key"]'), dialog: layoutQA.dialog() } };
+        })()`, 15000);
+        layout.pages.push(...first.pages.map(row => ({ scheme, ...row })));
+        if (!inspectDialogs) { process.stderr.write(`layout complete ${label}\n`); continue; }
+        layout.subscriptions.push({ scheme, ...first.subscription });
+        if (width === 1120 || width === 420) await capture(`${label}-subscription`);
+        const middle = await js(`(async () => {
+          layoutQA.phase = 'callback';
+          showLogin({ state: 'waiting', instructions: 'Fixture authorization instructions',
+            url: 'https://fixture.example/authorize', code: 'FIXTURE-CODE', pasteCallback: true });
+          const rows = [...document.querySelector('.login-progress').children];
+          const callback = { callbackGap: layoutQA.gap('#f-callback', '[data-action="signin-callback"]'),
+            progressGaps: rows.slice(1).map((row, index) => row.getBoundingClientRect().top - rows[index].getBoundingClientRect().bottom),
+            dialog: layoutQA.dialog() };
+          layoutQA.phase = 'callback close'; await layoutQA.close();
+          layoutQA.phase = 'account open'; await layoutQA.bounded(openAccounts('cursor'), layoutQA.phase);
+          layoutQA.phase = 'account settle'; await layoutQA.settle();
+          const account = { actionGap: layoutQA.gap('#fields .panel', '[data-action="add-account"]'),
+            rowCount: document.querySelectorAll('#fields .panel .row').length, dialog: layoutQA.dialog() };
+          layoutQA.phase = 'account close'; await layoutQA.close();
+          layoutQA.phase = 'keys open'; await layoutQA.bounded(openKeys('fixture-api'), layoutQA.phase);
+          layoutQA.phase = 'keys settle'; await layoutQA.settle();
+          const key = { nameGap: layoutQA.gap('#fields .panel', 'label[for="f-name"]'), dialog: layoutQA.dialog() };
+          layoutQA.phase = 'keys close'; await layoutQA.close();
+          layoutQA.phase = 'provider open'; openProvider();
+          document.querySelector('#f-preset').value = 'layout-preset';
+          document.querySelector('#f-preset').dispatchEvent(new Event('change', { bubbles: true }));
+          document.querySelector('#provider-advanced').open = true;
+          document.querySelector('#f-proxyMode').value = 'custom';
+          document.querySelector('#f-proxyMode').dispatchEvent(new Event('change', { bubbles: true }));
+          layoutQA.phase = 'provider settle'; await layoutQA.settle();
+          const provider = { regionGap: layoutQA.gap('#f-key', 'label[for="f-region"]'),
+            workspaceGap: layoutQA.gap('#f-chat', 'label[for="f-workspace"]'),
+            proxyGap: layoutQA.gap('#f-proxyMode', 'label[for="f-proxy"]'), advancedGap: layoutQA.advancedGap(), dialog: layoutQA.dialog() };
+          layoutQA.phase = 'provider done'; return { callback, account, key, provider };
+        })()`, 15000).catch(async error => { throw new Error(`${error.message}\nphase: ${await js('layoutQA.phase')}`); });
+        layout.callbacks.push({ scheme, ...middle.callback });
+        layout.accounts.push({ scheme, ...middle.account });
+        layout.keys.push({ scheme, ...middle.key });
+        layout.providers.push({ scheme, ...middle.provider });
+        if (width === 1120 || width === 420) await capture(`${label}-provider`);
+        const route = await js(`(async () => {
+          await layoutQA.close(); await go('routing'); openGroup();
+          document.querySelector('#fields details.advanced').open = true; await layoutQA.settle();
+          return { gridGap: layoutQA.gap('#fields > .form-hint', '.form-grid'),
+            advancedGap: layoutQA.advancedGap(), dialog: layoutQA.dialog() };
+        })()`, 10000);
+        layout.routes.push({ scheme, ...route });
+        if (width === 1120 || width === 420) await capture(`${label}-route`);
+        const successDialog = await js(`(async () => {
+          await layoutQA.close(); await openSubscription();
+          await showConnectionSuccess('\u8ba2\u9605\u8d26\u53f7\u63a5\u5165\u6210\u529f',
+            'Cursor \u8ba2\u9605\u8d26\u53f7\u5df2\u6dfb\u52a0\uff0c\u6a21\u578b\u5df2\u540c\u6b65\u5230\u9cb8\u5c7f\u3002',
+            { name: 'Cursor', kind: '\u8ba2\u9605\u8d26\u53f7', user: 'fixture.long.account.identity@example.test' });
+          await layoutQA.settle(); return layoutQA.dialog();
+        })()`, 10000);
+        const success = await readSuccess();
+        if (width === 1120 || width === 420) await capture(`${label}-success`);
+        layout.successes.push({ scheme, success, dialog: successDialog });
+        const confirmation = await js(`(async () => {
+          await layoutQA.close();
+          void ask('Fixture key weight', 'A positive weight determines how often this key is chosen.', 'Save fixture weight', 2);
+          await layoutQA.settle();
+          const confirmation = { fieldGap: layoutQA.gap('#confirm-body', 'label[for="f-weight"]'), dialog: layoutQA.dialog('#confirmation') };
+          await layoutQA.close('#confirmation', '#cancel-confirm'); return confirmation;
+        })()`, 10000);
+        layout.confirmations.push({ scheme, ...confirmation });
+        process.stderr.write(`layout complete ${label}\n`);
+      }
+    }
+    layout.windowVisible = win.isVisible();
+    layout.windowFocused = win.isFocused();
+
     return { initial, beforeInstall, installed: installedForm, signin, migrated, failureDefault, failed, failureRefreshes, addAccount, catalogs,
       promptValidationError, promptSignin, immediateSuccess, promptSuccess, providerSuccess, providerCompletion,
-      desktopAdapterGap, narrowAdapterGap, polled, unsuccessful,
+      desktopAdapterGap, narrowAdapterGap, polled, unsuccessful, layout, screenshots,
       installs: calls.filter(call => call.path === '/api/subscription/adapter'),
       prompts: calls.filter(call => call.path === '/api/subscription/prompt'),
       cancellations: calls.filter(call => call.path.endsWith('/cancel')),

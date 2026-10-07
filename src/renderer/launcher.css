@@ -28,19 +28,6 @@ body {
   -webkit-app-region: drag;
 }
 
-/* Square controls matching the main-window chrome (window-controls.css keeps
-   the colors, including the close-hover system exception). */
-.window-controls {
-  gap: 0;
-  padding: 12px 8px 4px;
-}
-
-.window-controls button {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-}
-
 .shell {
   display: flex;
   height: 100%;

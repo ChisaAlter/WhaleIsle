@@ -57,23 +57,27 @@ function register({ handle, LAUNCHER_ONLY, IPC_ROLES, send, onQuitCommit }) {
 
   handle('shell:components-update', LAUNCHER_ONLY, async (event, id) => {
     if (id !== 'whalebridge' || !bridge) return svc.update(id, progress(event, id));
+    const previousUrl = bridge.state()?.url;
     const result = await bridge.update(progress(event, id));
-    if (result.ok) require('./whalebridge-window').closeWhaleBridgeWindow();
+    // A failed switch can restore the old version on a new management URL.
+    if (result.ok || bridge.state()?.url !== previousUrl) require('./whalebridge-window').closeWhaleBridgeWindow();
     return result;
   });
 
   handle('shell:components-rollback', LAUNCHER_ONLY, async (event, id) => {
     if (id !== 'whalebridge' || !bridge) return svc.rollback(id, progress(event, id));
+    const previousUrl = bridge.state()?.url;
     const result = await bridge.rollback(progress(event, id));
-    if (result.ok) require('./whalebridge-window').closeWhaleBridgeWindow();
+    if (result.ok || bridge.state()?.url !== previousUrl) require('./whalebridge-window').closeWhaleBridgeWindow();
     return result;
   });
 
   handle('shell:components-uninstall', LAUNCHER_ONLY, async (event, arg) => {
     const id = typeof arg === 'string' ? arg : arg?.id;
     if (id !== 'whalebridge' || !bridge) return svc.uninstall(id, progress(event, id));
+    const previousUrl = bridge.state()?.url;
     const result = await bridge.uninstall(arg, progress(event, id));
-    if (result.ok) require('./whalebridge-window').closeWhaleBridgeWindow();
+    if (result.ok || bridge.state()?.url !== previousUrl) require('./whalebridge-window').closeWhaleBridgeWindow();
     return result;
   });
   handle('shell:components-uninstall-info', LAUNCHER_ONLY, (_event, id) => id === 'whalebridge' && bridge ? bridge.uninstallInfo() : {});

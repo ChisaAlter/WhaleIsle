@@ -182,10 +182,10 @@ function showEditor(){
  if(!$('#editor').open)$('#editor').showModal();
  $('#fields input:not([type=password]),#fields select')?.focus();
 }
-async function showConnectionSuccess(title,detail){
+async function showConnectionSuccess(title,detail,source){
  clearTimeout(loginTimer);loginFlow=null;editor.type='connection-success';
  $('#editor-title').textContent=title;
- $('#fields').innerHTML=`<div class="connection-success" role="status"><span class="connection-success-icon">${icon('check')}</span><p>${escape(detail)}</p><p class="muted">回到鲸屿桌面端，在模型选择器中选择「鲸桥」渠道下的模型即可使用。</p></div>`;
+ $('#fields').innerHTML=`<div class="connection-success" role="status"><div class="connection-result"><div class="connection-result-head"><span class="provider-avatar" aria-hidden="true">${escape(Array.from(source.name)[0].toUpperCase())}</span><div class="connection-identity"><strong>${escape(source.name)}</strong><div class="caption">${escape(source.kind)}${source.user?` · ${escape(source.user)}`:''}</div></div><span class="connection-success-status">${icon('check')}${source.updated?'授权已更新':'已接入'}</span></div><p>${escape(detail)}</p></div><div class="connection-next"><img src="/whale-head.png" alt=""><div><h3>下一步 · 开始使用模型</h3><p class="muted">回到鲸屿桌面端，在模型选择器中选择「鲸桥」渠道下的模型即可使用。</p></div></div></div>`;
  $('#form-error').hidden=true;$('#cancel-editor').textContent='完成';
  $('#save').hidden=false;$('#save').disabled=false;$('#save').textContent='查看供应商';$('#save').focus();
  await load();
@@ -206,7 +206,7 @@ $('#edit-form').addEventListener('submit',async e=>{
    await api('provider',input);
   }else{const g=current.data;await api('group',{...g,...data,from:g.id,id:data.id,members:lines(data.members),match:lines(data.match),firstToken:Number(data.firstToken)});}
   if(current!==editor||current.closed)return;
-  if(current.type==='provider'&&!current.data.id){await showConnectionSuccess('供应商添加成功',`${data.name} 已添加，模型已同步到鲸屿。`);return;}
+  if(current.type==='provider'&&!current.data.id){await showConnectionSuccess('供应商添加成功',`${data.name} 已添加，模型已同步到鲸屿。`,{name:data.name,kind:'API 供应商'});return;}
   $('#editor').close();message('已保存，模型已同步到鲸屿');await load();
  }catch(e){if(current===editor&&!current.closed){$('#form-error').textContent=e.message;$('#form-error').hidden=false;}}finally{if(current===editor&&!current.closed)$('#save').disabled=false;}
 });

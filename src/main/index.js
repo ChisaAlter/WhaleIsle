@@ -199,6 +199,8 @@ let stoppingForQuit = false;
 let closingOverlayActive = false;
 let desktopResources = null;
 let qaQuitIntercepted = false;
+// Only the initial presentation is inactive; later user entries keep focus.
+let backgroundStartup = process.argv.includes('--background');
 /**
  * The launcher window a parked update ask belongs to. A stale ask (window
  * closed/recreated, app quitting, install already started) must never keep
@@ -307,7 +309,7 @@ function bindMainClose(win) {
 }
 
 function createMainWindowWithClose() {
-  return bindMainClose(createMainWindow());
+  return bindMainClose(createMainWindow({ activate: !backgroundStartup }));
 }
 
 function bindLauncherClose(win) {
@@ -337,8 +339,8 @@ function bindLauncherClose(win) {
   return win;
 }
 
-async function openLauncher() {
-  const win = await showLauncher();
+async function openLauncher(options = {}) {
+  const win = await showLauncher(options);
   bindLauncherClose(win);
   launcherWindowToken = win;
   // Visible launcher: this is the moment a parked late update check may be
@@ -425,6 +427,7 @@ function showForeground() {
 }
 
 async function startDesktopFromLauncher(options = {}) {
+  const windowOptions = { activate: options.activate !== false };
   const recoveryLaunch = options.recoveryLaunch === true || options.skipLaunch === true;
   // Persistent blocked-import admission boundary: a user clicking Start in
   // the launcher (or a menu/tray auto-start reaching this entry point) must
@@ -435,7 +438,7 @@ async function startDesktopFromLauncher(options = {}) {
     const pending = readImportJournal(app.getPath('userData'));
     const blocked = journalIsBlocked(pending);
     if (blocked) {
-      await openLauncher();
+      await openLauncher(windowOptions);
       sendToLauncher('shell:show-tab', { tab: 'import' });
       sendToLauncher('shell:desktop-failed', { error: 'import-recovery-blocked' });
       return { ok: false, error: 'import-recovery-blocked', pendingTxns: (pending && pending.pendingTxns) || [] };
@@ -443,7 +446,7 @@ async function startDesktopFromLauncher(options = {}) {
   } catch {
     // An unreadable journal must fail closed too — unknown transaction
     // state is not a safe boot boundary.
-    await openLauncher();
+    await openLauncher(windowOptions);
     sendToLauncher('shell:show-tab', { tab: 'import' });
     sendToLauncher('shell:desktop-failed', { error: 'import-recovery-blocked' });
     return { ok: false, error: 'import-recovery-blocked' };
@@ -492,14 +495,14 @@ async function startDesktopFromLauncher(options = {}) {
     })) {
       closeLauncherWindow();
     } else if (stickyAfter || recoveryLaunch) {
-      if (stickyAfter) await openLauncher();
+      if (stickyAfter) await openLauncher(windowOptions);
       sendToLauncher('shell:show-tab', { tab: 'home' });
     }
     return harness.snapshot();
   } catch (error) {
     const message = error && error.message ? error.message : String(error);
     writeLastDesktopStart(app.getPath('userData'), { ok: false, error: message, logTail: kernelLogTail(dsh) });
-    await openLauncher();
+    await openLauncher(windowOptions);
     sendToLauncher('shell:show-tab', { tab: 'home' });
     sendToLauncher('shell:desktop-failed', { error: message });
     return { ok: false, error: message };
@@ -548,7 +551,7 @@ function gateInstallUpdate(onProgress, check) {
   });
 }
 
-function runColdStartGate() {
+function runColdStartGate(options = {}) {
   const userDataDir = app.getPath('userData');
   const launcherPackage = isLauncherPackage();
   return runLauncherColdStartGate({
@@ -577,14 +580,14 @@ function runColdStartGate() {
       updateAttention.clear();
       return result.response === 0;
     },
-    openLauncher,
+    openLauncher: () => openLauncher(options),
     sendToLauncher,
     recoverInterruptedImport: () => recoverInterruptedImport({ userDataDir }),
     readImportJournal,
     journalIsBlocked,
     startDesktop: launcherPackage
       ? () => runtimeInstall.startExternalDesktop()
-      : () => startDesktopFromLauncher(),
+      : () => startDesktopFromLauncher(options),
     drainParkedUpdateCheck: () => drainParkedUpdateCheck.drain({ generation: getLauncherWindow() }),
     log: (line, level) => dsh.log(line, level),
   });
@@ -596,11 +599,11 @@ const harness = new HarnessController({
   loadConfig,
   createMainWindow: createMainWindowWithClose,
   getMainWindow,
-  showBoot,
+  showBoot: () => showBoot({ activate: !backgroundStartup }),
   showHarness: async (url, extra) => {
     // Account services must not delay or gate workspace entry.
     void initializeDesktopAccount(url);
-    return showHarness(url, { cookie: dsh.sessionCookie, ...extra });
+    return showHarness(url, { cookie: dsh.sessionCookie, activate: !backgroundStartup, ...extra });
   },
   sendToBoot,
   isBootLoaded,
@@ -985,7 +988,8 @@ if (!gotLock) {
   console.error(`${PRODUCT_NAME} is already running. Quit the installed app before npm start (same appId single-instance lock).`);
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, commandLine) => {
+    if (commandLine.includes('--background')) return;
     showForeground();
   });
 
@@ -1363,16 +1367,21 @@ if (!gotLock) {
 
     const launcherWin = await prepareLauncher();
     bindLauncherClose(launcherWin);
-    if (process.argv.includes('--dshd-from-launcher')) {
-      // Spawned by the slim launcher package: its gate already decided — go
-      // straight to the desktop start instead of opening a second gate.
-      if (process.argv.includes('--skip-user-plugins')
-        && harness && typeof harness.writePluginSkip === 'function') {
-        harness.writePluginSkip(new Error('launcher-skip-user-plugins'));
+    const startupOptions = { activate: !backgroundStartup };
+    try {
+      if (process.argv.includes('--dshd-from-launcher')) {
+        // Spawned by the slim launcher package: its gate already decided — go
+        // straight to the desktop start instead of opening a second gate.
+        if (process.argv.includes('--skip-user-plugins')
+          && harness && typeof harness.writePluginSkip === 'function') {
+          harness.writePluginSkip(new Error('launcher-skip-user-plugins'));
+        }
+        await startDesktopFromLauncher(startupOptions);
+      } else {
+        await runColdStartGate(startupOptions);
       }
-      await startDesktopFromLauncher();
-    } else {
-      await runColdStartGate();
+    } finally {
+      backgroundStartup = false;
     }
     if (qaEnv('DSH_SMOKE')) {
       // QA / smoke orchestration lives in ./smoke and is only required inside
@@ -1408,6 +1417,7 @@ if (!gotLock) {
   });
 
   app.on('activate', () => {
+    if (backgroundStartup) return;
     showForeground();
   });
 

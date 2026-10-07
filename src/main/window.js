@@ -199,7 +199,7 @@ function attachWindowsAppDetails(win) {
   });
 }
 
-function createMainWindow() {
+function createMainWindow({ activate = true } = {}) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     return mainWindow;
   }
@@ -228,7 +228,8 @@ function createMainWindow() {
   attachIntegratedChrome(mainWindow);
   mainWindow.once('ready-to-show', () => {
     hideNativeMenu(mainWindow);
-    mainWindow.show();
+    if (activate) mainWindow.show();
+    else mainWindow.showInactive();
   });
   mainWindow.on('closed', () => {
     hideHarnessView(mainWindow);
@@ -748,8 +749,8 @@ function ensureHarnessView(win) {
   return harnessView;
 }
 
-function showBoot() {
-  const win = createMainWindow();
+function showBoot(options = {}) {
+  const win = createMainWindow(options);
   hideHarnessView(win);
   paintBackground(win, currentTheme().bg);
   if (isBootLoaded(win)) {
@@ -765,7 +766,7 @@ function showHarness(baseUrl, options = {}) {
   }
   const cookie = typeof options.cookie === 'string' ? options.cookie : '';
   const viewUrl = cookie && launchTokenFromUrl(loadUrl) ? loadUrlAfterRedeem(loadUrl) : loadUrl;
-  const win = createMainWindow();
+  const win = createMainWindow(options);
   hideHarnessView(win);
   const bootReady = isBootLoaded(win)
     ? Promise.resolve()
@@ -789,16 +790,18 @@ function showHarness(baseUrl, options = {}) {
   });
 }
 
-function showMain() {
+function showMain({ activate = true } = {}) {
   const win = getMainWindow();
   if (!win) {
     return null;
   }
-  if (win.isMinimized()) {
-    win.restore();
+  if (activate) {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  } else {
+    win.showInactive();
   }
-  win.show();
-  win.focus();
   return win;
 }
 
@@ -936,17 +939,19 @@ function createLauncherWindow() {
   return launcherWindow;
 }
 
-function showLauncher() {
+function showLauncher({ activate = true } = {}) {
   const win = createLauncherWindow();
   const ready = isLauncherLoaded(win)
     ? Promise.resolve()
     : win.loadFile(rendererFile('launcher.html'));
   return ready.then(() => {
-    if (win.isMinimized()) {
-      win.restore();
+    if (activate) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    } else {
+      win.showInactive();
     }
-    win.show();
-    win.focus();
     return win;
   });
 }

@@ -15,7 +15,7 @@ const electron = [
   path.resolve(__dirname, '../../node_modules/electron/dist/electron'),
 ].find(file => file && fs.existsSync(file));
 
-test('real WhaleBridge account UI keeps adapter selection and acknowledges successful connections', { skip: !electron }, async () => {
+test('real WhaleBridge account UI retains connection feedback and consistent responsive layout', { skip: !electron }, async () => {
   const tempRoot = path.resolve(os.tmpdir());
   const profile = fs.mkdtempSync(path.join(tempRoot, 'whalebridge-accounts-'));
   let failure;
@@ -29,7 +29,7 @@ test('real WhaleBridge account UI keeps adapter selection and acknowledges succe
       let stdout = '', stderr = '', childError, timedOut = false;
       child.stdout.on('data', data => { stdout += data; });
       child.stderr.on('data', data => { stderr += data; });
-      const timer = setTimeout(() => { timedOut = true; killProcessTree(child); }, 45000);
+      const timer = setTimeout(() => { timedOut = true; killProcessTree(child); }, 120000);
       child.once('error', error => { childError = error; clearTimeout(timer); });
       // close follows exit and drained stdio; cleanup must not race Electron.
       child.once('close', (code, signal) => {
@@ -44,6 +44,9 @@ test('real WhaleBridge account UI keeps adapter selection and acknowledges succe
         try { resolve(JSON.parse(line.slice(marker.length))); } catch (error) { reject(error); }
       });
     });
+    if (process.env.WHALEBRIDGE_QA_SCREENSHOTS) {
+      fs.writeFileSync(path.join(path.resolve(process.env.WHALEBRIDGE_QA_SCREENSHOTS), 'layout-result.json'), JSON.stringify(result, null, 2));
+    }
 
     assert.equal(result.initial.selected, 'claude', 'a new add-account dialog retains its default');
     assert.equal(result.beforeInstall.selected, 'cursor');
@@ -88,6 +91,12 @@ test('real WhaleBridge account UI keeps adapter selection and acknowledges succe
       assert.equal(success.visible, true, 'success feedback has rendered geometry');
       assert.equal(success.title, title);
       assert.ok(success.detail.includes(provider), 'the success detail names the connected provider');
+      assert.equal(success.sourceName, provider, 'the summary identifies the connected provider separately from explanatory copy');
+      assert.ok(success.identity, 'the summary retains the account or API source type');
+      assert.equal(success.checkedStatus, true, 'a checked, labeled status replaces the solitary decoration');
+      assert.equal(success.statusWithinSummary, true, 'the checked status is grouped with the connected source');
+      assert.equal(success.whaleRendered, true, 'the next step includes the loaded Whale Isle identity');
+      assert.ok(success.nextStep.includes('\u4e0b\u4e00\u6b65'), 'the next action has a visible heading');
       assert.ok(success.detail.includes('\u6a21\u578b\u5df2\u540c\u6b65\u5230\u9cb8\u5c7f'), 'success confirms model synchronization');
       assert.ok(success.instruction.includes('\u6a21\u578b\u9009\u62e9\u5668'), 'the success detail explains the next action');
       assert.ok(success.instruction.includes('\u9cb8\u6865'), 'the next action identifies the desktop model channel');
@@ -111,7 +120,7 @@ test('real WhaleBridge account UI keeps adapter selection and acknowledges succe
     assertSuccess(result.polled[1].success, '\u8ba2\u9605\u8d26\u53f7\u6388\u6743\u5df2\u66f4\u65b0', 'Codex');
     assert.ok(result.polled[1].success.detail.includes('\u767b\u5f55\u6388\u6743\u5df2\u66f4\u65b0'), 'renewing an existing account is not reported as a new account');
     for (const row of result.polled) {
-      assert.ok(row.success.detail.includes('fixture@example.test'), 'a returned account identity is shown');
+      assert.ok(row.success.identity.includes('fixture@example.test'), 'the account identity appears in the source summary');
       assert.equal(row.refreshes, 1, 'a completed login refreshes the provider and model state once');
     }
     assert.deepEqual(result.unsuccessful.map(row => row.error), ['fixture sign-in failed', '\u767b\u5f55\u5df2\u53d6\u6d88']);
@@ -130,6 +139,79 @@ test('real WhaleBridge account UI keeps adapter selection and acknowledges succe
     }
     assert.ok(result.desktopAdapterGap.width > 600);
     assert.equal(result.narrowAdapterGap.width, 420);
+
+    const layout = result.layout;
+    assert.equal(layout.windowVisible, false, 'the layout fixture never shows a desktop window');
+    assert.equal(layout.windowFocused, false, 'the layout fixture never takes the user input focus');
+    assert.equal(layout.pages.length, 50, 'five pages are inspected in five widths and both color schemes');
+    assert.deepEqual([...new Set(layout.pages.map(row => row.width))], [1120, 820, 600, 420, 380]);
+    for (const row of layout.pages) {
+      const context = `${row.scheme} ${row.width}px ${row.page}`;
+      for (const key of ['documentOverflowX', 'bodyOverflowX', 'mainOverflowX', 'contentOverflowX']) {
+        assert.ok(row[key] <= 1, `${context} ${key}: ${row[key]}px; ${JSON.stringify(row.overflowingElements)}`);
+      }
+      assert.deepEqual(row.overflowingElements, [], `${context} visible controls stay within the viewport`);
+    }
+    const assertDialog = (dialog, context) => {
+      assert.equal(dialog.open, true, `${context} dialog is open`);
+      assert.equal(dialog.dialogInsideViewport, true, `${context} dialog stays within the viewport`);
+      assert.ok(dialog.bodyOverflowX <= 1, `${context} form body does not overflow horizontally`);
+      assert.equal(dialog.fieldsInside, true, `${context} inputs remain inside the form body`);
+      assert.ok(dialog.buttons.length >= 2, `${context} has visible dismiss and completion controls`);
+      for (const button of dialog.buttons) assert.equal(button.visibleInside, true,
+        `${context} ${button.text} remains reachable after scrolling the form`);
+      if (dialog.bodyScrollable) assert.ok(dialog.scrollTop > 0, `${context} long form was inspected after scrolling`);
+    };
+    for (const row of layout.subscriptions) {
+      assert.equal(row.methodGap, 20, `${row.scheme} ${row.dialog.width}px provider and method have a 20px field gap`);
+      assert.equal(row.keyGap, 20, `${row.scheme} ${row.dialog.width}px method and API key have a 20px field gap`);
+      assertDialog(row.dialog, `subscription ${row.scheme} ${row.dialog.width}px`);
+    }
+    for (const row of layout.callbacks) {
+      assert.equal(row.callbackGap, 12, 'the callback submit action is separated from its input');
+      assert.deepEqual(row.progressGaps, [12, 12, 12], 'login instructions, link and code retain readable separation');
+      assertDialog(row.dialog, `callback ${row.scheme} ${row.dialog.width}px`);
+    }
+    for (const row of layout.accounts) {
+      assert.equal(row.rowCount, 2, 'account geometry includes both an active identity and actionable account');
+      assert.equal(row.actionGap, 16, 'add-account action is separated from the existing account panel');
+      assertDialog(row.dialog, `accounts ${row.scheme} ${row.dialog.width}px`);
+    }
+    for (const row of layout.keys) {
+      assert.equal(row.nameGap, 20, 'the new key form is separated from existing keys');
+      assertDialog(row.dialog, `keys ${row.scheme} ${row.dialog.width}px`);
+    }
+    for (const row of layout.providers) {
+      assert.equal(row.regionGap, 20, 'the conditional region field is separated from the API key');
+      assert.equal(row.workspaceGap, 20, 'the conditional workspace field is separated from the endpoint');
+      assert.equal(row.proxyGap, 20, 'the conditional proxy field is separated from proxy policy');
+      assert.ok(Math.abs(row.advancedGap - 16) < 0.01,
+        'the first advanced field has a 16px inset below its divider, allowing subpixel border rounding');
+      assertDialog(row.dialog, `provider ${row.scheme} ${row.dialog.width}px`);
+    }
+    for (const row of layout.routes) {
+      assert.equal(row.gridGap, 20, 'route identity fields are separated from the introduction');
+      assert.ok(Math.abs(row.advancedGap - 16) < 0.01,
+        'route advanced settings retain the shared 16px divider inset, allowing subpixel border rounding');
+      assertDialog(row.dialog, `route ${row.scheme} ${row.dialog.width}px`);
+    }
+    for (const row of layout.successes) {
+      assertSuccess(row.success, subscriptionSuccessTitle, 'Cursor');
+      assert.ok(row.success.identity.includes('fixture.long.account.identity@example.test'), 'the summary keeps a long account identity readable');
+      assertDialog(row.dialog, `success ${row.scheme} ${row.dialog.width}px`);
+    }
+    for (const row of layout.confirmations) {
+      assert.equal(row.fieldGap, 20, 'weight input is separated from its confirmation explanation');
+      assertDialog(row.dialog, `confirmation ${row.scheme} ${row.dialog.width}px`);
+    }
+    assert.ok(layout.providers.some(row => row.dialog.bodyScrollable), 'long provider settings exercise form scrolling');
+    if (process.env.WHALEBRIDGE_QA_SCREENSHOTS) {
+      assert.equal(result.screenshots.length, 16, 'desktop and narrow screenshots include four representative dialogs in both schemes');
+      for (const screenshot of result.screenshots) {
+        assert.ok(screenshot.width > 0 && screenshot.height > 0, 'hidden capture contains rendered pixels');
+        assert.ok(fs.existsSync(screenshot.file), 'the representative screenshot is saved');
+      }
+    }
   } catch (error) {
     failure = error;
     throw error;

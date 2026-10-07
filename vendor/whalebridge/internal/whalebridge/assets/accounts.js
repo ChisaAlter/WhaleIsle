@@ -39,10 +39,10 @@ async function beginSubscription(data){
 }
 async function completeSubscription(st){
  const s=subscriptions.find(s=>s.id===editor.request.agent);
- await showConnectionSuccess(st.again?'订阅账号授权已更新':'订阅账号接入成功',`${s.name}${st.user?`（${st.user}）`:''} ${st.again?'登录授权已更新':'订阅账号已添加'}，模型已同步到鲸屿。`);
+ await showConnectionSuccess(st.again?'订阅账号授权已更新':'订阅账号接入成功',`${s.name} ${st.again?'登录授权已更新':'订阅账号已添加'}，模型已同步到鲸屿。`,{name:s.name,user:st.user,kind:'订阅账号',updated:st.again});
 }
 function showLogin(st){
- $('#save').hidden=true;$('#fields').innerHTML=`<p>${escape(st.state==='installing'?`正在准备认证工具 ${st.installing || ''}`:'等待供应商登录完成')}</p>${st.instructions?`<p class="muted">${escape(st.instructions)}</p>`:''}${st.url&&/^https?:\/\//.test(st.url)?`<p><a href="${escape(st.url)}" target="_blank" rel="noreferrer">打开供应商登录页面 ↗</a></p>`:''}${st.code?`<p>验证码：<code>${escape(st.code)}</code></p>`:''}${st.pasteCallback||st.pasteCode||st.pasteKey?field('callback','完成登录后粘贴回调地址、验证码或密钥')+button('提交','signin-callback'):''}<p class="muted">关闭对话框会取消尚未完成的登录。</p>`;
+ $('#save').hidden=true;$('#fields').innerHTML=`<div class="login-progress"><p>${escape(st.state==='installing'?`正在准备认证工具 ${st.installing || ''}`:'等待供应商登录完成')}</p>${st.instructions?`<p class="muted">${escape(st.instructions)}</p>`:''}${st.url&&/^https?:\/\//.test(st.url)?`<p><a href="${escape(st.url)}" target="_blank" rel="noreferrer">打开供应商登录页面 ↗</a></p>`:''}${st.code?`<p>验证码：<code>${escape(st.code)}</code></p>`:''}</div>${st.pasteCallback||st.pasteCode||st.pasteKey?field('callback','完成登录后粘贴回调地址、验证码或密钥')+`<div class="actions-bar">${button('提交','signin-callback')}</div>`:''}<p class="muted">关闭对话框会取消尚未完成的登录。</p>`;
 }
 function pollLogin(){
  clearTimeout(loginTimer);const id=loginFlow;if(!id)return;
