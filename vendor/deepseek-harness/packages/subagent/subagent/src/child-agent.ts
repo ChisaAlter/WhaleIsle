@@ -9,6 +9,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { isAbsolute } from 'node:path'
 import type { Agent, AgentOptions, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -28,6 +29,7 @@ import type {} from '@deepseek-ai/dsh-permission-presets'
 // them through the tool registry's global layer.
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { delegationDepthOf } from './depth.ts'
+import type { ContinuableEnvironment } from './types.ts'
 
 /** Thrown when starting a child would exceed the requested depth cap. */
 export class SubagentDepthError extends Error {
@@ -140,12 +142,18 @@ export function childSessionMeta(
   parent: Agent,
   childDepth: number,
   isSeeded: boolean,
+  environment?: ContinuableEnvironment,
 ): NonNullable<CreateAgentOptions['meta']> {
   const parentHeader = parent.session.header
   const agentPreset = parent.ctx.get('agentPresets')?.composedPreset(parent.ctx)
+  if (environment?.cwd !== undefined && !isAbsolute(environment.cwd)) {
+    throw new Error('managed child cwd must be an absolute path')
+  }
+  const cwd = environment?.cwd ?? parentHeader.cwd
+  const preset = environment?.agentPreset ?? agentPreset
   return {
-    ...parentHeader.cwd !== undefined ? { cwd: parentHeader.cwd } : {},
-    ...agentPreset === undefined ? {} : { agentPreset },
+    ...cwd !== undefined ? { cwd } : {},
+    ...preset === undefined ? {} : { agentPreset: preset },
     parentSession: parentHeader.id,
     isSeeded,
     // Navigation classification only; the descriptor remains the authority
@@ -158,6 +166,8 @@ export function childSessionMeta(
 
 /** The scoped composition a child agent's creation window applies. */
 export interface ChildComposition {
+  /** Explicit host role preset, persisted by continuable descriptors. */
+  readonly agentPreset?: string | undefined
   /** Per-child persona shadowing the deployment persona. */
   readonly persona?: string | undefined
   /** Per-child tool scoping. */
@@ -197,12 +207,16 @@ export const SUBAGENT_DELEGATION_CONTEXT
  * @param parent - the delegating parent whose composition the child joins.
  * @param composition - the per-child persona and tool filter to install.
  */
-export function applyChildComposition(
+export async function applyChildComposition(
   childCtx: Context,
   parent: Agent,
   composition: ChildComposition,
-): void {
-  childCtx.get('agentPresets')?.composeFrom(childCtx, parent.ctx)
+): Promise<void> {
+  const presets = childCtx.get('agentPresets')
+  if (composition.agentPreset !== undefined) {
+    if (presets === undefined) throw new Error('managed child requires the agent preset registry')
+    await presets.mount(childCtx, composition.agentPreset)
+  } else presets?.composeFrom(childCtx, parent.ctx)
   childCtx.systemPrompt.context({
     name: 'subagent:delegation',
     order: childCtx.systemPrompt.getContextOrder('SUBAGENT_DELEGATION'),

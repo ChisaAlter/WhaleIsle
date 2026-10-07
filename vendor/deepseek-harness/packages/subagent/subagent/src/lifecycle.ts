@@ -43,6 +43,8 @@ export interface ActivationTerminal {
  * in-package contract rather than a published extension point.
  */
 export interface ActivationObserver {
+  /** Same epoch identity carried by start/end and the durable settlement notice. */
+  readonly runId: SubagentRunId
   /**
    * Publish the start edge once the epoch is resident.
    * @param child - the resident child agent, whose log suffix bounds this epoch.
@@ -193,6 +195,7 @@ export function createActivationObserver(
     ? captured
     : { stopReason: 'error' }
   return {
+    runId: identity.runId,
     start: (child: Agent): void => {
       boundary = child.session.seq
       emit('subagent/start', identity, parent)

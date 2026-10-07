@@ -163,13 +163,19 @@ export class SessionCommandController {
     if (value.composer !== undefined && value.composer !== 'managed') {
       throw new RemoteError('gateway/bad-request', 'presentation composer must be "managed" when provided', {})
     }
+    if (value.workingDirectory !== undefined &&
+      (typeof value.workingDirectory !== 'string' || !value.workingDirectory.trim()
+        || value.workingDirectory.length > 32768 || value.workingDirectory.includes('\0'))) {
+      throw new RemoteError('gateway/bad-request', 'presentation workingDirectory must be a non-empty path', {})
+    }
   }
 
   private writePresentation(session: Agent['session'], presentation: SessionPresentation | null): SessionPresentationValue {
     const previous = session.snapshotEvents().findLast(event => event.type === 'session/presentation')
     if (previous?.type === 'session/presentation' &&
       previous.data?.owner === presentation?.owner && previous.data?.title === presentation?.title
-      && previous.data?.composer === presentation?.composer) {
+      && previous.data?.composer === presentation?.composer
+      && previous.data?.workingDirectory === presentation?.workingDirectory) {
       return { presentation, seq: previous.seq }
     }
     const event = session.append('session/presentation', presentation)
@@ -179,7 +185,7 @@ export class SessionCommandController {
   /**
    * Validate and install one Session-local model selection; save the default in the background.
    * @param request - Session identity and requested model selection.
-   * Managed presentations never write the application default; ordinary Sessions
+   * Plugin presentations never write the application default; ordinary Sessions
    * retain the default-saving behavior unless the request opts out explicitly.
    * @returns the normalized selection installed for the Session, without waiting for default persistence.
    */
@@ -204,9 +210,9 @@ export class SessionCommandController {
         }
         this.agents.selectForNextRequest(agent, selected)
         const latestPresentation = agent.session.snapshotEvents().findLast(event => event.type === 'session/presentation')
-        const managedPresentation = latestPresentation?.type === 'session/presentation'
-          && latestPresentation.data?.composer === 'managed'
-        if (request.saveAsDefault !== false && !managedPresentation) {
+        const pluginPresentation = latestPresentation?.type === 'session/presentation'
+          && latestPresentation.data !== null
+        if (request.saveAsDefault !== false && !pluginPresentation) {
           void this.ctx.agentDefaultModel.saveSelection(selected).catch((error: unknown) => {
             this.ctx.logger.warn(
               `session-controller: model selection changed for the Session but the default was not saved: ${String(error)}`,
@@ -585,7 +591,7 @@ export class SessionCommandController {
    * @param request - Session whose active Agent turn is cancelled.
    * @returns acknowledgement that cancellation was requested.
    */
-  cancel(request: SessionCancelRequest): SessionCancelValue {
+  async cancel(request: SessionCancelRequest): Promise<SessionCancelValue> {
     const agent = this.ctx.agents.get(request.sessionId)
     if (agent === undefined) {
       throw new RemoteError(
@@ -597,6 +603,10 @@ export class SessionCommandController {
     if (hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) {
       throw apiSessionSubagentOwnershipError(request.sessionId)
     }
+    // A plugin-owned public conversation may own background work beyond its
+    // current turn. Persist its stop policy and stop that work before the
+    // ordinary cancellation; sessions without a listener retain their path.
+    await this.ctx.serial('session/before-cancel', { agent, request })
     agent.cancel({ kind: 'user' }, { keepInbox: true })
     return { accepted: true }
   }

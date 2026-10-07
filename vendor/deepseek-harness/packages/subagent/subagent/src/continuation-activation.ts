@@ -31,11 +31,12 @@ import {
 } from './child-agent.ts'
 import type { DelegatedPolicyOverrides } from './child-agent.ts'
 import { createSettlementMessage } from './continuation-messages.ts'
-import type { SubagentDescriptorData } from './descriptor.ts'
+import { foldSubagentDescriptor, type SubagentDescriptorData } from './descriptor.ts'
 import { SubagentError } from './error.ts'
 import { SubagentInbox } from './inbox.ts'
 import type { SubagentDelivery } from './inbox.ts'
 import type { ActivationObserver, ActivationTerminal } from './lifecycle.ts'
+import type { ContinuationAdmission } from './types.ts'
 
 /** Process-local slots shared through uninterrupted continuable parent links. */
 class ActivationPool {
@@ -77,6 +78,8 @@ export interface Activation {
   readonly parentSession: SessionId
   /** The provider name recorded in the durable descriptor. */
   readonly provider: string
+  /** Persisted policy also gates automatic settlement wakes of the parent. */
+  readonly admissionPolicy: string | undefined
   /** The retained live Agent handle, disposed exactly once at settlement. */
   readonly handle: AgentHandle
   /** The Activation-local admission and close wrapper around the handle's Agent inbox. */
@@ -126,7 +129,7 @@ export interface MaterializeInputs {
     descriptor: SubagentDescriptorData
   }
   agentOptions: AgentOptions
-  composition: { persona?: string | undefined; toolFilter?: ToolRestriction | undefined }
+  composition: { persona?: string | undefined; toolFilter?: ToolRestriction | undefined; agentPreset?: string | undefined }
   signal: AbortSignal
 }
 
@@ -206,6 +209,7 @@ export class ContinuableActivationRegistry {
       parent: Agent,
     ) => ActivationObserver,
     private readonly maxActiveSubagents: () => number,
+    private readonly admitContinuation: (policy: string, admission: ContinuationAdmission) => Promise<void>,
   ) {
     // Ordinary Cordis owner effects unwind in reverse registration order, which
     // cannot express the dynamic child graph. Register the private scope's
@@ -620,14 +624,14 @@ export class ContinuableActivationRegistry {
   ): Promise<Activation> {
     const { childId, provider, parent, create } = inputs
     inputs.signal.throwIfAborted()
-    const setup = (childCtx: Context, child: Agent): void => {
+    const setup = async (childCtx: Context, child: Agent): Promise<void> => {
       // Only fresh creation appends the descriptor and delegated policy after
       // the inherited marker; a cold resume replays those persisted events.
       if (create !== undefined) {
         child.session.append('subagent/descriptor', create.descriptor)
         appendDelegatedPolicyOverrides(child.session, create.delegatedPolicies)
       }
-      applyChildComposition(childCtx, parent, inputs.composition)
+      await applyChildComposition(childCtx, parent, inputs.composition)
     }
     const observer = this.observeActivation(provider, childId, parent)
     const handle: AgentHandle = create === undefined
@@ -649,12 +653,15 @@ export class ContinuableActivationRegistry {
         setup,
       })
 
+    // oxlint-disable-next-line typescript/no-deprecated -- the durable child descriptor owns admission.
+    const descriptor = foldSubagentDescriptor(handle.agent.session.snapshotEvents(handle.agent.session.inheritedEventCount))
     const activation: Activation = {
       pool,
       releaseSlot,
       childId,
       parentSession: parent.id,
       provider,
+      admissionPolicy: descriptor?.mode === 'continuable' ? descriptor.admissionPolicy : undefined,
       handle,
       inbox: new SubagentInbox(handle.agent),
       ancestry: new WeakSet([handle.agent, ...parentLineage]),
@@ -861,29 +868,49 @@ export class ContinuableActivationRegistry {
     }
     this.resident.delete(childId)
     activation.releaseSlot()
-    this.notifySettlement(activation, activation.observer.terminal(failure))
+    const notice = this.notifySettlement(activation, activation.observer.terminal(failure))
+    // Keep ordinary settlement synchronous; managed policy may need a durable Host check.
+    if (notice !== undefined) await notice
     this.releaseOwnership(childId)
     activation.observer.settle(failure)
     if (failure !== undefined) throw failure
   }
 
   /** Tell the durable direct parent how this Activation ended. */
-  private notifySettlement(activation: Activation, terminal: ActivationTerminal): void {
+  private notifySettlement(activation: Activation, terminal: ActivationTerminal): Promise<void> | undefined {
     if (!activation.announced) return
     try {
       const parent = this.ctx.agents.get(activation.parentSession)
       if (parent === undefined) return
-      const message = createSettlementMessage(activation.childId, terminal)
+      const message = createSettlementMessage(activation.childId, terminal, activation.observer.runId)
       if (this.closingTeardownFor(parent) !== undefined) {
         parent.inject(message)
         return
       }
+      if (activation.admissionPolicy !== undefined) return this.notifyManagedSettlement(activation.admissionPolicy, activation, parent, message)
       this.sendWaking(parent, message, parent.status === 'idle' ? 'queue' : 'steer')
     } catch (error: unknown) {
       this.ctx.logger.warn(
         `subagent "${activation.childId}" settlement notice was not delivered to its parent: `
         + errorChain(error),
       )
+    }
+  }
+
+  /** Park a denied notice in memory without waking; the owning policy persists its outcome. */
+  private async notifyManagedSettlement(policy: string, activation: Activation, parent: Agent, message: UserMessage): Promise<void> {
+    let admitted = false
+    try {
+      await this.admitContinuation(policy, { parent, childId: activation.childId, reason: 'settlement' })
+      admitted = true
+    } catch {
+      // Paused, stopped, stale, or unavailable owners must not wake their coordinator.
+    }
+    try {
+      if (!admitted || this.closingTeardownFor(parent) !== undefined) parent.inject(message)
+      else this.sendWaking(parent, message, parent.status === 'idle' ? 'queue' : 'steer')
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`subagent "${activation.childId}" settlement notice was not delivered to its parent: ` + errorChain(error))
     }
   }
 

@@ -5,6 +5,7 @@
  */
 
 import { createElement } from 'react'
+import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -58,7 +59,8 @@ export function apply(ctx: ClientContext): void {
     const session = Object.values(ctx.sessions.list.getSnapshot().byId)
       .find(row => (row.retainedBy.mainView ?? 0) > 0)
     const appId = controller.currentApp()
-    return session?.cwd && appId !== undefined ? { appId, path: session.cwd } : undefined
+    const cwd = sessionWorkingDirectory(session)
+    return cwd && appId !== undefined ? { appId, path: cwd } : undefined
   }
   ctx.effect(() => ctx.shortcuts.register({
     id: 'workspace.openLocal' as ShortcutCommandId, label: () => t('open.tooltip'), aliases: ['open workspace locally', 'open in app'],
@@ -96,7 +98,7 @@ export function apply(ctx: ClientContext): void {
     props: PropsRuntime<'conversation.session.header.utilities'> & Omit<OpenInAppActionProps, 'absolutePath'>,
   ) {
     const { sessionId, useSessions } = props
-    const cwd = useSessions(state => state.byId[sessionId]?.cwd)
+    const cwd = useSessions(state => sessionWorkingDirectory(state.byId[sessionId]))
     return cwd ? createElement(OpenInAppAction, { ...props, absolutePath: cwd }) : null
   }
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({

@@ -12,6 +12,7 @@ import type {
   SessionSummary,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type {
   IWorkspaces, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
@@ -28,6 +29,17 @@ interface MainSelection {
   readonly subagentAddress?: SubagentAddress
 }
 
+/** A composed feature that adopts a directory from the New Session picker. */
+export interface WorkspaceDirectoryAction {
+  /** Stable feature identity, distinct from Workspace identities. */
+  readonly id: string
+  /** Localized menu label supplied by the feature. */
+  readonly label: string
+  readonly order?: number
+  /** Accept the selected path without creating an ordinary Session. */
+  readonly adopt: (path: string) => Promise<void>
+}
+
 /** Optional content preparation for the resolved target Session. */
 export interface StartSessionOptions extends DraftInitializationOptions {
   /** Prepare the resolved Session after retention and before navigation, unless superseded. */
@@ -36,6 +48,10 @@ export interface StartSessionOptions extends DraftInitializationOptions {
 
 /** Workspace archive and directory operations consumed by Client UI domains. */
 export interface UiWorkspace {
+  /** Additional directory actions in the New Session picker. */
+  readonly directoryActions: HostObservable<readonly WorkspaceDirectoryAction[]>
+  /** Register one feature action; removal also updates the picker projection. */
+  registerDirectoryAction(action: WorkspaceDirectoryAction): () => void
   /**
    * Select a Session and show its Conversation as one UI navigation action.
    * @param target - known Session identity or durable direct-parent subagent address to display.
@@ -143,6 +159,8 @@ export class DirectoryBrowseError extends Error {
 
 /** Implements Workspace archive and directory UI operations. */
 class UiWorkspaceService extends Service implements UiWorkspace {
+  private readonly directoryActionStore = createSnapshotStore<readonly WorkspaceDirectoryAction[]>([])
+  readonly directoryActions: HostObservable<readonly WorkspaceDirectoryAction[]> = this.directoryActionStore
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
   /** In-flight no-directory inspection and create; callers share one Session. */
   private connectingNoDirectory: Promise<SessionId> | undefined
@@ -179,6 +197,19 @@ class UiWorkspaceService extends Service implements UiWorkspace {
         reference?.release()
       }
     }, 'ui-workspace: Workspace navigation policy')
+  }
+
+  registerDirectoryAction(action: WorkspaceDirectoryAction): () => void {
+    if (!action.id || action.id.startsWith('::') || this.directoryActions.getSnapshot().some(row => row.id === action.id)) {
+      throw new Error(`uiWorkspace.registerDirectoryAction: duplicate or invalid action ${action.id}`)
+    }
+    this.directoryActionStore.set([...this.directoryActions.getSnapshot(), action].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)))
+    let removed = false
+    return () => {
+      if (removed) return
+      removed = true
+      this.directoryActionStore.set(this.directoryActions.getSnapshot().filter(row => row !== action))
+    }
   }
 
   async connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId> {

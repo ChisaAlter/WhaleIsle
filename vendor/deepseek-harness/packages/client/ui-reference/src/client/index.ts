@@ -20,6 +20,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import { relativeTime } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   ClientSessionContext, InputTriggerCrumb, InputTriggerServiceContract, InputTriggerSource,
@@ -145,7 +146,7 @@ export function apply(ctx: ClientContext): void {
     openReference(session, { ref, appearance }) {
       if (appearance !== 'file') return false
       const path = ref.startsWith('@"') ? ref.slice(2, -1) : ref.slice(1)
-      const cwd = sessions.list.getSnapshot().byId[session.sessionId]?.cwd
+      const cwd = sessionWorkingDirectory(sessions.list.getSnapshot().byId[session.sessionId])
       ctx.sidebarRight.openResource(fileAddressFor(session.sessionId, cwd, path))
       return true
     },

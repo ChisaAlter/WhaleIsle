@@ -30,6 +30,7 @@ const sessionListMetadataSchema: z.ZodType<SessionListMetadata> = z.object({
   presentation: z.object({
     owner: z.string().min(1).max(240),
     title: z.string().min(1).max(240),
+    workingDirectory: z.string().min(1).max(32768).optional(),
     composer: z.literal('managed').optional(),
   }).optional(),
 })

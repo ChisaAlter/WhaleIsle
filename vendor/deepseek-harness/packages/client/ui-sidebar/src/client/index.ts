@@ -27,6 +27,15 @@ export type {
 export type { SidebarKey } from './locales.ts'
 export type { SidebarNavTabRow } from './stores.ts'
 
+/** Cross-plugin region selection, backed by the sidebar's own viewing store. */
+export interface UiSidebar {
+  selectTab(id: string): void
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context { uiSidebar: UiSidebar }
+}
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Sidebar controls and global panel copy. */
@@ -49,6 +58,12 @@ export const inject = ['slots', 'layout', 'uiWorkspace', 'locale', 'shortcuts']
  */
 export function apply(ctx: ClientContext): void {
   const workspaceNavigation = ctx.get('uiWorkspace') as unknown as WorkspaceNavigation
+  const navHandle = createSidebarNavStore()
+  const navInstance = navHandle.create()
+  const navStore: typeof navHandle = { ...navHandle, create: () => navInstance }
+  ctx.effect(() => ctx.reflect.provide('uiSidebar', {
+    selectTab: (id: string): void => { navInstance.actions.selectTab(id) },
+  } satisfies UiSidebar), 'ui-sidebar: region navigation')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar: dictionaries')
   const panels = createSnapshotStore<readonly SidebarPanelMetadata[]>([])
   const syncPanels = (): void => {
@@ -73,9 +88,9 @@ export function apply(ctx: ClientContext): void {
   const injectProps = (): SidebarRootInjected => ({
     // The shell's New Session button rides the Workspace UI's shared action
     // (current Session Workspace, then recent Workspace).
-    startSession: (workspaceId) => { workspaceNavigation.startSession(workspaceId) },
+    startSession: (workspaceId) => { navInstance.actions.selectTab('sessions'); workspaceNavigation.startSession(workspaceId) },
     toggleSidebar: () => { ctx.layout.toggleSidebar() },
-        selectPanel: (id) => {
+    selectPanel: (id) => {
       if (id === 'plugins' || id === 'schedules') ctx.get('productAnalytics')?.track('sidebar_menu_click', { menu_name: id === 'plugins' ? 'plugin' : 'cron' })
       ctx.layout.selectPanel(id)
     },
@@ -114,7 +129,7 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('sidebar', () => ctx.slots.register({
     name: 'sidebar',
     locale: NS,
-    store: createSidebarNavStore(),
+    store: navStore,
     // The shell owns geometry and optional region tabs; ui-workspace
     // registers the browsing region, ui-settings the foot trigger + panel.
     children: {

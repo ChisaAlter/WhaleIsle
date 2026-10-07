@@ -30,6 +30,8 @@ export function SubagentRunId(id: string): SubagentRunId {
 
 /** What a caller asks for when starting a continuable background child. */
 export interface ContinuableStartSpec {
+  /** Host-assigned execution environment; never populated from model arguments. */
+  readonly environment?: ContinuableEnvironment
   /** The `ctx.subagents` provider whose continuable-creation capability establishes the child. */
   readonly provider: string
   /** The initial delegation's short `description`, persisted as the child's creation label. */
@@ -47,6 +49,22 @@ export interface ContinuableStartSpec {
   readonly request: Omit<SubagentStartRequest, 'label' | 'signal' | 'outputSchema'>
   /** Caller cancellation, owning the operation only until inbox acceptance. */
   readonly signal: AbortSignal
+}
+
+/** Durable, host-selected inputs for a managed continuable child. */
+export interface ContinuableEnvironment {
+  readonly cwd?: string
+  readonly agentPreset?: string
+  /** Registered host admission policy required on every activation and delivery. */
+  readonly admissionPolicy?: string
+}
+
+/** Admission before managed child input or an automatic wake of its parent. */
+export interface ContinuationAdmission {
+  readonly parent: Agent
+  readonly childId: SessionId
+  /** Settlement admission controls waking; the owner persists its own outcome. */
+  readonly reason: 'start' | 'message' | 'settlement'
 }
 
 /** Identities returned once a continuable child accepted its initial prompt. */

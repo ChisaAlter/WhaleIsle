@@ -53,6 +53,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { WorkspaceShortcutState } from '../shortcuts.ts'
 import type { createWorkspaceViewStore } from '../stores.ts'
+import type { WorkspaceDirectoryAction } from '../navigation.ts'
 
 /**
  * Owner share of the directory-flow holes: the complete conversation between
@@ -482,6 +483,10 @@ export type WorkspaceBrowserProps =
  * supplies the implicit index signature required by the registry.
  */
 export type WorkspacePickerInjected = DirectoryPickingInjected & {
+  hooks: DirectoryPickingInjected['hooks'] & {
+    /** Composed directory actions, only offered in the New Session picker. */
+    directoryActions: HostObservable<readonly WorkspaceDirectoryAction[]>
+  }
   /** Adopt a picked host directory as a real Workspace before targeting a Session. */
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
 }

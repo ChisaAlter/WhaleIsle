@@ -3,6 +3,7 @@ import { IconRefreshOutline16, Input, Tooltip, writeClipboard } from '@deepseek-
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { UseSessions } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { serializeComposerFileLink } from './composerMention.ts'
 import { filterEntries } from './filter.ts'
@@ -40,7 +41,7 @@ export function SidebarFilesPanel(props: SidebarFilesPanelProps): ReactNode {
   const { sessionId, useSessions, openWorkspaceFile, t, ...injected } = props
   const cwd = useSessions(state => sessionId === undefined
     ? undefined
-    : state.byId[sessionId as SessionId]?.cwd || undefined)
+    : sessionWorkingDirectory(state.byId[sessionId as SessionId]))
   const openFile = async (relativePath: string): Promise<void> => {
     if (cwd === undefined || sessionId === undefined) return
     await openWorkspaceFile(sessionId, cwd, relativePath)
@@ -62,10 +63,10 @@ function currentCwd(
   useSessions: UseSessions,
 ): string | undefined {
   return useSessions((s) => {
-    if (sessionId !== undefined) return s.byId[sessionId as SessionId]?.cwd || undefined
+    if (sessionId !== undefined) return sessionWorkingDirectory(s.byId[sessionId as SessionId])
     const id = Object.values(s.byId)
       .find(row => (row.retainedBy.mainView ?? 0) > 0)?.id
-    const next = id === undefined ? undefined : s.byId[id]?.cwd
+    const next = id === undefined ? undefined : sessionWorkingDirectory(s.byId[id])
     return next ? next : undefined
   })
 }

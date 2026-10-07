@@ -93,6 +93,8 @@ Client callers can pass `prompt` and `clearPreviousDraft` in the second argument
 
 ### The directory-flow hole
 
+Features may register a localized directory action with `ctx.uiWorkspace.registerDirectoryAction({ id, label, order, adopt })`. It appears after **Add workspace...** in the New Session picker and reuses that picker's directory flow, busy state, cancellation and error retry. The feature's `adopt(path)` owns its domain command and navigation; the picker does not create an ordinary Workspace or Session for it. The returned disposer removes the action. The sidebar's ordinary add-only flow does not include these feature actions.
+
 Each registration declares a **directory-flow child hole** (`single` kind: `conversation.hero.workspace.directoryFlow` / `sidebar.workspaces.directoryFlow`) that the composed picker package's client half fills with its picking interaction — the `-native` backend's renderless OS-chooser driver, an in-app browsing dialog under a `-browse` composition. The flat **Add workspace...** action renders only while the surface's hole is occupied; an empty hole means the composition has no picking affordance. This package owns the trigger and the adoption: the occupant reports one picked path per open through the hole's owner conversation (`open`/`busy`/`onPicked`/`onCancel`/`onError`), and the owner adopts it through the object layer, selecting the committed Workspace only after its list projection has refreshed.
 
 ### Session row actions

@@ -233,6 +233,17 @@ function createHandler({ installPlugin, startHarness, desktop, restartDelayMs })
         sendJson(res, 200, await desktop.state());
         return;
       }
+      if (req.method === 'POST' && pathname === '/desktop/project') {
+        let payload;
+        try { payload = JSON.parse(await readBody(req) || '{}'); }
+        catch { badRequest(res, 'invalid json'); return; }
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload) || typeof desktop.project !== 'function') {
+          badRequest(res, 'Project capability is unavailable or invalid');
+          return;
+        }
+        sendJson(res, 200, await desktop.project(payload));
+        return;
+      }
       if (req.method === 'GET' && pathname === '/desktop/marketplace') {
         const { searchParams } = new URL(req.url ?? '/', 'http://dshd.internal');
         sendJson(res, 200, await desktop.listMarketplace({

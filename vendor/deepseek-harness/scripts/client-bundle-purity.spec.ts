@@ -154,6 +154,13 @@ describe('client bundle purity gate', () => {
     expect(() => resolveId('@deepseek-ai/dsh-spill-policy/notice/internal')).toThrow(/purity/)
   })
 
+  it('admits the Session wire helpers without bundling either Session service', () => {
+    expect(resolveId('@deepseek-ai/dsh-api-session-controller/types')).toBeNull()
+    expect(() => resolveId('@deepseek-ai/dsh-api-session-controller')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-api-session-controller/client')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-api-session-controller/types/internal')).toThrow(/purity/)
+  })
+
   it('lets exact generated Remote contributions inline without admitting their package implementation', () => {
     expect(resolveId('@deepseek-ai/dsh-goal/remote')).toBeNull()
     expect(() => resolveId('@deepseek-ai/dsh-goal')).toThrow(/purity/)

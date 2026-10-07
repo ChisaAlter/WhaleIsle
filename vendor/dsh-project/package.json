@@ -1,0 +1,33 @@
+{
+  "name": "dsh-project",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "license": "MIT",
+  "description": "WhaleIsle local Project conversations with stable continuing workers.",
+  "exports": {
+    ".": "./lib/index.js",
+    "./lead": "./lib/lead.js",
+    "./worker": "./lib/worker.js",
+    "./readonly": "./lib/readonly.js",
+    "./client": "./client/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-storage-domain": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/schemastery": "^3.18.2",
+    "zod": "^4.0.0"
+  },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "inject": ["@deepseek-ai/dsh-client-connection", "@deepseek-ai/dsh-client-locale", "@deepseek-ai/dsh-client-ui-sidebar", "@deepseek-ai/dsh-client-ui-workspace", "@deepseek-ai/dsh-client-ui-conversation"],
+      "platform": "web"
+    }
+  },
+  "files": ["lib", "client", "cordis.patch.yml", "README.md"]
+}
