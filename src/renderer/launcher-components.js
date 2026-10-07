@@ -200,7 +200,7 @@
       const control = `<button type="button" class="${running ? 'ghost' : 'primary'} small" data-comp-action="${running ? 'stop' : 'start'}" data-comp-id="${escapeHtml(row.id)}">${running ? '关闭' : '开启'}${escapeHtml(name)}</button>`;
       const settings = row.configurable && running ? `<button type="button" class="ghost small" data-comp-action="open" data-comp-id="${escapeHtml(row.id)}">打开设置</button>` : '';
       const details = row.message ? statusDetailsButton(row) : '';
-      return `<article class="home-component" data-comp-row="${escapeHtml(row.id)}"><div class="home-component-head">${componentIcon(row)}<div class="comp-copy"><h4>${escapeHtml(name)}</h4><span class="row-meta">v${escapeHtml(row.installedVersion)}</span></div>${stateBadge(row)}</div><p class="home-component-description">${escapeHtml(row.description || '鲸屿扩展组件')}</p><div class="home-component-controls">${control}${settings}${details}</div></article>`;
+      return `<article class="home-component" data-comp-row="${escapeHtml(row.id)}"><div class="home-component-head">${row.id === 'whalebridge' ? '' : componentIcon(row)}<div class="comp-copy"><h4>${escapeHtml(name)}</h4><span class="row-meta">v${escapeHtml(row.installedVersion)}</span></div>${stateBadge(row)}</div><p class="home-component-description">${escapeHtml(row.description || '鲸屿扩展组件')}</p><div class="home-component-controls">${control}${settings}${details}</div></article>`;
     }).join('');
     bindActions(state.homeList);
     syncPendingButtons();
