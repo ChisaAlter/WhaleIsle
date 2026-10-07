@@ -175,11 +175,15 @@ func TestQueueFullAndWaitedOut(t *testing.T) {
 	if json.Unmarshal([]byte(r.body), &oe) != nil || !strings.Contains(oe.Error.Message, "queue is full") || oe.Error.Type == "" {
 		t.Fatalf("c's body = %s, want OpenAI's error saying the queue is full", r.body)
 	}
-	// WhaleBridge exposes only the DSH chat endpoint; queue controls never open Messages.
+	// in Anthropic's shape on its Messages
 	g.send(context.Background(), "/v1/messages", "slow/m", "d")
 	r = g.reply()
-	if r.status != 404 {
-		t.Fatalf("excluded Messages endpoint status=%d", r.status)
+	var ae struct {
+		Type  string                         `json:"type"`
+		Error struct{ Type, Message string } `json:"error"`
+	}
+	if r.status != 429 || json.Unmarshal([]byte(r.body), &ae) != nil || ae.Type != "error" || ae.Error.Type != "rate_limit_error" || !strings.Contains(ae.Error.Message, "queue is full") {
+		t.Fatalf("d = %d %s, want Anthropic's rate_limit_error", r.status, r.body)
 	}
 
 	// b waits its second and is turned away, out of the queue

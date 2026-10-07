@@ -77,8 +77,12 @@ func (p Provider) available() []catalog.Model {
 			return collapseAntigravityModels(catalog.Decorate(live, known))
 		}
 		if p.IsAzure() {
+			// a deployment is named as the user named it
 			return catalog.Decorate(live, known)
 		}
+		// a model the provider's catalog doesn't list reads as it does
+		// under the other providers serving it (GLM-5-Turbo, not
+		// glm-5-turbo, beside ZCode's)
 		return catalog.Named(catalog.Decorate(live, known))
 	}
 	if p.IsAzure() {
@@ -940,6 +944,7 @@ func EffectivePriceIn(s settings.Settings, providerID, model string) (catalog.Pr
 	for _, key := range [...]string{id + "/" + model, id + "/*", AnyPriceKey(model)} {
 		if m, ok := s.ModelPrices[key]; ok {
 			if pr, bad := m.Price(); bad == "" {
+				// a Claude model's 1-hour cache write left out: 2× input
 				catalog.OneHourFor(model, &pr)
 				return pr, true
 			}
@@ -1052,6 +1057,7 @@ type Entry struct {
 	Efforts    []string `json:"efforts,omitempty"`
 	Provider   Provider `json:"-"`                // a group's: its first member's
 	Group      string   `json:"group,omitempty"`  // set on a routing group (group.go)
+	Named      bool     `json:"-"`                // a routing group the user made or changed: its name is theirs (Labels)
 	Icons      []string `json:"-"`                // a group's: its providers' icons, one per provider
 	Images     bool     `json:"images,omitempty"` // takes images as input (a group's: a member does)
 	ImageInput *bool    `json:"-"`                // explicit answer, nil when unknown
@@ -1151,6 +1157,8 @@ func entryFor(p Provider, m catalog.Model, s settings.Settings) Entry {
 	if override, ok := s.ModelImages[p.ID+"/"+m.ID]; ok {
 		images, imageInput = override, &override
 	}
+	// a model its vendor lists with no name is called by its id: unnamed,
+	// an agent's list showed the whole magpie/<provider>/<model> (#955)
 	name := cmp.Or(m.Name, m.ID)
 	e := Entry{ID: p.ID + "/" + m.ID, Model: m.ID, Family: p.Family, Name: name, Efforts: effortsOf(m), Provider: p,
 		Images: images, ImageInput: imageInput, Context: ctx, Output: output, Free: m.Free, Rate: m.Rate, RateWas: m.RateWas}
@@ -1344,6 +1352,9 @@ func (p Provider) ContextOf(model string) int {
 func (p Provider) ReplyLimit(m catalog.Model) int {
 	return p.replyLimit(m, settings.Load())
 }
+
+// ReplyLimitIn is ReplyLimit from settings s already read.
+func (p Provider) ReplyLimitIn(m catalog.Model, s settings.Settings) int { return p.replyLimit(m, s) }
 
 func (p Provider) replyLimit(m catalog.Model, s settings.Settings) int {
 	output := m.Output

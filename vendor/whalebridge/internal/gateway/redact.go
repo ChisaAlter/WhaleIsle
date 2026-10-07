@@ -1,9 +1,9 @@
 package gateway
 
 import (
-	"github.com/yetone/magpie/internal/provider"
 	"net/http"
 
+	"github.com/yetone/magpie/internal/provider"
 	"github.com/yetone/magpie/internal/redact"
 	"github.com/yetone/magpie/internal/settings"
 )

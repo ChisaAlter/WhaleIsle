@@ -613,11 +613,14 @@ var factoryModels = []factoryModel{
 	{"gemini-3.6-flash", "Gemini 3.6 Flash", Gemini, "google", 1000000, 65536, []string{"low", "medium", "high"}, true},
 	{"gemini-3.5-flash", "Gemini 3.5 Flash", Gemini, "google", 1000000, 65536, []string{"minimal", "low", "medium", "high"}, true},
 	{"gemini-3-flash-preview", "Gemini 3 Flash", Gemini, "google", 1000000, 65536, []string{"minimal", "low", "medium", "high"}, true},
+	// reasoning is mandatory on GLM-5.3 and GLM-5.3-Flash (Fireworks turns
+	// none away): low is their least. GLM-5.2, Kimi K3 and DeepSeek V4.1
+	// Flash stop thinking at none, droid's "off" (#899).
 	{"glm-5.3", "GLM-5.3", Chat, "fireworks", 1040000, 131072, []string{"low", "high", "max"}, false},
 	{"glm-5.3-flash", "GLM-5.3-Flash", Chat, "fireworks", 1048576, 131072, []string{"low", "high", "max"}, true},
-	{"glm-5.2", "GLM-5.2", Chat, "baseten", 1040000, 131072, []string{"high", "max"}, false},
-	{"kimi-k3", "Kimi K3", Chat, "fireworks", 262144, 65536, []string{"low", "high", "max"}, true},
-	{"deepseek-v4.1-flash", "DeepSeek V4.1 Flash", Chat, "fireworks", 1040000, 131072, []string{"low", "high", "max"}, true},
+	{"glm-5.2", "GLM-5.2", Chat, "baseten", 1040000, 131072, []string{"none", "high", "max"}, false},
+	{"kimi-k3", "Kimi K3", Chat, "fireworks", 262144, 65536, []string{"none", "low", "high", "max"}, true},
+	{"deepseek-v4.1-flash", "DeepSeek V4.1 Flash", Chat, "fireworks", 1040000, 131072, []string{"none", "low", "high", "max"}, true},
 	{"qwen3.8-max", "Qwen3.8 Max", Chat, "fireworks", 262144, 131072, []string{"low", "medium", "xhigh"}, false},
 	{"minimax-m3", "MiniMax M3", Chat, "fireworks", 512000, 64000, []string{"high"}, true},
 	{"minimax-m2.7", "MiniMax M2.7", Anthropic, "fireworks", 196600, 64000, []string{"high"}, false},

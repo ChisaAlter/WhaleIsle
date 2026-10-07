@@ -2,7 +2,9 @@ package provider
 
 // Usage alerts (#368): a notification when a subscription's or plan's window
 // has reached the share of it the user chose, or a balance has fallen to the
-// amount they chose (settings.UsageAlert, settings.BalanceAlert). Each is
+// amount they chose (settings.UsageAlert, settings.BalanceAlert); and the
+// reset reminder (#720), before a window renews or a reset credit runs out
+// with much left unused (settings.ResetReminder). Each is
 // said once: a window once each time it runs, a balance once until it is
 // topped up past the amount again. What was said is kept in a file, so a
 // restart doesn't say it again.
@@ -33,6 +35,11 @@ type QuotaAlert struct {
 	Used     float64
 	ResetsAt *time.Time
 	Balance  string // the balance as the vendor tells it
+	// Kind is "" for the alerts above; "renews" for a long window renewing
+	// within the reminder's hours with much of it left, "expires" for
+	// reset credits running out by then, Credits of them (#720)
+	Kind    string
+	Credits int
 }
 
 // alertMark is what was said of one window or balance: when, and for a
@@ -119,6 +126,61 @@ func dueAlerts(qs []SubscriptionQuota, marks map[string]alertMark, pct int, bal 
 	return out
 }
 
+// reminderUnder is how much of a window, in percent, may be used for its
+// renewal to be worth a reminder: past it, little is lost.
+const reminderUnder = 85
+
+// reminderSpan is the shortest window a renewal is reminded of: a 5-hour
+// one renews too often for it to be news.
+const reminderSpan = 24 * time.Hour
+
+// dueReminders is what the readings qs call for with the reset reminder at
+// lead before a renewal (0 off, #720): a window of a day or more renewing
+// within lead with under reminderUnder percent of it used, and reset
+// credits running out within lead — each once, by the time it renews or
+// runs out, kept in marks as the alerts are. A reading that failed, or is
+// one kept from before, says nothing.
+func dueReminders(qs []SubscriptionQuota, marks map[string]alertMark, lead time.Duration, now time.Time) []QuotaAlert {
+	if lead <= 0 {
+		return nil
+	}
+	var out []QuotaAlert
+	due := func(key string, at time.Time) bool {
+		if !at.After(now) || at.Sub(now) > lead {
+			return false
+		}
+		if m, ok := marks[key]; ok && sameRun(m.Until, &at) {
+			return false
+		}
+		marks[key] = alertMark{At: now, Until: &at}
+		return true
+	}
+	for _, q := range qs {
+		if q.Error != "" || q.AsOf != nil {
+			continue
+		}
+		for _, w := range PooledWindows(q.Windows) {
+			if w.Aside || w.Span < reminderSpan || w.Used >= reminderUnder {
+				continue
+			}
+			at := w.ResetsAt
+			if at == nil && w.ResetSecs > 0 {
+				t := now.Add(time.Duration(w.ResetSecs) * time.Second)
+				at = &t
+			}
+			if at == nil || !due(alertPrefix(q)+"r|"+w.Name+"|"+w.Model, *at) {
+				continue
+			}
+			out = append(out, QuotaAlert{Provider: q.Provider, Name: q.Name, User: q.User, Window: w.Name, Used: w.Used, ResetsAt: at, Kind: "renews"})
+		}
+		if r := q.Resets; r != nil && r.Count > 0 && r.Until != nil && due(alertPrefix(q)+"c", *r.Until) {
+			at := *r.Until
+			out = append(out, QuotaAlert{Provider: q.Provider, Name: q.Name, User: q.User, ResetsAt: &at, Kind: "expires", Credits: r.Count})
+		}
+	}
+	return out
+}
+
 // alertPrefix begins the keys of one card's marks: its provider and account.
 func alertPrefix(q SubscriptionQuota) string { return q.Provider + "|" + q.User + "|" }
 
@@ -174,12 +236,13 @@ func readAlertMarks(path string) map[string]alertMark {
 
 // checkAlerts reads what is left everywhere and says what is due, keeping
 // the marks in path.
-func checkAlerts(path string, qs []SubscriptionQuota, pct int, bal float64, now time.Time) []QuotaAlert {
+func checkAlerts(path string, qs []SubscriptionQuota, pct int, bal float64, lead time.Duration, now time.Time) []QuotaAlert {
 	quotaAlertMu.Lock()
 	defer quotaAlertMu.Unlock()
 	marks := readAlertMarks(path)
 	before, _ := json.Marshal(marks)
 	out := dueAlerts(qs, marks, pct, bal, now)
+	out = append(out, dueReminders(qs, marks, lead, now)...)
 	if after, _ := json.Marshal(marks); string(after) != string(before) {
 		os.MkdirAll(filepath.Dir(path), 0o755)
 		os.WriteFile(path, append(after, '\n'), 0o600)
@@ -205,12 +268,13 @@ func WatchQuotas(ctx context.Context, wake <-chan struct{}, send func(QuotaAlert
 		case <-t.C:
 		case <-wake:
 		}
-		if s := settings.Load(); s.UsageAlert > 0 || s.BalanceAlert > 0 {
+		if s := settings.Load(); s.UsageAlert > 0 || s.BalanceAlert > 0 || s.ResetReminder > 0 {
 			cx, cancel := context.WithTimeout(ctx, time.Minute)
 			qs := Quotas(cx)
 			cancel()
-			for _, a := range checkAlerts(quotaAlertPath(), qs, s.UsageAlert, s.BalanceAlert, time.Now()) {
-				log.Printf("usage alert: %s %s %s %.0f%% %s", a.Name, a.User, a.Window, a.Used, a.Balance)
+			lead := time.Duration(s.ResetReminder) * time.Hour
+			for _, a := range checkAlerts(quotaAlertPath(), qs, s.UsageAlert, s.BalanceAlert, lead, time.Now()) {
+				log.Printf("usage alert: %s %s %s %s %.0f%% %s", a.Kind, a.Name, a.User, a.Window, a.Used, a.Balance)
 				send(a)
 			}
 		}

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -37,6 +38,9 @@ type gPart struct {
 		ID       string          `json:"id,omitempty"`
 		Name     string          `json:"name"`
 		Response json.RawMessage `json:"response,omitempty"`
+		// Parts is what the function gave back beside its response: the
+		// image agy's view_file read, as inlineData (#1038)
+		Parts []gPart `json:"parts,omitempty"`
 	} `json:"functionResponse,omitempty"`
 }
 
@@ -105,7 +109,81 @@ func buildGemini(r *Request, model string) ([]byte, error) {
 	return json.Marshal(wrap.Request)
 }
 
+// geminiCamel spells a Gemini request's fields in camelCase. Google's API
+// reads proto JSON, which takes a field by either name — inline_data,
+// mime_type, function_call as well as inlineData — and clients (agy, the
+// Python SDK's raw calls) send the snake_case ones; read only as camelCase
+// an image or a PDF was left out, and the model made up what it held
+// (#934). The values that are the caller's own — a call's args, a
+// result's response, the schemas — keep their keys as they are.
+func geminiCamel(body []byte) []byte {
+	if !bytes.Contains(body, []byte("_")) {
+		return body
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var v any
+	if dec.Decode(&v) != nil {
+		return body
+	}
+	changed := false
+	v = camelKeys(v, &changed)
+	if !changed {
+		return body
+	}
+	out, err := json.Marshal(v)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// geminiOwn are the fields whose values are the caller's, not Google's:
+// their keys are kept as they are.
+var geminiOwn = map[string]bool{"args": true, "response": true, "parameters": true, "parametersJsonSchema": true,
+	"responseSchema": true, "responseJsonSchema": true, "labels": true}
+
+func camelKeys(v any, changed *bool) any {
+	switch t := v.(type) {
+	case []any:
+		for i := range t {
+			t[i] = camelKeys(t[i], changed)
+		}
+	case map[string]any:
+		for k, val := range t {
+			nk := k
+			if strings.Contains(k, "_") {
+				nk = snakeToCamel(k)
+			}
+			if !geminiOwn[nk] {
+				val = camelKeys(val, changed)
+			}
+			if nk == k {
+				t[k] = val
+				continue
+			}
+			*changed = true
+			delete(t, k)
+			if _, both := t[nk]; !both { // sent both ways, the camelCase one is kept
+				t[nk] = val
+			}
+		}
+	}
+	return v
+}
+
+func snakeToCamel(s string) string {
+	parts := strings.Split(s, "_")
+	for i := 1; i < len(parts); i++ {
+		if p := parts[i]; p != "" {
+			parts[i] = strings.ToUpper(p[:1]) + p[1:]
+		}
+	}
+	return strings.Join(parts, "")
+}
+
 func parseGemini(body []byte) (*Request, error) {
+	body = geminiCamel(body)
 	var g gRequest
 	if err := json.Unmarshal(body, &g); err != nil {
 		return nil, fmt.Errorf("invalid request: %v", err)
@@ -180,7 +258,10 @@ func parseGemini(body []byte) (*Request, error) {
 					id = names[fr.Name]
 				}
 				text, isErr := functionResponseText(fr.Response)
-				msg.Parts = append(msg.Parts, Part{Kind: ToolResult, CallID: id, Name: fr.Name, Text: text, IsError: isErr})
+				images, files := functionResponseParts(fr.Parts, &text)
+				msg.Parts = append(msg.Parts, Part{Kind: ToolResult, CallID: id, Name: fr.Name, Text: text, Images: images, IsError: isErr})
+				// a file no tool result can hold follows it in the same turn
+				msg.Parts = append(msg.Parts, files...)
 			case p.InlineData != nil:
 				if strings.HasPrefix(p.InlineData.MimeType, "image/") {
 					msg.Parts = append(msg.Parts, Part{Kind: Image, MediaType: p.InlineData.MimeType, Data: p.InlineData.Data})
@@ -280,6 +361,40 @@ func geminiText(raw json.RawMessage) string {
 		}
 	}
 	return b.String()
+}
+
+// functionResponseParts reads a functionResponse's own parts (Gemini 3's
+// multimodal function responses): its images go with the result, as the
+// other APIs' tool results carry them, and any other file (a PDF, audio)
+// is given back as a part of the turn, since a tool result holds only
+// text and images. Left unread, the model never saw what the tool read and
+// made it up (#1038).
+func functionResponseParts(parts []gPart, text *string) (images, files []Part) {
+	for _, p := range parts {
+		var part Part
+		switch {
+		case p.InlineData != nil:
+			part = Part{MediaType: p.InlineData.MimeType, Data: p.InlineData.Data}
+		case p.FileData != nil:
+			part = Part{MediaType: p.FileData.MimeType, URL: p.FileData.FileURI}
+		case p.Text != "" && !p.Thought:
+			if strings.TrimSpace(*text) != "" {
+				*text += "\n\n"
+			}
+			*text += p.Text
+			continue
+		default:
+			continue
+		}
+		if strings.HasPrefix(part.MediaType, "image/") {
+			part.Kind = Image
+			images = append(images, part)
+		} else {
+			part.Kind = File
+			files = append(files, part)
+		}
+	}
+	return images, files
 }
 
 // functionResponseText is what a tool said, as the other APIs carry it:

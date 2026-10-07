@@ -91,7 +91,7 @@ func sessionRecord(s sessions.TraceSpan, config settings.OTel) Record {
 	}
 	typ := s.Kind
 	return Record{Agent: s.Agent, Model: s.Model, Served: s.Served, Provider: s.Provider, Time: s.Start, Millis: s.End.Sub(s.Start).Milliseconds(), Status: status,
-		Input: s.Tokens.Input, Output: s.Tokens.Output, CacheRead: s.Tokens.CacheRead, CacheWrite: s.Tokens.CacheWrite, Reasoning: s.Reasoning,
+		Input: s.Tokens.Input, Output: s.Tokens.Output, CacheRead: s.Tokens.CacheRead, CacheWrite: s.Tokens.CacheWrite, CacheWrite1h: s.Tokens.CacheWrite1h, Reasoning: s.Reasoning,
 		BodyIn: sessionBody(s.Input, config), BodyOut: sessionBody(s.Output, config),
 		OTel: &OTelSpan{TraceID: sessions.TraceID(s.Agent, s.Session, s.Turn), SpanID: s.ID, ParentID: s.Parent, Root: s.Parent == "", End: s.End,
 			Name: s.Name, Type: typ, SessionID: s.Session, TraceName: s.Agent + " interaction", Session: true, Inferred: s.Inferred, Update: s.Update}}

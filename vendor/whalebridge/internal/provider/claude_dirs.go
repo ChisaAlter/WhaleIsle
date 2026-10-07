@@ -73,6 +73,20 @@ func clearClaudeDir(dir string) {
 }
 
 // forgetClaudeDir removes a saved account's config directory altogether.
+// ClaudeHandedOver is told of a saved Claude account switched in to Claude
+// Code itself, whose directory forgetClaudeDir has just removed: a Claude
+// Code still running there (the gateway's, waiting for its conversation's
+// next turn) holds the refresh token that is Claude Code's own now, and a
+// refresh of it there would leave Claude Code's copy refused, the account
+// signed out (0xAncientTwo on X). The gateway sets it.
+var ClaudeHandedOver func(user string)
+
+func claudeHandedOver(user string) {
+	if f := ClaudeHandedOver; f != nil {
+		f(user)
+	}
+}
+
 func forgetClaudeDir(user string) {
 	dir := claudeAccountDir(user)
 	clearClaudeDir(dir)
@@ -190,7 +204,7 @@ func claudeStandIn(ls []savedLogin) string {
 	var seen time.Time
 	bestOrder := 0
 	for _, l := range ls {
-		if l.Agent != "claude" || l.Held || l.Lapsed != "" && l.Refused == "" {
+		if l.Agent != "claude" || l.Hidden != "" || l.Held || l.Lapsed != "" && l.Refused == "" {
 			continue
 		}
 		rank := 0

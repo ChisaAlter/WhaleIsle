@@ -14,35 +14,11 @@ import (
 )
 
 func subscriptionRoutes(mux *http.ServeMux) {
+	adapterDiscoveryRoutes(mux)
 	mux.HandleFunc("GET /api/subscription/adapters", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
-		ps, err := plugin.Providers(ctx)
-		if err != nil {
-			http.Error(w, err.Error(), 400)
-			return
-		}
-		installed, available, moves := []map[string]any{}, []map[string]any{}, []map[string]any{}
-		for _, e := range plugin.Load().Plugins {
-			ids := []string{}
-			for _, p := range ps {
-				if plugin.Name(p.Spec) == plugin.Name(e.Spec) {
-					ids = append(ids, p.ID)
-				}
-			}
-			installed = append(installed, map[string]any{"id": plugin.Name(e.Spec), "name": plugin.Name(e.Spec), "package": e.Spec, "version": plugin.Version(e.Spec), "enabled": !e.Off, "providers": ids})
-		}
-		for _, e := range plugin.Market(ctx) {
-			if len(e.Providers) > 0 {
-				available = append(available, map[string]any{"id": e.Package, "name": e.Name, "package": e.Package, "summary": e.Summary, "providers": e.Providers})
-			}
-		}
-		for _, id := range provider.MovableIDs() {
-			m, _ := provider.MigrationOf(id)
-			p, _ := provider.Find(id)
-			moves = append(moves, map[string]any{"id": id, "package": provider.MovePackage(id), "moved": provider.Moved(id), "signedIn": p != nil && p.Account != nil, "state": m.State, "error": m.Err})
-		}
-		writeJSON(w, map[string]any{"installed": installed, "available": available, "moves": moves})
+		writeJSON(w, subscriptionAdapters(ctx))
 	})
 	mux.HandleFunc("POST /api/subscription/adapter", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
@@ -75,6 +51,14 @@ func subscriptionRoutes(mux *http.ServeMux) {
 		defer cancel()
 		var err error
 		switch b.Action {
+		case "update-all":
+			err = plugin.Update(ctx)
+		case "mirror":
+			if b.Enabled == nil {
+				err = fmt.Errorf("缺少镜像开关")
+			} else {
+				err = setAdapterMirror(*b.Enabled)
+			}
 		case "install":
 			if pkg == "" {
 				err = fmt.Errorf("缺少订阅适配器包名")
@@ -118,6 +102,14 @@ func subscriptionRoutes(mux *http.ServeMux) {
 			http.Error(w, err.Error(), 400)
 			return
 		}
+		if b.Action == "install" || b.Action == "update" || b.Action == "update-all" {
+			for id, handErr := range provider.WhaleBridgeHandOver(ctx) {
+				if handErr != nil {
+					http.Error(w, "适配器已安装，但 "+id+" 交接失败: "+handErr.Error(), 500)
+					return
+				}
+			}
+		}
 		if _, err = plugin.Providers(ctx); err != nil {
 			http.Error(w, err.Error(), 400)
 			return
@@ -136,7 +128,7 @@ func subscriptionRoutes(mux *http.ServeMux) {
 				if options == nil {
 					options = map[string]any{}
 				}
-				writeJSON(w, map[string]any{"options": options})
+				writeJSON(w, map[string]any{"options": options, "example": plugin.OptionsExample(plugin.Target(e.Spec))})
 				return
 			}
 		}
@@ -150,7 +142,7 @@ func subscriptionRoutes(mux *http.ServeMux) {
 		}
 		s := settings.Load()
 		patch := map[string]json.RawMessage{}
-		for _, k := range strings.Fields("codexWarmup claudeWarmup codexWarmAt claudeWarmAt workbuddyCheckin traeCheckin minimaxCheckin qoderCheckin pluginCheckins quotaLeft proxy") {
+		for _, k := range strings.Fields("codexWarmup claudeWarmup codexWarmAt claudeWarmAt workbuddyCheckin traeCheckin minimaxCheckin qoderCheckin pluginCheckins quotaLeft proxy usageAlert balanceAlert resetReminder chinaMirror") {
 			if v, ok := in[k]; ok {
 				patch[k] = v
 			}
@@ -159,7 +151,14 @@ func subscriptionRoutes(mux *http.ServeMux) {
 		if err := json.Unmarshal(data, &s); err != nil {
 			return err
 		}
-		return settings.Save(s)
+		mirrorChanged := s.ChinaMirror != settings.Load().ChinaMirror
+		if err := settings.Save(s); err != nil {
+			return err
+		}
+		if mirrorChanged {
+			plugin.RefreshMarket()
+		}
+		return nil
 	}))
 	mux.HandleFunc("POST /api/accounts/settings", mutate(func(w http.ResponseWriter, r *http.Request) error {
 		var b struct {
@@ -196,7 +195,17 @@ func subscriptionRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/accounts/{id}/usage", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
-		writeJSON(w, provider.WithCapped(provider.LoginUsage(ctx, r.PathValue("id"))))
+		id := r.PathValue("id")
+		qs := provider.LoginUsage(ctx, id)
+		if id == "cursor" && !provider.Moved(id) {
+			qs = map[string]provider.SubscriptionQuota{}
+			for _, q := range provider.Quotas(ctx) {
+				if q.Provider == id {
+					qs[q.User] = q
+				}
+			}
+		}
+		writeJSON(w, provider.WithCapped(qs))
 	})
 	mux.HandleFunc("POST /api/accounts/{action}", mutate(func(w http.ResponseWriter, r *http.Request) error {
 		var b struct {
@@ -318,7 +327,7 @@ func importAccounts(w http.ResponseWriter, r *http.Request) {
 
 func subscriptionSettings() map[string]any {
 	s := settings.Load()
-	out := map[string]any{"codexWarmup": s.CodexWarmup, "claudeWarmup": s.ClaudeWarmup, "codexWarmAt": s.CodexWarmAt, "claudeWarmAt": s.ClaudeWarmAt, "codexWarmAtOf": s.CodexWarmAtOf, "codexAutoReset": s.CodexAutoReset, "codexNoCredits": s.CodexNoCredits, "workbuddyCheckin": s.WorkBuddyCheckin, "traeCheckin": s.TraeCheckin, "minimaxCheckin": s.MiniMaxCheckin, "qoderCheckin": s.QoderCheckin, "pluginCheckins": s.PluginCheckins, "quotaLeft": s.QuotaLeft, "proxy": s.Proxy}
+	out := map[string]any{"codexWarmup": s.CodexWarmup, "claudeWarmup": s.ClaudeWarmup, "codexWarmAt": s.CodexWarmAt, "claudeWarmAt": s.ClaudeWarmAt, "codexWarmAtOf": s.CodexWarmAtOf, "codexAutoReset": s.CodexAutoReset, "codexNoCredits": s.CodexNoCredits, "workbuddyCheckin": s.WorkBuddyCheckin, "traeCheckin": s.TraeCheckin, "minimaxCheckin": s.MiniMaxCheckin, "qoderCheckin": s.QoderCheckin, "pluginCheckins": s.PluginCheckins, "quotaLeft": s.QuotaLeft, "proxy": s.Proxy, "usageAlert": s.UsageAlert, "balanceAlert": s.BalanceAlert, "resetReminder": s.ResetReminder, "chinaMirror": s.ChinaMirror, "codexWarmed": latestWarm(provider.CodexWarmed()), "claudeWarmed": latestWarm(provider.ClaudeWarmed())}
 	effective := map[string]bool{}
 	for _, p := range provider.WhaleBridgeSubscriptions() {
 		if p.Plugin && p.Checkin {
@@ -333,7 +342,14 @@ func quotaRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/quotas", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
-		writeJSON(w, provider.WithCheckins(provider.Quotas(ctx)))
+		if r.URL.Query().Get("asked") == "1" {
+			provider.AskClaudeUsage()
+		}
+		qs := provider.WithCheckins(provider.Quotas(ctx))
+		if provider.SubscriptionUsageReading() {
+			w.Header().Set("X-Magpie-Reading", "1")
+		}
+		writeJSON(w, qs)
 	})
 	mux.HandleFunc("POST /api/quotas/refresh", func(w http.ResponseWriter, r *http.Request) {
 		var b struct{ Provider, ID, User string }

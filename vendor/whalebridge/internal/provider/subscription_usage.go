@@ -77,12 +77,9 @@ type QuotaWindow struct {
 // SubscriptionQuota is provider-reported allowance usage. This is separate
 // from Dial's local token log: vendors expose percentages, not token totals.
 type SubscriptionQuota struct {
-	Provider string `json:"provider"`
-	Name     string `json:"name"`
-	Icon     string `json:"icon"`
-	// Kind and From identify a remote magpie's subscription, plan or balance card.
-	Kind      string        `json:"kind,omitempty"`
-	From      string        `json:"from,omitempty"`
+	Provider  string        `json:"provider"`
+	Name      string        `json:"name"`
+	Icon      string        `json:"icon"`
 	Plan      string        `json:"plan,omitempty"`
 	AccessSKU string        `json:"accessSku,omitempty"`
 	User      string        `json:"user,omitempty"` // the account, so two of one vendor tell apart
@@ -91,6 +88,8 @@ type SubscriptionQuota struct {
 	// BalanceParts are the Balance's amounts each apart, when the balance
 	// field the user wrote has several or a percent (cardParts)
 	BalanceParts []BalancePart `json:"balanceParts,omitempty"`
+	// BalanceTrend is the Balance over time, as magpie read it, and when
+	// it runs out at that pace (balance_history.go)
 	BalanceTrend *BalanceTrend `json:"balanceTrend,omitempty"`
 	// Until is when the plan's paid time ends: it renews then when Renew
 	// is "auto", is over when "off", and either when "" (the vendor
@@ -109,10 +108,10 @@ type SubscriptionQuota struct {
 	// Resets are the rate-limit resets a Codex account holds, nil when it
 	// holds none (codex_resets.go).
 	Resets *ResetCredits `json:"resets,omitempty"`
-	// Held is the backend gate once an account has no allowance or credits to continue.
-	Held    bool `json:"held,omitempty"`
-	readSeq uint64
-	glmPlan bool
+	// Held is set on a ChatGPT account the Codex app sends nothing for
+	// now (codexHeld): not on a window at 100% alone, which credits get
+	// past.
+	Held bool `json:"held,omitempty"`
 	// Daily is a WorkBuddy account's credits used day by day, as magpie
 	// counted them from its readings (credits_daily.go).
 	Daily *DailyCredits `json:"daily,omitempty"`
@@ -123,6 +122,18 @@ type SubscriptionQuota struct {
 	Checkins  bool              `json:"checkins,omitempty"`
 	CheckinBy string            `json:"checkinBy,omitempty"`
 	Checkin   *WorkBuddyCheckin `json:"checkin,omitempty"`
+	// Kind is the card's kind as another magpie is told it (CachedCards):
+	// subscription, plan or balance; "" here.
+	Kind string `json:"kind,omitempty"`
+	// From is the remote magpie a card is that one's (remote_quotas.go),
+	// by its name here; "" for this computer's own.
+	From string `json:"from,omitempty"`
+	// In-process read order, separate from the vendor's ReadAt and never
+	// persisted: restarting starts a new sequence.
+	readSeq uint64
+	// glmPlan marks a key's quota read from the GLM Coding Plan endpoint,
+	// including custom providers. Only these can share ZCode's allowance.
+	glmPlan bool
 }
 
 var subscriptionUsageCache struct {
@@ -133,9 +144,19 @@ var subscriptionUsageCache struct {
 	asked   bool          // the user asked (AskClaudeUsage): wait for the refresh
 }
 
-// OnSubscriptionUsage is told when a refresh has landed, for what shows a
-// stale copy meanwhile (the menu bar's text) to read the new one.
-var OnSubscriptionUsage func()
+// OnSubscriptionUsage sets what is told when a refresh has landed, for what
+// shows a stale copy meanwhile (the menu bar's text) to read the new one; nil
+// tells nothing. It is held atomically: a refresh runs in the background and
+// may be under way while it is set (#1023).
+func OnSubscriptionUsage(f func()) {
+	if f == nil {
+		onSubscriptionUsage.Store(nil)
+		return
+	}
+	onSubscriptionUsage.Store(&f)
+}
+
+var onSubscriptionUsage atomic.Pointer[func()]
 
 // subscriptionTimeout bounds one refresh; the vendors' endpoints can be
 // unreachable without a proxy, and then each fetch would hang to it.
@@ -170,10 +191,12 @@ func SubscriptionUsage(ctx context.Context) []SubscriptionQuota {
 				c.at = time.Time{} // asked meanwhile: read again
 			}
 			c.Unlock()
-			close(done)
-			if f := OnSubscriptionUsage; f != nil {
-				f()
+			// told before done is closed, so whoever waits for the refresh
+			// has it finished, hook and all
+			if f := onSubscriptionUsage.Load(); f != nil {
+				(*f)()
 			}
+			close(done)
 		}()
 	}
 	pending := c.pending
@@ -487,6 +510,10 @@ type accountStatusError struct {
 
 func (e *accountStatusError) Error() string { return http.StatusText(e.status) }
 
+// claudeSubscriptionUsage is the allowance of user, the account Claude Code
+// is signed in to, by the name magpie gives it (claudeAccount): its
+// readings and what it said answering are kept under that name, which for
+// a Team seat isn't the email alone `claude auth status` gives.
 func claudeSubscriptionUsage(ctx context.Context, user string) SubscriptionQuota {
 	q := SubscriptionQuota{Provider: "claude", Name: "Claude Code", Icon: "claude-color", Windows: []QuotaWindow{}}
 	if _, _, ok := claudeCredential(); !ok {
@@ -756,19 +783,6 @@ func claudeScopeModel(name string) string {
 	return strings.NewReplacer(" ", "-", ".", "-").Replace(strings.ToLower(name))
 }
 
-type quotaWire struct {
-	Utilization float64 `json:"utilization"`
-	ResetsAt    string  `json:"resets_at"`
-}
-
-func (w quotaWire) window(name string) QuotaWindow {
-	out := QuotaWindow{Name: name, Used: w.Utilization}
-	if t, err := time.Parse(time.RFC3339, w.ResetsAt); err == nil {
-		out.ResetsAt = &t
-	}
-	return out
-}
-
 func codexSubscriptionUsage(ctx context.Context, path string) SubscriptionQuota {
 	q := SubscriptionQuota{Provider: "codex", Name: "Codex", Icon: "codex-color", Windows: []QuotaWindow{}}
 	token, accountID, err := codexToken(ctx, path)
@@ -805,7 +819,8 @@ func codexUntil(auth []byte, now time.Time) *time.Time {
 // codexWindows is the plan, allowance, rate-limit resets and credits of
 // the ChatGPT account token signs in to. credits is what is left of the
 // credits the account bought or was given (#571), which Codex spends once
-// a window is used up, "" when it holds none or they are unlimited.
+// a window is used up, "" when it holds none or they are unlimited. held
+// is whether the Codex app sends nothing for the account now (codexHeld).
 func codexWindows(ctx context.Context, token, accountID string) (plan string, out []QuotaWindow, resets *ResetCredits, credits string, held bool, err error) {
 	var data codexUsage
 	base := strings.TrimSuffix(CodexBase, "/codex")

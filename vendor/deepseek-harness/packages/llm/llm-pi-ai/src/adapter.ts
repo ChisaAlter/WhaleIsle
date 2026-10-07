@@ -315,12 +315,14 @@ export class PiAiAdapter extends LlmAdapter {
     // Only a cap the deployment configured is a request default; the
     // catalog's `maxTokens` sizes the model and stops there.
     const configuredMaxTokens = profile.configuredMaxTokens.get(model)
+    const compactionThreshold = profile.configuredCompactionThresholds.get(model)
     return {
       provider,
       id: model,
       name: resolvedModel.name,
       inputModalities: [...resolvedModel.input],
-      context: { contextWindow: resolvedModel.contextWindow },
+      context: { contextWindow: resolvedModel.contextWindow,
+        ...compactionThreshold === undefined ? {} : { compactionThreshold } },
       ...configuredMaxTokens === undefined ? {} : { defaultMaxTokens: configuredMaxTokens },
       ...reasoningInfo(resolvedModel, defaultLevel),
     }

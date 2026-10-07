@@ -9,6 +9,7 @@ package provider
 // (gateway/fallback.go).
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -42,6 +43,70 @@ func (p Provider) AccountRefs() []string {
 	for _, l := range Logins(agent) {
 		if !slices.ContainsFunc(out, func(u string) bool { return accountKey(u) == accountKey(l.User) }) {
 			out = append(out, l.User)
+		}
+	}
+	return out
+}
+
+// AccountRef is one of a provider's accounts or keys as a gateway key's
+// account list knows it (#905): ID what the list keeps — an account's
+// stable id, kept through renames, a key's fingerprint — User and Plan
+// what it is shown as.
+type AccountRef struct {
+	ID   string
+	User string
+	Plan string
+	Key  bool // one of the provider's keys, not a signed-in account
+}
+
+// AccountIDs are the provider's accounts and keys as a gateway key's
+// account list knows them (#905): an account by its stable id, a key by
+// its fingerprint, with the name and plan each is shown by.
+func (p Provider) AccountIDs() []AccountRef {
+	var out []AccountRef
+	if p.Account == nil {
+		for _, k := range p.KeyList() {
+			out = append(out, AccountRef{ID: k.ID, User: cmp.Or(k.Name, k.Masked), Key: true})
+		}
+		return out
+	}
+	agent := p.Account.Agent
+	if p.IsPlugin() {
+		agent = p.ID
+	}
+	if p.Account.User != "" {
+		out = append(out, AccountRef{ID: LoginID(agent, p.Account.User), User: p.Account.User, Plan: p.Account.Plan})
+	}
+	for _, l := range Logins(agent) {
+		if !slices.ContainsFunc(out, func(r AccountRef) bool { return accountKey(r.User) == accountKey(l.User) }) {
+			out = append(out, AccountRef{ID: LoginID(agent, l.User), User: l.User, Plan: l.Plan})
+		}
+	}
+	return out
+}
+
+// AccountID is the stable id of p's account or key as a gateway key's
+// account list knows it (#905): the account's, kept through renames, or
+// a key's fingerprint.
+func (p Provider) AccountID() string {
+	if a := p.Account; a != nil && a.User != "" {
+		agent := a.Agent
+		if p.IsPlugin() {
+			agent = p.ID
+		}
+		return LoginID(agent, a.User)
+	}
+	return KeyID(p.Key)
+}
+
+// AccountNames maps every account and key a gateway key may name (#905),
+// "<provider>/<id>", to how it is shown, "<provider>/<user>"; what no
+// provider has now maps to itself.
+func AccountNames() map[string]string {
+	out := map[string]string{}
+	for _, p := range All() {
+		for _, a := range p.AccountIDs() {
+			out[p.ID+"/"+a.ID] = p.ID + "/" + a.User
 		}
 	}
 	return out

@@ -305,7 +305,7 @@ async function run() {
     await closeEditor('#save');
     await waitFor(`!document.querySelector('#editor').open && document.querySelector('[data-tab="providers"]').getAttribute('aria-current') === 'page'`);
     const providerCompletion = await js(`({
-      names: [...document.querySelectorAll('.provider-card .title')].map(element => element.textContent),
+      names: [...document.querySelectorAll('.source-identity strong')].map(element => element.textContent),
       selectedTab: document.querySelector('[data-tab][aria-current="page"]').dataset.tab,
     })`);
     providerCompletion.writes = calls.filter(call => call.path === '/api/provider').length;
@@ -367,7 +367,16 @@ async function run() {
         document.querySelector(selector).addEventListener('close', () => resolve(), { once: true });
         document.querySelector(control).click();
       }), layoutQA.phase + ' close'),
-      gap: (before, after) => document.querySelector(after).getBoundingClientRect().top - document.querySelector(before).getBoundingClientRect().bottom,
+      gap: (before, after) => Math.round((document.querySelector(after).getBoundingClientRect().top - document.querySelector(before).getBoundingClientRect().bottom) * 1000) / 1000,
+      clippedRect: element => {
+        const rect = element.getBoundingClientRect(); let left = rect.left, right = rect.right;
+        for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+          if (['auto', 'scroll', 'hidden', 'clip'].includes(getComputedStyle(parent).overflowX)) {
+            const bound = parent.getBoundingClientRect(); left = Math.max(left, bound.left); right = Math.min(right, bound.right);
+          }
+        }
+        return { ...rect.toJSON(), left, right, width: Math.max(0, right - left) };
+      },
       advancedGap: () => {
         const body = document.querySelector('#fields .advanced-body');
         return body.querySelector('label').getBoundingClientRect().top - body.getBoundingClientRect().top - parseFloat(getComputedStyle(body).borderTopWidth);
@@ -384,7 +393,12 @@ async function run() {
           buttons: buttons.map(button => ({ text: button.textContent.trim() || button.getAttribute('aria-label'),
             visibleInside: inside(button.getBoundingClientRect()) })),
           fieldsInside: [...body.querySelectorAll('input,select,textarea')].filter(field => field.getClientRects().length).every(field => {
-            const rect = field.getBoundingClientRect(); return rect.left >= bodyRect.left - 1 && rect.right <= bodyRect.right + 1;
+            const rect = field.getBoundingClientRect(), table = field.closest('.management-table-wrap');
+            if (table) {
+              const bound = table.getBoundingClientRect();
+              return rect.width <= table.clientWidth && bound.left >= bodyRect.left - 1 && bound.right <= bodyRect.right + 1;
+            }
+            return rect.left >= bodyRect.left - 1 && rect.right <= bodyRect.right + 1;
           }),
           dialogInsideViewport: bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= 0 && bounds.bottom <= innerHeight,
         };
@@ -395,7 +409,7 @@ async function run() {
           bodyOverflowX: document.body.scrollWidth - document.body.clientWidth,
           mainOverflowX: main.scrollWidth - main.clientWidth, contentOverflowX: content.scrollWidth - content.clientWidth,
           overflowingElements: [...document.querySelectorAll('#content *, .sidebar *')].filter(element => {
-            const rect = element.getBoundingClientRect();
+            const rect = layoutQA.clippedRect(element);
             return rect.width > 0 && rect.height > 0 && (rect.left < -1 || rect.right > innerWidth + 1);
           }).slice(0, 8).map(element => ({ tag: element.tagName, className: element.className,
             text: element.textContent.slice(0, 80), left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right })),
@@ -442,23 +456,26 @@ async function run() {
           layoutQA.phase = 'callback close'; await layoutQA.close();
           layoutQA.phase = 'account open'; await layoutQA.bounded(openAccounts('cursor'), layoutQA.phase);
           layoutQA.phase = 'account settle'; await layoutQA.settle();
-          const account = { actionGap: layoutQA.gap('#fields .panel', '[data-action="add-account"]'),
-            rowCount: document.querySelectorAll('#fields .panel .row').length, dialog: layoutQA.dialog() };
+          const account = { actionGap: layoutQA.gap('#fields .toolbar', '#fields .form-hint'),
+            rowCount: document.querySelectorAll('#fields .management-table tbody tr').length, dialog: layoutQA.dialog() };
           layoutQA.phase = 'account close'; await layoutQA.close();
           layoutQA.phase = 'keys open'; await layoutQA.bounded(openKeys('fixture-api'), layoutQA.phase);
           layoutQA.phase = 'keys settle'; await layoutQA.settle();
-          const key = { nameGap: layoutQA.gap('#fields .panel', 'label[for="f-name"]'), dialog: layoutQA.dialog() };
+          const keysTable = layoutQA.dialog(); activateEditorSection('new-key');
+          const key = { nameGap: layoutQA.gap('#fields [data-section="new-key"] h3', 'label[for="f-name"]'), table: keysTable, dialog: layoutQA.dialog() };
           layoutQA.phase = 'keys close'; await layoutQA.close();
           layoutQA.phase = 'provider open'; openProvider();
           document.querySelector('#f-preset').value = 'layout-preset';
           document.querySelector('#f-preset').dispatchEvent(new Event('change', { bubbles: true }));
-          document.querySelector('#provider-advanced').open = true;
+          activateEditorSection('network');
           document.querySelector('#f-proxyMode').value = 'custom';
           document.querySelector('#f-proxyMode').dispatchEvent(new Event('change', { bubbles: true }));
           layoutQA.phase = 'provider settle'; await layoutQA.settle();
-          const provider = { regionGap: layoutQA.gap('#f-key', 'label[for="f-region"]'),
-            workspaceGap: layoutQA.gap('#f-chat', 'label[for="f-workspace"]'),
-            proxyGap: layoutQA.gap('#f-proxyMode', 'label[for="f-proxy"]'), advancedGap: layoutQA.advancedGap(), dialog: layoutQA.dialog() };
+          const proxyGap = layoutQA.gap('#f-proxyMode', 'label[for="f-proxy"]'); activateEditorSection('connection');
+          const regionGap = layoutQA.gap('.credential-tools', 'label[for="f-region"]'), workspaceGap = layoutQA.gap('#f-region', 'label[for="f-workspace"]');
+          const sections = [...document.querySelectorAll('#editor-nav [data-section-target]')].map(button => { activateEditorSection(button.dataset.sectionTarget); return { id: button.dataset.sectionTarget, dialog: layoutQA.dialog() }; });
+          activateEditorSection('limits');
+          const provider = { regionGap, workspaceGap, proxyGap, sections, dialog: layoutQA.dialog() };
           layoutQA.phase = 'provider done'; return { callback, account, key, provider };
         })()`, 15000).catch(async error => { throw new Error(`${error.message}\nphase: ${await js('layoutQA.phase')}`); });
         layout.callbacks.push({ scheme, ...middle.callback });
@@ -469,8 +486,9 @@ async function run() {
         const route = await js(`(async () => {
           await layoutQA.close(); await go('routing'); openGroup();
           document.querySelector('#fields details.advanced').open = true; await layoutQA.settle();
-          return { gridGap: layoutQA.gap('#fields > .form-hint', '.form-grid'),
-            advancedGap: layoutQA.advancedGap(), dialog: layoutQA.dialog() };
+          const gridGap = layoutQA.gap('[data-section="members"] .editor-section-head', '[data-section="members"] .form-grid');
+          const advancedGap = layoutQA.advancedGap(), sections = [...document.querySelectorAll('#editor-nav [data-section-target]')].map(button => { activateEditorSection(button.dataset.sectionTarget); return { id: button.dataset.sectionTarget, dialog: layoutQA.dialog() }; });
+          activateEditorSection('members'); return { gridGap, advancedGap, sections, dialog: layoutQA.dialog() };
         })()`, 10000);
         layout.routes.push({ scheme, ...route });
         if (width === 1120 || width === 420) await capture(`${label}-route`);

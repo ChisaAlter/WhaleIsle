@@ -174,23 +174,26 @@ test('real WhaleBridge account UI retains connection feedback and consistent res
     }
     for (const row of layout.accounts) {
       assert.equal(row.rowCount, 2, 'account geometry includes both an active identity and actionable account');
-      assert.equal(row.actionGap, 16, 'add-account action is separated from the existing account panel');
+      assert.equal(row.actionGap, 8, 'account toolbar and its identity explanation have an 8px gap');
       assertDialog(row.dialog, `accounts ${row.scheme} ${row.dialog.width}px`);
     }
     for (const row of layout.keys) {
-      assert.equal(row.nameGap, 20, 'the new key form is separated from existing keys');
+      assert.equal(row.nameGap, 20, 'the new key section heading is separated from its first field');
+      assertDialog(row.table, `key table ${row.scheme} ${row.dialog.width}px`);
       assertDialog(row.dialog, `keys ${row.scheme} ${row.dialog.width}px`);
     }
     for (const row of layout.providers) {
-      assert.equal(row.regionGap, 20, 'the conditional region field is separated from the API key');
-      assert.equal(row.workspaceGap, 20, 'the conditional workspace field is separated from the endpoint');
+      assert.equal(row.regionGap, 20, 'the conditional region field is separated from credential tools');
+      assert.equal(row.workspaceGap, 20, 'the workspace field is separated from its selected region');
       assert.equal(row.proxyGap, 20, 'the conditional proxy field is separated from proxy policy');
-      assert.ok(Math.abs(row.advancedGap - 16) < 0.01,
-        'the first advanced field has a 16px inset below its divider, allowing subpixel border rounding');
+      assert.deepEqual(row.sections.map(section => section.id), ['connection','models','allocation','limits','network','balance','headers','identity']);
+      for (const section of row.sections) assertDialog(section.dialog, `provider ${section.id} ${row.scheme} ${row.dialog.width}px`);
       assertDialog(row.dialog, `provider ${row.scheme} ${row.dialog.width}px`);
     }
     for (const row of layout.routes) {
-      assert.equal(row.gridGap, 20, 'route identity fields are separated from the introduction');
+      assert.equal(row.gridGap, row.dialog.width > 760 ? 24 : 20, 'route identity fields use the workbench section spacing');
+      assert.deepEqual(row.sections.map(section => section.id), ['members','routing','conditions','levels']);
+      for (const section of row.sections) assertDialog(section.dialog, `route ${section.id} ${row.scheme} ${row.dialog.width}px`);
       assert.ok(Math.abs(row.advancedGap - 16) < 0.01,
         'route advanced settings retain the shared 16px divider inset, allowing subpixel border rounding');
       assertDialog(row.dialog, `route ${row.scheme} ${row.dialog.width}px`);

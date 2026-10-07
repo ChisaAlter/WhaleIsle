@@ -104,10 +104,16 @@ func searchModel(model string) bool {
 // searchesFor is searchesItself for one request: a Google sign-in's Gemini
 // searches by itself only for a request without function tools.
 func searchesFor(p provider.Provider, proto provider.Protocol, model string, req *Request) bool {
-	if searchesItself(p, proto) {
+	if searchesModel(p, proto, model) {
 		return true
 	}
 	return codeAssistSearches(p, proto, model) && (len(req.Tools) == 0 || req.ToolChoice == "none")
+}
+
+// searchesModel is searchesItself for one model: a Remote magpie searches
+// for the models its list says it does, on any API (search_remote.go).
+func searchesModel(p provider.Provider, proto provider.Protocol, model string) bool {
+	return searchesItself(p, proto) || proto != provider.Gemini && remoteSearch(p, model) != ""
 }
 
 // searchHosts are the APIs that search by themselves: OpenAI's, xAI's,
@@ -163,6 +169,9 @@ func searchRank(p provider.Provider) int {
 		return 4
 	case googleAccount(p):
 		// Gemini on a Google sign-in, by googleSearch (#757)
+		return 5
+	case remoteSearchesAny(p):
+		// another magpie, with the models it searches natively for
 		return 5
 	}
 	return -1
@@ -239,7 +248,7 @@ func chosenSearcher() (*provider.Provider, string, string) {
 		// it searches with no model
 		return &p, "", ""
 	}
-	if model != "" && slices.ContainsFunc(p.Available(), func(m catalog.Model) bool { return m.ID == model }) && (!googleAccount(p) || searchModel(model)) {
+	if model != "" && slices.ContainsFunc(p.Available(), func(m catalog.Model) bool { return m.ID == model }) && searchableModel(p, model) {
 		return &p, model, ""
 	}
 	if m := searcherModel(p); m != "" {
@@ -267,7 +276,7 @@ func Searchers() []SearcherChoice {
 		}
 		var ms []catalog.Model
 		for _, m := range p.Available() {
-			if !strings.HasPrefix(m.ID, provider.GroupPrefix) && (!googleAccount(p) || searchModel(m.ID)) {
+			if !strings.HasPrefix(m.ID, provider.GroupPrefix) && searchableModel(p, m.ID) {
 				ms = append(ms, m)
 			}
 		}
@@ -359,8 +368,8 @@ func smallModel(p provider.Provider, keep func(catalog.Model) bool) string {
 // searcherModel is the model p searches with when none is named: its
 // small model, of those it can search with.
 func searcherModel(p provider.Provider) string {
-	if googleAccount(p) {
-		return smallModel(p, func(m catalog.Model) bool { return searchModel(m.ID) })
+	if googleAccount(p) || p.IsRemoteMagpie() {
+		return smallModel(p, func(m catalog.Model) bool { return searchableModel(p, m.ID) })
 	}
 	return smallModel(p, nil)
 }
@@ -382,9 +391,18 @@ const searchSystem = "You are a web search tool. Search the web for what is aske
 // webSearch searches the web and says what it found, and on which pages:
 // for a model of a Kimi Code plan, with the plan's search service first;
 // then with the searcher's model, or, without one or when it fails, with
-// the search APIs the user set up (#419).
+// the search APIs the user set up (#419). Settings can put the search APIs
+// first (#928): the providers then search only when none of them answers.
 func (s *Server) webSearch(ctx context.Context, query string) (string, []Hit, error) {
 	var errs []error
+	apiFirst := settings.Load().SearchFirst == settings.SearchFirstAPI && len(provider.SearchAPIs()) > 0
+	if apiFirst {
+		said, hits, err := s.apiSearch(ctx, query)
+		if err == nil {
+			return said, hits, nil
+		}
+		errs = append(errs, err)
+	}
 	if p, ok := ownSearcher(ctx); ok {
 		said, hits, err := s.ownSearch(ctx, p, query)
 		if err == nil {
@@ -401,7 +419,7 @@ func (s *Server) webSearch(ctx context.Context, query string) (string, []Hit, er
 	if !errors.Is(err, errNoSearcher) || len(errs) == 0 && !apis {
 		errs = append(errs, err)
 	}
-	if !apis {
+	if !apis || apiFirst {
 		return "", nil, errors.Join(errs...)
 	}
 	said, hits, err = s.apiSearch(ctx, query)
@@ -462,7 +480,7 @@ func (s *Server) searchWith(ctx context.Context, p provider.Provider, model, que
 		"messages": []map[string]any{{"role": "user", "content": "Search the web for: " + query}},
 		"tools":    []map[string]any{{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}},
 	})
-	r, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://magpie/v1/messages", nil)
+	r, err := http.NewRequestWithContext(magpieChose(ctx), http.MethodPost, "http://magpie/v1/messages", nil)
 	if err != nil {
 		return "", nil, err
 	}

@@ -24,6 +24,9 @@ const traceKeep = 60
 
 // Route is one request's way through routing.
 type Route struct {
+	imageTurn     string
+	imageCaller   string
+	imageProvider string
 	Seq           int64        `json:"seq"` // the trace's count when it last changed
 	ID            int64        `json:"id"`
 	Time          time.Time    `json:"time"`
@@ -56,6 +59,9 @@ type Route struct {
 	Millis   int64        `json:"ms,omitempty"`
 	Tokens   int          `json:"tokens,omitempty"`
 	Output   int          `json:"out,omitempty"` // of Tokens, the reply's
+	// Reasoning: of Output, the reply's reasoning, which its speed leaves
+	// out (usage.DecodeOf)
+	Reasoning int `json:"reasoning,omitempty"`
 	// TTFT: ms from the request to its reply's first content (text,
 	// reasoning or a tool call), FirstText to its first text, as Millis
 	// counts: streamed replies only (#196)
@@ -67,25 +73,26 @@ type Route struct {
 	Served  string `json:"served,omitempty"`
 	Swapped bool   `json:"swapped,omitempty"`
 	Routed  bool   `json:"routed,omitempty"`
+	// Upstream: the provider an aggregator said answered behind it
+	Upstream string `json:"upstream,omitempty"`
 }
 
 // RouteUsage is one billable attempt's pricing inputs, kept in routing history.
 // Its JSON keys also read the earlier history that stored full usage records.
 type RouteUsage struct {
-	Provider     string `json:"provider"`
-	Model        string `json:"model"`
-	Input        int    `json:"in"`
-	Output       int    `json:"out"`
-	CacheRead    int    `json:"cache_read,omitempty"`
-	CacheWrite   int    `json:"cache_write,omitempty"`
-	CacheWrite1h int    `json:"cache_write_1h,omitempty"`
-	Reasoning    int    `json:"reasoning,omitempty"`
+	Provider   string `json:"provider"`
+	Model      string `json:"model"`
+	Input      int    `json:"in"`
+	Output     int    `json:"out"`
+	CacheRead  int    `json:"cache_read,omitempty"`
+	CacheWrite int    `json:"cache_write,omitempty"`
+	Reasoning  int    `json:"reasoning,omitempty"`
 }
 
 // PricingRecord lets the routing view reuse the ledger's effective prices.
 func (u RouteUsage) PricingRecord() usage.Record {
 	return usage.Record{Provider: u.Provider, Model: u.Model, Input: u.Input,
-		Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, CacheWrite1h: u.CacheWrite1h, Reasoning: u.Reasoning}
+		Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, Reasoning: u.Reasoning}
 }
 
 // GroupRef is the routing group a request asked for.
@@ -190,12 +197,17 @@ type Weighed struct {
 	// Barred: left out as the user set it not to serve the model, its
 	// own list of models leaving it out (#474)
 	Barred bool `json:"barred,omitempty"`
+	// Held: left out as the gateway key asking may not use its account or
+	// key (#905)
+	Held bool `json:"held,omitempty"`
 	// Capped: left out as held at the usage cap the user set on the
 	// account, this cap in percent; Used is then its fullest window's
 	// share, CapBack when the last window at or past it renews
-	Capped    int        `json:"capped,omitempty"`
-	CapBack   *time.Time `json:"capBack,omitempty"`
-	NoCredits bool       `json:"noCredits,omitempty"`
+	Capped  int        `json:"capped,omitempty"`
+	CapBack *time.Time `json:"capBack,omitempty"`
+	// NoCredits: held at 100% (Capped), a Codex account the user set not
+	// to spend its credits once its allowance is used up
+	NoCredits bool `json:"noCredits,omitempty"`
 	// Rank: its place in its provider's own list of accounts or keys, the
 	// order the provider's page shows and a drag sets (#217); routing may
 	// weigh them in another
@@ -237,10 +249,13 @@ type Try struct {
 	Served  string `json:"served,omitempty"`
 	Swapped bool   `json:"swapped,omitempty"`
 	Routed  bool   `json:"routed,omitempty"`
-	Fail    string `json:"fail,omitempty"` // why it failed, as rest tells it
-	Error   string `json:"error,omitempty"`
-	Rest    *Rest  `json:"rest,omitempty"`  // how long it now sits out; none when it was the last to try
-	Again   int64  `json:"again,omitempty"` // ms waited before it was tried again, the last one left
+	// Upstream: the provider an aggregator said answered behind it
+	// (OpenRouter's DeepInfra, Novita …)
+	Upstream string `json:"upstream,omitempty"`
+	Fail     string `json:"fail,omitempty"` // why it failed, as rest tells it
+	Error    string `json:"error,omitempty"`
+	Rest     *Rest  `json:"rest,omitempty"`  // how long it now sits out; none when it was the last to try
+	Again    int64  `json:"again,omitempty"` // ms waited before it was tried again, the last one left
 	// Queued: ms it waited for one of its key's or account's slots, the
 	// provider's MaxConcurrency out already (concurrency.go)
 	Queued int64 `json:"queued,omitempty"`
@@ -262,7 +277,9 @@ type AutoReset struct {
 
 type planned struct {
 	order, left []Weighed
-	held        []candidate
+	// held: the accounts left out (in left) as they won't spend their
+	// credits, for one that spends its resets by itself to spend one
+	held []candidate
 }
 
 func weighed(c candidate, p provider.Provider, wg weighing, fallback bool, from provider.Protocol) Weighed {
@@ -466,5 +483,5 @@ func routeUsage(id, model string, u Usage) []RouteUsage {
 		return nil
 	}
 	return []RouteUsage{{Provider: id, Model: model, Input: u.Input, Output: u.Output,
-		CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, CacheWrite1h: u.CacheWrite1h, Reasoning: u.Reasoning}}
+		CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, Reasoning: u.Reasoning}}
 }

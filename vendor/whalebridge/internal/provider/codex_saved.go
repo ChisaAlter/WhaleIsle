@@ -14,7 +14,7 @@ func codexStandIn(ls []savedLogin) string {
 	var seen time.Time
 	bestOrder := 0
 	for _, l := range ls {
-		if l.Agent != "codex" {
+		if l.Agent != "codex" || l.Hidden != "" {
 			continue
 		}
 		var a codexAuth

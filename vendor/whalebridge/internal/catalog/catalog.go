@@ -48,6 +48,11 @@ type Model struct {
 	MaxContext int `json:",omitempty"`
 	// Output is the most tokens a reply may hold, when known.
 	Output int `json:",omitempty"`
+	// Compact is where the user has Codex compact a conversation on this
+	// model (#876), its own or its provider's (settings.ModelCompacts): the
+	// window it is told when Context is longer. 0 is none set, for the
+	// one for every model (settings.Compact).
+	Compact int `json:",omitempty"`
 	// Fast is set on a model Codex may ask for priority processing (its
 	// Fast mode): one a ChatGPT account serves.
 	Fast bool `json:",omitempty"`
@@ -76,6 +81,11 @@ type Model struct {
 	// Reasoning is set on a model that thinks, whether or not it takes
 	// levels: mimo-v2.6-flash thinks with a switch alone (#402).
 	Reasoning bool `json:",omitempty"`
+	// WebSearch is how another magpie (a Remote magpie) searches the web
+	// for the model when a web search tool is offered: "native", its own
+	// provider by itself, or "magpie", with that magpie's searcher; "" it
+	// doesn't, or didn't say.
+	WebSearch string `json:",omitempty"`
 }
 
 func imageInput(modalities []string) *bool {
@@ -317,7 +327,9 @@ var (
 	// thinks are the models, by bare id, most of the providers serving
 	// them say reason, levels or not
 	thinks map[string]bool
-	names  map[string]string
+	// names are the models' names, by bare id, as most of the providers
+	// serving them give it
+	names map[string]string
 
 	syncMu sync.Mutex
 )
@@ -497,24 +509,6 @@ func Stale() bool {
 	}
 	st, err := os.Stat(src)
 	return err != nil || time.Since(st.ModTime()) > staleAfter
-}
-
-// ProviderEnv lists the env vars that unlock a models.dev provider.
-func ProviderEnv(provider string) []string {
-	if p, ok := load()[provider]; ok {
-		return p.Env
-	}
-	return nil
-}
-
-// ProviderAvailable is true when any of the provider's API-key env vars is set.
-func ProviderAvailable(provider string) bool {
-	for _, e := range ProviderEnv(provider) {
-		if os.Getenv(e) != "" {
-			return true
-		}
-	}
-	return false
 }
 
 // PriceOf is the list price of a models.dev provider's model, if known.
@@ -1039,4 +1033,22 @@ func Efforts(models []Model, id string) []string {
 		}
 	}
 	return nil
+}
+
+// ProviderEnv lists the env vars that unlock a models.dev provider.
+func ProviderEnv(provider string) []string {
+	if p, ok := load()[provider]; ok {
+		return p.Env
+	}
+	return nil
+}
+
+// ProviderAvailable is true when any of the provider's API-key env vars is set.
+func ProviderAvailable(provider string) bool {
+	for _, e := range ProviderEnv(provider) {
+		if os.Getenv(e) != "" {
+			return true
+		}
+	}
+	return false
 }

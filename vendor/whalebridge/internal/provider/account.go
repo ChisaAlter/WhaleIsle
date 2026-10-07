@@ -637,6 +637,9 @@ func claudeAccount() (Provider, bool) {
 	loginsMu.Lock()
 	owned := slices.ContainsFunc(readLogins(), func(l savedLogin) bool { return l.Agent == "claude" && l.Owned && strings.EqualFold(l.User, user) })
 	loginsMu.Unlock()
+	if whaleBridgeHiddenLogin("claude", user) {
+		return claudeStandInAccount()
+	}
 	if owned {
 		acct := &Account{Agent: "claude", User: user, Plan: plan, standIn: true}
 		acct.token = func(context.Context) (string, error) { return claudeSavedDir(user) }
@@ -867,6 +870,9 @@ func codexAccount(home string) (Provider, bool) {
 	loginsMu.Lock()
 	owned := slices.ContainsFunc(readLogins(), func(l savedLogin) bool { return l.Agent == "codex" && l.Owned && strings.EqualFold(l.User, acct.User) })
 	loginsMu.Unlock()
+	if whaleBridgeHiddenLogin("codex", acct.User) {
+		return codexStandInAccount()
+	}
 	if owned {
 		return codexSavedAccount(acct.User, acct.Plan), true
 	}

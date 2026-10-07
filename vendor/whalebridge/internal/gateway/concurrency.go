@@ -11,11 +11,19 @@ import (
 	"github.com/yetone/magpie/internal/provider"
 )
 
-// A provider's keys and accounts each have concurrency slots. When all
-// are occupied, requests wait in arrival order subject to QueueLimit and
-// QueueWait. A cancelled request leaves the queue without reaching a vendor.
-// Another account or group member with a free slot is tried before waiting;
-// a full queue or an expired wait is recorded as a rejection.
+// A provider's MaxConcurrency (Discord, Lemon: a Codex account is
+// risk-controlled past five or six requests at once) is how many requests
+// may be out at the vendor at once on each of its keys or accounts — the
+// key, the account, else the provider: a candidate's who(). One more waits
+// in a queue of no bound, in the order it came, and is sent when one out
+// is done: its reply read to the end, or the agent gone. A request whose
+// agent goes away while it waits leaves the queue and is never sent.
+//
+// Waiting is not failing: a request queued is never passed to a fallback
+// for want of a free slot, and the key or account it waits for doesn't
+// rest. That is what the setting is
+// for — the vendor sees no more than that many — and what is waited is
+// told in the route's try (Try.Queued).
 
 // lanes are the slots of each key or account with a limit.
 type lanes struct {
@@ -31,19 +39,43 @@ type lane struct {
 	queue []chan struct{}
 }
 
-// acquire waits for one of who's limit slots, in turn. It answers the
-// release, to call once the request is done with the vendor, and false
-// with no slot taken when ctx ended first. A limit of 0 takes no slot.
-func (l *lanes) acquire(ctx context.Context, who string, limit int) (release func(), ok bool) {
-	release, err := l.take(ctx, who, limit, 0, 0)
-	return release, err == nil
-}
+// Its own limit (#892) and the queue's bound and wait. A key or account
+// may have a limit of its own, over the provider's (provider.LaneLimit),
+// and the count is the lane's whatever asks for it: a model, a routing
+// group or an agent. A provider's QueueLimit bounds how many wait for each
+// of its lanes: one more is turned away at once (errQueueFull), and one
+// that waited QueueWait seconds is turned away (errQueueWait) and leaves
+// the queue. Turned away, a try is passed on as a failure that rests
+// nobody: to the next key, account or member, else told to the agent as a
+// 429 in its API's own shape, with Retry-After.
+//
+// A full one gives way first. Where the request has another key or
+// account of the same provider, or another member of its routing group,
+// with a slot free now, that one is asked first and the full one keeps its
+// place after it (laneMate): a group spreads its requests over members
+// with room before any waits. A fallback provider is never asked for want
+// of a slot — it is another vendor, often a paid one — and a request whose
+// keys and accounts are all full waits for the one routing chose.
 
+// errQueueFull and errQueueWait turn a request away from a lane: its queue
+// at its bound, or the request waited as long as it may.
 var (
 	errQueueFull = errors.New("queue full")
 	errQueueWait = errors.New("waited too long")
 )
 
+// acquire waits for one of who's limit slots, in turn, with no bound on
+// the queue or the wait. It answers the release, to call once the request
+// is done with the vendor, and false with no slot taken when ctx ended
+// first. A limit of 0 takes no slot.
+func (l *lanes) acquire(ctx context.Context, who string, limit int) (release func(), ok bool) {
+	release, err := l.take(ctx, who, limit, 0, 0)
+	return release, err == nil
+}
+
+// take is acquire with at most queue waiting (0: no bound) for at most
+// wait (0: as long as it takes): errQueueFull, errQueueWait, or ctx's
+// error when it ended first, with no slot taken.
 func (l *lanes) take(ctx context.Context, who string, limit, queue int, wait time.Duration) (release func(), err error) {
 	l.mu.Lock()
 	if l.m == nil {
@@ -100,13 +132,15 @@ func (l *lanes) take(ctx context.Context, who string, limit, queue int, wait tim
 			return nil, err
 		}
 	}
-	// granted as ctx ended: the slot is given on to the next
+	// granted as it gave up: the slot is given on to the next
 	ln.busy--
 	ln.grant()
 	l.drop(who, ln)
 	return nil, err
 }
 
+// free says whether a request for who would be sent at once: no limit, or
+// a slot free and nobody waiting for it.
 func (l *lanes) free(who string, limit int) bool {
 	if limit <= 0 {
 		return true
@@ -117,8 +151,10 @@ func (l *lanes) free(who string, limit int) bool {
 	return ln == nil || ln.busy < limit && len(ln.queue) == 0
 }
 
-// Use another account of this provider, or member of this group, before waiting.
-// Fallback vendors are not selected merely because a concurrency slot is full.
+// laneMate is where, after i, the first candidate is with a slot free now
+// — another key or account of cands[i]'s provider, or in a routing group
+// any member — when cands[i]'s key or account is full; -1 when it isn't
+// full, gave way once already, or none has room.
 func (s *Server) laneMate(cands []candidate, i int, group bool, gave map[string]bool) int {
 	c := cands[i]
 	who := c.who()
@@ -137,6 +173,8 @@ func (s *Server) laneMate(cands []candidate, i int, group bool, gave map[string]
 	return -1
 }
 
+// laneMessage tells the agent why its request was turned away by c's
+// queue: full, or waited out.
 func laneMessage(c candidate, err error, queued int64) string {
 	lim := c.p.LaneLimit()
 	if errors.Is(err, errQueueFull) {

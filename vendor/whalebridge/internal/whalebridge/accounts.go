@@ -114,7 +114,9 @@ func accountRoutes(mux *http.ServeMux) {
 		}
 		writeJSON(w, map[string]any{"ok": true})
 	})
-	mux.HandleFunc("GET /api/accounts/{id}", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, provider.Logins(r.PathValue("id"))) })
+	mux.HandleFunc("GET /api/accounts/{id}", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, provider.WhaleBridgeLogins(r.PathValue("id")))
+	})
 	mux.HandleFunc("GET /api/accounts/{id}/project", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 		if id != "gemini" && id != "antigravity" {
@@ -143,7 +145,7 @@ func accountRoutes(mux *http.ServeMux) {
 		if err := decode(w, r, &b); err != nil {
 			return err
 		}
-		return provider.SetLoginOn(b.ID, b.User, b.On)
+		return provider.WhaleBridgeSetLoginOn(b.ID, b.User, b.On)
 	}))
 	mux.HandleFunc("POST /api/accounts/remove", mutate(func(w http.ResponseWriter, r *http.Request) error {
 		var b struct {
@@ -153,7 +155,7 @@ func accountRoutes(mux *http.ServeMux) {
 		if err := decode(w, r, &b); err != nil {
 			return err
 		}
-		return provider.ForgetLogin(b.ID, b.User)
+		return provider.WhaleBridgeForgetLogin(b.ID, b.User)
 	}))
 	mux.HandleFunc("GET /api/keys/{id}", func(w http.ResponseWriter, r *http.Request) {
 		p, err := provider.Find(r.PathValue("id"))

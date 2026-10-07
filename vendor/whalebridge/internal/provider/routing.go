@@ -91,7 +91,10 @@ var usedCache struct {
 	m       map[string]map[string]Allowance // agent → user → allowance
 	at      map[string]time.Time
 	loading map[string]chan struct{} // closed when the fetch in flight is done
-	renewed map[string]time.Time     // account windows restarted during a read
+	// renewed: when an account's windows were last started again (a
+	// Codex reset spent), by agent/user: a reading begun before says
+	// nothing of them
+	renewed map[string]time.Time
 }
 
 // firstWait is how long a request waits for an agent's allowances the
@@ -413,6 +416,8 @@ func Allowances(agent string) map[string]Allowance {
 			at := time.Now()
 			for user := range all {
 				if c.renewed[agent+"/"+strings.ToLower(user)].After(began) {
+					// started again while this was read: not known till
+					// it is read again, at once
 					delete(all, user)
 					at = time.Time{}
 				}
@@ -442,7 +447,10 @@ func Allowances(agent string) map[string]Allowance {
 }
 
 // OnRenewed has f told when an account's usage windows were started again
-// (a Codex reset spent), so what sat out waiting for them can come back.
+// (a Codex reset spent), so what sat out waiting for them can come back;
+// and, as agent "" and the key's KeyAllowanceID, when a reading of a key's
+// own windows finds one it was full in full no more: its limit raised in
+// its panel, or its usage reset.
 func OnRenewed(f func(agent, user string)) {
 	renewedHooks.Lock()
 	renewedHooks.fs = append(renewedHooks.fs, f)
@@ -454,13 +462,16 @@ var renewedHooks struct {
 	fs []func(agent, user string)
 }
 
-// renewedNow forgets the account's old windows before announcing their reset.
+// renewedNow tells those OnRenewed asked, and forgets the account's
+// allowance as last read: its windows are not known till read again, and
+// what holds an account at a share of them (a cap, credits not spent)
+// holds it no more.
 func renewedNow(agent, user string) {
 	forgetAllowance(agent, user)
 	tellRenewed(agent, user)
 }
 
-// tellRenewed announces an account's or key's renewed usage windows.
+// tellRenewed tells those OnRenewed asked.
 func tellRenewed(agent, user string) {
 	renewedHooks.Lock()
 	fs := renewedHooks.fs
@@ -470,7 +481,8 @@ func tellRenewed(agent, user string) {
 	}
 }
 
-// forgetAllowance has the next Allowances read the account's windows again.
+// forgetAllowance leaves agent's account user out of the allowances last
+// read, and has the next Allowances read them again.
 func forgetAllowance(agent, user string) {
 	c := &usedCache
 	c.Lock()
@@ -486,7 +498,7 @@ func forgetAllowance(agent, user string) {
 	if !ok {
 		return
 	}
-	// Readers keep the old map without holding this lock.
+	// a new map: the one handed out is read without the lock
 	kept := make(map[string]Allowance, len(m))
 	for u, a := range m {
 		if !strings.EqualFold(u, user) {

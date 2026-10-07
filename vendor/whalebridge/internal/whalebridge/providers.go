@@ -81,6 +81,12 @@ func supplierInfo(p provider.Provider) map[string]any {
 	available := []map[string]any{}
 	seen := map[string]bool{}
 	exposed := map[string]bool{}
+	defaultModels := []string{}
+	defaults := p
+	defaults.Models = nil
+	for _, m := range defaults.Exposed() {
+		defaultModels = append(defaultModels, m.ID)
+	}
 	for _, m := range p.Exposed() {
 		exposed[m.ID] = true
 	}
@@ -98,6 +104,7 @@ func supplierInfo(p provider.Provider) map[string]any {
 		row["id"], row["name"], row["provider"] = m.ID, m.Name, m.Provider
 		row["efforts"], row["free"], row["rate"], row["rateWas"] = provider.EffortsOf(m), m.Free, m.Rate, m.RateWas
 		row["context"], row["listed"], row["output"], row["max"] = p.WindowOf(m), provider.ListedWindow(m), p.ReplyLimit(m), m.MaxContext
+		row["canFast"] = provider.CanFast(p, m.ID)
 		ownImages := m.Images || catalog.SeesImages(m.ID)
 		if m.ImageInput != nil {
 			ownImages = *m.ImageInput
@@ -136,7 +143,8 @@ func supplierInfo(p provider.Provider) map[string]any {
 		"catalog": p.Catalog, "family": p.Family, "website": p.Website, "keysUrl": p.KeysURL,
 		"headerNames": headers, "keySet": p.Key != "", "keyMasked": provider.Mask(p.Key), "keyList": keys,
 		"models": p.Models, "chosen": p.Models, "available": available, "modelCount": len(p.Exposed()),
-		"modelPrefs": prefs, "modelPrices": prices, "modelNames": p.ModelNames(), "modelEfforts": p.ModelEfforts(),
+		"defaultModels": defaultModels,
+		"modelPrefs":    prefs, "modelPrices": prices, "modelNames": p.ModelNames(), "modelEfforts": p.ModelEfforts(),
 		"contexts": p.Contexts, "outputs": provider.OutputsOf(p.ID), "compacts": provider.CompactsOf(p.ID),
 		"ready": p.Ready(), "off": p.Off, "unlisted": p.Unlisted, "searches": p.Searches, "unredacted": p.Unredacted,
 		"routing": p.Routing, "affinity": p.Affinity, "sink": p.Sink, "proxy": p.Proxy, "fallback": p.Fallback,

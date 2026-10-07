@@ -24,7 +24,8 @@ import (
 // v5: an OpenCode call keeps the effort its prompt asked for (#680).
 // v6: Codex response records and compact disk-only parser state.
 // v7: reconcile recent Claude message revisions.
-const callCacheVersion = "calls-v7"
+// v8: a Claude Code call's one-hour cache writes.
+const callCacheVersion = "calls-v8"
 const maxKeptCalls = 131072
 const maxKeptFiles = 64
 

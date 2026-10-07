@@ -167,6 +167,11 @@ func shellEnv() (string, map[string]string) {
 			sh = "/bin/sh"
 		}
 	}
+	return askShell(sh)
+}
+
+// askShell runs sh as a terminal opens it and reads what shellEnv says.
+func askShell(sh string) (string, map[string]string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	// interactive too, since many put PATH in .zshrc/.bashrc
@@ -174,6 +179,17 @@ func shellEnv() (string, map[string]string) {
 	cmd.Stdin = nil
 	out, _ := cmd.Output()
 	return parseShellEnv(string(out), shellMark)
+}
+
+// ShellPath is the PATH the shell sh (zsh, bash, fish) has in a terminal
+// opened now, whether or not it is the login shell; nil when it doesn't
+// say within a few seconds.
+func ShellPath(sh string) []string {
+	p, _ := askShell(sh)
+	if p == "" {
+		return nil
+	}
+	return filepath.SplitList(p)
 }
 
 // shellMark tells shellEnv's answer apart from whatever the profile prints.

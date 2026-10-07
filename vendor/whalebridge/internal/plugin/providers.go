@@ -1,7 +1,6 @@
 package plugin
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/settings"
 	"github.com/yetone/magpie/internal/steady"
 )
@@ -85,7 +83,9 @@ type Provider struct {
 	// an https URL or a data:image URI (internal/provider keeps it)
 	Icon string `json:"icon,omitempty"`
 	// Usage says the plugin tells each account's allowance (auth.usage)
-	Usage     bool    `json:"usage"`
+	Usage bool `json:"usage"`
+	// Checkin says the plugin presses its vendor's daily check-in for each
+	// account (auth.checkin)
 	Checkin   bool    `json:"checkin,omitempty"`
 	SignedIn  bool    `json:"signedIn"`
 	AuthType  string  `json:"authType"`
@@ -93,7 +93,9 @@ type Provider struct {
 	Models    []Model `json:"models"`
 	// FellBack says the plugin's models hook couldn't fetch its vendor's
 	// list and gave the default one back.
-	FellBack  bool   `json:"fellBack,omitempty"`
+	FellBack bool `json:"fellBack,omitempty"`
+	// ListError is why it fell back, as the models hook threw it or its
+	// last fetch failed: the editor says so over the short list.
 	ListError string `json:"listError,omitempty"`
 	// Accounts are the accounts signed in to it, the one kept under its
 	// own id first; SignedIn, AuthType and AccountID are that one's.
@@ -177,25 +179,18 @@ func Providers(ctx context.Context) ([]Provider, error) {
 func commitProviders(ps []Provider, epoch *uint64) []Provider {
 	// Serialize publishers without blocking Cached on Windows rename retries.
 	provWriteMu.Lock()
+	defer provWriteMu.Unlock()
 	provMu.Lock()
 	if epoch != nil && provEpoch != *epoch {
 		provMu.Unlock()
-		provWriteMu.Unlock()
 		return ps
 	}
 	ps = keepListed(ps, provCache)
 	ps = keepUnloaded(ps, provCache)
-	previous, _ := json.Marshal(provCache)
-	published, _ := json.Marshal(ps)
-	changed := !bytes.Equal(previous, published)
 	provCache, provGood, provTried = ps, true, true
 	provMu.Unlock()
 	if b, err := json.Marshal(ps); err == nil {
 		_ = writeWhole(providersPath(), b)
-	}
-	provWriteMu.Unlock()
-	if changed {
-		catalog.Touched()
 	}
 	return ps
 }
@@ -328,6 +323,7 @@ func keepListed(ps, last []Provider) []Provider {
 		}
 		if p.FellBack && !l.FellBack && len(l.Models) > 0 {
 			ps[i].Models, ps[i].FellBack, ps[i].ListError = l.Models, false, ""
+			// the first account's list is the provider's: it is kept with it
 			if len(ps[i].Accounts) > 0 && ps[i].Accounts[0].Models == nil {
 				ps[i].Accounts[0].FellBack, ps[i].Accounts[0].ListError = false, ""
 			}

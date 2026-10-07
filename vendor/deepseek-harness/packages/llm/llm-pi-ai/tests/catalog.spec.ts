@@ -155,7 +155,7 @@ describe('hand-declared providers', () => {
         baseURL: 'https://acme.test',
         // A listing endpoint that discloses nothing but ids still yields a
         // serviceable route.
-        models: [{ id: 'bare' }, { id: 'sized', contextWindow: 8192, maxTokens: 512 }],
+        models: [{ id: 'bare' }, { id: 'sized', contextWindow: 8192, maxTokens: 512, compactionThreshold: 2048 }],
       },
       'tuned-gateway': {
         api: 'openai-completions',
@@ -179,6 +179,8 @@ describe('hand-declared providers', () => {
     // the model's capability and stops there.
     expect(resolved.get('acme-gateway')?.configuredMaxTokens.get('bare')).toBeUndefined()
     expect(resolved.get('acme-gateway')?.configuredMaxTokens.get('sized')).toBe(512)
+    expect(resolved.get('acme-gateway')?.configuredCompactionThresholds.get('bare')).toBeUndefined()
+    expect(resolved.get('acme-gateway')?.configuredCompactionThresholds.get('sized')).toBe(2048)
   })
 
   it('takes a model’s declared modalities, then the catalog’s, then the route’s', () => {
@@ -730,6 +732,21 @@ describe('modelOverrides', () => {
     if (model === undefined) throw new Error('the installed catalog ships no deepseek model')
     return model
   }
+
+  it('exposes an automatic catalog model compaction override to the LLM consumer', async () => {
+    const target = deepseekModel()
+    const ctx = await harness({ providers: {
+      deepseek: { modelOverrides: { [target.id]: { compactionThreshold: 128_000 } } },
+    } })
+
+    const info = await ctx.llm.resolveModelInfo('deepseek', target.id)
+    expect(info.context).toEqual({ contextWindow: target.contextWindow, compactionThreshold: 128_000 })
+    const sibling = getBuiltinModels('deepseek').find(model => model.id !== target.id)
+    if (sibling !== undefined) {
+      expect((await ctx.llm.resolveModelInfo('deepseek', sibling.id)).context)
+        .not.toHaveProperty('compactionThreshold')
+    }
+  })
 
   it('reshapes one catalog model while the rest of the catalog keeps serving', () => {
     const catalogSize = getBuiltinModels('deepseek').length
