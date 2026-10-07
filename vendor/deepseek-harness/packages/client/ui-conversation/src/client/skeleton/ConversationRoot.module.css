@@ -253,15 +253,8 @@ button.crumb:hover {
   }
 
   .titleRow .tabs {
-    gap: 4px;
+    gap: 8px;
     margin-left: 8px;
-  }
-
-  .tabs .tab {
-    padding-right: 4px;
-    padding-left: 4px;
-    font-size: 12px;
-    line-height: 18px;
   }
 
   .titleRow .headerUtilities {
@@ -297,25 +290,25 @@ button.crumb:hover {
   display: none;
 }
 
-/* View navigation remains in the caption row beside the directory utility. */
+/* Keep the original text tabs and underline in the shared caption row. */
 .tabs {
   position: relative;
   z-index: 1;
   display: flex;
   flex: none;
   align-items: center;
-  gap: 8px;
+  gap: 36px;
   margin-left: 12px;
+  padding-left: 8px;
 }
 
 .tab {
   position: relative;
-  min-height: 28px;
-  padding: 4px 8px;
+  padding: 0 0 11px;
   border: none;
   background: transparent;
   font-size: 13px;
-  line-height: 20px;
+  line-height: 16px;
   font-weight: 500;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
@@ -325,9 +318,9 @@ button.crumb:hover {
 .tab::after {
   content: '';
   position: absolute;
-  right: 8px;
+  right: 0;
   bottom: 1px;
-  left: 8px;
+  left: 0;
   height: 2px;
   border-radius: 2px;
   background: transparent;
