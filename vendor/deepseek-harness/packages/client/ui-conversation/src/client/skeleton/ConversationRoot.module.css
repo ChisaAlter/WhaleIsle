@@ -389,7 +389,7 @@ button.crumb:hover {
   position: absolute;
   top: 0;
   bottom: 0;
-  /* Concrete overflow content establishes z-index 1, while the sticky
+  /* Concrete overflow content establishes z-index 1, while the viewport
      composer remains above both layers. */
   z-index: 0;
   width: min(
@@ -502,9 +502,9 @@ button.crumb:hover {
   --dsh-composer-text-max-height: 336px;
 }
 
-/* Active phase: header is ordinary column chrome above the scrollport (not
-   sticky). The scroll body holds the transcript and the sticky composer seat
-   so wheel over the footer moves the flow. */
+/* Active phase: header is ordinary column chrome above the scrollport.
+   The composer anchors to the body viewport, independently of transcript
+   scroll offsets and takeover height changes. */
 .root[data-phase='active'] {
   overflow: hidden;
 }
@@ -554,10 +554,9 @@ button.crumb:hover {
      the column's edge instead of flush against it. */
   margin-right: 2px;
   overflow-y: auto;
-  /* Reserved unconditionally: the composer seat rides this box's content box in
-     Chat and its padding box under a view's composer overlay, so an `auto`
-     gutter moves the input card sideways by the bar's width whenever the two
-     differ ([decision](../../../../../../.agents/notes/archived/bug-fix/2026-08-04-composer-tab-gutter-reservation.md)). */
+  /* Reserved unconditionally: the composer seat matches this box's content box in
+     Chat; the viewport seat compensates for that same width, so an `auto`
+     gutter would move the transcript axis whenever scrolling appears ([decision](../../../../../../.agents/notes/archived/bug-fix/2026-08-04-composer-tab-gutter-reservation.md)). */
   scrollbar-gutter: stable;
   /* Quiet bar: rebinding ui-theme's indirection pair to `transparent` takes
      the thumb out of paint (same mechanism as ui-sidebar's quietBars) while
@@ -583,12 +582,17 @@ button.crumb:hover {
 .embeddedBody[data-content-phase='active'] .viewArea {
   flex: 1 0 auto;
   min-height: auto;
+  /* The viewport-anchored seat is out of flow; retain its measured height
+     so the latest transcript row can scroll clear of the card. */
+  padding-bottom: var(--dsh-composer-height, 0px);
 }
 
 .root[data-phase='active'] .composerSeat,
 .embeddedBody[data-content-phase='active'] .composerSeat {
-  position: sticky;
+  position: absolute;
+  right: calc(2px + var(--dsh-scrollbar-width));
   bottom: 0;
+  left: 0;
   /* Above markdown CodeBlock sticky banners (z-index 6) so the footer never
      paints under a sticking code header while scrolling. The pinned compaction
      header (MessageItem.module.css, ui-chat) and the turn-navigation rail slot
@@ -635,17 +639,14 @@ button.crumb:hover {
 /* Views may opt into a composer overlay while ConversationRoot retains
    ownership of the seat geometry and its active-phase precedence. */
 .scrollBody:has([data-conversation-composer-overlay]) {
-  position: relative;
-  /* A clipping box nothing scrolls out of, stated as a scroll container on both
-     axes rather than `overflow: hidden`: a single-axis scroller computes the
-     other axis to `auto`, and the seat's absolute positioning below needs the
-     box to stay a containing block in every engine. */
+  /* The elected view owns its scrolling. Keep the body, rather than this
+     scroll element, as the composer's viewport positioning context. */
   overflow-x: hidden;
   overflow-y: auto;
   /* The view owns its own scrollers (the trajectory ledger scrolls inside the
      view), so this box never scrolls here; reserving a gutter would only
      narrow the view's content by the bar's width. Chat keeps the reservation
-     on the same element, so the seat below compensates with the bar's width
+     on the same element, so the viewport seat keeps the same bar-width compensation
      ([decision](../../../../../../.agents/notes/archived/bug-fix/2026-08-04-composer-tab-gutter-reservation.md)). */
   scrollbar-gutter: auto;
 }
@@ -660,22 +661,8 @@ button.crumb:hover {
 .scrollBody:has([data-conversation-composer-overlay]) > :global([data-slot='conversation.session']) > .viewArea {
   flex: 1 1 0;
   min-height: 0;
+  padding-bottom: 0;
   overflow: hidden;
-}
-
-.scrollBody:has([data-conversation-composer-overlay]) > .composerSeat {
-  position: absolute;
-  /* Chat's seat rides this box's content box, which its own scrolling shortens
-     by the bar's width; the overlay seat is against the padding box, so it
-     must give back the same width to keep the input card in place across
-     tabs. Reads ui-theme's --dsh-scrollbar-width, which mirrors the WebKit
-     bar's layout width. Chat reserves the engine-resolved width, so on an
-     engine where the resolved width differs from this fixed 8px the card
-     drifts by half the difference — accepted residual risk, recorded in
-     ([decision](../../../../../../.agents/notes/archived/bug-fix/2026-08-12-composer-overlay-seat-width-compensation.md)). */
-  right: var(--dsh-scrollbar-width);
-  bottom: 0;
-  left: 0;
 }
 
 /* Hero phase: the composer stack (hero chrome + workspace row + card) is
@@ -712,7 +699,7 @@ button.crumb:hover {
 }
 
 /* Hero: the composer sits inside the session scroll body; center there so
-   the tree seat matches active (sticky footer) without a Root remount. */
+   the tree seat matches active (viewport footer) without a Root remount. */
 .root[data-phase='hero'] .scrollBody,
 .embeddedBody[data-content-phase='hero'] .scrollBody {
   justify-content: center;

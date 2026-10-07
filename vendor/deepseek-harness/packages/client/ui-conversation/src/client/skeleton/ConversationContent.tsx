@@ -58,21 +58,54 @@ export function ConversationContent(props: ConversationContentProps) {
   // seat leaves visible. Callback ref, not an effect; stable identity prevents
   // observer churn while the first blank session fills the resident body
   // outlet.
-  const seatObserver = useRef<ResizeObserver | null>(null)
+  const seatCleanup = useRef<(() => void) | null>(null)
   const seatResizeRef = useCallback((seat: HTMLDivElement | null): void => {
-    seatObserver.current?.disconnect()
-    seatObserver.current = null
+    seatCleanup.current?.()
+    seatCleanup.current = null
     const scroller = seat?.parentElement ?? null
     if (seat === null || scroller === null) return
-    seatObserver.current = new ResizeObserver(() => {
+    const publishSize = () => {
       scroller.style.setProperty('--dsh-composer-height', `${seat.offsetHeight}px`)
       scroller.style.setProperty(
         '--dsh-conversation-viewport-height',
         `${scroller.clientHeight}px`,
       )
-    })
-    seatObserver.current.observe(seat)
-    seatObserver.current.observe(scroller)
+    }
+    const observer = new ResizeObserver(publishSize)
+    observer.observe(seat)
+    observer.observe(scroller)
+    publishSize()
+
+    // A viewport-positioned child does not participate in its DOM parent's
+    // native wheel chain. Preserve footer scrolling, while answer fields and
+    // takeover bodies retain their own scroll until they reach a boundary.
+    const onWheel = (event: WheelEvent) => {
+      if (event.defaultPrevented || event.ctrlKey || event.shiftKey || event.deltaY === 0
+        || getComputedStyle(seat).position !== 'absolute') return
+      let target = event.target instanceof Element ? event.target : null
+      while (target !== null && target !== seat) {
+        if (target instanceof HTMLElement) {
+          const style = getComputedStyle(target)
+          if (/^(auto|scroll)$/.test(style.overflowY)) {
+            const floor = target.scrollHeight - target.clientHeight
+            if ((event.deltaY < 0 && target.scrollTop > 0)
+              || (event.deltaY > 0 && target.scrollTop < floor)
+              || style.overscrollBehaviorY === 'contain' || style.overscrollBehaviorY === 'none') return
+          }
+        }
+        target = target.parentElement
+      }
+      const lineHeight = Number.parseFloat(getComputedStyle(scroller).lineHeight) || 24
+      const delta = event.deltaY * (event.deltaMode === WheelEvent.DOM_DELTA_LINE
+        ? lineHeight : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? scroller.clientHeight : 1)
+      scroller.scrollBy({ top: delta })
+      event.preventDefault()
+    }
+    seat.addEventListener('wheel', onWheel, { passive: false })
+    seatCleanup.current = () => {
+      observer.disconnect()
+      seat.removeEventListener('wheel', onWheel)
+    }
   }, [])
 
   const sessionWorkspace = sessionId === undefined
@@ -329,10 +362,8 @@ export function ConversationContent(props: ConversationContentProps) {
     { fallback: composerBar, fallbackOnly: sessionId === undefined, overlay: true },
   )
 
-  // Sticky wraps the whole chain output (fallback + elected overlay), not
-  // only `.composerStack`: overlay:true renders those as siblings, and sticky
-  // on the fallback alone would leave a business-owned takeover at the content
-  // end off-screen when the user is not pinned to the floor.
+  // The viewport anchor wraps the whole chain output: overlay:true keeps
+  // the hidden fallback and elected takeover as siblings in the same seat.
   const composerSeat = (
     <div ref={seatResizeRef} className={css.composerSeat} data-composer-seat="" data-conversation-region="composer">
       {composer}

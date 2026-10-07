@@ -586,7 +586,7 @@ describe('ConversationRoot resident composer', () => {
     expect(b.lineageOwners.at(-1)?.openTitle).toBeUndefined()
   })
 
-  it('active phase: fixed header outside the scrollport; sticky composer seat inside it', () => {
+  it('active phase: fixed header outside the scrollport; viewport composer seat inside it', () => {
     const b = mount(sessionSnapshotOf())
     const host = b.view.container.querySelector('[data-conversation-scroll]')
     const seat = b.view.container.querySelector('[data-composer-seat]')
@@ -601,7 +601,7 @@ describe('ConversationRoot resident composer', () => {
       sessionId: SID,
       presentation: undefined,
     })
-    // Header is column chrome above the scrollport; the seat sticks inside it.
+    // Header is column chrome above the scrollport; the viewport seat remains a DOM child for ownership.
     expect(host?.contains(header)).toBe(false)
     expect(host?.contains(seat)).toBe(true)
     expect(seat?.contains(textarea)).toBe(true)
@@ -615,13 +615,65 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.getByRole('tab', { name: 'Trajectory' })).toBeTruthy()
   })
 
-  it('sticky composer seat wraps the whole overlay chain, not only the fallback stack', () => {
+  it('viewport composer seat wraps the whole overlay chain, not only the fallback stack', () => {
     const b = mount(sessionSnapshotOf(), undefined, undefined, { overlayTakeover: true })
     const seat = b.view.container.querySelector('[data-composer-seat]')
     const takeover = b.view.getByTestId('composer-takeover')
     const fallback = b.view.container.querySelector('[data-chain-overlay-fallback="conversation.composer"]')
     expect(seat?.contains(takeover)).toBe(true)
     expect(seat?.contains(fallback)).toBe(true)
+  })
+
+  it('preserves transcript wheel scrolling over a viewport-anchored takeover', () => {
+    const b = mount(sessionSnapshotOf(), undefined, undefined, { overlayTakeover: true })
+    const host = b.view.container.querySelector<HTMLElement>('[data-conversation-scroll]')!
+    const seat = b.view.container.querySelector<HTMLElement>('[data-composer-seat]')!
+    const scrollBy = vi.fn()
+    host.scrollBy = scrollBy
+    host.style.lineHeight = '20px'
+    Object.defineProperty(host, 'clientHeight', { value: 400 })
+    seat.style.position = 'absolute'
+    const wheel = (deltaY: number, deltaMode = 0, ctrlKey = false) => {
+      const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY, deltaMode, ctrlKey })
+      seat.dispatchEvent(event)
+      return event
+    }
+    expect(wheel(120).defaultPrevented).toBe(true)
+    expect(scrollBy).toHaveBeenLastCalledWith({ top: 120 })
+    wheel(-2, WheelEvent.DOM_DELTA_LINE)
+    expect(scrollBy).toHaveBeenLastCalledWith({ top: -40 })
+    wheel(1, WheelEvent.DOM_DELTA_PAGE)
+    expect(scrollBy).toHaveBeenLastCalledWith({ top: 400 })
+    expect(wheel(120, 0, true).defaultPrevented).toBe(false)
+    expect(scrollBy).toHaveBeenCalledTimes(3)
+    seat.style.position = 'static'
+    expect(wheel(120).defaultPrevented).toBe(false)
+    expect(scrollBy).toHaveBeenCalledTimes(3)
+  })
+
+  it('leaves answer scrolling and contained takeover boundaries to the browser, and releases the listener', () => {
+    const b = mount(sessionSnapshotOf(), undefined, undefined, { overlayTakeover: true })
+    const host = b.view.container.querySelector<HTMLElement>('[data-conversation-scroll]')!
+    const seat = b.view.container.querySelector<HTMLElement>('[data-composer-seat]')!
+    const scrollBy = vi.fn()
+    host.scrollBy = scrollBy
+    seat.style.position = 'absolute'
+    const inner = document.createElement('div')
+    inner.style.overflowY = 'auto'
+    Object.defineProperties(inner, { clientHeight: { value: 40 }, scrollHeight: { value: 100 } })
+    inner.scrollTop = 10
+    seat.appendChild(inner)
+    fireEvent.wheel(inner, { deltaY: 120 })
+    expect(scrollBy).not.toHaveBeenCalled()
+    inner.scrollTop = 60
+    fireEvent.wheel(inner, { deltaY: 120 })
+    expect(scrollBy).toHaveBeenLastCalledWith({ top: 120 })
+    inner.style.overscrollBehaviorY = 'contain'
+    fireEvent.wheel(inner, { deltaY: 120 })
+    expect(scrollBy).toHaveBeenCalledTimes(1)
+    b.view.unmount()
+    fireEvent.wheel(seat, { deltaY: 120 })
+    expect(scrollBy).toHaveBeenCalledTimes(1)
   })
 
   it('hero phase: keeps sidebar controls accessible while hiding conversation chrome', () => {
