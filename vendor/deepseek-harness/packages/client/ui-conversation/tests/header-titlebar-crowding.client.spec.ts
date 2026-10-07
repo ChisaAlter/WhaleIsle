@@ -34,7 +34,7 @@ describe('ConversationRoot.module.css titlebar crowding', () => {
     expect(declarations('.headerCorner')?.get('margin-right')).toBe('-16px')
   })
 
-  it('keeps actions inline at every frame density and queries the reserved row width', () => {
+  it('keeps actions inline at every frame density with view tabs below the reserved row', () => {
     expect(declarations('.titleRow')?.get('container-type')).toBe('inline-size')
     expect(declarations('.headerActions')?.get('display')).toBe('flex')
     expect(declarations('.headerActions')?.get('overflow')).toBeUndefined()
@@ -45,8 +45,14 @@ describe('ConversationRoot.module.css titlebar crowding', () => {
     expect(declarations('.crumbs')?.get('flex')).toBe('0 1 auto')
     expect(declarations('.crumbs')?.get('overflow')).toBe('hidden')
     expect(declarations('.headerActions')?.get('flex')).toBe('none')
-    expect(declarations('.tabs')?.get('flex')).toBe('none')
-    expect(declarations('.tabs')?.get('margin-top')).toBeUndefined()
+    expect(declarations('.header')?.get('padding')).toBe('12px 28px 0 20px')
+    expect(declarations('.header:has(.tabs) .titleRow')?.get('min-height')).toBe('30px')
+    expect(declarations('.header:where(:not(:has(.tabs)))')?.get('padding-bottom')).toBe('12px')
+    expect(declarations('.tabs')?.get('display')).toBe('flex')
+    expect(declarations('.tabs')?.get('grid-column')).toBe('1 / -1')
+    expect(declarations('.tabs')?.get('margin-top')).toBe('4px')
+    expect(declarations('.tabs')?.get('gap')).toBe('36px')
+    expect(declarations('.tabs')?.get('padding-left')).toBe('8px')
     expect(declarations('.tab')?.get('font-size')).toBe('13px')
     expect(declarations('.tab')?.get('line-height')).toBe('16px')
     expect(declarations('.tab')?.get('padding')).toBe('0 0 11px')

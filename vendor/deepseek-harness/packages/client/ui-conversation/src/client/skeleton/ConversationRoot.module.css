@@ -41,7 +41,7 @@
   --dsh-composer-dock-inset: 8px;
 }
 
-/* Session identity, view tabs, and tools share one caption-height row. */
+/* Session identity and tools share the first row; view tabs sit below it. */
 .header {
   position: relative;
   grid-row: 1;
@@ -49,7 +49,7 @@
   grid-template-columns: auto minmax(0, 1fr);
   flex: none;
   min-width: 0;
-  padding: 12px 28px 12px 20px;
+  padding: 12px 28px 0 20px;
   /* Trailing cluster (Git / panel toggles) shares this row when
      details is closed; AppFrame writes the overlap as --dshd-titlebar-conversation-reserve.
      The +16px absorbs .headerCorner's -16px reach: while the reserve pads this
@@ -65,6 +65,10 @@
    semantic child; flatten its box so the caption row uses the same tracks. */
 .header .header {
   display: contents;
+}
+
+.header:has(.tabs) .titleRow {
+  min-height: 30px;
 }
 
 :global(html:not([data-windows-titlebar]):not([data-platform='darwin']) [data-phone]) .header {
@@ -89,6 +93,10 @@
    caption drag rectangle; this header is not a second drag region. */
 .headerBlank::after {
   display: none;
+}
+
+.header:where(:not(:has(.tabs))) {
+  padding-bottom: 12px;
 }
 
 .header:where(:not(:has(.tabs)))::after {
@@ -252,11 +260,6 @@ button.crumb:hover {
     gap: 4px;
   }
 
-  .titleRow .tabs {
-    gap: 8px;
-    margin-left: 8px;
-  }
-
   .titleRow .headerUtilities {
     margin-left: 8px;
   }
@@ -290,15 +293,14 @@ button.crumb:hover {
   display: none;
 }
 
-/* Keep the original text tabs and underline in the shared caption row. */
+/* Original left-aligned view navigation below the title and tools. */
 .tabs {
+  grid-column: 1 / -1;
   position: relative;
   z-index: 1;
   display: flex;
-  flex: none;
-  align-items: center;
   gap: 36px;
-  margin-left: 12px;
+  margin-top: 4px;
   padding-left: 8px;
 }
 
