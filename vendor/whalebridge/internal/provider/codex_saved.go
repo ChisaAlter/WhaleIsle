@@ -12,6 +12,7 @@ import (
 func codexStandIn(ls []savedLogin) string {
 	user, best := "", -1
 	var seen time.Time
+	bestOrder := 0
 	for _, l := range ls {
 		if l.Agent != "codex" {
 			continue
@@ -27,8 +28,8 @@ func codexStandIn(ls []savedLogin) string {
 				rank++
 			}
 		}
-		if rank > best || rank == best && l.Seen.After(seen) {
-			user, seen, best = l.User, l.Seen, rank
+		if rank > best || rank == best && earlierLogin(l.Order, bestOrder, l.Seen, seen) {
+			user, seen, best, bestOrder = l.User, l.Seen, rank, l.Order
 		}
 	}
 	return user

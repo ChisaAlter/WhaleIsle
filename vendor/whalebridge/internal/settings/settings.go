@@ -108,6 +108,10 @@ type Settings struct {
 	// with CodexWarmup or without it. ClaudeWarmAt is the Claude accounts'.
 	CodexWarmAt  string `json:"codexWarmAt,omitempty"`
 	ClaudeWarmAt string `json:"claudeWarmAt,omitempty"`
+	// An account's own warm-up time, "off" to disable, absent to follow CodexWarmAt.
+	CodexWarmAtOf map[string]string `json:"codexWarmAtOf,omitempty"`
+	// Codex accounts held at 100% instead of spending their extra credits.
+	CodexNoCredits []string `json:"codexNoCredits,omitempty"`
 	// CodexAutoReset are the ChatGPT accounts (lower-case) that spend one
 	// of their rate-limit resets by themselves once their weekly window is
 	// used up and no other account can take the request: at most one a
@@ -126,7 +130,9 @@ type Settings struct {
 	// MiniMaxCheckin presses MiniMax Code's daily check-in (签到) for each
 	// signed-in MiniMax Code (China) account (its plugin's) once a Beijing
 	// day, claiming the credits it gives (#811).
-	MiniMaxCheckin bool `json:"minimaxCheckin,omitempty"`
+	MiniMaxCheckin bool            `json:"minimaxCheckin,omitempty"`
+	QoderCheckin   bool            `json:"qoderCheckin,omitempty"`
+	PluginCheckins map[string]bool `json:"pluginCheckins,omitempty"`
 	// MemberModel has a reply's model name the routing group's member
 	// that answered, as magpie's provider/model id (workbuddy/glm-5.3-flash),
 	// rather than the vendor's own name for it, for agents that count
@@ -237,7 +243,9 @@ type Settings struct {
 	// Codex and Claude Code took 70–90s to its first token at 550K):
 	// what OpenAI does with its own models, 272K though they can take
 	// more, and Anthropic with its, 200K unless a [1m] one is picked.
-	FullContext bool `json:"fullContext,omitempty"`
+	FullContext   bool           `json:"fullContext,omitempty"`
+	CompactAt     int            `json:"compactAt,omitempty"`
+	ModelCompacts map[string]int `json:"modelCompacts,omitempty"`
 	// ChinaMirror is the Plugins page's 「国内镜像」 switch: the plugin list,
 	// npm (the plugins' packages and what npm says of them) and Bun's
 	// downloads are asked of mirrors in China first, and of their official
@@ -341,6 +349,13 @@ type ModelPrice struct {
 	Output     *float64 `json:"output,omitempty"`
 	CacheRead  *float64 `json:"cache_read,omitempty"`
 	CacheWrite *float64 `json:"cache_write,omitempty"`
+	// CacheWrite1h is a 1-hour cache write's price, absent where none is
+	// given: such a write is then counted at 2× input for a Claude model,
+	// else at the 5-minute price (catalog.OneHourFor).
+	CacheWrite1h *float64 `json:"cache_write_1h,omitempty"`
+	// Tiers are the prices of a request whose input is over a size, each
+	// whole: "magpie model price … --tier 272k …" (PAMI on Discord).
+	Tiers []catalog.Tier `json:"tiers,omitempty"`
 }
 
 // priceParts are the parts of a price, in the order they are asked for and
@@ -360,10 +375,35 @@ func (m ModelPrice) Price() (catalog.Price, string) {
 			return catalog.Price{}, priceParts[i]
 		}
 	}
-	return catalog.Price{
+	bad := func(v float64) bool { return math.IsNaN(v) || math.IsInf(v, 0) || v < 0 }
+	if m.CacheWrite1h != nil && bad(*m.CacheWrite1h) {
+		return catalog.Price{}, "1-hour cache write"
+	}
+	for i, t := range m.Tiers {
+		if t.Above <= 0 || i > 0 && t.Above <= m.Tiers[i-1].Above ||
+			bad(t.Input) || bad(t.Output) || bad(t.CacheRead) || bad(t.CacheWrite) || bad(t.CacheWrite1h) {
+			return catalog.Price{}, fmt.Sprintf("tier %d", i+1)
+		}
+	}
+	p := catalog.Price{
 		Input: *m.Input, Output: *m.Output,
 		CacheRead: *m.CacheRead, CacheWrite: *m.CacheWrite,
-	}, ""
+		Tiers: slices.Clone(m.Tiers),
+	}
+	if m.CacheWrite1h != nil {
+		p.CacheWrite1h = *m.CacheWrite1h
+	}
+	return p, ""
+}
+
+// StatedPrice is a price as ModelPrices keeps it: every part given, the
+// 1-hour cache write only when it is.
+func StatedPrice(p catalog.Price) ModelPrice {
+	m := ModelPrice{Input: new(p.Input), Output: new(p.Output), CacheRead: new(p.CacheRead), CacheWrite: new(p.CacheWrite), Tiers: slices.Clone(p.Tiers)}
+	if p.CacheWrite1h != 0 {
+		m.CacheWrite1h = new(p.CacheWrite1h)
+	}
+	return m
 }
 
 // CheckModelPrice is whether a price the user gives is one magpie will bill a
@@ -529,8 +569,12 @@ const WorkingWindow = 272000
 // Working is the context window an agent is told for a model with one of
 // n tokens (see FullContext).
 func (s Settings) Working(n int) int {
-	if !s.FullContext && n > WorkingWindow {
-		return WorkingWindow
+	threshold := s.CompactAt
+	if threshold <= 0 {
+		threshold = WorkingWindow
+	}
+	if !s.FullContext && n > threshold {
+		return threshold
 	}
 	return n
 }
@@ -652,6 +696,11 @@ func Save(s Settings) error {
 	if !slices.Contains(Currencies, s.Currency) {
 		return fmt.Errorf("currency must be one of %v, not %q", Currencies, s.Currency)
 	}
+	for user, at := range s.CodexWarmAtOf {
+		if _, _, ok := Clock(at); at != "off" && !ok {
+			return fmt.Errorf("%s's warm-up time of day must look like 06:00 or be off, not %q", user, at)
+		}
+	}
 	if !slices.Contains(Warmups, s.CodexWarmup) {
 		return fmt.Errorf("codex warm-up must be off, week or all, not %q", s.CodexWarmup)
 	}
@@ -716,6 +765,10 @@ func Save(s Settings) error {
 		s.CodexAutoReset[i] = strings.ToLower(u)
 	}
 	s.CodexAutoReset = ids(s.CodexAutoReset)
+	for i, u := range s.CodexNoCredits {
+		s.CodexNoCredits[i] = strings.ToLower(u)
+	}
+	s.CodexNoCredits = ids(s.CodexNoCredits)
 	s.TrayUsage = ""
 	if len(s.TrayUsages) > 0 {
 		s.TrayUsage = s.TrayUsages[0]
@@ -803,6 +856,22 @@ func (s Settings) normal() Settings {
 		*at = strings.TrimSpace(*at)
 		if h, m, ok := Clock(*at); ok {
 			*at = fmt.Sprintf("%02d:%02d", h, m)
+		}
+	}
+	if s.CodexWarmAtOf != nil {
+		of := map[string]string{}
+		for user, at := range s.CodexWarmAtOf {
+			user, at = strings.ToLower(strings.TrimSpace(user)), strings.ToLower(strings.TrimSpace(at))
+			if h, m, ok := Clock(at); ok {
+				at = fmt.Sprintf("%02d:%02d", h, m)
+			}
+			if user != "" && at != "" {
+				of[user] = at
+			}
+		}
+		s.CodexWarmAtOf = of
+		if len(of) == 0 {
+			s.CodexWarmAtOf = nil
 		}
 	}
 	return s

@@ -12,13 +12,31 @@ rows.push({ id: 'other/keep', name: 'Keep', channelId: 'other', channelName: 'Ot
 const hidden = new Set(['other/keep']);
 let reads = 0, fail = false;
 const writes = [];
+let providerFixture;
+const providerWrites = [], importWrites = [], settingWrites = [];
+const fixturePrice = { input: 1, output: 5, cache_read: 0.25, cache_write: 1.25, cache_write_1h: 2, tiers: [{ above: 200000, input: 2, output: 7.5, cache_read: 0.5, cache_write: 2.5, cache_write_1h: 4 }] };
+const subscriptionSettings = { pluginCheckins: { inactive: false }, pluginCheckinsEffective: { daily: true } };
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const json = body => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(body)); };
   if (url.pathname === '/api/state') {
     reads++;
-    return json({ version: 'test', providers: [], models: rows.filter(m => !hidden.has(m.id)), hidden: rows.filter(m => hidden.has(m.id)), groups: [] });
+    return json({ version: 'test', providers: providerFixture ? [providerFixture] : [], presets: [], models: rows.filter(m => !hidden.has(m.id)), hidden: rows.filter(m => hidden.has(m.id)), groups: [] });
   }
+  if (url.pathname === '/api/provider' || url.pathname === '/api/provider/import' || (url.pathname === '/api/subscription/settings' && req.method === 'POST')) {
+    let text = ''; for await (const chunk of req) text += chunk;
+    const body = JSON.parse(text);
+    if (url.pathname === '/api/provider') { providerWrites.push(body); return json({ ok: true }); }
+    if (url.pathname === '/api/subscription/settings') { settingWrites.push(body); return json({ ok: true }); }
+    importWrites.push(body);
+    return json(body.preview ? { providers: [{ id: 'imported', name: 'Imported API', chat: 'https://example.test/v1', models: ['long'], keySet: false, keyOptional: false }] } : { ok: true, added: ['imported'] });
+  }
+  if (url.pathname === '/api/upstream') return json({ vendors: [], providers: {} });
+  if (url.pathname === '/api/lanes') return json({});
+  if (url.pathname === '/api/usage') return json({ calls: 0, models: [] });
+  if (url.pathname === '/api/quotas') return json([]);
+  if (url.pathname === '/api/subscription/settings') return json(subscriptionSettings);
+  if (url.pathname === '/api/subscriptions') return json([{ id: 'daily-adapter', pid: 'daily', name: 'Daily API', plugin: true, checkin: true }]);
   if (url.pathname === '/api/models/hidden') {
     let text = ''; for await (const chunk of req) text += chunk;
     const body = JSON.parse(text); writes.push(body);
@@ -110,7 +128,37 @@ async function run() {
     win.setSize(390, 844);
     await js(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
     assert.equal(await js(`document.documentElement.scrollWidth<=window.innerWidth`), true);
-    console.log('WHALEBRIDGE_MODELS_RESULT:PASS scroll, stable DOM, grouped sources, scoped switches, fold, queued writes, failure rollback, filters and mobile layout');
+    // Provider edits exercise the rendered form and its submitted API payload.
+    providerFixture = { id: 'qa', name: 'QA API', chat: 'https://example.test/v1', keySet: true, keyMasked: 'qa…key', models: ['long'], modelCount: 1, available: [{ id: 'long', name: 'Long Context', price: fixturePrice, ownPrice: true }], modelPrices: { long: fixturePrice } };
+    win.setSize(900, 780);
+    await click('#refresh'); await wait(`!document.querySelector('#refresh').disabled`);
+    await click('[data-tab="providers"]');
+    await click('[data-action="edit-provider"][data-id="qa"]');
+    await click('.model-setting>summary');
+    await js(`(() => {const input=document.querySelector('[data-price="output"]');input.value='9';input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await js(`(() => {const input=document.querySelector('#provider-model-search');input.value='Long';input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    assert.equal(await js(`document.querySelector('[data-price="output"]').value`), '9', 'redrawing the model list retains edited prices');
+    await click('[data-action="add-price-tier"]');
+    await click('[data-action="remove-price-tier"]');
+    await click('#save'); await wait(`!document.querySelector('#editor').open`);
+    assert.deepEqual(providerWrites.at(-1).modelPrefs.long.price, { ...fixturePrice, output: 9, tiers: [{ above: 300000, input: 1, output: 9, cache_read: 0.25, cache_write: 1.25, cache_write_1h: 2 }] }, 'editing one price and replacing a tier retains all five price components');
+    await click('[data-action="import-provider"]');
+    await js(`document.querySelector('#f-source').value='{"name":"Imported API","chat":"https://example.test/v1"}'`);
+    await click('#save'); await wait(`document.querySelector('#f-importKey')`);
+    assert.equal(importWrites.length, 1, 'preview does not save a supplier');
+    assert.equal(importWrites[0].preview, true);
+    await js(`document.querySelector('#f-importKey').value='qa-import-key'`);
+    await click('#save'); await wait(`!document.querySelector('#editor').open`);
+    assert.equal(importWrites.length, 2);
+    assert.equal(importWrites[1].key, 'qa-import-key', 'the separate password field supplies credentials only after preview');
+    assert.equal(importWrites[1].text, importWrites[0].text);
+    await click('[data-tab="usage"]'); await wait(`document.querySelector('[data-action="subscription-settings"]')`);
+    await click('[data-action="subscription-settings"]'); await wait(`document.querySelector('[data-plugin-checkin="daily"]')`);
+    assert.equal(await js(`document.querySelector('[data-plugin-checkin="daily"]').checked`), true, 'the adapter default comes from the effective setting');
+    await click('#save'); await wait(`!document.querySelector('#editor').open`);
+    assert.equal(settingWrites.at(-1).pluginCheckins.daily, true, 'saving other settings preserves the effective adapter check-in default');
+    assert.equal(settingWrites.at(-1).pluginCheckins.inactive, false, 'saving does not erase the preference of a temporarily disabled adapter');
+    console.log('WHALEBRIDGE_MODELS_RESULT:PASS grouped models, scoped visibility, stable position, pricing tiers, import preview and subscription settings');
   } finally { win.destroy(); await new Promise(resolve => server.close(resolve)); }
 }
 run().then(() => app.exit(0), error => { console.error(error); app.exit(1); });

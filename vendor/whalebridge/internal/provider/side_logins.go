@@ -168,14 +168,11 @@ func setSideLoginOn(agent, user string, on bool, ls []sideLogin) error {
 
 // forgetSideLogin drops an account magpie signed in; gone is told what it
 // kept. The agent's own sign-in is only hidden: its files stay as they
-// are, and it shows again once the agent signs in anew (ownMark). Hidden
-// while first, the next account is put first.
+// are, and it shows again once the agent signs in anew (ownMark). Removing
+// the first account promotes the next; removing the last signs it out here.
 func forgetSideLogin(agent, user string, ls []sideLogin, gone func(savedLogin)) error {
 	own := slices.ContainsFunc(ls, func(l sideLogin) bool { return l.Own && strings.EqualFold(l.User, user) })
 	first := strings.EqualFold(activeOf(ls), user)
-	if first && !own {
-		return fmt.Errorf("magpie uses %s first; put another account first", user)
-	}
 	next := ""
 	if first {
 		for _, l := range ls {
@@ -191,13 +188,14 @@ func forgetSideLogin(agent, user string, ls []sideLogin, gone func(savedLogin)) 
 	}
 	var old savedLogin
 	err := editSideLogin(agent, user, func(saved []savedLogin, i int) ([]savedLogin, error) {
+		for j := range saved {
+			if next != "" && j != i && saved[j].Agent == agent {
+				saved[j].First = strings.EqualFold(saved[j].User, next)
+				saved[j].On = saved[j].On || saved[j].First
+			}
+		}
 		if saved[i].own() {
 			saved[i].Hidden, saved[i].First = mark, false
-			for j := range saved {
-				if next != "" && saved[j].Agent == agent {
-					saved[j].First = strings.EqualFold(saved[j].User, next)
-				}
-			}
 			return saved, nil
 		}
 		old = saved[i]
@@ -280,7 +278,7 @@ func addSideLogin(l savedLogin, ownUser string, dup func(savedLogin)) error {
 // agent's own store as Claude Code's and Codex's are.
 func sideAgent(agent string) bool {
 	switch agent {
-	case "grok", "copilot", "zcode", "kiro", "devin", "workbuddy", WorkBuddyAIID, CommandCodePlanID, "gemini", "antigravity", "qoder", QoderCNID, "zed", "factory", MiMoID:
+	case "grok", "copilot", "zcode", "kiro", "devin", "workbuddy", WorkBuddyAIID, CommandCodePlanID, "gemini", "antigravity", "qoder", QoderCNID, "zed", "factory", MiMoID, ChatGPTAPIID:
 		return true
 	}
 	return false

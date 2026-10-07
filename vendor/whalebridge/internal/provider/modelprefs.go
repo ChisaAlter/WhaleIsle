@@ -144,10 +144,7 @@ func SetModelPrice(id string, p *catalog.Price) error {
 		key = pr.ID + "/" + model
 	}
 	s := settings.Load()
-	m := settings.ModelPrice{
-		Input: new(p.Input), Output: new(p.Output),
-		CacheRead: new(p.CacheRead), CacheWrite: new(p.CacheWrite),
-	}
+	m := settings.StatedPrice(*p)
 	if err := settings.CheckModelPrice(key, m); err != nil {
 		return err
 	}
@@ -429,12 +426,14 @@ func (p Provider) ModelAPI(model string) (Protocol, bool) {
 // provider has for it, and Same "" its own id to merge it with other
 // vendors' by (see SetModelSame).
 type ModelPref struct {
-	Name      *string   `json:"name,omitempty"`
-	Efforts   *[]string `json:"efforts,omitempty"`
-	Images    *bool     `json:"images,omitempty"`
-	OwnImages bool      `json:"ownImages,omitempty"`
-	API       *string   `json:"api,omitempty"`
-	Same      *string   `json:"same,omitempty"`
+	Name      *string        `json:"name,omitempty"`
+	Efforts   *[]string      `json:"efforts,omitempty"`
+	Images    *bool          `json:"images,omitempty"`
+	OwnImages bool           `json:"ownImages,omitempty"`
+	API       *string        `json:"api,omitempty"`
+	Same      *string        `json:"same,omitempty"`
+	Price     *catalog.Price `json:"price,omitempty"`
+	OwnPrice  bool           `json:"ownPrice,omitempty"`
 }
 
 // SetModelPrefs makes the changes to a provider's models, by model id, as
@@ -477,6 +476,15 @@ func SetModelPrefs(pid string, prefs map[string]ModelPref) error {
 			}
 			if m.Same != nil {
 				if err := set(setModelSame(ref, *m.Same)); err != nil {
+					return err
+				}
+			}
+			if m.Price != nil || m.OwnPrice {
+				price := m.Price
+				if m.OwnPrice {
+					price = nil
+				}
+				if err := SetModelPrice(ref, price); err != nil {
 					return err
 				}
 			}

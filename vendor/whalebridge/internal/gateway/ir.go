@@ -192,11 +192,12 @@ type Event struct {
 
 // Usage counts tokens.
 type Usage struct {
-	Input      int `json:"input"`
-	Output     int `json:"output"`
-	CacheRead  int `json:"cache_read"`
-	CacheWrite int `json:"cache_write"`
-	Reasoning  int `json:"reasoning"`
+	Input        int `json:"input"`
+	Output       int `json:"output"`
+	CacheRead    int `json:"cache_read"`
+	CacheWrite   int `json:"cache_write"`
+	CacheWrite1h int `json:"cache_write_1h,omitempty"`
+	Reasoning    int `json:"reasoning"`
 	// Served: the model the vendor's reply says answered, when it named
 	// one — which may not be the one it was asked for
 	Served string `json:"served,omitempty"`
@@ -228,6 +229,9 @@ func (u *Usage) add(v Usage) {
 	}
 	if v.CacheWrite > 0 {
 		u.CacheWrite = v.CacheWrite
+	}
+	if v.CacheWrite1h > 0 {
+		u.CacheWrite1h = v.CacheWrite1h
 	}
 	if v.Reasoning > 0 {
 		u.Reasoning = v.Reasoning

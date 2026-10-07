@@ -174,8 +174,12 @@ func (p Provider) clineFreeModel(model string) bool {
 // (PinUpstream): "deepseek" for a DeepSeek model of the Cline API, ""
 // for anything else. Cline's free models are served where Cline puts
 // them, so they never are.
+func (p Provider) ClinePinnable() bool {
+	return p.IsCline() || p.IsPlugin() && p.Account.plugin.ID == "cline"
+}
+
 func (p Provider) ClinePin(model string) string {
-	if !p.PinUpstream || !p.IsCline() || strings.HasPrefix(model, clineFreePrefix) {
+	if !p.PinUpstream || !p.ClinePinnable() || strings.HasPrefix(model, clineFreePrefix) {
 		return ""
 	}
 	if name := model[strings.LastIndex(model, "/")+1:]; strings.HasPrefix(strings.ToLower(name), "deepseek") {

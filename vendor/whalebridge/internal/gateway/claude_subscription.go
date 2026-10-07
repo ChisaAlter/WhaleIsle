@@ -1811,10 +1811,11 @@ func (r *subscriptionRun) readOutput(rd io.Reader) {
 var unstreamedQuiet = 300 * time.Millisecond
 
 type cliUsage struct {
-	Input         int `json:"input_tokens"`
-	Output        int `json:"output_tokens"`
-	CacheRead     int `json:"cache_read_input_tokens"`
-	CacheWrite    int `json:"cache_creation_input_tokens"`
+	Input         int             `json:"input_tokens"`
+	Output        int             `json:"output_tokens"`
+	CacheRead     int             `json:"cache_read_input_tokens"`
+	CacheWrite    int             `json:"cache_creation_input_tokens"`
+	CacheCreation *aCacheCreation `json:"cache_creation"`
 	OutputDetails struct {
 		Thinking int `json:"thinking_tokens"`
 	} `json:"output_tokens_details"`
@@ -1856,7 +1857,7 @@ func claudeLimits(raw json.RawMessage) []provider.ClaudeLimit {
 }
 
 func (u Usage) plus(v Usage, only bool) Usage {
-	for _, f := range []struct{ a, b *int }{{&u.Input, &v.Input}, {&u.Output, &v.Output}, {&u.CacheRead, &v.CacheRead}, {&u.CacheWrite, &v.CacheWrite}, {&u.Reasoning, &v.Reasoning}} {
+	for _, f := range []struct{ a, b *int }{{&u.Input, &v.Input}, {&u.Output, &v.Output}, {&u.CacheRead, &v.CacheRead}, {&u.CacheWrite, &v.CacheWrite}, {&u.CacheWrite1h, &v.CacheWrite1h}, {&u.Reasoning, &v.Reasoning}} {
 		if *f.a > 0 || !only {
 			*f.a += *f.b
 		}
@@ -1865,7 +1866,12 @@ func (u Usage) plus(v Usage, only bool) Usage {
 }
 
 func (u cliUsage) gateway() Usage {
-	return Usage{Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, Reasoning: u.OutputDetails.Thinking}
+	out := Usage{Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, Reasoning: u.OutputDetails.Thinking}
+	if c := u.CacheCreation; c != nil {
+		out.CacheWrite = max(out.CacheWrite, c.Ephemeral5m+c.Ephemeral1h)
+		out.CacheWrite1h = c.Ephemeral1h
+	}
+	return out
 }
 
 func renderClaudePrompt(req *Request) ([]map[string]any, error) {

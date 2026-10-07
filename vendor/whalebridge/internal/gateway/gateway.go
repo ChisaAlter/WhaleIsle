@@ -1005,8 +1005,8 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	// the upstream names in force for this request, read once here rather
 	// than once per place a name is looked up below
 	r = withWires(r)
-	// secrets go as placeholders and come back as they were; the log has
-	// what the vendor saw and said
+	// The log keeps the masked prompt. A local route may receive plain below.
+	plain := body
 	w, body, unmask := redacted(w, body)
 	defer unmask()
 	// the reply's model the member that answered, when asked for (#822)
@@ -1026,6 +1026,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	asked, askedEffort := askedAt(modelOf(body))
 	if askedEffort != "" {
 		body = rewriteModel(body, asked)
+		plain = rewriteModel(plain, asked)
 	}
 	capture := &captureResponseWriter{ResponseWriter: w}
 	if wholeBodies {
@@ -1142,6 +1143,9 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	// before any image is taken out of the request: one may be for images
 	g, ms, isGroup := provider.FindGroup(asked)
 	g = g.Live() // a manual group's rules wait
+	if unredactedRoute(p, isGroup, ms) {
+		body = plain
+	}
 	// a Codex subagent's task its lead sealed — the lead answered by a
 	// ChatGPT account, the group's own or Codex's — goes only to a ChatGPT
 	// account, the lead's first (#619); with none, it is turned away
@@ -1261,6 +1265,21 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	if sealedTask {
 		cands, pl = sealedReaders(cands, pl)
 	}
+	var resetFirst *AutoReset
+	if len(cands) == 0 && len(pl.held) > 0 && strings.TrimSpace(r.Header.Get(AccountHeader)) == "" && !slices.ContainsFunc(pl.left, func(w Weighed) bool { return !w.Barred && w.Capped == 0 }) {
+		if pick, out, ok := s.autoReset(r.Context(), nil, pl.held[0], pl.held...); ok {
+			cands = []candidate{pick}
+			for i, item := range pl.left {
+				if item.ID == pick.rest && item.Model == pick.model {
+					item.Capped, item.NoCredits, item.Unlisted, item.CapBack = 0, false, false, nil
+					pl.order = append(pl.order, item)
+					pl.left = slices.Delete(pl.left, i, i+1)
+					break
+				}
+			}
+			resetFirst = &AutoReset{Who: pick.p.Account.User, Text: out.Text(), Agent: pick.p.Account.Agent}
+		}
+	}
 	if len(cands) == 0 && slices.ContainsFunc(pl.left, func(w Weighed) bool { return w.Capped > 0 }) &&
 		!slices.ContainsFunc(pl.left, func(w Weighed) bool { return !w.Barred && w.Capped == 0 }) {
 		// every account there is is held at its usage cap: used up, as far
@@ -1269,7 +1288,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		if d := time.Until(back); d > 0 {
 			w.Header().Set("Retry-After", strconv.Itoa(int(d.Seconds())+1))
 		}
-		call.Status, call.Error = 429, "every account at its usage cap"
+		call.Status, call.Error = 429, cappedRecord(pl.left)
 		writeError(w, from, 429, msg)
 		turnedAway()
 		return
@@ -1416,8 +1435,17 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	if from == provider.Gemini {
 		streams = strings.Contains(r.URL.Path, "streamGenerateContent")
 	}
+	gaveWay := map[string]bool{}
+	laneRejected := false
 	for i := 0; i < len(cands); i++ {
 		c := cands[i]
+		if j := s.laneMate(cands, i, isGroup, gaveWay); j > i {
+			gaveWay[c.who()] = true
+			cs := slices.Clone(cands)
+			cands = slices.Insert(slices.Delete(cs, i, i+1), j, c)
+			i--
+			continue
+		}
 		last := i == len(cands)-1
 		// the last one's failure is held too when an earlier one failed,
 		// for its allowance running out to be told as that one's error
@@ -1544,6 +1572,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		})
 		held := false    // answered as its vendor did a moment ago, without asking
 		var queued int64 // ms it waited for a slot of its key's or account's
+		var laneErr error
 		// the models Copilot's Auto picked for it, where from, and which
 		// were refused (#256)
 		autoPicked := func() []provider.AutoPick { return nil }
@@ -1574,9 +1603,12 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			// its slots is free, in turn; the agent gone while it waits,
 			// nothing is sent (the 499 below)
 			waited := time.Now()
-			release, ok := s.lanes.acquire(ctx, c.who(), c.p.Concurrency())
+			release, err := s.lanes.take(ctx, c.who(), c.p.LaneLimit(), c.p.QueueLimit, time.Duration(c.p.QueueWait)*time.Second)
 			queued = time.Since(waited).Milliseconds()
-			if ok {
+			if errors.Is(err, errQueueFull) || errors.Is(err, errQueueWait) {
+				laneErr = err
+			}
+			if err == nil {
 				if queued > 0 {
 					s.trace.update(tr, func(t *Route) { t.Tries[len(t.Tries)-1].Queued = queued })
 				}
@@ -1589,6 +1621,24 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 				}()
 			}
 			stop()
+		}
+		if laneErr != nil {
+			call.Status, call.Error = http.StatusTooManyRequests, laneMessage(c, laneErr, queued)
+			s.trace.update(tr, func(t *Route) {
+				tt := &t.Tries[len(t.Tries)-1]
+				tt.Done, tt.Status, tt.Error, tt.Queued, tt.Millis = true, call.Status, call.Error, queued, time.Since(began).Milliseconds()
+			})
+			if !last {
+				skipped = append(skipped, c.label()+": "+call.Error)
+				continue
+			}
+			if !kept.sent {
+				w.Header().Set("Retry-After", "1")
+			}
+			failTo(w, kept, from, call.Status, call.Error)
+			call.Millis = time.Since(start).Milliseconds()
+			laneRejected = true
+			break
 		}
 		hw.settle()
 		if hw.passing {
@@ -1613,6 +1663,9 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		}
 		try := Try{ID: c.rest, Model: c.model, Effort: sent, Picked: picked, Fixed: fixed, Fast: fast, Start: began, Done: true, Status: call.Status, Millis: time.Since(began).Milliseconds(), Error: call.Error, Queued: queued,
 			Served: call.Usage.Served, Auto: autoPicked()}
+		if resetFirst != nil {
+			try.Reset, resetFirst = resetFirst, nil
+		}
 		asName := provider.SentNameOnIn(wiresOf(r.Context()), c.p.ID, accountAgent(c.p), c.model, sent)
 		try.Swapped, try.Routed = swapped(asName, call.Usage.Served), usage.GroupRouted(asName, call.Usage.Served)
 		try.TTFT, try.FirstText = hw.first.ms()
@@ -1726,7 +1779,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 					ProviderKeyID: providerKeyID, ProviderKeyName: providerKeyName, ProviderAccount: providerAccount,
 					Requested: call.Model, Served: call.Usage.Served,
 					Input: call.Usage.Input, Output: call.Usage.Output, CacheRead: call.Usage.CacheRead,
-					CacheWrite: call.Usage.CacheWrite, Reasoning: call.Usage.Reasoning, Effort: sent, Millis: time.Since(began).Milliseconds(), Status: call.Status,
+					CacheWrite: call.Usage.CacheWrite, CacheWrite1h: call.Usage.CacheWrite1h, Reasoning: call.Usage.Reasoning, Effort: sent, Millis: time.Since(began).Milliseconds(), Status: call.Status,
 					TTFT: try.TTFT, FirstText: try.FirstText, Session: sessionOf(r.Header), NativeSession: nativeSessionOf(r.Header), Kind: call.Kind,
 					RequestID: call.Usage.RequestID, Endpoint: endpointOf(r, from, call.To), Archive: call.archiveName()}
 				failedWith(&rec, call.Status, call.Error, call.Usage.ErrType)
@@ -1876,7 +1929,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			// the user lets spend its resets by itself, its week used up,
 			// spends one and is asked again
 			autoReset = true
-			if pick, out, ok := s.autoReset(r.Context(), cands, c); ok {
+			if pick, out, ok := s.autoReset(r.Context(), cands, c, pl.held...); ok {
 				try.Fail = failQuota
 				try.Reset = &AutoReset{Who: pick.p.Account.User, Text: out.Text(), Agent: pick.p.Account.Agent}
 				s.trace.update(tr, func(t *Route) { t.Tries[len(t.Tries)-1] = try })
@@ -1993,14 +2046,15 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		}
 	})
 	s.record(call)
-	if call.To != "" {
+	if call.To != "" || laneRejected {
 		rec := usage.Record{RouteID: tr.ID, Time: start, Agent: call.Agent, Via: call.Via, Provider: call.Provider, Host: where, Model: model,
 			ProviderKeyID: providerKeyID, ProviderKeyName: providerKeyName, ProviderAccount: providerAccount,
 			Requested: call.Model, Served: call.Usage.Served,
 			Input: call.Usage.Input, Output: call.Usage.Output, CacheRead: call.Usage.CacheRead,
-			CacheWrite: call.Usage.CacheWrite, Reasoning: call.Usage.Reasoning, Effort: sent, Millis: call.Millis, Status: call.Status,
+			CacheWrite: call.Usage.CacheWrite, CacheWrite1h: call.Usage.CacheWrite1h, Reasoning: call.Usage.Reasoning, Effort: sent, Millis: call.Millis, Status: call.Status,
 			TTFT: call.TTFT, FirstText: call.FirstText, Sent: sentMs, Session: sessionOf(r.Header), NativeSession: nativeSessionOf(r.Header), Kind: call.Kind,
 			RequestID: call.Usage.RequestID, ResponseID: call.Usage.ResponseID, Endpoint: endpointOf(r, from, call.To), Archive: call.archiveName()}
+		rec.Rejected = laneRejected
 		failedWith(&rec, call.Status, call.Error, call.Usage.ErrType)
 		withBodies(&rec, &call)
 		appendUsage(r, rec)
@@ -2095,6 +2149,9 @@ func (s *Server) attempt(w http.ResponseWriter, r *http.Request, from provider.P
 	// a backend that only streams gets a non-streaming request translated
 	// (the provider is always streamed on that path) rather than relayed
 	relay := slices.Contains(s.usable(p, model), from) && (p.Account == nil || !p.Account.Stream || streamOf(body))
+	if relay && from != provider.Anthropic && p.OnMessages(model) && slices.Contains(s.usable(p, model), provider.Anthropic) {
+		relay = false
+	}
 	// a web search offered is done by the provider, or by magpie for it,
 	// which a relayed request can't
 	if relay && searchAsked(from, body) && (from == provider.Chat || !searchesItself(p, from)) {
@@ -2783,6 +2840,9 @@ func (s *Server) usable(p provider.Provider, model string) []provider.Protocol {
 	}
 	if p.ResponsesFirst(model) {
 		sort.SliceStable(out, func(i, j int) bool { return out[i] == provider.Responses && out[j] != provider.Responses })
+	}
+	if p.MessagesFirst(model) {
+		sort.SliceStable(out, func(i, j int) bool { return out[i] == provider.Anthropic && out[j] != provider.Anthropic })
 	}
 	return out
 }

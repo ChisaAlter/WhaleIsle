@@ -72,19 +72,20 @@ type Route struct {
 // RouteUsage is one billable attempt's pricing inputs, kept in routing history.
 // Its JSON keys also read the earlier history that stored full usage records.
 type RouteUsage struct {
-	Provider   string `json:"provider"`
-	Model      string `json:"model"`
-	Input      int    `json:"in"`
-	Output     int    `json:"out"`
-	CacheRead  int    `json:"cache_read,omitempty"`
-	CacheWrite int    `json:"cache_write,omitempty"`
-	Reasoning  int    `json:"reasoning,omitempty"`
+	Provider     string `json:"provider"`
+	Model        string `json:"model"`
+	Input        int    `json:"in"`
+	Output       int    `json:"out"`
+	CacheRead    int    `json:"cache_read,omitempty"`
+	CacheWrite   int    `json:"cache_write,omitempty"`
+	CacheWrite1h int    `json:"cache_write_1h,omitempty"`
+	Reasoning    int    `json:"reasoning,omitempty"`
 }
 
 // PricingRecord lets the routing view reuse the ledger's effective prices.
 func (u RouteUsage) PricingRecord() usage.Record {
 	return usage.Record{Provider: u.Provider, Model: u.Model, Input: u.Input,
-		Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, Reasoning: u.Reasoning}
+		Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, CacheWrite1h: u.CacheWrite1h, Reasoning: u.Reasoning}
 }
 
 // GroupRef is the routing group a request asked for.
@@ -192,8 +193,9 @@ type Weighed struct {
 	// Capped: left out as held at the usage cap the user set on the
 	// account, this cap in percent; Used is then its fullest window's
 	// share, CapBack when the last window at or past it renews
-	Capped  int        `json:"capped,omitempty"`
-	CapBack *time.Time `json:"capBack,omitempty"`
+	Capped    int        `json:"capped,omitempty"`
+	CapBack   *time.Time `json:"capBack,omitempty"`
+	NoCredits bool       `json:"noCredits,omitempty"`
 	// Rank: its place in its provider's own list of accounts or keys, the
 	// order the provider's page shows and a drag sets (#217); routing may
 	// weigh them in another
@@ -260,6 +262,7 @@ type AutoReset struct {
 
 type planned struct {
 	order, left []Weighed
+	held        []candidate
 }
 
 func weighed(c candidate, p provider.Provider, wg weighing, fallback bool, from provider.Protocol) Weighed {
@@ -463,5 +466,5 @@ func routeUsage(id, model string, u Usage) []RouteUsage {
 		return nil
 	}
 	return []RouteUsage{{Provider: id, Model: model, Input: u.Input, Output: u.Output,
-		CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, Reasoning: u.Reasoning}}
+		CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, CacheWrite1h: u.CacheWrite1h, Reasoning: u.Reasoning}}
 }

@@ -114,7 +114,7 @@ func (t *otelRequest) attempt(call Call, attempt Try, providerID, effort string,
 	u := call.Usage
 	rec := usage.Record{OTel: span, RouteID: t.routeID, Time: attempt.Start, Agent: call.Agent,
 		Provider: providerID, Model: attempt.Model, Requested: call.Model, Served: u.Served, Effort: effort,
-		Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, Reasoning: u.Reasoning,
+		Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, CacheWrite1h: u.CacheWrite1h, Reasoning: u.Reasoning,
 		Millis: time.Since(attempt.Start).Milliseconds(), Status: attempt.Status, TTFT: attempt.TTFT, FirstText: attempt.FirstText}
 	if usage.OTelBodies() {
 		reply, cut := capture.body.text(), capture.body.truncated

@@ -603,14 +603,34 @@ type aUsage struct {
 	OutputTokens             int `json:"output_tokens"`
 	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	// CacheCreation splits the cache writes by how long they are kept,
+	// which Anthropic bills apart: 1.25× input for 5 minutes, 2× for an
+	// hour
+	CacheCreation *aCacheCreation `json:"cache_creation,omitempty"`
+}
+
+type aCacheCreation struct {
+	Ephemeral5m int `json:"ephemeral_5m_input_tokens"`
+	Ephemeral1h int `json:"ephemeral_1h_input_tokens"`
 }
 
 func (u aUsage) usage() Usage {
-	return Usage{Input: u.InputTokens, Output: u.OutputTokens, CacheRead: u.CacheReadInputTokens, CacheWrite: u.CacheCreationInputTokens}
+	out := Usage{Input: u.InputTokens, Output: u.OutputTokens, CacheRead: u.CacheReadInputTokens, CacheWrite: u.CacheCreationInputTokens}
+	if c := u.CacheCreation; c != nil {
+		out.CacheWrite = max(out.CacheWrite, c.Ephemeral5m+c.Ephemeral1h)
+		out.CacheWrite1h = c.Ephemeral1h
+	}
+	return out
 }
 
+// anthropic is the usage as Anthropic says it, the cache writes split by
+// how long they are kept where some were for an hour.
 func (u Usage) anthropic() aUsage {
-	return aUsage{InputTokens: u.Input, OutputTokens: u.Output, CacheReadInputTokens: u.CacheRead, CacheCreationInputTokens: u.CacheWrite}
+	out := aUsage{InputTokens: u.Input, OutputTokens: u.Output, CacheReadInputTokens: u.CacheRead, CacheCreationInputTokens: u.CacheWrite}
+	if h := min(u.CacheWrite1h, u.CacheWrite); h > 0 {
+		out.CacheCreation = &aCacheCreation{Ephemeral5m: u.CacheWrite - h, Ephemeral1h: h}
+	}
+	return out
 }
 
 func stopFromAnthropic(s string) string {

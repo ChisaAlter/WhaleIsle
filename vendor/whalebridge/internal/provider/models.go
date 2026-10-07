@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log"
@@ -75,7 +76,10 @@ func (p Provider) available() []catalog.Model {
 			// levels aren't taken off by a known model of its id
 			return collapseAntigravityModels(catalog.Decorate(live, known))
 		}
-		return catalog.Decorate(live, known)
+		if p.IsAzure() {
+			return catalog.Decorate(live, known)
+		}
+		return catalog.Named(catalog.Decorate(live, known))
 	}
 	if p.IsAzure() {
 		// an Azure resource serves its deployments alone, named as the
@@ -715,7 +719,11 @@ func (p Provider) Exposed() []catalog.Model {
 				// with the levels the gateway fits an effort to (Known),
 				// not the none effortsOf takes a vendor's word for: the
 				// vendor's list doesn't have it, so it gave no word (#597)
-				out = append(out, catalog.Model{ID: id, Name: id, Provider: p.firstCatalog(), Efforts: p.knownElsewhere(id)})
+				m := catalog.Model{ID: id, Name: id, Provider: p.firstCatalog(), Efforts: p.knownElsewhere(id)}
+				if !p.IsAzure() {
+					m = catalog.Named([]catalog.Model{m})[0]
+				}
+				out = append(out, m)
 			}
 		}
 		return out
@@ -765,6 +773,21 @@ func (p Provider) Efforts(model string) []string {
 		return all
 	}
 	return effortsKept(nil, settings.Load().ModelEfforts[p.ID+"/"+model])
+}
+
+// Thinks reports whether the model reasons: it has levels, its list says
+// it thinks, or models.dev says most of those serving it do (Entry's
+// Reasoning).
+func (p Provider) Thinks(model string) bool {
+	if len(p.Efforts(model)) > 0 {
+		return true
+	}
+	for _, m := range p.Available() {
+		if m.ID == model && m.Reasoning {
+			return true
+		}
+	}
+	return catalog.Thinks(model)
 }
 
 // Known are the model's own reasoning levels, when known.
@@ -917,6 +940,7 @@ func EffectivePriceIn(s settings.Settings, providerID, model string) (catalog.Pr
 	for _, key := range [...]string{id + "/" + model, id + "/*", AnyPriceKey(model)} {
 		if m, ok := s.ModelPrices[key]; ok {
 			if pr, bad := m.Price(); bad == "" {
+				catalog.OneHourFor(model, &pr)
 				return pr, true
 			}
 		}
@@ -1127,10 +1151,11 @@ func entryFor(p Provider, m catalog.Model, s settings.Settings) Entry {
 	if override, ok := s.ModelImages[p.ID+"/"+m.ID]; ok {
 		images, imageInput = override, &override
 	}
-	e := Entry{ID: p.ID + "/" + m.ID, Model: m.ID, Family: p.Family, Name: m.Name, Efforts: effortsOf(m), Provider: p,
+	name := cmp.Or(m.Name, m.ID)
+	e := Entry{ID: p.ID + "/" + m.ID, Model: m.ID, Family: p.Family, Name: name, Efforts: effortsOf(m), Provider: p,
 		Images: images, ImageInput: imageInput, Context: ctx, Output: output, Free: m.Free, Rate: m.Rate, RateWas: m.RateWas}
 	if n, ok := modelNameIn(s.ModelNames, p.ID, m.ID); ok {
-		e.Name, e.Default = n, m.Name
+		e.Name, e.Default = n, name
 	}
 	// a model that thinks still does with the levels the user kept or
 	// none at all; one its source says nothing of thinks as most of the

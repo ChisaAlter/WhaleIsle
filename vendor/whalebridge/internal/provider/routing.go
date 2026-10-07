@@ -91,6 +91,7 @@ var usedCache struct {
 	m       map[string]map[string]Allowance // agent → user → allowance
 	at      map[string]time.Time
 	loading map[string]chan struct{} // closed when the fetch in flight is done
+	renewed map[string]time.Time     // account windows restarted during a read
 }
 
 // firstWait is how long a request waits for an agent's allowances the
@@ -265,6 +266,33 @@ func (a Allowance) Full(model string, share float64, now time.Time) time.Time {
 	return t
 }
 
+// Pooled says whether a refusal of model for its allowance leaves the
+// account's other models alone: the windows that count model and are full
+// at share are each of some models only (Opus's own week, Cursor's Other
+// Models pool) — or, none known full, no window of the whole account
+// counts it, only pools. Then it is that model which is out, not the
+// account: Cursor's Other Models used up leaves Auto and Composer in
+// theirs (Xiaopodev on X).
+func (a Allowance) Pooled(model string, share float64, now time.Time) bool {
+	model = strings.ToLower(model)
+	full, pooled, whole := false, false, false
+	for _, l := range a {
+		if !l.applies(model) {
+			continue
+		}
+		scoped := l.Model != "" || l.matches != nil
+		if l.Used >= share && (l.Resets.IsZero() || l.Resets.After(now)) {
+			if !scoped {
+				return false
+			}
+			full = true
+		}
+		pooled = pooled || scoped
+		whole = whole || !scoped
+	}
+	return full || pooled && !whole
+}
+
 // budgetSpan is the shortest window that is a budget rather than a rate
 // cap: the week (Kiro's month too), not the five hours in it — what the
 // five hours leave at their reset is nothing lost.
@@ -373,6 +401,7 @@ func Allowances(agent string) map[string]Allowance {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
+			began := time.Now()
 			all := map[string]Allowance{}
 			for user, q := range LoginUsage(ctx, agent) {
 				if q.Error != "" || len(q.Windows) == 0 {
@@ -381,7 +410,14 @@ func Allowances(agent string) map[string]Allowance {
 				all[user] = allowanceOf(q.Windows, time.Now()).restartedBy(resetRunsOut(agent, user, q.Windows, q.Resets))
 			}
 			c.Lock()
-			c.m[agent], c.at[agent] = all, time.Now()
+			at := time.Now()
+			for user := range all {
+				if c.renewed[agent+"/"+strings.ToLower(user)].After(began) {
+					delete(all, user)
+					at = time.Time{}
+				}
+			}
+			c.m[agent], c.at[agent] = all, at
 			delete(c.loading, agent)
 			c.Unlock()
 			close(done)
@@ -418,14 +454,46 @@ var renewedHooks struct {
 	fs []func(agent, user string)
 }
 
-// renewedNow tells those OnRenewed asked.
+// renewedNow forgets the account's old windows before announcing their reset.
 func renewedNow(agent, user string) {
+	forgetAllowance(agent, user)
+	tellRenewed(agent, user)
+}
+
+// tellRenewed announces an account's or key's renewed usage windows.
+func tellRenewed(agent, user string) {
 	renewedHooks.Lock()
 	fs := renewedHooks.fs
 	renewedHooks.Unlock()
 	for _, f := range fs {
 		f(agent, user)
 	}
+}
+
+// forgetAllowance has the next Allowances read the account's windows again.
+func forgetAllowance(agent, user string) {
+	c := &usedCache
+	c.Lock()
+	defer c.Unlock()
+	if c.renewed == nil {
+		c.renewed = map[string]time.Time{}
+	}
+	c.renewed[agent+"/"+strings.ToLower(user)] = time.Now()
+	if c.at != nil {
+		c.at[agent] = time.Time{}
+	}
+	m, ok := c.m[agent]
+	if !ok {
+		return
+	}
+	// Readers keep the old map without holding this lock.
+	kept := make(map[string]Allowance, len(m))
+	for u, a := range m {
+		if !strings.EqualFold(u, user) {
+			kept[u] = a
+		}
+	}
+	c.m[agent] = kept
 }
 
 // StaleAllowance makes the next Allowances ask the vendor again for user's

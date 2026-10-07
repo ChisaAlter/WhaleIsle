@@ -20,7 +20,7 @@ var autoResetTimeout = 20 * time.Second
 // autoReset spends a reset of one of cands' Codex accounts, c — the last
 // one, just out of its allowance — first: only when every other one of
 // them sits out too. It says which account it was and what spending did.
-func (s *Server) autoReset(ctx context.Context, cands []candidate, c candidate) (candidate, provider.ResetOutcome, bool) {
+func (s *Server) autoReset(ctx context.Context, cands []candidate, c candidate, held ...candidate) (candidate, provider.ResetOutcome, bool) {
 	for _, x := range cands {
 		if x.restKey() == c.restKey() {
 			continue
@@ -34,7 +34,7 @@ func (s *Server) autoReset(ctx context.Context, cands []candidate, c candidate) 
 		}
 	}
 	seen := map[string]bool{}
-	for _, x := range append([]candidate{c}, cands...) {
+	for _, x := range append(append([]candidate{c}, cands...), held...) {
 		a := x.p.Account
 		if a == nil || a.User == "" || seen[x.restKey()] || !provider.AutoResets(a.Agent, a.User) {
 			continue
@@ -42,6 +42,7 @@ func (s *Server) autoReset(ctx context.Context, cands []candidate, c candidate) 
 		seen[x.restKey()] = true
 		if out, ok := autoResetOf(ctx, a.Agent, a.User); ok {
 			s.Unrest(x.restKey())
+			x.capped = nil
 			return x, out, true
 		}
 	}

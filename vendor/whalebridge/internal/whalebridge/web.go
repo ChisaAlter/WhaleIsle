@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -45,8 +44,8 @@ func decode(w http.ResponseWriter, r *http.Request, v any) error {
 }
 
 // Run binds both listeners before publishing readiness or registering the DSH
-// route. It starts no client installers, account-switching jobs, session scans,
-// plugin updaters or LAN listener from Magpie's general-purpose server.
+// route. Subscription maintenance runs here; client installers, native account
+// switching, session scans and the LAN listener are excluded.
 func Run(version string) error {
 	if os.Getenv("LAUNCHER_COMPONENT_DATA_DIR") == "" || os.Getenv("WHALEBRIDGE_DSH_HOME") == "" {
 		return fmt.Errorf("请从鲸屿启动器安装并打开鲸桥")
@@ -125,48 +124,8 @@ func Run(version string) error {
 		}
 		writeJSON(w, map[string]any{"active": active})
 	})
-	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) {
-		if err := provider.FileError(); err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		type supplier struct {
-			ID          string          `json:"id"`
-			Name        string          `json:"name"`
-			Preset      string          `json:"preset"`
-			Chat        string          `json:"chat"`
-			Responses   string          `json:"responses"`
-			Anthropic   string          `json:"anthropic"`
-			Decide      string          `json:"decide"`
-			HeaderNames []string        `json:"headerNames"`
-			KeySet      bool            `json:"keySet"`
-			Models      []string        `json:"models"`
-			Off         bool            `json:"off"`
-			Routing     string          `json:"routing"`
-			Proxy       string          `json:"proxy"`
-			Fallback    []string        `json:"fallback"`
-			Available   []catalog.Model `json:"available"`
-			ModelCount  int             `json:"modelCount"`
-			Account     bool            `json:"account"`
-		}
-		suppliers := []supplier{}
-		modelSuppliers := map[string]map[string]string{}
-		for _, p := range provider.All() {
-			names := make([]string, 0, len(p.Headers))
-			for name := range p.Headers {
-				names = append(names, name)
-			}
-			sort.Strings(names)
-			available := p.Available()
-			modelSuppliers[p.ID] = map[string]string{}
-			for _, m := range available {
-				modelSuppliers[p.ID][m.ID] = modelSupplier(m.ID, m.Provider)
-			}
-			suppliers = append(suppliers, supplier{ID: p.ID, Name: p.Name, Preset: p.Preset, Chat: p.Chat, Responses: p.Responses, Anthropic: p.Anthropic, Decide: p.Decide, HeaderNames: names, KeySet: p.Key != "", Models: p.Models, Off: p.Off, Routing: p.Routing, Proxy: p.Proxy, Fallback: p.Fallback, Available: available, ModelCount: len(p.Exposed()), Account: p.Account != nil})
-		}
-		shown, hidden := provider.CatalogFor("dsh")
-		writeJSON(w, map[string]any{"version": version, "gateway": gateway.URL(), "providers": suppliers, "presets": provider.Presets(), "models": settingsModels(shown, modelSuppliers), "hidden": settingsModels(hidden, modelSuppliers), "groups": provider.Groups(), "defaultModel": isDefault(), "catalog": catalog.Status()})
-	})
+	mux.HandleFunc("GET /api/state", stateHandler(version))
+	providerRoutes(mux, server)
 	mux.HandleFunc("GET /api/usage", func(w http.ResponseWriter, r *http.Request) {
 		period := usage.Period(r.URL.Query().Get("period"))
 		switch period {
@@ -180,94 +139,8 @@ func Run(version string) error {
 		writeJSON(w, usage.Summarize(period))
 	})
 	mux.HandleFunc("POST /api/provider", mutate(func(w http.ResponseWriter, r *http.Request) error {
-		var input struct {
-			ID        string             `json:"id"`
-			Preset    string             `json:"preset"`
-			Name      string             `json:"name"`
-			Chat      string             `json:"chat"`
-			Responses string             `json:"responses"`
-			Anthropic string             `json:"anthropic"`
-			Decide    *string            `json:"decide"`
-			Region    string             `json:"region"`
-			Workspace string             `json:"workspace"`
-			Headers   map[string]*string `json:"headers"`
-			Key       *string            `json:"key"`
-			Models    []string           `json:"models"`
-			Off       bool               `json:"off"`
-			Routing   string             `json:"routing"`
-			Proxy     string             `json:"proxy"`
-			Fallback  []string           `json:"fallback"`
-		}
-		if err := decode(w, r, &input); err != nil {
-			return err
-		}
-		var p provider.Provider
-		if input.ID != "" {
-			old, err := provider.Find(input.ID)
-			if err != nil {
-				return err
-			}
-			p = *old
-		} else if input.Preset != "" {
-			var err error
-			p, err = provider.FromPreset(input.Preset)
-			if err != nil {
-				return err
-			}
-		}
-		if input.Region != "" {
-			pr := provider.Preset(p.Preset)
-			found := false
-			if pr != nil {
-				for _, region := range pr.Regions {
-					if region.ID == input.Region {
-						found = true
-						p.Catalog = pr.Catalog
-						if region.Catalog != "" {
-							p.Catalog = region.Catalog
-						}
-						p.Website, p.KeysURL = pr.Website, pr.KeysURL
-						if region.Website != "" {
-							p.Website = region.Website
-						}
-						if region.KeysURL != "" {
-							p.KeysURL = region.KeysURL
-						}
-						if input.Decide == nil {
-							p.Decide = region.Decide
-						}
-						break
-					}
-				}
-			}
-			if !found {
-				return fmt.Errorf("未知供应商区域或套餐")
-			}
-		}
-		p.Name, p.Chat, p.Responses, p.Anthropic = input.Name, input.Chat, input.Responses, input.Anthropic
-		if input.Decide != nil {
-			p.Decide = *input.Decide
-		}
-		if strings.Contains(p.Decide, provider.WorkspaceID) {
-			if strings.TrimSpace(input.Workspace) == "" {
-				return fmt.Errorf("请填写 API 密钥所属的 Workspace ID，或选择 Token Plan")
-			}
-			p.Decide = strings.ReplaceAll(p.Decide, provider.WorkspaceID, strings.TrimSpace(input.Workspace))
-		}
-		if p.Account == nil {
-			if err := patchHeaders(&p, input.Headers); err != nil {
-				return err
-			}
-		}
-		if input.Key != nil {
-			p.Key = *input.Key
-		}
-		p.Models, p.Off, p.Routing, p.Proxy, p.Fallback = input.Models, input.Off, input.Routing, input.Proxy, input.Fallback
-		if input.ID == "" {
-			_, err := provider.Add(p)
-			return err
-		}
-		return provider.Save(p)
+		_, err := saveProvider(r)
+		return err
 	}))
 	mux.HandleFunc("POST /api/provider/delete", mutate(func(w http.ResponseWriter, r *http.Request) error {
 		var b struct {
@@ -419,7 +292,35 @@ func Run(version string) error {
 	defer os.Remove(filepath.Join(appdir.Config(), "state.json"))
 	go func() { failures <- (&http.Server{Handler: auth, ReadHeaderTimeout: 10 * time.Second}).Serve(listener) }()
 	go provider.StartModelRefresh(ctx)
+	gateway.StartWhaleBridgeSubscriptions(ctx)
 	return <-failures
+}
+
+func stateHandler(version string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := provider.FileError(); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		suppliers := []map[string]any{}
+		modelSuppliers := map[string]map[string]string{}
+		for _, p := range provider.All() {
+			available := p.Available()
+			modelSuppliers[p.ID] = map[string]string{}
+			for _, m := range available {
+				modelSuppliers[p.ID][m.ID] = modelSupplier(m.ID, m.Provider)
+			}
+			suppliers = append(suppliers, supplierInfo(p))
+		}
+		shown, hidden := provider.CatalogFor("dsh")
+		removed := []map[string]any{}
+		for _, p := range provider.Hidden() {
+			row := supplierInfo(p)
+			row["hidden"], row["quiet"], row["tucked"] = true, p.Quiet, p.Tucked
+			removed = append(removed, row)
+		}
+		writeJSON(w, map[string]any{"version": version, "gateway": gateway.URL(), "providers": suppliers, "removed": removed, "excluded": provider.Excluded(), "presets": provider.Presets(), "models": settingsModels(shown, modelSuppliers), "hidden": settingsModels(hidden, modelSuppliers), "groups": provider.Groups(), "defaultModel": isDefault(), "catalog": catalog.Status()})
+	}
 }
 
 type settingsModel struct {
@@ -491,6 +392,9 @@ func patchHeaders(p *provider.Provider, changes map[string]*string) error {
 		}
 		if value != nil && strings.ContainsAny(*value, "\r\n") {
 			return fmt.Errorf("HTTP Header 值不能包含换行")
+		}
+		if value != nil && strings.TrimSpace(*value) == "" {
+			continue
 		}
 		for existing := range p.Headers {
 			if strings.EqualFold(existing, name) {

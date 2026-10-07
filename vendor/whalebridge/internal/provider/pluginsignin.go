@@ -88,6 +88,8 @@ func (s *signInFlow) pluginBegin(id string, method int, inputs map[string]string
 	s.stop = stop
 	if a.Method == "code" {
 		s.st.PasteCode, s.plugin = true, a.Session
+	} else if PluginPastesCallback(id, a.URL) {
+		s.st.PasteCallback, s.pluginPorts = true, loopbackPorts(a.URL)
 	}
 	s.mu.Unlock()
 	if a.Method == "code" {

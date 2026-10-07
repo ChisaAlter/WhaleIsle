@@ -77,10 +77,30 @@ func balanceSourceOf(p Provider) (balanceSource, bool) {
 // balancePathOf is the balance field of a provider that named its Balance
 // URL.
 func balancePathOf(p Provider) string {
-	if strings.TrimSpace(p.BalancePath) == "" && balanceURLPath(p.BalanceURL) == newAPIUserSelf {
-		// new-api's account query with its field left out: the quota,
-		// in new-api's units, as it reports it
+	if strings.TrimSpace(p.BalancePath) != "" {
+		return p.BalancePath
+	}
+	// a query whose reply is known, with its field left out (#881)
+	switch path := balanceURLPath(p.BalanceURL); {
+	case path == newAPIUserSelf:
+		// new-api's account query: the quota, in new-api's units, as it
+		// reports it
 		return newAPIQuotaPath
+	case path == newAPIKeyUsage:
+		// new-api's (and one-api's) query for a key: what is left on it,
+		// in the same units
+		return newAPIKeyPath
+	case path == sub2APIProfile:
+		// a sub2api panel's profile, asked with its login JWT: dollars
+		return "$data.balance"
+	case path == sub2APIKeyUsage:
+		// a sub2api panel's query for a key, asked with the key alone:
+		// what is left, in dollars, whether the wallet's, the key's own
+		// quota or its plan's
+		return "$remaining"
+	case strings.HasSuffix(path, creditGrants):
+		// OpenAI's old credit query, which relays still answer: dollars
+		return "$total_available"
 	}
 	return p.BalancePath
 }
@@ -93,6 +113,15 @@ const (
 	newAPIKeyUsage  = "/api/usage/token"
 	newAPIUserSelf  = "/api/user/self"
 	newAPIQuotaPath = "$data.quota / 500000"
+	newAPIKeyPath   = "$data.total_available / 500000"
+	// creditGrants is OpenAI's old query for what is left on an account,
+	// {"total_granted":…,"total_used":…,"total_available":…} in dollars
+	creditGrants = "/dashboard/billing/credit_grants"
+	// sub2APIProfile is a sub2api panel's account, told to its login JWT
+	sub2APIProfile = "/api/v1/user/profile"
+	// sub2APIKeyUsage is a sub2api panel's usage query for a key, which
+	// tells what is left on it (remaining, USD) without a login
+	sub2APIKeyUsage = "/v1/usage"
 )
 
 // balanceURLPath is a balance URL's path, without a slash at its end.
@@ -638,24 +667,33 @@ func (e *balanceExpr) at(path string) (any, error) {
 // Balance asks the vendor what is left on the provider's key in use. ok is
 // false when there is no way to ask it.
 func Balance(ctx context.Context, p Provider) (amount string, ok bool, err error) {
-	amount, _, ok, err = balanceParts(ctx, p)
+	amount, _, ws, ok, err := balanceRead(ctx, p)
+	if err == nil && amount == "" && len(ws) > 0 {
+		left := ws[0].Limit - ws[0].Amount
+		for _, w := range ws[1:] {
+			left = min(left, w.Limit-w.Amount)
+		}
+		amount = money("$", max(0, left))
+	}
 	return amount, ok, err
 }
 
-// balanceParts is Balance, with the amounts of a balance field the user
-// wrote each apart (nil for a vendor magpie reads itself).
-func balanceParts(ctx context.Context, p Provider) (amount string, parts []BalancePart, ok bool, err error) {
+// balanceRead is what Balance reads, with the amounts of a balance field
+// the user wrote each apart (nil for a vendor magpie reads itself), and the
+// key's own usage windows when its reply tells them (a sub2api key's
+// limits, readSub2APIKeyLimits).
+func balanceRead(ctx context.Context, p Provider) (amount string, parts []BalancePart, ws []QuotaWindow, ok bool, err error) {
 	ctx = p.Via(ctx)
 	src, ok := balanceSourceOf(p)
 	if !ok || p.Account != nil || p.Key == "" {
-		return "", nil, false, nil
+		return "", nil, nil, false, nil
 	}
 	if src.token != "" && p.BalanceURL != "" && balanceURLPath(p.BalanceURL) == newAPIKeyUsage {
-		return "", nil, true, errKeyUsageWithToken(p.BalanceURL)
+		return "", nil, nil, true, errKeyUsageWithToken(p.BalanceURL)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, withBalanceKey(src.url, p.Key, true), nil)
 	if err != nil {
-		return "", nil, true, err
+		return "", nil, nil, true, err
 	}
 	if src.token != "" {
 		// a named endpoint still gets the provider's headers, which is
@@ -679,9 +717,9 @@ func balanceParts(ctx context.Context, p Provider) (amount string, parts []Balan
 	if err != nil {
 		if k := url.QueryEscape(p.Key); k != "" && strings.Contains(err.Error(), k) {
 			// the URL in the error has the key in it: not shown on a card
-			return "", nil, true, errors.New(strings.ReplaceAll(err.Error(), k, Mask(p.Key)))
+			return "", nil, nil, true, errors.New(strings.ReplaceAll(err.Error(), k, Mask(p.Key)))
 		}
-		return "", nil, true, err
+		return "", nil, nil, true, err
 	}
 	defer res.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
@@ -692,28 +730,43 @@ func balanceParts(ctx context.Context, p Provider) (amount string, parts []Balan
 		if res.StatusCode >= 300 {
 			msg = res.Status + ": " + msg
 		}
-		return "", nil, true, errors.New(msg)
+		return "", nil, nil, true, errors.New(msg)
 	}
 	if res.StatusCode >= 300 {
 		// what a JSON reply says, on one line; a page of HTML says nothing
 		msg := strings.Join(strings.Fields(string(b)), " ")
 		if !strings.HasPrefix(msg, "{") {
-			return "", nil, true, errors.New(res.Status)
+			return "", nil, nil, true, errors.New(res.Status)
 		}
 		if r := []rune(msg); len(r) > 200 {
 			msg = string(r[:200]) + "…"
 		}
-		return "", nil, true, fmt.Errorf("%s: %s", res.Status, msg)
+		return "", nil, nil, true, fmt.Errorf("%s: %s", res.Status, msg)
 	}
 	if p.BalanceURL != "" {
+		if sub2APIKeyLimits(p) {
+			ws, _ = readSub2APIKeyLimits(b)
+		}
 		// the field the user wrote: its amounts each apart, as well
 		if parts, err = readBalanceParts(b, balancePathOf(p)); err != nil {
-			return "", nil, true, err
+			if len(ws) > 0 && strings.TrimSpace(p.BalancePath) == "" {
+				// a key given limits and no quota of its own has no
+				// "remaining": its windows are what it has left
+				return "", nil, ws, true, nil
+			}
+			return "", nil, nil, true, err
 		}
-		return joinBalanceParts(parts), parts, true, nil
+		return joinBalanceParts(parts), parts, ws, true, nil
 	}
 	amount, err = src.read(b)
-	return amount, nil, true, err
+	return amount, nil, nil, true, err
+}
+
+// sub2APIKeyLimits says the provider's Balance URL is a sub2api panel's
+// query for a key, whose reply tells the key's own limits when it has
+// some.
+func sub2APIKeyLimits(p Provider) bool {
+	return p.BalanceURL != "" && balanceURLPath(p.BalanceURL) == sub2APIKeyUsage
 }
 
 // balanceKeyNames are what a Balance URL or a header's value names the
@@ -746,6 +799,7 @@ func ForgetBalances() {
 	keyBalanceCache.Lock()
 	keyBalanceCache.data = nil
 	keyBalanceCache.Unlock()
+	forgetKeyAllowances()
 }
 
 // KeyBalances is the balance of every provider magpie can ask one of, the
@@ -762,6 +816,7 @@ func KeyBalances(ctx context.Context) []SubscriptionQuota {
 		return c.data
 	}
 	c.Unlock()
+	ctx, seq := quotaReading(ctx)
 	type job struct {
 		p    Provider
 		user string
@@ -772,7 +827,7 @@ func KeyBalances(ctx context.Context) []SubscriptionQuota {
 			continue
 		}
 		src, ok := balanceSourceOf(p)
-		if !ok {
+		if !ok && !clineKeyCard(p) {
 			continue
 		}
 		others := 0
@@ -816,26 +871,40 @@ func KeyBalances(ctx context.Context) []SubscriptionQuota {
 		go func() {
 			defer wg.Done()
 			q := SubscriptionQuota{Provider: j.p.ID, Name: j.p.Name, Icon: j.p.Icon, User: j.user, Windows: []QuotaWindow{}}
-			amount, parts, _, err := balanceParts(ctx, j.p)
+			if clineKeyCard(j.p) {
+				ws, amount, err := clineKeyUsage(ctx, j.p)
+				if err != nil {
+					q.Error = err.Error()
+				} else {
+					q.Windows, q.Balance = ws, amount
+					now := time.Now()
+					q.ReadAt = &now
+				}
+				out[i] = keepReading(ctx, q, keyTag("balance", j.p.Key))
+				return
+			}
+			amount, parts, ws, _, err := balanceRead(ctx, j.p)
 			if err != nil {
 				q.Error = err.Error()
 			} else {
 				q.Balance = amount
 				q.BalanceParts = cardParts(parts)
+				q.Windows = append(q.Windows, ws...)
+				noteKeyAllowance(j.p, ws, time.Now())
 				now := time.Now()
 				q.ReadAt = &now
 			}
 			// the vendor failing a while shows the balance last read
-			out[i] = keepLast(q, keyTag("balance", j.p.Key))
+			out[i] = keepReading(ctx, q, keyTag("balance", j.p.Key))
 		}()
 	}
 	wg.Wait()
 	if ctx.Err() == nil {
+		noteBalanceHistory(out, time.Now())
 		c.Lock()
-		if again {
-			c.data = mergeCards(c.data, out)
-		} else {
-			c.at, c.data = time.Now(), out
+		c.data = cacheCards(c.data, out, seq, again)
+		if !again {
+			c.at, out = time.Now(), c.data
 		}
 		c.Unlock()
 	}

@@ -54,9 +54,10 @@ type candidate struct {
 // of the fullest window at or past it, and when the last such window
 // renews (zero when one doesn't say).
 type capHold struct {
-	cap  int
-	used float64
-	back time.Time
+	cap       int
+	used      float64
+	back      time.Time
+	noCredits bool
 }
 
 // label names a candidate in a call's record: the provider, and the key
@@ -97,10 +98,19 @@ func (c candidate) isOpenRouterFree() bool {
 // restID is a free OpenRouter model's own rest key. A rate limit on that
 // model is its free-tier limit, while an account-level rest stays on restKey.
 func (c candidate) restID() string {
-	if c.isOpenRouterFree() {
+	if c.isOpenRouterFree() || c.p.Account != nil {
 		return c.restKey() + "/" + c.model
 	}
 	return c.restKey()
+}
+
+// pooled says whether the candidate's subscription, refused for its
+// allowance, is out for its model alone (provider.Allowance.Pooled).
+func (c candidate) pooled(now time.Time) bool {
+	if c.p.Account == nil {
+		return false
+	}
+	return allowances(c.p.Account.UsageAgent())[c.p.Account.User].Pooled(c.model, provider.SpentShareOf(c.p.Routing), now)
 }
 
 // who is the key or account itself, however many the provider has on: a
@@ -151,6 +161,10 @@ func perKeyBarred(p provider.Provider, model string, from provider.Protocol) (ou
 			all = append(all, candidate{p: p, model: model, rest: p.ID})
 		}
 		for i, q := range also {
+			// Account constructors retain their credentials and share the provider settings.
+			q.MaxConcurrency, q.AccountConcurrency = p.MaxConcurrency, p.AccountConcurrency
+			q.QueueLimit, q.QueueWait = p.QueueLimit, p.QueueWait
+			q.PinUpstream, q.PriceRate, q.Routing = p.PinUpstream, p.PriceRate, p.Routing
 			all = append(all, candidate{p: q, model: model, rest: p.ID + "@" + q.Account.User, rank: i + 1})
 		}
 		// kept signed in to an account of the user's choosing, the one
@@ -298,6 +312,7 @@ func (s *Server) plan(p provider.Provider, model string, from provider.Protocol)
 	var pl planned
 	add := func(q provider.Provider, m string, fallback bool) []candidate {
 		cs, aside, left, barred := perKeyBarred(q, m, from)
+		pl.held = append(pl.held, creditsHeld(barred)...)
 		pl.left = append(pl.left, barredOf(barred, q, fallback, from, nil)...)
 		cs, wg := weigh(q, cs, m, from)
 		for i, c := range cs {
@@ -357,6 +372,7 @@ func (s *Server) planGroup(g provider.Group, ms []provider.Member, from provider
 func planLevel(g provider.Group, ms []provider.Member, depth int, from provider.Protocol, pl *planned, asides *[]candidate, wAsides *[]Weighed) []candidate {
 	keys := func(m provider.Member) []candidate {
 		cs, aside, left, barred := perKeyBarred(m.Provider, m.Model, from)
+		pl.held = append(pl.held, creditsHeld(barred)...)
 		pl.left = append(pl.left, barredOf(barred, m.Provider, false, from, m.Groups())...)
 		// the effort the member is fixed at goes with each of its keys:
 		// the same model at another effort is another member's
@@ -481,7 +497,7 @@ func capHeld(p, acct provider.Provider, model string, now time.Time) *capHold {
 	if acct.Account == nil {
 		return nil
 	}
-	cap := p.AccountCap(acct.Account.User)
+	cap, noCredits := provider.HoldShare(p, acct.Account.Agent, acct.Account.User)
 	if cap <= 0 {
 		return nil
 	}
@@ -489,7 +505,7 @@ func capHeld(p, acct provider.Provider, model string, now time.Time) *capHold {
 	if !held {
 		return nil
 	}
-	return &capHold{cap: cap, used: used, back: back}
+	return &capHold{cap: cap, used: used, back: back, noCredits: noCredits}
 }
 
 // cappedError says why a request for model went nowhere when every account
@@ -503,6 +519,9 @@ func cappedError(model string, ws []Weighed, now time.Time) (string, time.Time) 
 			continue
 		}
 		s := fmt.Sprintf("%s (%s) is at %.0f%% of a usage window, past its %d%% cap", w.Name, w.Who, w.Used, w.Capped)
+		if w.NoCredits {
+			s = fmt.Sprintf("%s (%s) has used up a usage window and is set not to spend its credits", w.Name, w.Who)
+		}
 		if w.CapBack != nil {
 			s += ", until " + w.CapBack.Local().Format("Jan 2 15:04")
 			if soonest.IsZero() || w.CapBack.Before(soonest) {
@@ -511,7 +530,25 @@ func cappedError(model string, ws []Weighed, now time.Time) (string, time.Time) 
 		}
 		held = append(held, s)
 	}
-	return fmt.Sprintf("usage cap reached: every account that serves %q is held at the usage cap set on it in magpie — %s. magpie uses it again once that window renews; raise or lift the cap in magpie (Providers → the account's cap, or magpie provider account-cap)", model, strings.Join(held, "; ")), soonest
+	return fmt.Sprintf("usage limit reached: every account that serves %q is held — %s. Use it again after its window renews, or change its usage cap or credit spending setting", model, strings.Join(held, "; ")), soonest
+}
+
+// barredOf is how the trace tells the accounts or keys the user set not
+func creditsHeld(cs []candidate) []candidate {
+	var out []candidate
+	for _, c := range cs {
+		if c.capped != nil && c.capped.noCredits {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func cappedRecord(ws []Weighed) string {
+	if slices.ContainsFunc(ws, func(w Weighed) bool { return w.NoCredits }) {
+		return "every account held at its usage cap or set not to spend credits"
+	}
+	return "every account at its usage cap"
 }
 
 // barredOf is how the trace tells the accounts or keys the user set not
@@ -522,7 +559,7 @@ func barredOf(cs []candidate, q provider.Provider, fallback bool, from provider.
 		w := weighed(c, q, weighing{}, fallback, from)
 		w.Unlisted, w.Via = true, via
 		if h := c.capped; h != nil {
-			w.Capped, w.Used = h.cap, h.used
+			w.Capped, w.Used, w.NoCredits = h.cap, h.used, h.noCredits
 			if !h.back.IsZero() {
 				w.CapBack = &h.back
 			}

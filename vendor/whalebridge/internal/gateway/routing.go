@@ -260,6 +260,11 @@ func init() { provider.OnRenewed(renewed) }
 // staleAllowance is provider.StaleAllowance, swapped in tests.
 var staleAllowance = provider.StaleAllowance
 
+var (
+	keyAllowance      = provider.KeyAllowance
+	staleKeyAllowance = provider.StaleKeyAllowance
+)
+
 // RestOf is why what rests by key — a provider's id, or its id#key — is
 // passed over now, while it is.
 func RestOf(key string) (Rest, bool) { return restOf(key) }
@@ -328,6 +333,7 @@ func (s *Server) restAfterMarked(c candidate, status int, header http.Header, bo
 	now := time.Now()
 	d := fallbackCooldown
 	why := failureOf(c, status, body)
+	pooled := why == failQuota && c.pooled(now)
 	r := Rest{Why: why, Status: status, By: "cooldown"}
 	if why == failProxy {
 		// the account is as good as it was; the proxy is the user's to start
@@ -379,7 +385,7 @@ func (s *Server) restAfterMarked(c candidate, status int, header http.Header, bo
 		d, r.By, r.Failures = min(fallbackCooldown<<min(n-1, 10), longestRetry), "backoff", n
 		// a subscription that failed with a window full is out of it,
 		// whatever it said
-		if t := c.full(now); !t.IsZero() {
+		if t := c.full(now); !t.IsZero() && c.p.Account != nil {
 			d, r.By = t.Sub(now), "window"
 		}
 	}
@@ -387,15 +393,22 @@ func (s *Server) restAfterMarked(c candidate, status int, header http.Header, bo
 	// by the plugin's provider ("plugin:grok"), not by "plugin"
 	if a := c.p.Account; a != nil && why != failOther && why != failVerify {
 		staleAllowance(a.UsageAgent(), a.User) // ask again what it has left
+	} else if a == nil && why != failOther && why != failVerify {
+		staleKeyAllowance(c.p)
 	}
 	r.Until = now.Add(d)
 	if a := c.p.Account; a != nil {
 		r.agent, r.user = a.UsageAgent(), a.User
+	} else if why == failQuota {
+		r.user = provider.KeyAllowanceID(c.p)
 	}
 	id := c.restKey()
 	// OpenRouter identifies a provider's shared pool separately from its
 	// account-wide free-tier limit. Only the former leaves sibling models ready.
 	if why == failRate && c.isOpenRouterFree() && sharedPool {
+		id = c.restID()
+	}
+	if pooled {
 		id = c.restID()
 	}
 	r.Key = id
@@ -455,10 +468,16 @@ func (s *Server) rateRest(c candidate, header http.Header, body []byte, sharedPo
 // tried in its turn, and one that fails then isn't benched until its week
 // renews unless the vendor said it was out (#530).
 func (c candidate) full(now time.Time) time.Time {
-	if c.p.Account == nil {
-		return time.Time{}
+	a, _ := c.allowance()
+	return a.Full(c.model, provider.SpentShareOf(c.p.Routing), now)
+}
+
+func (c candidate) allowance() (provider.Allowance, bool) {
+	if a := c.p.Account; a != nil {
+		al, ok := allowances(a.UsageAgent())[a.User]
+		return al, ok
 	}
-	return allowances(c.p.Account.UsageAgent())[c.p.Account.User].Full(c.model, provider.SpentShareOf(c.p.Routing), now)
+	return keyAllowance(c.p)
 }
 
 // keepRetry passes on, with a vendor's error, what it said about when to
@@ -609,7 +628,7 @@ func weigh(p provider.Provider, cs []candidate, model string, from provider.Prot
 // weighRouted is weigh by the routing alone.
 func weighRouted(p provider.Provider, cs []candidate, model string, from provider.Protocol) ([]candidate, weighing) {
 	var wg weighing
-	if len(cs) < 2 {
+	if len(cs) == 0 {
 		return cs, wg
 	}
 	// each account's own agent's: a group weighs accounts of several
@@ -617,14 +636,18 @@ func weighRouted(p provider.Provider, cs []candidate, model string, from provide
 	now := time.Now()
 	wg.lefts = map[allowanceKey]left{}
 	for _, c := range cs {
+		var a provider.Allowance
+		var ok bool
 		if c.p.Account == nil {
-			continue
+			a, ok = keyAllowance(c.p)
+		} else {
+			ag := c.p.Account.UsageAgent()
+			if _, had := known[ag]; !had {
+				known[ag] = allowances(ag)
+			}
+			a, ok = known[ag][c.p.Account.User]
 		}
-		ag := c.p.Account.UsageAgent()
-		if _, ok := known[ag]; !ok {
-			known[ag] = allowances(ag)
-		}
-		if a, ok := known[ag][c.p.Account.User]; ok {
+		if ok {
 			u, r := a.For(c.model, now)
 			pc, due := a.Pace(c.model, now)
 			amt, of, unit := a.Count(c.model, now)
@@ -632,6 +655,9 @@ func weighRouted(p provider.Provider, cs []candidate, model string, from provide
 			wg.lefts[c.allowanceKey()] = left{used: u, renews: r, soon: a.Renewal(c.model, now), pace: pc, due: due, amount: amt, of: of, unit: unit,
 				restarts: rs, dueRestart: !rs.IsZero() && due.Equal(rs)} // one not known counts as unused
 		}
+	}
+	if len(cs) < 2 {
+		return cs, wg
 	}
 	lefts := wg.lefts
 	shareOf := func(c candidate) float64 { return lefts[c.allowanceKey()].used }

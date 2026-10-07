@@ -9,6 +9,7 @@ type WhaleBridgeSubscription struct {
 	PID     string          `json:"pid,omitempty"`
 	Name    string          `json:"name"`
 	Plugin  bool            `json:"plugin"`
+	Checkin bool            `json:"checkin,omitempty"`
 	Methods []plugin.Method `json:"methods,omitempty"`
 	Package string          `json:"package,omitempty"`
 }
@@ -22,7 +23,7 @@ func WhaleBridgeSubscriptions() []WhaleBridgeSubscription {
 		out = append(out, WhaleBridgeSubscription{ID: id, Name: nameOf(id), Package: MovePackage(id)})
 	}
 	for _, p := range plugin.Cached() {
-		out = append(out, WhaleBridgeSubscription{ID: PluginID(p.ID), PID: p.ID, Name: p.Name, Plugin: true, Methods: p.Methods})
+		out = append(out, WhaleBridgeSubscription{ID: PluginID(p.ID), PID: p.ID, Name: p.Name, Plugin: true, Methods: p.Methods, Checkin: p.Checkin})
 	}
 	return out
 }

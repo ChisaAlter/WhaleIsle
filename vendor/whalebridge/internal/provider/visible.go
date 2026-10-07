@@ -61,7 +61,18 @@ func described() bool { return Described != nil && Described() }
 func CatalogFor(agent string) (shown, hidden []Entry) {
 	listed, hidden := ListedFor(agent)
 	off := HiddenModels(agent)
+	isDSH := strings.EqualFold(agent, "dsh")
+	var compactSettings settings.Settings
+	var findGroup func(string) (Group, []Member, bool)
+	if isDSH {
+		compactSettings, findGroup = heldSettings(), GroupFinder()
+	}
 	for _, e := range listed {
+		if isDSH {
+			if at := CompactSetIn(compactSettings, e.ID, findGroup); at > 0 && (e.Context == 0 || at < e.Context) {
+				e.Context = at
+			}
+		}
 		if off[e.ID] {
 			hidden = append(hidden, e)
 		} else {
