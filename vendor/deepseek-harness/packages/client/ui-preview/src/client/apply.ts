@@ -33,6 +33,7 @@ interface SidebarRightTabsFace {
     id: string
     kind: string
     keepMounted?: boolean
+    mountOnOpen?: boolean
     priority: 'extension'
     title: () => string
     guide: readonly { id: string; order: number; title: () => string; description: () => string }[]
@@ -66,6 +67,7 @@ export function apply(ctx: Context): void {
       id: PREVIEW_ID,
       kind: BROWSER_KIND,
       keepMounted: true,
+      mountOnOpen: true,
       priority: 'extension',
       title: () => t('title'),
       guide: [{

@@ -84,6 +84,33 @@ function harness() {
 }
 
 describe('SidebarRightController — opening', () => {
+  it('keeps mini opens collapsed and reuses the same file when previewing and docking it', () => {
+    const h = harness()
+    const release = h.publish()
+    try {
+      h.tabs.register({ id: 'test/browser', kind: 'browser', title: () => 'Browser' })
+      h.controller.openTab('browser', { expand: false })
+      expect(h.layout().expanded).toBe(false)
+
+      const address = 'dsh-resource://file/session/s-test/notes.md'
+      const floating = { x: 400, y: 100, width: 380, height: 300 }
+      expect(h.controller.openResourceIn(SESSION, address, { expand: false, floating })).toBe(true)
+      const tab = h.tabOf('notes.md')
+      const pane = findTabPane(h.layout(), tab)
+      expect(h.layout().expanded).toBe(false)
+      expect(pane.host).toBe('float')
+      expect(pane.rect).toEqual(floating)
+
+      h.controller.openResourceIn(SESSION, address, { expand: false, floating })
+      expect(h.titles().filter(title => title === 'notes.md')).toHaveLength(1)
+      expect(findTabPane(h.layout(), tab).id).toBe(pane.id)
+      h.controller.dock(pane.id)
+      expect(h.layout().expanded).toBe(true)
+      expect(findTabPane(h.layout(), tab).host).toBe('dock')
+      expect(h.layout().tabs[tab]?.contentId).toBe(address)
+    } finally { release() }
+  })
+
   it('keeps independently opened instances distinct when they return to the same pane', () => {
     const h = harness()
     h.tabs.register({ id: 'test/terminal', kind: 'terminal', multiple: true, title: () => 'terminal' })

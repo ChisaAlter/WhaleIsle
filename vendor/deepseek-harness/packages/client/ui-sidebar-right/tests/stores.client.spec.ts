@@ -37,6 +37,32 @@ function harness() {
 }
 
 describe('createSidebarRightStore — the sequence', () => {
+  it('records a collapsed floating file open and its visible send-back as reversible intents', () => {
+    const { actions, layout, entries } = harness()
+    const before = layout()
+    actions.openContent(SESSION, {
+      kind: 'text', contentId: 'file:notes.md', title: 'notes.md', expand: false,
+      floating: { x: 400, y: 100, width: 380, height: 300 },
+    }, () => {})
+    const tab = Object.values(layout().tabs)[0]!
+    const pane = findTabPane(layout(), tab.id)
+    expect(layout().expanded).toBe(false)
+    expect(pane.host).toBe('float')
+    expect(entries()).toBe(1)
+    const floated = layout()
+    actions.undo(SESSION)
+    expect(layout()).toEqual(before)
+    actions.redo(SESSION)
+    expect(layout()).toEqual(floated)
+
+    actions.unfloatPane(SESSION, pane.id)
+    expect(layout().expanded).toBe(true)
+    expect(findTabPane(layout(), tab.id).host).toBe('dock')
+    expect(entries()).toBe(2)
+    actions.undo(SESSION)
+    expect(layout()).toEqual(floated)
+  })
+
   it.each(['left', 'right'] as const)('splits one pane at its %s edge and records the tab move as one reversible intent', (zone) => {
     const { actions, layout, entries, guide, expand } = harness()
     expand()

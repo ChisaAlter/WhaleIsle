@@ -177,6 +177,32 @@ describe('single right panel routing', () => {
     await b.fiber.dispose()
   })
 
+  it.each(['notes.md', 'notes.txt', 'image.png'])('previews the delivery %s in the originating chat without opening the sidebar', async file => {
+    const previewWorkspaceFile = desktop()
+    const sidebarRight = sidebarRightStub()
+    const b = await bench({ mainView: 'sess-1', sidebarRight })
+    const conversation = document.createElement('div')
+    conversation.dataset.conversationSession = 'sess-1'
+    const chat = document.createElement('div')
+    chat.setAttribute('data-conversation-scroll', '')
+    conversation.append(chat)
+    document.body.append(conversation)
+    vi.spyOn(conversation, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 76, 800, 624))
+    vi.spyOn(chat, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 76, 800, 624))
+    try {
+      await b.workspaces.openPath(`/tmp/proj/${file}`, { sessionId: 'sess-1', presentation: 'mini' })
+      expect(sidebarRight.openResourceIn).toHaveBeenCalledWith('sess-1', expect.stringContaining(file), {
+        expand: false, floating: { x: 508, y: 88, width: 380, height: 300 },
+      })
+      expect(sidebarRight.openTabIn).not.toHaveBeenCalled()
+      expect(previewWorkspaceFile).not.toHaveBeenCalled()
+      expect(b.originalOpen).not.toHaveBeenCalled()
+    } finally {
+      conversation.remove()
+      await b.fiber.dispose()
+    }
+  })
+
   it('opens ordinary browser documents in the same panel after the file tab', async () => {
     desktop()
     const sidebarRight = sidebarRightStub()

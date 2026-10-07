@@ -8,7 +8,7 @@
 ## 用户路径
 
 1. `Ctrl+\` 打开右栏。  
-2. 对话文件提及、工具行和产物芯片通过 `workspaces.openPath` 进入发起 Session 的 DSHD 工作环；交付卡片中的 HTML / HTM / XHTML / PDF 经桌面 token URL 先进入聊天区 Browser 悬浮预览，浮层“在右侧栏打开”才展开右栏 Browser。其他文件在右栏打开；工作区根目录打开 Files。缺 cwd 或不在工作区内的路径交回 Host 打开。
+2. 对话文件提及、工具行和产物芯片通过 `workspaces.openPath` 进入发起 Session 的 DSHD 工作环；交付卡片和收尾正文中的产出文件芯片先进入聊天区悬浮预览。HTML / HTM / XHTML / PDF 复用桌面 token URL 与 Browser guest；Markdown、文本、图片及其他文件复用已有 Sidebar 文件查看器与 DockKit 浮动面板，保留原文件身份、编辑与保存状态。悬浮预览不展开右栏，点击浮层的返回右栏按钮才展开；普通文件提及和工具路径仍在右栏打开，工作区根目录打开 Files。缺 cwd 或不在工作区内的路径交回 Host 打开。
 3. Files：从唯一的「文件」目录入口搜文件、打开具体文件预览、Mention / 加入对话；文件预览头部的“独立窗口预览”按钮把当前**已保存**文件送入单实例置顶只读原生窗口。点击对话引用不会直接创建原生窗口。
 4. Browser：URL 导航、可选截图 / PiP / 录制；交付卡片中的浏览器文档先浮在聊天区，浮层“在右侧栏打开”再展开 Browser 右栏。右栏 Browser 工具栏仍可将预览移回聊天区，来回切换保留 URL / history。
 5. Tab 关闭在标题右侧。栏内分栏、全屏和收起按钮隐藏；标题栏按钮与快捷键仍可开合右栏。
