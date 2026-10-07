@@ -94,11 +94,9 @@
   corner-shape: round;
 }
 
-/* macOS fullscreen: the panel reaches the window's top-left corner, where the
-   hiddenInset traffic lights (x 16..~68) float over the first pane's tab
-   strip. Widen that strip's start inset (dockkit publishes the variable);
-   the second Grid column sits clear of the lights and uses the ordinary inset. */
-:global([data-platform='darwin']) .panel[data-sidebar-right-panel='fullscreen'] :global([data-dockkit-host='dock'][data-dockkit-column='0']) {
+/* Phone drawers reach the top-left caption corner. macOS traffic lights
+   float over their first pane; desktop panels start below the caption row. */
+:global([data-platform='darwin']) :global([data-phone]) .panel[data-sidebar-right-panel='fullscreen'] :global([data-dockkit-host='dock'][data-dockkit-column='0']) {
   /* Lights end near x 68; 88 leaves the same 20px of air the conversation
      header's leading controls keep after them (ui-sidebar HeaderLeadingControls). */
   --dsh-dockkit-strip-inline-start: 88px;
@@ -187,12 +185,17 @@
   overflow: hidden;
 }
 
-/* The single DSHD column keeps its caption geometry for both guide and content. */
+/* Pane tabs sit beneath the application caption, for both guide and content. */
 .panel :global([data-dockkit-strip]) {
   height: 48px;
   min-height: 48px;
   padding-top: 0;
   align-items: center;
+  margin-right: 8px;
+}
+
+/* Phone details remain a full-frame drawer and still share the native caption. */
+:global([data-phone]) .panel :global([data-dockkit-strip]) {
   margin-right: var(--dshd-wco-controls, 8px);
 }
 

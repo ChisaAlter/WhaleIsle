@@ -4,7 +4,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import {
-  Button, IconDownloadOutline16, IconDownloadOutlineRegular,
+  Button, IconDownloadOutlineRegular,
   IconEllipsisOutlineRegular, IconPaperPlaneOutlineRegular, Menu,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SessionLogDownloadDialog, type SessionLogDownloadDialogProps } from './Dialog.tsx'
@@ -24,14 +24,14 @@ export interface SessionLogDownloadHeaderInjected {
 }
 
 export type SessionLogDownloadHeaderProps =
-  PropsRuntime<'conversation.session.header.utilities'>
+  PropsRuntime<'conversation.session.header.actions'>
   & PropsLocale<typeof NS>
   & InjectFace<SessionLogDownloadHeaderInjected>
 
 /**
  * Render the Session's persistent more-actions menu, including feedback while its plugin is available.
  * @param props - current Session, controller state, feedback availability, and copy.
- * @returns the compact Session utility, independent of the optional titlebar shortcut.
+ * @returns the compact Session action following the Agent controls.
  */
 export function SessionLogDownloadHeaderAction(props: SessionLogDownloadHeaderProps): ReactNode {
   const { sessionId, useSessions, useSessionLogDownload, useFeedbackAvailable, request, openFeedback, t } = props
@@ -46,6 +46,7 @@ export function SessionLogDownloadHeaderAction(props: SessionLogDownloadHeaderPr
       open={open}
       align="end"
       dense
+      portal
       onClose={() => { setOpen(false) }}
       items={[
         { id: 'download', label: t('menu.download'), icon: <IconDownloadOutlineRegular />, disabled: busy },
@@ -74,50 +75,19 @@ export function SessionLogDownloadHeaderAction(props: SessionLogDownloadHeaderPr
 }
 
 /**
- * Render the titlebar Session-log capsule and its shared result dialog.
- * @param props - titlebar density, current-session list, download controller, and copy.
- * @returns the persistent titlebar action and Session-scoped dialog.
+ * Keep the result dialog mounted for menu downloads and the /export command.
+ * @param props - current-session list, download controller, and copy.
+ * @returns the Session-scoped dialog without an extra titlebar shortcut.
  */
 export function SessionLogDownloadTitlebarAction(props: SessionLogDownloadDialogProps): ReactNode {
   const {
-    density = 'full',
     useSessions,
-    useTitlebarAction,
-    useSessionLogDownload,
-    request,
-    t,
   } = props
   const listedId = useSessions(state => Object.values(state.byId)
     .find(row => (row.retainedBy.mainView ?? 0) > 0)?.id)
   const sessionId = listedId ?? props.sessionId
   const managedSession = useSessions(state => sessionId === undefined
     ? false : state.byId[sessionId]?.presentation?.composer === 'managed')
-  const showChrome = typeof useTitlebarAction === 'function' ? useTitlebarAction(value => value) : true
-  const downloadEntry = useSessionLogDownload(state => (
-    sessionId === undefined ? undefined : state.bySession[String(sessionId)]
-  ))
-  const busy = downloadEntry?.status === 'downloading'
-  const compact = density === 'cozy' || density === 'compact'
-  const className = compact ? `${css.sessionLogButton} ${css.iconOnly}` : css.sessionLogButton
-
-  return managedSession ? null : (
-    <>
-      {showChrome && (
-        <button
-          type="button"
-          className={className}
-          disabled={busy || sessionId === undefined}
-          aria-busy={busy}
-          aria-label={t('menu.download')}
-          onClick={() => {
-            if (sessionId !== undefined) void request(sessionId)
-          }}
-        >
-          {compact ? null : <span>{t('menu.download')}</span>}
-          <IconDownloadOutline16 size={14} />
-        </button>
-      )}
-      {sessionId !== undefined && <SessionLogDownloadDialog {...props} sessionId={sessionId} />}
-    </>
-  )
+  return managedSession || sessionId === undefined ? null
+    : <SessionLogDownloadDialog {...props} sessionId={sessionId} />
 }
