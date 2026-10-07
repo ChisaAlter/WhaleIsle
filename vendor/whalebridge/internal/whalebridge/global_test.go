@@ -39,6 +39,16 @@ func TestGlobalSettingsPatchPreservesSecretsAndPrivateAccess(t *testing.T) {
 		t.Fatal("header patch did not remove/add the intended values")
 	}
 	a.call("POST", "global/settings", map[string]any{"requestArchive": true}, 400)
+	// Inherited upstream flags must not widen this component to native
+	// client sessions; gateway metadata overrides remain effective.
+	t.Setenv("MAGPIE_OTEL_METRICS", "false")
+	for _, inherited := range []string{"true", "invalid"} {
+		t.Setenv("MAGPIE_OTEL_SESSIONS", inherited)
+		effective, err := settings.OTelExport()
+		if err != nil || effective.Sessions || effective.Metrics {
+			t.Fatalf("inherited session flag changed component export scope: %+v, %v", effective, err)
+		}
+	}
 }
 
 func TestSupplierBackupSelectiveRestoreAndForeignSections(t *testing.T) {

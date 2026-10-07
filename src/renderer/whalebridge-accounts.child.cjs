@@ -1,6 +1,7 @@
 'use strict';
 
 const { app, BrowserWindow } = require('electron');
+const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
@@ -405,7 +406,11 @@ async function run() {
       },
       page: () => {
         const root = document.documentElement, main = document.querySelector('#main'), content = document.querySelector('#content');
+        const search = document.querySelector('#provider-search')?.closest('.search'), filter = document.querySelector('#provider-filter');
+        const rect = element => Object.fromEntries(['left','right','top','bottom','width','height'].map(key =>
+          [key, Math.round(element.getBoundingClientRect()[key] * 1000) / 1000]));
         return { width: innerWidth, documentOverflowX: root.scrollWidth - root.clientWidth,
+          providerToolbar: search && filter ? { search: rect(search), filter: rect(filter) } : null,
           bodyOverflowX: document.body.scrollWidth - document.body.clientWidth,
           mainOverflowX: main.scrollWidth - main.clientWidth, contentOverflowX: content.scrollWidth - content.clientWidth,
           overflowingElements: [...document.querySelectorAll('#content *, .sidebar *')].filter(element => {
@@ -442,6 +447,16 @@ async function run() {
           return { pages, subscription: { methodGap, keyGap: layoutQA.gap('#f-method', 'label[for="f-key"]'), dialog: layoutQA.dialog() } };
         })()`, 15000);
         layout.pages.push(...first.pages.map(row => ({ scheme, ...row })));
+        if (width === 1120) {
+          const toolbar = first.pages.find(row => row.page === 'providers').providerToolbar;
+          assert.ok(toolbar.search.width > 0 && toolbar.search.height > 0 && toolbar.filter.width > 0 && toolbar.filter.height > 0,
+            `${scheme} provider search and filter have rendered rectangles`);
+          const centerY = rect => Math.round((rect.top + rect.height / 2) * 1000) / 1000;
+          assert.equal(centerY(toolbar.search), centerY(toolbar.filter),
+            `${scheme} 1120px provider search and filter share one row: ${JSON.stringify(toolbar)}`);
+          assert.ok(toolbar.filter.left >= toolbar.search.right,
+            `${scheme} 1120px provider filter follows the search without overlap: ${JSON.stringify(toolbar)}`);
+        }
         if (!inspectDialogs) { process.stderr.write(`layout complete ${label}\n`); continue; }
         layout.subscriptions.push({ scheme, ...first.subscription });
         if (width === 1120 || width === 420) await capture(`${label}-subscription`);
@@ -465,6 +480,9 @@ async function run() {
           const key = { nameGap: layoutQA.gap('#fields [data-section="new-key"] h3', 'label[for="f-name"]'), table: keysTable, dialog: layoutQA.dialog() };
           layoutQA.phase = 'keys close'; await layoutQA.close();
           layoutQA.phase = 'provider open'; openProvider();
+          await layoutQA.settle();
+          const identityKeyGap = layoutQA.gap('[data-section="connection"] > .form-grid', '[data-section="connection"] > label[for="f-key"]');
+          const customPreset = document.querySelector('#f-preset').value;
           document.querySelector('#f-preset').value = 'layout-preset';
           document.querySelector('#f-preset').dispatchEvent(new Event('change', { bubbles: true }));
           activateEditorSection('network');
@@ -475,13 +493,16 @@ async function run() {
           const regionGap = layoutQA.gap('.credential-tools', 'label[for="f-region"]'), workspaceGap = layoutQA.gap('#f-region', 'label[for="f-workspace"]');
           const sections = [...document.querySelectorAll('#editor-nav [data-section-target]')].map(button => { activateEditorSection(button.dataset.sectionTarget); return { id: button.dataset.sectionTarget, dialog: layoutQA.dialog() }; });
           activateEditorSection('limits');
-          const provider = { regionGap, workspaceGap, proxyGap, sections, dialog: layoutQA.dialog() };
+          const provider = { identityKeyGap, customPreset, regionGap, workspaceGap, proxyGap, sections, dialog: layoutQA.dialog() };
           layoutQA.phase = 'provider done'; return { callback, account, key, provider };
         })()`, 15000).catch(async error => { throw new Error(`${error.message}\nphase: ${await js('layoutQA.phase')}`); });
         layout.callbacks.push({ scheme, ...middle.callback });
         layout.accounts.push({ scheme, ...middle.account });
         layout.keys.push({ scheme, ...middle.key });
         layout.providers.push({ scheme, ...middle.provider });
+        assert.equal(middle.provider.customPreset, '', 'the identity/key spacing is measured on a custom supplier connection');
+        assert.equal(middle.provider.identityKeyGap, 20,
+          `${scheme} ${width}px custom supplier API key label has a rendered 20px gap below the Name/ID grid`);
         if (width === 1120 || width === 420) await capture(`${label}-provider`);
         const route = await js(`(async () => {
           await layoutQA.close(); await go('routing'); openGroup();

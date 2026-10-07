@@ -117,6 +117,8 @@ h3{font-size:14px;line-height:22px;font-weight:600}
 .menu-content{position:absolute;right:0;top:calc(100% + 4px);min-width:148px;padding:4px;background:var(--dsw-alias-bg-layer-1);border-radius:12px;box-shadow:var(--dsw-shadow-lv3);z-index:3;display:flex;flex-direction:column;gap:4px}
 .menu-content button{border:0;border-radius:8px;justify-content:flex-start;width:100%;min-height:32px}
 .list-toolbar{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+.list-toolbar>select{width:auto;min-width:160px;max-width:240px}
+.list-toolbar>input{width:auto;min-width:0;flex:1 1 160px;max-width:320px}
 .search{display:flex;align-items:center;gap:8px;padding:0 12px;max-width:320px;flex:1;min-width:180px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;height:36px;color:var(--dsw-alias-label-tertiary)}
 .search input[type=search]{min-width:0;min-height:0;flex:1;border:0;border-radius:0;background:transparent;padding:0;outline:none;font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary)}
 .search:focus-within{border-color:var(--dsw-alias-state-business-primary)}
@@ -345,7 +347,7 @@ dialog.workbench form{height:100%;max-height:100%}
 .editor-footer{background:var(--dsw-alias-bg-layer-1)}
 .sync-error{border-bottom:1px solid var(--dsw-alias-border-l2);padding:16px 0;margin-bottom:20px;color:var(--dsw-alias-state-error-primary)}
 .sync-error p{font-size:12px;line-height:18px;margin:8px 0;overflow-wrap:anywhere}
-.editor-section>label:first-of-type{margin-top:0}
+.editor-section>.editor-section-head+label{margin-top:0}
 .editor-section>h3+label:first-of-type{margin-top:20px}
 .editor-section>.form-hint+.management-table-wrap,.editor-section>.toolbar+.management-table-wrap{margin-top:16px}
 .editor-section .form-section:first-child{margin-top:0;padding-top:0;border-top:0}
