@@ -55,6 +55,11 @@ function fixture() {
         assetFile: name => path.join('assets', name),
         rendererFile: name => path.join(__dirname, '..', 'renderer', name),
       };
+      if (name === './native-window-motion') return {
+        enableNativeWindowMotion: win => { win.nativeMotion = true; return true; },
+        isNativeWindowMaximized: () => undefined,
+        toggleNativeMaximize: () => false,
+      };
       if (name === 'node:fs' || name === 'node:path') return require(name);
       throw new Error(`Unexpected dependency: ${name}`);
     },
@@ -122,6 +127,11 @@ test('WhaleBridge mounts the same controls stylesheet and script as the desktop 
   const win = windows[0];
   assert.equal(win.options.frame, false);
   assert.equal(win.options.titleBarOverlay, undefined);
+  // Launcher silhouette: transparent page-drawn corners plus native window motion.
+  assert.equal(win.options.transparent, true);
+  assert.equal(win.options.roundedCorners, false);
+  assert.equal(win.options.backgroundColor, '#00000000');
+  assert.equal(win.nativeMotion, true);
   assert.equal(win.options.webPreferences.sandbox, true);
   assert.equal(win.options.webPreferences.contextIsolation, true);
   assert.equal(win.options.webPreferences.nodeIntegration, false);
@@ -129,7 +139,8 @@ test('WhaleBridge mounts the same controls stylesheet and script as the desktop 
   assert.deepEqual(Array.from(win.options.webPreferences.additionalArguments), ['--whalebridge-origin=http://127.0.0.1:19198']);
   win.webContents.emit('dom-ready');
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(win.css, fs.readFileSync(path.join(__dirname, '..', 'renderer', 'window-controls.css'), 'utf8'));
+  const renderer = name => fs.readFileSync(path.join(__dirname, '..', 'renderer', name), 'utf8');
+  assert.equal(win.css, renderer('window-controls.css') + renderer('whalebridge-window.css'));
   assert.ok(win.script.includes(fs.readFileSync(path.join(__dirname, '..', 'renderer', 'window-controls.js'), 'utf8')));
   assert.match(win.script, /host.className = 'window-controls'/);
   assert.deepEqual(win.calls, [], 'mounting controls never shows or focuses a window');

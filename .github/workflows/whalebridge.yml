@@ -1,10 +1,10 @@
 name: WhaleBridge
 on:
   pull_request:
-    paths: ['vendor/whalebridge/**', 'scripts/build-whalebridge.mjs', 'scripts/qa-whalebridge.mjs', 'src/launcher/whalebridge*', '.github/workflows/whalebridge.yml']
+    paths: ['vendor/whalebridge/**', 'scripts/build-whalebridge.mjs', 'scripts/qa-whalebridge*.mjs', 'src/launcher/whalebridge*', '.github/workflows/whalebridge.yml']
   push:
     branches: [main]
-    paths: ['vendor/whalebridge/**', 'scripts/build-whalebridge.mjs', 'scripts/qa-whalebridge.mjs', 'src/launcher/whalebridge*', '.github/workflows/whalebridge.yml']
+    paths: ['vendor/whalebridge/**', 'scripts/build-whalebridge.mjs', 'scripts/qa-whalebridge*.mjs', 'src/launcher/whalebridge*', '.github/workflows/whalebridge.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,6 +27,7 @@ jobs:
       - run: node scripts/build-whalebridge.mjs
       - run: node --test src/launcher/whalebridge.test.js
       - run: node scripts/qa-whalebridge.mjs
+      - run: node scripts/qa-whalebridge-models.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: WhaleBridge-windows-x64
