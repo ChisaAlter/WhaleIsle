@@ -278,8 +278,10 @@ test('shared boot and launcher window controls match the square main-window geom
   const css = fs.readFileSync(path.join(__dirname, '../renderer/window-controls.css'), 'utf8');
   const plate = css.match(/\.window-controls\s*\{([^}]+)\}/)?.[1] || '';
   const button = css.match(/\.window-controls button\s*\{([^}]+)\}/)?.[1] || '';
+  assert.match(plate, /box-sizing:\s*border-box;/);
+  assert.match(plate, /height:\s*var\(--caption-h, 48px\);/);
   assert.match(plate, /gap:\s*0;/);
-  assert.match(plate, /padding:\s*12px 8px 4px;/);
+  assert.match(plate, /padding:\s*8px;/);
   assert.match(button, /width:\s*32px;/);
   assert.match(button, /height:\s*32px;/);
   assert.match(button, /border-radius:\s*8px;/);

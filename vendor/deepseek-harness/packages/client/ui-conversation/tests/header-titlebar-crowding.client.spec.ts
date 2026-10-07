@@ -45,8 +45,9 @@ describe('ConversationRoot.module.css titlebar crowding', () => {
     expect(declarations('.crumbs')?.get('flex')).toBe('0 1 auto')
     expect(declarations('.crumbs')?.get('overflow')).toBe('hidden')
     expect(declarations('.headerActions')?.get('flex')).toBe('none')
-    expect(declarations('.header')?.get('padding')).toBe('12px 28px 0 20px')
-    expect(declarations('.header:has(.tabs) .titleRow')?.get('min-height')).toBe('30px')
+    expect(declarations('.header')?.get('padding')).toBe('8px 28px 0 20px')
+    expect(declarations('.titleRow')?.get('min-height')).toBe('32px')
+    expect(declarations('.titleRow')?.get('align-items')).toBe('center')
     expect(declarations('.header:where(:not(:has(.tabs)))')?.get('padding-bottom')).toBe('12px')
     expect(declarations('.tabs')?.get('display')).toBe('flex')
     expect(declarations('.tabs')?.get('grid-column')).toBe('1 / -1')
@@ -73,7 +74,7 @@ describe('ConversationRoot.module.css titlebar crowding', () => {
 
   it('keeps a blank caption in the titlebar row instead of collapsing the header', () => {
     expect(declarations('.headerHidden')).toBeUndefined()
-    expect(declarations('.blankCaption')?.get('min-height')).toBe('28px')
+    expect(declarations('.blankCaption')?.get('min-height')).toBe('32px')
     expect(declarations('.headerBlank::after')?.get('display')).toBe('none')
   })
 
