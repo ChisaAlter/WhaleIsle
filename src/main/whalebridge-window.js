@@ -5,7 +5,7 @@ const path = require('node:path');
 
 let window = null;
 function openWhaleBridgeWindow(url, { activate = true } = {}) {
-  const { BrowserWindow, shell, nativeTheme } = require('electron');
+  const { BrowserWindow, shell } = require('electron');
   const parsed = new URL(url);
   const origin = parsed.origin;
   if (!['http:', 'https:'].includes(parsed.protocol) || parsed.hostname !== '127.0.0.1') {
@@ -19,7 +19,9 @@ function openWhaleBridgeWindow(url, { activate = true } = {}) {
     window.destroy();
   }
   const { assetFile, rendererFile } = require('./paths');
-  const controlsCss = fs.readFileSync(rendererFile('window-controls.css'), 'utf8');
+  const nativeMotion = require('./native-window-motion');
+  const controlsCss = fs.readFileSync(rendererFile('window-controls.css'), 'utf8')
+    + fs.readFileSync(rendererFile('whalebridge-window.css'), 'utf8');
   const controlsScript = fs.readFileSync(rendererFile('window-controls.js'), 'utf8');
   const mountControls = `(() => {
     if (!document.getElementById('whalebridge-window-controls')) {
@@ -32,14 +34,13 @@ function openWhaleBridgeWindow(url, { activate = true } = {}) {
       ${controlsScript}
     }
   })();`;
-  const chromeColors = () => nativeTheme.shouldUseDarkColors
-    ? { color: '#151517', symbolColor: '#f9fafb' }
-    : { color: '#ffffff', symbolColor: '#0f1115' };
   const win = new BrowserWindow({
     title: '鲸桥 · WhaleBridge', width: 1120, height: 780, minWidth: 380, minHeight: 520,
     icon: assetFile('icon.ico'), autoHideMenuBar: true, show: false,
-    frame: false,
-    backgroundColor: chromeColors().color,
+    // Same silhouette as the launcher: whalebridge-window.css paints 20px
+    // corners on a transparent window; the OS mask would cut them to ~8px.
+    frame: false, transparent: true, thickFrame: true, roundedCorners: false,
+    backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'whalebridge.js'),
       additionalArguments: [`--whalebridge-origin=${origin}`],
@@ -47,16 +48,14 @@ function openWhaleBridgeWindow(url, { activate = true } = {}) {
     },
   });
   window = win;
-  const updateChrome = () => {
-    win.setBackgroundColor(chromeColors().color);
-  };
-  nativeTheme.on('updated', updateChrome);
+  nativeMotion.enableNativeWindowMotion(win);
   const contents = win.webContents;
   const isOwnedSender = event => !win.isDestroyed()
     && event.sender === contents && event.senderFrame === contents.mainFrame
     && URL.canParse(event.senderFrame.url)
     && new URL(event.senderFrame.url).origin === origin;
-  const windowState = () => ({ maximized: win.isMaximized(), minimizable: win.minimizable, maximizable: win.maximizable });
+  const isMaximized = () => nativeMotion.isNativeWindowMaximized(win) ?? win.isMaximized();
+  const windowState = () => ({ maximized: isMaximized(), minimizable: win.minimizable, maximizable: win.maximizable });
   contents.ipc.on('whalebridge:window', (event, action) => {
     if (!isOwnedSender(event)) return;
     if (action === 'close') { win.close(); return; }
@@ -65,7 +64,7 @@ function openWhaleBridgeWindow(url, { activate = true } = {}) {
     setImmediate(() => {
       if (win.isDestroyed()) return;
       if (action === 'minimize' && win.minimizable) win.minimize();
-      if (action === 'maximize' && win.maximizable) {
+      if (action === 'maximize' && win.maximizable && !nativeMotion.toggleNativeMaximize(win)) {
         if (win.isMaximized()) win.unmaximize(); else win.maximize();
       }
     });
@@ -75,8 +74,15 @@ function openWhaleBridgeWindow(url, { activate = true } = {}) {
     return windowState();
   });
   const sendState = () => contents.send('whalebridge:window-state', windowState());
-  win.on('maximize', sendState);
-  win.on('unmaximize', sendState);
+  let lastMaximized;
+  const syncState = () => {
+    if (win.isDestroyed() || isMaximized() === lastMaximized) return;
+    lastMaximized = isMaximized();
+    sendState();
+  };
+  win.on('maximize', syncState);
+  win.on('unmaximize', syncState);
+  win.on('resize', syncState);
   contents.on('dom-ready', () => {
     if (win.isDestroyed() || new URL(contents.getURL()).origin !== origin) return;
     void contents.insertCSS(controlsCss).then(() => {
@@ -99,7 +105,6 @@ function openWhaleBridgeWindow(url, { activate = true } = {}) {
   contents.on('will-redirect', guardNavigation);
   win.once('ready-to-show', () => activate ? win.show() : win.showInactive());
   win.once('closed', () => {
-    nativeTheme.removeListener('updated', updateChrome);
     if (window === win) window = null;
   });
   void win.loadURL(url);

@@ -9,6 +9,8 @@ let state, tab = 'overview', period = 'today', editor, renderEpoch = 0;
 let modelQuery = '', modelFilter = 'all', loginFlow, loginTimer;
 let visibilityWrites = Promise.resolve();
 const visibilityPending = new Map();
+const foldedChannels = new Set();
+let messageTimer;
 const pageNames = {overview:'接入概览',providers:'供应商与账号',models:'模型管理',routing:'路由组',usage:'用量统计',help:'使用说明'};
 const routes = {'':'智能','order':'按顺序','rotate':'轮换','usage':'最少用量','pace':'按剩余额度','weight':'权重','manual':'固定模型'};
 async function api(path, body) {
@@ -19,7 +21,8 @@ async function api(path, body) {
 function message(text, error = false) {
  $('#message-text').textContent = text; $('#message').hidden = !text;
  $('#message').dataset.error = String(error);
- if(text) $('#main').scrollTo({top:0});
+ clearTimeout(messageTimer);
+ if(text&&!error)messageTimer=setTimeout(()=>message(''),3200);
 }
 async function load() {
  $('#refresh').disabled = true;
@@ -59,11 +62,75 @@ function providers() {
  return html;
 }
 function modelRows() { return [...(state.models || []).map(m=>({...m,hidden:false})),...(state.hidden || []).map(m=>({...m,hidden:true}))].map(m=>visibilityPending.has(m.id)?{...m,hidden:visibilityPending.get(m.id)}:m); }
-function modelList() {
+function filteredModels() {
  const query=modelQuery.trim().toLowerCase();
- const rows=modelRows().filter(m=>(modelFilter==='all'||(modelFilter==='hidden')===m.hidden)&&`${m.name || ''} ${m.id}`.toLowerCase().includes(query));
- $('#model-list').innerHTML=rows.length?`<div class="panel"><div class="model-head"><span>模型 / 标识</span><span class="model-context">上下文</span><span>桌面端显示</span></div>${rows.map(m=>`<div class="model-row ${m.hidden?'disabled':''}"><div><div class="model-name">${escape(m.name || m.id)}${m.group?'<span class="tag">路由组</span>':''}${m.images?'<span class="tag subtle">图像</span>':''}</div><div class="model-meta"><code>${escape(m.id)}</code>${m.efforts?.length?`<span class="caption">思考：${escape(m.efforts.join(' / '))}</span>`:''}</div></div><span class="caption model-context">${m.context?short(m.context):'—'}</span><div class="model-visibility"><button type="button" class="switch" role="switch" aria-checked="${!m.hidden}" aria-label="在桌面端显示 ${escape(m.name || m.id)}" title="${m.hidden?'显示模型':'隐藏模型'}" data-action="hide-model" data-id="${escape(m.id)}" ${visibilityPending.has(m.id)?'disabled aria-busy="true"':''}></button></div></div>`).join('')}</div>`:empty('没有匹配的模型','试试其他模型名称或标识，或切换显示范围。','','search');
+ return modelRows().filter(m=>(modelFilter==='all'||(modelFilter==='hidden')===m.hidden)&&`${m.name || ''} ${m.id} ${m.channelName || ''} ${m.supplierName || ''}`.toLowerCase().includes(query));
+}
+const modelGroup = m => JSON.stringify([m.channelId,m.supplierId]);
+// Scope switches act on the rows currently listed: all results, a channel or a supplier.
+function scopeRows(scope,id) {
+ const rows=filteredModels();
+ return scope==='channel'?rows.filter(m=>m.channelId===id):scope==='supplier'?rows.filter(m=>modelGroup(m)===id):rows;
+}
+function scopeState(rows) {
+ const shown=rows.filter(m=>!m.hidden).length;
+ return {shown,total:rows.length,checked:!rows.length||!shown?'false':shown===rows.length?'true':'mixed'};
+}
+function syncModelControls() {
+ for(const b of document.querySelectorAll('[data-action="hide-model"]')){
+  const m=modelRows().find(m=>m.id===b.dataset.id);if(!m)continue;
+  b.setAttribute('aria-checked',String(!m.hidden));b.title=m.hidden?'显示模型':'隐藏模型';
+  b.disabled=visibilityPending.has(m.id);b.setAttribute('aria-busy',String(b.disabled));
+  b.closest('.model-row').classList.toggle('disabled',m.hidden);
+ }
+ for(const b of document.querySelectorAll('[data-action="model-scope"]')){
+  const rows=scopeRows(b.dataset.scope,b.dataset.id),s=scopeState(rows);
+  b.setAttribute('aria-checked',s.checked);b.title=s.checked==='true'?'全部隐藏':'全部显示';
+  b.disabled=!rows.length||rows.some(m=>visibilityPending.has(m.id));b.setAttribute('aria-busy',String(b.disabled&&rows.length>0));
+ }
+ for(const c of document.querySelectorAll('[data-count]')){
+  const s=scopeState(scopeRows(c.dataset.count,c.dataset.id));c.textContent=`已显示 ${s.shown} / ${s.total}`;
+ }
+}
+const scopeSwitch=(scope,id,label)=>`<button type="button" class="switch" role="switch" data-action="model-scope" data-scope="${scope}" data-id="${escape(id)}" aria-label="${escape(label)}"></button>`;
+function modelList() {
+ const rows=filteredModels().sort((a,b)=>a.id.localeCompare(b.id,'en')),channels=new Map();
+ const top=$('#main').scrollTop,focused=document.activeElement;
+ const focusID=focused?.dataset.id,focusAction=focused?.dataset.action;
+ for(const m of rows){
+  if(!channels.has(m.channelId))channels.set(m.channelId,{id:m.channelId,name:m.channelName,groups:new Map()});
+  const channel=channels.get(m.channelId),key=modelGroup(m);
+  if(!channel.groups.has(key))channel.groups.set(key,{name:m.supplierName,rows:[]});
+  channel.groups.get(key).rows.push(m);
+ }
+ const row=m=>`<div class="model-row ${m.hidden?'disabled':''}"><div class="model-main"><div class="model-name">${escape(m.name || m.id)}${m.group?'<span class="tag">路由组</span>':''}${m.images?'<span class="tag subtle">图像</span>':''}</div><div class="model-meta"><code>${escape(m.id)}</code>${m.efforts?.length?`<span class="caption">思考：${escape(m.efforts.join(' / '))}</span>`:''}</div></div><span class="caption model-context">${m.context?short(m.context):'—'}</span><button type="button" class="switch" role="switch" aria-checked="${!m.hidden}" aria-label="在桌面端显示 ${escape(m.name || m.id)}" data-action="hide-model" data-id="${escape(m.id)}"></button></div>`;
+ const open=c=>!!modelQuery.trim()||!foldedChannels.has(c.id);
+ $('#model-list').innerHTML=rows.length?[...channels.values()].map(c=>`<section class="panel model-channel"><div class="model-channel-head"><button type="button" class="model-fold" data-action="fold-channel" data-id="${escape(c.id)}" aria-expanded="${open(c)}">${icon('arrow')}<span class="model-channel-name">${escape(c.name)}</span><span class="caption" data-count="channel" data-id="${escape(c.id)}"></span></button>${scopeSwitch('channel',c.id,`显示 ${c.name} 的全部模型`)}</div><div class="model-channel-body" ${open(c)?'':'hidden'}>${[...c.groups.entries()].map(([key,g])=>`<div class="model-supplier"><span>${escape(g.name)}</span><span class="caption" data-count="supplier" data-id="${escape(key)}"></span>${scopeSwitch('supplier',key,`显示 ${c.name} / ${g.name} 的全部模型`)}</div>`+g.rows.map(row).join('')).join('')}</div></section>`).join(''):empty('没有匹配的模型','试试其他模型名称或标识，或切换显示范围。','','search');
  document.querySelectorAll('[data-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.filter===modelFilter)));
+ syncModelControls();
+ if(focusAction&&focusID)Array.from(document.querySelectorAll('[data-action]')).find(b=>b.dataset.action===focusAction&&b.dataset.id===focusID)?.focus({preventScroll:true});
+ $('#main').scrollTop=top;
+}
+async function setModelVisibility(ids,hidden) {
+ ids=ids.filter(id=>!visibilityPending.has(id)&&modelRows().some(m=>m.id===id&&m.hidden!==hidden));
+ if(!ids.length)return;
+ for(const id of ids)visibilityPending.set(id,hidden);
+ syncModelControls();
+ const write=visibilityWrites.then(async()=>{
+  try{
+   await api('models/hidden',{ids,hidden});
+   // Update confirmed rows without remounting the page or moving other models.
+   const rows=[...(state.models || []),...(state.hidden || [])],changed=new Set(ids),wasHidden=new Set((state.hidden || []).map(m=>m.id));
+   state.models=rows.filter(m=>!(changed.has(m.id)?hidden:wasHidden.has(m.id)));
+   state.hidden=rows.filter(m=>changed.has(m.id)?hidden:wasHidden.has(m.id));
+   $('#model-count').textContent=state.models.length || '';
+   if(ids.length>1)message(`已${hidden?'隐藏':'显示'} ${ids.length} 个模型，已同步到鲸屿`);
+  }finally{
+   for(const id of ids)visibilityPending.delete(id);
+   if($('#model-list')){if(modelFilter==='all')syncModelControls();else modelList();}
+  }
+ });
+ visibilityWrites=write.catch(()=>{});await write;
 }
 function routingPage() {
  let html=heading('路由组','把多个模型组合成一个入口，由鲸桥按所选策略分配请求。',button(`${icon('plus')}新建路由组`,'add-group','','primary'));
@@ -84,7 +151,7 @@ async function render() {
  else if(tab==='providers')html=providers();
  else if(tab==='models') {
   html=heading('模型管理','选择哪些模型显示在鲸屿桌面端的「鲸桥」渠道中。',button(`${icon('refresh')}更新模型目录`,'refresh-catalog'));
-  html+=modelRows().length?`<div class="list-toolbar"><div class="search">${icon('search')}<input id="model-search" type="search" placeholder="搜索模型名称或 ID" aria-label="搜索模型" value="${escape(modelQuery)}"></div><div class="segments" aria-label="模型显示范围">${Object.entries({all:'全部',shown:'已显示',hidden:'已隐藏'}).map(([v,l])=>`<button type="button" data-filter="${v}" aria-pressed="${v===modelFilter}">${l}</button>`).join('')}</div></div><div id="model-list"></div><p class="usage-note">${icon('info')}关闭显示开关会将模型从鲸屿的列表中隐藏，供应商配置仍保留。</p>`:empty('模型列表还是空的','添加并启用供应商，配置模型后，就可以在这里整理桌面端列表。',button('添加供应商','add-provider','','primary'),'models');
+  html+=modelRows().length?`<div class="list-toolbar"><div class="search">${icon('search')}<input id="model-search" type="search" placeholder="搜索模型、渠道或供应商" aria-label="搜索模型" value="${escape(modelQuery)}"></div><div class="segments" aria-label="模型显示范围">${Object.entries({all:'全部',shown:'已显示',hidden:'已隐藏'}).map(([v,l])=>`<button type="button" data-filter="${v}" aria-pressed="${v===modelFilter}">${l}</button>`).join('')}</div><div class="model-all"><span>全选</span><span class="caption" data-count="all" data-id=""></span>${scopeSwitch('all','','显示当前结果中的全部模型')}</div></div><div id="model-list"></div><p class="usage-note">${icon('info')}开关只影响鲸屿桌面端的模型列表；全选只作用于当前搜索和筛选结果，隐藏模型不删除供应商配置。</p>`:empty('模型列表还是空的','添加并启用供应商，配置模型后，就可以在这里整理桌面端列表。',button('添加供应商','add-provider','','primary'),'models');
  } else if(tab==='routing')html=routingPage();
  else if(tab==='help')html=helpPage();
  else if(tab==='usage') {
@@ -235,6 +302,9 @@ $('.workspace').addEventListener('click',async e=>{
   if(action==='keys'){await openKeys(id);return;}
   if(action==='add-provider'||action==='edit-provider'){openProvider(id);return;}
   if(action==='add-group'||action==='edit-group'){openGroup(id);return;}
+  if(action==='hide-model'){const m=modelRows().find(m=>m.id===id);if(m)await setModelVisibility([id],!m.hidden);return;}
+  if(action==='model-scope'){await setModelVisibility(scopeRows(b.dataset.scope,id).map(m=>m.id),b.getAttribute('aria-checked')==='true');return;}
+  if(action==='fold-channel'){const open=b.getAttribute('aria-expanded')!=='true';if(open)foldedChannels.delete(id);else foldedChannels.add(id);b.setAttribute('aria-expanded',String(open));b.closest('.model-channel').querySelector('.model-channel-body').hidden=!open;return;}
   b.disabled=true;
   if(action==='sync')await api('dsh/sync',{});
   if(action==='refresh-catalog')await api('catalog/refresh',{});
@@ -242,20 +312,8 @@ $('.workspace').addEventListener('click',async e=>{
   if(action==='delete-provider'){if(!await ask('删除供应商？','对应的模型会从鲸屿的「鲸桥」渠道中移除。其他供应商和对话记录不受影响。','删除供应商'))return;await api('provider/delete',{id});}
   if(action==='delete-group'){if(!await ask('删除路由组？','这个组会从鲸屿的模型列表中移除，成员模型和供应商配置仍保留。','删除路由组'))return;await api('group/delete',{id});}
   if(action==='toggle-provider'){const p=state.providers.find(p=>p.id===id);await api('provider',{...p,off:!p.off});}
-  if(action==='hide-model'){
-   if(visibilityPending.has(id))return;
-   const hidden=!modelRows().find(m=>m.id===id)?.hidden;
-   visibilityPending.set(id,hidden);modelList();
-   const write=visibilityWrites.then(async()=>{
-    try{await api('models/hidden',{id,hidden});await load();message('模型显示已更新，已同步到鲸屿');}
-    finally{visibilityPending.delete(id);if($('#model-list'))modelList();}
-   });
-   // The API changes one ID under the configuration lock; the queue keeps the
-   // user's click order without reusing an old full-list snapshot.
-   visibilityWrites=write.catch(()=>{});await write;return;
-  }
   message(action==='sync'?'模型已重新同步到鲸屿':'已更新，模型已同步到鲸屿');await load();
- }catch(e){message(e.message,true);}finally{b.disabled=false;}
+ }catch(e){message(e.message,true);}finally{if(!['hide-model','model-scope','fold-channel'].includes(action))b.disabled=false;}
 });
 $('#fields').addEventListener('click',e=>{
  const header=e.target.closest('[data-action=add-header],[data-action=remove-header]');

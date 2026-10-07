@@ -150,16 +150,22 @@ func Run(version string) error {
 			Account     bool            `json:"account"`
 		}
 		suppliers := []supplier{}
+		modelSuppliers := map[string]map[string]string{}
 		for _, p := range provider.All() {
 			names := make([]string, 0, len(p.Headers))
 			for name := range p.Headers {
 				names = append(names, name)
 			}
 			sort.Strings(names)
-			suppliers = append(suppliers, supplier{ID: p.ID, Name: p.Name, Preset: p.Preset, Chat: p.Chat, Responses: p.Responses, Anthropic: p.Anthropic, Decide: p.Decide, HeaderNames: names, KeySet: p.Key != "", Models: p.Models, Off: p.Off, Routing: p.Routing, Proxy: p.Proxy, Fallback: p.Fallback, Available: p.Available(), ModelCount: len(p.Exposed()), Account: p.Account != nil})
+			available := p.Available()
+			modelSuppliers[p.ID] = map[string]string{}
+			for _, m := range available {
+				modelSuppliers[p.ID][m.ID] = modelSupplier(m.ID, m.Provider)
+			}
+			suppliers = append(suppliers, supplier{ID: p.ID, Name: p.Name, Preset: p.Preset, Chat: p.Chat, Responses: p.Responses, Anthropic: p.Anthropic, Decide: p.Decide, HeaderNames: names, KeySet: p.Key != "", Models: p.Models, Off: p.Off, Routing: p.Routing, Proxy: p.Proxy, Fallback: p.Fallback, Available: available, ModelCount: len(p.Exposed()), Account: p.Account != nil})
 		}
 		shown, hidden := provider.CatalogFor("dsh")
-		writeJSON(w, map[string]any{"version": version, "gateway": gateway.URL(), "providers": suppliers, "presets": provider.Presets(), "models": shown, "hidden": hidden, "groups": provider.Groups(), "defaultModel": isDefault(), "catalog": catalog.Status()})
+		writeJSON(w, map[string]any{"version": version, "gateway": gateway.URL(), "providers": suppliers, "presets": provider.Presets(), "models": settingsModels(shown, modelSuppliers), "hidden": settingsModels(hidden, modelSuppliers), "groups": provider.Groups(), "defaultModel": isDefault(), "catalog": catalog.Status()})
 	})
 	mux.HandleFunc("GET /api/usage", func(w http.ResponseWriter, r *http.Request) {
 		period := usage.Period(r.URL.Query().Get("period"))
@@ -296,14 +302,22 @@ func Run(version string) error {
 			return err
 		}
 		if b.Hidden != nil {
-			if strings.TrimSpace(b.ID) == "" {
+			if b.ID != "" {
+				b.IDs = append(b.IDs, b.ID)
+			}
+			if len(b.IDs) == 0 {
 				return fmt.Errorf("缺少模型 ID")
 			}
 			ids := provider.HiddenModels("dsh")
-			if *b.Hidden {
-				ids[b.ID] = true
-			} else {
-				delete(ids, b.ID)
+			for _, id := range b.IDs {
+				if strings.TrimSpace(id) == "" {
+					return fmt.Errorf("缺少模型 ID")
+				}
+				if *b.Hidden {
+					ids[id] = true
+				} else {
+					delete(ids, id)
+				}
 			}
 			b.IDs = make([]string, 0, len(ids))
 			for id := range ids {
@@ -406,6 +420,63 @@ func Run(version string) error {
 	go func() { failures <- (&http.Server{Handler: auth, ReadHeaderTimeout: 10 * time.Second}).Serve(listener) }()
 	go provider.StartModelRefresh(ctx)
 	return <-failures
+}
+
+type settingsModel struct {
+	provider.Entry
+	ChannelID    string `json:"channelId"`
+	ChannelName  string `json:"channelName"`
+	SupplierID   string `json:"supplierId"`
+	SupplierName string `json:"supplierName"`
+}
+
+// Relay catalogs label every model with the relay (for example Cursor), not
+// its maker. Known model families provide the second grouping level there.
+func modelSupplier(id, listed string) string {
+	id = strings.ToLower(id)
+	if _, bare, ok := strings.Cut(id, "/"); ok {
+		id = bare
+	}
+	id = strings.TrimPrefix(id, "cursor-")
+	for _, family := range []struct{ prefix, supplier string }{
+		{"gpt-", "openai"}, {"chatgpt-", "openai"}, {"o1", "openai"}, {"o3", "openai"}, {"o4", "openai"},
+		{"claude-", "anthropic"}, {"gemini-", "google"}, {"grok-", "xai"}, {"composer-", "cursor"},
+		{"deepseek-", "deepseek"}, {"qwen", "alibaba"}, {"glm-", "zhipuai"}, {"kimi-", "moonshotai"},
+		{"minimax-", "minimax"}, {"mimo-", "xiaomi"}, {"doubao-", "bytedance"},
+		{"muse-spark-", "meta"}, {"hy3", "tencent"}, {"hy4-", "tencent"},
+	} {
+		if strings.HasPrefix(id, family.prefix) {
+			return family.supplier
+		}
+	}
+	return listed
+}
+
+// Only settings receive source labels; gateway and DSH model IDs stay unchanged.
+func settingsModels(entries []provider.Entry, sources map[string]map[string]string) []settingsModel {
+	rows := make([]settingsModel, 0, len(entries))
+	for _, e := range entries {
+		row := settingsModel{Entry: e, ChannelID: e.Provider.ID, ChannelName: e.Provider.Name}
+		if e.Group != "" {
+			row.ChannelID, row.ChannelName = "group", "路由组"
+			row.SupplierID, row.SupplierName = "group", "组合模型"
+		} else {
+			row.SupplierID = modelSupplier(e.Model, sources[e.Provider.ID][e.Model])
+			if row.SupplierID == "" {
+				row.SupplierID, row.SupplierName = e.Provider.ID, e.Provider.Name
+			} else {
+				row.SupplierName = catalog.ProviderName(row.SupplierID)
+				if pr := provider.Preset(row.SupplierID); row.SupplierName == "" && pr != nil {
+					row.SupplierName = pr.Name
+				}
+				if row.SupplierName == "" {
+					row.SupplierName = row.SupplierID
+				}
+			}
+		}
+		rows = append(rows, row)
+	}
+	return rows
 }
 
 // Header values can be credentials: the UI sees names only and patches filled
