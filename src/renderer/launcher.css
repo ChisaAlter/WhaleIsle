@@ -28,19 +28,6 @@ body {
   -webkit-app-region: drag;
 }
 
-/* Square controls matching the main-window chrome (window-controls.css keeps
-   the colors, including the close-hover system exception). */
-.window-controls {
-  gap: 0;
-  padding: 12px 8px 4px;
-}
-
-.window-controls button {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-}
-
 .shell {
   display: flex;
   height: 100%;
@@ -885,7 +872,6 @@ body[data-launcher-state="downloading"] #route-picker {
 .home-desktop { padding: 20px 24px; margin-bottom: 24px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 16px; background: var(--dsw-specific-sidebar-fill); }
 .home-desktop-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
 .home-product { display: flex; align-items: center; gap: 12px; }
-.home-product img { flex: none; object-fit: contain; }
 .home-product h3 { margin: 2px 0 0; font-size: 16px; line-height: 24px; font-weight: 600; }
 .home-eyebrow { display: block; color: var(--dsw-alias-label-tertiary); font-size: 10px; line-height: 16px; letter-spacing: 1px; }
 .home-description { margin: 12px 0 16px; font-size: 14px; line-height: 22px; color: var(--dsw-alias-label-secondary); }

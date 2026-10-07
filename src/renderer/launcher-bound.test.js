@@ -51,7 +51,10 @@ test('home component controls track lifecycle and keep rollback separate; availa
   assert.equal(r.stopped.rowStart, '启动');
   assert.equal(r.stopped.rowOpen, false);
   assert.equal(r.stopped.rollbackVisible, false);
-  assert.ok(r.stopped.brand > 0);
+  assert.equal(r.stopped.desktopImages, 0, 'the desktop home card omits its avatar');
+  assert.equal(r.stopped.homeImages, 0, 'the WhaleBridge home card omits its avatar');
+  assert.ok(r.stopped.sidebarBrand > 0, 'the sidebar brand stays unchanged');
+  assert.ok(r.stopped.catalogBrand > 0, 'component management retains its existing icon');
   assert.equal(r.starting.homeDisabled, true);
   assert.equal(r.running.homeStart, false);
   assert.equal(r.running.homeStop, true);

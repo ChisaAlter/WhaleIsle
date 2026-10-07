@@ -56,16 +56,20 @@ function shellFactoryFixture({ platform, launcher, isPackaged }) {
   const attach = source.slice(source.indexOf('function attachWindowsAppDetails'), source.indexOf('function createMainWindow'));
   const main = source.slice(source.indexOf('function createMainWindow'), source.indexOf('/**\n * Pin a privileged'));
   const launcherFactory = source.slice(source.indexOf('function createLauncherWindow'), source.indexOf('/** Create or reuse the launcher'));
+  const boot = source.slice(source.indexOf('function showBoot'), source.indexOf('function showHarness'));
+  const showMain = source.slice(source.indexOf('function showMain'), source.indexOf('/** Tear down the desktop shell window'));
   const events = [];
+  const showCalls = [];
   class Window extends EventEmitter {
     constructor(options) {
       super();
       this.options = options;
       this.webContents = {};
+      this.minimized = false;
       events.push('construct');
     }
     isDestroyed() { return false; }
-    isMinimized() { return false; }
+    isMinimized() { return this.minimized; }
     setAppDetails(details) {
       // Model Chromium's ID-first write and the refresh it triggers.
       if (details.appId) {
@@ -78,10 +82,12 @@ function shellFactoryFixture({ platform, launcher, isPackaged }) {
       this.details = { ...this.details, ...details };
     }
     loadFile() { return Promise.resolve(); }
-    show() { events.push('show'); }
-    focus() {}
+    show() { events.push('show'); showCalls.push('show'); }
+    showInactive() { showCalls.push('show-inactive'); }
+    restore() { this.minimized = false; showCalls.push('restore'); }
+    focus() { showCalls.push('focus'); }
   }
-  const api = vm.runInNewContext(`let mainWindow = null, launcherWindow = null;\n${attach}\n${main}\n${launcherFactory}\n({ createMainWindow, createLauncherWindow, showLauncher })`, {
+  const api = vm.runInNewContext(`let mainWindow = null, launcherWindow = null;\nfunction getMainWindow() { return mainWindow; }\n${attach}\n${main}\n${boot}\n${showMain}\n${launcherFactory}\n({ createMainWindow, createLauncherWindow, showBoot, showMain, showLauncher })`, {
     app: { isPackaged, getAppPath: () => sourceOptions.appPath },
     process: { platform, execPath: sourceOptions.execPath, argv: ['--auth-token=private', '--qa'] },
     require: () => ({ isLauncherPackage: () => launcher }),
@@ -101,8 +107,11 @@ function shellFactoryFixture({ platform, launcher, isPackaged }) {
     rendererFile: name => name,
     preloadFile: () => 'isolated-preload.js',
     hideHarnessView() {},
+    isBootLoaded: () => false,
+    paintBackground() {},
+    currentTheme: () => ({ bg: '#151517' }),
   });
-  return { api, events };
+  return { api, events, showCalls };
 }
 
 for (const launcher of [false, true]) {
@@ -135,5 +144,34 @@ test('other platform shell windows do not call the Windows-only API', async () =
     await api.showLauncher();
     assert.equal(events.includes('relaunch') || events.includes('identity'), false);
     assert.equal(events.filter(event => event === 'show').length, 2);
+  }
+});
+
+test('background boot and launcher show inactive without restore or focus; explicit opening keeps normal activation', async () => {
+  const { api, showCalls } = shellFactoryFixture({ platform: 'win32', launcher: false, isPackaged: false });
+  await api.showBoot({ activate: false });
+  const main = api.createMainWindow();
+  main.emit('ready-to-show');
+  assert.deepEqual(showCalls, ['show-inactive']);
+  main.minimized = true;
+  api.showMain({ activate: false });
+  assert.deepEqual(showCalls, ['show-inactive', 'show-inactive']);
+  api.showMain();
+  assert.deepEqual(showCalls.slice(2), ['restore', 'show', 'focus']);
+
+  showCalls.length = 0;
+  const launcher = await api.showLauncher({ activate: false });
+  launcher.minimized = true;
+  await api.showLauncher({ activate: false });
+  assert.deepEqual(showCalls, ['show-inactive', 'show-inactive']);
+  await api.showLauncher();
+  assert.deepEqual(showCalls.slice(2), ['restore', 'show', 'focus']);
+});
+
+test('main ready-to-show uses the explicit creation activation option', () => {
+  for (const activate of [true, false]) {
+    const { api, showCalls } = shellFactoryFixture({ platform: 'win32', launcher: false, isPackaged: false });
+    api.createMainWindow({ activate }).emit('ready-to-show');
+    assert.deepEqual(showCalls, [activate ? 'show' : 'show-inactive']);
   }
 });

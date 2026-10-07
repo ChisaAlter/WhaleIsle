@@ -579,6 +579,55 @@ test('ipc-components WhaleBridge open reuses the settings-window path without re
   assert.equal(bridge.start.mock.callCount(), 4, 'unknown component must not start WhaleBridge');
 });
 
+for (const operation of ['update', 'rollback', 'uninstall']) {
+  test(`ipc-components WhaleBridge ${operation} invalidates settings only after a successful or changed runtime`, async (t) => {
+    const env = fakeEnv(t);
+    const oldUrl = 'http://127.0.0.1:3427/?k=' + 'a'.repeat(32);
+    const restoredUrl = 'http://127.0.0.1:3428/?k=' + 'b'.repeat(32);
+    let live, nextLive, outcome;
+    const bridge = {
+      state: () => live,
+      [operation]: t.mock.fn(async () => {
+        live = nextLive;
+        return outcome;
+      }),
+    };
+    const close = t.mock.method(require('../../main/whalebridge-window'), 'closeWhaleBridgeWindow', () => {});
+    ipcComponents._configureForTest({ ...env.deps, whaleBridge: bridge });
+    t.after(() => ipcComponents._configureForTest());
+    const channels = new Map();
+    ipcComponents.register({
+      IPC_ROLES,
+      LAUNCHER_ONLY: [IPC_ROLES.LAUNCHER],
+      handle: (channel, roles, listener) => channels.set(channel, { roles, listener }),
+      send() {},
+      onQuitCommit() {},
+    });
+    const { listener, roles } = channels.get(`shell:components-${operation}`);
+    assert.deepEqual(roles, [IPC_ROLES.LAUNCHER]);
+    const cases = [
+      { name: 'success retains existing close behavior', result: { ok: true }, after: oldUrl, closes: true },
+      { name: 'failed switch restored at a new origin', result: { ok: false, error: 'whalebridge-failed' }, after: restoredUrl, closes: true },
+      { name: 'failed switch restored with a new authentication key', result: { ok: false, error: 'whalebridge-failed' }, after: oldUrl.replace(/a{32}/, 'b'.repeat(32)), closes: true },
+      { name: 'staging failed before the healthy runtime changed', result: { ok: false, error: 'whalebridge-failed', message: 'SHA256 mismatch' }, after: oldUrl, closes: false },
+      { name: 'busy refusal retains the healthy window', result: { ok: false, error: 'busy' }, after: oldUrl, closes: false },
+      { name: 'active request refusal retains the healthy window', result: { ok: false, error: 'whalebridge-failed', message: 'Active DSH request' }, after: oldUrl, closes: false },
+    ];
+    const argument = operation === 'uninstall' ? { id: 'whalebridge', removeData: false } : 'whalebridge';
+    for (const scenario of cases) {
+      live = { url: oldUrl };
+      nextLive = { url: scenario.after };
+      outcome = scenario.result;
+      const before = close.mock.callCount();
+      assert.equal(await listener({}, argument), outcome, scenario.name);
+      assert.equal(close.mock.callCount() - before, Number(scenario.closes), scenario.name);
+    }
+    const call = bridge[operation].mock.calls[0].arguments;
+    assert.equal(typeof call[operation === 'uninstall' ? 1 : 0], 'function');
+    if (operation === 'uninstall') assert.equal(call[0], argument);
+  });
+}
+
 // --- real end-to-end over the launcher-notes fixture ----------------------------
 // Not faked: the tests/fixtures/components/launcher-notes payload is installed
 // into a temp userData, spawned via real node, probed over real HTTP, updated

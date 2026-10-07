@@ -24,4 +24,6 @@ Read the relevant module, not every document. Update changed product facts in th
 
 `npm start` rebuilds stale client output before launching Electron. Remove `ELECTRON_RUN_AS_NODE` from the launch environment if the host sets it. After product runtime changes, restart the repository app; documentation and tooling changes do not require launching it. `vendor/dshbot` is linked into the runtime, so its changes need a restart.
 
+Source Electron accepts `--background` to show initial main/launcher windows without activation. Later user entries retain normal focus behavior; recovery, update confirmations and normal quit can still require attention. An older already-running owner does not support this flag, so quit that owner normally before starting the new source.
+
 If the vendor web build reports TS6059/TS6307 for packages outside apps/web, clean stale incremental state with `node node_modules/typescript/bin/tsc -b apps/web --clean` from the vendor directory before rebuilding; do not change the web project file list to hide it.

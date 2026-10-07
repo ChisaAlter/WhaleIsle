@@ -8,19 +8,23 @@ const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
 
 test('desktop entry reveals the workspace without waiting for credentials or welcome', async () => {
   const body = source.match(/showHarness: async \(url, extra\) => \{([\s\S]*?)\n  \},/)[1];
-  const calls = [];
-  const context = vm.createContext({
-    enteredWorkspace: false,
-    openInitialWelcome: async () => true,
-    initializeDesktopAccount: () => new Promise(() => {}),
-    dsh: { sessionCookie: 'session=test' },
-    showHarness: async (...args) => { calls.push(args); return 'workspace'; },
-  });
-  const enter = vm.runInContext(`(async (url, extra) => {${body}\n})`, context);
-  assert.equal(await enter('http://localhost:3080', { reveal: true }), 'workspace');
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0][1].cookie, 'session=test');
-  assert.equal(calls[0][1].reveal, true);
+  for (const backgroundStartup of [false, true]) {
+    const calls = [];
+    const context = vm.createContext({
+      backgroundStartup,
+      enteredWorkspace: false,
+      openInitialWelcome: async () => true,
+      initializeDesktopAccount: () => new Promise(() => {}),
+      dsh: { sessionCookie: 'session=test' },
+      showHarness: async (...args) => { calls.push(args); return 'workspace'; },
+    });
+    const enter = vm.runInContext(`(async (url, extra) => {${body}\n})`, context);
+    assert.equal(await enter('http://localhost:3080', { reveal: true }), 'workspace');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][1].cookie, 'session=test');
+    assert.equal(calls[0][1].reveal, true);
+    assert.equal(calls[0][1].activate, !backgroundStartup);
+  }
 });
 
 test('desktop entry never imports or opens upstream welcome', () => {
