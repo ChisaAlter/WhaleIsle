@@ -739,6 +739,16 @@ func take(to *backup.Bundle, from backup.Bundle, part string) {
 	case "settings":
 		keys := from.Keys || (from.SettingsKeys != nil && *from.SettingsKeys)
 		s := from.Settings
+		if s != nil {
+			// WhaleBridge does not own upstream GUI fonts. Preserve the
+			// server's opaque values when uploading supplier settings.
+			copy := *s
+			copy.UIFont, copy.CodeFont = nil, nil
+			if to.Settings != nil {
+				copy.UIFont, copy.CodeFont = to.Settings.UIFont, to.Settings.CodeFont
+			}
+			s = &copy
+		}
 		if s != nil && !keys && (to.Keys || (to.SettingsKeys != nil && *to.SettingsKeys)) && to.Settings != nil {
 			// Sent without keys: keep the ones the server has, as for providers.
 			copy := *s

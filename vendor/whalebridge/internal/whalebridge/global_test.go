@@ -128,7 +128,16 @@ func TestSupplierSyncPreservesForeignRemoteSections(t *testing.T) {
 	}))
 	defer server.Close()
 	opaque := json.RawMessage(`{"servers":[{"id":"do-not-change"}]}`)
-	b := backup.Bundle{Version: backup.BundleVersion, Created: time.Now(), Library: &opaque, Profiles: map[string]json.RawMessage{"external": json.RawMessage(`{"model":"external/model"}`)}, Agents: map[string]string{"external.model": "preserve"}}
+	remoteUI := json.RawMessage(`{"family":"Remote UI","name":"Remote UI Regular","weight":400,"style":"normal","stretch":100}`)
+	remoteCode := json.RawMessage(`{"family":"Remote Code","name":"Remote Code Italic","weight":400,"style":"italic","stretch":100}`)
+	localUI := json.RawMessage(`{"family":"Local UI","name":"Local UI Regular","weight":500,"style":"normal","stretch":100}`)
+	localCode := json.RawMessage(`{"family":"Local Code","name":"Local Code Regular","weight":400,"style":"normal","stretch":100}`)
+	local := settings.Load()
+	local.UIFont, local.CodeFont = localUI, localCode
+	if err := settings.Save(local); err != nil {
+		t.Fatal(err)
+	}
+	b := backup.Bundle{Version: backup.BundleVersion, Created: time.Now(), Settings: &settings.Settings{Currency: "usd", UIFont: remoteUI, CodeFont: remoteCode}, Library: &opaque, Profiles: map[string]json.RawMessage{"external": json.RawMessage(`{"model":"external/model"}`)}, Agents: map[string]string{"external.model": "preserve"}}
 	var err error
 	stored, err = backup.Seal(b, "sync-pass")
 	if err != nil {
@@ -142,6 +151,10 @@ func TestSupplierSyncPreservesForeignRemoteSections(t *testing.T) {
 	defer cancel()
 	if err = davsync.SyncNow(ctx); err != nil {
 		t.Fatal(err)
+	}
+	local = settings.Load()
+	if !bytes.Equal(local.UIFont, localUI) || !bytes.Equal(local.CodeFont, localCode) {
+		t.Fatal("settings restore replaced this computer's opaque font choices")
 	}
 	if err = provider.Save(provider.Provider{ID: "fixture", Name: "Fixture", Chat: a.vendor, Models: []string{"test-model"}}); err != nil {
 		t.Fatal(err)
@@ -158,6 +171,31 @@ func TestSupplierSyncPreservesForeignRemoteSections(t *testing.T) {
 	}
 	if result.Library == nil || !bytes.Equal(*result.Library, opaque) || result.Agents["external.model"] != "preserve" || len(result.Profiles) != 1 {
 		t.Fatal("supplier sync destroyed excluded remote sections")
+	}
+	if result.Settings == nil || !bytes.Equal(result.Settings.UIFont, remoteUI) || !bytes.Equal(result.Settings.CodeFont, remoteCode) {
+		t.Fatal("provider-only backup round trip destroyed remote opaque font choices")
+	}
+	local = settings.Load()
+	local.Currency = "cny"
+	if err = settings.Save(local); err != nil {
+		t.Fatal(err)
+	}
+	if err = davsync.SyncNow(ctx); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	data = bytes.Clone(stored)
+	mu.Unlock()
+	result, err = backup.Open(data, "sync-pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Settings == nil || result.Settings.Currency != "cny" || !bytes.Equal(result.Settings.UIFont, remoteUI) || !bytes.Equal(result.Settings.CodeFont, remoteCode) {
+		t.Fatal("settings merge overwrote remote opaque font choices")
+	}
+	local = settings.Load()
+	if !bytes.Equal(local.UIFont, localUI) || !bytes.Equal(local.CodeFont, localCode) {
+		t.Fatal("settings sync changed this computer's opaque font choices")
 	}
 }
 
