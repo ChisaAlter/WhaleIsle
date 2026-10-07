@@ -46,18 +46,6 @@ body {
   -webkit-app-region: drag;
 }
 
-/* Match main-window geometry, overriding the shared round defaults loaded last. */
-html[data-boot-theme] .window-controls {
-  gap: 0;
-  padding: 12px 8px 4px;
-}
-
-html[data-boot-theme] .window-controls button {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-}
-
 /* BrowserView sits on top of boot.html; Electron still hit-tests this
    caption's drag region on the parent window and swallows Web UI clicks
    except where boot window-controls are no-drag. */
