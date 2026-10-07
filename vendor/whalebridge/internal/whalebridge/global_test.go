@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -132,6 +133,21 @@ func TestSupplierSyncPreservesForeignRemoteSections(t *testing.T) {
 	remoteCode := json.RawMessage(`{"family":"Remote Code","name":"Remote Code Italic","weight":400,"style":"italic","stretch":100}`)
 	localUI := json.RawMessage(`{"family":"Local UI","name":"Local UI Regular","weight":500,"style":"normal","stretch":100}`)
 	localCode := json.RawMessage(`{"family":"Local Code","name":"Local Code Regular","weight":400,"style":"normal","stretch":100}`)
+	assertFont := func(label string, got, want json.RawMessage) {
+		t.Helper()
+		var gotValue, wantValue any
+		if err := json.Unmarshal(got, &gotValue); err != nil {
+			t.Fatalf("%s: invalid font JSON %s (want %s): %v", label, got, want, err)
+		}
+		if err := json.Unmarshal(want, &wantValue); err != nil {
+			t.Fatal(err)
+		}
+		// Settings.Save indents RawMessage values too. Compare the full
+		// decoded objects so whitespace does not mask data preservation.
+		if !reflect.DeepEqual(gotValue, wantValue) {
+			t.Fatalf("%s: font value changed: got %s, want %s", label, got, want)
+		}
+	}
 	local := settings.Load()
 	local.UIFont, local.CodeFont = localUI, localCode
 	if err := settings.Save(local); err != nil {
@@ -153,9 +169,8 @@ func TestSupplierSyncPreservesForeignRemoteSections(t *testing.T) {
 		t.Fatal(err)
 	}
 	local = settings.Load()
-	if !bytes.Equal(local.UIFont, localUI) || !bytes.Equal(local.CodeFont, localCode) {
-		t.Fatal("settings restore replaced this computer's opaque font choices")
-	}
+	assertFont("settings restore local uiFont", local.UIFont, localUI)
+	assertFont("settings restore local codeFont", local.CodeFont, localCode)
 	if err = provider.Save(provider.Provider{ID: "fixture", Name: "Fixture", Chat: a.vendor, Models: []string{"test-model"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -172,9 +187,11 @@ func TestSupplierSyncPreservesForeignRemoteSections(t *testing.T) {
 	if result.Library == nil || !bytes.Equal(*result.Library, opaque) || result.Agents["external.model"] != "preserve" || len(result.Profiles) != 1 {
 		t.Fatal("supplier sync destroyed excluded remote sections")
 	}
-	if result.Settings == nil || !bytes.Equal(result.Settings.UIFont, remoteUI) || !bytes.Equal(result.Settings.CodeFont, remoteCode) {
-		t.Fatal("provider-only backup round trip destroyed remote opaque font choices")
+	if result.Settings == nil {
+		t.Fatal("provider-only backup round trip destroyed remote settings")
 	}
+	assertFont("provider-only round trip remote uiFont", result.Settings.UIFont, remoteUI)
+	assertFont("provider-only round trip remote codeFont", result.Settings.CodeFont, remoteCode)
 	local = settings.Load()
 	local.Currency = "cny"
 	if err = settings.Save(local); err != nil {
@@ -190,13 +207,14 @@ func TestSupplierSyncPreservesForeignRemoteSections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Settings == nil || result.Settings.Currency != "cny" || !bytes.Equal(result.Settings.UIFont, remoteUI) || !bytes.Equal(result.Settings.CodeFont, remoteCode) {
-		t.Fatal("settings merge overwrote remote opaque font choices")
+	if result.Settings == nil || result.Settings.Currency != "cny" {
+		t.Fatal("settings merge lost the currency update")
 	}
+	assertFont("settings merge remote uiFont", result.Settings.UIFont, remoteUI)
+	assertFont("settings merge remote codeFont", result.Settings.CodeFont, remoteCode)
 	local = settings.Load()
-	if !bytes.Equal(local.UIFont, localUI) || !bytes.Equal(local.CodeFont, localCode) {
-		t.Fatal("settings sync changed this computer's opaque font choices")
-	}
+	assertFont("settings sync local uiFont", local.UIFont, localUI)
+	assertFont("settings sync local codeFont", local.CodeFont, localCode)
 }
 
 func TestUsageLedgerAccountKeyAndCSV(t *testing.T) {
