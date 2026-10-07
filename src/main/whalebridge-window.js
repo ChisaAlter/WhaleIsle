@@ -1,12 +1,15 @@
 'use strict';
 
 let window = null;
-function openWhaleBridgeWindow(url) {
+function openWhaleBridgeWindow(url, { activate = true } = {}) {
   const { BrowserWindow, shell, nativeTheme } = require('electron');
   const origin = new URL(url).origin;
   if (new URL(origin).hostname !== '127.0.0.1') throw new Error('鲸桥只能打开本机管理界面');
   if (window && !window.isDestroyed()) {
-    if (new URL(window.webContents.getURL() || url).origin === origin) { window.show(); window.focus(); return; }
+    if (new URL(window.webContents.getURL() || url).origin === origin) {
+      if (activate) { window.show(); window.focus(); } else window.showInactive();
+      return;
+    }
     window.destroy();
   }
   const { assetFile } = require('./paths');
@@ -36,7 +39,7 @@ function openWhaleBridgeWindow(url) {
       if (/^https?:\/\//i.test(target)) void shell.openExternal(target);
     }
   });
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => activate ? win.show() : win.showInactive());
   win.once('closed', () => {
     nativeTheme.removeListener('updated', updateChrome);
     if (window === win) window = null;
