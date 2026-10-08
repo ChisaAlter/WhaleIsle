@@ -507,28 +507,58 @@ func buildAnthropic(r *Request, model string) []byte {
 }
 
 // anthropicDecoder leaves out the blocks of Anthropic's own server tools —
-// a web search it ran — whose input is no call of the client's.
-type anthropicDecoder struct{ server map[int]bool }
+// a web search it ran — whose input is no call of the client's. A
+// tool_use block whose start carries its whole input, as a relay in front
+// of another vendor's model may send it with no input_json_delta after
+// (蓝猫 on Discord), keeps that input; Anthropic's own start has an empty
+// one, its deltas after.
+type anthropicDecoder struct {
+	server map[int]bool
+	whole  map[int]bool // the tool_use blocks whose start carried their input
+}
 
 func (d *anthropicDecoder) decode(data string, emit func(Event)) error {
 	var ev struct {
 		Type         string `json:"type"`
 		Index        int    `json:"index"`
 		ContentBlock struct {
-			Type string `json:"type"`
+			Type  string          `json:"type"`
+			Input json.RawMessage `json:"input"`
 		} `json:"content_block"`
+		Delta struct {
+			Type string `json:"type"`
+		} `json:"delta"`
 	}
 	if json.Unmarshal([]byte(data), &ev) == nil {
 		switch ev.Type {
 		case "content_block_start":
 			d.server[ev.Index] = ev.ContentBlock.Type == "server_tool_use"
+			d.whole[ev.Index] = false
+			if ev.ContentBlock.Type == "tool_use" && fullInput(ev.ContentBlock.Input) {
+				if err := decodeAnthropic(data, emit); err != nil {
+					return err
+				}
+				d.whole[ev.Index] = true
+				emit(Event{Kind: KToolArgs, Text: string(ev.ContentBlock.Input)})
+				return nil
+			}
 		case "content_block_delta", "content_block_stop":
 			if d.server[ev.Index] {
 				return nil
 			}
+			if d.whole[ev.Index] && ev.Delta.Type == "input_json_delta" {
+				return nil // the input came whole already
+			}
 		}
 	}
 	return decodeAnthropic(data, emit)
+}
+
+// fullInput says whether a tool_use start's input is the call's own: an
+// object with something in it.
+func fullInput(in json.RawMessage) bool {
+	var m map[string]any
+	return json.Unmarshal(in, &m) == nil && len(m) > 0
 }
 
 // decodeAnthropic turns an Anthropic event stream into events.
@@ -603,14 +633,34 @@ type aUsage struct {
 	OutputTokens             int `json:"output_tokens"`
 	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	// CacheCreation splits the cache writes by how long they are kept,
+	// which Anthropic bills apart: 1.25× input for 5 minutes, 2× for an
+	// hour
+	CacheCreation *aCacheCreation `json:"cache_creation,omitempty"`
+}
+
+type aCacheCreation struct {
+	Ephemeral5m int `json:"ephemeral_5m_input_tokens"`
+	Ephemeral1h int `json:"ephemeral_1h_input_tokens"`
 }
 
 func (u aUsage) usage() Usage {
-	return Usage{Input: u.InputTokens, Output: u.OutputTokens, CacheRead: u.CacheReadInputTokens, CacheWrite: u.CacheCreationInputTokens}
+	out := Usage{Input: u.InputTokens, Output: u.OutputTokens, CacheRead: u.CacheReadInputTokens, CacheWrite: u.CacheCreationInputTokens}
+	if c := u.CacheCreation; c != nil {
+		out.CacheWrite = max(out.CacheWrite, c.Ephemeral5m+c.Ephemeral1h)
+		out.CacheWrite1h = c.Ephemeral1h
+	}
+	return out
 }
 
+// anthropic is the usage as Anthropic says it, the cache writes split by
+// how long they are kept where some were for an hour.
 func (u Usage) anthropic() aUsage {
-	return aUsage{InputTokens: u.Input, OutputTokens: u.Output, CacheReadInputTokens: u.CacheRead, CacheCreationInputTokens: u.CacheWrite}
+	out := aUsage{InputTokens: u.Input, OutputTokens: u.Output, CacheReadInputTokens: u.CacheRead, CacheCreationInputTokens: u.CacheWrite}
+	if h := min(u.CacheWrite1h, u.CacheWrite); h > 0 {
+		out.CacheCreation = &aCacheCreation{Ephemeral5m: u.CacheWrite - h, Ephemeral1h: h}
+	}
+	return out
 }
 
 func stopFromAnthropic(s string) string {
@@ -619,9 +669,14 @@ func stopFromAnthropic(s string) string {
 		// the second is Claude 4.5+ running into its context window
 		// before max_tokens: the reply is cut short all the same
 		return "length"
-	case "tool_use":
+	case "tool_use",
+		// an Anthropic-shaped relay in front of another vendor's model,
+		// passing on OpenAI's reasons as they came (蓝猫 on Discord)
+		"tool_calls", "function_call":
 		return "tool"
-	case "refusal":
+	case "length":
+		return "length"
+	case "refusal", "content_filter":
 		return "filter"
 	}
 	return "stop"

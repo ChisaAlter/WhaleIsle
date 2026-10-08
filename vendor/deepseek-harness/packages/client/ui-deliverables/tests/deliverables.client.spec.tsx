@@ -931,7 +931,7 @@ describe('plugin registration', () => {
     )
     const service = (ctx as { get(name: string): ChatFileMentions | undefined }).get('chatFileMentions')
     const mentions = service?.forClosing(owner, SessionId('viewed-session'))
-    expect(mentions?.resolve('report.html')?.label).toBe('Open site/report.html in sidebar')
+    expect(mentions?.resolve('report.html')?.label).toBe('Preview site/report.html')
     mentions?.resolve('report.html')?.open()
     expect(opened).toEqual(['site/report.html'])
     const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
@@ -942,11 +942,11 @@ describe('plugin registration', () => {
       const mentions = service?.forClosing(delivered, SessionId('child-session'))
       for (const text of ['report.docx', 'out/report.docx']) {
         const mention = mentions?.resolve(text)
-        expect(mention?.label).toBe('Open out/report.docx in sidebar')
+        expect(mention?.label).toBe('Preview out/report.docx')
         mention?.open()
       }
     }
-    expect(preview.mock.calls).toEqual(Array.from({ length: 4 }, () => ['out/report.docx']))
+    expect(preview.mock.calls).toEqual(Array.from({ length: 4 }, () => ['out/report.docx', { presentation: 'mini' }]))
     expect(fetcher).not.toHaveBeenCalled()
     const face = entry!.inject!(SessionId('child-session') as never) as unknown as DeliverablesInjected
     fetcher.mockResolvedValueOnce(Response.json({ name: 'desktop', available: true, fileManager: 'finder' }))

@@ -760,7 +760,7 @@
   /* The body inside is unpadded and reaches the edges, so the frame clips it
      to its own corners. */
   overflow: hidden;
-  background: var(--dsw-alias-bg-layer-2);
+  isolation: isolate;
   border-radius: var(--dsw-radius-panel);
   /* The menu's shadow with the stroke rebound one step lighter than the
      default (l2): the panel reads as the same kind of raised surface, and the
@@ -768,6 +768,18 @@
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
   box-shadow: var(--dsw-elevation-prominent);
   pointer-events: auto;
+}
+
+/* Keep the blur off the frame so fixed tooltips retain viewport coordinates. */
+.float::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  pointer-events: none;
 }
 
 /* The active panel keeps the same frame: it is already on top of the z order

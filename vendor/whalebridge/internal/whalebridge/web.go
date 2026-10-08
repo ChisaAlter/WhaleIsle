@@ -9,21 +9,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/yetone/magpie/internal/appdir"
 	"github.com/yetone/magpie/internal/catalog"
+	"github.com/yetone/magpie/internal/davsync"
 	"github.com/yetone/magpie/internal/edit"
 	"github.com/yetone/magpie/internal/gateway"
 	"github.com/yetone/magpie/internal/netproxy"
 	"github.com/yetone/magpie/internal/provider"
+	"github.com/yetone/magpie/internal/sessions"
+	"github.com/yetone/magpie/internal/settings"
 	"github.com/yetone/magpie/internal/usage"
 )
 
@@ -45,8 +48,8 @@ func decode(w http.ResponseWriter, r *http.Request, v any) error {
 }
 
 // Run binds both listeners before publishing readiness or registering the DSH
-// route. It starts no client installers, account-switching jobs, session scans,
-// plugin updaters or LAN listener from Magpie's general-purpose server.
+// route. Subscription maintenance runs here; client installers, native account
+// switching, session scans and the LAN listener are excluded.
 func Run(version string) error {
 	if os.Getenv("LAUNCHER_COMPONENT_DATA_DIR") == "" || os.Getenv("WHALEBRIDGE_DSH_HOME") == "" {
 		return fmt.Errorf("请从鲸屿启动器安装并打开鲸桥")
@@ -84,6 +87,16 @@ func Run(version string) error {
 	usage.Agents = func() []usage.Known {
 		return []usage.Known{{ID: "dsh", Names: []string{"dsh", "deepseek-harness"}, UA: []string{"deepseek-harness"}}}
 	}
+	// Supplier accounting covers calls served by this component. Native
+	// client session discovery is outside WhaleBridge's management scope.
+	usage.LogCalls = func(time.Time) []sessions.Call { return nil }
+	s := settings.Load()
+	if s.OTel.Sessions {
+		s.OTel.Sessions = false
+		if err := settings.Save(s); err != nil {
+			return err
+		}
+	}
 	g, err := net.Listen("tcp", gateway.Addr())
 	if err != nil {
 		return fmt.Errorf("鲸桥网关端口不可用: %w", err)
@@ -97,7 +110,13 @@ func Run(version string) error {
 	if err := syncDSH(); err != nil {
 		return err
 	}
+	stopCatalogSync := watchDSHCatalog(ctx)
+	defer stopCatalogSync()
 	server := gateway.New()
+	stopOTel := usage.StartOTel()
+	defer stopOTel()
+	gateway.ArchiveBucket = func() (gateway.Putter, bool) { b, ok := davsync.S3Bucket(); return b, ok }
+	go davsync.Run(ctx)
 	failures := make(chan error, 2)
 	go func() {
 		failures <- (&http.Server{Handler: server.Handler(), ReadHeaderTimeout: 30 * time.Second}).Serve(g)
@@ -108,7 +127,7 @@ func Run(version string) error {
 	accountRoutes(mux)
 	mux.HandleFunc("GET /api/whalebridge/status", func(w http.ResponseWriter, r *http.Request) {
 		models, _ := provider.CatalogFor("dsh")
-		writeJSON(w, map[string]any{"models": len(models), "defaultModel": isDefault(), "version": version, "gateway": gateway.URL(), "pid": os.Getpid(), "catalog": catalog.Status()})
+		writeJSON(w, map[string]any{"models": len(models), "defaultModel": isDefault(), "version": version, "gateway": gateway.URL(), "pid": os.Getpid(), "catalog": catalog.Status(), "syncError": dshSyncError()})
 	})
 	mux.HandleFunc("POST /api/whalebridge/maintenance", func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
@@ -125,48 +144,9 @@ func Run(version string) error {
 		}
 		writeJSON(w, map[string]any{"active": active})
 	})
-	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, r *http.Request) {
-		if err := provider.FileError(); err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		type supplier struct {
-			ID          string          `json:"id"`
-			Name        string          `json:"name"`
-			Preset      string          `json:"preset"`
-			Chat        string          `json:"chat"`
-			Responses   string          `json:"responses"`
-			Anthropic   string          `json:"anthropic"`
-			Decide      string          `json:"decide"`
-			HeaderNames []string        `json:"headerNames"`
-			KeySet      bool            `json:"keySet"`
-			Models      []string        `json:"models"`
-			Off         bool            `json:"off"`
-			Routing     string          `json:"routing"`
-			Proxy       string          `json:"proxy"`
-			Fallback    []string        `json:"fallback"`
-			Available   []catalog.Model `json:"available"`
-			ModelCount  int             `json:"modelCount"`
-			Account     bool            `json:"account"`
-		}
-		suppliers := []supplier{}
-		modelSuppliers := map[string]map[string]string{}
-		for _, p := range provider.All() {
-			names := make([]string, 0, len(p.Headers))
-			for name := range p.Headers {
-				names = append(names, name)
-			}
-			sort.Strings(names)
-			available := p.Available()
-			modelSuppliers[p.ID] = map[string]string{}
-			for _, m := range available {
-				modelSuppliers[p.ID][m.ID] = modelSupplier(m.ID, m.Provider)
-			}
-			suppliers = append(suppliers, supplier{ID: p.ID, Name: p.Name, Preset: p.Preset, Chat: p.Chat, Responses: p.Responses, Anthropic: p.Anthropic, Decide: p.Decide, HeaderNames: names, KeySet: p.Key != "", Models: p.Models, Off: p.Off, Routing: p.Routing, Proxy: p.Proxy, Fallback: p.Fallback, Available: available, ModelCount: len(p.Exposed()), Account: p.Account != nil})
-		}
-		shown, hidden := provider.CatalogFor("dsh")
-		writeJSON(w, map[string]any{"version": version, "gateway": gateway.URL(), "providers": suppliers, "presets": provider.Presets(), "models": settingsModels(shown, modelSuppliers), "hidden": settingsModels(hidden, modelSuppliers), "groups": provider.Groups(), "defaultModel": isDefault(), "catalog": catalog.Status()})
-	})
+	mux.HandleFunc("GET /api/state", stateHandler(version))
+	providerRoutes(mux, server)
+	globalRoutes(mux, server, version)
 	mux.HandleFunc("GET /api/usage", func(w http.ResponseWriter, r *http.Request) {
 		period := usage.Period(r.URL.Query().Get("period"))
 		switch period {
@@ -180,94 +160,8 @@ func Run(version string) error {
 		writeJSON(w, usage.Summarize(period))
 	})
 	mux.HandleFunc("POST /api/provider", mutate(func(w http.ResponseWriter, r *http.Request) error {
-		var input struct {
-			ID        string             `json:"id"`
-			Preset    string             `json:"preset"`
-			Name      string             `json:"name"`
-			Chat      string             `json:"chat"`
-			Responses string             `json:"responses"`
-			Anthropic string             `json:"anthropic"`
-			Decide    *string            `json:"decide"`
-			Region    string             `json:"region"`
-			Workspace string             `json:"workspace"`
-			Headers   map[string]*string `json:"headers"`
-			Key       *string            `json:"key"`
-			Models    []string           `json:"models"`
-			Off       bool               `json:"off"`
-			Routing   string             `json:"routing"`
-			Proxy     string             `json:"proxy"`
-			Fallback  []string           `json:"fallback"`
-		}
-		if err := decode(w, r, &input); err != nil {
-			return err
-		}
-		var p provider.Provider
-		if input.ID != "" {
-			old, err := provider.Find(input.ID)
-			if err != nil {
-				return err
-			}
-			p = *old
-		} else if input.Preset != "" {
-			var err error
-			p, err = provider.FromPreset(input.Preset)
-			if err != nil {
-				return err
-			}
-		}
-		if input.Region != "" {
-			pr := provider.Preset(p.Preset)
-			found := false
-			if pr != nil {
-				for _, region := range pr.Regions {
-					if region.ID == input.Region {
-						found = true
-						p.Catalog = pr.Catalog
-						if region.Catalog != "" {
-							p.Catalog = region.Catalog
-						}
-						p.Website, p.KeysURL = pr.Website, pr.KeysURL
-						if region.Website != "" {
-							p.Website = region.Website
-						}
-						if region.KeysURL != "" {
-							p.KeysURL = region.KeysURL
-						}
-						if input.Decide == nil {
-							p.Decide = region.Decide
-						}
-						break
-					}
-				}
-			}
-			if !found {
-				return fmt.Errorf("未知供应商区域或套餐")
-			}
-		}
-		p.Name, p.Chat, p.Responses, p.Anthropic = input.Name, input.Chat, input.Responses, input.Anthropic
-		if input.Decide != nil {
-			p.Decide = *input.Decide
-		}
-		if strings.Contains(p.Decide, provider.WorkspaceID) {
-			if strings.TrimSpace(input.Workspace) == "" {
-				return fmt.Errorf("请填写 API 密钥所属的 Workspace ID，或选择 Token Plan")
-			}
-			p.Decide = strings.ReplaceAll(p.Decide, provider.WorkspaceID, strings.TrimSpace(input.Workspace))
-		}
-		if p.Account == nil {
-			if err := patchHeaders(&p, input.Headers); err != nil {
-				return err
-			}
-		}
-		if input.Key != nil {
-			p.Key = *input.Key
-		}
-		p.Models, p.Off, p.Routing, p.Proxy, p.Fallback = input.Models, input.Off, input.Routing, input.Proxy, input.Fallback
-		if input.ID == "" {
-			_, err := provider.Add(p)
-			return err
-		}
-		return provider.Save(p)
+		_, err := saveProvider(r)
+		return err
 	}))
 	mux.HandleFunc("POST /api/provider/delete", mutate(func(w http.ResponseWriter, r *http.Request) error {
 		var b struct {
@@ -336,8 +230,8 @@ func Run(version string) error {
 		}
 		to := strings.ToLower(strings.TrimSpace(b.ID))
 		from := strings.ToLower(strings.TrimSpace(b.From))
-		if to == "" || to != provider.Slug(to) {
-			return fmt.Errorf("路由 ID 只能包含小写字母、数字和连字符")
+		if to == "" || to != provider.GroupSlug(to) {
+			return fmt.Errorf("路由 ID 只能包含小写字母、数字、点和连字符")
 		}
 		if from != to {
 			taken, err := provider.GroupIDTaken(to)
@@ -370,12 +264,33 @@ func Run(version string) error {
 	}))
 	mux.HandleFunc("POST /api/group/delete", mutate(func(w http.ResponseWriter, r *http.Request) error {
 		var b struct {
-			ID string `json:"id"`
+			ID  string   `json:"id"`
+			IDs []string `json:"ids"`
 		}
 		if err := decode(w, r, &b); err != nil {
 			return err
 		}
-		return provider.DeleteGroup(b.ID)
+		if b.ID != "" {
+			b.IDs = append(b.IDs, b.ID)
+		}
+		if len(b.IDs) == 0 {
+			return fmt.Errorf("请选择路由组")
+		}
+		for _, id := range b.IDs {
+			if err := provider.DeleteGroup(id); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	mux.HandleFunc("POST /api/group/order", mutate(func(w http.ResponseWriter, r *http.Request) error {
+		var b struct {
+			Order []string `json:"order"`
+		}
+		if err := decode(w, r, &b); err != nil {
+			return err
+		}
+		return provider.SetGroupOrder(b.Order)
 	}))
 	mux.HandleFunc("POST /api/dsh/sync", mutate(func(w http.ResponseWriter, r *http.Request) error { return nil }))
 	mux.HandleFunc("POST /api/catalog/refresh", mutate(func(w http.ResponseWriter, r *http.Request) error { return catalog.Sync(r.Context()) }))
@@ -419,7 +334,36 @@ func Run(version string) error {
 	defer os.Remove(filepath.Join(appdir.Config(), "state.json"))
 	go func() { failures <- (&http.Server{Handler: auth, ReadHeaderTimeout: 10 * time.Second}).Serve(listener) }()
 	go provider.StartModelRefresh(ctx)
+	gateway.StartWhaleBridgeSubscriptions(ctx)
 	return <-failures
+}
+
+func stateHandler(version string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := provider.FileError(); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		suppliers := []map[string]any{}
+		modelSuppliers := map[string]map[string]string{}
+		for _, p := range provider.All() {
+			available := p.Available()
+			modelSuppliers[p.ID] = map[string]string{}
+			for _, m := range available {
+				modelSuppliers[p.ID][m.ID] = modelSupplier(m.ID, m.Provider)
+			}
+			suppliers = append(suppliers, supplierInfo(p))
+		}
+		shown, hidden := provider.CatalogFor("dsh")
+		removed := []map[string]any{}
+		for _, p := range provider.Hidden() {
+			row := supplierInfo(p)
+			row["hidden"], row["quiet"], row["tucked"] = true, p.Quiet, p.Tucked
+			removed = append(removed, row)
+		}
+		s := settings.Load()
+		writeJSON(w, map[string]any{"version": version, "gateway": gateway.URL(), "providers": suppliers, "removed": removed, "excluded": provider.Excluded(), "presets": provider.Presets(), "models": settingsModels(shown, modelSuppliers), "hidden": settingsModels(hidden, modelSuppliers), "groups": provider.Groups(), "defaultModel": isDefault(), "catalog": catalog.Status(), "syncError": dshSyncError(), "chineseUnits": s.ChineseUnits, "quotaLeft": s.QuotaLeft})
+	}
 }
 
 type settingsModel struct {
@@ -428,6 +372,7 @@ type settingsModel struct {
 	ChannelName  string `json:"channelName"`
 	SupplierID   string `json:"supplierId"`
 	SupplierName string `json:"supplierName"`
+	CanFast      bool   `json:"canFast,omitempty"`
 }
 
 // Relay catalogs label every model with the relay (for example Cursor), not
@@ -457,6 +402,7 @@ func settingsModels(entries []provider.Entry, sources map[string]map[string]stri
 	rows := make([]settingsModel, 0, len(entries))
 	for _, e := range entries {
 		row := settingsModel{Entry: e, ChannelID: e.Provider.ID, ChannelName: e.Provider.Name}
+		row.CanFast = e.Group == "" && provider.CanFast(e.Provider, e.Model)
 		if e.Group != "" {
 			row.ChannelID, row.ChannelName = "group", "路由组"
 			row.SupplierID, row.SupplierName = "group", "组合模型"
@@ -492,6 +438,9 @@ func patchHeaders(p *provider.Provider, changes map[string]*string) error {
 		if value != nil && strings.ContainsAny(*value, "\r\n") {
 			return fmt.Errorf("HTTP Header 值不能包含换行")
 		}
+		if value != nil && strings.TrimSpace(*value) == "" {
+			continue
+		}
 		for existing := range p.Headers {
 			if strings.EqualFold(existing, name) {
 				delete(p.Headers, existing)
@@ -511,6 +460,52 @@ func syncConfiguration() error {
 	mutations.Lock()
 	defer mutations.Unlock()
 	return syncDSH()
+}
+
+var catalogSyncState struct {
+	sync.Mutex
+	err string
+}
+
+func dshSyncError() string {
+	catalogSyncState.Lock()
+	defer catalogSyncState.Unlock()
+	return catalogSyncState.err
+}
+
+// Background supplier refreshes and automatic cloud sync also change the
+// DSH model list. Queue the callback because provider writes can occur inside
+// an API mutation; the worker then sees the latest atomically stored catalog.
+func watchDSHCatalog(ctx context.Context) func() {
+	wake := make(chan struct{}, 1)
+	previous := catalog.Changed
+	catalog.Changed = func() {
+		if previous != nil {
+			previous()
+		}
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+	}
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-wake:
+				err := syncConfiguration()
+				catalogSyncState.Lock()
+				catalogSyncState.err = ""
+				if err != nil {
+					catalogSyncState.err = err.Error()
+					log.Printf("鲸桥后台 DSH 同步失败: %v", err)
+				}
+				catalogSyncState.Unlock()
+			}
+		}
+	}()
+	return func() { catalog.Changed = previous }
 }
 func mutate(fn func(http.ResponseWriter, *http.Request) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

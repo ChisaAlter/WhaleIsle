@@ -1,15 +1,16 @@
 // Web e2e: assembled desktop chrome on the shipped web composition —
-// titlebar trailing cluster (Session log, Git, terminal + surfaces toggles)
+// titlebar trailing cluster (Git, terminal + surfaces toggles), Session menu,
 // and the right-panel guide. Zero model calls: a connected
-// workspace unlocks the current Session so Session log mounts; Git IPC is
-// absent in this lane, so the split button stays on the disabled Commit
-// label. A stray stream fails loud on the open llm seam.
+// workspace supplies one settled turn so the Session menu mounts. A desktop
+// IPC fixture supplies a clean main branch so the real Git controls and menu
+// mount. A stray stream fails loud on the open llm seam.
 import { mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { createMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
@@ -29,15 +30,50 @@ describe('web e2e: titlebar cluster and right sidebar guide', () => {
 
   beforeAll(async () => {
     await mkdir(SNAPSHOT_DIR, { recursive: true })
-    // The shipped default keeps the Session log capsule hidden; these
-    // assertions cover the opt-in path (Interface Settings switch).
-    scaffold = await launchWebScaffold({ sessionLogTitlebarAction: true })
+    scaffold = await launchWebScaffold()
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
+    await page.addInitScript(() => {
+      const status = {
+        refName: 'main', isRepo: true, isDefaultRef: true,
+        hasWorkingTreeChanges: false, hasUpstream: true, hasPrimaryRemote: true,
+        aheadCount: 0, behindCount: 0,
+        workingTree: { files: [], insertions: 0, deletions: 0 }, pr: null,
+      }
+      const holder = window as Window & { shell?: Record<string, unknown> }
+      holder.shell = {
+        ...(holder.shell && typeof holder.shell === 'object' ? holder.shell : {}),
+        gitStatus: async () => status,
+        gitFetchForStatus: async () => status,
+        gitReadPullRequest: async () => ({ ok: true, pr: null }),
+        gitBranchList: async () => ({
+          ok: true,
+          branches: [{ name: 'main', isRemote: false, isCurrent: true, isDefault: true }],
+        }),
+      }
+    })
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
+    const agent = scaffold.ctx.agents.list()[0]
+    if (!agent) throw new Error('workspace did not create an Agent')
+    agent.session.append('turn/start', { turn: 1 })
+    agent.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'Check desktop chrome.' }], source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    agent.session.append('step/start', { turn: 1, step: 1 })
+    agent.session.append('assistant/message', {
+      stream: [], turn: 1, step: 1,
+      message: createMessage({
+        role: 'assistant', content: [{ type: 'text', text: 'Desktop chrome ready.' }],
+        source: { kind: 'model', provider: 'fixture', model: 'fixture' },
+      }),
+    }, { surfaceOp: 'append' })
+    agent.session.append('step/end', { turn: 1, step: 1 })
+    agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await scaffold.ctx.sessions.flush(agent.session)
+    await page.getByText('Desktop chrome ready.').waitFor({ timeout: 10_000 })
   }, 120_000)
 
   afterAll(async () => {
@@ -45,7 +81,7 @@ describe('web e2e: titlebar cluster and right sidebar guide', () => {
     await scaffold?.close()
   })
 
-  it('shows Session log, Git, and two panel toggles left of the frame edge', async () => {
+  it('keeps logs in the Session menu and Git with two panel toggles at the frame edge', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-desktop-chrome-titlebar'))
     const cluster = page.locator('#dshd-shell-titlebar-trailing')
     await cluster.waitFor({ timeout: 15_000 })
@@ -55,14 +91,20 @@ describe('web e2e: titlebar cluster and right sidebar guide', () => {
     const gitMenu = cluster.getByRole('button', { name: 'Git actions' })
     const terminal = cluster.getByRole('button', { name: 'Toggle terminal drawer' })
     const surfaces = cluster.getByRole('button', { name: 'Toggle right panel' })
-    expect(await sessionLog.isVisible()).toBe(true)
+    expect(await sessionLog.count()).toBe(0)
+    const more = page.getByRole('button', { name: 'More actions', exact: true })
+    await more.click()
+    const download = page.getByRole('menuitem', { name: 'Download session log', exact: true })
+    await download.waitFor({ state: 'visible', timeout: 5_000 })
+    expect(await download.isEnabled()).toBe(true)
+    await page.keyboard.press('Escape')
+    await branch.waitFor({ state: 'visible', timeout: 5_000 })
     expect(await branch.isVisible()).toBe(true)
     expect(await git.isVisible()).toBe(true)
     expect(await gitMenu.isVisible()).toBe(true)
     expect(await terminal.isVisible()).toBe(true)
     expect(await surfaces.isVisible()).toBe(true)
     const boxes = await Promise.all([
-      sessionLog.boundingBox(),
       branch.boundingBox(),
       git.boundingBox(),
       terminal.boundingBox(),
@@ -76,7 +118,7 @@ describe('web e2e: titlebar cluster and right sidebar guide', () => {
     }
     const snapshot = await captureStableAria(page, '#dshd-shell-titlebar-trailing', scaffold.workspaceCwd)
     await compareOrRefreshGolden(TITLEBAR_EXPECTED, snapshot, MODE)
-    expect(snapshot).toMatch(/session log/i)
+    expect(snapshot).not.toMatch(/session log/i)
     expect(snapshot).toContain('Switch branch')
     expect(snapshot).toContain('Commit')
     expect(snapshot).toContain('Git actions')
@@ -123,7 +165,7 @@ describe('web e2e: titlebar cluster and right sidebar guide', () => {
     await guide.waitFor({ state: 'visible', timeout: 10_000 })
     const snapshot = await captureStableAria(page, '[data-sidebar-right-guide]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(GUIDE_EXPECTED, snapshot, MODE)
-    expect(snapshot).toContain('File viewer')
+    expect(snapshot).toContain('heading "Open a panel"')
     expect(snapshot).toContain('New terminal')
     expect(snapshot).toContain('Files')
     expect(snapshot).toContain('Workspace diff')
@@ -156,11 +198,9 @@ describe('web e2e: titlebar cluster and right sidebar guide', () => {
     }
     await expect.poll(() => surfaces.getAttribute('aria-pressed'), { timeout: 10_000 }).toBe('true')
     const cluster = page.locator('#dshd-shell-titlebar-trailing')
-    const sessionLog = cluster.getByRole('button', { name: /session log/i })
     const branch = cluster.getByRole('button', { name: 'Switch branch' })
     const git = cluster.getByRole('button', { name: 'Commit' })
     const boxes = await Promise.all([
-      sessionLog.boundingBox(),
       branch.boundingBox(),
       git.boundingBox(),
     ])
@@ -172,6 +212,7 @@ describe('web e2e: titlebar cluster and right sidebar guide', () => {
     }
     await branch.click()
     await expect.poll(() => branch.getAttribute('aria-expanded'), { timeout: 5_000 }).toBe('true')
+    await page.getByRole('menuitem', { name: 'main', exact: true }).waitFor({ state: 'visible', timeout: 5_000 })
     expect(tripwire.pageErrors, tripwire.pageErrors.join('\n')).toEqual([])
   })
 

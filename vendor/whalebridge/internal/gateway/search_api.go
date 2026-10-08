@@ -43,6 +43,10 @@ func canSearch() bool {
 	return len(provider.SearchAPIs()) > 0
 }
 
+// CanSearch is canSearch for the agents' rows: whether a web_search
+// server tool asked of any model here is answered.
+func CanSearch() bool { return canSearch() }
+
 // Searcher names the provider and model magpie searches with for a model
 // that can't, "" when none can.
 func Searcher() string {

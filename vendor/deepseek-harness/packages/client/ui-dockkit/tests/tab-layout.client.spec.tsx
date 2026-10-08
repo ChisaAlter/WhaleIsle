@@ -38,6 +38,19 @@ function mounted(controller = seededController(), options: Partial<ComponentProp
   return { controller, view, redraw, callbacks, node, body: (id: TabId) => node(`[data-body="${id}"]`) }
 }
 
+it('mounts an opted-in hidden body on open while other retained bodies still wait for visibility', () => {
+  const controller = seededController()
+  const lazy = getPane(controller.getSnapshot().state, controller.getSnapshot().state.rootId).tabs[0]!
+  const eager = controller.openContent({ kind: 'browser', contentId: 'browser:preview', title: 'Preview' })
+  controller.setExpanded(false)
+  const h = mounted(controller, { keepMounted: () => true, mountOnOpen: tab => tab.kind === 'browser', active: false })
+  expect(h.view.container.querySelector('[data-body]')).toBeNull()
+  h.redraw({ active: true })
+  expect(h.body(eager)).toBeDefined()
+  expect(h.body(eager).closest('[data-dockkit-content]')).toHaveProperty('inert', true)
+  expect(h.view.container.querySelector(`[data-body="${lazy}"]`)).toBeNull()
+})
+
 it('retains visited bodies and hands keyboard focus to the newly selected strip', () => {
   const controller = seededController()
   controller.setExpanded(true)

@@ -51,7 +51,21 @@ func bareModel(m string) string {
 // is the member another magpie's routing group sent it to (GroupRouted).
 func Swapped(sent, served string) bool {
 	a, b := bareModel(sent), bareModel(served)
-	return a != "" && b != "" && a != b && a != "auto" && bareModel(provider.EffortFamily(a)) != b && !GroupRouted(sent, served)
+	return a != "" && b != "" && squash(a) != squash(b) && a != "auto" && squash(bareModel(provider.EffortFamily(a))) != squash(b) && !GroupRouted(sent, served)
+}
+
+// squash is a bare name without its separators, so a vendor that writes
+// the dots of a version as hyphens (Volcengine Ark: deepseek-v4.1-flash
+// answered as deepseek-v4-1-flash, vincentzhang on Discord) or underscores
+// names the same model.
+var squash = strings.NewReplacer(".", "", "-", "", "_", "", " ", "").Replace
+
+// SameSpelled reports whether served is sent spelled with other separators
+// or case: a row or route kept marked swapped before Swapped knew it is
+// read as not swapped.
+func SameSpelled(sent, served string) bool {
+	a := squash(bareModel(sent))
+	return a != "" && a == squash(bareModel(served))
 }
 
 // GroupRouted reports whether sent is a routing group of another magpie

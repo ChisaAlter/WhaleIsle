@@ -60,9 +60,18 @@ describe('AppFrame.module.css titlebar trailing cluster', () => {
     expect(declarations('.frame[data-phone] .detailsCol')?.get('-webkit-app-region')).toBeUndefined()
   })
 
-  it('stops the trailing cluster before an open surfaces column', () => {
-    const open = declarations('.frame:not([data-rightbar-collapsed]) .titlebarTrailing')
-    expect(open?.get('grid-column')).toBe('2 / 3')
-    expect(open?.get('margin-right')).toBe('8px')
+  it('keeps Git at the caption right edge and places pane tabs below that row', () => {
+    const trailing = declarations('.titlebarTrailing')
+    expect(trailing?.get('grid-column')).toBe('2 / -1')
+    expect(trailing?.get('grid-row')).toBe('1')
+    expect(trailing?.get('height')).toBe('32px')
+    expect(trailing?.get('margin-top')).toBe('8px')
+    expect(trailing?.get('align-items')).toBe('center')
+    expect(trailing?.get('flex-shrink')).toBe('0')
+    expect(declarations('.frame:not([data-rightbar-collapsed]) .titlebarTrailing')).toBeUndefined()
+    expect(declarations('.detailsCol')?.get('grid-row')).toBe('2 / 4')
+    expect(declarations('.titlebarBand')?.get('min-height')).toBe('52px')
+    expect(declarations('.frame[data-titlebar-trailing-hidden] .titlebarTrailing')?.get('display')).toBe('none')
+    expect(declarations('.frame[data-compact-header] .titlebarTrailing')).toBeUndefined()
   })
 })

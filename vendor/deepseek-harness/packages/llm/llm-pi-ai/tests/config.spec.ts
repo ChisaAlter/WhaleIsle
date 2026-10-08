@@ -18,6 +18,17 @@ const routeWith = (profile: Record<string, unknown>): (() => unknown) =>
 const configWith = (model: Record<string, unknown>): (() => unknown) =>
   routeWith({ models: [{ id: 'm', ...model }] })
 
+describe('model compaction threshold', () => {
+  it.each([0, -1, 1.5, Number.NaN])('rejects threshold %s at schema and catalog resolution', (compactionThreshold) => {
+    expect(configWith({ compactionThreshold })).toThrow()
+    expect(() => resolveProfiles({ 'acme-gateway': {
+      api: 'openai-completions',
+      baseURL: 'https://acme.test',
+      models: [{ id: 'm', compactionThreshold }],
+    } })).toThrow(/compactionThreshold must be a positive integer/)
+  })
+})
+
 describe('reasoning schema boundary', () => {
   it('accepts an empty provider section and propagates unexpected catalog failures', () => {
     expect(() => { assertServiceable({}) }).not.toThrow()

@@ -12,13 +12,41 @@ rows.push({ id: 'other/keep', name: 'Keep', channelId: 'other', channelName: 'Ot
 const hidden = new Set(['other/keep']);
 let reads = 0, fail = false;
 const writes = [];
+let providerFixture;
+const providerWrites = [], importWrites = [], settingWrites = [], groupWrites = [];
+let groupFixture;
+const historyReads=[];
+let quotaReads=0;
+const fixturePrice = { input: 1, output: 5, cache_read: 0.25, cache_write: 1.25, cache_write_1h: 2, tiers: [{ above: 200000, input: 2, output: 7.5, cache_read: 0.5, cache_write: 2.5, cache_write_1h: 4 }] };
+const subscriptionSettings = { pluginCheckins: { inactive: false }, pluginCheckinsEffective: { daily: true } };
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const json = body => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(body)); };
   if (url.pathname === '/api/state') {
     reads++;
-    return json({ version: 'test', providers: [], models: rows.filter(m => !hidden.has(m.id)), hidden: rows.filter(m => hidden.has(m.id)), groups: [] });
+    return json({ version: 'test', providers: providerFixture ? [providerFixture] : [], presets: [], models: rows.filter(m => !hidden.has(m.id)), hidden: rows.filter(m => hidden.has(m.id)), groups: groupFixture ? (Array.isArray(groupFixture)?groupFixture:[groupFixture]) : [] });
   }
+  if (url.pathname === '/api/group') {
+    let text = ''; for await (const chunk of req) text += chunk;
+    groupWrites.push(JSON.parse(text)); return json({ ok: true });
+  }
+  if (url.pathname === '/api/provider' || url.pathname === '/api/provider/import' || (url.pathname === '/api/subscription/settings' && req.method === 'POST')) {
+    let text = ''; for await (const chunk of req) text += chunk;
+    const body = JSON.parse(text);
+    if (url.pathname === '/api/provider') { providerWrites.push(body); return json({ ok: true }); }
+    if (url.pathname === '/api/subscription/settings') { settingWrites.push(body); return json({ ok: true }); }
+    importWrites.push(body);
+    return json(body.preview ? { providers: [{ id: 'imported', name: 'Imported API', chat: 'https://example.test/v1', models: ['long'], keySet: false, keyOptional: false }] } : { ok: true, added: ['imported'] });
+  }
+  if (url.pathname === '/api/upstream') return json({ vendors: [], providers: {} });
+  if (url.pathname === '/api/global') return json({settings:{},models:[],searchVendors:[],searches:[],fx:{rate:7},sync:{}});
+  if (url.pathname === '/api/lanes') return json({});
+  if (url.pathname === '/api/usage') return json({ calls: 0, models: [] });
+  if (url.pathname === '/api/quotas') {quotaReads++;if(quotaReads===1)res.setHeader('X-Magpie-Reading','1');return json([]);}
+  if (url.pathname === '/api/quotas/history') {historyReads.push(url.searchParams.get('days'));return json([{provider:'qa',user:'qa-user',lines:[{name:'Weekly window',points:[{at:new Date(Date.now()-86400000).toISOString(),left:80},{at:new Date().toISOString(),left:65}]}]}]);}
+  if (url.pathname === '/api/keys/qa') return json(Array.from({length:7},(_,i)=>({id:'key-'+i,name:i===1?'Paused key':i===2?'Disabled key':'QA key '+i,masked:'qa-***-'+i,active:i===0,on:i!==2,...(i===1?{rest:{why:'429 fixture',until:'2099-01-01T00:00:00Z'}}:{})})));
+  if (url.pathname === '/api/subscription/settings') return json(subscriptionSettings);
+  if (url.pathname === '/api/subscriptions') return json([{ id: 'daily-adapter', pid: 'daily', name: 'Daily API', plugin: true, checkin: true }]);
   if (url.pathname === '/api/models/hidden') {
     let text = ''; for await (const chunk of req) text += chunk;
     const body = JSON.parse(text); writes.push(body);
@@ -110,7 +138,94 @@ async function run() {
     win.setSize(390, 844);
     await js(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
     assert.equal(await js(`document.documentElement.scrollWidth<=window.innerWidth`), true);
-    console.log('WHALEBRIDGE_MODELS_RESULT:PASS scroll, stable DOM, grouped sources, scoped switches, fold, queued writes, failure rollback, filters and mobile layout');
+    // Provider edits exercise the rendered form and its submitted API payload.
+    providerFixture = { id: 'qa', name: 'QA API', chat: 'https://example.test/v1', keySet: true, keyMasked: 'qa…key', models: [], defaultModels: ['long'], modelCount: 1, available: [{ id: 'long', name: 'Long Context', price: fixturePrice, list: fixturePrice, ownPrice: true, efforts: ['low','high'], canFast: true }], modelPrices: { long: fixturePrice } };
+    win.setSize(900, 780);
+    await click('#refresh'); await wait(`!document.querySelector('#refresh').disabled`);
+    await click('[data-tab="providers"]');
+    await click('[data-action="edit-provider"][data-id="qa"]');
+    await js(`activateEditorSection('models')`);
+    await js(`(() => {const input=document.querySelector('[data-price="output"]');input.value='9';input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await js(`(() => {const input=document.querySelector('[data-price="input"]');input.value='';input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await js(`(() => {const input=document.querySelector('#provider-model-search');input.value='Long';input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    assert.equal(await js(`document.querySelector('[data-price="output"]').value`), '9', 'redrawing the model list retains edited prices');
+    assert.equal(await js(`document.querySelector('[data-price="input"]').value`), '', 'redrawing retains a blank official-price inheritance choice');
+    await click('[data-action="add-price-tier"]');
+    await click('[data-action="remove-price-tier"]');
+    await click('#save'); await wait(`!document.querySelector('#editor').open`);
+    assert.deepEqual(providerWrites.at(-1).modelPrefs.long.price, { ...fixturePrice, output: 9, tiers: [{ above: 300000, input: 1, output: 9, cache_read: 0.25, cache_write: 1.25, cache_write_1h: 2 }] }, 'editing one price and replacing a tier retains all five price components');
+    assert.deepEqual(providerWrites.at(-1).models, [], 'editing default-model parameters keeps the default model selection');
+    await click('[data-action="edit-provider"][data-id="qa"]'); await js(`activateEditorSection('models')`);
+    await js(`(() => {const input=document.querySelector('[data-pref="name"]');input.value='Cancelled name';input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await click('#cancel-editor'); await wait(`!document.querySelector('#editor').open`);
+    await click('[data-action="edit-provider"][data-id="qa"]'); await js(`activateEditorSection('models')`);
+    assert.equal(await js(`document.querySelector('[data-pref="name"]').value`), '', 'cancel discards the model parameter draft');
+    await click('#cancel-editor'); await wait(`!document.querySelector('#editor').open`);
+    groupFixture = { id:'route',name:'QA route',members:['qa/long'],routing:'manual',pick:'qa/long',matched:[] };
+    await click('#refresh'); await wait(`!document.querySelector('#refresh').disabled`); await click('[data-tab="routing"]');
+    await click('[data-action="edit-group"][data-id="route"]');
+    await js(`(() => {const input=document.querySelector('[data-member-action="effort"]');input.value='high';input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await click('[data-member-action="fast"]');
+    await js(`(() => {activateEditorSection('routing');document.querySelector('#f-routing').value='order';document.querySelector('#f-affinity').value='turn';document.querySelector('#f-sink').checked=true;activateEditorSection('conditions');document.querySelector('[data-action="group-rule-add"]').click();document.querySelector('[data-rule="tokens"]').value='64000';document.querySelector('[data-rule="images"]').checked=true;document.querySelector('[data-rule="intent"]').value='代码调试';document.querySelector('#f-classifier').value='qa/long';document.querySelector('#f-effort').value='auto';activateEditorSection('levels');document.querySelector('#f-contextMode').value='custom';document.querySelector('#f-contextMode').dispatchEvent(new Event('change'));document.querySelector('#f-contextValue').value='128k';document.querySelector('#f-levelsMode').value='own';document.querySelector('#f-levelsMode').dispatchEvent(new Event('change'));document.querySelector('[data-group-level="high"]').checked=true;})()`);
+    await click('#save'); await wait(`!document.querySelector('#editor').open`);
+    assert.deepEqual(groupWrites.at(-1).members, ['qa/long:high']);
+    assert.equal(groupWrites.at(-1).pick, 'qa/long:high', 'fixed member level changes retain the manual pick');
+    assert.deepEqual(groupWrites.at(-1).fast, ['qa/long:high']);
+    assert.equal(groupWrites.at(-1).context,128000); assert.deepEqual(groupWrites.at(-1).levels,['high']);
+    assert.equal(groupWrites.at(-1).classifier,'qa/long'); assert.equal(groupWrites.at(-1).effort,'auto');
+    assert.equal(groupWrites.at(-1).affinity,'turn'); assert.equal(groupWrites.at(-1).sink,true);
+    assert.deepEqual(groupWrites.at(-1).rules,[{use:'qa/long:high',tokens:64000,effort:'',images:true,compact:false,intent:'代码调试',agents:[],time:null}]);
+    groupFixture=[groupFixture,{id:'outer',name:'Outer route',members:['group/route']}];
+    await click('#refresh'); await wait(`!document.querySelector('#refresh').disabled`);
+    await click('[data-action="edit-group"][data-id="outer"]'); await click('[data-action="group-edit-inner"]');
+    await wait(`document.querySelector('#confirmation').open`); await click('#accept-confirm');
+    await wait(`editor.data.id==='route'`);
+    assert.equal(await js(`!!editor.closed`),false,'nested-group navigation waits for the previous dialog close before opening the next editor');
+    await click('#cancel-editor'); await wait(`!document.querySelector('#editor').open`);
+    await click('[data-tab="providers"]');
+    await js(`openKeys('qa')`); await wait(`document.querySelector('#f-keySearch')`);
+    assert.equal(await js(`[...document.querySelectorAll('[data-key-row]')].filter(row=>!row.hidden).length`),5,'long key lists start folded at five visible identities');
+    await click('[data-key-pick="key-0"]');
+    await js(`document.querySelector('#f-keySearch').value='Paused key';document.querySelector('#f-keySearch').dispatchEvent(new Event('input',{bubbles:true}))`);
+    assert.equal(await js(`[...document.querySelectorAll('[data-key-row]')].filter(row=>!row.hidden).length`),1);
+    assert.equal(await js(`document.querySelector('[data-key-pick="key-0"]').checked`),false,'filtering out a selected key removes it from bulk deletion');
+    await js(`document.querySelector('#f-keySearch').value='';document.querySelector('#f-keySearch').dispatchEvent(new Event('input',{bubbles:true}))`);
+    await click('[data-action="key-fold"]');
+    assert.equal(await js(`[...document.querySelectorAll('[data-key-row]')].filter(row=>!row.hidden).length`),7,'expanding exposes every key');
+    await js(`document.querySelector('#f-keyStatus').value='off';document.querySelector('#f-keyStatus').dispatchEvent(new Event('change',{bubbles:true}))`);
+    assert.deepEqual(await js(`[...document.querySelectorAll('[data-key-row]')].filter(row=>!row.hidden).map(row=>row.querySelector('.table-primary').textContent)`),['Disabled key']);
+    await js(`document.querySelector('#f-keyStatus').value='rest';document.querySelector('#f-keyStatus').dispatchEvent(new Event('change',{bubbles:true}))`);
+    assert.deepEqual(await js(`[...document.querySelectorAll('[data-key-row]')].filter(row=>!row.hidden).map(row=>row.querySelector('.table-primary').textContent)`),['Paused key']);
+    await click('#cancel-editor'); await wait(`!document.querySelector('#editor').open`);
+    await click('[data-action="import-provider"]');
+    await js(`document.querySelector('#f-source').value='{"name":"Imported API","chat":"https://example.test/v1"}'`);
+    await click('#save'); await wait(`document.querySelector('#f-importKey')`);
+    assert.equal(importWrites.length, 1, 'preview does not save a supplier');
+    assert.equal(importWrites[0].preview, true);
+    await js(`document.querySelector('#f-importKey').value='qa-import-key'`);
+    await click('#save'); await wait(`!document.querySelector('#editor').open`);
+    assert.equal(importWrites.length, 2);
+    assert.equal(importWrites[1].key, 'qa-import-key', 'the separate password field supplies credentials only after preview');
+    assert.equal(importWrites[1].text, importWrites[0].text);
+    await click('[data-tab="usage"]'); await wait(`document.querySelector('[data-global-section="quotas"]')`);
+    await click('[data-global-section="quotas"]'); await wait(`document.querySelector('[data-action="subscription-settings"]')`);
+    await wait(`document.querySelector('#quota-section').getAttribute('aria-busy')==='false'`);
+    assert.ok(quotaReads>=2,'the X-Magpie-Reading response follows background quota reads until they finish');
+    await click('[data-action="quota-history"]'); await wait(`document.querySelectorAll('[data-history-point]').length===2`);
+    assert.equal(historyReads.at(-1),'35','history starts with the upstream 35-day range');
+    assert.equal(await js(`document.querySelector('.quota-history-line svg .trend-line').tagName.toLowerCase()`),'polyline');
+    await js(`document.querySelector('[data-history-point]').dispatchEvent(new Event('pointerenter'))`);
+    assert.ok(await js(`document.querySelector('[data-history-readout]').textContent.includes('80.0%')`),'hover updates the selected quota readout');
+    await js(`document.querySelector('#f-historyDays').value='7';document.querySelector('#f-historyDays').dispatchEvent(new Event('change'))`);
+    await wait(`document.querySelector('#quota-history-chart').getAttribute('aria-busy')==='false'`);
+    assert.equal(historyReads.at(-1),'7');
+    await click('#cancel-editor'); await wait(`!document.querySelector('#editor').open`);
+    await click('[data-action="subscription-settings"]'); await wait(`document.querySelector('[data-plugin-checkin="daily"]')`);
+    assert.equal(await js(`document.querySelector('[data-plugin-checkin="daily"]').checked`), true, 'the adapter default comes from the effective setting');
+    await click('#save'); await wait(`!document.querySelector('#editor').open`);
+    assert.equal(settingWrites.at(-1).pluginCheckins.daily, true, 'saving other settings preserves the effective adapter check-in default');
+    assert.equal(settingWrites.at(-1).pluginCheckins.inactive, false, 'saving does not erase the preference of a temporarily disabled adapter');
+    console.log('WHALEBRIDGE_MODELS_RESULT:PASS grouped models, scoped visibility, stable position, pricing tiers, import preview and subscription settings');
   } finally { win.destroy(); await new Promise(resolve => server.close(resolve)); }
 }
 run().then(() => app.exit(0), error => { console.error(error); app.exit(1); });

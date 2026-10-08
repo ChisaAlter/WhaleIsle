@@ -778,6 +778,10 @@ export class LlmRuntime extends TypertRemoteService {
     // Capability metadata rides through: an explicit modality omission is
     // negative capability downstream preflights act on (image admission).
     const inputModalities = this.detachedModalities(resolved.inputModalities)
+    if (context?.compactionThreshold !== undefined
+      && (!Number.isInteger(context.compactionThreshold) || context.compactionThreshold <= 0)) {
+      throw new LlmError(`adapter returned invalid compaction threshold for provider "${provider}" model "${model}"`, 'INVALID_MODEL_INFO')
+    }
     // Widened: adapters derive this mode from catalog config, so the value is checked as a string.
     const systemPromptUpdate: string | undefined = resolved.systemPromptUpdate
     if (systemPromptUpdate !== undefined && systemPromptUpdate !== 'in-history') {
@@ -808,7 +812,10 @@ export class LlmRuntime extends TypertRemoteService {
       name: resolved.name,
       ...resolved.description === undefined ? {} : { description: resolved.description },
       ...inputModalities === undefined ? {} : { inputModalities },
-      ...context === undefined ? {} : { context: { contextWindow: context.contextWindow } },
+      ...context === undefined ? {} : { context: {
+        contextWindow: context.contextWindow,
+        ...context.compactionThreshold === undefined ? {} : { compactionThreshold: context.compactionThreshold },
+      } },
       ...defaultMaxTokens === undefined ? {} : { defaultMaxTokens },
       ...resolved.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: resolved.systemPromptUpdate },
       ...resolved.toolUpdate === undefined ? {} : { toolUpdate: resolved.toolUpdate },

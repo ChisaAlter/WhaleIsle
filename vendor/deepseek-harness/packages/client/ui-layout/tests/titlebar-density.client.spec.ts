@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   resolveTitlebarDensity, titlebarConversationReserve,
-  TITLEBAR_DENSITY_COMPACT, TITLEBAR_DENSITY_COZY,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/titlebar-density.ts'
 
 describe('resolveTitlebarDensity', () => {
@@ -10,17 +9,17 @@ describe('resolveTitlebarDensity', () => {
   })
 
   it('keeps full labels at and above the cozy threshold', () => {
-    expect(resolveTitlebarDensity(TITLEBAR_DENSITY_COZY, true)).toBe('full')
-    expect(resolveTitlebarDensity(TITLEBAR_DENSITY_COZY + 1, true)).toBe('full')
+    expect(resolveTitlebarDensity(900, true)).toBe('full')
+    expect(resolveTitlebarDensity(901, true)).toBe('full')
   })
 
   it('is cozy between the compact and cozy thresholds', () => {
-    expect(resolveTitlebarDensity(TITLEBAR_DENSITY_COZY - 1, true)).toBe('cozy')
-    expect(resolveTitlebarDensity(TITLEBAR_DENSITY_COMPACT, true)).toBe('cozy')
+    expect(resolveTitlebarDensity(899, true)).toBe('cozy')
+    expect(resolveTitlebarDensity(720, true)).toBe('cozy')
   })
 
   it('is compact below the compact threshold', () => {
-    expect(resolveTitlebarDensity(TITLEBAR_DENSITY_COMPACT - 1, true)).toBe('compact')
+    expect(resolveTitlebarDensity(719, true)).toBe('compact')
   })
 })
 

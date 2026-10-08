@@ -43,19 +43,22 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* The directory action sits beside the Session-log and Git titlebar capsules. */
+/* The directory action shares the titlebar Git capsule's geometry. */
 .split[data-open-target='directory'] {
-  height: 32px;
+  flex: none;
+  height: 27px;
   border-color: var(--dsw-alias-border-l2);
-  border-radius: var(--dsw-radius-button);
+  border-radius: 14px;
 }
 
 .split[data-open-target='directory'] .main {
-  padding: 6px 10px;
+  flex: none;
+  padding: 0 9px;
 }
 
 .split[data-open-target='directory'] .chevron {
-  width: 28px;
+  flex: none;
+  width: 24px;
   padding: 0;
   border-left-color: var(--dsw-alias-border-l2);
 }

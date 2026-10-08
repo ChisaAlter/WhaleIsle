@@ -11,6 +11,7 @@ import { relativeTo } from './paths.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import type { FloatRect } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-browser/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
@@ -214,6 +215,13 @@ async function openWorkspaceSurface(
       return true
     }
   }
+  if (own && options?.presentation === 'mini' && !BROWSER_DOCUMENTS.has(documentExtension(relative))) {
+    return ctx.sidebarRight.openResourceIn(id, fileAddressFor(id, cwd, relative), {
+      expand: false,
+      floating: floatingFileRect(sessionId),
+      ...options.line === undefined ? {} : { params: { line: options.line } },
+    })
+  }
   const opened = ctx.sidebarRight.openResourceIn(id, fileAddressFor(id, cwd, relative),
     options?.line === undefined ? undefined : { params: { line: options.line } })
   if (opened && own) await previewBrowserDocument(cwd, relative, sessionId)
@@ -224,6 +232,20 @@ async function openWorkspaceSurface(
 function currentSessionId(ctx: Context): SessionId | undefined {
   return Object.values(ctx.sessions.list.getSnapshot().byId)
     .find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
+}
+
+/** Initial file preview rectangle inside the originating conversation. */
+function floatingFileRect(sessionId: string): FloatRect {
+  const conversation = [...document.querySelectorAll<HTMLElement>('[data-conversation-session]')]
+    .find(node => node.dataset.conversationSession === sessionId && node.getBoundingClientRect().width > 0)
+  const chat = conversation?.querySelector<HTMLElement>('[data-conversation-scroll]')
+  const rect = chat?.getBoundingClientRect()
+  if (rect === undefined || rect.width <= 0 || rect.height <= 0) {
+    throw new Error('conversation preview viewport is unavailable')
+  }
+  const width = Math.min(380, Math.max(1, rect.width - 24))
+  const height = Math.min(300, Math.max(1, rect.height - 24))
+  return { x: rect.right - width - 12, y: rect.top + 12, width, height }
 }
 
 /**

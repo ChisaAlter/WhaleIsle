@@ -12,7 +12,9 @@ import (
 // A model deep into a long conversation may write its tool calls into its
 // text instead of making them (#823, Dazzle-sys: DeepSeek through a group,
 // in Pi, ~700k tokens in): Hermes' <tool_call>{"name": …, "arguments": …}
-// </tool_call>, or DeepSeek's own <｜DSML｜invoke name="…"> with its
+// </tool_call>, GLM's <tool_call>name<arg_key>…</arg_key><arg_value>…
+// </arg_value></tool_call> (#906), or DeepSeek's own <｜DSML｜invoke
+// name="…"> with its
 // parameters, often with the other's closing tags strewn after it. The
 // agent got it as text, ran nothing and ended the turn; told to go on, the
 // model read its own text-written call back and wrote the next one the
@@ -121,7 +123,14 @@ func parseTextCalls(s string, names map[string]bool) (calls []writtenCall, rest 
 				s = t
 				continue
 			}
-			c, n, good := hermesCall(s[h+len("<tool_call>"):], names)
+			c, n, good := paramCall(s[h+len("<tool_call>"):], names)
+			if !good {
+				c, n, good = hermesCall(s[h+len("<tool_call>"):], names)
+			}
+			if !good && !strings.HasPrefix(strings.TrimLeft(s[h+len("<tool_call>"):], " \t\r\n"), "{") {
+				// GLM's own: the name, then its arguments in pairs (#906)
+				c, n, good = glmCall(s[h+len("<tool_call>"):], names)
+			}
 			if !good {
 				return nil, "", false
 			}
@@ -152,7 +161,7 @@ func parseTextCalls(s string, names map[string]bool) (calls []writtenCall, rest 
 // cutMark is the end of s that is a mark's beginning cut short (</ of
 // </tool_call>), "" when there's none; a lone < may be text.
 func cutMark(s string) string {
-	for _, m := range append([]string{"</tool_call>", "</｜DSML｜", "</|DSML|"}, textCallMarks...) {
+	for _, m := range append([]string{"</tool_call>", "</parameter>", "</｜DSML｜", "</|DSML|"}, textCallMarks...) {
 		for n := len(m) - 1; n >= 2; n-- {
 			if strings.HasSuffix(s, m[:n]) {
 				return m[:n]
@@ -201,6 +210,117 @@ func hermesCall(s string, names map[string]bool) (writtenCall, int, bool) {
 		n = len(s) - len(t) + len("</tool_call>")
 	}
 	return writtenCall{Name: v.Name, Args: args}, n, true
+}
+
+var (
+	paramHead = regexp.MustCompile(`^\s*\{\s*"name"\s*:\s*"([^"]+)"\s*\}?\s*>?`)
+	paramOpen = regexp.MustCompile(`^\s*<parameter(?:\s+name\s*=\s*"([^"]+)"|=([^\s>]+))\s*>`)
+)
+
+// paramCall reads a call DeepSeek wrote half as Hermes' block and half as
+// its own template (#917, Moody-Sin: DeepSeek through a group, in Pi): the
+// name as JSON, closed with } or > or not at all, then each argument as
+// <parameter name="k">v</parameter> (or Qwen's <parameter=k>), the closes
+// often missing, as DeepSeek's are tokens of its own the API drops. A
+// value runs to its close, the next parameter, </tool_call> or the end;
+// one that is JSON is taken as it, else it is the text it says. It says
+// how much of s it took.
+func paramCall(s string, names map[string]bool) (writtenCall, int, bool) {
+	m := paramHead.FindStringSubmatchIndex(s)
+	if m == nil || !names[s[m[2]:m[3]]] {
+		return writtenCall{}, 0, false
+	}
+	name, n := s[m[2]:m[3]], m[1]
+	args := map[string]any{}
+	for {
+		p := paramOpen.FindStringSubmatchIndex(s[n:])
+		if p == nil {
+			break
+		}
+		var key string
+		if p[2] >= 0 {
+			key = s[n+p[2] : n+p[3]]
+		} else {
+			key = s[n+p[4] : n+p[5]]
+		}
+		n += p[1]
+		end, next := len(s), len(s)
+		for _, stop := range []string{"</parameter>", "<parameter", "</tool_call>", "<tool_call>"} {
+			if i := strings.Index(s[n:], stop); i >= 0 && n+i < end {
+				end, next = n+i, n+i
+				if stop == "</parameter>" {
+					next += len(stop)
+				}
+			}
+		}
+		val := strings.Trim(s[n:end], "\r\n")
+		val = strings.TrimSuffix(val, cutMark(val))
+		var v any
+		if json.Unmarshal([]byte(strings.TrimSpace(val)), &v) == nil {
+			args[key] = v
+		} else {
+			args[key] = val
+		}
+		n = next
+	}
+	if len(args) == 0 {
+		return writtenCall{}, 0, false
+	}
+	if t := strings.TrimLeft(s[n:], " \t\r\n"); strings.HasPrefix(t, "</tool_call>") {
+		n = len(s) - len(t) + len("</tool_call>")
+	}
+	b, err := json.Marshal(args)
+	if err != nil {
+		return writtenCall{}, 0, false
+	}
+	return writtenCall{Name: name, Args: b}, n, true
+}
+
+var (
+	glmPair = regexp.MustCompile(`(?s)^\s*<arg_key>(.*?)</arg_key>\s*<arg_value>(.*?)</arg_value>`)
+	glmName = regexp.MustCompile(`^\s*([^\s<>{}"]+)\s*`)
+)
+
+// glmCall reads GLM's own call (#906, nullburn: GLM-5.3-Flash through
+// vLLM wrote them into its text in Codex): the tool's name right after
+// <tool_call>, then <arg_key>…</arg_key><arg_value>…</arg_value> for
+// each argument, then </tool_call>. A value that is JSON (a number, an
+// object, a list, true) is taken as it, as GLM's template writes them;
+// else it is the string it says. It says how much of s it took.
+func glmCall(s string, names map[string]bool) (writtenCall, int, bool) {
+	m := glmName.FindStringSubmatchIndex(s)
+	if m == nil || !names[s[m[2]:m[3]]] {
+		return writtenCall{}, 0, false
+	}
+	name, n := s[m[2]:m[3]], m[1]
+	args := map[string]any{}
+	for {
+		p := glmPair.FindStringSubmatchIndex(s[n:])
+		if p == nil {
+			break
+		}
+		key, val := strings.TrimSpace(s[n+p[2]:n+p[3]]), s[n+p[4]:n+p[5]]
+		var v any
+		if json.Unmarshal([]byte(strings.TrimSpace(val)), &v) == nil {
+			args[key] = v
+		} else {
+			args[key] = val
+		}
+		n += p[1]
+	}
+	t := strings.TrimLeft(s[n:], " \t\r\n")
+	switch {
+	case strings.HasPrefix(t, "</tool_call>"):
+		n = len(s) - len(t) + len("</tool_call>")
+	case t != "" && !strings.HasPrefix(t, "<tool_call>"):
+		// something else follows the name: not a call of GLM's
+		return writtenCall{}, 0, false
+	}
+	b, err := json.Marshal(args)
+	if err != nil {
+		return writtenCall{}, 0, false
+	}
+	return writtenCall{Name: name, Args: b}, n, true
 }
 
 // dsmlCall reads DeepSeek's <｜DSML｜invoke name="…"> and its parameters,

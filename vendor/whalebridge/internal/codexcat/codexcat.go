@@ -49,67 +49,72 @@ func Catalog(ms []catalog.Model) []byte {
 	return b
 }
 
+// level, tier and model are an entry of models.json as Entries writes it.
+type level struct {
+	Effort      string `json:"effort"`
+	Description string `json:"description"`
+}
+type tier struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+type model struct {
+	Slug          string  `json:"slug"`
+	DisplayName   string  `json:"display_name"`
+	Description   string  `json:"description"`
+	Instructions  string  `json:"base_instructions"`
+	DefaultEffort *string `json:"default_reasoning_level"`
+	Efforts       []level `json:"supported_reasoning_levels"`
+	Shell         string  `json:"shell_type"`
+	Visibility    string  `json:"visibility"`
+	InAPI         bool    `json:"supported_in_api"`
+	Priority      int     `json:"priority"`
+	Verbosity     bool    `json:"support_verbosity"`
+	DefVerbosity  *string `json:"default_verbosity"`
+	ApplyPatch    string  `json:"apply_patch_tool_type"`
+	Truncation    struct {
+		Mode  string `json:"mode"`
+		Limit int    `json:"limit"`
+	} `json:"truncation_policy"`
+	Tools      []string `json:"experimental_supported_tools"`
+	Modalities []string `json:"input_modalities"`
+	Context    *int     `json:"context_window,omitempty"`
+	// the model's whole window when Context is the working one
+	// (settings.Working): Codex's model_context_window may raise it
+	// that far, as it does OpenAI's own models'
+	MaxContext *int   `json:"max_context_window,omitempty"`
+	Tiers      []tier `json:"service_tiers"`
+	// Without the search, Codex puts every MCP tool's schema (a
+	// ChatGPT sign-in's apps' among them) in every request, 190K
+	// tokens before the first word (#258); with it, they are named in
+	// tool_search's description and handed over when searched for,
+	// as Codex does for its own models. Magpie serves the search to
+	// any model as a function (gateway/toolsearch.go). Code mode and
+	// Responses Lite stay off: the one has the model write JavaScript
+	// against Codex's tools, the other moves the tools and
+	// instructions into the input, neither for a model not trained on
+	// them.
+	SearchTool bool `json:"supports_search_tool"`
+	// Required from Codex 0.147 (#298: without it the whole catalog
+	// fails to load); later Codex ask for parallel calls whatever it
+	// says, so it says what they do.
+	Parallel bool `json:"supports_parallel_tool_calls"`
+	// "v1" only with settings.CodexAgentsV1, on an OpenAI model's
+	// entry (see V1); "v2" on a model offering Ultra that no ChatGPT
+	// account answers for (catalog.Model.AgentsV2), as Codex's own
+	// entry for it says: Ultra hands work to Codex's agents in V2
+	// alone, and a magpie-served lead writes their tasks as text.
+	MultiAgent string `json:"multi_agent_version,omitempty"`
+	// the model Codex's auto-review runs on, settings.CodexAutoReview
+	// (see AutoReview)
+	AutoReview string `json:"auto_review_model_override,omitempty"`
+}
+
 // Entries renders models as models.json entries, ranked after the first
 // `after`. Only fields Codex requires or that change behaviour are set; the
 // rest take Codex's defaults.
 func Entries(ms []catalog.Model, after int) []any {
-	type level struct {
-		Effort      string `json:"effort"`
-		Description string `json:"description"`
-	}
-	type tier struct {
-		ID          string `json:"id"`
-		Name        string `json:"name"`
-		Description string `json:"description"`
-	}
-	type model struct {
-		Slug          string  `json:"slug"`
-		DisplayName   string  `json:"display_name"`
-		Description   string  `json:"description"`
-		Instructions  string  `json:"base_instructions"`
-		DefaultEffort *string `json:"default_reasoning_level"`
-		Efforts       []level `json:"supported_reasoning_levels"`
-		Shell         string  `json:"shell_type"`
-		Visibility    string  `json:"visibility"`
-		InAPI         bool    `json:"supported_in_api"`
-		Priority      int     `json:"priority"`
-		Verbosity     bool    `json:"support_verbosity"`
-		DefVerbosity  *string `json:"default_verbosity"`
-		ApplyPatch    string  `json:"apply_patch_tool_type"`
-		Truncation    struct {
-			Mode  string `json:"mode"`
-			Limit int    `json:"limit"`
-		} `json:"truncation_policy"`
-		Tools      []string `json:"experimental_supported_tools"`
-		Modalities []string `json:"input_modalities"`
-		Context    *int     `json:"context_window,omitempty"`
-		// the model's whole window when Context is the working one
-		// (settings.Working): Codex's model_context_window may raise it
-		// that far, as it does OpenAI's own models'
-		MaxContext *int   `json:"max_context_window,omitempty"`
-		Tiers      []tier `json:"service_tiers"`
-		// Without the search, Codex puts every MCP tool's schema (a
-		// ChatGPT sign-in's apps' among them) in every request, 190K
-		// tokens before the first word (#258); with it, they are named in
-		// tool_search's description and handed over when searched for,
-		// as Codex does for its own models. Magpie serves the search to
-		// any model as a function (gateway/toolsearch.go). Code mode and
-		// Responses Lite stay off: the one has the model write JavaScript
-		// against Codex's tools, the other moves the tools and
-		// instructions into the input, neither for a model not trained on
-		// them.
-		SearchTool bool `json:"supports_search_tool"`
-		// Required from Codex 0.147 (#298: without it the whole catalog
-		// fails to load); later Codex ask for parallel calls whatever it
-		// says, so it says what they do.
-		Parallel bool `json:"supports_parallel_tool_calls"`
-		// "v1" only with settings.CodexAgentsV1, on an OpenAI model's
-		// entry (see V1); "v2" on a model offering Ultra that no ChatGPT
-		// account answers for (catalog.Model.AgentsV2), as Codex's own
-		// entry for it says: Ultra hands work to Codex's agents in V2
-		// alone, and a magpie-served lead writes their tasks as text.
-		MultiAgent string `json:"multi_agent_version,omitempty"`
-	}
 	own := CacheEntries()
 	v1 := V1()
 	work := settings.Load()
@@ -124,6 +129,7 @@ func Entries(ms []catalog.Model, after int) []any {
 			if v1 {
 				Stamp(e)
 			}
+			AutoReview(e)
 			entries = append(entries, e)
 			continue
 		}
@@ -133,6 +139,7 @@ func Entries(ms []catalog.Model, after int) []any {
 			Shell: "unified_exec", Visibility: "list", InAPI: true, Priority: after + i + 1,
 			ApplyPatch: "freeform", Tools: []string{}, Modalities: []string{"text"},
 			Tiers: []tier{}, SearchTool: true, Parallel: true,
+			AutoReview: work.CodexAutoReview,
 		}
 		// Fast mode: a ChatGPT account's GPT model Codex has no entry for,
 		// or a group one is in, gets the tier Codex's own catalog gives its
@@ -151,7 +158,12 @@ func Entries(ms []catalog.Model, after int) []any {
 			e.Modalities = append(e.Modalities, "image")
 		}
 		if c := m.Context; c > 0 {
+			// the model's or its provider's threshold, else the one for
+			// every model (#876); one at or above c is its whole window
 			w := work.Working(c)
+			if m.Compact > 0 {
+				w = min(c, m.Compact)
+			}
 			e.Context = &w
 			if w < c {
 				e.MaxContext = &c
@@ -165,9 +177,57 @@ func Entries(ms []catalog.Model, after int) []any {
 			d := DefaultEffort(m.Efforts)
 			e.DefaultEffort = &d
 		}
-		entries = append(entries, e)
+		entries = append(entries, &e)
 	}
 	return entries
+}
+
+// Order ranks entries — Codex's own, as the backend gives them, and
+// magpie's from Entries — in the order the user put them in (#855): Codex
+// lists its models by priority, lowest first. The ones at names go first,
+// by their place there; the others after them, as they stood. The slice is
+// put in that order too.
+func Order(entries []any, at map[string]int) {
+	type ranked struct {
+		i, by, was int
+	}
+	rs := make([]ranked, len(entries))
+	for i, e := range entries {
+		slug, was := "", i
+		switch o := e.(type) {
+		case map[string]any:
+			slug, _ = o["slug"].(string)
+			switch p := o["priority"].(type) {
+			case float64:
+				was = int(p)
+			case int:
+				was = p
+			}
+		case *model:
+			slug, was = o.Slug, o.Priority
+		}
+		by := len(at)
+		if n, ok := at[slug]; ok {
+			by = n
+		}
+		rs[i] = ranked{i, by, was}
+	}
+	slices.SortStableFunc(rs, func(a, b ranked) int {
+		if a.by != b.by {
+			return a.by - b.by
+		}
+		return a.was - b.was
+	})
+	in := slices.Clone(entries)
+	for n, r := range rs {
+		switch o := in[r.i].(type) {
+		case map[string]any:
+			o["priority"] = n + 1
+		case *model:
+			o.Priority = n + 1
+		}
+		entries[n] = in[r.i]
+	}
 }
 
 // CacheEntries is Codex's own models, as models_cache.json describes them
@@ -236,6 +296,24 @@ func unstamp(e map[string]any, was string) {
 		delete(e, "multi_agent_version")
 	} else {
 		e["multi_agent_version"] = was
+	}
+}
+
+// Codex's auto-review (the guardian deciding an approval in the user's
+// place) runs on the auto_review_model_override of the conversation's
+// model's entry, else on codex-auto-review when the list has it, else on the
+// conversation's model at low effort (#938). With settings.CodexAutoReview
+// every entry magpie hands Codex names that model.
+
+// AutoReview has one of Codex's own entries name the auto-review model the
+// user picked. With none picked, one magpie put there before — a magpie id,
+// which has a "/" where OpenAI's slugs have none, kept in Codex's cache — is
+// taken out, and one OpenAI gave it is left.
+func AutoReview(e map[string]any) {
+	if v := settings.Load().CodexAutoReview; v != "" {
+		e["auto_review_model_override"] = v
+	} else if was, _ := e["auto_review_model_override"].(string); strings.Contains(was, "/") {
+		delete(e, "auto_review_model_override")
 	}
 }
 

@@ -499,6 +499,7 @@ func (s *Server) videosCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, provider.Chat, code, msg)
 		s.record(call)
 	}
+	named := f.Model != "" // a gateway key's models hold one the caller names (#882)
 	if f.Model == "" {
 		m, ok := videomaker()
 		if !ok {
@@ -518,6 +519,20 @@ func (s *Server) videosCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		fail(404, fmt.Sprintf("magpie knows no model %q to make videos with", f.Model))
 		return
+	}
+	if keyWho, held := keyHolds(r); held && named && !modelAllowed(keyWho, p, model) {
+		fail(403, keyModelError(keyWho, f.Model))
+		return
+	}
+	// held to some accounts (#905): sent on a key the calling key may use,
+	// of those in use — not the provider's first alone, which a key held
+	// to a later one was refused by — or none, refused
+	if keyWho, held := accountHolds(r); held {
+		var ok bool
+		if p, ok = allowedKey(keyWho, p, model); !ok {
+			fail(403, keyAccountsError(keyWho, f.Model))
+			return
+		}
 	}
 	call.Provider, call.To = p.ID, provider.Chat
 	remote := p.IsRemoteMagpie()

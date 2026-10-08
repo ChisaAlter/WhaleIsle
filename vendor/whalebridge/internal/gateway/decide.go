@@ -422,6 +422,38 @@ func (s *Server) serveSystemOne(w http.ResponseWriter, r *http.Request) {
 	if asked == "" {
 		asked = p.ID + "/" + model
 	}
+	// a gateway key held to some models (#882) is refused another; a
+	// decision model is a model, and System One asks one directly
+	if keyWho, held := keyHolds(r); held && !modelAllowed(keyWho, p, model) {
+		writeError(w, provider.Chat, http.StatusForbidden, keyModelError(keyWho, asked))
+		return
+	}
+	// and held to some accounts (#905): the decision model's provider must
+	// have one the key may use, the call spend landing on it as any's —
+	// and asked on one such key, not the provider's first, which may be
+	// one the key may not: of the keys in use, the first the key may use
+	// and that is let serve the model, the request refused without one.
+	// A provider with no key asks as it is: an account's tokens, or none
+	// at all
+	if accWho, accHeld := accountHolds(r); accHeld {
+		if !accountServes(accWho, p, model) {
+			writeError(w, provider.Chat, http.StatusForbidden, keyAccountsError(accWho, asked))
+			return
+		}
+		if p.Account == nil && p.Key != "" {
+			kept := false
+			for _, k := range p.KeysOn() {
+				if q := p.WithKey(k); accountAllowed(accWho, candidate{p: q, model: model}) && p.AccountServes(q.AccountID(), model) {
+					p, kept = q, true
+					break
+				}
+			}
+			if !kept {
+				writeError(w, provider.Chat, http.StatusForbidden, keyAccountsError(accWho, asked))
+				return
+			}
+		}
+	}
 	seat := decideSeat(p, model)
 	var used Usage
 	tr := s.trace.begin(Route{Time: start, Agent: agentOf(r), Session: sessionOf(r.Header), Model: asked, Provider: p.ID,

@@ -122,7 +122,11 @@ func (s *Server) sendKiro(ctx context.Context, auth provider.KiroAuth, body []by
 	} {
 		req.Header.Set(k, v)
 	}
-	return s.client.Do(req)
+	res, err := s.client.Do(req)
+	if err != nil {
+		return res, err
+	}
+	return notAnAPIReply(res, ""), nil // a web page served 200 (#1012)
 }
 
 // kiroFailure is the status and message for an error Kiro answered with:

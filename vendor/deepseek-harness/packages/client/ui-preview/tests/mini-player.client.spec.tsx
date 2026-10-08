@@ -1,15 +1,50 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { DshdMiniPlayer } from '../src/client/DshdMiniPlayer.tsx'
 import { en } from '../src/client/locales.ts'
-import { clearMiniPlayer, closeMiniPlayer, openMiniPlayer, readMiniPlayer, setMiniPlayerRuntime } from '../src/client/mini-player-state.ts'
+import { clearMiniPlayer, closeMiniPlayer, openMiniPlayer, readMiniPlayer, setMiniPlayerRuntime, setMiniPlayerSuspended } from '../src/client/mini-player-state.ts'
 
 const t = (key: keyof typeof en): string => en[key]
 
 afterEach(() => { clearMiniPlayer(); cleanup() })
 
 describe('dshd mini-player', () => {
+  it('presents the first float when its runtime binds after opening and follows rebinds', async () => {
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      if (this.matches?.('[data-preview-mini-player-viewport]')) return { left: 480, top: 40, width: 320, height: 172, right: 800, bottom: 212 } as DOMRect
+      return originalRect.call(this)
+    }
+    const frame = document.createElement('div')
+    frame.dataset.shellOverlay = ''
+    const chat = document.createElement('div')
+    chat.dataset.conversationScroll = ''
+    Object.defineProperty(chat, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 800, height: 600, right: 800, bottom: 600 }) })
+    frame.append(chat)
+    document.body.append(frame)
+    try {
+      openMiniPlayer('preview-first', 'first.html')
+      render(<DshdMiniPlayer {...({ t } as Parameters<typeof DshdMiniPlayer>[0])} />)
+      expect(readMiniPlayer().runtime).toBeNull()
+      const bounds = { x: 480, y: 40, width: 320, height: 172 }
+      const runtime = { previewShow: vi.fn(async () => {}), previewResize: vi.fn(async () => {}), previewHide: vi.fn(async () => {}) }
+      act(() => { setMiniPlayerRuntime('preview-first', runtime) })
+      await waitFor(() => expect(runtime.previewShow).toHaveBeenCalledWith('preview-first', bounds))
+      expect(runtime.previewResize).toHaveBeenCalledWith('preview-first', bounds)
+      const rebound = { previewShow: vi.fn(async () => {}), previewResize: vi.fn(async () => {}), previewHide: vi.fn(async () => {}) }
+      act(() => { setMiniPlayerRuntime('preview-first', rebound) })
+      await waitFor(() => expect(rebound.previewShow).toHaveBeenCalledWith('preview-first', bounds))
+      expect(rebound.previewResize).toHaveBeenCalledWith('preview-first', bounds)
+      act(() => { setMiniPlayerSuspended(true) })
+      expect(rebound.previewHide).toHaveBeenCalledWith('preview-first')
+      expect(runtime.previewHide).not.toHaveBeenCalled()
+    } finally {
+      frame.remove()
+      HTMLElement.prototype.getBoundingClientRect = originalRect
+    }
+  })
+
   it('shows the same preview through the overlay and restores it', async () => {
     const originalRect = HTMLElement.prototype.getBoundingClientRect
     HTMLElement.prototype.getBoundingClientRect = function () {

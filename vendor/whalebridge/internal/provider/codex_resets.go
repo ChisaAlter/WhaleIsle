@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 )
@@ -31,6 +32,34 @@ type ResetCredits struct {
 	ByWindow bool `json:"byWindow,omitempty"`
 	FiveHour int  `json:"fiveHour,omitempty"`
 	Weekly   int  `json:"weekly,omitempty"`
+	// Each is every reset still to be used and when it runs out, the
+	// soonest first, one that never does last (#960: the card's tooltip
+	// lists them, where it only said the first). Empty when the vendor
+	// didn't say.
+	Each []ResetCard `json:"each,omitempty"`
+}
+
+// ResetCard is one reset: when it runs out (nil: it never does) and, of
+// resets counted by window, which one's ("fiveHour", "weekly").
+type ResetCard struct {
+	Until  *time.Time `json:"until,omitempty"`
+	Window string     `json:"window,omitempty"`
+}
+
+// sortResetCards puts the resets in the order they run out, one that
+// never does after all that do.
+func sortResetCards(cs []ResetCard) {
+	slices.SortStableFunc(cs, func(a, b ResetCard) int {
+		switch {
+		case a.Until == nil && b.Until == nil:
+			return 0
+		case a.Until == nil:
+			return 1
+		case b.Until == nil:
+			return -1
+		}
+		return a.Until.Compare(*b.Until)
+	})
 }
 
 // Words are the resets counted: "2 resets", or by window, "2 five-hour
@@ -98,6 +127,25 @@ func (w codexResetCreditsWire) soonest() *time.Time {
 	return at
 }
 
+// each is every credit still to be used, as ResetCredits.Each lists them.
+func (w codexResetCreditsWire) each() []ResetCard {
+	var out []ResetCard
+	for _, c := range w.Credits {
+		if c.Status != "available" || c.ID == "" {
+			continue
+		}
+		var r ResetCard
+		if c.ExpiresAt != nil {
+			if p, err := time.Parse(time.RFC3339, *c.ExpiresAt); err == nil {
+				r.Until = &p
+			}
+		}
+		out = append(out, r)
+	}
+	sortResetCards(out)
+	return out
+}
+
 // codexResets is the resets an account holds, from the count its usage
 // reading gave: nil when it holds none. When it does, the credits are
 // asked when they run out, best effort — a failure leaves the count.
@@ -111,6 +159,11 @@ func codexResets(ctx context.Context, base, token, accountID string, count int) 
 	var w codexResetCreditsWire
 	if accountJSON(ctx, base+"/wham/rate-limit-reset-credits", token, map[string]string{"chatgpt-account-id": accountID}, &w) == nil {
 		out.Until = w.soonest()
+		// listed only when they are the ones counted: a list that says
+		// otherwise isn't put on the card as if it were
+		if each := w.each(); len(each) == count {
+			out.Each = each
+		}
 	}
 	return out
 }

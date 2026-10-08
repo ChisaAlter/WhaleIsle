@@ -40,7 +40,7 @@ const SIGNAL = new AbortController().signal
 const MODEL = 'test-model'
 
 class ContextAdapter extends LlmAdapter {
-  constructor(private readonly contextWindow: number) {
+  constructor(private readonly contextWindow: number, private readonly compactionThreshold?: number) {
     super()
   }
 
@@ -49,7 +49,8 @@ class ContextAdapter extends LlmAdapter {
       provider,
       id: model,
       name: model,
-      context: { contextWindow: this.contextWindow },
+      context: { contextWindow: this.contextWindow,
+        ...this.compactionThreshold === undefined ? {} : { compactionThreshold: this.compactionThreshold } },
     })
   }
 
@@ -78,14 +79,14 @@ class RoutedContextAdapter extends LlmAdapter {
   }
 }
 
-function createContext(contextWindow = 1_000): Context {
+function createContext(contextWindow = 1_000, compactionThreshold?: number): Context {
   const ctx = new Context()
   void new LlmRuntime(ctx)
   // The registry is a required injection of TokenMeter (its three
   // projection units register in the constructor); mount it synchronously.
   new SessionProjectionRegistry(ctx)
   void new TokenMeter(ctx)
-  ctx.llm.registerAdapter([MODEL, 'actual', 'unlisted-provider'], new ContextAdapter(contextWindow))
+  ctx.llm.registerAdapter([MODEL, 'actual', 'unlisted-provider'], new ContextAdapter(contextWindow, compactionThreshold))
   return ctx
 }
 
@@ -447,6 +448,20 @@ describe('compact configuration and defaults', () => {
     const policy = resolveTargetPolicy(resolveConfig({ headroomTokens }), { provider: MODEL, model: MODEL })
     expect(() => resolveCompactSpec(policy, 1_000, 500))
       .toThrow(/headroom tokens.*leaving no pressure budget/)
+  })
+
+  it('scales retention to a low model threshold and still caps pressure by output and headroom', () => {
+    const policy = resolveTargetPolicy(resolveConfig({}), { provider: MODEL, model: MODEL })
+    expect(resolveCompactSpec(policy, 1_000_000, 256_000, 128_000)).toMatchObject({
+      thresholdTokens: 128_000, retainTokens: 20_480,
+    })
+    expect(resolveCompactSpec(policy, 1_000_000, 256_000, 950_000)).toMatchObject({
+      thresholdTokens: 678_464, retainTokens: 119_040,
+    })
+    for (const threshold of [0, -1, 1.5, Number.NaN]) {
+      expect(() => resolveCompactSpec(policy, 1_000_000, 256_000, threshold))
+        .toThrow(/compactionThreshold .* must be a positive integer/)
+    }
   })
 
   it('rejects ratio retention that reaches the headroom-limited threshold', () => {
@@ -1716,6 +1731,22 @@ describe('automatic listener and loader composition', () => {
     await preStep(ctx, agent(small, MODEL))
     expect(small.snapshotEvents().some(event => event.type === 'compaction/start')).toBe(false)
     expect(compact.calls).toHaveLength(1)
+  })
+
+  it('uses the model threshold for automatic compaction inside a large context window', async () => {
+    const ctx = createContext(1_000_000, 500)
+    const compact = new TestCompactionEngine(ctx, {})
+    const pressured = conversation(4)
+    const measured = ctx.tokenMeter.measure(pressured).totalTokens
+    expect(measured).toBeGreaterThan(500)
+    expect(measured).toBeLessThan(800_000)
+
+    await preStep(ctx, agent(pressured, MODEL))
+    expect(pressured.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(true)
+    expect(compact.calls).toHaveLength(1)
+    const small = conversation(1)
+    await preStep(ctx, agent(small, MODEL))
+    expect(small.snapshotEvents().some(event => event.type === 'compaction/start')).toBe(false)
   })
 
   it('skips pre-step pressure when the step signal is already aborted', async () => {

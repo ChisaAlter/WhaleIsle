@@ -151,6 +151,8 @@ export interface SidebarRightHost {
 export interface SidebarRightPlacement {
   /** False opens content without expanding the panel (chat mini preview). */
   readonly expand?: boolean
+  /** Show the resource in a floating pane at this viewport rectangle. */
+  readonly floating?: FloatRect
   /** Land a new tab in this pane instead of the active docked one. */
   readonly paneId?: PaneId
   /** Prefer a new pane for new content; use the target pane when splitting is unavailable. */
@@ -472,6 +474,8 @@ export class SidebarRightController implements ISidebarRight {
       kind: claim.kind,
       contentId: claim.contentId,
       title: claim.title,
+      ...placement.expand === undefined ? {} : { expand: placement.expand },
+      ...placement.floating === undefined ? {} : { floating: placement.floating },
       ...placement.paneId === undefined ? {} : { paneId: placement.paneId },
       ...preferNewPane ? { preferNewPane: true } : {},
       ...placement.replaceTab === undefined ? {} : { replaceTab: placement.replaceTab },

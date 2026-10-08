@@ -273,7 +273,8 @@ export function AppFrame({
       if (trailing !== null) {
         // Ceil the measured box: rounding down loses subpixel clearance
         // between the conversation utilities and this cluster.
-        setTrailingWidth(Math.max(0, Math.ceil(trailing.getBoundingClientRect().width)))
+        const inset = Number.parseFloat(window.getComputedStyle(trailing).marginRight) || 0
+        setTrailingWidth(Math.max(0, Math.ceil(trailing.getBoundingClientRect().width + inset)))
       }
     }
     function apply(): void {
@@ -315,7 +316,8 @@ export function AppFrame({
     const trailing = trailingRef.current
     /* v8 ignore next -- the trailing cluster mounts unconditionally with the frame. */
     if (trailing === null) return
-    setTrailingWidth(Math.max(0, Math.ceil(trailing.getBoundingClientRect().width)))
+    const inset = Number.parseFloat(window.getComputedStyle(trailing).marginRight) || 0
+    setTrailingWidth(Math.max(0, Math.ceil(trailing.getBoundingClientRect().width + inset)))
   })
 
   // Narrow viewports auto-collapse the sidebar; the store mirror keeps
@@ -328,10 +330,12 @@ export function AppFrame({
   // into the 56px rail or the overlay drawer.
   const phone = viewport < PHONE_MAX && !landscape
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE && !landscape
-  // Hide the titlebar trailing cluster on any phone-width frame, including
-  // landscape: rotation must not re-show Session log / Git over the title.
+  // Desktop Git actions keep their seat even when the window is narrow.
+  // Browser phone drawers retain their separate navigation chrome.
   const compactHeader = viewport < SIDEBAR_AUTO_COLLAPSE
-  const clusterVisible = !phone && !compactHeader
+  const desktop = document.documentElement.hasAttribute('data-windows-titlebar')
+    || document.documentElement.dataset.platform === 'darwin'
+  const clusterVisible = desktop || viewport >= PHONE_MAX
   useEffect(() => { actions.setNarrow(narrow) }, [actions, narrow])
   const sidebarCollapsed = narrow ? !layoutInfo.narrowExpanded : layoutInfo.sidebar === 0
   const sidebarPreference = sidebarCollapsed
@@ -365,8 +369,11 @@ export function AppFrame({
   const sidebarWidth = phone ? (sidebarCollapsed ? 0 : drawerWidth) : cols.sidebar
   const rightbarTracked = layoutInfo.rightbarTrack && cols.rightbar > 0
   const clusterOverConversation = clusterVisible
-  const titlebarDensity = resolveTitlebarDensity(cols.center, clusterOverConversation)
-  const conversationReserve = titlebarConversationReserve(clusterVisible, trailingWidth, 0)
+  const titlebarDensity = resolveTitlebarDensity(
+    rightbarTracked ? Math.min(cols.center, cols.rightbar) : cols.center,
+    clusterOverConversation,
+  )
+  const conversationReserve = titlebarConversationReserve(clusterVisible, trailingWidth, cols.rightbar)
 
   // The drag base is the rendered width captured at drag start (grabbing a
   // concession-clamped panel must not jump back to the stored preference);
@@ -419,6 +426,7 @@ export function AppFrame({
       data-phone-sidebar={phone && !sidebarCollapsed || undefined}
       data-phone-details={phone && layoutInfo.rightbarShown || undefined}
       data-compact-header={compactHeader || undefined}
+      data-titlebar-trailing-hidden={!clusterVisible || undefined}
       data-titlebar-density={titlebarDensity}
       data-titlebar-over-conversation={clusterOverConversation || undefined}
       data-dragging={dragging || undefined}

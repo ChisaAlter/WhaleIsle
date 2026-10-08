@@ -344,6 +344,8 @@ export interface LlmModelInfo {
 export interface LlmModelContext {
   /** Maximum combined request and response context in tokens. */
   contextWindow: number
+  /** Optional deployment-selected automatic compaction pressure in tokens. */
+  compactionThreshold?: number
 }
 
 /**

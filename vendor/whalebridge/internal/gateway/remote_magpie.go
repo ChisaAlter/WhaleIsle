@@ -62,9 +62,15 @@ func withCaller(next http.Handler) http.Handler {
 				}
 			}
 		}
+		ctx := context.WithValue(r.Context(), callerCtx{}, c)
+		if searchingFrom(r) {
+			// another magpie's search: only the model itself searches
+			ctx = context.WithValue(ctx, searchingKey{}, true)
+		}
 		r.Header.Del(AgentHeader)
 		r.Header.Del(ViaHeader)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerCtx{}, c)))
+		r.Header.Del(SearchingHeader)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

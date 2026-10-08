@@ -186,9 +186,42 @@ func (p Provider) Sign(ctx context.Context, req *http.Request, proto Protocol, b
 	// Written to the map directly, not via Set, so the name keeps the exact
 	// case the user typed — some gateways match header names case-sensitively.
 	for k, v := range p.Headers {
+		if ListHeader(k) {
+			MergeList(req.Header, k, v)
+			continue
+		}
 		req.Header[k] = []string{v}
 	}
 	return nil
+}
+
+// ListHeader is a header whose value is a comma-separated list the request
+// has its own of, which a provider's header of the same name adds to:
+// anthropic-beta, the betas an agent asks on each request.
+func ListHeader(name string) bool { return strings.EqualFold(name, "anthropic-beta") }
+
+// MergeList writes name in h as the items h has under it, in any case,
+// followed by those of add: comma-separated, each once, empty ones left
+// out, under name as written.
+func MergeList(h http.Header, name, add string) {
+	var vals []string
+	for _, k := range slices.Sorted(maps.Keys(h)) {
+		if strings.EqualFold(k, name) {
+			vals = append(vals, h[k]...)
+			delete(h, k)
+		}
+	}
+	var out []string
+	for _, v := range append(vals, add) {
+		for _, it := range strings.Split(v, ",") {
+			if it = strings.TrimSpace(it); it != "" && !slices.Contains(out, it) {
+				out = append(out, it)
+			}
+		}
+	}
+	if len(out) > 0 {
+		h[name] = []string{strings.Join(out, ",")}
+	}
 }
 
 // Retries is whether the account can mend a refusal (Retry), so the
@@ -604,6 +637,9 @@ func claudeAccount() (Provider, bool) {
 	loginsMu.Lock()
 	owned := slices.ContainsFunc(readLogins(), func(l savedLogin) bool { return l.Agent == "claude" && l.Owned && strings.EqualFold(l.User, user) })
 	loginsMu.Unlock()
+	if whaleBridgeHiddenLogin("claude", user) {
+		return claudeStandInAccount()
+	}
 	if owned {
 		acct := &Account{Agent: "claude", User: user, Plan: plan, standIn: true}
 		acct.token = func(context.Context) (string, error) { return claudeSavedDir(user) }
@@ -710,6 +746,9 @@ func Accounts() []Provider {
 	if p, ok := mimoAccount(); ok {
 		out = append(out, p)
 	}
+	if p, ok := siwcAccount(); ok {
+		out = append(out, p)
+	}
 	for _, agent := range []string{"gemini", "antigravity"} {
 		if p, ok := googleAccountOf(agent); ok {
 			out = append(out, p)
@@ -722,7 +761,7 @@ func Accounts() []Provider {
 
 // builtinOrder is the built-ins' ids in the order Accounts lists them.
 var builtinOrder = slices.Concat([]string{"claude", "codex", "copilot", "cursor", "grok", "devin", "kiro", "zcode",
-	"workbuddy", WorkBuddyAIID, CommandCodePlanID}, qoderAgents, []string{"zed", "factory", MiMoID, "gemini", "antigravity"})
+	"workbuddy", WorkBuddyAIID, CommandCodePlanID}, qoderAgents, []string{"zed", "factory", MiMoID, ChatGPTAPIID, "gemini", "antigravity"})
 
 // placeMoved adds the plugins' accounts to the built-ins': one a built-in
 // was moved onto stands where the built-in stood, the others go last.
@@ -831,6 +870,9 @@ func codexAccount(home string) (Provider, bool) {
 	loginsMu.Lock()
 	owned := slices.ContainsFunc(readLogins(), func(l savedLogin) bool { return l.Agent == "codex" && l.Owned && strings.EqualFold(l.User, acct.User) })
 	loginsMu.Unlock()
+	if whaleBridgeHiddenLogin("codex", acct.User) {
+		return codexStandInAccount()
+	}
 	if owned {
 		return codexSavedAccount(acct.User, acct.Plan), true
 	}

@@ -1,5 +1,4 @@
-- button "Download session log"
-- button "Switch branch": Select branch
+- button "Switch branch": main
 - button "Commit" [disabled]:
   - img
   - text: Commit
