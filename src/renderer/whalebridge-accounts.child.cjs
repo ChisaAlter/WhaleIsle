@@ -1,6 +1,7 @@
 'use strict';
 
 const { app, BrowserWindow } = require('electron');
+if (process.env.WHALEBRIDGE_QA_SOFTWARE_RENDERING) app.disableHardwareAcceleration();
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');

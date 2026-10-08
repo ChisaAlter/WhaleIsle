@@ -2,12 +2,15 @@
 // client's active account or edits that client's model configuration.
 let subscriptions=[];
 const subscriptionNames={claude:'Claude',codex:'Codex','chatgpt-api':'ChatGPT API',copilot:'GitHub Copilot',cursor:'Cursor',grok:'Grok',devin:'Devin',kiro:'Kiro',zcode:'ZCode',workbuddy:'WorkBuddy','workbuddy-ai':'WorkBuddy AI','commandcode-plan':'Command Code',qoder:'Qoder','qoder-cn':'Qoder 中国版',zed:'Zed',factory:'Factory','mimo-app':'小米 MiMo',gemini:'Google Gemini',antigravity:'Google Antigravity'};
-async function openSubscription(adapterId='', preferAdapter=false){
- subscriptions=(await api('subscriptions')).map(s=>({...s,name:s.plugin?s.name:(subscriptionNames[s.id] || s.name)}));editor={type:'subscription'};
+async function openSubscription(adapterId='', preferAdapter=false, expected){
+ const rows=await api('subscriptions');
+ if(expected&&(expected!==editor||expected.closed))return;
+ subscriptions=rows.map(s=>({...s,name:s.plugin?s.name:(subscriptionNames[s.id] || s.name)}));editor={type:'subscription'};
  $('#editor-title').textContent='添加订阅账号';
  $('#fields').innerHTML=`<p class="form-hint">将已有订阅连接到鲸屿。请选择你的供应商，再按对应的登录流程完成授权。</p><label for="f-agent">订阅供应商</label><select name="agent" id="f-agent">${subscriptions.map(s=>`<option value="${escape(s.id)}">${escape(s.name)}</option>`).join('')}</select><div id="signin-options"></div><p class="muted">部分订阅需要供应商的认证工具或适配器，登录时会显示准备进度。模型范围和使用额度由供应商决定。</p>${removedSubscriptions()}`;
  if(adapterId)$('#f-agent').value=preferAdapter?(subscriptions.find(s=>s.plugin&&s.pid===adapterId)?.id || adapterId):adapterId;
  $('#f-agent').onchange=subscriptionOptions;subscriptionOptions();showEditor();$('#save').textContent='开始登录';
+ return editor;
 }
 function removedSubscriptions(){const removed=state.removed || [],row=p=>`<div class="row account-row"><div class="text"><strong>${escape(p.name || p.id)}</strong><p class="caption">已从鲸桥移除 · 凭据保留${p.quiet?' · 已关闭恢复提醒':''}${p.tucked?' · 已从添加列表隐藏':''}</p></div><div class="actions">${button('恢复接入','removed-show',p.id)}${p.tucked?button('在添加列表显示','removed-untuck',p.id):button('从添加列表隐藏','removed-tuck',p.id)}${p.quiet?'':button('关闭恢复提醒','removed-quiet',p.id)}${button('彻底移除鲸桥凭据','removed-forget',p.id,'danger')}</div></div>`;return removed.length?`<details class="advanced"><summary>已移除的订阅（${removed.length}）</summary><div class="advanced-body"><p class="form-hint">恢复后保留先前模型和账号设置，无需重新授权。</p><div class="panel">${removed.filter(p=>!p.tucked).map(row).join('') || '<p class="empty-inline">所有已移除订阅均已隐藏。</p>'}</div>${removed.some(p=>p.tucked)?`<details class="advanced"><summary>查看隐藏的订阅</summary><div class="panel">${removed.filter(p=>p.tucked).map(row).join('')}</div></details>`:''}</div></details>`:'';}
 function subscriptionOptions(){
@@ -122,13 +125,27 @@ async function saveAccountEditor(data,current){const{id,ref,user}=current.data;
  if(current!==editor||current.closed)return;await load();if(current.type==='key-edit')await openKeys(id);else await openAccounts(id);message('设置已保存，已同步到鲸屿');
 }
 $('#fields').addEventListener('click',async e=>{
- const b=e.target.closest('[data-action]');if(!b)return;const{action,id}=b.dataset;
+ const b=e.target.closest('[data-action]');if(!b||b.disabled||editor?.adapterPending)return;const{action,id}=b.dataset;
  if(!['signin-callback','install-adapter','add-account','account-on','account-remove','account-edit','account-first','account-up','account-down','account-relogin','accounts-quota','auth-import','key-on','key-remove','key-weight','key-edit','key-import','key-use','key-up','key-down','key-remove-selected','key-fold','pick-account-model','gateway-unrest','removed-show','removed-quiet','removed-tuck','removed-untuck','removed-forget'].includes(action))return;
  b.disabled=true;
  try{
   if(action==='key-fold'){editor.expanded=!editor.expanded;localStorage.setItem('whalebridge.keys.expanded.'+id,editor.expanded?'1':'0');syncKeyList();return;}
   if(action==='signin-callback'){await api(`signin/${encodeURIComponent(loginFlow)}/callback`,{url:$('#f-callback').value});return;}
-  if(action==='install-adapter'){await api('subscription/adapter',{id});await openSubscription(id,true);message('供应商适配器已安装');return;}
+  if(action==='install-adapter'){
+   const current=editor,progress=startAdapterProgress(`正在安装 ${subscriptions.find(s=>s.id===id)?.name || id} 供应商适配器…`);
+   try{
+    await api('subscription/adapter',{id});
+    if(current!==editor||current.closed)return;
+    progress.update('适配器已安装，正在读取登录方式…');
+    const installedEditor=await openSubscription(id,true,current);
+    if(!installedEditor||installedEditor!==editor||installedEditor.closed)return;
+    $('#adapter-progress').hidden=false;$('#adapter-progress').setAttribute('aria-busy','false');
+    $('#adapter-progress').innerHTML='<p role="status">供应商适配器已安装，可以开始登录。</p>';
+    message('供应商适配器已安装');
+   }catch(error){if(current===editor&&!current.closed)formError(error);return;}
+   finally{progress.finish();}
+   return;
+  }
   if(action==='add-account'||action==='account-relogin'){await openSubscription(id);return;}
   if(action==='accounts-quota'){$('#editor').close();await go('usage');return;}
   if(action==='auth-import'){openAuthImport(id);return;}

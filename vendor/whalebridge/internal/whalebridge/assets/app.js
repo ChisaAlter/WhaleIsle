@@ -27,6 +27,33 @@ function message(text, error = false) {
  clearTimeout(messageTimer);
  if(text&&!error)messageTimer=setTimeout(()=>message(''),3200);
 }
+// Keep native select behavior, but use the shared icon and theme for its arrow.
+function decorateSelects(){
+ for(const select of document.querySelectorAll('select:not([multiple])')){
+  if(select.size>1 || select.parentElement.classList.contains('select-control'))continue;
+  const wrapper=document.createElement('span');wrapper.className='select-control';
+  select.before(wrapper);wrapper.append(select);wrapper.insertAdjacentHTML('beforeend',icon('chevron'));
+ }
+}
+new MutationObserver(decorateSelects).observe(document.body,{childList:true,subtree:true});
+decorateSelects();
+function startAdapterProgress(label){
+ const current=editor,host=$('#adapter-progress');
+ const controls=[...$('#edit-form').querySelectorAll('#fields button,#fields input,#fields select,#fields textarea,#save')].map(control=>[control,control.disabled]);
+ controls.forEach(([control])=>control.disabled=true);
+ current.adapterPending=true;host.hidden=false;host.setAttribute('aria-busy','true');
+ host.innerHTML=`<p role="status">${escape(label)}</p><progress aria-label="${escape(label)}"></progress><p class="caption">首次安装可能需要准备运行环境和下载依赖，请稍候。关闭窗口后，后台安装仍会继续。</p>`;
+ return {
+  update(text){if(current===editor&&!current.closed)host.querySelector('[role=status]').textContent=text;},
+  finish(text='',error=false){
+   current.adapterPending=false;
+   controls.forEach(([control,disabled])=>{if(current===editor&&control.isConnected)control.disabled=disabled;});
+   if(current!==editor||current.closed)return;
+   host.setAttribute('aria-busy','false');host.hidden=!text;
+   host.innerHTML=text?`<p role="${error?'alert':'status'}" class="${error?'inline-error':''}">${escape(text)}</p>`:'';
+  }
+ };
+}
 async function load() {
  $('#refresh').disabled = true;
  try {
@@ -535,9 +562,10 @@ function checkEditorValidity(){
  invalid.reportValidity();return false;
 }
 function showEditor(){
- $('#form-error').hidden=true;$('#save').hidden=false;$('#save').textContent='保存';$('#save').disabled=false;
+ $('#form-error').hidden=true;$('#adapter-progress').hidden=true;$('#save').hidden=false;$('#save').textContent='保存';$('#save').disabled=false;
  $('#cancel-editor').textContent=['accounts','keys','adapters','health'].includes(editor.type)?'关闭':'取消';
  configureEditorSections();
+ decorateSelects();
  if(!$('#editor').open)$('#editor').showModal();
  ($('#fields .editor-section:not([hidden]) input:not([type=password]),#fields .editor-section:not([hidden]) select') || $('#fields input:not([type=password]),#fields select'))?.focus();
 }
@@ -592,7 +620,7 @@ for(const b of document.querySelectorAll('[data-tab]'))b.addEventListener('click
 $('.workspace').addEventListener('click',async e=>{
  const filter=e.target.closest('[data-filter]');if(filter){modelFilter=filter.dataset.filter;modelList();return;}
  const b=e.target.closest('[data-action]');if(!b)return;const{action,id}=b.dataset;
- const menu=b.closest('details.menu');if(menu)menu.open=false;
+ const menu=b.closest('details.menu');if(menu)closeMenu(menu);
  try{
   if(action.startsWith('go-')){await go(action.slice(3));return;}
   if(action==='subscription'){await openSubscription();return;}
@@ -764,8 +792,8 @@ function adapterRows(items,installed=false){
   return `<tr><td><strong class="table-primary">${escape(p.name || p.package)}</strong><code class="table-meta">${escape(p.package)}</code><span class="table-meta">${escape(summary)}</span>${installed?`<span class="table-meta">${escape((p.providers || []).join('、'))}</span>`:''}${p.error?`<p class="inline-error">${escape(p.error)}</p>`:''}</td><td>${p.version?`<strong>${escape(p.version)}</strong>`:''}${installed?`<span class="status-badge">${p.enabled?'已启用':'已停用'}</span>${p.latest&&p.latest!==p.version?`<span class="table-meta">可更新 ${escape(p.latest)}</span>`:''}${p.autoUpdated?'<span class="table-meta">已自动更新</span>':''}`:`<span class="table-meta">${escape(p.publisher || '供应商提供')}</span>${p.weekly?`<span class="table-meta">每周下载 ${short(p.weekly)}</span>`:''}`}</td><td><div class="actions">${button('说明','adapter-page',ref,'text-button')}${installed?button('配置','adapter-options',ref)+button('更新','adapter-update',ref)+button(p.enabled?'停用':'启用',p.enabled?'adapter-off':'adapter-on',ref)+button('移除','adapter-remove',ref,'text-button danger'):button('安装','adapter-install',ref)}</div></td></tr>`;
  }).join('') || '<tr><td colspan="3" class="empty-inline">没有适配器。</td></tr>'}</tbody></table></div>`;
 }
-async function openAdapters(section='installed'){
- const r=await api('subscription/adapters');editor={type:'adapters',section};$('#editor-title').textContent='供应商适配器';
+async function openAdapters(section='installed',expected){
+ const r=await api('subscription/adapters');if(expected&&(expected!==editor||expected.closed))return;editor={type:'adapters',section};$('#editor-title').textContent='供应商适配器';
  const installed=`<div class="toolbar actions-bar">${button('检查更新','adapter-check',JSON.stringify({}))}${button('更新全部','adapter-update-all',JSON.stringify({}))}<label class="check-field"><input id="adapter-mirror" type="checkbox" ${r.mirror?'checked':''}><span>使用国内镜像</span></label></div><p class="form-hint">${r.bun?`运行环境 ${escape(r.bunVer || 'Bun')} 已就绪。`:'安装适配器需要 Bun，操作时由管理服务说明所需环境。'}${r.updates?.checked?` 最近检查：${escape(dateText(r.updates.checked))}`:''}</p>${r.error?`<p class="inline-error">${escape(r.error)}</p>`:''}${adapterRows(r.installed || [],true)}`;
  const available=(r.available || []).filter(p=>!(r.installed || []).some(i=>i.package===p.package));
  const discovery=`<div class="search"><input id="adapter-search-query" type="search" placeholder="搜索 npm 供应商适配器" aria-label="搜索供应商适配器">${button('搜索','adapter-search',JSON.stringify({}))}</div><div id="adapter-search-results">${adapterRows(available)}</div><div class="form-section"><h3>安装指定包</h3>${field('package','供应商提供的 npm 包名 / spec','','text','包名、包@版本或 npm spec')}<p class="form-hint">仅接入提供供应商认证的适配器。安装动作会保存到本机环境。</p>${button('安装此适配器','adapter-install-custom')}</div>`;
@@ -773,11 +801,14 @@ async function openAdapters(section='installed'){
  $('#fields').innerHTML=editorSection('installed','已安装','检查版本、配置认证适配器与连接环境。',installed)+editorSection('discover','查找与安装','选择推荐项或搜索供应商提供的 npm 包。',discovery)+editorSection('moves','订阅迁移','在内置接入与供应商适配器间管理已有授权。',`<div class="panel">${moves}</div>`);
  showEditor();$('#save').hidden=true;
  $('#adapter-mirror').onchange=async e=>{const current=editor;try{await api('subscription/adapter',{action:'mirror',enabled:e.target.checked});message('适配器镜像设置已保存');}catch(error){if(current===editor){e.target.checked=!e.target.checked;formError(error);}}};
+ return editor;
 }
 async function handleAdapterAction(e){
- const b=e.target.closest('[data-action]');if(!b||!b.dataset.action.startsWith('adapter-'))return;
+ const b=e.target.closest('[data-action]');if(!b||b.disabled||editor?.adapterPending)return;
+ if(b.dataset.action==='manage-adapters'){b.disabled=true;try{await openAdapters('installed',editor);}catch(error){formError(error);}finally{b.disabled=false;}return;}
+ if(!b.dataset.action.startsWith('adapter-'))return;
  const current=editor,action=b.dataset.action.replace('adapter-',''),data=action==='install-custom'?{package:$('#f-package').value.trim()}:JSON.parse(b.dataset.id || '{}');
- b.disabled=true;$('#form-error').hidden=true;
+ b.disabled=true;$('#form-error').hidden=true;let progress;
  try{
   if(action==='options'){
    const r=await api(`subscription/adapter/${encodeURIComponent(data.id)}/options`);if(current!==editor||current.closed)return;
@@ -796,23 +827,60 @@ async function handleAdapterAction(e){
   }
   if(action==='check'){
    const r=await api('subscription/adapters/check',{});if(current!==editor||current.closed)return;
-   await openAdapters('installed');message(`检查完成：${(r.plugins || []).filter(p=>p.latest&&p.latest!==p.version).length} 个适配器有更新`);return;
+   const checkedEditor=await openAdapters('installed',current);if(!checkedEditor||checkedEditor!==editor||checkedEditor.closed)return;
+   const unknown=(r.plugins || []).filter(p=>p.status==='unknown');
+   if(unknown.length){formError(new Error(`部分适配器未能检查更新：${unknown.map(p=>`${p.package || p.spec}（${p.error || p.why || '未获取版本'}）`).join('；')}`));return;}
+   const result=`检查完成：${(r.plugins || []).filter(p=>p.status==='update').length} 个适配器有更新`;
+   $('#adapter-progress').hidden=false;$('#adapter-progress').innerHTML=`<p role="status">${escape(result)}</p>`;message(result);return;
   }
   if(action==='install-custom'&&!data.package)throw new Error('请填写适配器包名。');
   if(['remove','move','moveback'].includes(action)&&!await ask(action==='remove'?'移除供应商适配器？':action==='move'?'迁移已有订阅？':'恢复内置接入？',action==='remove'?'此适配器的供应商将暂时不可用；已保存的鲸桥配置保留。':action==='move'?'已有账号由适配器接入，凭据只写入鲸桥。':'账号交回鲸桥内置接入；原客户端登录数据保留。','继续'))return;
+  if(['install','install-custom','update','update-all'].includes(action))progress=startAdapterProgress(action.startsWith('install')?'正在安装供应商适配器…':'正在更新供应商适配器…');
   await api('subscription/adapter',{...data,action:action==='install-custom'?'install':action});
   if(current!==editor||current.closed)return;
-  await load();await openAdapters();message(action==='update-all'?'适配器更新完成':'供应商适配器已更新');
- }catch(error){if(current===editor&&!current.closed)formError(error);}finally{b.disabled=false;}
+  progress?.update('安装操作已完成，正在刷新适配器列表…');
+  await load();const installedEditor=await openAdapters('installed',current);if(!installedEditor||installedEditor!==editor||installedEditor.closed)return;
+  const result=({install:'供应商适配器已安装','install-custom':'供应商适配器已安装',update:'供应商适配器已更新','update-all':'适配器更新完成',remove:'供应商适配器已移除',on:'供应商适配器已启用',off:'供应商适配器已停用',move:'已有订阅已迁移到适配器',moveback:'订阅已恢复内置接入',adopt:'订阅已使用适配器接入'})[action];
+  $('#adapter-progress').hidden=false;$('#adapter-progress').setAttribute('aria-busy','false');$('#adapter-progress').innerHTML=`<p role="status">${escape(result)}</p>`;message(result);
+ }catch(error){if(current===editor&&!current.closed)formError(error);}finally{progress?.finish();b.disabled=false;}
 }
 $('#fields').addEventListener('click',handleAdapterAction);
 $('#fields').addEventListener('click',e=>{if(e.target.closest('[data-action="copy-export"]'))copyText($('#f-export').value).catch(formError);});
-document.addEventListener('click',e=>{for(const menu of document.querySelectorAll('details.menu[open]'))if(!menu.contains(e.target))menu.open=false;});
-document.addEventListener('keydown',e=>{if(e.key==='Escape')for(const menu of document.querySelectorAll('details.menu[open]'))menu.open=false;});
+function closeMenu(menu,focus=false){
+ const content=menu.querySelector('.menu-content');
+ if(content.matches(':popover-open'))content.hidePopover();
+ menu.open=false;menu.querySelector('summary').setAttribute('aria-expanded','false');
+ if(focus)menu.querySelector('summary').focus();
+}
+document.addEventListener('click',e=>{
+ const summary=e.target.closest('details.menu > summary');
+ for(const menu of document.querySelectorAll('details.menu[open]'))if(!menu.contains(e.target))closeMenu(menu);
+ if(!summary)return;
+ e.preventDefault();const menu=summary.parentElement,content=menu.querySelector('.menu-content');
+ if(menu.open){closeMenu(menu);return;}
+ content.setAttribute('popover','auto');content.setAttribute('role','menu');
+ for(const button of content.querySelectorAll('button'))button.setAttribute('role','menuitem');
+ summary.setAttribute('aria-haspopup','menu');summary.setAttribute('aria-expanded','true');
+ menu.open=true;content.showPopover();
+ const anchor=summary.getBoundingClientRect(),box=content.getBoundingClientRect();
+ content.style.left=`${Math.max(8,Math.min(anchor.right-box.width,innerWidth-box.width-8))}px`;
+ const top=anchor.bottom+box.height+4<=innerHeight-8?anchor.bottom+4:anchor.top-box.height-4;
+ content.style.top=`${Math.max(8,Math.min(top,innerHeight-box.height-8))}px`;
+ content.querySelector('button:not(:disabled)')?.focus({preventScroll:true});
+},true);
+document.addEventListener('keydown',e=>{
+ const menu=e.target.closest('details.menu[open]');if(!menu)return;
+ if(e.key==='Escape'){e.preventDefault();closeMenu(menu,true);return;}
+ if(!['ArrowDown','ArrowUp','Home','End','Tab'].includes(e.key))return;
+ if(e.key==='Tab'){closeMenu(menu);return;}
+ const items=[...menu.querySelectorAll('.menu-content button:not(:disabled)')],at=items.indexOf(document.activeElement);
+ e.preventDefault();items[e.key==='Home'?0:e.key==='End'?items.length-1:(at+(e.key==='ArrowDown'?1:-1)+items.length)%items.length]?.focus();
+});
+for(const event of ['scroll','resize'])window.addEventListener(event,e=>{if(e.type==='scroll'&&e.target.closest?.('.menu-content'))return;for(const menu of document.querySelectorAll('details.menu[open]'))closeMenu(menu);},true);
 $('#editor-nav').addEventListener('click',e=>{const b=e.target.closest('[data-section-target]');if(b)activateEditorSection(b.dataset.sectionTarget);});
 window.configureEditorSections=configureEditorSections;
 $('#fields').addEventListener('change',handleGroupMemberChange);
 $('#fields').addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;if(editor?.type==='group'&&b.dataset.action==='group-preview-match'){void previewGroupMatch(b);return;}if(editor?.type==='group'&&b.dataset.action==='group-edit-inner'){void (async()=>{if(await ask('编辑内层路由组？','当前组尚未保存的修改会丢弃。请先保存，或继续进入内层组。','继续编辑内组')){const id=b.dataset.id.replace(/^group\//,'');await new Promise(resolve=>{$('#editor').addEventListener('close',resolve,{once:true});$('#editor').close();});openGroup(id);}})();return;}if(editor?.type==='group'&&b.dataset.action.startsWith('group-')){try{groupEditorAction(b.dataset.action,b.dataset.id);}catch(error){formError(error);}}if(b.dataset.action==='capacity-pick'){const data=JSON.parse(b.dataset.id);$('#f-'+data.kind).value=data.value;}});
 $('#content').addEventListener('change',e=>{if(e.target.dataset.groupSelect)e.target.checked?selectedGroups.add(e.target.dataset.groupSelect):selectedGroups.delete(e.target.dataset.groupSelect);});
-$('#content').addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;const action=b.dataset.action,id=b.dataset.id;if(!['group-up','group-down','group-switch','remove-selected-groups'].includes(action))return;b.disabled=true;try{if(action==='group-switch'){const g=state.groups.find(g=>g.id===id);await api('group/switch',{id,off:!g.disabled});}else if(action==='remove-selected-groups'){const ids=[...selectedGroups].filter(id=>state.groups.some(g=>g.id===id));if(!ids.length)throw new Error('请先选择路由组。');if(!await ask('删除已选路由组？',`将删除 ${ids.length} 个组；鲸屿模型列表随后同步。`,'删除组'))return;await api('group/delete',{ids});selectedGroups.clear();}else{const order=state.groups.map(g=>g.id),at=order.indexOf(id),to=at+(action==='group-up'?-1:1);if(at<0||to<0||to>=order.length)return;[order[at],order[to]]=[order[to],order[at]];await api('group/order',{order});}await load();}catch(error){message(error.message,true);}finally{b.disabled=false;}});
+$('#content').addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;const action=b.dataset.action,id=b.dataset.id;if(!['group-up','group-down','group-switch','remove-selected-groups'].includes(action))return;e.stopPropagation();b.disabled=true;try{if(action==='group-switch'){const g=state.groups.find(g=>g.id===id);await api('group/switch',{id,off:!g.disabled});}else if(action==='remove-selected-groups'){const ids=[...selectedGroups].filter(id=>state.groups.some(g=>g.id===id));if(!ids.length)throw new Error('请先选择路由组。');if(!await ask('删除已选路由组？',`将删除 ${ids.length} 个组；鲸屿模型列表随后同步。`,'删除组'))return;await api('group/delete',{ids});selectedGroups.clear();}else{const order=state.groups.map(g=>g.id),at=order.indexOf(id),to=at+(action==='group-up'?-1:1);if(at<0||to<0||to>=order.length)return;[order[at],order[to]]=[order[to],order[at]];await api('group/order',{order});}await load();}catch(error){message(error.message,true);}finally{b.disabled=false;}});
 window.addEventListener('DOMContentLoaded',load,{once:true});

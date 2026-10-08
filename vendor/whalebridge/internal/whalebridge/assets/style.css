@@ -373,7 +373,24 @@ dialog.workbench form{height:100%;max-height:100%}
 .management-table .icon-button{padding:0;width:28px;border-radius:8px}
 .management-table .menu-content button{width:100%;min-height:32px;border-radius:8px;justify-content:flex-start;white-space:normal}
 .management-table .menu{position:static}
-.management-table .menu-content{position:absolute;z-index:20;right:24px;min-width:176px}
+.menu-content[popover]{position:fixed;inset:auto;margin:0;min-width:176px;max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px);overflow:auto;border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-primary)}
+.menu-content[popover]:not(:popover-open){display:none}
+.select-control{display:inline-grid;position:relative;min-width:0;vertical-align:middle;width:100%}
+.select-control>select{appearance:none;padding-right:36px}
+.select-control>.icon{position:absolute;right:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--dsw-alias-label-secondary);pointer-events:none}
+.select-control:has(select:disabled)>.icon{opacity:.4}
+.list-toolbar>.select-control{width:160px;flex:none}
+.select-control:has(.usage-select){width:auto}
+.top>.select-control{width:160px;flex:0 0 160px}
+.form-field{min-width:0}
+.management-table .select-control>select{padding-right:36px}
+#adapter-progress{padding:12px 0;display:grid;gap:8px;font-size:12px;line-height:20px}
+#adapter-progress progress{appearance:none;display:block;width:100%;height:6px;border:0;border-radius:4px;overflow:hidden;background:var(--dsw-specific-sidebar-fill)}
+#adapter-progress progress::-webkit-progress-bar{background:transparent;border-radius:4px}
+#adapter-progress progress:indeterminate::-webkit-progress-value{background:var(--dsw-alias-state-business-primary)}
+#adapter-progress progress:indeterminate{background:linear-gradient(90deg,var(--dsw-specific-sidebar-fill) 0 25%,var(--dsw-alias-state-business-primary) 25% 45%,var(--dsw-specific-sidebar-fill) 45% 100%);background-size:200% 100%;animation:adapter-progress 1.4s ease-in-out infinite}
+@keyframes adapter-progress{from{background-position:100% 0}to{background-position:-100% 0}}
+@media(prefers-reduced-motion:reduce){#adapter-progress progress:indeterminate{animation:none}}
 .table-primary{display:block;font-weight:500;font-size:14px;line-height:22px}
 .table-meta{display:block;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);margin-top:4px;overflow-wrap:anywhere}
 .table-meta.endpoint,.member-preview{max-width:320px}
@@ -406,7 +423,7 @@ dialog.workbench form{height:100%;max-height:100%}
 .price-validation{color:var(--dsw-alias-state-error-primary)}
 .group-add-member{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;margin:20px 0}
 .group-add-member>label{flex-basis:100%;margin:0}
-.group-add-member>select{flex:1;min-width:180px}
+.group-add-member>select,.group-add-member>.select-control{flex:1;min-width:180px;width:auto}
 .group-add-member>button{flex:none}
 #group-member-table .management-table{min-width:700px}
 #group-member-table .management-table td:nth-child(2){min-width:220px}
@@ -422,7 +439,7 @@ dialog.workbench form{height:100%;max-height:100%}
 .rule-days .check-field{margin:0}
 .adapter-readme{font:12px/20px var(--ds-font-family-code);white-space:pre-wrap;overflow-wrap:anywhere;margin:16px 0;color:var(--dsw-alias-label-secondary)}
 .history-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:end;margin-bottom:24px}
-.history-toolbar>label{margin-top:0}.history-toolbar>select{grid-column:1}.history-toolbar #history-custom{grid-column:1/-1}.history-toolbar>button{grid-column:2;grid-row:2}
+.history-toolbar>label{margin-top:0}.history-toolbar>select,.history-toolbar>.select-control{grid-column:1}.history-toolbar #history-custom{grid-column:1/-1}.history-toolbar>button{grid-column:2;grid-row:2}
 .quota-history-line{padding:20px 0;border-bottom:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-state-business-primary)}
 .quota-history-line h3,.quota-history-line .form-hint{color:var(--dsw-alias-label-primary)}
 .quota-history-line svg{width:100%;display:block;margin-top:12px}.quota-history-line svg text{fill:var(--dsw-alias-label-tertiary);font:10px var(--dsw-font-family)}
@@ -442,6 +459,11 @@ dialog.workbench form{height:100%;max-height:100%}
 .page-segments button{min-height:32px;border:0;border-radius:8px;padding:0 12px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
 .page-segments button[aria-pressed=true],.page-segments button[aria-selected=true]{background:var(--dsw-specific-sidebar-nav-item-active);color:var(--dsw-alias-label-primary);font-weight:500}
 .usage-chart{padding:16px 0;border-top:1px solid var(--dsw-alias-border-l1);border-bottom:1px solid var(--dsw-alias-border-l1);margin:20px 0;display:grid;gap:12px}
+.usage-trend-panel{padding:20px}
+.global-form-panel{padding:20px;margin-top:24px}
+.global-form-panel .section-head{margin:0 0 16px}
+.global-form-panel .actions-bar{margin-top:16px}
+.usage-trend-panel>.section-head{margin:0 0 16px}
 .usage-bar-item{display:grid;grid-template-columns:minmax(120px,1fr) minmax(160px,3fr) auto;gap:12px;align-items:center;font-size:12px;line-height:18px}
 .usage-bar-item progress{width:100%;height:8px;accent-color:var(--dsw-alias-state-business-primary)}
 .usage-bar-item>span:first-child{overflow-wrap:anywhere}
