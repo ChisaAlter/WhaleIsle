@@ -51,15 +51,15 @@ function showLogin(st){
  $('#save').hidden=false;const label=st.state==='installing'?'准备中':'等待授权';if(editor.loginBusy)editor.loginBusy.update(label);else editor.loginBusy=startButtonBusy($('#save'),label);$('#fields').innerHTML=`<div class="login-progress">${st.instructions?`<p class="muted">${escape(st.instructions)}</p>`:''}${st.url&&/^https?:\/\//.test(st.url)?`<p><a href="${escape(st.url)}" target="_blank" rel="noreferrer">打开供应商登录页面 ↗</a></p>`:''}${st.code?`<p>验证码：<code>${escape(st.code)}</code></p>`:''}</div>${st.pasteCallback||st.pasteCode||st.pasteKey?field('callback','完成登录后粘贴回调地址、验证码或密钥')+`<div class="actions-bar">${button('提交','signin-callback')}</div>`:''}<p class="muted">关闭对话框会取消尚未完成的登录。</p>`;
 }
 function pollLogin(){
- clearTimeout(loginTimer);const id=loginFlow;if(!id)return;
+ clearTimeout(loginTimer);const id=loginFlow,current=editor;if(!id)return;
  loginTimer=setTimeout(async()=>{
-  try{const st=await api(`signin/${encodeURIComponent(id)}`);if(loginFlow!==id)return;
+  try{const st=await api(`signin/${encodeURIComponent(id)}`);if(loginFlow!==id||current!==editor||current.closed)return;
    if(st.state==='done'){await completeSubscription(st);return;}
    if(st.state==='failed'||st.state==='canceled'){loginFlow=null;editor.loginBusy?.finish();editor.loginBusy=null;$('#form-error').textContent=st.error || '登录已取消';$('#form-error').hidden=false;return;}
    // Do not replace an input while the user is pasting a callback.
    if(!$('#f-callback') || st.url!==$('#fields a')?.getAttribute('href'))showLogin(st);
    pollLogin();
-  }catch(e){loginFlow=null;editor.loginBusy?.finish();editor.loginBusy=null;$('#form-error').textContent=e.message;$('#form-error').hidden=false;}
+  }catch(e){if(loginFlow!==id||current!==editor||current.closed)return;loginFlow=null;editor.loginBusy?.finish();editor.loginBusy=null;$('#form-error').textContent=e.message;$('#form-error').hidden=false;}
  },1500);
 }
 $('#editor').addEventListener('close',()=>{if(editor){editor.closed=true;editor.loginBusy?.finish();editor.loginBusy=null;}clearTimeout(loginTimer);if(loginFlow){const id=loginFlow;loginFlow=null;api(`signin/${encodeURIComponent(id)}/cancel`,{}).catch(e=>message(e.message));}});
@@ -82,7 +82,7 @@ async function refreshAccountQuotas(current){
   const qs=await api('accounts/'+encodeURIComponent(current.data.id)+'/usage');
   if(current!==editor||current.closed)return;
   for(const node of $('#fields').querySelectorAll('[data-account-quota]')){
-   const q=Object.values(qs || {}).find(q=>String(q.user).toLowerCase()===node.dataset.accountQuota.toLowerCase());
+   const q=Object.entries(qs || {}).find(([user])=>user.toLowerCase()===node.dataset.accountQuota.toLowerCase())?.[1];
    node.textContent=q?quotaAccountText(q):'供应商未报告此账号额度';
   }
  }catch(error){if(current===editor&&!current.closed)for(const node of $('#fields').querySelectorAll('[data-account-quota]'))node.textContent='额度读取失败：'+error.message;}
