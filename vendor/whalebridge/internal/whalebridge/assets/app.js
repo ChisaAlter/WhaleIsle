@@ -37,25 +37,43 @@ function decorateSelects(){
 }
 new MutationObserver(decorateSelects).observe(document.body,{childList:true,subtree:true});
 decorateSelects();
-function startAdapterProgress(label){
- const current=editor,host=$('#adapter-progress');
+const buttonBusy = new WeakMap();
+function startButtonBusy(button,label){
+ const previous=buttonBusy.get(button),saved=previous?.saved || {html:button.innerHTML,disabled:button.disabled,minWidth:button.style.minWidth,ariaLabel:button.getAttribute('aria-label')};
+ const owner={saved};buttonBusy.set(button,owner);
+ const compact=button.classList.contains('icon-button')||button.tagName==='SUMMARY'||button.classList.contains('switch');
+ const update=text=>{if(buttonBusy.get(button)!==owner)return;button.innerHTML=(compact?'':'<span role="status">'+escape(text)+'</span>')+'<span class="button-spinner" aria-hidden="true"></span>';button.setAttribute('aria-label',text);};
+ button.style.minWidth=button.getBoundingClientRect().width+'px';button.disabled=true;button.setAttribute('aria-busy','true');update(label);
+ return {update,finish(){if(buttonBusy.get(button)!==owner)return;buttonBusy.delete(button);button.removeAttribute('aria-busy');button.style.minWidth=saved.minWidth;if(saved.ariaLabel===null)button.removeAttribute('aria-label');else button.setAttribute('aria-label',saved.ariaLabel);if(button.querySelector('.button-spinner'))button.innerHTML=saved.html;button.disabled=saved.disabled;}};
+}
+function startAdapterBusy(button,phase='downloading'){
+ const current=editor,host=$('#adapter-progress'),busy=startButtonBusy(button,'下载中');
  const controls=[...$('#edit-form').querySelectorAll('#fields button,#fields input,#fields select,#fields textarea,#save')].map(control=>[control,control.disabled]);
  controls.forEach(([control])=>control.disabled=true);
- current.adapterPending=true;host.hidden=false;host.setAttribute('aria-busy','true');
- host.innerHTML=`<p role="status">${escape(label)}</p><progress aria-label="${escape(label)}"></progress><p class="caption">首次安装可能需要准备运行环境和下载依赖，请稍候。关闭窗口后，后台安装仍会继续。</p>`;
+ current.adapterPending=true;host.hidden=true;
+ const update=phase=>{if(current===editor&&!current.closed){busy.update({downloading:'下载中',installing:'安装中',updating:'更新中'}[phase]);}};
+ update(phase);
  return {
-  update(text){if(current===editor&&!current.closed)host.querySelector('[role=status]').textContent=text;},
-  finish(text='',error=false){
+  update,
+  finish(){
    current.adapterPending=false;
+   busy.finish();
    controls.forEach(([control,disabled])=>{if(current===editor&&control.isConnected)control.disabled=disabled;});
-   if(current!==editor||current.closed)return;
-   host.setAttribute('aria-busy','false');host.hidden=!text;
-   host.innerHTML=text?`<p role="${error?'alert':'status'}" class="${error?'inline-error':''}">${escape(text)}</p>`:'';
   }
  };
 }
+async function installAdapter(data,busy){
+ const response=await fetch('/api/subscription/adapter',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/x-ndjson'},body:JSON.stringify({...data,action:'install'})});
+ if(!response.ok)throw new Error(await response.text());
+ const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',done=false;
+ const consume=line=>{if(!line.trim())return;const event=JSON.parse(line);if(event.error)throw new Error(event.error);if(event.phase)busy.update(event.phase);if(event.ok)done=true;};
+ try{
+  while(true){const part=await reader.read();buffer+=decoder.decode(part.value,{stream:!part.done});let end;while((end=buffer.indexOf('\n'))>=0){consume(buffer.slice(0,end));buffer=buffer.slice(end+1);}if(part.done)break;}
+  consume(buffer);if(!done)throw new Error('未收到适配器安装结果');
+ }finally{reader.releaseLock();}
+}
 async function load() {
- $('#refresh').disabled = true;
+ const busy=startButtonBusy($('#refresh'),'刷新中');
  try {
   state = await api('state');
   $('#version').textContent = `v${state.version}`;
@@ -69,7 +87,7 @@ async function load() {
   $('#content').setAttribute('aria-busy','false');
   if(!state) $('#content').innerHTML = empty('暂时无法读取配置','请确认鲸桥正在运行，然后点击右上角刷新。','','info');
   message(e.message,true);
- } finally { $('#refresh').disabled = false; }
+ } finally { busy.finish(); }
 }
 function heading(title, description, action = '') { return `<div class="top"><div><h1>${title}</h1><p>${description}</p></div>${action}</div>`; }
 const button = (label, action, id = '', cls = '') => `<button type="button" class="${cls}" data-action="${action}" data-id="${escape(id)}">${label}</button>`;
@@ -117,13 +135,13 @@ function syncModelControls() {
  for(const b of document.querySelectorAll('[data-action="hide-model"]')){
   const m=modelRows().find(m=>m.id===b.dataset.id);if(!m)continue;
   b.setAttribute('aria-checked',String(!m.hidden));b.title=m.hidden?'显示模型':'隐藏模型';
-  b.disabled=visibilityPending.has(m.id);b.setAttribute('aria-busy',String(b.disabled));
+  b.disabled=visibilityPending.has(m.id);b.setAttribute('aria-busy',String(b.disabled));b.innerHTML=b.disabled?'<span class="button-spinner" aria-hidden="true"></span>':'';
   b.closest('.model-row').classList.toggle('disabled',m.hidden);
  }
  for(const b of document.querySelectorAll('[data-action="model-scope"]')){
   const rows=scopeRows(b.dataset.scope,b.dataset.id),s=scopeState(rows);
   b.setAttribute('aria-checked',s.checked);b.title=s.checked==='true'?'全部隐藏':'全部显示';
-  b.disabled=!rows.length||rows.some(m=>visibilityPending.has(m.id));b.setAttribute('aria-busy',String(b.disabled&&rows.length>0));
+  b.disabled=!rows.length||rows.some(m=>visibilityPending.has(m.id));b.setAttribute('aria-busy',String(b.disabled&&rows.length>0));b.innerHTML=b.disabled&&rows.length?'<span class="button-spinner" aria-hidden="true"></span>':'';
  }
  for(const c of document.querySelectorAll('[data-count]')){
   const s=scopeState(scopeRows(c.dataset.count,c.dataset.id));c.textContent=`已显示 ${s.shown} / ${s.total}`;
@@ -199,7 +217,7 @@ function groupEditorAction(action,id){
  $('#f-members').value=members.join('\n');drawGroupMembers();
 }
 async function previewGroupMatch(button){
- const current=editor;button.disabled=true;
+ const current=editor,busy=startButtonBusy(button,'匹配中');
  try{
   const r=await api('group/match',{match:lines($('#f-match').value)});if(current!==editor||current.closed)return;
   current.rules=readGroupRules();
@@ -208,7 +226,7 @@ async function previewGroupMatch(button){
   $('#f-members').value=[...own,...matched].join('\n');
   $('#group-match-results').textContent=(r.hits || []).map(h=>`${h.pattern}：${h.models} 个模型`).join('；') || '没有自动匹配规则。';
   drawGroupMembers();
- }catch(error){if(current===editor&&!current.closed)formError(error);}finally{button.disabled=false;}
+ }catch(error){if(current===editor&&!current.closed)formError(error);}finally{busy.finish();}
 }
 function handleGroupMemberChange(e){
  if(editor?.type!=='group')return;
@@ -364,7 +382,7 @@ function openProvider(id,mode='edit'){
   field('balanceToken','专用余额访问令牌','','password',p.balanceTokenSet?'已保存 · 留空保留':'可选，仅查询余额')+(p.balanceTokenSet?checkField('clearBalanceToken','删除已保存的余额令牌'):'')+
   `<div class="actions-bar">${button('查询余额','check-balance',source?.id || '')}</div><p id="balance-result" class="form-hint" role="status"></p>`+
   `<div class="form-grid"><div>${field('teamOrg','智谱 / Z.ai 团队组织 ID',p.zhipuTeam?.org)}</div><div>${field('teamProject','团队项目 ID',p.zhipuTeam?.project)}</div></div>`+(p.stepPlan?stepPlanFields(p.stepPlan):'');
- const identity=field('family','模型分类标识',p.family,'text','可选')+(account?'':field('providerIcon','供应商图标',p.icon || '')+`<div class="actions-bar"><label class="file-button">上传图标<input id="provider-icon-file" type="file" accept="image/*,.ico,.svg"></label>${button('从网站获取','provider-favicon')}</div>`)+
+ const identity=field('family','模型分类标识',p.family,'text','可选')+(account?'':field('providerIcon','供应商图标',p.icon || '')+`<div class="actions-bar"><label class="file-button"><span>上传图标</span><input id="provider-icon-file" type="file" accept="image/*,.ico,.svg"></label>${button('从网站获取','provider-favicon')}</div>`)+
   (source&&!account?`<div class="form-section"><h3>复用配置</h3><div class="actions-bar">${button('再添加一个同类来源','another-provider',source.id)}${button('复制此供应商','copy-provider',source.id)}</div></div>`:'');
  $('#fields').innerHTML=editorSection('connection','连接与凭据','配置来源及接口，保存前可检查连接。',connection)+
   editorSection('models','模型与价格','选择模型并调整名称、能力、协议和价格。',models)+
@@ -562,7 +580,7 @@ function checkEditorValidity(){
  invalid.reportValidity();return false;
 }
 function showEditor(){
- $('#form-error').hidden=true;$('#adapter-progress').hidden=true;$('#save').hidden=false;$('#save').textContent='保存';$('#save').disabled=false;
+ $('#form-error').hidden=true;$('#adapter-progress').hidden=true;$('#save').hidden=false;buttonBusy.delete($('#save'));$('#save').removeAttribute('aria-label');$('#save').removeAttribute('aria-busy');$('#save').style.minWidth='';$('#save').textContent='保存';$('#save').disabled=false;
  $('#cancel-editor').textContent=['accounts','keys','adapters','health'].includes(editor.type)?'关闭':'取消';
  configureEditorSections();
  decorateSelects();
@@ -583,7 +601,7 @@ $('#edit-form').addEventListener('submit',async e=>{
   e.preventDefault();const current=editor;if(!checkEditorValidity())return;
  if(current.type==='connection-success'){$('#editor').close();await go('providers');return;}
  if(['accounts','adapters','health','quota-history','export','import-result'].includes(current.type))return;
- $('#save').disabled=true;$('#form-error').hidden=true;const data=Object.fromEntries(new FormData(e.target));
+ const busy=startButtonBusy($('#save'),current.type==='subscription'?'登录中':current.type==='provider-import'?(current.preview?'导入中':'预览中'):'保存中');$('#form-error').hidden=true;const data=Object.fromEntries(new FormData(e.target));
  try {
   if(current.type==='subscription'){await beginSubscription(data);return;}
   if(current.type==='subscription-settings'){const payload={};for(const key of ['codexWarmup','claudeWarmup','codexWarmAt','claudeWarmAt'])payload[key]=data[key];payload.quotaLeft=$('#f-quotaLeft').checked;payload.chinaMirror=$('#f-chinaMirror').checked;for(const key of ['usageAlert','balanceAlert','resetReminder'])payload[key]=Number(data[key] || 0);payload.proxy=data.proxyMode==='direct'?'direct':data.proxyMode==='custom'?data.proxy:'';for(const key of ['workbuddyCheckin','traeCheckin','minimaxCheckin','qoderCheckin'])payload[key]=!!$(`#f-${key}`).checked;payload.pluginCheckins={...subscriptionSettings.pluginCheckins,...Object.fromEntries([...$('#fields').querySelectorAll('[data-plugin-checkin]')].map(c=>[c.dataset.pluginCheckin,c.checked]))};await api('subscription/settings',payload);$('#editor').close();message('订阅维护设置已保存');state.quotaLeft=payload.quotaLeft;if(tab==='usage')await loadQuotas(renderEpoch);return;}
@@ -601,7 +619,7 @@ $('#edit-form').addEventListener('submit',async e=>{
   if(current!==editor||current.closed)return;
   if(current.type==='provider'&&!current.data.id){await showConnectionSuccess('供应商添加成功',`${data.name} 已添加，模型已同步到鲸屿。`,{name:data.name,kind:'API 供应商'});return;}
   $('#editor').close();message('已保存，模型已同步到鲸屿');await load();
- }catch(e){if(current===editor&&!current.closed){$('#form-error').textContent=e.message;$('#form-error').hidden=false;}}finally{if(current===editor&&!current.closed)$('#save').disabled=false;}
+ }catch(e){if(current===editor&&!current.closed){$('#form-error').textContent=e.message;$('#form-error').hidden=false;}}finally{if(current===editor&&!current.closed)busy.finish();}
 });
 $('#close-editor').onclick=$('#cancel-editor').onclick=()=>$('#editor').close();
 function ask(title,body,accept='确认',number){
@@ -619,8 +637,11 @@ for(const b of document.querySelectorAll('[data-tab]'))b.addEventListener('click
 // All navigational actions share one delegated handler, including footer help.
 $('.workspace').addEventListener('click',async e=>{
  const filter=e.target.closest('[data-filter]');if(filter){modelFilter=filter.dataset.filter;modelList();return;}
- const b=e.target.closest('[data-action]');if(!b)return;const{action,id}=b.dataset;
+ const b=e.target.closest('[data-action]');if(!b||b.disabled)return;const{action,id}=b.dataset;
  const menu=b.closest('details.menu');if(menu)closeMenu(menu);
+ let busy;const begin=label=>busy=startButtonBusy(menu?.querySelector('summary') || b,label);
+ const waiting={subscription:'加载中',accounts:'加载中',keys:'加载中','export-provider':'导出中','manage-adapters':'加载中','provider-health':'读取中','subscription-settings':'加载中','quota-history':'加载中','refresh-quotas':'刷新中',sync:'同步中','refresh-catalog':'刷新中','fetch-provider':'刷新中','provider-up':'保存中','provider-down':'保存中','toggle-provider':'保存中'};
+ if(waiting[action])begin(waiting[action]);
  try{
   if(action.startsWith('go-')){await go(action.slice(3));return;}
   if(action==='subscription'){await openSubscription();return;}
@@ -645,11 +666,11 @@ $('.workspace').addEventListener('click',async e=>{
   if(action==='refresh-catalog')await api('catalog/refresh',{});
   if(action==='fetch-provider')await api('provider/fetch',{id});
   if(action==='provider-up'||action==='provider-down'){const ids=state.providers.map(p=>p.id),i=ids.indexOf(id),to=i+(action==='provider-up'?-1:1);if(to<0||to>=ids.length)return;[ids[i],ids[to]]=[ids[to],ids[i]];await api('provider/order',{ids});}
-  if(action==='delete-provider'){if(!await ask('删除供应商？','对应的模型会从鲸屿的「鲸桥」渠道中移除。其他供应商和对话记录不受影响。','删除供应商'))return;await api('provider/delete',{id});}
-  if(action==='delete-group'){if(!await ask('删除路由组？','这个组会从鲸屿的模型列表中移除，成员模型和供应商配置仍保留。','删除路由组'))return;await api('group/delete',{id});}
+  if(action==='delete-provider'){if(!await ask('删除供应商？','对应的模型会从鲸屿的「鲸桥」渠道中移除。其他供应商和对话记录不受影响。','删除供应商'))return;begin('删除中');await api('provider/delete',{id});}
+  if(action==='delete-group'){if(!await ask('删除路由组？','这个组会从鲸屿的模型列表中移除，成员模型和供应商配置仍保留。','删除路由组'))return;begin('删除中');await api('group/delete',{id});}
   if(action==='toggle-provider'){const p=state.providers.find(p=>p.id===id);await api('provider',{...p,off:!p.off});}
   message(action==='sync'?'模型已重新同步到鲸屿':'已更新，模型已同步到鲸屿');await load();
- }catch(e){message(e.message,true);}finally{if(!['hide-model','model-scope','fold-channel'].includes(action))b.disabled=false;}
+ }catch(e){message(e.message,true);}finally{busy?.finish();if(!['hide-model','model-scope','fold-channel'].includes(action))b.disabled=false;}
 });
 $('#fields').addEventListener('click',e=>{
  const header=e.target.closest('[data-action=add-header],[data-action=remove-header]');
@@ -663,20 +684,20 @@ function formError(error){if($('#editor').open){$('#form-error').textContent=err
 function dateText(value){const d=new Date(value);return Number.isNaN(d.getTime())?String(value):d.toLocaleString('zh-CN',{hour12:false});}
 function externalLink(url,label){return /^https?:\/\//i.test(url || '')?`<a class="link" href="${escape(url)}" target="_blank" rel="noreferrer">${escape(label)} ↗</a>`:'';}
 async function copyText(value){await navigator.clipboard.writeText(String(value));message('已复制');}
-async function uploadProviderIcon(e){const file=e.target.files[0];if(!file)return;const current=editor;
- try{if(file.size>1048576)throw new Error('图标最大为 1 MiB');const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);const r=await api('icons',{data:btoa(binary)});if(current===editor&&!current.closed)$('#f-providerIcon').value=r.icon;}catch(error){formError(error);}
+async function uploadProviderIcon(e){const file=e.target.files[0];if(!file)return;const current=editor,input=e.target,busy=startButtonBusy(input.parentElement.querySelector('span'),'上传中');input.disabled=true;
+ try{if(file.size>1048576)throw new Error('图标最大为 1 MiB');const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);const r=await api('icons',{data:btoa(binary)});if(current===editor&&!current.closed)$('#f-providerIcon').value=r.icon;}catch(error){formError(error);}finally{busy.finish();input.disabled=false;}
 }
 function providerDraft(){const input=providerInput(Object.fromEntries(new FormData($('#edit-form'))));input.id=editor.from || editor.copyOf || '';input.typed=true;return input;}
 function probeResults(results){return (results || []).map(r=>`<div class="probe-row ${r.ok?'probe-ok':'probe-error'}"><strong>${escape([r.model || r.protocol || '连接',r.account].filter(Boolean).join(' · '))}</strong><span>${escape(protocolName(r.protocol))} · ${r.ok?'可用':'未通过'}${r.status?` · HTTP ${r.status}`:''}${r.ms!==undefined?` · ${r.ms} ms`:''}</span>${r.error?`<p>${escape(r.error)}</p>`:''}${r.base?`<code>${escape(r.base)}</code>`:''}</div>`).join('') || '<p class="form-hint">供应商未返回检测结果。</p>';}
 $('#fields').addEventListener('click',async e=>{
  const b=e.target.closest('[data-action]');if(!b||editor?.type!=='provider')return;const{action,id}=b.dataset;
  if(!['pick-provider-model','models-all','models-none','models-free','fetch-edit-models','unfetch-edit-models','test-provider','detect-provider','test-one-model','test-selected-models','detect-selected-models','reset-model-pref','copy-model-id','check-balance','another-provider','copy-provider','show-provider-key','provider-favicon','stepfun-copy','stepfun-session','stepfun-signout','add-price-tier','remove-price-tier'].includes(action))return;
- const current=editor;b.disabled=true;$('#form-error').hidden=true;
+ const current=editor;let busy;const waiting={'fetch-edit-models':'刷新中','unfetch-edit-models':'恢复中','test-provider':'测试中','detect-provider':'检测中','test-one-model':'测试中','test-selected-models':'测试中','detect-selected-models':'检测中','check-balance':'查询中','provider-favicon':'获取中','stepfun-session':'连接中','stepfun-signout':'退出中'};if(waiting[action])busy=startButtonBusy(b,waiting[action]);b.disabled=true;$('#form-error').hidden=true;
  try{
   if(action==='another-provider'||action==='copy-provider'){openProvider(id,action==='copy-provider'?'copy':'another');return;}
   if(action==='copy-model-id'){await copyText(id);return;}
   if(action==='add-price-tier'||action==='remove-price-tier'){const row=b.closest('.model-setting');if(action==='remove-price-tier')b.closest('.price-tier').remove();else{const price=priceOfRow(row),last=price.tiers.at(-1);row.querySelector('.price-tiers').insertAdjacentHTML('beforeend',priceTierFields({...price,above:last?last.above+100000:272000}));}keepRowPrice(row);return;}
-  if(action==='show-provider-key'){const input=$('#f-key');if(input.type==='text'){input.type='password';b.textContent='显示密钥';if(current.revealedKey&&!current.typedKey){input.value='';current.revealedKey=false;}return;}if(!input.value&&id){input.value=(await api(`provider/${encodeURIComponent(id)}/key`)).key;current.revealedKey=true;}if(current!==editor||current.closed)return;input.type='text';b.textContent='隐藏密钥';return;}
+  if(action==='show-provider-key'){const input=$('#f-key');if(input.type==='text'){input.type='password';b.textContent='显示密钥';if(current.revealedKey&&!current.typedKey){input.value='';current.revealedKey=false;}return;}if(!input.value&&id){busy=startButtonBusy(b,'读取中');input.value=(await api(`provider/${encodeURIComponent(id)}/key`)).key;current.revealedKey=true;}if(current!==editor||current.closed)return;input.type='text';b.textContent='隐藏密钥';return;}
   if(action==='provider-favicon'){const data=providerDraft(),r=await api('provider/icon',{url:data.chat || data.responses || data.anthropic || data.website,name:data.name});if(current===editor&&!current.closed)$('#f-providerIcon').value=r.icon;return;}
   if(action.startsWith('stepfun-')){const sp=current.data.stepPlan;if(action==='stepfun-copy'){await copyText(sp.bookmarklet);return;}await api(`stepfun/${encodeURIComponent(sp.site)}/${action==='stepfun-signout'?'signout':'session'}`,action==='stepfun-signout'?{}:{text:$('#f-stepSession').value});if(current!==editor||current.closed)return;const fresh=await api('state'),p=fresh.providers.find(p=>p.id===current.data.id);current.data.stepPlan=p.stepPlan;$('#step-plan').outerHTML=stepPlanFields(p.stepPlan);message(action==='stepfun-signout'?'已退出 StepFun 额度查询':'Step Plan 额度查询已连接');return;}
   if(action==='pick-provider-model'){const picked=new Set(configuredProviderModelIds());if(picked.has(id))picked.delete(id);else picked.add(id);$('#f-models').value=[...picked].join('\n');drawProviderModels();return;}
@@ -692,7 +713,7 @@ $('#fields').addEventListener('click',async e=>{
   const result=await api(action==='detect-provider'?'provider/detect':'provider/test',{...data,...(action==='test-one-model'?{test:[id]}:{}),base:data[data.baseAPI] || data.chat || data.responses || data.anthropic || data.decide,model:action==='test-one-model'?id:lines($('#f-models').value)[0] || ''});
   if(current!==editor||current.closed)return;const target=action==='test-one-model'?b.closest('.model-setting').querySelector('.model-test-result'):$('#provider-test-result');target.innerHTML=probeResults(result.results);
   if(action==='detect-provider'){current.detected=result.results;target.insertAdjacentHTML('beforeend',button('采用可用的协议地址','apply-detected-protocols'));}
- }catch(error){if(current===editor&&!current.closed)formError(error);}finally{b.disabled=false;}
+ }catch(error){if(current===editor&&!current.closed)formError(error);}finally{busy?.finish();if(b.getAttribute('aria-busy')!=='true')b.disabled=false;}
 });
 $('#fields').addEventListener('click',e=>{if(e.target.closest('[data-action="apply-detected-protocols"]')){for(const r of editor.detected || []){const input=$(`#f-${r.protocol}`);if(!input)continue;if(r.ok)input.value=r.base;else if([404,405].includes(r.status)&&input.value.replace(/\/$/,'')===String(r.base).replace(/\/$/,''))input.value='';}const chosen=(editor.detected || []).find(r=>r.ok);if(chosen)$('#f-baseAPI').value=chosen.protocol;message('协议地址已填入，保存后生效');}});
 $('#fields').addEventListener('input',e=>{if(e.target.id==='f-key'&&editor?.type==='provider'){editor.typedKey=true;editor.revealedKey=false;}});
@@ -706,13 +727,13 @@ function quotaHeldInfo(q){if(q.held)return '<p class="inline-error">额度已耗
 function balanceTrendView(trend){const points=(trend?.points || []).map(p=>({...p,time:Date.parse(p.at)})).filter(p=>Number.isFinite(p.time)&&Number.isFinite(p.amount));if(points.length<2)return '';const first=points[0],last=points.at(-1),from=first.time,to=Math.max(last.time,trend.fitFrom?Date.now():last.time),minimum=Math.min(...points.map(p=>p.amount),trend.fitFrom?trend.fitNow:last.amount),maximum=Math.max(...points.map(p=>p.amount),trend.fitFrom?trend.fitStart:first.amount),spread=maximum-minimum || Math.max(maximum*.1,1),low=minimum-spread*.1,high=maximum+spread*.1,x=t=>24+(t-from)/(to-from || 1)*296,y=v=>92-(v-low)/(high-low)*72,polyline=points.map(p=>`${x(p.time).toFixed(1)},${y(p.amount).toFixed(1)}`).join(' ');return `<div class="balance-trend"><p class="caption">最近 14 天余额走势</p><svg viewBox="0 0 344 112" role="img" aria-label="余额从 ${escape(first.amount)} 变化到 ${escape(last.amount)}"><line class="trend-axis" x1="24" y1="92" x2="320" y2="92"/><polyline class="trend-line" points="${polyline}"/>${trend.fitFrom?`<line class="trend-fit" x1="${x(Date.parse(trend.fitFrom)).toFixed(1)}" y1="${y(trend.fitStart).toFixed(1)}" x2="${x(to).toFixed(1)}" y2="${y(trend.fitNow).toFixed(1)}"/>`:''}<circle class="trend-dot" cx="${x(last.time).toFixed(1)}" cy="${y(last.amount).toFixed(1)}" r="3"/><text x="24" y="108">${escape(new Date(first.time).toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'}))}</text><text x="320" y="108" text-anchor="end">${escape(new Date(last.time).toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'}))}</text><text x="24" y="12">${maximum.toFixed(2)}</text></svg>${trend.fitFrom?`<p class="caption">近期平均消耗 ${Number(trend.perDay).toFixed(2)} / 天${trend.runsOut?` · 预计 ${escape(dateText(trend.runsOut))} 耗尽`:''}</p><p class="form-hint">按近期余额变化估计，充值或用量变化会影响预测。</p>`:''}<details class="advanced"><summary>查看余额读取记录</summary><div class="table-wrap"><table><thead><tr><th>读取时间</th><th>余额</th></tr></thead><tbody>${[...points].reverse().map(p=>`<tr><td>${escape(dateText(p.at))}</td><td>${p.amount.toFixed(2)}</td></tr>`).join('')}</tbody></table></div></details></div>`;}
 function quotaCards(rows){return rows.length?`<div class="quota-grid">${rows.map(q=>`<article class="panel quota-card"><div class="quota-head"><div><h3>${escape(q.name || q.provider)}</h3><p class="caption">${escape([q.from?`远端 ${q.from}`:'',q.user,q.plan].filter(Boolean).join(' · ') || 'API 余额')}</p></div>${iconButton('刷新这个账号的额度','quota-refresh',quotaIdentity(q),'refresh')}</div>${q.balance?`<strong class="quota-balance">${escape(q.balance)}</strong>`:''}${q.balanceParts?.length?`<dl class="quota-parts">${q.balanceParts.map(p=>`<dt>${escape(p.name || p.label || '余额')}</dt><dd>${escape(p.text || p.display || '')}</dd>`).join('')}</dl>`:''}${balanceTrendView(q.balanceTrend)}${quotaWindows(q.windows)}${q.until?`<p class="caption">套餐${q.renew==='auto'?'续费':'到期'}：${escape(dateText(q.until))}</p>`:''}${q.resets?`<p class="caption">${q.resets.byWindow?`5 小时重置 ${q.resets.fiveHour || 0} 次 · 每周重置 ${q.resets.weekly || 0} 次`:`剩余重置 ${q.resets.count} 次`}${q.resets.until?` · 最早到期 ${escape(dateText(q.resets.until))}`:''}</p>`:''}${quotaResetDetails(q.resets)}${quotaHeldInfo(q)}${q.checkin?`<p class="caption">签到：${escape(({claimed:'已领取',done:'今日已签到',ineligible:'无法参与',inactive:'活动未开始或已结束',failed:'签到失败',captcha:'需在供应商页面完成验证'})[q.checkin.outcome] || q.checkin.outcome)}${q.checkin.credit?` · 获得 ${short(q.checkin.credit)} credits`:''}${q.checkin.streak?` · 连续 ${q.checkin.streak} 天`:''}${q.checkin.msg?` · ${escape(q.checkin.msg)}`:''}</p>`:''}${dailyCredits(q.daily)}${q.error?`<p class="inline-error">${escape(q.error)}</p>`:''}${q.asOf?`<p class="inline-error">显示上次成功读取的额度：${escape(dateText(q.asOf))}</p>`:q.readAt?`<p class="caption">读取于 ${escape(dateText(q.readAt))}</p>`:''}${!(q.windows || []).length&&!q.balance&&!q.error?'<p class="form-hint">供应商未报告额度或余额。</p>':''}<div class="actions-bar compact-actions">${!q.from&&q.checkins?button('现在签到','quota-checkin',JSON.stringify({provider:q.checkinBy || q.provider})):''}${!q.from&&q.provider==='codex'&&q.resets?.count?button('使用一次重置','quota-reset',quotaIdentity(q)):''}${!q.from&&q.provider==='codex'&&q.user?button('账号维护','quota-settings',quotaIdentity(q)):''}${button('额度记录','quota-card-history',quotaIdentity(q))}</div></article>`).join('')}</div>`:empty('供应商暂无额度报告','部分供应商只报告余额，部分订阅需要连接套餐查询会话。配置入口在供应商设置中。','','usage');}
 async function loadQuotas(epoch){
- const target=$('#quota-section');if(!target)return;const sequence=++quotaReadSequence;target.setAttribute('aria-busy','true');
+ const target=$('#quota-section');if(!target)return;const sequence=++quotaReadSequence,refresh=document.querySelector('[data-action="refresh-quotas"]'),busy=refresh?startButtonBusy(refresh,'刷新中'):null;target.setAttribute('aria-busy','true');
  try{
   let reading=false;
   const [rows,settings]=await Promise.all([api('quotas?asked=1',undefined,h=>{reading=h.get('X-Magpie-Reading')==='1';}),api('subscription/settings')]);
   if(epoch!==renderEpoch||sequence!==quotaReadSequence||target!==$('#quota-section'))return;
   subscriptionSettings=settings;quotaRows=rows || [];
-  const draw=()=>{target.innerHTML=(reading?'<p class="form-hint" role="status">供应商正在后台读取额度，当前先显示已有记录…</p>':'')+quotaCards(quotaRows);};draw();
+  const draw=()=>{target.innerHTML=quotaCards(quotaRows);};draw();
   for(let poll=0;reading&&poll<20;poll++){
    await new Promise(resolve=>setTimeout(resolve,1500));
    if(epoch!==renderEpoch||sequence!==quotaReadSequence||target!==$('#quota-section'))return;
@@ -722,16 +743,16 @@ async function loadQuotas(epoch){
   }
   if(reading)target.insertAdjacentHTML('afterbegin','<p class="form-hint">供应商仍在读取，稍后点击刷新额度查看最新结果。</p>');
  }catch(error){if(epoch===renderEpoch&&sequence===quotaReadSequence&&target===$('#quota-section'))target.innerHTML=`<div class="panel empty"><h3>额度读取失败</h3><p>${escape(error.message)}</p>${button('重新读取','refresh-quotas')}</div>`;}
- finally{if(epoch===renderEpoch&&sequence===quotaReadSequence&&target===$('#quota-section'))target.setAttribute('aria-busy','false');}
+ finally{busy?.finish();if(epoch===renderEpoch&&sequence===quotaReadSequence&&target===$('#quota-section'))target.setAttribute('aria-busy','false');}
 }
-async function quotaAction(action,id,b){const data=JSON.parse(id);b.disabled=true;try{
+async function quotaAction(action,id,b){const data=JSON.parse(id);let busy;if(action!=='quota-reset'&&action!=='quota-settings')busy=startButtonBusy(b,action==='quota-checkin'?'签到中':action==='quota-refresh'?'刷新中':'加载中');b.disabled=true;try{
  if(action==='quota-card-history'){await openQuotaHistory(data);return;}
  if(action==='quota-settings'){openQuotaAccount(data);return;}
- if(action==='quota-reset'){if(!await ask('使用一次 Codex 重置？','会消耗这个账号的一次重置，重启供应商的额度窗口。当前窗口剩余额度会被重置。','使用一次重置'))return;const r=await api('quotas/codex-reset',{user:data.user});message(r.code?`重置结果：${r.code}`:'重置已提交');}
+ if(action==='quota-reset'){if(!await ask('使用一次 Codex 重置？','会消耗这个账号的一次重置，重启供应商的额度窗口。当前窗口剩余额度会被重置。','使用一次重置'))return;busy=startButtonBusy(b,'重置中');const r=await api('quotas/codex-reset',{user:data.user});message(r.code?`重置结果：${r.code}`:'重置已提交');}
  else if(action==='quota-checkin'){const r=await api('quotas/checkin',data);const failed=(r.results || r || []).filter(a=>a.outcome==='failed'||a.outcome==='captcha');message(failed.length?`签到完成，${failed.length} 个账号需要处理`:'签到完成',failed.length>0);}
  else if(action==='quota-refresh')await api('quotas/refresh',data);
  await loadQuotas(renderEpoch);
- }finally{b.disabled=false;}}
+ }finally{busy?.finish();if(b.getAttribute('aria-busy')!=='true')b.disabled=false;}}
 function openQuotaAccount(data){const key=data.user.toLowerCase(),warm=subscriptionSettings.codexWarmAtOf?.[key] || '';editor={type:'quota-account',data};$('#editor-title').textContent='Codex 账号维护';$('#fields').innerHTML=`<p class="form-hint">${escape(data.user)}</p>`+checkField('codexAutoReset','按上游规则自动使用账号重置',(subscriptionSettings.codexAutoReset || []).includes(key),'每周窗口耗尽且其他账号不可用时，或已有重置即将到期时，允许自动消耗重置。')+checkField('codexCredits','额度用尽后继续使用付费 credits',!(subscriptionSettings.codexNoCredits || []).includes(key),'关闭后账号额度用尽时停止使用，转到其他账号或回退模型。')+selectField('warmMode','每日窗口预热',[['','跟随全局设置'],['off','关闭此账号的每日预热'],['custom','使用独立时间']],warm==='off'?'off':warm?'custom':'')+`<div id="own-warm-time" ${warm&&warm!=='off'?'':'hidden'}>${field('codexWarmAt','预热时间',warm==='off'?'':warm,'time')}</div>`;showEditor();$('#f-warmMode').onchange=e=>{$('#own-warm-time').hidden=e.target.value!=='custom';$('#f-codexWarmAt').required=e.target.value==='custom';};}
 async function openSubscriptionSettings(){
  const [s,subs]=await Promise.all([api('subscription/settings'),api('subscriptions')]);subscriptionSettings=s;editor={type:'subscription-settings'};
@@ -755,14 +776,14 @@ async function openQuotaHistory(filter={}){
    if(!Number.isFinite(from)||!Number.isFinite(to)||from>to){formError('请选择有效的开始与结束日期。');return;}
    days=Math.max(1,Math.ceil((Date.now()-from)/86400000)+1);
   }
-  target.setAttribute('aria-busy','true');
+  const busy=startButtonBusy($('#fields [data-action="history-refresh"]'),'更新中');target.setAttribute('aria-busy','true');
   try{
    const query=new URLSearchParams({days:String(days),...(filter.provider?{provider:filter.provider}:{}),...(filter.user?{user:filter.user}:{})}),rows=await api(`quotas/history?${query}`);
    if(current!==editor||current.closed||request!==current.historyRequest)return;
    target.innerHTML=quotaHistoryView(rows || [],from,to);
    target.querySelectorAll('[data-history-point]').forEach(point=>{const read=()=>{point.closest('.quota-history-line').querySelector('[data-history-readout]').textContent=point.dataset.historyPoint;};point.onpointerenter=read;point.onfocus=read;});
   }catch(error){if(current===editor&&!current.closed&&request===current.historyRequest)formError(error);}
-  finally{if(current===editor&&!current.closed&&request===current.historyRequest)target.setAttribute('aria-busy','false');}
+  finally{busy.finish();if(current===editor&&!current.closed&&request===current.historyRequest)target.setAttribute('aria-busy','false');}
  }
  await refreshHistory();
 }
@@ -784,7 +805,7 @@ function liveLaneRows(lanes){return Object.entries(lanes || {}).map(([id,l])=>`<
 async function startProviderLive(epoch){try{const [upstream,lanes]=await Promise.all([api('upstream'),api('lanes')]);if(epoch!==renderEpoch||tab!=='providers')return;const vendors=upstreamVendors(upstream);for(const target of document.querySelectorAll('[data-provider-live]')){const id=target.dataset.providerLive,status=vendors.find(v=>v.vendor===upstream.providers?.[id]),active=Object.entries(lanes).filter(([key])=>key===id||key.startsWith(`${id}#`)||key.startsWith(`${id}@`));target.innerHTML=`${status&&status.level!=='ok'?`<p class="${status.level?'inline-error':'caption'}">${escape(status.name)} API：${escape(healthLevels[status.level] || '公开状态未知')}${status.error?` · ${escape(status.error)}`:''} ${externalLink(status.page,'供应商状态页')}</p>`:''}${active.length?`<p class="caption">处理中 ${active.reduce((n,[,l])=>n+l.busy,0)} · 排队 ${active.reduce((n,[,l])=>n+l.waiting,0)}</p>`:''}`;}}catch(error){if(epoch===renderEpoch&&tab==='providers')for(const target of document.querySelectorAll('[data-provider-live]'))target.innerHTML=`<p class="caption">运行状态未能读取：${escape(error.message)}</p>`;}finally{if(epoch===renderEpoch&&tab==='providers')providerLiveTimer=setTimeout(()=>startProviderLive(epoch),5000);}}
 function healthView(upstream,lanes){const vendors=upstreamVendors(upstream);return `<div class="panel">${vendors.map(v=>`<div class="row"><div class="text"><h3>${escape(v.name || v.vendor)}</h3><p class="caption">${escape(healthLevels[v.level] || '公开状态未知')}${v.read?` · ${escape(dateText(v.read))}`:''}</p>${v.error?`<p class="inline-error">${escape(v.error)}</p>`:''}${(v.parts || []).map(p=>`<p class="caption">${escape(p.name)} · ${escape(p.status)}</p>`).join('')}${(v.incidents || []).map(i=>`<p>${externalLink(i.url,i.name)}</p>`).join('')}${externalLink(v.page,'打开供应商状态页')}</div></div>`).join('') || '<p class="empty-inline">已配置供应商没有可读取的公开状态页。</p>'}</div><div class="form-section"><h3>当前请求与排队</h3><div class="table-wrap"><table><thead><tr><th>密钥 / 账号</th><th>处理中</th><th>排队</th><th>并发限制</th></tr></thead><tbody>${liveLaneRows(lanes)}</tbody></table></div></div>`;}
 async function refreshHealth(current){try{const [upstream,lanes]=await Promise.all([api('upstream'),api('lanes')]);if(current!==editor||current.closed)return;$('#health-status').innerHTML=healthView(upstream,lanes);$('#health-error').hidden=true;}catch(error){if(current===editor&&!current.closed){$('#health-error').textContent=`运行状态未能读取：${error.message}`;$('#health-error').hidden=false;}}finally{if(current===editor&&!current.closed)healthTimer=setTimeout(()=>refreshHealth(current),3000);}}
-async function openProviderHealth(){clearTimeout(healthTimer);editor={type:'health'};const current=editor;$('#editor-title').textContent='供应商运行状态';$('#fields').innerHTML='<p class="form-hint">供应商自己的 API 服务状态；鲸桥请求与排队实时更新。</p><p id="health-error" class="inline-error" hidden></p><div id="health-status"><p class="form-hint">正在读取…</p></div>';showEditor();$('#save').hidden=true;await refreshHealth(current);}
+async function openProviderHealth(){const [upstream,lanes]=await Promise.all([api('upstream'),api('lanes')]);clearTimeout(healthTimer);editor={type:'health'};const current=editor;$('#editor-title').textContent='供应商运行状态';$('#fields').innerHTML='<p class="form-hint">供应商自己的 API 服务状态；鲸桥请求与排队实时更新。</p><p id="health-error" class="inline-error" hidden></p><div id="health-status">'+healthView(upstream,lanes)+'</div>';showEditor();$('#save').hidden=true;healthTimer=setTimeout(()=>refreshHealth(current),3000);}
 $('#editor').addEventListener('close',()=>clearTimeout(healthTimer));
 function adapterRows(items,installed=false){
  return `<div class="management-table-wrap"><table class="management-table"><thead><tr><th>供应商适配器</th><th>${installed?'版本与状态':'来源'}</th><th>管理</th></tr></thead><tbody>${items.map(p=>{
@@ -800,15 +821,15 @@ async function openAdapters(section='installed',expected){
  const moves=(r.moves || []).map(m=>`<div class="row"><div class="text"><strong>${escape(subscriptionNames[m.id] || m.id)}</strong><p class="caption">${escape(m.package)} · ${m.moved?'适配器接入':'内置订阅接入'}</p>${m.error?`<p class="inline-error">${escape(m.error)}</p>`:''}</div>${button(m.moved?'恢复内置接入':m.signedIn?'迁移已有账号':'使用适配器接入',m.moved?'adapter-moveback':m.signedIn?'adapter-move':'adapter-adopt',JSON.stringify(m))}</div>`).join('') || '<p class="form-hint">当前没有可迁移的内置订阅。</p>';
  $('#fields').innerHTML=editorSection('installed','已安装','检查版本、配置认证适配器与连接环境。',installed)+editorSection('discover','查找与安装','选择推荐项或搜索供应商提供的 npm 包。',discovery)+editorSection('moves','订阅迁移','在内置接入与供应商适配器间管理已有授权。',`<div class="panel">${moves}</div>`);
  showEditor();$('#save').hidden=true;
- $('#adapter-mirror').onchange=async e=>{const current=editor;try{await api('subscription/adapter',{action:'mirror',enabled:e.target.checked});message('适配器镜像设置已保存');}catch(error){if(current===editor){e.target.checked=!e.target.checked;formError(error);}}};
+ $('#adapter-mirror').onchange=async e=>{const current=editor,input=e.target,busy=startButtonBusy(input.nextElementSibling,'保存中');input.disabled=true;try{await api('subscription/adapter',{action:'mirror',enabled:e.target.checked});message('适配器镜像设置已保存');}catch(error){if(current===editor){e.target.checked=!e.target.checked;formError(error);}}finally{busy.finish();input.disabled=false;}};
  return editor;
 }
 async function handleAdapterAction(e){
  const b=e.target.closest('[data-action]');if(!b||b.disabled||editor?.adapterPending)return;
- if(b.dataset.action==='manage-adapters'){b.disabled=true;try{await openAdapters('installed',editor);}catch(error){formError(error);}finally{b.disabled=false;}return;}
+ if(b.dataset.action==='manage-adapters'){const busy=startButtonBusy(b,'加载中');try{await openAdapters('installed',editor);}catch(error){formError(error);}finally{busy.finish();}return;}
  if(!b.dataset.action.startsWith('adapter-'))return;
  const current=editor,action=b.dataset.action.replace('adapter-',''),data=action==='install-custom'?{package:$('#f-package').value.trim()}:JSON.parse(b.dataset.id || '{}');
- b.disabled=true;$('#form-error').hidden=true;let progress;
+ let progress,busy;const waiting={options:'加载中',page:'加载中',search:'搜索中',check:'检查中'};if(waiting[action])busy=startButtonBusy(b,waiting[action]);b.disabled=true;$('#form-error').hidden=true;
  try{
   if(action==='options'){
    const r=await api(`subscription/adapter/${encodeURIComponent(data.id)}/options`);if(current!==editor||current.closed)return;
@@ -835,14 +856,16 @@ async function handleAdapterAction(e){
   }
   if(action==='install-custom'&&!data.package)throw new Error('请填写适配器包名。');
   if(['remove','move','moveback'].includes(action)&&!await ask(action==='remove'?'移除供应商适配器？':action==='move'?'迁移已有订阅？':'恢复内置接入？',action==='remove'?'此适配器的供应商将暂时不可用；已保存的鲸桥配置保留。':action==='move'?'已有账号由适配器接入，凭据只写入鲸桥。':'账号交回鲸桥内置接入；原客户端登录数据保留。','继续'))return;
-  if(['install','install-custom','update','update-all'].includes(action))progress=startAdapterProgress(action.startsWith('install')?'正在安装供应商适配器…':'正在更新供应商适配器…');
-  await api('subscription/adapter',{...data,action:action==='install-custom'?'install':action});
+  if(['install','install-custom','update','update-all'].includes(action))progress=startAdapterBusy(b,action.startsWith('install')?'downloading':'updating');
+  if(!progress)busy=startButtonBusy(b,action==='remove'?'移除中':action.startsWith('move')?'迁移中':'保存中');
+  if(action.startsWith('install'))await installAdapter(data,progress);
+  else await api('subscription/adapter',{...data,action});
   if(current!==editor||current.closed)return;
-  progress?.update('安装操作已完成，正在刷新适配器列表…');
+  progress?.update(action.startsWith('install')?'installing':'updating');
   await load();const installedEditor=await openAdapters('installed',current);if(!installedEditor||installedEditor!==editor||installedEditor.closed)return;
   const result=({install:'供应商适配器已安装','install-custom':'供应商适配器已安装',update:'供应商适配器已更新','update-all':'适配器更新完成',remove:'供应商适配器已移除',on:'供应商适配器已启用',off:'供应商适配器已停用',move:'已有订阅已迁移到适配器',moveback:'订阅已恢复内置接入',adopt:'订阅已使用适配器接入'})[action];
   $('#adapter-progress').hidden=false;$('#adapter-progress').setAttribute('aria-busy','false');$('#adapter-progress').innerHTML=`<p role="status">${escape(result)}</p>`;message(result);
- }catch(error){if(current===editor&&!current.closed)formError(error);}finally{progress?.finish();b.disabled=false;}
+ }catch(error){if(current===editor&&!current.closed)formError(error);}finally{progress?.finish();busy?.finish();if(b.getAttribute('aria-busy')!=='true')b.disabled=false;}
 }
 $('#fields').addEventListener('click',handleAdapterAction);
 $('#fields').addEventListener('click',e=>{if(e.target.closest('[data-action="copy-export"]'))copyText($('#f-export').value).catch(formError);});
@@ -856,7 +879,7 @@ document.addEventListener('click',e=>{
  const summary=e.target.closest('details.menu > summary');
  for(const menu of document.querySelectorAll('details.menu[open]'))if(!menu.contains(e.target))closeMenu(menu);
  if(!summary)return;
- e.preventDefault();const menu=summary.parentElement,content=menu.querySelector('.menu-content');
+ e.preventDefault();if(summary.getAttribute('aria-busy')==='true')return;const menu=summary.parentElement,content=menu.querySelector('.menu-content');
  if(menu.open){closeMenu(menu);return;}
  content.setAttribute('popover','auto');content.setAttribute('role','menu');
  for(const button of content.querySelectorAll('button'))button.setAttribute('role','menuitem');
@@ -882,5 +905,5 @@ window.configureEditorSections=configureEditorSections;
 $('#fields').addEventListener('change',handleGroupMemberChange);
 $('#fields').addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;if(editor?.type==='group'&&b.dataset.action==='group-preview-match'){void previewGroupMatch(b);return;}if(editor?.type==='group'&&b.dataset.action==='group-edit-inner'){void (async()=>{if(await ask('编辑内层路由组？','当前组尚未保存的修改会丢弃。请先保存，或继续进入内层组。','继续编辑内组')){const id=b.dataset.id.replace(/^group\//,'');await new Promise(resolve=>{$('#editor').addEventListener('close',resolve,{once:true});$('#editor').close();});openGroup(id);}})();return;}if(editor?.type==='group'&&b.dataset.action.startsWith('group-')){try{groupEditorAction(b.dataset.action,b.dataset.id);}catch(error){formError(error);}}if(b.dataset.action==='capacity-pick'){const data=JSON.parse(b.dataset.id);$('#f-'+data.kind).value=data.value;}});
 $('#content').addEventListener('change',e=>{if(e.target.dataset.groupSelect)e.target.checked?selectedGroups.add(e.target.dataset.groupSelect):selectedGroups.delete(e.target.dataset.groupSelect);});
-$('#content').addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;const action=b.dataset.action,id=b.dataset.id;if(!['group-up','group-down','group-switch','remove-selected-groups'].includes(action))return;e.stopPropagation();b.disabled=true;try{if(action==='group-switch'){const g=state.groups.find(g=>g.id===id);await api('group/switch',{id,off:!g.disabled});}else if(action==='remove-selected-groups'){const ids=[...selectedGroups].filter(id=>state.groups.some(g=>g.id===id));if(!ids.length)throw new Error('请先选择路由组。');if(!await ask('删除已选路由组？',`将删除 ${ids.length} 个组；鲸屿模型列表随后同步。`,'删除组'))return;await api('group/delete',{ids});selectedGroups.clear();}else{const order=state.groups.map(g=>g.id),at=order.indexOf(id),to=at+(action==='group-up'?-1:1);if(at<0||to<0||to>=order.length)return;[order[at],order[to]]=[order[to],order[at]];await api('group/order',{order});}await load();}catch(error){message(error.message,true);}finally{b.disabled=false;}});
+$('#content').addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;const action=b.dataset.action,id=b.dataset.id;if(!['group-up','group-down','group-switch','remove-selected-groups'].includes(action))return;e.stopPropagation();if(b.disabled)return;let busy;if(action!=='remove-selected-groups')busy=startButtonBusy(b,'保存中');b.disabled=true;try{if(action==='group-switch'){const g=state.groups.find(g=>g.id===id);await api('group/switch',{id,off:!g.disabled});}else if(action==='remove-selected-groups'){const ids=[...selectedGroups].filter(id=>state.groups.some(g=>g.id===id));if(!ids.length)throw new Error('请先选择路由组。');if(!await ask('删除已选路由组？',`将删除 ${ids.length} 个组；鲸屿模型列表随后同步。`,'删除组'))return;busy=startButtonBusy(b,'删除中');await api('group/delete',{ids});selectedGroups.clear();}else{const order=state.groups.map(g=>g.id),at=order.indexOf(id),to=at+(action==='group-up'?-1:1);if(at<0||to<0||to>=order.length)return;[order[at],order[to]]=[order[to],order[at]];await api('group/order',{order});}await load();}catch(error){message(error.message,true);}finally{busy?.finish();if(b.getAttribute('aria-busy')!=='true')b.disabled=false;}});
 window.addEventListener('DOMContentLoaded',load,{once:true});

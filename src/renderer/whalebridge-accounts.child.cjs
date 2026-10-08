@@ -190,7 +190,7 @@ async function run() {
   })()`);
   const waitForSuccess = async () => {
     await waitFor(`document.querySelector('.connection-success') && !document.querySelector('#refresh').disabled`);
-    await js(`(async () => { await Promise.all(document.querySelector('#editor').getAnimations().map(animation => animation.finished)); })()`);
+    await js(`(async () => { await Promise.all(document.querySelector('#editor').getAnimations().filter(animation => animation.effect.getTiming().iterations !== Infinity).map(animation => animation.finished)); })()`);
     return readSuccess();
   };
   // The close event is queued separately from removing the dialog's open state.
@@ -199,7 +199,7 @@ async function run() {
     document.querySelector(${JSON.stringify(control)}).click();
   })`);
   const readAdapterGap = () => js(`(async () => {
-    await Promise.all(document.querySelector('#editor').getAnimations().map(animation => animation.finished));
+    await Promise.all(document.querySelector('#editor').getAnimations().filter(animation => animation.effect.getTiming().iterations !== Infinity).map(animation => animation.finished));
     const button = document.querySelector('#fields [data-action="install-adapter"]');
     const hint = button.parentElement.previousElementSibling, body = document.querySelector('.dialog-body');
     const rect = button.getBoundingClientRect(), hintRect = hint.getBoundingClientRect(), bodyRect = body.getBoundingClientRect();
@@ -318,7 +318,7 @@ async function run() {
       await open(); await chooseSubscription(agent);
       const refreshesBefore = calls.filter(call => call.path === '/api/state').length;
       await js(`document.querySelector('#save').click()`);
-      await waitFor(`document.querySelector('#save').hidden && !document.querySelector('#f-agent')`);
+      await waitFor(`!document.querySelector('#save').hidden && document.querySelector('#save .button-spinner') && !document.querySelector('#f-agent')`);
       const success = await waitForSuccess();
       await closeEditor();
       polled.push({ scenario, success, polls: flows.get(`${scenario}-flow`).polls,
@@ -338,7 +338,7 @@ async function run() {
     scenario = 'signin-pending-cancel';
     await open(); await chooseSubscription('claude');
     await js(`document.querySelector('#save').click()`);
-    await waitFor(`document.querySelector('#save').hidden && !document.querySelector('#f-agent')`);
+    await waitFor(`!document.querySelector('#save').hidden && document.querySelector('#save .button-spinner') && !document.querySelector('#f-agent')`);
     await closeEditor();
     const cancelDeadline = Date.now() + 5000;
     while (!calls.some(call => call.path === '/api/signin/signin-pending-cancel-flow/cancel')) {
@@ -362,7 +362,7 @@ async function run() {
       settle: async () => {
         for (const dialog of document.querySelectorAll('dialog')) {
           if (!dialog.open) continue;
-          await layoutQA.bounded(Promise.all(dialog.getAnimations().map(animation => animation.finished)), layoutQA.phase + ' animation');
+          await layoutQA.bounded(Promise.all(dialog.getAnimations().filter(animation => animation.effect.getTiming().iterations !== Infinity).map(animation => animation.finished)), layoutQA.phase + ' animation');
         }
       },
       close: (selector = '#editor', control = '#cancel-editor') => layoutQA.bounded(new Promise(resolve => {
