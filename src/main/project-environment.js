@@ -27,8 +27,10 @@ function readRecord(file) {
 }
 function writeRecord(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(`${file}.tmp`, JSON.stringify(value, null, 2), 'utf8');
-  fs.renameSync(`${file}.tmp`, file);
+  const temporary = `${file}.${crypto.randomUUID()}.tmp`;
+  fs.writeFileSync(temporary, JSON.stringify(value, null, 2), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+  try { fs.renameSync(temporary, file); }
+  finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); }
 }
 
 /** Directory capabilities only. Worker commands and processes belong to Harness Jobs. */
@@ -185,6 +187,8 @@ function createProjectEnvironment(options = {}) {
     const current = await checkWorkspace(projectId, workstreamId, expected);
     if (current.ownership !== 'project') throw new Error('用户选择的工作目录不能由 Project 删除');
     if (current.dirty) throw new Error('独立工作目录有未提交内容，不能清理');
+    const ignored = await command(current.canonicalPath, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z']);
+    if (ignored) throw new Error('独立工作目录有 Git 忽略的文件，不能清理');
     const target = ownedPath('project-worktrees', projectId, workstreamId);
     await command(current.repositoryRoot, ['worktree', 'remove', '--', target]);
     const { file, binding } = bindingFor(projectId, workstreamId);
@@ -194,7 +198,7 @@ function createProjectEnvironment(options = {}) {
   async function openPath(payload) {
     const projectId = identifier(payload.projectId, 'projectId');
     if (typeof payload.path !== 'string' || !path.isAbsolute(payload.path)) throw new Error('打开 Project 文件需要绝对路径');
-    const requested = path.resolve(payload.path), docs = ownedPath('projects', projectId, 'docs');
+    const requested = fs.realpathSync.native(payload.path), docs = ownedPath('projects', projectId, 'docs');
     let root;
     if (isPathInside(docs, requested)) root = docs;
     else if (payload.workstreamId) root = (await checkWorkspace(projectId, payload.workstreamId, payload.workspace)).canonicalPath;
@@ -205,6 +209,7 @@ function createProjectEnvironment(options = {}) {
     if (!checked || !fs.existsSync(checked)) throw new Error('路径不属于允许打开的 Project 目录');
     const canonicalPath = fs.realpathSync.native(checked);
     if (!isPathInside(fs.realpathSync.native(root), canonicalPath)) throw new Error('Project 文件链接越界');
+    if (payload.action === 'resolve-path') return { ok: true, canonicalPath, root: fs.realpathSync.native(root) };
     const open = options.openPath || (target => require('electron').shell.openPath(target));
     const error = await open(canonicalPath); if (error) throw new Error(String(error));
     return { ok: true, canonicalPath };
@@ -246,6 +251,7 @@ function createProjectEnvironment(options = {}) {
       case 'snapshot': return snapshot(payload);
       case 'cleanup-workspace': return cleanupWorkspace(payload.projectId, payload.workstreamId, payload.workspace);
       case 'open-path': return openPath(payload);
+      case 'resolve-path': return openPath(payload);
       case 'pull-request': return pullRequest(payload);
       default: throw new Error(`不支持的 Project 操作：${String(payload.action || '')}`);
     }

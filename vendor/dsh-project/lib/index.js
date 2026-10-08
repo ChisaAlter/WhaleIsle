@@ -31,6 +31,16 @@ export async function apply(ctx) {
     service = new ProjectService(ctx, table, { home, desktop });
     // Dynamic role tool lookup works during recovery without an inject cycle.
     ctx.provide('projects', service);
+    ctx.tools.guard(exec => {
+      if (!service.state().projects.some(item => item.coordinatorSessionId === exec.agent?.id)
+        && !service.state().workers.some(item => item.sessionId === exec.agent?.id)) return;
+      return service.available ? service.guard(exec) : 'Project Host is unavailable.';
+    });
+    ctx.on('agent-preset/before-select', ({ agent, agentPreset }) => {
+      const role = service.state().projects.some(item => item.coordinatorSessionId === agent.id) ? 'project-coordinator'
+        : service.state().workers.some(item => item.sessionId === agent.id) ? 'project-worker' : undefined;
+      if (role && agentPreset !== role) throw new Error('Project session roles cannot be changed by preset selection.');
+    });
     await registerProjectPresets(ctx);
     ctx.on('agent/created', async ({ agent }) => {
       const project = service.state().projects.find(item => item.coordinatorSessionId === agent.id);

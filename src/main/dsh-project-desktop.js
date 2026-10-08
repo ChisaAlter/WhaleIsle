@@ -20,7 +20,7 @@ function projectPeerDirectories(harnessRoot, manifest) {
       if (!fs.existsSync(anchor)) continue;
       for (const modules of createRequire(anchor).resolve.paths(name) || []) {
         const dir = path.join(modules, name);
-        if (fs.existsSync(path.join(dir, 'package.json'))) return fs.realpathSync.native(dir);
+        if (fs.existsSync(path.join(dir, 'package.json'))) return fs.realpathSync(dir);
       }
     }
     return null;

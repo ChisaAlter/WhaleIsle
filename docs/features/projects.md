@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | **id** | `projects` |
-| **status** | Redesign 2.0 implemented and locally verified in the isolated work branch; PR integration pending |
+| **status** | Repair in review; live-model continuation and packaged acceptance pending |
 | **implementation** | `vendor/dsh-project`, optional desktop overlay and narrow directory bridge |
 
 The [accepted design](../superpowers/specs/2026-10-07-local-project-agent-teams.md) uses a restricted coordinator and real continuable background workers. Harness Agent Teams remain optional; creating or starting a Project does not enable Team plugins or change their settings.
@@ -36,8 +36,12 @@ Workers use the selected existing directory by default. Writable work in that sa
 - Shipped first-party resources and peer closure: `package.json`, `scripts/after-pack.js` and the Project package manifest. Hidden role presets are registered by the plugin, preserving existing user preset definitions.
 - Necessary Harness seams: continuable-subagent cwd/preset/admission and settlement run identity; awaited child composition; Session before-cancel and local model selection; directory action registration and sidebar navigation. Generic Team ownership, managed Session events and Workspace archive hooks are not part of this implementation.
 
-The official Harness build and Windows directory package completed. Focused checks exercised continuable identity, scope consumption, cancellation, directory occupancy, linked-path protection, native report delivery, conservative recovery and shutdown. The real Loader composition uses a scripted external model; those checks do not stand in for provider acceptance.
+The previous delivery claims were withdrawn after adversarial review found lifecycle, permission, data-preservation and layout defects. PR #153 is closed and was not merged. Its prior screenshots and checks do not certify this repair.
 
-Visible source-window checks in an isolated profile confirmed the directory menu, cancelled draft preservation, non-Git creation without background work, duplicate-directory reuse, selected-directory file browsing and explicit pause controls. A real model through the existing local Magpie gateway wrote and read back a Markdown plan, then continued the same worker Session after restart with an explicitly authorized code change. The coordinator received the matching native report and cleared its pending summary. The final Windows package was launched with a fresh isolated profile and its Project menu, directory selection and sole coordinator creation were observed; no package model request or installer installation was performed.
+The repair binds native runs to submitted/consumed delegations, retains directory reservations across old settlements, records the user-message cutoff for single-work stops, and drains workers even when generated notes cannot be refreshed. Project roles reject generic preset replacement. Worktree cleanup preserves ignored files, and receipt writes use exclusively created temporary files.
 
-The primary checkout's HEAD, dirty status and hashes of its 20 existing changed paths were unchanged. Application version and release workflows remain unchanged; development CI and the user's merge decision belong to the PR. Earlier results for the withdrawn Team experiment are not evidence for this design.
+Project materials use a compact header action beside the existing directory control. Work progress follows the composer width. Reported files resolve through the Project capability and retain their absolute identity in the application's existing preview surface. Document tabs use the Host's read-only viewer; Project docs do not become generic desktop write, terminal or Git roots. Unsaved materials remain open across navigation, successful saves remain successful if a later refresh fails, and a history request returning no records preserves the current page.
+
+The 2026-10-08 repair passed focused directory, lifecycle, client and file-preview routing checks, the official client build, and real Loader/Session/continuable-worker composition with a scripted model. Source Electron was restarted from the repair worktree using an isolated profile. The original directory-menu entry created a local non-Git Project without starting work; notes survived restart; the native preview displayed the actual Project docs file instead of a different same-named file in the bound directory. Full target-window captures at 1441×920 and 960×680 logical pixels confirmed a single-line header, truncated sidebar paths, and progress aligned with the composer. Native sidebar and document-preview surfaces were also observed.
+
+An actual model request failed with `MISSING_CREDENTIAL` in the isolated profile before a worker was created. Live-model delegation/continuation and the repaired packaged artifact remain unverified. This is not a ready-to-merge claim.

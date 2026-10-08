@@ -18,6 +18,7 @@ const workstream = z.object({ id, projectId: id, title: id, brief: id, status: z
 const worker = z.object({ sessionId: id, projectId: id, workstreamId: id, cwd: z.string(),
   role: z.enum(['worker', 'readonly', 'docs']), mode: z.enum(['existing', 'worktree']),
   phase: z.enum(['provisioning', 'active', 'idle', 'failed', 'stopping']), directoryHeld: z.boolean(), stopped: z.boolean(), materialized: z.boolean(),
+  activeRunId: z.string().optional(), reservationRef: z.string().optional(), holdSourceMessageId: z.string().optional(),
   branch: z.string().optional(), workspace: z.unknown().optional(), writePaths: z.array(z.string()), consumedDelegationRef: z.string(), error: z.string(), updatedAt: z.number() });
 const state = z.object({ version: z.literal(1), revision: z.number().int().nonnegative(), projects: z.array(project), workstreams: z.array(workstream), workers: z.array(worker) });
 export const initialState = { version: 1, revision: 0, projects: [], workstreams: [], workers: [] };

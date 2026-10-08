@@ -60,6 +60,26 @@ test('explicit real Git worktrees preserve dirty user data and retain committed 
   await assert.rejects(environment.prepareWorkspace(payload), /清理/);
 });
 
+test('cleanup preserves ignored files even when Git reports no ordinary changes', async t => {
+  const { source, git, environment } = await fixture(t);
+  fs.writeFileSync(path.join(source, '.gitignore'), '*.secret\n');
+  await git(source, ['add', '.gitignore']); await git(source, ['commit', '-m', 'ignore local material']);
+  const workspace = await environment.prepareWorkspace({ projectId: 'ignored-project', workstreamId: 'ignored-work', workingDirectory: source, mode: 'worktree' });
+  const material = path.join(workspace.canonicalPath, 'user.secret'); fs.writeFileSync(material, 'preserve me');
+  assert.equal((await environment.checkWorkspace('ignored-project', 'ignored-work', workspace)).dirty, false);
+  await assert.rejects(environment.cleanupWorkspace('ignored-project', 'ignored-work', workspace), /忽略/);
+  assert.equal(fs.readFileSync(material, 'utf8'), 'preserve me');
+});
+
+test('pre-existing temporary receipt hardlinks do not overwrite user material', async t => {
+  const { source, home, environment } = await fixture(t, false);
+  const folder = path.join(home, 'projects', 'linked-project', 'internal', 'desktop-workspaces'); fs.mkdirSync(folder, { recursive: true });
+  const material = path.join(source, 'material.txt'); fs.writeFileSync(material, 'preserve me');
+  fs.linkSync(material, path.join(folder, 'linked-work.json.tmp'));
+  await environment.prepareWorkspace({ projectId: 'linked-project', workstreamId: 'linked-work', workingDirectory: source });
+  assert.equal(fs.readFileSync(material, 'utf8'), 'preserve me');
+});
+
 test('default existing mode binds non-Git directories without Git initialization or shell execution', async t => {
   const { source, home, environment } = await fixture(t, false);
   const payload = { projectId: 'nongit-project', workstreamId: 'nongit-stream', workingDirectory: source, setup: { command: 'exit 99' } };

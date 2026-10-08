@@ -104,7 +104,7 @@ export class ProjectService {
       const previous = latest(existing), changesScope = previous.scope !== role || (role === 'docs' && paths.some(path => !previous.writePaths.includes(path)));
       if (changesScope && source.messageId === previous.source.messageId) fail('unauthorized', 'Scope expansion needs a new actual user message.');
       if (changesScope && (this.ctx.agents.get(worker.sessionId)?.status === 'running' || this.jobs(worker.sessionId).length)) {
-        await this.stop(actor.project.id, existing.id); await this.stops.get(worker.sessionId);
+        await this.stop(actor.project.id, existing.id, { recordHold: false }); await this.stops.get(worker.sessionId);
       }
     }
     let stream;
@@ -119,7 +119,7 @@ export class ProjectService {
         const worker = this.worker(existing.workerSessionId), row = this.stream(existing.id);
         if (worker.phase === 'stopping') fail('stopping', 'The original worker is still stopping.');
         if (args.isolate !== undefined && worker.mode !== (args.isolate ? 'worktree' : 'existing')) fail('fixed_directory', 'The original directory arrangement is fixed.');
-        if ((worker.stopped || project.paused) && latest(row).source.messageId === source.messageId) fail('stopped', 'Stopped work needs a new explicit user continuation.');
+        if (worker.holdSourceMessageId === source.messageId || ((worker.stopped || project.paused) && latest(row).source.messageId === source.messageId)) fail('stopped', 'Stopped work needs a new explicit user continuation.');
         await this.write(state => { const work = state.workstreams.find(item => item.id === row.id), member = state.workers.find(item => item.sessionId === worker.sessionId);
           work.brief = brief; work.currentDelegationRef = ref; work.delegations.push(receipt); work.status = 'open'; work.blockedReason = ''; delete work.latestReport; work.updatedAt = now; member.stopped = false; member.error = ''; state.projects.find(item => item.id === project.id).paused = false; });
         stream = this.stream(row.id);
@@ -145,7 +145,11 @@ export class ProjectService {
   }
   launch(id, signal = new AbortController().signal) {
     if (this.launches.has(id)) return this.launches.get(id);
-    const promise = this.doLaunch(id, signal).finally(() => this.launches.delete(id)); this.launches.set(id, promise); return promise;
+    const ref = latest(this.stream(id)).ref;
+    const promise = this.doLaunch(id, signal).finally(() => {
+      this.launches.delete(id);
+      if (latest(this.stream(id)).ref !== ref) this.schedule();
+    }); this.launches.set(id, promise); return promise;
   }
   async doLaunch(id, signal) {
     let stream = this.stream(id), worker = this.worker(stream.workerSessionId), receipt = latest(stream); const project = this.project(stream.projectId);
@@ -153,7 +157,7 @@ export class ProjectService {
     await this.serial(async () => {
       stream = this.stream(id); worker = this.worker(stream.workerSessionId); receipt = latest(stream);
       if (receipt.phase !== 'queued' || this.project(project.id).paused || worker.stopped || this.closing || !this.directoryAvailable(worker, receipt.scope)) return;
-      await this.write(state => { const member = state.workers.find(item => item.sessionId === worker.sessionId); member.directoryHeld = receipt.scope !== 'readonly'; latest(state.workstreams.find(item => item.id === id)).phase = 'preparing'; }); reserved = true;
+      await this.write(state => { const member = state.workers.find(item => item.sessionId === worker.sessionId); member.directoryHeld = receipt.scope !== 'readonly'; member.reservationRef = receipt.ref; latest(state.workstreams.find(item => item.id === id)).phase = 'preparing'; }); reserved = true;
     });
     if (!reserved) return;
     try {
@@ -163,7 +167,7 @@ export class ProjectService {
         const cwd = await checkedRoot(workspace.canonicalPath);
         await this.serial(() => this.write(state => { const member = state.workers.find(item => item.sessionId === worker.sessionId); member.cwd = cwd; member.workspace = copy(workspace); if (workspace.branch) member.branch = workspace.branch; }));
       } else await this.desktop('check-workspace', { projectId: project.id, workstreamId: id, workspace: worker.workspace });
-      worker = this.worker(worker.sessionId); stream = this.stream(id); receipt = latest(stream);
+      worker = this.worker(worker.sessionId); stream = this.stream(id);
       if (worker.stopped || this.project(project.id).paused) return;
       const internal = await safeProjectSubdirectory(this.home, project.id, 'internal', id), docs = await safeProjectSubdirectory(this.home, project.id, 'docs', id);
       const brief = `Project ${project.title}\nWorkstream ${id}: ${stream.title}\nDelegationRef: ${receipt.ref}\nWorking directory: ${worker.cwd}\nScope: ${receipt.scope}; exact repository write paths: ${JSON.stringify(receipt.writePaths)}\nProject deliverables: ${docs}\nPrivate work notes: ${internal}\nActual user source (${receipt.source.messageId}):\n${receipt.source.text}\n\nCurrent assignment:\n${receipt.brief}\n\n${this.preferencesFor(project.coordinatorSessionId)}\nUse project_report for this delegationRef, then finish. Do not send a duplicate completion message.`;
@@ -193,7 +197,12 @@ export class ProjectService {
     if (this.closing && !this.persistOnDispose) return Promise.resolve();
     if (!this.state().workers.some(item => item.sessionId === info.id)) return Promise.resolve();
     if (!this.terminals.has(info.runId)) { let resolve; const promise = new Promise(done => { resolve = done; }); this.terminals.set(info.runId, { promise, resolve }); }
-    return this.serial(() => this.write(state => { const work = state.workstreams.find(item => item.workerSessionId === info.id), member = state.workers.find(item => item.sessionId === info.id); const receipt = latest(work); if (!receipt.runId) receipt.runId = info.runId; if (!member.stopped) { member.phase = 'active'; work.status = 'running'; } }));
+    return this.serial(() => this.write(state => { const work = state.workstreams.find(item => item.workerSessionId === info.id), member = state.workers.find(item => item.sessionId === info.id);
+      member.activeRunId = info.runId;
+      const submitted = work.delegations.find(item => item.ref === member.reservationRef);
+      if (submitted?.phase === 'preparing') submitted.runId = info.runId;
+      if (!member.stopped) { member.phase = 'active'; member.directoryHeld = latest(work).scope !== 'readonly'; work.status = 'running'; }
+    }));
   }
   runEnded(info) {
     if (this.closing && !this.persistOnDispose) { this.terminals.get(info.runId)?.resolve(); return Promise.resolve(); }
@@ -204,7 +213,13 @@ export class ProjectService {
         if (work.settlements.some(item => item.runId === info.runId)) return;
         const refs = work.delegations.filter(item => item.runId === info.runId).map(item => item.ref);
         work.settlements.push({ runId: info.runId, delegationRefs: refs, stopReason: info.stopReason, summary: (info.lastAssistantMessage ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n'), at: Date.now(), merged: true, noticeMessageId: '', summarizedBy: '' }); work.pendingSummary = true;
-        member.phase = member.stopped ? 'stopping' : 'idle'; member.directoryHeld = member.role !== 'readonly' && this.jobs(member.sessionId).length > 0;
+        if (member.activeRunId === info.runId) {
+          member.activeRunId = '';
+          const reservation = work.delegations.find(item => item.ref === member.reservationRef);
+          const preparing = reservation?.phase === 'preparing' && !reservation.runId;
+          member.phase = member.stopped ? 'stopping' : preparing ? 'provisioning' : 'idle';
+          member.directoryHeld = Boolean(preparing && reservation.scope !== 'readonly') || (member.role !== 'readonly' && this.jobs(member.sessionId).length > 0);
+        }
         const receipt = latest(work);
         if (refs.includes(receipt.ref)) {
           if (member.stopped || this.project(member.projectId).paused) { work.status = 'blocked'; work.blockedReason = 'stopped'; }
@@ -259,8 +274,10 @@ export class ProjectService {
         if (input.messages.some(message => message.source.kind === 'agent-message' && message.source.senderSessionId !== this.project(worker.projectId).coordinatorSessionId)) return { kind: 'reject' };
         if (input.messages.some(message => content(message).includes(`DelegationRef: ${receipt.ref}`))) await this.serial(() => this.write(state => {
           const member = state.workers.find(item => item.sessionId === worker.sessionId); member.role = receipt.scope; member.writePaths = receipt.writePaths; member.consumedDelegationRef = receipt.ref;
-          // Warm steering shares an activation; associate only consumed input.
-          if (!receipt.runId) { const prior = stream.delegations.findLast(item => item.runId); if (prior) latest(state.workstreams.find(item => item.id === stream.id)).runId = prior.runId; }
+          // The native start precedes message consumption. Bind this input to
+          // that activation, never to the latest delegation at start time.
+          const consumed = state.workstreams.find(item => item.id === stream.id).delegations.find(item => item.ref === receipt.ref);
+          consumed.runId = member.activeRunId;
         }));
       }
     }
@@ -311,30 +328,31 @@ export class ProjectService {
     return { recorded: true, workstreamId: stream.id, report };
   }
   async stopTool(actor, args) { this.coordinatorOnly(actor); return this.stop(actor.project.id, args.workstreamId); }
-  async stop(projectId, workstreamId) {
+  async stop(projectId, workstreamId, { recordHold = true } = {}) {
     if (this.closing && !this.persistOnDispose) return { projectId, workstreamId, state: 'stopping' };
     const project = this.project(projectId), streams = workstreamId ? [this.stream(workstreamId, projectId)] : this.state().workstreams.filter(item => item.projectId === projectId), ids = streams.map(item => item.workerSessionId);
     await this.serial(async () => { const lastUser = this.ctx.agents.get(project.coordinatorSessionId)?.session?.snapshotEvents().findLast(event => event.type === 'user/message' && event.data.source.kind === 'user');
       await this.write(state => { if (!workstreamId) { const row = state.projects.find(item => item.id === projectId); row.paused = true; if (lastUser) row.holdSourceMessageId = lastUser.data.id; }
-      for (const work of state.workstreams.filter(item => ids.includes(item.workerSessionId))) { const member = state.workers.find(item => item.sessionId === work.workerSessionId); member.stopped = true;
+      for (const work of state.workstreams.filter(item => ids.includes(item.workerSessionId))) { const member = state.workers.find(item => item.sessionId === work.workerSessionId); member.stopped = true; if (recordHold) member.holdSourceMessageId = lastUser?.data.id ?? latest(work).source.messageId;
         member.phase = this.ctx.agents.get(member.sessionId)?.status === 'running' || this.launches.has(work.id) || this.jobs(member.sessionId).length ? 'stopping' : 'idle';
         for (const receipt of work.delegations.filter(item => ['queued', 'preparing'].includes(item.phase))) receipt.phase = 'stopped';
         if (work.status !== 'done') { work.status = 'blocked'; work.blockedReason = 'stopped'; } work.updatedAt = Date.now(); }
-    }); await this.notes(projectId); });
+    }); });
     for (const id of ids) if (!this.stops.has(id)) { const promise = this.finishStop(project, [id]).catch(async error => {
       if (this.closing && !this.persistOnDispose) { this.ctx.logger.warn('Project runtime stop needs attention: %s', error.message); return; }
       await this.serial(async () => { await this.write(state => { const worker = state.workers.find(item => item.sessionId === id); if (worker.phase === 'stopping') { worker.error = error.message; state.workstreams.find(item => item.id === worker.workstreamId).blockedReason = error.message; } }); await this.notes(projectId); });
       this.ctx.logger.warn('Project stop needs attention: %s', error.message);
     }).finally(() => this.stops.delete(id)); this.stops.set(id, promise); }
+    await this.serial(() => this.notes(projectId)).catch(error => this.ctx.logger.warn('Project stopped; notes could not be refreshed: %s', error.message));
     return { projectId, workstreamId, state: ids.some(id => this.worker(id).phase === 'stopping') ? 'stopping' : 'stopped' };
   }
   async finishStop(project, ids) {
     for (const id of ids) {
       await this.drainWorker(project, id);
       if (this.closing && !this.persistOnDispose) return;
-      await this.serial(() => this.write(state => { const row = state.workers.find(item => item.sessionId === id); row.phase = 'idle'; row.directoryHeld = false; row.updatedAt = Date.now(); }));
+      await this.serial(() => this.write(state => { const row = state.workers.find(item => item.sessionId === id); row.phase = 'idle'; row.activeRunId = ''; row.reservationRef = ''; row.directoryHeld = false; row.updatedAt = Date.now(); }));
     }
-    await this.serial(() => this.notes(project.id)); this.schedule();
+    await this.serial(() => this.notes(project.id)).catch(error => this.ctx.logger.warn('Project drained; notes could not be refreshed: %s', error.message)); this.schedule();
   }
   async drainWorker(project, id) {
     const member = this.worker(id), launch = this.launches.get(member.workstreamId); if (launch) await launch.catch(() => {});
@@ -348,14 +366,24 @@ export class ProjectService {
   }
   async sessionStop(sessionId) { const project = this.state().projects.find(item => item.coordinatorSessionId === sessionId); if (project) await this.stop(project.id); }
   schedule() {
-    if (this.scheduling || this.closing) return; this.scheduling = true;
-    void (async () => { for (const work of this.state().workstreams) if (!this.worker(work.workerSessionId).stopped && !this.project(work.projectId).paused && latest(work).phase === 'queued') await this.launch(work.id).catch(error => this.ctx.logger.warn('Project queued work blocked: %s', error.message)); })().finally(() => { this.scheduling = false; });
+    if (this.closing) return;
+    this.scheduleRequested = true;
+    if (this.scheduling) return; this.scheduling = true;
+    void (async () => {
+      do {
+        this.scheduleRequested = false;
+        for (const work of this.state().workstreams) if (!this.worker(work.workerSessionId).stopped && !this.project(work.projectId).paused && latest(work).phase === 'queued') await this.launch(work.id).catch(error => this.ctx.logger.warn('Project queued work blocked: %s', error.message));
+      } while (this.scheduleRequested && !this.closing);
+    })().finally(() => { this.scheduling = false; });
   }
   async jobChanged(event) {
     if (this.closing && !this.persistOnDispose) return;
     if (event.type !== 'settled' && event.type !== 'removed') return;
-    const id = event.job.owner, member = this.state().workers.find(item => item.sessionId === id); if (!member || this.jobs(id).length || this.ctx.agents.get(id)?.status === 'running' || member.phase === 'stopping') return;
-    await this.serial(async () => { await this.write(state => { const worker = state.workers.find(item => item.sessionId === id); worker.directoryHeld = false; const work = state.workstreams.find(item => item.id === worker.workstreamId), receipt = latest(work);
+    const id = event.job.owner, member = this.state().workers.find(item => item.sessionId === id); if (!member || member.activeRunId || this.launches.has(member.workstreamId) || this.jobs(id).length || this.ctx.agents.get(id)?.status === 'running' || member.phase === 'stopping') return;
+    await this.serial(async () => {
+      const current = this.worker(id);
+      if (current.activeRunId || this.launches.has(current.workstreamId) || this.jobs(id).length || this.ctx.agents.get(id)?.status === 'running' || current.phase === 'stopping') return;
+      await this.write(state => { const worker = state.workers.find(item => item.sessionId === id); worker.directoryHeld = false; const work = state.workstreams.find(item => item.id === worker.workstreamId), receipt = latest(work);
       if (!worker.stopped && receipt.report && work.settlements.some(terminal => terminal.delegationRefs.includes(receipt.ref) && terminal.stopReason === 'completed')) { work.status = receipt.report.outcome === 'completed' ? 'done' : 'blocked'; work.blockedReason = receipt.report.outcome === 'completed' ? '' : receipt.report.summary; }
     }); await this.notes(member.projectId); }); this.schedule();
   }
@@ -390,11 +418,13 @@ export class ProjectService {
     }
     return result;
   }
-  async writeArtifact(actor, args) {
+  async writeArtifact(actor, args, exec) {
     if (actor.role !== 'worker' || this.worker(actor.agent.id).stopped) fail('unauthorized', 'Only an active assigned worker may write materials.');
     if (typeof args.path !== 'string' || !/^[a-zA-Z0-9_.-]{1,140}$/.test(args.path) || ['.', '..'].includes(args.path)) fail('store_path', 'Use one material filename.');
     if (typeof args.text !== 'string' || args.text.length > 512000) fail('store_size', 'Material exceeds the write limit.');
     const root = await safeProjectSubdirectory(this.home, actor.project.id, args.internal ? 'internal' : 'docs', actor.worker.workstreamId), path = join(root, args.path);
+    exec.signal.throwIfAborted();
+    if (this.worker(actor.agent.id).stopped || this.project(actor.project.id).paused) fail('stopped', 'Project work was stopped before writing the material.');
     await fs.writeFile(path, args.text, { flag: 'wx', mode: 0o600 }); return { path };
   }
   async listStore(id) {
@@ -434,7 +464,7 @@ export class ProjectService {
       }
     }
     await this.write(state => { for (const project of state.projects) project.paused = true;
-      for (const worker of state.workers) { worker.directoryHeld = false; if (['active', 'provisioning', 'stopping'].includes(worker.phase)) worker.phase = worker.materialized ? 'idle' : 'failed'; worker.stopped = true;
+      for (const worker of state.workers) { worker.directoryHeld = false; worker.activeRunId = ''; worker.reservationRef = ''; if (['active', 'provisioning', 'stopping'].includes(worker.phase)) worker.phase = worker.materialized ? 'idle' : 'failed'; worker.stopped = true;
         const work = state.workstreams.find(item => item.id === worker.workstreamId); for (const receipt of work.delegations.filter(item => ['queued', 'preparing'].includes(item.phase))) { receipt.phase = 'failed'; receipt.error = 'Application interrupted; inbox acceptance could not be confirmed.'; }
         if (work.status !== 'done') { work.status = 'blocked'; work.blockedReason = 'Application restarted; waiting for explicit continuation.'; }
       } });
@@ -458,8 +488,8 @@ export class ProjectService {
       await this.write(state => { state.projects.find(item => item.id === project.id).updatedAt = Date.now(); }); return this.readStore(project.id, input.path); });
     if (endpoint === 'open') {
       if (!input.path) return this.desktop('open-path', { projectId: project.id, workingDirectory: project.canonicalWorkingDirectory, path: project.canonicalWorkingDirectory });
-      if (input.workstreamId) { const work = this.stream(input.workstreamId, project.id), worker = this.worker(work.workerSessionId), artifact = work.delegations.flatMap(item => item.report?.artifacts ?? []).find(item => item.path === input.path); if (!artifact) fail('store_path', 'The selected workstream did not report this artifact.'); const checked = await checkedFile(artifact.path, [worker.cwd, join(project.storageRoot, 'docs', work.id)]); return this.desktop('open-path', { projectId: project.id, workstreamId: work.id, workingDirectory: worker.cwd, path: checked.path }); }
-      if (!String(input.path).startsWith('docs/')) fail('store_path', 'Desktop material opening is limited to Project docs.'); return this.desktop('open-path', { projectId: project.id, path: await this.storePath(project, input.path) });
+      if (input.workstreamId) { const work = this.stream(input.workstreamId, project.id), worker = this.worker(work.workerSessionId), artifact = work.delegations.flatMap(item => item.report?.artifacts ?? []).find(item => item.path === input.path); if (!artifact) fail('store_path', 'The selected workstream did not report this artifact.'); const checked = await checkedFile(artifact.path, [worker.cwd, join(project.storageRoot, 'docs', work.id)]); return this.desktop('resolve-path', { projectId: project.id, workstreamId: work.id, workingDirectory: worker.cwd, path: checked.path }); }
+      if (!String(input.path).startsWith('docs/')) fail('store_path', 'Desktop material opening is limited to Project docs.'); return this.desktop('resolve-path', { projectId: project.id, path: await this.storePath(project, input.path) });
     }
     if (endpoint === 'diff') { const work = this.stream(input.workstreamId, project.id), worker = this.worker(work.workerSessionId); return { snapshot: await this.desktop('snapshot', { projectId: project.id, workstreamId: work.id, workspace: worker.workspace }), worker: { cwd: worker.cwd, mode: worker.mode, ...(worker.branch ? { branch: worker.branch } : {}) } }; }
     fail('unknown_command', 'This Project command is unavailable. Delegation and reporting require actual Agent tool provenance.');

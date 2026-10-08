@@ -128,6 +128,7 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     assert.equal(model.requests.length, 0); assert.equal(host.state().workstreams.length, 0);
     assert.equal((await host.command('create', { requestId: 'create-b', workingDirectory: directory })).project.coordinatorSessionId, project.coordinatorSessionId);
     assert.equal(ctx.agents.get(project.coordinatorSessionId).session.header.cwd, project.storageRoot);
+    await assert.rejects(ctx.agentPresets.select(ctx.agents.get(project.coordinatorSessionId), 'standard'), /Project session roles/);
     assert.equal(ctx.workspaceRegistry.get(project.workspaceId).path, await realpath(directory));
     const names = ctx.tools.schemas(ctx.agents.get(project.coordinatorSessionId)).map(item => item.name);
     assert.ok(names.includes('project_delegate')); assert.equal(names.some(name => ['spawn_agent', 'spawn_teammate', 'write', 'pwsh', 'bash'].includes(name)), false);
@@ -151,7 +152,7 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     const workerId = plan.workerSessionId; assert.equal(host.worker(workerId).cwd, await realpath(directory));
     const completion = await waitFor(() => model.settlementInputs.find(input => input.facts.reports.some(report => report.delegationRef === plan.currentDelegationRef)), 'parent receives actual report in its one native settlement notice without reading notes');
     assert.match(completion.text, /It left no closing message/); assert.equal(completion.facts.reports[0].summary, 'Plan completed');
-    assert.equal(completion.facts.reports[0].artifacts[0].path, join(directory, 'docs/plan.md')); assert.equal(completion.facts.currentStatus, 'done');
+    assert.equal(completion.facts.reports[0].artifacts[0].path, await realpath(join(directory, 'docs/plan.md'))); assert.equal(completion.facts.currentStatus, 'done');
     const noticeRecords = ctx.agents.get(project.coordinatorSessionId).session.snapshotEvents().filter(event => event.type === 'user/message' && event.data.source.kind === 'subagent-settled' && event.data.source.runId === completion.source.runId);
     assert.equal(noticeRecords.length, 1, 'report facts enrich the same message and do not create a second notification'); assert.equal(noticeRecords[0].data.id, completion.id);
     assert.deepEqual(plan.latestReport.remainingIssues, ['Real-provider and visible desktop acceptance remain outside this Host check.']);

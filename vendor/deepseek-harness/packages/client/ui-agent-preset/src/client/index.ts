@@ -239,7 +239,7 @@ export function apply(ctx: ClientContext): void {
   /** Capture the exact blank Session one Settings action may update. */
   const captureBlankSessionSync = (): ((id: string) => Promise<string | undefined>) => {
     const summary = Object.values(ctx.sessions.list.getSnapshot().byId)
-      .find(session => session.blank && (session.retainedBy.mainView ?? 0) > 0)
+      .find(session => session.blank && !session.presentation?.owner && (session.retainedBy.mainView ?? 0) > 0)
     const binding = summary === undefined ? undefined : ctx.sessions.binding(summary.id)
     const seat = binding === undefined ? undefined : seatFor(binding)
     const sessionId = seat?.blankSessionId()

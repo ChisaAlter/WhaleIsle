@@ -49,13 +49,14 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     .dsh-project-page{padding:12px;display:flex;flex-direction:column;gap:12px;min-width:0}
     .dsh-project-heading,.dsh-project-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     .dsh-project-heading{justify-content:space-between}.dsh-project-list{display:flex;flex-direction:column;gap:4px}
+    .dsh-project-header{display:flex;align-items:center;flex:0 0 auto;white-space:nowrap}
     .dsh-project-header-directory{min-width:0;max-width:100%}.dsh-project-header-label{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;flex:0 0 auto}
     .dsh-project-header-path{min-width:0;max-width:280px;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .dsh-project-row{border:0;border-radius:12px;background:transparent;color:var(--dsw-alias-label-primary);padding:10px;display:flex;align-items:center;gap:8px;text-align:left;cursor:pointer;min-width:0}
     .dsh-project-row:hover,.dsh-project-row[aria-current=page]{background:var(--dsw-alias-interactive-bg-hover)}
-    .dsh-project-row-text{display:flex;flex:1;flex-direction:column;min-width:0}.dsh-project-row-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .dsh-project-row-text{display:flex;flex:1;flex-direction:column;min-width:0}.dsh-project-row-title,.dsh-project-row-text>.dsh-project-muted{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .dsh-project-muted{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:1.5}.dsh-project-error{color:var(--dsw-alias-state-error-primary);white-space:pre-wrap;font-size:13px}
-    .dsh-project-dock{border:1px solid var(--dsw-alias-border-l2);border-radius:12px;padding:8px 12px;margin-top:8px;color:var(--dsw-alias-label-primary);font-size:13px}
+    .dsh-project-dock{box-sizing:border-box;flex:none;min-width:0;width:calc(100% - 2 * var(--dsh-composer-side-clearance) - 4 * var(--dsh-composer-dock-inset));max-width:calc(var(--dsh-composer-resized-width,var(--dsh-composer-card-max-width)) - 4 * var(--dsh-composer-dock-inset));border:1px solid var(--dsw-alias-border-l2);border-radius:12px;padding:8px 12px;margin:0 auto;color:var(--dsw-alias-label-primary);font-size:13px}
     .dsh-project-dock>summary{cursor:pointer;list-style-position:inside}.dsh-project-progress{max-height:320px;overflow:auto;display:flex;flex-direction:column;gap:8px;padding-top:8px}
     .dsh-project-work{border-top:1px solid var(--dsw-alias-border-l2);padding-top:8px;display:flex;flex-direction:column;gap:6px;min-width:0}
     .dsh-project-path{color:var(--dsw-alias-label-tertiary);font:12px monospace;overflow-wrap:anywhere}.dsh-project-body{display:flex;flex-direction:column;gap:12px;min-width:0}
@@ -84,22 +85,18 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       snapshot.loading && !snapshot.projects.length ? h('p', { role: 'status' }, t('loading')) : null,
       !projects.length && !snapshot.loading ? h('p', { className: 'dsh-project-muted' }, t('empty')) : null,
       h('div', { className: 'dsh-project-list' }, projects.map(project => h('button', {
-        key: project.id, type: 'button', className: 'dsh-project-row', 'aria-current': view.selected === project.id ? 'page' : undefined,
+        key: project.id, type: 'button', className: 'dsh-project-row', title: project.canonicalWorkingDirectory, 'aria-current': view.selected === project.id ? 'page' : undefined,
         onClick: () => { void openProject(project.id); },
       }, h(IconFolderCloseRegular, { size: 16 }), h('span', { className: 'dsh-project-row-text' },
         h('span', { className: 'dsh-project-row-title' }, project.title), h('span', { className: 'dsh-project-muted' },
           project.lifecycle === 'archived' ? t('archived') : project.paused ? t('paused') : project.canonicalWorkingDirectory))))));
   }
 
-  function ProjectHeader({ sessionId, useProjects, showMaterials, read, t }) {
+  function ProjectHeader({ sessionId, useProjects, showMaterials, t }) {
     const project = useProjects(value => value.projects.find(item => item.coordinatorSessionId === sessionId));
-    const [error, setError] = useState('');
-    useEffect(() => { setError(''); }, [project?.id]);
     if (!project) return null;
-    const open = async () => { setError(''); try { await read(project.id, 'open', { path: '' }); } catch (failure) { setError(errorText(failure)); } };
-    return h('div', { className: 'dsh-project-actions' },
-      h(Button, { variant: 'ghost', className: 'dsh-project-header-directory', onClick: open, title: project.canonicalWorkingDirectory, 'aria-label': t('openDirectory') }, h('span', { className: 'dsh-project-header-label' }, h(IconFolderCloseRegular, { size: 16 }), t('directory')), h('span', { className: 'dsh-project-header-path' }, project.canonicalWorkingDirectory)),
-      button(t('materials'), () => showMaterials(project.id)), error ? h('span', { className: 'dsh-project-error', role: 'alert' }, error) : null);
+    return h('div', { className: 'dsh-project-header' },
+      h(Button, { variant: 'ghost', size: 'sm', onClick: () => showMaterials(project.id) }, t('materials')));
   }
 
   function ProjectProgress({ sessionId, useProjects, trackProject, readDetail, command, read, showProcess, showDiff, t }) {
@@ -214,7 +211,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       try {
         await binding.session.loadOlder();
         const updated = processRecords(binding.eventSource.getSnapshot().entries);
-        setPageEnd(firstSeq === undefined ? updated.length : updated.findIndex(event => event.seq === firstSeq));
+        const boundary = firstSeq === undefined ? updated.length : updated.findIndex(event => event.seq === firstSeq);
+        if (boundary > 0) setPageEnd(boundary);
       } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); }
     };
     return h('div', { className: 'dsh-project-body' }, h('p', { className: 'dsh-project-muted' }, t('processHint')), h('p', { className: 'dsh-project-muted' }, t('windowHint')),
@@ -270,7 +268,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-project: locale');
       const snapshot = createSnapshotStore({ projects: [], details: {}, available: false, loading: true, error: '' });
       const viewHandle = defineStore({ init: () => ({ selected: null, modal: null, history: false }), actions: {
-        selectProject: (draft, id) => { draft.selected = id; draft.modal = null; },
+        selectProject: (draft, id) => { draft.selected = id; },
         setModal: (draft, modal) => { draft.modal = modal; }, setHistory: (draft, value) => { draft.history = value; },
       } });
       const viewInstance = viewHandle.create(), viewStore = { ...viewHandle, create: () => viewInstance };
@@ -289,7 +287,15 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
           details: { ...previous.details, [id]: { workstreams: [], workers: [], ...previous.details[id], ...detail } } });
         installSidebar();
       };
-      const read = (projectId, endpoint, input) => rpc(endpoint, { ...input, projectId });
+      const read = async (projectId, endpoint, input) => {
+        const value = await rpc(endpoint, { ...input, projectId });
+        if (endpoint === 'open' && input?.path) {
+          if (typeof ctx.workspaces.openPath !== 'function') throw new Error(t('unavailable'));
+          const project = snapshot.getSnapshot().projects.find(item => item.id === projectId);
+          await ctx.workspaces.openPath(value.canonicalPath, { sessionId: project.coordinatorSessionId, workingDirectory: value.root, presentation: 'mini' });
+        }
+        return value;
+      };
       const readDetail = async (projectId, incremental = false) => {
         const generation = refreshGeneration, since = incremental ? snapshot.getSnapshot().details[projectId]?.revision : undefined;
         const detail = await read(projectId, 'detail', { ...(since === undefined ? {} : { since }) });
@@ -301,7 +307,9 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         const value = await read(projectId, endpoint, { ...input, requestId: requestId() });
         refreshGeneration++;
         if (value?.project) acceptDetail(value);
-        if (!Array.isArray(value?.workstreams) || !Array.isArray(value?.workers)) await readDetail(projectId);
+        if (!Array.isArray(value?.workstreams) || !Array.isArray(value?.workers)) {
+          await readDetail(projectId).catch(failure => { if (alive) snapshot.set({ ...snapshot.getSnapshot(), error: errorText(failure) }); });
+        }
         return value;
       };
       const registerAction = () => {
@@ -321,7 +329,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
             const result = await rpc('list');
             if (!alive || generation !== refreshGeneration) return;
             const previous = snapshot.getSnapshot();
-            snapshot.set({ ...previous, projects: result.projects, available: result.available === true, loading: false, error: '' });
+            snapshot.set({ ...previous, projects: result.projects, available: result.available === true, loading: false, error: result.error ?? '' });
             if (previous.available !== (result.available === true)) registerAction();
             installSidebar();
             if (trackedProject && result.projects.some(project => project.id === trackedProject)) await readDetail(trackedProject, true);
@@ -341,7 +349,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       const show = (kind, projectId, workstreamId) => { viewInstance.actions.setModal({ kind, projectId, workstreamId }); };
       const face = () => ({ hooks: { projects: snapshot }, read, command, refresh, openProject, readDetail,
         showMaterials: projectId => show('materials', projectId), showProcess: (projectId, workstreamId) => show('process', projectId, workstreamId), showDiff: (projectId, workstreamId) => show('diff', projectId, workstreamId),
-        trackProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; if (viewInstance.getSnapshot().modal?.projectId === projectId) viewInstance.actions.setModal(null); }; },
+        trackProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; }; },
         retainProcess: (project, work) => ctx.sessions.retain({ parentSessionId: project.coordinatorSessionId, childSessionId: work.workerSessionId, mode: 'continuable' }, { source: 'projectPreview' }),
       });
       const installSidebar = () => {
