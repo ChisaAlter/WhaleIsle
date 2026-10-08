@@ -28,10 +28,11 @@ type ccLine struct {
 		Model   string          `json:"model"`
 		Content json.RawMessage `json:"content"`
 		Usage   *struct {
-			Input      int `json:"input_tokens"`
-			Output     int `json:"output_tokens"`
-			CacheRead  int `json:"cache_read_input_tokens"`
-			CacheWrite int `json:"cache_creation_input_tokens"`
+			Input      int              `json:"input_tokens"`
+			Output     int              `json:"output_tokens"`
+			CacheRead  int              `json:"cache_read_input_tokens"`
+			CacheWrite int              `json:"cache_creation_input_tokens"`
+			Creation   *ccCacheCreation `json:"cache_creation"`
 		} `json:"usage"`
 	} `json:"message"`
 }
@@ -204,15 +205,16 @@ func ccReply(s *state, at time.Time, msg, b []byte, main bool) {
 		return
 	}
 	var u struct {
-		Input      int `json:"input_tokens"`
-		Output     int `json:"output_tokens"`
-		CacheRead  int `json:"cache_read_input_tokens"`
-		CacheWrite int `json:"cache_creation_input_tokens"`
+		Input      int              `json:"input_tokens"`
+		Output     int              `json:"output_tokens"`
+		CacheRead  int              `json:"cache_read_input_tokens"`
+		CacheWrite int              `json:"cache_creation_input_tokens"`
+		Creation   *ccCacheCreation `json:"cache_creation"`
 	}
 	if json.NewDecoder(bytes.NewReader(b[i+len(ccUsage)-1:])).Decode(&u) != nil {
 		return
 	}
-	ccCount(s, m, at, model, Tokens{Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite}, main)
+	ccCount(s, m, at, model, ccTokens(u.Input, u.Output, u.CacheRead, u.CacheWrite, u.Creation), main)
 }
 
 // claudeFull reads a line whole.
@@ -280,7 +282,7 @@ func claudeFull(s *state, b []byte, main bool) {
 		if u == nil || l.Message.Model == "<synthetic>" {
 			return
 		}
-		ccCount(s, m, at, l.Message.Model, Tokens{Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite}, main)
+		ccCount(s, m, at, l.Message.Model, ccTokens(u.Input, u.Output, u.CacheRead, u.CacheWrite, u.Creation), main)
 	}
 }
 

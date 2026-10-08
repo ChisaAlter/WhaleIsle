@@ -52,6 +52,15 @@ const LAYOUT_MARKERS = ['surfaces', 'shell.titlebar.trailing', 'shell.terminalDr
 // cannot see these: sync:harness keeps them only via git merge, so a conflict
 // resolved towards upstream would drop them without failing any other assert.
 const FORK_FILE_MARKERS = [
+  // WhaleBridge thresholds travel with each model and are consumed by
+  // compaction; keeping only the configuration field would silently lose it.
+  { file: 'packages/llm/llm-pi-ai/src/catalog.ts', includes: ['compactionThreshold?: number'] },
+  { file: 'packages/llm/llm-pi-ai/src/config.ts', includes: ['configuredCompactionThresholds', 'compactionThreshold: z.number()'] },
+  { file: 'packages/llm/llm-pi-ai/src/adapter.ts', includes: ['configuredCompactionThresholds'] },
+  { file: 'packages/llm/llm/src/types.ts', includes: ['compactionThreshold?: number'] },
+  { file: 'packages/llm/llm/src/index.ts', includes: ['compactionThreshold'] },
+  { file: 'packages/compaction/compaction-basic/src/config.ts', includes: ['compactionThreshold'] },
+  { file: 'packages/compaction/compaction-basic/src/index.ts', includes: ['info.context.compactionThreshold'] },
   // SettingsSelect: official Menu pill for every settings value dropdown.
   { file: 'packages/client/ui-primitives/src/index.ts', includes: ['export { SettingsSelect }', 'ReviewDiff'] },
   { file: 'packages/client/ui-settings-mcp/src/client/McpSection.tsx', includes: ['SettingsSelect'] },

@@ -141,19 +141,21 @@ export function resolveTargetPolicy(
 /**
  * Scale one routed policy into concrete token budgets for its model capacity.
  *
- * Pressure is capped by both the window fraction and the capacity remaining
- * after the routed output reservation plus compaction headroom. Retention scales
- * the message budget before headroom is deducted.
+ * Pressure uses the configured model threshold or the window fraction, capped
+ * by capacity after the routed output reservation plus compaction headroom.
+ * Ratio retention scales the smaller of the model threshold and message budget.
  *
  * @param policy - merged policy for the exact routed target.
  * @param contextWindow - positive adapter-owned capacity for that target.
  * @param reservedCompletionTokens - output tokens one routed request reserves.
+ * @param compactionThreshold - optional model-owned automatic threshold in tokens.
  * @returns detached immutable pressure and retention budgets.
  */
 export function resolveCompactSpec(
   policy: ResolvedTargetPolicy,
   contextWindow: number,
   reservedCompletionTokens: number,
+  compactionThreshold?: number,
 ): ResolvedCompactSpec {
   const targetKey = `${policy.target.provider}/${policy.target.model}`
   if (!Number.isInteger(contextWindow) || contextWindow <= 0) {
@@ -167,6 +169,13 @@ export function resolveCompactSpec(
       targetKey,
       `BasicCompactionConfig: reservedCompletionTokens (${reservedCompletionTokens}) `
       + 'must be a non-negative integer',
+    )
+  }
+  if (compactionThreshold !== undefined
+    && (!Number.isInteger(compactionThreshold) || compactionThreshold <= 0)) {
+    throw new TargetPressureConfigError(
+      targetKey,
+      `BasicCompactionConfig: compactionThreshold (${compactionThreshold}) must be a positive integer`,
     )
   }
   const messageBudgetTokens = contextWindow - reservedCompletionTokens
@@ -189,11 +198,11 @@ export function resolveCompactSpec(
     )
   }
   const thresholdTokens = Math.floor(Math.min(
-    contextWindow * policy.thresholdRatio,
+    compactionThreshold ?? contextWindow * policy.thresholdRatio,
     pressureBudgetTokens,
   ))
   const retainTokens = policy.retainTokens === undefined
-    ? Math.floor(messageBudgetTokens * policy.retainRatio)
+    ? Math.floor(Math.min(messageBudgetTokens, compactionThreshold ?? messageBudgetTokens) * policy.retainRatio)
     : policy.retainTokens
   if (retainTokens >= thresholdTokens) {
     throw new TargetPressureConfigError(

@@ -91,6 +91,10 @@ var usedCache struct {
 	m       map[string]map[string]Allowance // agent → user → allowance
 	at      map[string]time.Time
 	loading map[string]chan struct{} // closed when the fetch in flight is done
+	// renewed: when an account's windows were last started again (a
+	// Codex reset spent), by agent/user: a reading begun before says
+	// nothing of them
+	renewed map[string]time.Time
 }
 
 // firstWait is how long a request waits for an agent's allowances the
@@ -265,6 +269,33 @@ func (a Allowance) Full(model string, share float64, now time.Time) time.Time {
 	return t
 }
 
+// Pooled says whether a refusal of model for its allowance leaves the
+// account's other models alone: the windows that count model and are full
+// at share are each of some models only (Opus's own week, Cursor's Other
+// Models pool) — or, none known full, no window of the whole account
+// counts it, only pools. Then it is that model which is out, not the
+// account: Cursor's Other Models used up leaves Auto and Composer in
+// theirs (Xiaopodev on X).
+func (a Allowance) Pooled(model string, share float64, now time.Time) bool {
+	model = strings.ToLower(model)
+	full, pooled, whole := false, false, false
+	for _, l := range a {
+		if !l.applies(model) {
+			continue
+		}
+		scoped := l.Model != "" || l.matches != nil
+		if l.Used >= share && (l.Resets.IsZero() || l.Resets.After(now)) {
+			if !scoped {
+				return false
+			}
+			full = true
+		}
+		pooled = pooled || scoped
+		whole = whole || !scoped
+	}
+	return full || pooled && !whole
+}
+
 // budgetSpan is the shortest window that is a budget rather than a rate
 // cap: the week (Kiro's month too), not the five hours in it — what the
 // five hours leave at their reset is nothing lost.
@@ -373,6 +404,7 @@ func Allowances(agent string) map[string]Allowance {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
+			began := time.Now()
 			all := map[string]Allowance{}
 			for user, q := range LoginUsage(ctx, agent) {
 				if q.Error != "" || len(q.Windows) == 0 {
@@ -381,7 +413,16 @@ func Allowances(agent string) map[string]Allowance {
 				all[user] = allowanceOf(q.Windows, time.Now()).restartedBy(resetRunsOut(agent, user, q.Windows, q.Resets))
 			}
 			c.Lock()
-			c.m[agent], c.at[agent] = all, time.Now()
+			at := time.Now()
+			for user := range all {
+				if c.renewed[agent+"/"+strings.ToLower(user)].After(began) {
+					// started again while this was read: not known till
+					// it is read again, at once
+					delete(all, user)
+					at = time.Time{}
+				}
+			}
+			c.m[agent], c.at[agent] = all, at
 			delete(c.loading, agent)
 			c.Unlock()
 			close(done)
@@ -406,7 +447,10 @@ func Allowances(agent string) map[string]Allowance {
 }
 
 // OnRenewed has f told when an account's usage windows were started again
-// (a Codex reset spent), so what sat out waiting for them can come back.
+// (a Codex reset spent), so what sat out waiting for them can come back;
+// and, as agent "" and the key's KeyAllowanceID, when a reading of a key's
+// own windows finds one it was full in full no more: its limit raised in
+// its panel, or its usage reset.
 func OnRenewed(f func(agent, user string)) {
 	renewedHooks.Lock()
 	renewedHooks.fs = append(renewedHooks.fs, f)
@@ -418,14 +462,50 @@ var renewedHooks struct {
 	fs []func(agent, user string)
 }
 
-// renewedNow tells those OnRenewed asked.
+// renewedNow tells those OnRenewed asked, and forgets the account's
+// allowance as last read: its windows are not known till read again, and
+// what holds an account at a share of them (a cap, credits not spent)
+// holds it no more.
 func renewedNow(agent, user string) {
+	forgetAllowance(agent, user)
+	tellRenewed(agent, user)
+}
+
+// tellRenewed tells those OnRenewed asked.
+func tellRenewed(agent, user string) {
 	renewedHooks.Lock()
 	fs := renewedHooks.fs
 	renewedHooks.Unlock()
 	for _, f := range fs {
 		f(agent, user)
 	}
+}
+
+// forgetAllowance leaves agent's account user out of the allowances last
+// read, and has the next Allowances read them again.
+func forgetAllowance(agent, user string) {
+	c := &usedCache
+	c.Lock()
+	defer c.Unlock()
+	if c.renewed == nil {
+		c.renewed = map[string]time.Time{}
+	}
+	c.renewed[agent+"/"+strings.ToLower(user)] = time.Now()
+	if c.at != nil {
+		c.at[agent] = time.Time{}
+	}
+	m, ok := c.m[agent]
+	if !ok {
+		return
+	}
+	// a new map: the one handed out is read without the lock
+	kept := make(map[string]Allowance, len(m))
+	for u, a := range m {
+		if !strings.EqualFold(u, user) {
+			kept[u] = a
+		}
+	}
+	c.m[agent] = kept
 }
 
 // StaleAllowance makes the next Allowances ask the vendor again for user's

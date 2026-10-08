@@ -237,6 +237,9 @@ if (!gotLock) {
     // are the runtime's state, so they point at the desktop home explicitly.
     const desktopDir = desktopStateDir(app);
     fs.mkdirSync(setDesktopDshHome(path.join(desktopDir, 'dsh-home')), { recursive: true });
+
+    const stopWhaleBridgeNotifications = require('../main/whalebridge-notifications').startWhaleBridgeNotifications();
+    app.once('will-quit', stopWhaleBridgeNotifications);
     trace(`dsh-home=${path.join(desktopDir, 'dsh-home')}`);
 
     // Window chrome IPC binds inside attachIntegratedChrome on window create.

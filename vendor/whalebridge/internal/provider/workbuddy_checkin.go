@@ -69,6 +69,8 @@ const (
 	CheckinIneligible = "ineligible" // the account can't take part
 	CheckinInactive   = "inactive"   // no event running, or it has ended
 	CheckinFailed     = "failed"     // no answer; tried again later that day
+	// A vendor challenge is completed by the user in its own app.
+	CheckinCaptcha = "captcha"
 )
 
 // wbCheckinSoon is how long a check-in that never reached WorkBuddy waits
@@ -103,6 +105,8 @@ type WorkBuddyCheckin struct {
 	// By is the vendor whose check-in it is: "" WorkBuddy's, "trae"
 	// Trae CN's; never kept.
 	By string `json:"by,omitempty"`
+	// Vendor names a plugin's provider for its check-in result.
+	Vendor string `json:"vendor,omitempty"`
 	// Asked is true of one checked in on this run, not one read back.
 	Asked bool `json:"-"`
 }
@@ -291,7 +295,9 @@ func WorkBuddyCheckins() []WorkBuddyCheckin {
 func WithCheckins(qs []SubscriptionQuota) []SubscriptionQuota {
 	qs = withCheckins(qs, wbCheckinAccounts(), readCheckins(wbCheckinPath()))
 	qs = markCheckins(qs, traeCards(traeCheckinAccounts()), readCheckins(traeCheckinPath()), "trae")
-	return markCheckins(qs, miniMaxCards(miniMaxCheckinAccounts()), readCheckins(miniMaxCheckinPath()), "minimax")
+	qs = markCheckins(qs, miniMaxCards(miniMaxCheckinAccounts()), readCheckins(miniMaxCheckinPath()), "minimax")
+	qs = markCheckins(qs, qoderCards(qoderCheckinAccounts()), readCheckins(qoderCheckinPath()), "qoder")
+	return pluginCheckinMarks(qs)
 }
 
 func withCheckins(qs []SubscriptionQuota, accts []wbAccount, st map[string]WorkBuddyCheckin) []SubscriptionQuota {
@@ -376,6 +382,9 @@ func wbCheckinAccounts() []wbAccount {
 // through the plugin's fetch, which signs it, and told by the card its
 // usage is on.
 func wbPluginAccounts(pp plugin.Provider) []wbAccount {
+	if pluginChecksIn(pp) {
+		return nil
+	}
 	auths := plugin.Auths(pp.ID)
 	card := PluginID(pp.ID)
 	var out []wbAccount

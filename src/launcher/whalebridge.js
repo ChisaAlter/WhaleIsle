@@ -95,6 +95,15 @@ function createWhaleBridgeService(deps = {}) {
     return result;
   }
 
+  async function alerts(current = state()) {
+    if (!current) return { sequence: 0, alerts: [] };
+    const access = management(current);
+    return fetchJson(`${access.origin}/api/subscriptions/alerts/claim`, {
+      method: 'POST',
+      headers: { Cookie: access.cookie },
+    });
+  }
+
   async function refreshCatalog() {
     catalogError = '';
     try {
@@ -329,7 +338,7 @@ function createWhaleBridgeService(deps = {}) {
     if (typeof info.defaultModel !== 'boolean') throw new Error('鲸桥配置状态无效');
     return info;
   }
-  return { row, refreshCatalog, install, start, stop, update, rollback, uninstall, uninstallInfo, installed, state, api };
+  return { row, refreshCatalog, install, start, stop, update, rollback, uninstall, uninstallInfo, installed, state, api, alerts };
 }
 
 let singleton;

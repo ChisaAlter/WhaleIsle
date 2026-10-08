@@ -100,7 +100,7 @@ func Bun(ctx context.Context) (string, error) {
 	defer bunMu.Unlock()
 	v := inUseLocked()
 	exe := bunExeOf(v)
-	if _, err := os.Stat(exe); err == nil {
+	if haveBun(v) {
 		return exe, nil
 	}
 	if err := downloadBun(ctx, v, exe); err != nil {
@@ -204,7 +204,7 @@ func getURLFrom(ctx context.Context, url string, limit int64, mirror bool) ([]by
 		res, err = source.DoOfficial(http.DefaultClient, req)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("%s: request: %w", url, err)
+		return nil, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
@@ -212,13 +212,7 @@ func getURLFrom(ctx context.Context, url string, limit int64, mirror bool) ([]by
 	}
 	b, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
 	if err != nil {
-		actual := url
-		if res.Request != nil && res.Request.URL != nil {
-			resolved := *res.Request.URL
-			resolved.RawQuery, resolved.Fragment, resolved.User = "", "", nil
-			actual = resolved.String()
-		}
-		return nil, fmt.Errorf("%s (resolved %s): reading response body (HTTP %d, received %d bytes, expected %d): %w", url, actual, res.StatusCode, len(b), res.ContentLength, err)
+		return nil, err
 	}
 	if int64(len(b)) > limit {
 		return nil, fmt.Errorf("%s: too large", url)

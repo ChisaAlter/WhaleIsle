@@ -2,7 +2,6 @@ package plugin
 
 import (
 	"context"
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,7 +13,6 @@ import (
 	"time"
 
 	"github.com/yetone/magpie/internal/settings"
-	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/steady"
 )
 
@@ -85,7 +83,10 @@ type Provider struct {
 	// an https URL or a data:image URI (internal/provider keeps it)
 	Icon string `json:"icon,omitempty"`
 	// Usage says the plugin tells each account's allowance (auth.usage)
-	Usage     bool    `json:"usage"`
+	Usage bool `json:"usage"`
+	// Checkin says the plugin presses its vendor's daily check-in for each
+	// account (auth.checkin)
+	Checkin   bool    `json:"checkin,omitempty"`
 	SignedIn  bool    `json:"signedIn"`
 	AuthType  string  `json:"authType"`
 	AccountID string  `json:"accountId"`
@@ -93,6 +94,9 @@ type Provider struct {
 	// FellBack says the plugin's models hook couldn't fetch its vendor's
 	// list and gave the default one back.
 	FellBack bool `json:"fellBack,omitempty"`
+	// ListError is why it fell back, as the models hook threw it or its
+	// last fetch failed: the editor says so over the short list.
+	ListError string `json:"listError,omitempty"`
 	// Accounts are the accounts signed in to it, the one kept under its
 	// own id first; SignedIn, AuthType and AccountID are that one's.
 	Accounts []Account `json:"accounts"`
@@ -114,8 +118,9 @@ type Account struct {
 	Hint string `json:"hint,omitempty"`
 	// Models are the ids of the provider's models this account has, when
 	// the provider has more than one account; none, it has them all.
-	Models   []string `json:"models,omitempty"`
-	FellBack bool     `json:"fellBack,omitempty"`
+	Models    []string `json:"models,omitempty"`
+	FellBack  bool     `json:"fellBack,omitempty"`
+	ListError string   `json:"listError,omitempty"`
 }
 
 var (
@@ -174,25 +179,18 @@ func Providers(ctx context.Context) ([]Provider, error) {
 func commitProviders(ps []Provider, epoch *uint64) []Provider {
 	// Serialize publishers without blocking Cached on Windows rename retries.
 	provWriteMu.Lock()
+	defer provWriteMu.Unlock()
 	provMu.Lock()
 	if epoch != nil && provEpoch != *epoch {
 		provMu.Unlock()
-		provWriteMu.Unlock()
 		return ps
 	}
 	ps = keepListed(ps, provCache)
 	ps = keepUnloaded(ps, provCache)
-	previous, _ := json.Marshal(provCache)
-	published, _ := json.Marshal(ps)
-	changed := !bytes.Equal(previous, published)
 	provCache, provGood, provTried = ps, true, true
 	provMu.Unlock()
 	if b, err := json.Marshal(ps); err == nil {
 		_ = writeWhole(providersPath(), b)
-	}
-	provWriteMu.Unlock()
-	if changed {
-		catalog.Touched()
 	}
 	return ps
 }
@@ -324,7 +322,11 @@ func keepListed(ps, last []Provider) []Provider {
 			continue
 		}
 		if p.FellBack && !l.FellBack && len(l.Models) > 0 {
-			ps[i].Models, ps[i].FellBack = l.Models, false
+			ps[i].Models, ps[i].FellBack, ps[i].ListError = l.Models, false, ""
+			// the first account's list is the provider's: it is kept with it
+			if len(ps[i].Accounts) > 0 && ps[i].Accounts[0].Models == nil {
+				ps[i].Accounts[0].FellBack, ps[i].Accounts[0].ListError = false, ""
+			}
 		}
 		for j, a := range p.Accounts {
 			if !a.FellBack {
@@ -332,7 +334,7 @@ func keepListed(ps, last []Provider) []Provider {
 			}
 			for _, b := range l.Accounts {
 				if b.Key == a.Key && !b.FellBack && len(b.Models) > 0 {
-					ps[i].Accounts[j].Models, ps[i].Accounts[j].FellBack = b.Models, false
+					ps[i].Accounts[j].Models, ps[i].Accounts[j].FellBack, ps[i].Accounts[j].ListError = b.Models, false, ""
 				}
 			}
 		}
@@ -446,7 +448,7 @@ func Cached() []Provider {
 		for i, a := range p.Accounts {
 			for _, w := range was {
 				if w.Key == a.Key {
-					p.Accounts[i].Models = w.Models
+					p.Accounts[i].Models, p.Accounts[i].FellBack, p.Accounts[i].ListError = w.Models, w.FellBack, w.ListError
 				}
 			}
 		}
@@ -839,6 +841,24 @@ type UsageWindow struct {
 	Models    []string `json:"models"`
 	NotModels []string `json:"notModels"`
 	Aside     bool     `json:"aside"`
+}
+
+// Checkin is what came of an account's daily check-in, as the plugin's
+// auth.checkin said: Outcome is one of claimed, done, ineligible,
+// inactive, captcha and failed.
+type Checkin struct {
+	Outcome string  `json:"outcome"`
+	Credit  float64 `json:"credit"`
+	Streak  int     `json:"streak"`
+	Message string  `json:"message"`
+}
+
+// AccountCheckin asks the plugin to check account of provider in for the
+// day.
+func AccountCheckin(ctx context.Context, provider, account string) (Checkin, error) {
+	var c Checkin
+	err := Call(ctx, "checkin", map[string]any{"provider": provider, "account": account, "proxy": proxyOf(ctx)}, &c)
+	return c, err
 }
 
 // AccountUsage asks the plugin for account's usage of provider.

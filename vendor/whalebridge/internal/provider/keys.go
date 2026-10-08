@@ -373,6 +373,44 @@ func RemoveKey(id, keyRef string) error {
 	return Save(*p)
 }
 
+// RemoveKeys forgets several keys at once (361 on Discord: hundreds of
+// keys, some dead): those named that it has. The first key, when it is
+// among them, gives its place to the next one on that stays. One key in
+// use always stays: removing every key in use is refused.
+func RemoveKeys(id string, refs []string) (removed int, err error) {
+	p, err := Find(id)
+	if err != nil {
+		return 0, err
+	}
+	gone := map[string]bool{}
+	for _, r := range refs {
+		gone[r] = true
+	}
+	var kept []KeyAccount
+	for _, k := range p.Keys {
+		if gone[keyID(k.Key)] {
+			removed++
+			continue
+		}
+		kept = append(kept, k)
+	}
+	firstGone := p.Key != "" && gone[keyID(p.Key)]
+	if firstGone {
+		removed++
+	}
+	if removed == 0 {
+		return 0, fmt.Errorf("%s has none of these keys", p.Name)
+	}
+	p.Keys = kept
+	// the first key is always on: only its removal can leave none in use
+	if firstGone {
+		if _, ok := promote(p); !ok {
+			return 0, errors.New("those are all the keys in use; keep one on")
+		}
+	}
+	return removed, Save(*p)
+}
+
 // RenameKey names one of a provider's keys, "Personal", "Team".
 func RenameKey(id, keyRef, name string) error {
 	p, err := Find(id)

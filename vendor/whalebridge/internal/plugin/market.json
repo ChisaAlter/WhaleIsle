@@ -22,6 +22,16 @@
     { "package": "@magpie-community/opencode-kiro-auth", "name": "Kiro", "icon": "kiro-color", "providers": ["kiro"], "community": true, "replaces": "kiro",
       "summary": { "en": "Kiro Free, Pro, Pro+ and Power — Kiro's sign-in, kiro-cli's, or an API key.", "zh": "Kiro Free、Pro、Pro+ 与 Power：Kiro 登录、沿用 kiro-cli 的登录，或 API key。" } },
     { "package": "@magpie-community/opencode-workbuddy-auth", "name": "WorkBuddy", "icon": "workbuddy-color", "providers": ["workbuddy", "workbuddy-ai"], "community": true, "replaces": "workbuddy",
-      "summary": { "en": "WorkBuddy's China build (CodeBuddy plan) and its international build.", "zh": "WorkBuddy 国内版（CodeBuddy 套餐）与国际版。" } }
+      "summary": { "en": "WorkBuddy's China build (CodeBuddy plan) and its international build.", "zh": "WorkBuddy 国内版（CodeBuddy 套餐）与国际版。" } },
+    { "package": "@magpie-community/middleware-param-override", "name": "Param Override", "kind": "middleware", "community": true,
+      "summary": { "en": "New API's parameter override: set, delete, move or rewrite fields of every request, by model or by condition.", "zh": "New API 的参数覆盖：按模型或条件设置、删除、移动或改写每个请求的字段。" } },
+    { "package": "@magpie-community/middleware-model-map", "name": "Model Map", "kind": "middleware", "community": true,
+      "summary": { "en": "New API's model redirection: send a model under another name, by name or pattern; replies keep the name asked for.", "zh": "New API 的模型重定向：按名称或正则把模型换成另一个发出，回复里仍是原来的名字。" } },
+    { "package": "@magpie-community/middleware-system-prompt", "name": "System Prompt", "kind": "middleware", "community": true,
+      "summary": { "en": "Add your own system prompt to every request, or only some agents' or models', in each API's own place.", "zh": "给每个请求（或指定 agent、模型）加上自己的系统提示词，放在各 API 自己的位置。" } },
+    { "package": "@magpie-community/middleware-word-guard", "name": "Word Guard", "kind": "middleware", "community": true,
+      "summary": { "en": "New API's sensitive-word filter: turn away or mask words and patterns in what you send, and in replies.", "zh": "New API 的敏感词过滤：拒绝或替换你发出的内容和回复里的词与正则。" } },
+    { "package": "@magpie-community/middleware-think-tags", "name": "Think Tags", "kind": "middleware", "community": true,
+      "summary": { "en": "Take a model's <think>…</think> out of its reply's text, or put a Chat reply's reasoning into it.", "zh": "去掉回复正文开头的 <think>…</think>，或把 Chat 回复的思考内容放进正文。" } }
   ]
 }

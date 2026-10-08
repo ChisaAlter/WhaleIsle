@@ -15,6 +15,7 @@ func isTitleKind(kind string) bool {
 // client_metadata in the Responses body. Read only identity fields; never keep
 // prompts or the rest of the metadata in the trace.
 type sessionMetadata struct {
+	Turn         string `json:"turn_id"`
 	Source       string `json:"thread_source"`
 	Parent       string `json:"parent_thread_id"`
 	Forked       string `json:"forked_from_thread_id"`
@@ -36,6 +37,7 @@ func requestSessionMetadata(h http.Header, body []byte) sessionMetadata {
 				return m
 			}
 		} else if len(envelope.Metadata) > 0 {
+			_ = json.Unmarshal(envelope.Metadata["turn_id"], &m.Turn)
 			// Compatibility projections used by clients without the full blob.
 			_ = json.Unmarshal(envelope.Metadata["thread_source"], &m.Source)
 			_ = json.Unmarshal(envelope.Metadata["parent_thread_id"], &m.Parent)
@@ -49,9 +51,13 @@ func requestSessionMetadata(h http.Header, body []byte) sessionMetadata {
 			}
 		}
 	}
+	projectedTurn := m.Turn
 	m = sessionMetadata{}
 	if json.Unmarshal([]byte(h.Get("x-codex-turn-metadata")), &m) != nil {
-		return sessionMetadata{}
+		return sessionMetadata{Turn: projectedTurn}
+	}
+	if projectedTurn != "" {
+		m.Turn = projectedTurn
 	}
 	return m
 }

@@ -3,6 +3,8 @@ package gateway
 import (
 	"bytes"
 	"encoding/json"
+	"maps"
+	"net/http"
 	"regexp"
 	"slices"
 	"strings"
@@ -61,6 +63,27 @@ func (s *Server) betas(p provider.Provider, asked []string) []string {
 		}
 	}
 	return out
+}
+
+// fitUserBetas fits the anthropic-beta a signed request carries when the
+// provider has one of the user's own (header.anthropic-beta), which Sign
+// added after the agent's: a beta of the user's is left out only once the
+// provider has refused it, as the agent's are, and the retry goes without.
+// The header keeps the name as the user wrote it.
+func (s *Server) fitUserBetas(p provider.Provider, h http.Header) {
+	if !slices.ContainsFunc(slices.Collect(maps.Keys(p.Headers)), provider.ListHeader) {
+		return
+	}
+	for k, vs := range h {
+		if !provider.ListHeader(k) {
+			continue
+		}
+		if bs := s.betas(p, vs); len(bs) > 0 {
+			h[k] = []string{strings.Join(bs, ",")}
+		} else {
+			delete(h, k)
+		}
+	}
 }
 
 // bodyBetas fits a body's anthropic_beta list, as Bedrock's InvokeModel

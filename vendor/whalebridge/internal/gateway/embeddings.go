@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -56,24 +57,49 @@ func (s *Server) retrieve(path, operation string) http.HandlerFunc {
 			s.record(call)
 			return
 		}
+		g, ms, isGroup := provider.FindGroup(asked)
+		if keyWho, held := keyHolds(r); held && (isGroup && !groupAllowed(keyWho, g, ms) || !isGroup && !modelAllowed(keyWho, p, model)) {
+			msg := keyModelError(keyWho, asked)
+			call.Status, call.Error = 403, msg
+			writeError(w, provider.Chat, 403, msg)
+			s.record(call)
+			return
+		}
 		call.To = provider.Chat
 		// a routing group's members are tried as its routing orders them,
 		// each account or key of theirs too (#773), the next asked when one
 		// fails: a member that serves no such API (404), one out of quota
 		// (429) or one whose vendor fails; a model is asked on its own
 		tries := []candidate{{p: p, model: model}}
-		if g, ms, isGroup := provider.FindGroup(asked); isGroup {
+		if isGroup {
 			if cs, _ := s.planGroup(g.Live(), ms, provider.Chat); len(cs) > 0 {
 				tries = cs
+			}
+		}
+		// the accounts or keys the calling key may not use are left out of
+		// the tries too (#905): a group's members through it no less
+		if keyWho, held := accountHolds(r); held {
+			tries = slices.DeleteFunc(tries, func(c candidate) bool { return !accountAllowed(keyWho, c) })
+			if len(tries) == 0 {
+				msg := keyAccountsError(keyWho, asked)
+				call.Status, call.Error = 403, msg
+				writeError(w, provider.Chat, 403, msg)
+				s.record(call)
+				return
 			}
 		}
 		var skipped []string
 		// masked once, as the settings say: a document a reranker gives
 		// back has its secrets again
 		all, _ := json.Marshal(req)
-		w, all, done := redacted(w, all)
-		defer done()
-		json.Unmarshal(all, &req)
+		// unless every try is on this machine or the local network, set
+		// to go unmasked (provider.SkipsRedaction)
+		if slices.ContainsFunc(tries, func(c candidate) bool { return !c.p.SkipsRedaction() }) {
+			var done func()
+			w, all, done = redacted(w, all)
+			defer done()
+			json.Unmarshal(all, &req)
+		}
 		for i, c := range tries {
 			last := i == len(tries)-1
 			call.Provider = c.p.ID

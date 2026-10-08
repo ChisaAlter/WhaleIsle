@@ -137,6 +137,11 @@ type Request struct {
 	// (AI Studio's, or a proxy in front of it on this machine or the LAN),
 	// which gives the model's thoughts only when asked in thinking_config.
 	GeminiCompat bool
+	// Resume is set on a request built to go on with a reply the client
+	// already has part of (continuation.go): its last message is that
+	// part, an assistant message the model goes on from, not a turn
+	// answered.
+	Resume bool
 	// Namespaced are the tools a Responses client offered inside a
 	// namespace, by the flat name the model is offered them under.
 	Namespaced map[string]nsTool
@@ -196,10 +201,18 @@ type Usage struct {
 	Output     int `json:"output"`
 	CacheRead  int `json:"cache_read"`
 	CacheWrite int `json:"cache_write"`
-	Reasoning  int `json:"reasoning"`
+	// CacheWrite1h is how many of the CacheWrite tokens were written to
+	// be kept for an hour, which Anthropic bills at 2× input where a
+	// 5-minute write is 1.25×, when its usage says so (cache_creation's
+	// ephemeral_1h_input_tokens)
+	CacheWrite1h int `json:"cache_write_1h,omitempty"`
+	Reasoning    int `json:"reasoning"`
 	// Served: the model the vendor's reply says answered, when it named
 	// one — which may not be the one it was asked for
 	Served string `json:"served,omitempty"`
+	// Upstream: the provider an aggregator says answered behind it
+	// (OpenRouter's "provider": DeepInfra, Novita …), when it says one
+	Upstream string `json:"upstream,omitempty"`
 	// RequestID: the id the vendor gave the request, from its reply's
 	// headers (Claude Code's own for a subscription); ErrType: what a
 	// failed request's error body called the error
@@ -207,6 +220,10 @@ type Usage struct {
 	// ResponseID is the final client response ID, independent of request headers.
 	ResponseID string `json:"response_id,omitempty"`
 	ErrType    string `json:"err_type,omitempty"`
+	// Stop is why the upstream said its reply ended, in its own words
+	// (stop_reason, finish_reason, a Responses status): "" when it said
+	// none, as a stream that just stops does (upstreamStop)
+	Stop string `json:"stop,omitempty"`
 }
 
 // prompt is every token the prompt came to, as OpenAI's and Gemini's
@@ -229,11 +246,17 @@ func (u *Usage) add(v Usage) {
 	if v.CacheWrite > 0 {
 		u.CacheWrite = v.CacheWrite
 	}
+	if v.CacheWrite1h > 0 {
+		u.CacheWrite1h = v.CacheWrite1h
+	}
 	if v.Reasoning > 0 {
 		u.Reasoning = v.Reasoning
 	}
 	if v.Served != "" {
 		u.Served = v.Served
+	}
+	if v.Upstream != "" {
+		u.Upstream = v.Upstream
 	}
 	if v.RequestID != "" {
 		u.RequestID = v.RequestID
@@ -243,6 +266,9 @@ func (u *Usage) add(v Usage) {
 	}
 	if v.ErrType != "" {
 		u.ErrType = v.ErrType
+	}
+	if v.Stop != "" {
+		u.Stop = v.Stop
 	}
 }
 
@@ -335,7 +361,10 @@ func (c *collector) add(ev Event) {
 
 func (c *collector) finish() Result {
 	c.closeTool()
-	if c.res.Stop == "" {
+	// a reply of tool calls ended "stop" (a relay's end_turn beside its
+	// tool_use blocks, 蓝猫 on Discord) is the client's to run the calls
+	// of: told it stopped, an agent ends its turn there
+	if c.res.Stop == "" || c.res.Stop == "stop" {
 		c.res.Stop = "stop"
 		for _, p := range c.res.Parts {
 			if p.Kind == ToolCall {
@@ -352,16 +381,6 @@ func (c *collector) finish() Result {
 func saidAnything(parts []Part) bool {
 	for _, p := range parts {
 		if p.Kind != Thinking {
-			return true
-		}
-	}
-	return false
-}
-
-// hasTool reports whether a result calls any tool.
-func hasTool(parts []Part) bool {
-	for _, p := range parts {
-		if p.Kind == ToolCall {
 			return true
 		}
 	}

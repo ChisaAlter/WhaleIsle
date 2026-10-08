@@ -588,7 +588,7 @@ func (c *traceCursor) pi(line []byte, bodies bool) []TraceSpan {
 				if json.Unmarshal(line, &usage) == nil {
 					s := c.span(id, o.ID, "model "+usage.Model+" ("+usage.Purpose+")", "generation", o.Timestamp, o.Timestamp)
 					s.Model, s.Provider, s.Inferred = usage.Model, usage.Provider, true
-					s.Tokens = Tokens{usage.Usage.Input, usage.Usage.Output, usage.Usage.CacheRead, usage.Usage.CacheWrite}
+					s.Tokens = Tokens{Input: usage.Usage.Input, Output: usage.Usage.Output, CacheRead: usage.Usage.CacheRead, CacheWrite: usage.Usage.CacheWrite}
 					return []TraceSpan{s}
 				}
 			}

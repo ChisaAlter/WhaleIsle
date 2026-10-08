@@ -42,6 +42,8 @@ type Tokens struct {
 	Output     int `json:"output"`
 	CacheRead  int `json:"cache_read"`
 	CacheWrite int `json:"cache_write"`
+	// CacheWrite1h is the part of CacheWrite kept for one hour.
+	CacheWrite1h int `json:"cache_write_1h,omitempty"`
 }
 
 func (t *Tokens) add(u Tokens) {
@@ -49,6 +51,7 @@ func (t *Tokens) add(u Tokens) {
 	t.Output += u.Output
 	t.CacheRead += u.CacheRead
 	t.CacheWrite += u.CacheWrite
+	t.CacheWrite1h += u.CacheWrite1h
 }
 
 func (t *Tokens) sub(u Tokens) {
@@ -56,6 +59,21 @@ func (t *Tokens) sub(u Tokens) {
 	t.Output -= u.Output
 	t.CacheRead -= u.CacheRead
 	t.CacheWrite -= u.CacheWrite
+	t.CacheWrite1h -= u.CacheWrite1h
+}
+
+type ccCacheCreation struct {
+	Ephemeral5m int `json:"ephemeral_5m_input_tokens"`
+	Ephemeral1h int `json:"ephemeral_1h_input_tokens"`
+}
+
+func ccTokens(in, out, read, write int, c *ccCacheCreation) Tokens {
+	t := Tokens{Input: in, Output: out, CacheRead: read, CacheWrite: write}
+	if c != nil {
+		t.CacheWrite = max(t.CacheWrite, c.Ephemeral5m+c.Ephemeral1h)
+		t.CacheWrite1h = c.Ephemeral1h
+	}
+	return t
 }
 
 func (t Tokens) zero() bool { return t == Tokens{} }
@@ -505,7 +523,8 @@ func CachePath() string { return filepath.Join(filepath.Dir(catalog.CachePath())
 // 11: Codex's input without what it wrote to the cache (#589).
 // 16: count Codex response records and compaction usage.
 // 17: reconcile recent Claude message revisions.
-const cacheVersion = 17
+// 18: Claude Code's one-hour cache writes apart from its five-minute ones.
+const cacheVersion = 18
 
 type cacheFile struct {
 	Version int               `json:"version"`
@@ -925,7 +944,7 @@ func assemble(fs []file, price func(string) *catalog.Price) (Session, bool) {
 	}
 	for _, m := range models {
 		if p := price(m.Model); p != nil {
-			m.Cost, m.Priced = p.Cost(m.Input, m.Output, m.CacheRead, m.CacheWrite), true
+			m.Cost, m.Priced = p.At(0).CostSplit(m.Input, m.Output, m.CacheRead, m.CacheWrite, m.CacheWrite1h), true
 			s.Cost += m.Cost
 		} else {
 			s.Unpriced++
@@ -1214,6 +1233,7 @@ func priceOf(s settings.Settings, model string) (catalog.Price, bool) {
 	// from them
 	if p, ok := s.ModelPrices[provider.AnyPriceKey(bare)]; ok {
 		if pr, bad := p.Price(); bad == "" {
+			catalog.OneHourFor(bare, &pr)
 			return pr, true
 		}
 	}

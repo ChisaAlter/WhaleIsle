@@ -58,10 +58,13 @@ func (o OTel) Check() error {
 // saved preferences. Merely setting an endpoint never enables export.
 func OTelExport() (OTel, error) {
 	o := Load().OTel
+	// This component exports its gateway traffic only. Native client sessions
+	// stay outside its scope, including inherited upstream environment flags.
+	o.Sessions = false
 	for _, x := range []struct {
 		name string
 		dst  *bool
-	}{{"MAGPIE_OTEL_ENABLED", &o.Enabled}, {"MAGPIE_OTEL_METRICS", &o.Metrics}, {"MAGPIE_OTEL_BODIES", &o.Bodies}, {"MAGPIE_OTEL_BODIES_WHOLE", &o.BodiesWhole}, {"MAGPIE_OTEL_SESSIONS", &o.Sessions}} {
+	}{{"MAGPIE_OTEL_ENABLED", &o.Enabled}, {"MAGPIE_OTEL_METRICS", &o.Metrics}, {"MAGPIE_OTEL_BODIES", &o.Bodies}, {"MAGPIE_OTEL_BODIES_WHOLE", &o.BodiesWhole}} {
 		if v, ok := os.LookupEnv(x.name); ok {
 			b, err := strconv.ParseBool(v)
 			if err != nil {

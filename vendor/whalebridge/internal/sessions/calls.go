@@ -392,10 +392,11 @@ type ccCall struct {
 		ID    string `json:"id"`
 		Model string `json:"model"`
 		Usage *struct {
-			Input      int `json:"input_tokens"`
-			Output     int `json:"output_tokens"`
-			CacheRead  int `json:"cache_read_input_tokens"`
-			CacheWrite int `json:"cache_creation_input_tokens"`
+			Input      int              `json:"input_tokens"`
+			Output     int              `json:"output_tokens"`
+			CacheRead  int              `json:"cache_read_input_tokens"`
+			CacheWrite int              `json:"cache_creation_input_tokens"`
+			Creation   *ccCacheCreation `json:"cache_creation"`
 		} `json:"usage"`
 	} `json:"message"`
 }
@@ -516,7 +517,7 @@ func claudeCallLine(st *callFile, b []byte) {
 			return
 		}
 		c.Model = st.str(model)
-		c.Tokens = Tokens{Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite}
+		c.Tokens = ccTokens(u.Input, u.Output, u.CacheRead, u.CacheWrite, u.Creation)
 		if c.Tokens.zero() && m.Usage == nil {
 			return
 		}

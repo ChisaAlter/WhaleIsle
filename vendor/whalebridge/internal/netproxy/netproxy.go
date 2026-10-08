@@ -5,7 +5,9 @@
 //
 // In order: the proxy set in magpie's settings (or "direct" for none), the
 // usual *_PROXY variables, then the system's proxy (macOS network
-// settings, Windows Internet Options). Loopback is never proxied.
+// settings, Windows Internet Options). Loopback is never proxied, nor,
+// unless a provider has a proxy of its own, a host on the user's own
+// network (lan.go).
 package netproxy
 
 import (
@@ -32,7 +34,8 @@ func Install() {
 }
 
 // Func is an http.Transport Proxy function: the proxy the request's
-// context names (With), or else the global one.
+// context names (With), or else the global one, which a host on the
+// user's own network goes around (onLAN).
 func Func(req *http.Request) (*url.URL, error) {
 	if loopback(req.URL.Hostname()) {
 		return nil, nil
@@ -40,7 +43,11 @@ func Func(req *http.Request) (*url.URL, error) {
 	if c := choiceOf(req.Context()); c != "" {
 		return forChoice(c)
 	}
-	return For(req.URL)
+	p, err := For(req.URL)
+	if p != nil && onLAN(req.URL.Hostname()) {
+		return nil, nil
+	}
+	return p, err
 }
 
 type choiceKey struct{}

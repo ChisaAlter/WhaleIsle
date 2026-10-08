@@ -510,8 +510,21 @@ func APIError(b []byte, fallback string) string {
 	if link, ok := Verification(b); ok {
 		return VerifyMessage(apiError(b, fallback), link)
 	}
+	if cmdGoNoAPI.Match(b) {
+		return apiError(b, fallback) + " — " + CommandCodeGoHint
+	}
 	return apiError(b, fallback)
 }
+
+// cmdGoNoAPI is Command Code's Provider API refusing a Go plan's key:
+// "Your Go plan doesn't include API access. Upgrade to Provider or higher
+// …" (#969). Go's key is only taken where Command Code's CLI asks, which
+// the Command Code plugin does; an API-key provider (the "commandcode"
+// preset) never can.
+var cmdGoNoAPI = regexp.MustCompile(`(?i)\bGo plan doesn.t include API access`)
+
+// CommandCodeGoHint says where a Go plan's key works.
+const CommandCodeGoHint = "a Go plan's key works in magpie through the Command Code plugin (Plugins › Command Code, then sign in with the key), which asks Command Code as its CLI does; a Command Code API-key provider can't use it"
 
 // verifyWords is a refusal asking for the account to be verified, put in
 // words rather than as VALIDATION_REQUIRED — or already by VerifyMessage.

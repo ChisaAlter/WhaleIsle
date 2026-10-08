@@ -236,7 +236,7 @@ func statsAt(days int, now time.Time) Stats {
 	for k, t := range use {
 		u := Usage{Agent: k.agent, Cwd: k.cwd, Model: k.model, Tokens: t}
 		if p := price(k.model); p != nil {
-			u.Cost, u.Priced = p.Cost(t.Input, t.Output, t.CacheRead, t.CacheWrite), true
+			u.Cost, u.Priced = p.At(0).CostSplit(t.Input, t.Output, t.CacheRead, t.CacheWrite, t.CacheWrite1h), true
 		}
 		byDate[k.date].Usage = append(byDate[k.date].Usage, u)
 	}
@@ -309,7 +309,7 @@ func statsAt(days int, now time.Time) Stats {
 			sum.Tokens.add(t)
 			sum.Models = append(sum.Models, model)
 			if p := price(model); p != nil {
-				sum.Cost += p.Cost(t.Input, t.Output, t.CacheRead, t.CacheWrite)
+				sum.Cost += p.At(0).CostSplit(t.Input, t.Output, t.CacheRead, t.CacheWrite, t.CacheWrite1h)
 			} else {
 				sum.Priced = false
 			}
