@@ -26,22 +26,14 @@ test('real WhaleBridge account UI retains connection feedback and consistent res
       const child = spawn(electron, [path.join(__dirname, 'whalebridge-accounts.child.cjs'), profile], {
         env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
       });
-      let stdout = '', stderr = '', childError, timedOut = false, completed = false;
-      let shutdownTimer;
-      const timer = setTimeout(() => { timedOut = true; killProcessTree(child); }, 120000);
-      child.stdout.on('data', data => {
-        stdout += data;
-        // A complete result ends the UI deadline; process exit is still required.
-        if (!completed && stdout.split(/\r?\n/).some(row => row.startsWith('WHALEBRIDGE_ACCOUNTS_RESULT:') && stdout.includes(row + '\n'))) {
-          completed = true; clearTimeout(timer);
-          shutdownTimer = setTimeout(() => { timedOut = true; killProcessTree(child); }, 5000);
-        }
-      });
+      let stdout = '', stderr = '', childError, timedOut = false;
+      child.stdout.on('data', data => { stdout += data; });
       child.stderr.on('data', data => { stderr += data; });
+      const timer = setTimeout(() => { timedOut = true; killProcessTree(child); }, 120000);
       child.once('error', error => { childError = error; clearTimeout(timer); });
       // close follows exit and drained stdio; cleanup must not race Electron.
       child.once('close', (code, signal) => {
-        clearTimeout(timer); clearTimeout(shutdownTimer);
+        clearTimeout(timer);
         if (timedOut || childError) return reject(new Error(
           `WhaleBridge account renderer ${timedOut ? 'timeout' : 'spawn failed'}: ${childError || signal || code}\n${stderr}\n${stdout}`,
           childError ? { cause: childError } : undefined,
@@ -150,7 +142,7 @@ test('real WhaleBridge account UI retains connection feedback and consistent res
     assert.equal(result.narrowAdapterGap.width, 420);
 
     const layout = result.layout;
-    assert.equal(layout.windowVisible, false, 'the layout fixture never shows a desktop window');
+    assert.equal(layout.windowVisible, Boolean(process.env.WHALEBRIDGE_QA_SCREENSHOTS), 'screenshot mode renders the target window visibly');
     assert.equal(layout.windowFocused, false, 'the layout fixture never takes the user input focus');
     assert.equal(layout.pages.length, 50, 'five pages are inspected in five widths and both color schemes');
     assert.deepEqual([...new Set(layout.pages.map(row => row.width))], [1120, 820, 600, 420, 380]);

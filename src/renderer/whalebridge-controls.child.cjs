@@ -135,7 +135,7 @@ async function run(){
   heldPath='/api/accounts/qa2/usage';await click('[data-action="accounts"][data-id="qa2"]');
   await wait(`editor?.type==='accounts'`);await held();
   assert.equal(await js(`document.querySelector('[data-action="accounts-refresh"]').textContent`),'刷新中');
-  assert.equal(await js(`document.querySelector('[data-account-quota]').textContent`),'');await screenshot('account-quota-busy');
+  assert.equal(await js(`document.querySelector('[data-account-quota]').textContent`),'');await screenshot('account-quota-busy');win.setContentSize(380,520);await wait('innerWidth===380');await screenshot('account-quota-busy-narrow');win.setContentSize(1120,780);await wait('innerWidth===1120');
   release();await wait(`document.querySelector('[data-account-quota]').textContent==='15'&&!document.querySelector('[data-action="accounts-refresh"]').disabled`);await close();
   installed=false;await subscribe();await js(`document.querySelector('#f-agent').value='claude';document.querySelector('#f-agent').dispatchEvent(new Event('change'))`);await click('#save');
   await wait(`document.querySelector('#save').textContent==='准备中'`);assert.equal(await js(`!document.querySelector('#save').hidden&&!!document.querySelector('#save .button-spinner')`),true);await screenshot('auth-tool-busy');
