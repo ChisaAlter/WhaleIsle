@@ -643,7 +643,7 @@ export function FilePreview({
           </Button>
         ) : null}
       </div>
-      <div className={css.body}>
+      <div className={clsx(css.body, showEditor && !showRenderedMarkdown && css.editorBody)}>
         {saveError !== null ? (
           <p className={css.saveError} role="alert">{saveError}</p>
         ) : null}

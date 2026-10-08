@@ -39,10 +39,22 @@ func PluginID(id string) string {
 	if Moved(id) {
 		return id
 	}
-	if slices.Contains(accountIDs, id) || Preset(id) != nil || id == "magpie" {
+	if slices.Contains(accountIDs, id) || Preset(id) != nil || id == "magpie" || customIDs()[id] {
 		return id + "-plugin"
 	}
 	return id
+}
+
+func customIDs() map[string]bool {
+	return heldOf("customIDs", func() map[string]bool {
+		ids := map[string]bool{}
+		for _, p := range load().Providers {
+			if p.Chat != "" || p.Responses != "" || p.Anthropic != "" || p.Decide != "" {
+				ids[p.ID] = true
+			}
+		}
+		return ids
+	})
 }
 
 // subscriptionID is whether id is a subscription's, a built-in's or an
@@ -175,7 +187,7 @@ func pluginCatalog(pp plugin.Provider) []catalog.Model {
 		}
 		// a built-in moved onto its plugin keeps the levels it had for a
 		// model its vendor gives none: its maker's, as effortsOf borrows
-		if len(c.Efforts) == 0 && Moved(pp.ID) {
+		if len(c.Efforts) == 0 && (Moved(pp.ID) || pp.ID == "cline") {
 			c.Efforts = borrowedEfforts(m.ID)
 		}
 		// OpenCode's price of a model it has none for is 0, as the
@@ -201,6 +213,34 @@ func pluginAccountCatalog(pp plugin.Provider, key string) []catalog.Model {
 		}
 	}
 	return all
+}
+
+// PluginListError is why the plugin couldn't list the account at key's
+// models, "" when it did or kept the list it had: what it shows instead
+// is its short defaults (Cursor's Auto alone).
+func PluginListError(pp plugin.Provider, key string) string {
+	for _, a := range pp.Accounts {
+		if a.Key == key {
+			if a.FellBack {
+				return a.ListError
+			}
+			return ""
+		}
+	}
+	return ""
+}
+
+// ListError is why a plugin's account lists only the plugin's defaults,
+// "" for any other provider.
+func (p Provider) ListError() string {
+	if !p.IsPlugin() {
+		return ""
+	}
+	pp := *p.Account.plugin
+	if cur, ok := PluginOf(p.ID); ok {
+		pp = cur
+	}
+	return PluginListError(pp, p.Account.pluginKey)
 }
 
 // pluginLists is whether a plugin's account serves model, as the plugin
@@ -251,6 +291,9 @@ func pluginProvider(pp plugin.Provider, l pluginLogin) Provider {
 		}
 		for _, cur := range ps {
 			if cur.ID == pp.ID {
+				if e := PluginListError(cur, acct.Key); e != "" {
+					return nil, fmt.Errorf("%s couldn't list its models: %s", name, e)
+				}
 				return catalog.Chat(pluginAccountCatalog(cur, acct.Key)), nil
 			}
 		}

@@ -325,9 +325,18 @@ export function PreviewPanel({
       /* v8 ignore next -- the host node is committed before previewId is set. */
       if (host !== null) observer.observe(host)
     }
+    // Opening the dock slides an ancestor without resizing this host. The
+    // native guest must also receive the host's final window coordinates.
+    const onTransition = (event: TransitionEvent): void => {
+      if (host !== null && event.target instanceof Element && event.target.contains(host)) sync()
+    }
+    window.addEventListener('transitionend', onTransition, true)
+    window.addEventListener('transitioncancel', onTransition, true)
     window.addEventListener('resize', sync)
     return () => {
       observer?.disconnect()
+      window.removeEventListener('transitionend', onTransition, true)
+      window.removeEventListener('transitioncancel', onTransition, true)
       window.removeEventListener('resize', sync)
       const current = readMiniPlayer()
       if (!current.open || current.previewId !== previewId) {

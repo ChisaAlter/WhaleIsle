@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -32,6 +33,9 @@ func ForgetAccount(id string) error {
 		}
 		return forgetPluginAccounts(pp)
 	}
+	if os.Getenv("LAUNCHER_COMPONENT_ID") == "whalebridge" && p.Account.Agent == "cursor" {
+		return Delete(id)
+	}
 	return forgetLogins(p.Account.Agent)
 }
 
@@ -50,7 +54,13 @@ func forgetLogins(agent string) error {
 	})
 	var errs []error
 	for _, l := range ls {
-		if err := ForgetLogin(agent, l.User); err != nil {
+		var err error
+		if os.Getenv("LAUNCHER_COMPONENT_ID") == "whalebridge" {
+			err = WhaleBridgeForgetLogin(agent, l.User)
+		} else {
+			err = ForgetLogin(agent, l.User)
+		}
+		if err != nil {
 			errs = append(errs, err)
 		}
 	}

@@ -209,7 +209,7 @@ func traeCards(accts []traeAccount) []checkinCard {
 // the plugin's fetch, which signs it as the account.
 func traeCheckinAccounts() []traeAccount {
 	pp, ok := PluginOf(TraeCNID)
-	if !ok {
+	if !ok || pluginChecksIn(pp) {
 		return nil
 	}
 	auths := plugin.Auths(pp.ID)

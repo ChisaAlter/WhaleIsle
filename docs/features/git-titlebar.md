@@ -46,9 +46,10 @@
 - `gitPush`（含 skip）在 `refs/remotes/<primary>/HEAD` 缺失或悬空时补上：先 `git remote set-head <primary> --auto`，失败则指向刚推的分支。这样首发非 `main`/`master` 的仓 `isDefaultRef` 为真，Commit & push 而不是误走 Commit, push & PR。不把 push 失败画成 set-head 失败。
 - Git 可执行解析不止看 PATH：父进程（Explorer/终端）持旧 PATH 快照时，已安装的 Git 对子进程不可见。`runGit` 在 ENOENT 后探测 `%ProgramFiles%\Git\cmd\git.exe`、`%ProgramFiles(x86)%`、`%LOCALAPPDATA%\Programs\Git\cmd\git.exe` 命中即缓存复用；两处均缺时错误文案携带安装指引（`winget install Git.Git` / git-scm 链接），不再是死胡同。探测缓存提供 `resetGitExecutableProbe` 测试接缝，避免污染 spawn 计数断言。（2026-10-03，`git.test.js` 103/103 中本机 1 个 symlink fixture 环境失败与 CI 相同类）
 - 官方 `dsh web` 标题栏 Git 视觉；不另做皮肤。
-- 普通会话标题行的「更多操作」菜单始终提供「下载会话日志」；反馈插件可用时同时提供「反馈」，打开现有反馈表单，不自动提交。该菜单不受标题栏快捷按钮开关或窄窗口尾簇隐藏影响；managed composer 会话保持原有隐藏规则。
-- Session 日志胶囊默认不进标题栏：`session-log-download.titlebarAction` 默认 `false`，加载中/远端记忆快照不得闪出；`settings.interface.item` 的「会话日志导出」开关仅控制额外的标题栏下载快捷按钮。关闭后仍可使用会话「更多操作」菜单和 `/export`；两处下载入口共用同一个控制器与结果对话框。
-- 标题行在 `cozy`/`compact` 密度（或 520px 容器断点）收起 `conversation.session.header.actions` 时，utilities 前必须渲染箭头溢出座席：悬停/聚焦临时展示、点击 pin、Esc/外部 pointerdown/再点收起；密度回到 `full` 座席卸载且状态清零。弹出面板避开 actions 带的 `overflow:hidden`，用菜单表面 token。
+- 普通会话标题行的「更多操作」菜单始终提供「下载会话日志」；反馈插件可用时同时提供「反馈」，打开现有反馈表单，不自动提交。该菜单紧随子智能体、智能体团队和模式标签；managed composer 会话保持原有隐藏规则。
+- 不再提供外部重复的 Session 日志下载胶囊及其界面设置开关；旧 `titlebarAction` 配置不改变显示。会话「更多操作」菜单和 `/export` 继续共用同一个控制器与结果对话框。
+- 会话标题、Agent 项、更多菜单与目录入口保持单排；对话 / 轨迹页签保留在标题下方。目录与 Git 胶囊统一 27px 高、14px 圆角及 l2 细描边；桌面窄窗口优先压缩标题与标签，Git 分支、主操作与菜单保持可见。
+- 标题行按实际可用宽度压缩标题与 Agent 标签，保留各操作入口；右栏文件等页签位于应用顶栏下方的面板内部，不与 Git 争用空间。
 
 ## Allowed touch
 
@@ -59,7 +60,7 @@
 - 本卡与 handbook `modules/git-titlebar.md`
 - vendor `ui-git` 的标题栏可见性及定向测试（仅针对状态不可用时隐藏整组）
 - 会话标题栏胶囊的局部修复：vendor `ui-open-in-app` 的目录控件与 `session-log-export` 的标题栏按钮（含默认可见性与界面设置开关）；文档预览文件控件不随之改尺寸
-- 会话 header 拥挤兜底：ui-conversation `ConversationSession.tsx` 的溢出座席与其 `ConversationRoot.module.css` 样式、`skeleton.client.spec.tsx` 定向测试；release-ui-walk 的 titlebar/interface 步
+- 会话 header 拥挤兜底：ui-conversation `ConversationSession.tsx` 的单排布局与标题 / 标签压缩及其 `ConversationRoot.module.css` 样式、`skeleton.client.spec.tsx` 定向测试；release-ui-walk 的 titlebar/interface 步
 
 ## Do not touch
 

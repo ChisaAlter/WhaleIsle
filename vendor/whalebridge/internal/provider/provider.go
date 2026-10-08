@@ -72,6 +72,8 @@ type Provider struct {
 	// Jev answers), for routing groups' choices of model and effort. The
 	// provider may also serve conversations on the other endpoints.
 	Decide string `json:"decide,omitempty"`
+	// BaseAPI remembers which endpoint the custom provider editor selected.
+	BaseAPI string `json:"baseAPI,omitempty"`
 
 	// Fallback is where a request goes when this provider can't take it —
 	// out of quota, rate limited, overloaded or down — before any of the
@@ -121,7 +123,10 @@ type Provider struct {
 	// risk-controlled past five or six at once); the rest wait their turn,
 	// in the order they came (see Concurrency). nil follows what a
 	// plugin's provider says it takes, else none; 0 is no limit.
-	MaxConcurrency *int `json:"maxConcurrency,omitempty"`
+	MaxConcurrency     *int           `json:"maxConcurrency,omitempty"`
+	AccountConcurrency map[string]int `json:"accountConcurrency,omitempty"`
+	QueueLimit         int            `json:"queueLimit,omitempty"`
+	QueueWait          int            `json:"queueWait,omitempty"`
 
 	// PriceRate is what the provider charges against the official price
 	// (ITea312, #819): a relay that bills 0.8× or 1.5× of it. It scales the
@@ -150,6 +155,8 @@ type Provider struct {
 	// model through an AI gateway that may serve it from any host, and
 	// DeepSeek's own keeps its prompt cache. See ClinePin.
 	PinUpstream bool `json:"pinUpstream,omitempty"`
+	// Unredacted is the user's choice to send a local provider the original prompt.
+	Unredacted bool `json:"unredacted,omitempty"`
 
 	// Proxy is the proxy magpie's requests to this provider go through
 	// (#237: Codex through one, a vendor at home without): "" follows
@@ -362,6 +369,7 @@ func (p Provider) clone() Provider {
 	p.Headers = maps.Clone(p.Headers)
 	p.AccountProxies = maps.Clone(p.AccountProxies)
 	p.AccountCaps = maps.Clone(p.AccountCaps)
+	p.AccountConcurrency = maps.Clone(p.AccountConcurrency)
 	p.Contexts = maps.Clone(p.Contexts)
 	if p.AccountModels != nil {
 		m := make(map[string][]string, len(p.AccountModels))
@@ -404,10 +412,11 @@ func allProviders() []Provider {
 		}
 		pk := picks[a.ID]
 		a.Models, a.Unlisted, a.Off, a.Fallback, a.Routing, a.Affinity, a.KeepLogin, a.KeepLoginAs, a.Contexts, a.Family = pk.Models, pk.Unlisted, pk.Off, pk.Fallback, pk.Routing, pk.Affinity, pk.KeepLogin, pk.KeepLoginAs, pk.Contexts, pk.Family
-		a.Sink = pk.Sink
+		a.Sink, a.PriceRate = pk.Sink, pk.PriceRate
 		a.Proxy, a.AccountProxies, a.AccountModels = pk.Proxy, pk.AccountProxies, pk.AccountModels
 		a.AccountCaps = pk.AccountCaps
-		a.MaxConcurrency = pk.MaxConcurrency
+		a.MaxConcurrency, a.PinUpstream = pk.MaxConcurrency, pk.PinUpstream
+		a.AccountConcurrency, a.QueueLimit, a.QueueWait = pk.AccountConcurrency, pk.QueueLimit, pk.QueueWait
 		if a.ID == "cursor" { // picked before its efforts were one model
 			a.Models = cursorPicks(a.Models)
 		}
@@ -493,7 +502,7 @@ func Save(p Provider) error {
 	if p.ID == "" {
 		p.ID = Slug(p.Name)
 	}
-	if p.ID == "" || p.ID != Slug(p.ID) {
+	if p.ID == "" || p.ID != Slug(p.ID) && !stored(p.ID) {
 		return fmt.Errorf("provider id must be lowercase letters, digits and dashes, not %q", p.ID)
 	}
 	if p.ID == "magpie" {
@@ -521,7 +530,7 @@ func Save(p Provider) error {
 		if p.ID == "kiro" {
 			key = p.Key
 		}
-		p = Provider{ID: p.ID, Key: key, Models: p.Models, Unlisted: p.Unlisted, Off: p.Off, Fallback: p.Fallback, Routing: p.Routing, Sink: p.Sink, Affinity: p.Affinity, KeepLogin: p.KeepLogin, KeepLoginAs: p.KeepLoginAs, Contexts: p.Contexts, Family: p.Family, Proxy: p.Proxy, AccountProxies: p.AccountProxies, AccountModels: p.AccountModels, AccountCaps: p.AccountCaps, MaxConcurrency: p.MaxConcurrency, Hidden: hiddenAccount(p.ID), Quiet: quietAccount(p.ID), Tucked: tuckedAccount(p.ID)}
+		p = Provider{ID: p.ID, Key: key, Models: p.Models, Unlisted: p.Unlisted, Off: p.Off, Fallback: p.Fallback, Routing: p.Routing, Sink: p.Sink, PriceRate: p.PriceRate, Affinity: p.Affinity, KeepLogin: p.KeepLogin, KeepLoginAs: p.KeepLoginAs, Contexts: p.Contexts, Family: p.Family, Proxy: p.Proxy, AccountProxies: p.AccountProxies, AccountModels: p.AccountModels, AccountCaps: p.AccountCaps, MaxConcurrency: p.MaxConcurrency, AccountConcurrency: p.AccountConcurrency, QueueLimit: p.QueueLimit, QueueWait: p.QueueWait, PinUpstream: p.PinUpstream, Hidden: hiddenAccount(p.ID), Quiet: quietAccount(p.ID), Tucked: tuckedAccount(p.ID)}
 	} else {
 		p.AccountProxies = nil // a provider of a key has no accounts to proxy apart
 		if subscriptionID(p.ID) && !stored(p.ID) {
@@ -619,6 +628,7 @@ func AddCopy(p Provider, from string) (string, error) {
 	}
 	p.Unlisted = p.Unlisted || src.Unlisted
 	p.Searches = p.Searches || src.Searches
+	p.Unredacted = p.Unredacted || src.Unredacted
 	if p.Website == "" {
 		p.Website = src.Website
 	}
@@ -673,7 +683,7 @@ func freeName(name string) string {
 }
 
 // accountIDs are the ids of the subscriptions magpie can list (account.go).
-var accountIDs = []string{"antigravity", "claude", "codex", CommandCodePlanID, "copilot", "cursor", "devin", "factory", "gemini", "grok", "kiro", MiMoID, "qoder", QoderCNID, "workbuddy", WorkBuddyAIID, "zcode", "zed"}
+var accountIDs = []string{"antigravity", "claude", "codex", CommandCodePlanID, "copilot", "cursor", "devin", "factory", "gemini", "grok", "kiro", MiMoID, ChatGPTAPIID, "qoder", QoderCNID, "workbuddy", WorkBuddyAIID, "zcode", "zed"}
 
 func stored(id string) bool {
 	for _, p := range load().Providers {
@@ -833,6 +843,9 @@ func normalize(p Provider) Provider {
 		}
 	}
 	p.Models = cleanList(p.Models)
+	if p.BaseAPI != "" && p.baseOf(p.BaseAPI) == "" {
+		p.BaseAPI = ""
+	}
 	p.Fallback = cleanList(p.Fallback)
 	// a provider saved under an id a preset carried before (presetAliases:
 	// qianfan's first day's, Tencent Cloud's plan and TokenHub's two) is
@@ -865,6 +878,8 @@ func normalize(p Provider) Provider {
 	if p.MaxConcurrency != nil && *p.MaxConcurrency < 0 {
 		p.MaxConcurrency = new(int)
 	}
+	p.AccountConcurrency = normalAccountConcurrency(p.AccountConcurrency)
+	p.QueueLimit, p.QueueWait = min(max(p.QueueLimit, 0), MaxQueueLimit), min(max(p.QueueWait, 0), MaxQueueWait)
 	p.Catalog = strings.Join(p.Catalogs(), ", ")
 	// a Bedrock provider saved before the preset had its Responses API
 	// (#176) gets it where its chat completions are: the runtime serves both
@@ -951,6 +966,20 @@ func contains(xs []string, x string) bool {
 }
 
 // Base returns the base URL for a protocol, or "" when the vendor lacks it.
+func (p Provider) baseOf(api string) string {
+	switch api {
+	case "chat":
+		return p.Chat
+	case "responses":
+		return p.Responses
+	case "anthropic":
+		return p.Anthropic
+	case "decide":
+		return p.Decide
+	}
+	return ""
+}
+
 func (p Provider) Base(proto Protocol) string {
 	switch proto {
 	case Chat:
@@ -1011,6 +1040,38 @@ func (p Provider) ResponsesFirst(model string) bool {
 	return openAIModel(model)
 }
 
+// MessagesFirst: a Claude model where the provider has Anthropic's Messages
+// API, which is best asked there though its Chat or Responses API serves
+// it too — a relay that serves both drops cache_control on Chat, so every
+// turn was billed uncached (#997; ReturnTrue on Discord: 0% cache hits
+// until the relay's OpenAI URL was left empty), and thinking with it.
+func (p Provider) MessagesFirst(model string) bool {
+	return p.Anthropic != "" && claudeModel(model)
+}
+
+// OnMessages: a Claude model MessagesFirst asks on Messages whatever API
+// the client spoke, not only when the client's isn't served — unless the
+// user set the API it is asked on, or the vendor's list names the APIs it
+// serves it on (Copilot's Claude on Chat and Messages), where a request is
+// relayed on the client's own API as before.
+func (p Provider) OnMessages(model string) bool {
+	if !p.MessagesFirst(model) {
+		return false
+	}
+	if _, ok := p.ModelAPI(model); ok {
+		return false
+	}
+	return p.ListedAPIs(model) == nil
+}
+
+// claudeModel is whether model is one of Anthropic's Claude models by its
+// name, after any vendor prefix (anthropic/claude-sonnet-4.5) or as
+// Bedrock names it.
+func claudeModel(model string) bool {
+	m := strings.ToLower(model[strings.LastIndex(model, "/")+1:])
+	return strings.HasPrefix(m, "claude") || bedrockClaude(m)
+}
+
 // openAIModel is whether model is one of OpenAI's own by its name: a GPT,
 // a Codex or an o-series model, after any vendor prefix.
 func openAIModel(model string) bool {
@@ -1044,6 +1105,9 @@ func (p Provider) Native(model string) Protocol {
 	}
 	if p.ResponsesFirst(model) && slices.Contains(out, Responses) {
 		return Responses
+	}
+	if p.MessagesFirst(model) && slices.Contains(out, Anthropic) {
+		return Anthropic
 	}
 	return out[0]
 }

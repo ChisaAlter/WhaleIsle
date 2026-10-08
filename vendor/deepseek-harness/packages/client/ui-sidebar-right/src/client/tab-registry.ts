@@ -106,6 +106,8 @@ export interface SidebarRightTabDefinition {
   readonly multiple?: boolean
   /** Lazily keep a visited body mounted through hiding, Session changes and docking; default false. */
   readonly keepMounted?: boolean
+  /** Mount while the dock is collapsed so an external presentation can consume an opening request. */
+  readonly mountOnOpen?: boolean
   /**
    * Resource-address globs this type recognizes; omit for a page type, which is
    * opened by kind and recognizes no address.

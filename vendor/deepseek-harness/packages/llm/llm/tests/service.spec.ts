@@ -757,7 +757,7 @@ describe('LlmRuntime', () => {
   it('resolves detached model context independently of advisory catalog membership', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
-    const source = { contextWindow: 32_000 }
+    const source = { contextWindow: 32_000, compactionThreshold: 8_000 }
     ctx.llm.registerAdapter(['route'], new CatalogAdapter(
       { id: 'route', name: 'Route' },
       [],
@@ -765,9 +765,10 @@ describe('LlmRuntime', () => {
     ))
 
     const resolved = await ctx.llm.resolveModelInfo('route', 'unlisted')
-    expect(resolved.context).toEqual({ contextWindow: 32_000 })
+    expect(resolved.context).toEqual({ contextWindow: 32_000, compactionThreshold: 8_000 })
     source.contextWindow = 64_000
-    expect(resolved.context).toEqual({ contextWindow: 32_000 })
+    source.compactionThreshold = 16_000
+    expect(resolved.context).toEqual({ contextWindow: 32_000, compactionThreshold: 8_000 })
     await expect(ctx.llm.resolveModelInfo('route', 'other')).resolves.toEqual({
       provider: 'route', id: 'other', name: 'other',
     })
@@ -1208,6 +1209,16 @@ describe('LlmRuntime', () => {
         .rejects.toMatchObject({ code: 'INVALID_MODEL_CONTEXT' })
     },
   )
+
+  it.each([0, -1, 1.5, Number.NaN])('rejects invalid adapter compaction threshold %s', async (compactionThreshold) => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    ctx.llm.registerAdapter(['route'], new CatalogAdapter(
+      { id: 'route', name: 'Route' }, [], { model: { contextWindow: 32_000, compactionThreshold } },
+    ))
+    await expect(ctx.llm.resolveModelInfo('route', 'model'))
+      .rejects.toMatchObject({ code: 'INVALID_MODEL_INFO' })
+  })
 
   it('captures a declared in-history system prompt update mode and rejects any other mode', async () => {
     const ctx = new Context()

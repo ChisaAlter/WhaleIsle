@@ -89,7 +89,7 @@ export function DshdMiniPlayer({ t }: Props): ReactNode {
       window.removeEventListener('resize', sync)
       window.removeEventListener('scroll', sync, true)
     }
-  }, [state.open, state.previewId, state.revision, state.suspended])
+  }, [state.open, state.previewId, state.runtime, state.revision, state.suspended])
 
   useEffect(() => {
     if (!state.open || state.previewId === null || state.suspended) return
@@ -103,7 +103,7 @@ export function DshdMiniPlayer({ t }: Props): ReactNode {
       x: Math.round(rect.left), y: Math.round(rect.top),
       width: Math.max(1, Math.round(rect.width)), height: Math.max(1, Math.round(rect.height)),
     })
-  }, [geometry.x, geometry.y, geometry.width, geometry.height, state.open, state.previewId, state.suspended])
+  }, [geometry.x, geometry.y, geometry.width, geometry.height, state.open, state.previewId, state.runtime, state.suspended])
 
   useEffect(() => {
     const runtime = readMiniPlayer().runtime
@@ -114,7 +114,7 @@ export function DshdMiniPlayer({ t }: Props): ReactNode {
       if (current.open && current.suspended && current.previewId === id) void runtime.previewHide(id)
     })
     return off
-  }, [state.previewId])
+  }, [state.previewId, state.runtime])
 
   if (!state.open || state.previewId === null) return null
 

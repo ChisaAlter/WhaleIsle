@@ -1,4 +1,4 @@
-// Real-browser regression for the conversation header when the DSHD surfaces
+// Real-browser regression for the conversation header when the DSHD right-panel
 // column takes space from a still-wide desktop conversation column.
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
@@ -57,15 +57,16 @@ describe('web e2e: right-panel titlebar fit', () => {
     const toggle = trailing.getByRole('button', { name: 'Toggle right panel' })
     if (await toggle.getAttribute('aria-pressed') === 'true') await toggle.click()
     await expect.poll(() => page.locator('[data-titlebar-density]').first()
-      .getAttribute('data-surfaces-collapsed')).toBe('true')
+      .getAttribute('data-rightbar-collapsed')).toBe('true')
     // The browser scaffold has no desktop application catalog. Give the real
-    // utilities seat the 62px opener width measured in Electron, while keeping
+    // utilities seat the 56px compact split (13px icon, 18px padding, 24px
+    // chevron, and border), while keeping
     // the real header actions, AppFrame reserve, and trailing controls.
     await utilities.evaluate(element => {
       const opener = document.createElement('button')
       opener.type = 'button'
       opener.setAttribute('aria-label', 'Open workspace fixture')
-      opener.style.cssText = 'display:block;flex:none;width:62px;height:32px;padding:0;border:0'
+      opener.style.cssText = 'display:block;flex:none;width:56px;height:27px;padding:0;border:0'
       element.append(opener)
     })
     await expect.poll(() => actions.isVisible()).toBe(true)
@@ -79,22 +80,20 @@ describe('web e2e: right-panel titlebar fit', () => {
       for (let cycle = 0; cycle < 3; cycle += 1) {
         await toggle.click()
         await expect.poll(() => page.locator('[data-titlebar-density]').first()
-          .getAttribute('data-surfaces-collapsed')).toBeNull()
+          .getAttribute('data-rightbar-collapsed')).toBeNull()
         expect(await utilities.locator('button[aria-label="Open workspace fixture"]').count()).toBe(1)
-        if (await row.evaluate(element => element.getBoundingClientRect().width) <= 520) {
-          await expect.poll(() => actions.isVisible()).toBe(false)
-        }
+        await expect.poll(() => actions.isVisible()).toBe(true)
         await expect.poll(async () => {
           const utilityBox = await utilities.boundingBox()
           const trailingBox = await trailing.boundingBox()
-          const actionBox = await actions.isVisible() ? await actions.boundingBox() : null
-          if (!utilityBox || !trailingBox) return false
-          return (actionBox === null || utilityBox.x - (actionBox.x + actionBox.width) >= 8)
+          const actionBox = await actions.boundingBox()
+          if (!utilityBox || !trailingBox || !actionBox) return false
+          return utilityBox.x - (actionBox.x + actionBox.width) >= 8
             && trailingBox.x - (utilityBox.x + utilityBox.width) >= 8
         }, { timeout: 10_000 }).toBe(true)
         await toggle.click()
         await expect.poll(() => page.locator('[data-titlebar-density]').first()
-          .getAttribute('data-surfaces-collapsed')).toBe('true')
+          .getAttribute('data-rightbar-collapsed')).toBe('true')
         await expect.poll(() => actions.isVisible()).toBe(true)
       }
     }

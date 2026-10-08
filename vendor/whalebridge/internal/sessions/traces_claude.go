@@ -189,7 +189,7 @@ func (c *traceCursor) claude(line []byte, bodies bool) []TraceSpan {
 	}
 	m := c.claudeMessage
 	m.span.End = o.Timestamp
-	m.span.Tokens = Tokens{o.Message.Usage.Input, o.Message.Usage.Output, o.Message.Usage.CacheRead, o.Message.Usage.CacheWrite}
+	m.span.Tokens = Tokens{Input: o.Message.Usage.Input, Output: o.Message.Usage.Output, CacheRead: o.Message.Usage.CacheRead, CacheWrite: o.Message.Usage.CacheWrite}
 	m.span.Error = o.IsApiErrorMessage
 	m.stop = o.Message.StopReason
 	if bodies {

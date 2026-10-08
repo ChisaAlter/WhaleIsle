@@ -284,6 +284,7 @@ func (s *Server) askCommandCode(api, key, model string) round {
 		if err != nil {
 			return nil, 502, "Command Code: " + err.Error()
 		}
+		res = notAnAPIReply(res, "") // a web page served 200 (#1012)
 		if res.StatusCode/100 != 2 {
 			b, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 			res.Body.Close()

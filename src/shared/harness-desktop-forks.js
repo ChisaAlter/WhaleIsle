@@ -67,6 +67,15 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/api/session-controller/src/commands.ts', includes: ["await this.ctx.serial('session/before-cancel'", 'async cancel(request:', '&& !pluginPresentation'] },
   { file: 'packages/api/session-controller/src/index.ts', includes: ["'session/before-cancel'", 'cancel(request: SessionCancelRequest): Promise<SessionCancelValue>'] },
   { file: 'packages/client/ui-sidebar/src/client/index.ts', includes: ['selectTab'] },
+  // WhaleBridge thresholds travel with each model and are consumed by
+  // compaction; keeping only the configuration field would silently lose it.
+  { file: 'packages/llm/llm-pi-ai/src/catalog.ts', includes: ['compactionThreshold?: number'] },
+  { file: 'packages/llm/llm-pi-ai/src/config.ts', includes: ['configuredCompactionThresholds', 'compactionThreshold: z.number()'] },
+  { file: 'packages/llm/llm-pi-ai/src/adapter.ts', includes: ['configuredCompactionThresholds'] },
+  { file: 'packages/llm/llm/src/types.ts', includes: ['compactionThreshold?: number'] },
+  { file: 'packages/llm/llm/src/index.ts', includes: ['compactionThreshold'] },
+  { file: 'packages/compaction/compaction-basic/src/config.ts', includes: ['compactionThreshold'] },
+  { file: 'packages/compaction/compaction-basic/src/index.ts', includes: ['info.context.compactionThreshold'] },
   // SettingsSelect: official Menu pill for every settings value dropdown.
   { file: 'packages/client/ui-primitives/src/index.ts', includes: ['export { SettingsSelect }', 'ReviewDiff'] },
   { file: 'packages/client/ui-settings-mcp/src/client/McpSection.tsx', includes: ['SettingsSelect'] },

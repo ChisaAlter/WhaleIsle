@@ -315,6 +315,7 @@ export class BasicCompactionEngine extends CompactionEngine {
       policy,
       info.context.contextWindow,
       reservedCompletionTokens(agent, info.defaultMaxTokens),
+      info.context.compactionThreshold,
     )
     if (measurement.totalTokens < spec.thresholdTokens) return null
 

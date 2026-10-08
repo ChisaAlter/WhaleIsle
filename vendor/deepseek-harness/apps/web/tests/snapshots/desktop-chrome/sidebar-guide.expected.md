@@ -1,6 +1,8 @@
-- button "Files"
-- button "File viewer"
-- button "New terminal"
-- button "Choose shell"
-- button "Workspace diff"
-- button "Agents and jobs"
+- heading "Open a panel" [level=3]
+- paragraph: Pick what shows in the right sidebar.
+- button "Files Browse files in this session workspace."
+- button "New terminal Run commands in the Session workspace":
+  - img
+  - text: New terminal Run commands in the Session workspace
+- button "Workspace diff Review Git changes in this session workspace."
+- button "Agents and jobs Review subagents and background jobs in this session."

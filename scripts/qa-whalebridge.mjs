@@ -16,15 +16,21 @@ const dir=mkdtempSync(join(tmpdir(),'whalebridge-native-'));
 const data=join(dir,'component'), home=join(dir,'dsh'), pkg=join(dir,'package');
 const gatewayPort=await reservePort();
 mkdirSync(home,{recursive:true});mkdirSync(pkg);
+let streamOpen=false,streamReleased=false,releaseStream,pendingStream;
+const streamBarrier=new Promise(resolve=>{releaseStream=()=>{streamReleased=true;resolve();};});
 const upstream=createServer(async(req,res)=>{
   if(req.url==='/v1/models'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:[{id:'qa-model'}]}));return;}
   const chunks=[];for await(const c of req)chunks.push(c);const body=JSON.parse(Buffer.concat(chunks));
   assert.equal(req.headers.authorization,'Bearer qa-only-key'); assert.equal(body.model,'qa-model');
   assert.equal(body.tools?.[0]?.function?.name,'qa_tool');
   if(body.stream){
+    streamOpen=true;res.once('close',()=>{streamOpen=false;});
     res.writeHead(200,{'Content-Type':'text/event-stream'});
     res.write('data: '+JSON.stringify({id:'qa-chat',object:'chat.completion.chunk',choices:[{index:0,delta:{role:'assistant',content:'鲸桥 QA'}}]})+'\n\n');
-    setTimeout(()=>{res.end('data: '+JSON.stringify({id:'qa-chat',object:'chat.completion.chunk',choices:[{index:0,delta:{tool_calls:[{index:0,id:'qa-call',type:'function',function:{name:'qa_tool',arguments:'{}'}}]},finish_reason:'tool_calls'}],usage:{prompt_tokens:12,completion_tokens:8}})+'\n\ndata: [DONE]\n\n');},250);
+    // Hold generation until the actual maintenance request has returned.
+    // Windows process/status probes can outlive a short wall-clock timer.
+    await streamBarrier;
+    res.end('data: '+JSON.stringify({id:'qa-chat',object:'chat.completion.chunk',choices:[{index:0,delta:{tool_calls:[{index:0,id:'qa-call',type:'function',function:{name:'qa_tool',arguments:'{}'}}]},finish_reason:'tool_calls'}],usage:{prompt_tokens:12,completion_tokens:8}})+'\n\ndata: [DONE]\n\n');
   }else{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({id:'qa-chat',object:'chat.completion',choices:[{index:0,message:{role:'assistant',content:'鲸桥 QA'},finish_reason:'stop'}],usage:{prompt_tokens:12,completion_tokens:8}}));}
 });
 await new Promise(r=>upstream.listen(0,'127.0.0.1',r));
@@ -56,11 +62,17 @@ try{
  const token=readFileSync(join(data,'data/gateway.key'),'utf8').trim();
  const gateway=current.gateway || (await api('state')).gateway;
  assert.equal((await fetch(gateway+'/v1/models')).status,401);
- assert.equal((await fetch(gateway+'/v1/responses',{method:'POST'})).status,404);
+ // Responses is part of the supplier gateway; it must still reject a
+ // request without the component's private gateway credential.
+ assert.equal((await fetch(gateway+'/v1/responses',{method:'POST'})).status,401);
  const response=await fetch(gateway+'/v1/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json','User-Agent':'deepseek-harness'},body:JSON.stringify({model:'group/qa-route',stream:true,messages:[{role:'user',content:'QA'}],tools:[{type:'function',function:{name:'qa_tool',parameters:{type:'object',properties:{}}}}]})});
  assert.equal(response.status,200);
+ pendingStream=response.text();
+ assert.equal(streamOpen,true);assert.equal(streamReleased,false);
  const busy=await service.stop();assert.equal(busy.ok,false);assert.match(busy.message,/正在生成/);
- const stream=await response.text();assert.match(stream,/鲸桥 QA/);assert.match(stream,/qa_tool/);assert.match(stream,/\[DONE\]/);
+ assert.equal(streamOpen,true);assert.equal(streamReleased,false);assert.equal(service.state()?.pid,current.pid);
+ releaseStream();
+ const stream=await pendingStream;assert.match(stream,/鲸桥 QA/);assert.match(stream,/qa_tool/);assert.match(stream,/\[DONE\]/);
  const usage=await api('usage?period=today');assert.equal(usage.calls,1);assert.equal(usage.input,12);assert.equal(usage.output,8);
  assert.equal((await service.stop()).ok,true);
  assert.equal((await service.uninstallInfo()).defaultModel,false);assert.equal(service.state(),null);
@@ -84,6 +96,7 @@ try{
  assert.doesNotMatch(readFileSync(profile,'utf8'),/whalebridge|qa-vendor\/qa-model/);
  console.log('PASS native install, private settings, suppliers/subscription choices, DSH route preservation, routing, streaming/tool calls, usage, busy-stop protection, restart, update, rollback, uninstall and reinstall');
 }finally{
+ releaseStream();await pendingStream?.catch(()=>{});
  if(service?.state())await service.stop();
  await new Promise(r=>upstream.close(r));rmSync(dir,{recursive:true,force:true});
 }

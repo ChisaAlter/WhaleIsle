@@ -7,7 +7,6 @@ import { stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { SessionLogDownloadHeaderAction, SessionLogDownloadTitlebarAction } from '../src/client/HeaderAction.tsx'
 import type { SessionLogDownloadHeaderInjected } from '../src/client/HeaderAction.tsx'
-import { SessionLogChromeRow } from '../src/client/SessionLogChromeRow.tsx'
 import { apply, inject } from '../src/client/index.ts'
 
 const SID = 'session-export-apply' as SessionId
@@ -26,7 +25,7 @@ function declare(slots: SlotRegistry): () => void {
   } as never, () => null)
 }
 
-async function bench() {
+async function bench(titlebarAction = false) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   const slots = ctx.get('slots') as SlotRegistry
@@ -34,49 +33,51 @@ async function bench() {
   ctx.provide('locale', new LocaleRuntime(ctx))
   ctx.provide('connection', { api: { settings: {} }, isLoopback: false })
   ctx.provide('remote', { $on: () => () => {} })
-  ctx.provide('configForms', { get: () => stubConfigForm().scope } as never)
+  const legacySettings = stubConfigForm<{ titlebarAction: boolean }>()
+  legacySettings.publish({ status: 'ready', value: { titlebarAction }, revision: 1, writable: true })
+  const getConfigForm = vi.fn(() => legacySettings.scope)
+  ctx.provide('configForms', { get: getConfigForm } as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
-  return { ctx, slots, declaration, fiber }
+  return { ctx, slots, declaration, fiber, legacySettings, getConfigForm }
 }
 
 describe('session-log-download browser plugin', () => {
-  it('provides one controller and removes its Header contribution on disposal', async () => {
+  it('places More after the Agent controls and retains only the shared result dialog despite a legacy titlebar opt-in', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 500 })))
-    const b = await bench()
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'configForms'])
+    const b = await bench(true)
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote'])
     expect(b.ctx.sessionLogDownload).toBeDefined()
-    expect(b.slots.entries('conversation.session.header.actions')).toHaveLength(0)
+    expect(b.slots.entries('conversation.session.header.actions')).toHaveLength(1)
+    expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
     const entry = b.slots.entries('shell.titlebar.trailing')[0]
     expect(entry?.component).toBe(SessionLogDownloadTitlebarAction)
     expect(entry?.options).toMatchObject({ id: 'session-log-download', order: 10 })
-    const menu = b.slots.entries('conversation.session.header.utilities')[0]
+    const menu = b.slots.entries('conversation.session.header.actions')[0]
     expect(menu?.component).toBe(SessionLogDownloadHeaderAction)
+    expect(menu?.options).toMatchObject({ id: 'session-log-download', order: 0 })
     const menuInjected = (menu?.inject as unknown as () => SessionLogDownloadHeaderInjected)()
     expect(menuInjected.hooks.sessionLogDownload).toBe(b.ctx.sessionLogDownload.store)
-    const chrome = b.slots.entries('settings.interface.item')[0]
-    expect(chrome?.component).toBe(SessionLogChromeRow)
-    expect(chrome?.options).toMatchObject({ id: 'session-log-export', order: 10 })
-    const chromeInjected = (chrome?.inject as unknown as () => import('../src/client/SessionLogChromeRow.tsx').SessionLogChromeRowInjected)()
-    expect(chromeInjected.hooks.titlebarAction.getSnapshot()).toBe(false)
+    expect(b.slots.entries('settings.interface.item')).toHaveLength(0)
+    expect(b.getConfigForm).not.toHaveBeenCalled()
+    expect(b.legacySettings.scope.getSnapshot().value?.titlebarAction).toBe(true)
     expect(menuInjected.hooks.feedbackAvailable.getSnapshot()).toBe(false)
-    chromeInjected.setTitlebarAction(true)
-    expect(chromeInjected.hooks.titlebarAction.getSnapshot()).toBe(true)
     const injected = (entry?.inject as unknown as () => import('../src/client/Dialog.tsx').SessionLogDownloadDialogInjected)()
+    expect(injected.hooks).not.toHaveProperty('titlebarAction')
     await menuInjected.request(SID)
     expect(b.ctx.sessionLogDownload.store.getSnapshot().bySession[SID]?.status).toBe('error')
     injected.dismiss(SID)
     expect(b.ctx.sessionLogDownload.store.getSnapshot().bySession[SID]?.open).toBe(false)
 
     await b.fiber.dispose()
-    expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
+    expect(b.slots.entries('conversation.session.header.actions')).toHaveLength(0)
     expect(b.slots.entries('shell.titlebar.trailing')).toHaveLength(0)
     expect(b.slots.entries('settings.interface.item')).toHaveLength(0)
   })
 
   it('tracks feedback plugin availability and ignores a stale action after it unloads', async () => {
     const b = await bench()
-    const entry = b.slots.entries('conversation.session.header.utilities')[0]
+    const entry = b.slots.entries('conversation.session.header.actions')[0]
     const injected = (entry?.inject as unknown as () => SessionLogDownloadHeaderInjected)()
     const openSession = vi.fn()
     expect(injected.hooks.feedbackAvailable.getSnapshot()).toBe(false)
@@ -121,11 +122,11 @@ describe('session-log-download browser plugin', () => {
   it('re-registers after the declaring Header slot collapses and returns', async () => {
     const b = await bench()
     b.declaration()
-    expect(b.slots.entries('conversation.session.header.utilities')).toHaveLength(0)
+    expect(b.slots.entries('conversation.session.header.actions')).toHaveLength(0)
     expect(b.slots.entries('shell.titlebar.trailing')).toHaveLength(0)
     const redeclare = declare(b.slots)
     await Promise.resolve()
-    expect(b.slots.entries('conversation.session.header.utilities')[0]?.component).toBe(SessionLogDownloadHeaderAction)
+    expect(b.slots.entries('conversation.session.header.actions')[0]?.component).toBe(SessionLogDownloadHeaderAction)
     expect(b.slots.entries('shell.titlebar.trailing')[0]?.component).toBe(SessionLogDownloadTitlebarAction)
     redeclare()
     await b.fiber.dispose()

@@ -511,6 +511,23 @@ describe('PreviewPanel', () => {
     })
   })
 
+  it('syncs final dock bounds after the slide when returning a chat float', async () => {
+    const b = mount()
+    await openGuest(b)
+    act(() => { openMiniPlayer('pv-1') })
+    const host = stubHostRect({ x: 1442, y: 98, width: 539, height: 822 })
+    act(() => { closeMiniPlayer() })
+    await waitFor(() => {
+      expect(b.previewShow).toHaveBeenLastCalledWith('pv-1', { x: 1442, y: 98, width: 539, height: 822 })
+    })
+    // The dock's ancestor finishes translating while the host keeps its size.
+    stubHostRect({ x: 902, y: 98, width: 539, height: 822 })
+    fireEvent.transitionEnd(host.parentElement as HTMLElement, { propertyName: 'transform' })
+    await waitFor(() => {
+      expect(b.previewResize).toHaveBeenLastCalledWith('pv-1', { x: 902, y: 98, width: 539, height: 822 })
+    })
+  })
+
   it('hides the guest when a collapsed right panel closes the float', async () => {
     const b = mount()
     await openGuest(b)

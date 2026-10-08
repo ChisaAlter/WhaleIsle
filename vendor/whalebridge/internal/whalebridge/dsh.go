@@ -5,6 +5,7 @@ import (
 
 	"github.com/yetone/magpie/internal/gateway"
 	"github.com/yetone/magpie/internal/provider"
+	"github.com/yetone/magpie/internal/settings"
 	"os"
 
 	"slices"
@@ -16,12 +17,13 @@ const keyName = "WHALEBRIDGE_GATEWAY_KEY"
 var dshWrites sync.Mutex
 
 type routeModel struct {
-	ID               string            `yaml:"id"`
-	Name             string            `yaml:"name"`
-	ContextWindow    int               `yaml:"contextWindow,omitempty"`
-	MaxTokens        int               `yaml:"maxTokens,omitempty"`
-	Input            []string          `yaml:"input,omitempty"`
-	ReasoningEfforts map[string]string `yaml:"reasoningEfforts,omitempty"`
+	ID                  string            `yaml:"id"`
+	Name                string            `yaml:"name"`
+	ContextWindow       int               `yaml:"contextWindow,omitempty"`
+	MaxTokens           int               `yaml:"maxTokens,omitempty"`
+	CompactionThreshold int               `yaml:"compactionThreshold,omitempty"`
+	Input               []string          `yaml:"input,omitempty"`
+	ReasoningEfforts    map[string]string `yaml:"reasoningEfforts,omitempty"`
 }
 
 func syncDSH() error {
@@ -33,9 +35,16 @@ func syncDSH() error {
 	defer dshWrites.Unlock()
 	models, _ := provider.CatalogFor("dsh")
 	labels := provider.Labels(models)
+	modelSettings := settings.Load()
+	findGroup := provider.GroupFinder()
+	compactAt := modelSettings.Compact()
 	out := make([]routeModel, 0, len(models))
 	for i, m := range models {
 		row := routeModel{ID: m.ID, Name: labels[i], ContextWindow: m.Context, MaxTokens: m.Output}
+		row.CompactionThreshold = provider.CompactSetIn(modelSettings, m.ID, findGroup)
+		if row.CompactionThreshold == 0 && compactAt > 0 && row.ContextWindow > compactAt {
+			row.CompactionThreshold = compactAt
+		}
 		if row.ContextWindow > 0 && row.MaxTokens > row.ContextWindow {
 			row.MaxTokens = row.ContextWindow
 		}

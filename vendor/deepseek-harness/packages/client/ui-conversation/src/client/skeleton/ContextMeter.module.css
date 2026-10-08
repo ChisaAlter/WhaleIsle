@@ -1,4 +1,4 @@
-/* Context-occupancy pill below the composer plus its click-open breakdown
+/* Context-occupancy control in the composer toolbar plus its click-open breakdown
    panel (menu surface: elevation-prominent). */
 
 .root {
@@ -11,7 +11,9 @@
   align-items: center;
   gap: 6px;
   flex: none;
-  padding: 1px 8px;
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 8px;
   border: none;
   border-radius: var(--dsw-radius-sm);
   background: transparent;

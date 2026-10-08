@@ -72,7 +72,7 @@ func RestoreGroups(gs []Group) error {
 		return err
 	}
 	for _, g := range gs {
-		if g.ID == "" || g.ID != Slug(g.ID) {
+		if g.ID == "" || g.ID != GroupSlug(g.ID) {
 			continue
 		}
 		g.Auto = false
@@ -112,6 +112,6 @@ func Mirror(ps []Provider, gs []Group) error {
 		out = append(out, p)
 	}
 	f.Providers = out
-	f.Groups = slices.DeleteFunc(slices.Clone(gs), func(g Group) bool { return g.ID == "" || g.ID != Slug(g.ID) })
+	f.Groups = slices.DeleteFunc(slices.Clone(gs), func(g Group) bool { return g.ID == "" || g.ID != GroupSlug(g.ID) })
 	return store(f)
 }

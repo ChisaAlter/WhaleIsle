@@ -10,9 +10,13 @@ package provider
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -55,6 +59,7 @@ type Login struct {
 }
 
 type savedLogin struct {
+	ID string `json:"id,omitempty"`
 	// Order is the user-arranged routing order within this agent. Zero keeps
 	// the original alphabetical order for accounts not arranged yet.
 	Order     int       `json:"order,omitempty"`
@@ -113,26 +118,96 @@ var (
 // switchable agents: those whose sign-in magpie can save and put back.
 var loginAgents = []string{"claude", "codex"}
 
+// loginID is the account's stable id (#905): the one saved with it, or a
+// stand-in made of its name until the logins are next written — set then,
+// and kept through renames.
+func loginID(l savedLogin) string {
+	if l.ID != "" {
+		return l.ID
+	}
+	sum := sha256.Sum256([]byte("magpie login\n" + l.Agent + "\n" + accountKey(l.User)))
+	return hex.EncodeToString(sum[:8])
+}
+
+// LoginID is the stable id of an agent's account known by its name
+// (#905): the login's, kept through renames, or one made of the name
+// for an account whose logins haven't been written since — and for an
+// agent that keeps its accounts elsewhere, made of the name always.
+func LoginID(agent, user string) string {
+	for _, l := range readLogins() {
+		if l.Agent == agent && accountKey(l.User) == accountKey(user) {
+			return loginID(l)
+		}
+	}
+	return loginID(savedLogin{Agent: agent, User: user})
+}
+
 func loginsPath() string { return filepath.Join(filepath.Dir(Path()), "logins.json") }
+
+// lastLogins is the accounts last read from logins.json: a read that fails
+// (a file half there, one magpie can't open for a moment) is them, not no
+// accounts, which the next change of an account would write back over
+// every account.
+var (
+	lastLoginsMu sync.Mutex
+	lastLogins   []savedLogin
+)
 
 func readLogins() []savedLogin {
 	// parsed once until the file changes: a state of the page asks for it
 	// dozens of times (every agent's drift and models), and with the
 	// accounts' credentials in it the file is large — a Save of a profile
 	// waited seconds on it
-	ls, _ := filememo.Read("logins", loginsPath(), func(b []byte) ([]savedLogin, error) {
+	ls, err := filememo.Read("logins", loginsPath(), func(b []byte) ([]savedLogin, error) {
 		var out []savedLogin
-		_ = json.Unmarshal(b, &out)
+		if err := json.Unmarshal(b, &out); err != nil {
+			return nil, err
+		}
 		// DimAgent's accounts: magpie no longer signs in to it (DimAgent
 		// doesn't allow its subscription used outside its client), so one
 		// signed in before is left out, and gone from the file at its next write
 		out = slices.DeleteFunc(out, func(l savedLogin) bool { return l.Agent == "dimagent" })
-		return dedupeLogins(out), nil
+		return nameAlike(dedupeLogins(out)), nil
 	})
+	lastLoginsMu.Lock()
+	defer lastLoginsMu.Unlock()
+	switch {
+	case err == nil:
+		lastLogins = ls
+	case errors.Is(err, fs.ErrNotExist):
+		lastLogins = nil
+	default:
+		log.Printf("logins.json: %v; the accounts read before are kept", err)
+		ls = lastLogins
+	}
 	return slices.Clone(ls) // callers change theirs
 }
 
+// Preserve an unreadable account file before replacing it, as upstream does.
+func keepUnreadLogins(path string) error {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var ls []savedLogin
+	if json.Unmarshal(b, &ls) == nil {
+		return nil
+	}
+	bad := path + ".bad-" + time.Now().Format("20060102-150405")
+	if err := os.WriteFile(bad, b, 0o600); err != nil {
+		return err
+	}
+	log.Printf("logins.json didn't parse; it is kept as %s", filepath.Base(bad))
+	return nil
+}
+
 func writeLogins(ls []savedLogin) error {
+	for i := range ls {
+		ls[i].ID = loginID(ls[i])
+	}
 	sort.SliceStable(ls, func(i, j int) bool {
 		if ls[i].Agent != ls[j].Agent {
 			return ls[i].Agent < ls[j].Agent
@@ -153,7 +228,16 @@ func writeLogins(ls []savedLogin) error {
 		return err
 	}
 	defer Changed() // an account added, switched or gone: All builds anew
-	return writePrivate(loginsPath(), append(b, '\n'))
+	if err := keepUnreadLogins(loginsPath()); err != nil {
+		return err
+	}
+	if err := writePrivate(loginsPath(), append(b, '\n')); err != nil {
+		return err
+	}
+	lastLoginsMu.Lock()
+	lastLogins = slices.Clone(ls)
+	lastLoginsMu.Unlock()
+	return nil
 }
 
 // writePrivate replaces a file readable by the user alone, atomically, so
@@ -187,9 +271,13 @@ func writePrivate(path string, b []byte) error {
 }
 
 func upsertLogin(ls []savedLogin, l savedLogin) []savedLogin {
+	l.User = codexName(ls, l)
+	if claudeSignInOfAnother(ls, l) {
+		return ls
+	}
 	for i := range ls {
 		if sameLogin(ls[i], l) {
-			if ls[i].Owned && !l.Owned {
+			if (ls[i].Owned || os.Getenv("LAUNCHER_COMPONENT_ID") == "whalebridge" && ls[i].Hidden != "") && !l.Owned {
 				return ls
 			}
 			// a refused Claude credential stays refused while it is the
@@ -199,6 +287,7 @@ func upsertLogin(ls []savedLogin, l savedLogin) []savedLogin {
 			}
 			l.On = l.On || ls[i].On
 			l.Paused = l.Paused || ls[i].Paused
+			l.ID = loginID(ls[i])
 			l.Order = ls[i].Order
 			ls[i] = l
 			return ls
@@ -330,6 +419,19 @@ func codexAuthPath() string {
 	return filepath.Join(home, ".codex", "auth.json")
 }
 
+// CodexAPIKeySignedIn says Codex itself is signed in with an OpenAI
+// API key rather than a ChatGPT account (auth.json's auth_mode): its
+// sign-in is a key's, and spends no account a gateway key's list
+// governs.
+func CodexAPIKeySignedIn() bool {
+	b, err := os.ReadFile(codexAuthPath())
+	if err != nil {
+		return false
+	}
+	var a codexAuth
+	return json.Unmarshal(b, &a) == nil && a.AuthMode == "apikey"
+}
+
 // claudeProfilePath is Claude Code's global state file, which holds the
 // signed-in account's identity next to much else.
 func claudeProfilePath() string {
@@ -439,8 +541,9 @@ func liveLogin(agent string) (savedLogin, bool) {
 		if user == "" {
 			return savedLogin{}, false
 		}
-		return savedLogin{Agent: agent, User: user, Plan: claimString(id, "https://api.openai.com/auth", "chatgpt_plan_type"),
-			Auth: json.RawMessage(bytes.TrimSpace(b))}, true
+		l := savedLogin{Agent: agent, User: user, Plan: claimString(id, "https://api.openai.com/auth", "chatgpt_plan_type"), Auth: json.RawMessage(bytes.TrimSpace(b))}
+		l.User = codexName(readLogins(), l)
+		return l, true
 	case "claude":
 		c, _, ok := claudeCredential()
 		if !ok {
@@ -545,6 +648,8 @@ func Logins(agent string) []Login {
 		return factoryLoginList()
 	case MiMoID:
 		return mimoLoginList()
+	case ChatGPTAPIID:
+		return siwcLoginList()
 	case "gemini", "antigravity":
 		return googleLoginList(agent)
 	case "":
@@ -569,7 +674,7 @@ func Logins(agent string) []Login {
 			{WorkBuddyAIID, func() []Login { return wbLoginList(wbAI) }}, {CommandCodePlanID, cmdLoginList},
 			{"qoder", func() []Login { return loginsOf(qoderLogins()) }},
 			{QoderCNID, func() []Login { return loginsOf(qoderLoginsOf(QoderCNID)) }}, {"zed", zedLoginList}, {"factory", factoryLoginList},
-			{MiMoID, mimoLoginList}, {"gemini", func() []Login { return googleLoginList("gemini") }},
+			{MiMoID, mimoLoginList}, {ChatGPTAPIID, siwcLoginList}, {"gemini", func() []Login { return googleLoginList("gemini") }},
 			{"antigravity", func() []Login { return googleLoginList("antigravity") }},
 		} {
 			if !Moved(b.id) {
@@ -612,13 +717,16 @@ func Logins(agent string) []Login {
 		}
 	}
 	for _, l := range ls {
+		if os.Getenv("LAUNCHER_COMPONENT_ID") == "whalebridge" && l.Hidden != "" {
+			continue
+		}
 		if (agent != "" && l.Agent != agent) || sideAgent(l.Agent) || strings.HasPrefix(l.Agent, "plugin:") {
 			continue
 		}
 		using := !l.Owned && strings.EqualFold(active[l.Agent], l.User)
 		first := l.Agent == "claude" && strings.EqualFold(standIn, l.User) || l.Agent == "codex" && strings.EqualFold(codexFirst, l.User) || l.Owned && strings.EqualFold(active[l.Agent], l.User)
 		lg := Login{Agent: l.Agent, User: l.User, Plan: l.Plan, Seen: l.Seen, Active: using, On: using || first || l.On,
-			Paused: (using || first) && pausedOwn(ls, l.Agent, l.User), first: first}
+			Own: !l.Owned && (l.Agent == "claude" || l.Agent == "codex"), Paused: (using || first) && pausedOwn(ls, l.Agent, l.User), first: first}
 		if l.Agent == "claude" {
 			lg.Lapsed = claudeSignedOut(l)
 		}
@@ -761,6 +869,8 @@ func switchLogin(agent, user string) error {
 		return switchFactoryLogin(user)
 	case MiMoID:
 		return switchMiMoLogin(user)
+	case ChatGPTAPIID:
+		return switchSIWCLogin(user)
 	case "gemini", "antigravity":
 		return switchGoogleLogin(agent, user)
 	}
@@ -836,6 +946,7 @@ func switchSavedLogin(agent, user string) (from string, _ error) {
 		if err = putClaudeLogin(want); err == nil {
 			// Claude Code's own now: its only holder
 			forgetClaudeDir(want.User)
+			claudeHandedOver(want.User)
 		}
 	default:
 		err = fmt.Errorf("%s accounts can't be switched", agent)
@@ -925,6 +1036,8 @@ func ForgetLogin(agent, user string) error {
 		return forgetFactoryLogin(user)
 	case MiMoID:
 		return forgetMiMoLogin(user)
+	case ChatGPTAPIID:
+		return forgetSIWCLogin(user)
 	case "gemini", "antigravity":
 		return forgetGoogleLogin(agent, user)
 	}
@@ -972,4 +1085,71 @@ func forgetAccountCaches() {
 	subscriptionUsageCache.at = time.Time{}
 	subscriptionUsageCache.data = nil
 	subscriptionUsageCache.Unlock()
+}
+
+func codexName(ls []savedLogin, l savedLogin) string {
+	if l.Agent != "codex" {
+		return l.User
+	}
+	taken := func(user string) bool {
+		return slices.ContainsFunc(ls, func(x savedLogin) bool {
+			return x.Agent == "codex" && strings.EqualFold(x.User, user) && !sameLogin(x, l)
+		})
+	}
+	for _, x := range ls {
+		// told apart once, it keeps that name; else it takes a new plan's
+		if x.Agent == "codex" && sameLogin(x, l) && (taken(l.User) || strings.HasPrefix(strings.ToLower(x.User), strings.ToLower(l.User)+" · ")) {
+			return x.User
+		}
+	}
+	if !taken(l.User) {
+		return l.User
+	}
+	_, ws := codexWho(l.Auth)
+	if len(ws) > 8 {
+		ws = ws[:8]
+	}
+	name := l.User
+	if ws != "" {
+		name += " · " + ws
+	}
+	for n := 2; taken(name); n++ {
+		name = fmt.Sprintf("%s · %s (%d)", l.User, ws, n)
+	}
+	return name
+}
+
+func nameAlike(ls []savedLogin) []savedLogin {
+	for i := range ls {
+		if ls[i].Agent == "codex" {
+			ls[i].User = codexName(ls[:i], ls[i])
+		}
+	}
+	return ls
+}
+
+func claudeSignInOfAnother(ls []savedLogin, l savedLogin) bool {
+	if l.Agent != "claude" {
+		return false
+	}
+	c, ok := parseClaudeCredentials(l.Auth)
+	if !ok {
+		return false
+	}
+	holds := func(x savedLogin) bool {
+		o, ok := parseClaudeCredentials(x.Auth)
+		return ok && (c.OAuth.AccessToken != "" && o.OAuth.AccessToken == c.OAuth.AccessToken ||
+			c.OAuth.RefreshToken != "" && o.OAuth.RefreshToken == c.OAuth.RefreshToken)
+	}
+	another := false
+	for _, x := range ls {
+		if x.Agent != "claude" || !holds(x) {
+			continue
+		}
+		if sameLogin(x, l) {
+			return false
+		}
+		another = true
+	}
+	return another
 }

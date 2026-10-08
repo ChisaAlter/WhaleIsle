@@ -170,12 +170,20 @@ func (p Provider) clineFreeModel(model string) bool {
 	return isClineFree(model)
 }
 
+// ClinePinnable reports whether p's requests reach Cline's API and can be
+// pinned to an upstream (PinUpstream): the ClinePass provider, one on
+// cline.bot, or the Cline plugin's (@magpie-community/opencode-cline-auth),
+// whose requests magpie writes before the plugin sends them on.
+func (p Provider) ClinePinnable() bool {
+	return p.IsCline() || p.PluginProvider() == "cline"
+}
+
 // ClinePin is the upstream a request for model is pinned to on p
 // (PinUpstream): "deepseek" for a DeepSeek model of the Cline API, ""
 // for anything else. Cline's free models are served where Cline puts
 // them, so they never are.
 func (p Provider) ClinePin(model string) string {
-	if !p.PinUpstream || !p.IsCline() || strings.HasPrefix(model, clineFreePrefix) {
+	if !p.PinUpstream || !p.ClinePinnable() || strings.HasPrefix(model, clineFreePrefix) {
 		return ""
 	}
 	if name := model[strings.LastIndex(model, "/")+1:]; strings.HasPrefix(strings.ToLower(name), "deepseek") {

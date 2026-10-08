@@ -15,6 +15,6 @@ execFileSync(process.env.WHALEBRIDGE_GO || 'go', ['build', '-mod=readonly', '-tr
  cwd:source, stdio:'inherit', env:{...process.env,GOOS:'windows',GOARCH:'amd64',CGO_ENABLED:'0'},
 });
 const binary = readFileSync(join(out, asset));
-const manifest = {id:'whalebridge',name:'鲸桥',version:pin.version,description:'将 API 供应商和订阅账号接入鲸屿，统一管理模型、请求路由与用量。',upstream:pin.commit,license:readFileSync(join(source,'LICENSE'),'utf8'),platforms:{'win32-x64':{asset,size:binary.length,sha256:createHash('sha256').update(binary).digest('hex')}}};
+const manifest = {id:'whalebridge',name:'鲸桥',version:pin.version,description:'将 API 供应商和订阅账号接入鲸屿，统一管理模型、请求路由与用量。',upstream:pin.commit,providerFeaturesUpstream:pin.providerFeaturesCommit,license:readFileSync(join(source,'LICENSE'),'utf8'),platforms:{'win32-x64':{asset,size:binary.length,sha256:createHash('sha256').update(binary).digest('hex')}}};
 writeFileSync(join(out,'WhaleBridge-component.json'),`${JSON.stringify(manifest,null,2)}\n`);
 console.log(`鲸桥 ${pin.version}: ${binary.length} bytes`);

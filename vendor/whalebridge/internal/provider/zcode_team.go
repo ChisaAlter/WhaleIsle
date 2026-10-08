@@ -352,20 +352,23 @@ func zhipuTeamResets(ctx context.Context, root, auth, base, org, project string)
 		return nil
 	}
 	r := &ResetCredits{ByWindow: true}
-	count := func(rs []reset) (n int) {
+	count := func(rs []reset, window string) (n int) {
 		for _, x := range rs {
 			if !x.Available {
 				continue
 			}
 			n++
-			if t := zcodeWhen(x.Expire); t != nil && (r.Until == nil || t.Before(*r.Until)) {
+			t := zcodeWhen(x.Expire)
+			if t != nil && (r.Until == nil || t.Before(*r.Until)) {
 				r.Until = t
 			}
+			r.Each = append(r.Each, ResetCard{Until: t, Window: window})
 		}
 		return n
 	}
-	r.FiveHour, r.Weekly = count(data.FiveHour), count(data.Week)
+	r.FiveHour, r.Weekly = count(data.FiveHour, "fiveHour"), count(data.Week, "weekly")
 	r.Count = r.FiveHour + r.Weekly
+	sortResetCards(r.Each)
 	if r.Count == 0 {
 		return nil
 	}

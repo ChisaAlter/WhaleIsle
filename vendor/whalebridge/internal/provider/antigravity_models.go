@@ -178,6 +178,19 @@ func collapseAntigravityModels(raw []catalog.Model) []catalog.Model {
 		}
 		out = append(out, f.model())
 	}
+	names := map[string]string{}
+	for _, m := range out {
+		names[m.ID] = m.Name
+	}
+	for i, m := range out {
+		if m.Name != "" {
+			continue
+		}
+		out[i].Name = m.ID
+		if b, ok := strings.CutSuffix(m.ID, "-tiered"); ok && names[b] != "" && names[b] != b {
+			out[i].Name = names[b] + " (Tiered)"
+		}
+	}
 	return out
 }
 

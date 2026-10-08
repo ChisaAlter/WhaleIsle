@@ -1080,6 +1080,10 @@ func pluginOn(id string) map[string]bool {
 // start-up: once, or again moveRetry after one failed. One the user moved
 // back stays.
 func MoveRetiring(ctx context.Context) map[string]error {
+	return moveRetiring(ctx, nil)
+}
+
+func moveRetiring(ctx context.Context, accept func(string, []Moving) bool) map[string]error {
 	out := map[string]error{}
 	for _, id := range Retiring {
 		m, ok := MigrationOf(id)
@@ -1092,7 +1096,7 @@ func MoveRetiring(ctx context.Context) map[string]error {
 		case ok && m.State == MoveFailed && time.Since(m.At) < moveRetry:
 			continue
 		}
-		if accts, err := movers[id].out(); err != nil || len(accts) == 0 {
+		if accts, err := movers[id].out(); err != nil || len(accts) == 0 || (accept != nil && !accept(id, accts)) {
 			continue
 		}
 		out[id] = Move(ctx, id)
@@ -1114,6 +1118,10 @@ func MoveRetiring(ctx context.Context) map[string]error {
 // user moved back stays built-in, and a failed move waits moveRetry. No
 // plugin is installed for it: the user's own install is what says to.
 func HandOver(ctx context.Context, accounts bool) map[string]error {
+	return handOver(ctx, accounts, nil)
+}
+
+func handOver(ctx context.Context, accounts bool, accept func(string, []Moving) bool) map[string]error {
 	out := map[string]error{}
 	var pps []plugin.Provider
 	asked := false
@@ -1137,6 +1145,9 @@ func HandOver(ctx context.Context, accounts bool) map[string]error {
 			continue
 		}
 		accts, err := mv.out()
+		if accept != nil && !accept(id, accts) {
+			continue
+		}
 		switch {
 		case err != nil:
 		case len(accts) == 0:

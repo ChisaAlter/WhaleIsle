@@ -1045,6 +1045,9 @@ if (!gotLock) {
     }
     const desktopHome = setDesktopDshHome(desktopDshHomeFromUserData(app.getPath('userData')));
     fs.mkdirSync(desktopHome, { recursive: true });
+
+    const stopWhaleBridgeNotifications = require('./whalebridge-notifications').startWhaleBridgeNotifications();
+    app.once('will-quit', stopWhaleBridgeNotifications);
     dsh.log(`Harness 家目录 ${desktopHome}`, 'app');
     const config = loadConfig();
     configureDesktopPet({ loadConfig, saveConfig, currentTheme });

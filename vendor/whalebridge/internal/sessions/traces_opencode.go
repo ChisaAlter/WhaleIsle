@@ -211,7 +211,7 @@ func traceOpenCode(sid string, messages []ocTraceMessage, bodies bool) []TraceSp
 			s := c.span(t.id, m.ID, "model "+m.ModelID, "generation", ms(m.Time.Created), end)
 			s.Model, s.Provider, s.Error = m.ModelID, m.ProviderID, failed
 			if u := m.Tokens; u != nil {
-				s.Tokens = Tokens{u.Input, u.Output + u.Reasoning, u.Cache.Read, u.Cache.Write}
+				s.Tokens = Tokens{Input: u.Input, Output: u.Output + u.Reasoning, CacheRead: u.Cache.Read, CacheWrite: u.Cache.Write}
 				s.Reasoning = u.Reasoning
 			}
 			if bodies {
