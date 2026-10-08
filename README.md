@@ -26,13 +26,14 @@
 </p>
 
 <p align="center">
-  <img src="assets/screenshot-home.jpg" alt="鲸屿 Whale Isle 主界面" width="920" />
+  <img src="docs/images/v0.3.5/screenshot-home.jpg" alt="鲸屿 Whale Isle 主界面" width="920" />
 </p>
 
 **鲸屿 Whale Isle 是基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的开源社区增强桌面客户端，由社区独立维护，非 DeepSeek 官方产品。** 官方 Harness 的 AI 对话、工具调用、Agent 团队、终端与 Git、MCP、技能和插件等核心功能，这里同样齐备。
 
 在官方能力的基础上，鲸屿 Whale Isle 进一步扩展桌面体验：
 
+- **鲸桥模型接入**：按需安装独立组件，统一管理 API 供应商、订阅账号、模型与路由。
 - **更丰富的个性化外观**：透明主题、自定义壁纸、毛玻璃与动态背景，让工作界面更符合自己的习惯。
 - **鲸鱼娘桌宠**：常驻桌面的互动伙伴，支持摸头、投喂和随实际 Token 用量成长。
 - **扩展用量统计**：跨会话 Token 汇总、使用热力图、费用估算与数据导出，让用量更直观。
@@ -40,12 +41,16 @@
 
 会话与配置保存在独立的数据目录中，并提供官方 CLI 数据导入和插件故障排查入口。
 
+## 当前版本：v0.3.5
+
+本版更新了会话顶栏、输入区上下文用量和右侧文件预览，加入鲸桥组件管理，并整理启动器及插件启动恢复流程。截图来自 v0.3.5 正式版；鲸桥通过独立组件通道更新。完整变更见 [v0.3.5 发布说明](https://github.com/ChisaAlter/WhaleIsle/releases/tag/v0.3.5)。
+
 ## 功能
 
 - **AI 对话**：管理工作区与历史会话，查看工具调用、确认操作审批，编辑并重新发送消息；支持 Agent 团队与多子代理并行任务。
 - **项目工具**：搜索和编辑文件、查看代码差异、预览网页，将文件或终端选区加入对话；Browser 预览支持在聊天区域内切换 mini-player。
 - **集成终端与 Git**：在应用内运行命令，切换分支、提交更改、推送代码及创建 Pull Request。
-- **模型与扩展**：配置模型服务，在设置中管理 MCP、技能和插件，通过内置市场安装扩展；内置机器人（Bots）页签可编排多机器人会话。
+- **模型与扩展**：直接配置模型服务，或通过鲸桥管理 API 供应商、订阅账号和路由；在设置中管理 MCP、技能和插件，通过内置市场安装扩展；内置机器人（Bots）页签可编排多机器人会话。
 - **用量统计**：查看跨会话 Token 用量、热力图和按峰谷时段估算的会话费用，支持导出统计数据。
 - **桌面宠物** <img src="assets/pet-head.png" width="18" alt="鲸鱼娘" />：Live2D 鲸鱼娘常驻桌面，随 Token 用量成长、推送钉住的常驻通知，支持「看看」「聊聊」与摸头互动。
 - **个性化外观**：浅色、深色与透明主题；壁纸图库（必应每日、Wallhaven 与自定义 HTTPS 图源）配合毛玻璃、像素化和流动渐变背景，终端透明度与按钮悬停光泽可独立调节。
@@ -61,14 +66,28 @@
 
 <table>
   <tr>
-    <td align="center" width="50%"><img src="assets/screenshot-surfaces.jpg" alt="会话与文件工作面" /></td>
-    <td align="center" width="50%"><img src="assets/screenshot-wallpaper.jpg" alt="自定义壁纸" /></td>
+    <td align="center" width="50%"><img src="docs/images/v0.3.5/screenshot-launcher.jpg" alt="v0.3.5 启动器与组件管理" /><br />启动器与组件管理</td>
+    <td align="center" width="50%"><img src="docs/images/v0.3.5/screenshot-surfaces.jpg" alt="v0.3.5 会话与文件预览" /><br />会话与文件预览</td>
   </tr>
   <tr>
-    <td align="center" width="50%"><img src="assets/screenshot-themes.jpg" alt="外观主题" /></td>
-    <td align="center" width="50%"><img src="assets/screenshot-appearance.jpg" alt="外观设置" /></td>
+    <td align="center" width="50%"><img src="docs/images/v0.3.5/screenshot-whalebridge.jpg" alt="鲸桥供应商、订阅与模型管理" /><br />鲸桥模型接入</td>
+    <td align="center" width="50%"><img src="docs/images/v0.3.5/screenshot-appearance.jpg" alt="v0.3.5 外观设置" /><br />主题与个性化外观</td>
   </tr>
 </table>
+
+## 鲸桥 WhaleBridge
+
+鲸桥是按需安装的模型接入组件，可以集中管理 API 供应商、订阅登录、多密钥、模型目录、路由与用量，并将模型同步到鲸屿。供应商编辑支持高级参数与模型范围，模型列表按渠道和供应商分组。
+
+**上游来源**：鲸桥基于 **yetone 的 Magpie** 源码精简开发，保留供应商、订阅、模型、路由与用量能力，将客户端接入聚焦于 DSH，并使用鲸屿的管理界面。上游 MIT 版权与许可证随源码和组件分发保留。
+
+上游项目：[yetone / Magpie](https://github.com/yetone/magpie)
+
+1. 在启动器的「组件」页面安装鲸桥。
+2. 打开鲸桥设置，添加 API 供应商或按对应服务的要求完成订阅授权。
+3. 返回鲸屿，在模型选择中使用同步后的鲸桥模型。已安装组件也可从侧栏账户菜单打开设置。
+
+鲸桥独立运行和更新，不随桌面安装包附带；关闭启动器后仍可继续服务桌面会话。停止、更新或卸载前需等待活跃请求及工具续接结束。卸载时可选择保留组件数据。API 调用与订阅费用由对应服务商收取，鲸桥不提供免费模型额度。更多说明见[组件与鲸桥文档](docs/features/launcher-components.md)。
 
 ## 下载与安装
 
@@ -84,7 +103,7 @@
 ### 开始使用
 
 1. 安装并打开应用，等待启动器进入主界面。
-2. 在「设置 → 模型」中选择模型服务，配置 API 密钥；使用自定义服务时，核对 API 地址与协议是否匹配。
+2. 在「设置 → 模型」中配置 API 服务，或从启动器安装鲸桥并添加供应商／订阅账号；使用自定义服务时，核对 API 地址与协议是否匹配。
 3. 选择项目目录作为工作区，或新建无工作区会话，开始对话。
 
 如果你使用过官方 CLI，可在启动器的「导入」页面选择需要迁移的数据。
@@ -93,7 +112,7 @@
 
 ### 需要自己准备 API 密钥吗？
 
-需要配置所使用模型服务的 API 密钥。本项目不提供模型额度，调用费用由对应服务商收取。
+直接接入 API 服务时需要该服务的密钥；也可以通过鲸桥使用受支持的订阅账号，按对应服务要求授权。本项目不提供模型额度或订阅，费用由对应服务商收取。
 
 ### 对话提示 `DeepSeek Messages request failed (404)` 怎么办？
 
@@ -170,7 +189,7 @@ npm run dist:mac    # 构建 macOS 安装包，需在 macOS 上运行
 
 ## 致谢
 
-感谢 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 提供基础能力，以及 [Linux.do](https://linux.do) 社区的支持。
+感谢 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 提供基础能力、[yetone / Magpie](https://github.com/yetone/magpie) 提供鲸桥的上游模型接入能力，以及 [Linux.do](https://linux.do) 社区的支持。
 
 ## 许可证
 
