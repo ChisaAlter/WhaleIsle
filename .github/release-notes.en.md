@@ -1,14 +1,19 @@
-# Whale Isle 0.3.4
+# Whale Isle 0.3.5
 
 [中文](release-notes.md) | English
 
 This update brings together desktop features and fixes since 0.3.3. The source baseline is DeepSeek Harness `0.2.1-alpha.1` (upstream commit `5badb15009ae1756c3afe0ae0cef1faafc290ccc`), retaining Whale Isle's desktop work loops, bundled plugins and data contracts.
 
+Project mode (the local coordinator and persistent workers) is excluded from this release and remains under separate development. Existing working-directory support for conversations, files, Git and terminals is retained.
+
 ## What's new
 
+- **Conversation workspace**: Reorganized the session title and top tools, keeping view tabs below the title and Git actions accessible in narrow windows. Context usage moves into the composer toolbar; question takeovers are anchored to the current conversation viewport.
+- **Files and previews**: Restored chat file entries and full-height sidebar content, with in-app file previews. Fixed chat text showing through floating preview backgrounds.
+- **WhaleBridge management**: Expanded provider, subscription, multi-key, model-scope and routing controls. Models are grouped by channel and provider; editors use section navigation and a fixed save bar. Synchronization preserves upstream settings outside the component's scope.
 - **WhaleBridge component**: Install and manage WhaleBridge from the launcher to connect API providers, subscription accounts, models and routes to DSH. Installed components also have a Settings entry in the sidebar account menu. WhaleBridge runs and updates independently; closing the launcher does not stop its service.
 - **Explicit connection results**: Saving a provider or completing subscription authorization keeps a result dialog open with the provider, account identity and model-sync details. Choose Done or View providers. Reauthorization reports an updated authorization, and completing a successful result does not save again or send a cancellation request.
-- **WhaleBridge interface**: Improved dynamic forms, advanced options, routes and long-name layouts. Its management window shares desktop and launcher window controls and supports light, dark and narrow layouts. The component version in this update is `1.0.6`; it is distributed through its own release and update channel, not bundled in the desktop installer.
+- **WhaleBridge interface**: Improved dynamic forms, advanced options, routes and long-name layouts. Its management window shares desktop and launcher window controls and supports light, dark and narrow layouts. The component version in this update is `1.1.0`; it is distributed through its own release and update channel, not bundled in the desktop installer.
 - **Launcher**: Reorganized the home and component management views. Action feedback preserves button geometry and focus, with long-running progress shown in place. Desktop and WhaleBridge home cards no longer repeat avatars; sidebar branding and component-list icons remain. Confirmation overlays stay within rounded window corners.
 - **Plugin startup recovery**: Retains the original startup failure and offers explicit disable-and-restart guidance when logs identify installed user plugins. Skip mode persists until an explicit full retry. Cancellation remains visibly incomplete; writing disabled-plugin settings is not reported as complete recovery, and user data is retained.
 - **Session archives and narrow windows**: Restored Hide archived / All conversations / Archived only filters for lists and search. Archived items can be unarchived or deleted; clicking an archived row does not restore or open it. Fixed session menus, header actions and title-bar drag regions in narrow windows.
@@ -19,7 +24,7 @@ This update brings together desktop features and fixes since 0.3.3. The source b
 
 ## Install and upgrade
 
-Windows 10 or later x64 users can download `Whale-Isle-Setup-0.3.4.exe` from [Releases](https://github.com/ChisaAlter/WhaleIsle/releases) and verify it with that version's `SHA512SUMS.txt`. Existing installations can be upgraded in place; use Import in the launcher to migrate another environment. The installer is not Authenticode-signed, so Windows may show a security warning.
+Windows 10 or later x64 users can download `Whale-Isle-Setup-0.3.5.exe` from [Releases](https://github.com/ChisaAlter/WhaleIsle/releases) and verify it with that version's `SHA512SUMS.txt`. Existing installations can be upgraded in place; use Import in the launcher to migrate another environment. The installer is not Authenticode-signed, so Windows may show a security warning.
 
 WhaleBridge is an optional component installed through the launcher. Its updates and rollbacks do not change the desktop version. Provider keys stay in component data; saving settings synchronizes only WhaleBridge-owned DSH channels without replacing other providers or the default model. Active requests and pending tool results prevent stop, update and uninstall operations.
 
