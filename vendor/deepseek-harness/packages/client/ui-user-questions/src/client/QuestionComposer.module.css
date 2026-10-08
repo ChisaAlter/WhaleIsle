@@ -22,7 +22,8 @@
   border: 0;
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: var(--dsw-radius-xl);
-  background: var(--dsw-specific-input-major);
+  background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
   box-shadow: var(--dsw-elevation-panel);
   color: var(--dsw-alias-label-primary);
   overflow: hidden;
