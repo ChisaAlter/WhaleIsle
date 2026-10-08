@@ -1,5 +1,5 @@
 /** Composer takeover for one pending approval waterfall. */
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Button, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ApprovalComposerProps, PendingApproval } from './contract/slots.ts'
 import css from './ApprovalPanel.module.css'
@@ -25,6 +25,23 @@ function ApprovalFlow({ pending, reason, detail, t }: {
   t: ApprovalComposerProps['t']
 }) {
   const [answered, setAnswered] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    const card = root?.closest('[data-composer-seat]')?.querySelector<HTMLElement>(
+      '[data-chain-overlay-fallback="conversation.composer"] [data-composer-card]',
+    )
+    if (root === null || card == null) return
+    const syncSize = () => {
+      const { width, height } = card.getBoundingClientRect()
+      root.style.setProperty('--dsh-approval-card-width', `${width}px`)
+      root.style.setProperty('--dsh-approval-card-height', `${height}px`)
+    }
+    const observer = new ResizeObserver(syncSize)
+    observer.observe(card)
+    syncSize()
+    return () => observer.disconnect()
+  }, [])
   const waiting = useRef(false)
   const active = useRef(true)
   const composing = useRef(false)
@@ -57,7 +74,7 @@ function ApprovalFlow({ pending, reason, detail, t }: {
     answer(event.key === 'Enter' ? 'allowed-once' : 'rejected')
   }
   return (
-    <div className={css.root} data-approval-key={pending.key} aria-busy={answered}
+    <div ref={rootRef} className={css.root} data-approval-key={pending.key} aria-busy={answered}
       onKeyDown={keydown}
       onKeyUpCapture={() => { compositionEnded.current = false }}
       onCompositionStartCapture={() => { composing.current = true }}
