@@ -27,3 +27,17 @@ Read the relevant module, not every document. Update changed product facts in th
 Source Electron accepts `--background` to show initial main/launcher windows without activation. Later user entries retain normal focus behavior; recovery, update confirmations and normal quit can still require attention. An older already-running owner does not support this flag, so quit that owner normally before starting the new source.
 
 If the vendor web build reports TS6059/TS6307 for packages outside apps/web, clean stale incremental state with `node node_modules/typescript/bin/tsc -b apps/web --clean` from the vendor directory before rebuilding; do not change the web project file list to hide it.
+
+## Agent skills
+
+### Issue tracker
+
+需求、Bug 和任务使用 GitHub Issues；操作前读取 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+议题分类使用五个默认标签；应用标签前读取 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+采用 single-context 布局；探索领域概念或设计决策前读取 `docs/agents/domain.md`。
