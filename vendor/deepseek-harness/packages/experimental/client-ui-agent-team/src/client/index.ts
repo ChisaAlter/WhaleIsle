@@ -3,6 +3,8 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { registerAgentTeamUi } from './mount.ts'
 
+export { TeamAction } from './TeamAction.tsx'
+export { en as teamEnglish, zh as teamChinese } from './locales.ts'
 export { inject } from './mount.ts'
 export type { TeamActionInjected, TeamActionProps } from './TeamAction.tsx'
 export type { TeamKey } from './locales.ts'

@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createProjectEnvironment } = require('./project-environment');
-const { createWorkspaceAuthority, readProjectExecutionPaths } = require('./workspace-authority');
+const { createWorkspaceAuthority, readProjectExecutionPaths, readProjectRegisteredPaths } = require('./workspace-authority');
 const { runGit } = require('./git-exec');
 
 async function fixture(t, isGit = true) {
@@ -30,6 +30,24 @@ async function fixture(t, isGit = true) {
   const authority = createWorkspaceAuthority({ workspace: source });
   return { directory, source, home, git, authority, environment: createProjectEnvironment({ home, authority }) };
 }
+
+test('a selected Project directory gains authority from its own persisted registration, without a Workspace row', async t => {
+  const { directory, home } = await fixture(t, false);
+  const selected = path.join(directory, 'new-project'); fs.mkdirSync(selected);
+  const authority = createWorkspaceAuthority({ workspace: '', listRegisteredWorkspaces: () => readProjectRegisteredPaths(home) });
+  const environment = createProjectEnvironment({ home, authority });
+  const choice = await environment.dispatch({ action: 'select-directory', workingDirectory: selected });
+  assert.equal(authority.resolveAuthorizedCwd(selected), null, 'selection alone grants no ongoing file access');
+  fs.mkdirSync(path.join(home, 'storages'));
+  const row = { lifecycle: 'ready', canonicalWorkingDirectory: choice.canonicalPath, directoryIdentity: choice.identity };
+  const save = () => fs.writeFileSync(path.join(home, 'storages', 'whale_project_local.json'), JSON.stringify({ unit: { name: 'whale_project_local', version: 1 }, tables: { state: { catalog: { projects: [row] } } } }));
+  save();
+  assert.equal(environment.canonicalize(selected).canonicalPath, choice.canonicalPath);
+  assert.equal(fs.existsSync(path.join(home, 'storages', 'workspace.json')), false);
+  row.directoryIdentity = 'changed'; save();
+  assert.throws(() => environment.canonicalize(selected), /未获授权/);
+  await assert.rejects(environment.dispatch({ action: 'select-directory', workingDirectory: path.parse(selected).root }), /不能作为/);
+});
 
 test('explicit real Git worktrees preserve dirty user data and retain committed branches after cleanup', async t => {
   const { source, home, git, environment } = await fixture(t);
@@ -133,7 +151,7 @@ test('open-path authorizes only docs or a bound working directory and rejects in
   assert.deepEqual(opened, [workspace.canonicalPath]);
   const docs = path.join(home, 'projects', projectId, 'docs'); fs.mkdirSync(docs);
   const report = path.join(docs, 'result.txt'); fs.writeFileSync(report, 'result');
-  await environment.openPath({ projectId, path: report }); assert.equal(opened[1], report);
+  await environment.openPath({ projectId, path: report }); assert.equal(opened[1], fs.realpathSync.native(report));
   await assert.rejects(environment.openPath({ projectId, path: path.join(source, 'file.txt') }), /不属于/);
   await assert.rejects(environment.openPath({ projectId, workstreamId, path: home }), /不属于/);
   const internal = path.join(home, 'projects', projectId, 'internal', 'private.txt'); fs.writeFileSync(internal, 'private');

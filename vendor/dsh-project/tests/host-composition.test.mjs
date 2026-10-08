@@ -10,7 +10,7 @@ import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 const projectPackage = resolve(dirname(fileURLToPath(import.meta.url)), '..'), harness = resolve(projectPackage, '../deepseek-harness');
 const cliRequire = createRequire(join(harness, 'apps/cli/package.json'));
-const anchors = [cliRequire, ...['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'].map(name => createRequire(cliRequire.resolve(`${name}/package.json`)))];
+const anchors = [cliRequire, ...['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-experimental-agent-team-profile'].map(name => createRequire(cliRequire.resolve(`${name}/package.json`)))];
 anchors.push(createRequire(anchors[1].resolve('@deepseek-ai/dsh-storage-domain/package.json')));
 function resolvePackage(name) { for (const anchor of anchors) try { return anchor.resolve(name); } catch (error) { if (!['MODULE_NOT_FOUND', 'ERR_PACKAGE_PATH_NOT_EXPORTED'].includes(error.code)) throw error; } throw new Error(`Missing built Harness dependency ${name}.`); }
 const projectUrl = pathToFileURL(`${projectPackage}${sep}`).href;
@@ -24,14 +24,14 @@ const blocks = value => [{ type: 'block-start', index: 0, blockType: 'text' }, {
 const call = (id, name, args) => [{ type: 'block-start', index: 0, blockType: 'tool-call' }, { type: 'tool-call-delta', index: 0, id, name, argumentsDelta: JSON.stringify(args) }, { type: 'block-end', index: 0, block: { type: 'tool-call', id, name, arguments: JSON.stringify(args) } }, { type: 'finish', reason: { kind: 'tool-calls' } }];
 const messageText = message => (message.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
 const signal = new AbortController().signal;
-const waitFor = async (read, reason, timeout = 20000) => { const start = Date.now(); while (Date.now() - start < timeout) { const value = await read(); if (value) return value; await new Promise(done => setTimeout(done, 20)); } throw new Error(`Timed out: ${reason}`); };
+const waitFor = async (read, reason, timeout = 20000) => { const start = Date.now(); while (Date.now() - start < timeout) { const value = await read(); if (value) return value; await new Promise(done => setTimeout(done, 20)); } console.error(`Timed out: ${reason}`); throw new Error(`Timed out: ${reason}`); };
 
 class ScriptedModel extends LlmAdapter {
   requests = []; failures = []; stages = new Map(); settlementInputs = []; counter = 0; state = () => null;
   coordinatorWaiting = false; coordinatorGate = new Promise(done => { this.releaseCoordinator = done; });
   async resolveModel(provider, model) { return { provider, id: model, name: model }; }
   async *stream(options) {
-    this.requests.push(options); const names = options.tools.map(tool => tool.name);
+    this.requests.push(options); const names = (options.tools ?? []).map(tool => tool.name);
     if (names.includes('project_delegate')) {
       const input = options.messages.findLast(message => message.role === 'user' && ['user', 'subagent-settled'].includes(message.source.kind));
       const key = `coordinator:${input?.id}`, stage = this.stages.get(key) ?? 0; this.stages.set(key, stage + 1);
@@ -56,7 +56,10 @@ class ScriptedModel extends LlmAdapter {
       }
       if (stage || text.includes('SHORT_QUESTION')) { yield* blocks('The Project conversation is ready.'); return; }
       const stream = this.state()?.workstreams.find(item => item.title === 'Plan work');
-      if (text.includes('MAKE_PATH_HOLD')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { title: 'Path work', brief: 'HOLD_FOR_PATH_CHANGE', scope: 'docs', writePaths: ['docs/first.md'] });
+      if (text.includes('PEER_RECEIVER')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { title: 'Peer receiver', brief: 'WAIT_FOR_PEER_EVIDENCE', scope: 'readonly' });
+      else if (text.includes('PEER_DEPENDENT')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { title: 'Dependent work', brief: 'AFTER_PEER_EVIDENCE', scope: 'readonly', blockedBy: [this.state().workstreams.find(work => work.title === 'Peer receiver').id] });
+      else if (text.includes('PEER_SENDER')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { title: 'Peer sender', brief: 'SEND_PEER_EVIDENCE', scope: 'readonly' });
+      else if (text.includes('MAKE_PATH_HOLD')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { title: 'Path work', brief: 'HOLD_FOR_PATH_CHANGE', scope: 'docs', writePaths: ['docs/first.md'] });
       else if (text.includes('EXTEND_DOC_PATHS')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { workstreamId: pathWork.id, brief: 'WRITE_EXTRA_DOC', scope: 'docs', writePaths: ['docs/first.md', 'docs/second.md'] });
       else if (text.includes('DOCS_CODE_PATH')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { title: 'Invalid docs', brief: 'Change code as docs', scope: 'docs', writePaths: ['src/forbidden.js'] });
       else if (text.includes('MAKE_DOCS')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { title: 'Plan work', brief: 'WRITE_PLAN', scope: 'docs', writePaths: ['docs/plan.md'] });
@@ -69,6 +72,12 @@ class ScriptedModel extends LlmAdapter {
     const assignment = options.messages.findLast(message => message.role === 'user' && messageText(message).includes('DelegationRef:'));
     const brief = messageText(assignment), ref = /DelegationRef: ([^\n]+)/.exec(brief)?.[1], cwd = /Working directory: ([^\n]+)/.exec(brief)?.[1];
     assert.ok(ref && cwd); const stage = this.stages.get(ref) ?? 0; this.stages.set(ref, stage + 1);
+    if (brief.includes('WAIT_FOR_PEER_EVIDENCE') && !options.messages.some(message => message.source?.kind === 'team-message' && message.content.some(block => block.type === 'text' && block.text === 'Verified peer finding'))) { yield* blocks('Waiting for the peer finding; no completion claim.'); return; }
+    if (brief.includes('SEND_PEER_EVIDENCE') && !stage) { yield* call(`members-${++this.counter}`, 'list_agents', {}); return; }
+    if (brief.includes('SEND_PEER_EVIDENCE') && stage === 1) {
+      const receiver = this.state().workstreams.find(work => work.title === 'Peer receiver');
+      yield* call(`peer-${++this.counter}`, 'send_message', { target: `member-${receiver.workerSessionId.replace(/^session-/, '')}`, message: 'Verified peer finding' }); return;
+    }
     if (brief.includes('HOLD_FOR_STOP') || brief.includes('HOLD_FOR_PATH_CHANGE')) { yield { type: 'block-start', index: 0, blockType: 'text' }; await new Promise((_, reject) => { if (options.signal.aborted) reject(new Error('aborted')); else options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }); }); return; }
     if (brief.includes('READONLY_GUARD') && !stage) { yield* call(`readonly-shell-${++this.counter}`, process.platform === 'win32' ? 'pwsh' : 'bash', { command: 'echo SHOULD_NOT_EXECUTE' }); return; }
     if (brief.includes('READONLY_GUARD') && stage === 1) { yield* call(`readonly-runtime-${++this.counter}`, 'run_code', { code: 'throw new Error("ARBITRARY_RUNTIME_MUST_NOT_EXECUTE")' }); return; }
@@ -86,7 +95,7 @@ async function desktopBridge(root) {
   const server = createServer(async (req, res) => { try {
     assert.equal(req.headers.authorization, 'Bearer composition-secret'); const chunks = []; for await (const chunk of req) chunks.push(chunk);
     const input = JSON.parse(Buffer.concat(chunks)); requests.push(input); let value;
-    if (input.action === 'canonicalize') { const path = await realpath(input.workingDirectory); value = { canonicalPath: path, identity: path.toLowerCase() }; }
+    if (input.action === 'select-directory') { const path = await realpath(input.workingDirectory); value = { canonicalPath: path, identity: path.toLowerCase() }; }
     else if (input.action === 'prepare-workspace') { assert.equal(input.mode, 'existing'); value = { canonicalPath: await realpath(input.workingDirectory), ownership: 'user', receipt: input.workstreamId, isGit: false }; bindings.set(input.workstreamId, value); }
     else if (input.action === 'check-workspace') { assert.deepEqual(input.workspace, bindings.get(input.workstreamId)); value = { valid: true }; }
     else if (input.action === 'snapshot') value = { isGit: false, dirty: null, fingerprint: null };
@@ -129,7 +138,7 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     assert.equal((await host.command('create', { requestId: 'create-b', workingDirectory: directory })).project.coordinatorSessionId, project.coordinatorSessionId);
     assert.equal(ctx.agents.get(project.coordinatorSessionId).session.header.cwd, project.storageRoot);
     await assert.rejects(ctx.agentPresets.select(ctx.agents.get(project.coordinatorSessionId), 'standard'), /Project session roles/);
-    assert.equal(ctx.workspaceRegistry.get(project.workspaceId).path, await realpath(directory));
+    assert.equal(project.workspaceId, undefined, 'Project creation does not add an empty regular workspace');
     const names = ctx.tools.schemas(ctx.agents.get(project.coordinatorSessionId)).map(item => item.name);
     assert.ok(names.includes('project_delegate')); assert.equal(names.some(name => ['spawn_agent', 'spawn_teammate', 'write', 'pwsh', 'bash'].includes(name)), false);
     assert.equal(names.includes('run_code'), false);
@@ -140,7 +149,7 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     await prompt('PAUSE_OLD_DELEGATE'); await waitFor(() => model.coordinatorWaiting, 'coordinator is still processing the old user request');
     await host.command('pause', { projectId: project.id }); model.releaseCoordinator(); await ctx.agents.get(project.coordinatorSessionId).whenIdle();
     assert.equal(host.state().workstreams.length, 0); assert.equal(host.project(project.id).paused, true);
-    assert.ok(model.failures.some(item => item.name === 'project_delegate' && /request was stopped/.test(item.error.message)));
+    assert.equal(model.requests.filter(request => request.tools?.some(tool => tool.name === 'project_report')).length, 0, 'stopped Lead cannot launch a late worker');
     await prompt('DOCS_CODE_PATH'); await ctx.agents.get(project.coordinatorSessionId).whenIdle(); assert.equal(host.state().workstreams.length, 0);
     assert.ok(model.failures.some(item => item.name === 'project_delegate' && /Documentation scope/.test(item.error.message)));
     await prompt('MAKE_DOCS');
@@ -149,6 +158,8 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     assert.ok(ctx.agents.get(project.coordinatorSessionId).session.snapshotEvents().some(event => event.type === 'user/message' && event.data.source.kind === 'runtime-context'));
     assert.equal(await readFile(join(directory, 'docs/plan.md'), 'utf8'), '# Plan\nOnly the authorized document changed.\n');
     await assert.rejects(readFile(join(directory, 'forbidden.js')), { code: 'ENOENT' }); assert.ok(model.failures.some(item => item.name === 'project_write_document'));
+    assert.equal(ctx.agentTeams.getTask(ctx.agents.get(project.coordinatorSessionId), plan.id).status, 'completed');
+    assert.ok(ctx.agentTeams.listMembers(ctx.agents.get(project.coordinatorSessionId)).some(member => member.id === plan.workerSessionId && member.role === 'teammate'));
     const workerId = plan.workerSessionId; assert.equal(host.worker(workerId).cwd, await realpath(directory));
     const completion = await waitFor(() => model.settlementInputs.find(input => input.facts.reports.some(report => report.delegationRef === plan.currentDelegationRef)), 'parent receives actual report in its one native settlement notice without reading notes');
     assert.match(completion.text, /It left no closing message/); assert.equal(completion.facts.reports[0].summary, 'Plan completed');
@@ -163,18 +174,36 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     await prompt('IMPLEMENT_PLAN');
     await waitFor(() => host.stream(plan.id).status === 'done' && host.stream(plan.id).latestReport?.summary === 'Requested work completed', 'scope upgrade uses same cold worker');
     assert.equal(host.stream(plan.id).workerSessionId, workerId); assert.equal(host.worker(workerId).role, 'worker');
+    assert.equal(ctx.agentTeams.getTask(ctx.agents.get(project.coordinatorSessionId), plan.id).description, 'DEVELOP_CONTINUE');
     const notes = await host.command('store/read', { projectId: project.id, path: 'notes.md' });
     assert.equal(notes.userText, 'My own project notes.'); assert.equal(notes.text.split('<!-- whale-project:user-notes -->').length, 2);
     assert.match(await readFile(join(directory, 'implementation.txt'), 'utf8'), /Same worker continued/);
+    await ctx.agents.get(project.coordinatorSessionId).whenIdle();
+    await prompt('PEER_RECEIVER');
+    const receiver = await waitFor(() => host.state().workstreams.find(work => work.title === 'Peer receiver' && work.settlements.length), 'receiver settles without falsely completing');
+    assert.equal(ctx.agentTeams.getTask(ctx.agents.get(project.coordinatorSessionId), receiver.id).status, 'in_progress');
+    await ctx.agents.get(project.coordinatorSessionId).whenIdle();
+    await prompt('PEER_DEPENDENT'); await ctx.agents.get(project.coordinatorSessionId).whenIdle();
+    const dependent = host.state().workstreams.find(work => work.title === 'Dependent work');
+    assert.equal(host.worker(dependent.workerSessionId).materialized, false, 'dependency waits before spawning');
+    assert.deepEqual(ctx.agentTeams.getTask(ctx.agents.get(project.coordinatorSessionId), dependent.id).blockedBy, [receiver.id]);
+    await prompt('PEER_SENDER');
+    await waitFor(() => [receiver.id, dependent.id].every(id => host.stream(id).status === 'done'), 'native peer message resumes receiver and unlocks dependent work');
+    const sender = await waitFor(() => host.state().workstreams.find(work => work.title === 'Peer sender' && work.status === 'done'), 'sender settles');
+    const peer = ctx.agents.get(project.coordinatorSessionId).session.snapshotEvents().find(event => event.type === 'team/message/queued' && event.data.message.senderId === sender.workerSessionId && event.data.message.targetId === receiver.workerSessionId);
+    assert.ok(peer, 'peer evidence used the native durable mailbox');
+    assert.deepEqual(ctx.agentTeams.messageContext(ctx.agents.get(project.coordinatorSessionId), peer.data.message.id), { senderAssignment: sender.currentDelegationRef, targetAssignment: receiver.currentDelegationRef });
+    assert.equal(model.failures.some(item => ['list_agents', 'send_message'].includes(item.name)), false);
     await prompt('READ_ONLY'); const investigation = await waitFor(() => host.state().workstreams.find(item => item.title === 'Readonly work' && item.status === 'done'), 'read-only worker settles');
     assert.equal(host.worker(investigation.workerSessionId).role, 'readonly'); assert.ok(model.failures.some(item => item.error.code === 'TOOL_GUARD_DENIED' || /shell|repository write/i.test(item.error.message)));
     assert.ok(model.failures.some(item => item.name === 'run_code'));
+    await waitFor(() => !host.stream(investigation.id).pendingSummary, 'readonly result is visible before the next request'); await ctx.agents.get(project.coordinatorSessionId).whenIdle();
     await prompt('MAKE_PATH_HOLD'); await ctx.agents.get(project.coordinatorSessionId).whenIdle();
     const pathWork = host.state().workstreams.find(item => item.title === 'Path work'), pathWorker = pathWork.workerSessionId;
     await waitFor(() => ctx.agents.get(pathWorker)?.status === 'running', 'document worker remains active in its original scope');
     assert.deepEqual(host.worker(pathWorker).writePaths, ['docs/first.md']);
-    assert.ok(model.failures.some(item => item.name === 'project_delegate' && /Scope expansion needs a new actual user message/.test(item.error.message)));
-    const oldDocRequest = model.requests.findLast(request => request.messages.some(message => message.role === 'user' && messageText(message).includes('HOLD_FOR_PATH_CHANGE')) && request.tools.some(tool => tool.name === 'project_report'));
+    assert.ok(model.failures.some(item => item.name === 'project_delegate' && /Scope expansion needs a new actual user message/.test(item.error.message)), JSON.stringify(model.failures));
+    const oldDocRequest = model.requests.findLast(request => request.messages.some(message => message.role === 'user' && messageText(message).includes('HOLD_FOR_PATH_CHANGE')) && request.tools?.some(tool => tool.name === 'project_report'));
     await prompt('EXTEND_DOC_PATHS'); await waitFor(() => host.stream(pathWork.id).status === 'done', 'new human scope drains the busy document worker and resumes its original Session');
     assert.equal(host.stream(pathWork.id).workerSessionId, pathWorker); assert.equal(oldDocRequest.signal.aborted, true);
     assert.deepEqual(host.worker(pathWorker).writePaths, ['docs/first.md', 'docs/second.md']); assert.match(await readFile(join(directory, 'docs/second.md'), 'utf8'), /Explicit new document scope/);
@@ -195,9 +224,9 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     await ctx.sessionController.prompt({ sessionId: project.coordinatorSessionId, requestId: 'read-pending', mode: 'queue', content: [{ type: 'text', text: 'READ_PENDING' }] }, signal);
     await waitFor(() => !resumed.stream(plan.id).pendingSummary, 'real visible coordinator reply summarizes durable pending facts');
     assert.equal(resumed.stream(plan.id).workerSessionId, workerId); assert.equal(resumed.worker(workerId).stopped, true);
-    assert.equal(restartedModel.requests.some(request => request.tools.some(tool => tool.name === 'project_report')), false, 'reading recovery facts never wakes an old worker');
+    assert.equal(restartedModel.requests.some(request => request.tools?.some(tool => tool.name === 'project_report')), false, 'reading recovery facts never wakes an old worker');
     await ctx.sessionController.prompt({ sessionId: project.coordinatorSessionId, requestId: 'abrupt-active', mode: 'queue', content: [{ type: 'text', text: 'HOLD_WORK' }] }, signal);
-    const activeRequest = await waitFor(() => restartedModel.requests.findLast(request => request.tools.some(tool => tool.name === 'project_report') && request.messages.some(message => message.role === 'user' && messageText(message).includes('HOLD_FOR_STOP'))), 'worker is really streaming before bare root unload');
+    const activeRequest = await waitFor(() => restartedModel.requests.findLast(request => request.tools?.some(tool => tool.name === 'project_report') && request.messages.some(message => message.role === 'user' && messageText(message).includes('HOLD_FOR_STOP'))), 'worker is really streaming before bare root unload');
     await ctx.agents.get(project.coordinatorSessionId).whenIdle();
     const beforeAbrupt = restartedModel.requests.length; await ctx.fiber.dispose(); ctx = undefined;
     assert.equal(activeRequest.signal.aborted, true); assert.equal(restartedModel.requests.length, beforeAbrupt);
@@ -216,7 +245,7 @@ test('failed warm admission keeps occupancy, expanding stops drain every worker,
   assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-boundaries-`));
   await mkdir(directory); await mkdir(join(store, 'docs'), { recursive: true });
   let state = { revision: 0, projects: [{ id: 'project-a', title: 'Boundary', coordinatorSessionId: 'parent', canonicalWorkingDirectory: await realpath(directory), storageRoot: await realpath(store), paused: false, lifecycle: 'ready' }], workers: [], workstreams: [] };
-  const cancelled = [], drained = [], agents = new Map([['parent', { id: 'parent' }]]); let releaseA;
+  const cancelled = [], drained = [], agents = new Map([['parent', { id: 'parent', cancel() {}, session: { snapshotEvents: () => [] } }]]); let releaseA;
   const gateA = new Promise(done => { releaseA = done; });
   const addWorker = suffix => {
     const id = `worker-${suffix}`, streamId = `work-${suffix}`, ref = `ref-${suffix}`;
@@ -226,12 +255,13 @@ test('failed warm admission keeps occupancy, expanding stops drain every worker,
     const agent = { id, status: 'running', cancel() { cancelled.push(id); }, async whenIdle() { if (suffix === 'a') await gateA; agent.status = 'idle'; } }; agents.set(id, agent);
     return id;
   };
-  const ctx = { agents, get: name => name === 'jobs' ? { list: () => [] } : undefined, logger: { warn() {} }, subagents: {
+  const tasks = new Map();
+  const ctx = { sessionPersistence: { stat: async () => ({}) }, agentTeams: { registerPolicy: () => () => {}, bindPolicy: async () => {}, cancelMessages: async () => {}, setCold: async () => {}, createTask: async (_root, input) => { if (!tasks.has(input.taskId)) tasks.set(input.taskId, { id: input.taskId, subject: input.subject, description: input.description, status: 'in_progress', ready: true }); return tasks.get(input.taskId); }, getTask: (_root, id) => tasks.get(id) }, agents, get: name => name === 'jobs' ? { list: () => [] } : undefined, logger: { warn() {} }, subagents: {
     registerContinuationPolicy: () => () => {}, async drainContinuableChildren(_parent, ids) { drained.push(...ids); if (ids.includes('worker-a')) await gateA; },
   } };
   const table = { get: () => state, async update(_key, change) { state = change(state); } };
   const service = new ProjectService(ctx, table, { home, desktop: async () => { throw new Error('Actual binding changed'); } });
-  service.notes = async () => {};
+  service.recovering = false; service.notes = async () => {}; service.schedule = () => {};
   try {
     const a = addWorker('a'); await assert.rejects(() => service.launch('work-a'), /Actual binding changed/);
     assert.equal(agents.get(a).status, 'running'); assert.equal(service.worker(a).directoryHeld, true, 'failed check must keep a live worker directory occupied');
@@ -244,16 +274,17 @@ test('failed warm admission keeps occupancy, expanding stops drain every worker,
     service.desktop = async () => { reservationCalls++; await directoryGate; throw new Error('Owned reservation probe completed'); };
     await service.write(next => { next.projects[0].paused = false; for (const worker of next.workers) { worker.stopped = false; worker.directoryHeld = false; worker.phase = 'idle'; }
       for (const work of next.workstreams) work.delegations.find(item => item.ref === work.currentDelegationRef).phase = 'queued'; });
+    service.held.clear(); service.projectHolds.clear(); // Simulate a newly accepted user continuation in this isolated admission fixture.
     const reservations = [service.launch('work-a'), service.launch('work-b')];
     await waitFor(() => reservationCalls === 1, 'one launch atomically owns the shared writable directory');
     assert.equal(service.state().workers.filter(worker => worker.directoryHeld).length, 1);
     assert.equal(service.state().workstreams.filter(work => work.delegations[0].phase === 'queued').length, 1);
     releaseDirectory(); await Promise.allSettled(reservations); assert.equal(reservationCalls, 1);
     await service.write(next => { for (const work of next.workstreams) { work.title = work.id === 'work-a' ? 'Plan' : 'Implement Plan'; work.pendingSummary = true; work.settlements = [{ runId: `native-${work.id}`, summarizedBy: '' }]; } });
-    service.consumed.set('parent', { turn: 1, streams: service.state().workstreams.map(work => ({ id: work.id, runs: [`native-${work.id}`], reports: [] })) });
+    service.consumed.set('parent', { turn: 1, streams: service.state().workstreams.filter(work => work.id === 'work-b').map(work => ({ id: work.id, runs: [`native-${work.id}`], reports: [] })) });
     const reply = text => service.assistantReply({ id: 'parent' }, { type: 'assistant/message', data: { turn: 1, interrupted: false, message: { id: `reply-${text}`, content: [{ type: 'text', text }] } } });
     await reply('Implement Plan: the result is ready.');
-    assert.equal(service.stream('work-a').pendingSummary, true); assert.equal(service.stream('work-b').pendingSummary, true, 'overlapping titles cannot acknowledge either result by substring');
+    assert.equal(service.stream('work-a').pendingSummary, true); assert.equal(service.stream('work-b').pendingSummary, false, 'only the explicit consumed result is associated with this reply');
     await reply('Implement Plan (work-b): the result is ready.');
     assert.equal(service.stream('work-a').pendingSummary, true); assert.equal(service.stream('work-b').pendingSummary, false);
     service.notes = ProjectService.prototype.notes;

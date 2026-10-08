@@ -356,6 +356,24 @@ function readProjectExecutionPaths(homeDir = dshHome()) {
   return paths;
 }
 
+/** Project selections are registered roots without creating ordinary Workspace rows. */
+function readProjectRegisteredPaths(homeDir = dshHome()) {
+  try {
+    const file = path.join(homeDir, 'storages', 'whale_project_local.json');
+    const document = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (document.unit?.name !== 'whale_project_local') return [];
+    const projects = document.tables?.state?.catalog?.projects;
+    if (!Array.isArray(projects)) return [];
+    return projects.flatMap(project => {
+      if (!['ready', 'archived'].includes(project.lifecycle) || typeof project.canonicalWorkingDirectory !== 'string') return [];
+      try {
+        const real = fs.realpathSync.native(project.canonicalWorkingDirectory);
+        return identityKey(real) === project.directoryIdentity && identityKey(real) === identityKey(project.canonicalWorkingDirectory) ? [real] : [];
+      } catch { return []; }
+    });
+  } catch { return []; }
+}
+
 /**
  * True when `dir` is a volume root (`C:\`, `/`). Registering that path would
  * authorize every file on the volume for Git/FS/PTY.
@@ -453,6 +471,7 @@ function loadWorkspaceAuthority(options = {}) {
       extraWorkspaces: options.allowScratchCwd ? [scratchWorkspacePath()] : [],
       listRegisteredWorkspaces: () => [
         ...filterRegisteredWorkspaceRoots(readHarnessRegisteredWorkspacePaths()),
+        ...filterRegisteredWorkspaceRoots(readProjectRegisteredPaths()),
         ...readProjectExecutionPaths(),
       ],
     });
@@ -466,6 +485,7 @@ module.exports = {
   loadWorkspaceAuthority,
   readHarnessRegisteredWorkspacePaths,
   readProjectExecutionPaths,
+  readProjectRegisteredPaths,
   filterRegisteredWorkspaceRoots,
   isHighRiskWorkspaceRoot,
   highRiskAnchorPaths,

@@ -56,9 +56,12 @@ function bench({ available = true, rejectCreation = false, detail = {}, rpcOverr
   const Button = ({ variant, children, ...props }) => h('button', { type: 'button', ...props }, children);
   const Modal = ({ open, title, closeLabel, onClose, children, footer }) => !open ? null : h('section', { role: 'dialog', 'aria-label': title },
     h('button', { type: 'button', 'aria-label': closeLabel, onClick: onClose }, closeLabel), children, footer);
-  const primitives = { Button, Modal, Pill: ({ children }) => h('span', null, children), MarkdownText: ({ text }) => h('div', { 'data-markdown': true }, text), IconFolderCloseRegular: () => h('span', { 'aria-hidden': true }) };
+  const TaskDock = ({ title, children, testId }) => { const [expanded, setExpanded] = React.useState(false); return h('section', { 'data-testid': testId }, h('button', { 'aria-expanded': expanded, onClick: () => setExpanded(!expanded) }, title), expanded ? children : null); };
+  const Menu = ({ open, anchor, items, onSelect }) => h(React.Fragment, null, anchor, open ? h('div', { role: 'menu' }, items.map(item => h('button', { key: item.id, role: 'menuitem', onClick: () => onSelect(item.id) }, item.label))) : null);
+  const primitives = { Button, Modal, TaskDock, Menu, Input: props => h('input', props), IconChevronDownOutlineRegular: () => null, IconChevronRightOutlineRegular: () => null, Pill: ({ children }) => h('span', null, children), MarkdownText: ({ text }) => h('div', { 'data-markdown': true }, text), IconFolderCloseRegular: () => h('span', { 'aria-hidden': true }) };
   const plugin = registration.factory(spec => {
     if (spec === 'react') return React;
+    if (spec === '@deepseek-ai/dsh-experimental-client-ui-agent-team') return { TeamAction: () => null, teamEnglish: {}, teamChinese: {} };
     if (spec === '@deepseek-ai/dsh-client-ui-primitives') return primitives;
     if (spec === '@deepseek-ai/dsh-client-store') return {
       createSnapshotStore: projection,
@@ -80,7 +83,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, rpcOverr
     workspaces: { create: async input => { requests.push({ method: 'workspace/create', input }); return { path: project.canonicalWorkingDirectory, workspaceId: project.workspaceId }; }, openPath: async (path, options) => opened.push({ path, options }) },
     uiWorkspace: { registerDirectoryAction: action => { directoryAction = action; return () => { directoryAction = undefined; }; }, openSession: id => navigation.push(['session', id]) },
     uiSidebar: { selectTab: id => navigation.push(['tab', id]) },
-    sessions: { retain: (address, options) => { retained.push({ address, options }); return { ready: Promise.resolve(binding), release: () => released.push(address.childSessionId) }; } },
+    sessions: { list: projection({ byId: { [project.coordinatorSessionId]: { id: project.coordinatorSessionId, retainedBy: { mainView: 1 } } } }), retain: (address, options) => { retained.push({ address, options }); return { ready: Promise.resolve(binding), release: () => released.push(address.childSessionId) }; } },
     connection: { rpc: { call: async (prefix, method, input) => {
       assert.equal(prefix, '/dsh-project'); requests.push({ method, input });
       const override = rpcOverride?.(method, input, project, stored);
@@ -106,7 +109,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, rpcOverr
   const selectHook = source => selector => selector(useSyncExternalStore(source.subscribe, source.getSnapshot, source.getSnapshot));
   function Slot({ entry }) {
     const injected = entry.options.inject(), store = entry.options.store?.create();
-    return h(entry.component, { ...injected, useProjects: selectHook(injected.hooks.projects),
+    return h(entry.component, { ...injected, useProjects: selectHook(injected.hooks.projects), useProjectSessions: selectHook(injected.hooks.projectSessions),
       ...(store ? { useStore: selectHook(store), actions: store.actions } : {}), sessionId: project.coordinatorSessionId, wide: true, t: key => key });
   }
   const render = () => root.render(h(React.Fragment, null, entries.filter(entry => entry.options.name !== 'sidebar.nav.tab').map(entry => h(Slot, { key: entry.options.name, entry }))));
@@ -142,10 +145,11 @@ test('the actual directory action is gated by availability, makes nothing before
     // Cancelling a chooser never calls adopt; no draft/session transition occurs.
     await b.flush(); assert.deepEqual(b.navigation, []); assert.equal(b.requests.some(request => request.method === 'workspace/create'), false);
     await b.adopt();
-    assert.deepEqual(b.requests.filter(request => ['workspace/create', 'create'].includes(request.method)).map(request => request.method), ['workspace/create', 'create']);
-    const creation = b.requests.find(request => request.method === 'create'); assert.equal(creation.input.workingDirectory, 'C:/workspace/real'); assert.ok(creation.input.requestId);
-    assert.deepEqual(b.navigation, [['tab', 'projects'], ['session', 'coordinator-existing']]);
-    await b.adopt(); assert.equal(b.entries.filter(entry => entry.options.name === 'sidebar.nav.tab').length, 1); assert.deepEqual(b.navigation.at(-1), ['session', 'coordinator-existing']);
+    assert.deepEqual(b.requests.filter(request => ['workspace/create', 'create'].includes(request.method)).map(request => request.method), ['create']);
+    const creation = b.requests.find(request => request.method === 'create'); assert.equal(creation.input.workingDirectory, 'C:/workspace/alias'); assert.ok(creation.input.requestId);
+    assert.deepEqual(b.navigation, [['tab', 'sessions'], ['session', 'coordinator-existing']]);
+    await b.adopt(); assert.equal(b.entries.filter(entry => entry.options.name === 'sidebar.workspaces.sections').length, 1); assert.deepEqual(b.navigation.at(-1), ['session', 'coordinator-existing']);
+    assert.equal(b.entries.some(entry => ['sidebar.nav.tab', 'sidebar.page'].includes(entry.options.name)), false);
     assert.equal(b.requests.some(request => request.method === 'session/create'), false);
   } finally { await b.dispose(); }
 });
@@ -159,12 +163,12 @@ test('a rejected creation preserves the previous conversation and publishes no e
 
 const workDetail = () => ({ workstreams: [{ id: 'work-one', title: 'Implement feature', status: 'running', workerSessionId: 'worker-one', pendingSummary: true, latestReport: {
   summary: 'Actual worker summary', artifacts: [{ path: 'src/app.js', size: 3, sha256: '123', type: 'file' }], evidence: ['Worker ran the targeted command'], remainingIssues: ['An actual integration check remains'],
-} }], workers: [{ sessionId: 'worker-one', workstreamId: 'work-one', role: 'worker', mode: 'existing', phase: 'active', cwd: 'C:/workspace/real' }] });
+} }], workers: [{ sessionId: 'worker-one', workstreamId: 'work-one', role: 'worker', mode: 'existing', phase: 'active', activeRunId: 'run-one', cwd: 'C:/workspace/real' }] });
 
 test('background process renders real Session records in pages and never opens a worker chat or input', async () => {
   const b = bench({ detail: workDetail() });
   try {
-    await b.flush(); await b.adopt(); await b.mount();
+    await b.flush(); await b.adopt(); await b.mount(); await b.press('progress');
     assert.match(b.document.body.textContent, /pendingSummary/); assert.match(b.document.body.textContent, /An actual integration check remains/);
     const navigation = b.navigation.length;
     await b.press('process'); await b.flush();
@@ -182,7 +186,7 @@ test('background process renders real Session records in pages and never opens a
 test('registered artifacts open in the application under their authorized directory and non-Git diff stays explicit', async () => {
   const b = bench({ detail: workDetail() });
   try {
-    await b.flush(); await b.adopt(); await b.mount();
+    await b.flush(); await b.adopt(); await b.mount(); await b.press('progress');
     await b.press('openFile'); const artifact = b.requests.filter(request => request.method === 'open').at(-1); assert.equal(artifact.input.workstreamId, 'work-one'); assert.equal(artifact.input.path, 'src/app.js');
     assert.equal(b.opened[0].path, 'C:/workspace/real/src/app.js');
     assert.equal(b.opened[0].options.sessionId, 'coordinator-existing'); assert.equal(b.opened[0].options.workingDirectory, 'C:/workspace/real'); assert.equal(b.opened[0].options.presentation, 'mini');
@@ -194,7 +198,7 @@ test('notes save and reload, while failed writes keep editing and require an exp
   let failWrites = true;
   const b = bench({ rpcOverride: method => method === 'store/write' && failWrites ? { ok: false, error: { code: 'storage/failed', message: 'Disk write failed' } } : undefined });
   try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush();
+    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush(); await b.press('notes');
     assert.equal(b.document.querySelector('textarea').value, 'Initial notes');
     assert.match(b.document.querySelector('[role=dialog]').textContent, /Generated current work records/); assert.match(b.document.querySelector('[role=dialog]').textContent, /generatedReadonly/);
     assert.doesNotMatch(b.document.querySelector('textarea').value, /Generated|whale-project/);
@@ -203,8 +207,8 @@ test('notes save and reload, while failed writes keep editing and require an exp
     await b.press('close'); assert.ok(b.document.querySelector('[role=dialog][aria-label=unsaved]')); await b.press('keepEditing'); assert.equal(b.document.querySelector('textarea').value, 'Keep this edit');
     failWrites = false; await b.press('save'); assert.match(b.stored['notes.md'], /\nKeep this edit$/); assert.equal(b.stored['notes.md'].match(/Generated current work records/g).length, 1); assert.ok(b.document.querySelector('[role=status]'));
     assert.equal(b.requests.filter(request => request.method === 'store/write').at(-1).input.text, 'Keep this edit');
-    await b.press('close'); await b.press('materials'); await b.flush(); assert.equal(b.document.querySelector('textarea').value, 'Keep this edit');
-    await b.press('docs/report.md'); assert.equal(b.document.querySelector('textarea'), null); assert.match(b.document.querySelector('[role=dialog]').textContent, /Saved report/); await b.press('openFile');
+    await b.press('close'); await b.press('materials'); await b.flush(); await b.press('notes'); assert.equal(b.document.querySelector('textarea').value, 'Keep this edit');
+    await b.press('docs/report.md'); assert.equal(b.opened.at(-1).path, 'C:/workspace/real/docs/report.md');
     const opened = b.requests.filter(request => request.method === 'open').at(-1); assert.equal(opened.input.path, 'docs/report.md'); assert.equal(opened.input.workstreamId, undefined);
   } finally { await b.dispose(); }
 });
@@ -213,7 +217,7 @@ test('saving notes stays saved when the subsequent detail refresh fails', async 
   let rejectDetail = false;
   const b = bench({ rpcOverride: method => method === 'detail' && rejectDetail ? Promise.reject(new Error('Detail refresh failed')) : undefined });
   try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush();
+    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush(); await b.press('notes');
     await b.changeNotes('Actually saved'); rejectDetail = true; await b.press('save');
     assert.match(b.stored['notes.md'], /Actually saved/); assert.ok(b.document.querySelector('[role=status]'));
     await b.press('close'); assert.equal(b.document.querySelector('[role=dialog]'), null);
@@ -223,7 +227,7 @@ test('saving notes stays saved when the subsequent detail refresh fails', async 
 test('a history load with no added records preserves the current page', async () => {
   const b = bench({ detail: workDetail() });
   try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.press('process'); await b.flush();
+    await b.flush(); await b.adopt(); await b.mount(); await b.press('progress'); await b.press('process'); await b.flush();
     await b.press('previous'); b.session.loadOlder = async () => {};
     const before = b.document.querySelector('[role=dialog]').textContent;
     await b.press('older'); assert.equal(b.document.querySelector('[role=dialog]').textContent, before);
@@ -234,7 +238,7 @@ test('navigating to another Project preserves unsaved materials until explicit c
   const b = bench({ rpcOverride: (method, input, project) => method === 'detail' && input.projectId === 'project-two'
     ? { ok: true, value: { project: { ...project, id: 'project-two', coordinatorSessionId: 'coordinator-two' }, workers: [], workstreams: [] } } : undefined });
   try {
-    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush(); await b.changeNotes('Keep this draft');
+    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush(); await b.press('notes'); await b.changeNotes('Keep this draft');
     await act(async () => { await b.face().openProject('project-two'); });
     assert.equal(b.document.querySelector('textarea').value, 'Keep this draft');
     await b.press('close'); assert.ok(b.document.querySelector('[role=dialog][aria-label=unsaved]'));
@@ -249,10 +253,10 @@ test('partial lifecycle command receipts refresh real details and preserve worke
     if (method === 'restore') { project.lifecycle = 'ready'; return { ok: true, value: { project } }; }
   } });
   try {
-    await b.flush(); await b.mount(); await b.flush();
+    await b.flush(); await b.mount(); await b.flush(); await b.press('progress');
     for (const action of ['resume', 'archive', 'restore']) {
       const before = b.requests.filter(request => request.method === 'detail').length;
-      await b.press(action);
+      await act(async () => { await b.face().command('project-one', action); });
       assert.ok(b.requests.filter(request => request.method === 'detail').length > before);
       assert.match(b.document.body.textContent, /Actual worker summary/); assert.ok(b.button('process'));
     }
@@ -264,7 +268,7 @@ test('stop controls invoke the same Host stop command and incremental polling pr
   const b = bench({ detail, rpcOverride: (method, input, project) => method === 'list' ? { ok: true, value: { projects: [project], available: true } }
     : method === 'detail' && input.since ? { ok: true, value: { unchanged: true, revision: input.since } } : undefined });
   try {
-    await b.flush(); await b.mount(); await b.flush(); await b.press('stopWork'); await b.press('stop');
+    await b.flush(); await b.mount(); await b.flush(); await b.press('progress'); await b.press('stopWork'); await b.press('stop');
     const stops = b.requests.filter(request => request.method === 'stop'); assert.equal(stops.length, 2); assert.equal(stops[0].input.workstreamId, 'work-one'); assert.equal(stops[1].input.workstreamId, undefined); assert.ok(stops.every(request => request.input.projectId === 'project-one' && request.input.requestId));
     await b.poll(); assert.ok(b.requests.some(request => request.method === 'detail' && request.input.since === 'revision-1')); assert.match(b.document.body.textContent, /Actual worker summary/);
   } finally { await b.dispose(); }

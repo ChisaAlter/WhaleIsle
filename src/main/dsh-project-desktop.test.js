@@ -30,7 +30,7 @@ test('optional Project mount preserves user Team settings and data across disabl
   assert.equal(fs.realpathSync(path.join(profileDir, 'node_modules', 'dsh-project')), fs.realpathSync(first.runtimeDir));
   assert.equal(fs.existsSync(path.join(sourceDir, 'node_modules')), false);
   assert.equal((fs.readFileSync(first.overlayFile, 'utf8').match(/name: "dsh-project"/g) || []).length, 1);
-  assert.doesNotMatch(fs.readFileSync(first.overlayFile, 'utf8'), /agent-team|disabled: false/);
+  assert.doesNotMatch(fs.readFileSync(first.overlayFile, 'utf8'), /id: agent-team\r?\n|disabled: false/);
   const data = path.join(profileDir, 'projects', 'existing'); fs.mkdirSync(data, { recursive: true });
   fs.writeFileSync(path.join(data, 'notes.md'), 'user material');
   for (const option of [{ enabled: false }, { skipUserPlugins: true }]) {

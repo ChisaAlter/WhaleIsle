@@ -270,6 +270,7 @@ type SessionTreeProps = Pick<
   'useSessionStatus' | 'startSession' | 'connectNoDirectory' | 'open'
   | 'insertWorkspaceBefore' | 't' | 'usePanelInfo'
 > & PropsRenderSlots<
+  | 'sidebar.workspaces.sections'
   | 'sidebar.workspaces.session.menu.item'
   | 'sidebar.workspaces.session.row.action'
   | 'sidebar.session.row.leading'
@@ -718,6 +719,7 @@ function SessionTree({
           renderSlot={renderSlot}
           t={t}
         />
+        {renderSlot('sidebar.workspaces.sections', {})}
       </AnimatedRows>
       <span className={css.fade} />
     </div>
@@ -851,6 +853,7 @@ function FlatList({
           renderSlot={renderSlot}
           t={t}
         />
+        {renderSlot('sidebar.workspaces.sections', {})}
       </AnimatedRows>
       <span className={css.fade} />
     </div>
@@ -1000,6 +1003,7 @@ export function WorkspaceBrowser({
   closeAddWorkspace,
   setDirectoryBusy,
   dismissForkError,
+  registerDirectoryPicker,
   renderSlot,
   t,
 }: WorkspaceBrowserProps) {
@@ -1029,6 +1033,26 @@ export function WorkspaceBrowser({
   // Live occupancy of this surface's directory-flow hole (the same source the
   // flow reads): a composition without a picking affordance can add nothing.
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
+  const [externalPickerOpen, setExternalPickerOpen] = useState(false)
+  const externalPick = useRef<ReturnType<typeof Promise.withResolvers<string | null>> | undefined>(undefined)
+  useEffect(() => {
+    if (registerDirectoryPicker === undefined || !directoryFlowAvailable) return
+    const dispose = registerDirectoryPicker(() => {
+      if (externalPick.current !== undefined) return externalPick.current.promise
+      const pending = Promise.withResolvers<string | null>()
+      externalPick.current = pending
+      setExternalPickerOpen(true)
+      return pending.promise
+    })
+    return () => { dispose(); externalPick.current?.resolve(null); externalPick.current = undefined; setExternalPickerOpen(false) }
+  }, [registerDirectoryPicker, directoryFlowAvailable])
+  const finishExternalPick = (path: string | null, error?: string): void => {
+    const pending = externalPick.current
+    externalPick.current = undefined
+    setExternalPickerOpen(false)
+    if (error === undefined) pending?.resolve(path)
+    else pending?.reject(new Error(error))
+  }
   const groupBy = useStore(s => s.groupBy)
   const orderBy = useStore(s => s.orderBy)
   const showArchivedList = useStore(s => s.showArchivedList ?? true)
@@ -1484,6 +1508,10 @@ export function WorkspaceBrowser({
             </Tooltip>
           )}
         </div>
+        {externalPickerOpen && renderSlot('sidebar.workspaces.directoryFlow', {
+          open: true, busy: false, onPicked: path => finishExternalPick(path),
+          onCancel: () => finishExternalPick(null), onError: message => finishExternalPick(null, message),
+        })}
         {/* Add flow + its error dialog (same package — direct composition). */}
         <WorkspacePickFlow
           t={t}
@@ -1526,6 +1554,7 @@ export function WorkspaceBrowser({
       <div className={css.listArea}>
         {wide && (normalizedQuery !== ''
           ? (
+            <>
             <SearchResults
               usePanelInfo={usePanelInfo}
               useSessions={useSessions}
@@ -1542,6 +1571,8 @@ export function WorkspaceBrowser({
               resultLimit={searchResultLimit}
               t={t}
             />
+            {renderSlot('sidebar.workspaces.sections', { query: normalizedQuery })}
+            </>
           )
           : groupBy === 'flat'
             ? (

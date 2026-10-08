@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { getDesktopDshHome } = require('../shared/dsh-home');
-const { loadWorkspaceAuthority, createWorkspaceAuthority, isPathInside } = require('./workspace-authority');
+const { loadWorkspaceAuthority, createWorkspaceAuthority, isPathInside, filterRegisteredWorkspaceRoots } = require('./workspace-authority');
 const { run, runGit, safeRefName, gitFailureMessage, GH_TIMEOUT_MS } = require('./git-exec');
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,100}$/;
@@ -235,6 +235,14 @@ function createProjectEnvironment(options = {}) {
   }
   async function dispatch(payload = {}) {
     switch (payload.action) {
+      // Only the authenticated Project creation command uses this selection
+      // boundary. Later file/Git operations still require a persisted root.
+      case 'select-directory': {
+        if (typeof payload.workingDirectory !== 'string' || !path.isAbsolute(payload.workingDirectory)) throw new Error('请选择本机绝对目录');
+        const canonicalPath = fs.realpathSync.native(payload.workingDirectory);
+        if (!fs.statSync(canonicalPath).isDirectory() || !filterRegisteredWorkspaceRoots([canonicalPath]).length) throw new Error('此目录不能作为项目工作目录');
+        return { ok: true, canonicalPath, identity: identity(canonicalPath) };
+      }
       case 'canonicalize': return canonicalize(payload.workingDirectory);
       case 'repository': return repository(payload.workingDirectory);
       case 'prepare-workspace': {

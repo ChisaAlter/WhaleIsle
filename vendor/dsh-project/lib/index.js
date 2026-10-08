@@ -1,3 +1,4 @@
+import TeamService from '@deepseek-ai/dsh-experimental-agent-team';
 import { randomUUID } from 'node:crypto';
 import z from '@deepseek-ai/schemastery';
 import { projectDomain, initialState } from './domain.js';
@@ -17,6 +18,8 @@ export async function apply(ctx) {
     finally { try { await domain?.close(); } finally { await releaseWriter?.(); } }
   });
   try {
+    if (!ctx.get('agentTeams')) await ctx.plugin(TeamService);
+    const teams = ctx.get('agentTeams');
     const home = process.env.DSH_HOME || process.env.DSHD_HOME;
     if (!home) throw new Error('Project requires the active desktop profile DSH_HOME.');
     releaseWriter = await acquireWriter(home, randomUUID());
@@ -28,7 +31,7 @@ export async function apply(ctx) {
       const response = await fetch(new URL('/desktop/project', base), { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ action, ...payload }) });
       const result = await response.json(); if (!response.ok || result.ok === false) throw new Error(result.error || `Project desktop request failed (${response.status}).`); return result;
     };
-    service = new ProjectService(ctx, table, { home, desktop });
+    service = new ProjectService(ctx, table, { home, desktop, teams });
     // Dynamic role tool lookup works during recovery without an inject cycle.
     ctx.provide('projects', service);
     ctx.tools.guard(exec => {

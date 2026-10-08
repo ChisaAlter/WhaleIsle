@@ -106,6 +106,8 @@ async function ensureDesktopDshProject(options = {}) {
     '# Desktop-owned optional Project overlay.',
     '# The user cordis.patch.yml is never changed by this overlay.',
     '- insert:',
+    '    - id: ui-agent-team',
+    '      name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"',
     '    - id: dsh-project',
     '      name: "dsh-project"',
     '',

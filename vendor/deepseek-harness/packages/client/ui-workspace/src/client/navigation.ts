@@ -52,6 +52,8 @@ export interface UiWorkspace {
   readonly directoryActions: HostObservable<readonly WorkspaceDirectoryAction[]>
   /** Register one feature action; removal also updates the picker projection. */
   registerDirectoryAction(action: WorkspaceDirectoryAction): () => void
+  /** Bind the resident browser to the composed native or in-app directory flow. */
+  registerDirectoryPicker(picker: () => Promise<string | null>): () => void
   /**
    * Select a Session and show its Conversation as one UI navigation action.
    * @param target - known Session identity or durable direct-parent subagent address to display.
@@ -124,6 +126,8 @@ export interface UiWorkspace {
    * @returns the selected directory, or null when cancelled.
    */
   pickDirectory(): Promise<string | null>
+  /** Ask the resident workspace directory flow without registering a workspace. */
+  selectDirectory(): Promise<string | null>
   /**
    * List one Host directory level.
    * @param path - directory path; absent selects the Host home.
@@ -161,6 +165,7 @@ export class DirectoryBrowseError extends Error {
 class UiWorkspaceService extends Service implements UiWorkspace {
   private readonly directoryActionStore = createSnapshotStore<readonly WorkspaceDirectoryAction[]>([])
   readonly directoryActions: HostObservable<readonly WorkspaceDirectoryAction[]> = this.directoryActionStore
+  private composedPicker: (() => Promise<string | null>) | undefined
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
   /** In-flight no-directory inspection and create; callers share one Session. */
   private connectingNoDirectory: Promise<SessionId> | undefined
@@ -447,6 +452,16 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   async unpinSession(sessionId: SessionId): Promise<void> {
     await this.workspaces.unpinSession(sessionId)
+  }
+
+  registerDirectoryPicker(picker: () => Promise<string | null>): () => void {
+    this.composedPicker = picker
+    return () => { if (this.composedPicker === picker) this.composedPicker = undefined }
+  }
+
+  async selectDirectory(): Promise<string | null> {
+    if (this.composedPicker !== undefined) return this.composedPicker()
+    return this.pickDirectory()
   }
 
   async pickDirectory(): Promise<string | null> {

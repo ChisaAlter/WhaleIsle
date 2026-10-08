@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain';
 const id = z.string().min(1);
-const project = z.object({ id, title: id, workspaceId: id, canonicalWorkingDirectory: id, directoryIdentity: id,
+const project = z.object({ id, title: id, workspaceId: id.optional(), canonicalWorkingDirectory: id, directoryIdentity: id,
   coordinatorSessionId: id, storageRoot: id, lifecycle: z.enum(['creating', 'ready', 'archived']),
   paused: z.boolean(), holdSourceMessageId: z.string(), diagnostics: z.array(z.string()), creationRequestId: id, createdAt: z.number(), updatedAt: z.number() });
 const source = z.object({ sessionId: id, messageId: id, callId: id, text: z.string() });
@@ -11,7 +11,7 @@ const report = z.object({ delegationRef: id, outcome: z.enum(['completed', 'bloc
 const delegation = z.object({ ref: id, source, brief: id, scope: z.enum(['worker', 'readonly', 'docs']), writePaths: z.array(z.string()), phase: z.enum(['queued', 'preparing', 'accepted', 'failed', 'stopped']),
   messageId: z.string(), runId: z.string(), error: z.string(), createdAt: z.number(), report: report.optional() });
 const workstream = z.object({ id, projectId: id, title: id, brief: id, status: z.enum(['open', 'running', 'blocked', 'done']),
-  workerSessionId: id, blockedReason: z.string(), currentDelegationRef: id, delegations: z.array(delegation), latestReport: report.optional(),
+  workerSessionId: id, blockedBy: z.array(id).optional(), blockedReason: z.string(), currentDelegationRef: id, delegations: z.array(delegation), latestReport: report.optional(),
   settlements: z.array(z.object({ runId: id, delegationRefs: z.array(id), stopReason: id, summary: z.string(), at: z.number(),
     merged: z.boolean(), noticeMessageId: z.string(), summarizedBy: z.string() })),
   pendingSummary: z.boolean(), archived: z.boolean(), createdAt: z.number(), updatedAt: z.number() });

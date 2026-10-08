@@ -228,3 +228,7 @@ These limits define the search depth, the archive surface, and the picking carri
 None.
 
 </details>
+
+The `sidebar.workspaces.sections` root-scoped list slot adds categories after the grouped or flat workspace rows, inside the same scroll region. Project uses it for its directory-bound conversations; it does not add a sidebar navigation tab. Categories receive the search query and filter their own entries without adding them to ordinary Session results.
+
+`ctx.uiWorkspace.selectDirectory()` opens the resident sidebar directory flow for a feature without creating a Workspace. It resolves null on cancellation or owner removal. `pickDirectory()` remains the native Host operation, so a native flow can call it without re-entering the composed picker.

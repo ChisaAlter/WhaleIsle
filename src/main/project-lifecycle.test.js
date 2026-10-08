@@ -8,17 +8,19 @@ async function fixture() {
     { seq: 11, type: 'user/message', data: { id: 'human-B', source: { kind: 'user' }, content: [{ type: 'text', text: 'Stop the earlier work.' }] } },
     { seq: 12, type: 'tool/call', data: { callId: 'later-call', turn: 2 } },
   ];
-  const parent = { id: 'main', session: { snapshotEvents: () => events } };
+  const parent = { id: 'main', cancel() {}, session: { snapshotEvents: () => events } };
   let state = { revision: 0, projects: [{ id: 'p', coordinatorSessionId: 'main', lifecycle: 'ready', paused: false, holdSourceMessageId: '', canonicalWorkingDirectory: '/selected' }],
     workers: ['a', 'b'].map(id => ({ sessionId: id, projectId: 'p', workstreamId: `work-${id}`, cwd: '/selected', role: 'worker', mode: 'existing', phase: 'idle', directoryHeld: false, stopped: false })),
     workstreams: ['a', 'b'].map(id => ({ id: `work-${id}`, projectId: 'p', workerSessionId: id, status: 'open', currentDelegationRef: id, settlements: [],
       delegations: [{ ref: id, source: { messageId: 'human-A' }, scope: 'worker', writePaths: [], phase: 'accepted', runId: '' }] })) };
   const warnings = [], agents = new Map([['main', parent]]);
-  const ctx = { agents, get: () => undefined, logger: { warn: (...args) => warnings.push(args) }, subagents: {
+  const tasks = new Map(state.workstreams.map(work => [work.id, { id: work.id, revision: 1, status: 'in_progress' }]));
+  const ctx = { agentTeams: { registerPolicy: () => () => {}, cancelMessages: async () => {}, setCold: async () => {}, getTask: (_root, id) => tasks.get(id), updateTask: async (_root, request) => { const task = tasks.get(request.taskId); task.status = request.action === 'complete' ? 'completed' : 'pending'; task.revision++; return task; } }, agents, get: () => undefined, logger: { warn: (...args) => warnings.push(args) }, subagents: {
     registerContinuationPolicy: () => () => {}, drainContinuableChildren: async () => {},
   } };
   const table = { get: () => state, update: async (_key, change) => { state = change(state); } };
   const service = new ProjectService(ctx, table, { home: '', desktop: async () => ({}) });
+  service.recovering = false;
   service.notes = async () => {};
   service.schedule = () => {};
   return { service, parent, agents, warnings, state: () => state };
@@ -67,7 +69,30 @@ test('unwritable generated notes do not prevent cancellation and native draining
   service.ctx.subagents.drainContinuableChildren = async () => { drained++; };
   service.notes = async () => { throw new Error('Disk write failed'); };
   await service.sessionStop('main'); await Promise.all([...service.stops.values()]);
-  assert.equal(cancelled, 1); assert.equal(drained, 2);
+  assert.equal(cancelled, 2); assert.equal(drained, 2);
   assert.equal(state().projects[0].paused, true); assert.equal(state().workers[0].directoryHeld, false);
   assert.ok(warnings.some(args => args.includes('Disk write failed')));
+});
+
+
+test('a failed stop write still cancels the Lead and denies delegation from that user message', async () => {
+  const { service, parent, state } = await fixture();
+  let cancelled = false;
+  parent.cancel = () => { cancelled = true; };
+  service.table.update = async () => { throw new Error('Catalog is unwritable'); };
+  await assert.rejects(service.stop('p'), /Catalog is unwritable/);
+  assert.equal(cancelled, true);
+  await assert.rejects(service.delegate({ role: 'coordinator', agent: parent, project: state().projects[0] }, { scope: 'readonly', brief: 'Late work' }, { callId: 'later-call', signal: new AbortController().signal }), { code: 'stopped' });
+  await Promise.allSettled([...service.stops.values()]);
+});
+
+test('the last owned Job completes its native Team task after the model has settled', async () => {
+  const { service, parent, state } = await fixture();
+  const work = state().workstreams[0], receipt = work.delegations[0];
+  receipt.report = { outcome: 'completed' }; receipt.runId = 'run-a';
+  work.settlements = [{ runId: 'run-a', delegationRefs: ['a'], stopReason: 'completed' }];
+  state().workers[0].directoryHeld = true;
+  await service.jobChanged({ type: 'settled', job: { owner: 'a' } });
+  assert.equal(service.teams.getTask(parent, work.id).status, 'completed');
+  assert.equal(state().workers[0].directoryHeld, false);
 });

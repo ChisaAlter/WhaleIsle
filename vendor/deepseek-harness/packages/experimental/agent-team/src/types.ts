@@ -2,6 +2,7 @@
 
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
+import type { MessageId } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /** Identifies the implicit team rooted at one top-level Session. */
@@ -164,6 +165,9 @@ export interface Config {
 
 /** Input for creating one durable teammate. */
 export interface SpawnTeammateRequest {
+  /** Trusted host continuation identity and environment; not model arguments. */
+  readonly childId?: SessionId
+  readonly environment?: { readonly cwd: string; readonly agentPreset: string; readonly admissionPolicy: string }
   readonly name: string
   readonly description: string
   readonly prompt: ContentBlock[]
@@ -175,10 +179,13 @@ export interface SpawnTeammateRequest {
 /** Result after one teammate reaches a durable active or failed edge. */
 export interface SpawnTeammateResult {
   readonly member: TeamMemberView
+  readonly messageId?: MessageId
 }
 
 /** Input for one durable peer message. */
 export interface SendTeamMessageRequest {
+  /** Stable host operation identity, reused only for exactly the same content. */
+  readonly messageId?: TeamMessageId
   readonly target: string
   readonly content: ContentBlock[]
   readonly signal: AbortSignal
@@ -192,6 +199,8 @@ export interface SendTeamMessageResult {
 
 /** Input for creating one shared task. */
 export interface CreateTeamTaskRequest {
+  /** Host-reserved durable task identity. */
+  readonly taskId?: TeamTaskId
   readonly subject: string
   readonly description: string
   readonly blockedBy?: readonly TeamTaskId[]

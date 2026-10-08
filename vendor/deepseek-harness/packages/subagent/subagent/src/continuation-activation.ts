@@ -887,7 +887,7 @@ export class ContinuableActivationRegistry {
         parent.inject(message)
         return
       }
-      if (activation.admissionPolicy !== undefined) return this.notifyManagedSettlement(activation.admissionPolicy, activation, parent, message)
+      if (activation.admissionPolicy !== undefined) return this.notifyManagedSettlement(activation.admissionPolicy, activation, parent, message, terminal)
       this.sendWaking(parent, message, parent.status === 'idle' ? 'queue' : 'steer')
     } catch (error: unknown) {
       this.ctx.logger.warn(
@@ -898,10 +898,10 @@ export class ContinuableActivationRegistry {
   }
 
   /** Park a denied notice in memory without waking; the owning policy persists its outcome. */
-  private async notifyManagedSettlement(policy: string, activation: Activation, parent: Agent, message: UserMessage): Promise<void> {
+  private async notifyManagedSettlement(policy: string, activation: Activation, parent: Agent, message: UserMessage, terminal: ActivationTerminal): Promise<void> {
     let admitted = false
     try {
-      await this.admitContinuation(policy, { parent, childId: activation.childId, reason: 'settlement' })
+      await this.admitContinuation(policy, { parent, childId: activation.childId, reason: 'settlement', settlement: { runId: activation.observer.runId, ...terminal } })
       admitted = true
     } catch {
       // Paused, stopped, stale, or unavailable owners must not wake their coordinator.

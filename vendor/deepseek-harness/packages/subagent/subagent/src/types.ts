@@ -65,6 +65,8 @@ export interface ContinuationAdmission {
   readonly childId: SessionId
   /** Settlement admission controls waking; the owner persists its own outcome. */
   readonly reason: 'start' | 'message' | 'settlement'
+  /** Captured after teardown, before the single parent notice. Never wait for subagent/end here. */
+  readonly settlement?: { readonly runId: SubagentRunId; readonly stopReason: SubagentResult['stopReason']; readonly output?: readonly ContentBlock[] }
 }
 
 /** Identities returned once a continuable child accepted its initial prompt. */
