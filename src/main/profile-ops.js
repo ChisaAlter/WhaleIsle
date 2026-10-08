@@ -18,6 +18,7 @@ const {
 } = require('./plugins');
 const { DSH_IM_ALIASES } = require('./dsh-im-desktop');
 const { DSHBOT_ALIASES } = require('./dshbot-desktop');
+const { DSH_PROJECT_ALIASES } = require('./dsh-project-desktop');
 const { DSH_MARKET_ALIASES } = require('./dsh-market-desktop');
 const { DSH_WHALE_ALIASES } = require('./dsh-whale-desktop');
 const { DSH_REMOTE_ALIASES } = require('./dsh-remote-desktop');
@@ -249,7 +250,9 @@ async function enablePlugin(name, { dsh, startHarness, configIO } = {}) {
   }
   const io = configIO || { load: loadConfig, save: saveConfig };
   const disabled = (io.load().disabledPlugins || []).filter((item) => item !== raw);
-  const enabled = setBundleEnabled(raw, true);
+  const enabled = DSH_PROJECT_ALIASES.includes(raw)
+    ? { ok: true, changed: false }
+    : setBundleEnabled(raw, true);
   applyDisabledBundles(disabled);
   io.save({ disabledPlugins: disabled });
   if (enabled.ok === false) {

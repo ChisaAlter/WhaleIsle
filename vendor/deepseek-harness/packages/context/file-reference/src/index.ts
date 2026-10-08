@@ -33,12 +33,14 @@ export abstract class FileReferenceService extends Service {
    * @param agent - target agent whose session cwd bounds discovery.
    * @param query - path text following `@` or `@"`.
    * @param signal - caller cancellation.
+   * @param workingDirectory - optional Host-selected user navigation root; never changes the Agent cwd.
    * @returns deterministic path-only candidates.
    */
   abstract list(
     agent: Agent,
     query: string,
     signal: AbortSignal,
+    workingDirectory?: string,
   ): Promise<FileReferenceCandidate[]>
 }
 

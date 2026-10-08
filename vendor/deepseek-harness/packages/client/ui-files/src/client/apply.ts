@@ -1,6 +1,7 @@
 /** Registers the Desktop file tree and editor in the native right Sidebar. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { en, NS, zh, type FilesKey } from './locales.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -89,7 +90,7 @@ export function apply(ctx: Context): void {
   }, FileClosePrompt))
 
   const cwdOf = (sessionId: string): string | undefined => {
-    const cwd = ctx.sessions.list.getSnapshot().byId[sessionId as SessionId]?.cwd
+    const cwd = sessionWorkingDirectory(ctx.sessions.list.getSnapshot().byId[sessionId as SessionId])
     return typeof cwd === 'string' && cwd !== '' ? cwd : undefined
   }
 

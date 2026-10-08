@@ -7,7 +7,7 @@
  * the recoverable browser-local drafts keyed by stable resource address.
  */
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
-import { parseFileAddress, type FileAddress } from '@deepseek-ai/dsh-util-workspace-path'
+import { isAbsoluteWorkspacePath, parseFileAddress, type FileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from './locales.ts'
 
@@ -66,6 +66,9 @@ export function canOpenDesktopFile(
 ): boolean {
   const parsed = parseDesktopFileAddress(address)
   if (parsed === undefined) return false
+  // External deliverables retain an absolute path. Use the Host read-only
+  // preview instead of rebasing them onto this session's editable workspace.
+  if (isAbsoluteWorkspacePath(parsed.path)) return false
   if (isOfficePreviewPath(parsed.path)) return false
   const cwd = cwdOf(parsed.sessionId)
   return cwd !== undefined && cwd !== ''

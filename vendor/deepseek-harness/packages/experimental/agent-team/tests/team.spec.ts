@@ -1794,3 +1794,16 @@ describe('Team mailbox and waiting', () => {
     })
   })
 })
+
+it('a managed failed member can retry its original identity at full capacity', async () => {
+  const { ctx, lead } = await setup([textResponse('retry completed')], { maxMembers: 1 })
+  ctx.agentTeams.registerPolicy('managed-test', { async admit() {} })
+  await ctx.agentTeams.bindPolicy(lead, 'managed-test')
+  const request = { childId: SessionId('original-worker'), name: 'original-worker', description: 'work', provider: 'spawn', context: 'fresh' as const, prompt: content('work'), signal: SIGNAL }
+  vi.spyOn(ctx.subagents, 'startContinuable').mockRejectedValueOnce(new Error('creation interrupted'))
+  await expect(ctx.agentTeams.spawnTeammate(lead, request)).rejects.toThrow('creation interrupted')
+  const retried = await ctx.agentTeams.spawnTeammate(lead, request)
+  expect(retried.member.id).toBe(request.childId)
+  expect(durable(lead).members).toHaveLength(1)
+  await waitNoAgent(ctx, request.childId)
+})

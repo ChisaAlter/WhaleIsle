@@ -210,6 +210,8 @@ interface ContinuableStart {
  * transcript that merged them would credit the child with words it never wrote.
  */
 interface SubagentSettledMessageSource {
+  /** Activation identity; absent only in historical notices. */
+  readonly runId?: SubagentRunId
   readonly kind: 'subagent-settled'
   /** A runtime account shown without expanding the row (`notice` context form). */
   readonly form: 'notice'

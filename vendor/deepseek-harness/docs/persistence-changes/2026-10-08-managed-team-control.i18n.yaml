@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-08-managed-team-control.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-10-08-managed-team-control.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-10-08-managed-team-control:
+  en: 6b7050857648789a
+  zh: e7cf02f3fec1749c
+/2026-10-08-managed-team-control/summary:
+  en: d5ca43f0cc540094
+  zh: 6744f04cc6629eb2
+/2026-10-08-managed-team-control/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-10-08-managed-team-control/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-10-08-managed-team-control/compatibility:
+  en: f1dc1c1e35e967e1
+  zh: 769f0e065930e796
+/2026-10-08-managed-team-control/verification:
+  en: 5c2b71d84efb6d10
+  zh: f6b9c9b121650526
+/2026-10-08-managed-team-control/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

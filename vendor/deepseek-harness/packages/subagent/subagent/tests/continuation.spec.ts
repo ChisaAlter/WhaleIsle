@@ -2997,6 +2997,35 @@ describe('continuable settlement delivery', () => {
     expect(turnStarts).toEqual([1])
   })
 
+  it('checks managed settlement admission before waking its parent', async () => {
+    const { ctx, parent, adapter } = await setup([textResponse('the answer'), textResponse('parent ack')])
+    const reasons: string[] = []
+    ctx.subagents.registerContinuationPolicy('managed-test', async ({ reason }) => { reasons.push(reason) })
+    const started = await ctx.subagents.startContinuable({ ...startSpec(parent), environment: { admissionPolicy: 'managed-test' } })
+    await vi.waitFor(() => { expect(settlementNotices(parent)).toHaveLength(1) })
+    await waitNoActivation(ctx, started.childId)
+    expect(reasons).toContain('settlement')
+    expect(adapter.requests.filter(request => request.sessionId === parent.id)).toHaveLength(1)
+  })
+
+  it('parks a denied managed settlement in resident parent input without a model wake', async () => {
+    const { ctx, parent, adapter } = await setup([textResponse('the answer')], { persistence: true })
+    let settlementChecked = false
+    ctx.subagents.registerContinuationPolicy('managed-test', async ({ reason }) => {
+      if (reason === 'settlement') { settlementChecked = true; throw new Error('project paused') }
+    })
+    const started = await ctx.subagents.startContinuable({ ...startSpec(parent), environment: { admissionPolicy: 'managed-test' } })
+    await vi.waitFor(() => { expect(parent.inbox.nextStep.some(message => message.source.kind === 'subagent-settled')).toBe(true) })
+    await waitNoActivation(ctx, started.childId)
+    expect(settlementChecked).toBe(true)
+    expect(parent.status).toBe('idle')
+    expect(adapter.requests.filter(request => request.sessionId === parent.id)).toHaveLength(0)
+    await ctx.sessions.flush(parent.session)
+    const saved = await loadStoredSession(ctx.sessionPersistence, parent.id)
+    expect(saved.events.some(event => event.type === 'agent/inbox/spliced'
+      && event.data.inserted.some(message => message.source.kind === 'subagent-settled'))).toBe(true)
+  })
+
   it('batches simultaneous notices into one step of a busy parent', async () => {
     const releaseChildren = Promise.withResolvers<undefined>()
     const releaseParent = Promise.withResolvers<undefined>()

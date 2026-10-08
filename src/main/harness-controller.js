@@ -61,6 +61,8 @@ class HarnessController extends EventEmitter {
       || (async () => ({ ok: true, added: false }));
     this.ensureDshbotPlugin = options.ensureDshbotPlugin
       || (async () => ({ ok: true, added: false }));
+    this.ensureDshProjectPlugin = options.ensureDshProjectPlugin
+      || (async () => ({ ok: true, added: false }));
     this.ensureDshWhalePlugin = options.ensureDshWhalePlugin
       || (async () => ({ ok: true, added: false }));
     this.ensureDshRemotePlugin = options.ensureDshRemotePlugin
@@ -796,6 +798,24 @@ class HarnessController extends EventEmitter {
       }
       throw new Error(`桌面内置 dshbot 失败：${errorMessage(error)}`);
     }
+    // Project shares the actual Harness peer instances. A fresh packaged
+    // runtime must be extracted before those instances can be linked.
+    const prepareProjectPlugin = async ({ harnessRoot } = {}) => {
+      try {
+        const project = await this.ensureDshProjectPlugin({ skipUserPlugins,
+          enabled: !(startConfig.disabledPlugins || []).includes('dsh-project'),
+          ...(harnessRoot ? { harnessRoot } : {}) });
+        checkCurrent();
+        if (project?.ok === false) this.dsh.log(`Project 不可用：${project.error || 'missing runtime'}`, 'app');
+        if (project?.ok && !project.disabled) this.dsh.log('桌面 Project 已就绪', 'app');
+        return project?.ok !== false ? project : null;
+      } catch (error) {
+        checkCurrent();
+        if (isCancellation(error)) throw error;
+        this.dsh.log(`Project 不可用：${errorMessage(error)}`, 'app');
+        return null;
+      }
+    };
     // dsh-whale is the desktop built-in whale-girl assistant — same contract
     // as dshbot: overlay on every start only while `whaleAssistantEnabled`
     // (default off, toggled from the pet settings page) is true; the disable
@@ -869,6 +889,7 @@ class HarnessController extends EventEmitter {
       configSnapshot: startConfig,
       skipUserPlugins,
       patchFiles,
+      prepareProjectPlugin,
     };
     checkCurrent();
     const url = await this.dsh.start(startOptions);

@@ -52,6 +52,21 @@ const LAYOUT_MARKERS = ['surfaces', 'shell.titlebar.trailing', 'shell.terminalDr
 // cannot see these: sync:harness keeps them only via git merge, so a conflict
 // resolved towards upstream would drop them without failing any other assert.
 const FORK_FILE_MARKERS = [
+  // Local Project continuations use explicit cwd/preset and admission policy.
+  // Ordinary Team and Session ownership are not changed by this feature.
+  { file: 'apps/cli/src/profile-boot.ts', includes: ['export async function disposeProfileApplication', 'for (const release of [() => projects?.dispose?.(), () => ctx?.fiber.dispose()])', 'disposeProfileApplication(app.current)', 'installFailLoud(NAME, process, dispose)'] },
+  { file: 'packages/subagent/subagent/src/types.ts', includes: ['interface ContinuableEnvironment', 'readonly cwd?: string', 'readonly agentPreset?: string', 'readonly admissionPolicy?: string'] },
+  { file: 'packages/subagent/subagent/src/child-agent.ts', includes: ['environment?.cwd ?? parentHeader.cwd', 'environment?.agentPreset ?? agentPreset', 'await presets.mount(childCtx, composition.agentPreset)'] },
+  { file: 'packages/subagent/subagent/src/descriptor.ts', includes: ['agentPreset', 'admissionPolicy'] },
+  { file: 'packages/subagent/subagent/src/continuation.ts', includes: ['admitContinuation', "reason: 'start'", "reason: 'message'", 'agentPreset: descriptor.agentPreset'] },
+  { file: 'packages/subagent/subagent/src/continuation-activation.ts', includes: ['notifyManagedSettlement', "reason: 'settlement'", 'activation.observer.runId'] },
+  { file: 'packages/subagent/subagent/src/continuation-messages.ts', includes: ['readonly runId?: SubagentRunId'] },
+  { file: 'packages/subagent/subagent/src/lifecycle.ts', includes: ['readonly runId: SubagentRunId'] },
+  { file: 'packages/subagent/subagent/src/index.ts', includes: ['registerContinuationPolicy'] },
+  { file: 'packages/subagent/subagent-in-process-driver/src/index.ts', includes: ['const setup = async', 'await applyChildComposition'] },
+  { file: 'packages/api/session-controller/src/commands.ts', includes: ["await this.ctx.serial('session/before-cancel'", 'async cancel(request:', '&& !pluginPresentation'] },
+  { file: 'packages/api/session-controller/src/index.ts', includes: ["'session/before-cancel'", 'cancel(request: SessionCancelRequest): Promise<SessionCancelValue>'] },
+  { file: 'packages/client/ui-sidebar/src/client/index.ts', includes: ['selectTab'] },
   // WhaleBridge thresholds travel with each model and are consumed by
   // compaction; keeping only the configuration field would silently lose it.
   { file: 'packages/llm/llm-pi-ai/src/catalog.ts', includes: ['compactionThreshold?: number'] },
@@ -134,7 +149,7 @@ const FORK_FILE_MARKERS = [
   // The no-directory pick may be made while the Workspace list still shows its
   // loading status: connectScratchCwd waits for the baseline instead of
   // rejecting, so the chip does not silently fall back.
-  { file: 'packages/client/ui-workspace/src/client/navigation.ts', includes: ['connectNoDirectory', 'connectScratchCwd', 'deleteWorkspace', 'scratchCwd'] },
+  { file: 'packages/client/ui-workspace/src/client/navigation.ts', includes: ['connectNoDirectory', 'connectScratchCwd', 'deleteWorkspace', 'scratchCwd', 'registerDirectoryAction'] },
   { file: 'packages/client/ui-workspace/src/client/tree.ts', includes: ['isNoDirectorySession', 'currentGroupKey'] },
   { file: 'packages/client/ui-workspace/src/client/WorkspacePicker.tsx', includes: ['NO_DIRECTORY', 'onPickNoDirectory'] },
   { file: 'packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx', includes: ['TasksSectionHeader', 'connectNoDirectory', 'GroupSessionRun'] },

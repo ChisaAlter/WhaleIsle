@@ -582,3 +582,14 @@ describe('Agent Teams projection events', () => {
     })
   })
 })
+
+// A failed member keeps its identity; only an explicit host retry admits a new provisioning attempt.
+it('replays a managed member retry without permitting ordinary failed-to-active transitions', () => {
+  const original = event('team/member', { version: 2, teamId: TEAM, member: member() }, SessionSeq(1))
+  const failure = event('team/member', { version: 2, teamId: TEAM, member: member({ phase: 'failed', error: 'creation interrupted' }) }, SessionSeq(2))
+  const active = event('team/member', { version: 2, teamId: TEAM, member: member({ phase: 'active' }) }, SessionSeq(4))
+  expect(project(ROOT, [original, failure, active]).failure).toContain('invalid failed -> active')
+  const retry = event('team/control', { version: 1, teamId: TEAM, control: { kind: 'retry-member', memberId: CHILD } }, SessionSeq(3))
+  const state = projectTeam(ROOT, [original, failure, retry, active])
+  expect(state.members).toEqual([member({ phase: 'active' })])
+})

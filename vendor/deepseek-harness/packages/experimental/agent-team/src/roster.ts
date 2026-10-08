@@ -21,6 +21,7 @@ import type {
   TeamMemberSnapshot,
   TeamMemberView,
 } from './types.ts'
+import type { TeamManagement } from './management.ts'
 import { requiredText } from './validation.ts'
 
 const MEMBER_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u
@@ -44,11 +45,12 @@ export function resolveActiveMember(
   root: Agent,
   state: TeamState,
   rawName: string,
+  provisioning = false,
 ): { id: SessionId; name: string } {
   const name = rawName.trim()
   if (name === 'lead') return { id: root.id, name }
   const member = state.members.find(candidate => candidate.name === name)
-  if (member === undefined || member.phase !== 'active') {
+  if (member === undefined || member.phase !== 'active' && !(provisioning && member.phase === 'provisioning')) {
     throw new TeamError(`active teammate "${name}" not found`, 'TEAM_MEMBER_NOT_FOUND')
   }
   return { id: member.id, name }
@@ -69,6 +71,7 @@ export class TeamRoster {
     private readonly journal: TeamJournal,
     private readonly lifecycle: TeamRuntimeLifecycle,
     private readonly maxMembers: number,
+    private readonly management: TeamManagement,
   ) {}
 
   /**
@@ -256,7 +259,7 @@ export class TeamRoster {
     const root = membership.root
     const name = this.memberName(request.name)
     const description = requiredText(request.description, 'description', 200)
-    const childId = brandString<SessionId>(randomUUID())
+    const childId = request.childId ?? brandString<SessionId>(randomUUID())
     const member: TeamMemberSnapshot = {
       id: childId,
       name,
@@ -268,20 +271,25 @@ export class TeamRoster {
 
     await this.journal.transact(root.id, async () => {
       const state = this.journal.state(root)
-      if (state.members.some(member => member.name === name)) {
+      const prior = state.members.find(member => member.name === name || member.id === childId)
+      const retry = this.management.state(root).policy !== undefined && request.childId !== undefined && prior?.id === childId && prior.name === name && prior.provider === member.provider && prior.context === member.context && prior.phase === 'failed'
+      if (prior !== undefined && !retry) {
         throw new TeamError(`teammate name "${name}" was already used in this Team`, 'TEAM_MEMBER_NAME_TAKEN')
       }
-      if (state.members.length >= this.maxMembers) {
+      if (!retry && state.members.filter(member => !this.management.state(root).coldMembers.has(member.id)).length >= this.maxMembers) {
         throw new TeamError(`Team member limit ${this.maxMembers} reached`, 'TEAM_MEMBER_LIMIT')
       }
-      await this.journal.appendAndFlush(root, 'team/member', { version: 2, teamId: TeamId(root.id), member })
+      if (retry) await this.journal.appendAndFlush(root, 'team/control', { version: 1, teamId: TeamId(root.id), control: { kind: 'retry-member', memberId: childId } })
+      else await this.journal.appendAndFlush(root, 'team/member', { version: 2, teamId: TeamId(root.id), member })
     })
 
     let started: ContinuableStart
     try {
+      await this.management.admit(root, 'startMember', { caller, request })
       started = await this.ctx.subagents.startContinuable({
         childId,
         provider: request.provider,
+        ...request.environment === undefined ? {} : { environment: request.environment },
         label: description,
         request: {
           prompt: request.prompt,
@@ -333,7 +341,35 @@ export class TeamRoster {
       }
       throw conflict
     }
-    return { member: this.memberView(active) }
+    return { member: this.memberView(active), messageId: started.messageId }
+  }
+
+  /** Import an existing continuation without sending a prompt or replacing its identity. */
+  async adopt(root: Agent, request: SpawnTeammateRequest): Promise<void> {
+    if (request.childId === undefined || request.environment === undefined) throw new TeamError('Adoption requires the original environment', 'TEAM_ADOPTION_INVALID')
+    await this.management.admit(root, 'adopt', { caller: root, request })
+    const stored = await readPersistedSession(this.ctx.sessionPersistence, request.childId, request.signal)
+    const descriptor = foldSubagentDescriptor(stored.events.slice(stored.inheritedEventCount))
+    if (stored.header.parentSession !== root.id || stored.header.cwd !== request.environment.cwd
+      || stored.header.agentPreset !== request.environment.agentPreset || descriptor?.mode !== 'continuable'
+      || descriptor.provider !== request.provider || descriptor.admissionPolicy !== request.environment.admissionPolicy) {
+      throw new TeamError('Original continuation does not match the managed member', 'TEAM_ADOPTION_INVALID')
+    }
+    await this.journal.transact(root.id, async () => {
+      const state = this.journal.state(root)
+      const prior = state.members.find(member => member.id === request.childId)
+      if (prior !== undefined) {
+        if (prior.name !== request.name || prior.provider !== request.provider) throw new TeamError('Member identity conflicts', 'TEAM_ADOPTION_INVALID')
+        if (prior.phase === 'active') return
+        if (prior.phase === 'failed') await this.journal.appendAndFlush(root, 'team/control', { version: 1, teamId: TeamId(root.id), control: { kind: 'retry-member', memberId: prior.id } })
+        const { error: _error, ...member } = prior
+        await this.journal.appendAndFlush(root, 'team/member', { version: 2, teamId: TeamId(root.id), member: { ...member, phase: 'active' } })
+        return
+      }
+      const member: TeamMemberSnapshot = { id: request.childId!, name: this.memberName(request.name), description: request.description, provider: request.provider, context: request.context, phase: 'provisioning' }
+      await this.journal.appendAndFlush(root, 'team/member', { version: 2, teamId: TeamId(root.id), member })
+      await this.journal.appendAndFlush(root, 'team/member', { version: 2, teamId: TeamId(root.id), member: { ...member, phase: 'active' } })
+    })
   }
 
   /** Flush the accepted initial inbox item before the Lead can commit `active`. */

@@ -53,6 +53,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { WorkspaceShortcutState } from '../shortcuts.ts'
 import type { createWorkspaceViewStore } from '../stores.ts'
+import type { WorkspaceDirectoryAction } from '../navigation.ts'
 
 /**
  * Owner share of the directory-flow holes: the complete conversation between
@@ -113,6 +114,8 @@ export interface SessionRowScheduleOwnerProps {
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
+    /** Additional categories after the workspace rows, sharing their scroll region. */
+    'sidebar.workspaces.sections': { kind: 'list'; scope: 'root'; owner: { query?: string } }
     /** Directory-flow hole under the conversation empty-state picker (declared by the WorkspacePicker entry). */
     'conversation.hero.workspace.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
     /** Directory-flow hole under the sidebar browsing region (declared by the WorkspaceBrowser entry). */
@@ -213,6 +216,8 @@ export type DirectoryPickingHooks = PropsHooks<DirectoryPickingInjected['hooks']
  * browsing region drives.
  */
 export type WorkspaceBrowserInjected = {
+  /** The resident sidebar owns the directory-flow surface used by external feature actions. */
+  registerDirectoryPicker?: (picker: () => Promise<string | null>) => () => void
   hooks: DirectoryPickingInjected['hooks'] & {
     /**
      * Fixed Host facts, reached through a hook rather than injected as values:
@@ -465,6 +470,7 @@ export type RowToastProps =
 export type WorkspaceBrowserProps =
   PropsRuntime<'sidebar.workspaces'>
   & PropsRenderSlots<
+    | 'sidebar.workspaces.sections'
     | 'sidebar.workspaces.directoryFlow'
     | 'sidebar.workspaces.session.menu.item'
     | 'sidebar.workspaces.session.row.action'
@@ -482,6 +488,10 @@ export type WorkspaceBrowserProps =
  * supplies the implicit index signature required by the registry.
  */
 export type WorkspacePickerInjected = DirectoryPickingInjected & {
+  hooks: DirectoryPickingInjected['hooks'] & {
+    /** Composed directory actions, only offered in the New Session picker. */
+    directoryActions: HostObservable<readonly WorkspaceDirectoryAction[]>
+  }
   /** Adopt a picked host directory as a real Workspace before targeting a Session. */
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
 }

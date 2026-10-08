@@ -27,6 +27,13 @@ test('extractSuspectNames reads bundle, package, and compose failures', () => {
   ]);
 });
 
+test('optional shipped Project remains disableable and is not desktop runtime damage', () => {
+  const report = inspectPlugins({ plugins: [], disabledPlugins: ['dsh-project'], logs: "Cannot find package 'dsh-project'" });
+  const project = report.plugins.find(row => row.name === 'dsh-project');
+  assert.equal(project.disabled, true); assert.equal(project.preset, true); assert.equal(project.orphan, false);
+  assert.equal(isInBoxPackageName('dsh-project'), false); assert.equal(report.desktopRuntimeDamage, false);
+});
+
 test('generic crashes are not blamed on a plugin', () => {
   assert.equal(classifyGenericFailure('FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory'), 'oom');
   assert.equal(classifyGenericFailure('listen EADDRINUSE: address already in use 127.0.0.1:3080'), 'port-in-use');

@@ -1,6 +1,7 @@
 /** One floating-preview request target resolved from a file resource address. */
 import { parseFileAddress, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /** Desktop preload surface used by the floating preview action. */
@@ -50,7 +51,7 @@ export function floatingPreviewTarget(
     return { ok: true, request: { absolutePath: address.path } }
   }
 
-  const cwd = sessions.byId[address.sessionId as SessionId]?.cwd
+  const cwd = sessionWorkingDirectory(sessions.byId[address.sessionId as SessionId])
   if (cwd !== undefined && cwd !== '') {
     const absolute = resolveWorkspacePath(cwd, address.path)
     const normalizedCwd = cwd.replace(/\\/g, '/').replace(/\/+$/, '')

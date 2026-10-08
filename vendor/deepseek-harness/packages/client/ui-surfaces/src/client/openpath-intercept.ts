@@ -6,6 +6,8 @@ export interface OpenPathOptions {
   presentation?: 'mini'
   /** Originating session; absent callers use the retained main-view session. */
   sessionId?: string
+  /** Explicit root for an authorized Project deliverable outside the session cwd. */
+  workingDirectory?: string
 }
 
 /** Minimal workspaces face the interceptor replaces. */
@@ -70,10 +72,11 @@ export function wrapOpenPath(workspaces: Partial<OpenPathService>, deps: OpenPat
     if (!deps.takeoverEnabled()) return previous.call(workspaces, path)
     const sessionId = options?.sessionId ?? deps.currentSessionId()
     if (sessionId === undefined) return previous.call(workspaces, path)
-    const takeoverOptions = options?.line === undefined && options?.presentation === undefined
+    const takeoverOptions = options?.line === undefined && options?.presentation === undefined && options?.workingDirectory === undefined
       ? undefined
       : { ...(options?.line === undefined ? {} : { line: options.line }),
-        ...(options?.presentation === undefined ? {} : { presentation: options.presentation }) }
+        ...(options?.presentation === undefined ? {} : { presentation: options.presentation }),
+        ...(options?.workingDirectory === undefined ? {} : { workingDirectory: options.workingDirectory }) }
     const accepted = takeoverOptions === undefined
       ? await deps.openInSurfaces(path, sessionId)
       : await deps.openInSurfaces(path, sessionId, takeoverOptions)

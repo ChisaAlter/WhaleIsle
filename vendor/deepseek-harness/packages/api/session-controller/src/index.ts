@@ -80,6 +80,10 @@ export { SessionFileReferences } from './file-references.ts'
 export { SessionSkillCatalog } from './skill-catalog.ts'
 
 declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** Stop plugin-owned background work before cancelling its public Agent. @mode serial */
+    'session/before-cancel'(payload: { agent: Agent; request: SessionCancelRequest }): Promise<void> | void
+  }
   interface Context {
     /** Host Session business API and Remote namespace owner. */
     sessionController: SessionController
@@ -537,7 +541,7 @@ export class SessionController extends TypertRemoteService {
    * @returns acknowledgement that cancellation was requested.
    */
   @Remote('cancel')
-  cancel(request: SessionCancelRequest): SessionCancelValue {
+  cancel(request: SessionCancelRequest): Promise<SessionCancelValue> {
     return this.commands.cancel(request)
   }
 

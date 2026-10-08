@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { describe, expect, it } from 'vitest'
-import { ClientSessions } from '../src/client/sessions/service.ts'
+import { ClientSessions, sessionWorkingDirectory } from '../src/client/sessions/service.ts'
 import { FakeApiClient, fakeRemote, ok } from './fake-api.client.ts'
 
 const sid = (id: string): SessionId => id as SessionId
@@ -10,7 +10,7 @@ describe('client SessionSummary presentation projection', () => {
   it('maps session-list presentation to presentation, title, and displayTitle', async () => {
     const api = new FakeApiClient()
     const sessionId = sid('client-presentation')
-    const presentation = { owner: 'plugin', title: 'Presented title', composer: 'managed' as const }
+    const presentation = { owner: 'project', title: 'Presented title', workingDirectory: '/user/project' }
     api.onList = () => Promise.resolve(ok({
       items: [{
         sessionId,
@@ -37,6 +37,10 @@ describe('client SessionSummary presentation projection', () => {
       presentation,
       title: 'Presented title',
       displayTitle: 'Presented title',
+      cwd: '/workspace/project',
     })
+    expect(sessionWorkingDirectory(sessions.list.getSnapshot().byId[sessionId])).toBe('/user/project')
+    expect(sessionWorkingDirectory({ cwd: '/ordinary/project' })).toBe('/ordinary/project')
+    expect(sessionWorkingDirectory(undefined)).toBeUndefined()
   })
 })
