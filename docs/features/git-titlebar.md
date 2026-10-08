@@ -25,6 +25,8 @@
 
 ## Invariants
 
+- 透明标题栏上的 Git 禁用控件（Commit、动作下拉和初始化）使用次级文字色，浅色和深色主题下仍可辨认；禁用行为及原因提示保持不变。
+
 - 登记文件的原生通知丢失时，每 2 秒核对一次元数据补发；防抖与已送达状态去重覆盖两路，停止监听必须同时停止轮询。
 
 - Git 的 `.git` 保护与 Files 同一套并锚定到**受信任根**：`resolveGitPath` 经 `resolveInside`/`resolveAuthorizedCwd` 解析，调用方传入落在 `.git` 内的 cwd（直接、子目录、或经无害链接）一律拒绝；realpath 失败时区分「真的不存在」与「悬空链接」，后者拒绝。（2026-09-20，`git*.test.js` + workspace 103/103）
