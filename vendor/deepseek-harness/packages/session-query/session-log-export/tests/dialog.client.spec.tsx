@@ -5,7 +5,7 @@ import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { SessionLogDownloadController } from '../src/client/controller.ts'
 import { SessionLogDownloadDialog } from '../src/client/Dialog.tsx'
-import type { SessionLogDownloadDialogRenderProps } from '../src/client/Dialog.tsx'
+import type { SessionLogDownloadDialogProps } from '../src/client/Dialog.tsx'
 import { en } from '../src/client/locales.ts'
 
 const SID = 'session-export-dialog' as SessionId
@@ -23,7 +23,7 @@ function bench(
     )
   }
   const t = (key: keyof typeof en): string => en[key]
-  const props = { sessionId: SID, useSessionLogDownload, dismiss, t } as unknown as SessionLogDownloadDialogRenderProps
+  const props = { sessionId: SID, useSessionLogDownload, dismiss, t } as unknown as SessionLogDownloadDialogProps & { sessionId: SessionId }
   const view = render(<SessionLogDownloadDialog {...props} />)
   return { controller, dismiss, view }
 }

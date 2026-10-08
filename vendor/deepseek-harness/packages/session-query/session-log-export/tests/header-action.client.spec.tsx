@@ -52,7 +52,6 @@ function bindSnapshot<State>(store: ObservableSnapshot<State>) {
 
 function bench(options: {
   feedbackAvailable?: boolean
-  titlebarAction?: boolean
   sessionId?: SessionId | undefined
   mainViewId?: SessionId | undefined
   managed?: boolean
@@ -63,7 +62,6 @@ function bench(options: {
   const dismiss = vi.fn((sessionId: SessionId) => { controller.dismiss(sessionId) })
   const openFeedback = vi.fn()
   const feedback = createSnapshotStore(options.feedbackAvailable ?? false)
-  const titlebar = createSnapshotStore(options.titlebarAction ?? false)
   const sessionId = 'sessionId' in options ? options.sessionId : SID
   const mainViewId = 'mainViewId' in options ? options.mainViewId : sessionId
   const sessions = createSnapshotStore(sessionList(mainViewId, options.managed))
@@ -82,13 +80,12 @@ function bench(options: {
   } as unknown as SessionLogDownloadHeaderProps
   const titlebarProps = {
     ...shared,
-    useTitlebarAction: bindSnapshot(titlebar),
   } as unknown as SessionLogDownloadDialogProps
   const view = render(<>
     {sessionId !== undefined && <SessionLogDownloadHeaderAction {...menuProps} />}
     <SessionLogDownloadTitlebarAction {...titlebarProps} />
   </>)
-  return { controller, request, openFeedback, feedback, titlebar, sessions, menuProps, titlebarProps, view }
+  return { controller, request, openFeedback, feedback, sessions, menuProps, titlebarProps, view }
 }
 
 afterEach(cleanup)
@@ -103,7 +100,7 @@ describe('Session export Header action', () => {
     expect(b.view.queryByRole('menu')).toBeNull()
   })
 
-  it('keeps export available when the titlebar shortcut is off and feedback is unavailable', () => {
+  it('keeps export in More when feedback is unavailable without a duplicate toolbar button', () => {
     const b = bench()
     expect(b.view.queryByRole('button', { name: 'Download session log' })).toBeNull()
     fireEvent.click(b.view.getByRole('button', { name: 'More actions' }))
@@ -126,8 +123,15 @@ describe('Session export Header action', () => {
     expect(b.request).not.toHaveBeenCalled()
   })
 
-  it.each([false, true])('downloads through the shared controller with one modal (titlebar shortcut %s)', async (titlebarAction) => {
-    const b = bench({ titlebarAction })
+  it('downloads through More with one modal even if an old titlebar hook still returns true', async () => {
+    const b = bench()
+    const legacyProps = { useTitlebarAction: vi.fn(() => true) }
+    b.view.rerender(<>
+      <SessionLogDownloadHeaderAction {...b.menuProps} />
+      <SessionLogDownloadTitlebarAction {...b.titlebarProps} {...legacyProps} />
+    </>)
+    expect(legacyProps.useTitlebarAction).not.toHaveBeenCalled()
+    expect(b.view.queryByRole('button', { name: 'Download session log' })).toBeNull()
     const button = b.view.getByRole('button', { name: 'More actions' })
     expect(button.querySelector('svg')).not.toBeNull()
     expect(button.getAttribute('aria-expanded')).toBe('false')
@@ -151,12 +155,12 @@ describe('Session export Header action', () => {
     let release!: (response: Response) => void
     const pending = new Promise<Response>((resolve) => { release = resolve })
     const controller = new SessionLogDownloadController(() => pending, vi.fn())
-    const b = bench({ feedbackAvailable: true, titlebarAction: true, controller })
+    const b = bench({ feedbackAvailable: true, controller })
     let download!: Promise<void>
     act(() => { download = controller.download(SID) })
     const button = b.view.getByRole('button', { name: 'More actions' })
     await waitFor(() => { expect(button.getAttribute('aria-busy')).toBe('true') })
-    expect(b.view.getByRole('button', { name: 'Download session log' })).toHaveProperty('disabled', true)
+    expect(b.view.queryByRole('button', { name: 'Download session log' })).toBeNull()
     fireEvent.click(button)
     expect(b.view.getByRole('menuitem', { name: 'Download session log' })).toHaveProperty('disabled', true)
     expect(b.view.getByRole('menuitem', { name: 'Feedback' })).toHaveProperty('disabled', false)
@@ -164,26 +168,17 @@ describe('Session export Header action', () => {
     await waitFor(() => { expect(button.getAttribute('aria-busy')).toBe('false') })
   })
 
-  it('keeps the optional shortcut disabled without a current session, then enables for the main view', async () => {
-    const b = bench({ sessionId: undefined, mainViewId: undefined, titlebarAction: true })
-    expect(b.view.getByRole('button', { name: 'Download session log' })).toHaveProperty('disabled', true)
+  it('shows a command-triggered download result once its Session becomes the main view', async () => {
+    const b = bench({ sessionId: undefined, mainViewId: undefined })
+    await act(async () => { await b.controller.download(SID) })
+    expect(b.view.queryByRole('dialog')).toBeNull()
     act(() => { b.sessions.set(sessionList(SID)) })
-    const button = b.view.getByRole('button', { name: 'Download session log' })
-    expect(button).toHaveProperty('disabled', false)
-    fireEvent.click(button)
-    await waitFor(() => { expect(b.request).toHaveBeenCalledWith(SID) })
-  })
-
-  it('drops the shortcut label at cozy density and keeps the accessible name', () => {
-    const b = bench({ titlebarAction: true })
-    b.view.rerender(<SessionLogDownloadTitlebarAction {...b.titlebarProps} density="cozy" />)
-    const button = b.view.getByRole('button', { name: 'Download session log' })
-    expect(b.view.queryByText('Download session log')).toBeNull()
-    expect(button.querySelector('svg')).not.toBeNull()
+    expect(await b.view.findAllByRole('dialog', { name: 'Session download started' })).toHaveLength(1)
+    expect(b.view.queryByRole('button', { name: 'Download session log' })).toBeNull()
   })
 
   it('keeps both entries and the download dialog absent for managed sessions', () => {
-    const b = bench({ managed: true, feedbackAvailable: true, titlebarAction: true })
+    const b = bench({ managed: true, feedbackAvailable: true })
     act(() => { b.controller.store.set({ bySession: { [SID]: { open: true, status: 'success', error: null } } }) })
     expect(b.view.queryByRole('button', { name: 'More actions' })).toBeNull()
     expect(b.view.queryByRole('button', { name: 'Download session log' })).toBeNull()

@@ -3,11 +3,12 @@
   top: 0;
   right: 0;
   z-index: 11;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 0;
   height: var(--caption-h, 48px);
-  padding: 12px 8px 4px;
+  padding: 8px;
   pointer-events: auto;
   -webkit-app-region: no-drag;
 }

@@ -57,7 +57,7 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
 /**
  * Renders Session header chrome above the resident conversation scrollport.
  * @param props - Strict Session store, view ledger, navigation, render, and locale shares.
- * @returns Session navigation controls, with title and tabs after conversation starts.
+ * @returns Session identity and tools with the original view tabs below.
  */
 export function ConversationSessionHeader({
   sessionId, useSession, useSessions, useConversation, useConversationViews, useViewTabs,
@@ -166,8 +166,6 @@ export function ConversationSessionHeader({
         </div>
       </div>
       {!hideChrome && showTabStrip && (
-        // data-conversation-tabs: marks the tab strip, which the window-chrome
-        // geometry and the browser coverage lane anchor on.
         <div className={css.tabs} role="tablist" data-conversation-tabs="">
           {tabs.map(viewTab => (
             <button

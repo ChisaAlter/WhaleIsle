@@ -1021,6 +1021,29 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.getByRole('tablist').hasAttribute('data-conversation-tabs')).toBe(true)
   })
 
+  it('keeps title and session actions in one caption row with view switching below it', () => {
+    const b = mount(sessionSnapshotOf())
+    const row = b.view.container.querySelector('[data-dshd-caption="title"]')
+    const header = row?.parentElement
+    const tabs = b.view.getByRole('tablist')
+    expect(row?.contains(b.view.getByText('Child'))).toBe(true)
+    expect(row?.contains(b.view.getByTestId('view-conversation.session.header.actions'))).toBe(true)
+    expect(header?.tagName).toBe('HEADER')
+    expect(tabs.parentElement).toBe(header)
+    expect(row?.contains(tabs)).toBe(false)
+    expect(row?.nextElementSibling).toBe(tabs)
+    expect(tabs.hasAttribute('data-conversation-tabs')).toBe(true)
+
+    fireEvent.click(b.view.getByRole('tab', { name: 'Trajectory' }))
+    expect(b.view.getByRole('tab', { name: 'Trajectory' }).getAttribute('aria-selected')).toBe('true')
+    expect(b.store.getSnapshot().view).toBe('trajectory')
+    expect(b.view.getByTestId('view-trajectory')).toBeTruthy()
+    fireEvent.click(b.view.getByRole('tab', { name: 'Chat' }))
+    expect(b.view.getByRole('tab', { name: 'Chat' }).getAttribute('aria-selected')).toBe('true')
+    expect(b.store.getSnapshot().view).toBe('chat')
+    expect(b.view.getByTestId('view-chat')).toBeTruthy()
+  })
+
   it('hides the Chat/Trajectory tablist when view tabs are disabled', () => {
     const b = mount(sessionSnapshotOf(), undefined, undefined, { viewTabsChrome: false })
     expect(b.view.queryByRole('tablist')).toBeNull()

@@ -38,7 +38,17 @@ describe('component radius scale', () => {
   })
 
   it('keeps client component radii on the shared scale with exact package-owned exceptions', () => {
-    const exceptions = JSON.parse(readFileSync(new URL('./expected/radius-exceptions.expected.json', import.meta.url), 'utf8')) as Record<string, string[]>
+    const exceptions: Record<string, string[]> = {
+      ...JSON.parse(readFileSync(new URL('./expected/radius-exceptions.expected.json', import.meta.url), 'utf8')) as Record<string, string[]>,
+      // The matching 27px Git and directory capsules own the requested 14px radius.
+      'ui-git/src/client/GitActionsControl.module.css': [
+        '.split: border-radius: 14px',
+        '.init: border-radius: 14px',
+      ],
+      'ui-open-in-app/src/client/OpenTargetButton.module.css': [
+        ".split[data-open-target='directory']: border-radius: 14px",
+      ],
+    }
     const failures = Object.fromEntries(packageStylesheets()
       .filter(file => file.includes('/packages/client/') && file.includes('/src/') && !file.includes('/src/styles/'))
       .map((file): [string, string[]] => {

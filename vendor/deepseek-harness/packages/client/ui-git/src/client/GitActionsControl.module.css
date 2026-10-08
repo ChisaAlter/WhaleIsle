@@ -1,30 +1,33 @@
 .split {
   display: inline-flex;
+  flex: none;
   align-items: stretch;
   overflow: hidden;
   box-sizing: border-box;
-  height: 32px;
+  height: 27px;
   border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: var(--dsw-radius-button);
+  border-radius: 14px;
   background: transparent;
   -webkit-app-region: no-drag;
 }
 
 .init {
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  height: 32px;
-  padding: 6px 12px;
+  box-sizing: border-box;
+  height: 27px;
+  padding: 0 10px;
   border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: var(--dsw-radius-button);
+  border-radius: 14px;
   background: transparent;
   color: var(--dsw-alias-label-primary);
   font-family: var(--dsw-font-family);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
-  line-height: 20px;
+  line-height: 18px;
   cursor: pointer;
   white-space: nowrap;
   -webkit-app-region: no-drag;
@@ -40,12 +43,13 @@
 }
 
 .initCompact {
-  padding: 6px 8px;
+  padding: 0 8px;
 }
 
 .primary,
 .chevron {
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   height: 100%;
@@ -54,29 +58,30 @@
   background: transparent;
   color: var(--dsw-alias-label-primary);
   font-family: var(--dsw-font-family);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
-  line-height: 20px;
+  line-height: 18px;
   cursor: pointer;
 }
 
 .primary {
   gap: 4px;
-  padding: 6px 12px;
+  padding: 0 10px;
   white-space: nowrap;
 }
 
 /* A narrow conversation must still leave room for its session actions. */
 :global([data-titlebar-density='compact']) .primary {
-  padding: 6px 8px;
+  padding: 0 8px;
 }
 
+:global([data-titlebar-density='cozy']) .primary > span,
 :global([data-titlebar-density='compact']) .primary > span {
   display: none;
 }
 
 .chevron {
-  width: 28px;
+  width: 24px;
   padding: 0;
 }
 
@@ -93,11 +98,13 @@
 
 .hintWrap {
   display: inline-flex;
+  flex: none;
 }
 
 .rule {
+  flex: none;
   width: 0.5px;
   align-self: stretch;
-  margin: 6px 0;
+  margin: 5px 0;
   background: var(--dsw-alias-border-l2);
 }

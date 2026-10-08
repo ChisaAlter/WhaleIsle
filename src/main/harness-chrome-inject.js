@@ -86,7 +86,7 @@
         gap: ${CONTROL_GAP}px;
         width: ${windowControlsRight()}px;
         height: ${CAPTION_HEIGHT}px;
-        padding: 12px ${EDGE}px 4px;
+        padding: ${EDGE}px;
         background: transparent;
         pointer-events: auto;
         user-select: none;
@@ -266,7 +266,7 @@
     host.style.width = `${windowControlsRight()}px`;
     host.style.height = `${CAPTION_HEIGHT}px`;
     host.style.gap = `${CONTROL_GAP}px`;
-    host.style.padding = `12px ${EDGE}px 4px`;
+    host.style.padding = `${EDGE}px`;
   }
 
   function applyControlTheme(host, maximized) {

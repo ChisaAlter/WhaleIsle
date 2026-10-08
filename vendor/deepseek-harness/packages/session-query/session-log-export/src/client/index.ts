@@ -9,7 +9,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-message-feedback/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { SessionLogDownloadController } from './controller.ts'
 import type { SessionLogDownloadDialogInjected } from './Dialog.tsx'
@@ -17,15 +16,6 @@ import {
   SessionLogDownloadHeaderAction, SessionLogDownloadTitlebarAction,
   type SessionLogDownloadHeaderInjected,
 } from './HeaderAction.tsx'
-import type { SessionLogChromeRowInjected } from './SessionLogChromeRow.tsx'
-import { SessionLogChromeRow } from './SessionLogChromeRow.tsx'
-import { ChromeVisibility } from './chrome-visibility.ts'
-import {
-  DEFAULT_TITLEBAR_ACTION,
-  SESSION_LOG_EXPORT_SETTINGS_NAMESPACE,
-  TITLEBAR_ACTION_FIELD,
-  type SessionLogExportSettings,
-} from '../export-settings.ts'
 import { en, NS, zh, type SessionLogDownloadKey } from './locales.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -42,13 +32,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 export type { SessionLogDownloadEntry, SessionLogDownloadState } from './controller.ts'
 
-/** Services required by the titlebar Session-log capsule and Interface row. */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'configForms']
+/** Services required by the Session menu and download dialog. */
+export const inject = ['slots', 'locale', 'connection', 'remote']
 
 /**
- * Provide the download controller, mount the Session menu and optional titlebar
- * shortcut with its shared modal, and contribute the Interface Settings visibility row.
- * @param ctx - browser context carrying slots, locale, and settings services.
+ * Provide the download controller, mount the Session menu and its shared modal.
+ * @param ctx - browser context carrying slots, locale, and download services.
  */
 export function apply(ctx: ClientContext): void {
   const controller = new SessionLogDownloadController()
@@ -66,16 +55,10 @@ export function apply(ctx: ClientContext): void {
     if (commandName === 'export' && result.kind === 'success') void controller.download(sessionId)
   })
 
-  const chrome = new ChromeVisibility<SessionLogExportSettings>(
-    ctx.configForms.get<SessionLogExportSettings>(SESSION_LOG_EXPORT_SETTINGS_NAMESPACE),
-    TITLEBAR_ACTION_FIELD,
-    DEFAULT_TITLEBAR_ACTION,
-  )
-
-  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
-    name: 'conversation.session.header.utilities',
+  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
+    name: 'conversation.session.header.actions',
     id: 'session-log-download',
-    order: 10,
+    order: 0,
     locale: NS,
     inject: (): SessionLogDownloadHeaderInjected => ({
       hooks: { sessionLogDownload: controller.store, feedbackAvailable },
@@ -91,22 +74,11 @@ export function apply(ctx: ClientContext): void {
     order: 10,
     locale: NS,
     inject: (): SessionLogDownloadDialogInjected => ({
-      hooks: { sessionLogDownload: controller.store, titlebarAction: chrome.visible },
+      hooks: { sessionLogDownload: controller.store },
       request: (sessionId: SessionId) => controller.download(sessionId),
       dismiss: (sessionId: SessionId) => { controller.dismiss(sessionId) },
     }),
   }, SessionLogDownloadTitlebarAction))
-
-  ctx.slots.inject('settings.interface.item', () => ctx.slots.register({
-    name: 'settings.interface.item',
-    id: 'session-log-export',
-    order: 10,
-    locale: NS,
-    inject: (): SessionLogChromeRowInjected => ({
-      hooks: { titlebarAction: chrome.visible, writable: chrome.writable },
-      setTitlebarAction: (value) => { chrome.setVisible(value) },
-    }),
-  }, SessionLogChromeRow))
 }
 
 export type { SessionLogDownloadDialogInjected, SessionLogDownloadDialogProps } from './Dialog.tsx'

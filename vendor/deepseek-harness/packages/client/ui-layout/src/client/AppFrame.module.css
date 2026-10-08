@@ -170,12 +170,12 @@
  * and lets the track decide whether the centre makes room. With no track the
  * panel hangs over the centre from a zero-width column, and while the track
  * animates the panel stays where it is. The occupant draws its own left border,
- * so the column paints none; the class name is the desktop chrome contract
- * name for column 3 (caption holes, phone drawer).
+ * so the column paints none. Pane tabs start below the shared application
+ * caption; phone drawers override this seat with a full-frame overlay.
  */
 .detailsCol {
   grid-column: 3;
-  grid-row: 1 / 4;
+  grid-row: 2 / 4;
   position: relative;
   min-width: 0;
   overflow: visible;
@@ -270,8 +270,8 @@
   border-color: var(--dsw-alias-border-l3);
 }
 
-/* First grid child so column paint order keeps this band behind Session log,
-   Git, surface tabs, and window controls. Electron collects the rectangle as
+/* First grid child so column paint order keeps this band behind Git,
+   surface tabs, and window controls. Electron collects the rectangle as
    the sole caption drag region, including the sidebar logo row; later
    no-drag boxes punch holes. */
 .captionDrag {
@@ -314,6 +314,7 @@
   grid-column: 3 / 4;
   grid-row: 1;
   position: relative;
+  min-height: 52px;
   pointer-events: none;
   z-index: 0;
 }
@@ -337,29 +338,25 @@
   align-self: start;
   z-index: 21;
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 8px;
   width: max-content;
   max-width: 100%;
   height: 32px;
-  margin-top: 12px;
+  margin-top: 8px;
   margin-right: var(--dshd-wco-controls, 8px);
   -webkit-app-region: no-drag;
 }
 
-/* Open surfaces occupies the titlebar row in column 4; keep Session log / Git /
-   panel toggles in columns 2–3. Window controls sit on the surfaces tab bar. */
-.frame:not([data-rightbar-collapsed]) .titlebarTrailing {
-  grid-column: 2 / 3;
+/* Windows window controls have their own caption row above the content. */
+:global([data-windows-titlebar]) .titlebarTrailing {
   margin-right: 8px;
 }
 
-/* Phone overlay and portrait-narrow frames: Session log / Git / panel toggles
-   sit in this cluster and would paint over the session title. Do not key this
-   off CSS orientation — a phone keyboard flips that media query. Landscape
-   and wide desktop keep the cluster. */
-.frame[data-phone] .titlebarTrailing,
-.frame[data-compact-header] .titlebarTrailing {
+/* AppFrame applies the same visibility decision to the measured reserve.
+   Narrow desktop windows retain the compact Git controls. */
+.frame[data-titlebar-trailing-hidden] .titlebarTrailing {
   display: none;
 }
 

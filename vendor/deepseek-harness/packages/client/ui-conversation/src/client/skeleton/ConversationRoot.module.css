@@ -41,12 +41,7 @@
   --dsh-composer-dock-inset: 8px;
 }
 
-/* 76px with its rule: the height of the Sidebar's tab strip and header row
-   (ui-dockkit `.tabStrip` 38px + the pane header's 38px), so the two rules
-   meet at the column edge. The rows add up to it — 12px top inset, the 32px
-   title row, the tab strip's 4px margin, a 16px tab line, and its 11px bottom
-   inset, plus the 1px transparent reserve border — so no row below may grow
-   past its figure. */
+/* Session identity and tools share the first row; view tabs sit below it. */
 .header {
   position: relative;
   grid-row: 1;
@@ -54,8 +49,8 @@
   grid-template-columns: auto minmax(0, 1fr);
   flex: none;
   min-width: 0;
-  padding: 12px 28px 0 20px;
-  /* Trailing cluster (Session log / Git / panel toggles) shares this row when
+  padding: 8px 28px 0 20px;
+  /* Trailing cluster (Git / panel toggles) shares this row when
      details is closed; AppFrame writes the overlap as --dshd-titlebar-conversation-reserve.
      The +16px absorbs .headerCorner's -16px reach: while the reserve pads this
      row the reach would extend past the content edge and land the corner
@@ -67,39 +62,15 @@
 }
 
 /* The resident header owns the grid and padding. The Session header is a
-   semantic child; flatten its box so its title and tabs use those same tracks. */
+   semantic child; flatten its box so the caption row uses the same tracks. */
 .header .header {
   display: contents;
 }
 
-/* Desktop caption controls: when the right sidebar is closed the trailing
-   cluster's margin clears the caption window controls (--dshd-wco-controls,
-   set by the desktop chrome inject, absent in a plain browser), so its left
-   edge reaches that much deeper into the row than the measured reserve. The
-   published reserve alone left header utilities (header.actions / plugins'
-   header.utilities buttons) painting under Session log and Git. Widen the
-   same reserve by the controls inset — `max(8px, …)` keeps the plain-browser
-   math identical to the pinned baseline above — and only while the rightbar is
-   closed, because an open rightbar pins the cluster's right edge back
-   to a fixed 8px inset inside the conversation column. The trailing +16px is the
-   corner-seat reach the baseline calc above also absorbs. */
-:global([data-surfaces-collapsed][data-rightbar-collapsed]) .header {
-  padding-right: max(
-    28px,
-    calc(
-      var(--dshd-titlebar-conversation-reserve, 0px)
-      + max(8px, var(--dshd-wco-controls, 8px))
-      + 16px
-    )
-  );
-}
-
-@media (max-width: 767px) {
-  .header {
-    padding-top: max(12px, env(safe-area-inset-top, 0px));
-    padding-right: max(16px, env(safe-area-inset-right, 0px));
-    padding-left: 56px;
-  }
+:global(html:not([data-windows-titlebar]):not([data-platform='darwin']) [data-phone]) .header {
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-left: 56px;
 }
 
 .header::after {
@@ -121,8 +92,7 @@
 }
 
 .header:where(:not(:has(.tabs))) {
-  min-height: 0;
-  padding-bottom: 10px;
+  padding-bottom: 12px;
 }
 
 .header:where(:not(:has(.tabs)))::after {
@@ -156,6 +126,7 @@
 .headerLeading,
 .crumbSeg,
 .headerActions,
+.tabs,
 .headerUtilities,
 .headerCorner {
   -webkit-app-region: no-drag;
@@ -184,7 +155,6 @@
   display: flex;
   align-items: center;
   gap: 0;
-  min-height: 30px;
   /* Clears the frame's window-chrome band (traffic lights + shell.leading
      controls, ui-layout AppFrame) when it is published; the header already
      pads 20px of it. Zero everywhere else (the fallback makes the max
@@ -194,9 +164,9 @@
 
 .titleCluster {
   display: flex;
-  flex: 1;
+  flex: 1 1 0;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -213,10 +183,11 @@
 
 .crumbs {
   display: flex;
-  flex: 1 1 0;
+  flex: 0 1 auto;
   align-items: center;
   gap: 4px;
   min-width: 0;
+  max-width: 280px;
   overflow: hidden;
   white-space: nowrap;
 }
@@ -268,20 +239,21 @@ button.crumb:hover {
 
 .headerActions {
   display: flex;
-  flex: 0 1 auto;
+  flex: none;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  max-width: 65%;
 }
 
 /* Keep every action reachable. Occupants truncate their own labels, then
    shed text at this row's actual width, including the trailing reserve. */
 @container (max-width: 520px) {
   .headerActions {
-    flex: none;
     gap: 4px;
-    max-width: none;
+  }
+
+  .titleCluster {
+    gap: 4px;
   }
 
   .titleRow .headerUtilities {
@@ -294,7 +266,7 @@ button.crumb:hover {
   flex: none;
   align-items: center;
   gap: 8px;
-  margin-left: 20px;
+  margin-left: 12px;
 }
 
 .headerUtilities:empty {
@@ -317,8 +289,7 @@ button.crumb:hover {
   display: none;
 }
 
-/* figma Tab_Group 34:11441: 35px strip, gap 36, pad-left 8, tabs bottom-aligned.
-   Positioned above the header's own paint, so the active bar covers the rule. */
+/* Original left-aligned view navigation below the title and tools. */
 .tabs {
   grid-column: 1 / -1;
   position: relative;
@@ -329,9 +300,6 @@ button.crumb:hover {
   padding-left: 8px;
 }
 
-/* figma .Tab 34:11442: 13/16 text (figma wt510, rendered 500). The 2px bar
-   rides the header's transparent reserve border, ending flush with the
-   hairline the header paints. */
 .tab {
   position: relative;
   padding: 0 0 11px;
@@ -342,6 +310,7 @@ button.crumb:hover {
   font-weight: 500;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .tab::after {
