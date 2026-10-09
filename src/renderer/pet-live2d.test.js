@@ -401,6 +401,62 @@ test('drawBubble flips below at the top edge and clamps inside the host', () => 
   bubbleRectInsideHost(pet, { x: 0, y: 0, width: 800, height: 600 });
 });
 
+test('right-edge status card leaves a pinned caption and its close target fully visible', () => {
+  const caption = '渲染优化检查：状态卡和提醒应当完整显示。';
+  for (const [placement, y] of [['normal', 694.83], ['near-top', 10]]) {
+    const pet = loadPet();
+    // The normal case reproduces the observed 1708x960 native viewport's
+    // tight silhouette and left-flipped card, rather than a 240px box.
+    pet.run(`window.innerWidth = 1708; window.innerHeight = 960;
+      homeRect = { x: 0, y: 0, width: 1708, height: 960 };
+      drawPos = { x: 1443, y: ${y} }; session = {};
+      charRect = { x: 83.69, y: 0, right: 157.54, bottom: 91.11 };
+      openPanel();
+      bubble = { text: '${caption}', pinned: true, until: Infinity };`);
+    pet.canvas.ctx.ops.length = 0;
+    const ink = pet.run('lastBubbleRect = drawBubble(performance.now())');
+    const card = pet.run('panel');
+    const close = pet.run('bubbleCloseRect');
+    assert.ok(ink.x < card.x + card.w && ink.x + ink.w > card.x,
+      'the fixture retains the horizontal overlap that previously hid the caption');
+    if (placement === 'normal') {
+      assert.ok(ink.y + ink.h <= card.y - 4,
+        'the complete bubble, tail and clear margin fit above the card');
+    } else {
+      assert.ok(ink.y >= card.y + card.h + 4,
+        'with insufficient space above, the full bubble fits below the card');
+    }
+    assert.ok(ink.y >= 0 && ink.y + ink.h <= 960, 'moved ink remains inside the viewport');
+    assert.equal(pet.canvas.ctx.ops.filter((op) => op[0] === 'fillText')
+      .map((op) => op[1]).join(''), caption, 'all caption characters remain painted');
+    assert.ok(close.x >= ink.x && close.y >= ink.y
+      && close.x + close.w <= ink.x + ink.w && close.y + close.h <= ink.y + ink.h,
+    'the entire pinned close target remains inside the moved ink rectangle');
+    const cx = close.x + close.w / 2;
+    const cy = close.y + close.h / 2;
+    assert.equal(pet.run(`bubbleCloseHit(${cx}, ${cy}) && overPet(${cx}, ${cy})`), true,
+      'the moved close button remains reachable through the real interactive geometry');
+    pet.run(`onCanvasPointerDown({ target: canvas, button: 0, clientX: ${cx}, clientY: ${cy} })`);
+    assert.equal(pet.run('bubble'), null, 'the moved close target dismisses the pinned caption');
+    assert.ok(pet.run('panel'), 'dismissal keeps the status card open');
+  }
+});
+
+test('a status card outside the bubble keeps the existing bubble placement', () => {
+  const pet = loadPet();
+  pet.run(`drawPos = { x: 280, y: 200 };
+    homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    bubble = { text: '测试气泡', until: Infinity };`);
+  const initial = JSON.parse(pet.run('JSON.stringify(drawBubble(performance.now()))'));
+  const initialText = pet.canvas.ctx.ops.filter((op) => op[0] === 'fillText');
+  pet.run('panel = { x: 10, y: 10, w: 100, h: 100 }');
+  pet.canvas.ctx.ops.length = 0;
+  const withCard = JSON.parse(pet.run('JSON.stringify(drawBubble(performance.now()))'));
+  assert.deepEqual(withCard, initial, 'an unrelated card does not move the existing ink rectangle');
+  assert.deepEqual(pet.canvas.ctx.ops.filter((op) => op[0] === 'fillText'), initialText,
+    'the existing caption coordinates remain unchanged');
+});
+
 test('carried live pet keeps the bubble beside her head and reports a tight hover rect', () => {
   const pet = loadPet();
   pet.run(`homeRect = { x: 0, y: 0, width: 800, height: 600 };
@@ -1668,4 +1724,278 @@ test('autonomous sad and shy expressions follow mood and affection', () => {
   assert.equal(flourish(80, 0), 'happy-tail');
   assert.equal(flourish(80, 4), 'shy');
   assert.equal(flourish(20, 0), 'sad');
+});
+
+function preparePetMount(pet) {
+  pet.run(`
+    globalThis.__raf = [];
+    globalThis.__imageRequests = [];
+    requestAnimationFrame = (callback) => { __raf.push(callback); return __raf.length; };
+    // Browser image/network and backend creation are the boundaries; mount,
+    // the display callback, state ticking and canvas drawing remain real.
+    Image = class {
+      naturalWidth = 2; naturalHeight = 2;
+      set src(value) { __imageRequests.push(value); this.onload(); }
+    };
+    PetDialogue.load = async () => __dialogueStore;
+    setTimeout = () => 0;
+    FRAME = 2; CROP = { x: 0, y: 0, w: 2, h: 2 };
+    charRect = { x: 0, y: 0, right: 240, bottom: 260 };
+    ort = { Tensor: class { constructor(type, data) { this.data = data; } } };
+    createSession = async () => __session;
+    loadImageTensor = async () => ({});
+    initSr = () => {};
+    petShell.onMove = (callback) => { globalThis.__move = callback; };
+    globalThis.__session = { run: async () => ({ rgba_f: {
+      data: new Float32Array(16).fill(255), dispose() {}
+    } }) };
+  `);
+}
+
+test('mounted display loop commits once after state ticks, input and inference completion', async () => {
+  const pet = loadPet();
+  preparePetMount(pet);
+  pet.run(`
+    globalThis.__disposed = 0;
+    __session.run = () => new Promise((resolve) => { globalThis.__finishInference = resolve; });
+  `);
+  await pet.run('mount()');
+  pet.run(`petPerf.start();
+    pushBubble({ text: '保持显示', until: Infinity, priority: 1 });`);
+  assert.equal(pet.run('petPerf.snapshot().paint?.count || 0'), 0,
+    'input requests wait for the display callback');
+
+  pet.run('__raf.shift()(performance.now())');
+  assert.equal(pet.run('petPerf.snapshot().paint.count'), 1,
+    'tickStill and the display loop share one canvas commit');
+  assert.equal(pet.run('inferBusy'), true);
+
+  pet.run(`__move({ x: 120, y: 180 }); __move({ x: 160, y: 200 });
+    __finishInference({ rgba_f: {
+      data: new Float32Array(16).fill(255), dispose() { __disposed++; }
+    } });`);
+  await pet.run('Promise.resolve()');
+  assert.equal(pet.run('__disposed'), 1);
+  assert.equal(pet.run('inferBusy'), false);
+  assert.equal(pet.run('painted'), true, 'completed inference updates the available image');
+  assert.equal(pet.run('petPerf.snapshot().paint.count'), 1,
+    'input and inference completion do not add off-refresh commits');
+
+  pet.setNow(pet.now() + 16);
+  pet.canvas.ctx.ops.length = 0;
+  pet.run('__raf.shift()(performance.now())');
+  assert.equal(pet.run('petPerf.snapshot().paint.count'), 2);
+  assert.deepEqual(JSON.parse(pet.run('JSON.stringify(drawPos)')), { x: 160, y: 200 },
+    'the next refresh presents the latest input position');
+  assert.ok(pet.canvas.ctx.ops.some((op) => op[0] === 'drawImage'),
+    'the refresh draws the completed avatar image');
+  assert.equal(pet.run('__raf.length'), 1, 'the real display loop schedules its next refresh');
+});
+
+test('unchanged live refreshes keep the surface until inference or input changes it', async () => {
+  const pet = loadPet();
+  preparePetMount(pet);
+  pet.run(`__session.run = () => new Promise((resolve) => {
+    globalThis.__finishInference = resolve;
+  });`);
+  await pet.run('mount()');
+  pet.run('petPerf.start()');
+  pet.run('__raf.shift()(performance.now())');
+  pet.setNow(pet.now() + 6);
+  pet.run('__raf.shift()(performance.now())');
+  assert.equal(pet.run('inferBusy'), true);
+  assert.equal(pet.run('petPerf.snapshot().paint?.count || 0'), 0,
+    'an unchanged live image requires no canvas commit while inference is pending');
+
+  pet.run(`__finishInference({ rgba_f: {
+    data: new Float32Array(16).fill(255), dispose() {}
+  } });`);
+  await pet.run('Promise.resolve()');
+  assert.equal(pet.run('petPerf.snapshot().paint?.count || 0'), 0,
+    'inference completion waits for display refresh');
+  pet.setNow(pet.now() + 6);
+  pet.run('__raf.shift()(performance.now())');
+  assert.equal(pet.run('petPerf.snapshot().paint.count'), 1);
+
+  pet.setNow(pet.now() + 6);
+  pet.run('__raf.shift()(performance.now())');
+  assert.equal(pet.run('petPerf.snapshot().paint.count'), 1,
+    'the completed image is retained between inference frames');
+  pet.run('__move({ x: 180, y: 180 })');
+  assert.equal(pet.run('petPerf.snapshot().paint.count'), 1);
+  pet.setNow(pet.now() + 6);
+  pet.run('__raf.shift()(performance.now())');
+  assert.equal(pet.run('petPerf.snapshot().paint.count'), 2,
+    'an input position change commits on the next refresh');
+  pet.setNow(pet.now() + 6);
+  pet.run('__raf.shift()(performance.now())');
+  assert.equal(pet.run('petPerf.snapshot().paint.count'), 2,
+    'consuming an input update does not leave continuous redraw enabled');
+});
+
+test('sleep and carried animation still commit at every mounted display refresh', async () => {
+  for (const state of ['sleep', 'pick-up']) {
+    const pet = loadPet();
+    preparePetMount(pet);
+    pet.run('__session.run = () => new Promise(() => {})');
+    await pet.run('mount()');
+    pet.run(`setStill('${state}'); stillCtl.alpha = 1;
+      sleeping = ${state === 'sleep'};
+      dragging = ${state === 'pick-up'}; dragMoved = dragging;
+      tickStill._nextZzz = Infinity;
+      pointer.x = -1000; pointer.y = -1000; petPerf.start();`);
+    for (let refresh = 1; refresh <= 3; refresh++) {
+      pet.setNow(pet.now() + 6);
+      pet.run('__raf.shift()(performance.now())');
+      assert.equal(pet.run('petPerf.snapshot().paint.count'), refresh,
+        `${state} transforms must be drawn every refresh while inference is pending`);
+    }
+  }
+});
+
+test('mounted refresh clears the final bubble and particle without a completed inference', async () => {
+  for (const transient of ['bubble', 'particle']) {
+    const pet = loadPet();
+    preparePetMount(pet);
+    pet.run('__session.run = () => new Promise(() => {})');
+    await pet.run('mount()');
+    pet.run('petPerf.start()');
+    if (transient === 'bubble') {
+      pet.run('pushBubble({ text: "短暂气泡", until: performance.now() + 10, priority: 1 })');
+    } else {
+      pet.run(`spawn('star', 80, 80, 0, 0);
+        particles[0].born = performance.now() - 200; particles[0].life = 210;`);
+    }
+    pet.run('__raf.shift()(performance.now())');
+    assert.equal(pet.run('petPerf.snapshot().paint.count'), 1);
+    const rectName = transient === 'bubble' ? 'lastBubbleRect' : 'lastParticleRect';
+    const previousRect = JSON.parse(pet.run(`JSON.stringify(${rectName})`));
+    assert.ok(previousRect, `${transient} has an ink region to clear`);
+
+    pet.setNow(pet.now() + 16);
+    pet.canvas.ctx.ops.length = 0;
+    pet.run('__raf.shift()(performance.now())');
+    assert.equal(pet.run('inferBusy'), true);
+    assert.equal(pet.run('petPerf.snapshot().paint.count'), 2,
+      `${transient} expiration needs a final cleanup commit`);
+    assert.equal(pet.run(rectName), null);
+    assert.ok(pet.canvas.ctx.ops.some((op) => op[0] === 'clearRect'
+      && op[1] === previousRect.x && op[2] === previousRect.y
+      && op[3] === previousRect.w && op[4] === previousRect.h),
+    `${transient}'s old ink is cleared at its recorded bounds`);
+
+    pet.setNow(pet.now() + 16);
+    pet.run('__raf.shift()(performance.now())');
+    assert.equal(pet.run('petPerf.snapshot().paint.count'), 2,
+      `after ${transient} cleanup, unchanged live refreshes stop committing`);
+  }
+});
+
+test('a star at maximum right sway fits its recorded clear region through expiry', async () => {
+  const pet = loadPet();
+  preparePetMount(pet);
+  pet.run('__session.run = () => new Promise(() => {})');
+  await pet.run('mount()');
+  pet.run(`spawn('star', 80, 80, 0, 0);
+    particles[0].seed = Math.PI / 2;
+    // One full sway period keeps the phase at PI/2 while the normal
+    // 1400ms particle is visible, rather than testing its transparent birth.
+    particles[0].born = performance.now() - Math.PI * 2 * 120;`);
+  pet.canvas.ctx.ops.length = 0;
+  pet.run('__raf.shift()(performance.now())');
+  const star = pet.canvas.ctx.ops.find((op) => op[0] === 'fillText' && op[1] === '★');
+  assert.ok(star, 'the actual canvas painter draws the star');
+  assert.ok(Math.abs(star[2] - 98) < 0.001, 'the glyph starts 18px right of its nominal center');
+  const region = JSON.parse(pet.run('JSON.stringify(lastParticleRect)'));
+  const glyphRight = star[2] + pet.canvas.ctx.measureText('★').width;
+  assert.ok(glyphRight + 1 <= region.x + region.w,
+    'the clear region contains the rightward glyph ink and antialiasing');
+
+  pet.setNow(pet.run('particles[0].born + particles[0].life + 1'));
+  pet.canvas.ctx.ops.length = 0;
+  pet.run('__raf.shift()(performance.now())');
+  assert.equal(pet.run('inferBusy'), true, 'cleanup does not depend on a new inference image');
+  assert.equal(pet.run('particles.length'), 0);
+  assert.equal(pet.run('lastParticleRect'), null);
+  assert.ok(pet.canvas.ctx.ops.some((op) => op[0] === 'clearRect'
+    && op[1] === region.x && op[2] === region.y && op[3] === region.w && op[4] === region.h),
+  'expiry clears the entire previously painted star region');
+});
+
+test('mount decodes only the panel avatar and failed engines retain lazy action images', async () => {
+  const pet = loadPet();
+  preparePetMount(pet);
+  await pet.run('mount()');
+  assert.deepEqual(Array.from(pet.run('__imageRequests')), [
+    'pet://pet/pet-live2d/states/greet.webp',
+  ]);
+  pet.run('setStill("eat")');
+  assert.equal(pet.run('__imageRequests.length'), 1,
+    'the live engine does not decode unused action images');
+  pet.run('session = null; rig.ready = false; setStill("eat")');
+  await pet.run('Promise.resolve().then(() => {}).then(() => {})');
+  assert.deepEqual(Array.from(pet.run('__imageRequests')), [
+    'pet://pet/pet-live2d/states/greet.webp',
+    'pet://pet/pet-live2d/states/eat.webp',
+  ]);
+  assert.equal(pet.run('stillCtl.entry === stills.get("eat")'), true,
+    'the fallback action receives its decoded image');
+  pet.run('setStill("eat")');
+  assert.equal(pet.run('__imageRequests.length'), 2, 'the decoded fallback image is reused');
+});
+
+test('inference readback failure disposes every output and releases the busy guard', async () => {
+  const pet = loadPet();
+  pet.run(`
+    FRAME = 1; allocOutput();
+    globalThis.__disposed = []; globalThis.__writes = 0; globalThis.__warnings = [];
+    outCtx.putImageData = () => { __writes++; };
+    console = { ...console, warn: (...args) => { __warnings.push(args); } };
+    ort = { env: { webgpu: { device: { queue: { writeBuffer() {} } } } } };
+    sessionOnGpu = true; poseGpuBuffer = {}; poseTensor = {}; imageTensor = {};
+    session = { run: async () => ({
+      rgba_f: { getData: async () => { throw new Error('readback failed'); },
+        dispose() { __disposed.push('rgba_f'); } },
+      intermediate: { dispose() { __disposed.push('intermediate'); } }
+    }) };
+  `);
+  await pet.run('renderFrame()');
+  assert.deepEqual(Array.from(pet.run('__disposed')), ['rgba_f', 'intermediate']);
+  assert.equal(pet.run('inferBusy'), false, 'another inference can run after a failed readback');
+  assert.equal(pet.run('__writes'), 0, 'a failed readback preserves the previous display image');
+  assert.equal(pet.run('__warnings.length'), 1, 'the failure remains observable');
+});
+
+test('transparent frames preserve the displayed image using quantized alpha and dispose outputs', async () => {
+  const pet = loadPet();
+  pet.run(`
+    FRAME = 1; CROP = { x: 0, y: 0, w: 1, h: 1 }; allocOutput();
+    charRect = { x: 0, y: 0, right: 240, bottom: 260 };
+    renderLoopActive = true; painted = true;
+    globalThis.__alpha = 0; globalThis.__writes = 0; globalThis.__srFrames = 0;
+    globalThis.__disposed = [];
+    outCtx.putImageData = () => { __writes++; };
+    srFrame = () => { __srFrames++; };
+    ort = { Tensor: class { constructor(type, data) { this.data = data; } } };
+    session = { run: async () => ({
+      rgba_f: { data: new Float32Array([95.5, -2, 260, __alpha]),
+        dispose() { __disposed.push('rgba_f'); } },
+      intermediate: { dispose() { __disposed.push('intermediate'); } }
+    }) };
+  `);
+  for (const [alpha, quantized, expectedWrites] of [
+    [3.49, 3, 0], [3.5, 4, 1], [0, 0, 1],
+  ]) {
+    pet.run(`__alpha = ${alpha}`);
+    await pet.run('renderFrame()');
+    assert.deepEqual(Array.from(pet.run('outImage.data')), [96, 0, 255, quantized]);
+    assert.equal(pet.run('__writes'), expectedWrites,
+      `alpha ${alpha} must use the display buffer's quantized transparency threshold`);
+    assert.equal(pet.run('__srFrames'), expectedWrites,
+      'transparent frames do not replace the upscaled display image');
+    assert.equal(pet.run('inferBusy'), false);
+  }
+  assert.deepEqual(Array.from(pet.run('__disposed')),
+    ['rgba_f', 'intermediate', 'rgba_f', 'intermediate', 'rgba_f', 'intermediate']);
+  assert.equal(pet.run('painted'), true, 'transparent frames retain the existing visible image');
 });
