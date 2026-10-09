@@ -38,6 +38,8 @@ import {
 import type {
   SessionAttachmentRequest,
   SessionAttachmentValue,
+  SessionVisualReplyRequest,
+  SessionVisualReplyValue,
   SessionCancelRequest,
   SessionCancelValue,
   SessionCreateRequest,
@@ -507,6 +509,49 @@ export class SessionCommandController {
     }
   }
 
+  /** Authorize against native and nested published tool results, without activating an Agent. */
+  async readVisualReply(request: SessionVisualReplyRequest, signal?: AbortSignal): Promise<SessionVisualReplyValue> {
+    signal?.throwIfAborted()
+    let source: SessionReadState
+    try {
+      source = await this.readSessionState(request.sessionId)
+    } catch (error) {
+      if (error instanceof ApiSessionNotFound) {
+        throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId })
+      }
+      throw new RemoteError('gateway/internal', 'Visual reply authorization is unavailable.', {})
+    }
+    signal?.throwIfAborted()
+    const ref = referencedVisualReply(source.events, String(request.attachmentId))
+    if (ref === undefined) {
+      throw new RemoteError('session/attachment-invalid', 'Visual reply is not referenced by this session.',
+        { reason: 'ATTACHMENT_NOT_REFERENCED' })
+    }
+    try {
+      const chunks: Uint8Array[] = []
+      let bytes = 0
+      for await (const chunk of this.ctx.attachments.readFileStream(ref, signal)) {
+        bytes += chunk.byteLength
+        if (bytes > MAX_VISUAL_REPLY_BYTES) {
+          throw new RemoteError('session/attachment-invalid', 'Visual reply exceeds 25 MiB.', { reason: 'VISUAL_REPLY_TOO_LARGE' })
+        }
+        chunks.push(chunk)
+      }
+      const data = Buffer.concat(chunks)
+      let html: string
+      try { html = new TextDecoder('utf-8', { fatal: true }).decode(data) }
+      catch { throw new RemoteError('session/attachment-invalid', 'Visual reply is not UTF-8 HTML.', { reason: 'VISUAL_REPLY_INVALID_UTF8' }) }
+      return { attachment: ref, html }
+    } catch (error) {
+      signal?.throwIfAborted()
+      if (remoteErrorOf(error) !== undefined) throw error
+      if (error instanceof AttachmentError) {
+        throw new RemoteError('session/attachment-invalid', error.message, { reason: error.code })
+      }
+      throw new RemoteError('gateway/internal', 'Unable to read Visual reply attachment.', {})
+    }
+  }
+
   /**
    * Mutate one pending Inbox occurrence, restoring an ordinary cold Agent when needed.
    * @param request - Session, queue item, and requested mutation.
@@ -773,6 +818,39 @@ function referencedImage(
   for (const event of events) {
     const found = imageInEvent(event, ref => String(ref.attachmentId) === attachmentId)
     if (found !== undefined) return found
+  }
+  return undefined
+}
+
+const MAX_VISUAL_REPLY_BYTES = 25 * 1024 * 1024
+
+/** Only successful html_render results grant access; metadata alone grants nothing. */
+function referencedVisualReply(events: readonly SessionEvent[], attachmentId: string): FileAttachmentRef | undefined {
+  const nativeCalls = new Map<string, string>()
+  const fromContent = (content: unknown): FileAttachmentRef | undefined => {
+    if (!Array.isArray(content)) return undefined
+    for (const value of content as unknown[]) {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
+      const block = value as { type?: unknown; attachment?: unknown }
+      if (block.type !== 'file' || typeof block.attachment !== 'object' || block.attachment === null || Array.isArray(block.attachment)) continue
+      const ref = block.attachment as FileAttachmentRef
+      if (String(ref.attachmentId) === attachmentId && typeof ref.name === 'string'
+        && Number.isSafeInteger(ref.bytes) && ref.bytes > 0 && ref.bytes <= MAX_VISUAL_REPLY_BYTES) return ref
+    }
+    return undefined
+  }
+  for (const event of events) {
+    if (event.type === 'tool/call') nativeCalls.set(String(event.data.callId), event.data.name)
+    else if (event.type === 'tool/result') {
+      if (event.data.message.isError === true
+        || nativeCalls.get(String(event.data.message.source.callId)) !== 'html_render') continue
+      const ref = fromContent(event.data.message.content)
+      if (ref !== undefined) return ref
+    } else if (event.type === 'tool/ptc-dispatch') {
+      if (event.data.name !== 'html_render' || event.data.isError === true) continue
+      const ref = fromContent(event.data.content)
+      if (ref !== undefined) return ref
+    }
   }
   return undefined
 }

@@ -1170,6 +1170,44 @@ describe('AppFrame — phone overlay shell', () => {
 })
 
 describe('AppFrame — landscape sidebar', () => {
+  it('keeps the left sidebar control effective after a desktop landscape resize', () => {
+    frameWidth = 1441
+    landscape = true
+    stubScreenAvail(1920, 1080)
+    Object.defineProperty(window.screen, 'orientation', {
+      configurable: true,
+      value: {
+        type: 'landscape-primary',
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      },
+    })
+    document.documentElement.setAttribute('data-windows-titlebar', '')
+    const { frame, instance, sidebarOwner, rightOwner } = mountFrame()
+    expect(tracks(frame)[0]).toBe(SIDEBAR_DEFAULT)
+
+    vi.stubGlobal('innerWidth', 962)
+    resize(962)
+    expect(sidebarOwner()).toEqual({ collapsed: false, width: SIDEBAR_DEFAULT })
+    expect(rightOwner().canShow).toBe(false)
+
+    // SidebarRoot's button invokes this public layout action.
+    act(() => { instance.actions.toggleSidebar() })
+    expect(tracks(frame)[0]).toBe(0)
+    expect(sidebarOwner()).toEqual({ collapsed: true, width: 0 })
+    expect(rightOwner().canShow).toBe(true)
+
+    act(() => { instance.actions.toggleSidebar() })
+    expect(tracks(frame)[0]).toBe(SIDEBAR_DEFAULT)
+    expect(sidebarOwner()).toEqual({ collapsed: false, width: SIDEBAR_DEFAULT })
+    expect(rightOwner().canShow).toBe(false)
+
+    vi.stubGlobal('innerWidth', 1441)
+    resize(1441)
+    expect(tracks(frame)[0]).toBe(SIDEBAR_DEFAULT)
+    expect(rightOwner().canShow).toBe(true)
+  })
+
   it('keeps the sidebar in the grid on a phone-width landscape frame', () => {
     frameWidth = 844
     landscape = true

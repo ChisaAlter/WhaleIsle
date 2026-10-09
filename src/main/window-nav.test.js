@@ -199,3 +199,29 @@ test('showHarness load policy rejects non-loopback and rewrites 0.0.0.0', () => 
   );
   assert.equal(isHttpOrHttpsUrl('javascript:alert(1)'), false);
 });
+
+test('visual reply frame cannot navigate after changing its window name', () => {
+  const opened = [];
+  const loaded = loadWindowWithOpenExternal(opened);
+  try {
+    const contents = createFakeContents('http://127.0.0.1:3080/');
+    loaded.attachPrivilegedNavigationGuards(contents, { allowUrl: isLoopbackHttpUrl, openDeniedExternal: true });
+    const frame = { name: 'whale-visual-reply', frameTreeNodeId: 71 };
+    contents.emit('frame-created', {}, { frame });
+    frame.name = 'changed';
+    const navigate = (target, url) => {
+      const event = { frame: target, url, isMainFrame: false, prevented: false, preventDefault() { this.prevented = true; } };
+      contents.emit('will-frame-navigate', event);
+      return event.prevented;
+    };
+    assert.equal(navigate(frame, 'about:srcdoc'), false);
+    assert.equal(navigate(frame, 'https://external.example/'), true);
+    assert.equal(navigate(frame, 'http://127.0.0.1:3080/private'), true);
+    assert.equal(navigate(frame, 'file:///C:/private'), true);
+    assert.equal(navigate(frame, 'data:text/html,new-document'), true);
+    assert.equal(navigate({ name: 'other', frameTreeNodeId: 72 }, 'https://external.example/'), false);
+    assert.deepEqual(opened, []);
+  } finally {
+    loaded.restore();
+  }
+});

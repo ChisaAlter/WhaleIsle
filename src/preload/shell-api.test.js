@@ -128,6 +128,8 @@ test('pet preload exposes only state, drag, menu, and theme controls', () => {
 
 test('harness preload keeps work loops and remote controls', () => {
   const api = buildShellApi('harness', fakeRenderer(), true);
+  assert.equal(api.visualReplyIsolation, true);
+  assert.equal(buildShellApi('boot', fakeRenderer()).visualReplyIsolation, undefined);
   assert.equal(typeof api.writeFile, 'function');
   assert.equal(typeof api.listEditors, 'function');
   assert.equal(typeof api.openInEditor, 'function');

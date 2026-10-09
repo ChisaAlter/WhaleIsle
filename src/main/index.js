@@ -1127,7 +1127,11 @@ if (!gotLock) {
       // so config writes and plugin toggles share one serialized align
       // chain no matter which surface asked.
       desktop: {
+
         project: (payload) => projectEnvironment.dispatch(payload),
+
+        htmlPreview: (input, signal) => require('./html-preview').captureHtmlPreview(input, signal),
+
         state: () => {
           const configNow = loadConfig();
           const listed = listInstalledPlugins();

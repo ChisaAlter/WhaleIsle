@@ -23,6 +23,8 @@ import type {
   SessionProjectionsRequest,
   SessionSelectModelRequest,
   SessionSelectModelValue,
+  SessionVisualReplyRequest,
+  SessionVisualReplyValue,
   SessionWorkspacePathApplication,
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { WorkspaceRemote } from '@deepseek-ai/dsh-api-workspace-controller/client'
@@ -159,6 +161,8 @@ export class FakeApiClient {
   onPrompt: (payload: unknown) => Promise<RemoteResult<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onAttachment: (payload: unknown) => Promise<RemoteResult<{ attachment: { attachmentId: never; mediaType: 'image/png'; bytes: number; width: number; height: number }; data: string }>> =
     () => Promise.resolve(ok({ attachment: { attachmentId: 'a' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1 }, data: 'AA==' }))
+  onReadVisualReply: (payload: SessionVisualReplyRequest) => Promise<RemoteResult<SessionVisualReplyValue>> =
+    () => { throw new Error('Program readVisualReply before requesting a page from this fake') }
   onUpdateQueue: (payload: unknown) => Promise<RemoteResult<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onCancel: (payload: unknown) => Promise<RemoteResult<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onOpenWorkspacePath: (payload: unknown) => Promise<RemoteResult<{ opened: true }>> =
@@ -270,6 +274,7 @@ export class FakeApiClient {
         delete: payload => this.record('session.delete', payload, this.onDelete(payload)),
         prompt: payload => this.record('session.prompt', payload, this.onPrompt(payload)),
         attachment: payload => this.record('session.attachment', payload, this.onAttachment(payload)),
+        readVisualReply: payload => this.record('session.readVisualReply', payload, this.onReadVisualReply(payload)),
         updateQueue: payload => this.record('session.updateQueue', payload, this.onUpdateQueue(payload)),
         cancel: payload => this.record('session.cancel', payload, this.onCancel(payload)),
         openWorkspacePath: payload => this.record(

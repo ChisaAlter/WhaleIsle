@@ -24,13 +24,13 @@ function desktopInstallReady() {
   return active?.ready || Promise.resolve();
 }
 
-function readBody(req) {
+function readBody(req, maxBytes = MAX_BODY_BYTES) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
     req.on('data', (chunk) => {
       size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
+      if (size > maxBytes) {
         reject(new Error('request too large'));
         req.destroy();
         return;
@@ -229,6 +229,29 @@ function createHandler({ installPlugin, startHarness, desktop, restartDelayMs })
       return;
     }
     try {
+      if (req.method === 'POST' && pathname === '/desktop/html-preview') {
+        if (typeof desktop.htmlPreview !== 'function') {
+          sendJson(res, 503, { error: 'HTML preview rendering service is unavailable' });
+          return;
+        }
+        // Base64 local images are already part of the prepared page; reserve
+        // room for JSON escaping while keeping this route independently bounded.
+        let payload;
+        try { payload = JSON.parse(await readBody(req, 52 * 1024 * 1024)); }
+        catch { badRequest(res, 'invalid or oversized HTML preview request'); return; }
+        const cancellation = new AbortController();
+        const cancel = () => cancellation.abort(new Error('HTML preview request closed.'));
+        req.once('aborted', cancel);
+        res.once('close', cancel);
+        try {
+          const value = await desktop.htmlPreview(payload, cancellation.signal);
+          if (!res.destroyed) sendJson(res, 200, value);
+        } finally {
+          req.removeListener('aborted', cancel);
+          res.removeListener('close', cancel);
+        }
+        return;
+      }
       if (req.method === 'GET' && pathname === '/desktop/state') {
         sendJson(res, 200, await desktop.state());
         return;

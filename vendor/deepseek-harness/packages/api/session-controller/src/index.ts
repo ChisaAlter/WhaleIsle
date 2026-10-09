@@ -38,6 +38,8 @@ import type {
   SessionWorkspacePathApplication,
   SessionAttachmentRequest,
   SessionAttachmentValue,
+  SessionVisualReplyRequest,
+  SessionVisualReplyValue,
   SessionBlankReuseRequest,
   SessionBlankReuseValue,
   SessionCancelRequest,
@@ -523,6 +525,13 @@ export class SessionController extends TypertRemoteService {
   @Remote('attachment')
   attachment(request: SessionAttachmentRequest): Promise<SessionAttachmentValue> {
     return this.commands.attachment(request)
+  }
+
+  /** Read a durable Visual reply, including when new publications are disabled. */
+  @Remote('readVisualReply')
+  readVisualReply(request: SessionVisualReplyRequest, signal: AbortSignal): Promise<SessionVisualReplyValue> {
+    signal.throwIfAborted()
+    return this.commands.readVisualReply(request, signal)
   }
 
   /**
