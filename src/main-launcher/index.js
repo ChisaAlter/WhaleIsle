@@ -6,6 +6,8 @@
 // and the launcher IPC surface exist here.
 
 const { app, dialog, Notification } = require('electron');
+// Select the discrete GPU before Chromium initializes any rendering contexts.
+app.commandLine.appendSwitch('force_high_performance_gpu');
 const { systemNotificationsSupported } = require('../main/system-notifications');
 const { LAUNCHER_NAME, LEGACY_LAUNCHER_USER_DATA, preserveUserDataPath } = require('../shared/product-identity');
 const { plainReleaseNotes } = require('../shared/release-notes');
