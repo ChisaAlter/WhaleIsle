@@ -471,6 +471,20 @@ button.crumb:hover {
   --dsh-composer-text-max-height: 336px;
 }
 
+/* Keep the resident input measurable during approval, including a restored
+   pending request and column resizes. It cannot paint, focus or reserve space. */
+.composerSeat:has([data-approval-key]) {
+  position: relative;
+}
+
+.composerSeat:has([data-approval-key]) [data-chain-overlay-fallback='conversation.composer'] {
+  display: block !important; /* Overrides the chain's inline display:none. */
+  position: absolute;
+  inset: 0 0 auto;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* Active phase: header is ordinary column chrome above the scrollport.
    The composer anchors to the body viewport, independently of transcript
    scroll offsets and takeover height changes. */

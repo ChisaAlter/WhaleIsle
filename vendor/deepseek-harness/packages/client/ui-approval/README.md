@@ -10,6 +10,8 @@ English | [中文](README.zh.md)
 
 Browser approval presentation over the Agent-scoped Remote Event waterfall. The plugin publishes each pending request through `ctx.uiSession`, takes over the Conversation composer, optionally renders correlated Tool detail, and returns the user's decision to the waiting Host request. Use it when a browser must collect approval for a waiting Host operation.
 
+The takeover matches the resident input card's actual width and height, including saved resize preferences and window changes. The hidden input remains measurable outside normal flow; approval detail scrolls inside the matched card while the action row remains visible.
+
 ## Table of Contents
 
 - [Model Experience](#model-experience)

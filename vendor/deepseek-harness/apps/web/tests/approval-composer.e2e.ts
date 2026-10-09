@@ -1,6 +1,8 @@
 // Browser geometry for a pending approval whose model-supplied command would
 // push the actions outside the viewport without a capped text region.
-import { readFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
@@ -96,7 +98,14 @@ describe.each(MODE === 'record' ? ['button'] as const : ['button', 'keyboard'] a
           // Role/text, not the CSS-module class names: the built client hashes those.
           const buttons = [...root.querySelectorAll<HTMLElement>('button')]
           const rows = buttons.map(button => button.getBoundingClientRect())
+          const inputCard = root.closest('[data-composer-seat]')?.querySelector<HTMLElement>(
+            '[data-chain-overlay-fallback="conversation.composer"] [data-composer-card]',
+          )
           return {
+            inputWidth: inputCard?.getBoundingClientRect().width ?? 0,
+            inputHeight: inputCard?.getBoundingClientRect().height ?? 0,
+            cardWidth: card?.getBoundingClientRect().width ?? 0,
+            cardHeight: card?.getBoundingClientRect().height ?? 0,
             buttons: buttons.length,
             capped: region === null ? 0 : region.clientHeight,
             // A scrolling region proves the cap is genuinely engaged; without
@@ -110,11 +119,19 @@ describe.each(MODE === 'record' ? ['button'] as const : ['button', 'keyboard'] a
         })
         expect(geometry.buttons).toBe(2)
         expect(geometry.scrolls).toBe(true)
-        // The panel and composer share one cap; allow sub-pixel layout variance.
-        expect(Math.abs(geometry.capped - composerCap)).toBeLessThan(1)
+        // Match the whole resident input card, including its chrome; long
+        // approval content scrolls inside that same box.
+        expect(geometry.inputWidth).toBeGreaterThan(0)
+        expect(geometry.inputHeight).toBeGreaterThan(0)
+        expect(Math.abs(geometry.cardWidth - geometry.inputWidth)).toBeLessThan(1)
+        expect(Math.abs(geometry.cardHeight - geometry.inputHeight)).toBeLessThan(1)
+        expect(geometry.capped).toBeLessThanOrEqual(composerCap)
         expect(geometry.actionsTop).toBeGreaterThan(0)
         expect(geometry.actionsBottom).toBeLessThanOrEqual(geometry.viewport)
         expect(geometry.actionsBottom).toBeLessThanOrEqual(geometry.cardBottom)
+        if (process.env.DSH_APPROVAL_SCREENSHOT_DIR) {
+          await page.screenshot({ path: join(process.env.DSH_APPROVAL_SCREENSHOT_DIR, `approval-${height}.png`) })
+        }
       }
       await page.setViewportSize(original)
     }
@@ -149,3 +166,83 @@ describe.each(MODE === 'record' ? ['button'] as const : ['button', 'keyboard'] a
     await assertFixtureInventory(SNAPSHOT_DIR, ['session.v3.jsonl', 'ui.expected.md', 'workspace.expected'])
   })
 })
+
+// Full shipped browser composition; requests use the real scoped approval
+// waterfall without executing a platform-specific shell command or model call.
+it.each([false, true])('matches approval width and height through viewport changes (saved resize: %s)', async (resized) => {
+  // The Loader runs built Host packages; its scope carrier WeakMap must be
+  // shared with the sender, rather than Vite's source module instance.
+  const home = await mkdtemp(join(tmpdir(), 'dsh-approval-size-home-'))
+  if (resized) await writeFile(join(home, 'settings.yaml'),
+    'ui-conversation:\n  composerResize: true\n  composerResizeWidth: 460\n  composerResizeHeight: 420\n')
+  const scaffold = await launchWebScaffold({ harnessHome: home })
+  const { scopeTarget } = createRequire(import.meta.url)(fileURLToPath(
+    new URL('../../../packages/core/scope/lib/index.js', import.meta.url),
+  )) as typeof import('@deepseek-ai/dsh-scope')
+  const browser = await chromium.launch()
+  const page = await newEnglishPage(browser)
+  const controller = new AbortController()
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(scaffold.authenticatedUrl)
+    await connectFreshWorkspace(page, scaffold.workspaceCwd)
+    const input = page.locator('[data-composer-input]').first()
+    await input.fill('Please inspect the workspace.')
+    if (resized) {
+      await expect.poll(() => input.evaluate(el => ({
+        width: el.closest('[data-composer-card]')!.getBoundingClientRect().width,
+        height: el.closest('[data-input-scroll]')!.getBoundingClientRect().height,
+      }))).toEqual({ width: 460, height: 420 })
+    }
+    const output = process.env.DSH_APPROVAL_SCREENSHOT_DIR ?? join(tmpdir(), 'dsh-approval-size')
+    await mkdir(output, { recursive: true })
+    await page.screenshot({ path: join(output, `input-${resized ? 'resized' : 'default'}.png`), animations: 'disabled' })
+    const agent = scaffold.ctx.agents.list()[0]
+    if (agent === undefined) throw new Error('Workspace selection did not create a session')
+    const result = scaffold.ctx.waterfall(scopeTarget(agent, agent), 'approval/request', {
+      agent, toolName: 'write', signal: controller.signal,
+      reason: 'Approval required: ' + 'Inspect and update the requested workspace file. '.repeat(80),
+    }, () => Promise.resolve('unavailable' as const)).then(value => ({ value }), error => ({ error }))
+    const panel = page.locator('[data-approval-key]')
+    await panel.waitFor({ timeout: 15_000 })
+    for (const width of [1440, 900, 620]) {
+      await page.setViewportSize({ width, height: 900 })
+      const measure = () => panel.evaluate(root => {
+        const inputCard = root.closest('[data-composer-seat]')!.querySelector<HTMLElement>('[data-composer-card]')!
+        const scroll = root.querySelector<HTMLElement>('[data-approval-scroll]')!
+        const card = scroll.parentElement!
+        const inputBox = inputCard.getBoundingClientRect()
+        const box = card.getBoundingClientRect()
+        return {
+          width: box.width, height: box.height,
+          inputWidth: inputBox.width, inputHeight: inputBox.height,
+          dw: Math.abs(box.width - inputBox.width), dh: Math.abs(box.height - inputBox.height),
+          scrolls: scroll.scrollHeight > scroll.clientHeight,
+          bodyHeight: scroll.clientHeight,
+          buttonsInside: [...card.querySelectorAll('button')].every(button => {
+            const b = button.getBoundingClientRect()
+            return b.top >= box.top && b.bottom <= box.bottom && b.left >= box.left && b.right <= box.right
+          }),
+        }
+      })
+      await expect.poll(async () => {
+        const box = await measure()
+        return box.dw < 1 && box.dh < 1 && box.width > 0 && box.height > 0
+      }).toBe(true)
+      const box = await measure()
+      expect(box.scrolls).toBe(true)
+      expect(box.bodyHeight).toBeGreaterThan(0)
+      expect(box.buttonsInside).toBe(true)
+      console.log('approval geometry', width, box)
+      await page.screenshot({ path: join(output, `approval-${resized ? 'resized' : 'default'}-${width}.png`), animations: 'disabled' })
+    }
+    await panel.getByRole('button', { name: 'Reject', exact: true }).click()
+    await expect(result).resolves.toEqual({ value: 'rejected' })
+    await expect.poll(() => panel.count()).toBe(0)
+    expect(await input.textContent()).toContain('Please inspect the workspace.')
+  } finally {
+    controller.abort()
+    await browser.close()
+    await scaffold.close()
+  }
+}, 90_000)
