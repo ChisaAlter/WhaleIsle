@@ -208,6 +208,25 @@ test('turn/end completed fires dshDone, other kinds fire dshError', (t) => {
   assert.equal(Object.keys(state.dsh.openTurns).length, 0);
 });
 
+test('a session dir removed mid-turn drops only its own open turn', (t) => {
+  const dir = tmpSessions(t);
+  const { watch, state } = makeWatch(t, dir);
+  const kept = logFile(dir, 'sess-1');
+  const gone = logFile(dir, 'sess-2');
+  appendEvents(kept, [{ type: 'turn/start', seq: 1, time: 1, data: { turn: 1 } }]);
+  appendEvents(gone, [{ type: 'turn/start', seq: 1, time: 1, data: { turn: 7 } }]);
+  watch.poll();
+  assert.equal(Object.keys(state.dsh.openTurns).length, 2);
+
+  fs.rmSync(path.dirname(gone), { recursive: true, force: true });
+  watch.poll();
+  const keys = Object.keys(state.dsh.openTurns);
+  assert.equal(keys.length, 1);
+  assert.equal(state.dsh.openTurns[keys[0]], 1);
+  assert.equal(state.dsh.files[gone], undefined); // vanished cursor dropped
+  assert.ok(state.dsh.files[kept] > 0);
+});
+
 test('usage events accumulate dayTokens and fire milestones once', (t) => {
   const dir = tmpSessions(t);
   const { watch, events, state } = makeWatch(t, dir);

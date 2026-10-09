@@ -1173,6 +1173,46 @@ test('cursor hold releases close to the reported body instead of swallowing near
   assert.deepEqual(deps.win.ignoreCalls.at(-1), [true, { forward: true }]);
 });
 
+test('cursor hold follows the reported hit islands onto the status card', (t) => {
+  let point = { x: 150, y: 150 };
+  const deps = live2dDeps({
+    sessionsDir: '',
+    loadConfig: () => ({ live2dPet: { x: 10, y: 10 } }),
+  });
+  deps.electron.screen.getCursorScreenPoint = () => point;
+  const manager = createLive2dPetManager(deps);
+  t.after(() => manager.dispose());
+  manager.show();
+  // Body island on the left; the status card is a SEPARATE island to its
+  // right, exactly like the renderer reports them.
+  deps.electron.ipcMain.handlers.get('shell:live2d-roam')(
+    authorizedEvent(deps), { x: 10, y: 20, w: 30, h: 40 });
+  deps.electron.ipcMain.handlers.get('shell:live2d-interactive')(authorizedEvent(deps), {
+    hitRegions: [
+      { x: 10, y: 20, width: 30, height: 40 },
+      { x: 100, y: 90, width: 80, height: 120 },
+    ],
+  });
+  deps.win.ignoreCalls.length = 0;
+  // Over the CARD, well outside the body hold zone — still interactive, so
+  // stepping off her onto the card never drops the window's input.
+  manager.pollCursor();
+  assert.deepEqual(deps.win.ignoreCalls.at(-1), [false, undefined]);
+  // The transparent gap between the two islands stays click-through.
+  point = { x: 60, y: 150 };
+  manager.pollCursor();
+  assert.deepEqual(deps.win.ignoreCalls.at(-1), [true, { forward: true }]);
+  point = { x: 150, y: 150 };
+  manager.pollCursor();
+  assert.deepEqual(deps.win.ignoreCalls.at(-1), [false, undefined]);
+  // Stale islands are dropped when the card closes → the hold releases.
+  deps.electron.ipcMain.handlers.get('shell:live2d-interactive')(authorizedEvent(deps), {
+    hitRegions: [{ x: 10, y: 20, width: 30, height: 40 }],
+  });
+  manager.pollCursor();
+  assert.deepEqual(deps.win.ignoreCalls.at(-1), [true, { forward: true }]);
+});
+
 
 
 test('render-process-gone recreates the overlay window instead of leaving an opaque surface', () => {
