@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { execFileSync } = require('node:child_process');
+const { Readable } = require('node:stream');
 
 const PLUGIN = path.join(__dirname, '..', '..', 'vendor', 'dsh-task-control', 'lib');
 const load = (file) => import(pathToFileURL(path.join(PLUGIN, file)).href);
@@ -376,4 +377,227 @@ test('jobs.start releases admission on a synchronous producer exception', async 
   assert.throws(() => jobs.start({}), error => error === failure);
   assert.equal(state.pending.size, 0);
   assert.equal((await acquireLock(state, { owner: 'desktop-quit', drainTimeoutMs: 20 })).ok, true);
+});
+
+function lifecycleWebServer() {
+  return {
+    prefixes: new Map(), exact: new Map(), upgrades: new Map(), fallback: undefined,
+    register(route) {
+      const table = route.kind === 'exact' ? this.exact : this.prefixes;
+      if (table.has(route.path)) throw new Error('duplicate route');
+      table.set(route.path, route);
+      return () => table.delete(route.path);
+    },
+    registerUpgrade(route) {
+      if (this.upgrades.has(route.path)) throw new Error('duplicate upgrade');
+      this.upgrades.set(route.path, route);
+      return () => this.upgrades.delete(route.path);
+    },
+    registerFallback(handler) {
+      if (this.fallback !== undefined) throw new Error('duplicate fallback');
+      this.fallback = handler;
+      return () => { this.fallback = undefined; };
+    },
+  };
+}
+
+function lifecycleContext(services) {
+  const disposers = [];
+  const listeners = new Map();
+  return {
+    get: name => services[name],
+    effect(setup) { disposers.push(setup()); },
+    on(name, handler) {
+      const handlers = listeners.get(name) || new Set();
+      listeners.set(name, handlers);
+      handlers.add(handler);
+      disposers.push(() => handlers.delete(handler));
+    },
+    emit(name, ...args) {
+      for (const handler of listeners.get(name) || []) handler(...args);
+    },
+    replaceService(name, service) {
+      services[name] = service;
+      this.emit('internal/service', name);
+    },
+    dispose() {
+      for (const dispose of disposers.splice(0).reverse()) dispose();
+    },
+  };
+}
+
+async function controlReply(webServer, op, body = {}) {
+  const request = Readable.from([Buffer.from(JSON.stringify(body))]);
+  request.method = 'POST';
+  request.url = `/dshd-task-control/${op}`;
+  request.headers = { authorization: 'Bearer lifecycle-token' };
+  const response = fakeRes();
+  await webServer.prefixes.get('/dshd-task-control').handler(request, response);
+  assert.equal(response.status, 200);
+  return JSON.parse(response.body);
+}
+
+function withLifecycleToken(t) {
+  const previous = process.env.DSHD_TASK_CONTROL_TOKEN;
+  process.env.DSHD_TASK_CONTROL_TOKEN = 'lifecycle-token';
+  t.after(() => {
+    if (previous === undefined) delete process.env.DSHD_TASK_CONTROL_TOKEN;
+    else process.env.DSHD_TASK_CONTROL_TOKEN = previous;
+  });
+}
+
+function upgradeSocket() {
+  return {
+    written: '', destroyed: false,
+    write(value) { this.written += value; },
+    destroy() { this.destroyed = true; },
+  };
+}
+
+test('service replacement registers a fresh control route while preserving the held lock', async (t) => {
+  withLifecycleToken(t);
+  const { apply } = await load('index.js');
+  const first = lifecycleWebServer();
+  const ctx = lifecycleContext({ webServer: first });
+  t.after(() => ctx.dispose());
+  apply(ctx);
+  const before = await controlReply(first, 'status');
+  const lock = await controlReply(first, 'acquire', { owner: 'replace-test' });
+  assert.equal(lock.ok, true);
+
+  const second = lifecycleWebServer();
+  second.register({ kind: 'exact', path: '/existing', handler: (_req, res) => res.end('existing') });
+  second.registerUpgrade({ path: '/existing-ws', handler: (_req, socket) => socket.write('upgrade-ok') });
+  ctx.replaceService('webServer', second);
+  // Other service notifications must neither duplicate the row nor reset the lock.
+  ctx.replaceService('jobs', { start: () => 'job-1' });
+  const after = await controlReply(second, 'status');
+  assert.equal(after.hostGeneration, before.hostGeneration);
+  assert.equal(after.lock.lockId, lock.lockId);
+  const denied = fakeRes();
+  await second.exact.get('/existing').handler({ method: 'POST', url: '/existing' }, denied);
+  assert.equal(denied.status, 503);
+  const refusedSocket = upgradeSocket();
+  second.upgrades.get('/existing-ws').handler({ url: '/existing-ws' }, refusedSocket, Buffer.alloc(0));
+  assert.ok(refusedSocket.written.includes('503'));
+  assert.equal(refusedSocket.destroyed, true);
+
+  assert.equal((await controlReply(second, 'release', { owner: 'replace-test', lockId: lock.lockId })).released, true);
+  const allowed = fakeRes();
+  await second.exact.get('/existing').handler({ method: 'POST', url: '/existing' }, allowed);
+  assert.equal(allowed.body, 'existing');
+  ctx.dispose();
+  assert.equal(first.prefixes.has('/dshd-task-control'), false);
+  assert.equal(second.prefixes.has('/dshd-task-control'), false);
+});
+
+test('plugin unload and reload retain later wrappers and gate every entry with fresh state', async (t) => {
+  withLifecycleToken(t);
+  const { apply } = await load('index.js');
+  const { AdmissionLockedError } = await load('wrap.js');
+  const server = lifecycleWebServer();
+  const route = { kind: 'exact', path: '/ping', handler: (_req, res) => res.end('ping') };
+  const upgrade = { path: '/ws', handler: (_req, socket) => socket.write('upgrade-ok') };
+  server.register(route);
+  server.registerUpgrade(upgrade);
+  server.registerFallback((_req, res) => res.end('spa'));
+  const controller = { resolveAgent: async id => ({ agent: id }) };
+  const jobs = { start: () => 'job-1' };
+  const services = { webServer: server, sessionController: controller, jobs };
+  const first = lifecycleContext(services);
+  const second = lifecycleContext(services);
+  t.after(() => { first.dispose(); second.dispose(); });
+  apply(first);
+  const before = await controlReply(server, 'status');
+
+  const calls = [];
+  const retainWrapper = (target, key) => {
+    const inner = target[key];
+    const later = function (...args) {
+      calls.push(key);
+      return inner.apply(this, args);
+    };
+    target[key] = later;
+    return later;
+  };
+  const laterRegister = retainWrapper(server, 'register');
+  const laterUpgradeRegister = retainWrapper(server, 'registerUpgrade');
+  const laterFallbackRegister = retainWrapper(server, 'registerFallback');
+  const laterRoute = retainWrapper(route, 'handler');
+  const laterUpgrade = retainWrapper(upgrade, 'handler');
+  const laterFallback = retainWrapper(server, 'fallback');
+  const laterResolve = retainWrapper(controller, 'resolveAgent');
+  const laterStart = retainWrapper(jobs, 'start');
+  server.register({ kind: 'exact', path: '/later', handler: (_req, res) => res.end('later') });
+  first.dispose();
+
+  assert.equal(server.prefixes.has('/dshd-task-control'), false);
+  for (const [target, key, later] of [
+    [server, 'register', laterRegister], [server, 'registerUpgrade', laterUpgradeRegister],
+    [server, 'registerFallback', laterFallbackRegister], [route, 'handler', laterRoute],
+    [upgrade, 'handler', laterUpgrade], [server, 'fallback', laterFallback],
+    [controller, 'resolveAgent', laterResolve], [jobs, 'start', laterStart],
+  ]) assert.equal(target[key], later);
+  const ping = fakeRes();
+  await route.handler({ method: 'POST', url: '/ping' }, ping);
+  assert.equal(ping.body, 'ping');
+  const spa = fakeRes();
+  await server.fallback({ method: 'POST', url: '/unmatched' }, spa);
+  assert.equal(spa.body, 'spa');
+  const socket = upgradeSocket();
+  upgrade.handler({ url: '/ws' }, socket, Buffer.alloc(0));
+  assert.equal(socket.written, 'upgrade-ok');
+  assert.equal(socket.destroyed, false);
+  assert.equal(jobs.start({}), 'job-1');
+  assert.deepEqual(await controller.resolveAgent('session-1'), { agent: 'session-1' });
+
+  apply(second);
+  const after = await controlReply(server, 'status');
+  assert.notEqual(after.hostGeneration, before.hostGeneration);
+  assert.equal(after.stopping, false);
+  server.register({ kind: 'exact', path: '/after-reload', handler: (_req, res) => res.end('fresh') });
+  const lock = await controlReply(server, 'acquire', { owner: 'reload-test' });
+  assert.equal(lock.ok, true);
+  for (const path of ['/ping', '/later', '/after-reload']) {
+    const denied = fakeRes();
+    await server.exact.get(path).handler({ method: 'POST', url: path }, denied);
+    assert.equal(denied.status, 503);
+    assert.equal(JSON.parse(denied.body).error.code, 'dshd/admission-locked');
+  }
+  const deniedFallback = fakeRes();
+  await server.fallback({ method: 'POST', url: '/unmatched' }, deniedFallback);
+  assert.equal(deniedFallback.status, 503);
+  const allowedRead = fakeRes();
+  await server.fallback({ method: 'GET', url: '/unmatched' }, allowedRead);
+  assert.equal(allowedRead.body, 'spa');
+  const refusedSocket = upgradeSocket();
+  upgrade.handler({ url: '/ws' }, refusedSocket, Buffer.alloc(0));
+  assert.ok(refusedSocket.written.includes('503'));
+  assert.equal(refusedSocket.destroyed, true);
+  assert.throws(() => jobs.start({}), AdmissionLockedError);
+  assert.ok((await controller.resolveAgent('session-1')).error instanceof AdmissionLockedError);
+  assert.equal((await controlReply(server, 'release', { owner: 'reload-test', lockId: lock.lockId })).released, true);
+  const resumed = fakeRes();
+  await route.handler({ method: 'POST', url: '/ping' }, resumed);
+  assert.equal(resumed.body, 'ping');
+  assert.equal(jobs.start({}), 'job-1');
+  assert.deepEqual(await controller.resolveAgent('session-1'), { agent: 'session-1' });
+  assert.ok(calls.includes('handler') && calls.includes('fallback') && calls.includes('start') && calls.includes('resolveAgent'));
+});
+
+test('unloading task control preserves a later registration at its previous control path', async (t) => {
+  withLifecycleToken(t);
+  const { apply } = await load('index.js');
+  const server = lifecycleWebServer();
+  const ctx = lifecycleContext({ webServer: server });
+  t.after(() => ctx.dispose());
+  apply(ctx);
+  server.prefixes.delete('/dshd-task-control');
+  const later = { kind: 'prefix', path: '/dshd-task-control', handler: (_req, res) => res.end('later-owner') };
+  server.register(later);
+  ctx.dispose();
+  assert.equal(server.prefixes.get(later.path), later);
+  const response = fakeRes();
+  await later.handler({ method: 'POST', url: later.path }, response);
+  assert.equal(response.body, 'later-owner');
 });

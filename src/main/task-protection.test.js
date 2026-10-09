@@ -276,22 +276,221 @@ test('production quit skips confirmation while retaining inspect, lock, cleanup 
     }, failDrain ? { acquire: async () => ({ ok: false, code: 'dshd/drain-timeout' }) } : {});
     const quit = vm.runInNewContext(`${source.slice(start, end)}; finalizeQuit`, {
       taskProtection: protection, quitting: true, stoppingForQuit: false, closingOverlayActive: false,
+      quitInProgress: false, dsh: { log: () => {} },
       stopDesktopInstallControl: () => events.push('control-stop'),
       taskControlPeer: { stop: async () => events.push('peer-stop') },
       cleanupDesktopResources: async () => events.push('cleanup'),
       hideHarnessView: () => {}, getMainWindow: () => ({}), loadConfig: () => ({}),
-      showClosingOverlay: async () => {}, harness: { shutdown: async () => events.push('shutdown') },
+      getHarnessWebContents: () => null, setTimeout, clearTimeout,
+      showClosingOverlay: async () => {}, harness: { shutdown: async () => events.push('shutdown'), cancelShutdown: () => {} },
       app: { quit: () => events.push('quit'), exit: () => assert.fail('must not force exit') },
       firstVisibleWindow: () => null,
-      confirmDialog: async () => { events.push('failure-notice'); return { response: 0 }; },
+      confirmDialog: async () => { events.push('failure-notice'); return { response: 2 }; },
     });
     await quit();
     if (failDrain) {
       assert.deepEqual(events, ['failure-notice']);
       assert.deepEqual(calls.map(call => call.op), ['inspect', 'acquire']);
     } else {
-      assert.deepEqual(events, ['control-stop', 'peer-stop', 'cleanup', 'shutdown', 'quit']);
+      assert.deepEqual(events, ['shutdown', 'cleanup', 'control-stop', 'peer-stop', 'quit']);
       assert.deepEqual(calls.map(call => call.op), ['inspect', 'acquire', 'inspect']);
     }
   }
+});
+
+function productionQuit(overrides = {}) {
+  const fs = require('node:fs');
+  const vm = require('node:vm');
+  const source = fs.readFileSync(require('node:path').join(__dirname, 'index.js'), 'utf8');
+  const start = source.indexOf("  app.on('before-quit'");
+  const end = source.indexOf("  app.on('window-all-closed'", start);
+  assert.ok(start >= 0 && end > start);
+  const requestStart = source.indexOf('function quitApp()');
+  const requestEnd = source.indexOf('function ignoreFailure(', requestStart);
+  let beforeQuit;
+  const context = {
+    quitting: true, stoppingForQuit: false, closingOverlayActive: false, quitInProgress: false,
+    dsh: { log: () => {} },
+    stopDesktopInstallControl: () => {}, taskControlPeer: { stop: async () => {} },
+    cleanupDesktopResources: async () => {}, hideHarnessView: () => {},
+    getMainWindow: () => ({}), loadConfig: () => ({}), showClosingOverlay: async () => {},
+    getHarnessWebContents: () => null,
+    harness: { shutdown: async () => {} }, firstVisibleWindow: () => null,
+    app: { quit: () => assert.fail('unexpected quit'), exit: () => assert.fail('unexpected force exit') },
+    qaEnv: () => false, process,
+    setTimeout, clearTimeout,
+    ...overrides,
+  };
+  context.harness = { cancelShutdown: () => {}, ...context.harness };
+  context.app.on = (name, handler) => { assert.equal(name, 'before-quit'); beforeQuit = handler; };
+  const functions = vm.runInNewContext(`${source.slice(start, end)}\n${source.slice(requestStart, requestEnd)}; ({ quit: finalizeQuit, request: quitApp })`, context);
+  return { ...functions, beforeQuit, context };
+}
+
+test('Retry repeats the protected quit and shuts down after the runtime recovers', async () => {
+  let attempts = 0;
+  let notices = 0;
+  let shutdowns = 0;
+  let exits = 0;
+  const { protection, calls } = makeProtection({}, {
+    acquire: async () => ++attempts === 1
+      ? { ok: false, code: 'dshd/drain-timeout' }
+      : { ok: true, lockId: 'retry-lock' },
+  });
+  const { quit } = productionQuit({
+    taskProtection: protection,
+    confirmDialog: async () => { notices++; return { response: 0 }; },
+    harness: { shutdown: async () => { shutdowns++; } },
+    app: { quit: () => { exits++; }, exit: () => assert.fail('Retry must use normal quit') },
+  });
+  await quit();
+  assert.equal(notices, 1);
+  assert.equal(shutdowns, 1);
+  assert.equal(exits, 1);
+  assert.deepEqual(calls.map(call => call.op), ['inspect', 'acquire', 'inspect', 'acquire', 'inspect']);
+});
+
+test('repeated tray quits share the failure prompt and cancelling permits a later quit', async () => {
+  let notices = 0;
+  let answer;
+  const { quit, request, beforeQuit, context } = productionQuit({
+    taskProtection: { coordinate: async () => ({ proceeded: false, code: 'dshd/unreachable' }) },
+    confirmDialog: () => { notices++; return new Promise(resolve => { answer = resolve; }); },
+  });
+  const first = quit();
+  await new Promise(setImmediate);
+  request();
+  let prevented = false;
+  beforeQuit({ preventDefault: () => { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(context.quitting, false);
+  await quit();
+  assert.equal(notices, 1);
+  answer({ response: 2 });
+  await first;
+  assert.equal(context.quitting, false);
+  const later = quit();
+  await new Promise(setImmediate);
+  assert.equal(notices, 2);
+  answer({ response: 2 });
+  await later;
+});
+
+test('force exit completes when either preview cleanup or runtime shutdown never settles', async () => {
+  for (const blocked of ['cleanup', 'shutdown']) {
+    let deadline;
+    let timerCleared = false;
+    let exits = 0;
+    let shutdownStarted = false;
+    const hanging = new Promise(() => {});
+    const { quit } = productionQuit({
+      taskProtection: { coordinate: async () => ({ proceeded: false, code: 'dshd/unreachable' }) },
+      confirmDialog: async () => ({ response: 1 }),
+      cleanupDesktopResources: () => blocked === 'cleanup' ? hanging : Promise.resolve(),
+      harness: { shutdown: () => { shutdownStarted = true; return blocked === 'shutdown' ? hanging : Promise.resolve(); } },
+      app: { exit: () => { exits++; }, quit: () => assert.fail('force exit must terminate directly') },
+      setTimeout: (callback, ms) => { assert.ok(ms > 0 && ms <= 5000); deadline = callback; return 42; },
+      clearTimeout: timer => { assert.equal(timer, 42); timerCleared = true; },
+    });
+    const pending = quit();
+    await new Promise(setImmediate);
+    assert.equal(exits, 0);
+    assert.equal(shutdownStarted, true, blocked);
+    deadline();
+    await pending;
+    assert.equal(exits, 1, blocked);
+    assert.equal(timerCleared, true);
+  }
+});
+
+test('drain failure preserves the blocked work diagnostics', async () => {
+  const { protection } = makeProtection({}, {
+    acquire: async () => ({ ok: false, code: 'dshd/drain-timeout',
+      pendingCount: 2, pendingLabels: ['http POST /api', 'resolveAgent'] }),
+  });
+  const result = await protection.coordinate('quit', { preConfirmed: true });
+  assert.equal(result.pendingCount, 2);
+  assert.deepEqual(result.pendingLabels, ['http POST /api', 'resolveAgent']);
+});
+
+test('failed shutdown offers recovery and cancelling removes the overlay without destroying the page', async () => {
+  const { protection } = makeProtection();
+  let dismissed = 0;
+  let hidden = 0;
+  let notices = 0;
+  const { quit, context } = productionQuit({
+    taskProtection: protection,
+    harness: { shutdown: async () => { throw new Error('process still alive'); } },
+    showClosingOverlay: async () => async () => { dismissed++; },
+    hideHarnessView: () => { hidden++; },
+    confirmDialog: async () => { notices++; return { response: 2 }; },
+  });
+  await quit();
+  assert.equal(notices, 1);
+  assert.equal(dismissed, 1);
+  assert.equal(hidden, 0);
+  assert.equal(context.quitting, false);
+  assert.equal(context.stoppingForQuit, false);
+  assert.equal(context.closingOverlayActive, false);
+  assert.equal(context.quitInProgress, false);
+});
+
+test('Retry can complete after a shutdown rejection and does not release a failed terminal commit as success', async () => {
+  const { protection, calls } = makeProtection();
+  let attempts = 0;
+  let quits = 0;
+  const { quit } = productionQuit({
+    taskProtection: protection,
+    harness: { shutdown: async () => { if (++attempts === 1) throw new Error('taskkill denied'); } },
+    confirmDialog: async () => ({ response: 0 }),
+    app: { quit: () => { quits++; }, exit: () => assert.fail('Retry must stop normally') },
+  });
+  await quit();
+  assert.equal(attempts, 2);
+  assert.equal(quits, 1);
+  assert.deepEqual(calls.map(call => call.op), ['inspect', 'acquire', 'inspect', 'release',
+    'inspect', 'acquire', 'inspect']);
+});
+
+test('a hung normal shutdown reaches the recovery prompt and retains the page', async () => {
+  const { protection } = makeProtection();
+  let deadline;
+  let hidden = false;
+  let notices = 0;
+  const { quit, context } = productionQuit({
+    taskProtection: protection,
+    harness: { shutdown: () => new Promise(() => {}) },
+    hideHarnessView: () => { hidden = true; },
+    confirmDialog: async () => { notices++; return { response: 2 }; },
+    setTimeout: (callback, ms) => { assert.equal(ms, 30000); deadline = callback; return 1; },
+    clearTimeout: timer => assert.equal(timer, 1),
+  });
+  const pending = quit();
+  await new Promise(setImmediate);
+  assert.equal(notices, 0);
+  deadline();
+  await pending;
+  assert.equal(notices, 1);
+  assert.equal(hidden, false);
+  assert.equal(context.quitInProgress, false);
+});
+
+test('force exit still waits for the runtime when preview cleanup rejects', async () => {
+  let deadline;
+  let exited = false;
+  const { quit } = productionQuit({
+    taskProtection: { coordinate: async () => ({ proceeded: false, code: 'dshd/unreachable' }) },
+    cleanupDesktopResources: async () => { throw new Error('preview teardown failed'); },
+    harness: { shutdown: () => new Promise(() => {}) },
+    confirmDialog: async () => ({ response: 1 }),
+    app: { quit: () => assert.fail('must force exit'), exit: () => { exited = true; } },
+    setTimeout: (callback, ms) => { assert.equal(ms, 5000); deadline = callback; return 1; },
+    clearTimeout: () => {},
+  });
+  const pending = quit();
+  await new Promise(setImmediate);
+  assert.equal(exited, false);
+  deadline();
+  await pending;
+  assert.equal(exited, true);
 });

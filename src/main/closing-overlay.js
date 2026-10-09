@@ -1,4 +1,5 @@
 const OVERLAY_ID = 'dshd-shell-closing';
+let closingGeneration = 0;
 
 function overlayCss(theme) {
   return `
@@ -69,7 +70,7 @@ function closingCopy(locale) {
   };
 }
 
-function overlayScript(copy) {
+function overlayScript(copy, generation) {
   return `(() => {
     const id = ${JSON.stringify(OVERLAY_ID)};
     const pick = (...keys) => {
@@ -81,6 +82,8 @@ function overlayScript(copy) {
       return '';
     };
     const root = document.getElementById(id) || document.createElement('div');
+    if (Number(root.dataset.closingGeneration || 0) > ${JSON.stringify(generation)}) return;
+    root.dataset.closingGeneration = ${JSON.stringify(String(generation))};
     if (!root.id) {
       root.id = id;
       root.setAttribute('role', 'alertdialog');
@@ -125,7 +128,7 @@ function overlayScript(copy) {
   })()`;
 }
 
-async function showClosingOverlay(win, locale) {
+async function showClosingOverlay(win, locale, contents = win?.webContents) {
   if (!win || win.isDestroyed()) {
     return;
   }
@@ -140,14 +143,32 @@ async function showClosingOverlay(win, locale) {
   win.setBackgroundColor(theme.bg);
   win.focus();
   let paintTimeout;
+  let cssKey;
+  let dismissed = false;
+  const generation = ++closingGeneration;
+  const dismiss = async () => {
+    dismissed = true;
+    if (!contents || contents.isDestroyed()) return;
+    await Promise.allSettled([
+      contents.executeJavaScript(`(() => {
+        const root = document.getElementById(${JSON.stringify(OVERLAY_ID)});
+        if (root?.dataset.closingGeneration === ${JSON.stringify(String(generation))}) root.remove();
+      })()`),
+      cssKey ? contents.removeInsertedCSS(cssKey) : Promise.resolve(),
+    ]);
+  };
   try {
     // Covered/hidden boot pages can suspend animation frames indefinitely.
     // Painting is best effort; its host deadline must never hold shutdown.
     await Promise.race([
       (async () => {
-        await win.webContents.insertCSS(overlayCss(theme));
-        await win.webContents.executeJavaScript(overlayScript(closingCopy(locale)));
-      })(),
+        cssKey = await contents.insertCSS(overlayCss(theme));
+        if (dismissed) return;
+        await contents.executeJavaScript(overlayScript(closingCopy(locale), generation));
+      })().finally(() => {
+        // A hidden/unresponsive page may finish painting after cancellation.
+        if (dismissed) void dismiss().catch(() => {});
+      }),
       new Promise(resolve => { paintTimeout = setTimeout(resolve, 500); }),
     ]);
   } catch {
@@ -155,6 +176,7 @@ async function showClosingOverlay(win, locale) {
   } finally {
     clearTimeout(paintTimeout);
   }
+  return dismiss;
 }
 
 module.exports = {

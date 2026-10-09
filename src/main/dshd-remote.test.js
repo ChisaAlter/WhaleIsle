@@ -6,6 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const http = require('node:http');
+const { execFile } = require('node:child_process');
 const {
   DshdRemote,
   buildDaemonChildEnv,
@@ -631,6 +632,160 @@ test('stopDaemon force-kills a child that ignores the stdin stop line', async ()
   }
 });
 
+test('stop before the real child ready line cancels startup and leaves no owned process', async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-ready-stop-'));
+  const marker = path.join(home, 'runner-pid');
+  const f = fakeRemote({ home, runnerBody: [
+    'fs.writeFileSync(launch.daemonConfig.chisacodeHome + "/runner-pid", String(process.pid));',
+    "process.stdin.removeAllListeners('data');",
+    "process.stdin.on('data', (chunk) => {",
+    "  if (!chunk.includes('stop\\n')) return;",
+    '  emit({ msg: "dshd_daemon_ready", listen: launch.daemonConfig.listen });',
+    '  setImmediate(() => process.exit(0));',
+    '});',
+  ].join('\n') });
+  t.after(async () => {
+    await f.remote.stopDaemon();
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(path.dirname(f.remote.runnerPath), { recursive: true, force: true });
+  });
+  const listening = [];
+  f.remote.on('listening', (snapshot) => listening.push(snapshot.listening));
+  const startup = f.remote.startDaemon();
+  const outcome = startup.then(() => ({ ok: true }), (error) => ({ ok: false, error }));
+  const deadline = Date.now() + f.remote.readyTimeoutMs;
+  while (!fs.existsSync(marker) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.ok(fs.existsSync(marker), 'the owned runner must actually start before stop');
+  const pid = Number(fs.readFileSync(marker, 'utf8'));
+  await f.remote.stopDaemon();
+  const result = await outcome;
+  assert.equal(result.ok, false, 'the late ready line must not complete cancelled startup');
+  assert.equal(result.error.code, 'DSHD_REMOTE_CANCELLED');
+  assert.equal(f.remote.daemon, null);
+  assert.equal(f.remote.snapshot().listening, false);
+  assert.deepEqual(f.remote.snapshot().urls, []);
+  assert.ok(!listening.includes(true), 'cancelled startup must never publish listening');
+  assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+});
+
+test('a refused daemon kill retains the real handle and stop retry observes its exit', async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-stop-refused-'));
+  const f = fakeRemote({ home, options: {
+    stopTimeoutMs: 20,
+    execFile: (command, args, options, callback) => callback(new Error('owned tree kill refused')),
+  }, runnerBody: [
+    "process.stdin.removeAllListeners('data');",
+    'emit({ msg: "dshd_daemon_ready", listen: launch.daemonConfig.listen });',
+    'setInterval(() => {}, 1000);',
+  ].join('\n') });
+  let child;
+  let originalKill;
+  t.after(async () => {
+    if (child && originalKill) child.kill = originalKill;
+    f.remote.execFile = execFile;
+    await f.remote.stopDaemon();
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(path.dirname(f.remote.runnerPath), { recursive: true, force: true });
+  });
+  await f.remote.startDaemon();
+  const handle = f.remote.daemon;
+  child = handle.child;
+  originalKill = child.kill;
+  child.kill = () => false;
+  await assert.rejects(f.remote.stopDaemon(), /远程守护进程未停止/);
+  assert.equal(f.remote.daemon, handle);
+  assert.match(f.remote.snapshot().error, /未停止/);
+  assert.equal(process.kill(child.pid, 0), true);
+  child.kill = originalKill;
+  f.remote.execFile = execFile;
+  await f.remote.stopDaemon();
+  assert.equal(f.remote.daemon, null);
+  assert.equal(f.remote.snapshot().listening, false);
+  assert.equal(f.remote.snapshot().error, '');
+  assert.ok(child.exitCode !== null || child.signalCode);
+  assert.throws(() => process.kill(child.pid, 0), { code: 'ESRCH' });
+});
+
+test('Windows daemon timeout keeps refused Node and Electron owned trees tracked until retry', { skip: process.platform !== 'win32' }, async (t) => {
+  for (const [runtime, execPath] of [['Node', process.execPath], ['Electron RUN_AS_NODE', require('electron')]]) {
+    await t.test(runtime, async (t) => {
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-owned-tree-'));
+      let child;
+      let descendantPid;
+      let allowTaskkill = false;
+      const commands = [];
+      const run = (command, args, options, callback) => {
+        commands.push(command);
+        if (allowTaskkill) execFile(command, args, options, callback);
+        else {
+          const error = new Error('tree stop denied');
+          error.code = 1;
+          callback(error, '');
+        }
+      };
+      const f = fakeRemote({ home, options: { stopTimeoutMs: 20, execPath, execFile: run }, runnerBody: [
+        "process.stdin.removeAllListeners('data');",
+        "const { spawn } = await import('node:child_process');",
+        "const leaf = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore', windowsHide: true });",
+        'fs.writeFileSync(launch.daemonConfig.chisacodeHome + "/owned-descendant.pid", String(leaf.pid));',
+        'emit({ msg: "dshd_daemon_ready", listen: launch.daemonConfig.listen });',
+        'setInterval(() => {}, 1000);',
+      ].join('\n') });
+      t.after(async () => {
+        allowTaskkill = true;
+        await f.remote.stopDaemon();
+        if (descendantPid) {
+          let live = false;
+          try { live = process.kill(descendantPid, 0); } catch { /* already gone */ }
+          if (live) await new Promise((resolve) => execFile('taskkill', ['/pid', String(descendantPid), '/T', '/F'], { windowsHide: true }, resolve));
+        }
+        fs.rmSync(home, { recursive: true, force: true });
+        fs.rmSync(path.dirname(f.remote.runnerPath), { recursive: true, force: true });
+      });
+      await f.remote.startDaemon();
+      const handle = f.remote.daemon;
+      child = handle.child;
+      descendantPid = Number(fs.readFileSync(path.join(home, 'owned-descendant.pid'), 'utf8'));
+      await assert.rejects(f.remote.stopDaemon(), /未停止.*tree stop denied/);
+      assert.deepEqual(commands, ['taskkill']);
+      assert.equal(f.remote.daemon, handle);
+      assert.equal(process.kill(child.pid, 0), true);
+      assert.equal(process.kill(descendantPid, 0), true, 'a denied tree stop must not silently kill only the root');
+      allowTaskkill = true;
+      await f.remote.stopDaemon();
+      assert.equal(f.remote.daemon, null);
+      assert.equal(f.remote.snapshot().listening, false);
+      assert.throws(() => process.kill(child.pid, 0), { code: 'ESRCH' });
+      assert.throws(() => process.kill(descendantPid, 0), { code: 'ESRCH' });
+    });
+  }
+});
+
+test('stop invalidates pending API preparation without waiting or allowing a late spawn', async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-api-stop-'));
+  const f = fakeRemote({ home });
+  const api = f.remote.serverApi;
+  let releaseApi;
+  const preparing = new Promise((resolve) => { releaseApi = resolve; });
+  f.remote.ensureApi = () => preparing;
+  t.after(async () => {
+    releaseApi(api);
+    await f.remote.stopDaemon();
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(path.dirname(f.remote.runnerPath), { recursive: true, force: true });
+  });
+  const startup = f.remote.startDaemon();
+  const cancelled = assert.rejects(startup, { code: 'DSHD_REMOTE_CANCELLED' });
+  await f.remote.stopDaemon();
+  releaseApi(api);
+  await cancelled;
+  assert.equal(f.remote.daemon, null);
+  assert.equal(f.remote.snapshot().listening, false);
+  assert.equal(fs.existsSync(path.join(home, 'runner-spawns.log')), false);
+});
+
 test('DshdRemote never uses lan.pairingUrl for product QR', async () => {
   const lan = require('../shared/lan');
   const original = lan.pairingUrl;
@@ -841,6 +996,27 @@ test('ensureDshAcpShim materializes PATH shims only when the bundled ACP entry i
   const cmd = fs.readFileSync(path.join(binDir, 'dsh-acp-demo.cmd'), 'utf8');
   assert.match(cmd, /set ELECTRON_RUN_AS_NODE=1/);
   assert.ok(cmd.includes(`"/opt/My App/electron" "${entry}" %*`));
+});
+
+test('quit cancels a configuration restart or leftover-handle cleanup waiting on the same stop', async () => {
+  for (const kind of ['configuration', 'leftover']) {
+    const remote = new DshdRemote({ getConfig: () => ({ remoteRelayEndpoint: 'new.example:443' }) });
+    if (kind === 'configuration') {
+      remote.daemon = { stopping: false };
+      remote.runtimeKey = 'old';
+    } else remote.pendingDaemon = {};
+    let finishStop;
+    remote.stopDaemonResources = () => new Promise(resolve => { finishStop = resolve; });
+    let starts = 0;
+    remote.ensureApi = async () => { starts++; throw new Error('must not start after quit'); };
+    const restart = remote.startDaemon();
+    const cancelled = assert.rejects(restart, { code: 'DSHD_REMOTE_CANCELLED' });
+    await new Promise(setImmediate);
+    const quit = remote.stopDaemon();
+    finishStop();
+    await Promise.all([quit, cancelled]);
+    assert.equal(starts, 0, kind);
+  }
 });
 
 test('DshdRemote snapshot is chisacode-v2 and has no host-token wall', () => {

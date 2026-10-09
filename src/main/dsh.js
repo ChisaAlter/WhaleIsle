@@ -221,13 +221,16 @@ function missingDesktopForkPackages(root) {
 }
 
 function execTimed(command, args, timeoutMs = 2500, run = execFile) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     run(command, args, {
       timeout: timeoutMs,
       windowsHide: true,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
-    }, (_error, stdout) => resolve(stdout ? String(stdout) : ''));
+    }, (error, stdout) => {
+      if (error) reject(error);
+      else resolve(stdout ? String(stdout) : '');
+    });
   });
 }
 
@@ -248,21 +251,43 @@ async function isSafeToKill(pid, run = execFile) {
 
 async function killTree(pid, run = execFile) {
   if (!pid || !await isSafeToKill(pid, run)) {
-    return;
+    return false;
   }
+  let failure;
   try {
     if (process.platform === 'win32') {
       await execTimed('taskkill', ['/pid', String(pid), '/T', '/F'], 2500, run);
     } else {
       process.kill(-pid, 'SIGTERM');
     }
-  } catch {
+  } catch (error) {
+    failure = error;
+    if (process.platform === 'win32') {
+      // A parent-only signal cannot prove that taskkill /T stopped the owned
+      // descendants. Keep the live tree tracked for an explicit retry.
+      if (!processAlive(pid)) return true;
+      const stopError = new Error(`dsh 进程树未停止（pid ${pid}）：${error.message}`);
+      stopError.code = 'DSH_STOP_FAILED';
+      stopError.cause = error;
+      throw stopError;
+    }
     try {
       process.kill(pid, 'SIGTERM');
-    } catch {
-      // already gone
+    } catch (fallbackError) {
+      if (fallbackError.code !== 'ESRCH') failure = fallbackError;
     }
   }
+  const deadline = Date.now() + 2_000;
+  while (processAlive(pid)) {
+    if (Date.now() >= deadline) {
+      const error = new Error(`dsh 进程未停止（pid ${pid}）${failure ? `：${failure.message}` : ''}`);
+      error.code = 'DSH_STOP_FAILED';
+      if (failure) error.cause = failure;
+      throw error;
+    }
+    await sleep(50);
+  }
+  return true;
 }
 
 function pidFilePath() {
@@ -309,8 +334,9 @@ function processAlive(pid) {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    // Access denied is evidence of a live process, not a successful stop.
+    return error.code !== 'ESRCH';
   }
 }
 
@@ -897,21 +923,24 @@ class DshManager extends EventEmitter {
   }
 
   async _start(options = {}) {
+    const gen = ++this.generation;
+    const isCurrent = () => gen === this.generation;
     if (this._stopPromise) {
       // 与 stop 重叠：等 stop 收尾后再启动，避免互相踩踏
       await this._stopPromise;
+      if (!isCurrent()) throw cancelledError();
     }
     // The controller opens the boundary before preparation; direct starts
     // open it here. Keep the full history for diagnostics, not attribution.
     if (this.state !== 'starting') this.beginStartLog();
-    const gen = ++this.generation;
-    const isCurrent = () => gen === this.generation;
 
     if (this.child) {
-      const leftover = this.child.pid;
+      const leftoverChild = this.child;
+      const leftover = leftoverChild.pid;
       this.log(`清理残留 dsh 进程（pid ${leftover}）`);
-      this.child = null;
-      await this._killTree(leftover);
+      await this._stopOwnedProcess(leftover);
+      if (this.child === leftoverChild) this.child = null;
+      this._clearPidFile();
       await this._sleep(300);
       if (!isCurrent()) {
         throw cancelledError();
@@ -980,6 +1009,7 @@ class DshManager extends EventEmitter {
     try {
       const env = this.spawnEnv(config, launch.nodeBin);
       this.log(`子进程 DSH_HOME ${env.DSH_HOME}`);
+      if (!isCurrent()) throw cancelledError();
       child = this._spawnHarness(launch.command, launch.args, {
         cwd: config.workspace,
         env,
@@ -1006,18 +1036,10 @@ class DshManager extends EventEmitter {
       return url;
     } catch (error) {
       if (!isCurrent()) {
-        const stalePid = child?.pid;
-        if (stalePid && this.child === child) {
-          this.child = null;
-          this._clearPidFile();
-          await this._killTree(stalePid);
-        }
         // 本代已被 stop/restart 取消：状态由 stop 收尾为 idle，这里绝不改写
         throw error;
       }
       const pid = (child || this.child)?.pid;
-      this.child = null;
-      this._clearPidFile();
       if (!this.failure) {
         const message = error && error.message ? error.message : String(error);
         this.error = message;
@@ -1028,8 +1050,10 @@ class DshManager extends EventEmitter {
         });
       }
       if (pid) {
-        await this._killTree(pid);
+        await this._stopOwnedProcess(pid);
       }
+      if (this.child === child) this.child = null;
+      this._clearPidFile();
       throw error;
     }
   }
@@ -1040,8 +1064,10 @@ class DshManager extends EventEmitter {
       return; // 旧 child 或已失效 generation 的事件，一律无效
     }
     const message = error && error.message ? error.message : String(error);
-    this.child = null;
-    this._clearPidFile();
+    if (!child.pid || child.exitCode !== null || child.signalCode) {
+      this.child = null;
+      this._clearPidFile();
+    }
     this.error = message;
     this.log(message, 'error');
     const phase = this.state === 'ready' ? 'runtime' : 'startup';
@@ -1059,6 +1085,9 @@ class DshManager extends EventEmitter {
     this._clearPidFile();
     if (this.state === 'stopping' || this.state === 'idle') {
       return; // stop 主动结束，状态由 stop() 收尾
+    }
+    if (this.state === 'error' && this.failure) {
+      return; // The first child error remains the cause; exit only releases ownership.
     }
     const message = `dsh 进程结束（code ${code ?? 'null'}, signal ${signal || 'none'}）`;
     const phase = this.state === 'ready' ? 'runtime' : 'startup';
@@ -1102,6 +1131,10 @@ class DshManager extends EventEmitter {
   }
 
   async stop() {
+    // Every stop request also cancels a start queued behind an earlier stop.
+    this.generation += 1;
+    this.preparationAbort?.abort();
+    this.inFlight = null;
     if (this._stopPromise) {
       return this._stopPromise;
     }
@@ -1117,31 +1150,33 @@ class DshManager extends EventEmitter {
   }
 
   async _doStop() {
-    this.generation += 1; // 使 in-flight start 与旧 child 事件全部失效
-    this.preparationAbort?.abort();
-    this.inFlight = null; // 下一次 start 从全新代开始
     this.attached = false;
     const child = this.child;
     const pid = child?.pid || this._readPidFile();
-    // Drop the live child before SIGTERM/killTree so a cancelled start catch
-    // cannot also killTree the same pid during the non-Windows grace sleep.
-    this.child = null;
-    if (pid) {
-      this.setState('stopping');
-      this.log(`停止 dsh（pid ${pid}）`);
-      if (child && process.platform !== 'win32') {
-        try {
-          child.kill('SIGTERM');
-        } catch {
-          // ignore
+    try {
+      if (pid) {
+        this.setState('stopping', { error: '' });
+        this.log(`停止 dsh（pid ${pid}）`);
+        if (child && process.platform !== 'win32') {
+          try {
+            child.kill('SIGTERM');
+          } catch {
+            // Tree cleanup below still owns the stop result.
+          }
+          await this._sleep(800);
         }
-        await this._sleep(800);
+        await this._stopOwnedProcess(pid);
       }
-      await this._killTree(pid);
+    } catch (error) {
+      const message = error?.message || String(error);
+      this.log(message, 'error');
+      this.setState('stopping', { error: message });
+      throw error;
     }
+    if (this.child === child) this.child = null;
     this._clearPidFile();
     if (this.state !== 'idle') {
-      this.setState('idle');
+      this.setState('idle', { error: '', failure: null });
     }
   }
 
@@ -1186,6 +1221,15 @@ class DshManager extends EventEmitter {
 
   _killTree(pid) {
     return this._deps.killTree(pid);
+  }
+
+  async _stopOwnedProcess(pid) {
+    const stopped = await this._killTree(pid);
+    if (stopped === false && processAlive(pid)) {
+      const error = new Error(`无法安全停止 dsh 进程（pid ${pid}），进程身份未通过检查`);
+      error.code = 'DSH_STOP_FAILED';
+      throw error;
+    }
   }
 
   _buildLaunch(config) {

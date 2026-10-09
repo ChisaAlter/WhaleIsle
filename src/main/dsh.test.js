@@ -8,6 +8,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
+const { spawn, execFile } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -579,13 +580,111 @@ test('Windows tree cleanup yields during process lookup and termination, preserv
   await pending;
   for (const name of ['electron.exe', 'Whale Isle.exe', 'unrelated.exe', '']) {
     const commands = [];
-    await killTree(CHILD_PID, (command, args, options, callback) => {
+    const stopped = await killTree(CHILD_PID, (command, args, options, callback) => {
       commands.push(command);
       callback(null, name ? `"${name}","4242"` : '');
     });
+    assert.equal(stopped, false, 'unsafe images must report that no stop was performed');
     assert.deepEqual(commands, ['tasklist']);
   }
   await killTree(process.pid, () => assert.fail('must not query or kill itself'));
+});
+
+test('a later stop cancels a start queued behind an earlier stop', async (t) => {
+  let releaseKill;
+  const pendingKill = new Promise((resolve) => { releaseKill = resolve; });
+  const h = makeHarness({ deps: { killTree: () => pendingKill } });
+  t.after(h.cleanup);
+  t.after(() => releaseKill());
+  h.setReachable(true);
+  await h.manager.start();
+  const firstStop = h.manager.stop();
+  const queuedStart = h.manager.start();
+  const cancelled = assert.rejects(queuedStart, { code: 'DSH_CANCELLED' });
+  const finalStop = h.manager.stop();
+  releaseKill();
+  await Promise.all([firstStop, finalStop, cancelled]);
+  assert.equal(h.spawned.length, 1, 'the cancelled start must never spawn after shutdown');
+  assert.equal(h.manager.state, 'idle');
+});
+
+test('failed Windows taskkill preserves a real owned process tree and PID until tree stop retry succeeds', { skip: process.platform !== 'win32' }, async (t) => {
+  const { killTree } = require('./dsh');
+  const originalKill = process.kill;
+  let child;
+  let descendantPid;
+  let allowTaskkill = false;
+  let fallbackAttempts = 0;
+  const commands = [];
+  const run = (command, args, options, callback) => {
+    commands.push(command);
+    if (command === 'tasklist') callback(null, `"node.exe","${child.pid}"`);
+    else if (allowTaskkill) execFile(command, args, options, callback);
+    else {
+      const error = new Error('taskkill denied');
+      error.code = 1;
+      callback(error, '');
+    }
+  };
+  const h = makeHarness({ deps: {
+    spawnHarness: () => {
+      child = spawn(process.execPath, ['-e', [
+        "const leaf = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore', windowsHide: true });",
+        "require('node:fs').writeFileSync(process.argv[1], String(leaf.pid));",
+        `process.stdout.write('dsh web: ${EXPECTED_URL}\\n');`,
+        'setInterval(() => {}, 1000);',
+      ].join('\n'), path.join(h.workspace, 'owned-descendant.pid')], {
+        stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+      });
+      return child;
+    },
+    killTree: (pid) => killTree(pid, run),
+  } });
+  t.after(async () => {
+    process.kill = originalKill;
+    if (child?.pid && child.exitCode === null && !child.signalCode) {
+      await new Promise((resolve) => execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }, resolve));
+      await waitFor(() => child.exitCode !== null || child.signalCode);
+    }
+    if (descendantPid) {
+      try { originalKill(descendantPid, 0); }
+      catch { descendantPid = null; }
+      if (descendantPid) await new Promise((resolve) => execFile('taskkill', ['/pid', String(descendantPid), '/T', '/F'], { windowsHide: true }, resolve));
+    }
+    h.cleanup();
+  });
+  h.setReachable(true);
+  await h.manager.start();
+  descendantPid = Number(fs.readFileSync(path.join(h.workspace, 'owned-descendant.pid'), 'utf8'));
+  const clearsBefore = h.calls.clearPid;
+  process.kill = function (pid, signal) {
+    if (pid === child.pid && signal === 'SIGTERM') {
+      fallbackAttempts += 1;
+      const error = new Error('signal denied');
+      error.code = 'EPERM';
+      throw error;
+    }
+    return originalKill.call(process, pid, signal);
+  };
+  await assert.rejects(h.manager.stop(), { code: 'DSH_STOP_FAILED' });
+  assert.deepEqual(commands, ['tasklist', 'taskkill']);
+  assert.equal(fallbackAttempts, 0, 'a parent-only signal must not discard tree ownership');
+  assert.equal(h.manager.state, 'stopping');
+  assert.match(h.manager.error, /未停止/);
+  assert.equal(h.manager.child, child);
+  assert.equal(h.calls.clearPid, clearsBefore, 'a live process must retain its PID file');
+  assert.equal(originalKill(child.pid, 0), true);
+  assert.equal(originalKill(descendantPid, 0), true, 'descendants remain tracked under their owned root');
+
+  process.kill = originalKill;
+  allowTaskkill = true;
+  await h.manager.stop();
+  await waitFor(() => child.exitCode !== null || child.signalCode);
+  assert.equal(h.manager.state, 'idle');
+  assert.equal(h.manager.child, null);
+  assert.ok(h.calls.clearPid > clearsBefore);
+  assert.throws(() => originalKill(child.pid, 0), { code: 'ESRCH' });
+  assert.throws(() => originalKill(descendantPid, 0), { code: 'ESRCH' });
 });
 
 test('stop awaits asynchronous process cleanup before clearing pid and allowing another start', async (t) => {
