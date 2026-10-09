@@ -1474,7 +1474,7 @@ if (!gotLock) {
               let shutdownTimer;
               try {
                 await Promise.race([
-                  Promise.all([harness.shutdown(), cleanupDesktopResources()]),
+                  Promise.all([harness.shutdown(), cleanupDesktopResources(), getLive2dPet()?.dispose()]),
                   new Promise((_, reject) => {
                     shutdownTimer = setTimeout(() => {
                       const error = new Error('后台关停未在 30 秒内完成');
@@ -1542,7 +1542,7 @@ if (!gotLock) {
                   stopDesktopInstallControl();
                   void taskControlPeer.stop();
                   // Start stopping the child even if a preview never closes.
-                  const results = await Promise.allSettled([harness.shutdown(), cleanupDesktopResources()]);
+                  const results = await Promise.allSettled([harness.shutdown(), cleanupDesktopResources(), getLive2dPet()?.dispose()]);
                   for (const result of results) {
                     if (result.status === 'rejected') {
                       dsh.log(`强制退出：后台关停失败：${result.reason?.message || String(result.reason)}`, 'error');
