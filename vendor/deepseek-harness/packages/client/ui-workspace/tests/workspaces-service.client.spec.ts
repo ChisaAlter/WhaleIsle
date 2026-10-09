@@ -1443,6 +1443,16 @@ describe('UiWorkspaceService', () => {
     expect(b.workspaces.echoCalls).toEqual([[]])
   })
 
+  it('keeps native directory picking independent of the composed feature picker', async () => {
+    const b = bench()
+    b.directoryPicker.onPick = () => Promise.resolve({ ok: true, value: '/native-selected' })
+    const dispose = b.uiWorkspace.registerDirectoryPicker(() => b.uiWorkspace.pickDirectory())
+    await expect(b.uiWorkspace.selectDirectory()).resolves.toBe('/native-selected')
+    expect(b.directoryPicker.callsOf('pick')).toEqual([{}])
+    dispose()
+    await expect(b.uiWorkspace.selectDirectory()).resolves.toBe('/native-selected')
+  })
+
   it('passes directory operations to the Host and preserves structured browse failures', async () => {
     const b = bench()
     b.directoryPicker.onPick = () => Promise.resolve({ ok: true, value: '/w/alpha' })

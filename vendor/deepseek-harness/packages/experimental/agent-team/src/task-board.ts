@@ -3,6 +3,7 @@
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { TeamMembership } from './roster.ts'
 import { TeamError } from './error.ts'
+import type { TeamManagement } from './management.ts'
 import type { TeamJournal } from './journal.ts'
 import type { TeamState } from './projection.ts'
 import { resolveActiveMember } from './roster.ts'
@@ -33,6 +34,7 @@ export class TeamTaskBoard {
   constructor(
     private readonly journal: TeamJournal,
     private readonly maxTasks: number,
+    private readonly management: TeamManagement,
   ) {}
 
   /**
@@ -45,11 +47,13 @@ export class TeamTaskBoard {
     const { root } = membership
     return this.journal.transact(root.id, async () => {
       const state = this.journal.state(root)
-      const active = state.tasks.filter(task => task.status !== 'deleted').length
+      const existing = request.taskId === undefined ? undefined : state.tasks.find(task => task.id === request.taskId)
+      if (existing !== undefined) return projectTaskView(state, existing)
+      const active = state.tasks.filter(task => task.status !== 'deleted' && !this.management.state(root).coldTasks.has(task.id)).length
       if (active >= this.maxTasks) {
         throw new TeamError(`Team task limit ${this.maxTasks} reached`, 'TEAM_TASK_LIMIT')
       }
-      const id = TeamTaskId(`task-${state.nextTaskNumber}`)
+      const id = request.taskId ?? TeamTaskId(`task-${state.nextTaskNumber}`)
       if (state.tasks.some(task => task.id === id)) {
         throw new TeamError('Team task id space exhausted', 'TEAM_TASK_LIMIT')
       }
@@ -182,7 +186,7 @@ export class TeamTaskBoard {
             break
           }
           if (!taskReady(state, current)) throw new TeamError(`team task "${current.id}" is blocked`, 'TEAM_TASK_BLOCKED')
-          const assignee = resolveActiveMember(root, state, request.owner)
+          const assignee = resolveActiveMember(root, state, request.owner, this.management.state(root).policy !== undefined)
           next = { ...current, status: 'in_progress', ownerId: assignee.id }
           break
         }

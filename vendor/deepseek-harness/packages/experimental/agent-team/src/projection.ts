@@ -1,6 +1,7 @@
 /** Team state projected incrementally from committed Session events, with a durable-only client view. */
 
 import { z } from 'zod'
+import { teamControlEventSchema } from './control.ts'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionEventMap, SessionId } from '@deepseek-ai/dsh-session'
@@ -176,6 +177,7 @@ const teamProjectionEntrySchema = z.object({
 
 /** Whether one event belongs to the Team domain. */
 export type TeamEventType =
+  | 'team/control'
   | 'team/member'
   | 'team/task'
   | 'team/message/queued'
@@ -190,7 +192,8 @@ type TeamSessionEvent = SessionEvent<TeamEventType>
  * @returns whether the event has a Team-owned type.
  */
 export function isTeamEvent(event: SessionEvent): event is TeamSessionEvent {
-  return event.type === 'team/member'
+  return event.type === 'team/control'
+    || event.type === 'team/member'
     || event.type === 'team/task'
     || event.type === 'team/message/queued'
     || event.type === 'team/message/delivered'
@@ -208,6 +211,8 @@ function parsePersisted<T>(type: TeamEventType, schema: z.ZodType<T>, value: unk
 /** Decode the complete current-version payload selected by one Team event type. */
 function parseCurrentTeamEvent(event: TeamSessionEvent): TeamSessionEvent {
   switch (event.type) {
+    case 'team/control':
+      return { ...event, data: parsePersisted(event.type, teamControlEventSchema, event.data) }
     case 'team/member':
       return { ...event, data: parsePersisted(event.type, teamMemberEventSchema, event.data) }
     case 'team/task':
@@ -228,7 +233,7 @@ function applyProjectionEvent(state: TeamProjectionState, event: SessionEvent): 
   try {
     const selector = parsePersisted(event.type, teamEventSelectorSchema, event.data)
     if (selector.teamId !== state.id) return state
-    if (selector.version !== 2) {
+    if (selector.version !== (event.type === 'team/control' ? 1 : 2)) {
       throw new Error(`unsupported Agent Teams event version ${String(selector.version)}`)
     }
     return applyCurrentTeamEvent(state, parseCurrentTeamEvent(event))
@@ -247,6 +252,13 @@ function replaceAt<T>(items: readonly T[], index: number, item: T): T[] {
 
 function applyCurrentTeamEvent(state: TeamProjectionState, event: TeamSessionEvent): TeamProjectionState {
   switch (event.type) {
+    case 'team/control': {
+      if (event.data.control.kind !== 'retry-member') return state
+      const id = event.data.control.memberId, index = state.members.findIndex(member => member.id === id), prior = state.members[index]
+      if (prior === undefined || prior.phase !== 'failed') throw new Error('Only a failed original teammate can retry provisioning')
+      const { error: _error, ...member } = prior
+      return { ...state, members: replaceAt(state.members, index, { ...member, phase: 'provisioning' }) }
+    }
     case 'team/member': {
       const member = event.data.member
       const index = state.members.findIndex(candidate => candidate.id === member.id)

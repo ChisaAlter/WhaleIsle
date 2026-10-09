@@ -699,6 +699,12 @@ describe('Web session model selection', () => {
     })))
     expect(saved).toHaveLength(1)
 
+    agent.session.append('session/presentation', { owner: 'project', title: 'Project conversation' })
+    expectValue(await remote.selectModel(request({
+      sessionId, provider: 'deepseek-official', model: 'deepseek-chat',
+    })))
+    expect(saved).toHaveLength(1)
+
     agent.session.append('session/presentation', null)
     expectValue(await remote.selectModel(request({
       sessionId, provider: 'deepseek-official', model: 'deepseek-chat',

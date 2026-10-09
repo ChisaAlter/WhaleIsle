@@ -44,6 +44,9 @@ export function AgentPresetLabel({
   sessionId, useSessions, useAgentPresets, load, t,
 }: AgentPresetLabelProps) {
   const preset = useSessions((state) => {
+    // Owner-managed conversations provide their own identity and controls;
+    // hidden internal role IDs are not user-facing preset names.
+    if (state.byId[sessionId]?.presentation?.owner) return undefined
     const value = state.byId[sessionId]?.projectionValues?.agentPreset
     return typeof value === 'string' ? value : undefined
   })

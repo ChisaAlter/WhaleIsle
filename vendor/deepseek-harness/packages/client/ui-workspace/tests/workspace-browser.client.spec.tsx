@@ -157,6 +157,21 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
 }
 
 describe('WorkspaceBrowser', () => {
+  it.each(['workspace', 'flat'] as const)('keeps additional categories after workspace rows in the same scrolling list in %s mode', mode => {
+    const b = mount({
+      useSessions: hook(sessionState([summary('ordinary-chat', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('ordinary-workspace', ['ordinary-chat'])])),
+      renderSlot: ((name: string) => name === 'sidebar.workspaces.sections'
+        ? <section aria-label="Project"><button>My Project</button></section>
+        : null) satisfies WorkspaceBrowserProps['renderSlot'],
+    })
+    act(() => { b.store.actions.setGroupBy(mode); b.store.actions.setGroupExpanded('ordinary-workspace', true) })
+    const category = screen.getByRole('region', { name: 'Project' })
+    const row = screen.getByText('ordinary-chat')
+    expect(category.parentElement?.contains(row)).toBe(true)
+    expect(row.compareDocumentPosition(category) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it.each(['workspace', 'flat'] as const)('toggles archived rows from Interface Settings in %s mode', (mode) => {
     const b = mount({
       useSessions: hook(sessionState([summary('archived-history', 1)])),
@@ -2583,4 +2598,17 @@ describe('Workspace tree grouping', () => {
     expect(b.props.insertWorkspaceBefore).toHaveBeenCalledOnce()
     expect(b.props.insertWorkspaceBefore).toHaveBeenCalledWith(wid('alpha'), wid('gamma'))
   })
+})
+
+it('feature requests use the composed directory flow without creating a regular workspace', async () => {
+  let request: (() => Promise<string | null>) | undefined
+  let owner: DirectoryFlowOwnerProps | undefined
+  const createWorkspace = vi.fn()
+  mount({ createWorkspace, registerDirectoryPicker: picker => { request = picker; return () => { request = undefined } }, renderSlot: ((name: string, props: object) => { if (name === 'sidebar.workspaces.directoryFlow' && (props as DirectoryFlowOwnerProps).open) owner = props as DirectoryFlowOwnerProps; return null }) })
+  let result: Promise<string | null> | undefined
+  act(() => { result = request!() })
+  expect(owner?.open).toBe(true)
+  act(() => { owner!.onPicked('/selected-project') })
+  await expect(result).resolves.toBe('/selected-project')
+  expect(createWorkspace).not.toHaveBeenCalled()
 })

@@ -10,6 +10,7 @@ import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { UseSidebarRightTabInfo } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { UseSessions } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import {
   formatFileCommentRange,
@@ -69,10 +70,10 @@ const FILE_WORD_WRAP_KEY = 'dshd.fileWordWrap'
 const FILE_SAVE_DEBOUNCE_MS = 500
 function currentCwd(sessionId: string | undefined, useSessions: FilePreviewProps['useSessions']): string | undefined {
   return useSessions((s) => {
-    if (sessionId !== undefined) return s.byId[sessionId as SessionId]?.cwd || undefined
+    if (sessionId !== undefined) return sessionWorkingDirectory(s.byId[sessionId as SessionId])
     const id = Object.values(s.byId)
       .find(row => (row.retainedBy.mainView ?? 0) > 0)?.id
-    const next = id === undefined ? undefined : s.byId[id]?.cwd
+    const next = id === undefined ? undefined : sessionWorkingDirectory(s.byId[id])
     return next ? next : undefined
   })
 }
@@ -103,7 +104,7 @@ export function SidebarFilePreview(props: SidebarFilePreviewProps): ReactNode {
     : undefined
   const workspaceCwd = useSessions(state => sessionId === undefined
     ? undefined
-    : state.byId[sessionId as SessionId]?.cwd || undefined)
+    : sessionWorkingDirectory(state.byId[sessionId as SessionId]))
   const address = tab.contentId
   // Earlier guide entries persisted a page address for this resource viewer.
   // Reuse the directory body without changing its layout or reading that URI.

@@ -24,6 +24,7 @@ const DROPPED = [
   // Bots ships first-party from vendor/dshbot.
   // Reject marketplace installs of the same package to avoid a second mount.
   'dshbot',
+  'dsh-project',
   // The whale-girl assistant ships first-party from vendor/dsh-whale.
   'dsh-whale',
   // Remote workspaces (SSH) ship first-party from vendor/dsh-remote.
@@ -42,6 +43,7 @@ const DROPPED_BASENAMES = [
   'xmanrui-dsh-im',
   'dsh-usage-panel',
   'dshbot',
+  'dsh-project',
   'dsh-whale',
   'dsh-remote',
 ];

@@ -20,6 +20,7 @@ import { workspaceDisplayTitle } from '@deepseek-ai/dsh-api-workspace-controller
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DirectoryFlowOwnerProps, WorkspacePickerProps } from './contract/slots.ts'
 import css from './WorkspacePicker.module.css'
+import type { WorkspaceDirectoryAction } from './navigation.ts'
 
 const ADD_WORKSPACE = '::add-workspace'
 const NO_DIRECTORY = '::no-directory'
@@ -51,6 +52,8 @@ export interface WorkspacePickFlowProps {
   onClose: () => void
   /** Report the picking interaction and adoption occupancy. */
   onBusyChange?: (busy: boolean) => void
+  /** Composed feature directory actions; the sidebar's add-only flow omits them. */
+  directoryActions?: readonly WorkspaceDirectoryAction[]
   /** Only offer the add action, hide existing workspaces. */
   addOnly?: boolean
   /** Menu opening direction relative to the anchor. */
@@ -82,6 +85,7 @@ export function WorkspacePickFlow({
   side = 'bottom',
   selectedId,
   noDirectorySelected,
+  directoryActions = [],
 }: WorkspacePickFlowProps) {
   const workspaceSnapshot = useWorkspaces(state => state)
   const workspaces = workspaceSnapshot.items
@@ -93,6 +97,7 @@ export function WorkspacePickFlow({
   const [modalError, setModalError] = useState<string | null>(null)
   const [flowOpen, setFlowOpen] = useState(false)
   const [pickingFolder, setPickingFolder] = useState(false)
+  const [directoryAction, setDirectoryAction] = useState<WorkspaceDirectoryAction | undefined>()
   // One picking interaction at a time: while the flow is open (native chooser
   // pending, browse dialog up) or its pick is being adopted, every other
   // menu action stays disabled — a late outcome must not race a concurrent
@@ -114,7 +119,10 @@ export function WorkspacePickFlow({
     if (flowOpen && !flowAvailable) setFlowOpen(false)
   }, [flowOpen, flowAvailable])
   const addEntries: MenuEntry[] = flowAvailable
-    ? [{ id: ADD_WORKSPACE, label: t('menu.addWorkspace'), icon: <IconPlusOutlineRegular size={16} />, disabled: flowBusy }]
+    ? [
+      { id: ADD_WORKSPACE, label: t('menu.addWorkspace'), icon: <IconPlusOutlineRegular size={16} />, disabled: flowBusy },
+      ...directoryActions.map(action => ({ id: `::feature:${action.id}`, label: action.label, icon: <IconPlusOutlineRegular size={16} />, disabled: flowBusy })),
+    ]
     : []
   // Working without a folder is a target like any Workspace, so it sits with
   // the actions rather than among the folder rows: pinned above "Add
@@ -149,9 +157,10 @@ export function WorkspacePickFlow({
 
   /** Adopt a picked directory; failures land in the folder-error dialog (Choose again reopens the flow). */
   const adoptDirectory = (path: string): Promise<void> =>
-    createWorkspace({ path }).then((workspace) => {
+    (directoryAction === undefined
+      ? createWorkspace({ path }).then(workspace => { onPick(workspace.workspaceId) })
+      : directoryAction.adopt(path)).then(() => {
       setFlowOpen(false)
-      onPick(workspace.workspaceId)
     }).catch((reason: unknown) => {
       setModalError(reason instanceof Error ? reason.message : String(reason))
       setFlowOpen(false)
@@ -201,6 +210,13 @@ export function WorkspacePickFlow({
 
   const handleSelect = (id: string): void => {
     if (id === ADD_WORKSPACE) {
+      setDirectoryAction(undefined)
+      openDirectoryFlow()
+      return
+    }
+    const action = directoryActions.find(candidate => id === `::feature:${candidate.id}`)
+    if (action !== undefined) {
+      setDirectoryAction(action)
       openDirectoryFlow()
       return
     }
@@ -265,6 +281,7 @@ export function WorkspacePicker({
   onClose,
   createWorkspace,
   useDirectoryFlow,
+  useDirectoryActions,
   renderSlot,
   t,
 }: WorkspacePickerProps) {
@@ -276,6 +293,7 @@ export function WorkspacePicker({
       useWorkspaces={useWorkspaces}
       createWorkspace={createWorkspace}
       useDirectoryFlow={useDirectoryFlow}
+      directoryActions={useDirectoryActions(actions => actions)}
       renderDirectoryFlow={owner => renderSlot('conversation.hero.workspace.directoryFlow', owner)}
       selectedId={selectedId}
       noDirectorySelected={noDirectorySelected}

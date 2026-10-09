@@ -1916,6 +1916,9 @@ module.exports = async function afterPack(context) {
     `${JSON.stringify(pin, null, 2)}\n`,
   );
   assertHarnessRuntime(harnessDest, pin, target.platform, target.arch);
+  assertVendoredPluginRuntimeDeps(resources, 'dsh-project');
+  require('../src/main/dsh-project-desktop').projectPeerDirectories(harnessDest,
+    JSON.parse(fs.readFileSync(path.join(resources, 'vendor', 'dsh-project', 'package.json'), 'utf8')));
   // Office payload + kit closure is a win-x64 deliverable only (see the
   // feature card's limitations); other targets ship without Office and the
   // desktop overlay stays unwritten because the bundled payload is absent.

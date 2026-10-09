@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // The domain's client-namespace pure-type outlet: one import edge delivers
@@ -7,7 +6,7 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 // free of host value imports, so no host Context merge enters this program.
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 import {
-  IconChecklistOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, StateDot,
+  TaskDock, StateDot,
   type StateDotState,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { NS } from '../locales.ts'
@@ -63,39 +62,21 @@ function progressLabel(todos: readonly TodoItem[], t: TodoPanelProps['t']): stri
 }
 
 export function TodoPanel({ todos, t }: TodoPanelProps) {
-  const [collapsed, setCollapsed] = useState(true)
   if (todos.length === 0) return null
 
   return (
-    <section className={css.root} data-testid="todo-panel" aria-label={t('todo.title')}>
-      <div className={css.body}>
-        <button
-          type="button"
-          className={css.header}
-          aria-expanded={!collapsed}
-          onClick={() => { setCollapsed(v => !v) }}
-        >
-          <span className={css.lead} aria-hidden><IconChecklistOutlineRegular /></span>
-          <span className={css.title}>{t('todo.title')}</span>
-          <span className={css.progress}>{progressLabel(todos, t)}</span>
-          <span className={css.chevron} aria-hidden>
-            {collapsed ? <IconChevronUpOutlineRegular /> : <IconChevronDownOutlineRegular />}
-          </span>
-        </button>
-        {!collapsed && (
-          <ul className={css.list}>
-            {todos.map(item => (
-              <li key={item.content} className={css.item} data-status={item.status}>
-                <span className={css.glyph} role="img" aria-label={statusLabel(item.status, t)}>
-                  <StateDot state={statusDotState(item.status)} />
-                </span>
-                <span className={css.content}>{item.content}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </section>
+    <TaskDock title={t('todo.title')} summary={progressLabel(todos, t)} testId="todo-panel">
+      <ul className={css.list}>
+        {todos.map(item => (
+          <li key={item.content} className={css.item} data-status={item.status}>
+            <span className={css.glyph} role="img" aria-label={statusLabel(item.status, t)}>
+              <StateDot state={statusDotState(item.status)} />
+            </span>
+            <span className={css.content}>{item.content}</span>
+          </li>
+        ))}
+      </ul>
+    </TaskDock>
   )
 }
 

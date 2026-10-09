@@ -4,6 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
+import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { IWorkspaces } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { GroupKey } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -214,7 +215,7 @@ export function apply(ctx: Context): void {
           // resolved against the Session's workspace root first, and a line
           // travels as an option so the opened file can reveal it.
           openFile: async (path, options) => {
-            const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
+            const cwd = sessionWorkingDirectory(ctx.sessions.list.getSnapshot().byId[sessionId])
             const workspaces = ctx.workspaces as IWorkspaces & WorkspacePathOpener
             const openPath = workspaces.openPath
             if (typeof openPath !== 'function') throw new Error('workspace path opener is unavailable')
