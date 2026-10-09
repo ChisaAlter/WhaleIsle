@@ -27,10 +27,23 @@ func Allotted(ctx context.Context) []SubscriptionQuota {
 func quotas(ctx context.Context) (subs, plans, balances []SubscriptionQuota) {
 	b := make(chan []SubscriptionQuota, 1)
 	p := make(chan []SubscriptionQuota, 1)
+	r := make(chan []SubscriptionQuota, 1)
 	go func() { b <- KeyBalances(ctx) }()
 	go func() { p <- PlanQuotas(ctx) }()
+	go func() { r <- RemoteCards(ctx) }()
 	subs = SubscriptionUsage(ctx)
-	return subs, notShown(<-p, subs), <-b
+	plans, balances = notShown(<-p, subs), <-b
+	for _, q := range <-r {
+		switch q.Kind {
+		case "plan":
+			plans = append(plans, q)
+		case "balance":
+			balances = append(balances, q)
+		default:
+			subs = append(subs, q)
+		}
+	}
+	return subs, plans, balances
 }
 
 // notShown is the plans not already on a subscription's card: a GLM
@@ -48,6 +61,9 @@ func notShown(plans, subs []SubscriptionQuota) []SubscriptionQuota {
 // at the same moment, and there is one such at least — a window's reset
 // is when that account first used it.
 func sameAccount(a, b SubscriptionQuota) bool {
+	if !a.glmPlan || (b.Provider != "zcode" && b.Provider != "zcode-plugin") {
+		return false
+	}
 	if a.Error != "" || b.Error != "" {
 		return false
 	}
@@ -95,6 +111,7 @@ type Quota struct {
 	// (served.go); Last is on the latest of them (#570).
 	LastServedAt *time.Time `json:"lastServedAt,omitempty"`
 	Last         bool       `json:"last,omitempty"`
+	From         string     `json:"from,omitempty"`
 }
 
 // QuotaSpan is one window of an allowance: how much of it is used and
@@ -129,7 +146,7 @@ func quotaReport(subs, plans, balances []SubscriptionQuota, now time.Time) []Quo
 	}{{"subscription", subs}, {"plan", plans}, {"balance", balances}} {
 		for _, q := range g.qs {
 			r := Quota{Provider: q.Provider, Name: q.Name, Kind: g.kind, Plan: q.Plan, User: q.User, AsOf: q.AsOf, ReadAt: q.ReadAt,
-				Windows: []QuotaSpan{}, Balance: q.Balance, Error: q.Error, Until: q.Until, Renew: q.Renew, Resets: q.Resets}
+				Windows: []QuotaSpan{}, Balance: q.Balance, Error: q.Error, Until: q.Until, Renew: q.Renew, Resets: q.Resets, From: q.From}
 			// a pool's own windows stand in for the models' drawing on it,
 			// as the usage page shows them
 			for _, w := range PooledWindows(q.Windows) {

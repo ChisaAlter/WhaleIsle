@@ -276,7 +276,7 @@ func miniMaxCards(accts []miniMaxAccount) []checkinCard {
 func miniMaxCheckinAccounts() []miniMaxAccount {
 	var out []miniMaxAccount
 	for _, site := range []string{MiniMaxCodeID, MiniMaxCodeGlobalID} {
-		if pp, ok := PluginOf(site); ok {
+		if pp, ok := PluginOf(site); ok && !pluginChecksIn(pp) {
 			out = append(out, miniMaxSiteAccounts(site, pp)...)
 		}
 	}

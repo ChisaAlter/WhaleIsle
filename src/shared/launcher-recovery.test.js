@@ -8,6 +8,8 @@ const {
   desktopRuntimeDamageVerdict,
   sortPluginRows,
   pluginErrorLabel,
+  disableableSuspectNames,
+  startupRecoveryGuidance,
 } = require('./launcher-recovery');
 
 test('shouldShowRecovery covers sticky skip, last failure, suspects, and generic causes', () => {
@@ -83,4 +85,53 @@ test('port-excluded diagnosis outranks sticky skip: a reserved port is not a plu
   assert.match(verdict, /系统保留/);
   assert.match(verdict, /listen EACCES/);
   assert.doesNotMatch(verdict, /恢复完整插件/);
+});
+
+function failedPluginStatus(extra = {}) {
+  return {
+    lastStart: { ok: false, at: '2026-10-06T10:00:00Z' },
+    desktop: { state: 'error' },
+    forensics: { pluginTreeFailure: true, plugins: [{ name: 'dsh-tavern', suspect: true }] },
+    ...extra,
+  };
+}
+
+test('startup guidance names only installed disableable users and asks before changing them', () => {
+  const status = failedPluginStatus();
+  status.forensics.plugins.push(
+    { name: 'healthy-user' },
+    { name: 'disabled-user', suspect: true, disabled: true },
+    { name: 'preset', suspect: true, preset: true },
+    { name: 'official', suspect: true, officialTemplate: true },
+    { name: 'missing', suspect: true, orphan: true },
+    { name: 'builtin', suspect: true, inBox: true },
+  );
+  assert.deepEqual(disableableSuspectNames(status.forensics), ['dsh-tavern']);
+  const guidance = startupRecoveryGuidance(status);
+  assert.equal(guidance.kind, 'disable');
+  assert.deepEqual(guidance.names, ['dsh-tavern']);
+  assert.equal(guidance.confirmText, '禁用并启动鲸屿');
+  assert.match(guidance.body, /不会卸载.*删除/);
+});
+
+test('automatic skip retains the targeted recommendation even after successful boot', () => {
+  const status = failedPluginStatus({ lastStart: { ok: true }, desktop: { state: 'ready' }, recovery: { skipUserPlugins: true } });
+  assert.equal(startupRecoveryGuidance(status).kind, 'disable');
+  assert.match(recoveryVerdict(status.lastStart, status.recovery, status.forensics), /dsh-tavern.*禁用并启动鲸屿/);
+  assert.equal(startupRecoveryGuidance({ ...status, recovery: { skipUserPlugins: false } }), null);
+});
+
+test('unknown plugin failures offer explicit skip, while generic and built-in failures never do', () => {
+  const status = failedPluginStatus();
+  status.forensics.plugins = [];
+  const guidance = startupRecoveryGuidance(status);
+  assert.equal(guidance.kind, 'skip');
+  assert.deepEqual(guidance.names, []);
+  assert.equal(startupRecoveryGuidance({ ...status, recovery: { skipUserPlugins: true } }), null);
+  for (const genericCause of ['oom', 'port-excluded', 'port-in-use', 'missing-node', 'session-cache']) {
+    const forensics = { ...failedPluginStatus().forensics, genericCause };
+    assert.deepEqual(disableableSuspectNames(forensics), []);
+    assert.equal(startupRecoveryGuidance({ ...status, forensics }), null);
+  }
+  assert.equal(startupRecoveryGuidance({ ...status, forensics: { ...status.forensics, desktopRuntimeDamage: true } }), null);
 });

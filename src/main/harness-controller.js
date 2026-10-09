@@ -1,6 +1,6 @@
 const EventEmitter = require('events');
 const { isPluginTreeFailure } = require('./plugin-tree-failure');
-const { stickySkipActive } = require('./launcher-gate');
+const { stickySkipActive, kernelLogTail } = require('./launcher-gate');
 const importGuard = require('./import-guard');
 
 const DEFAULT_STABLE_MS = 60_000;
@@ -258,7 +258,7 @@ class HarnessController extends EventEmitter {
       errorMessage(error),
       snapshot?.error,
       snapshot?.failure?.message,
-      ...(Array.isArray(snapshot?.logs) ? snapshot.logs : []),
+      ...kernelLogTail(this.dsh),
     ].some((value) => isPluginTreeFailure(value));
   }
 
@@ -268,6 +268,7 @@ class HarnessController extends EventEmitter {
       reason: errorMessage(error),
       at: new Date(this.now()).toISOString(),
       appVersion: this.appVersion,
+      logTail: kernelLogTail(this.dsh).concat(errorMessage(error).split(/\r?\n/)).slice(-80),
     };
     this.saveConfig({ pluginRecovery: this.pluginRecovery });
     return this.sendState();
@@ -440,7 +441,7 @@ class HarnessController extends EventEmitter {
     return this.runOperation((generation) => this.performStart({ showBoot: true, generation }));
   }
 
-  async replaceOperation({ showBoot, assertCurrent = () => {} }) {
+  async replaceOperation({ showBoot, fullPluginRetry = false, assertCurrent = () => {} }) {
     assertCurrent();
     const previousOperation = this.operation;
     const generation = ++this.operationGeneration;
@@ -455,10 +456,11 @@ class HarnessController extends EventEmitter {
     checkCurrent();
     await previousOperation?.catch(() => {});
     checkCurrent();
+    if (fullPluginRetry) this.clearPluginRecovery();
     return this.runOperation((generation) => this.performStart({ showBoot, generation, assertCurrent }));
   }
 
-  restart() {
+  restart({ fullPluginRetry = false } = {}) {
     // Never join an in-flight restart: callers that mutate skip/disabled lists
     // before restart() must get a performStart that re-reads those flags.
     const previous = this.restartOperation;
@@ -474,7 +476,7 @@ class HarnessController extends EventEmitter {
       this.pluginRecoveryTask = null;
       this.clearTimers();
       this.recovery = { status: 'inactive', attempt: 0, nextRetryAt: null, reason: '' };
-      return this.replaceOperation({ showBoot: true });
+      return this.replaceOperation({ showBoot: true, fullPluginRetry });
     })().finally(() => {
       if (this.restartOperation === task) {
         this.restartOperation = null;
@@ -511,12 +513,13 @@ class HarnessController extends EventEmitter {
       assertCurrent();
     };
     checkCurrent();
+    this.dsh.beginStartLog?.();
+    this.dsh.setState('starting', { error: '', failure: null });
     const win = this.createMainWindow();
     if (showBoot) {
       await this.ensureBootVisible(checkCurrent);
     }
     checkCurrent();
-    this.dsh.setState('starting', { error: '', failure: null });
     // One config read for the whole start. Port, disabled list, and every
     // built-in toggle read the *same* snapshot, so a Settings save landing
     // mid-start cannot produce a start that mixes two config versions. If a
@@ -955,8 +958,7 @@ class HarnessController extends EventEmitter {
   }
 
   retryFullPlugins() {
-    this.clearPluginRecovery();
-    return this.restart();
+    return this.restart({ fullPluginRetry: true });
   }
 
   reload() {

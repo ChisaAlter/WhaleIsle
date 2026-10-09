@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Sidebar presentation and tab subscriptions through the production slot renderer. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent } from '@testing-library/react'
+import { act, fireEvent, waitFor } from '@testing-library/react'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { SlotTestRuntime, type SlotView } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
@@ -18,6 +18,9 @@ import { registerSidebarShortcuts } from '../src/client/shortcuts.ts'
 import { ShortcutRegistry } from '@deepseek-ai/dsh-client-shortcuts/src/client/registry.ts'
 import type { SidebarRightTabInfo, SidebarRightTabMenuOwnerProps } from '../src/client/contract/slots.ts'
 import type { createSidebarRightStore } from '../src/client/stores.ts'
+import { apply as applyPreview, inject as previewInject } from '../../ui-preview/src/client/apply.ts'
+import { clearMiniPlayer, readMiniPlayer } from '../../ui-preview/src/client/mini-player-state.ts'
+import { apply as applySurfaces, inject as surfacesInject } from '../../ui-surfaces/src/client/apply.ts'
 
 declare module '../src/client/contract/params.ts' {
   interface SidebarRightResourceParamsMap {
@@ -168,6 +171,38 @@ async function mountSeat(viewportWidth = 1440, canShow = true, entryCount = 0, o
   }
 }
 
+it.each(['html', 'pdf'])('mounts the first collapsed Browser tab and opens a chat preview for %s immediately', async extension => {
+  const url = `http://127.0.0.1:4321/token/report.${extension}`
+  const previewOpen = vi.fn(async (input: { url: string }) => ({ ok: true, id: 'preview-first', url: input.url }))
+  const previewWorkspaceFile = vi.fn(async () => ({ ok: true, url }))
+  ;(window as Window & { shell?: unknown }).shell = { listDir: vi.fn(), previewWorkspaceFile, previewOpen }
+  const h = await mountSeat()
+  try {
+    await h.runtime.sessions.updateSummary(SESSION, { cwd: '/tmp/proj' })
+    h.runtime.remote.provideNamespaces({ session: { openWorkspacePath: vi.fn(async () => ({ ok: true })) } })
+    await h.runtime.mount({ inject: [...previewInject], apply: applyPreview })
+    await h.runtime.mount({ inject: [...surfacesInject], apply: applySurfaces })
+    expect(h.layout().expanded).toBe(false)
+    const workspaces = h.runtime.ctx.workspaces as typeof h.runtime.ctx.workspaces & {
+      openPath: (path: string, options: { sessionId: string; presentation: 'mini' }) => Promise<void>
+    }
+    await act(async () => {
+      await workspaces.openPath(`/tmp/proj/report.${extension}`, { sessionId: SESSION, presentation: 'mini' })
+    })
+    await waitFor(() => expect(previewOpen).toHaveBeenCalledWith({ url, scope: '/tmp/proj' }))
+    expect(previewOpen).toHaveBeenCalledOnce()
+    expect(h.layout().expanded).toBe(false)
+    expect(h.frame.openRightbar).not.toHaveBeenCalled()
+    expect(h.view.container.querySelector('[data-preview-host]')).not.toBeNull()
+    expect(readMiniPlayer()).toMatchObject({ open: true, previewId: 'preview-first' })
+    expect(sessionStorage.getItem('dshd-pending-preview-url')).toBeNull()
+  } finally {
+    delete (window as Window & { shell?: unknown }).shell
+    sessionStorage.clear()
+    clearMiniPlayer()
+  }
+})
+
 it('keeps duplicate Session Tabs independent and preserves a body through docking and float focus', async () => {
   const h = await mountSeat()
   await act(async () => {
@@ -205,8 +240,8 @@ it('keeps duplicate Session Tabs independent and preserves a body through dockin
   expect(h.controller.focusedTarget()?.tabId).toBe(tab.id)
   act(() => { h.controller.dock(floating.paneId) })
   expect(document.querySelector('[data-page-input]')).toBe(body)
-  expect(body.closest('[aria-hidden="true"]')).not.toBeNull()
-  act(() => { h.controller.toggleExpanded() })
+  expect(h.layout().expanded).toBe(true)
+  expect(body.closest('[aria-hidden="true"]')).toBeNull()
   expect(body.closest('[data-dockkit-host]')).toBe(cell)
 })
 

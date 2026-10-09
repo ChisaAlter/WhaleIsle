@@ -21,3 +21,20 @@ func withFast(proto provider.Protocol, body []byte) []byte {
 	}
 	return body
 }
+
+// fastPick sends the model an agent picked to be sent fast (#954) so:
+// every account and key of it, not a fallback to another.
+func fastPick(cands []candidate, pl planned, providerID, model string) {
+	for i, c := range cands {
+		if c.p.ID == providerID && c.model == model {
+			cands[i].fast = true
+		}
+	}
+	for _, ws := range [][]Weighed{pl.order, pl.left} {
+		for i, w := range ws {
+			if w.Provider == providerID && w.Model == model {
+				ws[i].Fast = true
+			}
+		}
+	}
+}

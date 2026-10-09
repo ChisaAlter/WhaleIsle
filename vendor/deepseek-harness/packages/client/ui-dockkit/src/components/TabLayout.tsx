@@ -15,6 +15,8 @@ import css from './dockkit.module.css'
 export interface TabRetention {
   /** Whether a visited body survives hiding; omitted means visibility-mounted. */
   readonly keepMounted?: (tab: TabRecord) => boolean
+  /** Mount a body in the active Session before its docked pane is shown. */
+  readonly mountOnOpen?: (tab: TabRecord) => boolean
   /** Whether this layout's Session is on screen; defaults to true. */
   readonly active?: boolean
 }
@@ -35,14 +37,15 @@ interface TabHostProps extends LayoutProps {
 }
 
 /** A tab's ancestors stay identical across selection, pane moves and floating. */
-function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRequest, keepMounted,
+function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRequest, keepMounted, mountOnOpen,
   active = true }: TabHostProps): ReactNode {
   const floating = pane.host === 'float'
   const selected = floating || pane.activeTabId === tab.id
   const visible = active && selected && (floating || state.expanded)
   const retained = keepMounted?.(tab) ?? false
-  const [visited, setVisited] = useState(visible)
-  if (visible && !visited) setVisited(true)
+  const ready = visible || (active && (mountOnOpen?.(tab) ?? false))
+  const [visited, setVisited] = useState(ready)
+  if (ready && !visited) setVisited(true)
   const host = useRef<HTMLElement | null>(null)
   const body = useRef<HTMLDivElement | null>(null)
   useLayoutEffect(() => {

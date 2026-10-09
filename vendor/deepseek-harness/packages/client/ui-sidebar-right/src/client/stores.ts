@@ -84,6 +84,8 @@ function seedRecord(id: TabId, seed: () => SidebarRightSeed): TabRecord {
 export interface OpenContentIntent {
   /** False preserves the current expanded state for a mini preview. */
   readonly expand?: boolean
+  /** Float the opened resource in the same transaction, preserving its body. */
+  readonly floating?: FloatRect
   readonly kind: string
   readonly contentId: string
   readonly title: string
@@ -349,6 +351,12 @@ export function createSidebarRightStore(
               })
           ops.push(...planned.ops)
           if (replace !== undefined && replace !== planned.tabId) ops.push({ type: 'closeTab', tabId: replace })
+          if (intent.floating !== undefined) {
+            const opened = replay(state, ops)
+            if (findTabPane(opened, planned.tabId).host === 'dock') {
+              ops.push(...planFloatTab(opened, mint, planned.tabId, intent.floating).ops)
+            }
+          }
           settled(planned.tabId)
           return ops
         }, seed))
@@ -392,14 +400,17 @@ export function createSidebarRightStore(
         d.bySession = seat(d, sessionId, s =>
           advance(s, (state, mint) => planFloatTab(state, mint, tabId, rect).ops, seed))
       },
-      // A floating pane holds one tab; docking it back lands in the active
+      // A floating pane holds one tab; sending it back reveals the active
       // docked pane, and only a page is subject to the merge rule there.
       unfloatPane: (d, sessionId: string, paneId: PaneId) => {
         d.bySession = seat(d, sessionId, s => advance(s, (state) => {
           const floated = getPane(state, paneId).tabs[0]
           const plan = (): readonly LayoutOp[] => planUnfloatPane(state, paneId)
           /* v8 ignore next -- a floating pane holds exactly one tab. */
-          return floated === undefined ? plan() : arriving(state, floated, activeDockPaneId(state), plan)
+          return [
+            ...planSetExpanded(state, true),
+            ...floated === undefined ? plan() : arriving(state, floated, activeDockPaneId(state), plan),
+          ]
         }, seed))
       },
       moveFloat: (d, sessionId: string, paneId: PaneId, x: number, y: number) => {

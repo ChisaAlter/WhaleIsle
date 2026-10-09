@@ -68,6 +68,23 @@ async function capMetrics(field: Locator): Promise<{ textLines: number; scrolls:
   })
 }
 
+/** Keep the takeover and both action bands inside the visible conversation. */
+async function expectComposerAnchored(composer: Locator): Promise<void> {
+  await expect.poll(() => composer.evaluate((frame) => {
+    const viewport = frame.closest('[data-conversation-scroll]')?.getBoundingClientRect()
+    const seat = frame.closest('[data-composer-seat]')?.getBoundingClientRect()
+    const surface = frame.querySelector('section')
+    const header = surface?.querySelector('header')?.getBoundingClientRect()
+    const footer = surface?.querySelector('footer')?.getBoundingClientRect()
+    return {
+      docked: viewport !== undefined && seat !== undefined && Math.abs(viewport.bottom - seat.bottom) < 1,
+      headerVisible: viewport !== undefined && header !== undefined && header.top >= viewport.top - 1,
+      footerVisible: viewport !== undefined && footer !== undefined && footer.bottom <= viewport.bottom + 1,
+      blurred: surface !== null && surface !== undefined && getComputedStyle(surface).backdropFilter.includes('blur('),
+    }
+  })).toEqual({ docked: true, headerVisible: true, footerVisible: true, blurred: true })
+}
+
 // The options carry long descriptions on purpose: the squeeze assertion below
 // needs option copy that WRAPS, which is the only text layout that reproduces a
 // collapsed row painting its copy outside its own box.
@@ -327,6 +344,7 @@ describe('web e2e: resident question composer round trip', () => {
     const composer = page.locator('[data-question-key]')
     await composer.waitFor({ timeout: MODE === 'record' ? 120_000 : 30_000 })
     await expect.poll(() => composer.getByText('Which color do you prefer?').count(), { timeout: 10_000 }).toBeGreaterThan(0)
+    if (MODE !== 'record') await expectComposerAnchored(composer)
 
     const selectedRow = page.locator('[role="treeitem"][aria-selected="true"]')
     await expect.poll(() => selectedRow.locator('[data-state="warning"]').count(), { timeout: 10_000 }).toBe(1)
@@ -354,6 +372,7 @@ describe('web e2e: resident question composer round trip', () => {
       const original = page.viewportSize() ?? { width: 1680, height: 1000 }
       for (const height of [520, 440, 380]) {
         await page.setViewportSize({ width: 900, height })
+        await expectComposerAnchored(composer)
         const squeeze = await composer.evaluate((card) => {
           // Role/ARIA selectors, not the CSS-module class names: the built
           // client hashes those.

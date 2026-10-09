@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const vm = require('node:vm');
 const {
   shouldPromptUpdate,
   shouldAutoStartDesktop,
@@ -12,6 +13,7 @@ const {
   shouldCloseLauncherAfterDesktopStart,
   readLastDesktopStart,
   writeLastDesktopStart,
+  kernelLogTail,
   recordLastDesktopStart,
   stickySkipActive,
   runColdStartGate,
@@ -22,6 +24,15 @@ const {
   createParkedUpdateDrainer,
   presentUpdateAsk,
 } = require('./launcher-gate');
+
+test('current-start evidence exports only the active attempt with the requested tail bound', () => {
+  const historical = ['old-user-pack failed', 'listen EADDRINUSE'];
+  const current = ['preparation started', { message: 'current-user-pack failed' }, { line: 'current failure ended' }];
+  const dsh = { logs: historical.concat(current), currentStartLogs: () => current };
+  assert.deepEqual(kernelLogTail(dsh, 2), ['current-user-pack failed', 'current failure ended']);
+  assert.deepEqual(kernelLogTail({ logs: historical, currentStartLogs: () => [] }), []);
+  assert.deepEqual(kernelLogTail({ logs: ['legacy last error'] }), ['legacy last error']);
+});
 
 test('shouldPromptUpdate asks only for a newer non-error check when the setting is on', () => {
   assert.equal(shouldPromptUpdate({ askOnUpdate: true, check: { status: 'available' } }), true);
@@ -551,5 +562,74 @@ test('quitting abandons the drain before any ask', async () => {
     assert.equal(peekParkedUpdateCheck()?.latest, '9.9.9');
   } finally {
     resetParkedUpdateCheck();
+  }
+});
+
+test('a background second instance does not raise the owner, while ordinary launches still do', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+  const start = source.indexOf("app.on('second-instance'");
+  const end = source.indexOf('// The pet overlay', start);
+  let listener;
+  let raised = 0;
+  vm.runInNewContext(source.slice(start, end), {
+    app: { on(_event, fn) { listener = fn; } },
+    showForeground() { raised++; },
+  });
+  listener({}, ['electron.exe', '.', '--background']);
+  assert.equal(raised, 0);
+  listener({}, ['electron.exe', '.']);
+  assert.equal(raised, 1);
+});
+
+test('background startup ignores initial app activation without changing later user activation', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+  const start = source.indexOf("app.on('activate'");
+  const end = source.indexOf("app.on('before-quit'", start);
+  let listener, raised = 0;
+  const context = vm.createContext({
+    backgroundStartup: true,
+    app: { on(_event, fn) { listener = fn; } },
+    showForeground() { raised++; },
+  });
+  vm.runInContext(source.slice(start, end), context);
+  listener();
+  assert.equal(raised, 0);
+  context.backgroundStartup = false;
+  listener();
+  assert.equal(raised, 1);
+});
+
+test('background startup passes inactive presentation only to the initial gate and resets after success or failure', async () => {
+  const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+  const start = source.indexOf('    const startupOptions =');
+  const end = source.indexOf("    if (qaEnv('DSH_SMOKE'))", start);
+  for (const direct of [false, true]) {
+    for (const fail of [false, true]) {
+      const calls = [];
+      let updateChecks = 0;
+      const context = vm.createContext({
+        backgroundStartup: true,
+        process: { argv: direct ? ['--dshd-from-launcher', '--background'] : ['--background'] },
+        harness: {},
+        checkUpdate() {
+          updateChecks++;
+          return Promise.resolve({ status: 'none' });
+        },
+        startDesktopFromLauncher(options) {
+          calls.push(['start', options.activate]);
+          return fail ? Promise.reject(new Error('startup failed')) : Promise.resolve();
+        },
+        runColdStartGate(options) {
+          calls.push(['gate', options.activate]);
+          return fail ? Promise.reject(new Error('startup failed')) : Promise.resolve();
+        },
+      });
+      const result = vm.runInContext(`(async () => { ${source.slice(start, end)} })()`, context);
+      if (fail) await assert.rejects(result, /startup failed/);
+      else await result;
+      assert.deepEqual(calls, [[direct ? 'start' : 'gate', false]]);
+      assert.equal(updateChecks, direct && !fail ? 1 : 0, 'a direct startup seeds update status after its promise resolves');
+      assert.equal(context.backgroundStartup, false, 'later explicit entry points retain normal activation');
+    }
   }
 });

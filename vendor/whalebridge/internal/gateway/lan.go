@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -35,7 +36,7 @@ func listenAddr() string {
 func Port() string {
 	_, p, err := net.SplitHostPort(Addr())
 	if err != nil {
-		return "3425"
+		return strconv.Itoa(settings.DefaultPort)
 	}
 	return p
 }
@@ -147,7 +148,8 @@ func LANURLs() []string {
 }
 
 // Relisten moves the gateway to where settings now say it listens — onto
-// the network or back to loopback. Requests in flight finish.
+// the network or back to loopback, or to another port. Requests in flight
+// finish.
 func (s *Server) Relisten() error {
 	migrateLANKeyBestEffort()
 	s.lnMu.Lock()
@@ -160,6 +162,19 @@ func (s *Server) Relisten() error {
 		return nil
 	}
 	was := s.ln.Addr().String()
+	// another port (Settings' port changed): the new one is taken up before
+	// the old one lets go, so one the gateway can't have leaves it serving
+	// where it was
+	if _, p, _ := net.SplitHostPort(was); p != Port() {
+		ln, err := Listen(to)
+		if err != nil {
+			return err
+		}
+		old := s.ln
+		s.ln = ln
+		old.Close()
+		return nil
+	}
 	// the port is the same, so the old one goes first
 	s.ln.Close()
 	ln, err := Listen(to)
@@ -180,7 +195,19 @@ func lanGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remote := !local(r)
 		shared := settings.Load().LAN
-		if remote && !shared && os.Getenv("MAGPIE_ADDR") == "" {
+		// a gateway MAGPIE_ADDR opens to the network lets anyone in, through
+		// a proxy too; listening on loopback, it is reached from elsewhere
+		// only through one, and that stays closed unless shared
+		closed := os.Getenv("MAGPIE_ADDR") == ""
+		if proxied(r) {
+			closed = !OpenToAnyone()
+		}
+		if remote && !shared && closed {
+			if proxied(r) {
+				log.Printf("refused %s %s through a proxy or tunnel: magpie isn't shared", r.Method, r.URL.Path)
+				http.Error(w, "this request came through a proxy or tunnel (it carries a forwarding header such as X-Forwarded-For or Cf-Connecting-IP), so magpie answers it as one from another machine: only while Settings → Share on local network is on, with an enabled gateway key (Gateway → Gateway keys) sent as Authorization: Bearer <key> or x-api-key", http.StatusForbidden)
+				return
+			}
 			http.Error(w, "magpie isn't shared on the local network", http.StatusForbidden)
 			return
 		}
@@ -336,12 +363,37 @@ func refusedKey(key string) string {
 	return which + " is not an enabled magpie gateway key: it is disabled, removed or mistyped"
 }
 
-// local is a request from this computer.
+// local is a request from this computer: one that reached the gateway on
+// loopback and wasn't passed on by a proxy or tunnel running here.
 func local(r *http.Request) bool {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return false
 	}
 	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	return ip != nil && ip.IsLoopback() && !proxied(r)
+}
+
+// forwardHeaders are what a proxy or tunnel adds to a request it passes
+// on: cloudflared (Cf-Connecting-IP, and X-Forwarded-For beside it),
+// ngrok, Tailscale serve and funnel, frp's and Caddy's and nginx's HTTP
+// proxies. An agent calling magpie sends none of them.
+var forwardHeaders = []string{"Forwarded", "X-Forwarded-For", "X-Real-IP", "Cf-Connecting-IP", "True-Client-IP", "Tailscale-User-Login"}
+
+// proxied: the request came to loopback through a proxy or tunnel on this
+// computer (#1022, znjhahaha: a Cloudflare Tunnel to 127.0.0.1:3425), so it
+// is someone else's, from wherever the proxy reaches, and is treated as
+// from another machine: answered only while magpie is shared, with an
+// enabled gateway key. MAGPIE_TRUST_PROXY=1 says a proxy here signs its
+// clients in itself, and keeps what it forwards local, as before.
+func proxied(r *http.Request) bool {
+	if trustProxy() {
+		return false
+	}
+	return slices.ContainsFunc(forwardHeaders, func(h string) bool { return r.Header.Get(h) != "" })
+}
+
+func trustProxy() bool {
+	v, _ := strconv.ParseBool(strings.TrimSpace(os.Getenv("MAGPIE_TRUST_PROXY")))
+	return v
 }

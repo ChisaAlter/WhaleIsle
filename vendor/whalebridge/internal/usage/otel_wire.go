@@ -171,10 +171,12 @@ func (e *otelExporter) traces(records []Record) any {
 		generation := r.OTel == nil || !r.OTel.Root && (!r.OTel.Session || r.OTel.Type == "generation")
 		if generation && !r.IsRejected() {
 			if pr := priceOf(r); pr != nil {
+				// the call's tier, by its whole input, for both halves
+				f := pr.At(r.Input + r.CacheRead + r.CacheWrite)
 				cost, err := json.Marshal(map[string]float64{
-					"input":  pr.Cost(r.Input, 0, r.CacheRead, r.CacheWrite),
-					"output": pr.Cost(0, r.Output, 0, 0),
-					"total":  pr.Cost(r.Input, r.Output, r.CacheRead, r.CacheWrite),
+					"input":  f.CostSplit(r.Input, 0, r.CacheRead, r.CacheWrite, r.CacheWrite1h),
+					"output": f.Cost(0, r.Output, 0, 0),
+					"total":  r.CostAt(*pr),
 				})
 				if err == nil {
 					a = append(a, otelString("langfuse.observation.cost_details", string(cost)))

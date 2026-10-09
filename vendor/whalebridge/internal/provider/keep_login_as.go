@@ -11,6 +11,7 @@ package provider
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 )
@@ -43,6 +44,26 @@ func keptAs(agent string) string {
 // signed in to at its own place among them; nil otherwise, when the one
 // signed in to is the first.
 func (p Provider) LoginRanks() map[string]int {
+	if os.Getenv("LAUNCHER_COMPONENT_ID") == "whalebridge" && p.Account != nil && slices.Contains(switchedAgents, p.Account.Agent) {
+		loginsMu.Lock()
+		ls := readLogins()
+		loginsMu.Unlock()
+		ranks, explicit := map[string]int{}, false
+		for _, l := range ls {
+			if l.Agent == p.Account.Agent {
+				rank := l.Order
+				if rank == 0 {
+					rank = len(ls) + 1
+				} else {
+					explicit = true
+				}
+				ranks[strings.ToLower(l.User)] = rank
+			}
+		}
+		if explicit {
+			return ranks
+		}
+	}
 	if p.Account == nil || p.Account.token != nil && !p.Account.standIn || !slices.Contains(switchedAgents, p.Account.Agent) ||
 		!p.KeepLogin || p.KeepLoginAs == "" {
 		return nil

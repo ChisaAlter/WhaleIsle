@@ -1952,9 +1952,19 @@ it('keeps the draft editor and send action beside the model seat', () => {
   expect(view.getByRole('button', { name: '发送消息' })).toBeTruthy()
 })
 
-it('opens context usage details without replacing the composer', () => {
-  const { view } = bench({ draft: 'draft', contextPressure: { pressureTokens: 32_000, contextWindow: 128_000 } })
-  fireEvent.click(view.getByRole('button', { name: '上下文已用 25%' }))
+it('opens context usage from the toolbar before the model without replacing the composer', () => {
+  const { view } = bench({
+    draft: 'draft',
+    modelEntry: <button>model choice</button>,
+    contextPressure: { pressureTokens: 32_000, contextWindow: 128_000 },
+  })
+  const trigger = view.getByRole('button', { name: '上下文已用 25%' })
+  const model = view.getByRole('button', { name: 'model choice' })
+  expect(view.container.querySelector('[data-composer-card]')?.contains(trigger)).toBe(true)
+  expect(view.container.querySelector('[data-composer-dock]')?.contains(trigger)).toBe(false)
+  expect(trigger.parentElement?.parentElement).toBe(model.parentElement)
+  expect(trigger.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  fireEvent.click(trigger)
   expect(view.getByRole('dialog', { name: '上下文已用' })).toBeTruthy()
   expect(view.getByRole('textbox').textContent).toBe('draft')
   expect(view.getByRole('button', { name: '发送消息' })).toBeTruthy()

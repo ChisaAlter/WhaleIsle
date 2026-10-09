@@ -85,13 +85,20 @@ test('injected chrome script can be evaluated twice in one realm', () => {
   assert.equal(hosts.length, 1);
 });
 
-test('injected measure publishes only the window-control insets', () => {
+test('injected measure publishes window-control insets with an 8px plate margin', () => {
   const cssVars = {};
   const context = vm.createContext(createInjectSandbox({ cssVars }));
   vm.runInContext(injectSource, context);
   assert.equal(cssVars['--dshd-wco-controls'], '112px');
   assert.equal(cssVars['--dshd-wco-caption'], '48px');
   assert.equal(cssVars['--dshd-wco-pad'], undefined);
+  const host = context.document.getElementById('dshd-shell-controls');
+  assert.ok(host);
+  assert.equal(host.style.top, '0px');
+  assert.equal(host.style.right, '0px');
+  assert.equal(host.style.width, '112px');
+  assert.equal(host.style.height, '48px');
+  assert.equal(host.style.padding, '8px');
   assert.equal(context.document.getElementById('dshd-shell-drag-strip'), null);
   assert.equal(context.document.querySelector('[data-dshd-shell-drag]'), null);
   assert.equal(context.document.querySelector('[data-dshd-shell-hit]'), null);

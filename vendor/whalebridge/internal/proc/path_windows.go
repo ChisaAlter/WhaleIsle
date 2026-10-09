@@ -67,3 +67,7 @@ func LoginPath() []string {
 	}
 	return dirs
 }
+
+// ShellPath is LoginPath on Windows: PowerShell and cmd both take the
+// registry's PATH.
+func ShellPath(string) []string { return LoginPath() }

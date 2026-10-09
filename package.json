@@ -1,7 +1,7 @@
 {
   "name": "deepseek-harness-desktop",
   "productName": "Whale Isle",
-  "version": "0.3.3",
+  "version": "0.3.5",
   "description": "Whale Isle desktop app based on DeepSeek Harness",
   "author": "Chisa",
   "license": "MIT",

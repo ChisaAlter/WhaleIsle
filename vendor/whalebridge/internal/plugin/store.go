@@ -224,17 +224,24 @@ var listSeen struct {
 	set   bool
 }
 
+// listStamp is plugins.json as it is now, and what is installed: bun's
+// package.json and lockfile in Dir(), which `magpie plugin update` changes
+// without touching plugins.json (#952: a terminal's update to 0.1.18 left
+// the app's host answering with 0.1.17 until it was killed).
 func listStamp() string {
-	fi, err := os.Stat(listPath())
-	if err != nil {
-		return ""
+	var b strings.Builder
+	for _, p := range []string{listPath(), filepath.Join(Dir(), "package.json"), filepath.Join(Dir(), "bun.lock"), filepath.Join(Dir(), "bun.lockb")} {
+		if fi, err := os.Stat(p); err == nil {
+			fmt.Fprint(&b, fi.ModTime().UnixNano(), " ", fi.Size())
+		}
+		b.WriteString(";")
 	}
-	return fmt.Sprint(fi.ModTime().UnixNano(), fi.Size())
+	return b.String()
 }
 
 // hostStale is set when another magpie changed the plugins (magpie plugin
-// add, remove or move in a terminal while the app runs): the host running
-// has the old ones loaded.
+// add, remove, update or move in a terminal while the app runs): the host
+// running has the old ones loaded.
 var hostStale atomic.Bool
 
 // checkList notices plugins.json changed by another magpie: the host is
@@ -452,17 +459,41 @@ func SetOff(name string, off bool) error {
 	return nil
 }
 
-// SetConfig sets the OpenCode config the plugins are handed.
-func SetConfig(cfg map[string]any) error {
+// SetOptions sets the options a plugin is handed (a middleware's
+// ctx.options); nil takes them away.
+func SetOptions(name string, opts map[string]any) error {
 	listMu.Lock()
 	defer listMu.Unlock()
 	l := Load()
-	l.Config = cfg
+	i := slices.IndexFunc(l.Plugins, func(x Entry) bool { return Name(x.Spec) == name || x.Spec == name })
+	if i < 0 {
+		// a short name, as the community's READMEs write it: param-override
+		// for @magpie-community/middleware-param-override
+		i = slices.IndexFunc(l.Plugins, func(x Entry) bool { return ShortName(Name(x.Spec)) == name })
+	}
+	if i < 0 {
+		return fmt.Errorf("no plugin %q", name)
+	}
+	if len(opts) == 0 {
+		opts = nil
+	}
+	l.Plugins[i].Options = opts
 	if err := save(l); err != nil {
 		return err
 	}
 	Restart()
 	return nil
+}
+
+// ShortName is a package's name without its scope and the words every
+// package of its kind has: model-map for @magpie-community/middleware-model-map,
+// zed for @magpie-community/opencode-zed-auth.
+func ShortName(pkg string) string {
+	if i := strings.LastIndex(pkg, "/"); i >= 0 {
+		pkg = pkg[i+1:]
+	}
+	pkg = strings.TrimPrefix(strings.TrimPrefix(pkg, "middleware-"), "opencode-")
+	return strings.TrimSuffix(pkg, "-auth")
 }
 
 // install puts an npm package into plugins/ with bun add, its scripts
@@ -622,4 +653,17 @@ func PackageName(spec string) string {
 		return pj.Name
 	}
 	return spec
+}
+
+// SetConfig sets the OpenCode config the plugins are handed.
+func SetConfig(cfg map[string]any) error {
+	listMu.Lock()
+	defer listMu.Unlock()
+	l := Load()
+	l.Config = cfg
+	if err := save(l); err != nil {
+		return err
+	}
+	Restart()
+	return nil
 }

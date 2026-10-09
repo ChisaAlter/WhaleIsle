@@ -120,7 +120,9 @@ function resolveBoot(program: Command, profile: string, options: BootOptions, ar
   if (options.fromDefaultProfile === '') program.error('error: --from-default-profile needs a name')
   const dumps = [options.dumpConfig, options.dumpDefaultConfig, options.dumpConfigSchema].filter(Boolean)
   if (dumps.length === 0) {
-    return { mode: 'profile', profile, fromDefaultProfile: options.fromDefaultProfile, patches, args }
+    return skipUserPlugins
+      ? { mode: 'profile', profile, fromDefaultProfile: options.fromDefaultProfile, patches, skipUserPlugins, args }
+      : { mode: 'profile', profile, fromDefaultProfile: options.fromDefaultProfile, patches, args }
   }
   if (dumps.length > 1) {
     program.error('error: --dump-config, --dump-default-config, and --dump-config-schema are mutually exclusive')

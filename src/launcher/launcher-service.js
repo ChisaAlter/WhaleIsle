@@ -16,6 +16,7 @@ const deltaInstall = require('./delta/install');
 const forensicsLog = require('./forensics-log');
 const { isLauncherPackage, runtimeTarget, desktopStateDir, desktopUserDataDir } = require('./product');
 const importGuard = require('../main/import-guard');
+const { startupRecoveryGuidance } = require('../shared/launcher-recovery');
 
 // In the slim package this process's config.json is the LAUNCHER's own file —
 // desktop-owned keys (disabledPlugins, pluginRecovery) live in the runtime's
@@ -25,26 +26,35 @@ function desktopConfigFile() {
   return path.join(desktopUserDataDir(app), 'config.json');
 }
 
-function loadPluginConfig() {
+function loadPluginConfig(strict = false) {
   if (!isLauncherPackage()) {
     return loadConfig();
   }
   try {
     const fs = require('fs');
-    return JSON.parse(fs.readFileSync(desktopConfigFile(), 'utf8')) || {};
-  } catch {
+    const config = JSON.parse(fs.readFileSync(desktopConfigFile(), 'utf8'));
+    if (strict && (typeof config !== 'object' || config === null || Array.isArray(config))) {
+      throw new Error('config-unreadable');
+    }
+    return config || {};
+  } catch (error) {
+    if (strict && error.code !== 'ENOENT') {
+      const failure = new Error('config-unreadable');
+      failure.code = 'CONFIG_UNREADABLE';
+      throw failure;
+    }
     return {};
   }
 }
 
-function savePluginConfig(patch) {
+function savePluginConfig(patch, strict = false) {
   if (!isLauncherPackage()) {
     return saveConfig(patch);
   }
   const fs = require('fs');
   const path = require('path');
   const file = desktopConfigFile();
-  const next = { ...loadPluginConfig(), ...patch };
+  const next = { ...loadPluginConfig(strict), ...patch };
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(next, null, 2), 'utf8');
@@ -84,20 +94,26 @@ function createLauncherService(deps) {
     const config = loadPluginConfig();
     const stateDir = desktopStateDir(app);
     const lastStart = readLastDesktopStart(stateDir);
-    // In slim mode dsh.logs is a stub: the captured external-runtime boot log
-    // plus the kernel log tail the runtime stamps into last-desktop-start.json
-    // are what carry plugin loader errors into suspect attribution there.
-    const bootTail = forensicsLog.readBootLogTail(forensicsLog.bootLogPath(stateDir));
-    const logs = (Array.isArray(dsh?.logs)
-      ? dsh.logs.map((row) => (typeof row === 'string' ? row : row.message || row.line || String(row)))
-      : []).concat(bootTail, lastStart.logTail || []);
-    const corpus = [logs.join('\n'), lastStart.error].filter(Boolean).join('\n');
     const recovery = harness?.pluginRecovery && typeof harness.pluginRecovery === 'object'
       ? harness.pluginRecovery
       : (config.pluginRecovery || {});
+    // Historical logs remain available for export, but must never authorize
+    // disabling a plugin. Sticky recovery retains the failed full attempt,
+    // not the subsequent skip boot or an earlier unrelated failure.
+    const currentLogs = typeof dsh?.currentStartLogs === 'function' ? dsh.currentStartLogs() : [];
+    const failedLogs = currentLogs.length ? currentLogs : (lastStart.logTail || []);
+    const logs = recovery.skipUserPlugins
+      ? (recovery.logTail || []).concat(lastStart.ok === false ? failedLogs : [])
+      : (lastStart.ok === false ? failedLogs : currentLogs);
+    if (isLauncherPackage() && lastStart.ok === null && !recovery.skipUserPlugins) {
+      logs.push(...forensicsLog.readBootLogTail(forensicsLog.bootLogPath(stateDir)));
+    }
+    const lastStartError = lastStart.ok === false ? lastStart.error : '';
+    const recoveryReason = typeof recovery.reason === 'string' ? recovery.reason : '';
+    const corpus = [logs.join('\n'), lastStartError, recoveryReason].filter(Boolean).join('\n');
     return inspectPlugins({
       logs,
-      lastStartError: lastStart.error,
+      lastStartError,
       pluginTreeFailure: isPluginTreeFailure(corpus),
       recovery,
       plugins: listed.plugins || [],
@@ -521,14 +537,14 @@ function createLauncherService(deps) {
         .finally(() => releaseMaintenanceSlot(guard));
     }
     const wasSticky = stickySkipActive(harness);
-    if (harness && typeof harness.clearPluginRecovery === 'function') {
+    if (!wasSticky && harness && typeof harness.clearPluginRecovery === 'function') {
       harness.clearPluginRecovery();
     }
     const start = typeof startDesktop === 'function' ? startDesktop : startHarness;
-    // Clearing sticky while already ready would otherwise early-return with skip mode still live.
+    // A full retry clears sticky only after the protected restart is admitted.
     if (wasSticky) {
       return Promise.resolve()
-        .then(() => start({ forceRestart: true, maintenanceToken: guard }))
+        .then(() => start({ forceRestart: true, fullPluginRetry: true, maintenanceToken: guard }))
         .finally(() => releaseMaintenanceSlot(guard));
     }
     return Promise.resolve()
@@ -802,6 +818,53 @@ function createLauncherService(deps) {
       return result.ok === true ? { ...result, forensics: collectForensics() } : result;
     },
 
+    async disableSuspectsAndStart(names) {
+      const blocked = blockedStartError();
+      if (blocked) {
+        return blocked;
+      }
+      if (importGuard.isMaintenanceHeld()) {
+        return { ok: false, error: 'operation-in-progress' };
+      }
+      const forensics = collectForensics();
+      const guidance = startupRecoveryGuidance({
+        forensics,
+        desktop: desktopSnapshot(),
+        lastStart: readLastDesktopStart(desktopStateDir(app)),
+        recovery: forensics.recovery,
+      });
+      const suspects = guidance?.kind === 'disable' ? guidance.names : [];
+      const requested = Array.isArray(names) && names.every((name) => typeof name === 'string' && name.trim())
+        ? [...new Set(names.map((name) => name.trim()))]
+        : [];
+      if (!requested.length || requested.length !== suspects.length
+        || requested.some((name) => !suspects.includes(name))) {
+        return { ok: false, error: 'suspects-changed', forensics };
+      }
+      try {
+        const result = await disablePlugins(requested, {
+          dsh,
+          configIO: isLauncherPackage() ? {
+            load: () => loadPluginConfig(true),
+            save: (patch) => savePluginConfig(patch, true),
+          } : pluginConfigIO,
+          startWhenIdle: true,
+          startHarness: async (ownerToken) => {
+            if (isLauncherPackage()) {
+              return retryFullPluginsSlim();
+            }
+            return startDesktop({ forceRestart: true, fullPluginRetry: true, recoveryLaunch: true, maintenanceToken: ownerToken });
+          },
+        });
+        return result.ok === true ? { ...result, forensics: collectForensics() } : result;
+      } catch (error) {
+        if (error.code === 'CONFIG_UNREADABLE') {
+          return { ok: false, error: 'config-unreadable' };
+        }
+        throw error;
+      }
+    },
+
     async disablePlugin(name) {
       if (importGuard.isMaintenanceHeld()) {
         return { ok: false, error: 'import-in-progress' };
@@ -847,15 +910,11 @@ function createLauncherService(deps) {
           .then(() => retryFullPluginsSlim())
           .finally(() => releaseMaintenanceSlot(guard));
       }
-      if (harness && typeof harness.clearPluginRecovery === 'function') {
-        harness.clearPluginRecovery();
-      }
       return Promise.resolve()
-        .then(() => startDesktop({ recoveryLaunch: true, forceRestart: true, maintenanceToken: guard }))
+        .then(() => startDesktop({ recoveryLaunch: true, forceRestart: true, fullPluginRetry: true, maintenanceToken: guard }))
         .finally(() => releaseMaintenanceSlot(guard));
       } catch (error) {
-        // clearPluginRecovery / config reads between acquire and the guarded
-        // promise must release on synchronous throw too.
+        // Release the owner if delegation throws before returning a promise.
         releaseMaintenanceSlot(guard);
         throw error;
       }

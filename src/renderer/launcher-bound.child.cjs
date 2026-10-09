@@ -350,7 +350,10 @@ app.whenReady().then(async () => {
           noticeTitle: document.querySelector('#app-confirm-title').textContent,
           noticeBody: document.querySelector('#app-confirm-body').textContent,
           updateCount: document.body.innerText.split('可更新至 v0.3.3').length - 1,
-          brand: home.querySelector('.comp-brand')?.naturalWidth,
+          desktopImages: document.querySelectorAll('.home-product img').length,
+          homeImages: home.querySelectorAll('img').length,
+          sidebarBrand: document.querySelector('.rail-head .brand-avatar')?.naturalWidth,
+          catalogBrand: row.querySelector('.comp-brand')?.naturalWidth,
         };
       })()`);
       await delay(150);
@@ -363,6 +366,11 @@ app.whenReady().then(async () => {
       const starting = await read();
       componentStartResolve(); await delay(100);
       const running = await read();
+      if (process.env.QA_HOME_ARTIFACTS) {
+        fs.mkdirSync(process.env.QA_HOME_ARTIFACTS, { recursive: true });
+        fs.writeFileSync(path.join(process.env.QA_HOME_ARTIFACTS, 'home-no-card-avatars.png'),
+          (await win.webContents.capturePage()).toPNG());
+      }
       await win.webContents.executeJavaScript(`document.querySelector('#home-components [data-comp-action="open"]').click()`);await delay(100);
       await win.webContents.executeJavaScript(`document.querySelector('#home-components [data-comp-action="stop"]').click(); document.querySelector('#home-components [data-comp-action="stop"]').click()`);await delay(80);
       const stopping = await read();

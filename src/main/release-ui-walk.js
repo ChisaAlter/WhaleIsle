@@ -370,7 +370,7 @@ const QA_REQUIRED_STEPS = [
   'market.installed',
   'usage-stats.section',
   'interface.dshbotSwitch',
-  'interface.sessionLogSwitch',
+  'interface.sessionLogMenu',
   'plugin.dshbot.defaultOff',
 ];
 
@@ -1259,13 +1259,7 @@ async function runReleaseUiWalk(wc, helpers) {
       ? Array.from(bar.querySelectorAll('button')).map((el) => dshLabel(el)).filter(Boolean).slice(0, 12)
       : [];
     return {
-      sessionLog: Boolean(
-        dshFind('session log|会话日志|Session 日志')
-        || dshFind('session log|会话日志|Session 日志', bar)
-        || Array.from(document.querySelectorAll('button')).some((el) =>
-          /session log|会话日志|Session 日志/.test(dshLabel(el)))
-        || Boolean(document.querySelector('[class*="sessionLog"]'))
-      ),
+      sessionLog: Boolean(bar && dshFind('session log|会话日志|Session 日志', bar)),
       labels,
       branch: Boolean(dshFind('switch branch|切换分支', bar)),
       commit: Boolean(dshFind('^commit|提交', bar)),
@@ -1274,10 +1268,16 @@ async function runReleaseUiWalk(wc, helpers) {
       surfaces: Boolean(dshFind('right panel|surfaces|右侧栏', bar)),
     };
   });
-  // Session log ships opt-in since the titlebar crowding fix: the capsule
-  // must stay hidden until Interface Settings enables it (verified below).
-  rec('titlebar.sessionLog', titlebar?.sessionLog === false,
-    `hiddenByDefault=${titlebar?.sessionLog === false} labels=${(titlebar?.labels || []).join(' | ')}`);
+  // Session logs remain available from More actions without a second shortcut.
+  const sessionMenuOpened = await clickNamed(wc, '^more actions$|^更多操作$');
+  const sessionLogMenu = sessionMenuOpened && Boolean(await waitUntil(() => pageEval(wc, () => {
+    const menu = document.querySelector('[role="menu"]');
+    const download = menu && dshFind('download session log|下载会话日志', menu);
+    return Boolean(download && !download.disabled);
+  }), 5_000));
+  rec('titlebar.sessionLog', Boolean(titlebar?.sessionLog === false && sessionLogMenu),
+    `extraShortcut=${titlebar?.sessionLog} menuDownload=${sessionLogMenu} labels=${(titlebar?.labels || []).join(' | ')}`);
+  await dismiss();
   rec('titlebar.branch', titlebar?.branch, '');
   rec('titlebar.commit', titlebar?.commit, '');
   rec('titlebar.git', titlebar?.git, '');
@@ -1965,34 +1965,15 @@ async function runReleaseUiWalk(wc, helpers) {
     && botsSetting?.switchPresent && botsSetting?.off && botsSetting?.beta),
   `nav=${botsSetting?.nav} switch=${botsSetting?.switchPresent} off=${botsSetting?.off} beta=${botsSetting?.beta}`);
 
-  // Session log titlebar capsule: default off; flipping the Interface switch
-  // draws the button, and turning it back off restores the lean titlebar.
-  const sessionLogSwitch = await waitUntil(() => pageEval(wc, () => {
+  // The single Session-menu entry no longer has an Interface visibility switch.
+  const sessionLogSwitchRemoved = await pageEval(wc, () => {
     const dialog = dshDialog();
     const control = dialog && Array.from(dialog.querySelectorAll('[role="switch"]'))
       .find((el) => /(会话日志|session log)/i.test(dshLabel(el)));
-    if (!dialog || !control || !dshShown(control) || control.disabled) return null;
-    const checked = dshSwitchChecked(control);
-    if (checked === null) return null;
-    const off = checked === false;
-    if (off) control.click();
-    return { off };
-  }), 10_000);
-  const sessionLogShown = sessionLogSwitch?.off === true && Boolean(await waitUntil(() =>
-    pageEval(wc, () => {
-      const bar = document.querySelector('#dshd-shell-titlebar-trailing');
-      return Boolean(bar && dshFind('session log|会话日志|Session 日志', bar));
-    }), 8_000));
-  rec('interface.sessionLogSwitch', Boolean(sessionLogSwitch?.off && sessionLogShown),
-    `off=${sessionLogSwitch?.off} shownAfterEnable=${sessionLogShown}`);
-  // Restore the shipped default so later packaged runs see the lean titlebar.
-  await pageEval(wc, () => {
-    const dialog = dshDialog();
-    const control = dialog && Array.from(dialog.querySelectorAll('[role="switch"]'))
-      .find((el) => /(会话日志|session log)/i.test(dshLabel(el)));
-    if (control && dshSwitchChecked(control) === true) control.click();
-    return true;
+    return Boolean(dialog && !control);
   });
+  rec('interface.sessionLogMenu', Boolean(interfaceOpened && sessionLogSwitchRemoved && sessionLogMenu),
+    `switchRemoved=${sessionLogSwitchRemoved} menuDownload=${sessionLogMenu}`);
   await dismiss();
   const botsTab = await pageEval(wc, () => {
     const tab = Array.from(document.querySelectorAll('[role="tab"]')).find((el) =>

@@ -81,6 +81,11 @@ func (s *Server) codexTitle(w http.ResponseWriter, r *http.Request, body []byte,
 	}
 	ctx := context.WithValue(r.Context(), titleCheckKey{}, check)
 	ctx = context.WithValue(ctx, titleShapeKey{}, &shape)
+	if to == settings.Load().CodexTitles {
+		// the model picked for titles in magpie's settings, not by the
+		// caller's key (#882)
+		ctx = magpieChose(ctx)
+	}
 	s.serve(rec, r.WithContext(ctx), provider.Responses, withModel(body, to))
 	if rec.status >= 400 {
 		for k, vs := range rec.header {

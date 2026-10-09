@@ -48,6 +48,11 @@ type Model struct {
 	MaxContext int `json:",omitempty"`
 	// Output is the most tokens a reply may hold, when known.
 	Output int `json:",omitempty"`
+	// Compact is where the user has Codex compact a conversation on this
+	// model (#876), its own or its provider's (settings.ModelCompacts): the
+	// window it is told when Context is longer. 0 is none set, for the
+	// one for every model (settings.Compact).
+	Compact int `json:",omitempty"`
 	// Fast is set on a model Codex may ask for priority processing (its
 	// Fast mode): one a ChatGPT account serves.
 	Fast bool `json:",omitempty"`
@@ -76,6 +81,11 @@ type Model struct {
 	// Reasoning is set on a model that thinks, whether or not it takes
 	// levels: mimo-v2.6-flash thinks with a switch alone (#402).
 	Reasoning bool `json:",omitempty"`
+	// WebSearch is how another magpie (a Remote magpie) searches the web
+	// for the model when a web search tool is offered: "native", its own
+	// provider by itself, or "magpie", with that magpie's searcher; "" it
+	// doesn't, or didn't say.
+	WebSearch string `json:",omitempty"`
 }
 
 func imageInput(modalities []string) *bool {
@@ -92,18 +102,153 @@ type Price struct {
 	Output     float64 `json:"output"`
 	CacheRead  float64 `json:"cache_read"`
 	CacheWrite float64 `json:"cache_write"`
+	// CacheWrite1h is what a cache write kept for an hour costs, Anthropic's
+	// 1-hour TTL, which it bills at 2× input where a 5-minute write (the
+	// CacheWrite above) is 1.25×. 0 is not given: such a write is then
+	// counted at the 5-minute price, as no other vendor has an hour's
+	// writes to bill apart; a Claude model's is 2× input (OneHourFor).
+	CacheWrite1h float64 `json:"cache_write_1h,omitempty"`
+	// Tiers are the prices a request is billed at, whole, once its input
+	// goes over a size (OpenAI's gpt-6-astra: 2× input and cache, 1.5×
+	// output above 272K), lowest first. models.dev lists them as "tiers" of
+	// type "context".
+	Tiers []Tier `json:"tiers,omitempty"`
+}
+
+// Tier is a price from a request's input size on: what the whole request
+// costs once its input, cached and cache-written tokens included, is over
+// Above tokens.
+type Tier struct {
+	Above        int     `json:"above"`
+	Input        float64 `json:"input"`
+	Output       float64 `json:"output"`
+	CacheRead    float64 `json:"cache_read"`
+	CacheWrite   float64 `json:"cache_write"`
+	CacheWrite1h float64 `json:"cache_write_1h,omitempty"`
+}
+
+// UnmarshalJSON reads a price as magpie writes it, and as models.dev does,
+// whose tiers name their size as {"tier": {"type": "context", "size": N}}
+// and may leave a part out, which is then the base price's. A tier of
+// another type, or of no size, is left out.
+func (p *Price) UnmarshalJSON(b []byte) error {
+	type flat Price
+	var raw struct {
+		flat
+		Tiers []struct {
+			Above        int      `json:"above"`
+			Input        *float64 `json:"input"`
+			Output       *float64 `json:"output"`
+			CacheRead    *float64 `json:"cache_read"`
+			CacheWrite   *float64 `json:"cache_write"`
+			CacheWrite1h *float64 `json:"cache_write_1h"`
+			Tier         *struct {
+				Type string `json:"type"`
+				Size int    `json:"size"`
+			} `json:"tier"`
+		} `json:"tiers"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	*p = Price(raw.flat)
+	p.Tiers = nil
+	or := func(v *float64, base float64) float64 {
+		if v != nil {
+			return *v
+		}
+		return base
+	}
+	for _, t := range raw.Tiers {
+		above := t.Above
+		if t.Tier != nil {
+			if t.Tier.Type != "" && t.Tier.Type != "context" {
+				continue
+			}
+			above = t.Tier.Size
+		}
+		if above <= 0 {
+			continue
+		}
+		p.Tiers = append(p.Tiers, Tier{Above: above, Input: or(t.Input, p.Input), Output: or(t.Output, p.Output),
+			CacheRead: or(t.CacheRead, p.CacheRead), CacheWrite: or(t.CacheWrite, p.CacheWrite), CacheWrite1h: or(t.CacheWrite1h, 0)})
+	}
+	slices.SortFunc(p.Tiers, func(a, b Tier) int { return a.Above - b.Above })
+	return nil
+}
+
+// OneHourFor gives a Claude model's price its 1-hour cache write where none
+// is given — models.dev lists none, and a price the user gives may leave it
+// out: 2× input, as Anthropic bills it for every model, wherever the model
+// has a (5-minute) cache write price at all. Any other model's stays
+// unset, its writes all at the 5-minute price: only Anthropic has a 1-hour
+// one (PAMI on Discord: gpt-6-astra was shown a $20 one that isn't).
+func OneHourFor(id string, p *Price) {
+	if p == nil || p.CacheWrite <= 0 || p.CacheWrite1h > 0 || !strings.Contains(strings.ToLower(id), "claude") {
+		return
+	}
+	p.CacheWrite1h = 2 * p.Input
+	for i := range p.Tiers {
+		if p.Tiers[i].CacheWrite1h <= 0 {
+			p.Tiers[i].CacheWrite1h = 2 * p.Tiers[i].Input
+		}
+	}
 }
 
 // Times is the price at r times each of its parts.
 func (p Price) Times(r float64) Price {
-	return Price{Input: p.Input * r, Output: p.Output * r, CacheRead: p.CacheRead * r, CacheWrite: p.CacheWrite * r}
+	out := Price{Input: p.Input * r, Output: p.Output * r, CacheRead: p.CacheRead * r, CacheWrite: p.CacheWrite * r, CacheWrite1h: p.CacheWrite1h * r}
+	for _, t := range p.Tiers {
+		out.Tiers = append(out.Tiers, Tier{Above: t.Above, Input: t.Input * r, Output: t.Output * r, CacheRead: t.CacheRead * r, CacheWrite: t.CacheWrite * r, CacheWrite1h: t.CacheWrite1h * r})
+	}
+	return out
 }
 
-// Cost of a call at this price. Reasoning tokens are billed as output by
-// every vendor, and are already inside the output count.
+// Same is whether two prices are the same in every part and tier.
+func (p Price) Same(q Price) bool {
+	return p.Input == q.Input && p.Output == q.Output && p.CacheRead == q.CacheRead && p.CacheWrite == q.CacheWrite &&
+		p.CacheWrite1h == q.CacheWrite1h && slices.Equal(p.Tiers, q.Tiers)
+}
+
+// At is the flat price a request whose input, cached and cache-written
+// tokens included, comes to prompt tokens is billed at: that of the highest
+// tier it is over, else the base price. OpenAI counts a request's input
+// with its cached tokens in it, and bills the whole request at the tier.
+func (p Price) At(prompt int) Price {
+	flat := Price{Input: p.Input, Output: p.Output, CacheRead: p.CacheRead, CacheWrite: p.CacheWrite, CacheWrite1h: p.CacheWrite1h}
+	for _, t := range p.Tiers {
+		if prompt > t.Above {
+			flat = Price{Input: t.Input, Output: t.Output, CacheRead: t.CacheRead, CacheWrite: t.CacheWrite, CacheWrite1h: t.CacheWrite1h}
+		}
+	}
+	return flat
+}
+
+// OneHour is what a 1-hour cache write costs at this flat price: the price
+// given, else the 5-minute one (a Claude model's is given, OneHourFor).
+func (p Price) OneHour() float64 {
+	if p.CacheWrite1h > 0 {
+		return p.CacheWrite1h
+	}
+	return p.CacheWrite
+}
+
+// Cost of a call at this price, every cache write a 5-minute one.
+// Reasoning tokens are billed as output by every vendor, and are already
+// inside the output count.
 func (p Price) Cost(input, output, cacheRead, cacheWrite int) float64 {
-	return (float64(input)*p.Input + float64(output)*p.Output +
-		float64(cacheRead)*p.CacheRead + float64(cacheWrite)*p.CacheWrite) / 1e6
+	return p.CostSplit(input, output, cacheRead, cacheWrite, 0)
+}
+
+// CostSplit is Cost where cacheWrite1h of the cacheWrite tokens were
+// written for an hour, billed at that price, and the rest for 5 minutes.
+// The whole call is billed at the tier its input reaches.
+func (p Price) CostSplit(input, output, cacheRead, cacheWrite, cacheWrite1h int) float64 {
+	cacheWrite1h = min(max(cacheWrite1h, 0), max(cacheWrite, 0))
+	f := p.At(input + cacheRead + cacheWrite)
+	return (float64(input)*f.Input + float64(output)*f.Output +
+		float64(cacheRead)*f.CacheRead + float64(cacheWrite-cacheWrite1h)*f.CacheWrite +
+		float64(cacheWrite1h)*f.OneHour()) / 1e6
 }
 
 type mdProvider struct {
@@ -182,6 +327,9 @@ var (
 	// thinks are the models, by bare id, most of the providers serving
 	// them say reason, levels or not
 	thinks map[string]bool
+	// names are the models' names, by bare id, as most of the providers
+	// serving them give it
+	names map[string]string
 
 	syncMu sync.Mutex
 )
@@ -219,6 +367,7 @@ func load() map[string]mdProvider {
 				if json.Unmarshal(b, &m) == nil && len(m) > 0 {
 					mdev = m
 					votes, reasons := map[string]int{}, map[string]int{}
+					named := map[string]map[string]int{}
 					sizes, outs := map[string]map[int]int{}, map[string]map[int]int{}
 					levels := map[string]map[string]int{}
 					// one vote a provider for each list it gives a model: a
@@ -228,6 +377,13 @@ func load() map[string]mdProvider {
 					voted := map[string]bool{}
 					for pid, p := range m {
 						for id, x := range p.Models {
+							OneHourFor(id, x.Cost)
+							if x.Name != "" && x.Name != id && x.Name != bareID(id) {
+								if named[bareID(id)] == nil {
+									named[bareID(id)] = map[string]int{}
+								}
+								named[bareID(id)][x.Name]++
+							}
 							if e := x.efforts(); len(e) > 0 {
 								l := strings.Join(e, ",")
 								if levels[bareID(id)] == nil {
@@ -274,6 +430,10 @@ func load() map[string]mdProvider {
 					for id, by := range levels {
 						efforts[id] = strings.Split(mostListed(by), ",")
 					}
+					names = map[string]string{}
+					for id, by := range named {
+						names[id] = mostNamed(by)
+					}
 					thinks = map[string]bool{}
 					for id, v := range reasons {
 						if v > 0 {
@@ -299,7 +459,7 @@ func Reset() {
 	loadMu.Lock()
 	defer loadMu.Unlock()
 	loaded = false
-	mdev, images, windows, outputs, efforts, thinks = nil, nil, nil, nil, nil, nil
+	mdev, images, windows, outputs, efforts, thinks, names = nil, nil, nil, nil, nil, nil, nil
 }
 
 // Sync downloads the models.dev catalog into CachePath. It serializes with
@@ -349,24 +509,6 @@ func Stale() bool {
 	}
 	st, err := os.Stat(src)
 	return err != nil || time.Since(st.ModTime()) > staleAfter
-}
-
-// ProviderEnv lists the env vars that unlock a models.dev provider.
-func ProviderEnv(provider string) []string {
-	if p, ok := load()[provider]; ok {
-		return p.Env
-	}
-	return nil
-}
-
-// ProviderAvailable is true when any of the provider's API-key env vars is set.
-func ProviderAvailable(provider string) bool {
-	for _, e := range ProviderEnv(provider) {
-		if os.Getenv(e) != "" {
-			return true
-		}
-	}
-	return false
 }
 
 // PriceOf is the list price of a models.dev provider's model, if known.
@@ -492,6 +634,32 @@ func ProviderName(id string) string {
 func Thinks(id string) bool {
 	load()
 	return thinks[bareID(id)]
+}
+
+// NameOf is the name models.dev gives a model of this id, as most of the
+// providers it lists serving it do, matched as SeesImages matches it:
+// without a vendor's prefix, in any case. "" when no provider names it
+// other than by its id.
+func NameOf(id string) string {
+	load()
+	return names[bareID(id)]
+}
+
+// Named gives a model the list names by its id alone the name models.dev
+// knows it by (NameOf), so one model reads the same under every provider:
+// a GLM Coding Plan's glm-5-turbo, which Zhipu's catalog doesn't list, is
+// GLM-5-Turbo as ZCode's is. Its id, and where requests go, stay as they
+// are.
+func Named(ms []Model) []Model {
+	out := slices.Clone(ms)
+	for i, m := range out {
+		if m.Name == "" || m.Name == m.ID {
+			if n := NameOf(m.ID); n != "" {
+				out[i].Name = n
+			}
+		}
+	}
+	return out
 }
 
 // Knows reports whether models.dev lists a model of this id at all, under
@@ -636,6 +804,18 @@ func mostListed(by map[string]int) string {
 	for l, c := range by {
 		if c > n || c == n && (strings.Count(l, ",") < strings.Count(best, ",") || strings.Count(l, ",") == strings.Count(best, ",") && l < best) {
 			best, n = l, c
+		}
+	}
+	return best
+}
+
+// mostNamed is the name most providers give; a tie goes to the shorter,
+// then the first in order, so the answer doesn't change from run to run.
+func mostNamed(by map[string]int) string {
+	best, n := "", 0
+	for s, c := range by {
+		if c > n || c == n && (len(s) < len(best) || len(s) == len(best) && s < best) {
+			best, n = s, c
 		}
 	}
 	return best
@@ -853,4 +1033,22 @@ func Efforts(models []Model, id string) []string {
 		}
 	}
 	return nil
+}
+
+// ProviderEnv lists the env vars that unlock a models.dev provider.
+func ProviderEnv(provider string) []string {
+	if p, ok := load()[provider]; ok {
+		return p.Env
+	}
+	return nil
+}
+
+// ProviderAvailable is true when any of the provider's API-key env vars is set.
+func ProviderAvailable(provider string) bool {
+	for _, e := range ProviderEnv(provider) {
+		if os.Getenv(e) != "" {
+			return true
+		}
+	}
+	return false
 }

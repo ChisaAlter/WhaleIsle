@@ -18,7 +18,7 @@ import { AppFrame } from '../src/client/AppFrame.tsx'
 import type { AppFrameProps } from '../src/client/AppFrame.tsx'
 import type { MainPanelId, RightbarOwnerProps, SidebarOwnerProps, TitlebarTrailingOwnerProps } from '../src/client/index.ts'
 import { createLayoutStore } from '../src/client/stores.ts'
-import { PHONE_DRAWER, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT } from '../src/client/columns.ts'
+import { PHONE_DRAWER, PHONE_MAX, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT } from '../src/client/columns.ts'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
@@ -220,8 +220,8 @@ beforeEach(() => {
   replaceProperty(Element.prototype, 'getBoundingClientRect', function (this: Element) {
     if (this instanceof HTMLElement && this.id === 'dshd-shell-titlebar-trailing') {
       return {
-        width: trailingClusterWidth, height: 32, top: 12, left: 0,
-        right: trailingClusterWidth, bottom: 44, x: 0, y: 12, toJSON: () => ({}),
+        width: trailingClusterWidth, height: 27, top: 12, left: 0,
+        right: trailingClusterWidth, bottom: 39, x: 0, y: 12, toJSON: () => ({}),
       }
     }
     return { width: frameWidth, height: 1080, top: 0, left: 0, right: frameWidth, bottom: 1080, x: 0, y: 0, toJSON: () => ({}) }
@@ -239,6 +239,7 @@ afterEach(() => {
     cleanup()
   } finally {
     delete document.documentElement.dataset.platform
+    document.documentElement.removeAttribute('data-windows-titlebar')
     for (const restore of restoreProperties.splice(0).reverse()) restore()
     document.title = originalTitle
     vi.restoreAllMocks()
@@ -815,7 +816,7 @@ describe('AppFrame — surfaces column and terminal drawer', () => {
     expect(frame.hasAttribute('data-terminal-drawer-collapsed')).toBe(false)
   })
 
-  it('keeps an open surfaces column full height; trailing cluster stops before column 4', () => {
+  it('keeps an open surfaces column full height with shared caption tools', () => {
     const { frame, instance } = mountFrame()
     expect(frame.style.gridTemplateRows.startsWith('auto minmax(0, 1fr)')).toBe(true)
     expect(frame.querySelector('[data-titlebar-row]')).toBeTruthy()
@@ -864,36 +865,98 @@ describe('AppFrame — titlebar density and conversation reserve', () => {
 
   it('rounds fractional trailing width up so the 8px clearance is never short', () => {
     trailingClusterWidth = 459.27
-    const { frame, instance } = mountFrame()
-    act(() => { instance.actions.openRightbar(true, false) })
+    const { frame } = mountFrame()
     act(() => { resize(frameWidth) })
     expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('460px')
   })
 
-  it('keeps the titlebar controls over conversation when the right panel is open', () => {
+  it('does not reserve conversation space when the global caption tools fit above the right column', () => {
     trailingClusterWidth = 300
     const { frame, instance } = mountFrame()
     act(() => { instance.actions.openRightbar(true, false) })
     act(() => { resize(frameWidth) })
     expect(frame.hasAttribute('data-titlebar-over-conversation')).toBe(true)
-    expect(frame.getAttribute('data-titlebar-density')).toBe('full')
-    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('300px')
+    expect(frame.getAttribute('data-titlebar-density')).toBe('cozy')
+    expect(tracks(frame)[1]).toBeGreaterThan(trailingClusterWidth)
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('0px')
   })
 
-  it('collapses to cozy when an open surfaces column pins the center below 720', () => {
-    frameWidth = 1500
+  it.each([
+    { clusterWidth: 160, extent: 240, overlap: 0 },
+    { clusterWidth: 480, extent: 560, overlap: 60 },
+  ])('reserves only $overlap px over a 400px Windows conversation for a $extent px tool extent', ({ clusterWidth, extent, overlap }) => {
+    document.documentElement.setAttribute('data-windows-titlebar', '')
+    frameWidth = 900
+    trailingClusterWidth = clusterWidth
+    const { frame, instance } = mountFrame()
+    const trailing = frame.querySelector<HTMLElement>('[data-titlebar-trailing]')!
+    trailing.style.marginRight = '80px'
+    act(() => {
+      instance.actions.openRightbar(true, false)
+      instance.actions.setRightbar(500)
+      resize(frameWidth)
+    })
+    const [sidebar, rightbar] = tracks(frame)
+    expect(frameWidth - sidebar! - rightbar!).toBe(400)
+    expect(rightbar).toBe(500)
+    expect(frame.hasAttribute('data-titlebar-trailing-hidden')).toBe(false)
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe(`${overlap}px`)
+
+    act(() => { instance.actions.closeRightbar() })
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe(`${extent}px`)
+  })
+
+  it.each([
+    { width: 1280, center: 700, closedDensity: 'full' },
+    { width: 700, center: 400, closedDensity: 'compact' },
+  ])('uses compact Git controls in a 300px rightbar at $width px and restores $closedDensity when closed', ({ width, center, closedDensity }) => {
+    document.documentElement.setAttribute('data-windows-titlebar', '')
+    frameWidth = width
     const { frame, instance, trailingOwner } = mountFrame()
-    act(() => { instance.actions.openRightbar(true, false) })
+    act(() => {
+      instance.actions.openRightbar(true, false)
+      instance.actions.setRightbar(300)
+    })
+    const [sidebar, rightbar] = tracks(frame)
+    expect(rightbar).toBe(300)
+    expect(frameWidth - sidebar! - rightbar!).toBe(center)
     expect(frame.getAttribute('data-titlebar-density')).toBe('compact')
     expect(trailingOwner()).toEqual({
       surfaces: 0, rightbarShown: true, terminalDrawer: 0, managedSession: false, density: 'compact',
     })
+    act(() => { instance.actions.closeRightbar() })
+    expect(frame.getAttribute('data-titlebar-density')).toBe(closedDensity)
+    expect(trailingOwner()).toMatchObject({ rightbarShown: false, density: closedDensity })
   })
 
-  it('hides the cluster on a compact header and does not mark over-conversation', () => {
+  it('keeps the trailing tools and reserve on a narrow browser header above phone width', () => {
     frameWidth = 980
+    trailingClusterWidth = 160
     const { frame } = mountFrame()
     expect(frame.hasAttribute('data-compact-header')).toBe(true)
+    expect(frame.hasAttribute('data-titlebar-trailing-hidden')).toBe(false)
+    expect(frame.hasAttribute('data-titlebar-over-conversation')).toBe(true)
+    expect(frame.getAttribute('data-titlebar-density')).toBe('full')
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('160px')
+  })
+
+  it.each([900, 700])('keeps the Windows Git tools and their reserve at %ipx', width => {
+    document.documentElement.setAttribute('data-windows-titlebar', '')
+    frameWidth = width
+    trailingClusterWidth = 160
+    const { frame, getByTestId } = mountFrame()
+    expect(frame.hasAttribute('data-compact-header')).toBe(true)
+    expect(frame.hasAttribute('data-titlebar-trailing-hidden')).toBe(false)
+    expect(frame.hasAttribute('data-titlebar-over-conversation')).toBe(true)
+    expect(getByTestId('shell.titlebar.trailing-content')).toBeTruthy()
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('160px')
+  })
+
+  it('hides the browser phone tools and releases their conversation reserve', () => {
+    frameWidth = 700
+    trailingClusterWidth = 160
+    const { frame } = mountFrame()
+    expect(frame.hasAttribute('data-titlebar-trailing-hidden')).toBe(true)
     expect(frame.hasAttribute('data-titlebar-over-conversation')).toBe(false)
     expect(frame.getAttribute('data-titlebar-density')).toBe('full')
     expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('0px')
@@ -911,11 +974,12 @@ describe('AppFrame — narrow-viewport auto-collapse', () => {
     expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(0)
   })
 
-  it('keeps the shared titlebar row when a compact header hides the trailing cluster', () => {
+  it('keeps the shared titlebar row with the tools on a compact browser header', () => {
     frameWidth = 980
     const { frame, instance } = mountFrame()
     act(() => { instance.actions.openRightbar(true, false) })
     expect(frame.hasAttribute('data-compact-header')).toBe(true)
+    expect(frame.hasAttribute('data-titlebar-trailing-hidden')).toBe(false)
     expect(frame.querySelector('[data-titlebar-row]')).toBeTruthy()
     expect(frame.style.gridTemplateRows.startsWith('auto minmax(0, 1fr)')).toBe(true)
   })
@@ -1120,19 +1184,20 @@ describe('AppFrame — landscape sidebar', () => {
     expect(frame.querySelectorAll('[class*="handle"]')).toHaveLength(1)
   })
 
-  it('hides the trailing cluster on a phone-width landscape frame and shows it when wide', () => {
-    frameWidth = 844
+  it('hides the trailing cluster below browser phone width even in landscape', () => {
+    frameWidth = 700
     landscape = true
     stubScreenAvail(844, 390)
     const { frame, rerenderFrame } = mountFrame()
     expect(frame.hasAttribute('data-compact-header')).toBe(true)
-    frameWidth = SIDEBAR_AUTO_COLLAPSE
-    vi.stubGlobal('innerWidth', SIDEBAR_AUTO_COLLAPSE)
+    expect(frame.hasAttribute('data-titlebar-trailing-hidden')).toBe(true)
+    frameWidth = PHONE_MAX
+    vi.stubGlobal('innerWidth', PHONE_MAX)
     act(() => {
       resize(frameWidth)
       rerenderFrame()
     })
-    expect(frame.hasAttribute('data-compact-header')).toBe(false)
+    expect(frame.hasAttribute('data-titlebar-trailing-hidden')).toBe(false)
   })
 
   it('rotating from portrait overlay to landscape puts the sidebar in the grid', () => {

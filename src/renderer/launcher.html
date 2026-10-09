@@ -65,7 +65,7 @@
         <section id="panel-home" class="panel is-active" role="tabpanel" aria-labelledby="tab-home">
           <header class="home-heading"><div><h2>首页</h2><p id="lede">桌面端与组件，一处管理。</p></div><button type="button" class="ghost small" data-goto="versions">版本管理</button></header>
           <section class="home-desktop" aria-labelledby="home-desktop-title">
-            <div class="home-desktop-head"><div class="home-product"><img src="../../assets/whale-head.png" alt="鲸屿" width="48" height="48"><div><span class="home-eyebrow">WHALE ISLE</span><h3 id="home-desktop-title">鲸屿桌面端</h3></div></div><span class="badge" id="home-version">读取版本…</span></div>
+            <div class="home-desktop-head"><div class="home-product"><div><span class="home-eyebrow">WHALE ISLE</span><h3 id="home-desktop-title">鲸屿桌面端</h3></div></div><span class="badge" id="home-version">读取版本…</span></div>
             <p class="home-description">在桌面端开始对话，管理模型与工作区。</p>
             <div class="home-desktop-controls"><p class="home-desktop-status"><span class="home-state-dot" id="home-state-dot" aria-hidden="true"></span><span id="home-status">正在读取状态…</span><span id="home-run-badge" hidden></span></p>
             <div class="actions" id="home-actions">
@@ -102,6 +102,14 @@
             <header class="home-section-head"><div><h3 id="home-components-title">我的组件</h3><p>按需开启，扩展鲸屿的能力。</p></div><button type="button" class="ghost small" data-goto="components">管理组件</button></header>
             <div class="home-component-grid" id="home-components-list"></div>
           </section>
+          <section id="home-plugin-guidance" class="card" role="status" aria-labelledby="home-plugin-guidance-title" hidden>
+            <h3 class="card-title" id="home-plugin-guidance-title">插件加载失败</h3>
+            <p class="recovery-verdict" id="home-plugin-guidance-body"></p>
+            <div class="actions">
+              <button type="button" class="primary" id="btn-recover-plugins">禁用并启动鲸屿</button>
+              <button type="button" class="ghost" data-goto="plugins">查看插件排查</button>
+            </div>
+          </section>
           <details id="home-recovery" class="recovery-board" hidden>
             <summary class="recovery-head"><h3>启动诊断</h3></summary>
             <p class="recovery-verdict" id="home-recovery-verdict"></p>
@@ -111,7 +119,7 @@
               <button type="button" class="ghost small" id="btn-retry-full">恢复完整插件并启动</button>
             </div>
             <div class="actions recovery-actions">
-              <button type="button" class="ghost small" id="btn-disable-suspects">禁用全部可疑</button>
+              <button type="button" class="ghost small" id="btn-disable-suspects">禁用失败插件并启动</button>
             </div>
             <ul id="home-recovery-list" class="list"></ul>
           </details>

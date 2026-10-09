@@ -63,7 +63,11 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
  * @returns Detached ordered patches; this function does not update the Loader.
  */
 export function readProfilePatches(binName: string, context: ProfileContext, initialProfile?: Profile): PatchOptions[] {
-  const profile = initialProfile ?? loadProfileDirectory(binName, context.dir, context.installAnchor, { userLayer: false })
+  // Later reads must keep the recovery bundle selection instead of restoring user bundles.
+  const profile = initialProfile ?? loadProfileDirectory(binName, context.dir, context.installAnchor, {
+    userLayer: false,
+    bundles: context.skipUserPlugins === true ? 'template' : 'manifest',
+  })
   const patches = structuredClone([
     ...profile.layers.flatMap(layer => layer.patches),
     ...(context.skipUserPlugins === true ? []

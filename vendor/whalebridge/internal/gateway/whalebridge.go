@@ -46,9 +46,9 @@ func (s *Server) Handler() http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		// DSH uses these two APIs. Other Magpie client, MCP, image and
-		// administrative endpoints are not exposed by this component.
-		if !(r.Method == "POST" && r.URL.Path == "/v1/chat/completions") && !(r.Method == "GET" && r.URL.Path == "/v1/models") {
+		// Provider APIs share the component's private gateway key. Client
+		// installers, public caller keys and MCP management remain outside it.
+		if !whaleBridgeAPI(r.Method, r.URL.Path) {
 			http.NotFound(w, r)
 			return
 		}
@@ -56,7 +56,7 @@ func (s *Server) Handler() http.Handler {
 			http.Error(w, "invalid WhaleBridge gateway key", http.StatusUnauthorized)
 			return
 		}
-		if r.Method != "POST" {
+		if r.Method == http.MethodGet && !strings.HasPrefix(r.URL.Path, "/v1/videos/") && !strings.HasPrefix(r.URL.Path, "/videos/") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -71,4 +71,25 @@ func (s *Server) Handler() http.Handler {
 		defer func() { whaleBridgeRequests.Lock(); whaleBridgeRequests.active--; whaleBridgeRequests.Unlock() }()
 		next.ServeHTTP(w, r)
 	})
+}
+
+func whaleBridgeAPI(method, path string) bool {
+	switch method {
+	case http.MethodPost:
+		switch path {
+		case "/v1/chat/completions", "/chat/completions", "/v1/responses", "/responses", "/v1/messages", "/messages",
+			"/v1/messages/count_tokens", "/v1/systemone", "/v1/images/generations", "/images/generations",
+			"/v1/images/edits", "/images/edits", "/v1/embeddings", "/embeddings", "/v1/rerank", "/rerank", "/v1/videos", "/videos":
+			return true
+		}
+		return strings.HasPrefix(path, "/v1beta/models/")
+	case http.MethodGet:
+		switch path {
+		case "/v1/models", "/models", "/v1beta/models", "/v1/responses", "/responses",
+			"/v1/magpie/quotas", "/v1/magpie/quotas/history", "/v1/magpie/route", "/v1/magpie/concurrency":
+			return true
+		}
+		return strings.HasPrefix(path, "/v1/models/") || strings.HasPrefix(path, "/v1/videos/") || strings.HasPrefix(path, "/videos/")
+	}
+	return false
 }

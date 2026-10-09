@@ -52,6 +52,9 @@ const ERROR_LABELS = {
   'peer-cancelled': '已在桌面端取消该操作。',
   cancelled: '已取消。',
   busy: '桌面端正在处理任务，请稍后重试。',
+  'suspects-changed': '插件排查结果已变化，请查看最新结果后重新确认。',
+  'operation-in-progress': '已有其他操作进行中，请稍后重试。',
+  'config-unreadable': '桌面配置无法读取，已停止恢复操作。请先恢复配置文件或读取权限。',
   'delta-not-found': '没有可用的增量包，请改用完整更新。',
   'install-in-progress': '已有安装任务进行中。',
 };
@@ -471,9 +474,7 @@ function pluginBoardRows(forensics, sortSuspectsFirst) {
 }
 
 function disableableSuspectNames(forensics) {
-  return pluginBoardRows(forensics, true)
-    .filter((row) => row.suspect && !row.orphan && !row.officialTemplate && !row.disabled)
-    .map((row) => row.name);
+  return window.launcherRecovery.disableableSuspectNames(forensics);
 }
 
 function forensicsSummaryText(forensics) {
@@ -584,6 +585,14 @@ function renderHomeRecovery(status) {
   const forensics = status?.forensics;
   const recovery = status?.recovery || forensics?.recovery || status?.desktop?.pluginRecovery;
   const recoveryApi = window.launcherRecovery;
+  const guidance = recoveryApi.startupRecoveryGuidance(status);
+  const guidanceCard = $('home-plugin-guidance');
+  guidanceCard.hidden = desktopActionBusy() || !guidance;
+  if (guidance) {
+    $('home-plugin-guidance-title').textContent = guidance.title;
+    $('home-plugin-guidance-body').textContent = guidance.body;
+    $('btn-recover-plugins').textContent = guidance.confirmText;
+  }
   const show = !desktopActionBusy() && Boolean(desktopActionError || recovery?.skipUserPlugins
     || (!desktopIsRunning(status?.desktop)
       && recoveryApi?.shouldShowRecovery?.(status?.lastStart, recovery, forensics, status?.desktop)));
@@ -668,6 +677,8 @@ function desktopIsRunning(desktop) {
 let lastStatus = null;
 let desktopOperation = null;
 let desktopActionError = '';
+let pluginGuidancePending = false;
+let promptedPluginFailure = '';
 let statusRequest = 0;
 let installBusy = false;
 let updateBusy = false;
@@ -1090,13 +1101,14 @@ async function refreshStatus() {
   } else {
     syncUpdateNotice(lastUpdateCheck);
   }
+  void maybePromptPluginRecovery();
 }
 
 function desktopActionBusy() {
   return Boolean(desktopOperation) || ['starting', 'stopping'].includes(lastStatus?.desktop?.state);
 }
 
-async function runDesktopAction(method, kind = 'starting') {
+async function runDesktopAction(method, kind = 'starting', ...args) {
   const api = pageShell();
   if (desktopActionBusy() || typeof api?.[method] !== 'function') return;
   desktopOperation = { kind, startedAt: Date.now() };
@@ -1111,10 +1123,13 @@ async function runDesktopAction(method, kind = 'starting') {
   };
   paint();
   const timer = setInterval(() => renderHomeStatus(lastStatus), 1000);
+  let result;
   try {
-    const result = await api[method]();
+    result = await api[method](...args);
     if (result?.ok === false) {
       desktopActionError = String(result.message || result.error || result.code || '操作未完成');
+    } else if (method === 'disableSuspectsAndStart' && result?.harnessRestarted === false) {
+      desktopActionError = `插件已禁用，但启动未完成：${errText(result.error)}`;
     }
   } catch (error) {
     desktopActionError = error?.message || String(error);
@@ -1125,6 +1140,67 @@ async function runDesktopAction(method, kind = 'starting') {
     catch { setHint('暂时无法读取桌面状态，请稍后重新打开首页。'); }
     paint();
   }
+  return result;
+}
+
+function pluginFailureKey(status, guidance) {
+  const recovery = status?.recovery || status?.desktop?.pluginRecovery || status?.forensics?.recovery;
+  const sticky = recovery?.skipUserPlugins === true;
+  return JSON.stringify([sticky ? 'sticky' : 'full', sticky ? recovery.at : status?.lastStart?.at, guidance.kind, guidance.names]);
+}
+
+async function askPluginRecovery(guidance) {
+  if (!guidance || desktopActionBusy() || pluginGuidancePending) return;
+  pluginGuidancePending = true;
+  const key = pluginFailureKey(lastStatus, guidance);
+  try {
+    while (confirmResolve) await confirmClosed;
+    const current = window.launcherRecovery.startupRecoveryGuidance(lastStatus);
+    if (!current || key !== pluginFailureKey(lastStatus, current) || desktopActionBusy()) return;
+    promptedPluginFailure = key;
+    if (!(await appConfirm({ ...guidance, cancelText: '暂不处理' }))) return;
+    const fresh = window.launcherRecovery.startupRecoveryGuidance(lastStatus);
+    if (!fresh || key !== pluginFailureKey(lastStatus, fresh)) {
+      await appNotice({ title: '排查结果已更新', body: ERROR_LABELS['suspects-changed'] });
+      return;
+    }
+    const progress = appProgress({
+      title: guidance.kind === 'disable' ? '正在禁用插件并启动鲸屿' : '正在跳过用户插件启动',
+      body: '正在应用插件恢复操作，请稍候。',
+    });
+    let result;
+    try {
+      result = guidance.kind === 'disable'
+        ? await runDesktopAction('disableSuspectsAndStart', 'starting', guidance.names)
+        : await runDesktopAction('skipUserPlugins');
+    } finally {
+      progress.close();
+    }
+    if (!result && desktopActionError) {
+      await appNotice({ title: '启动未完成', body: errText(desktopActionError) });
+      return;
+    }
+    if (guidance.kind !== 'disable' || !result) return;
+    if (result.ok === false) {
+      await appNotice({ title: '未能禁用插件', body: errText(result.error) });
+    } else if (result.harnessRestarted === false) {
+      await appNotice({ title: '插件已禁用，启动未完成', body: `已禁用 ${guidance.names.join('、')}，但鲸屿尚未启动成功。\n\n${errText(result.error)}` });
+    } else if ((result.forensics?.recovery || lastStatus?.recovery || lastStatus?.desktop?.pluginRecovery)?.skipUserPlugins) {
+      await appNotice({ title: '插件已禁用，仍需排查', body: `已禁用 ${guidance.names.join('、')}，鲸屿仍以跳过用户插件模式启动。还有插件加载失败，请查看最新诊断；不会自动继续禁用其他插件。` });
+    } else {
+      await appNotice({ title: '已禁用并启动鲸屿', body: `已禁用 ${guidance.names.join('、')}。未卸载插件或清理用户数据，可在「插件排查」中重新启用。` });
+    }
+  } finally {
+    pluginGuidancePending = false;
+  }
+}
+
+async function maybePromptPluginRecovery() {
+  if (document.visibilityState !== 'visible' || !document.hasFocus()
+    || desktopActionBusy() || pluginGuidancePending) return;
+  const guidance = window.launcherRecovery.startupRecoveryGuidance(lastStatus);
+  if (!guidance || promptedPluginFailure === pluginFailureKey(lastStatus, guidance)) return;
+  await askPluginRecovery(guidance);
 }
 
 function syncRecoveryActions(status) {
@@ -1226,7 +1302,7 @@ function syncDesktopControls() {
     stop.disabled = busy;
     stop.textContent = stopping ? '关闭中…' : '关闭桌面端';
   }
-  for (const id of ['btn-skip', 'btn-retry-full', 'btn-disable-suspects']) {
+  for (const id of ['btn-skip', 'btn-retry-full', 'btn-disable-suspects', 'btn-recover-plugins']) {
     if ($(id)) $(id).disabled = busy || $(id).getAttribute('aria-busy') === 'true';
   }
   const runBadge = $('home-run-badge');
@@ -2204,30 +2280,9 @@ function bind() {
   });
   $('btn-skip').addEventListener('click', () => void runDesktopAction('skipUserPlugins'));
   $('btn-retry-full').addEventListener('click', () => void runDesktopAction('retryFullPlugins'));
-  $('btn-disable-suspects').addEventListener('click', async () => {
-    const raw = $('btn-disable-suspects').dataset.names || '';
-    const names = raw.split('\0').filter(Boolean);
-    if (!names.length || !api?.disablePlugins) {
-      return;
-    }
-    const restore = launcherButtonBusy($('btn-disable-suspects'), '正在禁用可疑插件并重新启动…');
-    try {
-      const result = await api.disablePlugins(names);
-      if (result && result.ok === false) {
-        setHint(pluginErrorHint(result.error));
-        return;
-      }
-      if (result && result.harnessRestarted === false && result.error) {
-        setHint(errText(result));
-      }
-      void refreshStatus();
-      void refreshPlugins();
-    } catch (error) {
-      setHint(errText(error));
-    } finally {
-      restore();
-    }
-  });
+  for (const id of ['btn-disable-suspects', 'btn-recover-plugins']) {
+    $(id).addEventListener('click', () => void askPluginRecovery(window.launcherRecovery.startupRecoveryGuidance(lastStatus)));
+  }
   $('btn-pick-source').addEventListener('click', async () => {
     const picked = await api?.pickImportSource();
     if (picked) {
@@ -2455,6 +2510,8 @@ function bind() {
       void refreshStatus();
     });
   }
+  window.addEventListener('focus', () => void maybePromptPluginRecovery());
+  document.addEventListener('visibilitychange', () => void maybePromptPluginRecovery());
   if (api?.onLauncherHint) {
     api.onLauncherHint((payload) => {
       if (payload?.importResume) {

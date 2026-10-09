@@ -720,13 +720,15 @@ export function resolveBundleDir(
  * Load an already initialized profile directory without resolving it through
  * the shared Harness home. This is used by application-owned profiles whose
  * package project and lifecycle belong to that application.
- * Retired bundles are removed from the stored bundle list first, rewriting the
- * manifest when it listed one. Unreadable bundles, and bundles whose own dsh peers the profile does not exempt, are skipped
+ * Manifest selection removes retired bundles from the stored list, rewriting the
+ * manifest when it listed one. Template selection leaves that list untouched.
+ * Unreadable bundles, and bundles whose own dsh peers the profile does not exempt, are skipped
  * without changing the manifest and listed in `skippedBundles`; nothing is printed.
  * @param binName - the diagnostic prefix on thrown errors.
  * @param dir - absolute profile package directory.
  * @param installAnchor - absolute path of the owning dsh app's package.json.
- * @param options - `userLayer: false` skips reading `cordis.patch.yml`.
+ * @param options - `userLayer: false` skips reading `cordis.patch.yml`; `bundles: 'template'`
+ * selects only the shipped tuple for this profile name and rejects custom names.
  * @returns the successfully loaded bundle layers and optional user patch layer.
  */
 export function loadProfileDirectory(
@@ -735,8 +737,15 @@ export function loadProfileDirectory(
   installAnchor: string,
   options: { userLayer?: boolean; bundles?: 'manifest' | 'template' } = {},
 ): Profile {
-  const manifest = dropRetiredBundles(dir, readProfileManifest(binName, dir))
-  const bundles = manifest.dsh?.profile?.bundles ?? []
+  const manifest = readProfileManifest(binName, dir)
+  const name = basename(dir)
+  const template = options.bundles === 'template' && Object.hasOwn(PROFILE_TEMPLATES, name)
+    ? PROFILE_TEMPLATES[name]
+    : undefined
+  if (options.bundles === 'template' && template === undefined) {
+    throw new Error(`${binName}: profile ${JSON.stringify(name)} has no shipped template; cannot skip user plugins`)
+  }
+  const bundles = template?.bundles ?? dropRetiredBundles(dir, manifest).dsh?.profile?.bundles ?? []
   const layers: ProfileLayer[] = []
   const skippedBundles: SkippedBundle[] = []
   const exemptions = bundles.length === 0 ? {} : readProfileVersionExemptions(dir)
@@ -773,9 +782,8 @@ export function loadProfileDirectory(
  * @param name - the profile name.
  * @param installAnchor - absolute path of the dsh app's package.json (first resolution anchor).
  * @param home - the Harness home; defaults to {@link resolveDshHome}.
- * @param options - `userLayer: false` skips reading `cordis.patch.yml`, so a
- * bundles-only consumer (`--dump-default-config`, a recovery diagnostic)
- * cannot fail on a broken user layer.
+ * @param options - `userLayer: false` skips reading `cordis.patch.yml`; `bundles: 'template'`
+ * selects only the shipped tuple instead of the manifest's selected user bundles.
  * @returns the loaded profile (empty `patches` when the user layer is skipped).
  */
 export function loadProfile(
@@ -793,7 +801,7 @@ export function loadProfile(
     initProfile(dir, template.bundles)
   }
   removeLinkProjections(dir)
-  normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
+  if (options.bundles !== 'template') normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
   return loadProfileDirectory(binName, dir, installAnchor, options)
 }
 

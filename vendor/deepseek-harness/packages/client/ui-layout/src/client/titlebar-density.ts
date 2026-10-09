@@ -7,11 +7,11 @@
 /** How titlebar labels collapse when the trailing cluster shares the conversation column. */
 export type TitlebarDensity = 'full' | 'cozy' | 'compact'
 
-/** Center width below which Session log is icon-only. */
-export const TITLEBAR_DENSITY_COZY = 720
+/** Center width below which Git action labels collapse. */
+export const TITLEBAR_DENSITY_COZY = 900
 
 /** Center width below which the branch trigger hides its ref name. */
-export const TITLEBAR_DENSITY_COMPACT = 560
+export const TITLEBAR_DENSITY_COMPACT = 720
 
 /**
  * Resolve titlebar label density from the conversation column width.
@@ -33,8 +33,8 @@ export function resolveTitlebarDensity(
  * Pixels of the trailing cluster that occupy the conversation column.
  * Details sits to the right of conversation in the same titlebar span; a
  * closed details column contributes 0.
- * @param clusterVisible - false on phone and compact-header frames (cluster is `display: none`).
- * @param trailingWidth - measured `#dshd-shell-titlebar-trailing` width in px.
+ * @param clusterVisible - false on browser phone frames (cluster is `display: none`).
+ * @param trailingWidth - measured `#dshd-shell-titlebar-trailing` width plus its right inset in px.
  * @param detailsWidth - solved details column width in px (0 when closed).
  * @returns the conversation header reserve, never negative.
  */

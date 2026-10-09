@@ -1,10 +1,10 @@
 name: WhaleBridge
 on:
   pull_request:
-    paths: ['vendor/whalebridge/**', 'scripts/build-whalebridge.mjs', 'scripts/qa-whalebridge.mjs', 'src/launcher/whalebridge*', '.github/workflows/whalebridge.yml']
+    paths: ['vendor/whalebridge/**', 'scripts/build-whalebridge.mjs', 'scripts/qa-whalebridge*.mjs', 'src/launcher/whalebridge*', '.github/workflows/whalebridge.yml']
   push:
     branches: [main]
-    paths: ['vendor/whalebridge/**', 'scripts/build-whalebridge.mjs', 'scripts/qa-whalebridge.mjs', 'src/launcher/whalebridge*', '.github/workflows/whalebridge.yml']
+    paths: ['vendor/whalebridge/**', 'scripts/build-whalebridge.mjs', 'scripts/qa-whalebridge*.mjs', 'src/launcher/whalebridge*', '.github/workflows/whalebridge.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -25,8 +25,12 @@ jobs:
           go-version-file: vendor/whalebridge/go.mod
           cache-dependency-path: vendor/whalebridge/go.sum
       - run: node scripts/build-whalebridge.mjs
+      - run: go test -mod=readonly ./internal/catalog ./internal/settings ./internal/provider ./internal/usage ./internal/gateway ./internal/whalebridge
+        working-directory: vendor/whalebridge
       - run: node --test src/launcher/whalebridge.test.js
       - run: node scripts/qa-whalebridge.mjs
+      - run: node scripts/qa-whalebridge-models.mjs
+      - run: node scripts/qa-whalebridge-provider-parity.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: WhaleBridge-windows-x64
