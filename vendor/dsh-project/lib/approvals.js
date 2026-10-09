@@ -11,6 +11,11 @@ export class ProjectApprovals {
   requested(actor, source, scope) {
     if (scope !== 'worker' || this.native?.policyOf(actor.agent.session) !== 'ask') return false;
     const events = actor.agent.session.snapshotEvents();
+    if (source.requestId) {
+      const request = this.service.requirements.get(source.requestId, actor.project.id), version = this.service.requirements.current(request);
+      return version.version === source.requestVersion && version.authorization === 'worker'
+        && version.inputs.every(input => events.some(event => event.type === 'user/message' && event.data.source.kind === 'user' && event.data.id === input.messageId));
+    }
     const call = events.findLast(event => event.type === 'tool/call' && event.data.callId === source.callId);
     const start = call && events.findLast(event => event.type === 'turn/start' && event.data.turn === call.data.turn);
     return Boolean(call && start && events.some(event => event.type === 'user/message' && event.seq > start.seq && event.seq < call.seq

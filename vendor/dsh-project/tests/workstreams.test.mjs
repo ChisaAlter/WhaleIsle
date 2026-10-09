@@ -176,7 +176,7 @@ test('generated notes keep active work and preserve a full UTF-8 user body besid
   assert.equal(saved.userText, user); assert.ok((await fs.stat(path)).size <= 512000);
 });
 
-test('notes consume only displayed reports and matching runs; historical results remain bounded and reachable', async t => {
+test('notes and progress replies preserve pending results; historical results remain bounded and reachable', async t => {
   const f = setup(), home = await fs.mkdtemp(join(tmpdir(), 'whale-project-consumed-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   f.service.home = home; f.project.storageRoot = await projectDirectory(home, f.project.id);
@@ -199,18 +199,18 @@ test('notes consume only displayed reports and matching runs; historical results
   assert.equal(first.history.items.length, 10); assert.ok(first.nextCursor);
   for (const row of first.history.items) assert.ok(row.terminal.delegationRefs.includes(row.report.delegationRef));
   await reply('first-history-summary');
-  assert.equal(f.service.stream(item.work.id).settlements.filter(terminal => terminal.summarizedBy).length, 10);
+  assert.equal(f.service.stream(item.work.id).settlements.filter(terminal => terminal.summarizedBy).length, 0);
   assert.equal(f.service.stream(item.work.id).pendingSummary, true);
   const last = await f.service.readStoreTool(actor, { path: 'notes.md', workstreamId: item.work.id, cursor: first.nextCursor });
   assert.equal(last.history.items.length, 2); assert.equal(last.nextCursor, 'terminal:'); await reply('last-history-summary');
   const current = f.service.stream(item.work.id);
-  assert.ok(current.delegations.filter(receipt => receipt.report).every(receipt => receipt.report.summarizedBy));
+  assert.ok(current.delegations.filter(receipt => receipt.report).every(receipt => !receipt.report.summarizedBy));
   assert.equal(current.settlements.at(-1).summarizedBy, '', 'a terminal omitted from the actual tool response remains unconsumed');
   assert.equal(current.pendingSummary, true);
   const terminalPage = await f.service.readStoreTool(actor, { path: 'notes.md', workstreamId: item.work.id, cursor: last.nextCursor });
   assert.equal(terminalPage.history.items.length, 1); assert.equal(terminalPage.history.items[0].terminal.summary, 'No report was supplied');
   assert.equal(terminalPage.nextCursor, null); await reply('actual-terminal-summary');
-  assert.equal(f.service.stream(item.work.id).pendingSummary, false, 'explicitly reading the actual no-report terminal permits a visible summary');
+  assert.equal(f.service.stream(item.work.id).pendingSummary, true, 'reading a terminal and replying cannot replace explicit delivery');
 });
 
 test('materials results page by original report identity without losing previous reports or documents', async t => {
@@ -220,14 +220,21 @@ test('materials results page by original report identity without losing previous
   const docs = await safeProjectSubdirectory(home, f.project.id, 'docs');
   await fs.writeFile(join(docs, 'proof.md'), 'preserved');
   for (let i = 0; i < 25; i++) f.add(`result-${i}`, false, i).report.at = i;
+  f.state.requests = [{ id: 'request-one', projectId: f.project.id, currentVersion: 1, versions: [{ version: 1, goal: 'Delivered work' }] }];
+  f.state.deliveries = Array.from({ length: 12 }, (_, index) => ({ id: `delivery-${index}`, projectId: f.project.id, requestId: 'request-one', requestVersion: 1, committedAt: index + 1, references: [], requiredWork: [], evidence: [], remainingIssues: [] }));
   const first = await f.read('store/list');
   assert.equal(first.results.length, 10); assert.equal(first.resultsTotal, 25); assert.equal(first.resultsCursor, null);
+  assert.equal(first.deliveries.length, 10); assert.equal(first.deliveriesTotal, 12);
   assert.deepEqual(first.docs, [{ path: 'docs/proof.md', size: 9 }]);
   const second = await f.read('store/list', { resultsCursor: first.nextResultsCursor });
   const third = await f.read('store/list', { resultsCursor: second.nextResultsCursor });
   assert.equal(second.results.length, 10); assert.equal(third.results.length, 5); assert.equal(third.nextResultsCursor, null);
   assert.equal(new Set([...first.results, ...second.results, ...third.results].map(row => row.report.delegationRef)).size, 25);
   assert.equal(second.resultsCursor, first.nextResultsCursor);
+  assert.deepEqual(second.deliveries, first.deliveries, 'member report pages do not advance deliveries');
+  const deliveryPage = await f.read('store/list', { resultsCursor: first.nextResultsCursor, deliveryCursor: first.nextDeliveryCursor });
+  assert.equal(deliveryPage.deliveries.length, 2); assert.deepEqual(deliveryPage.results, second.results, 'delivery pages do not reset member report position');
+  await assert.rejects(f.read('store/list', { deliveryCursor: 'foreign-delivery' }), { code: 'result_cursor' });
   const continuing = f.state.workstreams.find(work => work.id === second.results[0].workstreamId);
   continuing.delegations.push({ ref: 'continued-ref', phase: 'queued', scope: 'readonly' });
   continuing.currentDelegationRef = 'continued-ref'; delete continuing.latestReport;
@@ -238,6 +245,17 @@ test('materials results page by original report identity without losing previous
   anchor.delegations.push({ ref: 'replaced-result', report: { delegationRef: 'replaced-result', at: 100, summary: 'New report', artifacts: [] } });
   await assert.rejects(f.read('store/list', { resultsCursor: first.nextResultsCursor }), { code: 'result_cursor' });
   assert.equal((await f.read('store/results', { workstreamId: anchor.id })).items.at(-1).delegationRef, first.nextResultsCursor);
+});
+
+test('historical process navigation returns the original native assignment anchor, not the latest receipt', async () => {
+  const f = setup(), item = f.add('continued-work', false, 1);
+  item.receipt.runId = 'original-run'; item.receipt.messageId = 'actual-native-assignment-input';
+  item.work.delegations.push({ ref: 'next-assignment', runId: 'new-run', phase: 'accepted', scope: 'readonly' }); item.work.currentDelegationRef = 'next-assignment';
+  const value = await f.read('workstreams/get', { workstreamId: item.work.id, delegationRef: item.receipt.ref, runId: 'original-run' });
+  assert.equal(value.workstream.processAnchor.messageId, 'actual-native-assignment-input');
+  assert.equal(value.workstream.processAnchor.runId, 'original-run'); assert.equal(value.workstream.delegation.ref, 'next-assignment');
+  await assert.rejects(f.read('workstreams/get', { workstreamId: item.work.id, delegationRef: item.receipt.ref, runId: 'new-run' }), { code: 'result_identity' });
+  await assert.rejects(f.read('workstreams/get', { workstreamId: item.work.id, delegationRef: 'foreign-assignment' }), { code: 'result_identity' });
 });
 
 test('queued summaries expose the dependency, occupied directory and native capacity actually encountered', async () => {

@@ -49,10 +49,12 @@ class ScriptedModel extends LlmAdapter {
         assert.ok(appendix, 'the real native notice must carry the persisted Project outcome even with no closing prose');
         const facts = JSON.parse(appendix.text.split('\n')[1]); assert.equal(facts.runId, input.source.runId);
         this.settlementInputs.push({ id: input.id, source: input.source, text, facts });
+        if (!stage && facts.requestId && this.state().requests.find(row => row.id === facts.requestId)?.currentVersion === facts.requestVersion) { yield* call(`deliver-${++this.counter}`, 'project_deliver', { requestId: facts.requestId, requestVersion: facts.requestVersion, outcome: facts.reports.length ? (facts.reports.at(-1).remainingIssues.length ? 'partial' : facts.reports.at(-1).outcome) : 'blocked', summary: facts.reports.map(report => report.summary).join('; ') || `Worker ended ${facts.stopReason}`, references: facts.reports.length ? facts.reports.map(report => ({ workstreamId: facts.workstreamId, delegationRef: report.delegationRef, reportId: report.callId, runId: facts.runId })) : facts.delegationRefs.map(delegationRef => ({ workstreamId: facts.workstreamId, delegationRef, runId: facts.runId })), evidence: ['Scripted provider; actual native settlement and saved worker evidence.'], remainingIssues: facts.reports.length ? facts.reports.at(-1).remainingIssues : ['The worker did not supply a report.'] }); return; }
         yield* blocks(`${facts.title}: ${facts.reports.map(report => report.summary).join('; ') || `Worker ended ${facts.stopReason}`}. This is a worker report, not an independent verification.`); return;
       }
       if (text.includes('READ_PENDING')) {
         if (!stage) yield* call(`notes-${++this.counter}`, 'project_read_store', { path: 'notes.md' });
+        else if (stage === 1) { const work = this.state().workstreams.find(work => work.title === 'Plan work'), receipt = work.delegations.find(row => row.ref === work.currentDelegationRef), references = work.settlements.filter(row => !row.summarizedBy).flatMap(terminal => terminal.delegationRefs.map(ref => { const assignment = work.delegations.find(row => row.ref === ref); return { workstreamId: work.id, delegationRef: ref, runId: terminal.runId, ...(assignment?.report ? { reportId: assignment.report.callId } : {}) }; })); yield* call(`retry-deliver-${++this.counter}`, 'project_deliver', { requestId: receipt.requestId, requestVersion: receipt.requestVersion, outcome: receipt.report?.remainingIssues.length ? 'partial' : receipt.report?.outcome ?? 'blocked', summary: receipt.report?.summary ?? 'The current work was stopped; its recorded terminal and prior results are preserved.', references, evidence: receipt.report?.evidence ?? ['Actual persisted native terminal; no completed worker report for this assignment.'], remainingIssues: receipt.report?.remainingIssues ?? ['Stopped work awaits an explicit continuation.'] }); }
         else yield* blocks('Plan work: the worker outcome is recorded; its evidence is a worker report, not an independent verification.'); return;
       }
       if (stage || text.includes('SHORT_QUESTION')) { yield* blocks('The Project conversation is ready.'); return; }
@@ -173,7 +175,7 @@ async function bootHost(home, model, teamConfig) {
   const ctx = await boot('project-composition', config, patches, ctx => {
     ctx.on('tools/result', (exec, result) => { if (result.error) model.failures.push({ name: exec.name, error: result.error }); });
     ctx.provide('connection', { fetch: { register: () => () => {} }, rpc: { intercept: () => () => {} } }); provideCmdline(ctx, { args: [], exit: () => {} });
-    ctx.loader.internal = { version: 'v2', async import(name) { if (name === 'dsh-project' || name.startsWith('dsh-project/')) return import(pathToFileURL(join(projectPackage, 'lib', `${name === 'dsh-project' ? 'index' : name.slice(12)}.js`)).href); return import(pathToFileURL(resolvePackage(name)).href); } };
+    ctx.loader.internal = { version: 'v2', async import(name) { if (name === 'dsh-project' || name.startsWith('dsh-project/')) return import(pathToFileURL(join(projectPackage, 'lib', `${name === 'dsh-project' ? 'index' : name.slice(12)}.js`)).href); try { return await import(pathToFileURL(resolvePackage(name)).href); } catch (error) { console.error(`Composition import failed: ${name}: ${error.stack}`); throw error; } } };
   });
   assert.equal(ctx.get('projects')?.available, true, ctx.get('projects')?.error);
   let contextVersion = 0; ctx.systemPrompt.context({ name: 'composition:actual-dynamic-context', order: 99999, text: () => `Runtime context snapshot ${++contextVersion}; it supplies no user authorization.` });
@@ -213,6 +215,9 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     assert.equal(await readFile(join(directory, 'docs/plan.md'), 'utf8'), scopedDocument, 'an oversized Chinese replacement preserves the accepted document');
     assert.ok(model.failures.some(item => item.name === 'project_write_document' && /Document exceeds the write limit/.test(item.error.message)));
     const documentEvents = (await ctx.sessionController.inspect(plan.workerSessionId)).events;
+    const originalProcess = await host.command('workstreams/get', { projectId: project.id, workstreamId: plan.id, delegationRef: plan.currentDelegationRef, runId: plan.delegations[0].runId });
+    assert.equal(originalProcess.workstream.processAnchor.messageId, plan.delegations[0].messageId);
+    assert.ok(documentEvents.some(event => event.type === 'user/message' && (event.data.id === originalProcess.workstream.processAnchor.messageId || event.data.source.messageId === originalProcess.workstream.processAnchor.messageId)), 'the process anchor is the actual native Session assignment input');
     const documentRead = documentEvents.find(event => event.type === 'tool/result' && event.data.message.toolCallId === model.documentReadCallId);
     assert.ok(documentRead, 'the docs member read its boundary-size document through the scoped read tool');
     const readPage = JSON.parse(messageText(documentRead.data.message));
@@ -275,7 +280,7 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     const pathWork = host.state().workstreams.find(item => item.title === 'Path work'), pathWorker = pathWork.workerSessionId;
     await waitFor(() => ctx.agents.get(pathWorker)?.status === 'running', 'document worker remains active in its original scope');
     assert.deepEqual(host.worker(pathWorker).writePaths, ['docs/first.md']);
-    assert.ok(model.failures.some(item => item.name === 'project_delegate' && /Scope expansion needs a new actual user message/.test(item.error.message)), JSON.stringify(model.failures));
+    assert.ok(model.failures.some(item => item.name === 'project_delegate' && /stage exceeds the current requirement authorization|Scope expansion needs a new actual user message/.test(item.error.message)), JSON.stringify(model.failures));
     const oldDocRequest = model.requests.findLast(request => request.messages.some(message => message.role === 'user' && messageText(message).includes('HOLD_FOR_PATH_CHANGE')) && request.tools?.some(tool => tool.name === 'project_report'));
     await prompt('EXTEND_DOC_PATHS'); await waitFor(() => host.stream(pathWork.id).status === 'done', 'new human scope drains the busy document worker and resumes its original Session');
     assert.equal(host.stream(pathWork.id).workerSessionId, pathWorker); assert.equal(oldDocRequest.signal.aborted, true);
@@ -347,8 +352,10 @@ test('native Team dependency changes preserve continuing identity, reject cycles
     assert.equal(receipt('Frontend').phase, 'queued'); assert.equal(model.workerInputs.some(item => item.brief === 'OMITTED_DEPS_STILL_WAIT'), false);
 
     const beforeCycle = stable('Backend'), backendInput = model.workerInputs.find(item => item.brief === 'HOLD_BACKEND'), cycleFailures = model.failures.length;
+    const backendRequest = receipt('Backend').requestId, requirementBeforeCycle = structuredClone(host.requirements.get(backendRequest, project.id));
     await prompt({ work: 'Backend', brief: 'REJECT_INDIRECT_CYCLE', deps: ['Frontend'] }); await lead.whenIdle();
     assert.deepEqual(stable('Backend'), beforeCycle, 'indirect cycle cannot drain the active member or replace its requirement');
+    assert.deepEqual(host.requirements.get(backendRequest, project.id), requirementBeforeCycle, 'a rejected legacy delegation cannot create an orphaned requirement revision');
     assert.equal(backendInput.signal.aborted, false); assert.ok(model.failures.slice(cycleFailures).some(item => /cycle/i.test(item.error.message)));
     model.gate('HOLD_BACKEND').release(); await done('Backend'); await done('Frontend');
     const unlocked = model.workerInputs.find(item => item.brief === 'OMITTED_DEPS_STILL_WAIT'), observedBackend = unlocked.work.find(item => item.title === 'Backend');
@@ -371,7 +378,7 @@ test('native Team dependency changes preserve continuing identity, reject cycles
     assert.equal(adjusted.delegations.length, 2); assert.equal(adjusted.delegations[0].source.messageId, adjusted.delegations[1].source.messageId);
     assert.equal(oldActive.signal.aborted, true); assert.equal(receipt('Active adjustment').phase, 'queued');
     assert.equal(host.worker(adjusted.workerSessionId).stopped, false); assert.deepEqual(task('Active adjustment').blockedBy, [work('Backend').id]);
-    assert.equal(model.failures.length, failuresBeforeDrain, 'internal dependency drain does not convert the same actual user request into a forbidden restart');
+    assert.equal(model.failures.length, failuresBeforeDrain, `internal dependency drain does not convert the same actual user request into a forbidden restart: ${JSON.stringify(model.failures.slice(failuresBeforeDrain))}`);
 
     await prompt({ title: 'User stop cutoff', brief: 'HOLD_USER_STOP' }, { work: 'User stop cutoff', brief: 'OLD_REQUEST_MUST_NOT_RESUME', deps: ['Backend'], awaitRunning: true, gate: 'late-dependency' });
     await waitFor(() => model.coordinatorGates.has('late-dependency'), 'old user request pauses before its second actual tool call');
@@ -633,12 +640,15 @@ test('a failed native Lead summary preserves its report and ordinary user summar
         this.requests.push(options);
         const key = `terminal-summary:${input.id}`, stage = this.stages.get(key) ?? 0; this.stages.set(key, stage + 1);
         if (!stage) yield* call(`terminal-notes-${++this.counter}`, 'project_read_store', { path: 'notes.md' });
-        else {
+        else if (stage === 1) {
           const result = options.messages.findLast(message => message.role === 'tool');
           assert.match(messageText(result), /^\{/, messageText(result));
           const facts = JSON.parse(messageText(result)).work.find(work => work.title === 'Readonly work');
           assert.equal(facts.report, undefined); assert.ok(facts.terminal);
-          yield* blocks(`Readonly work ended ${facts.terminal.stopReason}; it did not supply a report. The saved terminal remains available.`);
+          const work = this.state().workstreams.find(work => work.title === 'Readonly work'), receipt = work.delegations.find(row => row.ref === work.currentDelegationRef);
+          yield* call(`terminal-deliver-${++this.counter}`, 'project_deliver', { requestId: receipt.requestId, requestVersion: receipt.requestVersion, outcome: 'blocked', summary: 'The worker ended without a report.', references: [{ workstreamId: work.id, delegationRef: receipt.ref, runId: receipt.runId }], evidence: ['Actual native terminal error; no worker report was supplied.'], remainingIssues: ['Worker credentials need attention.'] });
+        } else {
+          yield* blocks('Readonly work ended without a report. The saved terminal remains available, and credentials need attention.');
         }
         return;
       }
@@ -745,9 +755,9 @@ test('failed warm admission keeps occupancy, expanding stops drain every worker,
     service.consume('parent', 1, service.state().workstreams.filter(work => work.id === 'work-b').map(work => ({ id: work.id, runs: [`native-${work.id}`], reports: [] })));
     const reply = text => service.assistantReply(parentSession, { type: 'assistant/message', data: { turn: 1, interrupted: false, message: { id: `reply-${text}`, content: [{ type: 'text', text }] } } });
     await reply('Implement Plan: the result is ready.');
-    assert.equal(service.stream('work-a').pendingSummary, true); assert.equal(service.stream('work-b').pendingSummary, false, 'only the explicit consumed result is associated with this reply');
+    assert.equal(service.stream('work-a').pendingSummary, true); assert.equal(service.stream('work-b').pendingSummary, true, 'a progress reply cannot replace explicit delivery intent');
     await reply('Implement Plan (work-b): the result is ready.');
-    assert.equal(service.stream('work-a').pendingSummary, true); assert.equal(service.stream('work-b').pendingSummary, false);
+    assert.equal(service.stream('work-a').pendingSummary, true); assert.equal(service.stream('work-b').pendingSummary, true);
     service.notes = ProjectService.prototype.notes;
     const outside = join(root, 'outside'); await mkdir(outside); await writeFile(join(outside, 'notes.md'), 'OWNED_EXTERNAL_SENTINEL');
     await rename(store, `${store}-original`); await symlink(outside, store, process.platform === 'win32' ? 'junction' : 'dir');

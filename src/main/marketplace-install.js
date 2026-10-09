@@ -62,11 +62,11 @@ function firstExisting(candidates) {
   return null;
 }
 
-function resolvePnpmCjs() {
+function resolvePnpmEntry() {
   return firstExisting([
-    path.join(process.resourcesPath || '', 'pnpm', 'bin', 'pnpm.cjs'),
-    path.join(projectRoot(), 'node_modules', 'pnpm', 'bin', 'pnpm.cjs'),
-    path.join(harnessRoot(), 'node_modules', 'pnpm', 'bin', 'pnpm.cjs'),
+    path.join(process.resourcesPath || '', 'pnpm', 'bin', 'pnpm.mjs'),
+    path.join(projectRoot(), 'node_modules', 'pnpm', 'bin', 'pnpm.mjs'),
+    path.join(harnessRoot(), 'node_modules', 'pnpm', 'bin', 'pnpm.mjs'),
   ]);
 }
 
@@ -84,18 +84,18 @@ function shimDir() {
 }
 
 function ensurePnpmShim(nodeBin) {
-  const cjs = resolvePnpmCjs();
-  if (!cjs || !nodeBin) {
+  const entry = resolvePnpmEntry();
+  if (!entry || !nodeBin) {
     return resolvePnpmBin() ? path.dirname(resolvePnpmBin()) : null;
   }
   const dir = shimDir();
   fs.mkdirSync(dir, { recursive: true });
   if (process.platform === 'win32') {
     const cmd = path.join(dir, 'pnpm.cmd');
-    fs.writeFileSync(cmd, `@echo off\r\n"${nodeBin}" "${cjs}" %*\r\n`, 'utf8');
+    fs.writeFileSync(cmd, `@echo off\r\n"${nodeBin}" "${entry}" %*\r\n`, 'utf8');
   } else {
     const sh = path.join(dir, 'pnpm');
-    fs.writeFileSync(sh, `#!/bin/sh\nexec "${nodeBin}" "${cjs}" "$@"\n`, { encoding: 'utf8', mode: 0o755 });
+    fs.writeFileSync(sh, `#!/bin/sh\nexec "${nodeBin}" "${entry}" "$@"\n`, { encoding: 'utf8', mode: 0o755 });
   }
   return dir;
 }
@@ -161,7 +161,7 @@ function resolveCli() {
   if (!cli || !fs.existsSync(cli)) {
     return { ok: false, error: 'dsh CLI 未构建。请先运行 npm run setup:harness。' };
   }
-  if (!resolvePnpmCjs() && !resolvePnpmBin()) {
+  if (!resolvePnpmEntry() && !resolvePnpmBin()) {
     return { ok: false, error: '未找到 pnpm。安装包应已内置；开发时请在本机安装 pnpm。' };
   }
   return { ok: true, nodeBin, cli };

@@ -1480,9 +1480,12 @@ if (!gotLock) {
               dismissClosing = await showClosingOverlay(win, loadConfig().locale,
                 getHarnessWebContents(win) || win?.webContents).catch(() => undefined);
               let shutdownTimer;
+              let shutdownAbandoned = false;
               try {
                 await Promise.race([
-                  Promise.all([harness.shutdown(), cleanupDesktopResources(), getLive2dPet()?.dispose()]),
+                  Promise.all([harness.shutdown(), cleanupDesktopResources()]).then(() => {
+                    if (!shutdownAbandoned) return getLive2dPet()?.dispose();
+                  }),
                   new Promise((_, reject) => {
                     shutdownTimer = setTimeout(() => {
                       const error = new Error('后台关停未在 30 秒内完成');
@@ -1492,6 +1495,7 @@ if (!gotLock) {
                   }),
                 ]);
               } finally {
+                shutdownAbandoned = true;
                 clearTimeout(shutdownTimer);
               }
               stopDesktopInstallControl();

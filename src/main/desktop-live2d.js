@@ -1018,7 +1018,7 @@ function createLive2dPetManager(options = {}) {
       assertAuthorized(event);
       if (Array.isArray(payload?.hitRegions)) { shapeStats.hitRegionReports += 1; }
       setSurfaceRegions(payload?.regions);
-      setHitRegions(payload?.hitRegions);
+      if (Array.isArray(payload?.hitRegions)) setHitRegions(payload.hitRegions);
       if (typeof payload?.interactive === 'boolean') {
         rendererInteractive = payload.interactive;
         applyInteractive();

@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
-  const { createElement: h, useState, useEffect, useRef, Fragment } = require('react');
+  const { createElement: h, useState, useEffect, useLayoutEffect, useRef, Fragment } = require('react');
   const { Button, Input, Menu, Modal, Pill, SegmentedTabs, MarkdownText, TaskDock, IconFolderCloseRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular } = require('@deepseek-ai/dsh-client-ui-primitives');
   const { createSnapshotStore, defineStore } = require('@deepseek-ai/dsh-client-store');
   const { TeamAction, teamEnglish, teamChinese } = require('@deepseek-ai/dsh-experimental-client-ui-agent-team');
@@ -56,6 +56,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     retrySummaryPrompt: 'Summarize the following saved result again, including changes, verification and remaining issues. Read the existing report without rerunning background work:', waitingDependencies: 'Waiting for prerequisite work', waitingDirectory: 'Waiting for other work to release the directory', waitingCapacity: 'Waiting for an available team slot', prerequisitesChanged: 'Prerequisites changed', prerequisitesHint: 'Prerequisite work has received a new request. This report retains the original result. Request revalidation in the main conversation if needed.',
     notGit: 'This directory is not a Git repository; Git changes are unavailable.', unsaved: 'Unsaved changes', discard: 'Discard changes', saveAndSwitch: 'Save and switch', discardAndSwitch: 'Discard and switch', keepEditing: 'Keep editing', saveBeforeSwitch: 'Save your changes before switching pages?',
   };
+  Object.assign(zh, { delivery: '主对话交付', deliveryVersion: '要求版本', pendingSummary: '待交付', delivered: '本轮已交付', back: '返回成果位置', supportingReports: '成员依据', partial: '部分交付', needsReview: '要求或依据已变化，待复核', round: '执行轮次', locating: '正在定位原执行记录…', missingRound: '原执行输入尚未找到；未改用其他轮次的记录。' });
+  Object.assign(en, { delivery: 'Delivered in conversation', deliveryVersion: 'Requirement version', pendingSummary: 'Awaiting delivery', delivered: 'Delivered this round', back: 'Return to results', supportingReports: 'Supporting reports', partial: 'Partial delivery', needsReview: 'Requirement or evidence changed; review needed', round: 'Execution round', locating: 'Locating the original execution…', missingRound: 'The original assignment was not found; no other execution was substituted.' });
   const CSS = `
     .dsh-project-page{padding:12px 0 8px;display:flex;flex-direction:column;gap:4px;min-width:0}
     .dsh-project-row-wrap{display:flex;align-items:center;min-width:0}.dsh-project-row-wrap>.dsh-project-row{flex:1}.dsh-project-category{flex:1;min-width:0;display:flex;align-items:center;gap:4px;height:36px;padding:0 8px;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;text-align:left;cursor:pointer}
@@ -89,7 +91,18 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   const stateLabel = (t, state) => Object.hasOwn(zh, state) ? t(state) : String(state ?? '');
   const errorText = failure => failure?.message ?? String(failure);
   const messageText = message => (message?.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
-  const processRecords = entries => entries.filter(entry => entry.type === 'event' && ['user/message', 'assistant/message', 'tool/call', 'tool/result', 'turn/end'].includes(entry.event.type)).map(entry => entry.event);
+  const processRecords = entries => entries.filter(entry => entry.type === 'event' && ['turn/start', 'user/message', 'assistant/message', 'tool/call', 'tool/result', 'turn/end'].includes(entry.event.type)).map(entry => entry.event);
+  const assignmentIndex = (records, messageId) => typeof messageId === 'string' && messageId ? records.findIndex(event => event.type === 'user/message' && (event.data.id === messageId || event.data.source?.messageId === messageId)) : -1;
+  const assignmentPageStart = (records, index) => {
+    const before = records.findLastIndex((event, at) => at < index && event.type === 'turn/start');
+    return Math.max(0, before);
+  };
+  const assignmentPageEnd = (records, index, leadId) => {
+    const next = records.findIndex((event, at) => at > index && event.type === 'user/message' && event.data.source?.kind === 'team-message' && event.data.source.senderId === leadId);
+    if (next < 0) return records.length;
+    const boundary = records.findLastIndex((event, at) => at > index && at < next && event.type === 'turn/start');
+    return boundary < 0 ? next : boundary;
+  };
   const isLive = worker => Boolean(worker.activeRunId || worker.jobs?.length || worker.phase === 'stopping');
   const fileName = path => path.split(/[\\/]/).at(-1);
   const directoryParts = project => project.canonicalWorkingDirectory.replaceAll('\\', '/').replace(/\/$/, '').split('/').filter(Boolean);
@@ -265,13 +278,13 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     };
     if (project.lifecycle === 'archived' || project.archiving) return null;
     const works = detail?.workstreams ?? [];
-    if (!works.length && !error && !project.diagnostics?.length) return detail && !detail.workPage?.currentTotal && !detail.workPage?.historyTotal ? h('p', { className: 'dsh-project-empty' }, t('noWork')) : null;
+    if (!works.length && !project.requestsTotal && !error && !project.diagnostics?.length) return detail && !detail.workPage?.currentTotal && !detail.workPage?.historyTotal ? h('p', { className: 'dsh-project-empty' }, t('noWork')) : null;
     const rows = works.map(work => ({ work, worker: detail.workers.find(item => item.sessionId === work.workerSessionId) }));
     const current = rows.filter(row => row.work.group === 'current'), previous = rows.filter(row => row.work.group === 'history');
     const activeCount = project.activity?.running ?? 0, attention = project.activity?.blocked ?? 0;
     const paused = project.paused || project.activity?.state === 'paused';
     const activity = project.activity;
-    const summary = activity?.state === 'stopping' ? t('stopping') : activity?.state === 'blocked' ? (attention ? attention + ' · ' : '') + t('blocked') + (activeCount ? ' · ' + activeCount + ' · ' + t('running') : '') : activity?.state === 'summaryFailed' ? t('summaryFailed') + (activeCount ? ' · ' + activeCount + ' · ' + t('running') : '') : activity?.state === 'done' ? t('done') : paused ? t('paused') : activeCount ? activeCount + ' · ' + t('running') : activity?.provisioning ? t('provisioning') : activity?.coordinatorRunning ? t('running') : activity?.queued ? activity.queued + ' · ' + t('queued') : activity?.state === 'pendingSummary' ? t('pendingSummary') : t('open');
+    const summary = activity?.state === 'stopping' ? t('stopping') : activity?.state === 'blocked' ? (attention ? attention + ' · ' : '') + t('blocked') + (activeCount ? ' · ' + activeCount + ' · ' + t('running') : '') : activity?.state === 'summaryFailed' ? t('summaryFailed') + (activeCount ? ' · ' + activeCount + ' · ' + t('running') : '') : activity?.state === 'done' ? t(project.requestsTotal ? 'delivered' : 'done') : paused ? t('paused') : activeCount ? activeCount + ' · ' + t('running') : activity?.provisioning ? t('provisioning') : activity?.coordinatorRunning ? t('running') : activity?.queued ? activity.queued + ' · ' + t('queued') : activity?.state === 'pendingSummary' ? t('pendingSummary') : t('open');
     const renderWork = ({ work, worker }) => h(WorkProgressItem, { key: work.id, projectId: project.id, work, worker, paused, act, read, retrySummary, openModelSettings, showProcess, showDiff, showMaterials, busy, t });
     const changeCurrentPage = async (cursor, previousPage = false) => {
       setBusy(true); setError('');
@@ -280,9 +293,10 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     };
     return h(TaskDock, { key: project.id, title: t('progress'), testId: 'project-progress', summary: detail?.workPage?.currentTotal === 1 ? `${current[0]?.work.title ?? ''} · ${summary}` : summary },
       h('div', { className: 'dsh-project-progress' },
+        project.requests?.slice(0, 20).map(request => h('div', { key: request.id }, h('strong', null, request.goal), h('p', { className: 'dsh-project-muted' }, `${t('deliveryVersion')} ${request.version} · ${request.delivery?.needsReview ? t('needsReview') : request.delivery ? t(request.delivery.outcome === 'completed' ? 'delivered' : request.delivery.outcome) : t('pendingSummary')}`))),
         activeCount ? h('div', { className: 'dsh-project-actions' }, button(t('stop'), () => act('stop'), busy)) : null,
         paused ? h('p', { className: 'dsh-project-muted' }, t('resumeHint')) : null,
-        !detail ? h('p', { role: 'status' }, t('loading')) : !works.length ? h('p', { className: 'dsh-project-muted' }, t('noWork')) : null,
+        !detail ? h('p', { role: 'status' }, t('loading')) : !works.length && !project.requestsTotal ? h('p', { className: 'dsh-project-muted' }, t('noWork')) : null,
         current.map(renderWork),
         h('div', { className: 'dsh-project-actions' }, detail?.workPage?.currentCursor ? button(t('previous'), () => changeCurrentPage(currentCursors.at(-1) ?? null, true), busy) : null,
           detail?.workPage?.currentNextCursor ? button(t('next'), () => changeCurrentPage(detail.workPage.currentNextCursor), busy) : null),
@@ -306,16 +320,17 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false);
     const open = async path => { setError(''); setNotice(''); setBusy(true); try { const value = await read(projectId, 'open', { workstreamId, delegationRef: report.delegationRef, path }); if (value.modifiedSinceReport) setNotice(t('modifiedArtifact')); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
     return h('div', { className: 'dsh-project-result-body' }, h('div', { className: 'dsh-project-result-meta' }, h(Pill, null, stateLabel(t, report.outcome)), h('time', { className: 'dsh-project-muted', dateTime: new Date(report.at).toISOString() }, new Date(report.at).toLocaleString()), h('span', { className: 'dsh-project-muted' }, t('reportSource'))),
+      markdown(t, report.summary),
       report.prerequisitesChanged ? h('p', { className: 'dsh-project-muted' }, t('prerequisitesChanged'), ' · ', t('prerequisitesHint')) : null,
       report.artifacts?.map(file => h(Artifact, { key: file.path, file, open, busy, t })),
       h('details', { className: 'dsh-project-result-disclosure', open: report.outcome !== 'completed' || Boolean(report.remainingIssues?.length) }, h('summary', null, t('reportDetails')),
-        h('div', { className: 'dsh-project-result-details' }, markdown(t, report.summary),
+        h('div', { className: 'dsh-project-result-details' },
           report.evidence?.length ? h('details', null, h('summary', null, t('evidence')), h('ul', null, report.evidence.map((item, index) => h('li', { key: index }, item)))) : null,
           report.remainingIssues?.length ? h('div', null, h('strong', null, t('remainingIssues')), h('ul', null, report.remainingIssues.map((item, index) => h('li', { key: index }, item)))) : null)),
       notice ? h('p', { role: 'status', className: 'dsh-project-muted' }, notice) : null, error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null);
   }
 
-  function ResultHistory({ projectId, result, read, t }) {
+  function ResultHistory({ projectId, result, read, showProcess, t }) {
     const [open, setOpen] = useState(false), [history, setHistory] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState(''), [cursors, setCursors] = useState([null]);
     const selected = cursors.at(-1);
     useEffect(() => {
@@ -326,7 +341,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     }, [open, projectId, result.workstreamId, selected]);
     return h('details', { className: 'dsh-project-result-disclosure', open, onToggle: event => setOpen(event.currentTarget.open) }, h('summary', null, t('resultHistory'), ` (${result.reportCount - 1})`),
       open ? h(Fragment, null,
-      history?.items.filter(report => report.delegationRef !== result.report.delegationRef).map(report => h(ResultCard, { key: report.delegationRef, projectId, workstreamId: result.workstreamId, report, read, t })),
+      history?.items.filter(report => report.delegationRef !== result.report.delegationRef).map(report => h('div', { key: report.delegationRef }, h(ResultCard, { projectId, workstreamId: result.workstreamId, report, read, t }), button(t('viewProcess'), () => showProcess(projectId, result.workstreamId, false, { delegationRef: report.delegationRef })))),
       busy ? h('p', { role: 'status' }, t('loading')) : null, error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null,
       h('div', { className: 'dsh-project-actions' }, cursors.length > 1 ? button(t('previous'), () => setCursors(before => before.slice(0, -1)), busy) : null,
         history?.nextCursor ? button(t('older'), () => setCursors(before => [...before, history.nextCursor]), busy) : null)) : null);
@@ -336,8 +351,21 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     return h('article', { className: 'dsh-project-result', 'data-result-workstream-id': result.workstreamId },
       h('div', { className: 'dsh-project-result-heading' }, h('strong', null, result.title), h('span', { className: 'dsh-project-muted' }, t(result.current ? 'currentResult' : 'previousResult'))),
       h(ResultCard, { projectId, workstreamId: result.workstreamId, report: result.report, read, t }),
-      h('div', { className: 'dsh-project-work-detail-actions' }, h(Button, { variant: 'ghost', size: 'sm', onClick: () => showProcess(projectId, result.workstreamId) }, t('viewProcess'))),
-      result.reportCount > 1 ? h(ResultHistory, { key: result.report.delegationRef, projectId, result, read, t }) : null);
+      h('div', { className: 'dsh-project-work-detail-actions' }, h(Button, { variant: 'ghost', size: 'sm', onClick: () => showProcess(projectId, result.workstreamId, false, { delegationRef: result.report.delegationRef }) }, t('viewProcess'))),
+      result.reportCount > 1 ? h(ResultHistory, { key: result.report.delegationRef, projectId, result, read, showProcess, t }) : null);
+  }
+  function DeliveryEntry({ projectId, delivery, read, showProcess, t }) {
+    const [error, setError] = useState(''), [notice, setNotice] = useState('');
+    const open = async (result, path) => { setError(''); setNotice(''); try { const value = await read(projectId, 'open', { workstreamId: result.workstreamId, delegationRef: result.report.delegationRef, path }); if (value.modifiedSinceReport) setNotice(t('modifiedArtifact')); } catch (failure) { setError(errorText(failure)); } };
+    return h('article', { className: 'dsh-project-result', 'data-delivery-id': delivery.id },
+      h('div', { className: 'dsh-project-result-heading' }, h('strong', null, delivery.title), h(Pill, null, t(delivery.outcome))),
+      h('p', { className: 'dsh-project-muted' }, t('delivery'), ` · ${t('deliveryVersion')} ${delivery.requestVersion} · ${new Date(delivery.committedAt).toLocaleString()}`),
+      markdown(t, delivery.summary), delivery.needsReview ? h('p', { className: 'dsh-project-muted' }, t('needsReview')) : null,
+      delivery.remainingIssues.length ? h('div', null, h('strong', null, t('remainingIssues')), h('ul', null, delivery.remainingIssues.map((issue, index) => h('li', { key: index }, issue)))) : null,
+      delivery.evidence.length ? h('details', null, h('summary', null, t('evidence')), h('ul', null, delivery.evidence.map((item, index) => h('li', { key: index }, item)))) : null,
+      delivery.reports.map(result => h('div', { key: result.report.delegationRef }, result.report.artifacts.map(file => h(Artifact, { key: file.path, file, t, open: path => open(result, path) })),
+        h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, result.title, ' · ', t('supportingReports')), h(ResultCard, { projectId, workstreamId: result.workstreamId, report: result.report, read, t }), button(t('viewProcess'), () => showProcess(projectId, result.workstreamId, false, delivery.references.find(ref => ref.workstreamId === result.workstreamId && ref.delegationRef === result.report.delegationRef)))))),
+      notice ? h('p', { role: 'status', className: 'dsh-project-muted' }, notice) : null, error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null);
   }
 
   function Materials({ projectId, workstreamId, read, command, onDirtyChange, readonly, showProcess, t }) {
@@ -345,6 +373,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const [loadedPath, setLoadedPath] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
     const [savedText, setSavedText] = useState(''), [generatedText, setGeneratedText] = useState('');
     const [resultCursors, setResultCursors] = useState([null]), resultsCursor = resultCursors.at(-1);
+    const [deliveryCursors, setDeliveryCursors] = useState([null]), deliveryCursor = deliveryCursors.at(-1);
     const [selectedWork, setSelectedWork] = useState(workstreamId), [selectedResult, setSelectedResult] = useState(null), [pendingPath, setPendingPath] = useState(null);
     const [listingBusy, setListingBusy] = useState(true), [selectionBusy, setSelectionBusy] = useState(Boolean(workstreamId));
     const pending = busy || listingBusy || selectionBusy;
@@ -353,9 +382,9 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     useEffect(() => {
       let live = true;
       setListingBusy(true); setError('');
-      read(projectId, 'store/list', resultsCursor ? { resultsCursor } : {}).then(value => { if (live) setListing(value); }).catch(failure => { if (live) setError(errorText(failure)); }).finally(() => { if (live) setListingBusy(false); });
+      read(projectId, 'store/list', { ...(resultsCursor ? { resultsCursor } : {}), ...(deliveryCursor ? { deliveryCursor } : {}), ...(selectedWork ? { workstreamId: selectedWork } : {}) }).then(value => { if (live) setListing(value); }).catch(failure => { if (live) setError(errorText(failure)); }).finally(() => { if (live) setListingBusy(false); });
       return () => { live = false; };
-    }, [projectId, resultsCursor]);
+    }, [projectId, resultsCursor, deliveryCursor, selectedWork]);
     useEffect(() => {
       if (!selectedWork) { setSelectionBusy(false); return; }
       let live = true; setSelectedResult(null); setError(''); setSelectionBusy(true);
@@ -387,10 +416,13 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       h('div', { className: 'dsh-project-materials-content', role: 'tabpanel', id: `${projectId}-material-panel-${path}`, 'aria-labelledby': `${projectId}-material-tab-${path}` },
       path === 'docs' ? h(Fragment, null,
       selectedWork ? h(Button, { variant: 'ghost', size: 'sm', style: { alignSelf: 'flex-start' }, onClick: () => { setSelectedWork(undefined); setSelectedResult(null); } }, t('allResults')) : null,
-      (selectedWork ? selectedResult ? [selectedResult] : [] : listing?.results ?? []).map(result => h(ResultEntry, { key: result.workstreamId, projectId, result, read, showProcess, t })),
-      !pending && !error && !(selectedWork ? selectedResult : listing?.results?.length) ? h('p', { className: 'dsh-project-muted' }, t('noResults')) : null,
-      h('div', { className: 'dsh-project-actions' }, !selectedWork && resultCursors.length > 1 ? button(t('previous'), () => setResultCursors(before => before.slice(0, -1)), pending) : null,
-        !selectedWork && listing?.nextResultsCursor ? button(t('next'), () => setResultCursors(before => [...before, listing.nextResultsCursor]), pending) : null),
+      listing?.deliveries?.map(delivery => h(DeliveryEntry, { key: delivery.id, projectId, delivery, read, showProcess, t })),
+      h('div', { className: 'dsh-project-actions' }, deliveryCursors.length > 1 ? button(t('previous'), () => setDeliveryCursors(before => before.slice(0, -1)), pending) : null, listing?.nextDeliveryCursor ? button(t('next'), () => setDeliveryCursors(before => [...before, listing.nextDeliveryCursor]), pending) : null),
+      listing?.deliveriesTotal ? h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, t('supportingReports')), (selectedWork ? selectedResult ? [selectedResult] : [] : listing?.results ?? []).map(result => h(ResultEntry, { key: result.workstreamId, projectId, result, read, showProcess, t })),
+        h('div', { className: 'dsh-project-actions' }, !selectedWork && resultCursors.length > 1 ? button(t('previous'), () => setResultCursors(before => before.slice(0, -1)), pending) : null, !selectedWork && listing?.nextResultsCursor ? button(t('next'), () => setResultCursors(before => [...before, listing.nextResultsCursor]), pending) : null)) : (selectedWork ? selectedResult ? [selectedResult] : [] : listing?.results ?? []).map(result => h(ResultEntry, { key: result.workstreamId, projectId, result, read, showProcess, t })),
+      !pending && !error && !listing?.deliveries?.length && !(selectedWork ? selectedResult : listing?.results?.length) ? h('p', { className: 'dsh-project-muted' }, t('noResults')) : null,
+      !listing?.deliveriesTotal ? h('div', { className: 'dsh-project-actions' }, !selectedWork && resultCursors.length > 1 ? button(t('previous'), () => setResultCursors(before => before.slice(0, -1)), pending) : null,
+        !selectedWork && listing?.nextResultsCursor ? button(t('next'), () => setResultCursors(before => [...before, listing.nextResultsCursor]), pending) : null) : null,
       h('details', { className: 'dsh-project-documents' }, h('summary', null, t('docs'), ` (${listing?.docs.length ?? 0})`), listing?.docs.length ? h('div', { className: 'dsh-project-list' }, listing.docs.map(file => h(Artifact, {
         key: file.path, file: { ...file, location: 'materials' }, busy: pending, t, open: path => { void read(projectId, 'open', { path }).catch(failure => setError(errorText(failure))); },
       }))) : h('p', { className: 'dsh-project-muted' }, t('noDocs')))) : loadedPath === path ? h(Fragment, null,
@@ -398,7 +430,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         h('textarea', { className: 'dsh-project-editor', value: text, disabled: pending, readOnly: readonly, 'aria-label': t(path === 'notes.md' ? 'userNotes' : 'preferences'), onChange: event => { setText(event.target.value); setNotice(''); } }),
         path === 'notes.md' ? h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, t('generatedNotes')), markdown(t, generatedText)) : null) : null,
       pending ? h('p', { role: 'status' }, t('loading')) : null,
-      error ? h(Fragment, null, h('p', { role: 'alert', className: 'dsh-project-error' }, t(editable && dirty ? 'saveFailed' : 'materialsError')), h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), h('pre', null, error))) : null),
+      error && pendingPath === null ? h(Fragment, null, h('p', { role: 'alert', className: 'dsh-project-error' }, t(editable && dirty ? 'saveFailed' : 'materialsError')), h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), h('pre', null, error))) : null),
       editable ? h('div', { className: 'dsh-project-materials-footer' }, readonly ? h('p', { className: 'dsh-project-muted' }, t('archivedMaterials')) : h(Fragment, null,
         notice ? h('p', { role: 'status', className: 'dsh-project-muted' }, notice) : null, h(Button, { variant: 'primary', onClick: save, disabled: pending || loadedPath !== path || !dirty }, t('save')))) : null),
       h(Modal, { open: pendingPath !== null, onClose: () => { if (!busy) setPendingPath(null); }, closeLabel: t('keepEditing'), className: 'dsh-project-confirm', title: t('unsaved'), footer: h('div', { className: 'dsh-project-actions' },
@@ -409,25 +441,36 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
 
   function ProcessRecords({ project, work, retainProcess, t }) {
     const [binding, setBinding] = useState(null), [window, setWindow] = useState(null), [sessionState, setSessionState] = useState(null);
-    const [error, setError] = useState(''), [pageEnd, setPageEnd] = useState(null), [busy, setBusy] = useState(false);
+    const [error, setError] = useState(''), [pageEnd, setPageEnd] = useState(null), [pageStart, setPageStart] = useState(null), [busy, setBusy] = useState(false);
+    const [located, setLocated] = useState(!work.processAnchor), [locating, setLocating] = useState(Boolean(work.processAnchor));
     useEffect(() => {
       let live = true, reference, offEvents, offState;
       setError('');
       try {
         reference = retainProcess(project, work);
-        reference.ready.then(value => {
+        reference.ready.then(async value => {
           if (!live) return;
           setBinding(value);
           const updateEvents = () => setWindow(value.eventSource.getSnapshot()), updateState = () => setSessionState(value.session.getSnapshot());
           offEvents = value.eventSource.subscribe(updateEvents); offState = value.session.subscribe(updateState); updateEvents(); updateState();
-        }).catch(failure => { if (live) setError(errorText(failure)); });
+          if (work.processAnchor) {
+            let snapshot = value.eventSource.getSnapshot(), records = processRecords(snapshot.entries), index = assignmentIndex(records, work.processAnchor.messageId);
+            while (live && index < 0 && snapshot.hasMore) {
+              await value.session.loadOlder();
+              const next = value.eventSource.getSnapshot();
+              if (next === snapshot) break;
+              snapshot = next; records = processRecords(snapshot.entries); index = assignmentIndex(records, work.processAnchor.messageId);
+            }
+            if (live) { setLocated(index >= 0); setLocating(false); if (index >= 0) { const start = assignmentPageStart(records, index); setPageStart(start); setPageEnd(Math.min(assignmentPageEnd(records, index, project.coordinatorSessionId), start + 50)); } else setError(t('missingRound')); }
+          }
+        }).catch(failure => { if (live) { setError(errorText(failure)); setLocating(false); } });
       } catch (failure) { setError(errorText(failure)); }
       return () => { live = false; offEvents?.(); offState?.(); reference?.release(); };
-    }, [project.id, work.workerSessionId]);
-    const records = processRecords(window?.entries ?? []), end = pageEnd ?? records.length, start = Math.max(0, end - 50);
+    }, [project.id, work.workerSessionId, work.processAnchor?.messageId]);
+    const records = processRecords(window?.entries ?? []), end = pageEnd ?? records.length, start = pageStart ?? Math.max(0, end - 50);
     const callNames = new Map(records.filter(event => event.type === 'tool/call').map(event => [event.data.callId, event.data.name]));
     const older = async () => {
-      if (start > 0) { setPageEnd(start); return; }
+      if (start > 0) { setPageStart(null); setPageEnd(start); return; }
       if (!binding || !window.hasMore) return;
       const firstSeq = records[0]?.seq;
       setBusy(true); setError('');
@@ -435,13 +478,14 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         await binding.session.loadOlder();
         const updated = processRecords(binding.eventSource.getSnapshot().entries);
         const boundary = firstSeq === undefined ? updated.length : updated.findIndex(event => event.seq === firstSeq);
-        if (boundary > 0) setPageEnd(boundary);
+        if (boundary > 0) { setPageStart(null); setPageEnd(boundary); }
       } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); }
     };
     return h('div', { className: 'dsh-project-body' }, h('p', { className: 'dsh-project-muted' }, t('processHint')),
-      !window && !error ? h('p', { role: 'status' }, t('loading')) : null,
-      records.slice(start, end).map(event => {
+      (!window || locating) && !error ? h('p', { role: 'status' }, t(locating ? 'locating' : 'loading')) : null,
+      located && !locating ? records.slice(start, end).map(event => {
         const data = event.data;
+        if (event.type === 'turn/start') return h('strong', { key: event.seq, className: 'dsh-project-record-row' }, `${t('round')} ${data.turn} · ${new Date(event.time).toLocaleString()}`);
         if (event.type === 'user/message') return h('details', { key: event.seq, className: 'dsh-project-record-row' }, h('summary', null, t(data.source.kind === 'team-message' ? 'teamMessage' : 'workRequest')), markdown(t, messageText(data)));
         if (event.type === 'assistant/message') {
           const text = messageText(data.message);
@@ -450,12 +494,12 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         if (event.type === 'tool/call') return h('details', { key: event.seq, className: 'dsh-project-record-row' }, h('summary', null, `${t('tool')}: ${data.name}`), h('pre', { className: 'dsh-project-record' }, data.arguments));
         if (event.type === 'tool/result') return h('details', { key: event.seq, className: 'dsh-project-record-row' }, h('summary', null, `${t(data.message.isError ? 'failed' : 'result')}: ${callNames.get(data.message.toolCallId) ?? data.message.toolCallId}`), h('pre', { className: 'dsh-project-record' }, messageText(data.message)), data.error ? h('p', { className: 'dsh-project-error' }, data.error.reason ?? data.error.code) : null);
         return data.reason?.kind === 'error' ? h('p', { key: event.seq, className: 'dsh-project-error' }, data.reason.error.message) : null;
-      }), window && !records.length ? h('p', { className: 'dsh-project-muted' }, t('noProcess')) : null,
+      }) : null, window && !records.length && located ? h('p', { className: 'dsh-project-muted' }, t('noProcess')) : null,
       sessionState?.openError ? h('p', { role: 'alert', className: 'dsh-project-error' }, sessionState.openError.message) : null,
       error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null,
-      h('div', { className: 'dsh-project-actions' }, start > 0 || window?.hasMore ? button(t(start > 0 ? 'previous' : 'older'), older, busy) : null,
-        pageEnd !== null && end < records.length ? button(t('next'), () => setPageEnd(Math.min(records.length, end + 50)), busy) : null,
-        pageEnd !== null ? button(t('newer'), () => setPageEnd(null), busy) : null));
+      located && !locating ? h('div', { className: 'dsh-project-actions' }, start > 0 || window?.hasMore ? button(t(start > 0 ? 'previous' : 'older'), older, busy) : null,
+        pageEnd !== null && end < records.length ? button(t('next'), () => { setPageStart(end); setPageEnd(Math.min(records.length, end + 50)); }, busy) : null,
+        pageEnd !== null ? button(t('newer'), () => { setPageStart(null); setPageEnd(null); }, busy) : null) : null);
   }
 
   function FileDiff({ projectId, workstreamId, read, t }) {
@@ -475,26 +519,39 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
           : value.snapshot.diff ? h('pre', { className: 'dsh-project-record' }, value.snapshot.diff) : !value.snapshot.files?.length ? h('p', { className: 'dsh-project-muted' }, t('noDiff')) : null));
   }
 
-  function ProcessPreview({ project, workstreamId, workerSessionId, read, retainProcess, t }) {
+  function ProcessPreview({ project, workstreamId, workerSessionId, delegationRef, runId, read, retainProcess, t }) {
     const [value, setValue] = useState(null), [error, setError] = useState('');
     useEffect(() => {
       let live = true; setValue(null); setError('');
-      void read(project.id, 'workstreams/get', workerSessionId ? { workerSessionId } : { workstreamId }).then(result => { if (live) setValue(result); }).catch(failure => { if (live) setError(errorText(failure)); });
+      void read(project.id, 'workstreams/get', { ...(workerSessionId ? { workerSessionId } : { workstreamId }), delegationRef, runId }).then(result => { if (live) setValue(result); }).catch(failure => { if (live) setError(errorText(failure)); });
       return () => { live = false; };
-    }, [project.id, workstreamId, workerSessionId]);
+    }, [project.id, workstreamId, workerSessionId, delegationRef, runId]);
     return error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : value ? h('div', { className: 'dsh-project-body' }, h('strong', null, value.workstream.title), h(ProcessRecords, { key: value.workstream.workerSessionId, project, work: value.workstream, retainProcess, t })) : h('p', { role: 'status' }, t('loading'));
   }
 
   function ProjectOverlay({ useStore, actions, useProjects, read, command, retainProcess, showProcess, t }) {
     const modal = useStore(value => value.modal), detail = useProjects(value => modal ? value.details[modal.projectId] : undefined);
     const [dirty, setDirty] = useState(false), [confirmClose, setConfirmClose] = useState(false);
+    const body = useRef(null), materialsPosition = useRef(null);
     useEffect(() => { setConfirmClose(false); }, [modal]);
+    useLayoutEffect(() => {
+      if (modal?.kind === 'materials' && materialsPosition.current?.modal === modal) {
+        // Modal's body scrolls; hiding the retained materials clamps that body's range.
+        body.current.parentElement.scrollTop = materialsPosition.current.top;
+      } else if (!modal || modal.kind === 'materials') materialsPosition.current = null;
+    }, [modal]);
     if (!modal) return null;
+    const materials = modal.kind === 'materials' ? modal : modal.returnTo?.kind === 'materials' ? modal.returnTo : null;
+    const openProcess = (...args) => {
+      materialsPosition.current = { modal, top: body.current.parentElement.scrollTop };
+      showProcess(...args);
+    };
     const close = () => { if (dirty) setConfirmClose(true); else actions.setModal(null); };
-    return h(Fragment, null, h(Modal, { open: true, onClose: close, closeLabel: t('close'), title: t(modal.kind), className: 'dsh-project-modal', contentClassName: 'dsh-project-modal-content' },
-      modal.kind === 'materials' ? h(Materials, { key: `${modal.projectId}:${modal.workstreamId ?? ''}`, projectId: modal.projectId, workstreamId: modal.workstreamId, read, command, onDirtyChange: setDirty, readonly: detail?.project.lifecycle === 'archived' || detail?.project.archiving, showProcess, t })
-        : modal.kind === 'diff' ? h(FileDiff, { key: modal.workstreamId, projectId: modal.projectId, workstreamId: modal.workstreamId, read, t })
-          : detail ? h(ProcessPreview, { key: modal.workstreamId ?? modal.workerSessionId, project: detail.project, workstreamId: modal.workstreamId, workerSessionId: modal.workerSessionId, read, retainProcess, t }) : h('p', { role: 'status' }, t('loading'))),
+    return h(Fragment, null, h(Modal, { open: true, onClose: close, closeLabel: t('close'), title: `${detail?.project.title ?? ''} · ${t(modal.kind)}`, className: 'dsh-project-modal', contentClassName: 'dsh-project-modal-content' },
+      h('div', { ref: body, className: 'dsh-project-body' }, modal.returnTo ? button(t('back'), () => actions.setModal(modal.returnTo)) : null,
+        materials ? h('div', { key: `materials:${materials.projectId}:${materials.workstreamId ?? ''}`, hidden: modal.kind !== 'materials' }, h(Materials, { projectId: materials.projectId, workstreamId: materials.workstreamId, read, command, onDirtyChange: setDirty, readonly: detail?.project.lifecycle === 'archived' || detail?.project.archiving, showProcess: openProcess, t })) : null,
+        modal.kind === 'diff' ? h(FileDiff, { key: modal.workstreamId, projectId: modal.projectId, workstreamId: modal.workstreamId, read, t })
+          : modal.kind === 'process' ? detail ? h(ProcessPreview, { key: `${modal.workstreamId ?? modal.workerSessionId}:${modal.delegationRef ?? ''}`, project: detail.project, workstreamId: modal.workstreamId, workerSessionId: modal.workerSessionId, delegationRef: modal.delegationRef, runId: modal.runId, read, retainProcess, t }) : h('p', { role: 'status' }, t('loading')) : null)),
       h(Modal, { open: confirmClose, onClose: () => setConfirmClose(false), closeLabel: t('keepEditing'), className: 'dsh-project-confirm', title: t('unsaved'), footer: h('div', { className: 'dsh-project-actions' },
         button(t('keepEditing'), () => setConfirmClose(false)), button(t('discard'), () => { setConfirmClose(false); actions.setModal(null); })) }));
   }
@@ -595,7 +652,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
           viewInstance.actions.selectProject(projectId); ctx.uiSidebar.selectTab('sessions'); ctx.uiWorkspace.openSession(detail.project.coordinatorSessionId);
         } catch (failure) { if (alive && navigation === navigationGeneration) snapshot.set({ ...snapshot.getSnapshot(), error: errorText(failure) }); }
       };
-      const show = (kind, projectId, workstreamId) => { viewInstance.actions.setModal({ kind, projectId, workstreamId }); };
+      const show = (kind, projectId, workstreamId, member = false, reference = {}) => { const previous = viewInstance.getSnapshot().modal; viewInstance.actions.setModal({ kind, projectId, ...(member ? { workerSessionId: workstreamId } : { workstreamId }), ...reference, ...(previous?.projectId === projectId ? { returnTo: previous } : {}) }); };
       const sendUserRequest = async (projectId, text) => {
         const project = snapshot.getSnapshot().projects.find(item => item.id === projectId);
         if (!project || project.lifecycle !== 'ready' || project.archiving) throw new Error(t('unavailable'));
@@ -606,7 +663,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       const face = () => ({ hooks: { projects: snapshot, projectSessions: ctx.sessions.list }, read, command, refresh, openProject, readDetail, sendUserRequest, teamT: ctx.locale.bind('project-team'),
         openModelSettings: () => ctx.settingsNavigation.open('models'),
         addProject: async () => { try { const path = await ctx.uiWorkspace.selectDirectory(); if (!path) return; const result = await rpc('create', { workingDirectory: path, requestId: requestId() }); acceptDetail({ project: result.project }); await openProject(result.project.id); } catch (failure) { snapshot.set({ ...snapshot.getSnapshot(), error: errorText(failure) }); } },
-        showMaterials: (projectId, workstreamId) => show('materials', projectId, workstreamId), showProcess: (projectId, workstreamId, member = false) => { viewInstance.actions.setModal({ kind: 'process', projectId, ...(member ? { workerSessionId: workstreamId } : { workstreamId }) }); }, showDiff: (projectId, workstreamId) => show('diff', projectId, workstreamId),
+        showMaterials: (projectId, workstreamId) => show('materials', projectId, workstreamId), showProcess: (projectId, workstreamId, member = false, reference) => show('process', projectId, workstreamId, member, reference), showDiff: (projectId, workstreamId) => show('diff', projectId, workstreamId),
         trackProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; }; },
         retainProcess: (project, work) => ctx.sessions.retain({ parentSessionId: project.coordinatorSessionId, childSessionId: work.workerSessionId, mode: 'continuable' }, { source: 'projectPreview' }),
       });

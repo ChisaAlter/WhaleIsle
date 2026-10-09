@@ -4,6 +4,31 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const detect = require('./install-detect');
+const { execFileSync } = require('node:child_process');
+
+test('native Windows registration preserves Chinese and emoji paths with redirected output', { skip: process.platform !== 'win32' }, () => {
+  const appId = `codex-whale-install-encoding-${process.pid}`;
+  const key = `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${appId}`;
+  const installPath = 'C:\\软件 🐳 é\\Encoding QA';
+  const fields = {
+    DisplayName: 'Encoding QA',
+    DisplayVersion: '1.2.3',
+    InstallLocation: installPath,
+    UninstallString: `"${installPath}\\Uninstall Encoding QA.exe" /currentuser`,
+  };
+  try {
+    for (const [name, value] of Object.entries(fields)) {
+      execFileSync('reg', ['add', key, '/v', name, '/t', 'REG_SZ', '/d', value, '/f'], { windowsHide: true, stdio: 'pipe' });
+    }
+    const result = detect.findRegisteredWindowsInstall({ target: { appId, productName: 'Encoding QA' } });
+    assert.equal(result.installPath, installPath);
+    assert.equal(result.uninstallCommand, fields.UninstallString);
+    assert.equal(result.displayVersion, '1.2.3');
+  } finally {
+    assert.equal(key, `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\codex-whale-install-encoding-${process.pid}`);
+    execFileSync('reg', ['delete', key, '/f'], { windowsHide: true, stdio: 'pipe' });
+  }
+});
 
 test('current desktop target still accepts the previous installed executable', () => {
   const candidates = detect.desktopExeCandidates('C:\\Apps\\Whale Isle');

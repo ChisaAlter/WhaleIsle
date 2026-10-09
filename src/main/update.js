@@ -111,10 +111,7 @@ function pickInstaller(assets, { platform = process.platform, arch = process.arc
     && /\.exe$/i.test(asset.name)
     && !/\.blockmap$/i.test(asset.name)
     && typeof asset.browser_download_url === 'string');
-  return exes.find((asset) => /setup|nsis|installer/i.test(asset.name))
-    || exes.find((asset) => !/portable/i.test(asset.name))
-    || exes[0]
-    || null;
+  return exes.find((asset) => /setup|nsis|installer/i.test(asset.name)) || null;
 }
 
 function pickChecksumAsset(assets) {
@@ -534,6 +531,11 @@ function launchInstaller(file, { spawn: spawnFn = spawn, installerArgs = [] } = 
 
 function summarizeRelease(release, current) {
   if (!release || release.draft) {
+    return null;
+  }
+  // Component releases share the repository, but are not desktop versions.
+  const versionTag = String(release.tag_name || release.name || '').trim();
+  if (!/^v?\d+\.\d+\.\d+(?:-[0-9a-z.-]+)?(?:\+[0-9a-z.-]+)?$/i.test(versionTag)) {
     return null;
   }
   const asset = pickInstaller(release.assets);

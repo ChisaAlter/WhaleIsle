@@ -1551,16 +1551,32 @@ function copyBundledNode(destDir, projectDir = process.cwd()) {
 
 function copyBundledPnpm(projectDir, destDir, target = {}) {
   const src = path.join(projectDir, 'node_modules', 'pnpm');
-  if (!fs.existsSync(path.join(src, 'bin', 'pnpm.cjs'))) {
+  if (!fs.existsSync(path.join(src, 'bin', 'pnpm.mjs'))) {
     throw new Error('打包时未找到 pnpm，请先 npm install');
   }
+  const platform = target.platform || process.platform;
+  const arch = target.arch || process.arch;
+  const libc = platform === 'linux' && process.report.getReport().header.glibcVersionRuntime === undefined
+    ? '-musl' : '';
+  const nativePackage = `@pnpm/exe.${platform}-${arch}${libc}`;
+  const nativeDir = path.dirname(require.resolve(`${nativePackage}/package.json`, { paths: [fs.realpathSync(src)] }));
+  const manifest = JSON.parse(fs.readFileSync(path.join(src, 'package.json'), 'utf8'));
+  const nativeManifest = JSON.parse(fs.readFileSync(path.join(nativeDir, 'package.json'), 'utf8'));
+  if (nativeManifest.version !== manifest.version) {
+    throw new Error(`pnpm 原生运行时版本不一致：pnpm@${manifest.version} ${nativePackage}@${nativeManifest.version}`);
+  }
+  const binary = platform === 'win32' ? 'pnpm.exe' : 'pnpm';
   const dest = path.join(destDir, 'pnpm');
   fs.mkdirSync(dest, { recursive: true });
-  // Match the published pnpm package: artifacts/exe duplicates the CLI bundle.
-  for (const name of ['package.json', 'bin', 'dist', 'LICENSE']) {
-    const source = path.join(src, name);
-    if (fs.existsSync(source)) fs.cpSync(source, path.join(dest, name), { recursive: true, dereference: true });
+  // pnpm 12's Node entry imports native-binary.mjs and needs an adjacent native
+  // executable. Use its official pnpm-native location so packaged use is offline.
+  for (const name of ['package.json', 'bin', 'dist', 'native-binary.mjs', 'THIRD-PARTY-NOTICES.md', 'README.md']) {
+    fs.cpSync(path.join(src, name), path.join(dest, name), { recursive: true, dereference: true });
   }
+  const nativeDest = path.join(dest, platform === 'win32' ? 'pnpm-native.exe' : 'pnpm-native');
+  fs.copyFileSync(path.join(nativeDir, binary), nativeDest);
+  fs.copyFileSync(path.join(nativeDir, 'LICENSE'), path.join(dest, 'LICENSE'));
+  if (platform !== 'win32') fs.chmodSync(nativeDest, 0o755);
   pruneRuntimeFiles(dest, target);
   return dest;
 }
@@ -1973,6 +1989,7 @@ module.exports.repairFlattenedCommanderEsm = repairFlattenedCommanderEsm;
 module.exports.copyFiles = copyFiles;
 module.exports.pickCopyWinners = pickCopyWinners;
 module.exports.copyBundledNode = copyBundledNode;
+module.exports.copyBundledPnpm = copyBundledPnpm;
 module.exports.nodeBinaryHasExternalDylibs = nodeBinaryHasExternalDylibs;
 module.exports.assertNodeModulesManifests = assertNodeModulesManifests;
 module.exports.deployCliEntries = deployCliEntries;

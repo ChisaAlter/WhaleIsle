@@ -54,8 +54,8 @@ function bench({ available = true, rejectCreation = false, detail = {}, rpcOverr
     globalThis: { crypto: { randomUUID } }, document: dom.window.document, setInterval: callback => { timer = callback; return 1; }, clearInterval() {} };
   vm.runInNewContext(fs.readFileSync(clientPath, 'utf8'), sandbox, { filename: clientPath });
   const Button = ({ variant, children, ...props }) => h('button', { type: 'button', ...props }, children);
-  const Modal = ({ open, title, closeLabel, onClose, children, footer }) => !open ? null : h('section', { role: 'dialog', 'aria-label': title },
-    h('button', { type: 'button', 'aria-label': closeLabel, onClick: onClose }, closeLabel), children, footer);
+  const Modal = ({ open, title, closeLabel, onClose, children, footer, className, contentClassName }) => !open ? null : h('section', { role: 'dialog', 'aria-label': title, className },
+    h('div', { className: contentClassName }, h('button', { type: 'button', 'aria-label': closeLabel, onClick: onClose }, closeLabel), h('div', { 'data-modal-body': true }, children)), footer);
   const TaskDock = ({ title, summary, children, testId }) => { const [expanded, setExpanded] = React.useState(false); return h('section', { 'data-testid': testId }, h('button', { 'aria-expanded': expanded, onClick: () => setExpanded(!expanded) }, title), h('span', null, summary), expanded ? children : null); };
   const Menu = ({ open, anchor, items, onSelect }) => h(React.Fragment, null, anchor, open ? h('div', { role: 'menu' }, items.map(item => h('button', { key: item.id, role: 'menuitem', onClick: () => onSelect(item.id) }, item.label))) : null);
   const SegmentedTabs = ({ items, value, onChange, label }) => h('div', { role: 'tablist', 'aria-label': label }, items.map(item => h('button', {
@@ -184,6 +184,74 @@ test('a rejected creation preserves the previous conversation and publishes no e
 const workDetail = () => ({ activity: { running: 1, blocked: 0, queued: 0, state: 'running' }, workPage: { currentTotal: 1, currentCursor: null, currentNextCursor: null, historyTotal: 0 }, workstreams: [{ id: 'work-one', title: 'Implement feature', group: 'current', status: 'running', workerSessionId: 'worker-one', currentDelegationRef: 'actual-assignment', pendingSummary: true, latestReport: {
   delegationRef: 'actual-assignment', outcome: 'completed', at: 1000, summary: 'Actual worker summary', artifacts: [{ path: 'src/app.js', size: 3, sha256: '123', type: 'file' }], evidence: ['Worker ran the targeted command'], remainingIssues: ['An actual integration check remains'],
 } }], workers: [{ sessionId: 'worker-one', workstreamId: 'work-one', role: 'worker', mode: 'existing', phase: 'active', activeRunId: 'run-one', cwd: 'C:/workspace/real' }] });
+
+test('an accepted objective without a worker shows its goal, revision and pending delivery', async () => {
+  const b = bench({ detail: { workstreams: [], workers: [], workPage: { currentTotal: 0, historyTotal: 0 } }, rpcOverride: (_method, _input, project) => {
+    project.requestsTotal = 1; project.requests = [{ id: 'real-request', version: 2, goal: 'Explain the saved API decision', requiredWork: [], delivery: null }];
+    project.activity = { state: 'pendingSummary', running: 0, queued: 0, blocked: 0, pendingSummary: 0 };
+  } });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.press('progress');
+    const dock = b.document.querySelector('[data-testid=project-progress]');
+    assert.match(dock.textContent, /Explain the saved API decision/); assert.match(dock.textContent, /deliveryVersion 2 · pendingSummary/);
+    assert.equal(dock.querySelectorAll('[data-workstream-id]').length, 0); assert.doesNotMatch(dock.textContent, /noWork/);
+  } finally { await b.dispose(); }
+});
+
+test('supporting member reports page independently beside a committed delivery', async () => {
+  const rows = Array.from({ length: 25 }, (_, index) => ({ workstreamId: `work-${index}`, title: `Member result ${index}`, current: true, reportCount: 1,
+    report: { delegationRef: `ref-${index}`, outcome: 'completed', summary: `Actual report ${index}`, at: index + 1, artifacts: [] } }));
+  const delivery = { id: 'committed-delivery', title: 'User objective', outcome: 'completed', requestVersion: 1, committedAt: 1, summary: 'Delivered objective', references: [], reports: [], evidence: [], remainingIssues: [] };
+  const b = bench({ rpcOverride: (method, input) => {
+    if (method !== 'store/list') return;
+    const start = input.resultsCursor ? rows.findIndex(row => row.report.delegationRef === input.resultsCursor) + 1 : 0, results = rows.slice(start, start + 10);
+    return { ok: true, value: { docs: [], deliveries: [delivery], deliveriesTotal: 1, results, resultsTotal: rows.length, nextResultsCursor: start + results.length < rows.length ? results.at(-1).report.delegationRef : null } };
+  } });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush(); await b.disclose('supportingReports');
+    await b.press('next'); await b.press('next');
+    const dialog = b.document.querySelector('[role=dialog]');
+    assert.equal(dialog.querySelectorAll('[data-result-workstream-id]').length, 5); assert.match(dialog.textContent, /Actual report 24/);
+    assert.match(dialog.textContent, /Delivered objective/); assert.equal(b.button('next'), undefined);
+    await b.press('previous'); assert.match(dialog.textContent, /Actual report 10/);
+    const requests = b.requests.filter(row => row.method === 'store/list');
+    assert.deepEqual(requests.map(row => row.input.resultsCursor), [undefined, 'ref-9', 'ref-19', 'ref-9']);
+    assert.ok(requests.every(row => row.input.deliveryCursor === undefined));
+  } finally { await b.dispose(); }
+});
+
+test('an old delivery opens its actual assignment round and returning preserves result and notes position', async () => {
+  const detail = workDetail(), work = detail.workstreams[0], ref = { workstreamId: work.id, delegationRef: 'old-assignment', runId: 'old-run', reportId: 'old-report' };
+  const report = { delegationRef: ref.delegationRef, outcome: 'completed', at: 1, summary: 'Original result', artifacts: [] };
+  const delivery = { id: 'old-delivery', title: 'Original goal', outcome: 'completed', requestVersion: 1, committedAt: 1, summary: 'Original delivery', references: [ref], reports: [{ workstreamId: work.id, title: work.title, report }], evidence: [], remainingIssues: [] };
+  const b = bench({ detail, rpcOverride: (method, input) => {
+    if (method === 'store/list') return { ok: true, value: { docs: [], deliveries: [delivery], deliveriesTotal: 1, results: [], resultsTotal: 0 } };
+    if (method === 'workstreams/get' && input.delegationRef) return { ok: true, value: { workstream: { ...work, processAnchor: { ...ref, messageId: 'native-old-assignment' } } } };
+  } });
+  const event = (seq, type, data) => ({ type: 'event', event: { seq, time: seq, type, data } });
+  const old = [event(1, 'turn/start', { turn: 1 }), event(2, 'user/message', { id: 'actual-user-event', source: { kind: 'team-message', senderId: b.project.coordinatorSessionId, messageId: 'native-old-assignment' }, content: [{ type: 'text', text: 'Original exact assignment' }] }), event(3, 'assistant/message', { turn: 1, message: { content: [{ type: 'text', text: 'Original exact result' }] } }), event(4, 'turn/end', { turn: 1, reason: { kind: 'completed' } })];
+  const later = [event(5, 'turn/start', { turn: 2 }), event(6, 'user/message', { id: 'later-user-event', source: { kind: 'team-message', senderId: b.project.coordinatorSessionId, messageId: 'native-new-assignment' }, content: [{ type: 'text', text: 'Later unrelated assignment' }] }), ...Array.from({ length: 70 }, (_, index) => turnRecord(index + 7))];
+  let loads = 0; b.eventSource.set({ entries: later, hasMore: true, revision: 1 });
+  b.session.loadOlder = async () => { loads++; b.eventSource.set({ entries: [...old, ...later], hasMore: false, revision: 2 }); };
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush();
+    await b.disclose(`${work.title} · supportingReports`);
+    const scrollBody = b.document.querySelector('.dsh-project-modal-content [data-modal-body]');
+    scrollBody.scrollTop = 520;
+    await b.press('viewProcess'); await b.flush();
+    // Browser layout clamps the shared Modal body when the long materials page is hidden.
+    scrollBody.scrollTop = 0;
+    const dialog = b.document.querySelector('[role=dialog]');
+    assert.equal(loads, 1); assert.match(dialog.textContent, /Original exact assignment|Original exact result/); assert.doesNotMatch(dialog.textContent, /Later unrelated assignment|Worker record 76/);
+    const request = b.requests.find(row => row.method === 'workstreams/get' && row.input.delegationRef);
+    assert.equal(request.input.delegationRef, ref.delegationRef); assert.equal(request.input.runId, ref.runId);
+    await b.press('back'); assert.match(dialog.textContent, /Original delivery/); assert.equal(dialog.querySelector('.dsh-project-result-disclosure').open, true);
+    assert.equal(scrollBody.scrollTop, 520, 'Return restores the nonzero original result position');
+    await b.press('notes'); await b.changeNotes('Keep the original draft');
+    await act(async () => { b.face().showProcess(b.project.id, work.id, false, ref); }); await b.flush(); await b.press('back');
+    assert.equal(dialog.querySelector('textarea').value, 'Keep the original draft'); assert.equal(b.sent.length, 0); assert.equal(b.navigation.filter(row => row[0] === 'session' && row[1] === work.workerSessionId).length, 0);
+  } finally { await b.dispose(); }
+});
 
 test('progress prioritizes unresolved and current work while older results and metadata open explicitly', async () => {
   const detail = { activity: { running: 1, blocked: 1, queued: 1, state: 'blocked' }, workPage: { currentTotal: 3, currentCursor: null, currentNextCursor: null, historyTotal: 5 }, workstreams: [], workers: [] };
@@ -437,7 +505,8 @@ test('notes save and reload, while failed writes keep editing and require an exp
     const generated = b.document.querySelector('[role=dialog] details'); assert.equal(generated.open, false); assert.match(generated.textContent, /Generated current work records/);
     assert.doesNotMatch(b.document.querySelector('textarea').value, /Generated|whale-project/);
     await b.changeNotes('Keep this edit'); await b.press('save');
-    assert.equal(b.document.querySelector('textarea').value, 'Keep this edit'); assert.match(b.document.querySelector('[role=alert]').textContent, /Disk write failed/); assert.match(b.stored['notes.md'], /\nInitial notes$/);
+    assert.equal(b.document.querySelector('textarea').value, 'Keep this edit'); assert.equal(b.document.querySelector('[role=alert]').textContent, 'saveFailed');
+    const failureDetails = b.document.querySelector('.dsh-project-error-details'); assert.equal(failureDetails.open, false); await b.disclose('errorDetails'); assert.equal(failureDetails.open, true); assert.equal(failureDetails.querySelector('pre').textContent, 'Disk write failed'); assert.match(b.stored['notes.md'], /\nInitial notes$/);
     await b.press('close'); assert.ok(b.document.querySelector('[role=dialog][aria-label=unsaved]')); await b.press('keepEditing'); assert.equal(b.document.querySelector('textarea').value, 'Keep this edit');
     failWrites = false; await b.press('save'); assert.match(b.stored['notes.md'], /\nKeep this edit$/); assert.equal(b.stored['notes.md'].match(/Generated current work records/g).length, 1); assert.ok(b.document.querySelector('[role=status]'));
     assert.equal(b.requests.filter(request => request.method === 'store/write').at(-1).input.text, 'Keep this edit');

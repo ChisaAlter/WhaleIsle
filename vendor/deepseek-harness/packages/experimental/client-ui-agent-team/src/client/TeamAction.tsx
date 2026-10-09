@@ -189,6 +189,8 @@ export function TeamAction({
 }: TeamActionProps) {
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [history, setHistory] = useState(false)
+  const [page, setPage] = useState(0)
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const triggerLabelRef = useRef<HTMLSpanElement>(null)
@@ -199,6 +201,7 @@ export function TeamAction({
   const positioned = position !== null
   const leadSessionId = useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? sessionId
   const team = useSessions(state => state.projectionsBySession[leadSessionId]?.values.agentTeam)
+  const sessionRows = useSessions(state => state.byId)
   const project = useSessions(state => state.byId[leadSessionId]?.presentation?.owner === 'project')
   const opening = useSession(snapshot => snapshot.openState === 'loading')
   const listing = useSessions(state => state.phase === 'pending')
@@ -217,6 +220,8 @@ export function TeamAction({
     hoverDismissedRef.current = false
     setOpen(false)
     setError(null)
+    setHistory(false)
+    setPage(0)
   }, [sessionId])
 
   useEffect(() => cancelHoverChange, [])
@@ -281,6 +286,13 @@ export function TeamAction({
     if (member.role === 'lead') return t('project.lead')
     return team?.tasks.find(task => task.ownerName === member.name)?.subject ?? member.description ?? member.name
   }
+  const taskRows = project && team !== undefined
+    ? history ? team.tasks.filter(task => task.status === 'completed').toReversed()
+      : [...team.tasks.filter(task => task.status !== 'completed'), ...team.tasks.filter(task => task.status === 'completed').slice(-3).reverse()]
+    : team?.tasks ?? []
+  const pageCount = Math.max(1, Math.ceil(taskRows.length / 20)), currentPage = Math.min(page, pageCount - 1)
+  const visibleTasks = project ? taskRows.slice(currentPage * 20, (currentPage + 1) * 20) : taskRows
+  const visibleMembers = project ? (team?.members ?? []).filter(member => member.role === 'lead' || member.id === sessionId || member.phase === 'provisioning' || sessionRows[member.id]?.running === true || visibleTasks.some(task => task.ownerName === member.name)) : team?.members ?? []
 
   return (
     <div
@@ -333,6 +345,12 @@ export function TeamAction({
             )}
             {team !== undefined && (
               <>
+                {project && <div className={css.meta}>
+                  <button type="button" onClick={() => { setHistory(value => !value); setPage(0) }}>{t(history ? 'project.currentWork' : 'project.history')}</button>
+                  <span>{t(history ? 'project.history' : 'project.currentWork')} · {taskRows.length}</span>
+                  {currentPage > 0 && <button type="button" onClick={() => { setPage(currentPage - 1) }}>{t('project.previous')}</button>}
+                  {currentPage + 1 < pageCount && <button type="button" onClick={() => { setPage(currentPage + 1) }}>{t('project.next')}</button>}
+                </div>}
                 {team.failure !== undefined && (
                   <div className={css.error} role="alert"><StateDot state="error" />{t('failure', { message: team.failure })}</div>
                 )}
@@ -342,7 +360,7 @@ export function TeamAction({
                     {team.members.length > 1 && <span className={css.count}>{team.members.length}</span>}
                   </h3>
                   <div className={css.roster}>
-                    {team.members.map(member => (
+                    {visibleMembers.map(member => (
                       <TeamMemberRow
                         key={member.id}
                         member={member}
@@ -366,7 +384,7 @@ export function TeamAction({
                       <>
                         <h3>{t('tasks')}<span className={css.count}>{team.tasks.length}</span></h3>
                         <div className={css.tasks}>
-                          {team.tasks.map(task => {
+                          {visibleTasks.map(task => {
                             const owner = team.members.find(member => member.name === task.ownerName)
                             return <TaskCard key={task.id} task={task} project={project}
                               ownerLabel={project && owner !== undefined ? memberLabel(owner) : task.ownerName ?? t('unowned')}

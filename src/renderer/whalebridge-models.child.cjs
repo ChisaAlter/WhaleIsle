@@ -126,7 +126,16 @@ async function run() {
     await click('[data-action="hide-model"][data-id="channel/model-20"]'); await wait(`visibilityPending.size===0`);
     assert.equal(await js(`document.querySelector('[data-action="hide-model"][data-id="channel/model-20"]').getAttribute('aria-checked')`), 'true');
     assert.equal(await js(`document.querySelector('#message-text').textContent`), 'QA save failed');
-    assert.equal(await js(`getComputedStyle(document.querySelector('#message')).position`), 'fixed');
+    assert.ok(await js(`(() => {
+      const message = document.querySelector('#message');
+      const rect = message.getBoundingClientRect();
+      const scrollViewport = document.querySelector('#main').getBoundingClientRect();
+      const close = message.querySelector('button').getBoundingClientRect();
+      return !message.hidden && rect.width > 0 && rect.height > 0
+        && rect.left >= 0 && rect.right <= innerWidth && rect.bottom <= scrollViewport.top
+        && close.left >= rect.left && close.right <= rect.right
+        && close.top >= rect.top && close.bottom <= rect.bottom;
+    })()`), 'save errors remain visible in reserved feedback space with a reachable close control');
     fail = false;
     await click('[data-filter="shown"]');
     await click('[data-action="hide-model"][data-id="channel/model-20"]'); await wait(`visibilityPending.size===0`);

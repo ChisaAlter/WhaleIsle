@@ -71,13 +71,13 @@ jobs:
         run: npm test
       - name: GUI behavior tests
         if: needs.scope.outputs.vendor == 'true'
-        run: node node_modules/pnpm/bin/pnpm.cjs --dir vendor/deepseek-harness run test:gui
+        run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness run test:gui
       - name: Core behavior tests
         if: needs.scope.outputs.vendor == 'true'
-        run: node node_modules/pnpm/bin/pnpm.cjs --dir vendor/deepseek-harness exec vitest run packages/core/agent-loop packages/core/session packages/core/tools packages/llm packages/api/session-controller packages/api/workspace-controller packages/fs/tool-fs packages/workspace packages/session/session-projection-cache packages/subagent/subagent --maxWorkers 2
+        run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run packages/core/agent-loop packages/core/session packages/core/tools packages/llm packages/api/session-controller packages/api/workspace-controller packages/fs/tool-fs packages/workspace packages/session/session-projection-cache packages/subagent/subagent --maxWorkers 2
       - name: Malformed tool recovery
         if: needs.scope.outputs.vendor == 'true'
-        run: node node_modules/pnpm/bin/pnpm.cjs --dir vendor/deepseek-harness exec vitest run --config vitest.snapshot.config.ts snapshots/session/headless.snapshot.ts -t "replays malformed-tool-call-retry"
+        run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run --config vitest.snapshot.config.ts snapshots/session/headless.snapshot.ts -t "replays malformed-tool-call-retry"
       - name: Built desktop composition
         if: needs.scope.outputs.vendor == 'true'
         run: node scripts/check-skip-compose-contract.js vendor/deepseek-harness

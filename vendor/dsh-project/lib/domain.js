@@ -5,14 +5,21 @@ const id = z.string().min(1);
 const project = z.object({ id, title: id, workspaceId: id.optional(), canonicalWorkingDirectory: id, directoryIdentity: id,
   coordinatorSessionId: id, storageRoot: id, lifecycle: z.enum(['creating', 'ready', 'archived']),
   paused: z.boolean(), holdSourceMessageId: z.string(), diagnostics: z.array(z.string()), creationRequestId: id, createdAt: z.number(), updatedAt: z.number() });
-const source = z.object({ sessionId: id, messageId: id, callId: id, text: z.string() });
+const humanInput = z.object({ messageId: id, text: z.string() });
+const source = z.object({ sessionId: id, messageId: id, callId: id, text: z.string(), inputs: z.array(humanInput).optional(), requestId: id.optional(), requestVersion: z.number().int().positive().optional() });
+const workReference = z.object({ workstreamId: id, delegationRef: id });
+const requestVersion = z.object({ version: z.number().int().positive(), goal: id, criteria: z.array(z.string()), constraints: z.array(z.string()), authorization: z.enum(['readonly', 'docs', 'worker']), writePaths: z.array(z.string()), inputs: z.array(humanInput), requiredWork: z.array(workReference), callId: id, at: z.number() });
+const request = z.object({ id, projectId: id, currentVersion: z.number().int().positive(), versions: z.array(requestVersion), updatedAt: z.number() });
+const evidenceReference = workReference.extend({ runId: id, reportId: id.optional() });
+const basisHead = workReference.extend({ runId: z.string(), reportId: z.string() });
+const delivery = z.object({ id, projectId: id, requestId: id, requestVersion: z.number().int().positive(), outcome: z.enum(['completed', 'blocked', 'failed', 'partial']), summary: id, evidence: z.array(z.string()), remainingIssues: z.array(z.string()), references: z.array(evidenceReference), requiredWork: z.array(workReference), basisHeads: z.array(basisHead).optional(), basisAlreadyChanged: z.boolean().optional(), sessionId: id, turn: z.number(), callId: id, callSeq: z.number(), at: z.number(), messageId: id.optional(), committedAt: z.number().optional(), supersededBy: id.optional(), error: z.string().optional() });
 const prerequisite = z.object({ workstreamId: id, title: id, delegationRef: id, reportId: id.optional() });
 const waitingReason = z.object({ kind: z.enum(['dependencies', 'directory', 'capacity']), workTitles: z.array(z.string()), code: z.string().optional() });
 const report = z.object({ delegationRef: id, outcome: z.enum(['completed', 'blocked', 'failed']), summary: id,
   artifacts: z.array(z.object({ path: id, size: z.number(), sha256: id, type: id })), evidence: z.array(z.string()), remainingIssues: z.array(z.string()), at: z.number(), callId: id, summarizedBy: z.string().optional(), prerequisites: z.array(prerequisite).optional() });
 const delegation = z.object({ ref: id, source, brief: id, scope: z.enum(['worker', 'readonly', 'docs']), writePaths: z.array(z.string()), phase: z.enum(['queued', 'preparing', 'accepted', 'failed', 'stopped']),
   messageId: z.string(), runId: z.string(), error: z.string(), createdAt: z.number(), report: report.optional(), waitingReason: waitingReason.optional(),
-  dispatchedPrerequisites: z.array(prerequisite).optional(), prerequisites: z.array(prerequisite).optional() });
+  requestId: id.optional(), requestVersion: z.number().int().positive().optional(), supersededBy: id.optional(), dispatchedPrerequisites: z.array(prerequisite).optional(), prerequisites: z.array(prerequisite).optional() });
 const workstream = z.object({ id, projectId: id, title: id, brief: id, status: z.enum(['open', 'running', 'blocked', 'done']),
   workerSessionId: id, blockedBy: z.array(id).optional(), blockedReason: z.string(), currentDelegationRef: id, delegations: z.array(delegation), latestReport: report.optional(),
   settlements: z.array(z.object({ runId: id, delegationRefs: z.array(id), stopReason: id, summary: z.string(), at: z.number(),
@@ -24,7 +31,7 @@ const worker = z.object({ sessionId: id, projectId: id, workstreamId: id, cwd: z
   phase: z.enum(['provisioning', 'active', 'idle', 'failed', 'stopping']), directoryHeld: z.boolean(), stopped: z.boolean(), materialized: z.boolean(),
   activeRunId: z.string().optional(), reservationRef: z.string().optional(), holdSourceMessageId: z.string().optional(),
   branch: z.string().optional(), workspace: z.unknown().optional(), writePaths: z.array(z.string()), consumedDelegationRef: z.string(), error: z.string(), updatedAt: z.number() });
-const state = z.object({ version: z.literal(1), revision: z.number().int().nonnegative(), projects: z.array(project), workstreams: z.array(workstream), workers: z.array(worker) });
+const state = z.object({ version: z.literal(1), revision: z.number().int().nonnegative(), projects: z.array(project), workstreams: z.array(workstream), workers: z.array(worker), requests: z.array(request).optional(), deliveries: z.array(delivery).optional() });
 export const initialState = { version: 1, revision: 0, projects: [], workstreams: [], workers: [] };
 // Abandoned Team trial data is preserved in whale_project; never reinterpret it.
 export const projectDomain = defineDomain({ name: 'whale_project_local', version: 1, tables: { state: domainTable(state) } });

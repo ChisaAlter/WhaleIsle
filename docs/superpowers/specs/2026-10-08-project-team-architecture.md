@@ -1,6 +1,6 @@
 # Project × Agent Teams：实现架构与迁移方案
 
-2026-10-09 · 设计 3.2 · 原生 Team 主链已实现；本次整体审查新增的要求归属、阶段授权与明确交付尚未实现。当前证据边界见功能资料。
+2026-10-10 · 设计 3.2 · 原生 Team 主链和要求归属、阶段授权、明确交付已接入集成工作分支；当前原生装配与用户路径的验收边界见功能资料，源码实现不代表真实模型或包验收通过。
 
 用户再次明确：Project 必须与鲸屿的智能体团队结合。此前把 Agent Teams 降为可选、用 Project 自建持续 worker 体系的决定撤销。本文件是运行时实现依据；[产品界面与流程](2026-10-08-project-product-redesign.md)保留，涉及团队的部分以本文为准；[配套提示词](2026-10-08-project-prompts.md)同步修订。GitHub 研究见[固定源码依据](../../research/2026-10-08-project-team-runtime-research.md)。
 
@@ -202,9 +202,9 @@ UI 的 running 来自 Session/Jobs，task owner 来自 Team，blocked 等原因�
 
 当前已实现原生 Team 主链、真实成员协作与同一 Session 续接，并补齐实际排队原因、当前依赖成果冻结、准备期依赖重开、可恢复的汇总失败和有界历史读取。真实模型、Host 故障检查、可见 UI 与当前包内工程验收的证据边界由[功能资料](../../features/projects.md)统一记录。上述 A–E 是原生接线阶段的地图，不是 3.2 已完成声明；本次整体业务缺口按下节和产品文档的连贯场景落实。
 
-## 13. 要求、阶段与交付的业务接缝（3.2 目标，尚未实现）
+## 13. 要求、阶段与交付的业务接缝（3.2 源码已接入，整体验收进行中）
 
-当前 `domain.js` 的 project/workstream/worker 与 `service.source` 的单条用户 messageId，能够关联一次委派，却不足以表达一件持续的用户要求。原生 Inbox 可一次领取多条输入；结算通知可能需要安排下一阶段；`readStoreTool` 的读取加 `assistantReply` 的任意回复不能证明用户目标已交付。这里补充最小业务记录，复用已有目录与持久保存，不建立新的运行时、消息队列、审批服务或任务板。
+`domain.js` 现增加可选 Request/Delivery 记录，`service.source` 保存本轮领取的全部真实人类输入；阶段委派绑定要求版本。`requirements.js` 承担明确交付声明、真实回复、completed 回合结束及持久 flush 对账。读取 notes 加任意回复不清除待交付。以下说明已接入的业务合同；当前原生组合、真实 provider、完整 UI 和包内验收以功能资料为准。
 
 ### 13.1 两类业务记录
 
