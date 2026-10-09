@@ -123,7 +123,7 @@
   max-width: calc(100vw - 48px);
   border-radius: var(--dsw-radius-panel);
   overflow: hidden;
-  background: var(--dsw-alias-bg-layer-2);
+  background: var(--dsw-alias-bg-panel-solid);
   box-shadow: var(--dsw-elevation-prominent);
   /* Elevated surface: the scrollbar thumb takes the l2 elevation tokens.
      Declared on the panel rather than the scrolling `.options` child so the

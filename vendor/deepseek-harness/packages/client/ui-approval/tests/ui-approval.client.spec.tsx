@@ -19,6 +19,7 @@ type ApprovalListener = (
     reason?: string
     displayReason?: PendingApproval['displayReason']
     signal?: AbortSignal
+    requester?: PendingApproval['requester']
   },
   next: () => Promise<'unavailable'>,
 ) => Promise<unknown>
@@ -252,6 +253,22 @@ describe('approval Remote Event consumer', () => {
     await scope.fiber.dispose()
   })
 
+  it('presents a member request in the Lead without retaining a member conversation', async () => {
+    const bench = await setupPlugin()
+    const scope = createScope(bench.ctx, id('lead'))
+    await scope.fiber.await()
+    const requester = { sessionId: id('member'), label: 'Build task', cwd: 'C:\\project',
+      call: { callId: 'build' as ToolCallId, name: 'pwsh', arguments: '{"command":"node --test"}' } }
+    const result = bench.listener.call(scope.ctx, { toolName: 'pwsh', callId: 'build', requester }, () => Promise.resolve('unavailable'))
+    const pending = bench.pending.getSnapshot()[0]!
+    expect(pending.sessionId).toBe('lead')
+    expect(pending.requester).toEqual(requester)
+    await pending.answer('allowed-once')
+    expect(await result).toBe('allowed-once')
+    expect(bench.pending.getSnapshot()).toEqual([])
+    await scope.fiber.dispose()
+  })
+
   it('propagates request cancellation after removing the pending object', async () => {
     const bench = await setupPlugin()
     const scope = createScope(bench.ctx, id('s1'))
@@ -340,7 +357,7 @@ describe('ApprovalPanel', () => {
     expect(screen.getByText('Tool bash asks')).toBeTruthy()
     expect(document.querySelector('[data-approval-key] [data-state="warning"]')).not.toBeNull()
     expect(screen.getByRole('group', { name: 'Approval details' })).toBeTruthy()
-    expect(props.renderSlot).not.toHaveBeenCalled()
+    expect(props.renderSlot).toHaveBeenCalledExactlyOnceWith('conversation.approval.actions', {})
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
 
     expect(document.querySelector('[data-approval-key]')?.getAttribute('aria-busy')).toBe('true')
@@ -355,7 +372,7 @@ describe('ApprovalPanel', () => {
       callId: 'call-1' as ToolCallId,
       reason: 'Run this exact command',
     })
-    const renderSlot = vi.fn(() => <code>pnpm test</code>)
+    const renderSlot = vi.fn((name: string) => name === 'conversation.approval.detail' ? <code>pnpm test</code> : null)
     render(<ApprovalPanel {...panelProps(pending, renderSlot)} />)
 
     expect(screen.getByText('Run this exact command')).toBeTruthy()
@@ -414,9 +431,28 @@ describe('ApprovalPanel', () => {
     await expect(pending.result).resolves.toBe('rejected')
   })
 
+  it('lets a session action withdraw the request without answering or allowing a late grant', async () => {
+    const pending = new PendingApproval(id('s1'), { toolName: 'pwsh' })
+    const result = pending.result.catch(error => error)
+    const answer = vi.spyOn(pending, 'answer')
+    const stop = vi.fn(() => { pending.abort(new Error('Project stopped')) })
+    const renderSlot = (name: string) => name === 'conversation.approval.actions' ? <button onClick={stop}>Stop work</button> : null
+    render(<ApprovalPanel {...panelProps(pending, renderSlot)} />)
+    const control = screen.getByRole('button', { name: 'Stop work' })
+    control.focus()
+    expect(fireEvent.keyDown(control, { key: 'Enter', code: 'Enter' })).toBe(true)
+    expect(answer).not.toHaveBeenCalled()
+    fireEvent.click(control)
+    expect(stop).toHaveBeenCalledOnce()
+    expect(await result).toBeInstanceOf(Error)
+    fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
+    expect(answer).not.toHaveBeenCalled()
+    expect(pending.answerable).toBe(false)
+  })
+
   it('ignores unowned input, modified keys, repeats and IME candidate keys', async () => {
     const pending = new PendingApproval(id('s1'), { toolName: 'bash', callId: 'call-1' as ToolCallId })
-    const renderSlot = () => <input aria-label="Approval input" />
+    const renderSlot = (name: string) => name === 'conversation.approval.detail' ? <input aria-label="Approval input" /> : null
     render(<ApprovalPanel {...panelProps(pending, renderSlot)} />)
     const group = screen.getByRole('group', { name: 'Approval details' })
     fireEvent.keyDown(group, { key: 'Enter', code: 'Enter' })

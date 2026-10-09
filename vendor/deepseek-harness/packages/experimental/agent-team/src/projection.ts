@@ -324,6 +324,7 @@ function applyCurrentTeamEvent(state: TeamProjectionState, event: TeamSessionEve
 const teamMemberProjectionSchema = z.object({
   id: sessionIdSchema,
   name: z.string(),
+  description: z.string().optional(),
   role: z.enum(['lead', 'teammate']),
   phase: z.enum(['provisioning', 'active', 'failed']),
   error: z.string().optional(),
@@ -358,6 +359,7 @@ function buildTeamProjection(state: TeamProjectionState): TeamProjection {
     members.push({
       id: member.id,
       name: member.name,
+      description: member.description,
       role: 'teammate',
       phase: member.phase,
       ...member.error === undefined ? {} : { error: member.error },

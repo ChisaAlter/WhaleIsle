@@ -2,7 +2,7 @@
 
 import { Profiler } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   TeamMemberProjection, TeamProjection, TeamTaskId, TeamTaskView as TeamTask,
@@ -57,10 +57,12 @@ function bench(options: {
   openState?: SessionSnapshot['openState']
   statuses?: SessionStatusSnapshot
   running?: Record<SessionId, boolean>
+  project?: boolean
 } = {}) {
   const sessionId = options.sessionId ?? SESSION
   const byId: Record<SessionId, SessionSummary> = {}
   for (const [id, running] of Object.entries(options.running ?? {}) as [SessionId, boolean][]) byId[id] = summary(id, running)
+  if (options.project) byId[SESSION] = { ...summary(SESSION, false), presentation: { owner: 'project', title: 'Local project' } }
   const sessions = createSnapshotStore<SessionListState>({
     ids: Object.keys(byId) as SessionId[], byId, phase: 'ready',
     projectionsBySession: options.projections ?? { [SESSION]: { state: 'ready', error: null, values: { agentTeam: team } } },
@@ -123,6 +125,68 @@ function setProjection(sessions: ReturnType<typeof bench>['sessions'], sessionId
 }
 
 describe('TeamAction', () => {
+  it.each([false, true])('uses readable Project labels without changing native identities (project: %s)', (project) => {
+    const b = bench({ project, projections: {
+      [SESSION]: { state: 'ready', error: null, values: { agentTeam: {
+        members: [lead, worker],
+        tasks: [
+          { ...task, subject: '修复登录', ownerName: worker.name, status: 'pending', blockedBy: [TASK_2], writeScopeWarnings: [] },
+          { ...task, id: TASK_2, subject: '确认接口', status: 'completed', writeScopeWarnings: [] },
+        ],
+      } } },
+    } })
+    render(<TeamAction {...b.props} />)
+    openPanel()
+
+    expect(screen.getByRole('button', { name: project ? /^协调者/u : /^lead/u })).toBeTruthy()
+    const member = screen.getByRole('button', { name: project ? /^修复登录/u : /^worker/u })
+    expect(screen.getByText(project ? '负责人: 修复登录' : 'Owner: worker')).toBeTruthy()
+    expect(screen.getByText(project ? '负责人: 协调者' : 'Owner: lead')).toBeTruthy()
+    expect(screen.getByText(project ? '依赖: 确认接口' : '依赖: task-2')).toBeTruthy()
+    const taskCard = within(screen.getByText('修复登录', { selector: 'strong' }).closest('article')!)
+    if (project) {
+      expect(screen.queryByText(TASK_1)).toBeNull()
+      expect(screen.queryByText(TASK_2)).toBeNull()
+      expect(taskCard.queryByText(task.description)).toBeNull()
+      const expand = taskCard.getByRole('button', { name: zh['task.expand'] })
+      expect(expand.getAttribute('aria-expanded')).toBe('false')
+      fireEvent.click(expand)
+      expect(taskCard.getByText(task.description).textContent).toBe(task.description)
+      const collapse = taskCard.getByRole('button', { name: zh['task.collapse'] })
+      expect(collapse.getAttribute('aria-expanded')).toBe('true')
+      fireEvent.click(collapse)
+      expect(taskCard.queryByText(task.description)).toBeNull()
+      expect(taskCard.getByRole('button', { name: zh['task.expand'] }).getAttribute('aria-expanded')).toBe('false')
+    } else {
+      expect(screen.getByText(TASK_1)).toBeTruthy()
+      expect(screen.getByText(TASK_2)).toBeTruthy()
+      const preview = taskCard.getByText(task.description)
+      expect(preview.textContent).toBe(task.description)
+      expect(preview.className).not.toBe('')
+    }
+    fireEvent.click(member)
+    expect(b.injected.openTeammate).toHaveBeenCalledWith(SESSION, WORKER)
+    expect(b.sessions.getSnapshot().projectionsBySession[SESSION]?.values.agentTeam?.members[1]?.name).toBe('worker')
+    expect(b.sessions.getSnapshot().projectionsBySession[SESSION]?.values.agentTeam?.tasks[0]?.description).toBe(task.description)
+  })
+
+  it.each([false, true])('retains the member label while a reopened task waits without an owner (project: %s)', (project) => {
+    const member = { ...worker, name: 'member-uuid', description: '修复登录' }
+    const { ownerName: _ownerName, ...unownedTask } = task
+    const b = bench({ project, projections: {
+      [SESSION]: { state: 'ready', error: null, values: { agentTeam: {
+        members: [lead, member],
+        tasks: [{ ...unownedTask, subject: '修复登录', status: 'pending', blockedBy: [TASK_2], writeScopeWarnings: [] }],
+      } } },
+    } })
+    render(<TeamAction {...b.props} />)
+    openPanel()
+    const row = screen.getByRole('button', { name: project ? /^修复登录/u : /^member-uuid/u })
+    if (project) expect(screen.queryByText('member-uuid')).toBeNull()
+    fireEvent.click(row)
+    expect(b.injected.openTeammate).toHaveBeenCalledWith(SESSION, WORKER)
+  })
+
   it('renders the Lead projection and applies later projection frames without any user action', async () => {
     const b = bench()
     render(<TeamAction {...b.props} />)
@@ -380,6 +444,25 @@ describe('TeamAction', () => {
       scrollHeight.mockRestore()
       clientHeight.mockRestore()
     }
+  })
+
+  it('keeps Escape dismissed under a stationary pointer until it leaves or clicks again', async () => {
+    vi.useFakeTimers()
+    render(<TeamAction {...bench().props} />)
+    const trigger = screen.getByRole('button', { name: /智能体团队/u })
+    fireEvent.click(trigger)
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    fireEvent.mouseEnter(trigger)
+    await act(async () => { await vi.advanceTimersByTimeAsync(200) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    fireEvent.mouseLeave(trigger.parentElement!, { relatedTarget: document.body })
+    fireEvent.mouseEnter(trigger)
+    await act(async () => { await vi.advanceTimersByTimeAsync(150) })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    fireEvent.click(trigger)
+    expect(screen.getByRole('dialog')).toBeTruthy()
   })
 
   it('opens on hover and preserves the trigger-to-panel crossing grace', async () => {

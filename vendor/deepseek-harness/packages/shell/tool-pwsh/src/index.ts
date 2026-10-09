@@ -30,7 +30,7 @@ import { HarnessError } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { JobId, JobRegistry, JobView } from '@deepseek-ai/dsh-jobs'
 import type {} from '@deepseek-ai/dsh-shell-env'
-import type {} from '@deepseek-ai/dsh-user-approval'
+import type { ApprovalExecutionScope } from '@deepseek-ai/dsh-user-approval'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { ESCALATION_TARGETS, approveEscalation, sandboxPermissionsDescription, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
@@ -293,7 +293,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     const promote = background && promoteOnTimeout
     /* jscpd:ignore-start -- the job start and wait mirror dsh-tool-bash's by design (pwsh-tool-and-executor Agent Note). */
     /** Register the command as a job; the process spawns inside the starter, after admission. */
-    const startJob = (registry: JobRegistry, args: PwshToolArgs, exec: ToolExecution, spec: ShellExecSpec): StartedJob => {
+    const startJob = (registry: JobRegistry, args: PwshToolArgs, exec: ToolExecution, spec: ShellExecSpec, approval?: ApprovalExecutionScope): StartedJob => {
       let proc: ShellExecution | undefined
       let stopped: string | undefined
       const id = registry.start({
@@ -304,7 +304,8 @@ export function apply(ctx: Context, config: Config = {}): void {
         run: () => {
           const hooks = processJob(
             async (signal) => {
-              proc = await ctx.shell.execute({ ...spec, signal })
+              approval?.assertCurrent()
+              proc = await ctx.shell.execute({ ...spec, signal: approval === undefined ? signal : AbortSignal.any([signal, approval.signal]) })
               return proc
             },
             started => processOutcome(started, escalationModes),
@@ -513,9 +514,13 @@ export function apply(ctx: Context, config: Config = {}): void {
         // Description is display metadata; workdir defaults to the caller's session.
         const standingPolicy = resolveSandboxPolicy(exec)
         const justification = escalationJustification(args)
+        const approval = args.sandbox_permissions !== undefined && args.sandbox_permissions !== standingPolicy?.mode && exec.agent !== undefined
+          ? ctx.get('approval')?.captureExecution(exec.agent, exec.signal) : undefined
         const approvedMode = args.sandbox_permissions !== undefined && justification !== undefined
           ? await approvePwshEscalation(args.sandbox_permissions, justification, exec, standingPolicy)
           : undefined
+        approval?.assertCurrent()
+        if (approval !== undefined) exec = { ...exec, signal: AbortSignal.any([exec.signal, approval.signal]) }
         const policy = approvedMode === undefined
           ? standingPolicy
           : { ...(standingPolicy as SandboxExecutionPolicy), mode: approvedMode }
@@ -537,7 +542,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           }
           // The caller owns cancellation until ctx.jobs commits detached ownership.
           if (exec.signal.aborted) throw toolAborted()
-          return { kind: 'background' as const, jobId: startJob(jobs, args, exec, ctx.shell.resolve({ ...request, onExpiry: 'none' })).id }
+          return { kind: 'background' as const, jobId: startJob(jobs, args, exec, ctx.shell.resolve({ ...request, onExpiry: 'none' }), approval).id }
         }
         // A foreground call is a job the tool waits on, so the command is
         // visible and killable from the moment it starts and outlives the wait
@@ -548,7 +553,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           const spec = ctx.shell.resolve({ ...request, onExpiry: 'none' })
           let attached: StartedJob | undefined
           try {
-            attached = startJob(jobs, args, exec, spec)
+            attached = startJob(jobs, args, exec, spec, approval)
           } catch (error) {
             ctx.logger.warn(`pwsh: job registration refused, running in the foreground with the timeout kill instead: ${String(error)}`)
           }

@@ -50,6 +50,7 @@ export async function apply(ctx) {
       const worker = service.state().workers.find(item => item.sessionId === agent.id);
       if (project) agent.session.append('session/presentation', { owner: 'project', title: project.title, workingDirectory: project.canonicalWorkingDirectory });
       else if (worker) agent.session.append('session/presentation', { owner: 'project', title: service.stream(worker.workstreamId).title, composer: 'managed' });
+      service.approvals.created(agent);
     });
     ctx.on('subagent/start', info => { void service.runStarted(info).catch(error => ctx.logger.warn('Project start accounting failed: %s', error.message)); });
     ctx.on('subagent/end', info => { void service.runEnded(info).catch(error => ctx.logger.warn('Project end accounting failed: %s', error.message)); });

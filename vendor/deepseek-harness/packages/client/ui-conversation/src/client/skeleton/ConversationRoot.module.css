@@ -350,8 +350,8 @@ button.crumb:hover {
    outer edge is clamped to keep a 24px safe zone against the
    column edges (sidebar side and scrollbar side stay drag-free). When the
    margin cannot fit inset + strip + safe zone the computed width goes
-   negative and the strip resolves to zero — no mispositioned hit area on
-   narrow columns. Known half-scrollbar (~4px) centering offset vs the
+   negative and the strip resolves to zero at the column edge, without
+   extending its scrollable width. Known half-scrollbar (~4px) centering offset vs the
    gutter-reserved content box is accepted: it consumes part of the 10px
    strip but remains within it. */
 .widthHandle {
@@ -361,19 +361,20 @@ button.crumb:hover {
   /* Concrete overflow content establishes z-index 1, while the viewport
      composer remains above both layers. */
   z-index: 0;
-  width: min(
-    10px,
-    calc((100% - var(--dsh-chat-content-width)) / 2 - 24px - 24px)
+  width: max(
+    0px,
+    min(10px, calc((100% - var(--dsh-chat-content-width)) / 2 - 24px - 24px))
   );
+  overflow: hidden;
   cursor: col-resize;
 }
 
 .widthHandle[data-side='left'] {
-  right: calc(50% + var(--dsh-chat-content-width) / 2 + 24px);
+  right: min(100%, calc(50% + var(--dsh-chat-content-width) / 2 + 24px));
 }
 
 .widthHandle[data-side='right'] {
-  left: calc(50% + var(--dsh-chat-content-width) / 2 + 24px);
+  left: min(100%, calc(50% + var(--dsh-chat-content-width) / 2 + 24px));
 }
 
 /* The glow: a short 2px bar following the captured pointer's Y, centered in the strip
@@ -475,7 +476,7 @@ button.crumb:hover {
    The composer anchors to the body viewport, independently of transcript
    scroll offsets and takeover height changes. */
 .root[data-phase='active'] {
-  overflow: hidden;
+  overflow: clip;
 }
 
 .root[data-phase='active'] .header {
@@ -490,6 +491,7 @@ button.crumb:hover {
   display: flex;
   grid-row: 2;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
 
   /* Shared width axis for the transcript, dock cards, composer, and takeover
@@ -551,9 +553,14 @@ button.crumb:hover {
 .embeddedBody[data-content-phase='active'] .viewArea {
   flex: 1 0 auto;
   min-height: auto;
-  /* The viewport-anchored seat is out of flow; retain its measured height
-     so the latest transcript row can scroll clear of the card. */
-  padding-bottom: var(--dsh-composer-height, 0px);
+}
+
+.root[data-phase='active'] .scrollBody:not(:has([data-conversation-composer-overlay])),
+.embeddedBody[data-content-phase='active'] .scrollBody:not(:has([data-conversation-composer-overlay])) {
+  /* The transparent footer must never cover transcript text. Reserve the
+     seat's measured height outside the scrollport, while its absolute box
+     stays anchored to .body and inside the composer event/resize ancestry. */
+  margin-bottom: var(--dsh-composer-height, 0px);
 }
 
 .root[data-phase='active'] .composerSeat,
@@ -586,8 +593,7 @@ button.crumb:hover {
 /* Wallpaper and ambient-gradient modes paint NO seat fill: any banded fill
    under the composer read as a cast shadow behind the input box. The card's
    own surface token plus its resting rim light carry the separation; the
-   transcript scrolls under the transparent seat like it does elsewhere in the
-   glass chrome. Transparent theme stays the same 0% (every chrome fill is 0%
+   transcript scrollport ends at the seat's top. Transparent theme stays the same 0% (every chrome fill is 0%
    there). */
 :global(html[data-dsh-wallpaper]:not([data-dsh-transparent])) .root[data-phase='active'] .composerSeat,
 :global(html[data-dsh-wallpaper]:not([data-dsh-transparent]) body[data-ds-dark-theme]) .root[data-phase='active'] .composerSeat,

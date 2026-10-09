@@ -9,6 +9,7 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import type { Agent } from '@deepseek-ai/dsh-agent/types'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /**
  * Pairs one `approval/asked` audit event with its `approval/decided`.
@@ -30,6 +31,14 @@ export function ApprovalRequestId(id: string): ApprovalRequestId {
  * request, or unavailable answerer. Callers fail closed on `unavailable`.
  */
 export type ApprovalOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
+
+/** Host-read execution identity and call, independent of the presenting conversation. */
+export interface ApprovalRequester {
+  readonly sessionId: SessionId
+  readonly label: string
+  readonly cwd?: string
+  readonly call: { readonly callId: ToolCallId; readonly name: string; readonly arguments: string }
+}
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
@@ -65,6 +74,8 @@ export interface ApprovalRequestEvent {
   readonly requestId?: ApprovalRequestId
   /** Agent identity projected to the corresponding Client Context in transit. */
   readonly agent: Agent
+  /** Original executing member, when its parent presents the question. Never model-supplied. */
+  readonly requester?: ApprovalRequester
   /** Tool whose operation requires a decision. */
   readonly toolName: string
   /** Exact tool call being decided, when available. */

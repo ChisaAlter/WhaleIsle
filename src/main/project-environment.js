@@ -35,7 +35,8 @@ function writeRecord(file, value) {
 
 /** Directory capabilities only. Worker commands and processes belong to Harness Jobs. */
 function createProjectEnvironment(options = {}) {
-  const git = options.runGit || runGit;
+  const executeGit = options.runGit || runGit;
+  const git = (cwd, args, limits) => executeGit(cwd, [...(process.platform === 'win32' ? ['-c', 'core.longpaths=true'] : []), ...args], limits);
   const pending = new Map();
   const home = () => fs.realpathSync.native(options.home || getDesktopDshHome());
   const authority = () => options.authority || loadWorkspaceAuthority();

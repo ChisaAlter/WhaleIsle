@@ -10,6 +10,8 @@ English | [中文](README.zh.md)
 
 Browser approval presentation over the Agent-scoped Remote Event waterfall. The plugin publishes each pending request through `ctx.uiSession`, takes over the Conversation composer, optionally renders correlated Tool detail, and returns the user's decision to the waiting Host request. Use it when a browser must collect approval for a waiting Host operation.
 
+Managed Project requests can appear in the Lead composer with the requesting work title, actual child command, and cwd snapshot. The child need not be retained in the browser. This changes presentation only; the Host keeps the decision and execution audit on that child. The session-scoped `conversation.approval.actions` list provides relevant session actions during composer takeover; Project uses it for the same Host stop command, including when its coordinator is running or a worker is preparing.
+
 ## Table of Contents
 
 - [Model Experience](#model-experience)

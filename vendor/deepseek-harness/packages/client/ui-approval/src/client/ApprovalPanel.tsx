@@ -13,15 +13,17 @@ export function ApprovalPanel(props: ApprovalComposerProps) {
   const approval = props.matched
   const detail = approval.callId === undefined
     ? null
-    : props.renderSlot('conversation.approval.detail', { callId: approval.callId })
+    : props.renderSlot('conversation.approval.detail', { callId: approval.callId, ...approval.requester === undefined ? {} : { requester: approval.requester } })
   const reason = approval.displayReason === undefined ? approval.reason : props.resolveReason(approval.displayReason)
-  return <ApprovalFlow key={approval.key} pending={approval} reason={reason} detail={detail} t={props.t} />
+  const controls = props.renderSlot('conversation.approval.actions', {})
+  return <ApprovalFlow key={approval.key} pending={approval} reason={reason} detail={detail} controls={controls} t={props.t} />
 }
 
-function ApprovalFlow({ pending, reason, detail, t }: {
+function ApprovalFlow({ pending, reason, detail, controls, t }: {
   pending: PendingApproval
   reason: string | undefined
   detail: ReactNode
+  controls: ReactNode
   t: ApprovalComposerProps['t']
 }) {
   const [answered, setAnswered] = useState(false)
@@ -75,6 +77,7 @@ function ApprovalFlow({ pending, reason, detail, t }: {
           {detail !== null && <div className={css.command}>{detail}</div>}
         </div>
         <div className={css.actionRow}>
+          {controls !== null && <div className={css.sessionControls}>{controls}</div>}
           <Button variant="outline" className={css.reject} disabled={answered} onClick={() => { answer('rejected') }}>
             {t('reject')}
           </Button>

@@ -382,8 +382,10 @@ function layoutHarnessView(win) {
     return;
   }
   const bounds = win.getContentBounds();
+  // Native resize already relays the final content bounds here. BrowserView
+  // auto-resize would apply the same size delta again after this listener.
+  harnessView.setAutoResize({ width: false, height: false });
   harnessView.setBounds({ x: 0, y: 0, width: bounds.width, height: bounds.height });
-  harnessView.setAutoResize({ width: true, height: true });
   desktopPet()?.layout(win);
 }
 

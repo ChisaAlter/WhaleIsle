@@ -4,6 +4,7 @@ import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionEventMap, SessionEventType } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import '../src/control.ts'
 import { teamProjectionDefinition, teamProjectionView } from '../src/projection.ts'
 import type { TeamProjectionState, TeamState } from '../src/projection.ts'
 import { TeamId, TeamMessageId, TeamTaskId } from '../src/types.ts'
@@ -433,6 +434,16 @@ describe('Agent Teams projection events', () => {
       version: 2, teamId: TEAM, messageId: TeamMessageId('message-1'), targetId: CHILD,
     }, SessionSeq(3))
 
+    it('publishes the persisted teammate description without requiring an owned task', () => {
+      const state = project(ROOT, [event('team/member', {
+        version: 2, teamId: TEAM, member: member({ description: 'Review project documents' }),
+      }, SessionSeq(0))])
+      const view = teamProjectionDefinition.wire.viewSchema.parse(teamProjectionView(state))
+      expect(view.tasks).toEqual([])
+      expect(view.members.find(row => row.id === CHILD)?.description).toBe('Review project documents')
+      expect(view.members.find(row => row.id === ROOT)).not.toHaveProperty('description')
+    })
+
     it('returns the same state for unrelated events and a new state that replaces only the touched collection', () => {
       const initial = project(ROOT, [])
       expect(teamProjectionDefinition.apply(initial, { type: 'turn/start', data: { turn: 1 }, seq: 0, time: 0 } as SessionEvent)).toBe(initial)
@@ -496,7 +507,7 @@ describe('Agent Teams projection events', () => {
       expect(view).toEqual({
         members: [
           { id: ROOT, name: 'lead', role: 'lead', phase: 'active' },
-          { id: CHILD, name: 'worker-a', role: 'teammate', phase: 'active' },
+          { id: CHILD, name: 'worker-a', description: 'worker', role: 'teammate', phase: 'active' },
         ],
         tasks: [
           {
@@ -520,7 +531,7 @@ describe('Agent Teams projection events', () => {
       const memberView = teamProjectionView(withMember)
       expect(memberView).not.toBe(view)
       expect(memberView.members.at(-1)).toEqual({
-        id: 'child-b', name: 'worker-b', role: 'teammate', phase: 'provisioning',
+        id: 'child-b', name: 'worker-b', description: 'worker', role: 'teammate', phase: 'provisioning',
       })
 
       const failedMember = event('team/member', {

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import type { ChatSnapshot, UseChat } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ApprovalRequester } from '@deepseek-ai/dsh-user-approval/types'
 import { PartialArguments } from '@deepseek-ai/dsh-util-values'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
@@ -28,6 +29,15 @@ describe('commandOf', () => {
 })
 
 describe('ApprovalCommand', () => {
+  it('renders the Host-read member command and cwd instead of a same-id Lead call', () => {
+    const requester = { sessionId: 'member', label: '验证工程', cwd: 'C:\\project',
+      call: { callId: 'call-1', name: 'pwsh', arguments: '{"command":"node --test\\nWrite-Output done","workdir":"src"}' } } as ApprovalRequester
+    const { container } = render(<ApprovalCommand {...props([
+      { kind: 'tool-call', data: { root: { phase: 'start', callId: 'call-1', argsRaw: '{"command":"wrong Lead command"}' } } },
+    ])} requester={requester} />)
+    expect(container.textContent).toBe('验证工程\nC:\\project\\src\nnode --test\nWrite-Output done')
+  })
+
   it('renders the running correlated Tool command', () => {
     render(<ApprovalCommand {...props([
       { kind: 'assistant-step', data: {} },

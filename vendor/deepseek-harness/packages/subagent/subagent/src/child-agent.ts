@@ -220,7 +220,9 @@ export async function applyChildComposition(
   childCtx.systemPrompt.context({
     name: 'subagent:delegation',
     order: childCtx.systemPrompt.getContextOrder('SUBAGENT_DELEGATION'),
-    text: SUBAGENT_DELEGATION_CONTEXT,
+    text: context => context.agent !== undefined && childCtx.get('approval')?.policyOf(context.agent.session) === 'ask'
+      ? 'You are a delegated subagent. Keep the assigned scope and base sandbox. When an operation requires wider access, request approval for that exact operation with its actual command and working directory; only an explicit user approval grants it once. A denial is final for that operation. Report the blocker instead of retrying or working around it.'
+      : SUBAGENT_DELEGATION_CONTEXT,
   })
   if (composition.persona !== undefined) {
     childCtx.systemPrompt.section({
