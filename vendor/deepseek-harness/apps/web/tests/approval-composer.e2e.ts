@@ -1,6 +1,6 @@
 // Browser geometry for a pending approval whose model-supplied command would
 // push the actions outside the viewport without a capped text region.
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
@@ -244,5 +244,6 @@ it.each([false, true])('matches approval width and height through viewport chang
     controller.abort()
     await browser.close()
     await scaffold.close()
+    await rm(home, { recursive: true, force: true })
   }
 }, 90_000)
