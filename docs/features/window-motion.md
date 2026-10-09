@@ -16,6 +16,7 @@
 - 主窗口与启动器保持 `transparent: true`、`roundedCorners: false`，20px 页面圆角、round 角形和缘线不变；最大化收为 0。不得为了修动画改为系统小圆角或不透明背板。
 - Windows 在显示前经 `native-window-motion` 补回 `WS_CAPTION` / `WS_THICKFRAME`，系统负责动画。原生桥只改指定 HWND 的样式并刷新非客户区，不改位置/尺寸/焦点/Z 序，不改系统偏好。
 - DWM 非客户区绘制必须关闭，透明角外不能有系统矩形描边、填充或阴影；保留 caption/thick-frame 和过渡策略。Harness/启动器缘线宽为一个物理像素，按 DPR 换算，保留 alpha 抗锯齿。交互桌面检查四角，在激活、失焦、resize、还原后均必须通过。
+- 原生桥监听 `WM_DWMNCRENDERINGCHANGED`；系统通知非客户区绘制重新开启时，在该原生操作提交后关闭该层，不能只在创建窗口时设置一次或在通知内重入原生操作。关闭中的页面也保留透明窗口底色与 20px 剪影，最大化时圆角为 0。
 - 最大化/还原必须经 `ShowWindowAsync(SW_MAXIMIZE / SW_RESTORE)`，状态以 Windows `IsZoomed` 为准；Electron `isMaximized()` 可能只是工作区几何判定，不得仅以 `setBounds()` 或几何覆盖充当 Windows 壳窗最大化。
 - 桌宠及透明覆盖层保留自己的窗口类型；非 Windows 保留现有剪影路径。不得改系统动画偏好。
 - 改动实际影响窗口行为时，使用下面相关检查并观察动画；无关上游同步不自动触发窗口全套验证。
