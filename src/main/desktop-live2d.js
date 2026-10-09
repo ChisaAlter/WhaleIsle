@@ -433,10 +433,12 @@ function createLive2dPetManager(options = {}) {
     // can dip out mid-gesture (she sways or runs under a parked cursor),
     // and honoring that exit punches a click-through hole under a click
     // that is already on its way. Leaving the zone releases the hold.
-    const pos = petPosition();
-    const scale = Number.isFinite(state.settings?.scale) ? state.settings.scale : 1;
-    const zone = roamRect
-      || { x: pos.x, y: pos.y, w: PET_WIDTH * scale, h: PET_HEIGHT * scale };
+    let zone = roamRect;
+    if (!zone) {
+      const pos = petPosition();
+      const scale = Number.isFinite(state.settings?.scale) ? state.settings.scale : 1;
+      zone = { x: pos.x, y: pos.y, w: PET_WIDTH * scale, h: PET_HEIGHT * scale };
+    }
     const inPet = inside
       && point.x >= zone.x - CURSOR_PET_PAD && point.x <= zone.x + zone.w + CURSOR_PET_PAD
       && point.y >= zone.y - CURSOR_PET_PAD && point.y <= zone.y + zone.h + CURSOR_PET_PAD;

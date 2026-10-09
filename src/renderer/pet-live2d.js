@@ -1565,6 +1565,20 @@ function drawBubble(now) {
   } else {
     by = Math.min(by, hostBottom - bh - 12);
   }
+  // The status card is drawn above bubbles. Keep the text and tail outside
+  // its rectangle when the head anchor would place them behind the card.
+  if (panel && bx < panel.x + panel.w + 4 && bx + bw > panel.x - 4
+      && by + bh + (below ? 0 : 8) > panel.y - 4
+      && by - (below ? 8 : 0) < panel.y + panel.h + 4) {
+    const above = panel.y - bh - 16;
+    if (above >= hostY + 4) {
+      by = above;
+      below = false;
+    } else {
+      by = panel.y + panel.h + 16;
+      below = true;
+    }
+  }
   const tx = Math.min(Math.max(headX, bx + 16), bx + bw - 16);
   ctx2d.fillStyle = bubbleStyle.getPropertyValue('--dsw-alias-bg-layer-1');
   ctx2d.strokeStyle = bubbleStyle.getPropertyValue('--dsw-alias-border-l2');
@@ -3447,7 +3461,8 @@ function tickStill(now) {
     if (p.type === 'drop') { p.vy += 0.08; }
     if (p.type === 'zzz') { p.vx += 0.004; }
   }
-  if (stillCtl.alpha > 0.01 || feed || come || sleeping || particles.length
+  if (stillCtl.alpha > 0.01 || feed || lastFeedRect || come || sleeping
+      || particles.length || lastParticleRect
       || bubble || lastBubbleRect || panel || lastPanelRect
       || landP < 1 || throwP < 1 || wander.glide) {
     paint();
@@ -3465,7 +3480,14 @@ let lastBubbleRect = null;
 let lastPanelRect = null;
 let lastRigRect = null;
 let lastFullClear = 0;
+let renderLoopActive = false;
+let paintRequested = false;
 function paint() {
+  // Before mount finishes, events can paint the startup surface directly.
+  // Once running, the display loop commits their latest state together.
+  if (renderLoopActive) { paintRequested = true; } else { paintFrame(); }
+}
+function paintFrame() {
   const perfStart = petPerf.enabled ? performance.now() : 0;
   const liveAlpha = (session || rig.ready) ? 1 : 1 - stillCtl.alpha;
   if (!painted && liveAlpha <= 0.01) {
@@ -3564,9 +3586,11 @@ function paint() {
       if (p.y < py0) { py0 = p.y; }
       if (p.y > py1) { py1 = p.y; }
     }
+    // Stars sway 18px then draw a 14px glyph to its right; include that
+    // entire ink and antialiasing, not just the particle's nominal center.
     lastParticleRect = {
-      x: Math.floor(px0) - 30, y: Math.floor(py0) - 30,
-      w: Math.ceil(px1 - px0) + 60, h: Math.ceil(py1 - py0) + 60,
+      x: Math.floor(px0) - 36, y: Math.floor(py0) - 36,
+      w: Math.ceil(px1 - px0) + 72, h: Math.ceil(py1 - py0) + 72,
     };
     ctx2d.clearRect(lastParticleRect.x, lastParticleRect.y, lastParticleRect.w, lastParticleRect.h);
   }
@@ -3625,8 +3649,8 @@ async function renderFrame() {
   }
   inferBusy = true;
   const perfStart = petPerf.enabled ? performance.now() : 0;
+  let results;
   try {
-    let results;
     if (sessionOnGpu) {
       ort.env.webgpu.device.queue.writeBuffer(poseGpuBuffer, 0, pose);
       results = await session.run({ image: imageTensor, pose: poseTensor });
@@ -3643,14 +3667,15 @@ async function renderFrame() {
     } finally {
       // Outputs own native memory even when the download/mapping fails.
       for (const output of Object.values(results)) { output?.dispose?.(); }
+      results = undefined;
     }
     const px = outImage.data;
-    // Skip a fully-transparent frame (a bad readback would blank her out for
-    // a frame, which reads as flicker); keep the previous frame instead.
     let alphaMax = 0;
     for (let i = 3; i < px.length; i += 4) {
-      if (px[i] > alphaMax) { alphaMax = px[i]; }
+      if (px[i] > alphaMax) alphaMax = px[i];
     }
+    // Skip a fully-transparent frame (a bad readback would blank her out for
+    // a frame, which reads as flicker); keep the previous frame instead.
     if (alphaMax < 4) {
       return;
     }
@@ -3668,6 +3693,8 @@ async function renderFrame() {
   } catch (error) {
     console.warn('pet: inference failed', error);
   } finally {
+    // Readback/conversion can fail after run() allocated its outputs.
+    for (const output of Object.values(results || {})) { output?.dispose?.(); }
     inferBusy = false;
     if (petPerf.enabled) { petPerf.record('inference', performance.now() - perfStart); }
   }
@@ -4400,10 +4427,8 @@ async function mount() {
     LINES = store.global || {};
     wireDialogue();
   }).catch(() => {});
-  for (const name of ['pick-up', 'running', 'eat', 'sleep', 'react-head',
-    'angry', 'celebrate', 'star', 'greet', 'tail-swing']) {
-    void loadStill(name).catch(() => {});
-  }
+  // The panel avatar needs greet; fallback poses load on demand in setStill.
+  void loadStill('greet').catch(() => {});
   // Main process relays the persisted screen position; convert it to
   // canvas coordinates by subtracting the overlay's own origin.
   petShell.onLayout?.((layout) => {
@@ -4541,10 +4566,13 @@ async function mount() {
           lastFrameAt = now;
           void renderFrame();
         }
-        paint();
-      } else {
-        // Rig fallback: pure canvas — pose math + paint every rAF, no ONNX.
-        paint();
+      }
+      // Commit changed live frames/state together at display refresh. The
+      // rig animates in canvas, so it still needs every refresh. An unchanged
+      // live idle image can stay on the surface until the next inference.
+      if (!session || paintRequested) {
+        paintRequested = false;
+        paintFrame();
       }
     } catch (err) {
       // A bad frame must never kill the rAF chain — one throw used to
@@ -4553,6 +4581,7 @@ async function mount() {
     }
     requestAnimationFrame(loop);
   };
+  renderLoopActive = true;
   requestAnimationFrame(loop);
 }
 
