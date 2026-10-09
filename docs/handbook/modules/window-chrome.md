@@ -14,6 +14,7 @@
 
 ## 架构要点
 
+- 桌面主程序与独立启动器在 Chromium 初始化前设置 `force_high_performance_gpu`，多显卡设备优先使用独显进行 GPU 合成、栅格化和 WebGL 渲染；CSS/DOM 的布局与样式计算仍由 CPU 执行。没有独显时沿用 Electron 的可用渲染设备，实际选卡受系统与驱动影响；该偏好可能增加功耗，完整退出并重新启动后生效。
 - 主窗口与启动器保持透明自绘 20px 圆角与缘线；Windows 在首次显示前经 `native-window-motion`（Koffi / N-API）补回 caption/thick-frame 样式，以 `ShowWindowAsync` 切换最大化/还原、`IsZoomed` 读取状态，保留 DWM 动画和原生最大化状态，不切换成系统小圆角。`roundedCorners:false` 禁止第二层 OS 圆角裁切；补样式后设置 `DWMWA_NCRENDERING_POLICY=DWMNCRP_DISABLED`，消除 DWM 在透明角外绘制的矩形表面。缘线使用 `--dsh-window-hairline=1/devicePixelRatio px`，保持一个物理像素，颜色沿用 border-l2。原生桥不碰桌宠；非 Windows 保持原路径。只有未启用原生窗控的透明窗使用几何最大化回退。详见 [window-motion](../../features/window-motion.md) 与[纠正决定](../../decisions/implemented/bug-fix/2026-09-29-rounded-window-motion.md)。注入自愈保持不变。
 - `window.js` 管理 Harness BrowserView bounds 与覆盖；`desktop-pet.js` + `desktop-pets.js` 管理 Codex 宠物发现（`${CODEX_HOME:-~/.codex}/pets`、v1/v2 图集）、约 80–96px 宠物 BrowserView、右键换肤菜单、归一化位置和生命周期，feature 默认关闭。
 - `desktop-live2d.js` 管理 Live2D 宠物：覆盖虚拟屏的透明 `alwaysOnTop` BrowserWindow，窗口本身永不 `setPosition`（分层透明窗移动会闪空）；默认 `setIgnoreMouseEvents` 穿透，主进程 ~30Hz 轮询 `screen.getCursorScreenPoint()` 推 `shell:live2d-cursor`，渲染器按角色 alpha bounds 决定交互。页面经特权 `pet://` scheme 加载，渲染进程内跑 onnxruntime-web（WebGPU→WASM 回落）。
