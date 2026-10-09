@@ -53,27 +53,51 @@ test('closingCopy is Chinese by default and English when locale is en', () => {
   });
 });
 
-function paintFixture({ insertCSS = async () => {}, executeJavaScript = async () => {} } = {}) {
+function paintFixture({ insertCSS = async () => {}, executeJavaScript = async () => {}, transparent = false } = {}) {
   const timers = [];
   const cleared = [];
   const calls = [];
+  const backgrounds = [];
+  const chrome = { exports: {} };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'chrome.js'), 'utf8'), {
+    module: chrome,
+    __dirname,
+    require: name => {
+      if (name === 'electron') return {};
+      if (name === './config') return { loadConfig: () => ({}) };
+      if (name === './ipc-authorization') return { IPC_ROLES: {} };
+      if (name === './native-window-motion') return {};
+      return require(name);
+    },
+  });
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'closing-overlay.js'), 'utf8'), {
     module,
-    require: () => ({ currentTheme: () => ({ bg: '#151517', fg: '#f5f5f5', scheme: 'dark' }) }),
+    require: () => ({ ...chrome.exports, currentTheme: () => ({ bg: '#151517', fg: '#f5f5f5', scheme: 'dark' }) }),
     setTimeout: (callback, milliseconds) => { const timer = { callback, milliseconds }; timers.push(timer); return timer; },
     clearTimeout: timer => { cleared.push(timer); },
   });
   const win = {
     isDestroyed: () => false, isMinimized: () => false, isVisible: () => true,
-    setBackgroundColor: () => {}, focus: () => {},
+    setBackgroundColor: color => { backgrounds.push(color); }, focus: () => {},
     webContents: {
       insertCSS: css => { calls.push('css'); return insertCSS(css); },
       executeJavaScript: script => { calls.push('eval'); return executeJavaScript(script); },
     },
   };
-  return { show: module.exports.showClosingOverlay, win, timers, cleared, calls };
+  if (transparent) chrome.exports.markWindowTransparent(win);
+  return { show: module.exports.showClosingOverlay, win, timers, cleared, calls, backgrounds };
 }
+
+test('closing preserves shell alpha while ordinary opaque windows still paint their theme', async () => {
+  const shell = paintFixture({ transparent: true });
+  await shell.show(shell.win);
+  assert.deepEqual(shell.backgrounds, []);
+  assert.deepEqual(shell.calls, ['css', 'eval']);
+  const opaque = paintFixture();
+  await opaque.show(opaque.win);
+  assert.deepEqual(opaque.backgrounds, ['#151517']);
+});
 
 test('successful closing paint keeps CSS/eval order and clears the 500ms host timer', async () => {
   const f = paintFixture();

@@ -10,6 +10,9 @@ function overlayCss(theme) {
   align-items: center;
   justify-content: center;
   margin: 0;
+  border-radius: 20px;
+  corner-shape: round;
+  overflow: hidden;
   background: ${theme.bg};
   color: ${theme.fg};
   color-scheme: ${theme.scheme || 'dark'};
@@ -17,6 +20,9 @@ function overlayCss(theme) {
   -webkit-app-region: no-drag;
   pointer-events: all;
   user-select: none;
+}
+html[data-window-maximized] #${OVERLAY_ID} {
+  border-radius: 0;
 }
 #${OVERLAY_ID} .dshd-shell-closing-card {
   display: flex;
@@ -129,7 +135,7 @@ async function showClosingOverlay(win, locale) {
   if (!win || win.isDestroyed()) {
     return;
   }
-  const { currentTheme } = require('./chrome');
+  const { currentTheme, paintBackground } = require('./chrome');
   const theme = currentTheme();
   if (win.isMinimized()) {
     win.restore();
@@ -137,7 +143,7 @@ async function showClosingOverlay(win, locale) {
   if (!win.isVisible()) {
     win.show();
   }
-  win.setBackgroundColor(theme.bg);
+  paintBackground(win, theme.bg);
   win.focus();
   let paintTimeout;
   try {
