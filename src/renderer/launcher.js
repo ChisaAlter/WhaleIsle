@@ -256,8 +256,9 @@ function uninstallErrorHint(result) {
   return labels[result?.error] || result?.error || '无法启动卸载程序';
 }
 
-function renderVersionLead(installed) {
-  const version = installed?.version || '';
+function renderVersionLead(installed, current) {
+  const version = current || installed?.version || '';
+  $('ver-label').textContent = current ? '当前运行' : '本机版本';
   const runningFromSource = Boolean(installed?.runningFromSource);
   const label = version
     ? `v${String(version).replace(/^v/i, '')}${runningFromSource ? ' · 源码运行' : ''}`
@@ -266,7 +267,9 @@ function renderVersionLead(installed) {
   const sub = $('ver-now-sub');
   if (sub) {
     if (installed?.installPath) {
-      sub.textContent = `安装位置 ${installed.installPath}`;
+      sub.textContent = current && installed.registeredInstall
+        ? `本机安装${installed.version ? ` v${String(installed.version).replace(/^v/i, '')}` : ''} · 安装位置 ${installed.installPath}`
+        : `${current && !installed.registeredInstall ? '运行位置' : '安装位置'} ${installed.installPath}`;
       sub.hidden = false;
       sub.title = installed.installPath;
     } else {
@@ -334,7 +337,7 @@ const { plainReleaseNotes } = typeof module !== 'undefined' && module.exports
   ? require('../shared/release-notes')
   : window.releaseNotes;
 
-function releaseDetailHtml(row, delta) {
+function releaseDetailHtml(row, delta, running) {
   const meta = [];
   if (row.publishedAt) {
     meta.push(`发布于 ${String(row.publishedAt).slice(0, 10)}`);
@@ -352,12 +355,12 @@ function releaseDetailHtml(row, delta) {
   return `<div class="rel-detail" hidden>
     <div class="rel-detail-meta row-meta">${escapeHtml(meta.join(' · '))}</div>
     <p class="rel-notes">${notes ? escapeHtml(notes) : '该版本未提供更新说明。'}</p>
-    ${actions ? `<div class="rel-detail-actions">${actions}</div>` : (row.current ? '<div class="row-meta">当前已安装此版本</div>' : '')}
+    ${actions ? `<div class="rel-detail-actions">${actions}</div>` : (row.current ? `<div class="row-meta">当前${running ? '正在运行' : '已安装'}此版本</div>` : '')}
   </div>`;
 }
 
 function renderReleases(payload) {
-  renderVersionLead(payload?.installed);
+  renderVersionLead(payload?.installed, payload?.current);
   const list = $('release-list');
   const rows = payload && Array.isArray(payload.releases) ? payload.releases : [];
   const deltas = (payload && payload.deltas) || lastStatus?.deltas || {};
@@ -384,7 +387,7 @@ function renderReleases(payload) {
     }
   } else {
     const installed = payload && payload.installed;
-    const known = Boolean(installed && installed.version) && rows.length > 0;
+    const known = Boolean(payload?.current || installed?.version) && rows.length > 0;
     badgeEl.textContent = known ? '已是最新' : '';
     badgeEl.className = 'badge green';
     badgeEl.hidden = !known;
@@ -419,10 +422,10 @@ function renderReleases(payload) {
           <span class="row-title">${escapeHtml(row.tag || row.version || '')} ${marks}</span>
           <span class="row-meta">${escapeHtml(metaBits.join(' · '))}</span>
         </span>
-        ${row.current ? '<span class="row-meta">已安装</span>' : ''}
+        ${row.current ? `<span class="row-meta">${payload?.current ? '运行中' : '已安装'}</span>` : ''}
         <svg class="rel-chev" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 10.6 3.7 6.3l1.1-1.1L8 8.4l3.2-3.2 1.1 1.1z"/></svg>
       </button>
-      ${releaseDetailHtml(row, delta)}
+      ${releaseDetailHtml(row, delta, Boolean(payload?.current))}
     </li>`;
   }).join('');
   list.querySelectorAll('[data-rel-toggle]').forEach((line) => {
