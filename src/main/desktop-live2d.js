@@ -632,13 +632,20 @@ function createLive2dPetManager(options = {}) {
   // Two writers share one switch; merging here keeps them from punching
   // holes in each other's decisions.
   function applyInteractive() {
+    shapeStats.interactiveToggles += 1;
     setInteractive(rendererInteractive || cursorInPetFrame);
   }
 
   // A transparent desktop-sized HWND must never become a desktop-sized input
   // shield while the renderer is busy. Native regions also bound its visible
   // footprint; keep disjoint surfaces disjoint instead of enclosing their gaps.
+  //
+  // Diagnostics separate REQUESTS from APPLIED native shape changes: a
+  // de-duplicated update is cheap, and counting them together would make a
+  // renderer that re-sends identical geometry look like shape churn.
+  const shapeStats = { regionRequests: 0, regionApplied: 0, interactiveToggles: 0, hitRegionReports: 0 };
   function setSurfaceRegions(regions) {
+    shapeStats.regionRequests += 1;
     if (!win || win.isDestroyed?.() || typeof win.setShape !== 'function'
       || process.platform === 'darwin' || !Array.isArray(regions)) { return; }
     const bounds = win.getBounds();
@@ -657,6 +664,7 @@ function createLive2dPetManager(options = {}) {
     if (key === surfaceRegionKey) { return; }
     win.setShape(shape);
     surfaceRegionKey = key;
+    shapeStats.regionApplied += 1;
   }
 
   function setInteractive(next) {
@@ -1004,6 +1012,7 @@ function createLive2dPetManager(options = {}) {
     } catch {}
     ipcMain.handle('shell:live2d-interactive', (event, payload) => {
       assertAuthorized(event);
+      if (Array.isArray(payload?.hitRegions)) { shapeStats.hitRegionReports += 1; }
       setSurfaceRegions(payload?.regions);
       setHitRegions(payload?.hitRegions);
       if (typeof payload?.interactive === 'boolean') {
@@ -1344,6 +1353,10 @@ function createLive2dPetManager(options = {}) {
     getWindow: () => win,
     recreateWindow,
     isInteractive: () => interactive,
+    // Opt-in counters for scripts/measure-whale-cdp.mjs: separates renderer
+    // requests from applied native changes so identical geometry is not
+    // mistaken for shape churn.
+    getDiagnostics: () => ({ ...shapeStats }),
   };
 }
 

@@ -145,6 +145,7 @@ function loadPet() {
   const source = SOURCE.replace(/mount\(\)\.catch[\s\S]*$/, '');
   let now = 100000;
   let rand = () => 0.5;
+  const rafQueue = [];
   const mathStub = {};
   for (const key of Object.getOwnPropertyNames(Math)) {
     mathStub[key] = Math[key];
@@ -169,7 +170,10 @@ function loadPet() {
     getComputedStyle: () => ({
       getPropertyValue: (name) => TOKEN_STYLE[name] || '',
     }),
-    requestAnimationFrame: () => 0,
+    // Presentations are coalesced onto the next animation frame, so the
+    // harness must be able to drive that frame explicitly. `flushFrames()`
+    // runs the queued callbacks with the harness clock as the timestamp.
+    requestAnimationFrame: (cb) => { rafQueue.push(cb); return rafQueue.length; },
     setTimeout, clearTimeout, setInterval, clearInterval,
     console,
     Math: mathStub,
@@ -189,6 +193,16 @@ function loadPet() {
     run: (expr) => vm.runInContext(expr, context),
     setNow: (v) => { now = v; },
     now: () => now,
+    // Run queued animation-frame callbacks at the harness clock. Tests that
+    // assert on painted output call this after the action under test.
+    flushFrames: (times = 1, advanceMs = 16) => {
+      for (let i = 0; i < times; i += 1) {
+        const due = rafQueue.splice(0, rafQueue.length);
+        if (!due.length) { break; }
+        now += advanceMs;
+        for (const cb of due) { cb(now); }
+      }
+    },
     setRandom: (fn) => { rand = fn; },
     resetRandom: () => { rand = () => 0.5; },
   };
@@ -507,6 +521,9 @@ test('paint clears before draws and an expired bubble still gets a cleanup paint
   // A steady bubble is static: it repaints on its change edges (push,
   // expiry) instead of forcing a tickStill paint every frame.
   pet.run(`pushBubble({ text: '测试气泡', until: ${pet.now() + 1000}, priority: 1 })`);
+  // Presentations are coalesced onto the next animation frame; the paint the
+  // push requests lands there.
+  pet.flushFrames();
   const first = pet.canvas.ctx.ops.length;
   assert.ok(first > 0, 'paint ran on bubble push');
   const drawIdx = pet.canvas.ctx.ops.findIndex((op) => op[0] === 'fill' || op[0] === 'drawImage' || op[0] === 'fillText');
@@ -519,6 +536,9 @@ test('paint clears before draws and an expired bubble still gets a cleanup paint
   pet.setNow(pet.now() + 2000);
   pet.canvas.ctx.ops.length = 0;
   pet.run('tickStill(performance.now())');
+  // Expiry requests a cleanup presentation; run the coalesced frame so the
+  // cleared region is actually recorded.
+  pet.flushFrames();
   const clears = pet.canvas.ctx.ops.filter((op) => op[0] === 'clearRect');
   assert.ok(clears.some((op) => op[1] === rect.x && op[2] === rect.y
     && op[3] === rect.w && op[4] === rect.h),
@@ -1077,6 +1097,7 @@ test('status card raster is rebuilt only when its content changes', () => {
     globalThis.__realDraw = drawPanel;
     drawPanel = function () { __paints += 1; return __realDraw(); };
     openPanel();`);
+  pet.flushFrames();
   assert.ok(pet.run('panelCache.key'), 'raster built on open');
   const key = pet.run('panelCache.key');
   const paints = pet.run('__paints');
@@ -1554,6 +1575,12 @@ test('notify bubble pins until the ✕ click — nothing preempts or expires it'
   pet.run('tickStill(performance.now())');
   assert.equal(pet.run('bubble.pinned'), true);
   // The pin paints and registers its ✕ hit box.
+  // A pinned bubble is pushed through the presentation owner, so its ink
+  // rect (and therefore its place in the interactive zone) only exists after
+  // the coalesced frame actually runs. Asserting before the frame ran tested
+  // the scheduler's timing, not the product contract.
+  pet.run('requestFrame()');
+  pet.flushFrames();
   pet.run('drawBubble(performance.now())');
   assert.ok(pet.run('bubbleCloseRect && bubbleCloseRect.w > 0'), '✕ hit box registered');
   // The bubble joins the interactive zone so the ✕ actually takes clicks.
@@ -1792,4 +1819,81 @@ test('autonomous sad and shy expressions follow mood and affection', () => {
   assert.equal(flourish(80, 0), 'happy-tail');
   assert.equal(flourish(80, 4), 'shy');
   assert.equal(flourish(20, 0), 'sad');
+});
+
+// ── presentation ownership ──
+// The 15 ms presentation budget used to be cosmetic: 22 producers called
+// paint() directly, so the pet composited ~87 times a second on a 15 ms
+// budget. These tests pin the contract that ONE owner gates presentations and
+// that a burst of producers collapses into a single frame.
+test('presentation budget cannot be bypassed by direct paint callers', () => {
+  const pet = loadPet();
+  pet.run('painted = true; settings = settings || {}; __paints = 0;'
+    + ' __realPaint = paint;'
+    + ' paint = function () { __paints += 1; return __realPaint(); };');
+  // A 60 Hz display for one second: 60 rAF ticks, and a producer asking for a
+  // frame on EVERY one of them.
+  for (let i = 0; i < 60; i += 1) {
+    pet.flushFrames(1, 16);
+    pet.run('requestFrame()');
+  }
+  pet.flushFrames(1, 16);
+  const paints = pet.run('__paints');
+  // 1000ms / 15ms ceiling => at most ~67 presentations, never 60 producers + 1.
+  assert.ok(paints > 0, 'presentations still happen');
+  assert.ok(paints <= 68, `presentation budget respected, got ${paints}`);
+});
+
+test('a burst of producer requests coalesces into one pending presentation', () => {
+  const pet = loadPet();
+  pet.run('painted = true; settings = settings || {}; __paints = 0;'
+    + ' __realPaint = paint;'
+    + ' paint = function () { __paints += 1; return __realPaint(); };');
+  pet.run('requestFrame(); requestFrame(); requestFrame(); requestFrame();');
+  pet.flushFrames(1, 16);
+  assert.equal(pet.run('__paints'), 1, 'four requests, one presentation');
+});
+
+test('diagnostic overrides drive the budgets and restore to shipped defaults', () => {
+  const pet = loadPet();
+  const applied = pet.run('__setPerfOverrides({ presentPerSecond: 30, inferPerSecond: 10, superResolution: false })');
+  assert.equal(applied.presentPerSecond, 30);
+  assert.equal(applied.inferPerSecond, 10);
+  assert.equal(applied.superResolution, false);
+  pet.setNow(100000);
+  assert.ok(Math.abs(pet.run('presentCeilingMs(100000)') - 1000 / 30) < 0.001,
+    'presentation override applies');
+  assert.ok(Math.abs(pet.run('inferenceGapMs(100000)') - 1000 / 10) < 0.001,
+    'inference override applies');
+  const restored = pet.run('__setPerfOverrides({})');
+  assert.equal(restored.presentPerSecond, null);
+  assert.equal(restored.inferPerSecond, null);
+  assert.equal(restored.superResolution, null);
+  assert.ok(Math.abs(pet.run('presentCeilingMs(100000)') - 15) < 0.001,
+    'shipped presentation default restored');
+  assert.ok(Math.abs(pet.run('inferenceGapMs(100000)') - 50) < 0.001,
+    'shipped inference default restored');
+});
+
+test('every panel close names its reason so an unexplained close is provable', () => {
+  const pet = loadPet();
+  pet.run('panel = { x: 10, y: 10, w: 100, h: 100, cells: [], hover: -1, feedHover: false };'
+    + ' closePanel("unit-test");');
+  const entries = pet.run('panelTrace.entries.map((e) => e.event + ":" + e.detail)');
+  assert.ok(entries.includes('close:unit-test'), 'close reason recorded');
+  // Bounded: a long soak must not grow the trace without limit.
+  pet.run('for (let i = 0; i < 200; i += 1) { tracePanel("open", { i }); }');
+  const len = pet.run('panelTrace.entries.length');
+  assert.ok(len <= 120, `trace bounded, got ${len}`);
+});
+
+test('perf counts keep counting after the timing-sample cap is reached', () => {
+  const pet = loadPet();
+  pet.run('window.__dshdPetPerf.start();');
+  pet.run('for (let i = 0; i < 100; i += 1) { petPerf.bump("probe");'
+    + ' petPerf.record("probeMs", 1); }');
+  const snap = pet.run('window.__dshdPetPerf.snapshot()');
+  assert.equal(snap.counts.probe, 100, 'count is exact');
+  assert.ok(snap.probeMs, 'timing bucket still present');
+  pet.run('window.__dshdPetPerf.stop()');
 });
