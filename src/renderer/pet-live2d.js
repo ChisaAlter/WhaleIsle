@@ -1655,10 +1655,14 @@ function tracePanel(event, detail) {
 // no holes punched by her clear rect, while the per-frame cost collapses to
 // one clearRect + one drawImage.
 const PANEL_PAD_MARGIN = 20; // raster + clear margin around the card box
-const PANEL_CLOSE_R = 9;     // ✕ affordance radius (overhangs the top-right)
-// How far the ✕ badge reaches above the card's top edge — the card is kept
-// clear of the display top by this much so the affordance never clips off.
-const PANEL_CLOSE_TOP = PANEL_CLOSE_R + 5;
+// The ✕ lives INSIDE the header row, on the title line's right edge, and only
+// appears while the pointer is over the card. It is a quiet affordance, not a
+// floating badge hanging off the corner: nothing pokes out of the silhouette,
+// so the card reads as one card instead of a card with an extra button glued
+// to it. The header reserves its width even when hidden, so nothing reflows.
+const PANEL_CLOSE_SIZE = 22;  // square hit/draw box, header-aligned
+const PANEL_CLOSE_X = PANEL_W - PANEL_PAD - PANEL_CLOSE_SIZE;
+const PANEL_CLOSE_Y = PANEL_PAD;
 const panelCache = { canvas: null, ctx: null, key: '', x: 0, y: 0, w: 0, h: 0 };
 
 // The ✕ close affordance: an explicit dismissal that does not depend on the
@@ -1666,12 +1670,24 @@ const panelCache = { canvas: null, ctx: null, key: '', x: 0, y: 0, w: 0, h: 0 };
 // strayed past the body/panel gap, which made its buttons unclickable).
 function panelCloseRect() {
   if (!panel) { return null; }
-  return { x: panel.x + panel.w - 14, y: panel.y - 14, w: 18, h: 18 };
+  return {
+    x: panel.x + PANEL_CLOSE_X,
+    y: panel.y + PANEL_CLOSE_Y,
+    w: PANEL_CLOSE_SIZE,
+    h: PANEL_CLOSE_SIZE,
+  };
 }
 function panelCloseHit(x, y) {
   const r = panelCloseRect();
   return Boolean(r) && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 }
+
+// Reveal state for the header ✕. Kept beside the card so the raster key picks
+// it up. The glyph is quiet while the pointer is anywhere on the card, then
+// stresses when the pointer enters the hit box — a card with no visible close
+// control is just as broken as one with a glued-on badge.
+let closeHover = false;
+let closeVisible = false;
 
 // 大数简写：≥1亿 → x.x亿（去尾零），≥1万 → x.x万，以下原样本地化。
 function fmtTokens(n) {
@@ -1708,9 +1724,12 @@ function openPanel() {
     x = b.x - PANEL_W - 8;
   }
   x = Math.min(Math.max(x, host.x + 4), host.x + host.width - PANEL_W - 4);
-  const y = Math.min(Math.max(b.y, hostY + PANEL_CLOSE_TOP),
+  // The ✕ is inside the card now, so the card needs no headroom above it.
+  const y = Math.min(Math.max(b.y, hostY + 4),
     hostY + host.height - h - 4);
   panel = { x, y, w: PANEL_W, h, cells: panelCells(), hover: -1, feedHover: false };
+  closeHover = false;
+  closeVisible = false;
   tracePanel('open', { x: Math.round(x), y: Math.round(y) });
   console.log(`pet: panel open x=${x} y=${y} w=${PANEL_W} h=${h} bounds=${JSON.stringify(b)}`);
   // Fresh snapshot so the feedable count and stats are real, not stale.
@@ -1747,6 +1766,7 @@ function panelCacheKey() {
   const css = (name) => bubbleStyle.getPropertyValue(name);
   return [
     panel.x, panel.y, panel.w, panel.h, panel.hover, panel.feedHover ? 1 : 0,
+    closeHover ? 1 : 0, closeVisible ? 1 : 0,
     sleeping ? 1 : 0, dshState,
     settings.lookAvailable === true ? 1 : 0,
     window.devicePixelRatio || 1, stillEpoch,
@@ -2783,8 +2803,12 @@ function drawPanel() {
     ctx2d.font = `600 10px ${font}`;
     const pill = `Lv.${g.level} ${g.levelName}`;
     const pw = ctx2d.measureText(pill).width + 14;
+    // The header's right edge belongs to the ✕, so the badge ends before it
+    // instead of underneath. The ✕ is hidden until hover, but the badge must
+    // not shift when it appears.
+    const badgeRight = p.x + PANEL_CLOSE_X - 6;
     ctx2d.beginPath();
-    ctx2d.roundRect(right - pw, p.y + PANEL_PAD + 1, pw, 16, 8);
+    ctx2d.roundRect(badgeRight - pw, p.y + PANEL_PAD + 1, pw, 16, 8);
     ctx2d.fillStyle = lvlColor;
     ctx2d.globalAlpha = 0.18;
     ctx2d.fill();
@@ -2792,10 +2816,10 @@ function drawPanel() {
     ctx2d.strokeStyle = lvlColor;
     ctx2d.lineWidth = 1;
     ctx2d.beginPath();
-    ctx2d.roundRect(right - pw, p.y + PANEL_PAD + 1, pw, 16, 8);
+    ctx2d.roundRect(badgeRight - pw, p.y + PANEL_PAD + 1, pw, 16, 8);
     ctx2d.stroke();
     ctx2d.fillStyle = lvlColor;
-    mid(pill, right - pw + 7, p.y + PANEL_PAD + 9);
+    mid(pill, badgeRight - pw + 7, p.y + PANEL_PAD + 9);
   }
   // Relation line: filled/open hearts + stage name.
   ctx2d.font = `10px ${font}`;
@@ -3030,32 +3054,54 @@ function drawPanel() {
     mid(cell.label, left + iw + 4 + lw / 2, cy + PANEL_CHIP_H / 2, 'center');
     ctx2d.globalAlpha = 1;
   });
-  // ── explicit dismissal: a ✕ badge overhanging the top-right corner ──
+  // ── explicit dismissal: a ✕ inside the header, revealed on hover ──
   // The card no longer dies when the pointer strays; this is the affordance
   // that closes it (alongside the right-click toggle and every action chip).
-  const cc = { x: p.x + p.w - 5, y: p.y - 5 };
-  ctx2d.globalAlpha = 1;
-  ctx2d.beginPath();
-  ctx2d.arc(cc.x, cc.y, PANEL_CLOSE_R, 0, Math.PI * 2);
-  ctx2d.fillStyle = css('--dsw-alias-bg-layer-1');
-  ctx2d.fill();
-  ctx2d.strokeStyle = css('--dsw-alias-border-l2');
-  ctx2d.lineWidth = 1;
-  ctx2d.beginPath();
-  ctx2d.arc(cc.x, cc.y, PANEL_CLOSE_R, 0, Math.PI * 2);
-  ctx2d.stroke();
-  ctx2d.strokeStyle = label;
-  ctx2d.lineWidth = 1.5;
-  ctx2d.beginPath();
-  ctx2d.moveTo(cc.x - 3.5, cc.y - 3.5);
-  ctx2d.lineTo(cc.x + 3.5, cc.y + 3.5);
-  ctx2d.moveTo(cc.x + 3.5, cc.y - 3.5);
-  ctx2d.lineTo(cc.x - 3.5, cc.y + 3.5);
-  ctx2d.stroke();
+  // It sits in the header's own row, so it is part of the card rather than a
+  // badge glued outside it, and it stays hidden until the pointer is over the
+  // card so an idle card is not wearing a permanent button. Quiet while the
+  // pointer is on the card; emphasized only when the hit box itself is hot.
+  if (closeVisible || closeHover) {
+    const cr = panelCloseRect();
+    const cx = cr.x + cr.w / 2;
+    const cy = cr.y + cr.h / 2;
+    // Quiet state must stay readable on the white card. Theme layer-2 is the
+    // same white as the card body, so a filled quiet chip vanishes; draw only
+    // a light hairline + secondary glyph until the hit box itself is hot.
+    ctx2d.beginPath();
+    ctx2d.roundRect(cr.x, cr.y, cr.w, cr.h, 6);
+    if (closeHover) {
+      ctx2d.globalAlpha = 0.95;
+      ctx2d.fillStyle = css('--dsw-alias-state-error-primary');
+      ctx2d.fill();
+      ctx2d.strokeStyle = css('--dsw-alias-state-error-primary');
+      ctx2d.lineWidth = 1;
+      ctx2d.stroke();
+      ctx2d.strokeStyle = css('--dsw-alias-bg-layer-1');
+    } else {
+      ctx2d.globalAlpha = 1;
+      ctx2d.strokeStyle = css('--dsw-alias-border-l2');
+      ctx2d.lineWidth = 1;
+      ctx2d.stroke();
+      ctx2d.strokeStyle = css('--dsw-alias-label-secondary');
+      ctx2d.globalAlpha = 0.85;
+    }
+    ctx2d.lineWidth = 1.5;
+    ctx2d.lineCap = 'round';
+    const arm = PANEL_CLOSE_SIZE * 0.19;
+    ctx2d.beginPath();
+    ctx2d.moveTo(cx - arm, cy - arm);
+    ctx2d.lineTo(cx + arm, cy + arm);
+    ctx2d.moveTo(cx + arm, cy - arm);
+    ctx2d.lineTo(cx - arm, cy + arm);
+    ctx2d.stroke();
+    ctx2d.lineCap = 'butt';
+    ctx2d.globalAlpha = 1;
+  }
   ctx2d.restore();
   // Clear margin must cover every painted pixel: 1px hairline stroke +
   // antialiased corners + emoji ink that can exceed its advance box, plus the
-  // ✕ badge that hangs above the card's top-right corner.
+  // in-header ✕ (kept inside the card box, so the existing pad is enough).
   return { x: p.x - PANEL_PAD_MARGIN, y: p.y - PANEL_PAD_MARGIN,
     w: p.w + PANEL_PAD_MARGIN * 2, h: p.h + PANEL_PAD_MARGIN * 2 };
 }
@@ -4217,10 +4263,20 @@ function onCursorMove(clientX, clientY, buttons) {
   if (panel) {
     const h = panelCellAt(clientX, clientY);
     const fb = feedButtonHit(clientX, clientY);
-    if (h !== panel.hover || fb !== panel.feedHover) {
+    // The header ✕ only exists while the pointer is over the card, so its
+    // reveal state is part of the same hover edge as the chips.
+    const onCard = clientX >= panel.x && clientX <= panel.x + panel.w
+      && clientY >= panel.y && clientY <= panel.y + panel.h;
+    const nearClose = onCard && panelCloseHit(clientX, clientY);
+    if (h !== panel.hover || fb !== panel.feedHover
+        || nearClose !== closeHover || onCard !== closeVisible) {
       panel.hover = h;
       panel.feedHover = fb;
-      invalidate();
+      closeHover = nearClose;
+      closeVisible = onCard;
+      // Hover edges must schedule a presentation: marking dirty alone leaves
+      // the cached raster on screen until an unrelated paint happens.
+      requestFrame();
     }
   }
   const bounds = petBodyBounds();

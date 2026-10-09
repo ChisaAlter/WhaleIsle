@@ -1036,8 +1036,47 @@ test('the ✕ dismissal stays on-screen when she is parked at the display top', 
     openPanel();`);
   const r = pet.run('panelCloseRect()');
   assert.ok(r, 'card is open');
-  assert.ok(r.y >= 0, `✕ badge must not clip off the display top (y=${r.y})`);
+  assert.ok(r.y >= 0, `✕ must not clip off the display top (y=${r.y})`);
   assert.ok(r.y + r.h <= 600, 'and must stay inside the bottom edge');
+});
+
+test('the ✕ lives inside the card header instead of hanging off its corner', () => {
+  const pet = loadPet();
+  pet.run(`homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    drawPos = { x: 560, y: 310 };
+    charRect = { x: 0, y: 0, right: 240, bottom: 260 };
+    openPanel();`);
+  const r = pet.run('panelCloseRect()');
+  const p = pet.run('panel');
+  // Inside the card on every side: the old badge deliberately overhung the
+  // top-right corner, which read as a second control glued onto the card.
+  assert.ok(r.x >= p.x, '✕ starts at or after the card left edge');
+  assert.ok(r.x + r.w <= p.x + p.w, '✕ ends at or before the card right edge');
+  assert.ok(r.y >= p.y, '✕ starts at or below the card top edge');
+  assert.ok(r.y + r.h <= p.y + p.h, '✕ ends at or above the card bottom edge');
+  // It shares the header row rather than sitting above it.
+  assert.equal(r.y - p.y, 12, '✕ sits one pad below the card top, inside the header');
+});
+
+test('the ✕ is hidden until the pointer is over it, then highlights', () => {
+  const pet = loadPet();
+  pet.run(`homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    drawPos = { x: 560, y: 310 };
+    charRect = { x: 0, y: 0, right: 240, bottom: 260 };
+    openPanel();`);
+  assert.equal(pet.run('closeVisible'), false, 'hidden when the card was just opened');
+  assert.equal(pet.run('closeHover'), false, 'not emphasized when the card was just opened');
+  const r = pet.run('panelCloseRect()');
+  // Far from the ✕ but still on the card: quiet glyph, not emphasized.
+  pet.run(`onCursorMove(${r.x - 60}, ${r.y + 60}, 0)`);
+  assert.equal(pet.run('closeVisible'), true, 'a pointer elsewhere on the card reveals the quiet ✕');
+  assert.equal(pet.run('closeHover'), false, 'but does not emphasize it');
+  // On the ✕: emphasized.
+  pet.run(`onCursorMove(${r.x + r.w / 2}, ${r.y + r.h / 2}, 0)`);
+  assert.equal(pet.run('closeVisible'), true, 'still visible over the ✕');
+  assert.equal(pet.run('closeHover'), true, 'hovering the ✕ emphasizes it');
+  assert.equal(pet.run('panelCloseHit(' + (r.x + r.w / 2) + ',' + (r.y + r.h / 2) + ')'), true,
+    'and the same point is clickable');
 });
 
 test('right-click toggles the card and neutral clicks leave it open', () => {
