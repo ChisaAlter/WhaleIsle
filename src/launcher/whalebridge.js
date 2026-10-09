@@ -113,7 +113,8 @@ function createWhaleBridgeService(deps = {}) {
         const source = require('./release-source');
         const saved = require('../main/config').loadConfig().downloadRoute;
         const route = source.normalizeRoute(saved) || 'github';
-        const releases = await fetchJson(`${source.ROUTES[route].apiBase}/releases?${route === 'cnb' ? 'page_size' : 'per_page'}=100`);
+        const releases = await fetchJson(`${source.ROUTES[route].apiBase}/releases?${route === 'cnb' ? 'page_size' : 'per_page'}=100`,
+          route === 'cnb' ? { headers: { Accept: 'application/vnd.cnb.api+json' } } : undefined);
         const release = (Array.isArray(releases) ? releases : []).filter(r => !r.draft && !r.prerelease && r.tag_name?.startsWith(TAG_PREFIX))
           .sort((a, b) => compareVersions(b.tag_name.slice(TAG_PREFIX.length), a.tag_name.slice(TAG_PREFIX.length)))[0];
         if (!release) throw new Error('鲸桥组件尚未发布到当前线路');
