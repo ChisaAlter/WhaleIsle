@@ -13,6 +13,9 @@ const path = require('path');
 const MAX_BYTES = 512 * 1024;
 const ROTATE_KEEP_BYTES = Math.floor(MAX_BYTES / 2);
 const TAIL_LINES = 200;
+const WRITE_HIGH_WATER_BYTES = 256 * 1024;
+const WRITE_LOW_WATER_BYTES = 64 * 1024;
+const writers = new Map();
 
 function noop() {}
 
@@ -22,46 +25,83 @@ function bootLogPath(stateDir) {
 
 // Drop the oldest half once over cap, restarting on a line boundary so the
 // kept tail stays parseable evidence instead of a mid-token fragment.
-function rotateTail(file, fsm) {
-  const buf = fsm.readFileSync(file);
+async function rotateTail(file, fsp) {
+  const buf = await fsp.readFile(file);
   let tail = buf.subarray(Math.max(0, buf.length - ROTATE_KEEP_BYTES));
   const newline = tail.indexOf(0x0a);
   if (newline >= 0 && newline < tail.length - 1) {
     tail = tail.subarray(newline + 1);
   }
-  fsm.writeFileSync(file, tail);
+  await fsp.writeFile(file, tail);
   return tail.length;
 }
 
 function attachBootLog(child, file, deps = {}) {
-  const fsm = deps.fs || fs;
+  const fsp = (deps.fs || fs).promises;
   if (!file) {
-    return { write: noop, line: noop };
+    return { write: noop, line: noop, flush: async () => ({ ok: true }) };
   }
   let size = 0;
-  try {
-    fsm.mkdirSync(path.dirname(file), { recursive: true });
-    fsm.writeFileSync(file, '');
-  } catch {
-    // Fresh-boot truncate failed (ACL, dir-is-file): appends below still try
-    // per chunk, each independently guarded, so a transient deny is not fatal.
-  }
+  let queuedBytes = 0;
+  let lastError = null;
+  let paused = false;
+  let closed = false;
+  let resolveClosed;
+  const whenClosed = new Promise((resolve) => { resolveClosed = resolve; });
+  const streams = [child && child.stdout, child && child.stderr].filter(Boolean);
+  const failed = (error) => { lastError = error; };
+  let pending = Promise.resolve().then(async () => {
+    await fsp.mkdir(path.dirname(file), { recursive: true });
+    await fsp.writeFile(file, '');
+  }).catch(failed);
+  const flowControl = () => {
+    if (!paused && queuedBytes >= WRITE_HIGH_WATER_BYTES) {
+      paused = true;
+      for (const stream of streams) stream.pause?.();
+    } else if (paused && queuedBytes <= WRITE_LOW_WATER_BYTES) {
+      paused = false;
+      for (const stream of streams) stream.resume?.();
+    }
+  };
   const write = (chunk) => {
-    try {
-      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
-      fsm.appendFileSync(file, buf);
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+    queuedBytes += buf.length;
+    flowControl();
+    pending = pending.then(async () => {
+      await fsp.appendFile(file, buf);
       size += buf.length;
       if (size > MAX_BYTES) {
-        size = rotateTail(file, fsm);
+        size = await rotateTail(file, fsp);
       }
-    } catch {
-      // EACCES/EPERM/ENOENT: best-effort evidence, never a spawn-path hazard.
-    }
+    }).catch(failed).finally(() => {
+      queuedBytes -= buf.length;
+      flowControl();
+    });
+    return pending;
   };
   const line = (text) => {
     write(`\n[${new Date().toISOString()}] ${String(text)}\n`);
   };
-  for (const stream of [child && child.stdout, child && child.stderr]) {
+  const flush = async () => {
+    // A child can exit with unread bytes still held by our backpressure.
+    // Its close event follows stdio drainage; a healthy detached runtime must
+    // not be awaited here because it deliberately continues running.
+    if (!closed && (child?.exitCode != null || child?.signalCode != null)) await whenClosed;
+    await pending;
+    // Logging remains best effort; callers can observe a write error without
+    // replacing the runtime's actual launch verdict with a logging failure.
+    return lastError ? { ok: false, error: lastError } : { ok: true };
+  };
+  const writer = { write, line, flush };
+  writers.set(file, writer);
+  child?.once?.('close', () => {
+    closed = true;
+    resolveClosed();
+    void flush().then(() => {
+      if (writers.get(file) === writer) writers.delete(file);
+    });
+  });
+  for (const stream of streams) {
     if (stream && typeof stream.on === 'function') {
       stream.on('data', write);
       stream.on('error', noop);
@@ -72,7 +112,7 @@ function attachBootLog(child, file, deps = {}) {
       }
     }
   }
-  return { write, line };
+  return writer;
 }
 
 /**
@@ -94,10 +134,28 @@ function readBootLogTail(file, options = {}, deps = {}) {
   }
 }
 
+async function readBootLogTailAsync(file, options = {}, deps = {}) {
+  const fsp = (deps.fs || fs).promises;
+  try {
+    await writers.get(file)?.flush();
+    const text = await fsp.readFile(file, 'utf8');
+    return text.split('\n').map((row) => row.replace(/\r$/, ''))
+      .filter((row) => row.trim().length > 0).slice(-(options.maxLines ?? TAIL_LINES));
+  } catch {
+    return [];
+  }
+}
+
+async function flushBootLogs() {
+  return Promise.all([...writers.values()].map((writer) => writer.flush()));
+}
+
 module.exports = {
   MAX_BYTES,
   TAIL_LINES,
   bootLogPath,
   attachBootLog,
   readBootLogTail,
+  readBootLogTailAsync,
+  flushBootLogs,
 };

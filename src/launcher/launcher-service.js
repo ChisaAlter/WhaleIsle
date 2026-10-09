@@ -78,22 +78,23 @@ function createLauncherService(deps) {
   } = deps;
   const protection = taskProtection || getTaskProtection();
 
-  function collectForensics() {
+  async function collectForensics(snapshot = {}) {
     const listed = listProfilePlugins();
-    const config = loadPluginConfig();
+    const config = snapshot.config || loadPluginConfig();
     const stateDir = desktopStateDir(app);
-    const lastStart = readLastDesktopStart(stateDir);
+    const lastStart = snapshot.lastStart || readLastDesktopStart(stateDir);
     // In slim mode dsh.logs is a stub: the captured external-runtime boot log
     // plus the kernel log tail the runtime stamps into last-desktop-start.json
     // are what carry plugin loader errors into suspect attribution there.
-    const bootTail = forensicsLog.readBootLogTail(forensicsLog.bootLogPath(stateDir));
-    const logs = (Array.isArray(dsh?.logs)
+    const liveLogs = (Array.isArray(dsh?.logs)
       ? dsh.logs.map((row) => (typeof row === 'string' ? row : row.message || row.line || String(row)))
-      : []).concat(bootTail, lastStart.logTail || []);
-    const corpus = [logs.join('\n'), lastStart.error].filter(Boolean).join('\n');
+      : []);
     const recovery = harness?.pluginRecovery && typeof harness.pluginRecovery === 'object'
-      ? harness.pluginRecovery
+      ? { ...harness.pluginRecovery }
       : (config.pluginRecovery || {});
+    const bootTail = await forensicsLog.readBootLogTailAsync(forensicsLog.bootLogPath(stateDir));
+    const logs = liveLogs.concat(bootTail, lastStart.logTail || []);
+    const corpus = [logs.join('\n'), lastStart.error].filter(Boolean).join('\n');
     return inspectPlugins({
       logs,
       lastStartError: lastStart.error,
@@ -364,8 +365,8 @@ function createLauncherService(deps) {
     return runtimeInstall.installedInfo(options);
   }
 
-  function configuredRoute() {
-    return runtimeInstall.configuredRoute();
+  function configuredRoute(config) {
+    return runtimeInstall.configuredRoute(config ? { loadConfig: () => config } : {});
   }
 
   function desktopSnapshot() {
@@ -597,34 +598,32 @@ function createLauncherService(deps) {
       const disabled = (pluginConfigIO.load().disabledPlugins || []).filter((item) => item !== raw);
       pluginConfigIO.save({ disabledPlugins: disabled });
     }
-    return { ...result, kernelStopped, forensics: collectForensics() };
+    return { ...result, kernelStopped, forensics: await collectForensics() };
     } finally {
       releaseMaintenanceSlot(guard);
     }
   }
 
   return {
-    status() {
+    async status() {
+      const config = loadConfig();
       const lastStart = readLastDesktopStart(desktopStateDir(app));
-      const forensics = collectForensics();
-      // Peek only: this poll also runs from the pre-created *hidden* launcher,
+      const forensics = collectForensics({ config: isLauncherPackage() ? loadPluginConfig() : config, lastStart });
+      // Peek only: status is also requested by the pre-created hidden launcher,
       // and the previous drain-on-status lost a late result before the user
       // ever saw the window. The main process drains it when the window is
       // really visible (`openLauncher` / window `show`), which is also where
       // the ask's generation and quit guards live.
-      return {
-        config: configPayload(loadConfig()),
+      const status = {
+        config: configPayload(config),
         desktop: desktopSnapshot(),
         lastStart,
-        recovery: forensics.recovery,
-        forensicsSummary: forensics.summary,
-        forensics,
         version: update.currentVersion(),
         pendingUpdateCheck: peekParkedUpdateCheck(),
         // Managed-runtime surface: which desktop install exists, which mirror
         // feeds it, and whether this process is the slim launcher package.
         installed: installedInfo(),
-        downloadRoute: configuredRoute(),
+        downloadRoute: configuredRoute(config),
         routes: releaseSource.listRoutes(),
         launcherPackage: isLauncherPackage(),
         // Lane-owned status keys (frozen contract §5.1): each contributor
@@ -637,6 +636,8 @@ function createLauncherService(deps) {
           }
         }, {}),
       };
+      const resolved = await forensics;
+      return { ...status, recovery: resolved.recovery, forensicsSummary: resolved.summary, forensics: resolved };
     },
 
     saveLauncherConfig(patch) {
@@ -685,10 +686,10 @@ function createLauncherService(deps) {
 
     scanImport(payload) {
       if (typeof payload === 'string') {
-        return dataImport.scanImport({ sourceHome: payload });
+        return dataImport.scanImportAsync({ sourceHome: payload });
       }
       const options = payload && typeof payload === 'object' ? payload : {};
-      return dataImport.scanImport({
+      return dataImport.scanImportAsync({
         sourceHome: typeof options.sourceHome === 'string' ? options.sourceHome : undefined,
         extraSkillDirs: Array.isArray(options.extraSkillDirs) ? options.extraSkillDirs : [],
       });
@@ -751,7 +752,7 @@ function createLauncherService(deps) {
         return { ok: false, error: 'import-in-progress' };
       }
       const result = await disablePlugins(names, { dsh, startHarness, configIO: pluginConfigIO });
-      return result.ok === true ? { ...result, forensics: collectForensics() } : result;
+      return result.ok === true ? { ...result, forensics: await collectForensics() } : result;
     },
 
     async disablePlugin(name) {
@@ -763,7 +764,7 @@ function createLauncherService(deps) {
         return { ok: false, error: 'missing-name' };
       }
       const result = await disablePlugins([raw], { dsh, startHarness, configIO: pluginConfigIO });
-      return result.ok === true ? { ...result, forensics: collectForensics() } : result;
+      return result.ok === true ? { ...result, forensics: await collectForensics() } : result;
     },
 
     async enablePlugin(name) {
@@ -775,7 +776,7 @@ function createLauncherService(deps) {
         return { ok: false, error: 'missing-name' };
       }
       const result = await enablePlugin(raw, { dsh, startHarness, configIO: pluginConfigIO });
-      return { ...result, forensics: collectForensics() };
+      return { ...result, forensics: await collectForensics() };
     },
 
     removePlugin: removePluginOp,

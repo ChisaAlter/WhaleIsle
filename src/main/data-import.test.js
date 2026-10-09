@@ -88,6 +88,30 @@ test('scanImport lists sessions, skips sqlite, and flags dest conflicts', () => 
   fs.rmSync(tree.root, { recursive: true, force: true });
 });
 
+test('asynchronous import scan preserves full synchronous results and source files', async () => {
+  const tree = makeTree();
+  const zlib = require('node:zlib');
+  const compressedDir = path.join(tree.source, 'sessions', 'proj', 'compressed');
+  fs.mkdirSync(compressedDir, { recursive: true });
+  const text = JSON.stringify({ type: 'session/header', data: { id: 'compressed', cwd: 'C:/work', createdAt: 123 } }) + '\n';
+  fs.writeFileSync(path.join(compressedDir, 'session.v3.jsonl.zstd'), zlib.zstdCompressSync(text));
+  const conflict = path.join(tree.dest, 'sessions', 'proj', 'sess-a');
+  fs.mkdirSync(conflict, { recursive: true });
+  fs.writeFileSync(path.join(conflict, 'session.jsonl'), '{"id":"old"}\n');
+  const malformed = path.join(tree.source, 'sessions', 'proj', 'sess-b', 'session.jsonl');
+  fs.writeFileSync(malformed, 'not valid json\n');
+  const { scanImport, scanImportAsync } = require('./data-import');
+  const options = { sourceHome: tree.source, destHome: tree.dest,
+    agentsSkillsRoot: path.join(tree.root, 'no-extra-skills') };
+  try {
+    assert.deepEqual(await scanImportAsync(options), scanImport(options));
+    assert.equal(fs.readFileSync(malformed, 'utf8'), 'not valid json\n');
+    assert.equal(fs.readFileSync(path.join(conflict, 'session.jsonl'), 'utf8'), '{"id":"old"}\n');
+  } finally {
+    fs.rmSync(tree.root, { recursive: true, force: true });
+  }
+});
+
 test('scanImport enriches session display meta from jsonl header and title, fail-soft on bad logs', () => {
   const tree = makeTree();
   const withMeta = path.join(tree.source, 'sessions', '_no-cwd', 'chat-1');

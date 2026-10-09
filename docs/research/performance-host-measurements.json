@@ -1,0 +1,143 @@
+{
+  "baseline": "26205a89",
+  "candidate": "working tree",
+  "platform": "win32",
+  "node": "v24.19.0",
+  "scope": "host functions and synthetic fixtures; not Electron UI",
+  "pidAfter": [
+    0.06459999999998445,
+    0.003899999999987358,
+    0.004899999999992133,
+    0.003199999999992542,
+    0.004199999999997317,
+    0.0030999999999892225,
+    0.002999999999985903,
+    0.003299999999995862,
+    0.0037000000000091404,
+    0.004800000000017235
+  ],
+  "copy": {
+    "fileCount": 1000,
+    "bytesPerFile": 8192,
+    "before": [
+      {
+        "dispatchMs": 1287.7767000000001,
+        "wallMs": 1288.8533,
+        "firstTimerMs": 1288.9624000000001
+      },
+      {
+        "dispatchMs": 1114.4300000000003,
+        "wallMs": 1114.4440999999997,
+        "firstTimerMs": 1114.5436
+      },
+      {
+        "dispatchMs": 973.8774000000003,
+        "wallMs": 973.9102000000003,
+        "firstTimerMs": 974.0735999999997
+      }
+    ],
+    "after": [
+      {
+        "dispatchMs": 2.811699999999746,
+        "wallMs": 1205.4146,
+        "firstTimerMs": 2.8928000000000793
+      },
+      {
+        "dispatchMs": 0.10630000000037398,
+        "wallMs": 1098.0982999999997,
+        "firstTimerMs": 0.6247999999995955
+      },
+      {
+        "dispatchMs": 0.10509999999976571,
+        "wallMs": 999.9273000000003,
+        "firstTimerMs": 1.522200000000339
+      }
+    ]
+  },
+  "logs": {
+    "chunks": 40,
+    "bytesPerChunk": 32768,
+    "before": [
+      {
+        "dispatchMs": 181.26710000000003,
+        "wallMs": 181.27680000000055,
+        "firstTimerMs": 181.32890000000043
+      },
+      {
+        "dispatchMs": 204.85460000000057,
+        "wallMs": 204.86419999999998,
+        "firstTimerMs": 204.9256000000005
+      },
+      {
+        "dispatchMs": 401.72609999999986,
+        "wallMs": 401.7366000000002,
+        "firstTimerMs": 401.79589999999916
+      }
+    ],
+    "after": [
+      {
+        "dispatchMs": 0.8083999999998923,
+        "wallMs": 131.51320000000032,
+        "firstTimerMs": 0.8996000000006461
+      },
+      {
+        "dispatchMs": 0.2440999999998894,
+        "wallMs": 156.39220000000023,
+        "firstTimerMs": 0.5962999999992462
+      },
+      {
+        "dispatchMs": 0.17660000000068976,
+        "wallMs": 202.67010000000118,
+        "firstTimerMs": 0.5742000000009284
+      }
+    ]
+  },
+  "plugins": {
+    "before": [
+      {
+        "dispatchMs": 7.548999999999069,
+        "wallMs": 7.555899999999383,
+        "firstTimerMs": 7.590700000000652,
+        "copies": 2,
+        "bytes": 10663
+      },
+      {
+        "dispatchMs": 2.4570999999996275,
+        "wallMs": 2.463399999998728,
+        "firstTimerMs": 2.4910999999992782,
+        "copies": 2,
+        "bytes": 10663
+      },
+      {
+        "dispatchMs": 2.4354000000002998,
+        "wallMs": 2.4434000000001106,
+        "firstTimerMs": 2.477100000000064,
+        "copies": 2,
+        "bytes": 10663
+      }
+    ],
+    "after": [
+      {
+        "dispatchMs": 8.513199999999415,
+        "wallMs": 8.518799999999828,
+        "firstTimerMs": 8.551099999998769,
+        "copies": 0,
+        "bytes": 0
+      },
+      {
+        "dispatchMs": 1.305500000000393,
+        "wallMs": 1.3091999999996915,
+        "firstTimerMs": 1.3417000000008557,
+        "copies": 0,
+        "bytes": 0
+      },
+      {
+        "dispatchMs": 1.3312999999998283,
+        "wallMs": 1.3354999999992287,
+        "firstTimerMs": 1.3531000000002678,
+        "copies": 0,
+        "bytes": 0
+      }
+    ]
+  }
+}

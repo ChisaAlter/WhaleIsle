@@ -7,7 +7,7 @@ const ADDRESS = 'dsh-resource://file/session/session-files/src/a.ts'
 const OTHER = 'dsh-resource://file/session/session-files/src/b.ts'
 const dirty = { text: 'disk', draft: 'edited' }
 
-afterEach(() => { localStorage.clear() })
+afterEach(() => { vi.restoreAllMocks(); localStorage.clear() })
 
 describe('DesktopFileState', () => {
   it('persists each edit immediately and restores it in a new plugin lifetime', () => {
@@ -18,6 +18,33 @@ describe('DesktopFileState', () => {
     expect(restored.read(ADDRESS)).toEqual(dirty)
     restored.write(ADDRESS, { text: 'edited', draft: 'edited' })
     expect(new DesktopFileState().read(ADDRESS)).toBeUndefined()
+  })
+
+  it('writes each changed draft immediately without writing the render echo again', () => {
+    const write = vi.spyOn(Storage.prototype, 'setItem')
+    const state = new DesktopFileState()
+    for (const draft of ['a', 'ab', 'abc']) {
+      state.write(ADDRESS, { text: 'disk', draft })
+      expect(new DesktopFileState().read(ADDRESS)?.draft).toBe(draft)
+      state.write(ADDRESS, { text: 'disk', draft })
+    }
+    expect(write).toHaveBeenCalledTimes(3)
+    state.write(ADDRESS, { text: 'new baseline', draft: 'abc' })
+    expect(write).toHaveBeenCalledTimes(4)
+    expect(new DesktopFileState().read(ADDRESS)).toEqual({ text: 'new baseline', draft: 'abc' })
+  })
+
+  it('does not treat a failed storage write as a persisted draft', () => {
+    const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+      throw new Error('quota')
+    })
+    const state = new DesktopFileState()
+    state.write(ADDRESS, dirty)
+    expect(state.read(ADDRESS)).toEqual(dirty)
+    expect(new DesktopFileState().read(ADDRESS)).toBeUndefined()
+    state.write(ADDRESS, { ...dirty })
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(new DesktopFileState().read(ADDRESS)).toEqual(dirty)
   })
 
   it('keeps a dirty draft and cancels close without removing its tab', () => {

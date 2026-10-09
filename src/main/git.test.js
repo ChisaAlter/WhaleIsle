@@ -22,6 +22,7 @@ const { createWorkspaceAuthority } = require('./workspace-authority');
 const { setDesktopDshHome, clearDesktopDshHome } = require('../shared/dsh-home');
 const { COMMIT_TIMEOUT_MS, FETCH_TIMEOUT_MS, GH_TIMEOUT_MS, commitArgs, gitBranchList, gitCheckLargeFiles, gitChildEnv, gitCommit, gitCreateBranch, gitCreateChangeRequest, gitDiff, gitDiscard, gitFailureMessage, gitFetchForStatus, gitInit, gitPublishRepository, gitPull, gitPush, gitReadPullRequest, gitStage, gitStatus, gitStatusEntries, gitSwitchBranch, gitUnstage, inferHookName, isGitAdviceLine, isNtfsReservedGitPath, matchesBranchHeadContext, normalizeGitRemoteUrl, parseCustomCommitMessage, parseGhPullRequestRow, parseGitHubRepositoryNameWithOwner, parsePorcelainZ, parseUnifiedDiff, providerFromRemoteUrl, readPrTemplate, readRangeContext, rememberLastKnownPr, resetFetchCooldowns, resetGitExecutableProbe, resetLastKnownPrCache, resolveBaseBranchForNoUpstream, resolveBranchHeadContext, resolveLastKnownPr, resolvePrBaseBranch, resolvePreferredHeadSelector, run, sanitizeProgressText, setGhDefaultBranchResolver, setLookupOpenPullRequest, setWorkspaceAuthority, summarizeCommitMessage } = require('./git.js');
 const { resetReadContexts } = require('./git-read-context.js');
+const { fetchForStatus } = require('./git-fetch.js');
 const { parseRepositoryNameWithOwnerFromNormalized } = require('./git-pullrequest');
 const { setTextGenerator } = require('./git-generate.js');
 
@@ -2206,6 +2207,149 @@ test('one titlebar refresh runs a single status walk and a single numstat', asyn
     // fetch for a beat after the child exits.
     fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     fs.rmSync(bare, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});
+
+function initStatusFetchFixture(root) {
+  const seed = path.join(root, 'seed');
+  const bare = path.join(root, 'remote.git');
+  const cwd = path.join(root, 'repo');
+  const linked = path.join(root, 'linked');
+  fs.mkdirSync(seed);
+  git(seed, ['init', '-b', 'main']);
+  git(seed, ['config', 'user.email', 't@local']);
+  git(seed, ['config', 'user.name', 'T']);
+  fs.writeFileSync(path.join(seed, 'file.txt'), 'base\n');
+  git(seed, ['add', 'file.txt']);
+  git(seed, ['commit', '-m', 'fixture base']);
+  git(root, ['clone', '--bare', seed, bare]);
+  git(root, ['clone', bare, cwd]);
+  git(cwd, ['worktree', 'add', '-b', 'linked', linked]);
+  git(linked, ['branch', '--set-upstream-to=origin/main', 'linked']);
+  return { seed, bare, cwd, linked };
+}
+
+function cleanStatusFetchFixture(root) {
+  assert.equal(path.dirname(path.resolve(root)), path.resolve(os.tmpdir()));
+  assert.ok(path.basename(root).startsWith('dsh-git-'));
+  resetFetchCooldowns();
+  resetReadContexts();
+  setWorkspaceAuthority(null);
+  fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+}
+
+test('concurrent status fetch shares linked-worktree refs and refreshes every owner', async () => {
+  const root = makeTempDir();
+  try {
+    resetFetchCooldowns();
+    const { seed, bare, cwd, linked } = initStatusFetchFixture(root);
+    fs.appendFileSync(path.join(cwd, 'file.txt'), 'main dirty\n');
+    fs.appendFileSync(path.join(linked, 'file.txt'), 'linked dirty\n');
+    const initial = await Promise.all([gitStatus(cwd, 'main-owner'), gitStatus(linked, 'linked-owner')]);
+    assert.deepEqual(initial.map(status => status.behindCount), [0, 0]);
+    fs.appendFileSync(path.join(seed, 'file.txt'), 'remote update\n');
+    git(seed, ['commit', '-am', 'fixture remote update']);
+    git(bare, ['fetch', seed, 'main:main']);
+    gitSpawnLog.length = 0;
+    countingGitSpawns = true;
+    try {
+      const statuses = await Promise.all([
+        gitFetchForStatus(cwd, 'main-owner'),
+        gitFetchForStatus(linked, 'linked-owner'),
+      ]);
+      for (const status of statuses) {
+        assert.equal(status.behindCount, 1);
+        assert.equal(status.hasWorkingTreeChanges, true);
+        assert.equal(status.workingTree.files.find(file => file.path === 'file.txt').insertions, 1);
+      }
+      assert.equal(gitSpawnLog.filter(line => line.startsWith('fetch ')).length, 1, gitSpawnLog.join('\n'));
+      // A new local refresh must still observe external edits during fetch TTL.
+      fs.writeFileSync(path.join(cwd, 'external.txt'), 'external edit\n');
+      const fresh = await gitStatus(cwd, 'main-owner');
+      assert.ok(fresh.workingTree.files.some(file => file.path === 'external.txt'));
+      const cooled = await gitFetchForStatus(cwd, 'main-owner');
+      assert.ok(cooled.workingTree.files.some(file => file.path === 'external.txt'));
+      assert.equal(gitSpawnLog.filter(line => line.startsWith('fetch ')).length, 1);
+    } finally {
+      countingGitSpawns = false;
+    }
+  } finally {
+    cleanStatusFetchFixture(root);
+  }
+});
+
+test('concurrent status fetch keeps different remote and common-directory identities separate', async () => {
+  const root = makeTempDir();
+  try {
+    resetFetchCooldowns();
+    const { seed, bare, cwd, linked } = initStatusFetchFixture(root);
+    const backup = path.join(root, 'backup.git');
+    const independent = path.join(root, 'independent');
+    git(root, ['clone', '--bare', seed, backup]);
+    git(cwd, ['remote', 'add', 'backup', backup]);
+    git(cwd, ['fetch', 'backup']);
+    git(linked, ['branch', '--set-upstream-to=backup/main', 'linked']);
+    git(root, ['clone', bare, independent]);
+    gitSpawnLog.length = 0;
+    countingGitSpawns = true;
+    try {
+      const results = await Promise.all([fetchForStatus(cwd), fetchForStatus(linked), fetchForStatus(independent)]);
+      assert.deepEqual(results, Array.from({ length: 3 }, () => ({ fetched: true, ok: true })));
+      const fetches = gitSpawnLog.filter(line => line.startsWith('fetch '));
+      assert.equal(fetches.length, 3, gitSpawnLog.join('\n'));
+      assert.equal(fetches.filter(line => line.endsWith(' origin')).length, 2);
+      assert.equal(fetches.filter(line => line.endsWith(' backup')).length, 1);
+    } finally {
+      countingGitSpawns = false;
+    }
+  } finally {
+    cleanStatusFetchFixture(root);
+  }
+});
+
+test('shared status fetch releases failures and preserves backoff and success TTL boundaries', async () => {
+  const root = makeTempDir();
+  const realNow = Date.now;
+  let now = 1_000_000;
+  try {
+    resetFetchCooldowns();
+    const { bare, cwd, linked } = initStatusFetchFixture(root);
+    git(cwd, ['remote', 'set-url', 'origin', path.join(root, 'missing.git')]);
+    fs.appendFileSync(path.join(cwd, 'file.txt'), 'local edit despite remote failure\n');
+    Date.now = () => now;
+    gitSpawnLog.length = 0;
+    countingGitSpawns = true;
+    try {
+      const delays = [30_000, 60_000, 120_000, 240_000, 480_000, 900_000, 900_000];
+      for (let index = 0; index < delays.length; index++) {
+        const results = index === 0
+          ? await Promise.all([fetchForStatus(cwd), fetchForStatus(linked)])
+          : [await fetchForStatus(cwd)];
+        assert.deepEqual(results, results.map(() => ({ fetched: true, ok: false })));
+        assert.equal(gitSpawnLog.filter(line => line.startsWith('fetch ')).length, index + 1);
+        if (index === 0) {
+          const localStatus = await gitFetchForStatus(cwd, 'failed-fetch-owner');
+          assert.equal(localStatus.isRepo, true);
+          assert.equal(localStatus.hasWorkingTreeChanges, true);
+          assert.equal(localStatus.workingTree.files.find(file => file.path === 'file.txt').insertions, 1);
+        }
+        now += delays[index] - 1;
+        assert.deepEqual(await fetchForStatus(cwd), { fetched: false, ok: false });
+        now += 1;
+      }
+      git(cwd, ['remote', 'set-url', 'origin', bare]);
+      assert.deepEqual(await fetchForStatus(cwd), { fetched: true, ok: true });
+      now += 14_999;
+      assert.deepEqual(await fetchForStatus(linked), { fetched: false, ok: false });
+      now += 1;
+      assert.deepEqual(await fetchForStatus(linked), { fetched: true, ok: true });
+      assert.equal(gitSpawnLog.filter(line => line.startsWith('fetch ')).length, delays.length + 2);
+    } finally {
+      countingGitSpawns = false;
+    }
+  } finally {
+    Date.now = realNow;
+    cleanStatusFetchFixture(root);
   }
 });
 

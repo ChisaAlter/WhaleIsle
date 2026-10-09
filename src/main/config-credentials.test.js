@@ -130,3 +130,46 @@ test('an envelope with no keychain available fails closed instead of leaking pay
   const config = loadConfig();
   assert.equal(config.apiKey, '');
 });
+
+test('ordinary and unchanged settings preserve credential bytes and avoid redundant disk writes', () => {
+  resetDisk();
+  const storage = fakeSafeStorage();
+  let encryptions = 0;
+  const encrypt = storage.encryptString;
+  storage.encryptString = (value) => { encryptions += 1; return encrypt(value); };
+  setSafeStorageForTests(storage);
+  saveConfig({ apiKey: 'retained-key', workspace: userData, closeToTray: true });
+  const credentialBytes = fs.readFileSync(credentialsPath(), 'utf8');
+  saveConfig({ closeToTray: false });
+  assert.equal(encryptions, 1);
+  assert.equal(fs.readFileSync(credentialsPath(), 'utf8'), credentialBytes);
+  assert.equal(loadConfig().apiKey, 'retained-key');
+
+  const writes = [];
+  const write = fs.writeFileSync;
+  fs.writeFileSync = (file, ...args) => { writes.push(String(file)); return write(file, ...args); };
+  try {
+    saveConfig({ closeToTray: false });
+    assert.deepEqual(writes, []);
+  } finally {
+    fs.writeFileSync = write;
+  }
+  saveConfig({ apiKey: 'updated-key' });
+  assert.equal(encryptions, 2);
+  assert.equal(loadConfig().apiKey, 'updated-key');
+});
+
+test('selective saves still observe external config and credential changes', () => {
+  resetDisk();
+  setSafeStorageForTests(fakeSafeStorage({ available: false }));
+  saveConfig({ apiKey: 'original-key', workspace: userData, closeToTray: true });
+  const configFile = path.join(userData, 'config.json');
+  const publicLayer = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+  fs.writeFileSync(configFile, JSON.stringify({ ...publicLayer, closeToTray: false }));
+  const credentialLayer = JSON.parse(fs.readFileSync(credentialsPath(), 'utf8'));
+  fs.writeFileSync(credentialsPath(), JSON.stringify({ ...credentialLayer, apiKey: 'external-key' }));
+  saveConfig({ locale: 'en' });
+  assert.equal(loadConfig().closeToTray, false);
+  assert.equal(loadConfig().locale, 'en');
+  assert.equal(loadConfig().apiKey, 'external-key');
+});

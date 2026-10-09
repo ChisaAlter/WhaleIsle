@@ -9,6 +9,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import {
   Session,
   SessionSeq,
+  adoptSessionEvent,
   snapshotSessionEvent,
   type SessionId,
   type SessionSeq as SessionSeqType,
@@ -196,7 +197,9 @@ export abstract class SessionQueryEngine extends Service {
     return {
       session: structuredClone(loaded.header),
       inheritedEventCount: loaded.inheritedEventCount,
-      events: loaded.events.map(snapshotSessionEvent),
+      // Corpus resolution already detached every event, so validate and freeze
+      // its message in place instead of copying the complete log a second time.
+      events: loaded.events.map(adoptSessionEvent),
     }
   }
 
