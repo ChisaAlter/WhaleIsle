@@ -11,7 +11,9 @@
 // pointer is inside the pet bounds we ask the main process to make the
 // window interactive, which enables tap reactions and dragging.
 const canvas = document.getElementById('pet');
-const ctx2d = canvas.getContext('2d');
+// `let` (not const) so the status-card raster cache can point the shared
+// painter at an offscreen context for the duration of one synchronous build.
+let ctx2d = canvas.getContext('2d');
 const bubbleStyle = getComputedStyle(document.documentElement);
 
 // Opt-in, in-memory measurements for the pet DevTools console. No sampling
@@ -494,6 +496,9 @@ const STILL_FADE = 7; // cross-fade rate, alpha/sec
 // reads as held by the scruff at the grab point.
 const STILL_ANCHOR = { 'pick-up': 'hang' };
 const stills = new Map(); // name -> { img, box } — box = alpha bbox in image px
+// Bumped whenever a still finishes decoding — the status card's raster shows
+// the `greet` avatar, so a late image must invalidate it.
+let stillEpoch = 0;
 const stillCtl = { name: null, entry: null, target: 0, alpha: 0, sway: 0.6 };
 const pointer = { x: 0, y: 0 }; // last cursor position, canvas coords
 const fx = { dx: 0, dy: 0, rot: 0, sx: 1, sy: 1 };
@@ -550,6 +555,7 @@ async function loadStill(name) {
   }
   const entry = { img, box: { x: minX, y: minY, right: maxX + 2, bottom: maxY + 2 } };
   stills.set(name, entry);
+  stillEpoch += 1;
   return entry;
 }
 
@@ -1603,6 +1609,31 @@ const PANEL_STATS = [
 ];
 let panel = null; // { x, y, w, h, cells, hover }
 
+// The status card is the most expensive thing on this surface (text metrics,
+// gradient fills, ten rungs, six chips) yet it only changes on real edges.
+// Paint it once into an offscreen raster and blit that every frame instead of
+// re-running the painter: the card stays on top of a walking character with
+// no holes punched by her clear rect, while the per-frame cost collapses to
+// one clearRect + one drawImage.
+const PANEL_PAD_MARGIN = 20; // raster + clear margin around the card box
+const PANEL_CLOSE_R = 9;     // ✕ affordance radius (overhangs the top-right)
+// How far the ✕ badge reaches above the card's top edge — the card is kept
+// clear of the display top by this much so the affordance never clips off.
+const PANEL_CLOSE_TOP = PANEL_CLOSE_R + 5;
+const panelCache = { canvas: null, ctx: null, key: '', x: 0, y: 0, w: 0, h: 0 };
+
+// The ✕ close affordance: an explicit dismissal that does not depend on the
+// pointer leaving (the old behaviour destroyed the card the moment the cursor
+// strayed past the body/panel gap, which made its buttons unclickable).
+function panelCloseRect() {
+  if (!panel) { return null; }
+  return { x: panel.x + panel.w - 14, y: panel.y - 14, w: 18, h: 18 };
+}
+function panelCloseHit(x, y) {
+  const r = panelCloseRect();
+  return Boolean(r) && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+}
+
 // 大数简写：≥1亿 → x.x亿（去尾零），≥1万 → x.x万，以下原样本地化。
 function fmtTokens(n) {
   const v = Number(n || 0);
@@ -1638,7 +1669,8 @@ function openPanel() {
     x = b.x - PANEL_W - 8;
   }
   x = Math.min(Math.max(x, host.x + 4), host.x + host.width - PANEL_W - 4);
-  const y = Math.min(Math.max(b.y, hostY + 4), hostY + host.height - h - 4);
+  const y = Math.min(Math.max(b.y, hostY + PANEL_CLOSE_TOP),
+    hostY + host.height - h - 4);
   panel = { x, y, w: PANEL_W, h, cells: panelCells(), hover: -1, feedHover: false };
   console.log(`pet: panel open x=${x} y=${y} w=${PANEL_W} h=${h} bounds=${JSON.stringify(b)}`);
   // Fresh snapshot so the feedable count and stats are real, not stale.
@@ -1659,6 +1691,83 @@ function closePanel() {
   }
   panel = null;
   paint();
+}
+
+// Right-click is the deliberate toggle (see the contextmenu listener): the
+// card is opened by an explicit right-click and closed by the next one.
+function togglePanel() {
+  if (panel) { closePanel(); } else { openPanel(); }
+}
+
+// Everything the raster depends on. Cheap to compute (a handful of token
+// reads) and it makes the cache self-invalidating: no producer has to remember
+// to poke it when growth, stats, hover, theme, DPR or the avatar change.
+function panelCacheKey() {
+  const css = (name) => bubbleStyle.getPropertyValue(name);
+  return [
+    panel.x, panel.y, panel.w, panel.h, panel.hover, panel.feedHover ? 1 : 0,
+    sleeping ? 1 : 0, dshState,
+    settings.lookAvailable === true ? 1 : 0,
+    window.devicePixelRatio || 1, stillEpoch,
+    css('--dsw-font-family'), css('--dsw-alias-bg-layer-1'),
+    css('--dsw-alias-border-l2'), css('--dsw-alias-label-primary'),
+    css('--dsw-alias-state-business-primary'),
+    css('--dsw-alias-state-error-primary'),
+    css('--dsw-alias-state-success-primary'),
+    growth ? [growth.points, growth.level, growth.levelName, growth.nextAt,
+      growth.nextName, growth.nextFeed, growth.tokensFed, growth.todayUsed,
+      growth.levelColor].join(',') : '',
+    stats ? [stats.satiety, stats.mood, stats.affection, stats.hearts,
+      stats.affectionName, stats.affectionLevel, stats.affectionBase,
+      stats.affectionNext].join(',') : '',
+    panel.cells.map((c) => `${c.id}:${c.icon}:${c.label}:${c.enabled}`).join('|'),
+  ].join('~');
+}
+
+// Blit the cached card. Rebuilds the raster only when the key changes; returns
+// the ink rect so `paint()` can register the clear region.
+function blitPanel() {
+  if (!panel) { return null; }
+  const pad = PANEL_PAD_MARGIN;
+  const w = Math.ceil(panel.w + pad * 2);
+  const h = Math.ceil(panel.h + pad * 2);
+  const x = panel.x - pad;
+  const y = panel.y - pad;
+  const dpr = window.devicePixelRatio || 1;
+  const bw = Math.max(1, Math.round(w * dpr));
+  const bh = Math.max(1, Math.round(h * dpr));
+  const key = panelCacheKey();
+  if (panelCache.key !== key || !panelCache.canvas
+      || panelCache.canvas.width !== bw || panelCache.canvas.height !== bh) {
+    if (!panelCache.canvas) {
+      panelCache.canvas = document.createElement('canvas');
+      panelCache.ctx = panelCache.canvas.getContext('2d');
+    }
+    const c = panelCache.ctx;
+    panelCache.canvas.width = bw;
+    panelCache.canvas.height = bh;
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, w, h);
+    c.save();
+    c.translate(-x, -y);
+    // Reuse the one painter by swapping the shared 2D context for the length
+    // of this synchronous build; restored in `finally`.
+    const prevCtx = ctx2d;
+    ctx2d = c;
+    try {
+      drawPanel();
+    } finally {
+      ctx2d = prevCtx;
+      c.restore();
+    }
+    panelCache.key = key;
+  }
+  panelCache.x = x;
+  panelCache.y = y;
+  panelCache.w = w;
+  panelCache.h = h;
+  ctx2d.drawImage(panelCache.canvas, x, y, w, h);
+  return { x, y, w, h };
 }
 
 // ── settings page lives in the main window ──
@@ -2880,10 +2989,34 @@ function drawPanel() {
     mid(cell.label, left + iw + 4 + lw / 2, cy + PANEL_CHIP_H / 2, 'center');
     ctx2d.globalAlpha = 1;
   });
+  // ── explicit dismissal: a ✕ badge overhanging the top-right corner ──
+  // The card no longer dies when the pointer strays; this is the affordance
+  // that closes it (alongside the right-click toggle and every action chip).
+  const cc = { x: p.x + p.w - 5, y: p.y - 5 };
+  ctx2d.globalAlpha = 1;
+  ctx2d.beginPath();
+  ctx2d.arc(cc.x, cc.y, PANEL_CLOSE_R, 0, Math.PI * 2);
+  ctx2d.fillStyle = css('--dsw-alias-bg-layer-1');
+  ctx2d.fill();
+  ctx2d.strokeStyle = css('--dsw-alias-border-l2');
+  ctx2d.lineWidth = 1;
+  ctx2d.beginPath();
+  ctx2d.arc(cc.x, cc.y, PANEL_CLOSE_R, 0, Math.PI * 2);
+  ctx2d.stroke();
+  ctx2d.strokeStyle = label;
+  ctx2d.lineWidth = 1.5;
+  ctx2d.beginPath();
+  ctx2d.moveTo(cc.x - 3.5, cc.y - 3.5);
+  ctx2d.lineTo(cc.x + 3.5, cc.y + 3.5);
+  ctx2d.moveTo(cc.x + 3.5, cc.y - 3.5);
+  ctx2d.lineTo(cc.x - 3.5, cc.y + 3.5);
+  ctx2d.stroke();
   ctx2d.restore();
   // Clear margin must cover every painted pixel: 1px hairline stroke +
-  // antialiased corners + emoji ink that can exceed its advance box.
-  return { x: p.x - 8, y: p.y - 8, w: p.w + 16, h: p.h + 16 };
+  // antialiased corners + emoji ink that can exceed its advance box, plus the
+  // ✕ badge that hangs above the card's top-right corner.
+  return { x: p.x - PANEL_PAD_MARGIN, y: p.y - PANEL_PAD_MARGIN,
+    w: p.w + PANEL_PAD_MARGIN * 2, h: p.h + PANEL_PAD_MARGIN * 2 };
 }
 
 // ── particles (Zzz / hearts / water spray / dizzy stars) ──
@@ -3393,6 +3526,17 @@ let lastBubbleRect = null;
 let lastPanelRect = null;
 let lastRigRect = null;
 let lastFullClear = 0;
+
+// ── presentation scheduler ──
+// Producers (inference completion, event handlers, settings pushes) mark the
+// scene dirty instead of compositing it themselves. `paint()` then runs once
+// per presentation opportunity from the rAF loop, which removes the duplicate
+// full-scene paints that used to stack up inside a single frame.
+let paintPending = false;
+function invalidate() {
+  paintPending = true;
+}
+
 function paint() {
   const perfStart = petPerf.enabled ? performance.now() : 0;
   const liveAlpha = (session || rig.ready) ? 1 : 1 - stillCtl.alpha;
@@ -3534,7 +3678,9 @@ function paint() {
     drawParticles(performance.now());
   }
   lastBubbleRect = drawBubble(performance.now()) || null;
-  lastPanelRect = drawPanel() || null;
+  // The card rides a cached raster — one clearRect + one drawImage per frame
+  // instead of ~270 lines of text metrics and gradient fills.
+  lastPanelRect = blitPanel() || null;
   lastPaintRect = rect;
   lastRigRect = rig.ready && stillCtl.entry && stillCtl.alpha > 0.01
     ? stillDrawRect()
@@ -3553,8 +3699,12 @@ async function renderFrame() {
   }
   inferBusy = true;
   const perfStart = petPerf.enabled ? performance.now() : 0;
+  // Hoisted so `finally` can release the output tensors on EVERY exit path —
+  // including a rejected run() or a readback that throws. Disposing only after
+  // a successful readback leaked a full frame of wasm/webgpu memory each time
+  // the backend hiccuped.
+  let results = null;
   try {
-    let results;
     if (sessionOnGpu) {
       ort.env.webgpu.device.queue.writeBuffer(poseGpuBuffer, 0, pose);
       results = await session.run({ image: imageTensor, pose: poseTensor });
@@ -3577,9 +3727,6 @@ async function renderFrame() {
     }
     // Every run() output tensor owns wasm/webgpu memory — dispose them all or
     // the renderer leaks ~1MB per frame forever.
-    for (const k of Object.keys(results)) {
-      results[k]?.dispose?.();
-    }
     // Skip a fully-transparent frame (a bad readback would blank her out for
     // a frame, which reads as flicker); keep the previous frame instead.
     let alphaMax = 0;
@@ -3599,10 +3746,19 @@ async function renderFrame() {
     outCtx.putImageData(outImage, 0, 0);
     srFrame();
     painted = true;
-    paint();
+    // The rAF loop composites; a second paint here would double the frame.
+    invalidate();
   } catch (error) {
     console.warn('pet: inference failed', error);
+    // Opt-in only: lets the CDP measurement tell a working live pet from one
+    // that is merely ticking without producing frames.
+    petPerf.record('inferenceError', 0);
   } finally {
+    if (results) {
+      for (const k of Object.keys(results)) {
+        try { results[k]?.dispose?.(); } catch { /* already released */ }
+      }
+    }
     inferBusy = false;
     if (petPerf.enabled) { petPerf.record('inference', performance.now() - perfStart); }
   }
@@ -3630,6 +3786,28 @@ function resizeCanvas() {
 
 // ── click-through + drag ──
 let surfaceRegionKey = '';
+
+// Logical interactive islands in SCREEN coordinates: her body plus every card
+// surface (status card, chat card, model picker, pinned bubble). The main
+// process merges these into its own cursor hold, so stepping off her body onto
+// the card — or back — never depends on a renderer round trip. That round trip
+// is exactly what used to drop interactivity while the renderer was busy.
+function interactiveHitRects() {
+  const rects = [petBodyBounds()];
+  for (const r of [panel, chatRect, chatPickerRect,
+    bubble && bubble.pinned ? lastBubbleRect : null]) {
+    if (r) { rects.push({ x: r.x, y: r.y, right: r.x + r.w, bottom: r.y + r.h }); }
+  }
+  const ox = overlayOrigin ? overlayOrigin.x : 0;
+  const oy = overlayOrigin ? overlayOrigin.y : 0;
+  return rects.map((r) => ({
+    x: Math.floor(r.x + ox),
+    y: Math.floor(r.y + oy),
+    width: Math.ceil(r.right + ox) - Math.floor(r.x + ox),
+    height: Math.ceil(r.bottom + oy) - Math.floor(r.y + oy),
+  }));
+}
+
 function reportSurfaceRegions() {
   // Preserve the existing menu elevation outside its border box as well.
   const pickerInk = chatPickerRect && { x: chatPickerRect.x - 24, y: chatPickerRect.y - 24,
@@ -3640,10 +3818,11 @@ function reportSurfaceRegions() {
     const y = Math.floor(r.y);
     return { x, y, width: Math.ceil(r.x + r.w) - x, height: Math.ceil(r.y + r.h) - y };
   });
-  const key = JSON.stringify(regions);
+  const hitRegions = interactiveHitRects();
+  const key = JSON.stringify([regions, hitRegions]);
   if (key === surfaceRegionKey) { return; }
   surfaceRegionKey = key;
-  void Promise.resolve(petShell.setInteractive?.({ regions })).catch(() => {
+  void Promise.resolve(petShell.setInteractive?.({ regions, hitRegions })).catch(() => {
     if (surfaceRegionKey === key) { surfaceRegionKey = ''; }
   });
 }
@@ -3893,18 +4072,22 @@ function onCursorMove(clientX, clientY, buttons) {
     if (h !== panel.hover || fb !== panel.feedHover) {
       panel.hover = h;
       panel.feedHover = fb;
-      paint();
+      invalidate();
     }
   }
   const bounds = petBodyBounds();
   const outside = distanceToInteractiveSurface(clientX, clientY);
   if (outside <= 0) {
     idle.lastInteract = performance.now();
-    if (sleeping) { wake(); }
+    // Wake and head-pat are BODY gestures: the status card, chat card and
+    // pinned bubbles are also interactive surfaces, and sweeping the pointer
+    // across the card must not wake her or read as a pat.
+    const onBody = overBody(clientX, clientY);
+    if (onBody && sleeping) { wake(); }
     // Head-pat: strokes across the top 45% of her bounds — 3 direction
     // flips inside 1.6s trigger the react-head still + hearts.
     const headY = bounds.y + (bounds.bottom - bounds.y) * 0.45;
-    if (clientY < headY && !action && !feed && !come && stillCtl.target === 0) {
+    if (onBody && clientY < headY && !action && !feed && !come && stillCtl.target === 0) {
       const now = performance.now();
       if (now - patTrack.since > 1600) { patTrack.flips = 0; patTrack.since = now; }
       const dx = clientX - patTrack.lastX;
@@ -3933,11 +4116,12 @@ function onCursorMove(clientX, clientY, buttons) {
     setInteractive(true);
   } else if (outside > EXIT_HYSTERESIS) {
     // Clearly gone: drop interactivity at once — a lingering interactive
-    // fullscreen window would eat clicks meant for the desktop below. A
-    // panel card stranded off-screen closes too (also fires on
-    // inside:false).
+    // fullscreen window would eat clicks meant for the desktop below. The
+    // card is NOT closed here: it used to be, which is exactly why it
+    // vanished the moment the pointer crossed the body/card gap and made its
+    // buttons unclickable. Leaving only releases click-through; the card is
+    // dismissed explicitly (✕ badge, right-click toggle, or an action).
     clearTimeout(exitInteractiveTimer);
-    closePanel();
     setInteractive(false);
   } else {
     // Near the edge: debounce so rapid boundary crossings don't toggle
@@ -3998,6 +4182,11 @@ function onCanvasPointerDown(event) {
   if (event.target !== canvas) {
     return;
   }
+  // Right-button presses leave the card alone: `contextmenu` owns the toggle,
+  // and closing on pointerdown would make the toggle reopen it instead.
+  if (event.button === 2) {
+    return;
+  }
   // The pinned bubble's ✕ wins over everything — it must take the click
   // even when the status panel happens to be open beneath it.
   if (event.button === 0 && bubbleCloseHit(event.clientX, event.clientY)) {
@@ -4006,8 +4195,16 @@ function onCanvasPointerDown(event) {
     return;
   }
   // Panel clicks win over the drag gesture: a row dispatch closes the card,
-  // a click anywhere outside just dismisses it (and must not grab her).
+  // and the ✕ badge dismisses it. Neutral clicks — the header, the dividers,
+  // the 6px gutters, or her own body underneath — leave it open, because
+  // dismissal is explicit only (the old "any other click closes it" rule is
+  // what made the card feel like it vanished on its own).
   if (panel) {
+    if (event.button === 0 && panelCloseHit(event.clientX, event.clientY)) {
+      console.log('pet: panel dismissed via ✕');
+      closePanel();
+      return;
+    }
     // Feed button in the growth block takes priority over the chip grid.
     if (feedButtonHit(event.clientX, event.clientY) && event.button === 0) {
       console.log('pet: feed button hit');
@@ -4022,8 +4219,6 @@ function onCanvasPointerDown(event) {
     const cell = idx >= 0 ? panel.cells[idx] : null;
     if (cell && cell.enabled !== false && event.button === 0) {
       dispatchPanelCell(cell);
-    } else {
-      closePanel();
     }
     return;
   }
@@ -4184,11 +4379,7 @@ window.addEventListener('pointercancel', endDrag);
 window.addEventListener('contextmenu', (event) => {
   event.preventDefault();
   if (event.target !== canvas) { return; }
-  if (panel) {
-    closePanel();
-  } else {
-    openPanel();
-  }
+  togglePanel();
 });
 
 // Drag-and-drop file eating (§B10): files dropped on her are "eaten" — a
@@ -4335,10 +4526,11 @@ async function mount() {
     LINES = store.global || {};
     wireDialogue();
   }).catch(() => {});
-  for (const name of ['pick-up', 'running', 'eat', 'sleep', 'react-head',
-    'angry', 'celebrate', 'star', 'greet', 'tail-swing']) {
-    void loadStill(name).catch(() => {});
-  }
+  // Only the avatar/first-fallback still is decoded up front. The other nine
+  // are 1024² images whose eager decode + full-resolution alpha scan cost real
+  // startup RAM; `setStill()` already loads them on demand, and the rig
+  // fallback pulls the full set when it actually becomes the renderer.
+  void loadStill('greet').catch(() => {});
   // Main process relays the persisted screen position; convert it to
   // canvas coordinates by subtracting the overlay's own origin.
   petShell.onLayout?.((layout) => {
@@ -4438,6 +4630,11 @@ async function mount() {
     if (rig.ready) {
       painted = true;
       console.log('pet: HD part rig ready');
+      // The rig is the visible renderer now — pull the state stills it draws.
+      for (const name of ['pick-up', 'running', 'eat', 'sleep', 'react-head',
+        'angry', 'celebrate', 'star', 'tail-swing']) {
+        void loadStill(name).catch(() => {});
+      }
     }
   }
   setTimeout(() => say('greet'), 1200);
@@ -4445,6 +4642,7 @@ async function mount() {
   // Pace inference on a steady cadence: an irregular rate (chasing max
   // speed) reads as flicker.
   let lastFrameAt = 0;
+  let lastPresentAt = 0;
   const loop = (now) => {
     try {
       if (petPerf.enabled) { petPerf.record('displayRefresh', 0); }
@@ -4471,9 +4669,14 @@ async function mount() {
           lastFrameAt = now;
           void renderFrame();
         }
-        paint();
-      } else {
-        // Rig fallback: pure canvas — pose math + paint every rAF, no ONNX.
+      }
+      // One presentation per opportunity. The cap keeps a 120/144 Hz panel
+      // from multiplying idle compositing; an explicit invalidation (input,
+      // inference completion, bubble edge) still presents on the next frame.
+      const presentGap = powerSaving(now) ? 110 : 15;
+      if (paintPending || now - lastPresentAt >= presentGap) {
+        paintPending = false;
+        lastPresentAt = now;
         paint();
       }
     } catch (err) {

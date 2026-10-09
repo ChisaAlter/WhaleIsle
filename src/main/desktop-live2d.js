@@ -409,6 +409,23 @@ function createLive2dPetManager(options = {}) {
   // the new one. Never persisted: `state.x/y` stays the user's chosen
   // anchor.
   let roamRect = null;
+  // Logical interactive islands in screen coords — her body plus the status
+  // card / chat card / picker / pinned bubble, as reported by the renderer.
+  // The cursor hold checks these too, so moving from her body onto the status
+  // card (or back) keeps the window interactive without waiting for the
+  // renderer's exit/enter round trip.
+  let hitRects = [];
+  function setHitRegions(regions) {
+    if (!Array.isArray(regions)) {
+      hitRects = [];
+      return;
+    }
+    hitRects = regions.slice(0, 24).flatMap((r) => {
+      if (!r || ![r.x, r.y, r.width, r.height].every(Number.isFinite)
+        || r.width <= 0 || r.height <= 0) { return []; }
+      return [{ x: r.x, y: r.y, w: r.width, h: r.height }];
+    });
+  }
   function pollCursor() {
     if (!win || win.isDestroyed?.()) {
       return;
@@ -435,9 +452,13 @@ function createLive2dPetManager(options = {}) {
     const scale = Number.isFinite(state.settings?.scale) ? state.settings.scale : 1;
     const zone = roamRect
       || { x: pos.x, y: pos.y, w: PET_WIDTH * scale, h: PET_HEIGHT * scale };
-    const inPet = inside
+    const inZone = inside
       && point.x >= zone.x - CURSOR_PET_PAD && point.x <= zone.x + zone.w + CURSOR_PET_PAD
       && point.y >= zone.y - CURSOR_PET_PAD && point.y <= zone.y + zone.h + CURSOR_PET_PAD;
+    const inHit = inside && hitRects.some((r) =>
+      point.x >= r.x - CURSOR_PET_PAD && point.x <= r.x + r.w + CURSOR_PET_PAD
+      && point.y >= r.y - CURSOR_PET_PAD && point.y <= r.y + r.h + CURSOR_PET_PAD);
+    const inPet = inZone || inHit;
     if (inPet !== cursorInPetFrame) {
       cursorInPetFrame = inPet;
       applyInteractive();
@@ -471,6 +492,7 @@ function createLive2dPetManager(options = {}) {
     // A stale `true` would pin the next window interactive forever —
     // the fresh page re-requests what it needs.
     rendererInteractive = false;
+    hitRects = [];
   }
 
   // Care stats (饱食/心情/亲密) live next to growth in live2dPet.stats.
@@ -727,6 +749,7 @@ function createLive2dPetManager(options = {}) {
     // The overlay may have hopped displays — a roam rect measured against
     // the old origin is stale; the renderer re-reports on its next move.
     roamRect = null;
+    hitRects = [];
     dbg(`pet: layout origin=${JSON.stringify(origin)} displays=${JSON.stringify(displays)} home=${home} pet=${JSON.stringify(petPosition())}`);
     win.webContents.send('shell:live2d-layout', {
       origin: { x: origin.x, y: origin.y },
@@ -824,6 +847,7 @@ function createLive2dPetManager(options = {}) {
       win = null;
       interactive = false;
       roamRect = null; // fresh page re-reports; a stale zone would wedge hover
+      hitRects = [];
     });
     void win.loadURL(petUrl).catch(() => {});
     return win;
@@ -841,6 +865,7 @@ function createLive2dPetManager(options = {}) {
       win = null;
       interactive = false;
       roamRect = null;
+      hitRects = [];
       if (old && !old.isDestroyed?.()) {
         old.destroy();
       }
@@ -980,6 +1005,7 @@ function createLive2dPetManager(options = {}) {
     ipcMain.handle('shell:live2d-interactive', (event, payload) => {
       assertAuthorized(event);
       setSurfaceRegions(payload?.regions);
+      setHitRegions(payload?.hitRegions);
       if (typeof payload?.interactive === 'boolean') {
         rendererInteractive = payload.interactive;
         applyInteractive();

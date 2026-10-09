@@ -326,9 +326,18 @@ function createDshWatch({
         delete dsh.files[key]; // log deleted/rotated away — drop its cursor
       }
     }
-    for (const sessKey of Object.keys(dsh.openTurns)) {
-      if (![...live].some((f) => sessKeyOf(f) === sessKey)) {
-        delete dsh.openTurns[sessKey]; // session dir vanished mid-turn
+    // A session dir that vanished mid-turn must drop its open turn. Build the
+    // live session-key set once: scanning every live file per open turn was
+    // O(openTurns × files) of path work on the main thread every poll.
+    if (Object.keys(dsh.openTurns).length) {
+      const liveKeys = new Set();
+      for (const f of live) {
+        liveKeys.add(sessKeyOf(f));
+      }
+      for (const sessKey of Object.keys(dsh.openTurns)) {
+        if (!liveKeys.has(sessKey)) {
+          delete dsh.openTurns[sessKey]; // session dir vanished mid-turn
+        }
       }
     }
 

@@ -37,13 +37,21 @@ test('native surface reports preserve separate ink rectangles and deduplicate fr
     chatRect = { x: 300, y: 100, w: 200, h: 180 };
     reportSurfaceRegions(); reportSurfaceRegions();
   `);
-  assert.deepEqual(JSON.parse(pet.run('JSON.stringify(reports)')), [{ regions: [
+  assert.deepEqual(JSON.parse(pet.run('JSON.stringify(reports[0].regions)')), [
     { x: 10, y: 20, width: 41, height: 51 },
     { x: 10, y: 1, width: 50, height: 10 },
     { x: 300, y: 100, width: 200, height: 180 },
-  ] }]);
+  ]);
+  assert.equal(pet.run('reports.length'), 1, 'identical geometry is deduplicated');
+  // The logical hit islands ride the same payload so the main process can hold
+  // interactivity across the body→card gap without a renderer round trip.
+  assert.deepEqual(JSON.parse(pet.run('JSON.stringify(reports[0].hitRegions)')),
+    JSON.parse(pet.run('JSON.stringify(interactiveHitRects())')));
+  assert.equal(pet.run('reports[0].hitRegions.length'), 2, 'body + chat card');
   pet.run('chatRect = null; reportSurfaceRegions()');
   assert.equal(pet.run('reports.at(-1).regions.length'), 2, 'closed card region is removed');
+  assert.equal(pet.run('reports.at(-1).hitRegions.length'), 1,
+    'closed card drops out of the main-side hit islands too');
 });
 
 const TOKEN_STYLE = {
@@ -968,6 +976,119 @@ test('status panel opens beside the pet, unions into bounds, chips dispatch', ()
   assert.equal(pet.run('panel'), null, 'settings dispatch still closes the panel');
 });
 
+test('the status card survives the pointer leaving — dismissal is explicit only', () => {
+  const pet = loadPet();
+  pet.run(`drawPos = { x: 280, y: 200 };
+    homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    // Silhouette narrower than the 240x260 frame — the real model's alpha box,
+    // which is what left the card outside the old 8px exit hysteresis.
+    charRect = { x: 20, y: 10, right: 220, bottom: 250 };
+    globalThis.__calls = [];
+    petShell.setInteractive = (p) => {
+      if (typeof p.interactive === 'boolean') { __calls.push(p.interactive); }
+      return Promise.resolve(null);
+    };`);
+  pet.run('openPanel()');
+  assert.ok(pet.run('panel'), 'panel opens');
+  // Hover her body first, the way a real pointer arrives.
+  pet.run('onCursorMove(drawPos.x + 120, drawPos.y + 130, null)');
+  assert.equal(pet.run('JSON.stringify(__calls)'), '[true]');
+  // Clearly away from her body AND the card: interactivity drops (the desktop
+  // must not be shielded) but the card is NOT destroyed.
+  pet.run('onCursorMove(790, 590, null)');
+  assert.ok(pet.run('panel'), 'card survives the pointer leaving');
+  assert.equal(pet.run('JSON.stringify(__calls)'), '[true,false]');
+  // Coming back re-arms interactivity; the card never had to be reopened.
+  pet.run('onCursorMove(panel.x + 10, panel.y + 10, null)');
+  assert.ok(pet.run('panel'), 'card still open after the round trip');
+  assert.equal(pet.run('JSON.stringify(__calls)'), '[true,false,true]');
+  // The ✕ badge is the explicit dismissal.
+  pet.run('onCanvasPointerDown({ target: canvas, button: 0,'
+    + ' clientX: panelCloseRect().x + 2, clientY: panelCloseRect().y + 2 })');
+  assert.equal(pet.run('panel'), null, '✕ closes the card');
+});
+
+test('the ✕ dismissal stays on-screen when she is parked at the display top', () => {
+  const pet = loadPet();
+  pet.run(`drawPos = { x: 280, y: 0 };
+    homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    charRect = { x: 20, y: 0, right: 220, bottom: 120 };
+    openPanel();`);
+  const r = pet.run('panelCloseRect()');
+  assert.ok(r, 'card is open');
+  assert.ok(r.y >= 0, `✕ badge must not clip off the display top (y=${r.y})`);
+  assert.ok(r.y + r.h <= 600, 'and must stay inside the bottom edge');
+});
+
+test('right-click toggles the card and neutral clicks leave it open', () => {
+  const pet = loadPet();
+  pet.run(`drawPos = { x: 280, y: 200 };
+    homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    charRect = { x: 0, y: 0, right: 240, bottom: 260 };
+    growth = { points: 100, level: 1, levelName: '幼鲸', nextAt: 500, nextFeed: 10, tokensFed: 0, todayUsed: 0 };
+    petShell.getGrowth = () => Promise.resolve(growth);`);
+  pet.run('openPanel()');
+  assert.ok(pet.run('panel'));
+  // Right-button pointerdown must not pre-close: `contextmenu` owns the toggle
+  // and a pre-close would make the toggle reopen instead of close.
+  pet.run('onCanvasPointerDown({ target: canvas, button: 2, clientX: 300, clientY: 300 })');
+  assert.ok(pet.run('panel'), 'right pointerdown leaves the card open');
+  // A neutral click on the header (no chip, no feed button, no ✕) keeps it.
+  pet.run('onCanvasPointerDown({ target: canvas, button: 0,'
+    + ' clientX: panel.x + panel.w / 2, clientY: panel.y + PANEL_PAD + 9 })');
+  assert.ok(pet.run('panel'), 'header click is neutral');
+  // ... and so does a press on her body underneath the open card.
+  pet.run('onCanvasPointerDown({ target: canvas, button: 0, clientX: 300, clientY: 300 })');
+  assert.ok(pet.run('panel'), 'body press does not dismiss the card');
+  // The contextmenu toggle is the other explicit dismissal.
+  pet.run('togglePanel()');
+  assert.equal(pet.run('panel'), null, 'right-click toggle closes');
+  pet.run('togglePanel()');
+  assert.ok(pet.run('panel'), 'right-click toggle reopens');
+});
+
+test('sweeping the status card does not wake her or read as a head pat', () => {
+  const pet = loadPet();
+  pet.run(`drawPos = { x: 280, y: 200 };
+    homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    charRect = { x: 0, y: 0, right: 240, bottom: 260 };
+    sleeping = true;
+    openPanel();`);
+  assert.ok(pet.run('panel'));
+  for (let i = 0; i < 6; i += 1) {
+    pet.run(`onCursorMove(panel.x + 16 + ${(i % 2) * 44}, panel.y + 8, null)`);
+  }
+  assert.equal(pet.run('sleeping'), true, 'card hover does not wake her');
+  assert.equal(pet.run('patTrack.flips'), 0, 'card hover is not a head pat');
+  // Her body still wakes her.
+  pet.run('onCursorMove(drawPos.x + 120, drawPos.y + 130, null)');
+  assert.equal(pet.run('sleeping'), false, 'body hover still wakes her');
+});
+
+test('status card raster is rebuilt only when its content changes', () => {
+  const pet = loadPet();
+  pet.run(`drawPos = { x: 280, y: 200 };
+    homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    charRect = { x: 0, y: 0, right: 240, bottom: 260 };
+    growth = { points: 100, level: 1, levelName: '幼鲸', nextAt: 500, nextFeed: 10, tokensFed: 0, todayUsed: 0 };
+    stats = { satiety: 50, mood: 50, affectionLevel: 1, hearts: 2, affectionName: '熟悉', satietyLabel: '一般', moodLabel: '平静' };
+    petShell.getGrowth = () => Promise.resolve(growth);
+    globalThis.__paints = 0;
+    globalThis.__realDraw = drawPanel;
+    drawPanel = function () { __paints += 1; return __realDraw(); };
+    openPanel();`);
+  assert.ok(pet.run('panelCache.key'), 'raster built on open');
+  const key = pet.run('panelCache.key');
+  const paints = pet.run('__paints');
+  pet.run('blitPanel(); blitPanel()');
+  assert.equal(pet.run('panelCache.key'), key, 'unchanged content reuses the raster');
+  assert.equal(pet.run('__paints'), paints, 'no repaint for unchanged content');
+  pet.run('panel.hover = 1');
+  pet.run('blitPanel()');
+  assert.notEqual(pet.run('panelCache.key'), key, 'hover change invalidates the raster');
+  assert.equal(pet.run('__paints'), paints + 1, 'exactly one rebuild for the hover edge');
+});
+
 test('chat card anchors above her head and flips below at the top edge', () => {
   const pet = loadPet();
   pet.run(`drawPos = { x: 300, y: 300 };
@@ -1120,7 +1241,9 @@ test('panel action icon and label ink are independently centered', () => {
   };
   ctx.measureText = metrics;
   ctx.fillText = (text, x, y) => { drawn.push({ text, x, y, m: metrics(text) }); };
-  pet.run('settings.lookAvailable = true; openPanel()');
+  // `paint()` now blits the card from its cached raster; `drawPanel()` is the
+  // raw painter whose runs this test inspects.
+  pet.run('settings.lookAvailable = true; openPanel(); drawPanel()');
   const cells = pet.run('panel.cells');
   const p = pet.run('({ x: panel.x, y: panel.y, w: PANEL_CHIP_W, h: PANEL_CHIP_H, pad: PANEL_PAD, gap: PANEL_CHIP_GAP, top: PANEL_GRID_TOP })');
   for (const [i, cell] of cells.entries()) {
@@ -1353,7 +1476,8 @@ test('panel runs are optically centered on real ink boxes; chip icon+label group
       midY: (op.y - m.actualBoundingBoxAscent + op.y + m.actualBoundingBoxDescent) / 2,
     };
   };
-  pet.run('openPanel()');
+  // `paint()` blits the cached raster now; this test inspects the raw painter.
+  pet.run('openPanel(); drawPanel()');
   const CHIP_W = pet.run('PANEL_CHIP_W');
   const CHIP_H = pet.run('PANEL_CHIP_H');
   const GAP = pet.run('PANEL_CHIP_GAP');
