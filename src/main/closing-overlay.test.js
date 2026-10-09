@@ -53,10 +53,11 @@ test('closingCopy is Chinese by default and English when locale is en', () => {
   });
 });
 
-function paintFixture({ insertCSS = async () => {}, executeJavaScript = async () => {} } = {}) {
+function paintFixture({ insertCSS = async () => {}, executeJavaScript = async () => {}, visible = true, minimized = false } = {}) {
   const timers = [];
   const cleared = [];
   const calls = [];
+  const windowCalls = [];
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'closing-overlay.js'), 'utf8'), {
     module,
@@ -65,15 +66,40 @@ function paintFixture({ insertCSS = async () => {}, executeJavaScript = async ()
     clearTimeout: timer => { cleared.push(timer); },
   });
   const win = {
-    isDestroyed: () => false, isMinimized: () => false, isVisible: () => true,
-    setBackgroundColor: () => {}, focus: () => {},
+    isDestroyed: () => false, isMinimized: () => minimized, isVisible: () => visible,
+    restore: () => { windowCalls.push('restore'); minimized = false; },
+    show: () => { windowCalls.push('show'); visible = true; },
+    setBackgroundColor: () => { windowCalls.push('background'); },
+    focus: () => { windowCalls.push('focus'); },
     webContents: {
       insertCSS: css => { calls.push('css'); return insertCSS(css); },
       executeJavaScript: script => { calls.push('eval'); return executeJavaScript(script); },
     },
   };
-  return { show: module.exports.showClosingOverlay, win, timers, cleared, calls };
+  return { show: module.exports.showClosingOverlay, win, timers, cleared, calls, windowCalls };
 }
+
+for (const state of [
+  { label: 'hidden in the tray', visible: false, minimized: false },
+  { label: 'minimized', visible: true, minimized: true },
+]) {
+  test(`closing leaves a window ${state.label} in its original state`, async () => {
+    const f = paintFixture(state);
+    await f.show(f.win);
+    assert.equal(f.win.isVisible(), state.visible);
+    assert.equal(f.win.isMinimized(), state.minimized);
+    assert.deepEqual(f.windowCalls, []);
+    assert.deepEqual(f.calls, []);
+    assert.deepEqual(f.timers, []);
+  });
+}
+
+test('closing a visible window paints feedback without activation or native background changes', async () => {
+  const f = paintFixture();
+  await f.show(f.win);
+  assert.deepEqual(f.calls, ['css', 'eval']);
+  assert.deepEqual(f.windowCalls, []);
+});
 
 test('successful closing paint keeps CSS/eval order and clears the 500ms host timer', async () => {
   const f = paintFixture();

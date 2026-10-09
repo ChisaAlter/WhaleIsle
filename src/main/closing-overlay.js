@@ -129,19 +129,12 @@ function overlayScript(copy, generation) {
 }
 
 async function showClosingOverlay(win, locale, contents = win?.webContents) {
-  if (!win || win.isDestroyed()) {
+  // Quit must not surface a window the user left hidden or minimized.
+  if (!win || win.isDestroyed() || !win.isVisible() || win.isMinimized()) {
     return;
   }
   const { currentTheme } = require('./chrome');
   const theme = currentTheme();
-  if (win.isMinimized()) {
-    win.restore();
-  }
-  if (!win.isVisible()) {
-    win.show();
-  }
-  win.setBackgroundColor(theme.bg);
-  win.focus();
   let paintTimeout;
   let cssKey;
   let dismissed = false;

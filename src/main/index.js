@@ -84,7 +84,6 @@ const {
   getHarnessWebContents,
   getHarnessView,
   isHarnessLoaded,
-  hideHarnessView,
   dismissMainWindow,
   showLauncher,
   prepareLauncher,
@@ -1476,7 +1475,8 @@ if (!gotLock) {
               }
               stopDesktopInstallControl();
               void taskControlPeer.stop();
-              hideHarnessView(win);
+              // Keep the current surface until the native window closes.
+              // Detaching it here exposes the boot page for a final frame.
             },
           });
         } catch (error) {
@@ -1528,7 +1528,6 @@ if (!gotLock) {
                 (async () => {
                   stopDesktopInstallControl();
                   void taskControlPeer.stop();
-                  hideHarnessView(getMainWindow());
                   // Start stopping the child even if a preview never closes.
                   const results = await Promise.allSettled([harness.shutdown(), cleanupDesktopResources()]);
                   for (const result of results) {
