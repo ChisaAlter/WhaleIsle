@@ -6,7 +6,7 @@
  */
 
 const { EventEmitter } = require('events');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -293,6 +293,12 @@ function waitForExit(child, timeoutMs) {
   });
 }
 
+function daemonStartCancelled() {
+  const error = new Error('远程守护进程启动已取消');
+  error.code = 'DSHD_REMOTE_CANCELLED';
+  return error;
+}
+
 /**
  * Desktop-facing home override (naming: `DSHD_*`, the desktop env family —
  * `CHISACODE_HOME` never appears in the shell's own environment). Mirrors the
@@ -422,6 +428,7 @@ class DshdRemote extends EventEmitter {
    * @param {string} [options.execPath] - node/electron executable override (tests)
    * @param {number} [options.readyTimeoutMs]
    * @param {number} [options.stopTimeoutMs]
+   * @param {typeof execFile} [options.execFile] - owned Windows taskkill command
    */
   constructor(options = {}) {
     super();
@@ -440,15 +447,21 @@ class DshdRemote extends EventEmitter {
       : () => '';
     this.git = options.git || null;
     this.gitTunnel = null;
+    this.gitTunnelStarting = null;
     this.readyTimeoutMs = options.readyTimeoutMs || DAEMON_READY_TIMEOUT_MS;
     this.stopTimeoutMs = options.stopTimeoutMs || DAEMON_STOP_TIMEOUT_MS;
+    this.execFile = options.execFile || execFile;
     this.daemon = null;
+    this.pendingDaemon = null;
     this.mobileWebServer = null;
+    this.mobileWebStarting = null;
     this.serverApi = null;
     this.pairing = { relayEnabled: false, url: null, qr: null };
     this.relayState = { connected: false, lastError: '' };
     this.error = '';
     this.starting = null;
+    this.startGeneration = 0;
+    this.stopping = null;
     this.runtimeKey = '';
     // After ensurePairing fails, get-remote polling must not hammer refreshPairing.
     this.pairingEnsureBlocked = false;
@@ -520,13 +533,20 @@ class DshdRemote extends EventEmitter {
   }
 
   async ensureMobileWebServer(config = this.getConfig() || {}) {
+    if (this.mobileWebStarting) {
+      await this.mobileWebStarting;
+      return;
+    }
     if (this.mobileWebServer) {
       return;
     }
     const bind = mobileBindAddress(config);
     const server = createMobileWebServer({ bindAddress: bind, port: MOBILE_WEB_PORT });
+    const listening = listenMobileWebServer(server, bind, MOBILE_WEB_PORT);
+    this.mobileWebStarting = listening;
     try {
-      await listenMobileWebServer(server, bind, MOBILE_WEB_PORT);
+      await listening;
+      this.mobileWebServer = server;
     } catch (err) {
       await new Promise((resolve) => {
         server.close(() => { resolve(); });
@@ -544,19 +564,21 @@ class DshdRemote extends EventEmitter {
         throw new Error(`系统拒绝在 ${bind}:${MOBILE_WEB_PORT} 监听（EACCES）：端口可能被 Windows 保留，请重启后重试`);
       }
       throw err;
+    } finally {
+      if (this.mobileWebStarting === listening) this.mobileWebStarting = null;
     }
-    this.mobileWebServer = server;
   }
 
   async stopMobileWebServer() {
+    await this.mobileWebStarting?.catch(() => {});
     const server = this.mobileWebServer;
-    this.mobileWebServer = null;
     if (!server) {
       return;
     }
-    await new Promise((resolve) => {
-      server.close(() => { resolve(); });
+    await new Promise((resolve, reject) => {
+      server.close((error) => { if (error) reject(error); else resolve(); });
     });
+    if (this.mobileWebServer === server) this.mobileWebServer = null;
   }
 
   snapshot() {
@@ -611,14 +633,19 @@ class DshdRemote extends EventEmitter {
   }
 
   async refreshPairing() {
+    const generation = this.startGeneration;
+    const assertCurrent = () => {
+      if (generation !== this.startGeneration) throw daemonStartCancelled();
+    };
     const api = await this.ensureApi();
+    assertCurrent();
     const config = this.getConfig() || {};
     const defaults = readDefaults();
     const relayEndpoint = (config.remoteRelayEndpoint || config.remoteRelayUrl || defaults.relayEndpoint || '').trim();
     const useTls = relayUseTls(config, relayEndpoint);
     const appBaseUrl = this.pairingAppBaseUrl();
 
-    this.pairing = await api.generateLocalPairingOffer({
+    const pairing = await api.generateLocalPairingOffer({
       chisacodeHome: this.homeDir(),
       relayEnabled: true,
       relayEndpoint,
@@ -628,6 +655,8 @@ class DshdRemote extends EventEmitter {
       appBaseUrl,
       includeQr: false,
     });
+    assertCurrent();
+    this.pairing = pairing;
     this.pairingEnsureBlocked = false;
     return this.pairing;
   }
@@ -644,6 +673,7 @@ class DshdRemote extends EventEmitter {
     try {
       await this.refreshPairing();
     } catch (err) {
+      if (err?.code === 'DSHD_REMOTE_CANCELLED') return this.snapshot();
       this.pairingEnsureBlocked = true;
       const msg = err instanceof Error ? err.message : String(err);
       if (!this.error) this.error = msg;
@@ -652,23 +682,36 @@ class DshdRemote extends EventEmitter {
   }
 
   async startDaemon() {
+    if (this.stopping) throw daemonStartCancelled();
+    if (this.starting) {
+      await this.starting;
+      return;
+    }
+    if (this.pendingDaemon || this.daemon?.stopping) {
+      const beforeStop = this.startGeneration;
+      await this.stopDaemon();
+      if (this.startGeneration !== beforeStop + 1) throw daemonStartCancelled();
+    }
     if (this.daemon) {
       const nextRuntimeKey = this.runtimeConfigKey(this.getConfig() || {});
       if (nextRuntimeKey !== this.runtimeKey) {
+        const beforeStop = this.startGeneration;
         await this.stopDaemon();
+        if (this.startGeneration !== beforeStop + 1) throw daemonStartCancelled();
         return this.startDaemon();
       }
       await this.refreshPairing();
       this.pairingEnsureBlocked = false;
       return;
     }
-    if (this.starting) {
-      await this.starting;
-      return;
-    }
-
-    this.starting = (async () => {
+    const generation = ++this.startGeneration;
+    const assertCurrent = () => {
+      if (generation !== this.startGeneration) throw daemonStartCancelled();
+    };
+    let startedHandle = null;
+    const starting = (async () => {
       const api = await this.ensureApi();
+      assertCurrent();
       const config = this.getConfig() || {};
       const defaults = readDefaults();
       const home = this.homeDir();
@@ -684,6 +727,7 @@ class DshdRemote extends EventEmitter {
       } else {
         await this.ensureMobileWebServer(config);
       }
+      assertCurrent();
       this.relayState = { connected: false, lastError: '' };
 
       const daemonConfig = {
@@ -707,32 +751,40 @@ class DshdRemote extends EventEmitter {
 
       // Full daemon in an isolated child — a daemon-side crash cannot take
       // down the Electron main process.
-      this.daemon = await this.spawnDaemonProcess({ api, home, config, daemonConfig });
+      startedHandle = await this.spawnDaemonProcess({ api, home, config, daemonConfig, assertCurrent });
+      assertCurrent();
+      this.daemon = startedHandle;
+      if (this.pendingDaemon === startedHandle) this.pendingDaemon = null;
       this.runtimeKey = this.runtimeConfigKey(config);
       this.error = '';
       this.pushHarnessOrigin();
       await this.refreshPairing();
+      assertCurrent();
       this.pairingEnsureBlocked = false;
       this.emit('listening', this.snapshot());
     })();
+    this.starting = starting;
 
     try {
-      await this.starting;
+      await starting;
     } catch (err) {
-      this.error = err instanceof Error ? err.message : String(err);
+      const current = generation === this.startGeneration;
+      if (current) this.error = err instanceof Error ? err.message : String(err);
       // A late failure (e.g. refreshPairing) can land after the child was
       // assigned; it must not leak past this cleanup.
-      const failed = this.daemon;
-      this.daemon = null;
-      this.runtimeKey = '';
-      this.relayState = { connected: false, lastError: this.error };
-      if (failed) {
-        await this.terminateDaemonProcess(failed);
+      if (startedHandle) {
+        await this.terminateDaemonProcess(startedHandle);
+        if (this.daemon === startedHandle) this.daemon = null;
+        if (this.pendingDaemon === startedHandle) this.pendingDaemon = null;
       }
-      await this.stopMobileWebServer();
+      if (current) {
+        this.runtimeKey = '';
+        this.relayState = { connected: false, lastError: this.error };
+        await this.stopMobileWebServer();
+      }
       throw err;
     } finally {
-      this.starting = null;
+      if (this.starting === starting) this.starting = null;
     }
   }
 
@@ -745,7 +797,7 @@ class DshdRemote extends EventEmitter {
    * @param {object} options.daemonConfig
    * @returns {Promise<{ child: import('child_process').ChildProcess, stopping: boolean }>}
    */
-  async spawnDaemonProcess({ api, home, config, daemonConfig }) {
+  async spawnDaemonProcess({ api, home, config, daemonConfig, assertCurrent = () => {} }) {
     const launchFile = path.join(home, 'daemon-launch.json');
     // No credentials in the launch file — DEEPSEEK_* rides the child env only.
     fs.writeFileSync(
@@ -755,8 +807,15 @@ class DshdRemote extends EventEmitter {
     );
     const git = this.git;
     if (git && !this.gitTunnel) {
-      this.gitTunnel = await startGitTunnelServer({ git });
+      const startingTunnel = this.gitTunnelStarting || startGitTunnelServer({ git });
+      this.gitTunnelStarting = startingTunnel;
+      try {
+        this.gitTunnel = await startingTunnel;
+      } finally {
+        if (this.gitTunnelStarting === startingTunnel) this.gitTunnelStarting = null;
+      }
     }
+    assertCurrent();
     const env = buildDaemonChildEnv({
       baseEnv: process.env,
       home,
@@ -774,6 +833,7 @@ class DshdRemote extends EventEmitter {
       windowsHide: true,
     });
     const handle = { child, stopping: false, stderrTail: '' };
+    this.pendingDaemon = handle;
 
     let readyResolve = null;
     let readyReject = null;
@@ -804,6 +864,7 @@ class DshdRemote extends EventEmitter {
       await ready;
     } catch (err) {
       await this.terminateDaemonProcess(handle);
+      if (this.pendingDaemon === handle) this.pendingDaemon = null;
       const tail = handle.stderrTail.trim();
       throw tail ? new Error(`${err.message}\nstderr:\n${tail}`) : err;
     } finally {
@@ -831,7 +892,7 @@ class DshdRemote extends EventEmitter {
       return;
     }
     const status = relayStatusFromLogRecord(record, this.relayState);
-    if (status) {
+    if (status && !handle.stopping) {
       this.setRelayState(status);
     }
     const msg = typeof record.msg === 'string' ? record.msg : '';
@@ -856,6 +917,7 @@ class DshdRemote extends EventEmitter {
    */
   handleDaemonExit(handle, code, signal) {
     handle.readyReject(new Error(`远程守护进程提前退出（${signal || `code ${code}`}）`));
+    if (this.pendingDaemon === handle) this.pendingDaemon = null;
     if (this.daemon !== handle) {
       return;
     }
@@ -876,7 +938,20 @@ class DshdRemote extends EventEmitter {
    * @param {{ child: import('child_process').ChildProcess, stopping: boolean }} handle
    */
   async terminateDaemonProcess(handle) {
+    if (handle.stopPromise) return handle.stopPromise;
     handle.stopping = true;
+    handle.readyReject?.(daemonStartCancelled());
+    const stopping = this.stopDaemonProcess(handle);
+    handle.stopPromise = stopping;
+    try {
+      await stopping;
+    } catch (error) {
+      if (handle.stopPromise === stopping) handle.stopPromise = null;
+      throw error;
+    }
+  }
+
+  async stopDaemonProcess(handle) {
     const child = handle.child;
     // pid undefined = the spawn itself failed ('error' fires, 'exit' never
     // does) — there is no process to wait on.
@@ -890,32 +965,78 @@ class DshdRemote extends EventEmitter {
     }
     const exited = await waitForExit(child, this.stopTimeoutMs);
     if (!exited) {
+      let killError;
       try {
-        child.kill('SIGKILL');
-      } catch {
-        // Already dead.
+        if (process.platform === 'win32') {
+          // This exact handle came from our spawn and remains owned. Its
+          // executable can be Electron running as Node; never broaden the
+          // image-name guard used for PID files in DshManager.
+          if ((this.daemon !== handle && this.pendingDaemon !== handle)
+              || child.pid === process.pid || child.pid === process.ppid) {
+            throw new Error('远程守护进程不属于当前桌面，拒绝终止');
+          }
+          await new Promise((resolve, reject) => {
+            this.execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+              timeout: 2_500, windowsHide: true,
+            }, (error) => { if (error) reject(error); else resolve(); });
+          });
+        } else {
+          child.kill('SIGKILL');
+        }
+      } catch (error) {
+        killError = error;
       }
-      await waitForExit(child, 2_000);
+      if ((process.platform === 'win32' && killError) || !await waitForExit(child, 2_000)) {
+        const error = new Error(`远程守护进程未停止（pid ${child.pid}）${killError ? `：${killError.message}` : ''}`);
+        error.code = 'DSHD_REMOTE_STOP_FAILED';
+        if (killError) error.cause = killError;
+        throw error;
+      }
     }
   }
 
   async stopDaemon() {
-    this.relayState = { connected: false, lastError: '' };
-    // A deliberate stop clears any stale crash/start error.
-    this.error = '';
-    const handle = this.daemon;
-    this.daemon = null;
-    this.runtimeKey = '';
-    this.pairing = { relayEnabled: false, url: null, qr: null };
-    if (handle) {
-      await this.terminateDaemonProcess(handle);
+    this.startGeneration += 1;
+    this.starting = null;
+    if (this.stopping) return this.stopping;
+    const stopping = this.stopDaemonResources();
+    this.stopping = stopping;
+    try {
+      await stopping;
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : String(error);
+      this.relayState = { connected: false, lastError: this.error };
+      throw error;
+    } finally {
+      if (this.stopping === stopping) this.stopping = null;
     }
+  }
+
+  async stopDaemonResources() {
+    const handles = [...new Set([this.daemon, this.pendingDaemon].filter(Boolean))];
+    const stopped = await Promise.allSettled(handles.map((handle) => this.terminateDaemonProcess(handle)));
+    // The cancelled startup no longer publishes ready, but can still be
+    // finishing a concrete server listen. Wait for those resource acquisitions.
+    await this.gitTunnelStarting?.catch(() => {});
+    const cleanup = [];
     if (this.gitTunnel) {
       const tunnel = this.gitTunnel;
-      this.gitTunnel = null;
-      try { await tunnel.close(); } catch { /* ignore */ }
+      cleanup.push(Promise.resolve().then(() => tunnel.close()).then(() => {
+        if (this.gitTunnel === tunnel) this.gitTunnel = null;
+      }));
     }
-    await this.stopMobileWebServer();
+    cleanup.push(this.stopMobileWebServer());
+    const results = stopped.concat(await Promise.allSettled(cleanup));
+    const failures = results.filter((result) => result.status === 'rejected').map((result) => result.reason);
+    if (failures.length) throw new AggregateError(failures, failures.map((error) => error?.message || String(error)).join('\n'));
+    for (const handle of handles) {
+      if (this.daemon === handle) this.daemon = null;
+      if (this.pendingDaemon === handle) this.pendingDaemon = null;
+    }
+    this.relayState = { connected: false, lastError: '' };
+    this.error = '';
+    this.runtimeKey = '';
+    this.pairing = { relayEnabled: false, url: null, qr: null };
     this.emit('listening', this.snapshot());
   }
 

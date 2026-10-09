@@ -122,6 +122,7 @@ function createTaskProtection(options = {}) {
       return {
         ok: false,
         code: inspection.code || 'dshd/unreachable',
+        detail: inspection.detail,
         activeWork: [],
         scheduledWork: [],
         coverage: { host: 'unavailable' },
@@ -213,11 +214,13 @@ function createTaskProtection(options = {}) {
       if (hostRunning() && opts.hostLock !== false) {
         const acquired = await acquire(operation);
         if (acquired.ok !== true) {
-          if (acquired.code === 'dshd/drain-timeout' || acquired.code === 'dshd/unreachable') {
-            // Fail closed for update/install flows; quit prompts already ran.
-            return { proceeded: false, code: acquired.code, detail: acquired.detail };
-          }
-          return { proceeded: false, code: acquired.code || 'acquire-failed' };
+          return {
+            proceeded: false,
+            code: acquired.code || 'acquire-failed',
+            detail: acquired.detail,
+            pendingCount: acquired.pendingCount,
+            pendingLabels: acquired.pendingLabels,
+          };
         }
         const second = mergedInspection(await inspect());
         if (!inspectionClean(second) && inspectionClean(first) && opts.preConfirmed !== true) {
