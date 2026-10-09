@@ -1,9 +1,9 @@
 /**
  * Main-thread client of the review-diff highlight Worker (`./highlight.worker.ts`,
  * embedded by tsdown and run from a Blob URL). One Worker per page serves every
- * mounted diff concurrently — jobs carry a `run` id so replies route to their
- * dispatch and a `drop` message lets the worker skip queued work a disposed
- * effect no longer needs. Worker startup is lazy and memoized: a page that
+ * mounted diff — jobs carry a `run` id so replies route to their dispatch.
+ * Each run sends one job at a time; disposal stops unsent jobs and ignores the
+ * submitted job's reply. Worker startup is lazy and memoized: a page that
  * never renders a diff never fetches the worker chunk.
  *
  * Availability is deliberately tentative: `Worker` missing, a blocked Blob
@@ -40,7 +40,7 @@ export interface HighlightJobCallbacks {
 
 /** What {@link dispatchHighlightJobs} returns while a run is cancellable. */
 export interface HighlightJobRun {
-  /** Stop applying this run and tell the worker to skip its queued jobs. */
+  /** Stop unsent jobs and callbacks; the one submitted job cannot be interrupted. */
   cancel(): void
 }
 
@@ -58,6 +58,8 @@ interface RunState {
   readonly callbacks: HighlightJobCallbacks
   /** Job indexes not yet answered. */
   readonly pending: Set<number>
+  /** The submitted job stays current while its lazy grammar loads. */
+  active: { readonly job: number; readonly phase: 'worker' | 'grammar' } | undefined
 }
 
 const runs = new Map<number, RunState>()
@@ -73,17 +75,41 @@ let workerFailed = false
  */
 const WORKER_READY_TIMEOUT_MS = 10_000
 
-/** Route every worker reply to its run; runs already dropped ignore it. */
+/** Submit at most one unanswered job per run, leaving other runs independent. */
+function dispatchNext(run: number): void {
+  const state = runs.get(run)
+  if (state === undefined || state.callbacks.cancelled() || state.active !== undefined || worker === undefined) return
+  const [index] = state.pending
+  if (index === undefined) return
+  const job = state.jobs[index]!
+  state.active = { job: index, phase: 'worker' }
+  worker.postMessage({ op: 'job', run, job: index, code: job.code, lang: job.lang })
+}
+
+/** Settle one side before advancing its run; applying a result may cancel it. */
+function completeJob(run: number, job: number, spans: HighlightSpan[][] | undefined, workMs: number): void {
+  const state = runs.get(run)
+  if (state === undefined || state.callbacks.cancelled()) return
+  state.pending.delete(job)
+  state.active = undefined
+  if (state.pending.size === 0) runs.delete(run)
+  try {
+    state.callbacks.apply(job, spans, workMs)
+  } catch (error) {
+    console.error('review highlight: apply callback failed', error)
+  }
+  dispatchNext(run)
+}
+
+/** Route every worker reply to its current job; cancelled runs ignore it. */
 function onWorkerMessage(event: MessageEvent<WorkerReply>): void {
   const message = event.data
   const state = runs.get(message.run)
   if (state === undefined || state.callbacks.cancelled()) return
-  const job = state.jobs[message.job]
-  if (job === undefined) return
+  const active = state.active
+  if (active === undefined || active.job !== message.job || active.phase !== 'worker') return
   if (message.op === 'done') {
-    state.pending.delete(message.job)
-    state.callbacks.apply(message.job, message.spans, message.workMs ?? 0)
-    if (state.pending.size === 0) runs.delete(message.run)
+    completeJob(message.run, message.job, message.spans, message.workMs ?? 0)
     return
   }
   // 'missing': the worker realm lacks this grammar. Fetch the registration
@@ -91,15 +117,18 @@ function onWorkerMessage(event: MessageEvent<WorkerReply>): void {
   // path), post it over, and repost the job. A failed fetch applies plain.
   const resolved = message.resolved
   if (resolved === undefined) return
+  state.active = { job: message.job, phase: 'grammar' }
   void fetchGrammarModule(resolved).then((registrations) => {
     const live = runs.get(message.run)
     if (live === undefined || live.callbacks.cancelled() || worker === undefined) return
+    const current = live.active
+    if (current === undefined || current.job !== message.job || current.phase !== 'grammar') return
     if (registrations === undefined) {
-      live.pending.delete(message.job)
-      live.callbacks.apply(message.job, undefined, 0)
-      if (live.pending.size === 0) runs.delete(message.run)
+      completeJob(message.run, message.job, undefined, 0)
       return
     }
+    const job = live.jobs[message.job]!
+    live.active = { job: message.job, phase: 'worker' }
     worker.postMessage({ op: 'langs', registrations: registrations satisfies LangModule['default'] })
     worker.postMessage({ op: 'job', run: message.run, job: message.job, code: job.code, lang: job.lang })
   })
@@ -175,27 +204,25 @@ export function dispatchHighlightJobs(
     return undefined
   }
   const run = ++nextRun
-  const state: RunState = { jobs, callbacks, pending: new Set(jobs.keys()) }
+  const state: RunState = { jobs, callbacks, pending: new Set(jobs.keys()), active: undefined }
   runs.set(run, state)
   if (jobs.length === 0) {
     runs.delete(run)
     return { cancel() {} }
   }
   void acquireWorker().then((instance) => {
-    if (!runs.has(run) || callbacks.cancelled()) return
+    const live = runs.get(run)
+    if (live === undefined || live.callbacks.cancelled()) return
     if (instance === undefined) {
       runs.delete(run)
-      callbacks.failed()
+      live.callbacks.failed()
       return
     }
-    for (const [index, job] of jobs.entries()) {
-      instance.postMessage({ op: 'job', run, job: index, code: job.code, lang: job.lang })
-    }
+    dispatchNext(run)
   })
   return {
     cancel() {
-      if (!runs.delete(run)) return
-      worker?.postMessage({ op: 'drop', run })
+      runs.delete(run)
     },
   }
 }

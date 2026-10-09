@@ -1,0 +1,148 @@
+diff --git a/dev/lib/edit-map.js b/dev/lib/edit-map.js
+index 983d055..5763f48 100644
+--- a/dev/lib/edit-map.js
++++ b/dev/lib/edit-map.js
+@@ -34,6 +34,13 @@ export class EditMap {
+      * @type {Array<Change>}
+      */
+     this.map = []
++
++    /**
++     * Edits indexed by position, without scanning preceding table cells.
++     *
++     * @type {Map<number, Change>}
++     */
++    this.byIndex = new Map()
+   }
+ 
+   /**
+@@ -124,6 +131,7 @@ export class EditMap {
+ 
+     // Truncate everything.
+     this.map.length = 0
++    this.byIndex.clear()
+   }
+ }
+ 
+@@ -137,32 +145,30 @@ export class EditMap {
+  * @returns {undefined}
+  */
+ function addImplementation(editMap, at, remove, add) {
+-  let index = 0
+-
+   /* c8 ignore next 3 -- `resolve` is never called without tables, so without edits. */
+   if (remove === 0 && add.length === 0) {
+     return
+   }
+ 
+-  while (index < editMap.map.length) {
+-    if (editMap.map[index][0] === at) {
+-      editMap.map[index][1] += remove
++  const change = editMap.byIndex.get(at)
++  if (change !== undefined) {
++    change[1] += remove
+ 
+-      // To do: before not used by tables, use when moving to micromark.
+-      // if (before) {
+-      //   add.push(...editMap.map[index][2])
+-      //   editMap.map[index][2] = add
+-      // } else {
+-      editMap.map[index][2].push(...add)
+-      // }
+-
+-      return
+-    }
++    // To do: before not used by tables, use when moving to micromark.
++    // if (before) {
++    //   add.push(...change[2])
++    //   change[2] = add
++    // } else {
++    change[2].push(...add)
++    // }
+ 
+-    index += 1
++    return
+   }
+ 
+-  editMap.map.push([at, remove, add])
++  /** @type {Change} */
++  const next = [at, remove, add]
++  editMap.map.push(next)
++  editMap.byIndex.set(at, next)
+ }
+ 
+ // /**
+diff --git a/lib/edit-map.js b/lib/edit-map.js
+index ecc8bce..692c737 100644
+--- a/lib/edit-map.js
++++ b/lib/edit-map.js
+@@ -34,6 +34,13 @@ export class EditMap {
+      * @type {Array<Change>}
+      */
+     this.map = [];
++
++    /**
++     * Edits indexed by position, without scanning preceding table cells.
++     *
++     * @type {Map<number, Change>}
++     */
++    this.byIndex = new Map();
+   }
+ 
+   /**
+@@ -117,6 +124,7 @@ export class EditMap {
+ 
+     // Truncate everything.
+     this.map.length = 0;
++    this.byIndex.clear();
+   }
+ }
+ 
+@@ -130,29 +138,30 @@ export class EditMap {
+  * @returns {undefined}
+  */
+ function addImplementation(editMap, at, remove, add) {
+-  let index = 0;
+-
+   /* c8 ignore next 3 -- `resolve` is never called without tables, so without edits. */
+   if (remove === 0 && add.length === 0) {
+     return;
+   }
+-  while (index < editMap.map.length) {
+-    if (editMap.map[index][0] === at) {
+-      editMap.map[index][1] += remove;
+-
+-      // To do: before not used by tables, use when moving to micromark.
+-      // if (before) {
+-      //   add.push(...editMap.map[index][2])
+-      //   editMap.map[index][2] = add
+-      // } else {
+-      editMap.map[index][2].push(...add);
+-      // }
+ 
+-      return;
+-    }
+-    index += 1;
++  const change = editMap.byIndex.get(at);
++  if (change !== undefined) {
++    change[1] += remove;
++
++    // To do: before not used by tables, use when moving to micromark.
++    // if (before) {
++    //   add.push(...change[2])
++    //   change[2] = add
++    // } else {
++    change[2].push(...add);
++    // }
++
++    return;
+   }
+-  editMap.map.push([at, remove, add]);
++
++  /** @type {Change} */
++  const next = [at, remove, add];
++  editMap.map.push(next);
++  editMap.byIndex.set(at, next);
+ }
+ 
+ // /**

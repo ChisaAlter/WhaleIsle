@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { Root, RootContent } from 'mdast'
 import { MarkdownText } from './markdown-test-components.tsx'
 import { IncrementalMarkdownParser } from '../src/markdown/incremental.ts'
-import { parseGfm } from '../src/markdown/parse.ts'
+import { parseGfm, parseGfmWithMath } from '../src/markdown/parse.ts'
 
 afterEach(cleanup)
 
@@ -482,6 +482,37 @@ describe('streaming composition across freezes', () => {
       fresh.unmount()
     }
     live.unmount()
+  })
+})
+
+describe('Markdown grammars', () => {
+  it.each([
+    ['streaming', parseGfm],
+    ['settled', parseGfmWithMath],
+  ] as const)('preserves every cell in a 10,000-row %s GFM table', (_arm, parse) => {
+    const rowCount = 10_000
+    const root = parse('|a|b|\n|-|-|\n' + '|a|b|\n'.repeat(rowCount))
+    expect(root.children).toHaveLength(1)
+    const table = root.children[0]
+    expect(table?.type).toBe('table')
+    if (table?.type !== 'table') throw new Error('Expected the complete table AST')
+    expect(table.align).toEqual([null, null])
+    expect(table.children).toHaveLength(rowCount + 1)
+    expect(table.children.map(row => ({
+      type: row.type,
+      children: row.children.map(cell => ({
+        type: cell.type,
+        children: cell.children.map(node => node.type === 'text'
+          ? { type: node.type, value: node.value }
+          : { type: node.type }),
+      })),
+    }))).toEqual(Array.from({ length: rowCount + 1 }, () => ({
+      type: 'tableRow',
+      children: [
+        { type: 'tableCell', children: [{ type: 'text', value: 'a' }] },
+        { type: 'tableCell', children: [{ type: 'text', value: 'b' }] },
+      ],
+    })))
   })
 })
 
