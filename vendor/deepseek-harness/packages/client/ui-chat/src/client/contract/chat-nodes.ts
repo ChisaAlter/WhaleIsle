@@ -10,6 +10,8 @@ export interface ChatConversationViewNode extends ConversationViewNode {
   readonly anchorSeq: number
   readonly location: ConversationLocation
   readonly visibility: 'visible' | 'hidden'
+  /** Published reply content remains outside the collapsible tool/reasoning process. */
+  readonly processVisibility?: 'independent'
   /** This turn was replaced by a user edit; excludes it from chat and legacy summaries. */
   readonly superseded?: true
 }

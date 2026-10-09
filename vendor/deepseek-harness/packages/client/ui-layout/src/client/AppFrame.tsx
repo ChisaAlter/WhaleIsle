@@ -336,7 +336,9 @@ export function AppFrame({
   const desktop = document.documentElement.hasAttribute('data-windows-titlebar')
     || document.documentElement.dataset.platform === 'darwin'
   const clusterVisible = desktop || viewport >= PHONE_MAX
-  useEffect(() => { actions.setNarrow(narrow) }, [actions, narrow])
+  // Width reports also update the store's fallback reading, even when the
+  // device orientation keeps this frame's narrow reading unchanged.
+  useEffect(() => { actions.setNarrow(narrow) }, [actions, narrow, viewport])
   const sidebarCollapsed = narrow ? !layoutInfo.narrowExpanded : layoutInfo.sidebar === 0
   const sidebarPreference = sidebarCollapsed
     ? 0

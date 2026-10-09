@@ -69,6 +69,8 @@ function bootApi(renderer) {
 
 function harnessApi(renderer, remoteFeature) {
   return {
+    // Generated pages are interactive only where the host vetoes navigation.
+    visualReplyIsolation: true,
     ...windowApi(renderer),
     ...configApi(renderer),
     openExternal: invoke(renderer, 'shell:open-external'),

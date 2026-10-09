@@ -48,3 +48,11 @@
 
 - [../superpowers/specs/2026-08-19-files-browser-logic-port-design.md](../../superpowers/specs/2026-08-19-files-browser-logic-port-design.md)
 - [terminal.md](terminal.md)
+
+## 会话视觉回复
+
+启用设置 → General → 视觉回复后，模型可用 `html_preview` 获取截图、页面高度和控制台反馈，再用 `html_render` 将完整 HTML 保存为会话附件并内联展示。桌面卡片提供展开、源码和保存 HTML；不会打开或改变右栏。展开／源码／返回复用同一个页面，主题切换也保留当前交互状态。该页面仅运行自包含 CSS / JavaScript 与嵌入图片，不联网，不具有应用同源或工具权限；桌面宿主同时拦截页面自行导航。普通浏览器和手机端提供源码和保存，不执行生成页面脚本，并提示在桌面端打开交互预览；预览截图在 `html_preview` 工具记录中查看，不嵌入发布卡片。截图使用主进程独立、隐藏、临时 Chromium partition，取消会销毁临时窗口；历史附件只允许所属会话读取，含嵌套工具调用。关闭开关不删除附件或隐藏历史页面。
+
+实现：`src/main/html-preview.js`、`desktop-install-control.js`；Harness 的 `packages/client/ui-visual-replies` 和 `packages/api/session-controller`。
+
+成功发布结果在客户端投影为独立的会话页面节点，不随已完成工具过程折叠；原工具详情仍可展开查看。该投影读取现有原生和嵌套工具事件，不改变会话日志格式。
