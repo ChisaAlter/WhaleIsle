@@ -1,7 +1,7 @@
 /** Approval composer and optional correlated-detail contracts. */
 import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { ApprovalRequestId } from '@deepseek-ai/dsh-user-approval/types'
+import type { ApprovalRequestId, ApprovalRequester } from '@deepseek-ai/dsh-user-approval/types'
 import type {
   PropsLocale, PropsRenderSlots, PropsRuntime,
 } from '@deepseek-ai/dsh-client-ui-slots'
@@ -34,6 +34,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 
   interface SlotMap {
+    /** Session controls that remain available during an approval takeover. */
+    'conversation.approval.actions': {
+      kind: 'list'
+      scope: 'session'
+    }
     /** Optional detail for the Tool call correlated with an approval request. */
     'conversation.approval.detail': {
       kind: 'single'
@@ -47,10 +52,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export interface ApprovalDetailOwnerProps {
   /** Tool call correlated with the request. */
   callId: ToolCallId
+  /** Host-read original member call; never resolve it from the presenting parent's chat. */
+  requester?: ApprovalRequester
 }
 
 /** Client-visible fields of an approval request projected through Remote Events. */
 export interface ApprovalPresentationRequest {
+  readonly requester?: ApprovalRequester
   /** Durable request identity reused when the Host resumes the blocked call. */
   readonly requestId?: ApprovalRequestId
   /** Tool requesting the decision. */
@@ -75,6 +83,7 @@ export type ApprovalInteractionKind = 'approval'
 
 /** One answerable Client presentation of a pending Host waterfall. */
 export class PendingApproval {
+  readonly requester: ApprovalRequester | undefined
   /** Domain discriminator used by Session pending-interaction consumers. */
   readonly kind: 'approval'
   /** Opaque render identity and one-shot remount axis. */
@@ -105,6 +114,7 @@ export class PendingApproval {
    */
   constructor(readonly sessionId: SessionId, request: ApprovalPresentationRequest) {
     this.kind = 'approval'
+    this.requester = request.requester
     nextApprovalKey += 1
     this.requestId = request.requestId
     this.key = request.requestId === undefined
@@ -196,7 +206,7 @@ export interface ApprovalInjected {
 /** Full props of the approval composer takeover. */
 export type ApprovalComposerProps =
   PropsRuntime<'conversation.composer'>
-  & PropsRenderSlots<'conversation.approval.detail'>
+  & PropsRenderSlots<'conversation.approval.detail' | 'conversation.approval.actions'>
   & { matched: PendingApproval }
   & PropsLocale<'approval'>
   & ApprovalInjected

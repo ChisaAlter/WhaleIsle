@@ -19,13 +19,8 @@
 }
 
 .frame {
-  /* The band a reader actually sees: the scrollport minus the sticky composer
-     stack covering its floor. ConversationRoot publishes both measurements on
-     the scrollport; the fallbacks carry the first paint before its observer
-     fires. */
-  --turn-rail-band: calc(
-    var(--dsh-conversation-viewport-height, 100dvh) - var(--dsh-composer-height, 152px)
-  );
+  /* ConversationRoot's scrollport already excludes the composer footer. */
+  --turn-rail-band: var(--dsh-conversation-viewport-height, 100dvh);
   --turn-preview-height: 100px;
 
   position: absolute;

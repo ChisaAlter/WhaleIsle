@@ -78,6 +78,31 @@ test('explicit real Git worktrees preserve dirty user data and retain committed 
   await assert.rejects(environment.prepareWorkspace(payload), /清理/);
 });
 
+test('real Git Project worktrees check out tracked long paths without changing repository configuration', async t => {
+  const { source, git, environment } = await fixture(t);
+  const relativeFile = path.join('nested-source-'.repeat(4), 'nested-module-'.repeat(4), 'tracked-result.txt');
+  const original = path.join(source, relativeFile), bytes = Buffer.from('Real tracked long-path content\n第二行\n', 'utf8');
+  fs.mkdirSync(path.dirname(original), { recursive: true }); fs.writeFileSync(original, bytes);
+  await git(source, ['-c', 'core.longpaths=true', 'add', '--', relativeFile]);
+  await git(source, ['commit', '-m', 'tracked long relative path']);
+  const configFile = path.join(source, '.git', 'config'), config = fs.readFileSync(configFile);
+  const payload = { projectId: `project-${'p'.repeat(36)}`, workstreamId: `work-${'w'.repeat(36)}`, workingDirectory: source, mode: 'worktree' };
+  const workspace = await environment.prepareWorkspace(payload), checkedOut = path.join(workspace.canonicalPath, relativeFile);
+  assert.ok(checkedOut.length > 260, 'the actual checkout exceeds the legacy Windows full-path limit');
+  assert.ok(checkedOut.split(/[\\/]/).every(part => part.length < 255), 'no path segment exceeds the filesystem component limit');
+  assert.deepEqual(fs.readFileSync(checkedOut), bytes);
+  assert.equal(workspace.ownership, 'project');
+  assert.equal(await git(workspace.canonicalPath, ['rev-parse', 'HEAD']), workspace.baseCommit);
+  const clean = await environment.snapshot({ projectId: payload.projectId, workstreamId: payload.workstreamId, workspace });
+  assert.equal(clean.dirty, false); assert.deepEqual(clean.files, []); assert.equal(clean.diff, '', 'tracked long paths are not falsely reported as deletions');
+  fs.writeFileSync(checkedOut, Buffer.concat([bytes, Buffer.from('Actual change\n')]));
+  const changed = await environment.snapshot({ projectId: payload.projectId, workstreamId: payload.workstreamId, workspace });
+  assert.equal(changed.dirty, true); assert.equal(changed.files.length, 1); assert.equal(changed.files[0].path, relativeFile.replaceAll('\\', '/'));
+  assert.match(changed.diff, /Actual change/); assert.equal(changed.files[0].sha256, require('node:crypto').createHash('sha256').update(fs.readFileSync(checkedOut)).digest('hex'));
+  assert.deepEqual(fs.readFileSync(configFile), config, 'checkout and subsequent inspections do not persist core.longpaths in shared config');
+  assert.deepEqual(fs.readFileSync(original), bytes);
+});
+
 test('cleanup preserves ignored files even when Git reports no ordinary changes', async t => {
   const { source, git, environment } = await fixture(t);
   fs.writeFileSync(path.join(source, '.gitignore'), '*.secret\n');

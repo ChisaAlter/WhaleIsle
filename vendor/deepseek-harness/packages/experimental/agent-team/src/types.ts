@@ -101,6 +101,8 @@ export interface TeamTaskView {
 export interface TeamMemberProjection {
   readonly id: SessionId
   readonly name: string
+  /** Persisted teammate description; the implicit Lead has no description. */
+  readonly description?: string
   readonly role: 'lead' | 'teammate'
   /** Durable lifecycle; the Lead row is always `active`. Turn activity comes from Session status. */
   readonly phase: TeamMemberPhase

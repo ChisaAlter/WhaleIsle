@@ -433,6 +433,31 @@ describe('AppFrame normal width concessions', () => {
     expect(rightOwner().canShow).toBe(true)
   })
 
+  it.each([
+    ['win32', false, 56], ['win32', true, 0], ['darwin', false, 0], ['linux', false, 56],
+  ] as const)('opens a narrow desktop right panel on a landscape monitor (%s, native caption: %s)', (platform, caption, rail) => {
+    document.documentElement.dataset.platform = platform
+    if (caption) document.documentElement.setAttribute('data-windows-titlebar', '')
+    landscape = true
+    stubScreenAvail(1920, 1080)
+    frameWidth = 960
+    const { frame, instance, rightOwner } = mountFrame()
+    expect(tracks(frame)).toEqual([rail, 0, 0])
+    act(() => { instance.actions.toggleSidebar() })
+    expect(tracks(frame)[0]).toBe(280)
+    expect(rightOwner()).toEqual({ width: 432, viewportWidth: 960, canShow: true })
+    act(() => { instance.actions.openRightbar(true, false) })
+    expect(tracks(frame)).toEqual([rail, 432, 0])
+    expect(instance.getSnapshot().layoutInfo.narrowExpanded).toBe(false)
+    vi.stubGlobal('innerWidth', 1440)
+    resize(1440)
+    expect(tracks(frame)[0]).toBe(280)
+    vi.stubGlobal('innerWidth', 960)
+    resize(960)
+    expect(tracks(frame)).toEqual([rail, 432, 0])
+    expect(rightOwner().canShow).toBe(true)
+  })
+
   it.each([[756, 300, true], [755, 0, false]] as const)('reports eligibility at %ipx', (width, rightbar, canShow) => {
     frameWidth = width
     const { instance, rightOwner } = mountFrame()

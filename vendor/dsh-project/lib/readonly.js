@@ -31,7 +31,7 @@ export function apply(ctx) {
   ctx.tools.register(defineTool({ name: 'project_write_document', description: 'Write exactly one repository-relative document path declared in the current consumed documentation assignment. No other repository file or shell is permitted.', timeoutMs: 10000,
     parameters: { path: { type: 'string', required: true }, text: { type: 'string', required: true } }, output,
     async execute(args, exec) { const { worker } = context(ctx, exec); if (worker.role !== 'docs' || !worker.writePaths.includes(args.path)) throw new Error('This document path is not authorized by the current assignment.');
-      if (typeof args.text !== 'string' || args.text.length > 512000) throw new Error('Document exceeds the write limit.');
+      if (typeof args.text !== 'string' || Buffer.byteLength(args.text, 'utf8') > 512000) throw new Error('Document exceeds the write limit.');
       const root = await checkedRoot(worker.cwd), target = resolve(root, args.path);
       if (!within(root, target)) throw new Error('Document path is outside the assigned directory.');
       let ancestor = dirname(target);

@@ -74,7 +74,7 @@
 | [desktop-pet](desktop-pet.md) | 受限宠物浮层：Codex 皮肤、点击/拖拽动画、右键换肤、托盘开关与位置持久化 | `desktop-pet` / `desktop-pets` / `window` / `tray` | TC-DESK-010；focused tests |
 | [desktop-live2d-pet](desktop-live2d-pet.md) | 整屏透明 Live2D 鲸鱼娘：点击穿透、拖拽物理、对话气泡、token 投喂成长 | `desktop-live2d` / `pet-growth` / `pet-live2d.*` | `node --test` focused；TC-DESK-011 |
 | [whale-assistant](whale-assistant.md) | 第一方 `dsh-whale` 插件：常驻助理会话 + 设置分区 + 侧栏入口 + 桌宠桥 | `dsh-whale-desktop` / `vendor/dsh-whale` | `dsh-whale-desktop.test.js` + skip-compose |
-| [projects](projects.md) | 本地目录绑定、唯一协调对话与可续接后台执行；Team 可选 | `dsh-project-desktop` / `project-environment` / `vendor/dsh-project` | 新版实现待验证；真实委派/停止、目录保护与可见窗口验收 |
+| [projects](projects.md) | 本地目录绑定、唯一 Team Lead 主对话与原生成员持续执行 | `dsh-project-desktop` / `project-environment` / `vendor/dsh-project` | 真实模型协作、开发、停止/恢复与打包应用 UI 已验证；本地安装包已生成，未安装或发布 |
 | [directory-picker-drives](directory-picker-drives.md) | 目录选择器 Win32 卷选择层：「此电脑」列出全部盘符，可跨盘选工作区 | vendor `directory-picker` / `directory-picker-browse` | vendor spec + marker 单测 |
 | [custom-instructions](custom-instructions.md) | 设置→通用自定义指令，作系统提示词末段随请求发送 | `ui-conversation.customInstructions` / `SystemPromptProjection` | ui-conversation 定向测试 + 真实模型验证 |
 | [session-cost-display](session-cost-display.md) | 会话累计费用显示与按峰谷分桶计价；开关关闭时整行隐藏 | `PeakValleyRow` / `billedUsage` 投影 / `ui-model-selection` | vendor client specs + 设置开关回归 |

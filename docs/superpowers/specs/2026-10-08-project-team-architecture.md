@@ -1,14 +1,16 @@
 # Project × Agent Teams：实现架构与迁移方案
 
-2026-10-08 · 设计 3.1 · 源码研究后的待实现方案。
+2026-10-09 · 设计 3.2 · 原生 Team 主链已实现；本次整体审查新增的要求归属、阶段授权与明确交付尚未实现。当前证据边界见功能资料。
 
 用户再次明确：Project 必须与鲸屿的智能体团队结合。此前把 Agent Teams 降为可选、用 Project 自建持续 worker 体系的决定撤销。本文件是运行时实现依据；[产品界面与流程](2026-10-08-project-product-redesign.md)保留，涉及团队的部分以本文为准；[配套提示词](2026-10-08-project-prompts.md)同步修订。GitHub 研究见[固定源码依据](../../research/2026-10-08-project-team-runtime-research.md)。
 
+本文保留设计时的基线、拟定接口和实现约束；它们不是当前源码缺口清单或最终 API 文档。实际接线与证据以 [功能资料](../../features/projects.md) 和 [插件说明](../../../vendor/dsh-project/README.md) 为准。当前已采用原生 Team Lead、成员 Session、任务和 mailbox；设计中的独立事件名及伪代码不能覆盖实际 `team/control` 等实现契约。
+
 这里的“结合”有可观察标准：Project 主对话就是 Team Lead；后台执行者是 Team roster 中的真实 teammate；工作就是 Team task；续接与协作使用 Team mailbox；进度和团队视图读取同一份 Team 状态。不是在两套运行时之间同步一个团队标志。
 
-## 1. 已核实的本地能力与缺口
+## 1. 设计时核实的本地能力与缺口
 
-以下路径均相对 `vendor/deepseek-harness/packages/experimental/`，以当前分支 `4fe72166b` 加未提交 UI 改动为检查对象。均为源码事实，尚未证明新的组合可运行。
+以下路径均相对 `vendor/deepseek-harness/packages/experimental/`，检查对象是设计时基线 `4fe72166b` 加当时未提交 UI 改动。表内行号、容量限制与“尚未接线”等描述仅记录当时源码，不代表最新实现；当前组合已有真实模型只读委派与原成员续接证据。
 
 | 代码位置 | 已有能力 | Project 必须补的连接 |
 | --- | --- | --- |
@@ -45,6 +47,7 @@ flowchart TB
 | 事实 | 唯一权威 | Project 是否再存一份 |
 | --- | --- | --- |
 | 项目名称、目录、生命周期、主对话 | Project 索引 | 保留 |
+| 用户目标、修订、真实输入引用与交付关系 | Project 业务记录，引用主对话原文 | 保留；不复制 Session 消息或建立第二套执行队列 |
 | TeamId | coordinatorSessionId，沿用 Root Team 规则 | 只保留关联，不生成第二个 Team |
 | 工作 id/标题/owner/依赖/status/revision | Lead 日志中的 TeamTask | 不再保存独立 workstream.status |
 | teammate 身份、名字、创建结果 | Team roster + 原 Session | 不再保存另一份 workers.phase |
@@ -64,7 +67,7 @@ Team runtime 增加宿主注册的 policy seam，按 Root Session 的持久绑�
 
 具体持久绑定采用 Lead 日志中版本化的 `team/policy-bound` 事件，值为 `{policyId, policyVersion, projectId}`，不含用户凭据或任意回调。创建顺序是先建未启动的协调者 Session、提交绑定并 flush，再允许 Agent 激活；原子记录 Project 索引之前的孤立 Session 不得自动执行。Team 的 `scheduleRecovery` 必须先重放该绑定，注册策略就绪后才做运行恢复；缺少实现只允许读取。旧项目迁移先给原 Lead 加绑定，再导入 roster；不能在导入后补保护。此为新增事件契约，需随 Session 后继代际实现。
 
-拟定窄接口（待实现，不是现有 API）：
+设计时拟定窄接口（保留表达职责，精确签名以当前源码为准）：
 
 ```ts
 // 只由受信宿主调用；模型参数不能提供 environment/policy/childId。
@@ -101,13 +104,13 @@ operationId 重放只允许完成已经授权的同一操作，不能在停止�
 
 ## 5. 追加、成员协作与依赖
 
-同一工作继续同一 Team task 和 teammate Session。`completed` 的 task 在明确新要求下 CAS reopen；owner 可因原生 reopen 被清除，但 Project 的固定 member 关联保留，重新派发仍指向原成员。active 工作追加通过 Team mailbox 去原成员最近边界；用户看到“追加已接受”，直到实际消费后才成为新执行范围。
+同一工作继续同一 Team task 和 teammate Session。`completed` 的 task 可因同一有效要求的必要下一阶段或明确新要求 CAS reopen；owner 可因原生 reopen 被清除，但 Project 的固定 member 关联保留，重新派发仍指向原成员。原授权内下一阶段不要求用户再次催促；停止后的恢复或超出授权的行为仍需新的用户输入。active 工作追加通过 Team mailbox 去原成员最近边界；用户看到“追加已接受”，直到实际消费后才成为新执行范围。
 
 Team mailbox 的 `accepted` 是持久投递观察，不是成员已理解或执行。运行回执另外记录被实际消费的 assignmentRef；旧权限不能因为一条新消息入队就扩张。
 
 成员协作使用真实 Team peer message：例如后端成员发送接口说明给前端成员。宿主加当前任务/代次关联，来源显示成员姓名。peer 内容是协作材料，不是新用户授权。空闲但仍有已授权活动任务的成员可在准入后被唤醒；已完成、已停止或封存成员不能被闲聊/迟到消息重新开工，其消息保留为待用户继续时可读资料。
 
-现有 Project pre-step 只认识用户委托/原生结算等来源，不能原样沿用。新增对真实 `team-message` source 的识别：向 Team journal 核对 messageId、同一 Team 的 sender/target、受信 deliveryContext 与当前 assignment；模型正文内的 DelegationRef 不算身份。peer 消息只作为当前已授权任务的材料，不更新 scope 或用户消息截止点；只有 Lead 经 project_delegate 发出的受信 assignment 才能更换本轮要求。
+设计时 Project pre-step 只认识用户委托/原生结算等来源，不能原样沿用。接入真实 `team-message` source 时，向 Team journal 核对 messageId、同一 Team 的 sender/target、受信 deliveryContext 与当前 assignment；模型正文内的 DelegationRef 不算身份。peer 消息只作为当前已授权任务的材料，不更新 scope 或用户消息截止点；只有 Lead 经 project_delegate 发出的受信 assignment 才能更换本轮要求。
 
 有执行先后关系时使用原生 TeamTask.blockedBy DAG。任务 ready 本身不启动成员；Project 调度在依赖完成且目录可用后派发。依赖仅由真实完成状态满足，失败报告、模型 idle 或仅声明完成都不能解锁。
 
@@ -131,11 +134,11 @@ Team 默认共享 cwd 保持不变；Project policy 为本 Team 每个成员提�
 
 结果顺序：报告落盘 → 原生捕获真实 terminal 并完成资源排空 → 持久结算回执 → Team complete 提交 → 发布结果与依赖 ready → 原生通知触发 Lead 汇总。不要再通过 Team send_message 额外发送完成通知。
 
-当前 continuation-activation 的顺序是先 notifyManagedSettlement，再 observer.settle 发 subagent/end；现有 admission 回调只有 parent/childId/reason。因此不能在 admission 里等待稍后才产生的 end 事件，否则会自锁。需新增受信 `commitSettlement({parentId, childId, runId, terminal})` 接点，在原生已完成排空并捕获 terminal 后、通知之前调用；Project 按实际 run 持久回执并提交 task，不等待 subagent/end 或 ownership release。目录预留仍以真实 Jobs 与排空事实为准，不能因 task completed 提前放行。该接点失败不能阻碍释放原生所有权和发 end；应保留不可自动执行的待对账状态，禁止唤醒 Lead，并显示记账故障。普通未管理 subagent 保持原结算路径。
+设计时 continuation-activation 的顺序是先 notifyManagedSettlement，再 observer.settle 发 subagent/end；现有 admission 回调只有 parent/childId/reason。因此不能在 admission 里等待稍后才产生的 end 事件，否则会自锁。需新增受信 `commitSettlement({parentId, childId, runId, terminal})` 接点，在原生已完成排空并捕获 terminal 后、通知之前调用；Project 按实际 run 持久回执并提交 task，不等待 subagent/end 或 ownership release。目录预留仍以真实 Jobs 与排空事实为准，不能因 task completed 提前放行。该接点失败不能阻碍释放原生所有权和发 end；应保留不可自动执行的待对账状态，禁止唤醒 Lead，并显示记账故障。普通未管理 subagent 保持原结算路径。
 
 崩溃在任意间隙时按 task revision、assignmentRef、原生 runId 和已保存报告对账。没有原生结算证据就不能完成；Team complete 已提交但 UI 未更新时重建投影，不能再执行任务。历史结果不会完成刚 reopen 的新要求。
 
-用户交付使用稳定 resultRef，至少含 `{teamId, taskId, assignmentRef, reportId}`，由宿主验证并绑定到可见结果载体。模型可以用自然语言总结，不要求逐字复述标题才能消除“待汇总”。已交付不等于已读，汇总失败仍可打开报告。
+成员报告使用稳定 resultRef，至少含 `{teamId, taskId, assignmentRef, reportId}`，由宿主验证。用户交付另按第 13 节关联要求版本与实际主对话回复。模型可以用自然语言总结，不要求逐字复述标题；读取报告和任意回复不消除“待交付”。已交付不等于已读，汇总失败仍可打开成员报告。
 
 ## 8. 停止、旧邮箱和重启
 
@@ -153,11 +156,11 @@ Team 默认共享 cwd 保持不变；Project policy 为本 Team 每个成员提�
 
 ## 9. 长期团队容量与历史
 
-现有历史成员永久计入 maxMembers、已完成任务永久计入 maxTasks，不满足长期 Project。必须新增 Team 原生封存能力，不能删成员或换主对话规避。
+设计时历史成员永久计入 maxMembers、已完成任务永久计入 maxTasks，不满足长期 Project。设计要求用 Team 原生冷置能力区分活动与历史，不能删成员或换主对话规避；当前冷容量接线见功能资料。
 
 拟定版本化 roster/task 快照增加 `archived` 生命周期标记，创建 phase 的 provisioning/active/failed 含义保持不变。Project 中已经结束本轮活动（完成、停止、失败或需要外部输入），且真实排空、无可执行 mailbox 的成员与任务可自动冷置，使用这个原生封存标记；名称、SessionId、taskId、原 owner、未完成 status、报告和日志全部保留。冷置只表示不占活动容量，不等于完成或归档整个项目；TaskDock 中未完成的阻碍仍可见。用户不需要手动“退役成员”。尚待依赖/目录/容量且可自动推进的排队任务不冷置其待执行意图；原生成员容量只在实际激活时占用。
 
-活动容量计算排除冷置记录；历史按需分页。任务板待处理队列达到 maxTasks 时说明容量并保留用户主对话请求，不能暗中丢任务或把活跃排队项假装结束；已结束本轮的历史不会永久吃掉该额度。任务依赖仍能查询已封存的 completed 事实，不使用 deleted tombstone 代替归档。新要求先按 CAS 激活原任务/成员，有空闲容量才派发，容量满时明确排队；失败成员不自动替换身份，新建替代工作必须由明确用户要求触发并关联旧记录。
+活动容量计算排除冷置记录；历史按需分页。任务板待处理队列达到 maxTasks 时说明容量并保留用户主对话请求，不能暗中丢任务或把活跃排队项假装结束；已结束本轮的历史不会永久吃掉该额度。任务依赖仍能查询已封存的 completed 事实，不使用 deleted tombstone 代替归档。新要求先按 CAS 激活原任务/成员，有空闲容量才派发，容量满时明确排队；失败成员不自动替换身份。Lead 可在原要求的有效授权内根据实际失败安排必要替代工作，说明原因并关联旧记录；原用户只授权调查时，替代不得升级为修复。
 
 原生 Team 客户端与工具都理解该版本字段，普通 Team 保持现有容量默认，新的封存操作可作为通用能力但不强迫原用户使用。所有持久类型改动遵循已发布 Session 代际规则，新增后继读取与变换，不覆盖旧代事件定义。不得通过只增大 maxMembers/maxTasks 宣称长期问题解决。
 
@@ -167,7 +170,7 @@ Team 默认共享 cwd 保持不变；Project policy 为本 Team 每个成员提�
 
 展开时看到工作标题、负责成员、依赖/排队/阻碍和成果；提供“团队”附属入口，复用鲸屿现有成员/任务组件及同一 projection。成员只读过程仍通过真实 parent-child Session 绑定打开，可看互相协作的消息，输入继续留在主对话。
 
-现有 TeamAction 的 openTeammate 会打开 continuable 子会话，Project 场景必须注入只读过程打开策略；普通 Team 不受影响。不能仅隐藏文本框而保留可发送的后台命令；Project role guard 拒绝绕过主对话的直接用户执行入口。
+设计时 TeamAction 的 openTeammate 会打开 continuable 子会话，Project 场景必须注入只读过程打开策略；普通 Team 不受影响。不能仅隐藏文本框而保留可发送的后台命令；Project role guard 拒绝绕过主对话的直接用户执行入口。
 
 UI 的 running 来自 Session/Jobs，task owner 来自 Team，blocked 等原因来自当前 assignment。两处视图应显示同一工作、同一成员与同一结果。项目资料保留成果/笔记/偏好，Team mailbox 和 internal 不是另一个用户聊天页。
 
@@ -197,4 +200,47 @@ UI 的 running 来自 Session/Jobs，task owner 来自 Team，blocked 等原因�
 
 最小故障观察必须覆盖：child接受前/后崩溃、目标接受后Lead ack前中断、报告保存后complete前中断、停止与派发并发、暂停状态的旧邮箱、目录启动失败释放、单项目资料失败、Team包缺失与普通会话不受影响。先实现对应产品能力，再准备必要定向检查；不跑无关全量测试。
 
-本次完成源码研究与实现架构，尚未修改上述产品文件。没有真实模型/安装验收前不得标可合并。3.0 的设计评审通过只适用于当时文本，不能替代本次 Team 架构与后续实现评审。
+当前已实现原生 Team 主链、真实成员协作与同一 Session 续接，并补齐实际排队原因、当前依赖成果冻结、准备期依赖重开、可恢复的汇总失败和有界历史读取。真实模型、Host 故障检查、可见 UI 与当前包内工程验收的证据边界由[功能资料](../../features/projects.md)统一记录。上述 A–E 是原生接线阶段的地图，不是 3.2 已完成声明；本次整体业务缺口按下节和产品文档的连贯场景落实。
+
+## 13. 要求、阶段与交付的业务接缝（3.2 目标，尚未实现）
+
+当前 `domain.js` 的 project/workstream/worker 与 `service.source` 的单条用户 messageId，能够关联一次委派，却不足以表达一件持续的用户要求。原生 Inbox 可一次领取多条输入；结算通知可能需要安排下一阶段；`readStoreTool` 的读取加 `assistantReply` 的任意回复不能证明用户目标已交付。这里补充最小业务记录，复用已有目录与持久保存，不建立新的运行时、消息队列、审批服务或任务板。
+
+### 13.1 两类业务记录
+
+| 记录 | 必需事实 | 不拥有的事实 |
+| --- | --- | --- |
+| Request | 项目与稳定要求身份；有序真实用户输入引用；版本及修订关系；目标、有效限制与完成条件；授权上限及原始来源；所关联工作 | Session 消息正文、模型运行状态、Team 任务状态、命令审批决定 |
+| Delivery | 要求身份与版本；可扫读结论、验证与未满足条件；真实报告/文件引用及适用依据；实际主对话回复的 Session/messageId | 成员报告正文、原生结算、用户“已读”、永久 Project 完成标记 |
+
+要求版本不可被后来消息悄悄覆盖。新增输入先保留原生已消费消息的身份和顺序；Lead 判断是解释、补充还是新目标，并显式关联相应要求。宿主验证输入确实来自本 Project 的人类主对话和实际领取批次，不能只用最后一句，也不能将 peer、动态上下文或结算通知当成人类输入。不存在“每条聊天都创建一项任务”的产品规则。
+
+模型对目标的描述负责业务组织，不授予额外执行权限。原始授权引用保留用户真实输入、Project 固有策略及原生权限决定；执行权限始终受这些限制。既有原生单次命令批准只适用于它批准的实际操作，不能因 Request 持久化成为长期通行证。
+
+在人类输入的接纳/修订边界声明并保存该版本的 scope 上限与 docs 允许写入位置，沿用当前权限表达和来源校验；通知不能修改这些字段。目标和上限按用户版本冻结，但必要工作可在该版本内根据真实反馈动态登记。工作登记引用准确的 workstreamId/委派身份；查阅资料和成员互相提供信息不能自动变成必需执行阶段。
+
+### 13.2 原要求上限与当前阶段范围
+
+委派记录新增要求身份与版本，继续使用已有 `delegationRef/runId`、停止来源截止点和固定成员/目录身份；当前进程内的 `workerStops.generation` 不能冒充已经持久化的域字段。每次成员委派的 scope 是阶段范围：完整修复要求可以先调查，再在原授权内安排修复、验证和必要整合；用户只要求调查时不能跨到修改。调度依据是尚未满足的要求与实际反馈，不是提前固定三个成员或三道工序。
+
+结算回到原主对话时按真实工作/委派/运行身份定位原要求。原要求仍有效、未停止且项目可执行时，Lead 可以安排为完成它所需的后续；不能因为当前轮只有结算通知就要求用户再说一次“继续”。有新的无关用户消息时也不能将旧结果挂到新目标。停止、归档、重启保持及权限撤销仍阻断推进；需要超出原授权的行为才等待新的用户授权。
+
+`ProjectApprovals.requested` 改为核验有效要求的真实授权来源与当前原生策略，而不是仅核验当前 turn 内有没有人类消息。成员在允许请求审批的开发阶段可以沿用原生请求入口；真正执行仍等待本次命令的原生决定。运行中的范围改变在实际排空、消费新委派后生效。新委派显式记录取代哪份未消费旧委派，旧 queued 保留为撤销事实；已消费的旧运行与报告不改写。
+
+### 13.3 声明交付与绑定实际回复
+
+Lead 明确提交针对某个要求版本的交付草稿：结论、满足及未满足的条件、使用的报告/文件引用与验证边界。声明时冻结必需工作的准确 `{workstreamId, delegationRef, runId}` 和复用的 reportId 等证据清单，而不是在首次人类输入时预定全部未来阶段。宿主核对要求版本、引用归属、匹配的原生结算和尚未排空的相关工作；不能把仍有必要工作的要求标成完整交付。部分结果可以交给用户，但未完成项继续可见。
+
+当前原生 `assistant/message` 没有 final 标志；草稿关联实际声明 tool call、Lead Session 与 turn。声明后的最后一份非 tool-call、非 interrupted 的可见文本回复只是候选；等该 turn 的 `turn/end.reason.kind === 'completed'` 后重核要求版本和精确证据。新增或取代了必需阶段时草稿不再适用，重新声明；异常、中止、截断或缺少候选回复不形成交付。
+
+随后 `await ctx.sessions.flush(lead.session)`，确认持久监听参与且成功，再提交带真实 Session/messageId 的 Delivery。turn/end 本身不保证落盘。提交失败保留草稿与原日志关联，按真实回复/turn/引用重新对账，不重跑成员；不存在的回复不能由目录记录假造。绑定使用明确交付意图，不从“本轮读过哪些报告”推断。宿主负责校验身份与执行证据，模型负责解释这些证据是否满足自然语言目标，不能声称结构校验自动证明业务正确。
+
+当前版本的适用性与历史执行结果分开保存。上游或要求变更时，旧交付仍是它原版本的交付；当前界面显示待复核或未满足项，不能删去旧事实，也不能仅因为所有历史 Team task completed 就显示本轮已交付。纯解释直接在原对话回答；沿用已有成果的交付可引用旧证据，不为生成交付记录启动新成员。
+
+### 13.4 兼容与展示
+
+现有 Project catalog 增加可选业务记录及关联字段；保持当前读取版本可兼容，不仅改 version 后拒绝旧目录。历史 Project、成员、委派、报告、文件及停止记录不变。只关联可由原生来源证明的旧事实，不从旧标题或已完成状态捏造要求版本或交付；用户继续旧工作时可建立明确的新要求版本，并引用原工作与报告。
+
+TaskDock 查询当前要求的真实工作、阻碍、待交付和适用性。资料先呈现用户交付，再下钻成员报告；Team 默认当前参与者与近期工作，历史成员/任务按需分页。冷置释放活动容量不等于界面有界。记录按真实要求、委派轮次和时间组织，不改写原始消息。资料、旧版本、成员记录和文件之间保留项目归属与返回位置；未保存笔记由原项目持有。
+
+完整完成标准统一采用产品文档第 11 节的八条连贯场景。原生身份、安全边界、目录排空与历史保留仍是底座，不以新业务字段替换这些事实。

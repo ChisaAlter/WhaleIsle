@@ -35,6 +35,7 @@
         "@deepseek-ai/dsh-client-ui-sidebar",
         "@deepseek-ai/dsh-client-ui-workspace",
         "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-settings-general",
         "@deepseek-ai/dsh-experimental-client-ui-agent-team"
       ],
       "platform": "web"

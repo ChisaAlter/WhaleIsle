@@ -71,12 +71,14 @@ type TeamMemberRowProps = Pick<TeamActionProps,
   'sessionId' | 'useSessions' | 'useSessionStatus' | 'openTeammate' | 't'
 > & {
   member: TeamMemberProjection
+  label: string
+  project: boolean
   memberCount: number
   onError: (message: string) => void
 }
 
 function TeamMemberRow({
-  member, memberCount, sessionId, useSessions, useSessionStatus, openTeammate, onError, t,
+  member, label, project, memberCount, sessionId, useSessions, useSessionStatus, openTeammate, onError, t,
 }: TeamMemberRowProps) {
   const model = useSessions(state => state.projectionsBySession[member.id]?.values.modelSelection?.next?.model)
   const running = useSessionStatus(state => state.get(member.id)?.running)
@@ -89,7 +91,7 @@ function TeamMemberRow({
   const inert = isCurrent || status === 'failed' || status === 'provisioning'
 
   return (
-    <Tooltip label={t('open')} side="bottom" gap={4} disabled={inert}>
+    <Tooltip label={t(project ? 'project.open' : 'open')} side="bottom" gap={4} disabled={inert}>
       <button
         type="button"
         className={highlightCurrent ? `${css.member} ${css.memberCurrent}` : css.member}
@@ -109,11 +111,11 @@ function TeamMemberRow({
         </span>
         <span className={css.memberText}>
           <span className={css.memberName}>
-            <span className={css.memberNameText}>{member.name}</span>
+            <span className={css.memberNameText}>{label}</span>
             {isCurrent && <Tag tone="info" className={css.currentTag}>{t('current')}</Tag>}
           </span>
           <small>
-            {t(memberStatusKey(status))}
+            {t(project && status === 'inactive' ? 'project.memberIdle' : memberStatusKey(status))}
             {model !== undefined && (
               <span className={css.memberModel}>{` · ${t('model')}: ${model}`}</span>
             )}
@@ -125,13 +127,19 @@ function TeamMemberRow({
   )
 }
 
-/** Task card with a two-line description clamp expanded from a toggle in the meta row. */
-function TaskCard({ task, t }: { task: TeamTask; t: TranslateNS<typeof NS> }) {
+/** Project assignments disclose their execution brief; ordinary Teams retain the two-line preview. */
+function TaskCard({ task, project, ownerLabel, dependencyLabels, t }: {
+  task: TeamTask
+  project: boolean
+  ownerLabel: string
+  dependencyLabels: string[]
+  t: TranslateNS<typeof NS>
+}) {
   const [expanded, setExpanded] = useState(false)
   const [clamped, setClamped] = useState(false)
   const textRef = useRef<HTMLParagraphElement>(null)
   useLayoutEffect(() => {
-    if (expanded) return
+    if (project || expanded) return
     const paragraph = textRef.current
     /* v8 ignore next -- the paragraph mounts in the same commit as the effect. */
     if (paragraph === null) return
@@ -141,7 +149,7 @@ function TaskCard({ task, t }: { task: TeamTask; t: TranslateNS<typeof NS> }) {
     const observer = new ResizeObserver(measure)
     observer.observe(paragraph)
     return () => { observer.disconnect() }
-  }, [task.description, expanded])
+  }, [task.description, expanded, project])
   return (
     <article className={css.task}>
       <div className={css.taskTitle}>
@@ -151,9 +159,9 @@ function TaskCard({ task, t }: { task: TeamTask; t: TranslateNS<typeof NS> }) {
           <span>{t(statusKey(task.status))}</span>
         </span>
       </div>
-      <p ref={textRef} className={expanded ? undefined : css.clampedDescription}>{task.description}</p>
+      {(!project || expanded) && <p ref={textRef} className={expanded ? undefined : css.clampedDescription}>{task.description}</p>}
       <div className={css.meta}>
-        {(clamped || expanded) && (
+        {(project && task.description.length > 0 || clamped || expanded) && (
           <button
             type="button"
             className={css.expandToggle}
@@ -164,10 +172,10 @@ function TaskCard({ task, t }: { task: TeamTask; t: TranslateNS<typeof NS> }) {
             <IconChevronDownOutlineRegular size={12} className={expanded ? css.expandToggleOpen : undefined} />
           </button>
         )}
-        <span>{task.id}</span>
-        <span>{t('owner')}: {task.ownerName ?? t('unowned')}</span>
+        {!project && <span>{task.id}</span>}
+        <span>{t(project ? 'project.owner' : 'owner')}: {ownerLabel}</span>
         {task.status === 'pending' && <span>{task.ready ? t('ready') : t('blocked')}</span>}
-        {task.blockedBy.length > 0 && <span>{t('blockedBy')}: {task.blockedBy.join(', ')}</span>}
+        {dependencyLabels.length > 0 && <span>{t('blockedBy')}: {dependencyLabels.join(', ')}</span>}
         {task.writeScopes.length > 0 && <span>{t('writeScopes')}: {task.writeScopes.join(', ')}</span>}
         {task.writeScopeWarnings.map(warning => <span key={warning} className={css.warning}>{warning}</span>)}
       </div>
@@ -191,10 +199,12 @@ export function TeamAction({
   const positioned = position !== null
   const leadSessionId = useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? sessionId
   const team = useSessions(state => state.projectionsBySession[leadSessionId]?.values.agentTeam)
+  const project = useSessions(state => state.byId[leadSessionId]?.presentation?.owner === 'project')
   const opening = useSession(snapshot => snapshot.openState === 'loading')
   const listing = useSessions(state => state.phase === 'pending')
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const pinnedRef = useRef(false)
+  const hoverDismissedRef = useRef(false)
 
   const cancelHoverChange = (): void => {
     clearTimeout(hoverTimer.current)
@@ -204,6 +214,7 @@ export function TeamAction({
   useEffect(() => {
     cancelHoverChange()
     pinnedRef.current = false
+    hoverDismissedRef.current = false
     setOpen(false)
     setError(null)
   }, [sessionId])
@@ -222,7 +233,7 @@ export function TeamAction({
 
   const scheduleHoverOpen = (): void => {
     cancelHoverChange()
-    if (open) return
+    if (open || hoverDismissedRef.current) return
     const label = triggerLabelRef.current
     /* v8 ignore next -- the label mounts with the trigger that received the hover. */
     if (label === null) return
@@ -237,6 +248,7 @@ export function TeamAction({
 
   const scheduleHoverClose = (): void => {
     cancelHoverChange()
+    hoverDismissedRef.current = false
     if (pinnedRef.current) return
     hoverTimer.current = setTimeout(() => {
       hoverTimer.current = undefined
@@ -252,6 +264,9 @@ export function TeamAction({
       if (event.key !== 'Escape') return
       event.preventDefault()
       cancelHoverChange()
+      // Removing the panel can emit a fresh mouse-enter on the trigger under
+      // the stationary pointer. Escape stays dismissed until that pointer leaves.
+      hoverDismissedRef.current = true
       pinnedRef.current = false
       setOpen(false)
       if (panelRef.current?.contains(document.activeElement)) triggerRef.current?.focus()
@@ -261,6 +276,11 @@ export function TeamAction({
   }, [open])
 
   const compact = team !== undefined && team.members.length === 1 && team.tasks.length === 0
+  const memberLabel = (member: TeamMemberProjection): string => {
+    if (!project) return member.name
+    if (member.role === 'lead') return t('project.lead')
+    return team?.tasks.find(task => task.ownerName === member.name)?.subject ?? member.description ?? member.name
+  }
 
   return (
     <div
@@ -280,6 +300,7 @@ export function TeamAction({
         aria-expanded={open}
         onClick={() => {
           cancelHoverChange()
+          hoverDismissedRef.current = false
           pinnedRef.current = true
           if (!open) changeOpen(true)
           else panelRef.current?.focus()
@@ -325,6 +346,8 @@ export function TeamAction({
                       <TeamMemberRow
                         key={member.id}
                         member={member}
+                        label={memberLabel(member)}
+                        project={project}
                         memberCount={team.members.length}
                         sessionId={sessionId}
                         useSessions={useSessions}
@@ -343,7 +366,15 @@ export function TeamAction({
                       <>
                         <h3>{t('tasks')}<span className={css.count}>{team.tasks.length}</span></h3>
                         <div className={css.tasks}>
-                          {team.tasks.map(task => <TaskCard key={task.id} task={task} t={t} />)}
+                          {team.tasks.map(task => {
+                            const owner = team.members.find(member => member.name === task.ownerName)
+                            return <TaskCard key={task.id} task={task} project={project}
+                              ownerLabel={project && owner !== undefined ? memberLabel(owner) : task.ownerName ?? t('unowned')}
+                              dependencyLabels={task.blockedBy.map(id => project
+                                ? team.tasks.find(dependency => dependency.id === id)?.subject ?? t('project.missingDependency')
+                                : id)}
+                              t={t} />
+                          })}
                         </div>
                       </>
                     )}

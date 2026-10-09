@@ -52,10 +52,10 @@ export function ConversationContent(props: ConversationContentProps) {
   const pickerAnchor = useRef<HTMLButtonElement>(null)
 
   // Publishes the two live measurements floating View chrome reads off the
-  // scroll body: the seat's height as --dsh-composer-height, so controls clear
-  // the composer as it grows, and the scrollport's own height as
-  // --dsh-conversation-viewport-height, so a control can sit in the band the
-  // seat leaves visible. Callback ref, not an effect; stable identity prevents
+  // scroll body: the seat's height as --dsh-composer-height reserves footer
+  // space outside the transcript, and the remaining scrollport height as
+  // --dsh-conversation-viewport-height places controls in the visible band.
+  // Callback ref, not an effect; stable identity prevents
   // observer churn while the first blank session fills the resident body
   // outlet.
   const seatCleanup = useRef<(() => void) | null>(null)

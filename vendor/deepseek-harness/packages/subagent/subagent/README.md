@@ -167,7 +167,7 @@ Append-only in the parent: the notice follows its reusable request prefix. Reach
 
 #### What the model sees
 
-Every in-process child's runtime-context snapshot carries the `subagent:delegation` statement below, after the sandbox-policy and approval-policy sentences.
+Ordinary in-process children carry the `subagent:delegation` statement below, after the sandbox-policy and approval-policy sentences. They start with a delegation-owned `never` approval policy. A managed local Project can enable `ask` at a new human continuation through the host-owned approval contract; then this context instructs the child to request its exact operation once, keep its assigned scope and base sandbox, and treat denial as final. An explicit user `never` is never replaced.
 
 ##### The delegation-scope statement
 
@@ -177,11 +177,11 @@ You are a delegated subagent: your permission scope was fixed when you were star
 
 #### Token effect
 
-One fixed statement in each child's runtime-context snapshot; none in the parent's requests.
+One statement in each child's runtime-context snapshot, selected from its effective approval policy; none in the parent's requests.
 
 #### KV Cache effect
 
-Prefix-stable within a child: the statement never changes during the child's lifetime, so it is written once into the first runtime-context snapshot. Parent-side, no direct invalidation; the named tool consumers own any request-prefix changes.
+The stable system prefix is unchanged. The statement travels in runtime context and changes when the host changes request eligibility for a new managed assignment. Parent-side, no direct invalidation; the named tool consumers own any request-prefix changes.
 
 ## Known Limitations and Deferred Work
 

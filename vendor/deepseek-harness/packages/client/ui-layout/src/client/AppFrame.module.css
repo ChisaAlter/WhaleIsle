@@ -5,7 +5,9 @@
   max-width: 100%;
   min-width: 0;
   height: 100%;
-  overflow: hidden;
+  /* Closed side panels remain outside the grid. Focus must never scroll the
+     frame towards those off-canvas boxes and displace the conversation. */
+  overflow: clip;
   border-radius: var(--dsw-radius-xl);
   corner-shape: round;
   background: var(--dsw-alias-bg-base);
