@@ -848,18 +848,20 @@ async function pickWorkspace() {
  * restart/reload/quit must not proceed while a BrowserView teardown is still
  * in flight, or a raced detach leaves a half-removed view behind.
  */
-function cleanupDesktopResources() {
+async function cleanupDesktopResources() {
   if (!desktopResources) {
-    return Promise.resolve();
+    await require('../launcher/forensics-log').flushBootLogs();
+    return;
   }
   try {
     desktopResources.pty.killAll();
   } catch (error) {
     dsh.log(`PTY 清理失败：${error.message}`, 'app');
   }
-  return Promise.resolve(desktopResources.preview.closeAll()).catch((error) => {
+  await Promise.resolve(desktopResources.preview.closeAll()).catch((error) => {
     dsh.log(`预览清理失败：${error.message}`, 'app');
   });
+  await require('../launcher/forensics-log').flushBootLogs();
 }
 
 /**

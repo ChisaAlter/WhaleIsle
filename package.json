@@ -91,6 +91,9 @@
       "src/shared/dshd-mux-sse.js",
       "src/main/pet-growth.js",
       "src/main/pet-growth-scan-worker.js",
+      "src/main/pet-dsh-watch-worker.js",
+      "src/main/pet-dsh-watch.js",
+      "src/main/pet-settings.js",
       "node_modules/koffi/**/*",
       "node_modules/@koromix/koffi-*/**/*"
     ],

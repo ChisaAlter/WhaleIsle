@@ -1,0 +1,61 @@
+{
+  "rows": [
+    {
+      "kind": "sync",
+      "elapsedMs": 14335.068899999998,
+      "firstTimerMs": 14335.160199999998,
+      "count": 1000,
+      "hash": "6219b3fce6c5e9e55f01615b7e889059256d680fc0be9ea248f5bf7cb80b7eae"
+    },
+    {
+      "kind": "async",
+      "elapsedMs": 283.2350999999999,
+      "firstTimerMs": 2.7937999999994645,
+      "count": 1000,
+      "hash": "6219b3fce6c5e9e55f01615b7e889059256d680fc0be9ea248f5bf7cb80b7eae"
+    },
+    {
+      "kind": "async",
+      "elapsedMs": 260.14509999999973,
+      "firstTimerMs": 0.2544999999990978,
+      "count": 1000,
+      "hash": "6219b3fce6c5e9e55f01615b7e889059256d680fc0be9ea248f5bf7cb80b7eae"
+    },
+    {
+      "kind": "sync",
+      "elapsedMs": 204.1851999999999,
+      "firstTimerMs": 204.58020000000033,
+      "count": 1000,
+      "hash": "6219b3fce6c5e9e55f01615b7e889059256d680fc0be9ea248f5bf7cb80b7eae"
+    },
+    {
+      "kind": "sync",
+      "elapsedMs": 187.48320000000058,
+      "firstTimerMs": 187.52730000000156,
+      "count": 1000,
+      "hash": "6219b3fce6c5e9e55f01615b7e889059256d680fc0be9ea248f5bf7cb80b7eae"
+    },
+    {
+      "kind": "async",
+      "elapsedMs": 248.4447999999993,
+      "firstTimerMs": 4.732200000000375,
+      "count": 1000,
+      "hash": "6219b3fce6c5e9e55f01615b7e889059256d680fc0be9ea248f5bf7cb80b7eae"
+    },
+    {
+      "kind": "async",
+      "elapsedMs": 246.03600000000006,
+      "firstTimerMs": 5.659600000000864,
+      "count": 1000,
+      "hash": "6219b3fce6c5e9e55f01615b7e889059256d680fc0be9ea248f5bf7cb80b7eae"
+    },
+    {
+      "kind": "sync",
+      "elapsedMs": 180.10599999999977,
+      "firstTimerMs": 180.14159999999902,
+      "count": 1000,
+      "hash": "6219b3fce6c5e9e55f01615b7e889059256d680fc0be9ea248f5bf7cb80b7eae"
+    }
+  ],
+  "sameResult": true
+}

@@ -320,6 +320,7 @@ function createPreviewController(options = {}) {
   let pipSession = null;
   /** @type {Map<string, { timer: ReturnType<typeof setInterval> | null, consumers: Set<string> }>} */
   const frameCaptureSessions = new Map();
+  const frameCapturesInFlight = new Map();
 
   function unknownPreviewId() {
     return { ok: false, message: 'unknown preview id' };
@@ -423,6 +424,9 @@ function createPreviewController(options = {}) {
     }
     current = { timer: null, consumers: new Set([consumer]) };
     frameCaptureSessions.set(previewId, current);
+    const prior = frameCapturesInFlight.get(previewId);
+    if (prior) await prior.catch(() => {});
+    if (frameCaptureSessions.get(previewId) !== current) return;
     await capturePreviewFrame(previewId);
     if (frameCaptureSessions.get(previewId) !== current) return;
     const timer = setInterval(() => {
@@ -434,7 +438,17 @@ function createPreviewController(options = {}) {
 
   async function capturePreviewFrame(previewId) {
     const capture = frameCaptureSessions.get(previewId);
-    if (!capture || capture.consumers.size === 0) return;
+    if (!capture || capture.consumers.size === 0 || frameCapturesInFlight.has(previewId)) return;
+    const pending = publishCapturedPreviewFrame(previewId, capture);
+    frameCapturesInFlight.set(previewId, pending);
+    try {
+      await pending;
+    } finally {
+      if (frameCapturesInFlight.get(previewId) === pending) frameCapturesInFlight.delete(previewId);
+    }
+  }
+
+  async function publishCapturedPreviewFrame(previewId, capture) {
     const session = sessions.get(previewId);
     if (!session) return;
     const wc = session.view.webContents;

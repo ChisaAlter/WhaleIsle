@@ -277,7 +277,10 @@ function ensureDesktopInstallPlugin(options = {}) {
     if (!fs.existsSync(src)) {
       return { ok: false, reason: `missing-source:${name}` };
     }
-    fs.copyFileSync(src, path.join(destDir, name));
+    const dest = path.join(destDir, name);
+    const contents = fs.readFileSync(src);
+    const unchanged = fs.existsSync(dest) && fs.readFileSync(dest).equals(contents);
+    if (!unchanged) fs.copyFileSync(src, dest);
   }
   // The overlay mounts install-dsh-plugin.mjs by file URL. The request-time
   // plugin-package inventory resolves such an entry's owning manifest by

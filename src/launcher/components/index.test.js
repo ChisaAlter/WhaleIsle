@@ -16,6 +16,21 @@ const { IPC_ROLES, assertIpcSender } = require('../../main/ipc-authorization');
 
 const SAMPLE_FIXTURES = path.resolve(__dirname, '..', '..', '..', 'tests', 'fixtures', 'components');
 
+test('native PID query distinguishes absent, denied and unknown results without sending a signal', () => {
+  let called = false;
+  assert.equal(lifecycle.isPidAlive(-1, { processKill: () => { called = true; } }), false);
+  assert.equal(called, false);
+  const query = (code) => ({ processKill: (pid, signal) => {
+    assert.equal(pid, 42);
+    assert.equal(signal, 0);
+    if (code) throw Object.assign(new Error(code), { code });
+  } });
+  assert.equal(lifecycle.isPidAlive(42, query()), true);
+  assert.equal(lifecycle.isPidAlive(42, query('EPERM')), true);
+  assert.equal(lifecycle.isPidAlive(42, query('ESRCH')), false);
+  assert.throws(() => lifecycle.isPidAlive(42, query('EUNKNOWN')), { code: 'EUNKNOWN' });
+});
+
 function tmpDir(t, prefix) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   t.after(() => {
@@ -59,7 +74,7 @@ function makeSample(root, id, version, extra = {}) {
   return dir;
 }
 
-// Fake child_process seam: an EventEmitter child + win32 tasklist/taskkill
+// Fake child_process seam: an EventEmitter child + PID query/taskkill
 // over a Set of live pids. Drive exits by emitting 'exit' on the child.
 function fakeEnv(t, { samples } = {}) {
   const root = tmpDir(t, 'dshd-comp-svc-');
@@ -75,6 +90,11 @@ function fakeEnv(t, { samples } = {}) {
     startGraceMs: 30,
     stateWaitMs: 30,
     restartBaseMs: 10,
+    processKill: (pid, signal) => {
+      assert.equal(signal, 0);
+      if (!alive.has(pid)) throw Object.assign(new Error('absent'), { code: 'ESRCH' });
+      return true;
+    },
     spawn: (bin, args, options) => {
       const pid = nextPid += 1;
       alive.add(pid);

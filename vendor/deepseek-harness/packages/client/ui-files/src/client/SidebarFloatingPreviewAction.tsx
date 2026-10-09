@@ -14,11 +14,10 @@ export function SidebarFloatingPreviewAction({
   useSessions,
   t,
 }: SidebarFloatingPreviewActionProps): ReactNode {
-  const sessions = useSessions(state => state)
   return (
     <FloatingPreviewButton
       resourceAddress={resourceAddress}
-      sessions={sessions}
+      useSessions={useSessions}
       t={t}
     />
   )

@@ -1,0 +1,194 @@
+{
+  "ok": true,
+  "cycles": 20,
+  "rows": [
+    {
+      "phase": "hidden-outbox",
+      "offset": null,
+      "bytes": 67
+    },
+    {
+      "cycle": 1,
+      "readyMs": 9655,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": {
+        "text": "Performance QA: hidden message retained",
+        "pinned": true
+      },
+      "offset": 67
+    },
+    {
+      "cycle": 2,
+      "readyMs": 2236,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 3,
+      "readyMs": 2095,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 4,
+      "readyMs": 2280,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 5,
+      "readyMs": 2009,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 6,
+      "readyMs": 2147,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 7,
+      "readyMs": 2086,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 8,
+      "readyMs": 2144,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 9,
+      "readyMs": 2184,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 10,
+      "readyMs": 2028,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 11,
+      "readyMs": 2147,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 12,
+      "readyMs": 2040,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 13,
+      "readyMs": 2083,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 14,
+      "readyMs": 2108,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 15,
+      "readyMs": 2091,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 16,
+      "readyMs": 2040,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 17,
+      "readyMs": 2018,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 18,
+      "readyMs": 2006,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 19,
+      "readyMs": 2080,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    },
+    {
+      "cycle": 20,
+      "readyMs": 2055,
+      "gpu": true,
+      "packed": true,
+      "sr": true,
+      "bubble": null,
+      "offset": 67
+    }
+  ]
+}

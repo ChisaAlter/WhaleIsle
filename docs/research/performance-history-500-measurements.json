@@ -1,0 +1,708 @@
+{
+  "scenario": "expanded-history-500-plus-8",
+  "setupMs": 4384.617,
+  "replayContextWindow": 10000000,
+  "historyPages": [
+    {
+      "turns": 48,
+      "measurement": {
+        "wallMs": 960.225,
+        "taskMs": 219.781,
+        "scriptMs": 69.657,
+        "layoutMs": 27.233,
+        "recalcStyleMs": 39.797,
+        "devtoolsMs": 45.341,
+        "nodesDelta": 1977,
+        "listenersDelta": 441,
+        "heapDeltaMb": 2.521,
+        "totalNodes": 6374,
+        "heapMb": 52.205
+      }
+    },
+    {
+      "turns": 72,
+      "measurement": {
+        "wallMs": 934.191,
+        "taskMs": 254.114,
+        "scriptMs": 70.307,
+        "layoutMs": 25.195,
+        "recalcStyleMs": 49.764,
+        "devtoolsMs": 68.578,
+        "nodesDelta": 2238,
+        "listenersDelta": 323,
+        "heapDeltaMb": 6.697,
+        "totalNodes": 8612,
+        "heapMb": 58.902
+      }
+    },
+    {
+      "turns": 96,
+      "measurement": {
+        "wallMs": 956.225,
+        "taskMs": 367.277,
+        "scriptMs": 72.056,
+        "layoutMs": 43.314,
+        "recalcStyleMs": 68.585,
+        "devtoolsMs": 96.686,
+        "nodesDelta": 1592,
+        "listenersDelta": 129,
+        "heapDeltaMb": -8.298,
+        "totalNodes": 10204,
+        "heapMb": 50.604
+      }
+    },
+    {
+      "turns": 120,
+      "measurement": {
+        "wallMs": 1041.401,
+        "taskMs": 301.925,
+        "scriptMs": 58.797,
+        "layoutMs": 30.577,
+        "recalcStyleMs": 67.695,
+        "devtoolsMs": 102.406,
+        "nodesDelta": 1963,
+        "listenersDelta": 296,
+        "heapDeltaMb": 20.44,
+        "totalNodes": 12167,
+        "heapMb": 71.043
+      }
+    },
+    {
+      "turns": 144,
+      "measurement": {
+        "wallMs": 1024.254,
+        "taskMs": 372.757,
+        "scriptMs": 74.217,
+        "layoutMs": 37.689,
+        "recalcStyleMs": 88.128,
+        "devtoolsMs": 125.234,
+        "nodesDelta": 2238,
+        "listenersDelta": 323,
+        "heapDeltaMb": -4.494,
+        "totalNodes": 14405,
+        "heapMb": 66.549
+      }
+    },
+    {
+      "turns": 168,
+      "measurement": {
+        "wallMs": 1128.853,
+        "taskMs": 431.224,
+        "scriptMs": 64.446,
+        "layoutMs": 56.611,
+        "recalcStyleMs": 98.364,
+        "devtoolsMs": 159.923,
+        "nodesDelta": 1963,
+        "listenersDelta": 296,
+        "heapDeltaMb": 0.458,
+        "totalNodes": 16368,
+        "heapMb": 67.007
+      }
+    },
+    {
+      "turns": 192,
+      "measurement": {
+        "wallMs": 1145.725,
+        "taskMs": 553.545,
+        "scriptMs": 68.312,
+        "layoutMs": 63.029,
+        "recalcStyleMs": 135.74,
+        "devtoolsMs": 226.775,
+        "nodesDelta": 2238,
+        "listenersDelta": 323,
+        "heapDeltaMb": 3.107,
+        "totalNodes": 18606,
+        "heapMb": 70.115
+      }
+    },
+    {
+      "turns": 216,
+      "measurement": {
+        "wallMs": 1333.622,
+        "taskMs": 542.743,
+        "scriptMs": 56.907,
+        "layoutMs": 74.507,
+        "recalcStyleMs": 122.548,
+        "devtoolsMs": 222.252,
+        "nodesDelta": 1963,
+        "listenersDelta": 296,
+        "heapDeltaMb": 4.19,
+        "totalNodes": 20569,
+        "heapMb": 74.305
+      }
+    },
+    {
+      "turns": 240,
+      "measurement": {
+        "wallMs": 1329.909,
+        "taskMs": 588.45,
+        "scriptMs": 64.805,
+        "layoutMs": 60.285,
+        "recalcStyleMs": 151.394,
+        "devtoolsMs": 236.958,
+        "nodesDelta": 1963,
+        "listenersDelta": 296,
+        "heapDeltaMb": 4.663,
+        "totalNodes": 22532,
+        "heapMb": 78.967
+      }
+    },
+    {
+      "turns": 264,
+      "measurement": {
+        "wallMs": 1408.188,
+        "taskMs": 631.763,
+        "scriptMs": 64.191,
+        "layoutMs": 57.794,
+        "recalcStyleMs": 152.561,
+        "devtoolsMs": 280.028,
+        "nodesDelta": 2238,
+        "listenersDelta": 323,
+        "heapDeltaMb": 5.011,
+        "totalNodes": 24770,
+        "heapMb": 83.978
+      }
+    },
+    {
+      "turns": 288,
+      "measurement": {
+        "wallMs": 1581.181,
+        "taskMs": 813.108,
+        "scriptMs": 74.238,
+        "layoutMs": 110.727,
+        "recalcStyleMs": 199.962,
+        "devtoolsMs": 341.131,
+        "nodesDelta": 1963,
+        "listenersDelta": 296,
+        "heapDeltaMb": 5.361,
+        "totalNodes": 26733,
+        "heapMb": 89.339
+      }
+    },
+    {
+      "turns": 312,
+      "measurement": {
+        "wallMs": 1692.495,
+        "taskMs": 936.849,
+        "scriptMs": 78.598,
+        "layoutMs": 123.882,
+        "recalcStyleMs": 222.596,
+        "devtoolsMs": 412.9,
+        "nodesDelta": 2238,
+        "listenersDelta": 323,
+        "heapDeltaMb": 6.934,
+        "totalNodes": 28971,
+        "heapMb": 96.273
+      }
+    },
+    {
+      "turns": 336,
+      "measurement": {
+        "wallMs": 1983.278,
+        "taskMs": 1159.505,
+        "scriptMs": 83.576,
+        "layoutMs": 138.541,
+        "recalcStyleMs": 277.172,
+        "devtoolsMs": 544.856,
+        "nodesDelta": 1963,
+        "listenersDelta": 296,
+        "heapDeltaMb": 6.953,
+        "totalNodes": 30934,
+        "heapMb": 103.227
+      }
+    },
+    {
+      "turns": 360,
+      "measurement": {
+        "wallMs": 1903.901,
+        "taskMs": 1109.299,
+        "scriptMs": 68.715,
+        "layoutMs": 129.394,
+        "recalcStyleMs": 268.237,
+        "devtoolsMs": 533.418,
+        "nodesDelta": 1963,
+        "listenersDelta": 296,
+        "heapDeltaMb": 7.91,
+        "totalNodes": 32897,
+        "heapMb": 111.137
+      }
+    },
+    {
+      "turns": 384,
+      "measurement": {
+        "wallMs": 1884.118,
+        "taskMs": 1093.473,
+        "scriptMs": 82.533,
+        "layoutMs": 102.135,
+        "recalcStyleMs": 278.908,
+        "devtoolsMs": 492.403,
+        "nodesDelta": 2238,
+        "listenersDelta": 323,
+        "heapDeltaMb": -3.516,
+        "totalNodes": 35135,
+        "heapMb": 107.621
+      }
+    },
+    {
+      "turns": 408,
+      "measurement": {
+        "wallMs": 1914.03,
+        "taskMs": 1239.975,
+        "scriptMs": 71.166,
+        "layoutMs": 196.725,
+        "recalcStyleMs": 310.056,
+        "devtoolsMs": 561.424,
+        "nodesDelta": 1963,
+        "listenersDelta": 296,
+        "heapDeltaMb": 10.848,
+        "totalNodes": 37098,
+        "heapMb": 118.468
+      }
+    },
+    {
+      "turns": 432,
+      "measurement": {
+        "wallMs": 2103.063,
+        "taskMs": 1444.017,
+        "scriptMs": 94.412,
+        "layoutMs": 140.371,
+        "recalcStyleMs": 317.41,
+        "devtoolsMs": 653.74,
+        "nodesDelta": 2238,
+        "listenersDelta": 323,
+        "heapDeltaMb": -9.734,
+        "totalNodes": 39336,
+        "heapMb": 108.734
+      }
+    },
+    {
+      "turns": 456,
+      "measurement": {
+        "wallMs": 2656.651,
+        "taskMs": 2043.225,
+        "scriptMs": 119.798,
+        "layoutMs": 238.434,
+        "recalcStyleMs": 432.785,
+        "devtoolsMs": 1099.346,
+        "nodesDelta": 1963,
+        "listenersDelta": 296,
+        "heapDeltaMb": 13.796,
+        "totalNodes": 41299,
+        "heapMb": 122.53
+      }
+    },
+    {
+      "turns": 480,
+      "measurement": {
+        "wallMs": 2012.78,
+        "taskMs": 1381.973,
+        "scriptMs": 65.859,
+        "layoutMs": 121.374,
+        "recalcStyleMs": 340.983,
+        "devtoolsMs": 722.114,
+        "nodesDelta": 1963,
+        "listenersDelta": 296,
+        "heapDeltaMb": -1.884,
+        "totalNodes": 43262,
+        "heapMb": 120.646
+      }
+    },
+    {
+      "turns": 500,
+      "measurement": {
+        "wallMs": 2576.668,
+        "taskMs": 1816.031,
+        "scriptMs": 128.045,
+        "layoutMs": 131.308,
+        "recalcStyleMs": 583.362,
+        "devtoolsMs": 816.412,
+        "nodesDelta": 1710,
+        "listenersDelta": 254,
+        "heapDeltaMb": 14.69,
+        "totalNodes": 44972,
+        "heapMb": 135.336
+      }
+    }
+  ],
+  "conversation": {
+    "startingTurns": 500,
+    "turnsAdded": 8,
+    "toolTurns": 2,
+    "retainedBefore": {
+      "domElements": 39013,
+      "nodes": 44978,
+      "listeners": 6858,
+      "heapMb": 116.73
+    },
+    "retainedAfter": {
+      "domElements": 39528,
+      "nodes": 45576,
+      "listeners": 6956,
+      "heapMb": 119.194
+    },
+    "retainedDelta": {
+      "domElements": 515,
+      "nodes": 598,
+      "listeners": 98,
+      "heapMb": 2.464
+    },
+    "checkpoints": [
+      {
+        "turns": 500,
+        "state": {
+          "domElements": 39013,
+          "nodes": 44978,
+          "listeners": 6858,
+          "heapMb": 116.73
+        }
+      },
+      {
+        "turns": 508,
+        "state": {
+          "domElements": 39528,
+          "nodes": 45576,
+          "listeners": 6956,
+          "heapMb": 119.194
+        }
+      }
+    ],
+    "turns": [
+      {
+        "ordinal": 1,
+        "resultingTurns": 501,
+        "kind": "text",
+        "promptChars": 698,
+        "composerFill": {
+          "wallMs": 405.825,
+          "taskMs": 397.522,
+          "scriptMs": 12.184,
+          "layoutMs": 8.768,
+          "recalcStyleMs": 284.717,
+          "devtoolsMs": 70.8,
+          "nodesDelta": 5,
+          "listenersDelta": 0,
+          "heapDeltaMb": 0.346,
+          "totalNodes": 44983,
+          "heapMb": 117.091
+        },
+        "stream": {
+          "paceMs": 8,
+          "deltaChunks": 24,
+          "persistedChunks": 28,
+          "toolCalls": 0,
+          "toolResults": 0,
+          "clickToUserEchoMs": 3040.352,
+          "clickToFirstChunkMs": 3650.494,
+          "firstChunkToSettledMs": 195.92,
+          "batches": 14,
+          "records": 35,
+          "wallMs": 3846.414,
+          "taskMs": 3474.454,
+          "scriptMs": 334.685,
+          "layoutMs": 156.262,
+          "recalcStyleMs": 1614.551,
+          "devtoolsMs": 1021.787,
+          "nodesDelta": 155,
+          "listenersDelta": 48,
+          "heapDeltaMb": 118.364,
+          "totalNodes": 45138,
+          "heapMb": 235.46
+        }
+      },
+      {
+        "ordinal": 2,
+        "resultingTurns": 502,
+        "kind": "text",
+        "promptChars": 698,
+        "composerFill": {
+          "wallMs": 379.033,
+          "taskMs": 371.469,
+          "scriptMs": 5.275,
+          "layoutMs": 1.439,
+          "recalcStyleMs": 279.194,
+          "devtoolsMs": 65.061,
+          "nodesDelta": 5,
+          "listenersDelta": 0,
+          "heapDeltaMb": 2.616,
+          "totalNodes": 45143,
+          "heapMb": 242.159
+        },
+        "stream": {
+          "paceMs": 8,
+          "deltaChunks": 24,
+          "persistedChunks": 28,
+          "toolCalls": 0,
+          "toolResults": 0,
+          "clickToUserEchoMs": 1254.04,
+          "clickToFirstChunkMs": 2727.329,
+          "firstChunkToSettledMs": 209.033,
+          "batches": 12,
+          "records": 27,
+          "wallMs": 2936.362,
+          "taskMs": 2759.498,
+          "scriptMs": 226.288,
+          "layoutMs": 53.366,
+          "recalcStyleMs": 1180.039,
+          "devtoolsMs": 1100.53,
+          "nodesDelta": 108,
+          "listenersDelta": 40,
+          "heapDeltaMb": 142.772,
+          "totalNodes": 45251,
+          "heapMb": 384.934
+        }
+      },
+      {
+        "ordinal": 3,
+        "resultingTurns": 503,
+        "kind": "tool",
+        "promptChars": 698,
+        "composerFill": {
+          "wallMs": 407.223,
+          "taskMs": 398.654,
+          "scriptMs": 4.997,
+          "layoutMs": 1.383,
+          "recalcStyleMs": 299.974,
+          "devtoolsMs": 66.801,
+          "nodesDelta": 5,
+          "listenersDelta": 0,
+          "heapDeltaMb": 2.616,
+          "totalNodes": 45256,
+          "heapMb": 391.613
+        },
+        "stream": {
+          "paceMs": 8,
+          "deltaChunks": 24,
+          "persistedChunks": 33,
+          "toolCalls": 1,
+          "toolResults": 1,
+          "clickToUserEchoMs": 1640.697,
+          "clickToFirstChunkMs": 5192.934,
+          "firstChunkToSettledMs": 321.497,
+          "batches": 23,
+          "records": 49,
+          "wallMs": 5514.432,
+          "taskMs": 5163.038,
+          "scriptMs": 403.46,
+          "layoutMs": 84.874,
+          "recalcStyleMs": 1962.195,
+          "devtoolsMs": 2242.402,
+          "nodesDelta": 59,
+          "listenersDelta": -19,
+          "heapDeltaMb": -92.21,
+          "totalNodes": 45315,
+          "heapMb": 299.405
+        }
+      },
+      {
+        "ordinal": 4,
+        "resultingTurns": 504,
+        "kind": "text",
+        "promptChars": 698,
+        "composerFill": {
+          "wallMs": 614.428,
+          "taskMs": 597.9,
+          "scriptMs": 7.243,
+          "layoutMs": 2.059,
+          "recalcStyleMs": 443.032,
+          "devtoolsMs": 111.021,
+          "nodesDelta": 5,
+          "listenersDelta": 0,
+          "heapDeltaMb": 2.64,
+          "totalNodes": 45320,
+          "heapMb": 306.144
+        },
+        "stream": {
+          "paceMs": 8,
+          "deltaChunks": 24,
+          "persistedChunks": 28,
+          "toolCalls": 0,
+          "toolResults": 0,
+          "clickToUserEchoMs": 2494.591,
+          "clickToFirstChunkMs": 4869.056,
+          "firstChunkToSettledMs": 222.537,
+          "batches": 12,
+          "records": 27,
+          "wallMs": 5091.594,
+          "taskMs": 4772.858,
+          "scriptMs": 507.26,
+          "layoutMs": 87.769,
+          "recalcStyleMs": 1902.083,
+          "devtoolsMs": 1966.675,
+          "nodesDelta": 108,
+          "listenersDelta": 40,
+          "heapDeltaMb": 124.425,
+          "totalNodes": 45428,
+          "heapMb": 430.572
+        }
+      },
+      {
+        "ordinal": 5,
+        "resultingTurns": 505,
+        "kind": "text",
+        "promptChars": 698,
+        "composerFill": {
+          "wallMs": 549.152,
+          "taskMs": 540.116,
+          "scriptMs": 5.036,
+          "layoutMs": 1.4,
+          "recalcStyleMs": 410.888,
+          "devtoolsMs": 89.311,
+          "nodesDelta": 5,
+          "listenersDelta": 0,
+          "heapDeltaMb": 2.597,
+          "totalNodes": 45433,
+          "heapMb": 437.246
+        },
+        "stream": {
+          "paceMs": 8,
+          "deltaChunks": 24,
+          "persistedChunks": 28,
+          "toolCalls": 0,
+          "toolResults": 0,
+          "clickToUserEchoMs": 3604.544,
+          "clickToFirstChunkMs": 3817.397,
+          "firstChunkToSettledMs": 330.993,
+          "batches": 12,
+          "records": 27,
+          "wallMs": 4148.391,
+          "taskMs": 3913.093,
+          "scriptMs": 302.538,
+          "layoutMs": 69.366,
+          "recalcStyleMs": 1700.253,
+          "devtoolsMs": 1547.337,
+          "nodesDelta": -63,
+          "listenersDelta": -45,
+          "heapDeltaMb": -265.193,
+          "totalNodes": 45370,
+          "heapMb": 172.054
+        }
+      },
+      {
+        "ordinal": 6,
+        "resultingTurns": 506,
+        "kind": "tool",
+        "promptChars": 698,
+        "composerFill": {
+          "wallMs": 480.333,
+          "taskMs": 472.179,
+          "scriptMs": 5.158,
+          "layoutMs": 1.378,
+          "recalcStyleMs": 358.642,
+          "devtoolsMs": 85.953,
+          "nodesDelta": 5,
+          "listenersDelta": 0,
+          "heapDeltaMb": 2.606,
+          "totalNodes": 45375,
+          "heapMb": 178.761
+        },
+        "stream": {
+          "paceMs": 8,
+          "deltaChunks": 24,
+          "persistedChunks": 33,
+          "toolCalls": 1,
+          "toolResults": 1,
+          "clickToUserEchoMs": 2878.036,
+          "clickToFirstChunkMs": 4589.445,
+          "firstChunkToSettledMs": 201.152,
+          "batches": 23,
+          "records": 50,
+          "wallMs": 4790.598,
+          "taskMs": 4416.95,
+          "scriptMs": 379.506,
+          "layoutMs": 70.381,
+          "recalcStyleMs": 1800.433,
+          "devtoolsMs": 1788.988,
+          "nodesDelta": 197,
+          "listenersDelta": 64,
+          "heapDeltaMb": 227.143,
+          "totalNodes": 45572,
+          "heapMb": 405.907
+        }
+      },
+      {
+        "ordinal": 7,
+        "resultingTurns": 507,
+        "kind": "text",
+        "promptChars": 698,
+        "composerFill": {
+          "wallMs": 182.278,
+          "taskMs": 399.209,
+          "scriptMs": 4.111,
+          "layoutMs": 1.568,
+          "recalcStyleMs": 298.464,
+          "devtoolsMs": 69.143,
+          "nodesDelta": 5,
+          "listenersDelta": 0,
+          "heapDeltaMb": 2.585,
+          "totalNodes": 45577,
+          "heapMb": 412.582
+        },
+        "stream": {
+          "paceMs": 8,
+          "deltaChunks": 24,
+          "persistedChunks": 28,
+          "toolCalls": 0,
+          "toolResults": 0,
+          "clickToUserEchoMs": 1294.837,
+          "clickToFirstChunkMs": 2779.855,
+          "firstChunkToSettledMs": 259.014,
+          "batches": 12,
+          "records": 27,
+          "wallMs": 3038.869,
+          "taskMs": 2867.862,
+          "scriptMs": 278.919,
+          "layoutMs": 49.184,
+          "recalcStyleMs": 1145.88,
+          "devtoolsMs": 1176.974,
+          "nodesDelta": 108,
+          "listenersDelta": -40,
+          "heapDeltaMb": -239.817,
+          "totalNodes": 45685,
+          "heapMb": 172.767
+        }
+      },
+      {
+        "ordinal": 8,
+        "resultingTurns": 508,
+        "kind": "text",
+        "promptChars": 8232,
+        "composerFill": {
+          "wallMs": 390.836,
+          "taskMs": 384.052,
+          "scriptMs": 6.273,
+          "layoutMs": 5.701,
+          "recalcStyleMs": 286.062,
+          "devtoolsMs": 66.273,
+          "nodesDelta": 5,
+          "listenersDelta": 0,
+          "heapDeltaMb": 2.655,
+          "totalNodes": 45523,
+          "heapMb": 179.539
+        },
+        "stream": {
+          "paceMs": 8,
+          "deltaChunks": 120,
+          "persistedChunks": 124,
+          "toolCalls": 0,
+          "toolResults": 0,
+          "clickToUserEchoMs": 1394.527,
+          "clickToFirstChunkMs": 3886.642,
+          "firstChunkToSettledMs": 247.559,
+          "batches": 14,
+          "records": 31,
+          "wallMs": 4134.201,
+          "taskMs": 3945.428,
+          "scriptMs": 535.607,
+          "layoutMs": 68.38,
+          "recalcStyleMs": 1548.022,
+          "devtoolsMs": 1463.395,
+          "nodesDelta": 116,
+          "listenersDelta": 48,
+          "heapDeltaMb": 167.383,
+          "totalNodes": 45639,
+          "heapMb": 346.926
+        }
+      }
+    ]
+  }
+}

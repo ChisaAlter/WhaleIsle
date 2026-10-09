@@ -1,7 +1,9 @@
 'use strict';
 
 const { contextBridge, ipcRenderer } = require('electron');
-const { PREVIEW_PIP_FRAME_CHANNEL } = require('./preview-pip-protocol');
+// Sandboxed preloads cannot require local modules; keep this channel in sync
+// with preview-pip-protocol.js.
+const PREVIEW_PIP_FRAME_CHANNEL = 'dshd-preview-pip-frame';
 
 contextBridge.exposeInMainWorld('previewPictureInPicture', {
   onFrame(listener) {

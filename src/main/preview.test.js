@@ -2173,6 +2173,78 @@ test('startRecording while PiP is open does not create a second capture interval
   }
 });
 
+test('slow shared PiP captures stay single-flight and release after success or failure', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const fake = fakeAttach();
+  const pip = createPipFactory();
+  const preview = createPreviewController({ attach: fake.attach, createPipWindow: pip.createPipWindow });
+  const opened = await preview.open({ url: 'http://127.0.0.1:3000' });
+  const wc = fake.views[0].webContents;
+  stubWideCapture(wc);
+  const captureImage = wc.capturePage.bind(wc);
+  await preview.openPictureInPicture(opened.id);
+  await preview.startRecording(opened.id);
+  let calls = 0;
+  let complete;
+  let fail;
+  wc.capturePage = () => {
+    calls += 1;
+    return new Promise((resolve, reject) => { complete = resolve; fail = reject; });
+  };
+  const flush = async () => { for (let i = 0; i < 6; i += 1) await Promise.resolve(); };
+  try {
+    t.mock.timers.tick(PREVIEW_PIP_FRAME_INTERVAL_MS * 4);
+    assert.equal(calls, 1);
+    const before = pip.created[0].sent.length;
+    complete(captureImage());
+    await flush();
+    assert.equal(pip.created[0].sent.length, before + 1);
+    assert.equal(wc.jpegQualities.at(-1), 80);
+    t.mock.timers.tick(PREVIEW_PIP_FRAME_INTERVAL_MS);
+    assert.equal(calls, 2);
+    fail(new Error('capture temporarily unavailable'));
+    await flush();
+    t.mock.timers.tick(PREVIEW_PIP_FRAME_INTERVAL_MS);
+    assert.equal(calls, 3);
+    complete(captureImage());
+    await flush();
+  } finally {
+    await preview.stopRecording(opened.id);
+    await preview.closePictureInPicture();
+    await preview.close(opened.id);
+  }
+});
+
+test('closing and reopening PiP waits for its old in-flight capture', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const fake = fakeAttach();
+  const pip = createPipFactory();
+  const preview = createPreviewController({ attach: fake.attach, createPipWindow: pip.createPipWindow });
+  const opened = await preview.open({ url: 'http://127.0.0.1:3000' });
+  const wc = fake.views[0].webContents;
+  stubWideCapture(wc);
+  const captureImage = wc.capturePage.bind(wc);
+  await preview.openPictureInPicture(opened.id);
+  const releases = [];
+  wc.capturePage = () => new Promise((resolve) => releases.push(resolve));
+  t.mock.timers.tick(PREVIEW_PIP_FRAME_INTERVAL_MS);
+  assert.equal(releases.length, 1);
+  await preview.closePictureInPicture();
+  const reopening = preview.openPictureInPicture(opened.id);
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  assert.equal(releases.length, 1, 'new consumer does not overlap the old native capture');
+  const before = pip.created[1].sent.length;
+  releases[0](captureImage());
+  for (let i = 0; i < 12; i++) await Promise.resolve();
+  assert.equal(releases.length, 2);
+  assert.equal(pip.created[1].sent.length, before, 'the old generation does not publish into the new PiP');
+  releases[1](captureImage());
+  await reopening;
+  assert.equal(pip.created[1].sent.length, before + 1);
+  await preview.closePictureInPicture();
+  await preview.close(opened.id);
+});
+
 test('saveRecording writes under preview-recordings', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dshd-preview-rec-'));
   const fake = fakeAttach();

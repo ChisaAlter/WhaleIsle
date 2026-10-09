@@ -492,6 +492,7 @@ async function startExternalDesktop(argv = [], deps = {}) {
     await new Promise((resolve) => setTimeout(resolve, Math.min(pollMs, Math.max(0, deadline - Date.now()))));
     if (spawnError) {
       bootLog.line(`launcher verdict: spawn failed (${spawnError.message || 'runtime-spawn-failed'})`);
+      await bootLog.flush?.();
       return { ok: false, error: spawnError.message || 'runtime-spawn-failed', exe };
     }
     const alive = probe();
@@ -502,11 +503,13 @@ async function startExternalDesktop(argv = [], deps = {}) {
     if (seen) {
       // Appeared in the process table then vanished before the grace ended.
       bootLog.line('launcher verdict: runtime-exited inside alive grace');
+      await bootLog.flush?.();
       return { ok: false, error: 'runtime-exited', exe };
     }
   }
   const alive = probe();
   bootLog.line(`launcher verdict: ${alive ? 'launched' : seen ? 'runtime-exited' : 'runtime-never-started'}`);
+  await bootLog.flush?.();
   return alive
     ? { ok: true, launched: true, external: true, exe }
     : { ok: false, error: seen ? 'runtime-exited' : 'runtime-never-started', exe };

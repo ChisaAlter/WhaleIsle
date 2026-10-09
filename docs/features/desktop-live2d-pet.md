@@ -61,6 +61,7 @@
 - `src/main/pet-stats.js`, `src/main/pet-stats.test.js` — 养成属性（饱食/心情/亲密）衰减、增量、冷却与称号。
 - `src/main/pet-settings.js`, `src/main/pet-settings.test.js` — 宠物设置默认值/规范化/钳制（纯函数）。
 - `src/main/pet-dsh-watch.js`, `src/main/pet-dsh-watch.test.js` — 会话日志尾随 + DSH 状态机 + 水位线。
+- `src/main/pet-dsh-watch-host.js`, `src/main/pet-dsh-watch-worker.js` — 生产环境每 2 秒最多一次在途的日志扫描，复用尾随器；主进程确认持久化成功后才镜像用量，停止时同步 checkpoint 并屏蔽旧 worker 的迟到事件。隐藏宠物仍继续助理用量更新。
 - 审批桥接（R3：**无现行代码路径**）：本仓 harness 无 `/api/respond` REST 端点（审批走 typert Remote 进程内协议），审批桥接由 `dsh-whale` 插件落地为 jsonl 事件桥。`shell:live2d-respond` IPC 形状已预留；相关 R3 模块（规划名 `pet-dsh-mux`）尚未实现，实现落地前不列入本卡 touch 面。
 - `src/main/pet-chat.js`, `src/main/pet-chat.test.js` — 对话/视觉请求封装（聊聊=whale `pet/chat` 优先、直连兜底；看看=whale `pet/look` 按所选 provider 路由，providerless 才直连）。
 - `src/renderer/pet-live2d.html`, `src/renderer/pet-live2d.js`, `src/renderer/pet-live2d/**` — THA4 ONNX 渲染器、ORT/WebGPU 资产、模型与角色图、鲸鱼娘 fallback 资产、聊聊对话卡。
