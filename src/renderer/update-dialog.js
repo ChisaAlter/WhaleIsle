@@ -18,13 +18,14 @@ function applyScheme(scheme) {
 function respond(index) {
   if (responding || view === undefined) return;
   responding = true;
-  void api.respond(view.revision, index).catch(() => { responding = false; });
+  const downloadMode = document.querySelector('input[name="download-method"]:checked')?.value;
+  void api.respond(view.revision, index, downloadMode).catch(() => { responding = false; });
 }
 document.getElementById('close').addEventListener('click', () => { respond(view.cancelId); });
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && view !== undefined) { event.preventDefault(); respond(view.cancelId); }
   if (event.key !== 'Tab') return;
-  const controls = [...document.querySelectorAll('button, details:not([hidden]) > summary, details[open]:not([hidden]) > pre')];
+  const controls = [...document.querySelectorAll('button:not(:disabled), input:not(:disabled), #content:not([hidden]), details:not([hidden]) > summary, details[open]:not([hidden]) > pre')];
   const current = controls.indexOf(document.activeElement);
   const next = current < 0 ? (event.shiftKey ? controls.length - 1 : 0)
     : (current + (event.shiftKey ? -1 : 1) + controls.length) % controls.length;
@@ -48,6 +49,32 @@ function render(state) {
   document.documentElement.lang = state.locale;
   document.title = state.title;
   document.getElementById('title').textContent = state.message;
+  document.getElementById('dialog').dataset.kind = state.kind || 'confirmation';
+  document.getElementById('context').textContent = state.context || '';
+  document.getElementById('context').hidden = !state.context;
+  const methods = state.downloadMethods || [];
+  document.getElementById('download-methods').hidden = methods.length === 0;
+  const options = document.getElementById('download-method-options');
+  options.replaceChildren();
+  const selected = methods.find((method) => !method.disabledReason)?.id;
+  for (const method of methods) {
+    const label = document.createElement('label');
+    label.className = 'download-method';
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = 'download-method';
+    input.value = method.id;
+    input.disabled = Boolean(method.disabledReason);
+    input.checked = method.id === selected;
+    const copy = document.createElement('span');
+    const title = document.createElement('strong');
+    title.textContent = method.label;
+    const description = document.createElement('span');
+    description.textContent = method.disabledReason || method.description;
+    copy.append(title, description);
+    label.append(input, copy);
+    options.append(label);
+  }
   document.getElementById('detail').textContent = state.detail;
   document.getElementById('detail').hidden = state.detail === '';
   document.getElementById('close').setAttribute('aria-label', state.closeLabel);
@@ -55,6 +82,8 @@ function render(state) {
   document.getElementById('technical-details-label').textContent = state.technicalDetailsLabel;
   document.getElementById('technical-details-content').textContent = state.technicalDetails;
   document.getElementById('technical-details').open = false;
+  document.getElementById('content').setAttribute('aria-label', state.kind === 'update' ? '更新说明' : '详情');
+  document.getElementById('content').hidden = !state.detail && !state.technicalDetails;
   document.getElementById('actions').replaceChildren();
   for (const [index, label] of state.buttons.entries()) {
     const button = document.createElement('button');
@@ -66,7 +95,7 @@ function render(state) {
     document.getElementById('actions').append(button);
   }
   document.querySelector('main').hidden = false;
-  document.getElementById('dialog').scrollTop = 0;
+  document.getElementById('content').scrollTop = 0;
   document.body.classList.add('visible');
   document.getElementById('dialog').focus();
 }

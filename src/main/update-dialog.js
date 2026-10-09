@@ -47,7 +47,7 @@ class ShellConfirmDialog {
     this.closing = undefined;
     this.active = undefined;
     ipcMain.handle(UPDATE_DIALOG_IPC.status, (event) => { this.owned(event); return this.active?.view ?? null; });
-    ipcMain.handle(UPDATE_DIALOG_IPC.respond, (event, revision, index) => {
+    ipcMain.handle(UPDATE_DIALOG_IPC.respond, (event, revision, index, downloadMode) => {
       this.owned(event);
       const active = this.active;
       if (active === undefined || revision !== active.view.revision) {
@@ -57,7 +57,11 @@ class ShellConfirmDialog {
         || (index !== active.view.cancelId && (index < 0 || index >= active.view.buttons.length))) {
         throw new Error('dshd dialog: invalid response');
       }
-      active.finish(index);
+      if (index === 0 && active.view.downloadMethods.length > 0
+        && !active.view.downloadMethods.some((method) => method.id === downloadMode && !method.disabledReason)) {
+        throw new Error('dshd dialog: unavailable download method');
+      }
+      active.finish(index, false, index === 0 ? downloadMode : undefined);
     });
   }
 
@@ -88,6 +92,9 @@ class ShellConfirmDialog {
     const view = {
       revision: ++this.revision, locale: 'zh-CN', title: options.title ?? '',
       message: options.message ?? '', detail: options.detail ?? '',
+      kind: options.kind === 'update' ? 'update' : 'confirmation',
+      context: options.context ?? '',
+      downloadMethods: Array.isArray(options.downloadMethods) ? options.downloadMethods : [],
       buttons, cancelId, closeLabel: this.text.close,
       technicalDetails: options.technicalDetails ?? '',
       technicalDetailsLabel: this.text.technicalDetails,
@@ -114,7 +121,7 @@ class ShellConfirmDialog {
         window.webContents.send(UPDATE_DIALOG_IPC.changed, view);
       };
       const abort = () => { finish(cancelId); };
-      const finish = (response, retain = false) => {
+      const finish = (response, retain = false, downloadMode) => {
         if (this.active?.view !== view) return;
         this.active = undefined;
         parent.off('resize', syncMaximized);
@@ -124,7 +131,7 @@ class ShellConfirmDialog {
           window.webContents.send(UPDATE_DIALOG_IPC.changed, null);
           this.closing = setTimeout(() => { this.close(); }, 150);
         }
-        resolve({ response });
+        resolve(downloadMode === undefined ? { response } : { response, downloadMode });
       };
       this.active = { window, view, finish };
       parent.on('resize', syncMaximized);

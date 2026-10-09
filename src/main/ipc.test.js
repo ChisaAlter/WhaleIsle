@@ -189,7 +189,7 @@ function loadIpc(options = {}) {
   stub('./chrome', { applyAppTheme() {} });
   stub('./update', {
     checkUpdate() { return {}; },
-    installUpdate: async () => ({}),
+    installUpdate: options.installUpdate || (async () => ({})),
     listReleases: async () => ({ status: 'ok', releases: [], installed: { version: '0.0.0' } }),
     installRelease: async () => ({ status: 'error', message: 'no-installer', launched: false }),
     launchUninstaller: options.launchUninstaller || (() => ({ ok: true })),
@@ -213,6 +213,9 @@ function loadIpc(options = {}) {
     startExternalDesktop: () => ({ ok: true, external: true }),
     stopExternalDesktop: async () => ({ ok: true, stopped: false }),
     ...(options.runtimeInstall || {}),
+  });
+  stub('../launcher/delta/install', {
+    installDelta: options.installDelta || (async () => ({ ok: true, mode: 'delta' })),
   });
   const scanImportCalls = [];
   const runImportCalls = [];
@@ -346,7 +349,7 @@ function loadIpc(options = {}) {
   let startDesktopCalls = 0;
   const startDesktopArgs = [];
   const { registerIpc } = require('./ipc');
-  registerIpc({
+  const resources = registerIpc({
     dsh: options.dsh || { snapshot: () => ({}), logs: [] },
     harness: options.harness || null,
     startHarness: async () => {
@@ -386,6 +389,7 @@ function loadIpc(options = {}) {
   }
 
   return {
+    launcher: resources.launcher,
     handlers,
     invoke,
     restore,
@@ -2266,4 +2270,147 @@ test('remove-plugin refuses before any side effect while the import journal is b
   } finally {
     ipc.restore();
   }
+});
+
+test('main-confirmed update keeps the exact release and shares the import maintenance boundary', async () => {
+  const importGuard = require('./import-guard');
+  const calls = [];
+  let finishInstall;
+  const installation = new Promise((resolve) => { finishInstall = () => resolve({ launched: true }); });
+  const ipc = loadIpc({ installUpdate: async (_progress, options) => { calls.push(options); return installation; } });
+  const expectedCheck = { status: 'available', latest: '9.9.9', tag: 'v9.9.9', assetUrl: 'https://example.test/confirmed.exe' };
+  const confirmUnverified = async () => false;
+  const foreign = importGuard.acquireMaintenance('import');
+  try {
+    const blocked = await ipc.launcher.installUpdate(null, { expectedCheck, confirmUnverified, downloadMode: 'delta' });
+    assert.equal(blocked.error, 'operation-in-progress');
+    assert.equal(calls.length, 0);
+    assert.equal(importGuard.holdsMaintenance(foreign), true);
+    importGuard.releaseMaintenance(foreign);
+
+    const pending = ipc.launcher.installUpdate(null, { expectedCheck, confirmUnverified, downloadMode: 'delta' });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].expectedCheck, expectedCheck, 'the release shown by main must survive service admission unchanged');
+    assert.equal(calls[0].confirmUnverified, confirmUnverified);
+    assert.equal(calls[0].downloadMode, 'delta');
+    assert.equal(importGuard.isMaintenanceHeld(), true);
+    const competitor = await ipc.invoke('shell:run-import', launcherEvent(), {});
+    assert.equal(competitor.error, 'import-in-progress');
+    assert.equal(ipc.runImportCalls.length, 0);
+    finishInstall();
+    assert.equal((await pending).launched, true);
+    assert.equal(importGuard.isMaintenanceHeld(), false);
+
+    await ipc.invoke('shell:install-update', harnessEvent(), { expectedCheck, downloadMode: 'delta' });
+    assert.equal(calls[1].expectedCheck, undefined, 'renderer IPC cannot choose installer metadata');
+    assert.equal(calls[1].downloadMode, 'full', 'renderer IPC cannot change the main-owned download choice');
+  } finally {
+    finishInstall();
+    importGuard.releaseMaintenance(foreign);
+    ipc.restore();
+  }
+});
+
+test('main-confirmed update refuses an unresolved import journal before downloading', async () => {
+  const importGuard = require('./import-guard');
+  for (const journal of [{ phase: 'blocked', pendingTxns: ['op-1'] }, { unreadable: true }]) {
+    let downloads = 0;
+    const ipc = loadIpc({
+      readImportJournal: () => journal,
+      installUpdate: async () => { downloads++; return { launched: true }; },
+    });
+    try {
+      const result = await ipc.launcher.installUpdate(null, { expectedCheck: { status: 'available', latest: '9.9.9' } });
+      assert.equal(result.error, 'import-recovery-blocked');
+      assert.equal(downloads, 0);
+      assert.equal(importGuard.isMaintenanceHeld(), false);
+    } finally {
+      ipc.restore();
+    }
+  }
+});
+
+test('launcher delta IPC holds the shared maintenance slot through protected application', async () => {
+  const importGuard = require('./import-guard');
+  let installCalls = 0;
+  let stopped = 0;
+  let running = true;
+  let continueInstall;
+  const pendingInstall = new Promise(resolve => { continueInstall = resolve; });
+  const ipc = loadIpc({
+    installDelta: async (tag, progress, options) => {
+      installCalls++;
+      assert.equal(tag, 'v9.9.9');
+      progress({ phase: 'download', percent: 42 });
+      await pendingInstall;
+      const admitted = await options.beforeApply();
+      assert.deepEqual(admitted, { ok: true });
+      assert.equal(importGuard.isMaintenanceHeld(), true);
+      return { ok: true, mode: 'delta' };
+    },
+    runtimeInstall: {
+      probeDesktopRunning: () => running,
+      stopExternalDesktop: async () => { stopped++; running = false; return { ok: true, stopped: true }; },
+    },
+  });
+  const foreign = importGuard.acquireMaintenance('import');
+  try {
+    const blocked = await ipc.invoke('shell:install-delta', launcherEvent(), 'v9.9.9');
+    assert.equal(blocked.mode, 'delta');
+    assert.equal(blocked.error, 'operation-in-progress');
+    assert.equal(installCalls, 0);
+    importGuard.releaseMaintenance(foreign);
+
+    const progress = [];
+    const pending = ipc.invoke('shell:install-delta', launcherEvent(progress), 'v9.9.9');
+    assert.equal(installCalls, 1);
+    assert.equal(stopped, 0, 'desktop remains running while the selected delta downloads');
+    assert.equal(importGuard.isMaintenanceHeld(), true);
+    assert.equal(progress[0].payload.delta, true);
+    const competitor = await ipc.invoke('shell:run-import', launcherEvent(), {});
+    assert.equal(competitor.error, 'import-in-progress');
+    assert.equal(ipc.runImportCalls.length, 0);
+    continueInstall();
+    assert.deepEqual(await pending, { ok: true, mode: 'delta' });
+    assert.equal(stopped, 1);
+    assert.equal(importGuard.isMaintenanceHeld(), false);
+  } finally {
+    continueInstall();
+    importGuard.releaseMaintenance(foreign);
+    ipc.restore();
+  }
+});
+
+test('launcher delta refuses unresolved import recovery before downloading', async () => {
+  const importGuard = require('./import-guard');
+  let installs = 0;
+  const ipc = loadIpc({
+    readImportJournal: () => ({ phase: 'blocked', pendingTxns: ['delta-import'] }),
+    installDelta: async () => { installs++; },
+  });
+  try {
+    const result = await ipc.invoke('shell:install-delta', launcherEvent(), 'v9.9.9');
+    assert.deepEqual(result, { ok: false, mode: 'delta', error: 'import-recovery-blocked', pendingTxns: ['delta-import'] });
+    assert.equal(installs, 0);
+    assert.equal(importGuard.isMaintenanceHeld(), false);
+  } finally { ipc.restore(); }
+});
+
+test('launcher delta preserves a declined peer shutdown and releases maintenance', async () => {
+  const importGuard = require('./import-guard');
+  const refusal = { ok: false, cancelled: true, error: 'peer-cancelled', stopped: false };
+  let stops = 0;
+  const ipc = loadIpc({
+    installDelta: async (_tag, _progress, options) => ({ ...await options.beforeApply(), mode: 'delta' }),
+    runtimeInstall: {
+      probeDesktopRunning: () => true,
+      stopExternalDesktop: async () => { stops++; return refusal; },
+    },
+  });
+  try {
+    const result = await ipc.invoke('shell:install-delta', launcherEvent(), 'v9.9.9');
+    assert.deepEqual(result, { ...refusal, mode: 'delta' });
+    assert.equal(stops, 1);
+    assert.equal(importGuard.isMaintenanceHeld(), false);
+  } finally { ipc.restore(); }
 });

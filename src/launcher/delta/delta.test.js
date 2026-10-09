@@ -176,7 +176,11 @@ test('buildDelta emits add/patch/delete ops and applyDeltaFile reproduces the to
   assert.equal(/^[0-9a-f]{128}$/.test(built.sha512), true);
 
   const progress = [];
-  const result = await applyDeltaFile(out, target, { expectedSha512: built.sha512, onProgress: (p) => progress.push(p) });
+  const result = await applyDeltaFile(out, target, {
+    expectedSha512: built.sha512, expectedProduct: 'Test',
+    expectedFromVersion: 'v1.0.0', expectedToVersion: 'v2.0.0',
+    onProgress: (p) => progress.push(p),
+  });
   assert.equal(result.ok, true);
   assert.equal(result.toVersion, '2.0.0');
   assert.deepEqual(await treeHashes(target), await treeHashes(toDir));
@@ -187,7 +191,42 @@ test('buildDelta emits add/patch/delete ops and applyDeltaFile reproduces the to
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('applyDeltaFile fails closed on base drift and leaves the tree untouched', async () => {
+test('applyDeltaFile refuses a different product or version without modifying the installed tree', async () => {
+  const dir = tmpdir();
+  const fromDir = path.join(dir, 'from');
+  const toDir = path.join(dir, 'to');
+  const target = path.join(dir, 'target');
+  writeTree(fromDir, FROM_TREE);
+  writeTree(toDir, TO_TREE);
+  fs.cpSync(fromDir, target, { recursive: true });
+  const before = await treeHashes(target);
+  const out = path.join(dir, 'delta.zip');
+  const built = await buildDelta({
+    fromDir, toDir, outFile: out, product: 'Whale-Isle', fromVersion: '1.0.0', toVersion: '2.0.0',
+  });
+  let stopped = 0;
+  try {
+    for (const incorrect of [
+      { expectedProduct: 'Another-Product' },
+      { expectedFromVersion: '1.0.1' },
+      { expectedToVersion: '2.0.1' },
+    ]) {
+      await assert.rejects(() => applyDeltaFile(out, target, {
+        expectedSha512: built.sha512,
+        expectedProduct: 'Whale-Isle', expectedFromVersion: '1.0.0', expectedToVersion: '2.0.0',
+        beforeApply: async () => { stopped++; return { ok: true }; },
+        ...incorrect,
+      }), error => error.code === 'manifest-target-mismatch');
+      assert.deepEqual(await treeHashes(target), before);
+      assert.equal(stopped, 0, 'wrong product/version must not request desktop shutdown');
+      assert.equal(fs.readdirSync(target).some(name => name.startsWith('.dshd-delta-')), false);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('applyDeltaFile fails closed on base drift without stopping the desktop or modifying the tree', async () => {
   const dir = tmpdir();
   const fromDir = path.join(dir, 'from');
   const toDir = path.join(dir, 'to');
@@ -200,16 +239,40 @@ test('applyDeltaFile fails closed on base drift and leaves the tree untouched', 
 
   const out = path.join(dir, 'delta.zip');
   await buildDelta({ fromDir, toDir, outFile: out });
+  let stopped = 0;
   await assert.rejects(
-    () => applyDeltaFile(out, target, {}),
+    () => applyDeltaFile(out, target, { beforeApply: async () => { stopped++; return { ok: true }; } }),
     (error) => error instanceof DeltaApplyError && error.code === 'base-mismatch',
   );
+  assert.equal(stopped, 0);
   const after = await treeHashes(target);
   assert.equal(after['lib/change.dll'], manifest.sha256Hex(Buffer.from('user-modified')));
   delete before['lib/change.dll'];
   delete after['lib/change.dll'];
   assert.deepEqual(after, before);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('applyDeltaFile preserves protected shutdown refusal before creating staging or changing target files', async () => {
+  const dir = tmpdir();
+  const fromDir = path.join(dir, 'from');
+  const toDir = path.join(dir, 'to');
+  const target = path.join(dir, 'target');
+  writeTree(fromDir, FROM_TREE);
+  writeTree(toDir, TO_TREE);
+  fs.cpSync(fromDir, target, { recursive: true });
+  const before = await treeHashes(target);
+  const out = path.join(dir, 'delta.zip');
+  await buildDelta({ fromDir, toDir, outFile: out });
+  const refusal = { ok: false, cancelled: true, error: 'peer-cancelled' };
+  try {
+    const result = await applyDeltaFile(out, target, { beforeApply: async () => refusal });
+    assert.equal(result, refusal);
+    assert.deepEqual(await treeHashes(target), before);
+    assert.equal(fs.readdirSync(target).some(name => name.startsWith('.dshd-delta-')), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('applyDeltaFile rejects artifact sha512 mismatch before reading the manifest', async () => {

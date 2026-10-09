@@ -12,7 +12,7 @@ const CHANNELS = {
 
 const api = {
   status: () => ipcRenderer.invoke(CHANNELS.status),
-  respond: (revision, index) => ipcRenderer.invoke(CHANNELS.respond, revision, index),
+  respond: (revision, index, downloadMode) => ipcRenderer.invoke(CHANNELS.respond, revision, index, downloadMode),
   subscribe: (listener) => {
     const receive = (_event, view) => { listener(view); };
     ipcRenderer.on(CHANNELS.changed, receive);

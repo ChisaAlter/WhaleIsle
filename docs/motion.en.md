@@ -134,7 +134,7 @@ These transitions consume `--ds-transition-*` / `--ds-ease-in-out` without `data
 | Switch | `Switch` thumb `transform` over `--ds-transition-duration-fast` |
 | Button, field, and row hover | Interactive color tokens, not an enter/exit recipe |
 | Micro-interactions | Icon-button press, card press offset, and other `transform` feedback over `--ds-transition-duration-fast`; card-level hover (border / fill) uses `--ds-motion-duration-popover` |
-| Layout tracks | `TurnNavigator` turn rail (`height` / `top` / mark width, own swift curve), `WorkspaceBrowser` row collapse (`max-width` / `margin` / `padding` / `width` + `visibility` delay), `UpdateAction` progress width: layout-property animation over `--ds-transition-duration`, stopped under reduced motion |
+| Layout tracks | `TurnNavigator` turn rail (`height` / `top` / mark width, own swift curve), `WorkspaceBrowser` row collapse (`max-width` / `margin` / `padding` / `width` + `visibility` delay): layout-property animation over `--ds-transition-duration`, stopped under reduced motion |
 | Sidebar rail choreography | `SidebarRoot`: 150ms collapse phase + 200ms `wide-in`, riding AppFrame’s 300ms track; stopped under reduced motion |
 | Empty-session Hero fish | On hover when motion is not reduced, a 1.6s gentle sway loop |
 

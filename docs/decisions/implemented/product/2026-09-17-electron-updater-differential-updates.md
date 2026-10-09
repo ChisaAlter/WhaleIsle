@@ -2,6 +2,8 @@
 
 Status: implemented
 
+2026-10-09 调整：更新确认改为用户选择「增量更新」或「完全下载」；差量失败不再自动转整包，缓存或元数据不足时说明不可用原因。下文记录最初方案；当前行为与完整校验、任务保护约定见[托盘、关闭与更新](../../../handbook/modules/tray-update.md)。
+
 中文 | [English](2026-09-17-electron-updater-differential-updates.en.md)
 
 ## Problem

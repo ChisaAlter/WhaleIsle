@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { desktopShell, type UpdateInfo } from './desktop-shell.ts'
 import css from './AboutSection.module.css'
 
@@ -15,6 +15,12 @@ type UpdateStatus = 'idle' | 'checking' | 'none' | 'current' | 'available' | 'er
 
 /** Props the Settings renderer binds for this section. */
 export type AboutSectionProps = PropsRuntime<'settings.section'> & PropsLocale<'settings'>
+  & InjectFace<AboutSectionInjected>
+
+/** The existing Desktop update flow, when the host provides its status carrier. */
+export type AboutSectionInjected = {
+  openDesktopUpdate?: () => void
+}
 
 function statusCopy(
   t: AboutSectionProps['t'],
@@ -35,7 +41,7 @@ function statusCopy(
 }
 
 /** Render the About column: this desktop app, version check, and official Harness. */
-export function AboutSection({ t }: AboutSectionProps): ReactNode {
+export function AboutSection({ t, openDesktopUpdate }: AboutSectionProps): ReactNode {
   const [version, setVersion] = useState('')
   const [homePath, setHomePath] = useState('')
   const [homeError, setHomeError] = useState('')
@@ -69,6 +75,10 @@ export function AboutSection({ t }: AboutSectionProps): ReactNode {
   }, [applyInfo, shell])
 
   const install = useCallback(async () => {
+    if (status === 'available' && openDesktopUpdate !== undefined) {
+      openDesktopUpdate()
+      return
+    }
     if (!shell?.installUpdate) return
     setBusy(true)
     setPercent(0)
@@ -83,7 +93,7 @@ export function AboutSection({ t }: AboutSectionProps): ReactNode {
     } finally {
       setBusy(false)
     }
-  }, [applyInfo, shell])
+  }, [applyInfo, openDesktopUpdate, shell, status])
 
   const openHome = useCallback(async () => {
     if (!shell?.openDshHome) return
@@ -123,7 +133,7 @@ export function AboutSection({ t }: AboutSectionProps): ReactNode {
     }
   }, [check, shell])
 
-  const canInstall = Boolean(shell?.installUpdate) && !busy && (
+  const canInstall = Boolean(shell?.installUpdate || (status === 'available' && openDesktopUpdate)) && !busy && (
     Boolean(info?.assetUrl) || status === 'none' || status === 'available' || status === 'current'
   )
   const message = statusCopy(t, status, info, percent)

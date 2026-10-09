@@ -27,4 +27,6 @@ Harness 来源由 `vendor/harness-upstream.json` 记录；同步用 `npm run syn
 
 `release.yml` 从成功的 main 开发构建下载资产。版本高于已发布版本才分发，失败上传可重试原 CI run。资产检查由 `scripts/check-release-assets.mjs` 核对文件与更新元数据；不运行候选计划或签署检查。
 
+发布说明由 `.github/release-notes.md` 与 `.github/release-notes.en.md` 维护，正文保留主要用户变化和必要版本边界；GitHub 首屏展示中文，英文放入折叠区。构建来源由 tag 与工作流记录，校验和通过 `SHA512SUMS.txt` 资产提供。
+
 `SHA512SUMS.txt` 是桌面更新器的实际输入，发布时必须包含同批资产的 SHA512。下载、安装、用户数据迁移等变更需要相应实际操作验证；打包启动成功只证明它观察到的行为。历史候选报告不是当前流程。

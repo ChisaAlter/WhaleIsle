@@ -90,6 +90,9 @@ test('actual publication path validates bytes, emits updater checksums and uploa
   const upload = f.calls.findIndex(([name, args]) => name === 'gh' && args[0] === 'release')
   const makePublic = f.calls.findIndex(([, o]) => o.method === 'PATCH')
   assert.ok(upload >= 0 && makePublic > upload)
+  const body = f.calls.find(([, o]) => o.method === 'PATCH')[1].body.body
+  assert.match(body, /^中文发布说明\n\n<details>\n<summary>English<\/summary>\n\nRelease notes\n\n<\/details>/)
+  assert.doesNotMatch(body, /Source:|Build:|Setup SHA256:/)
 })
 test('corrupt assets and a tag on another commit never upload', async t => {
   for (const input of [{ corrupt: true }, { tagSha: 'b'.repeat(40) }]) {

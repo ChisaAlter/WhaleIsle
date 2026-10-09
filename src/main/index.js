@@ -37,7 +37,8 @@ const { buildMenu } = require('./menu');
 const { createTray, invokeTrayAction, refreshTrayMenu } = require('./tray');
 const { DESKTOP_PET_FEATURE, configureDesktopPet, getDesktopPet } = require('./desktop-pet');
 const { LIVE2D_PET_FEATURE, configureLive2dPet, getLive2dPet } = require('./desktop-live2d');
-const { checkUpdate, installUpdate, setGithubTokenProvider, setUpdateStateSink, currentVersion } = require('./update');
+const { checkUpdate, updateDownloadMethods, setGithubTokenProvider, setUpdateStateSink, currentVersion } = require('./update');
+const { plainReleaseNotes } = require('../shared/release-notes');
 const { createUpdatesState } = require('./updates-state');
 const { BrowserGuests, installBrowserGuests } = require('./browser-guests');
 const { connectWelcome } = require('./welcome-backend');
@@ -263,6 +264,19 @@ async function confirmDialog(parent, options) {
     } catch (error) {
       console.warn('dshd dialog: shell confirm failed, native fallback', error);
     }
+  }
+  if (options.downloadMethods?.length > 0) {
+    const methods = options.downloadMethods.filter((method) => !method.disabledReason);
+    const result = await dialog.showMessageBox(parent || undefined, {
+      ...options,
+      buttons: [...methods.map((method) => method.label), '稍后'],
+      defaultId: 0, cancelId: methods.length,
+      detail: options.downloadMethods.map((method) => `${method.label}：${method.disabledReason || method.description}`).join('\n')
+        + '\n\n' + options.detail,
+    });
+    return result.response < methods.length
+      ? { response: 0, downloadMode: methods[result.response].id }
+      : { response: options.cancelId };
   }
   return dialog.showMessageBox(parent || undefined, options);
 }
@@ -512,8 +526,8 @@ async function startDesktopFromLauncher(options = {}) {
 }
 
 /** Cold-start twin of the ipc.js unverified-install confirmation. */
-async function confirmUnverifiedColdStart(info) {
-  const result = await confirmDialog(getLauncherWindow(), {
+async function confirmUnverifiedColdStart(info, parent = getLauncherWindow()) {
+  const result = await confirmDialog(parent, {
     type: 'warning',
     buttons: ['仍要安装', '取消'],
     defaultId: 1,
@@ -526,30 +540,32 @@ async function confirmUnverifiedColdStart(info) {
   return result.response === 0;
 }
 
-// Release notes travel on the check payload (`notes`); the update ask used to
-// drop them, so the user confirmed blind. Surface a bounded excerpt as detail.
+// Keep the full release notes in the update dialog's reading region.
 function updateAskDetail(check) {
-  const notes = typeof check?.notes === 'string' ? check.notes.trim() : '';
-  if (!notes) {
-    return undefined;
+  return plainReleaseNotes(check?.notes) || '该版本未提供更新说明。';
+}
+
+async function updateAskOptions(check) {
+  const downloadMethods = await updateDownloadMethods(check);
+  if (isLauncherPackage()) {
+    downloadMethods[0].disabledReason = '请在已安装的桌面程序中使用增量更新。';
   }
-  return notes.length > 600 ? `${notes.slice(0, 600)}…` : notes;
+  return {
+    type: 'question', buttons: ['下载并更新', '稍后'], defaultId: 0, cancelId: 1,
+    title: '发现新版本', message: `更新到 v${check.latest || check.version || ''}`,
+    kind: 'update',
+    context: `当前版本 v${check.current || currentVersion()} → v${check.latest || check.version || ''}`,
+    detail: updateAskDetail(check), downloadMethods, noLink: true,
+  };
 }
 
 // Slim-package cold start talks to the managed runtime: route-aware checks,
 // installs that keep the launcher alive, and external process start.
 function gateInstallUpdate(onProgress, check) {
-  if (isLauncherPackage()) {
-    return runtimeInstall.installRuntime(
-      check && check.tag ? { tag: check.tag } : {},
-      onProgress,
-      { confirmUnverified: confirmUnverifiedColdStart },
-    );
-  }
-  return installUpdate(onProgress, {
+  return desktopResources.launcher.installUpdate(onProgress, {
     confirmUnverified: confirmUnverifiedColdStart,
     expectedCheck: check,
-    taskProtection: getTaskProtection(),
+    downloadMode: check?.downloadMode,
   });
 }
 
@@ -569,17 +585,9 @@ function runColdStartGate(options = {}) {
       if (win && !win.isDestroyed() && !win.isFocused()) {
         updateAttention.ready(String(check.latest || check.version || 'update'), win, shellConfirm().window);
       }
-      const result = await confirmDialog(win, {
-        type: 'question',
-        buttons: ['更新', '稍后'],
-        defaultId: 0,
-        cancelId: 1,
-        title: '发现新版本',
-        message: `是否更新到 ${check.latest || check.version || ''}？`,
-        detail: updateAskDetail(check),
-        noLink: true,
-      });
+      const result = await confirmDialog(win, await updateAskOptions(check));
       updateAttention.clear();
+      if (result.response === 0) check.downloadMode = result.downloadMode;
       return result.response === 0;
     },
     openLauncher: () => openLauncher(options),
@@ -684,21 +692,26 @@ async function openDesktopUpdate() {
   const win = getMainWindow();
   const info = await checkUpdate();
   if (info.status === 'available') {
-    const ask = await confirmDialog(win, {
-      type: 'question',
-      buttons: ['更新', '稍后'],
-      defaultId: 0,
-      cancelId: 1,
-      title: '发现新版本',
-      message: `是否更新到 ${info.latest || info.version || ''}？`,
-      detail: updateAskDetail(info),
-      noLink: true,
-    });
+    const ask = await confirmDialog(win, await updateAskOptions(info));
     if (ask.response !== 0) return;
-    await installUpdate(() => {}, {
-      confirmUnverified: confirmUnverifiedColdStart,
+    const result = await desktopResources.launcher.installUpdate(() => {}, {
+      confirmUnverified: (unverified) => confirmUnverifiedColdStart(unverified, win),
       expectedCheck: info,
-      taskProtection: getTaskProtection(),
+      downloadMode: ask.downloadMode,
+    });
+    if (result.launched || result.declined || (result.cancelled && result.code === 'cancelled')) return;
+    await confirmDialog(win, {
+      type: result.manualInstall || result.openedPage ? 'info' : 'error',
+      buttons: ['知道了'],
+      defaultId: 0,
+      cancelId: 0,
+      title: '安装更新',
+      message: result.manualInstall ? '请完成安装映像中的更新步骤'
+        : result.openedPage ? '此版本没有适用的安装包，已打开发布页面'
+          : result.cancelled ? '更新前未能安全结束正在运行的工作'
+          : '未能安装更新',
+      detail: result.message || result.error || result.code || '',
+      noLink: true,
     });
     return;
   }
@@ -962,17 +975,9 @@ const drainParkedUpdateCheck = createParkedUpdateDrainer({
       if (win && !win.isDestroyed() && !win.isFocused()) {
         updateAttention.ready(String(pending.latest || pending.version || 'update'), win, shellConfirm().window);
       }
-      const result = await confirmDialog(win, {
-        type: 'question',
-        buttons: ['更新', '稍后'],
-        defaultId: 0,
-        cancelId: 1,
-        title: '发现新版本',
-        message: `是否更新到 ${pending.latest || pending.version || ''}？`,
-        detail: updateAskDetail(pending),
-        noLink: true,
-      });
+      const result = await confirmDialog(win, await updateAskOptions(pending));
       updateAttention.clear();
+      if (result.response === 0) pending.downloadMode = result.downloadMode;
       return result.response === 0;
     },
     installUpdate: gateInstallUpdate,
@@ -1390,6 +1395,9 @@ if (!gotLock) {
           harness.writePluginSkip(new Error('launcher-skip-user-plugins'));
         }
         await startDesktopFromLauncher(startupOptions);
+        // The external launcher's gate ran in another process. Seed this
+        // desktop's single update status stream without opening another gate.
+        void checkUpdate();
       } else {
         await runColdStartGate(startupOptions);
       }
