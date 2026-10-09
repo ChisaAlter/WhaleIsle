@@ -337,6 +337,12 @@ func Target(spec string) string {
 // Add installs a plugin and adds it to the list, in place of one of the
 // same package. A package is installed with its scripts left unrun.
 func Add(ctx context.Context, spec string) (Entry, error) {
+	return AddWithProgress(ctx, spec, nil)
+}
+
+// AddWithProgress calls downloaded after packages and their dependencies are
+// present, before registering and loading the adapter.
+func AddWithProgress(ctx context.Context, spec string, downloaded func()) (Entry, error) {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
 		return Entry{}, errors.New("no plugin given")
@@ -373,6 +379,9 @@ func Add(ctx context.Context, spec string) (Entry, error) {
 	}
 	if err := ensurePi(ctx, Target(spec)); err != nil {
 		return Entry{}, err
+	}
+	if downloaded != nil {
+		downloaded()
 	}
 	listMu.Lock()
 	defer listMu.Unlock()
