@@ -1869,8 +1869,18 @@ test('diagnostic overrides drive the budgets and restore to shipped defaults', (
   assert.equal(restored.presentPerSecond, null);
   assert.equal(restored.inferPerSecond, null);
   assert.equal(restored.superResolution, null);
-  assert.ok(Math.abs(pet.run('presentCeilingMs(100000)') - 15) < 0.001,
-    'shipped presentation default restored');
+  // Shipped policy: 30/s idle, 60/s while real body work is happening.
+  pet.run('lastActiveInputAt = -1e9;');
+  assert.ok(Math.abs(pet.run('presentCeilingMs(100000)') - 1000 / 30) < 0.001,
+    'idle presentation default restored');
+  pet.run('noteActiveInput(100000);');
+  assert.ok(Math.abs(pet.run('presentCeilingMs(100000)') - 1000 / 60) < 0.001,
+    'active presentation default restored');
+  // The interaction boost expires: an open card or a resting cursor must not
+  // hold the pet at the display-rate budget.
+  pet.run('lastActiveInputAt = 100000 - 5000;');
+  assert.ok(Math.abs(pet.run('presentCeilingMs(100000)') - 1000 / 30) < 0.001,
+    'boost expires after the hold window');
   assert.ok(Math.abs(pet.run('inferenceGapMs(100000)') - 50) < 0.001,
     'shipped inference default restored');
 });
@@ -1896,4 +1906,25 @@ test('perf counts keep counting after the timing-sample cap is reached', () => {
   assert.equal(snap.counts.probe, 100, 'count is exact');
   assert.ok(snap.probeMs, 'timing bucket still present');
   pet.run('window.__dshdPetPerf.stop()');
+});
+
+test('hovering the open status card does not hold the 60/s interaction budget', () => {
+  const pet = loadPet();
+  pet.run('homeRect = { x: 0, y: 0, width: 800, height: 600 };'
+    + ' drawPos = { x: 560, y: 310 }; charRect = { x: 0, y: 0, right: 240, bottom: 260 };'
+    + ' openPanel(); lastActiveInputAt = -1e9;');
+  const cardX = pet.run('panel.x + panel.w / 2');
+  const cardY = pet.run('panel.y + panel.h / 2');
+  pet.run(`onCursorMove(${cardX}, ${cardY}, 0)`);
+  const t = pet.now();
+  // Hovering the card is not body work: she stays on the idle budget.
+  assert.equal(pet.run(`overBody(${cardX}, ${cardY})`), false, 'the card is not her body');
+  assert.ok(Math.abs(pet.run(`presentCeilingMs(${t})`) - 1000 / 30) < 0.001,
+    'card hover keeps the idle presentation ceiling');
+  // Her body still earns the display-rate budget.
+  const bodyX = pet.run('drawPos.x + 40');
+  const bodyY = pet.run('drawPos.y + 40');
+  pet.run(`onCursorMove(${bodyX}, ${bodyY}, 0)`);
+  assert.ok(Math.abs(pet.run(`presentCeilingMs(${t})`) - 1000 / 60) < 0.001,
+    'body interaction raises the presentation ceiling');
 });

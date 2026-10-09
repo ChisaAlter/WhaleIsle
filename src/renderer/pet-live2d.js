@@ -3592,7 +3592,26 @@ function presentCeilingMs(now) {
   if (presentCeilingOverride !== null && presentCeilingOverride > 0) {
     return 1000 / presentCeilingOverride;
   }
-  return 15;
+  // Measured policy (iteration-2 matrix): idle compositing at 30/s costs the
+  // same GPU-process CPU as 60/s did while the pet is just breathing, and
+  // interaction still gets the display-rate budget so dragging and reactions
+  // stay smooth. The inference ceiling is NOT raised by interaction.
+  return activeWork(now) ? 1000 / 60 : 1000 / 30;
+}
+
+// Meaningful body work — NOT "a card is open" and NOT a parked cursor. An
+// unchanged status push or a cursor resting on the card must not hold the
+// pet in the 60/s mode forever, so the boost expires on a short timer after
+// the last real interaction.
+const ACTIVE_HOLD_MS = 2000;
+let lastActiveInputAt = 0;
+function noteActiveInput(now = performance.now()) {
+  lastActiveInputAt = now;
+}
+function activeWork(now) {
+  if (dragging || thrown || feed || come) { return true; }
+  if (action && now < (action.until || 0)) { return true; }
+  return now - lastActiveInputAt < ACTIVE_HOLD_MS;
 }
 
 // Inference START budget. At most one run is ever in flight; a skipped slot
@@ -4212,6 +4231,10 @@ function onCursorMove(clientX, clientY, buttons) {
     // pinned bubbles are also interactive surfaces, and sweeping the pointer
     // across the card must not wake her or read as a pat.
     const onBody = overBody(clientX, clientY);
+    // Only real body interaction earns the 60/s presentation budget. Hovering
+    // the status card keeps her clickable but must not hold the pet in the
+    // high-cost mode.
+    if (onBody) { noteActiveInput(); }
     if (onBody && sleeping) { wake(); }
     // Head-pat: strokes across the top 45% of her bounds — 3 direction
     // flips inside 1.6s trigger the react-head still + hearts.
