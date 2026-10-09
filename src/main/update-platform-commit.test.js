@@ -36,12 +36,21 @@ test('updater download success followed by spawn failure releases protection and
         : { ok: true, lockId: 'qa-lock', owner: 'qa' } };
     } });
   const updater = new EventEmitter();
-  updater.checkForUpdates = async () => ({ updateInfo: { version: '9.9.9' } });
+  info.blockmapUrl = 'https://example.test/Setup.exe.blockmap';
+  info.updaterMetadataUrl = 'https://example.test/latest.yml';
+  updater.getOrCreateDownloadHelper = async () => ({ cacheDir: path.dirname(file) });
+  updater.checkForUpdates = async () => {
+    const updateInfo = { version: '9.9.9' };
+    updater.updateInfoAndProvider = { info: updateInfo, provider: { resolveFiles: () => [{
+      url: new URL('https://example.test/Setup.exe'), info: { url: 'Setup.exe' },
+    }] } };
+    return { updateInfo };
+  };
   updater.downloadUpdate = async () => [file];
   updater.quitAndInstall = () => { throw new Error('unobservable installer must not be used'); };
   let launches = 0;
-  const options = { preferUpdater: true, platform: 'win32', quitAfterInstall: true, taskProtection: protection,
-    updaterDeps: { isPackaged: true, platform: 'win32', autoUpdater: updater },
+  const options = { downloadMode: 'delta', platform: 'win32', quitAfterInstall: true, taskProtection: protection,
+    updaterDeps: { isPackaged: true, platform: 'win32', autoUpdater: updater, existsSync: () => true },
     spawn: () => { launches++; const child = new EventEmitter(); child.unref = () => {};
       setImmediate(() => child.emit('error', Object.assign(new Error('spawn denied'), { code: 'EACCES' }))); return child; } };
   for (let attempt = 0; attempt < 2; attempt++) {

@@ -513,7 +513,7 @@ function registerIpc({
     onQuitCommit: (fn) => getTaskProtection().onCommitCleanup(fn),
   });
 
-  return { pty, preview, stopWorkspaceWatch };
+  return { pty, preview, stopWorkspaceWatch, launcher };
 }
 
 module.exports = { registerIpc };

@@ -720,6 +720,31 @@ describe('Modal', () => {
 })
 
 describe('ConnectionIndicator', () => {
+  it('keeps compact recovery controls accessible and explains their status through the shared tooltip', async () => {
+    const reconnect = vi.fn()
+    const labels = {
+      disconnectedLabel: 'Disconnected, retry',
+      connectingLabel: 'Connecting',
+      recoveredLabel: 'Connected',
+      reconnectActionLabel: 'Disconnected, reconnect now',
+      restartActionLabel: 'Connecting, restart now',
+      onReconnect: reconnect,
+    }
+    const { rerender } = render(<ConnectionIndicator compact state="disconnected" {...labels} />)
+    const outage = screen.getByRole('button', { name: 'Disconnected, reconnect now' })
+    expect(outage.textContent).toBe('')
+    fireEvent.click(outage)
+    expect(reconnect).toHaveBeenCalledOnce()
+    fireEvent.focus(outage)
+    expect((await screen.findByRole('tooltip')).textContent).toBe('Disconnected, retry')
+    rerender(<ConnectionIndicator compact state="connecting" {...labels} />)
+    fireEvent.focus(screen.getByRole('button', { name: 'Connecting, restart now' }))
+    expect((await screen.findByRole('tooltip')).textContent).toBe('Connecting')
+    rerender(<ConnectionIndicator compact state="recovered" {...labels} />)
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getByRole('status', { name: 'Connected' }).textContent).toBe('')
+  })
+
   it('renders outage, attempt progress, and recovered states without a native tooltip', () => {
     const reconnect = vi.fn()
     const labels = {

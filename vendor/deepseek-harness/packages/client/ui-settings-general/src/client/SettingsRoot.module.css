@@ -11,32 +11,44 @@
 
 .launcherRow {
   display: flex;
-  width: calc(100% + 4px);
-  margin: 4px -2px 0;
-}
-
-.launcherRow.railLauncherRow {
-  width: 36px;
-  margin: 8px 0 0;
+  flex: 1;
+  min-width: 0;
 }
 
 .triggerRow {
   position: relative;
   flex: none;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
   align-items: center;
   gap: 8px;
   width: calc(100% + 4px);
+  height: 44px;
   margin: 4px -2px;
 }
 
 .triggerRow.railRow {
   width: 36px;
+  height: 80px;
+  grid-template-columns: 36px;
+  grid-template-rows: 36px 36px;
   margin: 8px 0 10px;
 }
 
-.triggerRow:empty {
-  display: none;
+.railRow .launcherRow,
+.railRow .trigger {
+  grid-row: 2;
+}
+
+.statusSeat {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+}
+
+.railRow .statusSeat {
+  grid-row: 1;
 }
 
 .trigger {

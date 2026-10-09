@@ -81,9 +81,12 @@ async function whaleBridgeMenu(openWhaleBridge: WhaleBridgeBridge['open']) {
   const t: AccountMenuProps['t'] = key => key in zh ? zh[key as AccountKey] : key
   const renderSlot: AccountMenuProps['renderSlot'] = (key, owner, options) => {
     recordSlot(key, owner, options)
-    return options?.only === 'whalebridge'
-      ? <WhaleBridgeMenuAction {...({} as GlobalStandardProps)} openWhaleBridge={openWhaleBridge} close={owner.close} t={t} />
-      : <div data-testid="remote-popup" />
+    if (options?.only !== 'whalebridge') return <div data-testid="remote-popup" />
+    if (!('close' in owner) || typeof owner.close !== 'function') {
+      throw new Error('WhaleBridge action requires the launcher slot close callback')
+    }
+    const close = owner.close
+    return <WhaleBridgeMenuAction {...({} as GlobalStandardProps)} openWhaleBridge={openWhaleBridge} close={() => { close() }} t={t} />
   }
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
   render(<AccountMenu {...({} as GlobalStandardProps)} {...operations}

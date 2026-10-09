@@ -78,7 +78,7 @@ export async function publish({ repo, runId, request, gh, sha, root = process.cw
   files.push(checksumFile)
   const notes = await readFile(join(root, '.github/release-notes.md'), 'utf8')
   const english = await readFile(join(root, '.github/release-notes.en.md'), 'utf8')
-  const body = notes + '\n\n---\n\n' + english + '\n\nSource: ' + sha + '\nBuild: ' + run.html_url + '\nSetup SHA256: ' + verified.sha256 + '\n'
+  const body = notes + '\n\n<details>\n<summary>English</summary>\n\n' + english + '\n\n</details>\n'
   const release = existing || await request(prefix + '/releases', {
     method: 'POST', body: { tag_name: tag, target_commitish: sha, name: 'Whale Isle ' + tag, body, draft: true },
   })

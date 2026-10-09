@@ -40,7 +40,7 @@ import { AutoStartDesktopRow } from './AutoStartDesktopRow.tsx'
 import { DshbotRow } from './DshbotRow.tsx'
 import { RemoteWorkspaceRow } from './RemoteWorkspaceRow.tsx'
 import { PetSection, type PetSectionInjected } from './PetSection.tsx'
-import { AboutSection } from './AboutSection.tsx'
+import { AboutSection, type AboutSectionInjected } from './AboutSection.tsx'
 import { HarnessRestartRow } from './HarnessRestartRow.tsx'
 import { canPersistCloseBehavior, desktopShell } from './desktop-shell.ts'
 import { CurrentVersionRow } from './CurrentVersionRow.tsx'
@@ -376,5 +376,8 @@ export function apply(ctx: ClientContext): void {
     order: 90,
     label: () => t('about.nav'),
     locale: NS,
+    inject: (): AboutSectionInjected => carrier?.protocolVersion === 1 && carrier.updates !== undefined
+      ? { openDesktopUpdate: () => { desktopUpdate.open() } }
+      : {},
   }, AboutSection))
 }

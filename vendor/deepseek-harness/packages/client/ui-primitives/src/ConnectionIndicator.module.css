@@ -26,6 +26,15 @@
   opacity: 0;
 }
 
+.compact {
+  grid-template-columns: 14px;
+  justify-content: center;
+  column-gap: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
 @keyframes indicator-enter {
   from {
     opacity: 0;

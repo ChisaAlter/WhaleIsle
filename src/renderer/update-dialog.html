@@ -11,11 +11,15 @@
   <body class="update-dialog">
     <main id="dialog" role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="title" aria-describedby="detail" hidden>
       <header><h1 id="title"></h1><button id="close" class="close" type="button" aria-label="关闭">✕</button></header>
-      <p id="detail"></p>
-      <details id="technical-details" hidden>
-        <summary id="technical-details-label"></summary>
-        <pre id="technical-details-content" tabindex="0"></pre>
-      </details>
+      <p id="context" hidden></p>
+      <fieldset id="download-methods" hidden><legend>下载方式</legend><div id="download-method-options"></div></fieldset>
+      <div id="content" tabindex="0" role="region" aria-label="详情">
+        <p id="detail"></p>
+        <details id="technical-details" hidden>
+          <summary id="technical-details-label"></summary>
+          <pre id="technical-details-content" tabindex="0"></pre>
+        </details>
+      </div>
       <div id="actions"></div>
     </main>
     <script src="update-dialog.js"></script>
