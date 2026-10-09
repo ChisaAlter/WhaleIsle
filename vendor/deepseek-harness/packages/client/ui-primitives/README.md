@@ -160,6 +160,8 @@ While a reply streams, `MarkdownText` parses incrementally: all but the trailing
 
 ### Syntax highlighting
 
+`ReviewDiff` sends one job per run at a time to its shared worker; cancellation stops unsent jobs and callbacks without retaining cancelled run ids, while the one submitted synchronous tokenize may finish.
+
 The shared Shiki highlighter is built on demand and never at module load: a document that renders no code surface constructs it zero times. `useViewportHighlighting` requests initialization when the first highlightable `CodeBlock` or `ReadBlock` mounts, and the work is split across background tasks that each stay under the 50 ms long-task budget. The Oniguruma-to-JavaScript pattern translation for the three boot grammars ships precomputed in `src/markdown/highlight-pattern-table.generated.ts` (`node scripts/generate-highlight-pattern-table.mjs`; `tests/highlight-pattern-table.client.spec.ts` fails if a dependency upgrade makes the table incomplete), and each pattern's V8 compile is paid during warm-up rather than inside the first fence. A grammar the table does not cover — every lazily loaded read-card grammar — still resolves through the runtime translator, and a surface that renders before warm-up finishes simply takes the synchronous path. Until highlighting is ready the complete monospace source stays visible and copyable; a failure never shows highlighted output for stale input. See [the design language](../../../docs/design-language.md) rule 17 and the [syntax-highlight scheduling decision](../../../docs/decisions/proposed/architecture/2026-09-21-syntax-highlight-scheduling.md).
 
 ### Geometry and overflow
