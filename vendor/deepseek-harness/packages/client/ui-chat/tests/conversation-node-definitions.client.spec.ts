@@ -1470,6 +1470,140 @@ describe('built-in conversation node Definitions', () => {
     expect((withSecondChild?.data as ToolChatData).root.subCalls[0]).toBe(firstChild)
   })
 
+  it('preserves PTC subcall first-seen order through early results and duplicate events', () => {
+    const dispatch = (subCallId: string) => ({
+      rootCallId: 'root', parentCallId: 'root', subCallId, name: 'get_goal', arguments: {},
+    })
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'tool/call', { turn: 1, step: 1, callId: 'root', name: 'run_code', arguments: '{}' }),
+      at(4, 'tool/ptc-dispatch-start', dispatch('z-first')),
+      at(5, 'tool/ptc-dispatch', { ...dispatch('a-second'), content: [{ type: 'text', text: 'early result' }] }),
+      at(6, 'tool/ptc-dispatch-start', dispatch('m-third')),
+      at(7, 'tool/ptc-dispatch-start', dispatch('z-first')),
+      at(8, 'tool/ptc-dispatch-start', dispatch('a-second')),
+      at(9, 'tool/ptc-dispatch', { ...dispatch('m-third'), content: [{ type: 'text', text: 'third result' }] }),
+      at(10, 'tool/ptc-dispatch', { ...dispatch('z-first'), content: [{ type: 'text', text: 'first result' }] }),
+    ])
+    const original = (node(snapshot(value), 'tool-call')?.data as ToolChatData).root
+    expect(original.subCalls.map(child => child.callId)).toEqual(['z-first', 'a-second', 'm-third'])
+    expect(original.subCalls[1]).toMatchObject({ kind: 'tool-result', callTime: null, content: [{ type: 'text', text: 'early result' }] })
+
+    value.append(at(11, 'tool/ptc-dispatch', { ...dispatch('a-second'), content: [{ type: 'text', text: 'latest result' }] }))
+    value.flush()
+    const updated = (node(snapshot(value), 'tool-call')?.data as ToolChatData).root
+    expect(updated.subCalls).toMatchObject([
+      { callId: 'z-first', kind: 'tool-result', content: [{ type: 'text', text: 'first result' }] },
+      { callId: 'a-second', kind: 'tool-result', content: [{ type: 'text', text: 'latest result' }] },
+      { callId: 'm-third', kind: 'tool-result', content: [{ type: 'text', text: 'third result' }] },
+    ])
+    expect(original.subCalls[1]).toMatchObject({ content: [{ type: 'text', text: 'early result' }] })
+  })
+
+  it('keeps published PTC trees unchanged after later child starts and results', () => {
+    const dispatch = (parentCallId: string, subCallId: string) => ({
+      rootCallId: 'root', parentCallId, subCallId, name: 'get_goal', arguments: {},
+    })
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'tool/call', { turn: 1, step: 1, callId: 'root', name: 'run_code', arguments: '{}' }),
+      at(4, 'tool/ptc-dispatch-start', dispatch('root', 'first')),
+    ])
+    const before = (node(snapshot(value), 'tool-call')?.data as ToolChatData).root
+
+    value.append(at(5, 'tool/ptc-dispatch-start', dispatch('root', 'second')))
+    value.append(at(6, 'tool/ptc-dispatch-start', dispatch('first', 'nested')))
+    value.flush()
+    const started = (node(snapshot(value), 'tool-call')?.data as ToolChatData).root
+    expect(started.subCalls).toMatchObject([
+      { callId: 'first', phase: 'start', subCalls: [{ callId: 'nested', phase: 'start' }] },
+      { callId: 'second', phase: 'start', subCalls: [] },
+    ])
+    expect(before.subCalls).toMatchObject([{ callId: 'first', phase: 'start', subCalls: [] }])
+    expect(before.subCalls).toHaveLength(1)
+
+    value.append(at(7, 'tool/ptc-dispatch', { ...dispatch('first', 'nested'), content: [{ type: 'text', text: 'nested result' }] }))
+    value.append(at(8, 'tool/ptc-dispatch', { ...dispatch('root', 'first'), content: [{ type: 'text', text: 'first result' }] }))
+    value.flush()
+    const settled = (node(snapshot(value), 'tool-call')?.data as ToolChatData).root
+    expect(settled.subCalls[0]).toMatchObject({
+      callId: 'first', kind: 'tool-result', content: [{ type: 'text', text: 'first result' }],
+      subCalls: [{ callId: 'nested', kind: 'tool-result', content: [{ type: 'text', text: 'nested result' }] }],
+    })
+    expect(started.subCalls).toMatchObject([
+      { callId: 'first', phase: 'start', subCalls: [{ callId: 'nested', phase: 'start' }] },
+      { callId: 'second', phase: 'start', subCalls: [] },
+    ])
+    expect(before.subCalls).toMatchObject([{ callId: 'first', phase: 'start', subCalls: [] }])
+    expect(before.subCalls).toHaveLength(1)
+  })
+
+  it('restores a large PTC dispatch batch with every settled child in recorded order', () => {
+    const childIds = Array.from({ length: 2000 }, (_, index) => `child-${index}`)
+    const events = [
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'tool/call', { turn: 1, step: 1, callId: 'root', name: 'run_code', arguments: '{}' }),
+    ]
+    let seq = 4
+    for (const subCallId of childIds) {
+      const dispatch = { rootCallId: 'root', parentCallId: 'root', subCallId, name: 'get_goal', arguments: {} }
+      events.push(at(seq++, 'tool/ptc-dispatch-start', dispatch))
+      events.push(at(seq++, 'tool/ptc-dispatch', { ...dispatch, content: [{ type: 'text', text: subCallId }] }))
+    }
+    events.push(at(seq, 'tool/result', { turn: 1, step: 1, message: toolResult('root', 'completed') }, { surfaceOp: 'append' }))
+
+    const restored = (node(snapshot(assembler(events)), 'tool-call')?.data as ToolChatData).root
+    expect(restored).toMatchObject({ callId: 'root', kind: 'tool-result', content: [{ type: 'text', text: 'completed' }] })
+    expect(restored.subCalls.map(child => ({
+      callId: child.callId,
+      parentCallId: child.parentCallId,
+      content: 'kind' in child ? child.content : null,
+    }))).toEqual(childIds.map(callId => ({ callId, parentCallId: 'root', content: [{ type: 'text', text: callId }] })))
+  })
+
+  it('rejects PTC self-parent and cycle-closing edges in the assembled tool tree', () => {
+    const dispatch = (parentCallId: string, subCallId: string) => ({
+      rootCallId: 'root', parentCallId, subCallId, name: 'run_code', arguments: {},
+    })
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'tool/call', { turn: 1, step: 1, callId: 'root', name: 'run_code', arguments: '{}' }),
+      at(4, 'tool/ptc-dispatch-start', dispatch('root', 'root')),
+      at(5, 'tool/ptc-dispatch-start', dispatch('root', 'first')),
+      at(6, 'tool/ptc-dispatch-start', dispatch('first', 'second')),
+      at(7, 'tool/ptc-dispatch', { ...dispatch('second', 'root'), content: [] }),
+    ])
+    const root = (node(snapshot(value), 'tool-call')?.data as ToolChatData).root
+    expect(root.subCalls).toHaveLength(1)
+    expect(root.subCalls[0]).toMatchObject({ callId: 'first', subCalls: [{ callId: 'second', subCalls: [] }] })
+  })
+
+  it('keeps the assembled PTC tree within its recursive depth limit', () => {
+    const events = [
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'tool/call', { turn: 1, step: 1, callId: 'call-0', name: 'run_code', arguments: '{}' }),
+    ]
+    for (let depth = 1; depth <= 256; depth++) {
+      events.push(at(3 + depth, 'tool/ptc-dispatch-start', {
+        rootCallId: 'call-0', parentCallId: `call-${depth - 1}`, subCallId: `call-${depth}`, name: 'run_code', arguments: {},
+      }))
+    }
+    let current = (node(snapshot(assembler(events)), 'tool-call')?.data as ToolChatData).root
+    let depth = 1
+    while (current.subCalls.length > 0) {
+      expect(current.subCalls).toHaveLength(1)
+      current = current.subCalls[0]!
+      depth++
+    }
+    expect(depth).toBe(256)
+    expect(current.callId).toBe('call-255')
+  })
+
   it('projects a running tool card as an interrupted error when its turn closes in error (legacy orphan log)', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
