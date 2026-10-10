@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, act, within } from '@testing-library/react'
 import { useMemo, useSyncExternalStore } from 'react'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
-import type { GlobalStandardProps, OwnerOf } from '@deepseek-ai/dsh-client-ui-slots'
+import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AccountDetails, AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { DEFAULT_THEME_SETTINGS } from '@deepseek-ai/dsh-client-ui-theme/src/theme-settings.ts'
@@ -81,11 +81,12 @@ async function whaleBridgeMenu(openWhaleBridge: WhaleBridgeBridge['open']) {
   const t: AccountMenuProps['t'] = key => key in zh ? zh[key as AccountKey] : key
   const renderSlot: AccountMenuProps['renderSlot'] = (key, owner, options) => {
     recordSlot(key, owner, options)
-    // The generic slot key does not narrow its conditional owner type.
-    const actionOwner = owner as unknown as OwnerOf<'settings.launcher.action'>
-    return options?.only === 'whalebridge'
-      ? <WhaleBridgeMenuAction {...({} as GlobalStandardProps)} openWhaleBridge={openWhaleBridge} close={actionOwner.close} t={t} />
-      : <div data-testid="remote-popup" />
+    if (options?.only !== 'whalebridge') return <div data-testid="remote-popup" />
+    if (!('close' in owner) || typeof owner.close !== 'function') {
+      throw new Error('WhaleBridge action requires the launcher slot close callback')
+    }
+    const close = owner.close
+    return <WhaleBridgeMenuAction {...({} as GlobalStandardProps)} openWhaleBridge={openWhaleBridge} close={() => { close() }} t={t} />
   }
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
   render(<AccountMenu {...({} as GlobalStandardProps)} {...operations}

@@ -134,7 +134,7 @@ composer 上四个浮层共用此时长：加号斜杠菜单、权限 `Menu`、�
 | 开关 | `Switch` 滑块 `transform`，`--ds-transition-duration-fast` |
 | 按钮、输入、行 hover | 交互色 token，不是进出场 recipe |
 | 微交互 | 图标按钮按压、卡片按压位移等 `transform` 反馈，`--ds-transition-duration-fast`；卡片级 hover（边框 / 底色）用 `--ds-motion-duration-popover` |
-| 布局轨道 | `TurnNavigator` 回合轨（`height` / `top` / mark 宽，自有 swift 曲线）、`WorkspaceBrowser` 行收合（`max-width` / `margin` / `padding` / `width` + `visibility` 延迟）、`UpdateAction` 进度宽度：布局属性动画，时长 `--ds-transition-duration`，减弱动效停 |
+| 布局轨道 | `TurnNavigator` 回合轨（`height` / `top` / mark 宽，自有 swift 曲线）、`WorkspaceBrowser` 行收合（`max-width` / `margin` / `padding` / `width` + `visibility` 延迟）：布局属性动画，时长 `--ds-transition-duration`，减弱动效停 |
 | 侧栏轨道收合编排 | `SidebarRoot`：收合相位 150ms + 回宽 200ms（`wide-in`），跟随 AppFrame 300ms 轨道；减弱动效停 |
 | 空会话 Hero 小鱼 | 悬停且未减弱动效时，1.6s 轻摆循环 |
 

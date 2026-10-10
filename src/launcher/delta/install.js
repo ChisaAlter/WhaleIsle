@@ -3,9 +3,8 @@
 // Delta install orchestration for shell:install-delta: resolve the release
 // through the configured download route, pick its `<product>-delta-<from>-
 // <to>.zip` asset, download + SHA512SUMS-verify it, then apply onto the
-// installed runtime directory. ANY delta-side failure routes to the same
-// full-installer path as a normal install and reports mode:'full' — the
-// renderer never has to distinguish a delta shortfall from a regular update.
+// installed runtime directory. Failures remain in the selected delta lane;
+// the user can explicitly choose a full download afterwards.
 const fs = require('fs');
 const path = require('path');
 const update = require('../../main/update');
@@ -52,15 +51,10 @@ function pickChecksumUrl(assets) {
   return found ? assetUrl(found) : '';
 }
 
-function fullFallbackOk(result) {
-  return Boolean(result) && (result.ok === true
-    || result.launched === true
-    || result.status === 'installed'
-    || result.status === 'waiting'
-    || result.status === 'quit-pending');
-}
-
 function defaultDeltaDir() {
+  if (process.env.DSHD_DELTA_DIR) {
+    return process.env.DSHD_DELTA_DIR;
+  }
   try {
     const { app } = require('electron');
     return path.join(app.getPath('userData'), 'deltas');
@@ -72,7 +66,7 @@ function defaultDeltaDir() {
 /**
  * @param {string} tag release tag to update to ('' resolves latest)
  * @param {Function} onProgress shell:update-progress payloads
- * @returns {Promise<{ok:boolean, mode:'delta'|'full', error?:string}>}
+ * @returns {Promise<{ok:boolean, mode:'delta', error?:string}>}
  */
 async function installDelta(tag, onProgress, deps = {}) {
   const progress = (payload) => {
@@ -80,27 +74,8 @@ async function installDelta(tag, onProgress, deps = {}) {
       onProgress(payload);
     }
   };
-  const fullInstall = typeof deps.fullInstall === 'function'
-    ? deps.fullInstall
-    : async () => ({ ok: false, error: 'no-full-installer' });
   let resolvedTag = String(tag || '').trim();
-  const fallback = async (reason) => {
-    progress({ phase: 'install', percent: 0, deltaFallback: reason });
-    let result;
-    try {
-      result = await fullInstall(resolvedTag, progress);
-    } catch (error) {
-      result = { ok: false, error: error?.message || String(error) };
-    }
-    const ok = fullFallbackOk(result);
-    return {
-      ...(result && typeof result === 'object' ? result : {}),
-      ok,
-      mode: 'full',
-      deltaFallback: reason,
-      ...(ok ? {} : { error: result?.error || result?.message || reason }),
-    };
-  };
+  const failed = (error) => ({ ok: false, mode: 'delta', error });
 
   try {
     progress({ phase: 'resolve', percent: 0, delta: true });
@@ -110,34 +85,13 @@ async function installDelta(tag, onProgress, deps = {}) {
     if (!launcherPackage) {
       // The full package cannot patch its own running install dir — the
       // self-update installer path owns that case.
-      return fallback('unsupported-package');
+      return failed('unsupported-package');
     }
     const installed = typeof deps.installedInfo === 'function'
       ? await deps.installedInfo({ fresh: true })
       : runtimeInstall.installedInfo({ fresh: true });
     if (!installed?.registeredInstall || !installed.installPath) {
-      return fallback('no-installed-base');
-    }
-    const probe = typeof deps.probeDesktopRunning === 'function'
-      ? deps.probeDesktopRunning
-      : () => runtimeInstall.probeDesktopRunning();
-    if (probe()) {
-      const stop = typeof deps.stopDesktop === 'function'
-        ? deps.stopDesktop
-        : () => runtimeInstall.stopExternalDesktop();
-      const stopResult = await stop();
-      if (probe()) {
-        // The desktop declined or could not exit — the full-installer path
-        // would just re-prompt through the same handshake, so report the
-        // outcome directly instead of falling back.
-        return {
-          ok: false,
-          mode: 'delta',
-          error: stopResult?.error || 'runtime-busy',
-          cancelled: stopResult?.cancelled === true,
-          message: stopResult?.message,
-        };
-      }
+      return failed('no-installed-base');
     }
 
     const route = releaseSource.normalizeRoute(deps.route)
@@ -145,22 +99,22 @@ async function installDelta(tag, onProgress, deps = {}) {
       || 'github';
     const release = await fetchRelease(route, resolvedTag, deps);
     if (!release || release.draft) {
-      return fallback('release-not-found');
+      return failed('release-not-found');
     }
     resolvedTag = release.tag_name || release.name || resolvedTag;
     const toVersion = update.normalizeVersion(release.tag_name || release.name);
     const asset = pickDeltaAsset(release.assets, installed.version, toVersion);
     if (!asset) {
-      return fallback('delta-asset-missing');
+      return failed('delta-asset-missing');
     }
     const checksumUrl = pickChecksumUrl(release.assets);
     if (!checksumUrl) {
-      return fallback('delta-unverified');
+      return failed('delta-unverified');
     }
 
     const deltaDir = deps.deltaDir || defaultDeltaDir();
     if (!deltaDir) {
-      return fallback('no-delta-dir');
+      return failed('no-delta-dir');
     }
     fs.mkdirSync(deltaDir, { recursive: true });
     const safeName = path.basename(asset.name).replace(/[^\w.\-]+/g, '_');
@@ -181,9 +135,18 @@ async function installDelta(tag, onProgress, deps = {}) {
     const applied = await (deps.applyFile || apply.applyDeltaFile)(
       dest,
       installed.installPath,
-      { onProgress: progress },
+      {
+        onProgress: progress,
+        expectedFromVersion: installed.version,
+        expectedToVersion: toVersion,
+        expectedProduct: asset.name.slice(0, asset.name.toLowerCase().lastIndexOf('-delta-')),
+        beforeApply: deps.beforeApply,
+      },
       deps,
     );
+    if (applied?.ok === false) {
+      return { ...applied, mode: 'delta' };
+    }
     // A consumed artifact must not re-list as 'available' in status.
     try { fs.unlinkSync(dest); } catch { /* already gone */ }
     try { fs.unlinkSync(`${dest}.json`); } catch { /* none written */ }
@@ -199,7 +162,7 @@ async function installDelta(tag, onProgress, deps = {}) {
     if (error && error.name === 'AbortError') {
       return { ok: false, mode: 'delta', error: 'cancelled', cancelled: true };
     }
-    return fallback(error?.code || error?.message || 'delta-failed');
+    return failed(error?.code || error?.message || 'delta-failed');
   }
 }
 

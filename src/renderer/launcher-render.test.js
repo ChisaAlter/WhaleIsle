@@ -86,7 +86,7 @@ test('renderReleases surfaces a newer version badge and CTA on the top card', ()
   assert.match(global.document.getElementById('ver-badge').textContent, /发现新版本 v0\.3\.3/);
   const cta = global.document.getElementById('ver-cta').innerHTML;
   assert.match(cta, /增量更新/);
-  assert.match(cta, /更新到此版本/);
+  assert.match(cta, /完全下载/);
   // The newest row stays collapsed by default; its detail expands in place.
   const html = global.document.getElementById('release-list').innerHTML;
   assert.match(html, /data-rel-toggle/);
@@ -126,4 +126,16 @@ test('renderReleases renders no delta button without delta evidence', () => {
   const html = global.document.getElementById('release-list').innerHTML;
   assert.doesNotMatch(html, /data-delta-tag/);
   assert.doesNotMatch(html, /增量更新/);
+});
+
+test('renderReleases preserves the full release notes as readable text', () => {
+  renderReleases({
+    status: 'ok', installed: { version: '0.3.3' },
+    releases: [{ tag: 'v0.3.5', version: '0.3.5', newer: true, installable: true,
+      notes: '# Whale Isle 0.3.5\n\n- **完整说明**：' + '较长的更新内容。'.repeat(180) + '\n\n最后一项：[阅读详情](release-notes.en.md)' }],
+  });
+  const html = global.document.getElementById('release-list').innerHTML;
+  assert.match(html, /最后一项：阅读详情/);
+  assert.match(html, /完整说明/);
+  assert.doesNotMatch(html, /# Whale|\*\*|release-notes\.en\.md/);
 });

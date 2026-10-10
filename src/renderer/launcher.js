@@ -309,7 +309,7 @@ function releaseActionLabel(row) {
     return null;
   }
   if (row.newer) {
-    return '更新到此版本';
+    return '完全下载';
   }
   return '切换至此版本';
 }
@@ -322,7 +322,7 @@ function releaseActionButtons(row, delta) {
   }
   if (label) {
     const kind = row.newer ? 'update' : 'switch';
-    parts.push(`<button type="button" class="primary small" data-install-tag="${escapeHtml(row.tag || '')}" data-install-kind="${kind}">${label}</button>`);
+    parts.push(`<button type="button" class="${delta ? 'ghost' : 'primary'} small" data-install-tag="${escapeHtml(row.tag || '')}" data-install-kind="${kind}">${label}</button>`);
   } else if (!row.current) {
     const reason = row.installable ? '不可用' : '无安装包';
     parts.push(`<button type="button" class="ghost small" disabled>${reason}</button>`);
@@ -330,25 +330,9 @@ function releaseActionButtons(row, delta) {
   return parts.join('');
 }
 
-const RELEASE_NOTES_LIMIT = 1200;
-
-// Release bodies are markdown; the detail pane shows plain reading text.
-function plainReleaseNotes(body) {
-  return String(body || '')
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/__([^_]+)__/g, '$1')
-    .replace(/\*([^*\n]+)\*/g, '$1')
-    .replace(/(^|\s)_([^_\n]+)_(?=\s|$)/g, '$1$2')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/^\s*>\s?/gm, '')
-    .replace(/^\s*[-*_]{3,}\s*$/gm, '')
-    .replace(/^\s*[-+*]\s+\[[ xX]\]\s+/gm, '· ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
+const { plainReleaseNotes } = typeof module !== 'undefined' && module.exports
+  ? require('../shared/release-notes')
+  : window.releaseNotes;
 
 function releaseDetailHtml(row, delta) {
   const meta = [];
@@ -364,11 +348,10 @@ function releaseDetailHtml(row, delta) {
     meta.push(`增量包 ${delta.assetName || ''}${delta.size ? ` · ${formatBytes(delta.size)}` : ''}`.trim());
   }
   const notes = plainReleaseNotes(row.notes);
-  const clipped = notes.length > RELEASE_NOTES_LIMIT ? `${notes.slice(0, RELEASE_NOTES_LIMIT)}…` : notes;
   const actions = releaseActionButtons(row, delta);
   return `<div class="rel-detail" hidden>
     <div class="rel-detail-meta row-meta">${escapeHtml(meta.join(' · '))}</div>
-    <p class="rel-notes">${clipped ? escapeHtml(clipped) : '该版本未提供更新说明。'}</p>
+    <p class="rel-notes">${notes ? escapeHtml(notes) : '该版本未提供更新说明。'}</p>
     ${actions ? `<div class="rel-detail-actions">${actions}</div>` : (row.current ? '<div class="row-meta">当前已安装此版本</div>' : '')}
   </div>`;
 }
@@ -2112,8 +2095,8 @@ async function installTag(tag, kind) {
     message = `将下载并安装 ${tag} 桌面端，期间桌面端会短暂关闭。`;
   } else if (kind === 'update') {
     title = '更新桌面端';
-    message = `将更新到 ${tag}，安装程序会替换当前版本。`;
-    confirmText = '更新';
+    message = `将下载 ${tag} 的完整安装包，安装程序会替换当前版本。`;
+    confirmText = '完全下载';
   } else if (kind === 'switch') {
     title = '切换版本';
     message = `${tag} 早于当前版本，安装程序将覆盖当前安装。`;
@@ -2171,7 +2154,7 @@ async function installDelta(tag) {
   }
   if (!(await appConfirm({
     title: '增量更新',
-    body: `将通过增量包更新到 ${tag}，只下载变更部分。增量包不可用时自动改用完整安装包。`,
+    body: `将通过增量包更新到 ${tag}，只下载变更部分。下载失败会停止，可返回选择完全下载。`,
     confirmText: '增量更新',
   }))) {
     return;
@@ -2186,31 +2169,20 @@ async function installDelta(tag) {
   try {
     const result = await api.installDelta(tag);
     const status = result?.status;
-    const fellBack = result?.mode === 'full' || status === 'fallback-full';
     if (result?.ok === true || status === 'applied' || status === 'installed') {
-      paintProgress('update-progress', { phase: 'done', mode: fellBack ? 'full' : 'delta' });
+      paintProgress('update-progress', { phase: 'done', mode: 'delta' });
       const version = result?.installed?.version || result?.version || tag;
-      $('update-progress').textContent = fellBack
-        ? `增量包不可用，已通过完整安装包完成安装：v${String(version).replace(/^v/i, '')}`
-        : `已增量更新到 v${String(version).replace(/^v/i, '')}`;
+      $('update-progress').textContent = `已增量更新到 v${String(version).replace(/^v/i, '')}`;
       void refreshStatus();
       void refreshReleases();
-      return;
-    }
-    if (fellBack && result?.ok !== false) {
-      // The delta lane reported a full-installer fallback without a final
-      // verdict yet; keep the card up and let progress events carry on.
-      $('update-progress').textContent = result?.message || '增量包不可用，正在改用完整安装包…';
-      if (title) {
-        title.textContent = `正在安装 ${tag}`;
-      }
       return;
     }
     if (result?.cancelled) {
       $('update-progress').textContent = result.message || '已取消';
       return;
     }
-    $('update-progress').textContent = errText(result, '增量更新失败');
+    paintProgress('update-progress', { phase: 'error', mode: 'delta' });
+    $('update-progress').textContent = `${errText(result, '增量更新失败')}。可返回版本列表选择完全下载。`;
   } catch (error) {
     $('update-progress').textContent = errText(error, '增量更新失败');
   } finally {

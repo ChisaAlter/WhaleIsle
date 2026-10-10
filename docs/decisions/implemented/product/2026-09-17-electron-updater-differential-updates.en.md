@@ -2,6 +2,8 @@
 
 Status: implemented
 
+2026-10-09 update: users explicitly choose incremental or full download. Differential failure no longer starts a full transfer; missing cache or metadata is explained before selection. The original decision follows below; current behavior and verification/install protection are documented in [Tray, close and updates](../../../handbook/modules/tray-update.md).
+
 [中文](2026-09-17-electron-updater-differential-updates.md) | English
 
 ## Problem

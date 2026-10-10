@@ -1,11 +1,10 @@
 .indicator {
-  display: inline-grid;
-  grid-template-columns: 14px max-content;
-  align-items: center;
-  column-gap: 4px;
+  display: grid;
+  place-items: center;
   flex: none;
-  height: 28px;
-  padding: 0 8px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
   box-sizing: border-box;
   border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 20%, transparent);
   border-radius: var(--dsw-radius-sm);
@@ -15,9 +14,16 @@
   font-size: 12px;
   font-weight: 500;
   line-height: 18px;
-  text-align: left;
-  white-space: nowrap;
   cursor: pointer;
+}
+
+.indicator:hover:not([aria-disabled="true"]) {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 14%, transparent);
+}
+
+.indicator:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
 }
 
 .icon {

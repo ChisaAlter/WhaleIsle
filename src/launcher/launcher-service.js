@@ -12,6 +12,7 @@ const { readLastDesktopStart, stickySkipActive, peekParkedUpdateCheck } = requir
 const { loadConfig, saveConfig, normalizeLauncherConfigPatch } = require('../main/config');
 const releaseSource = require('./release-source');
 const runtimeInstall = require('./runtime-install');
+const deltaInstall = require('./delta/install');
 const forensicsLog = require('./forensics-log');
 const { isLauncherPackage, runtimeTarget, desktopStateDir, desktopUserDataDir } = require('./product');
 const importGuard = require('../main/import-guard');
@@ -405,14 +406,24 @@ function createLauncherService(deps) {
     }
     return Promise.resolve()
       .then(() => runtimeInstall.installRuntime(options, onProgress, {
-        confirmUnverified: confirmUnverifiedInstall,
+        confirmUnverified: options.confirmUnverified || confirmUnverifiedInstall,
       }))
       .finally(() => releaseMaintenanceSlot(guard));
   }
 
-  async function installUpdateOp(onProgress) {
+  async function installUpdateOp(onProgress, options = {}) {
+    const downloadMode = options.downloadMode === undefined ? 'full' : options.downloadMode;
+    if (downloadMode !== 'full' && downloadMode !== 'delta') {
+      return { status: 'error', launched: false, message: '更新方式无效，请重新选择增量更新或完全下载。' };
+    }
     if (isLauncherPackage()) {
-      return installRuntimeOp({}, onProgress);
+      if (downloadMode === 'delta') {
+        return { status: 'error', launched: false, message: '启动器管理的桌面安装暂不支持此增量方式，请选择完全下载。' };
+      }
+      return installRuntimeOp({
+        tag: options.expectedCheck?.tag, downloadMode: 'full',
+        confirmUnverified: options.confirmUnverified,
+      }, onProgress);
     }
     if (importGuard.isMaintenanceHeld()) {
       return { status: 'error', launched: false, ok: false, error: 'operation-in-progress', message: '已有其他任务进行中' };
@@ -427,7 +438,11 @@ function createLauncherService(deps) {
     }
     try {
       return await update.installUpdate(onProgress, {
-        confirmUnverified: confirmUnverifiedInstall,
+        // These options come from a main-owned confirmation. The renderer IPC
+        // invokes this method with progress only, never renderer-picked assets.
+        expectedCheck: options.expectedCheck,
+        downloadMode,
+        confirmUnverified: options.confirmUnverified || confirmUnverifiedInstall,
         taskProtection: protection,
       });
     } catch (error) {
@@ -437,9 +452,9 @@ function createLauncherService(deps) {
         repoUrl: update.REPO_URL,
         releasesUrl: update.RELEASES_PAGE,
         htmlUrl: update.RELEASES_PAGE,
-        latest: '',
-        assetName: '',
-        assetUrl: '',
+        latest: options.expectedCheck?.latest || options.expectedCheck?.version || '',
+        assetName: options.expectedCheck?.assetName || '',
+        assetUrl: options.expectedCheck?.assetUrl || '',
         launched: false,
         message: error.message || String(error),
       };
@@ -470,6 +485,37 @@ function createLauncherService(deps) {
       });
     } catch (error) {
       return { status: 'error', launched: false, message: error.message || String(error) };
+    } finally {
+      releaseMaintenanceSlot(guard);
+    }
+  }
+
+  async function installDeltaOp(tag, onProgress) {
+    const blocked = blockedStartError();
+    if (blocked) {
+      return { ...blocked, mode: 'delta' };
+    }
+    const guard = acquireMaintenanceSlot('install');
+    if (!guard) {
+      return { ok: false, mode: 'delta', error: 'operation-in-progress' };
+    }
+    try {
+      return await deltaInstall.installDelta(tag, onProgress, {
+        beforeApply: async () => {
+          if (!runtimeInstall.probeDesktopRunning()) {
+            return { ok: true };
+          }
+          // Download and checksum verification have completed. The desktop
+          // peer now protects its tasks and grants shutdown before patching.
+          const stopped = await runtimeInstall.stopExternalDesktop();
+          if (stopped?.ok === false) {
+            return stopped;
+          }
+          return runtimeInstall.probeDesktopRunning()
+            ? { ok: false, error: 'runtime-busy' }
+            : { ok: true };
+        },
+      });
     } finally {
       releaseMaintenanceSlot(guard);
     }
@@ -690,6 +736,8 @@ function createLauncherService(deps) {
     },
 
     installRelease: installReleaseOp,
+
+    installDelta: installDeltaOp,
 
     installRuntime: installRuntimeOp,
 

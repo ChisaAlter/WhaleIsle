@@ -5,8 +5,7 @@
 //   2. manifest parse + per-payload sha256/size verification into a staging
 //      dir INSIDE the target tree (same volume → atomic renames)
 //   3. base-hash preflight on every file being patched/deleted — a drifted
-//      base aborts before a single target byte is touched (caller falls back
-//      to the full installer rather than risk a partial write)
+//      base aborts before a single target byte is touched
 //   4. commit by rename with rollback, then drop staging.
 const fs = require('fs');
 const path = require('path');
@@ -107,10 +106,10 @@ function pruneEmptyDirs(targetDir, relPath, deps = {}) {
 }
 
 /**
- * @returns {Promise<{ok:true, fromVersion, toVersion, applied:{added,patched,deleted,skipped}}>}
+ * @returns {Promise<{ok:true, fromVersion, toVersion, applied:{added,patched,deleted,skipped}}|{ok:false}>}
  * @throws {DeltaApplyError} code ∈ artifact-sha512-mismatch | bad-zip |
- *   manifest-invalid | base-mismatch | payload-* | apply-failed — every one
- *   of them means "use the full installer", never a partial tree.
+ *   manifest-invalid | base-mismatch | payload-* | apply-failed — no partial
+ *   tree is accepted after an error.
  */
 async function applyDeltaFile(zipFile, targetDir, options = {}, deps = {}) {
   const fsx = deps.fs || fs;
@@ -145,6 +144,24 @@ async function applyDeltaFile(zipFile, targetDir, options = {}, deps = {}) {
       error.message || String(error));
   }
 
+  const version = (value) => String(value || '').trim().replace(/^v/i, '');
+  if ((options.expectedFromVersion && version(doc.fromVersion) !== version(options.expectedFromVersion))
+    || (options.expectedToVersion && version(doc.toVersion) !== version(options.expectedToVersion))
+    || (options.expectedProduct
+      && manifest.deltaAssetName(doc.product, '', '') !== manifest.deltaAssetName(options.expectedProduct, '', ''))) {
+    throw new DeltaApplyError('manifest-target-mismatch', 'delta manifest does not match the selected product and versions');
+  }
+
+  const skip = await preflightBase(targetDir, doc.files, deps);
+  if (typeof options.beforeApply === 'function') {
+    // Reject an invalid target or drifted base while the desktop stays live.
+    // The protected shutdown owns the last boundary before any target write.
+    const admitted = await options.beforeApply();
+    if (admitted?.ok === false) {
+      return admitted;
+    }
+  }
+
   const stagingDir = path.join(targetDir, `.dshd-delta-${process.pid}-${Date.now().toString(36)}`);
   const backups = []; // { target, backup } — rename-restorable
   const placed = [];  // { target } — committed adds/patches
@@ -152,7 +169,6 @@ async function applyDeltaFile(zipFile, targetDir, options = {}, deps = {}) {
   try {
     fsx.mkdirSync(stagingDir, { recursive: true });
     const staged = await extractPayloads(zipFile, entries, doc.files, stagingDir, deps, onProgress);
-    const skip = await preflightBase(targetDir, doc.files, deps);
     applied.skipped = skip.size;
     if (typeof onProgress === 'function') {
       onProgress({ phase: 'apply', percent: 0 });
