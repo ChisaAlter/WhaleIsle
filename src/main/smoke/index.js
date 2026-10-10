@@ -675,6 +675,8 @@ function createSmokeRunner(deps) {
             port: dsh.port || config.port,
             userData: app.getPath('userData'),
             appVersion: app.getVersion(),
+            resourcesPath: process.resourcesPath,
+            runtimeRoot: require('../paths').harnessRoot(),
             bootLogs: dsh.logs,
           });
         } catch (error) {

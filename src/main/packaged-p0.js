@@ -2,6 +2,9 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { readRuntimeArchiveIdentity } = require('../shared/harness-runtime-identity');
+const { readRuntimeLinks } = require('../shared/runtime-links');
+const { harnessHasGhosttyAssets } = require('../shared/ghostty-assets');
 
 const PACKAGED_P0_STEPS = Object.freeze([
   'packaged.sibling.exists',
@@ -17,6 +20,51 @@ const NO_OPEN_ERROR = "unknown option '--no-open'";
 
 function runtimeStampPath(userData, appVersion) {
   return path.join(String(userData || ''), 'runtime', String(appVersion || ''), '.dshd-runtime.json');
+}
+
+/** Verify the runtime actually selected by the packaged application. */
+async function verifyPackagedRuntime({ resourcesPath, runtimeRoot, userData, appVersion, expectedPin, expectedArchiveIdentity }) {
+  const vendor = path.join(resourcesPath, 'vendor');
+  const archive = path.join(vendor, 'deepseek-harness.tar');
+  const manifest = await readRuntimeArchiveIdentity(archive);
+  if (!manifest) throw new Error('Missing packaged runtime archive identity');
+  if (expectedArchiveIdentity && (manifest.archiveBytes !== expectedArchiveIdentity.archiveBytes
+      || manifest.archiveSha256 !== expectedArchiveIdentity.archiveSha256)) {
+    throw new Error('Packaged runtime archive identity mismatch');
+  }
+  const pin = JSON.parse(fs.readFileSync(path.join(vendor, 'harness-upstream.json'), 'utf8'));
+  if (!/^[0-9a-f]{40}$/.test(pin.sha) || typeof pin.npm !== 'string' || !pin.npm
+      || (expectedPin && (pin.sha !== expectedPin.sha || pin.npm !== expectedPin.npm))) {
+    throw new Error('Packaged runtime pin mismatch');
+  }
+  const identity = { sha: pin.sha, npm: pin.npm, archiveBytes: manifest.archiveBytes, archiveSha256: manifest.archiveSha256 };
+  const installed = path.join(vendor, 'deepseek-harness');
+  const extracted = path.dirname(runtimeStampPath(userData, appVersion));
+  const mode = !fs.existsSync(archive) ? 'installed' : 'extracted';
+  const expectedRoot = mode === 'installed' ? installed : extracted;
+  const selectedRoot = fs.realpathSync(runtimeRoot);
+  if (selectedRoot !== fs.realpathSync(expectedRoot)) throw new Error('Selected runtime root mismatch');
+  if (mode === 'extracted') {
+    if (fs.statSync(archive).size !== identity.archiveBytes) throw new Error('Packaged runtime archive size mismatch');
+    const stamp = JSON.parse(fs.readFileSync(path.join(runtimeRoot, '.dshd-runtime.json'), 'utf8'));
+    for (const key of Object.keys(identity)) {
+      if (stamp[key] !== identity[key]) throw new Error(`Runtime stamp mismatch: ${key}`);
+    }
+  }
+  const pkg = JSON.parse(fs.readFileSync(path.join(runtimeRoot, 'package.json'), 'utf8'));
+  if (pkg.version !== pin.npm) throw new Error('Selected runtime package version mismatch');
+  for (const entry of ['apps/cli/lib/bin.js', 'apps/web/dist/index.html', '.dsh-runtime-links.json']) {
+    if (!fs.statSync(path.join(runtimeRoot, entry)).isFile()) throw new Error(`Incomplete selected runtime: ${entry}`);
+  }
+  if (!harnessHasGhosttyAssets(runtimeRoot)) throw new Error('Selected runtime lacks Ghostty assets');
+  for (const { from, target } of readRuntimeLinks(runtimeRoot)) {
+    const targetRoot = fs.realpathSync(target);
+    if (!targetRoot.startsWith(selectedRoot + path.sep) || !fs.lstatSync(from).isSymbolicLink()
+        || fs.realpathSync(from) !== targetRoot) {
+      throw new Error('Selected runtime dependency link mismatch');
+    }
+  }
+  return { mode, root: selectedRoot, identity };
 }
 
 function record(steps, name, ok, detail) {
@@ -57,7 +105,7 @@ function resolveGitBranchList(deps) {
 }
 
 /**
- * Packaged-path P0: sibling workspace Git/PTY, Ghostty wasm, overlay extract stamp,
+ * Packaged-path P0: sibling workspace Git/PTY, Ghostty wasm, selected runtime identity,
  * and no stale `--no-open` boot failure.
  * @param {{
  *   siblingPath?: string,
@@ -68,6 +116,8 @@ function resolveGitBranchList(deps) {
  *   port?: number,
  *   userData?: string,
  *   appVersion?: string,
+ *   resourcesPath?: string,
+ *   runtimeRoot?: string,
  *   bootLogs?: unknown[],
  *   existsSync?: (file: string) => boolean,
  * }} deps
@@ -135,10 +185,22 @@ async function runPackagedP0(deps = {}) {
 
   const stampPath = runtimeStampPath(deps.userData, deps.appVersion);
   const existsSync = typeof deps.existsSync === 'function' ? deps.existsSync : fs.existsSync;
-  const stampOk = Boolean(stampPath) && existsSync(stampPath);
-  record(steps, 'packaged.runtime.stamp', stampOk, stampOk ? stampPath : `missing stamp: ${stampPath}`);
+  let runtime = null;
+  let stampOk = Boolean(stampPath) && existsSync(stampPath);
+  let stampDetail = stampOk ? stampPath : `missing stamp: ${stampPath}`;
+  if (deps.resourcesPath || deps.runtimeRoot) {
+    try {
+      runtime = await verifyPackagedRuntime(deps);
+      stampOk = true;
+      stampDetail = `${runtime.mode}: ${runtime.root}`;
+    } catch (error) {
+      stampOk = false;
+      stampDetail = error.message;
+    }
+  }
+  record(steps, 'packaged.runtime.stamp', stampOk, stampDetail);
 
-  return { ok: steps.every((row) => row.ok), steps };
+  return { ok: steps.every((row) => row.ok), steps, runtime };
 }
 
 module.exports = {
@@ -146,5 +208,6 @@ module.exports = {
   GHOSTTY_WASM_PATH,
   NO_OPEN_ERROR,
   runtimeStampPath,
+  verifyPackagedRuntime,
   runPackagedP0,
 };

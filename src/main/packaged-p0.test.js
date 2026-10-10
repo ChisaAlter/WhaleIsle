@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { PACKAGED_P0_STEPS, runPackagedP0 } = require('./packaged-p0');
+const { PACKAGED_P0_STEPS, runPackagedP0, verifyPackagedRuntime } = require('./packaged-p0');
 
 function step(result, name) {
   return result.steps.find((row) => row.name === name);
@@ -201,4 +201,70 @@ test('qa:packaged is a local rehearsal script and not a GitHub Release job', () 
   assert.match(runner, /Node version in root \.nvmrc/);
   const sourceQa = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'run-source-qa.mjs'), 'utf8');
   assert.doesNotMatch(sourceQa, /DSH_SMOKE_SIBLING/);
+});
+
+function runtimeFixture(t, mode = 'installed') {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-p0-runtime-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const resourcesPath = path.join(root, 'resources'), userData = path.join(root, 'profile');
+  const vendor = path.join(resourcesPath, 'vendor');
+  const runtimeRoot = mode === 'installed' ? path.join(vendor, 'deepseek-harness') : path.join(userData, 'runtime', '0.3.5');
+  const expectedPin = { sha: 'a'.repeat(40), npm: '0.2.1-alpha.1' };
+  const expectedArchiveIdentity = { version: 1, archiveBytes: 10, archiveSha256: 'b'.repeat(64) };
+  const write = (base, relative, value) => {
+    const file = path.join(base, relative); fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, typeof value === 'string' ? value : JSON.stringify(value));
+  };
+  write(vendor, 'harness-upstream.json', expectedPin);
+  write(vendor, 'deepseek-harness-runtime.json', expectedArchiveIdentity);
+  write(runtimeRoot, 'package.json', { version: expectedPin.npm });
+  for (const entry of ['apps/cli/lib/bin.js', 'apps/web/dist/index.html', 'packages/client/ui-user-terminal/lib/client.js',
+    ...require('../shared/ghostty-assets').GHOSTTY_ASSET_FILES.map(name => `packages/client/ui-user-terminal/lib/assets/${name}`)]) write(runtimeRoot, entry, 'fixture');
+  write(runtimeRoot, '.dsh-runtime-links.json', { version: 1, links: [] });
+  if (mode === 'extracted') {
+    write(vendor, 'deepseek-harness.tar', '0123456789');
+    write(runtimeRoot, '.dshd-runtime.json', { ...expectedPin, archiveBytes: 10, archiveSha256: expectedArchiveIdentity.archiveSha256 });
+  }
+  return { resourcesPath, runtimeRoot, userData, appVersion: '0.3.5', expectedPin, expectedArchiveIdentity, write, vendor };
+}
+
+test('NSIS runtime identity accepts the selected installed tree while leaving a stale userData overlay unselected', async t => {
+  const deps = runtimeFixture(t);
+  const stale = path.join(deps.userData, 'runtime', deps.appVersion);
+  deps.write(stale, 'package.json', { version: '0.1.0-rc.7' });
+  const runtime = await verifyPackagedRuntime(deps);
+  assert.equal(runtime.mode, 'installed');
+  assert.equal(fs.existsSync(path.join(deps.runtimeRoot, '.dshd-runtime.json')), false);
+  const p0Deps = passingDeps({ ...deps, stampExists: false });
+  t.after(() => fs.rmSync(p0Deps.siblingPath, { recursive: true, force: true }));
+  const result = await runPackagedP0(p0Deps);
+  assert.equal(result.ok, true);
+  assert.equal(result.runtime.mode, 'installed');
+  await assert.rejects(verifyPackagedRuntime({ ...deps, runtimeRoot: stale }), /root mismatch/);
+});
+
+test('selected runtime rejects wrong pin, package version and equal-size archive identity changes', async t => {
+  const deps = runtimeFixture(t);
+  await assert.rejects(verifyPackagedRuntime({ ...deps, expectedPin: { ...deps.expectedPin, sha: 'c'.repeat(40) } }), /pin mismatch/);
+  await assert.rejects(verifyPackagedRuntime({ ...deps, expectedArchiveIdentity: { ...deps.expectedArchiveIdentity, archiveSha256: 'c'.repeat(64) } }), /archive identity mismatch/);
+  deps.write(deps.runtimeRoot, 'package.json', { version: '0.1.0-rc.7' });
+  await assert.rejects(verifyPackagedRuntime(deps), /package version mismatch/);
+});
+
+test('selected installed runtime rejects incomplete or invalid dependency link trees', async t => {
+  const deps = runtimeFixture(t);
+  deps.write(deps.runtimeRoot, '.dsh-runtime-links.json', { version: 1, links: [{ path: 'node_modules/a', target: '../outside' }] });
+  await assert.rejects(verifyPackagedRuntime(deps), /Invalid runtime link path/);
+  deps.write(deps.runtimeRoot, '.dsh-runtime-links.json', { version: 1, links: [] });
+  fs.unlinkSync(path.join(deps.runtimeRoot, 'apps/cli/lib/bin.js'));
+  await assert.rejects(verifyPackagedRuntime(deps), /ENOENT/);
+});
+
+test('tar-extracted runtime still requires an exact completed stamp and rejects a stale same-version overlay', async t => {
+  const deps = runtimeFixture(t, 'extracted');
+  assert.equal((await verifyPackagedRuntime(deps)).mode, 'extracted');
+  deps.write(deps.runtimeRoot, '.dshd-runtime.json', { ...deps.expectedPin, archiveBytes: 10, archiveSha256: 'c'.repeat(64) });
+  await assert.rejects(verifyPackagedRuntime(deps), /stamp mismatch: archiveSha256/);
+  fs.unlinkSync(path.join(deps.runtimeRoot, '.dshd-runtime.json'));
+  await assert.rejects(verifyPackagedRuntime(deps), /ENOENT/);
 });
