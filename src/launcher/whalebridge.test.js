@@ -57,6 +57,12 @@ test('manifest refuses substituted asset, invalid version, digest and missing li
 
 test('remote catalog requests CNB JSON and keeps assets on the selected route', async t => {
   const f = fixture(t);
+  const Module = require('node:module');
+  const load = Module._load;
+  t.mock.method(Module, '_load', function (id, ...args) {
+    if (id === 'electron') return { app: {}, shell: {} };
+    return Reflect.apply(load, this, [id, ...args]);
+  });
   const { ROUTES } = require('./release-source');
   let route;
   const configPath = require.resolve('../main/config');
