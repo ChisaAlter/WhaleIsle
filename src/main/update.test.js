@@ -81,6 +81,39 @@ test('summarizeRelease selects the host-compatible macOS DMG and rejects a forei
   assert.equal(incompatible.assetUrl, '');
 });
 
+test('desktop release listing and install reject component releases and standalone executables', async (t) => {
+  useReleasePlatform(t, 'win32');
+  const component = {
+    tag_name: 'whalebridge-v1.1.0',
+    assets: [{ name: 'WhaleBridge-win32-x64.exe', browser_download_url: 'https://example.test/bridge.exe' }],
+  };
+  const desktop = {
+    tag_name: 'v0.3.5',
+    assets: [{ name: 'Whale-Isle-Setup-0.3.5.exe', browser_download_url: 'https://example.test/setup.exe' }],
+  };
+  assert.equal(summarizeRelease(component, '0.3.3'), null);
+  assert.equal(summarizeRelease({ ...component, assets: desktop.assets }, '0.3.3'), null);
+  assert.equal(summarizeRelease({ ...desktop, assets: component.assets }, '0.3.3').installable, false);
+  assert.equal(summarizeRelease({ ...desktop, tag_name: 'v0.3.6-rc.1+candidate', prerelease: true }, '0.3.5').installable, true);
+  const previousFetch = global.fetch;
+  const requests = [];
+  global.fetch = async (url) => {
+    requests.push(String(url));
+    return { ok: true, status: 200, json: async () => String(url).includes('/releases/tags/') ? component : [component, desktop] };
+  };
+  try {
+    const listed = await listReleases();
+    assert.equal(listed.status, 'ok');
+    assert.deepEqual(listed.releases.map(row => row.tag), ['v0.3.5']);
+    const rejected = await installRelease(component.tag_name);
+    assert.equal(rejected.status, 'error');
+    assert.equal(rejected.launched, false);
+    assert.equal(requests.length, 2, 'component installation stops after metadata, before any download');
+  } finally {
+    global.fetch = previousFetch;
+  }
+});
+
 test('getInstalledAppInfo reports version and source-run uninstall guidance when unpackaged', () => {
   const info = getInstalledAppInfo({ isPackaged: false, existsSync: () => false, execFileSync: () => { throw new Error('missing'); } });
   assert.equal(typeof info.version, 'string');

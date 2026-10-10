@@ -80,7 +80,16 @@ test('desktop unit tests do not pin DSH_HARNESS_ROOT to vendor/deepseek-harness'
 
 test('setup-harness uses the lockfile-installed pnpm executable', () => {
   const source = fs.readFileSync(path.join(ROOT, 'scripts', 'setup-harness.js'), 'utf8');
-  assert.match(source, /node_modules['"], ['"]pnpm['"], ['"]bin['"], ['"]pnpm\.cjs/);
+  assert.match(source, /node_modules['"], ['"]pnpm['"], ['"]bin['"], ['"]pnpm\.mjs/);
+  const installed = require('pnpm/package.json');
+  const declared = require('../../package.json').devDependencies.pnpm;
+  assert.equal(installed.version, declared);
+  const entry = path.join(ROOT, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs');
+  const result = require('node:child_process').spawnSync(process.execPath, [entry, '--version'], {
+    encoding: 'utf8', windowsHide: true,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), declared);
 });
 
 test('setup-harness builds the official DSH client profile', () => {

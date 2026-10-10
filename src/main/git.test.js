@@ -2314,6 +2314,10 @@ test('shared status fetch releases failures and preserves backoff and success TT
   try {
     resetFetchCooldowns();
     const { bare, cwd, linked } = initStatusFetchFixture(root);
+    // The main repository can be opened through a Windows short path or a
+    // directory alias while Git reports the linked worktree's canonical path.
+    const alias = path.join(root, 'repo-alias');
+    fs.symlinkSync(cwd, alias, process.platform === 'win32' ? 'junction' : 'dir');
     git(cwd, ['remote', 'set-url', 'origin', path.join(root, 'missing.git')]);
     fs.appendFileSync(path.join(cwd, 'file.txt'), 'local edit despite remote failure\n');
     Date.now = () => now;
@@ -2323,7 +2327,7 @@ test('shared status fetch releases failures and preserves backoff and success TT
       const delays = [30_000, 60_000, 120_000, 240_000, 480_000, 900_000, 900_000];
       for (let index = 0; index < delays.length; index++) {
         const results = index === 0
-          ? await Promise.all([fetchForStatus(cwd), fetchForStatus(linked)])
+          ? await Promise.all([fetchForStatus(alias), fetchForStatus(linked)])
           : [await fetchForStatus(cwd)];
         assert.deepEqual(results, results.map(() => ({ fetched: true, ok: false })));
         assert.equal(gitSpawnLog.filter(line => line.startsWith('fetch ')).length, index + 1);

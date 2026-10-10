@@ -1,4 +1,5 @@
 const path = require('node:path');
+const fs = require('node:fs/promises');
 const { runGit, FETCH_TIMEOUT_MS } = require('./git-exec');
 const { resolveCurrentUpstream, resolvePrimaryRemoteName } = require('./git-remotes');
 
@@ -23,7 +24,9 @@ function resetFetchCooldowns() {
 async function fetchCooldownKey(cwd, remote, readRun = runGit) {
   const common = await readRun(cwd, ['rev-parse', '--git-common-dir']);
   const dir = common.code === 0 && common.stdout.trim()
-    ? path.resolve(cwd, common.stdout.trim())
+    // Git can report the linked worktree's absolute path while the main
+    // worktree was opened through a junction or Windows short path.
+    ? await fs.realpath(path.resolve(cwd, common.stdout.trim()))
     : cwd;
   return `${dir}\u0000${remote}`;
 }

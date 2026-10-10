@@ -26,6 +26,7 @@
 ## 不变量
 
 - 更新资产按平台选择：Windows Setup.exe，macOS 匹配架构的 DMG；DMG 校验后由系统打开并提示拖入 Applications，当前应用保持运行，不宣称已安装。
+- 桌面版本列表与指定版本安装只接受桌面版本号；同仓库的 `whalebridge-v…` 组件发布不进入桌面更新。Windows 仅选择 Setup/NSIS/installer 安装器，不把组件或便携 EXE 当成安装包。
 - 差量通道只负责下载；目标版本与 SHA512 校验后和整包路径共用任务保护 commit 中的 spawn。操作系统拒绝启动会报错、释放接纳锁，不能报告 launched 或提前退出。
 
 - 关闭行为可配置且重启后保持（验收表有持久化相关条）。  

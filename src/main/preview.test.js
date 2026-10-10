@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+const vm = require('node:vm');
 const {
   createPreviewController,
   DISCOVER_PORTS,
@@ -1937,6 +1938,77 @@ test('pickElement returns unknown preview id without throwing', async () => {
 test('fitPictureInPictureContentSize matches the 16/9 and 9/16 fixtures', () => {
   assert.deepEqual(fitPictureInPictureContentSize([480, 320], 16 / 9), [523, 294]);
   assert.deepEqual(fitPictureInPictureContentSize([480, 320], 9 / 16), [294, 523]);
+});
+
+test('native preview attachment preserves capture through menu hide, PiP, and sidebar restoration', async (t) => {
+  const fake = fakeAttach();
+  const children = new Set();
+  let frontView;
+  const win = {
+    contentView: { addChildView: (view) => { children.add(view); frontView = view; },
+      removeChildView: (view) => children.delete(view) },
+    addBrowserView: (view) => children.add(view),
+    removeBrowserView: (view) => children.delete(view),
+  };
+  let nativeView;
+  class NativeView {
+    constructor() {
+      Object.assign(this, fake.attach({ id: 'native-preview' }));
+      nativeView = this;
+      this.setVisible = (visible) => { this.visible = visible; };
+      this.setBounds = (bounds) => { this.bounds = bounds; };
+      this.webContents.setWindowOpenHandler = () => {};
+      this.webContents.close = () => { this.webContents.destroyed = true; };
+      stubWideCapture(this.webContents);
+      const capture = this.webContents.capturePage.bind(this.webContents);
+      this.webContents.capturePage = (...args) => {
+        if (!children.has(this)) throw new Error('display surface unavailable after detach');
+        return capture(...args);
+      };
+    }
+  }
+  // Exercise the production default attachment, which injected fakeAttach tests
+  // previously bypassed. Model the observed loss of capture when it detaches.
+  const source = await fs.readFile(path.join(__dirname, 'preview.js'), 'utf8');
+  const loaded = { exports: {} };
+  vm.runInNewContext(source, {
+    module: loaded, __dirname, Buffer, process, setInterval, clearInterval,
+    require(id) {
+      if (id === 'electron') return { WebContentsView: NativeView, BrowserView: NativeView };
+      if (id === './window') return { getMainWindow: () => win };
+      if (id === './preview-session') return { ...require(id),
+        previewSessionForPartition: () => ({ webRequest: { onBeforeRequest() {} } }) };
+      return require(id);
+    },
+  });
+  const pip = createPipFactory();
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'preview-native-attachment-'));
+  t.after(() => fs.rm(userDataPath, { recursive: true, force: true }));
+  const preview = loaded.exports.createPreviewController({ createPipWindow: pip.createPipWindow, userDataPath });
+  const bounds = { x: 10, y: 20, width: 539, height: 750 };
+  const opened = await preview.open({ url: 'http://127.0.0.1:3000', bounds });
+  try {
+    await preview.hide(opened.id); // More menu hides the native overlay first.
+    assert.equal(nativeView.visible, false);
+    assert.equal(children.has(nativeView), true);
+    assert.equal(nativeView.bounds, bounds, 'hiding must preserve the actual viewport');
+    assert.equal((await preview.captureScreenshot(opened.id)).ok, true);
+    await preview.openPictureInPicture(opened.id);
+    assert.equal(nativeView.visible, false);
+    assert.ok(pip.created[0].sent.some(([channel, frame]) =>
+      channel === PREVIEW_PIP_FRAME_CHANNEL && frame.width === 1280 && frame.data.length > 0),
+    'the hidden attached guest must deliver a real captured frame');
+    await preview.closePictureInPicture();
+    frontView = {}; // The main Harness can be brought forward while PiP is open.
+    await preview.show(opened.id, bounds);
+    assert.equal(nativeView.visible, true);
+    assert.equal(frontView, nativeView, 'restoration brings the native preview above the Harness');
+    assert.equal(children.size, 1, 'sidebar restoration reuses the same guest');
+  } finally {
+    await preview.closeAll();
+  }
+  assert.equal(children.size, 0, 'only final preview close releases the attachment');
+  assert.equal(nativeView.webContents.destroyed, true);
 });
 
 test('openPictureInPicture creates an isolated alwaysOnTop window and hides the guest', async () => {

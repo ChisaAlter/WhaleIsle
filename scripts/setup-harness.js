@@ -5,7 +5,7 @@ const { readPin } = require('../src/shared/harness-upstream');
 
 const root = path.join(__dirname, '..');
 const vendor = path.join(root, 'vendor', 'deepseek-harness');
-const pnpm = path.join(root, 'node_modules', 'pnpm', 'bin', 'pnpm.cjs');
+const pnpm = path.join(root, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs');
 
 function harnessEnv() {
   const bin = path.join(root, 'node_modules', '.bin');

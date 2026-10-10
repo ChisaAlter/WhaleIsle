@@ -7,7 +7,12 @@ const {
   QA_REQUIRED_STEPS,
   PAGE_HELPERS,
   waitForComposerIdle,
+  waitForComposerSubmission,
+  probeSessionLogMenu,
+  probeGitCommitMenu,
   probeRemoteEntry,
+  probeSignedOutAccountMenu,
+  probeAppearanceControls,
 } = require('./release-ui-walk');
 const vm = require('node:vm');
 
@@ -42,6 +47,83 @@ function pageWorld(queries = {}, ids = {}) {
     wc: { executeJavaScript: async (script) => vm.runInContext(script, context) },
   };
 }
+
+test('account probe waits for both signed-out actions and ignores another open menu', async () => {
+  const unrelated = pageNode({}, '', { controls: [pageNode({}, 'Settings')] });
+  const accountControls = [pageNode({}, 'Sign in')];
+  const account = pageNode({}, '', { controls: accountControls });
+  const world = pageWorld({ '[role="menu"]': [unrelated, account] });
+  let reads = 0;
+  const wc = { executeJavaScript: async (script) => {
+    const value = await world.wc.executeJavaScript(script);
+    reads++;
+    if (reads === 1) accountControls.push(pageNode({}, 'Contact us'));
+    return value;
+  } };
+  const result = await probeSignedOutAccountMenu(wc, 2_000);
+  assert.equal(reads, 2, 'a menu with only Sign in is not ready');
+  assert.equal(result.signIn, true);
+  assert.equal(result.contact, true);
+});
+
+test('account probe reports failure when the missing signed-out action never mounts', async () => {
+  const account = pageNode({}, '', { controls: [pageNode({}, 'Sign in')] });
+  const world = pageWorld({ '[role="menu"]': [account] });
+  assert.equal(await probeSignedOutAccountMenu(world.wc, 10), null,
+    'a partial snapshot cannot become success at the deadline');
+});
+
+test('appearance probe waits for the active Settings page and both wallpaper controls', async () => {
+  const navAttrs = { 'aria-current': 'false' };
+  const controls = [];
+  const settingsQueries = { controls, 'h1, h2, h3': [] };
+  const otherDialog = pageNode({ 'aria-label': 'Other dialog' }, '', {
+    controls: [pageNode({}, 'Choose image'), pageNode({}, 'Browse gallery')],
+    'h1, h2, h3': [pageNode({}, 'Wallpaper')],
+  });
+  const settings = pageNode({ 'aria-label': 'Settings' }, '', settingsQueries);
+  const world = pageWorld({ '[role="dialog"]': [otherDialog, settings],
+    '[data-dsh-settings-section="appearance"]': [pageNode(navAttrs)] });
+  let reads = 0;
+  const wc = { executeJavaScript: async (script) => {
+    const value = await world.wc.executeJavaScript(script);
+    reads++;
+    if (reads === 1) {
+      navAttrs['aria-current'] = 'true';
+      settingsQueries['h1, h2, h3'] = [pageNode({}, 'Wallpaper')];
+      controls.push(pageNode({}, 'Choose image'));
+    } else if (reads === 2) {
+      controls.push(pageNode({}, 'Browse gallery'));
+    }
+    return value;
+  } };
+  const result = await probeAppearanceControls(wc, 2_000);
+  assert.equal(reads, 3, 'all-false and partially loaded snapshots keep waiting');
+  assert.equal(result.nav, true);
+  assert.equal(result.choose, true);
+  assert.equal(result.browse, true);
+});
+
+test('appearance readiness does not hide forbidden gallery-source content', async () => {
+  const dialog = pageNode({ 'aria-label': 'Settings' }, 'Bing daily wallpapers', {
+    controls: [pageNode({}, 'Choose image'), pageNode({}, 'Browse gallery')],
+    'h1, h2, h3': [pageNode({}, 'Wallpaper')],
+  });
+  const world = pageWorld({ '[role="dialog"]': [dialog],
+    '[data-dsh-settings-section="appearance"]': [pageNode({ 'aria-current': 'true' })] });
+  const result = await probeAppearanceControls(world.wc, 10);
+  assert.equal(result.bingDaily, true, 'the existing noSourceDump verdict must still reject this copy');
+});
+
+test('appearance probe never accepts controls under another active settings section', async () => {
+  const dialog = pageNode({ 'aria-label': 'Settings' }, '', {
+    controls: [pageNode({}, 'Choose image'), pageNode({}, 'Browse gallery')],
+    'h1, h2, h3': [pageNode({}, 'Wallpaper')],
+  });
+  const world = pageWorld({ '[role="dialog"]': [dialog],
+    '[data-dsh-settings-section="appearance"]': [pageNode({ 'aria-current': 'false' })] });
+  assert.equal(await probeAppearanceControls(world.wc, 10), null);
+});
 
 test('page names resolve ordered aria-labelledby references before label or text', () => {
   const control = pageNode({ 'aria-labelledby': 'title detail', 'aria-label': 'outdated' });
@@ -187,6 +269,94 @@ test('stopped empty composers prove enabled Send with an unsent readiness draft'
   queries.controls = [send, pageNode({ 'aria-label': '停止生成' })];
   assert.equal(await waitForComposerIdle(world.wc, 20, 'QA readiness'), false);
   assert.equal(writes, 1, 'do not hide an active turn by typing into its composer');
+});
+
+test('submission waits for its user echo and cleared draft even when the fast turn already ended', async () => {
+  const editor = pageNode({ contenteditable: 'true' }, 'ping Off');
+  const send = pageNode({ 'aria-label': 'Send message' });
+  send.disabled = true;
+  const queries = { '[data-composer-card]': [pageNode({}, '', { controls: [send] })],
+    '[data-composer-input]': [editor], '[data-chat-flow-kind="user"]': [pageNode({}, 'other ping')] };
+  const world = pageWorld(queries);
+  let reads = 0;
+  const wc = { executeJavaScript: async (script) => {
+    const value = await world.wc.executeJavaScript(script);
+    reads++;
+    if (reads === 1) queries['[data-chat-flow-kind="user"]'].push(pageNode({}, 'ping Off'));
+    if (reads === 2) editor.innerText = editor.textContent = '';
+    return value;
+  } };
+  assert.equal(await waitForComposerSubmission(wc, 'ping Off', 2_000), 'idle');
+  assert.equal(reads, 3, 'neither an unrelated bubble nor the still-typed draft proves submission');
+  assert.equal(send.disabled, true, 'a valid empty draft keeps Send disabled');
+});
+
+test('submission does not accept Stop without the matching user echo, or a disabled composer', async () => {
+  const attrs = { contenteditable: 'true' };
+  const queries = { '[data-composer-input]': [pageNode(attrs)],
+    controls: [pageNode({ 'aria-label': 'Stop generating' })], '[data-chat-flow-kind="user"]': [] };
+  const world = pageWorld(queries);
+  assert.equal(await waitForComposerSubmission(world.wc, 'ping Low', 10), null);
+  queries['[data-chat-flow-kind="user"]'].push(pageNode({}, 'ping Low'));
+  assert.equal(await waitForComposerSubmission(world.wc, 'ping Low', 10), 'engaged');
+  attrs['aria-disabled'] = 'true';
+  assert.equal(await waitForComposerSubmission(world.wc, 'ping Low', 10), null);
+});
+
+test('session log menu probes a sent session and waits for its own enabled download', async () => {
+  const more = pageNode({ 'aria-label': 'More actions' });
+  const unrelated = pageNode({}, '', { controls: [pageNode({}, 'Commit')] });
+  const download = pageNode({}, 'Download session log');
+  download.disabled = true;
+  const ownMenu = pageNode({}, '', { controls: [download] });
+  const queries = { controls: [more], '[data-chat-flow-kind="user"]': [pageNode({}, 'sent ping')],
+    '[role="menu"]': [unrelated] };
+  more.click = () => { queries['[role="menu"]'].push(ownMenu); };
+  const world = pageWorld(queries);
+  let reads = 0;
+  const wc = { executeJavaScript: async (script) => {
+    const value = await world.wc.executeJavaScript(script);
+    reads++;
+    if (reads === 2) download.disabled = false;
+    return value;
+  } };
+  const result = await probeSessionLogMenu(wc, 2_000);
+  assert.equal(result.ordinary, true);
+  assert.equal(result.opened, true);
+  assert.equal(result.download, true);
+  assert.equal(result.extraShortcut, false);
+  assert.equal(reads, 3, 'disabled download cannot count as reachable');
+});
+
+test('session log probe rejects a blank draft and retains the duplicate-shortcut failure', async () => {
+  const more = pageNode({ 'aria-label': 'More actions' });
+  let clicks = 0;
+  more.click = () => { clicks++; };
+  const queries = { controls: [more], '[data-chat-flow-kind="user"]': [],
+    '#dshd-shell-titlebar-trailing': [pageNode({}, '', { controls: [pageNode({}, 'Session log')] })] };
+  const world = pageWorld(queries);
+  const result = await probeSessionLogMenu(world.wc, 10);
+  assert.equal(result.ordinary, false);
+  assert.equal(result.download, false);
+  assert.equal(result.extraShortcut, true);
+  assert.equal(clicks, 0, 'blank drafts have no session menu to verify');
+});
+
+test('Git Commit entry is reachable through the menu when the primary action is Publish', async () => {
+  const commit = pageNode({ 'aria-disabled': 'true' }, 'Commit');
+  const world = pageWorld({ controls: [pageNode({}, 'Publish repository')],
+    '[role="menu"]': [pageNode({}, '', { controls: [commit] })] });
+  const result = await probeGitCommitMenu(world.wc, 10);
+  assert.equal(result.present, true);
+  assert.equal(result.enabled, false, 'clean-repository disabling must remain visible to QA');
+  commit.getAttribute = () => null;
+  assert.equal((await probeGitCommitMenu(world.wc, 10)).enabled, true);
+});
+
+test('Git Commit probe cannot be satisfied by a primary button or Commit and push', async () => {
+  const world = pageWorld({ controls: [pageNode({}, 'Commit')],
+    '[role="menu"]': [pageNode({}, '', { controls: [pageNode({}, 'Commit & push')] })] });
+  assert.equal(await probeGitCommitMenu(world.wc, 10), null);
 });
 
 test('remote gate clicks the account menu and requires its actual pairing dialog', async () => {

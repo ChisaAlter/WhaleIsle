@@ -3801,7 +3801,12 @@ function maybePresent(now) {
 function paintFrame() {
   const perfStart = petPerf.enabled ? performance.now() : 0;
   const liveAlpha = (session || rig.ready) ? 1 : 1 - stillCtl.alpha;
-  if (!painted && liveAlpha <= 0.01) {
+  // A mount/resize invalidation can arrive before the first model image.
+  // Commit only visible ink or cleanup; an empty live scene has nothing to
+  // upload while that first inference is still in flight.
+  const activeStill = stillCtl.entry && stillCtl.alpha > 0.01;
+  if (!painted && !activeStill && !feed && !particles.length && !bubble && !panel
+      && !lastPaintRect && !lastFeedRect && !lastParticleRect && !lastBubbleRect && !lastPanelRect) {
     return;
   }
   // Self-healing sweep: every ~1.5s clear the WHOLE surface once. Dirty

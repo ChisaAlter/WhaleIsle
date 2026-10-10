@@ -280,6 +280,7 @@ test('production quit skips confirmation while retaining inspect, lock, cleanup 
       stopDesktopInstallControl: () => events.push('control-stop'),
       taskControlPeer: { stop: async () => events.push('peer-stop') },
       cleanupDesktopResources: async () => events.push('cleanup'),
+      getLive2dPet: () => ({ dispose: async () => events.push('pet-dispose') }),
       hideHarnessView: () => {}, getMainWindow: () => ({}), loadConfig: () => ({}),
       getHarnessWebContents: () => null, setTimeout, clearTimeout,
       showClosingOverlay: async () => {}, harness: { shutdown: async () => events.push('shutdown'), cancelShutdown: () => {} },
@@ -292,7 +293,7 @@ test('production quit skips confirmation while retaining inspect, lock, cleanup 
       assert.deepEqual(events, ['failure-notice']);
       assert.deepEqual(calls.map(call => call.op), ['inspect', 'acquire']);
     } else {
-      assert.deepEqual(events, ['shutdown', 'cleanup', 'control-stop', 'peer-stop', 'quit']);
+      assert.deepEqual(events, ['shutdown', 'cleanup', 'pet-dispose', 'control-stop', 'peer-stop', 'quit']);
       assert.deepEqual(calls.map(call => call.op), ['inspect', 'acquire', 'inspect']);
     }
   }
@@ -313,6 +314,7 @@ function productionQuit(overrides = {}) {
     dsh: { log: () => {} },
     stopDesktopInstallControl: () => {}, taskControlPeer: { stop: async () => {} },
     cleanupDesktopResources: async () => {}, hideHarnessView: () => {},
+    getLive2dPet: () => null,
     getMainWindow: () => ({}), loadConfig: () => ({}), showClosingOverlay: async () => {},
     getHarnessWebContents: () => null,
     harness: { shutdown: async () => {} }, firstVisibleWindow: () => null,
@@ -418,9 +420,11 @@ test('failed shutdown offers recovery and cancelling removes the overlay without
   let dismissed = 0;
   let hidden = 0;
   let notices = 0;
+  let petDisposed = false;
   const { quit, context } = productionQuit({
     taskProtection: protection,
     harness: { shutdown: async () => { throw new Error('process still alive'); } },
+    getLive2dPet: () => ({ dispose: async () => { petDisposed = true; } }),
     showClosingOverlay: async () => async () => { dismissed++; },
     hideHarnessView: () => { hidden++; },
     confirmDialog: async () => { notices++; return { response: 2 }; },
@@ -429,6 +433,7 @@ test('failed shutdown offers recovery and cancelling removes the overlay without
   assert.equal(notices, 1);
   assert.equal(dismissed, 1);
   assert.equal(hidden, 0);
+  assert.equal(petDisposed, false, 'cancelling a failed shutdown preserves the pet service');
   assert.equal(context.quitting, false);
   assert.equal(context.stoppingForQuit, false);
   assert.equal(context.closingOverlayActive, false);
@@ -457,9 +462,12 @@ test('a hung normal shutdown reaches the recovery prompt and retains the page', 
   let deadline;
   let hidden = false;
   let notices = 0;
+  let finishShutdown;
+  let petDisposed = false;
   const { quit, context } = productionQuit({
     taskProtection: protection,
-    harness: { shutdown: () => new Promise(() => {}) },
+    harness: { shutdown: () => new Promise(resolve => { finishShutdown = resolve; }) },
+    getLive2dPet: () => ({ dispose: async () => { petDisposed = true; } }),
     hideHarnessView: () => { hidden = true; },
     confirmDialog: async () => { notices++; return { response: 2 }; },
     setTimeout: (callback, ms) => { assert.equal(ms, 30000); deadline = callback; return 1; },
@@ -473,6 +481,9 @@ test('a hung normal shutdown reaches the recovery prompt and retains the page', 
   assert.equal(notices, 1);
   assert.equal(hidden, false);
   assert.equal(context.quitInProgress, false);
+  finishShutdown();
+  await new Promise(setImmediate);
+  assert.equal(petDisposed, false, 'a late shutdown cannot dispose the pet after cancellation');
 });
 
 test('force exit still waits for the runtime when preview cleanup rejects', async () => {

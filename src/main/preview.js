@@ -144,17 +144,17 @@ function artifactSiteSlug(rawUrl) {
 }
 
 function defaultAttach({ bounds, partition }) {
-  const { BrowserView } = require('electron');
+  const { WebContentsView } = require('electron');
   const { getMainWindow } = require('./window');
   const win = getMainWindow();
   if (!win) {
     throw new Error('preview requires the desktop window');
   }
   const ses = previewSessionForPartition(partition);
-  const view = new BrowserView({
+  const view = new WebContentsView({
     webPreferences: previewGuestWebPreferences({ session: ses }),
   });
-  win.addBrowserView(view);
+  win.contentView.addChildView(view);
   if (bounds) view.setBounds(bounds);
   view.webContents.setWindowOpenHandler(({ url }) => {
     const next = resolvePreviewLoadUrl(url);
@@ -173,11 +173,13 @@ function defaultAttach({ bounds, partition }) {
     setVisible(next) {
       if (next === visible) return;
       visible = next;
-      if (next) win.addBrowserView(view);
-      else win.removeBrowserView(view);
+      // Menus and PiP hide the native overlay, but capturePage still needs
+      // its attached display surface. Detaching leaves captures pending.
+      if (next) win.contentView.addChildView(view);
+      view.setVisible(next);
     },
     destroy() {
-      win.removeBrowserView(view);
+      win.contentView.removeChildView(view);
       view.webContents.close();
     },
   };

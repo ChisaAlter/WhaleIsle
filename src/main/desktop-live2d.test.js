@@ -1202,6 +1202,9 @@ test('cursor hold follows the reported hit islands onto the status card', (t) =>
   point = { x: 60, y: 150 };
   manager.pollCursor();
   assert.deepEqual(deps.win.ignoreCalls.at(-1), [true, { forward: true }]);
+  // Leaving the body sends a boolean-only update before unchanged geometry.
+  deps.electron.ipcMain.handlers.get('shell:live2d-interactive')(
+    authorizedEvent(deps), { interactive: false });
   point = { x: 150, y: 150 };
   manager.pollCursor();
   assert.deepEqual(deps.win.ignoreCalls.at(-1), [false, undefined]);
@@ -1209,6 +1212,15 @@ test('cursor hold follows the reported hit islands onto the status card', (t) =>
   deps.electron.ipcMain.handlers.get('shell:live2d-interactive')(authorizedEvent(deps), {
     hitRegions: [{ x: 10, y: 20, width: 30, height: 40 }],
   });
+  manager.pollCursor();
+  assert.deepEqual(deps.win.ignoreCalls.at(-1), [true, { forward: true }]);
+  deps.electron.ipcMain.handlers.get('shell:live2d-interactive')(authorizedEvent(deps), {
+    hitRegions: [{ x: 100, y: 90, width: 80, height: 120 }],
+  });
+  manager.pollCursor();
+  assert.deepEqual(deps.win.ignoreCalls.at(-1), [false, undefined]);
+  deps.electron.ipcMain.handlers.get('shell:live2d-interactive')(
+    authorizedEvent(deps), { hitRegions: [] });
   manager.pollCursor();
   assert.deepEqual(deps.win.ignoreCalls.at(-1), [true, { forward: true }]);
 });
