@@ -37,13 +37,21 @@ test('native surface reports preserve separate ink rectangles and deduplicate fr
     chatRect = { x: 300, y: 100, w: 200, h: 180 };
     reportSurfaceRegions(); reportSurfaceRegions();
   `);
-  assert.deepEqual(JSON.parse(pet.run('JSON.stringify(reports)')), [{ regions: [
+  assert.deepEqual(JSON.parse(pet.run('JSON.stringify(reports[0].regions)')), [
     { x: 10, y: 20, width: 41, height: 51 },
     { x: 10, y: 1, width: 50, height: 10 },
     { x: 300, y: 100, width: 200, height: 180 },
-  ] }]);
+  ]);
+  assert.equal(pet.run('reports.length'), 1, 'identical geometry is deduplicated');
+  // The logical hit islands ride the same payload so the main process can hold
+  // interactivity across the body→card gap without a renderer round trip.
+  assert.deepEqual(JSON.parse(pet.run('JSON.stringify(reports[0].hitRegions)')),
+    JSON.parse(pet.run('JSON.stringify(interactiveHitRects())')));
+  assert.equal(pet.run('reports[0].hitRegions.length'), 2, 'body + chat card');
   pet.run('chatRect = null; reportSurfaceRegions()');
   assert.equal(pet.run('reports.at(-1).regions.length'), 2, 'closed card region is removed');
+  assert.equal(pet.run('reports.at(-1).hitRegions.length'), 1,
+    'closed card drops out of the main-side hit islands too');
 });
 
 const TOKEN_STYLE = {
@@ -137,6 +145,7 @@ function loadPet() {
   const source = SOURCE.replace(/mount\(\)\.catch[\s\S]*$/, '');
   let now = 100000;
   let rand = () => 0.5;
+  const rafQueue = [];
   const mathStub = {};
   for (const key of Object.getOwnPropertyNames(Math)) {
     mathStub[key] = Math[key];
@@ -161,7 +170,10 @@ function loadPet() {
     getComputedStyle: () => ({
       getPropertyValue: (name) => TOKEN_STYLE[name] || '',
     }),
-    requestAnimationFrame: () => 0,
+    // Presentations are coalesced onto the next animation frame, so the
+    // harness must be able to drive that frame explicitly. `flushFrames()`
+    // runs the queued callbacks with the harness clock as the timestamp.
+    requestAnimationFrame: (cb) => { rafQueue.push(cb); return rafQueue.length; },
     setTimeout, clearTimeout, setInterval, clearInterval,
     console,
     Math: mathStub,
@@ -181,6 +193,16 @@ function loadPet() {
     run: (expr) => vm.runInContext(expr, context),
     setNow: (v) => { now = v; },
     now: () => now,
+    // Run queued animation-frame callbacks at the harness clock. Tests that
+    // assert on painted output call this after the action under test.
+    flushFrames: (times = 1, advanceMs = 16) => {
+      for (let i = 0; i < times; i += 1) {
+        const due = rafQueue.splice(0, rafQueue.length);
+        if (!due.length) { break; }
+        now += advanceMs;
+        for (const cb of due) { cb(now); }
+      }
+    },
     setRandom: (fn) => { rand = fn; },
     resetRandom: () => { rand = () => 0.5; },
   };
@@ -433,6 +455,62 @@ test('drawBubble flips below at the top edge and clamps inside the host', () => 
   bubbleRectInsideHost(pet, { x: 0, y: 0, width: 800, height: 600 });
 });
 
+test('right-edge status card leaves a pinned caption and its close target fully visible', () => {
+  const caption = '渲染优化检查：状态卡和提醒应当完整显示。';
+  for (const [placement, y] of [['normal', 694.83], ['near-top', 10]]) {
+    const pet = loadPet();
+    // The normal case reproduces the observed 1708x960 native viewport's
+    // tight silhouette and left-flipped card, rather than a 240px box.
+    pet.run(`window.innerWidth = 1708; window.innerHeight = 960;
+      homeRect = { x: 0, y: 0, width: 1708, height: 960 };
+      drawPos = { x: 1443, y: ${y} }; session = {};
+      charRect = { x: 83.69, y: 0, right: 157.54, bottom: 91.11 };
+      openPanel();
+      bubble = { text: '${caption}', pinned: true, until: Infinity };`);
+    pet.canvas.ctx.ops.length = 0;
+    const ink = pet.run('lastBubbleRect = drawBubble(performance.now())');
+    const card = pet.run('panel');
+    const close = pet.run('bubbleCloseRect');
+    assert.ok(ink.x < card.x + card.w && ink.x + ink.w > card.x,
+      'the fixture retains the horizontal overlap that previously hid the caption');
+    if (placement === 'normal') {
+      assert.ok(ink.y + ink.h <= card.y - 4,
+        'the complete bubble, tail and clear margin fit above the card');
+    } else {
+      assert.ok(ink.y >= card.y + card.h + 4,
+        'with insufficient space above, the full bubble fits below the card');
+    }
+    assert.ok(ink.y >= 0 && ink.y + ink.h <= 960, 'moved ink remains inside the viewport');
+    assert.equal(pet.canvas.ctx.ops.filter((op) => op[0] === 'fillText')
+      .map((op) => op[1]).join(''), caption, 'all caption characters remain painted');
+    assert.ok(close.x >= ink.x && close.y >= ink.y
+      && close.x + close.w <= ink.x + ink.w && close.y + close.h <= ink.y + ink.h,
+    'the entire pinned close target remains inside the moved ink rectangle');
+    const cx = close.x + close.w / 2;
+    const cy = close.y + close.h / 2;
+    assert.equal(pet.run(`bubbleCloseHit(${cx}, ${cy}) && overPet(${cx}, ${cy})`), true,
+      'the moved close button remains reachable through the real interactive geometry');
+    pet.run(`onCanvasPointerDown({ target: canvas, button: 0, clientX: ${cx}, clientY: ${cy} })`);
+    assert.equal(pet.run('bubble'), null, 'the moved close target dismisses the pinned caption');
+    assert.ok(pet.run('panel'), 'dismissal keeps the status card open');
+  }
+});
+
+test('a status card outside the bubble keeps the existing bubble placement', () => {
+  const pet = loadPet();
+  pet.run(`drawPos = { x: 280, y: 200 };
+    homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    bubble = { text: '测试气泡', until: Infinity };`);
+  const initial = JSON.parse(pet.run('JSON.stringify(drawBubble(performance.now()))'));
+  const initialText = pet.canvas.ctx.ops.filter((op) => op[0] === 'fillText');
+  pet.run('panel = { x: 10, y: 10, w: 100, h: 100 }');
+  pet.canvas.ctx.ops.length = 0;
+  const withCard = JSON.parse(pet.run('JSON.stringify(drawBubble(performance.now()))'));
+  assert.deepEqual(withCard, initial, 'an unrelated card does not move the existing ink rectangle');
+  assert.deepEqual(pet.canvas.ctx.ops.filter((op) => op[0] === 'fillText'), initialText,
+    'the existing caption coordinates remain unchanged');
+});
+
 test('carried live pet keeps the bubble beside her head and reports a tight hover rect', () => {
   const pet = loadPet();
   pet.run(`homeRect = { x: 0, y: 0, width: 800, height: 600 };
@@ -531,6 +609,9 @@ test('paint clears before draws and an expired bubble still gets a cleanup paint
   // A steady bubble is static: it repaints on its change edges (push,
   // expiry) instead of forcing a tickStill paint every frame.
   pet.run(`pushBubble({ text: '测试气泡', until: ${pet.now() + 1000}, priority: 1 })`);
+  // Presentations are coalesced onto the next animation frame; the paint the
+  // push requests lands there.
+  pet.flushFrames();
   const first = pet.canvas.ctx.ops.length;
   assert.ok(first > 0, 'paint ran on bubble push');
   const drawIdx = pet.canvas.ctx.ops.findIndex((op) => op[0] === 'fill' || op[0] === 'drawImage' || op[0] === 'fillText');
@@ -543,6 +624,9 @@ test('paint clears before draws and an expired bubble still gets a cleanup paint
   pet.setNow(pet.now() + 2000);
   pet.canvas.ctx.ops.length = 0;
   pet.run('tickStill(performance.now())');
+  // Expiry requests a cleanup presentation; run the coalesced frame so the
+  // cleared region is actually recorded.
+  pet.flushFrames();
   const clears = pet.canvas.ctx.ops.filter((op) => op[0] === 'clearRect');
   assert.ok(clears.some((op) => op[1] === rect.x && op[2] === rect.y
     && op[3] === rect.w && op[4] === rect.h),
@@ -1000,6 +1084,159 @@ test('status panel opens beside the pet, unions into bounds, chips dispatch', ()
   assert.equal(pet.run('panel'), null, 'settings dispatch still closes the panel');
 });
 
+test('the status card survives the pointer leaving — dismissal is explicit only', () => {
+  const pet = loadPet();
+  pet.run(`drawPos = { x: 280, y: 200 };
+    homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    // Silhouette narrower than the 240x260 frame — the real model's alpha box,
+    // which is what left the card outside the old 8px exit hysteresis.
+    charRect = { x: 20, y: 10, right: 220, bottom: 250 };
+    globalThis.__calls = [];
+    petShell.setInteractive = (p) => {
+      if (typeof p.interactive === 'boolean') { __calls.push(p.interactive); }
+      return Promise.resolve(null);
+    };`);
+  pet.run('openPanel()');
+  assert.ok(pet.run('panel'), 'panel opens');
+  // Hover her body first, the way a real pointer arrives.
+  pet.run('onCursorMove(drawPos.x + 120, drawPos.y + 130, null)');
+  assert.equal(pet.run('JSON.stringify(__calls)'), '[true]');
+  // Clearly away from her body AND the card: interactivity drops (the desktop
+  // must not be shielded) but the card is NOT destroyed.
+  pet.run('onCursorMove(790, 590, null)');
+  assert.ok(pet.run('panel'), 'card survives the pointer leaving');
+  assert.equal(pet.run('JSON.stringify(__calls)'), '[true,false]');
+  // Coming back re-arms interactivity; the card never had to be reopened.
+  pet.run('onCursorMove(panel.x + 10, panel.y + 10, null)');
+  assert.ok(pet.run('panel'), 'card still open after the round trip');
+  assert.equal(pet.run('JSON.stringify(__calls)'), '[true,false,true]');
+  // The ✕ badge is the explicit dismissal.
+  pet.run('onCanvasPointerDown({ target: canvas, button: 0,'
+    + ' clientX: panelCloseRect().x + 2, clientY: panelCloseRect().y + 2 })');
+  assert.equal(pet.run('panel'), null, '✕ closes the card');
+});
+
+test('the ✕ dismissal stays on-screen when she is parked at the display top', () => {
+  const pet = loadPet();
+  pet.run(`drawPos = { x: 280, y: 0 };
+    homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    charRect = { x: 20, y: 0, right: 220, bottom: 120 };
+    openPanel();`);
+  const r = pet.run('panelCloseRect()');
+  assert.ok(r, 'card is open');
+  assert.ok(r.y >= 0, `✕ must not clip off the display top (y=${r.y})`);
+  assert.ok(r.y + r.h <= 600, 'and must stay inside the bottom edge');
+});
+
+test('the ✕ lives inside the card header instead of hanging off its corner', () => {
+  const pet = loadPet();
+  pet.run(`homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    drawPos = { x: 560, y: 310 };
+    charRect = { x: 0, y: 0, right: 240, bottom: 260 };
+    openPanel();`);
+  const r = pet.run('panelCloseRect()');
+  const p = pet.run('panel');
+  // Inside the card on every side: the old badge deliberately overhung the
+  // top-right corner, which read as a second control glued onto the card.
+  assert.ok(r.x >= p.x, '✕ starts at or after the card left edge');
+  assert.ok(r.x + r.w <= p.x + p.w, '✕ ends at or before the card right edge');
+  assert.ok(r.y >= p.y, '✕ starts at or below the card top edge');
+  assert.ok(r.y + r.h <= p.y + p.h, '✕ ends at or above the card bottom edge');
+  // It shares the header row rather than sitting above it.
+  assert.equal(r.y - p.y, 12, '✕ sits one pad below the card top, inside the header');
+});
+
+test('the ✕ is hidden until the pointer is over it, then highlights', () => {
+  const pet = loadPet();
+  pet.run(`homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    drawPos = { x: 560, y: 310 };
+    charRect = { x: 0, y: 0, right: 240, bottom: 260 };
+    openPanel();`);
+  assert.equal(pet.run('closeVisible'), false, 'hidden when the card was just opened');
+  assert.equal(pet.run('closeHover'), false, 'not emphasized when the card was just opened');
+  const r = pet.run('panelCloseRect()');
+  // Far from the ✕ but still on the card: quiet glyph, not emphasized.
+  pet.run(`onCursorMove(${r.x - 60}, ${r.y + 60}, 0)`);
+  assert.equal(pet.run('closeVisible'), true, 'a pointer elsewhere on the card reveals the quiet ✕');
+  assert.equal(pet.run('closeHover'), false, 'but does not emphasize it');
+  // On the ✕: emphasized.
+  pet.run(`onCursorMove(${r.x + r.w / 2}, ${r.y + r.h / 2}, 0)`);
+  assert.equal(pet.run('closeVisible'), true, 'still visible over the ✕');
+  assert.equal(pet.run('closeHover'), true, 'hovering the ✕ emphasizes it');
+  assert.equal(pet.run('panelCloseHit(' + (r.x + r.w / 2) + ',' + (r.y + r.h / 2) + ')'), true,
+    'and the same point is clickable');
+});
+
+test('right-click toggles the card and neutral clicks leave it open', () => {
+  const pet = loadPet();
+  pet.run(`drawPos = { x: 280, y: 200 };
+    homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    charRect = { x: 0, y: 0, right: 240, bottom: 260 };
+    growth = { points: 100, level: 1, levelName: '幼鲸', nextAt: 500, nextFeed: 10, tokensFed: 0, todayUsed: 0 };
+    petShell.getGrowth = () => Promise.resolve(growth);`);
+  pet.run('openPanel()');
+  assert.ok(pet.run('panel'));
+  // Right-button pointerdown must not pre-close: `contextmenu` owns the toggle
+  // and a pre-close would make the toggle reopen instead of close.
+  pet.run('onCanvasPointerDown({ target: canvas, button: 2, clientX: 300, clientY: 300 })');
+  assert.ok(pet.run('panel'), 'right pointerdown leaves the card open');
+  // A neutral click on the header (no chip, no feed button, no ✕) keeps it.
+  pet.run('onCanvasPointerDown({ target: canvas, button: 0,'
+    + ' clientX: panel.x + panel.w / 2, clientY: panel.y + PANEL_PAD + 9 })');
+  assert.ok(pet.run('panel'), 'header click is neutral');
+  // ... and so does a press on her body underneath the open card.
+  pet.run('onCanvasPointerDown({ target: canvas, button: 0, clientX: 300, clientY: 300 })');
+  assert.ok(pet.run('panel'), 'body press does not dismiss the card');
+  // The contextmenu toggle is the other explicit dismissal.
+  pet.run('togglePanel()');
+  assert.equal(pet.run('panel'), null, 'right-click toggle closes');
+  pet.run('togglePanel()');
+  assert.ok(pet.run('panel'), 'right-click toggle reopens');
+});
+
+test('sweeping the status card does not wake her or read as a head pat', () => {
+  const pet = loadPet();
+  pet.run(`drawPos = { x: 280, y: 200 };
+    homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    charRect = { x: 0, y: 0, right: 240, bottom: 260 };
+    sleeping = true;
+    openPanel();`);
+  assert.ok(pet.run('panel'));
+  for (let i = 0; i < 6; i += 1) {
+    pet.run(`onCursorMove(panel.x + 16 + ${(i % 2) * 44}, panel.y + 8, null)`);
+  }
+  assert.equal(pet.run('sleeping'), true, 'card hover does not wake her');
+  assert.equal(pet.run('patTrack.flips'), 0, 'card hover is not a head pat');
+  // Her body still wakes her.
+  pet.run('onCursorMove(drawPos.x + 120, drawPos.y + 130, null)');
+  assert.equal(pet.run('sleeping'), false, 'body hover still wakes her');
+});
+
+test('status card raster is rebuilt only when its content changes', () => {
+  const pet = loadPet();
+  pet.run(`drawPos = { x: 280, y: 200 };
+    homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    charRect = { x: 0, y: 0, right: 240, bottom: 260 };
+    growth = { points: 100, level: 1, levelName: '幼鲸', nextAt: 500, nextFeed: 10, tokensFed: 0, todayUsed: 0 };
+    stats = { satiety: 50, mood: 50, affectionLevel: 1, hearts: 2, affectionName: '熟悉', satietyLabel: '一般', moodLabel: '平静' };
+    petShell.getGrowth = () => Promise.resolve(growth);
+    globalThis.__paints = 0;
+    globalThis.__realDraw = drawPanel;
+    drawPanel = function () { __paints += 1; return __realDraw(); };
+    openPanel();`);
+  pet.flushFrames();
+  assert.ok(pet.run('panelCache.key'), 'raster built on open');
+  const key = pet.run('panelCache.key');
+  const paints = pet.run('__paints');
+  pet.run('blitPanel(); blitPanel()');
+  assert.equal(pet.run('panelCache.key'), key, 'unchanged content reuses the raster');
+  assert.equal(pet.run('__paints'), paints, 'no repaint for unchanged content');
+  pet.run('panel.hover = 1');
+  pet.run('blitPanel()');
+  assert.notEqual(pet.run('panelCache.key'), key, 'hover change invalidates the raster');
+  assert.equal(pet.run('__paints'), paints + 1, 'exactly one rebuild for the hover edge');
+});
+
 test('chat card anchors above her head and flips below at the top edge', () => {
   const pet = loadPet();
   pet.run(`drawPos = { x: 300, y: 300 };
@@ -1152,7 +1389,9 @@ test('panel action icon and label ink are independently centered', () => {
   };
   ctx.measureText = metrics;
   ctx.fillText = (text, x, y) => { drawn.push({ text, x, y, m: metrics(text) }); };
-  pet.run('settings.lookAvailable = true; openPanel()');
+  // `paint()` now blits the card from its cached raster; `drawPanel()` is the
+  // raw painter whose runs this test inspects.
+  pet.run('settings.lookAvailable = true; openPanel(); drawPanel()');
   const cells = pet.run('panel.cells');
   const p = pet.run('({ x: panel.x, y: panel.y, w: PANEL_CHIP_W, h: PANEL_CHIP_H, pad: PANEL_PAD, gap: PANEL_CHIP_GAP, top: PANEL_GRID_TOP })');
   for (const [i, cell] of cells.entries()) {
@@ -1385,7 +1624,8 @@ test('panel runs are optically centered on real ink boxes; chip icon+label group
       midY: (op.y - m.actualBoundingBoxAscent + op.y + m.actualBoundingBoxDescent) / 2,
     };
   };
-  pet.run('openPanel()');
+  // `paint()` blits the cached raster now; this test inspects the raw painter.
+  pet.run('openPanel(); drawPanel()');
   const CHIP_W = pet.run('PANEL_CHIP_W');
   const CHIP_H = pet.run('PANEL_CHIP_H');
   const GAP = pet.run('PANEL_CHIP_GAP');
@@ -1462,6 +1702,12 @@ test('notify bubble pins until the ✕ click — nothing preempts or expires it'
   pet.run('tickStill(performance.now())');
   assert.equal(pet.run('bubble.pinned'), true);
   // The pin paints and registers its ✕ hit box.
+  // A pinned bubble is pushed through the presentation owner, so its ink
+  // rect (and therefore its place in the interactive zone) only exists after
+  // the coalesced frame actually runs. Asserting before the frame ran tested
+  // the scheduler's timing, not the product contract.
+  pet.run('requestFrame()');
+  pet.flushFrames();
   pet.run('drawBubble(performance.now())');
   assert.ok(pet.run('bubbleCloseRect && bubbleCloseRect.w > 0'), '✕ hit box registered');
   // The bubble joins the interactive zone so the ✕ actually takes clicks.
@@ -1700,4 +1946,379 @@ test('autonomous sad and shy expressions follow mood and affection', () => {
   assert.equal(flourish(80, 0), 'happy-tail');
   assert.equal(flourish(80, 4), 'shy');
   assert.equal(flourish(20, 0), 'sad');
+});
+
+function preparePetMount(pet) {
+  pet.run(`
+    globalThis.__raf = [];
+    globalThis.__imageRequests = [];
+    requestAnimationFrame = (callback) => { __raf.push(callback); return __raf.length; };
+    // Browser image/network and backend creation are the boundaries; mount,
+    // the display callback, state ticking and canvas drawing remain real.
+    Image = class {
+      naturalWidth = 2; naturalHeight = 2;
+      set src(value) { __imageRequests.push(value); this.onload(); }
+    };
+    PetDialogue.load = async () => __dialogueStore;
+    setTimeout = () => 0;
+    FRAME = 2; CROP = { x: 0, y: 0, w: 2, h: 2 };
+    charRect = { x: 0, y: 0, right: 240, bottom: 260 };
+    ort = { Tensor: class { constructor(type, data) { this.data = data; } } };
+    createSession = async () => __session;
+    loadImageTensor = async () => ({});
+    initSr = () => {};
+    petShell.onMove = (callback) => { globalThis.__move = callback; };
+    globalThis.__session = { run: async () => ({ rgba_f: {
+      data: new Float32Array(16).fill(255), dispose() {}
+    } }) };
+  `);
+}
+
+test('mounted display loop commits once after state ticks, input and inference completion', async () => {
+  const pet = loadPet();
+  preparePetMount(pet);
+  pet.run(`
+    globalThis.__disposed = 0;
+    __session.run = () => new Promise((resolve) => { globalThis.__finishInference = resolve; });
+  `);
+  await pet.run('mount()');
+  pet.run(`petPerf.start();
+    pushBubble({ text: '保持显示', until: Infinity, priority: 1 });`);
+  assert.equal(pet.run('petPerf.snapshot().paint?.count || 0'), 0,
+    'input requests wait for the display callback');
+
+  pet.run('__raf.shift()(performance.now())');
+  assert.equal(pet.run('petPerf.snapshot().paint.count'), 1,
+    'tickStill and the display loop share one canvas commit');
+  assert.equal(pet.run('inferBusy'), true);
+
+  pet.run(`__move({ x: 120, y: 180 }); __move({ x: 160, y: 200 });
+    __finishInference({ rgba_f: {
+      data: new Float32Array(16).fill(255), dispose() { __disposed++; }
+    } });`);
+  await pet.run('Promise.resolve()');
+  assert.equal(pet.run('__disposed'), 1);
+  assert.equal(pet.run('inferBusy'), false);
+  assert.equal(pet.run('painted'), true, 'completed inference updates the available image');
+  assert.equal(pet.run('petPerf.snapshot().paint.count'), 1,
+    'input and inference completion do not add off-refresh commits');
+
+  pet.setNow(pet.now() + 16);
+  pet.canvas.ctx.ops.length = 0;
+  pet.run('__raf.shift()(performance.now())');
+  assert.equal(pet.run('petPerf.snapshot().paint.count'), 2);
+  assert.deepEqual(JSON.parse(pet.run('JSON.stringify(drawPos)')), { x: 160, y: 200 },
+    'the next refresh presents the latest input position');
+  assert.ok(pet.canvas.ctx.ops.some((op) => op[0] === 'drawImage'),
+    'the refresh draws the completed avatar image');
+  assert.equal(pet.run('__raf.length'), 1, 'the real display loop schedules its next refresh');
+});
+
+test('unchanged live refreshes keep the surface until inference or input changes it', async () => {
+  const pet = loadPet();
+  preparePetMount(pet);
+  pet.run(`__session.run = () => new Promise((resolve) => {
+    globalThis.__finishInference = resolve;
+  });`);
+  await pet.run('mount()');
+  pet.run('petPerf.start()');
+  pet.run('__raf.shift()(performance.now())');
+  pet.setNow(pet.now() + 6);
+  pet.run('__raf.shift()(performance.now())');
+  assert.equal(pet.run('inferBusy'), true);
+  assert.equal(pet.run('petPerf.snapshot().paint?.count || 0'), 0,
+    'an unchanged live image requires no canvas commit while inference is pending');
+
+  pet.run(`__finishInference({ rgba_f: {
+    data: new Float32Array(16).fill(255), dispose() {}
+  } });`);
+  await pet.run('Promise.resolve()');
+  assert.equal(pet.run('petPerf.snapshot().paint?.count || 0'), 0,
+    'inference completion waits for display refresh');
+  pet.setNow(pet.now() + 6);
+  pet.run('__raf.shift()(performance.now())');
+  assert.equal(pet.run('petPerf.snapshot().paint.count'), 1);
+
+  pet.setNow(pet.now() + 6);
+  pet.run('__raf.shift()(performance.now())');
+  assert.equal(pet.run('petPerf.snapshot().paint.count'), 1,
+    'the completed image is retained between inference frames');
+  pet.run('__move({ x: 180, y: 180 })');
+  assert.equal(pet.run('petPerf.snapshot().paint.count'), 1);
+  pet.setNow(pet.now() + 6);
+  pet.run('__raf.shift()(performance.now())');
+  assert.equal(pet.run('petPerf.snapshot().paint.count'), 2,
+    'an input position change commits on the next refresh');
+  pet.setNow(pet.now() + 6);
+  pet.run('__raf.shift()(performance.now())');
+  assert.equal(pet.run('petPerf.snapshot().paint.count'), 2,
+    'consuming an input update does not leave continuous redraw enabled');
+});
+
+test('sleep and carried animation still commit at every mounted display refresh', async () => {
+  for (const state of ['sleep', 'pick-up']) {
+    const pet = loadPet();
+    preparePetMount(pet);
+    pet.run('__session.run = () => new Promise(() => {})');
+    await pet.run('mount()');
+    pet.run(`setStill('${state}'); stillCtl.alpha = 1;
+      sleeping = ${state === 'sleep'};
+      dragging = ${state === 'pick-up'}; dragMoved = dragging;
+      tickStill._nextZzz = Infinity;
+      pointer.x = -1000; pointer.y = -1000; petPerf.start();`);
+    for (let refresh = 1; refresh <= 3; refresh++) {
+      pet.setNow(pet.now() + 6);
+      pet.run('__raf.shift()(performance.now())');
+      assert.equal(pet.run('petPerf.snapshot().paint.count'), refresh,
+        `${state} transforms must be drawn every refresh while inference is pending`);
+    }
+  }
+});
+
+test('mounted refresh clears the final bubble and particle without a completed inference', async () => {
+  for (const transient of ['bubble', 'particle']) {
+    const pet = loadPet();
+    preparePetMount(pet);
+    pet.run('__session.run = () => new Promise(() => {})');
+    await pet.run('mount()');
+    pet.run('petPerf.start()');
+    if (transient === 'bubble') {
+      pet.run('pushBubble({ text: "短暂气泡", until: performance.now() + 10, priority: 1 })');
+    } else {
+      pet.run(`spawn('star', 80, 80, 0, 0);
+        particles[0].born = performance.now() - 200; particles[0].life = 210;`);
+    }
+    pet.run('__raf.shift()(performance.now())');
+    assert.equal(pet.run('petPerf.snapshot().paint.count'), 1);
+    const rectName = transient === 'bubble' ? 'lastBubbleRect' : 'lastParticleRect';
+    const previousRect = JSON.parse(pet.run(`JSON.stringify(${rectName})`));
+    assert.ok(previousRect, `${transient} has an ink region to clear`);
+
+    pet.setNow(pet.now() + 16);
+    pet.canvas.ctx.ops.length = 0;
+    pet.run('__raf.shift()(performance.now())');
+    assert.equal(pet.run('inferBusy'), true);
+    assert.equal(pet.run('petPerf.snapshot().paint.count'), 2,
+      `${transient} expiration needs a final cleanup commit`);
+    assert.equal(pet.run(rectName), null);
+    assert.ok(pet.canvas.ctx.ops.some((op) => op[0] === 'clearRect'
+      && op[1] === previousRect.x && op[2] === previousRect.y
+      && op[3] === previousRect.w && op[4] === previousRect.h),
+    `${transient}'s old ink is cleared at its recorded bounds`);
+
+    pet.setNow(pet.now() + 16);
+    pet.run('__raf.shift()(performance.now())');
+    assert.equal(pet.run('petPerf.snapshot().paint.count'), 2,
+      `after ${transient} cleanup, unchanged live refreshes stop committing`);
+  }
+});
+
+test('a star at maximum right sway fits its recorded clear region through expiry', async () => {
+  const pet = loadPet();
+  preparePetMount(pet);
+  pet.run('__session.run = () => new Promise(() => {})');
+  await pet.run('mount()');
+  pet.run(`spawn('star', 80, 80, 0, 0);
+    particles[0].seed = Math.PI / 2;
+    // One full sway period keeps the phase at PI/2 while the normal
+    // 1400ms particle is visible, rather than testing its transparent birth.
+    particles[0].born = performance.now() - Math.PI * 2 * 120;`);
+  pet.canvas.ctx.ops.length = 0;
+  pet.run('__raf.shift()(performance.now())');
+  const star = pet.canvas.ctx.ops.find((op) => op[0] === 'fillText' && op[1] === '★');
+  assert.ok(star, 'the actual canvas painter draws the star');
+  assert.ok(Math.abs(star[2] - 98) < 0.001, 'the glyph starts 18px right of its nominal center');
+  const region = JSON.parse(pet.run('JSON.stringify(lastParticleRect)'));
+  const glyphRight = star[2] + pet.canvas.ctx.measureText('★').width;
+  assert.ok(glyphRight + 1 <= region.x + region.w,
+    'the clear region contains the rightward glyph ink and antialiasing');
+
+  pet.setNow(pet.run('particles[0].born + particles[0].life + 1'));
+  pet.canvas.ctx.ops.length = 0;
+  pet.run('__raf.shift()(performance.now())');
+  assert.equal(pet.run('inferBusy'), true, 'cleanup does not depend on a new inference image');
+  assert.equal(pet.run('particles.length'), 0);
+  assert.equal(pet.run('lastParticleRect'), null);
+  assert.ok(pet.canvas.ctx.ops.some((op) => op[0] === 'clearRect'
+    && op[1] === region.x && op[2] === region.y && op[3] === region.w && op[4] === region.h),
+  'expiry clears the entire previously painted star region');
+});
+
+test('mount decodes only the panel avatar and failed engines retain lazy action images', async () => {
+  const pet = loadPet();
+  preparePetMount(pet);
+  await pet.run('mount()');
+  assert.deepEqual(Array.from(pet.run('__imageRequests')), [
+    'pet://pet/pet-live2d/states/greet.webp',
+  ]);
+  pet.run('setStill("eat")');
+  assert.equal(pet.run('__imageRequests.length'), 1,
+    'the live engine does not decode unused action images');
+  pet.run('session = null; rig.ready = false; setStill("eat")');
+  await pet.run('Promise.resolve().then(() => {}).then(() => {})');
+  assert.deepEqual(Array.from(pet.run('__imageRequests')), [
+    'pet://pet/pet-live2d/states/greet.webp',
+    'pet://pet/pet-live2d/states/eat.webp',
+  ]);
+  assert.equal(pet.run('stillCtl.entry === stills.get("eat")'), true,
+    'the fallback action receives its decoded image');
+  pet.run('setStill("eat")');
+  assert.equal(pet.run('__imageRequests.length'), 2, 'the decoded fallback image is reused');
+});
+
+test('inference readback failure disposes every output and releases the busy guard', async () => {
+  const pet = loadPet();
+  pet.run(`
+    FRAME = 1; allocOutput();
+    globalThis.__disposed = []; globalThis.__writes = 0; globalThis.__warnings = [];
+    outCtx.putImageData = () => { __writes++; };
+    console = { ...console, warn: (...args) => { __warnings.push(args); } };
+    ort = { env: { webgpu: { device: { queue: { writeBuffer() {} } } } } };
+    sessionOnGpu = true; poseGpuBuffer = {}; poseTensor = {}; imageTensor = {};
+    session = { run: async () => ({
+      rgba_f: { getData: async () => { throw new Error('readback failed'); },
+        dispose() { __disposed.push('rgba_f'); } },
+      intermediate: { dispose() { __disposed.push('intermediate'); } }
+    }) };
+  `);
+  await pet.run('renderFrame()');
+  assert.deepEqual(Array.from(pet.run('__disposed')), ['rgba_f', 'intermediate']);
+  assert.equal(pet.run('inferBusy'), false, 'another inference can run after a failed readback');
+  assert.equal(pet.run('__writes'), 0, 'a failed readback preserves the previous display image');
+  assert.equal(pet.run('__warnings.length'), 1, 'the failure remains observable');
+});
+
+test('transparent frames preserve the displayed image using quantized alpha and dispose outputs', async () => {
+  const pet = loadPet();
+  pet.run(`
+    FRAME = 1; CROP = { x: 0, y: 0, w: 1, h: 1 }; allocOutput();
+    charRect = { x: 0, y: 0, right: 240, bottom: 260 };
+    renderLoopActive = true; painted = true;
+    globalThis.__alpha = 0; globalThis.__writes = 0; globalThis.__srFrames = 0;
+    globalThis.__disposed = [];
+    outCtx.putImageData = () => { __writes++; };
+    srFrame = () => { __srFrames++; };
+    ort = { Tensor: class { constructor(type, data) { this.data = data; } } };
+    session = { run: async () => ({
+      rgba_f: { data: new Float32Array([95.5, -2, 260, __alpha]),
+        dispose() { __disposed.push('rgba_f'); } },
+      intermediate: { dispose() { __disposed.push('intermediate'); } }
+    }) };
+  `);
+  for (const [alpha, quantized, expectedWrites] of [
+    [3.49, 3, 0], [3.5, 4, 1], [0, 0, 1],
+  ]) {
+    pet.run(`__alpha = ${alpha}`);
+    await pet.run('renderFrame()');
+    assert.deepEqual(Array.from(pet.run('outImage.data')), [96, 0, 255, quantized]);
+    assert.equal(pet.run('__writes'), expectedWrites,
+      `alpha ${alpha} must use the display buffer's quantized transparency threshold`);
+    assert.equal(pet.run('__srFrames'), expectedWrites,
+      'transparent frames do not replace the upscaled display image');
+    assert.equal(pet.run('inferBusy'), false);
+  }
+  assert.deepEqual(Array.from(pet.run('__disposed')),
+    ['rgba_f', 'intermediate', 'rgba_f', 'intermediate', 'rgba_f', 'intermediate']);
+  assert.equal(pet.run('painted'), true, 'transparent frames retain the existing visible image');
+});
+// ── presentation ownership ──
+// The 15 ms presentation budget used to be cosmetic: 22 producers called
+// paint() directly, so the pet composited ~87 times a second on a 15 ms
+// budget. These tests pin the contract that ONE owner gates presentations and
+// that a burst of producers collapses into a single frame.
+test('diagnostic presentation budget is applied by the single refresh owner', () => {
+  const pet = loadPet();
+  pet.run('painted = true; settings = settings || {}; __paints = 0;'
+    + ' __setPerfOverrides({ presentPerSecond: 30 });'
+    + ' __realPaint = paintFrame;'
+    + ' paintFrame = function () { __paints += 1; return __realPaint(); };');
+  // A 60 Hz display for one second: 60 rAF ticks, and a producer asking for a
+  // frame on EVERY one of them.
+  for (let i = 0; i < 60; i += 1) {
+    pet.flushFrames(1, 16);
+    pet.run('requestFrame()');
+  }
+  pet.flushFrames(1, 16);
+  const paints = pet.run('__paints');
+  assert.ok(paints > 0, 'presentations still happen');
+  assert.ok(paints <= 31, `explicit 30fps diagnostic budget respected, got ${paints}`);
+});
+
+test('a burst of producer requests coalesces into one pending presentation', () => {
+  const pet = loadPet();
+  pet.run('painted = true; settings = settings || {}; __paints = 0;'
+    + ' __realPaint = paintFrame;'
+    + ' paintFrame = function () { __paints += 1; return __realPaint(); };');
+  pet.run('requestFrame(); requestFrame(); requestFrame(); requestFrame();');
+  pet.flushFrames(1, 16);
+  assert.equal(pet.run('__paints'), 1, 'four requests, one presentation');
+});
+
+test('diagnostic overrides drive the budgets and restore to shipped defaults', () => {
+  const pet = loadPet();
+  const applied = pet.run('__setPerfOverrides({ presentPerSecond: 30, inferPerSecond: 10, superResolution: false })');
+  assert.equal(applied.presentPerSecond, 30);
+  assert.equal(applied.inferPerSecond, 10);
+  assert.equal(applied.superResolution, false);
+  pet.setNow(100000);
+  assert.ok(Math.abs(pet.run('presentCeilingMs(100000)') - 1000 / 30) < 0.001,
+    'presentation override applies');
+  assert.ok(Math.abs(pet.run('inferenceGapMs(100000)') - 1000 / 10) < 0.001,
+    'inference override applies');
+  const restored = pet.run('__setPerfOverrides({})');
+  assert.equal(restored.presentPerSecond, null);
+  assert.equal(restored.inferPerSecond, null);
+  assert.equal(restored.superResolution, null);
+  assert.equal(pet.run('presentCeilingMs(100000)'), 0,
+    'default presentations follow display refresh without a separate ceiling');
+  pet.run('settings.powerSave = true; idle.lastInteract = 0;');
+  assert.equal(pet.run('presentCeilingMs(400000)'), 0,
+    'power saving does not throttle presentation');
+  assert.equal(pet.run('inferenceGapMs(400000)'), 110,
+    'power saving only lowers the inference cadence');
+  pet.run('settings.powerSave = false;');
+  assert.ok(Math.abs(pet.run('inferenceGapMs(100000)') - 50) < 0.001,
+    'shipped inference default restored');
+});
+
+test('every panel close names its reason so an unexplained close is provable', () => {
+  const pet = loadPet();
+  pet.run('panel = { x: 10, y: 10, w: 100, h: 100, cells: [], hover: -1, feedHover: false };'
+    + ' closePanel("unit-test");');
+  const entries = pet.run('panelTrace.entries.map((e) => e.event + ":" + e.detail)');
+  assert.ok(entries.includes('close:unit-test'), 'close reason recorded');
+  // Bounded: a long soak must not grow the trace without limit.
+  pet.run('for (let i = 0; i < 200; i += 1) { tracePanel("open", { i }); }');
+  const len = pet.run('panelTrace.entries.length');
+  assert.ok(len <= 120, `trace bounded, got ${len}`);
+});
+
+test('perf counts keep counting after the timing-sample cap is reached', () => {
+  const pet = loadPet();
+  pet.run('window.__dshdPetPerf.start();');
+  pet.run('for (let i = 0; i < 60001; i += 1) { petPerf.bump("probe");'
+    + ' petPerf.record("probeMs", 1); }');
+  const snap = pet.run('window.__dshdPetPerf.snapshot()');
+  assert.equal(snap.counts.probe, 60001, 'count is exact');
+  assert.equal(snap.probeMs.count, 60001, 'timing count remains exact beyond the sample capacity');
+  pet.run('window.__dshdPetPerf.stop()');
+});
+
+test('status-card hover preserves separate body gestures and default display refresh', () => {
+  const pet = loadPet();
+  pet.run('homeRect = { x: 0, y: 0, width: 800, height: 600 };'
+    + ' drawPos = { x: 560, y: 310 }; charRect = { x: 0, y: 0, right: 240, bottom: 260 };'
+    + ' openPanel();');
+  const cardX = pet.run('panel.x + panel.w / 2');
+  const cardY = pet.run('panel.y + panel.h / 2');
+  pet.run(`onCursorMove(${cardX}, ${cardY}, 0)`);
+  const t = pet.now();
+  assert.equal(pet.run(`overBody(${cardX}, ${cardY})`), false, 'the card is not her body');
+  assert.equal(pet.run(`presentCeilingMs(${t})`), 0,
+    'card hover follows display refresh');
+  const bodyX = pet.run('drawPos.x + 40');
+  const bodyY = pet.run('drawPos.y + 40');
+  pet.run(`onCursorMove(${bodyX}, ${bodyY}, 0)`);
+  assert.equal(pet.run(`presentCeilingMs(${t})`), 0,
+    'body interaction follows display refresh');
 });

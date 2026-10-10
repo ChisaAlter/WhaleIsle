@@ -1092,6 +1092,36 @@ test('cursor pump pushes window-local positions and dedupes', (t) => {
   assert.deepEqual(deps.win.sends.at(-1), ['shell:live2d-cursor', { inside: true, x: 10, y: 10 }]);
 });
 
+test('cursor pump reads displays only until the renderer reports body bounds', (t) => {
+  let point = { x: 50, y: 60 };
+  const deps = live2dDeps({
+    sessionsDir: '',
+    loadConfig: () => ({ live2dPet: { x: 10, y: 10 } }),
+  });
+  deps.electron.screen.getCursorScreenPoint = () => point;
+  const manager = createLive2dPetManager(deps);
+  t.after(() => manager.dispose());
+  manager.show();
+  const primaryDisplay = t.mock.method(deps.electron.screen, 'getPrimaryDisplay');
+  const allDisplays = t.mock.method(deps.electron.screen, 'getAllDisplays');
+  manager.pollCursor();
+  assert.equal(primaryDisplay.mock.callCount(), 1, 'fallback position uses the current primary display');
+  assert.equal(allDisplays.mock.callCount(), 1, 'fallback position validates the saved coordinates');
+  assert.equal(manager.isInteractive(), true, 'fallback body bounds hold hover before the renderer reports');
+
+  deps.electron.ipcMain.handlers.get('shell:live2d-roam')(
+    authorizedEvent(deps), { x: 150, y: 150, w: 50, h: 50 });
+  manager.pollCursor();
+  assert.equal(manager.isInteractive(), false, 'reported body bounds replace the fallback hover zone');
+  point = { x: 170, y: 170 };
+  for (let i = 0; i < 30; i += 1) {
+    manager.pollCursor();
+  }
+  assert.equal(manager.isInteractive(), true, 'reported body bounds remain interactive');
+  assert.equal(primaryDisplay.mock.callCount(), 1, 'reported bounds avoid repeated primary display reads');
+  assert.equal(allDisplays.mock.callCount(), 1, 'reported bounds avoid repeated display enumeration');
+});
+
 test('cursor hold keeps the window clickable inside the padded pet frame', (t) => {
   let point = { x: 50, y: 60 };
   const deps = live2dDeps({
@@ -1139,6 +1169,46 @@ test('cursor hold releases close to the reported body instead of swallowing near
   manager.pollCursor();
   assert.deepEqual(deps.win.ignoreCalls.at(-1), [false, undefined]);
   point = { x: 70, y: 50 };
+  manager.pollCursor();
+  assert.deepEqual(deps.win.ignoreCalls.at(-1), [true, { forward: true }]);
+});
+
+test('cursor hold follows the reported hit islands onto the status card', (t) => {
+  let point = { x: 150, y: 150 };
+  const deps = live2dDeps({
+    sessionsDir: '',
+    loadConfig: () => ({ live2dPet: { x: 10, y: 10 } }),
+  });
+  deps.electron.screen.getCursorScreenPoint = () => point;
+  const manager = createLive2dPetManager(deps);
+  t.after(() => manager.dispose());
+  manager.show();
+  // Body island on the left; the status card is a SEPARATE island to its
+  // right, exactly like the renderer reports them.
+  deps.electron.ipcMain.handlers.get('shell:live2d-roam')(
+    authorizedEvent(deps), { x: 10, y: 20, w: 30, h: 40 });
+  deps.electron.ipcMain.handlers.get('shell:live2d-interactive')(authorizedEvent(deps), {
+    hitRegions: [
+      { x: 10, y: 20, width: 30, height: 40 },
+      { x: 100, y: 90, width: 80, height: 120 },
+    ],
+  });
+  deps.win.ignoreCalls.length = 0;
+  // Over the CARD, well outside the body hold zone — still interactive, so
+  // stepping off her onto the card never drops the window's input.
+  manager.pollCursor();
+  assert.deepEqual(deps.win.ignoreCalls.at(-1), [false, undefined]);
+  // The transparent gap between the two islands stays click-through.
+  point = { x: 60, y: 150 };
+  manager.pollCursor();
+  assert.deepEqual(deps.win.ignoreCalls.at(-1), [true, { forward: true }]);
+  point = { x: 150, y: 150 };
+  manager.pollCursor();
+  assert.deepEqual(deps.win.ignoreCalls.at(-1), [false, undefined]);
+  // Stale islands are dropped when the card closes → the hold releases.
+  deps.electron.ipcMain.handlers.get('shell:live2d-interactive')(authorizedEvent(deps), {
+    hitRegions: [{ x: 10, y: 20, width: 30, height: 40 }],
+  });
   manager.pollCursor();
   assert.deepEqual(deps.win.ignoreCalls.at(-1), [true, { forward: true }]);
 });
