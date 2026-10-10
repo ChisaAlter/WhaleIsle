@@ -51,7 +51,6 @@
 }
 
 body {
-  --dsw-alias-bg-panel-solid: rgb(from var(--dsw-alias-bg-layer-2) r g b / 1);
   --dsw-alias-settings-card-fill: var(--dsw-alias-bg-layer-2);
   --dsw-alias-settings-card-stroke: var(--dsw-alias-border-l4);
 }

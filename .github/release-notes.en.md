@@ -1,7 +1,9 @@
-- **Conversations and files**: Refined titles, tabs and context controls; restored archive filters and in-app previews; improved narrow-window layouts.
-- **WhaleBridge**: Install through the launcher and manage providers, subscriptions, multiple keys, models and routes, with clearer authorization results.
-- **Startup and recovery**: Improved component management and progress feedback. Failed plugins can be disabled before restarting, preserving user data.
-- **Whale assistant**: Fixed memory, reminders, shared conversations and failed-turn records; added thinking animation and a smoother startup transition.
-- **Updates and compatibility**: Moved the domestic update channel to CNB, fixed installation migration, rollback and plugin compatibility, and integrated Harness `0.2.1-alpha.1`.
+- **Sidebar and glass**: The More hover area fills the footer when no status action is shown. Settings, menus and dialogs respond to glass opacity.
+- **Windows and shutdown**: Transparent windows retain native Windows maximize, restore and minimize animations, with fixes for shutdown flashes and resource cleanup.
+- **Conversations and files**: Approval cards match the resident composer dimensions, with performance improvements for large tables, highlighting, file previews and session queries.
+- **Updates and recovery**: Unified connection and update controls, explicit differential or full downloads, and improved installation detection, shutdown and failure recovery.
+- **Whale assistant**: Reduced idle rendering, repeated parsing and output overhead while preserving interaction responsiveness and cleaning up resources on exit.
+- **Optional visual replies**: Added generated page replies, disabled by default, with isolated previews and retained conversation attachments.
+- **WhaleBridge source**: Fixed quota displays and asynchronous editing state. The component remains separately built and is not bundled with the desktop installer.
 
-Windows 10 or later x64 only; existing installations support in-place upgrades. Project mode (the local coordinator and persistent workers) is excluded. WhaleBridge `1.1.0` is an optional launcher-installed component that runs and updates independently; it is not bundled in the desktop installer.
+Windows 10 or later x64 only; existing installations support in-place upgrades. Project mode (the local coordinator and persistent workers) is excluded. Harness remains at `0.2.1-alpha.1`. WhaleBridge is an optional launcher-installed component that runs and updates independently.
