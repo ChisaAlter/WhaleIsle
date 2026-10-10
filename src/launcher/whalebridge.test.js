@@ -57,10 +57,16 @@ test('manifest refuses substituted asset, invalid version, digest and missing li
 
 test('remote catalog requests CNB JSON and keeps assets on the selected route', async t => {
   const f = fixture(t);
-  const config = require('../main/config');
   const { ROUTES } = require('./release-source');
   let route;
-  t.mock.method(config, 'loadConfig', () => ({ downloadRoute: route }));
+  const configPath = require.resolve('../main/config');
+  const previousConfig = require.cache[configPath];
+  // The native-component workflow runs without desktop/Electron dependencies.
+  require.cache[configPath] = { exports: { loadConfig: () => ({ downloadRoute: route }) } };
+  t.after(() => {
+    if (previousConfig) require.cache[configPath] = previousConfig;
+    else delete require.cache[configPath];
+  });
   const requests = [];
   t.mock.method(global, 'fetch', async (url, options) => {
     requests.push(url);

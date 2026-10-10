@@ -17,7 +17,7 @@ function rule(css: string, selector: string): string {
 describe('conversation width handle styles', () => {
   it('keeps the gutter hit target narrow', () => {
     const handle = rule(conversationCss, '.widthHandle')
-    const width = /width:\s*([^;]+);/s.exec(handle)?.[1].replace(/\s+/g, '')
+    const width = /width:\s*([^;]+);/s.exec(handle)?.[1]?.replace(/\s+/g, '')
     // Never wider than 10px; collapse to zero when the content column leaves
     // no room for the 24px inner inset and 24px outer safe zone.
     expect(width).toBe(

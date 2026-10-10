@@ -1,37 +1,34 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { CommandDefinition } from '@deepseek-ai/dsh-commands'
-import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import * as SessionLogDownload from '../src/index.ts'
-import { SESSION_LOG_EXPORT_SETTINGS_NAMESPACE } from '../src/export-settings.ts'
-
-class MemorySettings extends SettingsProvider {
-  readonly writable = true
-  protected load(): Promise<Record<string, unknown>> { return Promise.resolve({}) }
-  protected persist(_ns: SettingsNamespace, _section: Record<string, unknown>): Promise<void> {
-    return Promise.resolve()
-  }
-}
 
 describe('session-log-export host', () => {
-  it('registers, validates, and disposes the titlebar Session-log visibility preference', async () => {
+  it('validates the titlebar visibility preference in the plugin Config', () => {
+    expect(SessionLogDownload.Config({}).titlebarAction).toBe(false)
+    for (const titlebarAction of [false, true]) {
+      expect(SessionLogDownload.Config({ titlebarAction }).titlebarAction).toBe(titlebarAction)
+    }
+    expect(() => SessionLogDownload.Config({ titlebarAction: 'no' } as never)).toThrow()
+  })
+
+  it('registers and disposes the export command independently of titlebar visibility', async () => {
     const ctx = new Context()
+    const commands = new Set<CommandDefinition>()
     ctx.provide('commands', {
-      register(_next: CommandDefinition) {
-        return () => {}
+      register(next: CommandDefinition) {
+        commands.add(next)
+        return () => { commands.delete(next) }
       },
     } as never)
     ctx.provide('connection', {
       fetch: { register() { return async () => {} } },
     } as never)
-    await ctx.plugin(MemorySettings).await()
-    const fiber = await ctx.plugin(SessionLogDownload)
-    const ns = SESSION_LOG_EXPORT_SETTINGS_NAMESPACE
-    expect(ctx.settings.get(ns)).toEqual({ titlebarAction: false })
-    await ctx.settings.update(ns, { titlebarAction: false })
-    expect(ctx.settings.get(ns)).toEqual({ titlebarAction: false })
-    await expect(ctx.settings.update(ns, { titlebarAction: 'no' })).rejects.toThrow()
-    await fiber.dispose()
-    expect(ctx.settings.describe().map(row => row.ns)).not.toContain(ns)
+    for (const titlebarAction of [false, true]) {
+      const fiber = await ctx.plugin(SessionLogDownload, { titlebarAction })
+      expect([...commands].map(command => command.name)).toEqual(['export'])
+      await fiber.dispose()
+      expect(commands.size).toBe(0)
+    }
   })
 })
