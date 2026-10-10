@@ -38,7 +38,7 @@
 }
 
 .init:disabled {
-  color: var(--dsw-alias-label-dimmed);
+  color: var(--dsw-alias-label-secondary);
   cursor: not-allowed;
 }
 
@@ -92,7 +92,8 @@
 
 .primary:disabled,
 .chevron:disabled {
-  color: var(--dsw-alias-label-dimmed);
+  /* Keep disabled icons and text legible on the transparent titlebar. */
+  color: var(--dsw-alias-label-secondary);
   cursor: not-allowed;
 }
 
