@@ -51,6 +51,7 @@ const STREAM_DELTA_COUNT = 120
 const COMPARISON_TURNS = 8
 const COMPARISON_DELTA_COUNT = 24
 const COMPARISON_TOOL_INTERVAL = 3
+const CONTINUATION_SHELL_TOOL = process.platform === 'win32' ? 'pwsh' : 'bash'
 const SOAK_TURNS = 100
 const POST_SOAK_RENDER_TURN = SOAK_TURNS + 1
 const SOAK_DELTA_COUNT = 8
@@ -336,13 +337,13 @@ function smallSidebarFixture(): string {
   session.append('turn/start', {
     turn: 1,
   })
+  session.append('step/start', { turn: 1, step: 1 })
+  appendSystemPrompt(session, 1, 1)
   const user = session.append('user/message', createUserMessage({
     content: text('Inspect this compact synthetic session.'),
     source: { kind: 'user' },
   }), { surfaceOp: 'append' })
   appendTitle(session, 'Synthetic sidebar session', user.seq)
-  session.append('step/start', { turn: 1, step: 1 })
-  appendSystemPrompt(session, 1, 1)
   appendRequestHeader(session, 1, 1)
   appendToolStep(session, 1, 1, 2)
   session.append('step/end', { turn: 1, step: 1 })
@@ -360,6 +361,8 @@ function longHistoryFixture(): string {
     session.append('turn/start', {
       turn,
     })
+    session.append('step/start', { turn, step: 1 })
+    if (turn === 1) appendSystemPrompt(session, turn, 1)
     const user = session.append('user/message', createUserMessage({
       content: text(
         `LONG_PERF_SENTINEL turn ${String(turn)}: analyze payload ${'u'.repeat(200)}`,
@@ -368,8 +371,6 @@ function longHistoryFixture(): string {
     }), { surfaceOp: 'append' })
     if (turn === 1) appendTitle(session, LONG_SESSION_TITLE, user.seq)
 
-    session.append('step/start', { turn, step: 1 })
-    if (turn === 1) appendSystemPrompt(session, turn, 1)
     appendRequestHeader(session, turn, 1)
     if (turn % TOOL_TURN_INTERVAL === 0) {
       appendToolStep(session, turn, 1, TOOLS_PER_TOOL_TURN)
@@ -484,7 +485,9 @@ function soakTurn(index: number): ConversationTurnSpec {
 function toolStream(index: number, marker: string): StreamChunk[] {
   const callId = ToolCallId(`performance-tool-${marker.toLowerCase()}-${String(index)}`)
   const args = JSON.stringify({
-    command: `printf '${marker}\\n'`,
+    command: CONTINUATION_SHELL_TOOL === 'pwsh'
+      ? `Write-Output '${marker}'`
+      : `printf '${marker}\\n'`,
     description: `Emit performance marker ${String(index)}`,
   })
   return [
@@ -493,13 +496,13 @@ function toolStream(index: number, marker: string): StreamChunk[] {
       type: 'tool-call-delta',
       index: 0,
       id: callId,
-      name: 'bash',
+      name: CONTINUATION_SHELL_TOOL,
       argumentsDelta: args,
     },
     {
       type: 'block-end',
       index: 0,
-      block: { type: 'tool-call', id: callId, name: 'bash', arguments: args },
+      block: { type: 'tool-call', id: callId, name: CONTINUATION_SHELL_TOOL, arguments: args },
     },
     { type: 'usage', usage: { inputTokens: 256, outputTokens: 32 } },
     { type: 'finish', reason: { kind: 'tool-calls' } },
@@ -859,14 +862,19 @@ async function launchPerformanceWorld(
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => {
       sessionEvents.push(event)
     })
+    const seededSessionIds: SessionId[] = []
     if ((options.sidebarSessions ?? 0) > 0) {
       const small = smallSidebarFixture()
       for (let index = 0; index < (options.sidebarSessions ?? 0); index += 1) {
-        await seedSession(scaffold, small, `perf-sidebar-${String(index).padStart(4, '0')}`)
+        seededSessionIds.push(await seedSession(scaffold, small, `perf-sidebar-${String(index).padStart(4, '0')}`))
       }
     }
     if (options.seedLongHistory === true) {
-      await seedSession(scaffold, longHistoryFixture(), LONG_SESSION_ID)
+      seededSessionIds.push(await seedSession(scaffold, longHistoryFixture(), LONG_SESSION_ID))
+    }
+    if (seededSessionIds.length > 0) {
+      const workspace = await scaffold.ctx.workspaceRegistry.create(scaffold.workspaceCwd)
+      for (const sessionId of seededSessionIds) await workspace.attachSession(sessionId)
     }
     const setupMs = performance.now() - setupStarted
     page = await newEnglishPage(options.browser)
@@ -924,15 +932,17 @@ async function openPerformancePage(
 ): Promise<Locator> {
   await world.page.goto(world.scaffold.authenticatedUrl, { waitUntil: 'load' })
   await world.page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-  const group = world.page.getByRole('treeitem').first()
-  await expect.poll(() => group.textContent(), { timeout: 30_000 })
-    .toContain(`${String(expectedSessions)} ${expectedSessions === 1 ? 'session' : 'sessions'}`)
+  const workspace = await world.scaffold.ctx.workspaceRegistry.resolveByPath(world.scaffold.workspaceCwd)
+  if (workspace === undefined) throw new Error('performance workspace was not registered')
+  expect(workspace.sessionIds.length).toBe(expectedSessions)
+  const group = world.page.locator(`[data-row-key="workspace:${String(workspace.id)}"]`)
+  await group.waitFor({ state: 'visible', timeout: 30_000 })
   return group
 }
 
 async function openLongHistory(page: Page): Promise<number> {
-  await page.getByRole('textbox', { name: 'Search name, keywords...', exact: true })
-    .fill('LONG_PERF_SENTINEL')
+  await page.getByRole('button', { name: 'Search sessions', exact: true }).click()
+  await page.getByPlaceholder('Search session names', { exact: true }).fill('LONG_PERF_SENTINEL')
   const results = page.getByRole('tree', { name: 'Search results' }).getByRole('treeitem')
   await expect.poll(() => results.count(), { timeout: 60_000 }).toBe(1)
   await results.first().click()
@@ -1004,7 +1014,7 @@ async function continueConversation(
     expect(toolCalls).toHaveLength(toolTurn ? 1 : 0)
     expect(toolResults).toHaveLength(toolTurn ? 1 : 0)
     if (spec.toolResultMarker !== undefined) {
-      expect(toolCalls[0]?.data.name).toBe('bash')
+      expect(toolCalls[0]?.data.name).toBe(CONTINUATION_SHELL_TOOL)
       const toolResult = toolResults[0]
       if (toolResult?.type !== 'tool/result') {
         throw new Error(`continued turn ${String(index)} did not log its tool result`)
@@ -1365,12 +1375,15 @@ describe('manual web performance: complex workspace and history', () => {
       replay: performanceReplayOverride(COMPARISON_TURNS, comparisonTurn),
       seedLongHistory: true,
     })
+    const failures: unknown[] = []
+    const historyPages: { turns: number; measurement: Measurement }[] = []
+    let initialTurns: number | undefined
     try {
       await openPerformancePage(world, 1)
       const cdp = await world.page.context().newCDPSession(world.page)
       await cdp.send('Performance.enable')
-      expect(await openLongHistory(world.page)).toBe(DEFAULT_HISTORY_TURNS)
-      const historyPages: { turns: number; measurement: Measurement }[] = []
+      initialTurns = await openLongHistory(world.page)
+      expect(initialTurns).toBe(DEFAULT_HISTORY_TURNS)
       let turns = DEFAULT_HISTORY_TURNS
       while (turns < LONG_HISTORY_TURNS) {
         const previousTurns = turns
@@ -1400,9 +1413,32 @@ describe('manual web performance: complex workspace and history', () => {
       }, null, 2)}`)
       expect(world.tripwire.warnings).toEqual([])
       expect(world.tripwire.pageErrors).toEqual([])
+    } catch (error) {
+      failures.push(error)
+      console.error('WEB_PERF_PRIMARY_FAILURE', error)
+      console.info(`WEB_PERF_PARTIAL ${JSON.stringify({
+        scenario: 'expanded-history-500-plus-8',
+        status: 'partial',
+        setupMs: rounded(world.setupMs),
+        replayContextWindow: PERF_REPLAY_CONTEXT_WINDOW,
+        initialTurns,
+        historyPages,
+      }, null, 2)}`)
+      try {
+        console.error(`WEB_PERF_FAILURE_PAGE ${JSON.stringify({
+          body: await world.page.evaluate(() => document.body.innerText),
+          warnings: world.tripwire.warnings,
+          pageErrors: world.tripwire.pageErrors,
+          toolEvents: world.sessionEvents.filter(event => event.type === 'tool/call' || event.type === 'tool/result'),
+        })}`)
+      } catch (diagnosticError) {
+        failures.push(diagnosticError)
+      }
     } finally {
-      await closePerformanceWorld(world)
+      await closePerformanceWorld(world).catch((error: unknown) => failures.push(error))
     }
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, 'web performance scenario and cleanup failed')
   })
 
   it('reports one hundred generated turns and the next user-message paint', async () => {

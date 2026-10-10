@@ -71,7 +71,7 @@ test('real WhaleBridge account UI retains connection feedback and consistent res
       ['claude', 'codex', 'cursor'],
       ['claude', 'codex', 'cursor', 'cursor-plugin'],
     ], 'the adapter API actually changes the HTTP catalog fixture');
-    assert.deepEqual(result.installs.map(call => call.body), [{ id: 'cursor' }, { id: 'cursor' }, { id: 'cursor' }]);
+    assert.deepEqual(result.installs.map(call => call.body), [{ id: 'cursor', action: 'install' }, { id: 'cursor', action: 'install' }, { id: 'cursor', action: 'install' }]);
     assert.deepEqual(result.prompts.filter(call => call.scenario === 'normal').map(call => call.body), [
       { id: 'cursor', method: 0, inputs: {} },
     ]);
@@ -127,7 +127,8 @@ test('real WhaleBridge account UI retains connection feedback and consistent res
     for (const row of result.unsuccessful) {
       assert.equal(row.open, true, 'a failed or canceled login remains visible with its error');
       assert.equal(row.visible, false, 'a failed or canceled login never shows success feedback');
-      assert.equal(row.primaryHidden, true);
+      assert.equal(row.primaryHidden, false, 'failed authorization restores the original button');
+      assert.equal(row.primaryDisabled, false);
       assert.notEqual(row.completion, '\u5b8c\u6210');
     }
     assert.deepEqual(result.cancellations.map(call => call.path), ['/api/signin/signin-pending-cancel-flow/cancel'],
@@ -141,7 +142,7 @@ test('real WhaleBridge account UI retains connection feedback and consistent res
     assert.equal(result.narrowAdapterGap.width, 420);
 
     const layout = result.layout;
-    assert.equal(layout.windowVisible, false, 'the layout fixture never shows a desktop window');
+    assert.equal(layout.windowVisible, true, 'layout checks render the target window visibly');
     assert.equal(layout.windowFocused, false, 'the layout fixture never takes the user input focus');
     assert.equal(layout.pages.length, 50, 'five pages are inspected in five widths and both color schemes');
     assert.deepEqual([...new Set(layout.pages.map(row => row.width))], [1120, 820, 600, 420, 380]);
@@ -169,7 +170,7 @@ test('real WhaleBridge account UI retains connection feedback and consistent res
     }
     for (const row of layout.callbacks) {
       assert.equal(row.callbackGap, 12, 'the callback submit action is separated from its input');
-      assert.deepEqual(row.progressGaps, [12, 12, 12], 'login instructions, link and code retain readable separation');
+      assert.deepEqual(row.progressGaps, [12, 12], 'login instructions, link and code retain readable separation without a pending text row');
       assertDialog(row.dialog, `callback ${row.scheme} ${row.dialog.width}px`);
     }
     for (const row of layout.accounts) {

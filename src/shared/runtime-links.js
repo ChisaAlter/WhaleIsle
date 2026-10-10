@@ -169,5 +169,5 @@ async function removeRuntimeLinksAsync(root, { signal, onProgress = () => {} } =
   }
 }
 
-module.exports = { RUNTIME_LINKS, materializeRuntimeLinks, removeRuntimeLinks,
+module.exports = { RUNTIME_LINKS, readRuntimeLinks, materializeRuntimeLinks, removeRuntimeLinks,
   materializeRuntimeLinksAsync, removeRuntimeLinksAsync };

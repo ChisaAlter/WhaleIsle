@@ -12,10 +12,10 @@
  *   (no per-task budget off the main thread) and reply `done` with per-line
  *   spans plus the worker-side milliseconds, or `missing` when the resolved
  *   grammar is not registered in this realm.
- * - `{op:'drop', run}` — the owning effect disposed; queued jobs of that run
- *   are skipped at dequeue so a closed diff stops costing worker time.
  * - `{op:'langs', registrations}` — register grammar data the main thread
  *   fetched from the lazy table, after which the reposted job tokenizes.
+ * The client submits one job per run at a time. Cancellation stops subsequent
+ * submissions and callbacks; a submitted synchronous tokenize cannot be interrupted.
  *
  * The engine module this imports must stay free of dynamic imports: a
  * self-contained bundle inlines every `import()` it can see, which would pull
@@ -30,7 +30,6 @@ import {
 /** Messages the main thread posts in. */
 type WorkerRequest =
   | { readonly op: 'job'; readonly run: number; readonly job: number; readonly code: string; readonly lang?: string }
-  | { readonly op: 'drop'; readonly run: number }
   | { readonly op: 'langs'; readonly registrations: LangModule['default'] }
 
 /** Messages posted back out; `ready` arrives once, at script evaluation end. */
@@ -39,22 +38,15 @@ type WorkerReply =
   | { readonly op: 'done'; readonly run: number; readonly job: number; readonly spans: HighlightSpan[][] | undefined; readonly workMs: number }
   | { readonly op: 'missing'; readonly run: number; readonly job: number; readonly resolved: string }
 
-/** Run ids whose queued jobs are skipped without tokenizing. */
-const dropped = new Set<number>()
-
 const reply = (message: WorkerReply): void => { globalThis.postMessage(message) }
 
 globalThis.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const message = event.data
   switch (message.op) {
-    case 'drop':
-      dropped.add(message.run)
-      return
     case 'langs':
       registerGrammarModules(message.registrations)
       return
     case 'job': {
-      if (dropped.has(message.run)) return
       const resolved = grammarForHint(message.lang)
       if (resolved !== undefined && !grammarRegistered(resolved)) {
         reply({ op: 'missing', run: message.run, job: message.job, resolved })

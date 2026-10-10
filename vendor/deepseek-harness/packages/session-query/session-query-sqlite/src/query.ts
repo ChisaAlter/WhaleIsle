@@ -268,10 +268,10 @@ export function requestFingerprint(request: NormalizedSessionRequest | Normalize
  */
 export function makeSnippet(markedText: string, maxChars: number): string {
   const { text: clean, matchStart } = normalizeMarkedText(markedText)
-  const characters = Array.from(clean)
-  if (characters.length <= maxChars) return clean
+  const length = codePointLength(clean)
+  if (length <= maxChars) return clean
   if (maxChars === 1) return '…'
-  const matchedIndex = Math.min(matchStart, characters.length - 1)
+  const matchedIndex = Math.min(matchStart, length - 1)
   let start = Math.max(0, matchedIndex - Math.floor(maxChars / 3))
   const prefix = start > 0 ? '…' : ''
   let suffix = '…'
@@ -283,36 +283,47 @@ export function makeSnippet(markedText: string, maxChars: number): string {
   } else if (matchedIndex >= start + contentLength) {
     start = matchedIndex - contentLength + 1
   }
-  let end = Math.min(characters.length, start + contentLength)
-  if (end === characters.length) {
+  let end = Math.min(length, start + contentLength)
+  if (end === length) {
     suffix = ''
     contentLength = maxChars - prefix.length
     start = Math.max(0, end - contentLength)
   }
-  end = Math.min(characters.length, start + contentLength)
-  return `${prefix}${characters.slice(start, end).join('')}${suffix}`
+  end = Math.min(length, start + contentLength)
+  return `${prefix}${sliceCodePoints(clean, start, end)}${suffix}`
 }
 
 function normalizeMarkedText(markedText: string): { text: string; matchStart: number } {
-  const characters: string[] = []
-  let matchStart: number | undefined
-  for (const character of markedText) {
-    if (character === FTS_HIGHLIGHT_START) {
-      matchStart ??= characters.length
-      continue
-    }
-    if (character === FTS_HIGHLIGHT_END) continue
-    if (/\s/u.test(character)) {
-      if (characters.length > 0 && characters.at(-1) !== ' ') characters.push(' ')
-    } else {
-      characters.push(character)
-    }
-  }
-  if (characters.at(-1) === ' ') characters.pop()
+  const firstMatch = markedText.indexOf(FTS_HIGHLIGHT_START)
+  const normalize = (text: string) => text
+    .replaceAll(FTS_HIGHLIGHT_START, '')
+    .replaceAll(FTS_HIGHLIGHT_END, '')
+    .replace(/\s+/gu, ' ')
   return {
-    text: characters.join(''),
-    matchStart: matchStart ?? 0,
+    text: normalize(markedText).trim(),
+    // Keep whitespace before the match: the previous character fold already
+    // emitted that separator when it encountered the first highlight marker.
+    matchStart: firstMatch < 0 ? 0 : codePointLength(normalize(markedText.slice(0, firstMatch)).trimStart()),
   }
+}
+
+/** Count Unicode code points without allocating an array for a complete document. */
+export function codePointLength(text: string): number {
+  let count = 0
+  for (let offset = 0; offset < text.length; count += 1) {
+    offset += text.codePointAt(offset)! > 0xFFFF ? 2 : 1
+  }
+  return count
+}
+
+function sliceCodePoints(text: string, start: number, end: number): string {
+  let from = 0
+  let offset = 0
+  for (let index = 0; offset < text.length && index < end; index += 1) {
+    if (index === start) from = offset
+    offset += text.codePointAt(offset)! > 0xFFFF ? 2 : 1
+  }
+  return text.slice(from, offset)
 }
 
 function normalizeQuery(value: string): string {

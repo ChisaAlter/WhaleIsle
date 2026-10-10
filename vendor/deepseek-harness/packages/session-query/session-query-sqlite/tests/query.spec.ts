@@ -7,6 +7,7 @@ import {
   FTS_HIGHLIGHT_END,
   FTS_HIGHLIGHT_START,
   makeSnippet,
+  codePointLength,
   normalizeEventRequest,
   normalizeSessionRequest,
   quoteFtsData,
@@ -24,6 +25,18 @@ function expectCode(code: SessionQueryErrorCode): Error {
 }
 
 describe('SQLite search request normalization', () => {
+  it('counts code points without combining isolated UTF-16 surrogates', () => {
+    expect(codePointLength('')).toBe(0)
+    expect(codePointLength('A😀\uD800B\uDC00')).toBe(5)
+    expect(codePointLength('咖啡é')).toBe(4)
+  })
+
+  it('extracts the same bounded excerpt at either end of a large document', () => {
+    const body = 'x'.repeat(1024 * 1024)
+    expect(makeSnippet(`${FTS_HIGHLIGHT_START}match${FTS_HIGHLIGHT_END}${body}`, 12)).toBe('matchxxxxxx…')
+    expect(makeSnippet(`${body}${FTS_HIGHLIGHT_START}match${FTS_HIGHLIGHT_END}`, 12)).toBe('…xxxxxxmatch')
+  })
+
   it('normalizes both scopes, defaults arrays and limits, and preserves cursors', () => {
     expect(normalizeSessionRequest({ query: '  alpha\n beta  ' }, limits)).toEqual({
       query: 'alpha beta',

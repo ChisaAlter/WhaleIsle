@@ -254,6 +254,20 @@ function createMainWindow({ activate = true } = {}) {
  */
 function attachPrivilegedNavigationGuards(contents, options) {
   const { allowUrl, openDeniedExternal = false, openDeniedLoopback = false } = options;
+  // A generated document may run scripts, but must keep its original CSP.
+  // Remember the frame identity before its scripts can change window.name.
+  const visualReplyFrames = new Set();
+  contents.on('frame-created', (_event, { frame }) => {
+    if (frame?.name === 'whale-visual-reply') visualReplyFrames.add(frame.frameTreeNodeId);
+  });
+  contents.on('will-frame-navigate', event => {
+    const frame = event.frame;
+    if (!event.isMainFrame && frame
+      && (visualReplyFrames.has(frame.frameTreeNodeId) || frame.name === 'whale-visual-reply')
+      && event.url !== 'about:srcdoc') {
+      event.preventDefault();
+    }
+  });
 
   function handleDeniedHttp(url) {
     if (openDeniedLoopback && isLoopbackHttpUrl(url)) {
@@ -382,8 +396,10 @@ function layoutHarnessView(win) {
     return;
   }
   const bounds = win.getContentBounds();
+  // Native resize already relays the final content bounds here. BrowserView
+  // auto-resize would apply the same size delta again after this listener.
+  harnessView.setAutoResize({ width: false, height: false });
   harnessView.setBounds({ x: 0, y: 0, width: bounds.width, height: bounds.height });
-  harnessView.setAutoResize({ width: true, height: true });
   desktopPet()?.layout(win);
 }
 

@@ -6,7 +6,7 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { SESSION_FORMAT_VERSION, SessionSeq } from '@deepseek-ai/dsh-session'
-import type { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync, StatementSync } from 'node:sqlite'
 import { Context, Service, type Fiber } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Session, SessionEvent, SessionHeader, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
@@ -51,6 +51,7 @@ import {
   buildEventWhere,
   buildSessionWhere,
   makeSnippet,
+  codePointLength,
   normalizeEventRequest,
   normalizeSessionRequest,
   quoteFtsData,
@@ -58,6 +59,13 @@ import {
   sanitizeFtsText,
   SQLITE_MAX_PAGE_LIMIT,
 } from './query.ts'
+
+interface PersistedReplacementStatements {
+  deleteDocuments: StatementSync
+  deleteSession: StatementSync
+  insertSession: StatementSync
+  insertDocument: StatementSync
+}
 
 export {
   SESSION_QUERY_SQLITE_APPLICATION_ID,
@@ -454,10 +462,11 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
         db.exec('BEGIN IMMEDIATE')
         began = true
         for (const row of persistentDeletes) this._deleteSession('persisted', row.id as SessionId)
+        const persistedStatements = persistentChanges.length === 0 ? undefined : this._persistedReplacementStatements()
         for (const entry of persistentChanges) {
           /* v8 ignore next -- observation loads every entry whose revision differs */
           if (entry.loaded === undefined) throw new Error(`missing loaded revision for session "${entry.header.id}"`)
-          this._replacePersistedSession(entry.loaded, entry.revision, nextMainGeneration)
+          this._replacePersistedSession(entry.loaded, entry.revision, nextMainGeneration, persistedStatements)
         }
         if (persistentChanges.length > 0 || persistentDeletes.length > 0) {
           db.prepare('UPDATE search_state SET global_generation = ? WHERE singleton = 1').run(nextMainGeneration)
@@ -583,33 +592,45 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
     entry: ObservedSession,
     revision: SessionPersistenceRevision,
     generation: number,
+    statements = this._persistedReplacementStatements(),
   ): void {
-    this._deleteSession('persisted', entry.header.id)
-    const db = this._requireDb()
-    db.prepare(`
-      INSERT INTO persisted_sessions
-        (id, version, created_at, cwd, parent_session, seed_length, delegation_depth, agent_preset, revision, generation)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    statements.deleteDocuments.run(entry.header.id)
+    statements.deleteSession.run(entry.header.id)
+    statements.insertSession.run(
       ...headerBindings(entry.header, entry.inheritedEventCount),
       revision,
       generation,
     )
-    const insert = db.prepare(`
-      INSERT INTO persisted_docs (text, session_id, seq, type, time, surface, codepoint_length)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `)
     for (const document of entry.documents) {
       const text = sanitizeFtsText(document.text)
-      insert.run(
+      statements.insertDocument.run(
         text,
         document.sessionId,
         document.seq,
         document.type,
         document.time,
         document.surface,
-        Array.from(text).length,
+        codePointLength(text),
       )
+    }
+  }
+
+  private _persistedReplacementStatements(): PersistedReplacementStatements {
+    const db = this._requireDb()
+    // One set per reconciliation transaction; never retained across database
+    // ownership or schema changes, and reused for every changed cold session.
+    return {
+      deleteDocuments: db.prepare('DELETE FROM persisted_docs WHERE session_id = ?'),
+      deleteSession: db.prepare('DELETE FROM persisted_sessions WHERE id = ?'),
+      insertSession: db.prepare(`
+      INSERT INTO persisted_sessions
+        (id, version, created_at, cwd, parent_session, seed_length, delegation_depth, agent_preset, revision, generation)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `),
+      insertDocument: db.prepare(`
+      INSERT INTO persisted_docs (text, session_id, seq, type, time, surface, codepoint_length)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      `),
     }
   }
 
@@ -639,7 +660,7 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
         document.type,
         document.time,
         document.surface,
-        Array.from(text).length,
+        codePointLength(text),
       )
     }
   }

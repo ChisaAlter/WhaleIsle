@@ -326,17 +326,19 @@ export function AppFrame({
   // solver stays breakpoint-free: a narrow re-expand passes the preference
   // (or the default when the wide preference is closed) and the center
   // absorbs the squeeze.
-  // Landscape keeps the sidebar in the grid: a phone rotate must not fall
-  // into the 56px rail or the overlay drawer.
+  // Phone landscape keeps the sidebar in the grid; desktop window width
+  // still determines collapse regardless of the monitor's orientation.
+  const desktop = document.documentElement.hasAttribute('data-windows-titlebar')
+    || ['win32', 'darwin', 'linux'].includes(document.documentElement.dataset.platform ?? '')
   const phone = viewport < PHONE_MAX && !landscape
-  const narrow = viewport < SIDEBAR_AUTO_COLLAPSE && !landscape
+  const narrow = viewport < SIDEBAR_AUTO_COLLAPSE && (desktop || !landscape)
   // Desktop Git actions keep their seat even when the window is narrow.
   // Browser phone drawers retain their separate navigation chrome.
   const compactHeader = viewport < SIDEBAR_AUTO_COLLAPSE
-  const desktop = document.documentElement.hasAttribute('data-windows-titlebar')
-    || document.documentElement.dataset.platform === 'darwin'
   const clusterVisible = desktop || viewport >= PHONE_MAX
-  useEffect(() => { actions.setNarrow(narrow) }, [actions, narrow])
+  // Width reports also update the store's fallback reading, even when the
+  // device orientation keeps this frame's narrow reading unchanged.
+  useEffect(() => { actions.setNarrow(narrow) }, [actions, narrow, viewport])
   const sidebarCollapsed = narrow ? !layoutInfo.narrowExpanded : layoutInfo.sidebar === 0
   const sidebarPreference = sidebarCollapsed
     ? 0

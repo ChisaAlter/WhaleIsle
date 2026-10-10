@@ -82,6 +82,7 @@ Feature card：[../../features/desktop-live2d-pet.md](../../features/desktop-liv
 
 - 模型：`avatar/model.onnx`，输入 `image` `[1,4,512,512]`（预乘 alpha，归一化到 [-1,1]）+ `pose` `[1,45]`，输出 512×512 RGBA。
 - EP 尝试顺序 `webnn → webgpu → wasm`；WebGPU 成功时启用 `enableGraphCapture` + `preferredOutputLocation:'gpu-buffer'`，pose 经 `queue.writeBuffer` 写入常驻 GPU buffer（图捕获要求所有输入是外部 buffer）。
+- WebGPU 输出先在 GPU 上将 CHW float32 转为 packed RGBA8，再下载 1MiB 的 512² 帧；钳制和半值舍入保持 `Uint8ClampedArray` 的行为。设备不能创建转换 pipeline 时沿用原 float 下载路径，WebNN/WASM 路径保持。模型、Anime4K 与推理节拍不变。
 - 输出帧裁 `{x:60, y:20, w:390, h:492}` 画到 240×260；全透明帧丢弃防闪烁。
 - 推理节拍到 ~20fps（50ms 一帧）——不规则的 8–15fps 读起来是闪烁，稳定慢节奏反而顺滑；立绘 alpha≥0.98 时整帧跳过推理省 GPU。（rig 模式下该节不生效——无推理，60fps rAF。）
 - 每 240 个渲染帧重测一次 alpha 剪影盒 `charRect`，命中区跟着角色实际位置走，不留死角。

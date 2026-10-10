@@ -24,7 +24,8 @@ function updateCopy(state: DesktopUpdatePresentation, t: SettingsTranslate): { l
   }
   const label = labels[state.phase]
   if (state.phase === 'checking' || state.phase === 'verifying' || state.phase === 'installing') {
-    return { label, detail: state.version ?? label }
+    return { label, detail: state.version === undefined ? label
+      : t('desktop.update.versionDetail', { label, version: state.version }) }
   }
   if (state.phase === 'error') {
     const failures: Readonly<Record<DesktopUpdateFailureKind, string>> = {
@@ -49,32 +50,30 @@ function updateCopy(state: DesktopUpdatePresentation, t: SettingsTranslate): { l
 }
 
 /**
- * Render update status with connection-indicator geometry and brand-blue labels, including retries.
- * @param props - Connection priority, sidebar width, and localized bridge-failure copy.
+ * Render one fixed-size update action with complete localized status in its tooltip.
+ * @param props - Connection priority, update status, and localized bridge-failure copy.
  * @returns Desktop-only status beside the account button, or nothing in browsers.
  */
-export function DesktopUpdateIndicator({ wide, hidden, t, view, onOpen }: {
-  wide: boolean
+export function DesktopUpdateIndicator({ hidden, t, view, onOpen }: {
   hidden: boolean
   t: SettingsTranslate
   view: DesktopUpdateView
   onOpen: () => void
 }) {
   const { presentation: state, failed, opening } = view
-  if (!wide || hidden || (!failed && (state === undefined || state.phase === 'idle'))) return null
+  if (hidden || (!failed && (state === undefined || state.phase === 'idle'))) return null
   const retryLabel = t('desktop.update.retry')
   const copy = state === undefined ? { label: retryLabel, detail: retryLabel } : updateCopy(state, t)
   const label = failed ? retryLabel : copy.label
   const error = failed || state?.phase === 'error'
   const busy = opening || (state !== undefined && BUSY_PHASES.has(state.phase))
-  return <Tooltip label={failed ? retryLabel : copy.detail} side="top">
+  return <Tooltip label={failed ? retryLabel : copy.detail} side="top" portal>
     <button type="button" className={css.indicator}
       aria-label={label} aria-disabled={busy} onClick={() => { if (!busy) onOpen() }}>
       <span className={css.icon} aria-hidden="true">
         {error ? <span className={css.errorDot} />
           : busy ? <IconLoadingOutlineRegular className={css.spinner} size={14} /> : <IconDownloadOutlineRegular size={14} />}
       </span>
-      <span>{label}</span>
     </button>
   </Tooltip>
 }

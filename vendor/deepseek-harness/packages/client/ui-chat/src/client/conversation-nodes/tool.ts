@@ -21,8 +21,9 @@ const MAX_DEPTH = 256
 interface ToolState {
   /** Absent until a named delta or `tool/call` identifies the call. */
   readonly root: ToolCallBlock | undefined
-  readonly children: ReadonlyMap<string, readonly ToolCallBlock[]>
-  readonly parents: ReadonlyMap<string, string>
+  /** Context-owned indexes; publication copies children into `subCalls` arrays. */
+  readonly children: Map<string, Map<string, ToolCallBlock>>
+  readonly parents: Map<string, string>
 }
 
 interface ProjectedBlockCache {
@@ -186,7 +187,7 @@ function acceptsEdge(state: ToolState, parent: string, child: string): boolean {
     if (descendants.has(candidate.callId)) return false
     descendants.add(candidate.callId)
     subtreeDepth = Math.max(subtreeDepth, candidate.depth)
-    for (const nested of state.children.get(candidate.callId) ?? []) {
+    for (const nested of state.children.get(candidate.callId)?.values() ?? []) {
       pending.push({ callId: nested.callId, depth: candidate.depth + 1 })
     }
   }
@@ -199,26 +200,17 @@ function updateDispatch(state: ToolState, match: ConversationMatch): ToolState {
   const data = event.data
   const parentCallId = String(data.parentCallId)
   const subCallId = String(data.subCallId)
-  const siblings = state.children.get(parentCallId) ?? []
-  const index = siblings.findIndex(candidate => candidate.callId === subCallId)
-  if (event.type === 'tool/ptc-dispatch-start') {
-    if (index >= 0 || !acceptsEdge(state, parentCallId, subCallId)) return state
-    const children = new Map(state.children)
-    children.set(parentCallId, [...siblings, childCall(match, data)])
-    const parents = new Map(state.parents)
-    parents.set(subCallId, parentCallId)
-    return { ...state, children, parents }
-  }
-  if (index < 0 && !acceptsEdge(state, parentCallId, subCallId)) return state
-  const previous = index < 0 ? undefined : siblings[index]
-  const settled = childResult(match, data, previous)
-  const children = new Map(state.children)
-  children.set(parentCallId, index < 0
-    ? [...siblings, settled]
-    : siblings.map((child, at) => at === index ? settled : child))
-  const parents = new Map(state.parents)
-  if (index < 0) parents.set(subCallId, parentCallId)
-  return { ...state, children, parents }
+  const siblings = state.children.get(parentCallId)
+  const previous = siblings?.get(subCallId)
+  if (event.type === 'tool/ptc-dispatch-start' && previous !== undefined) return state
+  if (previous === undefined && !acceptsEdge(state, parentCallId, subCallId)) return state
+  const child = event.type === 'tool/ptc-dispatch-start'
+    ? childCall(match, data)
+    : childResult(match, data, previous)
+  if (siblings === undefined) state.children.set(parentCallId, new Map([[subCallId, child]]))
+  else siblings.set(subCallId, child)
+  if (previous === undefined) state.parents.set(subCallId, parentCallId)
+  return state
 }
 
 function projectBlock(
@@ -232,8 +224,11 @@ function projectBlock(
   if (visited.has(block.callId) || depth > MAX_DEPTH) return { ...block, subCalls: [] }
   const nextVisited = new Set(visited)
   nextVisited.add(block.callId)
-  const children = (state.children.get(block.callId) ?? block.subCalls)
-    .map(child => projectBlock(child, state, interruptedAt, nextVisited, depth + 1))
+  const siblings = state.children.get(block.callId)
+  const children = Array.from(
+    siblings === undefined ? block.subCalls : siblings.values(),
+    child => projectBlock(child, state, interruptedAt, nextVisited, depth + 1),
+  )
   const interruptionSeq = 'kind' in block ? undefined : interruptedAt?.seq
   const interruptionTime = 'kind' in block ? undefined : interruptedAt?.time
   const cached = projectedBlocks.get(block)

@@ -208,8 +208,8 @@ function createDshWatch({
     return d && typeof d === 'object' ? d : {};
   }
 
-  function write(next) {
-    saveDsh?.(next);
+  function write(next, outboxBefore) {
+    return saveDsh?.(next, outboxBefore);
   }
 
   function emit(type, extra) {
@@ -326,14 +326,24 @@ function createDshWatch({
         delete dsh.files[key]; // log deleted/rotated away — drop its cursor
       }
     }
-    for (const sessKey of Object.keys(dsh.openTurns)) {
-      if (![...live].some((f) => sessKeyOf(f) === sessKey)) {
-        delete dsh.openTurns[sessKey]; // session dir vanished mid-turn
+    // A session dir that vanished mid-turn must drop its open turn. Build the
+    // live session-key set once: scanning every live file per open turn was
+    // O(openTurns × files) of path work on the main thread every poll.
+    if (Object.keys(dsh.openTurns).length) {
+      const liveKeys = new Set();
+      for (const f of live) {
+        liveKeys.add(sessKeyOf(f));
+      }
+      for (const sessKey of Object.keys(dsh.openTurns)) {
+        if (!liveKeys.has(sessKey)) {
+          delete dsh.openTurns[sessKey]; // session dir vanished mid-turn
+        }
       }
     }
 
     const hadActivityBefore = dsh.lastActiveAt || 0;
     const lastSeenBefore = dsh.lastSeenAt || 0; // feedEvent overwrites it
+    let outboxBefore;
     for (const file of files) {
       if (file === outboxFile && !isPetVisible()) continue;
       let stat;
@@ -369,6 +379,7 @@ function createDshWatch({
       if (!consumed) {
         continue; // only a torn tail frame/line so far
       }
+      if (isOutbox) outboxBefore = { offset: dsh.files[file], lastSeenAt: dsh.lastSeenAt };
       dsh.files[file] = offset + consumed;
       const sessKey = isOutbox ? '' : sessKeyOf(file);
       for (const line of lines) {
@@ -440,33 +451,55 @@ function createDshWatch({
     const persistedProjection = normalizeDshState(persistedDsh);
     const runtimeProjection = normalizeDshState(dsh);
     const withoutActiveTime = (value) => JSON.stringify({ ...value, activeMsToday: 0 });
+    let saved;
     if (withoutActiveTime(runtimeProjection) !== withoutActiveTime(persistedProjection)
         || runtimeProjection.activeMsToday - persistedProjection.activeMsToday >= 60000) {
-      write(dsh);
+      saved = write(dsh, outboxBefore);
     }
     // Daily-usage snapshot for the whale assistant's whale_usage_today
     // tool — written only when the counters move (this poll runs every 2s).
-    if (usageFile) {
-      const snapshotPayload = {
-        day: dsh.day,
-        used: dsh.dayTokens?.used || 0,
-        milestones: dsh.milestoneMarks,
-        activeMsToday: Math.floor((dsh.activeMsToday || 0) / 60000) * 60000,
-        state,
-      };
-      const snapshot = JSON.stringify(snapshotPayload);
-      if (snapshot !== lastUsageJson) {
-        try {
-          fsImpl.mkdirSync(path.dirname(usageFile), { recursive: true });
-          const tmp = `${usageFile}.tmp`;
-          fsImpl.writeFileSync(tmp, JSON.stringify({ ...snapshotPayload, at: t }) + '\n', 'utf8');
-          fsImpl.renameSync(tmp, usageFile);
-          lastUsageJson = snapshot;
-        } catch {
-          // Best-effort mirror — the authoritative state lives in dsh.*.
+    function mirrorUsage() {
+      if (usageFile) {
+        const snapshotPayload = {
+          day: dsh.day,
+          used: dsh.dayTokens?.used || 0,
+          milestones: dsh.milestoneMarks,
+          activeMsToday: Math.floor((dsh.activeMsToday || 0) / 60000) * 60000,
+          state,
+        };
+        const snapshot = JSON.stringify(snapshotPayload);
+        if (snapshot !== lastUsageJson) {
+          try {
+            fsImpl.mkdirSync(path.dirname(usageFile), { recursive: true });
+            const tmp = `${usageFile}.tmp`;
+            fsImpl.writeFileSync(tmp, JSON.stringify({ ...snapshotPayload, at: t }) + '\n', 'utf8');
+            fsImpl.renameSync(tmp, usageFile);
+            lastUsageJson = snapshot;
+          } catch {
+            // Best-effort mirror — the authoritative state lives in dsh.*.
+          }
         }
       }
     }
+    // In-process consumers stay synchronous. The production worker waits for
+    // the main process to commit this checkpoint before publishing its mirror.
+    function restoreDeferredOutbox(deferred) {
+      // Visibility may change during a scan. Unaccepted outbox lines stay
+      // unread even if the main config write also failed in that poll.
+      if (deferred && outboxBefore) {
+        if (outboxBefore.offset === undefined) delete dsh.files[outboxFile];
+        else dsh.files[outboxFile] = outboxBefore.offset;
+        dsh.lastSeenAt = outboxBefore.lastSeenAt;
+      }
+    }
+    if (saved && typeof saved.then === 'function') return saved.then((commit) => {
+      restoreDeferredOutbox(commit?.outboxDeferred);
+      mirrorUsage();
+    }, (error) => {
+      restoreDeferredOutbox(error?.outboxDeferred);
+      throw error;
+    });
+    mirrorUsage();
   }
 
   function start(intervalMs = 2000) {
@@ -500,7 +533,7 @@ function createDshWatch({
     };
   }
 
-  return { poll, start };
+  return { poll, start, snapshot: () => runtimeDsh ? normalizeDshState(runtimeDsh) : null };
 }
 
 module.exports = {

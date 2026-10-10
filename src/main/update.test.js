@@ -14,6 +14,7 @@ const {
   installUpdate,
   installFromAsset,
   checkUpdate,
+  updateDownloadMethods,
   listReleases,
   getInstalledAppInfo,
   launchUninstaller,
@@ -26,6 +27,7 @@ const {
   parseSha512Sums,
   verifyAssetChecksum,
   CHECKSUM_ASSET_NAME,
+  setUpdateStateSink,
 } = require('./update');
 
 // Metadata entry points select assets for the host, so Windows release fixtures
@@ -77,6 +79,39 @@ test('summarizeRelease selects the host-compatible macOS DMG and rejects a forei
   assert.equal(incompatible.installable, false);
   assert.equal(incompatible.assetName, '');
   assert.equal(incompatible.assetUrl, '');
+});
+
+test('desktop release listing and install reject component releases and standalone executables', async (t) => {
+  useReleasePlatform(t, 'win32');
+  const component = {
+    tag_name: 'whalebridge-v1.1.0',
+    assets: [{ name: 'WhaleBridge-win32-x64.exe', browser_download_url: 'https://example.test/bridge.exe' }],
+  };
+  const desktop = {
+    tag_name: 'v0.3.5',
+    assets: [{ name: 'Whale-Isle-Setup-0.3.5.exe', browser_download_url: 'https://example.test/setup.exe' }],
+  };
+  assert.equal(summarizeRelease(component, '0.3.3'), null);
+  assert.equal(summarizeRelease({ ...component, assets: desktop.assets }, '0.3.3'), null);
+  assert.equal(summarizeRelease({ ...desktop, assets: component.assets }, '0.3.3').installable, false);
+  assert.equal(summarizeRelease({ ...desktop, tag_name: 'v0.3.6-rc.1+candidate', prerelease: true }, '0.3.5').installable, true);
+  const previousFetch = global.fetch;
+  const requests = [];
+  global.fetch = async (url) => {
+    requests.push(String(url));
+    return { ok: true, status: 200, json: async () => String(url).includes('/releases/tags/') ? component : [component, desktop] };
+  };
+  try {
+    const listed = await listReleases();
+    assert.equal(listed.status, 'ok');
+    assert.deepEqual(listed.releases.map(row => row.tag), ['v0.3.5']);
+    const rejected = await installRelease(component.tag_name);
+    assert.equal(rejected.status, 'error');
+    assert.equal(rejected.launched, false);
+    assert.equal(requests.length, 2, 'component installation stops after metadata, before any download');
+  } finally {
+    global.fetch = previousFetch;
+  }
 });
 
 test('getInstalledAppInfo reports version and source-run uninstall guidance when unpackaged', () => {
@@ -559,6 +594,8 @@ test('installer reuses a freshly verified cache, but never launches a corrupt re
   const digest = crypto.createHash('sha512').update('valid').digest('hex');
   let downloads = 0;
   let installs = 0;
+  const states = [];
+  setUpdateStateSink((state) => states.push(state));
   global.fetch = async () => ({ ok: true, text: async () => `${digest}  Setup.exe\n` });
   https.get = (_url, _options, respond) => {
     downloads++;
@@ -568,18 +605,24 @@ test('installer reuses a freshly verified cache, but never launches a corrupt re
     });
     return request;
   };
-  t.after(() => { global.fetch = previousFetch; https.get = previousGet; fs.rmSync(dir, { recursive: true, force: true }); });
-  const info = { assetUrl: 'https://example.test/setup.exe', assetName: 'Setup.exe', checksumUrl: 'https://example.test/sums' };
+  t.after(() => { setUpdateStateSink(null); global.fetch = previousFetch; https.get = previousGet; fs.rmSync(dir, { recursive: true, force: true }); });
+  const info = { latest: '9.9.9', assetUrl: 'https://example.test/setup.exe', assetName: 'Setup.exe', checksumUrl: 'https://example.test/sums' };
   const options = { platform: 'win32', userDataDir: dir, beforeInstall: () => { installs++; return { ok: false, cancelled: true }; } };
   const result = await installFromAsset(info, null, options);
   assert.equal(result.cancelled, true);
   assert.equal(downloads, 0);
   assert.equal(installs, 1);
+  assert.deepEqual(states[0], { phase: 'downloading', version: '9.9.9', percent: 0 });
+  assert.ok(states.some((state) => state.phase === 'verifying' && state.version === '9.9.9'));
+  assert.ok(states.some((state) => state.phase === 'installing' && state.version === '9.9.9'));
   fs.writeFileSync(file, 'damaged-cache');
   await assert.rejects(installFromAsset(info, null, options), /sha512 不匹配/);
   assert.equal(downloads, 1);
   assert.equal(installs, 1, 'a failed hash must never reach the installer gate');
   assert.deepEqual(fs.readdirSync(path.join(dir, 'updates')), []);
+  assert.equal(states.at(-1).phase, 'error', 'failed verification must reach the live indicator even without an Electron evidence journal');
+  assert.equal(states.at(-1).version, '9.9.9');
+  assert.equal(states.at(-1).failedOperation, 'download', 'verification failures use the supported download failure contract');
 });
 
 test('download cancellation during retry backoff never starts another request', async (t) => {
@@ -815,7 +858,7 @@ test('M-3: 两条安装通道都接 confirmUnverified，确认框默认与 Esc �
   assert.match(ipcSource, /handle\('shell:install-release'/);
   // The confirm wiring moved with launcher orchestration into the service.
   const source = fs.readFileSync(path.join(__dirname, '../launcher/launcher-service.js'), 'utf8');
-  const wired = source.match(/confirmUnverified:\s*confirmUnverifiedInstall/g) || [];
+  const wired = source.match(/confirmUnverified:\s*(?:options\.confirmUnverified\s*\|\|\s*)?confirmUnverifiedInstall/g) || [];
   assert.ok(wired.length >= 2, `install-update 与 install-release 都必须显式接确认回调（发现 ${wired.length} 处）`);
 
   const fn = source.match(/async function confirmUnverifiedInstall[\s\S]*?\n {2}\}/);
@@ -925,7 +968,7 @@ test('M-3: 非 Windows getInstalledAppInfo 不暴露可用卸载入口', () => {
 });
 
 // ---------------------------------------------------------------------------
-// electron-updater channel: latest-only seam, fallback, tag-install guard
+// Explicit download choices, strict updater seam and tag-install guard.
 // ---------------------------------------------------------------------------
 
 function releaseWithChecksum() {
@@ -936,8 +979,10 @@ function releaseWithChecksum() {
     html_url: 'https://example.test/r',
     body: '',
     assets: [
-      { name: 'Deepseek-Harness-Desktop-Setup-0.2.6.exe', browser_download_url: 'https://example.test/setup.exe' },
+      { name: 'Deepseek-Harness-Desktop-Setup-0.2.6.exe', size: 123456, browser_download_url: 'https://example.test/setup.exe' },
       { name: CHECKSUM_ASSET_NAME, browser_download_url: 'https://example.test/SHA512SUMS.txt' },
+      { name: 'Deepseek-Harness-Desktop-Setup-0.2.6.exe.blockmap', browser_download_url: 'https://example.test/setup.exe.blockmap' },
+      { name: 'latest.yml', browser_download_url: 'https://example.test/latest.yml' },
     ],
   };
 }
@@ -945,12 +990,18 @@ function releaseWithChecksum() {
 function fakeUpdaterChannel(overrides = {}) {
   const updater = new EventEmitter();
   updater.calls = { checkForUpdates: 0, downloadUpdate: 0, quitAndInstall: [] };
+  updater.getOrCreateDownloadHelper = async () => ({ cacheDir: 'C:/configured-cache' });
   updater.checkForUpdates = async () => {
     updater.calls.checkForUpdates += 1;
     if (overrides.failCheck) {
       throw new Error('manifest unreachable');
     }
-    return { updateInfo: { version: overrides.version || '0.2.6' } };
+    const info = { version: overrides.version || '0.2.6' };
+    updater.updateInfoAndProvider = { info, provider: { resolveFiles: () => [{
+      url: new URL('https://example.test/Deepseek-Harness-Desktop-Setup-0.2.6.exe'),
+      info: { url: 'Deepseek-Harness-Desktop-Setup-0.2.6.exe' },
+    }] } };
+    return { updateInfo: info };
   };
   updater.downloadUpdate = async () => {
     updater.calls.downloadUpdate += 1;
@@ -966,7 +1017,7 @@ function fakeUpdaterChannel(overrides = {}) {
   return updater;
 }
 
-test('installUpdate uses the updater channel for the latest release and skips the whole-file download', async (t) => {
+test('explicit incremental update uses its confirmed release and publishes download, verify and install state', async (t) => {
   useReleasePlatform(t, 'win32');
   const previousFetch = global.fetch;
   const previousGet = https.get;
@@ -988,8 +1039,12 @@ test('installUpdate uses the updater channel for the latest release and skips th
     return request;
   };
   const fake = fakeUpdaterChannel({ installer, logLine: 'Full: 636.65 MB, To download: 44.59 MB (7%)' });
+  const states = [];
+  setUpdateStateSink((state) => states.push(state));
   try {
+    const info = { ...summarizeRelease(releaseWithChecksum(), '0.2.5'), status: 'available', latest: '0.2.6' };
     const result = await installUpdate(null, {
+      expectedCheck: info, downloadMode: 'delta',
       updaterDeps: { isPackaged: true, platform: 'win32', autoUpdater: fake, existsSync: () => true },
       quitAfterInstall: false,
       spawn: (file, args) => {
@@ -1005,22 +1060,30 @@ test('installUpdate uses the updater channel for the latest release and skips th
     assert.equal(result.launched, true);
     assert.equal(result.differential, true);
     assert.equal(result.downloadPercent, 7);
+    assert.equal(result.downloadMode, 'delta');
     assert.equal(fake.calls.downloadUpdate, 1);
     assert.deepEqual(fake.calls.quitAndInstall, []);
     assert.equal(seenGet.length, 0, 'legacy downloadFile must not run when the updater channel succeeds');
     assert.equal(fetched.some((url) => url.includes('setup.exe')), false);
+    assert.deepEqual(fetched, ['https://example.test/SHA512SUMS.txt'], 'confirmed metadata bypasses releases/latest');
+    assert.deepEqual(states.map((state) => [state.phase, state.version]), [
+      ['downloading', '0.2.6'], ['downloading', '0.2.6'], ['verifying', '0.2.6'], ['installing', '0.2.6'],
+    ]);
   } finally {
+    setUpdateStateSink(null);
     global.fetch = previousFetch;
     https.get = previousGet;
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('installUpdate falls back to the verified whole-file path when the updater channel fails', async (t) => {
+test('default full download bypasses the updater and publishes its actual failure', async (t) => {
   useReleasePlatform(t, 'win32');
   const previousFetch = global.fetch;
   const previousGet = https.get;
   const seenGet = [];
+  const states = [];
+  setUpdateStateSink((state) => states.push(state));
   global.fetch = async () => ({ ok: true, status: 200, json: async () => releaseWithChecksum() });
   https.get = (target, _options, onResponse) => {
     seenGet.push(String(target));
@@ -1042,15 +1105,69 @@ test('installUpdate falls back to the verified whole-file path when the updater 
         userDataDir: os.tmpdir(),
       }),
       /HTTP 500/,
-      'fallback must surface the legacy download error',
+      'full selection must surface the whole-file download error',
     );
-    assert.equal(fake.calls.checkForUpdates, 1, 'updater channel was attempted first');
+    assert.equal(fake.calls.checkForUpdates, 0, 'full never attempts the updater channel');
     assert.equal(fake.calls.downloadUpdate, 0);
-    assert.ok(seenGet.some((url) => url.includes('setup.exe')), 'fallback must reach downloadFile');
+    assert.ok(seenGet.some((url) => url.includes('setup.exe')), 'full must reach downloadFile');
+    assert.equal(states.at(-1).phase, 'error');
+    assert.equal(states.at(-1).version, '0.2.6');
+    assert.equal(states.at(-1).failedOperation, 'download');
   } finally {
+    setUpdateStateSink(null);
     global.fetch = previousFetch;
     https.get = previousGet;
   }
+});
+
+test('failed incremental update stops without silently requesting the full installer', async (t) => {
+  useReleasePlatform(t, 'win32');
+  const previousGet = https.get;
+  const states = [];
+  let fullDownloads = 0;
+  setUpdateStateSink((state) => states.push(state));
+  https.get = () => { fullDownloads++; throw new Error('full transfer forbidden'); };
+  t.after(() => { https.get = previousGet; setUpdateStateSink(null); });
+  const fake = fakeUpdaterChannel({ failCheck: true });
+  const info = { ...summarizeRelease(releaseWithChecksum(), '0.2.5'), status: 'available', latest: '0.2.6' };
+  await assert.rejects(installUpdate(null, {
+    expectedCheck: info, downloadMode: 'delta',
+    updaterDeps: { isPackaged: true, platform: 'win32', autoUpdater: fake, existsSync: () => true },
+  }), /manifest unreachable/);
+  assert.equal(fake.calls.checkForUpdates, 1);
+  assert.equal(fake.calls.downloadUpdate, 0);
+  assert.equal(fullDownloads, 0);
+  assert.equal(states.at(-1).phase, 'error');
+  assert.equal(states.at(-1).version, '0.2.6');
+  assert.equal(states.at(-1).failedOperation, 'download');
+});
+
+test('download methods expose exact metadata and disable delta for missing cache, metadata and source runs', async (t) => {
+  useReleasePlatform(t, 'win32');
+  const previousFetch = global.fetch;
+  global.fetch = async () => ({ ok: true, status: 200, json: async () => releaseWithChecksum() });
+  t.after(() => { global.fetch = previousFetch; });
+  const checked = await checkUpdate();
+  const summary = summarizeRelease(releaseWithChecksum(), '0.2.5');
+  for (const info of [checked, summary]) {
+    assert.equal(info.assetSize, 123456);
+    assert.equal(info.blockmapUrl, 'https://example.test/setup.exe.blockmap');
+    assert.equal(info.updaterMetadataUrl, 'https://example.test/latest.yml');
+  }
+  const fake = fakeUpdaterChannel();
+  const deps = { isPackaged: true, platform: 'win32', autoUpdater: fake, existsSync: () => true };
+  assert.deepEqual(await updateDownloadMethods(checked, deps), [
+    { id: 'delta', label: '增量更新', description: '只下载发生变化的部分，节省流量。' },
+    { id: 'full', label: '完全下载', description: '下载完整安装包，适合修复或重新安装。' },
+  ]);
+  const wrongBlockmap = releaseWithChecksum();
+  wrongBlockmap.assets.find((asset) => asset.name.endsWith('.blockmap')).name = 'Other.exe.blockmap';
+  const missingMetadata = summarizeRelease(wrongBlockmap, '0.2.5');
+  assert.equal(missingMetadata.blockmapUrl, '');
+  assert.match((await updateDownloadMethods(missingMetadata, deps))[0].disabledReason, /所需文件/);
+  assert.match((await updateDownloadMethods(checked, { ...deps, existsSync: () => false }))[0].disabledReason, /缓存/);
+  assert.match((await updateDownloadMethods(checked, { ...deps, isPackaged: false }))[0].disabledReason, /源码/);
+  assert.equal(fake.calls.checkForUpdates, 0, 'capability projection must not create another update check');
 });
 
 test('installRelease for a specific tag never touches the updater channel', async (t) => {

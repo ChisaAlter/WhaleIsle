@@ -2,7 +2,7 @@
 
 // Process supervision for installed components: spawn through the host
 // binary (Electron runs as plain node under ELECTRON_RUN_AS_NODE, which keeps
-// components working without a separately installed Node), a tasklist/process
+// components working without a separately installed Node), a native PID
 // liveness probe, and tree kill — Windows-first: taskkill /PID <pid> /T /F,
 // never kill -9.
 const fs = require('fs');
@@ -19,25 +19,15 @@ function isPidAlive(pid, deps = {}) {
   if (!Number.isInteger(pid) || pid <= 0) {
     return false;
   }
-  if (resolvePlatform(deps) === 'win32') {
-    const exec = deps.execFileSync || execFileSync;
-    try {
-      const out = String(exec('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], {
-        encoding: 'utf8',
-        windowsHide: true,
-      }));
-      // CSV rows look like "node.exe","1234","Console","1","100 K" — a quoted
-      // pid match is enough; the "no tasks" info line never contains one.
-      return new RegExp(`"${pid}"`).test(out);
-    } catch {
-      return false;
-    }
-  }
   try {
-    process.kill(pid, 0);
+    // Signal 0 only asks the OS whether the PID exists. Spawning tasklist for
+    // every status row can block the main process for hundreds of milliseconds.
+    (deps.processKill || process.kill)(pid, 0);
     return true;
   } catch (error) {
-    return error && error.code === 'EPERM';
+    if (error && error.code === 'EPERM') return true;
+    if (error && error.code === 'ESRCH') return false;
+    throw error;
   }
 }
 
@@ -158,26 +148,26 @@ function readStateFile(file, deps = {}) {
   }
 }
 
-// Recursive copy kept manual (readdir+copyFile) so a payload inside an asar
-// bundle — readable but not cpSync-able — still installs.
-function copyDir(src, dest, deps = {}) {
-  const fsp = deps.fs || fs;
-  fsp.mkdirSync(dest, { recursive: true });
-  for (const item of fsp.readdirSync(src, { withFileTypes: true })) {
+// Keep manual traversal for ASAR payloads, with asynchronous filesystem calls
+// so staging a component does not block Electron's main event loop.
+async function copyDir(src, dest, deps = {}) {
+  const fsp = (deps.fs || fs).promises;
+  await fsp.mkdir(dest, { recursive: true });
+  for (const item of await fsp.readdir(src, { withFileTypes: true })) {
     const from = path.join(src, item.name);
     const to = path.join(dest, item.name);
     if (item.isDirectory()) {
-      copyDir(from, to, deps);
+      await copyDir(from, to, deps);
     } else if (item.isFile()) {
-      fsp.copyFileSync(from, to);
+      await fsp.copyFile(from, to);
     }
   }
 }
 
-function removeDir(dir, deps = {}) {
-  const fsp = deps.fs || fs;
+async function removeDir(dir, deps = {}) {
+  const fsp = (deps.fs || fs).promises;
   try {
-    fsp.rmSync(dir, { recursive: true, force: true });
+    await fsp.rm(dir, { recursive: true, force: true });
     return true;
   } catch {
     return false;

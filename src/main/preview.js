@@ -144,17 +144,17 @@ function artifactSiteSlug(rawUrl) {
 }
 
 function defaultAttach({ bounds, partition }) {
-  const { BrowserView } = require('electron');
+  const { WebContentsView } = require('electron');
   const { getMainWindow } = require('./window');
   const win = getMainWindow();
   if (!win) {
     throw new Error('preview requires the desktop window');
   }
   const ses = previewSessionForPartition(partition);
-  const view = new BrowserView({
+  const view = new WebContentsView({
     webPreferences: previewGuestWebPreferences({ session: ses }),
   });
-  win.addBrowserView(view);
+  win.contentView.addChildView(view);
   if (bounds) view.setBounds(bounds);
   view.webContents.setWindowOpenHandler(({ url }) => {
     const next = resolvePreviewLoadUrl(url);
@@ -173,11 +173,13 @@ function defaultAttach({ bounds, partition }) {
     setVisible(next) {
       if (next === visible) return;
       visible = next;
-      if (next) win.addBrowserView(view);
-      else win.removeBrowserView(view);
+      // Menus and PiP hide the native overlay, but capturePage still needs
+      // its attached display surface. Detaching leaves captures pending.
+      if (next) win.contentView.addChildView(view);
+      view.setVisible(next);
     },
     destroy() {
-      win.removeBrowserView(view);
+      win.contentView.removeChildView(view);
       view.webContents.close();
     },
   };
@@ -320,6 +322,7 @@ function createPreviewController(options = {}) {
   let pipSession = null;
   /** @type {Map<string, { timer: ReturnType<typeof setInterval> | null, consumers: Set<string> }>} */
   const frameCaptureSessions = new Map();
+  const frameCapturesInFlight = new Map();
 
   function unknownPreviewId() {
     return { ok: false, message: 'unknown preview id' };
@@ -423,6 +426,9 @@ function createPreviewController(options = {}) {
     }
     current = { timer: null, consumers: new Set([consumer]) };
     frameCaptureSessions.set(previewId, current);
+    const prior = frameCapturesInFlight.get(previewId);
+    if (prior) await prior.catch(() => {});
+    if (frameCaptureSessions.get(previewId) !== current) return;
     await capturePreviewFrame(previewId);
     if (frameCaptureSessions.get(previewId) !== current) return;
     const timer = setInterval(() => {
@@ -434,7 +440,17 @@ function createPreviewController(options = {}) {
 
   async function capturePreviewFrame(previewId) {
     const capture = frameCaptureSessions.get(previewId);
-    if (!capture || capture.consumers.size === 0) return;
+    if (!capture || capture.consumers.size === 0 || frameCapturesInFlight.has(previewId)) return;
+    const pending = publishCapturedPreviewFrame(previewId, capture);
+    frameCapturesInFlight.set(previewId, pending);
+    try {
+      await pending;
+    } finally {
+      if (frameCapturesInFlight.get(previewId) === pending) frameCapturesInFlight.delete(previewId);
+    }
+  }
+
+  async function publishCapturedPreviewFrame(previewId, capture) {
     const session = sessions.get(previewId);
     if (!session) return;
     const wc = session.view.webContents;

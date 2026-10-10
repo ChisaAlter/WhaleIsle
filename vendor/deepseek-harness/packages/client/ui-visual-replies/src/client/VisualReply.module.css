@@ -1,0 +1,47 @@
+.card {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-panel);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 6px 10px;
+}
+
+.title {
+  flex: 1 1 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--dsw-font-markdown-small-font-size);
+  line-height: var(--dsw-font-markdown-small-line-height);
+  font-weight: 500;
+}
+
+.actions { display: flex; flex-wrap: wrap; gap: 2px; }
+.inlineHost { min-height: var(--visual-reply-placeholder-height, 0px); }
+.frame, .expandedFrame { display: block; width: 100%; border: 0; background: var(--dsw-alias-bg-base); }
+.frame { height: var(--visual-reply-height); max-height: 2000px; }
+.expandedFrame { height: min(72vh, 900px); }
+.status { display: flex; align-items: center; gap: 12px; padding: 16px; color: var(--dsw-alias-label-secondary); }
+.dialog {
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+  width: min(1100px, 100%);
+  max-height: 100%;
+  padding-bottom: 0;
+  /* Page and source reading need a solid ground even with translucent themes. */
+  background: rgb(from var(--dsw-alias-bg-layer-2) r g b / 1);
+}
+.dialog .actions { display: inline-flex; vertical-align: middle; }
+.dialog .actions + button { vertical-align: middle; }
+.dialogContent { min-height: 0; overflow: auto; }
+.source { margin: 0; padding: 16px; overflow: auto; max-height: 72vh; font-family: var(--ds-font-family-code); font-size: var(--dsw-font-markdown-small-font-size); line-height: var(--dsw-font-markdown-small-line-height); white-space: pre-wrap; overflow-wrap: anywhere; }

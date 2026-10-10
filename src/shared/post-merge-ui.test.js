@@ -258,7 +258,6 @@ const NO_DRAG_FILES = [
   'packages/client/ui-primitives/src/Tooltip.module.css',
   'packages/client/ui-schedule/src/client/ScheduleCatalogAction.module.css',
   'packages/client/ui-settings-general/src/client/SettingsRoot.module.css',
-  'packages/client/ui-settings-general/src/client/UpdateAction.module.css',
   'packages/client/ui-settings-remote/src/client/RemoteSection.module.css',
   'packages/client/ui-sidebar/src/client/SidebarRoot.module.css',
   'packages/client/ui-subagent/src/client/SubagentHeaderLineage.module.css',

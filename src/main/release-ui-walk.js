@@ -409,15 +409,48 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitUntil(probe, timeoutMs, intervalMs = 200) {
+async function waitUntil(probe, timeoutMs, intervalMs = 200, isReady) {
   const deadline = Date.now() + timeoutMs;
   let last = null;
   while (Date.now() < deadline) {
     last = await probe();
-    if (last) return last;
+    if (isReady ? isReady(last) : last) return last;
     await sleep(intervalMs);
   }
-  return last;
+  // A partial object must not become a truthy success when its ready
+  // predicate never passed. Boolean-only callers retain their old result.
+  return isReady ? null : last;
+}
+
+// Snapshot presence alone does not mean the controls have finished mounting.
+function probeSignedOutAccountMenu(wc, timeoutMs = 5_000) {
+  return waitUntil(() => pageEval(wc, () => {
+    const menu = Array.from(document.querySelectorAll('[role="menu"]')).find((el) =>
+      dshShown(el) && (dshFind('^sign in$|^登录$', el) || dshFind('^contact us$|^联系我们$', el)));
+    if (!menu) return null;
+    return {
+      signIn: Boolean(dshFind('^sign in$|^登录$', menu)),
+      contact: Boolean(dshFind('^contact us$|^联系我们$', menu)),
+    };
+  }), timeoutMs, 200, (state) => state?.signIn && state?.contact);
+}
+
+function probeAppearanceControls(wc, timeoutMs = 10_000) {
+  return waitUntil(() => pageEval(wc, () => {
+    const dialog = dshDialogNamed('^设置$|^settings$');
+    if (!dialog) return null;
+    const nav = document.querySelector('[data-dsh-settings-section="appearance"]');
+    const text = dialog.innerText || '';
+    return {
+      nav: nav?.getAttribute('aria-current') === 'true',
+      heading: Boolean(dshHeading('wallpaper|背景图', dialog)),
+      choose: Boolean(dshFind('choose image|选择图片', dialog)),
+      browse: Boolean(dshFind('browse gallery|浏览图库', dialog)),
+      bingDaily: /Bing daily wallpapers|Bing 每日壁纸/.test(text),
+      catalogUrls: /Wallpaper catalog URLs|壁纸目录地址/.test(text),
+      placeholder: Boolean(dialog.querySelector('input[placeholder="https://example.com/wallpapers.json"]')),
+    };
+  }), timeoutMs, 200, (state) => state?.nav && state?.heading && state?.choose && state?.browse);
 }
 
 function pageEval(wc, fn, ...args) {
@@ -778,6 +811,49 @@ async function waitForComposerIdle(wc, timeoutMs = 10_000, readinessDraft) {
     Math.max(0, deadline - Date.now())));
 }
 
+/** A cleared draft and the matching user bubble prove this send was accepted. */
+function waitForComposerSubmission(wc, text, timeoutMs = 30_000) {
+  return waitUntil(() => pageEval(wc, (want) => {
+    const echoed = Array.from(document.querySelectorAll('[data-chat-flow-kind="user"]'))
+      .some((el) => dshShown(el) && (el.textContent || '').includes(want));
+    if (!echoed || dshComposerText() !== '' || !dshComposerReady()) return null;
+    const stop = dshFind('stop generating|停止生成|deep diving|深潜');
+    if (stop && !stop.disabled) return 'engaged';
+    // Empty, editable composers correctly disable Send after a fast turn ends.
+    return dshComposerSend() ? 'idle' : null;
+  }, text), timeoutMs);
+}
+
+async function probeSessionLogMenu(wc, timeoutMs = 5_000) {
+  const entry = await pageEval(wc, () => {
+    const ordinary = Array.from(document.querySelectorAll('[data-chat-flow-kind="user"]')).some(dshShown);
+    const more = ordinary && dshFind('^more actions$|^更多操作$');
+    const bar = document.querySelector('#dshd-shell-titlebar-trailing');
+    const extraShortcut = Boolean(bar && dshFind('session log|会话日志|Session 日志', bar));
+    const opened = Boolean(more && !more.disabled);
+    if (opened) more.click();
+    return { ordinary, opened, extraShortcut };
+  });
+  const download = entry.opened && Boolean(await waitUntil(() => pageEval(wc, () => {
+    const menu = Array.from(document.querySelectorAll('[role="menu"]')).find((el) =>
+      dshShown(el) && dshFind('download session log|下载会话日志', el));
+    const item = menu && dshFind('download session log|下载会话日志', menu);
+    return item && !item.disabled && item.getAttribute('aria-disabled') !== 'true' ? true : null;
+  }), timeoutMs));
+  return { ...entry, download: Boolean(download) };
+}
+
+/** The Git primary action varies with repository state; Commit lives in its menu. */
+function probeGitCommitMenu(wc, timeoutMs = 5_000) {
+  return waitUntil(() => pageEval(wc, () => {
+    const menu = Array.from(document.querySelectorAll('[role="menu"]')).find((el) =>
+      dshShown(el) && dshFind('^commit$|^提交$', el));
+    const commit = menu && dshFind('^commit$|^提交$', menu);
+    return commit ? { present: true,
+      enabled: !commit.disabled && commit.getAttribute('aria-disabled') !== 'true' } : null;
+  }), timeoutMs);
+}
+
 /** Verify the current account entry or its documented sidebar fallback. */
 async function probeRemoteEntry(wc, timeoutMs = 5_000) {
   const entry = await pageEval(wc, () => {
@@ -900,17 +976,9 @@ async function switchComposerThinking(wc, helpers) {
       await pressEnter(wc);
       sent = true;
     }
-    // Credential-less QA world: the turn may engage and then sit in provider
-    // retries without ever reaching idle. Engagement proves the composer
-    // accepted the send after the effort switch; idle is best-effort after.
-    const settled = await waitUntil(() => pageEval(wc, () => {
-      const stop = dshFind('stop generating|停止生成|deep diving|深潜');
-      if (stop && !stop.disabled) return 'engaged';
-      const send = dshComposerSend();
-      return send && dshComposerIdle() ? 'idle' : null;
-    }), 30_000);
+    const settled = await waitForComposerSubmission(wc, pingText);
     if (settled === 'engaged') {
-      await waitForComposerIdle(wc, 20_000, pingText);
+      if (await waitForComposerIdle(wc, 20_000, pingText)) return '';
       // Still engaged (credential-less world sits in provider retries): stop
       // the turn so the next ping starts from an idle composer.
       await pageEval(wc, () => {
@@ -921,7 +989,7 @@ async function switchComposerThinking(wc, helpers) {
       const idleAfterStop = await waitForComposerIdle(wc, 10_000, pingText);
       return idleAfterStop ? '' : `composer did not become idle after stopping ${label}`;
     }
-    return settled === 'idle' ? '' : `ping for ${label} neither engaged nor settled`;
+    return settled === 'idle' ? '' : `ping for ${label} had no accepted user echo and ready composer`;
   };
 
   const errors = [];
@@ -934,7 +1002,7 @@ async function switchComposerThinking(wc, helpers) {
     ok: errors.length === 0,
     detail: errors.length
       ? errors.join(' | ')
-      : `switched ${picked.map((row) => row.label).join(' → ')}`,
+      : `switched ${picked.map((row) => row.label).join(' → ')}; accepted sends and idle verified; model inference unverified (MISSING_CREDENTIAL is not inference acceptance)`,
   };
 }
 
@@ -1186,6 +1254,12 @@ async function runReleaseUiWalk(wc, helpers) {
   );
   const thinking = await switchComposerThinking(wc, helpers);
   rec('composer.thinkingSwitch', thinking.ok, thinking.detail);
+  // A sent ordinary session owns More actions. A fresh blank draft hides it.
+  const sessionLog = await probeSessionLogMenu(wc);
+  const sessionLogMenu = sessionLog.download;
+  rec('titlebar.sessionLog', !sessionLog.extraShortcut && sessionLog.ordinary && sessionLogMenu,
+    `ordinary=${sessionLog.ordinary} extraShortcut=${sessionLog.extraShortcut} menuDownload=${sessionLogMenu}`);
+  await dismiss();
   await clickNewSession(wc);
   await waitUntil(() => pageEval(wc, () => (
     dshComposerReady() && dshFind('send message|发送消息') ? true : null
@@ -1262,24 +1336,12 @@ async function runReleaseUiWalk(wc, helpers) {
       sessionLog: Boolean(bar && dshFind('session log|会话日志|Session 日志', bar)),
       labels,
       branch: Boolean(dshFind('switch branch|切换分支', bar)),
-      commit: Boolean(dshFind('^commit|提交', bar)),
       git: Boolean(dshFind('git actions|git 操作', bar)),
       terminal: Boolean(dshFind('terminal|终端', bar)),
       surfaces: Boolean(dshFind('right panel|surfaces|右侧栏', bar)),
     };
   });
-  // Session logs remain available from More actions without a second shortcut.
-  const sessionMenuOpened = await clickNamed(wc, '^more actions$|^更多操作$');
-  const sessionLogMenu = sessionMenuOpened && Boolean(await waitUntil(() => pageEval(wc, () => {
-    const menu = document.querySelector('[role="menu"]');
-    const download = menu && dshFind('download session log|下载会话日志', menu);
-    return Boolean(download && !download.disabled);
-  }), 5_000));
-  rec('titlebar.sessionLog', Boolean(titlebar?.sessionLog === false && sessionLogMenu),
-    `extraShortcut=${titlebar?.sessionLog} menuDownload=${sessionLogMenu} labels=${(titlebar?.labels || []).join(' | ')}`);
-  await dismiss();
   rec('titlebar.branch', titlebar?.branch, '');
-  rec('titlebar.commit', titlebar?.commit, '');
   rec('titlebar.git', titlebar?.git, '');
   rec('titlebar.terminal', titlebar?.terminal, '');
   rec('titlebar.surfaces', titlebar?.surfaces, '');
@@ -1310,6 +1372,9 @@ async function runReleaseUiWalk(wc, helpers) {
   await helpers.clickTitlebarButton(wc, 'git actions|git 操作');
   const gitMenu = await waitUntil(() => pageEval(wc, () => Boolean(document.querySelector('[role="menu"]'))), 5_000);
   rec('titlebar.gitMenu', Boolean(gitMenu), gitMenu ? 'opened' : 'did not open');
+  const gitCommit = gitMenu && await probeGitCommitMenu(wc);
+  rec('titlebar.commit', Boolean(gitCommit?.present),
+    gitCommit ? `Git menu Commit present; enabled=${gitCommit.enabled} (actual commit verified by git.commit)` : 'Git menu Commit missing');
   await dismiss();
   const drawerOpen = await pageEval(wc, () => {
     const root = document.querySelector('[data-terminal-owner="drawer"]');
@@ -1324,7 +1389,7 @@ async function runReleaseUiWalk(wc, helpers) {
     return {
       newTerminal: Boolean(dshFind('new terminal|新建终端', root)),
     };
-  }), 10_000);
+  }), 10_000, 200, (state) => state?.newTerminal);
   rec('terminal.drawer', Boolean(drawer), drawer ? '' : 'drawer did not open');
   rec('terminal.new', Boolean(drawer?.newTerminal), '');
   if (drawer) {
@@ -1369,7 +1434,7 @@ async function runReleaseUiWalk(wc, helpers) {
       note,
       text: text.slice(0, 160),
     };
-  }), 20_000);
+  }), 20_000, 200, (state) => state?.search && state?.readme && state?.note);
   const filesSnap = files || await pageEval(wc, () => {
     const panel = document.querySelector('[data-files-panel]');
     if (!panel) return null;
@@ -1458,7 +1523,7 @@ async function runReleaseUiWalk(wc, helpers) {
         submit: Boolean(dshFind('^commit$|^提交$', dialog)),
         note,
       };
-    }), 8_000);
+    }), 8_000, 200, (state) => state?.note && state?.message && state?.submit);
     if (!commitDialog) await dismiss();
   }
   rec('git.commitDialog', Boolean(commitDialog), commitDialog ? 'note.md listed' : 'commit dialog did not list note.md', true);
@@ -1508,7 +1573,7 @@ async function runReleaseUiWalk(wc, helpers) {
     if (!panel || !dshShown(panel)) return null;
     const text = panel.innerText || '';
     return { empty: /no agents yet|还没有子代理/i.test(text) };
-  }), 10_000);
+  }), 10_000, 200, (state) => state?.empty);
   rec('agents.panel', Boolean(agents), '');
   rec('agents.empty', Boolean(agents?.empty), agents?.empty ? '' : 'empty copy missing');
 
@@ -1541,7 +1606,7 @@ async function runReleaseUiWalk(wc, helpers) {
       toolbar: Boolean(toolbar && dshShown(toolbar)),
       url,
     };
-  }), 10_000);
+  }), 10_000, 200, (state) => state?.unavailable || state?.url || state?.toolbar);
   const browserDiagnostic = !browser ? await pageEval(wc, () => {
     const panel = document.querySelector('[data-sidebar-right-panel][data-sidebar-right-open]');
     return {
@@ -1567,14 +1632,7 @@ async function runReleaseUiWalk(wc, helpers) {
   const accountLauncher = await pageEval(wc, () => Boolean(dshFind('^account menu|^账号菜单')));
   rec('account.launcher', accountLauncher, accountLauncher ? '' : 'desktop account launcher missing');
   if (accountLauncher) await clickNamed(wc, '^account menu|^账号菜单');
-  const accountMenu = accountLauncher ? await waitUntil(() => pageEval(wc, () => {
-    const menu = Array.from(document.querySelectorAll('[role="menu"]')).find(dshShown);
-    if (!menu) return null;
-    return {
-      signIn: Boolean(dshFind('^sign in$|^登录$', menu)),
-      contact: Boolean(dshFind('^contact us$|^联系我们$', menu)),
-    };
-  }), 5_000) : null;
+  const accountMenu = accountLauncher ? await probeSignedOutAccountMenu(wc) : null;
   rec('account.signedOutMenu', Boolean(accountMenu?.signIn && accountMenu?.contact),
     accountMenu ? `signIn=${accountMenu.signIn} contact=${accountMenu.contact}` : 'account menu missing');
   await dismiss();
@@ -1583,21 +1641,7 @@ async function runReleaseUiWalk(wc, helpers) {
   rec('settings.trigger', settingsTrigger, '');
 
   const appearanceOpened = await openSettings('appearance');
-  const appearance = await waitUntil(() => pageEval(wc, () => {
-    const dialog = dshDialog();
-    if (!dialog) return null;
-    const nav = document.querySelector('[data-dsh-settings-section="appearance"]');
-    const text = dialog.innerText || '';
-    return {
-      nav: Boolean(nav),
-      heading: Boolean(dshHeading('wallpaper|背景图', dialog)),
-      choose: Boolean(dshFind('choose image|选择图片', dialog)),
-      browse: Boolean(dshFind('browse gallery|浏览图库', dialog)),
-      bingDaily: /Bing daily wallpapers|Bing 每日壁纸/.test(text),
-      catalogUrls: /Wallpaper catalog URLs|壁纸目录地址/.test(text),
-      placeholder: Boolean(dialog.querySelector('input[placeholder="https://example.com/wallpapers.json"]')),
-    };
-  }), 10_000);
+  const appearance = await probeAppearanceControls(wc);
   rec('appearance.choose', Boolean(appearanceOpened && appearance?.choose), appearanceOpened ? '' : 'settings did not open');
   rec('appearance.browse', Boolean(appearance?.browse), '');
   rec(
@@ -1657,7 +1701,7 @@ async function runReleaseUiWalk(wc, helpers) {
       sources: Boolean(dshFind('^sources$|^图源$', galleryDialog)),
       items: (galleryDialog.innerText || '').slice(0, 80),
     };
-  }), 15_000);
+  }), 15_000, 200, (state) => state?.sources);
   rec('gallery.dialog', Boolean(gallery), gallery ? '' : 'browse gallery dialog missing');
   rec('gallery.sources', Boolean(gallery?.sources), gallery?.sources ? '' : 'Sources missing — wallpaper shell inject?');
 
@@ -1670,7 +1714,7 @@ async function runReleaseUiWalk(wc, helpers) {
         addSource: Boolean(dshFind('add source|新增图源', galleryDialog)),
         hint: /Categories come from here|分类来自这里/i.test(galleryDialog.innerText || ''),
       };
-    }), 8_000);
+    }), 8_000, 200, (state) => state?.addSource);
     rec('gallery.addSource', Boolean(sourcesPane?.addSource), sourcesPane?.hint ? 'hint visible' : '');
     await clickNamed(wc, 'back to gallery|返回图库');
     await sleep(300);
@@ -1688,7 +1732,7 @@ async function runReleaseUiWalk(wc, helpers) {
       sfw: Boolean(dshFind('常规|general', galleryDialog)),
       r18: /R18|NSFW|purity/i.test(text),
     };
-  }), 8_000);
+  }), 8_000, 200, (state) => state?.tab || state?.sfw || state?.r18);
   rec(
     'gallery.wallhavenSfw',
     Boolean(wallhaven?.tab || wallhaven?.sfw) && !wallhaven?.r18,
@@ -1750,7 +1794,7 @@ async function runReleaseUiWalk(wc, helpers) {
 
   const modelsOpened = await openSettings('models');
   const models = await waitUntil(() => pageEval(wc, () => {
-    const dialog = dshDialog();
+    const dialog = dshDialogNamed('^设置$|^settings$');
     const nav = document.querySelector('[data-dsh-settings-section="models"]');
     if (!dialog || nav?.getAttribute('aria-current') !== 'true') return null;
     const text = dialog.innerText || '';
@@ -1761,7 +1805,7 @@ async function runReleaseUiWalk(wc, helpers) {
       customAdd,
       thinking: /supported thinking intensity|思考强度/i.test(text),
     };
-  }), 10_000);
+  }), 10_000, 200, (state) => state?.heading && state?.customAdd);
   const vision = await waitUntil(() => pageEval(wc, () => {
     const dialog = dshDialog();
     return Boolean(dialog && dshFind('vision model|识图模型', dialog));
@@ -1886,25 +1930,25 @@ async function runReleaseUiWalk(wc, helpers) {
 
   const pluginsOpened = await openSettings('plugins');
   const plugins = await waitUntil(() => pageEval(wc, () => {
-    const dialog = dshDialog();
+    const dialog = dshDialogNamed('^设置$|^settings$');
     const nav = document.querySelector('[data-dsh-settings-section="plugins"]');
     return {
       nav: Boolean(nav && nav.getAttribute('aria-current') === 'true'),
       heading: Boolean(dialog && dshHeading('^plugins$|^插件$', dialog)),
     };
-  }), 10_000);
+  }), 10_000, 200, (state) => state?.nav || state?.heading);
   rec('plugins.heading', Boolean(pluginsOpened && (plugins?.heading || plugins?.nav)), '');
 
   const marketOpened = await openSettings('market');
   const market = await waitUntil(() => pageEval(wc, () => {
     const nav = document.querySelector('[data-dsh-settings-section="market"]');
-    const dialog = dshDialog();
+    const dialog = dshDialogNamed('^设置$|^settings$');
     const text = dialog ? (dialog.innerText || '') : '';
     return {
-      nav: Boolean(nav && (nav.getAttribute('aria-current') === 'true' || dshShown(nav))),
+      nav: Boolean(dialog && nav?.getAttribute('aria-current') === 'true'),
       discover: /discover|发现/i.test(text),
     };
-  }), 10_000);
+  }), 10_000, 200, (state) => state?.nav);
   rec('market.section', Boolean(marketOpened && market?.nav), marketOpened ? '' : 'market section missing');
   await clickNamed(wc, '^(discover|发现)$');
   const discover = await waitUntil(() => pageEval(wc, () => {
@@ -1936,9 +1980,9 @@ async function runReleaseUiWalk(wc, helpers) {
   const usage = await waitUntil(() => pageEval(wc, () => {
     const nav = document.querySelector('[data-dsh-settings-section="usage-stats"]');
     return {
-      nav: Boolean(nav && (nav.getAttribute('aria-current') === 'true' || dshShown(nav))),
+      nav: Boolean(dshDialogNamed('^设置$|^settings$') && nav?.getAttribute('aria-current') === 'true'),
     };
-  }), 10_000);
+  }), 10_000, 200, (state) => state?.nav);
   rec('usage-stats.section', Boolean(usageOpened && usage?.nav), usageOpened ? '' : 'usage-stats section missing');
 
   await dismiss();
@@ -1949,7 +1993,7 @@ async function runReleaseUiWalk(wc, helpers) {
   // disabled plugin has not silently mounted a Bots sidebar tab.
   const interfaceOpened = await openSettings('interface');
   const botsSetting = await waitUntil(() => pageEval(wc, () => {
-    const dialog = dshDialog();
+    const dialog = dshDialogNamed('^设置$|^settings$');
     const nav = document.querySelector('[data-dsh-settings-section="interface"]');
     const control = dialog && Array.from(dialog.querySelectorAll('[role="switch"]'))
       .find((el) => /(bots|机器人)/i.test(dshLabel(el)));
@@ -1960,7 +2004,7 @@ async function runReleaseUiWalk(wc, helpers) {
       off: control?.getAttribute('aria-checked') === 'false',
       beta: Boolean(dialog && /测试中|beta/i.test(dialog.innerText || '')),
     };
-  }), 10_000);
+  }), 10_000, 200, (state) => state?.nav && state?.switchPresent);
   rec('interface.dshbotSwitch', Boolean(interfaceOpened && botsSetting?.nav
     && botsSetting?.switchPresent && botsSetting?.off && botsSetting?.beta),
   `nav=${botsSetting?.nav} switch=${botsSetting?.switchPresent} off=${botsSetting?.off} beta=${botsSetting?.beta}`);
@@ -2025,5 +2069,10 @@ module.exports = {
   typeIntoComposer,
   clickNewSession,
   waitForComposerIdle,
+  waitForComposerSubmission,
+  probeSessionLogMenu,
+  probeGitCommitMenu,
   probeRemoteEntry,
+  probeSignedOutAccountMenu,
+  probeAppearanceControls,
 };

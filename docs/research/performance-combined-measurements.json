@@ -1,0 +1,2985 @@
+{
+  "readyAt": 1791479532222,
+  "elapsedMs": 1800609,
+  "entry": ".",
+  "samples": [
+    {
+      "at": 1791479533954,
+      "elapsedMs": 1732,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 29500868,
+          "totalSize": 32911360,
+          "embedderHeapUsedSize": 8427968,
+          "backingStorageSize": 19380684
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 6173148,
+          "totalSize": 7573504,
+          "embedderHeapUsedSize": 1781808,
+          "backingStorageSize": 11796662
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7647232,
+          "PrivateMemorySize64": 1282048,
+          "CPU": 0.03125,
+          "Handles": 95
+        },
+        {
+          "Id": 24748,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7512064,
+          "PrivateMemorySize64": 1269760,
+          "CPU": 0.25,
+          "Handles": 98
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 269803520,
+          "PrivateMemorySize64": 156884992,
+          "CPU": 7.03125,
+          "Handles": 341
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 318705664,
+          "PrivateMemorySize64": 942419968,
+          "CPU": 14.359375,
+          "Handles": 662
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 237228032,
+          "PrivateMemorySize64": 149860352,
+          "CPU": 3.3125,
+          "Handles": 1216
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 228515840,
+          "PrivateMemorySize64": 125415424,
+          "CPU": 2.375,
+          "Handles": 329
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 117460992,
+          "PrivateMemorySize64": 14012416,
+          "CPU": 0.453125,
+          "Handles": 382
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 144130048,
+          "PrivateMemorySize64": 46608384,
+          "CPU": 2.515625,
+          "Handles": 279
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 424734720,
+          "PrivateMemorySize64": 442568704,
+          "CPU": 12.203125,
+          "Handles": 324
+        },
+        {
+          "Id": 35496,
+          "ProcessName": "reg",
+          "WorkingSet64": 4284416,
+          "PrivateMemorySize64": 892928,
+          "CPU": 0.34375,
+          "Handles": 84
+        }
+      ],
+      "pages": [
+        {
+          "id": "AEA3B0EE502D6BCA9CF3AA24D45F461B",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot-reveal.html"
+        },
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        },
+        {
+          "id": "4083FFC95F96D0AB688E65A908B46C38",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/launcher.html"
+        }
+      ]
+    },
+    {
+      "at": 1791479595216,
+      "elapsedMs": 62994,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 26344652,
+          "totalSize": 27930624,
+          "embedderHeapUsedSize": 7603728,
+          "backingStorageSize": 19309494
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 7188232,
+          "totalSize": 10194944,
+          "embedderHeapUsedSize": 4047584,
+          "backingStorageSize": 11796742
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7630848,
+          "PrivateMemorySize64": 1245184,
+          "CPU": 0.03125,
+          "Handles": 95
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 236695552,
+          "PrivateMemorySize64": 145215488,
+          "CPU": 20.296875,
+          "Handles": 337
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 270327808,
+          "PrivateMemorySize64": 920162304,
+          "CPU": 47.65625,
+          "Handles": 662
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 185090048,
+          "PrivateMemorySize64": 127037440,
+          "CPU": 4.828125,
+          "Handles": 1204
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 175730688,
+          "PrivateMemorySize64": 115515392,
+          "CPU": 2.921875,
+          "Handles": 337
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78413824,
+          "PrivateMemorySize64": 13516800,
+          "CPU": 0.484375,
+          "Handles": 377
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116391936,
+          "PrivateMemorySize64": 50135040,
+          "CPU": 8.625,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 263847936,
+          "PrivateMemorySize64": 283693056,
+          "CPU": 14.171875,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        }
+      ]
+    },
+    {
+      "at": 1791479654488,
+      "elapsedMs": 122266,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 26360908,
+          "totalSize": 27930624,
+          "embedderHeapUsedSize": 8070176,
+          "backingStorageSize": 19310301
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 6500056,
+          "totalSize": 8359936,
+          "embedderHeapUsedSize": 4094120,
+          "backingStorageSize": 11796742
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7630848,
+          "PrivateMemorySize64": 1245184,
+          "CPU": 0.03125,
+          "Handles": 95
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 236101632,
+          "PrivateMemorySize64": 144433152,
+          "CPU": 31.484375,
+          "Handles": 337
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 264785920,
+          "PrivateMemorySize64": 908058624,
+          "CPU": 75.234375,
+          "Handles": 656
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 184217600,
+          "PrivateMemorySize64": 126185472,
+          "CPU": 5.328125,
+          "Handles": 1188
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 174649344,
+          "PrivateMemorySize64": 114606080,
+          "CPU": 2.96875,
+          "Handles": 337
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78319616,
+          "PrivateMemorySize64": 13320192,
+          "CPU": 0.5,
+          "Handles": 365
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116137984,
+          "PrivateMemorySize64": 49881088,
+          "CPU": 14.328125,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 266964992,
+          "PrivateMemorySize64": 286543872,
+          "CPU": 15.15625,
+          "Handles": 309
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        }
+      ]
+    },
+    {
+      "at": 1791479714881,
+      "elapsedMs": 182659,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 26207720,
+          "totalSize": 27930624,
+          "embedderHeapUsedSize": 8853920,
+          "backingStorageSize": 19311105
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 7391712,
+          "totalSize": 9408512,
+          "embedderHeapUsedSize": 6153056,
+          "backingStorageSize": 11796747
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7630848,
+          "PrivateMemorySize64": 1245184,
+          "CPU": 0.03125,
+          "Handles": 95
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 235905024,
+          "PrivateMemorySize64": 144109568,
+          "CPU": 41.421875,
+          "Handles": 337
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 264859648,
+          "PrivateMemorySize64": 904523776,
+          "CPU": 99.921875,
+          "Handles": 660
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 184786944,
+          "PrivateMemorySize64": 126521344,
+          "CPU": 5.65625,
+          "Handles": 1189
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 175992832,
+          "PrivateMemorySize64": 116023296,
+          "CPU": 3.140625,
+          "Handles": 337
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78319616,
+          "PrivateMemorySize64": 13320192,
+          "CPU": 0.5,
+          "Handles": 365
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116117504,
+          "PrivateMemorySize64": 49864704,
+          "CPU": 19.40625,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 267235328,
+          "PrivateMemorySize64": 287084544,
+          "CPU": 16.015625,
+          "Handles": 309
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        }
+      ]
+    },
+    {
+      "at": 1791479775644,
+      "elapsedMs": 243422,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 28431848,
+          "totalSize": 32387072,
+          "embedderHeapUsedSize": 9259712,
+          "backingStorageSize": 19444497
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 7775876,
+          "totalSize": 12476416,
+          "embedderHeapUsedSize": 3664072,
+          "backingStorageSize": 11711244
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7630848,
+          "PrivateMemorySize64": 1245184,
+          "CPU": 0.03125,
+          "Handles": 95
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 238800896,
+          "PrivateMemorySize64": 146239488,
+          "CPU": 54.9375,
+          "Handles": 339
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 264777728,
+          "PrivateMemorySize64": 908697600,
+          "CPU": 130.734375,
+          "Handles": 659
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 188444672,
+          "PrivateMemorySize64": 129740800,
+          "CPU": 8.890625,
+          "Handles": 1191
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 182284288,
+          "PrivateMemorySize64": 119963648,
+          "CPU": 3.296875,
+          "Handles": 338
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78364672,
+          "PrivateMemorySize64": 13316096,
+          "CPU": 0.515625,
+          "Handles": 353
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116080640,
+          "PrivateMemorySize64": 49811456,
+          "CPU": 25.875,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 268808192,
+          "PrivateMemorySize64": 288436224,
+          "CPU": 17.140625,
+          "Handles": 309
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        }
+      ]
+    },
+    {
+      "at": 1791479837716,
+      "elapsedMs": 305494,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 25018304,
+          "totalSize": 29761536,
+          "embedderHeapUsedSize": 6589472,
+          "backingStorageSize": 17840826
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 10314260,
+          "totalSize": 15450112,
+          "embedderHeapUsedSize": 6696976,
+          "backingStorageSize": 11711244
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7757824,
+          "PrivateMemorySize64": 1327104,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 241573888,
+          "PrivateMemorySize64": 148983808,
+          "CPU": 68.96875,
+          "Handles": 339
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 266887168,
+          "PrivateMemorySize64": 931028992,
+          "CPU": 164.34375,
+          "Handles": 658
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 191287296,
+          "PrivateMemorySize64": 132276224,
+          "CPU": 17.859375,
+          "Handles": 1191
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 181575680,
+          "PrivateMemorySize64": 118165504,
+          "CPU": 3.703125,
+          "Handles": 337
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78508032,
+          "PrivateMemorySize64": 13418496,
+          "CPU": 0.53125,
+          "Handles": 353
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116436992,
+          "PrivateMemorySize64": 50061312,
+          "CPU": 31.875,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 269561856,
+          "PrivateMemorySize64": 289050624,
+          "CPU": 18.359375,
+          "Handles": 309
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        }
+      ]
+    },
+    {
+      "at": 1791479897255,
+      "elapsedMs": 365033,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 25030556,
+          "totalSize": 29761536,
+          "embedderHeapUsedSize": 7955792,
+          "backingStorageSize": 17847353
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 8155092,
+          "totalSize": 22016000,
+          "embedderHeapUsedSize": 2019304,
+          "backingStorageSize": 11711244
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7757824,
+          "PrivateMemorySize64": 1327104,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 237363200,
+          "PrivateMemorySize64": 157093888,
+          "CPU": 83.53125,
+          "Handles": 336
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 266407936,
+          "PrivateMemorySize64": 930377728,
+          "CPU": 194.21875,
+          "Handles": 658
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 192561152,
+          "PrivateMemorySize64": 133423104,
+          "CPU": 24.671875,
+          "Handles": 1201
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 181592064,
+          "PrivateMemorySize64": 118206464,
+          "CPU": 3.890625,
+          "Handles": 337
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78524416,
+          "PrivateMemorySize64": 13426688,
+          "CPU": 0.53125,
+          "Handles": 359
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116387840,
+          "PrivateMemorySize64": 49991680,
+          "CPU": 38.265625,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 270086144,
+          "PrivateMemorySize64": 290840576,
+          "CPU": 19.53125,
+          "Handles": 309
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        }
+      ]
+    },
+    {
+      "at": 1791479962053,
+      "elapsedMs": 429831,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 25700788,
+          "totalSize": 29761536,
+          "embedderHeapUsedSize": 10174472,
+          "backingStorageSize": 17849551
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 7722424,
+          "totalSize": 9375744,
+          "embedderHeapUsedSize": 4725240,
+          "backingStorageSize": 11711441
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 240386048,
+          "PrivateMemorySize64": 155172864,
+          "CPU": 97.515625,
+          "Handles": 347
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 268488704,
+          "PrivateMemorySize64": 908083200,
+          "CPU": 227.65625,
+          "Handles": 658
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 193441792,
+          "PrivateMemorySize64": 133734400,
+          "CPU": 27.953125,
+          "Handles": 1201
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 183930880,
+          "PrivateMemorySize64": 119947264,
+          "CPU": 4.265625,
+          "Handles": 337
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78491648,
+          "PrivateMemorySize64": 13357056,
+          "CPU": 0.53125,
+          "Handles": 359
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116400128,
+          "PrivateMemorySize64": 49938432,
+          "CPU": 44.734375,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 270393344,
+          "PrivateMemorySize64": 291037184,
+          "CPU": 20.84375,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        }
+      ]
+    },
+    {
+      "at": 1791480019556,
+      "elapsedMs": 487334,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 25705780,
+          "totalSize": 29761536,
+          "embedderHeapUsedSize": 10541248,
+          "backingStorageSize": 17850643
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 7299604,
+          "totalSize": 8654848,
+          "embedderHeapUsedSize": 7769256,
+          "backingStorageSize": 11711441
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 234160128,
+          "PrivateMemorySize64": 148856832,
+          "CPU": 109.703125,
+          "Handles": 346
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 269254656,
+          "PrivateMemorySize64": 908656640,
+          "CPU": 260.015625,
+          "Handles": 659
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 193961984,
+          "PrivateMemorySize64": 134565888,
+          "CPU": 28.390625,
+          "Handles": 1193
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 184262656,
+          "PrivateMemorySize64": 120246272,
+          "CPU": 4.3125,
+          "Handles": 338
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78475264,
+          "PrivateMemorySize64": 13316096,
+          "CPU": 0.5625,
+          "Handles": 353
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116314112,
+          "PrivateMemorySize64": 49844224,
+          "CPU": 50.890625,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 271966208,
+          "PrivateMemorySize64": 292929536,
+          "CPU": 22.046875,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        }
+      ]
+    },
+    {
+      "at": 1791480078942,
+      "elapsedMs": 546720,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 25705780,
+          "totalSize": 29761536,
+          "embedderHeapUsedSize": 11085312,
+          "backingStorageSize": 17850643
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 7643632,
+          "totalSize": 9441280,
+          "embedderHeapUsedSize": 2356808,
+          "backingStorageSize": 11711441
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 234164224,
+          "PrivateMemorySize64": 148713472,
+          "CPU": 122.03125,
+          "Handles": 346
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 267919360,
+          "PrivateMemorySize64": 907304960,
+          "CPU": 290.890625,
+          "Handles": 659
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 193449984,
+          "PrivateMemorySize64": 134275072,
+          "CPU": 28.96875,
+          "Handles": 1193
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 185204736,
+          "PrivateMemorySize64": 121401344,
+          "CPU": 4.375,
+          "Handles": 338
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78475264,
+          "PrivateMemorySize64": 13316096,
+          "CPU": 0.5625,
+          "Handles": 353
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116277248,
+          "PrivateMemorySize64": 49827840,
+          "CPU": 56.4375,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 272400384,
+          "PrivateMemorySize64": 292929536,
+          "CPU": 23.203125,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        }
+      ]
+    },
+    {
+      "at": 1791480140148,
+      "elapsedMs": 607926,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 41176212,
+          "totalSize": 50212864,
+          "embedderHeapUsedSize": 10956776,
+          "backingStorageSize": 22958798
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 7397252,
+          "totalSize": 9019392,
+          "embedderHeapUsedSize": 9054024,
+          "backingStorageSize": 11711458
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7737344,
+          "PrivateMemorySize64": 1290240,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 235274240,
+          "PrivateMemorySize64": 149315584,
+          "CPU": 135.53125,
+          "Handles": 347
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 269824000,
+          "PrivateMemorySize64": 870596608,
+          "CPU": 322.453125,
+          "Handles": 656
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 200937472,
+          "PrivateMemorySize64": 142974976,
+          "CPU": 30.015625,
+          "Handles": 1199
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 227332096,
+          "PrivateMemorySize64": 172023808,
+          "CPU": 11.046875,
+          "Handles": 338
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78589952,
+          "PrivateMemorySize64": 13430784,
+          "CPU": 0.578125,
+          "Handles": 365
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116543488,
+          "PrivateMemorySize64": 50089984,
+          "CPU": 62.625,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 296435712,
+          "PrivateMemorySize64": 316878848,
+          "CPU": 25.3125,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        }
+      ]
+    },
+    {
+      "at": 1791480200335,
+      "elapsedMs": 668113,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 26421012,
+          "totalSize": 28979200,
+          "embedderHeapUsedSize": 5533288,
+          "backingStorageSize": 19303780
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 8653440,
+          "totalSize": 15572992,
+          "embedderHeapUsedSize": 3614520,
+          "backingStorageSize": 11711447
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 240930816,
+          "PrivateMemorySize64": 155414528,
+          "CPU": 148.734375,
+          "Handles": 346
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 267657216,
+          "PrivateMemorySize64": 872660992,
+          "CPU": 351.640625,
+          "Handles": 654
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 198402048,
+          "PrivateMemorySize64": 139747328,
+          "CPU": 35.265625,
+          "Handles": 1193
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 226246656,
+          "PrivateMemorySize64": 170905600,
+          "CPU": 11.0625,
+          "Handles": 338
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78528512,
+          "PrivateMemorySize64": 13352960,
+          "CPU": 0.59375,
+          "Handles": 367
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116453376,
+          "PrivateMemorySize64": 49999872,
+          "CPU": 68.765625,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 296595456,
+          "PrivateMemorySize64": 316805120,
+          "CPU": 26.25,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        }
+      ]
+    },
+    {
+      "at": 1791480264719,
+      "elapsedMs": 732497,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 26370312,
+          "totalSize": 27144192,
+          "embedderHeapUsedSize": 5319520,
+          "backingStorageSize": 19266703
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 9826308,
+          "totalSize": 19505152,
+          "embedderHeapUsedSize": 5171896,
+          "backingStorageSize": 11711447
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 246226944,
+          "PrivateMemorySize64": 160202752,
+          "CPU": 165.0625,
+          "Handles": 346
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 267997184,
+          "PrivateMemorySize64": 873025536,
+          "CPU": 386.5625,
+          "Handles": 656
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 199135232,
+          "PrivateMemorySize64": 140156928,
+          "CPU": 44.578125,
+          "Handles": 1193
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 204783616,
+          "PrivateMemorySize64": 149995520,
+          "CPU": 11.3125,
+          "Handles": 337
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78487552,
+          "PrivateMemorySize64": 13299712,
+          "CPU": 0.59375,
+          "Handles": 365
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116432896,
+          "PrivateMemorySize64": 49963008,
+          "CPU": 76.046875,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 268152832,
+          "PrivateMemorySize64": 288813056,
+          "CPU": 27.71875,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        }
+      ]
+    },
+    {
+      "at": 1791480321408,
+      "elapsedMs": 789186,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 26370312,
+          "totalSize": 27144192,
+          "embedderHeapUsedSize": 5319520,
+          "backingStorageSize": 19266703
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 8764440,
+          "totalSize": 23175168,
+          "embedderHeapUsedSize": 2173600,
+          "backingStorageSize": 11711436
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 250093568,
+          "PrivateMemorySize64": 165167104,
+          "CPU": 177.28125,
+          "Handles": 346
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 267665408,
+          "PrivateMemorySize64": 872640512,
+          "CPU": 415.109375,
+          "Handles": 656
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 199200768,
+          "PrivateMemorySize64": 139751424,
+          "CPU": 50.921875,
+          "Handles": 1191
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 204783616,
+          "PrivateMemorySize64": 149995520,
+          "CPU": 11.328125,
+          "Handles": 337
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78491648,
+          "PrivateMemorySize64": 13299712,
+          "CPU": 0.59375,
+          "Handles": 365
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116350976,
+          "PrivateMemorySize64": 49905664,
+          "CPU": 82.484375,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 270155776,
+          "PrivateMemorySize64": 291004416,
+          "CPU": 28.640625,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        }
+      ]
+    },
+    {
+      "at": 1791480382112,
+      "elapsedMs": 849890,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 26381652,
+          "totalSize": 27406336,
+          "embedderHeapUsedSize": 5427984,
+          "backingStorageSize": 19267746
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 9589200,
+          "totalSize": 24223744,
+          "embedderHeapUsedSize": 7651928,
+          "backingStorageSize": 11711436
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 249233408,
+          "PrivateMemorySize64": 164200448,
+          "CPU": 191.015625,
+          "Handles": 346
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 268296192,
+          "PrivateMemorySize64": 873304064,
+          "CPU": 443.390625,
+          "Handles": 656
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 199290880,
+          "PrivateMemorySize64": 140185600,
+          "CPU": 58.03125,
+          "Handles": 1188
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 204914688,
+          "PrivateMemorySize64": 150257664,
+          "CPU": 11.328125,
+          "Handles": 337
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78491648,
+          "PrivateMemorySize64": 13299712,
+          "CPU": 0.609375,
+          "Handles": 365
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116371456,
+          "PrivateMemorySize64": 49897472,
+          "CPU": 88.515625,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 268087296,
+          "PrivateMemorySize64": 287981568,
+          "CPU": 29.6875,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        }
+      ]
+    },
+    {
+      "at": 1791480443300,
+      "elapsedMs": 911078,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 26399588,
+          "totalSize": 27406336,
+          "embedderHeapUsedSize": 5742864,
+          "backingStorageSize": 19268349
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 10175264,
+          "totalSize": 22913024,
+          "embedderHeapUsedSize": 2562304,
+          "backingStorageSize": 11711436
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 245366784,
+          "PrivateMemorySize64": 163811328,
+          "CPU": 205.953125,
+          "Handles": 346
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 267382784,
+          "PrivateMemorySize64": 871866368,
+          "CPU": 475.890625,
+          "Handles": 656
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 199536640,
+          "PrivateMemorySize64": 140464128,
+          "CPU": 66.359375,
+          "Handles": 1188
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 205021184,
+          "PrivateMemorySize64": 150257664,
+          "CPU": 11.34375,
+          "Handles": 337
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78475264,
+          "PrivateMemorySize64": 13266944,
+          "CPU": 0.625,
+          "Handles": 364
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116330496,
+          "PrivateMemorySize64": 49852416,
+          "CPU": 95.0625,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 268087296,
+          "PrivateMemorySize64": 287981568,
+          "CPU": 30.640625,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        }
+      ]
+    },
+    {
+      "at": 1791480503738,
+      "elapsedMs": 971516,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 26399588,
+          "totalSize": 27406336,
+          "embedderHeapUsedSize": 5742864,
+          "backingStorageSize": 19268349
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 20921032,
+          "totalSize": 29990912,
+          "embedderHeapUsedSize": 7250328,
+          "backingStorageSize": 11711436
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 252026880,
+          "PrivateMemorySize64": 170516480,
+          "CPU": 219.1875,
+          "Handles": 346
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 267571200,
+          "PrivateMemorySize64": 872923136,
+          "CPU": 505.171875,
+          "Handles": 654
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 199749632,
+          "PrivateMemorySize64": 140484608,
+          "CPU": 73.328125,
+          "Handles": 1194
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 205025280,
+          "PrivateMemorySize64": 150257664,
+          "CPU": 11.359375,
+          "Handles": 337
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78516224,
+          "PrivateMemorySize64": 13340672,
+          "CPU": 0.625,
+          "Handles": 366
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116465664,
+          "PrivateMemorySize64": 49999872,
+          "CPU": 100.59375,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 268087296,
+          "PrivateMemorySize64": 287981568,
+          "CPU": 31.5,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        }
+      ]
+    },
+    {
+      "at": 1791480564364,
+      "elapsedMs": 1032142,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 26399588,
+          "totalSize": 27406336,
+          "embedderHeapUsedSize": 5742864,
+          "backingStorageSize": 19268349
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 10097636,
+          "totalSize": 30359552,
+          "embedderHeapUsedSize": 2500824,
+          "backingStorageSize": 11711436
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 11052,
+          "ProcessName": "electron",
+          "WorkingSet64": 252362752,
+          "PrivateMemorySize64": 170917888,
+          "CPU": 232.078125,
+          "Handles": 346
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 267038720,
+          "PrivateMemorySize64": 872390656,
+          "CPU": 530.4375,
+          "Handles": 654
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 199450624,
+          "PrivateMemorySize64": 140222464,
+          "CPU": 81.078125,
+          "Handles": 1194
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 205025280,
+          "PrivateMemorySize64": 150257664,
+          "CPU": 11.359375,
+          "Handles": 337
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78516224,
+          "PrivateMemorySize64": 13340672,
+          "CPU": 0.625,
+          "Handles": 366
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116383744,
+          "PrivateMemorySize64": 49885184,
+          "CPU": 105.8125,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 268087296,
+          "PrivateMemorySize64": 287981568,
+          "CPU": 32.578125,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        },
+        {
+          "id": "D8EE764EDA7EDBF84FB671DDAB51B736",
+          "url": "pet://pet/pet-live2d.html"
+        }
+      ]
+    },
+    {
+      "at": 1791480630258,
+      "elapsedMs": 1098036,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 26411508,
+          "totalSize": 27406336,
+          "embedderHeapUsedSize": 5742864,
+          "backingStorageSize": 19268349
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 188157952,
+          "PrivateMemorySize64": 480202752,
+          "CPU": 558.953125,
+          "Handles": 594
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 234508288,
+          "PrivateMemorySize64": 176541696,
+          "CPU": 88.90625,
+          "Handles": 1200
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 205090816,
+          "PrivateMemorySize64": 150323200,
+          "CPU": 11.359375,
+          "Handles": 337
+        },
+        {
+          "Id": 41328,
+          "ProcessName": "electron",
+          "WorkingSet64": 177856512,
+          "PrivateMemorySize64": 87420928,
+          "CPU": 0.421875,
+          "Handles": 290
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78479360,
+          "PrivateMemorySize64": 13262848,
+          "CPU": 0.625,
+          "Handles": 364
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116428800,
+          "PrivateMemorySize64": 49950720,
+          "CPU": 112.75,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 268365824,
+          "PrivateMemorySize64": 288792576,
+          "CPU": 34.015625,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        }
+      ]
+    },
+    {
+      "at": 1791480685341,
+      "elapsedMs": 1153119,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 26538260,
+          "totalSize": 27406336,
+          "embedderHeapUsedSize": 6058536,
+          "backingStorageSize": 19268349
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 7577488,
+          "totalSize": 13864960,
+          "embedderHeapUsedSize": 2774320,
+          "backingStorageSize": 11796826
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 307519488,
+          "PrivateMemorySize64": 891273216,
+          "CPU": 600.40625,
+          "Handles": 660
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 189186048,
+          "PrivateMemorySize64": 130007040,
+          "CPU": 94.828125,
+          "Handles": 1190
+        },
+        {
+          "Id": 32200,
+          "ProcessName": "electron",
+          "WorkingSet64": 273461248,
+          "PrivateMemorySize64": 158568448,
+          "CPU": 5.625,
+          "Handles": 337
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 205234176,
+          "PrivateMemorySize64": 150409216,
+          "CPU": 11.40625,
+          "Handles": 337
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78499840,
+          "PrivateMemorySize64": 13283328,
+          "CPU": 0.71875,
+          "Handles": 364
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116436992,
+          "PrivateMemorySize64": 49930240,
+          "CPU": 117.65625,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 269119488,
+          "PrivateMemorySize64": 289333248,
+          "CPU": 34.671875,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "A155C616856387545C61AEDA2356DF70",
+          "url": "pet://pet/pet-live2d.html"
+        },
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        }
+      ]
+    },
+    {
+      "at": 1791480745933,
+      "elapsedMs": 1213711,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 26538260,
+          "totalSize": 27406336,
+          "embedderHeapUsedSize": 6058536,
+          "backingStorageSize": 19268349
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 6786316,
+          "totalSize": 8097792,
+          "embedderHeapUsedSize": 6317576,
+          "backingStorageSize": 11796674
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 301813760,
+          "PrivateMemorySize64": 891269120,
+          "CPU": 629.75,
+          "Handles": 656
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 188420096,
+          "PrivateMemorySize64": 129261568,
+          "CPU": 95.15625,
+          "Handles": 1191
+        },
+        {
+          "Id": 32200,
+          "ProcessName": "electron",
+          "WorkingSet64": 261009408,
+          "PrivateMemorySize64": 144736256,
+          "CPU": 17.734375,
+          "Handles": 337
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 205238272,
+          "PrivateMemorySize64": 150413312,
+          "CPU": 11.40625,
+          "Handles": 337
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78520320,
+          "PrivateMemorySize64": 13320192,
+          "CPU": 0.71875,
+          "Handles": 367
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116490240,
+          "PrivateMemorySize64": 49983488,
+          "CPU": 124.125,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 270352384,
+          "PrivateMemorySize64": 290414592,
+          "CPU": 35.53125,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "A155C616856387545C61AEDA2356DF70",
+          "url": "pet://pet/pet-live2d.html"
+        },
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        }
+      ]
+    },
+    {
+      "at": 1791480806537,
+      "elapsedMs": 1274315,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 26720240,
+          "totalSize": 27668480,
+          "embedderHeapUsedSize": 6418768,
+          "backingStorageSize": 19268441
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 6770192,
+          "totalSize": 8097792,
+          "embedderHeapUsedSize": 9398544,
+          "backingStorageSize": 11796674
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 302059520,
+          "PrivateMemorySize64": 891371520,
+          "CPU": 660.875,
+          "Handles": 656
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 188190720,
+          "PrivateMemorySize64": 128880640,
+          "CPU": 95.671875,
+          "Handles": 1190
+        },
+        {
+          "Id": 32200,
+          "ProcessName": "electron",
+          "WorkingSet64": 231190528,
+          "PrivateMemorySize64": 142475264,
+          "CPU": 31.21875,
+          "Handles": 337
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 205430784,
+          "PrivateMemorySize64": 150704128,
+          "CPU": 11.484375,
+          "Handles": 337
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78536704,
+          "PrivateMemorySize64": 13352960,
+          "CPU": 0.71875,
+          "Handles": 366
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116412416,
+          "PrivateMemorySize64": 49926144,
+          "CPU": 131.15625,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 270774272,
+          "PrivateMemorySize64": 290684928,
+          "CPU": 36.703125,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "A155C616856387545C61AEDA2356DF70",
+          "url": "pet://pet/pet-live2d.html"
+        },
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        }
+      ]
+    },
+    {
+      "at": 1791480867301,
+      "elapsedMs": 1335079,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 26720240,
+          "totalSize": 27668480,
+          "embedderHeapUsedSize": 6418768,
+          "backingStorageSize": 19268441
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 6796944,
+          "totalSize": 8097792,
+          "embedderHeapUsedSize": 3960856,
+          "backingStorageSize": 11796674
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 283660288,
+          "PrivateMemorySize64": 889704448,
+          "CPU": 686.28125,
+          "Handles": 658
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 189169664,
+          "PrivateMemorySize64": 130232320,
+          "CPU": 96.046875,
+          "Handles": 1188
+        },
+        {
+          "Id": 32200,
+          "ProcessName": "electron",
+          "WorkingSet64": 231051264,
+          "PrivateMemorySize64": 142417920,
+          "CPU": 42.171875,
+          "Handles": 337
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 205434880,
+          "PrivateMemorySize64": 150708224,
+          "CPU": 11.5,
+          "Handles": 337
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78495744,
+          "PrivateMemorySize64": 13279232,
+          "CPU": 0.71875,
+          "Handles": 364
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116363264,
+          "PrivateMemorySize64": 49852416,
+          "CPU": 136.5625,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 271228928,
+          "PrivateMemorySize64": 292036608,
+          "CPU": 37.90625,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "A155C616856387545C61AEDA2356DF70",
+          "url": "pet://pet/pet-live2d.html"
+        },
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        }
+      ]
+    },
+    {
+      "at": 1791480927899,
+      "elapsedMs": 1395677,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 27160272,
+          "totalSize": 27930624,
+          "embedderHeapUsedSize": 9628544,
+          "backingStorageSize": 19268761
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 8251880,
+          "totalSize": 12292096,
+          "embedderHeapUsedSize": 7873192,
+          "backingStorageSize": 11711392
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 286842880,
+          "PrivateMemorySize64": 939945984,
+          "CPU": 715.9375,
+          "Handles": 659
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 191393792,
+          "PrivateMemorySize64": 131993600,
+          "CPU": 98.828125,
+          "Handles": 1188
+        },
+        {
+          "Id": 32200,
+          "ProcessName": "electron",
+          "WorkingSet64": 234127360,
+          "PrivateMemorySize64": 145186816,
+          "CPU": 55.453125,
+          "Handles": 339
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 209465344,
+          "PrivateMemorySize64": 152707072,
+          "CPU": 11.71875,
+          "Handles": 341
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78495744,
+          "PrivateMemorySize64": 13279232,
+          "CPU": 0.71875,
+          "Handles": 364
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116334592,
+          "PrivateMemorySize64": 49856512,
+          "CPU": 142.328125,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 272089088,
+          "PrivateMemorySize64": 292036608,
+          "CPU": 38.984375,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "A155C616856387545C61AEDA2356DF70",
+          "url": "pet://pet/pet-live2d.html"
+        },
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        }
+      ]
+    },
+    {
+      "at": 1791480988323,
+      "elapsedMs": 1456101,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 27160272,
+          "totalSize": 27930624,
+          "embedderHeapUsedSize": 10834720,
+          "backingStorageSize": 19268761
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 6682528,
+          "totalSize": 11505664,
+          "embedderHeapUsedSize": 2089376,
+          "backingStorageSize": 11711240
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 286334976,
+          "PrivateMemorySize64": 939208704,
+          "CPU": 743.6875,
+          "Handles": 659
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 198234112,
+          "PrivateMemorySize64": 138657792,
+          "CPU": 105.625,
+          "Handles": 1188
+        },
+        {
+          "Id": 32200,
+          "ProcessName": "electron",
+          "WorkingSet64": 234135552,
+          "PrivateMemorySize64": 144818176,
+          "CPU": 68.65625,
+          "Handles": 339
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 210284544,
+          "PrivateMemorySize64": 153669632,
+          "CPU": 11.8125,
+          "Handles": 341
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78495744,
+          "PrivateMemorySize64": 13279232,
+          "CPU": 0.71875,
+          "Handles": 364
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116473856,
+          "PrivateMemorySize64": 50016256,
+          "CPU": 147.984375,
+          "Handles": 325
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 272859136,
+          "PrivateMemorySize64": 293040128,
+          "CPU": 39.9375,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "A155C616856387545C61AEDA2356DF70",
+          "url": "pet://pet/pet-live2d.html"
+        },
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        }
+      ]
+    },
+    {
+      "at": 1791481050408,
+      "elapsedMs": 1518186,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 27160272,
+          "totalSize": 27930624,
+          "embedderHeapUsedSize": 11985280,
+          "backingStorageSize": 19268761
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 9133704,
+          "totalSize": 14913536,
+          "embedderHeapUsedSize": 2468688,
+          "backingStorageSize": 11711240
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 286097408,
+          "PrivateMemorySize64": 938692608,
+          "CPU": 774.359375,
+          "Handles": 661
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 199655424,
+          "PrivateMemorySize64": 140476416,
+          "CPU": 112.5625,
+          "Handles": 1195
+        },
+        {
+          "Id": 32200,
+          "ProcessName": "electron",
+          "WorkingSet64": 226734080,
+          "PrivateMemorySize64": 149217280,
+          "CPU": 83.671875,
+          "Handles": 336
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 212553728,
+          "PrivateMemorySize64": 155795456,
+          "CPU": 12.015625,
+          "Handles": 341
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78520320,
+          "PrivateMemorySize64": 13320192,
+          "CPU": 0.71875,
+          "Handles": 367
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116436992,
+          "PrivateMemorySize64": 49934336,
+          "CPU": 154.546875,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 273985536,
+          "PrivateMemorySize64": 293842944,
+          "CPU": 41.234375,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "A155C616856387545C61AEDA2356DF70",
+          "url": "pet://pet/pet-live2d.html"
+        },
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        }
+      ]
+    },
+    {
+      "at": 1791481109693,
+      "elapsedMs": 1577471,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 24688292,
+          "totalSize": 27926528,
+          "embedderHeapUsedSize": 5978408,
+          "backingStorageSize": 17706253
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 12689792,
+          "totalSize": 21991424,
+          "embedderHeapUsedSize": 4144984,
+          "backingStorageSize": 11711240
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 286609408,
+          "PrivateMemorySize64": 939524096,
+          "CPU": 799.78125,
+          "Handles": 661
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 196870144,
+          "PrivateMemorySize64": 137736192,
+          "CPU": 118.625,
+          "Handles": 1192
+        },
+        {
+          "Id": 32200,
+          "ProcessName": "electron",
+          "WorkingSet64": 234291200,
+          "PrivateMemorySize64": 156192768,
+          "CPU": 94.453125,
+          "Handles": 336
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 214286336,
+          "PrivateMemorySize64": 157413376,
+          "CPU": 12.25,
+          "Handles": 341
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78536704,
+          "PrivateMemorySize64": 13352960,
+          "CPU": 0.71875,
+          "Handles": 366
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116387840,
+          "PrivateMemorySize64": 49930240,
+          "CPU": 159.234375,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 274509824,
+          "PrivateMemorySize64": 294113280,
+          "CPU": 42,
+          "Handles": 317
+        }
+      ],
+      "pages": [
+        {
+          "id": "A155C616856387545C61AEDA2356DF70",
+          "url": "pet://pet/pet-live2d.html"
+        },
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        }
+      ]
+    },
+    {
+      "at": 1791481169977,
+      "elapsedMs": 1637755,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 25727048,
+          "totalSize": 27926528,
+          "embedderHeapUsedSize": 10060272,
+          "backingStorageSize": 17720566
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 8573676,
+          "totalSize": 21991424,
+          "embedderHeapUsedSize": 2397624,
+          "backingStorageSize": 11711240
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 279412736,
+          "PrivateMemorySize64": 977358848,
+          "CPU": 829.46875,
+          "Handles": 684
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 197312512,
+          "PrivateMemorySize64": 136765440,
+          "CPU": 125.375,
+          "Handles": 1284
+        },
+        {
+          "Id": 32200,
+          "ProcessName": "electron",
+          "WorkingSet64": 233590784,
+          "PrivateMemorySize64": 156192768,
+          "CPU": 107.765625,
+          "Handles": 336
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 217985024,
+          "PrivateMemorySize64": 160292864,
+          "CPU": 12.765625,
+          "Handles": 345
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78929920,
+          "PrivateMemorySize64": 13627392,
+          "CPU": 0.734375,
+          "Handles": 391
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116359168,
+          "PrivateMemorySize64": 49856512,
+          "CPU": 165.03125,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 273719296,
+          "PrivateMemorySize64": 295862272,
+          "CPU": 43.453125,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "49C36430C3614A5C783DC42D26E8CE42",
+          "url": "data:text/html;charset=utf-8,%3C!doctype%20html%3E%0A%3Chtml%3E%0A%20%20%3Chead%3E%0A%20%20%20%20%3Cmeta%20charset%3D%22utf-8%22%3E%0A%20%20%20%20%3Cmeta%0A%20%20%20%20%20%20http-equiv%3D%22Content-Security-Policy%22%0A%20%20%20%20%20%20content%3D%22default-src%20'none'%3B%20img-src%20data%3A%3B%20style-src%20'unsafe-inline'%3B%20script-src%20'unsafe-inline'%22%0A%20%20%20%20%3E%0A%20%20%20%20%3Cmeta%20name%3D%22color-scheme%22%20content%3D%22dark%22%3E%0A%20%20%20%20%3Cstyle%3E%0A%20%20%20%20%20%20html%2C%20body%20%7B%20width%3A%20100%25%3B%20height%3A%20100%25%3B%20margin%3A%200%3B%20overflow%3A%20hidden%3B%20background%3A%20%23111%3B%20%7D%0A%20%20%20%20%20%20body%20%7B%20display%3A%20grid%3B%20place-items%3A%20center%3B%20%7D%0A%20%20%20%20%20%20img%20%7B%20width%3A%20100%25%3B%20height%3A%20100%25%3B%20object-fit%3A%20contain%3B%20user-select%3A%20none%3B%20-webkit-user-drag%3A%20none%3B%20%7D%0A%20%20%20%20%3C%2Fstyle%3E%0A%20%20%3C%2Fhead%3E%0A%20%20%3Cbody%3E%0A%20%20%20%20%3Cimg%20id%3D%22preview-frame%22%20alt%3D%22Live%20browser%20preview%22%3E%0A%20%20%20%20%3Cscript%3E%0A%20%20%20%20%20%20const%20frame%20%3D%20document.getElementById(%22preview-frame%22)%3B%0A%20%20%20%20%20%20window.previewPictureInPicture.onFrame((next)%20%3D%3E%20%7B%0A%20%20%20%20%20%20%20%20frame.src%20%3D%20%22data%3Aimage%2Fjpeg%3Bbase64%2C%22%20%2B%20next.data%3B%0A%20%20%20%20%20%20%7D)%3B%0A%20%20%20%20%3C%2Fscript%3E%0A%20%20%3C%2Fbody%3E%0A%3C%2Fhtml%3E"
+        },
+        {
+          "id": "974DFEABC60A7BF5823AA1B0E283D71B",
+          "url": "http://127.0.0.1:55910/"
+        },
+        {
+          "id": "A155C616856387545C61AEDA2356DF70",
+          "url": "pet://pet/pet-live2d.html"
+        },
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        }
+      ]
+    },
+    {
+      "at": 1791481230624,
+      "elapsedMs": 1698402,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 25868580,
+          "totalSize": 28975104,
+          "embedderHeapUsedSize": 10883752,
+          "backingStorageSize": 17720699
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 9151936,
+          "totalSize": 21991424,
+          "embedderHeapUsedSize": 7802424,
+          "backingStorageSize": 11711240
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 284839936,
+          "PrivateMemorySize64": 945950720,
+          "CPU": 858.328125,
+          "Handles": 679
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 198594560,
+          "PrivateMemorySize64": 138211328,
+          "CPU": 133.03125,
+          "Handles": 1276
+        },
+        {
+          "Id": 32200,
+          "ProcessName": "electron",
+          "WorkingSet64": 234508288,
+          "PrivateMemorySize64": 156680192,
+          "CPU": 119.875,
+          "Handles": 336
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 215212032,
+          "PrivateMemorySize64": 157614080,
+          "CPU": 12.96875,
+          "Handles": 342
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78876672,
+          "PrivateMemorySize64": 13541376,
+          "CPU": 0.765625,
+          "Handles": 389
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116477952,
+          "PrivateMemorySize64": 50008064,
+          "CPU": 170.46875,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 274042880,
+          "PrivateMemorySize64": 296239104,
+          "CPU": 44.328125,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "49C36430C3614A5C783DC42D26E8CE42",
+          "url": "data:text/html;charset=utf-8,%3C!doctype%20html%3E%0A%3Chtml%3E%0A%20%20%3Chead%3E%0A%20%20%20%20%3Cmeta%20charset%3D%22utf-8%22%3E%0A%20%20%20%20%3Cmeta%0A%20%20%20%20%20%20http-equiv%3D%22Content-Security-Policy%22%0A%20%20%20%20%20%20content%3D%22default-src%20'none'%3B%20img-src%20data%3A%3B%20style-src%20'unsafe-inline'%3B%20script-src%20'unsafe-inline'%22%0A%20%20%20%20%3E%0A%20%20%20%20%3Cmeta%20name%3D%22color-scheme%22%20content%3D%22dark%22%3E%0A%20%20%20%20%3Cstyle%3E%0A%20%20%20%20%20%20html%2C%20body%20%7B%20width%3A%20100%25%3B%20height%3A%20100%25%3B%20margin%3A%200%3B%20overflow%3A%20hidden%3B%20background%3A%20%23111%3B%20%7D%0A%20%20%20%20%20%20body%20%7B%20display%3A%20grid%3B%20place-items%3A%20center%3B%20%7D%0A%20%20%20%20%20%20img%20%7B%20width%3A%20100%25%3B%20height%3A%20100%25%3B%20object-fit%3A%20contain%3B%20user-select%3A%20none%3B%20-webkit-user-drag%3A%20none%3B%20%7D%0A%20%20%20%20%3C%2Fstyle%3E%0A%20%20%3C%2Fhead%3E%0A%20%20%3Cbody%3E%0A%20%20%20%20%3Cimg%20id%3D%22preview-frame%22%20alt%3D%22Live%20browser%20preview%22%3E%0A%20%20%20%20%3Cscript%3E%0A%20%20%20%20%20%20const%20frame%20%3D%20document.getElementById(%22preview-frame%22)%3B%0A%20%20%20%20%20%20window.previewPictureInPicture.onFrame((next)%20%3D%3E%20%7B%0A%20%20%20%20%20%20%20%20frame.src%20%3D%20%22data%3Aimage%2Fjpeg%3Bbase64%2C%22%20%2B%20next.data%3B%0A%20%20%20%20%20%20%7D)%3B%0A%20%20%20%20%3C%2Fscript%3E%0A%20%20%3C%2Fbody%3E%0A%3C%2Fhtml%3E"
+        },
+        {
+          "id": "974DFEABC60A7BF5823AA1B0E283D71B",
+          "url": "http://127.0.0.1:55910/"
+        },
+        {
+          "id": "A155C616856387545C61AEDA2356DF70",
+          "url": "pet://pet/pet-live2d.html"
+        },
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        }
+      ]
+    },
+    {
+      "at": 1791481291337,
+      "elapsedMs": 1759115,
+      "heaps": {
+        "http://127.0.0.1:54505/": {
+          "usedSize": 25876404,
+          "totalSize": 28975104,
+          "embedderHeapUsedSize": 11234824,
+          "backingStorageSize": 17720699
+        },
+        "pet://pet/pet-live2d.html": {
+          "usedSize": 8704168,
+          "totalSize": 28282880,
+          "embedderHeapUsedSize": 2546016,
+          "backingStorageSize": 11711240
+        }
+      },
+      "processes": [
+        {
+          "Id": 13392,
+          "ProcessName": "conhost",
+          "WorkingSet64": 7716864,
+          "PrivateMemorySize64": 1253376,
+          "CPU": 0.046875,
+          "Handles": 95
+        },
+        {
+          "Id": 13420,
+          "ProcessName": "electron",
+          "WorkingSet64": 284262400,
+          "PrivateMemorySize64": 945455104,
+          "CPU": 889.359375,
+          "Handles": 681
+        },
+        {
+          "Id": 26384,
+          "ProcessName": "electron",
+          "WorkingSet64": 198316032,
+          "PrivateMemorySize64": 137060352,
+          "CPU": 139.5625,
+          "Handles": 1272
+        },
+        {
+          "Id": 32200,
+          "ProcessName": "electron",
+          "WorkingSet64": 241197056,
+          "PrivateMemorySize64": 163631104,
+          "CPU": 133.421875,
+          "Handles": 336
+        },
+        {
+          "Id": 37484,
+          "ProcessName": "electron",
+          "WorkingSet64": 215191552,
+          "PrivateMemorySize64": 157577216,
+          "CPU": 13.0625,
+          "Handles": 342
+        },
+        {
+          "Id": 48840,
+          "ProcessName": "electron",
+          "WorkingSet64": 78872576,
+          "PrivateMemorySize64": 13537280,
+          "CPU": 0.765625,
+          "Handles": 389
+        },
+        {
+          "Id": 49668,
+          "ProcessName": "electron",
+          "WorkingSet64": 116436992,
+          "PrivateMemorySize64": 49954816,
+          "CPU": 176.953125,
+          "Handles": 324
+        },
+        {
+          "Id": 35676,
+          "ProcessName": "node",
+          "WorkingSet64": 274485248,
+          "PrivateMemorySize64": 296771584,
+          "CPU": 45.1875,
+          "Handles": 311
+        }
+      ],
+      "pages": [
+        {
+          "id": "49C36430C3614A5C783DC42D26E8CE42",
+          "url": "data:text/html;charset=utf-8,%3C!doctype%20html%3E%0A%3Chtml%3E%0A%20%20%3Chead%3E%0A%20%20%20%20%3Cmeta%20charset%3D%22utf-8%22%3E%0A%20%20%20%20%3Cmeta%0A%20%20%20%20%20%20http-equiv%3D%22Content-Security-Policy%22%0A%20%20%20%20%20%20content%3D%22default-src%20'none'%3B%20img-src%20data%3A%3B%20style-src%20'unsafe-inline'%3B%20script-src%20'unsafe-inline'%22%0A%20%20%20%20%3E%0A%20%20%20%20%3Cmeta%20name%3D%22color-scheme%22%20content%3D%22dark%22%3E%0A%20%20%20%20%3Cstyle%3E%0A%20%20%20%20%20%20html%2C%20body%20%7B%20width%3A%20100%25%3B%20height%3A%20100%25%3B%20margin%3A%200%3B%20overflow%3A%20hidden%3B%20background%3A%20%23111%3B%20%7D%0A%20%20%20%20%20%20body%20%7B%20display%3A%20grid%3B%20place-items%3A%20center%3B%20%7D%0A%20%20%20%20%20%20img%20%7B%20width%3A%20100%25%3B%20height%3A%20100%25%3B%20object-fit%3A%20contain%3B%20user-select%3A%20none%3B%20-webkit-user-drag%3A%20none%3B%20%7D%0A%20%20%20%20%3C%2Fstyle%3E%0A%20%20%3C%2Fhead%3E%0A%20%20%3Cbody%3E%0A%20%20%20%20%3Cimg%20id%3D%22preview-frame%22%20alt%3D%22Live%20browser%20preview%22%3E%0A%20%20%20%20%3Cscript%3E%0A%20%20%20%20%20%20const%20frame%20%3D%20document.getElementById(%22preview-frame%22)%3B%0A%20%20%20%20%20%20window.previewPictureInPicture.onFrame((next)%20%3D%3E%20%7B%0A%20%20%20%20%20%20%20%20frame.src%20%3D%20%22data%3Aimage%2Fjpeg%3Bbase64%2C%22%20%2B%20next.data%3B%0A%20%20%20%20%20%20%7D)%3B%0A%20%20%20%20%3C%2Fscript%3E%0A%20%20%3C%2Fbody%3E%0A%3C%2Fhtml%3E"
+        },
+        {
+          "id": "974DFEABC60A7BF5823AA1B0E283D71B",
+          "url": "http://127.0.0.1:55910/"
+        },
+        {
+          "id": "A155C616856387545C61AEDA2356DF70",
+          "url": "pet://pet/pet-live2d.html"
+        },
+        {
+          "id": "8B98747FE2802E59A73A94E75728B1D5",
+          "url": "file:///C:/AI/WhaleIsle-application-performance/src/renderer/boot.html"
+        },
+        {
+          "id": "C31448139F3B70CA0E0729714B90C5F0",
+          "url": "http://127.0.0.1:54505/"
+        }
+      ]
+    }
+  ]
+}

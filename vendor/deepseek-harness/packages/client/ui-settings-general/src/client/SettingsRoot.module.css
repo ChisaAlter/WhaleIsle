@@ -11,32 +11,53 @@
 
 .launcherRow {
   display: flex;
-  width: calc(100% + 4px);
-  margin: 4px -2px 0;
-}
-
-.launcherRow.railLauncherRow {
-  width: 36px;
-  margin: 8px 0 0;
+  flex: 1;
+  min-width: 0;
 }
 
 .triggerRow {
   position: relative;
   flex: none;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
   align-items: center;
   gap: 8px;
   width: calc(100% + 4px);
+  height: 44px;
   margin: 4px -2px;
 }
 
 .triggerRow.railRow {
   width: 36px;
+  height: 80px;
+  grid-template-columns: 36px;
+  grid-template-rows: 36px 36px;
   margin: 8px 0 10px;
 }
 
-.triggerRow:empty {
+/* An absent status action must not shorten the expanded launcher hover area. */
+.triggerRow:not(.railRow):has(> .statusSeat:empty) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.triggerRow:not(.railRow) > .statusSeat:empty {
   display: none;
+}
+
+.railRow .launcherRow,
+.railRow .trigger {
+  grid-row: 2;
+}
+
+.statusSeat {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+}
+
+.railRow .statusSeat {
+  grid-row: 1;
 }
 
 .trigger {
@@ -117,13 +138,13 @@
 .panel {
   position: relative;
   z-index: 1;
+  isolation: isolate;
   display: flex;
   width: 800px;
   height: min(800px, calc(100vh - 2 * max(24px, var(--dsh-frame-overlay-top, 24px))));
   max-width: calc(100vw - 48px);
   border-radius: var(--dsw-radius-panel);
   overflow: hidden;
-  background: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-elevation-prominent);
   /* Elevated surface: the scrollbar thumb takes the l2 elevation tokens.
      Declared on the panel rather than the scrolling `.options` child so the
@@ -132,6 +153,18 @@
      styles/scrollbar.css for the rebinding contract). */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+/* Filtering only the background keeps fixed tooltips in viewport coordinates. */
+.panel::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--dsw-alias-bg-layer-2);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  content: '';
+  pointer-events: none;
 }
 
 .panel:focus {

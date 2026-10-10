@@ -1,16 +1,29 @@
 // Renderer timing capture through an explicitly enabled local Electron
-// DevTools port. The sleep scenario temporarily enters sleep, then restores
-// the original awake state. Launch with --remote-debugging-port=9223 first.
+// DevTools port. The sleep scenario temporarily enters sleep and the card
+// scenario temporarily opens the status card; both restore the original state
+// afterwards. Launch with --remote-debugging-port=9223 first.
+//
+// A run only counts as valid when the pet is actually visible AND a live
+// engine keeps producing successful inference frames: a stalled or failing
+// renderer reports fast timings for nothing, which would otherwise read as a
+// performance win.
 import fs from 'node:fs';
 
 const port = Number(process.argv[2] || 9223);
 const seconds = Number(process.argv[3] || 120);
 const screenshot = process.argv[4] || '';
 const scenario = process.argv[5] || 'normal';
+// Diagnostic budget overrides for the controlled matrix (iteration 2).
+// `--present` / `--infer` are ceilings per second; `--no-sr` suspends
+// super-resolution for this window only. They are never persisted and the
+// `finally` below restores the shipped defaults.
+const presentPerSecond = Number(process.argv[6]);
+const inferPerSecond = Number(process.argv[7]);
+const noSr = process.argv[8] === 'no-sr';
 if (!Number.isInteger(port) || port < 1 || port > 65535
     || !Number.isFinite(seconds) || seconds < 1 || seconds > 3600
-    || !['normal', 'sleep'].includes(scenario)) {
-  throw new Error('usage: node scripts/measure-whale-cdp.mjs [port] [seconds] [screenshot.png] [normal|sleep]');
+    || !['normal', 'sleep', 'card'].includes(scenario)) {
+  throw new Error('usage: node scripts/measure-whale-cdp.mjs [port] [seconds] [screenshot.png] [normal|sleep|card]');
 }
 
 const pages = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
@@ -47,14 +60,28 @@ async function evaluate(expression) {
 }
 
 let wasSleeping;
+let wasPanelOpen;
 let perfStarted = false;
+let overridesApplied = false;
 try {
   wasSleeping = await evaluate('sleeping');
+  wasPanelOpen = await evaluate('Boolean(panel)');
   if (scenario === 'sleep' && !wasSleeping) { await evaluate('sleepEnter()'); }
-  if (scenario === 'normal' && wasSleeping) { await evaluate('wake()'); }
+  if (scenario !== 'sleep' && wasSleeping) { await evaluate('wake()'); }
+  if (scenario === 'card' && !wasPanelOpen) { await evaluate('openPanel()'); }
+  if (Number.isFinite(presentPerSecond) || Number.isFinite(inferPerSecond) || noSr) {
+    const applied = await evaluate(`window.__dshdPetDiag.setOverrides({
+      presentPerSecond: ${Number.isFinite(presentPerSecond) ? presentPerSecond : 'undefined'},
+      inferPerSecond: ${Number.isFinite(inferPerSecond) ? inferPerSecond : 'undefined'},
+      superResolution: ${noSr ? 'false' : 'undefined'},
+    })`);
+    overridesApplied = true;
+    process.stderr.write(`pet-measure: overrides ${JSON.stringify(applied)}\n`);
+  }
   const engine = await evaluate(`({backend: sessionOnGpu ? 'webgpu' : session ? 'wasm-or-webnn' : rig.ready ? 'rig' : 'states',
     superResolution: srReady, width: canvas.width, height: canvas.height, frame: FRAME, scenario: '${scenario}',
     sleeping, inferenceGapMs: powerSaving(performance.now()) ? 110 : 50})`);
+  const liveEngine = engine.backend === 'webgpu' || engine.backend === 'wasm-or-webnn';
   await evaluate('window.__dshdPetPerf.start()');
   perfStarted = true;
   const states = [];
@@ -63,35 +90,71 @@ try {
     await new Promise((resolve) => setTimeout(resolve, Math.min(1000, Math.max(1, seconds * 1000 - (Date.now() - started)))));
     states.push({ elapsedMs: Date.now() - started, ...(await evaluate(`({sleeping, inferenceGapMs: powerSaving(performance.now()) ? 110 : 50,
       visibility: document.visibilityState, focused: document.hasFocus(),
-      pointerOverPet: overPet(pointer.x, pointer.y)})`)) });
+      pointerOverPet: overPet(pointer.x, pointer.y),
+      panelOpen: Boolean(panel), painted,
+      bodyVisible: Boolean(session || rig.ready) || stillCtl.alpha > 0.01,
+      inferenceCount: window.__dshdPetPerf.snapshot().frameProduction?.count || 0})`)) });
   }
   const timings = await evaluate('window.__dshdPetPerf.stop()');
   perfStarted = false;
+  const counts = timings.counts || (await evaluate('window.__dshdPetPerf.snapshot().counts'));
+  const effective = await evaluate('window.__dshdPetDiag.effective()');
+  const panelTrace = scenario === 'card'
+    ? await evaluate('window.__dshdPetDiag.panelTrace()')
+    : null;
   if (screenshot) {
     const shot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
     fs.writeFileSync(screenshot, Buffer.from(shot.data, 'base64'));
   }
-  const attempts = (timings.inference?.count || 0) + (timings.inferenceBusy?.count || 0);
+  const attempts = (timings.frameProduction?.count || 0) + (timings.inferenceBusy?.count || 0);
   const sleepAttemptLimit = Math.ceil(seconds * 1000 / engine.inferenceGapMs) + 5;
+  // A visible pet is a painted one whose body is actually being drawn; the
+  // live engines additionally have to keep landing frames without errors.
+  const petVisible = states.every((state) => state.painted && state.bodyVisible);
+  // "Ongoing" is proven by the live frame counter actually advancing between
+  // samples — a hardcoded rate would misjudge a machine whose inference simply
+  // takes longer than the pacing gap.
+  const inferenceProgress = states.at(-1).inferenceCount - states[0].inferenceCount;
+  const inferencePerSample = states.length > 1 ? inferenceProgress / (states.length - 1) : 0;
+  const liveInference = liveEngine
+    ? inferenceProgress > 0 && inferencePerSample >= 2
+      && (counts.inferenceError || 0) === 0
+    : null;
+  const inferenceOk = liveInference === null || liveInference;
   const stableSleep = scenario === 'sleep' ? (attempts <= sleepAttemptLimit
     && states.every((state) => state.sleeping && state.inferenceGapMs === engine.inferenceGapMs)) : null;
   const stableNormal = scenario === 'normal'
     ? states.every((state) => !state.sleeping && state.inferenceGapMs === engine.inferenceGapMs) : null;
-  const validScenario = scenario === 'sleep' ? stableSleep : stableNormal;
-  process.stdout.write(`${JSON.stringify({ at: new Date().toISOString(), seconds, engine,
-    stableSleep, stableNormal, validScenario,
+  const stableCard = scenario === 'card'
+    ? states.every((state) => !state.sleeping && state.panelOpen) : null;
+  const scenarioStable = scenario === 'sleep' ? stableSleep
+    : scenario === 'card' ? stableCard : stableNormal;
+  const validScenario = Boolean(scenarioStable) && petVisible && inferenceOk;
+  process.stdout.write(`${JSON.stringify({ at: new Date().toISOString(), seconds, engine, effective, counts,
+    stableSleep, stableNormal, stableCard, petVisible, inferenceProgress, liveInference,
+    validScenario,
     observed: { samples: states.length, sleeping: [...new Set(states.map((s) => s.sleeping))],
       inferenceGapMs: [...new Set(states.map((s) => s.inferenceGapMs))],
       visibility: [...new Set(states.map((s) => s.visibility))],
       focused: [...new Set(states.map((s) => s.focused))],
       pointerOverPet: [...new Set(states.map((s) => s.pointerOverPet))],
-      attempts, sleepAttemptLimit, timeline: states }, timings }, null, 2)}\n`);
+      panelOpen: [...new Set(states.map((s) => s.panelOpen))],
+      painted: [...new Set(states.map((s) => s.painted))],
+      attempts, sleepAttemptLimit, timeline: states },
+    panelTrace,
+    timings }, null, 2)}\n`);
   if (!validScenario) { process.exitCode = 2; }
 } finally {
   try {
     if (perfStarted) { await evaluate('window.__dshdPetPerf.stop()'); }
+    if (overridesApplied) {
+      // Restore shipped defaults even when the scenario was rejected, so one
+      // failed window never leaks a diagnostic budget into the next run.
+      await evaluate('window.__dshdPetDiag.setOverrides({})');
+    }
+    if (scenario === 'card' && wasPanelOpen === false) { await evaluate('closePanel()'); }
     if (scenario === 'sleep' && wasSleeping === false) { await evaluate('wake()'); }
-    if (scenario === 'normal' && wasSleeping === true) { await evaluate('sleepEnter()'); }
+    if (scenario !== 'sleep' && wasSleeping === true) { await evaluate('sleepEnter()'); }
   } finally {
     socket.close();
   }

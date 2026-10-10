@@ -19,6 +19,7 @@ const { app } = require('electron');
 const { tryGetDesktopDshHome } = require('../../shared/dsh-home');
 const { titlebarMenuLooksOpen } = require('./titlebar-menu');
 const { waitForHarnessContents } = require('./client-ready');
+const { getLive2dPet } = require('../desktop-live2d');
 
 const SMOKE_SURFACES = 'right panel|surfaces|\u53f3\u4fa7\u680f';
 const SMOKE_BRANCH = 'switch branch|\u5207\u6362\u5206\u652f';
@@ -521,6 +522,7 @@ function createSmokeRunner(deps) {
         Promise.resolve(desktopResources?.preview?.closeAll()),
       ]);
       await Promise.resolve(harness.shutdown()).catch(() => {});
+      await getLive2dPet()?.dispose();
       app.exit(code);
     };
     let wc;
@@ -673,6 +675,8 @@ function createSmokeRunner(deps) {
             port: dsh.port || config.port,
             userData: app.getPath('userData'),
             appVersion: app.getVersion(),
+            resourcesPath: process.resourcesPath,
+            runtimeRoot: require('../paths').harnessRoot(),
             bootLogs: dsh.logs,
           });
         } catch (error) {

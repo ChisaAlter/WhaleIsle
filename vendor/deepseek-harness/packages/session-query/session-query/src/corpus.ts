@@ -98,7 +98,7 @@ export class SessionCorpus {
     }
     const persistence = this._persistence
     if (persistence === undefined) throw notFound(sessionId)
-    const listed = (await listPersisted(persistence, signal)).find(header => header.id === sessionId)
+    const listed = await statPersisted(persistence, sessionId, signal)
     signal?.throwIfAborted()
     if (listed === undefined) throw notFound(sessionId)
     const loaded = await inspectPersisted(persistence, sessionId, signal)
@@ -265,6 +265,24 @@ async function listPersisted(
     if (signal?.aborted) signal.throwIfAborted()
     throw new SessionQueryError(
       `session persistence listing failed: ${errorMessage(error)}`,
+      'SESSION_QUERY_PERSISTENCE_FAILED',
+      { cause: error },
+    )
+  }
+}
+
+async function statPersisted(
+  persistence: SessionPersistence,
+  sessionId: SessionId,
+  signal?: AbortSignal,
+): Promise<SessionHeader | undefined> {
+  try {
+    const snapshot = await persistence.stat(sessionId, signal === undefined ? undefined : { signal })
+    return snapshot?.header
+  } catch (error: unknown) {
+    if (signal?.aborted) signal.throwIfAborted()
+    throw new SessionQueryError(
+      `session persistence observation failed: ${errorMessage(error)}`,
       'SESSION_QUERY_PERSISTENCE_FAILED',
       { cause: error },
     )

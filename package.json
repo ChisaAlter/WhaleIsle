@@ -1,7 +1,7 @@
 {
   "name": "deepseek-harness-desktop",
   "productName": "Whale Isle",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Whale Isle desktop app based on DeepSeek Harness",
   "author": "Chisa",
   "license": "MIT",
@@ -48,9 +48,9 @@
   },
   "devDependencies": {
     "@types/ws": "^8.18.1",
-    "electron": "^44.1.1",
+    "electron": "^44.2.0",
     "electron-builder": "^26.15.3",
-    "pnpm": "11.22.0",
+    "pnpm": "12.3.4",
     "semver": "^7.8.5"
   },
   "overrides": {
@@ -90,6 +90,9 @@
       "src/shared/dshd-mux-sse.js",
       "src/main/pet-growth.js",
       "src/main/pet-growth-scan-worker.js",
+      "src/main/pet-dsh-watch-worker.js",
+      "src/main/pet-dsh-watch.js",
+      "src/main/pet-settings.js",
       "node_modules/koffi/**/*",
       "node_modules/@koromix/koffi-*/**/*"
     ],

@@ -32,13 +32,12 @@ function fixture() {
   const source = new DesktopUpdateSource(bridge)
   const subscribe = (notify: () => void) => source.store.subscribe(notify)
   const snapshot = () => source.store.getSnapshot()
-  function Indicator({ wide = true, hidden = false, dictionary = zh }: {
-    wide?: boolean
+  function Indicator({ hidden = false, dictionary = zh }: {
     hidden?: boolean
     dictionary?: typeof zh | typeof en
   }) {
     const state = useSyncExternalStore(subscribe, snapshot)
-    return <DesktopUpdateIndicator wide={wide} hidden={hidden} t={translate(dictionary)} view={state} onOpen={() => { source.open() }} />
+    return <DesktopUpdateIndicator hidden={hidden} t={translate(dictionary)} view={state} onOpen={() => { source.open() }} />
   }
   const view = render(<Indicator />)
   const unmount = view.unmount
@@ -52,7 +51,7 @@ const available = { phase: 'available', version: '1.0.1' } as const
 
 it('renders nothing outside the Desktop carrier', () => {
   const source = new DesktopUpdateSource(undefined)
-  const view = render(<DesktopUpdateIndicator wide hidden={false} t={translate(zh)}
+  const view = render(<DesktopUpdateIndicator hidden={false} t={translate(zh)}
     view={source.store.getSnapshot()} onOpen={() => { source.open() }} />)
   source.open()
   source.dispose()
@@ -77,8 +76,8 @@ it('keeps the newest event, hides for connection priority, and invokes only the 
     const retry = screen.getByRole('button', { name: '重试更新' })
     fireEvent.focus(retry)
     expect((await screen.findByRole('tooltip')).textContent).toBe('下载更新失败，请重试。')
-    f.view.rerender(<f.Indicator wide={false} />)
-    expect(screen.queryByRole('button')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '重试更新' }))
+    expect(f.open).toHaveBeenCalledTimes(2)
   } finally { f.view.unmount(); f.status.resolve(available) }
   expect(f.unsubscribe).toHaveBeenCalledOnce()
 })
@@ -153,15 +152,15 @@ it('shows fallback progress and error details when the shell omits optional fiel
   } finally { f.view.unmount(); f.status.resolve({ phase: 'idle' }) }
 })
 
-it.each(['checking', 'verifying', 'installing'] as const)('shows only the version during %s in both locales', async (phase) => {
+it.each(['checking', 'verifying', 'installing'] as const)('shows the phase and complete version during %s in both locales', async (phase) => {
   const f = fixture()
   try {
     await f.emit({ phase, version: '0.1.7-alpha.2' })
     fireEvent.focus(screen.getByRole('button'))
-    expect((await screen.findByRole('tooltip')).textContent).toBe('0.1.7-alpha.2')
+    expect((await screen.findByRole('tooltip')).textContent).toBe(`${zh[`desktop.update.${phase}`]}：0.1.7-alpha.2`)
     f.view.rerender(<f.Indicator dictionary={en} />)
     fireEvent.focus(screen.getByRole('button'))
-    expect((await screen.findByRole('tooltip')).textContent).toBe('0.1.7-alpha.2')
+    expect((await screen.findByRole('tooltip')).textContent).toBe(`${en[`desktop.update.${phase}`]}: 0.1.7-alpha.2`)
   } finally { f.view.unmount(); f.status.resolve({ phase: 'idle' }) }
 })
 

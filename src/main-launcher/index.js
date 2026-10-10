@@ -6,8 +6,11 @@
 // and the launcher IPC surface exist here.
 
 const { app, dialog, Notification } = require('electron');
+// Select the discrete GPU before Chromium initializes any rendering contexts.
+app.commandLine.appendSwitch('force_high_performance_gpu');
 const { systemNotificationsSupported } = require('../main/system-notifications');
 const { LAUNCHER_NAME, LEGACY_LAUNCHER_USER_DATA, preserveUserDataPath } = require('../shared/product-identity');
+const { plainReleaseNotes } = require('../shared/release-notes');
 preserveUserDataPath(app, LEGACY_LAUNCHER_USER_DATA);
 app.setName(LAUNCHER_NAME);
 
@@ -138,13 +141,14 @@ async function confirmUnverified(info) {
 }
 
 async function confirmUpdateAsk(check) {
-  const notes = typeof check?.notes === 'string' ? check.notes.trim() : '';
+  const notes = plainReleaseNotes(check?.notes);
   const body = `是否更新到 ${check.latest || check.version || ''}？`
-    + (notes ? `\n\n${notes.length > 600 ? `${notes.slice(0, 600)}…` : notes}` : '');
+    + '\n启动器将下载完整安装包。增量更新可在已安装的桌面程序中选择。'
+    + (notes ? `\n\n${notes}` : '');
   const bridged = await launcherConfirm.ask({
     title: '发现新版本',
     body,
-    confirmText: '更新',
+    confirmText: '完全下载',
     cancelText: '稍后',
   });
   if (bridged !== null) {
@@ -152,12 +156,12 @@ async function confirmUpdateAsk(check) {
   }
   const result = await dialog.showMessageBox(getLauncherWindow() || undefined, {
     type: 'question',
-    buttons: ['更新', '稍后'],
+    buttons: ['完全下载', '稍后'],
     defaultId: 0,
     cancelId: 1,
     title: '发现新版本',
     message: `是否更新到 ${check.latest || check.version || ''}？`,
-    detail: notes ? (notes.length > 600 ? `${notes.slice(0, 600)}…` : notes) : undefined,
+    detail: notes || undefined,
     noLink: true,
   });
   return result.response === 0;

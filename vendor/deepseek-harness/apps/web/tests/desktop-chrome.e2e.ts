@@ -127,6 +127,49 @@ describe('web e2e: titlebar cluster and right sidebar guide', () => {
     expect(tripwire.pageErrors, tripwire.pageErrors.join('\n')).toEqual([])
   })
 
+  it('keeps disabled Commit legible in light and dark titlebars', async () => {
+    const git = page.getByRole('button', { name: 'Commit', exact: true })
+    try {
+      for (const colorScheme of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme })
+        await expect.poll(() => page.locator('body').getAttribute('data-ds-dark-theme'))
+          .toBe(colorScheme === 'dark' ? '' : null)
+        expect(await git.isDisabled()).toBe(true)
+        const pixels = await git.screenshot()
+        const contrast = await git.evaluate(async (button, png) => {
+          const image = new Image()
+          image.src = `data:image/png;base64,${png}`
+          await image.decode()
+          const canvas = document.createElement('canvas')
+          canvas.width = image.width
+          canvas.height = image.height
+          const context = canvas.getContext('2d')!
+          context.drawImage(image, 0, 0)
+          // This inset is inside the button's empty padding, away from its icon/text.
+          const backdrop = context.getImageData(3, 3, 1, 1).data
+          context.fillStyle = getComputedStyle(button).color
+          context.fillRect(0, 0, 1, 1)
+          const foreground = context.getImageData(0, 0, 1, 1).data
+          const luminance = (color: Uint8ClampedArray) => {
+            const channels = [...color].slice(0, 3).map((n) => {
+              const c = n / 255
+              return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+            })
+            return channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722
+          }
+          const a = luminance(foreground)
+          const b = luminance(backdrop)
+          return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+        }, pixels.toString('base64'))
+        // Muted controls still need to remain recognizable on the titlebar.
+        expect(contrast, `${colorScheme} disabled Commit contrast`).toBeGreaterThanOrEqual(3)
+        expect(await page.getByRole('button', { name: 'Git actions', exact: true }).isEnabled()).toBe(true)
+      }
+    } finally {
+      await page.emulateMedia({ colorScheme: null })
+    }
+  })
+
   it('publishes complete platform UI exports to runtime-loaded plugins', async () => {
     const exportTypes = await page.evaluate(async () => {
       const modules = (window as Window & {

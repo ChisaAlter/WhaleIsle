@@ -20,10 +20,42 @@ function translate(key: string, params?: Record<string, string>) {
   return text
 }
 
-function mount() {
-  const props = { t: translate } as AboutSectionProps
+function mount(overrides: Pick<AboutSectionProps, 'openDesktopUpdate'> = {}) {
+  const props = { t: translate, ...overrides } as AboutSectionProps
   render(<AboutSection {...props} />)
 }
+
+it('opens the shared Desktop confirmation for an available update without starting the old installer flow', async () => {
+  const openDesktopUpdate = vi.fn()
+  const installUpdate = vi.fn(async () => ({ launched: true }))
+  ;(window as Window & { shell?: unknown }).shell = {
+    checkUpdate: async () => ({ status: 'available', latest: '9.9.9', assetUrl: 'https://example.test/app.exe' }),
+    installUpdate,
+  }
+  mount({ openDesktopUpdate })
+  const button = await screen.findByRole('button', { name: en['about.installUpdate'] })
+  await waitFor(() => { expect((button as HTMLButtonElement).disabled).toBe(false) })
+  fireEvent.click(button)
+  expect(openDesktopUpdate).toHaveBeenCalledOnce()
+  expect(installUpdate).not.toHaveBeenCalled()
+  expect(screen.getByRole('status').textContent).toBe('New version 9.9.9 is available')
+})
+
+it('retains the shell reinstall action when the checked release is current', async () => {
+  const openDesktopUpdate = vi.fn()
+  const installUpdate = vi.fn(async () => ({ manualInstall: true, launched: false }))
+  ;(window as Window & { shell?: unknown }).shell = {
+    checkUpdate: async () => ({ status: 'current', latest: '9.9.9', assetUrl: 'https://example.test/app.dmg' }),
+    installUpdate,
+  }
+  mount({ openDesktopUpdate })
+  const button = await screen.findByRole('button', { name: en['about.installUpdate'] })
+  await waitFor(() => { expect((button as HTMLButtonElement).disabled).toBe(false) })
+  fireEvent.click(button)
+  expect(await screen.findByText(en['about.updateManualInstall'])).toBeTruthy()
+  expect(installUpdate).toHaveBeenCalledOnce()
+  expect(openDesktopUpdate).not.toHaveBeenCalled()
+})
 
 it('shows manual DMG instructions and releases busy controls after opening the image', async () => {
   ;(window as Window & { shell?: unknown }).shell = {

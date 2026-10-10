@@ -1,4 +1,5 @@
 const OVERLAY_ID = 'dshd-shell-closing';
+let closingGeneration = 0;
 
 function overlayCss(theme) {
   return `
@@ -10,6 +11,9 @@ function overlayCss(theme) {
   align-items: center;
   justify-content: center;
   margin: 0;
+  border-radius: 20px;
+  corner-shape: round;
+  overflow: hidden;
   background: ${theme.bg};
   color: ${theme.fg};
   color-scheme: ${theme.scheme || 'dark'};
@@ -17,6 +21,9 @@ function overlayCss(theme) {
   -webkit-app-region: no-drag;
   pointer-events: all;
   user-select: none;
+}
+html[data-window-maximized] #${OVERLAY_ID} {
+  border-radius: 0;
 }
 #${OVERLAY_ID} .dshd-shell-closing-card {
   display: flex;
@@ -69,7 +76,7 @@ function closingCopy(locale) {
   };
 }
 
-function overlayScript(copy) {
+function overlayScript(copy, generation) {
   return `(() => {
     const id = ${JSON.stringify(OVERLAY_ID)};
     const pick = (...keys) => {
@@ -81,6 +88,8 @@ function overlayScript(copy) {
       return '';
     };
     const root = document.getElementById(id) || document.createElement('div');
+    if (Number(root.dataset.closingGeneration || 0) > ${JSON.stringify(generation)}) return;
+    root.dataset.closingGeneration = ${JSON.stringify(String(generation))};
     if (!root.id) {
       root.id = id;
       root.setAttribute('role', 'alertdialog');
@@ -125,29 +134,40 @@ function overlayScript(copy) {
   })()`;
 }
 
-async function showClosingOverlay(win, locale) {
-  if (!win || win.isDestroyed()) {
+async function showClosingOverlay(win, locale, contents = win?.webContents) {
+  // Quit must not surface a window the user left hidden or minimized.
+  if (!win || win.isDestroyed() || !win.isVisible() || win.isMinimized()) {
     return;
   }
   const { currentTheme } = require('./chrome');
   const theme = currentTheme();
-  if (win.isMinimized()) {
-    win.restore();
-  }
-  if (!win.isVisible()) {
-    win.show();
-  }
-  win.setBackgroundColor(theme.bg);
-  win.focus();
   let paintTimeout;
+  let cssKey;
+  let dismissed = false;
+  const generation = ++closingGeneration;
+  const dismiss = async () => {
+    dismissed = true;
+    if (!contents || contents.isDestroyed()) return;
+    await Promise.allSettled([
+      contents.executeJavaScript(`(() => {
+        const root = document.getElementById(${JSON.stringify(OVERLAY_ID)});
+        if (root?.dataset.closingGeneration === ${JSON.stringify(String(generation))}) root.remove();
+      })()`),
+      cssKey ? contents.removeInsertedCSS(cssKey) : Promise.resolve(),
+    ]);
+  };
   try {
     // Covered/hidden boot pages can suspend animation frames indefinitely.
     // Painting is best effort; its host deadline must never hold shutdown.
     await Promise.race([
       (async () => {
-        await win.webContents.insertCSS(overlayCss(theme));
-        await win.webContents.executeJavaScript(overlayScript(closingCopy(locale)));
-      })(),
+        cssKey = await contents.insertCSS(overlayCss(theme));
+        if (dismissed) return;
+        await contents.executeJavaScript(overlayScript(closingCopy(locale), generation));
+      })().finally(() => {
+        // A hidden/unresponsive page may finish painting after cancellation.
+        if (dismissed) void dismiss().catch(() => {});
+      }),
       new Promise(resolve => { paintTimeout = setTimeout(resolve, 500); }),
     ]);
   } catch {
@@ -155,6 +175,7 @@ async function showClosingOverlay(win, locale) {
   } finally {
     clearTimeout(paintTimeout);
   }
+  return dismiss;
 }
 
 module.exports = {

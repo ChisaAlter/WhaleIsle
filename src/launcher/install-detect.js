@@ -177,13 +177,37 @@ function uninstallSearchRoots() {
   return roots;
 }
 
+let registryGetValue;
+
+function unicodeRegistryBlock(key) {
+  const match = String(key).match(/^(HKCU|HKLM|HKEY_CURRENT_USER|HKEY_LOCAL_MACHINE)\\(.+)$/i);
+  if (!match) return '';
+  if (!registryGetValue) {
+    registryGetValue = require('koffi').load('advapi32.dll').func(
+      'int32_t __stdcall RegGetValueW(intptr_t, str16, str16, uint32_t, void *, void *, _Inout_ uint32_t *)',
+    );
+  }
+  const hive = /^(HKCU|HKEY_CURRENT_USER)$/i.test(match[1]) ? -2147483647 : -2147483646;
+  const lines = [key];
+  for (const name of ['DisplayName', 'DisplayVersion', 'InstallLocation', 'DisplayIcon', 'UninstallString']) {
+    const size = [0];
+    // Read Unicode strings directly; console encodings can lose path characters.
+    const flags = 0x10000006; // REG_SZ/REG_EXPAND_SZ, without expansion.
+    if (registryGetValue(hive, match[2], name, flags, null, null, size) !== 0 || !size[0]) continue;
+    const data = Buffer.alloc(size[0]);
+    if (registryGetValue(hive, match[2], name, flags, null, data, size) !== 0) continue;
+    lines.push(`    ${name}    REG_SZ    ${data.subarray(0, size[0]).toString('utf16le').replace(/\0+$/, '')}`);
+  }
+  return lines.join('\n');
+}
+
 function queryRegKey(key, deps = {}) {
   const execReg = deps.execFileSync || execFileSync;
   try {
-    return execReg('reg', ['query', key], {
-      encoding: 'utf8',
+    const output = execReg('reg', ['query', key], {
       windowsHide: true,
     });
+    return Buffer.isBuffer(output) ? unicodeRegistryBlock(key) : String(output || '');
   } catch {
     return '';
   }
@@ -208,20 +232,22 @@ function findRegisteredWindowsInstall(deps = {}) {
   for (const root of uninstallSearchRoots()) {
     for (const name of productNames(target.productName)) {
       try {
-        const out = execReg('reg', [
+        const output = execReg('reg', [
           'query',
           root,
           '/s',
           '/f',
           name,
-        ], { encoding: 'utf8', windowsHide: true });
+        ], { windowsHide: true });
+        const out = String(output);
         const blocks = out.split(/\r?\n\r?\n/);
         for (const block of blocks) {
           if (!/DisplayName/i.test(block)) {
             continue;
           }
           const keyMatch = block.match(/^HKEY_[^\r\n]+/m);
-          const parsed = parseRegBlock(block, keyMatch ? keyMatch[0] : root);
+          const candidateKey = keyMatch ? keyMatch[0] : root;
+          const parsed = parseRegBlock(Buffer.isBuffer(output) ? unicodeRegistryBlock(candidateKey) : block, candidateKey);
           if (parsed && (
             parsed.displayName.includes(name)
             || parsed.uninstallCommand.includes(name)

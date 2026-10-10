@@ -22,6 +22,7 @@ const usePanelInfo: GlobalStandardProps['usePanelInfo'] = selector => selector({
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
+  vi.unstubAllGlobals()
 })
 
 type Row = { id: string; order: number; label: string }
@@ -102,6 +103,7 @@ function mount({
   const listeners = new Set<() => void>()
   const connectionListeners = new Set<() => void>()
   const reconnect = vi.fn()
+  const openDesktopUpdate = vi.fn()
   const renderSlot = vi.fn(
     ((key: string, _owner: unknown, opts?: { only?: string; fallback?: import('react').ReactNode }) => {
       if (key === 'settings.section') return <div data-testid={`section-${opts?.only ?? 'all'}`} />
@@ -145,7 +147,7 @@ function mount({
       }, [navigation])
       return select(navigation.getSnapshot())
     },
-    openDesktopUpdate: () => {},
+    openDesktopUpdate,
     useDesktopUpdate: select => select(desktopUpdate),
     t: makeTranslate(dictionary),
     useConnectionState: (select) => {
@@ -197,7 +199,7 @@ function mount({
     act(() => { sessions.byId[activeId] = { ...session, blank: next } })
     view.rerender(<SettingsRoot {...props} />)
   }
-  return { view, renderSlot, bump, listeners, reconnect, setConnectionState, setDesktopUpdate, setShortcuts, setOnboardingActive, navigation }
+  return { view, renderSlot, bump, listeners, reconnect, openDesktopUpdate, setConnectionState, setDesktopUpdate, setShortcuts, setOnboardingActive, navigation }
 }
 
 function openPanel() {
@@ -208,6 +210,20 @@ function openPanel() {
 }
 
 describe('SettingsRoot trigger', () => {
+  it.each([true, false])('offers one shell update action without starting another release check when wide is %s', async (wide) => {
+    const checkUpdate = vi.fn(async () => ({ status: 'available', latest: '1.0.1' }))
+    vi.stubGlobal('shell', { checkUpdate })
+    const mounted = mount({ wide, launcher: true,
+      desktopUpdate: { failed: false, opening: false, presentation: { phase: 'available', version: '1.0.1' } } })
+    await act(async () => {})
+    expect(checkUpdate).not.toHaveBeenCalled()
+    expect(screen.getAllByRole('button')).toHaveLength(2)
+    const update = screen.getByRole('button', { name: 'Update' })
+    expect(update.textContent).toBe('')
+    fireEvent.click(update)
+    expect(mounted.openDesktopUpdate).toHaveBeenCalledOnce()
+  })
+
   it.each([true, false])('uses the account launcher as the only Settings entry when wide is %s', async (wide) => {
     const { renderSlot, navigation, setConnectionState } = mount({ wide, launcher: true })
     const accountButton = screen.getByRole('button', { name: 'Account' })
@@ -259,11 +275,12 @@ describe('SettingsRoot trigger', () => {
     const f = mount({ dictionary: zh, connectionState: 'connecting',
       desktopUpdate: { failed: false, opening: false, presentation } })
     expect(screen.getByRole('button', { name: '正在准备重启…' })).toBeTruthy()
-    expect(screen.queryByText('重新连接中')).toBeNull()
+    expect(screen.queryByRole('button', { name: '连接中断，正在重试，点击立即重连' })).toBeNull()
     f.setDesktopUpdate({ failed: false, opening: false,
       presentation: { phase: 'error', version: presentation.version, failure: 'install' } })
     expect(screen.queryByRole('button', { name: '重试更新' })).toBeNull()
-    expect(screen.getByText('重新连接中')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '连接中断，正在重试，点击立即重连' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '正在准备重启…' })).toBeNull()
   })
   it.each([
     { column: 'expanded English', wide: true, dictionary: en, name: 'Settings' },
@@ -293,15 +310,14 @@ describe('SettingsRoot trigger', () => {
 
     mounted.setConnectionState('disconnected')
     const indicator = screen.getByRole('button', { name: 'Disconnected, reconnect now' })
-    expect(indicator.textContent).toContain('Disconnected')
+    expect(indicator.textContent).toBe('')
     expect(indicator.hasAttribute('title')).toBe(false)
     expect(indicator.querySelector('svg')).toBeTruthy()
     fireEvent.click(indicator)
     expect(mounted.reconnect).toHaveBeenCalledOnce()
 
     mounted.setConnectionState('connecting')
-    expect(screen.getByRole('button', { name: 'Reconnecting, reconnect now' }).textContent)
-      .toContain('Reconnecting...')
+    expect(screen.getByRole('button', { name: 'Reconnecting, reconnect now' })).toBeTruthy()
 
     // An attempt that resolves instantly still shows the connecting pill for
     // its 800ms minimum before the confirmation replaces it.
@@ -312,7 +328,7 @@ describe('SettingsRoot trigger', () => {
     // The confirmation window is measured from visibility, not the transition.
     act(() => { vi.advanceTimersByTime(1_999) })
     expect(screen.getByRole('status', { name: 'Connected' })).toBeTruthy()
-    // The confirmation window closes at 2s, then the pill fades for 150ms.
+    // The confirmation vacates the shared status position after two seconds.
     act(() => { vi.advanceTimersByTime(1) })
     act(() => { vi.advanceTimersByTime(150) })
     expect(screen.queryByRole('status')).toBeNull()
@@ -323,15 +339,14 @@ describe('SettingsRoot trigger', () => {
     const mounted = mount({ dictionary: zh })
     mounted.setConnectionState('connecting')
     const attempt = screen.getByRole('button', { name: '连接中断，正在重试，点击立即重连' })
-    expect(attempt.textContent).toContain('重新连接中')
+    expect(attempt.textContent).toBe('')
     fireEvent.click(attempt)
     expect(mounted.reconnect).toHaveBeenCalledOnce()
-    expect(attempt.textContent).toContain('重新连接中')
+    expect(attempt.getAttribute('aria-label')).toBe('连接中断，正在重试，点击立即重连')
     // An attempt that resolves mid-hold keeps its label until the hold ends.
     act(() => { vi.advanceTimersByTime(100) })
     mounted.setConnectionState('connected')
-    expect(screen.getByRole('button', { name: '连接中断，正在重试，点击立即重连' }).textContent)
-      .toContain('重新连接中')
+    expect(screen.getByRole('button', { name: '连接中断，正在重试，点击立即重连' })).toBeTruthy()
     act(() => { vi.advanceTimersByTime(700) })
     expect(screen.getByRole('status', { name: '连接成功' })).toBeTruthy()
     // The full two-second confirmation follows the delayed appearance.
@@ -354,9 +369,18 @@ describe('SettingsRoot trigger', () => {
     expect(screen.queryByRole('status')).toBeNull()
   })
 
-  it('keeps the reconnect indicator out of the collapsed rail', () => {
-    mount({ wide: false, connectionState: 'disconnected' })
-    expect(screen.queryByRole('button', { name: 'Disconnected, reconnect now' })).toBeNull()
+  it('keeps one actionable connection status in the collapsed rail before restoring the update action', () => {
+    vi.useFakeTimers()
+    const mounted = mount({ wide: false, connectionState: 'disconnected',
+      desktopUpdate: { failed: false, opening: false, presentation: { phase: 'available', version: '1.0.1' } } })
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnected, reconnect now' }))
+    expect(mounted.reconnect).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: 'Update' })).toBeNull()
+    mounted.setConnectionState('connected')
+    act(() => { vi.advanceTimersByTime(2_000) })
+    expect(screen.queryByRole('status')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Update' }))
+    expect(mounted.openDesktopUpdate).toHaveBeenCalledOnce()
   })
 })
 

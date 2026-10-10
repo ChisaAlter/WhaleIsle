@@ -35,8 +35,8 @@ const make = (host = stubConfigForm<ThemeSettings>()): {
 }
 
 /**
- * Runtime constructed on a Host section without the backdrop extras, so raw
- * (unmixed) token assertions stay about their own feature.
+ * Runtime constructed on a Host section without the backdrop extras, so
+ * canvas-token assertions stay about their own feature.
  */
 const makeBare = (): ReturnType<typeof make> => {
   const host = stubConfigForm<ThemeSettings>()
@@ -452,6 +452,25 @@ describe('ThemeRuntime', () => {
     expect(theme.getTheme().fontFamilyComposer).toBe('Georgia')
     flushWrites()
     expect(host.set).toHaveBeenCalledWith('fontFamilySans', 'Inter')
+  })
+
+  it('mixes family dialog fills with glass even without a wallpaper or gradient', () => {
+    const { theme } = makeBare()
+    for (const mode of ['light', 'dark'] as const) {
+      theme.setTheme(mode)
+      theme.setThemeHalf(mode, 'celadon')
+      theme.setGlassOpacity(100)
+      const solid = theme.getTheme().active.tokens
+      for (const opacity of [40, 70]) {
+        theme.setGlassOpacity(opacity)
+        const mixed = theme.getTheme().active.tokens
+        for (const token of ['--dsw-alias-bg-layer-1', '--dsw-alias-bg-layer-2']) {
+          expect(mixed[token]).toBe(`color-mix(in srgb, ${solid[token]} ${opacity}%, transparent)`)
+        }
+      }
+      theme.setGlassOpacity(100)
+      expect(theme.getTheme().active.tokens).toEqual(solid)
+    }
   })
 
   it('persists a wallpaper and mixes chrome fills so the image can show through', () => {

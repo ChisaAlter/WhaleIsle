@@ -3,7 +3,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { createGrowthTracker, normalizeGrowthState } = require('./pet-growth');
-const { createDshWatch } = require('./pet-dsh-watch');
+const { createDshWatchWorker } = require('./pet-dsh-watch-host');
 const { createPetChat } = require('./pet-chat');
 const petStats = require('./pet-stats');
 const petSettings = require('./pet-settings');
@@ -177,7 +177,7 @@ function createLive2dPetManager(options = {}) {
   // milestones, the 45-minute rest nudge, and the 久别 greeting. Events push
   // to the renderer over shell:live2d-dsh; the alert arbitration there
   // decides when she may actually speak.
-  const dshWatch = createDshWatch({
+  const dshWatch = createDshWatchWorker({
     sessionsDir: options.sessionsDir || '',
     outboxFile: options.sessionsDir
       ? path.join(path.dirname(options.sessionsDir), 'data', 'whale', 'pet-outbox.jsonl')
@@ -199,12 +199,14 @@ function createLive2dPetManager(options = {}) {
       }
     },
     onEvent: (ev) => {
-      if (!win || win.isDestroyed?.()) {
-        return;
+      if (!win || win.isDestroyed?.()
+        || (ev.type === 'dshWhale' && (!petRendererReady || !win.isVisible()))) {
+        return false;
       }
       try {
         win.webContents.send('shell:live2d-dsh', { ...ev, category: ev.type });
-      } catch {}
+        return true;
+      } catch { return false; }
     },
     onState: (s) => {
       dshActivityState = s;
@@ -409,6 +411,23 @@ function createLive2dPetManager(options = {}) {
   // the new one. Never persisted: `state.x/y` stays the user's chosen
   // anchor.
   let roamRect = null;
+  // Logical interactive islands in screen coords — her body plus the status
+  // card / chat card / picker / pinned bubble, as reported by the renderer.
+  // The cursor hold checks these too, so moving from her body onto the status
+  // card (or back) keeps the window interactive without waiting for the
+  // renderer's exit/enter round trip.
+  let hitRects = [];
+  function setHitRegions(regions) {
+    if (!Array.isArray(regions)) {
+      hitRects = [];
+      return;
+    }
+    hitRects = regions.slice(0, 24).flatMap((r) => {
+      if (!r || ![r.x, r.y, r.width, r.height].every(Number.isFinite)
+        || r.width <= 0 || r.height <= 0) { return []; }
+      return [{ x: r.x, y: r.y, w: r.width, h: r.height }];
+    });
+  }
   function pollCursor() {
     if (!win || win.isDestroyed?.()) {
       return;
@@ -431,13 +450,19 @@ function createLive2dPetManager(options = {}) {
     // can dip out mid-gesture (she sways or runs under a parked cursor),
     // and honoring that exit punches a click-through hole under a click
     // that is already on its way. Leaving the zone releases the hold.
-    const pos = petPosition();
-    const scale = Number.isFinite(state.settings?.scale) ? state.settings.scale : 1;
-    const zone = roamRect
-      || { x: pos.x, y: pos.y, w: PET_WIDTH * scale, h: PET_HEIGHT * scale };
-    const inPet = inside
+    let zone = roamRect;
+    if (!zone) {
+      const pos = petPosition();
+      const scale = Number.isFinite(state.settings?.scale) ? state.settings.scale : 1;
+      zone = { x: pos.x, y: pos.y, w: PET_WIDTH * scale, h: PET_HEIGHT * scale };
+    }
+    const inZone = inside
       && point.x >= zone.x - CURSOR_PET_PAD && point.x <= zone.x + zone.w + CURSOR_PET_PAD
       && point.y >= zone.y - CURSOR_PET_PAD && point.y <= zone.y + zone.h + CURSOR_PET_PAD;
+    const inHit = inside && hitRects.some((r) =>
+      point.x >= r.x - CURSOR_PET_PAD && point.x <= r.x + r.w + CURSOR_PET_PAD
+      && point.y >= r.y - CURSOR_PET_PAD && point.y <= r.y + r.h + CURSOR_PET_PAD);
+    const inPet = inZone || inHit;
     if (inPet !== cursorInPetFrame) {
       cursorInPetFrame = inPet;
       applyInteractive();
@@ -471,6 +496,7 @@ function createLive2dPetManager(options = {}) {
     // A stale `true` would pin the next window interactive forever —
     // the fresh page re-requests what it needs.
     rendererInteractive = false;
+    hitRects = [];
   }
 
   // Care stats (饱食/心情/亲密) live next to growth in live2dPet.stats.
@@ -610,13 +636,20 @@ function createLive2dPetManager(options = {}) {
   // Two writers share one switch; merging here keeps them from punching
   // holes in each other's decisions.
   function applyInteractive() {
+    shapeStats.interactiveToggles += 1;
     setInteractive(rendererInteractive || cursorInPetFrame);
   }
 
   // A transparent desktop-sized HWND must never become a desktop-sized input
   // shield while the renderer is busy. Native regions also bound its visible
   // footprint; keep disjoint surfaces disjoint instead of enclosing their gaps.
+  //
+  // Diagnostics separate REQUESTS from APPLIED native shape changes: a
+  // de-duplicated update is cheap, and counting them together would make a
+  // renderer that re-sends identical geometry look like shape churn.
+  const shapeStats = { regionRequests: 0, regionApplied: 0, interactiveToggles: 0, hitRegionReports: 0 };
   function setSurfaceRegions(regions) {
+    shapeStats.regionRequests += 1;
     if (!win || win.isDestroyed?.() || typeof win.setShape !== 'function'
       || process.platform === 'darwin' || !Array.isArray(regions)) { return; }
     const bounds = win.getBounds();
@@ -635,6 +668,7 @@ function createLive2dPetManager(options = {}) {
     if (key === surfaceRegionKey) { return; }
     win.setShape(shape);
     surfaceRegionKey = key;
+    shapeStats.regionApplied += 1;
   }
 
   function setInteractive(next) {
@@ -727,6 +761,7 @@ function createLive2dPetManager(options = {}) {
     // The overlay may have hopped displays — a roam rect measured against
     // the old origin is stale; the renderer re-reports on its next move.
     roamRect = null;
+    hitRects = [];
     dbg(`pet: layout origin=${JSON.stringify(origin)} displays=${JSON.stringify(displays)} home=${home} pet=${JSON.stringify(petPosition())}`);
     win.webContents.send('shell:live2d-layout', {
       origin: { x: origin.x, y: origin.y },
@@ -824,6 +859,7 @@ function createLive2dPetManager(options = {}) {
       win = null;
       interactive = false;
       roamRect = null; // fresh page re-reports; a stale zone would wedge hover
+      hitRects = [];
     });
     void win.loadURL(petUrl).catch(() => {});
     return win;
@@ -841,6 +877,7 @@ function createLive2dPetManager(options = {}) {
       win = null;
       interactive = false;
       roamRect = null;
+      hitRects = [];
       if (old && !old.isDestroyed?.()) {
         old.destroy();
       }
@@ -979,7 +1016,9 @@ function createLive2dPetManager(options = {}) {
     } catch {}
     ipcMain.handle('shell:live2d-interactive', (event, payload) => {
       assertAuthorized(event);
+      if (Array.isArray(payload?.hitRegions)) { shapeStats.hitRegionReports += 1; }
       setSurfaceRegions(payload?.regions);
+      if (Array.isArray(payload?.hitRegions)) setHitRegions(payload.hitRegions);
       if (typeof payload?.interactive === 'boolean') {
         rendererInteractive = payload.interactive;
         applyInteractive();
@@ -1258,14 +1297,17 @@ function createLive2dPetManager(options = {}) {
   function dispose() {
     clearInterval(growthTimer);
     growthTimer = 0;
-    Promise.resolve(growth.close?.()).catch(() => {});
+    const growthClosed = Promise.resolve(growth.close?.()).catch(() => {});
     clearTimeout(mirrorTimer);
     mirrorTimer = 0;
     stopCursorPump();
     hide();
+    let watcherClosed;
     if (stopDshWatch) {
-      stopDshWatch();
+      watcherClosed = stopDshWatch();
       stopDshWatch = null;
+    } else {
+      watcherClosed = dshWatch.close();
     }
     if (handlersRegistered) {
       ipcMain.removeHandler?.('shell:live2d-interactive');
@@ -1292,6 +1334,7 @@ function createLive2dPetManager(options = {}) {
     while (surfaceWatch.length) {
       try { surfaceWatch.pop()(); } catch {}
     }
+    return Promise.all([growthClosed, watcherClosed]);
   }
 
   registerHandlers();
@@ -1318,6 +1361,10 @@ function createLive2dPetManager(options = {}) {
     getWindow: () => win,
     recreateWindow,
     isInteractive: () => interactive,
+    // Opt-in counters for scripts/measure-whale-cdp.mjs: separates renderer
+    // requests from applied native changes so identical geometry is not
+    // mistaken for shape churn.
+    getDiagnostics: () => ({ ...shapeStats }),
   };
 }
 

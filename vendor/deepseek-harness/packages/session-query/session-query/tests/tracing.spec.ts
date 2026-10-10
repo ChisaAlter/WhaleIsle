@@ -85,18 +85,24 @@ class TraceHandle implements SessionHandle {
 class TracePersistence extends SessionPersistence {
   static entries = new Map<SessionIdType, { meta: SessionHeader; events: SessionEvent[] }>()
   static listCalls = 0
+  static statCalls = 0
   static readCalls = 0
   static listFailure: Error | undefined
+  static statFailure: Error | undefined
   static readFailure: Error | undefined
   static afterList: (() => void) | undefined
+  static afterStat: (() => void) | undefined
 
   static reset(entries: readonly { meta: SessionHeader; events: SessionEvent[] }[] = []): void {
     this.entries = new Map(entries.map(entry => [entry.meta.id, structuredClone(entry)]))
     this.listCalls = 0
+    this.statCalls = 0
     this.readCalls = 0
     this.listFailure = undefined
+    this.statFailure = undefined
     this.readFailure = undefined
     this.afterList = undefined
+    this.afterStat = undefined
   }
 
   create(header: SessionHeader): Promise<SessionHandle> {
@@ -114,12 +120,16 @@ class TracePersistence extends SessionPersistence {
   }
 
   stat(id: SessionIdType): Promise<SessionPersistenceSnapshot | undefined> {
+    TracePersistence.statCalls += 1
+    if (TracePersistence.statFailure !== undefined) return Promise.reject(TracePersistence.statFailure)
     const entry = TracePersistence.entries.get(id)
     if (entry === undefined) return Promise.resolve(undefined)
-    return Promise.resolve({
+    const snapshot = {
       header: structuredClone(entry.meta),
       revision: SessionPersistenceRevision(`events:${entry.events.length}`),
-    })
+    }
+    TracePersistence.afterStat?.()
+    return Promise.resolve(snapshot)
   }
 
   list(): Promise<readonly SessionPersistenceSnapshot[]> {
@@ -378,7 +388,7 @@ describe('session event tracing', () => {
 
     await expect(ctx.sessionQuery.traceEvent({ sessionId: durable.id, seq: SessionSeq(0) }))
       .resolves.toMatchObject({ target: { type: 'user/message', surface: 'current' } })
-    expect([TracePersistence.listCalls, TracePersistence.readCalls]).toEqual([1, 1])
+    expect([TracePersistence.listCalls, TracePersistence.statCalls, TracePersistence.readCalls]).toEqual([0, 1, 1])
 
     const live = ctx.sessions.create(durable.id, { meta: { createdAt: 1, cwd: '/same' } })
     live.append('turn/start', { turn: 1 })
@@ -390,23 +400,24 @@ describe('session event tracing', () => {
       { surfaceOp: 'append' },
     )
     TracePersistence.listFailure = new Error('list unavailable')
+    TracePersistence.statFailure = new Error('stat unavailable')
     TracePersistence.readFailure = new Error('inspect unavailable')
     await expect(ctx.sessionQuery.traceEvent({ sessionId: durable.id, seq: SessionSeq(1) }))
       .resolves.toMatchObject({ target: { type: 'user/message' } })
-    expect([TracePersistence.listCalls, TracePersistence.readCalls]).toEqual([1, 1])
+    expect([TracePersistence.listCalls, TracePersistence.statCalls, TracePersistence.readCalls]).toEqual([0, 1, 1])
 
     TracePersistence.reset([{ meta: durable, events: [appendEvent(0)] }])
     const failedCtx = await queryContext()
     await failedCtx.plugin(TracePersistence)
-    TracePersistence.listFailure = new Error('list unavailable')
+    TracePersistence.statFailure = new Error('stat unavailable')
     await expect(failedCtx.sessionQuery.traceEvent({ sessionId: durable.id, seq: SessionSeq(0) }))
       .rejects.toThrow(expectCode('SESSION_QUERY_PERSISTENCE_FAILED'))
-    TracePersistence.listFailure = undefined
+    TracePersistence.statFailure = undefined
     TracePersistence.readFailure = new Error('inspect unavailable')
     await expect(failedCtx.sessionQuery.traceEvent({ sessionId: durable.id, seq: SessionSeq(0) }))
       .rejects.toThrow(expectCode('SESSION_QUERY_PERSISTENCE_FAILED'))
     TracePersistence.readFailure = undefined
-    TracePersistence.afterList = () => {
+    TracePersistence.afterStat = () => {
       mutableHeader(TracePersistence.entries.get(durable.id)!.meta).cwd = '/changed'
     }
     await expect(failedCtx.sessionQuery.traceEvent({ sessionId: durable.id, seq: SessionSeq(0) }))

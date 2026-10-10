@@ -55,6 +55,57 @@ test('manifest refuses substituted asset, invalid version, digest and missing li
   for (const value of [ { ...good, version: '../x' }, { ...good, license: '' }, { ...good, platforms: { 'win32-x64': { ...good.platforms['win32-x64'], asset: '../payload.exe' } } } ]) assert.throws(() => validateManifest(value));
 });
 
+test('remote catalog requests CNB JSON and keeps assets on the selected route', async t => {
+  const f = fixture(t);
+  const Module = require('node:module');
+  const load = Module._load;
+  t.mock.method(Module, '_load', function (id, ...args) {
+    if (id === 'electron') return { app: {}, shell: {} };
+    return Reflect.apply(load, this, [id, ...args]);
+  });
+  const { ROUTES } = require('./release-source');
+  let route;
+  const configPath = require.resolve('../main/config');
+  const previousConfig = require.cache[configPath];
+  // The native-component workflow runs without desktop/Electron dependencies.
+  require.cache[configPath] = { exports: { loadConfig: () => ({ downloadRoute: route }) } };
+  t.after(() => {
+    if (previousConfig) require.cache[configPath] = previousConfig;
+    else delete require.cache[configPath];
+  });
+  const requests = [];
+  t.mock.method(global, 'fetch', async (url, options) => {
+    requests.push(url);
+    const selected = route === 'gitee' ? 'cnb' : route;
+    const base = ROUTES[selected].apiBase;
+    const manifestUrl = `${base}/releases/download/whalebridge-v1.0.0/WhaleBridge-component.json`;
+    if (url === manifestUrl) return Response.json(f.manifest);
+    assert.equal(url, `${base}/releases?${selected === 'cnb' ? 'page_size' : 'per_page'}=100`);
+    const accept = new Headers(options.headers).get('Accept');
+    if (selected === 'cnb' && accept !== 'application/vnd.cnb.api+json') {
+      return new Response('<!DOCTYPE html><html>CNB releases</html>', { headers: { 'Content-Type': 'text/html' } });
+    }
+    if (selected === 'github') assert.notEqual(accept, 'application/vnd.cnb.api+json');
+    return Response.json([{ tag_name: 'whalebridge-v1.0.0', assets: [
+      { name: 'WhaleBridge-component.json', browser_download_url: manifestUrl },
+      { name: 'WhaleBridge-win32-x64.exe', size: f.manifest.platforms['win32-x64'].size,
+        browser_download_url: `${base}/releases/download/whalebridge-v1.0.0/WhaleBridge-win32-x64.exe` },
+    ] }]);
+  });
+  for (route of ['cnb', 'gitee', 'github']) {
+    requests.length = 0;
+    const service = createWhaleBridgeService({ ...f.deps, devPackage: '', fetchJson: undefined });
+    const row = await service.refreshCatalog();
+    assert.equal(row.message, '');
+    assert.equal(row.latest, '1.0.0');
+    const selected = route === 'gitee' ? 'cnb' : route;
+    const catalog = JSON.parse(fs.readFileSync(path.join(f.deps.root, 'catalog.json')));
+    assert.equal(catalog.route, selected);
+    assert.equal(catalog.url, `${ROUTES[selected].apiBase}/releases/download/whalebridge-v1.0.0/WhaleBridge-win32-x64.exe`);
+    assert.equal(requests.length, 2);
+  }
+});
+
 test('download checksum failure never marks a component installed or starts it', async t => {
   const f = fixture(t);
   fs.appendFileSync(path.join(f.deps.devPackage, 'WhaleBridge-win32-x64.exe'), 'bad');

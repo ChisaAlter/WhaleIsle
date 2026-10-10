@@ -84,7 +84,7 @@ function run(command, args, cwd = root, { shell = process.platform === 'win32' }
 const buildReason = await officialBuildReason();
 if (buildReason) {
   console.log(`[prestart] ${buildReason}; rebuilding official client`);
-  const pnpm = path.join(root, 'node_modules', 'pnpm', 'bin', 'pnpm.cjs');
+  const pnpm = path.join(root, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs');
   run(process.execPath, [pnpm, '--dir', harness, 'run', 'build:official'], root, { shell: false });
 }
 

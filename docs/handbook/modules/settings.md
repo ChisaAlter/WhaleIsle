@@ -10,6 +10,7 @@
 - `Ctrl+,` 或菜单「设置」。  
 - 桌面侧栏底部的账户入口使用 `settings.launcher`：打开账户菜单，可进入设置、远程配对、登录，或明确重开 API Key 引导。账户入口存在时不显示重复的「设置」按钮和独立「远程」行；没有账户入口时保留这两个回退入口。
 - `openSettings` / `settings-jump` 可深链到 section（如 `market`、`usage-stats`、`appearance`）。
+- 设置 → General：视觉回复开关默认关闭，保存到活动 profile，立即限制新的 HTML 预览和发布；关闭后已发布页面仍可查看。
 - 设置 → 关于：「打开运行目录」打开桌面 `dsh-home`（见 [dsh-home.md](dsh-home.md)）。  
 - Section id 表：[../appendix/settings-sections.md](../appendix/settings-sections.md)
 
@@ -30,7 +31,7 @@
 - 市场在设置内，无独立市场窗（见 [marketplace.md](marketplace.md)）。
 - 模型 / MCP / 技能写桌面 `dsh-home`，不写 `~/.dsh`（[dsh-home.md](dsh-home.md)）。
 - 设置侧栏导航按 section id 使用互异的 16px `currentColor` 线框图标，未知 id 回退齿轮；映射见[设置 section id 附录](../appendix/settings-sections.md)。
-- 账户菜单与回退按钮打开同一设置面板；远程菜单项与回退行打开同一配对弹窗。更新、连接状态独立保留，空状态行不占空间。没有账户注册项时不留下占位。
+- 账户菜单与回退按钮打开同一设置面板；远程菜单项与回退行打开同一配对弹窗。账号与更新/连接状态共用固定底栏，状态互斥；折叠侧栏固定预留状态图标席，状态变化不移动头像。没有账户注册项时显示设置入口。
 - 桌面登录自动打开浏览器不改变 Host 授权和取消流程；普通 Web 页不启用该账户插件。
 
 ## 门槛

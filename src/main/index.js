@@ -1,4 +1,6 @@
 const { app, clipboard, dialog, ipcMain, session, shell, nativeTheme, systemPreferences } = require('electron');
+// Select the discrete GPU before Chromium initializes any rendering contexts.
+app.commandLine.appendSwitch('force_high_performance_gpu');
 const { PRODUCT_NAME, LEGACY_DESKTOP_USER_DATA, preserveUserDataPath } = require('../shared/product-identity');
 preserveUserDataPath(app, LEGACY_DESKTOP_USER_DATA);
 const fs = require('fs');
@@ -35,7 +37,8 @@ const { buildMenu } = require('./menu');
 const { createTray, invokeTrayAction, refreshTrayMenu } = require('./tray');
 const { DESKTOP_PET_FEATURE, configureDesktopPet, getDesktopPet } = require('./desktop-pet');
 const { LIVE2D_PET_FEATURE, configureLive2dPet, getLive2dPet } = require('./desktop-live2d');
-const { checkUpdate, installUpdate, setGithubTokenProvider, setUpdateStateSink, currentVersion } = require('./update');
+const { checkUpdate, updateDownloadMethods, setGithubTokenProvider, setUpdateStateSink, currentVersion } = require('./update');
+const { plainReleaseNotes } = require('../shared/release-notes');
 const { createUpdatesState } = require('./updates-state');
 const { BrowserGuests, installBrowserGuests } = require('./browser-guests');
 const { connectWelcome } = require('./welcome-backend');
@@ -84,7 +87,6 @@ const {
   getHarnessWebContents,
   getHarnessView,
   isHarnessLoaded,
-  hideHarnessView,
   dismissMainWindow,
   showLauncher,
   prepareLauncher,
@@ -194,6 +196,7 @@ async function setRemoteFromQa(patch) {
 
 let quitting = false;
 let stoppingForQuit = false;
+let quitInProgress = false;
 // Shell-owned input block for the shortcut bridge: while the closing overlay
 // owns the window, bound chords and menu dispatch must not run commands.
 let closingOverlayActive = false;
@@ -262,6 +265,19 @@ async function confirmDialog(parent, options) {
       console.warn('dshd dialog: shell confirm failed, native fallback', error);
     }
   }
+  if (options.downloadMethods?.length > 0) {
+    const methods = options.downloadMethods.filter((method) => !method.disabledReason);
+    const result = await dialog.showMessageBox(parent || undefined, {
+      ...options,
+      buttons: [...methods.map((method) => method.label), '稍后'],
+      defaultId: 0, cancelId: methods.length,
+      detail: options.downloadMethods.map((method) => `${method.label}：${method.disabledReason || method.description}`).join('\n')
+        + '\n\n' + options.detail,
+    });
+    return result.response < methods.length
+      ? { response: 0, downloadMode: methods[result.response].id }
+      : { response: options.cancelId };
+  }
   return dialog.showMessageBox(parent || undefined, options);
 }
 
@@ -290,7 +306,7 @@ function bindMainClose(win) {
     if (quitting) {
       // A protection prompt may be in flight — swallow the close instead of
       // destroying a window the user just cancelled quitting over.
-      if (!stoppingForQuit) event.preventDefault();
+      if (quitInProgress || !stoppingForQuit) event.preventDefault();
       return;
     }
     if (hideOnClose(loadConfig(), quitting)) {
@@ -327,7 +343,7 @@ function bindLauncherClose(win) {
   });
   win.on('close', (event) => {
     if (quitting) {
-      if (!stoppingForQuit) event.preventDefault();
+      if (quitInProgress || !stoppingForQuit) event.preventDefault();
       return;
     }
     if (getMainWindow()) {
@@ -510,8 +526,8 @@ async function startDesktopFromLauncher(options = {}) {
 }
 
 /** Cold-start twin of the ipc.js unverified-install confirmation. */
-async function confirmUnverifiedColdStart(info) {
-  const result = await confirmDialog(getLauncherWindow(), {
+async function confirmUnverifiedColdStart(info, parent = getLauncherWindow()) {
+  const result = await confirmDialog(parent, {
     type: 'warning',
     buttons: ['仍要安装', '取消'],
     defaultId: 1,
@@ -524,30 +540,32 @@ async function confirmUnverifiedColdStart(info) {
   return result.response === 0;
 }
 
-// Release notes travel on the check payload (`notes`); the update ask used to
-// drop them, so the user confirmed blind. Surface a bounded excerpt as detail.
+// Keep the full release notes in the update dialog's reading region.
 function updateAskDetail(check) {
-  const notes = typeof check?.notes === 'string' ? check.notes.trim() : '';
-  if (!notes) {
-    return undefined;
+  return plainReleaseNotes(check?.notes) || '该版本未提供更新说明。';
+}
+
+async function updateAskOptions(check) {
+  const downloadMethods = await updateDownloadMethods(check);
+  if (isLauncherPackage()) {
+    downloadMethods[0].disabledReason = '请在已安装的桌面程序中使用增量更新。';
   }
-  return notes.length > 600 ? `${notes.slice(0, 600)}…` : notes;
+  return {
+    type: 'question', buttons: ['下载并更新', '稍后'], defaultId: 0, cancelId: 1,
+    title: '发现新版本', message: `更新到 v${check.latest || check.version || ''}`,
+    kind: 'update',
+    context: `当前版本 v${check.current || currentVersion()} → v${check.latest || check.version || ''}`,
+    detail: updateAskDetail(check), downloadMethods, noLink: true,
+  };
 }
 
 // Slim-package cold start talks to the managed runtime: route-aware checks,
 // installs that keep the launcher alive, and external process start.
 function gateInstallUpdate(onProgress, check) {
-  if (isLauncherPackage()) {
-    return runtimeInstall.installRuntime(
-      check && check.tag ? { tag: check.tag } : {},
-      onProgress,
-      { confirmUnverified: confirmUnverifiedColdStart },
-    );
-  }
-  return installUpdate(onProgress, {
+  return desktopResources.launcher.installUpdate(onProgress, {
     confirmUnverified: confirmUnverifiedColdStart,
     expectedCheck: check,
-    taskProtection: getTaskProtection(),
+    downloadMode: check?.downloadMode,
   });
 }
 
@@ -567,17 +585,9 @@ function runColdStartGate(options = {}) {
       if (win && !win.isDestroyed() && !win.isFocused()) {
         updateAttention.ready(String(check.latest || check.version || 'update'), win, shellConfirm().window);
       }
-      const result = await confirmDialog(win, {
-        type: 'question',
-        buttons: ['更新', '稍后'],
-        defaultId: 0,
-        cancelId: 1,
-        title: '发现新版本',
-        message: `是否更新到 ${check.latest || check.version || ''}？`,
-        detail: updateAskDetail(check),
-        noLink: true,
-      });
+      const result = await confirmDialog(win, await updateAskOptions(check));
       updateAttention.clear();
+      if (result.response === 0) check.downloadMode = result.downloadMode;
       return result.response === 0;
     },
     openLauncher: () => openLauncher(options),
@@ -681,21 +691,26 @@ async function openDesktopUpdate() {
   const win = getMainWindow();
   const info = await checkUpdate();
   if (info.status === 'available') {
-    const ask = await confirmDialog(win, {
-      type: 'question',
-      buttons: ['更新', '稍后'],
-      defaultId: 0,
-      cancelId: 1,
-      title: '发现新版本',
-      message: `是否更新到 ${info.latest || info.version || ''}？`,
-      detail: updateAskDetail(info),
-      noLink: true,
-    });
+    const ask = await confirmDialog(win, await updateAskOptions(info));
     if (ask.response !== 0) return;
-    await installUpdate(() => {}, {
-      confirmUnverified: confirmUnverifiedColdStart,
+    const result = await desktopResources.launcher.installUpdate(() => {}, {
+      confirmUnverified: (unverified) => confirmUnverifiedColdStart(unverified, win),
       expectedCheck: info,
-      taskProtection: getTaskProtection(),
+      downloadMode: ask.downloadMode,
+    });
+    if (result.launched || result.declined || (result.cancelled && result.code === 'cancelled')) return;
+    await confirmDialog(win, {
+      type: result.manualInstall || result.openedPage ? 'info' : 'error',
+      buttons: ['知道了'],
+      defaultId: 0,
+      cancelId: 0,
+      title: '安装更新',
+      message: result.manualInstall ? '请完成安装映像中的更新步骤'
+        : result.openedPage ? '此版本没有适用的安装包，已打开发布页面'
+          : result.cancelled ? '更新前未能安全结束正在运行的工作'
+          : '未能安装更新',
+      detail: result.message || result.error || result.code || '',
+      noLink: true,
     });
     return;
   }
@@ -831,18 +846,20 @@ async function pickWorkspace() {
  * restart/reload/quit must not proceed while a BrowserView teardown is still
  * in flight, or a raced detach leaves a half-removed view behind.
  */
-function cleanupDesktopResources() {
+async function cleanupDesktopResources() {
   if (!desktopResources) {
-    return Promise.resolve();
+    await require('../launcher/forensics-log').flushBootLogs();
+    return;
   }
   try {
     desktopResources.pty.killAll();
   } catch (error) {
     dsh.log(`PTY 清理失败：${error.message}`, 'app');
   }
-  return Promise.resolve(desktopResources.preview.closeAll()).catch((error) => {
+  await Promise.resolve(desktopResources.preview.closeAll()).catch((error) => {
     dsh.log(`预览清理失败：${error.message}`, 'app');
   });
+  await require('../launcher/forensics-log').flushBootLogs();
 }
 
 /**
@@ -913,6 +930,7 @@ const reloadWithCleanup = createReloadWithCleanup({
   getUserDataDir: () => app.getPath('userData'),
 });
 function quitApp() {
+  if (quitInProgress) return;
   if (qaEnv('DSH_QA_SHELL') && process.env.DSH_QA_ALLOW_QUIT !== '1') {
     qaQuitIntercepted = true;
     console.log('[DSH_QA_SHELL] quit intercepted');
@@ -957,17 +975,9 @@ const drainParkedUpdateCheck = createParkedUpdateDrainer({
       if (win && !win.isDestroyed() && !win.isFocused()) {
         updateAttention.ready(String(pending.latest || pending.version || 'update'), win, shellConfirm().window);
       }
-      const result = await confirmDialog(win, {
-        type: 'question',
-        buttons: ['更新', '稍后'],
-        defaultId: 0,
-        cancelId: 1,
-        title: '发现新版本',
-        message: `是否更新到 ${pending.latest || pending.version || ''}？`,
-        detail: updateAskDetail(pending),
-        noLink: true,
-      });
+      const result = await confirmDialog(win, await updateAskOptions(pending));
       updateAttention.clear();
+      if (result.response === 0) pending.downloadMode = result.downloadMode;
       return result.response === 0;
     },
     installUpdate: gateInstallUpdate,
@@ -1122,6 +1132,7 @@ if (!gotLock) {
       // so config writes and plugin toggles share one serialized align
       // chain no matter which surface asked.
       desktop: {
+        htmlPreview: (input, signal) => require('./html-preview').captureHtmlPreview(input, signal),
         state: () => {
           const configNow = loadConfig();
           const listed = listInstalledPlugins();
@@ -1380,6 +1391,9 @@ if (!gotLock) {
           harness.writePluginSkip(new Error('launcher-skip-user-plugins'));
         }
         await startDesktopFromLauncher(startupOptions);
+        // The external launcher's gate ran in another process. Seed this
+        // desktop's single update status stream without opening another gate.
+        void checkUpdate();
       } else {
         await runColdStartGate(startupOptions);
       }
@@ -1425,6 +1439,10 @@ if (!gotLock) {
   });
 
   app.on('before-quit', (event) => {
+    if (quitInProgress) {
+      event.preventDefault();
+      return;
+    }
     quitting = true;
     if (stoppingForQuit) {
       return;
@@ -1436,56 +1454,127 @@ if (!gotLock) {
   // Explicit quit is already consent: keep inspection/lock/drain, not a
   // second task-warning prompt. Failed shutdown still offers recovery.
   async function finalizeQuit() {
-    const result = await taskProtection.coordinate('quit', {
-      terminal: true,
-      preConfirmed: true,
-      commit: async () => {
-        stoppingForQuit = true;
-        stopDesktopInstallControl();
-        void taskControlPeer.stop();
-        await cleanupDesktopResources();
-        hideHarnessView(getMainWindow());
-        closingOverlayActive = true;
-        await showClosingOverlay(getMainWindow(), loadConfig().locale).catch(() => {});
-        await harness.shutdown();
-      },
-    });
-    if (result.proceeded) {
-      app.quit();
-      return;
-    }
-    quitting = false;
-    stoppingForQuit = false;
-    closingOverlayActive = false;
-    // The user already requested quit; a failed drain or an
-    // unreachable runtime must not silently cancel the quit — offer a
-    // last-resort force exit so the app can always be closed.
-    if (result.code && result.code !== 'cancelled' && result.code !== 'busy') {
-      const choice = await confirmDialog(firstVisibleWindow(), {
-        type: 'warning',
-        title: '退出未完成',
-        message: '桌面运行时未响应退出请求',
-        detail: '后台任务状态无法完全确认。可重试退出，或强制退出（运行中的工作将直接中断）。',
-        buttons: ['重试', '强制退出'],
-        defaultId: 0,
-        cancelId: 0,
-        dangerIds: [1],
-        noLink: true,
-      }).catch(() => ({ response: 0 }));
-      if (choice.response === 1) {
-        quitting = true;
-        stoppingForQuit = true;
+    if (quitInProgress) return;
+    quitInProgress = true;
+    try {
+      while (true) {
+        let result;
+        let dismissClosing;
         try {
-          stopDesktopInstallControl();
-          void taskControlPeer.stop();
-          await cleanupDesktopResources();
-          hideHarnessView(getMainWindow());
-          await harness.shutdown();
-        } catch {
-          // A wedged runtime must not stall the force exit.
+          result = await taskProtection.coordinate('quit', {
+            terminal: true,
+            preConfirmed: true,
+            commit: async () => {
+              stoppingForQuit = true;
+              closingOverlayActive = true;
+              const win = getMainWindow();
+              // Keep the current page and its drafts until stopping succeeds.
+              dismissClosing = await showClosingOverlay(win, loadConfig().locale,
+                getHarnessWebContents(win) || win?.webContents).catch(() => undefined);
+              let shutdownTimer;
+              let shutdownAbandoned = false;
+              try {
+                await Promise.race([
+                  Promise.all([harness.shutdown(), cleanupDesktopResources()]).then(() => {
+                    if (!shutdownAbandoned) return getLive2dPet()?.dispose();
+                  }),
+                  new Promise((_, reject) => {
+                    shutdownTimer = setTimeout(() => {
+                      const error = new Error('后台关停未在 30 秒内完成');
+                      error.code = 'dshd/shutdown-timeout';
+                      reject(error);
+                    }, 30000);
+                  }),
+                ]);
+              } finally {
+                shutdownAbandoned = true;
+                clearTimeout(shutdownTimer);
+              }
+              stopDesktopInstallControl();
+              void taskControlPeer.stop();
+              // Keep the current surface until the native window closes.
+              // Detaching it here exposes the boot page for a final frame.
+            },
+          });
+        } catch (error) {
+          result = { proceeded: false, code: error.code || 'dshd/shutdown-failed',
+            detail: error.message || String(error) };
         }
-        app.exit(0);
+        if (result.proceeded) {
+          quitInProgress = false;
+          app.quit();
+          return;
+        }
+        quitting = false;
+        stoppingForQuit = false;
+        closingOverlayActive = false;
+        if (dismissClosing) void dismissClosing().catch(() => {});
+        // The user already requested quit; a failed drain or an
+        // unreachable runtime must not silently cancel the quit — offer a
+        // last-resort force exit so the app can always be closed.
+        if (result.code && result.code !== 'cancelled' && result.code !== 'busy') {
+          const diagnostics = {
+            code: result.code,
+            detail: result.detail,
+            pendingCount: result.pendingCount,
+            pendingLabels: result.pendingLabels,
+          };
+          dsh.log(`退出失败：${JSON.stringify(diagnostics)}`, 'error');
+          const choice = await confirmDialog(firstVisibleWindow(), {
+            type: 'warning',
+            title: '退出未完成',
+            message: result.code === 'dshd/shutdown-failed' || result.code === 'dshd/shutdown-timeout'
+              ? '后台服务未能完成关停' : '桌面运行时未响应退出请求',
+            detail: '可重试退出，或强制退出（运行中的工作将直接中断）。取消可返回应用。',
+            buttons: ['重试', '强制退出', '取消'],
+            defaultId: 2,
+            cancelId: 2,
+            dangerIds: [1],
+            noLink: true,
+          }).catch(() => ({ response: 2 }));
+          if (choice.response === 0) {
+            quitting = true;
+            continue;
+          }
+          if (choice.response === 1) {
+            quitting = true;
+            stoppingForQuit = true;
+            let forceExitTimer;
+            try {
+              await Promise.race([
+                (async () => {
+                  stopDesktopInstallControl();
+                  void taskControlPeer.stop();
+                  // Start stopping the child even if a preview never closes.
+                  const results = await Promise.allSettled([harness.shutdown(), cleanupDesktopResources(), getLive2dPet()?.dispose()]);
+                  for (const result of results) {
+                    if (result.status === 'rejected') {
+                      dsh.log(`强制退出：后台关停失败：${result.reason?.message || String(result.reason)}`, 'error');
+                    }
+                  }
+                })(),
+                new Promise((resolve) => {
+                  forceExitTimer = setTimeout(() => {
+                    dsh.log('强制退出：关停等待超时', 'error');
+                    resolve();
+                  }, 5000);
+                }),
+              ]);
+            } catch (error) {
+              dsh.log(`强制退出：后台关停失败：${error.message || String(error)}`, 'error');
+            } finally {
+              clearTimeout(forceExitTimer);
+            }
+            app.exit(0);
+            return;
+          }
+        }
+        quitting = false;
+        harness.cancelShutdown();
+        return;
       }
+    } finally {
+      quitInProgress = false;
     }
   }
 

@@ -151,7 +151,9 @@ test('launcher versions panel: current version on top, expandable release rows, 
   assert.match(js, /setRoutePop/);
   assert.match(js, /closeRoutePops/);
   assert.match(js, /renderRouteOptions/);
-  assert.match(js, /更新到此版本/);
+  assert.match(js, /完全下载/);
+  assert.match(js, /data-delta-tag/);
+  assert.match(js, /增量更新/);
   assert.match(js, /切换至此版本/);
   assert.match(js, /uninstallApp/);
   assert.match(css, /\.ver-now/);

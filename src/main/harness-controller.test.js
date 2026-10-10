@@ -1198,6 +1198,159 @@ test('shutdown cancels recovery and does not navigate or restart afterward', asy
   assert.equal(f.clock.timers.size, 0);
 });
 
+test('overlapping shutdown calls share the exact completion promise and wait for both stop results', async () => {
+  const f = fixture();
+  let releaseDsh;
+  let releaseRemote;
+  const dshStopped = new Promise((resolve) => { releaseDsh = resolve; });
+  const remoteStopped = new Promise((resolve) => { releaseRemote = resolve; });
+  f.dsh.stop = () => { f.dsh.stopCalls += 1; return dshStopped; };
+  f.remote.stopDaemon = () => { f.remote.stopCalls += 1; return remoteStopped; };
+  const first = f.controller.shutdown();
+  const second = f.controller.shutdown();
+  assert.equal(first, second);
+  let finished = false;
+  first.then(() => { finished = true; });
+  await settle();
+  assert.equal(f.dsh.stopCalls, 1);
+  assert.equal(f.remote.stopCalls, 1);
+  releaseDsh();
+  await settle();
+  assert.equal(finished, false, 'remote stop still owns a live shutdown result');
+  releaseRemote();
+  await first;
+  assert.equal(f.controller.shutdown(), first);
+  assert.equal(finished, true);
+});
+
+test('shutdown failures propagate to every caller and leave shutdown retry available', async () => {
+  const f = fixture();
+  const failure = new Error('owned process refused to stop');
+  f.dsh.stop = async () => { f.dsh.stopCalls += 1; throw failure; };
+  const first = f.controller.shutdown();
+  const second = f.controller.shutdown();
+  assert.equal(first, second);
+  await assert.rejects(first, (error) => error instanceof AggregateError && error.errors.includes(failure));
+  await assert.rejects(second, /owned process refused to stop/);
+  assert.equal(f.remote.stopCalls, 1, 'one stop failure must not prevent the other backend stopping');
+  assert.equal(f.controller.shuttingDown, false);
+  f.dsh.stop = async () => { f.dsh.stopCalls += 1; f.dsh.setState('idle'); };
+  const retry = f.controller.shutdown();
+  assert.notEqual(retry, first);
+  await retry;
+  assert.equal(f.dsh.stopCalls, 2);
+  assert.equal(f.remote.stopCalls, 2);
+});
+
+test('shutdown stops backends before unfinished preparation and cancelled preparation never starts late', async (t) => {
+  let releaseTarget;
+  const target = new Promise((resolve) => { releaseTarget = resolve; });
+  const f = fixture({ resolveLaunchTarget: () => target });
+  t.after(() => releaseTarget({ port: 3080 }));
+  const startup = f.controller.start();
+  const cancelled = assert.rejects(startup, { code: 'HARNESS_OPERATION_CANCELLED' });
+  await settle();
+  assert.equal(f.dsh.startCalls, 0);
+  let stopped = false;
+  const shutdown = f.controller.shutdown().then(() => { stopped = true; });
+  await settle();
+  assert.equal(stopped, true, 'pending preparation must not block completed backend cleanup');
+  assert.equal(f.dsh.stopCalls, 1);
+  assert.equal(f.remote.stopCalls, 1);
+  releaseTarget({ port: 3080 });
+  await Promise.all([shutdown, cancelled]);
+  assert.equal(f.dsh.startCalls, 0);
+  assert.equal(f.remote.syncCalls, 0);
+  assert.equal(f.events.some((event) => event.startsWith('harness:')), false);
+});
+
+test('a cancelled old operation stays invalid after failed quit reopens admission for a new start', async (t) => {
+  let releaseTarget;
+  const oldTarget = new Promise((resolve) => { releaseTarget = resolve; });
+  let targetCalls = 0;
+  const f = fixture({ resolveLaunchTarget: () => ++targetCalls === 1 ? oldTarget : Promise.resolve({ port: 3080 }) });
+  t.after(() => releaseTarget({ port: 3080 }));
+  const oldStart = f.controller.start();
+  const cancelled = assert.rejects(oldStart, { code: 'HARNESS_OPERATION_CANCELLED' });
+  await settle();
+  f.dsh.stop = async () => { f.dsh.stopCalls += 1; throw new Error('stop refused'); };
+  await assert.rejects(f.controller.shutdown(), /stop refused/);
+  assert.equal(f.controller.shuttingDown, false);
+  const freshStart = f.controller.start();
+  releaseTarget({ port: 3080 });
+  await Promise.all([freshStart, cancelled]);
+  assert.equal(f.dsh.startCalls, 1, 'only the new admitted operation may start a backend');
+  assert.equal(f.remote.syncCalls, 1);
+  assert.equal(f.events.filter((event) => event.startsWith('harness:')).length, 1);
+});
+
+test('a restart queued before failed shutdown cannot become a fresh operation afterward', async (t) => {
+  let releaseTarget;
+  const oldTarget = new Promise((resolve) => { releaseTarget = resolve; });
+  let targetCalls = 0;
+  const f = fixture({ resolveLaunchTarget: () => ++targetCalls === 2 ? oldTarget : Promise.resolve({ port: 3080 }) });
+  t.after(() => releaseTarget({ port: 3080 }));
+  await f.controller.start();
+  const first = f.controller.restart();
+  const firstCancelled = assert.rejects(first, { code: 'HARNESS_OPERATION_CANCELLED' });
+  await settle();
+  assert.equal(targetCalls, 2, 'the first restart must be waiting in actual preparation');
+  const queued = f.controller.restart();
+  const queuedCancelled = assert.rejects(queued, { code: 'HARNESS_OPERATION_CANCELLED' });
+  f.dsh.stop = async () => { f.dsh.stopCalls += 1; throw new Error('stop refused'); };
+  await assert.rejects(f.controller.shutdown(), /stop refused/);
+  assert.equal(f.controller.shuttingDown, false);
+  releaseTarget({ port: 3080 });
+  await Promise.all([firstCancelled, queuedCancelled]);
+  assert.equal(f.dsh.startCalls, 1, 'neither old restart may launch after quit was cancelled');
+  assert.equal(f.remote.syncCalls, 1);
+});
+
+test('cancelling quit after a completed backend stop permits an explicit new start', async () => {
+  const f = fixture();
+  await f.controller.start();
+  await f.controller.shutdown();
+  f.controller.cancelShutdown();
+  await f.controller.start();
+  assert.equal(f.dsh.startCalls, 2);
+  assert.equal(f.dsh.state, 'ready');
+  assert.equal(f.controller.shuttingDown, false);
+});
+
+test('a shutdown completing after quit cancellation keeps the shell able to start again', async () => {
+  const f = fixture();
+  await f.controller.start();
+  let finishStop;
+  f.dsh.stop = () => new Promise(resolve => { finishStop = () => { f.dsh.setState('idle'); resolve(); }; });
+  const old = f.controller.shutdown();
+  await settle();
+  f.controller.cancelShutdown();
+  finishStop();
+  await old;
+  await f.controller.start();
+  assert.equal(f.dsh.startCalls, 2);
+  assert.equal(f.dsh.state, 'ready');
+  assert.equal(f.controller.snapshot().state, 'ready');
+});
+
+test('an old cancelled shutdown rejection cannot reopen a newer shutdown', async () => {
+  const f = fixture();
+  const stops = [];
+  f.dsh.stop = () => new Promise((resolve, reject) => { stops.push({ resolve, reject }); });
+  const old = f.controller.shutdown();
+  const oldRejected = assert.rejects(old, /old stop refused/);
+  await settle();
+  f.controller.cancelShutdown();
+  const current = f.controller.shutdown();
+  await settle();
+  stops[0].reject(new Error('old stop refused'));
+  await oldRejected;
+  assert.equal(f.controller.shuttingDown, true);
+  assert.equal(f.controller.shutdown(), current);
+  stops[1].resolve();
+  await current;
+});
+
 test('disabling auto restart cancels a pending recovery immediately', async () => {
   const f = fixture();
   await f.controller.start();

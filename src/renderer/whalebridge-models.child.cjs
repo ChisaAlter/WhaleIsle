@@ -126,7 +126,16 @@ async function run() {
     await click('[data-action="hide-model"][data-id="channel/model-20"]'); await wait(`visibilityPending.size===0`);
     assert.equal(await js(`document.querySelector('[data-action="hide-model"][data-id="channel/model-20"]').getAttribute('aria-checked')`), 'true');
     assert.equal(await js(`document.querySelector('#message-text').textContent`), 'QA save failed');
-    assert.equal(await js(`getComputedStyle(document.querySelector('#message')).position`), 'fixed');
+    assert.ok(await js(`(() => {
+      const message = document.querySelector('#message');
+      const rect = message.getBoundingClientRect();
+      const scrollViewport = document.querySelector('#main').getBoundingClientRect();
+      const close = message.querySelector('button').getBoundingClientRect();
+      return !message.hidden && rect.width > 0 && rect.height > 0
+        && rect.left >= 0 && rect.right <= innerWidth && rect.bottom <= scrollViewport.top
+        && close.left >= rect.left && close.right <= rect.right
+        && close.top >= rect.top && close.bottom <= rect.bottom;
+    })()`), 'save errors remain visible in reserved feedback space with a reachable close control');
     fail = false;
     await click('[data-filter="shown"]');
     await click('[data-action="hide-model"][data-id="channel/model-20"]'); await wait(`visibilityPending.size===0`);
@@ -175,6 +184,9 @@ async function run() {
     assert.equal(groupWrites.at(-1).classifier,'qa/long'); assert.equal(groupWrites.at(-1).effort,'auto');
     assert.equal(groupWrites.at(-1).affinity,'turn'); assert.equal(groupWrites.at(-1).sink,true);
     assert.deepEqual(groupWrites.at(-1).rules,[{use:'qa/long:high',tokens:64000,effort:'',images:true,compact:false,intent:'代码调试',agents:[],time:null}]);
+    // Saving closes the editor before its state reload completes. A click on
+    // the still-disabled refresh button would not request the next fixture.
+    await wait(`!document.querySelector('#refresh').disabled && document.querySelector('#content').getAttribute('aria-busy')==='false'`);
     groupFixture=[groupFixture,{id:'outer',name:'Outer route',members:['group/route']}];
     await click('#refresh'); await wait(`!document.querySelector('#refresh').disabled`);
     await click('[data-action="edit-group"][data-id="outer"]'); await click('[data-action="group-edit-inner"]');

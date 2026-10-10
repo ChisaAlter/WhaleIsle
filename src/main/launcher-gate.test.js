@@ -606,10 +606,15 @@ test('background startup passes inactive presentation only to the initial gate a
   for (const direct of [false, true]) {
     for (const fail of [false, true]) {
       const calls = [];
+      let updateChecks = 0;
       const context = vm.createContext({
         backgroundStartup: true,
         process: { argv: direct ? ['--dshd-from-launcher', '--background'] : ['--background'] },
         harness: {},
+        checkUpdate() {
+          updateChecks++;
+          return Promise.resolve({ status: 'none' });
+        },
         startDesktopFromLauncher(options) {
           calls.push(['start', options.activate]);
           return fail ? Promise.reject(new Error('startup failed')) : Promise.resolve();
@@ -623,6 +628,7 @@ test('background startup passes inactive presentation only to the initial gate a
       if (fail) await assert.rejects(result, /startup failed/);
       else await result;
       assert.deepEqual(calls, [[direct ? 'start' : 'gate', false]]);
+      assert.equal(updateChecks, direct && !fail ? 1 : 0, 'a direct startup seeds update status after its promise resolves');
       assert.equal(context.backgroundStartup, false, 'later explicit entry points retain normal activation');
     }
   }

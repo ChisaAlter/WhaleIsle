@@ -4,7 +4,7 @@ const https = require('https');
 const path = require('path');
 const { spawn } = require('child_process');
 const { app, shell } = require('electron');
-const { downloadLatestViaUpdater } = require('./update-updater');
+const { downloadLatestViaUpdater, differentialAvailability } = require('./update-updater');
 const { UpdateJournal } = require('./update-journal');
 const { checkInstallSpace } = require('./install-space');
 const { setTimeout: delay } = require('node:timers/promises');
@@ -111,10 +111,7 @@ function pickInstaller(assets, { platform = process.platform, arch = process.arc
     && /\.exe$/i.test(asset.name)
     && !/\.blockmap$/i.test(asset.name)
     && typeof asset.browser_download_url === 'string');
-  return exes.find((asset) => /setup|nsis|installer/i.test(asset.name))
-    || exes.find((asset) => !/portable/i.test(asset.name))
-    || exes[0]
-    || null;
+  return exes.find((asset) => /setup|nsis|installer/i.test(asset.name)) || null;
 }
 
 function pickChecksumAsset(assets) {
@@ -122,6 +119,27 @@ function pickChecksumAsset(assets) {
   return list.find((asset) => typeof asset?.name === 'string'
     && asset.name.toLowerCase() === CHECKSUM_ASSET_NAME.toLowerCase()
     && typeof asset.browser_download_url === 'string') || null;
+}
+
+function installerMetadata(assets, asset) {
+  const list = Array.isArray(assets) ? assets : [];
+  const namedUrl = (name) => list.find((row) => row?.name === name)?.browser_download_url || '';
+  return {
+    assetSize: Number(asset?.size) || 0,
+    blockmapUrl: asset ? namedUrl(`${asset.name}.blockmap`) : '',
+    updaterMetadataUrl: namedUrl('latest.yml'),
+  };
+}
+
+async function updateDownloadMethods(info, deps) {
+  const available = await differentialAvailability(info, deps);
+  return [
+    {
+      id: 'delta', label: '增量更新', description: '只下载发生变化的部分，节省流量。',
+      ...(!available.ok ? { disabledReason: available.message } : {}),
+    },
+    { id: 'full', label: '完全下载', description: '下载完整安装包，适合修复或重新安装。' },
+  ];
 }
 
 /**
@@ -258,6 +276,7 @@ async function runUpdateCheck() {
       assetName: asset?.name || '',
       assetUrl: asset?.browser_download_url || '',
       checksumUrl: checksum?.browser_download_url || '',
+      ...installerMetadata(release.assets, asset),
     });
   } catch (error) {
     return snapshot({
@@ -514,6 +533,11 @@ function summarizeRelease(release, current) {
   if (!release || release.draft) {
     return null;
   }
+  // Component releases share the repository, but are not desktop versions.
+  const versionTag = String(release.tag_name || release.name || '').trim();
+  if (!/^v?\d+\.\d+\.\d+(?:-[0-9a-z.-]+)?(?:\+[0-9a-z.-]+)?$/i.test(versionTag)) {
+    return null;
+  }
   const asset = pickInstaller(release.assets);
   const checksum = pickChecksumAsset(release.assets);
   const version = normalizeVersion(release.tag_name || release.name);
@@ -530,6 +554,7 @@ function summarizeRelease(release, current) {
     assetName: asset?.name || '',
     assetUrl: asset?.browser_download_url || '',
     checksumUrl: checksum?.browser_download_url || '',
+    ...installerMetadata(release.assets, asset),
     installable: Boolean(asset),
   };
 }
@@ -553,13 +578,17 @@ async function listReleases() {
 }
 
 async function installFromAsset(info, onProgress, options = {}) {
+  const downloadMode = options.downloadMode === undefined ? 'full' : options.downloadMode;
+  if (downloadMode !== 'delta' && downloadMode !== 'full') {
+    throw new Error('更新方式无效，请重新选择增量更新或完全下载。');
+  }
   if (!info?.assetUrl) {
     if (info?.htmlUrl) {
       await shell.openExternal(info.htmlUrl);
     }
     return { ...info, launched: false, openedPage: Boolean(info?.htmlUrl) };
   }
-  if (!info.checksumUrl) {
+  if (!info.checksumUrl && downloadMode === 'full') {
     // No SHA512SUMS.txt on this release: never install unverified silently.
     // The caller must supply a user confirmation; absent or declined, the
     // download does not even start (fail closed).
@@ -576,88 +605,92 @@ async function installFromAsset(info, onProgress, options = {}) {
       };
     }
   }
-  if (options.preferUpdater) {
-    let outcome;
-    try {
-      outcome = await downloadLatestViaUpdater(
-        { timeoutMs: 15 * 60_000 },
-        onProgress,
-        options.updaterDeps,
-      );
-    } catch (error) {
-      // The updater channel is an optimization: any failure falls back to the
-      // verified whole-file download below, which is fully independent.
-      console.warn('electron-updater path failed, falling back to full download:', error && error.message ? error.message : error);
-    }
-    if (outcome?.ok && normalizeVersion(outcome.version) === normalizeVersion(info.latest || info.version)) {
-      // Recheck the release's checksum before launching the updater cache.
-      // Neither download success nor quitAndInstall's void return certifies
-      // an installer launch. Do not retry side effects after commit failures.
-      if (info.checksumUrl) await verifyAssetChecksum(outcome.installer, info.assetName, info.checksumUrl, options);
-      return launchPreparedInstaller(info, outcome.installer, onProgress, {
-        ...options, installerArgs: ['--updated', '/S', '--force-run'],
-      }, { updater: true, differential: Boolean(outcome.differential), downloadPercent: outcome.downloadPercent ?? null });
-    }
-    console.warn(`electron-updater path unavailable (${outcome?.ok ? 'release-changed' : outcome?.reason || 'download-failed'}); falling back to full download`);
-  }
-  if (typeof onProgress === 'function') {
-    onProgress({ phase: 'download', percent: 0 });
-  }
   try { journal()?.action('download-requested'); } catch { /* evidence only */ }
-  const dir = path.join(options.userDataDir || app.getPath('userData'), 'updates');
-  fs.mkdirSync(dir, { recursive: true });
-  const safeName = path.basename(info.assetName || 'Whale-Isle-Setup.exe').replace(/[^\w.\-]+/g, '_');
-  const dest = path.join(dir, safeName);
+  const version = info.latest || info.version;
   const journalProgress = (progress) => {
-    try {
-      if (progress && progress.phase === 'download') {
-        journal()?.state({ phase: 'downloading', version: info.version, percent: progress.percent ?? 0 });
-        publishState({ phase: 'downloading', version: info.version, percent: progress.percent ?? 0 });
-      } else if (progress && progress.phase === 'verify') {
-        journal()?.state({ phase: 'verifying', version: info.version });
-        publishState({ phase: 'verifying', version: info.version });
-      } else if (progress && progress.phase === 'install') {
-        journal()?.state({ phase: 'ready', version: info.version });
-        publishState({ phase: 'ready', version: info.version });
-      }
-    } catch { /* evidence only */ }
+    let state;
+    if (progress && progress.phase === 'download') {
+      state = { phase: 'downloading', version, percent: progress.percent ?? 0 };
+    } else if (progress && progress.phase === 'verify') {
+      state = { phase: 'verifying', version };
+    } else if (progress && progress.phase === 'install') {
+      state = { phase: 'installing', version };
+    }
+    if (state) {
+      try { journal()?.state(state); } catch { /* evidence only */ }
+      publishState(state);
+    }
     if (typeof onProgress === 'function') onProgress(progress);
   };
-  // Completed downloads survive a cancelled wizard. Reuse only after checking
-  // this release's current manifest again; file name/existence is not trust.
-  let cached = false;
-  const partial = `${dest}.part`;
+  let dest;
+  let partial;
+  let preparedOptions = options;
+  let extra = { downloadMode };
   try {
-    if (info.checksumUrl && fs.existsSync(dest)) {
-      journalProgress({ phase: 'verify', cached: true });
-      try {
-        await verifyAssetChecksum(dest, info.assetName, info.checksumUrl, options);
-        cached = true;
-      } catch (error) {
-        if (error.code !== 'ERR_UPDATER_CHECKSUM_MISMATCH') throw error;
-        cleanupPartial(dest);
+    journalProgress({ phase: 'download', percent: 0 });
+    if (downloadMode === 'delta') {
+      const outcome = await downloadLatestViaUpdater(
+        { timeoutMs: 15 * 60_000, expectedCheck: info, signal: options.signal },
+        journalProgress, options.updaterDeps,
+      );
+      if (!outcome.ok) {
+        throw Object.assign(new Error(outcome.message || '增量更新未完成，请重新选择完全下载。'), {
+          code: outcome.reason,
+        });
       }
-    }
-    if (!cached) {
-      await downloadFile(info.assetUrl, partial, journalProgress, { signal: options.signal });
-      if (info.checksumUrl) {
-        journalProgress({ phase: 'verify' });
-        await verifyAssetChecksum(partial, info.assetName, info.checksumUrl, options);
+      dest = outcome.installer;
+      journalProgress({ phase: 'verify' });
+      await verifyAssetChecksum(dest, info.assetName, info.checksumUrl, options);
+      preparedOptions = { ...options, installerArgs: ['--updated', '/S', '--force-run'] };
+      extra = { ...extra, updater: true, differential: Boolean(outcome.differential), downloadPercent: outcome.downloadPercent ?? null };
+    } else {
+      const dir = path.join(options.userDataDir || app.getPath('userData'), 'updates');
+      const safeName = path.basename(info.assetName || 'Whale-Isle-Setup.exe').replace(/[^\w.\-]+/g, '_');
+      dest = path.join(dir, safeName);
+      partial = `${dest}.part`;
+      // Completed downloads survive a cancelled wizard. Reuse only after checking
+      // this release's current manifest again; file name/existence is not trust.
+      let cached = false;
+      fs.mkdirSync(dir, { recursive: true });
+      if (info.checksumUrl && fs.existsSync(dest)) {
+        journalProgress({ phase: 'verify', cached: true });
+        try {
+          await verifyAssetChecksum(dest, info.assetName, info.checksumUrl, options);
+          cached = true;
+        } catch (error) {
+          if (error.code !== 'ERR_UPDATER_CHECKSUM_MISMATCH') throw error;
+          cleanupPartial(dest);
+        }
       }
-      if (options.signal?.aborted) throw cancelledError();
-      fs.renameSync(partial, dest);
+      if (!cached) {
+        await downloadFile(info.assetUrl, partial, journalProgress, { signal: options.signal });
+        if (info.checksumUrl) {
+          journalProgress({ phase: 'verify' });
+          await verifyAssetChecksum(partial, info.assetName, info.checksumUrl, options);
+        }
+        if (options.signal?.aborted) throw cancelledError();
+        fs.renameSync(partial, dest);
+      }
     }
   } catch (error) {
-    cleanupPartial(partial);
-    try { journal()?.state({ phase: 'error', version: info.version, failedOperation: 'download-or-verify', message: `${error.code || ''} ${error.message}` }); } catch { /* evidence only */ }
+    if (partial) cleanupPartial(partial);
+    const state = { phase: 'error', version, failedOperation: 'download', message: `${error.code || ''} ${error.message}` };
+    try { journal()?.state(state); } catch { /* evidence only */ }
+    publishState(state);
     throw error;
   }
-  return launchPreparedInstaller(info, dest, journalProgress, options);
+  return launchPreparedInstaller(info, dest, journalProgress, preparedOptions, extra);
 }
 
 async function launchPreparedInstaller(info, dest, onProgress, options = {}, extra = {}) {
   try {
-    return await commitPreparedInstaller(info, dest, onProgress, options, extra);
+    const result = await commitPreparedInstaller(info, dest, onProgress, options, extra);
+    if (result.cancelled) {
+      publishState(result.code === 'cancelled'
+        ? { phase: 'available', version: info.latest || info.version }
+        : { phase: 'error', version: info.latest || info.version, failedOperation: 'install', message: result.code || result.message });
+    }
+    return result;
   } catch (error) {
     const state = { phase: 'error', version: info.latest || info.version, failedOperation: 'install', message: error.message || String(error) };
     try { journal()?.state(state); } catch { /* evidence only */ }
@@ -779,7 +812,7 @@ async function installUpdate(onProgress, options = {}) {
     assetName: info.assetName,
     checksumUrl: info.checksumUrl,
     htmlUrl: info.htmlUrl,
-  }, onProgress, { ...options, preferUpdater: !confirmedCheck });
+  }, onProgress, options);
 }
 
 module.exports = {
@@ -793,6 +826,7 @@ module.exports = {
   CHECKSUM_ASSET_NAME,
   checkUpdate,
   installUpdate,
+  updateDownloadMethods,
   setUpdateStateSink,
   summarizeRelease,
   listReleases,
