@@ -11,7 +11,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import { filterEntries } from '../src/client/filter.ts'
 import { FileTree, joinRel } from '../src/client/FileTree.tsx'
-import { FilePreview } from '../src/client/FilePreview.tsx'
+import { FilePreview, type FilePreviewProps } from '../src/client/FilePreview.tsx'
 import { resolveCenteredFileLineScrollTop } from '../src/client/fileLineReveal.ts'
 import type { FilesPanelProps } from '../src/client/FilesPanel.tsx'
 import { FilesPanel } from '../src/client/FilesPanel.tsx'
@@ -211,6 +211,100 @@ describe('FileTree', () => {
 })
 
 describe('FilesPanel', () => {
+  it('bounds complete search requests and retains directory order despite out-of-order replies', async () => {
+    const dirs = Array.from({ length: 8 }, (_, index) => ({ name: `d${index}`, kind: 'directory' as const }))
+    const pending = new Map<string, (result: ListDirResult) => void>()
+    let active = 0
+    let peak = 0
+    const listDir = vi.fn<FilesPanelProps['listDir']>(async (_cwd, path) => {
+      if (path === '') return { ok: true, entries: dirs }
+      active += 1
+      peak = Math.max(peak, active)
+      try {
+        return await new Promise<ListDirResult>(resolve => { pending.set(path, resolve) })
+      } finally { active -= 1 }
+    })
+    render(<FilesPanel
+      sessionId={SID} useSessions={sel => sel(sessionList('/tmp/proj'))} openFile={() => {}}
+      listDir={listDir} readFile={async () => ({ ok: false })} readFileMedia={async () => ({ ok: false })}
+      mentionFile={() => {}} writeFile={async () => ({ ok: true })} t={t}
+    />)
+    await screen.findByRole('button', { name: /d0/ })
+    fireEvent.change(screen.getByLabelText('Search files'), { target: { value: 'leaf' } })
+    await waitFor(() => { expect(pending.size).toBe(4) })
+    expect(screen.getByRole('status').textContent).toBe('Searching files…')
+    for (const batch of [[3, 1, 2, 0], [7, 5, 6, 4]]) {
+      await act(async () => {
+        for (const index of batch) {
+          const path = `d${index}`
+          pending.get(path)!({ ok: true, entries: [{ name: `leaf${index}.ts`, kind: 'file' }] })
+          pending.delete(path)
+        }
+      })
+      if (batch[0] === 3) await waitFor(() => { expect(pending.size).toBe(4) })
+    }
+    await waitFor(() => { expect(screen.queryByRole('status')).toBeNull() })
+    const rows = screen.getAllByRole('button').filter(button => button.textContent?.includes('leaf'))
+    expect(rows.map(row => row.textContent)).toEqual(dirs.map((_, index) => `leaf${index}.tsd${index}/leaf${index}.ts`))
+    expect(peak).toBe(4)
+    const calls = listDir.mock.calls.length
+    fireEvent.change(screen.getByLabelText('Search files'), { target: { value: 'leaf7' } })
+    expect(screen.getByText('leaf7.ts')).toBeTruthy()
+    expect(listDir.mock.calls.length).toBe(calls)
+  })
+
+  it('does not schedule descendants after a search is cleared while its batch is in flight', async () => {
+    const dirs = Array.from({ length: 8 }, (_, index) => ({ name: `d${index}`, kind: 'directory' as const }))
+    const pending: ((result: ListDirResult) => void)[] = []
+    const listDir = vi.fn<FilesPanelProps['listDir']>(async (_cwd, path) => {
+      if (path === '') return { ok: true, entries: dirs }
+      return new Promise<ListDirResult>(resolve => { pending.push(resolve) })
+    })
+    render(<FilesPanel
+      sessionId={SID} useSessions={sel => sel(sessionList('/tmp/proj'))} openFile={() => {}}
+      listDir={listDir} readFile={async () => ({ ok: false })} readFileMedia={async () => ({ ok: false })}
+      mentionFile={() => {}} writeFile={async () => ({ ok: true })} t={t}
+    />)
+    await screen.findByRole('button', { name: /d0/ })
+    fireEvent.change(screen.getByLabelText('Search files'), { target: { value: 'leaf' } })
+    await waitFor(() => { expect(pending.length).toBe(4) })
+    const calls = listDir.mock.calls.length
+    fireEvent.change(screen.getByLabelText('Search files'), { target: { value: '' } })
+    await act(async () => {
+      for (const finish of pending) finish({ ok: true, entries: [{ name: 'deeper', kind: 'directory' }] })
+    })
+    expect(listDir.mock.calls.length).toBe(calls)
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.getByRole('button', { name: /d0/ })).toBeTruthy()
+  })
+
+  it('keeps a late expansion from an earlier workspace out of the current tree', async () => {
+    let cwd = '/tmp/old'
+    let finishOld!: (result: ListDirResult) => void
+    const listDir: FilesPanelProps['listDir'] = async (target, path) => {
+      if (path === '') return { ok: true, entries: [{ name: 'src', kind: 'directory' }] }
+      if (target === '/tmp/old') return new Promise(resolve => { finishOld = resolve })
+      return { ok: true, entries: [{ name: 'current.ts', kind: 'file' }] }
+    }
+    const props: FilesPanelProps = {
+      sessionId: SID, useSessions: selector => selector(sessionList(cwd)), openFile: () => {}, listDir,
+      readFile: async () => ({ ok: false }), readFileMedia: async () => ({ ok: false }),
+      mentionFile: () => {}, writeFile: async () => ({ ok: true }), t,
+    }
+    const view = render(<FilesPanel {...props} />)
+    fireEvent.click(await screen.findByRole('button', { name: /src/ }))
+    cwd = '/tmp/current'
+    view.rerender(<FilesPanel {...props} />)
+    await act(async () => { await Promise.resolve() })
+    fireEvent.click(await screen.findByRole('button', { name: /src/ }))
+    await screen.findByText('current.ts')
+    await act(async () => {
+      finishOld({ ok: true, entries: [{ name: 'stale.ts', kind: 'file' }] })
+    })
+    expect(screen.queryByText('stale.ts')).toBeNull()
+    expect(screen.getByText('current.ts')).toBeTruthy()
+  })
+
   it('ignores a background workspace after the main-view session is released', () => {
     render(
       <FilesPanel
@@ -817,6 +911,27 @@ describe('FilePreview', () => {
     )
     const image = await screen.findByRole('img', { name: 'icon.png' })
     expect(image.getAttribute('src')).toBe('data:image/png;base64,aaaa')
+  })
+
+  it('refreshes memoized markdown copy and footnote labels when the locale changes', async () => {
+    localStorage.removeItem('dshd.renderMarkdown')
+    const props: FilePreviewProps = {
+      sessionId: SID, relativePath: 'note.md', active: true,
+      onDirtyChange: () => {}, registerSave: () => {}, readBuffer: () => undefined, writeBuffer: () => {},
+      useSessions: selector => selector(sessionList('/tmp/proj')), listDir: async () => ({ ok: false }),
+      readFile: async () => ({ ok: true, text: '```text\nhello\n```\n\nnote[^n]\n\n[^n]: body', binary: false }),
+      readFileMedia: async () => ({ ok: false }), mentionFile: () => {}, writeFile: async () => ({ ok: true }), t,
+    }
+    const view = render(<FilePreview {...props} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Rendered' }))
+    await screen.findByRole('button', { name: 'Copy' })
+    const localized: FilePreviewProps['t'] = key => key === 'preview.copy' ? '复制代码'
+      : key === 'preview.footnotes' ? '脚注标题' : t(key)
+    view.rerender(<FilePreview {...props} t={localized} />)
+    expect(await screen.findByRole('button', { name: '复制代码' })).toBeTruthy()
+    expect(screen.getByText('脚注标题')).toBeTruthy()
+    expect(screen.getByText('hello')).toBeTruthy()
+    localStorage.removeItem('dshd.renderMarkdown')
   })
 
   it('shows the binary stub and the empty-cwd message', async () => {

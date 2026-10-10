@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { isDeepStrictEqual } = require('node:util');
 const { app, safeStorage } = require('electron');
 const { projectRoot } = require('./paths');
 const { DEFAULT_CLOSE_TO_TRAY } = require('./close-behavior');
@@ -400,29 +401,31 @@ function readCredentials() {
   try {
     raw = JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch {
-    return {};
+    return { creds: {}, needsWrite: true };
   }
   if (isEncryptedCredentialsFile(raw)) {
     if (!canEncryptCredentials()) {
-      return {};
+      return { creds: {}, needsWrite: true };
     }
     try {
       const json = safeStorageImpl.decryptString(Buffer.from(raw.payload, 'base64'));
       const parsed = JSON.parse(json);
-      return parsed && typeof parsed === 'object' ? parsed : {};
+      return { creds: parsed && typeof parsed === 'object' ? parsed : {}, needsWrite: false };
     } catch {
-      return {};
+      return { creds: {}, needsWrite: true };
     }
   }
   const plain = raw && typeof raw === 'object' ? raw : {};
+  let needsWrite = false;
   if (canEncryptCredentials()) {
     try {
       writeCredentials(plain);
     } catch {
       // Migration is best-effort; the plaintext copy stays readable.
+      needsWrite = true;
     }
   }
-  return plain;
+  return { creds: plain, needsWrite };
 }
 
 /**
@@ -464,9 +467,9 @@ function defaultWorkspace() {
   return projectRoot();
 }
 
-function loadConfig() {
+function readConfigLayers() {
   const stored = readJson(configPath(), {});
-  const creds = readCredentials();
+  const { creds, needsWrite } = readCredentials();
   let config = {
     ...DEFAULTS,
     ...stored,
@@ -488,7 +491,11 @@ function loadConfig() {
   }
   delete config.pluginSubagent;
   delete config.pluginGenUi;
-  return config;
+  return { config, stored, creds, credentialsNeedWrite: needsWrite };
+}
+
+function loadConfig() {
+  return readConfigLayers().config;
 }
 
 /**
@@ -512,7 +519,7 @@ function readConfigSnapshot() {
 }
 
 function saveConfig(next) {
-  const current = loadConfig();
+  const { config: current, stored, creds, credentialsNeedWrite } = readConfigLayers();
   const merged = normalizeLauncherSettings(
     normalizePetStateInConfig(normalizeLive2dPetStateInConfig(normalizeRemoteConfig(normalizePluginRecovery(normalizeHarnessRecovery({ ...current, ...next }))))),
   );
@@ -526,15 +533,20 @@ function saveConfig(next) {
   delete merged.pluginSubagent;
   delete merged.pluginGenUi;
   const { apiKey, baseUrl, githubToken, remoteToken, remoteRelayToken, remoteDevices, ...publicLayer } = merged;
-  writeJson(configPath(), publicLayer);
-  writeCredentials({
+  if (!isDeepStrictEqual(stored, publicLayer)) {
+    writeJson(configPath(), publicLayer);
+  }
+  const credentials = {
     apiKey: apiKey || '',
     baseUrl: baseUrl || '',
     githubToken: githubToken || '',
     remoteToken: remoteToken || '',
     remoteRelayToken: remoteRelayToken || '',
     remoteDevices: Array.isArray(remoteDevices) ? remoteDevices : [],
-  });
+  };
+  if (credentialsNeedWrite || !isDeepStrictEqual(creds, credentials)) {
+    writeCredentials(credentials);
+  }
   configRevisionValue += 1;
   return merged;
 }

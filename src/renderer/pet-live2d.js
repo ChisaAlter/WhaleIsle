@@ -376,11 +376,83 @@ async function loadImageTensor() {
 let outCanvas = null;
 let outCtx = null;
 let outImage = null;
+let gpuPixels = null;
 function allocOutput() {
   outCanvas = document.createElement('canvas');
   outCanvas.width = outCanvas.height = FRAME;
   outCtx = outCanvas.getContext('2d', { willReadFrequently: true });
   outImage = outCtx.createImageData(FRAME, FRAME);
+}
+
+// Keep the existing Uint8ClampedArray conversion (including ties-to-even)
+// while downloading one packed RGBA byte per channel instead of four floats.
+// Inference and Anime4K still use the same model and display pipeline.
+async function initGpuPixels() {
+  if (!sessionOnGpu) { return; }
+  const device = ort.env.webgpu.device;
+  const n = FRAME * FRAME;
+  const shader = device.createShaderModule({ code: `
+    @group(0) @binding(0) var<storage, read> rgba: array<f32>;
+    @group(0) @binding(1) var<storage, read_write> pixels: array<u32>;
+    fn clampedByte(v: f32) -> u32 {
+      if (!(v > 0.0)) { return 0u; }
+      if (v >= 255.0) { return 255u; }
+      let lower = floor(v);
+      let value = u32(lower);
+      let fraction = v - lower;
+      return value + select(0u, 1u,
+        fraction > 0.5 || (fraction == 0.5 && (value & 1u) == 1u));
+    }
+    @compute @workgroup_size(256)
+    fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+      let i = id.x;
+      if (i >= ${n}u) { return; }
+      pixels[i] = clampedByte(rgba[i])
+        | (clampedByte(rgba[${n}u + i]) << 8u)
+        | (clampedByte(rgba[${n * 2}u + i]) << 16u)
+        | (clampedByte(rgba[${n * 3}u + i]) << 24u);
+    }` });
+  const pipeline = await device.createComputePipelineAsync({ layout: 'auto',
+    compute: { module: shader, entryPoint: 'main' } });
+  const packed = device.createBuffer({ size: n * 4,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+  const staging = device.createBuffer({ size: n * 4,
+    usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+  gpuPixels = { device, pipeline, packed, staging, size: n * 4, n };
+}
+
+async function copyOutputPixels(out) {
+  if (gpuPixels) {
+    const { device, pipeline, packed, staging, size, n } = gpuPixels;
+    const bindGroup = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
+      { binding: 0, resource: { buffer: out.gpuBuffer } },
+      { binding: 1, resource: { buffer: packed } },
+    ] });
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(Math.ceil(n / 256));
+    pass.end();
+    encoder.copyBufferToBuffer(packed, 0, staging, 0, size);
+    device.queue.submit([encoder.finish()]);
+    await staging.mapAsync(GPUMapMode.READ);
+    try {
+      outImage.data.set(new Uint8Array(staging.getMappedRange()));
+    } finally {
+      staging.unmap();
+    }
+    return;
+  }
+  const raw = sessionOnGpu ? await out.getData() : out.data;
+  const px = outImage.data;
+  const n = FRAME * FRAME;
+  for (let i = 0; i < n; i += 1) {
+    px[i * 4] = raw[i];
+    px[i * 4 + 1] = raw[n + i];
+    px[i * 4 + 2] = raw[n * 2 + i];
+    px[i * 4 + 3] = raw[n * 3 + i];
+  }
 }
 
 // ── live SR stage (Anime4K CNN, WebGL) ──
@@ -3566,20 +3638,13 @@ async function renderFrame() {
       results = await session.run({ image: imageTensor, pose: poseCpuTensor });
     }
     const out = results.rgba_f || results.rgba;
-    const raw = sessionOnGpu ? await out.getData() : out.data; // CHW
+    try {
+      await copyOutputPixels(out);
+    } finally {
+      // Outputs own native memory even when the download/mapping fails.
+      for (const output of Object.values(results)) { output?.dispose?.(); }
+    }
     const px = outImage.data;
-    const n = FRAME * FRAME;
-    for (let i = 0; i < n; i += 1) {
-      px[i * 4] = raw[i];
-      px[i * 4 + 1] = raw[n + i];
-      px[i * 4 + 2] = raw[n * 2 + i];
-      px[i * 4 + 3] = raw[n * 3 + i];
-    }
-    // Every run() output tensor owns wasm/webgpu memory — dispose them all or
-    // the renderer leaks ~1MB per frame forever.
-    for (const k of Object.keys(results)) {
-      results[k]?.dispose?.();
-    }
     // Skip a fully-transparent frame (a bad readback would blank her out for
     // a frame, which reads as flicker); keep the previous frame instead.
     let alphaMax = 0;
@@ -4419,6 +4484,11 @@ async function mount() {
     session = await createSession();
     allocOutput();
     imageTensor = await loadImageTensor();
+    try {
+      await initGpuPixels();
+    } catch (error) {
+      console.warn('pet: packed GPU output unavailable; using float output', error);
+    }
     if (FRAME === 512) {
       // HD frames already supersample the 240px display 4x — SR only pays
       // on the 512² pipeline.

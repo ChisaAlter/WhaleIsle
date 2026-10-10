@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const vm = require('node:vm');
 const { PREVIEW_PIP_FRAME_CHANNEL } = require('./preview-pip-protocol.js');
 
 const leftoverBrand = ['t', '3', 'code'].join('');
@@ -16,10 +17,6 @@ const BRAND = new RegExp(
 );
 
 function loadPipPreload() {
-  const electronPath = require.resolve('electron');
-  const preloadPath = require.resolve('./preview-pip-preload.js');
-  const cachedElectron = require.cache[electronPath];
-  const cachedPreload = require.cache[preloadPath];
   const listeners = new Map();
   let exposed = null;
   const ipcRenderer = {
@@ -37,30 +34,21 @@ function loadPipPreload() {
     },
   };
 
-  require.cache[electronPath] = {
-    id: electronPath,
-    filename: electronPath,
-    loaded: true,
-    exports: {
-      contextBridge: {
-        exposeInMainWorld(name, api) {
-          exposed = { name, api };
+  const source = fs.readFileSync(path.join(__dirname, 'preview-pip-preload.js'), 'utf8');
+  vm.runInNewContext(source, {
+    require(name) {
+      assert.equal(name, 'electron', 'sandbox preload must not require local modules');
+      return {
+        contextBridge: {
+          exposeInMainWorld(name, api) {
+            exposed = { name, api };
+          },
         },
-      },
-      ipcRenderer,
+        ipcRenderer,
+      };
     },
-  };
-  delete require.cache[preloadPath];
-
-  try {
-    require('./preview-pip-preload.js');
-    return { exposed, ipcRenderer };
-  } finally {
-    if (cachedElectron) require.cache[electronPath] = cachedElectron;
-    else delete require.cache[electronPath];
-    if (cachedPreload) require.cache[preloadPath] = cachedPreload;
-    else delete require.cache[preloadPath];
-  }
+  }, { filename: 'preview-pip-preload.js' });
+  return { exposed, ipcRenderer };
 }
 
 test('pip preload and protocol omit leftover brand markers', () => {
@@ -70,7 +58,7 @@ test('pip preload and protocol omit leftover brand markers', () => {
   }
 });
 
-test('pip preload exposes previewPictureInPicture.onFrame without ipcRenderer', () => {
+test('sandboxed pip preload exposes onFrame on the protocol channel without ipcRenderer', () => {
   const { exposed, ipcRenderer } = loadPipPreload();
   assert.equal(exposed?.name, 'previewPictureInPicture');
   assert.equal(typeof exposed?.api.onFrame, 'function');

@@ -186,6 +186,38 @@ function loadPet() {
   };
 }
 
+test('output conversion keeps clamped RGBA values on the CPU path', async () => {
+  const pet = loadPet();
+  pet.run(`FRAME = 2; allocOutput(); sessionOnGpu = false;
+    globalThis.output = { data: new Float32Array([
+      -1, 0.5, 1.5, 256, 2.5, 3.5, 254.5, NaN,
+      255, Infinity, -Infinity, 4.5, 5.5, 6.5, 7.5, 8.5
+    ]) };`);
+  await pet.run('copyOutputPixels(output)');
+  assert.deepEqual(Array.from(pet.run('outImage.data')), [
+    0, 2, 255, 6, 0, 4, 255, 6, 2, 254, 0, 8, 255, 0, 4, 8,
+  ]);
+});
+
+test('a failed output download releases every output and allows another frame', async () => {
+  const pet = loadPet();
+  pet.run(`FRAME = 2; allocOutput(); sessionOnGpu = false;
+    globalThis.disposed = 0; globalThis.runs = 0;
+    poseCpuTensor = { data: new Float32Array(45) };
+    console = { warn() {} };
+    session = { run: async () => { runs++;
+      return { rgba_f: { get data() { throw Error('download failed'); }, dispose() { disposed++; } },
+        extra: { dispose() { disposed++; } } };
+    } };`);
+  await pet.run('renderFrame()');
+  assert.equal(pet.run('disposed'), 2);
+  assert.equal(pet.run('inferBusy'), false);
+  assert.equal(pet.run('painted'), false, 'a failed frame does not replace the displayed image');
+  await pet.run('renderFrame()');
+  assert.equal(pet.run('runs'), 2);
+  assert.equal(pet.run('disposed'), 4);
+});
+
 function pathOps(ops) {
   const start = ops.findIndex((op) => op[0] === 'beginPath');
   const end = ops.findIndex((op, i) => i > start && op[0] === 'closePath');

@@ -88,20 +88,12 @@ function isInside(root, target) {
   return rel === '' || (Boolean(rel) && !rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
-function walkSessionDirs(sessionsRoot) {
+function* walkSessionDirectoryEntries(sessionsRoot) {
   const found = [];
-  if (!fs.existsSync(sessionsRoot)) {
-    return found;
-  }
   const stack = [sessionsRoot];
   while (stack.length) {
     const dir = stack.pop();
-    let entries = [];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
+    const entries = yield dir;
     const logs = entries.filter((entry) => entry.isFile() && SESSION_LOG.test(entry.name));
     const dbs = entries.filter((entry) => entry.isFile() && UNSUPPORTED_DB.test(entry.name));
     if (logs.length) {
@@ -132,6 +124,28 @@ function walkSessionDirs(sessionsRoot) {
     }
   }
   return found.sort((a, b) => a.rel.localeCompare(b.rel));
+}
+
+function walkSessionDirs(sessionsRoot) {
+  const walk = walkSessionDirectoryEntries(sessionsRoot);
+  let step = walk.next();
+  while (!step.done) {
+    let entries = [];
+    try { entries = fs.readdirSync(step.value, { withFileTypes: true }); } catch {}
+    step = walk.next(entries);
+  }
+  return step.value;
+}
+
+async function walkSessionDirsAsync(sessionsRoot) {
+  const walk = walkSessionDirectoryEntries(sessionsRoot);
+  let step = walk.next();
+  while (!step.done) {
+    let entries = [];
+    try { entries = await fs.promises.readdir(step.value, { withFileTypes: true }); } catch {}
+    step = walk.next(entries);
+  }
+  return step.value;
 }
 
 function emptySessionMeta() {
@@ -291,6 +305,10 @@ function readZstdSessionMeta(file) {
   } catch {
     return meta;
   }
+  return foldZstdSessionMeta(meta, buffer);
+}
+
+function foldZstdSessionMeta(meta, buffer) {
   let frames;
   try {
     frames = scanZstdFrames(buffer);
@@ -345,6 +363,26 @@ function readSessionDisplayMeta(row) {
     ...emptySessionMeta(),
     id: idFromSessionRel(row.rel),
   };
+}
+
+async function readSessionDisplayMetaAsync(row) {
+  if (!row || row.unsupported) return readSessionDisplayMeta(row);
+  const logs = Array.isArray(row.logs) ? row.logs : [];
+  const plain = logs.find((name) => SESSION_PLAIN.test(name));
+  const zstd = plain ? undefined : logs.find((name) => SESSION_ZSTD.test(name));
+  const meta = emptySessionMeta();
+  if (zstd) meta.compressedLog = true;
+  if (plain || (zstd && typeof zlib.zstdDecompressSync === 'function')) {
+    try {
+      const buffer = await fs.promises.readFile(path.join(row.abs, plain || zstd));
+      if (plain) foldSessionJsonlText(meta, buffer.toString('utf8'));
+      else foldZstdSessionMeta(meta, buffer);
+    } catch {
+      // Keep the same fail-soft metadata as the synchronous import API.
+    }
+  }
+  if (!meta.id) meta.id = idFromSessionRel(row.rel);
+  return meta;
 }
 
 /**
@@ -1087,6 +1125,41 @@ function scanImport({
         conflict: !row.unsupported && destHasSession(destSessions, row.rel),
       };
     });
+  return finishImportScan({ source, target, extraSkillDirs, agentsSkillsRoot }, sessions);
+}
+
+// The renderer scan uses asynchronous filesystem reads. Keep the synchronous
+// API for callers that already own a non-interactive import snapshot.
+async function scanImportAsync({ sourceHome, destHome: dest, extraSkillDirs, agentsSkillsRoot } = {}) {
+  const source = resolveSourceHome(sourceHome);
+  const target = destHome(dest);
+  const rows = (await walkSessionDirsAsync(path.join(source, 'sessions')))
+    .filter((row) => !isHarnessPresetSessionRel(row.rel));
+  const sessions = new Array(rows.length);
+  let nextRow = 0;
+  await Promise.all(Array.from({ length: Math.min(4, rows.length) }, async () => {
+    while (nextRow < rows.length) {
+      const index = nextRow++;
+      const row = rows[index];
+      const meta = await readSessionDisplayMetaAsync(row);
+      let conflict = false;
+      if (!row.unsupported) {
+        try {
+          const entries = await fs.promises.readdir(path.join(target, 'sessions', row.rel));
+          conflict = entries.some((name) => SESSION_LOG.test(name));
+        } catch {}
+      }
+      sessions[index] = { ...row, id: meta.id, cwd: meta.cwd, title: meta.title,
+        createdAt: meta.createdAt, compressedLog: Boolean(meta.compressedLog), conflict };
+    }
+  }));
+  const scan = finishImportScan({ source, target, extraSkillDirs, agentsSkillsRoot }, sessions, false);
+  scan.destEmpty = (await walkSessionDirsAsync(path.join(target, 'sessions'))).length === 0;
+  return scan;
+}
+
+function finishImportScan({ source, target, extraSkillDirs, agentsSkillsRoot }, sessions, destEmpty) {
+  const destSessions = path.join(target, 'sessions');
   const attachmentsDir = path.join(source, 'attachments');
   const plugins = pluginCandidates(source);
   const { skills, skillRoots } = collectSkills({
@@ -1111,7 +1184,7 @@ function scanImport({
     sourceHome: source,
     destHome: target,
     homeDir: os.homedir(),
-    destEmpty: walkSessionDirs(destSessions).length === 0,
+    destEmpty: destEmpty === undefined ? walkSessionDirs(destSessions).length === 0 : destEmpty,
     sourceHasData,
     sessions,
     plugins,
@@ -1595,7 +1668,7 @@ async function importSessions({
   onProgress,
   deferJournalDone = false,
 } = {}) {
-  const scan = providedScan || scanImport({ sourceHome, destHome: dest, extraSkillDirs, agentsSkillsRoot });
+  const scan = providedScan || await scanImportAsync({ sourceHome, destHome: dest, extraSkillDirs, agentsSkillsRoot });
   const chosen = Array.isArray(selectedRels) ? selectedRels : scan.sessions.map((row) => row.rel);
   const journalFile = journalPath(userDataDir || path.join(scan.destHome, '..'));
   const results = [];
@@ -1730,7 +1803,7 @@ async function importPlugins({
   signal,
   onProgress,
 } = {}) {
-  const scan = providedScan || scanImport({ sourceHome, destHome: dest, extraSkillDirs, agentsSkillsRoot });
+  const scan = providedScan || await scanImportAsync({ sourceHome, destHome: dest, extraSkillDirs, agentsSkillsRoot });
   const chosen = new Set(
     Array.isArray(selectedNames)
       ? selectedNames
@@ -2039,7 +2112,7 @@ async function runImport(options = {}) {
     && selectedSettingIds.length === 0
     && selectedPresetIds.length === 0
     && !importAttachments;
-  const scan = scanImport(options);
+  const scan = await scanImportAsync(options);
   const journalFile = journalPath(options.userDataDir || path.join(scan.destHome, '..'));
   const signal = options.signal;
   const opId = typeof options.opId === 'string' && options.opId ? options.opId : nextOpId();
@@ -2274,6 +2347,7 @@ async function runImport(options = {}) {
 module.exports = {
   officialDshHome,
   scanImport,
+  scanImportAsync,
   shouldHoldForImport,
   probeImportHold,
   importSessions,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
   Button,
@@ -240,7 +240,6 @@ export function FilePreview({
   const floatingPreviewAddress = sessionId === undefined
     ? undefined
     : sessionFileAddress(sessionId, relativePath)
-  const sessions = useSessions(state => state)
   const projectName = cwd === undefined ? '' : basenameOf(cwd)
   const crumbs = fileBreadcrumbs(projectName, relativePath)
   const seed = readBuffer()
@@ -380,7 +379,10 @@ export function FilePreview({
   const revealActive = typeof revealLine === 'number' && typeof revealRequestId === 'number'
   const revealHandled = handledReveal?.path === relativePath && handledReveal.requestId === revealRequestId
   const showRenderedMarkdown = isMarkdown && renderMarkdown && !(revealActive && !revealHandled)
-  const codeLabels = { copyLabel: t('preview.copy'), copiedLabel: t('preview.copied') }
+  const markdownLabels = useMemo(() => ({
+    code: { copyLabel: t('preview.copy'), copiedLabel: t('preview.copied') },
+    footnotes: t('preview.footnotes'),
+  }), [t])
 
   const onDirtyChangeRef = useRef(onDirtyChange)
   onDirtyChangeRef.current = onDirtyChange
@@ -615,7 +617,7 @@ export function FilePreview({
         {floatingPreviewAddress === undefined ? null : (
           <FloatingPreviewButton
             resourceAddress={floatingPreviewAddress}
-            sessions={sessions}
+            useSessions={useSessions}
             t={t}
           />
         )}
@@ -672,7 +674,7 @@ export function FilePreview({
             {isMarkdown && showRenderedMarkdown ? (
               <MarkdownText
                 text={draft}
-                labels={{ code: codeLabels, footnotes: t('preview.footnotes') }}
+                labels={markdownLabels}
               />
             ) : (
               <textarea
@@ -691,7 +693,7 @@ export function FilePreview({
             {isMarkdown ? (
               <MarkdownText
                 text={text}
-                labels={{ code: codeLabels, footnotes: t('preview.footnotes') }}
+                labels={markdownLabels}
               />
             ) : (
               <pre className={css.code}>{text}</pre>

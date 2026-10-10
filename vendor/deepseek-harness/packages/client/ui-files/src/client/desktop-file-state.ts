@@ -29,6 +29,7 @@ export interface DesktopFileStateInjected {
 /** Owns drafts for one plugin lifetime; dirty contents are persisted on each edit. */
 export class DesktopFileState {
   private readonly buffers = new Map<string, DesktopFileBuffer>()
+  private readonly persisted = new Set<string>()
   private readonly saves = new Map<string, () => Promise<boolean>>()
   private readonly pending: PendingClose[] = []
   private readonly source = createSnapshotStore<FileCloseRequest | undefined>(undefined)
@@ -52,6 +53,7 @@ export class DesktopFileState {
         || !('draft' in stored) || typeof stored.draft !== 'string') return undefined
       const buffer = { text: stored.text, draft: stored.draft }
       this.buffers.set(address, buffer)
+      this.persisted.add(address)
       return { ...buffer }
     } catch (_error: unknown) {
       // Unavailable storage or invalid persisted JSON has no restorable draft.
@@ -65,11 +67,16 @@ export class DesktopFileState {
    * @param buffer - editor baseline and draft, or null to discard it.
    */
   write(address: string, buffer: DesktopFileBuffer | null): void {
+    const previous = this.buffers.get(address)
+    if (buffer !== null && this.persisted.has(address)
+      && previous?.text === buffer.text && previous.draft === buffer.draft) return
     if (buffer === null) this.buffers.delete(address)
     else this.buffers.set(address, { ...buffer })
+    this.persisted.delete(address)
     try {
       if (buffer === null || buffer.text === buffer.draft) localStorage.removeItem(DRAFT_PREFIX + address)
       else localStorage.setItem(DRAFT_PREFIX + address, JSON.stringify(buffer))
+      if (buffer !== null) this.persisted.add(address)
     } catch (_error: unknown) {
       // Keep the current editor usable when the browser refuses local storage.
     }

@@ -1,0 +1,85 @@
+{
+  "fixture": "C:\\AI\\WhaleIsle-application-performance\\.tmp\\pet-watch-perf-IZSISq",
+  "sessions": "C:\\AI\\WhaleIsle-application-performance\\.tmp\\pet-watch-perf-IZSISq\\sessions",
+  "count": 1000,
+  "eventsPerLog": 22,
+  "plainBytesPerLog": 8589,
+  "zstdBytesPerLog": 304,
+  "clock": 1791476255066,
+  "platform": "win32",
+  "node": "v24.19.0",
+  "cold": {
+    "wallMs": 368.83270000000005,
+    "firstTimerMs": 369.71629999999993,
+    "saves": 1,
+    "eventCount": 1005,
+    "cursors": 400,
+    "used": 3000000
+  },
+  "stable": [
+    {
+      "wallMs": 106.39520000000016,
+      "firstTimerMs": 106.53980000000001,
+      "saves": 1,
+      "eventCount": 1005,
+      "cursors": 400,
+      "used": 3000000
+    },
+    {
+      "wallMs": 107.68029999999999,
+      "firstTimerMs": 107.75759999999991,
+      "saves": 1,
+      "eventCount": 1005,
+      "cursors": 400,
+      "used": 3000000
+    },
+    {
+      "wallMs": 100.2159999999999,
+      "firstTimerMs": 100.59889999999996,
+      "saves": 1,
+      "eventCount": 1005,
+      "cursors": 400,
+      "used": 3000000
+    }
+  ],
+  "after": {
+    "cold": {
+      "dispatchMs": 4.123200000000004,
+      "wallMs": 1344.9612,
+      "firstTimerMs": 4.746700000000004,
+      "saves": 1,
+      "eventCount": 915,
+      "cursors": 400,
+      "used": 3000000
+    },
+    "stable": [
+      {
+        "dispatchMs": 0.9135000000001128,
+        "wallMs": 84.8578,
+        "firstTimerMs": 0.9710999999999785,
+        "saves": 1,
+        "eventCount": 915,
+        "cursors": 400,
+        "used": 3000000
+      },
+      {
+        "dispatchMs": 0.3969999999999345,
+        "wallMs": 93.95079999999984,
+        "firstTimerMs": 0.417299999999841,
+        "saves": 1,
+        "eventCount": 915,
+        "cursors": 400,
+        "used": 3000000
+      },
+      {
+        "dispatchMs": 0.3110999999998967,
+        "wallMs": 83.20799999999986,
+        "firstTimerMs": 0.3326999999999316,
+        "saves": 1,
+        "eventCount": 915,
+        "cursors": 400,
+        "used": 3000000
+      }
+    ]
+  }
+}

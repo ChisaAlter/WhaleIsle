@@ -14,6 +14,8 @@ The `/client` exports are the plugin body (`apply`/`inject`) plus the contract t
 
 Search filters the local file list by name or path subsequence before applying the result limit. Nonmatching files are omitted; an empty query keeps file order.
 
+Root listings, lazy expansion and search share at most four in-flight directory requests. Search still visits the complete tree, shows its pending state, and publishes results in the original directory order; changing cwd, Refresh or leaving search prevents superseded work from starting more requests. Already-issued IPC reads finish without publishing into the new request. Further query edits reuse the walked file inventory. The preview and separate-window action subscribe only to the resource's owning cwd. Dirty drafts remain synchronously persisted on every changed edit; repeated writes of an already persisted buffer do not serialize it again.
+
 ## Model Experience
 
 None, as the Files surface only reads the workspace for display; nothing here reaches a model request.

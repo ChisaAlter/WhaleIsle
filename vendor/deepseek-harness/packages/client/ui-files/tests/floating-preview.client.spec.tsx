@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { Profiler } from 'react'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { bindSnapshotSelector } from '../../ui-renderer/src/client/bind.ts'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
@@ -34,10 +37,10 @@ afterEach(() => {
 })
 
 describe('floating preview target', () => {
-  it('uses the cwd of the session named by the resource, not the main-view session', () => {
+  it('uses the owning workspace for a relative resource', () => {
     expect(floatingPreviewTarget(
       sessionFileAddress('resource-session', 'src/a.ts'),
-      sessions({ 'resource-session': { cwd: '/tmp/resource' }, 'main-session': { cwd: '/tmp/main' } }),
+      '/tmp/resource',
     )).toEqual({
       ok: true,
       request: { cwd: '/tmp/resource', relativePath: 'src/a.ts' },
@@ -47,14 +50,14 @@ describe('floating preview target', () => {
   it('uses an absolute request for an absolute resource address', () => {
     expect(floatingPreviewTarget(
       'dsh-resource://file/absolute/tmp/outside/a.ts',
-      sessions({}),
+      undefined,
     )).toEqual({ ok: true, request: { absolutePath: '/tmp/outside/a.ts' } })
   })
 
   it('disables a relative address whose owning session has no cwd', () => {
     expect(floatingPreviewTarget(
       sessionFileAddress('resource-session', 'src/a.ts'),
-      sessions({ 'resource-session': {} }),
+      undefined,
     )).toEqual({ ok: false, reason: 'no-cwd' })
   })
 })
@@ -66,7 +69,7 @@ describe('FloatingPreviewButton', () => {
     render(
       <FloatingPreviewButton
         resourceAddress={sessionFileAddress('resource-session', 'src/a.ts')}
-        sessions={sessions({ 'resource-session': { cwd: '/tmp/resource' } })}
+        useSessions={selector => selector(sessions({ 'resource-session': { cwd: '/tmp/resource' }, 'main-session': { cwd: '/tmp/main' } }))}
         t={t}
       />,
     )
@@ -85,7 +88,7 @@ describe('FloatingPreviewButton', () => {
     render(
       <FloatingPreviewButton
         resourceAddress="dsh-resource://file/absolute/tmp/a.ts"
-        sessions={sessions({})}
+        useSessions={selector => selector(sessions({}))}
         t={t}
       />,
     )
@@ -100,7 +103,7 @@ describe('FloatingPreviewButton', () => {
     render(
       <FloatingPreviewButton
         resourceAddress={sessionFileAddress('resource-session', 'src/a.ts')}
-        sessions={sessions({ 'resource-session': {} })}
+        useSessions={selector => selector(sessions({ 'resource-session': {} }))}
         t={t}
       />,
     )
@@ -111,7 +114,7 @@ describe('FloatingPreviewButton', () => {
     render(
       <FloatingPreviewButton
         resourceAddress={sessionFileAddress('resource-session', 'src/a.ts')}
-        sessions={sessions({ 'resource-session': { cwd: '/tmp/resource' } })}
+        useSessions={selector => selector(sessions({ 'resource-session': { cwd: '/tmp/resource' } }))}
         t={t}
       />,
     )
@@ -154,6 +157,42 @@ describe('FloatingPreviewButton', () => {
     expect(writeFile).not.toHaveBeenCalled()
   })
 
+  it('ignores unrelated Session updates but tracks its resource workspace', async () => {
+    const previewOpenFileWindow = vi.fn(async () => ({ ok: true as const }))
+    ;(window as Window & { shell?: unknown }).shell = { previewOpenFileWindow }
+    const source = createSnapshotStore(sessions({
+      'resource-session': { cwd: '/tmp/resource' },
+      'other-session': { cwd: '/tmp/other' },
+    }))
+    const useSessions = bindSnapshotSelector(source)
+    const commits = vi.fn()
+    const { FilePreview } = await import('../src/client/FilePreview.tsx')
+    render(<Profiler id="file-preview" onRender={commits}>
+      <FilePreview
+        sessionId={'resource-session' as SessionId} relativePath="src/a.ts" active
+        onDirtyChange={() => {}} registerSave={() => {}} readBuffer={() => undefined} writeBuffer={() => {}}
+        useSessions={useSessions} listDir={async () => ({ ok: false })}
+        readFile={async () => ({ ok: true, text: 'disk', binary: false })}
+        readFileMedia={async () => ({ ok: false })} mentionFile={() => {}}
+        writeFile={async () => ({ ok: true })} t={t}
+      />
+    </Profiler>)
+    await screen.findByLabelText('src/a.ts')
+    const count = commits.mock.calls.length
+    await act(async () => {
+      source.update(state => { state.byId['other-session' as SessionId]!.cwd = '/tmp/changed' })
+    })
+    expect(commits.mock.calls.length).toBe(count)
+    await act(async () => {
+      source.update(state => { state.byId['resource-session' as SessionId]!.cwd = '/tmp/new' })
+    })
+    expect(commits.mock.calls.length).toBeGreaterThan(count)
+    fireEvent.click(screen.getByRole('button', { name: en['preview.floating'] }))
+    await waitFor(() => {
+      expect(previewOpenFileWindow).toHaveBeenCalledWith({ cwd: '/tmp/new', relativePath: 'src/a.ts' })
+    })
+  })
+
   it('captures the target before an in-flight request so a session switch cannot redirect it', async () => {
     let release!: (result: { ok: true }) => void
     const previewOpenFileWindow = vi.fn(() => new Promise<{ ok: true }>((resolve) => { release = resolve }))
@@ -161,7 +200,7 @@ describe('FloatingPreviewButton', () => {
     const view = render(
       <FloatingPreviewButton
         resourceAddress={sessionFileAddress('resource-session', 'src/a.ts')}
-        sessions={sessions({ 'resource-session': { cwd: '/tmp/first' } })}
+        useSessions={selector => selector(sessions({ 'resource-session': { cwd: '/tmp/first' } }))}
         t={t}
       />,
     )
@@ -169,7 +208,7 @@ describe('FloatingPreviewButton', () => {
     view.rerender(
       <FloatingPreviewButton
         resourceAddress={sessionFileAddress('resource-session', 'src/a.ts')}
-        sessions={sessions({ 'resource-session': { cwd: '/tmp/second' } })}
+        useSessions={selector => selector(sessions({ 'resource-session': { cwd: '/tmp/second' } }))}
         t={t}
       />,
     )
@@ -192,7 +231,7 @@ describe('FloatingPreviewButton', () => {
     render(
       <FloatingPreviewButton
         resourceAddress={sessionFileAddress('resource-session', 'src/a.ts')}
-        sessions={sessions({ 'resource-session': { cwd: '/tmp/resource' } })}
+        useSessions={selector => selector(sessions({ 'resource-session': { cwd: '/tmp/resource' } }))}
         t={t}
       />,
     )

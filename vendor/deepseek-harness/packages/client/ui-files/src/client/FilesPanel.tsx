@@ -1,16 +1,55 @@
-import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { IconRefreshOutline16, Input, Tooltip, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { UseSessions } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { serializeComposerFileLink } from './composerMention.ts'
-import { filterEntries } from './filter.ts'
 import { FileTree, joinRel, type TreeEntry } from './FileTree.tsx'
 import { NS } from './locales.ts'
 import { getProjectFilePickerMatches, type ProjectEntry } from './projectFilePicker.ts'
-import type { FilesShellInjected } from './shell.ts'
+import type { FilesShellInjected, ListDirResult } from './shell.ts'
 import css from './FilesPanel.module.css'
+
+const SEARCH_LISTING_CONCURRENCY = 4
+
+/** Share the four IPC slots across root, expansion and cancelled search walks. */
+function directoryLister(listDir: FilesShellInjected['listDir']) {
+  let active = 0
+  const pending: {
+    cwd: string
+    path: string
+    cancelled: () => boolean
+    resolve: (value: ListDirResult | undefined) => void
+    reject: (error: unknown) => void
+  }[] = []
+  const drain = (): void => {
+    while (active < SEARCH_LISTING_CONCURRENCY && pending.length > 0) {
+      const request = pending.shift()
+      if (request === undefined) break
+      if (request.cancelled()) {
+        request.resolve(undefined)
+        continue
+      }
+      active += 1
+      const finish = (): void => {
+        active -= 1
+        drain()
+      }
+      try {
+        void listDir(request.cwd, request.path).then(request.resolve, request.reject).finally(finish)
+      } catch (error: unknown) {
+        request.reject(error)
+        finish()
+      }
+    }
+  }
+  return (cwd: string, path: string, cancelled: () => boolean): Promise<ListDirResult | undefined> =>
+    new Promise((resolve, reject) => {
+      pending.push({ cwd, path, cancelled, resolve, reject })
+      drain()
+    })
+}
 
 export interface FilesPanelProps extends PropsLocale<typeof NS>, FilesShellInjected {
   sessionId: string | undefined
@@ -132,10 +171,26 @@ export function FilesPanel({
   const [copied, setCopied] = useState(false)
   const [generation, setGeneration] = useState(0)
   const [query, setQuery] = useState('')
+  const [searchPending, setSearchPending] = useState(false)
   const [editors, setEditors] = useState<readonly { id: string; label: string }[]>([])
   const searching = query.trim() !== ''
+  const listDirectory = useMemo(() => directoryLister(listDir), [listDir])
+  const listingIdentity = useRef({ cwd, generation, searching })
+  listingIdentity.current = { cwd, generation, searching }
+  const previousCwd = useRef(cwd)
+  const mounted = useRef(false)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
 
   useEffect(() => {
+    if (previousCwd.current !== cwd) {
+      previousCwd.current = cwd
+      setRoot([])
+      setChildrenByPath({})
+      setExpanded(new Set())
+    }
     if (cwd === undefined) {
       setRoot([])
       setChildrenByPath({})
@@ -145,8 +200,8 @@ export function FilesPanel({
     }
     setListing('pending')
     let cancelled = false
-    void listDir(cwd, '').then((result) => {
-      if (cancelled) return
+    void listDirectory(cwd, '', () => cancelled).then((result) => {
+      if (cancelled || result === undefined) return
       if (!result.ok) {
         setError(result.message ?? t('error.list'))
         setRoot([])
@@ -163,42 +218,60 @@ export function FilesPanel({
       }
     })
     return () => { cancelled = true }
-  }, [cwd, listDir, t, generation])
+  }, [cwd, listDirectory, t, generation])
 
-  // One walk per search session: the DFS runs when the query first becomes
+  // One walk per search session: traversal runs when the query first becomes
   // non-empty (and on Refresh via `generation`); further keystrokes only
   // filter the cached listing in memory. The cleanup flag also cancels an
   // in-flight walk when the session ends, so walks never stack.
   useEffect(() => {
-    if (cwd === undefined || !searching) return
+    if (cwd === undefined || !searching) {
+      setSearchPending(false)
+      return
+    }
     let cancelled = false
-    const walk = async (
-      parent: string,
-      acc: Record<string, TreeEntry[]>,
-    ): Promise<void> => {
-      const result = await listDir(cwd, parent)
-      if (cancelled) return
-      if (!result.ok) {
-        if (parent === '') setError(result.message ?? t('error.list'))
-        return
-      }
-      const entries = toTree(parent, result.entries ?? [])
-      acc[parent] = entries
-      for (const entry of entries) {
-        if (entry.kind === 'directory') {
-          await walk(entry.path, acc)
+    setSearchPending(true)
+    const acc: Record<string, TreeEntry[]> = {}
+    const walk = async (): Promise<void> => {
+      const pending = ['']
+      let searchError: string | null = null
+      while (pending.length > 0 && !cancelled) {
+        const parents = pending.splice(0, SEARCH_LISTING_CONCURRENCY)
+        const batch = await Promise.all(parents.map(async parent => {
+          if (cancelled) return undefined
+          try {
+            const result = await listDirectory(cwd, parent, () => cancelled)
+            if (cancelled || result === undefined) return undefined
+            if (!result.ok) {
+              searchError ??= result.message ?? t('error.list')
+              return undefined
+            }
+            return { parent, entries: toTree(parent, result.entries ?? []) }
+          } catch {
+            if (!cancelled) searchError ??= t('error.list')
+            return undefined
+          }
+        }))
+        if (cancelled) return
+        for (const result of batch) {
+          if (result === undefined) continue
+          acc[result.parent] = result.entries
+          for (const entry of result.entries) {
+            if (entry.kind === 'directory') pending.push(entry.path)
+          }
         }
       }
-    }
-    const acc: Record<string, TreeEntry[]> = {}
-    void walk('', acc).then(() => {
       if (cancelled) return
+      setError(searchError)
       setRoot(acc[''] ?? [])
       setChildrenByPath(acc)
       setExpanded(new Set(Object.keys(acc).filter(path => path !== '')))
-    })
+      setListing('settled')
+      setSearchPending(false)
+    }
+    void walk()
     return () => { cancelled = true }
-  }, [cwd, listDir, searching, generation])
+  }, [cwd, listDirectory, searching, generation, t])
 
   useEffect(() => {
     if (listEditors === undefined) return
@@ -220,13 +293,18 @@ export function FilesPanel({
     if (childrenByPath[path] !== undefined) return
     /* v8 ignore next -- the tree unmounts when cwd is missing. */
     if (cwd === undefined) return
-    void listDir(cwd, path).then((result) => {
+    const request = { cwd, generation, searching }
+    const current = (): boolean => mounted.current && request.cwd === listingIdentity.current.cwd
+      && request.generation === listingIdentity.current.generation
+      && request.searching === listingIdentity.current.searching
+    void listDirectory(cwd, path, () => !current()).then((result) => {
+      if (!current() || result === undefined) return
       if (!result.ok) {
         setError(result.message ?? t('error.list'))
         return
       }
       setChildrenByPath(current => ({ ...current, [path]: toTree(path, result.entries ?? []) }))
-    }).catch(() => { setError(t('error.list')) })
+    }).catch(() => { if (current()) setError(t('error.list')) })
   }
 
   const copyPath = (value: string): void => {
@@ -250,10 +328,11 @@ export function FilesPanel({
     setQuery('')
   }
 
-  const visibleRoot = filterEntries(root, query, childrenByPath)
-  const pickerMatches = searching
-    ? getProjectFilePickerMatches(collectFiles(root, childrenByPath), query)
-    : []
+  const pickerFiles = useMemo(() => searching ? collectFiles(root, childrenByPath) : [],
+    [root, childrenByPath, searching])
+  const pickerMatches = useMemo(() => searching
+    ? getProjectFilePickerMatches(pickerFiles, query)
+    : [], [pickerFiles, query, searching])
 
   return (
     <div className={css.root} data-files-panel>
@@ -284,7 +363,8 @@ export function FilesPanel({
           </button>
         </Tooltip>
       </div>
-      <div className={css.body}>
+      <div className={css.body} aria-busy={searching && searchPending || undefined}>
+        {searching && searchPending ? <p className={css.message} role="status">{t('search.pending')}</p> : null}
         {cwd === undefined ? (
           <p className={css.message}>{t('empty.cwd')}</p>
         ) : error !== null ? (
@@ -310,7 +390,7 @@ export function FilesPanel({
             </div>
           ) : (
             <FileTree
-              entries={visibleRoot}
+              entries={root}
               childrenByPath={childrenByPath}
               expanded={expanded}
               query={query}

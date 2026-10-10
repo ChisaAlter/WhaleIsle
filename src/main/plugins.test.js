@@ -133,6 +133,12 @@ test('ensureDesktopInstallPlugin copies the Host plugin and keeps cordis.patch.y
     const overlay = fs.readFileSync(first.overlayFile, 'utf8');
     assert.ok(overlay.includes('id: dshd-desktop-plugin-install'));
     assert.ok(overlay.includes(first.href));
+    const pluginFile = path.join(dest, 'install-dsh-plugin.mjs');
+    const past = new Date('2001-01-01T00:00:00Z');
+    fs.utimesSync(pluginFile, past, past);
+    const unchanged = fs.statSync(pluginFile).mtimeMs;
+    ensureDesktopInstallPlugin({ sourceDir: source, profileDir });
+    assert.equal(fs.statSync(pluginFile).mtimeMs, unchanged, 'unchanged payload is not rewritten');
     fs.writeFileSync(path.join(source, 'install-dsh-plugin.mjs'), 'export const name = "updated"\n', 'utf8');
     ensureDesktopInstallPlugin({ sourceDir: source, profileDir });
     assert.equal(fs.readFileSync(path.join(dest, 'install-dsh-plugin.mjs'), 'utf8'), 'export const name = "updated"\n');

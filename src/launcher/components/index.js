@@ -140,32 +140,32 @@ function createComponentsService(deps = {}) {
 
   // Stage payload → verify staged manifest → swap into versions/<v>. A broken
   // stage never touches the active dir.
-  function stagePayload(id, manifest, onProgress, op) {
+  async function stagePayload(id, manifest, onProgress, op) {
     const staging = store.stagingDir(root, id);
     const target = store.versionDir(root, id, manifest.version);
     emit(onProgress, { id, op, phase: 'copy', percent: 30 });
-    lifecycle.removeDir(staging, deps);
-    lifecycle.copyDir(manifest.dir, staging, deps);
+    await lifecycle.removeDir(staging, deps);
+    await lifecycle.copyDir(manifest.dir, staging, deps);
     emit(onProgress, { id, op, phase: 'verify', percent: 55 });
     const staged = registry.readManifest(staging, deps);
     if (!staged || staged.id !== manifest.id || staged.version !== manifest.version || !staged.entryFile) {
-      lifecycle.removeDir(staging, deps);
+      await lifecycle.removeDir(staging, deps);
       throw Object.assign(new Error('staged payload failed manifest verification'), { code: 'bad-payload' });
     }
     emit(onProgress, { id, op, phase: 'switch', percent: 75 });
     if (!store.validComponentId(id)) {
       throw Object.assign(new Error('invalid component id'), { code: 'invalid-id' });
     }
-    if (!lifecycle.removeDir(target, deps)) {
-      lifecycle.removeDir(staging, deps);
+    if (!await lifecycle.removeDir(target, deps)) {
+      await lifecycle.removeDir(staging, deps);
       throw Object.assign(new Error(`cannot replace ${target}`), { code: 'switch-failed' });
     }
-    const fsp = deps.fs || require('fs');
-    fsp.mkdirSync(path.dirname(target), { recursive: true });
+    const fsp = (deps.fs || require('fs')).promises;
+    await fsp.mkdir(path.dirname(target), { recursive: true });
     try {
-      fsp.renameSync(staging, target);
+      await fsp.rename(staging, target);
     } catch (error) {
-      lifecycle.removeDir(staging, deps);
+      await lifecycle.removeDir(staging, deps);
       throw Object.assign(error, { code: 'switch-failed' });
     }
     return { dir: target, manifest: staged };
@@ -399,9 +399,9 @@ function createComponentsService(deps = {}) {
         return { ok: false, error: 'unknown-version', id, version: target.version };
       }
       try {
-        const staged = stagePayload(id, picked, onProgress, 'install');
-        const fsp = deps.fs || require('fs');
-        fsp.mkdirSync(store.dataDir(root, id), { recursive: true });
+        const staged = await stagePayload(id, picked, onProgress, 'install');
+        const fsp = (deps.fs || require('fs')).promises;
+        await fsp.mkdir(store.dataDir(root, id), { recursive: true });
         const now = new Date().toISOString();
         readRegistry().components[id] = {
           id,
@@ -468,7 +468,7 @@ function createComponentsService(deps = {}) {
         await stopComponent(id, onProgress, 'update');
       }
       try {
-        stagePayload(id, latest, onProgress, 'update');
+        await stagePayload(id, latest, onProgress, 'update');
       } catch (error) {
         emit(onProgress, { id, op: 'update', phase: 'error', percent: 100, message: error.message });
         return { ok: false, error: error.code || 'update-failed', id, from, to: from, message: error.message };
@@ -485,7 +485,7 @@ function createComponentsService(deps = {}) {
       rec.updatedAt = new Date().toISOString();
       writeRegistry();
       if (oldPrevious && oldPrevious !== rec.previous && oldPrevious !== rec.version) {
-        lifecycle.removeDir(store.versionDir(root, id, oldPrevious), deps);
+        await lifecycle.removeDir(store.versionDir(root, id, oldPrevious), deps);
       }
       if (wasRunning) {
         const restarted = await startComponent(id, onProgress, 'update');
@@ -556,7 +556,7 @@ function createComponentsService(deps = {}) {
         await stopComponent(id, onProgress, 'uninstall');
       }
       emit(onProgress, { id, op: 'uninstall', phase: 'remove', percent: 60 });
-      lifecycle.removeDir(store.versionsDir(root, id), deps);
+      await lifecycle.removeDir(store.versionsDir(root, id), deps);
       // Per feature card the data dir is the user's choice surface; v1 keeps
       // <id>/data/ (notes/state/logs) so uninstall never destroys user data.
       delete readRegistry().components[id];

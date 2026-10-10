@@ -3,7 +3,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { createGrowthTracker, normalizeGrowthState } = require('./pet-growth');
-const { createDshWatch } = require('./pet-dsh-watch');
+const { createDshWatchWorker } = require('./pet-dsh-watch-host');
 const { createPetChat } = require('./pet-chat');
 const petStats = require('./pet-stats');
 const petSettings = require('./pet-settings');
@@ -177,7 +177,7 @@ function createLive2dPetManager(options = {}) {
   // milestones, the 45-minute rest nudge, and the 久别 greeting. Events push
   // to the renderer over shell:live2d-dsh; the alert arbitration there
   // decides when she may actually speak.
-  const dshWatch = createDshWatch({
+  const dshWatch = createDshWatchWorker({
     sessionsDir: options.sessionsDir || '',
     outboxFile: options.sessionsDir
       ? path.join(path.dirname(options.sessionsDir), 'data', 'whale', 'pet-outbox.jsonl')
@@ -199,12 +199,14 @@ function createLive2dPetManager(options = {}) {
       }
     },
     onEvent: (ev) => {
-      if (!win || win.isDestroyed?.()) {
-        return;
+      if (!win || win.isDestroyed?.()
+        || (ev.type === 'dshWhale' && (!petRendererReady || !win.isVisible()))) {
+        return false;
       }
       try {
         win.webContents.send('shell:live2d-dsh', { ...ev, category: ev.type });
-      } catch {}
+        return true;
+      } catch { return false; }
     },
     onState: (s) => {
       dshActivityState = s;
@@ -1258,14 +1260,17 @@ function createLive2dPetManager(options = {}) {
   function dispose() {
     clearInterval(growthTimer);
     growthTimer = 0;
-    Promise.resolve(growth.close?.()).catch(() => {});
+    const growthClosed = Promise.resolve(growth.close?.()).catch(() => {});
     clearTimeout(mirrorTimer);
     mirrorTimer = 0;
     stopCursorPump();
     hide();
+    let watcherClosed;
     if (stopDshWatch) {
-      stopDshWatch();
+      watcherClosed = stopDshWatch();
       stopDshWatch = null;
+    } else {
+      watcherClosed = dshWatch.close();
     }
     if (handlersRegistered) {
       ipcMain.removeHandler?.('shell:live2d-interactive');
@@ -1292,6 +1297,7 @@ function createLive2dPetManager(options = {}) {
     while (surfaceWatch.length) {
       try { surfaceWatch.pop()(); } catch {}
     }
+    return Promise.all([growthClosed, watcherClosed]);
   }
 
   registerHandlers();

@@ -407,7 +407,7 @@ function growthDeps(t, overrides = {}) {
   };
 }
 
-test('usage continues while hidden and outbox waits for the renderer to finish loading', (t) => {
+test('usage continues while hidden and outbox waits for the renderer to finish loading', async (t) => {
   const fs = require('node:fs');
   const path = require('node:path');
   const timers = [];
@@ -428,19 +428,19 @@ test('usage continues while hidden and outbox waits for the renderer to finish l
   const manager = createLive2dPetManager(deps);
   t.after(() => manager.dispose());
   const tick = timers.find((timer) => timer.ms === 2000).fn;
-  tick();
+  await tick();
   assert.equal(JSON.parse(fs.readFileSync(path.join(whaleHome, 'usage-today.json'))).used, 25500);
   assert.equal(deps.win.sends.some(([channel, payload]) => channel === 'shell:live2d-dsh' && payload.kind === 'notify'), false);
   manager.show();
   deps.win.showInactive();
-  tick();
+  await tick();
   assert.equal(deps.win.sends.some(([channel, payload]) => channel === 'shell:live2d-dsh' && payload.kind === 'notify'), false);
   callbacks.get('did-finish-load')();
-  tick();
+  await tick();
   assert.equal(deps.win.sends.filter(([channel, payload]) => channel === 'shell:live2d-dsh' && payload.kind === 'notify').length, 1);
 });
 
-test('DSH config write retries after save mutates memory then throws', (t) => {
+test('DSH config write retries after save mutates memory then throws', async (t) => {
   const fs = require('node:fs');
   const os = require('node:os');
   const path = require('node:path');
@@ -469,11 +469,11 @@ test('DSH config write retries after save mutates memory then throws', (t) => {
   manager.show();
   const tick = timers.find((timer) => timer.ms === 2000)?.fn;
   assert.equal(typeof tick, 'function');
-  tick();
+  await tick();
   assert.equal(writes, 1);
   assert.equal(committed, undefined);
   assert.equal(Object.keys(manager.getState().dsh.files).length, 0);
-  tick();
+  await tick();
   assert.equal(writes, 2);
   assert.equal(Object.keys(committed.files).length, 1);
   assert.equal(deps.win.sends.filter(([channel, payload]) => channel === 'shell:live2d-dsh' && payload.state === 'working').length, 1);

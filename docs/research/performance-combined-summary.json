@@ -1,0 +1,250 @@
+{
+  "elapsedMs": 1800609,
+  "samples": 30,
+  "entry": ".",
+  "first": {
+    "minute": 0.03,
+    "processCount": 10,
+    "privateMiB": 1794.07,
+    "rssMiB": 1678.49,
+    "heaps": {
+      "main": {
+        "usedMiB": 28.13,
+        "totalMiB": 31.39,
+        "backingMiB": 18.48
+      },
+      "pet": {
+        "usedMiB": 5.89,
+        "totalMiB": 7.22,
+        "backingMiB": 11.25
+      }
+    }
+  },
+  "last": {
+    "minute": 29.32,
+    "processCount": 8,
+    "privateMiB": 1683.46,
+    "rssMiB": 1350.86,
+    "heaps": {
+      "main": {
+        "usedMiB": 24.68,
+        "totalMiB": 27.63,
+        "backingMiB": 16.9
+      },
+      "pet": {
+        "usedMiB": 8.3,
+        "totalMiB": 26.97,
+        "backingMiB": 11.17
+      }
+    }
+  },
+  "warmPrivateRangeMiB": [
+    1189.95,
+    1708.23
+  ],
+  "warmRssRangeMiB": [
+    1217.46,
+    1380.13
+  ],
+  "postLifecycle": [
+    {
+      "minute": 19.22,
+      "processCount": 8,
+      "privateMiB": 1606.04,
+      "rssMiB": 1380.13,
+      "heaps": {
+        "main": {
+          "usedMiB": 25.31,
+          "totalMiB": 26.14,
+          "backingMiB": 18.38
+        },
+        "pet": {
+          "usedMiB": 7.23,
+          "totalMiB": 13.22,
+          "backingMiB": 11.25
+        }
+      }
+    },
+    {
+      "minute": 20.23,
+      "processCount": 8,
+      "privateMiB": 1593.26,
+      "rssMiB": 1363.34,
+      "heaps": {
+        "main": {
+          "usedMiB": 25.31,
+          "totalMiB": 26.14,
+          "backingMiB": 18.38
+        },
+        "pet": {
+          "usedMiB": 6.47,
+          "totalMiB": 7.72,
+          "backingMiB": 11.25
+        }
+      }
+    },
+    {
+      "minute": 21.24,
+      "processCount": 8,
+      "privateMiB": 1591.35,
+      "rssMiB": 1335.44,
+      "heaps": {
+        "main": {
+          "usedMiB": 25.48,
+          "totalMiB": 26.39,
+          "backingMiB": 18.38
+        },
+        "pet": {
+          "usedMiB": 6.46,
+          "totalMiB": 7.72,
+          "backingMiB": 11.25
+        }
+      }
+    },
+    {
+      "minute": 22.25,
+      "processCount": 8,
+      "privateMiB": 1592.14,
+      "rssMiB": 1319.05,
+      "heaps": {
+        "main": {
+          "usedMiB": 25.48,
+          "totalMiB": 26.39,
+          "backingMiB": 18.38
+        },
+        "pet": {
+          "usedMiB": 6.48,
+          "totalMiB": 7.72,
+          "backingMiB": 11.25
+        }
+      }
+    },
+    {
+      "minute": 23.26,
+      "processCount": 8,
+      "privateMiB": 1646.29,
+      "rssMiB": 1331.77,
+      "heaps": {
+        "main": {
+          "usedMiB": 25.9,
+          "totalMiB": 26.64,
+          "backingMiB": 18.38
+        },
+        "pet": {
+          "usedMiB": 7.87,
+          "totalMiB": 11.72,
+          "backingMiB": 11.17
+        }
+      }
+    },
+    {
+      "minute": 24.27,
+      "processCount": 8,
+      "privateMiB": 1653.62,
+      "rssMiB": 1339.47,
+      "heaps": {
+        "main": {
+          "usedMiB": 25.9,
+          "totalMiB": 26.64,
+          "backingMiB": 18.38
+        },
+        "pet": {
+          "usedMiB": 6.37,
+          "totalMiB": 10.97,
+          "backingMiB": 11.17
+        }
+      }
+    },
+    {
+      "minute": 25.3,
+      "processCount": 8,
+      "privateMiB": 1661.81,
+      "rssMiB": 1336.77,
+      "heaps": {
+        "main": {
+          "usedMiB": 25.9,
+          "totalMiB": 26.64,
+          "backingMiB": 18.38
+        },
+        "pet": {
+          "usedMiB": 8.71,
+          "totalMiB": 14.22,
+          "backingMiB": 11.17
+        }
+      }
+    },
+    {
+      "minute": 26.29,
+      "processCount": 8,
+      "privateMiB": 1668.47,
+      "rssMiB": 1343.93,
+      "heaps": {
+        "main": {
+          "usedMiB": 23.54,
+          "totalMiB": 26.63,
+          "backingMiB": 16.89
+        },
+        "pet": {
+          "usedMiB": 12.1,
+          "totalMiB": 20.97,
+          "backingMiB": 11.17
+        }
+      }
+    },
+    {
+      "minute": 27.3,
+      "processCount": 8,
+      "privateMiB": 1708.23,
+      "rssMiB": 1339.94,
+      "heaps": {
+        "main": {
+          "usedMiB": 24.54,
+          "totalMiB": 26.63,
+          "backingMiB": 16.9
+        },
+        "pet": {
+          "usedMiB": 8.18,
+          "totalMiB": 20.97,
+          "backingMiB": 11.17
+        }
+      }
+    },
+    {
+      "minute": 28.31,
+      "processCount": 8,
+      "privateMiB": 1677.99,
+      "rssMiB": 1344.94,
+      "heaps": {
+        "main": {
+          "usedMiB": 24.67,
+          "totalMiB": 27.63,
+          "backingMiB": 16.9
+        },
+        "pet": {
+          "usedMiB": 8.73,
+          "totalMiB": 20.97,
+          "backingMiB": 11.17
+        }
+      }
+    },
+    {
+      "minute": 29.32,
+      "processCount": 8,
+      "privateMiB": 1683.46,
+      "rssMiB": 1350.86,
+      "heaps": {
+        "main": {
+          "usedMiB": 24.68,
+          "totalMiB": 27.63,
+          "backingMiB": 16.9
+        },
+        "pet": {
+          "usedMiB": 8.3,
+          "totalMiB": 26.97,
+          "backingMiB": 11.17
+        }
+      }
+    }
+  ],
+  "note": "candidate only; mixed actions and parallel builds; no forced GC or baseline whole-app comparison"
+}
