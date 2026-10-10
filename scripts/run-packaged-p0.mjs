@@ -4,6 +4,8 @@ import { spawn, spawnSync } from 'node:child_process'
 import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import packagedP0Checks from '../src/main/packaged-p0.js'
+import runtimeIdentityChecks from '../src/shared/harness-runtime-identity.js'
 import {
   assertDesktopHarnessHome, assertSmokeResult, createSmokeDirs, electronSpawnEnv,
   initGitWorkspace, reservePort, writeSmokeConfig,
@@ -170,7 +172,7 @@ async function printSetupSha() {
   }
 }
 
-function assertPackagedP0Result(result, extractRoot) {
+async function assertPackagedP0Result(result, extractRoot, resourcesPath) {
   const packagedP0 = result.packagedP0
   if (!packagedP0) {
     throw new Error(
@@ -195,6 +197,22 @@ function assertPackagedP0Result(result, extractRoot) {
       throw new Error(`packagedP0 step failed: ${name} ${JSON.stringify(row || null)}`)
     }
   }
+  const runtime = packagedP0.runtime
+  if (!runtime || !runtime.root) throw new Error('Packaged P0 has no selected runtime identity')
+  const expectedPin = JSON.parse(readFileSync(path.join(root, 'vendor', 'harness-upstream.json'), 'utf8'))
+  const expectedResources = runtime.mode === 'installed'
+    ? path.join(distDir, 'win-unpacked', 'resources') : resourcesPath
+  const expectedArchiveIdentity = await runtimeIdentityChecks.readRuntimeArchiveIdentity(
+    path.join(expectedResources, 'vendor', 'deepseek-harness.tar'))
+  if (!expectedArchiveIdentity) throw new Error('Missing matching build runtime archive identity')
+  const verified = await packagedP0Checks.verifyPackagedRuntime({
+    resourcesPath, runtimeRoot: runtime.root, userData: path.dirname(path.dirname(extractRoot)),
+    appVersion: packageJson.version, expectedPin, expectedArchiveIdentity,
+  })
+  if (JSON.stringify(verified) !== JSON.stringify(runtime)) throw new Error('Packaged P0 runtime identity mismatch')
+  // NSIS has replaced the application directory and selected its verified
+  // runtime. The deliberately stale userData extract must remain unselected.
+  if (verified.mode === 'installed') return
   const stamp = path.join(extractRoot, '.dshd-runtime.json')
   if (!existsSync(stamp)) {
     throw new Error(`missing runtime stamp after packaged boot: ${stamp}`)
@@ -250,9 +268,12 @@ try {
   const result = JSON.parse(readFileSync(dirs.resultPath, 'utf8'))
   assertSmokeResult(outcome, result)
   assertDesktopHarnessHome(dirs.userData, result)
-  assertPackagedP0Result(result, extractRoot)
+  const resourcesPath = process.platform === 'darwin'
+    ? path.resolve(path.dirname(executable), '..', 'Resources')
+    : path.join(path.dirname(executable), 'resources')
+  await assertPackagedP0Result(result, extractRoot, resourcesPath)
   await printSetupSha()
-  console.log(`Packaged P0 passed on port ${port}; sibling Git/PTY, Ghostty wasm, overlay extract, and --no-open are healthy.`)
+  console.log(`Packaged P0 passed on port ${port}; sibling Git/PTY, Ghostty wasm, selected runtime identity, and --no-open are healthy.`)
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error))
   try {
