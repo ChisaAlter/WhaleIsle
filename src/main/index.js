@@ -84,7 +84,6 @@ const {
   getHarnessWebContents,
   getHarnessView,
   isHarnessLoaded,
-  hideHarnessView,
   dismissMainWindow,
   showLauncher,
   prepareLauncher,
@@ -194,6 +193,7 @@ async function setRemoteFromQa(patch) {
 
 let quitting = false;
 let stoppingForQuit = false;
+let quitInProgress = false;
 // Shell-owned input block for the shortcut bridge: while the closing overlay
 // owns the window, bound chords and menu dispatch must not run commands.
 let closingOverlayActive = false;
@@ -290,7 +290,7 @@ function bindMainClose(win) {
     if (quitting) {
       // A protection prompt may be in flight — swallow the close instead of
       // destroying a window the user just cancelled quitting over.
-      if (!stoppingForQuit) event.preventDefault();
+      if (quitInProgress || !stoppingForQuit) event.preventDefault();
       return;
     }
     if (hideOnClose(loadConfig(), quitting)) {
@@ -327,7 +327,7 @@ function bindLauncherClose(win) {
   });
   win.on('close', (event) => {
     if (quitting) {
-      if (!stoppingForQuit) event.preventDefault();
+      if (quitInProgress || !stoppingForQuit) event.preventDefault();
       return;
     }
     if (getMainWindow()) {
@@ -913,6 +913,7 @@ const reloadWithCleanup = createReloadWithCleanup({
   getUserDataDir: () => app.getPath('userData'),
 });
 function quitApp() {
+  if (quitInProgress) return;
   if (qaEnv('DSH_QA_SHELL') && process.env.DSH_QA_ALLOW_QUIT !== '1') {
     qaQuitIntercepted = true;
     console.log('[DSH_QA_SHELL] quit intercepted');
@@ -1425,6 +1426,10 @@ if (!gotLock) {
   });
 
   app.on('before-quit', (event) => {
+    if (quitInProgress) {
+      event.preventDefault();
+      return;
+    }
     quitting = true;
     if (stoppingForQuit) {
       return;
@@ -1436,56 +1441,123 @@ if (!gotLock) {
   // Explicit quit is already consent: keep inspection/lock/drain, not a
   // second task-warning prompt. Failed shutdown still offers recovery.
   async function finalizeQuit() {
-    const result = await taskProtection.coordinate('quit', {
-      terminal: true,
-      preConfirmed: true,
-      commit: async () => {
-        stoppingForQuit = true;
-        stopDesktopInstallControl();
-        void taskControlPeer.stop();
-        await cleanupDesktopResources();
-        hideHarnessView(getMainWindow());
-        closingOverlayActive = true;
-        await showClosingOverlay(getMainWindow(), loadConfig().locale).catch(() => {});
-        await harness.shutdown();
-      },
-    });
-    if (result.proceeded) {
-      app.quit();
-      return;
-    }
-    quitting = false;
-    stoppingForQuit = false;
-    closingOverlayActive = false;
-    // The user already requested quit; a failed drain or an
-    // unreachable runtime must not silently cancel the quit — offer a
-    // last-resort force exit so the app can always be closed.
-    if (result.code && result.code !== 'cancelled' && result.code !== 'busy') {
-      const choice = await confirmDialog(firstVisibleWindow(), {
-        type: 'warning',
-        title: '退出未完成',
-        message: '桌面运行时未响应退出请求',
-        detail: '后台任务状态无法完全确认。可重试退出，或强制退出（运行中的工作将直接中断）。',
-        buttons: ['重试', '强制退出'],
-        defaultId: 0,
-        cancelId: 0,
-        dangerIds: [1],
-        noLink: true,
-      }).catch(() => ({ response: 0 }));
-      if (choice.response === 1) {
-        quitting = true;
-        stoppingForQuit = true;
+    if (quitInProgress) return;
+    quitInProgress = true;
+    try {
+      while (true) {
+        let result;
+        let dismissClosing;
         try {
-          stopDesktopInstallControl();
-          void taskControlPeer.stop();
-          await cleanupDesktopResources();
-          hideHarnessView(getMainWindow());
-          await harness.shutdown();
-        } catch {
-          // A wedged runtime must not stall the force exit.
+          result = await taskProtection.coordinate('quit', {
+            terminal: true,
+            preConfirmed: true,
+            commit: async () => {
+              stoppingForQuit = true;
+              closingOverlayActive = true;
+              const win = getMainWindow();
+              // Keep the current page and its drafts until stopping succeeds.
+              dismissClosing = await showClosingOverlay(win, loadConfig().locale,
+                getHarnessWebContents(win) || win?.webContents).catch(() => undefined);
+              let shutdownTimer;
+              try {
+                await Promise.race([
+                  Promise.all([harness.shutdown(), cleanupDesktopResources()]),
+                  new Promise((_, reject) => {
+                    shutdownTimer = setTimeout(() => {
+                      const error = new Error('后台关停未在 30 秒内完成');
+                      error.code = 'dshd/shutdown-timeout';
+                      reject(error);
+                    }, 30000);
+                  }),
+                ]);
+              } finally {
+                clearTimeout(shutdownTimer);
+              }
+              stopDesktopInstallControl();
+              void taskControlPeer.stop();
+              // Keep the current surface until the native window closes.
+              // Detaching it here exposes the boot page for a final frame.
+            },
+          });
+        } catch (error) {
+          result = { proceeded: false, code: error.code || 'dshd/shutdown-failed',
+            detail: error.message || String(error) };
         }
-        app.exit(0);
+        if (result.proceeded) {
+          quitInProgress = false;
+          app.quit();
+          return;
+        }
+        quitting = false;
+        stoppingForQuit = false;
+        closingOverlayActive = false;
+        if (dismissClosing) void dismissClosing().catch(() => {});
+        // The user already requested quit; a failed drain or an
+        // unreachable runtime must not silently cancel the quit — offer a
+        // last-resort force exit so the app can always be closed.
+        if (result.code && result.code !== 'cancelled' && result.code !== 'busy') {
+          const diagnostics = {
+            code: result.code,
+            detail: result.detail,
+            pendingCount: result.pendingCount,
+            pendingLabels: result.pendingLabels,
+          };
+          dsh.log(`退出失败：${JSON.stringify(diagnostics)}`, 'error');
+          const choice = await confirmDialog(firstVisibleWindow(), {
+            type: 'warning',
+            title: '退出未完成',
+            message: result.code === 'dshd/shutdown-failed' || result.code === 'dshd/shutdown-timeout'
+              ? '后台服务未能完成关停' : '桌面运行时未响应退出请求',
+            detail: '可重试退出，或强制退出（运行中的工作将直接中断）。取消可返回应用。',
+            buttons: ['重试', '强制退出', '取消'],
+            defaultId: 2,
+            cancelId: 2,
+            dangerIds: [1],
+            noLink: true,
+          }).catch(() => ({ response: 2 }));
+          if (choice.response === 0) {
+            quitting = true;
+            continue;
+          }
+          if (choice.response === 1) {
+            quitting = true;
+            stoppingForQuit = true;
+            let forceExitTimer;
+            try {
+              await Promise.race([
+                (async () => {
+                  stopDesktopInstallControl();
+                  void taskControlPeer.stop();
+                  // Start stopping the child even if a preview never closes.
+                  const results = await Promise.allSettled([harness.shutdown(), cleanupDesktopResources()]);
+                  for (const result of results) {
+                    if (result.status === 'rejected') {
+                      dsh.log(`强制退出：后台关停失败：${result.reason?.message || String(result.reason)}`, 'error');
+                    }
+                  }
+                })(),
+                new Promise((resolve) => {
+                  forceExitTimer = setTimeout(() => {
+                    dsh.log('强制退出：关停等待超时', 'error');
+                    resolve();
+                  }, 5000);
+                }),
+              ]);
+            } catch (error) {
+              dsh.log(`强制退出：后台关停失败：${error.message || String(error)}`, 'error');
+            } finally {
+              clearTimeout(forceExitTimer);
+            }
+            app.exit(0);
+            return;
+          }
+        }
+        quitting = false;
+        harness.cancelShutdown();
+        return;
       }
+    } finally {
+      quitInProgress = false;
     }
   }
 

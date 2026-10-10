@@ -92,6 +92,8 @@ class HarnessController extends EventEmitter {
     this.recoveryAdmissionCheck = () => null;
     this.recoveryGeneration = 0;
     this.shuttingDown = false;
+    this.shutdownPromise = null;
+    this.shutdownGeneration = 0;
     this.recovery = {
       status: 'inactive',
       attempt: 0,
@@ -464,11 +466,12 @@ class HarnessController extends EventEmitter {
     // Never join an in-flight restart: callers that mutate skip/disabled lists
     // before restart() must get a performStart that re-reads those flags.
     const previous = this.restartOperation;
+    const shutdownGeneration = this.shutdownGeneration;
     const task = (async () => {
       if (previous) {
         await previous.catch(() => {});
       }
-      if (this.shuttingDown) {
+      if (this.shuttingDown || shutdownGeneration !== this.shutdownGeneration) {
         throw operationCancelled();
       }
       this.recoveryGeneration += 1;
@@ -1046,27 +1049,57 @@ class HarnessController extends EventEmitter {
     }
   }
 
-  async shutdown() {
-    if (this.shuttingDown) {
-      return;
-    }
+  shutdown() {
+    if (this.shutdownPromise) return this.shutdownPromise;
+    const shutdown = this.performShutdown().catch((error) => {
+      // A refused quit leaves the shell usable. The generation checks still
+      // reject any work cancelled by this shutdown, even after admission opens.
+      if (this.shutdownPromise === shutdown) {
+        this.shuttingDown = false;
+        this.shutdownPromise = null;
+      }
+      throw error;
+    });
+    this.shutdownPromise = shutdown;
+    return shutdown;
+  }
+
+  cancelShutdown() {
+    // The owned stop can finish later. Keep cancelled starts invalidated, but
+    // reopen explicit starts without letting an old completion seal the shell.
+    this.shutdownPromise = null;
+    this.shuttingDown = false;
+    this.sendState();
+  }
+
+  async performShutdown() {
     this.shuttingDown = true;
+    this.shutdownGeneration += 1;
     this.recoveryGeneration += 1;
+    this.operationGeneration += 1;
     this.recoveryTask = null;
     this.pluginRecoveryTask = null;
     this.clearTimers();
     const currentOperation = this.operation;
     const currentRestart = this.restartOperation;
-    await Promise.allSettled([
-      this.dsh.stop(),
+    this.operation = null;
+    this.restartOperation = null;
+    // Cancelled preparation or renderer loading can remain pending without
+    // owning a process. Observe its rejection, but start process cleanup now.
+    currentOperation?.catch(() => {});
+    currentRestart?.catch(() => {});
+    const results = await Promise.allSettled([
+      Promise.resolve().then(() => this.dsh.stop()),
       // DshdRemote's teardown face is stopDaemon() — a bare stop() call
       // would optional-chain into a silent no-op and leak the daemon + :3180.
-      this.remote?.stopDaemon?.(),
-      currentOperation,
-      currentRestart,
-    ].filter(Boolean));
-    this.dsh.off('state', this.onDshState);
-    this.dsh.off('log', this.onDshLog);
+      Promise.resolve().then(() => this.remote?.stopDaemon?.()),
+    ]);
+    const failures = results.filter((result) => result.status === 'rejected').map((result) => result.reason);
+    if (failures.length) {
+      throw new AggregateError(failures, failures.map(errorMessage).join('\n'));
+    }
+    // A preview cleanup can still fail and the user can cancel quitting after
+    // the backends stop. State/log listeners belong to the live shell.
   }
 }
 

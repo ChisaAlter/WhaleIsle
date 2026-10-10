@@ -18,7 +18,7 @@
 
 import { admit, createControlState } from './state.js';
 import { CONTROL_PREFIX, createControlHandler } from './http.js';
-import { wrapJobs, wrapSessionController, wrapWebServer } from './wrap.js';
+import { disposeGuards, wrapJobs, wrapSessionController, wrapWebServer } from './wrap.js';
 
 export const name = 'dsh-task-control';
 export const inject = [];
@@ -27,14 +27,25 @@ export const inject = [];
 export function apply(ctx) {
   const state = createControlState();
   const token = String(process.env.DSHD_TASK_CONTROL_TOKEN || '');
-  let routeRegistered = false;
+  const controlRoutes = [];
+
+  ctx.effect(() => () => {
+    state.stopping = true;
+    for (const { webServer, route, dispose } of controlRoutes) {
+      // A later owner may have replaced this path after unregistering our row.
+      // Its registration must survive disposal of this plugin.
+      if (webServer.prefixes.get(CONTROL_PREFIX) === route) dispose();
+    }
+    disposeGuards(state);
+  }, 'dsh-task-control.lifecycle');
 
   const installGuards = () => {
+    if (state.stopping) return;
     wrapSessionController(state, ctx.get('sessionController'));
     wrapJobs(state, ctx.get('jobs'));
     const webServer = ctx.get('webServer');
-    if (wrapWebServer(state, webServer) && !routeRegistered) {
-      webServer.register({
+    if (wrapWebServer(state, webServer)) {
+      const route = {
         kind: 'prefix',
         path: CONTROL_PREFIX,
         handler: createControlHandler(ctx, state, {
@@ -51,8 +62,8 @@ export function apply(ctx) {
             }
           },
         }),
-      });
-      routeRegistered = true;
+      };
+      controlRoutes.push({ webServer, route, dispose: webServer.register(route) });
     }
   };
 
@@ -79,8 +90,4 @@ export function apply(ctx) {
       admission.done();
     }
   });
-
-  ctx.effect(() => () => {
-    state.stopping = true;
-  }, 'dsh-task-control.stopping');
 }
