@@ -1213,19 +1213,23 @@ describe('AppFrame — landscape sidebar', () => {
 
     vi.stubGlobal('innerWidth', 962)
     resize(962)
-    expect(sidebarOwner()).toEqual({ collapsed: false, width: SIDEBAR_DEFAULT })
-    expect(rightOwner().canShow).toBe(false)
+    expect(tracks(frame)[0]).toBe(0)
+    expect(sidebarOwner()).toEqual({ collapsed: true, width: 0 })
+    expect(instance.getSnapshot().layoutInfo).toMatchObject({ sidebar: SIDEBAR_DEFAULT, narrow: true, narrowExpanded: false })
+    expect(rightOwner().canShow).toBe(true)
 
     // SidebarRoot's button invokes this public layout action.
     act(() => { instance.actions.toggleSidebar() })
-    expect(tracks(frame)[0]).toBe(0)
-    expect(sidebarOwner()).toEqual({ collapsed: true, width: 0 })
+    expect(tracks(frame)[0]).toBe(SIDEBAR_DEFAULT)
+    expect(sidebarOwner()).toEqual({ collapsed: false, width: SIDEBAR_DEFAULT })
+    expect(instance.getSnapshot().layoutInfo).toMatchObject({ sidebar: SIDEBAR_DEFAULT, narrowExpanded: true })
     expect(rightOwner().canShow).toBe(true)
 
     act(() => { instance.actions.toggleSidebar() })
-    expect(tracks(frame)[0]).toBe(SIDEBAR_DEFAULT)
-    expect(sidebarOwner()).toEqual({ collapsed: false, width: SIDEBAR_DEFAULT })
-    expect(rightOwner().canShow).toBe(false)
+    expect(tracks(frame)[0]).toBe(0)
+    expect(sidebarOwner()).toEqual({ collapsed: true, width: 0 })
+    expect(instance.getSnapshot().layoutInfo).toMatchObject({ sidebar: SIDEBAR_DEFAULT, narrowExpanded: false })
+    expect(rightOwner().canShow).toBe(true)
 
     vi.stubGlobal('innerWidth', 1441)
     resize(1441)
