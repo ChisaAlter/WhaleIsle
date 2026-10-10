@@ -41,6 +41,9 @@ export class ProjectRequirements {
       const project = service.project(actor.project.id); if (project.lifecycle !== 'ready' || service.archiving.has(project.id)) fail('archived', 'Restore this Project before accepting work.');
       const prior = args.requestId || priorCall ? this.get(id, project.id) : undefined;
       const replay = prior?.versions.find(version => version.callId === exec.callId); if (replay) return;
+      const messageId = selected.at(-1).messageId;
+      if (service.projectHolds.get(project.id) === messageId || project.holdSourceMessageId === messageId) fail('stopped', 'The request was stopped; a new actual user message is required.');
+      exec.signal.throwIfAborted();
       const previous = prior && this.current(prior), version = (prior?.currentVersion ?? 0) + 1;
       const record = { version, goal: args.goal.trim(), criteria, constraints, authorization, writePaths, inputs: [...(previous?.inputs ?? []), ...selected.filter(input => !previous?.inputs.some(old => old.messageId === input.messageId))], requiredWork: structuredClone(previous?.requiredWork ?? []), callId: exec.callId, at: Date.now() };
       await service.write(state => { state.requests ??= []; const row = state.requests.find(row => row.id === id); if (row) { row.currentVersion = version; row.versions.push(record); row.updatedAt = record.at; } else state.requests.push({ id, projectId: project.id, currentVersion: version, versions: [record], updatedAt: record.at }); });

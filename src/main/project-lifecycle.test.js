@@ -58,7 +58,7 @@ test('writers in overlapping Project directories queue while siblings and readon
 });
 
 test('recovery clears only resolved directory diagnostics and reconciles the original Project without running work', async t => {
-  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'whale-project-recover-directory-'));
+  const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'whale-project-recover-directory-')));
   t.after(() => fs.rm(temporary, { recursive: true, force: true }));
   const storage = path.join(temporary, 'storage'), selected = path.join(temporary, 'selected');
   await fs.mkdir(storage);
@@ -106,7 +106,7 @@ test('a newly queued request is not assigned to the native run of the previously
 });
 
 test('explicit continuation after finding the original directory removes only its resolved blocker without restarting the app', async t => {
-  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'whale-project-live-directory-'));
+  const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'whale-project-live-directory-')));
   t.after(() => fs.rm(temporary, { recursive: true, force: true }));
   const { projectDirectory } = await import('../../vendor/dsh-project/lib/files.js');
   const selected = path.join(temporary, 'selected'), home = path.join(temporary, 'home');

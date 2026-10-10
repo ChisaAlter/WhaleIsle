@@ -220,7 +220,7 @@ function loadIpc(options = {}) {
   const scanImportCalls = [];
   const runImportCalls = [];
   stub('./data-import', {
-    scanImport: (opts) => {
+    scanImportAsync: async (opts) => {
       scanImportCalls.push(opts);
       return {
         ok: true, destEmpty: true, sourceHasData: false, sessions: [], plugins: [], skills: [], mcp: [], settings: [], presets: [],

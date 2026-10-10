@@ -8,7 +8,7 @@ const path = require('node:path');
 test('status resolves plain forensics with one config/start snapshot and observes the next change', async () => {
   const filename = path.join(__dirname, 'launcher-service.js');
   let config = { downloadRoute: 'github', disabledPlugins: ['@sample/disabled'] };
-  let lastStart = { error: 'first error', logTail: [] };
+  let lastStart = { ok: false, error: 'first error', logTail: [] };
   let configReads = 0;
   let startReads = 0;
   let releaseTail;
@@ -29,7 +29,10 @@ test('status resolves plain forensics with one config/start snapshot and observe
     '../main/plugins': { listInstalledPlugins: () => ({ plugins: [], bundles: [] }), OFFICIAL_TEMPLATE_BUNDLES: new Set() },
     '../main/profile-ops': {},
     '../main/task-protection': {},
-    '../main/plugin-forensics': { inspectPlugins: (input) => ({ ...input, recovery: input.recovery, summary: { error: input.lastStartError } }) },
+    '../main/plugin-forensics': { inspectPlugins: async (input) => {
+      await tailGate;
+      return { ...input, recovery: input.recovery, summary: { error: input.lastStartError } };
+    } },
     '../main/plugin-tree-failure': { isPluginTreeFailure: () => false },
     '../main/launcher-gate': {
       readLastDesktopStart: () => { startReads += 1; return { ...lastStart }; },
@@ -41,7 +44,7 @@ test('status resolves plain forensics with one config/start snapshot and observe
       installedInfo: () => null,
       configuredRoute: (deps) => (deps.loadConfig || configIO.loadConfig)().downloadRoute,
     },
-    './forensics-log': { bootLogPath: () => 'unused', readBootLogTailAsync: async () => { await tailGate; return ['latest crash line']; } },
+    './forensics-log': { bootLogPath: () => 'unused', readBootLogTailAsync: async () => assert.fail('full desktop must use current-start evidence') },
     './product': { isLauncherPackage: () => false, desktopStateDir: () => __dirname },
     '../main/import-guard': {},
   };
@@ -61,7 +64,7 @@ test('status resolves plain forensics with one config/start snapshot and observe
     else delete require.cache[filename];
   }
   const service = createLauncherService({
-    dsh: { logs: ['live line'], snapshot: () => ({ state: 'ready' }) },
+    dsh: { logs: ['historical crash line'], currentStartLogs: () => ['latest crash line'], snapshot: () => ({ state: 'ready' }) },
     configPayload: (value) => value,
     taskProtection: {},
     statusContributors: [() => ({ components: [{ id: 'sample', state: 'running' }] })],
@@ -76,6 +79,7 @@ test('status resolves plain forensics with one config/start snapshot and observe
   assert.equal(first.lastStart.error, 'first error');
   assert.equal(first.forensics.lastStartError, 'first error');
   assert.ok(first.forensics.logs.includes('latest crash line'));
+  assert.ok(!first.forensics.logs.includes('historical crash line'));
   assert.equal(first.components[0].state, 'running');
   assert.deepEqual(JSON.parse(JSON.stringify(first)).forensics, first.forensics);
   assert.equal(configReads, 1);

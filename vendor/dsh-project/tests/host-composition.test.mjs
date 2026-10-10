@@ -182,7 +182,7 @@ async function bootHost(home, model, teamConfig) {
   ctx.llm.registerAdapter(['composition'], model); model.state = () => ctx.projects.state(); return ctx;
 }
 test('real coordinator tools delegate, preserve worker scope/cwd, stop and recover durable outcomes', { timeout: 120000 }, async () => {
-  const root = await mkdtemp(join(tmpdir(), 'whale-project-v2-')), home = join(root, 'home'), directory = join(root, 'selected');
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'whale-project-v2-'))), home = join(root, 'home'), directory = join(root, 'selected');
   await mkdir(home); await mkdir(directory); const bridge = await desktopBridge(root); let ctx;
   const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });

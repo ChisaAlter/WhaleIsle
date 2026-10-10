@@ -826,7 +826,7 @@ function createLauncherService(deps) {
       if (importGuard.isMaintenanceHeld()) {
         return { ok: false, error: 'operation-in-progress' };
       }
-      const forensics = collectForensics();
+      const forensics = await collectForensics();
       const guidance = startupRecoveryGuidance({
         forensics,
         desktop: desktopSnapshot(),
@@ -856,7 +856,7 @@ function createLauncherService(deps) {
             return startDesktop({ forceRestart: true, fullPluginRetry: true, recoveryLaunch: true, maintenanceToken: ownerToken });
           },
         });
-        return result.ok === true ? { ...result, forensics: collectForensics() } : result;
+        return result.ok === true ? { ...result, forensics: await collectForensics() } : result;
       } catch (error) {
         if (error.code === 'CONFIG_UNREADABLE') {
           return { ok: false, error: 'config-unreadable' };

@@ -43,6 +43,51 @@ test('all consumed human inputs retain their order; independent goals and revisi
   await assert.rejects(f.accept({ messageIds: ['fabricated'] }), { code: 'unauthorized' });
 });
 
+test('a stop while implicit acceptance is queued cannot save a request or delegate work', async () => {
+  const f = fixture(); f.human(['Inspect the repository']);
+  f.actor.agent.cancel = () => {};
+  f.service.teams.cancelMessages = async () => {};
+  let release, announce;
+  const gate = new Promise(done => { release = done; }), queued = new Promise(done => { announce = done; });
+  const serial = f.service.serial.bind(f.service); let calls = 0;
+  f.service.serial = work => {
+    if (++calls === 2) { serial(() => gate); announce(); } // After dependency validation, before implicit acceptance.
+    return serial(work);
+  };
+  const delegation = f.service.delegate(f.actor, { scope: 'readonly', brief: 'Inspect only' }, f.exec('project_delegate'));
+  const rejection = assert.rejects(delegation, { code: 'stopped' });
+  await queued;
+  const stopping = f.service.stop(f.project.id); release();
+  await Promise.all([rejection, stopping]);
+  assert.equal(f.state.requests, undefined);
+  assert.equal(f.state.revision, 1, 'only the durable pause writes; stopped acceptance does not revise the catalog');
+  assert.equal(f.state.workstreams.length, 0); assert.equal(f.state.workers.length, 0);
+  f.human(['Explicitly continue the inspection']);
+  assert.equal((await f.accept({ authorization: 'readonly' })).request.currentVersion, 1, 'a fresh actual human input can still accept work');
+});
+
+test('queued request revisions recheck cancellation while held existing acceptance remains an idempotent replay', async () => {
+  const f = fixture(); f.human(['Inspect the repository']);
+  const args = { goal: 'Inspect', authorization: 'readonly' }, originalExec = f.exec('project_request');
+  const { request } = await f.service.acceptRequest(f.actor, args, originalExec);
+  f.service.projectHolds.set(f.project.id, request.versions[0].inputs.at(-1).messageId);
+  const revision = f.state.revision;
+  assert.deepEqual((await f.service.acceptRequest(f.actor, args, originalExec)).request, request);
+  assert.equal(f.state.revision, revision, 'replaying a saved call after a stop does not rewrite it');
+  f.human(['Continue with an additional finding']);
+  let release; const gate = new Promise(done => { release = done; });
+  const blocking = f.service.serial(() => gate), controller = new AbortController();
+  const exec = { ...f.exec('project_request'), signal: controller.signal };
+  const acceptance = f.service.acceptRequest(f.actor, { ...args, requestId: request.id }, exec);
+  const rejected = assert.rejects(acceptance, { name: 'AbortError' });
+  controller.abort(); release(); await Promise.all([blocking, rejected]);
+  assert.equal(f.state.requests.length, 1); assert.equal(f.state.requests[0].currentVersion, 1);
+  assert.equal(f.state.revision, revision, 'a cancelled queued acceptance cannot save a requirement revision');
+  const continued = (await f.accept({ ...args, requestId: request.id })).request;
+  assert.equal(continued.currentVersion, 2);
+  assert.deepEqual(continued.versions[1].inputs.map(row => row.text), ['Inspect the repository', 'Continue with an additional finding']);
+});
+
 test('stages retain original authority on a native notification; readonly cannot silently become development', async () => {
   const f = fixture(); f.human(['Investigate, fix and verify']); const { request } = await f.accept({});
   f.events.push({ seq: f.events.length, type: 'turn/start', data: { turn: 2 } }, { seq: f.events.length + 1, type: 'user/message', data: { id: 'settlement', source: { kind: 'subagent-settled' }, content: [] } });
