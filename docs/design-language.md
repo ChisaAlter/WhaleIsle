@@ -88,7 +88,7 @@ Files 只保留「文件」目录入口，编辑器由具体文件打开；旧�
 10. **图标 16px、`currentColor`。** 用 `ui-primitives` 的 `ic_ds_*`。密集标题栏可用 14px。不要引入另一套图标库或彩色填充图标。
 11. **动效只动 opacity 和 transform。** 时长走 `--ds-transition-duration*`（100–200ms，flip 400ms）。新对话框 / 菜单用 `usePresence` + `motion.css` recipe。禁止动画 `backdrop-filter` 和大面板宽高，禁止引入动画库。对照与例外见 [动效规范](motion.md)。
 12. **阴影只用 lv1 / lv2 / lv3。** 菜单和对话框用 `lv3`；悬浮卡片用 `lv2`；输入条不铺外投影（静止轮廓光 + 发丝描边承担分离）。禁止 `0 18px 40px` 这类重阴影。
-13. **毛玻璃止于基线配方。** 遮罩 `blur(2px)`（`--dsw-mask-blur`）+ `--dsw-alias-bg-mask-*`；抬起面用 `color-mix(..., var(--dsw-alias-glass-opacity), transparent)`。使用 `--dsw-specific-menu` 填充的抬起菜单须配对 `--dsw-menu-backdrop-filter`。不要加更重的 blur，也不要每层都铺投影。
+13. **毛玻璃止于基线配方。** 遮罩 `blur(2px)`（`--dsw-mask-blur`）+ `--dsw-alias-bg-mask-*`；抬起面用 `color-mix(..., var(--dsw-alias-glass-opacity), transparent)`。使用 `--dsw-specific-menu` 填充的抬起菜单须配对 `--dsw-menu-backdrop-filter`。不要加更重的 blur，也不要每层都铺投影。鲸桥独立窗口的对话框仅使用遮罩色，不使用背景模糊：软件渲染下背景模糊会使按钮等待动效持续掉帧。
 14. **滚动条用共享样式。** 禁止组件内 `::-webkit-scrollbar`。
 15. **产品文案中文，代码注释英文。** 不要把 VS Code / Material / iOS 的密度和装饰搬进来压过基线 Web UI。
 16. **应用对外主名用 Whale Isle，侧栏字标保持既有设计。** `setup:harness` 走 vendor 树自带的 `pnpm run build:official`（`DSH_CLIENT_BUILD_PROFILE=official`）；源码 `npm start` 消费 vendor 产物前确认官方构建记录，发现旧的普通 `build` 产物即补做 official build。桌面与 Web 官方构建沿用上述侧栏字标；「屿」为品牌蓝，头像不带方形底板或本地构建回退文案。字标可使用适配 40px Windows 标题栏的紧凑字级，不改变其余控件字号。改 client 后也用同一条命令重建，不要单独 `build:lib:client` 把品牌打回本地包。

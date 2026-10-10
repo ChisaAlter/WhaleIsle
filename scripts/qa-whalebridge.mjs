@@ -86,7 +86,7 @@ try{
  writeFileSync(join(pkg,'WhaleBridge-component.json'),JSON.stringify(manifest));
  assert.equal((await service.update()).ok,true);assert.equal(service.state().version,nextVersion);assert.equal((await service.api('status')).models,2);
  assert.equal((await service.rollback()).ok,true);assert.equal(service.state().version,original.version);
- assert.equal((await service.uninstall()).ok,true);
+ const removed=await service.uninstall();assert.equal(removed.ok,true,JSON.stringify(removed));
  const after=readFileSync(profile,'utf8');assert.doesNotMatch(after,/whalebridge/);assert.match(after,/provider: existing/);assert.match(after,/id: unrelated/);assert.match(after,/!!js/);assert.match(after,/# Preserve profile comments/);assert.equal(readFileSync(join(home,'settings.yaml'),'utf8'),'unrelated: legacy-kept\n');
  assert.equal(readFileSync(join(home,'.env'),'utf8').trim(),'EXISTING_KEY=keep');
  assert.equal((await service.install()).ok,true);assert.equal((await service.api('status')).models,2);

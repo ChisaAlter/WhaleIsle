@@ -49,6 +49,24 @@ func subscriptionRoutes(mux *http.ServeMux) {
 		defer mutations.Unlock()
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Minute)
 		defer cancel()
+		stream := b.Action == "install" && r.Header.Get("Accept") == "application/x-ndjson"
+		if stream {
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		send := func(event map[string]any) {
+			if stream {
+				_ = json.NewEncoder(w).Encode(event)
+				_ = http.NewResponseController(w).Flush()
+			}
+		}
+		fail := func(message string, status int) {
+			if stream {
+				send(map[string]any{"error": message})
+			} else {
+				http.Error(w, message, status)
+			}
+		}
 		var err error
 		switch b.Action {
 		case "update-all":
@@ -63,7 +81,10 @@ func subscriptionRoutes(mux *http.ServeMux) {
 			if pkg == "" {
 				err = fmt.Errorf("缺少订阅适配器包名")
 			} else {
-				_, err = plugin.Add(ctx, pkg)
+				send(map[string]any{"phase": "downloading"})
+				_, err = plugin.AddWithProgress(ctx, pkg, func() {
+					send(map[string]any{"phase": "installing"})
+				})
 			}
 		case "update":
 			if pkg == "" {
@@ -99,27 +120,31 @@ func subscriptionRoutes(mux *http.ServeMux) {
 			err = fmt.Errorf("未知订阅适配器操作")
 		}
 		if err != nil {
-			http.Error(w, err.Error(), 400)
+			fail(err.Error(), 400)
 			return
 		}
 		if b.Action == "install" || b.Action == "update" || b.Action == "update-all" {
 			for id, handErr := range provider.WhaleBridgeHandOver(ctx) {
 				if handErr != nil {
-					http.Error(w, "适配器已安装，但 "+id+" 交接失败: "+handErr.Error(), 500)
+					fail("适配器已安装，但 "+id+" 交接失败: "+handErr.Error(), 500)
 					return
 				}
 			}
 		}
 		if _, err = plugin.Providers(ctx); err != nil {
-			http.Error(w, err.Error(), 400)
+			fail(err.Error(), 400)
 			return
 		}
 		provider.ForgetAccounts()
 		if err = syncDSH(); err != nil {
-			http.Error(w, "订阅适配器已更新，但 DSH 渠道同步失败: "+err.Error(), 500)
+			fail("订阅适配器已更新，但 DSH 渠道同步失败: "+err.Error(), 500)
 			return
 		}
-		writeJSON(w, map[string]bool{"ok": true})
+		if stream {
+			send(map[string]any{"ok": true})
+		} else {
+			writeJSON(w, map[string]bool{"ok": true})
+		}
 	})
 	mux.HandleFunc("GET /api/subscription/adapter/{id}/options", func(w http.ResponseWriter, r *http.Request) {
 		for _, e := range plugin.Load().Plugins {
