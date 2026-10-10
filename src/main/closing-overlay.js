@@ -11,6 +11,9 @@ function overlayCss(theme) {
   align-items: center;
   justify-content: center;
   margin: 0;
+  border-radius: 20px;
+  corner-shape: round;
+  overflow: hidden;
   background: ${theme.bg};
   color: ${theme.fg};
   color-scheme: ${theme.scheme || 'dark'};
@@ -18,6 +21,9 @@ function overlayCss(theme) {
   -webkit-app-region: no-drag;
   pointer-events: all;
   user-select: none;
+}
+html[data-window-maximized] #${OVERLAY_ID} {
+  border-radius: 0;
 }
 #${OVERLAY_ID} .dshd-shell-closing-card {
   display: flex;
