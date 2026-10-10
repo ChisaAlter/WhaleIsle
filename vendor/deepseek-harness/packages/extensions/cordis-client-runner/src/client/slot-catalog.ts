@@ -268,7 +268,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'useProjection: UseProjection',
       'useTrajectory: UseTrajectory',
     ],
-    keyDomain: 'fixed by the owner\'s key table { [Kind in ChatNodeKind]: { node: ChatNode<Kind> } }, already taken: assistant-step, command, command-input, compaction, context, manual-compaction, model-retry, question-reply, steering, system-prompt, tool-call, turn-error, turn-max-tokens, turn-process, turn-tail, turn-trigger, unknown, user, workflow-run',
+    keyDomain: 'fixed by the owner\'s key table { [Kind in ChatNodeKind]: { node: ChatNode<Kind> } }, already taken: assistant-step, command, command-input, compaction, context, manual-compaction, model-retry, question-reply, steering, system-prompt, tool-call, turn-error, turn-max-tokens, turn-process, turn-tail, turn-trigger, unknown, user, visual-reply, workflow-run',
     hookContext: 'ChatNodeHookContext',
     slotInject: 'ChatNodeInjected',
     declaredBy: 'an entry in \'conversation.view\' (client-ui-chat), so it exists while that entry is mounted',
@@ -291,6 +291,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-goal GoalCommandInputView key \'command-input\'',
       'client-ui-tool ToolCallTree key \'tool-call\'',
       'client-ui-user-questions QuestionReplyView key \'question-reply\'',
+      'client-ui-visual-replies VisualReplyNode key \'visual-reply\'',
       'client-ui-workflow-run WorkflowRunPanel key \'workflow-run\'',
     ],
     replaceRisk: 'shadows-shipped-ui',
@@ -1617,6 +1618,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-jobs JobListAction id \'job-list\'',
       'client-ui-subagent SubagentCatalogAction id \'subagent-catalog\'',
       'experimental-client-ui-agent-team TeamAction id \'agent-team\'',
+      'session-log-export SessionLogDownloadHeaderAction id \'session-log-download\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.session.header.actions\', () => ctx.slots.register(\n      { name: \'conversation.session.header.actions\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -2759,6 +2761,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-settings-session-log UploadRow',
       'client-ui-shortcuts ShortcutsRow id \'shortcuts\'',
       'client-ui-theme FontSizeRow id \'font-size\'',
+      'client-ui-visual-replies VisualRepliesRow id \'visual-replies\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.general.item\', () => ctx.slots.register(\n      { name: \'settings.general.item\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -2851,7 +2854,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-titlebar TerminalToggleRow id \'terminal-toggle\'',
       'client-ui-titlebar SurfacesToggleRow id \'surfaces-toggle\'',
       'client-ui-workspace ShowArchivedListRow id \'show-archived-list\'',
-      'session-log-export SessionLogChromeRow id \'session-log-export\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.interface.item\', () => ctx.slots.register(\n      { name: \'settings.interface.item\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -2932,6 +2934,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'settings.launcher\' (client-ui-settings-account), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-settings-account WhaleBridgeMenuAction id \'whalebridge\'',
       'client-ui-settings-remote RemoteMenuAction id \'remote\'',
     ],
     replaceRisk: 'none',
@@ -3589,7 +3592,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [
       'client-ui-git GitActionsControl id \'git-actions\'',
       'client-ui-titlebar PanelToggles id \'panel-toggles\'',
-      'session-log-export SessionLogDownloadHeaderAction id \'session-log-download\'',
+      'session-log-export SessionLogDownloadTitlebarAction id \'session-log-download\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'shell.titlebar.trailing\', () => ctx.slots.register(\n      { name: \'shell.titlebar.trailing\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -4921,7 +4924,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'surfaces.agents\', () => ctx.slots.register(\n      { name: \'surfaces.agents\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-surfaces/src/client/apply.ts:85',
+    source: 'packages/client/ui-surfaces/src/client/apply.ts:86',
   },
   {
     key: 'surfaces.browser',
@@ -4958,7 +4961,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'surfaces.browser\', () => ctx.slots.register(\n      { name: \'surfaces.browser\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-surfaces/src/client/apply.ts:64',
+    source: 'packages/client/ui-surfaces/src/client/apply.ts:65',
   },
   {
     key: 'surfaces.diff',
@@ -4995,7 +4998,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'surfaces.diff\', () => ctx.slots.register(\n      { name: \'surfaces.diff\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-surfaces/src/client/apply.ts:81',
+    source: 'packages/client/ui-surfaces/src/client/apply.ts:82',
   },
   {
     key: 'surfaces.file',
@@ -5032,7 +5035,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'surfaces.file\', () => ctx.slots.register(\n      { name: \'surfaces.file\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-surfaces/src/client/apply.ts:77',
+    source: 'packages/client/ui-surfaces/src/client/apply.ts:78',
   },
   {
     key: 'surfaces.files',
@@ -5069,7 +5072,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'surfaces.files\', () => ctx.slots.register(\n      { name: \'surfaces.files\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-surfaces/src/client/apply.ts:73',
+    source: 'packages/client/ui-surfaces/src/client/apply.ts:74',
   },
   {
     key: 'surfaces.terminal',
@@ -5104,7 +5107,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'surfaces.terminal\', () => ctx.slots.register(\n      { name: \'surfaces.terminal\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-surfaces/src/client/apply.ts:69',
+    source: 'packages/client/ui-surfaces/src/client/apply.ts:70',
   },
   {
     key: 'tool.call.images',
@@ -5146,14 +5149,14 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'tool.call.images\', () => ctx.slots.register(\n      { name: \'tool.call.images\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-tool/src/client/contract/slots.ts:42',
+    source: 'packages/client/ui-tool/src/client/contract/slots.ts:41',
   },
   {
     key: 'tool.call.toolview',
     kind: 'keyed',
     scope: 'session',
     summary: 'Keyed Tool call view; register any Tool name with `key: \'<tool name>\'`.',
-    doc: 'Keyed Tool call view; register any Tool name with `key: \'<tool name>\'`.\nA typo never renders; occupied keys replace their view, unclaimed keys use the generic row.\nThe owner supplies call identity and running or settled nodes through phase props.\nEvery stage supplies `name` and lazy `args`; preparing arguments may be incomplete.\nuseToolCallArgumentsPartial optionally subscribes to the raw argument prefix.',
+    doc: 'Keyed Tool call view; register any Tool name with `key: \'<tool name>\'`.\nA typo never renders; occupied keys replace their view, unclaimed keys use the generic row.\nThe owner supplies call identity and running or settled nodes through phase props.\nEvery stage supplies its current block; preparing arguments may be incomplete.',
     registerOptions: [
       {
         name: 'key',
@@ -5255,7 +5258,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'tool.call.toolview\', () => ctx.slots.register(\n      { name: \'tool.call.toolview\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-tool/src/client/contract/slots.ts:24',
+    source: 'packages/client/ui-tool/src/client/contract/slots.ts:23',
   },
   {
     key: 'tool.view.cordis',

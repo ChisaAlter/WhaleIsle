@@ -42,6 +42,7 @@ function sameMembers(left: readonly NodeReference[], right: readonly NodeReferen
 function structureChanged(previous: ChatNode | undefined, current: ChatNode): boolean {
   if (!isVisibleChatNode(current) && (previous === undefined || !isVisibleChatNode(previous))) return false
   return previous === undefined || previous.kind !== current.kind
+    || previous.processVisibility !== current.processVisibility
     || turnOf(previous) !== turnOf(current)
     || isVisibleChatNode(previous) !== isVisibleChatNode(current)
     || reasoning(previous) !== reasoning(current) || reply(previous) !== reply(current)
@@ -162,7 +163,7 @@ class TurnGroups {
       const node = readNode(input, key)
       // Both Definitions retain the same message id; only its question presentation renders.
       if (node.kind === 'turn-trigger' && replies.has(node.id)) continue
-      if (INDEPENDENT.has(node.kind)) {
+      if (node.processVisibility === 'independent' || INDEPENDENT.has(node.kind)) {
         flush(true)
         emit(key, { kind: 'node', key })
       } else if (node.kind === 'turn-process') {

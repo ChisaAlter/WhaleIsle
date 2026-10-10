@@ -2,7 +2,7 @@
 import type { NativeFileApplication } from '@deepseek-ai/dsh-native-command/types'
 
 import type {
-  AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
+  AttachmentIdType, FileAttachmentRef, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
 } from '@deepseek-ai/dsh-attachment'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { LlmAttemptId, MessageId } from '@deepseek-ai/dsh-llm/brand'
@@ -420,6 +420,18 @@ export interface SessionAttachmentRequest {
 export interface SessionAttachmentValue {
   readonly attachment: ImageAttachmentRef
   readonly data: string
+}
+
+/** Read one published HTML page already referenced by this Session. */
+export interface SessionVisualReplyRequest {
+  readonly sessionId: SessionId
+  readonly attachmentId: AttachmentIdType
+}
+
+/** Exact prepared HTML and its authenticated durable reference. */
+export interface SessionVisualReplyValue {
+  readonly attachment: FileAttachmentRef
+  readonly html: string
 }
 
 /** Pending queue mutation request. */

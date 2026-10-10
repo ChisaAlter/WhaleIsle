@@ -10,6 +10,7 @@
 - `Ctrl+,` 或菜单「设置」。  
 - 桌面侧栏底部的账户入口使用 `settings.launcher`：打开账户菜单，可进入设置、远程配对、登录，或明确重开 API Key 引导。账户入口存在时不显示重复的「设置」按钮和独立「远程」行；没有账户入口时保留这两个回退入口。
 - `openSettings` / `settings-jump` 可深链到 section（如 `market`、`usage-stats`、`appearance`）。
+- 设置 → General：视觉回复开关默认关闭，保存到活动 profile，立即限制新的 HTML 预览和发布；关闭后已发布页面仍可查看。
 - 设置 → 关于：「打开运行目录」打开桌面 `dsh-home`（见 [dsh-home.md](dsh-home.md)）。  
 - Section id 表：[../appendix/settings-sections.md](../appendix/settings-sections.md)
 
