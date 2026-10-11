@@ -100,7 +100,7 @@ function createWhaleBridgeService(deps = {}) {
     const access = management(current);
     return fetchJson(`${access.origin}/api/subscriptions/alerts/claim`, {
       method: 'POST',
-      headers: { Cookie: access.cookie },
+      headers: { Cookie: access.cookie, 'Content-Type': 'application/json' },
     });
   }
 
