@@ -2,6 +2,7 @@ import TeamService from '@deepseek-ai/dsh-experimental-agent-team';
 import { randomUUID } from 'node:crypto';
 import z from '@deepseek-ai/schemastery';
 import { projectDomain, initialState } from './domain.js';
+import { migrateCatalog } from './catalog-migration.js';
 import { acquireWriter } from './files.js';
 import { ProjectService } from './service.js';
 import { registerProjectTransport } from './transport.js';
@@ -25,6 +26,10 @@ export async function apply(ctx) {
     releaseWriter = await acquireWriter(home, randomUUID());
     domain = await ctx.storageDomain.open(projectDomain);
     const table = domain.table('state'); if (!table.get('catalog')) await table.put('catalog', structuredClone(initialState));
+    if (table.get('catalog').version !== 2) {
+      const migrated = await migrateCatalog(table.get('catalog'), ctx.sessionPersistence);
+      await table.update('catalog', () => migrated);
+    }
     const desktop = async (action, payload) => {
       const base = process.env.DSH_DESKTOP_INSTALL_URL, token = process.env.DSH_DESKTOP_INSTALL_TOKEN;
       if (!base || !token) throw new Error('Project desktop bridge is unavailable.');

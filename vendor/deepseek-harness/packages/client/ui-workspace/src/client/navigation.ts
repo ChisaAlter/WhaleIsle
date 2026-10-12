@@ -29,6 +29,11 @@ interface MainSelection {
   readonly subagentAddress?: SubagentAddress
 }
 
+interface OwnedSessionActions {
+  readonly rename: (sessionId: SessionId) => void
+  readonly archive: (sessionId: SessionId) => void
+}
+
 /** A composed feature that adopts a directory from the New Session picker. */
 export interface WorkspaceDirectoryAction {
   /** Stable feature identity, distinct from Workspace identities. */
@@ -48,6 +53,10 @@ export interface StartSessionOptions extends DraftInitializationOptions {
 
 /** Workspace archive and directory operations consumed by Client UI domains. */
 export interface UiWorkspace {
+  /** Register the presentation owner's rename and archive flows; returns their disposer. */
+  registerSessionActions(owner: string, actions: OwnedSessionActions): () => void
+  /** Resolve an action against the Session's current presentation owner, with its identity bound. */
+  resolveSessionAction(sessionId: SessionId, action: keyof OwnedSessionActions): (() => void) | undefined
   /** Additional directory actions in the New Session picker. */
   readonly directoryActions: HostObservable<readonly WorkspaceDirectoryAction[]>
   /** Register one feature action; removal also updates the picker projection. */
@@ -163,6 +172,7 @@ export class DirectoryBrowseError extends Error {
 
 /** Implements Workspace archive and directory UI operations. */
 class UiWorkspaceService extends Service implements UiWorkspace {
+  private readonly sessionActions = new Map<string, OwnedSessionActions>()
   private readonly directoryActionStore = createSnapshotStore<readonly WorkspaceDirectoryAction[]>([])
   readonly directoryActions: HostObservable<readonly WorkspaceDirectoryAction[]> = this.directoryActionStore
   private composedPicker: (() => Promise<string | null>) | undefined
@@ -215,6 +225,23 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       removed = true
       this.directoryActionStore.set(this.directoryActions.getSnapshot().filter(row => row !== action))
     }
+  }
+
+  registerSessionActions(owner: string, actions: OwnedSessionActions): () => void {
+    if (this.sessionActions.has(owner)) throw new Error(`uiWorkspace.registerSessionActions: duplicate owner ${owner}`)
+    this.sessionActions.set(owner, actions)
+    let removed = false
+    return () => {
+      if (removed) return
+      removed = true
+      this.sessionActions.delete(owner)
+    }
+  }
+
+  resolveSessionAction(sessionId: SessionId, action: keyof OwnedSessionActions): (() => void) | undefined {
+    const owner = this.sessions.list.getSnapshot().byId[sessionId]?.presentation?.owner
+    const actions = owner === undefined ? undefined : this.sessionActions.get(owner)
+    return actions === undefined ? undefined : () => { actions[action](sessionId) }
   }
 
   async connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId> {

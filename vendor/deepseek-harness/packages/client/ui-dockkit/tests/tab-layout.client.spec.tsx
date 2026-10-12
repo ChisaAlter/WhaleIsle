@@ -10,14 +10,14 @@ import type { TabId } from '../src/contract/types.ts'
 import { followPointer } from '../src/components/pointer.ts'
 import { seededController, TEST_LABELS } from './fixtures.client.ts'
 
-afterEach(() => { cleanup(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 function mounted(controller = seededController(), options: Partial<ComponentProps<typeof TabLayout>> = {}) {
   const callbacks: PaneCallbacks = {
     onFocusTab: (id) => { controller.focusTab(id); redraw() },
     onFocusPane: (id) => { controller.focusPane(id); redraw() },
     onSplitPane: vi.fn(), onAddTab: vi.fn(), onCloseTab: vi.fn(), onTabPressed: vi.fn(), onDividerPressed: vi.fn(),
-    splitBlock: () => undefined, canAddTab: () => true, canCloseTab: () => true,
+    splitBlock: () => undefined, canAddTab: () => true, canCloseTab: () => true, canDockTab: () => true,
     dropTarget: undefined, draggingTabId: undefined, labels: TEST_LABELS,
     renderTab: tab => <input data-body={tab.id} defaultValue={tab.title} />,
     renderTabTitle: undefined, renderTabMenuItems: undefined,
@@ -37,6 +37,47 @@ function mounted(controller = seededController(), options: Partial<ComponentProp
   }
   return { controller, view, redraw, callbacks, node, body: (id: TabId) => node(`[data-body="${id}"]`) }
 }
+
+it('keeps floating-only panels without a dock action while ordinary floating panels retain it', () => {
+  const controller = seededController()
+  const tab = controller.openContent({ kind: 'observer', contentId: 'observer:project', title: 'Observer' })
+  const pane = controller.floatTab(tab, { x: 20, y: 70, width: 360, height: 300 })
+  const h = mounted(controller)
+  h.redraw({ callbacks: { ...h.callbacks, canDockTab: () => false } })
+  expect(h.view.container.querySelector('[data-dockkit-float-dock]')).toBeNull()
+  expect(h.view.container.querySelector('[data-dockkit-float-close]')).not.toBeNull()
+  const body = h.body(tab)
+  controller.resizeFloat(pane, { x: 20, y: 70, width: 360, height: 38 })
+  h.redraw()
+  expect(h.view.container.querySelector('[data-dockkit-float-dock]')).toBeNull()
+  expect(h.body(tab)).toBe(body)
+  h.redraw({ callbacks: { ...h.callbacks, canDockTab: () => true } })
+  expect(h.view.container.querySelector('[data-dockkit-float-dock]')).not.toBeNull()
+})
+
+it('minimizes a floating tab to its native header and restores the same mounted body', () => {
+  const controller = seededController()
+  controller.setExpanded(true)
+  const tab = getPane(controller.getSnapshot().state, controller.getSnapshot().state.rootId).tabs[0]!
+  controller.floatTab(tab, { x: 20, y: 70, width: 360, height: 300 })
+  const pane = controller.getSnapshot().state.floats[0]!
+  const h = mounted(controller)
+  const body = h.body(tab)
+  expect(body.closest('[data-dockkit-content]')?.getAttribute('aria-hidden')).toBeNull()
+  controller.resizeFloat(pane, { x: 20, y: 70, width: 360, height: 38 })
+  h.redraw()
+  expect(h.body(tab)).toBe(body)
+  expect(body.parentElement).toHaveProperty('hidden', true)
+  expect(body.parentElement).toHaveProperty('inert', true)
+  expect(h.view.container.querySelector('[data-dockkit-float-resize]')).toBeNull()
+  expect(h.node('[data-dockkit-float-title]')).toBeDefined()
+  controller.resizeFloat(pane, { x: 20, y: 70, width: 360, height: 300 })
+  h.redraw()
+  expect(h.body(tab)).toBe(body)
+  expect(body.parentElement).toHaveProperty('hidden', false)
+  expect(body.parentElement).toHaveProperty('inert', false)
+  expect(h.node('[data-dockkit-float-resize]')).toBeDefined()
+})
 
 it('mounts an opted-in hidden body on open while other retained bodies still wait for visibility', () => {
   const controller = seededController()
@@ -81,6 +122,8 @@ it('retains visited bodies and hands keyboard focus to the newly selected strip'
 })
 
 it('keeps body ancestors through pane moves, floating, raising and docking', () => {
+  vi.stubGlobal('innerWidth', 1442)
+  vi.stubGlobal('innerHeight', 920)
   const controller = seededController()
   controller.setExpanded(true)
   const tab = controller.openContent({ kind: 'file', contentId: 'file:a', title: 'A' })
@@ -111,10 +154,19 @@ it('keeps body ancestors through pane moves, floating, raising and docking', () 
   act(() => { controller.placeTab(tab, secondPane, 0); h.redraw() })
   expect(h.body(tab)).toBe(body)
   expect(body.closest('[data-dockkit-host]')).toBe(host)
-  act(() => { controller.floatTab(tab); h.redraw() })
+  act(() => { controller.floatTab(tab, { x: 1110, y: 690, width: 300, height: 200 }); h.redraw() })
   const floating = controller.getSnapshot().state.floats[0]!
   expect(body.closest('[data-dockkit-host]')).toBe(host)
   expect(host.getAttribute('data-dockkit-host')).toBe('float')
+  const saved = controller.getSnapshot()
+  vi.stubGlobal('innerWidth', 961)
+  vi.stubGlobal('innerHeight', 680)
+  fireEvent.resize(window)
+  expect(h.node(`[data-dockkit-float="${floating}"]`).style.left).toBe('661px')
+  expect(h.node(`[data-dockkit-float="${floating}"]`).style.top).toBe('max(var(--dsh-dockkit-float-top, 0px), 480px)')
+  expect(controller.getSnapshot()).toBe(saved)
+  expect(h.body(tab)).toBe(body)
+  expect(body.closest('[data-dockkit-host]')).toBe(host)
   act(() => { controller.setExpanded(false); h.redraw() })
   expect(body.closest('[data-dockkit-content]')?.getAttribute('aria-hidden')).toBeNull()
   fireEvent.pointerDown(h.node(`[data-dockkit-float="${floating}"]`), { pointerId: 1, button: 0 })

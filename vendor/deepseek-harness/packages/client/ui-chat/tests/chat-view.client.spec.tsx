@@ -3138,6 +3138,22 @@ describe('ChatView', () => {
     expect(h.forkAt.mock.calls).toEqual([[3]])
   })
 
+  it('hides Project branches when owner metadata arrives while retaining reply and copy actions', () => {
+    const h = makeHarness({ nodes: [user(1, 'question'), assistant(2, 'answer')], turnEnds: new Map([[1, 3]]) })
+    const row = { id: SID, displayTitle: 'Project', blank: false, running: false, updatedAt: 0, retainedBy: { mainView: 1 } }
+    const sessions = createSnapshotStore<SessionListState>({ ids: [SID], byId: { [SID]: row }, phase: 'ready', projectionsBySession: {} })
+    const view = render(<h.ChatView {...h.props} useSessions={bindSnapshotSelector(sessions)} />)
+    expect(view.getAllByRole('button', { name: '在新对话中分支' })).toHaveLength(1)
+    act(() => { sessions.set({ ...sessions.getSnapshot(), byId: { [SID]: { ...row, presentation: { owner: 'project', title: 'Project' } } } }) })
+    expect(view.queryByRole('button', { name: '在新对话中分支' })).toBeNull()
+    expect(view.getByText('answer')).toBeTruthy()
+    expect(view.getAllByRole('button', { name: '复制' })).toHaveLength(2)
+    expect(h.forkAt).not.toHaveBeenCalled()
+    act(() => { sessions.set({ ...sessions.getSnapshot(), byId: { [SID]: row } }) })
+    fireEvent.click(view.getByRole('button', { name: '在新对话中分支' }))
+    expect(h.forkAt).toHaveBeenCalledWith(3)
+  })
+
   it('disables fork when the indexed Turn has a later steering Node', () => {
     const base = chatSnapshotFixture({
       nodes: [user(1, 'question'), assistant(2, 'answer')],

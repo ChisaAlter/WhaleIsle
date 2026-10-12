@@ -278,6 +278,13 @@ export interface ISidebarRight {
    */
   float(tabId: TabId, rect?: FloatRect): void
   /**
+   * Set a floating pane's viewport rectangle as one recorded layout action.
+   * Missing or docked panes and an unchanged rectangle are left alone.
+   * Programmatic sizes can be smaller than the manual resize floor, allowing
+   * a page to minimize to the native title row while keeping its body mounted.
+   */
+  resizeFloat(paneId: PaneId, rect: FloatRect): void
+  /**
    * Return a floating panel's tab to the active docked pane. Recorded.
    * @param paneId - the floating pane; one that is missing or docked is left alone.
    */
@@ -486,7 +493,8 @@ export class SidebarRightController implements ISidebarRight {
     const replacementPane = replaced === undefined || layout === undefined ? undefined : findTabPane(layout, replaced.id)
     const revealed = layout === undefined ? undefined
       : claim.contentId === pageAddress(claim.kind)
-        ? findPaneContentTab(layout, replacementPane?.host === 'dock' ? replacementPane.id : placement.paneId ?? activeDockPaneId(layout), claim.contentId, claim.kind)
+        ? this.tabs.get(claim.kind)?.floatingOnly === true ? findContentTab(layout, claim.contentId, claim.kind)
+          : findPaneContentTab(layout, replacementPane?.host === 'dock' ? replacementPane.id : placement.paneId ?? activeDockPaneId(layout), claim.contentId, claim.kind)
         : placement.revealIfOpened === false ? undefined : findContentTab(layout, claim.contentId, claim.kind)
     if (replaced === undefined || replaced.id === revealed) { commit(); return }
     this.removeAfterCleanup(sessionId, replaced, commit)
@@ -702,6 +710,16 @@ export class SidebarRightController implements ISidebarRight {
     actions.floatTab(sessionId, tabId, rect)
   }
 
+  /** Set one floating pane's saved rectangle without changing its tab identity. */
+  resizeFloat(paneId: PaneId, rect: FloatRect): void {
+    const { actions, sessionId } = this.require()
+    const pane = this.mountedSurface()?.layout.nodes[paneId]
+    if (pane?.kind !== 'pane' || pane.host !== 'float') return
+    const previous = pane.rect
+    if (previous?.x === rect.x && previous.y === rect.y && previous.width === rect.width && previous.height === rect.height) return
+    actions.resizeFloat(sessionId, paneId, rect)
+  }
+
   /**
    * Return a floating panel's tab to the active docked pane; a missing or docked pane is left alone.
    * @param paneId - the floating pane.
@@ -710,6 +728,8 @@ export class SidebarRightController implements ISidebarRight {
     const { sessionId, actions } = this.require()
     const node = this.mountedSurface()?.layout.nodes[paneId]
     if (node === undefined || node.kind !== 'pane' || node.host !== 'float') return
+    const tab = node.tabs[0] === undefined ? undefined : this.mountedSurface()?.layout.tabs[node.tabs[0]]
+    if (tab !== undefined && this.tabs.get(tab.kind)?.floatingOnly === true) return
     actions.unfloatPane(sessionId, paneId)
   }
 

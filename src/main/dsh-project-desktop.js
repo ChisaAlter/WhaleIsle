@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { createRequire } = require('node:module');
 const { ensureDirectoryLink } = require('./desktop-plugin-link');
 const { missingDeclaredEntries, missingRuntimeFiles } = require('./plugin-runtime-files');
@@ -109,7 +110,7 @@ async function ensureDesktopDshProject(options = {}) {
     '    - id: ui-agent-team',
     '      name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"',
     '    - id: dsh-project',
-    '      name: "dsh-project"',
+    `      name: ${JSON.stringify(pathToFileURL(path.join(runtimeDir, 'lib', 'index.js')).href)}`,
     '',
   ].join('\n');
   fs.writeFileSync(`${overlayFile}.tmp`, contents, 'utf8');

@@ -27,6 +27,8 @@ This package lets users browse grouped or flat Session lists, choose a Workspace
 <a id="use-this-package"></a>
 ## Use this package
 
+Presentation owners can register `uiWorkspace.registerSessionActions(owner, { rename, archive })` and dispose the registration on unload. `resolveSessionAction` binds an action to the current Session presentation owner. Project shortcuts use its owner actions, never ordinary Session fallback; an unavailable owner handler blocks the action. Project coordinators also block the fork shortcut so their native identity remains associated with the Project.
+
 Use the sidebar to browse Workspaces and their Sessions, reorder them, and start new ones; use the picker in the Session Intent hero to choose a Workspace for a new session. An open Workspace shows five idle, non-blank Sessions by default. Running Sessions, including parents with running children, remain visible in their ordered positions without using that quota; the selected blank **New Session** is also an extra row until its first prompt. Each **Show more** click reveals up to five more idle Sessions; after the final batch, **Show less** restores the initial rows while keeping running Sessions visible. Closing and reopening the Workspace also restores this folded projection.
 
 History rows without a stored title use the localized unnamed label (未命名 / Untitled), rather than a directory name. The current blank row remains New Session; other blank rows remain hidden. Rename drafts use the stored title, or start empty when unnamed; unnamed rows do not offer title copying.

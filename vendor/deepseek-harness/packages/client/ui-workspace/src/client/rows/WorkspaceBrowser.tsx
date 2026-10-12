@@ -1113,6 +1113,24 @@ export function WorkspaceBrowser({
       ),
     }
   }), [currentBlank, list.byId, orderBy, orderState, sessionOrderByAccount, workspaces])
+  // Directory selection can leave an unused ordinary blank beside the Project.
+  // Decide from authoritative membership before ordering drops unknown summaries;
+  // keep the complete registry and saved orders for the picker and later chats.
+  const sidebarWorkspaces = useMemo(() => {
+    const projectDirectories = new Set(Object.values(list.byId).flatMap(session =>
+      session.presentation?.owner === 'project' && session.presentation.workingDirectory
+        ? [session.presentation.workingDirectory] : []))
+    const visible = new Set(workspaces.filter(workspace => {
+      const projectDirectory = projectDirectories.has(workspace.path)
+      if (workspace.sessionIds.length === 0) return !projectDirectory
+      return !workspace.sessionIds.every(id => {
+        const session = list.byId[id]
+        return session?.presentation !== undefined
+          || (projectDirectory && session?.blank === true && id !== mainSessionId)
+      })
+    }).map(workspace => workspace.workspaceId))
+    return orderedWorkspaces.filter(workspace => visible.has(workspace.workspaceId))
+  }, [list.byId, mainSessionId, orderedWorkspaces, workspaces])
   const orderedUngroupedSessionIds = useMemo(() => {
     const baseOrder = orderBy === 'updated'
       ? orderByRecency(ungroupedMemberIds, list.byId)
@@ -1609,7 +1627,7 @@ export function WorkspaceBrowser({
                 onSessionDeleteRequest={onSessionDeleteRequest}
                 connectNoDirectory={connectNoDirectory}
                 renderSlot={renderSlot}
-                workspaces={orderedWorkspaces}
+                workspaces={sidebarWorkspaces}
                 scratchCwd={scratchCwd}
                 ungroupedSessionIds={orderedUngroupedSessionIds}
                 workspaceReady={workspaceReady}

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -8,6 +8,7 @@ import type {
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import {
   IconChevronDownOutlineRegular,
+  Button, Input, SegmentedTabs,
   IconUserOutlineRegular, IconUsersOutlineRegular, StateDot, Tag, Tooltip,
   useAnchoredPosition, useDismissOnOutsidePointer, type StateDotState,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -21,6 +22,32 @@ import css from './TeamAction.module.css'
 export interface TeamActionInjected {
   /** Open a roster Session from the current conversation. */
   openTeammate: (sessionId: SessionId, childSessionId: SessionId) => void
+  /** Project-owned current/recent task identities, ordered by actual business activity. */
+  projectTaskIds?: readonly string[]
+}
+
+const memberPageSize = 6
+const taskPageSize = 5
+
+/** Bound each read-only collection independently; changing pages never changes Team state. */
+function TeamPagination({ page, total, pageSize, onChange, label, t }: {
+  page: number
+  total: number
+  pageSize: number
+  onChange: (page: number) => void
+  label: string
+  t: TranslateNS<typeof NS>
+}) {
+  if (total <= pageSize) return null
+  return (
+    <nav className={css.pagination} aria-label={label}>
+      <span className={css.pageRange} aria-live="polite">
+        {t('project.range', { start: page * pageSize + 1, end: Math.min((page + 1) * pageSize, total), total })}
+      </span>
+      <Button size="sm" disabled={page === 0} onClick={() => { onChange(page - 1) }}>{t('project.previous')}</Button>
+      <Button size="sm" disabled={(page + 1) * pageSize >= total} onClick={() => { onChange(page + 1) }}>{t('project.next')}</Button>
+    </nav>
+  )
 }
 
 /** Durable lifecycle overlaid with the member Session's live turn activity. */
@@ -111,7 +138,7 @@ function TeamMemberRow({
         </span>
         <span className={css.memberText}>
           <span className={css.memberName}>
-            <span className={css.memberNameText}>{label}</span>
+            <span className={css.memberNameText} title={label}>{label}</span>
             {isCurrent && <Tag tone="info" className={css.currentTag}>{t('current')}</Tag>}
           </span>
           <small>
@@ -185,12 +212,15 @@ function TaskCard({ task, project, ownerLabel, dependencyLabels, t }: {
 
 /** Render the Team roster and read-only task board. */
 export function TeamAction({
-  sessionId, useSession, useSessions, useSessionStatus, openTeammate, t,
+  sessionId, useSession, useSessions, useSessionStatus, openTeammate, projectTaskIds, t,
 }: TeamActionProps) {
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [history, setHistory] = useState(false)
-  const [page, setPage] = useState(0)
+  const [view, setView] = useState<'current' | 'history'>('current')
+  const [query, setQuery] = useState('')
+  const [memberPage, setMemberPage] = useState(0)
+  const [taskPage, setTaskPage] = useState(0)
+  const viewId = useId()
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const triggerLabelRef = useRef<HTMLSpanElement>(null)
@@ -201,8 +231,16 @@ export function TeamAction({
   const positioned = position !== null
   const leadSessionId = useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? sessionId
   const team = useSessions(state => state.projectionsBySession[leadSessionId]?.values.agentTeam)
-  const sessionRows = useSessions(state => state.byId)
   const project = useSessions(state => state.byId[leadSessionId]?.presentation?.owner === 'project')
+  const liveMembers = useSessionStatus(state => project
+    ? team?.members.filter(member => state.get(member.id)?.running === true).map(member => member.id).join('\n') ?? ''
+    : '')
+  const inactiveMembers = useSessionStatus(state => project
+    ? team?.members.filter(member => state.get(member.id)?.running === false).map(member => member.id).join('\n') ?? ''
+    : '')
+  const summaryLiveMembers = useSessions(state => project
+    ? team?.members.filter(member => state.byId[member.id]?.running === true).map(member => member.id).join('\n') ?? ''
+    : '')
   const opening = useSession(snapshot => snapshot.openState === 'loading')
   const listing = useSessions(state => state.phase === 'pending')
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -220,8 +258,10 @@ export function TeamAction({
     hoverDismissedRef.current = false
     setOpen(false)
     setError(null)
-    setHistory(false)
-    setPage(0)
+    setView('current')
+    setQuery('')
+    setMemberPage(0)
+    setTaskPage(0)
   }, [sessionId])
 
   useEffect(() => cancelHoverChange, [])
@@ -281,18 +321,53 @@ export function TeamAction({
   }, [open])
 
   const compact = team !== undefined && team.members.length === 1 && team.tasks.length === 0
+  const taskById = new Map<string, TeamTask>(team?.tasks.map(task => [task.id, task]))
+  const taskByOwner = new Map<string, TeamTask>()
+  // Prefer the Project's real current task when a native member has older tasks too.
+  for (const task of [...(projectTaskIds?.flatMap(id => taskById.get(id) ?? []) ?? []), ...(team?.tasks ?? [])]) {
+    if (task.ownerName !== undefined && !taskByOwner.has(task.ownerName)) taskByOwner.set(task.ownerName, task)
+  }
   const memberLabel = (member: TeamMemberProjection): string => {
     if (!project) return member.name
     if (member.role === 'lead') return t('project.lead')
-    return team?.tasks.find(task => task.ownerName === member.name)?.subject ?? member.description ?? member.name
+    return taskByOwner.get(member.name)?.subject ?? member.description ?? member.name
   }
-  const taskRows = project && team !== undefined
-    ? history ? team.tasks.filter(task => task.status === 'completed').toReversed()
-      : [...team.tasks.filter(task => task.status !== 'completed'), ...team.tasks.filter(task => task.status === 'completed').slice(-3).reverse()]
-    : team?.tasks ?? []
-  const pageCount = Math.max(1, Math.ceil(taskRows.length / 20)), currentPage = Math.min(page, pageCount - 1)
-  const visibleTasks = project ? taskRows.slice(currentPage * 20, (currentPage + 1) * 20) : taskRows
-  const visibleMembers = project ? (team?.members ?? []).filter(member => member.role === 'lead' || member.id === sessionId || member.phase === 'provisioning' || sessionRows[member.id]?.running === true || visibleTasks.some(task => task.ownerName === member.name)) : team?.members ?? []
+  const memberByName = new Map(team?.members.map(member => [member.name, member]))
+  const inactiveMemberIds = new Set(inactiveMembers.split('\n'))
+  const liveMemberIds = new Set([...liveMembers.split('\n'), ...summaryLiveMembers.split('\n').filter(id => !inactiveMemberIds.has(id))])
+  const activeOwnerNames = new Set(team?.members.filter(member => liveMemberIds.has(member.id) || member.phase === 'provisioning').map(member => member.name))
+  const taskOrder = new Map(projectTaskIds?.map((id, index) => [id, index]))
+  const activeTasks = (team?.tasks.filter(task => projectTaskIds === undefined
+    ? task.status === 'pending' || task.status === 'in_progress'
+    : task.ownerName !== undefined && activeOwnerNames.has(task.ownerName)) ?? [])
+    .sort((a, b) => (taskOrder.get(a.id) ?? taskOrder.size) - (taskOrder.get(b.id) ?? taskOrder.size))
+  // Old Projects have no request association. Only their recent recorded completions
+  // supplement live work; insertion order never stands in for a current Request.
+  const relatedTasks = projectTaskIds?.flatMap(id => taskById.get(id) ?? [])
+    ?? [...(team?.tasks ?? [])].reverse().filter(task => task.status === 'completed').slice(0, 3)
+  const currentTasks = [...new Map([...activeTasks, ...relatedTasks].map(task => [task.id, task])).values()]
+  const currentOwners = new Set(currentTasks.flatMap(task => task.ownerName === undefined ? [] : [task.ownerName]))
+  const search = query.trim().toLocaleLowerCase()
+  const matchingTasks = new Set(team?.tasks.filter(task => `${task.subject}\n${task.description}`.toLocaleLowerCase().includes(search)).map(task => task.id))
+  const matchingOwners = new Set(team?.tasks.filter(task => matchingTasks.has(task.id)).map(task => task.ownerName))
+  const taskCandidates = !project ? team?.tasks ?? [] : view === 'history'
+    ? [...(team?.tasks ?? [])].reverse().filter(task => {
+      const owner = task.ownerName === undefined ? undefined : memberByName.get(task.ownerName)
+      return matchingTasks.has(task.id) || owner !== undefined && memberLabel(owner).toLocaleLowerCase().includes(search)
+    })
+    : currentTasks
+  const memberCandidates = !project ? team?.members ?? [] : view === 'history'
+    ? [...(team?.members ?? [])].reverse().filter(member => memberLabel(member).toLocaleLowerCase().includes(search)
+      || (member.description ?? '').toLocaleLowerCase().includes(search) || matchingOwners.has(member.name))
+    : (team?.members ?? []).filter(member => member.role === 'lead' || currentOwners.has(member.name)
+      || liveMemberIds.has(member.id) || member.phase === 'provisioning')
+  const visibleMemberPage = Math.min(memberPage, Math.max(0, Math.ceil(memberCandidates.length / memberPageSize) - 1))
+  const visibleTaskPage = Math.min(taskPage, Math.max(0, Math.ceil(taskCandidates.length / taskPageSize) - 1))
+  const visibleMembers = project ? memberCandidates.slice(visibleMemberPage * memberPageSize, (visibleMemberPage + 1) * memberPageSize) : memberCandidates
+  const visibleTasks = project ? taskCandidates.slice(visibleTaskPage * taskPageSize, (visibleTaskPage + 1) * taskPageSize) : taskCandidates
+
+  useEffect(() => { setMemberPage(visibleMemberPage) }, [visibleMemberPage])
+  useEffect(() => { setTaskPage(visibleTaskPage) }, [visibleTaskPage])
 
   return (
     <div
@@ -324,7 +399,7 @@ export function TeamAction({
       {open && createPortal(
         <div
           ref={panelRef}
-          className={compact ? `${css.panel} ${css.panelCompact}` : css.panel}
+          className={`${css.panel}${compact ? ` ${css.panelCompact}` : ''}${project ? ` ${css.projectPanel}` : ''}`}
           style={position ?? { visibility: 'hidden', left: 0, top: 0 }}
           role="dialog"
           tabIndex={-1}
@@ -332,8 +407,30 @@ export function TeamAction({
           data-team-panel
           onMouseEnter={cancelHoverChange}
           onMouseLeave={scheduleHoverClose}
+          onFocusCapture={() => { if (project) pinnedRef.current = true }}
+          onPointerDownCapture={() => { if (project) pinnedRef.current = true }}
         >
-          <div className={css.body}>
+          {project && team !== undefined && !compact && (
+            <div className={css.projectToolbar}>
+              <SegmentedTabs
+                label={t('project.view')}
+                value={view}
+                items={[
+                  { value: 'current', label: t('project.recent'), id: `${viewId}-current`, panelId: `${viewId}-panel` },
+                  { value: 'history', label: t('project.history'), id: `${viewId}-history`, panelId: `${viewId}-panel` },
+                ]}
+                onChange={next => { setView(next); setQuery(''); setMemberPage(0); setTaskPage(0) }}
+              />
+              {view === 'history' && <label className={css.searchLabel}>
+                <span>{t('project.search')}</span>
+                <Input type="search" value={query} placeholder={t('project.searchHint')}
+                  onChange={event => { setQuery(event.target.value); setMemberPage(0); setTaskPage(0) }} />
+              </label>}
+            </div>
+          )}
+          <div className={css.body} id={project && team !== undefined && !compact ? `${viewId}-panel` : undefined}
+            role={project && team !== undefined && !compact ? 'tabpanel' : undefined}
+            aria-labelledby={project && team !== undefined && !compact ? `${viewId}-${view}` : undefined}>
             {error !== null && (
               <div className={css.error} role="alert"><StateDot state="error" />{error}</div>
             )}
@@ -345,19 +442,13 @@ export function TeamAction({
             )}
             {team !== undefined && (
               <>
-                {project && <div className={css.meta}>
-                  <button type="button" onClick={() => { setHistory(value => !value); setPage(0) }}>{t(history ? 'project.currentWork' : 'project.history')}</button>
-                  <span>{t(history ? 'project.history' : 'project.currentWork')} · {taskRows.length}</span>
-                  {currentPage > 0 && <button type="button" onClick={() => { setPage(currentPage - 1) }}>{t('project.previous')}</button>}
-                  {currentPage + 1 < pageCount && <button type="button" onClick={() => { setPage(currentPage + 1) }}>{t('project.next')}</button>}
-                </div>}
                 {team.failure !== undefined && (
                   <div className={css.error} role="alert"><StateDot state="error" />{t('failure', { message: team.failure })}</div>
                 )}
                 <section>
                   <h3>
                     {t('roster')}
-                    {team.members.length > 1 && <span className={css.count}>{team.members.length}</span>}
+                    {memberCandidates.length > 1 && <span className={css.count}>{memberCandidates.length}</span>}
                   </h3>
                   <div className={css.roster}>
                     {visibleMembers.map(member => (
@@ -376,24 +467,31 @@ export function TeamAction({
                       />
                     ))}
                   </div>
+                  {project && memberCandidates.length === 0 && <p className={css.emptyNotice}>{t('project.noMembers')}</p>}
+                  {project && <TeamPagination page={visibleMemberPage} total={memberCandidates.length} pageSize={memberPageSize}
+                    onChange={setMemberPage} label={t('project.memberPages')} t={t} />}
                 </section>
                 <section>
-                  {team.tasks.length === 0
-                    ? <p className={css.emptyNotice}>{t('empty')}</p>
+                  {taskCandidates.length === 0
+                    ? <p className={css.emptyNotice}>{t(!project ? 'empty' : view === 'history' && search ? 'project.noTasks' : team.tasks.length === 0 ? 'project.empty' : 'project.noCurrentWork')}</p>
                     : (
                       <>
-                        <h3>{t('tasks')}<span className={css.count}>{team.tasks.length}</span></h3>
+                        <h3>{t(project ? 'project.work' : 'tasks')}<span className={css.count}>{taskCandidates.length}</span></h3>
+                        {project && view === 'current' && projectTaskIds === undefined && relatedTasks.length > 0
+                          && <p className={css.collectionHint}>{t('project.legacyRecent')}</p>}
                         <div className={css.tasks}>
                           {visibleTasks.map(task => {
-                            const owner = team.members.find(member => member.name === task.ownerName)
+                            const owner = task.ownerName === undefined ? undefined : memberByName.get(task.ownerName)
                             return <TaskCard key={task.id} task={task} project={project}
                               ownerLabel={project && owner !== undefined ? memberLabel(owner) : task.ownerName ?? t('unowned')}
                               dependencyLabels={task.blockedBy.map(id => project
-                                ? team.tasks.find(dependency => dependency.id === id)?.subject ?? t('project.missingDependency')
+                                ? taskById.get(id)?.subject ?? t('project.missingDependency')
                                 : id)}
                               t={t} />
                           })}
                         </div>
+                        {project && <TeamPagination page={visibleTaskPage} total={taskCandidates.length} pageSize={taskPageSize}
+                          onChange={setTaskPage} label={t('project.workPages')} t={t} />}
                       </>
                     )}
                 </section>

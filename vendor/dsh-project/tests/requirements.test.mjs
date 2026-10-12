@@ -5,8 +5,8 @@ import { ProjectService } from '../lib/service.js';
 function fixture() {
   const events = [], project = { id: 'project', coordinatorSessionId: 'lead', storageRoot: '/project-materials', lifecycle: 'ready', paused: false, diagnostics: [], updatedAt: 0 };
   const session = { id: 'lead', snapshotEvents: () => events }, lead = { id: 'lead', session }, state = { revision: 0, projects: [project], workstreams: [], workers: [] };
-  let persist = true, flushes = 0;
-  const ctx = { agents: new Map([['lead', lead]]), get: () => undefined, sessions: { flush: async () => { flushes++; if (persist instanceof Error) throw persist; return persist; } }, subagents: { registerContinuationPolicy: () => () => {} }, agentTeams: { registerPolicy: () => () => {}, listTasks: () => [] } };
+  let persist = true, flushes = 0, durableEvents = [];
+  const ctx = { agents: new Map([['lead', lead]]), get: () => undefined, sessions: { flush: async () => { flushes++; if (persist instanceof Error) throw persist; if (persist) durableEvents = structuredClone(events); return persist; } }, sessionPersistence: { stat: async () => ({}), open: async () => ({ read: async () => ({ events: durableEvents }), close: async () => {} }) }, subagents: { registerContinuationPolicy: () => () => {} }, agentTeams: { registerPolicy: () => () => {}, listTasks: () => [] } };
   const service = new ProjectService(ctx, { get: () => state, update: async (_key, change) => Object.assign(state, change(state)) }, { home: '', desktop: async () => ({}) });
   service.recovering = false; service.notes = async () => {};
   const actor = service.actor(lead), signal = new AbortController().signal;
@@ -14,33 +14,56 @@ function fixture() {
   let turn = 0;
   const human = texts => { turn++; append('turn/start', { turn }); texts.forEach((text, index) => append('user/message', { id: `human-${turn}-${index}`, source: { kind: 'user' }, content: [{ type: 'text', text }] })); };
   const exec = name => { const callId = `call-${events.length}`; append('tool/call', { turn, callId, name }); return { signal, callId }; };
-  const accept = args => service.acceptRequest(actor, { goal: 'Repair and validate login', authorization: 'development', criteria: ['Login works'], constraints: ['Preserve user work'], ...args }, exec('project_request'));
+  const result = (execution, value) => append('tool/result', { turn, message: { toolCallId: execution.callId, isError: false, content: [{ type: 'text', text: JSON.stringify(value) }] } });
+  const accept = async args => { const execution = exec('project_request'); const value = await service.acceptRequest(actor, { goal: 'Repair and validate login', scopeCeiling: 'development', conditions: ['Login works'], constraints: ['Preserve user work'], ...args }, execution); result(execution, value); return { request: state.requests.find(row => row.id === value.id) }; };
   const add = (request, outcome = 'completed') => {
     const id = `work-${state.workstreams.length}`, ref = `ref-${id}`, runId = `run-${id}`, report = { delegationRef: ref, callId: `report-${id}`, outcome, summary: 'Actual worker finding', artifacts: [], evidence: ['Observed result'], remainingIssues: [], at: Date.now() };
-    const receipt = { ref, runId, phase: 'accepted', scope: 'readonly', requestId: request.id, requestVersion: request.currentVersion, report, source: {}, writePaths: [] };
-    const work = { id, projectId: project.id, workerSessionId: `member-${id}`, currentDelegationRef: ref, delegations: [receipt], settlements: [{ runId, delegationRefs: [ref], stopReason: 'completed', summarizedBy: '' }], pendingSummary: true, latestReport: report };
+    const receipt = { ref, runId, phase: 'accepted', scope: 'readonly', report, source: { ...service.requirements.version(request).source }, writePaths: [] };
+    const work = { id, title: id, status: 'done', updatedAt: Date.now(), projectId: project.id, workerSessionId: `member-${id}`, currentDelegationRef: ref, delegations: [receipt], settlements: [{ runId, delegationRefs: [ref], stopReason: 'completed', summarizedBy: '' }], pendingSummary: true, latestReport: report };
     state.workstreams.push(work); state.workers.push({ sessionId: work.workerSessionId, workstreamId: id, projectId: project.id, stopped: false, phase: 'idle' });
-    service.requirements.bind(state, receipt, id); return { work, receipt, ref: { workstreamId: id, delegationRef: ref, runId, reportId: report.callId } };
+    return { get work() { return state.workstreams.find(row => row.id === id); }, get receipt() { return this.work.delegations.find(row => row.ref === ref); }, ref: { workstreamId: id, delegationRef: ref, runId, reportId: report.callId } };
   };
-  const declare = (request, refs, extra = {}) => service.declareDelivery(actor, { requestId: request.id, requestVersion: request.currentVersion, outcome: 'completed', summary: 'The required result is available.', references: refs, evidence: ['Actual worker evidence; no independent UI claim'], remainingIssues: [], ...extra }, exec('project_deliver'));
+  const declare = async (request, refs, extra = {}) => { const execution = exec('project_deliver'); const value = await service.deliver(actor, { requestId: request.id, requestRevision: request.revision, outcome: 'completed', summary: 'The required result is available.', reportRefs: refs.filter(row => row.reportId).map(({ workstreamId, delegationRef, reportId }) => ({ workstreamId, delegationRef, reportId })), terminalRefs: refs.map(({ workstreamId, delegationRef, runId }) => ({ workstreamId, delegationRef, runId })), evidence: ['Actual worker evidence; no independent UI claim'], remainingIssues: [], ...extra }, execution); result(execution, value); return value; };
   const reply = async (id, interrupted = false) => { const event = append('assistant/message', { turn, interrupted, message: { id, content: [{ type: 'text', text: 'Visible useful result.' }] } }); await service.assistantReply(session, event); };
   const end = async kind => { const event = append('turn/end', { turn, reason: { kind } }); await service.assistantReply(session, event); };
-  return { service, state, project, actor, session, events, human, exec, accept, add, declare, reply, end, flushes: () => flushes, persist(value) { persist = value; } };
+  return { service, state, project, actor, session, events, human, exec, result, accept, add, declare, reply, end, flushes: () => flushes, persist(value) { persist = value; }, checkpoint() { durableEvents = structuredClone(events); } };
 }
+
+test('authority requirements page their original goals by Project without mutating authorization', async () => {
+  const f = fixture();
+  for (let i = 0; i < 25; i++) {
+    const id = `saved-${String(i).padStart(2, '0')}`; f.human([`Original human goal ${i}`]);
+    const { request } = await f.accept({ title: `Saved goal ${i}`, goal: `Original full goal ${i}` });
+    Object.assign(request, { id, updatedAt: Math.floor(i / 2) }); f.service.requirements.version(request).authorityError = `Original input missing ${i}`;
+  }
+  f.human(['Verified normal request']); const { request: normal } = await f.accept({}); Object.assign(normal, { id: 'verified-normal', updatedAt: 1000 });
+  f.state.requests.push({ ...structuredClone(f.state.requests[0]), id: 'foreign-goal', projectId: 'other-project', updatedAt: 2000 });
+  const before = structuredClone(f.state), read = cursor => f.service.command('store/list', { projectId: f.project.id, kind: 'requests', ...(cursor ? { cursor } : {}) });
+  const first = (await read()).requests, second = (await read(first.nextCursor)).requests, third = (await read(second.nextCursor)).requests;
+  assert.equal(first.total, 25); assert.deepEqual([first.items.length, second.items.length, third.items.length], [10, 10, 5]); assert.equal(third.nextCursor, null);
+  const expected = ['saved-24', ...Array.from({ length: 12 }, (_, i) => [String(22 - i * 2).padStart(2, '0'), String(23 - i * 2).padStart(2, '0')]).flat().map(id => `saved-${id}`)];
+  const all = [...first.items, ...second.items, ...third.items]; assert.deepEqual(all.map(row => row.id), expected);
+  assert.equal(all[0].goal, 'Original full goal 24'); assert.equal(all[0].authorityError, 'Original input missing 24');
+  await assert.rejects(read('foreign-goal'), { code: 'request_cursor' }); await assert.rejects(read(normal.id), { code: 'request_cursor' });
+  assert.deepEqual(f.state, before, 'Reading original requirements cannot restore authority, revise requests or start work');
+});
 
 test('all consumed human inputs retain their order; independent goals and revisions preserve source authority', async () => {
   const f = fixture(); f.human(['Investigate and fix login', 'Preserve the existing credentials']);
   const { request } = await f.accept({});
-  assert.deepEqual(request.versions[0].inputs.map(row => row.text), ['Investigate and fix login', 'Preserve the existing credentials']);
+  assert.deepEqual(request.versions[0].source.messageIds, ['human-1-0', 'human-1-1']);
+  assert.equal(request.versions[0].source.text, 'Investigate and fix login\n\nPreserve the existing credentials');
   const source = f.service.source(f.actor, f.exec('project_delegate'));
-  assert.deepEqual(source.inputs.map(row => row.messageId), ['human-1-0', 'human-1-1']);
-  f.human(['Also support empty passwords', 'Unrelated: document the API']);
-  const revised = (await f.accept({ requestId: request.id, messageIds: ['human-2-0'] })).request;
-  const independent = (await f.accept({ goal: 'Document the API', authorization: 'docs', messageIds: ['human-2-1'] })).request;
-  assert.equal(revised.currentVersion, 2); assert.equal(revised.versions[0].inputs.length, 2);
-  assert.deepEqual(revised.versions[1].inputs.map(row => row.text), ['Investigate and fix login', 'Preserve the existing credentials', 'Also support empty passwords']);
-  assert.notEqual(revised.id, independent.id); assert.deepEqual(independent.versions[0].inputs.map(row => row.text), ['Unrelated: document the API']);
-  await assert.rejects(f.accept({ messageIds: ['fabricated'] }), { code: 'unauthorized' });
+  assert.deepEqual(source.messageIds, ['human-1-0', 'human-1-1']);
+  f.human(['Also support empty passwords']);
+  const revised = (await f.accept({ requestId: request.id })).request;
+  f.human(['Unrelated: document the API']);
+  const independent = (await f.accept({ goal: 'Document the API', scopeCeiling: 'docs' })).request;
+  assert.equal(revised.revision, 2); assert.equal(revised.versions[0].source.messageIds.length, 2);
+  assert.equal(revised.versions[1].source.text, 'Also support empty passwords');
+  assert.notEqual(revised.id, independent.id); assert.equal(independent.versions[0].source.text, 'Unrelated: document the API');
+  f.human([]);
+  await assert.rejects(f.accept({}), { code: 'unauthorized' });
 });
 
 test('a stop while implicit acceptance is queued cannot save a request or delegate work', async () => {
@@ -51,7 +74,7 @@ test('a stop while implicit acceptance is queued cannot save a request or delega
   const gate = new Promise(done => { release = done; }), queued = new Promise(done => { announce = done; });
   const serial = f.service.serial.bind(f.service); let calls = 0;
   f.service.serial = work => {
-    if (++calls === 2) { serial(() => gate); announce(); } // After dependency validation, before implicit acceptance.
+    if (++calls === 1) { serial(() => gate); announce(); } // Immediately before implicit acceptance's authoritative transaction.
     return serial(work);
   };
   const delegation = f.service.delegate(f.actor, { scope: 'readonly', brief: 'Inspect only' }, f.exec('project_delegate'));
@@ -63,16 +86,16 @@ test('a stop while implicit acceptance is queued cannot save a request or delega
   assert.equal(f.state.revision, 1, 'only the durable pause writes; stopped acceptance does not revise the catalog');
   assert.equal(f.state.workstreams.length, 0); assert.equal(f.state.workers.length, 0);
   f.human(['Explicitly continue the inspection']);
-  assert.equal((await f.accept({ authorization: 'readonly' })).request.currentVersion, 1, 'a fresh actual human input can still accept work');
+  assert.equal((await f.accept({ scopeCeiling: 'readonly' })).request.revision, 1, 'a fresh actual human input can still accept work');
 });
 
 test('queued request revisions recheck cancellation while held existing acceptance remains an idempotent replay', async () => {
   const f = fixture(); f.human(['Inspect the repository']);
-  const args = { goal: 'Inspect', authorization: 'readonly' }, originalExec = f.exec('project_request');
-  const { request } = await f.service.acceptRequest(f.actor, args, originalExec);
-  f.service.projectHolds.set(f.project.id, request.versions[0].inputs.at(-1).messageId);
+  const args = { goal: 'Inspect', scopeCeiling: 'readonly' }, originalExec = f.exec('project_request');
+  const request = await f.service.acceptRequest(f.actor, args, originalExec);
+  f.service.projectHolds.set(f.project.id, f.state.requests[0].versions[0].source.messageId);
   const revision = f.state.revision;
-  assert.deepEqual((await f.service.acceptRequest(f.actor, args, originalExec)).request, request);
+  assert.deepEqual(await f.service.acceptRequest(f.actor, args, originalExec), request);
   assert.equal(f.state.revision, revision, 'replaying a saved call after a stop does not rewrite it');
   f.human(['Continue with an additional finding']);
   let release; const gate = new Promise(done => { release = done; });
@@ -81,87 +104,106 @@ test('queued request revisions recheck cancellation while held existing acceptan
   const acceptance = f.service.acceptRequest(f.actor, { ...args, requestId: request.id }, exec);
   const rejected = assert.rejects(acceptance, { name: 'AbortError' });
   controller.abort(); release(); await Promise.all([blocking, rejected]);
-  assert.equal(f.state.requests.length, 1); assert.equal(f.state.requests[0].currentVersion, 1);
+  assert.equal(f.state.requests.length, 1); assert.equal(f.state.requests[0].revision, 1);
   assert.equal(f.state.revision, revision, 'a cancelled queued acceptance cannot save a requirement revision');
   const continued = (await f.accept({ ...args, requestId: request.id })).request;
-  assert.equal(continued.currentVersion, 2);
-  assert.deepEqual(continued.versions[1].inputs.map(row => row.text), ['Inspect the repository', 'Continue with an additional finding']);
+  assert.equal(continued.revision, 2);
+  assert.equal(continued.versions[0].source.text, 'Inspect the repository');
+  assert.equal(continued.versions[1].source.text, 'Continue with an additional finding');
+});
+
+test('a hold established immediately after accepted authority blocks delegation before dependency or work preparation', async () => {
+  const f = fixture(); f.human(['Inspect the repository']);
+  const assignment = f.service.requirements.assignment.bind(f.service.requirements);
+  f.service.requirements.assignment = async (...args) => { const accepted = await assignment(...args); f.service.projectHolds.set(f.project.id, accepted.source.messageId); return accepted; };
+  let preparation = 0; f.service.desktop = async () => { preparation++; return {}; };
+  const execution = f.exec('project_delegate');
+  await assert.rejects(f.service.delegate(f.actor, { title: 'Inspect', brief: 'Inspect only', scope: 'readonly' }, execution), { code: 'stopped' });
+  assert.equal(f.state.requests.length, 1, 'already accepted authority remains saved');
+  assert.equal(f.state.workstreams.length, 0); assert.equal(f.state.workers.length, 0); assert.equal(preparation, 0);
 });
 
 test('stages retain original authority on a native notification; readonly cannot silently become development', async () => {
   const f = fixture(); f.human(['Investigate, fix and verify']); const { request } = await f.accept({});
-  f.events.push({ seq: f.events.length, type: 'turn/start', data: { turn: 2 } }, { seq: f.events.length + 1, type: 'user/message', data: { id: 'settlement', source: { kind: 'subagent-settled' }, content: [] } });
-  const source = f.service.requirements.source(f.actor, f.exec('project_delegate'), request.id);
-  assert.doesNotThrow(() => f.service.requirements.authorize(source, 'readonly', []));
-  assert.doesNotThrow(() => f.service.requirements.authorize(source, 'worker', []));
-  f.human(['Only investigate this independent error']); const readonly = (await f.accept({ authorization: 'readonly' })).request;
-  const restricted = f.service.requirements.source(f.actor, f.exec('project_delegate'), readonly.id);
-  assert.throws(() => f.service.requirements.authorize(restricted, 'worker', []), { code: 'unauthorized' });
-  await f.service.write(state => { state.projects[0].paused = true; }); assert.throws(() => f.service.requirements.source(f.actor, f.exec('project_delegate'), request.id), { code: 'stopped' });
+  const result = f.add(request); f.human([]);
+  f.events.push({ seq: f.events.length, type: 'user/message', data: { id: 'settlement', source: { kind: 'subagent-settled', senderSessionId: result.work.workerSessionId, runId: result.receipt.runId }, content: [] } });
+  const assignment = args => f.service.requirements.assignment(f.actor, { requestId: request.id, requestRevision: request.revision, ...args }, f.exec('project_delegate'));
+  assert.equal((await assignment({ scope: 'readonly' })).source.authorizationCallId, request.versions[0].source.authorizationCallId);
+  assert.equal((await assignment({ scope: 'development' })).source.authorizationCallId, request.versions[0].source.authorizationCallId);
+  await f.service.write(state => { state.projects[0].paused = true; }); await assert.rejects(assignment({ scope: 'development' }), { code: 'unauthorized' });
+  f.state.projects[0].paused = false;
+  f.human(['Only investigate this independent error']); const readonly = (await f.accept({ scopeCeiling: 'readonly' })).request;
+  await assert.rejects(f.service.requirements.assignment(f.actor, { requestId: readonly.id, requestRevision: readonly.revision, scope: 'development' }, f.exec('project_delegate')), { code: 'unauthorized' });
 });
 
 test('reading facts and replying progress never deliver; declaration waits for completed turn and confirmed persistence', async () => {
   const f = fixture(); f.human(['Fix login']); const { request } = await f.accept({}), result = f.add(request);
   f.service.consume('lead', 1, [{ id: result.work.id, reports: [result.receipt.ref], runs: [result.receipt.runId] }]);
-  await f.reply('progress'); assert.equal(result.work.pendingSummary, true); assert.equal(f.state.deliveries, undefined);
+  await f.reply('progress'); assert.equal(result.work.pendingSummary, true); assert.deepEqual(f.state.deliveries, []);
   await f.declare(request, [result.ref]); await f.reply('final');
   assert.equal(f.state.workstreams[0].pendingSummary, true); assert.equal(f.flushes(), 0);
   await f.end('completed'); assert.equal(f.flushes(), 1);
-  const delivery = f.state.deliveries[0]; assert.equal(delivery.messageId, 'final'); assert.ok(delivery.committedAt);
+  const delivery = f.state.deliveries[0]; assert.equal(delivery.replyMessageId, 'final'); assert.equal(delivery.status, 'delivered');
   assert.equal(f.state.workstreams[0].pendingSummary, false); assert.equal(f.state.workstreams[0].latestReport.summarizedBy, 'final');
-  await f.service.requirements.reconcile(f.session); assert.equal(f.flushes(), 1); assert.equal(f.state.deliveries.length, 1);
+  await f.service.requirements.reconcile(f.project); assert.equal(f.flushes(), 1); assert.equal(f.state.deliveries.length, 1);
 });
 
 test('missing persistence keeps results pending; durable reply reconciliation recovers without worker execution', async () => {
   const f = fixture(); f.human(['Fix login']); const { request } = await f.accept({}), result = f.add(request);
-  await f.declare(request, [result.ref]); await f.reply('preserved'); f.persist(false); await f.end('completed');
-  assert.equal(f.state.workstreams[0].pendingSummary, true); assert.equal(f.state.deliveries[0].committedAt, undefined); assert.match(f.state.deliveries[0].error, /persistent Session listener/);
-  f.persist(true); await f.service.requirements.reconcile(f.session);
-  assert.equal(f.state.workstreams[0].pendingSummary, false); assert.equal(f.state.deliveries[0].messageId, 'preserved'); assert.ok(f.state.deliveries[0].committedAt);
+  await f.declare(request, [result.ref]); await f.reply('preserved'); f.persist(false); await assert.rejects(f.end('completed'), /No native Session persistence/);
+  assert.equal(f.state.workstreams[0].pendingSummary, true); assert.equal(f.state.deliveries[0].status, 'draft'); assert.match(f.state.deliveries[0].error, /No native Session persistence/);
+  await f.service.requirements.reconcile(f.project);
+  assert.equal(f.state.deliveries[0].status, 'draft', 'an attached reply absent from the durable prefix cannot recover a delivery');
+  f.persist(true); f.checkpoint(); await f.service.requirements.reconcile(f.project);
+  assert.equal(f.state.workstreams[0].pendingSummary, false); assert.equal(f.state.deliveries[0].replyMessageId, 'preserved'); assert.equal(f.state.deliveries[0].status, 'delivered');
   assert.equal(f.state.workstreams.length, 1); assert.equal(f.state.workstreams[0].delegations.length, 1);
+  f.state.deliveries.push({ ...f.state.deliveries[0], id: 'later-unproven-history', at: Date.now() + 1, status: 'historical', error: 'The later saved declaration has no native acceptance.' });
+  const projected = await f.service.command('detail', { projectId: f.project.id });
+  assert.equal(projected.project.activity.state, 'summaryFailed', 'an older successful delivery cannot hide the latest unproven handover');
+  assert.equal(projected.project.currentRequests[0].handoverError, f.state.deliveries.at(-1).error);
+  assert.equal(f.service.requirements.deliveries(f.project.id).items[0].status, 'historical');
 });
 
 test('revision, missing required result, unsettled work and interrupted replies cannot create complete delivery', async () => {
   for (const kind of ['revision', 'missing', 'unsettled', 'interrupted']) {
     const f = fixture(); f.human(['Fix login']); const { request } = await f.accept({}), result = f.add(request);
-    if (kind === 'missing') { await assert.rejects(f.declare(request, []), { code: 'delivery_incomplete' }); continue; }
-    if (kind === 'unsettled') { result.work.settlements = []; await assert.rejects(f.declare(request, [result.ref]), { code: 'delivery_evidence' }); continue; }
+    if (kind === 'missing') { await assert.rejects(f.declare(request, []), { code: 'result_missing' }); continue; }
+    if (kind === 'unsettled') { result.work.settlements = []; await assert.rejects(f.declare(request, [result.ref]), { code: 'result_unsettled' }); continue; }
     await f.declare(request, [result.ref]);
     if (kind === 'revision') { f.human(['Also verify empty passwords']); await f.accept({ requestId: request.id }); }
     else await f.reply('interrupted-result', true);
-    await f.end('completed'); assert.equal(f.state.deliveries[0].committedAt, undefined); assert.equal(f.state.workstreams[0].pendingSummary, true);
+    await f.end('completed'); assert.notEqual(f.state.deliveries[0].status, 'delivered'); assert.equal(f.state.workstreams[0].pendingSummary, true);
   }
 });
 
 test('a new requirement reuses saved evidence without a worker, and changed execution identities require review', async () => {
   const f = fixture(); f.human(['Fix login']); const { request: original } = await f.accept({}), result = f.add(original);
-  f.human(['Explain the saved login repair']); const { request: explanation } = await f.accept({ goal: 'Explain the saved repair', authorization: 'readonly' });
+  f.human(['Explain the saved login repair']); const { request: explanation } = await f.accept({ goal: 'Explain the saved repair', scopeCeiling: 'readonly' });
   await f.declare(explanation, [result.ref]); await f.reply('explanation'); await f.end('completed');
   const delivery = f.state.deliveries[0];
-  assert.deepEqual(delivery.requiredWork, []); assert.equal(f.state.workstreams.length, 1);
-  assert.equal(f.service.requirements.deliveryView(delivery).needsReview, false);
-  for (const change of ['delegation', 'run', 'report']) {
+  assert.deepEqual(delivery.requiredDelegations, []); assert.equal(f.state.workstreams.length, 1);
+  assert.equal(f.service.requirements.applicable(delivery), true);
+  for (const change of ['run', 'report']) {
     const work = f.state.workstreams[0], receipt = work.delegations[0];
     const saved = { current: work.currentDelegationRef, run: receipt.runId, report: receipt.report.callId };
     if (change === 'delegation') work.currentDelegationRef = 'next-assignment';
     if (change === 'run') receipt.runId = 'next-run';
     if (change === 'report') receipt.report.callId = 'replacement-report';
-    const view = f.service.requirements.deliveryView(delivery);
-    assert.equal(view.current, true, 'the historical delivery retains its own requirement version');
-    assert.equal(view.needsReview, true, `${change} changes invalidate reused evidence applicability`);
+    assert.equal(delivery.requestRevision, explanation.revision, 'the historical delivery retains its own requirement revision');
+    assert.equal(f.service.requirements.applicable(delivery), false, `${change} changes invalidate exact reused evidence applicability`);
     work.currentDelegationRef = saved.current; receipt.runId = saved.run; receipt.report.callId = saved.report;
   }
-  assert.equal(f.service.requirements.views('project').find(row => row.id === original.id).delivery, null, 'the second requirement does not complete the first');
+  assert.deepEqual(f.service.requirements.current('project').map(row => row.id), [original.id], 'the second requirement does not complete the first');
 });
 
 test('duplicate declaration and failed flush preserve a single delivery for exact reply recovery', async () => {
-  const f = fixture(); f.human(['Explain existing facts']); const { request } = await f.accept({ authorization: 'readonly' });
-  const exec = f.exec('project_deliver'), args = { requestId: request.id, requestVersion: 1, outcome: 'completed', summary: 'Existing facts explained', references: [], evidence: [], remainingIssues: [] };
-  await f.service.declareDelivery(f.actor, args, exec); await f.service.declareDelivery(f.actor, args, exec);
-  assert.equal(f.state.deliveries.length, 1); await f.reply('exact-reply'); f.persist(new Error('disk persistence failed')); await f.end('completed');
-  assert.equal(f.state.deliveries[0].committedAt, undefined); assert.match(f.state.deliveries[0].error, /disk persistence/);
-  f.persist(true); await f.service.requirements.reconcile(f.session); await f.service.requirements.reconcile(f.session);
-  assert.equal(f.state.deliveries.length, 1); assert.equal(f.state.deliveries[0].messageId, 'exact-reply'); assert.ok(f.state.deliveries[0].committedAt);
+  const f = fixture(); f.human(['Explain existing facts']); const { request } = await f.accept({ scopeCeiling: 'readonly' });
+  const exec = f.exec('project_deliver'), args = { requestId: request.id, requestRevision: 1, outcome: 'completed', summary: 'Existing facts explained', reportRefs: [], evidence: [], remainingIssues: [] };
+  const value = await f.service.deliver(f.actor, args, exec); await f.service.deliver(f.actor, args, exec); f.result(exec, value);
+  assert.equal(f.state.deliveries.length, 1); await f.reply('exact-reply'); f.persist(new Error('disk persistence failed')); await assert.rejects(f.end('completed'), /disk persistence failed/);
+  assert.equal(f.state.deliveries[0].status, 'draft'); assert.match(f.state.deliveries[0].error, /disk persistence/);
+  f.persist(true); f.checkpoint(); await f.service.requirements.reconcile(f.project); await f.service.requirements.reconcile(f.project);
+  assert.equal(f.state.deliveries.length, 1); assert.equal(f.state.deliveries[0].replyMessageId, 'exact-reply'); assert.equal(f.state.deliveries[0].status, 'delivered');
 });
 
 test('one requirement delivers its investigation, repair and verification together; later head changes require review', async () => {
@@ -169,26 +211,115 @@ test('one requirement delivers its investigation, repair and verification togeth
   for (const stage of ['repair', 'verification']) {
     const receipt = { ...first.receipt, ref: stage, runId: `run-${stage}`, scope: stage === 'repair' ? 'docs' : 'readonly', report: { ...first.receipt.report, delegationRef: stage, callId: `report-${stage}` } };
     first.work.delegations.push(receipt); first.work.settlements.push({ runId: receipt.runId, delegationRefs: [stage], stopReason: 'completed', summarizedBy: '' });
-    first.work.currentDelegationRef = stage; first.work.latestReport = receipt.report; f.service.requirements.bind(f.state, receipt, first.work.id);
+    first.work.currentDelegationRef = stage; first.work.latestReport = receipt.report;
     refs.push({ workstreamId: first.work.id, delegationRef: stage, runId: receipt.runId, reportId: receipt.report.callId });
   }
   await f.declare(request, refs); await f.reply('all-stages-delivered'); await f.end('completed');
-  const delivery = f.state.deliveries[0]; assert.ok(delivery.committedAt); assert.equal(delivery.references.length, 3);
-  assert.equal(f.service.requirements.deliveryView(delivery).needsReview, false); assert.equal(f.state.workstreams[0].pendingSummary, false);
+  const delivery = f.state.deliveries[0]; assert.equal(delivery.status, 'delivered'); assert.equal(delivery.reportRefs.length, 3);
+  assert.equal(f.service.requirements.applicable(delivery), true); assert.equal(f.state.workstreams[0].pendingSummary, false);
   assert.equal(f.state.workstreams[0].delegations.every(row => row.report.summarizedBy === 'all-stages-delivered'), true);
+  first.work.delegations.push({ ...first.receipt, ref: 'later-execution', runId: '', phase: 'queued', report: undefined });
   f.state.workstreams[0].currentDelegationRef = 'later-execution';
-  assert.equal(f.service.requirements.deliveryView(delivery).needsReview, true);
+  assert.equal(f.service.requirements.applicable(delivery), false);
 });
 
-test('evidence obsolete before a no-worker delivery remains reviewable, and a change during reply cannot commit', async () => {
+test('an explicit no-worker explanation preserves prior evidence while new required work during reply prevents commit', async () => {
   const f = fixture(); f.human(['Repair login']); const { request: original } = await f.accept({}), result = f.add(original);
   const next = { ...result.receipt, ref: 'new-assignment', runId: 'new-run', report: { ...result.receipt.report, delegationRef: 'new-assignment', callId: 'new-report' } };
   result.work.delegations.push(next); result.work.currentDelegationRef = next.ref;
-  f.human(['Explain the prior saved finding']); const { request: explanation } = await f.accept({ authorization: 'readonly' });
+  f.human(['Explain the prior saved finding']); const { request: explanation } = await f.accept({ scopeCeiling: 'readonly' });
   await f.declare(explanation, [result.ref]); await f.reply('prior-finding'); await f.end('completed');
-  const delivery = f.state.deliveries[0]; assert.ok(delivery.committedAt); assert.deepEqual(delivery.requiredWork, []);
-  assert.equal(f.service.requirements.deliveryView(delivery).needsReview, true); assert.equal(f.state.workers.length, 1);
-  f.human(['Explain again']); const { request: again } = await f.accept({ authorization: 'readonly' });
-  await f.declare(again, [result.ref]); await f.reply('changed-before-flush'); f.state.workstreams[0].currentDelegationRef = 'third-assignment'; await f.end('completed');
-  assert.equal(f.state.deliveries[1].committedAt, undefined); assert.match(f.state.deliveries[1].error, /execution changed/);
+  const delivery = f.state.deliveries[0]; assert.equal(delivery.status, 'delivered'); assert.deepEqual(delivery.requiredDelegations, []);
+  assert.equal(f.service.requirements.applicable(delivery), true, 'an explicit explanation may use an unchanged prior receipt without recreating work'); assert.equal(f.state.workers.length, 1);
+  f.human(['Continue the same repair']); const { request: again } = await f.accept({ requestId: original.id });
+  next.report = { ...next.report, outcome: 'completed' }; result.work.settlements.push({ runId: next.runId, delegationRefs: [next.ref], stopReason: 'completed', summarizedBy: '' });
+  await f.declare(again, [{ workstreamId: result.work.id, delegationRef: next.ref, runId: next.runId, reportId: next.report.callId }]); await f.reply('changed-before-flush');
+  result.work.delegations.push({ ...next, source: { ...again.versions.at(-1).source }, ref: 'third-assignment', runId: '', phase: 'queued', report: undefined }); result.work.currentDelegationRef = 'third-assignment'; await f.end('completed');
+  assert.equal(f.state.deliveries[1].status, 'obsolete'); assert.match(f.state.deliveries[1].error, /Required work changed/);
+});
+
+test('task cards group an actual request, team work and delivery; archive only changes their presentation', async () => {
+  const f = fixture(); f.human(['Repair login and verify it']);
+  const { request } = await f.accept({ title: 'Repair login' }), result = f.add(request);
+  const current = await f.service.command('requests/list', { projectId: f.project.id, kind: 'current' });
+  assert.equal(current.total, 1); assert.equal(current.items[0].id, request.id);
+  assert.equal(current.items[0].workPreview[0].workstreamId, result.ref.workstreamId);
+  assert.equal(current.items[0].workPreview[0].delegationRef, result.ref.delegationRef);
+  assert.equal(current.items[0].workPreview[0].workerSessionId, result.work.workerSessionId);
+  assert.equal(current.items[0].status, 'pendingDelivery', 'a completed member report does not deliver the whole request');
+  assert.equal(current.items[0].members[0].status, 'completed', 'member status describes this request work, not global worker phase');
+  const worker = f.state.workers[0];
+  worker.phase = 'active'; worker.activeRunId = result.ref.runId;
+  assert.equal((await f.service.command('requests/get', { projectId: f.project.id, requestId: request.id })).card.work[0].status, 'running', 'live execution is shown before an old completed receipt');
+  worker.phase = 'stopping';
+  assert.equal((await f.service.command('requests/get', { projectId: f.project.id, requestId: request.id })).card.work[0].status, 'stopping');
+  worker.phase = 'idle'; delete worker.activeRunId;
+  const report = result.receipt.report; result.receipt.report = undefined;
+  assert.equal((await f.service.command('requests/get', { projectId: f.project.id, requestId: request.id })).card.work[0].status, 'blocked', 'a terminal without its report is not a pending delivery');
+  result.receipt.report = report;
+  assert.equal((await f.service.command('requests/get', { projectId: f.project.id, requestId: request.id })).card.versions[0].goal, request.versions[0].goal);
+  await assert.rejects(f.service.command('requests/archive', { projectId: f.project.id, requestId: request.id }), { code: 'request_active' });
+
+  await f.declare(request, [result.ref]); await f.reply('visible-result'); await f.end('completed');
+  assert.equal((await f.service.command('requests/list', { projectId: f.project.id, kind: 'current' })).total, 0);
+  const completed = (await f.service.command('requests/list', { projectId: f.project.id, kind: 'completed' })).items[0];
+  assert.equal(completed.status, 'completed'); assert.equal(completed.delivery.applicable, true);
+  const exact = (await f.service.command('requests/get', { projectId: f.project.id, requestId: request.id })).card;
+  assert.equal(exact.delivery.reportRefs[0].reportId, result.ref.reportId);
+  assert.equal(exact.work[0].reportAt, result.receipt.report.at);
+  assert.equal(exact.work[0].terminalStopReason, 'completed');
+  const before = structuredClone({ workstreams: f.state.workstreams, workers: f.state.workers, deliveries: f.state.deliveries });
+  const archived = await f.service.command('requests/archive', { projectId: f.project.id, requestId: request.id });
+  assert.equal(typeof archived.archivedAt, 'number');
+  assert.equal((await f.service.command('requests/list', { projectId: f.project.id, kind: 'completed' })).total, 0);
+  assert.equal((await f.service.command('requests/list', { projectId: f.project.id, kind: 'archived' })).items[0].id, request.id);
+  assert.deepEqual({ workstreams: f.state.workstreams, workers: f.state.workers, deliveries: f.state.deliveries }, before);
+  await f.service.command('requests/restore', { projectId: f.project.id, requestId: request.id });
+  assert.equal((await f.service.command('requests/list', { projectId: f.project.id, kind: 'completed' })).total, 1);
+  await f.service.command('requests/archive', { projectId: f.project.id, requestId: request.id });
+  f.human(['Also verify empty passwords']); await f.accept({ requestId: request.id });
+  assert.equal(f.state.requests[0].archivedAt, undefined, 'a new real human revision returns the same task card to the active list');
+  assert.equal((await f.service.command('requests/list', { projectId: f.project.id, kind: 'current' })).items[0].revision, 2);
+});
+
+test('request card pages have stable identities and never archive an unproven result', async () => {
+  const f = fixture(); let newest;
+  for (let index = 0; index < 12; index++) {
+    f.human([`Goal ${index}`]); const { request } = await f.accept({ title: `Goal ${index}` });
+    request.updatedAt = index; newest = request;
+  }
+  await f.declare(newest, []); await f.reply('newest-completed'); await f.end('completed');
+  const first = await f.service.command('requests/list', { projectId: f.project.id, kind: 'current' });
+  const second = await f.service.command('requests/list', { projectId: f.project.id, kind: 'current', cursor: first.nextCursor });
+  assert.equal(first.total, 11); assert.deepEqual([first.items.length, second.items.length], [10, 1]);
+  assert.equal(first.items[0].title, 'Goal 10'); assert.equal(second.nextCursor, null);
+  const completed = await f.service.command('requests/list', { projectId: f.project.id, kind: 'completed' });
+  assert.equal(completed.total, 1); assert.equal(completed.items[0].id, newest.id);
+  await assert.rejects(f.service.command('requests/list', { projectId: f.project.id, kind: 'archived', cursor: first.nextCursor }), { code: 'request_cursor' });
+  await assert.rejects(f.service.command('requests/archive', { projectId: f.project.id, requestId: first.items[0].id }), { code: 'request_active' });
+  assert.equal(f.state.requests.some(row => row.archivedAt !== undefined), false);
+});
+
+test('an archived delivery returns to current when its actual prerequisite changes', async () => {
+  const f = fixture(); f.human(['Repair login']); const { request: repair } = await f.accept({ title: 'Repair login' }), result = f.add(repair);
+  f.human(['Establish the runtime baseline']); const { request: baseline } = await f.accept({ title: 'Runtime baseline' }), prerequisite = f.add(baseline);
+  result.receipt.report.prerequisites = [{ workstreamId: prerequisite.ref.workstreamId,
+    delegationRef: prerequisite.ref.delegationRef, reportId: prerequisite.ref.reportId }];
+  await f.declare(repair, [result.ref]); await f.reply('repair-delivered'); await f.end('completed');
+  await f.service.command('requests/archive', { projectId: f.project.id, requestId: repair.id });
+  assert.equal((await f.service.command('requests/list', { projectId: f.project.id, kind: 'archived' })).total, 1);
+
+  const next = { ...prerequisite.receipt, ref: 'runtime-follow-up', runId: 'run-runtime-follow-up', phase: 'queued', report: undefined };
+  prerequisite.work.delegations.push(next); prerequisite.work.currentDelegationRef = next.ref;
+  const current = await f.service.command('requests/list', { projectId: f.project.id, kind: 'current' });
+  assert.equal(current.items.find(card => card.id === repair.id)?.status, 'needsReview');
+  assert.equal(typeof current.items.find(card => card.id === repair.id)?.archivedAt, 'number', 'the current card still offers restore for its persisted archive marker');
+  assert.equal((await f.service.command('requests/list', { projectId: f.project.id, kind: 'archived' })).total, 0);
+  assert.equal(typeof (await f.service.command('requests/get', { projectId: f.project.id, requestId: repair.id })).card.archivedAt, 'number');
+  await assert.rejects(f.service.command('requests/archive', { projectId: f.project.id, requestId: repair.id }), { code: 'request_active' });
+  await f.service.command('requests/restore', { projectId: f.project.id, requestId: repair.id });
+  assert.equal(f.state.requests.find(row => row.id === repair.id).archivedAt, undefined);
+  prerequisite.work.delegations.pop(); prerequisite.work.currentDelegationRef = prerequisite.ref.delegationRef;
+  assert.equal((await f.service.command('requests/list', { projectId: f.project.id, kind: 'completed' })).items.find(card => card.id === repair.id)?.status, 'completed');
+  assert.equal((await f.service.command('requests/list', { projectId: f.project.id, kind: 'archived' })).total, 0);
 });

@@ -7,16 +7,11 @@ export class ProjectApprovals {
   }
   get native() { return this.service.ctx.get('approval'); }
 
-  /** Only the current human-authored Lead turn can enable asking for a new assignment. */
+  /** A live requirement retains the ability to ask; native Approval owns every decision. */
   requested(actor, source, scope) {
     if (scope !== 'worker' || this.native?.policyOf(actor.agent.session) !== 'ask') return false;
     const events = actor.agent.session.snapshotEvents();
-    if (source.requestId) {
-      const request = this.service.requirements.get(source.requestId, actor.project.id), version = this.service.requirements.current(request);
-      return version.version === source.requestVersion && version.authorization === 'worker'
-        && version.inputs.every(input => events.some(event => event.type === 'user/message' && event.data.source.kind === 'user' && event.data.id === input.messageId));
-    }
-    const call = events.findLast(event => event.type === 'tool/call' && event.data.callId === source.callId);
+    const call = events.findLast(event => event.type === 'tool/call' && event.data.callId === (source.authorizationCallId ?? source.callId));
     const start = call && events.findLast(event => event.type === 'turn/start' && event.data.turn === call.data.turn);
     return Boolean(call && start && events.some(event => event.type === 'user/message' && event.seq > start.seq && event.seq < call.seq
       && event.data.id === source.messageId && event.data.source.kind === 'user'));

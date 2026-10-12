@@ -9,15 +9,17 @@ import { projectDirectory, safeProjectSubdirectory } from '../lib/files.js';
 function setup() {
   const project = { id: 'project', coordinatorSessionId: 'lead', storageRoot: '/project-materials', lifecycle: 'ready', paused: false, diagnostics: [], updatedAt: 0 };
   const state = { revision: 1, projects: [project, { ...project, id: 'other' }], workstreams: [], workers: [] };
-  const tasks = [], lead = { id: 'lead', status: 'idle', session: { id: 'lead', snapshotEvents: () => [{ type: 'turn/start', data: { turn: 1 } }] } };
+  const events = [{ seq: 0, type: 'turn/start', data: { turn: 1 } }];
+  const tasks = [], lead = { id: 'lead', status: 'idle', session: { id: 'lead', snapshotEvents: () => events } };
   const teams = { registerPolicy: () => () => {}, listTasks: () => tasks };
-  const ctx = { agents: new Map([['lead', lead]]), sessionPersistence: { stat: async () => ({}) }, get: () => undefined,
+  const ctx = { agents: new Map([['lead', lead]]), sessionPersistence: { stat: async () => ({}) }, sessions: { flush: async () => true }, get: () => undefined,
     subagents: { registerContinuationPolicy: () => () => {} }, agentTeams: teams };
   const service = new ProjectService(ctx, { get: () => state, update: async (_key, change) => { Object.assign(state, change(state)); } }, { home: '', desktop: async () => ({}) });
   function add(id, current, updatedAt) {
-    const report = { delegationRef: `ref-${id}`, summary: `Full report ${id}`, outcome: 'completed', evidence: [], remainingIssues: [], artifacts: [{ path: `/original-cwd/result/${id}`, sha256: 'recorded-hash' }] };
+    const report = { delegationRef: `ref-${id}`, summary: `Full report ${id}`, outcome: 'completed', evidence: [], remainingIssues: [], at: updatedAt, callId: `report-${id}`, artifacts: [{ path: `/original-cwd/result/${id}`, sha256: 'recorded-hash', size: 1, type: 'file' }] };
     const receipt = { ref: `ref-${id}`, phase: current ? 'queued' : 'accepted', scope: 'readonly',
-      brief: 'Assignment text '.repeat(1000), source: { text: 'Original human text '.repeat(1000) }, ...(current ? {} : { report }) };
+      brief: 'Assignment text '.repeat(1000), source: { sessionId: 'lead', messageId: `human-${id}`, callId: `delegate-${id}`, text: 'Original human text '.repeat(1000) },
+      writePaths: [], messageId: `assignment-${id}`, runId: current ? '' : `run-${id}`, error: '', createdAt: updatedAt, ...(current ? {} : { report }) };
     const work = { id, projectId: project.id, title: id, workerSessionId: `session-${id}`, currentDelegationRef: receipt.ref,
       status: current ? 'open' : 'done', brief: receipt.brief, blockedBy: [], blockedReason: '', pendingSummary: false,
       createdAt: 0, updatedAt, delegations: [receipt], settlements: [], ...(current ? {} : { latestReport: report }) };
@@ -28,7 +30,10 @@ function setup() {
     return { work, worker, receipt, report };
   }
   const read = (endpoint, input = {}) => service.command(endpoint, { projectId: project.id, ...input });
-  return { service, state, tasks, project, add, read, lead };
+  const append = (type, data) => { const event = { seq: events.length, type, data }; events.push(event); return event; };
+  const result = (turn, callId, value) => append('tool/result', { turn, step: 0, message: { id: `result-${callId}`, role: 'tool', source: { kind: 'tool', callId },
+    toolCallId: callId, isError: false, content: [{ type: 'text', text: JSON.stringify(value) }] } });
+  return { service, state, tasks, project, add, read, lead, events, append, result };
 }
 
 test('initial detail bounds both work groups, preserves priority and omits report and delegation payloads', async () => {
@@ -123,7 +128,8 @@ test('explicit details resolve unloaded original member identity and only the cu
   assert.equal(detail.workstream.delegation.source.text, work.delegations[0].source.text);
   await assert.rejects(f.read('workstreams/get', { workerSessionId: worker.sessionId, projectId: 'other' }), { code: 'missing' });
   await assert.rejects(f.read('workstreams/get', { workstreamId: work.id, workerSessionId: worker.sessionId }), { code: 'work_identity' });
-  work.delegations.push({ ref: 'new-request', phase: 'queued', scope: 'readonly' }); work.currentDelegationRef = 'new-request';
+  work.delegations.push({ ref: 'new-request', phase: 'queued', scope: 'readonly', brief: 'Continue the original work', writePaths: [], messageId: '', runId: '', error: '', createdAt: 100,
+    source: { sessionId: 'lead', messageId: 'new-human', callId: 'new-delegate', text: 'Continue the original work' } }); work.currentDelegationRef = 'new-request';
   const continued = await f.read('workstreams/get', { workstreamId: work.id });
   assert.equal(continued.workstream.latestReport, undefined, 'a previous report cannot appear as the new assignment result');
   assert.equal(continued.worker.sessionId, worker.sessionId);
@@ -145,7 +151,50 @@ test('Project activity accounts for preparing and failed members outside the sel
   failure.worker.stopped = true;
   preparing.receipt.phase = 'accepted'; preparing.work.status = 'done'; preparing.work.pendingSummary = true;
   project = (await f.read('list')).projects.find(row => row.id === f.project.id);
-  assert.equal(project.activity.blocked, 0); assert.equal(project.activity.pendingSummary, 1); assert.equal(project.activity.state, 'pendingSummary');
+  assert.equal(project.activity.blocked, 0); assert.equal(project.activity.pendingSummary, 1); assert.equal(project.activity.state, 'pendingDelivery');
+});
+
+test('a successful current handover resolves review while the preceding handover keeps its original history', async () => {
+  const f = setup(), item = f.add('continued-goal', false, 1);
+  const source = { ...item.receipt.source, requestId: 'goal', requestRevision: 1, authorizationCallId: 'accept-goal' };
+  item.receipt.source = source;
+  f.state.requests = [{ id: 'goal', projectId: f.project.id, title: 'Complete the goal', revision: 1, createdAt: 1, updatedAt: 1,
+    versions: [{ revision: 1, title: 'Complete the goal', goal: 'Complete and verify the goal', constraints: [], conditions: ['Verified result'], scope: 'readonly', writePaths: [], source, at: 1 }] }];
+  const handover = (id, receipt, at) => ({ id, projectId: f.project.id, requestId: 'goal', requestRevision: 1, title: 'Complete the goal',
+    summary: `Verified result ${id}`, outcome: 'completed', evidence: ['Actual verification'], remainingIssues: [],
+    reportRefs: [{ workstreamId: item.work.id, delegationRef: receipt.ref, reportId: receipt.report.callId }],
+    requiredDelegations: [{ workstreamId: item.work.id, delegationRef: receipt.ref, runId: receipt.runId }],
+    declaredCallId: `deliver-${id}`, sessionId: f.lead.id, turn: at, status: 'delivered', replyMessageId: `reply-${id}`, at });
+  f.state.deliveries = [handover('preceding', item.receipt, 1)];
+  const next = { ...item.receipt, ref: 'continued-result', runId: 'continued-run',
+    report: { ...item.report, delegationRef: 'continued-result', callId: 'continued-report', at: 2 } };
+  item.work.delegations.push(next); item.work.currentDelegationRef = next.ref; item.work.updatedAt = 2;
+  f.project.paused = true;
+  let project = (await f.read('list')).projects.find(row => row.id === f.project.id);
+  assert.equal(project.activity.needsReview, 1); assert.equal(project.activity.state, 'needsReview', 'a safety hold does not conceal changed delivery evidence');
+  f.state.deliveries.push(handover('current', next, 2));
+  project = (await f.read('list')).projects.find(row => row.id === f.project.id);
+  assert.equal(project.activity.needsReview, 0); assert.equal(project.activity.state, 'done');
+  assert.equal(project.paused, true, 'a valid delivered goal stays done while its execution safety hold is retained');
+  assert.deepEqual(project.currentRequests, []);
+  const { deliveries: history } = await f.read('store/list', { kind: 'deliveries' });
+  assert.deepEqual(history.items.map(row => [row.id, row.applicable]), [['current', true], ['preceding', false]]);
+  assert.equal(history.items[1].replyMessageId, 'reply-preceding');
+  assert.equal(history.items[1].reportRefs[0].delegationRef, item.receipt.ref);
+  const failedDraft = { ...handover('failed-after-completed', next, 3), status: 'draft', error: 'The latest handover tool failed.' };
+  delete failedDraft.replyMessageId; f.state.deliveries.push(failedDraft);
+  project = (await f.read('list')).projects.find(row => row.id === f.project.id);
+  assert.equal(project.paused, true); assert.equal(project.activity.state, 'summaryFailed'); assert.equal(project.activity.summaryFailed, 1);
+  assert.deepEqual(project.currentRequests.map(row => row.id), ['goal']);
+  assert.equal(project.currentRequests[0].handoverError, failedDraft.error, 'an old completed delivery cannot hide a newer failed attempt');
+  const unfinishedDraft = { ...failedDraft, id: 'awaiting-current-reply', at: 4 }; delete unfinishedDraft.error;
+  f.state.deliveries.push(unfinishedDraft);
+  project = (await f.read('list')).projects.find(row => row.id === f.project.id);
+  assert.equal(project.activity.state, 'paused', 'an unfinished handover still requires continuation under a hold');
+  assert.equal(project.activity.summaryFailed, 0); assert.equal(project.currentRequests.length, 1);
+  f.project.diagnostics = ['The original coordinator could not be inspected.'];
+  project = (await f.read('list')).projects.find(row => row.id === f.project.id);
+  assert.equal(project.activity.state, 'blocked', 'a current recovery diagnostic takes precedence over the safety hold');
 });
 
 test('generated notes keep active work and preserve a full UTF-8 user body beside oversized legacy summaries', async t => {
@@ -176,7 +225,7 @@ test('generated notes keep active work and preserve a full UTF-8 user body besid
   assert.equal(saved.userText, user); assert.ok((await fs.stat(path)).size <= 512000);
 });
 
-test('notes and progress replies preserve pending results; historical results remain bounded and reachable', async t => {
+test('reading and progress replies preserve outcomes; explicit handovers consume only exact reports and native terminals', async t => {
   const f = setup(), home = await fs.mkdtemp(join(tmpdir(), 'whale-project-consumed-'));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   f.service.home = home; f.project.storageRoot = await projectDirectory(home, f.project.id);
@@ -185,32 +234,65 @@ test('notes and progress replies preserve pending results; historical results re
   item.work.pendingSummary = true;
   for (let i = 0; i < 12; i++) {
     const ref = `past-ref-${i}`, runId = `past-run-${i}`;
-    item.work.delegations.unshift({ ...initial, ref, runId, phase: 'accepted', report: { ...item.report, delegationRef: ref, summary: `Actual past report ${i}` } });
-    item.work.settlements.push({ runId, delegationRefs: [ref], summary: `Actual past terminal ${i}`, summarizedBy: '' });
+    item.work.delegations.unshift({ ...initial, ref, runId, phase: 'accepted', report: { ...item.report, delegationRef: ref, callId: `past-report-${i}`, summary: `Actual past report ${i}` } });
+    item.work.settlements.push({ runId, delegationRefs: [ref], stopReason: 'completed', summary: `Actual past terminal ${i}`, summarizedBy: '' });
   }
-  item.work.settlements.push({ runId: 'no-report-run', delegationRefs: ['no-report-ref'], summarizedBy: '', summary: 'No report was supplied' });
+  item.work.delegations.unshift({ ...initial, ref: 'no-report-ref', runId: 'no-report-run', phase: 'accepted' });
+  item.work.settlements.push({ runId: 'no-report-run', delegationRefs: ['no-report-ref'], stopReason: 'error', summarizedBy: '', summary: 'No report was supplied' });
   await f.service.notes(f.project.id);
   const actor = { role: 'coordinator', project: f.project, agent: f.lead };
-  const reply = id => f.service.assistantReply(f.lead.session, { type: 'assistant/message', data: { turn: 1, interrupted: false, message: { id, content: [{ type: 'text', text: 'Visible summary of the facts just read.' }] } } });
+  let turn = 1;
+  const start = id => {
+    f.append('turn/start', { turn: ++turn });
+    f.append('user/message', { id, source: { kind: 'user' }, content: [{ type: 'text', text: 'Summarize these stored outcomes; do not restart the work.' }] });
+  };
+  const reply = async id => {
+    await f.service.assistantReply(f.lead.session, f.append('assistant/message', { turn, message: { id, content: [{ type: 'text', text: 'Visible summary of the stated recorded facts.' }] } }));
+    await f.service.assistantReply(f.lead.session, f.append('turn/end', { turn, reason: { kind: 'completed' } }));
+  };
   const emptyCurrent = await f.service.readStoreTool(actor, { path: 'notes.md' });
   assert.equal(emptyCurrent.work[0].report, undefined); await reply('continued-acknowledgement');
   assert.ok(f.service.stream(item.work.id).settlements.every(terminal => !terminal.summarizedBy), 'a current empty report cannot consume older outcomes');
+  start('summary-goal-human');
+  const goal = { title: 'Review unfinished work', goal: 'Summarize recorded reports and preserve unfinished work', scopeCeiling: 'readonly', conditions: ['Explain the exact results and unresolved work'] };
+  f.append('tool/call', { turn, step: 0, callId: 'accept-summary', name: 'project_request', arguments: JSON.stringify(goal) });
+  const request = await f.service.acceptRequest(actor, goal, { callId: 'accept-summary', signal: new AbortController().signal });
+  f.result(turn, 'accept-summary', request);
+  const handover = async (id, reports, terminalRefs = []) => {
+    start(`human-${id}`);
+    const args = { requestId: request.id, requestRevision: request.revision, summary: 'Review of exact stored outcomes', outcome: 'partial', evidence: ['Read the referenced records'],
+      remainingIssues: ['The original work has unresolved outcomes'], reportRefs: reports.map(report => ({ workstreamId: item.work.id, delegationRef: report.delegationRef, reportId: report.callId })), terminalRefs };
+    f.append('tool/call', { turn, step: 0, callId: id, name: 'project_deliver', arguments: JSON.stringify(args) });
+    const result = await f.service.deliver(actor, args, { callId: id, signal: new AbortController().signal });
+    f.result(turn, id, result);
+    await reply(`reply-${id}`);
+    assert.equal(f.state.deliveries.find(row => row.id === result.deliveryId).status, 'delivered');
+  };
   const first = await f.service.readStoreTool(actor, { path: 'notes.md', workstreamId: item.work.id });
   assert.equal(first.history.items.length, 10); assert.ok(first.nextCursor);
   for (const row of first.history.items) assert.ok(row.terminal.delegationRefs.includes(row.report.delegationRef));
-  await reply('first-history-summary');
-  assert.equal(f.service.stream(item.work.id).settlements.filter(terminal => terminal.summarizedBy).length, 0);
+  await reply('first-history-progress');
+  assert.ok(f.service.stream(item.work.id).settlements.every(terminal => !terminal.summarizedBy), 'reading historical reports and replying does not declare a handover');
+  await handover('first-history-handover', first.history.items.map(row => row.report));
+  assert.equal(f.service.stream(item.work.id).settlements.filter(terminal => terminal.summarizedBy).length, 10);
   assert.equal(f.service.stream(item.work.id).pendingSummary, true);
+  start('read-last-history');
   const last = await f.service.readStoreTool(actor, { path: 'notes.md', workstreamId: item.work.id, cursor: first.nextCursor });
-  assert.equal(last.history.items.length, 2); assert.equal(last.nextCursor, 'terminal:'); await reply('last-history-summary');
+  assert.equal(last.history.items.length, 2); assert.equal(last.nextCursor, 'terminal:'); await reply('last-history-progress');
+  assert.equal(f.service.stream(item.work.id).settlements.filter(terminal => terminal.summarizedBy).length, 10, 'later ordinary replies do not consume unread delivery references');
+  await handover('last-history-handover', last.history.items.map(row => row.report));
   const current = f.service.stream(item.work.id);
-  assert.ok(current.delegations.filter(receipt => receipt.report).every(receipt => !receipt.report.summarizedBy));
+  assert.ok(current.delegations.filter(receipt => receipt.report).every(receipt => receipt.report.summarizedBy));
   assert.equal(current.settlements.at(-1).summarizedBy, '', 'a terminal omitted from the actual tool response remains unconsumed');
   assert.equal(current.pendingSummary, true);
+  start('read-terminal');
   const terminalPage = await f.service.readStoreTool(actor, { path: 'notes.md', workstreamId: item.work.id, cursor: last.nextCursor });
   assert.equal(terminalPage.history.items.length, 1); assert.equal(terminalPage.history.items[0].terminal.summary, 'No report was supplied');
-  assert.equal(terminalPage.nextCursor, null); await reply('actual-terminal-summary');
-  assert.equal(f.service.stream(item.work.id).pendingSummary, true, 'reading a terminal and replying cannot replace explicit delivery');
+  assert.equal(terminalPage.nextCursor, null); await reply('terminal-progress');
+  assert.equal(f.service.stream(item.work.id).pendingSummary, true, 'reading the actual no-report terminal does not consume it');
+  await handover('terminal-handover', [], [{ workstreamId: item.work.id, delegationRef: 'no-report-ref', runId: 'no-report-run' }]);
+  assert.equal(f.service.stream(item.work.id).pendingSummary, false, 'only its explicit completed handover consumes the exact no-report terminal');
+  assert.equal(f.service.stream(item.work.id).settlements.at(-1).summarizedBy, 'reply-terminal-handover');
 });
 
 test('materials results page by original report identity without losing previous reports or documents', async t => {
@@ -220,21 +302,14 @@ test('materials results page by original report identity without losing previous
   const docs = await safeProjectSubdirectory(home, f.project.id, 'docs');
   await fs.writeFile(join(docs, 'proof.md'), 'preserved');
   for (let i = 0; i < 25; i++) f.add(`result-${i}`, false, i).report.at = i;
-  f.state.requests = [{ id: 'request-one', projectId: f.project.id, currentVersion: 1, versions: [{ version: 1, goal: 'Delivered work' }] }];
-  f.state.deliveries = Array.from({ length: 12 }, (_, index) => ({ id: `delivery-${index}`, projectId: f.project.id, requestId: 'request-one', requestVersion: 1, committedAt: index + 1, references: [], requiredWork: [], evidence: [], remainingIssues: [] }));
   const first = await f.read('store/list');
   assert.equal(first.results.length, 10); assert.equal(first.resultsTotal, 25); assert.equal(first.resultsCursor, null);
-  assert.equal(first.deliveries.length, 10); assert.equal(first.deliveriesTotal, 12);
   assert.deepEqual(first.docs, [{ path: 'docs/proof.md', size: 9 }]);
   const second = await f.read('store/list', { resultsCursor: first.nextResultsCursor });
   const third = await f.read('store/list', { resultsCursor: second.nextResultsCursor });
   assert.equal(second.results.length, 10); assert.equal(third.results.length, 5); assert.equal(third.nextResultsCursor, null);
   assert.equal(new Set([...first.results, ...second.results, ...third.results].map(row => row.report.delegationRef)).size, 25);
   assert.equal(second.resultsCursor, first.nextResultsCursor);
-  assert.deepEqual(second.deliveries, first.deliveries, 'member report pages do not advance deliveries');
-  const deliveryPage = await f.read('store/list', { resultsCursor: first.nextResultsCursor, deliveryCursor: first.nextDeliveryCursor });
-  assert.equal(deliveryPage.deliveries.length, 2); assert.deepEqual(deliveryPage.results, second.results, 'delivery pages do not reset member report position');
-  await assert.rejects(f.read('store/list', { deliveryCursor: 'foreign-delivery' }), { code: 'result_cursor' });
   const continuing = f.state.workstreams.find(work => work.id === second.results[0].workstreamId);
   continuing.delegations.push({ ref: 'continued-ref', phase: 'queued', scope: 'readonly' });
   continuing.currentDelegationRef = 'continued-ref'; delete continuing.latestReport;
@@ -245,17 +320,6 @@ test('materials results page by original report identity without losing previous
   anchor.delegations.push({ ref: 'replaced-result', report: { delegationRef: 'replaced-result', at: 100, summary: 'New report', artifacts: [] } });
   await assert.rejects(f.read('store/list', { resultsCursor: first.nextResultsCursor }), { code: 'result_cursor' });
   assert.equal((await f.read('store/results', { workstreamId: anchor.id })).items.at(-1).delegationRef, first.nextResultsCursor);
-});
-
-test('historical process navigation returns the original native assignment anchor, not the latest receipt', async () => {
-  const f = setup(), item = f.add('continued-work', false, 1);
-  item.receipt.runId = 'original-run'; item.receipt.messageId = 'actual-native-assignment-input';
-  item.work.delegations.push({ ref: 'next-assignment', runId: 'new-run', phase: 'accepted', scope: 'readonly' }); item.work.currentDelegationRef = 'next-assignment';
-  const value = await f.read('workstreams/get', { workstreamId: item.work.id, delegationRef: item.receipt.ref, runId: 'original-run' });
-  assert.equal(value.workstream.processAnchor.messageId, 'actual-native-assignment-input');
-  assert.equal(value.workstream.processAnchor.runId, 'original-run'); assert.equal(value.workstream.delegation.ref, 'next-assignment');
-  await assert.rejects(f.read('workstreams/get', { workstreamId: item.work.id, delegationRef: item.receipt.ref, runId: 'new-run' }), { code: 'result_identity' });
-  await assert.rejects(f.read('workstreams/get', { workstreamId: item.work.id, delegationRef: 'foreign-assignment' }), { code: 'result_identity' });
 });
 
 test('queued summaries expose the dependency, occupied directory and native capacity actually encountered', async () => {
@@ -289,10 +353,11 @@ test('reports preserve host-consumed prerequisite identity and expose later chan
   upstream.report.callId = 'upstream-report';
   const references = [{ workstreamId: upstream.work.id, title: upstream.work.title, delegationRef: upstream.work.currentDelegationRef, reportId: 'upstream-report' }];
   dependent.receipt.prerequisites = references; dependent.worker.consumedDelegationRef = dependent.receipt.ref;
+  dependent.receipt.runId = 'dependent-native-run'; dependent.worker.activeRunId = dependent.receipt.runId;
   const actor = { role: 'worker', agent: { id: dependent.worker.sessionId }, project: f.project };
   await f.service.report(actor, { delegationRef: dependent.receipt.ref, outcome: 'completed', summary: 'Implemented against the received API contract',
     prerequisites: [{ workstreamId: 'forged', title: 'Model claim', delegationRef: 'not-consumed' }] }, { callId: 'dependent-report' });
-  await f.service.write(state => { const work = state.workstreams.find(row => row.id === dependent.work.id); work.status = 'done'; });
+  await f.service.write(state => { const work = state.workstreams.find(row => row.id === dependent.work.id); work.status = 'done'; delete state.workers.find(row => row.sessionId === dependent.worker.sessionId).activeRunId; });
   f.tasks.find(task => task.id === dependent.work.id).status = 'completed';
   let detail = await f.read('workstreams/get', { workstreamId: dependent.work.id });
   assert.deepEqual(detail.workstream.latestReport.prerequisites, references); assert.equal(detail.workstream.latestReport.prerequisitesChanged, false);
@@ -320,4 +385,32 @@ test('reports preserve host-consumed prerequisite identity and expose later chan
   assert.deepEqual((await f.read('store/results', { workstreamId: dependent.work.id })).items[0].prerequisites, references);
   assert.equal((await f.read('workstreams/get', { workstreamId: legacy.work.id })).workstream.latestReport.prerequisitesChanged, undefined);
   assert.equal(f.service.stream(dependent.work.id).latestReport.prerequisitesChanged, undefined, 'derived warnings never rewrite the saved report');
+});
+
+test('a later accepted assignment supersedes every unconsumed queued and preparing receipt without changing member identity', async () => {
+  const f = setup(), current = f.add('Continuing work', true, 1), first = current.receipt;
+  current.work.delegations.unshift({ ...first, ref: 'older-preparation', phase: 'preparing' }, { ...first, ref: 'older-queued', phase: 'queued' });
+  f.append('user/message', { id: 'fresh-human', source: { kind: 'user' }, content: [{ type: 'text', text: 'Continue this investigation with the new requirement.' }] });
+  f.append('tool/call', { turn: 1, callId: 'continue-call', name: 'project_delegate' });
+  f.service.notes = async () => {}; f.service.launch = async () => {};
+  const accepted = await f.service.delegate(f.service.actor(f.lead), { workstreamId: current.work.id, brief: 'Investigate the new requirement', scope: 'readonly' }, { callId: 'continue-call', signal: new AbortController().signal });
+  const work = f.service.stream(current.work.id), worker = f.service.worker(current.worker.sessionId);
+  assert.equal(work.workerSessionId, current.worker.sessionId); assert.equal(worker.cwd, '/original-cwd');
+  assert.equal(work.currentDelegationRef, accepted.delegationRef); assert.equal(work.delegations.length, 4);
+  assert.ok(work.delegations.slice(0, 3).every(receipt => receipt.phase === 'stopped' && receipt.supersededBy === accepted.delegationRef && /before consumption/.test(receipt.error)));
+  assert.equal(work.delegations.at(-1).phase, 'queued'); assert.equal(worker.activeRunId, undefined);
+});
+
+test('the actual consumed native run may report its prior receipt while a later assignment remains queued', async () => {
+  const f = setup(), item = f.add('Continuing worker', false, 1), original = item.receipt;
+  item.worker.consumedDelegationRef = original.ref; item.worker.activeRunId = original.runId;
+  const next = { ...original, ref: 'queued-next', phase: 'queued', runId: '', report: undefined };
+  item.work.delegations.push(next); item.work.currentDelegationRef = next.ref; delete item.work.latestReport;
+  f.service.notes = async () => {};
+  const actor = { role: 'worker', agent: { id: item.worker.sessionId }, project: f.project };
+  await f.service.report(actor, { delegationRef: original.ref, outcome: 'completed', summary: 'The actual consumed assignment finished.', artifacts: [], evidence: ['Exact active native run'], remainingIssues: [] }, { callId: 'actual-old-report' });
+  const saved = f.service.stream(item.work.id);
+  assert.equal(saved.delegations[0].report.callId, 'actual-old-report'); assert.equal(saved.delegations[1].phase, 'queued');
+  assert.equal(saved.delegations[1].report, undefined); assert.equal(saved.latestReport, undefined); assert.equal(saved.currentDelegationRef, next.ref);
+  await assert.rejects(f.service.report(actor, { delegationRef: next.ref, outcome: 'completed', summary: 'Never consumed' }, { callId: 'forged-next-report' }), { code: 'obsolete_result' });
 });

@@ -95,6 +95,22 @@ const remote = (ctx: Context) => createSessionTestRemote(ctx, {
 })
 
 describe('sessions.fork', () => {
+  it.each(['latest', 'atSeq', 'beforeSeq'] as const)('refuses Project forks at %s before creating a child', async boundary => {
+    const ctx = await composed()
+    try {
+      const source = await liveAgent(ctx, `project-fork-${boundary}`, 1)
+      source.append('session/presentation', { owner: 'project', title: 'Project' })
+      const events = source.snapshotEvents(), sessions = ctx.sessions.list()
+      const result = await remote(ctx).fork({ sessionId: source.id,
+        ...(boundary === 'atSeq' ? { atSeq: 0 } : boundary === 'beforeSeq' ? { beforeSeq: 1 } : {}) })
+      expect(result).toMatchObject({ ok: false, error: { code: 'session/fork-unavailable', details: { sessionId: source.id } } })
+      expect(ctx.sessions.list()).toEqual(sessions)
+      expect(source.snapshotEvents()).toEqual(events)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('keeps the completed manual compaction checkpoint when atSeq is omitted', async () => {
     const ctx = new Context()
     try {

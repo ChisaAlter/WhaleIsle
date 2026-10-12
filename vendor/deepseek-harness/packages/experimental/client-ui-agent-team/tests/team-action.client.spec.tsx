@@ -181,6 +181,12 @@ describe('TeamAction', () => {
     } })
     render(<TeamAction {...b.props} />)
     openPanel()
+    if (project) {
+      // A reopened task with no owner does not establish this member as current.
+      // The original member and its readable label remain in the real history.
+      expect(screen.queryByRole('button', { name: /^修复登录/u })).toBeNull()
+      fireEvent.click(screen.getByRole('tab', { name: zh['project.history'] }))
+    }
     const row = screen.getByRole('button', { name: project ? /^修复登录/u : /^member-uuid/u })
     if (project) expect(screen.queryByText('member-uuid')).toBeNull()
     fireEvent.click(row)

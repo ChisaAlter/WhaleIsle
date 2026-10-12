@@ -157,6 +157,48 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
 }
 
 describe('WorkspaceBrowser', () => {
+  it('keeps a Project directory in its category without a duplicate unused ordinary blank', () => {
+    const lead = summary('lead', 4, { cwd: '/dsh-home/projects/project',
+      presentation: { owner: 'project', title: 'Project', workingDirectory: '/projects/project' } })
+    const worker = summary('worker', 3, { cwd: '/projects/project', origin: 'subagent',
+      presentation: { owner: 'project', title: 'Development member' } })
+    const blank = summary('blank', 1, { cwd: '/projects/project', blank: true })
+    const registered = workspace('project', ['worker', 'blank'])
+    const b = mount({
+      useSessions: hook(sessionState([lead, worker, blank], { main: lead.id })),
+      useWorkspaces: hook(workspaceState([registered, workspace('empty', [])])),
+      renderSlot: ((name: string) => name === 'sidebar.workspaces.sections'
+        ? <section aria-label="Project"><button>My Project</button></section> : null) satisfies WorkspaceBrowserProps['renderSlot'],
+    })
+    act(() => { b.store.actions.setGroupBy('workspace'); b.store.actions.setOrderBy('updated', {}) })
+    expect(screen.queryByRole('treeitem', { name: /^project$/ })).toBeNull()
+    expect(screen.getByRole('region', { name: 'Project' })).toBeTruthy()
+    expect(screen.getByRole('treeitem', { name: /^empty$/ })).toBeTruthy()
+    expect(b.props.useWorkspaces(state => state.items)[0]).toEqual(registered)
+
+    // Choosing an ordinary blank makes its directory available again.
+    rerender(b, { useSessions: hook(sessionState([lead, worker, blank], { main: blank.id })) })
+    expect(screen.getByRole('treeitem', { name: /^project$/ })).toBeTruthy()
+    rerender(b, { useSessions: hook(sessionState([lead, worker, { ...blank, blank: false }], { main: lead.id })) })
+    expect(screen.getByRole('treeitem', { name: /^project$/ })).toBeTruthy()
+
+    // Unknown authoritative members survive the recency projection's omission.
+    rerender(b, {
+      useSessions: hook(sessionState([lead, worker, blank], { main: lead.id })),
+      useWorkspaces: hook(workspaceState([{ ...registered, sessionIds: [...registered.sessionIds, sid('loading')] }])),
+    })
+    expect(screen.getByRole('treeitem', { name: /^project$/ })).toBeTruthy()
+    rerender(b, { useWorkspaces: hook(workspaceState([workspace('project', [])])) })
+    expect(screen.queryByRole('treeitem', { name: /^project$/ })).toBeNull()
+    rerender(b, { useWorkspaces: hook(workspaceState([workspace('project', ['worker'])])) })
+    expect(screen.queryByRole('treeitem', { name: /^project$/ })).toBeNull()
+    rerender(b, {
+      useSessions: hook(sessionState([blank])),
+      useWorkspaces: hook(workspaceState([workspace('project', [])])),
+    })
+    expect(screen.getByRole('treeitem', { name: /^project$/ })).toBeTruthy()
+  })
+
   it.each(['workspace', 'flat'] as const)('keeps additional categories after workspace rows in the same scrolling list in %s mode', mode => {
     const b = mount({
       useSessions: hook(sessionState([summary('ordinary-chat', 1)])),

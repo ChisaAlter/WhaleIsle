@@ -2,6 +2,7 @@
 
 2026-10-10 · 设计 3.2 · 原生 Team 主链和要求归属、阶段授权、明确交付已接入集成工作分支；当前原生装配与用户路径的验收边界见功能资料，源码实现不代表真实模型或包验收通过。
 
+
 用户再次明确：Project 必须与鲸屿的智能体团队结合。此前把 Agent Teams 降为可选、用 Project 自建持续 worker 体系的决定撤销。本文件是运行时实现依据；[产品界面与流程](2026-10-08-project-product-redesign.md)保留，涉及团队的部分以本文为准；[配套提示词](2026-10-08-project-prompts.md)同步修订。GitHub 研究见[固定源码依据](../../research/2026-10-08-project-team-runtime-research.md)。
 
 本文保留设计时的基线、拟定接口和实现约束；它们不是当前源码缺口清单或最终 API 文档。实际接线与证据以 [功能资料](../../features/projects.md) 和 [插件说明](../../../vendor/dsh-project/README.md) 为准。当前已采用原生 Team Lead、成员 Session、任务和 mailbox；设计中的独立事件名及伪代码不能覆盖实际 `team/control` 等实现契约。
@@ -205,6 +206,7 @@ UI 的 running 来自 Session/Jobs，task owner 来自 Team，blocked 等原因�
 ## 13. 要求、阶段与交付的业务接缝（3.2 源码已接入，整体验收进行中）
 
 `domain.js` 现增加可选 Request/Delivery 记录，`service.source` 保存本轮领取的全部真实人类输入；阶段委派绑定要求版本。`requirements.js` 承担明确交付声明、真实回复、completed 回合结束及持久 flush 对账。读取 notes 加任意回复不清除待交付。以下说明已接入的业务合同；当前原生组合、真实 provider、完整 UI 和包内验收以功能资料为准。
+
 
 ### 13.1 两类业务记录
 

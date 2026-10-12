@@ -299,6 +299,10 @@ export class SessionCommandController {
       )
     }
     using source = observed
+    const presentation = source.events.findLast(event => event.type === 'session/presentation')
+    if (presentation?.type === 'session/presentation' && presentation.data?.owner === 'project') {
+      throw new RemoteError('session/fork-unavailable', 'A Project keeps its original main conversation and cannot be forked.', { sessionId: request.sessionId })
+    }
     let seed: ReturnType<typeof buildForkSeed>
     let inheritedEventCount: SessionLogOffset
     if (beforeSeq !== undefined) {

@@ -116,6 +116,69 @@
   scrollbar-gutter: stable;
 }
 
+.projectToolbar {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 14px 12px;
+}
+
+.searchLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.pageRange {
+  margin-right: auto;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.collectionHint {
+  margin: 0 4px 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.projectPanel .taskTitle {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.projectPanel .taskTitle strong {
+  flex: 1 1 180px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.projectPanel .taskState {
+  flex: none;
+}
+
+.projectPanel .task p,
+.projectPanel .meta {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .projectPanel .roster {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .taskTitle {
   display: flex;
   align-items: center;

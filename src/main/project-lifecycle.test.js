@@ -66,8 +66,8 @@ test('recovery clears only resolved directory diagnostics and reconciles the ori
   state().workers = []; state().workstreams = [];
   Object.assign(state().projects[0], { storageRoot: await fs.realpath(storage), canonicalWorkingDirectory: selected,
     diagnostics: ['Unresolved settlement accounting failure'] });
-  const inspected = [], reconciled = [];
-  service.ctx.sessionController = { inspect: async id => { inspected.push(id); } };
+  const inspected = [], reconciled = []; let inspectionFailed = true;
+  service.ctx.sessionController = { inspect: async id => { inspected.push(id); if (inspectionFailed) throw new Error('Unresolved settlement accounting failure'); } };
   service.ctx.sessionPersistence = { stat: async () => ({}) };
   service.teams.bindPolicy = async root => { reconciled.push(root.id); };
   await service.recover();
@@ -79,13 +79,14 @@ test('recovery clears only resolved directory diagnostics and reconciles the ori
   assert.deepEqual(state().projects[0].diagnostics, ['Unresolved settlement accounting failure']);
   assert.deepEqual(inspected, ['main']);
   assert.deepEqual(reconciled, [], 'an unrelated unresolved fault is not declared repaired');
+  inspectionFailed = false;
   state().projects[0].diagnostics = [`ENOENT: no such file or directory, realpath '${selected}'`];
   await service.recover();
   assert.deepEqual(state().projects[0].diagnostics, [], 'previous raw missing-path diagnostics are resolved by the same successful check');
-  assert.deepEqual(reconciled, ['main'], 'the original Team is reconciled after its directory returns');
+  assert.deepEqual(reconciled, ['main'], 'the original Team is reconciled after its directory and original Session become inspectable');
   assert.equal(state().projects[0].coordinatorSessionId, 'main');
   assert.equal(state().projects[0].paused, true, 'successful recovery still requires new user input');
-  assert.equal(service.projectView(state().projects[0]).activity.state, 'idle');
+  assert.equal(service.projectView(state().projects[0]).activity.state, 'idle', 'an empty Project retains its safety hold without claiming interrupted work');
 });
 
 test('a newly queued request is not assigned to the native run of the previously submitted brief', async () => {

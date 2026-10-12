@@ -131,6 +131,7 @@ export function ChatView({
   const inbox = useProjection('inbox') as unknown as InboxState | undefined
   // Workspace root off the session list row: path summaries display relative to it.
   const cwd = useSessions(s => sessionWorkingDirectory(s.byId[sessionId]))
+  const projectOwned = useSessions(s => s.byId[sessionId]?.presentation?.owner === 'project')
   const fileImages = useMemo(() => ({
     resolve: (path: string) => fileMediaUrl(document.baseURI, resolveWorkspacePath(cwd, path)),
     labels: {
@@ -278,7 +279,7 @@ export function ChatView({
                 openFile={requestOpenFile}
                 openSkill={openSkill}
                 inspectCall={inspectCall}
-                forkAt={forkAt}
+                forkAt={projectOwned ? undefined : forkAt}
                 loadImage={loadImage}
                 renderMessageImages={renderMessageImages}
                 fileMentions={fileMentions}

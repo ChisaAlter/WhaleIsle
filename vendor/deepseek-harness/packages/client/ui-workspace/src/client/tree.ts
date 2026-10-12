@@ -514,7 +514,8 @@ export function deriveArchived(
 /**
  * Derive the workspace browser groups with every session as a top-level row.
  *
- * Every group shows, except that the archived-only filter drops groups
+ * Groups containing only feature-owned conversations use that feature's navigation.
+ * Other groups show, except that the archived-only filter drops groups
  * without visible members; sessions populate under expanded groups with
  * pinned rows leading in the selected local order. Blank sessions are
  * excluded except for the selected provisional New Session row; archived

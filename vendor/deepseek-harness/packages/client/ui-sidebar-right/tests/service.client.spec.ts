@@ -52,7 +52,7 @@ function harness() {
     openWithFocus: (_sessionId, open) => { open() },
     closeWithFocus: (_sessionId, _paneId, close) => { close() },
   })
-  const instance = createSidebarRightStore(() => ({ kind: 'guide', title: 'seed' })).create()
+  const instance = createSidebarRightStore(() => ({ kind: 'guide', title: 'seed' }), kind => tabs.get(kind)?.floatingOnly === true).create()
   // The runtime mints the Session's store before any seat renders, and the plugin adopts it.
   const unadopt = adopt(SESSION, instance)
   const layout = (): LayoutState => {
@@ -84,6 +84,51 @@ function harness() {
 }
 
 describe('SidebarRightController — opening', () => {
+  it('keeps floating-only pages independent through ordinary opens, pane moves and send-back commands', () => {
+    const h = harness()
+    const release = h.publish()
+    try {
+      h.tabs.register({ id: 'test/observer', kind: 'observer', floatingOnly: true, title: () => 'Observer' })
+      expect(h.controller.openTabIn(SESSION, 'observer')).toBe(true)
+      const tab = h.tabOf('Observer')
+      const pane = findTabPane(h.layout(), tab)
+      expect(pane.host).toBe('float')
+      expect(h.layout().expanded).toBe(false)
+
+      h.controller.openTab('observer', { preferNewPane: true })
+      expect(h.titles()).toEqual(['Observer'])
+      expect(findTabPane(h.layout(), tab).id).toBe(pane.id)
+      h.controller.openResource('dsh-resource://file/session/s-test/notes.md')
+      const docked = findTabPane(h.layout(), h.tabOf('notes.md'))
+      const before = h.layout()
+      h.controller.dock(pane.id)
+      h.instance.actions.unfloatPane(SESSION, pane.id)
+      h.instance.actions.placeTab(SESSION, tab, docked.id, 0)
+      h.instance.actions.dropTab(SESSION, tab, docked.id, 'center')
+      h.instance.actions.dropTab(SESSION, tab, docked.id, 'right')
+      expect(h.layout()).toBe(before)
+      expect(findTabPane(h.layout(), tab).host).toBe('float')
+      expect(findTabPane(h.layout(), h.tabOf('notes.md')).host).toBe('dock')
+    } finally { release() }
+  })
+
+  it('moves an already restored page into a float when its registered type requires it', () => {
+    const h = harness()
+    const release = h.publish()
+    try {
+      h.tabs.register({ id: 'test/observer', kind: 'observer', priority: 'builtin', title: () => 'Observer' })
+      h.controller.openTab('observer')
+      const tab = h.tabOf('Observer')
+      expect(findTabPane(h.layout(), tab).host).toBe('dock')
+      h.tabs.register({ id: 'test/observer-extension', kind: 'observer', floatingOnly: true,
+        priority: 'extension', title: () => 'Observer' })
+      h.instance.actions.reconcileFloating(SESSION)
+      expect(findTabPane(h.layout(), tab).host).toBe('float')
+      expect(h.layout().expanded).toBe(false)
+      h.instance.actions.undo(SESSION)
+      expect(findTabPane(h.layout(), tab).host).toBe('float')
+    } finally { release() }
+  })
   it('keeps mini opens collapsed and reuses the same file when previewing and docking it', () => {
     const h = harness()
     const release = h.publish()
@@ -108,6 +153,26 @@ describe('SidebarRightController — opening', () => {
       expect(h.layout().expanded).toBe(true)
       expect(findTabPane(h.layout(), tab).host).toBe('dock')
       expect(h.layout().tabs[tab]?.contentId).toBe(address)
+    } finally { release() }
+  })
+
+  it('resizes an existing float to its title row without replacing its tab', () => {
+    const h = harness()
+    const release = h.publish()
+    try {
+      h.tabs.register({ id: 'test/project', kind: 'project', title: () => 'Project' })
+      h.controller.openTab('project', { expand: false, floating: { x: 600, y: 70, width: 360, height: 360 } })
+      const tab = h.tabOf('Project')
+      const pane = findTabPane(h.layout(), tab)
+      const before = h.entries()
+      const minimized = { x: 600, y: 70, width: 360, height: 38 }
+      h.controller.resizeFloat(pane.id, minimized)
+      expect(findTabPane(h.layout(), tab).rect).toEqual(minimized)
+      expect(h.entries()).toBe(before + 1)
+      h.controller.resizeFloat(pane.id, minimized)
+      expect(h.entries()).toBe(before + 1)
+      h.controller._undo()
+      expect(findTabPane(h.layout(), tab).rect?.height).toBe(360)
     } finally { release() }
   })
 
@@ -139,6 +204,7 @@ describe('SidebarRightController — opening', () => {
     expect(() => { controller.focus('tab1' as TabId) }).toThrow('no session surface is mounted')
     expect(() => { controller.split() }).toThrow('no session surface is mounted')
     expect(() => { controller.float('tab1' as TabId) }).toThrow('no session surface is mounted')
+    expect(() => { controller.resizeFloat('pane1' as PaneId, { x: 0, y: 0, width: 360, height: 38 }) }).toThrow('no session surface is mounted')
     expect(() => { controller.dock('pane1' as PaneId) }).toThrow('no session surface is mounted')
   })
 

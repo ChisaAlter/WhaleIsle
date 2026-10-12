@@ -347,6 +347,30 @@ function lastOpening(open: MockInstance<UiWorkspaceService['openWorkspace']>): P
 }
 
 describe('UiWorkspaceService', () => {
+  it('resolves owner Session actions from current metadata and releases registrations with their plugin', async () => {
+    const project = summary('project', { presentation: { owner: 'project', title: 'Project' } }), ordinary = summary('ordinary')
+    const b = bench({ sessions: sessionState([project, ordinary]) })
+    const rename = vi.fn(), archive = vi.fn()
+    const fiber = b.ctx.plugin(ctx => ctx.effect(() => b.uiWorkspace.registerSessionActions('project', { rename, archive })))
+    await fiber.await()
+    expect(b.uiWorkspace.resolveSessionAction(ordinary.id, 'archive')).toBeUndefined()
+    expect(b.uiWorkspace.resolveSessionAction(project.id, 'rename')).toBeTypeOf('function')
+    b.uiWorkspace.resolveSessionAction(project.id, 'rename')!()
+    b.uiWorkspace.resolveSessionAction(project.id, 'archive')!()
+    expect(rename).toHaveBeenCalledWith(project.id)
+    expect(archive).toHaveBeenCalledWith(project.id)
+    b.sessions.list.set(sessionState([summary('project')]))
+    expect(b.uiWorkspace.resolveSessionAction(project.id, 'archive')).toBeUndefined()
+    b.sessions.list.set(sessionState([project]))
+    await fiber.dispose()
+    expect(b.uiWorkspace.resolveSessionAction(project.id, 'rename')).toBeUndefined()
+    const replacement = vi.fn()
+    const remove = b.uiWorkspace.registerSessionActions('project', { rename: replacement, archive: replacement })
+    b.uiWorkspace.resolveSessionAction(project.id, 'archive')!()
+    expect(replacement).toHaveBeenCalledWith(project.id)
+    remove()
+  })
+
   it('prepares and selects the default Workspace after both startup baselines', async () => {
     const b = bench({ configureWorkspaces: (workspaces) => {
       workspaces.initializeDefault.mockImplementation(async () => {
