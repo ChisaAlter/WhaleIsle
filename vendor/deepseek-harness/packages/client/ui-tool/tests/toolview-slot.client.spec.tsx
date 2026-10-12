@@ -12,13 +12,31 @@ import {
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotTestRuntime, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { installConnection, type RpcFetch } from '@deepseek-ai/dsh-client-connection/client'
+import { clientRequestSchema } from '@deepseek-ai/dsh-client-connection/src/rpc-schema.ts'
 import { apply as applyConversation, inject as injectConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { NEXT_PROMPT_ENDPOINT } from '@deepseek-ai/dsh-client-ui-conversation/src/next-prompt-contract.ts'
 import { apply as applyTool, inject as injectTool } from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import { PartialArguments } from '@deepseek-ai/dsh-util-values'
 import { toolSessionEvents } from './tool-fixtures.client.ts'
 
 const SID = 's1' as SessionId
+
+/** Tool-only events have no completed user turn for the suggestion endpoint. */
+const toolOnlyPromptFetch: RpcFetch = async (route, init) => {
+  if (route !== `api/${NEXT_PROMPT_ENDPOINT}` || init.method !== 'POST' || typeof init.body !== 'string') {
+    throw new Error(`unexpected Tool fixture RPC route: ${String(route)}`)
+  }
+  const request = clientRequestSchema.parse(JSON.parse(init.body))
+  if (request.method !== NEXT_PROMPT_ENDPOINT || JSON.stringify(request.payload) !== JSON.stringify({ sessionId: SID })) {
+    throw new Error('unexpected Tool fixture RPC request')
+  }
+  return Response.json({
+    type: 'server-response', rpcId: request.rpcId,
+    result: { ok: true, value: { turn: null, seq: null, text: null } },
+  })
+}
 // jsdom omits font loading events used by the resident composer.
 const fonts = Object.getOwnPropertyDescriptor(document, 'fonts')
 
@@ -76,6 +94,7 @@ const LAYOUT_CHILDREN = {
  */
 async function bench(nodes: ToolResultNode[]) {
   const runtime = await SlotTestRuntime.create()
+  await runtime.mount({ apply: ctx => installConnection(ctx, { transport: { fetch: toolOnlyPromptFetch } }) })
   const openPath = vi.fn(async (_path: string) => {})
   ;(runtime.ctx.workspaces as typeof runtime.ctx.workspaces & {
     openPath: (path: string) => Promise<void>
@@ -330,6 +349,7 @@ describe('keyed toolview hole through the real machinery', () => {
 describe('registrant declaration injection', () => {
   it('runs a registrant before ui-tool and waits on the actual toolview declaration', async () => {
     const runtime = await SlotTestRuntime.create()
+    await runtime.mount({ apply: ctx => installConnection(ctx, { transport: { fetch: toolOnlyPromptFetch } }) })
     runtime.remote.provideNamespaces({
       session: {
         openWorkspacePath: vi.fn(async () => ({ ok: true, value: { opened: true } })),

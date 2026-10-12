@@ -226,8 +226,8 @@ it('reports a failed developer-tool write and allows retry', async () => {
 
 describe('current version', () => {
   it.each([
-    ['Current version: 1.2.3-rc.4', en],
-    ['当前版本：1.2.3-rc.4', zh],
+    ['Harness version: 1.2.3-rc.4', en],
+    ['Harness 版本：1.2.3-rc.4', zh],
   ])('renders the localized release label %s', (expected, dictionary) => {
     vi.stubEnv('DSH_CLIENT_VERSION', '1.2.3-rc.4')
     const translate: TriggerContentProps['t'] = (key, params) => {

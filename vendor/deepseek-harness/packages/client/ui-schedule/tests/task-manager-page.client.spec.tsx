@@ -3821,7 +3821,7 @@ describe('Mock detail metrics shared with the task list', () => {
     expect(stylesheet)
       .toMatch(/\.searchField:focus-within\s*\{[^}]*border-color:\s*var\(--dsw-alias-state-business-primary\);/)
     expect(stylesheet).toMatch(/\.searchField > :first-child svg\s*\{[^}]*width:\s*14px;/)
-    expect(stylesheet).toMatch(/\.searchField input::placeholder\s*\{[^}]*color:\s*var\(--dsw-alias-label-caption\);/)
+    expect(stylesheet).toMatch(/\.searchField input::placeholder\s*\{[^}]*color:\s*var\(--dsw-alias-label-placeholder\);/)
     expect(stylesheet).toMatch(/\.searchField input::-webkit-search-cancel-button\s*\{[^}]*display:\s*none;/)
     expect(rule('searchClear')).toMatch(/margin-right:\s*-6px;/)
     expect(rule('searchClear')).toMatch(/color:\s*var\(--dsw-alias-label-tertiary\);/)

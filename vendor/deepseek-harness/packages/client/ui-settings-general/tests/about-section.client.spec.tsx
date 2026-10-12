@@ -126,7 +126,7 @@ describe('AboutSection credential storage', () => {
     }
     mount()
     await waitFor(() => {
-      expect(screen.getByText('Version 0.2.7')).toBeTruthy()
+      expect(screen.getByText('Desktop version 0.2.7')).toBeTruthy()
     })
     expect(screen.queryByText(en['about.credEncrypted'])).toBeNull()
     expect(screen.queryByText(en['about.credPlaintext'])).toBeNull()

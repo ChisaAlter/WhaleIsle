@@ -6,6 +6,7 @@ import {
   SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages,
 } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { installConnection } from '@deepseek-ai/dsh-client-connection/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -43,6 +44,7 @@ const SID = 'session-1' as SessionId
 
 async function bench() {
   const runtime = await SlotTestRuntime.create()
+  await runtime.mount({ apply: installConnection })
   const chatSettings = stubConfigForm<ChatSettings>()
   const conversationSettings = stubConfigForm<ConversationSettings>()
   runtime.ctx.provide('configForms', {

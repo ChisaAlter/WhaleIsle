@@ -5,6 +5,8 @@ import { toolSessionEvents } from './tool-fixtures.client.ts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { installConnection, type RpcFetch } from '@deepseek-ai/dsh-client-connection/client'
+import { clientRequestSchema } from '@deepseek-ai/dsh-client-connection/src/rpc-schema.ts'
 import type { ISession } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
@@ -15,6 +17,7 @@ import {
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotTestRuntime, usePinnedBrowserLanguages, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as applyConversation, inject as injectConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { NEXT_PROMPT_ENDPOINT } from '@deepseek-ai/dsh-client-ui-conversation/src/next-prompt-contract.ts'
 import { PartialArguments } from '@deepseek-ai/dsh-util-values'
 import { apply as applyTool, inject as injectTool } from '../src/client/apply.ts'
 
@@ -23,6 +26,21 @@ import { apply as applyTool, inject as injectTool } from '../src/client/apply.ts
 usePinnedBrowserLanguages('zh-CN')
 
 const SID = 's1' as SessionId
+
+/** Tool-only events have no completed user turn for the suggestion endpoint. */
+const toolOnlyPromptFetch: RpcFetch = async (route, init) => {
+  if (route !== `api/${NEXT_PROMPT_ENDPOINT}` || init.method !== 'POST' || typeof init.body !== 'string') {
+    throw new Error(`unexpected Tool fixture RPC route: ${String(route)}`)
+  }
+  const request = clientRequestSchema.parse(JSON.parse(init.body))
+  if (request.method !== NEXT_PROMPT_ENDPOINT || JSON.stringify(request.payload) !== JSON.stringify({ sessionId: SID })) {
+    throw new Error('unexpected Tool fixture RPC request')
+  }
+  return Response.json({
+    type: 'server-response', rpcId: request.rpcId,
+    result: { ok: true, value: { turn: null, seq: null, text: null } },
+  })
+}
 // jsdom omits font loading events used by the resident composer.
 const fonts = Object.getOwnPropertyDescriptor(document, 'fonts')
 
@@ -83,6 +101,7 @@ const LAYOUT_CHILDREN = {
 
 async function bench(nodes: ToolResultNode[]) {
   const runtime = await SlotTestRuntime.create()
+  await runtime.mount({ apply: ctx => installConnection(ctx, { transport: { fetch: toolOnlyPromptFetch } }) })
   runtime.remote.provideNamespaces({
     session: {
       openWorkspacePath: vi.fn(async () => ({ ok: true, value: { opened: true } })),

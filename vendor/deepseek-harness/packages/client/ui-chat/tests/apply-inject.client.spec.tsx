@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ISession, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { installConnection } from '@deepseek-ai/dsh-client-connection/client'
 import {
   RemoteError, SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages,
 } from '@deepseek-ai/dsh-client-test-runtime'
@@ -53,6 +54,7 @@ function sessionFakeFor() {
 
 async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true, withProcessGroups = true) {
   const runtime = await SlotTestRuntime.create()
+  await runtime.mount({ apply: installConnection })
   const chatSettings = stubConfigForm<ChatSettings>()
   if (initialSettings !== undefined) chatSettings.publish({ value: initialSettings })
   runtime.ctx.provide('configForms', {
