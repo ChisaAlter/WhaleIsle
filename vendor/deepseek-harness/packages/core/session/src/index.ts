@@ -21,6 +21,7 @@ import type { SessionSurface, SessionMessageProjection } from './surface.ts'
 import { foldRequestHeader } from './request-header.ts'
 import { repairMalformedToolCalls } from './tool-transcript.ts'
 import { ToolHistoryProjection } from './tool-history.ts'
+import { KNOWN_SESSION_EVENT_TYPES } from './known-event-types.ts'
 import type { ToolHistory } from '@deepseek-ai/dsh-llm'
 
 import { buildForkSeed } from './fork.ts'
@@ -729,6 +730,7 @@ export class Session {
       throw new TypeError('ignorable: true is only valid for informational log-only appends')
     }
     if (!isSurfaceEligibleType(type)
+      && !KNOWN_SESSION_EVENT_TYPES.has(type)
       && (surfaceOpts?.surfaceOp !== undefined || surfaceOpts?.sourceEventSeqs !== undefined)) {
       throw new TypeError('log-only appends cannot carry surface metadata')
     }
