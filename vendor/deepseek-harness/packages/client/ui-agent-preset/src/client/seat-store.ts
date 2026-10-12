@@ -69,7 +69,7 @@ export class AgentPresetSeatController {
     /** The session the hero is about to hand over to, when there is one. */
     private readonly currentSession: () => Pick<
       SessionSummary,
-      'id' | 'blank' | 'projectionValues'
+      'id' | 'blank' | 'projectionValues' | 'presentation'
     > | undefined,
     private readonly staged: AgentPresetStage = { id: undefined, introduce: false },
   ) {}
@@ -162,7 +162,7 @@ export class AgentPresetSeatController {
    */
   blankSessionId(): SessionSummary['id'] | undefined {
     const session = this.currentSession()
-    return session?.blank === true ? session.id : undefined
+    return session?.blank === true && !session.presentation?.owner ? session.id : undefined
   }
 
   /**
@@ -178,7 +178,7 @@ export class AgentPresetSeatController {
   ): Promise<string | undefined> {
     while (this.pendingSelection !== undefined) await this.pendingSelection
     const session = this.currentSession()
-    if (session === undefined || !session.blank || session.id !== expectedSessionId) return undefined
+    if (session === undefined || !session.blank || session.presentation?.owner || session.id !== expectedSessionId) return undefined
     this.stage(id)
     return await this.apply()
   }
@@ -211,7 +211,7 @@ export class AgentPresetSeatController {
     if (session === undefined) return
     // A started session's history was produced under its own composition; the
     // host refuses the swap, so the stage is no longer meaningful.
-    if (!session.blank || presetOf(session) === staged) {
+    if (!session.blank || session.presentation?.owner || presetOf(session) === staged) {
       this.clearStage()
       return
     }

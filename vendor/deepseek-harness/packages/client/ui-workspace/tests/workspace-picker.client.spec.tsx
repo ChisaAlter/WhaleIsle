@@ -111,6 +111,7 @@ function mount(
       onClose={onClose}
       createWorkspace={createWorkspace}
       useDirectoryFlow={occupancy.useDirectoryFlow}
+      useDirectoryActions={hook([])}
       renderSlot={renderSlot}
       t={t}
     />
@@ -129,6 +130,44 @@ function chooseAdd(): void {
 }
 
 describe('WorkspacePicker', () => {
+  it('offers a feature directory action after the ordinary workspace action without creating an ordinary Session', async () => {
+    const createWorkspace = vi.fn()
+    const adopt = vi.fn().mockResolvedValue(undefined)
+    const onPick = vi.fn()
+    const { probe, renderFlow } = flowProbe()
+    render(<WorkspacePickFlow t={t} open anchorRef={anchor()} useWorkspaces={hook(workspaceState([workspace('alpha', 'Alpha')]))}
+      createWorkspace={createWorkspace} useDirectoryFlow={occupancySource().useDirectoryFlow} renderDirectoryFlow={renderFlow}
+      onPick={onPick} onPickNoDirectory={vi.fn()} onClose={vi.fn()}
+      directoryActions={[{ id: 'project', label: '添加 Project…', adopt }]} />)
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Alpha', '无工作目录', '添加工作区…', '添加 Project…'])
+    fireEvent.click(screen.getByRole('menuitem', { name: '添加 Project…' }))
+    act(() => probe.owner!.onPicked('/projects/project'))
+    await waitFor(() => expect(adopt).toHaveBeenCalledWith('/projects/project'))
+    await waitFor(() => expect(probe.owner!.busy).toBe(false))
+    expect(createWorkspace).not.toHaveBeenCalled()
+    expect(onPick).not.toHaveBeenCalled()
+  })
+
+  it('keeps the chosen feature action when retrying a rejected directory and does nothing on cancellation', async () => {
+    const createWorkspace = vi.fn()
+    const adopt = vi.fn().mockRejectedValueOnce(new Error('project unavailable')).mockResolvedValue(undefined)
+    const { probe, renderFlow } = flowProbe()
+    render(<WorkspacePickFlow t={t} open anchorRef={anchor()} useWorkspaces={hook(workspaceState([]))}
+      createWorkspace={createWorkspace} useDirectoryFlow={occupancySource().useDirectoryFlow} renderDirectoryFlow={renderFlow}
+      onPick={vi.fn()} onPickNoDirectory={vi.fn()} onClose={vi.fn()}
+      directoryActions={[{ id: 'project', label: '添加 Project…', adopt }]} />)
+    fireEvent.click(screen.getByRole('menuitem', { name: '添加 Project…' }))
+    act(() => probe.owner!.onCancel())
+    expect(adopt).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('menuitem', { name: '添加 Project…' }))
+    act(() => probe.owner!.onPicked('/projects/first'))
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'project unavailable')
+    fireEvent.click(screen.getByRole('button', { name: '重新选择' }))
+    act(() => probe.owner!.onPicked('/projects/second'))
+    await waitFor(() => expect(adopt).toHaveBeenLastCalledWith('/projects/second'))
+    expect(createWorkspace).not.toHaveBeenCalled()
+  })
+
   it('lists same-title Workspaces separately and forwards the selected id', () => {
     const b = mount([workspace('alpha', 'Shared'), workspace('beta', 'Shared')])
     const entries = screen.getAllByRole('menuitem', { name: 'Shared' })
@@ -276,7 +315,7 @@ describe('WorkspacePicker', () => {
         useSessionRetainInfo={() => undefined}
         usePanelInfo={usePanelInfo} useResource={useResource}
         onPick={vi.fn()} onPickNoDirectory={vi.fn()} onClose={vi.fn()} createWorkspace={vi.fn()}
-        useDirectoryFlow={occupancySource().useDirectoryFlow} renderSlot={renderSlot} t={t}
+        useDirectoryFlow={occupancySource().useDirectoryFlow} useDirectoryActions={hook([])} renderSlot={renderSlot} t={t}
       />,
     )
     expect(screen.queryByRole('menu')).toBeNull()
@@ -294,7 +333,7 @@ describe('WorkspacePicker', () => {
         useSessionRetainInfo={() => undefined}
         usePanelInfo={usePanelInfo} useResource={useResource}
         onPick={vi.fn()} onPickNoDirectory={vi.fn()} onClose={vi.fn()} createWorkspace={vi.fn()}
-        useDirectoryFlow={occupancySource().useDirectoryFlow} renderSlot={renderSlot} t={t}
+        useDirectoryFlow={occupancySource().useDirectoryFlow} useDirectoryActions={hook([])} renderSlot={renderSlot} t={t}
       />,
     )
     // An empty list is not final yet: jumping into the directory flow here

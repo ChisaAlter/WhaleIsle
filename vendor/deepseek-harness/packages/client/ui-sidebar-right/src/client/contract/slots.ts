@@ -26,7 +26,7 @@ import type { RightbarOwnerProps } from '@deepseek-ai/dsh-client-ui-layout/clien
 // The locale plugin's own merge carries the shared `common` vocabulary that the
 // lookup chain consults after this namespace misses.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { PaneId, TabId, TabRecord } from '@deepseek-ai/dsh-client-ui-dockkit'
+import type { FloatRect, PaneId, TabId, TabRecord } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { SlotHookFactory } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TabHookContext } from '../tab-info.ts'
 import type { SidebarRightKey } from '../locales.ts'
@@ -167,7 +167,12 @@ export interface SidebarRightTabInfo {
     /** Presentation selected by manual mode or viewport width; preserved while collapsed. */
     readonly fullscreen: boolean
   }
-  readonly panel: { readonly id: PaneId }
+  readonly panel: {
+    readonly id: PaneId
+    readonly host: 'dock' | 'float'
+    /** Saved viewport rectangle of a float; the renderer may constrain it to the current viewport. */
+    readonly rect: FloatRect | undefined
+  }
   readonly tab: TabRecord & {
     /** Effective refresh binding for this page's controls. */
     readonly refreshShortcut?: ShortcutCatalogEntry | undefined

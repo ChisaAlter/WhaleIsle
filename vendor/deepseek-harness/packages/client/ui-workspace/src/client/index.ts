@@ -57,7 +57,7 @@ import { WorkspacePicker } from './WorkspacePicker.tsx'
 import { ShowArchivedListRow } from './ShowArchivedListRow.tsx'
 import { en, zh, type WorkspaceKey } from './locales.ts'
 
-export type { StartSessionOptions, UiWorkspace } from './navigation.ts'
+export type { StartSessionOptions, UiWorkspace, WorkspaceDirectoryAction, OwnedSessionNavigationEntry } from './navigation.ts'
 export type {
   DirectoryFlowOwnerProps, DirectoryFlowSlotName, DirectoryPickingHooks, DirectoryPickingInjected,
   MenuOpenState, RowToast, SessionRenameTarget, SessionRowOwnerProps, UseMenuOpenState, WorkspaceBrowserInjected,
@@ -148,16 +148,47 @@ export function apply(ctx: Context): void {
   }
   // Registry-global sets as Sets, rebuilt only when the Workspace snapshot changes.
   const pinnedSet = derive(workspaces.list, snapshot => new Set<SessionId>(snapshot.pinnedSessionIds))
-  const archivedSet = derive(workspaces.list, snapshot => new Set<SessionId>(snapshot.archivedSessionIds))
+  let archiveWorkspaceSnapshot: WorkspaceSnapshot | undefined
+  let archiveNavigationSnapshot: ReturnType<typeof uiWorkspace.sessionNavigation.getSnapshot> | undefined
+  let archivedValue: ReadonlySet<SessionId> = new Set()
+  const archivedSet: HostObservable<ReadonlySet<SessionId>> = {
+    getSnapshot: () => {
+      const workspaceSnapshot = workspaces.list.getSnapshot()
+      const navigationSnapshot = uiWorkspace.sessionNavigation.getSnapshot()
+      if (workspaceSnapshot !== archiveWorkspaceSnapshot || navigationSnapshot !== archiveNavigationSnapshot) {
+        archiveWorkspaceSnapshot = workspaceSnapshot
+        archiveNavigationSnapshot = navigationSnapshot
+        archivedValue = new Set([...workspaceSnapshot.archivedSessionIds,
+          ...navigationSnapshot.filter(entry => entry.archived).map(entry => entry.sessionId)])
+      }
+      return archivedValue
+    },
+    subscribe: listener => {
+      const offWorkspace = workspaces.list.subscribe(listener)
+      const offNavigation = uiWorkspace.sessionNavigation.subscribe(listener)
+      return () => { offWorkspace(); offNavigation() }
+    },
+  }
   // Plugin-private facts the row actions and their overlay surfaces share:
   // the pending rename request and the notice on display. Each business
   // writes through its own injected callback and the surface reads through
   // its bound hook.
   const renameRequest = derive(shortcutControls.state, state => state.renameTarget)
   const archiveRequest = createSnapshotStore<SessionArchiveConfirmRequest | null>(null)
-  const requestSessionRename = shortcutControls.rename
+  const requestSessionRename: WorkspaceBrowserInjected['requestSessionRename'] = (sessionId, title) => {
+    const action = uiWorkspace.resolveSessionAction(sessionId, 'rename')
+    if (action !== undefined) { action(); return }
+    if (sessions.list.getSnapshot().byId[sessionId]?.presentation !== undefined) return
+    shortcutControls.rename(sessionId, title)
+  }
+  const restoreSession = async (sessionId: SessionId): Promise<void> => {
+    const action = uiWorkspace.resolveSessionAction(sessionId, 'restore')
+    if (action !== undefined) { await action(); return }
+    if (sessions.list.getSnapshot().byId[sessionId]?.presentation !== undefined) return
+    await uiWorkspace.unarchiveSession(sessionId)
+  }
   const unarchiveSession = (sessionId: SessionId): void => {
-    uiWorkspace.unarchiveSession(sessionId).catch((reason: unknown) => {
+    restoreSession(sessionId).catch((reason: unknown) => {
       console.warn('session unarchive rejected:', reason)
     })
   }
@@ -187,6 +218,9 @@ export function apply(ctx: Context): void {
     // The Host's refusal for running work is the one case that asks first:
     // the confirmation names that work and offers to stop it.
     archiveSession: (sessionId) => {
+      const action = uiWorkspace.resolveSessionAction(sessionId, 'archive')
+      if (action !== undefined) { action(); return }
+      if (sessions.list.getSnapshot().byId[sessionId]?.presentation !== undefined) return
       uiWorkspace.archiveSession(sessionId).then(() => {
         notify({ kind: 'archived', sessionId })
       }).catch((reason: unknown) => {
@@ -231,6 +265,7 @@ export function apply(ctx: Context): void {
     undoArchive: unarchiveSession,
     showArchived: () => { viewInstance.actions.setArchivedFilter('show') },
   })
+  const registerDirectoryPicker: NonNullable<WorkspaceBrowserInjected['registerDirectoryPicker']> = picker => uiWorkspace.registerDirectoryPicker(picker)
   const browserInjected = (): WorkspaceBrowserInjected => ({
     // Explicit group actions keep their target; unscoped New Session inherits
     // the current Session Workspace before the recent-Workspace fallback.
@@ -251,18 +286,20 @@ export function apply(ctx: Context): void {
     insertWorkspaceBefore: async (workspaceId, beforeWorkspaceId) => {
       await workspaces.insertBefore(workspaceId, beforeWorkspaceId)
     },
-    unarchiveSession: async (sessionId) => { await uiWorkspace.unarchiveSession(sessionId) },
+    unarchiveSession: restoreSession,
     createWorkspace: input => workspaces.create(input),
+    registerDirectoryPicker,
     requestSearch: shortcutControls.search,
     requestAddWorkspace: shortcutControls.add,
     closeAddWorkspace: shortcutControls.closeAdd,
     setDirectoryBusy: shortcutControls.directoryBusy,
     dismissForkError: shortcutControls.dismissForkError,
-    hooks: { directoryFlow: browserFlowSource, hostInfo, workspaceShortcuts: shortcutControls.state, shortcuts: ctx.shortcuts.catalog },
+    hooks: { directoryFlow: browserFlowSource, hostInfo, workspaceShortcuts: shortcutControls.state, shortcuts: ctx.shortcuts.catalog,
+      sessionNavigation: uiWorkspace.sessionNavigation },
   })
   const pickerInjected = (): WorkspacePickerInjected => ({
     createWorkspace: input => workspaces.create(input),
-    hooks: { directoryFlow: pickerFlowSource },
+    hooks: { directoryFlow: pickerFlowSource, directoryActions: uiWorkspace.directoryActions },
   })
   // Each registration declares its owned children in the same call; slot
   // injection follows both the owner and declaration HMR lifetimes.
@@ -271,6 +308,7 @@ export function apply(ctx: Context): void {
       name: 'sidebar.workspaces',
       children: {
         'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' },
+        'sidebar.workspaces.sections': { kind: 'list', scope: 'root' },
         // Every row entry reads the menu's open state through a hook bound
         // from the row's render occurrence (the owner passes the state pair
         // as hookContext).

@@ -1,6 +1,7 @@
 /** Registers the Diff page type in the right Sidebar. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-surfaces/client'
@@ -75,7 +76,7 @@ export function apply(ctx: Context): void {
         const workspaces = ctx.get('workspaces') as WorkspacePathOpener | undefined
         const openPath = workspaces?.openPath
         if (openPath === undefined) throw new Error('workspace path opener is unavailable')
-        const cwd = ctx.sessions.list.getSnapshot().byId[sessionId as SessionId]?.cwd
+        const cwd = sessionWorkingDirectory(ctx.sessions.list.getSnapshot().byId[sessionId as SessionId])
         await openPath.call(workspaces, resolveWorkspacePath(cwd, relativePath), { sessionId })
       },
     }),

@@ -66,6 +66,10 @@ Every exact live Agent can use `sendMessage()` with a direct continuable child; 
 
 ### Failure and recovery
 
+A trusted Host can create a continuable child with an explicit `environment`: an absolute `cwd`, registered `agentPreset` and `admissionPolicy` key. The child mounts that preset instead of copying its parent's tool scope. Its v4 descriptor retains the role and policy for cold resume; model selection uses the existing `request.agentOptions` and descriptor fields. Delegated permission policy still follows the existing parent rules. The Host registers the matching continuation policy through `registerContinuationPolicy()`; every first activation and warm or cold message admission calls it. Settlement also calls it with `reason: 'settlement'` before waking the parent. Denied notices can be parked in the resident inbox, but that inbox does not survive disposal: the owning Host must persist its outcome and pending-summary facts. Missing or unloaded policies refuse activation. Ordinary continuations retain their inherited environment, v3 descriptor and settlement wakes. Native settlement sources carry an optional `runId` to correlate the same lifecycle epoch without a second notification.
+
+`subagent/start`, `subagent/end` and settlement notices expose the activation's `runId`, so a Host can correlate a real settlement with the execution it admitted instead of treating an inactive Agent as a successful task.
+
 Requests that need a capability the chosen provider lacks fail loudly at start rather than being silently ignored. A failed child run returns a stop reason, and provider backends add a safe diagnostic; a cancelled request settles as `aborted`. Children are isolated: a crashed or misbehaving child cannot corrupt the parent's session.
 
 -----

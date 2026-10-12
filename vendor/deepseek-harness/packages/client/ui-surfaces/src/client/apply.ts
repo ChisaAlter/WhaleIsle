@@ -6,7 +6,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { en, NS, zh, type SurfacesKey } from './locales.ts'
 import { ensureBaseOpenPath, wrapOpenPath, type OpenPathOptions, type OpenPathService } from './openpath-intercept.ts'
-import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
+import { fileAddressFor, sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import { relativeTo } from './paths.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
@@ -202,11 +202,19 @@ async function openWorkspaceSurface(
   options?: OpenPathOptions,
 ): Promise<boolean> {
   const id = sessionId as SessionId
-  const cwd = ctx.sessions.list.getSnapshot().byId[id]?.cwd
+  const session = ctx.sessions.list.getSnapshot().byId[id]
+  const sessionCwd = session?.presentation?.workingDirectory ?? session?.cwd
+  const cwd = options?.workingDirectory ?? sessionCwd
   if (typeof cwd !== 'string' || cwd.length === 0) return false
   const relative = relativeTo(cwd, path)
   if (relative === undefined) return false
   if (relative === '') return ctx.sidebarRight.openTabIn(id, 'files')
+  // Project sessions store their private state under a different Host cwd.
+  // Every resolved deliverable must therefore keep its absolute identity,
+  // including Office files inside the presented working directory.
+  const address = options?.workingDirectory === undefined
+    ? fileAddressFor(id, sessionCwd, path)
+    : sessionFileAddress(id, path)
   const own = currentSessionId(ctx) === sessionId
   if (own && options?.presentation === 'mini' && BROWSER_DOCUMENTS.has(documentExtension(relative))) {
     const url = await browserDocumentUrl(cwd, relative)
@@ -216,13 +224,13 @@ async function openWorkspaceSurface(
     }
   }
   if (own && options?.presentation === 'mini' && !BROWSER_DOCUMENTS.has(documentExtension(relative))) {
-    return ctx.sidebarRight.openResourceIn(id, fileAddressFor(id, cwd, relative), {
+    return ctx.sidebarRight.openResourceIn(id, address, {
       expand: false,
       floating: floatingFileRect(sessionId),
       ...options.line === undefined ? {} : { params: { line: options.line } },
     })
   }
-  const opened = ctx.sidebarRight.openResourceIn(id, fileAddressFor(id, cwd, relative),
+  const opened = ctx.sidebarRight.openResourceIn(id, address,
     options?.line === undefined ? undefined : { params: { line: options.line } })
   if (opened && own) await previewBrowserDocument(cwd, relative, sessionId)
   return opened

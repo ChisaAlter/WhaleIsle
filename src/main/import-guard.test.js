@@ -41,6 +41,32 @@ test('profile mutations refuse while the maintenance slot is held', async () => 
   }
 });
 
+test('optional Project disable and enable preserve ordinary profile manifest and user patch', async () => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const { setDesktopDshHome, clearDesktopDshHome } = require('../shared/dsh-home');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'project-profile-ops-'));
+  setDesktopDshHome(home);
+  try {
+    const profile = path.join(home, 'profiles', 'web'); fs.mkdirSync(profile, { recursive: true });
+    const manifest = JSON.stringify({ dependencies: { 'user-plugin': '1.0.0' }, dsh: { profile: { bundles: ['user-plugin'] } } });
+    fs.writeFileSync(path.join(profile, 'package.json'), manifest);
+    fs.writeFileSync(path.join(profile, 'cordis.patch.yml'), '# preserve user\n');
+    let config = { disabledPlugins: [] };
+    const io = { load: () => config, save: patch => { config = { ...config, ...patch }; } }, dsh = { state: 'idle' };
+    assert.equal((await disablePlugins(['dsh-project'], { dsh, configIO: io })).ok, true);
+    assert.deepEqual(config.disabledPlugins, ['dsh-project']);
+    assert.equal((await enablePlugin('dsh-project', { dsh, configIO: io })).ok, true);
+    assert.deepEqual(config.disabledPlugins, []);
+    assert.equal(fs.readFileSync(path.join(profile, 'package.json'), 'utf8'), manifest);
+    assert.equal(fs.readFileSync(path.join(profile, 'cordis.patch.yml'), 'utf8'), '# preserve user\n');
+    assert.equal(importGuard.isMaintenanceHeld(), false);
+  } finally {
+    clearDesktopDshHome();
+    assert.ok(path.resolve(home).startsWith(path.join(os.tmpdir(), 'project-profile-ops-')));
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('holdsMaintenance distinguishes the live owner token from foreign callers', () => {
   const owner = importGuard.acquireMaintenance('start');
   try {

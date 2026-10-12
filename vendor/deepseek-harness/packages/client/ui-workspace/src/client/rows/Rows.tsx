@@ -247,7 +247,7 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
   newShortcut?: ShortcutCatalogEntry | undefined
   containsCurrentDescendant?: boolean
   onToggle: () => void
-  onCreate: () => void
+  onCreate?: (() => void) | undefined
   /** Real-Workspace actions; absent for the ungrouped bucket (no menu shown). */
   actions?: { rename: () => void; delete: () => void } | undefined
   /** Present only for real Workspace rows in the grouped view. */
@@ -320,7 +320,7 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
             )}
           />
         )}
-        <Tooltip label={t('actions.newSession')} shortcutKeys={newShortcut?.keys} side="bottom" align="end" delayMs={500}>
+        {onCreate !== undefined && <Tooltip label={t('actions.newSession')} shortcutKeys={newShortcut?.keys} side="bottom" align="end" delayMs={500}>
           <button
             type="button"
             className={css.iconButton}
@@ -330,7 +330,7 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
           >
             <IconNewChatOutlineRegular />
           </button>
-        </Tooltip>
+        </Tooltip>}
       </span>
     </div>
   )
@@ -542,25 +542,27 @@ function SessionHoverContent({ node, now, renderSlot, t }: {
  * @param props.t - Workspace-browser translation seat.
  * @returns the result row.
  */
-export function SearchResultItem({ result, currentId, onOpen, onUnarchive, onDelete, t }: {
+export function SearchResultItem({ result, currentId, onOpen, onUnarchive, onDelete, renderSlot, t }: {
   result: SearchResultNode
   currentId: string | undefined
   onOpen: (id: SearchResultNode['id']) => void
   onUnarchive: (id: SearchResultNode['id']) => void
   onDelete: (id: SearchResultNode['id'], title: string) => void
+  renderSlot: RowRenderSlots
   t: RowTranslate
 }) {
   const selected = result.id === currentId
   const statuses = sessionStatuses(result, t)
   const primaryStatus = statuses[0]
   const [menuOpen, setMenuOpen] = useState(false)
+  const menuOpenState = useMemo((): MenuOpenState => [menuOpen, setMenuOpen], [menuOpen])
   const title = result.title || t('session.untitled')
   return (
     <div
       className={clsx(css.searchResultRow, selected && css.selected, result.archived && css.archived, menuOpen && css.menuOpen)}
       role="treeitem"
       aria-selected={selected}
-      aria-description={result.archived ? t('toast.archivedNotOpenable') : undefined}
+      aria-description={result.archived && result.owner === undefined ? t('toast.archivedNotOpenable') : undefined}
       onClick={() => { onOpen(result.id) }}
     >
       <span className={css.searchResultHeading}>
@@ -573,15 +575,15 @@ export function SearchResultItem({ result, currentId, onOpen, onUnarchive, onDel
           )}
         </span>
         <span className={css.searchResultTitle}>{title}</span>
-        {result.archived && (
+        {(result.archived || result.owner !== undefined) && (
           <span className={css.rowActions} onClick={(e) => { e.stopPropagation() }}>
             <Menu
               open={menuOpen}
               onClose={() => { setMenuOpen(false) }}
-              items={[
+              {...(result.owner === undefined ? { items: [
                 { id: 'unarchive', label: t('menu.unarchiveSession'), icon: <IconUnarchiveOutlineRegular size={16} /> },
                 { id: 'delete', label: t('menu.deleteSession'), icon: <IconTrashOutlineRegular size={16} />, danger: true },
-              ]}
+              ] } : {})}
               onSelect={(id) => {
                 setMenuOpen(false)
                 if (id === 'unarchive') onUnarchive(result.id)
@@ -599,7 +601,10 @@ export function SearchResultItem({ result, currentId, onOpen, onUnarchive, onDel
                   <IconEllipsisOutlineRegular size={16} />
                 </button>
               )}
-            />
+            >
+              {result.owner !== undefined && renderSlot('sidebar.workspaces.session.menu.item',
+                { sessionId: result.id, displayTitle: result.title }, { hookContext: menuOpenState })}
+            </Menu>
           </span>
         )}
       </span>
@@ -663,7 +668,7 @@ export function SessionNodeItem({
   // Archived rows hold their in-place grayed slot, so manual reorder cannot
   // move them. Pinned rows drag within the pinned block: the browser gates
   // their drop targets to fellow pinned rows.
-  const draggable = drag !== undefined && !row.blank && !row.archived
+  const draggable = drag !== undefined && !row.blank && !row.archived && row.owner === undefined
   const [menuOpen, setMenuOpen] = useState(false)
   // The menu's open state, bound into the row entries' `useMenuOpenState` hook.
   const menuOpenState = useMemo((): MenuOpenState => [menuOpen, setMenuOpen], [menuOpen])
@@ -687,7 +692,7 @@ export function SessionNodeItem({
       )}
       role="treeitem"
       aria-selected={selected}
-      aria-description={row.archived ? t('toast.archivedNotOpenable') : undefined}
+      aria-description={row.archived && row.owner === undefined ? t('toast.archivedNotOpenable') : undefined}
       onClick={() => { onOpen(node.id) }}
       onPointerEnter={marquee.enter}
       onPointerLeave={marquee.leave}
@@ -776,7 +781,7 @@ export function SessionNodeItem({
               { sessionId: node.id, displayTitle: row.title },
               { hookContext: menuOpenState },
             )}
-            {row.archived && onDeleteRequest !== undefined && (
+            {row.archived && row.owner === undefined && onDeleteRequest !== undefined && (
               <MenuItemButton danger icon={<IconTrashOutlineRegular size={16} />} onSelect={() => {
                 setMenuOpen(false)
                 onDeleteRequest(node.id, title)
@@ -844,10 +849,11 @@ export function ArchivedSectionHeader({ expanded, onToggle, t }: {
  * @param props.t - the browser root's locale seat.
  * @returns the archived session row.
  */
-export function ArchivedSessionNodeItem({ node, currentId, now, onUnarchive, onDelete, renderSlot, t }: {
+export function ArchivedSessionNodeItem({ node, currentId, now, onOpen, onUnarchive, onDelete, renderSlot, t }: {
   node: SessionNode
   currentId: string | undefined
   now: number
+  onOpen?: ((id: SessionNode['id']) => void) | undefined
   onUnarchive: (id: SessionNode['id']) => void
   onDelete: (id: SessionNode['id'], title: string) => void
   renderSlot: RowRenderSlots
@@ -860,9 +866,10 @@ export function ArchivedSessionNodeItem({ node, currentId, now, onUnarchive, onD
   const primaryStatus = statuses[0]
   const showStatus = primaryStatus.state !== 'done' || row.completed
   const [menuOpen, setMenuOpen] = useState(false)
+  const menuOpenState = useMemo((): MenuOpenState => [menuOpen, setMenuOpen], [menuOpen])
   const archivedMenuItems = [
     { id: 'unarchive', label: t('menu.unarchiveSession'), icon: <IconArchiveOutlineRegular size={16} /> },
-    { id: 'delete', label: t('menu.deleteSession'), icon: <IconTrashOutlineRegular size={16} />, danger: true },
+    ...(row.owner === undefined ? [{ id: 'delete', label: t('menu.deleteSession'), icon: <IconTrashOutlineRegular size={16} />, danger: true }] : []),
   ]
   const ownRow = (
     <div
@@ -870,7 +877,8 @@ export function ArchivedSessionNodeItem({ node, currentId, now, onUnarchive, onD
       data-row-key={`session:${node.id}`}
       role="treeitem"
       aria-selected={selected}
-      aria-description={t('toast.archivedNotOpenable')}
+      aria-description={node.owner === undefined ? t('toast.archivedNotOpenable') : undefined}
+      onClick={node.owner === undefined ? undefined : () => { onOpen?.(node.id) }}
     >
       <span className={css.slot}>
         {showStatus && <SessionStatusDots statuses={statuses} />}
@@ -878,11 +886,11 @@ export function ArchivedSessionNodeItem({ node, currentId, now, onUnarchive, onD
       <span className={css.title}>{title}</span>
       {!row.blank && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
       {!row.blank && (
-        <span className={css.rowActions}>
+        <span className={css.rowActions} onClick={(event) => { event.stopPropagation() }}>
           <Menu
             open={menuOpen}
             onClose={() => { setMenuOpen(false) }}
-            items={archivedMenuItems}
+            {...(node.owner === undefined ? { items: archivedMenuItems } : {})}
             onSelect={(id) => {
               setMenuOpen(false)
               if (id === 'unarchive') onUnarchive(node.id)
@@ -900,7 +908,10 @@ export function ArchivedSessionNodeItem({ node, currentId, now, onUnarchive, onD
                 <IconEllipsisOutlineRegular size={16} />
               </button>
             )}
-          />
+          >
+            {node.owner !== undefined && renderSlot('sidebar.workspaces.session.menu.item',
+              { sessionId: node.id, displayTitle: node.title }, { hookContext: menuOpenState })}
+          </Menu>
         </span>
       )}
     </div>

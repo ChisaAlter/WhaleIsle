@@ -136,7 +136,7 @@ const neverHook = (() => { throw new Error('terminal drawer must not read this h
 const panelInfoStub = ((selector: (s: unknown) => unknown) => selector({ activePanelId: null })) as never
 const resourceStub = (() => ({ status: 'none' as const, value: undefined, failure: undefined })) as never
 
-function sessionList(cwd: string | undefined): SessionListState {
+function sessionList(cwd: string | undefined, workingDirectory?: string): SessionListState {
   const current = cwd === undefined ? undefined : SID
   const byId = current === undefined
     ? {}
@@ -149,6 +149,7 @@ function sessionList(cwd: string | undefined): SessionListState {
           retainedBy: { mainView: 1 },
           updatedAt: 1,
           ...(cwd ? { cwd } : {}),
+          ...(workingDirectory === undefined ? {} : { presentation: { owner: 'project', title: 'Project', workingDirectory } }),
         },
       }
   return {
@@ -171,6 +172,7 @@ function bindStore(instance: ReturnType<ReturnType<typeof createTerminalSessionS
 
 function mount(opts: {
   cwd?: string | undefined
+  workingDirectory?: string
   sessionId?: SessionId | undefined | null
   handle?: ReturnType<typeof createTerminalSessionStore>
   instance?: ReturnType<ReturnType<typeof createTerminalSessionStore>['create']>
@@ -214,7 +216,7 @@ function mount(opts: {
       ? undefined
       : (opts.sessionId === undefined && opts.cwd === undefined ? undefined : (opts.sessionId ?? SID)),
     useSession: neverHook,
-    useSessions: ((sel: (s: SessionListState) => unknown) => sel(sessionList(opts.cwd))) as TerminalDrawerProps['useSessions'],
+    useSessions: ((sel: (s: SessionListState) => unknown) => sel(sessionList(opts.cwd, opts.workingDirectory))) as TerminalDrawerProps['useSessions'],
     useWorkspaces: neverHook,
     useProjection: neverHook,
     useConversation: neverHook,
@@ -279,6 +281,12 @@ describe('clampDrawerHeight', () => {
 })
 
 describe('TerminalDrawer', () => {
+  it('starts a user terminal in the bound Project directory instead of the coordinator storage cwd', async () => {
+    const b = mount({ cwd: '/profile/project-store', workingDirectory: '/work/project-code' })
+    fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
+    await waitFor(() => expect(b.ptyCreate).toHaveBeenCalledExactlyOnceWith({ cwd: '/work/project-code' }))
+  })
+
   it('does not create a PTY when the session has no cwd', () => {
     const b = mount({ cwd: undefined, sessionId: undefined })
     expect(screen.getByText('A workspace is required to start a terminal')).toBeTruthy()

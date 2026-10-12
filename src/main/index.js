@@ -14,6 +14,8 @@ const { ensureUsagePanelPlugin } = require('./usage-panel-preset');
 const { ensureSessionSearchOverlay } = require('./session-search-overlay');
 const { ensureDshImPlugin } = require('./dsh-im-desktop');
 const { ensureDshbotPlugin } = require('./dshbot-desktop');
+const { ensureDesktopDshProject } = require('./dsh-project-desktop');
+const { createProjectEnvironment } = require('./project-environment');
 const { ensureDesktopTaskControl } = require('./task-control-overlay');
 const { ensureDesktopPlatformSession } = require('./platform-session-overlay');
 const { fetchPlatformSession } = require('./platform-session');
@@ -628,6 +630,7 @@ const harness = new HarnessController({
   ensureSessionSearchOverlay,
   ensureDshImPlugin,
   ensureDshbotPlugin,
+  ensureDshProjectPlugin: ensureDesktopDshProject,
   ensureTaskControlPlugin: ensureDesktopTaskControl,
   ensureDesktopPlatformSession,
   ensureDshWhalePlugin: ensureDesktopDshWhale,
@@ -779,6 +782,7 @@ async function confirmTaskStop(operation, inspection) {
   return result.response === 0;
 }
 
+const projectEnvironment = createProjectEnvironment({ getGithubToken: () => loadConfig().githubToken });
 const taskProtection = createTaskProtection({
   getBaseUrl: () => (typeof dsh.baseUrl === 'string' ? dsh.baseUrl : ''),
   hostRunning: () => isDesktopKernelRunning() && dsh.webReady === true && Boolean(dsh.baseUrl),
@@ -1133,6 +1137,7 @@ if (!gotLock) {
       // chain no matter which surface asked.
       desktop: {
         htmlPreview: (input, signal) => require('./html-preview').captureHtmlPreview(input, signal),
+        project: (payload) => projectEnvironment.dispatch(payload),
         state: () => {
           const configNow = loadConfig();
           const listed = listInstalledPlugins();

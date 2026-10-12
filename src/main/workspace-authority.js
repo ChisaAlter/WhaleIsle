@@ -306,6 +306,75 @@ function readHarnessRegisteredWorkspacePaths(homeDir = dshHome()) {
 }
 
 /**
+ * App-created worktrees are execution directories, not user Workspace rows.
+ * Only exact ready receipts beneath the desktop home add a root; neither the
+ * Project store nor a receipt-supplied arbitrary path becomes authorized.
+ */
+function readProjectExecutionPaths(homeDir = dshHome()) {
+  const paths = [];
+  let realHome;
+  try { realHome = fs.realpathSync.native(homeDir); } catch { return paths; }
+  const safePath = (...parts) => {
+    let current = realHome;
+    for (const part of parts) {
+      current = path.join(current, part);
+      try {
+        if (fs.lstatSync(current).isSymbolicLink()
+          || identityKey(fs.realpathSync.native(current)) !== identityKey(current)) return null;
+      } catch { return null; }
+    }
+    return current;
+  };
+  const projects = safePath('projects');
+  if (!projects) return paths;
+  let projectIds;
+  try { projectIds = fs.readdirSync(projects); } catch { return paths; }
+  for (const projectId of projectIds) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,100}$/.test(projectId)) continue;
+    const bindings = safePath('projects', projectId, 'internal', 'desktop-workspaces');
+    if (!bindings) continue;
+    let files;
+    try { files = fs.readdirSync(bindings); } catch { continue; }
+    for (const filename of files) {
+      const workstreamId = filename.replace(/\.json$/, '');
+      if (filename !== `${workstreamId}.json` || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,100}$/.test(workstreamId)) continue;
+      const file = safePath('projects', projectId, 'internal', 'desktop-workspaces', filename);
+      const cwd = safePath('project-worktrees', projectId, workstreamId);
+      if (!file || !cwd) continue;
+      try {
+        const record = JSON.parse(fs.readFileSync(file, 'utf8'));
+        if (record.projectId !== projectId || record.workstreamId !== workstreamId
+          || record.ownership !== 'project' || record.mode !== 'worktree' || record.state !== 'ready'
+          || typeof record.receipt !== 'string' || !record.receipt
+          || typeof record.canonicalPath !== 'string'
+          || identityKey(record.canonicalPath) !== identityKey(cwd)
+          || record.directoryIdentity !== identityKey(cwd) || !fs.statSync(cwd).isDirectory()) continue;
+        paths.push(cwd);
+      } catch { /* An unavailable or invalid receipt grants no authority. */ }
+    }
+  }
+  return paths;
+}
+
+/** Project selections are registered roots without creating ordinary Workspace rows. */
+function readProjectRegisteredPaths(homeDir = dshHome()) {
+  try {
+    const file = path.join(homeDir, 'storages', 'whale_project_local.json');
+    const document = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (document.unit?.name !== 'whale_project_local') return [];
+    const projects = document.tables?.state?.catalog?.projects;
+    if (!Array.isArray(projects)) return [];
+    return projects.flatMap(project => {
+      if (!['ready', 'archived'].includes(project.lifecycle) || typeof project.canonicalWorkingDirectory !== 'string') return [];
+      try {
+        const real = fs.realpathSync.native(project.canonicalWorkingDirectory);
+        return identityKey(real) === project.directoryIdentity && identityKey(real) === identityKey(project.canonicalWorkingDirectory) ? [real] : [];
+      } catch { return []; }
+    });
+  } catch { return []; }
+}
+
+/**
  * True when `dir` is a volume root (`C:\`, `/`). Registering that path would
  * authorize every file on the volume for Git/FS/PTY.
  * @param {string} dir
@@ -400,9 +469,11 @@ function loadWorkspaceAuthority(options = {}) {
     return createWorkspaceAuthority({
       workspace: loadConfig().workspace,
       extraWorkspaces: options.allowScratchCwd ? [scratchWorkspacePath()] : [],
-      listRegisteredWorkspaces: () => filterRegisteredWorkspaceRoots(
-        readHarnessRegisteredWorkspacePaths(),
-      ),
+      listRegisteredWorkspaces: () => [
+        ...filterRegisteredWorkspaceRoots(readHarnessRegisteredWorkspacePaths()),
+        ...filterRegisteredWorkspaceRoots(readProjectRegisteredPaths()),
+        ...readProjectExecutionPaths(),
+      ],
     });
   } catch {
     return createWorkspaceAuthority({ workspace: '' });
@@ -413,6 +484,8 @@ module.exports = {
   createWorkspaceAuthority,
   loadWorkspaceAuthority,
   readHarnessRegisteredWorkspacePaths,
+  readProjectExecutionPaths,
+  readProjectRegisteredPaths,
   filterRegisteredWorkspaceRoots,
   isHighRiskWorkspaceRoot,
   highRiskAnchorPaths,

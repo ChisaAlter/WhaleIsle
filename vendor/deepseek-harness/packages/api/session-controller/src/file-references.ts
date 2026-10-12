@@ -4,6 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-file-reference'
 import type { FileReferenceCandidate } from '@deepseek-ai/dsh-file-reference/types'
+import type {} from '@deepseek-ai/dsh-workspace'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 
 declare module '@deepseek-ai/cordis' {
@@ -35,7 +36,14 @@ export class SessionFileReferences extends TypertRemoteService {
     query: string,
     signal: AbortSignal,
   ): Promise<FileReferenceCandidate[]> {
-    return this.ctx.fileReferences.list(agent, query, signal)
+    const presentation = agent.session.snapshotEvents().findLast(event => event.type === 'session/presentation')
+    const workingDirectory = presentation?.type === 'session/presentation' ? presentation.data?.workingDirectory : undefined
+    if (workingDirectory === undefined) return this.ctx.fileReferences.list(agent, query, signal)
+    // Presentation is a navigation hint. Only a registered, user-selected Workspace may supply this root.
+    if (!this.ctx.get('workspaceRegistry') || !this.ctx.workspaceRegistry.list().some(workspace => workspace.path === workingDirectory)) {
+      return Promise.resolve([])
+    }
+    return this.ctx.fileReferences.list(agent, query, signal, workingDirectory)
   }
 }
 

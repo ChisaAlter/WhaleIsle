@@ -4,6 +4,7 @@ import type { MutableRefObject, ReactNode } from 'react'
 import clsx from 'clsx'
 import type { DockIntents } from '../contract/adapter.ts'
 import type { LayoutState, PaneNode, TabId, TabRecord } from '../contract/types.ts'
+import { FLOAT_MINIMIZED_HEIGHT } from '../engine/constraints.ts'
 import { findTabPane, floatRect, getNode, getPane } from '../engine/tree.ts'
 import type { SizePreview } from './PaneTree.tsx'
 import type { PaneCallbacks } from './render.ts'
@@ -40,6 +41,7 @@ interface TabHostProps extends LayoutProps {
 function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRequest, keepMounted, mountOnOpen,
   active = true }: TabHostProps): ReactNode {
   const floating = pane.host === 'float'
+  const minimized = floating && (pane.rect?.height ?? 0) <= FLOAT_MINIMIZED_HEIGHT
   const selected = floating || pane.activeTabId === tab.id
   const visible = active && selected && (floating || state.expanded)
   const retained = keepMounted?.(tab) ?? false
@@ -48,6 +50,11 @@ function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRe
   if (ready && !visited) setVisited(true)
   const host = useRef<HTMLElement | null>(null)
   const body = useRef<HTMLDivElement | null>(null)
+  useLayoutEffect(() => {
+    const element = body.current as HTMLDivElement
+    element.inert = minimized
+    if (minimized && element.contains(document.activeElement)) (document.activeElement as HTMLElement).blur()
+  }, [minimized])
   useLayoutEffect(() => {
     // Both refs target unconditional descendants attached before these effects.
     const section = host.current as HTMLElement
@@ -76,7 +83,7 @@ function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRe
     return () => { element.removeEventListener('focus', focus, true) }
   }, [visible, floating, floats, pane.id, state.activePaneId, callbacks])
   const lifted = floating && floats.preview?.paneId === pane.id ? floats.preview.rect : undefined
-  const rect = floating ? lifted ?? floatRect(pane) : undefined
+  const rect = floating ? floats.visibleRect(lifted ?? floatRect(pane)) : undefined
   const depth = lifted === undefined ? state.floats.indexOf(pane.id) + 1 : state.floats.length + 1
   return (
     <div className={clsx(css.tabCell, floating && css.floatingCell)} hidden={!selected}
@@ -98,14 +105,16 @@ function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRe
         <div className={css.tabHostHeader}>
           {selected && (floating
             ? <FloatHeader paneId={pane.id} tab={tab} labels={callbacks.labels} intents={intents}
-              renderTabTitle={callbacks.renderTabTitle} canCloseTab={callbacks.canCloseTab} drag={floats.drag} />
+              renderTabTitle={callbacks.renderTabTitle} canCloseTab={callbacks.canCloseTab}
+              canDockTab={callbacks.canDockTab} drag={floats.drag} />
             : <TabStrip state={state} pane={pane} callbacks={callbacks} />)}
         </div>
-        <div ref={body} className={clsx(css.tabHostBody, floating ? css.floatBody : css.paneBody)}>
+        <div ref={body} className={clsx(css.tabHostBody, floating ? css.floatBody : css.paneBody)}
+          hidden={minimized} aria-hidden={minimized || undefined}>
           {visited && (retained || (active && selected)) ? callbacks.renderTab(tab) : null}
           {!floating && <PaneDropHints pane={pane} callbacks={callbacks} />}
         </div>
-        {floating && <div className={css.floatResize} data-dockkit-float-resize={pane.id}
+        {floating && !minimized && <div className={css.floatResize} data-dockkit-float-resize={pane.id}
           onPointerDown={(event) => { floats.drag('resize', pane.id, event) }} />}
       </section>
     </div>

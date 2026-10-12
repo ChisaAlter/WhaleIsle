@@ -1,5 +1,5 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { IconCloseOutline16, IconPanelRightOutline16, IconRightUpOutline16, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCloseOutline16, IconPanelRightOutline16, IconRightUpOutline16, Tooltip, foregroundModalSurfaces } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { NS } from './locales.ts'
@@ -62,6 +62,9 @@ export function DshdMiniPlayer({ t }: Props): ReactNode {
   useEffect(() => {
     if (!state.open || state.previewId === null || state.suspended) return
     const sync = (): void => {
+      // The modal observer may still be publishing its React update. Never
+      // reclaim the native guest from a foreground surface during that gap.
+      if (foregroundModalSurfaces(document).length > 0) return
       const root = rootRef.current
       const chat = chatRect()
       const frame = frameRect()
@@ -93,6 +96,7 @@ export function DshdMiniPlayer({ t }: Props): ReactNode {
 
   useEffect(() => {
     if (!state.open || state.previewId === null || state.suspended) return
+    if (foregroundModalSurfaces(document).length > 0) return
     const root = rootRef.current
     const runtime = readMiniPlayer().runtime
     if (!root || !runtime) return
@@ -109,10 +113,12 @@ export function DshdMiniPlayer({ t }: Props): ReactNode {
     const runtime = readMiniPlayer().runtime
     const id = readMiniPlayer().previewId
     if (!runtime || !id) return
-    const off = subscribeMiniPlayer(() => {
+    const sync = (): void => {
       const current = readMiniPlayer()
       if (current.open && current.suspended && current.previewId === id) void runtime.previewHide(id)
-    })
+    }
+    const off = subscribeMiniPlayer(sync)
+    sync()
     return off
   }, [state.previewId, state.runtime])
 

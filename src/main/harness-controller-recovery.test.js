@@ -34,6 +34,7 @@ function fixture(initialConfig = {}, extra = {}) {
       this.starts.push({ skipUserPlugins: options.skipUserPlugins });
       record('dsh.start', { count: this.starts.length, skipUserPlugins: options.skipUserPlugins, maintenanceOwner: importGuard.maintenanceOwner()?.kind || null });
       if (this.startFailures.length) { const err = new Error(this.startFailures.shift()); this.setState('error', { error: err.message, failure: { phase: 'startup', message: err.message } }); throw err; }
+      await options.prepareProjectPlugin?.();
       this.setState('ready', { error: '', failure: null, baseUrl: 'http://fixture.invalid:3080' }); return this.baseUrl;
     }
     async stop() { this.stopCalls++; record('dsh.stop', { count: this.stopCalls }); this.setState('idle', { error: '', failure: null, baseUrl: '' }); }
@@ -233,7 +234,7 @@ const recoverySteps = [
   'resolveLaunchTarget', 'ensureTaskControlPlugin', 'ensureDesktopPlatformSession',
   'ensureDesktopOfficeRuntime', 'removeDshMarketPreset', 'ensureUsagePanelPlugin',
   'ensureDshImPlugin', 'ensureDesktopMarket', 'removeLegacyDshbotPreset',
-  'ensureDshbotPlugin', 'ensureDshWhalePlugin', 'ensureDshRemotePlugin',
+  'ensureDshbotPlugin', 'ensureDshProjectPlugin', 'ensureDshWhalePlugin', 'ensureDshRemotePlugin',
   'ensureWorkspace', 'showHarness',
 ];
 for (const step of recoverySteps) {

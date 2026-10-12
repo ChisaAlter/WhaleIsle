@@ -52,6 +52,8 @@ export interface SessionSummary {
   projectionValues?: Readonly<Partial<SessionProjectionMap>>
 }
 
+export { sessionWorkingDirectory } from '../../types.ts'
+
 /** Catalog metadata and local source counts; catalog membership owns no Client generation. */
 export interface SessionListState {
   /** Host list order; every id has a matching byId row in the same snapshot. */

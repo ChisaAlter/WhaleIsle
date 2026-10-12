@@ -78,6 +78,13 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
   ].join('\n'));
   for (const marker of FORK_FILE_MARKERS) {
     const content = {
+      'packages/experimental/agent-team/src/index.ts': 'registerManagedPolicy\n',
+      'packages/experimental/agent-team/src/managed.ts': 'ManagedTeamController\n',
+      'packages/experimental/agent-team/src/types.ts': 'PrepareTeamMemberRequest\n',
+      'packages/subagent/subagent/src/index.ts': 'registerContinuationPolicy\n',
+      'packages/subagent/subagent/src/descriptor.ts': 'agentPreset admissionPolicy\n',
+      'packages/api/session-controller/src/index.ts': 'registerManagedPolicy bindManagedSession\n',
+      'packages/client/ui-sidebar/src/client/index.ts': 'selectTab\n',
       'packages/client/ui-primitives/src/index.ts': "export { SettingsSelect } from './SettingsSelect.tsx'\nexport { ReviewDiff } from './ReviewDiff.tsx'\n",
       'packages/client/ui-primitives/src/ReviewDiff.tsx': 'export const MAX_RENDERED_LINES = 5000\ndata-review-view\ndata-diff-line\n',
       'packages/client/ui-primitives/src/ReviewDiff.module.css': '.add {}\n.del {}\n',
@@ -141,8 +148,8 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/api/workspace-controller/src/types.ts': 'export interface WorkspaceBaseline { readonly scratchCwd: string }\n',
       'packages/api/workspace-controller/src/index.ts': "export function scratchWorkspaceCwd() { return dshHomePath('no-workspace') }\n",
       'packages/api/workspace-controller/src/client/model.ts': 'export interface WorkspaceSnapshot { readonly scratchCwd?: string }\n',
-      'packages/workspace/workspace/src/index.ts': 'private async readoptableSessionIds(canonical: string) {}\n',
-      'packages/client/ui-workspace/src/client/navigation.ts': 'connectNoDirectory() { return this.workspaces.list.getSnapshot().scratchCwd }\nconnectScratchCwd() { return this.workspaces.list.getSnapshot().scratchCwd }\ndeleteWorkspace() {}\n',
+      'packages/workspace/workspace/src/index.ts': 'private async readoptableSessionIds(canonical: string) {} workspace/session-before-archive\n',
+      'packages/client/ui-workspace/src/client/navigation.ts': 'connectNoDirectory() { return this.workspaces.list.getSnapshot().scratchCwd }\nconnectScratchCwd() { return this.workspaces.list.getSnapshot().scratchCwd }\ndeleteWorkspace() {}\nregisterDirectoryAction() {}\n',
       'packages/client/ui-workspace/src/client/tree.ts': 'export function isNoDirectorySession() {}\nexport function currentGroupKey() {}\n',
       'packages/client/ui-workspace/src/client/WorkspacePicker.tsx': "const NO_DIRECTORY = '::no-directory'\nonPickNoDirectory?.()\n",
       'packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx': '<TasksSectionHeader onCreate={() => { connectNoDirectory() }} /><GroupSessionRun open={group.expanded} />\n',
@@ -228,7 +235,22 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-sidebar-terminal/src/client/index.ts': 'terminal.drawer.toggle\n',
       'packages/client/ui-user-terminal/src/client/TerminalPane.tsx': 'xterm\n',
     };
-    writeFile(root, marker.file, content[marker.file] ?? 'export {}\n');
+    const projectSeams = {
+      'apps/cli/src/profile-boot.ts': 'export async function disposeProfileApplication\nfor (const release of [() => projects?.dispose?.(), () => ctx?.fiber.dispose()])\ndisposeProfileApplication(app.current)\ninstallFailLoud(NAME, process, dispose)\n',
+      'packages/subagent/subagent/src/types.ts': 'interface ContinuableEnvironment { readonly cwd?: string; readonly agentPreset?: string; readonly admissionPolicy?: string }\n',
+      'packages/subagent/subagent/src/child-agent.ts': 'environment?.cwd ?? parentHeader.cwd\nenvironment?.agentPreset ?? agentPreset\nawait presets.mount(childCtx, composition.agentPreset)\n',
+      'packages/subagent/subagent/src/descriptor.ts': 'agentPreset admissionPolicy\n',
+      'packages/subagent/subagent/src/continuation.ts': "admitContinuation reason: 'start' reason: 'message' agentPreset: descriptor.agentPreset\n",
+      'packages/subagent/subagent/src/continuation-activation.ts': "notifyManagedSettlement reason: 'settlement' activation.observer.runId\n",
+      'packages/subagent/subagent/src/continuation-messages.ts': 'readonly runId?: SubagentRunId\n',
+      'packages/subagent/subagent/src/lifecycle.ts': 'readonly runId: SubagentRunId\n',
+      'packages/subagent/subagent/src/index.ts': 'registerContinuationPolicy\n',
+      'packages/subagent/subagent-in-process-driver/src/index.ts': 'const setup = async\nawait applyChildComposition\n',
+      'packages/api/session-controller/src/commands.ts': "await this.ctx.serial('session/before-cancel'\nasync cancel(request:\n&& !pluginPresentation\n",
+      'packages/api/session-controller/src/index.ts': "'session/before-cancel'\ncancel(request: SessionCancelRequest): Promise<SessionCancelValue>\n",
+      'packages/client/ui-sidebar/src/client/index.ts': 'selectTab\n',
+    };
+    writeFile(root, marker.file, projectSeams[marker.file] ?? content[marker.file] ?? 'export {}\n');
   }
   return root;
 }

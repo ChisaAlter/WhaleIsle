@@ -126,6 +126,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     useSessionRetainInfo: () => undefined,
     usePanelInfo, useResource,
     useWorkspaces: hook(workspaceState([])),
+    useSessionNavigation: hook([]),
     useStore: bindSnapshotSelector(store),
     actions: store.actions,
     startSession: vi.fn(),
@@ -157,6 +158,21 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
 }
 
 describe('WorkspaceBrowser', () => {
+  it.each(['workspace', 'flat'] as const)('keeps additional categories after workspace rows in the same scrolling list in %s mode', mode => {
+    const b = mount({
+      useSessions: hook(sessionState([summary('ordinary-chat', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('ordinary-workspace', ['ordinary-chat'])])),
+      renderSlot: ((name: string) => name === 'sidebar.workspaces.sections'
+        ? <section aria-label="Project"><button>My Project</button></section>
+        : null) satisfies WorkspaceBrowserProps['renderSlot'],
+    })
+    act(() => { b.store.actions.setGroupBy(mode); b.store.actions.setGroupExpanded('ordinary-workspace', true) })
+    const category = screen.getByRole('region', { name: 'Project' })
+    const row = screen.getByText('ordinary-chat')
+    expect(category.parentElement?.contains(row)).toBe(true)
+    expect(row.compareDocumentPosition(category) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it.each(['workspace', 'flat'] as const)('toggles archived rows from Interface Settings in %s mode', (mode) => {
     const b = mount({
       useSessions: hook(sessionState([summary('archived-history', 1)])),
@@ -2306,6 +2322,34 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
+  it('native Workspace rename ignores projected Project directory names but retains registered duplicate protection', async () => {
+    const renameWorkspace = vi.fn(async () => {})
+    const directory = '/projects/Virtual'
+    mount({
+      useWorkspaces: hook(workspaceState([workspace('alpha', [], 'Alpha'), workspace('beta', [], 'Beta')])),
+      useSessions: hook(sessionState([summary('lead', 1, {
+        cwd: '/dsh-home/projects/lead', blank: true,
+        presentation: { owner: 'project', title: 'Project Lead', workingDirectory: directory },
+      })])),
+      useSessionNavigation: hook([{ owner: 'project', sessionId: sid('lead'), workingDirectory: directory, archived: false }]),
+      renameWorkspace,
+    })
+    expect(screen.getByText('Virtual')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '工作区“Alpha”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '重命名' }))
+    const input = screen.getByLabelText<HTMLInputElement>('工作区名称')
+    const confirm = screen.getByRole<HTMLButtonElement>('button', { name: '重命名' })
+    fireEvent.change(input, { target: { value: 'Beta' } })
+    expect(confirm.disabled).toBe(true)
+    expect(screen.getByRole('alert').textContent).toBe('已存在名为“Beta”的工作区。')
+    fireEvent.change(input, { target: { value: 'Virtual' } })
+    expect(confirm.disabled).toBe(false)
+    expect(screen.queryByRole('alert')).toBeNull()
+    fireEvent.click(confirm)
+    expect(renameWorkspace).toHaveBeenCalledWith(wid('alpha'), 'Virtual')
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+  })
+
   it('rename via Enter, failure surfaces the error, Cancel closes', async () => {
     const renameWorkspace = vi.fn(async () => { throw new Error('rename conflict') })
     mount({
@@ -2583,4 +2627,17 @@ describe('Workspace tree grouping', () => {
     expect(b.props.insertWorkspaceBefore).toHaveBeenCalledOnce()
     expect(b.props.insertWorkspaceBefore).toHaveBeenCalledWith(wid('alpha'), wid('gamma'))
   })
+})
+
+it('feature requests use the composed directory flow without creating a regular workspace', async () => {
+  let request: (() => Promise<string | null>) | undefined
+  let owner: DirectoryFlowOwnerProps | undefined
+  const createWorkspace = vi.fn()
+  mount({ createWorkspace, registerDirectoryPicker: picker => { request = picker; return () => { request = undefined } }, renderSlot: ((name: string, props: object) => { if (name === 'sidebar.workspaces.directoryFlow' && (props as DirectoryFlowOwnerProps).open) owner = props as DirectoryFlowOwnerProps; return null }) })
+  let result: Promise<string | null> | undefined
+  act(() => { result = request!() })
+  expect(owner?.open).toBe(true)
+  act(() => { owner!.onPicked('/selected-project') })
+  await expect(result).resolves.toBe('/selected-project')
+  expect(createWorkspace).not.toHaveBeenCalled()
 })

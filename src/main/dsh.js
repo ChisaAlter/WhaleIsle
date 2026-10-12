@@ -966,8 +966,9 @@ class DshManager extends EventEmitter {
 
     const preparationAbort = new AbortController();
     this.preparationAbort = preparationAbort;
+    let preparedHarnessRoot;
     try {
-      await this._ensurePackagedHarness((line) => { if (isCurrent()) this.log(line); }, { signal: preparationAbort.signal });
+      preparedHarnessRoot = await this._ensurePackagedHarness((line) => { if (isCurrent()) this.log(line); }, { signal: preparationAbort.signal });
       if (!isCurrent()) {
         throw cancelledError();
       }
@@ -981,6 +982,14 @@ class DshManager extends EventEmitter {
       throw new Error(`准备运行时失败：${error.message}`);
     } finally {
       if (this.preparationAbort === preparationAbort) this.preparationAbort = null;
+    }
+
+    if (typeof options.prepareProjectPlugin === 'function') {
+      const project = await options.prepareProjectPlugin({ harnessRoot: preparedHarnessRoot });
+      if (!isCurrent()) throw cancelledError();
+      if (project?.overlayFile) {
+        options = { ...options, patchFiles: [...(options.patchFiles || []), project.overlayFile] };
+      }
     }
 
     const port = Number(options.port) || Number(config.port) || 3080;

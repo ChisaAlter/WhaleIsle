@@ -3,6 +3,7 @@ import type {} from '@deepseek-ai/dsh-client-product-analytics/client'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ISessions, SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
+import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import { IconPaperclipOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { createSnapshotStore, type BoundActions } from '@deepseek-ai/dsh-client-store'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
@@ -636,7 +637,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
           }
           const uploads: File[] = []
           const references: ReferenceInsert[] = []
-          const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd
+          const cwd = sessionWorkingDirectory(sessions.list.getSnapshot().byId[sessionId])
           for (const file of files) {
             const directory = directories.has(file)
             if (bridge === undefined && directory) return t('attachment.directoryDesktopOnly')

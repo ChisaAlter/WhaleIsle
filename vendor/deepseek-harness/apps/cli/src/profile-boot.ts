@@ -40,6 +40,17 @@ import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.
 
 const NAME = 'dsh'
 
+/** Drain the optional Project owner before parallel root teardown closes its storage. */
+export async function disposeProfileApplication(ctx: Context | undefined): Promise<void> {
+  const projects = ctx?.get('projects') as { dispose?: () => Promise<void> } | undefined
+  const failures: unknown[] = []
+  for (const release of [() => projects?.dispose?.(), () => ctx?.fiber.dispose()]) {
+    try { await release() } catch (error) { failures.push(error) }
+  }
+  if (failures.length === 1) throw failures[0]
+  if (failures.length > 1) throw new AggregateError(failures, 'dsh: application cleanup failed')
+}
+
 /** Launcher-owned readiness signal committed only after boot and host setup succeed. */
 function createAppReady(): { service: AppReady; commit(): void } {
   let ready = false
@@ -277,7 +288,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   let disposal: Promise<void> | undefined
   const dispose = (): Promise<void> => disposal ??= (async () => {
     const failures: unknown[] = []
-    for (const release of [() => app.current?.fiber.dispose(), disposeProxy]) {
+    for (const release of [() => disposeProfileApplication(app.current), disposeProxy]) {
       try { await release() } catch (error) { failures.push(error) }
     }
     if (failures.length === 1) throw failures[0]
@@ -302,9 +313,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     // complete; SIGINT is a user interrupt and reports 130.
     process.on('SIGTERM', () => { interrupt(0) })
     process.on('SIGINT', () => { interrupt(130) })
-    installFailLoud(NAME, process, async () => {
-      await app.current?.fiber.dispose()
-    })
+    installFailLoud(NAME, process, dispose)
 
     const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
     const profileContext: ProfileContext = {

@@ -6,6 +6,9 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, desktopListingAvailable, inject } from '../src/client/index.ts'
+import { canOpenDesktopFile } from '../../ui-files/src/client/desktop-files.ts'
+import { hostFileOf } from '../../ui-sidebar-documentpreview/src/client/rpc.ts'
+import type { OpenPathOptions } from '../src/client/openpath-intercept.ts'
 
 function declare(slots: SlotRegistry): () => void {
   return slots.register({
@@ -67,7 +70,7 @@ async function bench(
   const slots = ctx.get('slots') as SlotRegistry
   const declaration = declare(slots)
   const layout = { openSurfaces: vi.fn(), closeSurfaces: vi.fn(), closeRightbar: vi.fn() }
-  const originalOpen = vi.fn(async (_path: string, _options?: { line?: number; sessionId?: string; presentation?: 'mini' }) => {})
+  const originalOpen = vi.fn(async (_path: string, _options?: OpenPathOptions) => {})
   const hostOpenPath = vi.fn(async () => ({ ok: true as const, value: { opened: true as const } }))
   const workspaces = { openPath: originalOpen }
   ctx.provide('layout', layout)
@@ -114,6 +117,18 @@ function desktop(previewWorkspaceFile = vi.fn(async () => ({ ok: true, url: 'htt
 }
 
 describe('single right panel routing', () => {
+  it.each(['/bound/report.docx', '/worktree/src/a.ts', '/projects/p/docs/result.md'])('previews the actual Project deliverable %s without rebasing or authorizing desktop edits', async path => {
+    desktop()
+    const sidebarRight = sidebarRightStub()
+    const b = await bench({ mainView: 'project-main', cwd: '/projects/p', sidebarRight })
+    await b.workspaces.openPath(path, { sessionId: 'project-main', workingDirectory: path.slice(0, path.lastIndexOf('/')) })
+    const address = (sidebarRight.openResourceIn.mock.calls[0] as unknown as [string, string])[1]
+    expect(hostFileOf(address)).toEqual({ sessionId: 'project-main', path })
+    expect(canOpenDesktopFile(address, () => '/bound')).toBe(false)
+    expect(b.originalOpen).not.toHaveBeenCalled()
+    await b.fiber.dispose()
+  })
+
   it('does not register a second panel host', async () => {
     const b = await bench()
     expect(b.slots.entries('surfaces')).toEqual([])
