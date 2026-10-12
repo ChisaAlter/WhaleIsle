@@ -7,7 +7,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { killProcessTree } = require('../main/git-exec');
 const electron = [process.env.ELECTRON_PATH, path.resolve(__dirname, '../../node_modules/electron/dist/electron.exe'), path.resolve(__dirname, '../../node_modules/electron/dist/electron'), path.resolve(__dirname, '../../node_modules/electron/dist/Electron.app/Contents/MacOS/Electron')].find(file => file && fs.existsSync(file));
-test('WhaleBridge model controls preserve position and apply scoped bulk visibility', { skip: !electron }, async () => {
+test('WhaleBridge compact overview and model controls preserve focus, position and scoped bulk visibility', { skip: !electron }, async () => {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'whalebridge-models-'));
   try {
     await new Promise((resolve, reject) => {

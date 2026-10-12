@@ -1,0 +1,70 @@
+{
+  "name": "dsh-with-chatgpt",
+  "version": "0.1.0",
+  "description": "ChatGPT plans and reviews. DeepSeek Harness executes in the current workspace.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "d2c": "bridge/bin/d2c.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "lib/",
+    "skills/",
+    "locale/",
+    "icon.svg",
+    "cordis.patch.yml",
+    "bridge/dist/",
+    "bridge/bin/",
+    "bridge/package.json",
+    "bridge/LICENSE",
+    "bridge/NOTICE.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node node_modules/typescript/bin/tsc -p bridge/tsconfig.json",
+    "test": "node --test tests/*.test.js",
+    "test:bridge": "node node_modules/vitest/vitest.mjs run --config bridge/vitest.config.ts",
+    "prepack": "node node_modules/typescript/bin/tsc -p bridge/tsconfig.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "commander": "14.0.3",
+    "express": "5.2.1",
+    "ignore": "7.0.6",
+    "playwright-core": "1.61.1",
+    "zod": "3.25.76"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.5-alpha.1",
+    "@deepseek-ai/dsh-agent": "0.2.1-alpha.1",
+    "@deepseek-ai/dsh-skill": "0.2.1-alpha.1",
+    "@deepseek-ai/dsh-tools": "0.2.1-alpha.1",
+    "@deepseek-ai/schemastery": "~3.18.5-alpha.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-llm": "0.2.1-alpha.1",
+    "@deepseek-ai/dsh-session": "0.2.1-alpha.1",
+    "@deepseek-ai/dsh-system-prompt": "0.2.1-alpha.1",
+    "@types/express": "5.0.6",
+    "@types/node": "22.20.1",
+    "tsx": "4.23.12",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "license": "MIT"
+}

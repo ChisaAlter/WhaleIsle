@@ -47,6 +47,9 @@ var NS = "dsh-remote";
 var zh = {
   "settings.nav": "\u8FDC\u7A0B\u5DE5\u4F5C\u533A",
   "settings.summary": "\u628A SSH \u673A\u5668\u53D8\u6210\u5DE5\u4F5C\u533A\uFF1A\u672C\u5730\u955C\u50CF\u76EE\u5F55 + SFTP \u540C\u6B65 + \u8FDC\u7A0B\u6587\u4EF6\u4E0E\u547D\u4EE4\u3002",
+  "settings.loading": "\u6B63\u5728\u8BFB\u53D6\u8FDC\u7A0B\u5DE5\u4F5C\u533A\u914D\u7F6E\u2026",
+  "settings.loadFailed": "\u65E0\u6CD5\u8BFB\u53D6\u8FDC\u7A0B\u5DE5\u4F5C\u533A\u914D\u7F6E\uFF1A{error}\u3002\u8BF7\u91CD\u8BD5\uFF1B\u82E5\u4ECD\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u540E\u53F0\u670D\u52A1\u662F\u5426\u8FD0\u884C\u3002",
+  "settings.retry": "\u91CD\u65B0\u8BFB\u53D6",
   "settings.active": "\u5F53\u524D\u673A\u5668",
   "settings.none": "\u672A\u9009\u62E9\u673A\u5668",
   "settings.connected": "\u5DF2\u8FDE\u63A5",
@@ -191,6 +194,9 @@ var zh = {
 var en = {
   "settings.nav": "Remote Workspaces",
   "settings.summary": "Turn SSH machines into workspaces: local mirror directories with SFTP sync, remote files and commands.",
+  "settings.loading": "Reading remote workspace configuration\u2026",
+  "settings.loadFailed": "Could not read remote workspace configuration: {error}. Retry, then check that the background service is running.",
+  "settings.retry": "Reload",
   "settings.active": "Active machine",
   "settings.none": "No machine selected",
   "settings.connected": "Connected",
@@ -359,7 +365,7 @@ async function api(method, path, body) {
 }
 var remoteApi = {
   raw: apiRaw,
-  status: (sessionId) => api("GET", withSessionQuery("/dsh-remote/status", sessionId)).catch(() => null),
+  status: (sessionId) => api("GET", withSessionQuery("/dsh-remote/status", sessionId)),
   machines: () => api("GET", "/dsh-remote/machines"),
   saveMachine: (payload) => api("POST", "/dsh-remote/machines", payload),
   deleteMachine: (id) => api("POST", "/dsh-remote/machines", { action: "delete", id }),
@@ -718,6 +724,9 @@ function RemoteSettingsSection({ t }) {
   const [machines, setMachines] = React2.useState([]);
   const [currentId, setCurrentId] = React2.useState(null);
   const [err, setErr] = React2.useState("");
+  const [loadError, setLoadError] = React2.useState("");
+  const [loading, setLoading] = React2.useState(true);
+  const loadGeneration = React2.useRef(0);
   const [msg, setMsg] = React2.useState("");
   const [busyId, setBusyId] = React2.useState("");
   const [formOpen, setFormOpen] = React2.useState(false);
@@ -728,16 +737,26 @@ function RemoteSettingsSection({ t }) {
   const [audit, setAudit] = React2.useState(null);
   const [confirmDel, setConfirmDel] = React2.useState(null);
   const refresh = React2.useCallback(() => {
-    remoteApi.machines().then((r) => {
+    const generation = ++loadGeneration.current;
+    setLoading(true);
+    setLoadError("");
+    return Promise.all([remoteApi.machines(), remoteApi.status(), remoteApi.forwards()]).then(([r, s, f]) => {
+      if (generation !== loadGeneration.current) return;
       setMachines(r.machines || []);
       setCurrentId(r.currentId || null);
-    }).catch((e) => setErr(String(e && e.message || e)));
-    remoteApi.status().then((s) => setStatus(s));
-    remoteApi.forwards().then((r) => setForwards(r.forwards || [])).catch(() => {
+      setStatus(s);
+      setForwards(f.forwards || []);
+    }).catch((e) => {
+      if (generation === loadGeneration.current) setLoadError(String(e && e.message || e));
+    }).finally(() => {
+      if (generation === loadGeneration.current) setLoading(false);
     });
   }, []);
   React2.useEffect(() => {
     refresh();
+    return () => {
+      loadGeneration.current++;
+    };
   }, [refresh]);
   const run = (fn, okMsg) => {
     setErr("");
@@ -795,6 +814,11 @@ function RemoteSettingsSection({ t }) {
   const current = machines.find((m) => m.id === currentId) || null;
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-page", children: [
     /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-caption", children: t("settings.summary") }),
+    loading ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { role: "status", className: "dshr-caption", children: t("settings.loading") }) : null,
+    loadError ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { role: "alert", className: "dshr-error", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { children: t("settings.loadFailed", { error: loadError }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Button, { size: "sm", variant: "ghost", onClick: refresh, children: t("settings.retry") })
+    ] }) : null,
     err ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-error", children: err }) : null,
     msg ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-ok", children: msg }) : null,
     /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-card", children: [
@@ -857,7 +881,7 @@ function RemoteSettingsSection({ t }) {
           }
         }
       ) : null,
-      !formOpen && !editing && machines.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-emptyState", children: [
+      !loading && !loadError && !formOpen && !editing && machines.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-emptyState", children: [
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: t("machines.empty") }),
         /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshr-caption", children: t("machines.emptyHint") })
       ] }) : null,

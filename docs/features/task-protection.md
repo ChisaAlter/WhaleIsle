@@ -15,7 +15,7 @@
 
 ## User paths
 
-1. 显式退出（主窗配置为退出、托盘、菜单、IPC、最后 Launcher 关闭）直接进入受保护关闭流程，不再弹工作清单确认；关闭到托盘按用户设置。重启/重载活动任务确认保留，取消无副作用。
+1. 显式退出（主窗配置为退出、托盘、菜单、IPC、最后 Launcher 关闭）直接进入关闭流程，不再弹工作清单或「退出未完成」确认；关闭到托盘按用户设置。正常退出保留 inspect→acquire→drain→复查，检查或关停失败则记录诊断并自动清理退出。重启/重载活动任务确认保留，取消无副作用。
 2. 更新 / 重装前锁定任务接纳，排空已接纳请求，复查无活动后放行安装器 / 差量写入；锁中 Schedule、Bots、外部 hook 的到期/触发保留状态不丢。安装/更新入口（更新询问、版本卡、「在线安装」、增量更新、runtime 安装、peer prepare-install）本身即用户显式同意，`preConfirmed` 下不再弹第二道确认。
 3. Launcher 侧的「停止桌面」与运行时装对**外部桌面**先走同义握手；旧桌面无握手时要求正常退出并确认进程结束，不回退直接 taskkill /F。launcher 发起的停止带 `preConfirmed`——点击即同意，inspect→acquire→commit 照跑但两道确认门整体跳过，永远零弹窗。
 
@@ -26,7 +26,7 @@
 - 关闭遮罩绘制是尽力显示；主进程等待 CSS / 脚本 / 画帧最多 500ms 后继续既有正常关停。隐藏或无响应的 renderer 不得卡住已通过任务保护的退出；不以 app.exit / 强杀替换正常 cleanup / shutdown。
 
 - 2026-09-30：差量下载和整包安装共用可观测 spawn commit；updater 只下载，不调用 quitAndInstall。安装失败后释放锁且下一次尝试重新 inspect/acquire；macOS 打开 DMG 不提交退出。
-- 终止操作的附属清理只在 commit 成功后执行；commit 失败保留运行中的组件服务及清理钩子，后续退出仍正常清理。
+- 更新/安装终止操作的附属清理只在 commit 成功后执行；commit 失败保留运行中的组件服务及清理钩子，后续退出仍正常清理。显式 quit 已确定结束进程，Host 检查/关停失败也会执行清理钩子，各资源并发开始关停，单项失败不阻止其他清理。
 
 - 整包更新把安装器 spawn 纳入协调器 commit；启动失败或 commit 前取消须释放 Host 接纳锁，不得提前锁定 committed 或退出当前界面。
 
@@ -40,7 +40,7 @@
 - `before-quit` 的 preventDefault 不拦截其他监听者（`ipc-components.js` 的 svc.shutdown、main-launcher tray.destroy）——附属清理由协调器 commit 钩子统一触发。
 - Schedule 与 Bots 同按声明开关取覆盖：flag 未设报 `intentional-disabled`，已设而服务缺失即 `unavailable`（fail closed）；加载失败/未知/超时一律阻止自动提交。
 - 壳侧 PTY/preview/components 关停视为「受影响工作」计入确认面，但不算 Host 任务。
-- `preConfirmed` 用于显式同意的入口（统一 quit、peer `stop-desktop`、launcher `stopOp`、全部 install/update 链、peer `prepare-install`）：inspect、Host 接纳锁与 drain 照常。quit 不再弹工作清单确认，故障恢复提示保留；restart/reload 确认不变。
+- `preConfirmed` 用于显式同意的入口（统一 quit、peer `stop-desktop`、launcher `stopOp`、全部 install/update 链、peer `prepare-install`）：inspect、Host 接纳锁与 drain 照常。quit 不再弹工作清单及故障恢复确认；正常流程等待上限 30 秒，失败后附加清理最多等待 5 秒再结束桌面进程。Windows 组件树的同步 taskkill 单次另有 5 秒系统调用时限，期间 JavaScript 定时器会等待主线程恢复。restart/reload 确认不变。
 
 ## Allowed touch
 

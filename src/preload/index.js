@@ -131,6 +131,7 @@ function harnessApi(renderer, remoteFeature) {
     gitSwitchBranch: invoke(renderer, 'shell:git-switch-branch'),
     gitCreateBranch: invoke(renderer, 'shell:git-create-branch'),
     ptyCreate: invoke(renderer, 'shell:pty-create'),
+    ptyCanCreate: invoke(renderer, 'shell:pty-can-create'),
     ptyWrite: invoke(renderer, 'shell:pty-write'),
     ptyAck: invoke(renderer, 'shell:pty-ack'),
     ptyResize: invoke(renderer, 'shell:pty-resize'),
@@ -323,10 +324,6 @@ if (role === 'harness' && isMainFrame) {
       edit: invoke(ipcRenderer, 'shell:shortcuts-edit'),
       recording: invoke(ipcRenderer, 'shell:shortcuts-recording'),
       subscribe: subscribe(ipcRenderer, 'shell:shortcuts-changed'),
-    },
-    whaleBridge: {
-      status: invoke(ipcRenderer, 'shell:whalebridge-status'),
-      open: invoke(ipcRenderer, 'shell:whalebridge-open'),
     },
     // Upstream DesktopUpdateBridge contract: status/notify only — open()
     // joins the shell-owned update flow (check → confirm → install), never

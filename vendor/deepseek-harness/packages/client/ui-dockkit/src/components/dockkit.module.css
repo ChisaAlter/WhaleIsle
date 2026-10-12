@@ -752,6 +752,9 @@
 }
 
 .float {
+  /* The desktop shell publishes this existing caption variable without the
+     vendor titlebar marker. The fallback keeps Web's top edge at zero. */
+  --dsh-dockkit-float-top: calc(var(--dshd-wco-caption, -20px) + 20px);
   position: fixed;
   /* Desktop fork: fixed layers must punch a no-drag hole over the caption band. */
   -webkit-app-region: no-drag;

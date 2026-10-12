@@ -2,6 +2,7 @@
 // handlers. Keep their implementation shared with legacy Web hosts while using
 // Connection's authenticated, carrier-neutral channel on portless Desktop.
 import { Readable } from 'node:stream'
+import { EventEmitter } from 'node:events'
 
 const MAX_BODY_BYTES = 1024 * 1024
 
@@ -51,16 +52,32 @@ export function connectionRoute(route) {
       req.url = route.path + url.search
       const headers = new Headers()
       let response
-      const res = {
+      const res = Object.assign(new EventEmitter(), {
         statusCode: 200,
+        headersSent: false,
+        writableEnded: false,
         setHeader(key, value) { headers.set(key, value) },
-        end(body) { response = new Response(body, { status: this.statusCode, headers }) },
-      }
+        writeHead(status, values = {}) {
+          this.statusCode = status
+          for (const [key, value] of Object.entries(values)) this.setHeader(key, value)
+          this.headersSent = true
+        },
+        end(body) {
+          response = new Response(body, { status: this.statusCode, headers })
+          this.headersSent = true
+          this.writableEnded = true
+          this.emit('finish')
+        },
+      })
+      const abort = () => { res.emit('close'); req.destroy() }
+      request.signal.addEventListener('abort', abort, { once: true })
       try {
         await route.handler(req, res)
         if (!response) throw new Error('JSON handler did not finish its response')
         return response
       } finally {
+        request.signal.removeEventListener('abort', abort)
+        res.emit('close')
         req.destroy()
       }
     },

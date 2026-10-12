@@ -203,7 +203,7 @@ export function FilesPanel({
     void listDirectory(cwd, '', () => cancelled).then((result) => {
       if (cancelled || result === undefined) return
       if (!result.ok) {
-        setError(result.message ?? t('error.list'))
+        setError(result.code === 'workspace/outside' ? t('error.workspaceAccess') : result.message ?? t('error.list'))
         setRoot([])
         setListing('settled')
         return
@@ -243,7 +243,7 @@ export function FilesPanel({
             const result = await listDirectory(cwd, parent, () => cancelled)
             if (cancelled || result === undefined) return undefined
             if (!result.ok) {
-              searchError ??= result.message ?? t('error.list')
+              searchError ??= result.code === 'workspace/outside' ? t('error.workspaceAccess') : result.message ?? t('error.list')
               return undefined
             }
             return { parent, entries: toTree(parent, result.entries ?? []) }
@@ -300,7 +300,7 @@ export function FilesPanel({
     void listDirectory(cwd, path, () => !current()).then((result) => {
       if (!current() || result === undefined) return
       if (!result.ok) {
-        setError(result.message ?? t('error.list'))
+        setError(result.code === 'workspace/outside' ? t('error.workspaceAccess') : result.message ?? t('error.list'))
         return
       }
       setChildrenByPath(current => ({ ...current, [path]: toTree(path, result.entries ?? []) }))

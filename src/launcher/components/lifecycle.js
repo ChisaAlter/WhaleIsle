@@ -40,7 +40,7 @@ function killPid(pid, { force = true } = {}, deps = {}) {
     try {
       exec('taskkill', force
         ? ['/PID', String(pid), '/T', '/F']
-        : ['/PID', String(pid)], { windowsHide: true });
+        : ['/PID', String(pid)], { windowsHide: true, timeout: 5000 });
       return true;
     } catch {
       return false;

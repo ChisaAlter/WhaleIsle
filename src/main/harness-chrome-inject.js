@@ -166,7 +166,7 @@
         corner-shape: round;
         overflow: hidden;
       }
-      /* A hairline ring just inside the silhouette anchors the rounded edge:
+      /* A visible theme border just inside the silhouette anchors the rounded edge:
          the bare alpha-AA edge reads as blur on a transparent window. A real
          element (not body::after) keeps the ring immune to client stylesheets
          claiming body's pseudo-elements, and lets the self-heal observer
@@ -176,7 +176,7 @@
         inset: 0;
         border-radius: ${FRAME_RADIUS}px;
         corner-shape: round;
-        box-shadow: inset 0 0 0 var(--dsh-window-hairline, 1px) var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.4));
+        box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l3);
         pointer-events: none;
         z-index: 2147483646;
       }

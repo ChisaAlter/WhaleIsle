@@ -10,7 +10,7 @@ import type { TabId } from '../src/contract/types.ts'
 import { followPointer } from '../src/components/pointer.ts'
 import { seededController, TEST_LABELS } from './fixtures.client.ts'
 
-afterEach(() => { cleanup(); vi.restoreAllMocks() })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 function mounted(controller = seededController(), options: Partial<ComponentProps<typeof TabLayout>> = {}) {
   const callbacks: PaneCallbacks = {
@@ -81,6 +81,8 @@ it('retains visited bodies and hands keyboard focus to the newly selected strip'
 })
 
 it('keeps body ancestors through pane moves, floating, raising and docking', () => {
+  vi.stubGlobal('innerWidth', 1442)
+  vi.stubGlobal('innerHeight', 920)
   const controller = seededController()
   controller.setExpanded(true)
   const tab = controller.openContent({ kind: 'file', contentId: 'file:a', title: 'A' })
@@ -111,10 +113,19 @@ it('keeps body ancestors through pane moves, floating, raising and docking', () 
   act(() => { controller.placeTab(tab, secondPane, 0); h.redraw() })
   expect(h.body(tab)).toBe(body)
   expect(body.closest('[data-dockkit-host]')).toBe(host)
-  act(() => { controller.floatTab(tab); h.redraw() })
+  act(() => { controller.floatTab(tab, { x: 1110, y: 690, width: 300, height: 200 }); h.redraw() })
   const floating = controller.getSnapshot().state.floats[0]!
   expect(body.closest('[data-dockkit-host]')).toBe(host)
   expect(host.getAttribute('data-dockkit-host')).toBe('float')
+  const saved = controller.getSnapshot()
+  vi.stubGlobal('innerWidth', 961)
+  vi.stubGlobal('innerHeight', 680)
+  fireEvent.resize(window)
+  expect(h.node(`[data-dockkit-float="${floating}"]`).style.left).toBe('661px')
+  expect(h.node(`[data-dockkit-float="${floating}"]`).style.top).toBe('max(var(--dsh-dockkit-float-top, 0px), 480px)')
+  expect(controller.getSnapshot()).toBe(saved)
+  expect(h.body(tab)).toBe(body)
+  expect(body.closest('[data-dockkit-host]')).toBe(host)
   act(() => { controller.setExpanded(false); h.redraw() })
   expect(body.closest('[data-dockkit-content]')?.getAttribute('aria-hidden')).toBeNull()
   fireEvent.pointerDown(h.node(`[data-dockkit-float="${floating}"]`), { pointerId: 1, button: 0 })

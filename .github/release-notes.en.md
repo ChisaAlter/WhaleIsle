@@ -1,9 +1,14 @@
-- **Sidebar and glass**: The More hover area fills the footer when no status action is shown. Settings, menus and dialogs respond to glass opacity.
-- **Windows and shutdown**: Transparent windows retain native Windows maximize, restore and minimize animations, with fixes for shutdown flashes and resource cleanup.
-- **Conversations and files**: Approval cards match the resident composer dimensions, with performance improvements for large tables, highlighting, file previews and session queries.
+# Whale Isle 0.3.6
+
+- **Next-prompt suggestions**: After a reply, the built-in feature can ask the current model for one follow-up prompt. Clicking it or pressing Tab only fills the draft and never sends it automatically. It defaults to on and can be disabled in Settings → Interface; generation makes one additional model call.
+- **Message editing**: Resending the latest user message in the current Session removes the replaced turn's old replies, errors, retries, progress, tool rows and quota notice. The revised result survives history reloads without dismissing earlier turns or other Sessions.
+- **Sidebar, glass and layout**: The More hover area fills the footer when no status action is shown. Settings, menus and dialogs respond to glass opacity. Launcher, composer, narrow-window and high-DPI edges are improved, with keyboard controls and status feedback.
+- **Windows and shutdown**: Transparent windows retain native Windows maximize, restore and minimize animations, with fixes for shutdown flashes and resource cleanup. A failed shutdown no longer opens a second confirmation dialog; shutdown waits are bounded.
+- **Conversations, files and terminals**: Approval cards match the resident composer dimensions, with performance improvements for large tables, highlighting, file previews and session queries. Remote connection status, directory errors and terminal availability checks are improved.
 - **Updates and recovery**: Unified connection and update controls, explicit differential or full downloads, and improved installation detection, shutdown and failure recovery.
 - **Whale assistant**: Reduced idle rendering, repeated parsing and output overhead while preserving interaction responsiveness and cleaning up resources on exit.
 - **Optional visual replies**: Added generated page replies, disabled by default, with isolated previews and retained conversation attachments.
-- **WhaleBridge source**: Fixed quota displays and asynchronous editing state. The component remains separately built and is not bundled with the desktop installer.
+- **WhaleBridge sources and models**: Search official APIs, relays, local services, built-in subscriptions and installed plugins. Discover community plugins, read their instructions and confirm trust before installing; configuration, updates, enable/disable and removal remain available. Model selection, editing and asynchronous feedback are improved, and desktop quota notices now send the required JSON request header.
+- **WhaleBridge usage and settings**: Switch trends between requests, tokens and cost. The request ledger retains details, ownership, failure diagnostics and CSV export; cache-only requests count toward cost and missing prices remain visible. Search-service and settings sections preserve unsaved drafts.
 
-Windows 10 or later x64 only; existing installations support in-place upgrades. Project mode (the local coordinator and persistent workers) is excluded. Harness remains at `0.2.1-alpha.1`. WhaleBridge is an optional launcher-installed component that runs and updates independently.
+Windows 10 or later x64 only; existing installations support in-place upgrades. Project mode (the local coordinator and persistent workers) is excluded. Harness remains at `0.2.1-alpha.1`. WhaleBridge `1.1.1` is an optional launcher-installed component, built, published, run and updated independently rather than bundled with the desktop installer.

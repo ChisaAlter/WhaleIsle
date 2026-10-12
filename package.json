@@ -17,6 +17,7 @@
     "prepare:dshd-remote": "node scripts/prepare-dshd-remote.mjs",
     "prepare:office-runtime": "node scripts/prepare-office-runtime.mjs",
     "prepare:dsh-remote-client": "node scripts/prepare-dsh-remote-client.mjs",
+    "prepare:dsh-with-chatgpt-bundle": "node scripts/prepare-dsh-with-chatgpt-bundle.mjs",
     "pack": "node scripts/prepare-dsh-remote-client.mjs --force && node scripts/prepare-dshd-remote.mjs --force --runtime && node scripts/prepare-office-runtime.mjs && node scripts/run-electron-builder.cjs --dir --publish never",
     "pack:launcher": "node scripts/run-electron-builder.cjs --dir --publish never -c electron-builder.launcher.yml",
     "installer:assets": "node scripts/run-render-installer-assets.js",

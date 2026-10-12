@@ -1,0 +1,4 @@
+node_modules/
+bridge/node_modules/
+bridge/dist/
+*.tgz

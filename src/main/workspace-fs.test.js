@@ -64,9 +64,47 @@ test('listDir returns directories first and rejects path traversal', async () =>
     ]);
     const escaped = await listDir(cwd, '..');
     assert.equal(escaped.ok, false);
+    assert.equal(escaped.message, 'Path is outside the workspace.');
+    assert.equal(escaped.code, 'workspace/outside');
   } finally {
     setWorkspaceAuthority(null);
     fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('listDir reports workspace/outside when a directory is swapped outside after authorization', async () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-fs-list-swap-'));
+  const cwd = path.join(parent, 'workspace');
+  const victim = path.join(cwd, 'victim');
+  const outside = path.join(parent, 'outside');
+  fs.mkdirSync(victim, { recursive: true });
+  fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(outside, 'secret.txt'), 'outside');
+  const authority = createWorkspaceAuthority({ workspace: cwd });
+  let swapped = false;
+  setWorkspaceAuthority({
+    ...authority,
+    resolveInside(base, relativePath) {
+      const target = authority.resolveInside(base, relativePath);
+      assert.ok(target, 'fixture must be authorized before the swap');
+      fs.rmdirSync(target);
+      fs.symlinkSync(outside, target, process.platform === 'win32' ? 'junction' : 'dir');
+      swapped = true;
+      return target;
+    },
+  });
+  try {
+    const result = await listDir(cwd, 'victim');
+    assert.equal(swapped, true);
+    assert.equal(fs.realpathSync.native(victim), fs.realpathSync.native(outside));
+    assert.deepEqual(result, {
+      ok: false,
+      message: 'Path is outside the workspace.',
+      code: 'workspace/outside',
+    });
+  } finally {
+    setWorkspaceAuthority(null);
+    fs.rmSync(parent, { recursive: true, force: true });
   }
 });
 

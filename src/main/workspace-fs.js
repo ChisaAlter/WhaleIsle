@@ -44,8 +44,8 @@ function resolveInside(cwd, relativePath) {
   return authority().resolveInside(cwd, relativePath);
 }
 
-function fail(message) {
-  return { ok: false, message };
+function fail(message, code) {
+  return { ok: false, message, ...(code ? { code } : {}) };
 }
 
 /**
@@ -156,9 +156,9 @@ function gitIgnoredSet(cwd, relPaths) {
 
 async function listDir(cwd, relativePath) {
   const target = resolveInside(cwd, relativePath);
-  if (!target) return fail('Path is outside the workspace.');
+  if (!target) return fail('Path is outside the workspace.', 'workspace/outside');
   const realTarget = await canonicalInside(cwd, target);
-  if (!realTarget) return fail('Path is outside the workspace.');
+  if (!realTarget) return fail('Path is outside the workspace.', 'workspace/outside');
   let names;
   try {
     names = await fs.promises.readdir(realTarget, { withFileTypes: true });

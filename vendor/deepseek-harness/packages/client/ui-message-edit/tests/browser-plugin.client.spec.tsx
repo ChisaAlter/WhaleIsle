@@ -45,6 +45,7 @@ async function bench(options: {
   const submits: string[] = []
   const notices: Array<{ sessionId: string; message: string }> = []
   const cancels: string[] = []
+  const focused: string[] = []
   /** The live edit spec per session, as the fake composer machine holds it. */
   const edits = new Map<string, InputEditSpec>()
 
@@ -80,6 +81,7 @@ async function bench(options: {
     }),
     input: {
       for: vi.fn((scope: { sessionId: SessionId }) => ({
+        focus: () => { focused.push(scope.sessionId) },
         beginEdit: (spec: InputEditSpec) => {
           if (options.refuse === true) return false
           edits.set(scope.sessionId, spec)
@@ -130,6 +132,7 @@ async function bench(options: {
     submits,
     notices,
     cancels,
+    focused,
     edits,
     sessions,
     conversation,
@@ -185,6 +188,7 @@ describe('ui-message-edit browser plugin', () => {
     const spec = b.edits.get('s1')!
     expect(spec).toMatchObject({ key: 'message-edit:7', label: en['editor.banner'], seed: 'original prompt' })
     expect(b.notices).toHaveLength(0)
+    expect(b.focused).toEqual(['s1'])
     // The pencil never forks: only the composer's confirm does.
     expect(b.sessions.fork).not.toHaveBeenCalled()
   })
@@ -314,6 +318,7 @@ describe('ui-message-edit browser plugin', () => {
     expect(face.beginEdit(7, 'original prompt')).toBe(false)
 
     expect(b.notices).toEqual([{ sessionId: 's1', message: `error:${en['error.busy']}` }])
+    expect(b.focused).toEqual([])
   })
 
   it('endEdit cancels its own live session and leaves a foreign one alone', async () => {

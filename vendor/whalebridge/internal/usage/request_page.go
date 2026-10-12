@@ -297,7 +297,7 @@ func queryPage(p Period, f Filter, offset, limit int, readSource func(sessions.C
 			sent = provider.SentNameIn(cfg.ModelWires, r.Provider, r.Model, r.Effort)
 		}
 		row := Row{Record: r, Source: source, Swapped: r.Served != "" && Swapped(sent, r.Served), Routed: GroupRouted(sent, r.Served)}
-		if pr := price(r); pr != nil && r.Input+r.Output > 0 {
+		if pr := price(r); pr != nil && r.Input+r.Output+r.CacheRead+r.CacheWrite > 0 {
 			row.Priced = true
 			row.Cost = r.CostAt(*pr)
 		}

@@ -1304,6 +1304,95 @@ describe('divider drags', () => {
 })
 
 describe('FloatLayer', () => {
+  it('keeps a full desktop-shell float below its existing caption CSS and prevents dragging into window controls', () => {
+    vi.stubGlobal('innerWidth', 961)
+    vi.stubGlobal('innerHeight', 680)
+    const root = document.documentElement
+    const attributes = ['data-windows-titlebar', 'data-fullscreen', 'style'].map(name => [name, root.getAttribute(name)] as const)
+    const chrome = document.createElement('style')
+    chrome.textContent = ':root { --dshd-wco-caption: 40px; }'
+    document.head.append(chrome)
+    root.removeAttribute('data-windows-titlebar')
+    root.removeAttribute('data-fullscreen')
+    root.style.removeProperty('--dshd-wco-caption')
+    onTestFinished(() => {
+      chrome.remove()
+      for (const [name, value] of attributes) {
+        if (value === null) root.removeAttribute(name)
+        else root.setAttribute(name, value)
+      }
+    })
+    const controller = seededController()
+    const tabId = controller.openContent({ contentId: 'dsh-resource://file/session/s/a.txt', title: 'a.txt', kind: 'file' })
+    const paneId = controller.floatTab(tabId, { x: 500, y: 0, width: 420, height: 900 })
+    const intents = spyIntents()
+    render(<FloatLayer state={controller.getSnapshot().state} intents={intents} labels={TEST_LABELS} renderTab={() => null} />)
+    const panel = document.querySelector<HTMLElement>(`[data-dockkit-float="${paneId}"]`)!
+    expect(panel.style.top).toBe('max(var(--dsh-dockkit-float-top, 0px), 60px)')
+    expect(panel.style.height).toBe('620px')
+    drag(panel.querySelector('[data-dockkit-float-grip]')!, [550, 70], [530, 5])
+    expect(intents.moveFloat).toHaveBeenCalledWith(paneId, 480, 60)
+    drag(panel.querySelector('[data-dockkit-float-resize]')!, [920, 680], [930, 900])
+    expect(intents.resizeFloat).toHaveBeenCalledWith(paneId, { x: 500, y: 60, width: 430, height: 620 })
+  })
+
+  it.each([
+    { rect: { x: 1110, y: 690, width: 300, height: 200 }, narrow: { x: 661, y: 480, width: 300, height: 200 } },
+    { rect: { x: 100, y: 80, width: 1200, height: 820 }, narrow: { x: 0, y: 60, width: 961, height: 620 } },
+  ])('keeps the frame and controls inside a resized viewport without recording layout or focus: $rect', ({ rect, narrow }) => {
+    vi.stubGlobal('innerWidth', 1442)
+    vi.stubGlobal('innerHeight', 920)
+    const root = document.documentElement
+    const attributes = ['data-windows-titlebar', 'data-fullscreen', 'style'].map(name => [name, root.getAttribute(name)] as const)
+    onTestFinished(() => {
+      for (const [name, value] of attributes) {
+        if (value === null) root.removeAttribute(name)
+        else root.setAttribute(name, value)
+      }
+    })
+    root.setAttribute('data-windows-titlebar', '')
+    root.removeAttribute('data-fullscreen')
+    root.style.setProperty('--dsh-windows-titlebar-height', '40px')
+    const controller = seededController()
+    const tabId = controller.openContent({ contentId: 'dsh-resource://file/session/s/a.txt', title: 'a.txt', kind: 'file' })
+    const paneId = controller.floatTab(tabId, rect)
+    const intents = spyIntents()
+    render(<FloatLayer state={controller.getSnapshot().state} intents={intents} labels={TEST_LABELS}
+      renderTab={tab => <input data-testid="retained-file" defaultValue={tab.title} />} />)
+    const panel = document.querySelector<HTMLElement>(`[data-dockkit-float="${paneId}"]`)!
+    const body = screen.getByTestId('retained-file')
+    const saved = controller.getSnapshot()
+    body.focus()
+    vi.stubGlobal('innerWidth', 961)
+    vi.stubGlobal('innerHeight', 680)
+    fireEvent.resize(window)
+    expect(panel.style.left).toBe(`${narrow.x}px`)
+    expect(panel.style.top).toBe(`max(var(--dsh-dockkit-float-top, 0px), ${narrow.y}px)`)
+    expect(panel.style.width).toBe(`${narrow.width}px`)
+    expect(panel.style.height).toBe(`${narrow.height}px`)
+    expect(screen.getByTestId('retained-file')).toBe(body)
+    expect(document.activeElement).toBe(body)
+    expect(controller.getSnapshot()).toBe(saved)
+    expect(Object.values(intents).every(intent => intent.mock.calls.length === 0)).toBe(true)
+
+    // A gesture starts at the visible position, rather than jumping to the saved wide-window position.
+    drag(panel.querySelector('[data-dockkit-float-grip]')!, [narrow.x + 50, narrow.y + 10], [narrow.x + 40, narrow.y + 10])
+    if (narrow.x > 0) expect(intents.moveFloat).toHaveBeenCalledWith(paneId, narrow.x - 10, narrow.y)
+    else expect(intents.moveFloat).not.toHaveBeenCalled()
+
+    vi.stubGlobal('innerWidth', 1442)
+    vi.stubGlobal('innerHeight', 920)
+    fireEvent.resize(window)
+    expect(panel.style.left).toBe(`${rect.x}px`)
+    expect(panel.style.width).toBe(`${rect.width}px`)
+    expect(panel.style.height).toBe(`${rect.height}px`)
+    expect(screen.getByTestId('retained-file')).toBe(body)
+    fireEvent.click(screen.getByRole('button', { name: TEST_LABELS.dockFloat }))
+    expect(intents.unfloatPane).toHaveBeenCalledWith(paneId)
+    fireEvent.click(screen.getByRole('button', { name: TEST_LABELS.closeTab }))
+    expect(intents.closeTab).toHaveBeenCalledWith(tabId)
+  })
+
   it.each([
     { fullscreen: false, savedY: 0, displayedY: 60 },
     { fullscreen: true, savedY: 0, displayedY: 20 },

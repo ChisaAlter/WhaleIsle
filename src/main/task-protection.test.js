@@ -261,44 +261,6 @@ test('failed terminal commit preserves services and cleanup hooks until a succes
   assert.equal(protection.isCommitted(), true);
 });
 
-test('production quit skips confirmation while retaining inspect, lock, cleanup and shutdown', async () => {
-  const fs = require('node:fs');
-  const vm = require('node:vm');
-  const source = fs.readFileSync(require('node:path').join(__dirname, 'index.js'), 'utf8');
-  const start = source.indexOf('  async function finalizeQuit()');
-  const end = source.indexOf("  app.on('window-all-closed'", start);
-  assert.ok(start >= 0 && end > start);
-  for (const failDrain of [false, true]) {
-    const events = [];
-    const { protection, calls } = makeProtection({
-      inspection: DIRTY_INSPECTION,
-      confirm: async () => { assert.fail('explicit quit must not ask again'); },
-    }, failDrain ? { acquire: async () => ({ ok: false, code: 'dshd/drain-timeout' }) } : {});
-    const quit = vm.runInNewContext(`${source.slice(start, end)}; finalizeQuit`, {
-      taskProtection: protection, quitting: true, stoppingForQuit: false, closingOverlayActive: false,
-      quitInProgress: false, dsh: { log: () => {} },
-      stopDesktopInstallControl: () => events.push('control-stop'),
-      taskControlPeer: { stop: async () => events.push('peer-stop') },
-      cleanupDesktopResources: async () => events.push('cleanup'),
-      getLive2dPet: () => ({ dispose: async () => events.push('pet-dispose') }),
-      hideHarnessView: () => {}, getMainWindow: () => ({}), loadConfig: () => ({}),
-      getHarnessWebContents: () => null, setTimeout, clearTimeout,
-      showClosingOverlay: async () => {}, harness: { shutdown: async () => events.push('shutdown'), cancelShutdown: () => {} },
-      app: { quit: () => events.push('quit'), exit: () => assert.fail('must not force exit') },
-      firstVisibleWindow: () => null,
-      confirmDialog: async () => { events.push('failure-notice'); return { response: 2 }; },
-    });
-    await quit();
-    if (failDrain) {
-      assert.deepEqual(events, ['failure-notice']);
-      assert.deepEqual(calls.map(call => call.op), ['inspect', 'acquire']);
-    } else {
-      assert.deepEqual(events, ['shutdown', 'cleanup', 'pet-dispose', 'control-stop', 'peer-stop', 'quit']);
-      assert.deepEqual(calls.map(call => call.op), ['inspect', 'acquire', 'inspect']);
-    }
-  }
-});
-
 function productionQuit(overrides = {}) {
   const fs = require('node:fs');
   const vm = require('node:vm');
@@ -313,51 +275,82 @@ function productionQuit(overrides = {}) {
     quitting: true, stoppingForQuit: false, closingOverlayActive: false, quitInProgress: false,
     dsh: { log: () => {} },
     stopDesktopInstallControl: () => {}, taskControlPeer: { stop: async () => {} },
-    cleanupDesktopResources: async () => {}, hideHarnessView: () => {},
+    cleanupDesktopResources: async () => {},
     getLive2dPet: () => null,
     getMainWindow: () => ({}), loadConfig: () => ({}), showClosingOverlay: async () => {},
     getHarnessWebContents: () => null,
-    harness: { shutdown: async () => {} }, firstVisibleWindow: () => null,
+    harness: { shutdown: async () => {}, cancelShutdown: () => assert.fail('explicit quit must not be cancelled') },
+    firstVisibleWindow: () => null,
+    confirmDialog: async () => assert.fail('explicit quit must never open a second confirmation'),
     app: { quit: () => assert.fail('unexpected quit'), exit: () => assert.fail('unexpected force exit') },
     qaEnv: () => false, process,
     setTimeout, clearTimeout,
     ...overrides,
   };
-  context.harness = { cancelShutdown: () => {}, ...context.harness };
   context.app.on = (name, handler) => { assert.equal(name, 'before-quit'); beforeQuit = handler; };
-  const functions = vm.runInNewContext(`${source.slice(start, end)}\n${source.slice(requestStart, requestEnd)}; ({ quit: finalizeQuit, request: quitApp })`, context);
+  const functions = vm.runInNewContext(source.slice(start, end) + '\n' + source.slice(requestStart, requestEnd)
+    + '; ({ quit: finalizeQuit, request: quitApp })', context);
   return { ...functions, beforeQuit, context };
 }
 
-test('Retry repeats the protected quit and shuts down after the runtime recovers', async () => {
-  let attempts = 0;
-  let notices = 0;
-  let shutdowns = 0;
-  let exits = 0;
-  const { protection, calls } = makeProtection({}, {
-    acquire: async () => ++attempts === 1
-      ? { ok: false, code: 'dshd/drain-timeout' }
-      : { ok: true, lockId: 'retry-lock' },
+test('production quit skips all prompts and retains inspection, lock and all resource cleanup', async () => {
+  const events = [];
+  const { protection, calls } = makeProtection({
+    inspection: DIRTY_INSPECTION,
+    confirm: async () => assert.fail('explicit quit must not ask again'),
   });
+  protection.onCommitCleanup(() => events.push('services-stop'));
   const { quit } = productionQuit({
     taskProtection: protection,
-    confirmDialog: async () => { notices++; return { response: 0 }; },
-    harness: { shutdown: async () => { shutdowns++; } },
-    app: { quit: () => { exits++; }, exit: () => assert.fail('Retry must use normal quit') },
+    harness: { shutdown: async () => events.push('shutdown') },
+    cleanupDesktopResources: async () => events.push('cleanup'),
+    getLive2dPet: () => ({ dispose: async () => events.push('pet-dispose') }),
+    stopDesktopInstallControl: () => events.push('control-stop'),
+    taskControlPeer: { stop: async () => events.push('peer-stop') },
+    app: { quit: () => events.push('quit'), exit: () => assert.fail('healthy shutdown uses app.quit') },
   });
   await quit();
-  assert.equal(notices, 1);
-  assert.equal(shutdowns, 1);
-  assert.equal(exits, 1);
-  assert.deepEqual(calls.map(call => call.op), ['inspect', 'acquire', 'inspect', 'acquire', 'inspect']);
+  assert.deepEqual(events, ['shutdown', 'cleanup', 'pet-dispose', 'control-stop', 'peer-stop', 'services-stop', 'quit']);
+  assert.deepEqual(calls.map(call => call.op), ['inspect', 'acquire', 'inspect']);
+  assert.equal(protection.isCommitted(), true);
 });
 
-test('repeated tray quits share the failure prompt and cancelling permits a later quit', async () => {
-  let notices = 0;
-  let answer;
+test('failed Host admission automatically cleans supervised services and exits without a prompt', async () => {
+  for (const code of ['dshd/drain-timeout', 'dshd/unreachable', 'busy']) {
+    const events = [];
+    const diagnostics = [];
+    const { protection, calls } = makeProtection({}, {
+      acquire: async () => ({ ok: false, code, pendingCount: 2, pendingLabels: ['http POST /api', 'resolveAgent'] }),
+    });
+    protection.onCommitCleanup(() => events.push('services-stop'));
+    const { quit, context } = productionQuit({
+      taskProtection: protection,
+      dsh: { log: message => diagnostics.push(message) },
+      harness: { shutdown: async () => events.push('shutdown') },
+      cleanupDesktopResources: async () => events.push('cleanup'),
+      getLive2dPet: () => ({ dispose: async () => events.push('pet-dispose') }),
+      stopDesktopInstallControl: () => events.push('control-stop'),
+      taskControlPeer: { stop: async () => events.push('peer-stop') },
+      app: { quit: () => assert.fail('failed admission must finish directly'), exit: code => { assert.equal(code, 0); events.push('exit'); } },
+    });
+    await quit();
+    assert.deepEqual(events, ['shutdown', 'cleanup', 'pet-dispose', 'control-stop', 'peer-stop', 'services-stop', 'exit'], code);
+    assert.deepEqual(calls.map(call => call.op), ['inspect', 'acquire']);
+    assert.ok(diagnostics[0].includes('resolveAgent'));
+    assert.equal(context.quitting, true);
+    assert.equal(context.quitInProgress, false);
+  }
+});
+
+test('repeated tray quits share one automatic cleanup without duplicate shutdown', async () => {
+  let finishShutdown;
+  let shutdowns = 0;
+  let exits = 0;
+  const { protection } = makeProtection({}, { acquire: async () => ({ ok: false, code: 'dshd/unreachable' }) });
   const { quit, request, beforeQuit, context } = productionQuit({
-    taskProtection: { coordinate: async () => ({ proceeded: false, code: 'dshd/unreachable' }) },
-    confirmDialog: () => { notices++; return new Promise(resolve => { answer = resolve; }); },
+    taskProtection: protection,
+    harness: { shutdown: () => { shutdowns++; return new Promise(resolve => { finishShutdown = resolve; }); } },
+    app: { quit: () => assert.fail('repeated quit should be ignored'), exit: () => { exits++; } },
   });
   const first = quit();
   await new Promise(setImmediate);
@@ -365,44 +358,113 @@ test('repeated tray quits share the failure prompt and cancelling permits a late
   let prevented = false;
   beforeQuit({ preventDefault: () => { prevented = true; } });
   assert.equal(prevented, true);
-  assert.equal(context.quitting, false);
   await quit();
-  assert.equal(notices, 1);
-  answer({ response: 2 });
+  assert.equal(shutdowns, 1);
+  assert.equal(context.quitting, true);
+  finishShutdown();
   await first;
-  assert.equal(context.quitting, false);
-  const later = quit();
-  await new Promise(setImmediate);
-  assert.equal(notices, 2);
-  answer({ response: 2 });
-  await later;
+  assert.equal(exits, 1);
 });
 
-test('force exit completes when either preview cleanup or runtime shutdown never settles', async () => {
-  for (const blocked of ['cleanup', 'shutdown']) {
-    let deadline;
-    let timerCleared = false;
-    let exits = 0;
-    let shutdownStarted = false;
+test('a rejected shutdown still cleans other resources and does not retry or reopen confirmation', async () => {
+  const { protection, calls } = makeProtection();
+  let shutdowns = 0;
+  const events = [];
+  protection.onCommitCleanup(() => events.push('services-stop'));
+  const { quit } = productionQuit({
+    taskProtection: protection,
+    harness: { shutdown: async () => { shutdowns++; throw new Error('taskkill denied'); } },
+    cleanupDesktopResources: async () => events.push('cleanup'),
+    getLive2dPet: () => ({ dispose: async () => events.push('pet-dispose') }),
+    app: { quit: () => assert.fail('rejected shutdown must complete directly'), exit: () => events.push('exit') },
+  });
+  await quit();
+  assert.equal(shutdowns, 1);
+  assert.deepEqual(events, ['cleanup', 'pet-dispose', 'services-stop', 'exit']);
+  assert.deepEqual(calls.map(call => call.op), ['inspect', 'acquire', 'inspect', 'release']);
+});
+
+function fakeQuitTimers() {
+  const timers = new Map();
+  return {
+    timers,
+    setTimeout: (callback, ms) => { assert.ok(ms === 30000 || ms === 5000); timers.set(ms, callback); return ms; },
+    clearTimeout: timer => timers.delete(timer),
+  };
+}
+
+test('hung shutdown, preview or service cleanup reaches the deadline while other cleanup starts', async () => {
+  for (const blocked of ['shutdown', 'preview', 'service']) {
+    const { protection } = makeProtection();
+    const clock = fakeQuitTimers();
     const hanging = new Promise(() => {});
+    const events = [];
+    protection.onCommitCleanup(() => { events.push('first-service'); return blocked === 'service' ? hanging : undefined; });
+    protection.onCommitCleanup(() => events.push('second-service'));
+    let shutdowns = 0;
+    let exits = 0;
     const { quit } = productionQuit({
-      taskProtection: { coordinate: async () => ({ proceeded: false, code: 'dshd/unreachable' }) },
-      confirmDialog: async () => ({ response: 1 }),
-      cleanupDesktopResources: () => blocked === 'cleanup' ? hanging : Promise.resolve(),
-      harness: { shutdown: () => { shutdownStarted = true; return blocked === 'shutdown' ? hanging : Promise.resolve(); } },
-      app: { exit: () => { exits++; }, quit: () => assert.fail('force exit must terminate directly') },
-      setTimeout: (callback, ms) => { assert.ok(ms > 0 && ms <= 5000); deadline = callback; return 42; },
-      clearTimeout: timer => { assert.equal(timer, 42); timerCleared = true; },
+      taskProtection: protection,
+      harness: { shutdown: () => { shutdowns++; return blocked === 'shutdown' ? hanging : Promise.resolve(); } },
+      cleanupDesktopResources: () => { events.push('preview'); return blocked === 'preview' ? hanging : Promise.resolve(); },
+      getLive2dPet: () => ({ dispose: () => events.push('pet-dispose') }),
+      app: { quit: () => assert.fail('hung cleanup must complete directly'), exit: () => { exits++; } },
+      setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
     });
     const pending = quit();
     await new Promise(setImmediate);
+    assert.ok(events.includes('second-service'), blocked);
+    assert.ok(events.includes('pet-dispose'), blocked);
     assert.equal(exits, 0);
-    assert.equal(shutdownStarted, true, blocked);
-    deadline();
+    clock.timers.get(30000)();
+    await new Promise(setImmediate);
+    assert.equal(exits, 0);
+    clock.timers.get(5000)();
     await pending;
+    assert.equal(shutdowns, 1, blocked);
     assert.equal(exits, 1, blocked);
-    assert.equal(timerCleared, true);
+    assert.equal(clock.timers.size, 0);
   }
+});
+
+test('an inspection that never settles cannot indefinitely block explicit quit', async () => {
+  const clock = fakeQuitTimers();
+  const { protection } = makeProtection({}, { inspect: () => new Promise(() => {}) });
+  let cleaned = 0;
+  let exits = 0;
+  protection.onCommitCleanup(() => { cleaned++; });
+  const { quit } = productionQuit({
+    taskProtection: protection,
+    app: { quit: () => assert.fail('blocked inspection completes directly'), exit: () => { exits++; } },
+    setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
+  });
+  const pending = quit();
+  await new Promise(setImmediate);
+  clock.timers.get(30000)();
+  await pending;
+  assert.equal(cleaned, 1);
+  assert.equal(exits, 1);
+  assert.equal(clock.timers.size, 0);
+});
+
+test('a preview rejection does not skip waiting for an unsettled runtime shutdown', async () => {
+  const clock = fakeQuitTimers();
+  const { protection } = makeProtection({}, { acquire: async () => ({ ok: false, code: 'dshd/unreachable' }) });
+  let exited = false;
+  const { quit } = productionQuit({
+    taskProtection: protection,
+    cleanupDesktopResources: async () => { throw new Error('preview teardown failed'); },
+    harness: { shutdown: () => new Promise(() => {}) },
+    app: { quit: () => assert.fail('must exit directly'), exit: () => { exited = true; } },
+    setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
+  });
+  const pending = quit();
+  await new Promise(setImmediate);
+  assert.equal(exited, false);
+  clock.timers.get(5000)();
+  await pending;
+  assert.equal(exited, true);
+  assert.equal(clock.timers.size, 0);
 });
 
 test('drain failure preserves the blocked work diagnostics', async () => {
@@ -413,95 +475,4 @@ test('drain failure preserves the blocked work diagnostics', async () => {
   const result = await protection.coordinate('quit', { preConfirmed: true });
   assert.equal(result.pendingCount, 2);
   assert.deepEqual(result.pendingLabels, ['http POST /api', 'resolveAgent']);
-});
-
-test('failed shutdown offers recovery and cancelling removes the overlay without destroying the page', async () => {
-  const { protection } = makeProtection();
-  let dismissed = 0;
-  let hidden = 0;
-  let notices = 0;
-  let petDisposed = false;
-  const { quit, context } = productionQuit({
-    taskProtection: protection,
-    harness: { shutdown: async () => { throw new Error('process still alive'); } },
-    getLive2dPet: () => ({ dispose: async () => { petDisposed = true; } }),
-    showClosingOverlay: async () => async () => { dismissed++; },
-    hideHarnessView: () => { hidden++; },
-    confirmDialog: async () => { notices++; return { response: 2 }; },
-  });
-  await quit();
-  assert.equal(notices, 1);
-  assert.equal(dismissed, 1);
-  assert.equal(hidden, 0);
-  assert.equal(petDisposed, false, 'cancelling a failed shutdown preserves the pet service');
-  assert.equal(context.quitting, false);
-  assert.equal(context.stoppingForQuit, false);
-  assert.equal(context.closingOverlayActive, false);
-  assert.equal(context.quitInProgress, false);
-});
-
-test('Retry can complete after a shutdown rejection and does not release a failed terminal commit as success', async () => {
-  const { protection, calls } = makeProtection();
-  let attempts = 0;
-  let quits = 0;
-  const { quit } = productionQuit({
-    taskProtection: protection,
-    harness: { shutdown: async () => { if (++attempts === 1) throw new Error('taskkill denied'); } },
-    confirmDialog: async () => ({ response: 0 }),
-    app: { quit: () => { quits++; }, exit: () => assert.fail('Retry must stop normally') },
-  });
-  await quit();
-  assert.equal(attempts, 2);
-  assert.equal(quits, 1);
-  assert.deepEqual(calls.map(call => call.op), ['inspect', 'acquire', 'inspect', 'release',
-    'inspect', 'acquire', 'inspect']);
-});
-
-test('a hung normal shutdown reaches the recovery prompt and retains the page', async () => {
-  const { protection } = makeProtection();
-  let deadline;
-  let hidden = false;
-  let notices = 0;
-  let finishShutdown;
-  let petDisposed = false;
-  const { quit, context } = productionQuit({
-    taskProtection: protection,
-    harness: { shutdown: () => new Promise(resolve => { finishShutdown = resolve; }) },
-    getLive2dPet: () => ({ dispose: async () => { petDisposed = true; } }),
-    hideHarnessView: () => { hidden = true; },
-    confirmDialog: async () => { notices++; return { response: 2 }; },
-    setTimeout: (callback, ms) => { assert.equal(ms, 30000); deadline = callback; return 1; },
-    clearTimeout: timer => assert.equal(timer, 1),
-  });
-  const pending = quit();
-  await new Promise(setImmediate);
-  assert.equal(notices, 0);
-  deadline();
-  await pending;
-  assert.equal(notices, 1);
-  assert.equal(hidden, false);
-  assert.equal(context.quitInProgress, false);
-  finishShutdown();
-  await new Promise(setImmediate);
-  assert.equal(petDisposed, false, 'a late shutdown cannot dispose the pet after cancellation');
-});
-
-test('force exit still waits for the runtime when preview cleanup rejects', async () => {
-  let deadline;
-  let exited = false;
-  const { quit } = productionQuit({
-    taskProtection: { coordinate: async () => ({ proceeded: false, code: 'dshd/unreachable' }) },
-    cleanupDesktopResources: async () => { throw new Error('preview teardown failed'); },
-    harness: { shutdown: () => new Promise(() => {}) },
-    confirmDialog: async () => ({ response: 1 }),
-    app: { quit: () => assert.fail('must force exit'), exit: () => { exited = true; } },
-    setTimeout: (callback, ms) => { assert.equal(ms, 5000); deadline = callback; return 1; },
-    clearTimeout: () => {},
-  });
-  const pending = quit();
-  await new Promise(setImmediate);
-  assert.equal(exited, false);
-  deadline();
-  await pending;
-  assert.equal(exited, true);
 });

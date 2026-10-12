@@ -1,0 +1,7 @@
+node_modules/
+tests/
+bridge/node_modules/
+bridge/.tooling/
+bridge/src/
+bridge/tests/
+*.tgz

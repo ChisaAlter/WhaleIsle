@@ -72,6 +72,21 @@ async function clickMutation(button: HTMLElement) {
 }
 
 describe('MarketSection', () => {
+  it('expands all categories and retains the selected filter when collapsed', async () => {
+    const rows = Array.from({ length: 7 }, (_, i) => item({ id: `acme/plugin-${i}`, repo: `plugin-${i}`, category: `cat-${i}` }))
+    renderMarket({ listCatalog: vi.fn(async () => catalog(rows, { categories: [
+      { id: 'all', label: 'All', count: rows.length },
+      ...rows.map((_row, i) => ({ id: `cat-${i}`, label: `Category ${i}`, count: 1 })),
+    ] })) })
+    const expand = await screen.findByRole('button', { name: en.expandCategories })
+    expect(screen.queryByRole('radio', { name: /Category 6/ })).toBeNull()
+    fireEvent.click(expand)
+    fireEvent.click(screen.getByRole('radio', { name: /Category 6/ }))
+    fireEvent.click(screen.getByRole('button', { name: en.collapseCategories }))
+    expect(screen.getByRole('radio', { name: /Category 6/ }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByText('plugin-6')).toBeTruthy()
+    expect(screen.queryByText('plugin-0')).toBeNull()
+  })
   it('does not install before confirmation and cancellation performs no mutation', async () => {
     const props = renderMarket()
     fireEvent.click(await screen.findByRole('button', { name: en.install }))

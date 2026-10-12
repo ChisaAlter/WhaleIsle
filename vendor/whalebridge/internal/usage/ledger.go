@@ -313,7 +313,7 @@ func ledgerWithShared(since time.Time, f Filter, recs []Record, logs []sessions.
 			sent = provider.SentNameIn(wires, r.Provider, r.Model, r.Effort)
 		}
 		row := Row{Record: r, Swapped: r.Served != "" && Swapped(sent, r.Served), Routed: GroupRouted(sent, r.Served), Source: source}
-		if pr != nil && r.Input+r.Output > 0 {
+		if pr != nil && r.Input+r.Output+r.CacheRead+r.CacheWrite > 0 {
 			row.Cost, row.Priced = r.CostAt(*pr), true
 		}
 		row.Agent = AgentOf(r.Agent)
@@ -527,7 +527,7 @@ func (t *Totals) addRow(r Row) {
 	switch {
 	case r.Priced:
 		t.Cost += r.Cost
-	case r.Input+r.Output > 0:
+	case r.Input+r.Output+r.CacheRead+r.CacheWrite > 0:
 		t.Unpriced++
 	}
 }

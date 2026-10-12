@@ -6,6 +6,9 @@ export const NS = 'dsh-remote'
 export const zh = {
   'settings.nav': '远程工作区',
   'settings.summary': '把 SSH 机器变成工作区：本地镜像目录 + SFTP 同步 + 远程文件与命令。',
+  'settings.loading': '正在读取远程工作区配置…',
+  'settings.loadFailed': '无法读取远程工作区配置：{error}。请重试；若仍失败，请检查后台服务是否运行。',
+  'settings.retry': '重新读取',
   'settings.active': '当前机器',
   'settings.none': '未选择机器',
   'settings.connected': '已连接',
@@ -160,6 +163,9 @@ export const zh = {
 export const en = {
   'settings.nav': 'Remote Workspaces',
   'settings.summary': 'Turn SSH machines into workspaces: local mirror directories with SFTP sync, remote files and commands.',
+  'settings.loading': 'Reading remote workspace configuration…',
+  'settings.loadFailed': 'Could not read remote workspace configuration: {error}. Retry, then check that the background service is running.',
+  'settings.retry': 'Reload',
   'settings.active': 'Active machine',
   'settings.none': 'No machine selected',
   'settings.connected': 'Connected',

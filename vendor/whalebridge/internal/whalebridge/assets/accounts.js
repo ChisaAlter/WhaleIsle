@@ -7,7 +7,7 @@ async function openSubscription(adapterId='', preferAdapter=false, expected){
  if(expected&&(expected!==editor||expected.closed))return;
  subscriptions=rows.map(s=>({...s,name:s.plugin?s.name:(subscriptionNames[s.id] || s.name)}));editor={type:'subscription'};
  $('#editor-title').textContent='添加订阅账号';
- $('#fields').innerHTML=`<p class="form-hint">将已有订阅连接到鲸屿。请选择你的供应商，再按对应的登录流程完成授权。</p><label for="f-agent">订阅供应商</label><select name="agent" id="f-agent">${subscriptions.map(s=>`<option value="${escape(s.id)}">${escape(s.name)}</option>`).join('')}</select><div id="signin-options"></div><p class="muted">部分订阅需要供应商的认证工具或适配器，登录时会显示准备进度。模型范围和使用额度由供应商决定。</p>${removedSubscriptions()}`;
+ $('#fields').innerHTML=`<div class="actions-bar">${button('返回订阅列表','source-back','subscription','text-button')}${button('查找更多社区插件','source-discover','','text-button')}</div><p class="form-hint">将已有订阅连接到鲸屿。请选择你的供应商，再按对应的登录流程完成授权。</p><label for="f-agent">订阅供应商</label><select name="agent" id="f-agent">${subscriptions.map(s=>`<option value="${escape(s.id)}">${escape(s.name)}</option>`).join('')}</select><div id="signin-options"></div><p class="muted">部分订阅需要供应商的认证工具或适配器，登录时会显示准备进度。模型范围和使用额度由供应商决定。</p>${removedSubscriptions()}`;
  if(adapterId)$('#f-agent').value=preferAdapter?(subscriptions.find(s=>s.plugin&&s.pid===adapterId)?.id || adapterId):adapterId;
  $('#f-agent').onchange=subscriptionOptions;subscriptionOptions();showEditor();$('#save').textContent='开始登录';
  return editor;
@@ -140,7 +140,10 @@ $('#fields').addEventListener('click',async e=>{
   if(action==='key-fold'){editor.expanded=!editor.expanded;localStorage.setItem('whalebridge.keys.expanded.'+id,editor.expanded?'1':'0');syncKeyList();return;}
   if(action==='signin-callback'){await api(`signin/${encodeURIComponent(loginFlow)}/callback`,{url:$('#f-callback').value});return;}
   if(action==='install-adapter'){
-   const current=editor,progress=startAdapterBusy(b);
+   const current=editor,subscription=subscriptions.find(s=>s.id===id);
+   if(!await ask('安装第三方供应商插件？',(subscription?.package || id)+'\n\n'+adapterTrust,'信任并安装'))return;
+   if(current!==editor||current.closed)return;
+   const progress=startAdapterBusy(b);
    try{
     await installAdapter({id},progress);
     if(current!==editor||current.closed)return;

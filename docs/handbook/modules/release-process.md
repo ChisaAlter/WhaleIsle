@@ -37,6 +37,8 @@
 
 `.github/workflows/whalebridge.yml` 单独编译 `vendor/whalebridge` 并验证真实 Windows 程序的生命周期和本机网关。PR 提供开发资产；成功的 main 构建在组件版本尚未发布时自动创建 `whalebridge-v<版本>`，附件为 `WhaleBridge-win32-x64.exe` 和包含大小、SHA256、MIT 版权的 `WhaleBridge-component.json`。组件版本位于 `vendor/whalebridge/upstream.json`，独立于桌面 package.json。
 
+桌面 `0.3.6` 对应的鲸桥源码版本为 `1.1.1`，包含社区订阅插件发现与安装、模型来源选择、用量明细及缓存费用修复。它作为 `whalebridge-v1.1.1` 独立组件发布；桌面安装包不携带组件二进制，安装桌面更新也不等于已更新组件。用户从启动器明确安装或更新鲸桥，社区插件同样需要用户选择与信任确认。
+
 该工作流成功后 CNB mirror 同步组件 tag 与原始资产，按组件清单检查二进制并完成匿名字节校验。GitHub 和 CNB 都保持桌面程序的 latest，不把组件设为最新桌面安装包。源码构建入口为 `node scripts/build-whalebridge.mjs`。
 
 ## 失败处理

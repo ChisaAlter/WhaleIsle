@@ -619,6 +619,7 @@ class DshdRemote extends EventEmitter {
       relayUrl: relayEndpoint,
       defaultRelayUrl: defaults.relayEndpoint,
       relayTokenSet: true,
+      legacyRelayTokenSet: Boolean(config.remoteRelayToken),
       relayConfigured: relayReady,
       relayConnected: Boolean(this.relayState.connected),
       relayError: this.relayState.lastError || '',

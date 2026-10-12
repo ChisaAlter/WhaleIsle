@@ -124,6 +124,30 @@ test('ptyCreate rejects a missing project cwd', async () => {
   await assert.rejects(() => pty.create({}), /cwd/);
 });
 
+test('PTY creation preflight checks sender and workspace authorization without spawning', () => {
+  const { handlers, ipcMain } = ptyHandlers();
+  const pty = createPtyController({
+    spawn() { assert.fail('preflight must not spawn a PTY'); },
+    emit() {},
+  });
+  const sender = { id: 7 };
+  const denied = new Error('Unauthorized IPC sender');
+  registerPtyIpc(ipcMain, pty, {
+    authorize(event) {
+      if (event.sender !== sender) throw denied;
+    },
+  });
+  const canCreate = handlers.get('shell:pty-can-create');
+  const event = { sender };
+  assert.equal(canCreate(event, ws), true);
+  assert.equal(canCreate(event, path.dirname(ws)), false);
+  assert.equal(canCreate(event, path.join(ws, 'missing-project')), false);
+  assert.equal(canCreate(event, ''), false);
+  assert.equal(canCreate(event), false);
+  assert.throws(() => canCreate({ sender: { id: 8 } }, ws), denied);
+  assert.equal(pty.count(), 0);
+});
+
 test('Windows PTY spawn uses pwsh without the login banner', () => {
   if (process.platform !== 'win32') return;
   assert.equal(defaultShell(), 'pwsh.exe');
@@ -143,6 +167,7 @@ test('registerPtyIpc succeeds when the PTY backend is unavailable', async () => 
   };
   const pty = createPtyController({ spawn: null, emit() {} });
   assert.doesNotThrow(() => registerPtyIpc(ipcMain, pty));
+  assert.equal(typeof handlers.get('shell:pty-can-create'), 'function');
   assert.equal(typeof handlers.get('shell:pty-create'), 'function');
   assert.equal(typeof handlers.get('shell:pty-write'), 'function');
   assert.equal(typeof handlers.get('shell:pty-resize'), 'function');

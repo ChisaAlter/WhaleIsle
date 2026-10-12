@@ -9,7 +9,7 @@ const vm = require('vm');
 const CLIENT_BUNDLE = path.join(__dirname, '..', '..', 'vendor', 'dsh-remote', 'lib', 'client.js');
 
 // Executes the shipped ModuleLoader bundle and returns its plugin exports.
-function loadClientModule() {
+function loadClientModule({ fetch, react, jsx } = {}) {
   let captured = null;
   const sandbox = {
     window: { __ModuleLoader__: { load: (registration) => { captured = registration; } } },
@@ -20,11 +20,13 @@ function loadClientModule() {
     },
     URL,
     console,
+    fetch,
   };
   vm.runInNewContext(fs.readFileSync(CLIENT_BUNDLE, 'utf8'), sandbox, { filename: CLIENT_BUNDLE });
   assert.ok(captured && captured.id === 'dsh-remote', 'client bundle must register itself as "dsh-remote"');
   const requireStub = (spec) => {
     if (spec === 'react') {
+      if (react) return react;
       return {
         createElement: () => null,
         useState: (init) => [init, () => {}],
@@ -35,6 +37,7 @@ function loadClientModule() {
         Fragment: Symbol('Fragment'),
       };
     }
+    if (spec === 'react/jsx-runtime' && jsx) return { jsx, jsxs: jsx };
     return new Proxy({}, { get: () => () => null });
   };
   return captured.factory(requireStub);
@@ -126,8 +129,8 @@ function makeCtx(slots) {
   return rootCtx;
 }
 
-function applyWith(slots) {
-  const mod = loadClientModule();
+function applyWith(slots, options) {
+  const mod = loadClientModule(options);
   assert.equal(mod.name, 'dsh-remote');
   assert.deepEqual([...mod.inject], ['slots', 'locale']);
   const ctx = makeCtx(slots);
@@ -137,6 +140,77 @@ function applyWith(slots) {
 
 function registeredSeats(slots) {
   return slots.registrations.map((entry) => `${entry.options.name}#${entry.options.id ?? entry.options.key ?? ''}`);
+}
+
+// Reuse the shipped bundle and registered settings component; retain hook
+// state across renders so async reads and the visible reload action execute.
+function remoteSettingsFixture(fetch) {
+  const hooks = [];
+  const effects = [];
+  let cursor = 0;
+  const changed = (previous, deps) => !previous
+    || deps.length !== previous.deps.length
+    || deps.some((dep, index) => dep !== previous.deps[index]);
+  const react = {
+    useState(initial) {
+      const index = cursor++;
+      if (!(index in hooks)) hooks[index] = initial;
+      return [hooks[index], (value) => {
+        hooks[index] = typeof value === 'function' ? value(hooks[index]) : value;
+      }];
+    },
+    useRef(initial) {
+      const index = cursor++;
+      if (!(index in hooks)) hooks[index] = { current: initial };
+      return hooks[index];
+    },
+    useCallback(fn, deps) {
+      const index = cursor++;
+      if (changed(hooks[index], deps)) hooks[index] = { deps: [...deps], value: fn };
+      return hooks[index].value;
+    },
+    useEffect(fn, deps) {
+      const index = cursor++;
+      const previous = hooks[index];
+      if (!changed(previous, deps)) return;
+      hooks[index] = { deps: [...deps] };
+      effects.push(() => {
+        previous?.cleanup?.();
+        hooks[index].cleanup = fn();
+      });
+    },
+    Fragment: Symbol('Fragment'),
+  };
+  const slots = makeSlots();
+  const { ctx } = applyWith(slots, { fetch, react, jsx: (type, props) => ({ type, props }) });
+  slots.declare('settings.section');
+  const section = slots.registrations.find((entry) => entry.options.id === 'remote-workspace').component;
+  const dictionary = ctx._locales.get('dsh-remote').zh;
+  const t = (key, args = {}) => dictionary[key].replace(/\{(\w+)\}/g, (match, name) => args[name] ?? match);
+  return {
+    render() {
+      cursor = 0;
+      const tree = section({ t });
+      for (const effect of effects.splice(0)) effect();
+      return tree;
+    },
+    async settle() {
+      await new Promise(setImmediate);
+      return this.render();
+    },
+  };
+}
+
+function elements(node) {
+  if (Array.isArray(node)) return node.flatMap(elements);
+  if (!node || typeof node !== 'object' || !node.props) return [];
+  return [node, ...elements(node.props.children)];
+}
+
+function textContent(node) {
+  if (Array.isArray(node)) return node.map(textContent).join(' ');
+  if (node && typeof node === 'object') return textContent(node.props?.children);
+  return node == null || typeof node === 'boolean' ? '' : String(node);
 }
 
 const REMOTE_FLOW_SLOTS = [
@@ -203,3 +277,59 @@ test('dsh-remote file tab title resolves the remote path from the resource addre
   assert.equal(fileDef.title(address), 'README.md');
   assert.equal(typeof fileDef.title('not-a-resource'), 'string');
 });
+
+test('remote settings show loading before a successful empty registry', async () => {
+  const data = {
+    '/api/dsh-remote/machines': { machines: [], currentId: null },
+    '/api/dsh-remote/status': { connected: false },
+    '/api/dsh-remote/forwards': { forwards: [] },
+    '/api/dsh-remote/ssh-config': { entries: [] },
+  };
+  const requested = [];
+  const fixture = remoteSettingsFixture(async (url) => {
+    requested.push(url);
+    assert.ok(Object.hasOwn(data, url), 'unexpected request: ' + url);
+    return { status: 200, json: async () => data[url] };
+  });
+  const loading = fixture.render();
+  assert.match(textContent(elements(loading).find((element) => element.props.role === 'status')), /正在读取/);
+  assert.doesNotMatch(textContent(loading), /还没有保存的 SSH 机器/);
+  const ready = await fixture.settle();
+  assert.equal(elements(ready).some((element) => element.props.role === 'status'), false);
+  assert.equal(elements(ready).some((element) => element.props.role === 'alert'), false);
+  assert.match(textContent(ready), /还没有保存的 SSH 机器/);
+  assert.deepEqual(requested.sort(), Object.keys(data).sort());
+});
+
+for (const resource of ['machines', 'status', 'forwards']) {
+  test('remote settings expose ' + resource + ' read rejection and recover through reload', async () => {
+    let fail = true;
+    const data = {
+      '/api/dsh-remote/machines': { machines: [{ id: 'canary', name: 'Saved SSH canary', host: 'ssh.example', port: 22, username: 'dev' }], currentId: null },
+      '/api/dsh-remote/status': { connected: false },
+      '/api/dsh-remote/forwards': { forwards: [] },
+      '/api/dsh-remote/ssh-config': { entries: [] },
+    };
+    const fixture = remoteSettingsFixture(async (url) => {
+      assert.ok(Object.hasOwn(data, url), 'unexpected request: ' + url);
+      if (fail && url === '/api/dsh-remote/' + resource) {
+        return { status: 503, json: async () => ({ error: resource + ' read refused' }) };
+      }
+      return { status: 200, json: async () => data[url] };
+    });
+    fixture.render();
+    const failed = await fixture.settle();
+    const alert = elements(failed).find((element) => element.props.role === 'alert');
+    assert.ok(alert, resource + ' failure must stay visible instead of becoming null/empty');
+    assert.ok(textContent(alert).includes(resource + ' read refused'));
+    assert.doesNotMatch(textContent(failed), /还没有保存的 SSH 机器/);
+    const reload = elements(alert).find((element) => typeof element.props.onClick === 'function');
+    assert.equal(textContent(reload), '重新读取');
+    fail = false;
+    reload.props.onClick();
+    assert.equal(elements(fixture.render()).some((element) => element.props.role === 'status'), true);
+    const recovered = await fixture.settle();
+    assert.equal(elements(recovered).some((element) => element.props.role === 'alert'), false);
+    assert.match(textContent(recovered), /Saved SSH canary/);
+  });
+}

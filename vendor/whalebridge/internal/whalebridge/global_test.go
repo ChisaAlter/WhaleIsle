@@ -230,6 +230,35 @@ func TestUsageLedgerAccountKeyAndCSV(t *testing.T) {
 	}
 }
 
+func TestCacheOnlyUsageMatchesSummaryLedgerAndExport(t *testing.T) {
+	a := newProviderHTTP(t)
+	a.call("POST", "model-price", map[string]any{"id": "*/cache-only-model", "price": map[string]any{"input": 5, "output": 25, "cache_read": 0.5, "cache_write": 6.25, "cache_write_1h": 10}}, 200)
+	usage.Append(usage.Record{Time: time.Now(), Provider: "fixture", Model: "cache-only-model", CacheRead: 2000, CacheWrite: 400, CacheWrite1h: 100, Status: 200})
+	// A cache-only call still carries billable input, even with no ordinary
+	// input or output tokens. All three customer-facing reads must agree.
+	want := (2000*0.5 + 300*6.25 + 100*10.0) / 1e6
+	summary := usage.Summarize(usage.All)
+	if summary.Calls != 1 || summary.Unpriced != 0 || summary.Cost-want > 1e-9 || want-summary.Cost > 1e-9 {
+		t.Fatalf("summary=%+v want cost=%v", summary, want)
+	}
+	var page usage.RequestPage
+	if err := json.Unmarshal(a.call("GET", "requests?period=all&provider=fixture&model=cache-only-model", nil, 200), &page); err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || len(page.Rows) != 1 || !page.Rows[0].Priced || page.Sum.Cost != summary.Cost || page.Rows[0].Cost != summary.Cost {
+		t.Fatalf("ledger=%+v summary cost=%v", page, summary.Cost)
+	}
+	csv := a.call("GET", "requests/export?period=all&provider=fixture&model=cache-only-model", nil, 200)
+	if !strings.Contains(string(csv), ",0.003875,") {
+		t.Fatalf("cache-only CSV omitted its USD cost: %s", csv)
+	}
+	// Missing tariffs must be reported as unknown rather than a free call.
+	usage.Append(usage.Record{Time: time.Now(), Provider: "fixture", Model: "unknown-cache-only-model", CacheRead: 25, Status: 200})
+	if got := usage.Summarize(usage.All); got.Unpriced != 1 || got.Cost != summary.Cost {
+		t.Fatalf("unknown cache-only request=%+v", got)
+	}
+}
+
 func TestBackgroundSupplierChangeUpdatesDSH(t *testing.T) {
 	a := newProviderHTTP(t)
 	ctx, cancel := context.WithCancel(context.Background())

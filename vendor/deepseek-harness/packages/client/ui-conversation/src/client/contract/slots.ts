@@ -397,6 +397,8 @@ export interface ComposerBarOwnerProps {
 /** Package-private operations injected into the resident composer bar. */
 export interface ComposerBarInjected {
   keyboard: ComposerKeyboard | undefined
+  /** Generate the latest completed turn's suggestion without sending a message. */
+  requestNextPrompt: ((signal: AbortSignal) => Promise<import('../../next-prompt-contract.ts').NextPromptResult>) | undefined
   /**
    * Register one picked batch; resolves to the rejection copy or null. Where
    * the browser shell reports host paths (the Desktop application), files
@@ -419,6 +421,8 @@ export interface ComposerBarInjected {
      * and the primary Send button use while the addressed agent is busy.
      */
     busyEnter: ObservableSnapshot<BusyEnterBehavior>
+    /** Whether the empty composer offers a suggested follow-up. */
+    nextPrompt: ObservableSnapshot<boolean>
     /** Live per-draft upload states for file-kind drafts. */
     fileUploads: ObservableSnapshot<DraftFileUploads>
     notices: ObservableSnapshot<InputNotice | null>

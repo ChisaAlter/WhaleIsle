@@ -406,7 +406,7 @@ func (t *Totals) add(r Record, price *catalog.Price) {
 			t.DecodeOut += n
 		}
 	}
-	if r.Input+r.Output == 0 {
+	if r.Input+r.Output+r.CacheRead+r.CacheWrite == 0 {
 		return
 	}
 	if price == nil {

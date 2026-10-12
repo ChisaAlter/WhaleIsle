@@ -226,7 +226,7 @@
 }
 
 .searchInput::placeholder {
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-placeholder);
 }
 
 .clearButton {

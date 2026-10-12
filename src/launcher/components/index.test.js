@@ -12,7 +12,7 @@ const { createComponentsService } = require('./index');
 const store = require('./store');
 const lifecycle = require('./lifecycle');
 const ipcComponents = require('../../main/ipc-components');
-const { IPC_ROLES, assertIpcSender } = require('../../main/ipc-authorization');
+const { IPC_ROLES } = require('../../main/ipc-authorization');
 
 const SAMPLE_FIXTURES = path.resolve(__dirname, '..', '..', '..', 'tests', 'fixtures', 'components');
 
@@ -115,7 +115,7 @@ function fakeEnv(t, { samples } = {}) {
       spawned.push({ pid, bin, args, options, child });
       return child;
     },
-    execFileSync: (bin, args) => {
+    execFileSync: (bin, args, options) => {
       const text = args.join(' ');
       if (bin === 'tasklist') {
         const match = /PID eq (\d+)/.exec(text);
@@ -125,7 +125,7 @@ function fakeEnv(t, { samples } = {}) {
       if (bin === 'taskkill') {
         const match = /\/PID\s+(\d+)/i.exec(text);
         const pid = match ? Number(match[1]) : 0;
-        killed.push({ pid, args: args.slice() });
+        killed.push({ pid, args: args.slice(), options });
         // Mirror real Windows: a non-forced taskkill on a windowless child is
         // refused ("只能强制终止"), only /F actually kills.
         if (!args.includes('/F')) {
@@ -228,6 +228,7 @@ test('start spawns the entry, records pid, and stop taskkills the tree', async (
   const kill = env.killed.find((row) => row.pid === started.pid && row.args.includes('/F'));
   assert.ok(kill, 'a refused graceful kill must escalate to force');
   assert.ok(kill.args.includes('/T') && kill.args.includes('/F'), 'tree kill must be forced');
+  assert.ok(env.killed.every((row) => row.options.timeout === 5000), 'every synchronous taskkill must have a five-second timeout');
   assert.equal(store.loadRegistry(env.root).components.toy.state, 'stopped');
 });
 
@@ -482,12 +483,8 @@ test('ipc-components mounts the frozen channel set with LAUNCHER_ONLY', async (t
     assert.deepEqual(channels.get(name).roles, ['launcher']);
   }
   for (const name of ['shell:whalebridge-status', 'shell:whalebridge-open']) {
-    assert.deepEqual(channels.get(name).roles, [IPC_ROLES.HARNESS]);
+    assert.equal(channels.has(name), false, `${name} is no longer exposed to the Harness`);
   }
-  assert.deepEqual(channels.get('shell:whalebridge-status').listener({}), { installed: false });
-  assert.deepEqual(await channels.get('shell:whalebridge-open').listener({}), {
-    ok: false, error: 'unknown-component',
-  });
   const list = await channels.get('shell:components-list').listener({});
   assert.ok(Array.isArray(list.components));
   const install = await channels.get('shell:components-install').listener({}, 'toy');
@@ -498,62 +495,7 @@ test('ipc-components mounts the frozen channel set with LAUNCHER_ONLY', async (t
   assert.deepEqual(status.components, [{ id: 'toy', state: 'installed', version: '1.0.0' }]);
 });
 
-test('ipc-components WhaleBridge status is Harness-only, non-secret and independent of runtime or catalog', (t) => {
-  const env = fakeEnv(t);
-  let record = null;
-  let live = null;
-  const bridge = {
-    installed: () => record,
-    state: t.mock.fn(() => live),
-    row: t.mock.fn(() => ({ state: live ? 'running' : 'stopped', url: live?.url })),
-    refreshCatalog: t.mock.fn(),
-  };
-  ipcComponents._configureForTest({ ...env.deps, whaleBridge: bridge });
-  t.after(() => ipcComponents._configureForTest());
-  const contents = (url) => ({ mainFrame: { url }, isDestroyed: () => false });
-  const policy = {
-    surfaces: {
-      harness: contents('http://127.0.0.1:3080/chat'),
-      harnessOrigin: 'http://127.0.0.1:3080',
-      launcher: contents('file:///launcher.html'),
-      boot: contents('file:///boot.html'),
-    },
-    isLauncherUrl: (url) => url === 'file:///launcher.html',
-    isBootUrl: (url) => url === 'file:///boot.html',
-  };
-  const channels = new Map();
-  ipcComponents.register({
-    IPC_ROLES,
-    LAUNCHER_ONLY: [IPC_ROLES.LAUNCHER],
-    handle: (channel, roles, listener) => channels.set(channel, (event, ...args) => {
-      assertIpcSender(event, roles, policy);
-      return listener(event, ...args);
-    }),
-    send() {},
-    onQuitCommit() {},
-  });
-  const event = (sender) => ({ sender, senderFrame: sender.mainFrame });
-  const status = channels.get('shell:whalebridge-status');
-  const harnessEvent = event(policy.surfaces.harness);
-  assert.deepEqual(status(harnessEvent), { installed: false });
-  record = { version: '1.0.4' };
-  assert.deepEqual(status(harnessEvent), { installed: true }, 'stopped installation remains visible');
-  live = { pid: 5001, url: 'http://127.0.0.1:3427/?k=' + 'a'.repeat(32) };
-  assert.deepEqual(status(harnessEvent), { installed: true }, 'running installation exposes no management token');
-  record = null;
-  assert.deepEqual(status(harnessEvent), { installed: false }, 'uninstall is reflected by the next read');
-  for (const sender of [policy.surfaces.launcher, policy.surfaces.boot]) {
-    assert.throws(() => status(event(sender)), { code: 'ERR_DSH_IPC_SENDER' });
-  }
-  assert.throws(() => status({ sender: policy.surfaces.harness, senderFrame: { ...policy.surfaces.harness.mainFrame } }), {
-    code: 'ERR_DSH_IPC_SENDER',
-  });
-  for (const name of ['state', 'row', 'refreshCatalog']) {
-    assert.equal(bridge[name].mock.callCount(), 0, `${name} must not be queried just to display the menu`);
-  }
-});
-
-test('ipc-components WhaleBridge open reuses the settings-window path without returning its URL', async (t) => {
+test('launcher WhaleBridge open reuses the settings-window path without returning its URL', async (t) => {
   const env = fakeEnv(t);
   const url = 'http://127.0.0.1:3427/?k=' + 'a'.repeat(32);
   let outcome = { ok: true, url };
@@ -575,15 +517,12 @@ test('ipc-components WhaleBridge open reuses the settings-window path without re
     send: (event, channel, payload) => sent.push({ event, channel, payload }),
     onQuitCommit() {},
   });
-  const narrow = channels.get('shell:whalebridge-open');
   const launcher = channels.get('shell:components-open');
-  assert.deepEqual(narrow.roles, [IPC_ROLES.HARNESS]);
   assert.deepEqual(launcher.roles, [IPC_ROLES.LAUNCHER]);
   const event = {};
-  assert.deepEqual(await narrow.listener(event), { ok: true });
   assert.deepEqual(await launcher.listener(event, 'whalebridge'), { ok: true });
-  assert.equal(bridge.start.mock.callCount(), 2);
-  assert.deepEqual(open.mock.calls.map((call) => call.arguments), [[url], [url]]);
+  assert.equal(bridge.start.mock.callCount(), 1);
+  assert.deepEqual(open.mock.calls.map((call) => call.arguments), [[url]]);
   assert.ok(sent.every((row) => row.channel === 'shell:components-progress'
     && row.payload.id === 'whalebridge' && !Object.hasOwn(row.payload, 'url')));
 
@@ -592,11 +531,11 @@ test('ipc-components WhaleBridge open reuses the settings-window path without re
     { ok: false, error: 'whalebridge-failed', message: 'Please install WhaleBridge first' },
   ]) {
     outcome = failure;
-    assert.deepEqual(await narrow.listener(event), failure);
+    assert.deepEqual(await launcher.listener(event, 'whalebridge'), failure);
   }
-  assert.equal(open.mock.callCount(), 2, 'failed starts must not open a settings window');
+  assert.equal(open.mock.callCount(), 1, 'failed starts must not open a settings window');
   assert.deepEqual(await launcher.listener(event, 'other-component'), { ok: false, error: 'unknown-component' });
-  assert.equal(bridge.start.mock.callCount(), 4, 'unknown component must not start WhaleBridge');
+  assert.equal(bridge.start.mock.callCount(), 3, 'unknown component must not start WhaleBridge');
 });
 
 for (const operation of ['update', 'rollback', 'uninstall']) {

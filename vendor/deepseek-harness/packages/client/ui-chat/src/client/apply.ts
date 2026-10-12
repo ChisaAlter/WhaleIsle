@@ -70,7 +70,10 @@ export const inject = [
  * @param ctx - Client root context.
  */
 export function apply(ctx: Context): void {
-  const quotaNotice = createSnapshotStore<QuotaNoticeState | null>(null)
+  const quotaNotice = createSnapshotStore<(QuotaNoticeState & {
+    readonly sessionId: SessionId
+    readonly turn: number
+  }) | null>(null)
   let quotaNoticeSeq = 0
   // Each hold is its own token, so a release can only drop the hold it was
   // issued for: one arriving after a dismissal or a later acquisition leaves
@@ -92,10 +95,17 @@ export function apply(ctx: Context): void {
           const { change } = binding.eventSource.getSnapshot()
           if (change.kind !== 'append') return
           for (const { event } of change.entries) {
+            if (event.type === 'user/message' && event.data.source.kind === 'user' && 'edit' in event.data.source) {
+              const notice = quotaNotice.getSnapshot()
+              if (notice?.sessionId === binding.sessionId && notice.turn === event.data.source.edit.turn) {
+                quotaNoticeHolds.clear()
+                quotaNotice.set(null)
+              }
+            }
             if (event.type !== 'turn/end' || event.data.reason.kind !== 'error') continue
             const { code } = event.data.reason.error
             if (quotaNoticeHolds.size > 0 || (code !== 'QUOTA' && code !== 'ACCOUNT_QUOTA')) continue
-            quotaNotice.set({ code, seq: ++quotaNoticeSeq })
+            quotaNotice.set({ code, seq: ++quotaNoticeSeq, sessionId: binding.sessionId, turn: event.data.turn })
           }
         })
         return () => {

@@ -19,6 +19,7 @@ The scoped `conversation.edit` sends revised text and draft images through the s
 
 - [Conversation assembly](#conversation-assembly)
 - [Shell and standard props](#shell-and-standard-props)
+- [Next-prompt suggestions](#next-prompt-suggestions)
 - [Temporary composer entries](#temporary-composer-entries)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
@@ -102,6 +103,15 @@ When another writer owns the Session, the send-error toast asks the user to quit
 
 Two independent Escape presses in the focused Chat or Composer stop its current running turn and preserve queued messages. The interval comes from the shortcuts plugin’s `stopSequenceMs` configuration (500 ms by default). A menu, approval, modal, terminal, embedded webpage, composition, repeated key, changed input region, Session or turn breaks the sequence. The shortcut uses the same scoped cancellation as the Stop button. The plugin registers Stop as a fixed action in the `input` display group. Its registration reserves plain Escape against editable shortcuts and supplies the `Esc Esc` sequence shown in the Stop button’s hover and keyboard-focus tooltip.
 
+<a id="next-prompt-suggestions"></a>
+## Next-prompt suggestions
+
+Next-prompt suggestions are built into the conversation composer; no third-party plugin installation is required. Settings → Interface → Next-prompt suggestions controls the Host-backed `ui-conversation.nextPrompt` preference, which defaults to on.
+
+After a normal reply completes, an ordinary writable Session with an empty draft may display one suggested follow-up from its current model. Pressing Tab or clicking the suggestion only fills the draft; the user still chooses whether to edit or send it. Typing, starting another turn, or turning the setting off hides the suggestion and cancels any in-flight generation.
+
+Generating a suggestion makes one additional model call and does not guarantee a suggestion: a failed request or an unsuitable response leaves the composer unchanged. The auxiliary call prefers supported reasoning off or low, with at most 2048 output tokens and a 30-second deadline; the suggested text remains limited to 160 characters. The feature observes turns that complete after the application starts; opening an old Session history does not regenerate a suggestion for its previous reply.
+
 <a id="temporary-composer-entries"></a>
 ## Temporary composer entries
 
@@ -159,9 +169,11 @@ The selector must be a pure function of the owner currency. Its non-null return 
 
 The Host entry contributes the `ui:custom-instructions` prompt section and the `custom_instructions` prompt variable: the durable `ui-conversation` settings namespace's `customInstructions` field (≤1500 characters, default empty) is appended to the system prompt assembled before every model step, so a standing user instruction reaches every request in every scope — including subagents — while an empty or whitespace-only value contributes nothing. Edits apply live: the next step's assembly reads the committed value, and the loop's system-prompt projection records the changed text.
 
+Next-prompt generation is a separate auxiliary request to the Session's current model. Its default context contains the latest human user message and that turn's final assistant text, not the complete agent request history. The Session log keeps an ignorable internal record of the exact auxiliary request for tracing. Generation appends no `user/message` or `assistant` event, adds no visible chat message, and does not enter or alter the main agent's conversation history. A suggestion becomes ordinary user input only if the user accepts and sends it.
+
 #### KV Cache effect
 
-The section is the prompt's last block, so an edit invalidates only the suffix tail; every earlier section keeps its cached prefix.
+The custom-instructions section is the main agent prompt's last block, so an edit invalidates only the suffix tail; every earlier section keeps its cached prefix. Next-prompt generation adds a separate request with its own context and cache behavior; it does not rewrite or append to the main agent's cached request history.
 
 ## Known Limitations and Deferred Work
 

@@ -108,7 +108,8 @@ export function apply(ctx: Context): void {
             }
           },
         })
-        if (!started) input.notify('error', t('error.busy'))
+        if (started) input.focus()
+        else input.notify('error', t('error.busy'))
         return started
       },
       endEdit: (seq) => {
