@@ -60,6 +60,9 @@ function shellWindowChrome(overrides = {}) {
     roundedCorners: false,
     backgroundColor: '#00000000',
     ...(process.platform === 'darwin' ? {
+      // AppKit needs its titled style for standard buttons. Disabling native
+      // corners makes Electron remove that style before creating the buttons.
+      roundedCorners: true,
       titleBarStyle: 'hidden',
       trafficLightPosition: { x: 16, y: 18 },
     } : {}),

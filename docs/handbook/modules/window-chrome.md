@@ -19,7 +19,7 @@
 - `window.js` 管理 Harness BrowserView bounds 与覆盖；`desktop-pet.js` + `desktop-pets.js` 管理 Codex 宠物发现（`${CODEX_HOME:-~/.codex}/pets`、v1/v2 图集）、约 80–96px 宠物 BrowserView、右键换肤菜单、归一化位置和生命周期，feature 默认关闭。
 - `desktop-live2d.js` 管理 Live2D 宠物：覆盖虚拟屏的透明 `alwaysOnTop` BrowserWindow，窗口本身永不 `setPosition`（分层透明窗移动会闪空）；默认 `setIgnoreMouseEvents` 穿透，主进程 ~30Hz 轮询 `screen.getCursorScreenPoint()` 推 `shell:live2d-cursor`，渲染器按角色 alpha bounds 决定交互。页面经特权 `pet://` scheme 加载，渲染进程内跑 onnxruntime-web（WebGPU→WASM 回落）。
 - `harness-chrome-inject.js` / `chrome.js` 把桌面 chrome 接到官方页。
-- macOS 主窗口与启动器使用左上角原生红黄绿按钮，保留透明自绘外形；主窗口按钮位置 `(16, 18)` 对齐上游侧栏的 52px 顶部安全区，启动器按钮对齐 32px caption。Mac 不绘制右侧 Windows 按钮，Harness 右侧操作只保留 8px 边距。全屏状态由原生窗口事件同步到 `html[data-fullscreen]`，进入全屏取消外框圆角和缘线，退出后恢复；绿键、最小化与关闭沿用系统行为和既有关闭策略。
+- macOS 主窗口与启动器使用左上角原生红黄绿按钮，保留透明自绘外形；壳窗使用 `roundedCorners: true` 保留 AppKit titled style，否则 Electron 会连同原生按钮一起移除。主窗口按钮位置 `(16, 18)` 对齐上游侧栏的 52px 顶部安全区，启动器按钮对齐 32px caption。Mac 不绘制右侧 Windows 按钮，Harness 右侧操作只保留 8px 边距。全屏状态由原生窗口事件同步到 `html[data-fullscreen]`，进入全屏取消外框圆角和缘线，退出后恢复；绿键、最小化与关闭沿用系统行为和既有关闭策略。
 - Mac 侧栏完全折叠时，`AppFrame` 继续挂载既有 `shell.leading` 的展开侧栏／新会话按钮；会话标题与路径一起避让这个区域，全屏隐藏系统按钮后同步收回留白。
 - `closing-overlay.js` 关闭过渡。
 - `pet-growth.js` 的版本化 food 账本将投喂余额与当前日志存量分离；worker 返回按会话与 turn/step 摘要的用量桶，重复扫描、删除或恢复日志不重复发放。旧状态迁移保留等级与原有可用余额，新增消费立即可投喂。见[投喂账本决定](../../decisions/implemented/bug-fix/2026-10-02-pet-feed-ledger.md)。

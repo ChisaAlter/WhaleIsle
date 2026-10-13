@@ -113,6 +113,8 @@ test('isEffectivelyMaximized treats a work-area-covering transparent window as m
 });
 
 test('shell window policy cannot be overridden to disable native Windows transitions', () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' });
   const { chrome, restore } = loadChrome();
   try {
     const options = chrome.shellWindowChrome({ transparent: true, thickFrame: false, roundedCorners: false, backgroundColor: '#00000000' });
@@ -121,7 +123,10 @@ test('shell window policy cannot be overridden to disable native Windows transit
     assert.equal(options.roundedCorners, false, 'OS mask must not cut down the 20px page radius');
     assert.equal(options.backgroundColor, '#00000000');
     assert.equal(chrome.windowChrome({ transparent: true }).transparent, true, 'pet/overlay transparency stays available');
-  } finally { restore(); }
+  } finally {
+    restore();
+    Object.defineProperty(process, 'platform', platform);
+  }
 });
 
 test('macOS shell windows retain their alpha silhouette and expose native traffic lights only for shell chrome', () => {
@@ -132,7 +137,7 @@ test('macOS shell windows retain their alpha silhouette and expose native traffi
     const options = chrome.shellWindowChrome();
     assert.equal(options.frame, false);
     assert.equal(options.transparent, true);
-    assert.equal(options.roundedCorners, false);
+    assert.equal(options.roundedCorners, true, 'AppKit titled style must remain available for native buttons');
     assert.equal(options.titleBarStyle, 'hidden');
     assert.deepEqual(options.trafficLightPosition, { x: 16, y: 18 });
     assert.equal(chrome.windowChrome().titleBarStyle, undefined, 'pet/overlay windows must not gain native buttons');
