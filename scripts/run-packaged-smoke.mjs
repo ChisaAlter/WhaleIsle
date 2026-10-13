@@ -121,6 +121,8 @@ try {
   if (macosEvidenceDir) {
     writeFileSync(path.join(macosEvidenceDir, 'packaged-smoke.log'), Buffer.concat(macosOutput))
     if (existsSync(dirs.resultPath)) copyFileSync(dirs.resultPath, path.join(macosEvidenceDir, 'dshd-smoke.json'))
+    const startupResult = path.join(dirs.userData, 'last-desktop-start.json')
+    if (existsSync(startupResult)) copyFileSync(startupResult, path.join(macosEvidenceDir, 'last-desktop-start.json'))
   }
   if (keepArtifacts) {
     console.log(`Smoke artifacts kept at ${dirs.smokeRoot}`)

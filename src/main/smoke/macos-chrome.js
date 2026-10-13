@@ -156,6 +156,30 @@ async function runMacosChromeQa(win, wc, helpers) {
     wc.sendInputEvent({ type: 'keyDown', keyCode: 'ESC' });
     wc.sendInputEvent({ type: 'keyUp', keyCode: 'ESC' });
     await sleep(250);
+    await record('main.1440.workspace-baseline', async () => {
+      win.setSize(1440, 780);
+      await waitFor(async () => Math.abs((await mainLayout(wc)).viewport.width - 1440) < 2, 'baseline main width');
+      await setSidebar(wc, false);
+      result.screenshots.push(captureWindow(win, native, dir, 'main-1440-baseline'));
+      return 'original workspace view before the long-caption Session';
+    });
+    await record('main.persisted-long-title', async () => {
+      const { rpc } = require('../workspace-rpc');
+      const title = '验证 macOS 原生窗口按钮、标题栏留白与侧栏折叠后的完整长会话标题 / Reviewing native window controls, narrow layouts and sidebar reopening';
+      const auth = { cookie: helpers.dsh.sessionCookie };
+      // The built-in assistant's product entry opens a real persistent Session
+      // without a prompt. Use its existing window reference: blank/owned
+      // Sessions are intentionally absent from the ordinary sidebar.
+      await waitFor(() => wc.executeJavaScript(`typeof window.__dshWhaleOpen === 'function'`), 'built-in Session navigation');
+      const sessionId = await wc.executeJavaScript('window.__dshWhaleOpen()');
+      assert.equal(typeof sessionId, 'string', 'the product entry must open a real Session');
+      await rpc(helpers.dsh.baseUrl, 'session/rename', { request: { sessionId, title } }, fetch, auth);
+      await rpc(helpers.dsh.baseUrl, 'session/setPresentation', { request: {
+        sessionId, presentation: { owner: 'mac-caption-qa', title },
+      } }, fetch, auth);
+      await waitFor(() => wc.executeJavaScript(`Boolean(document.querySelector('[data-dshd-caption="title"]')?.textContent.includes(${JSON.stringify(title)}))`), 'persisted long caption');
+      return { sessionId, title, entry: 'window.__dshWhaleOpen', presentationOwner: 'mac-caption-qa', modelCalls: 0 };
+    });
     await record('main.native-buttons', async () => {
       const snapshot = native.snapshot(win);
       assert.deepEqual(snapshot.position, { x: 16, y: 18 });

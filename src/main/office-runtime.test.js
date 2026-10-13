@@ -133,12 +133,37 @@ test('dev without a payload only warns and leaves no overlay', () => {
   assert.equal(fs.existsSync(overlayFile), false);
 });
 
-test('packaged without a payload fails as runtime damage', () => {
+test('Windows packaged without a payload fails as runtime damage', () => {
   const home = tempHome();
   const result = ensureDesktopOfficeRuntime(options(home, {
     isPackaged: true,
+    platform: 'win32',
     bundledRuntimeDir: undefined,
     resourcesPath: path.join(home, 'resources'),
+  }));
+  assert.equal(result.ok, false);
+  assert.match(result.error, /Office 运行时/);
+});
+
+test('Mac packaged without the Windows-only Office payload stays bootable without an overlay', () => {
+  const home = tempHome();
+  const result = ensureDesktopOfficeRuntime(options(home, {
+    isPackaged: true, platform: 'darwin', bundledRuntimeDir: undefined,
+    resourcesPath: path.join(home, 'resources'),
+  }));
+  assert.equal(result.ok, true);
+  assert.equal(result.present, false);
+  assert.match(result.warning, /Office 技能不可用/);
+  const overlayFile = path.join(home, 'profiles', 'web', 'desktop-plugins', 'office', OFFICE_OVERLAY_FILENAME);
+  assert.equal(fs.existsSync(overlayFile), false);
+});
+
+test('Mac packaged still rejects an explicitly configured missing Office runtime', () => {
+  const home = tempHome();
+  const result = ensureDesktopOfficeRuntime(options(home, {
+    isPackaged: true, platform: 'darwin', bundledRuntimeDir: undefined,
+    resourcesPath: path.join(home, 'resources'),
+    env: { DSH_PRIMARY_RUNTIME: path.join(home, 'explicit-missing-runtime') },
   }));
   assert.equal(result.ok, false);
   assert.match(result.error, /Office 运行时/);

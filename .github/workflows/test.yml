@@ -120,7 +120,8 @@ jobs:
       - run: node node_modules/electron/install.js
       - run: npm run setup:harness
       - run: npm test
-      - run: npm run dist:mac
+      - id: mac_package
+        run: npm run dist:mac
       - run: npm run smoke:packaged
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
@@ -130,6 +131,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always() && steps.mac_package.outcome == 'success'
         with:
           name: Whale-Isle-macos-arm64
           path: dist/Whale-Isle-*.dmg

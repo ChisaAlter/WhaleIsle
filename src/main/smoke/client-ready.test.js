@@ -43,3 +43,10 @@ test('a destroyed welcome window does not block direct entry', async () => {
   assert.equal(await waitForHarnessContents(() => harness, {}, 1000,
     () => ({ isDestroyed: () => true })), harness);
 });
+
+test('a recorded desktop startup failure is reported immediately instead of waiting for a view', async () => {
+  await assert.rejects(waitForHarnessContents(
+    () => assert.fail('must not wait on a rejected desktop start'), {}, 300_000,
+    () => null, () => '安装包缺少 Office 运行时',
+  ), /Desktop startup failed: 安装包缺少 Office 运行时/);
+});
