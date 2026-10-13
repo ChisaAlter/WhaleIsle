@@ -259,13 +259,18 @@ async function runMacosChromeQa(win, wc, helpers) {
       const layout = await mainLayout(wc);
       assert.equal(layout.bodyRadius, '0px');
       assert.equal(layout.ringDisplay, 'none');
-      assert.ok(native.snapshot(win).buttons.every(item => item.hidden), 'native buttons must hide in fullscreen');
+      // AppKit keeps standard buttons unhidden in its fullscreen title bar.
+      // That flag does not prove they cover the content: retain the OS image
+      // for visual review and verify the native green control stays available.
+      const fullscreenNative = native.snapshot(win);
       result.screenshots.push(captureWindow(win, native, dir, 'main-fullscreen'));
+      assert.ok(fullscreenNative.buttons.some(item => item.name === 'zoom' && item.present && item.enabled),
+        'native green control must remain available in AppKit fullscreen');
       win.setFullScreen(false);
       await waitFor(async () => !win.isFullScreen() && !(await mainLayout(wc)).fullscreen, 'fullscreen exit and preload');
       await sleep(500);
       assert.ok(native.snapshot(win).buttons.every(item => !item.hidden), 'native buttons must return after fullscreen');
-      return { layout, entry: 'native green NSButton performClick:', exit: 'Electron win.setFullScreen(false); native and preload state synchronized' };
+      return { layout, native: fullscreenNative, entry: 'native green NSButton performClick:', exit: 'Electron win.setFullScreen(false); native and preload state synchronized' };
     });
     await record('main.native-close-to-tray', async () => {
       helpers.saveConfig({ closeToTray: true });
