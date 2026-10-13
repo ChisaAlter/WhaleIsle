@@ -311,6 +311,11 @@ async function realUpdaterFixture(t, { incompatibleBlockmap = false } = {}) {
     userDataPath: dir, appUpdateConfigPath: configFile, whenReady: async () => {},
     onQuit: () => { throw new Error('auto install must be disabled'); }, quit: () => { throw new Error('no app quit'); } };
   const updater = new (strictNsisUpdaterClass(NsisUpdater))(null, adapter);
+  // This fixture exercises Windows NSIS transfers even when the test host is macOS.
+  const providerRuntimeOptions = updater.createProviderRuntimeOptions.bind(updater);
+  t.mock.method(updater, 'createProviderRuntimeOptions', () => ({
+    ...providerRuntimeOptions(), platform: 'win32',
+  }));
   let fullDownloads = 0;
   class LocalHttpExecutor extends HttpExecutor {
     createRequest(options, callback) { return http.request(options, callback); }

@@ -15,10 +15,12 @@
 ## 架构要点
 
 - 桌面主程序与独立启动器在 Chromium 初始化前设置 `force_high_performance_gpu`，多显卡设备优先使用独显进行 GPU 合成、栅格化和 WebGL 渲染；CSS/DOM 的布局与样式计算仍由 CPU 执行。没有独显时沿用 Electron 的可用渲染设备，实际选卡受系统与驱动影响；该偏好可能增加功耗，完整退出并重新启动后生效。
-- 主窗口与启动器保持透明自绘 20px 圆角与缘线；Windows 在首次显示前经 `native-window-motion`（Koffi / N-API）补回 caption/thick-frame 样式，以 `ShowWindowAsync` 切换最大化/还原、`IsZoomed` 读取状态，保留 DWM 动画和原生最大化状态，不切换成系统小圆角。`roundedCorners:false` 禁止第二层 OS 圆角裁切；补样式后设置 `DWMWA_NCRENDERING_POLICY=DWMNCRP_DISABLED`，消除 DWM 在透明角外绘制的矩形表面。缘线使用 `--dsh-window-hairline=1/devicePixelRatio px`，保持一个物理像素，颜色沿用 border-l2。原生桥不碰桌宠；非 Windows 保持原路径。只有未启用原生窗控的透明窗使用几何最大化回退。详见 [window-motion](../../features/window-motion.md) 与[纠正决定](../../decisions/implemented/bug-fix/2026-09-29-rounded-window-motion.md)。注入自愈保持不变。
+- 主窗口与启动器保持透明自绘 20px 圆角与缘线；Windows 在首次显示前经 `native-window-motion`（Koffi / N-API）补回 caption/thick-frame 样式，以 `ShowWindowAsync` 切换最大化/还原、`IsZoomed` 读取状态，保留 DWM 动画和原生最大化状态，不切换成系统小圆角。`roundedCorners:false` 禁止第二层 OS 圆角裁切；补样式后设置 `DWMWA_NCRENDERING_POLICY=DWMNCRP_DISABLED`，消除 DWM 在透明角外绘制的矩形表面。启动页、Harness 与启动器缘线均使用 `--dsh-window-hairline=1/devicePixelRatio px`，保持一个物理像素与 border-l2；Harness 使用同一宽度和颜色的内描边。原生桥不碰桌宠；非 Windows 保持原路径。只有未启用原生窗控的透明窗使用几何最大化回退。详见 [window-motion](../../features/window-motion.md) 与[纠正决定](../../decisions/implemented/bug-fix/2026-09-29-rounded-window-motion.md)。注入自愈保持不变。
 - `window.js` 管理 Harness BrowserView bounds 与覆盖；`desktop-pet.js` + `desktop-pets.js` 管理 Codex 宠物发现（`${CODEX_HOME:-~/.codex}/pets`、v1/v2 图集）、约 80–96px 宠物 BrowserView、右键换肤菜单、归一化位置和生命周期，feature 默认关闭。
 - `desktop-live2d.js` 管理 Live2D 宠物：覆盖虚拟屏的透明 `alwaysOnTop` BrowserWindow，窗口本身永不 `setPosition`（分层透明窗移动会闪空）；默认 `setIgnoreMouseEvents` 穿透，主进程 ~30Hz 轮询 `screen.getCursorScreenPoint()` 推 `shell:live2d-cursor`，渲染器按角色 alpha bounds 决定交互。页面经特权 `pet://` scheme 加载，渲染进程内跑 onnxruntime-web（WebGPU→WASM 回落）。
 - `harness-chrome-inject.js` / `chrome.js` 把桌面 chrome 接到官方页。
+- macOS 主窗口与启动器使用左上角原生红黄绿按钮，保留透明自绘外形；壳窗使用 `roundedCorners: true` 保留 AppKit titled style，否则 Electron 会连同原生按钮一起移除。主窗口按钮位置 `(16, 18)` 对齐上游侧栏的 52px 顶部安全区，启动器按钮对齐 32px caption。Mac 不绘制右侧 Windows 按钮，Harness 右侧操作只保留 8px 边距。全屏状态由原生窗口事件同步到 `html[data-fullscreen]`，进入全屏取消外框圆角和缘线，退出后恢复；绿键、最小化与关闭沿用系统行为和既有关闭策略。
+- Mac 侧栏完全折叠时，`AppFrame` 继续挂载既有 `shell.leading` 的展开侧栏／新会话按钮；会话标题与路径一起避让这个区域，全屏页内预留空间按原生全屏状态收回。全屏系统标题栏与原生按钮由 AppKit 管理，按钮 `hidden` 属性不能替代完整 OS 画面的遮挡验收。
 - `closing-overlay.js` 关闭过渡。
 - `pet-growth.js` 的版本化 food 账本将投喂余额与当前日志存量分离；worker 返回按会话与 turn/step 摘要的用量桶，重复扫描、删除或恢复日志不重复发放。旧状态迁移保留等级与原有可用余额，新增消费立即可投喂。见[投喂账本决定](../../decisions/implemented/bug-fix/2026-10-02-pet-feed-ledger.md)。
 

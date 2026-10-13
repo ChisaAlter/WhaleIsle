@@ -76,11 +76,14 @@ function gateHttpHandler(state, guard, path, handler) {
       finished = true;
       admission.done();
     };
-    res.once('close', done);
+    let listening = false;
     try {
+      res.once('close', done);
+      listening = true;
       return await handler(req, res);
     } finally {
       done();
+      if (listening) res.off('close', done);
     }
   };
 }

@@ -21,8 +21,13 @@ test('host reads authenticated quota notices from loopback without a management 
   const server = http.createServer((request, response) => {
     assert.equal(request.url, '/api/subscriptions/alerts/claim');
     assert.equal(request.method, 'POST');
+    assert.equal(request.headers['content-type'], 'application/json');
     assert.equal(request.headers.cookie, `magpie_web_${server.address().port}=${secret}`);
     assert.equal(request.headers.authorization, undefined);
+    if (request.headers['content-type'] !== 'application/json') {
+      response.writeHead(415).end('JSON requests are required');
+      return;
+    }
     response.setHeader('Content-Type', 'application/json');
     response.end(JSON.stringify({ sequence: 7, alerts: [{ sequence: 7, alert }] }));
   });

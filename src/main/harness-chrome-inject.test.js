@@ -104,6 +104,18 @@ test('injected measure publishes window-control insets with an 8px plate margin'
   assert.equal(context.document.querySelector('[data-dshd-shell-hit]'), null);
 });
 
+test('Mac chrome leaves system controls native and returns the right inset to the client', () => {
+  const cssVars = {};
+  const context = vm.createContext(createInjectSandbox({ cssVars, platform: 'darwin' }));
+  vm.runInContext(injectSource, context);
+  vm.runInContext(injectSource, context);
+  const host = context.document.getElementById('dshd-shell-controls');
+  assert.equal(host.querySelectorAll('button').length, 0);
+  assert.equal(cssVars['--dshd-wco-controls'], '8px');
+  assert.equal(context.document.querySelectorAll('#dshd-shell-controls').length, 1);
+  assert.ok(context.document.getElementById('dshd-frame-ring'));
+});
+
 test('injected window controls dispatch windowAction on pointerdown', () => {
   const actions = [];
   const context = vm.createContext(createInjectSandbox({
@@ -286,6 +298,7 @@ function createInjectSandbox(options = {}) {
   }
 
   const html = makeElement('html');
+  html.dataset.platform = options.platform || 'win32';
   const body = makeElement('body');
   html.appendChild(body);
 

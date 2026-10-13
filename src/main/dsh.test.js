@@ -557,8 +557,15 @@ test('start 与 stop 重叠不死锁：start 等待 stop 完成后新起一代',
   assert.equal(rStop.status, 'fulfilled');
 });
 
-test('Windows tree cleanup yields during process lookup and termination, preserving image guards', { skip: process.platform !== 'win32' }, async () => {
+test('Windows tree cleanup yields during process lookup and termination, preserving image guards', { skip: process.platform !== 'win32' }, async (t) => {
   const { killTree } = require('./dsh');
+  const originalKill = process.kill.bind(process);
+  let childAlive = true;
+  t.mock.method(process, 'kill', (pid, signal) => {
+    if (pid !== CHILD_PID || signal !== 0) return originalKill(pid, signal);
+    if (childAlive) return true;
+    throw Object.assign(new Error('fixture process exited'), { code: 'ESRCH' });
+  });
   const calls = [];
   let complete;
   const run = (command, args, options, callback) => {
@@ -576,6 +583,7 @@ test('Windows tree cleanup yields during process lookup and termination, preserv
   assert.equal(calls[1].command, 'taskkill');
   assert.deepEqual(calls[1].args, ['/pid', '4242', '/T', '/F']);
   assert.equal(settled, false);
+  childAlive = false;
   complete(null, '');
   await pending;
   for (const name of ['electron.exe', 'Whale Isle.exe', 'unrelated.exe', '']) {

@@ -9,6 +9,7 @@ export interface DirEntry {
 /** listDir IPC result. */
 export interface ListDirResult {
   ok: boolean
+  code?: string
   message?: string
   entries?: DirEntry[]
 }

@@ -225,6 +225,7 @@ function fakeRes() {
     writeHead(code) { res.status = code; res.headersSent = true; },
     end(payload) { res.body = payload || ''; },
     once() {},
+    off() {},
     listeners: {},
   };
   return res;
@@ -600,4 +601,39 @@ test('unloading task control preserves a later registration at its previous cont
   const response = fakeRes();
   await later.handler({ method: 'POST', url: later.path }, response);
   assert.equal(response.body, 'later-owner');
+});
+
+test('remote Fetch responses compose with admission guards and release before quit', async () => {
+  const { connectionRoute } = await import(pathToFileURL(path.join(__dirname, '../../vendor/dsh-remote/lib/http-transport.js')).href);
+  const { createControlState, acquireLock, releaseLock } = await load('state.js');
+  const { wrapWebServer } = await load('wrap.js');
+  const state = createControlState();
+  const route = { kind: 'exact', path: '/dsh-remote/machines', handler(_req, res) {
+    res.statusCode = 200;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ machines: [] }));
+  } };
+  wrapWebServer(state, { exact: new Map([[route.path, route]]), prefixes: new Map(), register() {} });
+  const fetchRoute = connectionRoute(route);
+  const response = await fetchRoute.fetch(new Request('http://dsh.internal/api/dsh-remote/machines'));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { machines: [] });
+  assert.equal(state.pending.size, 0);
+  const lock = await acquireLock(state, { owner: 'desktop-quit', drainTimeoutMs: 20 });
+  assert.equal(lock.ok, true);
+  const refused = await fetchRoute.fetch(new Request('http://dsh.internal/api/dsh-remote/machines'));
+  assert.equal(refused.status, 503);
+  assert.equal((await refused.json()).error.code, 'dshd/admission-locked');
+  releaseLock(state, { lockId: lock.lockId, owner: 'desktop-quit' });
+});
+
+test('response lifecycle setup failure does not leak admission', async () => {
+  const { createControlState } = await load('state.js');
+  const { wrapWebServer } = await load('wrap.js');
+  const state = createControlState();
+  const failure = new Error('response lifecycle unavailable');
+  const route = { kind: 'exact', path: '/probe', handler() { assert.fail('must not dispatch'); } };
+  wrapWebServer(state, { exact: new Map([[route.path, route]]), prefixes: new Map(), register() {} });
+  await assert.rejects(route.handler({ method: 'GET', url: '/probe' }, { once() { throw failure; } }), failure);
+  assert.equal(state.pending.size, 0);
 });

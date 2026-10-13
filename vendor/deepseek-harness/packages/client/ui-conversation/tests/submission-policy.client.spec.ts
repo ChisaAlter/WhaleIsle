@@ -9,6 +9,7 @@ import {
   normalizeTypingFxPresets, normalizeTypingFxStyle, resolveSubmitMode,
 } from '../src/client/input/submission-policy.ts'
 import type { ConversationSettings } from '../src/submission-settings.ts'
+import { ConversationSettingsSchema } from '../src/submission-settings.ts'
 
 function chrome(over: Partial<ConversationSettings> = {}): ConversationSettings {
   return {
@@ -47,6 +48,7 @@ describe('ComposerSubmissionPolicy', () => {
     ['statsLine', 'setStatsLine', false],
     ['sessionCost', 'setSessionCost', true],
     ['officialPeakValley', 'setOfficialPeakValley', true],
+    ['nextPrompt', 'setNextPrompt', false],
   ] as const)('keeps the latest %s choice while an older Host snapshot arrives during its write', async (field, setter, value) => {
     const host = stubConfigForm<ConversationSettings>()
     host.publish({ status: 'ready', value: chrome({ sessionCost: false }), revision: 1, writable: true })
@@ -75,6 +77,73 @@ describe('ComposerSubmissionPolicy', () => {
     policy.setBusyEnter('steer')
     expect(changed).toHaveBeenCalledTimes(1)
     expect(policy.busyEnter.getSnapshot()).toBe('steer')
+  })
+
+  it('enables next-prompt suggestions by default without writing a missing Host preference', () => {
+    expect(ConversationSettingsSchema({}).nextPrompt).toBe(true)
+    const local = new ComposerSubmissionPolicy()
+    expect(local.nextPrompt.getSnapshot()).toBe(true)
+    local.dispose()
+
+    const host = stubConfigForm<ConversationSettings>()
+    const policy = new ComposerSubmissionPolicy(host.scope)
+    expect(policy.nextPrompt.getSnapshot()).toBe(true)
+    host.publish({ status: 'ready', value: chrome(), revision: 1, writable: true })
+    expect(policy.nextPrompt.getSnapshot()).toBe(true)
+    expect(host.set).not.toHaveBeenCalled()
+    policy.dispose()
+  })
+
+  it('persists disabling next-prompt suggestions and restores that choice in a new policy', async () => {
+    const host = stubConfigForm<ConversationSettings>()
+    let saved = chrome()
+    host.publish({ status: 'ready', value: saved, revision: 1, writable: true })
+    host.set.mockImplementation(async (field: string, value: unknown) => {
+      saved = ConversationSettingsSchema({ ...saved, [field]: value })
+      host.publish({ value: saved, revision: 2 })
+      return true
+    })
+    const policy = new ComposerSubmissionPolicy(host.scope)
+    policy.setNextPrompt(false)
+    expect(policy.nextPrompt.getSnapshot()).toBe(false)
+    expect(host.set).toHaveBeenCalledExactlyOnceWith('nextPrompt', false)
+    await Promise.resolve()
+    policy.dispose()
+
+    const restoredHost = stubConfigForm<ConversationSettings>()
+    restoredHost.publish({ status: 'ready', value: saved, revision: 2, writable: true })
+    const restored = new ComposerSubmissionPolicy(restoredHost.scope)
+    expect(restored.nextPrompt.getSnapshot()).toBe(false)
+    restored.setNextPrompt(false)
+    expect(restoredHost.set).not.toHaveBeenCalled()
+    restored.dispose()
+  })
+
+  it('keeps the latest next-prompt intent through rapid off/on writes and delayed Host reflection', async () => {
+    const host = stubConfigForm<ConversationSettings>()
+    host.publish({ status: 'ready', value: chrome(), revision: 1, writable: true })
+    const off = Promise.withResolvers<boolean>()
+    const on = Promise.withResolvers<boolean>()
+    host.set.mockReturnValueOnce(off.promise).mockReturnValueOnce(on.promise)
+    const policy = new ComposerSubmissionPolicy(host.scope)
+    policy.setNextPrompt(false)
+    policy.setNextPrompt(true)
+    expect(host.set).toHaveBeenNthCalledWith(1, 'nextPrompt', false)
+    expect(host.set).toHaveBeenNthCalledWith(2, 'nextPrompt', true)
+
+    host.publish({ value: chrome({ nextPrompt: false }), revision: 2 })
+    off.resolve(true)
+    await off.promise
+    expect(policy.nextPrompt.getSnapshot()).toBe(true)
+    on.resolve(true)
+    await on.promise
+    host.publish({ value: chrome({ nextPrompt: false }), revision: 3 })
+    expect(policy.nextPrompt.getSnapshot()).toBe(true)
+
+    host.publish({ value: chrome({ nextPrompt: true }), revision: 4 })
+    host.publish({ value: chrome({ nextPrompt: false }), revision: 5 })
+    expect(policy.nextPrompt.getSnapshot()).toBe(false)
+    policy.dispose()
   })
 
   it('keeps all three latest choices across partial namespace publications and superseded settlements', async () => {
@@ -109,20 +178,25 @@ describe('ComposerSubmissionPolicy', () => {
     policy.dispose()
   })
 
-  it.each(['refused', 'rejected'] as const)('restores confirmed values when the latest dock write is %s', async failure => {
+  it.each([
+    ['sessionCost', 'setSessionCost', true, 'refused'],
+    ['sessionCost', 'setSessionCost', true, 'rejected'],
+    ['nextPrompt', 'setNextPrompt', false, 'refused'],
+    ['nextPrompt', 'setNextPrompt', false, 'rejected'],
+  ] as const)('restores confirmed %s after %s(%s) is %s', async (field, setter, value, failure) => {
     const host = stubConfigForm<ConversationSettings>()
     host.publish({ value: chrome({ sessionCost: false }), revision: 1 })
     const write = Promise.withResolvers<boolean>()
     host.set.mockReturnValue(write.promise)
     const policy = new ComposerSubmissionPolicy(host.scope)
-    policy.setSessionCost(true)
+    policy[setter](value)
     host.publish({ value: chrome({ sessionCost: false }), revision: 2 })
-    expect(policy.sessionCost.getSnapshot()).toBe(true)
+    expect(policy[field].getSnapshot()).toBe(value)
     if (failure === 'refused') write.resolve(false)
     else write.reject(new Error('transport disconnected'))
     await write.promise.catch(() => {})
-    expect(policy.sessionCost.getSnapshot()).toBe(false)
-    policy.setSessionCost(true)
+    expect(policy[field].getSnapshot()).toBe(!value)
+    policy[setter](value)
     expect(host.set).toHaveBeenCalledTimes(2)
     policy.dispose()
   })

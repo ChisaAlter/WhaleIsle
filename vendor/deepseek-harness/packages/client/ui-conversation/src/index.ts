@@ -1,4 +1,4 @@
-/** Host registration for browser conversation preferences. */
+/** Host registration for conversation preferences and next-message suggestions. */
 import type {} from '@deepseek-ai/dsh-settings'
 
 import type { Volatile, Context } from '@deepseek-ai/cordis'
@@ -6,6 +6,7 @@ import type { ConversationSettings } from './submission-settings.ts'
 import z from '@deepseek-ai/schemastery'
 
 import { ConversationSettingsFields } from './submission-settings.ts'
+import { applyNextPrompt } from './next-prompt.ts'
 
 export {
   BUSY_ENTER_BEHAVIORS, BUSY_ENTER_FIELD, COMPOSER_BEAM_DIRECTIONS, COMPOSER_BEAM_EASINGS,
@@ -21,6 +22,7 @@ export {
   DEFAULT_COMPOSER_BEAM_STYLE, DEFAULT_COMPOSER_RESIZE,
   DEFAULT_COMPOSER_RESIZE_HEIGHT, DEFAULT_COMPOSER_RESIZE_WIDTH,
   DEFAULT_CUSTOM_INSTRUCTIONS,
+  DEFAULT_NEXT_PROMPT, NEXT_PROMPT_FIELD,
   DEFAULT_OFFICIAL_PEAK_VALLEY, DEFAULT_SESSION_COST, DEFAULT_SESSION_COST_PRICES,
   DEFAULT_STATS_LINE, DEFAULT_TYPING_FX, DEFAULT_TYPING_FX_PRESETS, DEFAULT_TYPING_FX_STYLE,
   DEFAULT_VIEW_TABS,
@@ -48,6 +50,7 @@ export const Config = z.object({
   sessionCost: ConversationSettingsFields.sessionCost.volatile(),
   sessionCostPrices: ConversationSettingsFields.sessionCostPrices.volatile(),
   viewTabs: ConversationSettingsFields.viewTabs.volatile(),
+  nextPrompt: ConversationSettingsFields.nextPrompt.volatile(),
   typingFx: ConversationSettingsFields.typingFx.volatile(),
   typingFxStyle: ConversationSettingsFields.typingFxStyle.volatile(),
   typingFxPresets: ConversationSettingsFields.typingFxPresets.volatile(),
@@ -56,7 +59,11 @@ export const Config = z.object({
 
 /** Host preferences are consumed through the configuration form projection.
  * @param ctx Plugin context used for optional settings presentation.
+ * @param config Live conversation preferences, including next-message suggestions.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config: Config): void {
   ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
+  ctx.inject(['connection', 'llm', 'sessions'], (child) => {
+    applyNextPrompt(child, () => config.nextPrompt?.get() !== false)
+  })
 }

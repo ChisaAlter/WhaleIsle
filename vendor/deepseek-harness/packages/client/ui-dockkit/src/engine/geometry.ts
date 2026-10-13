@@ -180,6 +180,24 @@ export interface Size {
 }
 
 /**
+ * Keep a floating frame and its controls inside the current viewport.
+ * @param rect - the saved or gesture-preview rectangle.
+ * @param viewport - the window's current size in CSS pixels.
+ * @param top - the existing caption-band exclusion in viewport coordinates.
+ * @returns the visible rectangle without changing the saved layout.
+ */
+export function boundedFloatRect(rect: FloatRect, viewport: Size, top: number): FloatRect {
+  const width = Math.min(rect.width, viewport.width)
+  const height = Math.min(rect.height, viewport.height - top)
+  return {
+    x: Math.max(0, Math.min(rect.x, viewport.width - width)),
+    y: Math.max(top, Math.min(rect.y, viewport.height - height)),
+    width,
+    height,
+  }
+}
+
+/**
  * A floating panel's rectangle after a drag.
  * @param rect - the rectangle the gesture started from.
  * @param dx - pointer travel on x.

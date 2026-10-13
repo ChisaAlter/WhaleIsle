@@ -78,7 +78,7 @@
 }
 
 .search input::placeholder {
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-placeholder);
 }
 
 .search input:focus-visible {

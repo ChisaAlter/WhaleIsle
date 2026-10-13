@@ -5,6 +5,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { SlotTestRuntime, usePinnedBrowserLanguages, stubSettingsScope, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { installConnection } from '@deepseek-ai/dsh-client-connection/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -24,6 +25,7 @@ const CHILD = 'child-1' as SessionId
 
 async function bench() {
   const runtime = await SlotTestRuntime.create()
+  await runtime.mount({ apply: installConnection })
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   runtime.ctx.provide('configForms', { developerTools: { enabled: createSnapshotStore(true) }, get: () => stubConfigForm().scope } as never)
   runtime.ctx.provide('uiWorkspace', { connectWorkspace: vi.fn(async () => ROOT) } as never)
@@ -63,7 +65,7 @@ describe('conversation apply wiring (desktop peak/valley + session cost)', () =>
     expect(b.slots.entries('settings.general.item').map(entry => entry.options.id))
       .toEqual(['composer-enter', 'custom-instructions'])
     expect(b.slots.entries('settings.interface.item').map(entry => entry.options.id)).toEqual([
-      'composer-beam', 'composer-resize', 'stats-line', 'session-cost', 'official-peak-valley', 'view-tabs',
+      'composer-beam', 'composer-resize', 'stats-line', 'session-cost', 'official-peak-valley', 'view-tabs', 'next-prompt',
     ])
     const beam = b.slots.entries('settings.interface.item')[0]
     const beamInjected = (beam?.inject as unknown as () => BeamRowInjected)()

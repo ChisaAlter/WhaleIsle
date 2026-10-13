@@ -29,7 +29,7 @@ const server = http.createServer(async (req,res) => {
  const body=bytes?JSON.parse(bytes):undefined;calls.push({path:u.pathname,body});
  if(u.pathname===heldPath){await new Promise(resolve=>releaseRequest=resolve);if(rejectRequest){res.writeHead(500);res.end(failureText);return;}}
  if(u.pathname==='/api/state')return json({version:'controls-test',providers:[provider,{...provider,id:'qa2',name:'Second supplier',account:true}],models:[{id:'qa/qa-model',name:'QA'}],hidden:[],groups:[{id:'qa-group',name:'QA group',members:['qa/qa-model'],routing:'order'}],presets:[]});
- if(u.pathname==='/api/subscriptions') { if(catalogHeld){releaseCatalog=()=>json(catalog());return;}return json(catalog()); }
+ if(u.pathname==='/api/subscriptions') { if(catalogHeld&&!releaseCatalog){releaseCatalog=()=>json(catalog());return;}return json(catalog()); }
  if(u.pathname==='/api/subscription/adapter') {
   assert.equal(req.headers.accept,'application/x-ndjson');res.writeHead(200,{'Content-Type':'application/x-ndjson'});
   res.write(JSON.stringify({phase:'downloading'})+'\n');releaseStage=()=>res.write(JSON.stringify({phase:'installing'})+'\n');
@@ -72,7 +72,9 @@ async function run(){
  const screenshot=async name=>{if(!process.env.WHALEBRIDGE_QA_SCREENSHOTS)return;await js(`Promise.all(document.getAnimations().filter(a=>a.effect.getTiming().iterations!==Infinity).map(a=>a.finished))`);await js(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))`);fs.mkdirSync(process.env.WHALEBRIDGE_QA_SCREENSHOTS,{recursive:true});fs.writeFileSync(path.join(process.env.WHALEBRIDGE_QA_SCREENSHOTS,name+'.png'),(await win.webContents.capturePage()).toPNG());};
  const resize=async(width,height)=>{win.setContentSize(width,height);try{await wait(`innerWidth===${width}&&innerHeight===${height}`);}catch(error){const observed={requested:{width,height},contentBounds:win.getContentBounds(),windowBounds:win.getBounds(),renderer:await js(`({width:innerWidth,height:innerHeight,dpr:devicePixelRatio})`)};if(process.env.WHALEBRIDGE_QA_SCREENSHOTS){fs.writeFileSync(path.join(process.env.WHALEBRIDGE_QA_SCREENSHOTS,'resize-unsettled.json'),JSON.stringify(observed,null,2));await screenshot('resize-unsettled');}throw Error(error.message+' '+JSON.stringify(observed));}};
  const close=()=>js(`new Promise(r=>{const d=document.querySelector('#editor');d.addEventListener('close',r,{once:true});d.close();})`);
- const subscribe=async()=>{releaseInstall=undefined;await click('[data-action="subscription"]');await wait(`document.querySelector('#editor').open&&editor?.type==='subscription'&&!editor.closed&&document.querySelector('#f-agent option[value="cursor"]')`);await js(`document.querySelector('#f-agent').value='cursor';document.querySelector('#f-agent').dispatchEvent(new Event('change'))`);};
+ const subscribe=async()=>{releaseInstall=undefined;await click('[data-action="subscription"]');await wait(`document.querySelector('#editor').open&&editor?.type==='source-picker'&&!editor.closed&&document.querySelector('#source-picker [data-action="source-subscription"][data-id="cursor"]')`);await click('#source-picker [data-action="source-subscription"][data-id="cursor"]');await wait(`document.querySelector('#editor').open&&editor?.type==='subscription'&&!editor.closed&&document.querySelector('#f-agent option[value="cursor"]')`);assert.equal(await js(`document.querySelector('#f-agent').value`),'cursor');};
+ const addProvider=async()=>{await click('[data-action="add-provider"]');await wait(`document.querySelector('#editor').open&&editor?.type==='source-picker'&&!editor.closed&&document.querySelector('#source-picker [data-action="source-custom"]')`);await click('#source-picker [data-action="source-custom"]');await wait(`document.querySelector('#editor').open&&editor?.type==='provider'&&!editor.closed&&document.querySelector('#f-name')&&document.querySelector('#f-id')`);};
+ const requestInstall=async()=>{await click('[data-action="install-adapter"]');await wait(`document.querySelector('#confirmation').open&&document.querySelector('#accept-confirm').textContent==='信任并安装'`);await click('#accept-confirm');};
  const installStarted=async()=>{const end=Date.now()+7000;while(!releaseInstall&&Date.now()<end)await new Promise(r=>setTimeout(r,20));assert.ok(releaseInstall,'installation request reached backend');};
  try{
   await win.loadURL(`http://127.0.0.1:${server.address().port}/`);await wait(`document.querySelector('#content').getAttribute('aria-busy')==='false'`);
@@ -83,19 +85,19 @@ async function run(){
   const held=async()=>{const end=Date.now()+7000;while(!releaseRequest&&Date.now()<end)await new Promise(r=>setTimeout(r,20));assert.ok(releaseRequest,'request reached backend');heldApiBaseline=await js(`window.__qaApiSettled[${JSON.stringify(heldPath)}]?.settled||0`);};
   const release=()=>{const observed={path:heldPath,baseline:heldApiBaseline};heldPath=undefined;const resolve=releaseRequest;releaseRequest=undefined;resolve();return observed;};
   if(!focused){
-  await subscribe();await click('[data-action="install-adapter"]');await wait(`document.querySelector('[data-action="install-adapter"] .button-spinner')`);
+  await subscribe();await requestInstall();await wait(`document.querySelector('[data-action="install-adapter"] .button-spinner')`);
   assert.equal(await js(`document.querySelector('#f-agent').disabled&&document.querySelector('#save').disabled`),true);
   assert.equal(await js(`document.querySelector('#adapter-progress progress')`),null,'no progress bar');
   assert.equal(await js(`document.querySelector('[data-action="install-adapter"]').textContent`),'下载中');
   await screenshot('downloading-button');await installStarted();releaseStage();await wait(`document.querySelector('[data-action="install-adapter"]').textContent==='安装中'`);
   await screenshot('installing-button');releaseInstall();await wait(`document.querySelector('#f-agent').value==='cursor-adapter'&&!document.querySelector('#adapter-progress').hidden`);
   assert.match(await js(`document.querySelector('#adapter-progress').textContent`),/已安装/);await close();
-  installed=false;failing=true;await subscribe();await click('[data-action="install-adapter"]');await wait(`document.querySelector('[data-action="install-adapter"] .button-spinner')`);await installStarted();releaseInstall();
+  installed=false;failing=true;await subscribe();await requestInstall();await wait(`document.querySelector('[data-action="install-adapter"] .button-spinner')`);await installStarted();releaseInstall();
   await wait(`!document.querySelector('#form-error').hidden`);assert.match(await js(`document.querySelector('#form-error').textContent`),/installation rejected/);
   assert.equal(await js(`document.querySelector('#f-agent').disabled||document.querySelector('#save').disabled`),false);await close();
-  failing=false;await subscribe();await click('[data-action="install-adapter"]');await wait(`document.querySelector('[data-action="install-adapter"] .button-spinner')`);await installStarted();releaseStage();catalogHeld=true;releaseInstall();await wait(`document.querySelector('[data-action="install-adapter"]').textContent==='安装中'`);
+  failing=false;await subscribe();await requestInstall();await wait(`document.querySelector('[data-action="install-adapter"] .button-spinner')`);await installStarted();releaseStage();catalogHeld=true;releaseInstall();await wait(`document.querySelector('[data-action="install-adapter"]').textContent==='安装中'`);
   while(!releaseCatalog)await new Promise(r=>setTimeout(r,20));
-  await close();await click('[data-action="add-provider"]');await wait(`editor?.type==='provider'`);releaseCatalog();catalogHeld=false;
+  await close();await addProvider();releaseCatalog();catalogHeld=false;
   await wait(`document.querySelector('#editor-title').textContent==='添加供应商'`);assert.equal(await js(`document.querySelector('#adapter-progress').hidden`),true);await close();
   await click('[data-tab="providers"]');await wait(`document.querySelector('details.menu summary')`);
   for(const scheme of ['light','dark']){nativeTheme.themeSource=scheme;
@@ -116,7 +118,7 @@ async function run(){
   }
   win.setContentSize(1120,780);await click('details.menu summary');await click('.menu-content [data-action="toggle-provider"]');await wait(`document.querySelector('#message-text').textContent.includes('已更新')&&!document.querySelector('#refresh').disabled`);
   assert.ok(calls.some(c=>c.path==='/api/provider'&&c.body.off===true));
-  await click('[data-action="manage-adapters"]');await wait(`document.querySelector('[data-action="adapter-page"]')`);await click('[data-action="adapter-page"]');await wait(`editor?.type==='adapter-readme'`);await click('#fields [data-action="manage-adapters"]');await wait(`editor?.type==='adapters'`);
+  await click('[data-action="manage-adapters"]');await wait(`document.querySelector('[data-action="adapter-page"]')`);await click('[data-action="adapter-page"]');await wait(`editor?.type==='adapter-readme'`);await click('#fields [data-action="adapter-back"]');await wait(`editor?.type==='adapters'&&document.querySelector('[data-action="adapter-check"]')`);
   await click('[data-action="adapter-check"]');await wait(`!document.querySelector('#form-error').hidden`);assert.match(await js(`document.querySelector('#form-error').textContent`),/registry offline/);await close();
   await click('[data-tab="routing"]');await wait(`document.querySelector('[data-action="remove-selected-groups"]')`);await click('[data-action="remove-selected-groups"]');await wait(`!document.querySelector('#message').hidden`);
   assert.match(await js(`document.querySelector('#message-text').textContent`),/请先选择/);assert.equal(await js(`document.querySelector('#message').dataset.error`),'true');
@@ -140,7 +142,7 @@ async function run(){
   heldPath='/api/global/settings';await click('#global-form [type="submit"]');await held();
   assert.equal(await js(`document.querySelector('#global-form [type="submit"]').textContent`),'保存中');for(const scheme of ['light','dark']){nativeTheme.themeSource=scheme;await screenshot('settings-save-busy-'+scheme);const colors=await js(`(()=>{const c=getComputedStyle(document.querySelector('#global-form [type=submit]'));return {text:c.color,background:c.backgroundColor}})()`);assert.notEqual(colors.text,colors.background,'busy primary has visible foreground');}
   release();await wait(`!document.querySelector('#refresh').disabled&&document.querySelector('#global-form [type="submit"]').textContent==='保存设置'`);
-  await click('[data-tab="providers"]');await wait(`document.querySelector('[data-action="manage-adapters"]')`);await click('[data-action="manage-adapters"]');await wait(`editor?.type==='adapters'`);
+  await click('[data-tab="providers"]');await wait(`document.querySelector('[data-action="manage-adapters"]')`);await click('[data-action="manage-adapters"]');await wait(`editor?.type==='adapters'&&document.querySelector('[data-action="adapter-check"]')`);
   heldPath='/api/subscription/adapters/check';await click('[data-action="adapter-check"]');await held();
   assert.equal(await js(`document.querySelector('[data-action="adapter-check"]').textContent`),'检查中');await screenshot('adapter-check-busy');release();await wait(`!document.querySelector('#form-error').hidden`);await close();
   heldPath='/api/state';await click('#refresh');await held();assert.equal(await js(`!!document.querySelector('#refresh .button-spinner')`),true);release();await wait(`!document.querySelector('#refresh').disabled`);
@@ -164,7 +166,7 @@ async function run(){
   const screenshotPair=async(name,selector)=>{for(const [width,height,label] of [[1120,780,'normal'],[380,520,'narrow']]){await resize(width,height);if(selector)await js(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'})`);await screenshot(name+'-'+label);}await resize(1120,780);};
   const section=async key=>{await click(`[data-global-section="${key}"]`);await wait(`document.querySelector('[data-global-section="${key}"]').getAttribute('aria-selected')==='true'&&document.querySelector('#content').getAttribute('aria-busy')==='false'`);};
   if(!messagesOnly){
-  const providerDraft=async(name,id)=>{await click('[data-tab="providers"]');await wait(`document.querySelector('[data-action="add-provider"]')`);await click('[data-action="add-provider"]');await wait(`document.querySelector('#editor').open&&document.querySelector('#f-name')&&document.querySelector('#f-id')`);await type('#f-name',name);await type('#f-id',id);};
+  const providerDraft=async(name,id)=>{await click('[data-tab="providers"]');await wait(`document.querySelector('[data-action="add-provider"]')`);await addProvider();await type('#f-name',name);await type('#f-id',id);};
   const assertProviderDraft=async(name,id)=>assert.deepEqual(await js(`({open:document.querySelector('#editor').open,title:document.querySelector('#editor-title').textContent,name:document.querySelector('#f-name')?.value,id:document.querySelector('#f-id')?.value,enabled:!document.querySelector('#save').disabled,errorHidden:document.querySelector('#form-error').hidden})`),{open:true,title:'添加供应商',name,id,enabled:true,errorHidden:true});
   const quotas=async()=>{await click('[data-tab="usage"]');await wait(`document.querySelector('[data-global-section="quotas"]')`);await click('[data-global-section="quotas"]');await wait(`document.querySelector('[data-action="quota-settings"]')`);};
   for(const [action,savePath,name,id] of [['subscription-settings','/api/subscription/settings','Subscription return draft','subscription-return'],['quota-settings','/api/accounts/settings','Account return draft','account-return']]){

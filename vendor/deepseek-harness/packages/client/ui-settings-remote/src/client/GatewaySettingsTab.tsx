@@ -1,7 +1,7 @@
 /** Settings → Remote → Gateway: offer v2 connections and local daemon settings. */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Button, SettingsSelect } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, DisclosureRow, SettingsSelect } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RemotePatch, RemoteSnapshot } from './desktop-shell.ts'
 import { ipcErrorMessage } from './relay-copy.ts'
@@ -58,6 +58,7 @@ export function GatewaySettingsTab({
   const [relayUrlDraft, setRelayUrlDraft] = useState('')
   const [relayTokenDraft, setRelayTokenDraft] = useState('')
   const [savedFlash, setSavedFlash] = useState(false)
+  const [legacyOpen, setLegacyOpen] = useState(false)
 
   const applySnap = useCallback((next: RemoteSnapshot | null) => {
     const value = next ?? EMPTY
@@ -174,7 +175,19 @@ export function GatewaySettingsTab({
         </div>
       </div>
 
-      <div className={css.row}>
+      {snap.protocol === 'chisacode-v2' ? (
+        <DisclosureRow className={css.legacy} icon={null} title={t('legacyConfiguration')}
+          open={legacyOpen} expandable expandOnRowClick previewChevron={false}
+          onToggle={() => { setLegacyOpen(value => !value) }}>
+          <p className={css.desc}>{t('relayTokenHint')}</p>
+          {snap.legacyRelayTokenSet ? (
+            <Button size="sm" variant="ghost" disabled={busy}
+              onClick={() => { void save({ remoteRelayToken: '' }) }}>
+              {t('relayTokenClear')}
+            </Button>
+          ) : <p className={css.desc}>{t('legacyEmpty')}</p>}
+        </DisclosureRow>
+      ) : <div className={css.row}>
         <div className={css.rowText}>
           <div className={css.title}>{t('relayToken')}</div>
           <div className={css.desc}>{t('relayTokenHint')}</div>
@@ -217,7 +230,7 @@ export function GatewaySettingsTab({
             </Button>
           </div>
         </div>
-      </div>
+      </div>}
 
       <div className={css.row}>
         <div className={css.rowText}>

@@ -12,6 +12,7 @@
   /** Transparent-window silhouette radius; every injected layer that draws the
       rounded edge shares this value outside the native Windows frame. */
   const FRAME_RADIUS = 20;
+  const NATIVE_MAC_CONTROLS = document.documentElement.dataset.platform === 'darwin';
 
   const ICON_MIN = '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="5.4" width="8" height="1.2" rx="0.6" fill="currentColor"/></svg>';
   const ICON_MAX = '<svg viewBox="0 0 12 12" aria-hidden="true"><rect x="2.4" y="2.4" width="7.2" height="7.2" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
@@ -59,7 +60,7 @@
   }
 
   function windowControlsRight() {
-    return EDGE + CONTROL_SIZE * 3 + CONTROL_GAP * 2 + CLUSTER;
+    return NATIVE_MAC_CONTROLS ? EDGE : EDGE + CONTROL_SIZE * 3 + CONTROL_GAP * 2 + CLUSTER;
   }
 
   function ensureStyle() {
@@ -80,7 +81,7 @@
         right: 0;
         z-index: 2147483647;
         box-sizing: border-box;
-        display: flex;
+        display: ${NATIVE_MAC_CONTROLS ? 'none' : 'flex'};
         align-items: center;
         justify-content: flex-end;
         gap: ${CONTROL_GAP}px;
@@ -176,15 +177,19 @@
         inset: 0;
         border-radius: ${FRAME_RADIUS}px;
         corner-shape: round;
-        box-shadow: inset 0 0 0 var(--dsh-window-hairline, 1px) var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.4));
+        box-shadow: inset 0 0 0 var(--dsh-window-hairline, 1px) var(--dsw-alias-border-l2);
         pointer-events: none;
         z-index: 2147483646;
       }
       html[data-window-maximized] body,
       html[data-window-maximized] #dsh-wallpaper,
-      html[data-window-maximized] #${FRAME_CANVAS_ID} {
+      html[data-window-maximized] #${FRAME_CANVAS_ID},
+      html[data-fullscreen] body,
+      html[data-fullscreen] #dsh-wallpaper,
+      html[data-fullscreen] #${FRAME_CANVAS_ID} {
         border-radius: 0;
       }
+      html[data-fullscreen] #${FRAME_RING_ID},
       html[data-window-maximized] #${FRAME_RING_ID} {
         display: none;
       }
@@ -226,7 +231,7 @@
     }
     host = document.createElement('div');
     host.id = CONTROLS_ID;
-    host.innerHTML = [
+    host.innerHTML = NATIVE_MAC_CONTROLS ? '' : [
       `<button type="button" data-act="minimize" aria-label="最小化">${ICON_MIN}</button>`,
       `<button type="button" data-act="maximize" aria-label="最大化">${ICON_MAX}</button>`,
       `<button type="button" data-act="close" aria-label="关闭">${ICON_CLOSE}</button>`,

@@ -80,6 +80,8 @@ function SettingsPanel({ rows, renderSlot, activeId, motionState, open, onSelect
   const titleId = useId()
 
   const panel = useRef<HTMLDivElement>(null)
+  const options = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => { if (options.current) options.current.scrollTop = 0 }, [active])
   // Register on the LOGICAL flag, not on this component's mount: Presence keeps
   // the panel mounted for the exit recipe, and a layer that stayed registered
   // through that window would keep the rest of the UI yielding keyboard input
@@ -129,7 +131,7 @@ function SettingsPanel({ rows, renderSlot, activeId, motionState, open, onSelect
               <span className={css.hiddenLabel}>{renderSlot('settings.close', {})}</span>
             </button>
           </div>
-          <div className={css.options}>
+          <div ref={options} className={css.options}>
             {active !== undefined && (
               <div key={active} data-dsh-motion="swap">
                 {renderSlot('settings.section', { close: onClose }, { only: active })}

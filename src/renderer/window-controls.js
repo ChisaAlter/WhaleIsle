@@ -20,7 +20,9 @@ function mountWindowControls(host) {
   }
   const hideMin = host.dataset.minimize === 'false';
   const hideMax = host.dataset.maximize === 'false';
-  host.innerHTML = [
+  const nativeMac = (window.shell?.platform ?? document.documentElement.dataset.platform) === 'darwin';
+  host.hidden = nativeMac;
+  host.innerHTML = nativeMac ? '' : [
     hideMin ? '' : `<button type="button" data-act="minimize" aria-label="最小化">${iconMin()}</button>`,
     hideMax ? '' : `<button type="button" data-act="maximize" aria-label="最大化">${iconMax()}</button>`,
     `<button type="button" data-act="close" aria-label="关闭">${iconClose()}</button>`,
@@ -59,6 +61,7 @@ function mountWindowControls(host) {
       return;
     }
     document.documentElement.toggleAttribute('data-window-maximized', Boolean(state.maximized));
+    document.documentElement.toggleAttribute('data-fullscreen', Boolean(state.fullscreen));
     if (!maxBtn) {
       return;
     }

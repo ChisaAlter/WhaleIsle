@@ -34,7 +34,7 @@ async function api(method, path, body) {
 
 export const remoteApi = {
   raw: apiRaw,
-  status: (sessionId) => api('GET', withSessionQuery('/dsh-remote/status', sessionId)).catch(() => null),
+  status: (sessionId) => api('GET', withSessionQuery('/dsh-remote/status', sessionId)),
   machines: () => api('GET', '/dsh-remote/machines'),
   saveMachine: (payload) => api('POST', '/dsh-remote/machines', payload),
   deleteMachine: (id) => api('POST', '/dsh-remote/machines', { action: 'delete', id }),

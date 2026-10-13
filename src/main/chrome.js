@@ -59,6 +59,13 @@ function shellWindowChrome(overrides = {}) {
     thickFrame: true,
     roundedCorners: false,
     backgroundColor: '#00000000',
+    ...(process.platform === 'darwin' ? {
+      // AppKit needs its titled style for standard buttons. Disabling native
+      // corners makes Electron remove that style before creating the buttons.
+      roundedCorners: true,
+      titleBarStyle: 'hidden',
+      trafficLightPosition: { x: 16, y: 18 },
+    } : {}),
   });
 }
 
@@ -159,6 +166,7 @@ function sendWindowState(win) {
   }
   const payload = {
     maximized: isEffectivelyMaximized(win),
+    fullscreen: win.isFullScreen(),
     minimizable: win.minimizable,
     maximizable: win.maximizable,
   };
@@ -224,10 +232,11 @@ function bindChromeIpc() {
     const role = assertIpcSender(event, WINDOW_ROLES);
     const win = windowFromEvent(event, role);
     if (!win || win.isDestroyed()) {
-      return { maximized: false, minimizable: true, maximizable: true };
+      return { maximized: false, fullscreen: false, minimizable: true, maximizable: true };
     }
     return {
       maximized: isEffectivelyMaximized(win),
+      fullscreen: win.isFullScreen(),
       minimizable: win.minimizable,
       maximizable: win.maximizable,
     };
@@ -327,6 +336,10 @@ function watchSystemTheme({ theme = nativeTheme, apply = applyAppTheme } = {}) {
 
 function attachIntegratedChrome(win, options = {}) {
   enableNativeWindowMotion(win);
+  if (process.platform === 'darwin') {
+    win.setWindowButtonPosition({ x: 16, y: options.role === 'launcher' ? 9 : 18 });
+    win.setWindowButtonVisibility(true);
+  }
   if (options.role) {
     chromeRoles.set(win, options.role);
   }
@@ -367,6 +380,8 @@ function attachIntegratedChrome(win, options = {}) {
   win.on('moved', syncMaximizedState);
   win.on('maximize', () => sendWindowState(win));
   win.on('unmaximize', () => sendWindowState(win));
+  win.on('enter-full-screen', () => sendWindowState(win));
+  win.on('leave-full-screen', () => sendWindowState(win));
   win.webContents.on('did-finish-load', apply);
   win.webContents.on('dom-ready', apply);
   win.webContents.on('did-navigate-in-page', apply);

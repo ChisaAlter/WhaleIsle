@@ -11,6 +11,7 @@
 - 上游和窗口检查仅在相应改动时执行。
 - 工具测试独立运行，不混入 `npm test`。
 - 需要 macOS 时手动运行 Development CI，勾选 `include_macos`；默认只交付 Windows。
+- `Release macOS single-file diagnosis` 的手动运行仅做当前工作分支的 Mac 打包与真实包内窗口验收，适合定向排查 Mac 截图；它不负责发布，也不替代正式发布所用的同次 main Development CI 原始附件。
 - 汇总检查名为 `CI`，失败或取消不会变成通过。main 的 GitHub 分支保护要求经 PR 合并，并要求 GitHub Actions 的 `CI` 检查通过；管理员同样受保护，禁止强推与删除。不强制第二位审查者批准，合并仍由用户决定。保护设置不要求分支必须追上最新 main，避免仅因无关合并重复构建。
 
 安装或升级行为发生变化时，在开发阶段验证相应实际操作，并在 PR 说明结果。没有固定的每版人工验收全表。
@@ -36,6 +37,8 @@
 ## 鲸桥组件
 
 `.github/workflows/whalebridge.yml` 单独编译 `vendor/whalebridge` 并验证真实 Windows 程序的生命周期和本机网关。PR 提供开发资产；成功的 main 构建在组件版本尚未发布时自动创建 `whalebridge-v<版本>`，附件为 `WhaleBridge-win32-x64.exe` 和包含大小、SHA256、MIT 版权的 `WhaleBridge-component.json`。组件版本位于 `vendor/whalebridge/upstream.json`，独立于桌面 package.json。
+
+桌面 `0.3.6` 对应的鲸桥源码版本为 `1.1.1`，包含社区订阅插件发现与安装、模型来源选择、用量明细及缓存费用修复。它作为 `whalebridge-v1.1.1` 独立组件发布；桌面安装包不携带组件二进制，安装桌面更新也不等于已更新组件。用户从启动器明确安装或更新鲸桥，社区插件同样需要用户选择与信任确认。
 
 该工作流成功后 CNB mirror 同步组件 tag 与原始资产，按组件清单检查二进制并完成匿名字节校验。GitHub 和 CNB 都保持桌面程序的 latest，不把组件设为最新桌面安装包。源码构建入口为 `node scripts/build-whalebridge.mjs`。
 

@@ -24,9 +24,10 @@
  *   desktop built-in, not a user plugin, so the disable list never applies.
  * - `DSH_PRIMARY_RUNTIME` overrides the bundled payload directory; an empty
  *   string is the explicit opt-out (upstream carrier semantics).
- * - Packaged builds ship the payload at resources/runtime/primary-runtime
+ * - Windows packaged builds ship the payload at resources/runtime/primary-runtime
  *   and the skills at resources/runtime/office-skills (afterPack asserts
- *   both); a missing packaged payload is runtime damage and fails the start.
+ *   both); a missing Windows packaged payload is runtime damage and fails the start.
+ *   Other desktop targets do not currently ship this payload and stay bootable.
  *   A missing dev payload (build/office-runtime, produced by
  *   `npm run prepare:office-runtime`) only warns — dev shells stay bootable.
  */
@@ -252,7 +253,7 @@ function officeRuntimeEnv(options = {}) {
  * packaged on every start after the first).
  *
  * @param {{ profileDir?: string, harnessRoot?: string, env?: NodeJS.ProcessEnv,
- *   isPackaged?: boolean, resourcesPath?: string, projectRoot?: string,
+ *   isPackaged?: boolean, platform?: string, resourcesPath?: string, projectRoot?: string,
  *   dshHome?: string }} [options]
  * @returns {{ ok: boolean, added?: boolean, disabled?: boolean, present?: boolean,
  *   error?: string, warning?: string, overlayFile?: string, source?: string,
@@ -282,6 +283,10 @@ function ensureDesktopOfficeRuntime(options = {}) {
   const source = candidates.find((dir) => fs.existsSync(path.join(dir, 'runtime.json')));
   if (!source) {
     removeOverlay();
+    const platform = options.platform || process.platform;
+    if (isPackaged && platform !== 'win32' && !env.DSH_PRIMARY_RUNTIME) {
+      return { ok: true, present: false, warning: '此平台未提供内置 Office 运行时，Office 技能不可用。' };
+    }
     if (isPackaged) {
       return {
         ok: false,

@@ -38,7 +38,7 @@ import css from './AppFrame.module.css'
 /** Full composed props: runtime share + child-slot render share + store share. */
 export type AppFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'main' | 'rightbar' | 'surfaces' | 'shell.bottom' | 'shell.overlay' | 'shell.titlebar.trailing' | 'shell.terminalDrawer'>
+  & PropsRenderSlots<'sidebar' | 'main' | 'rightbar' | 'surfaces' | 'shell.bottom' | 'shell.overlay' | 'shell.leading' | 'shell.titlebar.trailing' | 'shell.terminalDrawer'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & PropsLocale<'common'>
 
@@ -439,6 +439,11 @@ export function AppFrame({
         usePanelInfo={usePanelInfo}
       />
       <div className={css.captionDrag} data-dshd-caption="band" aria-hidden="true" />
+      {document.documentElement.dataset.platform === 'darwin' && sidebarCollapsed && (
+        <div className={css.leadingSeat} data-shell-leading-band>
+          {renderSlot('shell.leading', {})}
+        </div>
+      )}
       {phone && sidebarCollapsed && (
         <button
           type="button"

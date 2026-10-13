@@ -10,6 +10,8 @@ The drawer toolbar is horizontal split / vertical split / maximize (restore reme
 
 The `/client` exports are the plugin body (`apply`/`inject`), the store factory, and the contract types only; drawer and surface components remain package-internal behind the slot registrations.
 
+Before enabling creation, both terminal surfaces query desktop `ptyCanCreate(cwd)` using the same workspace authority as `ptyCreate`. Missing or unauthorized directories disable New and Split with an explanation; automatic opening waits for the current directory's authorization result. The main process still enforces authority when creating the PTY.
+
 ## Model Experience
 
 None, as the user terminal only drives desktop PTY IPC and layout geometry; nothing here reaches a model request.

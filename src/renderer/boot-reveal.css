@@ -1,5 +1,6 @@
 html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
 body { border-radius: 20px; }
+html[data-fullscreen] body,
 html[data-window-maximized] body { border-radius: 0; }
 #dshd-boot-curtains { position: fixed; inset: 0; z-index: 2147483647; border-radius: inherit; overflow: hidden; pointer-events: none; }
 .dshd-boot-curtain { position: absolute; left: 0; right: 0; overflow: hidden; transform: translateY(0); will-change: transform; transition: transform calc(var(--ds-transition-duration, 0.2s) * 3) var(--ds-ease-in-out, ease-out); }

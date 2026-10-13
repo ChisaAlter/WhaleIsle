@@ -76,7 +76,7 @@ function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRe
     return () => { element.removeEventListener('focus', focus, true) }
   }, [visible, floating, floats, pane.id, state.activePaneId, callbacks])
   const lifted = floating && floats.preview?.paneId === pane.id ? floats.preview.rect : undefined
-  const rect = floating ? lifted ?? floatRect(pane) : undefined
+  const rect = floating ? floats.visibleRect(lifted ?? floatRect(pane)) : undefined
   const depth = lifted === undefined ? state.floats.indexOf(pane.id) + 1 : state.floats.length + 1
   return (
     <div className={clsx(css.tabCell, floating && css.floatingCell)} hidden={!selected}

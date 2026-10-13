@@ -15,6 +15,9 @@ export function RemoteSettingsSection({ t }) {
   const [machines, setMachines] = React.useState([])
   const [currentId, setCurrentId] = React.useState(null)
   const [err, setErr] = React.useState('')
+  const [loadError, setLoadError] = React.useState('')
+  const [loading, setLoading] = React.useState(true)
+  const loadGeneration = React.useRef(0)
   const [msg, setMsg] = React.useState('')
   const [busyId, setBusyId] = React.useState('')
   const [formOpen, setFormOpen] = React.useState(false)
@@ -26,17 +29,19 @@ export function RemoteSettingsSection({ t }) {
   const [confirmDel, setConfirmDel] = React.useState(null) // machine row pending delete
 
   const refresh = React.useCallback(() => {
-    remoteApi.machines()
-      .then((r) => { setMachines(r.machines || []); setCurrentId(r.currentId || null) })
-      .catch((e) => setErr(String((e && e.message) || e)))
-    remoteApi.status()
-      .then((s) => setStatus(s))
-    remoteApi.forwards()
-      .then((r) => setForwards(r.forwards || []))
-      .catch(() => {})
+    const generation = ++loadGeneration.current
+    setLoading(true); setLoadError('')
+    return Promise.all([remoteApi.machines(), remoteApi.status(), remoteApi.forwards()])
+      .then(([r, s, f]) => {
+        if (generation !== loadGeneration.current) return
+        setMachines(r.machines || []); setCurrentId(r.currentId || null)
+        setStatus(s); setForwards(f.forwards || [])
+      })
+      .catch((e) => { if (generation === loadGeneration.current) setLoadError(String((e && e.message) || e)) })
+      .finally(() => { if (generation === loadGeneration.current) setLoading(false) })
   }, [])
 
-  React.useEffect(() => { refresh() }, [refresh])
+  React.useEffect(() => { refresh(); return () => { loadGeneration.current++ } }, [refresh])
 
   const run = (fn, okMsg) => {
     setErr(''); setMsg('')
@@ -98,6 +103,12 @@ export function RemoteSettingsSection({ t }) {
     <div className="dshr-page">
       <div className="dshr-caption">{t('settings.summary')}</div>
 
+      {loading ? <div role="status" className="dshr-caption">{t('settings.loading')}</div> : null}
+      {loadError ? <div role="alert" className="dshr-error">
+        <p>{t('settings.loadFailed', { error: loadError })}</p>
+        <Button size="sm" variant="ghost" onClick={refresh}>{t('settings.retry')}</Button>
+      </div> : null}
+
       {err ? <div className="dshr-error">{err}</div> : null}
       {msg ? <div className="dshr-ok">{msg}</div> : null}
 
@@ -149,7 +160,7 @@ export function RemoteSettingsSection({ t }) {
             onCancel={() => { setFormOpen(false); setEditing(null) }}
           />
         ) : null}
-        {!formOpen && !editing && machines.length === 0 ? (
+        {!loading && !loadError && !formOpen && !editing && machines.length === 0 ? (
           <div className="dshr-emptyState">
             <span>{t('machines.empty')}</span>
             <span className="dshr-caption">{t('machines.emptyHint')}</span>

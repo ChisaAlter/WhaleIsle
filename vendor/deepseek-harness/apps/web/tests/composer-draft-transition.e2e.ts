@@ -14,6 +14,7 @@ const MODE = webSnapshotMode()
 const EXPECTED = fileURLToPath(new URL('./expected/composer-draft-transition/geometry.expected.md', import.meta.url))
 const CASES = [
   { name: 'desktop-click', width: 1680, height: 1000, reduced: false, enter: false, lines: 1 },
+  { name: 'desktop-narrow', width: 960, height: 640, reduced: false, enter: true, lines: 1 },
   { name: 'desktop-reduced', width: 1680, height: 1000, reduced: true, enter: true, lines: 1 },
   { name: 'mobile-enter', width: 390, height: 844, reduced: false, enter: true, lines: 1 },
   { name: 'desktop-multiline', width: 1680, height: 1000, reduced: false, enter: true, lines: 5 },
@@ -34,7 +35,9 @@ describe('web e2e: draft composer transition', () => {
     })
     const browser = await chromium.launch(process.env.DSH_WEB_HEADED === '1'
       ? { headless: false, channel: 'msedge' }
-      : {})
+      : process.env.DSH_TEST_CHROMIUM_PATH === undefined
+        ? {}
+        : { executablePath: process.env.DSH_TEST_CHROMIUM_PATH })
     const page = await newEnglishPage(browser)
     let failed = false
     try {
@@ -114,6 +117,7 @@ describe('web e2e: draft composer transition', () => {
       const { samples: frames, sawEntering, sawCompositedMotion } = await capture
       await writeFile(join(dir, 'frames.json'), JSON.stringify(frames, null, 2))
       await page.screenshot({ path: join(dir, 'settled.png') })
+      console.log('Composer transition evidence:', JSON.stringify({ scenario: scenario.name, directory: dir }))
       const last = frames.at(-1)!
       await page.getByText('TRANSITION-REPLY', { exact: true }).waitFor({ timeout: 20_000 })
       expect(frames.every(frame => frame.sameInput)).toBe(true)
@@ -132,12 +136,33 @@ describe('web e2e: draft composer transition', () => {
       expect(last.entering).toBe(false)
       expect(await page.locator('[data-composer-card]').evaluate(card =>
         getComputedStyle(card.parentElement!).transform)).toBe('none')
+      const footerGeometry = () => page.evaluate(() => {
+        const scroll = document.querySelector<HTMLElement>('[data-conversation-scroll]')!
+        const seat = document.querySelector<HTMLElement>('[data-composer-seat]')!
+        const scrollBox = scroll.getBoundingClientRect()
+        const seatBox = seat.getBoundingClientRect()
+        return { scrollBottom: scrollBox.bottom, scrollHeight: scrollBox.height,
+          seatTop: seatBox.top, seatHeight: seatBox.height, seatBottom: seatBox.bottom }
+      })
+      const assertFooterBoundary = async () => {
+        await expect.poll(async () => {
+          const geometry = await footerGeometry()
+          return Math.abs(geometry.scrollBottom - geometry.seatTop)
+        }).toBeLessThanOrEqual(2)
+        const geometry = await footerGeometry()
+        expect(geometry.scrollHeight).toBeGreaterThan(0)
+        expect(geometry.seatHeight).toBeGreaterThan(0)
+        expect(geometry.seatBottom).toBeLessThanOrEqual(scenario.height)
+      }
+      await assertFooterBoundary()
       await composer.fill('Respond with SECOND-REPLY.')
       await composer.press('Enter')
       await page.getByText('SECOND-REPLY', { exact: true }).waitFor({ timeout: 20_000 })
       expect(await page.locator('[data-composer-entering]').count()).toBe(0)
       const secondTop = await page.locator('[data-composer-card]').evaluate(card => card.getBoundingClientRect().top)
       expect(secondTop).toBe(last.top)
+      await composer.fill(Array.from({ length: 8 }, (_, index) => `Unsent draft line ${index + 1}`).join('\n'))
+      await assertFooterBoundary()
       await compareOrRefreshGolden(EXPECTED, [
         '# First draft submission geometry', '',
         '- Editor DOM is retained: true',

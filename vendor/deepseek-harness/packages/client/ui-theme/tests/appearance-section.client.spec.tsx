@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Appearance section: color-scheme tiles, two-ball library, editor, glass, type. */
+/** Appearance section: color-scheme tiles, split-preview library, editor, glass, type. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -187,7 +187,7 @@ const pressed = (name: string): string | null => cube(name).getAttribute('aria-p
 describe('AppearanceSection', () => {
   it('renders color-scheme tiles with the preference cube selected', () => {
     mount('dark')
-    expect(screen.getByText('色制')).toBeDefined()
+    expect(screen.getByRole('heading', { name: '颜色模式' })).toBeDefined()
     expect(pressed('深色')).toBe('true')
     expect(pressed('浅色')).toBe('false')
     expect(pressed('跟随系统')).toBe('false')
@@ -202,11 +202,11 @@ describe('AppearanceSection', () => {
     expect(pressed('浅色')).toBe('true')
   })
 
-  it('selects light and dark halves from the two-ball grid', () => {
+  it('selects light and dark halves from the split-preview grid', () => {
     const b = mount('system')
-    fireEvent.click(screen.getByRole('button', { name: '青瓷 浅色半' }))
+    fireEvent.click(screen.getByRole('button', { name: '青瓷 浅色主题' }))
     expect(b.setThemeHalf).toHaveBeenCalledWith('light', 'celadon')
-    fireEvent.click(screen.getByRole('button', { name: '青瓷 深色半' }))
+    fireEvent.click(screen.getByRole('button', { name: '青瓷 深色主题' }))
     expect(b.setThemeHalf).toHaveBeenCalledWith('dark', 'celadon')
   })
 

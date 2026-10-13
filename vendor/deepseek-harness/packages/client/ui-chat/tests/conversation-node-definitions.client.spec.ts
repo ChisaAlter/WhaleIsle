@@ -2537,6 +2537,137 @@ describe('built-in conversation node Definitions', () => {
     expect((node(current, 'tool-call')?.data as ToolChatData).root).not.toHaveProperty('kind')
   })
 
+  it.each(['live', 'replay', 'prepend'] as const)('removes a failed turn when a real message replacement commits (%s)', (mode) => {
+    const earlier = [
+      at(0, 'turn/start', { turn: 1 }),
+      at(1, 'step/start', { turn: 1, step: 1 }),
+      at(2, 'user/message', textMessage('earlier-user', 'earlier question'), { surfaceOp: 'append' }),
+      at(3, 'assistant/message', {
+        turn: 1, step: 1, message: assistantMessage('earlier-assistant', 'earlier answer'),
+      }, { surfaceOp: 'append' }),
+      at(4, 'step/end', { turn: 1, step: 1 }),
+      at(5, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    ]
+    const original = textMessage('failed-user', 'failed question')
+    const failed = [
+      at(6, 'agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [original] }),
+      at(7, 'turn/start', { turn: 2 }),
+      at(8, 'agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] }),
+      at(9, 'step/start', { turn: 2, step: 1 }),
+      at(10, 'user/message', original, { surfaceOp: 'append' }),
+      at(11, 'assistant/message', {
+        turn: 2, step: 1, message: {
+          ...assistantMessage('failed-assistant', 'superseded partial answer'),
+          content: [
+            { type: 'reasoning', text: 'superseded reasoning' },
+            { type: 'text', text: 'superseded partial answer' },
+            { type: 'tool-call', id: 'old-call', name: 'read_file', arguments: '{}' },
+          ],
+        },
+      }, { surfaceOp: 'append' }),
+      at(12, 'tool/call', { turn: 2, step: 1, callId: 'old-call', name: 'read_file', arguments: '{}' }),
+      at(13, 'tool/result', { turn: 2, step: 1, message: toolResult('old-call', 'superseded tool result') }, {
+        surfaceOp: 'append', sourceEventSeqs: [12],
+      }),
+      at(14, 'step/end', { turn: 2, step: 1 }),
+      at(15, 'step/start', { turn: 2, step: 2 }),
+      at(16, 'assistant/attempt', { turn: 2, step: 2, stream: [] }),
+      at(17, 'llm/retry', {
+        retryId: 'old-retry', turn: 2, step: 2, provider: 'fake', mode: 'normal',
+        policyKey: 'fake-normal', retry: 1, maxRetries: 2, delayMs: 10,
+        failure: { code: 'TRANSPORT', message: 'superseded retry failure' },
+      }),
+      at(18, 'llm/retry-started', { retryId: 'old-retry', turn: 2, step: 2, retry: 1 }),
+      at(19, 'step/end', { turn: 2, step: 2 }),
+      at(20, 'turn/end', { turn: 2, reason: { kind: 'error', error: { code: 'QUOTA', message: 'superseded quota failure' } } }),
+    ]
+    const revised = {
+      ...textMessage('edited-user', 'edited question'),
+      source: { kind: 'user', edit: { messageSeq: 10, turn: 2 } },
+    }
+    const edit = [
+      at(21, 'agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [revised] }),
+      at(22, 'turn/start', { turn: 3 }),
+      at(23, 'agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] }),
+      at(24, 'step/start', { turn: 3, step: 1 }),
+      at(25, 'user/message', revised, {
+        surfaceOp: { op: 'replace', startSeq: 10, endSeq: 13 }, sourceEventSeqs: [10, 11, 13],
+      }),
+      at(26, 'assistant/message', {
+        turn: 3, step: 1, message: assistantMessage('edited-assistant', 'edited answer'),
+      }, { surfaceOp: 'append' }),
+      at(27, 'step/end', { turn: 3, step: 1 }),
+      at(28, 'turn/end', { turn: 3, reason: { kind: 'completed' } }),
+    ]
+    const belongsToTurn = (candidate: ChatConversationViewNode, turn: number): boolean =>
+      (candidate.location.kind === 'turn' || candidate.location.kind === 'step')
+      && candidate.location.turn.turn === turn
+    const value = assembler(mode === 'replay' ? [...earlier, ...failed, ...edit]
+      : mode === 'prepend' ? edit : [...earlier, ...failed], mode === 'prepend')
+    if (mode === 'live') {
+      const old = snapshot(value).nodes.values().filter(candidate => belongsToTurn(candidate, 2))
+      expect(old.map(candidate => candidate.kind)).toEqual(expect.arrayContaining([
+        'user', 'assistant-step', 'tool-call', 'model-retry', 'turn-error', 'turn-process', 'turn-tail',
+      ]))
+      for (const entry of edit) {
+        value.append(entry)
+        value.flush()
+        if (entry.event.seq === 25) {
+          for (const candidate of old) expect(snapshot(value).order).not.toContain(candidate.key)
+          expect(snapshot(value).legacy.nodes.map(candidate => candidate.seq)).toEqual([2, 3, 25])
+        }
+      }
+    } else if (mode === 'prepend') {
+      value.prepend(failed, true)
+      value.flush()
+      expect(snapshot(value).order.every(key => !belongsToTurn(snapshot(value).nodes.get(key)!, 2))).toBe(true)
+      value.prepend(earlier, false)
+      value.flush()
+    }
+    const assertEdited = (current: ChatSnapshot, superseded: readonly number[], userSeq: number, replySeq: number): void => {
+      for (const turn of superseded) {
+        const old = current.nodes.values().filter(candidate => belongsToTurn(candidate, turn))
+        expect(old.length).toBeGreaterThan(0)
+        for (const candidate of old) {
+          expect(candidate).toMatchObject({ visibility: 'hidden', superseded: true })
+          expect(current.order).not.toContain(candidate.key)
+        }
+      }
+      expect(current.legacy.nodes.map(candidate => candidate.seq)).toEqual([2, 3, userSeq, replySeq])
+      expect(current.legacy.partial).toBeNull()
+      expect(current.legacy.runningCalls).toEqual([])
+      expect(current.order.map(key => current.nodes.get(key))).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: 'user', data: expect.objectContaining({ seq: userSeq }) }),
+        expect.objectContaining({ kind: 'assistant-step', data: expect.objectContaining({ finalNode: expect.objectContaining({ seq: replySeq }) }) }),
+      ]))
+      expect(current.legacy.nodes[0]).toMatchObject({ content: [{ type: 'text', text: 'earlier question' }] })
+      expect(current.legacy.nodes[1]).toMatchObject({ blocks: [{ kind: 'text', text: 'earlier answer' }] })
+    }
+    assertEdited(snapshot(value), [2], 25, 26)
+    const revisedAgain = {
+      ...textMessage('edited-again-user', 'edited again'),
+      source: { kind: 'user', edit: { messageSeq: 25, turn: 3 } },
+    }
+    const repeated = [
+      at(29, 'agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [revisedAgain] }),
+      at(30, 'turn/start', { turn: 4 }),
+      at(31, 'agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] }),
+      at(32, 'step/start', { turn: 4, step: 1 }),
+      at(33, 'user/message', revisedAgain, {
+        surfaceOp: { op: 'replace', startSeq: 25, endSeq: 26 }, sourceEventSeqs: [25, 26],
+      }),
+      at(34, 'assistant/message', {
+        turn: 4, step: 1, message: assistantMessage('edited-again-assistant', 'edited again answer'),
+      }, { surfaceOp: 'append' }),
+      at(35, 'step/end', { turn: 4, step: 1 }),
+      at(36, 'turn/end', { turn: 4, reason: { kind: 'completed' } }),
+    ]
+    for (const entry of repeated) value.append(entry)
+    value.flush()
+    assertEdited(snapshot(value), [2, 3], 33, 34)
+    assertEdited(snapshot(assembler([...earlier, ...failed, ...edit, ...repeated])), [2, 3], 33, 34)
+  })
+
   it('assembles retry chains and keeps manual and automatic compaction ownership separate', () => {
     const retry = assembler([
       at(1, 'turn/start', { turn: 1 }),

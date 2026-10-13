@@ -99,7 +99,7 @@ describe('FeedbackDialog layout styles', () => {
     expect(block('FeedbackDialog', '.dialog.dialog')).toMatch(/gap:\s*38px/)
     expect(block('FeedbackDialog', '.categories')).toMatch(/margin-top:\s*-14px/)
     expect(block('FeedbackDialog', '.chip')).toMatch(/color:\s*var\(--dsw-alias-label-primary\)/)
-    expect(block('FeedbackDialog', '.detail::placeholder')).toMatch(/color:\s*var\(--dsw-alias-label-caption\)/)
+    expect(block('FeedbackDialog', '.detail::placeholder')).toMatch(/color:\s*var\(--dsw-alias-label-placeholder\)/)
     expect(block('FeedbackDialog', '.detail')).toContain('border-radius: var(--dsw-radius-lg)')
     expect(block('FeedbackDialog', '.submit')).toContain('border-radius: var(--dsw-radius-lg)')
     expect(block('FeedbackDialog', '.submit')).toMatch(/font-weight:\s*500/)

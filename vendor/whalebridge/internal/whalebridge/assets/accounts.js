@@ -3,11 +3,13 @@
 let subscriptions=[];
 const subscriptionNames={claude:'Claude',codex:'Codex','chatgpt-api':'ChatGPT API',copilot:'GitHub Copilot',cursor:'Cursor',grok:'Grok',devin:'Devin',kiro:'Kiro',zcode:'ZCode',workbuddy:'WorkBuddy','workbuddy-ai':'WorkBuddy AI','commandcode-plan':'Command Code',qoder:'Qoder','qoder-cn':'Qoder 中国版',zed:'Zed',factory:'Factory','mimo-app':'小米 MiMo',gemini:'Google Gemini',antigravity:'Google Antigravity'};
 async function openSubscription(adapterId='', preferAdapter=false, expected){
+ const previous=editor,wasClosed=previous?.closed;
  const rows=await api('subscriptions');
+ if(previous!==editor||previous?.closed!==wasClosed)return;
  if(expected&&(expected!==editor||expected.closed))return;
  subscriptions=rows.map(s=>({...s,name:s.plugin?s.name:(subscriptionNames[s.id] || s.name)}));editor={type:'subscription'};
  $('#editor-title').textContent='添加订阅账号';
- $('#fields').innerHTML=`<p class="form-hint">将已有订阅连接到鲸屿。请选择你的供应商，再按对应的登录流程完成授权。</p><label for="f-agent">订阅供应商</label><select name="agent" id="f-agent">${subscriptions.map(s=>`<option value="${escape(s.id)}">${escape(s.name)}</option>`).join('')}</select><div id="signin-options"></div><p class="muted">部分订阅需要供应商的认证工具或适配器，登录时会显示准备进度。模型范围和使用额度由供应商决定。</p>${removedSubscriptions()}`;
+ $('#fields').innerHTML=`<div class="actions-bar">${button('返回订阅列表','source-back','subscription','text-button')}${button('查找更多社区插件','source-discover','','text-button')}</div><p class="form-hint">将已有订阅连接到鲸屿。请选择你的供应商，再按对应的登录流程完成授权。</p><label for="f-agent">订阅供应商</label><select name="agent" id="f-agent">${subscriptions.map(s=>`<option value="${escape(s.id)}">${escape(s.name)}</option>`).join('')}</select><div id="signin-options"></div><p class="muted">部分订阅需要供应商的认证工具或适配器，登录时会显示准备进度。模型范围和使用额度由供应商决定。</p>${removedSubscriptions()}`;
  if(adapterId)$('#f-agent').value=preferAdapter?(subscriptions.find(s=>s.plugin&&s.pid===adapterId)?.id || adapterId):adapterId;
  $('#f-agent').onchange=subscriptionOptions;subscriptionOptions();showEditor();$('#save').textContent='开始登录';
  return editor;
@@ -62,10 +64,12 @@ function pollLogin(){
   }catch(e){if(loginFlow!==id||current!==editor||current.closed)return;loginFlow=null;editor.loginBusy?.finish();editor.loginBusy=null;$('#form-error').textContent=e.message;$('#form-error').hidden=false;}
  },1500);
 }
-$('#editor').addEventListener('close',()=>{if(editor){editor.closed=true;editor.loginBusy?.finish();editor.loginBusy=null;}clearTimeout(loginTimer);if(loginFlow){const id=loginFlow;loginFlow=null;api(`signin/${encodeURIComponent(id)}/cancel`,{}).catch(e=>message(e.message));}});
 
-async function openAccounts(id){
+async function openAccounts(id,expected){
+ if(expected&&(expected!==editor||expected.closed))return;
+ const previous=editor,wasClosed=previous?.closed;
  const rows=await api('accounts/'+encodeURIComponent(id)),p=state.providers.find(p=>p.id===id);
+ if(previous!==editor||previous?.closed!==wasClosed)return;
  editor={type:'accounts',data:{id},rows};const current=editor;
  $('#editor-title').textContent=(p?.name || '订阅')+' · 账号管理';
  const actions=button(icon('plus')+' 添加账号','add-account',id)+(['codex','claude','gemini','antigravity','factory'].includes(id)?button('导入账号','auth-import',id):'')+button('刷新额度','accounts-refresh',id)+button('查看完整额度','accounts-quota',id);
@@ -93,8 +97,11 @@ function quotaAccountText(q){
  if(q.error)return q.error;
  return [q.balance,...(q.windows || []).map(w=>w.name+'：'+(w.unlimited?'不限':w.display || (100-Number(w.used)).toFixed(1)+'% 剩余')),q.asOf?'显示上次成功读取':'' ].filter(Boolean).join(' · ') || '供应商未报告额度';
 }
-async function openKeys(id){
+async function openKeys(id,expected){
+ if(expected&&(expected!==editor||expected.closed))return;
+ const previous=editor,wasClosed=previous?.closed;
  const rows=await api('keys/'+encodeURIComponent(id)),p=state.providers.find(p=>p.id===id);
+ if(previous!==editor||previous?.closed!==wasClosed)return;
  editor={type:'keys',data:{id},rows,expanded:localStorage.getItem('whalebridge.keys.expanded.'+id)==='1'};$('#editor-title').textContent=(p?.name || '供应商')+' · 密钥管理';
  $('#fields').innerHTML='<section class="editor-section" data-section="keys" data-title="现有密钥"><div class="toolbar">'+button('批量导入密钥','key-import',id)+(rows.length?button('移除已选密钥','key-remove-selected',id,'danger'):'')+'</div><div class="toolbar">'+field('keySearch','查找密钥','','search','名称、脱敏密钥或协议')+selectField('keyStatus','密钥状态',[['all','全部状态'],['usable','可请求'],['rest','请求暂停'],['off','已停用']],'all')+button('展开全部密钥','key-fold',id,'text-button')+'</div><p id="key-filter-count" class="form-hint" aria-live="polite"></p><div class="management-table-wrap"><table class="management-table"><thead><tr><th>选择</th><th>名称与密钥</th><th>状态与协议</th><th>路由设置</th><th>操作</th></tr></thead><tbody>'+rows.map((k,i)=>{
  const ref=JSON.stringify({id,ref:k.id});
@@ -123,24 +130,27 @@ function syncAccountModelChoices(){const allow=new Set(lines($('#f-allow')?.valu
 function openKeyImport(id){editor={type:'key-import',data:{id}};$('#editor-title').textContent='批量导入密钥';$('#fields').innerHTML=text('key','API 密钥','','每行一个，也可使用逗号或空格分隔')+selectField('protocol','密钥协议',protocolOptions,'')+'<p class="form-hint">已有密钥保持原设置；重复项会跳过。</p>';showEditor();$('#f-key').required=true;$('#save').textContent='导入密钥';}
 function openAuthImport(id){editor={type:'auth-import',data:{id},files:[]};$('#editor-title').textContent='导入订阅账号';$('#fields').innerHTML=`<p class="form-hint">${escape(subscriptionNames[id] || id)} · 导入你导出的账号凭据，先由供应商验证，再保存在鲸桥。</p>${['codex','claude'].includes(id)?'<p class="inline-error">导入时会向供应商刷新登录授权，消耗来源文件的 refresh token。来源工具需要重新登录后才能继续使用该账号。</p>':''}<label class="file-button"><span>选择凭据文件</span><input id="auth-files" type="file" accept=".json,.txt" multiple></label><p id="auth-file-names" class="form-hint"></p>`+text('source','或粘贴一个凭据文件的内容','','auth.json、账号导出 JSON；Factory 可以直接粘贴 fk- API 密钥');showEditor();$('#save').textContent='验证并导入';$('#auth-files').onchange=async e=>{const current=editor,input=e.target,files=Array.from(input.files),busy=startButtonBusy(input.parentElement.querySelector('span'),'读取中'),save=$('#save'),disabled=save.disabled;input.disabled=true;save.disabled=true;try{const contents=await Promise.all(files.map(f=>f.text()));if(current===editor&&!current.closed){current.files=contents;$('#auth-file-names').textContent=files.map(f=>f.name).join('、');}}catch(error){if(current===editor&&!current.closed)formError(error);}finally{busy.finish();input.disabled=false;if(current===editor&&!current.closed)save.disabled=disabled;}};}
 async function saveAccountEditor(data,current){const{id,ref,user}=current.data;
- if(current.type==='adapter-options'){let options;try{options=JSON.parse(data.options);}catch{throw new Error('适配器选项必须是有效的 JSON');}if(!options||Array.isArray(options)||typeof options!=='object')throw new Error('适配器选项必须是 JSON 对象');await api('subscription/adapter',{...current.data,action:'options',options});if(current!==editor||current.closed)return;await load();await openAdapters();message('供应商适配器配置已保存');return;}
- if(current.type==='key-import'){const r=await api('keys',{id,action:'import',key:data.key,protocol:data.protocol});if(current!==editor||current.closed)return;await load();await openKeys(id);message(`密钥导入完成${r.added!==undefined?`：新增 ${r.added}，已有 ${r.had || 0}`:''}`);return;}
- if(current.type==='auth-import'){const files=[...current.files,...(data.source.trim()?[data.source]:[])];if(!files.length)throw new Error('请先选择凭据文件或粘贴内容');const r=await api('accounts/import',{id,agent:id,files});if(current!==editor||current.closed)return;await load();editor={type:'import-result',data:{id}};$('#editor-title').textContent='账号导入结果';$('#fields').innerHTML=`<div class="panel">${(r.results || []).map(a=>`<div class="row"><div class="text"><strong>${escape(a.user || a.name || '账号')}</strong><p class="${a.error?'inline-error':'caption'}">${escape(a.error || ({added:'已添加',updated:'已更新授权',exists:'已存在',failed:'验证失败'})[a.status] || a.status || '已验证')}</p></div></div>`).join('')}</div><div class="actions-bar">${button('继续添加账号','add-account',id)}</div>`;showEditor();$('#save').hidden=true;return;}
+ if(current.type==='adapter-options'){let options;try{options=JSON.parse(data.options);}catch{throw new Error('适配器选项必须是有效的 JSON');}if(!options||Array.isArray(options)||typeof options!=='object')throw new Error('适配器选项必须是 JSON 对象');await api('subscription/adapter',{...current.data,action:'options',options});if(current!==editor||current.closed)return;await load();await openAdapters('installed',current);message('供应商适配器配置已保存');return;}
+ if(current.type==='key-import'){const r=await api('keys',{id,action:'import',key:data.key,protocol:data.protocol});if(current!==editor||current.closed)return;await load();await openKeys(id,current);message(`密钥导入完成${r.added!==undefined?`：新增 ${r.added}，已有 ${r.had || 0}`:''}`);return;}
+ if(current.type==='auth-import'){const files=[...current.files,...(data.source.trim()?[data.source]:[])];if(!files.length)throw new Error('请先选择凭据文件或粘贴内容');const r=await api('accounts/import',{id,agent:id,files});if(current!==editor||current.closed)return;await load();if(current!==editor||current.closed)return;editor={type:'import-result',data:{id}};$('#editor-title').textContent='账号导入结果';$('#fields').innerHTML=`<div class="panel">${(r.results || []).map(a=>`<div class="row"><div class="text"><strong>${escape(a.user || a.name || '账号')}</strong><p class="${a.error?'inline-error':'caption'}">${escape(a.error || ({added:'已添加',updated:'已更新授权',exists:'已存在',failed:'验证失败'})[a.status] || a.status || '已验证')}</p></div></div>`).join('')}</div><div class="actions-bar">${button('继续添加账号','add-account',id)}</div>`;showEditor();$('#save').hidden=true;return;}
  const applied=[];try{
   if(current.type==='key-edit'){for(const [action,values,label] of [['rename',{name:data.name},'名称'],['protocol',{protocol:data.protocol},'协议'],['weight',{weight:Number(data.weight)},'权重'],['models',{allow:lines(data.allow)},'模型范围'],['concurrency',{limit:data.limit===''?null:Number(data.limit)},'并发']]){await api('keys',{id,ref,action,...values});applied.push(label);}}
   if(current.type==='account-edit'){for(const [action,values,label] of [['models',{allow:lines(data.allow)},'模型范围'],['cap',{cap:Number(data.cap || 0)},'额度上限'],['concurrency',{limit:data.limit===''?null:Number(data.limit)},'并发'],['proxy',{proxy:data.proxyMode==='direct'?'direct':data.proxyMode==='custom'?data.proxy:''},'代理']]){await api(`accounts/${action}`,{id,user,...values});applied.push(label);}if(data.project!==undefined){await api('accounts/project',{id,user,project:data.project});applied.push('Cloud project');}}
  }catch(error){throw new Error(`${applied.length?`已保存${applied.join('、')}；其余设置未完成。`:''}${error.message}`);}
- if(current!==editor||current.closed)return;await load();if(current.type==='key-edit')await openKeys(id);else await openAccounts(id);message('设置已保存，已同步到鲸屿');
+ if(current!==editor||current.closed)return;await load();if(current.type==='key-edit')await openKeys(id,current);else await openAccounts(id,current);message('设置已保存，已同步到鲸屿');
 }
 $('#fields').addEventListener('click',async e=>{
- const b=e.target.closest('[data-action]');if(!b||b.disabled||editor?.adapterPending)return;const{action,id}=b.dataset;
+ const b=e.target.closest('[data-action]');if(!b||b.disabled||editor?.adapterPending)return;const{action,id}=b.dataset;const current=editor;
  if(!['signin-callback','install-adapter','add-account','account-on','account-remove','account-edit','account-first','account-up','account-down','account-relogin','accounts-quota','accounts-refresh','auth-import','key-on','key-remove','key-weight','key-edit','key-import','key-use','key-up','key-down','key-remove-selected','key-fold','pick-account-model','gateway-unrest','removed-show','removed-quiet','removed-tuck','removed-untuck','removed-forget'].includes(action))return;
  let busy;const waiting={'signin-callback':'提交中','add-account':'加载中','account-relogin':'加载中','gateway-unrest':'恢复中','account-on':'保存中','account-first':'保存中','account-up':'保存中','account-down':'保存中','key-on':'保存中','key-use':'保存中','key-up':'保存中','key-down':'保存中','removed-show':'恢复中','removed-quiet':'保存中','removed-tuck':'保存中','removed-untuck':'保存中'};if(waiting[action])busy=startButtonBusy(b,waiting[action]);b.disabled=true;
  try{
   if(action==='key-fold'){editor.expanded=!editor.expanded;localStorage.setItem('whalebridge.keys.expanded.'+id,editor.expanded?'1':'0');syncKeyList();return;}
   if(action==='signin-callback'){await api(`signin/${encodeURIComponent(loginFlow)}/callback`,{url:$('#f-callback').value});return;}
   if(action==='install-adapter'){
-   const current=editor,progress=startAdapterBusy(b);
+   const current=editor,subscription=subscriptions.find(s=>s.id===id);
+   if(!await ask('安装第三方供应商插件？',(subscription?.package || id)+'\n\n'+adapterTrust,'信任并安装'))return;
+   if(current!==editor||current.closed)return;
+   const progress=startAdapterBusy(b);
    try{
     await installAdapter({id},progress);
     if(current!==editor||current.closed)return;
@@ -154,29 +164,29 @@ $('#fields').addEventListener('click',async e=>{
    finally{progress.finish();}
    return;
   }
-  if(action==='add-account'||action==='account-relogin'){await openSubscription(id);return;}
+  if(action==='add-account'||action==='account-relogin'){await openSubscription(id,false,current);return;}
   if(action==='accounts-refresh'){await refreshAccountQuotas(editor);return;}
-  if(action==='accounts-quota'){$('#editor').close();await go('usage');return;}
+  if(action==='accounts-quota'){closeEditor();await go('usage');return;}
   if(action==='auth-import'){openAuthImport(id);return;}
   if(action==='key-import'){openKeyImport(id);return;}
   if(action==='pick-account-model'){const allow=new Set(lines($('#f-allow').value));if(allow.has(id))allow.delete(id);else allow.add(id);$('#f-allow').value=[...allow].join('\n');syncAccountModelChoices();return;}
-  if(action.startsWith('removed-')){if(action==='removed-forget'&&!await ask('彻底移除鲸桥保存的订阅凭据？','鲸桥保存的授权将被删除，重新接入时需要登录。借用其他客户端的登录仍在原客户端保留。','彻底移除'))return;if(action==='removed-forget')busy=startButtonBusy(b,'移除中');await api(`provider/${action.slice(8)}`,{id});await load();await openSubscription();message(action==='removed-show'?'订阅已恢复，模型已同步':'已移除订阅的设置已更新');return;}
-  if(action==='gateway-unrest'){const data=JSON.parse(id),r=await api('gateway/unrest',{key:data.key});message(r.lifted?'已恢复此密钥的请求':'此密钥已不在暂停状态');await load();await openKeys(data.id);return;}
-  if(action==='key-remove-selected'){const refs=[...$('#fields').querySelectorAll('[data-key-pick]:checked')].map(c=>c.dataset.keyPick);if(!refs.length)throw new Error('请先选择要移除的密钥');if(!await ask('移除已选密钥？',`将从鲸桥移除 ${refs.length} 个密钥。供应商控制台中的密钥不受影响。`,'移除密钥'))return;busy=startButtonBusy(b,'移除中');await api('keys',{id,action:'remove-many',refs});await load();await openKeys(id);return;}
+  if(action.startsWith('removed-')){if(action==='removed-forget'&&!await ask('彻底移除鲸桥保存的订阅凭据？','鲸桥保存的授权将被删除，重新接入时需要登录。借用其他客户端的登录仍在原客户端保留。','彻底移除'))return;if(current!==editor||current.closed)return;if(action==='removed-forget')busy=startButtonBusy(b,'移除中');await api(`provider/${action.slice(8)}`,{id});await load();await openSubscription('',false,current);message(action==='removed-show'?'订阅已恢复，模型已同步':'已移除订阅的设置已更新');return;}
+  if(action==='gateway-unrest'){const data=JSON.parse(id),r=await api('gateway/unrest',{key:data.key});message(r.lifted?'已恢复此密钥的请求':'此密钥已不在暂停状态');await load();await openKeys(data.id,current);return;}
+  if(action==='key-remove-selected'){const refs=[...$('#fields').querySelectorAll('[data-key-pick]:checked')].map(c=>c.dataset.keyPick);if(!refs.length)throw new Error('请先选择要移除的密钥');if(!await ask('移除已选密钥？',`将从鲸桥移除 ${refs.length} 个密钥。供应商控制台中的密钥不受影响。`,'移除密钥'))return;if(current!==editor||current.closed)return;busy=startButtonBusy(b,'移除中');await api('keys',{id,action:'remove-many',refs});await load();await openKeys(id,current);return;}
   const data=JSON.parse(id);
   if(action==='key-edit'){openKeyEdit(data.id,data.ref);return;}
   if(action==='account-edit'){openAccountEdit(data.id,data.user);return;}
   if(action==='account-on')await api('accounts/on',data);
-  if(action==='account-remove'){if(!await ask('移除订阅账号？','移除这个保存在鲸桥中的账号，不会删除供应商的订阅。','移除账号'))return;busy=startButtonBusy(b,'移除中');await api('accounts/remove',data);}
+  if(action==='account-remove'){if(!await ask('移除订阅账号？','移除这个保存在鲸桥中的账号，不会删除供应商的订阅。','移除账号'))return;if(current!==editor||current.closed)return;busy=startButtonBusy(b,'移除中');await api('accounts/remove',data);}
   if(['account-first','account-up','account-down'].includes(action)){const order=editor.rows.map(a=>a.user),at=order.indexOf(data.user),to=action==='account-first'?0:at+(action==='account-up'?-1:1);if(at<0||to<0||to>=order.length)return;order.splice(at,1);order.splice(to,0,data.user);await api('accounts/order',{id:data.id,order});}
   if(action==='key-on')await api('keys',{...data,action:'on'});
   if(action==='key-use')await api('keys',{...data,action:'use'});
   if(action==='key-up'||action==='key-down'){const order=editor.rows.map(k=>k.id),at=order.indexOf(data.ref),to=at+(action==='key-up'?-1:1);if(at<0||to<0||to>=order.length)return;[order[at],order[to]]=[order[to],order[at]];await api('keys',{id:data.id,action:'arrange',order});}
-  if(action==='key-remove'){if(!await ask('移除密钥？','此密钥将不再用于鲸桥请求。如需撤销密钥，请到供应商控制台操作。','移除密钥'))return;busy=startButtonBusy(b,'移除中');await api('keys',{...data,action:'remove'});}
-  if(action==='key-weight'){const value=await ask('设置密钥权重','权重越高，在权重路由中分配到的请求越多。请输入正整数。','保存权重',data.weight);if(value===false)return;busy=startButtonBusy(b,'保存中');await api('keys',{...data,action:'weight',weight:value});}
+  if(action==='key-remove'){if(!await ask('移除密钥？','此密钥将不再用于鲸桥请求。如需撤销密钥，请到供应商控制台操作。','移除密钥'))return;if(current!==editor||current.closed)return;busy=startButtonBusy(b,'移除中');await api('keys',{...data,action:'remove'});}
+  if(action==='key-weight'){const value=await ask('设置密钥权重','权重越高，在权重路由中分配到的请求越多。请输入正整数。','保存权重',data.weight);if(value===false)return;if(current!==editor||current.closed)return;busy=startButtonBusy(b,'保存中');await api('keys',{...data,action:'weight',weight:value});}
   await load();
-  if(action.startsWith('account-'))await openAccounts(data.id);else await openKeys(data.id);
- }catch(e){formError(e);}finally{busy?.finish();if(b.getAttribute('aria-busy')!=='true')b.disabled=false;}
+  if(action.startsWith('account-'))await openAccounts(data.id,current);else await openKeys(data.id,current);
+ }catch(e){if(current===editor&&!current.closed)formError(e);}finally{busy?.finish();if(b.getAttribute('aria-busy')!=='true')b.disabled=false;}
 });
 $('#fields').addEventListener('input',e=>{if(e.target.id==='f-allow')syncAccountModelChoices();if(e.target.id==='f-keySearch')syncKeyList();});
 $('#fields').addEventListener('change',e=>{if(e.target.id==='f-keyStatus')syncKeyList();});

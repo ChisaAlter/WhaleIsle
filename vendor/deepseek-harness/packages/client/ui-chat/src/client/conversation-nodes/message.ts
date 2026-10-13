@@ -38,12 +38,6 @@ declare module '../contract/chat-nodes.ts' {
   }
 }
 
-function isCompactionCheckpoint(event: Parameters<ConversationNodeDefinition['match']>[0]): boolean {
-  if (event.type !== 'user/message' || !isReplacementSurfaceEvent(event)) return false
-  const source = event.data.source as { kind?: unknown }
-  return source.kind === 'compact-checkpoint'
-}
-
 /** Context presentation shared by user-role injections and developer messages. */
 function contextMessage(
   event: Pick<ContextMessageNode, 'seq' | 'time'>,
@@ -66,7 +60,9 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
   target: 'chat',
   match: (event) => {
     if (event.type === 'user/message') {
-      return isAppendSurfaceEvent(event) && !isCompactionCheckpoint(event)
+      const edited = isReplacementSurfaceEvent(event)
+        && event.data.source.kind === 'user' && 'edit' in event.data.source
+      return isAppendSurfaceEvent(event) || edited
         ? { id: String(event.data.id), role: 'start' }
         : null
     }

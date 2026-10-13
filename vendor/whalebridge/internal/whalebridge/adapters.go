@@ -65,7 +65,7 @@ func subscriptionAdapters(ctx context.Context) map[string]any {
 				ids = append(ids, p.ID)
 			}
 		}
-		row := map[string]any{"id": plugin.Name(e.Spec), "name": plugin.Name(e.Spec), "package": e.Spec, "version": plugin.Installed(e.Spec), "enabled": !e.Off, "providers": ids, "error": errs[plugin.Name(e.Spec)], "latest": known[plugin.Name(e.Spec)].Version, "moved": provider.MovedOnto(e.Spec), "optionsExample": plugin.OptionsExample(plugin.Target(e.Spec))}
+		row := map[string]any{"id": plugin.Name(e.Spec), "name": plugin.PackageName(e.Spec), "package": e.Spec, "version": plugin.Installed(e.Spec), "enabled": !e.Off, "providers": ids, "error": errs[plugin.Name(e.Spec)], "latest": known[plugin.Name(e.Spec)].Version, "moved": provider.MovedOnto(e.Spec), "optionsExample": plugin.OptionsExample(plugin.Target(e.Spec))}
 		if u, ok := plugin.LastUpdated(plugin.Name(e.Spec), time.Now().Add(-3*24*time.Hour)); ok && !plugin.IsPath(e.Spec) {
 			row["autoUpdated"] = u
 		}

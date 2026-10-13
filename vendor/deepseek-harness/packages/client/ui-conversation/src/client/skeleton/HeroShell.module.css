@@ -213,7 +213,7 @@
 }
 
 .modalInput::placeholder {
-  color: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-label-placeholder);
 }
 
 .modalInput:disabled {

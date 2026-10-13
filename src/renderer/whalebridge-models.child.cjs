@@ -1,9 +1,11 @@
 'use strict';
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, nativeTheme } = require('electron');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
+const startedAt = Date.now();
+const phase = name => console.log('WHALEBRIDGE_MODELS_PHASE:' + JSON.stringify({ name, elapsedMs: Date.now() - startedAt }));
 app.setPath('userData', process.argv[2]);
 const assets = path.resolve(__dirname, '../../vendor/whalebridge/internal/whalebridge/assets');
 const names = new Set(fs.readdirSync(assets));
@@ -11,20 +13,24 @@ const rows = Array.from({ length: 48 }, (_, i) => ({ id: `channel/model-${String
 rows.push({ id: 'other/keep', name: 'Keep', channelId: 'other', channelName: 'Other Channel', supplierId: 'other', supplierName: 'Other' });
 const hidden = new Set(['other/keep']);
 let reads = 0, fail = false;
+let holdWrite = false, releaseWrite;
 const writes = [];
 let providerFixture;
 const providerWrites = [], importWrites = [], settingWrites = [], groupWrites = [];
 let groupFixture;
 const historyReads=[];
 let quotaReads=0;
+let holdReadPath='',releaseRead;
 const fixturePrice = { input: 1, output: 5, cache_read: 0.25, cache_write: 1.25, cache_write_1h: 2, tiers: [{ above: 200000, input: 2, output: 7.5, cache_read: 0.5, cache_write: 2.5, cache_write_1h: 4 }] };
 const subscriptionSettings = { pluginCheckins: { inactive: false }, pluginCheckinsEffective: { daily: true } };
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
+  if(url.pathname===holdReadPath){holdReadPath='';await new Promise(resolve=>{releaseRead=resolve;});}
   const json = body => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(body)); };
+  if (url.pathname === '/api/keys' && req.method==='POST') return json({ok:true,added:1});
   if (url.pathname === '/api/state') {
     reads++;
-    return json({ version: 'test', providers: providerFixture ? [providerFixture] : [], presets: [], models: rows.filter(m => !hidden.has(m.id)), hidden: rows.filter(m => hidden.has(m.id)), groups: groupFixture ? (Array.isArray(groupFixture)?groupFixture:[groupFixture]) : [] });
+    return json({ version: 'test', gateway: 'http://127.0.0.1', providers: providerFixture ? [providerFixture] : [], presets: [], models: rows.filter(m => !hidden.has(m.id)), hidden: rows.filter(m => hidden.has(m.id)), groups: groupFixture ? (Array.isArray(groupFixture)?groupFixture:[groupFixture]) : [] });
   }
   if (url.pathname === '/api/group') {
     let text = ''; for await (const chunk of req) text += chunk;
@@ -50,7 +56,8 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/models/hidden') {
     let text = ''; for await (const chunk of req) text += chunk;
     const body = JSON.parse(text); writes.push(body);
-    await new Promise(resolve => setTimeout(resolve, 60));
+    if (holdWrite) await new Promise(resolve => { releaseWrite = resolve; });
+    else await new Promise(resolve => setTimeout(resolve, 60));
     if (fail) { res.writeHead(400); return res.end('QA save failed'); }
     for (const id of body.ids) { if (body.hidden) hidden.add(id); else hidden.delete(id); }
     return json({ ok: true });
@@ -68,7 +75,7 @@ async function run() {
   const js = source => win.webContents.executeJavaScript(source).catch(error => { throw new Error(`${source}: ${error.message}`); });
   const wait = async expr => {
     const end = Date.now() + 5000;
-    while (!await js(`Boolean(${expr})`)) {
+    while (!await (typeof expr === 'function' ? expr() : js(`Boolean(${expr})`))) {
       if (Date.now() > end) throw new Error(`DOM timeout: ${expr}`);
       await new Promise(resolve => setTimeout(resolve, 20));
     }
@@ -77,6 +84,55 @@ async function run() {
   try {
     await win.loadURL(`http://127.0.0.1:${server.address().port}`);
     await wait(`document.querySelector('#content').getAttribute('aria-busy')==='false'`);
+    if (process.env.WHALEBRIDGE_MODELS_VISUAL_OUTPUT) {
+      const output = path.resolve(process.env.WHALEBRIDGE_MODELS_VISUAL_OUTPUT);
+      fs.mkdirSync(output, { recursive: true });
+      for (const [width, height] of [[1120, 780], [380, 660]]) {
+        win.setContentSize(width, height);
+        await wait(`innerWidth===${width} && innerHeight===${height}`);
+        for (const theme of ['light', 'dark']) {
+          nativeTheme.themeSource = theme;
+          await wait(`document.documentElement.hasAttribute('data-ds-dark-theme')===${theme === 'dark'}`);
+          for (const tab of ['overview', 'models']) {
+            await js(`go(${JSON.stringify(tab)})`);
+            await js(`document.fonts.ready.then(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))`);
+            const screenshot = path.join(output, `${tab}-${width}x${height}-${theme}.png`);
+            fs.writeFileSync(screenshot, (await win.webContents.capturePage()).toPNG());
+            const geometry = await js(`({width:innerWidth,height:innerHeight,documentOverflow:document.documentElement.scrollWidth>innerWidth,mainOverflow:document.querySelector('#main').scrollWidth>document.querySelector('#main').clientWidth})`);
+            console.log('WHALEBRIDGE_MODELS_VISUAL:' + JSON.stringify({ screenshot, tab, theme, ...geometry }));
+          }
+        }
+      }
+      console.log('WHALEBRIDGE_MODELS_VISUAL_RESULT:PASS');
+      return;
+    }
+    for (const [width, height] of [[1120, 780], [860, 560], [380, 522]]) {
+      win.setContentSize(width, height);
+      await wait(`innerWidth===${width} && innerHeight===${height}`);
+      await js(`go('overview')`);
+      await js(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+      assert.equal(await js(`document.querySelectorAll('.overview-page').length`), 1);
+      assert.equal(await js(`!!document.querySelector('[data-action="overview-next"],[data-action="overview-prev"]')`), false, 'setup steps remain on the overview page');
+      const overviewLayout = await js(`(() => {const sidebar=document.querySelector('.sidebar').getBoundingClientRect(),viewport=document.querySelector('#main').getBoundingClientRect(),actions=document.querySelector('.hero .actions-bar').getBoundingClientRect();return {sidebarHeight:sidebar.height,sidebarShare:sidebar.height/innerHeight,mainHeight:viewport.height,actionsTop:actions.top,actionsBottom:actions.bottom,viewportTop:viewport.top,viewportBottom:viewport.bottom};})()`);
+      console.log('WHALEBRIDGE_OVERVIEW_LAYOUT:' + JSON.stringify({ width, height, ...overviewLayout }));
+      assert.ok(overviewLayout.actionsTop>=overviewLayout.viewportTop && overviewLayout.actionsBottom<=overviewLayout.viewportBottom, `primary overview actions are initially visible at ${width}px: ${JSON.stringify(overviewLayout)}`);
+      if (width === 1120) assert.ok(await js(`document.querySelector('#main').scrollHeight-document.querySelector('#main').clientHeight<=1`), 'the normal overview fits its first viewport');
+      for (const theme of ['light', 'dark']) {
+        nativeTheme.themeSource = theme;
+        await wait(`document.documentElement.hasAttribute('data-ds-dark-theme')===${theme === 'dark'}`);
+        await js(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+        assert.ok(await js(`(() => {const hero=document.querySelector('.hero').getBoundingClientRect(),actions=document.querySelector('.hero .actions-bar').getBoundingClientRect();return actions.bottom<=hero.bottom-8 && actions.left>=hero.left && actions.right<=hero.right;})()`), `overview actions remain inside the hero at ${width}px ${theme}`);
+      }
+      assert.equal(await js(`document.querySelector('.overview-notes').open`), false);
+      await js(`(() => {document.querySelector('.overview-notes').open=true;document.querySelector('.overview-notes .advanced').open=true;const sync=document.querySelector('[data-action="sync"]');sync.focus();sync.scrollIntoView({block:'center'});})()`);
+      assert.equal(await js(`document.activeElement.dataset.action`), 'sync');
+      assert.ok(await js(`(() => {const sync=document.querySelector('[data-action="sync"]').getBoundingClientRect(),viewport=document.querySelector('#main').getBoundingClientRect();return sync.top>=viewport.top && sync.bottom<=viewport.bottom;})()`), `the expanded connection sync action remains reachable at ${width}px`);
+      await js(`go('models').then(()=>go('overview'))`);
+      assert.equal(await js(`document.querySelector('#main').scrollTop`), 0, 'returning to overview starts at the top');
+    }
+    win.setContentSize(1120, 780);
+    await wait(`innerWidth===1120 && innerHeight===780`);
+    nativeTheme.themeSource = 'system';
     await click('[data-tab="models"]');
     assert.equal(await js(`document.querySelectorAll('.model-channel').length`), 2);
     assert.equal(await js(`document.querySelectorAll('.model-supplier').length`), 3, 'every channel keeps its supplier divider, including single-supplier channels');
@@ -90,11 +146,22 @@ async function run() {
     assert.ok(await js(`document.querySelector('#main').getBoundingClientRect().y>=48`), 'model switches cannot scroll into the native control strip');
     assert.equal(await js(`getComputedStyle(document.querySelector('.toolbar')).getPropertyValue('-webkit-app-region')`), 'drag', 'empty title-row space moves the window');
     assert.equal(await js(`getComputedStyle(document.querySelector('#refresh')).getPropertyValue('-webkit-app-region')`), 'no-drag', 'refresh remains clickable within the draggable title row');
-    const before = await js(`(() => { document.querySelector('#main').scrollTop=900; globalThis.row=document.querySelector('[data-action="hide-model"][data-id="channel/model-12"]'); globalThis.search=document.querySelector('#model-search'); return {scroll:document.querySelector('#main').scrollTop,y:row.getBoundingClientRect().y}; })()`);
+    const before = await js(`(() => { document.querySelector('#main').scrollTop=900; globalThis.row=document.querySelector('[data-action="hide-model"][data-id="channel/model-12"]'); row.focus({preventScroll:true}); globalThis.search=document.querySelector('#model-search'); return {scroll:document.querySelector('#main').scrollTop,y:row.getBoundingClientRect().y}; })()`);
+    holdWrite = true; releaseWrite = undefined;
     await click('[data-action="hide-model"][data-id="channel/model-12"]');
-    await wait(`!document.querySelector('[data-action="hide-model"][data-id="channel/model-12"]').disabled`);
+    await wait(() => typeof releaseWrite === 'function');
+    assert.equal(await js(`document.activeElement.dataset.id`), 'channel/model-12', 'saving a model switch keeps keyboard focus');
+    assert.equal(await js(`document.activeElement.getAttribute('aria-busy')`), 'true');
+    assert.equal(await js(`document.activeElement.getAttribute('aria-disabled')`), 'true');
+    assert.equal(await js(`document.activeElement.disabled`), false, 'pending focus is retained without native disabling');
+    const writeCount = writes.length;
+    await click('[data-action="hide-model"][data-id="channel/model-12"]');
+    assert.equal(writes.length, writeCount, 'the pending switch does not submit another visibility write');
+    releaseWrite(); releaseWrite = undefined; holdWrite = false;
+    await wait(`document.querySelector('[data-action="hide-model"][data-id="channel/model-12"]').getAttribute('aria-busy')==='false'`);
     const after = await js(`({scroll:document.querySelector('#main').scrollTop,y:row.getBoundingClientRect().y,sameRow:row===document.querySelector('[data-id="channel/model-12"][data-action]'),sameSearch:search===document.querySelector('#model-search'),message:document.querySelector('#message').hidden})`);
     assert.equal(after.scroll, before.scroll); assert.equal(after.y, before.y);
+    assert.equal(await js(`document.activeElement.dataset.id`), 'channel/model-12');
     assert.ok(after.sameRow && after.sameSearch); assert.equal(after.message, true, 'single toggles show no toast'); assert.equal(reads, 1);
     assert.equal(await js(`document.querySelector('[data-scope="supplier"]').getAttribute('aria-checked')`), 'mixed');
     await js(`document.querySelector('[data-action="hide-model"][data-id="channel/model-13"]').click();document.querySelector('[data-action="hide-model"][data-id="channel/model-14"]').click()`);
@@ -123,7 +190,9 @@ async function run() {
     assert.equal(await js(`document.querySelector('.model-channel-body').hidden`), true);
     await click('[data-action="fold-channel"][data-id="channel"]');
     fail = true;
-    await click('[data-action="hide-model"][data-id="channel/model-20"]'); await wait(`visibilityPending.size===0`);
+    await js(`document.querySelector('[data-action="hide-model"][data-id="channel/model-20"]').focus();document.activeElement.click();document.querySelector('#model-search').focus()`);
+    await wait(`visibilityPending.size===0`);
+    assert.equal(await js(`document.activeElement.id`), 'model-search', 'failure completion leaves the user new focus alone');
     assert.equal(await js(`document.querySelector('[data-action="hide-model"][data-id="channel/model-20"]').getAttribute('aria-checked')`), 'true');
     assert.equal(await js(`document.querySelector('#message-text').textContent`), 'QA save failed');
     assert.ok(await js(`(() => {
@@ -138,8 +207,12 @@ async function run() {
     })()`), 'save errors remain visible in reserved feedback space with a reachable close control');
     fail = false;
     await click('[data-filter="shown"]');
+    const neighbor = await js(`(() => {const switches=[...document.querySelectorAll('[data-action="hide-model"]')].filter(b=>!b.closest('[hidden]')),current=switches.find(b=>b.dataset.id==='channel/model-20');current.focus();return switches[switches.indexOf(current)+1].dataset.id;})()`);
     await click('[data-action="hide-model"][data-id="channel/model-20"]'); await wait(`visibilityPending.size===0`);
     assert.equal(await js(`document.querySelector('[data-action="hide-model"][data-id="channel/model-20"]')`), null);
+    assert.equal(await js(`document.activeElement.dataset.id`), neighbor, 'a filtered-out model hands focus to its next visible neighbor');
+    assert.equal(await js(`document.querySelector('#message').hidden`), true, 'a successful retry clears its corresponding save error');
+    assert.match(await js(`document.querySelector('#model-feedback').textContent`), /已隐藏 Model 20.*已同步到鲸屿/);
     win.setSize(700, 780);
     await js(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
     assert.equal(await js(`document.documentElement.scrollWidth<=window.innerWidth`), true);
@@ -147,6 +220,19 @@ async function run() {
     win.setSize(390, 844);
     await js(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
     assert.equal(await js(`document.documentElement.scrollWidth<=window.innerWidth`), true);
+    win.setContentSize(380, 522);
+    await wait(`innerWidth===380 && innerHeight===522`);
+    await click('[data-filter="all"]');
+    const narrowBefore = await js(`(() => {const b=document.querySelector('[data-action="hide-model"][data-id="channel/model-22"]');b.focus();b.scrollIntoView({block:'center'});return {y:b.getBoundingClientRect().y,scroll:document.querySelector('#main').scrollTop};})()`);
+    holdWrite = true; releaseWrite = undefined;
+    await click('[data-action="hide-model"][data-id="channel/model-22"]');
+    await wait(() => typeof releaseWrite === 'function');
+    assert.equal(await js(`document.activeElement.dataset.id`), 'channel/model-22', 'narrow model switches retain focus while saving');
+    releaseWrite(); releaseWrite = undefined; holdWrite = false;
+    await wait(`document.querySelector('[data-action="hide-model"][data-id="channel/model-22"]').getAttribute('aria-busy')==='false'`);
+    const narrowAfter = await js(`({id:document.activeElement.dataset.id,y:document.activeElement.getBoundingClientRect().y,scroll:document.querySelector('#main').scrollTop})`);
+    assert.equal(narrowAfter.id, 'channel/model-22');
+    assert.equal(narrowAfter.y, narrowBefore.y); assert.equal(narrowAfter.scroll, narrowBefore.scroll);
     // Provider edits exercise the rendered form and its submitted API payload.
     providerFixture = { id: 'qa', name: 'QA API', chat: 'https://example.test/v1', keySet: true, keyMasked: 'qa…key', models: [], defaultModels: ['long'], modelCount: 1, available: [{ id: 'long', name: 'Long Context', price: fixturePrice, list: fixturePrice, ownPrice: true, efforts: ['low','high'], canFast: true }], modelPrices: { long: fixturePrice } };
     win.setSize(900, 780);
@@ -209,7 +295,10 @@ async function run() {
     await js(`document.querySelector('#f-keyStatus').value='rest';document.querySelector('#f-keyStatus').dispatchEvent(new Event('change',{bubbles:true}))`);
     assert.deepEqual(await js(`[...document.querySelectorAll('[data-key-row]')].filter(row=>!row.hidden).map(row=>row.querySelector('.table-primary').textContent)`),['Paused key']);
     await click('#cancel-editor'); await wait(`!document.querySelector('#editor').open`);
-    await click('[data-action="import-provider"]');
+    // The previous dialog's queued close event must not poison its replacement.
+    await js(`document.querySelector('[data-action="import-provider"]').click();window.closedEditor=editor;document.querySelector('#cancel-editor').click();document.querySelector('[data-action="import-provider"]').click();`);
+    await js(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+    assert.equal(await js(`closedEditor.closed && !editor.closed && document.querySelector('#editor').open`),true);
     await js(`document.querySelector('#f-source').value='{"name":"Imported API","chat":"https://example.test/v1"}'`);
     await click('#save'); await wait(`document.querySelector('#f-importKey')`);
     assert.equal(importWrites.length, 1, 'preview does not save a supplier');
@@ -219,6 +308,26 @@ async function run() {
     assert.equal(importWrites.length, 2);
     assert.equal(importWrites[1].key, 'qa-import-key', 'the separate password field supplies credentials only after preview');
     assert.equal(importWrites[1].text, importWrites[0].text);
+    // A read launched from an old editor cannot replace a newer draft.
+    for(const [pathname,open] of [['/api/keys/qa',"openKeys('qa')"],['/api/subscriptions','openSubscription()'],['/api/subscription/settings','openSubscriptionSettings()'],['/api/upstream','openProviderHealth()']]){
+      await click('[data-action="import-provider"]');
+      holdReadPath=pathname;releaseRead=undefined;
+      await js('window.pendingEditorRead='+open+';void 0');await wait(()=>!!releaseRead);
+      await js('openKeyImport("qa")');
+      releaseRead();await js('pendingEditorRead');
+      assert.equal(await js('editor.type'), 'key-import',pathname+' must not overwrite the newer draft');
+      await click('#cancel-editor');
+    }
+    await js('openKeyImport("qa")');
+    await js('document.querySelector("#f-key").value="fixture-only-key"');
+    holdReadPath='/api/state';releaseRead=undefined;
+    await click('#save');await wait(()=>!!releaseRead);
+    await click('#cancel-editor');await click('[data-action="import-provider"]');
+    releaseRead();await wait("document.querySelector('#content').getAttribute('aria-busy')==='false'");
+    await js('new Promise(resolve=>setTimeout(resolve,30))');
+    assert.equal(await js('editor.type'), 'provider-import','late post-save reload must not reopen the old key editor');
+    await js("document.querySelector('#editor').dispatchEvent(new Event('cancel',{cancelable:true}))");
+    assert.equal(await js("editor.closed && !document.querySelector('#editor').open"),true,'native cancel closes the current editor synchronously');
     await click('[data-tab="usage"]'); await wait(`document.querySelector('[data-global-section="quotas"]')`);
     await click('[data-global-section="quotas"]'); await wait(`document.querySelector('[data-action="subscription-settings"]')`);
     await wait(`document.querySelector('#quota-section').getAttribute('aria-busy')==='false'`);
@@ -237,7 +346,16 @@ async function run() {
     await click('#save'); await wait(`!document.querySelector('#editor').open`);
     assert.equal(settingWrites.at(-1).pluginCheckins.daily, true, 'saving other settings preserves the effective adapter check-in default');
     assert.equal(settingWrites.at(-1).pluginCheckins.inactive, false, 'saving does not erase the preference of a temporarily disabled adapter');
-    console.log('WHALEBRIDGE_MODELS_RESULT:PASS grouped models, scoped visibility, stable position, pricing tiers, import preview and subscription settings');
-  } finally { win.destroy(); await new Promise(resolve => server.close(resolve)); }
+    console.log('WHALEBRIDGE_MODELS_RESULT:PASS compact overview, model focus, grouped models, scoped visibility, stable position, pricing tiers, import preview and subscription settings');
+  } finally {
+    phase('behavior-finished');
+    releaseRead?.(); releaseWrite?.();
+    win.destroy();
+    phase('window-destroyed');
+    await new Promise(resolve => {
+      server.close(() => { phase('server-closed'); resolve(); });
+      server.closeAllConnections();
+    });
+  }
 }
-run().then(() => app.exit(0), error => { console.error(error); app.exit(1); });
+run().then(() => { phase('exit-zero'); app.exit(0); }, error => { console.error(error); phase('exit-error'); app.exit(1); });

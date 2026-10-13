@@ -147,10 +147,11 @@ function createTaskProtection(options = {}) {
   }
 
   async function runCommitCleanups() {
-    for (const cleanup of commitCleanups.splice(0)) {
-      try {
-        await cleanup();
-      } catch (error) {
+    const results = await Promise.allSettled(commitCleanups.splice(0)
+      .map((cleanup) => Promise.resolve().then(cleanup)));
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        const error = result.reason;
         log(`task-protection cleanup failed: ${error && error.message ? error.message : String(error)}`);
       }
     }
@@ -267,6 +268,9 @@ function createTaskProtection(options = {}) {
     onCommitCleanup(cleanup) {
       if (typeof cleanup === 'function') commitCleanups.push(cleanup);
     },
+    // Explicit quit must also stop supervised services when Host inspection
+    // or shutdown fails. Failed installer commits still preserve these hooks.
+    cleanupAfterQuit: runCommitCleanups,
     /** Force-release a held lock (error paths). */
     release,
     controlOp,
@@ -292,6 +296,7 @@ function passThroughProtection() {
     isCommitted: () => false,
     isCoordinating: () => false,
     onCommitCleanup: () => {},
+    cleanupAfterQuit: async () => {},
     release: async () => {},
     controlOp: async () => ({ ok: false, code: 'dshd/no-protection' }),
     _internals: { inspectionClean, taskControlToken },

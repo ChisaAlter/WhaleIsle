@@ -22,9 +22,25 @@
   grid-template-columns: minmax(0, 1fr) 36px;
   align-items: center;
   gap: 8px;
-  width: calc(100% + 4px);
+  width: calc(100% - 4px);
   height: 44px;
-  margin: 4px -2px;
+  margin: 4px 2px;
+}
+
+.triggerRow:not(.railRow) .launcherRow,
+.triggerRow:not(.railRow) .trigger {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.triggerRow:not(.railRow) .statusSeat {
+  grid-column: 2;
+  grid-row: 1;
+  z-index: 1;
+}
+
+.triggerRow:not(.railRow):has(> .statusSeat:not(:empty)) :is(.trigger, .launcherRow button[aria-haspopup='menu']) {
+  padding-right: 52px;
 }
 
 .triggerRow.railRow {

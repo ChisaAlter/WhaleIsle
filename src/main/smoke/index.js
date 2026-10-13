@@ -19,6 +19,7 @@ const { app } = require('electron');
 const { tryGetDesktopDshHome } = require('../../shared/dsh-home');
 const { titlebarMenuLooksOpen } = require('./titlebar-menu');
 const { waitForHarnessContents } = require('./client-ready');
+const { readLastDesktopStart } = require('../launcher-gate');
 const { getLive2dPet } = require('../desktop-live2d');
 
 const SMOKE_SURFACES = 'right panel|surfaces|\u53f3\u4fa7\u680f';
@@ -527,10 +528,13 @@ function createSmokeRunner(deps) {
     };
     let wc;
     try {
-      wc = await waitForHarnessContents(getHarnessWebContents, win, undefined, getWelcomeWebContents);
+      wc = await waitForHarnessContents(getHarnessWebContents, win, undefined, getWelcomeWebContents, () => {
+        const start = readLastDesktopStart(app.getPath('userData'));
+        return start.ok === false ? start.error || 'desktop start rejected' : null;
+      });
     } catch (error) {
       fs.writeFileSync(path.join(app.getPath('userData'), 'dshd-smoke.json'), JSON.stringify({
-        ok: false, error: error.message,
+        ok: false, error: error.message, startup: readLastDesktopStart(app.getPath('userData')),
       }, null, 2));
       await exitSmoke(1);
       return;
@@ -926,6 +930,12 @@ function createSmokeRunner(deps) {
         }
         console.log('[DSH_THEME_SMOKE]', JSON.stringify(result.themeSmoke));
       }
+      if (process.platform === 'darwin' && app.isPackaged) {
+        result.macosChrome = await require('./macos-chrome').runMacosChromeQa(win, wc, {
+          loadConfig, saveConfig, dsh,
+        });
+        console.log('[DSH_MACOS_CHROME]', JSON.stringify(result.macosChrome));
+      }
       const hitCount = titlebarHits.hits.surfaces + titlebarHits.hits.branch + titlebarHits.hits.git;
       const requireFullTitlebar = needsReleaseQa
         || needsComposerQa
@@ -963,6 +973,7 @@ function createSmokeRunner(deps) {
         && (!needsShellQa || result.shellP0Qa?.ok === true)
         && (!needsPersistQa || result.persistQa?.ok === true)
         && (!needsRecoveryQa || result.recoveryQa?.ok === true)
+        && (process.platform !== 'darwin' || !app.isPackaged || result.macosChrome?.ok === true)
         && (needsRecoveryQa || pageErrors.length === 0)
         && (!siblingPath || packagedP0?.ok === true);
       try {

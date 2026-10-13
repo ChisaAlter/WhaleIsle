@@ -182,7 +182,7 @@
   height: 100%;
   min-height: 0;
   min-width: 0;
-  overflow: hidden;
+  overflow: auto;
 }
 
 /* Pane tabs sit beneath the application caption, for both guide and content. */

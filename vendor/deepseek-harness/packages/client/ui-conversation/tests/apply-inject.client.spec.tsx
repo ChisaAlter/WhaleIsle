@@ -8,6 +8,7 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { CommandContribution, CommandUiContract } from '@deepseek-ai/dsh-client-ui-commands/client'
 import type { ISession, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { installConnection } from '@deepseek-ai/dsh-client-connection/client'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import {
   SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages,
@@ -40,6 +41,7 @@ function sessionFakeFor() {
 
 async function bench() {
   const runtime = await SlotTestRuntime.create()
+  await runtime.mount({ apply: installConnection })
   const rootUpload = vi.fn(() => Promise.resolve({
     ok: true as const,
     value: {

@@ -208,6 +208,8 @@ async function run() {
   })()`);
   const open = async () => {
     await js(`document.querySelector('#dismiss-message').click(); document.querySelector('#content [data-action="subscription"]').click()`);
+    await waitFor(`document.querySelector('#editor').open && editor?.type === 'source-picker' && document.querySelector('#source-picker [data-action="source-subscription"][data-id="claude"]')`);
+    await js(`document.querySelector('#source-picker [data-action="source-subscription"][data-id="claude"]').click()`);
     await waitFor(`document.querySelector('#editor').open && document.querySelector('#f-agent')`);
   };
   const chooseSubscription = id => js(`(() => {
@@ -215,8 +217,13 @@ async function run() {
     select.dispatchEvent(new Event('change', { bubbles: true }));
   })()`);
   const chooseCursor = () => chooseSubscription('cursor');
-  const install = async () => {
+  const requestInstall = async () => {
     await js(`document.querySelector('#fields [data-action="install-adapter"]').click()`);
+    await waitFor(`document.querySelector('#confirmation').open && document.querySelector('#accept-confirm').textContent === '信任并安装'`);
+    await js(`document.querySelector('#accept-confirm').click()`);
+  };
+  const install = async () => {
+    await requestInstall();
     await waitFor(`!document.querySelector('#message').hidden`);
   };
   const screenshots = [];
@@ -263,7 +270,7 @@ async function run() {
     const failureDefault = (await read()).selected;
     await chooseCursor();
     const previousCatalogs = catalogs.length;
-    await js(`document.querySelector('#fields [data-action="install-adapter"]').click()`);
+    await requestInstall();
     await waitFor(`!document.querySelector('#form-error').hidden && !document.querySelector('#fields [data-action="install-adapter"]').disabled`);
     const failed = await read(), failureRefreshes = catalogs.length - previousCatalogs;
     await closeEditor();
@@ -296,6 +303,8 @@ async function run() {
 
     scenario = 'api-provider';
     await js(`document.querySelector('#content [data-action="add-provider"]').click()`);
+    await waitFor(`document.querySelector('#editor').open && editor?.type === 'source-picker' && document.querySelector('#source-picker [data-action="source-custom"]')`);
+    await js(`document.querySelector('#source-picker [data-action="source-custom"]').click()`);
     await waitFor(`document.querySelector('#editor').open && document.querySelector('#f-name')`);
     await js(`(() => {
       document.querySelector('#f-name').value = 'Fixture API';

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement, type ReactNode } from 'react'
 import {
   Button,
   IconChevronLeftOutline14,
@@ -10,6 +10,8 @@ import {
   Input,
   Menu,
   Tooltip,
+  foregroundModalSurfaces,
+  modalSelector,
   type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -74,6 +76,27 @@ function currentCwd(useSessions: PreviewPanelProps['useSessions']): string | und
     const next = s.byId[id]?.cwd
     return next ? next : undefined
   })
+}
+
+/** Observe actual foreground ownership, including Modals portaled outside the browser seat. */
+function useForegroundOcclusion(): boolean {
+  const [occluded, setOccluded] = useState(() => foregroundModalSurfaces(document).length > 0)
+  useLayoutEffect(() => {
+    const sync = (): void => { setOccluded(foregroundModalSurfaces(document).length > 0) }
+    const containsModal = (node: Node): boolean => node instanceof Element
+      && (node.matches(modalSelector) || node.querySelector(modalSelector) !== null)
+    const observer = new MutationObserver((records) => {
+      if (records.some(record => record.type === 'attributes'
+        || [...record.addedNodes, ...record.removedNodes].some(containsModal))) sync()
+    })
+    observer.observe(document.body, {
+      childList: true, subtree: true, attributes: true,
+      attributeFilter: ['aria-hidden', 'aria-modal', 'role', 'hidden', 'inert'],
+    })
+    sync()
+    return () => { observer.disconnect() }
+  }, [])
+  return occluded
 }
 
 function readBounds(el: HTMLElement | null): PreviewBounds | undefined {
@@ -162,7 +185,7 @@ function ChromeButton({
  */
 export function PreviewPanel({
   active,
-  occluded,
+  occluded: seatOccluded,
   previewAvailable,
   previewOpen,
   previewNavigate,
@@ -202,6 +225,10 @@ export function PreviewPanel({
   t,
 }: PreviewPanelProps): ReactNode {
   const hostRef = useRef<HTMLDivElement>(null)
+  // Native guest views paint above renderer DOM. A real foreground Modal or
+  // menu therefore releases their presentation lease, preserving the guest.
+  const foregroundOccluded = useForegroundOcclusion()
+  const occluded = seatOccluded || foregroundOccluded
   const cwd = currentCwd(useSessions)
   const mainViewSessionId = useSessions(s => Object.values(s.byId)
     .find(row => (row.retainedBy.mainView ?? 0) > 0)?.id)
@@ -293,6 +320,7 @@ export function PreviewPanel({
     let reclaimFloatGuest = floatOwnedGuestRef.current
     floatOwnedGuestRef.current = false
     const sync = (): void => {
+      if (foregroundModalSurfaces(document).length > 0) return
       const occupant = visibleBounds(readBounds(hostRef.current))
       if (occupant === undefined) {
         if (visible || reclaimFloatGuest) {
@@ -358,9 +386,11 @@ export function PreviewPanel({
   }, [deviceToolbar, viewportSetting, zoomFactor, previewId, active, occluded, overlayOpen, pipOpen, miniPlayer.open, previewResize])
 
   useEffect(() => {
+    const current = readMiniPlayer()
+    if (previewId === null || current.previewId !== previewId) return
     setMiniPlayerSuspended(occluded || overlayOpen || pipOpen)
-    if (miniPlayer.open) notifyMiniPlayerLayout()
-  }, [occluded, overlayOpen, pipOpen, miniPlayer.open])
+    if (current.open) notifyMiniPlayerLayout()
+  }, [previewId, miniPlayer.previewId, occluded, overlayOpen, pipOpen, miniPlayer.open])
 
   useEffect(() => {
     if (previewId === null) {

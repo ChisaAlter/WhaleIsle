@@ -12,6 +12,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { ShortcutCommandId, ShortcutFixedCommand } from '@deepseek-ai/dsh-client-shortcuts/client'
 import { UiConversation } from './conversation/assembly.ts'
 import type { ViewTab } from './contract/views.ts'
@@ -42,6 +43,8 @@ import { ResizeRow } from './settings/ResizeRow.tsx'
 import type { ResizeRowInjected } from './settings/ResizeRow.tsx'
 import { StatsLineRow } from './settings/StatsLineRow.tsx'
 import type { StatsLineRowInjected } from './settings/StatsLineRow.tsx'
+import { NextPromptRow } from './settings/NextPromptRow.tsx'
+import type { NextPromptRowInjected } from './settings/NextPromptRow.tsx'
 import { PeakValleySettingsRow } from './settings/PeakValleyRow.tsx'
 import type { PeakValleySettingsRowInjected } from './settings/PeakValleyRow.tsx'
 import { CostSettingsRow } from './settings/CostSettingsRow.tsx'
@@ -64,6 +67,7 @@ import { en, NS, zh, type ConversationKey } from './locales.ts'
 import {
   CONVERSATION_SETTINGS_NAMESPACE, type ConversationSettings,
 } from '../submission-settings.ts'
+import { NEXT_PROMPT_ENDPOINT, nextPromptResultSchema } from '../next-prompt-contract.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -74,7 +78,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Services required by the Conversation plugin. */
 export const inject = [
-  'slots', 'sessions', 'fileUpload', 'uiSession', 'uiWorkspace', 'locale', 'configForms',
+  'slots', 'sessions', 'fileUpload', 'uiSession', 'uiWorkspace', 'locale', 'configForms', 'connection',
 ]
 
 /** Conversation runtime configuration. */
@@ -257,6 +261,17 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       setStatsLine: (value) => { submissionPolicy.setStatsLine(value) },
     }),
   }, StatsLineRow))
+
+  ctx.slots.inject('settings.interface.item', () => ctx.slots.register({
+    name: 'settings.interface.item',
+    id: 'next-prompt',
+    order: 85,
+    locale: NS,
+    inject: (): NextPromptRowInjected => ({
+      hooks: { nextPrompt: submissionPolicy.nextPrompt, writable: submissionPolicy.writable },
+      setNextPrompt: (value) => { submissionPolicy.setNextPrompt(value) },
+    }),
+  }, NextPromptRow))
 
   ctx.slots.inject('settings.interface.item', () => ctx.slots.register({
     name: 'settings.interface.item',
@@ -599,6 +614,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       if (sessionId === undefined) {
         return {
           keyboard: undefined,
+          requestNextPrompt: undefined,
           addFiles: undefined,
           removeAttachment: undefined,
           resolveDraftAttachments: undefined,
@@ -608,6 +624,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
           hooks: {
             stopShortcut,
             busyEnter: submissionPolicy.busyEnter,
+            nextPrompt: submissionPolicy.nextPrompt,
             fileUploads: ABSENT_FILE_UPLOADS,
             notices: ABSENT_NOTICES,
             lexicon: ABSENT_LEXICON,
@@ -629,6 +646,12 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       const bridge = hostPathBridge()
       return {
         keyboard: shell,
+        requestNextPrompt: async (signal) => {
+          const connection = ctx.get('connection') as ConnectionHandle
+          const response = await connection.rpc.call('/api', NEXT_PROMPT_ENDPOINT, { sessionId }, signal)
+          if (!response.ok) throw new Error(response.error.message)
+          return nextPromptResultSchema.parse(response.value)
+        },
         addFiles: (files, directories = new Set()) => {
           if (sessions.binding(sessionId) === undefined) return t('file.sessionUnavailable')
           if (shell.snapshot.phase === 'adjudicating' || shell.snapshot.phase === 'submitting') {
@@ -692,6 +715,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         hooks: {
           stopShortcut,
           busyEnter: submissionPolicy.busyEnter,
+          nextPrompt: submissionPolicy.nextPrompt,
           fileUploads: conversation.fileUploads,
           notices: shell.notices,
           lexicon: shell.lexicon,

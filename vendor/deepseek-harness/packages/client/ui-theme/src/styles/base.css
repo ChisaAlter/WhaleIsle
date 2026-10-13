@@ -51,8 +51,15 @@
 }
 
 body {
+  --dsw-alias-label-placeholder: var(--dsw-alias-label-secondary);
   --dsw-alias-settings-card-fill: var(--dsw-alias-bg-layer-2);
   --dsw-alias-settings-card-stroke: var(--dsw-alias-border-l4);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--dsw-alias-label-placeholder);
+  opacity: 1;
 }
 
 [data-dsh-automatic-focus]:focus,

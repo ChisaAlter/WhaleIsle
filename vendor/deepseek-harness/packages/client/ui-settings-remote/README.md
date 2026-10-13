@@ -13,4 +13,6 @@ Registration requires Electron `window.shell` `getRemote` / `saveRemote` / `rota
 
 See desktop feature cards `remote-settings` and `mobile-remote`.
 
+With the `chisacode-v2` gateway, retired host credentials appear only in a collapsed legacy-cleanup row. `legacyRelayTokenSet` indicates whether there is a stored token to clear; the normal gateway form has no host-token input or save action. Other protocols retain their existing credential controls.
+
 No runtime invariant companion is published; this package owns no independent durable event relationship, and focused package tests cover its UI or service behavior.

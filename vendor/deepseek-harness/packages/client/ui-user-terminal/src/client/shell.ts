@@ -1,5 +1,6 @@
 /** Desktop PTY methods the Electron preload exposes on `window.shell`. */
 export interface PtyShell {
+  ptyCanCreate?: (cwd: string) => Promise<boolean>
   ptyCreate?: (input: { cwd: string }) => Promise<{ id: string }>
   ptyWrite?: (id: string, data: string) => Promise<void>
   /** Cumulative acknowledgement: frame `seq` and every earlier frame were consumed. */
@@ -12,6 +13,7 @@ export interface PtyShell {
 
 /** Injected PTY + layout writes shared by the drawer and the surface. */
 export interface TerminalShellInjected {
+  ptyCanCreate: (cwd: string) => Promise<boolean>
   ptyCreate: (input: { cwd: string }) => Promise<{ id: string }>
   ptyWrite: (id: string, data: string) => Promise<void>
   /** Cumulative acknowledgement: frame `seq` and every earlier frame were consumed. */
@@ -39,13 +41,14 @@ function unavailable(): Promise<{ id: string }> {
  */
 export function readPtyShell(): Pick<
   TerminalShellInjected,
-  'ptyCreate' | 'ptyWrite' | 'ptyAck' | 'ptyResize' | 'ptyKill' | 'onPtyData' | 'onPtyExit'
+  'ptyCanCreate' | 'ptyCreate' | 'ptyWrite' | 'ptyAck' | 'ptyResize' | 'ptyKill' | 'onPtyData' | 'onPtyExit'
 > {
   /* v8 ignore next -- browser-only module; Node coverage never sees a missing window. */
   const shell = typeof window === 'undefined'
     ? undefined
     : (window as Window & { shell?: PtyShell }).shell
   return {
+    ptyCanCreate: cwd => shell?.ptyCanCreate?.(cwd) ?? Promise.resolve(false),
     ptyCreate: input => shell?.ptyCreate?.(input) ?? unavailable(),
     ptyWrite: (id, data) => shell?.ptyWrite?.(id, data) ?? Promise.resolve(),
     ptyAck: (id, seq) => shell?.ptyAck?.(id, seq) ?? Promise.resolve(),

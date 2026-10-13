@@ -172,6 +172,8 @@ Browser 空白页、导航工具栏与尚未加载网页的 guest 占位区透�
 
 输入条：`InputBar` 胶囊卡（22 圆角）静止态自带整圈轮廓光——`inset 0 0 12px 1px rgba(255, 255, 255, 0.25)`，四条边与四个圆角均匀包裹（inset 光天然跟随 `border-radius`；浅色主题白上加白自然隐形，不写主题分支）。卡片不带外投影（elevation-soft 不上输入条），分离由轮廓光 + 发丝描边承担；壁纸亮部透过玻璃只做环境叠加，轮廓光才是自有合同。运行态思考炫光（beam）参照 Libraries.dev Border Beam 的 Rotate / Large / Colorful 层次叠加在这圈轮廓光之上：未滤镜的命中壳在卡边外扩 4px 并继续 `overflow: hidden`，22px stroke / inner 内缩回原卡边，stroke 以 0.6 透明度、inner 以旋转窗口共同形成移动亮区，masked bloom 光源由外层容器以 `blur(8px)` 模糊并以 0.36 透明度进入这圈圆角光晕；4px 小于 composer stack 的 6px 间距，因此不盖住 dock。空会话 Hero 的 workspace / agent-preset 行与输入卡共享实际宽轴：有已保存宽度时读取 `--dsh-composer-resized-width`，否则回退 `--dsh-composer-card-max-width`，整行在 composer stack 内居中，不能留在外层满宽左缘。静止/运行的层级靠流光对比，不加新色板。壁纸模式下输入条背后不铺座位暗带：输入卡与统计行直接坐在壁纸上，任何带状填充都会读成输入框投下的阴影。
 
+普通会话的聊天滚动区域在输入卡栈上方结束，以输入座位的实时高度在滚动区域外留出空间；聊天文字不从透明输入座位下穿过。“到底部”按钮距聊天滚动区域底边 16px，随剩余可见区域定位。输入卡与统计行继续直接显示在壁纸上，不增加座位底板或阴影带。
+
 草稿首次发送只在切入会话的短暂滑行期对输入卡栈使用 `transform` 位移，让位移由合成层绘制；Hero 静止布局不使用 transform。内置的 fixed 浮层挂在页面 portal，滑行结束即清除栈的 transform，后续弹层继续使用视口坐标。减少动态效果时直接落位。
 
 思考炫光不是常亮彩色整圈：2px stroke 使用参考实现的旋转 conic 强度窗口，inner 使用同方向的双 conic 窗口，允许尾迹之外透明；移动 filament / bloom 是唯一高亮峰，静态 rim 负责始终完整的四边与四角轮廓。圆角按**整轮经过性**验收：24 个冻结角度内，亮峰必须完整经过四个 22px 圆角弧，经过时与相邻直边连续、没有平切或缺口；同时至少存在暗帧，防止再次退化成整圈等亮霓虹。stroke 保留 `border-radius + 两层 ring mask`，不得叠加第二层 `clip-path` 抗锯齿。

@@ -1068,7 +1068,8 @@ function renderHomeStatus(status) {
     bits.push('启动或关闭未完成，详见启动诊断');
   }
   if (desktopOperation) bits.push(`已等待 ${Math.floor((Date.now() - desktopOperation.startedAt) / 1000)} 秒`);
-  $('home-status').textContent = bits.join(' · ');
+  const statusText = bits.join(' · ');
+  if ($('home-status').textContent !== statusText) $('home-status').textContent = statusText;
   $('home-state-dot').dataset.state = desktopActionBusy() ? 'busy' : (desktopIsRunning(desktop) ? 'running' : 'stopped');
 }
 
@@ -1606,6 +1607,17 @@ function syncImportSummary() {
   if (selLine) {
     selLine.textContent = `已选 会话 ${sessionsChecked} · 技能 ${skillsChecked} · 插件 ${pluginsChecked} · MCP ${mcpChecked} · 设置 ${settingsChecked} · 预设 ${presetsChecked}`;
   }
+  const scope = $('import-scope');
+  if (scope) {
+    scope.textContent = [
+      $('import-overwrite').checked
+        ? '覆盖已选项中同名的会话、技能、MCP、预设和设置（含全局指令及关联凭据）；重新安装已勾选插件。'
+        : '保留已有同名项及关联凭据；跳过已安装的插件。',
+      $('import-attachments').checked
+        ? `附件会合并整个 attachments/ 目录，包括未勾选会话的附件；同路径附件${$('import-overwrite').checked ? '覆盖' : '保留'}。`
+        : '不导入附件。',
+    ].join(' ');
+  }
 }
 
 function syncSessionClusters() {
@@ -2003,9 +2015,16 @@ function setRoutePop(chip, pop, open) {
   if (!chip || !pop) {
     return;
   }
+  if (!open && pop.contains(document.activeElement)) chip.focus();
   pop.hidden = !open;
   if (chip.setAttribute) {
     chip.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  if (open) {
+    const option = pop.querySelector('[aria-selected="true"]:not(:disabled)')
+      || pop.querySelector('[role="option"]:not(:disabled)');
+    pop.querySelectorAll('[role="option"]').forEach(node => { node.tabIndex = node === option ? 0 : -1; });
+    option?.focus();
   }
 }
 
@@ -2023,10 +2042,15 @@ function closeRoutePops(exceptWrap) {
 // Shared option list for every route popover: checked current, unverified
 // rows disabled, one click delegates to the caller's save flow.
 function renderRouteOptions(pop, routes, routeId, onPick) {
+  const focusedId = pop.contains(document.activeElement) ? document.activeElement.dataset.routeOpt : null;
+  const selectedId = routes.find(route => route.verified && route.id === routeId)?.id
+    || routes.find(route => route.verified)?.id;
+  const focusId = routes.some(route => route.verified && route.id === focusedId) ? focusedId : selectedId;
   pop.innerHTML = routes.map((route) => `
     <button type="button" role="option" class="route-opt"
       data-route-opt="${escapeHtml(route.id)}"
       aria-selected="${route.id === routeId ? 'true' : 'false'}"
+      tabindex="${route.id === focusId ? '0' : '-1'}"
       ${route.verified ? '' : 'disabled'}>
       <span class="route-opt-check" aria-hidden="true">${route.id === routeId ? '✓' : ''}</span>
       <span class="route-opt-body">
@@ -2037,6 +2061,32 @@ function renderRouteOptions(pop, routes, routeId, onPick) {
   pop.querySelectorAll('[data-route-opt]').forEach((button) => {
     button.addEventListener('click', () => { void onPick(button.dataset.routeOpt); });
   });
+  if (focusedId && !pop.hidden) {
+    const option = [...pop.querySelectorAll('[role="option"]:not(:disabled)')]
+      .find(node => node.dataset.routeOpt === focusedId)
+      || pop.querySelector('[tabindex="0"]:not(:disabled)');
+    option?.focus();
+  }
+  pop.onkeydown = event => {
+    const options = [...pop.querySelectorAll('[role="option"]:not(:disabled)')];
+    const index = options.indexOf(document.activeElement);
+    let next;
+    if (event.key === 'ArrowDown') next = options[(index + 1) % options.length];
+    if (event.key === 'ArrowUp') next = options[(index - 1 + options.length) % options.length];
+    if (event.key === 'Home') next = options[0];
+    if (event.key === 'End') next = options.at(-1);
+    if (next) {
+      event.preventDefault();
+      options.forEach(node => { node.tabIndex = node === next ? 0 : -1; });
+      next.focus();
+    }
+  };
+  pop.onfocusout = event => {
+    if (event.relatedTarget && !pop.closest('.route-pop-wrap').contains(event.relatedTarget)) {
+      const chip = pop.closest('.route-pop-wrap').querySelector('[aria-haspopup="listbox"]');
+      setRoutePop(chip, pop, false);
+    }
+  };
 }
 
 async function pickDownloadRoute(routeId, current, afterSave) {
@@ -2278,7 +2328,11 @@ function bind() {
   });
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
+      const wrap = document.activeElement?.closest('.route-pop-wrap');
+      const chip = wrap?.querySelector('[aria-haspopup="listbox"]');
+      const wasOpen = wrap?.querySelector('.route-pop')?.hidden === false;
       closeRoutePops();
+      if (wasOpen) { event.preventDefault(); chip?.focus(); }
     }
   });
   $('btn-skip').addEventListener('click', () => void runDesktopAction('skipUserPlugins'));
@@ -2382,6 +2436,8 @@ function bind() {
     syncSessionClusters();
     syncImportSummary();
   });
+  $('import-overwrite').addEventListener('change', syncImportSummary);
+  $('import-attachments').addEventListener('change', syncImportSummary);
   $('btn-import-select-all').addEventListener('click', () => {
     setGroupChecked(IMPORT_CATS[importCat].name, true);
     syncSessionClusters();

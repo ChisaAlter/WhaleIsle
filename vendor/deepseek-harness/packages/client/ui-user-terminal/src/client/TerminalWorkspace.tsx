@@ -107,7 +107,7 @@ function ActionBar({
           {divider()}
         </>
       ) : null}
-      <Tooltip label={t('action.new')} side="bottom">
+      <Tooltip label={t(available ? 'action.new' : 'empty.unavailable')} side="bottom">
         <button
           key={hasSessions ? 'new-terminal' : 'ensure-terminal'}
           type="button"
@@ -148,6 +148,7 @@ export function TerminalWorkspace({
   useStore,
   actions,
   ptyCreate,
+  ptyCanCreate,
   ptyWrite,
   ptyResize,
   ptyKill,
@@ -173,11 +174,20 @@ export function TerminalWorkspace({
   const visibleIds = activeGroup?.terminalIds ?? (activeId ? [activeId] : [])
   const splitDirection: TerminalSplitDirection = activeGroup?.splitDirection ?? 'horizontal'
   const atLimit = visibleIds.length >= MAX_TERMINALS_PER_GROUP
-  const available = Boolean(cwd)
+  const [authorizedCwd, setAuthorizedCwd] = useState<string>()
+  const available = cwd !== undefined && authorizedCwd === cwd
+  useEffect(() => {
+    let cancelled = false
+    setAuthorizedCwd(undefined)
+    if (cwd) void ptyCanCreate(cwd).then(allowed => {
+      if (!cancelled && allowed) setAuthorizedCwd(cwd)
+    }).catch(() => { /* Keep creation unavailable when authority cannot be read. */ })
+    return () => { cancelled = true }
+  }, [cwd, ptyCanCreate])
   const hasTerminalSidebar = sessions.length > 1
 
   const create = useCallback(async (kind: 'ensure' | 'new' | TerminalSplitDirection) => {
-    if (!cwd || !acquireCreate(actions)) return
+    if (!available || !cwd || !acquireCreate(actions)) return
     try {
       const snap = snapshotOf(actions)
       if (kind === 'ensure' && snap && snap.sessions.length > 0) return
@@ -190,7 +200,7 @@ export function TerminalWorkspace({
     } finally {
       releaseCreate(actions)
     }
-  }, [actions, atLimit, cwd, ptyCreate])
+  }, [actions, atLimit, available, cwd, ptyCreate])
 
   const closeSession = useCallback((id: string) => {
     actions.close(id)
@@ -206,18 +216,19 @@ export function TerminalWorkspace({
   useEffect(() => {
     const el = rootRef.current
     if (el === null || typeof ResizeObserver === 'undefined') return
+    wasOpen.current = false
     const observer = new ResizeObserver(() => {
       const open = el.clientHeight > 0
       const justOpened = open && !wasOpen.current
       wasOpen.current = open
       if (!justOpened) return
       const snap = snapshotOf(actions)
-      if (!cwd || !snap || snap.sessions.length > 0 || snap.createFailed) return
+      if (!available || !cwd || !snap || snap.sessions.length > 0 || snap.createFailed) return
       void create('ensure')
     })
     observer.observe(el)
     return () => { observer.disconnect() }
-  }, [actions, create, createFailed, cwd])
+  }, [actions, available, create, createFailed, cwd])
 
   const onResizePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return

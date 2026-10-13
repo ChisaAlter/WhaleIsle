@@ -34,5 +34,5 @@
 }
 
 .input::placeholder {
-  color: var(--dsw-alias-label-dimmed);
+  color: var(--dsw-alias-label-placeholder);
 }
