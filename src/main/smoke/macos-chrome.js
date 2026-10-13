@@ -3,9 +3,11 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
 const { app, nativeImage } = require('electron');
 
+const execFileAsync = promisify(execFile);
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const VISIBLE_CONTROL = `(el) => {
   const r = el.getBoundingClientRect();
@@ -15,8 +17,7 @@ const VISIBLE_CONTROL = `(el) => {
   return hit === el || el.contains(hit);
 }`;
 
-async function waitFor(probe, label) {
-  const deadline = Date.now() + 12_000;
+async function waitFor(probe, label, deadline = Date.now() + 12_000) {
   while (Date.now() < deadline) {
     if (await probe()) return;
     await sleep(150);
@@ -69,10 +70,11 @@ function cocoaButtons() {
   };
 }
 
-function captureWindow(win, native, dir, name) {
+async function captureWindow(win, native, dir, name) {
   const file = path.join(dir, `${name}.png`);
   const snapshot = native.snapshot(win);
-  execFileSync('/usr/sbin/screencapture', ['-x', '-o', '-l', String(snapshot.windowNumber), file], { timeout: 10_000 });
+  // Let AppKit and Chromium present the resized frame while the OS captures it.
+  await execFileAsync('/usr/sbin/screencapture', ['-x', '-o', '-l', String(snapshot.windowNumber), file], { timeout: 10_000 });
   const image = nativeImage.createFromPath(file);
   assert.equal(image.isEmpty(), false, `${name}: OS capture must be readable`);
   const size = image.getSize();
@@ -99,6 +101,10 @@ async function mainLayout(wc) {
     const leading = document.querySelector('[data-shell-leading-band]');
     const reopen = leading && Array.from(leading.querySelectorAll('button')).find(el =>
       /open sidebar|打开侧边栏/i.test(el.getAttribute('aria-label') || ''));
+    const composer = document.querySelector('[data-composer-seat]');
+    const send = composer?.querySelector('button[aria-label="Send message"], button[aria-label="发送消息"]');
+    const toolbar = document.querySelector('[data-titlebar-trailing]');
+    const geometry = el => el ? { rect: rect(el), visibleAndHit: visibleControl(el) } : null;
     const overlap = fullscreen ? [] : Array.from(document.querySelectorAll('button, input, a[href]')).filter(el => {
       const r = el.getBoundingClientRect();
       return visibleControl(el) && r.y < 40 && r.bottom > 8 && r.x < 80 && r.right > 8;
@@ -110,6 +116,12 @@ async function mainLayout(wc) {
       collapsed: frame?.hasAttribute('data-sidebar-collapsed') || false,
       leading: leading ? rect(leading) : null,
       reopen: reopen ? { rect: rect(reopen), visibleAndHit: visibleControl(reopen) } : null,
+      geometry: {
+        frame: geometry(frame),
+        composer: geometry(composer),
+        send: geometry(send),
+        toolbar: toolbar ? { ...geometry(toolbar), buttons: Array.from(toolbar.querySelectorAll('button')).map(geometry) } : null,
+      },
       overlap,
       customButtons: document.querySelectorAll('#dshd-shell-controls [data-act]').length,
       bodyRadius: getComputedStyle(document.body).borderTopLeftRadius,
@@ -158,6 +170,49 @@ async function runMacosChromeQa(win, wc, helpers) {
     console.log(`[DSH_MACOS_STEP] ${name} passed`);
     return detail;
   };
+  const prepareMainCapture = async (width, collapsed, deadline) => {
+    let observed;
+    try {
+      await waitFor(async () => {
+        const layout = await mainLayout(wc);
+        const view = require('../window').getHarnessView();
+        assert.ok(view && view.webContents === wc, 'capture must inspect the live Harness view');
+        observed = { layout, windowBounds: win.getContentBounds(), viewBounds: view.getBounds() };
+        const { frame, composer, send, toolbar } = layout.geometry;
+        return Math.abs(layout.viewport.width - width) < 2 && layout.collapsed === collapsed
+          && Math.abs(observed.windowBounds.width - width) < 2
+          && Math.abs(observed.viewBounds.width - width) < 2
+          && Math.abs(observed.viewBounds.height - layout.viewport.height) < 2
+          && frame?.visibleAndHit && Math.abs(frame.rect.width - width) < 2
+          && composer?.visibleAndHit && send?.visibleAndHit
+          && toolbar?.visibleAndHit && toolbar.buttons.length > 0
+          && toolbar.buttons.every(button => button?.visibleAndHit);
+      }, `main ${width} complete layout and control hits`, deadline);
+    } finally {
+      result.layoutEvidence ||= [];
+      result.layoutEvidence.push(observed || { width, collapsed, error: 'layout unavailable' });
+      persist();
+    }
+    // innerWidth updates before responsive observers and native surface commits.
+    // Keep the two paint frames and capture fence inside the same resize budget.
+    await wc.executeJavaScript(`new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('resize paint frames did not settle')), ${Math.max(0, deadline - Date.now())});
+      requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(timer); resolve(); }));
+    })`);
+    let timer;
+    const paint = await Promise.race([
+      wc.capturePage(),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('resize paint capture did not settle')), Math.max(0, deadline - Date.now())); }),
+    ]).finally(() => clearTimeout(timer));
+    assert.equal(paint.isEmpty(), false, 'resize paint fence must contain a Chromium frame');
+    observed.paintFence = { size: paint.getSize(), scaleFactors: paint.getScaleFactors() };
+    if (width === 960 && !collapsed) {
+      observed.paintFence.file = 'main-960-expanded-renderer.png';
+      fs.writeFileSync(path.join(dir, observed.paintFence.file), paint.toPNG());
+    }
+    persist();
+    return observed.layout;
+  };
   try {
     const native = cocoaButtons();
     win.show();
@@ -166,10 +221,12 @@ async function runMacosChromeQa(win, wc, helpers) {
     wc.sendInputEvent({ type: 'keyUp', keyCode: 'ESC' });
     await sleep(250);
     await record('main.1440.workspace-baseline', async () => {
+      const deadline = Date.now() + 12_000;
       win.setSize(1440, 780);
-      await waitFor(async () => Math.abs((await mainLayout(wc)).viewport.width - 1440) < 2, 'baseline main width');
+      await waitFor(async () => Math.abs((await mainLayout(wc)).viewport.width - 1440) < 2, 'baseline main width', deadline);
       await setSidebar(wc, false);
-      result.screenshots.push(captureWindow(win, native, dir, 'main-1440-baseline'));
+      await prepareMainCapture(1440, false, deadline);
+      result.screenshots.push(await captureWindow(win, native, dir, 'main-1440-baseline'));
       return 'original workspace view before the long-caption Session';
     });
     await record('main.persisted-long-title', async () => {
@@ -205,7 +262,7 @@ async function runMacosChromeQa(win, wc, helpers) {
         setBootHarnessCovered(win, false);
         await waitFor(() => win.webContents.executeJavaScript(`Boolean(document.body && !document.body.hasAttribute('data-harness-covered') && getComputedStyle(document.body).visibility === 'visible')`), 'real boot visibility');
         await sleep(250);
-        result.screenshots.push(captureWindow(win, native, dir, 'boot'));
+        result.screenshots.push(await captureWindow(win, native, dir, 'boot'));
         return 'existing boot document uncovered; live Harness view retained';
       } finally {
         win.addBrowserView(view);
@@ -219,12 +276,13 @@ async function runMacosChromeQa(win, wc, helpers) {
       { width: 960, collapsed: false },
       { width: 960, collapsed: true },
     ]) {
+      const deadline = Date.now() + 12_000;
       win.setSize(width, 780);
       win.center();
-      await waitFor(async () => Math.abs((await mainLayout(wc)).viewport.width - width) < 2, `main width ${width}`);
+      await waitFor(async () => Math.abs((await mainLayout(wc)).viewport.width - width) < 2, `main width ${width}`, deadline);
       await setSidebar(wc, collapsed);
       await record(`main.${width}.${collapsed ? 'collapsed' : 'expanded'}`, async () => {
-        const layout = await mainLayout(wc);
+        const layout = await prepareMainCapture(width, collapsed, deadline);
         assert.equal(layout.platform, 'darwin');
         assert.equal(layout.customButtons, 0);
         assert.deepEqual(layout.overlap, [], 'HTML controls must clear native traffic lights');
@@ -232,7 +290,7 @@ async function runMacosChromeQa(win, wc, helpers) {
           assert.ok(layout.leading && layout.leading.x >= 80, 'collapsed sidebar controls must clear traffic lights');
           assert.ok(layout.reopen?.visibleAndHit && layout.reopen.rect.x >= 80, 'the leading seat must contain a visible and hittable reopen button');
         }
-        result.screenshots.push(captureWindow(win, native, dir, `main-${width}-${collapsed ? 'collapsed' : 'expanded'}`));
+        result.screenshots.push(await captureWindow(win, native, dir, `main-${width}-${collapsed ? 'collapsed' : 'expanded'}`));
         return layout;
       });
     }
@@ -272,7 +330,7 @@ async function runMacosChromeQa(win, wc, helpers) {
         // That flag does not prove they cover the content: retain the OS image
         // for visual review and verify the native green control stays available.
         const fullscreenNative = native.snapshot(win);
-        result.screenshots.push(captureWindow(win, native, dir, 'main-fullscreen'));
+        result.screenshots.push(await captureWindow(win, native, dir, 'main-fullscreen'));
         assert.ok(fullscreenNative.buttons.some(item => item.name === 'zoom' && item.present && item.enabled),
           'native green control must remain available in AppKit fullscreen');
         win.setFullScreen(false);
@@ -315,7 +373,7 @@ async function runMacosChromeQa(win, wc, helpers) {
       assert.equal(layout.platform, 'darwin');
       assert.equal(layout.customButtons, 0);
       assert.equal(layout.horizontalOverflow, false);
-      result.screenshots.push(captureWindow(launcher, native, dir, 'launcher-860'));
+      result.screenshots.push(await captureWindow(launcher, native, dir, 'launcher-860'));
       native.click(launcher, 0);
       await waitFor(() => launcher.isDestroyed(), 'native launcher close');
       assert.equal(win.isDestroyed(), false, 'closing the launcher must preserve the main window');

@@ -11,6 +11,7 @@
 - 上游和窗口检查仅在相应改动时执行。
 - 工具测试独立运行，不混入 `npm test`。
 - 需要 macOS 时手动运行 Development CI，勾选 `include_macos`；默认只交付 Windows。
+- `Release macOS single-file diagnosis` 的手动运行仅做当前工作分支的 Mac 打包与真实包内窗口验收，适合定向排查 Mac 截图；它不负责发布，也不替代正式发布所用的同次 main Development CI 原始附件。
 - 汇总检查名为 `CI`，失败或取消不会变成通过。main 的 GitHub 分支保护要求经 PR 合并，并要求 GitHub Actions 的 `CI` 检查通过；管理员同样受保护，禁止强推与删除。不强制第二位审查者批准，合并仍由用户决定。保护设置不要求分支必须追上最新 main，避免仅因无关合并重复构建。
 
 安装或升级行为发生变化时，在开发阶段验证相应实际操作，并在 PR 说明结果。没有固定的每版人工验收全表。
