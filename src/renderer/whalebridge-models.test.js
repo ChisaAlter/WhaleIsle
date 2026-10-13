@@ -12,11 +12,24 @@ test('WhaleBridge compact overview and model controls preserve focus, position a
   try {
     await new Promise((resolve, reject) => {
       const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
+      const startedAt = Date.now();
       const child = spawn(electron, [path.join(__dirname, 'whalebridge-models.child.cjs'), profile], { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
       let output = ''; child.stdout.on('data', data => { output += data; }); child.stderr.on('data', data => { output += data; });
-      const timer = setTimeout(() => killProcessTree(child), 45000);
+      const timer = setTimeout(() => {
+        output += '\nWHALEBRIDGE_MODELS_WATCHDOG:' + JSON.stringify({
+          elapsedMs: Date.now() - startedAt,
+          exitCode: child.exitCode,
+          signalCode: child.signalCode,
+          behaviorPassed: output.includes('WHALEBRIDGE_MODELS_RESULT:PASS'),
+        }) + '\n';
+        killProcessTree(child);
+      }, 45000);
       child.once('error', error => { clearTimeout(timer); reject(error); });
-      child.once('close', code => { clearTimeout(timer); try { assert.equal(code, 0, output); assert.match(output, /WHALEBRIDGE_MODELS_RESULT:PASS/); resolve(); } catch (error) { reject(error); } });
+      child.once('close', code => {
+        clearTimeout(timer);
+        console.log(output.split(/\r?\n/).filter(line => line.startsWith('WHALEBRIDGE_MODELS_PHASE:') || line.startsWith('WHALEBRIDGE_MODELS_WATCHDOG:')).join('\n'));
+        try { assert.equal(code, 0, output); assert.match(output, /WHALEBRIDGE_MODELS_RESULT:PASS/); resolve(); } catch (error) { reject(error); }
+      });
     });
   } finally {
     const relative = path.relative(os.tmpdir(), profile);

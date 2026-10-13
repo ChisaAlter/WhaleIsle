@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
+const startedAt = Date.now();
+const phase = name => console.log('WHALEBRIDGE_MODELS_PHASE:' + JSON.stringify({ name, elapsedMs: Date.now() - startedAt }));
 app.setPath('userData', process.argv[2]);
 const assets = path.resolve(__dirname, '../../vendor/whalebridge/internal/whalebridge/assets');
 const names = new Set(fs.readdirSync(assets));
@@ -345,6 +347,15 @@ async function run() {
     assert.equal(settingWrites.at(-1).pluginCheckins.daily, true, 'saving other settings preserves the effective adapter check-in default');
     assert.equal(settingWrites.at(-1).pluginCheckins.inactive, false, 'saving does not erase the preference of a temporarily disabled adapter');
     console.log('WHALEBRIDGE_MODELS_RESULT:PASS compact overview, model focus, grouped models, scoped visibility, stable position, pricing tiers, import preview and subscription settings');
-  } finally { releaseRead?.(); releaseWrite?.(); win.destroy(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+  } finally {
+    phase('behavior-finished');
+    releaseRead?.(); releaseWrite?.();
+    win.destroy();
+    phase('window-destroyed');
+    await new Promise(resolve => {
+      server.close(() => { phase('server-closed'); resolve(); });
+      server.closeAllConnections();
+    });
+  }
 }
-run().then(() => app.exit(0), error => { console.error(error); app.exit(1); });
+run().then(() => { phase('exit-zero'); app.exit(0); }, error => { console.error(error); phase('exit-error'); app.exit(1); });
