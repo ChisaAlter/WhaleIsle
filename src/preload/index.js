@@ -38,6 +38,7 @@ function subscribe(renderer, channel) {
 
 function windowApi(renderer) {
   return {
+    platform: process.platform,
     windowAction: send(renderer, 'shell:window'),
     getWindowState: invoke(renderer, 'shell:window-state'),
     onWindowState: subscribe(renderer, 'shell:window-state'),

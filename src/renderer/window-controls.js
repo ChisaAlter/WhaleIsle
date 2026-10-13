@@ -20,7 +20,7 @@ function mountWindowControls(host) {
   }
   const hideMin = host.dataset.minimize === 'false';
   const hideMax = host.dataset.maximize === 'false';
-  const nativeMac = document.documentElement.dataset.platform === 'darwin';
+  const nativeMac = (window.shell?.platform ?? document.documentElement.dataset.platform) === 'darwin';
   host.hidden = nativeMac;
   host.innerHTML = nativeMac ? '' : [
     hideMin ? '' : `<button type="button" data-act="minimize" aria-label="最小化">${iconMin()}</button>`,

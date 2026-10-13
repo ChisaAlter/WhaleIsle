@@ -93,6 +93,20 @@ test('sandbox preload entry is self-contained and exposes the selected role', ()
   assert.equal(exposed?.api.writeFile, undefined);
 });
 
+test('desktop roles expose their native platform before the document exists', (t) => {
+  withMainFrame(t, true);
+  const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  delete globalThis.document;
+  try {
+    for (const role of ['boot', 'harness', 'launcher']) {
+      const { exposures } = loadPreload(['electron', `--dshd-shell-role=${role}`]);
+      assert.equal(exposures.shell.platform, process.platform);
+    }
+  } finally {
+    if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument);
+  }
+});
+
 test('boot preload exposes recovery but no workspace mutation', () => {
   const api = buildShellApi('boot', fakeRenderer());
   assert.equal(typeof api.restart, 'function');
