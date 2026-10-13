@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -12,6 +12,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
 const distDir = path.join(root, 'dist')
 const timeoutMs = Number(process.env.DSH_SMOKE_TIMEOUT_MS) || 300_000
+const macosEvidenceDir = process.platform === 'darwin' ? path.join(distDir, 'macos-chrome-evidence') : null
+const macosOutput = []
 
 function packagedExecutable() {
   if (process.env.DSH_SMOKE_EXE) {
@@ -58,8 +60,14 @@ function run(executable, args, env) {
       reject(new Error(`Packaged smoke timed out after ${timeoutMs}ms.`))
     }, timeoutMs)
 
-    child.stdout.on('data', (chunk) => process.stdout.write(chunk))
-    child.stderr.on('data', (chunk) => process.stderr.write(chunk))
+    child.stdout.on('data', (chunk) => {
+      if (macosEvidenceDir) macosOutput.push(chunk)
+      process.stdout.write(chunk)
+    })
+    child.stderr.on('data', (chunk) => {
+      if (macosEvidenceDir) macosOutput.push(chunk)
+      process.stderr.write(chunk)
+    })
     child.once('error', (error) => {
       clearTimeout(timer)
       reject(error)
@@ -76,6 +84,7 @@ const dirs = createSmokeDirs('dsh-packaged-smoke-')
 const keepArtifacts = process.env.DSH_SMOKE_KEEP === '1'
 
 try {
+  if (macosEvidenceDir) mkdirSync(macosEvidenceDir, { recursive: true })
   const executable = packagedExecutable()
   if (!existsSync(executable)) {
     throw new Error(`Packaged executable not found: ${executable}`)
@@ -95,6 +104,7 @@ try {
     DSH_SMOKE: '1',
     // Packaged builds ignore ambient QA/smoke flags; the rehearsal opts in.
     DSHD_ALLOW_PACKAGED_QA: '1',
+    ...(macosEvidenceDir ? { DSH_MACOS_CHROME_EVIDENCE_DIR: macosEvidenceDir } : {}),
   }))
 
   if (!existsSync(dirs.resultPath)) {
@@ -108,6 +118,10 @@ try {
   console.error(error instanceof Error ? error.message : String(error))
   process.exitCode = 1
 } finally {
+  if (macosEvidenceDir) {
+    writeFileSync(path.join(macosEvidenceDir, 'packaged-smoke.log'), Buffer.concat(macosOutput))
+    if (existsSync(dirs.resultPath)) copyFileSync(dirs.resultPath, path.join(macosEvidenceDir, 'dshd-smoke.json'))
+  }
   if (keepArtifacts) {
     console.log(`Smoke artifacts kept at ${dirs.smokeRoot}`)
   } else {

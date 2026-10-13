@@ -294,6 +294,29 @@ const role = shellRole();
 const isMainFrame = process.isMainFrame !== false;
 const api = isMainFrame ? buildShellApi(role, ipcRenderer) : null;
 
+// The shell owns native fullscreen state; the client uses this mark to clear
+// the macOS traffic-light inset when the system hides its window buttons.
+if (isMainFrame && ['boot', 'harness', 'launcher'].includes(role)
+    && typeof window !== 'undefined' && typeof document !== 'undefined') {
+  let fullscreen = false;
+  const markWindow = () => {
+    if (document.documentElement === null) return;
+    document.documentElement.dataset.platform = process.platform;
+    document.documentElement.toggleAttribute('data-fullscreen', fullscreen);
+  };
+  const applyWindowState = (state) => {
+    fullscreen = Boolean(state?.fullscreen);
+    markWindow();
+  };
+  if (document.documentElement === null) {
+    window.addEventListener('DOMContentLoaded', markWindow, { once: true });
+  } else {
+    markWindow();
+  }
+  api.onWindowState(applyWindowState);
+  api.getWindowState().then(applyWindowState).catch(() => {});
+}
+
 // Desktop shortcut bridge (upstream ctx.shortcuts contract): the trusted
 // product main frame is marked for runtime detection, and a deliberately
 // narrow dshDesktop facade — keyboard + shortcuts only, never the full

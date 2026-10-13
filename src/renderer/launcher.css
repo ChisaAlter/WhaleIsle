@@ -32,6 +32,11 @@ body {
 /* This window's compact caption keeps the shared native controls centered. */
 .window-controls { padding: 0 8px; }
 
+html[data-platform="darwin"] .caption {
+  left: 80px;
+  right: 0;
+}
+
 .shell {
   display: flex;
   height: 100%;
@@ -51,11 +56,13 @@ body {
   z-index: 20;
 }
 
+html[data-fullscreen] .shell,
 html[data-window-maximized] .shell {
   border-radius: 0;
   box-shadow: none;
 }
 
+html[data-fullscreen] .shell::after,
 html[data-window-maximized] .shell::after { border: 0; }
 
 .rail {

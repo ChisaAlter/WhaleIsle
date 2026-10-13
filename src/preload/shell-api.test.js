@@ -337,6 +337,71 @@ test('harness subframes do not expose shell privileges', (t) => {
   assert.equal(exposures.shell, undefined);
 });
 
+test('desktop shell main frames track initial and native fullscreen state in their document', async (t) => {
+  withMainFrame(t, true);
+  const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const savedDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  t.after(() => {
+    if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow);
+    else delete globalThis.window;
+    if (savedDocument) Object.defineProperty(globalThis, 'document', savedDocument);
+    else delete globalThis.document;
+  });
+  for (const role of ['boot', 'harness', 'launcher']) {
+    const attributes = new Set();
+    const root = {
+      dataset: {},
+      toggleAttribute(name, value) { if (value) attributes.add(name); else attributes.delete(name); },
+    };
+    globalThis.window = { addEventListener() {} };
+    globalThis.document = { documentElement: root, readyState: 'complete' };
+    const listeners = new Map();
+    const calls = [];
+    loadPreload(['electron', `--dshd-shell-role=${role}`], {
+      ipcRenderer: {
+        ...fakeRenderer(),
+        invoke: async (channel) => { calls.push(channel); return { fullscreen: true }; },
+        on: (channel, listener) => { listeners.set(channel, listener); },
+      },
+    });
+    await Promise.resolve();
+    assert.equal(root.dataset.platform, process.platform);
+    assert.deepEqual(calls, ['shell:window-state']);
+    assert.equal(attributes.has('data-fullscreen'), true, `${role} must seed the native fullscreen state`);
+    listeners.get('shell:window-state')({}, { fullscreen: false });
+    assert.equal(attributes.has('data-fullscreen'), false);
+    listeners.get('shell:window-state')({}, { fullscreen: true });
+    assert.equal(attributes.has('data-fullscreen'), true);
+  }
+});
+
+test('desktop window state arriving before DOMContentLoaded is retained for the document root', async (t) => {
+  withMainFrame(t, true);
+  const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const savedDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  t.after(() => {
+    if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow);
+    else delete globalThis.window;
+    if (savedDocument) Object.defineProperty(globalThis, 'document', savedDocument);
+    else delete globalThis.document;
+  });
+  const events = new Map();
+  globalThis.window = { addEventListener: (name, listener) => events.set(name, listener) };
+  globalThis.document = { documentElement: null };
+  loadPreload(['electron', '--dshd-shell-role=launcher'], {
+    ipcRenderer: { ...fakeRenderer(), invoke: async () => ({ fullscreen: true }) },
+  });
+  await Promise.resolve();
+  const attributes = new Set();
+  globalThis.document.documentElement = {
+    dataset: {},
+    toggleAttribute(name, value) { if (value) attributes.add(name); else attributes.delete(name); },
+  };
+  events.get('DOMContentLoaded')();
+  assert.equal(globalThis.document.documentElement.dataset.platform, process.platform);
+  assert.equal(attributes.has('data-fullscreen'), true);
+});
+
 test('non-harness roles do not expose updates/browser/platform bridges', () => {
   const { exposures } = loadPreload(
     ['electron', '--dshd-shell-role=boot'],

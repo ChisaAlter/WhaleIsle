@@ -329,7 +329,7 @@ describe('AppFrame', () => {
     expect(frame.querySelector('[data-shell-leading-band]')).toBeNull()
   })
 
-  it('keeps the caption drag band when the darwin sidebar collapses', () => {
+  it('keeps sidebar reopen controls beside the native caption when the darwin sidebar collapses', () => {
     document.documentElement.dataset.platform = 'darwin'
     const { frame, instance, sidebarOwner, queryByTestId } = mountFrame()
     // The caption drag band sits before column content so later no-drag
@@ -340,9 +340,10 @@ describe('AppFrame', () => {
     expect(tracks(frame)).toEqual([0, 0, 0])
     expect(sidebarOwner()).toEqual({ collapsed: true, width: 0 })
     expect(frame.querySelector('[data-dshd-caption="band"]')).not.toBeNull()
-    expect(queryByTestId('shell.leading-content')).toBeNull()
+    expect(queryByTestId('shell.leading-content')?.parentElement?.hasAttribute('data-shell-leading-band')).toBe(true)
     act(() => { instance.actions.toggleSidebar() })
     expect(queryByTestId('shell.leading-content')).toBeNull()
+    expect(frame.querySelector('[data-shell-leading-band]')).toBeNull()
   })
 
   it('switches only the keyed main outlet when the active panel changes', () => {

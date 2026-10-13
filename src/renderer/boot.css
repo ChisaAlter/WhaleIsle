@@ -46,6 +46,11 @@ body {
   -webkit-app-region: drag;
 }
 
+html[data-platform="darwin"] .caption {
+  left: 80px;
+  right: 0;
+}
+
 /* BrowserView sits on top of boot.html; Electron still hit-tests this
    caption's drag region on the parent window and swallows Web UI clicks
    except where boot window-controls are no-drag. */
@@ -604,6 +609,8 @@ body[data-state="error"] .ticker-dot {
 
 /* Maximized windows lose the rounded silhouette (native corners square). */
 html[data-window-maximized] body,
-html[data-window-maximized] .scene {
+html[data-window-maximized] .scene,
+html[data-fullscreen] body,
+html[data-fullscreen] .scene {
   border-radius: 0;
 }

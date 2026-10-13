@@ -50,6 +50,8 @@
   flex: none;
   min-width: 0;
   padding: 8px 28px 0 20px;
+  /* The whole header, including breadcrumbs, clears Mac caption controls. */
+  padding-left: max(20px, var(--dsh-frame-leading-clearance, 0px));
   /* Trailing cluster (Git / panel toggles) shares this row when
      details is closed; AppFrame writes the overlap as --dshd-titlebar-conversation-reserve.
      The +16px absorbs .headerCorner's -16px reach: while the reserve pads this
@@ -155,11 +157,6 @@
   display: flex;
   align-items: center;
   gap: 0;
-  /* Clears the frame's window-chrome band (traffic lights + shell.leading
-     controls, ui-layout AppFrame) when it is published; the header already
-     pads 20px of it. Zero everywhere else (the fallback makes the max
-     negative). */
-  padding-inline-start: max(0px, calc(var(--dsh-frame-leading-clearance, 0px) - 20px));
 }
 
 .titleCluster {

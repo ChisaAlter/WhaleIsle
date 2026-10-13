@@ -926,6 +926,12 @@ function createSmokeRunner(deps) {
         }
         console.log('[DSH_THEME_SMOKE]', JSON.stringify(result.themeSmoke));
       }
+      if (process.platform === 'darwin' && app.isPackaged) {
+        result.macosChrome = await require('./macos-chrome').runMacosChromeQa(win, wc, {
+          loadConfig, saveConfig,
+        });
+        console.log('[DSH_MACOS_CHROME]', JSON.stringify(result.macosChrome));
+      }
       const hitCount = titlebarHits.hits.surfaces + titlebarHits.hits.branch + titlebarHits.hits.git;
       const requireFullTitlebar = needsReleaseQa
         || needsComposerQa
@@ -963,6 +969,7 @@ function createSmokeRunner(deps) {
         && (!needsShellQa || result.shellP0Qa?.ok === true)
         && (!needsPersistQa || result.persistQa?.ok === true)
         && (!needsRecoveryQa || result.recoveryQa?.ok === true)
+        && (process.platform !== 'darwin' || !app.isPackaged || result.macosChrome?.ok === true)
         && (needsRecoveryQa || pageErrors.length === 0)
         && (!siblingPath || packagedP0?.ok === true);
       try {

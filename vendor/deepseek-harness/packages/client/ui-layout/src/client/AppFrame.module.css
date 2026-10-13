@@ -90,6 +90,10 @@
   --dsh-frame-chrome-top: 0px;
 }
 
+:global([data-fullscreen]) .frame {
+  border-radius: 0;
+}
+
 :global([data-platform='darwin']) .sidebarCol {
   background: color-mix(in srgb, var(--dsw-specific-sidebar-fill) 60%, transparent);
   border-right: none;
@@ -283,6 +287,27 @@
   height: 48px;
   user-select: none;
   -webkit-app-region: drag;
+}
+
+/* The hidden Mac sidebar's existing controls occupy the native caption row. */
+:global([data-platform='darwin']) .frame[data-sidebar-collapsed] {
+  --dsh-frame-leading-clearance: 164px;
+}
+
+.leadingSeat {
+  position: absolute;
+  top: 11px;
+  left: 88px;
+  z-index: 21;
+  -webkit-app-region: no-drag;
+}
+
+:global([data-platform='darwin'][data-fullscreen]) .frame[data-sidebar-collapsed] {
+  --dsh-frame-leading-clearance: 88px;
+}
+
+:global([data-platform='darwin'][data-fullscreen]) .leadingSeat {
+  left: 12px;
 }
 
 .bottomRow {

@@ -123,6 +123,13 @@ jobs:
       - run: npm run dist:mac
       - run: npm run smoke:packaged
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: Whale-Isle-macos-chrome-evidence
+          path: dist/macos-chrome-evidence
+          if-no-files-found: warn
+          retention-days: 30
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: Whale-Isle-macos-arm64
           path: dist/Whale-Isle-*.dmg
