@@ -23,6 +23,8 @@ const {
   restoreVendoredPluginNodeModules,
   installPluginRuntimeDeps,
   missingPluginRuntimeClosure,
+  missingDshImRuntimeClosure,
+  assertDshImSharpRuntime,
 } = require('../../scripts/after-pack');
 
 const RC7_PIN = { npm: '0.1.0-rc.7' };
@@ -669,6 +671,43 @@ test('a deep missing dependency still forces the repair install', (t) => {
   });
   assert.equal(result.installed, true);
   assert.equal(ran, true);
+});
+
+test('dsh-im restores missing Mac native sharp packages despite a complete JS closure', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'after-pack-sharp-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const writePackage = (name, manifest, file = 'index.js') => {
+    const dir = name === 'dsh-im' ? root : path.join(root, 'node_modules', name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name, main: file, ...manifest }));
+    fs.writeFileSync(path.join(dir, file), 'module.exports = {};');
+    return dir;
+  };
+  writePackage('dsh-im', { dependencies: { sharp: '0.35.3' } });
+  writePackage('sharp', { optionalDependencies: {
+    '@img/sharp-darwin-arm64': '0.35.3', '@img/sharp-libvips-darwin-arm64': '1.3.2',
+    '@img/sharp-win32-x64': '0.35.3',
+  } });
+  writePackage('@img/sharp-win32-x64', {});
+  const target = { platform: 'darwin', arch: 'arm64' };
+  const verify = dir => missingDshImRuntimeClosure(dir, target);
+  assert.deepEqual(missingPluginRuntimeClosure(root), [], 'old JS-only check misses platform packages');
+  assert.deepEqual(verify(root), ['@img/sharp-darwin-arm64', '@img/sharp-libvips-darwin-arm64']);
+  const result = installPluginRuntimeDeps(root, { verify, run: () => {
+    writePackage('@img/sharp-darwin-arm64', {}, 'sharp.node');
+    writePackage('@img/sharp-libvips-darwin-arm64', {}, 'libvips.dylib');
+  } });
+  assert.equal(result.installed, true);
+  assert.deepEqual(verify(root), []);
+  assert.equal(installPluginRuntimeDeps(root, { verify, run: () => assert.fail('healthy tree is reused') }).installed, false);
+  fs.unlinkSync(path.join(root, 'node_modules/@img/sharp-darwin-arm64/sharp.node'));
+  assert.deepEqual(verify(root), ['@img/sharp-darwin-arm64/sharp.node']);
+});
+
+test('sharp runtime verification rejects a different host before executing a target binary', () => {
+  assert.throws(() => assertDshImSharpRuntime('unused', 'must-not-execute', {
+    platform: process.platform === 'darwin' ? 'win32' : 'darwin', arch: process.arch,
+  }), /native runner matching/);
 });
 
 test('installPluginRuntimeDeps fails closed when the install does not repair the tree', (t) => {
