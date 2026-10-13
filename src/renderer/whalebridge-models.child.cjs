@@ -18,11 +18,14 @@ const providerWrites = [], importWrites = [], settingWrites = [], groupWrites = 
 let groupFixture;
 const historyReads=[];
 let quotaReads=0;
+let holdReadPath='',releaseRead;
 const fixturePrice = { input: 1, output: 5, cache_read: 0.25, cache_write: 1.25, cache_write_1h: 2, tiers: [{ above: 200000, input: 2, output: 7.5, cache_read: 0.5, cache_write: 2.5, cache_write_1h: 4 }] };
 const subscriptionSettings = { pluginCheckins: { inactive: false }, pluginCheckinsEffective: { daily: true } };
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
+  if(url.pathname===holdReadPath){holdReadPath='';await new Promise(resolve=>{releaseRead=resolve;});}
   const json = body => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(body)); };
+  if (url.pathname === '/api/keys' && req.method==='POST') return json({ok:true,added:1});
   if (url.pathname === '/api/state') {
     reads++;
     return json({ version: 'test', gateway: 'http://127.0.0.1', providers: providerFixture ? [providerFixture] : [], presets: [], models: rows.filter(m => !hidden.has(m.id)), hidden: rows.filter(m => hidden.has(m.id)), groups: groupFixture ? (Array.isArray(groupFixture)?groupFixture:[groupFixture]) : [] });
@@ -290,7 +293,10 @@ async function run() {
     await js(`document.querySelector('#f-keyStatus').value='rest';document.querySelector('#f-keyStatus').dispatchEvent(new Event('change',{bubbles:true}))`);
     assert.deepEqual(await js(`[...document.querySelectorAll('[data-key-row]')].filter(row=>!row.hidden).map(row=>row.querySelector('.table-primary').textContent)`),['Paused key']);
     await click('#cancel-editor'); await wait(`!document.querySelector('#editor').open`);
-    await click('[data-action="import-provider"]');
+    // The previous dialog's queued close event must not poison its replacement.
+    await js(`document.querySelector('[data-action="import-provider"]').click();window.closedEditor=editor;document.querySelector('#cancel-editor').click();document.querySelector('[data-action="import-provider"]').click();`);
+    await js(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+    assert.equal(await js(`closedEditor.closed && !editor.closed && document.querySelector('#editor').open`),true);
     await js(`document.querySelector('#f-source').value='{"name":"Imported API","chat":"https://example.test/v1"}'`);
     await click('#save'); await wait(`document.querySelector('#f-importKey')`);
     assert.equal(importWrites.length, 1, 'preview does not save a supplier');
@@ -300,6 +306,26 @@ async function run() {
     assert.equal(importWrites.length, 2);
     assert.equal(importWrites[1].key, 'qa-import-key', 'the separate password field supplies credentials only after preview');
     assert.equal(importWrites[1].text, importWrites[0].text);
+    // A read launched from an old editor cannot replace a newer draft.
+    for(const [pathname,open] of [['/api/keys/qa',"openKeys('qa')"],['/api/subscriptions','openSubscription()'],['/api/subscription/settings','openSubscriptionSettings()'],['/api/upstream','openProviderHealth()']]){
+      await click('[data-action="import-provider"]');
+      holdReadPath=pathname;releaseRead=undefined;
+      await js('window.pendingEditorRead='+open+';void 0');await wait(()=>!!releaseRead);
+      await js('openKeyImport("qa")');
+      releaseRead();await js('pendingEditorRead');
+      assert.equal(await js('editor.type'), 'key-import',pathname+' must not overwrite the newer draft');
+      await click('#cancel-editor');
+    }
+    await js('openKeyImport("qa")');
+    await js('document.querySelector("#f-key").value="fixture-only-key"');
+    holdReadPath='/api/state';releaseRead=undefined;
+    await click('#save');await wait(()=>!!releaseRead);
+    await click('#cancel-editor');await click('[data-action="import-provider"]');
+    releaseRead();await wait("document.querySelector('#content').getAttribute('aria-busy')==='false'");
+    await js('new Promise(resolve=>setTimeout(resolve,30))');
+    assert.equal(await js('editor.type'), 'provider-import','late post-save reload must not reopen the old key editor');
+    await js("document.querySelector('#editor').dispatchEvent(new Event('cancel',{cancelable:true}))");
+    assert.equal(await js("editor.closed && !document.querySelector('#editor').open"),true,'native cancel closes the current editor synchronously');
     await click('[data-tab="usage"]'); await wait(`document.querySelector('[data-global-section="quotas"]')`);
     await click('[data-global-section="quotas"]'); await wait(`document.querySelector('[data-action="subscription-settings"]')`);
     await wait(`document.querySelector('#quota-section').getAttribute('aria-busy')==='false'`);
@@ -319,6 +345,6 @@ async function run() {
     assert.equal(settingWrites.at(-1).pluginCheckins.daily, true, 'saving other settings preserves the effective adapter check-in default');
     assert.equal(settingWrites.at(-1).pluginCheckins.inactive, false, 'saving does not erase the preference of a temporarily disabled adapter');
     console.log('WHALEBRIDGE_MODELS_RESULT:PASS compact overview, model focus, grouped models, scoped visibility, stable position, pricing tiers, import preview and subscription settings');
-  } finally { releaseWrite?.(); win.destroy(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+  } finally { releaseRead?.(); releaseWrite?.(); win.destroy(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }
 run().then(() => app.exit(0), error => { console.error(error); app.exit(1); });

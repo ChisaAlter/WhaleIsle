@@ -147,4 +147,3 @@ async function handleAdapterAction(e){
  }finally{progress?.finish();busy?.finish();if(b.getAttribute('aria-busy')!=='true')b.disabled=false;if(current===editor&&!current.closed&&$('#adapter-search-results'))$('#adapter-search-results').setAttribute('aria-busy','false');}
 }
 $('#fields').addEventListener('click',handleAdapterAction);
-$('#editor').addEventListener('close',()=>clearTimeout(editor?.searchTimer));
