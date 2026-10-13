@@ -253,24 +253,37 @@ async function runMacosChromeQa(win, wc, helpers) {
       return 'native yellow target/action minimized; Electron restore reopened the window';
     });
     await record('main.native-fullscreen-enter-exit', async () => {
-      native.click(win, 2);
-      await waitFor(async () => win.isFullScreen() && (await mainLayout(wc)).fullscreen, 'native fullscreen entry and preload');
-      await sleep(500);
-      const layout = await mainLayout(wc);
-      assert.equal(layout.bodyRadius, '0px');
-      assert.equal(layout.ringDisplay, 'none');
-      // AppKit keeps standard buttons unhidden in its fullscreen title bar.
-      // That flag does not prove they cover the content: retain the OS image
-      // for visual review and verify the native green control stays available.
-      const fullscreenNative = native.snapshot(win);
-      result.screenshots.push(captureWindow(win, native, dir, 'main-fullscreen'));
-      assert.ok(fullscreenNative.buttons.some(item => item.name === 'zoom' && item.present && item.enabled),
-        'native green control must remain available in AppKit fullscreen');
-      win.setFullScreen(false);
-      await waitFor(async () => !win.isFullScreen() && !(await mainLayout(wc)).fullscreen, 'fullscreen exit and preload');
-      await sleep(500);
-      assert.ok(native.snapshot(win).buttons.every(item => !item.hidden), 'native buttons must return after fullscreen');
-      return { layout, native: fullscreenNative, entry: 'native green NSButton performClick:', exit: 'Electron win.setFullScreen(false); native and preload state synchronized' };
+      let entered = false;
+      let exited = false;
+      const onEntered = () => { entered = true; };
+      const onExited = () => { exited = true; };
+      // isFullScreen/resize can update before AppKit's Spaces animation ends.
+      // Its completion events are the boundary for OS capture and restoration.
+      win.once('enter-full-screen', onEntered);
+      win.once('leave-full-screen', onExited);
+      try {
+        native.click(win, 2);
+        await waitFor(async () => entered && win.isFullScreen() && (await mainLayout(wc)).fullscreen, 'native fullscreen completion and preload');
+        await sleep(500);
+        const layout = await mainLayout(wc);
+        assert.equal(layout.bodyRadius, '0px');
+        assert.equal(layout.ringDisplay, 'none');
+        // AppKit keeps standard buttons unhidden in its fullscreen title bar.
+        // That flag does not prove they cover the content: retain the OS image
+        // for visual review and verify the native green control stays available.
+        const fullscreenNative = native.snapshot(win);
+        result.screenshots.push(captureWindow(win, native, dir, 'main-fullscreen'));
+        assert.ok(fullscreenNative.buttons.some(item => item.name === 'zoom' && item.present && item.enabled),
+          'native green control must remain available in AppKit fullscreen');
+        win.setFullScreen(false);
+        await waitFor(async () => exited && !win.isFullScreen() && !(await mainLayout(wc)).fullscreen, 'native fullscreen exit completion and preload');
+        await sleep(500);
+        assert.ok(native.snapshot(win).buttons.every(item => !item.hidden), 'native buttons must return after fullscreen');
+        return { layout, native: fullscreenNative, nativeEvents: { entered, exited }, entry: 'native green NSButton performClick:', exit: 'Electron win.setFullScreen(false); native and preload state synchronized' };
+      } finally {
+        win.removeListener('enter-full-screen', onEntered);
+        win.removeListener('leave-full-screen', onExited);
+      }
     });
     await record('main.native-close-to-tray', async () => {
       helpers.saveConfig({ closeToTray: true });
