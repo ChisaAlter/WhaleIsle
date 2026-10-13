@@ -8,8 +8,11 @@ html, body {
   background: transparent;
   color: var(--dsw-alias-label-primary);
   font-family: var(--dsw-font-family);
-  --caption-h: 32px;
 }
+
+html { --caption-h: 32px; }
+
+html[data-platform="win32"] { --caption-h: 48px; }
 
 body {
   overflow: hidden;
@@ -24,13 +27,15 @@ body {
   top: 0;
   left: 0;
   right: 120px;
-  height: 32px;
+  height: var(--caption-h);
   z-index: 4;
   -webkit-app-region: drag;
 }
 
 /* This window's compact caption keeps the shared native controls centered. */
 .window-controls { padding: 0 8px; }
+
+html[data-platform="win32"] .window-controls { padding: 8px; }
 
 html[data-platform="darwin"] .caption {
   left: 80px;
@@ -72,7 +77,7 @@ html[data-window-maximized] .shell::after { border: 0; }
   flex-direction: column;
   gap: 18px;
   width: 188px;
-  padding: 40px 12px 16px;
+  padding: calc(var(--caption-h) + 8px) 12px 16px;
   background: var(--dsw-specific-sidebar-fill);
   border-right: 1px solid var(--dsw-alias-border-l1);
 }
@@ -264,7 +269,7 @@ html[data-window-maximized] .shell::after { border: 0; }
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 40px 24px 24px;
+  padding: calc(var(--caption-h) + 8px) 24px 24px;
 }
 
 button[aria-busy="true"] {

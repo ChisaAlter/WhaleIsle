@@ -182,6 +182,7 @@ app.whenReady().then(async () => {
     if (visualOnly) {
       if (!process.env.QA_HOME_ARTIFACTS) throw new Error('visual capture requires QA_HOME_ARTIFACTS');
       const artifactDir = process.env.QA_HOME_ARTIFACTS;
+      const captionOnly = process.env.QA_LAUNCHER_VISUAL_SCOPE === 'caption';
       fs.mkdirSync(artifactDir, { recursive: true });
       const settle = () => win.webContents.executeJavaScript(`(async () => {
         await document.fonts.ready;
@@ -213,6 +214,21 @@ app.whenReady().then(async () => {
         // capturePage reads the composited frame; allow the existing 100ms
         // color transition to reach that frame after its DOM animation ends.
         await new Promise(resolve => setTimeout(resolve, 180));
+        if (captionOnly) {
+          const center = await win.webContents.executeJavaScript(`(() => {
+            const close = document.querySelector('.window-controls button[data-act="close"]');
+            if (!close) throw new Error('launcher close control is missing');
+            const r = close.getBoundingClientRect();
+            return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+          })()`);
+          win.webContents.sendInputEvent({ type: 'mouseMove', ...center });
+          await waitForDom(`(() => {
+            const close = document.querySelector('.window-controls button[data-act="close"]');
+            const hit = document.elementFromPoint(${center.x}, ${center.y});
+            return close?.matches(':hover') && (hit === close || close.contains(hit));
+          })()`);
+          await settle();
+        }
         const layout = await win.webContents.executeJavaScript(`(() => {
           const boxes = Object.fromEntries(${JSON.stringify(selectors)}.map(selector => {
             const el = document.querySelector(selector);
@@ -220,6 +236,7 @@ app.whenReady().then(async () => {
             const style = el && getComputedStyle(el);
             return [selector, !el ? null : { visible: el.checkVisibility(), text: el.textContent.trim(),
               disabled: el.disabled, color: style.color, background: style.backgroundColor, opacity: style.opacity,
+              paddingTop: Number.parseFloat(style.paddingTop),
               scrollWidth: el.scrollWidth, clientWidth: el.clientWidth,
               x: rect.x, y: rect.y, width: rect.width, height: rect.height,
               clippedByViewport: rect.left < 0 || rect.top < 0 || rect.right > innerWidth || rect.bottom > innerHeight }];
@@ -228,7 +245,14 @@ app.whenReady().then(async () => {
             theme: document.documentElement.hasAttribute('data-ds-dark-theme') ? 'dark' : 'light',
             documentWidth: document.documentElement.scrollWidth,
             mainWidth: document.querySelector('main').clientWidth,
-            mainScrollWidth: document.querySelector('main').scrollWidth, boxes };
+            mainScrollWidth: document.querySelector('main').scrollWidth, boxes,
+            ...( ${captionOnly} ? (() => {
+              const close = document.querySelector('.window-controls button[data-act="close"]');
+              const r = close.getBoundingClientRect();
+              const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+              return { closeHovered: close.matches(':hover'), closeCenterHit: hit === close || close.contains(hit),
+                closeTopGap: r.top, closeRightGap: innerWidth - r.right };
+            })() : {}) };
         })()`);
         const screenshot = await win.webContents.capturePage(undefined, { stayHidden: true });
         const file = `${name}.png`;
@@ -237,6 +261,48 @@ app.whenReady().then(async () => {
           pixels: screenshot.getSize(), layout });
       };
       await waitForDom('document.querySelector("#home-version").textContent === "v0.3.6" && !!document.querySelector("#home-components [data-comp-action=open]")');
+      let darwinCssGeometry;
+      if (captionOnly) {
+        const selectors = ['.window-controls', '.window-controls button[data-act="close"]',
+          '[data-goto="versions"]', '.caption', '.rail-head', '.home-heading', '.stage'];
+        for (const theme of ['dark', 'light']) {
+          win.webContents.send('shell:theme', { scheme: theme });
+          await waitForDom(`document.documentElement.hasAttribute('data-ds-dark-theme') === ${theme === 'dark'}`);
+          for (const [label, width, height] of [['normal', 1060, 660], ['narrow', 860, 560]]) {
+            win.setContentSize(width, height);
+            await capture(`caption-${theme}-${label}-close-hover`, selectors);
+            const item = captures.at(-1);
+            if (win.isVisible() || win.isFocused()) throw new Error('caption fixture must remain hidden and unfocused');
+            for (const selector of selectors) {
+              const box = item.layout.boxes[selector];
+              if (!box?.visible || box.clippedByViewport) throw new Error(`caption control clipped or missing: ${selector}`);
+            }
+            const caption = item.layout.boxes['.caption'];
+            const captionBottom = caption.y + caption.height;
+            if (caption.height !== 48 || !item.layout.closeHovered || !item.layout.closeCenterHit
+              || item.layout.closeTopGap < 8 || item.layout.closeRightGap < 8) {
+              throw new Error(`caption hover or window spacing failed: ${item.file}`);
+            }
+            for (const selector of ['.rail-head', '.home-heading', '[data-goto="versions"]']) {
+              if (item.layout.boxes[selector].y < captionBottom + 8) throw new Error(`caption overlaps content: ${selector}`);
+            }
+            if (item.layout.boxes['.stage'].paddingTop !== 56) throw new Error('Windows stage must clear the caption');
+          }
+        }
+        darwinCssGeometry = await win.webContents.executeJavaScript(`(() => {
+          const previous = document.documentElement.dataset.platform;
+          document.documentElement.dataset.platform = 'darwin';
+          try {
+            return { evidence: 'Windows renderer CSS with simulated platform; not a native Mac screenshot',
+              caption: document.querySelector('.caption').getBoundingClientRect().height,
+              railPaddingTop: Number.parseFloat(getComputedStyle(document.querySelector('.rail')).paddingTop),
+              stagePaddingTop: Number.parseFloat(getComputedStyle(document.querySelector('.stage')).paddingTop) };
+          } finally { document.documentElement.dataset.platform = previous; }
+        })()`);
+        if (darwinCssGeometry.caption !== 32 || darwinCssGeometry.railPaddingTop !== 40 || darwinCssGeometry.stagePaddingTop !== 40) {
+          throw new Error('Windows caption spacing changed Darwin CSS geometry');
+        }
+      } else {
       if (process.env.QA_LAUNCHER_VISUAL_SCOPE !== 'import') {
         const homeSelectors = ['.caption', '.rail-head', '.rail nav', '.rail-foot', '#btn-start', '#btn-check-update', '#home-components [data-comp-action="open"]'];
         for (const theme of ['dark', 'light']) {
@@ -274,6 +340,7 @@ app.whenReady().then(async () => {
       if (captures.find(item => item.file === 'import-light-actions-narrow.png').layout.boxes['#btn-import'].clippedByViewport) {
         throw new Error('import primary action not reachable in narrow window');
       }
+      }
       const crypto = require('crypto');
       const sourceHashes = Object.fromEntries(['launcher.html', 'launcher.css', 'launcher.js', 'theme.js'].map(name =>
         [name, crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname, name))).digest('hex')]));
@@ -281,7 +348,7 @@ app.whenReady().then(async () => {
       const display = screen.getDisplayMatching(win.getBounds());
       const report = { entry: LAUNCHER_HTML, preload: PRELOAD, scan, fixtureUserData,
         sourceHashes, display: { scaleFactor: display.scaleFactor, bounds: display.bounds, workArea: display.workArea },
-        activated: false, captures, calls: results.calls };
+        activated: false, captures, calls: results.calls, ...(darwinCssGeometry ? { darwinCssGeometry } : {}) };
       fs.writeFileSync(path.join(artifactDir, 'capture.json'), JSON.stringify(report, null, 2));
       process.stdout.write('BOUND_RESULT:' + JSON.stringify(report));
       app.exit(0);
