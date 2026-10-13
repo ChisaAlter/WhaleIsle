@@ -23,7 +23,7 @@
     "build:official": "tsx scripts/build.ts --profile official",
     "build:lib": "pnpm run build:lib:host && pnpm run build:lib:client",
     "build:lib:host": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc -b tsconfig.host.json && tsdown --config-loader native --env.DSH_BUILD_FACE host && pnpm --filter @deepseek-ai/dsh-desktop run bundle",
-    "build:lib:client": "tsc -b tsconfig.client.json && tsdown --config-loader native --env.DSH_BUILD_FACE client && node packages/client/ui-user-terminal/scripts/copy-ghostty-assets.mjs",
+    "build:lib:client": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc -b tsconfig.client.json && tsdown --config-loader native --env.DSH_BUILD_FACE client && node packages/client/ui-user-terminal/scripts/copy-ghostty-assets.mjs",
     "build:web": "pnpm --filter @deepseek-ai/dsh-web-frontend run build",
     "build:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run build",
     "dev:desktop": "pnpm --filter @deepseek-ai/dsh-desktop run dev",
