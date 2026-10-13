@@ -179,7 +179,7 @@ test('source mirror pushes real main and tags, and rejects diverged main without
 test('workflow covers main pushes, automatic-token releases and manual backfill without rebuilding', () => {
   const workflow = load(readFileSync(new URL('../.github/workflows/cnb-mirror.yml', import.meta.url), 'utf8'))
   assert.deepEqual(workflow.on.push.branches, ['main'])
-  assert.deepEqual(workflow.on.workflow_run.workflows, ['Release', 'WhaleBridge'])
+  assert.deepEqual(workflow.on.workflow_run.workflows, ['Release'])
   assert.deepEqual(workflow.on.release.types, ['published'])
   assert.ok(workflow.on.workflow_dispatch.inputs.tag)
   assert.equal(workflow.concurrency['cancel-in-progress'], false)

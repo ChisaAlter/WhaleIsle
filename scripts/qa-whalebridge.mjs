@@ -2,16 +2,21 @@
 // No real subscription credentials or paid API calls are used.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { createHash } from 'node:crypto';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, copyFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, execFileSync } from 'node:child_process';
 import { createWhaleBridgeService } from '../src/launcher/whalebridge.js';
 import { reservePort } from './smoke-workspace.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const componentPackage=resolve(process.env.WHALEBRIDGE_QA_PACKAGE || join(root,'.tmp/whalebridge-package'));
+assert.ok(existsSync(join(componentPackage,'WhaleBridge-component.json')),`鲸桥 QA 组件包不存在，请通过 WHALEBRIDGE_QA_PACKAGE 指定已构建包目录: ${componentPackage}`);
+const source=process.env.WHALEBRIDGE_SOURCE_DIR;
+assert.ok(source && isAbsolute(source),'更新/回滚生命周期 QA 需要 WHALEBRIDGE_SOURCE_DIR 明确指向独立鲸桥源码的绝对目录');
+const builder=join(source,'scripts/build.mjs');
+assert.ok(existsSync(builder),`生命周期 QA 找不到独立鲸桥构建入口: ${builder}`);
 const dir=mkdtempSync(join(tmpdir(),'whalebridge-native-'));
 const data=join(dir,'component'), home=join(dir,'dsh'), pkg=join(dir,'package');
 const gatewayPort=await reservePort();
@@ -34,8 +39,8 @@ const upstream=createServer(async(req,res)=>{
   }else{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({id:'qa-chat',object:'chat.completion',choices:[{index:0,message:{role:'assistant',content:'鲸桥 QA'},finish_reason:'stop'}],usage:{prompt_tokens:12,completion_tokens:8}}));}
 });
 await new Promise(r=>upstream.listen(0,'127.0.0.1',r));
-const original=JSON.parse(readFileSync(join(root,'.tmp/whalebridge-package/WhaleBridge-component.json')));
-const executable=join(root,'.tmp/whalebridge-package/WhaleBridge-win32-x64.exe');
+const original=JSON.parse(readFileSync(join(componentPackage,'WhaleBridge-component.json')));
+const executable=join(componentPackage,'WhaleBridge-win32-x64.exe');
 // A second native version is built only to exercise the real update/rollback
 // transition, including the binary's version agreeing with the manifest.
 copyFileSync(executable,join(pkg,'WhaleBridge-win32-x64.exe'));
@@ -80,10 +85,9 @@ try{
  assert.equal(readFileSync(join(data,'data/gateway.key'),'utf8').trim(),token);
  assert.match(readFileSync(profile,'utf8'),/qa-vendor\/qa-model/);
  const nextVersion=original.version.replace(/(\d+)$/,n=>String(Number(n)+1));
- execFileSync(process.env.WHALEBRIDGE_GO || 'go',['build','-mod=readonly','-trimpath','-ldflags',`-s -w -X main.version=${nextVersion}`,'-o',join(pkg,'WhaleBridge-win32-x64.exe'),'.'],{cwd:join(root,'vendor/whalebridge'),stdio:'inherit',env:{...process.env,GOOS:'windows',GOARCH:'amd64',CGO_ENABLED:'0'}});
- const upgraded=readFileSync(join(pkg,'WhaleBridge-win32-x64.exe'));
- const manifest=structuredClone(original);manifest.version=nextVersion;manifest.platforms['win32-x64'].size=upgraded.length;manifest.platforms['win32-x64'].sha256=createHash('sha256').update(upgraded).digest('hex');
- writeFileSync(join(pkg,'WhaleBridge-component.json'),JSON.stringify(manifest));
+ execFileSync(process.execPath,[builder,'--out',pkg,'--version',nextVersion],{cwd:source,stdio:'inherit',env:{...process.env}});
+ const manifest=JSON.parse(readFileSync(join(pkg,'WhaleBridge-component.json')));
+ assert.equal(manifest.version,nextVersion,'the standalone builder emits the requested QA version');
  assert.equal((await service.update()).ok,true);assert.equal(service.state().version,nextVersion);assert.equal((await service.api('status')).models,2);
  assert.equal((await service.rollback()).ok,true);assert.equal(service.state().version,original.version);
  const removed=await service.uninstall();assert.equal(removed.ok,true,JSON.stringify(removed));

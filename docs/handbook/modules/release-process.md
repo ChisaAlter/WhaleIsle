@@ -35,9 +35,11 @@
 
 ## 鲸桥组件
 
-`.github/workflows/whalebridge.yml` 单独编译 `vendor/whalebridge` 并验证真实 Windows 程序的生命周期和本机网关。PR 提供开发资产；成功的 main 构建在组件版本尚未发布时自动创建 `whalebridge-v<版本>`，附件为 `WhaleBridge-win32-x64.exe` 和包含大小、SHA256、MIT 版权的 `WhaleBridge-component.json`。组件版本位于 `vendor/whalebridge/upstream.json`，独立于桌面 package.json。
+组件源码和 CI 已迁至 [WhaleBridge](https://github.com/ChisaAlter/WhaleBridge) 独立仓库。其 `upstream.json` 管理组件版本，`scripts/build.mjs` 生成 Windows 二进制及包含大小、SHA256、MIT 版权的清单。鲸屿不再编译或发布 Go 组件，只维护下载、启动、原生管理窗口与实际联动 QA。
 
-该工作流成功后 CNB mirror 同步组件 tag 与原始资产，按组件清单检查二进制并完成匿名字节校验。GitHub 和 CNB 都保持桌面程序的 latest，不把组件设为最新桌面安装包。源码构建入口为 `node scripts/build-whalebridge.mjs`。
+独立仓库的 Windows CI 保留网关与设置回归，并验证构建后二进制的实际启动协议及组件页面交互。成功的 main 构建在组件版本尚未发布时发布 `whalebridge-v<版本>`，附件契约保持 `WhaleBridge-win32-x64.exe` 和 `WhaleBridge-component.json`。工作分支与 PR 只产生检查和开发产物。
+
+鲸屿的 CNB 工作流只监听桌面 Release；现有镜像中的历史组件和手动校验能力保留。独立鲸桥的新版本镜像仍需配置与实际匿名字节验证，不能把源码拆分视为线上分发完成。公开仓库和首个组件资产可访问前，不合入新的 GitHub 组件下载源。
 
 ## 失败处理
 
