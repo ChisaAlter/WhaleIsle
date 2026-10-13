@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -14,6 +15,7 @@ const distDir = path.join(root, 'dist')
 const timeoutMs = Number(process.env.DSH_SMOKE_TIMEOUT_MS) || 300_000
 const macosEvidenceDir = process.platform === 'darwin' ? path.join(distDir, 'macos-chrome-evidence') : null
 const macosOutput = []
+let macosCrash = null
 
 function packagedExecutable() {
   if (process.env.DSH_SMOKE_EXE) {
@@ -47,6 +49,7 @@ function stopProcessTree(child) {
 
 function run(executable, args, env) {
   return new Promise((resolve, reject) => {
+    const startedAt = Date.now()
     const child = spawn(executable, args, {
       cwd: root,
       detached: process.platform !== 'win32',
@@ -75,6 +78,7 @@ function run(executable, args, env) {
 
     child.once('exit', (code, signal) => {
       clearTimeout(timer)
+      if (macosEvidenceDir && signal) macosCrash = { pid: child.pid, startedAt, signal }
       resolve({ code, signal })
     })
   })
@@ -104,7 +108,10 @@ try {
     DSH_SMOKE: '1',
     // Packaged builds ignore ambient QA/smoke flags; the rehearsal opts in.
     DSHD_ALLOW_PACKAGED_QA: '1',
-    ...(macosEvidenceDir ? { DSH_MACOS_CHROME_EVIDENCE_DIR: macosEvidenceDir } : {}),
+    ...(macosEvidenceDir ? {
+      DSH_MACOS_CHROME_EVIDENCE_DIR: macosEvidenceDir,
+      ELECTRON_ENABLE_STACK_DUMPING: '1',
+    } : {}),
   }))
 
   if (!existsSync(dirs.resultPath)) {
@@ -123,6 +130,24 @@ try {
     if (existsSync(dirs.resultPath)) copyFileSync(dirs.resultPath, path.join(macosEvidenceDir, 'dshd-smoke.json'))
     const startupResult = path.join(dirs.userData, 'last-desktop-start.json')
     if (existsSync(startupResult)) copyFileSync(startupResult, path.join(macosEvidenceDir, 'last-desktop-start.json'))
+    if (macosCrash) {
+      // macOS can write its report shortly after process exit. Read once,
+      // retaining only reports for this rehearsal PID and launch interval.
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      const reportsDir = path.join(homedir(), 'Library', 'Logs', 'DiagnosticReports')
+      try {
+        for (const name of readdirSync(reportsDir).filter(name => name.endsWith('.ips'))) {
+          const file = path.join(reportsDir, name)
+          if (statSync(file).mtimeMs < macosCrash.startedAt) continue
+          const report = readFileSync(file, 'utf8')
+          if (!new RegExp(`"pid"\\s*:\\s*${macosCrash.pid}(?:\\s*[,}])`).test(report)) continue
+          copyFileSync(file, path.join(macosEvidenceDir, name))
+          console.log(`Mac crash report retained: ${name}`)
+        }
+      } catch (error) {
+        console.warn(`Mac crash report unavailable: ${error.message}`)
+      }
+    }
   }
   if (keepArtifacts) {
     console.log(`Smoke artifacts kept at ${dirs.smokeRoot}`)

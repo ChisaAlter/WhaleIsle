@@ -33,7 +33,7 @@ function cocoaButtons() {
   const button = objc.func('objc_msgSend', 'void *', ['void *', 'void *', 'uintptr_t']);
   const flag = objc.func('objc_msgSend', 'int8_t', ['void *', 'void *']);
   const number = objc.func('objc_msgSend', 'intptr_t', ['void *', 'void *']);
-  const action = objc.func('objc_msgSend', 'void', ['void *', 'void *', 'void *']);
+  const queueAction = objc.func('objc_msgSend', 'void', ['void *', 'void *', 'void *', 'void *', 'double']);
   const names = new Map();
   const sel = name => {
     if (!names.has(name)) names.set(name, selector(name));
@@ -62,7 +62,9 @@ function cocoaButtons() {
       const native = button(windowFor(win), sel('standardWindowButton:'), type);
       assert.ok(native, `native window button ${type} must exist`);
       assert.ok(flag(native, sel('isEnabled')), `native window button ${type} must be enabled`);
-      action(native, sel('performClick:'), null);
+      // Koffi uses a separate native stack. Queue the same button action on
+      // AppKit's run loop so Electron's JS events run after that stack exits.
+      queueAction(native, sel('performSelector:withObject:afterDelay:'), sel('performClick:'), null, 0);
     },
   };
 }
@@ -140,13 +142,20 @@ async function setSidebar(wc, collapsed) {
 async function runMacosChromeQa(win, wc, helpers) {
   const dir = process.env.DSH_MACOS_CHROME_EVIDENCE_DIR || path.join(app.getPath('userData'), 'macos-chrome');
   fs.mkdirSync(dir, { recursive: true });
-  const result = { ok: false, nativeAction: 'NSButton performClick:, not physical mouse hit testing', visualReview: 'pending', steps: [], screenshots: [] };
+  const result = { ok: false, nativeAction: 'NSButton performClick: queued on AppKit run loop, not physical mouse hit testing', visualReview: 'pending', steps: [], screenshots: [] };
+  const persist = () => fs.writeFileSync(path.join(dir, 'macos-chrome.json'), JSON.stringify(result, null, 2));
   const originalBounds = win.getBounds();
   const originalConfig = helpers.loadConfig();
   let launcher;
   const record = async (name, work) => {
+    result.activeStep = name;
+    persist();
+    console.log(`[DSH_MACOS_STEP] ${name} start`);
     const detail = await work();
     result.steps.push({ name, ok: true, detail });
+    delete result.activeStep;
+    persist();
+    console.log(`[DSH_MACOS_STEP] ${name} passed`);
     return detail;
   };
   try {
@@ -307,7 +316,7 @@ async function runMacosChromeQa(win, wc, helpers) {
       win.setBounds(originalBounds);
       win.show();
     }
-    fs.writeFileSync(path.join(dir, 'macos-chrome.json'), JSON.stringify(result, null, 2));
+    persist();
   }
   return result;
 }
