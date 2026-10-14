@@ -32,11 +32,11 @@
 }
 
 [data-dsh-motion='popover'] {
+  /* Keep the backdrop root stable while descendant menu material samples the
+   * page. Fading this container clips that sampling until opacity reaches 1. */
   opacity: 1;
   transform: none;
-  transition:
-    opacity var(--ds-motion-duration-popover) var(--ds-ease-in-out),
-    transform var(--ds-motion-duration-popover) var(--ds-ease-in-out);
+  transition: transform var(--ds-motion-duration-popover) var(--ds-ease-in-out);
 }
 
 [data-dsh-motion='popover'][data-state='closed'] {
