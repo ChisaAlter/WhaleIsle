@@ -1047,7 +1047,15 @@ export class ProjectService {
       await this.write(state => { state.projects.find(item => item.id === project.id).updatedAt = Date.now(); }); return this.readStore(project.id, input.path); });
     if (endpoint === 'open') {
       if (!input.path) return this.desktop('open-path', { projectId: project.id, workingDirectory: project.canonicalWorkingDirectory, path: project.canonicalWorkingDirectory });
-      if (input.workstreamId) { const work = this.stream(input.workstreamId, project.id), worker = this.worker(work.workerSessionId), artifact = work.delegations.filter(item => !input.delegationRef || item.ref === input.delegationRef).flatMap(item => item.report?.artifacts ?? []).find(item => item.path === input.path); if (!artifact) fail('store_path', 'The selected result did not report this artifact.'); const checked = await checkedFile(artifact.path, [worker.cwd, join(project.storageRoot, 'docs', work.id)]); const opened = await this.desktop('resolve-path', { projectId: project.id, workstreamId: work.id, workingDirectory: worker.cwd, path: checked.path }); return { ...opened, modifiedSinceReport: checked.sha256 !== artifact.sha256 }; }
+      if (input.workstreamId) {
+        const work = this.stream(input.workstreamId, project.id), worker = this.worker(work.workerSessionId);
+        const requestedPath = await fs.realpath(resolve(input.path));
+        const artifact = work.delegations.filter(item => !input.delegationRef || item.ref === input.delegationRef).flatMap(item => item.report?.artifacts ?? []).find(item => item.path === requestedPath);
+        if (!artifact) fail('store_path', 'The selected result did not report this artifact.');
+        const checked = await checkedFile(artifact.path, [worker.cwd, join(project.storageRoot, 'docs', work.id)]);
+        const opened = await this.desktop('resolve-path', { projectId: project.id, workstreamId: work.id, workingDirectory: worker.cwd, path: checked.path });
+        return { ...opened, modifiedSinceReport: checked.sha256 !== artifact.sha256 };
+      }
       if (!String(input.path).startsWith('docs/')) fail('store_path', 'Desktop material opening is limited to Project docs.'); return this.desktop('resolve-path', { projectId: project.id, path: await this.storePath(project, input.path) });
     }
     if (endpoint === 'diff') { const work = this.stream(input.workstreamId, project.id), worker = this.worker(work.workerSessionId); return { snapshot: await this.desktop('snapshot', { projectId: project.id, workstreamId: work.id, workspace: worker.workspace }), worker: { cwd: worker.cwd, mode: worker.mode, ...(worker.branch ? { branch: worker.branch } : {}) } }; }
