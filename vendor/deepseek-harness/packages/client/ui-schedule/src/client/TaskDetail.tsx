@@ -636,6 +636,13 @@ export function TaskDetail({
     if (pending) return
     setFailureDismissed(false)
     const invalid = draftError(shown)
+    if (invalid === 'rule.cronInvalid') {
+      // The cron field already owns the validation alert; return to that
+      // field instead of duplicating it in the operation-result toast.
+      setFailure(undefined)
+      panelRef.current?.querySelector<HTMLInputElement>('input[aria-invalid="true"]')?.focus()
+      return
+    }
     if (invalid !== undefined) {
       setFailure(invalid)
       return

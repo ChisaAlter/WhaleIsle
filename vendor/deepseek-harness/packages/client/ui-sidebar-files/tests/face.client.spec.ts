@@ -269,10 +269,10 @@ describe('filesFace', () => {
 
     face.refresh(TAB)
     expect((await waitForList(2)).path).toBe(ROOT)
-    expect(snapshot()!.levels).toEqual(cached.levels)
+    expect(snapshot()!.levels).toEqual({ ...cached.levels, [ROOT]: { ...cached.levels[ROOT], loading: true } })
     await settle({ ok: true, value: LEVEL })
     expect((await waitForList(3)).path).toBe(child)
-    expect(snapshot()!.levels[child]).toEqual(cached.levels[child])
+    expect(snapshot()!.levels).toEqual({ ...cached.levels, [child]: { ...cached.levels[child], loading: true } })
     await settle({ ok: true, value: { entries: [], truncated: false } })
     expect(snapshot()!.levels[collapsed]).toEqual(cached.levels[collapsed])
     expect(snapshot()).toMatchObject({ expanded: [ROOT, child], scrollTop: 120, autoRefresh: false })

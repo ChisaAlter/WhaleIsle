@@ -10,7 +10,7 @@
  * over them.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { OwnerOf } from '@deepseek-ai/dsh-client-ui-slots'
@@ -195,7 +195,11 @@ describe('TextPreview — pages', () => {
     const next = Promise.withResolvers<Awaited<ReturnType<typeof h.read>>>()
     h.read.mockReturnValueOnce(next.promise)
     click(view.container, '[data-textpreview-more]')
-    expect(view.getByRole('status').getAttribute('aria-label')).toBe('loading')
+    const more = view.getByRole('button', { name: 'loadMore' }) as HTMLButtonElement
+    expect(more.getAttribute('aria-busy')).toBe('true')
+    expect(more.disabled).toBe(true)
+    fireEvent.click(more)
+    expect(h.read).toHaveBeenCalledTimes(2)
     expect(lines(view.container)).toEqual(['held\n'])
     await act(async () => { next.resolve(page(2, ['tail'], true)); await next.promise })
     expect(view.queryByRole('status')).toBeNull()
@@ -208,17 +212,19 @@ describe('TextPreview — pages', () => {
     await settle()
     const failed = view.container.querySelector('[data-textpreview-failed]')
     expect(failed?.getAttribute('data-textpreview-failed')).toBe('gateway/internal')
-    expect(view.container.textContent).toContain('error.unavailable(message=boom)')
+    const notice = view.getByRole('alert')
+    expect(notice.textContent).toContain('error.unavailable(message=boom)')
     // Nothing read yet: the failure stands as the body, under the file's type sheet.
     expect(failed?.querySelector('svg')).not.toBeNull()
     expect(view.container.querySelector('[data-textpreview-more]')).toBeNull()
     expect(view.container.querySelector('[data-slot="sidebar.right.tab.document.unpreviewable"]')).toBeNull()
     h.script(1, page(1, ['one'], true))
-    click(view.container, '[data-textpreview-retry]')
+    fireEvent.click(within(notice).getByRole('button', { name: 'reloadNow' }))
     await settle()
     expect(h.read).toHaveBeenLastCalledWith(SESSION, PATH, 1, h.controller.signal)
     expect(lines(view.container)).toEqual(['one\n'])
     expect(view.container.querySelector('[data-textpreview-failed]')).toBeNull()
+    expect(view.queryByRole('alert')).toBeNull()
   })
 
   it('hands a readable file it cannot render to the unpreviewable seat instead of Retry', async () => {
@@ -259,21 +265,22 @@ describe('TextPreview — pages', () => {
     expect(view.container.querySelector('[data-textpreview-failed]')).toBeNull()
   })
 
-  it('says why a later page failed on a line under the pages already read', async () => {
+  it('announces why a later page failed while preserving the pages already read', async () => {
     const h = harness({ 1: page(1, ['a'], false), 2: failure('workspace-file/too-large', { path: PATH, limit: 1024 }) })
     const view = render(<TextPreview {...h.props()} />)
     await settle()
     click(view.container, '[data-textpreview-more]')
     await settle()
-    const failed = view.container.querySelector('[data-textpreview-failed]')
-    expect(failed?.getAttribute('data-textpreview-failed')).toBe('workspace-file/too-large')
-    expect(failed?.querySelector('svg')).toBeNull()
+    const notice = view.getByRole('alert')
+    expect(notice.textContent).toContain('error.tooLarge(limit=1 KB)')
+    expect(view.container.querySelector('[data-textpreview-failed]')).toBeNull()
     expect(lines(view.container)).toEqual(['a\n'])
     h.script(2, page(2, ['b'], true))
-    click(view.container, '[data-textpreview-retry]')
+    fireEvent.click(within(notice).getByRole('button', { name: 'retry' }))
     await settle()
     expect(lines(view.container)).toEqual(['a\n', 'b\n'])
     expect(view.container.querySelector('[data-textpreview-failed]')).toBeNull()
+    expect(view.queryByRole('alert')).toBeNull()
   })
 
   it('announces a change while automatic refresh is paused and reloads on request, keeping the reader\'s place', async () => {
@@ -284,10 +291,10 @@ describe('TextPreview — pages', () => {
     click(view.container, '[data-textpreview-tool="auto-refresh"]')
     h.setVersion('v2')
     view.rerender(<TextPreview {...h.props()} />)
-    expect(view.container.querySelector('[data-textpreview-changed]')?.textContent).toContain('changed')
+    expect(view.getByRole('alert').textContent).toContain('changed')
     expect(lines(view.container)).toEqual(['a\n', 'b\n'])
     h.script(1, page(1, ['A', 'B', 'C'], true, 'v2'))
-    click(view.container, '[data-textpreview-reload-now]')
+    fireEvent.click(within(view.getByRole('alert')).getByRole('button', { name: 'reloadNow' }))
     expect(h.read).toHaveBeenCalledTimes(2)
     await settle()
     expect(h.read).toHaveBeenLastCalledWith(SESSION, PATH, 1, h.controller.signal)
@@ -332,18 +339,18 @@ describe('TextPreview — the file\'s metadata', () => {
     await settle()
     click(view.container, '[data-textpreview-tool="auto-refresh"]')
     expect(h.instance.getSnapshot().byTab[TAB_ID]).toMatchObject({ version: 'v2', observedVersion: 'v1' })
-    expect(view.container.querySelector('[data-textpreview-changed]')).toBeNull()
+    expect(view.queryByRole('alert')).toBeNull()
     h.setVersion('v3')
     view.rerender(<TextPreview {...h.props()} />)
-    expect(view.container.querySelector('[data-textpreview-changed]')).not.toBeNull()
+    expect(view.getByRole('alert').textContent).toContain('changed')
     h.script(1, page(1, ['refreshed'], true, 'v4'))
-    click(view.container, '[data-textpreview-reload-now]')
+    fireEvent.click(within(view.getByRole('alert')).getByRole('button', { name: 'reloadNow' }))
     await settle()
     expect(h.instance.getSnapshot().byTab[TAB_ID]).toMatchObject({ version: 'v4', observedVersion: 'v3' })
-    expect(view.container.querySelector('[data-textpreview-changed]')).toBeNull()
+    expect(view.queryByRole('alert')).toBeNull()
     h.setVersion('v5')
     view.rerender(<TextPreview {...h.props()} />)
-    expect(view.container.querySelector('[data-textpreview-changed]')).not.toBeNull()
+    expect(view.getByRole('alert').textContent).toContain('changed')
   })
 
   it('announces metadata that changes during the first read while automatic refresh is paused', async () => {
@@ -357,7 +364,7 @@ describe('TextPreview — the file\'s metadata', () => {
     await act(async () => { pending.resolve(page(1, ['read v1'], true)); await pending.promise })
     expect(h.read).toHaveBeenCalledTimes(1)
     expect(h.instance.getSnapshot().byTab[TAB_ID]).toMatchObject({ version: 'v1', observedVersion: 'v1' })
-    expect(view.container.querySelector('[data-textpreview-changed]')).not.toBeNull()
+    expect(view.getByRole('alert').textContent).toContain('changed')
   })
 
   it('refreshes one tab without acknowledging another tab on the same file and store', async () => {
@@ -374,13 +381,15 @@ describe('TextPreview — the file\'s metadata', () => {
     h.setVersion('v2')
     first.rerender(<TextPreview {...firstProps} />)
     second.rerender(<TextPreview {...secondProps} />)
-    expect(first.container.querySelector('[data-textpreview-changed]')).not.toBeNull()
-    expect(second.container.querySelector('[data-textpreview-changed]')).not.toBeNull()
+    const notices = screen.getAllByRole('alert')
+    expect(notices).toHaveLength(2)
+    const [firstNotice, secondNotice] = notices
+    expect(firstNotice!.textContent).toContain('changed')
+    expect(secondNotice!.textContent).toContain('changed')
     h.script(1, page(1, ['new'], true, 'v2'))
-    click(first.container, '[data-textpreview-reload-now]')
+    fireEvent.click(within(firstNotice!).getByRole('button', { name: 'reloadNow' }))
     await settle()
-    expect(first.container.querySelector('[data-textpreview-changed]')).toBeNull()
-    expect(second.container.querySelector('[data-textpreview-changed]')).not.toBeNull()
+    expect(screen.getAllByRole('alert')).toEqual([secondNotice])
     expect(lines(first.container)).toEqual(['new\n'])
     expect(lines(second.container)).toEqual(['old\n'])
     expect(h.instance.getSnapshot().byTab[TAB_ID]).toMatchObject({ version: 'v2', observedVersion: 'v2' })
@@ -395,23 +404,22 @@ describe('TextPreview — the file\'s metadata', () => {
     h.setVersion('v2')
     h.setFailure(new RemoteError('workspace-file/not-found', 'gone', { path: PATH }))
     view.rerender(<TextPreview {...h.props()} />)
-    const bar = view.container.querySelector('[data-textpreview-meta-failed]')
-    expect(bar?.getAttribute('data-textpreview-meta-failed')).toBe('workspace-file/not-found')
-    expect(bar?.textContent).toContain('error.notFound')
-    expect(view.container.querySelector('[data-textpreview-changed]')).toBeNull()
+    const notice = view.getByRole('alert')
+    expect(notice.textContent).toContain('error.notFound')
+    expect(notice.textContent).not.toContain('changed')
     expect(lines(view.container)).toEqual(['a\n', 'b\n'])
     // Retrying content does not acknowledge or mutate the shared metadata failure.
     h.script(1, page(1, ['A'], true, 'v2'))
-    click(view.container, '[data-textpreview-reload-now]')
+    fireEvent.click(within(notice).getByRole('button', { name: 'reloadNow' }))
     expect(h.read).toHaveBeenCalledTimes(2)
     await settle()
     expect(lines(view.container)).toEqual(['A\n'])
+    expect(view.getByRole('alert').textContent).toContain('error.notFound')
     // A later provider frame independently clears the metadata failure.
     h.setVersion('v2')
     h.setFailure(undefined)
     view.rerender(<TextPreview {...h.props()} />)
-    expect(view.container.querySelector('[data-textpreview-meta-failed]')).toBeNull()
-    expect(view.container.querySelector('[data-textpreview-changed]')).toBeNull()
+    expect(view.queryByRole('alert')).toBeNull()
   })
 
   it('says a metadata-and-read failure once and retries the content read', async () => {

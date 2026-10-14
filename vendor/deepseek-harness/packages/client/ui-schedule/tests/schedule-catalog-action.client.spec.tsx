@@ -241,8 +241,8 @@ describe('ScheduleCatalogAction visibility', () => {
     expect(pending.hasAttribute('disabled')).toBe(true)
     expect(pending.getAttribute('aria-busy')).toBe('true')
     expect(pending.querySelector('[data-state="ongoing"]')).not.toBeNull()
-    // The icon-only delete button keeps its action copy as the tooltip.
-    expect(pending.getAttribute('title')).toBe(en['delete.pending'])
+    // The fixed-size busy control retains the reminder's identity and action.
+    expect(pending.getAttribute('title')).toBe('Delete reminder: selected')
     view.rerender(<ScheduleCatalogAction {...props([row], 'error')} />)
     expect(screen.queryByRole('list')).toBeNull()
   })

@@ -3,7 +3,7 @@
 // semantics (IME guard, Shift newline, busy Enter policy, Ctrl/Meta steering,
 // repeat suppression), running semantics (input stays free; continuable
 // children keep Send beside Stop), the machine pending lock, chip decorators,
-// error banners, status strips, and the focus-keeping mousedown. Keyboard
+// error and information Toasts, and the focus-keeping mousedown. Keyboard
 // gestures dispatch real KeyboardEvents at the contenteditable (the Lexical
 // root listener routes them through the keymap commands); draft writes drive
 // the shell (jsdom's beforeinput lacks the ranges Lexical needs).
@@ -1841,11 +1841,27 @@ describe('strips and variants', () => {
     }
   })
 
-  it('renders an information notice from the machine store as a status strip', () => {
-    const { view, shell } = bench()
-    act(() => { shell.notify('info', '命令完成了') })
-    expect(view.getByRole('status').textContent).toBe('命令完成了')
-    expect(view.queryByRole('alert')).toBeNull()
+  it('keeps an information notice visible in the Toast until dismissed without disturbing the draft', () => {
+    vi.useFakeTimers()
+    try {
+      const { view, shell, textarea } = bench({ draft: '保留的草稿' })
+      textarea.focus()
+      act(() => { shell.notify('info', '命令完成了') })
+      const toast = view.getByRole('alert')
+      expect(toast.textContent).toBe('命令完成了')
+      expect(toast.getAttribute('data-persistent')).toBe('true')
+      expect(toast.closest('[data-dsh-toast-stack]')).not.toBeNull()
+      expect(view.queryByRole('status')).toBeNull()
+      expect(document.activeElement).toBe(textarea)
+      expect(shell.snapshot.draft).toBe('保留的草稿')
+      act(() => { vi.advanceTimersByTime(4000) })
+      expect(view.getByRole('alert')).toBe(toast)
+      fireEvent.click(view.getByRole('button', { name: '关闭提示' }))
+      expect(view.queryByRole('alert')).toBeNull()
+      expect(shell.snapshot.draft).toBe('保留的草稿')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('hero variant adds the hero class and accessory row renders', () => {

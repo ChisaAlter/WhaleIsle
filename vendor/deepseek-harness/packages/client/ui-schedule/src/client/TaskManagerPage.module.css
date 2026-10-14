@@ -1309,7 +1309,7 @@
   justify-content: flex-end;
   gap: 8px;
   padding: 8px 12px;
-  border: 0.5px solid var(--dsw-alias-border-l4);
+  border: 0;
   border-radius: var(--dsw-radius-md);
   background: var(--dsw-specific-menu);
   backdrop-filter: var(--dsw-menu-backdrop-filter);

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { Profiler } from 'react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector } from '../../ui-renderer/src/client/bind.ts'
@@ -236,7 +236,9 @@ describe('FloatingPreviewButton', () => {
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: en['preview.floating'] }))
-    expect((await screen.findByRole('alert')).textContent).toBe('Could not open the separate preview window.')
+    const failure = await screen.findByRole('alert')
+    expect(within(failure).getByText('Could not open the separate preview window.')).toBeTruthy()
+    expect(within(failure).getByRole('button', { name: en['preview.floating'] })).toBeTruthy()
     expect(previewOpenFileWindow).toHaveBeenCalledTimes(1)
   })
 })

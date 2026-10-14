@@ -4,6 +4,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const vm = require('node:vm');
+const { previewGuestPreloadPath } = require('./preview-session');
+const { preparePreviewGuestPreload } = require('../../scripts/prepare-preview-guest-preload.cjs');
 const {
   applyAnnotationTheme,
   cssSelector,
@@ -23,6 +26,35 @@ const BRAND = new RegExp(
 function readSource(name) {
   return fs.readFileSync(path.join(__dirname, name), 'utf8');
 }
+
+test('production guest preload loads with Electron sandbox require restrictions', () => {
+  const output = preparePreviewGuestPreload();
+  assert.equal(output, previewGuestPreloadPath());
+  const listeners = new Map();
+  const pointerListeners = [];
+  const context = {
+    require(name) {
+      assert.equal(name, 'electron', 'sandbox must not require local modules or Node builtins');
+      return {
+        ipcRenderer: {
+          on(channel, listener) {
+            listeners.set(channel, [...(listeners.get(channel) ?? []), listener]);
+          },
+          send() {},
+        },
+      };
+    },
+    window: { addEventListener: (name) => pointerListeners.push(name) },
+  };
+  vm.runInNewContext(fs.readFileSync(output, 'utf8'), context, { filename: output });
+  assert.ok(listeners.has('dshd-preview-start-pick'));
+  assert.ok(listeners.has('dshd-preview-annotation-theme'));
+  assert.ok(listeners.has('dshd-preview-cancel-pick'));
+  assert.deepEqual(pointerListeners, ['pointerdown', 'keydown']);
+  assert.equal(context.ipcRenderer, undefined);
+  assert.equal(context.window.ipcRenderer, undefined);
+  for (const cancel of listeners.get('dshd-preview-cancel-pick')) cancel();
+});
 
 test('guest preload keeps ipcRenderer in the isolated world and omits leftover brand markers', () => {
   const files = [

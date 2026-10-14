@@ -158,11 +158,18 @@ it('retains renderer content across remounts and waits for reload when automatic
   expect(screen.getByText('PDF v2')).toBeTruthy()
 })
 
-it('aborts a superseded load and rejects its late bytes and version report', async () => {
+it('locks reload during a load and rejects late bytes and version reports after replacement', async () => {
   const h = setup()
   render(<h.View />)
   const previous = h.request()
-  fireEvent.click(screen.getByRole('button', { name: 'reload' }))
+  const reload = screen.getByRole('button', { name: 'reload' }) as HTMLButtonElement
+  expect(reload.getAttribute('aria-busy')).toBe('true')
+  expect(reload.disabled).toBe(true)
+  fireEvent.click(reload)
+  expect(h.read).toHaveBeenCalledTimes(1)
+  // The toolbar locks repeat clicks, while an external renderer replacement
+  // still retires the previous generation and ignores its late reports.
+  act(() => { h.h.face.prepareRenderer(TAB_ID, h.h.controller.signal, definition.id, h.h.file?.version, true) })
   expect(h.pending[0]!.signal.aborted).toBe(true)
   act(() => { previous.failed() })
   expect(h.h.instance.getSnapshot().byTab[TAB_ID]?.loading).toBe(true)

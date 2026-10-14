@@ -138,6 +138,24 @@ function rowButton(item: HTMLElement): HTMLButtonElement {
   return within(item).getByRole<HTMLButtonElement>('button')
 }
 
+/** The scan indicator occupies Open's existing caption seat. */
+function expectOpenBusy(busy: boolean): HTMLButtonElement {
+  const button = screen.getByRole<HTMLButtonElement>('button', { name: 'browser.open' })
+  expect(button.getAttribute('aria-busy')).toBe(busy ? 'true' : null)
+  if (busy) expect(button.disabled).toBe(true)
+  return button
+}
+
+/** Failures keep their exact message and expose retry/dismiss through a visible toast. */
+function expectErrorToast(text: string): HTMLElement {
+  const toast = screen.getByRole('alert')
+  expect(within(toast).getByText(text, { exact: true })).toBeTruthy()
+  expect(toast.getAttribute('data-persistent')).toBe('true')
+  expect(within(toast).getByRole('button', { name: 'browser.retry' })).toBeTruthy()
+  expect(within(toast).getByRole('button', { name: 'browser.dismiss' })).toBeTruthy()
+  return toast
+}
+
 describe('DirectoryBrowser', () => {
   it('renders nothing and launches no listing while initially closed', () => {
     const b = mount({ open: false })
@@ -373,10 +391,10 @@ describe('DirectoryBrowser', () => {
       await act(async () => { vi.advanceTimersByTime(250) })
       await act(async () => { settlers.get(DOCS)!(listingFor(DOCS)) })
       // Its parent leg gets a fresh silence window. Crossing the original
-      // scan's 300ms deadline therefore cannot flash the indicator during the
+      // scan's 300ms deadline therefore cannot mark Open busy during the
       // bounded landing wait.
       await act(async () => { vi.advanceTimersByTime(199) })
-      expect(screen.queryByText('browser.loading')).toBeNull()
+      expectOpenBusy(false)
       // The parent leg outlives PARENT_LEG_WAIT_MS: the target lands alone.
       await act(async () => { vi.advanceTimersByTime(1) })
       expect(columns()).toHaveLength(1)
@@ -418,7 +436,7 @@ describe('DirectoryBrowser', () => {
     }
   })
 
-  it('shows the loading indicator only once a scan outlives its silence window, floating over the stale view', async () => {
+  it('marks Open busy only once a scan outlives its silence window, preserving the stale view', async () => {
     vi.useFakeTimers()
     try {
       // The home level is truncated so its note is on screen when the slow
@@ -432,26 +450,27 @@ describe('DirectoryBrowser', () => {
       })
       mount({ listDirectory })
       await act(async () => {})
-      expect(screen.queryByText('browser.loading')).toBeNull()
+      const openButton = expectOpenBusy(false)
       expect(screen.getByText('browser.truncated')).toBeTruthy()
       fireEvent.click(screen.getByRole('button', { name: 'browser.editPath' }))
       fireEvent.change(screen.getByLabelText<HTMLInputElement>('browser.editPath'), { target: { value: DOCS } })
       fireEvent.keyDown(screen.getByLabelText('browser.editPath'), { key: 'Enter' })
-      // In flight but still inside the silence window: no indicator, and the
+      // In flight but still inside the silence window: no busy caption, and the
       // stale level's truncated note stays put (no layout churn on launch).
-      expect(screen.queryByText('browser.loading')).toBeNull()
+      expect(expectOpenBusy(false)).toBe(openButton)
       expect(screen.getByText('browser.truncated')).toBeTruthy()
       await act(async () => { vi.advanceTimersByTime(300) })
-      // Past it: the indicator floats while the stale level — truncated note
-      // included — keeps rendering beneath it.
-      expect(screen.getByText('browser.loading')).toBeTruthy()
+      // Past it: Open's caption seat carries the indicator while the stale
+      // level, truncated note and entered path stay in place.
+      expect(expectOpenBusy(true)).toBe(openButton)
+      expect(screen.getByLabelText<HTMLInputElement>('browser.editPath').value).toBe(DOCS)
       expect(screen.getByText('browser.truncated')).toBeTruthy()
       expect(screen.getByText('Documents')).toBeTruthy()
       // Landing (both legs) retires the indicator with the scan, and the
       // fresh listings' own truncated state replaces the stale note.
       await act(async () => { settlers.get(DOCS)!(listingFor(DOCS)) })
       await act(async () => { settlers.get(HOME)!(listingFor(HOME)) })
-      expect(screen.queryByText('browser.loading')).toBeNull()
+      expect(expectOpenBusy(false)).toBe(openButton)
       expect(screen.queryByText('browser.truncated')).toBeNull()
       expect(columns()).toHaveLength(2)
     } finally {
@@ -471,16 +490,17 @@ describe('DirectoryBrowser', () => {
       await act(async () => {})
       fireEvent.click(rowButton(itemNamed('Documents')))
       await act(async () => { vi.advanceTimersByTime(300) })
-      expect(screen.getByText('browser.loading')).toBeTruthy()
+      const openButton = expectOpenBusy(true)
       // The same row remains actionable while its preview is pending. A second
       // pick starts a new listing without a false `loading` edge.
       fireEvent.click(rowButton(itemNamed('Documents')))
-      expect(screen.queryByText('browser.loading')).toBeNull()
+      expect(expectOpenBusy(false)).toBe(openButton)
       await act(async () => { vi.advanceTimersByTime(299) })
-      expect(screen.queryByText('browser.loading')).toBeNull()
+      expect(expectOpenBusy(false)).toBe(openButton)
       await act(async () => { vi.advanceTimersByTime(1) })
-      expect(screen.getByText('browser.loading')).toBeTruthy()
+      expect(expectOpenBusy(true)).toBe(openButton)
       await act(async () => { pending.at(-1)!(listingFor(DOCS)) })
+      expect(expectOpenBusy(false)).toBe(openButton)
     } finally {
       vi.useRealTimers()
     }
@@ -496,20 +516,20 @@ describe('DirectoryBrowser', () => {
         new Promise<DirectoryListing>((resolve) => { settlers.push(resolve) }))
       const { view, props } = mount({ listDirectory })
       await act(async () => { vi.advanceTimersByTime(300) })
-      expect(screen.getByText('browser.loading')).toBeTruthy()
+      expectOpenBusy(true)
       // Close while the scan is in flight, then reopen: the first frame must
       // wait out a fresh silence window, not inherit the armed indicator.
       view.rerender(<DirectoryBrowser {...props} open={false} />)
       view.rerender(<DirectoryBrowser {...props} open />)
       await act(async () => {})
-      expect(screen.queryByText('browser.loading')).toBeNull()
+      expectOpenBusy(false)
       await act(async () => { vi.advanceTimersByTime(300) })
-      expect(screen.getByText('browser.loading')).toBeTruthy()
+      expectOpenBusy(true)
       // Reopen lists home first; the parent `/home` leg starts only after
       // that target settles, so the two arrivals are sequential.
       await act(async () => { settlers.at(-1)!(listingFor(undefined)) })
       await act(async () => { settlers.at(-1)!(listingFor('/home')) })
-      expect(screen.queryByText('browser.loading')).toBeNull()
+      expectOpenBusy(false)
       expect(screen.getByText('Documents')).toBeTruthy()
     } finally {
       vi.useRealTimers()
@@ -931,7 +951,7 @@ describe('DirectoryBrowser', () => {
     // Submitting inside the debounce window holds the pending scan back.
     fireEvent.change(input, { target: { value: HARNESS } })
     fireEvent.keyDown(input, { key: 'Enter' })
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('target unreadable') })
+    await waitFor(() => { expectErrorToast('target unreadable') })
     // Correcting only the final segment leaves the directory part unchanged;
     // the edit must still release the hold and re-arm the wait.
     fireEvent.change(input, { target: { value: `${HARNESS}x` } })
@@ -1250,23 +1270,36 @@ describe('DirectoryBrowser', () => {
   })
 
   it('surfaces an unreadable target as an alert and keeps the edit open for correction', async () => {
-    mount()
+    const b = mount()
     await waitFor(() => { expect(itemNamed('Documents')).toBeTruthy() })
     fireEvent.click(screen.getByRole('button', { name: 'browser.editPath' }))
     const input = screen.getByLabelText('browser.editPath')
     fireEvent.change(input, { target: { value: '/nope' } })
     fireEvent.keyDown(input, { key: 'Enter' })
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('cannot list /nope') })
-    expect(screen.getByLabelText('browser.editPath')).toBeTruthy()
+    await waitFor(() => { expectErrorToast('cannot list /nope') })
+    expect(screen.getByLabelText<HTMLInputElement>('browser.editPath').value).toBe('/nope')
     expect(itemNamed('Documents').textContent).toBe('Documents')
+    // Retry targets the failed submission, keeping its draft and listed
+    // content rather than falling back to Home or starting a draft scan.
+    fireEvent.click(within(expectErrorToast('cannot list /nope')).getByRole('button', { name: 'browser.retry' }))
+    await waitFor(() => {
+      expect(b.listDirectory.mock.calls.map(call => call[0])).toEqual([undefined, '/home', '/nope', '/nope'])
+      expectErrorToast('cannot list /nope')
+    })
+    expect(screen.getByLabelText<HTMLInputElement>('browser.editPath').value).toBe('/nope')
+    expect(itemNamed('Documents').textContent).toBe('Documents')
+    fireEvent.click(within(expectErrorToast('cannot list /nope')).getByRole('button', { name: 'browser.dismiss' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByLabelText<HTMLInputElement>('browser.editPath').value).toBe('/nope')
+    expect(b.onClose).not.toHaveBeenCalled()
   })
 
   it('folds non-typed failures into readable text (Error message, String otherwise)', async () => {
     const b = mount({ listDirectory: vi.fn(async () => { throw new Error('socket down') }) })
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('socket down') })
+    await waitFor(() => { expectErrorToast('socket down') })
     b.view.rerender(<DirectoryBrowser {...b.props} open={false} />)
     const raw = mount({ listDirectory: vi.fn(async () => { throw 'raw failure' }) })
-    await waitFor(() => { expect(screen.getAllByRole('alert').at(-1)!.textContent).toBe('raw failure') })
+    await waitFor(() => { expectErrorToast('raw failure') })
     expect(raw.onOpen).not.toHaveBeenCalled()
   })
 
@@ -1353,7 +1386,7 @@ describe('DirectoryBrowser', () => {
       })
     })
     mount({ listDirectory })
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('home unreadable') })
+    await waitFor(() => { expectErrorToast('home unreadable') })
     // With no listed level, typing an absolute path is the one way forward.
     fireEvent.click(screen.getByRole('button', { name: 'browser.editPath' }))
     const input = screen.getByLabelText('browser.editPath')
@@ -1372,7 +1405,7 @@ describe('DirectoryBrowser', () => {
       throw Object.assign(new Error('home unavailable'), { rpcError: null })
     })
     mount({ listDirectory })
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('home unavailable') })
+    await waitFor(() => { expectErrorToast('home unavailable') })
   })
 
   it('disables Open and New folder while a path draft is uncommitted', async () => {
@@ -1412,7 +1445,7 @@ describe('DirectoryBrowser', () => {
     await waitFor(() => { expect(b.createDirectory).toHaveBeenCalledWith(DOCS, '新建') })
   })
 
-  it('surfaces a two-pane navigation failure as an alert below the columns', async () => {
+  it('surfaces a two-pane navigation failure through a toast while preserving both columns', async () => {
     const b = mount()
     await waitFor(() => { expect(itemNamed('Documents')).toBeTruthy() })
     fireEvent.click(rowButton(itemNamed('Documents')))
@@ -1421,9 +1454,9 @@ describe('DirectoryBrowser', () => {
       throw new Error('denied')
     })
     fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: 'browser.home' }))
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('denied') })
-    // Both panes survive the failure; the alert renders in the flow, not as a
-    // third column competing for the fixed widths.
+    await waitFor(() => { expectErrorToast('denied') })
+    // Both panes survive the failure; the portal toast does not become a
+    // third column competing for their fixed widths.
     expect(columns()).toHaveLength(2)
   })
 
@@ -1528,7 +1561,7 @@ describe('DirectoryBrowser', () => {
       throw new Error('denied')
     })
     fireEvent.click(rowButton(itemNamed('Documents')))
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('denied') })
+    await waitFor(() => { expectErrorToast('denied') })
     // The breadcrumb names the level, so the level must be the committing
     // target: no half-selected two-pane state survives the failure.
     expect(columns()).toHaveLength(1)
@@ -1656,7 +1689,8 @@ describe('DirectoryBrowser', () => {
     expect(b.createDirectory).not.toHaveBeenCalled()
     fireEvent.change(input, { target: { value: 'x' } })
     fireEvent.keyDown(input, { key: 'Enter' })
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('taken already') })
+    await waitFor(() => { expectErrorToast('taken already') })
+    expect(screen.getByLabelText<HTMLInputElement>('browser.folderName').value).toBe('x')
     fireEvent.keyDown(screen.getByLabelText('browser.folderName'), { key: 'Escape' })
     await waitFor(() => { expect(screen.queryByRole('textbox', { name: 'browser.folderName' })).toBeNull() })
 
@@ -1681,7 +1715,7 @@ describe('DirectoryBrowser', () => {
     const input = screen.getByLabelText('browser.folderName')
     fireEvent.change(input, { target: { value: 'fresh' } })
     fireEvent.keyDown(input, { key: 'Enter' })
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('level vanished') })
+    await waitFor(() => { expectErrorToast('level vanished') })
   })
 
   it('drops a stale child listing that resolves after a crumb jump', async () => {

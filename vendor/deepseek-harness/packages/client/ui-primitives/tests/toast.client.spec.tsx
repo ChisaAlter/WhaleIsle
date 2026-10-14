@@ -11,12 +11,11 @@ afterEach(cleanup)
 const settle = () => act(async () => { await Promise.resolve() })
 
 describe('Toast', () => {
-  it('announces its text and reports done after the hold-and-fade lifetime', async () => {
+  it('announces its text in the mounting commit and reports done after the hold-and-fade lifetime', () => {
     vi.useFakeTimers()
     try {
       const onDone = vi.fn()
       const view = render(<Toast text="最多添加 50 张图片" icon={<svg data-testid="icon" />} onDone={onDone} />)
-      await settle()
       const banner = view.getByRole('alert')
       expect(banner.textContent).toContain('最多添加 50 张图片')
       expect(view.getByTestId('icon')).toBeTruthy()
@@ -327,6 +326,38 @@ describe('Toast', () => {
     expect(screen.getByRole('dialog', { name: 'Prices' })).toBeTruthy()
     expect(screen.getByRole('textbox', { name: 'Draft price' })).toHaveProperty('value', 'invalid price')
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close prices' }))
+  })
+
+  it('assigns a notice registered before its sibling editor to that editor in the opening commit', async () => {
+    function Settings() {
+      const [editor, setEditor] = useState(false)
+      const [notice, setNotice] = useState('Ready')
+      return <Modal open title="Settings" closeLabel="Close settings" onClose={() => {}}>
+        <section>
+          <button onClick={() => { setEditor(true); setNotice('Prices rejected') }}>Edit prices</button>
+          <Toast text={notice} holdMs={null} dismissLabel="Dismiss price error" onDone={() => {}} />
+          <Modal open={editor} title="Prices" closeLabel="Close prices" onClose={() => { setEditor(false) }}>
+            <input aria-label="Draft price" />
+          </Modal>
+        </section>
+      </Modal>
+    }
+    render(<Settings />)
+    await settle()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit prices' }))
+    const notice = screen.getByRole('alert')
+    expect(notice.textContent).toContain('Prices rejected')
+    expect(notice.inert).toBe(false)
+    const input = screen.getByRole('textbox', { name: 'Draft price' })
+    input.focus()
+    fireEvent.keyDown(input, { key: 'Tab' })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Dismiss price error' }))
+    await settle()
+    expect(notice.inert).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Close prices' }))
+    await settle()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('dialog', { name: 'Settings' })).toBeTruthy()
   })
 
   it('keeps a closed editor notice hidden under its parent and restores it when the editor remounts', async () => {

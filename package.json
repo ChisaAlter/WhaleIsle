@@ -16,6 +16,7 @@
     "setup:harness": "node scripts/setup-harness.js",
     "sync:harness": "node scripts/sync-upstream.js",
     "prepare:dshd-remote": "node scripts/prepare-dshd-remote.mjs",
+    "prepare:preview-guest": "node scripts/prepare-preview-guest-preload.cjs",
     "prepare:office-runtime": "node scripts/prepare-office-runtime.mjs",
     "prepare:dsh-remote-client": "node scripts/prepare-dsh-remote-client.mjs",
     "prepare:dsh-with-chatgpt-bundle": "node scripts/prepare-dsh-with-chatgpt-bundle.mjs",

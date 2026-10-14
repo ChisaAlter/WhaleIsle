@@ -233,7 +233,7 @@ it.each([en, zh])('offers settings, contact and sign-in from the signed-out acco
   expect(operations.contactUs).toHaveBeenCalledOnce()
 })
 
-it('reports a failed start in the login dialog, not as a sidebar alert', async () => {
+it('reports a failed start once while keeping the login dialog available', async () => {
   const operations = mount({ status: 'signed-out', attempt: null })
   cleanup()
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
@@ -251,14 +251,17 @@ it('reports a failed start in the login dialog, not as a sidebar alert', async (
   fireEvent.click(screen.getByRole('button', { name: en.menu }))
   await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: en.signIn })) })
   expect(start).toHaveBeenCalledOnce()
-  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByRole('alert').textContent).toBe(en.failed)
   view.rerender(<AccountMenu {...({} as GlobalStandardProps)} {...operations} settingsOpen={false} start={start}
     useAccount={selector => selector(snapshot)} useTheme={selector => selector(operations.hooks.theme.getSnapshot())}
     wide openOnboarding={() => {}} openSettings={() => {}}
     t={key => key in en ? en[key as AccountKey] : key} />)
-  expect(screen.getByRole('dialog').textContent).toContain(en.failed)
-  expect(screen.queryByRole('alert')).toBeNull()
-  // The dialog is the only place that reports the failure, so its copy appears once.
+  const dialog = screen.getByRole('dialog')
+  expect(dialog.textContent).toContain(en.loginTitle)
+  expect(within(dialog).getByRole<HTMLButtonElement>('button', { name: en.retry }).disabled).toBe(false)
+  // The dialog's result is portaled above it; rerendering the Host snapshot must not duplicate it.
+  expect(screen.getAllByRole('alert')).toHaveLength(1)
+  expect(screen.getByRole('alert').textContent).toBe(en.failed)
   expect(document.body.textContent.split(en.failed)).toHaveLength(2)
   await expect(`${document.body.textContent}\n`).toMatchFileSnapshot('./expected/login-failed-en.txt')
 })
@@ -276,9 +279,12 @@ it('keeps the confirmation dialog open after a failed sign-out', async () => {
   fireEvent.click(screen.getByRole('button', { name: en.menu }))
   await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: en.signOut })) })
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.signOut })) })
-  // The confirmation dialog owns the failure; the launcher renders no error of its own.
+  // The confirmation stays open, with its failure portaled above the dialog.
   const dialog = screen.getByRole('dialog')
-  expect(within(dialog).getByRole('alert').textContent).toBe(en.failed)
+  expect(within(dialog).getByRole<HTMLButtonElement>('button', { name: en.signOut }).disabled).toBe(false)
+  expect(screen.getAllByRole('alert')).toHaveLength(1)
+  expect(screen.getByRole('alert').textContent).toBe(en.failed)
+  expect(signOut).toHaveBeenCalledOnce()
 })
 
 it.each([en, zh])('renders Platform profile and recharge wallet balances', async (copy) => {
@@ -605,7 +611,10 @@ it('reports a rejected settings login and disables login while initial state is 
   snapshot = operations.hooks.account.getSnapshot()
   view.rerender(<AccountSection {...props} />)
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.signIn })) })
-  expect(screen.getByRole('status').textContent).toBe(en.failed)
+  expect(screen.getByRole('alert').textContent).toBe(en.failed)
+  expect(screen.getByRole('status').textContent).toBe(en.settingsSignedOutDescription)
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: en.signIn }).disabled).toBe(false)
+  expect(props.start).toHaveBeenCalledOnce()
 })
 
 it('dismisses a collapsed menu and hands its login dialog to the API-key onboarding step', async () => {

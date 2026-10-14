@@ -265,7 +265,7 @@ export function PreviewPanel({
   const [moreOpen, setMoreOpen] = useState(false)
   const [presetMenuOpen, setPresetMenuOpen] = useState(false)
   const miniPlayer = useMiniPlayer()
-  const overlayOpen = moreOpen || presetMenuOpen
+  const overlayOpen = moreOpen || presetMenuOpen || pendingAction === 'pip'
   /**
    * Whether the chat float owned the native guest. Dropping the float's React
    * node does not unpaint the `BrowserView`, so when the float closes and this
@@ -638,7 +638,7 @@ export function PreviewPanel({
       const theme = readPreviewAnnotationTheme()
       void previewSetAnnotationTheme?.(previewId, theme)
       runAction(id, () => previewPickElement(previewId).then((result) => {
-        if (!result.ok) { if (result.message !== undefined) setMessage(result.message); return }
+        if (!result.ok) { if (result.message !== undefined && result.message !== 'cancelled') setMessage(result.message); return }
         const markdown = formatPickedAnnotationMarkdown(result)
         if (appendComposerText !== undefined && sessionId !== undefined) {
           const wrote = appendComposerText(sessionId, markdown)

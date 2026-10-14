@@ -209,6 +209,8 @@ it('releases the shared page and its hold when the account signs out mid-page', 
   expect(dismiss).toHaveBeenCalledOnce()
   expect(spies.pages.getSnapshot()).toBeNull()
   expect(releaseHold).toHaveBeenCalledOnce()
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(screen.queryByRole('alert')).toBeNull()
 })
 
 it('releases the hold when a higher-priority entry unmounts this one', async () => {

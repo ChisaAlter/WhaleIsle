@@ -2909,6 +2909,8 @@ describe('Task detail rule header and run-time card', () => {
     expect(expression.parentElement?.contains(hint)).toBe(false)
     clickSave()
     expect(h.updateTiming).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(expression)
+    expect(expression.value).toBe('0 9 * *')
     // The refused save adds no second copy: the hint stays the one alert.
     expect(screen.getAllByRole('alert')).toEqual([hint])
   })

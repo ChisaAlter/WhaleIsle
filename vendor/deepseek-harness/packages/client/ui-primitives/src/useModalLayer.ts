@@ -91,13 +91,16 @@ function toastModal(owner: HTMLElement): HTMLElement | null {
   return null
 }
 
-function updateToastStack(document: Document, stack: ToastStack): void {
+function updateToastStack(document: Document, stack: ToastStack, settleOwners = true): void {
   const foreground = foregroundModalSurfaces(document).filter(element => element.matches(dialogSelector)).at(-1)
   for (const item of stack.items) {
     if (!item.resolved) {
       item.modal = toastModal(item.owner)
       item.modalParent = layers.get(document)?.find(layer => layer.element === item.modal)?.owner?.parentElement ?? null
-      item.resolved = true
+      // Child layout effects can run before the sibling Modal has registered.
+      // Publish visibility immediately, but settle initial ownership only once
+      // the commit's remaining layer registrations have finished.
+      item.resolved = settleOwners
     } else if (item.modal !== null && !item.modal.isConnected && item.modalParent !== null) {
       // A persistent sibling notice outlives the modal's 200ms exit unmount.
       // Reopening that same owner creates a new dialog; keep the notice hidden
@@ -196,10 +199,12 @@ export function registerToastLayer(owner: HTMLElement, element: HTMLElement, vis
   if (stack === undefined) return () => {}
   const item: ToastLayer = { owner, element, modal: null, modalParent: null, resolved: false, visibility }
   stack.items.add(item)
+  updateToastStack(document, stack, false)
   scheduleToastStack(document)
   return () => {
     const focused = element.contains(document.activeElement)
     stack.items.delete(item)
+    updateToastStack(document, stack, false)
     scheduleToastStack(document)
     if (!focused || item.modal === null) return
     const modal = item.modal
@@ -309,6 +314,8 @@ export function useModalLayer(dialog: RefObject<HTMLElement | null>, open: boole
     const layer: ModalLayer = { element, close: () => { close.current() },
       ...owner?.current == null ? {} : { owner: owner.current } }
     stack.push(layer)
+    const notices = toastStacks.get(document)
+    if (notices !== undefined) updateToastStack(document, notices, false)
     scheduleToastStack(document)
     /**
      * A surface that is only being retained for its exit recipe is not a
@@ -369,6 +376,8 @@ export function useModalLayer(dialog: RefObject<HTMLElement | null>, open: boole
       stack.splice(stack.indexOf(layer), 1)
       document.removeEventListener('keydown', keydown)
       if (stack.length === 0) layers.delete(document)
+      const notices = toastStacks.get(document)
+      if (notices !== undefined) updateToastStack(document, notices, false)
       scheduleToastStack(document)
       if (wasTop) {
         const fallback = stack.at(-1)?.element

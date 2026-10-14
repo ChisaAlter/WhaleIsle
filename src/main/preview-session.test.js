@@ -308,5 +308,5 @@ test('previewGuestWebPreferences pin sandbox, isolation, and disable nodeIntegra
   assert.equal(prefs.contextIsolation, true);
   assert.equal(prefs.session, ses);
   assert.equal(prefs.preload, previewGuestPreloadPath());
-  assert.match(prefs.preload, /preview-guest-preload\.js$/);
+  assert.match(prefs.preload, /preview-guest-preload\.bundle\.js$/);
 });

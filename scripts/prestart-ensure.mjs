@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createFileScanner } from './source-scan.mjs';
 import { readStageCredentials, stagesToRun } from '../vendor/deepseek-harness/scripts/build-stage-credentials.mjs';
+import { preparePreviewGuestPreload } from './prepare-preview-guest-preload.cjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const harness = path.join(root, 'vendor', 'deepseek-harness');
@@ -89,6 +90,7 @@ if (buildReason) {
 }
 
 // Absolute node paths with spaces break under shell:true on Windows.
+preparePreviewGuestPreload();
 run(process.execPath, ['scripts/prepare-dshd-remote.mjs'], root, { shell: false });
 run(process.execPath, ['scripts/prepare-dsh-remote-client.mjs'], root, { shell: false });
 

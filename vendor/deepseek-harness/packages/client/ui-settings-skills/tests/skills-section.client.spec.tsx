@@ -473,7 +473,7 @@ describe('SkillsSection', () => {
     expect(await screen.findByRole('dialog', { name: en.editorTitleEdit })).toBeTruthy()
   })
 
-  it('updates the model-invocation Switch in place with pending and inline failure states', async () => {
+  it('updates the model-invocation Switch in place with pending and failure feedback', async () => {
     const first = deferred<boolean>()
     const setInvocation = vi.fn(async () => { await first.promise })
     await renderCatalog({ setInvocation })
@@ -494,7 +494,9 @@ describe('SkillsSection', () => {
     // A non-Error rejection falls back to the localized failure copy.
     setInvocation.mockImplementationOnce(async () => { throw 'plain failure' })
     fireEvent.click(screen.getByRole('switch', { name: `Model invocation for ${writableSkill.name}` }))
-    expect((await screen.findByRole('alert')).textContent).toContain(en.invocationFailed)
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain(en.invocationFailed) })
+    expect(setInvocation).toHaveBeenCalledTimes(3)
+    expect(screen.getByRole<HTMLInputElement>('switch', { name: `Model invocation for ${writableSkill.name}` }).checked).toBe(false)
   })
 
   it('reloads for the active project and ignores a late response from the previous project', async () => {
@@ -521,8 +523,9 @@ describe('SkillsSection', () => {
       .mockResolvedValueOnce({ skills: [writableSkill] })
     render(<SkillsSection {...props({ list })} />)
 
-    expect((await screen.findByRole('alert')).textContent).toContain(en.error)
-    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    const failure = await screen.findByRole('alert')
+    expect(failure.textContent).toContain(en.error)
+    fireEvent.click(within(failure).getByRole('button', { name: en.retry }))
     expect(await screen.findByText(writableSkill.name)).toBeTruthy()
     expect(screen.queryByRole('alert')).toBeNull()
   })
@@ -943,8 +946,11 @@ describe('SkillsSection', () => {
     fireEvent.change(within(dialog).getByLabelText(en.content), { target: { value: 'A'.repeat(2_000) } })
     fireEvent.click(within(dialog).getByRole('button', { name: en.save }))
 
-    expect((await within(dialog).findByRole('alert')).textContent).toContain('directory already exists')
+    expect((await screen.findByRole('alert')).textContent).toContain('directory already exists')
     expect(screen.getByRole('dialog', { name: en.editorTitleAdd })).toBeTruthy()
+    expect(create).toHaveBeenCalledOnce()
+    expect(within(dialog).getByLabelText<HTMLInputElement>(en.name).value).toBe('new-skill')
+    expect(within(dialog).getByLabelText<HTMLInputElement>(en.description).value).toBe('Does work')
     expect(within(dialog).getByLabelText<HTMLTextAreaElement>(en.content).value).toBe('A'.repeat(2_000))
   })
 
@@ -984,11 +990,17 @@ describe('SkillsSection', () => {
     openDelete()
     expect(screen.getByText(/entire skill directory/)).toBeTruthy()
     expect(screen.getByText(/every accompanying file/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: en.deleteConfirm }))
+    const dialog = screen.getByRole('dialog')
+    const confirm = within(dialog).getByRole<HTMLButtonElement>('button', { name: en.deleteConfirm })
+    fireEvent.click(confirm)
+    fireEvent.click(confirm)
     expect(remove).toHaveBeenCalledWith(writableSkill.name, {})
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.deleting }).disabled).toBe(true)
+    expect(remove).toHaveBeenCalledOnce()
+    expect(confirm.disabled).toBe(true)
+    expect(confirm.getAttribute('aria-busy')).toBe('true')
+    expect(within(dialog).getByRole('button', { name: en.deleteConfirm })).toBe(confirm)
     // Close stays blocked while the deletion is pending.
-    fireEvent.click(screen.getByRole('button', { name: en.close }))
+    fireEvent.click(within(dialog).getByRole('button', { name: en.close }))
     expect(screen.getByRole('dialog')).toBeTruthy()
     removeRequest.resolve(true)
     await waitFor(() => { expect(screen.queryByText(writableSkill.name)).toBeNull() })
@@ -1079,7 +1091,9 @@ describe('SkillsSection', () => {
     fireEvent.click(await within(dialog).findByRole('button', { name: en.hubInstall }))
     dialog = screen.getByRole('dialog', { name: en.hubConfirmTitle })
     fireEvent.click(within(dialog).getByRole('button', { name: en.hubInstallConfirm }))
-    expect((await within(dialog).findByRole('alert')).textContent).toContain('skill already exists')
+    expect((await screen.findByRole('alert')).textContent).toContain('skill already exists')
+    expect(installHub).toHaveBeenCalledOnce()
+    expect(within(dialog).getByRole<HTMLButtonElement>('button', { name: en.hubInstallConfirm }).disabled).toBe(false)
     expect(installHub).toHaveBeenCalledWith(result, 'project-dsh', {
       sessionId: 'session-1',
       cwd: '/work/project',
