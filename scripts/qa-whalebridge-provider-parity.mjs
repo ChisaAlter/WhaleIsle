@@ -2,7 +2,7 @@
 // --ui opens the repository's original WhaleBridge window for manual acceptance.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +12,8 @@ import { createWhaleBridgeService } from '../src/launcher/whalebridge.js';
 import { reservePort } from './smoke-workspace.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const componentPackage=resolve(process.env.WHALEBRIDGE_QA_PACKAGE || join(root,'.tmp/whalebridge-package'));
+assert.ok(existsSync(join(componentPackage,'WhaleBridge-component.json')),`鲸桥 QA 组件包不存在，请通过 WHALEBRIDGE_QA_PACKAGE 指定已构建包目录: ${componentPackage}`);
 const dir=mkdtempSync(join(tmpdir(),'whalebridge-providers-'));
 const data=join(dir,'component'),home=join(dir,'dsh');
 mkdirSync(home,{recursive:true});
@@ -34,7 +36,7 @@ const upstream=createServer(async(req,res)=>{
 await new Promise(r=>upstream.listen(0,'127.0.0.1',r));
 const env={...process.env,USERPROFILE:dir,HOME:dir,XDG_CONFIG_HOME:join(dir,'config'),CODEX_HOME:join(dir,'codex'),CLAUDE_CONFIG_DIR:join(dir,'claude'),MAGPIE_ADDR:`127.0.0.1:${port}`};
 delete env.ELECTRON_RUN_AS_NODE;
-const service=createWhaleBridgeService({root:data,dshHome:home,devPackage:join(root,'.tmp/whalebridge-package'),spawn:(file,args,options)=>spawn(file,args,{...options,env:{...options.env,...env},windowsHide:true})});
+const service=createWhaleBridgeService({root:data,dshHome:home,devPackage:componentPackage,spawn:(file,args,options)=>spawn(file,args,{...options,env:{...options.env,...env},windowsHide:true})});
 let electron;
 try{
  const installed=await service.install();assert.equal(installed.ok,true,installed.message);

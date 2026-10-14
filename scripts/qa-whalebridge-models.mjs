@@ -1,17 +1,19 @@
 // Real native settings API and DSH profile writes with isolated, unpaid models.
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, isAbsolute } from 'node:path';
+import { dirname, join, relative, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createWhaleBridgeService } from '../src/launcher/whalebridge.js';
 import { reservePort } from './smoke-workspace.mjs';
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const componentPackage = resolve(process.env.WHALEBRIDGE_QA_PACKAGE || join(root, '.tmp/whalebridge-package'));
+assert.ok(existsSync(join(componentPackage, 'WhaleBridge-component.json')), `鲸桥 QA 组件包不存在，请通过 WHALEBRIDGE_QA_PACKAGE 指定已构建包目录: ${componentPackage}`);
 const dir = mkdtempSync(join(tmpdir(), 'whalebridge-model-api-'));
 const home = join(dir, 'dsh'); mkdirSync(home);
 const port = await reservePort();
-const service = createWhaleBridgeService({ root: join(dir, 'component'), dshHome: home, devPackage: join(root, '.tmp/whalebridge-package'),
+const service = createWhaleBridgeService({ root: join(dir, 'component'), dshHome: home, devPackage: componentPackage,
   spawn: (file, args, options) => spawn(file, args, { ...options, env: { ...options.env, MAGPIE_ADDR: `127.0.0.1:${port}`, USERPROFILE: dir, HOME: dir, XDG_CONFIG_HOME: join(dir, 'config'), CODEX_HOME: join(dir, 'codex'), CLAUDE_CONFIG_DIR: join(dir, 'claude') } }),
 });
 let failure;
