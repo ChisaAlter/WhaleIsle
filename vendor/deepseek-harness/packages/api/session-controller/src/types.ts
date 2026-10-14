@@ -57,8 +57,15 @@ export interface SessionListMetadata {
 export interface SessionPresentation {
   readonly owner: string
   readonly title: string
+  /** User-facing file navigation root; does not change the Agent cwd or grant filesystem access. */
+  readonly workingDirectory?: string | undefined
   /** Selects the shared composer with plugin-owned trailing controls. */
   readonly composer?: 'managed' | undefined
+}
+
+/** User file navigation preserves the separate execution cwd and grants no path authority. */
+export function sessionWorkingDirectory(summary: { readonly cwd?: string | undefined; readonly presentation?: SessionPresentation | undefined } | undefined): string | undefined {
+  return summary?.presentation?.workingDirectory || summary?.cwd || undefined
 }
 
 /** Set or release persistent presentation on an existing Session. */
@@ -347,7 +354,7 @@ export interface SessionCreateValue {
 /** Session model-selection request. */
 export interface SessionSelectModelRequest extends ModelSelection {
   readonly sessionId: SessionId
-  /** Keep this Session-local selection out of the application default when false; managed presentations always opt out. */
+  /** Keep this Session-local selection out of the application default when false; plugin presentations always opt out. */
   readonly saveAsDefault?: boolean
 }
 

@@ -10,6 +10,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { steerHostSubagentPrompt } from '@deepseek-ai/dsh-subagent/internal'
 import { errorMessage, TeamError } from './error.ts'
+import type { TeamManagement } from './management.ts'
 import type { TeamJournal } from './journal.ts'
 import type { TeamRuntimeLifecycle } from './lifecycle.ts'
 import { readPersistedSession } from './persisted.ts'
@@ -44,6 +45,7 @@ export class TeamMailbox {
     private readonly lifecycle: TeamRuntimeLifecycle,
     private readonly maxPendingMessagesPerMember: number,
     private readonly maxMessageBytes: number,
+    private readonly management: TeamManagement,
   ) {}
 
   /**
@@ -89,7 +91,7 @@ export class TeamMailbox {
     if (membership === undefined) return
     const state = this.journal.state(membership.root)
     const messages = state.messages.filter(message =>
-      !state.delivered.includes(message.id)
+      !state.delivered.includes(message.id) && !this.management.state(membership.root).cancelled.has(message.id)
       && (membership.role === 'lead' || message.targetId === agent.id))
     for (const message of messages) {
       signal.throwIfAborted()
@@ -113,14 +115,20 @@ export class TeamMailbox {
     const membership = this.roster.membership(caller)
     request.signal.throwIfAborted()
     const root = membership.root
+    await this.management.admit(root, 'send', { caller, request })
     const content = structuredClone(request.content)
     const queued = await this.journal.transact(root.id, async () => {
       request.signal.throwIfAborted()
       const state = this.journal.state(root)
       const target = resolveActiveMember(root, state, request.target)
+      const prior = request.messageId === undefined ? undefined : state.messages.find(message => message.id === request.messageId)
+      if (prior !== undefined) {
+        if (prior.senderId !== caller.id || prior.targetId !== target.id || JSON.stringify(prior.content) !== JSON.stringify(content)) throw new TeamError('Message identity reused with different content', 'TEAM_MESSAGE_CONFLICT')
+        return { message: prior, dispatch: this.tryDispatch(root, prior, request.signal) }
+      }
       if (target.id === caller.id) throw new TeamError('a Team member cannot message itself', 'TEAM_SELF_MESSAGE')
       const pendingForTarget = state.messages.filter(candidate =>
-        candidate.targetId === target.id && !state.delivered.includes(candidate.id)).length
+        candidate.targetId === target.id && !state.delivered.includes(candidate.id) && !this.management.state(root).cancelled.has(candidate.id)).length
       if (pendingForTarget >= this.maxPendingMessagesPerMember) {
         throw new TeamError(
           `teammate "${target.name}" has ${pendingForTarget} pending messages`,
@@ -128,7 +136,7 @@ export class TeamMailbox {
         )
       }
       const queued: TeamMessageSnapshot = {
-        id: TeamMessageId(`team-message-${randomUUID()}`),
+        id: request.messageId ?? TeamMessageId(`team-message-${randomUUID()}`),
         senderId: caller.id,
         senderName: membership.name,
         targetId: target.id,
@@ -234,6 +242,8 @@ export class TeamMailbox {
   /** Attempt one queued delivery after target-local ordering admits it. */
   private async dispatchOnce(root: Agent, message: TeamMessageSnapshot, signal: AbortSignal): Promise<boolean> {
     try {
+      if (this.management.state(root).cancelled.has(message.id)) return true
+      await this.management.admit(root, 'deliver', message)
       const target = message.targetId === root.id ? root : this.ctx.agents.get(message.targetId)
       if (target !== undefined && this.targetRecorded(target.session, message.id)) {
         return await this.checkpointDelivered(root, target.session, message.id)
@@ -264,6 +274,10 @@ export class TeamMailbox {
         ? true
         : await this.checkpointDelivered(root, target.session, message.id)
     } catch (error: unknown) {
+      if (error instanceof Error && 'code' in error && error.code === 'obsolete_message') {
+        await this.management.cancel(root, message)
+        return true
+      }
       this.ctx.logger.warn(`team message "${message.id}" remains queued: ${errorMessage(error)}`)
       return false
     }

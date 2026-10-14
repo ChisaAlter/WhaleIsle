@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
+import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import {
   Button, DisclosureRow, IconCodeOutline16, IconCompareSplitOutlineRegular, IconNowrapFillRegular,
   IconRefreshOutline16, IconWrapFillRegular, languageForPath, MAX_RENDERED_LINES, Menu, Modal,
@@ -102,7 +103,7 @@ export function DiffPanel({
 }: DiffPanelProps): ReactNode {
   const cwd = useSessions((state) => {
     const id = sessionId ?? Object.values(state.byId).find(row => (row.retainedBy.mainView ?? 0) > 0)?.id
-    const next = id === undefined ? undefined : state.byId[id]?.cwd
+    const next = id === undefined ? undefined : sessionWorkingDirectory(state.byId[id])
     return next ? next : undefined
   })
   const [available, setAvailable] = useState(false)

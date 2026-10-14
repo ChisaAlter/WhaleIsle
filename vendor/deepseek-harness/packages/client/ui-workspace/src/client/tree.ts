@@ -19,6 +19,11 @@ import type {
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
+import type { NavigationSessionSummary, NavigationWorkspace } from './navigation-projection.ts'
+
+function navigationOwned(session: SessionSummary): boolean {
+  return (session as NavigationSessionSummary).navigationOwner !== undefined
+}
 
 /** Group key for no-directory Sessions (the Host scratch cwd bucket). */
 export const UNGROUPED_KEY = ''
@@ -54,7 +59,7 @@ function accountedIds(workspaces: readonly WorkspaceView[]): Set<SessionId> {
 
 /** A Session the browser may list at all: Workspace member or no-directory task. */
 function listed(session: SessionSummary, accounted: ReadonlySet<SessionId>, scratchCwd: string | undefined): boolean {
-  return session.presentation === undefined
+  return (session.presentation === undefined || navigationOwned(session))
     && (accounted.has(session.id) || isNoDirectorySession(session, accounted, scratchCwd))
 }
 
@@ -84,6 +89,7 @@ function mainSessionId(list: SessionListState): SessionId | undefined {
 /** One top-level session row in a group or the flat list. */
 export interface SessionNode {
   id: SessionId
+  owner?: string | undefined
   /** Stored title, or empty; the renderer localizes blank and unnamed row labels. */
   title: string
   /** The provisional blank session (renderer shows the localized New Session title). */
@@ -107,6 +113,7 @@ export type SessionOrderBy = 'manual' | 'updated'
 
 /** One workspace group section: header row facts + visible top-level session rows. */
 export interface GroupNode {
+  navigationOnly?: boolean | undefined
   /** Group key: the workspace id or {@link UNGROUPED_KEY}. */
   key: string
   /** Backing Workspace id; absent only for the no-directory bucket. */
@@ -127,6 +134,7 @@ export interface GroupNode {
 /** One flat search row combining list metadata with an optional content match. */
 export interface SearchResultNode {
   id: SessionId
+  owner?: string | undefined
   title: string
   workspace: string
   /** A Session-scoped UI consumer is awaiting this user. */
@@ -161,6 +169,7 @@ interface Group {
   createdAt: number | undefined
   label: string
   sessions: SessionSummary[]
+  navigationOnly?: boolean | undefined
 }
 
 /**
@@ -390,17 +399,19 @@ function groupByWorkspace(
       const summary = list.byId[id]
       if (summary === undefined) continue // account may lead the list pull; the row appears when the summary lands
       accounted.add(id)
-      if (summary.presentation !== undefined) continue
+      if (summary.presentation !== undefined && !navigationOwned(summary)) continue
       if (!sessionVisible(summary, current, archived, archivedFilter)) continue
       members.push(summary)
     }
     // The archived-only view lists archives, not the Workspace inventory, so
     // a Workspace without archived Sessions contributes no group.
     if (archivedFilter === 'only' && members.length === 0) continue
-    groups.push(buildGroup(
+    const group = buildGroup(
       workspace.workspaceId, workspace.workspaceId, workspace.path,
-      Date.parse(workspace.createdAt), workspace.title, members,
-    ))
+      (workspace as NavigationWorkspace).navigationOnly ? undefined : Date.parse(workspace.createdAt), workspace.title, members,
+    )
+    group.navigationOnly = (workspace as NavigationWorkspace).navigationOnly
+    groups.push(group)
   }
   const stray = list.ids
     .map(id => list.byId[id])
@@ -436,7 +447,7 @@ export function currentGroupKey(
 ): string | undefined {
   const current = mainSessionId(list)
   if (current === undefined) return undefined
-  if (list.byId[current]?.presentation !== undefined) return undefined
+  if (list.byId[current]?.presentation !== undefined && !navigationOwned(list.byId[current])) return undefined
   const owner = workspaces.find(w => w.sessionIds.includes(current))
   if (owner !== undefined) return owner.workspaceId
   const summary = list.byId[current]
@@ -476,6 +487,7 @@ function sessionNode(
   return {
     id: s.id,
     title: sessionTitle(s),
+    owner: (s as NavigationSessionSummary).navigationOwner,
     blank: s.blank,
     running: status?.running ?? s.running,
     runningSubagentCount: runningChildCount(list, s.id, statuses),
@@ -514,7 +526,8 @@ export function deriveArchived(
 /**
  * Derive the workspace browser groups with every session as a top-level row.
  *
- * Every group shows, except that the archived-only filter drops groups
+ * Groups containing only feature-owned conversations use that feature's navigation.
+ * Other groups show, except that the archived-only filter drops groups
  * without visible members; sessions populate under expanded groups with
  * pinned rows leading in the selected local order. Blank sessions are
  * excluded except for the selected provisional New Session row; archived
@@ -548,6 +561,7 @@ export function deriveGroups(
     const expanded = expandedGroups.has(g.key)
     groups.push({
       key: g.key,
+      navigationOnly: g.navigationOnly,
       workspaceId: g.workspaceId,
       cwd: g.cwd,
       createdAt: g.createdAt,
@@ -718,6 +732,7 @@ export function deriveSearchResults(
       return {
         id: summary.id,
         title: sessionTitle(summary),
+        owner: (summary as NavigationSessionSummary).navigationOwner,
         workspace: labelOf(summary),
         running: status?.running ?? summary.running,
         runningSubagentCount: runningChildCount(list, summary.id, statuses),

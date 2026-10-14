@@ -1,5 +1,7 @@
 /** Source-safe Agent Teams browser registration. */
 
+import { createElement } from 'react'
+import type { TeamActionProps } from './TeamAction.tsx'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -58,6 +60,12 @@ export function registerAgentTeamUi(ctx: ClientContext): void {
       order: -20,
       locale: NS,
       inject: () => actions,
-    }, TeamAction),
+    }, DefaultTeamAction),
   )
+}
+
+/** Managed Project conversations provide the same panel with their read-only process navigation. */
+function DefaultTeamAction(props: TeamActionProps) {
+  const owner = props.useSessions(state => state.byId[props.sessionId]?.presentation?.owner)
+  return owner === 'project' ? null : createElement(TeamAction, props)
 }

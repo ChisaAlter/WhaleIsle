@@ -1323,7 +1323,7 @@ describe('FloatLayer', () => {
       }
     })
     const controller = seededController()
-    const tabId = controller.openContent({ contentId: 'dsh-resource://file/session/s/a.txt', title: 'a.txt', kind: 'file' })
+    const tabId = controller.openContent({ contentId: 'observer:project', title: 'Project', kind: 'observer' })
     const paneId = controller.floatTab(tabId, { x: 500, y: 0, width: 420, height: 900 })
     const intents = spyIntents()
     render(<FloatLayer state={controller.getSnapshot().state} intents={intents} labels={TEST_LABELS} renderTab={() => null} />)

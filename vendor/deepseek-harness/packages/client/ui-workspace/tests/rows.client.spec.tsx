@@ -13,7 +13,7 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 import { PRESENCE_EXIT_MS } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RowDragProps } from '../src/client/rows/Rows.tsx'
 import {
-  GroupSessionRun, ProjectRowItem, SearchResultItem, SessionNodeItem as SessionNodeItemComponent,
+  ArchivedSessionNodeItem, GroupSessionRun, ProjectRowItem, SearchResultItem, SessionNodeItem as SessionNodeItemComponent,
   TasksSectionHeader,
 } from '../src/client/rows/Rows.tsx'
 import type { GroupNode, SearchResultNode, SessionNode } from '../src/client/tree.ts'
@@ -115,7 +115,7 @@ describe('workspace browser rows', () => {
       archived: false,
       snippet: 'matching message excerpt',
     }
-    render(<SearchResultItem result={result} currentId={result.id} onOpen={onOpen} onUnarchive={vi.fn()} onDelete={vi.fn()} t={t} />)
+    render(<SearchResultItem result={result} currentId={result.id} onOpen={onOpen} onUnarchive={vi.fn()} onDelete={vi.fn()} renderSlot={renderNoRowEntries} t={t} />)
     const row = screen.getByRole('treeitem')
     expect(row.getAttribute('aria-selected')).toBe('true')
     expect(screen.getByText('Workspace context')).toBeTruthy()
@@ -136,7 +136,7 @@ describe('workspace browser rows', () => {
       id: sid(pendingInteraction), title: 'Needs input', workspace: 'Project',
       pendingInteraction, running: true, runningSubagentCount: 0, completed: false, archived: false,
     }
-    render(<SearchResultItem result={result} currentId={undefined} onOpen={vi.fn()} onUnarchive={vi.fn()} onDelete={vi.fn()} t={t} />)
+    render(<SearchResultItem result={result} currentId={undefined} onOpen={vi.fn()} onUnarchive={vi.fn()} onDelete={vi.fn()} renderSlot={renderNoRowEntries} t={t} />)
     const row = screen.getByRole('treeitem')
     expect(row.querySelector('[data-state="warning"]')).toBeTruthy()
     expect(row.querySelector('[data-state="ongoing"]')).toBeNull()
@@ -443,7 +443,7 @@ describe('workspace browser rows', () => {
         id: sid('result'), title: 'Done', workspace: 'Workspace', running: false,
         runningSubagentCount: 0, completed: true, archived: false,
       }}
-      currentId={undefined} onOpen={vi.fn()} onUnarchive={vi.fn()} onDelete={vi.fn()} t={t}
+      currentId={undefined} onOpen={vi.fn()} onUnarchive={vi.fn()} onDelete={vi.fn()} renderSlot={renderNoRowEntries} t={t}
     />)
     expect(screen.getByRole('treeitem').querySelector('[data-state="done"]')).not.toBeNull()
   })
@@ -1003,11 +1003,60 @@ describe('workspace browser rows', () => {
       id: sid('result'), title: 'Old result', workspace: 'Workspace context',
       running: false, runningSubagentCount: 0, completed: false, archived: true,
     }
-    render(<SearchResultItem result={result} currentId={undefined} onOpen={vi.fn()} onUnarchive={vi.fn()} onDelete={vi.fn()} t={t} />)
+    render(<SearchResultItem result={result} currentId={undefined} onOpen={vi.fn()} onUnarchive={vi.fn()} onDelete={vi.fn()} renderSlot={renderNoRowEntries} t={t} />)
     const row = screen.getByRole('treeitem')
     expect(row.className).toMatch(/archived/)
     // No leading marker: the grayed row alone carries the archived look.
     expect(screen.queryByRole('img', { name: '已归档' })).toBeNull()
+  })
+})
+
+describe('navigation row menu routing', () => {
+  const archived: SessionNode = {
+    id: sid('lead'), title: 'Project Lead', blank: false, running: false,
+    runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: true,
+  }
+
+  it.each(['search', 'archive'] as const)('keeps %s owner menus composed without native restore or delete entries', (surface) => {
+    const onUnarchive = vi.fn(), onDelete = vi.fn(), ownerRestore = vi.fn()
+    const renderSlot: RowRenderSlot = (name: RowSlotName, owner: object, opts?: object) => {
+      if (name !== 'sidebar.workspaces.session.menu.item') return null
+      const [, setMenuOpen] = (opts !== undefined && 'hookContext' in opts ? opts.hookContext : undefined) as MenuOpenState
+      return <MenuItemButton onSelect={() => { setMenuOpen(false); ownerRestore((owner as SessionRowOwnerProps).sessionId) }}>Owner restore</MenuItemButton>
+    }
+    const node = { ...archived, owner: 'project' }
+    if (surface === 'search') {
+      render(<SearchResultItem result={{ ...node, workspace: 'Repository' }} currentId={undefined}
+        onOpen={vi.fn()} onUnarchive={onUnarchive} onDelete={onDelete} renderSlot={renderSlot} t={t} />)
+    } else {
+      render(<ArchivedSessionNodeItem node={node} currentId={undefined} now={0}
+        onUnarchive={onUnarchive} onDelete={onDelete} renderSlot={renderSlot} t={t} />)
+    }
+    fireEvent.click(screen.getByRole('button', { name: '会话“Project Lead”的操作' }))
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Owner restore'])
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Owner restore' }))
+    expect(ownerRestore).toHaveBeenCalledWith(archived.id)
+    expect(onUnarchive).not.toHaveBeenCalled()
+    expect(onDelete).not.toHaveBeenCalled()
+  })
+
+  it.each(['search', 'archive'] as const)('retains %s ordinary archived restore and delete menus', (surface) => {
+    const onUnarchive = vi.fn(), onDelete = vi.fn()
+    if (surface === 'search') {
+      render(<SearchResultItem result={{ ...archived, workspace: 'Repository' }} currentId={undefined}
+        onOpen={vi.fn()} onUnarchive={onUnarchive} onDelete={onDelete} renderSlot={renderNoRowEntries} t={t} />)
+    } else {
+      render(<ArchivedSessionNodeItem node={archived} currentId={undefined} now={0}
+        onUnarchive={onUnarchive} onDelete={onDelete} renderSlot={renderNoRowEntries} t={t} />)
+    }
+    const trigger = screen.getByRole('button', { name: '会话“Project Lead”的操作' })
+    fireEvent.click(trigger)
+    expect(screen.getAllByRole('menuitem')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('menuitem', { name: '取消归档' }))
+    expect(onUnarchive).toHaveBeenCalledWith(archived.id)
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除会话' }))
+    expect(onDelete).toHaveBeenCalledWith(archived.id, archived.title)
   })
 })
 
@@ -1134,7 +1183,7 @@ it.each([['未命名', t], ['Untitled', tEn]])('labels unnamed search results as
     running: false, runningSubagentCount: 0, completed: false, archived: false }
   const onOpen = vi.fn()
   render(<SearchResultItem result={result} currentId={undefined} onOpen={onOpen}
-    onUnarchive={vi.fn()} onDelete={vi.fn()} t={translate} />)
+    onUnarchive={vi.fn()} onDelete={vi.fn()} renderSlot={renderNoRowEntries} t={translate} />)
   fireEvent.click(screen.getByText(label))
   expect(onOpen).toHaveBeenCalledWith(result.id)
 })

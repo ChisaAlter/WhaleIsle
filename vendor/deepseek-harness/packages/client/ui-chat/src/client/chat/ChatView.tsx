@@ -7,6 +7,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
+import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import {
   Button, IconChevronDownOutlineRegular, MarkdownDelegateProvider, Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -129,7 +130,8 @@ export function ChatView({
   )
   const inbox = useProjection('inbox') as unknown as InboxState | undefined
   // Workspace root off the session list row: path summaries display relative to it.
-  const cwd = useSessions(s => s.byId[sessionId]?.cwd)
+  const cwd = useSessions(s => sessionWorkingDirectory(s.byId[sessionId]))
+  const projectOwned = useSessions(s => s.byId[sessionId]?.presentation?.owner === 'project')
   const fileImages = useMemo(() => ({
     resolve: (path: string) => fileMediaUrl(document.baseURI, resolveWorkspacePath(cwd, path)),
     labels: {
@@ -277,7 +279,7 @@ export function ChatView({
                 openFile={requestOpenFile}
                 openSkill={openSkill}
                 inspectCall={inspectCall}
-                forkAt={forkAt}
+                forkAt={projectOwned ? undefined : forkAt}
                 loadImage={loadImage}
                 renderMessageImages={renderMessageImages}
                 fileMentions={fileMentions}

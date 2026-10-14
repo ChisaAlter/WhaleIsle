@@ -744,13 +744,16 @@ export type SubagentCatalogActionProps =
  * here — their breadcrumb switcher in the lineage slot owns the same
  * navigation.
  * @param props - Session standard props plus the catalog actions and translator.
- * @returns The count dropdown, or null on a child session.
+ * @returns The count dropdown, or null on a child or managed Project session.
  */
 export function SubagentCatalogAction({
   sessionId, useSessions, useSessionStatus, openChild, openChildAside, refreshProjection, t,
 }: SubagentCatalogActionProps) {
-  const isChild = useSessions(state => state.byId[sessionId]?.origin === 'subagent')
-  if (isChild) return null
+  const managed = useSessions(state => {
+    const session = state.byId[sessionId]
+    return session?.origin === 'subagent' || session?.presentation?.owner === 'project'
+  })
+  if (managed) return null
   return (
     <CatalogDropdown
       key={sessionId}

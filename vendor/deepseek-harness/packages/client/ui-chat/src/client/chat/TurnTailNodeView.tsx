@@ -66,7 +66,7 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
         clock="end"
         // The branch action owns boundary resolution: it sends the real
         // turn/end seq it already has, and the Host cuts exactly there.
-        onBranch={() => { forkAt(data.seq) }}
+        onBranch={forkAt === undefined ? undefined : () => { forkAt(data.seq) }}
         branchUnavailable={data.branchUnavailable || hasLaterChatNode}
         className={css.actions}
         extraActions={assistantActions}

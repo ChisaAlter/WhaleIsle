@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package fills the sidebar brand slots in an `official` client build with the transparent whale-girl head, the established Chinese-first “鲸屿 / WHALE ISLE” wordmark on the same line, and “BASED ON DEEPSEEK HARNESS” beneath on desktop and Web. The 屿 glyph uses brand blue; the head has no square background. Its mark occupant supplies the same head to the collapsed rail's upper-left expand button, which swaps to the panel icon on hover or keyboard focus; the expanded sidebar hides that duplicate mark. Other build profiles keep the shell's fish mark and local-build label, while the conversation hero always uses the animated fish. It has no runtime state and does not affect model requests.
+This package fills the sidebar brand slots in an `official` client build with the transparent whale-girl head, a wordmark on one line that follows the interface language: the matching name leads in larger type and the other name follows in smaller type, and “BASED ON DEEPSEEK HARNESS” beneath on desktop and Web. The leading name’s 屿 glyph (Chinese) or ISLE word (English) uses brand blue; the head has no square background. Its mark occupant supplies the same head to the collapsed rail's upper-left expand button, which swaps to the panel icon on hover or keyboard focus; the expanded sidebar hides that duplicate mark. Other build profiles keep the shell's fish mark and local-build label, while the conversation hero always uses the animated fish. It has no runtime state and does not affect model requests.
 
 ## Table of Contents
 

@@ -27,6 +27,7 @@ import type { SessionSearchResultItem } from '@deepseek-ai/dsh-api-session-contr
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { workspaceDisplayTitle } from '@deepseek-ai/dsh-api-workspace-controller/default-workspace'
+import { projectSessionNavigation, type NavigationSessionSummary, type NavigationWorkspace } from '../navigation-projection.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorkspaceBrowserProps } from '../contract/slots.ts'
@@ -233,12 +234,13 @@ function workspaceGroupHalf(e: { clientY: number; currentTarget: HTMLElement }):
 }
 
 /** One inert, session-local collapsed archive section shared by grouped and flat views. */
-function ArchivedSessionSection({ nodes, currentId, now, expanded, onToggle, onUnarchive, onDelete, renderSlot, t }: {
+function ArchivedSessionSection({ nodes, currentId, now, expanded, onToggle, open, onUnarchive, onDelete, renderSlot, t }: {
   nodes: readonly SessionNode[]
   currentId: SessionId | undefined
   now: number
   expanded: boolean
   onToggle: () => void
+  open: (id: SessionNode['id']) => void
   onUnarchive: (id: SessionNode['id']) => void
   onDelete: (id: SessionNode['id'], title: string) => void
   renderSlot: SessionTreeProps['renderSlot']
@@ -255,6 +257,7 @@ function ArchivedSessionSection({ nodes, currentId, now, expanded, onToggle, onU
           currentId={currentId}
           now={now}
           onUnarchive={onUnarchive}
+          onOpen={open}
           onDelete={onDelete}
           renderSlot={renderSlot}
           t={t}
@@ -270,6 +273,7 @@ type SessionTreeProps = Pick<
   'useSessionStatus' | 'startSession' | 'connectNoDirectory' | 'open'
   | 'insertWorkspaceBefore' | 't' | 'usePanelInfo'
 > & PropsRenderSlots<
+  | 'sidebar.workspaces.sections'
   | 'sidebar.workspaces.session.menu.item'
   | 'sidebar.workspaces.session.row.action'
   | 'sidebar.session.row.leading'
@@ -393,8 +397,10 @@ function SessionTree({
   const expandedGroups = useMemo(() => {
     const ancestorKeys = new Set<string | undefined>(parents.values())
     return [...workspaces.map(workspace => workspace.workspaceId), UNGROUPED_KEY]
-      .filter(key => groupExpansion[key] ?? ancestorKeys.has(key))
-  }, [groupExpansion, parents, workspaces])
+      .filter(key => groupExpansion[key] ?? (ancestorKeys.has(key)
+        || workspaces.some(workspace => workspace.workspaceId === key
+          && workspace.sessionIds.some(id => list.byId[id]?.presentation !== undefined))))
+  }, [groupExpansion, parents, workspaces, list.byId])
   const groups = useMemo(
     () => deriveGroups(list, workspaces, rowState, statuses, {
       expandedGroups,
@@ -440,7 +446,8 @@ function SessionTree({
     workspaceDropCommitted.current = true
     setWorkspaceDrag(null)
     const owner = parents.get(activeDrag.workspaceId)
-    const siblings = workspaces.filter(workspace => parents.get(workspace.workspaceId) === owner)
+    const siblings = workspaces.filter(workspace => !(workspace as NavigationWorkspace).navigationOnly
+      && parents.get(workspace.workspaceId) === owner)
     const rowIndex = siblings.findIndex(workspace => workspace.workspaceId === over.id)
     if (rowIndex === -1) return
     const anchor = over.half === 'before' ? over.id : siblings[rowIndex + 1]?.workspaceId
@@ -475,7 +482,7 @@ function SessionTree({
 
   const rowKeys: string[] = groups.length === 0 && archivedNodes.length === 0 ? ['empty'] : []
   const renderGroup = (group: GroupNode, depth: number): ReactNode => {
-    const workspaceId = group.workspaceId
+    const workspaceId = group.navigationOnly ? undefined : group.workspaceId
     const children = childrenByParent.get(group.key) ?? []
     const compatibleDrag = workspaceDrag !== null && parents.get(workspaceDrag.workspaceId) === parents.get(group.key)
     const overflowCount = collapsedSessionRows(group.sessions).hiddenCount
@@ -557,7 +564,7 @@ function SessionTree({
             }
           }}
       >
-        {workspaceId === undefined ? (
+        {group.workspaceId === undefined ? (
           <TasksSectionHeader
             expanded={group.expanded}
             containsCurrent={group.containsCurrent}
@@ -577,14 +584,14 @@ function SessionTree({
             }
             setGroupExpanded(group.key, !group.expanded)
           }}
-          onCreate={() => {
+          onCreate={group.navigationOnly ? undefined : () => {
             if (group.workspaceId !== undefined) {
               setGroupExpanded(group.key, true)
               startSession(group.workspaceId)
             }
           }}
           drag={workspaceDragProps}
-          actions={group.workspaceId === undefined
+          actions={workspaceId === undefined
             ? undefined
             : {
               rename: () => {
@@ -634,7 +641,7 @@ function SessionTree({
               sessionDropCommitted.current = false
             },
           }
-          if (node.archived) return (
+          if (node.archived && node.owner === undefined) return (
             <ArchivedSessionNodeItem
               key={node.id}
               node={node}
@@ -713,11 +720,13 @@ function SessionTree({
           now={now}
           expanded={archivedExpanded}
           onToggle={onToggleArchived}
+          open={open}
           onUnarchive={onSessionUnarchive}
           onDelete={onSessionDeleteRequest}
           renderSlot={renderSlot}
           t={t}
         />
+        {renderSlot('sidebar.workspaces.sections', {})}
       </AnimatedRows>
       <span className={css.fade} />
     </div>
@@ -792,7 +801,7 @@ function FlatList({
         )}
         {rows.map((node) => {
           const active = drag !== null && drag.pinned === node.pinned
-          if (node.archived) return (
+          if (node.archived && node.owner === undefined) return (
             <ArchivedSessionNodeItem
               key={node.id}
               node={node}
@@ -846,11 +855,13 @@ function FlatList({
           now={now}
           expanded={archivedExpanded}
           onToggle={onToggleArchived}
+          open={open}
           onUnarchive={onSessionUnarchive}
           onDelete={onSessionDeleteRequest}
           renderSlot={renderSlot}
           t={t}
         />
+        {renderSlot('sidebar.workspaces.sections', {})}
       </AnimatedRows>
       <span className={css.fade} />
     </div>
@@ -866,7 +877,7 @@ interface RemoteSearchState {
 
 /** Flat search body: local metadata matches plus the current Host result page. */
 function SearchResults({
-  useSessions,
+  list,
   useSessionStatus,
   open,
   onUnarchive,
@@ -879,8 +890,10 @@ function SearchResults({
   remote,
   resultLimit,
   usePanelInfo,
+  renderSlot,
   t,
-}: Pick<WorkspaceBrowserProps, 'useSessions' | 'useSessionStatus' | 'open' | 't' | 'usePanelInfo'> & {
+}: Pick<WorkspaceBrowserProps, 'useSessionStatus' | 'open' | 't' | 'usePanelInfo' | 'renderSlot'> & {
+  list: SessionListState
   workspaces: readonly WorkspaceView[]
   scratchCwd: string | undefined
   archivedSessionIds: readonly SessionNode['id'][]
@@ -895,7 +908,6 @@ function SearchResults({
   resultLimit: number
 }) {
   const panelActive = usePanelInfo(info => info.activePanelId !== null)
-  const list = useSessions(s => s)
   const statuses = useSessionStatus(s => s)
   const currentRemote = remote.query === query
     ? remote
@@ -931,6 +943,7 @@ function SearchResults({
               onOpen={open}
               onUnarchive={onUnarchive}
               onDelete={onDelete}
+              renderSlot={renderSlot}
               t={t}
             />
           ))}
@@ -976,6 +989,7 @@ export function WorkspaceBrowser({
   useSessions,
   useSessionStatus,
   useWorkspaces,
+  useSessionNavigation,
   useStore,
   actions,
   startSession,
@@ -1000,6 +1014,7 @@ export function WorkspaceBrowser({
   closeAddWorkspace,
   setDirectoryBusy,
   dismissForkError,
+  registerDirectoryPicker,
   renderSlot,
   t,
 }: WorkspaceBrowserProps) {
@@ -1009,26 +1024,54 @@ export function WorkspaceBrowser({
   const addShortcut = shortcuts.find(row => row.id === 'workspace.add')
   const shortcutState = useWorkspaceShortcuts(state => state)
   // Ordering remains live while the rail or search replaces the list body.
-  const list = useSessions(state => state)
+  const sessionList = useSessions(state => state)
+  const sessionNavigation = useSessionNavigation(entries => entries)
   const storedWorkspaces = useWorkspaces(state => state.items)
   // The resolved name, not `t`, is the memo dependency: the bound seat keeps
   // its identity across a language switch.
   const defaultWorkspaceName = t('workspace.defaultName')
-  const workspaces = useMemo(
+  const registeredWorkspaces = useMemo(
     () => storedWorkspaces.map(workspace => ({
       ...workspace,
       title: workspaceDisplayTitle(workspace.title, defaultWorkspaceName),
     })),
     [storedWorkspaces, defaultWorkspaceName],
   )
+  const { list, workspaces } = useMemo(
+    () => projectSessionNavigation(sessionList, registeredWorkspaces, sessionNavigation),
+    [sessionList, registeredWorkspaces, sessionNavigation],
+  )
   const workspacePhase = useWorkspaces(state => state.phase)
   const workspaceStreamState = useWorkspaces(state => state.state)
-  const archivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
+  const registeredArchivedSessionIds = useWorkspaces(state => state.archivedSessionIds)
+  const archivedSessionIds = useMemo(() => [...registeredArchivedSessionIds,
+    ...sessionNavigation.filter(entry => entry.archived).map(entry => entry.sessionId)],
+  [registeredArchivedSessionIds, sessionNavigation])
   const scratchCwd = useWorkspaces(state => state.scratchCwd)
   const pinnedSessionIds = useWorkspaces(state => state.pinnedSessionIds)
   // Live occupancy of this surface's directory-flow hole (the same source the
   // flow reads): a composition without a picking affordance can add nothing.
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
+  const [externalPickerOpen, setExternalPickerOpen] = useState(false)
+  const externalPick = useRef<ReturnType<typeof Promise.withResolvers<string | null>> | undefined>(undefined)
+  useEffect(() => {
+    if (registerDirectoryPicker === undefined || !directoryFlowAvailable) return
+    const dispose = registerDirectoryPicker(() => {
+      if (externalPick.current !== undefined) return externalPick.current.promise
+      const pending = Promise.withResolvers<string | null>()
+      externalPick.current = pending
+      setExternalPickerOpen(true)
+      return pending.promise
+    })
+    return () => { dispose(); externalPick.current?.resolve(null); externalPick.current = undefined; setExternalPickerOpen(false) }
+  }, [registerDirectoryPicker, directoryFlowAvailable])
+  const finishExternalPick = (path: string | null, error?: string): void => {
+    const pending = externalPick.current
+    externalPick.current = undefined
+    setExternalPickerOpen(false)
+    if (error === undefined) pending?.resolve(path)
+    else pending?.reject(new Error(error))
+  }
   const groupBy = useStore(s => s.groupBy)
   const orderBy = useStore(s => s.orderBy)
   const showArchivedList = useStore(s => s.showArchivedList ?? true)
@@ -1039,7 +1082,7 @@ export function WorkspaceBrowser({
   // Archived sessions are not openable: the row stays visible under the
   // filter but a click explains instead of navigating.
   const guardedOpen = (sessionId: SessionId): void => {
-    if (archivedSessionIds.includes(sessionId)) {
+    if (archivedSessionIds.includes(sessionId) && !sessionNavigation.some(entry => entry.sessionId === sessionId)) {
       notifyArchivedNotOpenable()
       return
     }
@@ -1089,6 +1132,25 @@ export function WorkspaceBrowser({
       ),
     }
   }), [currentBlank, list.byId, orderBy, orderState, sessionOrderByAccount, workspaces])
+  // Directory selection can leave an unused ordinary blank beside the Project.
+  // Decide from authoritative membership before ordering drops unknown summaries;
+  // keep owner navigation rows and the complete registry for the picker and later chats.
+  const sidebarWorkspaces = useMemo(() => {
+    const projectDirectories = new Set(Object.values(list.byId).flatMap(session =>
+      session.presentation?.owner === 'project' && session.presentation.workingDirectory
+        ? [session.presentation.workingDirectory] : []))
+    const visible = new Set(workspaces.filter(workspace => {
+      const projectDirectory = projectDirectories.has(workspace.path)
+      if (workspace.sessionIds.length === 0) return !projectDirectory
+      return !workspace.sessionIds.every(id => {
+        const session = list.byId[id]
+        return (session?.presentation !== undefined
+          && (session as NavigationSessionSummary).navigationOwner === undefined)
+          || (projectDirectory && session?.blank === true && id !== mainSessionId)
+      })
+    }).map(workspace => workspace.workspaceId))
+    return orderedWorkspaces.filter(workspace => visible.has(workspace.workspaceId))
+  }, [list.byId, mainSessionId, orderedWorkspaces, workspaces])
   const orderedUngroupedSessionIds = useMemo(() => {
     const baseOrder = orderBy === 'updated'
       ? orderByRecency(ungroupedMemberIds, list.byId)
@@ -1180,7 +1242,7 @@ export function WorkspaceBrowser({
   const composingRef = useRef(false)
 
   const openSearchResult = (sessionId: SessionId): void => {
-    if (archivedSessionIds.includes(sessionId)) {
+    if (archivedSessionIds.includes(sessionId) && !sessionNavigation.some(entry => entry.sessionId === sessionId)) {
       notifyArchivedNotOpenable()
       return
     }
@@ -1290,7 +1352,7 @@ export function WorkspaceBrowser({
   // localized label, which for an automatically titled Workspace equals its
   // own displayed title without being a conflict with itself.
   const renameDuplicate = renameTarget !== null && renameTrimmed !== ''
-    && workspaces.some(w => w.workspaceId !== renameTarget.workspaceId && w.title === renameTrimmed)
+    && registeredWorkspaces.some(w => w.workspaceId !== renameTarget.workspaceId && w.title === renameTrimmed)
   const renameBlocked = renaming || renameTrimmed === ''
     || renameTarget === null || renameTrimmed === renameTarget.storedTitle || renameDuplicate
   const closeRename = () => {
@@ -1484,6 +1546,10 @@ export function WorkspaceBrowser({
             </Tooltip>
           )}
         </div>
+        {externalPickerOpen && renderSlot('sidebar.workspaces.directoryFlow', {
+          open: true, busy: false, onPicked: path => finishExternalPick(path),
+          onCancel: () => finishExternalPick(null), onError: message => finishExternalPick(null, message),
+        })}
         {/* Add flow + its error dialog (same package — direct composition). */}
         <WorkspacePickFlow
           t={t}
@@ -1526,9 +1592,11 @@ export function WorkspaceBrowser({
       <div className={css.listArea}>
         {wide && (normalizedQuery !== ''
           ? (
+            <>
             <SearchResults
               usePanelInfo={usePanelInfo}
-              useSessions={useSessions}
+              list={list}
+              renderSlot={renderSlot}
               useSessionStatus={useSessionStatus}
               open={openSearchResult}
               onUnarchive={onSessionUnarchive}
@@ -1542,6 +1610,8 @@ export function WorkspaceBrowser({
               resultLimit={searchResultLimit}
               t={t}
             />
+            {renderSlot('sidebar.workspaces.sections', { query: normalizedQuery })}
+            </>
           )
           : groupBy === 'flat'
             ? (
@@ -1578,7 +1648,7 @@ export function WorkspaceBrowser({
                 onSessionDeleteRequest={onSessionDeleteRequest}
                 connectNoDirectory={connectNoDirectory}
                 renderSlot={renderSlot}
-                workspaces={orderedWorkspaces}
+                workspaces={sidebarWorkspaces}
                 scratchCwd={scratchCwd}
                 ungroupedSessionIds={orderedUngroupedSessionIds}
                 workspaceReady={workspaceReady}

@@ -55,6 +55,7 @@ import type {
   ContinuableCreateSpec,
   ContinuableStart,
   ContinuableStartSpec,
+  ContinuationAdmission,
   ResolvedSubagentStartRequest,
   SubagentCapabilities,
   SubagentInterruptAuthority,
@@ -89,6 +90,8 @@ export type {
   ContinuableCreateSpec,
   ContinuableStart,
   ContinuableStartSpec,
+  ContinuableEnvironment,
+  ContinuationAdmission,
   ResolvedSubagentStartRequest,
   SubagentCapabilities,
   SubagentInterruptAuthority,
@@ -104,6 +107,7 @@ export {
   foldSubagentDescriptor,
   snapshotSubagentDescriptor,
   SUBAGENT_DESCRIPTOR_VERSION,
+  MANAGED_SUBAGENT_DESCRIPTOR_VERSION,
 } from './descriptor.ts'
 export type {
   ContinuableSubagentDescriptorData,
@@ -201,6 +205,7 @@ export class SubagentRuntime extends TypertRemoteService {
     maxActiveSubagents: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(8).volatile(),
   })
   private providers = new Map<string, SubagentProvider>()
+  private readonly continuationPolicies = new Map<string, (admission: ContinuationAdmission) => Promise<void>>()
   private continuations: SubagentContinuationManager | undefined
   /**
    * The contained lifecycle-edge publisher. Built here because scoped dispatch
@@ -214,6 +219,11 @@ export class SubagentRuntime extends TypertRemoteService {
     this.emitLifecycle = createLifecycleEmitter(this.ctx, parent => scopeTarget(this, parent))
     ctx.inject(['agents'], (childCtx: Context) => {
       const manager = new SubagentContinuationManager(childCtx, {
+        admitContinuation: async (key, admission) => {
+          const policy = this.continuationPolicies.get(key)
+          if (policy === undefined) throw new SubagentError(`continuation policy "${key}" is unavailable`, 'UNAUTHORIZED')
+          await policy(admission)
+        },
         prepareContinuable: (name, request) => this.prepareContinuable(name, request),
         observeActivation: (provider, childId, parent) => this.observeActivation(provider, childId, parent),
       }, () => this.config.maxActiveSubagents.get())
@@ -232,6 +242,13 @@ export class SubagentRuntime extends TypertRemoteService {
     // Archive admission: this runtime is the owner that knows which live
     // children descend from a Session and how a parent stops them.
     ctx.inject(['agents'], (agentsCtx: Context) => { installSubagentArchiveAdmission(agentsCtx) })
+  }
+
+  /** Register the host policy required by persisted managed continuations. */
+  registerContinuationPolicy(key: string, policy: (admission: ContinuationAdmission) => Promise<void>): () => void {
+    if (!key.trim() || this.continuationPolicies.has(key)) throw new Error(`duplicate or empty continuation policy "${key}"`)
+    this.continuationPolicies.set(key, policy)
+    return () => { if (this.continuationPolicies.get(key) === policy) this.continuationPolicies.delete(key) }
   }
 
   /**

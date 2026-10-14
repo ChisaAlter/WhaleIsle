@@ -9,7 +9,7 @@ import { boundContextSummary, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ActivationTerminal } from './lifecycle.ts'
-import type { SubagentResult } from './types.ts'
+import type { SubagentResult, SubagentRunId } from './types.ts'
 
 /** Durable attribution for one model-authored message between adjacent Agents. */
 export interface AgentMessageSource {
@@ -28,6 +28,8 @@ export interface AgentMessageSource {
  * transcript that merged them would credit the child with words it never wrote.
  */
 export interface SubagentSettledMessageSource {
+  /** Activation identity; absent only in historical notices. */
+  readonly runId?: SubagentRunId
   readonly kind: 'subagent-settled'
   /** A runtime account shown without expanding the row (`notice` context form). */
   readonly form: 'notice'
@@ -135,6 +137,7 @@ function settlementSummary(childId: SessionId, stopReason: SubagentResult['stopR
 export function createSettlementMessage(
   childId: SessionId,
   terminal: ActivationTerminal,
+  runId?: SubagentRunId,
 ): ReturnType<typeof createUserMessage> {
   const summary = settlementSummary(childId, terminal.stopReason)
   // Parent providers receive this notice as a user message and may reject
@@ -155,6 +158,7 @@ export function createSettlementMessage(
       form: 'notice' as const,
       summary: boundContextSummary(summary),
       senderSessionId: childId,
+      ...runId === undefined ? {} : { runId },
     },
   })
 }

@@ -21,11 +21,17 @@ UI 改动先读本文。工程细则（CSS Modules、token 分层、动效 recip
 - 工程规则：[web-styling.md](../vendor/deepseek-harness/docs/web-styling.md)
 - 动效规范与使用对照：[motion.md](motion.md)
 
-应用对外称 Whale Isle；侧栏保留「鲸屿 / WHALE ISLE」字标与 DeepSeek Harness 来源说明。桌面与 Web 侧栏左侧使用透明头像 [`assets/whale-head.png`](../assets/whale-head.png)，字标下方是「BASED ON DEEPSEEK HARNESS」。仅「屿」使用品牌蓝，头像不带方形底板；收起时左上角的展开按钮保留头像，悬停或键盘聚焦时换显面板图标，点击仍展开侧栏。明暗色只从主题 token 取得，不绘制独立光晕。应用图标沿用白色圆角方形底板（半径为边长 22%），头像居中并四边各内缩 4%；安装器读取相同的生成图标 `assets/icon.png`。窗口、任务栏、托盘和安装器共享此源；`assets/icon.svg` 包装此图，`npm run icon` 生成 `assets/icon.png` 与多尺寸 `assets/icon.ico`。Windows 窗口首次显示前显式声明既有 AppUserModelID、同源图标、成对的重启命令与产品名；源码使用真实 ICO 与绝对项目入口，安装版使用 EXE 内嵌图标及该 EXE 重启命令。原始 Electron 源码运行保留应用内提示，禁止系统通知注册同身份的 Electron 快捷方式。启动时将旧通知自动生成的同身份 Electron 开始菜单条目原字节移到唯一的 `Electron.lnk.backup` 可恢复备份，备份不保留 `.lnk` 扩展名：必须同时匹配固定文件名、应用 ID、Electron 目标、空参数及默认图标；不改用户固定项或其它应用条目。移动成功后仅异步通知 Shell 旧开始菜单入口已移除，使用 SHCNE_DELETE（旧路径，NULL）与 SHCNF_PATHW | SHCNF_FLUSH，不向 Shell 登记备份为新启动入口；原生回调最多等待 500ms，通知失败或超时保留备份并继续启动，不清全局缓存或重启 Explorer。FLUSH 只等待事件投递，不证明任务栏像素正确；首次启动须另行验收。宠物立绘生成器不再拥有应用图标。
+应用对外称 Whale Isle；侧栏保留「鲸屿 / WHALE ISLE」字标与 DeepSeek Harness 来源说明。桌面与 Web 侧栏左侧使用透明头像 [`assets/whale-head.png`](../assets/whale-head.png)，字标下方是「BASED ON DEEPSEEK HARNESS」。字标随界面语言交换顺序与主副字级：中文模式「鲸屿」在前为大字、「WHALE ISLE」在后为小字，仅「屿」使用品牌蓝；英文模式「WHALE ISLE」在前为大字、「鲸屿」在后为小字，仅「ISLE」使用品牌蓝。头像不带方形底板；收起时左上角的展开按钮保留头像，悬停或键盘聚焦时换显面板图标，点击仍展开侧栏。明暗色只从主题 token 取得，不绘制独立光晕。应用图标沿用白色圆角方形底板（半径为边长 22%），头像居中并四边各内缩 4%；安装器读取相同的生成图标 `assets/icon.png`。窗口、任务栏、托盘和安装器共享此源；`assets/icon.svg` 包装此图，`npm run icon` 生成 `assets/icon.png` 与多尺寸 `assets/icon.ico`。Windows 窗口首次显示前显式声明既有 AppUserModelID、同源图标、成对的重启命令与产品名；源码使用真实 ICO 与绝对项目入口，安装版使用 EXE 内嵌图标及该 EXE 重启命令。原始 Electron 源码运行保留应用内提示，禁止系统通知注册同身份的 Electron 快捷方式。启动时将旧通知自动生成的同身份 Electron 开始菜单条目原字节移到唯一的 `Electron.lnk.backup` 可恢复备份，备份不保留 `.lnk` 扩展名：必须同时匹配固定文件名、应用 ID、Electron 目标、空参数及默认图标；不改用户固定项或其它应用条目。移动成功后仅异步通知 Shell 旧开始菜单入口已移除，使用 SHCNE_DELETE（旧路径，NULL）与 SHCNF_PATHW | SHCNF_FLUSH，不向 Shell 登记备份为新启动入口；原生回调最多等待 500ms，通知失败或超时保留备份并继续启动，不清全局缓存或重启 Explorer。FLUSH 只等待事件投递，不证明任务栏像素正确；首次启动须另行验收。宠物立绘生成器不再拥有应用图标。
 
 关闭遮罩沿用同一主题、文案和动效。等待首次绘制属于尽力显示：主进程最多等待 500ms，隐藏页面不产帧或 renderer 没有响应时继续正常关停，不让视觉反馈阻断已经获准的退出。
 
 设置面板使用 `--dsw-alias-bg-layer-2`，随玻璃透明度设置调整填充，并复用 `--dsw-menu-backdrop-filter` 模糊底层内容。菜单与对话框同样响应玻璃透明度；透明主题仍遵循壁纸门控与滑块禁用契约。
+
+Project 的资料与浮窗内容使用 `--dsw-alias-bg-panel-solid`：保留当前高层背景的主题色，以不透明内容面分离表单与底层聊天文字；不修改全局玻璃透明度设置或普通设置面板的配方。确认面板沿用共享 Modal 的玻璃效果。
+
+Project 主对话承载需求与交付。左栏按绑定的真实目录融入原有工作区层级，不另加 Project 分类；顶部目录入口打开该目录，「项目概览」才打开浮窗。观察面板保留原生浮动、拖动、调整尺寸和布局保存，不停靠或合并到普通侧栏；进入 Project 不自动打开。首次展开使用有限高度，不默认填满主对话；保留用户调整的有效尺寸和位置。标题栏只呈现项目名、真实状态和「收起 / 展开」，不提供仿窗口的最小化、最大化或关闭控件。收起只隐藏内容，不停止后台工作；展开保留原页面和编辑状态。调整窗口或输入区时只约束越界部分，不将用户挪动的浮窗复位。
+
+Project 浮窗提供顶部单行和完整面板两态。完整面板提供任务、团队和资料；当前任务置顶，完成任务只在完整展开的任务列表中显示，已有记录和成果仍可访问。任务用分隔列表呈现标题、当前状态、等待原因和结果，不重复大段要求、时间戳与头像字母。团队按真实职责和当前工作组织，内部成员 ID、消息目标、目录与分支收在执行信息中；回合不运行不代表工作已完成。资料先展示交付结论、相关文件、验证与未完成项。需要解释流程、结构或对比时，成果嵌入应用原有生成式页面，沿用附件权限、主题、展开与源码控件；页面不能作为运行或完成状态来源，也不获得应用操作权限。完整报告、原始记录与要求版本按需展开。归档收在更多菜单，成员自报结果不被表述为独立验收。
 
 ## 适用范围
 
@@ -95,7 +101,7 @@ Files 只保留「文件」目录入口，编辑器由具体文件打开；旧�
 13. **毛玻璃止于基线配方。** 遮罩 `blur(2px)`（`--dsw-mask-blur`）+ `--dsw-alias-bg-mask-*`；抬起面用 `color-mix(..., var(--dsw-alias-glass-opacity), transparent)`。使用 `--dsw-specific-menu` 填充的抬起菜单须配对 `--dsw-menu-backdrop-filter`。不要加更重的 blur，也不要每层都铺投影。鲸桥独立窗口的对话框仅使用遮罩色，不使用背景模糊：软件渲染下背景模糊会使按钮等待动效持续掉帧。
 14. **滚动条用共享样式。** 禁止组件内 `::-webkit-scrollbar`。
 15. **产品文案中文，代码注释英文。** 不要把 VS Code / Material / iOS 的密度和装饰搬进来压过基线 Web UI。
-16. **应用对外主名用 Whale Isle，侧栏字标保持既有设计。** `setup:harness` 走 vendor 树自带的 `pnpm run build:official`（`DSH_CLIENT_BUILD_PROFILE=official`）；源码 `npm start` 消费 vendor 产物前确认官方构建记录，发现旧的普通 `build` 产物即补做 official build。桌面与 Web 官方构建沿用上述侧栏字标；「屿」为品牌蓝，头像不带方形底板或本地构建回退文案。字标可使用适配 40px Windows 标题栏的紧凑字级，不改变其余控件字号。改 client 后也用同一条命令重建，不要单独 `build:lib:client` 把品牌打回本地包。
+16. **应用对外主名用 Whale Isle，侧栏字标保持既有设计。** `setup:harness` 走 vendor 树自带的 `pnpm run build:official`（`DSH_CLIENT_BUILD_PROFILE=official`）；源码 `npm start` 消费 vendor 产物前确认官方构建记录，发现旧的普通 `build` 产物即补做 official build。桌面与 Web 官方构建沿用上述侧栏字标；主名字标中的「屿」或「ISLE」随界面语言使用品牌蓝，头像不带方形底板或本地构建回退文案。字标可使用适配 40px Windows 标题栏的紧凑字级，不改变其余控件字号。改 client 后也用同一条命令重建，不要单独 `build:lib:client` 把品牌打回本地包。
 17. **代码高亮按需、分片，不把长任务搬了个位置。** 会话里没有代码块时，语法高亮器一次都不构造；有代码内容时，原文先可见、可复制、可选中，再在同一位置换成高亮结果，不先显示占位。初始化与每个 grammar 的首次 tokenize 各自独立调度，都是后台任务：单个高亮相关主线程任务必须小于 50 ms，且不得靠 `requestIdleCallback` / `setTimeout` 把同一个长任务原样推迟来「达标」。高亮失败或未就绪时降级为完整等宽原文，绝不显示旧输入的高亮结果。已完成的增量 Markdown 缓存、streaming→settled 的 DOM 语义、复制文本不含行号保持基线不变。
 18. **终端高吞吐输出有界，背压必须真的约束生产者。** PTY 输出先按 burst 合并再跨 IPC，帧带每会话单调序号；renderer 只有在**把该帧写入自己的终端会话状态之后**才回执，收到 IPC 即回执不算消费完成。主进程按未确认字节数设高/低水位：越过上限就暂停后端 PTY 读取，回落到低水位再恢复。暂停期间输入写入与 resize 不受影响；恢复后必须零丢失、零乱序，退出前的尾部输出照常先 flush。不允许用丢弃数据、无上限队列或「只在 renderer 侧丢弃」冒充背压；后端无法真正停读时必须如实标注背压未完成，而不是假装达标。
 
@@ -151,6 +157,8 @@ Browser 空白页、导航工具栏与尚未加载网页的 guest 占位区透�
 | 用户气泡 | `--dsw-specific-bubble` |
 | 选中行 | `--dsw-specific-sidebar-nav-item-active`（强调用 `*-accent`）；设置侧栏导航沿用上游中性选中底色，浅色为 `#EBEEF2`，不使用强调色 |
 | 字体栈 | `--dsw-font-family`（系统 UI + 苹方 / 雅黑）；代码 `--ds-font-family-code` |
+
+Project 的资料、只读过程及确认弹窗沿用 `Modal`，内容面取 `--dsw-alias-bg-layer-2` 的颜色并使用实色，避免文本与底下的聊天文字叠读；资料与过程的标题、关闭钮固定在滚动内容上方。画布、侧栏和输入框仍沿用现有透明度。
 
 设置侧栏导航禁止浏览器默认的黄色焦点轮廓。仅键盘焦点使用与设置入口一致的 `2px solid var(--dsw-alias-label-primary)` 内描边（`outline-offset: -2px`）；鼠标选中只显示中性选中底色，不额外画边框。
 

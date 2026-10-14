@@ -136,6 +136,21 @@ describe('desktop install control', { concurrency: false }, () => {
     assert.equal(response.status, 400);
   });
 
+  test('/desktop/project authenticates and routes narrow Project actions without accepting malformed requests', async () => {
+    const calls = [];
+    startDesktopInstallControl({ installPlugin: async () => ({ ok: true }), startHarness: async () => {},
+      desktop: { project: async payload => { calls.push(payload); return { ok: true, canonicalPath: 'bound-directory' }; } } });
+    const { url, token } = await desktopInstallReady(), endpoint = new URL('/desktop/project', url);
+    assert.equal((await fetch(endpoint, { method: 'POST', body: '{}' })).status, 401);
+    const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+    const payload = { action: 'canonicalize', workingDirectory: 'chosen-directory' };
+    const response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(payload) });
+    assert.equal(response.status, 200); assert.equal((await response.json()).canonicalPath, 'bound-directory');
+    assert.deepEqual(calls, [payload]);
+    for (const body of ['[1]', 'invalid']) assert.equal((await fetch(endpoint, { method: 'POST', headers, body })).status, 400);
+    assert.deepEqual(calls, [payload]);
+  });
+
   test('/desktop/state returns the desktop ops payload', async () => {
     startDesktopInstallControl({
       installPlugin: async () => ({ ok: true }),

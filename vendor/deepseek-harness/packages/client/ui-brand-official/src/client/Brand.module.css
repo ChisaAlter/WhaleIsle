@@ -55,6 +55,30 @@
   letter-spacing: 0.12em;
 }
 
+/* The locale service keeps the document language in sync with Settings. */
+:global(html[lang|="en"]) .englishName {
+  order: -1;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 22px;
+  letter-spacing: -0.04em;
+}
+
+:global(html[lang|="en"]) .chineseName {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 12px;
+  letter-spacing: 0.12em;
+}
+
+:global(html[lang|="en"]) .isleGlyph {
+  color: inherit;
+}
+
+:global(html[lang|="en"]) .isleWord {
+  color: var(--dsw-alias-state-business-primary);
+}
+
 .attribution {
   color: var(--dsw-alias-label-tertiary);
   display: block;

@@ -52,7 +52,7 @@
 | Recipe | 视觉 | 何时用 |
 | --- | --- | --- |
 | `overlay` | 遮罩淡入淡出；面板淡入并从 8px / 0.96 落到原位 | 全屏接管：对话框、设置、灯箱、Onboarding |
-| `popover` | 卡片淡入并上移 4px | 锚定浮层：菜单、斜杠命令、模型面板、HoverCard |
+| `popover` | 卡片以完整毛玻璃材质出现并上移 4px，关闭时立即隐藏 | 锚定浮层：菜单、斜杠命令、模型面板、HoverCard |
 | `fade` | 只动透明度 | 节点自己用 `transform` 做定位：Tooltip、Disclosure 展开体 |
 | `swap` | 仅进场淡入（`animation`，无退场） | 同层换页，例如设置分区 |
 | `flip` | 旧文案 `rotateX(-80deg)` 翻出，新文案翻入 | 触发器标签替换，只通过 `FlipText` |

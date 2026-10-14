@@ -155,6 +155,15 @@ function HeaderCatalog(props: SubagentHeaderLineageProps) {
 }
 
 describe('SubagentHeaderLineage', () => {
+  it('leaves managed Project roster navigation to the Project Team action', () => {
+    const input = props(catalog())
+    const initial = input.useSessions(state => state)
+    render(<HeaderCatalog {...input} useSessions={select => select({ ...initial, byId: {
+      ...initial.byId, [PARENT]: { ...summary(PARENT, 1), presentation: { owner: 'project', title: 'Project', workingDirectory: '/project' } },
+    } })} />)
+    expect(screen.queryByRole('button', { name: /个子智能体/ })).toBeNull()
+  })
+
   it('shows current catalog-only child status before Host list discovery', () => {
     const input = props(catalog({ entries: [{ id: CHILD, mode: 'continuable', label: 'worker', activity: 'inactive' }] }))
     const initial = input.useSessions(state => state)

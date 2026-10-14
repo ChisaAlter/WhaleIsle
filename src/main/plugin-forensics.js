@@ -4,6 +4,7 @@ const { OFFICIAL_TEMPLATE_BUNDLES } = require('./plugins');
 const { DESKTOP_PACKAGES } = require('../shared/harness-desktop-forks');
 const { DSH_IM_ALIASES } = require('./dsh-im-desktop');
 const { DSHBOT_ALIASES } = require('./dshbot-desktop');
+const { DSH_PROJECT_ALIASES } = require('./dsh-project-desktop');
 const { DSH_WHALE_ALIASES } = require('./dsh-whale-desktop');
 const { DSH_REMOTE_ALIASES } = require('./dsh-remote-desktop');
 const { USAGE_PANEL_ALIASES } = require('./usage-panel-preset');
@@ -29,10 +30,10 @@ const WEB_BOOT_AUDIT_ENTRY = /^\s*(?:\[(?:app|error|dsh)\]\s*)?(@?[\w.-]+(?:\/[\
 // Preset plugins stay here to block `shell:remove-plugin` on a same-named
 // profile row (the built-in itself never appears in the profile list — it
 // mounts via the desktop overlay). dsh-usage-panel, dsh-im, and dshbot are
-// desktop built-in modules now (not disableable), but the `preset` marker
+// desktop built-in modules, but the `preset` marker
 // only gates removal; disable is blocked separately via IPC and config
-// alias-stripping.
-const PRESET_PLUGINS = new Set(['dsh-usage-panel', '@xmanrui/dsh-im', 'dsh-im', 'xmanrui-dsh-im', ...DSHBOT_ALIASES, ...DSH_WHALE_ALIASES, ...DSH_REMOTE_ALIASES]);
+// alias-stripping. Project retains this removal guard while honoring disable.
+const PRESET_PLUGINS = new Set(['dsh-usage-panel', '@xmanrui/dsh-im', 'dsh-im', 'xmanrui-dsh-im', ...DSHBOT_ALIASES, ...DSH_PROJECT_ALIASES, ...DSH_WHALE_ALIASES, ...DSH_REMOTE_ALIASES]);
 const EVIDENCE_LINE_MAX = 240;
 
 // In-box names cover the harness fork packages plus the desktop built-in
@@ -171,7 +172,7 @@ function inspectPlugins({
   const logText = Array.isArray(logs) ? logs.join('\n') : String(logs || '');
   const corpus = [logText, lastStartError, recovery?.reason].filter(Boolean).join('\n');
   const genericCause = classifyGenericFailure(corpus);
-  const pluginNames = new Set((plugins || []).map((row) => row.name || row));
+  const pluginNames = new Set([...(plugins || []).map((row) => row.name || row), ...DSH_PROJECT_ALIASES]);
   const seenEvidence = new Set();
   const evidence = extractEvidence(corpus).map((row) => {
     // Profile dependencies and disableable bundles use the package root.
@@ -188,7 +189,10 @@ function inspectPlugins({
   const suspectSet = new Set(suspects);
   const disabled = new Set(Array.isArray(disabledPlugins) ? disabledPlugins : []);
   const bundleSet = new Set(Array.isArray(bundles) ? bundles : []);
-  const rows = (plugins || []).map((row) => {
+  // Project is shipped through an overlay, but remains disableable in the existing board.
+  const listed = [...(plugins || [])];
+  if (!listed.some(row => DSH_PROJECT_ALIASES.includes(row.name || row))) listed.push({ name: 'dsh-project', spec: 'desktop' });
+  const rows = listed.map((row) => {
     const name = row.name || row;
     return {
       name,

@@ -46,6 +46,8 @@ declare module '@deepseek-ai/dsh-session/types' {
  * an implicit extra field.
  */
 export const SUBAGENT_DESCRIPTOR_VERSION = 3
+/** Explicit Host-managed composition writes v4; ordinary delegation keeps its v3 format. */
+export const MANAGED_SUBAGENT_DESCRIPTOR_VERSION = 4
 
 /** Fields shared by every supported `subagent/descriptor` payload. */
 interface SubagentDescriptorBase {
@@ -70,6 +72,10 @@ export interface OneShotSubagentDescriptorData extends SubagentDescriptorBase {
 
 /** A session-backed subagent whose declared composition supports cold resume. */
 export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {
+  /** Host-selected role composition; absence preserves ordinary parent inheritance. */
+  readonly agentPreset?: string
+  /** Managed admission policy must exist before this child can be activated. */
+  readonly admissionPolicy?: string
   readonly mode: 'continuable'
   /** The initial delegation's short `description`, used for durable enumeration. */
   readonly label: string
@@ -107,6 +113,8 @@ export interface OneShotSubagentDescriptorInput extends SubagentDescriptorInputB
 
 /** Input for a continuable child's durable identity and resumable composition. */
 export interface ContinuableSubagentDescriptorInput extends SubagentDescriptorInputBase {
+  readonly agentPreset?: string
+  readonly admissionPolicy?: string
   readonly mode: 'continuable'
   /** Initial delegation `description` used for durable enumeration. */
   readonly label: string
@@ -141,6 +149,8 @@ const CONTINUABLE_DESCRIPTOR_KEYS = new Set([
   'agentReasoningEffort',
   'persona',
   'toolFilter',
+  'agentPreset',
+  'admissionPolicy',
 ])
 const TOOL_FILTER_KEYS = new Set(['allow', 'deny'])
 
@@ -207,7 +217,8 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
   if (typeof version !== 'number') {
     throw new Error('persisted subagent descriptor version must be a number')
   }
-  if (version !== SUBAGENT_DESCRIPTOR_VERSION) return undefined
+  // v3 remains readable; only managed children need the new v4 inputs.
+  if (version !== SUBAGENT_DESCRIPTOR_VERSION && version !== MANAGED_SUBAGENT_DESCRIPTOR_VERSION) return undefined
 
   const mode = value['mode']
   if (mode !== 'one-shot' && mode !== 'continuable') {
@@ -223,9 +234,10 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
     throw new Error('persisted subagent descriptor provider must be a string')
   }
   if (mode === 'one-shot') {
+    if (version !== SUBAGENT_DESCRIPTOR_VERSION) return undefined
     const label = optionalString(value, 'label')
     return {
-      version: SUBAGENT_DESCRIPTOR_VERSION,
+      version,
       mode,
       provider,
       ...label !== undefined ? { label } : {},
@@ -239,11 +251,17 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
   const agentModel = optionalString(value, 'agentModel')
   const agentReasoningEffort = optionalString(value, 'agentReasoningEffort') as ReasoningEffortId | undefined
   const persona = optionalString(value, 'persona')
+  const agentPreset = optionalString(value, 'agentPreset')
+  const admissionPolicy = optionalString(value, 'admissionPolicy')
+  if (version === 3 && (agentPreset !== undefined || admissionPolicy !== undefined)) {
+    throw new Error('persisted v3 subagent descriptor cannot contain managed environment fields')
+  }
+  if (version === MANAGED_SUBAGENT_DESCRIPTOR_VERSION && agentPreset === undefined && admissionPolicy === undefined) return undefined
   const toolFilter = Object.hasOwn(value, 'toolFilter')
     ? parseToolFilter(value['toolFilter'])
     : undefined
   return {
-    version: SUBAGENT_DESCRIPTOR_VERSION,
+    version,
     mode,
     provider,
     label,
@@ -252,6 +270,8 @@ function parseSubagentDescriptor(value: unknown): SubagentDescriptorData | undef
     ...agentReasoningEffort !== undefined ? { agentReasoningEffort } : {},
     ...persona !== undefined ? { persona } : {},
     ...toolFilter !== undefined ? { toolFilter } : {},
+    ...agentPreset !== undefined ? { agentPreset } : {},
+    ...admissionPolicy !== undefined ? { admissionPolicy } : {},
   }
 }
 
@@ -279,13 +299,13 @@ export function snapshotSubagentDescriptor(
 export function snapshotSubagentDescriptor(input: SubagentDescriptorInput): SubagentDescriptorData {
   const candidate: SubagentDescriptorData = input.mode === 'one-shot'
     ? {
-      version: SUBAGENT_DESCRIPTOR_VERSION,
+      version: 3,
       mode: input.mode,
       provider: input.provider,
       ...input.label !== undefined ? { label: input.label } : {},
     }
     : {
-      version: SUBAGENT_DESCRIPTOR_VERSION,
+      version: input.agentPreset !== undefined || input.admissionPolicy !== undefined ? MANAGED_SUBAGENT_DESCRIPTOR_VERSION : SUBAGENT_DESCRIPTOR_VERSION,
       mode: input.mode,
       provider: input.provider,
       label: input.label,
@@ -294,6 +314,8 @@ export function snapshotSubagentDescriptor(input: SubagentDescriptorInput): Suba
       ...input.agentReasoningEffort !== undefined ? { agentReasoningEffort: input.agentReasoningEffort } : {},
       ...input.persona !== undefined ? { persona: input.persona } : {},
       ...input.toolFilter !== undefined ? { toolFilter: input.toolFilter } : {},
+      ...input.agentPreset !== undefined ? { agentPreset: input.agentPreset } : {},
+      ...input.admissionPolicy !== undefined ? { admissionPolicy: input.admissionPolicy } : {},
     }
   const snapshot = snapshotJsonValue(candidate)
   if (snapshot === undefined) {

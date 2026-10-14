@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement, type ReactNode } from 'react'
+import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import {
   Button,
   IconChevronLeftOutline14,
@@ -73,7 +74,7 @@ function currentCwd(useSessions: PreviewPanelProps['useSessions']): string | und
     const id = Object.values(s.byId)
       .find(row => (row.retainedBy.mainView ?? 0) > 0)?.id
     if (id === undefined) return undefined
-    const next = s.byId[id]?.cwd
+    const next = sessionWorkingDirectory(s.byId[id])
     return next ? next : undefined
   })
 }

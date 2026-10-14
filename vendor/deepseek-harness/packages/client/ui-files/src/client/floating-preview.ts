@@ -1,6 +1,9 @@
 /** One floating-preview request target resolved from a file resource address. */
 import { parseFileAddress, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 
+
+
+
 /** Desktop preload surface used by the floating preview action. */
 export interface FloatingPreviewShell {
   previewOpenFileWindow?: (input: FloatingPreviewRequest) => Promise<FloatingPreviewResult | null | undefined>
@@ -47,6 +50,7 @@ export function floatingPreviewTarget(
   if (address.scope === 'absolute') {
     return { ok: true, request: { absolutePath: address.path } }
   }
+
 
   if (cwd !== undefined && cwd !== '') {
     const absolute = resolveWorkspacePath(cwd, address.path)

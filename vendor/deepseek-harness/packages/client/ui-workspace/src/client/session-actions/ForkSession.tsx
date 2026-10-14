@@ -9,10 +9,12 @@ import type { ForkSessionInjected, SessionMenuItemProps } from '../contract/slot
  * @returns the row.
  */
 export function ForkSessionMenuItem({
-  sessionId, useMenuOpenState, useShortcuts, forkSession, t,
+  sessionId, useMenuOpenState, useShortcuts, useSessions, forkSession, t,
 }: SessionMenuItemProps<ForkSessionInjected>) {
   const [, setMenuOpen] = useMenuOpenState()
   const shortcut = useShortcuts(rows => rows.find(row => row.id === 'session.fork'))
+  const owned = useSessions(list => list.byId[sessionId]?.presentation?.owner === 'project')
+  if (owned) return null
   return (
     <MenuItemButton
       shortcut={shortcut}

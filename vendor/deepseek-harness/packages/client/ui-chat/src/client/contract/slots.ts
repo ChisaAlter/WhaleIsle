@@ -211,7 +211,8 @@ export interface ChatNodeOwnerProps {
   openSkill: (name: string) => void
   openFile: (path: string, options?: OpenFileOptions) => void
   inspectCall: ((callId: ToolCallId) => void) | undefined
-  forkAt: (seq: number) => void
+  /** Absence hides branch actions for an owner that requires the original conversation. */
+  forkAt: ((seq: number) => void) | undefined
   /**
    * Session-authorized image loader, down-threaded from the Chat view so a
    * chat-node renderer can render the attachment presentation slot directly

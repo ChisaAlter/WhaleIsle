@@ -55,6 +55,21 @@ async function stubAgent(
 }
 
 describe('LocalFileReferenceService', () => {
+  it('switches user discovery roots without mutating the Agent directory or reusing the wrong index', async () => {
+    const ctx = await harness()
+    const { agent } = await stubAgent(ctx)
+    const original = agent.session.header.cwd
+    const root = await mkdtemp(join(tmpdir(), 'dsh-user-reference-'))
+    roots.push(root)
+    await writeFile(join(root, 'USER_DIRECTORY.md'), 'selected directory')
+    await ctx.plugin(LocalFileReferenceService)
+    const signal = new AbortController().signal
+    await expect(ctx.fileReferences.list(agent, '', signal)).resolves.toEqual([{ path: 'README.md', kind: 'file' }])
+    await expect(ctx.fileReferences.list(agent, '', signal, root)).resolves.toEqual([{ path: 'USER_DIRECTORY.md', kind: 'file' }])
+    await expect(ctx.fileReferences.list(agent, '', signal)).resolves.toEqual([{ path: 'README.md', kind: 'file' }])
+    expect(agent.session.header.cwd).toBe(original)
+    await ctx.fiber.dispose()
+  })
   it('defers guidance until optional prompt and tool services become available', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

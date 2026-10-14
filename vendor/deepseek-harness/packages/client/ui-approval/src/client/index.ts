@@ -43,6 +43,7 @@ async function answerApproval(
   const sessionId = ctx.sessions.scopeOf(owner)
   if (sessionId === undefined) return next()
   const pending = new PendingApproval(sessionId, {
+    ...request.requester === undefined ? {} : { requester: request.requester },
     ...(request.requestId === undefined ? {} : { requestId: request.requestId }),
     toolName: request.toolName,
     ...(request.callId === undefined
@@ -100,6 +101,7 @@ export function apply(ctx: ClientContext): void {
     }),
     children: {
       'conversation.approval.detail': { kind: 'single', scope: 'session' },
+      'conversation.approval.actions': { kind: 'list', scope: 'session' },
     },
   }, ApprovalPanel))
   ctx.remote.$on('approval/request', function (request, next) {

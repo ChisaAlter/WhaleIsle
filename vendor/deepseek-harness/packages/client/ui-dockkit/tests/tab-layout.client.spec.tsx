@@ -17,7 +17,7 @@ function mounted(controller = seededController(), options: Partial<ComponentProp
     onFocusTab: (id) => { controller.focusTab(id); redraw() },
     onFocusPane: (id) => { controller.focusPane(id); redraw() },
     onSplitPane: vi.fn(), onAddTab: vi.fn(), onCloseTab: vi.fn(), onTabPressed: vi.fn(), onDividerPressed: vi.fn(),
-    splitBlock: () => undefined, canAddTab: () => true, canCloseTab: () => true,
+    splitBlock: () => undefined, canAddTab: () => true, canCloseTab: () => true, canDockTab: () => true,
     dropTarget: undefined, draggingTabId: undefined, labels: TEST_LABELS,
     renderTab: tab => <input data-body={tab.id} defaultValue={tab.title} />,
     renderTabTitle: undefined, renderTabMenuItems: undefined,
@@ -37,6 +37,47 @@ function mounted(controller = seededController(), options: Partial<ComponentProp
   }
   return { controller, view, redraw, callbacks, node, body: (id: TabId) => node(`[data-body="${id}"]`) }
 }
+
+it('keeps floating-only panels without a dock action while ordinary floating panels retain it', () => {
+  const controller = seededController()
+  const tab = controller.openContent({ kind: 'observer', contentId: 'observer:project', title: 'Observer' })
+  const pane = controller.floatTab(tab, { x: 20, y: 70, width: 360, height: 300 })
+  const h = mounted(controller)
+  h.redraw({ callbacks: { ...h.callbacks, canDockTab: () => false } })
+  expect(h.view.container.querySelector('[data-dockkit-float-dock]')).toBeNull()
+  expect(h.view.container.querySelector('[data-dockkit-float-close]')).not.toBeNull()
+  const body = h.body(tab)
+  controller.resizeFloat(pane, { x: 20, y: 70, width: 360, height: 38 })
+  h.redraw()
+  expect(h.view.container.querySelector('[data-dockkit-float-dock]')).toBeNull()
+  expect(h.body(tab)).toBe(body)
+  h.redraw({ callbacks: { ...h.callbacks, canDockTab: () => true } })
+  expect(h.view.container.querySelector('[data-dockkit-float-dock]')).not.toBeNull()
+})
+
+it('minimizes a floating tab to its native header and restores the same mounted body', () => {
+  const controller = seededController()
+  controller.setExpanded(true)
+  const tab = getPane(controller.getSnapshot().state, controller.getSnapshot().state.rootId).tabs[0]!
+  controller.floatTab(tab, { x: 20, y: 70, width: 360, height: 300 })
+  const pane = controller.getSnapshot().state.floats[0]!
+  const h = mounted(controller)
+  const body = h.body(tab)
+  expect(body.closest('[data-dockkit-content]')?.getAttribute('aria-hidden')).toBeNull()
+  controller.resizeFloat(pane, { x: 20, y: 70, width: 360, height: 38 })
+  h.redraw()
+  expect(h.body(tab)).toBe(body)
+  expect(body.parentElement).toHaveProperty('hidden', true)
+  expect(body.parentElement).toHaveProperty('inert', true)
+  expect(h.view.container.querySelector('[data-dockkit-float-resize]')).toBeNull()
+  expect(h.node('[data-dockkit-float-title]')).toBeDefined()
+  controller.resizeFloat(pane, { x: 20, y: 70, width: 360, height: 300 })
+  h.redraw()
+  expect(h.body(tab)).toBe(body)
+  expect(body.parentElement).toHaveProperty('hidden', false)
+  expect(body.parentElement).toHaveProperty('inert', false)
+  expect(h.node('[data-dockkit-float-resize]')).toBeDefined()
+})
 
 it('mounts an opted-in hidden body on open while other retained bodies still wait for visibility', () => {
   const controller = seededController()

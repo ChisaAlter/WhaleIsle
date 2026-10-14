@@ -224,8 +224,23 @@ describe('Session queue commands', () => {
     await expectFailure(Promise.resolve().then(() => controller.cancel({
       sessionId: SessionId('missing'),
     })), 'session/not-found')
-    expect(controller.cancel({ sessionId: agent.id })).toEqual({ accepted: true })
+    expect(await controller.cancel({ sessionId: agent.id })).toEqual({ accepted: true })
     expect(cancel).toHaveBeenCalledWith({ kind: 'user' }, { keepInbox: true })
+    await ctx.fiber.dispose()
+  })
+
+  it('waits for the conversation owner to stop its work before cancelling the ordinary turn', async () => {
+    const { ctx, controller, agent, cancel } = await commandHarness()
+    const stopped = Promise.withResolvers<void>()
+    ctx.on('session/before-cancel', ({ agent: subject }) => {
+      expect(subject).toBe(agent)
+      return stopped.promise
+    })
+    const cancellation = controller.cancel({ sessionId: agent.id })
+    expect(cancel).not.toHaveBeenCalled()
+    stopped.resolve()
+    expect(await cancellation).toEqual({ accepted: true })
+    expect(cancel).toHaveBeenCalledExactlyOnceWith({ kind: 'user' }, { keepInbox: true })
     await ctx.fiber.dispose()
   })
 

@@ -199,6 +199,46 @@ test('正常启动：reachable 后进入 ready、清 failure、写 PID、返回 
   }
 });
 
+test('Project peer mount waits for packaged runtime preparation and reaches launch patches', async (t) => {
+  const order = [], preparedRoot = 'C:/prepared/runtime';
+  let launchConfig;
+  const h = makeHarness({ deps: {
+    ensurePackagedHarness: async () => { order.push('runtime'); return preparedRoot; },
+  } });
+  t.after(h.cleanup);
+  const build = h.manager._deps.buildLaunch;
+  h.manager._deps.buildLaunch = (config) => { order.push('launch'); launchConfig = config; return build(config); };
+  h.setReachable(true);
+  await h.manager.start({ patchFiles: ['C:/desktop.patch.yml'], prepareProjectPlugin: async ({ harnessRoot }) => {
+    assert.equal(harnessRoot, preparedRoot);
+    assert.deepEqual(order, ['runtime']);
+    order.push('project');
+    return { overlayFile: 'C:/project.patch.yml' };
+  } });
+  assert.deepEqual(order, ['runtime', 'project', 'launch']);
+  assert.deepEqual(launchConfig.patchFiles, ['C:/desktop.patch.yml', 'C:/project.patch.yml']);
+  await h.manager.stop();
+});
+
+test('stop during Project mounting prevents stale packaged launch', async (t) => {
+  let releaseMount, enteredMount;
+  const gate = new Promise(resolve => { releaseMount = resolve; });
+  const entered = new Promise(resolve => { enteredMount = resolve; });
+  const h = makeHarness();
+  t.after(h.cleanup);
+  const outcome = settle(h.manager.start({ prepareProjectPlugin: async () => {
+    enteredMount(); await gate; return { overlayFile: 'C:/project.patch.yml' };
+  } }));
+  await entered;
+  await h.manager.stop();
+  releaseMount();
+  const result = await outcome;
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'DSH_CANCELLED');
+  assert.equal(h.spawned.length, 0);
+  assert.equal(h.manager.state, 'idle');
+});
+
 test('P2A: a probe that resolves after stop() cannot write a stale session cookie', async (t) => {
   let releaseProbe;
   const probeGate = new Promise((resolve) => { releaseProbe = resolve; });
