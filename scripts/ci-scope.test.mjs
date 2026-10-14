@@ -4,8 +4,8 @@ import { readFileSync } from 'node:fs'
 import { load } from 'js-yaml'
 import { selectChecks } from './ci-scope.mjs'
 
-test('DSH component source uses its own native workflow without Harness regression builds', () => {
-  assert.deepEqual(selectChecks(['vendor/whalebridge/main.go', 'scripts/build-whalebridge.mjs', '.github/workflows/whalebridge.yml']),
+test('external component QA and removed source/build paths do not build Harness', () => {
+  assert.deepEqual(selectChecks(['vendor/whalebridge/main.go', 'scripts/build-whalebridge.mjs', 'scripts/qa-whalebridge-models.mjs', 'scripts/qa-whalebridge-agents.cjs', '.github/workflows/whalebridge.yml']),
     { product: false, vendor: false, tools: false, motion: false })
   assert.equal(selectChecks(['src/main/ipc-components.js']).product, true)
 })

@@ -149,6 +149,23 @@ describe('single right panel routing', () => {
     await b.fiber.dispose()
   })
 
+  it.each(['c:\\ai\\repo\\a.txt', 'c:/ai/repo/a.txt'])('keeps ordinary Windows workspace file %s eligible for desktop editing', async path => {
+    desktop()
+    const sidebarRight = sidebarRightStub()
+    const cwd = 'C:\\AI\\Repo'
+    const b = await bench({ mainView: 'sess-1', cwd, sidebarRight })
+    try {
+      await b.workspaces.openPath(path, { sessionId: 'sess-1', line: 7 })
+      const address = (sidebarRight.openResourceIn.mock.calls[0] as unknown as [string, string])[1]
+      expect(hostFileOf(address)).toEqual({ sessionId: 'sess-1', path: 'a.txt' })
+      expect(canOpenDesktopFile(address, () => cwd)).toBe(true)
+      expect(sidebarRight.openResourceIn).toHaveBeenCalledWith('sess-1', address, { params: { line: 7 } })
+      expect(b.originalOpen).not.toHaveBeenCalled()
+    } finally {
+      await b.fiber.dispose()
+    }
+  })
+
   it('opens the workspace root as Files in the same panel', async () => {
     desktop()
     const sidebarRight = sidebarRightStub()

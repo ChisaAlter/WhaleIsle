@@ -1060,6 +1060,57 @@ test('the short Project float keeps collapse and expand inside the viewport', as
   } finally { await b.dispose(); }
 });
 
+test('Project collapse and expand preserve the user-sized frame through a narrow viewport', async () => {
+  const b = bench();
+  try {
+    const view = b.document.defaultView;
+    Object.defineProperty(view, 'innerWidth', { configurable: true, value: 1200 });
+    Object.defineProperty(view, 'innerHeight', { configurable: true, value: 800 });
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    const preferred = { x: 100, y: 90, width: 420, height: 350 };
+    await act(async () => { b.sidebarRight.resizeFloat(b.observer.getSnapshot().panel.id, preferred); });
+    await b.press('observerStrip'); assert.equal(b.observer.getSnapshot().panel.rect.height, 38);
+    await b.press('observerExpand'); assert.deepEqual({ ...b.observer.getSnapshot().panel.rect }, preferred);
+    Object.defineProperty(view, 'innerWidth', { configurable: true, value: 360 });
+    Object.defineProperty(view, 'innerHeight', { configurable: true, value: 320 });
+    await act(async () => { view.dispatchEvent(new view.Event('resize')); });
+    const narrow = b.observer.getSnapshot().panel.rect;
+    assert.ok(narrow.height < preferred.height && narrow.width < preferred.width);
+    assert.ok(narrow.x >= 8 && narrow.x + narrow.width <= 360);
+    assert.ok(narrow.y >= 20 && narrow.y + narrow.height <= 308);
+    await b.press('observerStrip'); await b.press('observerExpand');
+    assert.deepEqual({ ...b.observer.getSnapshot().panel.rect }, { ...narrow });
+    Object.defineProperty(view, 'innerWidth', { configurable: true, value: 1200 });
+    Object.defineProperty(view, 'innerHeight', { configurable: true, value: 800 });
+    await act(async () => { view.dispatchEvent(new view.Event('resize')); });
+    assert.deepEqual({ ...b.observer.getSnapshot().panel.rect }, preferred);
+  } finally { await b.dispose(); }
+});
+
+test('user-sized Project observers retain separate frames for identical Session pane ids until close', async () => {
+  const b = bench({ rpcOverride: (method, input, project) => method === 'detail' && input.projectId === 'project-two'
+    ? { ok: true, value: { project: { ...project, id: 'project-two', title: 'Second Project', coordinatorSessionId: 'coordinator-two' }, workers: [], workstreams: [] } } : undefined });
+  const ownerA = b.project.coordinatorSessionId, ownerB = 'coordinator-two';
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    const frameA = { x: 60, y: 70, width: 400, height: 350 }, frameB = { x: 100, y: 50, width: 360, height: 410 };
+    await act(async () => { b.sidebarRight.resizeFloat(b.observer.getSnapshot().panel.id, frameA); });
+    await b.press('observerStrip');
+    await act(async () => { await b.face().readDetail('project-two'); b.face().openObserver('project-two'); });
+    await b.mountSession(ownerB);
+    const sourceB = b.observerIn(ownerB);
+    assert.equal(sourceB.getSnapshot().panel.id, b.observer.getSnapshot().panel.id);
+    await act(async () => { b.sidebarRight.resizeFloat(sourceB.getSnapshot().panel.id, frameB); });
+    await b.press('observerStrip'); await b.press('observerExpand');
+    assert.deepEqual({ ...sourceB.getSnapshot().panel.rect }, frameB);
+    await b.mountSession(ownerA); await b.press('observerExpand');
+    assert.deepEqual({ ...b.observer.getSnapshot().panel.rect }, frameA);
+    await b.press('close'); await b.openObserver();
+    assert.equal(b.observer.getSnapshot().panel.rect.height, 520, 'A newly created panel does not inherit the closed panel preferred frame');
+    assert.deepEqual({ ...sourceB.getSnapshot().panel.rect }, frameB);
+  } finally { await b.dispose(); }
+});
+
 test('the Request Team preserves real member stop, process and non-Git diff controls', async () => {
   const task = taskCard('task-running', 'Implement feature');
   task.work = [{ workstreamId: 'work-one', delegationRef: 'actual-assignment', workerSessionId: 'worker-one', title: 'Implement feature',

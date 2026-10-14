@@ -287,6 +287,10 @@ export function createSidebarRightStore(
     if (layout !== surface.layout && dockPaneIds(layout).every(id => getPane(layout, id).tabs.length === 0)) {
       layout = replay(layout, planSetExpanded(layout, false))
     }
+    if (layout !== surface.layout) {
+      layout = replay(layout, planSettle(layout, counter.mint,
+        layout.expanded ? id => seedRecord(id, seed) : undefined))
+    }
     return layout === surface.layout ? surface : { layout, history: EMPTY_HISTORY, minted: counter.used() }
   }
   const handle = defineStore<SidebarRightState, SidebarRightActions>({

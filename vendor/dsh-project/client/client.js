@@ -271,7 +271,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
 
   const OBSERVER_KIND = 'project';
   const OBSERVER_TAB = 'dsh-project/observer';
-  function observerRect(mode, current, fit = false) {
+  function observerRect(mode, current) {
     const root = document.documentElement;
     const caption = root.hasAttribute('data-windows-titlebar') && !root.hasAttribute('data-fullscreen')
       ? Number.parseFloat(root.style.getPropertyValue('--dsh-windows-titlebar-height')) || 0 : 0;
@@ -281,7 +281,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       .find(rect => rect.height > 0 && rect.top > top + 140);
     const bottom = Math.min(window.innerHeight - 12, composer ? composer.top - 12 : window.innerHeight - 12);
     const minimumHeight = mode === 'strip' ? 38 : 140, availableHeight = Math.max(minimumHeight, bottom - top);
-    const height = Math.max(minimumHeight, Math.min(fit && current ? current.height : mode === 'strip' ? 38 : 520, availableHeight));
+    const height = Math.max(minimumHeight, Math.min(mode === 'strip' ? 38 : current?.height ?? 520, availableHeight));
     return { x: Math.max(8, Math.min(current?.x ?? window.innerWidth - width - 12, window.innerWidth - width - 8)),
       y: Math.max(top, Math.min(current?.y ?? top, bottom - height)), width, height };
   }
@@ -1157,11 +1157,27 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       let navigationGeneration = 0, refreshGeneration = 0;
       const detailSequences = new Map(), detailPages = new Map();
       const observerEditors = new Map();
+      const observerRects = createSnapshotStore({}, { persist: { name: 'dsh-project.observer-rects.v1' } });
       const registerObserverEditor = (sessionId, tabId, editor) => {
         const key = JSON.stringify([sessionId, tabId]);
         observerEditors.set(key, editor);
-        return () => { if (observerEditors.get(key) === editor) observerEditors.delete(key); };
+        return () => {
+          if (observerEditors.get(key) === editor) {
+            observerEditors.delete(key);
+          }
+        };
       };
+      ctx.effect(() => {
+        const sync = () => {
+          const open = new Set(ctx.sidebarRight.openTabs.getSnapshot().filter(tab => tab.kind === OBSERVER_KIND)
+            .map(tab => JSON.stringify([tab.sessionId, tab.tabId])));
+          const before = observerRects.getSnapshot();
+          const retained = Object.fromEntries(Object.entries(before).filter(([key]) => open.has(key)));
+          if (Object.keys(retained).length !== Object.keys(before).length) observerRects.set(retained);
+        };
+        sync();
+        return ctx.sidebarRight.openTabs.subscribe(sync);
+      }, 'dsh-project: retain observer frames for saved native tabs');
       ctx.effect(() => ctx.sidebarRight.registerCloseHandler(OBSERVER_KIND, (sessionId, tab, proceed) => {
         const editor = observerEditors.get(JSON.stringify([sessionId, tab.id]));
         if (!editor?.isDirty()) return;
@@ -1194,9 +1210,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
           if (isCurrent && !isCurrent()) return value;
           if (originPanel?.sessionId === project.coordinatorSessionId && ctx.sidebarRight.mounted.getSnapshot() === project.coordinatorSessionId && originPanel.host === 'float'
             && ctx.sidebarRight.tabsIn(project.coordinatorSessionId).some(tab => tab.id === originPanel.tabId && tab.kind === OBSERVER_KIND)) {
-            ctx.sidebarRight.resizeFloat(originPanel.paneId, observerRect('strip'));
-            const modes = observerModes.getSnapshot();
-            observerModes.set({ ...modes, [project.coordinatorSessionId]: { ...modes[project.coordinatorSessionId], [originPanel.paneId]: 'strip' } });
+            const panel = observerEditors.get(JSON.stringify([project.coordinatorSessionId, originPanel.tabId]))?.getPanel();
+            if (panel?.id === originPanel.paneId) resizeObserver(project.coordinatorSessionId, panel, originPanel.tabId, 'strip');
           }
           const currentView = viewInstance.getSnapshot();
           if (originalView.modal?.kind === 'materials' && originalView.modal.projectId === projectId && originalView.modalRevision === currentView.modalRevision && !currentView.pendingModal && (!isCurrent || isCurrent())) { fileReturn = { origin, modal: originalView.modal, scrollTop, isCurrent }; viewInstance.actions.suspendMaterials(projectId, originalView.modalRevision); }
@@ -1310,7 +1325,17 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         if (ctx.sidebarRight.mounted.getSnapshot() !== sessionId) return;
         // Desktop boot mounts Harness at 0x0 until reveal; do not save that temporary viewport.
         if (window.innerWidth === 0 || window.innerHeight === 0) return;
-        const rect = observerRect(mode, panel.host === 'float' ? panel.rect : undefined, !remember);
+        const key = JSON.stringify([sessionId, tabId]), previous = observerRects.getSnapshot()[key];
+        const current = panel.host === 'float' ? panel.rect : undefined;
+        const unchanged = current && previous?.paneId === panel.id
+          && ['x', 'y', 'width', 'height'].every(field => current[field] === previous.applied[field]);
+        // Viewport fits only change the displayed frame; a real user gesture replaces the preferred frame.
+        const fullHeight = previous?.paneId === panel.id ? previous.preferred.height : 520;
+        const preferred = unchanged ? previous.preferred : current ? {
+          ...current, height: panelMode(panel) === 'strip' ? fullHeight : current.height,
+        } : undefined;
+        const rect = observerRect(mode, preferred);
+        observerRects.set({ ...observerRects.getSnapshot(), [key]: { paneId: panel.id, preferred: preferred ?? rect, applied: rect } });
         if (remember || panel.host === 'float' && panelMode({ ...panel, rect }) !== mode) {
           const modes = observerModes.getSnapshot();
           observerModes.set({ ...modes, [sessionId]: { ...modes[sessionId], [panel.id]: mode } });

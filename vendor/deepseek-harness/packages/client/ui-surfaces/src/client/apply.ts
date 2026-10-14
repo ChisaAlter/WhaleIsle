@@ -213,7 +213,7 @@ async function openWorkspaceSurface(
   // Every resolved deliverable must therefore keep its absolute identity,
   // including Office files inside the presented working directory.
   const address = options?.workingDirectory === undefined
-    ? fileAddressFor(id, sessionCwd, path)
+    ? fileAddressFor(id, sessionCwd, relative)
     : sessionFileAddress(id, path)
   const own = currentSessionId(ctx) === sessionId
   if (own && options?.presentation === 'mini' && BROWSER_DOCUMENTS.has(documentExtension(relative))) {
