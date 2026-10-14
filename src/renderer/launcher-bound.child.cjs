@@ -4,6 +4,8 @@
 // A deferred-cancel A->B and a route-save refusal->retry are exercised against
 // the real bind() and the real bridge — not pure functions.
 const { app, BrowserWindow, ipcMain, screen } = require('electron');
+// Keep hidden QA capture independent of the user's GPU compositor.
+app.disableHardwareAcceleration();
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -24,6 +26,10 @@ if (visualOnly) ipcMain.handle('shell:window-state', event => ({
 
 // IPC fixtures the test controls via process.env / argv switches.
 const results = { calls: [] };
+const deltaFeedback = process.env.QA_DELTA_FEEDBACK === '1';
+let deltaResolve;
+let statusReads = 0;
+let releaseReads = 0;
 const pendingCancels = new Map();
 let importResolve = null;
 let startResolve = null;
@@ -65,7 +71,7 @@ ipcMain.handle('shell:scan-import', () => ({
   }] : [],
   ...(visualOnly ? { sourceHome: visualSourceHome, homeDir: fixtureUserData, sourceHasData: true, destEmpty: false, hasAttachments: true } : {}),
 }));
-ipcMain.handle('shell:launcher-status', () => ({
+ipcMain.handle('shell:launcher-status', () => { statusReads++; return ({
   ok: true,
   ...(visualOnly ? { version: '0.3.6', desktop: { state: 'stopped' },
     installed: { version: '0.3.6', registeredInstall: true, installPath: visualSourceHome } } : {}),
@@ -81,7 +87,7 @@ ipcMain.handle('shell:launcher-status', () => ({
     { id: 'beta', label: 'Beta', verified: true, detail: 'beta channel' },
     { id: 'nightly', label: 'Nightly', verified: false, detail: 'not verified' },
   ],
-}));
+}); });
 ipcMain.handle('shell:launcher-check-update', () => process.env.QA_COMPONENTS_HOME === '1' ? { status: 'available', latest: '0.3.3', currentVersion: '0.3.2', hint: '发现正式版 0.3.3。' } : { status: 'none' });
 ipcMain.handle('shell:check-update', () => process.env.QA_COMPONENTS_HOME === '1' ? { status: 'available', latest: '0.3.3', currentVersion: '0.3.2', hint: '发现正式版 0.3.3。' } : { status: 'none' });
 const componentFeedback = process.env.QA_COMPONENT_FEEDBACK === '1';
@@ -129,10 +135,17 @@ ipcMain.handle('shell:components-uninstall', (_event, argument) => {
   componentInstalled = false; componentRunning = false;
   return { ok: true };
 });
-ipcMain.handle('shell:list-releases', () => ({ status: 'ok', releases: [],
+ipcMain.handle('shell:install-delta', (_event, tag) => {
+  results.calls.push({ op: 'install-delta', tag });
+  return new Promise(resolve => { deltaResolve = resolve; });
+});
+ipcMain.handle('shell:list-releases', () => { releaseReads++; return ({ status: 'ok', releases: deltaFeedback ? [{
+  tag: 'v9.9.9', version: '9.9.9', newer: true, installable: true, delta: { size: 20 },
+}] : [],
+  ...(deltaFeedback ? { current: '9.9.8' } : {}),
   installed: visualOnly ? { version: '0.3.6', registeredInstall: true, installPath: visualSourceHome } : { version: '0' },
   ...(visualOnly ? { current: '0.3.6' } : {}),
-}));
+}); });
 ipcMain.handle('shell:list-marketplace', () => ({ ok: true, items: [] }));
 ipcMain.handle('shell:list-installed-plugins', () => ({ plugins: [], bundles: [] }));
 ipcMain.handle('shell:list-wallpapers', () => ({ ok: true, items: [] }));
@@ -155,6 +168,7 @@ app.whenReady().then(async () => {
     show: false,
     webPreferences: {
       backgroundThrottling: false,
+      offscreen: !visualOnly && Boolean(process.env.QA_HOME_ARTIFACTS),
       preload: PRELOAD,
       contextIsolation: true,
       nodeIntegration: false,
@@ -178,6 +192,67 @@ app.whenReady().then(async () => {
       routePicker: Boolean(document.getElementById('route-picker')),
       readyState: document.readyState,
     })`);
+    const captureBound = async name => {
+      if (!process.env.QA_HOME_ARTIFACTS) return;
+      fs.mkdirSync(process.env.QA_HOME_ARTIFACTS, { recursive: true });
+      await win.webContents.executeJavaScript("document.getAnimations().filter(a => a instanceof CSSTransition || a.animationName === 'shell-feedback-in').forEach(a => a.finish()); void 0");
+      win.webContents.invalidate();
+      await new Promise(resolve => setTimeout(resolve, 80));
+      fs.writeFileSync(path.join(process.env.QA_HOME_ARTIFACTS, name),
+        (await win.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG());
+      if (win.isVisible() || win.isFocused()) throw new Error('bound fixture must remain hidden and unfocused');
+    };
+
+    if (deltaFeedback) {
+      const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+      const js = source => win.webContents.executeJavaScript(source);
+      const waitFor = async expression => {
+        for (let i = 0; i < 100; i++) {
+          if (await js(expression)) return;
+          await delay(20);
+        }
+        throw new Error('delta DOM did not settle: ' + expression);
+      };
+      const read = () => js(`(() => {
+        const card = document.getElementById('update-progress-card');
+        const button = document.querySelector('#ver-cta [data-delta-tag]');
+        return { title: document.getElementById('update-progress-title').textContent,
+          body: document.getElementById('update-progress').textContent,
+          pct: document.getElementById('update-progress-pct').textContent,
+          phasesHidden: document.getElementById('update-progress-phases').hidden,
+          barHidden: document.getElementById('update-progress-bar').parentElement.hidden,
+          modalHidden: document.getElementById('app-confirm').hidden,
+          progressVisible: card.checkVisibility(), busy: card.getAttribute('aria-busy'),
+          focus: document.activeElement === button, toasts: document.querySelectorAll('.shell-feedback-toast').length };
+      })()`);
+      await js('document.querySelector("[data-tab=versions]").click()');
+      await waitFor('!!document.querySelector("#ver-cta [data-delta-tag]")');
+      const cases = [];
+      for (const [name, reply] of [
+        ['waiting', { mode: 'full', status: 'waiting', ok: true }],
+        ['delta-installed', { mode: 'delta', ok: true, to: '9.9.9' }],
+        ['full-installed', { mode: 'full', status: 'installed', installed: { version: '9.9.9' } }],
+      ]) {
+        deltaResolve = undefined;
+        await js('document.querySelector("#ver-cta [data-delta-tag]").focus(); document.querySelector("#ver-cta [data-delta-tag]").click()');
+        await waitFor('!document.getElementById("app-confirm").hidden');
+        const confirmationFocus = await js('document.activeElement.id');
+        await js('document.getElementById("app-confirm-ok").click()');
+        await waitFor('document.getElementById("update-progress-card").getAttribute("aria-busy") === "true"');
+        const pending = await read();
+        const readsBefore = { status: statusReads, releases: releaseReads };
+        deltaResolve(reply);
+        await waitFor('document.getElementById("update-progress-card").getAttribute("aria-busy") === "false"');
+        await delay(30);
+        const terminal = await read();
+        const readsAfter = { status: statusReads, releases: releaseReads };
+        await captureBound(`bound-delta-${name}.png`);
+        cases.push({ name, confirmationFocus, pending, terminal, readsBefore, readsAfter });
+      }
+      process.stdout.write('BOUND_RESULT:' + JSON.stringify({ cases, calls: results.calls }));
+      app.exit(0);
+      return;
+    }
 
     if (visualOnly) {
       if (!process.env.QA_HOME_ARTIFACTS) throw new Error('visual capture requires QA_HOME_ARTIFACTS');
@@ -383,6 +458,8 @@ app.whenReady().then(async () => {
         const button = window.qaComponentButton;
         const box = button.getBoundingClientRect();
         const mask = document.querySelector('#app-confirm');
+        const toast = [...document.querySelectorAll('.shell-feedback-toast')].at(-1);
+        const progress = [...document.querySelectorAll('.shell-feedback-progress')].at(-1);
         return {
           sameButton: button.isConnected, caption: button.textContent, width: box.width, height: box.height,
           busy: button.getAttribute('aria-busy'), loadingLabel: button.getAttribute('aria-label'),
@@ -391,9 +468,14 @@ app.whenReady().then(async () => {
             action: control.dataset.compAction, disabled: control.disabled, busy: control.getAttribute('aria-busy'),
           })),
           extraFeedbackNodes: document.querySelectorAll('#hint, [data-comp-hint], #home-components-hint, [data-comp-progress]').length,
-          noticeVisible: !mask.hidden, loadingDialog: mask.classList.contains('is-loading'),
-          noticeTitle: document.querySelector('#app-confirm-title').textContent,
-          noticeBody: document.querySelector('#app-confirm-body').textContent,
+          modalVisible: !mask.hidden,
+          noticeVisible: !!toast?.checkVisibility(), noticeRole: toast?.getAttribute('role') || '',
+          noticeTitle: window.qaComponentNotices.at(-1)?.title || '',
+          noticeBody: toast?.querySelector('.shell-feedback-text')?.textContent || '',
+          confirmTitle: document.querySelector('#app-confirm-title').textContent,
+          confirmBody: document.querySelector('#app-confirm-body').textContent,
+          progressVisible: !!progress?.checkVisibility(), progressBusy: progress?.getAttribute('aria-busy') || '',
+          progressBody: progress?.querySelector('p')?.textContent || '',
           okHidden: document.querySelector('#app-confirm-ok').hidden,
           cancelHidden: document.querySelector('#app-confirm-cancel').hidden,
           notices: window.qaComponentNotices,
@@ -410,8 +492,8 @@ app.whenReady().then(async () => {
         button.focus(); button.click();
       })()`);
       const closeNotice = async () => {
-        await click('#app-confirm-ok');
-        await waitForDom('document.querySelector("#app-confirm").hidden');
+        await win.webContents.executeJavaScript('document.querySelector(".shell-feedback-toast .shell-feedback-close").click()');
+        await waitForDom('!document.querySelector(".shell-feedback-toast")');
       };
       const componentProgress = payload => win.webContents.send('shell:components-progress', { id: 'whalebridge', ...payload });
       await waitForDom('!!document.querySelector("#home-components [data-comp-action=start]")');
@@ -429,8 +511,9 @@ app.whenReady().then(async () => {
       await waitForDom('window.qaComponentButton.title.includes("fixture component startup failed")');
       const failedPhase = await readFeedback();
       componentStartResolve({ ok: false, error: 'spawn-failed' });
-      await waitForDom('!document.querySelector("#app-confirm").hidden');
+      await waitForDom('!!document.querySelector(".shell-feedback-toast")');
       const failed = await readFeedback();
+      await captureBound('bound-component-start-failed.png');
       await closeNotice();
       const failureDismissed = await readFeedback();
 
@@ -447,17 +530,19 @@ app.whenReady().then(async () => {
       const installBefore = await rememberButton('#tab-components [data-comp-action="install"]');
       await click('#tab-components [data-comp-action="install"]');
       await waitFor(() => typeof componentInstallResolve === 'function');
-      await waitForDom('document.querySelector("#app-confirm").classList.contains("is-loading")');
+      await waitForDom('!!document.querySelector(".shell-feedback-progress")');
       const installing = await readFeedback();
       componentProgress({ phase: 'download', percent: 42 });
-      await waitForDom('document.querySelector("#app-confirm-body").textContent.includes("42%")');
+      await waitForDom('document.querySelector(".shell-feedback-progress p").textContent.includes("42%")');
       const downloading = await readFeedback();
+      await captureBound('bound-component-download.png');
       componentProgress({ phase: 'verify', percent: 60 });
-      await waitForDom('document.querySelector("#app-confirm-body").textContent.includes("校验")');
+      await waitForDom('document.querySelector(".shell-feedback-progress p").textContent.includes("校验")');
       const verifying = await readFeedback();
       componentInstallResolve();
-      await waitForDom('document.querySelector("#app-confirm-title").textContent === "鲸桥安装完成"');
+      await waitForDom('document.querySelector(".shell-feedback-toast .shell-feedback-text")?.textContent.startsWith("鲸桥安装完成：")');
       const installed = await readFeedback();
+      await captureBound('bound-component-installed.png');
       await closeNotice();
       const installDismissed = await readFeedback();
 
@@ -468,12 +553,15 @@ app.whenReady().then(async () => {
       await click('#tab-components [data-comp-action="update"]');
       await waitFor(() => typeof componentUpdateResolve === 'function');
       componentProgress({ phase: 'download', percent: 51 });
-      await waitForDom('document.querySelector("#app-confirm-body").textContent.includes("51%")');
+      await waitForDom('document.querySelector(".shell-feedback-progress p").textContent.includes("51%")');
       const updating = await readFeedback();
       componentProgress({ phase: 'error', percent: 100, message: 'fixture package refused' });
       componentUpdateResolve({ ok: false, message: 'fixture package refused' });
-      await waitForDom('document.querySelector("#app-confirm-title").textContent === "鲸桥操作未完成"');
+      await waitForDom('document.querySelector(".shell-feedback-toast .shell-feedback-text")?.textContent.startsWith("鲸桥操作未完成：")');
       const updateFailed = await readFeedback();
+      win.setSize(860, 560);
+      await captureBound('bound-component-update-failed-narrow.png');
+      win.setSize(1280, 800);
       await closeNotice();
       const updateDismissed = await readFeedback();
 
@@ -481,7 +569,7 @@ app.whenReady().then(async () => {
       await win.webContents.executeJavaScript('window.__launcherComponents.refresh()');
       const persistentErrorInline = await win.webContents.executeJavaScript('document.querySelector("[data-comp-list]").innerText.includes("fixture catalog")');
       await click('#tab-components [data-comp-info="whalebridge"]');
-      await waitForDom('document.querySelector("#app-confirm-title").textContent === "鲸桥状态"');
+      await waitForDom('document.querySelector(".shell-feedback-toast .shell-feedback-text")?.textContent.startsWith("鲸桥状态：")');
       const statusDetails = await readFeedback();
       await closeNotice();
 
@@ -503,6 +591,7 @@ app.whenReady().then(async () => {
       componentUninstallInfoResolve({ defaultModel: true });
       await waitForDom('document.querySelector("#app-confirm-title").textContent.includes("卸载组件")');
       const uninstallConfirm = await readFeedback();
+      await captureBound('bound-component-uninstall-confirm.png');
       await click('#app-confirm-cancel');
       await waitForDom('!document.querySelector("[data-comp-action=uninstall]").disabled');
       const uninstallCancelled = await readFeedback();
@@ -547,6 +636,8 @@ app.whenReady().then(async () => {
           noticeVisible: !document.querySelector('#app-confirm').hidden,
           noticeTitle: document.querySelector('#app-confirm-title').textContent,
           noticeBody: document.querySelector('#app-confirm-body').textContent,
+          toastCount: document.querySelectorAll('.shell-feedback-toast').length,
+          updateText: document.querySelector('#home-update-text').textContent,
           updateCount: document.body.innerText.split('可更新至 v0.3.3').length - 1,
           desktopImages: document.querySelectorAll('.home-product img').length,
           homeImages: home.querySelectorAll('img').length,
@@ -579,6 +670,7 @@ app.whenReady().then(async () => {
       await win.webContents.executeJavaScript(`document.querySelector('.comp-manage').open = true; document.querySelector('[data-comp-action="rollback"]').click()`);await delay(80);
       await win.webContents.executeJavaScript(`document.querySelector('#app-confirm-cancel').click(); document.querySelector('[data-tab="home"]').click(); document.querySelector('#btn-check-update').click()`);await delay(150);
       const update = await read();
+      await captureBound('bound-home-update.png');
       componentInstalled = false;await win.webContents.executeJavaScript('window.__launcherComponents.refresh()');const removed = await read();
       console.log('BOUND_RESULT:' + JSON.stringify({ absent, stopped, starting, running, stopping, stoppedAgain, catalogStopped, update, removed, calls: results.calls }));app.quit();return;
     }
@@ -594,14 +686,36 @@ app.whenReady().then(async () => {
       };
       const readHome = () => win.webContents.executeJavaScript(`(() => {
         const get = id => document.getElementById(id);
+        // Chromium innerText includes text inside closed <details>. Measure
+        // laid-out text so hidden diagnostics do not count as visible copy.
+        const visibleText = [];
+        const homeVisibleText = [];
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          const node = walker.currentNode;
+          if (!node.parentElement?.checkVisibility()) continue;
+          const collapsed = node.parentElement.closest('details:not([open])');
+          if (collapsed && !collapsed.querySelector(':scope > summary')?.contains(node)) continue;
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          if ([...range.getClientRects()].some(rect => rect.width > 0 && rect.height > 0)) {
+            visibleText.push(node.textContent);
+            if (!node.parentElement.closest('.shell-feedback-stack')) homeVisibleText.push(node.textContent);
+          }
+        }
         return {
           duplicateRetry: Boolean(get('btn-recovery-retry')),
           startText: get('btn-start').textContent, startDisabled: get('btn-start').disabled,
+          startBusy: get('btn-start').getAttribute('aria-busy'), startLabel: get('btn-start').getAttribute('aria-label'),
           startHidden: get('btn-start').hidden, stopHidden: get('btn-stop').hidden,
           stopDisabled: get('btn-stop').disabled, stopText: get('btn-stop').textContent,
+          stopBusy: get('btn-stop').getAttribute('aria-busy'), stopLabel: get('btn-stop').getAttribute('aria-label'),
           skipDisabled: get('btn-skip').disabled, fullDisabled: get('btn-retry-full').disabled,
           diagnosticsHidden: get('home-recovery').hidden, diagnosticsOpen: get('home-recovery').open === true,
-          visibleText: document.body.innerText,
+          visibleText: visibleText.join(' '),
+          homeVisibleText: homeVisibleText.join(' '),
+          errorToasts: [...document.querySelectorAll('.shell-feedback-toast[role="alert"] .shell-feedback-text')].map(node => node.textContent),
+          modalHidden: get('app-confirm').hidden,
           status: get('home-status').textContent,
           detail: get('home-recovery-verdict').textContent,
         };
@@ -629,7 +743,7 @@ app.whenReady().then(async () => {
           button.scrollIntoView();
           const r = button.getBoundingClientRect();
           return { width: innerWidth, reachable: r.top >= 0 && r.bottom <= innerHeight && r.right <= innerWidth,
-            rawErrorCount: document.body.innerText.split('EEXIST').length - 1 };
+            rawErrorCount: document.getElementById('panel-home').innerText.split('EEXIST').length - 1 };
         })()`);
         layouts.push({ zoom, ...layout });
         await captureHome(`home-failed-${zoom}x.png`);

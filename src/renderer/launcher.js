@@ -2239,10 +2239,12 @@ async function installDelta(tag) {
   try {
     const result = await api.installDelta(tag);
     const status = result?.status;
-    if (result?.ok === true || status === 'applied' || status === 'installed') {
-      paintProgress('update-progress', { phase: 'done', mode: 'delta' });
-      const version = result?.installed?.version || result?.version || tag;
-      $('update-progress').textContent = `已增量更新到 v${String(version).replace(/^v/i, '')}`;
+    if ((result?.mode === 'delta' && result?.ok === true) || status === 'applied' || status === 'installed') {
+      paintProgress('update-progress', { phase: 'done', mode: result?.mode || 'delta' });
+      const version = result?.installed?.version || result?.version || result?.to || tag;
+      $('update-progress').textContent = result?.mode === 'full'
+        ? `已完成安装：v${String(version).replace(/^v/i, '')}`
+        : `已增量更新到 v${String(version).replace(/^v/i, '')}`;
       void refreshStatus();
       void refreshReleases();
       return;
@@ -2250,6 +2252,11 @@ async function installDelta(tag) {
     if (result?.cancelled) {
       paintProgress('update-progress', { phase: status === 'waiting' ? 'waiting' : 'cancelled' });
       $('update-progress').textContent = result.message || '已取消';
+      return;
+    }
+    if (result?.mode === 'full' && (status === 'waiting' || status === 'quit-pending' || status === 'fallback-full' || result?.launched === true || result?.ok === true)) {
+      paintProgress('update-progress', { phase: 'waiting', mode: 'full' });
+      $('update-progress').textContent = result.message || '安装结果待确认。请检查安装向导与系统授权，完成后刷新状态。';
       return;
     }
     paintProgress('update-progress', { phase: 'error', mode: 'delta' });

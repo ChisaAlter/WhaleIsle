@@ -249,6 +249,7 @@ function loadPet() {
   nodes['pc-send'].textContent = '↑';
   const context = vm.createContext({
     document: {
+      ...makeNode('document'),
       documentElement: {},
       getElementById: id => id === 'pet' ? mainCanvas : nodes[id] || null,
       createElement: (tag) => (tag === 'canvas' ? makeCanvas() : makeNode()),

@@ -59,6 +59,7 @@ for (const argument of ['check', 'pending']) {
     });
     const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8').replace(/\r\n/g, '\n');
     const setup = source.slice(source.indexOf('const updateAttention ='), source.indexOf('\n/**\n * Productized confirmation:'));
+    const askOptions = source.slice(source.indexOf('async function updateAskOptions('), source.indexOf('\n// Slim-package cold start'));
     const start = source.indexOf(`confirmUpdate: async (${argument})`);
     const end = source.indexOf('\n    },', start) + '\n    },'.length;
     const confirmation = source.slice(start, end);
@@ -73,20 +74,27 @@ for (const argument of ['check', 'pending']) {
     parent.flashFrame = () => {};
     const modal = { focus: () => ui.push('confirmation-focus') };
     let respond;
-    const confirm = vm.runInNewContext(`${setup}\n({ ${confirmation} }).confirmUpdate`, {
+    let markDialogOpened;
+    const dialogOpened = new Promise(resolve => { markDialogOpened = resolve; });
+    const confirm = vm.runInNewContext(`${setup}\n${askOptions}\n({ ${confirmation} }).confirmUpdate`, {
       UpdateAttention: updateModule.exports.UpdateAttention,
       shellConfirm: () => modal,
       getLauncherWindow: () => parent,
       updateAskDetail: () => 'release notes',
+      updateDownloadMethods: async () => [],
+      isLauncherPackage: () => false,
+      currentVersion: () => '0.3.9',
       confirmDialog: (win, options) => {
         assert.equal(win, parent);
-        assert.equal(options.message, '是否更新到 0.4.0？');
+        assert.equal(options.message, '更新到 v0.4.0');
+        markDialogOpened();
         return new Promise(resolve => { respond = resolve; });
       },
     });
     let settled = false;
     const result = confirm({ latest: '0.4.0' }).then(value => { settled = true; return value; });
     assert.equal(fixture.notifications.length, 1);
+    await dialogOpened;
     const notification = fixture.notifications[0];
     assert.equal(notification.options.title, '发现新版本');
     assert.equal(notification.options.body, '新版本可用，回到窗口查看更新说明。');

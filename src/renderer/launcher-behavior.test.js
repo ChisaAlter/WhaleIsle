@@ -56,6 +56,7 @@ test('delta fallback reports actual installer stages and only certifies applied 
     { result: { mode: 'full', ok: true, launched: true }, phase: 'waiting' },
     { result: { mode: 'full', ok: true, status: 'fallback-full' }, phase: 'waiting' },
     { result: { mode: 'full', ok: true, status: 'installed', installed: { version: '9.9.9' } }, phase: 'done' },
+    { result: { status: 'applied', version: '9.9.9' }, phase: 'done' },
     { result: { mode: 'delta', ok: true, to: '9.9.9' }, phase: 'done' },
     { result: { mode: 'full', cancelled: true, status: 'waiting', message: '已停止等待，安装向导仍在运行' }, phase: 'waiting' },
   ];
@@ -73,6 +74,7 @@ test('delta fallback reports actual installer stages and only certifies applied 
     assert.equal(context.updateBusy, false);
     const text = elements.get('update-progress').textContent;
     if (phase === 'waiting') {
+      assert.ok(text.trim(), 'an unconfirmed installation remains visible');
       assert.doesNotMatch(text, /完成安装：|安装完成：|已增量更新到/);
       assert.equal(refreshes, 0, 'starting an installer is not a verified installed version');
     } else {
