@@ -12,7 +12,7 @@ import type { ChatNode, ChatNodeInjected, ChatSnapshot } from '@deepseek-ai/dsh-
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { RemoteError, SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsRenderSlots, PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { useTurnDataValue } from '@deepseek-ai/dsh-client-ui-chat/src/client/chat/use-turn-data.ts'
 import { bindDisclosure } from '@deepseek-ai/dsh-client-ui-chat/src/client/chat/use-disclosure.ts'
@@ -93,6 +93,64 @@ afterEach(async () => {
 })
 
 describe('published visual replies', () => {
+  it.each([true, false])('loads the shared factory through its explicit publishing Session with access=%s', async (permitted) => {
+    Object.defineProperty(window, 'shell', { configurable: true, value: { visualReplyIsolation: true } })
+    const runtime = await SlotTestRuntime.create()
+    runtimes.push(runtime)
+    const publishingSession = 'page-owner-session' as SessionId
+    const readVisualReply = vi.fn<typeof runtime.ctx.remote.session.readVisualReply>()
+      .mockImplementation(async ({ sessionId, attachmentId }) => sessionId === publishingSession && attachmentId === FILE.attachmentId
+        ? { ok: true, value: { attachment: FILE, html: HTML } }
+        : { ok: false, error: new RemoteError('session/attachment-invalid', 'This Session does not reference the page', { reason: 'ATTACHMENT_NOT_REFERENCED' }) })
+    const remoteContext = runtime.ctx.isolate('remote').isolate('remote.session')
+    class TrackedRemote extends Service {
+      constructor(ctx: Context) { super(ctx, 'remote') }
+    }
+    class TrackedSessionRemote extends Service {
+      readonly readVisualReply = readVisualReply
+      constructor(ctx: Context) { super(ctx, 'remote.session') }
+    }
+    await remoteContext.plugin({ apply(ctx: Context) {
+      new TrackedRemote(ctx)
+      new TrackedSessionRemote(ctx)
+    } }).await()
+    const theme = { active: { colorScheme: 'light' } } as ThemeSnapshot
+    runtime.ctx.provide('theme', { getTheme: () => theme } as never)
+    runtime.ctx.provide('configForms', { get: () => stubConfigForm().scope } as never)
+    const locale = new LocaleRuntime(runtime.ctx)
+    runtime.ctx.provide('locale', locale)
+    runtime.slots.installLocale(locale)
+    new UiConversation(runtime.ctx, runtime.sessions)
+    await runtime.sessions.add({ id: SID, events: history(false) })
+    const reference = runtime.sessions.retain(SID)
+    await reference.ready
+    await remoteContext.plugin({ inject: [...inject], apply }).await()
+    const pageSession = permitted ? publishingSession : SID
+    const chatInject: ChatNodeInjected = {
+      hooks: {
+        turnData: (_standard, { turnData }) => function useTurnData(key) {
+          return useTurnDataValue(turnData, key)
+        },
+        disclosure: (_standard, { disclosureReset }) => bindDisclosure(disclosureReset),
+      },
+    }
+    await runtime.root.declare({
+      'conversation.chat.node': { kind: 'keyed', scope: 'session', inject: chatInject },
+    }, ({ renderFactorySlot, SessionProvider }: PropsRenderSlots<'conversation.chat.node'> & PropsRenderFactories) =>
+      <SessionProvider session={reference}>
+        {renderFactorySlot('visual-reply.page', { sessionId: pageSession, file: FILE, title: 'Shared evidence', height: 180 })}
+      </SessionProvider>)
+    const view = runtime.renderRoot()
+    if (permitted) expect((await view.findByTitle('Visual reply: Shared evidence')).getAttribute('srcdoc')).toBe(HTML)
+    else {
+      expect(await view.findByRole('alert')).toHaveProperty('textContent', en['card.loadNotReferenced'])
+      expect(document.querySelector('iframe')).toBeNull()
+      expect(view.queryByRole('button', { name: en['card.reload'] })).toBeNull()
+    }
+    expect(readVisualReply).toHaveBeenCalledWith({ sessionId: pageSession, attachmentId: FILE.attachmentId }, expect.any(AbortSignal))
+    expect(readVisualReply).toHaveBeenCalledTimes(1)
+  })
+
   it.each([false, true])('keeps a successful nested=%s page outside the completed tool activity', (nested) => {
     const { assembler, snapshot } = assemble(history(nested))
     const page = snapshot.nodes.values().find((node): node is ChatNode<'visual-reply'> => node.kind === 'visual-reply')!

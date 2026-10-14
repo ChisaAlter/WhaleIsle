@@ -7,6 +7,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import { apply as applySidebar, inject as sidebarInject } from '../../ui-sidebar-right/src/client/index.ts'
 import { readSidebarLayout, sidebarPersistence } from '../../ui-sidebar-right/src/client/persistence.ts'
@@ -56,7 +57,7 @@ function saveLegacy(address = 'sidebar://desktop-file', floating = false): void 
   localStorage.setItem(`${sidebarPersistence}.${OWN}`, JSON.stringify(saved))
 }
 
-async function mountFiles(options: { missingCwd?: boolean } = {}) {
+async function mountFiles(options: { missingCwd?: boolean; workingDirectory?: string } = {}) {
   const ipc = {
     listDir: vi.fn<FilesShellInjected['listDir']>(async () => ({ ok: true, entries: [{ name: 'notes.txt', kind: 'file' }] })),
     readFile: vi.fn<FilesShellInjected['readFile']>(async () => ({ ok: true, text: 'disk', binary: false })),
@@ -76,14 +77,16 @@ async function mountFiles(options: { missingCwd?: boolean } = {}) {
     rightbar: { kind: 'single', scope: 'root' },
     'conversation.session.header.corner': { kind: 'single', scope: 'session' },
   })
-  await runtime.sessions.add({ id: OWN, summary: options.missingCwd ? {} : { cwd: '/tmp/owning' } })
+  await runtime.sessions.add({ id: OWN, summary: options.missingCwd ? {} : { cwd: '/tmp/owning', ...(options.workingDirectory === undefined ? {} : {
+    presentation: { owner: 'project', title: 'Project', workingDirectory: options.workingDirectory },
+  }) } })
   await runtime.sessions.add({ id: OTHER, summary: { cwd: '/tmp/other' } })
   let reference = runtime.sessions.retainFor(runtime.ctx, OWN, { source: 'mainView' })
   await runtime.mount({ inject: [...sidebarInject], apply: applySidebar })
   const controller = runtime.ctx.sidebarRight
   const openPath = vi.fn(async (path: string, options: { sessionId: string }) => {
     const id = options.sessionId as SessionId
-    const cwd = runtime.sessions.list.getSnapshot().byId[id]?.cwd
+    const cwd = sessionWorkingDirectory(runtime.sessions.list.getSnapshot().byId[id])
     controller.openResourceIn(id, fileAddressFor(id, cwd, path))
   })
   Object.assign(runtime.workspaces, { openPath })
@@ -100,6 +103,20 @@ async function mountFiles(options: { missingCwd?: boolean } = {}) {
 }
 
 describe('Files registration and restored addresses', () => {
+  it('browses and opens the bound Project directory while its coordinator keeps a separate execution cwd', async () => {
+    const h = await mountFiles({ workingDirectory: '/tmp/project-workspace' })
+    await act(async () => { h.controller.openTab('guide') })
+    const entry = h.view.container.querySelector<HTMLButtonElement>('[data-sidebar-right-guide-entry="files"]')
+    if (entry === null) throw new Error('the registered Files guide entry did not render')
+    fireEvent.click(entry)
+    fireEvent.click(await h.view.view.findByRole('button', { name: /notes.txt/ }))
+    await h.view.view.findByLabelText('notes.txt')
+    expect(h.ipc.listDir).toHaveBeenCalledWith('/tmp/project-workspace', '')
+    expect(h.openPath).toHaveBeenCalledExactlyOnceWith('/tmp/project-workspace/notes.txt', { sessionId: OWN })
+    expect(h.ipc.readFile).toHaveBeenCalledExactlyOnceWith('/tmp/project-workspace', 'notes.txt')
+    expect(h.runtime.sessions.list.getSnapshot().byId[OWN]?.cwd).toBe('/tmp/owning')
+  })
+
   it('offers one Files guide entry and opens its chosen file through the keyed resource body', async () => {
     const h = await mountFiles()
     await act(async () => { h.controller.openTab('guide') })

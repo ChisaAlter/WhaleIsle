@@ -65,7 +65,7 @@ export function createWorkspaceShortcutControls(): WorkspaceShortcutControls {
  */
 export function installWorkspaceShortcuts(
   ctx: Context,
-  navigation: Pick<UiWorkspace, 'startSession' | 'forkSession'>,
+  navigation: Pick<UiWorkspace, 'startSession' | 'forkSession' | 'resolveSessionAction'>,
   controls: ReturnType<typeof createWorkspaceShortcutControls>,
   archiveSession: (sessionId: SessionId) => void,
 ): void {
@@ -96,13 +96,17 @@ export function installWorkspaceShortcuts(
     })
   register('session.rename', () => t('rename.session.title'), ['rename session'], 'KeyG', ['primary', 'alt'], ['primary', 'alt'], (context) => {
     const target = current()
-    return target === undefined || target.blank || context.modal !== null || ctx.layout.panelInfo.getSnapshot().activePanelId !== null
-      ? { status: 'blocked', reason: t('shortcut.noSession') }
+    if (target === undefined || context.modal !== null || ctx.layout.panelInfo.getSnapshot().activePanelId !== null) return { status: 'blocked', reason: t('shortcut.noSession') }
+    const action = navigation.resolveSessionAction(target.id, 'rename')
+    if (action !== undefined) return { status: 'handled', run: action }
+    if (target.presentation?.owner === 'project') return { status: 'blocked', reason: t('shortcut.projectActionUnavailable') }
+    return target.blank ? { status: 'blocked', reason: t('shortcut.noSession') }
       : { status: 'handled', run: () => { controls.rename(target.id, target.title?.trim() ?? '') } }
   })
   register('session.fork', () => t('menu.fork'), ['fork session'], 'KeyF', ['primary', 'alt'], ['primary', 'shift'], () => {
     const target = current()
     if (target === undefined) return { status: 'blocked', reason: t('shortcut.noSession') }
+    if (target.presentation?.owner === 'project') return { status: 'blocked', reason: t('shortcut.projectForkUnavailable') }
     if (target.blank) return { status: 'blocked', reason: t('shortcut.noCompletedTurn') }
     return { status: 'handled', run: () => {
       void navigation.forkSession(target.id).catch((error: unknown) => {
@@ -116,8 +120,11 @@ export function installWorkspaceShortcuts(
   })
   register('session.archive', () => t('menu.archiveSession'), ['archive session'], 'KeyA', ['primary', 'shift'], ['primary', 'alt'], () => {
     const target = current()
-    return target === undefined ? { status: 'blocked', reason: t('shortcut.noSession') }
-      : { status: 'handled', run: () => {
+    if (target === undefined) return { status: 'blocked', reason: t('shortcut.noSession') }
+    const action = navigation.resolveSessionAction(target.id, 'archive')
+    if (action !== undefined) return { status: 'handled', run: action }
+    if (target.presentation?.owner === 'project') return { status: 'blocked', reason: t('shortcut.projectActionUnavailable') }
+    return { status: 'handled', run: () => {
         archiveSession(target.id)
       } }
   })

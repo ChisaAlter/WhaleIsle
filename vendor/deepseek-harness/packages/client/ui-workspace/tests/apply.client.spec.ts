@@ -397,6 +397,32 @@ describe('ui-workspace apply', () => {
     expect(toast.hooks.toast.getSnapshot()).toEqual({ kind: 'archived', sessionId: 'one', seq: 1 })
   })
 
+  it('preserves owner restore rejections for browser and row-action callers without invoking native Session restore', async () => {
+    const b = await bench()
+    onTestFinished(() => b.ctx.fiber.dispose())
+    b.setSessions(sessionState([{ ...summary('lead', 3), presentation: { owner: 'project', title: 'Project Lead' } }]))
+    declare(b.slots, 'sidebar.workspaces', 'shell.overlay')
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const rejection = new Error('Project restore rejected')
+    const restore = vi.fn(async (_sessionId: SessionId): Promise<void> => { throw rejection })
+    b.ctx.uiWorkspace.registerSessionActions('project', { rename: () => {}, archive: () => {}, restore })
+    const nativeRestore = vi.spyOn(b.ctx.uiWorkspace, 'unarchiveSession')
+    const browser = faceOf(b.slots.entries('sidebar.workspaces')[0]!) as WorkspaceBrowserInjected
+    await expect(browser.unarchiveSession(sid('lead'))).rejects.toBe(rejection)
+    expect(restore).toHaveBeenCalledWith(sid('lead'))
+
+    const archive = faceOf(entry(b.slots, MENU_ITEM, 'archive')) as ArchiveSessionInjected
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      archive.unarchiveSession(sid('lead'))
+      await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith('session unarchive rejected:', rejection) })
+    } finally {
+      warn.mockRestore()
+    }
+    expect(restore).toHaveBeenCalledTimes(2)
+    expect(nativeRestore).not.toHaveBeenCalled()
+  })
+
   it('turns the Host\'s running-work refusal into the stop-and-archive confirmation, which archives with stopActivity', async () => {
     const b = await bench()
     b.setSessions(sessionState([{ ...summary('busy', 3), displayTitle: 'Busy session' }]))

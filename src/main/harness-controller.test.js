@@ -82,6 +82,8 @@ class FakeDsh extends EventEmitter {
 
   async start(options = {}) {
     this.startCalls += 1;
+    const project = await options.prepareProjectPlugin?.({});
+    if (project?.overlayFile) options = { ...options, patchFiles: [...(options.patchFiles || []), project.overlayFile] };
     this.startOptions.push(options);
     const result = this.startResults.length ? this.startResults.shift() : 'http://127.0.0.1:3080';
     if (result instanceof Error) {
@@ -199,6 +201,34 @@ function fixture(overrides = {}) {
     },
   };
 }
+
+test('optional Project omission and preparation failure keep ordinary Harness startup available', async () => {
+  for (const failure of [{ ok: false, overlayFile: '/stale/project.patch.yml', error: 'missing-source:peer' }, new Error('runtime link replaced')]) {
+    const f = fixture({ ensureDshProjectPlugin: async () => { if (failure instanceof Error) throw failure; return failure; } });
+    await f.controller.start();
+    assert.equal(f.dsh.startCalls, 1);
+    assert.equal(f.dsh.state, 'ready');
+    assert.ok(!f.dsh.startOptions[0].patchFiles?.includes('/stale/project.patch.yml'));
+    assert.ok(f.dsh.logs.some(line => line.includes('Project 不可用')));
+    await f.controller.shutdown();
+  }
+});
+
+test('Project enable and recovery flags reach the optional mount without enabling Team', async () => {
+  for (const disabled of [false, true]) {
+    const calls = [], f = fixture({ initialConfig: { disabledPlugins: disabled ? ['dsh-project'] : [] },
+      ensureDshProjectPlugin: async options => { calls.push(options); return { ok: true, disabled: options.skipUserPlugins || !options.enabled,
+        ...(options.skipUserPlugins || !options.enabled ? {} : { overlayFile: '/project.patch.yml' }) }; } });
+    await f.controller.start();
+    assert.equal(calls[0].enabled, !disabled); assert.equal(calls[0].skipUserPlugins, false);
+    assert.equal(f.dsh.startOptions[0].patchFiles?.includes('/project.patch.yml') || false, !disabled);
+    f.controller.writePluginSkip(new Error('recover'));
+    await f.controller.restart('recover');
+    assert.equal(calls.at(-1).skipUserPlugins, true);
+    assert.ok(!f.dsh.startOptions.at(-1).patchFiles?.includes('/project.patch.yml'));
+    await f.controller.shutdown();
+  }
+});
 
 test('writes the desktop install plugin before launching Harness', async () => {
   const calls = [];

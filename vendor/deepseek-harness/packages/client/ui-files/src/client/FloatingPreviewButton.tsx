@@ -15,6 +15,7 @@ import css from './FilePreview.module.css'
 import { parseFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import type { UseSessions } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 
 type FloatingPreviewButtonProps =
   & PropsLocale<typeof NS>
@@ -34,7 +35,7 @@ export function FloatingPreviewButton({
 }: FloatingPreviewButtonProps): ReactNode {
   const address = parseFileAddress(resourceAddress)
   const cwd = useSessions(state => address?.scope === 'session'
-    ? state.byId[address.sessionId as SessionId]?.cwd
+    ? sessionWorkingDirectory(state.byId[address.sessionId as SessionId])
     : undefined)
   const shape = floatingPreviewTarget(resourceAddress, cwd)
   const shell = readFloatingPreviewShell()

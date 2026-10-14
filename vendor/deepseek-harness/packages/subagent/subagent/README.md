@@ -66,6 +66,10 @@ Every exact live Agent can use `sendMessage()` with a direct continuable child; 
 
 ### Failure and recovery
 
+A trusted Host can create a continuable child with an explicit `environment`: an absolute `cwd`, registered `agentPreset` and `admissionPolicy` key. The child mounts that preset instead of copying its parent's tool scope. Its v4 descriptor retains the role and policy for cold resume; model selection uses the existing `request.agentOptions` and descriptor fields. Delegated permission policy still follows the existing parent rules. The Host registers the matching continuation policy through `registerContinuationPolicy()`; every first activation and warm or cold message admission calls it. Settlement also calls it with `reason: 'settlement'` before waking the parent. Denied notices can be parked in the resident inbox, but that inbox does not survive disposal: the owning Host must persist its outcome and pending-summary facts. Missing or unloaded policies refuse activation. Ordinary continuations retain their inherited environment, v3 descriptor and settlement wakes. Native settlement sources carry an optional `runId` to correlate the same lifecycle epoch without a second notification.
+
+`subagent/start`, `subagent/end` and settlement notices expose the activation's `runId`, so a Host can correlate a real settlement with the execution it admitted instead of treating an inactive Agent as a successful task.
+
 Requests that need a capability the chosen provider lacks fail loudly at start rather than being silently ignored. A failed child run returns a stop reason, and provider backends add a safe diagnostic; a cancelled request settles as `aborted`. Children are isolated: a crashed or misbehaving child cannot corrupt the parent's session.
 
 -----
@@ -163,7 +167,7 @@ Append-only in the parent: the notice follows its reusable request prefix. Reach
 
 #### What the model sees
 
-Every in-process child's runtime-context snapshot carries the `subagent:delegation` statement below, after the sandbox-policy and approval-policy sentences.
+Ordinary in-process children carry the `subagent:delegation` statement below, after the sandbox-policy and approval-policy sentences. They start with a delegation-owned `never` approval policy. A managed local Project can enable `ask` at a new human continuation through the host-owned approval contract; then this context instructs the child to request its exact operation once, keep its assigned scope and base sandbox, and treat denial as final. An explicit user `never` is never replaced.
 
 ##### The delegation-scope statement
 
@@ -173,11 +177,11 @@ You are a delegated subagent: your permission scope was fixed when you were star
 
 #### Token effect
 
-One fixed statement in each child's runtime-context snapshot; none in the parent's requests.
+One statement in each child's runtime-context snapshot, selected from its effective approval policy; none in the parent's requests.
 
 #### KV Cache effect
 
-Prefix-stable within a child: the statement never changes during the child's lifetime, so it is written once into the first runtime-context snapshot. Parent-side, no direct invalidation; the named tool consumers own any request-prefix changes.
+The stable system prefix is unchanged. The statement travels in runtime context and changes when the host changes request eligibility for a new managed assignment. Parent-side, no direct invalidation; the named tool consumers own any request-prefix changes.
 
 ## Known Limitations and Deferred Work
 

@@ -36,11 +36,11 @@ function harness() {
     if (committed === undefined) throw new Error('expected the layout to commit')
     domain.sync(SESSION, committed)
   }
-  const bind = (tabId: TabId): UseSidebarRightTabInfo => {
+  const bind = (tabId: TabId, title = false): UseSidebarRightTabInfo => {
     const occurrence = domain.occurrence(SESSION, { id: tabId })
     navigationSources.set(tabId, occurrence.navigation)
     return tabInfoFactory(standard, {
-      tabId, title: false, fullscreen: false, active: true, shortcuts: [],
+      tabId, title, fullscreen: false, active: true, shortcuts: [],
       signal: occurrence.signal, actions: occurrence.tabActions, useStore, useTabNavigation,
     })
   }
@@ -74,6 +74,19 @@ function expectUncommitted(useTabInfo: UseSidebarRightTabInfo, tabId: TabId): vo
 }
 
 describe('tabInfoFactory committed-record relation', () => {
+  it('exposes the float rectangle and keeps its title visible when the body is minimized', () => {
+    const h = harness()
+    const tabId = h.open()
+    h.instance.actions.floatTab(SESSION, tabId, { x: 20, y: 70, width: 360, height: 38 })
+    h.sync()
+    const body = renderHook(h.bind(tabId))
+    const title = renderHook(h.bind(tabId, true))
+    expect(body.result.current.panel).toMatchObject({ host: 'float', rect: { height: 38 } })
+    expect(body.result.current.tab.visible).toBe(false)
+    expect(title.result.current.tab.visible).toBe(true)
+    expect(title.result.current.panel.id).toBe(body.result.current.panel.id)
+  })
+
   it('rejects a navigation before the first layout commit and reads the same record after commit', () => {
     const h = harness()
     const tabId = h.open((opened) => {

@@ -74,3 +74,10 @@
   color: var(--dsw-alias-state-error-primary);
   border-color: transparent;
 }
+
+.sessionControls {
+  margin-right: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

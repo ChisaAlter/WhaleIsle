@@ -4,6 +4,7 @@
  * side, wrapped or scrolling, and controls to open the file itself.
  */
 import { useEffect, useMemo, useState } from 'react'
+import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { ReactNode } from 'react'
 import {
   IconChevronDownOutlineRegular, IconCompareSplitOutlineRegular, IconInspectOutlineRegular,
@@ -74,7 +75,7 @@ export function ReviewTab({
   const coordinates = useMemo(() => parseChangesReviewAddress(tab.contentId), [tab.contentId])
   if (coordinates === undefined) throw new Error(`ui-deliverables: not a review address "${tab.contentId}"`)
   const { seq } = coordinates
-  const cwd = useSessions(sessions => sessions.byId[sessionId]?.cwd)
+  const cwd = useSessions(sessions => sessionWorkingDirectory(sessions.byId[sessionId]))
   const summary = useChangesSummary(value => value[changesSummaryUrl(sessionId, seq)])
   const state = useStore(store => store.byTab[tab.id])
   const host = usePresentedHost(value => value)

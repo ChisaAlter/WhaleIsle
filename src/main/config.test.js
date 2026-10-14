@@ -404,11 +404,11 @@ test('launcher defaults auto-start desktop, ask on update, and quit after a succ
 test('normalizeDisabledPlugins strips desktop built-in dsh-im, usage-panel, and remote aliases', () => {
   const before = loadConfig();
   saveConfig({
-    disabledPlugins: ['@xmanrui/dsh-im', 'dsh-im', 'dsh-usage-panel', 'dsh-remote', 'user-pack'],
+    disabledPlugins: ['@xmanrui/dsh-im', 'dsh-im', 'dsh-usage-panel', 'dsh-remote', 'dsh-project', 'user-pack'],
   });
   try {
     const loaded = loadConfig();
-    assert.deepEqual(loaded.disabledPlugins, ['user-pack']);
+    assert.deepEqual(loaded.disabledPlugins, ['dsh-project', 'user-pack']);
   } finally {
     saveConfig({ disabledPlugins: before.disabledPlugins });
   }

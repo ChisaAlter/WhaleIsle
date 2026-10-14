@@ -27,6 +27,14 @@ Use this package to require a one-shot decision before a sensitive tool action p
 
 Compose this service when sensitive tool actions should pause for a human or machine decision instead of running unconditionally. The tools pipeline and the sandboxed bash tool route their `ask` decisions through this seam and fail closed when it is absent, so interactive deployments mount it with at least one answerer.
 
+### Managed child requests
+
+A local Project host may call `enableDelegatedRequests(child, owner)` only after accepting a new human continuation. It changes a host-created delegation policy to `ask` when the direct parent is also `ask`; an explicit user policy is preserved. This enables questions, grants no operation, and does not widen the standing sandbox.
+
+`bindDelegatedRequester(child, { owner, label, validate })` presents that child's requests in its direct parent's conversation. The host validator must bind the consumed assignment and run. Request, decision, and command audit remain on the actual child; the UI receives its exact current tool arguments and working directory. Disposing the route withdraws pending requests and cancels its execution lifetime. Stop, archive, replacement, and host shutdown must dispose it.
+
+Executors capture that lifetime through `captureExecution(child, signal)`, recheck `assertCurrent()` after approval and immediately before spawn, and combine its cancellation signal with the execution owner. A late answer cannot authorize a revoked assignment. Ordinary delegated children retain their default `never` policy.
+
 ### Composing answerers
 
 Answerers are `approval/request` waterfall listeners: return an outcome to answer for an owned agent, or call `next()` to delegate. Agent-scoped listeners receive only that agent's requests, and a deployment composes one terminal answerer — sibling listener order is not a policy-priority mechanism. Without a terminal answerer, requests resolve `unavailable` and fail closed; the service itself never prompts a human.

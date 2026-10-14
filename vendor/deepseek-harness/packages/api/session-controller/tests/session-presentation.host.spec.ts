@@ -65,7 +65,7 @@ describe('session presentation host commands', () => {
   it('creates presentation as a log-only event without starting a conversation', async () => {
     const { ctx, remote } = await harness()
     const id = sid('presentation-create')
-    const presentation: SessionPresentation = { owner: 'plugin', title: 'Goal board', composer: 'managed' }
+    const presentation: SessionPresentation = { owner: 'project', title: 'Project conversation', workingDirectory: '/user/project' }
 
     await expect(remote.create({ sessionId: id, cwd: '/tmp', presentation })).resolves.toEqual({
       ok: true,
@@ -73,6 +73,7 @@ describe('session presentation host commands', () => {
     })
 
     const session = sessionOf(ctx, id)
+    expect(session.header.cwd).toBe('/tmp')
     expect(session.snapshotEvents().map(event => event.type)).toEqual(['session/presentation'])
     expect(session.snapshotEvents()[0]).toMatchObject({ seq: 0, data: presentation })
     expect(metadataOf(ctx, session)).toEqual({ blank: true, lastPromptAt: null, presentation })
@@ -114,12 +115,19 @@ describe('session presentation host commands', () => {
       projections: { values: { sessionListMetadata: { presentation: second } } },
     })
 
+    const directoryChange = { ...second, workingDirectory: '/user/project' }
+    await expect(remote.setPresentation({ sessionId: id, presentation: directoryChange })).resolves.toMatchObject({
+      ok: true, value: { seq: 2, presentation: directoryChange },
+    })
+    expect(metadataOf(ctx, session).presentation).toEqual(directoryChange)
+    expect(session.header.cwd).toBe('/tmp')
+
     await expect(remote.setPresentation({ sessionId: id, presentation: null })).resolves.toEqual({
       ok: true,
-      value: { presentation: null, seq: 2 },
+      value: { presentation: null, seq: 3 },
     })
     expect(session.snapshotEvents().map(event => event.type)).toEqual([
-      'session/presentation', 'session/presentation', 'session/presentation',
+      'session/presentation', 'session/presentation', 'session/presentation', 'session/presentation',
     ])
     expect(session.snapshotEvents().at(-1)?.data).toBeNull()
     expect(metadataOf(ctx, session)).toEqual({ blank: true, lastPromptAt: null })

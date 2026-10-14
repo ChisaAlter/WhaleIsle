@@ -27,6 +27,8 @@ This package lets users browse grouped or flat Session lists, choose a Workspace
 <a id="use-this-package"></a>
 ## Use this package
 
+Presentation owners can register `uiWorkspace.registerSessionActions(owner, { rename, archive })` and dispose the registration on unload. `resolveSessionAction` binds an action to the current Session presentation owner. Project shortcuts use its owner actions, never ordinary Session fallback; an unavailable owner handler blocks the action. Project coordinators also block the fork shortcut so their native identity remains associated with the Project.
+
 Use the sidebar to browse Workspaces and their Sessions, reorder them, and start new ones; use the picker in the Session Intent hero to choose a Workspace for a new session. An open Workspace shows five idle, non-blank Sessions by default. Running Sessions, including parents with running children, remain visible in their ordered positions without using that quota; the selected blank **New Session** is also an extra row until its first prompt. Each **Show more** click reveals up to five more idle Sessions; after the final batch, **Show less** restores the initial rows while keeping running Sessions visible. Closing and reopening the Workspace also restores this folded projection.
 
 History rows without a stored title use the localized unnamed label (未命名 / Untitled), rather than a directory name. The current blank row remains New Session; other blank rows remain hidden. Rename drafts use the stored title, or start empty when unnamed; unnamed rows do not offer title copying.
@@ -92,6 +94,8 @@ The browser entry also declares two root-scoped `list` child seats on each Sessi
 Client callers can pass `prompt` and `clearPreviousDraft` in the second argument to `uiWorkspace.startSession`. A prompt is plain text; structured drafts are handled internally during restoration and Workspace transfer. Without clearing, existing text or attachments are preserved; explicit clearing replaces only the target Session's text and inline references, leaving attachments intact. Option values are captured before asynchronous creation and applied to the exact retained binding before navigation commits. Superseded navigation does not write content; a submission-blocked input refuses preparation and keeps the previous selection. Calls without options retain the normal New Session flow. The [draft initialization decision](../../../.agents/notes/implemented/architecture/2026-09-30-structured-draft-initialization.md) describes the input owner's data flow.
 
 ### The directory-flow hole
+
+Features may register a localized directory action with `ctx.uiWorkspace.registerDirectoryAction({ id, label, order, adopt })`. It appears after **Add workspace...** in the New Session picker and reuses that picker's directory flow, busy state, cancellation and error retry. The feature's `adopt(path)` owns its domain command and navigation; the picker does not create an ordinary Workspace or Session for it. The returned disposer removes the action. The sidebar's ordinary add-only flow does not include these feature actions.
 
 Each registration declares a **directory-flow child hole** (`single` kind: `conversation.hero.workspace.directoryFlow` / `sidebar.workspaces.directoryFlow`) that the composed picker package's client half fills with its picking interaction — the `-native` backend's renderless OS-chooser driver, an in-app browsing dialog under a `-browse` composition. The flat **Add workspace...** action renders only while the surface's hole is occupied; an empty hole means the composition has no picking affordance. This package owns the trigger and the adoption: the occupant reports one picked path per open through the hole's owner conversation (`open`/`busy`/`onPicked`/`onCancel`/`onError`), and the owner adopts it through the object layer, selecting the committed Workspace only after its list projection has refreshed.
 
@@ -226,3 +230,7 @@ These limits define the search depth, the archive surface, and the picking carri
 None.
 
 </details>
+
+The `sidebar.workspaces.sections` root-scoped list slot adds categories after the grouped or flat workspace rows, inside the same scroll region. Project uses it for its directory-bound conversations; it does not add a sidebar navigation tab. Categories receive the search query and filter their own entries without adding them to ordinary Session results.
+
+`ctx.uiWorkspace.selectDirectory()` opens the resident sidebar directory flow for a feature without creating a Workspace. It resolves null on cancellation or owner removal. `pickDirectory()` remains the native Host operation, so a native flow can call it without re-entering the composed picker.

@@ -18,6 +18,9 @@ export const FLOAT_DEFAULT_SIZE = { width: 380, height: 300 } as const
 /** Smallest size a floating panel may be resized to, in CSS pixels. */
 export const FLOAT_MIN_SIZE = { width: 220, height: 140 } as const
 
+/** A programmatically minimized float shows only its native 38px title row. */
+export const FLOAT_MINIMIZED_HEIGHT = 38
+
 /** Fraction of a pane's width or height that counts as its dock edge. */
 export const DOCK_EDGE_FRACTION = 0.25
 

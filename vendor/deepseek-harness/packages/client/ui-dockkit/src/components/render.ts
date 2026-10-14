@@ -29,6 +29,8 @@ export interface PaneCallbacks {
   readonly canAddTab: (paneId: PaneId) => boolean
   /** Whether a tab draws its close control and its menu's close item. */
   readonly canCloseTab: (tabId: TabId) => boolean
+  /** Whether a floating tab offers a return-to-dock control. */
+  readonly canDockTab: (tabId: TabId) => boolean
   /** Live drop preview, or `undefined` while nothing is being dragged. */
   readonly dropTarget: DropTarget | undefined
   /** Show both horizontal landing regions while a body split is being targeted. */

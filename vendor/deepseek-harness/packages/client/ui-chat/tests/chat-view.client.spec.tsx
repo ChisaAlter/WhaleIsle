@@ -2280,6 +2280,78 @@ describe('ChatView', () => {
     expect(members[0]?.getAttribute('hidden')).toBeNull()
   })
 
+  it.each([
+    { kind: 'ordinary chat', presentation: undefined, timed: true, english: false, label: '已完成，用时 4秒' },
+    { kind: 'Project coordinator', presentation: { owner: 'project', title: 'Project' }, timed: true, english: false, label: '本轮回复结束，用时 4秒' },
+    { kind: 'managed Project worker', presentation: { owner: 'project', title: 'Worker', composer: 'managed' }, timed: true, english: false, label: '已完成，用时 4秒' },
+    { kind: 'other plugin', presentation: { owner: 'other', title: 'Other' }, timed: true, english: false, label: '已完成，用时 4秒' },
+    { kind: 'Project coordinator without timing', presentation: { owner: 'project', title: 'Project' }, timed: false, english: false, label: '本轮回复结束' },
+    { kind: 'English Project coordinator', presentation: { owner: 'project', title: 'Project' }, timed: true, english: true, label: 'Response finished in 4s' },
+  ] as const)('keeps the settled turn label scoped to $kind', ({ presentation, timed, english, label }) => {
+    const h = makeHarness({
+      nodes: [user(1, 'question'), reasoningAssistant(2, 'inspect the repository', 1, 1), toolResult(3, 'a'), assistant(5, 'progress reply', 1, 2)],
+      turnTimings: timed ? new Map([[1, { startTime: 1_000, endTime: 5_000 }]]) : new Map(),
+      turnEnds: new Map([[1, 6]]),
+    })
+    const sessions = createSnapshotStore<SessionListState>({
+      ids: [SID], phase: 'ready', projectionsBySession: {},
+      byId: { [SID]: {
+        id: SID, displayTitle: 'Conversation', running: true, retainedBy: {}, blank: false, updatedAt: 0,
+        ...(presentation === undefined ? {} : { presentation }),
+      } },
+    })
+    h.props.useSessions = bindSnapshotSelector(sessions)
+    if (english) h.props.t = makeTranslate(en, commonEn)
+    const view = render(<h.ChatView {...h.props} />)
+    const toggle = view.getByRole('button', { name: label })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(view.getByRole('status').textContent).toBe(timed ? label.split(english ? ' in ' : '，')[0] : label)
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+
+    act(() => { sessions.set({ ...sessions.getSnapshot(), byId: {
+      [SID]: { ...sessions.getSnapshot().byId[SID]!, running: false, updatedAt: 1 },
+    } }) })
+    expect(toggle.textContent).toBe(label)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it.each([
+    { reason: { kind: 'aborted', reason: { kind: 'user' } }, label: '已停止' },
+    { reason: { kind: 'error', error: { code: 'UNKNOWN', message: 'failed' } }, label: '处理失败' },
+  ] as const)('preserves the Project turn $reason.kind label', ({ reason, label }) => {
+    const h = makeHarness({
+      nodes: [user(1, 'question'), toolResult(3, 'a'), assistant(5, 'progress reply', 1, 2)],
+      turnTimings: new Map([[1, { startTime: 1_000, endTime: 5_000 }]]),
+      turnEnds: new Map([[1, 6]]),
+    })
+    const sessions = createSnapshotStore<SessionListState>({
+      ids: [SID], phase: 'ready', projectionsBySession: {},
+      byId: { [SID]: {
+        id: SID, displayTitle: 'Project', running: false, retainedBy: {}, blank: false, updatedAt: 0,
+        presentation: { owner: 'project', title: 'Project' },
+      } },
+    })
+    h.props.useSessions = bindSnapshotSelector(sessions)
+    h.setNodeRenderer((_key: string, owner: object, opts?: { hookContext?: unknown }) => {
+      const nodeOwner = owner as RoutedChatNodeOwner
+      if (nodeOwner.node.kind !== 'turn-process' || nodeOwner.node.location.kind !== 'turn') return null
+      const turn = nodeOwner.node.location.turn
+      if (turn.end === undefined) throw new Error('Expected a settled fixture turn')
+      const node: ChatNode<'turn-process'> = { ...nodeOwner.node, location: { kind: 'turn', turn: {
+        ...turn, end: { ...turn.end, data: { ...turn.end.data, reason } },
+      } } }
+      const { turnData, disclosureReset } = opts?.hookContext as ChatNodeHookContext
+      const useTurnData: UseChatNodeTurnData = dataKey => useTurnDataValue(turnData, dataKey)
+      const useDisclosure = bindDisclosure(disclosureReset)
+      return <TurnProcessNodeView {...h.props} {...nodeOwner} useTurnData={useTurnData} useDisclosure={useDisclosure} node={node} />
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('button', { name: label })).toBeTruthy()
+    expect(view.getByRole('status').textContent).toBe(label)
+    expect(view.queryByText(/本轮回复结束/)).toBeNull()
+  })
+
   it('omits injected Context while folding and revealing the visible Turn process', () => {
     const h = makeHarness({
       nodes: [
@@ -3136,6 +3208,22 @@ describe('ChatView', () => {
     expect(buttons[0]!.getAttribute('aria-disabled')).toBeNull()
     fireEvent.click(buttons[0]!)
     expect(h.forkAt.mock.calls).toEqual([[3]])
+  })
+
+  it('hides Project branches when owner metadata arrives while retaining reply and copy actions', () => {
+    const h = makeHarness({ nodes: [user(1, 'question'), assistant(2, 'answer')], turnEnds: new Map([[1, 3]]) })
+    const row = { id: SID, displayTitle: 'Project', blank: false, running: false, updatedAt: 0, retainedBy: { mainView: 1 } }
+    const sessions = createSnapshotStore<SessionListState>({ ids: [SID], byId: { [SID]: row }, phase: 'ready', projectionsBySession: {} })
+    const view = render(<h.ChatView {...h.props} useSessions={bindSnapshotSelector(sessions)} />)
+    expect(view.getAllByRole('button', { name: '在新对话中分支' })).toHaveLength(1)
+    act(() => { sessions.set({ ...sessions.getSnapshot(), byId: { [SID]: { ...row, presentation: { owner: 'project', title: 'Project' } } } }) })
+    expect(view.queryByRole('button', { name: '在新对话中分支' })).toBeNull()
+    expect(view.getByText('answer')).toBeTruthy()
+    expect(view.getAllByRole('button', { name: '复制' })).toHaveLength(2)
+    expect(h.forkAt).not.toHaveBeenCalled()
+    act(() => { sessions.set({ ...sessions.getSnapshot(), byId: { [SID]: row } }) })
+    fireEvent.click(view.getByRole('button', { name: '在新对话中分支' }))
+    expect(h.forkAt).toHaveBeenCalledWith(3)
   })
 
   it('disables fork when the indexed Turn has a later steering Node', () => {

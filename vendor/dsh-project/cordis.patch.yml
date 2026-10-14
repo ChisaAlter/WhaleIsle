@@ -1,0 +1,5 @@
+- insert:
+    - id: ui-agent-team
+      name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"
+    - id: dsh-project
+      name: dsh-project

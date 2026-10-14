@@ -52,6 +52,7 @@ async function bench(runtime: 'web' | 'desktop' = 'desktop', platform: ShortcutP
   ctx.provide('locale', locale)
   const navigation = {
     startSession: vi.fn(), forkSession: vi.fn(async () => 'fork-child' as SessionId), archiveSession: vi.fn(async (_sessionId: SessionId) => {}),
+    resolveSessionAction: vi.fn<(_id: SessionId, _action: 'rename' | 'archive') => (() => void) | undefined>(),
   }
   const controls = createWorkspaceShortcutControls()
   const fiber = ctx.plugin((scoped) => {
@@ -67,6 +68,37 @@ async function bench(runtime: 'web' | 'desktop' = 'desktop', platform: ShortcutP
 afterEach(() => { vi.restoreAllMocks() })
 
 describe('workspace shortcut ownership', () => {
+  it('routes Project rename and archive to the owner while retaining the selected Project identity', async () => {
+    const b = await bench()
+    const rename = vi.fn(), archive = vi.fn()
+    b.navigation.resolveSessionAction.mockImplementation((id, action) => () => { (action === 'rename' ? rename : archive)(id) })
+    const resolutions = ['session.rename', 'session.archive'].map(command => {
+      b.list.set({ ...b.list.getSnapshot(), byId: { [sid('a')]: { ...row('a', true), blank: true, presentation: { owner: 'project', title: 'Project A' } } } })
+      return b.commands.get(command)!.resolve(context)
+    })
+    b.select('b')
+    for (const resolution of resolutions) {
+      expect(resolution.status).toBe('handled')
+      if (resolution.status === 'handled') resolution.run()
+    }
+    expect(rename).toHaveBeenCalledWith(sid('a'))
+    expect(archive).toHaveBeenCalledWith(sid('a'))
+    expect(b.controls.state.getSnapshot().renameTarget).toBeNull()
+    expect(b.navigation.archiveSession).not.toHaveBeenCalled()
+  })
+
+  it('blocks missing Project handlers and Project forks without invoking ordinary Session actions', async () => {
+    const b = await bench()
+    b.list.set({ ...b.list.getSnapshot(), byId: { [sid('a')]: { ...row('a', true), presentation: { owner: 'project', title: 'Project A' } } } })
+    for (const command of ['session.rename', 'session.archive']) {
+      expect(b.commands.get(command)!.resolve(context)).toMatchObject({ status: 'blocked', reason: en['shortcut.projectActionUnavailable'] })
+    }
+    expect(b.commands.get('session.fork')!.resolve(context)).toMatchObject({ status: 'blocked', reason: en['shortcut.projectForkUnavailable'] })
+    expect(b.navigation.forkSession).not.toHaveBeenCalled()
+    expect(b.navigation.archiveSession).not.toHaveBeenCalled()
+    expect(b.controls.state.getSnapshot().renameTarget).toBeNull()
+  })
+
   it('refuses rename and archive without a selected Session and keeps a busy picker closed', async () => {
     const b = await bench()
     b.select('none')

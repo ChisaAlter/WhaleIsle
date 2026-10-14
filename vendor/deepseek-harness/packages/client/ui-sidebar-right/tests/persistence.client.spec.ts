@@ -3,7 +3,9 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
+import { dockPaneIds, findTabPane, getPane } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { createSidebarRightStore } from '../src/client/stores.ts'
+import { pageAddress } from '../src/client/contract/seed.ts'
 import { createSidebarRightController } from '../src/client/service.ts'
 import { SidebarRightTabRegistry } from '../src/client/tab-registry.ts'
 
@@ -53,6 +55,41 @@ it('restores current layout independently by Session with a fresh undo history',
   restored.clearPersisted()
   expect(createSidebarRightStore(seed).create(sessionId).getSnapshot()).toEqual({ bySession: {} })
   expect(createSidebarRightStore(seed).create('second').getSnapshot()).toEqual(second.getSnapshot())
+})
+
+it('merges the empty dock pane after restoring a Project page beside Files as floating-only', () => {
+  storage()
+  const first = createSidebarRightStore(seed).create(sessionId)
+  let project!: TabId
+  first.actions.openContent(sessionId, {
+    kind: 'project', contentId: pageAddress('project'), title: 'Project',
+  }, id => { project = id })
+  first.actions.splitPane(sessionId)
+  const splitLayout = first.getSnapshot().bySession[sessionId]!.layout
+  const filesPane = splitLayout.activePaneId
+  const defaultTab = getPane(splitLayout, filesPane).tabs[0]!
+  let files!: TabId
+  first.actions.openContent(sessionId, {
+    kind: 'files', contentId: pageAddress('files'), title: 'Files', replaceTab: defaultTab,
+  }, id => { files = id })
+  const before = first.getSnapshot().bySession[sessionId]!.layout
+  expect(dockPaneIds(before)).toHaveLength(2)
+  expect(findTabPane(before, project).tabs).toEqual([project])
+  expect(getPane(before, filesPane).tabs).toEqual([files])
+
+  const restored = createSidebarRightStore(seed, kind => kind === 'project').create(sessionId)
+  const after = restored.getSnapshot().bySession[sessionId]!.layout
+  expect(after.expanded).toBe(true)
+  expect(dockPaneIds(after)).toEqual([filesPane])
+  expect(getPane(after, filesPane).tabs).toEqual([files])
+  expect(getPane(after, filesPane).activeTabId).toBe(files)
+  expect(findTabPane(after, project).host).toBe('float')
+  expect(after.floats).toEqual([findTabPane(after, project).id])
+  expect(Object.values(after.tabs).filter(tab => tab.kind === 'project')).toHaveLength(1)
+  expect(after.tabs[files]).toEqual(before.tabs[files])
+  const snapshot = restored.getSnapshot()
+  restored.actions.reconcileFloating(sessionId)
+  expect(restored.getSnapshot()).toBe(snapshot)
 })
 
 it('pins restored records during adoption before the first render or store mutation', async () => {

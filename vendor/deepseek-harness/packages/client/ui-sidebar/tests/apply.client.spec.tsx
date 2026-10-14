@@ -53,6 +53,21 @@ async function bench(declare = true) {
 }
 
 describe('ui-sidebar apply', () => {
+  it('lets a feature select its region and returns New Session to the ordinary browser', async () => {
+    const b = await bench()
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = b.slots.entries('sidebar')[0]!
+    if (entry.store === undefined || typeof entry.store === 'function') throw new Error('sidebar must register its shared navigation store handle')
+    const store = entry.store.create()
+    const navigation = b.ctx.get('uiSidebar')
+    if (navigation === undefined) throw new Error('sidebar navigation service did not activate')
+    navigation.selectTab('projects')
+    expect(store.getSnapshot()).toMatchObject({ selectedTab: 'projects' })
+    const injected = (entry.inject as () => SidebarRootInjected)()
+    injected.startSession()
+    expect(store.getSnapshot()).toMatchObject({ selectedTab: 'sessions' })
+    expect(b.uiWorkspace.startSession).toHaveBeenCalledOnce()
+  })
   it('keeps the host Loader entry inert', () => {
     expect(hostApply).not.toThrow()
   })

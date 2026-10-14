@@ -26,6 +26,14 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     agentPresets: AgentPresetRegistry
   }
+  interface Events {
+    /**
+     * Authorize a blank session's preset change before replacing its scope.
+     * @mode serial
+     * @param input Target Agent and requested preset identity.
+     */
+    'agent-preset/before-select'(input: { agent: Agent, agentPreset: string }): Promise<void> | void
+  }
 }
 
 interface Generation {
@@ -362,6 +370,7 @@ export class AgentPresetRegistry extends TypertRemoteService {
       if (boundary !== undefined && (boundary.openTurnStartSeq !== null || boundary.lastTurn > 0)) {
         throw new RemoteError('agent-preset/locked', 'This session has already started', { sessionId: agent.id, agentPreset })
       }
+      await this.owner.serial('agent-preset/before-select', { agent, agentPreset })
       const preset = await this.recompose(agent.ctx, agentPreset)
       agent.session.append('agent-preset/selected', { agentPreset: preset.id })
       return preset.id

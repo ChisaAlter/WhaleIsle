@@ -22,7 +22,7 @@ import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolJobs from '@deepseek-ai/dsh-tool-jobs'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, Session, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
 import { ShellExecutor } from '@deepseek-ai/dsh-shell'
@@ -32,6 +32,7 @@ import { turnBoundaryProjectionDefinition } from '@deepseek-ai/dsh-agent-loop'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import { escalationHintMarker, sandboxDenialMarker } from '@deepseek-ai/dsh-sandbox'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
+import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 import { processOutcome } from '../src/background.ts'
 import { renderPwshJobRead, renderPwshResult } from '../src/render.ts'
@@ -212,7 +213,7 @@ class ConfiningFakeBash extends ShellExecutor {
 }
 
 /** Sandboxed composition: the shared policy service + a confining executor + the pwsh tool (+ optional approval). */
-async function setupSandboxed(withApproval = false) {
+async function setupSandboxed(withApproval = false, tool: typeof ToolPwsh | typeof ToolBash = ToolPwsh) {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
@@ -228,7 +229,7 @@ async function setupSandboxed(withApproval = false) {
   await ctx.plugin(SandboxPolicyService, {})
   await ctx.plugin(ConfiningFakeBash)
   if (withApproval) await ctx.plugin(ApprovalService)
-  await ctx.plugin(ToolPwsh)
+  await ctx.plugin(tool, {})
   const bash = ctx.shell as ConfiningFakeBash
   return { ctx, bash }
 }
@@ -619,6 +620,56 @@ describe('sandbox escalation through ctx.approval', () => {
     sandbox_permissions: 'workspace-write',
     justification: 'the command needs workspace writes',
   }
+
+  it.each(['pwsh', 'bash'])('%s does not start a managed command when its assignment changes after the grant is committed', async name => {
+    const { ctx, bash } = await setupSandboxed(true, name === 'pwsh' ? ToolPwsh : ToolBash)
+    const ownerId = SessionId('lead'), owner = { id: ownerId, session: Session.create(ownerId) } as Agent
+    let release = () => {}
+    const agent = sandboxAgent(undefined, ctx, type => { if (type === 'approval/decided') release() })
+    Object.assign(agent.session.header, { parentSession: ownerId })
+    await ctx.agents.register(agent)
+    agent.session.append('approval/policy', { policy: 'never', source: 'delegation' })
+    const callId = ToolCallId('managed-race')
+    agent.session.append('tool/call', { turn: 1, step: 1, callId, name, arguments: JSON.stringify(escalate) })
+    ctx.approval.enableDelegatedRequests(agent, owner)
+    release = ctx.approval.bindDelegatedRequester(agent, { owner, label: 'Build', validate: () => true })
+    ctx.on('approval/request', async () => 'allowed-once')
+    const result = await ctx.tools.execute({ callId, name, arguments: escalate, agent, signal: new AbortController().signal })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('no longer active')
+    expect(bash.modes).toEqual([])
+    expect(ctx.jobs.list(agent.id)).toEqual([])
+    await ctx.fiber.dispose()
+  })
+
+  it.each(['pwsh', 'bash'])('%s keeps a started managed command connected to assignment cancellation', async name => {
+    const { ctx, bash } = await setupSandboxed(true, name === 'pwsh' ? ToolPwsh : ToolBash)
+    const ownerId = SessionId('lead'), owner = { id: ownerId, session: Session.create(ownerId) } as Agent
+    const agent = sandboxAgent(undefined, ctx)
+    Object.assign(agent.session.header, { parentSession: ownerId })
+    await ctx.agents.register(agent)
+    agent.session.append('approval/policy', { policy: 'never', source: 'delegation' })
+    const callId = ToolCallId('managed-running')
+    agent.session.append('tool/call', { turn: 1, step: 1, callId, name, arguments: JSON.stringify(escalate) })
+    ctx.approval.enableDelegatedRequests(agent, owner)
+    const release = ctx.approval.bindDelegatedRequester(agent, { owner, label: 'Build', validate: () => true })
+    ctx.on('approval/request', async () => 'allowed-once')
+    const started = Promise.withResolvers<AbortSignal>()
+    vi.spyOn(bash, 'execute').mockImplementation(async spec => {
+      const signal = spec.signal!
+      const ended = Promise.withResolvers<ShellRunResult>()
+      signal.addEventListener('abort', () => { ended.resolve(runResult('', { aborted: true })) }, { once: true })
+      started.resolve(signal)
+      return Object.assign(fakeProcess(), { result: () => ended.promise })
+    })
+    const result = ctx.tools.execute({ callId, name, arguments: escalate, agent, signal: new AbortController().signal })
+    const signal = await started.promise
+    expect(signal.aborted).toBe(false)
+    release()
+    expect(signal.aborted).toBe(true)
+    expect((await result).isError).toBe(true)
+    await ctx.fiber.dispose()
+  })
 
   it('advertises the sandbox fields, the escalation clause, and the confined-mode contracts', async () => {
     const { ctx } = await setupSandboxed()

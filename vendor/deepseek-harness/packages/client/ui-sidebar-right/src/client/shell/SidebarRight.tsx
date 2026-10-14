@@ -303,6 +303,7 @@ function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<H
   const { sessionId, surface, actions, t, renderSlot, openTab, width, reportRoom, fullscreen, panelRef } = panel
   const { expanded } = surface.layout
   const types = panel.useTabTypes(value => value)
+  useLayoutEffect(() => { actions.reconcileFloating(sessionId) }, [actions, sessionId, types])
   return (
     <div
       ref={panelRef}
@@ -323,7 +324,9 @@ function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<H
           dropZones="horizontal"
           minPaneFraction={0.2}
           canAddTab={paneId => guideIn(surface.layout, paneId) === undefined}
-          canCloseTab={tabId => canCloseTab(surface, tabId)}
+          canCloseTab={tabId => canCloseTab(surface, tabId)
+            && types.find(type => type.kind === surface.layout.tabs[tabId]?.kind)?.showCloseButton !== false}
+          canDockTab={tabId => types.find(type => type.kind === surface.layout.tabs[tabId]?.kind)?.floatingOnly !== true}
           intents={intentsFor(sessionId, actions, openTab, panel.closeTab, panel.splitPane)}
           labels={dockLabels(t, panel.shortcuts.find(entry => entry.id === 'pane.split'), panel.shortcuts.find(entry => entry.id === 'page.close'))}
           renderTab={bodiesFor(panel)}

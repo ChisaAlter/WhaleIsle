@@ -48,6 +48,7 @@ import type {
   ContinuableCreateSpec,
   ContinuableStart,
   ContinuableStartSpec,
+  ContinuationAdmission,
   SubagentInterruptAuthority,
   SubagentSendMessageOptions,
 } from './types.ts'
@@ -67,6 +68,7 @@ type ChildDeliveryOptions =
 
 /** Package-private hooks supplied by the owning service. */
 interface ContinuationHost {
+  admitContinuation(policy: string, admission: ContinuationAdmission): Promise<void>
   /** Resolve one provider's detached continuable-creation contribution. */
   prepareContinuable(name: string, request: ContinuableCreateRequest): Promise<ContinuableCreateSpec>
   /** Build the lifecycle observer for one Activation residency epoch. */
@@ -91,6 +93,7 @@ export class SubagentContinuationManager {
       ctx,
       (provider, childId, parent) => host.observeActivation(provider, childId, parent),
       maxActiveSubagents,
+      (policy, admission) => host.admitContinuation(policy, admission),
     )
   }
 
@@ -125,10 +128,16 @@ export class SubagentContinuationManager {
       ...agentReasoningEffort !== undefined ? { agentReasoningEffort } : {},
       ...request.persona !== undefined ? { persona: request.persona } : {},
       ...request.toolFilter !== undefined ? { toolFilter: request.toolFilter } : {},
+      ...spec.environment?.agentPreset !== undefined ? { agentPreset: spec.environment.agentPreset } : {},
+      ...spec.environment?.admissionPolicy !== undefined ? { admissionPolicy: spec.environment.admissionPolicy } : {},
     })
     // Capture before the first await: a later parent switch belongs to the
     // parent's future, not to this child.
     const delegatedPolicies = captureDelegatedPolicyOverrides(parent)
+    if (spec.environment?.admissionPolicy !== undefined) {
+      await this.host.admitContinuation(spec.environment.admissionPolicy, { parent, childId, reason: 'start' })
+      spec.signal.throwIfAborted()
+    }
 
     // An idle continuation-managed parent must not settle while a caller is
     // still creating its child. A turn-scoped delegation does not need this,
@@ -164,13 +173,13 @@ export class SubagentContinuationManager {
           parent,
           create: {
             seed,
-            meta: childSessionMeta(parent, childDepth, prepared.seed !== undefined),
+            meta: childSessionMeta(parent, childDepth, prepared.seed !== undefined, spec.environment),
             inheritedEventCount,
             delegatedPolicies,
             descriptor,
           },
           agentOptions,
-          composition: { persona: request.persona, toolFilter: request.toolFilter },
+          composition: { persona: request.persona, toolFilter: request.toolFilter, agentPreset: spec.environment?.agentPreset },
           signal: spec.signal,
         })
         const childHeader = activation.handle.agent.session.header
@@ -312,6 +321,9 @@ export class SubagentContinuationManager {
             return undefined
           }
         }
+        const admission = this.admitActivation(activation, parent, 'message')
+        if (admission !== undefined) await admission
+        options.signal.throwIfAborted()
         const messageId = this.submitAdmitted(activation, content, options, parent)
         activation.announced = true
         return messageId
@@ -431,6 +443,10 @@ export class SubagentContinuationManager {
         'NOT_RESUMABLE',
       )
     }
+    if (descriptor.admissionPolicy !== undefined) {
+      await this.host.admitContinuation(descriptor.admissionPolicy, { parent, childId, reason: 'message' })
+      options.signal.throwIfAborted()
+    }
     let activation: Activation
     try {
       activation = await this.activations.materialize({
@@ -444,7 +460,7 @@ export class SubagentContinuationManager {
             ? { reasoningEffort: ReasoningEffortId(descriptor.agentReasoningEffort) }
             : {},
         },
-        composition: { persona: descriptor.persona, toolFilter: descriptor.toolFilter },
+        composition: { persona: descriptor.persona, toolFilter: descriptor.toolFilter, agentPreset: descriptor.agentPreset },
         signal: options.signal,
       })
     } catch (error: unknown) {
@@ -470,6 +486,9 @@ export class SubagentContinuationManager {
           throw new SubagentError(`subagent "${activation.childId}" is closing`, 'ACTIVATION_CLOSING')
         }
       }
+      const admission = this.admitActivation(activation, parent, commit === undefined ? 'message' : 'start')
+      if (admission !== undefined) await admission
+      options.signal.throwIfAborted()
       const messageId = this.submitAdmitted(activation, content, options, parent)
       commit?.()
       activation.announced = true
@@ -483,6 +502,15 @@ export class SubagentContinuationManager {
         )
       }
       throw error
+    }
+  }
+
+  /** Last admission boundary after reconstruction/image awaits and before waking input. */
+  private admitActivation(activation: Activation, parent: Agent, reason: 'start' | 'message'): Promise<void> | undefined {
+    // oxlint-disable-next-line typescript/no-deprecated -- the durable descriptor owns this child's policy.
+    const descriptor = foldSubagentDescriptor(activation.handle.agent.session.snapshotEvents(activation.handle.agent.session.inheritedEventCount))
+    if (descriptor?.mode === 'continuable' && descriptor.admissionPolicy !== undefined) {
+      return this.host.admitContinuation(descriptor.admissionPolicy, { parent, childId: activation.childId, reason })
     }
   }
 

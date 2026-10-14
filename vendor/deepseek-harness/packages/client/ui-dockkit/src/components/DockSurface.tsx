@@ -54,6 +54,8 @@ export interface DockSurfaceProps {
    * width either way. The menu still opens and carries the embedder's items.
    */
   readonly canCloseTab?: (tabId: TabId) => boolean
+  /** Whether a floating tab offers a return-to-dock control; defaults to true. */
+  readonly canDockTab?: (tabId: TabId) => boolean
   readonly intents: DockIntents
   readonly labels: DockLabels
   readonly renderTab: TabRenderer
@@ -163,7 +165,7 @@ function sameSizes(a: readonly number[], b: readonly number[]): boolean {
 
 /** The split tree and the gestures over it. */
 function Surface({
-  state, canSplit, canAddTab, canCloseTab, intents, labels, renderTab, renderTabTitle, renderTabMenuItems, chrome, onRoom,
+  state, canSplit, canAddTab, canCloseTab, canDockTab, intents, labels, renderTab, renderTabTitle, renderTabMenuItems, chrome, onRoom,
   draw,
   dropZones = 'edges', minPaneFraction = MIN_PANE_FRACTION, hideSplitWhenBlocked = false,
 }: DockSurfaceProps & { readonly draw: (callbacks: PaneCallbacks, preview: SizePreview | undefined) => ReactNode }): ReactNode {
@@ -278,6 +280,7 @@ function Surface({
     hideSplitWhenBlocked,
     canAddTab: canAddTab ?? ALWAYS,
     canCloseTab: canCloseTab ?? ALWAYS,
+    canDockTab: canDockTab ?? ALWAYS,
     dropTarget: preview.dropTarget,
     horizontalDrops: dropZones === 'horizontal',
     draggingTabId: preview.draggingTabId,

@@ -4,6 +4,9 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-session-persistence'
+import { TeamManagement } from './management.ts'
+import type { TeamPolicy } from './management.ts'
+export type { TeamPolicy } from './management.ts'
 import { TeamActivity } from './activity.ts'
 import { errorMessage, TeamError } from './error.ts'
 import { TeamJournal } from './journal.ts'
@@ -67,6 +70,7 @@ export class TeamService extends Service {
   /** Validated deployment limits used by every Team operation. */
   private readonly config: Required<Config>
 
+  private readonly management: TeamManagement
   private readonly activity: TeamActivity
   private readonly lifecycle: TeamRuntimeLifecycle
   private readonly journal: TeamJournal
@@ -93,7 +97,8 @@ export class TeamService extends Service {
     this.activity = new TeamActivity()
     this.lifecycle = new TeamRuntimeLifecycle(this.config.disposalTimeoutMs)
     this.journal = new TeamJournal(ctx, (root) => { this.activity.notify(TeamId(root.id)) })
-    this.roster = new TeamRoster(ctx, this.journal, this.lifecycle, this.config.maxMembers)
+    this.management = new TeamManagement(this.journal, this.config.maxMembers, this.config.maxTasks)
+    this.roster = new TeamRoster(ctx, this.journal, this.lifecycle, this.config.maxMembers, this.management)
     this.mailbox = new TeamMailbox(
       ctx,
       this.journal,
@@ -101,8 +106,9 @@ export class TeamService extends Service {
       this.lifecycle,
       this.config.maxPendingMessagesPerMember,
       this.config.maxMessageBytes,
+      this.management,
     )
-    this.tasks = new TeamTaskBoard(this.journal, this.config.maxTasks)
+    this.tasks = new TeamTaskBoard(this.journal, this.config.maxTasks, this.management)
 
     ctx.on('session/event', (session, event) => { this.mailbox.observeSessionEvent(session, event) })
     ctx.on('agent/created', ({ agent }) => { this.scheduleRecovery(agent) })
@@ -148,6 +154,7 @@ export class TeamService extends Service {
    * @returns the active roster row.
    */
   async spawnTeammate(caller: Agent, request: SpawnTeammateRequest): Promise<SpawnTeammateResult> {
+    await this.management.admit(this.roster.membership(caller).root, 'spawn', { caller, request })
     return await this.roster.spawn(caller, request)
   }
 
@@ -197,6 +204,7 @@ export class TeamService extends Service {
    * @returns the committed next task revision.
    */
   async updateTask(caller: Agent, request: UpdateTeamTaskRequest): Promise<TeamTaskView> {
+    await this.management.admit(this.roster.membership(caller).root, 'task', { caller, request })
     return await this.tasks.update(caller, this.roster.membership(caller), request)
   }
 
@@ -230,6 +238,39 @@ export class TeamService extends Service {
   tryMembership(agent: Agent): TeamMembership | undefined {
     return this.roster.tryMembership(agent)
   }
+
+  /** Register a managed Team host; the disposer leaves durable bindings fail-closed. */
+  registerPolicy(id: string, policy: TeamPolicy): () => void { return this.management.register(id, policy) }
+
+  /** Bind a root before creating its managed members. */
+  async bindPolicy(root: Agent, id: string): Promise<void> { await this.management.bind(this.roster.membership(root).root, id) }
+
+  /** Release or reclaim capacity without deleting history. */
+  async setCold(root: Agent, memberId: import('@deepseek-ai/dsh-session').SessionId, taskId: import('./types.ts').TeamTaskId, cold: boolean): Promise<void> {
+    await this.management.setCold(this.roster.membership(root).root, memberId, taskId, cold)
+  }
+
+  /** Read the original durable peer input, including cancelled history. */
+  message(root: Agent, id: import('./types.ts').TeamMessageId): import('./types.ts').TeamMessageSnapshot | undefined {
+    return this.journal.state(this.roster.membership(root).root).messages.find(message => message.id === id)
+  }
+
+  /** Revoke a stopped target's pending and accepted-but-unconsumed mailbox items. */
+  async cancelMessages(root: Agent, targets: readonly import('@deepseek-ai/dsh-session').SessionId[]): Promise<void> {
+    for (const message of this.journal.state(root).messages) if (targets.includes(message.targetId) || targets.includes(message.senderId)) await this.management.cancel(root, message)
+  }
+
+  /** Test cancellation at the receiver's final execution boundary. */
+  messageCancelled(root: Agent, id: import('./types.ts').TeamMessageId): boolean { return this.management.state(root).cancelled.has(id) }
+
+  /** Persist peer input scope before enqueueing. */
+  async bindMessage(root: Agent, messageId: import('./types.ts').TeamMessageId, senderAssignment: string, targetAssignment: string): Promise<void> { await this.management.bindMessage(root, messageId, senderAssignment, targetAssignment) }
+
+  /** Read the immutable scope attached by the managed host. */
+  messageContext(root: Agent, id: import('./types.ts').TeamMessageId): { senderAssignment: string; targetAssignment: string } | undefined { return this.management.state(root).contexts.get(id) }
+
+  /** Adopt only an existing continuation verified against its durable descriptor. */
+  async adoptMember(root: Agent, request: SpawnTeammateRequest): Promise<void> { await this.roster.adopt(root, request) }
 
   /** Queue one contained recovery pass after publication has unwound. */
   private scheduleRecovery(agent: Agent): void {

@@ -82,8 +82,18 @@ test('blank-session Hero controls follow and center on the resized composer card
 });
 
 test('todo panel follows the drag-resized composer card', () => {
-  const css = normalize(readRel(UI_CONVERSATION, 'skeleton/TodoPanel.module.css'));
-  assert.match(ruleOf(css, '\\.root'), FOLLOW);
+  const todo = readRel(UI_CONVERSATION, 'skeleton/TodoPanel.tsx');
+  assert.match(todo, /import\s*\{[^}]*\bTaskDock\b[^}]*\}\s*from\s*'@deepseek-ai\/dsh-client-ui-primitives'/);
+  assert.match(todo, /<TaskDock\b/);
+  const primitives = path.join(VENDOR, 'deepseek-harness', 'packages', 'client', 'ui-primitives', 'src');
+  const task = readRel(primitives, 'TaskDock.tsx');
+  assert.match(task, /import css from '\.\/TaskDock\.module\.css'/);
+  assert.match(task, /<section className=\{css\.root\}/);
+  const css = normalize(readRel(primitives, 'TaskDock.module.css'));
+  const rule = ruleOf(css, '\\.root');
+  assert.match(rule, FOLLOW);
+  const cap = rule.match(/max-width:[^;]+;/)?.[0];
+  assert.equal(cap.match(/var\(--dsh-composer-dock-inset\)/g).length, 4);
 });
 
 test('goal bar follows the drag-resized composer card', () => {

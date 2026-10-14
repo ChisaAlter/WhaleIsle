@@ -36,7 +36,7 @@ export {
 // Interaction limits and geometry.
 export {
   canSplit, clampSizes, DOCK_EDGE_FRACTION, DOCK_ZONES, dockPaneCount,
-  FLOAT_DEFAULT_SIZE, FLOAT_MIN_SIZE, MAX_DOCK_PANES, MIN_PANE_FRACTION, zoneAt, zoneSplit,
+  FLOAT_DEFAULT_SIZE, FLOAT_MIN_SIZE, FLOAT_MINIMIZED_HEIGHT, MAX_DOCK_PANES, MIN_PANE_FRACTION, zoneAt, zoneSplit,
 } from './engine/constraints.ts'
 export {
   containsPoint, dividerSizes, DRAG_THRESHOLD, floatRectAt, halvesFit, insertionIndex,
