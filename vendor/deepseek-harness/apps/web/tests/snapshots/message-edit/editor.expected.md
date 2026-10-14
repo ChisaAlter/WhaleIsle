@@ -1,54 +1,41 @@
 - banner:
-  - navigation "Session hierarchy":
-    - button "Message edit fixture" [disabled]
-  - tablist:
-    - tab "Chat" [selected]
-    - tab "Trajectory"
+  - banner:
+    - navigation "Session hierarchy": Message edit fixture
+    - button "More actions"
+    - button "Open right sidebar"
+    - tablist:
+      - tab "Chat" [selected]
+      - tab "Trajectory"
 - navigation "Turn navigation":
   - button "Jump to turn 1"
   - button "Jump to turn 2"
 - text: Original prompt 1 {{clock}}
-- button "Copy":
-  - img
+- button "Copy"
+- status: Completed
+- button "Completed in {{duration}}" [disabled]
 - paragraph: Original reply 1
-- button "Copy":
-  - img
-- button "Good response":
-  - img
-- button "Bad response":
-  - img
-- button "Branch into a new conversation":
-  - img
-- button "Ran for {{duration}}":
-  - img
-  - text: Ran for {{duration}}
+- button "Copy"
+- button "Good response"
+- button "Bad response"
+- button "Branch into a new conversation"
 - text: {{clock}} Original prompt 2
 - status: Re-editing in the input box below
 - button "Cancel"
+- status: Completed
+- button "Completed in {{duration}}" [disabled]
 - paragraph: Original reply 2
-- button "Copy":
-  - img
-- button "Good response":
-  - img
-- button "Bad response":
-  - img
-- button "Branch into a new conversation":
-  - img
-- button "Ran for {{duration}}":
-  - img
-  - text: Ran for {{duration}}
+- button "Copy"
+- button "Good response"
+- button "Bad response"
+- button "Branch into a new conversation"
 - text: {{clock}}
 - status:
   - text: Re-editing this message
-  - button "Cancel re-edit":
-    - img
-- textbox "Message or run a task... / commands, @ files or sessions":
+  - button "Cancel re-edit"
+- textbox "Message or run a task, / commands, @ files or sessions":
   - paragraph: Original prompt 2
-- button "Commands":
-  - img
+- button "Add files or run commands"
 - 'button "Access mode, current: Workspace Write"': Workspace Write
-- button "Select model":
-  - text: Select model
-  - img
+- button "Select model, current DeepSeek-V4-Flash": DeepSeek-V4-Flash
 - button "Send message"
-- text: 2 turns · 2 steps LLM {{duration}}
+- button "2 turns 2 steps"

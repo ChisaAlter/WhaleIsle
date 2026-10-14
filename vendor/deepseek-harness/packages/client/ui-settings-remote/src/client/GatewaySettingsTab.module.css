@@ -1,5 +1,12 @@
 /* Gateway advanced settings tab. */
 
+.legacy {
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.legacy p { margin: 8px 0; }
+
 .page {
   display: flex;
   flex-direction: column;

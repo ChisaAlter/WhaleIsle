@@ -11,6 +11,7 @@
   <script src="launcher-components.js" defer></script>
 </head>
 <body>
+  <p id="component-status" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></p>
   <div class="caption" aria-hidden="true"></div>
   <div class="window-controls"></div>
   <div class="shell">
@@ -18,8 +19,8 @@
       <div class="rail-head">
         <img class="brand-avatar" src="../../assets/whale-head.png" alt="" />
         <span class="brand-block">
-          <span class="brand-title"><span class="brand-cn">鲸<span class="brand-isle">屿</span></span><span class="brand-en">WHALE ISLE</span></span>
-          <span class="brand-role">启动器</span>
+          <span class="brand-title"><span class="brand-cn">鲸<span class="brand-isle">屿</span></span><span class="brand-role">启动器</span></span>
+          <span class="brand-en">WHALE ISLE</span>
         </span>
       </div>
       <nav class="tabs" role="tablist" aria-label="启动器分区" aria-orientation="vertical">
@@ -67,7 +68,7 @@
           <section class="home-desktop" aria-labelledby="home-desktop-title">
             <div class="home-desktop-head"><div class="home-product"><div><span class="home-eyebrow">WHALE ISLE</span><h3 id="home-desktop-title">鲸屿桌面端</h3></div></div><span class="badge" id="home-version">读取版本…</span></div>
             <p class="home-description">在桌面端开始对话，管理模型与工作区。</p>
-            <div class="home-desktop-controls"><p class="home-desktop-status"><span class="home-state-dot" id="home-state-dot" aria-hidden="true"></span><span id="home-status">正在读取状态…</span><span id="home-run-badge" hidden></span></p>
+            <div class="home-desktop-controls"><p class="home-desktop-status"><span class="home-state-dot" id="home-state-dot" aria-hidden="true"></span><span id="home-status" role="status" aria-live="polite" aria-atomic="true">正在读取状态…</span><span id="home-run-badge" hidden></span></p>
             <div class="actions" id="home-actions">
               <button type="button" class="primary" id="btn-start">启动桌面端</button>
               <button type="button" class="ghost" id="btn-stop" hidden>关闭桌面端</button>
@@ -239,6 +240,7 @@
             </div>
           </div>
           <footer class="import-foot">
+            <p id="import-scope" class="import-scope" aria-live="polite">保留已有同名项及关联凭据；跳过已安装的插件。不导入附件。</p>
             <div class="import-foot-opts">
               <label class="switch-row compact" title="覆盖同名会话、技能、MCP，并重装已勾选插件。">
                 <span class="switch-copy">
@@ -263,7 +265,7 @@
               <span class="import-selection-line" id="import-selection-line">未选择</span>
               <p id="import-result" class="import-summary" role="status" aria-live="polite"></p>
               <button type="button" class="ghost" id="btn-import-cancel" hidden>取消</button>
-              <button type="button" class="primary" id="btn-import">开始导入</button>
+              <button type="button" class="primary" id="btn-import" aria-describedby="import-scope import-selection-line">开始导入</button>
             </div>
           </footer>
         </section>

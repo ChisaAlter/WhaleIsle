@@ -38,6 +38,7 @@ function subscribe(renderer, channel) {
 
 function windowApi(renderer) {
   return {
+    platform: process.platform,
     windowAction: send(renderer, 'shell:window'),
     getWindowState: invoke(renderer, 'shell:window-state'),
     onWindowState: subscribe(renderer, 'shell:window-state'),
@@ -131,6 +132,7 @@ function harnessApi(renderer, remoteFeature) {
     gitSwitchBranch: invoke(renderer, 'shell:git-switch-branch'),
     gitCreateBranch: invoke(renderer, 'shell:git-create-branch'),
     ptyCreate: invoke(renderer, 'shell:pty-create'),
+    ptyCanCreate: invoke(renderer, 'shell:pty-can-create'),
     ptyWrite: invoke(renderer, 'shell:pty-write'),
     ptyAck: invoke(renderer, 'shell:pty-ack'),
     ptyResize: invoke(renderer, 'shell:pty-resize'),
@@ -293,6 +295,29 @@ const role = shellRole();
 const isMainFrame = process.isMainFrame !== false;
 const api = isMainFrame ? buildShellApi(role, ipcRenderer) : null;
 
+// The shell owns native fullscreen state; the client uses this mark to clear
+// the macOS traffic-light inset when the system hides its window buttons.
+if (isMainFrame && ['boot', 'harness', 'launcher'].includes(role)
+    && typeof window !== 'undefined' && typeof document !== 'undefined') {
+  let fullscreen = false;
+  const markWindow = () => {
+    if (document.documentElement === null) return;
+    document.documentElement.dataset.platform = process.platform;
+    document.documentElement.toggleAttribute('data-fullscreen', fullscreen);
+  };
+  const applyWindowState = (state) => {
+    fullscreen = Boolean(state?.fullscreen);
+    markWindow();
+  };
+  if (document.documentElement === null) {
+    window.addEventListener('DOMContentLoaded', markWindow, { once: true });
+  } else {
+    markWindow();
+  }
+  api.onWindowState(applyWindowState);
+  api.getWindowState().then(applyWindowState).catch(() => {});
+}
+
 // Desktop shortcut bridge (upstream ctx.shortcuts contract): the trusted
 // product main frame is marked for runtime detection, and a deliberately
 // narrow dshDesktop facade — keyboard + shortcuts only, never the full
@@ -323,10 +348,6 @@ if (role === 'harness' && isMainFrame) {
       edit: invoke(ipcRenderer, 'shell:shortcuts-edit'),
       recording: invoke(ipcRenderer, 'shell:shortcuts-recording'),
       subscribe: subscribe(ipcRenderer, 'shell:shortcuts-changed'),
-    },
-    whaleBridge: {
-      status: invoke(ipcRenderer, 'shell:whalebridge-status'),
-      open: invoke(ipcRenderer, 'shell:whalebridge-open'),
     },
     // Upstream DesktopUpdateBridge contract: status/notify only — open()
     // joins the shell-owned update flow (check → confirm → install), never

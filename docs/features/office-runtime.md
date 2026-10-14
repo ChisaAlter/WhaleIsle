@@ -35,7 +35,7 @@
 - 不在 workspace 外落 Office 运行时；不写全局 PATH / 注册表。
 - 不伪造 Office 编辑器；不引入第二套文档预览 UI。
 - 不把 `cli:false` 写进 overlay（kit-less 部署不是完整 Office 运行时）。
-- 非 win32 目标暂不出 payload（assert 门控跳过 `electronPlatformName!=='win32'`）。
+- 非 win32 目标暂不出 payload（assert 门控跳过 `electronPlatformName!=='win32'`）；缺少默认载荷时继续启动且不写 Office overlay，显式指定的运行时仍须完整校验。
 
 ## Gates
 

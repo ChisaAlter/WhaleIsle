@@ -35,6 +35,7 @@
   box-sizing: border-box;
   position: relative;
   z-index: 1;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -43,9 +44,20 @@
   overflow: hidden;
   border: 0;
   border-radius: var(--dsw-radius-panel);
-  background: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-elevation-prominent);
   animation: modalEnter var(--ds-transition-duration) var(--ds-ease-in-out);
+}
+
+/* Blur only the fill so fixed descendants keep their viewport coordinates. */
+.dialog::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--dsw-alias-bg-layer-2);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  content: '';
+  pointer-events: none;
 }
 
 @keyframes modalEnter {

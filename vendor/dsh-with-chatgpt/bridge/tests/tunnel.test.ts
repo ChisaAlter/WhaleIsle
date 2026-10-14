@@ -1,0 +1,493 @@
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import path from "node:path";
+import type { ChildProcess } from "node:child_process";
+import { PassThrough } from "node:stream";
+import { findBinary } from "../src/tunnel/detect.js";
+import {
+  CloudflaredQuickTunnel,
+  parseQuickTunnelUrl,
+  type CloudflaredQuickTunnelOptions,
+} from "../src/tunnel/cloudflared.js";
+import { normalizeNamedTunnelHostname } from "../src/tunnel/cloudflared-named.js";
+import { hostnameSlug, parseZoneInput, suggestedNamedHostname } from "../src/tunnel/hostname.js";
+import {
+  chooseQuickTunnel,
+  cloudflaredCredentialPath,
+  inspectNamedTunnelCredentials,
+  namedTunnelCredentialRepairMessage,
+  parseCreatedTunnel,
+  parseTunnelList,
+  ProcessCloudflaredAccount,
+  provisionNamedTunnel,
+  type CloudflaredAccount,
+} from "../src/tunnel/named-provision.js";
+import { resolveTunnelProtocol, tunnelProtocolArgs } from "../src/tunnel/protocol.js";
+import { isNamedTunnelReady, needsTunnelChoice, readTunnelState, writeTunnelState } from "../src/tunnel/state.js";
+import { cleanup, isolateStateDir, makeTmpDir, write } from "./helpers.js";
+
+const stateDirs: string[] = [];
+const previousStateDir = process.env.D2C_STATE_DIR;
+const previousCloudflaredPath = process.env.D2C_CLOUDFLARED_PATH;
+const previousOriginCert = process.env.TUNNEL_ORIGIN_CERT;
+const previousCredentialFile = process.env.TUNNEL_CRED_FILE;
+const QUICK_URL = "https://random-words-here-1234.trycloudflare.com";
+type FetchImpl = NonNullable<CloudflaredQuickTunnelOptions["fetchImpl"]>;
+
+class FakeCloudflaredProcess extends EventEmitter {
+  readonly stdout = new PassThrough();
+  readonly stderr = new PassThrough();
+  exitCode: number | null = null;
+  signalCode: NodeJS.Signals | null = null;
+  killed = false;
+  readonly kill = vi.fn(() => {
+    this.killed = true;
+    return true;
+  });
+}
+
+function setupTunnel(fetchImpl: FetchImpl, startTimeoutMs = 1_000) {
+  const child = new FakeCloudflaredProcess();
+  const spawnImpl = vi.fn(() => child as unknown as ChildProcess);
+  const tunnel = new CloudflaredQuickTunnel(undefined, "cloudflared", {
+    spawnImpl,
+    fetchImpl,
+    startTimeoutMs,
+    initialHealthDelayMs: 0,
+  });
+  return { child, spawnImpl, tunnel };
+}
+
+function announceUrl(child: FakeCloudflaredProcess): void {
+  child.stderr.write(`INF ${QUICK_URL}\n`);
+}
+
+function healthResponse(): Response {
+  return new Response(JSON.stringify({ service: "d2c-bridge", status: "ok" }), { status: 200 });
+}
+
+afterEach(() => {
+  while (stateDirs.length) cleanup(stateDirs.pop()!);
+  if (previousStateDir === undefined) delete process.env.D2C_STATE_DIR;
+  else process.env.D2C_STATE_DIR = previousStateDir;
+  if (previousCloudflaredPath === undefined) delete process.env.D2C_CLOUDFLARED_PATH;
+  else process.env.D2C_CLOUDFLARED_PATH = previousCloudflaredPath;
+  if (previousOriginCert === undefined) delete process.env.TUNNEL_ORIGIN_CERT;
+  else process.env.TUNNEL_ORIGIN_CERT = previousOriginCert;
+  if (previousCredentialFile === undefined) delete process.env.TUNNEL_CRED_FILE;
+  else process.env.TUNNEL_CRED_FILE = previousCredentialFile;
+});
+
+describe("findBinary", () => {
+  it("uses D2C_CLOUDFLARED_PATH for an accessible cloudflared executable", () => {
+    const dir = makeTmpDir("cloudflared-path");
+    stateDirs.push(dir);
+    const filename = process.platform === "win32" ? "cloudflared.exe" : "cloudflared";
+    const configured = write(dir, filename, "placeholder");
+    if (process.platform !== "win32") fs.chmodSync(configured, 0o755);
+    process.env.D2C_CLOUDFLARED_PATH = configured;
+    expect(findBinary("cloudflared")).toBe(configured);
+  });
+});
+
+describe("parseQuickTunnelUrl", () => {
+  it("extracts the URL from cloudflared banner output", () => {
+    const line =
+      "2026-08-28T10:00:00Z INF |  https://random-words-here-1234.trycloudflare.com                              |";
+    expect(parseQuickTunnelUrl(line)).toBe(QUICK_URL);
+  });
+
+  it("ignores unrelated lines and non-Quick-Tunnel hosts", () => {
+    expect(parseQuickTunnelUrl("INF Starting tunnel connection")).toBeNull();
+    expect(parseQuickTunnelUrl("visit https://www.cloudflare.com for docs")).toBeNull();
+    expect(parseQuickTunnelUrl("https://evil.example.com/trycloudflare.com")).toBeNull();
+  });
+
+  it("rejects Cloudflare's API host", () => {
+    expect(parseQuickTunnelUrl("INF https://api.trycloudflare.com")).toBeNull();
+  });
+});
+
+describe("CloudflaredQuickTunnel", () => {
+  it("waits initialHealthDelayMs before the first health probe", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi.fn(async () => healthResponse());
+      const child = new FakeCloudflaredProcess();
+      const spawnImpl = vi.fn(() => child as unknown as ChildProcess);
+      const tunnel = new CloudflaredQuickTunnel(undefined, "cloudflared", {
+        spawnImpl,
+        fetchImpl,
+        startTimeoutMs: 60_000,
+        initialHealthDelayMs: 5_000,
+      });
+      const starting = tunnel.start(3333);
+      child.stderr.write(`INF ${QUICK_URL}\n`);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(fetchImpl).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(5_000);
+      await expect(starting).resolves.toBe(QUICK_URL);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      await tunnel.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("resolves only after the public health endpoint identifies the bridge", async () => {
+    const fetchImpl = vi.fn(async () => healthResponse());
+    const { child, spawnImpl, tunnel } = setupTunnel(fetchImpl);
+    const starting = tunnel.start(3333);
+    announceUrl(child);
+
+    await expect(starting).resolves.toBe(QUICK_URL);
+    expect(spawnImpl).toHaveBeenCalledWith(
+      "cloudflared",
+      ["tunnel", "--url", "http://127.0.0.1:3333", "--no-autoupdate"],
+      { stdio: ["ignore", "pipe", "pipe"], windowsHide: true }
+    );
+    expect(fetchImpl).toHaveBeenCalledWith(`${QUICK_URL}/health`, {
+      redirect: "error",
+      signal: expect.any(AbortSignal),
+    });
+    expect(tunnel.status()).toMatchObject({ running: true, url: QUICK_URL });
+    await tunnel.stop();
+  });
+
+  it("passes --protocol when D2C_TUNNEL_PROTOCOL is set", async () => {
+    vi.stubEnv("D2C_TUNNEL_PROTOCOL", "http2");
+    const { child, spawnImpl, tunnel } = setupTunnel(async () => healthResponse());
+    const starting = tunnel.start(3333);
+    announceUrl(child);
+    await expect(starting).resolves.toBe(QUICK_URL);
+    expect(spawnImpl).toHaveBeenCalledWith(
+      "cloudflared",
+      ["tunnel", "--url", "http://127.0.0.1:3333", "--no-autoupdate", "--protocol", "http2"],
+      { stdio: ["ignore", "pipe", "pipe"], windowsHide: true }
+    );
+    await tunnel.stop();
+    vi.unstubAllEnvs();
+  });
+
+  it("keeps consuming cloudflared errors after the tunnel is ready", async () => {
+    const { child, tunnel } = setupTunnel(async () => healthResponse());
+    const starting = tunnel.start(3333);
+    announceUrl(child);
+    await expect(starting).resolves.toBe(QUICK_URL);
+
+    child.stderr.write("ERR runtime connection error\n");
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(tunnel.status().detail).toBe("ERR runtime connection error");
+    await tunnel.stop();
+  });
+
+  it("does not accept an HTTP 200 response from another service", async () => {
+    const { child, tunnel } = setupTunnel(
+      async () =>
+        new Response(JSON.stringify({ service: "cloudflare", status: "ok" }), { status: 200 }),
+      20
+    );
+    const starting = tunnel.start(3333);
+    announceUrl(child);
+
+    await expect(starting).rejects.toThrow(/timed out/i);
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(tunnel.status()).toMatchObject({ running: false, url: null });
+  });
+
+  it("does not spawn twice or resolve a stopped pending start", async () => {
+    const { child, spawnImpl, tunnel } = setupTunnel(() => new Promise<Response>(() => {}));
+    const starting = tunnel.start(3333);
+    announceUrl(child);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const concurrent = tunnel.start(3333);
+    await tunnel.stop();
+    await expect(starting).rejects.toThrow(/stopped/i);
+    await expect(concurrent).rejects.toThrow(/stopped/i);
+    expect(spawnImpl).toHaveBeenCalledTimes(1);
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+  });
+
+  it("does not resolve if cloudflared exits while the health probe is in flight", async () => {
+    let resolveFetch!: (response: Response) => void;
+    const { child, tunnel } = setupTunnel(
+      () => new Promise<Response>((resolve) => (resolveFetch = resolve))
+    );
+    const starting = tunnel.start(3333);
+    announceUrl(child);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    child.exitCode = 1;
+    child.emit("exit", 1, null);
+    resolveFetch(healthResponse());
+    await expect(starting).rejects.toThrow(/exited/i);
+    expect(tunnel.status()).toMatchObject({ running: false, url: null });
+  });
+
+  it("rejects when spawning reports an asynchronous error", async () => {
+    const { child, tunnel } = setupTunnel(async () => new Response(null));
+    const starting = tunnel.start(3333);
+    await new Promise((resolve) => setImmediate(resolve));
+    child.emit("error", new Error("spawn cloudflared ENOENT"));
+
+    await expect(starting).rejects.toThrow(/ENOENT/i);
+    expect(tunnel.status()).toMatchObject({ running: false, url: null });
+  });
+
+  it("retries a non-ready health response before resolving", async () => {
+    let calls = 0;
+    const cancelBody = vi.fn(async () => undefined);
+    const { child, tunnel } = setupTunnel(async () => {
+      calls += 1;
+      return calls === 1
+        ? ({ ok: false, status: 503, body: { cancel: cancelBody } } as unknown as Response)
+        : healthResponse();
+    });
+    const starting = tunnel.start(3333);
+    announceUrl(child);
+
+    await expect(starting).resolves.toBe(QUICK_URL);
+    expect(calls).toBe(2);
+    expect(cancelBody).toHaveBeenCalledTimes(1);
+    await tunnel.stop();
+  });
+});
+
+describe("tunnel transport protocol", () => {
+  it("keeps cloudflared's default when D2C_TUNNEL_PROTOCOL is unset or empty", () => {
+    expect(resolveTunnelProtocol({})).toBeNull();
+    expect(resolveTunnelProtocol({ D2C_TUNNEL_PROTOCOL: "  " })).toBeNull();
+    expect(tunnelProtocolArgs(null)).toEqual([]);
+  });
+
+  it("accepts the cloudflared protocol names case-insensitively", () => {
+    expect(resolveTunnelProtocol({ D2C_TUNNEL_PROTOCOL: "HTTP2" })).toBe("http2");
+    expect(resolveTunnelProtocol({ D2C_TUNNEL_PROTOCOL: " quic " })).toBe("quic");
+    expect(resolveTunnelProtocol({ D2C_TUNNEL_PROTOCOL: "auto" })).toBe("auto");
+    expect(tunnelProtocolArgs("http2")).toEqual(["--protocol", "http2"]);
+  });
+
+  it("rejects unknown protocols instead of silently falling back", () => {
+    expect(() => resolveTunnelProtocol({ D2C_TUNNEL_PROTOCOL: "tcp" })).toThrow(
+      /D2C_TUNNEL_PROTOCOL must be one of auto, quic, http2/
+    );
+  });
+});
+
+describe("normalizeNamedTunnelHostname", () => {
+  it("normalizes a valid hostname", () => {
+    expect(normalizeNamedTunnelHostname("Dev.GetRemi.xyz.")).toBe("dev.getremi.xyz");
+  });
+
+  it("rejects URLs and invalid hostnames", () => {
+    expect(() => normalizeNamedTunnelHostname("https://dev.getremi.xyz")).toThrow(/invalid/i);
+    expect(() => normalizeNamedTunnelHostname("localhost")).toThrow(/invalid/i);
+  });
+});
+
+describe("named hostname helpers", () => {
+  it("builds a stable d2c-<project>.<zone> hostname", () => {
+    expect(suggestedNamedHostname("Example.COM", "My App", "abcdef123456")).toBe("d2c-my-app.example.com");
+  });
+
+  it("falls back to the workspace id when the name is not ASCII", () => {
+    expect(hostnameSlug("回声", "abcdef123456")).toBe("d2c-ws-abcdef12");
+  });
+
+  it("parses a typed domain", () => {
+    expect(parseZoneInput("https://Example.com/")).toBe("example.com");
+    expect(parseZoneInput("not a domain")).toBeNull();
+  });
+});
+
+describe("cloudflared output parsers", () => {
+  it("reads a tunnel list table", () => {
+    const output = `
+ID                                   NAME          CREATED
+11111111-1111-1111-1111-111111111111 d2c-abc123    2026-08-30
+`;
+    expect(parseTunnelList(output)).toEqual([
+      { id: "11111111-1111-1111-1111-111111111111", name: "d2c-abc123" },
+    ]);
+  });
+
+  it("reads created-tunnel output", () => {
+    expect(
+      parseCreatedTunnel(
+        "Created tunnel d2c-abc with id 22222222-2222-2222-2222-222222222222",
+        "d2c-abc"
+      )
+    ).toEqual({ id: "22222222-2222-2222-2222-222222222222", name: "d2c-abc" });
+  });
+
+  it("does not claim a duplicate DNS route belongs to this product", async () => {
+    const account = new ProcessCloudflaredAccount("fake-cloudflared");
+    const run = vi.spyOn(account as any, "run").mockReturnValue({
+      ok: false,
+      stdout: "",
+      stderr: "Failed to add route: record already exists",
+    });
+    await expect(account.routeDns("d2c-test", "existing.example.com")).rejects.toThrow(/record already exists/);
+    expect(run).toHaveBeenCalledWith(["tunnel", "route", "dns", "d2c-test", "existing.example.com"]);
+    expect(run.mock.calls.flat(2)).not.toContain("--overwrite-dns");
+    run.mockRestore();
+  });
+});
+
+describe("tunnel preference state", () => {
+  it("asks once, then remembers a quick choice", () => {
+    stateDirs.push(isolateStateDir());
+    const unset = readTunnelState("ws1");
+    expect(needsTunnelChoice(unset)).toBe(true);
+    const saved = chooseQuickTunnel("ws1");
+    expect(saved.preference).toBe("quick");
+    expect(needsTunnelChoice(readTunnelState("ws1"))).toBe(false);
+    expect(isNamedTunnelReady(saved)).toBe(false);
+  });
+
+  it("provisions a named hostname through the account adapter and stores it outside the project", () => {
+    stateDirs.push(isolateStateDir());
+    const account: CloudflaredAccount = {
+      hasCert: () => true,
+      login: async () => undefined,
+      listTunnels: async () => [],
+      createTunnel: async (name) => ({ id: "33333333-3333-3333-3333-333333333333", name }),
+      routeDns: async () => undefined,
+    };
+    return provisionNamedTunnel({
+      workspaceId: "abcdef123456",
+      workspaceName: "Demo",
+      zone: "example.com",
+      account,
+    }).then((result) => {
+      expect(result.fallback).toBe(false);
+      expect(result.state.preference).toBe("named");
+      expect(result.state.hostname).toBe("d2c-demo.example.com");
+      expect(result.state.tunnelName).toBe("d2c-abcdef123456");
+      expect(isNamedTunnelReady(readTunnelState("abcdef123456"))).toBe(true);
+    });
+  });
+
+  it("reports named provisioning failure without replacing the existing connection", () => {
+    stateDirs.push(isolateStateDir());
+    const previous = writeTunnelState({
+      workspaceId: "ws2",
+      preference: "named",
+      provider: "cloudflare-named",
+      tunnelName: "d2c-existing",
+      tunnelId: "33333333-3333-4333-8333-333333333333",
+      hostname: "d2c-existing.example.com",
+    });
+    const account: CloudflaredAccount = {
+      hasCert: () => true,
+      login: async () => undefined,
+      listTunnels: async () => [],
+      createTunnel: async () => {
+        throw new Error("no zone");
+      },
+      routeDns: async () => undefined,
+    };
+    return provisionNamedTunnel({
+      workspaceId: "ws2",
+      workspaceName: "Demo",
+      zone: "example.com",
+      account,
+    }).then((result) => {
+      expect(result.ok).toBe(false);
+      expect(result.fallback).toBe(false);
+      expect(result.error).toBe("no zone");
+      expect(result.state).toEqual(previous);
+      expect(readTunnelState("ws2")).toEqual(previous);
+      expect(result.userMessage).toMatch(/保持不变/);
+    });
+  });
+
+  it("rejects an invalid named hostname without creating a tunnel or changing the choice", async () => {
+    stateDirs.push(isolateStateDir());
+    const previous = readTunnelState("invalid-host");
+    const createTunnel = vi.fn(async (name: string) => ({ id: "33333333-3333-4333-8333-333333333333", name }));
+    const account: CloudflaredAccount = {
+      hasCert: () => true,
+      login: async () => undefined,
+      listTunnels: async () => [],
+      createTunnel,
+      routeDns: async () => undefined,
+    };
+    const result = await provisionNamedTunnel({
+      workspaceId: "invalid-host",
+      workspaceName: "Demo",
+      zone: "example.com",
+      hostname: "https://d2c.example.com",
+      account,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.fallback).toBe(false);
+    expect(result.state).toEqual(previous);
+    expect(readTunnelState("invalid-host")).toEqual(previous);
+    expect(createTunnel).not.toHaveBeenCalled();
+  });
+});
+
+describe("named tunnel credential diagnostics", () => {
+  const tunnelId = "11111111-1111-4111-8111-111111111111";
+
+  it("requires the account certificate before checking tunnel credentials", () => {
+    const dir = makeTmpDir("named-credentials-no-cert");
+    stateDirs.push(dir);
+    process.env.TUNNEL_ORIGIN_CERT = path.join(dir, "missing-cert.pem");
+    process.env.TUNNEL_CRED_FILE = path.join(dir, `${tunnelId}.json`);
+    expect(inspectNamedTunnelCredentials(tunnelId).status).toBe("missing_account_certificate");
+  });
+
+  it("distinguishes a missing tunnel credential from a missing certificate", () => {
+    const dir = makeTmpDir("named-credentials-missing");
+    stateDirs.push(dir);
+    process.env.TUNNEL_ORIGIN_CERT = write(dir, "cert.pem", "synthetic cert");
+    process.env.TUNNEL_CRED_FILE = path.join(dir, `${tunnelId}.json`);
+    expect(inspectNamedTunnelCredentials(tunnelId).status).toBe("missing_credentials");
+    expect(cloudflaredCredentialPath(tunnelId)).toBe(path.join(dir, `${tunnelId}.json`));
+  });
+
+  it("classifies malformed and mismatched credentials without returning their contents", () => {
+    const dir = makeTmpDir("named-credentials-invalid");
+    stateDirs.push(dir);
+    process.env.TUNNEL_ORIGIN_CERT = write(dir, "cert.pem", "synthetic cert");
+    const credential = path.join(dir, `${tunnelId}.json`);
+    process.env.TUNNEL_CRED_FILE = credential;
+
+    write(dir, `${tunnelId}.json`, "not json");
+    expect(inspectNamedTunnelCredentials(tunnelId)).toMatchObject({ status: "invalid_credentials" });
+
+    write(
+      dir,
+      `${tunnelId}.json`,
+      JSON.stringify({ TunnelID: "22222222-2222-4222-8222-222222222222", TunnelSecret: "synthetic" })
+    );
+    expect(inspectNamedTunnelCredentials(tunnelId).status).toBe("mismatched_credentials");
+
+    write(dir, `${tunnelId}.json`, JSON.stringify({ TunnelID: tunnelId }));
+    expect(inspectNamedTunnelCredentials(tunnelId).status).toBe("invalid_credentials");
+
+    process.env.TUNNEL_CRED_FILE = path.join(dir, "credential-directory");
+    fs.mkdirSync(process.env.TUNNEL_CRED_FILE);
+    expect(inspectNamedTunnelCredentials(tunnelId).status).toBe("unreadable_credentials");
+  });
+
+  it("accepts a matching credential and gives bounded repair guidance", () => {
+    const dir = makeTmpDir("named-credentials-ready");
+    stateDirs.push(dir);
+    process.env.TUNNEL_ORIGIN_CERT = write(dir, "cert.pem", "synthetic cert");
+    process.env.TUNNEL_CRED_FILE = path.join(dir, `${tunnelId}.json`);
+    write(
+      dir,
+      `${tunnelId}.json`,
+      JSON.stringify({ TunnelID: tunnelId, TunnelSecret: "synthetic" })
+    );
+    expect(inspectNamedTunnelCredentials(tunnelId).status).toBe("ready");
+    expect(namedTunnelCredentialRepairMessage("missing_credentials")).toContain("cloudflared tunnel token");
+    expect(namedTunnelCredentialRepairMessage("missing_credentials")).not.toContain("synthetic");
+  });
+});

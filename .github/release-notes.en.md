@@ -1,7 +1,9 @@
-- **Conversations and files**: Refined titles, tabs and context controls; restored archive filters and in-app previews; improved narrow-window layouts.
-- **WhaleBridge**: Install through the launcher and manage providers, subscriptions, multiple keys, models and routes, with clearer authorization results.
-- **Startup and recovery**: Improved component management and progress feedback. Failed plugins can be disabled before restarting, preserving user data.
-- **Whale assistant**: Fixed memory, reminders, shared conversations and failed-turn records; added thinking animation and a smoother startup transition.
-- **Updates and compatibility**: Moved the domestic update channel to CNB, fixed installation migration, rollback and plugin compatibility, and integrated Harness `0.2.1-alpha.1`.
+# Whale Isle 0.3.6
 
-Windows 10 or later x64 only; existing installations support in-place upgrades. Project mode (the local coordinator and persistent workers) is excluded. WhaleBridge `1.1.0` is an optional launcher-installed component that runs and updates independently; it is not bundled in the desktop installer.
+- **Mac support**: An ARM64 DMG with native traffic-light buttons, collapsed sidebar controls and fullscreen support.
+- **Next-prompt suggestions**: Click or press Tab to fill the draft without sending it automatically. Enabled by default; turn it off in Settings → Interface. Generation makes an additional model call.
+- **Messages and shutdown**: Fixes for cleanup after message re-editing, and removal of the second confirmation after a failed shutdown.
+- **Interface and performance**: Improved launcher spacing, narrow-window and high-DPI layouts, with lower runtime overhead for file previews, terminals and the whale-girl assistant.
+- **Updates and recovery**: Improved differential and full downloads, installation detection and startup failure recovery.
+
+Supports Windows 10+ x64 and macOS 14+ Apple Silicon. Installers are unsigned; the Mac package is not notarized and does not include the bundled Office runtime. WhaleBridge and the ChatGPT plugin are installed and updated independently, and are not bundled with the desktop package. The Project local coordinator and persistent workers are excluded from this release.

@@ -13,7 +13,7 @@
 
 ## Invariants
 
-- 主窗口与启动器保持 `transparent: true`、`roundedCorners: false`，20px 页面圆角、round 角形和缘线不变；最大化收为 0。不得为了修动画改为系统小圆角或不透明背板。
+- Windows 主窗口与启动器保持 `transparent: true`、`roundedCorners: false`，20px 页面圆角、round 角形和缘线不变；最大化收为 0。不得为了修动画改为系统小圆角或不透明背板。macOS 壳窗保留透明页面剪影，但使用 `roundedCorners: true`，避免 Electron 移除原生红黄绿按钮所需的 AppKit titled style。
 - Windows 在显示前经 `native-window-motion` 补回 `WS_CAPTION` / `WS_THICKFRAME`，系统负责动画。原生桥只改指定 HWND 的样式并刷新非客户区，不改位置/尺寸/焦点/Z 序，不改系统偏好。
 - DWM 非客户区绘制必须关闭，透明角外不能有系统矩形描边、填充或阴影；保留 caption/thick-frame 和过渡策略。Harness/启动器缘线宽为一个物理像素，按 DPR 换算，保留 alpha 抗锯齿。交互桌面检查四角，在激活、失焦、resize、还原后均必须通过。
 - 原生桥监听 `WM_DWMNCRENDERINGCHANGED`；系统通知非客户区绘制重新开启时，在该原生操作提交后关闭该层，不能只在创建窗口时设置一次或在通知内重入原生操作。关闭中的页面也保留透明窗口底色与 20px 剪影，最大化时圆角为 0。

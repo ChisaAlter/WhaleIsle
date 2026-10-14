@@ -53,8 +53,11 @@ export async function publish({ repo, runId, request, gh, sha, root = process.cw
   ])
   const decision = releaseDecision({ run, repo, sha, version, latest, existing, artifacts: artifactList.artifacts })
   if (decision.skip) { output(decision.skip); return { skipped: decision.skip } }
-  const tagged = await request(prefix + '/commits/' + tag, { missing: true })
-  if (tagged && tagged.sha !== sha) throw new Error('Existing tag belongs to another commit')
+  const tagRef = await request(prefix + '/git/ref/tags/' + tag, { missing: true })
+  if (tagRef) {
+    const tagged = await request(prefix + '/commits/' + tag)
+    if (tagged.sha !== sha) throw new Error('Existing tag belongs to another commit')
+  }
 
   const directory = await mkdtemp(join(tmpdir(), 'whale-release-'))
   const windowsDir = join(directory, 'windows')

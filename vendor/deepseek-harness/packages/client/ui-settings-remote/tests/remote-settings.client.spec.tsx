@@ -98,6 +98,19 @@ describe('ui-settings-remote settings section', () => {
 })
 
 describe('GatewaySettingsTab', () => {
+  it('offers v2 retired credentials only as collapsed cleanup and clears them', async () => {
+    const snapshot = { ...SNAP, protocol: 'chisacode-v2', legacyRelayTokenSet: true }
+    const saveRemote = vi.fn(async () => ({ ...snapshot, legacyRelayTokenSet: false }))
+    renderGateway({ getRemote: vi.fn(async () => snapshot), saveRemote })
+    const disclosure = await screen.findByRole('button', { name: en.legacyConfiguration })
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByLabelText(en.relayToken)).toBeNull()
+    fireEvent.click(disclosure)
+    fireEvent.click(await screen.findByRole('button', { name: en.relayTokenClear }))
+    await waitFor(() => { expect(saveRemote).toHaveBeenCalledWith({ remoteRelayToken: '' }) })
+    expect(await screen.findByText(en.legacyEmpty)).toBeTruthy()
+  })
+
   it('labels the relay as Server and selects it when no mode has been saved', async () => {
     expect(zh.modeRelay).toBe('服务器')
     expect(en.modeRelay).toBe('Server')

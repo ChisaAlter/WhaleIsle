@@ -139,7 +139,7 @@ function spawnEnvWithoutInheritedNpmConfig(base) {
   return env;
 }
 
-function defaultNpmInstall(packageDir) {
+function defaultNpmInstall(packageDir, { includeOptional = false } = {}) {
   const nm = path.join(packageDir, 'node_modules');
   if (fs.existsSync(nm)) {
     fs.rmSync(nm, { recursive: true, force: true });
@@ -149,6 +149,7 @@ function defaultNpmInstall(packageDir) {
   const args = fs.existsSync(lockFile)
     ? ['ci', '--omit=dev', '--omit=peer', '--ignore-scripts', '--no-fund', '--no-audit']
     : ['install', '--omit=dev', '--omit=peer', '--ignore-scripts', '--no-fund', '--no-audit'];
+  if (includeOptional) args.push('--include=optional');
   const result = spawnSync(npmCmd, args, {
     cwd: packageDir,
     stdio: 'inherit',
@@ -236,6 +237,48 @@ function assertVendoredPluginRuntimeDeps(resources, packageName) {
   if (missing.length) {
     throw new Error(`packaged ${packageName} is missing node_modules: ${missing.join(', ')}`);
   }
+}
+
+// sharp's native packages are optional in its cross-platform manifest, but the
+// current desktop target needs them. A Windows-vendored tree can otherwise pass
+// the generic production closure check on macOS without a usable image codec.
+function missingDshImRuntimeClosure(packageDir, target = {}) {
+  const missing = missingPluginRuntimeClosure(packageDir);
+  const sharpDir = resolvePackageFrom(packageDir, 'sharp', packageDir);
+  if (!sharpDir) return missing.includes('sharp') ? missing : [...missing, 'sharp'];
+  const platform = target.platform || process.platform;
+  const arch = target.arch || process.arch;
+  const nativeNames = [`@img/sharp-${platform}-${arch}`];
+  if (platform === 'darwin') nativeNames.push(`@img/sharp-libvips-${platform}-${arch}`);
+  for (const name of nativeNames) {
+    const dir = resolvePackageFrom(sharpDir, name, packageDir);
+    if (!dir) {
+      missing.push(name);
+      continue;
+    }
+    const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+    for (const entry of missingDeclaredEntries(dir, manifest)) missing.push(`${name}/${entry}`);
+  }
+  return missing;
+}
+
+function assertDshImSharpRuntime(packageDir, nodeBinary = process.execPath, target = {}) {
+  if ((target.platform && target.platform !== process.platform)
+    || (target.arch && target.arch !== process.arch)) {
+    throw new Error('sharp runtime verification requires a native runner matching the desktop target');
+  }
+  // Run after pruning, in a fresh process: a prior require cache or undeclared
+  // WASM fallback must not make the final staged native runtime appear usable.
+  execFileSync(nodeBinary, ['-e', `
+    const sharp = require('sharp');
+    (async () => {
+      const png = await sharp({ create: { width: 1, height: 1, channels: 4,
+        background: { r: 23, g: 45, b: 67, alpha: 1 } } }).png().toBuffer();
+      const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+      if (info.width !== 1 || info.height !== 1 || info.channels !== 4
+        || !data.equals(Buffer.from([23, 45, 67, 255]))) throw new Error('sharp PNG round-trip failed');
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+  `], { cwd: packageDir, stdio: 'pipe', windowsHide: true, timeout: 30_000 });
 }
 
 async function assertDshdRemoteRuntime(resources) {
@@ -1877,13 +1920,12 @@ module.exports = async function afterPack(context) {
   installPluginRuntimeDeps(path.join(resources, 'vendor', 'dsh-usage-panel'), { skipIfComplete: true });
   assertVendoredPluginRuntimeDeps(resources, 'dsh-usage-panel');
   restoreVendoredPluginNodeModules(projectDir, resources, 'dsh-im');
-  // Reuse the tree only when a deep closure check proves it complete. The
-  // shallow `skipIfComplete` predicate must not decide this: it can leave a
-  // half-broken tree that silently drops Settings → Remote → Channels, which is
-  // why the previous revision deleted and reinstalled unconditionally.
+  // Include sharp's target-native optional packages when deciding whether the
+  // staged tree can be reused; a complete JS closure alone is insufficient.
   installPluginRuntimeDeps(path.join(resources, 'vendor', 'dsh-im'), {
     skipIfComplete: false,
-    verify: missingPluginRuntimeClosure,
+    verify: (dir) => missingDshImRuntimeClosure(dir, target),
+    run: (dir) => defaultNpmInstall(dir, { includeOptional: true }),
   });
   assertVendoredPluginRuntimeDeps(resources, 'dsh-im');
   restoreVendoredPluginNodeModules(projectDir, resources, 'dshbot');
@@ -1924,6 +1966,7 @@ module.exports = async function afterPack(context) {
   assertNoDevOnlyPackages(harnessDest);
 
   const nodeDest = copyBundledNode(resources, projectDir);
+  assertDshImSharpRuntime(path.join(resources, 'vendor', 'dsh-im'), nodeDest, target);
   const pnpmDest = copyBundledPnpm(projectDir, resources, target);
   const pin = JSON.parse(fs.readFileSync(path.join(projectDir, 'vendor', 'harness-upstream.json'), 'utf8'));
   fs.mkdirSync(path.join(resources, 'vendor'), { recursive: true });
@@ -2004,6 +2047,8 @@ module.exports.assertVendoredPluginRuntimeDeps = assertVendoredPluginRuntimeDeps
 module.exports.assertDshdRemoteRuntime = assertDshdRemoteRuntime;
 module.exports.installPluginRuntimeDeps = installPluginRuntimeDeps;
 module.exports.missingPluginRuntimeClosure = missingPluginRuntimeClosure;
+module.exports.missingDshImRuntimeClosure = missingDshImRuntimeClosure;
+module.exports.assertDshImSharpRuntime = assertDshImSharpRuntime;
 module.exports.CLOSURE_INCOMPLETE_MARKER = CLOSURE_INCOMPLETE_MARKER;
 module.exports.nodePtyPrebuildRelative = nodePtyPrebuildRelative;
 module.exports.restoreVendoredPluginNodeModules = restoreVendoredPluginNodeModules;

@@ -156,6 +156,7 @@ test('theme changes preserve the pet overlay transparency, including recreated w
     win.webContents.isDestroyed = () => false;
     win.isMinimized = () => false;
     win.isMaximized = () => false;
+    win.isFullScreen = () => false;
     windows.push(win);
     return win;
   };

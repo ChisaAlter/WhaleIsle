@@ -25,6 +25,9 @@ export type RemoteDevice = {
 
 /** Snapshot returned by `window.shell.getRemote`. */
 export type RemoteSnapshot = {
+  protocol?: string
+  /** Stored retired credentials; unrelated to v2 relay readiness. */
+  legacyRelayTokenSet?: boolean
   enabled?: boolean
   listening?: boolean
   port?: number

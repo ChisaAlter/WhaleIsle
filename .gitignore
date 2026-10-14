@@ -112,3 +112,7 @@ pelican-bike.html
 # Generated Office runtime payload + download cache (prepare:office-runtime)
 build/office-runtime/
 build/office-runtime-cache/
+
+# Build-time esbuild is installed for the host by the root lockfile.
+vendor/dsh-remote/node_modules/esbuild/
+vendor/dsh-remote/node_modules/@esbuild/

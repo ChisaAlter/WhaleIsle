@@ -315,7 +315,7 @@
    blank; without the variable the declaration is invalid and nothing shows. */
 .input p:last-child::after {
   content: var(--dsh-composer-hint);
-  color: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-label-placeholder);
 }
 
 .input[data-composer-composing] p:last-child::after {
@@ -333,12 +333,47 @@
 .placeholder {
   position: absolute;
   inset: 4px 8px auto 14px;
-  color: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-label-placeholder);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
   user-select: none;
+}
+
+.nextPrompt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  height: auto;
+  background: transparent;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.nextPromptText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nextPromptKey {
+  flex: none;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  padding: 0 4px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.input[data-composer-composing] ~ .nextPrompt {
+  visibility: hidden;
 }
 
 .inputDisabled {

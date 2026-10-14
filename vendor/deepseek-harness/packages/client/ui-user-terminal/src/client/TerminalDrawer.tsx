@@ -27,6 +27,7 @@ export function TerminalDrawer(props: TerminalDrawerProps): ReactNode {
       useStore={props.useStore}
       actions={props.actions}
       ptyCreate={props.ptyCreate}
+      ptyCanCreate={props.ptyCanCreate}
       ptyWrite={props.ptyWrite}
       ptyAck={props.ptyAck}
       ptyResize={props.ptyResize}

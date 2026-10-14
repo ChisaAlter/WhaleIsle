@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { act, screen } from '@testing-library/react'
 import { SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { installConnection } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionLiveEventEntry, SessionReference } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
@@ -16,6 +17,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { apply as applyChat, inject as injectChat } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { QuotaNoticeInjected } from '@deepseek-ai/dsh-client-ui-chat/client'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../src/chat-settings.ts'
 
 usePinnedBrowserLanguages('en')
@@ -32,10 +34,31 @@ afterEach(async () => {
 })
 
 /** One live `turn/end` failure entry for a session event window. */
-const quotaEntry = (seq: number, code: string): SessionLiveEventEntry => ({
+const quotaEntry = (seq: number, code: string, turn = 0): SessionLiveEventEntry => ({
   type: 'event', event: {
     type: 'turn/end', seq: seq as SessionSeq, time: seq,
-    data: { turn: 0, reason: { kind: 'error', error: { code, message: 'balance' } } },
+    data: { turn, reason: { kind: 'error', error: { code, message: 'balance' } } },
+  },
+})
+
+/** The durable replacement emitted after Host edit admission, not an ordinary append. */
+const editEntry = (seq: number, turn: number): SessionLiveEventEntry => ({
+  type: 'event', event: {
+    type: 'user/message', seq: seq as SessionSeq, time: seq,
+    data: createUserMessage({ content: [{ type: 'text', text: 'edited prompt' }], source: {
+      kind: 'user', edit: { messageSeq: 0, turn },
+    } }),
+    surfaceOp: { op: 'replace', startSeq: 0 as SessionSeq, endSeq: 0 as SessionSeq },
+    sourceEventSeqs: [0 as SessionSeq],
+  },
+})
+
+/** One ordinary surface message, including the prompt targeted by an edit. */
+const promptEntry = (seq: number): SessionLiveEventEntry => ({
+  type: 'event', event: {
+    type: 'user/message', seq: seq as SessionSeq, time: seq,
+    data: createUserMessage({ content: [{ type: 'text', text: 'original prompt' }], source: { kind: 'user' } }),
+    surfaceOp: 'append',
   },
 })
 
@@ -47,6 +70,7 @@ const quotaEntry = (seq: number, code: string): SessionLiveEventEntry => ({
 async function bench() {
   const runtime = await SlotTestRuntime.create()
   disposers.push(() => runtime.dispose())
+  await runtime.mount({ apply: installConnection })
   const chatSettings = stubConfigForm<ChatSettings>()
   runtime.ctx.provide('configForms', {
     developerTools: { enabled: createSnapshotStore(true) },
@@ -97,9 +121,9 @@ function noticeFace(runtime: SlotTestRuntime): QuotaNoticeInjected {
 }
 
 /** Retain one Session and subscribe the Chat source to its events. */
-async function attach(runtime: SlotTestRuntime, descriptor: Awaited<ReturnType<typeof bench>>['sourceDescriptor']) {
-  await runtime.sessions.add({ id: SID })
-  const reference = runtime.sessions.retain(SID)
+async function attach(runtime: SlotTestRuntime, descriptor: Awaited<ReturnType<typeof bench>>['sourceDescriptor'], sessionId = SID) {
+  await runtime.sessions.add({ id: sessionId })
+  const reference = runtime.sessions.retain(sessionId)
   references.push(reference)
   descriptor.resolve(reference.binding)
   return reference
@@ -136,6 +160,66 @@ describe('frame-wide quota notices', () => {
     await b.runtime.sessions.appendEvent(SID, { type: 'event', event: {
       type: 'turn/end', seq: 4 as SessionSeq, time: 4, data: { turn: 0, reason: { kind: 'completed' } },
     } })
+    expect(notice.getSnapshot()).toBe(published)
+  })
+
+  it('dismisses a replaced turn notice and retires only its old holds', async () => {
+    const b = await bench()
+    await attach(b.runtime, b.sourceDescriptor)
+    const face = noticeFace(b.runtime)
+    await b.runtime.sessions.appendEvent(SID, promptEntry(0))
+    await b.runtime.sessions.appendEvent(SID, quotaEntry(1, 'ACCOUNT_QUOTA'))
+    const oldRelease = face.keepNoticeOpen()
+    await b.runtime.sessions.appendEvent(SID, editEntry(2, 0))
+    expect(face.hooks.notice.getSnapshot()).toBeNull()
+
+    await b.runtime.sessions.appendEvent(SID, quotaEntry(3, 'QUOTA', 1))
+    const current = face.hooks.notice.getSnapshot()
+    expect(current).toMatchObject({ code: 'QUOTA' })
+    const activeRelease = face.keepNoticeOpen()
+    oldRelease()
+    expect(face.hooks.notice.getSnapshot()).toBe(current)
+    await b.runtime.sessions.appendEvent(SID, quotaEntry(4, 'ACCOUNT_QUOTA', 1))
+    expect(face.hooks.notice.getSnapshot()).toBe(current)
+    activeRelease()
+    await b.runtime.sessions.appendEvent(SID, quotaEntry(5, 'ACCOUNT_QUOTA', 1))
+    expect(face.hooks.notice.getSnapshot()).toMatchObject({ code: 'ACCOUNT_QUOTA' })
+    expect(face.hooks.notice.getSnapshot()?.seq).toBeGreaterThan(current!.seq)
+  })
+
+  it('keeps a live notice during edit cancellation, ordinary sends, unrelated edits, and history loading', async () => {
+    const b = await bench()
+    const reference = await attach(b.runtime, b.sourceDescriptor)
+    const otherId = 'session-2' as SessionId
+    await attach(b.runtime, b.sourceDescriptor, otherId)
+    const notice = noticeFace(b.runtime).hooks.notice
+    await b.runtime.sessions.appendEvent(SID, promptEntry(0))
+    await b.runtime.sessions.appendEvent(SID, quotaEntry(1, 'QUOTA'))
+    const published = notice.getSnapshot()
+    expect(published).toMatchObject({ code: 'QUOTA' })
+
+    const conversation = reference.binding.ctx.get('conversation')
+    if (conversation === undefined) throw new Error('retained Session has no Conversation service')
+    const input = conversation.input.for(reference.binding.ctx)
+    expect(input.beginEdit({
+      key: 'message-edit:0', label: 'Edit message', seed: 'original prompt',
+      submit: async () => ({ kind: 'success' }),
+    })).toBe(true)
+    expect(notice.getSnapshot()).toBe(published)
+    input.cancelEdit()
+    expect(input.state.getSnapshot().edit).toBeUndefined()
+    expect(notice.getSnapshot()).toBe(published)
+
+    await b.runtime.sessions.appendEvent(SID, promptEntry(2))
+    expect(notice.getSnapshot()).toBe(published)
+    await b.runtime.sessions.appendEvent(SID, editEntry(3, 9))
+    expect(notice.getSnapshot()).toBe(published)
+    await b.runtime.sessions.appendEvent(otherId, promptEntry(0))
+    await b.runtime.sessions.appendEvent(otherId, editEntry(1, 0))
+    expect(notice.getSnapshot()).toBe(published)
+    await b.runtime.sessions.replaceEvents(SID, [editEntry(4, 0)])
+    expect(notice.getSnapshot()).toBe(published)
+    await b.runtime.sessions.prependEvents(SID, [editEntry(3, 0)])
     expect(notice.getSnapshot()).toBe(published)
   })
 

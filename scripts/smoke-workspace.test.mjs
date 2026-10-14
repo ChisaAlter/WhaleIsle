@@ -1,12 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
 import {
   EXISTING_WORKSPACE_ENV,
+  assertDesktopHarnessHome,
   assertWorkspaceOutsideScratchRoot,
   createSmokeDirs,
   initGitWorkspace,
@@ -35,6 +36,20 @@ function makeTempRoot(t) {
   })
   return root
 }
+
+test('desktop home accepts filesystem aliases but rejects a different physical directory', (t) => {
+  const root = makeTempRoot(t)
+  const userData = path.join(root, 'user-data')
+  const home = path.join(userData, 'dsh-home')
+  mkdirSync(home, { recursive: true })
+  const alias = path.join(root, 'user-data-alias')
+  symlinkSync(userData, alias, process.platform === 'win32' ? 'junction' : 'dir')
+  const result = { desktopHome: path.join(alias, 'dsh-home'), homeLog: `[app] Harness 家目录 ${home}` }
+  assert.equal(assertDesktopHarnessHome(userData, result), home)
+  const otherHome = path.join(root, 'other-home')
+  mkdirSync(otherHome)
+  assert.throws(() => assertDesktopHarnessHome(userData, { ...result, desktopHome: otherHome }), /desktopHome mismatch/)
+})
 
 function makeRepo(root, name = 'repo') {
   const repo = path.join(root, name)

@@ -12,7 +12,7 @@ Status: implemented
 
 连接计数排除已销毁 socket 和回环地址（127/8、::1、IPv4-mapped IPv6），使用 Node `BlockList`/`isIP`；外部和未知来源仍计数。本地发起的 agent/job/在途请求仍独立检查，准入与 drain 不变。
 
-统一 `finalizeQuit` 传 `preConfirmed: true`，保留 inspect→acquire→drain→复查→cleanup→shutdown，仅跳过工作清单确认。主窗配置为退出、菜单/托盘及 before-quit 均覆盖；关闭到托盘设置不变。锁/排空失败仍不提交，保留故障恢复提示；重启和重载确认不变。此决定扩展[启动器停止](../product/2026-09-27-launcher-stop-preconfirmed.md)的预确认范围。
+统一 `finalizeQuit` 传 `preConfirmed: true`，保留 inspect→acquire→drain→复查→cleanup→shutdown。主窗配置为退出、菜单/托盘及 before-quit 均覆盖；关闭到托盘设置不变。2026-10-12 按用户再次指出的「退出未完成：重试／强制退出／取消」补全原要求：显式退出也不再弹故障恢复确认。锁/排空或关停失败记录诊断，自动执行有时限的资源及组件清理后结束进程；更新/安装失败仍保留组件清理钩子，重启和重载确认不变。此决定扩展[启动器停止](../product/2026-09-27-launcher-stop-preconfirmed.md)的预确认范围。
 
 ## Alternatives considered
 

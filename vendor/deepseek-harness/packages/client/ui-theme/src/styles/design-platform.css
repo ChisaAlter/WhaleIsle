@@ -168,8 +168,8 @@ body {
   --dsw-alias-bg-document-preview: var(--dsw-static-neutral-bluish-100);
   --dsw-alias-bg-document-selection: color-mix(in srgb, var(--dsw-static-blue-500) 40%, transparent);
   --dsw-alias-label-document-preview: var(--dsw-static-neutral-bluish-700);
-  --dsw-alias-bg-layer-1: var(--dsw-static-neutral-bluish-00);
-  --dsw-alias-bg-layer-2: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-bg-layer-1: color-mix(in srgb, var(--dsw-static-neutral-bluish-00) var(--dsw-alias-glass-opacity), transparent);
+  --dsw-alias-bg-layer-2: color-mix(in srgb, var(--dsw-static-neutral-bluish-00) var(--dsw-alias-glass-opacity), transparent);
   --dsw-alias-terminal-pane: var(--dsw-alias-bg-base);
   --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-00);
   --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.24);
@@ -270,7 +270,9 @@ body {
   --dsw-alias-glass-opacity: 80%;
   --dsw-specific-input-major: color-mix(in srgb, var(--dsw-static-neutral-bluish-00) var(--dsw-alias-glass-opacity), transparent);
   --dsw-specific-login-input: var(--dsw-static-neutral-bluish-50);
-  --dsw-menu-surface-fill: rgba(248, 249, 250, 0.58);
+  /* Preserve the shipped material at glass 80%; the upper range reaches
+     a solid fill at 100% while the lower range keeps the same tint. */
+  --dsw-menu-surface-fill: rgb(248 249 250 / max(calc(var(--dsw-alias-glass-opacity) * 0.725), calc(var(--dsw-alias-glass-opacity) * 2.1 - 110%)));
   --dsw-alias-menu-group-header-fill: rgba(248, 249, 250, 0.94);
   --dsw-specific-menu: var(--dsw-menu-surface-fill);
   --dsw-specific-selector: var(--dsw-static-neutral-bluish-60);
@@ -294,8 +296,8 @@ body[data-ds-dark-theme] {
   --dsw-alias-bg-document-preview: var(--dsw-static-neutral-bluish-950);
   --dsw-alias-bg-document-selection: color-mix(in srgb, var(--dsw-static-blue-500) 40%, transparent);
   --dsw-alias-label-document-preview: var(--dsw-static-neutral-bluish-300);
-  --dsw-alias-bg-layer-1: var(--dsw-static-neutral-bluish-875);
-  --dsw-alias-bg-layer-2: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-bg-layer-1: color-mix(in srgb, var(--dsw-static-neutral-bluish-875) var(--dsw-alias-glass-opacity), transparent);
+  --dsw-alias-bg-layer-2: color-mix(in srgb, var(--dsw-static-neutral-bluish-850) var(--dsw-alias-glass-opacity), transparent);
   --dsw-alias-terminal-pane: var(--dsw-alias-bg-base);
   --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-800);
   --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.5);
@@ -396,7 +398,7 @@ body[data-ds-dark-theme] {
   --dsw-alias-glass-opacity: 80%;
   --dsw-specific-input-major: color-mix(in srgb, var(--dsw-static-neutral-bluish-850) var(--dsw-alias-glass-opacity), transparent);
   --dsw-specific-login-input: var(--dsw-static-neutral-bluish-900);
-  --dsw-menu-surface-fill: rgba(67, 69, 74, 0.45);
+  --dsw-menu-surface-fill: rgb(67 69 74 / max(calc(var(--dsw-alias-glass-opacity) * 0.5625), calc(var(--dsw-alias-glass-opacity) * 2.75 - 175%)));
   --dsw-alias-menu-group-header-fill: rgba(48, 49, 54, 0.94);
   --dsw-specific-menu: var(--dsw-menu-surface-fill);
   --dsw-specific-selector: var(--dsw-static-neutral-bluish-800);
@@ -415,11 +417,11 @@ body[data-ds-dark-theme] {
 }
 
 /* Overlays without MenuSurface's opaque backing cannot blur page content over
- * native vibrancy reliably, so their fill stays nearly opaque on macOS. */
+ * native vibrancy reliably, so macOS uses a denser fill at the default glass value. */
 html[data-platform='darwin'] body {
-  --dsw-specific-menu: rgba(248, 249, 250, 0.94);
+  --dsw-specific-menu: rgb(248 249 250 / min(calc(var(--dsw-alias-glass-opacity) * 1.175), calc(var(--dsw-alias-glass-opacity) * 0.3 + 70%)));
 }
 
 html[data-platform='darwin'] body[data-ds-dark-theme] {
-  --dsw-specific-menu: rgba(48, 49, 54, 0.94);
+  --dsw-specific-menu: rgb(48 49 54 / min(calc(var(--dsw-alias-glass-opacity) * 1.175), calc(var(--dsw-alias-glass-opacity) * 0.3 + 70%)));
 }

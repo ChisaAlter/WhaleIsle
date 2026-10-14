@@ -1,0 +1,50 @@
+{
+  "name": "dsh-with-chatgpt-bridge",
+  "version": "0.1.0",
+  "description": "Read-only ChatGPT workspace bridge for DSH planning and review.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "d2c": "./bin/d2c.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "packageManager": "pnpm@11.24.0",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "commander": "14.0.3",
+    "express": "5.2.1",
+    "ignore": "7.0.6",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/node": "22.20.1",
+    "tsx": "4.23.12",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "LICENSE",
+    "NOTICE.md",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./dist/bridge/server.js",
+    "./workspace": "./dist/workspace/manager.js",
+    "./records": "./dist/execution/records.js",
+    "./output": "./dist/execution/output.js",
+    "./session": "./dist/session/state.js",
+    "./paths": "./dist/config/paths.js"
+  }
+}

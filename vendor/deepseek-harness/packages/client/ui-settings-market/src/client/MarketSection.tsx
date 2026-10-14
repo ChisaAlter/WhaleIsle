@@ -212,6 +212,7 @@ export function MarketSection({
   const [tab, setTab] = useState<Tab>('discover')
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
+  const [categoriesExpanded, setCategoriesExpanded] = useState(false)
   const [visibleCount, setVisibleCount] = useState(DISCOVER_PAGE_SIZE)
   const [busy, setBusy] = useState<BusyOp>(null)
   const [progress, setProgress] = useState<string[]>([])
@@ -566,7 +567,7 @@ export function MarketSection({
                 </div>
                 {state.catalog.categories.length > 1 ? (
                   <div className={css.categories} role="radiogroup" aria-label={t('categories')}>
-                    {state.catalog.categories.map(row => (
+                    {state.catalog.categories.filter((row, index) => categoriesExpanded || index < 5 || row.id === category).map(row => (
                       <Pill
                         key={row.id}
                         role="radio"
@@ -578,6 +579,12 @@ export function MarketSection({
                         <span className={css.categoryCount}>{row.count}</span>
                       </Pill>
                     ))}
+                    {state.catalog.categories.length > 5 ? (
+                      <Button size="sm" variant="ghost" aria-expanded={categoriesExpanded}
+                        onClick={() => { setCategoriesExpanded(value => !value) }}>
+                        {t(categoriesExpanded ? 'collapseCategories' : 'expandCategories')}
+                      </Button>
+                    ) : null}
                   </div>
                 ) : null}
                 {state.catalog.warning ? (

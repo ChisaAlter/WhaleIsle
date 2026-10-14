@@ -62,7 +62,7 @@ export const zh = {
   'action.push': 'Push',
   'action.pull': 'Pull',
   'action.publish': 'Publish repository',
-  'action.init': 'Initialize Git',
+  'action.init': '初始化 Git',
   'action.init.busy': 'Initializing...',
   'settings.titlebarGit.title': '标题栏 Git 操作',
   'settings.titlebarGit.description': '显示初始化、切换分支、提交及菜单。关闭后仍可通过进行中的进度与对话框完成操作。',

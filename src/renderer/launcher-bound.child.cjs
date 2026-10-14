@@ -3,7 +3,7 @@
 // fixture shell:* IPC handlers, and drive the page through executeJavaScript.
 // A deferred-cancel A->B and a route-save refusal->retry are exercised against
 // the real bind() and the real bridge — not pure functions.
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -14,6 +14,13 @@ app.setPath('userData', fixtureUserData);
 
 const LAUNCHER_HTML = path.join(__dirname, 'launcher.html');
 const PRELOAD = path.join(__dirname, '..', 'preload', 'index.js');
+const visualOnly = process.env.QA_LAUNCHER_VISUAL_ONLY === '1';
+const visualSourceHome = path.join(fixtureUserData, '官方 DeepSeek Harness 的会话与技能备份',
+  '包含空格的目录', '2026-10-12_团队工作目录与迁移验证', '来源目录_需保留完整位置并可读取说明');
+if (visualOnly) fs.mkdirSync(visualSourceHome, { recursive: true });
+if (visualOnly) ipcMain.handle('shell:window-state', event => ({
+  maximized: BrowserWindow.fromWebContents(event.sender)?.isMaximized() || false,
+}));
 
 // IPC fixtures the test controls via process.env / argv switches.
 const results = { calls: [] };
@@ -49,9 +56,19 @@ ipcMain.handle('shell:run-import', (_e, opts) => {
   results.calls.push({ op: 'run-import', opts });
   return new Promise((resolve) => { importResolve = resolve; });
 });
-ipcMain.handle('shell:scan-import', () => ({ ok: true, sessions: [], skills: [], plugins: [], mcp: [], settings: [], presets: [] }));
+ipcMain.handle('shell:scan-import', () => ({
+  ok: true, skills: [], plugins: [], mcp: [], settings: [], presets: [],
+  sessions: visualOnly ? [{
+    rel: 'launcher-layout/session.jsonl', id: 'session-long-title',
+    title: '迁移验收：包含中文、空格和较长来源路径的会话，确认保留原标题并呈现完整的导入影响说明',
+    cwd: visualSourceHome, createdAt: '2026-10-12T06:00:00.000Z',
+  }] : [],
+  ...(visualOnly ? { sourceHome: visualSourceHome, homeDir: fixtureUserData, sourceHasData: true, destEmpty: false, hasAttachments: true } : {}),
+}));
 ipcMain.handle('shell:launcher-status', () => ({
   ok: true,
+  ...(visualOnly ? { version: '0.3.6', desktop: { state: 'stopped' },
+    installed: { version: '0.3.6', registeredInstall: true, installPath: visualSourceHome } } : {}),
   ...(process.env.QA_STARTUP_FLOW === '1' ? {
     version: '0.3.3', desktop: { state: startupState },
     lastStart: { ok: startupState === 'ready', error: startupError },
@@ -68,15 +85,15 @@ ipcMain.handle('shell:launcher-status', () => ({
 ipcMain.handle('shell:launcher-check-update', () => process.env.QA_COMPONENTS_HOME === '1' ? { status: 'available', latest: '0.3.3', currentVersion: '0.3.2', hint: '发现正式版 0.3.3。' } : { status: 'none' });
 ipcMain.handle('shell:check-update', () => process.env.QA_COMPONENTS_HOME === '1' ? { status: 'available', latest: '0.3.3', currentVersion: '0.3.2', hint: '发现正式版 0.3.3。' } : { status: 'none' });
 const componentFeedback = process.env.QA_COMPONENT_FEEDBACK === '1';
-let componentInstalled = componentFeedback;
-let componentRunning = false;
-let componentLatest = '1.0.3';
-let componentVersion = '1.0.3';
+let componentInstalled = componentFeedback || visualOnly;
+let componentRunning = visualOnly;
+let componentLatest = visualOnly ? '1.1.1' : '1.0.3';
+let componentVersion = visualOnly ? '1.1.1' : '1.0.3';
 let componentMessage = '';
 let componentStartResolve, componentStopResolve, componentInstallResolve, componentUpdateResolve;
 let componentListResolve, componentUninstallInfoResolve;
 const componentRow = () => ({ id: 'whalebridge', name: '鲸桥', description: '连接供应商和订阅账号，在鲸屿使用模型。', version: componentLatest, installedVersion: componentInstalled ? componentVersion : '', previousVersion: '1.0.2', updateAvailable: componentInstalled && componentVersion !== componentLatest, message: componentMessage, state: componentInstalled ? (componentRunning ? 'running' : 'stopped') : 'available', configurable: componentInstalled, source: 'official', kind: 'service' });
-const componentPayload = () => ({ components: process.env.QA_COMPONENTS_HOME === '1' || componentFeedback ? [componentRow()] : [] });
+const componentPayload = () => ({ components: process.env.QA_COMPONENTS_HOME === '1' || componentFeedback || visualOnly ? [componentRow()] : [] });
 ipcMain.handle('shell:components-list', (_event, options) => {
   results.calls.push({ op: 'component-list', refresh: options?.refresh === true });
   if (componentFeedback && options?.refresh) return new Promise(resolve => { componentListResolve = () => resolve(componentPayload()); });
@@ -112,11 +129,16 @@ ipcMain.handle('shell:components-uninstall', (_event, argument) => {
   componentInstalled = false; componentRunning = false;
   return { ok: true };
 });
-ipcMain.handle('shell:list-releases', () => ({ status: 'ok', releases: [], installed: { version: '0' } }));
+ipcMain.handle('shell:list-releases', () => ({ status: 'ok', releases: [],
+  installed: visualOnly ? { version: '0.3.6', registeredInstall: true, installPath: visualSourceHome } : { version: '0' },
+  ...(visualOnly ? { current: '0.3.6' } : {}),
+}));
 ipcMain.handle('shell:list-marketplace', () => ({ ok: true, items: [] }));
 ipcMain.handle('shell:list-installed-plugins', () => ({ plugins: [], bundles: [] }));
 ipcMain.handle('shell:list-wallpapers', () => ({ ok: true, items: [] }));
-ipcMain.handle('shell:get-config', () => ({ theme: 'midnight', locale: 'zh' }));
+ipcMain.handle('shell:get-config', () => ({ theme: 'midnight', locale: 'zh',
+  ...(visualOnly ? { themeTokens: { scheme: 'dark' } } : {}),
+}));
 ipcMain.handle('shell:get-launcher-config', () => ({ downloadRoute: 'stable' }));
 ipcMain.handle('shell:list-routes', () => ({ ok: true, routes: [{ id: 'stable', label: 'Stable' }, { id: 'beta', label: 'Beta' }] }));
 
@@ -156,6 +178,182 @@ app.whenReady().then(async () => {
       routePicker: Boolean(document.getElementById('route-picker')),
       readyState: document.readyState,
     })`);
+
+    if (visualOnly) {
+      if (!process.env.QA_HOME_ARTIFACTS) throw new Error('visual capture requires QA_HOME_ARTIFACTS');
+      const artifactDir = process.env.QA_HOME_ARTIFACTS;
+      const captionOnly = process.env.QA_LAUNCHER_VISUAL_SCOPE === 'caption';
+      fs.mkdirSync(artifactDir, { recursive: true });
+      const settle = () => win.webContents.executeJavaScript(`(async () => {
+        await document.fonts.ready;
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        await Promise.allSettled(document.getAnimations().filter(animation =>
+          animation.effect.getComputedTiming().iterations !== Infinity).map(animation => animation.finished));
+        return new Promise(resolve => requestAnimationFrame(() => resolve(true)));
+      })()`);
+      const waitForDom = expression => win.webContents.executeJavaScript(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 5000;
+        const poll = () => {
+          if (${expression}) return resolve(true);
+          if (Date.now() >= deadline) return reject(new Error('visual DOM did not settle: ' + ${JSON.stringify(expression)}));
+          setTimeout(poll, 20);
+        };
+        poll();
+      })`);
+      const captures = [];
+      const capture = async (name, selectors) => {
+        // A hidden native window can retain a partly repainted composited frame
+        // after theme / tab changes. Resize back to the requested geometry to
+        // invalidate the full surface without showing or focusing the fixture.
+        const [width, height] = win.getContentSize();
+        win.setContentSize(width + 1, height);
+        await settle();
+        win.setContentSize(width, height);
+        await settle();
+        win.webContents.invalidate();
+        // capturePage reads the composited frame; allow the existing 100ms
+        // color transition to reach that frame after its DOM animation ends.
+        await new Promise(resolve => setTimeout(resolve, 180));
+        if (captionOnly) {
+          const center = await win.webContents.executeJavaScript(`(() => {
+            const close = document.querySelector('.window-controls button[data-act="close"]');
+            if (!close) throw new Error('launcher close control is missing');
+            const r = close.getBoundingClientRect();
+            return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+          })()`);
+          win.webContents.sendInputEvent({ type: 'mouseMove', ...center });
+          await waitForDom(`(() => {
+            const close = document.querySelector('.window-controls button[data-act="close"]');
+            const hit = document.elementFromPoint(${center.x}, ${center.y});
+            return close?.matches(':hover') && (hit === close || close.contains(hit));
+          })()`);
+          await settle();
+        }
+        const layout = await win.webContents.executeJavaScript(`(() => {
+          const boxes = Object.fromEntries(${JSON.stringify(selectors)}.map(selector => {
+            const el = document.querySelector(selector);
+            const rect = el?.getBoundingClientRect();
+            const style = el && getComputedStyle(el);
+            return [selector, !el ? null : { visible: el.checkVisibility(), text: el.textContent.trim(),
+              disabled: el.disabled, color: style.color, background: style.backgroundColor, opacity: style.opacity,
+              paddingTop: Number.parseFloat(style.paddingTop),
+              scrollWidth: el.scrollWidth, clientWidth: el.clientWidth,
+              x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+              clippedByViewport: rect.left < 0 || rect.top < 0 || rect.right > innerWidth || rect.bottom > innerHeight }];
+          }));
+          return { width: innerWidth, height: innerHeight, dpr: devicePixelRatio,
+            theme: document.documentElement.hasAttribute('data-ds-dark-theme') ? 'dark' : 'light',
+            documentWidth: document.documentElement.scrollWidth,
+            mainWidth: document.querySelector('main').clientWidth,
+            mainScrollWidth: document.querySelector('main').scrollWidth, boxes,
+            ...( ${captionOnly} ? (() => {
+              const close = document.querySelector('.window-controls button[data-act="close"]');
+              const r = close.getBoundingClientRect();
+              const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+              return { closeHovered: close.matches(':hover'), closeCenterHit: hit === close || close.contains(hit),
+                closeTopGap: r.top, closeRightGap: innerWidth - r.right };
+            })() : {}) };
+        })()`);
+        const screenshot = await win.webContents.capturePage(undefined, { stayHidden: true });
+        const file = `${name}.png`;
+        fs.writeFileSync(path.join(artifactDir, file), screenshot.toPNG());
+        captures.push({ file, nativeBounds: win.getBounds(), nativeContentBounds: win.getContentBounds(),
+          pixels: screenshot.getSize(), layout });
+      };
+      await waitForDom('document.querySelector("#home-version").textContent === "v0.3.6" && !!document.querySelector("#home-components [data-comp-action=open]")');
+      let darwinCssGeometry;
+      if (captionOnly) {
+        const selectors = ['.window-controls', '.window-controls button[data-act="close"]',
+          '[data-goto="versions"]', '.caption', '.rail-head', '.home-heading', '.stage'];
+        for (const theme of ['dark', 'light']) {
+          win.webContents.send('shell:theme', { scheme: theme });
+          await waitForDom(`document.documentElement.hasAttribute('data-ds-dark-theme') === ${theme === 'dark'}`);
+          for (const [label, width, height] of [['normal', 1060, 660], ['narrow', 860, 560]]) {
+            win.setContentSize(width, height);
+            await capture(`caption-${theme}-${label}-close-hover`, selectors);
+            const item = captures.at(-1);
+            if (win.isVisible() || win.isFocused()) throw new Error('caption fixture must remain hidden and unfocused');
+            for (const selector of selectors) {
+              const box = item.layout.boxes[selector];
+              if (!box?.visible || box.clippedByViewport) throw new Error(`caption control clipped or missing: ${selector}`);
+            }
+            const caption = item.layout.boxes['.caption'];
+            const captionBottom = caption.y + caption.height;
+            if (caption.height !== 48 || !item.layout.closeHovered || !item.layout.closeCenterHit
+              || item.layout.closeTopGap < 8 || item.layout.closeRightGap < 8) {
+              throw new Error(`caption hover or window spacing failed: ${item.file}`);
+            }
+            for (const selector of ['.rail-head', '.home-heading', '[data-goto="versions"]']) {
+              if (item.layout.boxes[selector].y < captionBottom + 8) throw new Error(`caption overlaps content: ${selector}`);
+            }
+            if (item.layout.boxes['.stage'].paddingTop !== 56) throw new Error('Windows stage must clear the caption');
+          }
+        }
+        darwinCssGeometry = await win.webContents.executeJavaScript(`(() => {
+          const previous = document.documentElement.dataset.platform;
+          document.documentElement.dataset.platform = 'darwin';
+          try {
+            return { evidence: 'Windows renderer CSS with simulated platform; not a native Mac screenshot',
+              caption: document.querySelector('.caption').getBoundingClientRect().height,
+              railPaddingTop: Number.parseFloat(getComputedStyle(document.querySelector('.rail')).paddingTop),
+              stagePaddingTop: Number.parseFloat(getComputedStyle(document.querySelector('.stage')).paddingTop) };
+          } finally { document.documentElement.dataset.platform = previous; }
+        })()`);
+        if (darwinCssGeometry.caption !== 32 || darwinCssGeometry.railPaddingTop !== 40 || darwinCssGeometry.stagePaddingTop !== 40) {
+          throw new Error('Windows caption spacing changed Darwin CSS geometry');
+        }
+      } else {
+      if (process.env.QA_LAUNCHER_VISUAL_SCOPE !== 'import') {
+        const homeSelectors = ['.caption', '.rail-head', '.rail nav', '.rail-foot', '#btn-start', '#btn-check-update', '#home-components [data-comp-action="open"]'];
+        for (const theme of ['dark', 'light']) {
+          win.webContents.send('shell:theme', { scheme: theme });
+          await waitForDom(`document.documentElement.hasAttribute('data-ds-dark-theme') === ${theme === 'dark'}`);
+          win.setContentSize(1280, 800);
+          await capture(`home-${theme}-normal`, homeSelectors);
+          win.setContentSize(860, 560);
+          await capture(`home-${theme}-narrow`, homeSelectors);
+        }
+        await win.webContents.executeJavaScript('document.querySelector("#rail-route-btn").click()');
+        await capture('home-light-route-narrow', ['#rail-route-btn', '#rail-route-pop']);
+        await win.webContents.executeJavaScript('document.querySelector("#rail-route-btn").click(); document.querySelector("[data-tab=versions]").click()');
+        await capture('versions-light-long-path-narrow', ['#ver-lead', '#installed-uninstall-note', '#btn-refresh-releases']);
+      }
+      win.webContents.send('shell:theme', { scheme: 'light' });
+      await waitForDom("!document.documentElement.hasAttribute('data-ds-dark-theme')");
+      await win.webContents.executeJavaScript('document.querySelector("[data-tab=import]").click()');
+      await waitForDom('document.querySelector("#import-source").textContent.includes("来源目录")');
+      await win.webContents.executeJavaScript('document.querySelector("#import-overwrite").click(); document.querySelector("#import-attachments").checked || document.querySelector("#import-attachments").click()');
+      win.setContentSize(1280, 800);
+      const importSelectors = ['#import-source', '.import-board-body', '.import-cluster-head', '.import-cluster .row-title', '#import-scope', '#btn-import'];
+      await capture('import-light-long-path-normal', importSelectors);
+      win.setContentSize(860, 560);
+      await capture('import-light-long-path-narrow', importSelectors);
+      await win.webContents.executeJavaScript('document.querySelector("#btn-import").scrollIntoView({ block: "nearest" })');
+      await capture('import-light-actions-narrow', ['#import-scope', '#import-selection-line', '#btn-import']);
+      for (const item of captures.filter(item => item.file.startsWith('import-'))) {
+        if (item.layout.documentWidth > item.layout.width || item.layout.mainScrollWidth > item.layout.mainWidth) {
+          throw new Error(`import surface overflow: ${item.file}`);
+        }
+        const body = item.layout.boxes['.import-board-body'];
+        if (body && body.scrollWidth > body.clientWidth) throw new Error(`import list horizontal overflow: ${item.file}`);
+      }
+      if (captures.find(item => item.file === 'import-light-actions-narrow.png').layout.boxes['#btn-import'].clippedByViewport) {
+        throw new Error('import primary action not reachable in narrow window');
+      }
+      }
+      const crypto = require('crypto');
+      const sourceHashes = Object.fromEntries(['launcher.html', 'launcher.css', 'launcher.js', 'theme.js'].map(name =>
+        [name, crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname, name))).digest('hex')]));
+      sourceHashes.preload = crypto.createHash('sha256').update(fs.readFileSync(PRELOAD)).digest('hex');
+      const display = screen.getDisplayMatching(win.getBounds());
+      const report = { entry: LAUNCHER_HTML, preload: PRELOAD, scan, fixtureUserData,
+        sourceHashes, display: { scaleFactor: display.scaleFactor, bounds: display.bounds, workArea: display.workArea },
+        activated: false, captures, calls: results.calls, ...(darwinCssGeometry ? { darwinCssGeometry } : {}) };
+      fs.writeFileSync(path.join(artifactDir, 'capture.json'), JSON.stringify(report, null, 2));
+      process.stdout.write('BOUND_RESULT:' + JSON.stringify(report));
+      app.exit(0);
+      return;
+    }
 
     if (componentFeedback) {
       const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -462,6 +660,22 @@ app.whenReady().then(async () => {
       return;
     }
 
+    const keyboard = await win.webContents.executeJavaScript(`(() => {
+      const chip = document.getElementById('rail-route-btn');
+      const pop = document.getElementById('rail-route-pop');
+      chip.click();
+      const read = () => document.activeElement.dataset.routeOpt;
+      const key = value => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true }));
+      const opened = read(); key('ArrowDown'); const down = read();
+      key('End'); const end = read(); key('Home'); const home = read();
+      key('ArrowUp'); const up = read(); key('Escape');
+      const escaped = document.activeElement === chip && pop.hidden;
+      document.getElementById('import-overwrite').click();
+      document.getElementById('import-attachments').click();
+      const scope = document.getElementById('import-scope').textContent;
+      return { opened, down, end, home, up, escaped, scope };
+    })()`);
+
     // ---- Delayed cancel A -> B ----
     // Start import A (runs forever until we resolve). While A is in flight,
     // click cancel — the handler captures A's opId and awaits. Then start B
@@ -540,7 +754,7 @@ app.whenReady().then(async () => {
       routeRetry = { error: String(error) };
     }
 
-    const report = { scan, delayedCancel, routeRetry, calls: results.calls.map((c) => ({ op: c.op, hasOp: Boolean(c.opts && c.opts.opId) })) };
+    const report = { scan, keyboard, delayedCancel, routeRetry, calls: results.calls.map((c) => ({ op: c.op, hasOp: Boolean(c.opts && c.opts.opId) })) };
     process.stdout.write('BOUND_RESULT:' + JSON.stringify(report));
     app.exit(0);
   } catch (error) {

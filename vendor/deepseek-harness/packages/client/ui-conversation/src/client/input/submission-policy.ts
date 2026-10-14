@@ -21,10 +21,12 @@ import {
   DEFAULT_COMPOSER_RESIZE,
   DEFAULT_COMPOSER_RESIZE_HEIGHT, DEFAULT_COMPOSER_RESIZE_WIDTH,
   DEFAULT_CUSTOM_INSTRUCTIONS,
+  DEFAULT_NEXT_PROMPT,
   DEFAULT_OFFICIAL_PEAK_VALLEY, DEFAULT_SESSION_COST, DEFAULT_SESSION_COST_PRICES,
   DEFAULT_STATS_LINE, DEFAULT_TYPING_FX, DEFAULT_TYPING_FX_PRESETS, DEFAULT_TYPING_FX_STYLE, DEFAULT_VIEW_TABS,
   normalizeComposerBeamPresets, normalizeComposerBeamStyle,
   normalizeTypingFxPresets, normalizeTypingFxStyle,
+  NEXT_PROMPT_FIELD,
   OFFICIAL_PEAK_VALLEY_FIELD, SESSION_COST_FIELD, SESSION_COST_PRICES_FIELD,
   STATS_LINE_FIELD, TYPING_FX_FIELD, TYPING_FX_PRESETS_FIELD, TYPING_FX_STYLE_FIELD, VIEW_TABS_FIELD,
 } from '../../submission-settings.ts'
@@ -37,6 +39,7 @@ export {
   DEFAULT_BUSY_ENTER_BEHAVIOR, DEFAULT_COMPOSER_BEAM, DEFAULT_COMPOSER_BEAM_PRESETS, DEFAULT_COMPOSER_BEAM_STYLE,
   DEFAULT_COMPOSER_RESIZE,
   DEFAULT_COMPOSER_RESIZE_HEIGHT, DEFAULT_COMPOSER_RESIZE_WIDTH,
+  DEFAULT_NEXT_PROMPT,
   DEFAULT_OFFICIAL_PEAK_VALLEY, DEFAULT_SESSION_COST, DEFAULT_SESSION_COST_PRICES,
   DEFAULT_STATS_LINE, DEFAULT_TYPING_FX, DEFAULT_TYPING_FX_PRESETS, DEFAULT_TYPING_FX_STYLE, DEFAULT_VIEW_TABS,
 } from '../../submission-settings.ts'
@@ -91,6 +94,7 @@ export function resolveSubmitMode(
 }
 
 type DockPreferenceField = typeof STATS_LINE_FIELD | typeof SESSION_COST_FIELD | typeof OFFICIAL_PEAK_VALLEY_FIELD
+  | typeof NEXT_PROMPT_FIELD
 interface DockPreferenceWrite {
   readonly value: boolean
   accepted: boolean
@@ -126,6 +130,8 @@ export class ComposerSubmissionPolicy {
   readonly sessionCostPrices: SnapshotStore<SessionCostPrices> = createSnapshotStore(DEFAULT_SESSION_COST_PRICES)
   /** Reactive view-tablist source for the Settings row and ConversationSessionHeader. */
   readonly viewTabs: SnapshotStore<boolean> = createSnapshotStore(DEFAULT_VIEW_TABS)
+  /** Reactive next-prompt preference shared by the Settings row and InputBar. */
+  readonly nextPrompt: SnapshotStore<boolean> = createSnapshotStore(DEFAULT_NEXT_PROMPT)
   /** Reactive custom-instructions source for the General Settings row. */
   readonly customInstructions: SnapshotStore<string> = createSnapshotStore(DEFAULT_CUSTOM_INSTRUCTIONS)
   /** Reactive typing-effect source for the Appearance row and every InputBar. */
@@ -404,6 +410,15 @@ export class ComposerSubmissionPolicy {
   }
 
   /**
+   * Change whether the composer suggests the next user prompt; the live value
+   * publishes before the durable write starts.
+   * @param value - true enables suggestions; false stops requesting and displaying them.
+   */
+  setNextPrompt(value: boolean): void {
+    this.setDockPreference(NEXT_PROMPT_FIELD, value)
+  }
+
+  /**
    * Adopt the scope's accepted durable behavior without writing it back.
    * @param host - the constructor-narrowed scope driving this adoption.
    */
@@ -432,6 +447,7 @@ export class ComposerSubmissionPolicy {
     this.adoptDockPreference(STATS_LINE_FIELD, section.statsLine !== false)
     this.adoptDockPreference(OFFICIAL_PEAK_VALLEY_FIELD, section.officialPeakValley === true)
     this.adoptDockPreference(SESSION_COST_FIELD, section.sessionCost === true)
+    this.adoptDockPreference(NEXT_PROMPT_FIELD, section.nextPrompt !== false)
     // Sanitize the loosely schema'd record at the durable boundary: only a
     // plain string-keyed object adopts; anything else reads as "no custom
     // prices" instead of leaking into price lookups.

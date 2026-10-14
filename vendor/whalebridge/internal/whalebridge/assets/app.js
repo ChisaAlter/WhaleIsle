@@ -9,6 +9,7 @@ let state, tab = 'overview', period = 'today', editor, renderEpoch = 0;
 let modelQuery = '', modelFilter = 'all', loginFlow, loginTimer;
 let providerQuery='',providerFilter='all',groupQuery='',selectedGroups=new Set();
 let visibilityWrites = Promise.resolve();
+let visibilityError;
 const visibilityPending = new Map();
 const foldedChannels = new Set();
 let messageTimer;
@@ -51,7 +52,7 @@ function startAdapterBusy(button,phase='downloading'){
  const controls=[...$('#edit-form').querySelectorAll('#fields button,#fields input,#fields select,#fields textarea,#save')].map(control=>[control,control.disabled]);
  controls.forEach(([control])=>control.disabled=true);
  current.adapterPending=true;host.hidden=true;
- const update=phase=>{if(current===editor&&!current.closed){busy.update({downloading:'下载中',installing:'安装中',updating:'更新中'}[phase]);}};
+ const update=phase=>{if(current===editor&&!current.closed){busy.update({downloading:'下载中',installing:'安装中',updating:'更新中',migrating:'迁移中',adopting:'接入中'}[phase]);}};
  update(phase);
  return {
   update,
@@ -97,18 +98,18 @@ const short = n => new Intl.NumberFormat(state?.chineseUnits===false?'en-US':'zh
 function stat(label,value,note,glyph){return `<div class="stat"><div class="stat-label">${label}${icon(glyph)}</div><strong>${value}</strong><p class="caption">${note}</p></div>`;}
 function overview() {
  const total = state.providers.length, active = state.providers.filter(p=>!p.off).length, models = state.models?.length || 0;
- return `${state.syncError?`<div class="sync-error" role="alert"><strong>模型未能同步到鲸屿</strong><p>${escape(state.syncError)}</p>${button('重新同步模型','sync')}</div>`:''}<div class="hero"><div class="hero-copy"><span class="tag subtle">鲸屿官方组件</span><h1>你的模型，接入鲸屿。</h1><p>鲸桥是鲸屿的模型连接组件。集中管理 API 供应商和订阅账号，让不同来源的模型都能在桌面端使用。</p><div class="actions-bar">${button(`${icon('plus')}添加供应商`,'add-provider','','primary')}${button('接入订阅账号','subscription')}</div></div><div class="connection-map" aria-label="供应商和订阅账号通过鲸桥接入鲸屿桌面端"><div class="flow-node">${icon('account')}<div class="text"><h3>你的供应商与订阅账号</h3><p class="caption">API 密钥 · 订阅登录</p></div></div><div class="flow-link"></div><div class="flow-node bridge">${icon('routing')}<div class="text"><h3>鲸桥 · 统一模型入口</h3><p class="caption">模型管理 · 请求路由 · 用量记录</p></div></div><div class="flow-link"></div><div class="flow-node"><img src="/whale-head.png" alt="鲸屿"><div class="text"><h3>鲸屿桌面端</h3><p class="caption">选择「鲸桥」渠道开始对话</p></div><span class="tag business">已接入</span></div></div></div>
+ return `<div class="overview-page">${state.syncError?`<div class="sync-error" role="alert"><strong>模型未能同步到鲸屿</strong><p>${escape(state.syncError)}</p>${button('重新同步模型','sync')}</div>`:''}<div class="hero"><div class="hero-copy"><span class="tag subtle">鲸屿官方组件</span><h1>你的模型，接入鲸屿。</h1><p class="overview-description">鲸桥是鲸屿的模型连接组件。集中管理 API 供应商和订阅账号，让不同来源的模型都能在桌面端使用。</p><p class="overview-summary">集中接入 API 密钥与订阅账号，在鲸屿中使用。</p><div class="actions-bar">${button(`${icon('plus')}添加供应商`,'add-provider','','primary')}${button('接入订阅账号','subscription')}</div></div><div class="connection-map" aria-label="供应商和订阅账号通过鲸桥接入鲸屿桌面端"><div class="flow-node">${icon('account')}<div class="text"><h3>你的供应商与订阅账号</h3><p class="caption">API 密钥 · 订阅登录</p></div></div><div class="flow-link"></div><div class="flow-node bridge">${icon('routing')}<div class="text"><h3>鲸桥 · 统一模型入口</h3><p class="caption">模型管理 · 请求路由 · 用量记录</p></div></div><div class="flow-link"></div><div class="flow-node"><img src="/whale-head.png" alt="鲸屿"><div class="text"><h3>鲸屿桌面端</h3><p class="caption">选择「鲸桥」渠道开始对话</p></div><span class="tag business">已接入</span></div></div></div>
  <div class="stats">${stat('已配置供应商',total,`${active} 个已启用`,'providers')}${stat('可用模型',models,state.syncError?'等待同步到鲸屿桌面端':'已同步到鲸屿桌面端','models')}${stat('路由组',state.groups?.length || 0,'多个模型，共用一个入口','routing')}</div>
- <div class="section-head"><div><h2>从接入到对话，只需三步</h2><p>已有配置可以随时调整，保存后自动同步。</p></div>${button('查看说明','go-help','','text-button')}</div>
- <div class="steps"><article class="step"><div class="step-head"><span class="step-number">01 / 连接来源</span>${total?icon('check'):icon('providers')}</div><h3>添加供应商或登录订阅</h3><p>填写供应商的 API 密钥，或通过支持的供应商登录流程接入订阅账号。</p>${button(`${total?'管理供应商':'开始添加'} ${icon('arrow')}`,total?'go-providers':'add-provider')}</article><article class="step"><div class="step-head"><span class="step-number">02 / 选择模型</span>${models?icon('check'):icon('models')}</div><h3>整理桌面端的模型列表</h3><p>保留常用模型，隐藏暂时不用的模型。多个模型也可以组合为一个路由组。</p>${button(`管理模型 ${icon('arrow')}`,'go-models')}</article><article class="step"><div class="step-head"><span class="step-number">03 / 开始使用</span>${icon('overview')}</div><h3>在鲸屿中选择「鲸桥」</h3><p>回到鲸屿桌面端，打开对话的模型选择器，选择「鲸桥」渠道下的模型。</p>${button(`查看使用方法 ${icon('arrow')}`,'go-help')}</article></div>
- <div class="support-grid"><div><h3>一个地方，管理多种模型来源</h3><p>API 供应商和订阅账号可以同时接入。用路由组分配请求，在用量统计中查看调用次数和 Token 消耗。</p></div><div><h3>关闭窗口，模型服务仍继续</h3><p>鲸桥在后台为桌面端提供服务。在启动器首页可开启或关闭鲸桥，更新、回滚和卸载在「组件」页的管理菜单操作。</p></div></div>
- <details class="advanced"><summary>连接信息与同步</summary><div class="advanced-body"><dl><dt>桌面端渠道</dt><dd>鲸桥 · WhaleBridge</dd><dt>本地网关</dt><dd><code>${escape(state.gateway)}/v1</code></dd><dt>同步方式</dt><dd>配置保存后自动同步；不会替换已有供应商或当前默认模型。</dd></dl><div class="actions-bar">${button(`${icon('refresh')}重新同步模型`,'sync','','text-button')}</div></div></details>`;
+ <div class="section-head"><div><h2>从接入到对话，只需三步</h2></div>${button('查看说明','go-help','','text-button')}</div>
+ <div class="steps"><article class="step"><div class="step-head"><span class="step-number">01 / 连接来源</span>${total?icon('check'):icon('providers')}</div><h3>添加供应商或登录订阅</h3><p>添加 API 密钥或订阅账号。</p>${button(`${total?'管理供应商':'开始添加'} ${icon('arrow')}`,total?'go-providers':'add-provider')}</article><article class="step"><div class="step-head"><span class="step-number">02 / 选择模型</span>${models?icon('check'):icon('models')}</div><h3>整理桌面端的模型列表</h3><p>保留常用模型，按需组合路由。</p>${button(`管理模型 ${icon('arrow')}`,'go-models')}</article><article class="step"><div class="step-head"><span class="step-number">03 / 开始使用</span>${icon('overview')}</div><h3>在鲸屿中选择「鲸桥」</h3><p>在桌面端选择「鲸桥」渠道。</p>${button(`查看使用方法 ${icon('arrow')}`,'go-help')}</article></div>
+ <details class="overview-notes"><summary>服务说明与连接信息</summary><div class="support-grid"><div><h3>一个地方，管理多种模型来源</h3><p>API 供应商和订阅账号可以同时接入。用路由组分配请求，在用量统计中查看调用次数和 Token 消耗。</p></div><div><h3>关闭窗口，模型服务仍继续</h3><p>鲸桥在后台为桌面端提供服务。在启动器首页可开启或关闭鲸桥，更新、回滚和卸载在「组件」页的管理菜单操作。</p></div></div>
+ <details class="advanced"><summary>连接信息与同步</summary><div class="advanced-body"><dl><dt>桌面端渠道</dt><dd>鲸桥 · WhaleBridge</dd><dt>本地网关</dt><dd><code>${escape(state.gateway)}/v1</code></dd><dt>同步方式</dt><dd>配置保存后自动同步；不会替换已有供应商或当前默认模型。</dd></dl><div class="actions-bar">${button(`${icon('refresh')}重新同步模型`,'sync','','text-button')}</div></div></details><footer><span>鲸屿出品 · 基于 Magpie</span>${button('了解鲸桥','go-help','','text-button')}</footer></details></div>`;
 }
 function providerAvatar(p){const file=String(p.icon || '').startsWith('file:')?String(p.icon).slice(5):'';return file?`<img class="provider-avatar provider-image" src="/api/icons/${encodeURIComponent(file)}" alt="">`:`<span class="provider-avatar" aria-hidden="true">${escape(Array.from(p.name || p.id)[0].toUpperCase())}</span>`;}
 function providers(){
  const all=state.providers,visible=all.filter(p=>`${p.name} ${p.id} ${p.preset || ''}`.toLowerCase().includes(providerQuery.toLowerCase())).filter(p=>providerFilter==='all'||providerFilter==='enabled'&&!p.off||providerFilter==='disabled'&&p.off||providerFilter==='api'&&!p.account||providerFilter==='subscription'&&p.account);
  let html=heading('供应商与账号','管理模型来源、接口凭据与订阅身份。',`<div class="actions">${button('导入配置','import-provider')}${button('订阅账号','subscription')}${button(`${icon('plus')}添加供应商`,'add-provider','','primary')}</div>`);
- html+=`<div class="provider-summary"><span><strong>${all.length}</strong> 个来源</span><span><strong>${all.filter(p=>!p.off).length}</strong> 已启用</span><span><strong>${all.filter(p=>p.account).length}</strong> 订阅来源</span><div class="actions">${button('运行状态','provider-health','','text-button')}${button('供应商适配器','manage-adapters','','text-button')}</div></div>`;
+ html+=`<div class="provider-summary"><span><strong>${all.length}</strong> 个来源</span><span><strong>${all.filter(p=>!p.off).length}</strong> 已启用</span><span><strong>${all.filter(p=>p.account).length}</strong> 订阅来源</span><div class="actions">${button('运行状态','provider-health','','text-button')}${button('社区插件','manage-adapters','discover','text-button')}</div></div>`;
  if(!all.length)return html+empty('连接第一个模型来源','使用 API 密钥或供应商订阅接入鲸屿。',button('添加供应商','add-provider','','primary'),'providers');
  html+=`<div class="list-toolbar"><div class="search">${icon('search')}<input id="provider-search" type="search" value="${escape(providerQuery)}" placeholder="搜索供应商名称 / ID" aria-label="搜索供应商"></div><select id="provider-filter" aria-label="来源筛选">${[['all','全部来源'],['enabled','已启用'],['disabled','已停用'],['api','API 供应商'],['subscription','订阅账号']].map(([v,l])=>`<option value="${v}" ${v===providerFilter?'selected':''}>${l}</option>`).join('')}</select><span class="caption">${visible.length} / ${all.length} 个来源</span></div><div class="management-table-wrap"><table class="management-table provider-table"><thead><tr><th>供应商</th><th>接入与状态</th><th>模型 / 路由</th><th>管理</th></tr></thead><tbody>${visible.map(p=>{
   const i=all.findIndex(x=>x.id===p.id);
@@ -135,13 +136,15 @@ function syncModelControls() {
  for(const b of document.querySelectorAll('[data-action="hide-model"]')){
   const m=modelRows().find(m=>m.id===b.dataset.id);if(!m)continue;
   b.setAttribute('aria-checked',String(!m.hidden));b.title=m.hidden?'显示模型':'隐藏模型';
-  b.disabled=visibilityPending.has(m.id);b.setAttribute('aria-busy',String(b.disabled));b.innerHTML=b.disabled?'<span class="button-spinner" aria-hidden="true"></span>':'';
+  const pending=visibilityPending.has(m.id);
+  b.disabled=false;b.setAttribute('aria-disabled',String(pending));b.setAttribute('aria-busy',String(pending));b.innerHTML=pending?'<span class="button-spinner" aria-hidden="true"></span>':'';
   b.closest('.model-row').classList.toggle('disabled',m.hidden);
  }
  for(const b of document.querySelectorAll('[data-action="model-scope"]')){
   const rows=scopeRows(b.dataset.scope,b.dataset.id),s=scopeState(rows);
   b.setAttribute('aria-checked',s.checked);b.title=s.checked==='true'?'全部隐藏':'全部显示';
-  b.disabled=!rows.length||rows.some(m=>visibilityPending.has(m.id));b.setAttribute('aria-busy',String(b.disabled&&rows.length>0));b.innerHTML=b.disabled&&rows.length?'<span class="button-spinner" aria-hidden="true"></span>':'';
+  const pending=rows.some(m=>visibilityPending.has(m.id));
+  b.disabled=!rows.length;b.setAttribute('aria-disabled',String(b.disabled||pending));b.setAttribute('aria-busy',String(pending));b.innerHTML=pending?'<span class="button-spinner" aria-hidden="true"></span>':'';
  }
  for(const c of document.querySelectorAll('[data-count]')){
   const s=scopeState(scopeRows(c.dataset.count,c.dataset.id));c.textContent=`已显示 ${s.shown} / ${s.total}`;
@@ -150,8 +153,9 @@ function syncModelControls() {
 const scopeSwitch=(scope,id,label)=>`<button type="button" class="switch" role="switch" data-action="model-scope" data-scope="${scope}" data-id="${escape(id)}" aria-label="${escape(label)}"></button>`;
 function modelList() {
  const rows=filteredModels().sort((a,b)=>a.id.localeCompare(b.id,'en')),channels=new Map();
- const top=$('#main').scrollTop,focused=document.activeElement;
+ const host=$('#model-list'),top=$('#main').scrollTop,focused=document.activeElement;
  const focusID=focused?.dataset.id,focusAction=focused?.dataset.action;
+ const focusedInside=host.contains(focused),switches=[...host.querySelectorAll('[data-action="hide-model"]')].filter(b=>!b.closest('[hidden]')),focusIndex=switches.indexOf(focused);
  for(const m of rows){
   if(!channels.has(m.channelId))channels.set(m.channelId,{id:m.channelId,name:m.channelName,groups:new Map()});
   const channel=channels.get(m.channelId),key=modelGroup(m);
@@ -163,7 +167,12 @@ function modelList() {
  $('#model-list').innerHTML=rows.length?[...channels.values()].map(c=>`<section class="panel model-channel"><div class="model-channel-head"><button type="button" class="model-fold" data-action="fold-channel" data-id="${escape(c.id)}" aria-expanded="${open(c)}">${icon('arrow')}<span class="model-channel-name">${escape(c.name)}</span><span class="caption" data-count="channel" data-id="${escape(c.id)}"></span></button>${scopeSwitch('channel',c.id,`显示 ${c.name} 的全部模型`)}</div><div class="model-channel-body" ${open(c)?'':'hidden'}>${[...c.groups.entries()].map(([key,g])=>`<div class="model-supplier"><span>${escape(g.name)}</span><span class="caption" data-count="supplier" data-id="${escape(key)}"></span>${scopeSwitch('supplier',key,`显示 ${c.name} / ${g.name} 的全部模型`)}</div>`+g.rows.map(row).join('')).join('')}</div></section>`).join(''):empty('没有匹配的模型','试试其他模型名称或标识，或切换显示范围。','','search');
  document.querySelectorAll('[data-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.filter===modelFilter)));
  syncModelControls();
- if(focusAction&&focusID)Array.from(document.querySelectorAll('[data-action]')).find(b=>b.dataset.action===focusAction&&b.dataset.id===focusID)?.focus({preventScroll:true});
+ if(focusedInside){
+  const next=[...host.querySelectorAll('[data-action="hide-model"]')].filter(b=>!b.closest('[hidden]'));
+  const target=[...host.querySelectorAll('[data-action]')].find(b=>b.dataset.action===focusAction&&b.dataset.id===focusID)
+   || (focusAction==='hide-model'?next[Math.min(focusIndex,next.length-1)]:null) || $('#model-search');
+  target?.focus({preventScroll:true});
+ }
  $('#main').scrollTop=top;
 }
 async function setModelVisibility(ids,hidden) {
@@ -179,8 +188,17 @@ async function setModelVisibility(ids,hidden) {
    state.models=rows.filter(m=>!(changed.has(m.id)?hidden:wasHidden.has(m.id)));
    state.hidden=rows.filter(m=>changed.has(m.id)?hidden:wasHidden.has(m.id));
    $('#model-count').textContent=state.models.length || '';
+   if(visibilityError){
+    visibilityError.ids=visibilityError.ids.filter(id=>!ids.includes(id));
+    if(!visibilityError.ids.length){
+     if($('#message').dataset.error==='true'&&$('#message-text').textContent===visibilityError.text)message('');
+     visibilityError=undefined;
+    }
+   }
+   const feedback=$('#model-feedback');
+   if(feedback)feedback.textContent=ids.length===1?`已${hidden?'隐藏':'显示'} ${rows.find(m=>m.id===ids[0])?.name || ids[0]}，已同步到鲸屿`:`已${hidden?'隐藏':'显示'} ${ids.length} 个模型，已同步到鲸屿`;
    if(ids.length>1)message(`已${hidden?'隐藏':'显示'} ${ids.length} 个模型，已同步到鲸屿`);
-  }finally{
+  }catch(e){visibilityError={ids:[...ids],text:e.message};throw e;}finally{
    for(const id of ids)visibilityPending.delete(id);
    if($('#model-list')){if(modelFilter==='all')syncModelControls();else modelList();}
   }
@@ -256,12 +274,13 @@ function renderModelsPage(){
 async function render(){
  if(!state)return;
  const epoch=++renderEpoch;clearTimeout(providerLiveTimer);
+ $('.app-shell').dataset.page=tab;
  document.querySelectorAll('[data-tab]').forEach(b=>{const selected=b.dataset.tab===tab;b.setAttribute('aria-selected',String(selected));if(selected)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});
  $('#page-label').textContent=pageNames[tab];$('#content').setAttribute('aria-busy','true');
  let html='';
  if(tab==='overview')html=overview();
  else if(tab==='providers')html=providers();
- else if(tab==='models')html=renderModelsPage();
+ else if(tab==='models')html=renderModelsPage()+'<span id="model-feedback" class="visually-hidden" role="status" aria-live="polite"></span>';
  else if(tab==='routing')html=routingPage();
  else if(tab==='help')html=helpPage();
  else if(tab==='usage'||tab==='settings')html=await window.renderBridgeGlobalPage(tab,epoch);
@@ -272,7 +291,7 @@ async function render(){
  if(tab==='usage'||tab==='settings')await window.bindBridgeGlobalPage(tab,epoch);
  if(tab==='providers')startProviderLive(epoch);
 }
-async function go(next){tab=next;message('');await render();$('#main').scrollTo({top:0});}
+async function go(next){window.captureBridgeGlobalDrafts?.();tab=next;message('');await render();$('#main').scrollTo({top:0});}
 function field(name,label,value='',type='text',hint='') { return `<label for="f-${name}">${label}</label><input id="f-${name}" name="${name}" type="${type}" value="${escape(value)}" autocomplete="${type==='password'?'new-password':'off'}" ${hint?`placeholder="${escape(hint)}"`:''}>`; }
 function text(name,label,value='',hint='') { return `<label for="f-${name}">${label}</label><textarea id="f-${name}" name="${name}" placeholder="${escape(hint)}">${escape(value)}</textarea>`; }
 function routing(value,group=false){return `<label for="f-routing">请求分配策略</label><select id="f-routing" name="routing">${Object.entries(routes).filter(([v])=>group?v!=='weight':v!=='manual').map(([v,l])=>`<option value="${v}" ${v===value?'selected':''}>${l}</option>`).join('')}</select><p class="form-hint">按顺序优先使用列表靠前的模型；轮换会在模型间依次分配请求。</p>`;}
@@ -354,10 +373,11 @@ function capacityPicks(kind,p){
  const maximum=kind==='contexts'?(p.available || []).map(normalizeModel).filter(m=>m.max>Number(m.listed || m.context || 0)): [];
  return `<div class="capacity-picks">${usual.map(v=>button(v,'capacity-pick',JSON.stringify({kind,value:v}),'text-button')).join('')}${maximum.length?button('每个模型支持的最高值','capacity-pick',JSON.stringify({kind,value:maximum.map(m=>`${m.id}=${m.max}`).join('\n')}),'text-button'):''}</div>`;
 }
-function openProvider(id,mode='edit'){
+function openProvider(id,mode='edit',presetId=''){
  const source=state.providers.find(p=>p.id===id),p=source?{...source,models:[...(source.models || [])]}:{id:'',name:'',models:[],routing:''};
  if(mode==='another'){for(const k of Object.keys(p))delete p[k];Object.assign(p,{id:'',preset:source.preset,models:[],name:''});}
  if(mode==='copy'){p.id='';p.name=`${p.name} 副本`;}
+ if(!source&&presetId)p.preset=presetId;
  editor={type:'provider',data:p,removedHeaders:[],available:availableModels(p),modelPrefs:{},copyOf:mode==='copy'?source.id:'',from:mode==='edit'?p.id:'',section:'connection'};
  const pr=state.presets.find(x=>x.id===p.preset),account=!!p.account;
  $('#editor-title').textContent=p.id?`${p.name} · 供应商设置`:mode==='copy'?'复制供应商':'添加供应商';
@@ -395,7 +415,7 @@ function openProvider(id,mode='edit'){
  $('#f-proxyMode').onchange=e=>{$('#proxy-address').hidden=e.target.value!=='custom';$('#f-proxy').required=e.target.value==='custom';};$('#f-proxy').required=$('#f-proxyMode').value==='custom';
  for(const name of p.headerNames || [])$('#header-list')?.append(headerRow(name,true));
  const hints=pr=>{for(const name of pr?.headerHints || [])if(![...document.querySelectorAll('.header-name')].some(i=>i.value.toLowerCase()===name.toLowerCase()))$('#header-list')?.append(headerRow(name,false,true));};
- hints(pr);configurePreset(pr,mode==='another');
+ hints(pr);configurePreset(pr,mode==='another'||!source&&!!presetId);
  const pin=pr=>$('#pin-upstream').hidden=!(pr?.id==='clinepass'||p.cline||/cline/i.test(p.preset || '')||/cline\./i.test(p.chat || ''));
  pin(pr);$('#f-preset')?.addEventListener('change',e=>{const chosen=state.presets.find(x=>x.id===e.target.value);configurePreset(chosen,true);hints(chosen);pin(chosen);});
  if(!account){
@@ -579,9 +599,18 @@ function checkEditorValidity(){
  for(const details of invalid.closest('details')?[invalid.closest('details')]:[])details.open=true;
  invalid.reportValidity();return false;
 }
+function closeEditor(){
+ const current=editor;
+ if(current){current.closed=true;current.loginBusy?.finish();current.loginBusy=null;clearTimeout(current.searchTimer);}
+ clearTimeout(loginTimer);clearTimeout(healthTimer);
+ if(loginFlow){const id=loginFlow;loginFlow=null;api(`signin/${encodeURIComponent(id)}/cancel`,{}).catch(e=>message(e.message));}
+ $('#editor').close();
+}
+$('#editor').addEventListener('cancel',e=>{e.preventDefault();closeEditor();});
 function showEditor(){
  $('#form-error').hidden=true;$('#adapter-progress').hidden=true;$('#save').hidden=false;buttonBusy.delete($('#save'));$('#save').removeAttribute('aria-label');$('#save').removeAttribute('aria-busy');$('#save').style.minWidth='';$('#save').textContent='保存';$('#save').disabled=false;
- $('#cancel-editor').textContent=['accounts','keys','adapters','health'].includes(editor.type)?'关闭':'取消';
+ $('#editor-note').hidden=editor.type==='read-only';
+ $('#cancel-editor').textContent=['accounts','keys','adapters','adapter-readme','source-picker','health','read-only'].includes(editor.type)?'关闭':'取消';
  configureEditorSections();
  decorateSelects();
  if(!$('#editor').open)$('#editor').showModal();
@@ -599,18 +628,18 @@ const lines=value=>value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
 $('#edit-form').addEventListener('invalid',e=>{const details=e.target.closest('details');if(details)details.open=true;},true);
 $('#edit-form').addEventListener('submit',async e=>{
   e.preventDefault();const current=editor;if(!checkEditorValidity())return;
- if(current.type==='connection-success'){$('#editor').close();await go('providers');return;}
- if(['accounts','adapters','health','quota-history','export','import-result'].includes(current.type))return;
+ if(current.type==='connection-success'){closeEditor();await go('providers');return;}
+ if(['accounts','adapters','adapter-readme','source-picker','health','quota-history','export','import-result'].includes(current.type))return;
  const busy=startButtonBusy($('#save'),current.type==='subscription'?'登录中':current.type==='provider-import'?(current.preview?'导入中':'预览中'):'保存中');$('#form-error').hidden=true;const data=Object.fromEntries(new FormData(e.target));
  try {
   if(current.type==='subscription'){await beginSubscription(data);return;}
-  if(current.type==='subscription-settings'){const payload={};for(const key of ['codexWarmup','claudeWarmup','codexWarmAt','claudeWarmAt'])payload[key]=data[key];payload.quotaLeft=$('#f-quotaLeft').checked;payload.chinaMirror=$('#f-chinaMirror').checked;for(const key of ['usageAlert','balanceAlert','resetReminder'])payload[key]=Number(data[key] || 0);payload.proxy=data.proxyMode==='direct'?'direct':data.proxyMode==='custom'?data.proxy:'';for(const key of ['workbuddyCheckin','traeCheckin','minimaxCheckin','qoderCheckin'])payload[key]=!!$(`#f-${key}`).checked;payload.pluginCheckins={...subscriptionSettings.pluginCheckins,...Object.fromEntries([...$('#fields').querySelectorAll('[data-plugin-checkin]')].map(c=>[c.dataset.pluginCheckin,c.checked]))};await api('subscription/settings',payload);if(current!==editor||current.closed)return;$('#editor').close();message('订阅维护设置已保存');state.quotaLeft=payload.quotaLeft;if(tab==='usage')await loadQuotas(renderEpoch);return;}
-  if(current.type==='quota-account'){await api('accounts/settings',{id:current.data.provider,user:current.data.user,codexAutoReset:$('#f-codexAutoReset').checked,codexCredits:$('#f-codexCredits').checked,codexWarmAt:data.warmMode==='custom'?data.codexWarmAt:data.warmMode==='off'?'off':''});if(current!==editor||current.closed)return;$('#editor').close();message('账号维护设置已保存');await loadQuotas(renderEpoch);return;}
+  if(current.type==='subscription-settings'){const payload={};for(const key of ['codexWarmup','claudeWarmup','codexWarmAt','claudeWarmAt'])payload[key]=data[key];payload.quotaLeft=$('#f-quotaLeft').checked;payload.chinaMirror=$('#f-chinaMirror').checked;for(const key of ['usageAlert','balanceAlert','resetReminder'])payload[key]=Number(data[key] || 0);payload.proxy=data.proxyMode==='direct'?'direct':data.proxyMode==='custom'?data.proxy:'';for(const key of ['workbuddyCheckin','traeCheckin','minimaxCheckin','qoderCheckin'])payload[key]=!!$(`#f-${key}`).checked;payload.pluginCheckins={...subscriptionSettings.pluginCheckins,...Object.fromEntries([...$('#fields').querySelectorAll('[data-plugin-checkin]')].map(c=>[c.dataset.pluginCheckin,c.checked]))};await api('subscription/settings',payload);if(current!==editor||current.closed)return;closeEditor();message('订阅维护设置已保存');state.quotaLeft=payload.quotaLeft;if(tab==='usage')await loadQuotas(renderEpoch);return;}
+  if(current.type==='quota-account'){await api('accounts/settings',{id:current.data.provider,user:current.data.user,codexAutoReset:$('#f-codexAutoReset').checked,codexCredits:$('#f-codexCredits').checked,codexWarmAt:data.warmMode==='custom'?data.codexWarmAt:data.warmMode==='off'?'off':''});if(current!==editor||current.closed)return;closeEditor();message('账号维护设置已保存');await loadQuotas(renderEpoch);return;}
   if(current.type==='keys'){await api('keys',{id:current.data.id,action:'add',name:data.name,key:data.key,protocol:data.protocol});if(current!==editor||current.closed)return;await openKeys(current.data.id);message('密钥已添加');await load();return;}
   if(['key-edit','account-edit','key-import','auth-import','adapter-options'].includes(current.type)){await saveAccountEditor(data,current);return;}
   if(current.type==='provider-import'){
    if(!current.preview){const r=await api('provider/import',{text:data.source,preview:true});if(current!==editor||current.closed)return;const missing=r.providers.filter(p=>!p.keyOptional&&!p.keySet);current.source=data.source;current.preview=r.providers;$('#fields').innerHTML=`<p class="form-hint">将新增 ${r.providers.length} 个供应商。已有供应商和密钥保持原样；请核对来源和接口地址后导入。</p><div class="panel">${r.providers.map(p=>`<div class="row"><div class="text"><strong>${escape(p.name || p.id)}</strong><p class="caption">${escape(p.chat || p.responses || p.anthropic || '')}</p><p class="caption">${p.models?.length || 0} 个已选模型 · ${p.keySet?'包含密钥':p.keyOptional?'无需 API 密钥':'需要补充密钥'}</p></div></div>`).join('')}</div>`;if(missing.length&&r.providers.length===1){$('#fields').insertAdjacentHTML('beforeend',field('importKey','此供应商的 API 密钥','','password','导入前需要提供凭据'));$('#f-importKey').required=true;}else if(missing.length){current.preview=null;$('#fields').insertAdjacentHTML('beforeend',`<p class="inline-error">${escape(missing.map(p=>p.name || p.id).join('、'))} 需要密钥。请分别在各供应商 JSON 中填写 key，再重新预览。</p>`+text('source','补充凭据后的来源',data.source));$('#f-source').required=true;}$('#save').textContent=current.preview?'导入这些供应商':'重新预览';return;}
-   const r=await api('provider/import',{text:current.source,...(data.importKey?{key:data.importKey}:{})});if(current!==editor||current.closed)return;$('#editor').close();message(`已新增 ${r.added?.length || current.preview.length} 个供应商，模型已同步`);await load();return;
+   const r=await api('provider/import',{text:current.source,...(data.importKey?{key:data.importKey}:{})});if(current!==editor||current.closed)return;closeEditor();message(`已新增 ${r.added?.length || current.preview.length} 个供应商，模型已同步`);await load();return;
   }
   if(current.type==='project'){await api('accounts/project',{id:current.data.id,user:current.data.user,project:data.project});if(current!==editor||current.closed)return;await openAccounts(current.data.id);message('Cloud project 已保存');await load();return;}
   if(current.type==='provider'){
@@ -618,10 +647,10 @@ $('#edit-form').addEventListener('submit',async e=>{
    }else{await api('group',groupInput(data));}
   if(current!==editor||current.closed)return;
   if(current.type==='provider'&&!current.data.id){await showConnectionSuccess('供应商添加成功',`${data.name} 已添加，模型已同步到鲸屿。`,{name:data.name,kind:'API 供应商'});return;}
-  $('#editor').close();message('已保存，模型已同步到鲸屿');await load();
+  closeEditor();message('已保存，模型已同步到鲸屿');await load();
  }catch(e){if(current===editor&&!current.closed){$('#form-error').textContent=e.message;$('#form-error').hidden=false;}}finally{if(current===editor&&!current.closed)busy.finish();}
 });
-$('#close-editor').onclick=$('#cancel-editor').onclick=()=>$('#editor').close();
+$('#close-editor').onclick=$('#cancel-editor').onclick=()=>closeEditor();
 function ask(title,body,accept='确认',number){
  const d=$('#confirmation');$('#confirm-title').textContent=title;$('#confirm-body').textContent=body;$('#accept-confirm').textContent=accept;
  $('#confirm-input').innerHTML=number===undefined?'':field('weight','权重',number,'number');
@@ -637,21 +666,22 @@ for(const b of document.querySelectorAll('[data-tab]'))b.addEventListener('click
 // All navigational actions share one delegated handler, including footer help.
 $('.workspace').addEventListener('click',async e=>{
  const filter=e.target.closest('[data-filter]');if(filter){modelFilter=filter.dataset.filter;modelList();return;}
- const b=e.target.closest('[data-action]');if(!b||b.disabled)return;const{action,id}=b.dataset;
+ const b=e.target.closest('[data-action]');if(!b||b.disabled||b.getAttribute('aria-disabled')==='true')return;const{action,id}=b.dataset;
  const menu=b.closest('details.menu');if(menu)closeMenu(menu);
  let busy;const begin=label=>busy=startButtonBusy(menu?.querySelector('summary') || b,label);
- const waiting={subscription:'加载中',accounts:'加载中',keys:'加载中','export-provider':'导出中','manage-adapters':'加载中','provider-health':'读取中','subscription-settings':'加载中','quota-history':'加载中','refresh-quotas':'刷新中',sync:'同步中','refresh-catalog':'刷新中','fetch-provider':'刷新中','provider-up':'保存中','provider-down':'保存中','toggle-provider':'保存中'};
+ const waiting={subscription:'加载中','add-provider':'加载中',accounts:'加载中',keys:'加载中','export-provider':'导出中','manage-adapters':'加载中','provider-health':'读取中','subscription-settings':'加载中','quota-history':'加载中','refresh-quotas':'刷新中',sync:'同步中','refresh-catalog':'刷新中','fetch-provider':'刷新中','provider-up':'保存中','provider-down':'保存中','toggle-provider':'保存中'};
  if(waiting[action])begin(waiting[action]);
  try{
   if(action.startsWith('go-')){await go(action.slice(3));return;}
-  if(action==='subscription'){await openSubscription();return;}
+  if(action==='subscription'){await openSourcePicker('subscription');return;}
   if(action==='accounts'){await openAccounts(id);return;}
   if(action==='keys'){await openKeys(id);return;}
-  if(action==='add-provider'||action==='edit-provider'){openProvider(id);return;}
+  if(action==='add-provider'){await openSourcePicker('api');return;}
+  if(action==='edit-provider'){openProvider(id);return;}
   if(action==='copy-provider'||action==='another-provider'){openProvider(id,action==='copy-provider'?'copy':'another');return;}
   if(action==='import-provider'){editor={type:'provider-import'};$('#editor-title').textContent='导入供应商';$('#fields').innerHTML=text('source','供应商配置或分享链接','','粘贴供应商导出 JSON 或支持的导入链接')+'<p class="form-hint">导入会添加供应商，保留现有配置。</p>';$('#f-source').required=true;showEditor();$('#save').textContent='导入';return;}
   if(action==='export-provider'){await exportProvider(id);return;}
-  if(action==='manage-adapters'){await openAdapters();return;}
+  if(action==='manage-adapters'){await openAdapters(id || 'installed');return;}
   if(action==='provider-health'){await openProviderHealth();return;}
   if(action==='subscription-settings'){await openSubscriptionSettings();return;}
   if(action==='quota-history'){await openQuotaHistory();return;}
@@ -755,7 +785,8 @@ async function quotaAction(action,id,b){const data=JSON.parse(id);let busy;if(ac
  }finally{busy?.finish();if(b.getAttribute('aria-busy')!=='true')b.disabled=false;}}
 function openQuotaAccount(data){const key=data.user.toLowerCase(),warm=subscriptionSettings.codexWarmAtOf?.[key] || '';editor={type:'quota-account',data};$('#editor-title').textContent='Codex 账号维护';$('#fields').innerHTML=`<p class="form-hint">${escape(data.user)}</p>`+checkField('codexAutoReset','按上游规则自动使用账号重置',(subscriptionSettings.codexAutoReset || []).includes(key),'每周窗口耗尽且其他账号不可用时，或已有重置即将到期时，允许自动消耗重置。')+checkField('codexCredits','额度用尽后继续使用付费 credits',!(subscriptionSettings.codexNoCredits || []).includes(key),'关闭后账号额度用尽时停止使用，转到其他账号或回退模型。')+selectField('warmMode','每日窗口预热',[['','跟随全局设置'],['off','关闭此账号的每日预热'],['custom','使用独立时间']],warm==='off'?'off':warm?'custom':'')+`<div id="own-warm-time" ${warm&&warm!=='off'?'':'hidden'}>${field('codexWarmAt','预热时间',warm==='off'?'':warm,'time')}</div>`;showEditor();$('#f-warmMode').onchange=e=>{$('#own-warm-time').hidden=e.target.value!=='custom';$('#f-codexWarmAt').required=e.target.value==='custom';};}
 async function openSubscriptionSettings(){
- const [s,subs]=await Promise.all([api('subscription/settings'),api('subscriptions')]);subscriptionSettings=s;editor={type:'subscription-settings'};
+ const previous=editor,wasClosed=previous?.closed;
+ const [s,subs]=await Promise.all([api('subscription/settings'),api('subscriptions')]);if(previous!==editor||previous?.closed!==wasClosed)return;subscriptionSettings=s;editor={type:'subscription-settings'};
  $('#editor-title').textContent='订阅维护设置';const choices=[['','关闭'],['week','每周窗口重置后预热'],['all','每个窗口重置后预热']];
  const warm=`<p class="form-hint">预热会发送一个很小的请求，使额度窗口从选定时间开始计算。只对鲸桥已启用的账号执行。</p><div class="form-grid"><div>${selectField('codexWarmup','Codex 窗口预热',choices,s.codexWarmup || '')}${field('codexWarmAt','Codex 每日预热时间',s.codexWarmAt || '','time')}<p class="caption">最近预热：${s.codexWarmed?escape(dateText(s.codexWarmed)):'尚无记录'}</p></div><div>${selectField('claudeWarmup','Claude 窗口预热',choices,s.claudeWarmup || '')}${field('claudeWarmAt','Claude 每日预热时间',s.claudeWarmAt || '','time')}<p class="caption">最近预热：${s.claudeWarmed?escape(dateText(s.claudeWarmed)):'尚无记录'}</p></div></div><p class="form-hint">每日时间留空则关闭；账号可设置独立的预热时间。</p>`;
  const claims=[['workbuddyCheckin','WorkBuddy 中国版'],['traeCheckin','Trae 中国版'],['minimaxCheckin','MiniMax Code 中国版'],['qoderCheckin','Qoder / Qoder 中国版']].map(([k,n])=>checkField(k,n,s[k])).join('')+subs.filter(p=>p.plugin&&p.checkin).map(p=>`<label class="check-field"><input type="checkbox" data-plugin-checkin="${escape(p.pid || p.id)}" ${s.pluginCheckinsEffective?.[p.pid || p.id]?'checked':''}><span>${escape(p.name)} 适配器签到</span></label>`).join('')+'<p class="form-hint">需要验证码时，在供应商页面完成；结果显示在额度卡片。</p>';
@@ -805,69 +836,8 @@ function liveLaneRows(lanes){return Object.entries(lanes || {}).map(([id,l])=>`<
 async function startProviderLive(epoch){try{const [upstream,lanes]=await Promise.all([api('upstream'),api('lanes')]);if(epoch!==renderEpoch||tab!=='providers')return;const vendors=upstreamVendors(upstream);for(const target of document.querySelectorAll('[data-provider-live]')){const id=target.dataset.providerLive,status=vendors.find(v=>v.vendor===upstream.providers?.[id]),active=Object.entries(lanes).filter(([key])=>key===id||key.startsWith(`${id}#`)||key.startsWith(`${id}@`));target.innerHTML=`${status&&status.level!=='ok'?`<p class="${status.level?'inline-error':'caption'}">${escape(status.name)} API：${escape(healthLevels[status.level] || '公开状态未知')}${status.error?` · ${escape(status.error)}`:''} ${externalLink(status.page,'供应商状态页')}</p>`:''}${active.length?`<p class="caption">处理中 ${active.reduce((n,[,l])=>n+l.busy,0)} · 排队 ${active.reduce((n,[,l])=>n+l.waiting,0)}</p>`:''}`;}}catch(error){if(epoch===renderEpoch&&tab==='providers')for(const target of document.querySelectorAll('[data-provider-live]'))target.innerHTML=`<p class="caption">运行状态未能读取：${escape(error.message)}</p>`;}finally{if(epoch===renderEpoch&&tab==='providers')providerLiveTimer=setTimeout(()=>startProviderLive(epoch),5000);}}
 function healthView(upstream,lanes){const vendors=upstreamVendors(upstream);return `<div class="panel">${vendors.map(v=>`<div class="row"><div class="text"><h3>${escape(v.name || v.vendor)}</h3><p class="caption">${escape(healthLevels[v.level] || '公开状态未知')}${v.read?` · ${escape(dateText(v.read))}`:''}</p>${v.error?`<p class="inline-error">${escape(v.error)}</p>`:''}${(v.parts || []).map(p=>`<p class="caption">${escape(p.name)} · ${escape(p.status)}</p>`).join('')}${(v.incidents || []).map(i=>`<p>${externalLink(i.url,i.name)}</p>`).join('')}${externalLink(v.page,'打开供应商状态页')}</div></div>`).join('') || '<p class="empty-inline">已配置供应商没有可读取的公开状态页。</p>'}</div><div class="form-section"><h3>当前请求与排队</h3><div class="table-wrap"><table><thead><tr><th>密钥 / 账号</th><th>处理中</th><th>排队</th><th>并发限制</th></tr></thead><tbody>${liveLaneRows(lanes)}</tbody></table></div></div>`;}
 async function refreshHealth(current){try{const [upstream,lanes]=await Promise.all([api('upstream'),api('lanes')]);if(current!==editor||current.closed)return;$('#health-status').innerHTML=healthView(upstream,lanes);$('#health-error').hidden=true;}catch(error){if(current===editor&&!current.closed){$('#health-error').textContent=`运行状态未能读取：${error.message}`;$('#health-error').hidden=false;}}finally{if(current===editor&&!current.closed)healthTimer=setTimeout(()=>refreshHealth(current),3000);}}
-async function openProviderHealth(){const [upstream,lanes]=await Promise.all([api('upstream'),api('lanes')]);clearTimeout(healthTimer);editor={type:'health'};const current=editor;$('#editor-title').textContent='供应商运行状态';$('#fields').innerHTML='<p class="form-hint">供应商自己的 API 服务状态；鲸桥请求与排队实时更新。</p><p id="health-error" class="inline-error" hidden></p><div id="health-status">'+healthView(upstream,lanes)+'</div>';showEditor();$('#save').hidden=true;healthTimer=setTimeout(()=>refreshHealth(current),3000);}
-$('#editor').addEventListener('close',()=>clearTimeout(healthTimer));
-function adapterRows(items,installed=false){
- return `<div class="management-table-wrap"><table class="management-table"><thead><tr><th>供应商适配器</th><th>${installed?'版本与状态':'来源'}</th><th>管理</th></tr></thead><tbody>${items.map(p=>{
-  const ref=JSON.stringify({id:p.id,package:p.package}),summary=typeof p.summary==='object'?(p.summary?.zh || p.summary?.en || ''):p.summary || p.description || '';
-  return `<tr><td><strong class="table-primary">${escape(p.name || p.package)}</strong><code class="table-meta">${escape(p.package)}</code><span class="table-meta">${escape(summary)}</span>${installed?`<span class="table-meta">${escape((p.providers || []).join('、'))}</span>`:''}${p.error?`<p class="inline-error">${escape(p.error)}</p>`:''}</td><td>${p.version?`<strong>${escape(p.version)}</strong>`:''}${installed?`<span class="status-badge">${p.enabled?'已启用':'已停用'}</span>${p.latest&&p.latest!==p.version?`<span class="table-meta">可更新 ${escape(p.latest)}</span>`:''}${p.autoUpdated?'<span class="table-meta">已自动更新</span>':''}`:`<span class="table-meta">${escape(p.publisher || '供应商提供')}</span>${p.weekly?`<span class="table-meta">每周下载 ${short(p.weekly)}</span>`:''}`}</td><td><div class="actions">${button('说明','adapter-page',ref,'text-button')}${installed?button('配置','adapter-options',ref)+button('更新','adapter-update',ref)+button(p.enabled?'停用':'启用',p.enabled?'adapter-off':'adapter-on',ref)+button('移除','adapter-remove',ref,'text-button danger'):button('安装','adapter-install',ref)}</div></td></tr>`;
- }).join('') || '<tr><td colspan="3" class="empty-inline">没有适配器。</td></tr>'}</tbody></table></div>`;
-}
-async function openAdapters(section='installed',expected){
- const r=await api('subscription/adapters');if(expected&&(expected!==editor||expected.closed))return;editor={type:'adapters',section};$('#editor-title').textContent='供应商适配器';
- const installed=`<div class="toolbar actions-bar">${button('检查更新','adapter-check',JSON.stringify({}))}${button('更新全部','adapter-update-all',JSON.stringify({}))}<label class="check-field"><input id="adapter-mirror" type="checkbox" ${r.mirror?'checked':''}><span>使用国内镜像</span></label></div><p class="form-hint">${r.bun?`运行环境 ${escape(r.bunVer || 'Bun')} 已就绪。`:'安装适配器需要 Bun，操作时由管理服务说明所需环境。'}${r.updates?.checked?` 最近检查：${escape(dateText(r.updates.checked))}`:''}</p>${r.error?`<p class="inline-error">${escape(r.error)}</p>`:''}${adapterRows(r.installed || [],true)}`;
- const available=(r.available || []).filter(p=>!(r.installed || []).some(i=>i.package===p.package));
- const discovery=`<div class="search"><input id="adapter-search-query" type="search" placeholder="搜索 npm 供应商适配器" aria-label="搜索供应商适配器">${button('搜索','adapter-search',JSON.stringify({}))}</div><div id="adapter-search-results">${adapterRows(available)}</div><div class="form-section"><h3>安装指定包</h3>${field('package','供应商提供的 npm 包名 / spec','','text','包名、包@版本或 npm spec')}<p class="form-hint">仅接入提供供应商认证的适配器。安装动作会保存到本机环境。</p>${button('安装此适配器','adapter-install-custom')}</div>`;
- const moves=(r.moves || []).map(m=>`<div class="row"><div class="text"><strong>${escape(subscriptionNames[m.id] || m.id)}</strong><p class="caption">${escape(m.package)} · ${m.moved?'适配器接入':'内置订阅接入'}</p>${m.error?`<p class="inline-error">${escape(m.error)}</p>`:''}</div>${button(m.moved?'恢复内置接入':m.signedIn?'迁移已有账号':'使用适配器接入',m.moved?'adapter-moveback':m.signedIn?'adapter-move':'adapter-adopt',JSON.stringify(m))}</div>`).join('') || '<p class="form-hint">当前没有可迁移的内置订阅。</p>';
- $('#fields').innerHTML=editorSection('installed','已安装','检查版本、配置认证适配器与连接环境。',installed)+editorSection('discover','查找与安装','选择推荐项或搜索供应商提供的 npm 包。',discovery)+editorSection('moves','订阅迁移','在内置接入与供应商适配器间管理已有授权。',`<div class="panel">${moves}</div>`);
- showEditor();$('#save').hidden=true;
- $('#adapter-mirror').onchange=async e=>{const current=editor,input=e.target,busy=startButtonBusy(input.nextElementSibling,'保存中');input.disabled=true;try{await api('subscription/adapter',{action:'mirror',enabled:e.target.checked});message('适配器镜像设置已保存');}catch(error){if(current===editor){e.target.checked=!e.target.checked;formError(error);}}finally{busy.finish();input.disabled=false;}};
- return editor;
-}
-async function handleAdapterAction(e){
- const b=e.target.closest('[data-action]');if(!b||b.disabled||editor?.adapterPending)return;
- if(b.dataset.action==='manage-adapters'){const busy=startButtonBusy(b,'加载中');try{await openAdapters('installed',editor);}catch(error){formError(error);}finally{busy.finish();}return;}
- if(!b.dataset.action.startsWith('adapter-'))return;
- const current=editor,action=b.dataset.action.replace('adapter-',''),data=action==='install-custom'?{package:$('#f-package').value.trim()}:JSON.parse(b.dataset.id || '{}');
- let progress,busy;const waiting={options:'加载中',page:'加载中',search:'搜索中',check:'检查中'};if(waiting[action])busy=startButtonBusy(b,waiting[action]);b.disabled=true;$('#form-error').hidden=true;
- try{
-  if(action==='options'){
-   const r=await api(`subscription/adapter/${encodeURIComponent(data.id)}/options`);if(current!==editor||current.closed)return;
-   editor={type:'adapter-options',data};$('#editor-title').textContent='供应商适配器配置';
-   const example=!Object.keys(r.options || {}).length&&r.example;
-   $('#fields').innerHTML=text('options','认证配置（JSON）',JSON.stringify(example || r.options || {},null,2))+`<p class="form-hint">${example?'以下是适配器提供的示例，修改后保存才会使用。':'按供应商适配器说明编辑；保存后由该适配器使用。'}</p>`;showEditor();return;
-  }
-  if(action==='page'){
-   const r=await api(`subscription/adapters/page?name=${encodeURIComponent(data.package)}`);if(current!==editor||current.closed)return;
-   editor={type:'adapter-readme',data};$('#editor-title').textContent=`${data.package} · 使用说明`;
-   $('#fields').innerHTML=`${r.updated?`<p class="caption">更新于 ${escape(dateText(r.updated))}</p>`:''}<pre class="adapter-readme">${escape(r.readme || '此适配器未提供说明。')}</pre><div class="actions-bar">${button('返回适配器','manage-adapters')}</div>`;showEditor();$('#save').hidden=true;return;
-  }
-  if(action==='search'){
-   const q=$('#adapter-search-query').value.trim();if(!q)throw new Error('请填写包名或关键词。');
-   const r=await api(`subscription/adapters/search?q=${encodeURIComponent(q)}`);if(current===editor&&!current.closed)$('#adapter-search-results').innerHTML=adapterRows(r.hits || []);return;
-  }
-  if(action==='check'){
-   const r=await api('subscription/adapters/check',{});if(current!==editor||current.closed)return;
-   const checkedEditor=await openAdapters('installed',current);if(!checkedEditor||checkedEditor!==editor||checkedEditor.closed)return;
-   const unknown=(r.plugins || []).filter(p=>p.status==='unknown');
-   if(unknown.length){formError(new Error(`部分适配器未能检查更新：${unknown.map(p=>`${p.package || p.spec}（${p.error || p.why || '未获取版本'}）`).join('；')}`));return;}
-   const result=`检查完成：${(r.plugins || []).filter(p=>p.status==='update').length} 个适配器有更新`;
-   $('#adapter-progress').hidden=false;$('#adapter-progress').innerHTML=`<p role="status">${escape(result)}</p>`;message(result);return;
-  }
-  if(action==='install-custom'&&!data.package)throw new Error('请填写适配器包名。');
-  if(['remove','move','moveback'].includes(action)&&!await ask(action==='remove'?'移除供应商适配器？':action==='move'?'迁移已有订阅？':'恢复内置接入？',action==='remove'?'此适配器的供应商将暂时不可用；已保存的鲸桥配置保留。':action==='move'?'已有账号由适配器接入，凭据只写入鲸桥。':'账号交回鲸桥内置接入；原客户端登录数据保留。','继续'))return;
-  if(['install','install-custom','update','update-all'].includes(action))progress=startAdapterBusy(b,action.startsWith('install')?'downloading':'updating');
-  if(!progress)busy=startButtonBusy(b,action==='remove'?'移除中':action.startsWith('move')?'迁移中':'保存中');
-  if(action.startsWith('install'))await installAdapter(data,progress);
-  else await api('subscription/adapter',{...data,action});
-  if(current!==editor||current.closed)return;
-  progress?.update(action.startsWith('install')?'installing':'updating');
-  await load();const installedEditor=await openAdapters('installed',current);if(!installedEditor||installedEditor!==editor||installedEditor.closed)return;
-  const result=({install:'供应商适配器已安装','install-custom':'供应商适配器已安装',update:'供应商适配器已更新','update-all':'适配器更新完成',remove:'供应商适配器已移除',on:'供应商适配器已启用',off:'供应商适配器已停用',move:'已有订阅已迁移到适配器',moveback:'订阅已恢复内置接入',adopt:'订阅已使用适配器接入'})[action];
-  $('#adapter-progress').hidden=false;$('#adapter-progress').setAttribute('aria-busy','false');$('#adapter-progress').innerHTML=`<p role="status">${escape(result)}</p>`;message(result);
- }catch(error){if(current===editor&&!current.closed)formError(error);}finally{progress?.finish();busy?.finish();if(b.getAttribute('aria-busy')!=='true')b.disabled=false;}
-}
-$('#fields').addEventListener('click',handleAdapterAction);
+async function openProviderHealth(){const previous=editor,wasClosed=previous?.closed;const [upstream,lanes]=await Promise.all([api('upstream'),api('lanes')]);if(previous!==editor||previous?.closed!==wasClosed)return;clearTimeout(healthTimer);editor={type:'health'};const current=editor;$('#editor-title').textContent='供应商运行状态';$('#fields').innerHTML='<p class="form-hint">供应商自己的 API 服务状态；鲸桥请求与排队实时更新。</p><p id="health-error" class="inline-error" hidden></p><div id="health-status">'+healthView(upstream,lanes)+'</div>';showEditor();$('#save').hidden=true;healthTimer=setTimeout(()=>refreshHealth(current),3000);}
+
 $('#fields').addEventListener('click',e=>{if(e.target.closest('[data-action="copy-export"]'))copyText($('#f-export').value).catch(formError);});
 function closeMenu(menu,focus=false){
  const content=menu.querySelector('.menu-content');
@@ -903,7 +873,7 @@ for(const event of ['scroll','resize'])window.addEventListener(event,e=>{if(e.ty
 $('#editor-nav').addEventListener('click',e=>{const b=e.target.closest('[data-section-target]');if(b)activateEditorSection(b.dataset.sectionTarget);});
 window.configureEditorSections=configureEditorSections;
 $('#fields').addEventListener('change',handleGroupMemberChange);
-$('#fields').addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;if(editor?.type==='group'&&b.dataset.action==='group-preview-match'){void previewGroupMatch(b);return;}if(editor?.type==='group'&&b.dataset.action==='group-edit-inner'){void (async()=>{if(await ask('编辑内层路由组？','当前组尚未保存的修改会丢弃。请先保存，或继续进入内层组。','继续编辑内组')){const id=b.dataset.id.replace(/^group\//,'');await new Promise(resolve=>{$('#editor').addEventListener('close',resolve,{once:true});$('#editor').close();});openGroup(id);}})();return;}if(editor?.type==='group'&&b.dataset.action.startsWith('group-')){try{groupEditorAction(b.dataset.action,b.dataset.id);}catch(error){formError(error);}}if(b.dataset.action==='capacity-pick'){const data=JSON.parse(b.dataset.id);$('#f-'+data.kind).value=data.value;}});
+$('#fields').addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;if(editor?.type==='group'&&b.dataset.action==='group-preview-match'){void previewGroupMatch(b);return;}if(editor?.type==='group'&&b.dataset.action==='group-edit-inner'){void (async()=>{if(await ask('编辑内层路由组？','当前组尚未保存的修改会丢弃。请先保存，或继续进入内层组。','继续编辑内组')){const id=b.dataset.id.replace(/^group\//,'');await new Promise(resolve=>{$('#editor').addEventListener('close',resolve,{once:true});closeEditor();});openGroup(id);}})();return;}if(editor?.type==='group'&&b.dataset.action.startsWith('group-')){try{groupEditorAction(b.dataset.action,b.dataset.id);}catch(error){formError(error);}}if(b.dataset.action==='capacity-pick'){const data=JSON.parse(b.dataset.id);$('#f-'+data.kind).value=data.value;}});
 $('#content').addEventListener('change',e=>{if(e.target.dataset.groupSelect)e.target.checked?selectedGroups.add(e.target.dataset.groupSelect):selectedGroups.delete(e.target.dataset.groupSelect);});
 $('#content').addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b)return;const action=b.dataset.action,id=b.dataset.id;if(!['group-up','group-down','group-switch','remove-selected-groups'].includes(action))return;e.stopPropagation();if(b.disabled)return;let busy;if(action!=='remove-selected-groups')busy=startButtonBusy(b,'保存中');b.disabled=true;try{if(action==='group-switch'){const g=state.groups.find(g=>g.id===id);await api('group/switch',{id,off:!g.disabled});}else if(action==='remove-selected-groups'){const ids=[...selectedGroups].filter(id=>state.groups.some(g=>g.id===id));if(!ids.length)throw new Error('请先选择路由组。');if(!await ask('删除已选路由组？',`将删除 ${ids.length} 个组；鲸屿模型列表随后同步。`,'删除组'))return;busy=startButtonBusy(b,'删除中');await api('group/delete',{ids});selectedGroups.clear();}else{const order=state.groups.map(g=>g.id),at=order.indexOf(id),to=at+(action==='group-up'?-1:1);if(at<0||to<0||to>=order.length)return;[order[at],order[to]]=[order[to],order[at]];await api('group/order',{order});}await load();}catch(error){message(error.message,true);}finally{busy?.finish();if(b.getAttribute('aria-busy')!=='true')b.disabled=false;}});
 window.addEventListener('DOMContentLoaded',load,{once:true});

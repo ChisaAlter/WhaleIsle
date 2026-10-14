@@ -48,7 +48,7 @@ test('real WhaleBridge account UI retains connection feedback and consistent res
       fs.writeFileSync(path.join(path.resolve(process.env.WHALEBRIDGE_QA_SCREENSHOTS), 'layout-result.json'), JSON.stringify(result, null, 2));
     }
 
-    assert.equal(result.initial.selected, 'claude', 'a new add-account dialog retains its default');
+    assert.equal(result.initial.selected, 'claude', 'the subscription editor retains the source selected in the picker');
     assert.equal(result.beforeInstall.selected, 'cursor');
     assert.equal(result.beforeInstall.hasAdapterButton, true);
     assert.equal(result.installed.selected, 'cursor-plugin', 'refresh selects the installed backend, not the built-in');
@@ -58,7 +58,7 @@ test('real WhaleBridge account UI retains connection feedback and consistent res
     assert.equal(result.migrated.selected, 'cursor', 'provider identity comes from the refreshed catalog, not a suffix');
     assert.deepEqual(result.migrated.methods, ['Cursor OAuth', 'Cursor API key']);
     assert.equal(result.migrated.hasAdapterButton, false);
-    assert.equal(result.failureDefault, 'claude', 'the prior adapter does not leak into a new dialog');
+    assert.equal(result.failureDefault, 'claude', 'the prior adapter does not replace the source selected in a new picker');
     assert.equal(result.failed.selected, 'cursor');
     assert.equal(result.failed.hasAdapterButton, true);
     assert.equal(result.failed.adapterDisabled, false);
@@ -67,7 +67,10 @@ test('real WhaleBridge account UI retains connection feedback and consistent res
     assert.equal(result.addAccount.selected, 'cursor', 'adding an existing provider account keeps its exact identity');
     assert.equal(result.addAccount.hasAdapterButton, true);
     assert.deepEqual(result.addAccount.methods, []);
-    assert.deepEqual(result.catalogs.slice(0, 2).map(row => row.ids), [
+    assert.deepEqual(result.catalogs.slice(0, 3).map(row => row.installed), [false, false, true],
+      'the source picker and subscription editor read before installation, then the editor refreshes afterward');
+    assert.deepEqual(result.catalogs.slice(0, 3).map(row => row.ids), [
+      ['claude', 'codex', 'cursor'],
       ['claude', 'codex', 'cursor'],
       ['claude', 'codex', 'cursor', 'cursor-plugin'],
     ], 'the adapter API actually changes the HTTP catalog fixture');
@@ -142,7 +145,7 @@ test('real WhaleBridge account UI retains connection feedback and consistent res
     assert.equal(result.narrowAdapterGap.width, 420);
 
     const layout = result.layout;
-    assert.equal(layout.windowVisible, Boolean(process.env.WHALEBRIDGE_QA_SCREENSHOTS), 'screenshot mode renders the target window visibly');
+    assert.equal(layout.windowVisible, true, 'layout checks render the target window visibly');
     assert.equal(layout.windowFocused, false, 'the layout fixture never takes the user input focus');
     assert.equal(layout.pages.length, 50, 'five pages are inspected in five widths and both color schemes');
     assert.deepEqual([...new Set(layout.pages.map(row => row.width))], [1120, 820, 600, 420, 380]);

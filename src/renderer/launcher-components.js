@@ -125,6 +125,11 @@
 
   function renderRows(payload) {
     const rows = payload && Array.isArray(payload.components) ? payload.components : [];
+    const changed = rows.filter(row => state.rows.has(row.id) && state.rows.get(row.id).state !== row.state);
+    if (changed.length) {
+      const status = document.getElementById('component-status');
+      if (status) status.textContent = changed.map(row => `${row.name || row.id}：${STATE_LABELS[row.state] || row.state}`).join('；');
+    }
     state.rows = new Map(rows.map((row) => [row.id, row]));
     renderHomeRows(rows);
     const badgeNode = document.getElementById('tab-badge-components');
@@ -358,6 +363,8 @@
         if (!ok) return;
       }
       pending.label = ACTION_LOADING[action];
+      const status = document.getElementById('component-status');
+      if (status) status.textContent = `${name}：${pending.label}`;
       syncPendingButtons();
       if (action === 'install' || action === 'update') {
         pending.progress = window.appProgress({
@@ -383,6 +390,8 @@
       if (restoreFocus) restoreActionFocus(button, focusHost, action, id);
     }
     if (failure) {
+      const status = document.getElementById('component-status');
+      if (status) status.textContent = `${name}操作未完成：${failure}`;
       void window.appNotice({ title: `${name}操作未完成`, body: failure });
     } else if (completed && completionMessage) {
       void window.appNotice({ title: `${name}操作结果`, body: completionMessage });

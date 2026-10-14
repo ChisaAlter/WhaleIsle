@@ -1136,11 +1136,8 @@ if (!gotLock) {
       // so config writes and plugin toggles share one serialized align
       // chain no matter which surface asked.
       desktop: {
-
         project: (payload) => projectEnvironment.dispatch(payload),
-
         htmlPreview: (input, signal) => require('./html-preview').captureHtmlPreview(input, signal),
-
         state: () => {
           const configNow = loadConfig();
           const listed = listInstalledPlugins();
@@ -1459,128 +1456,91 @@ if (!gotLock) {
     void finalizeQuit();
   });
 
-  // Explicit quit is already consent: keep inspection/lock/drain, not a
-  // second task-warning prompt. Failed shutdown still offers recovery.
+  // Explicit quit is already consent, including when the runtime cannot
+  // drain or shut down. Keep cleanup bounded without asking the user again.
   async function finalizeQuit() {
     if (quitInProgress) return;
     quitInProgress = true;
+    let shutdownPromise;
+    let shutdownTimer;
+    const shutdownForQuit = () => {
+      if (!shutdownPromise) {
+        stoppingForQuit = true;
+        shutdownPromise = Promise.allSettled([
+          Promise.resolve().then(() => harness.shutdown()),
+          Promise.resolve().then(() => cleanupDesktopResources()),
+          Promise.resolve().then(() => getLive2dPet()?.dispose()),
+          Promise.resolve().then(() => stopDesktopInstallControl()),
+          Promise.resolve().then(() => taskControlPeer.stop()),
+          Promise.resolve().then(() => taskProtection.cleanupAfterQuit()),
+        ]).then((results) => {
+          let failure;
+          for (const result of results) {
+            if (result.status === 'rejected') {
+              failure ||= result.reason;
+              dsh.log(`退出：资源关停失败：${result.reason?.message || String(result.reason)}`, 'error');
+            }
+          }
+          if (failure) throw failure;
+        });
+      }
+      return shutdownPromise;
+    };
     try {
-      while (true) {
-        let result;
-        let dismissClosing;
-        try {
-          result = await taskProtection.coordinate('quit', {
+      let result;
+      try {
+        result = await Promise.race([
+          taskProtection.coordinate('quit', {
             terminal: true,
             preConfirmed: true,
             commit: async () => {
               stoppingForQuit = true;
               closingOverlayActive = true;
               const win = getMainWindow();
-              // Keep the current page and its drafts until stopping succeeds.
-              dismissClosing = await showClosingOverlay(win, loadConfig().locale,
+              await showClosingOverlay(win, loadConfig().locale,
                 getHarnessWebContents(win) || win?.webContents).catch(() => undefined);
-              let shutdownTimer;
-              let shutdownAbandoned = false;
-              try {
-                await Promise.race([
-                  Promise.all([harness.shutdown(), cleanupDesktopResources()]).then(() => {
-                    if (!shutdownAbandoned) return getLive2dPet()?.dispose();
-                  }),
-                  new Promise((_, reject) => {
-                    shutdownTimer = setTimeout(() => {
-                      const error = new Error('后台关停未在 30 秒内完成');
-                      error.code = 'dshd/shutdown-timeout';
-                      reject(error);
-                    }, 30000);
-                  }),
-                ]);
-              } finally {
-                shutdownAbandoned = true;
-                clearTimeout(shutdownTimer);
-              }
-              stopDesktopInstallControl();
-              void taskControlPeer.stop();
+              await shutdownForQuit();
               // Keep the current surface until the native window closes.
-              // Detaching it here exposes the boot page for a final frame.
             },
-          });
-        } catch (error) {
-          result = { proceeded: false, code: error.code || 'dshd/shutdown-failed',
-            detail: error.message || String(error) };
-        }
-        if (result.proceeded) {
-          quitInProgress = false;
-          app.quit();
-          return;
-        }
-        quitting = false;
-        stoppingForQuit = false;
-        closingOverlayActive = false;
-        if (dismissClosing) void dismissClosing().catch(() => {});
-        // The user already requested quit; a failed drain or an
-        // unreachable runtime must not silently cancel the quit — offer a
-        // last-resort force exit so the app can always be closed.
-        if (result.code && result.code !== 'cancelled' && result.code !== 'busy') {
-          const diagnostics = {
-            code: result.code,
-            detail: result.detail,
-            pendingCount: result.pendingCount,
-            pendingLabels: result.pendingLabels,
-          };
-          dsh.log(`退出失败：${JSON.stringify(diagnostics)}`, 'error');
-          const choice = await confirmDialog(firstVisibleWindow(), {
-            type: 'warning',
-            title: '退出未完成',
-            message: result.code === 'dshd/shutdown-failed' || result.code === 'dshd/shutdown-timeout'
-              ? '后台服务未能完成关停' : '桌面运行时未响应退出请求',
-            detail: '可重试退出，或强制退出（运行中的工作将直接中断）。取消可返回应用。',
-            buttons: ['重试', '强制退出', '取消'],
-            defaultId: 2,
-            cancelId: 2,
-            dangerIds: [1],
-            noLink: true,
-          }).catch(() => ({ response: 2 }));
-          if (choice.response === 0) {
-            quitting = true;
-            continue;
-          }
-          if (choice.response === 1) {
-            quitting = true;
-            stoppingForQuit = true;
-            let forceExitTimer;
-            try {
-              await Promise.race([
-                (async () => {
-                  stopDesktopInstallControl();
-                  void taskControlPeer.stop();
-                  // Start stopping the child even if a preview never closes.
-                  const results = await Promise.allSettled([harness.shutdown(), cleanupDesktopResources(), getLive2dPet()?.dispose()]);
-                  for (const result of results) {
-                    if (result.status === 'rejected') {
-                      dsh.log(`强制退出：后台关停失败：${result.reason?.message || String(result.reason)}`, 'error');
-                    }
-                  }
-                })(),
-                new Promise((resolve) => {
-                  forceExitTimer = setTimeout(() => {
-                    dsh.log('强制退出：关停等待超时', 'error');
-                    resolve();
-                  }, 5000);
-                }),
-              ]);
-            } catch (error) {
-              dsh.log(`强制退出：后台关停失败：${error.message || String(error)}`, 'error');
-            } finally {
-              clearTimeout(forceExitTimer);
-            }
-            app.exit(0);
-            return;
-          }
-        }
-        quitting = false;
-        harness.cancelShutdown();
+          }),
+          new Promise((_, reject) => {
+            shutdownTimer = setTimeout(() => {
+              const error = new Error('后台关停未在 30 秒内完成');
+              error.code = 'dshd/shutdown-timeout';
+              reject(error);
+            }, 30000);
+          }),
+        ]);
+      } catch (error) {
+        result = { proceeded: false, code: error.code || 'dshd/shutdown-failed',
+          detail: error.message || String(error) };
+      } finally {
+        clearTimeout(shutdownTimer);
+      }
+      if (result.proceeded) {
+        quitInProgress = false;
+        app.quit();
         return;
       }
+      dsh.log(`退出：自动完成关停：${JSON.stringify({
+        code: result.code, detail: result.detail,
+        pendingCount: result.pendingCount, pendingLabels: result.pendingLabels,
+      })}`, 'error');
+      let finalTimer;
+      try {
+        await Promise.race([
+          shutdownForQuit().catch(() => {}),
+          new Promise((resolve) => {
+            finalTimer = setTimeout(() => {
+              dsh.log('退出：资源清理等待超时，结束桌面进程', 'error');
+              resolve();
+            }, 5000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(finalTimer);
+      }
+      app.exit(0);
     } finally {
       quitInProgress = false;
     }

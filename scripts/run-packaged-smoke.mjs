@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -12,6 +13,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
 const distDir = path.join(root, 'dist')
 const timeoutMs = Number(process.env.DSH_SMOKE_TIMEOUT_MS) || 300_000
+const macosEvidenceDir = process.platform === 'darwin' ? path.join(distDir, 'macos-chrome-evidence') : null
+const macosOutput = []
+let macosCrash = null
 
 function packagedExecutable() {
   if (process.env.DSH_SMOKE_EXE) {
@@ -45,6 +49,7 @@ function stopProcessTree(child) {
 
 function run(executable, args, env) {
   return new Promise((resolve, reject) => {
+    const startedAt = Date.now()
     const child = spawn(executable, args, {
       cwd: root,
       detached: process.platform !== 'win32',
@@ -58,8 +63,14 @@ function run(executable, args, env) {
       reject(new Error(`Packaged smoke timed out after ${timeoutMs}ms.`))
     }, timeoutMs)
 
-    child.stdout.on('data', (chunk) => process.stdout.write(chunk))
-    child.stderr.on('data', (chunk) => process.stderr.write(chunk))
+    child.stdout.on('data', (chunk) => {
+      if (macosEvidenceDir) macosOutput.push(chunk)
+      process.stdout.write(chunk)
+    })
+    child.stderr.on('data', (chunk) => {
+      if (macosEvidenceDir) macosOutput.push(chunk)
+      process.stderr.write(chunk)
+    })
     child.once('error', (error) => {
       clearTimeout(timer)
       reject(error)
@@ -67,6 +78,7 @@ function run(executable, args, env) {
 
     child.once('exit', (code, signal) => {
       clearTimeout(timer)
+      if (macosEvidenceDir && signal) macosCrash = { pid: child.pid, startedAt, signal }
       resolve({ code, signal })
     })
   })
@@ -76,6 +88,7 @@ const dirs = createSmokeDirs('dsh-packaged-smoke-')
 const keepArtifacts = process.env.DSH_SMOKE_KEEP === '1'
 
 try {
+  if (macosEvidenceDir) mkdirSync(macosEvidenceDir, { recursive: true })
   const executable = packagedExecutable()
   if (!existsSync(executable)) {
     throw new Error(`Packaged executable not found: ${executable}`)
@@ -95,6 +108,10 @@ try {
     DSH_SMOKE: '1',
     // Packaged builds ignore ambient QA/smoke flags; the rehearsal opts in.
     DSHD_ALLOW_PACKAGED_QA: '1',
+    ...(macosEvidenceDir ? {
+      DSH_MACOS_CHROME_EVIDENCE_DIR: macosEvidenceDir,
+      ELECTRON_ENABLE_STACK_DUMPING: '1',
+    } : {}),
   }))
 
   if (!existsSync(dirs.resultPath)) {
@@ -108,6 +125,30 @@ try {
   console.error(error instanceof Error ? error.message : String(error))
   process.exitCode = 1
 } finally {
+  if (macosEvidenceDir) {
+    writeFileSync(path.join(macosEvidenceDir, 'packaged-smoke.log'), Buffer.concat(macosOutput))
+    if (existsSync(dirs.resultPath)) copyFileSync(dirs.resultPath, path.join(macosEvidenceDir, 'dshd-smoke.json'))
+    const startupResult = path.join(dirs.userData, 'last-desktop-start.json')
+    if (existsSync(startupResult)) copyFileSync(startupResult, path.join(macosEvidenceDir, 'last-desktop-start.json'))
+    if (macosCrash) {
+      // macOS can write its report shortly after process exit. Read once,
+      // retaining only reports for this rehearsal PID and launch interval.
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      const reportsDir = path.join(homedir(), 'Library', 'Logs', 'DiagnosticReports')
+      try {
+        for (const name of readdirSync(reportsDir).filter(name => name.endsWith('.ips'))) {
+          const file = path.join(reportsDir, name)
+          if (statSync(file).mtimeMs < macosCrash.startedAt) continue
+          const report = readFileSync(file, 'utf8')
+          if (!new RegExp(`"pid"\\s*:\\s*${macosCrash.pid}(?:\\s*[,}])`).test(report)) continue
+          copyFileSync(file, path.join(macosEvidenceDir, name))
+          console.log(`Mac crash report retained: ${name}`)
+        }
+      } catch (error) {
+        console.warn(`Mac crash report unavailable: ${error.message}`)
+      }
+    }
+  }
   if (keepArtifacts) {
     console.log(`Smoke artifacts kept at ${dirs.smokeRoot}`)
   } else {

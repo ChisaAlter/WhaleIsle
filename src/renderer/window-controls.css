@@ -1,3 +1,7 @@
+.window-controls[hidden] {
+  display: none;
+}
+
 .window-controls {
   position: fixed;
   top: 0;

@@ -186,6 +186,13 @@ test('home uses one guarded start action and hides stale diagnostics throughout 
 
 test('bound handlers: delayed cancel A->B keeps B live and refuses the stale write', { skip: !hasElectron }, async () => {
   const r = await runBound();
+  assert.deepEqual([r.keyboard.opened, r.keyboard.down, r.keyboard.end, r.keyboard.home, r.keyboard.up],
+    ['stable', 'beta', 'beta', 'stable', 'beta'], 'popup skips the unverified option and supports arrow and boundary keys');
+  assert.equal(r.keyboard.escaped, true, 'Escape returns focus to the popup trigger');
+  assert.match(r.keyboard.scope, /重新安装已勾选插件/);
+  assert.match(r.keyboard.scope, /预设和设置（含全局指令及关联凭据）/);
+  assert.match(r.keyboard.scope, /同路径附件覆盖/);
+  assert.match(r.keyboard.scope, /整个 attachments\/ 目录，包括未勾选会话/);
   assert.equal(r.scan.hasShell, true, 'real preload bridge exposed window.shell');
   assert.equal(r.scan.importBtn && r.scan.cancelBtn && r.scan.routePicker, true, 'launcher DOM bound');
   assert.equal(r.delayedCancel.staleWriteRefused, true,

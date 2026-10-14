@@ -889,6 +889,15 @@ export class ThemeRuntime {
     tokens['--dsw-alias-glass-opacity'] = `${solidity}%`
     if (backdropLive) {
       Object.assign(tokens, mixWallpaperSurfaces(tokens, mode, solidity, this.settings.terminalOpacity))
+    } else {
+      // The base sheet mixes DeepSeek's raised fills directly. Custom
+      // families supply their own colors, so apply the same glass value here.
+      for (const name of ['--dsw-alias-bg-layer-1', '--dsw-alias-bg-layer-2']) {
+        const color = tokens[name]
+        if (color !== undefined && solidity < 100) {
+          tokens[name] = `color-mix(in srgb, ${color} ${solidity}%, transparent)`
+        }
+      }
     }
     for (const layer of [...this.overrides.values()].sort((a, b) => a.seq - b.seq)) {
       for (const [name, modes] of Object.entries(layer.tokens)) {

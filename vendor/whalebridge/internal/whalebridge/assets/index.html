@@ -4,11 +4,13 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>鲸桥 · WhaleBridge</title><link rel="icon" href="/whale-head.png">
   <link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/scrollbar.css"><link rel="stylesheet" href="/style.css">
-  <script src="/app.js" defer></script><script src="/accounts.js" defer></script><script src="/global.js" defer></script>
+  <link rel="stylesheet" href="/source-picker.css">
+  <link rel="stylesheet" href="/adapters.css">
+  <script src="/app.js" defer></script><script src="/accounts.js" defer></script><script src="/sources.js" defer></script><script src="/global.js" defer></script><script src="/adapters.js" defer></script>
 </head>
 <body>
   <div class="window-drag" aria-hidden="true"></div>
-  <div class="app-shell">
+  <div class="app-shell" data-page="overview">
     <aside class="sidebar">
       <a class="brand" href="/" aria-label="鲸桥首页"><img src="/whale-head.png" alt="鲸屿" width="40" height="40"><span><strong>鲸桥</strong><small>WHALEBRIDGE</small></span></a>
       <div class="sidebar-label">鲸屿 · 模型连接组件</div>

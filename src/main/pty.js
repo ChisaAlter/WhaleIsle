@@ -821,6 +821,10 @@ function registerPtyIpc(ipcMain, controller, options = {}) {
     throw new Error(`unknown pty id: ${id}`);
   }
 
+  ipcMain.handle('shell:pty-can-create', (event, cwd) => {
+    authorize(event);
+    return Boolean(asCwd(cwd));
+  });
   ipcMain.handle('shell:pty-create', async (event, input) => {
     const context = track(event);
     const created = await context.live.create(input);

@@ -51,7 +51,11 @@ function fixture(t, { corrupt = false, failUpload = false, existing = null, tagS
     if (path.endsWith('/releases/latest')) return { tag_name: 'v1.2.2' }
     if (path.includes('/releases?')) return existing ? [{ ...existing, tag_name: 'v1.2.3' }] : []
     if (path.includes('/artifacts?')) return { artifacts: [artifact] }
-    if (path.endsWith('/commits/v1.2.3')) return tagSha ? { sha: tagSha } : null
+    if (path.endsWith('/git/ref/tags/v1.2.3')) return tagSha ? { ref: 'refs/tags/v1.2.3' } : null
+    if (path.endsWith('/commits/v1.2.3')) {
+      if (!tagSha) throw new Error('GitHub commits API returns HTTP 422 for a missing tag')
+      return { sha: tagSha }
+    }
     if (options.method === 'POST') {
       assert.equal(options.body.draft, true)
       assert.equal(options.body.target_commitish, sha)
@@ -93,6 +97,14 @@ test('actual publication path validates bytes, emits updater checksums and uploa
   const body = f.calls.find(([, o]) => o.method === 'PATCH')[1].body.body
   assert.match(body, /^中文发布说明\n\n<details>\n<summary>English<\/summary>\n\nRelease notes\n\n<\/details>/)
   assert.doesNotMatch(body, /Source:|Build:|Setup SHA256:/)
+  assert.ok(f.calls.some(([path, options]) => path.endsWith('/git/ref/tags/v1.2.3') && options.missing))
+  assert.ok(!f.calls.some(([path]) => path.endsWith('/commits/v1.2.3')))
+})
+
+test('an existing matching tag resolves its commit and may resume publication', async t => {
+  const f = fixture(t, { tagSha: sha })
+  assert.match((await publish(f.options)).url, /v1.2.3$/)
+  assert.ok(f.calls.some(([path]) => path.endsWith('/commits/v1.2.3')))
 })
 test('corrupt assets and a tag on another commit never upload', async t => {
   for (const input of [{ corrupt: true }, { tagSha: 'b'.repeat(40) }]) {

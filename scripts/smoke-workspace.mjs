@@ -199,7 +199,7 @@ export function assertDesktopHarnessHome(userData, result = {}) {
     throw new Error(`desktop Harness home was not created at ${home}`)
   }
   const recorded = typeof result.desktopHome === 'string' ? result.desktopHome : ''
-  if (recorded && path.resolve(recorded) !== path.resolve(home)) {
+  if (recorded && realpathSync(recorded) !== realpathSync(home)) {
     throw new Error(`desktopHome mismatch: recorded=${recorded} expected=${home}`)
   }
   if (result.electronEnv?.DSH_HOME) {

@@ -26,6 +26,8 @@
 长期上游差异由相关功能页说明行为和原因，位置见 src/shared/harness-desktop-forks.js；整合方法见维护说明。Allowed touch 和 Gates 用于导航，不是审批边界或必跑清单。
 ## 索引
 
+- [DSH with ChatGPT](dsh-with-chatgpt.md): optional ChatGPT planning/review bundle, native DSH tools, and isolated per-Session state.
+
 | id | 一句话 | 主入口 | gates 摘要 |
 | --- | --- | --- | --- |
 | [release-process](release-process.md) | 固定候选、影响验收、失败分级与原包晋级 | release/publish workflows | 计划、验收记录、CI 资格和工作流测试 |

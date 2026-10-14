@@ -16,8 +16,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties, KeyboardEvent, MouseEvent } from 'react'
 import clsx from 'clsx'
+import { COMMAND_PRIORITY_HIGH, KEY_TAB_COMMAND } from 'lexical'
 import {
-  IconCloseOutline16, IconPlusOutline16, IconWarningOutline16, Toast, Tooltip,
+  Button, IconCloseOutline16, IconPlusOutline16, IconWarningOutline16, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: the `plan` projection key merge (the TodoDock posture — the
 // composer reads a host-computed value; the domain owns the key).
@@ -29,6 +30,7 @@ import type {} from '@deepseek-ai/dsh-goal/client'
 // api-remotes import already places it in every client program.
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ComposerBarProps } from '../contract/slots.ts'
+import type { NextPromptResult } from '../../next-prompt-contract.ts'
 import { ComposerBeam } from '../ComposerBeam.tsx'
 import { TypingFxLayer } from '../TypingFxLayer.tsx'
 import { DraftEditor } from '../input/editor/DraftEditor.tsx'
@@ -54,7 +56,7 @@ export const InputBar = memo(function InputBar({
   toggleCommandMenu, stop, t,
   renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useStopShortcut,
   useComposerBeam, useComposerBeamStyle, useComposerResize, useComposerResizeHeight, useComposerResizeWidth,
-  useTypingFx, useTypingFxStyle,
+  useTypingFx, useTypingFxStyle, useNextPrompt, requestNextPrompt,
   setComposerResizeSize,
   useProjection, sessionId, variant, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
@@ -73,6 +75,7 @@ export const InputBar = memo(function InputBar({
   const composerResizeWidth = useComposerResizeWidth(value => value)
   const typingFx = useTypingFx(value => value)
   const typingFxStyle = useTypingFxStyle(value => value)
+  const nextPromptEnabled = useNextPrompt(value => value)
   // Scheme text stop recolors the whole composer input through a CSS var;
   // theme (null) leaves the token fallback untouched.
   const typingFxTextColor = typingFx ? resolveTypingFxColors(typingFxStyle.colors).text : null
@@ -83,6 +86,8 @@ export const InputBar = memo(function InputBar({
   const running = useSession(s => s.running) ?? false
   const subagent = useSession(s => s.subagent) ?? null
   const removed = useSession(s => s.removed) ?? false
+  const blank = useSession(s => s.blank) ?? true
+  const open = useSession(s => s.openState === 'open') ?? false
   // Plan mode swaps the composer placeholder (the projection is the folded
   // host value; owner-prop placeholders — hero, session-unavailable — win).
   const planActive = useProjection('plan', plan => plan !== undefined && (plan.pending ? !plan.active : plan.active))
@@ -276,6 +281,50 @@ export const InputBar = memo(function InputBar({
   }, [subagent, addFiles, attachments, imageLimits, showToast, t])
 
   const canAcceptDrop = subagent === null && !locked && !machineBusy && addFiles !== undefined
+
+  const [nextPrompt, setNextPrompt] = useState<NextPromptResult | null>(null)
+  const acceptedPrompt = useRef<{ sessionId: string; seq: number } | null>(null)
+  const nextPromptRequest = useRef(requestNextPrompt)
+  nextPromptRequest.current = requestNextPrompt
+  const canSuggest = nextPromptEnabled && variant === 'composer' && open && !blank
+    && !running && !locked && !machineBusy && !managed && subagent === null
+    && draft === '' && attachments.length === 0 && edit === null && input?.phase === 'plain'
+
+  useEffect(() => {
+    setNextPrompt(null)
+    if (!canSuggest || sessionId === undefined || nextPromptRequest.current === undefined) return
+    const controller = new AbortController()
+    void nextPromptRequest.current(controller.signal).then(result => {
+      if (controller.signal.aborted || result.text === null || result.seq === null) return
+      if (acceptedPrompt.current?.sessionId === sessionId && acceptedPrompt.current.seq === result.seq) return
+      setNextPrompt(result)
+    }).catch(error => {
+      if (!controller.signal.aborted) console.warn('Next-prompt suggestion failed:', error)
+    })
+    return () => { controller.abort() }
+  }, [canSuggest, sessionId, running])
+
+  const acceptNextPrompt = useCallback((): boolean => {
+    if (!canSuggest || nextPrompt?.text == null || nextPrompt.seq === null
+      || sessionId === undefined || inputActions === undefined
+      || keyboard?.snapshot.draft !== '' || keyboard.snapshot.attachmentIds.length !== 0) return false
+    acceptedPrompt.current = { sessionId, seq: nextPrompt.seq }
+    inputActions.setDraft(nextPrompt.text)
+    setNextPrompt(null)
+    return true
+  }, [canSuggest, nextPrompt, sessionId, inputActions, keyboard])
+
+  useEffect(() => {
+    if (editor === null || nextPrompt === null || !canSuggest) return
+    return editor.registerCommand(KEY_TAB_COMMAND, event => {
+      if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey
+        || event.isComposing || editor.isComposing()
+        || editor.getRootElement()?.hasAttribute('data-composer-composing')) return false
+      if (!acceptNextPrompt()) return false
+      event.preventDefault()
+      return true
+    }, COMMAND_PRIORITY_HIGH)
+  }, [editor, nextPrompt, canSuggest, acceptNextPrompt])
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const onPickFiles = (e: ChangeEvent<HTMLInputElement>): void => {
@@ -524,15 +573,35 @@ export const InputBar = memo(function InputBar({
             workspacePickerOpen={workspacePickerOpen}
             onWorkspaceKeyDown={onWorkspaceKeyDown}
             hint={hint}
-            showPlaceholder={draft === '' && attachments.length === 0 && !claimActive}
+            showPlaceholder={draft === '' && attachments.length === 0 && !claimActive && (!canSuggest || nextPrompt === null)}
             inputStyle={inputStyle}
             typingFxCaret={typingFx && typingFxStyle.cursor !== 'native' ? typingFxStyle.cursor : undefined}
             layers={(
-              <TypingFxLayer
-                editor={workspaceTrigger ? null : editor}
-                enabled={typingFx}
-                style={typingFxStyle}
-              />
+              <>
+                <TypingFxLayer
+                  editor={workspaceTrigger ? null : editor}
+                  enabled={typingFx}
+                  style={typingFxStyle}
+                />
+                {canSuggest && nextPrompt?.text != null && (
+                  <Tooltip label={`${nextPrompt.text} · ${t('input.nextPrompt.hint')}`} side="top" delayMs={500}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      className={clsx(css.placeholder, css.nextPrompt)}
+                      data-next-prompt
+                      aria-label={`${t('input.nextPrompt.accept')}: ${nextPrompt.text}`}
+                      aria-keyshortcuts="Tab"
+                      onMouseDown={keepFocus}
+                      onClick={acceptNextPrompt}
+                    >
+                      <span className={css.nextPromptText}>{nextPrompt.text}</span>
+                      <kbd className={css.nextPromptKey} aria-hidden>Tab</kbd>
+                    </Button>
+                  </Tooltip>
+                )}
+              </>
             )}
           />
           <div className={css.row}>

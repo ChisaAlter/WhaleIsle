@@ -47,9 +47,19 @@ test('boot page silhouette layers use the shared radius and zero out maximized',
 });
 
 test('launcher shell uses the shared radius, the l2 edge ring, and zeroes out maximized', () => {
-  assert.match(launcher, /\.shell\s*\{[^}]*border-radius:\s*20px/);
-  assert.match(launcher, /\.shell\s*\{[^}]*box-shadow:\s*inset 0 0 0 var\(--dsh-window-hairline, 1px\) var\(--dsw-alias-border-l2\)/);
+  const shell = launcher.match(/\.shell\s*\{([^}]*)\}/)?.[1];
+  const ring = launcher.match(/\.shell::after\s*\{([^}]*)\}/)?.[1];
+  assert.ok(shell, 'shell rule');
+  assert.ok(ring, 'shell edge ring rule');
+  assert.match(shell, /border-radius:\s*20px/);
+  // Keep a single edge ring on the overlay so child backgrounds cannot cover
+  // it; a second inset shadow on the shell would darken the rounded edge.
+  assert.doesNotMatch(shell, /box-shadow:/);
+  assert.match(ring, /border:\s*var\(--dsh-window-hairline, 1px\) solid var\(--dsw-alias-border-l2\)/);
+  assert.match(ring, /border-radius:\s*inherit/);
+  assert.match(ring, /pointer-events:\s*none/);
   assert.match(launcher, /html\[data-window-maximized\]\s*\.shell\s*\{[^}]*border-radius:\s*0/);
+  assert.match(launcher, /html\[data-window-maximized\]\s*\.shell::after\s*\{[^}]*border:\s*0/);
 });
 
 // Windows 11's DWM corner mask (roundedCorners default) cuts a ~8px arc over

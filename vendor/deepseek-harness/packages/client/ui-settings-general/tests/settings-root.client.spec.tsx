@@ -210,6 +210,15 @@ function openPanel() {
 }
 
 describe('SettingsRoot trigger', () => {
+  it('starts a different section at the top instead of inheriting the previous scroll offset', () => {
+    mount()
+    openPanel()
+    const options = screen.getByTestId('section-general').parentElement!.parentElement!
+    options.scrollTop = 320
+    fireEvent.click(screen.getByRole('button', { name: 'Models' }))
+    expect(screen.getByTestId('section-models')).toBeTruthy()
+    expect(options.scrollTop).toBe(0)
+  })
   it.each([true, false])('offers one shell update action without starting another release check when wide is %s', async (wide) => {
     const checkUpdate = vi.fn(async () => ({ status: 'available', latest: '1.0.1' }))
     vi.stubGlobal('shell', { checkUpdate })

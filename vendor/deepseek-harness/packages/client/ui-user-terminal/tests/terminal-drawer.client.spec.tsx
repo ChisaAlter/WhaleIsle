@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { useSyncExternalStore } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 // Ghostty needs a real layout to fit; the pane integration is asserted against
 // a scripted fake that records writes, data handlers, and disposal.
@@ -170,7 +170,7 @@ function bindStore(instance: ReturnType<ReturnType<typeof createTerminalSessionS
   }
 }
 
-function mount(opts: {
+async function mount(opts: {
   cwd?: string | undefined
   workingDirectory?: string
   sessionId?: SessionId | undefined | null
@@ -180,6 +180,7 @@ function mount(opts: {
   surfaceHandle?: ReturnType<typeof createTerminalSessionStore>
   surfaceInstance?: ReturnType<ReturnType<typeof createTerminalSessionStore>['create']>
   ptyCreate?: (input: { cwd: string }) => Promise<{ id: string }>
+  ptyAllowed?: boolean
   t?: TerminalDrawerProps['t']
 } = {}) {
   const handle = opts.handle ?? createTerminalSessionStore()
@@ -228,6 +229,7 @@ function mount(opts: {
     inputActions: undefined,
     ...store,
     ptyCreate,
+    ptyCanCreate: vi.fn(async () => opts.ptyAllowed !== false),
     ptyWrite,
     ptyAck,
     ptyResize,
@@ -251,6 +253,7 @@ function mount(opts: {
         : null}
     </>,
   )
+  await act(async () => {})
   return {
     ptyCreate, ptyWrite, ptyAck, ptyResize, ptyKill, toggleTerminalDrawer, setTerminalDrawer,
     mentionTerminal, writeClipboard, openWorkspacePath, openLocalUrl, openExternal,
@@ -282,20 +285,28 @@ describe('clampDrawerHeight', () => {
 
 describe('TerminalDrawer', () => {
   it('starts a user terminal in the bound Project directory instead of the coordinator storage cwd', async () => {
-    const b = mount({ cwd: '/profile/project-store', workingDirectory: '/work/project-code' })
+    const b = await mount({ cwd: '/profile/project-store', workingDirectory: '/work/project-code' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await waitFor(() => expect(b.ptyCreate).toHaveBeenCalledExactlyOnceWith({ cwd: '/work/project-code' }))
   })
 
-  it('does not create a PTY when the session has no cwd', () => {
-    const b = mount({ cwd: undefined, sessionId: undefined })
-    expect(screen.getByText('A workspace is required to start a terminal')).toBeTruthy()
+  it('keeps unauthorized session directories unavailable without issuing create IPC', async () => {
+    const b = await mount({ cwd: '/profile/whale', ptyAllowed: false })
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'New terminal' }).disabled).toBe(true)
+    expect(screen.getByText(en['empty.unavailable'])).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
+    expect(b.ptyCreate).not.toHaveBeenCalled()
+  })
+
+  it('does not create a PTY when the session has no cwd', async () => {
+    const b = await mount({ cwd: undefined, sessionId: undefined })
+    expect(screen.getByText(en['empty.unavailable'])).toBeTruthy()
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'New terminal' }).disabled).toBe(true)
     expect(b.ptyCreate).not.toHaveBeenCalled()
   })
 
   it('creates a PTY on New and closes it from the toolbar', async () => {
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await waitFor(() => expect(b.ptyCreate).toHaveBeenCalledWith({ cwd: '/work' }))
     expect(await screen.findByRole('log', { name: 'pty-1' })).toBeTruthy()
@@ -305,7 +316,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('splits up to MAX_TERMINALS_PER_GROUP and then disables split', async () => {
-    mount({ cwd: '/work' })
+    await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await screen.findByRole('log', { name: 'pty-1' })
     for (let index = 2; index <= MAX_TERMINALS_PER_GROUP; index += 1) {
@@ -324,7 +335,7 @@ describe('TerminalDrawer', () => {
     const instance = handle.create('session-1')
     const surfaceHandle = createTerminalSessionStore()
     const surfaceInstance = surfaceHandle.create('session-1')
-    mount({ cwd: '/work', handle, instance, surface: true, surfaceHandle, surfaceInstance })
+    await mount({ cwd: '/work', handle, instance, surface: true, surfaceHandle, surfaceInstance })
     fireEvent.click(screen.getAllByRole('button', { name: 'New terminal' })[0]!)
     await screen.findByRole('log', { name: 'pty-1' })
     expect(instance.getSnapshot().sessions.map(session => session.id)).toEqual(['pty-1'])
@@ -332,8 +343,8 @@ describe('TerminalDrawer', () => {
     expect(screen.queryAllByRole('log', { name: 'pty-1' })).toHaveLength(1)
   })
 
-  it('writes a clamped height through setTerminalDrawer on drag', () => {
-    const b = mount({ cwd: '/work' })
+  it('writes a clamped height through setTerminalDrawer on drag', async () => {
+    const b = await mount({ cwd: '/work' })
     const handle = screen.getByRole('separator', { name: 'Resize terminal drawer' })
     handle.getBoundingClientRect = () => ({
       x: 0, y: 400, width: 800, height: 6, top: 400, left: 0, bottom: 406, right: 800, toJSON() { return {} },
@@ -347,8 +358,8 @@ describe('TerminalDrawer', () => {
     expect(next).toBeLessThanOrEqual(maxDrawerHeight(window.innerHeight))
   })
 
-  it('maximize writes 75% of the viewport and restore writes the previous height', () => {
-    const b = mount({ cwd: '/work' })
+  it('maximize writes 75% of the viewport and restore writes the previous height', async () => {
+    const b = await mount({ cwd: '/work' })
     const root = document.querySelector('[data-terminal-owner="drawer"]') as HTMLElement
     Object.defineProperty(root, 'clientHeight', { configurable: true, value: 280 })
     fireEvent.click(screen.getByRole('button', { name: 'Maximize' }))
@@ -358,7 +369,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('omits maximize on the surfaces.terminal occupant', async () => {
-    mount({ cwd: '/work', surface: true })
+    await mount({ cwd: '/work', surface: true })
     fireEvent.click(screen.getAllByRole('button', { name: 'New terminal' })[0]!)
     await screen.findAllByRole('log')
     const surface = document.querySelector('[data-terminal-owner="surface"]') as HTMLElement
@@ -368,7 +379,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('copies a selection, appends it to chat, and opens a URL from the selection bar', async () => {
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await screen.findByRole('log', { name: 'pty-1' })
     const term = await waitFor(() => {
@@ -404,7 +415,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('refuses Ctrl+` so the drawer toggle bubbles instead of feeding the PTY', async () => {
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await screen.findByRole('log', { name: 'pty-1' })
     const term = await waitFor(() => {
@@ -430,7 +441,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('opens a non-loopback URL from the selection bar in the system browser', async () => {
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await screen.findByRole('log', { name: 'pty-1' })
     const term = await waitFor(() => {
@@ -446,7 +457,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('disables Add to chat when the session id is missing', async () => {
-    const b = mount({ cwd: '/work', sessionId: null })
+    const b = await mount({ cwd: '/work', sessionId: null })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await screen.findByRole('log', { name: 'pty-1' })
     const term = await waitFor(() => {
@@ -463,7 +474,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('activates a Ctrl-clicked terminal URL through the Ghostty link callback', async () => {
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await screen.findByRole('log', { name: 'pty-1' })
     const term = await waitFor(() => {
@@ -478,12 +489,12 @@ describe('TerminalDrawer', () => {
     expect(b.openLocalUrl).toHaveBeenCalledTimes(1)
   })
 
-  it('does not register its own Ctrl+` listener; the titlebar toggle owns the shortcut', () => {
-    const withCwd = mount({ cwd: '/work' })
+  it('does not register its own Ctrl+` listener; the titlebar toggle owns the shortcut', async () => {
+    const withCwd = await mount({ cwd: '/work' })
     fireEvent.keyDown(window, { key: '`', ctrlKey: true })
     expect(withCwd.toggleTerminalDrawer).not.toHaveBeenCalled()
     cleanup()
-    const without = mount({ cwd: undefined, sessionId: undefined })
+    const without = await mount({ cwd: undefined, sessionId: undefined })
     fireEvent.keyDown(window, { key: '`', ctrlKey: true })
     expect(without.toggleTerminalDrawer).not.toHaveBeenCalled()
   })
@@ -493,7 +504,7 @@ describe('TerminalDrawer', () => {
     const instance = handle.create('session-1')
     const surfaceHandle = createTerminalSessionStore()
     const surfaceInstance = surfaceHandle.create('session-1')
-    const b = mount({ cwd: '/work', handle, instance, surface: true, surfaceHandle, surfaceInstance })
+    const b = await mount({ cwd: '/work', handle, instance, surface: true, surfaceHandle, surfaceInstance })
     bindPtyListeners([handle, surfaceHandle], { onPtyData: b.onPtyData, onPtyExit: b.onPtyExit, ptyAck: b.ptyAck })
     fireEvent.click(screen.getAllByRole('button', { name: 'New terminal' })[0]!)
     await screen.findByRole('log', { name: 'pty-1' })
@@ -521,7 +532,7 @@ describe('TerminalDrawer', () => {
       disconnect() {}
       unobserve() {}
     })
-    const b = mount({ cwd: '/work', surface: true })
+    const b = await mount({ cwd: '/work', surface: true })
     await waitFor(() => expect(b.ptyCreate).toHaveBeenCalledTimes(2))
     for (const run of observers) run()
     await Promise.resolve()
@@ -531,6 +542,11 @@ describe('TerminalDrawer', () => {
   })
 
   it('keeps a stale empty-state New click idempotent after auto-create settles', async () => {
+    let resolveFirst!: (value: { id: string }) => void
+    let created = 0
+    const ptyCreate = vi.fn(() => ++created === 1
+      ? new Promise<{ id: string }>(resolve => { resolveFirst = resolve })
+      : Promise.resolve({ id: `pty-${created}` }))
     vi.stubGlobal('ResizeObserver', class {
       cb: ResizeObserverCallback
       constructor(cb: ResizeObserverCallback) { this.cb = cb }
@@ -541,8 +557,9 @@ describe('TerminalDrawer', () => {
       disconnect() {}
       unobserve() {}
     })
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work', ptyCreate })
     const emptyStateNew = screen.getByRole('button', { name: 'New terminal' })
+    await act(async () => { resolveFirst({ id: 'pty-1' }) })
     await screen.findByRole('log', { name: 'pty-1' })
 
     expect(emptyStateNew.isConnected).toBe(false)
@@ -558,7 +575,7 @@ describe('TerminalDrawer', () => {
   it('closes the session when onPtyExit fires', async () => {
     const handle = createTerminalSessionStore()
     const instance = handle.create('session-1')
-    const b = mount({ cwd: '/work', handle, instance })
+    const b = await mount({ cwd: '/work', handle, instance })
     bindPtyListeners([handle], { onPtyData: b.onPtyData, onPtyExit: b.onPtyExit, ptyAck: b.ptyAck })
     fireEvent.click(screen.getAllByRole('button', { name: 'New terminal' })[0]!)
     await screen.findAllByRole('log', { name: 'pty-1' })
@@ -568,7 +585,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('forwards Ghostty input to the PTY and does not nest a button around the pane', async () => {
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     const log = await screen.findByRole('log', { name: 'pty-1' })
     expect(log.closest('button')).toBeNull()
@@ -596,7 +613,7 @@ describe('TerminalDrawer', () => {
       disconnect() {}
       unobserve() {}
     })
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     await waitFor(() => expect(b.ptyCreate).toHaveBeenCalledTimes(1))
     fireEvent.click(screen.getByRole('button', { name: 'Close terminal' }))
     await waitFor(() => expect(b.ptyKill).toHaveBeenCalledWith('pty-1'))
@@ -608,7 +625,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('constructs Ghostty with a resolved monospace family', async () => {
-    mount({ cwd: '/work' })
+    await mount({ cwd: '/work' })
     expect(screen.getByRole('button', { name: 'Split left/right' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Split top/bottom' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
@@ -631,7 +648,7 @@ describe('TerminalDrawer', () => {
 
   it('writes Ghostty init failure copy onto the mount', async () => {
     ghosttyState.createError = new Error('wasm-down')
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await waitFor(() => {
       expect(screen.getByRole('log', { name: 'pty-1' }).textContent).toContain('wasm-down')
@@ -641,7 +658,7 @@ describe('TerminalDrawer', () => {
 
   it('uses Ghostty fallback copy when create rejects a non-Error', async () => {
     ghosttyState.createError = 'nope'
-    mount({ cwd: '/work' })
+    await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await waitFor(() => {
       expect(screen.getByRole('log', { name: 'pty-1' }).textContent).toContain(
@@ -651,7 +668,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('does not answer ConPTY DA from the pane; Ghostty owns device attributes', async () => {
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await screen.findByRole('log', { name: 'pty-1' })
     await waitFor(() => expect(ghosttyState.instances.at(-1)).toBeTruthy())
@@ -659,7 +676,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('shows a session list after a second PTY and can activate or close a row', async () => {
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await screen.findByRole('log', { name: 'pty-1' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
@@ -682,7 +699,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('tiles a vertical split as stacked panes', async () => {
-    mount({ cwd: '/work' })
+    await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await screen.findByRole('log', { name: 'pty-1' })
     fireEvent.click(screen.getByRole('button', { name: 'Split top/bottom' }))
@@ -704,7 +721,7 @@ describe('TerminalDrawer', () => {
       disconnect() {}
       unobserve() {}
     })
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     await waitFor(() => expect(b.ptyCreate).toHaveBeenCalledTimes(1))
     await screen.findByRole('log', { name: 'pty-1' })
     expect(b.instance.getSnapshot().sessions[0]?.cols).toBe(DEFAULT_TERMINAL_COLS)
@@ -712,7 +729,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('does not settle-fit a zero-used-box pane', async () => {
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await screen.findByRole('log', { name: 'pty-1' })
     const term = await waitFor(() => {
@@ -729,7 +746,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('forwards Ghostty onResize like TerminalViewport', async () => {
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await screen.findByRole('log', { name: 'pty-1' })
     const term = await waitFor(() => {
@@ -742,7 +759,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('resizes the PTY from Ghostty fit once the host has a used box', async () => {
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await waitFor(() => expect(b.ptyCreate).toHaveBeenCalledTimes(1))
     const log = await screen.findByRole('log', { name: 'pty-1' })
@@ -761,7 +778,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('keeps the scrollback position on the settle fit unless the viewport was at the bottom', async () => {
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await waitFor(() => expect(b.ptyCreate).toHaveBeenCalledTimes(1))
     await screen.findByRole('log', { name: 'pty-1' })
@@ -783,7 +800,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('does not follow output on the settle fit when Ghostty is not at the bottom', async () => {
-    mount({ cwd: '/work' })
+    await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     const term = await waitFor(() => {
       const next = ghosttyState.instances.at(-1)
@@ -801,7 +818,7 @@ describe('TerminalDrawer', () => {
   it('replays the PTY buffer when a pane remounts', async () => {
     const handle = createTerminalSessionStore()
     const instance = handle.create('session-1')
-    const b = mount({ cwd: '/work', handle, instance })
+    const b = await mount({ cwd: '/work', handle, instance })
     bindPtyListeners([handle], { onPtyData: b.onPtyData, onPtyExit: b.onPtyExit, ptyAck: b.ptyAck })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await screen.findByRole('log', { name: 'pty-1' })
@@ -817,7 +834,7 @@ describe('TerminalDrawer', () => {
 
   it('opens Ghostty when ResizeObserver is missing', async () => {
     vi.stubGlobal('ResizeObserver', undefined)
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await screen.findByRole('log', { name: 'pty-1' })
     await waitFor(() => expect(ghosttyState.instances.at(-1)).toBeTruthy())
@@ -825,7 +842,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('focuses the active pane and follows sidebar activation', async () => {
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await screen.findByRole('log', { name: 'pty-1' })
     fireEvent.click(screen.getByRole('button', { name: 'Split top/bottom' }))
@@ -842,7 +859,7 @@ describe('TerminalDrawer', () => {
   })
 
   it('activates a pane from pointerdown on its host without waiting for click', async () => {
-    const b = mount({ cwd: '/work' })
+    const b = await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await screen.findByRole('log', { name: 'pty-1' })
     fireEvent.click(screen.getByRole('button', { name: 'Split top/bottom' }))
@@ -865,7 +882,7 @@ describe('TerminalDrawer', () => {
       unobserve() {}
     })
     ghosttyState.throwFit = true
-    const throwing = mount({ cwd: '/work' })
+    const throwing = await mount({ cwd: '/work' })
     await waitFor(() => expect(throwing.ptyCreate).toHaveBeenCalledTimes(1))
     await screen.findByRole('log', { name: 'pty-1' })
     await new Promise(resolve => {
@@ -876,7 +893,7 @@ describe('TerminalDrawer', () => {
     ghosttyState.throwFit = false
     ghosttyState.cols = 0
     ghosttyState.rows = 0
-    const empty = mount({ cwd: '/work' })
+    const empty = await mount({ cwd: '/work' })
     await waitFor(() => expect(empty.ptyCreate).toHaveBeenCalledTimes(1))
     await screen.findByRole('log', { name: 'pty-1' })
     await new Promise(resolve => {
@@ -901,7 +918,7 @@ describe('TerminalDrawer', () => {
       unobserve() {}
     })
     const ptyCreate = vi.fn(async () => { throw new Error('node-pty is not available') })
-    mount({
+    await mount({
       cwd: '/work',
       ptyCreate,
       t: key => (zh as Record<string, string>)[key] ?? key,

@@ -31,6 +31,9 @@
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../connection/tsconfig.client.json"
+    },
+    {
       "path": "../ui-slots"
     },
     {
@@ -107,6 +110,7 @@
     }
   ],
   "exclude": [
+    "src/next-prompt.ts",
     "src/index.ts"
   ]
 }

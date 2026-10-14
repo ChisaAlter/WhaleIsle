@@ -1031,5 +1031,16 @@ test('DshdRemote snapshot is chisacode-v2 and has no host-token wall', () => {
   assert.equal(snap.protocol, 'chisacode-v2');
   assert.equal(snap.relayConfigured, true);
   assert.equal(snap.relayTokenSet, true);
+  assert.equal(snap.legacyRelayTokenSet, false);
   assert.equal(snap.enabled, false);
+  config = { ...config, remoteRelayToken: 'legacy-token-canary' };
+  const withLegacyToken = remote.snapshot();
+  assert.equal(withLegacyToken.legacyRelayTokenSet, true);
+  assert.equal(withLegacyToken.relayTokenSet, true);
+  assert.equal(withLegacyToken.relayConfigured, true);
+  config = { ...config, remoteRelayToken: '' };
+  const cleared = remote.snapshot();
+  assert.equal(cleared.legacyRelayTokenSet, false);
+  assert.equal(cleared.relayTokenSet, true);
+  assert.equal(cleared.relayConfigured, true);
 });

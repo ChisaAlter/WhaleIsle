@@ -477,6 +477,14 @@ export type SurfaceIntent<T extends SurfaceEventType = SurfaceEventType> = {
   sourceEventSeqs?: SessionSeq[]
 })
 
+/** Optional omission-safe metadata for a log-only append. */
+export interface SessionLogMetadata {
+  /** Only informational records whose omission cannot affect history may set this marker. */
+  readonly ignorable?: true
+  readonly surfaceOp?: never
+  readonly sourceEventSeqs?: never
+}
+
 /**
  * One immutable entry in the session log.
  *

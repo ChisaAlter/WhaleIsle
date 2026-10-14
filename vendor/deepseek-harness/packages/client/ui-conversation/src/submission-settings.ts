@@ -50,6 +50,9 @@ export const SESSION_COST_PRICES_FIELD = 'sessionCostPrices'
 /** Field carrying whether the session header paints Chat/Trajectory tabs. */
 export const VIEW_TABS_FIELD = 'viewTabs'
 
+/** Field carrying whether the composer suggests the next user prompt. */
+export const NEXT_PROMPT_FIELD = 'nextPrompt'
+
 /** Field carrying the user's standing custom instructions sent with every request. */
 export const CUSTOM_INSTRUCTIONS_FIELD = 'customInstructions'
 
@@ -571,6 +574,9 @@ export type SessionCostPrices = Record<string, SessionCostModelPrice>
 /** Default keeps the Chat/Trajectory header tablist when more than one view exists. */
 export const DEFAULT_VIEW_TABS = true
 
+/** Default enables next-prompt suggestions without submitting them. */
+export const DEFAULT_NEXT_PROMPT = true
+
 /** Durable conversation section shared by the Host schema and the browser scope. */
 export interface ConversationSettings {
   /** Delivery mode for plain Enter while the addressed agent is busy. */
@@ -597,6 +603,8 @@ export interface ConversationSettings {
   sessionCostPrices?: SessionCostPrices
   /** Whether ConversationSessionHeader paints the Chat/Trajectory tablist. */
   viewTabs: boolean
+  /** Whether the composer suggests the next user prompt; absent/undefined reads as on. */
+  nextPrompt?: boolean
   /** Whether the composer paints typing echoes and a custom caret; absent/undefined reads as off. */
   typingFx?: boolean
   /** Optional visual tuning for the typing effect. */
@@ -710,6 +718,7 @@ export const ConversationSettingsFields = {
   [SESSION_COST_FIELD]: z.boolean().required(false),
   [SESSION_COST_PRICES_FIELD]: z.any().required(false),
   [VIEW_TABS_FIELD]: z.boolean().default(DEFAULT_VIEW_TABS),
+  [NEXT_PROMPT_FIELD]: z.boolean().default(DEFAULT_NEXT_PROMPT),
   [TYPING_FX_FIELD]: z.boolean().required(false),
   [TYPING_FX_STYLE_FIELD]: TypingFxStyleSchema.required(false),
   [TYPING_FX_PRESETS_FIELD]: z.dict(TypingFxStyleSchema).required(false),

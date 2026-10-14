@@ -626,8 +626,8 @@ class HarnessController extends EventEmitter {
     }
     // Office is desktop built-in: the workspace-dependencies + skill-office
     // rows ride --patch on every start (including skipUserPlugins recovery);
-    // the disable list never applies. A missing packaged payload or an
-    // incomplete kit closure is desktop runtime damage — fail the start;
+    // the disable list never applies. A missing required Windows payload or an
+    // incomplete provided kit closure is desktop runtime damage — fail the start;
     // skip cannot fix it.
     try {
       const office = await this.ensureDesktopOfficeRuntime();

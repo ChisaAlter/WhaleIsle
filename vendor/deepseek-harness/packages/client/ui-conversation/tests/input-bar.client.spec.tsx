@@ -12,7 +12,7 @@ import './control-row-dom.ts'
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { $getRoot, $isTextNode } from 'lexical'
 import {
   bindSnapshotSelector, conversationSnapshot as conversationFixture, makeTranslate, RemoteError,
@@ -120,6 +120,8 @@ interface BenchOptions {
   composerResize?: boolean
   typingFx?: boolean
   typingFxStyle?: TypingFxStyle
+  nextPrompt?: boolean
+  requestNextPrompt?: InputBarProps['requestNextPrompt']
   presentation?: SessionSummary['presentation']
 }
 
@@ -174,6 +176,7 @@ function bench(over?: BenchOptions) {
   const menuLauncher = createSnapshotStore<string | null>(over?.commandMenuOpen === true ? 'command' : null)
   const busyEnter = createSnapshotStore<'queue' | 'steer'>(over?.busyEnter ?? 'queue')
   const stopShortcut = createSnapshotStore<readonly string[]>(['Esc', 'Esc'])
+  const nextPrompt = createSnapshotStore(over?.nextPrompt ?? true)
   const slotCalls: { key: string; owner: unknown }[] = []
   const renderSlot = ((key: string, owner: object) => {
     slotCalls.push({ key, owner })
@@ -214,6 +217,7 @@ function bench(over?: BenchOptions) {
     useInput: bindSnapshotSelector(shell.state),
     inputActions: shell.actions,
     keyboard: shell,
+    requestNextPrompt: over?.requestNextPrompt,
     addFiles: over?.addFiles ?? (() => null),
     useFileUploads: bindSnapshotSelector(createSnapshotStore<DraftFileUploads>(over?.fileUploads ?? {})),
     retryFileUpload: undefined,
@@ -224,6 +228,7 @@ function bench(over?: BenchOptions) {
     }),
     toggleCommandMenu: over?.toggleCommandMenu ?? vi.fn(),
     useBusyEnter: bindSnapshotSelector(busyEnter),
+    useNextPrompt: bindSnapshotSelector(nextPrompt),
     useStopShortcut: bindSnapshotSelector(stopShortcut),
     useNotices: bindSnapshotSelector(shell.notices),
     useLexicon: bindSnapshotSelector(shell.lexicon),
@@ -275,7 +280,7 @@ function bench(over?: BenchOptions) {
   const interruptButton = view.container.querySelector<HTMLButtonElement>('button[aria-label="停止生成"]')
   return {
     view, textarea, button, interruptButton, props, sink, shell, wiring: shell, session, stop, removeAttachment, slotCalls,
-    menuLauncher, busyEnter, stopShortcut,
+    menuLauncher, busyEnter, stopShortcut, nextPrompt,
     steerQueue: over?.steerQueue,
     get placeholder() { return placeholderOf(view.container) },
     get inputDisabled() { return textarea.getAttribute('aria-disabled') === 'true' },
@@ -304,6 +309,90 @@ function editableOf(input: HTMLElement): boolean {
 function writeDraft(shell: SessionInputShell, text: string): void {
   act(() => { shell.setDraft(text) })
 }
+
+describe('built-in next-prompt suggestions', () => {
+  function readySession(session: ReturnType<typeof createSnapshotStore<SessionSnapshot>>): void {
+    act(() => { session.set({ ...session.getSnapshot(), blank: false, openState: 'open' }) })
+  }
+
+  const suggestion = { turn: 1, seq: 12, text: '请补充一个具体例子' }
+
+  it('offers the completed-turn suggestion by default and Tab only adopts the draft', async () => {
+    const requestNextPrompt = vi.fn(() => Promise.resolve(suggestion))
+    const { view, session, textarea, shell, sink } = bench({ requestNextPrompt })
+    readySession(session)
+    await waitFor(() => { expect(view.getByRole('button', { name: `采纳下一句提示: ${suggestion.text}` })).toBeTruthy() })
+    fireEvent.keyDown(textarea, { key: 'Tab', keyCode: 9 })
+    expect(shell.snapshot.draft).toBe(suggestion.text)
+    expect(sink).not.toHaveBeenCalled()
+    expect(view.queryByRole('button', { name: /采纳下一句提示/ })).toBeNull()
+    expect(requestNextPrompt).toHaveBeenCalledTimes(1)
+  })
+
+  it('clicking the suggestion adopts it without sending or losing the editor focus', async () => {
+    const { view, session, shell, textarea, sink } = bench({ requestNextPrompt: () => Promise.resolve(suggestion) })
+    readySession(session)
+    const button = await view.findByRole('button', { name: /采纳下一句提示/ })
+    fireEvent.mouseDown(button)
+    fireEvent.click(button)
+    expect(shell.snapshot.draft).toBe(suggestion.text)
+    expect(sink).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(textarea)
+  })
+
+  it('turning the setting off cancels the pending request and rejects its late result', async () => {
+    let finish: ((value: typeof suggestion) => void) | undefined
+    let signal: AbortSignal | undefined
+    const requestNextPrompt = vi.fn((requestSignal: AbortSignal) => {
+      signal = requestSignal
+      return new Promise<typeof suggestion>(resolve => { finish = resolve })
+    })
+    const { view, session, nextPrompt } = bench({ requestNextPrompt })
+    readySession(session)
+    expect(requestNextPrompt).toHaveBeenCalledTimes(1)
+    act(() => { nextPrompt.set(false) })
+    expect(signal?.aborted).toBe(true)
+    await act(async () => { finish?.(suggestion) })
+    expect(view.queryByRole('button', { name: /采纳下一句提示/ })).toBeNull()
+    expect(requestNextPrompt).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not replace text entered while the suggestion is generating', async () => {
+    let finish: ((value: typeof suggestion) => void) | undefined
+    const { view, session, shell } = bench({
+      requestNextPrompt: () => new Promise<typeof suggestion>(resolve => { finish = resolve }),
+    })
+    readySession(session)
+    writeDraft(shell, '保留我正在写的内容')
+    await act(async () => { finish?.(suggestion) })
+    expect(shell.snapshot.draft).toBe('保留我正在写的内容')
+    expect(view.queryByRole('button', { name: /采纳下一句提示/ })).toBeNull()
+  })
+
+  it('keeps modified Tab and IME composition away from suggestion adoption', async () => {
+    const { view, session, shell, textarea } = bench({ requestNextPrompt: () => Promise.resolve(suggestion) })
+    readySession(session)
+    await view.findByRole('button', { name: /采纳下一句提示/ })
+    fireEvent.keyDown(textarea, { key: 'Tab', keyCode: 9, shiftKey: true })
+    expect(shell.snapshot.draft).toBe('')
+    fireEvent.compositionStart(textarea)
+    const composingDraft = shell.snapshot.draft
+    fireEvent.keyDown(textarea, { key: 'Tab', keyCode: 9, isComposing: true })
+    expect(shell.snapshot.draft).toBe(composingDraft)
+    expect(shell.snapshot.draft).not.toBe(suggestion.text)
+    fireEvent.compositionEnd(textarea)
+  })
+
+  it('does not request suggestions for a disabled preference, a draft, or a running turn', () => {
+    for (const over of [{ nextPrompt: false }, { draft: 'my draft' }, { running: true }]) {
+      const requestNextPrompt = vi.fn(() => Promise.resolve(suggestion))
+      const { session } = bench({ ...over, requestNextPrompt })
+      readySession(session)
+      expect(requestNextPrompt).not.toHaveBeenCalled()
+      cleanup()
+    }
+  })
+})
 
 describe('composer focus handoff', () => {
   it('focus() returns the keyboard to the editor through Lexical, not a bare DOM focus', () => {
