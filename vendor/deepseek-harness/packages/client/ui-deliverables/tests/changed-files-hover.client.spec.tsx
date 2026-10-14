@@ -7,6 +7,8 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ChangedFiles } from '../src/client/ChangedFiles.tsx'
 import { ChangesDiffStore } from '../src/client/changes-diff.ts'
+import { PresentedOpenController } from '../src/client/present-open.ts'
+import { renderFileActions } from './file-actions.tsx'
 import { changesDiffUrl } from '../src/changes.ts'
 import { en } from '../src/client/locales.ts'
 
@@ -23,9 +25,13 @@ function mount(fileCount = 2) {
   const subscribe = diffs.state.subscribe.bind(diffs.state)
   const getSnapshot = diffs.state.getSnapshot.bind(diffs.state)
   const changes = { seq: 5, files: files.slice(0, fileCount), total: fileCount, added: fileCount, deleted: fileCount }
+  const opener = new PresentedOpenController()
   const view = render(<ChangedFiles changes={changes}
     cwd="/workspace" sessionId={sessionId} t={makeTranslate(en)} openReview={openReview}
     loadChangesDiff={loadChangesDiff}
+    usePresentedOpen={select => select(opener.state.getSnapshot())}
+    usePresentedHost={select => select(opener.host.getSnapshot())}
+    openChanged={vi.fn().mockResolvedValue(null)} renderSlot={renderFileActions}
     useChangesDiff={select => select(useSyncExternalStore(subscribe, getSnapshot))} />)
   return { view, diffs, loadChangesDiff, openReview, row: screen.getByRole('button', { name: 'View changes to main.ts' }) }
 }

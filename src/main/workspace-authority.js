@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { logicalRealpathSync } = require('./logical-realpath');
 const { getDesktopDshHome, tryGetDesktopDshHome } = require('../shared/dsh-home');
 
 /**
@@ -64,14 +65,16 @@ function createWorkspaceAuthority({
       return null;
     }
     const resolved = path.resolve(candidate);
-    // Use the same native canonical spelling as async file operations (DOS 8.3 on Windows).
+    // Resolve symlinks without switching Windows package-virtualized files
+    // from their logical workspace path to a separate LocalCache path.
     let real;
     try {
       if (!fs.statSync(resolved).isDirectory()) return null;
-      real = fs.realpathSync.native(resolved);
+      real = logicalRealpathSync(resolved);
     } catch {
       return null;
     }
+    if (hasGitMetadataTarget(real)) return null;
     for (const root of authorizedRoots()) {
       if (!containedIn(root, real)) continue;
       // The `.git` rule is anchored to the trusted root, never to the caller's
@@ -114,7 +117,7 @@ function createWorkspaceAuthority({
         if (!containedIn(base, nodeReal)) return null;
         // Canonical form: catches `.git` reached through a link whose own name
         // is innocuous, and `.GIT` on case-insensitive filesystems.
-        if (hasGitDirSegment(path.relative(base, nodeReal))) return null;
+        if (hasGitDirSegment(path.relative(base, nodeReal)) || hasGitMetadataTarget(nodeReal)) return null;
         return target;
       }
       // realpath failed. Only a genuinely absent node may be folded into a
@@ -156,7 +159,7 @@ function collectRoots(candidates) {
     // (/private/var/...), so every accepted root is canonicalized here.
     let real;
     try {
-      real = fs.realpathSync.native(resolved);
+      real = logicalRealpathSync(resolved);
     } catch {
       continue;
     }
@@ -180,7 +183,7 @@ function identityKey(resolved) {
  */
 function realPathOrNull(target) {
   try {
-    return fs.realpathSync.native(target);
+    return logicalRealpathSync(target);
   } catch {
     return null;
   }
@@ -248,6 +251,16 @@ function hasGitDirSegment(relativePath) {
   return String(relativePath)
     .split(/[\\/]+/)
     .some((segment) => segment.toLowerCase() === '.git');
+}
+
+/** Native identity detects DOS short names such as GIT~1 without using the
+ * physical LocalCache location for workspace containment. */
+function hasGitMetadataTarget(target) {
+  try {
+    return hasGitDirSegment(fs.realpathSync.native(target));
+  } catch {
+    return true;
+  }
 }
 
 function dshHome() {
@@ -412,8 +425,9 @@ function highRiskAnchorPaths() {
   }
   const anchors = [];
   for (const candidate of candidates) {
-    const real = realPathOrNull(path.resolve(candidate));
-    if (real !== null) anchors.push(real);
+    try {
+      anchors.push(fs.realpathSync.native(path.resolve(candidate)));
+    } catch { /* Missing anchors cannot expose stored data. */ }
   }
   return anchors;
 }
@@ -491,5 +505,6 @@ module.exports = {
   highRiskAnchorPaths,
   scratchWorkspacePath,
   hasGitDirSegment,
+  hasGitMetadataTarget,
   isPathInside,
 };

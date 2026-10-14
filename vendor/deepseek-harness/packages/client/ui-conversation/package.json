@@ -47,9 +47,11 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@deepseek-ai/dsh-api-session-controller": "workspace:*",
     "@deepseek-ai/dsh-client-connection": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-session-projection": "workspace:*",
     "@deepseek-ai/dsh-util-values": "workspace:*",
     "zod": "^4.4.3",
     "@deepseek-ai/schemastery": "workspace:~"
@@ -60,10 +62,11 @@
   },
   "devDependencies": {
     "@deepseek-ai/dsh-session-persistence": "workspace:*",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:*",
+    "@deepseek-ai/dsh-agent-loop-testkit": "workspace:*",
     "@deepseek-ai/dsh-timeout": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-api-remotes": "workspace:*",
-    "@deepseek-ai/dsh-api-session-controller": "workspace:*",
     "@deepseek-ai/dsh-api-workspace-controller": "workspace:*",
     "@deepseek-ai/dsh-attachment": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",

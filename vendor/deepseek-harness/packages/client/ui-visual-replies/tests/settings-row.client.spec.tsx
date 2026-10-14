@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The switch displays Host acceptance and reports rejected saves. */
+/** Switch feedback stays in place; rejected saves restore the Host value. */
 import { afterEach, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -24,12 +24,12 @@ function fixture() {
   return { state, pending, setEnabled, toggle: screen.getByRole('switch', { name: en['settings.title'] }) }
 }
 
-it('waits for the Host value while saving and enables the accepted preference', async () => {
+it('changes the switch immediately without inserting a saving status', async () => {
   const { state, pending, toggle, setEnabled } = fixture()
   fireEvent.click(toggle)
-  expect(toggle.getAttribute('aria-checked')).toBe('false')
+  expect(toggle.getAttribute('aria-checked')).toBe('true')
   expect(toggle).toHaveProperty('disabled', true)
-  expect(screen.getByRole('status').textContent).toBe(en['settings.saving'])
+  expect(screen.queryByRole('status')).toBeNull()
   expect(setEnabled).toHaveBeenCalledWith(true)
   await act(async () => {
     state.set({ ...state.getSnapshot(), value: { enabled: true }, revision: 1 })
@@ -48,7 +48,7 @@ it.each(['refused', 'rejected'] as const)('retains the accepted preference and a
     if (failure === 'refused') pending.resolve(false)
     else pending.reject(new Error('Disconnected'))
   })
-  await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe(en['settings.saveFailed']) })
+  await waitFor(() => { expect(screen.getByRole('dialog').textContent).toContain(en['settings.saveFailed']) })
   expect(toggle.getAttribute('aria-checked')).toBe('false')
   expect(toggle).toHaveProperty('disabled', false)
   expect(screen.queryByRole('status')).toBeNull()

@@ -201,7 +201,8 @@ public static class DshFileAssociations {
     var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     Visit(path, delegate(IHandler handler) {
       string id, name;
-      handler.GetName(out id); handler.GetUIName(out name);
+      try { handler.GetName(out id); handler.GetUIName(out name); }
+      catch (COMException) { return; }
       if (!seen.Add(id)) return;
       apps.Add(new Application { id = id, name = name, icon = IconData(handler, id),
         @default = String.Equals(id, executable, StringComparison.OrdinalIgnoreCase) || String.Equals(id, appId, StringComparison.OrdinalIgnoreCase) });
@@ -214,8 +215,11 @@ public static class DshFileAssociations {
   static void OpenRegistered(string path, string application) {
     bool opened = false;
     Visit(path, delegate(IHandler handler) {
-      string id; handler.GetName(out id);
-      if (opened || !String.Equals(id, application, StringComparison.OrdinalIgnoreCase)) return;
+      if (opened) return;
+      string id;
+      try { handler.GetName(out id); }
+      catch (COMException) { return; }
+      if (!String.Equals(id, application, StringComparison.OrdinalIgnoreCase)) return;
       var iid = typeof(IShellItem).GUID;
       IShellItem item;
       SHCreateItemFromParsingName(path, IntPtr.Zero, ref iid, out item);

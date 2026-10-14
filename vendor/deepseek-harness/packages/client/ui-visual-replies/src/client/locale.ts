@@ -7,7 +7,7 @@ export const NS = 'visual-replies'
 export const zh = {
   'settings.title': '视觉回复',
   'settings.description': '允许智能体生成交互式页面并在会话内展示。截图检查需要支持图片的模型，或已配置的识图模型；关闭后已生成页面仍可查看。',
-  'settings.saving': '正在保存…',
+  'settings.close': '关闭',
   'settings.saveFailed': '无法保存设置，请重试。',
   'settings.unavailable': '当前连接无法更改此设置。',
   'card.title': '视觉回复',
@@ -41,7 +41,7 @@ export type VisualRepliesKey = keyof typeof zh
 export const en = {
   'settings.title': 'Visual replies',
   'settings.description': 'Allow the agent to create interactive pages and show them in conversations. Screenshot inspection requires an image-capable model or a configured vision model. Existing pages remain available when this is off.',
-  'settings.saving': 'Saving…',
+  'settings.close': 'Close',
   'settings.saveFailed': 'Could not save this setting. Try again.',
   'settings.unavailable': 'This setting cannot be changed through the current connection.',
   'card.title': 'Visual reply',

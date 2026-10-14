@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { execFileSync } = require('node:child_process');
 const { createWorkspaceAuthority } = require('./workspace-authority');
 const { normalizePreviewFileTarget } = require('./preview-file-target');
 
@@ -16,25 +17,43 @@ function authorityFor(workspace, extraWorkspaces = []) {
   return createWorkspaceAuthority({ workspace, extraWorkspaces });
 }
 
-test('absolute preview agrees with native authority when legacy realpath retains an alias', (t) => {
-  const root = makeTempDir('dsh-preview-native-');
-  const native = fs.realpathSync.native;
-  const realRoot = native(root);
+test('absolute preview rebases a real Windows DOS directory name onto the logical long root', { skip: process.platform !== 'win32' }, (t) => {
+  const root = process.env.ProgramFiles;
+  const alias = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    '(New-Object -ComObject Scripting.FileSystemObject).GetFolder($env:WHALE_TEST_DIRECTORY).ShortPath'], {
+    env: { ...process.env, WHALE_TEST_DIRECTORY: root }, encoding: 'utf8', windowsHide: true,
+  }).trim();
+  if (alias.toLowerCase() === fs.realpathSync.native(root).toLowerCase()) {
+    t.skip('the existing fixture directory has no DOS short name');
+    return;
+  }
+  assert.equal(fs.realpathSync.native(alias), fs.realpathSync.native(root), 'the fixture uses a real filesystem alias');
+  assert.deepEqual(
+    normalizePreviewFileTarget({ absolutePath: path.join(alias, 'new-preview.txt') }, authorityFor(root)),
+    { ok: true, cwd: fs.realpathSync(root), relativePath: 'new-preview.txt' },
+  );
+  assert.equal(normalizePreviewFileTarget({ absolutePath: path.join(alias, '..', 'outside-preview.txt') }, authorityFor(root)).ok, false);
+});
+
+test('absolute preview resolves an accessible directory alias and refuses its escaping symlink', () => {
+  const parent = makeTempDir('dsh-preview-alias-');
+  const root = path.join(parent, 'workspace');
+  const alias = path.join(parent, 'alias');
+  const outside = path.join(parent, 'outside');
+  fs.mkdirSync(root);
+  fs.mkdirSync(outside);
+  fs.symlinkSync(root, alias, 'junction');
+  fs.symlinkSync(outside, path.join(root, 'escape'), 'junction');
   fs.writeFileSync(path.join(root, 'note.txt'), 'inside');
-  const retainedAlias = (file) => {
-    const real = native(file);
-    return real.startsWith(realRoot) ? real.replace(realRoot, `${realRoot}-alias`) : real;
-  };
-  retainedAlias.native = native;
+  fs.writeFileSync(path.join(outside, 'secret.txt'), 'outside');
   try {
-    t.mock.method(fs, 'realpathSync', retainedAlias);
     assert.deepEqual(
-      normalizePreviewFileTarget({ absolutePath: path.join(root, 'note.txt') }, authorityFor(root)),
-      { ok: true, cwd: realRoot, relativePath: 'note.txt' },
+      normalizePreviewFileTarget({ absolutePath: path.join(alias, 'note.txt') }, authorityFor(alias)),
+      { ok: true, cwd: fs.realpathSync(root), relativePath: 'note.txt' },
     );
+    assert.equal(normalizePreviewFileTarget({ absolutePath: path.join(alias, 'escape', 'secret.txt') }, authorityFor(alias)).ok, false);
   } finally {
-    t.mock.restoreAll();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(parent, { recursive: true, force: true });
   }
 });
 

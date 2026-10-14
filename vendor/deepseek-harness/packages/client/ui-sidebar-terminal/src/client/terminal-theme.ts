@@ -1,9 +1,26 @@
 /** DSH defaults and application OSC colors for one xterm screen. */
 import type { IDisposable, ITheme, Terminal } from '@xterm/xterm'
 
-/* oxlint-disable typescript/no-non-null-assertion -- OSC widths/indices are checked; DSH defaults precede cursor reads. */
+/* oxlint-disable typescript/no-non-null-assertion -- The terminal browser supplies Canvas 2D; OSC widths/indices are checked; DSH defaults precede cursor reads. */
 const ansiKeys = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white', 'brightBlack', 'brightRed', 'brightGreen', 'brightYellow', 'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite'] as const
 const specialKeys = ['foreground', 'background', 'cursor'] as const
+
+/** Resolve browser CSS colors to xterm's hex format, leaving the pane's tint in the DOM. */
+export function terminalScreenColors(node: HTMLElement): { background: string; foreground: string; opaqueBackground: string } {
+  const canvas = node.ownerDocument.createElement('canvas')
+  canvas.width = 1
+  canvas.height = 1
+  const context = canvas.getContext('2d', { willReadFrequently: true })!
+  const read = (value: string): string => {
+    context.clearRect(0, 0, 1, 1)
+    context.fillStyle = value
+    context.fillRect(0, 0, 1, 1)
+    return `#${Array.from(context.getImageData(0, 0, 1, 1).data, channel => channel.toString(16).padStart(2, '0')).join('')}`
+  }
+  const style = getComputedStyle(node)
+  const opaqueBackground = read(style.backgroundColor).slice(0, 7)
+  return { background: `${opaqueBackground}00`, foreground: read(style.color), opaqueBackground }
+}
 
 /** Keep program color overrides separate from the DSH defaults used by OSC resets. */
 export class TerminalTheme implements IDisposable {
@@ -51,14 +68,15 @@ export class TerminalTheme implements IDisposable {
 
   /**
    * Apply changed DSH colors without replacing application-defined palette entries.
-   * @param background - resolved opaque DSH background.
+   * @param background - xterm background; transparent while the DOM pane owns the fill.
    * @param foreground - resolved DSH text color.
+   * @param opaqueBackground - pane RGB for visible selected text and cursor characters.
    */
-  update(background: string, foreground: string): void {
+  update(background: string, foreground: string, opaqueBackground = background): void {
     if (this.defaults.background === background && this.defaults.foreground === foreground) return
     this.defaults = {
-      background, foreground, cursor: foreground, cursorAccent: background,
-      selectionBackground: foreground, selectionForeground: background, selectionInactiveBackground: foreground,
+      background, foreground, cursor: foreground, cursorAccent: opaqueBackground,
+      selectionBackground: foreground, selectionForeground: opaqueBackground, selectionInactiveBackground: foreground,
     }
     this.apply()
   }

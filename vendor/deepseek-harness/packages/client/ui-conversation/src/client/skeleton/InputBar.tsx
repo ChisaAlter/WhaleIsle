@@ -288,7 +288,7 @@ export const InputBar = memo(function InputBar({
   nextPromptRequest.current = requestNextPrompt
   const canSuggest = nextPromptEnabled && variant === 'composer' && open && !blank
     && !running && !locked && !machineBusy && !managed && subagent === null
-    && draft === '' && attachments.length === 0 && edit === null && input?.phase === 'plain'
+    && draft.trim() === '' && attachments.length === 0 && edit === null && input?.phase === 'plain'
 
   useEffect(() => {
     setNextPrompt(null)
@@ -307,7 +307,7 @@ export const InputBar = memo(function InputBar({
   const acceptNextPrompt = useCallback((): boolean => {
     if (!canSuggest || nextPrompt?.text == null || nextPrompt.seq === null
       || sessionId === undefined || inputActions === undefined
-      || keyboard?.snapshot.draft !== '' || keyboard.snapshot.attachmentIds.length !== 0) return false
+      || keyboard?.snapshot.draft.trim() !== '' || keyboard.snapshot.attachmentIds.length !== 0) return false
     acceptedPrompt.current = { sessionId, seq: nextPrompt.seq }
     inputActions.setDraft(nextPrompt.text)
     setNextPrompt(null)

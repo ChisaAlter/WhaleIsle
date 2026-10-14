@@ -10,7 +10,7 @@ import type { TerminalBodyInjected } from './face.ts'
 import type {} from './locales.ts'
 import '@xterm/xterm/css/xterm.css'
 import css from './terminal.module.css'
-import { TerminalTheme } from './terminal-theme.ts'
+import { TerminalTheme, terminalScreenColors } from './terminal-theme.ts'
 import { observeTerminalCursor } from './terminal-cursor.ts'
 
 /** Standard sidebar owner share plus terminal model and localized copy. */
@@ -87,7 +87,7 @@ function TerminalScreen({ state, model, visible, label, theme }: {
 
   useLayoutEffect(() => {
     const node = element.current!
-    const xterm = new Terminal({ minimumContrastRatio: 4.5, cursorBlink: true, fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', scrollback: current.current.state.environment?.scrollback ?? 0 })
+    const xterm = new Terminal({ allowTransparency: true, minimumContrastRatio: 4.5, cursorBlink: true, fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', scrollback: current.current.state.environment?.scrollback ?? 0 })
     const addon = new FitAddon()
     xterm.loadAddon(addon)
     xterm.open(node)
@@ -117,8 +117,8 @@ function TerminalScreen({ state, model, visible, label, theme }: {
   }, [model])
 
   useLayoutEffect(() => {
-    const style = getComputedStyle(element.current!)
-    colors.current!.update(style.backgroundColor, style.color)
+    const { background, foreground, opaqueBackground } = terminalScreenColors(element.current!)
+    colors.current!.update(background, foreground, opaqueBackground)
   }, [theme, model])
 
   useLayoutEffect(() => {

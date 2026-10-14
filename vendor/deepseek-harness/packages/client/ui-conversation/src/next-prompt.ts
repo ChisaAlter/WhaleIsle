@@ -26,12 +26,14 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-session-controller'
 import { clientRequestSchema } from '@deepseek-ai/dsh-client-connection'
 import type { ConnectionRpcResult } from '@deepseek-ai/dsh-client-connection'
 import { BlockAssembler, createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, LlmCallConfig, Message, ToolSchema } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
+import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-settings'
 import { deadline } from '@deepseek-ai/dsh-timeout'
 import { deepFreeze } from '@deepseek-ai/dsh-util-values'
@@ -67,11 +69,23 @@ declare module '@deepseek-ai/dsh-session/types' {
   }
 }
 
-interface TurnContext {
+interface PromptContext {
+  readonly turn: number | null
+  readonly user: string
+  readonly assistant: string
+  readonly seq: number | null
+}
+
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    /** Bounded latest-turn context, reconstructed on Session resume. */
+    nextPromptContext: PromptContext
+  }
+}
+
+interface TurnContext extends PromptContext {
   readonly turn: number
-  user: string
-  assistant: string
-  seq: number | null
+  readonly seq: number
   attempted: boolean
   result: NextPromptResult | undefined
   pending: PendingSuggestion | undefined
@@ -80,7 +94,6 @@ interface TurnContext {
 interface PendingSuggestion {
   readonly controller: AbortController
   readonly settled: Promise<NextPromptResult>
-  readonly callers: Set<AbortSignal>
 }
 
 function noSuggestion(context?: TurnContext): NextPromptResult {
@@ -114,6 +127,36 @@ function boundedMessageText(content: readonly ContentBlock[], limit: number): st
   }
   return redactTranscriptSecrets(text).trim()
 }
+
+const promptContextSchema: z.ZodType<PromptContext> = z.object({
+  turn: z.number().int().nonnegative().nullable(),
+  user: z.string().max(MAX_USER_CHARACTERS),
+  assistant: z.string().max(MAX_ASSISTANT_CHARACTERS),
+  seq: z.number().int().nonnegative().nullable(),
+})
+
+const promptContextDefinition = {
+  key: 'nextPromptContext',
+  stateSchema: promptContextSchema,
+  stateVersion: 1,
+  init: () => ({ turn: null, user: '', assistant: '', seq: null }),
+  apply: (state, event) => {
+    if (event.type === 'turn/start') {
+      return { turn: event.data.turn, user: '', assistant: '', seq: null }
+    }
+    if (state.turn === null) return state
+    if (event.type === 'user/message' && event.data.source.kind === 'user') {
+      return { ...state, user: boundedMessageText(event.data.content, MAX_USER_CHARACTERS) }
+    }
+    if (event.type === 'assistant/message') {
+      return { ...state, assistant: boundedMessageText(event.data.message.content, MAX_ASSISTANT_CHARACTERS) }
+    }
+    if (event.type === 'turn/end' && event.data.turn === state.turn) {
+      return { ...state, seq: event.data.reason.kind === 'completed' ? event.seq : null }
+    }
+    return state
+  },
+} satisfies ProjectionDefinition<'nextPromptContext', PromptContext>
 
 function suggestionInstruction(): string {
   return [
@@ -186,7 +229,6 @@ async function generateSuggestion(
     sessionId: session.id,
     signal: call.signal,
   })
-  if (context.seq === null) return null
   session.append('conversation/next-prompt-request', {
     turn: context.turn,
     completedSeq: context.seq,
@@ -197,6 +239,7 @@ async function generateSuggestion(
   }, { ignorable: true })
   call.signal.throwIfAborted()
   const assembler = new BlockAssembler()
+  const blockBytes = new Map<number, number>()
   let outputBytes = 0
   for await (const chunk of prepared.stream(options)) {
     call.signal.throwIfAborted()
@@ -206,9 +249,13 @@ async function generateSuggestion(
       throw new Error('Next-message suggestion returned a tool call')
     }
     if (chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') {
-      outputBytes += Buffer.byteLength(chunk.text, 'utf8')
+      const deltaBytes = Buffer.byteLength(chunk.text, 'utf8')
+      blockBytes.set(chunk.index, (blockBytes.get(chunk.index) ?? 0) + deltaBytes)
+      outputBytes += deltaBytes
     } else if (chunk.type === 'block-end' && (chunk.block.type === 'text' || chunk.block.type === 'reasoning')) {
-      outputBytes += Buffer.byteLength(chunk.block.text, 'utf8')
+      const bytes = Buffer.byteLength(chunk.block.text, 'utf8')
+      outputBytes += bytes - (blockBytes.get(chunk.index) ?? 0)
+      blockBytes.set(chunk.index, bytes)
     }
     if (outputBytes > MAX_OUTPUT_BYTES) throw new Error('Next-message suggestion exceeded the output limit')
     assembler.push(chunk)
@@ -227,20 +274,19 @@ async function generateSuggestion(
  * @param enabled Live conversation preference, read before generation and publication.
  */
 export function applyNextPrompt(ctx: Context, enabled: () => boolean): void {
+  ctx.sessionProjections.register(promptContextDefinition)
   const contexts = new Map<Session, TurnContext>()
   const operations = new Set<PendingSuggestion>()
+  let previouslyEnabled = enabled()
 
   const waitForSuggestion = (operation: PendingSuggestion, signal: AbortSignal): Promise<NextPromptResult> => {
     signal.throwIfAborted()
-    operation.callers.add(signal)
     return new Promise((resolve, reject) => {
       const release = (): void => {
         signal.removeEventListener('abort', abort)
-        operation.callers.delete(signal)
       }
       const abort = (): void => {
         release()
-        if (operation.callers.size === 0 && operations.has(operation)) operation.controller.abort(signal.reason)
         reject(signal.reason)
       }
       signal.addEventListener('abort', abort, { once: true })
@@ -249,42 +295,42 @@ export function applyNextPrompt(ctx: Context, enabled: () => boolean): void {
   }
 
   ctx.on('session/event', (session, event) => {
-    if (event.type === 'turn/start') {
-      contexts.get(session)?.pending?.controller.abort()
-      contexts.set(session, { turn: event.data.turn, user: '', assistant: '', seq: null,
-        attempted: false, result: undefined, pending: undefined })
-      return
-    }
-    const context = contexts.get(session)
-    if (context === undefined) return
-    if (event.type === 'user/message' && event.data.source.kind === 'user') {
-      context.user = boundedMessageText(event.data.content, MAX_USER_CHARACTERS)
-    } else if (event.type === 'assistant/message') {
-      context.assistant = boundedMessageText(event.data.message.content, MAX_ASSISTANT_CHARACTERS)
-    } else if (event.type === 'turn/end' && event.data.turn === context.turn) {
-      context.seq = event.data.reason.kind === 'completed' ? event.seq : null
-    }
+    if (event.type !== 'turn/start') return
+    contexts.get(session)?.pending?.controller.abort()
+    contexts.delete(session)
   })
   ctx.on('session/disposed', (session) => {
     contexts.get(session)?.pending?.controller.abort()
     contexts.delete(session)
   })
   ctx.on('settings/document-updated', () => {
-    if (enabled()) return
-    for (const operation of operations) operation.controller.abort()
-    for (const context of contexts.values()) {
-      context.result = undefined
+    const current = enabled()
+    const reenabled = current && !previouslyEnabled
+    previouslyEnabled = current
+    if (!current) {
+      for (const operation of operations) operation.controller.abort()
+      for (const context of contexts.values()) context.pending = undefined
+    } else if (reenabled) {
+      for (const context of contexts.values()) {
+        if (context.result === undefined) context.attempted = false
+      }
     }
   })
 
   const requestSuggestion = async (session: Session, signal: AbortSignal): Promise<NextPromptResult> => {
     signal.throwIfAborted()
-    const context = contexts.get(session)
-    if (!enabled() || context?.seq === null || context === undefined) return noSuggestion()
+    if (!enabled()) return noSuggestion()
+    const state = ctx.sessionProjections.stateOf(session, 'nextPromptContext')
+    if (state === undefined || state.turn === null || state.seq === null) return noSuggestion()
+    const cached = contexts.get(session)
+    const context: TurnContext = cached?.seq === state.seq ? cached : {
+      ...state, turn: state.turn, seq: state.seq,
+      attempted: false, result: undefined, pending: undefined,
+    }
+    if (context !== cached) contexts.set(session, context)
     if (context.pending !== undefined) return waitForSuggestion(context.pending, signal)
     if (context.attempted) return context.result ?? noSuggestion(context)
     context.attempted = true
-    context.result = noSuggestion(context)
     const controller = new AbortController()
     const callSignal = controller.signal
     const settled = generateSuggestion(ctx, session, context, callSignal).then((text) => {
@@ -297,7 +343,7 @@ export function applyNextPrompt(ctx: Context, enabled: () => boolean): void {
       operations.delete(operation)
       if (context.pending?.controller === controller) context.pending = undefined
     })
-    const operation = { controller, settled, callers: new Set<AbortSignal>() }
+    const operation = { controller, settled }
     operations.add(operation)
     context.pending = operation
     return waitForSuggestion(operation, signal)
@@ -321,8 +367,14 @@ export function applyNextPrompt(ctx: Context, enabled: () => boolean): void {
       if (!payload.success) {
         result = { ok: false, error: { code: 'NEXT_PROMPT_BAD_REQUEST', message: 'Invalid session identity', details: {} } }
       } else {
-        const session = ctx.sessions.get(SessionId(payload.data.sessionId))
         try {
+          const sessionId = SessionId(payload.data.sessionId)
+          let session = ctx.sessions.get(sessionId)
+          if (session === undefined && enabled()) {
+            const resolved = await ctx.sessionController.resolveAgent(sessionId)
+            if ('error' in resolved) throw resolved.error
+            session = resolved.agent.session
+          }
           const value = session === undefined ? noSuggestion() : await requestSuggestion(session, request.signal)
           request.signal.throwIfAborted()
           result = { ok: true, value }

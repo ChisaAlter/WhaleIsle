@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const {
   createWorkspaceAuthority,
   loadWorkspaceAuthority,
@@ -31,6 +32,49 @@ test('resolveAuthorizedCwd accepts the root and its subdirectories', () => {
     assert.equal(authority.resolveAuthorizedCwd(root), canonical(root));
     assert.equal(authority.resolveAuthorizedCwd(path.join(root, 'sub')), path.join(canonical(root), 'sub'));
   } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Windows DOS directory names share authority with their actual long names', { skip: process.platform !== 'win32' }, (t) => {
+  const root = process.env.ProgramFiles;
+  const alias = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    '(New-Object -ComObject Scripting.FileSystemObject).GetFolder($env:WHALE_TEST_DIRECTORY).ShortPath'], {
+    env: { ...process.env, WHALE_TEST_DIRECTORY: root }, encoding: 'utf8', windowsHide: true,
+  }).trim();
+  if (alias.toLowerCase() === fs.realpathSync.native(root).toLowerCase()) {
+    t.skip('the existing fixture directory has no DOS short name');
+    return;
+  }
+  assert.equal(fs.realpathSync.native(alias), fs.realpathSync.native(root), 'the fixture is a real DOS name for the same directory');
+  const canonicalRoot = fs.realpathSync(root);
+  const authority = createWorkspaceAuthority({ workspace: root });
+  assert.equal(authority.resolveAuthorizedCwd(alias), canonicalRoot);
+  assert.deepEqual(createWorkspaceAuthority({ workspace: alias }).authorizedRoots(), [canonicalRoot]);
+  assert.equal(authority.resolveInside(alias, 'new-file.txt'), path.join(canonicalRoot, 'new-file.txt'));
+  assert.equal(authority.resolveAuthorizedCwd(path.dirname(alias)), null);
+});
+
+test('native cache locations do not replace logical workspace directory boundaries', () => {
+  const root = makeRoot();
+  const native = fs.realpathSync.native;
+  const logicalRoot = native(root);
+  const cache = path.join(path.dirname(logicalRoot), 'LocalCache', 'virtualized-directory');
+  const spellings = new Set([path.resolve(root).toLowerCase(), logicalRoot.toLowerCase()]);
+  let cacheChecks = 0;
+  fs.realpathSync.native = (target, ...args) => {
+    if (spellings.has(path.resolve(target).toLowerCase())) { cacheChecks++; return cache; }
+    return native(target, ...args);
+  };
+  try {
+    const authority = createWorkspaceAuthority({ workspace: root });
+    assert.equal(authority.resolveAuthorizedCwd(root), logicalRoot);
+    assert.deepEqual(authority.authorizedRoots(), [logicalRoot]);
+    assert.equal(authority.resolveInside(root, 'new-file.txt'), path.join(logicalRoot, 'new-file.txt'));
+    assert.equal(authority.resolveAuthorizedCwd(cache), null);
+    assert.ok(cacheChecks > 0, 'native identity inspected the redirected directory without adopting its location');
+  } finally {
+    fs.realpathSync.native = native;
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

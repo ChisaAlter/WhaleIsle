@@ -1,4 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import LlmRuntime, {
   LlmAdapter, ToolCallId, createAssistantMessage, createToolResultMessage, createUserMessage,
@@ -7,12 +10,16 @@ import LlmRuntime, {
 import type { GenerateOptions, LlmModelReasoningInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { KNOWN_SESSION_EVENT_TYPES, Session as StoredSession, SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, TurnEndReason } from '@deepseek-ai/dsh-session'
+import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
+import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
+import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { validateStoredEvents } from '@deepseek-ai/dsh-session-persistence'
 import { HostConnectionService, serverResponseSchema } from '@deepseek-ai/dsh-client-connection'
 import type { BrowserAuth } from '../../connection/src/browser-auth.ts'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { applyNextPrompt } from '../src/next-prompt.ts'
 import { NEXT_PROMPT_ENDPOINT } from '../src/next-prompt-contract.ts'
+import { createSessionTestController } from '../../../api/session-controller/tests/test-remote.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -52,12 +59,14 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
 })
 
-async function mounted() {
+async function mounted(seed?: readonly SessionEvent[]) {
   const ctx = new Context()
   const sessionsFiber = ctx.plugin(SessionStore)
   const llmFiber = ctx.plugin(LlmRuntime)
   await sessionsFiber.await()
   await llmFiber.await()
+  const projectionsFiber = ctx.plugin(SessionProjectionRegistry)
+  await projectionsFiber.await()
   const adapter = new SuggestionAdapter()
   const connectionFiber = ctx.plugin((child) => {
     // The public shared Fetch handler is the subject here; HTTP authentication is Connection-owned.
@@ -67,11 +76,11 @@ async function mounted() {
   await connectionFiber.await()
   let enabled = true
   let session!: Session
-  const featureFiber = ctx.plugin((child) => {
-    child.inject(['connection', 'llm', 'sessions'], (ready) => {
-      applyNextPrompt(ready, () => enabled)
-      session = ready.sessions.create(SessionId('next-prompt-session'))
-    })
+  const featureFiber = ctx.inject(['connection', 'llm', 'sessions', 'sessionProjections'], (ready) => {
+    applyNextPrompt(ready, () => enabled)
+    session = seed === undefined
+      ? ready.sessions.create(SessionId('next-prompt-session'))
+      : ready.sessions.create(SessionId('next-prompt-session'), { seed })
   })
   await featureFiber.await()
   const shared = ctx.connection.createSharedFetchHandler('/api')
@@ -93,6 +102,7 @@ async function mounted() {
     await featureFiber.dispose()
     await connectionFiber.dispose()
     await llmFiber.dispose()
+    await projectionsFiber.dispose()
     await sessionsFiber.dispose()
   })
   return { ctx, session, adapter, featureFiber, shared, request,
@@ -152,6 +162,9 @@ describe('next-message suggestions through the Connection Fetch route', () => {
     expect(host.adapter.calls).toHaveLength(0)
     const first = await host.request()
     expect(first).toEqual({ ok: true, value: { turn: 1, seq: end.seq, text: 'Run the focused tests' } })
+    expect(await host.request()).toEqual(first)
+    host.setEnabled(false)
+    host.setEnabled(true)
     expect(await host.request()).toEqual(first)
     expect(host.adapter.calls).toHaveLength(1)
     const options = host.adapter.calls[0]!
@@ -275,7 +288,7 @@ describe('next-message suggestions through the Connection Fetch route', () => {
     expect(host.adapter.calls[0]?.model).toBe('changed-model')
   })
 
-  it('caches a failed model call as no suggestion instead of retrying on remount', async () => {
+  it('retries a failed call only after the setting is explicitly reenabled', async () => {
     const host = await mounted()
     host.adapter.generate = async function* () {
       yield { type: 'finish', reason: { kind: 'error', failure: { code: 'TEST_FAILURE', message: 'unavailable' } } }
@@ -285,9 +298,14 @@ describe('next-message suggestions through the Connection Fetch route', () => {
     expect(await host.request()).toMatchObject({ ok: false, error: { code: 'NEXT_PROMPT_FAILED' } })
     expect(await host.request()).toEqual({ ok: true, value: { turn: 1, seq: end.seq, text: null } })
     expect(host.adapter.calls).toHaveLength(1)
+    host.adapter.generate = () => textStream('Check the repaired result')
+    host.setEnabled(false)
+    host.setEnabled(true)
+    expect(await host.request()).toEqual({ ok: true, value: { turn: 1, seq: end.seq, text: 'Check the repaired result' } })
+    expect(host.adapter.calls).toHaveLength(2)
   })
 
-  it.each(['setting-off', 'new-turn', 'caller-abort'] as const)('cancels %s in flight and never publishes the late result', async (cause) => {
+  it.each(['setting-off', 'new-turn'] as const)('cancels %s in flight and never publishes the late result', async (cause) => {
     const host = await mounted()
     const started = deferred<GenerateOptions>()
     const release = deferred<string>()
@@ -303,19 +321,109 @@ describe('next-message suggestions through the Connection Fetch route', () => {
     const pending = host.request(caller.signal)
     const options = await started.promise
     if (cause === 'setting-off') host.setEnabled(false)
-    else if (cause === 'new-turn') startTurn(host.session, 2)
-    else caller.abort()
+    else startTurn(host.session, 2)
     expect(options.signal?.aborted).toBe(true)
     release.resolve('LATE OLD SUGGESTION')
     const result = await pending
     expect(result).toMatchObject({ ok: true, value: { text: null } })
-    if (cause === 'setting-off') host.setEnabled(true)
     expect(await host.request()).toMatchObject({ ok: true, value: { text: null } })
     expect(host.adapter.calls).toHaveLength(1)
-    if (cause !== 'new-turn') startTurn(host.session, 2)
-    const end = finishTurn(host.session, 2)
-    expect(await host.request()).toEqual({ ok: true, value: { turn: 2, seq: end.seq, text: 'Check the new result' } })
+    if (cause === 'setting-off') {
+      host.setEnabled(true)
+      expect(await host.request()).toMatchObject({ ok: true, value: { turn: 1, text: 'Check the new result' } })
+    } else {
+      const end = finishTurn(host.session, 2)
+      expect(await host.request()).toEqual({ ok: true, value: { turn: 2, seq: end.seq, text: 'Check the new result' } })
+    }
     expect(host.adapter.calls).toHaveLength(2)
+  })
+
+  it('keeps the one Host generation alive after its only caller leaves and reuses the result', async () => {
+    const host = await mounted()
+    const started = deferred<GenerateOptions>()
+    const release = deferred<string>()
+    host.adapter.generate = async function* (options) {
+      started.resolve(options)
+      yield* textStream(await release.promise)
+    }
+    startTurn(host.session)
+    const end = finishTurn(host.session)
+    const caller = new AbortController()
+    const pending = host.request(caller.signal)
+    const options = await started.promise
+    caller.abort()
+    expect(options.signal?.aborted).toBe(false)
+    expect(await pending).toMatchObject({ ok: true, value: { text: null } })
+    release.resolve('Review the result')
+    expect(await host.request()).toEqual({ ok: true, value: { turn: 1, seq: end.seq, text: 'Review the result' } })
+    expect(await host.request()).toMatchObject({ ok: true, value: { text: 'Review the result' } })
+    expect(host.adapter.calls).toHaveLength(1)
+  })
+
+  it('restores the completed context from a resumed Session without replaying live events', async () => {
+    const previous = await mounted()
+    startTurn(previous.session)
+    const end = finishTurn(previous.session)
+    const host = await mounted(previous.session.snapshotEvents())
+    expect(await host.request()).toEqual({ ok: true, value: { turn: 1, seq: end.seq, text: 'Run the focused tests' } })
+    expect(await host.request()).toMatchObject({ ok: true, value: { text: 'Run the focused tests' } })
+    expect(host.adapter.calls).toHaveLength(1)
+  })
+
+  it('waits for the actual cold Session activation before generating its suggestion', async () => {
+    const previous = await mounted()
+    startTurn(previous.session)
+    const end = finishTurn(previous.session)
+    const root = await mkdtemp(join(tmpdir(), 'next-prompt-cold-'))
+    const ctx = new Context()
+    cleanups.push(async () => {
+      await ctx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+    })
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
+    await mountAgentLoopTestHarness(ctx)
+    const adapter = new SuggestionAdapter()
+    ctx.llm.registerAdapter(['session-provider'], adapter)
+    const writer = await ctx.sessionPersistence.create({ ...previous.session.header, cwd: root })
+    await writer.append(previous.session.snapshotEvents())
+    await writer.close()
+    createSessionTestController(ctx, {
+      cwd: root,
+      defaultModelSelection: () => ({ provider: 'session-provider', model: 'session-model' }),
+    })
+    new HostConnectionService(ctx, [], {} as BrowserAuth)
+    applyNextPrompt(ctx, () => true)
+    expect(ctx.sessions.get(previous.session.id)).toBeUndefined()
+    const shared = ctx.connection.createSharedFetchHandler('/api')
+    const response = await shared.fetch(new Request(`http://host/api/${NEXT_PROMPT_ENDPOINT}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId: 'cold-next-prompt',
+        method: NEXT_PROMPT_ENDPOINT, payload: { sessionId: previous.session.id } }),
+    }))
+    expect(serverResponseSchema.parse(await response.json()).result).toEqual({
+      ok: true, value: { turn: 1, seq: end.seq, text: 'Run the focused tests' },
+    })
+    expect(ctx.sessions.get(previous.session.id)?.requestHeader()?.config.model).toBe('session-model')
+    expect(adapter.calls).toHaveLength(1)
+  })
+
+  it('counts streamed deltas and the final full block once', async () => {
+    const host = await mounted()
+    const reasoning = 'x'.repeat(5000)
+    const text = 'Review the result'
+    host.adapter.generate = async function* () {
+      yield { type: 'reasoning-delta', index: 0, text: reasoning }
+      yield { type: 'block-end', index: 0, block: { type: 'reasoning', text: reasoning } }
+      yield { type: 'text-delta', index: 1, text }
+      yield { type: 'block-end', index: 1, block: { type: 'text', text } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    }
+    startTurn(host.session)
+    const end = finishTurn(host.session)
+    expect(await host.request()).toEqual({ ok: true, value: { turn: 1, seq: end.seq, text } })
+    expect(host.adapter.calls).toHaveLength(1)
   })
 
   it('bounds the text context, redacts common token shapes and preserves valid emoji', async () => {
