@@ -77,7 +77,7 @@ test('remote catalog requests CNB JSON and keeps assets on the selected route', 
   t.mock.method(global, 'fetch', async (url, options) => {
     requests.push(url);
     const selected = route === 'gitee' ? 'cnb' : route;
-    const base = selected === 'github' ? 'https://api.github.com/repos/ChisaAlter/WhaleBridge' : ROUTES[selected].apiBase;
+    const base = ROUTES[selected].apiBase;
     const manifestUrl = `${base}/releases/download/whalebridge-v1.0.0/WhaleBridge-component.json`;
     if (url === manifestUrl) return Response.json(f.manifest);
     assert.equal(url, `${base}/releases?${selected === 'cnb' ? 'page_size' : 'per_page'}=100`);
@@ -101,8 +101,7 @@ test('remote catalog requests CNB JSON and keeps assets on the selected route', 
     const selected = route === 'gitee' ? 'cnb' : route;
     const catalog = JSON.parse(fs.readFileSync(path.join(f.deps.root, 'catalog.json')));
     assert.equal(catalog.route, selected);
-    const base = selected === 'github' ? 'https://api.github.com/repos/ChisaAlter/WhaleBridge' : ROUTES[selected].apiBase;
-    assert.equal(catalog.url, `${base}/releases/download/whalebridge-v1.0.0/WhaleBridge-win32-x64.exe`);
+    assert.equal(catalog.url, `${ROUTES[selected].apiBase}/releases/download/whalebridge-v1.0.0/WhaleBridge-win32-x64.exe`);
     assert.equal(requests.length, 2);
   }
 });

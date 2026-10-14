@@ -11,9 +11,6 @@ const ID = 'whalebridge';
 const MANIFEST = 'WhaleBridge-component.json';
 const ASSET = 'WhaleBridge-win32-x64.exe';
 const TAG_PREFIX = 'whalebridge-v';
-// The component owns its GitHub releases. CNB keeps the existing shared
-// distribution mirror, including releases used by already-installed clients.
-const GITHUB_API = 'https://api.github.com/repos/ChisaAlter/WhaleBridge';
 
 function defaultPaths() {
   const { app } = require('electron');
@@ -116,8 +113,7 @@ function createWhaleBridgeService(deps = {}) {
         const source = require('./release-source');
         const saved = require('../main/config').loadConfig().downloadRoute;
         const route = source.normalizeRoute(saved) || 'github';
-        const apiBase = route === 'github' ? GITHUB_API : source.ROUTES[route].apiBase;
-        const releases = await fetchJson(`${apiBase}/releases?${route === 'cnb' ? 'page_size' : 'per_page'}=100`,
+        const releases = await fetchJson(`${source.ROUTES[route].apiBase}/releases?${route === 'cnb' ? 'page_size' : 'per_page'}=100`,
           route === 'cnb' ? { headers: { Accept: 'application/vnd.cnb.api+json' } } : undefined);
         const release = (Array.isArray(releases) ? releases : []).filter(r => !r.draft && !r.prerelease && r.tag_name?.startsWith(TAG_PREFIX))
           .sort((a, b) => compareVersions(b.tag_name.slice(TAG_PREFIX.length), a.tag_name.slice(TAG_PREFIX.length)))[0];
