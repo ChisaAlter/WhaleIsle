@@ -93,10 +93,13 @@ test('boot.js wires the log drawer toggle', () => {
   assert.match(js, /Escape/);
 });
 
-test('boot.html loads boot-recovery.js before boot.js', () => {
+test('boot.html loads recovery and shared floating feedback before boot.js', () => {
   const html = fs.readFileSync(path.join(__dirname, 'boot.html'), 'utf8');
   const recovery = html.indexOf('src="boot-recovery.js"');
   const boot = html.indexOf('src="boot.js"');
+  const feedback = html.indexOf('src="feedback.js"');
   assert.ok(recovery >= 0);
   assert.ok(boot > recovery);
+  assert.ok(feedback > recovery && boot > feedback);
+  assert.match(html, /href="feedback\.css"/);
 });

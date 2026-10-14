@@ -39,6 +39,7 @@ const PRODUCT_NAMES = {
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  'close': '关闭',
   'open.title': '用 {app} 打开',
   'path.appDefault': '{app}（默认）',
   'path.appsError': '无法获取应用列表',
@@ -59,6 +60,7 @@ export const zh = {
 
 /** English dictionary, key-identical to the Chinese source of truth. */
 export const en: Record<OpenInAppKey, string> = {
+  'close': 'Close',
   'open.title': 'Open in {app}',
   'path.appDefault': '{app} (default)',
   'path.appsError': 'Could not load applications',

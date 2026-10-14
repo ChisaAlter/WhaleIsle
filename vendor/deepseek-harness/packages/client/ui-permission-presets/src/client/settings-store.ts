@@ -126,6 +126,9 @@ export class PermissionPresetSettingsController {
         [{ op: 'set', path: ['defaultPreset'], value: preset }],
         view.revision,
       )
+    } catch (error) {
+      if (!this.disposed) this.fail(error)
+      return
     } finally {
       // Cleared before the fold below, whose publish reaches `derive` through
       // this row's own subscription and is skipped while a save is pending.
@@ -133,7 +136,7 @@ export class PermissionPresetSettingsController {
     }
     if (this.disposed) return
     if (!response.ok) {
-      this.fail(response.error)
+      this.fail(new Error(response.error.message))
       return
     }
     // The mirror publish reaches this row's own subscription, so the fold

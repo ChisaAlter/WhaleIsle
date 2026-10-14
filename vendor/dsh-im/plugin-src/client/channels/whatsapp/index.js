@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ActionButton, FeedbackToast, ConfirmDialog } from '../../feedback.js';
 
 import { WhatsappLogoGlyph } from '../../channel-logos.js';
 import { QrActionIcon } from '../../credential-binding.js';
@@ -132,21 +133,20 @@ export function WhatsappAccessSettings({ account, busy = false, onSave }) {
       ? h('p', { className: 'dwa-accessWarning', role: 'status' },
           '白名单为空；保存后将只接受自聊消息。')
       : null,
-    error ? h('p', { className: 'dwa-accessError', role: 'alert' }, error) : null,
+    error ? h(FeedbackToast, { text: error, tone: "error" }) : null,
     h('div', { className: 'dwa-accessActions' },
-      h('button', {
+      h(ActionButton, {
         type: 'submit',
         className: 'ddt-button',
         'data-kind': 'secondary',
-        disabled: busy,
-      }, busy ? '正在保存…' : '保存访问设置')));
+        disabled: busy, loading: busy, }, '保存访问设置')));
 }
 
 const Button = React.forwardRef(function Button(
   { children, kind = 'secondary', className = '', ...props },
   ref,
 ) {
-  return h('button', {
+  return h(ActionButton, {
     ...props,
     ref,
     type: 'button',
@@ -186,8 +186,7 @@ function Heading({ totals, busy, onAdd, addButtonRef }) {
           onClick: onAdd,
           disabled: busy,
           ref: addButtonRef,
-          'aria-label': '扫码接入 WhatsApp 机器人',
-        }, h(QrActionIcon), busy ? '正在接入' : '扫码接入机器人')),
+          'aria-label': '扫码接入 WhatsApp 机器人', loading: busy, }, h(QrActionIcon), '扫码接入机器人')),
       totals.configured > 0
         ? h('div', { className: 'ddt-badge dim-onlineBadge' },
             h('span', null, `${totals.connected} / ${totals.configured} 在线`))
@@ -211,8 +210,8 @@ export function EmptyView({ busy, onStart }) {
         h('h3', null, '扫码绑定 WhatsApp 机器人'),
         h('p', null, '使用手机 WhatsApp 扫描二维码即可接入。'),
         h('div', { className: 'ddt-actions dim-viewActions' },
-          h(Button, { kind: 'primary', onClick: onStart, disabled: busy },
-            busy ? '正在生成二维码…' : '生成二维码'))),
+          h(Button, { kind: 'primary', onClick: onStart, disabled: busy, loading: busy, },
+            '生成二维码'))),
       h('div', {
         className: 'ddt-brandMark dim-emptyBrand dwa-avatar',
         'aria-hidden': 'true',
@@ -279,14 +278,14 @@ export function ProvisionView({ provision, busy, onRetry, onClose }) {
         h(Button, { onClick: onClose, disabled: busy }, '关闭'))));
 }
 
-function RemoveConfirmation({ account, busy, onConfirm, onCancel }) {
-  return h('div', { className: 'ddt-confirm dim-confirm', role: 'alertdialog' },
+function RemoveConfirmation({ account, busy, error, feedbackSequence, onConfirm, onCancel }) {
+  return h(ConfirmDialog, { className: 'ddt-confirm dim-confirm', role: 'alertdialog', onClose: onCancel, busy: Boolean(busy), error, feedbackSequence },
     h('strong', null, `从 DeepSeek Harness 移除“${account.bot.name}”？`),
     h('p', null, '这会停止消息连接，并删除本机保存的 WhatsApp 关联设备和会话映射。'),
     h('div', { className: 'ddt-actions dim-viewActions' },
       h(Button, { onClick: onCancel, disabled: busy }, '保留机器人'),
-      h(Button, { kind: 'danger', onClick: onConfirm, disabled: busy },
-        busy ? '正在移除…' : '确认移除接入')));
+      h(Button, { kind: 'danger', onClick: onConfirm, disabled: busy, loading: busy, },
+        '确认移除接入')));
 }
 
 export function WhatsappAccountCard({
@@ -294,6 +293,8 @@ export function WhatsappAccountCard({
   busy,
   testNotice,
   removing,
+  removeError,
+  removeFeedbackSequence,
   onReconnect,
   onWorkspaceSave,
   onAgentPresetSave,
@@ -343,8 +344,7 @@ export function WhatsappAccountCard({
         h('div', { className: 'dim-cardFooterLayout' },
           h('div', { className: 'ddt-actions dim-cardActions' },
             h(Button, {
-              className: 'dim-cardAction', onClick: onReconnect, disabled: Boolean(busy),
-            }, busy === 'reconnect' ? '检查中…' : account.connected ? '检查连接' : '重试连接'),
+              className: 'dim-cardAction', onClick: onReconnect, disabled: Boolean(busy), loading: busy === 'reconnect', }, account.connected ? '检查连接' : '重试连接'),
             h(Button, {
               className: 'dim-cardAction', kind: 'danger', onClick: onRequestRemove, disabled: Boolean(busy),
             }, '移除接入')),
@@ -353,13 +353,12 @@ export function WhatsappAccountCard({
             className: 'ddt-summary',
             error: account.lastMessageError,
           }) : null,
-          testNotice ? h('div', {
-            className: 'ddt-summary dim-cardFeedback',
-            role: 'status',
-          }, testNotice) : null))),
+          testNotice ? h(FeedbackToast, { text: testNotice }) : null))),
     removing ? h(RemoveConfirmation, {
       account,
       busy: busy === 'delete',
+      error: removeError,
+      feedbackSequence: removeFeedbackSequence,
       onConfirm: onConfirmRemove,
       onCancel: onCancelRemove,
     }) : null);
@@ -375,6 +374,8 @@ export function WhatsappSettingsTab({ rpcCall }) {
   const [busyByBot, setBusyByBot] = React.useState({});
   const [testNoticeByBot, setTestNoticeByBot] = React.useState({});
   const [removeTarget, setRemoveTarget] = React.useState(null);
+  const [actionError, setActionError] = React.useState(null);
+  const [removeErrorsByBot, setRemoveErrorsByBot] = React.useState({});
   const [now, setNow] = React.useState(Date.now());
   const mounted = React.useRef(true);
   const workspaceFence = useWorkspaceSnapshotFence();
@@ -473,7 +474,15 @@ export function WhatsappSettingsTab({ rpcCall }) {
       if (provision?.attemptId && ACTIVE_STATES.has(provision.status)) {
         await invoke(WHATSAPP_ENDPOINTS.cancelProvisioning, { attemptId: provision.attemptId });
       }
-      if (mounted.current) setProvision(null);
+      if (mounted.current) {
+        setProvision(null);
+        setActionError(null);
+      }
+    } catch (cause) {
+      if (mounted.current) setActionError((current) => ({
+        message: cause?.message ?? '操作失败，请稍后重试。',
+        sequence: (current?.sequence ?? 0) + 1,
+      }));
     } finally {
       if (mounted.current) setBusy(false);
     }
@@ -578,6 +587,8 @@ export function WhatsappSettingsTab({ rpcCall }) {
             busy: busyByBot[account.botId],
             testNotice: testNoticeByBot[account.botId],
             removing: removeTarget === account.botId,
+            removeError: removeErrorsByBot[account.botId]?.message,
+            removeFeedbackSequence: removeErrorsByBot[account.botId]?.sequence,
             onReconnect: () => void botAction(
               account,
               'reconnect',
@@ -605,11 +616,26 @@ export function WhatsappSettingsTab({ rpcCall }) {
             onRequestRemove: () => setRemoveTarget(account.botId),
             onCancelRemove: () => setRemoveTarget(null),
             onConfirmRemove: async () => {
-              await botAction(account, 'delete', WHATSAPP_ENDPOINTS.deleteBot, {
-                botId: account.botId,
-                confirm: true,
-              });
-              if (mounted.current) setRemoveTarget(null);
+              try {
+                await botAction(account, 'delete', WHATSAPP_ENDPOINTS.deleteBot, {
+                  botId: account.botId,
+                  confirm: true,
+                });
+                if (mounted.current) {
+                  setRemoveTarget(null);
+                  setRemoveErrorsByBot((current) => {
+                    const next = { ...current }; delete next[account.botId]; return next;
+                  });
+                }
+              } catch (cause) {
+                if (mounted.current) setRemoveErrorsByBot((current) => ({
+                  ...current,
+                  [account.botId]: {
+                    message: cause?.message ?? '移除失败，请重试。',
+                    sequence: (current[account.botId]?.sequence ?? 0) + 1,
+                  },
+                }));
+              }
             },
           })))))
     : null;
@@ -620,6 +646,9 @@ export function WhatsappSettingsTab({ rpcCall }) {
     className: 'ddt-page dwa-page dim-channelPage',
     'aria-label': 'WhatsApp 设置',
   },
+    actionError ? h(FeedbackToast, { text: actionError.message, tone: 'error', sequence: actionError.sequence }) : null,
+    Object.entries(removeErrorsByBot).map(([botId, failure]) => botId !== removeTarget
+      ? h(FeedbackToast, { key: botId, text: failure.message, tone: 'error', sequence: failure.sequence }) : null),
   h(Heading, {
     totals: model.totals,
     busy,

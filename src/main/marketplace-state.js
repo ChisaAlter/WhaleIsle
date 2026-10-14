@@ -93,25 +93,39 @@ async function recordMarketplaceOperation(kind, target, work) {
     const result = await work(payload => {
       row.log = `${row.log}${redactMarketLog(payload.line)}\n`.slice(-MAX_LOG);
     });
-    row.status = result.ok && result.harnessStarted !== false ? 'succeeded' : 'failed';
-    row.error = redactMarketLog(result.error).slice(0, 2000);
+    const restartUnconfirmed = result.ok === true && result.harnessStarted !== true && result.harnessStarted !== false;
+    row.status = result.ok === true && result.harnessStarted === true ? 'succeeded'
+      : restartUnconfirmed ? 'interrupted' : 'failed';
+    row.error = redactMarketLog(result.error || (restartUnconfirmed
+      ? '插件操作已返回，但 Harness 重启结果尚未确认。请检查运行状态后再操作。' : '')).slice(0, 2000);
     row.log = [row.log, redactMarketLog(result.log), ...(result.results || []).map(item => (
       `${item.id}: ${item.ok ? 'OK' : redactMarketLog(item.error)}\n${redactMarketLog(item.log)}`
     ))].filter(Boolean).join('\n').slice(-MAX_LOG);
     row.finishedAt = Date.now();
     try {
       save();
-    } catch {
-      // A committed profile write must not become a failed operation just because history storage failed.
-      return { ...result, historyWarning: '操作已完成，但无法保存操作记录' };
+    } catch (historyError) {
+      // Preserve the actual profile/runtime result while reporting the separate storage failure.
+      const outcome = result.ok !== true ? '插件操作未完成'
+        : result.harnessStarted === true ? '插件操作及 Harness 重启已完成'
+          : result.harnessStarted === false ? '插件操作已完成，但 Harness 未重新启动'
+            : '插件操作已返回，Harness 重启结果尚未确认';
+      const storageError = redactMarketLog(historyError.message || String(historyError)).slice(0, 2000);
+      return { ...result, historyWarning: `${outcome}；操作记录保存失败：${storageError}` };
     }
     return result;
   } catch (error) {
     row.status = 'failed';
     row.error = redactMarketLog(error.message);
     row.finishedAt = Date.now();
-    try { save(); } catch { /* The original failure is reported if the state disk is unavailable. */ }
-    return { ok: false, error: row.error };
+    let historyWarning;
+    try {
+      save();
+    } catch (historyError) {
+      const storageError = redactMarketLog(historyError.message || String(historyError)).slice(0, 2000);
+      historyWarning = `插件操作失败；操作记录保存失败：${storageError}`;
+    }
+    return { ok: false, error: row.error, ...(historyWarning ? { historyWarning } : {}) };
   } finally {
     active.delete(row.id);
   }

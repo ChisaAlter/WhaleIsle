@@ -22,13 +22,13 @@ export function OnboardingConfirmation({ kind, t, busy, canRecharge, onClose, on
   const title = t(credit ? 'onboardingNoCreditTitle' : 'onboardingSkipTitle')
   return <Modal open headless backdropBlur={false} title={title} onClose={onClose}>
     <div className={css.confirmation}>
-      <div className={css.confirmationHeading}><h2>{title}</h2>
+      <div className={css.confirmationHeading} data-dsh-modal-header=""><h2>{title}</h2>
         <button type="button" className={css.confirmationClose} aria-label={t('close')} onClick={onClose}><IconCloseOutlineRegular size={14} /></button>
       </div>
       <p>{t(credit ? 'onboardingNoCreditDescription' : 'onboardingSkipDescription')}</p>
-      <div className={css.confirmationActions}>
-        <Button className={css.dialogButton} variant="outline" disabled={busy} onClick={kind === 'credit-skip' ? onSkip : kind === 'credit' ? onContinue : onContinueSetup}>{t(credit ? 'onboardingUnderstood' : 'onboardingKeepSetting')}</Button>
-        <Button className={css.dialogButton} variant="primary" disabled={busy || (credit && !canRecharge)} onClick={credit ? onRecharge : onSkip}>{t(credit ? 'onboardingGoTopUp' : 'onboardingEnter')}</Button>
+      <div className={css.confirmationActions} data-dsh-modal-footer="">
+        <Button className={css.dialogButton} variant="outline" disabled={busy} loading={busy && kind === 'credit-skip'} onClick={kind === 'credit-skip' ? onSkip : kind === 'credit' ? onContinue : onContinueSetup}>{t(credit ? 'onboardingUnderstood' : 'onboardingKeepSetting')}</Button>
+        <Button className={css.dialogButton} variant="primary" disabled={busy || (credit && !canRecharge)} loading={busy && !credit} onClick={credit ? onRecharge : onSkip}>{t(credit ? 'onboardingGoTopUp' : 'onboardingEnter')}</Button>
       </div>
     </div>
   </Modal>

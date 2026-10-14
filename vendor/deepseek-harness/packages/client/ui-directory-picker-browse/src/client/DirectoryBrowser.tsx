@@ -39,7 +39,7 @@ import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import {
   Button, IconCheckOutline16, IconChevronRightOutline14, IconEditOutline16, IconFolderClose16, IconFolderOpen16,
-  IconPlusOutline16, Modal, Pill,
+  IconPlusOutline16, IconWarningOutline16, Modal, Pill, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DirectoryEntry, DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
 import type { Translate } from '@deepseek-ai/dsh-client-locale/client'
@@ -328,6 +328,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
   const [folderDraft, setFolderDraft] = useState<string | null>(null)
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+  const retryBrowse = useRef<() => void>(() => {})
   const requestSeq = useRef(0)
   // The in-flight listing's controller: superseding intent aborts the wire
   // request too — the Host stops scanning — instead of only discarding the
@@ -518,6 +519,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
 
   /** Commit a submitted path (Enter, a crumb, the initial home listing): the editor closes, failures surface. */
   const navigate = useCallback((path?: string) => {
+    retryBrowse.current = () => { land(path, { closeEditor: true, announce: true }) }
     land(path, { closeEditor: true, announce: true })
   }, [land])
 
@@ -541,6 +543,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
    * click but the swap itself.
    */
   const select = useCallback((entry: DirectoryEntry) => {
+    retryBrowse.current = () => { select(entry) }
     const { seq, scan } = launchListing(entry.path)
     // A pick while the path editor is open adopts the (filtered) row and
     // closes the editor — the draft served its purpose. Focus re-parks on
@@ -666,6 +669,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
       // Land like a right-column pick (figma 802:57446 → 813:23278 flow): the
       // create target becomes the listed level and the new folder its selection.
       const { seq, scan } = launchListing(targetPath)
+      retryBrowse.current = () => { navigate(targetPath) }
       setLoading(true)
       // Symmetric with navigate/select: a launched scan clears the stale
       // failure text (and keeps the floating indicator's corner the only
@@ -887,7 +891,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
           cancelPathEdit()
         }}
       >
-        <div className={css.header}>
+        <div className={css.header} data-dsh-modal-header="">
           <div className={css.titleRow}>
             <h2 className={css.title}>{t('browser.title')}</h2>
             {remote !== undefined && (
@@ -1070,8 +1074,6 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
                   />
                 )}
               </div>
-              {loading && slowScan
-          && <div className={clsx(css.status, css.loadingFloat)} role="status">{t('browser.loading')}</div>}
               {/* The backend bounds a level at its complete-result limit; say so
           * whenever a visible pane was cut instead of letting the tail of a
           * huge directory go silently missing. The note describes the panes
@@ -1080,9 +1082,8 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
           * on every navigation away from it. */}
               {(parent?.truncated === true || child?.truncated === true)
           && <div className={css.status} role="status">{t('browser.truncated')}</div>}
-              {error !== null && <div className={css.error} role="alert">{error}</div>}
             </div>
-            <div className={css.footerBar}>
+            <div className={css.footerBar} data-dsh-modal-footer="">
               <Button
                 variant="outline"
                 icon={<IconPlusOutline16 size={14} />}
@@ -1117,6 +1118,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
                 variant="primary"
                 className={clsx(css.footerAction)}
                 disabled={confirmBlocked}
+                loading={busy || (loading && slowScan)}
                 /* v8 ignore next -- narrowing guard: Open disables while no target exists. */
                 onClick={() => { if (targetPath !== null) onOpen(targetPath) }}
               >
@@ -1145,7 +1147,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
         headless
       >
         <div className={css.createBody}>
-          <h3 className={css.createTitle}>{t('browser.newFolder')}</h3>
+          <h3 className={css.createTitle} data-dsh-modal-header="">{t('browser.newFolder')}</h3>
           <p className={css.createIn}>{t('browser.createIn', { name: targetName })}</p>
           <input
             className={css.createInput}
@@ -1167,19 +1169,35 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
               }
             }}
           />
-          {createError !== null && <div className={css.error} role="alert">{createError}</div>}
-          <div className={css.createActions}>
+          <div className={css.createActions} data-dsh-modal-footer="">
             <Button variant="outline" disabled={creatingFolder} onClick={() => { setFolderDraft(null) }}>{t('browser.cancel')}</Button>
             <Button
               variant="primary"
               disabled={creatingFolder || folderDraft === null || folderDraft.trim() === ''}
+              loading={creatingFolder}
               onClick={confirmCreate}
             >
               {t('browser.create')}
             </Button>
           </div>
         </div>
+        {createError !== null && <Toast
+          text={createError}
+          icon={<IconWarningOutline16 />}
+          holdMs={null}
+          dismissLabel={t('browser.dismiss')}
+          actions={[{ label: t('browser.retry'), onClick: confirmCreate }]}
+          onDone={() => { setCreateError(null) }}
+        />}
       </Modal>
+      {activeTab === 'local' && folderDraft === null && error !== null && <Toast
+        text={error}
+        icon={<IconWarningOutline16 />}
+        holdMs={null}
+        dismissLabel={t('browser.dismiss')}
+        actions={[{ label: t('browser.retry'), onClick: () => { retryBrowse.current() } }]}
+        onDone={() => { setError(null) }}
+      />}
     </Modal>
   )
 }

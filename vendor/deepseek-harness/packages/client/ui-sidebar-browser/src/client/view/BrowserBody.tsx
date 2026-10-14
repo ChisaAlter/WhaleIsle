@@ -6,7 +6,7 @@ import {
   IconChevronLeftOutlineRegular,
   IconChevronRightOutlineRegular,
   IconLinkOutlineRegular,
-  IconRefreshOutlineRegular, Tooltip,
+  IconRefreshOutlineRegular, StateDot, Toast, Tooltip,
   IconRightUpOutlineRegular,
   SHIELD_OUTLINE_PATH,
   ICON_REGULAR_STROKE,
@@ -53,6 +53,8 @@ export function BrowserBody(props: BrowserBodyProps): ReactNode {
   const initialUrl = useRef(tab.navigation.params?.url)
   const viewportId = useId()
   const [mountEpoch, setMountEpoch] = useState(0)
+  const [notice, setNotice] = useState<string>()
+  const [noticeRevision, setNoticeRevision] = useState(0)
   const state = useBrowserState(tab.id)
   const frame = state?.frame ?? EMPTY_FRAME
   const restoreTarget = state === undefined ? currentBrowserTarget(initial.current) : state.restoreTarget
@@ -74,7 +76,19 @@ export function BrowserBody(props: BrowserBodyProps): ReactNode {
   const sandboxed = frame.sandboxEnabled
   const failure = state?.addressFailure
   const error = frame.error
-  const submit = (event: FormEvent): void => { event.preventDefault(); loadUrl(tab.id, draft) }
+  useEffect(() => {
+    if (!tab.visible) { setNotice(undefined); return }
+    setNotice(failure !== undefined ? t(`error.${failure}`)
+      : error !== undefined ? error.code !== undefined && error.description !== undefined
+        ? t('load.failed.detail', { code: String(error.code), description: error.description }) : t('load.failed')
+      : sandboxed === false ? t('sandbox.warning') : undefined)
+  }, [failure, error, sandboxed, tab.visible, noticeRevision, t])
+  const submit = (event: FormEvent): void => {
+    event.preventDefault()
+    if (frame.loading && draft.trim() === target?.url) return
+    loadUrl(tab.id, draft)
+    setNoticeRevision(value => value + 1)
+  }
 
   return (
     <div className={css.root}>
@@ -82,19 +96,21 @@ export function BrowserBody(props: BrowserBodyProps): ReactNode {
         <button type="button" className={css.tool} aria-label={t('back')} title={t('back')} disabled={!frame.canGoBack} onClick={() => { goBack(tab.id) }}><IconChevronLeftOutlineRegular /></button>
         <button type="button" className={css.tool} aria-label={t('forward')} title={t('forward')} disabled={!frame.canGoForward} onClick={() => { goForward(tab.id) }}><IconChevronRightOutlineRegular /></button>
         <Tooltip label={t('reload')} shortcutKeys={tab.refreshShortcut?.keys} side="bottom" delayMs={500}>
-          <button type="button" className={css.tool} aria-label={t('reload')} aria-keyshortcuts={tab.refreshShortcut?.aria} disabled={target === undefined || mountEpoch === 0} onClick={() => { reload(tab.id) }}><IconRefreshOutlineRegular /></button>
+          <Button size="sm" className={css.tool} aria-label={t('reload')} aria-keyshortcuts={tab.refreshShortcut?.aria} loading={frame.loading} disabled={target === undefined || mountEpoch === 0} onClick={() => { reload(tab.id) }}><IconRefreshOutlineRegular /></Button>
         </Tooltip>
         <div className={css.addressBox}>
           <input
             className={[css.address, unknown ? css.addressUnknown : ''].join(' ')}
             value={draft}
             aria-label={t('address.placeholder')}
+            aria-invalid={failure !== undefined}
+            title={failure !== undefined ? t(`error.${failure}`) : undefined}
             placeholder={t('address.placeholder')}
             spellCheck={false}
             onChange={(event) => { setDraft(event.currentTarget.value) }}
           />
           {unknown && <span className={css.addressChanged}>{t('address.changed')}</span>}
-          <button type="submit" className={[css.tool, css.addressGo].join(' ')} aria-label={t('go')} title={t('go')}><IconLinkOutlineRegular /></button>
+          <Button size="sm" type="submit" loading={frame.loading && draft.trim() === target?.url} className={[css.tool, css.addressGo].join(' ')} aria-label={t('go')} title={t('go')}><IconLinkOutlineRegular /></Button>
         </div>
         <button type="button" className={css.tool} aria-label={t('external')} title={t('external')} disabled={externalUrl === undefined}
           onClick={externalUrl === undefined ? undefined : () => { window.open(externalUrl, '_blank', 'noopener,noreferrer') }}
@@ -103,16 +119,12 @@ export function BrowserBody(props: BrowserBodyProps): ReactNode {
           type="button"
           className={[css.tool, sandboxed ? '' : css.sandboxOff].join(' ')}
           aria-label={t(sandboxed ? 'sandbox.disable' : 'sandbox.enable')}
-          title={t(sandboxed ? 'sandbox.disable' : 'sandbox.enable')}
+          title={sandboxed ? t('sandbox.disable') : `${t('sandbox.enable')} — ${t('sandbox.warning')}`}
           aria-pressed={!sandboxed}
           onClick={() => { setSandbox(tab.id, !sandboxed) }}
         ><SandboxPolicyIcon sandboxed={sandboxed} /></button>}
       </form>
-      {sandboxed === false && <div className={css.sandboxWarning} role="status">{t('sandbox.warning')}</div>}
-      {error !== undefined && <div className={css.failure} role="status">{error.code !== undefined && error.description !== undefined
-        ? t('load.failed.detail', { code: String(error.code), description: error.description })
-        : t('load.failed')}</div>}
-      {failure !== undefined && <div className={css.failure} role="alert">{t(`error.${failure}`)}</div>}
+      {notice !== undefined && <Toast key={`${noticeRevision}:${notice}`} text={notice} holdMs={null} dismissLabel={t('dismissFeedback')} onDone={() => { setNotice(undefined) }} />}
       <div className={css.content} aria-busy={frame.loading}>
         <div id={viewportId} className={css.viewport} aria-label={t('type.label')} />
         {restoreTarget !== undefined && <section className={css.restore} aria-label={t('restore.previous')}>
@@ -124,7 +136,7 @@ export function BrowserBody(props: BrowserBodyProps): ReactNode {
           </Button>
         </section>}
         {restoreTarget === undefined && (target === undefined || frame.loading) && error === undefined && <div className={css.placeholder}>
-          <div className={css.start}>{t(target === undefined ? 'start' : 'loading')}</div>
+          <div className={css.start} role="status" aria-label={target === undefined ? undefined : t('loading')}>{target === undefined ? t('start') : <StateDot state="ongoing" size={28} />}</div>
         </div>}
       </div>
       {unknown && <p className={css.limit}>{t('address.unknown')}</p>}

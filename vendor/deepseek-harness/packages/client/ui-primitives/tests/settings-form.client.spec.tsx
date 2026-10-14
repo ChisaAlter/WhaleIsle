@@ -47,7 +47,7 @@ it('keeps the save inert until something is staged, then saves on click', () => 
   expect(onSave).not.toHaveBeenCalled()
 })
 
-it('blocks the save while a draft is invalid or one is in flight, and reports a refused save', () => {
+it('blocks the save while a draft is invalid or one is in flight, and reports a refused save', async () => {
   renderForm({ dirty: true, invalid: true })
   expect(screen.getByRole('button', { name: labels.save })).toHaveProperty('disabled', true)
   cleanup()
@@ -57,7 +57,8 @@ it('blocks the save while a draft is invalid or one is in flight, and reports a 
   cleanup()
 
   renderForm({ dirty: true, failed: true })
-  expect(screen.getByRole('status').textContent).toBe(labels.saveFailed)
+  expect((await screen.findByRole('alert')).textContent).toBe(labels.saveFailed)
+  expect(screen.getByRole('button', { name: labels.save })).toHaveProperty('disabled', false)
 })
 
 it('says the document is read-only over the controls', () => {

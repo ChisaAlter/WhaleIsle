@@ -2,6 +2,7 @@ import * as React from 'react'
 import { Button, Checkbox, Input, Modal, SettingsSelect, StateDot, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { remoteApi } from './api.js'
 import { MachineForm } from './MachineForm.jsx'
+import { RemoteFeedback } from './Feedback.jsx'
 
 const EMPTY_FORWARD = { direction: 'local', listenPort: '', targetHost: '127.0.0.1', targetPort: '', autoStart: false }
 
@@ -43,20 +44,27 @@ export function RemoteSettingsSection({ t }) {
 
   React.useEffect(() => { refresh(); return () => { loadGeneration.current++ } }, [refresh])
 
-  const run = (fn, okMsg) => {
+  const run = async (fn, okMsg, operation = 'action') => {
+    if (busyId) return false
+    setBusyId(operation)
     setErr(''); setMsg('')
-    return fn()
-      .then(() => { if (okMsg) setMsg(okMsg); refresh() })
-      .catch((e) => setErr(String((e && e.message) || e)))
+    try {
+      await fn()
+      if (okMsg) setMsg(okMsg)
+      refresh()
+      return true
+    } catch (e) {
+      setErr(String((e && e.message) || e))
+      return false
+    } finally { setBusyId('') }
   }
 
   const setCurrent = (id) => {
-    setBusyId(id || 'clear')
-    run(() => remoteApi.setCurrent(id), id ? '' : t('settings.cleared'))
-      .finally(() => setBusyId(''))
+    void run(() => remoteApi.setCurrent(id), id ? '' : t('settings.cleared'), id || 'clear')
   }
 
   const testMachine = (m) => {
+    if (busyId) return
     setBusyId('test:' + m.id); setErr(''); setMsg('')
     remoteApi.testConnect({
       machineId: m.id,
@@ -83,7 +91,7 @@ export function RemoteSettingsSection({ t }) {
   React.useEffect(() => {
     remoteApi.sshConfig()
       .then((r) => setSshEntries((r && r.entries) || []))
-      .catch(() => setSshEntries([]))
+      .catch((e) => { setSshEntries([]); setErr(String((e && e.message) || e)) })
   }, [])
 
   const addForward = () => {
@@ -94,7 +102,7 @@ export function RemoteSettingsSection({ t }) {
       action: 'define', direction: fwdForm.direction,
       listenPort: listen, targetHost: fwdForm.targetHost || '127.0.0.1',
       targetPort: target, autoStart: fwdForm.autoStart,
-    })).then(() => setFwdForm(EMPTY_FORWARD))
+    }), '', 'forward:add').then((saved) => { if (saved) setFwdForm(EMPTY_FORWARD) })
   }
 
   const current = machines.find((m) => m.id === currentId) || null
@@ -109,8 +117,7 @@ export function RemoteSettingsSection({ t }) {
         <Button size="sm" variant="ghost" onClick={refresh}>{t('settings.retry')}</Button>
       </div> : null}
 
-      {err ? <div className="dshr-error">{err}</div> : null}
-      {msg ? <div className="dshr-ok">{msg}</div> : null}
+      <RemoteFeedback error={err} message={msg} onClearMessage={() => setMsg('')} t={t} />
 
       <div className="dshr-card">
         <div className="dshr-cardTitle">
@@ -133,10 +140,10 @@ export function RemoteSettingsSection({ t }) {
             ) : null}
             {currentId ? (
               <div className="dshr-row">
-                <Button variant="ghost" size="sm" onClick={() => setCurrent('')} disabled={busyId === 'clear'}>
+                <Button variant="ghost" size="sm" onClick={() => setCurrent('')} disabled={!!busyId} loading={busyId === 'clear'}>
                   {t('settings.clearCurrent')}
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => run(() => remoteApi.forgetKey())}>
+                <Button variant="ghost" size="sm" onClick={() => run(() => remoteApi.forgetKey(), '', 'forgetKey')} disabled={!!busyId} loading={busyId === 'forgetKey'}>
                   {t('settings.forgetKey')}
                 </Button>
               </div>
@@ -156,7 +163,11 @@ export function RemoteSettingsSection({ t }) {
           <MachineForm
             t={t}
             machine={editing}
-            onSaved={() => { setFormOpen(false); setEditing(null); refresh() }}
+            onSaved={(result) => {
+              setFormOpen(false); setEditing(null)
+              if (result && result.warning) setErr(result.warning + (result.warningDetail ? ` (${result.warningDetail})` : ''))
+              refresh()
+            }}
             onCancel={() => { setFormOpen(false); setEditing(null) }}
           />
         ) : null}
@@ -184,12 +195,12 @@ export function RemoteSettingsSection({ t }) {
               </div>
               <div className="dshr-row" style={{ flexShrink: 0 }}>
                 {m.id !== currentId ? (
-                  <Button variant="ghost" size="sm" onClick={() => setCurrent(m.id)} disabled={busyId === m.id}>
+                  <Button variant="ghost" size="sm" onClick={() => setCurrent(m.id)} disabled={!!busyId} loading={busyId === m.id}>
                     {t('machines.setCurrent')}
                   </Button>
                 ) : null}
-                <Button variant="ghost" size="sm" onClick={() => testMachine(m)} disabled={busyId === 'test:' + m.id}>
-                  {busyId === 'test:' + m.id ? t('machines.testing') : t('machines.test')}
+                <Button variant="ghost" size="sm" onClick={() => testMachine(m)} disabled={!!busyId} loading={busyId === 'test:' + m.id}>
+                  {t('machines.test')}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => { setEditing(m); setFormOpen(false) }}>
                   {t('machines.edit')}
@@ -238,10 +249,10 @@ export function RemoteSettingsSection({ t }) {
                     </span>
                     <div className="dshr-row">
                       <Tag tone="outline">{f.running ? t('forwards.running') : t('forwards.stopped')}</Tag>
-                      <Button variant="ghost" size="sm" onClick={() => run(() => remoteApi.forwardAction({ action: f.running ? 'stop' : 'start', id: f.id }))}>
+                      <Button variant="ghost" size="sm" onClick={() => run(() => remoteApi.forwardAction({ action: f.running ? 'stop' : 'start', id: f.id }), '', 'forward:' + f.id)} disabled={!!busyId} loading={busyId === 'forward:' + f.id}>
                         {f.running ? t('forwards.stop') : t('forwards.start')}
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => run(() => remoteApi.forwardAction({ action: 'remove', id: f.id }))}>
+                      <Button variant="ghost" size="sm" onClick={() => run(() => remoteApi.forwardAction({ action: 'remove', id: f.id }), '', 'removeForward:' + f.id)} disabled={!!busyId} loading={busyId === 'removeForward:' + f.id}>
                         {t('forwards.remove')}
                       </Button>
                     </div>
@@ -266,7 +277,7 @@ export function RemoteSettingsSection({ t }) {
               <Input value={fwdForm.targetPort} onChange={(e) => setFwdForm((f) => ({ ...f, targetPort: e.target.value }))}
                 placeholder={t('forwards.targetPort')} inputMode="numeric" style={{ width: 90 }} />
               <Checkbox checked={fwdForm.autoStart} onChange={(v) => setFwdForm((f) => ({ ...f, autoStart: v }))} label={t('forwards.autoStart')} />
-              <Button variant="ghost" size="sm" onClick={addForward} disabled={!fwdForm.listenPort}>
+              <Button variant="ghost" size="sm" onClick={addForward} disabled={!!busyId || !fwdForm.listenPort} loading={busyId === 'forward:add'}>
                 {t('forwards.add')}
               </Button>
             </div>
@@ -279,10 +290,12 @@ export function RemoteSettingsSection({ t }) {
           <div className="dshr-cardTitle">{t('audit.title')}</div>
           <Button variant="ghost" size="sm" onClick={() => {
             if (audit) { setAudit(null); return }
+            setBusyId('audit')
             remoteApi.audit(100)
               .then((r) => setAudit(r))
               .catch((e) => setErr(String((e && e.message) || e)))
-          }}>
+              .finally(() => setBusyId(''))
+          }} disabled={!!busyId} loading={busyId === 'audit'}>
             {audit ? t('audit.hide') : t('audit.show')}
           </Button>
         </div>

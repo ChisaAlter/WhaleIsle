@@ -6,9 +6,13 @@ import type { LocalizedText } from '@deepseek-ai/dsh-package-manifest'
 import {
   IconChevronDownOutlineRegular,
   IconSearchOutlineRegular,
+  IconRefreshOutline16,
+  Button,
   Menu,
   StateDot,
   Tag,
+  Toast,
+  Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState, TagTone } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -26,7 +30,7 @@ export interface PluginInventorySettingsTabInjected {
   /** Page-local module synchronization, independent from the Host inventory. */
   hooks: { clientSync: ObservableSnapshot<ClientEntryState> }
   /** Retry the latest client graph without changing the Host composition. */
-  retryClient: () => void
+  retryClient: () => Promise<void>
   /** Read a current Host inventory snapshot. */
   list: () => Promise<PluginInventorySnapshot>
   /**
@@ -253,6 +257,19 @@ export function PluginInventorySettingsTab(
   { list, presetName, resolveText, t, useClientSync, retryClient }: PluginInventorySettingsTabProps,
 ): ReactNode {
   const clientSync = useClientSync(snapshot => snapshot)
+  const [syncFeedbackDismissed, setSyncFeedbackDismissed] = useState(false)
+  const [retryFailure, setRetryFailure] = useState<string | undefined>()
+  const syncFailureText = clientSync.failures.map(failure => `${failure.id}: ${failure.message}`).join('; ')
+  useEffect(() => { setSyncFeedbackDismissed(false) }, [clientSync.syncing, syncFailureText])
+  const retrySync = async (): Promise<void> => {
+    setRetryFailure(undefined)
+    setSyncFeedbackDismissed(false)
+    try {
+      await retryClient()
+    } catch (error) {
+      setRetryFailure(error instanceof Error ? error.message : String(error))
+    }
+  }
   const sectionId = useId()
   const [request, setRequest] = useState(0)
   const [query, setQuery] = useState('')
@@ -262,6 +279,7 @@ export function PluginInventorySettingsTab(
   const [presetOpen, setPresetOpen] = useState<boolean | null>(null)
   const [globalOpen, setGlobalOpen] = useState<boolean | null>(null)
   const [state, setState] = useState<ViewState>({ status: 'loading' })
+  const [readFailureDismissed, setReadFailureDismissed] = useState(false)
 
   useEffect(() => {
     let current = true
@@ -319,6 +337,7 @@ export function PluginInventorySettingsTab(
     && otherPresetMatches.length === 0
 
   const retry = (): void => {
+    setReadFailureDismissed(false)
     setState({ status: 'loading' })
     setRequest(value => value + 1)
   }
@@ -437,20 +456,14 @@ export function PluginInventorySettingsTab(
 
   return (
     <div className={css.section} aria-busy={state.status === 'loading'}>
-      {clientSync.syncing ? (
-        <p className={`${css.status} ${css.statusWithDot}`} role="status">
-          <StateDot state="ongoing" />{t('clientSyncing')}
-        </p>
+      {!syncFeedbackDismissed && (clientSync.syncing || clientSync.failures.length > 0 || retryFailure !== undefined) ? (
+        <Toast text={clientSync.syncing ? t('clientSyncing') : `${t('clientSyncFailed')} ${retryFailure ?? syncFailureText}`}
+          holdMs={null} dismissLabel={t('dismissFeedback')}
+          {...clientSync.syncing ? {} : { actions: [{ label: t('clientSyncRetry'), onClick: () => { void retrySync() } }] }}
+          onDone={() => { setSyncFeedbackDismissed(true) }} />
       ) : null}
-      {clientSync.failures.length === 0 ? null : (
-        <div className={css.failure} data-client-sync-failure>
-          <p className={css.statusWithDot} role="alert">
-            <StateDot state="error" />{t('clientSyncFailed')}
-          </p>
-          <ul>{clientSync.failures.map(failure => <li key={failure.id}>{failure.id}: {failure.message}</li>)}</ul>
-          <button type="button" disabled={clientSync.syncing} onClick={retryClient}>{t('clientSyncRetry')}</button>
-        </div>
-      )}
+      {syncFeedbackDismissed && !clientSync.syncing && (clientSync.failures.length > 0 || retryFailure !== undefined)
+        ? <Toast text="" holdMs={null} actions={[{ label: t('clientSyncRetry'), onClick: () => { void retrySync() } }]} onDone={() => {}} /> : null}
       {state.status === 'loading' ? (
         <div className={css.cards} role="status">
           <span className={css.visuallyHidden}>{t('loading')}</span>
@@ -463,12 +476,13 @@ export function PluginInventorySettingsTab(
         </div>
       ) : null}
       {state.status === 'error' ? (
-        <div className={css.failure}>
-          <p className={css.statusWithDot} role="alert">
-            <StateDot state="error" />{t('error')}
-          </p>
-          <button type="button" onClick={retry}>{t('retry')}</button>
-        </div>
+        <>
+          {!readFailureDismissed && <Toast key={request} text={t('error')} holdMs={null}
+            dismissLabel={t('dismissFeedback')} actions={[{ label: t('retry'), onClick: retry }]}
+            onDone={() => { setReadFailureDismissed(true) }} />}
+          <Tooltip label={t('error')} portal><Button className={css.readRetry} size="sm" variant="outline"
+            icon={<IconRefreshOutline16 />} aria-label={t('retry')} onClick={retry} /></Tooltip>
+        </>
       ) : null}
       {snapshot !== undefined ? (
         <div className={css.catalog}>

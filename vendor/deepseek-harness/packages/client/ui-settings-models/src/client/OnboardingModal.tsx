@@ -44,7 +44,7 @@ export function OnboardingModal({
       className={css.dialog as string}
     >
       <div className={css.content}>
-        <h2 ref={titleRef} className={css.title} tabIndex={focusTitle ? -1 : undefined}>{title}</h2>
+        <h2 ref={titleRef} className={css.title} data-dsh-modal-header="" tabIndex={focusTitle ? -1 : undefined}>{title}</h2>
         <div className={css.body}>{children}</div>
       </div>
     </Modal>

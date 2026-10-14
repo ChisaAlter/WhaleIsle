@@ -9,6 +9,7 @@
 import { useState, type ReactNode } from 'react'
 import { IconInfoOutlineRegular } from '../icons/index.tsx'
 import { Tag } from '../Tag.tsx'
+import { Tooltip } from '../Tooltip.tsx'
 import css from './fields.module.css'
 
 /** What every settings field control needs regardless of its value type. */
@@ -59,8 +60,9 @@ export function SettingsValueField(props: Omit<SettingsFieldProps, 'hint'> & {
   const [helpOpen, setHelpOpen] = useState(false)
   const helpId = `${props.id}-help`
   const messageId = `${props.id}-message`
-  const hasMessage = props.invalid || Boolean(props.hint)
-  const description = [hasMessage ? messageId : '', helpOpen ? helpId : ''].filter(Boolean).join(' ')
+  const invalidId = `${props.id}-invalid`
+  const hasMessage = Boolean(props.hint)
+  const description = [hasMessage ? messageId : '', props.invalid ? invalidId : '', helpOpen ? helpId : ''].filter(Boolean).join(' ')
   return (
     <div className={css.field}>
       <div className={css.head}>
@@ -92,7 +94,7 @@ export function SettingsValueField(props: Omit<SettingsFieldProps, 'hint'> & {
           )
           : null}
       </div>
-      <input
+      <Tooltip label={props.invalidLabel} disabled={!props.invalid} side="bottom" portal><input
         id={props.id}
         className={css.input}
         type="text"
@@ -103,10 +105,11 @@ export function SettingsValueField(props: Omit<SettingsFieldProps, 'hint'> & {
         placeholder={props.placeholder ?? ''}
         disabled={props.disabled}
         onChange={(event) => { props.onEdit(event.target.value) }}
-      />
+      /></Tooltip>
       {hasMessage
-        ? <p id={messageId} className={props.invalid ? css.invalid : css.hint}>{props.invalid ? props.invalidLabel : props.hint}</p>
+        ? <p id={messageId} className={css.hint}>{props.hint}</p>
         : null}
+      {props.invalid ? <span id={invalidId} className={css.visuallyHidden}>{props.invalidLabel}</span> : null}
       {props.help !== undefined && helpOpen
         ? <div id={helpId} className={css.help} role="region" aria-label={props.help.label}>{props.help.content}</div>
         : null}

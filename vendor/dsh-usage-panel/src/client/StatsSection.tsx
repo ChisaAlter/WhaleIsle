@@ -21,7 +21,7 @@ import { ProvidersCard } from './components/ProvidersCard.tsx'
 import { ModelDonut } from './components/ModelDonut.tsx'
 import { ExportMenu } from './components/ExportMenu.tsx'
 import { BillingSettingsModal } from './BillingSettingsModal.tsx'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import * as React from 'react'
 
 export type Freshness = 'loading' | 'fresh' | 'stale' | 'fallback' | 'error'
@@ -45,7 +45,8 @@ export function StatsSection({ rpc, i18n: baseI18n }: StatsSectionProps): JSX.El
   const [heatTip, setHeatTip] = useState<Tip | null>(null)
   const [billingOpen, setBillingOpen] = useState(false)
   const [repairing, setRepairing] = useState(false)
-  const [repairMsg, setRepairMsg] = useState<string | null>(null)
+  const [repairFeedback, setRepairFeedback] = useState<{ id: number; text: string; success: boolean } | null>(null)
+  const repairFeedbackId = React.useRef(0)
   const billing = useBillingSettings(rpc)
   const dataRef = useLatest(data)
 
@@ -53,7 +54,7 @@ export function StatsSection({ rpc, i18n: baseI18n }: StatsSectionProps): JSX.El
     const targets = data?.coverage.failedSessionIds ?? []
     if (targets.length === 0 || repairing) return
     setRepairing(true)
-    setRepairMsg(null)
+    setRepairFeedback(null)
     // One click repairs EVERY currently-failed session sequentially, then a
     // single forced rescan refreshes the whole page.
     const chain = targets.reduce<Promise<number>>(
@@ -62,19 +63,18 @@ export function StatsSection({ rpc, i18n: baseI18n }: StatsSectionProps): JSX.El
     )
     chain
       .then((total) => {
-        setRepairMsg(t('status.repairDone', { count: total }))
-        return load(true)
-      })
-      .then((fresh) => {
-        // Re-check the REFRESHED payload (load resolves with it): if a session
-        // still reports failed, the damage outlived the repair — the repair
-        // itself is durable and a restart only clears host in-memory state.
-        if (fresh !== undefined && fresh.coverage.failedSessionIds.length > 0) {
-          setRepairMsg(t('status.repairStill'))
-        }
+        return load(true).then((fresh) => {
+          // A repair can be accepted while its follow-up scan fails. Report
+          // both facts instead of leaving the earlier success on screen.
+          const success = fresh !== undefined && fresh.coverage.failedSessionIds.length === 0
+          const text = fresh === undefined
+            ? t('status.repairRefreshFailed', { count: total })
+            : success ? t('status.repairDone', { count: total }) : t('status.repairStill')
+          setRepairFeedback({ id: ++repairFeedbackId.current, text, success })
+        })
       })
       .catch((err) => {
-        setRepairMsg(t('status.repairFailed', { msg: String((err as Error)?.message ?? err) }))
+        setRepairFeedback({ id: ++repairFeedbackId.current, text: t('status.repairFailed', { msg: String((err as Error)?.message ?? err) }), success: false })
       })
       .finally(() => setRepairing(false))
   }
@@ -189,11 +189,10 @@ export function StatsSection({ rpc, i18n: baseI18n }: StatsSectionProps): JSX.El
               <div className="dsw-ust-repair">
                 <div className="dsw-ust-repair-row">
                   <span className="dsw-ust-repair-hint">{t('status.repairHint', { count: data.coverage.failedSessionIds.length })}</span>
-                  <button type="button" className="dsw-ust-more" onClick={repairFirst} disabled={repairing}>
-                    {repairing ? t('status.repairLoading') : t('status.repair')}
-                  </button>
+                  <Button size="sm" className="dsw-ust-more" onClick={repairFirst} disabled={repairing} loading={repairing}>
+                    {t('status.repair')}
+                  </Button>
                 </div>
-                {repairMsg !== null && <span className="dsw-ust-repair-msg">{repairMsg}</span>}
               </div>
             )}
           </div>
@@ -219,6 +218,7 @@ export function StatsSection({ rpc, i18n: baseI18n }: StatsSectionProps): JSX.El
             size="sm"
             onClick={() => load(true)}
             disabled={loading}
+            loading={loading}
             title={t('refresh.title')}
             icon={
               <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -227,12 +227,22 @@ export function StatsSection({ rpc, i18n: baseI18n }: StatsSectionProps): JSX.El
               </svg>
             }
           >
-            {loading ? t('refresh.loading') : t('refresh.button')}
+            {t('refresh.button')}
           </Button>
         </div>
       </div>
       {body}
       <BillingSettingsModal rpc={rpc} i18n={i18n} open={billingOpen} onClose={() => setBillingOpen(false)} />
+      {repairFeedback !== null && (
+        <Toast
+          key={repairFeedback.id}
+          text={repairFeedback.text}
+          tone={repairFeedback.success ? 'success' : undefined}
+          holdMs={repairFeedback.success ? undefined : null}
+          dismissLabel={t('billing.close')}
+          onDone={() => setRepairFeedback(null)}
+        />
+      )}
     </div>
   )
 }

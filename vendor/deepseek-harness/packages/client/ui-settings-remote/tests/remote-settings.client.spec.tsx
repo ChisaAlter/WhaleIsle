@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
@@ -251,5 +251,117 @@ describe('GatewaySettingsTab', () => {
     renderGateway({ rotateRemoteToken })
     fireEvent.click(await screen.findByRole('button', { name: en.rotateTokenConfirm }))
     await waitFor(() => { expect(rotateRemoteToken).toHaveBeenCalled() })
+  })
+
+  it.each(['null', 'unavailable', 'rejected', 'service-error'] as const)('keeps the token draft after a %s save result without reporting success', async (outcome) => {
+    let resolveSave: (value: RemoteSnapshot | null) => void = () => {}
+    let rejectSave: (error: Error) => void = () => {}
+    const saveRemote = vi.fn((_patch: RemotePatch) => new Promise<RemoteSnapshot | null>((resolve, reject) => {
+      resolveSave = resolve
+      rejectSave = reject
+    }))
+    renderGateway({ saveRemote })
+    const token = await screen.findByLabelText(en.relayToken) as HTMLInputElement
+    const controls = within(token.parentElement!)
+    const save = controls.getByRole('button', { name: en.save }) as HTMLButtonElement
+    const draft = 'a'.repeat(32)
+    fireEvent.change(token, { target: { value: draft } })
+    fireEvent.click(save)
+    expect(saveRemote).toHaveBeenCalledExactlyOnceWith({ remoteRelayToken: draft })
+    expect(save.disabled).toBe(true)
+    expect(save.getAttribute('aria-busy')).toBe('true')
+    expect(controls.getByRole('button', { name: en.save })).toBe(save)
+    expect(token.disabled).toBe(true)
+    expect(token.value).toBe(draft)
+    fireEvent.click(save)
+    expect(saveRemote).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      if (outcome === 'rejected') rejectSave(new Error('write failed'))
+      else resolveSave(outcome === 'null' ? null : outcome === 'unavailable' ? { available: false } : { ...SNAP, error: 'gateway stopped' })
+    })
+    const alert = await screen.findByRole('alert')
+    const expected = outcome === 'rejected' ? t('statusError', { message: 'write failed' })
+      : outcome === 'service-error' ? t('savedServiceError', { message: 'gateway stopped' }) : en.error
+    expect(alert.textContent).toBe(expected)
+    expect(alert.getAttribute('data-persistent')).toBe('true')
+    expect(screen.queryByText(en.saved)).toBeNull()
+    expect(token.value).toBe(draft)
+    expect(token.disabled).toBe(false)
+    expect(save.disabled).toBe(false)
+    expect(save.getAttribute('aria-busy')).toBeNull()
+    expect(token.closest('[data-dsh-remote-gateway]')!.contains(alert)).toBe(false)
+    fireEvent.click(within(alert).getByRole('button', { name: en.dismiss }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(token.value).toBe(draft)
+    expect(controls.getByRole('button', { name: en.save })).toBe(save)
+  })
+
+  it('clears the token draft only after a healthy save result', async () => {
+    let resolveSave: (value: RemoteSnapshot) => void = () => {}
+    const saveRemote = vi.fn((_patch: RemotePatch) => new Promise<RemoteSnapshot>((resolve) => { resolveSave = resolve }))
+    renderGateway({ saveRemote })
+    const token = await screen.findByLabelText(en.relayToken) as HTMLInputElement
+    const save = within(token.parentElement!).getByRole('button', { name: en.save })
+    fireEvent.change(token, { target: { value: 'b'.repeat(32) } })
+    fireEvent.click(save)
+    expect(token.value).toBe('b'.repeat(32))
+    expect(screen.queryByText(en.saved)).toBeNull()
+    await act(async () => { resolveSave(SNAP) })
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe(en.saved)
+    expect(alert.getAttribute('data-persistent')).toBeNull()
+    expect(token.value).toBe('')
+    expect((save as HTMLButtonElement).disabled).toBe(true)
+    expect(save.getAttribute('aria-busy')).toBeNull()
+  })
+
+  it('keeps port validation after dismissing its Toast and clears it for a valid save', async () => {
+    let resolveSave: (value: RemoteSnapshot) => void = () => {}
+    const saveRemote = vi.fn((_patch: RemotePatch) => new Promise<RemoteSnapshot>((resolve) => { resolveSave = resolve }))
+    renderGateway({ saveRemote })
+    const port = await screen.findByLabelText(en.port) as HTMLInputElement
+    const save = within(port.parentElement!).getByRole('button', { name: en.save }) as HTMLButtonElement
+    fireEvent.change(port, { target: { value: '1' } })
+    fireEvent.click(save)
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe(en.portInvalid)
+    expect(port.getAttribute('aria-invalid')).toBe('true')
+    expect(port.title).toBe(en.portInvalid)
+    expect(saveRemote).not.toHaveBeenCalled()
+    expect(port.parentElement!.contains(alert)).toBe(false)
+    fireEvent.click(within(alert).getByRole('button', { name: en.dismiss }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(port.getAttribute('aria-invalid')).toBe('true')
+    expect(port.value).toBe('1')
+    fireEvent.change(port, { target: { value: '3200' } })
+    fireEvent.click(save)
+    expect(saveRemote).toHaveBeenCalledExactlyOnceWith({ remotePort: 3200 })
+    expect(port.getAttribute('aria-invalid')).toBeNull()
+    expect(port.title).toBe('')
+    expect(save.getAttribute('aria-busy')).toBe('true')
+    await act(async () => { resolveSave({ ...SNAP, port: 3200 }) })
+    expect((await screen.findByRole('alert')).textContent).toBe(en.saved)
+    expect(port.value).toBe('3200')
+    expect(save.disabled).toBe(false)
+  })
+
+  it('keeps a retry control after an initial read failure and recovers without stale feedback', async () => {
+    const getRemote = vi.fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(SNAP)
+    renderGateway({ getRemote })
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe(t('statusError', { message: 'offline' }))
+    expect(alert.getAttribute('data-persistent')).toBe('true')
+    const retry = screen.getByRole('button', { name: en.retry }) as HTMLButtonElement
+    expect(retry.disabled).toBe(false)
+    fireEvent.click(within(alert).getByRole('button', { name: en.dismiss }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('button', { name: en.retry })).toBe(retry)
+    fireEvent.click(retry)
+    await screen.findByLabelText(en.relayUrl)
+    expect(getRemote).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('button', { name: en.retry })).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })

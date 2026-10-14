@@ -2,7 +2,7 @@
  * Settings MCP page: searchable managed catalog plus read-only composition rows.
  */
 
-import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type ReactElement } from 'react'
 import type {
   McpServerEntry,
   McpServerRecord,
@@ -23,6 +23,8 @@ import {
   SettingsSelect,
   StateDot,
   Switch,
+  Toast,
+  Tooltip,
   type StateDotState,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -119,6 +121,25 @@ export function McpSection(props: McpSectionProps) {
   const [testResults, setTestResults] = useState<Readonly<Record<string, TestState>>>({})
   const [rowFailures, setRowFailures] = useState<Readonly<Record<string, string>>>({})
   const [refreshFailure, setRefreshFailure] = useState(false)
+  const [refreshPending, setRefreshPending] = useState(false)
+  const [notice, setNotice] = useState<{ text: string; success: boolean } | undefined>()
+  const [noticeDismissed, setNoticeDismissed] = useState(false)
+  const [noticeSequence, setNoticeSequence] = useState(0)
+  const notify = useCallback((text: string, success = false): void => {
+    setNotice({ text, success })
+    setNoticeDismissed(false)
+    setNoticeSequence(sequence => sequence + 1)
+  }, [])
+  useEffect(() => {
+    if (refreshFailure) notify(t('refreshFailed'))
+  }, [refreshFailure, notify, t])
+  useEffect(() => {
+    if (view.status === 'error') notify(t('error'))
+    else if (view.status === 'loading') setNoticeDismissed(true)
+  }, [view.status, notify, t])
+  useEffect(() => {
+    if (!refreshFailure && notice?.text === t('refreshFailed')) setNoticeDismissed(true)
+  }, [refreshFailure, notice, t])
 
   useEffect(() => {
     mountedRef.current = true
@@ -193,22 +214,33 @@ export function McpSection(props: McpSectionProps) {
   }, [props.list, view.status])
 
   const refresh = (): void => {
+    if (refreshPending) return
+    setNoticeDismissed(true)
+    if (view.status !== 'ready') {
+      retry()
+      return
+    }
+    setRefreshPending(true)
     void (async () => {
+      const failures: string[] = []
       if (view.status === 'ready') {
         const failed = view.snapshot.servers.filter(entry =>
           entry.origin === 'managed' && entry.connection?.health === 'failed')
         for (const entry of failed) {
           try {
             await props.retry(entry.id)
-          } catch {
-            // The following list call reports whether the child came back.
+          } catch (error) {
+            failures.push(`${entry.spec.serverName}: ${messageOf(error, t('error'))}`)
           }
         }
       }
       try {
         await reloadReady()
+        if (failures.length > 0) notify(failures.join('; '))
       } catch {
-        // reloadReady records refreshFailure when the list call rejects.
+        notify(t('refreshFailed'))
+      } finally {
+        if (mountedRef.current) setRefreshPending(false)
       }
     })()
   }
@@ -257,6 +289,7 @@ export function McpSection(props: McpSectionProps) {
         },
       }))
       setRowFailures(current => ({ ...current, [entry.id]: messageOf(error, t('toggleFailed')) }))
+      notify(`${entry.spec.serverName}: ${messageOf(error, t('toggleFailed'))}`)
       clearPending()
       void reloadReady().catch(() => {})
     })
@@ -280,6 +313,7 @@ export function McpSection(props: McpSectionProps) {
     }).catch((error: unknown) => {
       if (!mountedRef.current) return
       setRowFailures(current => ({ ...current, [entry.id]: messageOf(error, t('signInFailed')) }))
+      notify(`${entry.spec.serverName}: ${messageOf(error, t('signInFailed'))}`)
       clearPending()
     })
   }
@@ -298,12 +332,14 @@ export function McpSection(props: McpSectionProps) {
     void props.test(entry.id).then((result) => {
       if (!mountedRef.current) return
       setTestResults(current => ({ ...current, [entry.id]: { status: 'success', result } }))
+      notify(`${entry.spec.serverName}: ${format(t('testSuccess'), { count: String(result.toolCount), tools: toolSummary(result.toolNames, t) })}`, true)
     }).catch((error: unknown) => {
       if (!mountedRef.current) return
       setTestResults(current => ({
         ...current,
         [entry.id]: { status: 'error', message: messageOf(error, t('testFailed')) },
       }))
+      notify(`${entry.spec.serverName}: ${messageOf(error, t('testFailed'))}`)
     }).finally(clearPending)
   }
 
@@ -315,6 +351,8 @@ export function McpSection(props: McpSectionProps) {
 
   return (
     <div className={styles.section} aria-busy={view.status === 'loading'}>
+      {notice === undefined || noticeDismissed ? null : <Toast key={noticeSequence} text={notice.text}
+        {...notice.success ? { tone: 'success' as const } : { holdMs: 9000 }} onDone={() => { setNoticeDismissed(true) }} />}
       <div className={styles.heading}>
         <div>
           <h2 className={styles.title}>{t('title')}</h2>
@@ -334,28 +372,18 @@ export function McpSection(props: McpSectionProps) {
             variant="outline"
             className={styles.iconAction}
             icon={<IconRefreshOutline16 />}
-            aria-label={t('refresh')}
+            aria-label={view.status === 'loading' ? t('loading') : t('refresh')}
+            title={view.status === 'error' ? t('error') : t('refresh')}
+            loading={refreshPending || view.status === 'loading'}
+            disabled={refreshPending || view.status === 'loading'}
             onClick={refresh}
           />
         </div>
       </div>
 
-      {view.status === 'loading' ? <p className={styles.status}>{t('loading')}</p> : null}
-      {view.status === 'error' ? (
-        <div className={styles.loadFailure}>
-          <p role="alert">{t('error')}</p>
-          <Button variant="outline" onClick={retry}>{t('retry')}</Button>
-        </div>
-      ) : null}
 
       {view.status === 'ready' ? (
         <>
-          {refreshFailure ? (
-            <div className={styles.loadFailure}>
-              <p role="alert">{t('refreshFailed')}</p>
-              <Button variant="outline" onClick={() => { void reloadReady().catch(() => {}) }}>{t('retry')}</Button>
-            </div>
-          ) : null}
           <div className={styles.searchRow}>
             <Input
               {...styles.search === undefined ? {} : { className: styles.search }}
@@ -461,6 +489,9 @@ export function McpSection(props: McpSectionProps) {
             <Button
               variant="primary"
               disabled={deletePending}
+              loading={deletePending}
+              feedback={deletePending ? t('deleting') : undefined}
+              aria-describedby={deleteFailure === undefined ? undefined : 'mcp-delete-error'}
               onClick={() => {
                 if (deleting === undefined || deletePending) return
                 const target = deleting
@@ -476,16 +507,17 @@ export function McpSection(props: McpSectionProps) {
                   .catch((error: unknown) => {
                     if (!mountedRef.current) return
                     setDeleteFailure(messageOf(error, t('deleteFailed')))
+                    notify(messageOf(error, t('deleteFailed')))
                     setDeletePending(false)
                   })
               }}
             >
-              {deletePending ? t('deleting') : t('deleteConfirm')}
+              {t('deleteConfirm')}
             </Button>
           </>
         )}
       >
-        {deleteFailure === undefined ? null : <p className={styles.notice} role="alert">{deleteFailure}</p>}
+        {deleteFailure === undefined ? null : <span className={styles.visuallyHidden} id="mcp-delete-error">{deleteFailure}</span>}
       </Modal>
     </div>
   )
@@ -515,7 +547,7 @@ function ToolsDialog({
       headless
       className={styles.toolsDialog}
     >
-      <div className={styles.toolsDialogHeader}>
+      <div className={styles.toolsDialogHeader} data-dsh-modal-header="">
         <h2 className={styles.toolsDialogTitle}>{format(t('toolsTitle'), { name })}</h2>
         <button type="button" className={styles.toolsDialogClose} aria-label={t('close')} onClick={onClose}>
           <IconCloseOutline16 size={14} />
@@ -558,6 +590,9 @@ function ServerRow({
     : status
   const name = entry.spec.serverName
   const [toolsOpen, setToolsOpen] = useState(false)
+  const failureId = useId()
+  const testMessage = testResult?.status === 'error' ? testResult.message
+    : testResult?.status === 'success' ? format(t('testSuccess'), { count: String(testResult.result.toolCount), tools: toolSummary(testResult.result.toolNames, t) }) : undefined
   return (
     <li className={styles.row}>
       <div className={styles.rowMain}>
@@ -585,14 +620,6 @@ function ServerRow({
               />
             </>
           )}
-          {testResult?.status === 'success' ? (
-            <span className={styles.testResult}>
-              {format(t('testSuccess'), {
-                count: String(testResult.result.toolCount),
-                tools: toolSummary(testResult.result.toolNames, t),
-              })}
-            </span>
-          ) : null}
         </span>
         <Pill>{entry.origin === 'managed' ? t('managed') : t('composition')}</Pill>
       </div>
@@ -602,14 +629,21 @@ function ServerRow({
           variant="outline"
           disabled={testing || pending}
           aria-label={format(t('testFor'), { name })}
+          title={testMessage}
+          aria-describedby={testMessage === undefined ? undefined : `${failureId}-test`}
+          loading={testing}
+          feedback={testing ? t('testing') : undefined}
           onClick={onTest}
         >
-          {testing ? t('testing') : t('test')}
+          {t('test')}
         </Button>
         {entry.writable ? (
           <Switch
             checked={entry.enabled}
             disabled={pending}
+            loading={pending}
+            aria-describedby={failure === undefined ? undefined : failureId}
+            title={failure}
             aria-label={format(t('enableAria'), { name })}
             onChange={(event: ChangeEvent<HTMLInputElement>) => { onToggleEnabled(event.currentTarget.checked) }}
           />
@@ -622,9 +656,11 @@ function ServerRow({
                 variant="outline"
                 disabled={signingIn === true || pending}
                 aria-label={format(t('signInFor'), { name })}
+                loading={signingIn === true}
+                feedback={signingIn === true ? t('signingIn') : undefined}
                 onClick={onSignIn}
               >
-                {signingIn === true ? t('signingIn') : t('signIn')}
+                {t('signIn')}
               </Button>
             ) : null}
             <button
@@ -646,8 +682,8 @@ function ServerRow({
           </>
         ) : null}
       </div>
-      {failure === undefined ? null : <p className={styles.rowError} role="alert">{failure}</p>}
-      {testResult?.status === 'error' ? <p className={styles.rowError} role="alert">{testResult.message}</p> : null}
+      {failure === undefined ? null : <span className={styles.visuallyHidden} id={failureId}>{failure}</span>}
+      {testMessage === undefined ? null : <span className={styles.visuallyHidden} id={`${failureId}-test`}>{testMessage}</span>}
     </li>
   )
 }
@@ -689,6 +725,9 @@ function EditorModal({ open, draft, creating, t, onClose, onSave }: {
   const [submitted, setSubmitted] = useState(false)
   const [pending, setPending] = useState(false)
   const [remoteError, setRemoteError] = useState<string | undefined>()
+  const [remoteErrorDismissed, setRemoteErrorDismissed] = useState(false)
+  const [remoteErrorSequence, setRemoteErrorSequence] = useState(0)
+  useEffect(() => { setRemoteErrorDismissed(false) }, [remoteError])
   useEffect(() => {
     const next = editorDraft(draft)
     setForm(next)
@@ -717,6 +756,8 @@ function EditorModal({ open, draft, creating, t, onClose, onSave }: {
   const applyJson = (): McpServerRecord | undefined => {
     const parsed = parseServerJson(jsonText, fallback())
     if (!parsed.ok) {
+      setRemoteErrorDismissed(false)
+      setRemoteErrorSequence(sequence => sequence + 1)
       setRemoteError(t(parsed.messageKey))
       return undefined
     }
@@ -737,8 +778,12 @@ function EditorModal({ open, draft, creating, t, onClose, onSave }: {
           <Button
             variant="primary"
             disabled={pending}
+            loading={pending}
+            feedback={pending ? t('saving') : undefined}
             onClick={() => {
               if (pending) return
+              setRemoteErrorDismissed(false)
+              setRemoteErrorSequence(sequence => sequence + 1)
               setSubmitted(true)
               setRemoteError(undefined)
               if (mode === 'json') {
@@ -749,6 +794,7 @@ function EditorModal({ open, draft, creating, t, onClose, onSave }: {
                 if (Object.keys(nextErrors).length > 0) {
                   setForm(nextForm)
                   setMode('form')
+                  setRemoteError(Object.values(nextErrors).join('; '))
                   return
                 }
                 setPending(true)
@@ -758,14 +804,17 @@ function EditorModal({ open, draft, creating, t, onClose, onSave }: {
                 return
               }
               const nextErrors = validate(form, t)
-              if (Object.keys(nextErrors).length > 0) return
+              if (Object.keys(nextErrors).length > 0) {
+                setRemoteError(Object.values(nextErrors).join('; '))
+                return
+              }
               setPending(true)
               void onSave(toRecord(form)).catch((error: unknown) => {
                 setRemoteError(messageOf(error, t('saveFailed')))
               }).finally(() => { setPending(false) })
             }}
           >
-            {pending ? t('saving') : t('save')}
+            {t('save')}
           </Button>
         </>
       )}
@@ -809,6 +858,8 @@ function EditorModal({ open, draft, creating, t, onClose, onSave }: {
             <textarea
               className={styles.jsonEditor}
               aria-label={t('jsonLabel')}
+              aria-invalid={remoteError !== undefined}
+              aria-describedby={remoteError === undefined ? undefined : `${fieldId}-remote-error`}
               spellCheck={false}
               value={jsonText}
               disabled={pending}
@@ -986,7 +1037,8 @@ function EditorModal({ open, draft, creating, t, onClose, onSave }: {
             </fieldset>
           </>
         )}
-        {remoteError === undefined ? null : <p className={styles.notice} role="alert">{remoteError}</p>}
+        {remoteError === undefined ? null : <span className={styles.visuallyHidden} id={`${fieldId}-remote-error`}>{remoteError}</span>}
+        {remoteError === undefined || remoteErrorDismissed ? null : <Toast key={remoteErrorSequence} text={remoteError} holdMs={9000} onDone={() => { setRemoteErrorDismissed(true) }} />}
       </div>
     </Modal>
   )
@@ -997,17 +1049,16 @@ function Field({ label, hint, error, id, children }: {
   hint?: string
   error?: string | undefined
   id: string
-  children: ReactNode
+  children: ReactElement
 }) {
   const baseId = id.replace(/-(?:id|serverName|command|args|env|cwd|url|headers|timeout)$/, '')
   const name = id.slice(baseId.length + 1)
   return (
     <div className={styles.field}>
       <label className={styles.label} htmlFor={id}>{label}</label>
-      {children}
-      {error !== undefined
-        ? <p className={styles.fieldError} id={`${baseId}-${name}-error`}>{error}</p>
-        : hint !== undefined ? <p className={styles.hint} id={`${baseId}-${name}-hint`}>{hint}</p> : null}
+      <Tooltip label={error ?? ''} disabled={error === undefined} portal side="bottom">{children}</Tooltip>
+      {error === undefined ? null : <span className={styles.visuallyHidden} id={`${baseId}-${name}-error`}>{error}</span>}
+      {hint === undefined ? null : <p className={styles.hint} id={`${baseId}-${name}-hint`}>{hint}</p>}
     </div>
   )
 }

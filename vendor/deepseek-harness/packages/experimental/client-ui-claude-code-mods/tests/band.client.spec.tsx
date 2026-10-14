@@ -91,17 +91,22 @@ it('presses a button with the generation it was drawn in and shows the failure o
   expect(b.press).toHaveBeenCalledWith(4, 'a0')
   await act(async () => { await Promise.resolve() })
   expect(screen.queryByRole('status')).toBeNull()
+  expect(screen.queryByRole('alert')).toBeNull()
 
   b.press.mockImplementationOnce(() => Promise.reject(new Error('gone')))
   fireEvent.click(screen.getByRole('button', { name: /Cancel/ }))
   await act(async () => { await Promise.resolve() })
-  expect(screen.getByRole('status').textContent).toBe('按钮操作失败：gone')
+  expect((await screen.findByRole('alert')).textContent).toBe('按钮操作失败：gone')
+  expect(screen.getByRole('group', { name: zh.band }).textContent).not.toContain('按钮操作失败')
+  fireEvent.click(screen.getByRole('button', { name: zh.close }))
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy()
 
   // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- a press rejected with a bare value is the scenario.
   b.press.mockImplementationOnce(() => Promise.reject('text failure'))
   fireEvent.click(screen.getByRole('button', { name: /Cancel/ }))
   await act(async () => { await Promise.resolve() })
-  expect(screen.getByRole('status').textContent).toBe('按钮操作失败：text failure')
+  expect((await screen.findByRole('alert')).textContent).toBe('按钮操作失败：text failure')
 })
 
 it('disables every button while a press is in flight', async () => {
@@ -111,6 +116,8 @@ it('disables every button while a press is in flight', async () => {
   fireEvent.click(screen.getByRole('button', { name: /Proceed/ }))
   expect(screen.getByRole<HTMLButtonElement>('button', { name: /Cancel/ }).disabled).toBe(true)
   expect(screen.getByRole('button', { name: /Proceed/ }).getAttribute('aria-busy')).toBe('true')
+  expect(screen.getByRole('button', { name: 'Proceed' })).toBeTruthy()
+  expect(screen.queryByText(zh.pressing)).toBeNull()
   await act(async () => { settle?.(); await Promise.resolve() })
   expect(screen.getByRole<HTMLButtonElement>('button', { name: /Cancel/ }).disabled).toBe(false)
 })

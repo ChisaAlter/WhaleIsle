@@ -94,8 +94,3 @@
   align-items: center;
   padding: 14px 0;
 }
-
-.error {
-  font-size: 12px;
-  color: var(--dsw-alias-text-error, var(--dsw-alias-state-error-primary));
-}

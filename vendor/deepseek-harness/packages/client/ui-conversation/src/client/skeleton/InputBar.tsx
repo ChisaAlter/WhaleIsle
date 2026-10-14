@@ -116,11 +116,11 @@ export const InputBar = memo(function InputBar({
   // Transient error banner (machine notices, image-intake rejections, and
   // prompt failures): the seq keys the Toast so an identical repeated message
   // restarts the hold-then-fade cycle instead of reusing the faded one.
-  const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
+  const [toast, setToast] = useState<{ seq: number; text: string; level: 'info' | 'error' } | null>(null)
   const toastSeq = useRef(0)
-  const showToast = useCallback((text: string) => {
+  const showToast = useCallback((text: string, level: 'info' | 'error' = 'error') => {
     toastSeq.current += 1
-    setToast({ seq: toastSeq.current, text })
+    setToast({ seq: toastSeq.current, text, level })
   }, [])
   const dismissToast = useCallback(() => { setToast(null) }, [])
   // The deployment's image-intake limits (absent while no attachment service
@@ -146,7 +146,8 @@ export const InputBar = memo(function InputBar({
       : `${error.message} (${error.code})`)
   }, [promptError, showToast, t, imageLimits])
   useEffect(() => {
-    if (notice?.level === 'error') showToast(notice.text)
+    if (notice !== null) showToast(notice.text, notice.level)
+    else setToast(current => current?.level === 'info' ? null : current)
   }, [notice, showToast])
   const cardRef = useRef<HTMLDivElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -481,15 +482,12 @@ export const InputBar = memo(function InputBar({
         <Toast
           key={toast.seq}
           text={toast.text}
-          icon={<IconWarningOutline16 />}
+          icon={toast.level === 'error' ? <IconWarningOutline16 /> : undefined}
+          holdMs={toast.level === 'info' ? null : undefined}
+          dismissLabel={t('input.dismissNotice')}
           anchor={cardRef.current}
           onDone={dismissToast}
         />
-      )}
-      {notice?.level === 'info' && (
-        <div className={css.notice} role="status">
-          {notice.text}
-        </div>
       )}
       {/* Trigger clicks land on the card, not the editor: the toolbar row's
           disabled controls swallow clicks otherwise (the CSS state disarms

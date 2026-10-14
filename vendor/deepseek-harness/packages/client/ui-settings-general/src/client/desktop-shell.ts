@@ -17,6 +17,8 @@ export type UpdateInfo = {
   launched?: boolean
   openedPage?: boolean
   manualInstall?: boolean
+  cancelled?: boolean
+  code?: string
 }
 
 /** Download/install progress pushed by the shell during installUpdate. */

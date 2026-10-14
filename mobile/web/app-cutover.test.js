@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 
 const app = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'app.js'), 'utf8');
 const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'app.css'), 'utf8');
@@ -114,6 +115,43 @@ test('opening a session refreshes Git so the titlebar pill can show', () => {
 test('non-repo Git pill stays visible so Initialize Git is reachable', () => {
   assert.match(app, /state\.gitStatus\.isRepo === false/);
   assert.match(app, /Initialize Git/);
+});
+
+test('closing Git progress keeps a reachable view of the running operation and its latest step', () => {
+  const element = tag => ({
+    tag, children: [], dataset: {}, listeners: {}, textContent: '',
+    append(...children) { this.children.push(...children); },
+    replaceChildren(...children) { this.children = children; },
+    setAttribute() {},
+    addEventListener(name, handler) { this.listeners[name] = handler; },
+  });
+  const toastRoot = element('root');
+  const state = {
+    gitBusy: true, gitProgressDismissed: false, gitProgress: 'push',
+    gitToast: '', toastActions: [], toastTone: 'info', gitDialog: 'commit',
+  };
+  const context = { state, toastRoot, document: { createElement: element }, svgNode: () => element('svg'), clearTimeout, toastTimer: null };
+  runInNewContext(app.slice(app.indexOf('function renderToast()'), app.indexOf('function renderLightbox()')), context);
+  const toast = () => toastRoot.children[0].children[0];
+  context.renderToast();
+  toast().children.at(-1).listeners.click();
+  assert.equal(state.gitBusy, true, 'closing progress does not finish the operation');
+  assert.equal(state.gitDialog, 'commit');
+  assert.equal(toast().tag, 'button', 'recovery remains available while the Git dialog is pending');
+  assert.equal(toast().textContent, '查看 Git 进度 · push');
+  state.gitProgress = 'create-change-request';
+  context.renderToast();
+  assert.equal(toast().textContent, '查看 Git 进度 · create-change-request');
+  toast().listeners.click();
+  assert.equal(state.gitBusy, true);
+  assert.equal(state.gitProgressDismissed, false);
+  assert.equal(toast().children[1].children[0].textContent, 'Git: create-change-request');
+  state.gitBusy = false;
+  state.gitToast = '完成';
+  state.toastTone = 'success';
+  context.renderToast();
+  assert.equal(toast().tag, 'div', 'completion replaces the pending recovery entry');
+  assert.equal(toast().children[1].children[0].textContent, '完成');
 });
 
 test('drawer hides untitled blank rows that arrive live via host/session-added', () => {

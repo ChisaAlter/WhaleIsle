@@ -556,6 +556,14 @@ code {
   color: var(--dsw-alias-state-business-primary);
 }
 
+/* State details use the existing badge box instead of moving action buttons. */
+button.comp-state-details {
+  min-height: 0;
+  padding: 1px 8px;
+  border: 0;
+  line-height: 18px;
+}
+
 .badge.green {
   background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent);
   color: var(--dsw-alias-state-success-primary);
@@ -904,6 +912,8 @@ body[data-launcher-state="downloading"] #route-picker {
 .home-description { margin: 12px 0 16px; font-size: 14px; line-height: 22px; color: var(--dsw-alias-label-secondary); }
 .home-desktop-controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .home-desktop-status { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary); }
+.home-desktop-status { min-width: 0; }
+#home-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .home-state-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--dsw-alias-label-secondary); flex: none; }
 .home-state-dot[data-state=running] { background: var(--dsw-alias-state-success-primary); }
 .home-state-dot[data-state=busy] { background: var(--dsw-alias-state-business-primary); }
@@ -1018,6 +1028,24 @@ body[data-launcher-state="downloading"] #route-picker {
 .switch input:focus-visible + .switch-ui {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 2px;
+}
+.switch input[aria-busy='true'] + .switch-ui::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 2px solid var(--dsw-alias-label-primary);
+  border-right-color: transparent;
+  border-radius: 50%;
+  background: transparent;
+  animation: launcher-loading 800ms linear infinite;
+}
+.switch input[aria-busy='true'] + .switch-ui::after { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .switch input[aria-busy='true'] + .switch-ui::before { animation: none; }
 }
 
 .route-seg {

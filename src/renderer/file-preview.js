@@ -1,6 +1,7 @@
 'use strict';
 
 const root = document.getElementById('preview');
+let truncationNotice;
 
 function applyTheme(theme) {
   const dark = theme?.scheme === 'dark';
@@ -33,6 +34,8 @@ function mediaStage(child) {
 }
 
 function render(state) {
+  truncationNotice?.close();
+  truncationNotice = undefined;
   if (!state || typeof state !== 'object') {
     status(textFor(state, 'failed'));
     return;
@@ -77,10 +80,7 @@ function render(state) {
     const wrap = document.createElement('div');
     wrap.className = 'textWrap';
     if (state.truncated) {
-      const notice = document.createElement('p');
-      notice.className = 'notice';
-      notice.textContent = textFor(state, 'truncated');
-      wrap.append(notice);
+      truncationNotice = window.shellFeedback.notice({ body: textFor(state, 'truncated'), holdMs: null, dismissLabel: state.locale === 'en' ? 'Dismiss notice' : '关闭提示' });
     }
     const code = document.createElement('pre');
     code.className = 'code';

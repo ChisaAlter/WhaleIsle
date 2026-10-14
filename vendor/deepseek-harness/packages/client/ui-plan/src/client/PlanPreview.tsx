@@ -1,6 +1,6 @@
 /** Read-only Markdown viewer for logged plans and temporary review documents. */
-import { useMemo } from 'react'
-import { FileTypeIcon, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useEffect, useMemo, useState } from 'react'
+import { FileTypeIcon, MarkdownText, StateDot, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from './plan-resource.ts'
@@ -21,15 +21,25 @@ export function PlanPreview({ useTabInfo, useResource, t }: PlanPreviewProps) {
   const temporary = isReviewPreviewAddress(tab.tab.navigation.address)
   const params = tab.tab.navigation.params
   const plan = temporary ? (params !== undefined && 'planReview' in params ? params.planReview : undefined) : resource.value
+  const [failureDismissed, setFailureDismissed] = useState(false)
+  useEffect(() => { setFailureDismissed(false) }, [resource.status, resource.failure, tab.tab.navigation.address])
   const labels = useMemo(() => ({
     code: { copyLabel: t('copy'), copiedLabel: t('copied'), toolbarLabels: { codeLabel: t('codeBlock.title'), wrapLabel: t('codeBlock.wrap'), unwrapLabel: t('codeBlock.unwrap') } },
     footnotes: t('markdown.footnotes'),
   }), [t])
+  if (plan === undefined && !temporary && resource.status !== 'none') return (
+    <div className={css.preview} aria-busy={resource.status !== 'failed'}>
+      {resource.status === 'failed' ? !failureDismissed && <Toast
+        text={[t('preview.failed'), ...resource.failure === undefined ? [] : [planFailureLine(t, resource.failure)]].join('\n')}
+        holdMs={null}
+        dismissLabel={t('notice.dismiss')}
+        onDone={() => { setFailureDismissed(true) }}
+      /> : <span className={css.loading}><StateDot state="ongoing" /></span>}
+    </div>
+  )
   if (plan === undefined) return (
     <div className={css.message} role="status">
-      {temporary ? t('preview.expired') : resource.status === 'none' ? t('preview.unavailable')
-        : resource.status === 'failed' ? t('preview.failed') : t('preview.loading')}
-      {!temporary && resource.failure !== undefined && <p>{planFailureLine(t, resource.failure)}</p>}
+      {temporary ? t('preview.expired') : t('preview.unavailable')}
     </div>
   )
   return (

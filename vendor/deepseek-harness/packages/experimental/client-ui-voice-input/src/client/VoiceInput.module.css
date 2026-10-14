@@ -11,8 +11,6 @@
 .preparation p { margin: 0; }
 .preparationActions { display: flex; gap: 8px; }
 .preparationActions:empty { display: none; }
-.preparationError { color: var(--dsw-alias-state-error-primary); overflow-wrap: anywhere; font-size: 12px; }
-.downloadFailure { display: grid; gap: 6px; overflow-wrap: anywhere; }
 .summaryRow { min-height: 28px; height: auto; flex-wrap: wrap; gap: 4px; }
 .summaryTitle { flex: 1; min-width: 0; }
 .metric { font-size: 12px; color: var(--dsw-alias-label-tertiary); }

@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
 import {
   Button,
   IconChevronRightOutline14,
+  IconWarningOutline16,
   MarkdownText,
+  Toast,
   Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -250,11 +252,18 @@ export function FilePreview({
   const [binary, setBinary] = useState(false)
   const [truncated, setTruncated] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const [notification, setNotification] = useState<{ id: number; text: string; retry: 'read' | 'save' } | null>(null)
+  const notificationId = useRef(0)
+  const [readGeneration, setReadGeneration] = useState(0)
+  const [saving, setSaving] = useState(false)
+  const notifyError = useCallback((message: string, retry: 'read' | 'save'): void => {
+    setNotification({ id: ++notificationId.current, text: message, retry })
+  }, [])
   const [renderMarkdown, setRenderMarkdown] = useState(() => readStoredFlag(RENDER_MARKDOWN_KEY))
   const [wordWrap, setWordWrap] = useState(() => readStoredFlag(FILE_WORD_WRAP_KEY))
   const [handledReveal, setHandledReveal] = useState<{ path: string; requestId: number } | null>(null)
   const [saved, setSaved] = useState(false)
+  const savedTimer = useRef<number | null>(null)
   const [ready, setReady] = useState(seed !== undefined)
   const loadedRef = useRef(seed !== undefined)
   const textRef = useRef(seed?.text ?? '')
@@ -282,7 +291,7 @@ export function FilePreview({
   useEffect(() => {
     if (cwd === undefined) {
       setError(t('empty.cwd'))
-      setSaveError(null)
+      setNotification(null)
       // Keep text/draft: a transient missing cwd must not wipe unsaved edits.
       return
     }
@@ -295,7 +304,7 @@ export function FilePreview({
     const applyError = (message: string): void => {
       const remembered = readBufferRef.current()
       setError(message)
-      setSaveError(null)
+      notifyError(message, 'read')
       setMedia(null)
       if (remembered !== undefined && remembered.draft !== remembered.text) {
         setText(remembered.text)
@@ -320,7 +329,7 @@ export function FilePreview({
           return
         }
         setError(null)
-        setSaveError(null)
+        setNotification(null)
         setBinary(false)
         setTruncated(result.truncated === true)
         setMedia({ mime: result.mime, base64: result.base64 })
@@ -339,7 +348,7 @@ export function FilePreview({
           return
         }
         setError(null)
-        setSaveError(null)
+        setNotification(null)
         setBinary(result.binary === true)
         setTruncated(result.truncated === true)
         const next = result.text ?? ''
@@ -369,7 +378,7 @@ export function FilePreview({
       })
     }
     return () => { cancelled = true }
-  }, [cwd, relativePath, readFile, readFileMedia, t, isImage, active])
+  }, [cwd, relativePath, readFile, readFileMedia, t, isImage, active, readGeneration, notifyError])
 
   const editable = ready && error === null && !isImage && !binary && !truncated
   // Dirty tracks buffer divergence even when cwd/error/truncated/binary block a
@@ -430,6 +439,7 @@ export function FilePreview({
     isCurrent: () => boolean,
   ): Promise<FileSaveResult> => {
     if (persistCwd === undefined) return { ok: false }
+    setSaving(true)
     try {
       const latest = await readFileRef.current(persistCwd, persistPath)
       if (!isCurrent()) return { ok: false }
@@ -443,23 +453,25 @@ export function FilePreview({
       ) {
         setText(latest.text)
         writeBufferRef.current({ text: latest.text, draft: draftRef.current })
-        setSaveError(tRef.current('error.changed'))
+        notifyError(tRef.current('error.changed'), 'save')
         return { ok: false }
       }
       const result = await writeFileRef.current(persistCwd, persistPath, contents)
       if (!isCurrent()) return { ok: result.ok }
       if (!result.ok) {
-        setSaveError(result.message ?? tRef.current('error.write'))
+        notifyError(result.message ?? tRef.current('error.write'), 'save')
         return { ok: false }
       }
-      setSaveError(null)
+      setNotification(null)
       setError(null)
       setTruncated(false)
       setBinary(false)
       return { ok: true }
     } catch {
-      if (isCurrent()) setSaveError(tRef.current('error.write'))
+      if (isCurrent()) notifyError(tRef.current('error.write'), 'save')
       return { ok: false }
+    } finally {
+      if (isCurrent()) setSaving(false)
     }
   }
 
@@ -495,7 +507,8 @@ export function FilePreview({
   }, [relativePath])
 
   const saveRef = useRef<() => Promise<boolean>>(() => Promise.resolve(false))
-  const save = async (): Promise<boolean> => {
+  const inFlightSave = useRef<Promise<boolean> | null>(null)
+  const saveOnce = async (): Promise<boolean> => {
     if (cwd === undefined || !dirty) return false
     // Snapshot the draft before any await: characters typed while the write is
     // in flight must stay dirty instead of being marked saved. The coordinator
@@ -505,13 +518,28 @@ export function FilePreview({
     const coordinator = coordinatorRef.current
     /* v8 ignore next -- the coordinator effect runs before any save trigger can fire. */
     if (coordinator === null) return false
-    const ok = await coordinator.flush(contents)
+    setSaving(true)
+    let ok: boolean
+    try { ok = await coordinator.flush(contents) }
+    finally { setSaving(false) }
     if (!ok) return false
-    setSaved(true)
-    window.setTimeout(() => { setSaved(false) }, 1200)
+    if (savedTimer.current !== null) window.clearTimeout(savedTimer.current)
+    setSaved(draftRef.current === contents)
+    savedTimer.current = window.setTimeout(() => { setSaved(false); savedTimer.current = null }, 1200)
     return true
   }
+  const save = (): Promise<boolean> => {
+    if (inFlightSave.current !== null) return inFlightSave.current
+    const pending = saveOnce()
+    inFlightSave.current = pending
+    const finish = (): void => { if (inFlightSave.current === pending) inFlightSave.current = null }
+    void pending.then(finish, finish)
+    return pending
+  }
   saveRef.current = save
+  useEffect(() => () => {
+    if (savedTimer.current !== null) window.clearTimeout(savedTimer.current)
+  }, [])
 
   useEffect(() => {
     registerSave(() => saveRef.current())
@@ -542,6 +570,7 @@ export function FilePreview({
   }, [showEditor, showRenderedMarkdown])
 
   const applyDraft = (next: string): void => {
+    setSaved(false)
     setDraft(next)
     writeBufferRef.current({ text: textRef.current, draft: next })
     coordinatorRef.current?.change(next)
@@ -639,17 +668,16 @@ export function FilePreview({
             variant="primary"
             size="sm"
             disabled={!canSave}
+            loading={saving}
+            {...(saved ? { feedback: t('preview.saved') } : {})}
             onClick={() => { void save() }}
           >
-            {saved ? t('preview.saved') : t('preview.save')}
+            {t('preview.save')}
           </Button>
         ) : null}
       </div>
       <div className={clsx(css.body, showEditor && !showRenderedMarkdown && css.editorBody)}>
-        {saveError !== null ? (
-          <p className={css.saveError} role="alert">{saveError}</p>
-        ) : null}
-        {error !== null ? (
+        {error !== null && cwd === undefined ? (
           <p className={css.message}>{error}</p>
         ) : null}
         {media !== null ? (
@@ -702,6 +730,21 @@ export function FilePreview({
           </>
         ) : null}
       </div>
+      {notification !== null && <Toast
+        key={notification.id}
+        text={notification.text}
+        icon={<IconWarningOutline16 />}
+        holdMs={null}
+        dismissLabel={t('unsaved.close')}
+        actions={[{
+          label: t(notification.retry === 'read' ? 'refresh' : 'preview.save'),
+          onClick: () => {
+            if (notification.retry === 'read') setReadGeneration(value => value + 1)
+            else void saveRef.current()
+          },
+        }]}
+        onDone={() => { setNotification(null) }}
+      />}
     </div>
   )
 }

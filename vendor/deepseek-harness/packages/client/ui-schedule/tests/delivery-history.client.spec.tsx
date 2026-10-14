@@ -265,21 +265,24 @@ describe.each([en, zh])('saved delivery records', (dictionary) => {
     const pending = Promise.withResolvers<Result>()
     const loadHistory = vi.fn<DeliveryHistoryInjected['loadHistory']>(() => pending.promise)
     if (mode === 'throw') loadHistory.mockImplementationOnce(() => { throw new Error('Private thrown detail') })
-    render(<DeliveryHistory
+    const view = render(<DeliveryHistory
       id={id} sessionId={sessionId} latestMessageId={undefined} loadHistory={loadHistory} t={makeTranslate(dictionary)}
     />)
     if (mode === 'reject') await reject(pending)
     else if (mode !== 'throw') await resolve(pending, mode === 'remote' ? transportFailure : failure(mode === 'missing' ? 'schedule_not_found' : 'delivery_cursor_not_found'))
     const key = mode === 'missing' ? 'delivery.notFound' : mode === 'cursor' ? 'delivery.cursorError' : 'delivery.error'
-    // Nothing was loaded, so the staleness caveat about shown records is absent.
-    expect(screen.getByRole('alert').textContent).toBe(dictionary[key])
+    const notice = await screen.findByRole('alert')
+    expect(notice.hasAttribute('data-dsh-toast')).toBe(true)
+    expect(view.container.contains(notice)).toBe(false)
+    expect(notice.parentElement?.parentElement).toBe(document.body)
+    expect(within(notice).getByText(dictionary[key], { exact: true })).toBeDefined()
     expect(screen.queryByText(dictionary['delivery.empty'])).toBeNull()
     expect(document.body.textContent).not.toContain('Private')
     loadHistory.mockResolvedValueOnce({ ok: true, value: {
       id, records: [], earlierRecordsUnavailable: false,
       earlierRecordsPruned: false, retention: { days: 30, records: 200 },
     } })
-    fireEvent.click(screen.getByRole('button', { name: dictionary[mode === 'cursor' ? 'delivery.refresh' : 'delivery.retry'] }))
+    fireEvent.click(within(notice).getByRole('button', { name: dictionary[mode === 'cursor' ? 'delivery.refresh' : 'delivery.retry'] }))
     await screen.findByText(dictionary['delivery.empty'])
     expect(loadHistory).toHaveBeenLastCalledWith({ id, sessionId, limit: 20 })
     expect(screen.queryByRole('alert')).toBeNull()
@@ -399,8 +402,12 @@ it('appends real-sized pages stably without duplicate IDs and contains overlappi
   expect(h.loadHistory).toHaveBeenCalledTimes(2)
   expect(h.loadHistory).toHaveBeenLastCalledWith({ id, sessionId, limit: 20, before: records[19]!.messageId })
   expect(more.hasAttribute('disabled')).toBe(true)
+  expect(more.getAttribute('aria-busy')).toBe('true')
+  expect(screen.getByRole('button', { name: en['delivery.loadMore'] })).toBe(more)
+  expect(more.querySelector('[data-state="ongoing"]')).not.toBeNull()
   const overlapping = result(19, 39)
   await resolve(pending, overlapping)
+  expect(more.hasAttribute('aria-busy')).toBe(false)
   expect(occurrences()).toEqual(records.slice(0, 39).map(record => record.scheduledAt))
   h.loadHistory.mockResolvedValueOnce(result(39, 45))
   fireEvent.click(screen.getByRole('button', { name: en['delivery.loadMore'] }))
@@ -418,13 +425,47 @@ it.each(['remote', 'reject', 'cursor', 'missing'] as const)('preserves records o
   if (mode === 'reject') await reject(pending)
   else await resolve(pending, mode === 'remote' ? transportFailure : failure(mode === 'cursor' ? 'delivery_cursor_not_found' : 'schedule_not_found'))
   expect(occurrences()).toEqual(records.slice(0, 20).map(record => record.scheduledAt))
-  expect(screen.getByRole('alert').textContent).toBe(en[mode === 'cursor' ? 'delivery.cursorError' : mode === 'missing' ? 'delivery.notFound' : 'delivery.error'])
+  const notice = await screen.findByRole('alert')
+  expect(notice.hasAttribute('data-dsh-toast')).toBe(true)
+  expect(h.view.container.contains(notice)).toBe(false)
+  expect(within(notice).getByText(en[mode === 'cursor' ? 'delivery.cursorError' : mode === 'missing' ? 'delivery.notFound' : 'delivery.error'], { exact: true })).toBeDefined()
   expect(screen.queryByText(en['delivery.empty'])).toBeNull()
   h.loadHistory.mockResolvedValueOnce(mode === 'remote' || mode === 'reject' ? result(20, 40) : result(0, 20))
-  fireEvent.click(screen.getByRole('button', { name: en[mode === 'cursor' ? 'delivery.refresh' : 'delivery.retry'] }))
+  fireEvent.click(within(notice).getByRole('button', { name: en[mode === 'cursor' ? 'delivery.refresh' : 'delivery.retry'] }))
   await act(async () => { await h.loadHistory.mock.results[2]!.value })
   expect(h.loadHistory).toHaveBeenLastCalledWith({ id, sessionId, limit: 20, ...(mode === 'remote' || mode === 'reject' ? { before: records[19]!.messageId } : {}) })
   expect(occurrences()).toHaveLength(mode === 'remote' || mode === 'reject' ? 40 : 20)
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+it.each([
+  { page: 'first-page', olderPage: false, mode: 'remote' },
+  { page: 'first-page', olderPage: false, mode: 'cursor' },
+  { page: 'older-page', olderPage: true, mode: 'remote' },
+  { page: 'older-page', olderPage: true, mode: 'cursor' },
+] as const)('keeps recovery available after dismissing a $page $mode failure', async ({ olderPage, mode }) => {
+  const failed = mode === 'remote' ? transportFailure : failure('delivery_cursor_not_found')
+  const loadHistory = vi.fn<DeliveryHistoryInjected['loadHistory']>().mockResolvedValueOnce(olderPage ? result() : failed)
+  if (olderPage) loadHistory.mockResolvedValueOnce(failed)
+  const view = render(<DeliveryHistory
+    id={id} sessionId={sessionId} latestMessageId={undefined} loadHistory={loadHistory} t={makeTranslate(en)}
+  />)
+  if (olderPage) fireEvent.click(await screen.findByRole('button', { name: en['delivery.loadMore'] }))
+  const notice = await screen.findByRole('alert')
+  fireEvent.click(within(notice).getByRole('button', { name: en['detail.close'] }))
+  const recovery = await screen.findByRole('alert')
+  expect(recovery.hasAttribute('data-dsh-toast')).toBe(true)
+  expect(view.container.contains(recovery)).toBe(false)
+  expect(within(recovery).getByText(en[mode === 'cursor' ? 'delivery.refreshAvailable' : 'delivery.retryAvailable'], { exact: true })).toBeDefined()
+  expect(within(recovery).queryByRole('button', { name: en['detail.close'] })).toBeNull()
+  expect(screen.queryByText(en['delivery.empty'])).toBeNull()
+  expect(occurrences()).toHaveLength(olderPage ? 20 : 0)
+  const append = olderPage && mode === 'remote'
+  loadHistory.mockResolvedValueOnce(append ? result(20, 40) : result())
+  fireEvent.click(within(recovery).getByRole('button', { name: en[mode === 'cursor' ? 'delivery.refresh' : 'delivery.retry'] }))
+  await act(async () => { await loadHistory.mock.results.at(-1)!.value })
+  expect(loadHistory).toHaveBeenLastCalledWith({ id, sessionId, limit: 20, ...(append ? { before: records[19]!.messageId } : {}) })
+  expect(occurrences()).toEqual(records.slice(0, append ? 40 : 20).map(record => record.scheduledAt))
   expect(screen.queryByRole('alert')).toBeNull()
 })
 

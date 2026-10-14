@@ -11,6 +11,8 @@ English | [中文](README.zh.md)
 
 Choose Agent presets and the new-task default in Web, read what each mode does and what it declares. Authoring is guided to Creator mode.
 
+Selection and read failures use persistent, dismissible Toast feedback; dismissing a notice retains the failed state. Loading indicators occupy the existing card or action dimensions.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

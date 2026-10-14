@@ -9,7 +9,7 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import {
   IconChevronDownOutlineRegular,
   Button, Input, SegmentedTabs,
-  IconUserOutlineRegular, IconUsersOutlineRegular, StateDot, Tag, Tooltip,
+  IconUserOutlineRegular, IconUsersOutlineRegular, StateDot, Tag, Toast, Tooltip,
   useAnchoredPosition, useDismissOnOutsidePointer, type StateDotState,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -101,7 +101,7 @@ type TeamMemberRowProps = Pick<TeamActionProps,
   label: string
   project: boolean
   memberCount: number
-  onError: (message: string) => void
+  onError: (message: string | null) => void
 }
 
 function TeamMemberRow({
@@ -124,10 +124,11 @@ function TeamMemberRow({
         className={highlightCurrent ? `${css.member} ${css.memberCurrent}` : css.member}
         disabled={inert}
         onClick={() => {
+          onError(null)
           try {
             openTeammate(sessionId, member.id)
           } catch (reason) {
-            onError(String(reason))
+            onError(reason instanceof Error ? reason.message : String(reason))
           }
         }}
       >
@@ -221,6 +222,9 @@ export function TeamAction({
   const [memberPage, setMemberPage] = useState(0)
   const [taskPage, setTaskPage] = useState(0)
   const viewId = useId()
+  const [errorDismissed, setErrorDismissed] = useState(false)
+  const [errorSequence, setErrorSequence] = useState(0)
+  const [loadingDismissed, setLoadingDismissed] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const triggerLabelRef = useRef<HTMLSpanElement>(null)
@@ -243,6 +247,8 @@ export function TeamAction({
     : '')
   const opening = useSession(snapshot => snapshot.openState === 'loading')
   const listing = useSessions(state => state.phase === 'pending')
+  const loadingTeam = team === undefined && (opening || listing)
+  useEffect(() => { setLoadingDismissed(false) }, [opening, listing, open])
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const pinnedRef = useRef(false)
   const hoverDismissedRef = useRef(false)
@@ -262,6 +268,7 @@ export function TeamAction({
     setQuery('')
     setMemberPage(0)
     setTaskPage(0)
+    setErrorDismissed(false)
   }, [sessionId])
 
   useEffect(() => cancelHoverChange, [])
@@ -396,6 +403,10 @@ export function TeamAction({
         <IconUsersOutlineRegular size={14} />
         <span ref={triggerLabelRef} className={css.triggerLabel}>{t('trigger')}</span>
       </button>
+      {open && error !== null && !errorDismissed ? <Toast key={errorSequence} text={error} holdMs={null}
+        dismissLabel={t('dismissFeedback')} onDone={() => { setErrorDismissed(true) }} />
+        : open && loadingTeam && !loadingDismissed ? <Toast text={t('loading')} icon={<StateDot state="ongoing" />}
+          holdMs={null} dismissLabel={t('dismissFeedback')} onDone={() => { setLoadingDismissed(true) }} /> : null}
       {open && createPortal(
         <div
           ref={panelRef}
@@ -428,16 +439,15 @@ export function TeamAction({
               </label>}
             </div>
           )}
-          <div className={css.body} id={project && team !== undefined && !compact ? `${viewId}-panel` : undefined}
+          <div className={css.body} aria-busy={loadingTeam} data-team-loading={loadingTeam || undefined}
+            id={project && team !== undefined && !compact ? `${viewId}-panel` : undefined}
             role={project && team !== undefined && !compact ? 'tabpanel' : undefined}
             aria-labelledby={project && team !== undefined && !compact ? `${viewId}-${view}` : undefined}>
-            {error !== null && (
-              <div className={css.error} role="alert"><StateDot state="error" />{error}</div>
-            )}
-            {team === undefined && (
+            {loadingTeam && <span className={css.loading} aria-hidden="true"><StateDot state="ongoing" /></span>}
+            {team === undefined && !loadingTeam && (
               <div className={css.notice} role="status">
-                <StateDot state={opening || listing ? 'ongoing' : 'warning'} />
-                {t(opening || listing ? 'loading' : 'unavailable')}
+                <StateDot state="warning" />
+                {t('unavailable')}
               </div>
             )}
             {team !== undefined && (
@@ -462,7 +472,7 @@ export function TeamAction({
                         useSessions={useSessions}
                         useSessionStatus={useSessionStatus}
                         openTeammate={openTeammate}
-                        onError={setError}
+                        onError={(message) => { setError(message); setErrorDismissed(false); setErrorSequence(sequence => sequence + 1) }}
                         t={t}
                       />
                     ))}

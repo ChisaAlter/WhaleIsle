@@ -2043,7 +2043,7 @@ function dispatchPanelCell(cell) {
     // Her settings live in the main window's Settings shell (section
     // `pet`) — navigate there, confirm with a line, no local overlay.
     void Promise.resolve(petShell.openSettings?.()).then((res) => {
-      say(res && res.ok === true ? 'settingsChanged' : 'dshError', undefined, undefined, 0);
+      say(res && res.ok === true ? 'settingsOpened' : 'dshError', undefined, undefined, 0);
     }).catch(() => say('dshError', undefined, undefined, 0));
   } else if (cell.id === 'chat') {
     toggleChat(true);
@@ -2064,6 +2064,38 @@ let chatOpen = false;
 let chatBusy = false;
 let chatRect = null; // { x, y, w, h } — joins petBounds so the card takes clicks
 let chatPickerRect = null; // floating menu joins the interactive area only while open
+let chatFeedbackRect = null;
+const chatFeedbackEl = document.getElementById('pc-feedback');
+let lastChatFeedbackText = '';
+
+function closeChatFeedback() {
+  chatFeedbackEl.hidden = true;
+  chatFeedbackRect = null;
+}
+document.getElementById('pc-feedback-close').addEventListener('click', closeChatFeedback);
+
+function showChatFeedback(text) {
+  lastChatFeedbackText = text;
+  document.getElementById('pc-feedback-text').textContent = text;
+  chatFeedbackEl.hidden = false;
+  syncChatFeedbackPos();
+  setInteractive(true);
+}
+
+function syncChatFeedbackPos() {
+  if (chatFeedbackEl.hidden) return;
+  const host = homeRect || { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight };
+  const w = chatFeedbackEl.offsetWidth;
+  const h = chatFeedbackEl.offsetHeight;
+  const anchor = chatRect || chatAnchor(petBodyBounds(), host, w, h);
+  const x = Math.min(Math.max(anchor.x, host.x + 4), host.x + host.width - w - 4);
+  let y = anchor.y - h - 8;
+  if (y < (host.y || 0) + 4) y = anchor.y + anchor.h + 8;
+  y = Math.min(Math.max(y, (host.y || 0) + 4), (host.y || 0) + host.height - h - 4);
+  chatFeedbackRect = { x, y, w, h };
+  chatFeedbackEl.style.left = x + 'px';
+  chatFeedbackEl.style.top = y + 'px';
+}
 const chatLog = []; // { role: 'user'|'her'|'err', text }
 let chatTypingEl = null;
 const CHAT_LOG_MAX = 30;
@@ -2124,6 +2156,7 @@ function syncChatPos() {
     chatEl.style.top = `${ny}px`;
   }
   syncChatPickerPos();
+  syncChatFeedbackPos();
 }
 
 function chatScrollDown() {
@@ -2135,7 +2168,7 @@ function chatRenderEmpty() {
   const thread = chatPart('#pc-thread');
   if (!thread) { return; }
   const empty = chatPart('#pc-empty');
-  if (empty) { empty.hidden = chatLog.length > 0; }
+  if (empty) { empty.hidden = chatLog.some((entry) => entry.role !== 'err'); }
 }
 
 // She texts like a person — one reply can arrive as several short
@@ -2149,6 +2182,7 @@ function chatSegments(role, text) {
 function chatAppend(role, text) {
   chatLog.push({ role, text });
   if (chatLog.length > CHAT_LOG_MAX) { chatLog.shift(); }
+  if (role === 'err') { showChatFeedback(text); return; }
   const thread = chatPart('#pc-thread');
   if (!thread) { return; }
   for (const part of chatSegments(role, text)) {
@@ -2184,18 +2218,12 @@ function chatAppendImage(src, alt) {
 function chatSetBusy(next) {
   chatBusy = next;
   const send = chatPart('#pc-send');
-  if (send) { send.disabled = next || !(chatPart('#pc-input')?.value || '').trim(); }
-  if (next) {
-    const thread = chatPart('#pc-thread');
-    if (thread) {
-      chatTypingEl = document.createElement('div');
-      chatTypingEl.className = 'pc-msg pc-typing';
-      chatTypingEl.textContent = '…';
-      thread.appendChild(chatTypingEl);
-      chatRenderEmpty();
-      chatScrollDown();
-    }
-  } else if (chatTypingEl) {
+  if (send) {
+    send.disabled = next || !(chatPart('#pc-input')?.value || '').trim();
+    send.setAttribute('aria-busy', next ? 'true' : 'false');
+    send.setAttribute('aria-label', next ? '正在发送…' : '发送');
+  }
+  if (!next && chatTypingEl) {
     chatTypingEl.remove?.();
     chatTypingEl = null;
   }
@@ -2219,6 +2247,7 @@ function chatRenderHistory(list) {
   chatTypingEl = null;
   for (const node of thread.querySelectorAll('.pc-msg')) { node.remove?.(); }
   for (const m of chatLog) {
+    if (m.role === 'err') continue;
     for (const part of chatSegments(m.role, m.text)) {
       const node = document.createElement('div');
       node.className = `pc-msg pc-${m.role}`;
@@ -2226,14 +2255,10 @@ function chatRenderHistory(list) {
       thread.appendChild(node);
     }
   }
-  if (chatBusy) {
-    chatTypingEl = document.createElement('div');
-    chatTypingEl.className = 'pc-msg pc-typing';
-    chatTypingEl.textContent = '…';
-    thread.appendChild(chatTypingEl);
-  }
+  const last = chatLog[chatLog.length - 1];
+  if (last?.role === 'err' && last.text !== lastChatFeedbackText) showChatFeedback(last.text);
   const empty = chatPart('#pc-empty');
-  if (empty) { empty.hidden = chatLog.length > 0; }
+  if (empty) { empty.hidden = chatLog.some((entry) => entry.role !== 'err'); }
   chatScrollDown();
 }
 
@@ -2503,6 +2528,9 @@ function chatSubmitModelChoice() {
   if (!m) { return; }
   const effort = effSel && effBox && !effBox.hidden ? String(effSel.value || '') : '';
   chatPickPending = true;
+  const trigger = chatPart('#pc-model-trigger');
+  trigger.disabled = true;
+  trigger.setAttribute('aria-busy', 'true');
   void Promise.resolve(petShell.chatSelectModel?.({
     provider: m.provider, model: m.model, reasoningEffort: effort,
   })).then((result) => {
@@ -2511,6 +2539,8 @@ function chatSubmitModelChoice() {
     chatAppend('err', '模型切换没有成功');
   }).finally(() => {
     chatPickPending = false;
+    trigger.disabled = false;
+    trigger.removeAttribute('aria-busy');
     if (chatOpen) { void chatRefreshState(); }
   });
 }
@@ -2537,6 +2567,7 @@ function toggleChat(force) {
   } else {
     chatClosePicker();
     chatEl.hidden = true;
+    closeChatFeedback();
     chatRect = null;
     chatFocusWindow(chatOpen);
     chatStopPoll();
@@ -4085,7 +4116,7 @@ function reportSurfaceRegions() {
   const pickerInk = chatPickerRect && { x: chatPickerRect.x - 24, y: chatPickerRect.y - 24,
     w: chatPickerRect.w + 48, h: chatPickerRect.h + 56 };
   const regions = [lastPaintRect, lastFeedRect, lastParticleRect, lastBubbleRect,
-    lastPanelRect, chatRect, pickerInk].filter(Boolean).map((r) => {
+    lastPanelRect, chatRect, pickerInk, chatFeedbackRect].filter(Boolean).map((r) => {
     const x = Math.floor(r.x);
     const y = Math.floor(r.y);
     return { x, y, width: Math.ceil(r.x + r.w) - x, height: Math.ceil(r.y + r.h) - y };
@@ -4295,7 +4326,7 @@ function distanceToInteractiveSurface(x, y) {
   // Cards and pinned bubbles are separate islands; their empty gaps belong
   // to the desktop. Geometry used to anchor bubbles is independent of this.
   const body = petBodyBounds();
-  const rects = [body, ...[panel, chatRect, chatPickerRect,
+  const rects = [body, ...[panel, chatRect, chatPickerRect, chatFeedbackRect,
     bubble?.pinned ? lastBubbleRect : null].filter(Boolean).map(r => ({
     x: r.x, y: r.y, right: r.x + r.w, bottom: r.y + r.h,
   }))];

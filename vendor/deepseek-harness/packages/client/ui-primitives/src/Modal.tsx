@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { IconCloseOutline16 } from './icons/index.tsx'
 import { usePresence } from './usePresence.ts'
-import { useModalLayer } from './useModalLayer.ts'
+import { modalHasToastControls, useModalLayer } from './useModalLayer.ts'
 import css from './Modal.module.css'
 
 interface ModalBaseProps {
@@ -54,18 +54,23 @@ export function Modal({
 }: ModalProps) {
   const { mounted, state } = usePresence(open)
   const dialog = useRef<HTMLDivElement>(null)
-  useModalLayer(dialog, open, onClose)
+  const owner = useRef<HTMLSpanElement>(null)
+  useModalLayer(dialog, open, onClose, owner)
 
   if (!mounted) return null
 
-  return createPortal((
+  return <><span ref={owner} hidden data-dsh-modal-owner="" />{createPortal((
     <div
       className={css.root}
       role="presentation"
       data-dsh-motion="overlay"
       data-state={state}
       aria-hidden={open ? undefined : true}
-      onKeyDownCapture={onKeyDownCapture}
+      onKeyDownCapture={(event) => {
+        // A caller's DOM-only Tab trap cannot see the body-portaled actions.
+        if (event.key === 'Tab' && dialog.current !== null && modalHasToastControls(dialog.current)) return
+        onKeyDownCapture?.(event)
+      }}
     >
       <div className={css.mask} style={backdropBlur ? undefined : { backdropFilter: 'none' }} data-dsh-motion-part="mask" aria-hidden="true" onClick={onClose} />
       <div
@@ -83,7 +88,7 @@ export function Modal({
           : (
             <>
               <div className={clsx(css.content, contentClassName)}>
-                <div className={css.header}>
+                <div className={css.header} data-dsh-modal-header="">
                   <h2 className={css.title}>{title}</h2>
                   <div className={css.headerEnd}>
                     {headerActions}
@@ -97,10 +102,10 @@ export function Modal({
                 )}
                 {children !== undefined && <div className={css.body}>{children}</div>}
               </div>
-              {footer !== undefined && <div className={css.footer}>{footer}</div>}
+              {footer !== undefined && <div className={css.footer} data-dsh-modal-footer="">{footer}</div>}
             </>
           )}
       </div>
     </div>
-  ), document.body)
+  ), document.body)}</>
 }

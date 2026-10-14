@@ -41,6 +41,7 @@ export const en = {
 /** Simplified Chinese dictionary for the current-session popup gate. */
 export const accessZh = {
   'mode': '访问模式，当前：{name}',
+  'switchFailed': '未能切换权限模式，请重试。',
   'close': '关闭',
   'preset.readOnly': '仅可查看',
   'preset.workspaceWrite': '工作区内修改',
@@ -65,6 +66,7 @@ export type PermissionAccessKey = keyof typeof accessZh
 /** English dictionary for the current-session popup gate. */
 export const accessEn = {
   'mode': 'Access mode, current: {name}',
+  'switchFailed': 'Permission mode could not be changed. Please try again.',
   'close': 'Close',
   'preset.readOnly': 'Read Only',
   'preset.workspaceWrite': 'Workspace Write',

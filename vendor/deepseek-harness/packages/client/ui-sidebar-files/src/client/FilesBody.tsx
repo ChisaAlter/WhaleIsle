@@ -8,7 +8,7 @@
  * anything else is shown but refuses to open. The header uses the shared
  * PathLabel for the root, followed by reload and workspace directory actions.
  */
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
@@ -16,7 +16,7 @@ import type {
   PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore, TranslateNS,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  FileTypeIcon, IconFolderCloseRegular, IconFolderOpenRegular, IconRefreshOutlineRegular, Tooltip, classifyFileType,
+  Button, FileTypeIcon, IconFolderCloseRegular, IconFolderOpenRegular, IconRefreshOutlineRegular, IconWarningOutline16, StateDot, Toast, Tooltip, classifyFileType,
   IconPauseOutlineRegular, IconPlayOutlineRegular, PathLabel,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
@@ -82,10 +82,13 @@ function Entry({ parent, entry, tree }: { parent: string; entry: WorkspaceDirect
   const path = childPath(parent, entry.name)
   if (entry.type === 'directory') {
     const expanded = tree.state.expanded.includes(path)
+    const level = tree.state.levels[path]
+    const loading = expanded && (level === undefined || level.kind === 'loading' || (level.kind === 'ready' && level.loading === true))
     return (
       <li className={css.item} data-files-entry="directory" data-files-path={path}>
-        <button type="button" className={css.row} aria-expanded={expanded} onClick={() => { tree.onToggle(parent, path) }}>
-          {expanded ? <IconFolderOpenRegular className={css.icon} /> : <IconFolderCloseRegular className={css.icon} />}
+        <button type="button" className={css.row} aria-expanded={expanded} aria-busy={loading} onClick={() => { tree.onToggle(parent, path) }}>
+          {loading ? <StateDot state="ongoing" size={16} className={css.icon} />
+            : expanded ? <IconFolderOpenRegular className={css.icon} /> : <IconFolderCloseRegular className={css.icon} />}
           <span className={css.name}>{entry.name}</span>
         </button>
         {expanded && <ul className={css.level}><Level path={path} tree={tree} /></ul>}
@@ -116,19 +119,14 @@ function Level({ path, tree }: { path: string; tree: TreeContext }): ReactNode {
   const { state, t } = tree
   const level = state.levels[path]
   if (level === undefined || level.kind === 'loading') {
-    return <li className={css.note} data-files-row="loading">{t('loading')}</li>
+    return null
   }
   if (level.kind === 'failed') {
-    return (
-      <li className={css.note} data-files-row="failed" data-files-code={level.failure.code}>
-        {failureLine(t, level.failure)}
-      </li>
-    )
+    return null
   }
   const entries = orderEntries(level.level.entries)
   return (
     <>
-      {level.failure !== undefined && <li className={css.note} data-files-row="failed">{failureLine(t, level.failure)}</li>}
       {entries.length === 0 && <li className={css.note} data-files-row="empty">{t('empty')}</li>}
       {entries.map(entry => <Entry key={entry.name} parent={path} entry={entry} tree={tree} />)}
       {level.level.truncated && <li className={css.note} data-files-row="truncated">{t('truncated')}</li>}
@@ -146,6 +144,7 @@ export function FilesBody({
   const { signal, actions: tabActions } = tab
   const cwd = useSessions(sessions => sessions.byId[sessionId]?.cwd)
   const state = useStore(store => store.byTab[tab.id])
+  const [dismissedFailures, setDismissedFailures] = useState<readonly RemoteFailure[]>([])
   const bodyRef = useRef<HTMLDivElement>(null)
   const scrollTopRef = useRef(0)
   // Come back where the reader was: loaded levels outlive the body in the
@@ -190,6 +189,13 @@ export function FilesBody({
   const reload = (): void => {
     refresh(tab.id)
   }
+  const allFailures = Object.entries(state.levels).flatMap(([path, level]) => {
+    const failure = level.kind === 'failed' ? level.failure : level.kind === 'ready' ? level.failure : undefined
+    return failure === undefined ? [] : [{ path, failure }]
+  })
+  const failures = allFailures.filter(item => !dismissedFailures.includes(item.failure))
+  const rootLevel = state.levels[state.root]
+  const loading = rootLevel === undefined || rootLevel.kind === 'loading' || (rootLevel.kind === 'ready' && rootLevel.loading === true)
   return (
     <div className={css.root} data-files-state="tree" data-files-root={state.root}>
       <div className={css.header}>
@@ -203,21 +209,30 @@ export function FilesBody({
           </button>
         </span>
         <Tooltip label={t('reload')} shortcutKeys={tab.refreshShortcut?.keys} side="bottom" delayMs={500}>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             className={css.tool}
             aria-label={t('reload')}
             aria-keyshortcuts={tab.refreshShortcut?.aria}
             data-files-reload
+            loading={loading}
             onClick={reload}
           >
             <IconRefreshOutlineRegular />
-          </button>
+          </Button>
         </Tooltip>
         {renderSlot('sidebar.right.tab.files.actions', {
           absolutePath: state.root,
         })}
       </div>
+      {failures.length > 0 && <Toast
+        text={failures.map(({ path, failure }) => `${path}: ${failureLine(t, failure)}`).join('\n')}
+        icon={<IconWarningOutline16 />} holdMs={null} dismissLabel={t('feedback.close')}
+        actions={[{ label: t('reload'), onClick: reload }]}
+        onDone={() => { setDismissedFailures(allFailures.map(item => item.failure)) }}
+      />}
       <div
         ref={bodyRef}
         className={css.body}

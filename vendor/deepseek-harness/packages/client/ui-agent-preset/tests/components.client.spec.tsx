@@ -253,7 +253,7 @@ describe('the new-session chip', () => {
 })
 
 describe('a refused switch', () => {
-  it('announces delayed and repeated refusals even without a composed preset or Coding Tools', () => {
+  it('announces delayed and repeated refusals even without a composed preset or Coding Tools', async () => {
     // The banner's own timer has to be a fake one from the start, or the
     // lifetime assertion below would wait out its real nine seconds.
     vi.useFakeTimers({ shouldAdvanceTime: true })
@@ -262,6 +262,7 @@ describe('a refused switch', () => {
       const actions = renderSeat({ current: '' }, undefined, undefined, false)
       const refusal = { preset: { id: 'cordis' }, reason }
       act(() => { actions.store.set({ ...actions.store.getSnapshot(), error: refusal }) })
+      await act(async () => {})
 
       // The host refuses a mount discovery reported healthy, so this banner is
       // the only place the cause appears — the chip has already reverted and
@@ -273,6 +274,7 @@ describe('a refused switch', () => {
 
       act(() => { vi.advanceTimersByTime(7000) })
       act(() => { actions.store.set({ ...actions.store.getSnapshot(), error: { ...refusal } }) })
+      await act(async () => {})
       act(() => { vi.advanceTimersByTime(2001) })
       expect(screen.getByRole('alert').textContent).toContain(reason)
 

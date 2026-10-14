@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import {
   IconCheckOutlineRegular, IconCloseOutlineRegular, IconCordisPluginOutlineRegular, IconPlayOutlineRegular,
-  IconStopFillRegular, IconTrashOutlineRegular, SettingsSelect, StateDot, Tooltip, useDismissOnOutsidePointer,
+  Button, IconStopFillRegular, IconTrashOutlineRegular, SettingsSelect, StateDot, Toast, Tooltip, useDismissOnOutsidePointer,
   type StateDotState,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -98,9 +98,9 @@ function RowAction({ label, children, ...props }: {
 } & ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <Tooltip label={label} side="bottom" delayMs={500}>
-      <button type="button" className={css.actionButton} aria-label={label} {...props}>
+      <Button type="button" className={css.actionButton} aria-label={label} {...props}>
         {children}
-      </button>
+      </Button>
     </Tooltip>
   )
 }
@@ -131,6 +131,7 @@ export function CordisPanel({
   const [selected, setSelected] = useState<Record<string, CordisDynamicPackageId>>({})
   const [pending, setPending] = useState<ReadonlySet<CordisDynamicPluginId>>(new Set())
   const [actionErrors, setActionErrors] = useState<ReadonlyMap<CordisDynamicPluginId, string>>(new Map())
+  const [dismissedError, setDismissedError] = useState<string>()
   const visibleRequests = useRef<Set<ApprovalRequestId>>(new Set())
   const rootRef = useRef<HTMLDivElement>(null)
   const [anchor, setAnchor] = useState<{ left: number; bottom: number }>()
@@ -189,10 +190,41 @@ export function CordisPanel({
     loaded,
   ) === 'running').length
 
-  if (all.length === 0) return null
+  const errorText = [
+    ...inventory.error === undefined ? [] : [t('panel.readFailed', { message: inventory.error })],
+    ...all.flatMap(({ pluginId, listed }) => {
+      const failure = errors.get(pluginId)
+      const hostFailure = listed?.latestRun?.status === 'failed' ? listed.latestRun.error : undefined
+      const actionError = actionErrors.get(pluginId)
+      const renderFailure = renderFailures.get(pluginId)
+      return [
+        ...failure === undefined ? [] : [`${pluginId}: ${failure.message} (${failure.reason})`],
+        ...failure !== undefined || hostFailure === undefined ? [] : [`${pluginId}: ${hostFailure.message} (${hostFailure.phase})`],
+        ...actionError === undefined ? [] : [`${pluginId}: ${actionError}`],
+        ...renderFailure === undefined ? [] : [`${pluginId}: ${t(RENDER_FAILURE_LABELS[renderFailure.abdicated ? 'abdicated' : 'held'], {
+          slot: renderFailure.slot,
+        })} ${renderFailure.message}`],
+      ]
+    }),
+  ].join('\n')
+
+  useEffect(() => { setDismissedError(undefined) }, [open, errorText])
+
+  const operationNotice = (open || inventory.error !== undefined) && errorText !== ''
+    && (errorText !== dismissedError || inventory.error !== undefined)
+    ? <Toast
+        text={errorText === dismissedError ? t('panel.retryAvailable') : errorText}
+        holdMs={null}
+        dismissLabel={errorText === dismissedError ? undefined : t('action.dismiss')}
+        actions={inventory.error === undefined ? [] : [{ label: t('action.retry'), onClick: () => { setDismissedError(undefined); onRefresh() } }]}
+        onDone={() => { setDismissedError(errorText) }}
+      /> : null
+
+  if (all.length === 0) return operationNotice
 
   const runAction = async (pluginId: CordisDynamicPluginId, action: () => Promise<void | { ok: boolean; message?: string }>) => {
     if (pending.has(pluginId)) return
+    setDismissedError(undefined)
     setPending(currentPending => new Set(currentPending).add(pluginId))
     setActionErrors((currentErrors) => {
       const next = new Map(currentErrors)
@@ -238,10 +270,6 @@ export function CordisPanel({
       : latest?.status === 'awaiting-approval' ? latest.approvalRequestId : undefined
     const status = visiblePanelStatus(view, selectedPackageId, loaded)
     const busy = pending.has(pluginId) || activity?.phase === 'orchestrating'
-    const failure = errors.get(pluginId)
-    const hostFailure = latest?.status === 'failed' ? latest.error : undefined
-    const renderFailure = renderFailures.get(pluginId)
-    const actionError = actionErrors.get(pluginId)
     const nextPackageId = listed?.nextPackageId !== undefined
       && listed.nextPackageId !== listed.currentPackageId ? listed.nextPackageId : undefined
     const currentPackageId = listed?.currentPackageId
@@ -430,25 +458,6 @@ export function CordisPanel({
             </div>
           </div>
         )}
-        {failure !== undefined && (
-          <div className={css.rowError} role="alert">{`${failure.message} (${failure.reason})`}</div>
-        )}
-        {failure === undefined && hostFailure !== undefined && (
-          <div className={css.rowError} role="alert">{`${hostFailure.message} (${hostFailure.phase})`}</div>
-        )}
-        {actionError !== undefined && <div className={css.rowError} role="alert">{actionError}</div>}
-        {renderFailure !== undefined && (
-          <div
-            className={css.rowError}
-            role="alert"
-            data-cordis-render-failure={renderFailure.slot}
-            data-cordis-render-abdicated={renderFailure.abdicated || undefined}
-          >
-            {`${t(RENDER_FAILURE_LABELS[renderFailure.abdicated ? 'abdicated' : 'held'], {
-              slot: renderFailure.slot,
-            })} ${renderFailure.message}`}
-          </div>
-        )}
         {activePackage !== undefined && activePackage.packageId !== selectedPackageId && (
           <span className={css.activeVersion}>{`${t('status.running')}: ${activePackage.name} · ${activePackage.packageId}`}</span>
         )}
@@ -458,16 +467,14 @@ export function CordisPanel({
 
   return (
     <div ref={rootRef} className={wide ? css.layer : `${css.layer} ${css.rail}`}>
+      {operationNotice}
       {open && anchor !== undefined && (
         <section className={css.panel} style={anchor} data-cordis-panel aria-label={t('panel.title')}>
           <header className={css.header}>
             <span className={css.title}>{t('panel.title')}</span>
           </header>
           <div className={css.body}>
-            {inventory.error !== undefined && (
-              <p className={css.readError} role="alert">{t('panel.readFailed', { message: inventory.error })}</p>
-            )}
-            {!inventory.read && inventory.error === undefined && <p className={css.note}>{t('panel.loading')}</p>}
+            {!inventory.read && inventory.error === undefined && <span className={css.loading}><StateDot state="ongoing" /></span>}
             {inventory.read && all.length === 0 && <p className={css.note}>{t('panel.empty')}</p>}
             {mine.length > 0 && (
               <section>

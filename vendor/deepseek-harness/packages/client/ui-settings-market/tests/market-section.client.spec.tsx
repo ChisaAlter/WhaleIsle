@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DISCOVER_PAGE_SIZE, MarketSection } from '../src/client/MarketSection.tsx'
 import type { MarketSectionProps } from '../src/client/MarketSection.tsx'
-import type { MarketCatalog, MarketItem } from '../src/client/desktop-shell.ts'
+import type { MarketCatalog, MarketItem, PluginOpResult } from '../src/client/desktop-shell.ts'
 import { en, type MarketLocaleKey } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -216,6 +216,37 @@ describe('MarketSection', () => {
     expect(props.listInstalled).toHaveBeenCalled()
   })
 
+  it.each([
+    { name: 'unconfirmed restart', result: { ok: true }, text: en.opOutcomeUnknown },
+    { name: 'failed restart', result: { ok: true, harnessStarted: false }, text: en.harnessDown },
+    { name: 'history write failure after restart', result: { ok: true, harnessStarted: true, historyWarning: 'history write failed' }, text: 'history write failed' },
+    { name: 'restart failure with history warning', result: { ok: true, harnessStarted: false, error: 'restart failed', historyWarning: 'history write failed' }, text: 'restart failed history write failed' },
+    { name: 'operation failure with history warning', result: { ok: false, error: 'install failed', historyWarning: 'history write failed' }, text: 'Operation failed: install failed history write failed' },
+  ] satisfies { name: string; result: PluginOpResult; text: string }[])('does not claim success for $name', async ({ result, text }) => {
+    const props = renderMarket({ install: vi.fn(async () => result) })
+    await clickMutation(await screen.findByRole('button', { name: en.install }))
+    const feedback = await screen.findByText(text)
+    expect(feedback.closest('[data-dsh-toast]')).toBeTruthy()
+    expect(screen.queryByText(en.installDone)).toBeNull()
+    expect(props.install).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: en.install })).not.toHaveProperty('disabled', true)
+  })
+
+  it('reports a rejected install and releases the pending action without claiming success', async () => {
+    let rejectInstall: ((reason: Error) => void) | undefined
+    const install = vi.fn(() => new Promise<PluginOpResult>((_resolve, reject) => { rejectInstall = reject }))
+    renderMarket({ install })
+    await clickMutation(await screen.findByRole('button', { name: en.install }))
+    const installing = await screen.findByRole('button', { name: en.installing })
+    expect(installing).toHaveProperty('disabled', true)
+    expect(installing.getAttribute('aria-busy')).toBe('true')
+    await act(async () => { rejectInstall!(new Error('bridge disconnected')) })
+    expect((await screen.findByText('Operation failed: bridge disconnected')).closest('[role="alert"]')).toBeTruthy()
+    expect(screen.queryByText(en.installDone)).toBeNull()
+    expect(screen.getByRole('button', { name: en.install })).not.toHaveProperty('disabled', true)
+    expect(install).toHaveBeenCalledTimes(1)
+  })
+
   it('shows a version difference and updates by catalog id', async () => {
     const props = renderMarket({
       listInstalled: vi.fn(async () => [{ name: 'demo', spec: '1.0.0' }]),
@@ -282,7 +313,7 @@ describe('MarketSection', () => {
       update: update as unknown as MarketSectionProps['update'],
     })
     fireEvent.click(await screen.findByRole('button', { name: en.update }))
-    await screen.findByRole('alertdialog')
+    await screen.findByRole('dialog', { name: t('allowBuildsAsk', { name: 'demo' }) })
     fireEvent.click(screen.getByRole('button', { name: en.allowBuildsConfirm }))
     await waitFor(() => {
       expect(props.update).toHaveBeenLastCalledWith('acme/demo', { allowBuilds: ['demo'] })
@@ -295,8 +326,9 @@ describe('MarketSection', () => {
       install: vi.fn(async () => ({ ok: false, error: '安装失败' })) as unknown as MarketSectionProps['install'],
     })
     await clickMutation(await screen.findByRole('button', { name: en.install }))
-    const alert = await screen.findByRole('alert')
-    expect(alert.textContent).toContain('安装失败')
+    const failure = await screen.findByText(t('opFailed', { message: '安装失败' }))
+    expect(failure.closest('[role="alert"]')).toBeTruthy()
+    expect(screen.queryByText(en.installDone)).toBeNull()
   })
 
   it('asks before allowing build scripts and retries with the keys', async () => {
@@ -305,7 +337,7 @@ describe('MarketSection', () => {
       .mockResolvedValueOnce({ ok: true, harnessStarted: true })
     const props = renderMarket({ install: install as unknown as MarketSectionProps['install'] })
     await clickMutation(await screen.findByRole('button', { name: en.install }))
-    await screen.findByRole('alertdialog')
+    await screen.findByRole('dialog', { name: t('allowBuildsAsk', { name: 'demo' }) })
     fireEvent.click(screen.getByRole('button', { name: en.allowBuildsConfirm }))
     await waitFor(() => {
       expect(props.install).toHaveBeenLastCalledWith('acme/demo', {
@@ -319,9 +351,9 @@ describe('MarketSection', () => {
     const install = vi.fn(async () => ({ ok: false, needsAllowBuilds: true, allowBuilds: [] }))
     renderMarket({ install: install as unknown as MarketSectionProps['install'] })
     await clickMutation(await screen.findByRole('button', { name: en.install }))
-    const alert = await screen.findByRole('alert')
-    expect(alert.textContent).toContain('allowBuilds')
-    expect(screen.queryByRole('alertdialog')).toBeNull()
+    const failure = await screen.findByText(t('opFailed', { message: en.buildApprovalMissing }))
+    expect(failure.closest('[role="alert"]')).toBeTruthy()
+    expect(screen.queryByRole('dialog', { name: t('allowBuildsAsk', { name: 'demo' }) })).toBeNull()
     expect(install).toHaveBeenCalledTimes(1)
   })
 
@@ -330,10 +362,27 @@ describe('MarketSection', () => {
       .mockResolvedValueOnce({ ok: false, needsAllowBuilds: true, allowBuilds: ['demo'] })
     const props = renderMarket({ install: install as unknown as MarketSectionProps['install'] })
     await clickMutation(await screen.findByRole('button', { name: en.install }))
-    await screen.findByRole('alertdialog')
+    await screen.findByRole('dialog', { name: t('allowBuildsAsk', { name: 'demo' }) })
     fireEvent.click(screen.getByRole('button', { name: en.allowBuildsCancel }))
-    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(screen.queryByRole('dialog', { name: t('allowBuildsAsk', { name: 'demo' }) })).toBeNull()
     expect(props.install).toHaveBeenCalledTimes(1)
+  })
+
+  it('retains build approval actions when operation history could not be saved', async () => {
+    const key = 'demo@git+https://github.com/acme/demo.git'
+    const install = vi.fn()
+      .mockResolvedValueOnce({ ok: false, needsAllowBuilds: true, allowBuilds: [key], historyWarning: 'history write failed' })
+      .mockResolvedValueOnce({ ok: true, harnessStarted: true })
+    renderMarket({ install })
+    await clickMutation(await screen.findByRole('button', { name: en.install }))
+    const dialog = await screen.findByRole('dialog', { name: t('allowBuildsAsk', { name: 'demo' }) })
+    expect((await screen.findByText('history write failed')).closest('[role="alert"]')).toBeTruthy()
+    expect(within(dialog).getByText(t('allowBuildsKeys', { keys: key }))).toBeTruthy()
+    expect(install).toHaveBeenCalledTimes(1)
+    fireEvent.click(within(dialog).getByRole('button', { name: en.allowBuildsConfirm }))
+    await screen.findByText(en.installDone)
+    expect(install).toHaveBeenLastCalledWith('acme/demo', { allowBuilds: [key] })
+    expect(install).toHaveBeenCalledTimes(2)
   })
 
   it('offers uninstall for installed rows and reports harness-down failures', async () => {
@@ -520,12 +569,48 @@ describe('MarketSection', () => {
     await screen.findByText('demo')
     fireEvent.click(screen.getByRole('button', { name: en.refresh }))
     const alert = await screen.findByRole('alert')
-    expect(alert.textContent).toBe(en.loadError)
+    expect(within(alert).getByText(en.loadError)).toBeTruthy()
     expect(screen.getByText('demo')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.retry }))
     await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
     expect(screen.getByText('demo')).toBeTruthy()
     expect(listCatalog).toHaveBeenCalledTimes(3)
+  })
+
+  it('keeps the catalog and a working refresh action after dismissing its failure notice', async () => {
+    const listCatalog = vi.fn()
+      .mockResolvedValueOnce(catalog([item()]))
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(catalog([item({ description: 'Recovered catalog' })]))
+    renderMarket({ listCatalog })
+    await screen.findByText('demo')
+    fireEvent.click(screen.getByRole('button', { name: en.refresh }))
+    const failure = await screen.findByText(en.loadError)
+    const alert = failure.closest('[role="alert"]') as HTMLElement
+    fireEvent.click(within(alert).getByRole('button', { name: en.close }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByText('demo')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.refresh }))
+    await screen.findByText('Recovered catalog')
+    expect(listCatalog).toHaveBeenCalledTimes(3)
+  })
+
+  it('keeps details and their refresh recovery after dismissing a failed details read', async () => {
+    const getDetails = vi.fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ ok: true, partial: false, readme: '# Recovered documentation', version: '2.0.0', requirements: [] })
+    renderMarket({ getDetails })
+    fireEvent.click(await screen.findByRole('button', { name: en.details }))
+    const dialog = await screen.findByRole('dialog', { name: 'demo' })
+    const failure = await screen.findByText(en.detailsFailed)
+    const alert = failure.closest('[role="alert"]') as HTMLElement
+    fireEvent.click(within(alert).getByRole('button', { name: en.close }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(within(dialog).getByText('A demo plugin')).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: en.refresh }))
+    await screen.findByRole('heading', { name: 'Recovered documentation' })
+    expect(getDetails).toHaveBeenLastCalledWith('acme/demo', { force: true })
+    expect(getDetails).toHaveBeenCalledTimes(2)
   })
 
   it('disables and relabels the refresh control while a reload is in flight', async () => {
@@ -623,7 +708,7 @@ describe('MarketSection', () => {
     })
   })
 
-  it('streams progress lines during an install', async () => {
+  it('floats the latest progress line during an install without adding an in-flow log', async () => {
     let publish: ((payload: { phase: string; line?: string }) => void) | null = null
     let resolveInstall: ((value: { ok: boolean; harnessStarted: boolean }) => void) | null = null
     renderMarket({
@@ -636,11 +721,33 @@ describe('MarketSection', () => {
     await clickMutation(await screen.findByRole('button', { name: en.install }))
     await waitFor(() => { expect(publish).not.toBeNull() })
     publish!({ phase: 'log', line: 'resolving demo' })
+    const resolving = await screen.findByText('resolving demo')
+    expect(resolving.closest('[data-dsh-toast]')).toBeTruthy()
+    expect(screen.queryByRole('log')).toBeNull()
+    expect(screen.getByRole('button', { name: en.installing }).getAttribute('aria-busy')).toBe('true')
     publish!({ phase: 'restart' })
-    const log = await screen.findByRole('log')
-    expect(log.textContent).toContain('resolving demo')
-    expect(log.textContent).toContain(en.restarting)
+    expect((await screen.findByText(en.restarting)).closest('[data-dsh-toast]')).toBeTruthy()
+    expect(screen.queryByText('resolving demo')).toBeNull()
     resolveInstall!({ ok: true, harnessStarted: true })
     await screen.findByText(en.installDone)
+  })
+
+  it('dismisses progress presentation without cancelling or repeating the install', async () => {
+    let resolveInstall: ((value: PluginOpResult) => void) | undefined
+    const unsubscribe = vi.fn()
+    const install = vi.fn(() => new Promise<PluginOpResult>((resolve) => { resolveInstall = resolve }))
+    renderMarket({ install, onProgress: vi.fn(() => unsubscribe) })
+    await clickMutation(await screen.findByRole('button', { name: en.install }))
+    const progress = await screen.findByRole('alert')
+    expect(within(progress).getByText(en.installing)).toBeTruthy()
+    fireEvent.click(within(progress).getByRole('button', { name: en.close }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('button', { name: en.installing })).toHaveProperty('disabled', true)
+    expect(unsubscribe).not.toHaveBeenCalled()
+    expect(install).toHaveBeenCalledTimes(1)
+    await act(async () => { resolveInstall!({ ok: true, harnessStarted: true }) })
+    await screen.findByText(en.installDone)
+    expect(unsubscribe).toHaveBeenCalledTimes(1)
+    expect(install).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { DshbotRow } from '../src/client/DshbotRow.tsx'
 import type { DshbotRowProps } from '../src/client/DshbotRow.tsx'
 import { en, zh } from '../src/client/locales.ts'
@@ -23,7 +23,8 @@ function mount(dict: Record<string, string> = en) {
     useSessionStatus: unusedHook,
     useSessionRetainInfo: () => undefined,
     useWorkspaces: unusedHook,
-    t: key => dict[key] ?? key,
+    t: (key, params) => Object.entries(params ?? {}).reduce(
+      (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), dict[key] ?? key),
   }
   render(<DshbotRow {...props} />)
 }
@@ -38,6 +39,8 @@ describe('DshbotRow', () => {
     mount()
     const toggle = screen.getByRole('switch', { name: 'Bots' })
     expect(toggle.getAttribute('aria-checked')).toBe('false')
+    expect(toggle).toHaveProperty('disabled', true)
+    await waitFor(() => { expect(toggle).toHaveProperty('disabled', false) })
     fireEvent.click(toggle)
     expect(saveConfig).toHaveBeenCalledWith({ dshbotEnabled: true })
     expect(screen.getByRole('switch', { name: 'Bots' }).getAttribute('aria-checked')).toBe('true')
@@ -71,20 +74,27 @@ describe('DshbotRow', () => {
   })
 
   it('reverts the switch when saveConfig rejects and blocks input while busy', async () => {
-    const saveConfig = vi.fn(async () => { throw new Error('write failed') })
+    const pending = Promise.withResolvers<object>()
+    const saveConfig = vi.fn(() => pending.promise)
     ;(window as Window & { shell?: unknown }).shell = {
       getConfig: async () => ({ dshbotEnabled: false }),
       saveConfig,
     }
     mount()
     const toggle = screen.getByRole('switch', { name: 'Bots' })
+    await waitFor(() => { expect(toggle).toHaveProperty('disabled', false) })
     fireEvent.click(toggle)
     expect(saveConfig).toHaveBeenCalledWith({ dshbotEnabled: true })
+    expect(toggle).toHaveProperty('disabled', true)
+    toggle.click()
+    expect(saveConfig).toHaveBeenCalledOnce()
+    await act(async () => { pending.reject(new Error('write failed')) })
     await waitFor(() => {
       const reverted = screen.getByRole('switch', { name: 'Bots' })
       expect(reverted.getAttribute('aria-checked')).toBe('false')
       expect((reverted as HTMLButtonElement).disabled).toBe(false)
     })
+    expect((await screen.findByRole('alert')).textContent).toBe('Could not save settings: write failed')
   })
 
   it('stays off when the desktop config cannot be read', async () => {

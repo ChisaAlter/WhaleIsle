@@ -5,14 +5,14 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
   const primitives = require("@deepseek-ai/dsh-client-ui-primitives");
   const { createElement: h, useState, useEffect, useMemo, useRef } = react;
   const {
-    Button, Input, Menu, Modal, Pill, SettingsSelect, Switch, Tooltip,
+    Button, Input, Menu, Modal, Pill, SettingsSelect, Switch, Toast, Tooltip,
     DocumentFileIcon, MarkdownText, fileSizeText,
     IconPlusOutline16, IconSearchOutline16, IconEllipsisOutline16,
     IconEditOutline16, IconTrashOutline16, IconCopyOutline16,
     IconAgentPresetOutline16, IconClockOutline16, IconPlayOutline16,
     IconPauseOutline16, IconStopFill16,
     IconWarningOutline16, IconSkillOutline16, IconContextInjectionOutline16,
-    IconSettingsOutline16,
+    IconSettingsOutline16, StateDot,
     IconChevronDownOutline14, IconChevronRightOutline14,
   } = primitives;
 
@@ -298,6 +298,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     routineTriggerShow: "显示触发命令",
     routineTriggerCopy: "复制",
     routineTriggerCopied: "已复制",
+    routineTriggerCopyFailed: "复制失败",
     groupRuntime: "群运行态",
     groupRuntimeLoading: "正在加载群运行态…",
     groupRuntimeUnavailable: "群运行态不可用；不会伪装成正常。",
@@ -385,6 +386,8 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     capabilityGlobalConfirm: "打开设置",
     profileTransportUnavailable: "机器人资料服务不可用，无法保存资料。",
     profileSessionUnavailable: "机器人资料服务未返回可用会话。",
+    profileCreatedOpenFailed: "已创建，但打开失败：{message}",
+    profileSavedOpenFailed: "已保存，但打开失败：{message}",
     memory: "长期记忆",
     memoryLoading: "正在加载记忆…",
     memoryUnavailable: "记忆管理不可用；不会伪装成空记忆。",
@@ -693,6 +696,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     routineTriggerShow: "Show trigger command",
     routineTriggerCopy: "Copy",
     routineTriggerCopied: "Copied",
+    routineTriggerCopyFailed: "Copy failed",
     groupRuntime: "Group runtime",
     groupRuntimeLoading: "Loading group runtime…",
     groupRuntimeUnavailable: "Group runtime is unavailable; it is not shown as healthy.",
@@ -780,6 +784,8 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     capabilityGlobalConfirm: "Open Settings",
     profileTransportUnavailable: "Bot profile service is unavailable; the profile cannot be saved.",
     profileSessionUnavailable: "The bot profile service did not return a usable session.",
+    profileCreatedOpenFailed: "Created, but opening failed: {message}",
+    profileSavedOpenFailed: "Saved, but opening failed: {message}",
     memory: "Long-term memory",
     memoryLoading: "Loading memory…",
     memoryUnavailable: "Memory management is unavailable; it is not shown as empty.",
@@ -1747,15 +1753,15 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
   }
 
   function AvatarPicker(props) {
-    const { t, onChange } = props;
+    const { t, onChange, onError: setError } = props;
     const disabled = props.disabled === true;
     const seed = props.seed || props.name;
     const resolved = normalizeAvatar(props.avatar, seed);
     const blobColor = resolved.kind === "blob" ? resolved.color : "ink";
     const blobShape = resolved.kind === "blob" ? resolved.shape : "circle";
     const [tab, setTab] = useState(resolved.kind === "image" ? "upload" : "blob");
-    const [error, setError] = useState("");
     const [cropSource, setCropSource] = useState(null);
+    const [imageBusy, setImageBusy] = useState(false);
     const fileRef = useRef(null);
 
     const closeCropper = () => {
@@ -1829,22 +1835,27 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
             type: "file",
             accept: "image/*",
             hidden: true,
-            disabled,
+            disabled: disabled || imageBusy,
             onChange: async (event) => {
               const file = event.target.files && event.target.files[0];
               event.target.value = "";
               if (!file) return;
+              setImageBusy(true);
+              setError("");
               try {
                 setCropSource(await loadAvatarImage(file));
                 setError("");
               } catch {
                 setError(t("avatarBadImage"));
+              } finally {
+                setImageBusy(false);
               }
             },
           }),
           h(Button, {
             variant: "outline",
-            disabled,
+            disabled: disabled || imageBusy,
+            loading: imageBusy,
             onClick: () => { if (fileRef.current) fileRef.current.click(); },
           }, t("avatarPick")),
           h("div", { className: "dshbot-pills" },
@@ -1863,7 +1874,6 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
               },
             }, t("avatarSquare")),
           ),
-          error ? h("div", { className: "dshbot-error", role: "alert" }, error) : null,
         ),
     );
   }
@@ -2474,21 +2484,27 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     const questions = Array.isArray(interaction?.questions) ? interaction.questions : [];
     const [drafts, setDrafts] = useState([]);
     const [busy, setBusy] = useState(false);
-    const [error, setError] = useState("");
+    const [pendingAction, setPendingAction] = useState("");
+    const [errorState, setError] = useFeedbackError();
+    const error = errorState.error;
 
     useEffect(() => {
       setDrafts(questions.map(() => ({ selected: [], custom: "", skipped: false })));
       setBusy(false);
+      setPendingAction("");
       setError("");
     }, [interaction?.key]);
 
-    const settle = async (operation) => {
+    const settle = async (action, operation) => {
+      if (busy) return;
       setBusy(true);
+      setPendingAction(action);
       setError("");
       try {
         await operation();
       } catch (cause) {
         setBusy(false);
+        setPendingAction("");
         setError(`${t("groupInteractionFailed")}: ${cause instanceof Error ? cause.message : String(cause)}`);
       }
     };
@@ -2500,16 +2516,18 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
         h("div", { className: "dshbot-group-interaction-copy" },
           `${t("groupApprovalReason")}${tool ? `: ${tool}` : ""}${reason ? `\n${reason}` : ""}`,
         ),
-        error ? h("div", { className: "dshbot-group-interaction-error", role: "alert" }, error) : null,
+        h(Feedback, { t, error, identity: errorState }),
         h("div", { className: "dshbot-group-interaction-actions" },
           h(Button, {
             variant: "ghost", size: "sm", disabled: busy,
-            onClick: () => settle(() => interaction.answer("rejected")),
-          }, busy ? t("groupInteractionBusy") : t("groupApprovalReject")),
+            loading: busy && pendingAction === "reject",
+            onClick: () => settle("reject", () => interaction.answer("rejected")),
+          }, t("groupApprovalReject")),
           h(Button, {
             variant: "primary", size: "sm", disabled: busy,
-            onClick: () => settle(() => interaction.answer("allowed-once")),
-          }, busy ? t("groupInteractionBusy") : t("groupApprovalAllow")),
+            loading: busy && pendingAction === "allow",
+            onClick: () => settle("allow", () => interaction.answer("allowed-once")),
+          }, t("groupApprovalAllow")),
         ),
       );
     }
@@ -2538,7 +2556,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
           };
         }),
       };
-      settle(() => interaction.answer(answer));
+      settle("submit", () => interaction.answer(answer));
     };
 
     return h("div", { className: "dshbot-group-interaction", "data-dshbot-group-interaction": interaction?.kind || "question" },
@@ -2602,16 +2620,18 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
           ),
         );
       })),
-      error ? h("div", { className: "dshbot-group-interaction-error", role: "alert" }, error) : null,
+      h(Feedback, { t, error, identity: errorState }),
       h("div", { className: "dshbot-group-interaction-actions" },
         typeof interaction?.cancel === "function" ? h(Button, {
           variant: "ghost", size: "sm", disabled: busy,
-          onClick: () => settle(() => interaction.cancel()),
-        }, busy ? t("groupInteractionBusy") : t("groupQuestionCancel")) : null,
+          loading: busy && pendingAction === "cancel",
+          onClick: () => settle("cancel", () => interaction.cancel()),
+        }, t("groupQuestionCancel")) : null,
         h(Button, {
           variant: "primary", size: "sm", disabled: busy || questions.length === 0,
+          loading: busy && pendingAction === "submit",
           onClick: submit,
-        }, busy ? t("groupInteractionBusy") : t("groupQuestionSubmit")),
+        }, t("groupQuestionSubmit")),
       ),
     );
   }
@@ -2736,9 +2756,36 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     );
   }
 
+  function useFeedbackError() {
+    const [state, setState] = useState({ error: "" });
+    return [state, (error) => setState({ error })];
+  }
+
+  const dismissedFeedback = new WeakMap();
+
+  function Feedback({ t, text, error, warnings, identity, loading = false }) {
+    const message = [text || error, ...(Array.isArray(warnings)
+      ? warnings.map((warning) => `${t("hostWarning")}: ${warning}`) : [])].filter(Boolean).join("\n");
+    const [dismissed, setDismissed] = useState(false);
+    useEffect(() => { setDismissed(false); }, [message, identity]);
+    const sharedIdentity = identity !== null && typeof identity === "object";
+    if (!message || dismissed || sharedIdentity && dismissedFeedback.get(identity) === message) return null;
+    return h(Toast, {
+      key: message,
+      text: message,
+      icon: loading ? h(StateDot, { state: "ongoing", size: 16 }) : h(IconWarningOutline16, { size: 16 }),
+      holdMs: null,
+      dismissLabel: t("close"),
+      onDone: () => {
+        if (sharedIdentity) dismissedFeedback.set(identity, message);
+        setDismissed(true);
+      },
+    });
+  }
+
   function ConfirmActionModal(props) {
     const {
-      t, open, title, body, caveat, confirmLabel, onClose, onConfirm, busy, error,
+      t, open, title, body, caveat, confirmLabel, onClose, onConfirm, busy, error, feedbackIdentity, feedbackLoading,
     } = props;
     return h(Modal, {
       open,
@@ -2748,20 +2795,20 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
       className: "dshbot-task-modal",
       footer: h("div", { className: "dshbot-footer" },
         h(Button, { variant: "outline", "aria-label": t("cancel"), disabled: busy, onClick: onClose }, t("cancel")),
-        h(Button, { variant: "primary", "aria-label": confirmLabel, disabled: busy, onClick: onConfirm }, busy ? t("routineBusy") : confirmLabel),
+        h(Button, { variant: "primary", "aria-label": confirmLabel, disabled: busy, loading: busy, onClick: onConfirm }, confirmLabel),
       ),
     },
       h("div", { className: "dshbot-confirm" },
         h("div", { className: "dshbot-task-value" }, body),
         h("p", { className: "dshbot-confirm-caveat" }, caveat),
-        error ? h("div", { className: "dshbot-error", role: "alert" }, error) : null,
+        h(Feedback, { t, error, identity: feedbackIdentity, loading: feedbackLoading }),
       ),
     );
   }
 
   function RoutineEditorModal(props) {
     const {
-      t, open, mode, routine, items, routines, disabled, busy, error, onClose, onSave, getTriggerToken,
+      t, open, mode, routine, items, routines, disabled, busy, error, feedbackIdentity, stateText, stateLoading, onClose, onSave, getTriggerToken,
     } = props;
     const [name, setName] = useState("");
     const [botId, setBotId] = useState("");
@@ -2785,8 +2832,18 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     const [watchValue, setWatchValue] = useState("");
     const [watchTimeout, setWatchTimeout] = useState("15000");
     const [trigger, setTrigger] = useState({ status: "idle", text: "", copied: false, error: "" });
+    const [copyBusy, setCopyBusy] = useState(false);
+    const triggerSequence = useRef(0);
 
     useEffect(() => {
+      if (!trigger.copied) return undefined;
+      const timer = setTimeout(() => setTrigger((current) => ({ ...current, copied: false })), 2000);
+      return () => clearTimeout(timer);
+    }, [trigger.copied, open, routine?.id]);
+
+    useEffect(() => {
+      triggerSequence.current++;
+      setCopyBusy(false);
       if (!open) return;
       setName(routine?.name || t("routineDefaultName"));
       setBotId(routine?.botId || "");
@@ -2813,6 +2870,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
       setWatchValue(String(routine?.watch?.value ?? ""));
       setWatchTimeout(String(Number(routine?.watch?.timeoutMs) || 15000));
       setTrigger({ status: "idle", text: "", copied: false, error: "" });
+      return () => { triggerSequence.current++; };
     }, [open, routine?.id, mode]);
 
     const botChoices = items.filter((item) => item.kind !== "room");
@@ -2863,9 +2921,11 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     const contextSelection = contextFrom.filter((id) => contextIds.has(id));
     const showTrigger = async () => {
       if (typeof getTriggerToken !== "function" || !routine?.id) return;
+      const sequence = ++triggerSequence.current;
       setTrigger({ status: "loading", text: "", copied: false, error: "" });
       try {
         const result = await getTriggerToken();
+        if (sequence !== triggerSequence.current) return;
         const token = String(result?.token ?? "");
         if (!token) throw new Error(t("profileTransportUnavailable"));
         const origin = typeof location !== "undefined" && location.origin ? location.origin : "http://127.0.0.1";
@@ -2876,7 +2936,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
           error: "",
         });
       } catch (cause) {
-        setTrigger({ status: "idle", text: "", copied: false, error: cause instanceof Error ? cause.message : String(cause) });
+        if (sequence === triggerSequence.current) setTrigger({ status: "idle", text: "", copied: false, error: cause instanceof Error ? cause.message : String(cause) });
       }
     };
     const frequencyOptions = ROUTINE_FREQUENCIES.map((id) => ({ id, label: t(`routineFrequency${id[0].toUpperCase()}${id.slice(1)}`) }));
@@ -2991,6 +3051,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
           variant: "primary",
           "aria-label": t("routineSave"),
           disabled: disabled || busy || !valid,
+          loading: busy,
           onClick: () => onSave({
             id: routine?.id,
             name: name.trim(),
@@ -3004,11 +3065,12 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
             silentAllowed,
             watch: watchKind ? { kind: watchKind, value: watchValue.trim(), timeoutMs: watchTimeoutValue } : null,
           }),
-        }, busy ? t("routineBusy") : t("save")),
+        }, t("save")),
       ),
     },
       h("div", { className: "dshbot-routine-form" },
-        error ? h("div", { className: "dshbot-error", role: "alert" }, error) : null,
+        h(Feedback, { t, text: [error, trigger.error, stateText].filter(Boolean).join("\n"),
+          identity: error ? feedbackIdentity : trigger, loading: Boolean(stateLoading && !error && !trigger.error) }),
         h("div", { className: "dshbot-field" },
           h("label", null, t("routineName")),
           h(Input, {
@@ -3027,10 +3089,12 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
             options,
             placeholder: t("routineBotRequired"),
             "aria-label": t("routineBot"),
+            "aria-invalid": Boolean(botId && !botAvailable),
+            "aria-description": botId && !botAvailable ? t("routineBotRequired") : undefined,
+            title: botId && !botAvailable ? t("routineBotRequired") : undefined,
             disabled: disabled || busy,
             onChange: setBotId,
           }),
-          !botAvailable && botId ? h("div", { className: "dshbot-error", role: "alert" }, t("routineBotRequired")) : null,
         ),
         h("div", { className: "dshbot-field" },
           h("label", null, t("routinePrompt")),
@@ -3052,6 +3116,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
             value: frequency,
             options: frequencyOptions,
             "aria-label": t("routineFrequency"),
+            "aria-invalid": !validSchedule,
+            "aria-description": !validSchedule ? t("routineInvalidSchedule") : undefined,
+            title: !validSchedule ? t("routineInvalidSchedule") : undefined,
             disabled: disabled || busy,
             onChange: setFrequency,
           }),
@@ -3064,6 +3131,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
           h(Input, {
             value: timezone,
             "aria-label": t("routineTimezone"),
+            "aria-invalid": !validTimezone,
+            "aria-description": !validTimezone ? t("routineInvalidSchedule") : undefined,
+            title: !validTimezone ? t("routineInvalidSchedule") : undefined,
             disabled: disabled || busy,
             onChange: (event) => setTimezone(event.target.value),
           }),
@@ -3080,12 +3150,14 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
             step: 1,
             value: maxRuns,
             "aria-label": t("routineMaxRuns"),
+            "aria-invalid": !validMaxRuns,
+            "aria-description": !validMaxRuns ? t("routineInvalidSchedule") : undefined,
+            title: !validMaxRuns ? t("routineInvalidSchedule") : undefined,
             disabled: disabled || busy,
             onChange: (event) => setMaxRuns(event.target.value),
           }),
           Number(maxRuns) === 0 ? h("span", { className: "dshbot-hint" }, t("routineUnlimited")) : null,
         ),
-        !validSchedule || !validTimezone || !validMaxRuns ? h("div", { className: "dshbot-error", role: "alert" }, t("routineInvalidSchedule")) : null,
         h("div", { className: "dshbot-field" },
           h("label", null, t("routineContextFrom")),
           h("div", { className: "dshbot-hint" }, t("routineContextFromHint")),
@@ -3156,28 +3228,37 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
         mode === "edit" && routine?.id ? h("div", { className: "dshbot-field" },
           h("label", null, t("routineTriggerUrl")),
           h("div", { className: "dshbot-hint" }, t("routineTriggerHint")),
-          trigger.error ? h("div", { className: "dshbot-error", role: "alert" }, trigger.error) : null,
           trigger.text ? h("div", { className: "dshbot-routine-trigger" },
             h("code", { className: "dshbot-routine-trigger-command" }, trigger.text),
             h(Button, {
               variant: "outline",
               "aria-label": t("routineTriggerCopy"),
-              disabled: busy,
+              disabled: busy || copyBusy,
+              loading: copyBusy,
+              feedback: trigger.copied ? t("routineTriggerCopied") : undefined,
               onClick: async () => {
+                if (copyBusy) return;
+                const sequence = ++triggerSequence.current;
+                setCopyBusy(true);
+                setTrigger((current) => ({ ...current, copied: false, error: "" }));
                 try {
                   await navigator.clipboard.writeText(trigger.text);
-                  setTrigger((current) => ({ ...current, copied: true }));
-                } catch {
-                  setTrigger((current) => ({ ...current, copied: false }));
+                  if (sequence === triggerSequence.current) setTrigger((current) => ({ ...current, copied: true }));
+                } catch (cause) {
+                  if (sequence === triggerSequence.current) setTrigger((current) => ({ ...current, copied: false,
+                    error: `${t("routineTriggerCopyFailed")}: ${cause instanceof Error ? cause.message : String(cause)}` }));
+                } finally {
+                  if (sequence === triggerSequence.current) setCopyBusy(false);
                 }
               },
-            }, trigger.copied ? t("routineTriggerCopied") : t("routineTriggerCopy")),
+            }, t("routineTriggerCopy")),
           ) : h(Button, {
             variant: "outline",
             "aria-label": t("routineTriggerShow"),
             disabled: disabled || busy || trigger.status === "loading" || typeof getTriggerToken !== "function",
+            loading: trigger.status === "loading",
             onClick: () => { void showTrigger(); },
-          }, trigger.status === "loading" ? t("routineBusy") : t("routineTriggerShow")),
+          }, t("routineTriggerShow")),
         ) : null,
         h("div", { className: "dshbot-switch-row" },
           h("label", null, t("routineEnabled")),
@@ -3207,7 +3288,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
   }
 
   function SectionNameModal(props) {
-    const { t, open, mode, initialName, busy, error, onClose, onSubmit } = props;
+    const { t, open, mode, initialName, busy, error, feedbackIdentity, stateText, stateLoading, onClose, onSubmit } = props;
     const [value, setValue] = useState(initialName || "");
     useEffect(() => {
       if (open) setValue(initialName || "");
@@ -3228,12 +3309,13 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
           variant: "primary",
           "aria-label": mode === "create" ? t("sectionCreate") : t("sectionRename"),
           disabled: busy || !value.trim(),
+          loading: busy,
           onClick: submit,
-        }, busy ? t("saving") : (mode === "create" ? t("sectionCreate") : t("sectionRename"))),
+        }, mode === "create" ? t("sectionCreate") : t("sectionRename")),
       ),
     },
       h("div", { className: "dshbot-form" },
-        error ? h("div", { className: "dshbot-error", role: "alert" }, error) : null,
+        h(Feedback, { t, text: [error, stateText].filter(Boolean).join("\n"), identity: feedbackIdentity, loading: Boolean(stateLoading && !error) }),
         h("div", { className: "dshbot-field" },
           h("label", null, t("sectionName")),
           h(Input, {
@@ -3287,6 +3369,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     const [sessionStopState, setSessionStopState] = useState({ busy: false, error: "" });
     const [plusOpen, setPlusOpen] = useState(false);
     const [menu, setMenu] = useState(null);
+    const [contactBusy, setContactBusy] = useState({});
+    const [contactErrorState, setContactError] = useFeedbackError();
+    const contactPendingRef = useRef(new Set());
     const [showHidden, setShowHidden] = useState(false);
     const [filterOpen, setFilterOpen] = useState(false);
     const [sectionMenuOpen, setSectionMenuOpen] = useState("");
@@ -3321,6 +3406,25 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     const sections = catalogSections(catalogSnap);
     const sourceChoices = useMemo(() => sourceOptions(items), [items]);
     const sectionControlAvailable = Boolean(controlAvailable && typeof sectionControl === "function");
+    const runContactAction = async (action, id, label, operation) => {
+      const key = `${action}:${id}`;
+      if (contactPendingRef.current.has(key)) return;
+      contactPendingRef.current.add(key);
+      setContactBusy((current) => ({ ...current, [key]: label }));
+      setContactError("");
+      try {
+        await operation();
+      } catch (cause) {
+        setContactError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        contactPendingRef.current.delete(key);
+        setContactBusy((current) => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        });
+      }
+    };
     useEffect(() => {
       if (sourceFilter !== "all" && !sourceChoices.some((source) => source.id === sourceFilter)) {
         setSourceFilter("all");
@@ -3792,8 +3896,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
               variant: "ghost",
               size: "sm",
               "aria-label": `${t("groupHandle")}: ${memberName(member)}${sessionId ? "" : ` (${t("groupMemberSessionUnavailable")})`}`,
-              disabled: !sessionId || typeof openSession !== "function",
-              onClick: () => openSession(sessionId),
+              disabled: !sessionId || typeof openSession !== "function" || Boolean(contactBusy[`open:${sessionId}`]),
+              loading: Boolean(contactBusy[`open:${sessionId}`]),
+              onClick: () => { void runContactAction("open", sessionId, `${t("groupHandle")}: ${memberName(member)}`, () => openSession(sessionId)); },
             }, t("groupHandle")) : null,
           )
           : h("div", { className: "dshbot-group-runtime-row", key: `${sessionId || member?.botId || index}` }, body);
@@ -3854,7 +3959,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
             "aria-label": `${t("openConversation")}: ${name}`,
             onClick: () => {
               setTaskDetailId("");
-              openItem(participant);
+              void runContactAction("open", participant.id, `${t("openConversation")}: ${name}`, () => openItem(participant));
             },
           }, t("openConversation"))
           : h("span", {
@@ -3881,6 +3986,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
       "aria-label": label,
       title: label,
       disabled: taskActionDisabled(action),
+      loading: taskControlState.busy === action,
         onClick: () => requestTaskControl(action, selectedTask),
     })));
     const taskActions = selectedTask
@@ -3921,7 +4027,6 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
             h("div", { className: "dshbot-task-label" }, t("taskId")),
             h("div", { className: "dshbot-task-value" }, String(selectedTask.id || t("taskNone"))),
           ),
-          taskControlState.error ? h("div", { className: "dshbot-error dshbot-task-action-error", role: "alert" }, taskControlState.error) : null,
           h("div", { className: "dshbot-task-field" },
             h("div", { className: "dshbot-task-label" }, t("taskParticipants")),
             h("div", { className: "dshbot-task-participant-list" },
@@ -4002,7 +4107,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
         title: accessibleName,
         "data-active": active ? "true" : undefined,
         "aria-current": active ? "true" : undefined,
-        onClick: () => openItem(item),
+        "aria-busy": Boolean(contactBusy[`open:${item.id}`]),
+        disabled: Boolean(contactBusy[`open:${item.id}`]),
+        onClick: () => { void runContactAction("open", item.id, `${t("openConversation")}: ${name}`, () => openItem(item)); },
         onContextMenu: (event) => {
           event.preventDefault();
           setMenu({ x: event.clientX, y: event.clientY, itemId: item.id });
@@ -4093,6 +4200,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
               "aria-label": `${t("sectionOptions")}: ${section.name}`,
               title: t("sectionOptions"),
               disabled: sectionState.busy !== "" && sectionState.busy.includes(section.id),
+              loading: sectionState.busy !== "" && sectionState.busy.includes(section.id),
               icon: h(IconEllipsisOutline16, { size: 16 }),
               onClick: () => setSectionMenuOpen((current) => current === section.id ? "" : section.id),
             }),
@@ -4211,7 +4319,6 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
           }),
         }),
       ),
-      catalogStateText ? h("div", { className: "dshbot-state", role: "status" }, catalogStateText) : null,
       visibleMissedRoutines.length > 0 ? h("div", { className: "dshbot-state dshbot-missed-banner", role: "status" },
         h("span", null, t("routinesMissed").replace("{count}", String(visibleMissedRoutines.length))),
         h(Button, {
@@ -4223,17 +4330,6 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
             setMissedRoutineIds((current) => current.filter((id) => !dismissedRoutineBanners.has(id)));
           },
         }, t("routinesMissedDismiss")),
-      ) : null,
-      sectionState.error ? h("div", { className: "dshbot-section-error", role: "alert" }, sectionState.error) : null,
-      sectionUndo ? h("div", { className: "dshbot-section-undo", role: "status" },
-        h("span", null, `${t("sectionDeleted")} ${sectionUndo.name}`),
-        h(Button, {
-          variant: "ghost",
-          size: "sm",
-          "aria-label": t("sectionUndo"),
-          disabled: Boolean(sectionState.busy),
-          onClick: () => { void restoreSection(); },
-        }, t("sectionUndo")),
       ) : null,
       groupRuntimePanel,
       !catalogReady
@@ -4252,9 +4348,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
           if (!item) return;
           if (id === "edit") openEditor(item.id);
           if (catalogWriteDisabled && id !== "edit") return;
-          if (id === "duplicate") duplicateItem(item.id);
-          if (id === "pin") togglePin?.(item.id);
-           if (id === "hide") toggleHide?.(item.id);
+          if (id === "duplicate") void runContactAction(id, item.id, `${t("duplicate")}: ${displayName(item)}`, () => duplicateItem(item.id));
+          if (id === "pin") void runContactAction(id, item.id, `${itemPinnedLabel(items, item.id, t)}: ${displayName(item)}`, () => togglePin(item.id));
+           if (id === "hide") void runContactAction(id, item.id, `${itemHiddenLabel(items, item.id, t)}: ${displayName(item)}`, () => toggleHide(item.id));
            if (id === "delete") requestDelete(item.id);
            if (id === "stop") requestSessionStop(item);
            if (id === "create-section") openSectionCreate(item.id);
@@ -4318,7 +4414,6 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
           onChange: setTaskStatus,
         }),
       ),
-      catalogStateText ? h("div", { className: "dshbot-state", role: "status" }, catalogStateText) : null,
       !catalogReady
         ? null
         : tasks.length === 0
@@ -4378,10 +4473,6 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
             onClick: () => openRoutineEditor("create", null),
           }))),
       ),
-      catalogStateText ? h("div", { className: "dshbot-state", role: "status" }, catalogStateText) : null,
-      !controlAvailable && catalogReady
-        ? h("div", { className: "dshbot-control-unavailable", role: "status" }, h(IconWarningOutline16, { size: 14 }), t("taskControlUnavailable")) : null,
-      routineControlState.error ? h("div", { className: "dshbot-error", role: "alert" }, routineControlState.error) : null,
       !catalogReady
         ? null
         : routines.length === 0
@@ -4466,6 +4557,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
                         checked: routine.enabled === true,
                         "aria-label": routine.enabled ? t("routinePause") : t("routineResume"),
                         disabled: catalogWriteDisabled || !controlAvailable || rowBusy,
+                        loading: busy === `toggle:${routine.id}`,
                         onChange: () => { void runRoutineAction("toggle", routine); },
                       }))),
                     h(Tooltip, { label: t("routineRunNow"), side: "bottom", delayMs: 400 },
@@ -4476,6 +4568,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
                         "aria-label": t("routineRunNow"),
                         title: t("routineRunNow"),
                         disabled: catalogWriteDisabled || !controlAvailable || rowBusy,
+                        loading: busy === `run:${routine.id}`,
                         onClick: () => { void runRoutineAction("run", routine); },
                       }))),
                     h(Tooltip, { label: t("routineEdit"), side: "bottom", delayMs: 400 },
@@ -4516,7 +4609,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
         caveat: t("taskSideEffectCaveat"),
         confirmLabel: taskConfirmation.action === "retry" ? t("taskRetry") : t("taskCancel"),
         busy: Boolean(taskControlState.busy),
-        error: taskControlState.error,
+        error: [taskControlState.error, catalogStateText].filter(Boolean).join("\n"),
+        feedbackIdentity: taskControlState,
+        feedbackLoading: catalogLoading && !taskControlState.error,
         onClose: () => {
           if (taskConfirmation.action === "retry") discardRetryOperation(taskConfirmation.taskId);
           setTaskConfirmation(null);
@@ -4537,7 +4632,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
         caveat: t("routineDeleteCaveat"),
         confirmLabel: t("delete"),
         busy: Boolean(routineControlState.busy),
-        error: routineControlState.error,
+        error: [routineControlState.error, catalogStateText].filter(Boolean).join("\n"),
+        feedbackIdentity: routineControlState,
+        feedbackLoading: catalogLoading && !routineControlState.error,
         onClose: () => { setRoutineConfirmation(null); setRoutineControlState({ busy: "", error: "" }); },
         onConfirm: async () => {
           if (await runRoutineAction("delete", confirmationRoutine)) setRoutineConfirmation(null);
@@ -4553,13 +4650,17 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
         caveat: t("sessionStopCaveat"),
         confirmLabel: t("sessionStop"),
         busy: sessionStopState.busy,
-        error: sessionStopState.error,
+        error: [sessionStopState.error, catalogStateText].filter(Boolean).join("\n"),
+        feedbackIdentity: sessionStopState,
+        feedbackLoading: catalogLoading && !sessionStopState.error,
         onClose: () => { setSessionStop(null); setSessionStopState({ busy: false, error: "" }); },
         onConfirm: () => { void executeSessionStop(); },
       })
       : null;
 
-    return h("div", { className: "dshbot-page" },
+    return h("div", { className: "dshbot-page", "aria-busy": catalogLoading,
+      "aria-description": catalogStateText || (!controlAvailable ? t("taskControlUnavailable") : undefined),
+      title: catalogStateText || (!controlAvailable ? t("taskControlUnavailable") : undefined) },
       h("div", {
         ref: tabListRef,
         className: "dshbot-view-tabs",
@@ -4598,10 +4699,30 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
           onClick: () => switchView("routines"),
         }, t("routines")),
       ),
-      !editor.open && editor.error ? h("div", { className: "dshbot-error", role: "alert" }, editor.error) : null,
-      !editor.open && Array.isArray(editor.warnings) && editor.warnings.length > 0
-        ? h("div", { className: "dshbot-warning-list", role: "status" }, editor.warnings.map((warning, index) => h("div", { className: "dshbot-warning", key: `${warning}:${index}` }, `${t("hostWarning")}: ${warning}`)))
-        : null,
+      h(Feedback, { t,
+        text: editor.open || sectionUndo || sectionDialog || routineEditor.open || taskConfirmation || routineConfirmation || sessionStop ? "" : [
+          editor.error,
+          ...Object.values(contactBusy), contactErrorState.error,
+          sectionState.busy.startsWith("assign:") ? t("moveToSection") : "",
+          catalogStateText,
+          !controlAvailable && catalogReady ? t("taskControlUnavailable") : "",
+          taskControlState.error, routineControlState.error, sectionState.error,
+        ].filter(Boolean).join("\n"),
+        warnings: editor.open || sectionUndo || sectionDialog || routineEditor.open || taskConfirmation || routineConfirmation || sessionStop ? [] : editor.warnings,
+        identity: contactErrorState.error ? contactErrorState : taskControlState.error ? taskControlState : routineControlState.error ? routineControlState : sectionState.error ? sectionState : editor.feedbackId,
+        loading: Boolean((catalogLoading || Object.keys(contactBusy).length > 0 || sectionState.busy.startsWith("assign:")) && !editor.error && !contactErrorState.error && !taskControlState.error && !routineControlState.error && !sectionState.error),
+      }),
+      sectionUndo && !editor.open && !sectionDialog && !routineEditor.open && !taskConfirmation && !routineConfirmation && !sessionStop ? h(Toast, {
+        text: [`${t("sectionDeleted")} ${sectionUndo.name}`, catalogStateText, editor.error,
+          ...Object.values(contactBusy), contactErrorState.error,
+          ...(editor.warnings ?? []).map((warning) => `${t("hostWarning")}: ${warning}`), taskControlState.error, routineControlState.error, sectionState.error].filter(Boolean).join("\n"),
+        tone: sectionState.busy || Object.keys(contactBusy).length > 0 || contactErrorState.error || sectionState.error || taskControlState.error || routineControlState.error || catalogStateText || editor.error || editor.warnings?.length ? undefined : "success",
+        icon: sectionState.busy || Object.keys(contactBusy).length > 0 ? h(StateDot, { state: "ongoing", size: 16 })
+          : contactErrorState.error || sectionState.error || taskControlState.error || routineControlState.error || catalogStateText || editor.error || editor.warnings?.length ? h(IconWarningOutline16, { size: 16 }) : undefined,
+        holdMs: null,
+        actions: [{ label: t("sectionUndo"), onClick: () => { if (!sectionState.busy) void restoreSection(); } }],
+        onDone: () => {},
+      }) : null,
       contactPanel,
       taskPanel,
       routinePanel,
@@ -4616,6 +4737,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
         initialName: sectionDialog?.initialName || "",
         busy: Boolean(sectionState.busy),
         error: sectionState.error,
+        feedbackIdentity: sectionState,
+        stateText: catalogStateText,
+        stateLoading: catalogLoading,
         onClose: () => { setSectionDialog(null); setSectionState({ busy: "", error: "" }); },
         onSubmit: (name) => { void submitSection(name); },
       }),
@@ -4630,6 +4754,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
         disabled: catalogWriteDisabled || !controlAvailable,
         busy: routineControlState.busy === "save",
         error: routineEditor.error,
+        feedbackIdentity: routineEditor,
+        stateText: catalogStateText,
+        stateLoading: catalogLoading,
         onClose: () => setRoutineEditor({ open: false, mode: "create", id: null, revision: null, error: "" }),
         onSave: saveRoutine,
       }),
@@ -4676,6 +4803,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     const [modelSource, setModelSource] = useState({ status: "idle", value: null, error: "" });
     const [busy, setBusy] = useState(false);
     const [avatar, setAvatar] = useState(null);
+    const [avatarErrorState, setAvatarError] = useFeedbackError();
     const [sourcePolicy, setSourcePolicy] = useState("default");
     const [sourceIds, setSourceIds] = useState([]);
     const [capabilities, setCapabilities] = useState(defaultCapabilities());
@@ -4683,12 +4811,16 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
       status: "idle", value: capabilityCatalog(null), active: false, skillsAvailable: false, error: "",
     });
     const [capabilityManager, setCapabilityManager] = useState({ confirm: null, error: "" });
+    const [capabilityBusy, setCapabilityBusy] = useState(false);
     const [capabilityPicker, setCapabilityPicker] = useState(null);
     const [memorySource, setMemorySource] = useState({ status: "idle", value: null, error: "" });
     const [memoryTrack, setMemoryTrack] = useState("bot");
     const [memoryEditingId, setMemoryEditingId] = useState(null);
     const [memoryDraft, setMemoryDraft] = useState("");
     const [memoryBusy, setMemoryBusy] = useState(false);
+    const [memoryAction, setMemoryAction] = useState("");
+    const [memoryErrorState, setMemoryError] = useFeedbackError();
+    const memoryError = memoryErrorState.error;
     const [deleteConfirmed, setDeleteConfirmed] = useState(false);
     const [maxRounds, setMaxRounds] = useState(String(GROUP_DEFAULT_MAX_ROUNDS));
     const [maxSpeaks, setMaxSpeaks] = useState(String(GROUP_DEFAULT_MAX_MEMBER_TURNS));
@@ -4706,6 +4838,8 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     useEffect(() => {
       if (!open) return;
       setDeleteConfirmed(false);
+      setMemoryError("");
+      setAvatarError("");
       setCapabilityPicker(null);
       if (isRoomCreate) {
         setName(t("defaultRoomName"));
@@ -4906,6 +5040,10 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     const sourceSelectionInvalid = !isRoom
       && sourcePolicy === "selected"
       && (validSourceIds.length === 0 || invalidSourceIds.length > 0);
+    const sourceValidationMessage = sourcePolicy === "selected" ? [
+      invalidSourceIds.length > 0 ? t("sourceInvalid") : "",
+      validSourceIds.length === 0 ? t("sourceNeedOne") : "",
+    ].filter(Boolean).join(" ") : "";
     const catalogStateMessage = catalogLoading
       ? t("catalogLoading")
       : catalogUnavailable
@@ -4975,6 +5113,8 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     };
     const capabilityGroup = (group) => {
       const policy = capabilities[group.id] ?? { mode: "all", names: [] };
+      const policyInvalid = capabilitySource.status === "ready" && policy.mode === "selected"
+        && policy.names.some((name) => !discoveredCapabilities[group.id].some((entry) => entry.name === name));
       const updatePolicy = (next) => setCapabilities((current) => ({
         ...current,
         [group.id]: normalizeCapabilityPolicy(next),
@@ -5001,7 +5141,8 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
             className: "dshbot-capability-manage",
             "aria-label": manageLabel,
             title: manageLabel,
-            disabled: busy,
+            disabled: busy || capabilityBusy,
+            loading: capabilityBusy && capabilityManager.confirm?.id === group.id,
             onClick: requestManagement,
           }, t("capabilityManage")),
         ),
@@ -5013,6 +5154,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
             { id: "selected", label: t("capabilityModeSelected") },
           ],
           "aria-label": t(group.labelKey),
+          "aria-invalid": policyInvalid,
+          "aria-description": policyInvalid ? t("capabilityInvalid") : undefined,
+          title: policyInvalid ? t("capabilityInvalid") : capabilityStateMessage || undefined,
           disabled: catalogWriteDisabled || busy || capabilitySource.status !== "ready" || capabilitySource.active === false,
           onChange: (mode) => updatePolicy({ ...policy, mode }),
         }),
@@ -5027,7 +5171,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
             size: "sm",
             className: "dshbot-capability-select",
             "aria-label": pickerTitle,
-            title: pickerTitle,
+            title: policyInvalid ? `${pickerTitle}: ${t("capabilityInvalid")}` : pickerTitle,
             disabled: catalogWriteDisabled || busy || capabilitySource.status !== "ready" || capabilitySource.active === false,
             onClick: () => setCapabilityPicker({ groupId: group.id, names: [...policy.names] }),
           }, t("capabilitySelect")),
@@ -5048,11 +5192,13 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     const beginMemoryAdd = () => {
       setMemoryEditingId("__new__");
       setMemoryDraft("");
+      setMemoryError("");
       setMemorySource((current) => ({ ...current, error: "" }));
     };
     const beginMemoryEdit = (entry) => {
       setMemoryEditingId(entry.id);
       setMemoryDraft(entry.text);
+      setMemoryError("");
       setMemorySource((current) => ({ ...current, error: "" }));
     };
     const cancelMemoryEdit = () => {
@@ -5078,7 +5224,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     const saveMemory = async () => {
       const text = memoryDraft.trim();
       if (!text) {
-        setMemorySource((current) => ({ ...current, error: t("memoryRequired") }));
+        setMemoryError(t("memoryRequired"));
         return;
       }
       if (!item?.id || memorySource.status !== "ready" || typeof replaceMemory !== "function") return;
@@ -5086,39 +5232,47 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
         ? [...activeMemory.entries, { id: newId(), text }]
         : activeMemory.entries.map((entry) => entry.id === memoryEditingId ? { ...entry, text } : entry);
       setMemoryBusy(true);
+      setMemoryAction("save");
+      setMemoryError("");
       try {
         const result = await replaceMemory(item.id, memoryTrack, nextEntries, activeMemory.revision);
         updateMemoryTrack(result?.memory ?? result, nextEntries);
         cancelMemoryEdit();
       } catch (error) {
+        setMemoryError(error instanceof Error ? error.message : String(error));
         setMemorySource((current) => ({
           ...current,
           status: isRpcUnavailable(error) ? "unavailable" : current.status,
-          error: error instanceof Error ? error.message : String(error),
         }));
       } finally {
         setMemoryBusy(false);
+        setMemoryAction("");
       }
     };
     const deleteMemory = async (entry) => {
       if (!item?.id || memorySource.status !== "ready" || typeof replaceMemory !== "function") return;
       setMemoryBusy(true);
+      setMemoryAction(entry.id);
+      setMemoryError("");
       try {
         const nextEntries = activeMemory.entries.filter((current) => current.id !== entry.id);
         const result = await replaceMemory(item.id, memoryTrack, nextEntries, activeMemory.revision);
         updateMemoryTrack(result?.memory ?? result, nextEntries);
         if (memoryEditingId === entry.id) cancelMemoryEdit();
       } catch (error) {
+        setMemoryError(error instanceof Error ? error.message : String(error));
         setMemorySource((current) => ({
           ...current,
           status: isRpcUnavailable(error) ? "unavailable" : current.status,
-          error: error instanceof Error ? error.message : String(error),
         }));
       } finally {
         setMemoryBusy(false);
+        setMemoryAction("");
       }
     };
-    const memorySection = !isRoom && !isBotCreate ? h("div", { className: "dshbot-memory", "data-dshbot-memory": "" },
+    const memorySection = !isRoom && !isBotCreate ? h("div", { className: "dshbot-memory", "data-dshbot-memory": "",
+      "aria-busy": memorySource.status === "loading", "aria-description": memoryStateMessage || undefined,
+      title: memoryStateMessage || undefined },
       h("div", { className: "dshbot-memory-heading" },
         h("span", null, t("memory")),
         memorySource.status === "ready" ? h(Button, {
@@ -5156,7 +5310,6 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
         h("span", null, t("memoryReview")),
       ),
       h("div", { className: "dshbot-hint" }, t("memoryReviewHint")),
-      memoryStateMessage ? h("div", { className: "dshbot-model-state", role: "status", "data-error": memorySource.status === "unavailable" ? "true" : undefined }, memoryStateMessage) : null,
       memorySource.status === "ready" && activeMemory.entries.length === 0 && memoryEditingId === null
         ? h("div", { className: "dshbot-empty" }, t("memoryEmpty"))
         : null,
@@ -5187,6 +5340,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
                 "aria-label": `${t("memoryDelete")}: ${entry.text}`,
                 title: t("memoryDelete"),
                 disabled: memoryBusy || memoryEditingId !== null,
+                loading: memoryBusy && memoryAction === entry.id,
                 onClick: () => { void deleteMemory(entry); },
               }))),
           ),
@@ -5203,14 +5357,11 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
           disabled: memoryBusy,
           onChange: (event) => setMemoryDraft(event.target.value),
         }),
-        memorySource.error ? h("div", { className: "dshbot-error", role: "alert" }, `${t("memoryError")}: ${memorySource.error}`) : null,
         h("div", { className: "dshbot-memory-editor-actions" },
           h(Button, { variant: "outline", "aria-label": t("memoryCancel"), disabled: memoryBusy, onClick: cancelMemoryEdit }, t("cancel")),
-          h(Button, { variant: "primary", "aria-label": t("memorySave"), disabled: memoryBusy || !memoryDraft.trim(), onClick: () => { void saveMemory(); } }, memoryBusy ? t("memorySaving") : t("memorySave")),
+          h(Button, { variant: "primary", "aria-label": t("memorySave"), disabled: memoryBusy || !memoryDraft.trim(), loading: memoryBusy && memoryAction === "save", onClick: () => { void saveMemory(); } }, t("memorySave")),
         ),
       ) : null,
-      memorySource.status === "ready" && memorySource.error && memoryEditingId === null
-        ? h("div", { className: "dshbot-error", role: "alert" }, `${t("memoryError")}: ${memorySource.error}`) : null,
     ) : null;
 
     const profileValues = {
@@ -5242,10 +5393,8 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
       }).filter(Boolean).join("、") || t("deleteNone");
     };
     const deleteDependencies = deletePreview?.dependencies ?? {};
-    const deletePreviewContent = deletePreview?.status === "loading"
-      ? h("div", { className: "dshbot-state", role: "status" }, t("deletePreviewLoading"))
-      : deletePreview?.status !== "ready"
-        ? h("div", { className: "dshbot-error", role: "alert" }, deletePreview?.error || t("deletePreviewUnavailable"))
+    const deletePreviewContent = deletePreview?.status !== "ready"
+        ? null
         : h("div", { className: "dshbot-delete-preview" },
           h("div", { className: "dshbot-delete-preview-row" }, h("span", null, t("deleteGroups")), h("span", null, deletePreviewNames(deleteDependencies.groups))),
           h("div", { className: "dshbot-delete-preview-row" }, h("span", null, t("deleteRoutines")), h("span", null, deletePreviewNames(deleteDependencies.routines))),
@@ -5260,12 +5409,18 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
 
     const footer = isDelete
       ? h("div", { className: "dshbot-footer" },
-        h(Button, { variant: "outline", "aria-label": t("cancel"), onClick: closeEditor }, t("cancel")),
+        h(Button, { variant: "outline", "aria-label": t("cancel"), disabled: busy, onClick: closeEditor }, t("cancel")),
         h(Button, {
           variant: "primary",
           "aria-label": t("delete"),
           disabled: catalogWriteDisabled || busy || deletePreview?.status !== "ready" || !deleteConfirmed,
-          onClick: () => confirmDelete(editor.itemId),
+          loading: busy || deletePreview?.status === "loading",
+          onClick: async () => {
+            if (busy) return;
+            setBusy(true);
+            try { await confirmDelete(editor.itemId); }
+            finally { setBusy(false); }
+          },
         }, t("delete")),
       )
       : h("div", { className: "dshbot-footer" },
@@ -5273,6 +5428,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
         h(Button, {
           variant: "primary",
           "aria-label": t("save"),
+          loading: busy,
           disabled: catalogWriteDisabled || busy || (!isRoom && modelSource.status === "loading") || (!isRoom && modelSelectionInvalid) || (isRoom && (
              memberIds.length < GROUP_MIN_MEMBERS || memberIds.length > GROUP_MAX_MEMBERS
            )) || sourceSelectionInvalid || groupLimitsInvalid || capabilitySelectedInvalid || objectiveInvalid,
@@ -5301,7 +5457,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
               setBusy(false);
             }
           },
-        }, busy ? t("saving") : t("save")),
+        }, t("save")),
       );
 
     const capabilityConfirmGroup = capabilityManager.confirm;
@@ -5328,33 +5484,44 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
       }));
       closeCapabilityPicker();
     };
-    return h(react.Fragment, null, h(Modal, {
+    return h(react.Fragment, null,
+      h(Feedback, { t,
+        text: !open || capabilityManager.confirm ? "" : [
+          editor.error,
+          open ? catalogStateMessage : "",
+          open && isDelete && deletePreview?.status === "loading" ? t("deletePreviewLoading") : "",
+          open && isDelete && deletePreview?.status === "unavailable" ? t("deletePreviewUnavailable") : "",
+          open && !isDelete && !isRoom ? modelCatalogStateMessage : "",
+          open && !isDelete && !isRoom ? capabilityStateMessage : "",
+          open && !isDelete && !isRoom && !isBotCreate ? memoryStateMessage : "",
+          open && !isDelete ? avatarErrorState.error : "",
+          open && !isDelete && memoryError ? `${t("memoryError")}: ${memoryError}` : "",
+          open ? capabilityManager.error : "",
+        ].filter(Boolean).join("\n"),
+        warnings: open && !capabilityManager.confirm ? editor.warnings : [],
+        identity: avatarErrorState.error ? avatarErrorState : memoryError ? memoryErrorState
+          : capabilityManager.error ? capabilityManager : editor.feedbackId,
+        loading: open && !editor.error && !avatarErrorState.error && !memoryError && !capabilityManager.error
+          && (catalogLoading || isDelete && deletePreview?.status === "loading"
+            || !isDelete && !isRoom && (modelSource.status === "loading" || capabilitySource.status === "loading" || !isBotCreate && memorySource.status === "loading")),
+      }),
+      h(Modal, {
       open,
-      onClose: () => { if (!busy) closeEditor(); },
+      onClose: () => { if (!busy && !capabilityBusy) closeEditor(); },
       title: isDelete ? t("delete") : isRoom ? t("addRoom") : isBotCreate ? t("addBot") : t("edit"),
       closeLabel: t("close"),
       className: "dshbot-modal",
       footer,
     },
       isDelete
-        ? h("div", { className: "dshbot-form" },
-          editor.error ? h("div", { className: "dshbot-error", role: "alert" }, editor.error) : null,
-          Array.isArray(editor.warnings) && editor.warnings.length > 0
-            ? h("div", { className: "dshbot-warning-list", role: "status" }, editor.warnings.map((warning, index) => h("div", { className: "dshbot-warning", key: `${warning}:${index}` }, `${t("hostWarning")}: ${warning}`)))
-            : null,
-          catalogStateMessage ? h("div", { className: "dshbot-state", role: "status" }, catalogStateMessage) : null,
+        ? h("div", { className: "dshbot-form", "aria-description": catalogStateMessage || undefined, title: catalogStateMessage || undefined },
           h("p", null, t("confirmDelete")),
           h("div", { className: "dshbot-field" },
             h("label", null, t("deleteDependencies")),
             deletePreviewContent,
           ),
         )
-        : h("div", { className: "dshbot-form" },
-          editor.error ? h("div", { className: "dshbot-error", role: "alert" }, editor.error) : null,
-          Array.isArray(editor.warnings) && editor.warnings.length > 0
-            ? h("div", { className: "dshbot-warning-list", role: "status" }, editor.warnings.map((warning, index) => h("div", { className: "dshbot-warning", key: `${warning}:${index}` }, `${t("hostWarning")}: ${warning}`)))
-            : null,
-          catalogStateMessage ? h("div", { className: "dshbot-state", role: "status" }, catalogStateMessage) : null,
+        : h("div", { className: "dshbot-form", "aria-description": catalogStateMessage || undefined, title: catalogStateMessage || undefined },
           !isRoom ? h("div", { className: "dshbot-field" },
             h("label", null, t("avatar")),
             h(AvatarView, {
@@ -5371,6 +5538,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
                onChange: setAvatar,
                live: open,
                disabled: catalogWriteDisabled,
+               onError: setAvatarError,
              }),
           ) : null,
           h("div", { className: "dshbot-field" },
@@ -5440,7 +5608,6 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
           ) : null,
           !isRoom ? h("div", { className: "dshbot-field" },
             h("label", null, t("model")),
-            modelCatalogStateMessage ? h("div", { className: "dshbot-model-state", role: "status", "data-error": modelSource.status === "unavailable" ? "true" : undefined }, modelCatalogStateMessage) : null,
             h("div", { className: "dshbot-model-grid" },
               h("div", { className: "dshbot-field" },
                 h("label", null, t("provider")),
@@ -5449,6 +5616,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
                   value: provider,
                   options: providerOptions,
                   "aria-label": t("provider"),
+                  "aria-busy": modelSource.status === "loading",
+                  "aria-description": modelCatalogStateMessage || undefined,
+                  title: modelCatalogStateMessage || undefined,
                   disabled: catalogWriteDisabled || modelSource.status !== "ready",
                   onChange: (value) => {
                     setProvider(value);
@@ -5464,6 +5634,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
                   value: model,
                   options: modelOptions,
                   "aria-label": t("model"),
+                  "aria-busy": modelSource.status === "loading",
+                  "aria-description": modelCatalogStateMessage || undefined,
+                  title: modelCatalogStateMessage || undefined,
                   disabled: catalogWriteDisabled || modelSource.status !== "ready" || !provider,
                   onChange: (value) => {
                     setModel(value);
@@ -5478,6 +5651,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
                   value: reasoningEffort,
                   options: effortOptions,
                   "aria-label": t("reasoningEffort"),
+                  "aria-busy": modelSource.status === "loading",
+                  "aria-description": modelCatalogStateMessage || undefined,
+                  title: modelCatalogStateMessage || undefined,
                   disabled: catalogWriteDisabled || modelSource.status !== "ready" || !provider || !model || modelEfforts(selectedModel).length === 0,
                   onChange: setReasoningEffort,
                 }),
@@ -5495,6 +5671,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
                 { id: "selected", label: t("sourceSelected") },
               ],
               "aria-label": t("sourcePolicy"),
+              "aria-invalid": sourceSelectionInvalid,
+              "aria-description": sourceValidationMessage || undefined,
+              title: sourceValidationMessage || undefined,
               disabled: catalogWriteDisabled,
               onChange: setSourcePolicy,
             }),
@@ -5524,12 +5703,6 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
                 h("span", null, `${t("sourceUnavailable")}: ${id}`),
               )),
             ) : null,
-            sourcePolicy === "selected" && invalidSourceIds.length > 0
-              ? h("div", { className: "dshbot-error", role: "alert" }, t("sourceInvalid"))
-              : null,
-            sourcePolicy === "selected" && validSourceIds.length === 0
-              ? h("div", { className: "dshbot-error", role: "alert" }, t("sourceNeedOne"))
-              : null,
           ) : null,
           isRoom ? h("div", { className: "dshbot-field" },
             h("label", null, t("groupLimits")),
@@ -5545,6 +5718,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
                 step: 1,
                 value: maxRounds,
                 "aria-label": t("maxRounds"),
+                "aria-invalid": groupLimitsInvalid,
+                "aria-description": groupLimitsInvalid ? t("groupLimitHint") : undefined,
+                title: groupLimitsInvalid ? t("groupLimitHint") : undefined,
                 disabled: catalogWriteDisabled,
                 onChange: (event) => setMaxRounds(event.target.value),
               }),
@@ -5560,11 +5736,13 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
                 step: 1,
                 value: maxSpeaks,
                 "aria-label": t("maxSpeaks"),
+                "aria-invalid": groupLimitsInvalid,
+                "aria-description": groupLimitsInvalid ? t("groupLimitHint") : undefined,
+                title: groupLimitsInvalid ? t("groupLimitHint") : undefined,
                 disabled: catalogWriteDisabled,
                 onChange: (event) => setMaxSpeaks(event.target.value),
               }),
             ),
-            groupLimitsInvalid ? h("div", { className: "dshbot-error", role: "alert" }, t("groupLimitHint")) : null,
           ) : null,
           h("div", { className: "dshbot-field" },
             h("label", null, t("workspace")),
@@ -5580,11 +5758,6 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
           ),
           !isRoom ? h("div", { className: "dshbot-field" },
             h("label", null, t("capabilities")),
-            capabilityStateMessage ? h("div", { className: "dshbot-state", role: "status" }, capabilityStateMessage) : null,
-            capabilitySelectedInvalid ? h("div", { className: "dshbot-error", role: "alert" }, t("capabilityInvalid")) : null,
-            capabilityManager.error && !capabilityManager.confirm
-              ? h("div", { className: "dshbot-error", role: "alert" }, capabilityManager.error)
-              : null,
             h("div", { className: "dshbot-capability-groups" }, CAPABILITY_GROUPS.map(capabilityGroup)),
           ) : null,
           !isRoom ? h("div", { className: "dshbot-field", "data-dshbot-objective-field": "" },
@@ -5611,12 +5784,14 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
                 step: 1,
                 value: objectiveMaxRounds,
                 "aria-label": t("objectiveRounds"),
+                "aria-invalid": objectiveInvalid,
+                "aria-description": objectiveInvalid ? t("objectiveRoundsHint") : undefined,
+                title: objectiveInvalid ? t("objectiveRoundsHint") : undefined,
                 disabled: catalogWriteDisabled,
                 onChange: (event) => setObjectiveMaxRounds(event.target.value),
               }),
               h("span", { className: "dshbot-hint" }, t("objectiveRoundsHint")),
             ),
-            objectiveInvalid ? h("div", { className: "dshbot-error", role: "alert" }, t("objectiveRoundsHint")) : null,
           ) : null,
           !isRoom ? h("div", { className: "dshbot-field" },
             h("label", { className: "dshbot-memory-review" },
@@ -5681,16 +5856,21 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
         body: t("capabilityGlobalConfirmBody").replace("{capability}", capabilityConfirmLabel),
         caveat: t("capabilityGlobalConfirmCaveat"),
         confirmLabel: t("capabilityGlobalConfirm"),
-        busy: false,
+        busy: capabilityBusy,
         error: capabilityManager.error,
+        feedbackIdentity: capabilityManager,
         onClose: () => setCapabilityManager({ confirm: null, error: "" }),
-        onConfirm: () => {
-          if (!capabilityConfirmGroup || !item) return;
+        onConfirm: async () => {
+          if (!capabilityConfirmGroup || !item || capabilityBusy) return;
+          setCapabilityBusy(true);
+          setCapabilityManager({ confirm: capabilityConfirmGroup, error: "" });
           try {
+            await manageCapabilities(capabilityConfirmGroup.id, item);
             setCapabilityManager({ confirm: null, error: "" });
-            manageCapabilities(capabilityConfirmGroup.id, item);
           } catch (error) {
             setCapabilityManager({ confirm: capabilityConfirmGroup, error: error instanceof Error ? error.message : String(error) });
+          } finally {
+            setCapabilityBusy(false);
           }
         },
       }),
@@ -6442,7 +6622,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
       return rows.sort((left, right) => (Number(left.at) || 0) - (Number(right.at) || 0));
     }, [members, messages, newest, runtimeState, t]);
     const latestActivity = activityRows[activityRows.length - 1];
-    const activityVisible = roomBusy || stopState.error || activityRows.length > 0;
+    const activityVisible = roomBusy || activityRows.length > 0;
 
     const renderThread = (thread) => {
       const isNewest = thread.id === newest;
@@ -6552,6 +6732,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
                 variant: "ghost", size: "sm", icon: h(IconTrashOutline16, { size: 16 }),
                 "aria-label": t("groupDisband"), title: t("groupDisband"),
                 disabled: disbandState.busy,
+                loading: disbandState.busy,
                 onClick: () => { setDisbandState({ busy: false, error: "" }); setDisbandOpen(true); },
               }))),
           ),
@@ -6575,10 +6756,10 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
                 variant: "ghost", size: "sm", icon: h(IconStopFill16, { size: 16 }),
                 "aria-label": t("groupStop"), title: t("groupStop"),
                 disabled: stopState.busy || typeof stopRoom !== "function",
+                loading: stopState.busy,
                 onClick: () => { void stopGroup(); },
               }))) : null,
           ),
-          stopState.error ? h("div", { className: "dshbot-error", role: "alert" }, `${t("groupStopFailed")}: ${stopState.error}`) : null,
           activityOpen && activityRows.length > 0 ? h("div", { className: "dshbot-room-activity-list", role: "log", "aria-label": t("groupActivity") },
             activityRows.slice(-20).map((row) => h("div", { key: row.id, className: "dshbot-room-activity-row", "data-state": row.state },
                 h("span", { className: "dshbot-room-activity-row-copy" }, row.text),
@@ -6599,6 +6780,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
           ),
         ),
       ),
+      h(Feedback, { t, error: !disbandOpen && stopState.error ? `${t("groupStopFailed")}: ${stopState.error}` : "", identity: stopState }),
       h(ConfirmActionModal, {
         t,
         open: disbandOpen,
@@ -6608,6 +6790,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
         confirmLabel: t("groupDisband"),
         busy: disbandState.busy,
         error: disbandState.error,
+        feedbackIdentity: disbandState,
         onClose: () => setDisbandOpen(false),
         onConfirm: () => { void disband(); },
       }),
@@ -6723,7 +6906,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     const hasObjective = Boolean(String(item?.objective ?? "").trim());
     const [goal, setGoal] = useState(null);
     const [busy, setBusy] = useState(false);
-    const [error, setError] = useState("");
+    const [pendingAction, setPendingAction] = useState("");
+    const [errorState, setError] = useFeedbackError();
+    const error = errorState.error;
 
     useEffect(() => {
       if (!botId || !hasObjective || !controlAvailable || typeof getActivity !== "function") {
@@ -6751,6 +6936,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     const run = async (action) => {
       if (busy || typeof objectiveControl !== "function") return;
       setBusy(true);
+      setPendingAction(action);
       setError("");
       try {
         const result = await objectiveControl(action, item.id);
@@ -6759,6 +6945,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
         setError(cause instanceof Error ? cause.message : String(cause));
       } finally {
         setBusy(false);
+        setPendingAction("");
       }
     };
     return h("div", { className: "dshbot-objective", "data-dshbot-objective": "", "data-session-id": sessionId },
@@ -6771,19 +6958,21 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
         h("div", { className: "dshbot-objective-actions" },
           h(Button, {
             variant: "ghost", size: "sm", disabled: busy || !controlAvailable,
+            loading: busy && pendingAction === "start",
             "aria-label": t("objectiveStart"), title: t("objectiveStart"),
             icon: h(IconPlayOutline16, { size: 16 }),
             onClick: () => { void run("start"); },
           }, t("objectiveStart")),
           h(Button, {
             variant: "ghost", size: "sm", disabled: busy || !controlAvailable,
+            loading: busy && pendingAction === "clear",
             "aria-label": t("objectiveClear"), title: t("objectiveClear"),
             icon: h(IconTrashOutline16, { size: 16 }),
             onClick: () => { void run("clear"); },
           }, t("objectiveClear")),
         ),
       ),
-      error ? h("div", { className: "dshbot-error", role: "alert" }, error) : null,
+      h(Feedback, { t, error, identity: errorState }),
     );
   }
 
@@ -6792,7 +6981,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     ctx.effect(() => ctx.locale.register(NS, { zh, en }), "dshbot: dictionaries");
     const t = ctx.locale.bind(NS);
     const catalog = ctx.configForms.get(CATALOG_NS);
-    let editor = { open: false, mode: "edit", itemId: null, error: "", warnings: [], deletePreview: null };
+    let editor = { open: false, mode: "edit", itemId: null, error: "", warnings: [], deletePreview: null, feedbackId: {} };
     const editorListeners = new Set();
     const editorSource = {
       getSnapshot: () => editor,
@@ -6802,7 +6991,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
       },
     };
     const setEditor = (next) => {
-      editor = next;
+      editor = { ...next, feedbackId: next.feedbackId ?? {} };
       for (const listener of [...editorListeners]) listener();
     };
     const catalogSource = {
@@ -6813,6 +7002,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     const readItems = () => catalogItems(catalog.getSnapshot());
     const connection = ctx.connection ?? ctx.get("connection");
     const sessionsSvc = ctx.sessions ?? ctx.get("sessions");
+    const uiWorkspace = ctx.uiWorkspace;
     const controlAvailable = typeof connection?.rpc?.call === "function";
 
     const acceptControlView = (view) => {
@@ -7019,7 +7209,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
     };
 
     const fail = (error) => {
-      setEditor({ ...editor, error: error instanceof Error ? error.message : String(error) });
+      setEditor({ ...editor, error: error instanceof Error ? error.message : String(error), feedbackId: {} });
     };
 
     let openSequence = 0;
@@ -7071,9 +7261,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
         const navigation = ctx.settingsNavigation ?? ctx.get("settingsNavigation");
         if (typeof navigation?.open !== "function") throw new Error(t("capabilityManageUnavailable"));
         const section = kind === "skills" ? "skills" : kind === "mcp" ? "mcp" : "plugins";
-        ctx.sessions.open(await ensureCanonicalSession(item));
+        uiWorkspace.openSession(await ensureCanonicalSession(item));
+        await navigation.open(section);
         setEditor({ open: false, mode: "edit", itemId: null, error: "", warnings: [], deletePreview: null });
-        navigation.open(section);
       },
       taskControl: (action, taskId) => controlCommand(`task/${action}`, { taskId }),
       retryTask: async (task, operationId) => {
@@ -7113,12 +7303,13 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
       openSession: async (sessionId) => {
         if (!sessionId) return;
         const item = readItems().find((entry) => entry.sessionId === sessionId);
-        ctx.sessions.open(item ? await ensureCanonicalSession(item) : sessionId);
+        uiWorkspace.openSession(item ? await ensureCanonicalSession(item) : sessionId);
       },
       addBot: () => {
         setEditor({ open: true, mode: "create-bot", itemId: null, revision: catalog.getSnapshot().revision, error: "", warnings: [], deletePreview: null });
       },
       createBotSubmit: async (profile) => {
+        let created = false;
         try {
           const result = await profileCommand("bot/create", {
             kind: "bot",
@@ -7137,20 +7328,22 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
             scratchCwd: getScratchCwd(),
           });
           if (!result?.view) throw new Error(t("profileTransportUnavailable"));
+          created = true;
           const sessionId = lifecycleSessionId(result);
           const item = lifecycleItem(result, { sessionId, botId: result?.botId })
             || readItems().find((entry) => entry.sessionId === sessionId);
           if (!sessionId || !item) throw new Error(t("profileSessionUnavailable"));
           setEditor({ open: false, mode: "edit", itemId: null, error: "", warnings: normalizeWarnings(result.warnings), deletePreview: null });
-          ctx.sessions.open(sessionId);
+          uiWorkspace.openSession(sessionId);
         } catch (error) {
-          fail(error);
+          fail(created ? new Error(t("profileCreatedOpenFailed").replace("{message}", error instanceof Error ? error.message : String(error))) : error);
         }
       },
       createRoom: () => {
         setEditor({ open: true, mode: "create-room", itemId: null, error: "", warnings: [], deletePreview: null });
       },
       createRoomSubmit: async ({ name, description, workspaceId, memberBotIds, maxRounds, maxSpeaks }) => {
+        let created = false;
         try {
           editableSnapshot();
           const memberValidation = roomMemberValidation(memberBotIds, readItems());
@@ -7178,14 +7371,15 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
             maxSpeaks,
           });
           if (!result?.view) throw new Error(t("profileTransportUnavailable"));
+          created = true;
           const sessionId = lifecycleSessionId(result);
           const item = lifecycleItem(result, { sessionId, botId: result?.botId })
             || readItems().find((entry) => entry.sessionId === sessionId);
           if (!sessionId || !item) throw new Error(t("profileSessionUnavailable"));
           setEditor({ open: false, mode: "edit", itemId: null, error: "", warnings: normalizeWarnings(result.warnings), deletePreview: null });
-          ctx.sessions.open(sessionId);
+          uiWorkspace.openSession(sessionId);
         } catch (error) {
-          fail(error);
+          fail(created ? new Error(t("profileCreatedOpenFailed").replace("{message}", error instanceof Error ? error.message : String(error))) : error);
         }
       },
       openItem: async (row) => {
@@ -7200,7 +7394,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
           }
           const sessionId = await ensureCanonicalSession(canonical);
           if (sequence !== openSequence) return false;
-          ctx.sessions.open(sessionId);
+          uiWorkspace.openSession(sessionId);
           return true;
         } catch (error) {
           if (sequence === openSequence) fail(error);
@@ -7210,7 +7404,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
       openEditor: (itemId) => {
         setEditor({ open: true, mode: "edit", itemId, revision: catalog.getSnapshot().revision, error: "", warnings: [], deletePreview: null });
       },
-      closeEditor: () => setEditor({ open: false, mode: "edit", itemId: null, error: editor.error, warnings: editor.warnings ?? [], deletePreview: null }),
+      closeEditor: () => setEditor({ open: false, mode: "edit", itemId: null, error: editor.error, warnings: editor.warnings ?? [], deletePreview: null, feedbackId: editor.feedbackId }),
       requestDelete: async (itemId) => {
         setEditor({ open: true, mode: "delete", itemId, revision: catalog.getSnapshot().revision, error: "", warnings: [], deletePreview: { status: "loading" } });
         try {
@@ -7241,20 +7435,22 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
       duplicateItem: async (itemId) => {
         const source = readItems().find((item) => item.id === itemId);
         if (!source) return;
+        let created = false;
         try {
           const result = await profileCommand("bot/duplicate", {
             id: itemId,
             scratchCwd: getScratchCwd(),
           });
           if (!result?.view) throw new Error(t("profileTransportUnavailable"));
+          created = true;
           const sessionId = lifecycleSessionId(result);
           const copy = lifecycleItem(result, { sessionId, botId: result?.botId })
             || readItems().find((entry) => entry.sessionId === sessionId);
           if (!sessionId || !copy) throw new Error(t("profileSessionUnavailable"));
           setEditor({ open: false, mode: "edit", itemId: null, error: "", warnings: normalizeWarnings(result.warnings), deletePreview: null });
-          ctx.sessions.open(sessionId);
+          uiWorkspace.openSession(sessionId);
         } catch (error) {
-          fail(error);
+          fail(created ? new Error(t("profileCreatedOpenFailed").replace("{message}", error instanceof Error ? error.message : String(error))) : error);
         }
       },
       togglePin: async (itemId) => {
@@ -7283,6 +7479,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
         })).catch(fail);
       },
       saveItem: async (next, { workspaceLocked, sourcePolicy, capabilityCatalog: availableCapabilities } = {}) => {
+        let saved = false;
         try {
           const snapshot = editableSnapshot();
           if (snapshot.revision !== editor.revision) throw new Error(t("saveConflict"));
@@ -7360,6 +7557,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
           });
           const result = await profileCommand("bot/update", profileUpdate, snapshot.revision);
           if (!result?.view) throw new Error(t("profileTransportUnavailable"));
+          saved = true;
           const returned = lifecycleItem(result, { botId: current.id });
           const sessionId = lifecycleSessionId(result, returned?.sessionId || current.sessionId, current.id);
           const updated = returned || { ...next, sessionId };
@@ -7368,9 +7566,9 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
           setEditor(warnings.length > 0
             ? { open: true, mode: "edit", itemId: current.id, revision: result.view.revision, error: "", warnings, deletePreview: null }
             : { open: false, mode: "edit", itemId: null, error: "", warnings: [], deletePreview: null });
-          ctx.sessions.open(sessionId);
+          uiWorkspace.openSession(sessionId);
         } catch (error) {
-          fail(error);
+          fail(saved ? new Error(t("profileSavedOpenFailed").replace("{message}", error instanceof Error ? error.message : String(error))) : error);
           return false;
         }
       },
@@ -7577,7 +7775,7 @@ window.__ModuleLoader__.load({ id: "dshbot", factory: (require) => {
   }
 
   exports.name = "dsh-bot";
-  exports.inject = ["slots", "locale", "sessions", "uiSession", "workspaces", "configForms", "settingsNavigation", "connection", "remote", "remote.session", "inputTriggers"];
+  exports.inject = ["slots", "locale", "sessions", "uiSession", "uiWorkspace", "workspaces", "configForms", "settingsNavigation", "connection", "remote", "remote.session", "inputTriggers"];
   exports.apply = apply;
   return module.exports;
 }});

@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { RiskConfirmation, SettingsSelect } from '@deepseek-ai/dsh-client-ui-primitives'
+import { RiskConfirmation, SettingsSelect, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PermissionSettingsState } from './settings-store.ts'
 import type { PermissionSettingsKey } from './locales.ts'
 import { displayPermissionPreset, FULL_ACCESS_PRESET } from './presentation.ts'
@@ -40,6 +40,8 @@ export function PermissionRow({ load, select, usePermission, t }: PermissionRowP
   const state = usePermission(snapshot => snapshot)
   const [confirmingFullAccess, setConfirmingFullAccess] = useState(false)
   const [acknowledged, setAcknowledged] = useState(false)
+  const [dismissedError, setDismissedError] = useState<string | null>(null)
+  useEffect(() => { setDismissedError(null) }, [state.error])
 
   useEffect(() => {
     void load()
@@ -57,19 +59,19 @@ export function PermissionRow({ load, select, usePermission, t }: PermissionRowP
   const optionLabel = (option: PermissionSettingsState['options'][number]): string =>
     displayPermissionPreset(option.id, option.label, t)
   const label = selected !== undefined ? optionLabel(selected) : (busy ? t('loading') : t('unavailable'))
-  const description: string = state.error ?? t('description')
 
   return (
     <>
       <div className={css.row}>
         <div className={css.rowText}>
           <div className={css.title}>{t('title')}</div>
-          <div className={css.desc} role={state.error === null ? undefined : 'alert'}>{description}</div>
+          <div className={css.desc}>{t('description')}</div>
         </div>
         <SettingsSelect
           align="end"
           aria-label={label}
           disabled={busy || !state.writable || state.options.length === 0}
+          loading={state.status === 'loading' || state.status === 'saving'}
           value={state.currentValue}
           options={state.options.map(option => ({ id: option.id, label: optionLabel(option) }))}
           onChange={(id) => {
@@ -83,6 +85,9 @@ export function PermissionRow({ load, select, usePermission, t }: PermissionRowP
           }}
         />
       </div>
+      {state.error !== null && state.error !== dismissedError ? <Toast key={state.error}
+        text={state.error} holdMs={null} dismissLabel={t('close')}
+        onDone={() => { setDismissedError(state.error) }} /> : null}
       <RiskConfirmation
         open={confirmingFullAccess}
         title={t('confirm.title')}

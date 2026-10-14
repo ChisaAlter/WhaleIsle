@@ -775,29 +775,35 @@ export function GitActionsControl({
   const quickLabel = localizeGitLabel(quickAction.label, t)
   const commitLargeFiles = selectedLargeFiles(largeFiles, commitFiles, excludedFiles)
   const mainButton = (
-    <button
+    <Button
+      variant="ghost"
+      size="sm"
       type="button"
       className={css.primary}
       disabled={quickAction.disabled}
+      loading={busy}
       aria-label={quickLabel}
       onClick={runQuick}
     >
       {iconFor(quickIcon(quickAction))}
-      <span>{quickLabel}</span>
-    </button>
+      <span className={css.primaryLabel}>{quickLabel}</span>
+    </Button>
   )
 
   const initButton = (
-    <button
+    <Button
+      variant="ghost"
+      size="sm"
       type="button"
       className={clsx(css.init, density === 'compact' && css.initCompact)}
       disabled={busy}
+      loading={busy}
       aria-label={t('action.init')}
       onClick={runInit}
     >
       <IconBranchOutline16 size={14} />
-      {density === 'compact' ? null : <span>{busy ? t('action.init.busy') : t('action.init')}</span>}
-    </button>
+      {density === 'compact' ? null : <span>{t('action.init')}</span>}
+    </Button>
   )
 
   return managedSession ? null : (
@@ -814,7 +820,7 @@ export function GitActionsControl({
             gitSwitchBranch={gitSwitchBranch}
             gitCreateBranch={gitCreateBranch}
             onChanged={() => { if (cwd !== undefined) void refresh(cwd) }}
-            onError={(message, title) => { failProgress(message, title) }}
+            onError={(message, title) => { lastProgressLine.current = null; failProgress(message, title) }}
           />
           <span className={css.rule} aria-hidden="true" />
           {hint

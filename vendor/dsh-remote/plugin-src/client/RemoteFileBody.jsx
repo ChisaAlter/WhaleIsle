@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Button, FileTypeIcon, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { remoteApi, remoteFileTarget } from './api.js'
+import { RemoteFeedback } from './Feedback.jsx'
 
 const MAX_BYTES = 256 * 1024
 
@@ -23,6 +24,7 @@ export function RemoteFileBody({ useTabInfo, t }) {
   const [edit, setEdit] = React.useState(false)
   const [draft, setDraft] = React.useState('')
   const [saving, setSaving] = React.useState(false)
+  const [downloading, setDownloading] = React.useState(false)
 
   const originalText = (data && data.content != null ? String(data.content) : '').replace(/\n…\[truncated:.*$/, '')
   const dirty = edit && draft !== originalText
@@ -62,11 +64,12 @@ export function RemoteFileBody({ useTabInfo, t }) {
   }
 
   const download = () => {
-    setSaving(true); setErr(''); setNotice('')
+    if (downloading) return
+    setDownloading(true); setErr(''); setNotice('')
     remoteApi.fs('download', { path }, sessionId)
       .then((r) => setNotice(t('file.downloaded', { path: (r && r.local) ? t('file.downloadedAt', { path: r.local }) : '' })))
       .catch((e) => setErr(String((e && e.message) || e)))
-      .finally(() => setSaving(false))
+      .finally(() => setDownloading(false))
   }
 
   const baseName = path.split(/[\\/]/).pop() || path
@@ -79,21 +82,20 @@ export function RemoteFileBody({ useTabInfo, t }) {
         <span className="dshr-caption" style={{ flexShrink: 0 }}>{edit ? t('file.editing') : t('file.readonly')}</span>
         {edit ? (
           <React.Fragment>
-            <Button variant="primary" size="sm" onClick={save} disabled={saving || !dirty} title={t('file.saveHint')}>
-              {saving ? t('file.saving') : t('file.saveToRemote')}
+            <Button variant="primary" size="sm" onClick={save} disabled={saving || !dirty} loading={saving} title={t('file.saveHint')}>
+              {t('file.saveToRemote')}
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => { setEdit(false); setErr('') }}>{t('file.cancel')}</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setEdit(false); setErr('') }} disabled={saving}>{t('file.cancel')}</Button>
           </React.Fragment>
         ) : (
           <React.Fragment>
-            <Button variant="ghost" size="sm" onClick={startEdit} disabled={!data || !!data.binary}>{t('file.edit')}</Button>
-            <Button variant="ghost" size="sm" onClick={download} disabled={saving}>{t('file.download')}</Button>
+            <Button variant="ghost" size="sm" onClick={startEdit} disabled={downloading || !data || !!data.binary}>{t('file.edit')}</Button>
+            <Button variant="ghost" size="sm" onClick={download} disabled={downloading} loading={downloading}>{t('file.download')}</Button>
           </React.Fragment>
         )}
       </div>
       <div className="dshr-editorBody">
-        {err ? <div className="dshr-error" style={{ padding: '8px 12px', flexShrink: 0 }}>{err}</div> : null}
-        {notice ? <div className="dshr-ok" style={{ padding: '8px 12px', flexShrink: 0 }}>{notice}</div> : null}
+        <RemoteFeedback error={err} message={notice} onClearMessage={() => setNotice('')} t={t} actions={!data && !edit ? [{ label: t('explorer.retry'), onClick: load }] : undefined} />
         {loading ? <div className="dshr-muted" style={{ padding: 12, fontSize: 13 }}>{t('file.loading')}</div> : (
           data && data.binary ? (
             <div className="dshr-muted" style={{ padding: 12, fontSize: 13 }}>
@@ -106,13 +108,13 @@ export function RemoteFileBody({ useTabInfo, t }) {
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); if (!saving && dirty) save() }
-                if (e.key === 'Escape') { e.preventDefault(); setEdit(false); setErr('') }
+                if (e.key === 'Escape' && !saving) { e.preventDefault(); setEdit(false); setErr('') }
               }}
               spellCheck={false}
             />
           ) : (
             <div className="dshr-editorView">
-              {data && data.content != null ? data.content : t('file.empty')}
+              {data && data.content != null ? data.content : data ? t('file.empty') : null}
               {data && data.truncated ? <div className="dshr-caption dshr-warn" style={{ marginTop: 8 }}>{t('file.truncated')}</div> : null}
             </div>
           )

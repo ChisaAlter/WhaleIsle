@@ -32,6 +32,14 @@
   cursor: pointer;
 }
 
+/* Primitive loading overlays use the existing split-button seat at every size. */
+.split .main,
+.split .chevron {
+  height: 100%;
+  min-width: 0;
+  border-radius: 0;
+}
+
 .main {
   gap: 4px;
   padding: 3px 5px;
@@ -71,9 +79,10 @@
 }
 
 /* Pending disables clicks without a restyle; only hover feedback pauses. */
-.main:disabled,
-.chevron:disabled {
+.split .main:disabled,
+.split .chevron:disabled {
   cursor: default;
+  opacity: 1;
 }
 
 .appIcon {

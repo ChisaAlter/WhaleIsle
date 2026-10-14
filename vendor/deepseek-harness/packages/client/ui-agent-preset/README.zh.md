@@ -11,6 +11,8 @@ kind: "package-reference"
 
 在 Web 中选择 Agent preset 和新任务默认值，查看各模式的说明与声明的配置。创建与修改引导至创造模式。
 
+选择与读取失败使用可关闭的持久 Toast；关闭提示保留失败状态，加载指示不改变卡片或操作按钮的尺寸。
+
 ## 目录
 
 - [使用此包](#use-this-package)

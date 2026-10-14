@@ -8,6 +8,48 @@ import { POINTER_GRACE_MS } from '../src/pointer-grace.ts'
 afterEach(cleanup)
 
 describe('Button', () => {
+  /** Model the measured feedback seat; jsdom does not calculate CSS text widths. */
+  function feedbackGeometry(initialWidth: number, labelWidth: number) {
+    let width = initialWidth
+    class FeedbackResizeObserver implements ResizeObserver {
+      static latest: FeedbackResizeObserver | undefined
+      readonly observe = vi.fn()
+      readonly unobserve = vi.fn()
+      readonly disconnect = vi.fn()
+      constructor(private readonly callback: ResizeObserverCallback) {
+        FeedbackResizeObserver.latest = this
+      }
+      fire(): void { this.callback([], this) }
+    }
+    vi.stubGlobal('ResizeObserver', FeedbackResizeObserver)
+    const clientWidth = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width)
+    const scrollWidth = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(labelWidth)
+    const readStyle = globalThis.getComputedStyle
+    const computedStyle = vi.spyOn(globalThis, 'getComputedStyle').mockImplementation((element, pseudo) => {
+      const style = readStyle(element, pseudo)
+      // The overlay has 4px padding on either side and a 4px spinner-to-label gap.
+      Object.defineProperties(style, {
+        paddingLeft: { value: '4px' }, paddingRight: { value: '4px' }, columnGap: { value: '4px' },
+      })
+      return style
+    })
+    return {
+      resize(nextWidth: number): void {
+        width = nextWidth
+        const observer = FeedbackResizeObserver.latest
+        if (observer === undefined) throw new Error('expected feedback to observe its available width')
+        act(() => { observer.fire() })
+      },
+      observer: () => FeedbackResizeObserver.latest,
+      restore(): void {
+        computedStyle.mockRestore()
+        scrollWidth.mockRestore()
+        clientWidth.mockRestore()
+        vi.unstubAllGlobals()
+      },
+    }
+  }
+
   it('exposes its native button for focus and releases the ref on unmount', () => {
     const ref = createRef<HTMLButtonElement>()
     const { unmount } = render(<Button ref={ref}>Focus</Button>)
@@ -37,6 +79,133 @@ describe('Button', () => {
   it('outline variant renders a bordered cancel-style button', () => {
     render(<Button variant="outline">Cancel</Button>)
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeDefined()
+  })
+
+  it('blocks repeated activation while loading and announces feedback before returning to its caption', () => {
+    const onClick = vi.fn()
+    const view = render(<Button onClick={onClick}>Save</Button>)
+    const button = screen.getByRole('button', { name: 'Save' })
+    fireEvent.click(button)
+    expect(onClick).toHaveBeenCalledOnce()
+    view.rerender(<Button loading onClick={onClick}>Save</Button>)
+    expect(button.getAttribute('aria-busy')).toBe('true')
+    expect(button).toHaveProperty('disabled', true)
+    fireEvent.click(button)
+    expect(onClick).toHaveBeenCalledOnce()
+    view.rerender(<Button feedback="Saved" onClick={onClick}>Save</Button>)
+    expect(screen.getByRole('button', { name: 'Saved' })).toBe(button)
+    expect(button).toHaveProperty('disabled', false)
+    view.rerender(<Button onClick={onClick}>Save</Button>)
+    expect(screen.getByRole('button', { name: 'Save' })).toBe(button)
+    expect(button.hasAttribute('aria-busy')).toBe(false)
+  })
+
+  it('keeps a 56px Save seat while long busy and result copy remain fully accessible', () => {
+    const geometry = feedbackGeometry(32, 66)
+    const ref = createRef<HTMLButtonElement>()
+    const onClick = vi.fn()
+    const busyLabel = 'Saving configuration'
+    const resultLabel = 'Configuration saved'
+    const seat = { width: 56, height: 36 }
+    const view = render(<Button ref={ref} style={seat} loading feedback={busyLabel} onClick={onClick}>Save</Button>)
+    try {
+      const button = screen.getByRole('button', { name: busyLabel })
+      expect(ref.current).toBe(button)
+      expect(button.dataset.feedbackDisplay).toBe('compact-label')
+      expect(button.contains(screen.getByText('…'))).toBe(true)
+      expect(button.querySelector('[data-state="ongoing"]')).not.toBeNull()
+      expect(button.textContent).toContain('Save')
+      expect(button.title).toBe(busyLabel)
+      expect(button.getAttribute('aria-busy')).toBe('true')
+      expect(button).toHaveProperty('disabled', true)
+      fireEvent.click(button)
+      expect(onClick).not.toHaveBeenCalled()
+
+      view.rerender(<Button ref={ref} style={seat} feedback={resultLabel} onClick={onClick}>Save</Button>)
+      expect(screen.getByRole('button', { name: resultLabel })).toBe(button)
+      expect(button.dataset.feedbackDisplay).toBe('caption')
+      expect(button.title).toBe(resultLabel)
+      expect(button.textContent).toContain('Save')
+      expect(button.querySelector('[data-state="ongoing"]')).toBeNull()
+      expect(button).toHaveProperty('disabled', false)
+      expect(button.style.width).toBe('56px')
+      expect(button.style.height).toBe('36px')
+
+      view.rerender(<Button ref={ref} style={seat} onClick={onClick}>Save</Button>)
+      expect(screen.getByRole('button', { name: 'Save' })).toBe(button)
+      expect(button.hasAttribute('data-feedback-display')).toBe(false)
+      expect(button.hasAttribute('aria-busy')).toBe(false)
+      fireEvent.click(button)
+      expect(onClick).toHaveBeenCalledOnce()
+      view.unmount()
+      expect(ref.current).toBeNull()
+    } finally {
+      view.unmount()
+      geometry.restore()
+    }
+  })
+
+  it('switches between full busy copy and an ellipsis as the same button resizes', () => {
+    const geometry = feedbackGeometry(90, 66)
+    const ref = vi.fn()
+    const label = 'Saving configuration'
+    const view = render(<Button ref={ref} loading feedback={label}>Save</Button>)
+    try {
+      const button = screen.getByRole('button', { name: label })
+      expect(button.dataset.feedbackDisplay).toBe('label')
+      expect(button.querySelector('[data-state="ongoing"]')).not.toBeNull()
+      expect(button.querySelector('[data-dsh-motion-part="current"]')?.textContent).toBe(label)
+      const observer = geometry.observer()
+      if (observer === undefined) throw new Error('expected feedback size observation')
+      expect(observer.observe).toHaveBeenCalledWith(button)
+
+      geometry.resize(88)
+      expect(screen.getByRole('button', { name: label })).toBe(button)
+      expect(button.dataset.feedbackDisplay).toBe('compact-label')
+      expect(button.title).toBe(label)
+      geometry.resize(120)
+      expect(button.dataset.feedbackDisplay).toBe('label')
+      expect(button.querySelector('[data-dsh-motion-part="current"]')?.textContent).toBe(label)
+      expect(button.textContent).toContain('Save')
+      expect(ref).toHaveBeenLastCalledWith(button)
+      view.unmount()
+      expect(observer.disconnect).toHaveBeenCalledOnce()
+      expect(ref).toHaveBeenLastCalledWith(null)
+    } finally {
+      view.unmount()
+      geometry.restore()
+    }
+  })
+
+  it('keeps an icon child text-free until an explicit feedback label is supplied', () => {
+    const geometry = feedbackGeometry(200, 66)
+    const label = 'Refresh the complete inventory'
+    const view = render(<Button loading aria-label={label}><svg data-testid="refresh-icon" /></Button>)
+    try {
+      const button = screen.getByRole('button', { name: label })
+      expect(button.dataset.feedbackDisplay).toBe('indicator')
+      expect(button.title).toBe(label)
+      expect(button.querySelector('[data-state="ongoing"]')).not.toBeNull()
+      expect(button.querySelector('[data-dsh-motion="flip"]')).toBeNull()
+      expect(button.textContent).toBe('')
+      expect(screen.getByTestId('refresh-icon')).toBeTruthy()
+      expect(button.getAttribute('aria-busy')).toBe('true')
+      expect(button).toHaveProperty('disabled', true)
+
+      const feedback = 'Rebuilding the inventory'
+      view.rerender(<Button loading aria-label={label} feedback={feedback}><svg data-testid="refresh-icon" /></Button>)
+      expect(screen.getByRole('button', { name: feedback })).toBe(button)
+      expect(button.dataset.feedbackDisplay).toBe('label')
+      expect(button.querySelector('[data-dsh-motion-part="current"]')?.textContent).toBe(feedback)
+      expect(screen.getAllByText(feedback)).toHaveLength(1)
+      geometry.resize(32)
+      expect(button.dataset.feedbackDisplay).toBe('indicator')
+      expect(button.title).toBe(feedback)
+      expect(screen.getByRole('button', { name: feedback })).toBe(button)
+    } finally {
+      view.unmount()
+      geometry.restore()
+    }
   })
 })
 

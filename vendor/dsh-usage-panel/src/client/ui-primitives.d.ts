@@ -6,6 +6,8 @@ declare module '@deepseek-ai/dsh-client-ui-primitives' {
     size?: 'md' | 'sm'
     icon?: ReactNode
     className?: string
+    loading?: boolean
+    feedback?: string
     children?: ReactNode
   } & ButtonHTMLAttributes<HTMLButtonElement>): JSX.Element
 
@@ -39,4 +41,15 @@ declare module '@deepseek-ai/dsh-client-ui-primitives' {
   }): JSX.Element
 
   export function Switch(props: import('react').InputHTMLAttributes<HTMLInputElement>): JSX.Element
+
+  export function Toast(props: {
+    text: string
+    icon?: ReactNode
+    tone?: 'success'
+    anchor?: HTMLElement | null
+    holdMs?: number | null
+    dismissLabel?: string
+    actions?: readonly { label: string; prefix?: string; onClick: () => void }[]
+    onDone: () => void
+  }): JSX.Element
 }

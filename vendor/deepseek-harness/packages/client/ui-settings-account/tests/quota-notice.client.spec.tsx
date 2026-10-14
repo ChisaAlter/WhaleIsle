@@ -77,12 +77,13 @@ function mount(options: { account?: 'unloaded' | 'signed-out' | 'credential-stor
   // Page changes re-render through the channel's subscription, the way the
   // renderer's framework hook does; release it so no callback reaches an
   // unmounted instance.
-  if (pages !== undefined) mountedSubscriptions.push(pages.subscribe(rerender))
+  const unsubscribe = pages?.subscribe(rerender)
+  if (unsubscribe !== undefined) mountedSubscriptions.push(unsubscribe)
   return {
     dismiss,
     keepOpen,
     releaseHold,
-    rendered,
+    rendered: { ...rendered, unmount: () => { unsubscribe?.(); rendered.unmount() } },
     setStatus: (status: 'signed-out' | 'credential-stored') => { account = snapshot(status); rerender() },
     failStream: () => { account = { ...account, failed: true }; rerender() },
   }
@@ -143,7 +144,7 @@ it.each([en, zh])('defers the balance Modal while any Platform page is showing',
   expect(dismiss).not.toHaveBeenCalled()
 })
 
-it.each(['credential-stored', 'signed-out'] as const)('waits beyond the Toast lifetime for the first account snapshot: %s', (status) => {
+it.each(['credential-stored', 'signed-out'] as const)('waits beyond the Toast lifetime for the first account snapshot: %s', async (status) => {
   vi.useFakeTimers()
   const spies = pageSpies()
   const { dismiss, setStatus } = mount({ account: 'unloaded', pages: spies.pages })
@@ -151,38 +152,39 @@ it.each(['credential-stored', 'signed-out'] as const)('waits beyond the Toast li
   expect(dismiss).not.toHaveBeenCalled()
   expect(screen.queryByRole('alert')).toBeNull()
   expect(screen.queryByRole('dialog')).toBeNull()
-  act(() => { setStatus(status) })
+  await act(async () => { setStatus(status) })
   if (status === 'credential-stored') {
     expect(screen.getByRole('dialog', { name: en.quotaTitle })).toBeTruthy()
     expect(dismiss).not.toHaveBeenCalled()
   } else {
     expect(screen.getByRole('alert').textContent).toBe(noticeMessage)
-    act(() => { vi.runAllTimers() })
+    await act(async () => { await vi.runAllTimersAsync() })
     expect(dismiss).toHaveBeenCalledOnce()
   }
 })
 
-it('shows a timed Toast when the account stream fails before its first snapshot', () => {
+it('shows a timed Toast when the account stream fails before its first snapshot', async () => {
   vi.useFakeTimers()
   const { dismiss, failStream, keepOpen } = mount({ account: 'unloaded', pages: createPlatformPages() })
   act(() => { vi.advanceTimersByTime(10_000) })
   expect(screen.queryByRole('alert')).toBeNull()
   expect(dismiss).not.toHaveBeenCalled()
-  act(() => { failStream() })
+  await act(async () => { failStream() })
   expect(screen.getByRole('alert').textContent).toBe(noticeMessage)
   expect(screen.queryByRole('dialog')).toBeNull()
   expect(keepOpen).not.toHaveBeenCalled()
-  act(() => { vi.runAllTimers() })
+  await act(async () => { await vi.runAllTimersAsync() })
   expect(dismiss).toHaveBeenCalledOnce()
   expect(screen.queryByRole('alert')).toBeNull()
 })
 
-it.each(['signed-out', 'unloaded'] as const)('uses a timed Toast without the shared page host: %s', (account) => {
+it.each(['signed-out', 'unloaded'] as const)('uses a timed Toast without the shared page host: %s', async (account) => {
   vi.useFakeTimers()
   const { dismiss } = mount({ account })
+  await act(async () => {})
   expect(screen.getByRole('alert').textContent).toBe(noticeMessage)
   expect(screen.queryByRole('button')).toBeNull()
-  act(() => { vi.runAllTimers() })
+  await act(async () => { await vi.runAllTimersAsync() })
   expect(dismiss).toHaveBeenCalledOnce()
   expect(screen.queryByRole('alert')).toBeNull()
 })

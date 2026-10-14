@@ -2,7 +2,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
-  Button, IconBrowseOutlineRegular, IconPlusOutlineRegular, Modal, Tag, Tooltip,
+  Button, IconBrowseOutlineRegular, IconLoadingOutlineRegular, IconPlusOutlineRegular, Modal, Tag, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -71,6 +71,10 @@ export function AgentPresetSection({
     content: NonNullable<ReturnType<typeof presetGuide>>
     page: PresetGuidePage
   } | null>(null)
+  const [dismissedError, setDismissedError] = useState<string | null>(null)
+  const [savingId, setSavingId] = useState<string | null>(null)
+  const [readingId, setReadingId] = useState<string | null>(null)
+  useEffect(() => { setDismissedError(null) }, [state.error])
   const viewTrigger = useRef<HTMLButtonElement | null>(null)
   const closeViewOnUnmount = useRef(closeView)
   useEffect(() => { void load() }, [load])
@@ -101,7 +105,9 @@ export function AgentPresetSection({
   return <section className={css.section}>
     <h2 className={css.title}>{t('nav')}</h2>
     <p className={css.intro}>{t('sectionIntro')}</p>
-    {state.error === null ? null : <p className={css.error} role="alert">{state.error}</p>}
+    {state.error !== null && state.error !== dismissedError ? <Toast key={state.error}
+      text={state.error} holdMs={null} dismissLabel={t('close')}
+      onDone={() => { setDismissedError(state.error) }} /> : null}
     {([true, false] as const).map((builtIn) => {
       const rows = state.rows.filter(row => isBuiltInPreset(row) === builtIn
         && (developerTools || !requiresCodingTools(row)))
@@ -120,9 +126,15 @@ export function AgentPresetSection({
               row.isDefault ? css.cardActive : undefined,
             ].filter(Boolean).join(' ')}>
               <button type="button" className={css.cardMain} aria-pressed={row.isDefault}
+                aria-busy={savingId === row.id} data-loading={savingId === row.id || undefined}
                 disabled={row.isDefault || (row.broken === undefined && state.saving)}
                 aria-disabled={row.broken !== undefined} aria-label={`${selectionAction}: ${display.name}`} title={selectionAction}
-                onClick={() => { if (row.broken === undefined) void makeDefault(row.id) }}>
+                onClick={() => {
+                  if (row.broken !== undefined) return
+                  setSavingId(row.id)
+                  void makeDefault(row.id).finally(() => { setSavingId(null) })
+                }}>
+                {savingId === row.id ? <span className={css.loadingOverlay} aria-hidden><IconLoadingOutlineRegular className={css.spinner} /></span> : null}
                 <span className={css.cardHead}>
                   <span className={css.cardIdentity}>
                     <span className={css.cardName} title={display.name}>{display.name}</span>
@@ -148,10 +160,16 @@ export function AgentPresetSection({
                 {/* Reading the declaration is the one thing this page offers
                   beyond choosing: a broken preset's YAML is also where its
                   diagnostic points, so the viewer stays available for it. */}
-                <button type="button" className={css.iconButton} data-tip={t('view')} aria-label={`${t('view')}: ${display.name}`}
-                  onClick={(event) => { viewTrigger.current = event.currentTarget; void view(row.id) }}>
+                <Button size="sm" variant="ghost" className={css.iconButton} data-tip={t('view')}
+                  loading={readingId === row.id} disabled={readingId !== null}
+                  aria-label={`${t('view')}: ${display.name}`}
+                  onClick={(event) => {
+                    viewTrigger.current = event.currentTarget
+                    setReadingId(row.id)
+                    void view(row.id).finally(() => { setReadingId(null) })
+                  }}>
                   <IconBrowseOutlineRegular />
-                </button>
+                </Button>
               </div>
             </li>
           })}

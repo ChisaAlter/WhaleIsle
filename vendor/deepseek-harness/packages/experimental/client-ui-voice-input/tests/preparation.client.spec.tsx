@@ -73,10 +73,13 @@ it('starts preparation and offers retry without showing progress for completed o
   await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.retryPrepare }).disabled).toBe(false) })
   b.prepare.mockRejectedValueOnce(new Error('offline'))
   fireEvent.click(screen.getByRole('button', { name: zh.retryPrepare }))
-  await screen.findByText('语音识别失败：offline')
+  await screen.findByRole('alert')
+  await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('语音识别失败：offline') })
   b.prepare.mockRejectedValueOnce('network closed')
   fireEvent.click(screen.getByRole('button', { name: zh.retryPrepare }))
-  await screen.findByText('语音识别失败：network closed')
+  await screen.findByRole('alert')
+  await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('语音识别失败：network closed') })
+  expect(b.container.textContent).not.toContain('语音识别失败：network closed')
   fireEvent.click(screen.getByRole('button', { name: zh['short.failed'] }))
   expect(screen.queryByRole('progressbar')).toBeNull()
 })
@@ -85,11 +88,11 @@ it('shows waking without an explicit preparation cancellation control', () => {
   expect(screen.getByText('已等待 5 秒')).toBeTruthy()
   expect(screen.queryByRole('button', { name: zh.cancelPrepare })).toBeNull()
 })
-it('explains download failures on the Host machine and retains an actionable retry', () => {
+it('explains download failures on the Host machine and retains an actionable retry', async () => {
   const b = fixture({ phase: 'failed', message: 'fetch failed', download: {
     resource: 'model.int8.onnx', source: 'https://mirror.example', reason: 'dns', code: 'ENOTFOUND',
   } })
-  const alert = screen.getByRole('alert')
+  const alert = await screen.findByRole('alert')
   expect(alert.textContent).toContain('无法下载 model.int8.onnx：无法解析下载地址。')
   expect(alert.textContent).toContain('运行 DSH 的机器的 DNS 和代理设置')
   expect(alert.textContent).toContain('下载来源：https://mirror.example')
@@ -103,11 +106,18 @@ it('explains download failures on the Host machine and retains an actionable ret
       resource: 'tokens.txt', source: 'https://huggingface.co', reason: 'http', status: 503,
     },
   } }} />)
-  expect(screen.getByRole('alert').textContent).toContain('无法下载 tokens.txt：下载服务返回 HTTP 503。')
+  expect((await screen.findByRole('alert')).textContent).toContain('无法下载 tokens.txt：下载服务返回 HTTP 503。')
   expect(screen.getByRole('alert').textContent).not.toContain('错误码')
   b.rerender(<PreparationCard {...b.props} provider={{ ...b.props.provider,
     preparation: { phase: 'failed', message: 'runtime missing' } }} />)
-  expect(screen.getByRole('alert').textContent).toBe('准备失败：runtime missing')
+  expect((await screen.findByRole('alert')).textContent).toContain(t('providerFeedback', {
+    name: 'SenseVoiceSmall', message: '准备失败：runtime missing',
+  }))
+  fireEvent.click(screen.getByRole('button', { name: zh.dismissFeedback }))
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByText(zh['short.failed'])).toBeTruthy()
+  expect(screen.getByRole('button', { name: zh.retryPrepare })).toBeTruthy()
+  expect(b.container.textContent).not.toContain('准备失败：runtime missing')
 })
 it('persists settings and reports disconnection in the detail card', async () => {
   const store = createSnapshotStore<SpeechReadiness>({ connected: true, error: null, catalog: {
@@ -129,14 +139,23 @@ it('persists settings and reports disconnection in the detail card', async () =>
   expect(within(screen.getByLabelText(zh.language)).getByRole('option', { name: 'fr' })).toBeTruthy()
   configure.mockRejectedValueOnce(new Error('settings are read-only'))
   fireEvent.change(screen.getByLabelText(zh.language), { target: { value: 'zh' } })
-  await screen.findByText('语音识别失败：settings are read-only')
+  expect((await screen.findByRole('alert')).textContent).toContain('语音识别失败：settings are read-only')
   configure.mockRejectedValueOnce('settings are locked')
   fireEvent.change(screen.getByLabelText(zh.language), { target: { value: 'ja' } })
-  await screen.findByText('语音识别失败：settings are locked')
+  await screen.findByRole('alert')
+  await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('语音识别失败：settings are locked') })
+  fireEvent.click(screen.getByRole('button', { name: zh.dismissFeedback }))
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getByLabelText<HTMLSelectElement>(zh.language).value).toBe('en')
+  fireEvent.change(screen.getByLabelText(zh.language), { target: { value: 'en' } })
+  await waitFor(() => { expect(screen.getByLabelText<HTMLSelectElement>(zh.language).disabled).toBe(false) })
+  act(() => { store.set({ catalog: null, connected: false, error: null }) })
+  view.rerender(<VoicePreparation {...props} />)
+  expect((await screen.findByRole('alert')).textContent).toBe(zh.loading)
   act(() => { store.set({ catalog: null, connected: false, error: 'disconnected' }) })
   view.rerender(<VoicePreparation {...props} />)
-  expect(screen.getByText(zh.loading)).toBeTruthy()
-  expect(screen.getByRole('alert').textContent).toContain('disconnected')
+  expect((await screen.findByRole('alert')).textContent).toContain('disconnected')
+  expect(screen.queryByText(zh.loading)).toBeNull()
 })
 it.each(['cancelled', 'standby', 'cancelling'] as const)('displays Host state %s', (phase) => {
   fixture(phase === 'cancelling' ? { phase, startedAt: Date.now() } : { phase })
@@ -203,6 +222,7 @@ it('locks source changes while a preparation request is pending and hides them d
   try {
     expect(screen.getByLabelText<HTMLSelectElement>(zh.sourceChoice).disabled).toBe(true)
     expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.prepare }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: zh.prepare }).getAttribute('aria-busy')).toBe('true')
   } finally { await act(async () => { pending.resolve(undefined); await pending.promise }) }
   b.rerender(<PreparationCard {...b.props} provider={provider} connected={false} />)
   expect(screen.getByLabelText<HTMLSelectElement>(zh.sourceChoice).disabled).toBe(true)

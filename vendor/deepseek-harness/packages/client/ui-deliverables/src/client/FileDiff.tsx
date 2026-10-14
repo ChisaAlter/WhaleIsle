@@ -1,7 +1,7 @@
 /** Shared file comparison for the turn-tail hover preview and Sidebar review. */
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
-  Button, languageForPath, MAX_RENDERED_LINES, ReviewDiff,
+  IconWarningOutline16, languageForPath, MAX_RENDERED_LINES, ReviewDiff, StateDot, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ReviewNote } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -30,10 +30,18 @@ export function FileDiff({ state, split, wrap, retry, t }: {
   wrap: boolean
   retry: () => void
 } & PropsLocale<typeof NS>): ReactNode {
-  if (state === undefined || state === 'loading') return <p className={css.status} role="status">{t('diff.loading')}</p>
+  const [dismissedError, setDismissedError] = useState(false)
+  useEffect(() => {
+    if (state !== 'error') setDismissedError(false)
+  }, [state])
+  if (state === undefined || state === 'loading') return <Toast text={t('diff.loading')}
+    icon={<StateDot state="ongoing" />} holdMs={null} onDone={() => {}} />
   if (state === 'missing') return <p className={css.status}>{t('diff.missing')}</p>
   if (state === 'error') {
-    return <div className={css.status}><span>{t('diff.error')}</span><Button size="sm" onClick={retry}>{t('presented.retry')}</Button></div>
+    return dismissedError ? null : <Toast text={t('diff.error')} icon={<IconWarningOutline16 />}
+      holdMs={null} dismissLabel={t('feedback.close')}
+      actions={[{ label: t('presented.retry'), onClick: retry }]}
+      onDone={() => { setDismissedError(true) }} />
   }
   if (state.kind === 'binary') return <p className={css.status}>{t('diff.binary')}</p>
   if (state.kind === 'oversized') return <p className={css.status}>{t('diff.oversized')}</p>

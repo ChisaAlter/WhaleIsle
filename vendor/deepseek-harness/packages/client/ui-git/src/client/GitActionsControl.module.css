@@ -75,8 +75,8 @@
   padding: 0 8px;
 }
 
-:global([data-titlebar-density='cozy']) .primary > span,
-:global([data-titlebar-density='compact']) .primary > span {
+:global([data-titlebar-density='cozy']) .primary .primaryLabel,
+:global([data-titlebar-density='compact']) .primary .primaryLabel {
   display: none;
 }
 

@@ -88,7 +88,8 @@ describe('CloseBehaviorRow', () => {
     mount()
     fireEvent.click(screen.getByRole('button', { name: /Minimize to tray/ }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Quit' }))
-    expect(screen.getByRole('button', { name: /Quit/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Minimize to tray/ })).toBeTruthy()
+    expect(saveConfig).not.toHaveBeenCalled()
   })
 
   it('ignores a late config read after unmount and closes the menu outside', async () => {
@@ -113,6 +114,9 @@ describe('CloseBehaviorRow', () => {
 
     mount()
     const trigger = screen.getByRole('button', { name: /Minimize to tray/ })
+    expect(trigger).toHaveProperty('disabled', true)
+    await act(async () => { resolveConfig({ closeToTray: true }) })
+    await waitFor(() => { expect(trigger).toHaveProperty('disabled', false) })
     fireEvent.click(trigger)
     expect(screen.getByRole('menuitem', { name: 'Quit' })).toBeTruthy()
     fireEvent.pointerDown(document.body)

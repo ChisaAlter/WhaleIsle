@@ -101,6 +101,27 @@
   transition: transform var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
 
+/* Reserve both unset captions so the first catalog read announces loading
+   without changing the selector's width when it settles without a model. */
+.initialLabel {
+  position: relative;
+  display: var(--dsh-composer-model-text-display, inline-grid);
+}
+
+.initialReserve {
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+
+.initialCaption[data-dsh-motion='flip'] {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chevronOpen {
   transform: rotate(180deg);
 }

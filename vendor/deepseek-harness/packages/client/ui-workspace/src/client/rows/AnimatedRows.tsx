@@ -9,6 +9,7 @@ interface AnimatedRowsProps {
   children: ReactNode
   className: string
   label: string
+  multiSelect?: boolean | undefined
   /** Unique DOM-order keys matching the rendered data-row-key attributes. */
   rowKeys: readonly string[]
   ready: boolean
@@ -172,6 +173,7 @@ export class AnimatedRows extends Component<AnimatedRowsProps> {
         className={this.props.className}
         role="tree"
         aria-label={this.props.label}
+        aria-multiselectable={this.props.multiSelect || undefined}
         onPointerDownCapture={() => { this.armed = true }}
         onKeyDownCapture={() => { this.armed = true }}
       >

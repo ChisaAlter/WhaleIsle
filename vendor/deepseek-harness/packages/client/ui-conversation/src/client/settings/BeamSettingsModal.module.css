@@ -230,7 +230,9 @@
 }
 
 .timeField input {
+  box-sizing: border-box;
   width: 100%;
+  min-width: 0;
   min-height: 36px;
   padding: 0 10px;
   border: 0.5px solid var(--dsw-alias-border-l2);

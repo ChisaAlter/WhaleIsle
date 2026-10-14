@@ -41,6 +41,8 @@ import {
   SearchResultItem, SessionNodeItem, TasksSectionHeader,
 } from './Rows.tsx'
 import { AnimatedRows } from './AnimatedRows.tsx'
+import { useSessionSelection, SessionSelectionToggle, SessionSelectionToolbar, SessionSelectionDialogs } from './SessionSelection.tsx'
+import type { SessionRowSelection } from './SessionSelection.tsx'
 import { FLAT_SESSION_ORDER_KEY, type SessionGroupBy } from '../stores.ts'
 import { WorkspacePickFlow } from '../WorkspacePicker.tsx'
 import css from './WorkspaceBrowser.module.css'
@@ -234,7 +236,7 @@ function workspaceGroupHalf(e: { clientY: number; currentTarget: HTMLElement }):
 }
 
 /** One inert, session-local collapsed archive section shared by grouped and flat views. */
-function ArchivedSessionSection({ nodes, currentId, now, expanded, onToggle, open, onUnarchive, onDelete, renderSlot, t }: {
+function ArchivedSessionSection({ nodes, currentId, now, expanded, onToggle, open, onUnarchive, onDelete, renderSlot, selection, t }: {
   nodes: readonly SessionNode[]
   currentId: SessionId | undefined
   now: number
@@ -244,6 +246,7 @@ function ArchivedSessionSection({ nodes, currentId, now, expanded, onToggle, ope
   onUnarchive: (id: SessionNode['id']) => void
   onDelete: (id: SessionNode['id'], title: string) => void
   renderSlot: SessionTreeProps['renderSlot']
+  selection?: SessionRowSelection | undefined
   t: WorkspaceBrowserProps['t']
 }) {
   if (nodes.length === 0) return null
@@ -259,6 +262,7 @@ function ArchivedSessionSection({ nodes, currentId, now, expanded, onToggle, ope
           onUnarchive={onUnarchive}
           onOpen={open}
           onDelete={onDelete}
+          selection={selection}
           renderSlot={renderSlot}
           t={t}
         />
@@ -279,6 +283,7 @@ type SessionTreeProps = Pick<
   | 'sidebar.session.row.leading'
   | 'sidebar.session.row.hover'
 > & {
+  selection?: SessionRowSelection | undefined
   shortcuts: readonly import('@deepseek-ai/dsh-client-shortcuts/client').ShortcutCatalogEntry[]
   /** Always-mounted Session list snapshot. */
   list: SessionListState
@@ -347,7 +352,7 @@ function SessionTree({
   rowState, archivedNodes, archivedExpanded, onToggleArchived, onSessionUnarchive, onLeaveArchivedOnly,
   workspaceReady, animationResetKey, usePanelInfo,
   onRenameRequest, onDeleteRequest, onSessionRenameRequest, onSessionDeleteRequest,
-  renderSlot,
+  renderSlot, selection,
   insertWorkspaceBefore,
   nestWorkspaces, groupExpansion, setGroupExpanded,
   setSessionOrder, home, t,
@@ -649,6 +654,7 @@ function SessionTree({
               now={now}
               onUnarchive={onSessionUnarchive}
               onDelete={onSessionDeleteRequest}
+              selection={selection}
               renderSlot={renderSlot}
               t={t}
             />
@@ -662,6 +668,7 @@ function SessionTree({
               onOpen={open}
               onRenameRequest={onSessionRenameRequest}
               onDeleteRequest={onSessionDeleteRequest}
+              selection={selection}
               renderSlot={renderSlot}
               onReveal={node.id === revealSessionId && group.key === revealGroup
                 ? () => { onSessionRevealed(node.id) }
@@ -706,6 +713,7 @@ function SessionTree({
       <AnimatedRows
         className={clsx(css.list, workspaceDropAtListStart && css.listTopDropActive)}
         label={t('section.sessions')}
+        multiSelect={selection?.enabled}
         rowKeys={rowKeys}
         ready={list.phase === 'ready' && workspaceReady && !nativeDragActive}
         resetKey={JSON.stringify([animationResetKey, sessionLimits])}
@@ -723,6 +731,7 @@ function SessionTree({
           open={open}
           onUnarchive={onSessionUnarchive}
           onDelete={onSessionDeleteRequest}
+          selection={selection}
           renderSlot={renderSlot}
           t={t}
         />
@@ -738,10 +747,11 @@ function FlatList({
   list, sessionIds, rowState, useSessionStatus, open, onSessionRenameRequest, onSessionDeleteRequest,
   onLeaveArchivedOnly, archivedNodes, archivedExpanded, onToggleArchived, onSessionUnarchive, renderSlot,
   usePanelInfo, setSessionOrder, workspaceReady, animationResetKey,
-  revealSessionId, onSessionRevealed, t,
+  revealSessionId, onSessionRevealed, selection, t,
 }: Pick<
   SessionTreeProps,
   | 'list'
+  | 'selection'
   | 'useSessionStatus'
   | 'open'
   | 'onSessionRenameRequest'
@@ -789,6 +799,7 @@ function FlatList({
       <AnimatedRows
         className={clsx(css.list, css.flatList)}
         label={t('section.sessions')}
+        multiSelect={selection?.enabled}
         rowKeys={[
           ...rows.length === 0 && archivedNodes.length === 0 ? ['empty'] : rows.map(row => `session:${row.id}`),
           ...archivedNodes.length > 0 ? ['archived-section'] : [],
@@ -809,6 +820,7 @@ function FlatList({
               now={now}
               onUnarchive={onSessionUnarchive}
               onDelete={onSessionDeleteRequest}
+              selection={selection}
               renderSlot={renderSlot}
               t={t}
             />
@@ -822,6 +834,7 @@ function FlatList({
               onOpen={open}
               onRenameRequest={onSessionRenameRequest}
               onDeleteRequest={onSessionDeleteRequest}
+              selection={selection}
               renderSlot={renderSlot}
               onReveal={node.id === revealSessionId
                 ? () => { onSessionRevealed(node.id) }
@@ -858,6 +871,7 @@ function FlatList({
           open={open}
           onUnarchive={onSessionUnarchive}
           onDelete={onSessionDeleteRequest}
+          selection={selection}
           renderSlot={renderSlot}
           t={t}
         />
@@ -891,9 +905,11 @@ function SearchResults({
   resultLimit,
   usePanelInfo,
   renderSlot,
+  selection,
   t,
 }: Pick<WorkspaceBrowserProps, 'useSessionStatus' | 'open' | 't' | 'usePanelInfo' | 'renderSlot'> & {
   list: SessionListState
+  selection?: SessionRowSelection | undefined
   workspaces: readonly WorkspaceView[]
   scratchCwd: string | undefined
   archivedSessionIds: readonly SessionNode['id'][]
@@ -934,10 +950,11 @@ function SearchResults({
   return (
     <div className={clsx(css.treeBody, css.wide)}>
       <div className={css.list}>
-        <div className={css.searchTree} role="tree" aria-label={t('search.results.aria')}>
+        <div className={css.searchTree} role="tree" aria-label={t('search.results.aria')} aria-multiselectable={selection?.enabled || undefined}>
           {results.items.map(result => (
             <SearchResultItem
               key={result.id}
+              selection={selection}
               result={result}
               currentId={currentId}
               onOpen={open}
@@ -1000,6 +1017,8 @@ export function WorkspaceBrowser({
   renameWorkspace,
   deleteWorkspace,
   deleteSession,
+  archiveSessionForBatch,
+  deleteSessionForBatch,
   insertWorkspaceBefore,
   unarchiveSession,
   createWorkspace,
@@ -1227,6 +1246,12 @@ export function WorkspaceBrowser({
   const [searchExpanded, setSearchExpanded] = useState(false)
   const [revealSessionId, setRevealSessionId] = useState<SessionId | undefined>(undefined)
   const normalizedQuery = sanitizeSearchQuery(query).trim()
+  const selection = useSessionSelection({
+    scopeKey: `${wide}/${groupBy}/${archivedFilter}/${normalizedQuery}`,
+    archiveSessionForBatch,
+    deleteSessionForBatch,
+    t,
+  })
   const [remoteSearch, setRemoteSearch] = useState<RemoteSearchState>({
     query: '',
     status: 'idle',
@@ -1355,6 +1380,9 @@ export function WorkspaceBrowser({
     && registeredWorkspaces.some(w => w.workspaceId !== renameTarget.workspaceId && w.title === renameTrimmed)
   const renameBlocked = renaming || renameTrimmed === ''
     || renameTarget === null || renameTrimmed === renameTarget.storedTitle || renameDuplicate
+  useEffect(() => {
+    if (renameDuplicate) setRenameError(t('conflict.named', { name: renameTrimmed }))
+  }, [renameDuplicate, renameTrimmed, t])
   const closeRename = () => {
     if (renaming) return
     setRenameTarget(null)
@@ -1514,6 +1542,7 @@ export function WorkspaceBrowser({
             </div>
           </div>
         )}
+        {wide && <SessionSelectionToggle selection={selection} />}
         <div className={clsx(css.headerActions, wide && searchExpanded && css.headerActionsHidden)}>
           {wide && (
             <ViewOptionsMenu
@@ -1570,6 +1599,8 @@ export function WorkspaceBrowser({
         />
       </div>
 
+      {wide && <SessionSelectionToolbar selection={selection} />}
+
       {/* The collapsed rail keeps search as its own 36px control. */}
       {!wide && <div className={css.search}>
         <Tooltip label={t('search')} shortcutKeys={searchShortcut?.keys}>
@@ -1594,6 +1625,7 @@ export function WorkspaceBrowser({
           ? (
             <>
             <SearchResults
+              selection={selection}
               usePanelInfo={usePanelInfo}
               list={list}
               renderSlot={renderSlot}
@@ -1631,6 +1663,7 @@ export function WorkspaceBrowser({
                 open={guardedOpen}
                 onSessionRenameRequest={requestSessionRename}
                 onSessionDeleteRequest={onSessionDeleteRequest}
+                selection={selection}
                 renderSlot={renderSlot}
                 setSessionOrder={saveSessionOrder}
                 revealSessionId={revealSessionId}
@@ -1647,6 +1680,7 @@ export function WorkspaceBrowser({
                 onSessionRenameRequest={requestSessionRename}
                 onSessionDeleteRequest={onSessionDeleteRequest}
                 connectNoDirectory={connectNoDirectory}
+                selection={selection}
                 renderSlot={renderSlot}
                 workspaces={sidebarWorkspaces}
                 scratchCwd={scratchCwd}
@@ -1694,7 +1728,7 @@ export function WorkspaceBrowser({
         footer={(
           <>
             <Button variant="outline" disabled={renaming} onClick={closeRename}>{t('cancel')}</Button>
-            <Button variant="primary" disabled={renameBlocked} onClick={confirmRename}>{t('rename')}</Button>
+            <Button variant="primary" disabled={renameBlocked} loading={renaming} onClick={confirmRename}>{t('rename')}</Button>
           </>
         )}
       >
@@ -1715,10 +1749,7 @@ export function WorkspaceBrowser({
             }
           }}
         />
-        {renameDuplicate && (
-          <div className={css.renameError} role="alert">{t('conflict.named', { name: renameTrimmed })}</div>
-        )}
-        {renameError !== null && <div className={css.renameError} role="alert">{renameError}</div>}
+        {renameError !== null && <Toast text={renameError} holdMs={null} dismissLabel={t('close')} onDone={() => { setRenameError(null) }} />}
       </Modal>
 
       <Modal
@@ -1735,6 +1766,7 @@ export function WorkspaceBrowser({
             <Button
               variant="outline"
               className={css.deleteAction}
+              loading={deleting}
               disabled={deleting}
               onClick={confirmDelete}
             >
@@ -1743,8 +1775,7 @@ export function WorkspaceBrowser({
           </>
         )}
       >
-        {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
-        {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
+        {deleteError !== null && <Toast text={deleteError} holdMs={null} dismissLabel={t('close')} onDone={() => { setDeleteError(null) }} />}
       </Modal>
       <Modal
         open={sessionDeleteTarget !== null}
@@ -1760,6 +1791,7 @@ export function WorkspaceBrowser({
             <Button
               variant="outline"
               className={css.deleteAction}
+              loading={sessionDeleting}
               disabled={sessionDeleting}
               onClick={confirmSessionDelete}
             >
@@ -1768,9 +1800,9 @@ export function WorkspaceBrowser({
           </>
         )}
       >
-        {sessionDeleting && <div className={css.deleteStatus} role="status">{t('delete.session.pending')}</div>}
-        {sessionDeleteError !== null && <div className={css.renameError} role="alert">{sessionDeleteError}</div>}
+        {sessionDeleteError !== null && <Toast text={sessionDeleteError} holdMs={null} dismissLabel={t('close')} onDone={() => { setSessionDeleteError(null) }} />}
       </Modal>
+      <SessionSelectionDialogs selection={selection} />
       {shortcutState.forkError !== null && <Toast key={shortcutState.forkError.seq}
         text={t(shortcutState.forkError.reason === 'unavailable' ? 'shortcut.noCompletedTurn' : 'shortcut.forkFailed')}
         onDone={dismissForkError} />}

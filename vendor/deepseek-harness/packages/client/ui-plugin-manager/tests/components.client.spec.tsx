@@ -28,6 +28,7 @@ const translate = (dict: typeof en): PluginManagerPageProps['t'] => ((key: Plugi
   )) as PluginManagerPageProps['t']
 
 const t = translate(en)
+const flushFeedback = async (): Promise<void> => { await act(async () => {}) }
 
 function pkg(overrides: Partial<PackageView> = {}): PackageView {
   return {
@@ -173,7 +174,7 @@ function renderTab(
   const contents = () => (
     <>
       {showPage ? <PluginManagerPage {...props} t={currentT} /> : null}
-      <PluginRefreshToast usePluginManager={props.usePluginManager} dismissNotice={actions.dismissNotice} t={currentT} />
+      <PluginRefreshToast usePluginManager={props.usePluginManager} dismissNotice={actions.dismissNotice} refresh={actions.refresh} t={currentT} />
     </>
   )
   const { rerender, unmount } = render(contents())
@@ -317,7 +318,7 @@ describe('PluginManagerPage', () => {
     expect(document.querySelector('[data-plugin-detail="dsh-better-sidebar"]')).not.toBeNull()
   })
 
-  it('asks the store once mounted and renders the loading, unavailable, error, and empty states', () => {
+  it('asks the store once mounted and renders the loading, unavailable, error, and empty states', async () => {
     const { actions, set } = renderTab({ status: 'loading' })
     expect(actions.ensure).toHaveBeenCalledTimes(1)
     const loading = screen.getByRole('status', { name: en.loading })
@@ -330,13 +331,15 @@ describe('PluginManagerPage', () => {
     set({ status: 'unavailable' })
     expect(screen.queryByRole('status', { name: en.loading })).toBeNull()
     expect(screen.getByRole('status').querySelector('[data-state="idle"]')).not.toBeNull()
-    set({ status: 'error' })
-    expect(screen.getByRole('alert').querySelector('[data-state="error"]')).not.toBeNull()
+    set({ status: 'error', notice: { kind: 'refresh-failed', initial: true, seq: 1 } })
+    await flushFeedback()
+    expect(within(screen.getByRole('alert')).getByText(en.error)).toBeTruthy()
+    expect(document.querySelector('[data-plugin-panel]')?.contains(screen.getByRole('alert'))).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: en.retry }))
     expect(actions.refresh).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: en.refresh }))
     expect(actions.refresh).toHaveBeenCalledTimes(2)
-    set({ status: 'ready' })
+    set({ status: 'ready', notice: null })
     expect(screen.getByText(en.empty)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.addPlugin }))
     expect(actions.openInstall).toHaveBeenCalledTimes(1)
@@ -385,19 +388,21 @@ describe('PluginManagerPage', () => {
     expect(actions.dismissNotice).not.toHaveBeenCalled()
   })
 
-  it.each(['list', 'detail'] as const)('keeps cached %s content with one localized refresh toast and no inline retry', (view) => {
-    const { set, setLanguage } = renderTab({ packages: [pkg()] })
+  it.each(['list', 'detail'] as const)('keeps cached %s content with one localized refresh toast and a floating retry', async (view) => {
+    const { actions, set, setLanguage } = renderTab({ packages: [pkg()] })
     if (view === 'detail') fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
     const content = document.querySelector(view === 'detail' ? '[data-plugin-detail]' : '[data-plugin-package]')
-    for (const dict of [en, zh]) {
+    for (const [seq, dict] of [en, zh].entries()) {
       setLanguage(dict)
-      set({ status: 'ready', refreshStatus: 'idle', notice: { kind: 'refresh-failed', seq: 1 } })
+      set({ status: 'ready', refreshStatus: 'failed', notice: { kind: 'refresh-failed', seq } })
+      await flushFeedback()
       expect(screen.getAllByRole('alert')).toHaveLength(1)
       const toast = screen.getByRole('alert')
-      expect(toast.textContent).toBe(dict.refreshError)
-      expect(toast.parentElement).toBe(document.body)
+      expect(within(toast).getByText(dict.refreshError)).toBeTruthy()
+      expect(toast.parentElement?.hasAttribute('data-dsh-toast-stack')).toBe(true)
       expect(document.querySelector('[data-plugin-panel]')?.contains(toast)).toBe(false)
-      expect(screen.queryByRole('button', { name: dict.retry })).toBeNull()
+      fireEvent.click(within(toast).getByRole('button', { name: dict.retry }))
+      expect(actions.refresh).toHaveBeenCalledTimes(seq + 1)
       expect(content?.isConnected).toBe(true)
       set({ refreshStatus: 'refreshing', notice: null })
       expect(screen.queryByRole('alert')).toBeNull()
@@ -407,79 +412,95 @@ describe('PluginManagerPage', () => {
     }
   })
 
-  it.each(['list', 'configuration detail'] as const)('keeps an uncached refresh failure inline in %s and hides it during retry', (view) => {
+  it.each(['list', 'configuration detail'] as const)('keeps an uncached refresh failure floating in %s and hides it during retry', async (view) => {
     const { actions, set, setLanguage } = renderTab(
       { status: 'error', refreshStatus: 'failed' },
       { items: [{ id: 'bash', label: 'Shell' }] },
     )
     if (view === 'configuration detail') fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'Shell') }))
-    for (const dict of [en, zh]) {
+    for (const [seq, dict] of [en, zh].entries()) {
       setLanguage(dict)
-      set({ status: 'error', refreshStatus: 'failed' })
+      set({ status: 'error', refreshStatus: 'failed', notice: { kind: 'refresh-failed', seq } })
+      await flushFeedback()
       const alert = screen.getByRole('alert')
-      expect(alert.textContent).toBe(dict.refreshError)
-      expect(document.querySelector('[data-plugin-panel]')?.contains(alert)).toBe(true)
+      expect(within(alert).getByText(dict.refreshError)).toBeTruthy()
+      expect(document.querySelector('[data-plugin-panel]')?.contains(alert)).toBe(false)
       fireEvent.click(screen.getByRole('button', { name: dict.retry }))
-      set({ refreshStatus: 'refreshing' })
+      set({ refreshStatus: 'refreshing', notice: null })
       expect(screen.queryByRole('alert')).toBeNull()
       expect(screen.queryByRole('button', { name: dict.retry })).toBeNull()
     }
     expect(actions.refresh).toHaveBeenCalledTimes(2)
   })
 
-  it.each(['before', 'after'] as const)('keeps the refresh toast when navigation leaves %s the failure arrives', (navigation) => {
+  it.each(['before', 'after'] as const)('keeps the refresh toast when navigation leaves %s the failure arrives', async (navigation) => {
     vi.useFakeTimers()
     try {
-      const { actions, set, hidePage } = renderTab({ packages: [pkg()] })
+      const { actions, set, hidePage, store } = renderTab({ packages: [pkg()] })
       set({ refreshStatus: 'refreshing' })
       if (navigation === 'before') hidePage()
-      set({ refreshStatus: 'idle', notice: { kind: 'refresh-failed', seq: 1 } })
+      set({ refreshStatus: 'failed', notice: { kind: 'refresh-failed', seq: 1 } })
+      await flushFeedback()
       const toast = screen.getByRole('alert')
-      expect(toast.textContent).toBe(en.refreshError)
+      expect(within(toast).getByText(en.refreshError)).toBeTruthy()
       if (navigation === 'after') hidePage()
       expect(document.querySelector('[data-plugin-panel]')).toBeNull()
       expect(screen.getByRole('alert')).toBe(toast)
-      expect(toast.style.getPropertyValue('--dsh-toast-hold')).toBe('3000ms')
-      act(() => { vi.advanceTimersByTime(3_999) })
+      expect(toast.getAttribute('data-persistent')).toBe('true')
+      act(() => { vi.advanceTimersByTime(10_000) })
       expect(actions.dismissNotice).not.toHaveBeenCalled()
-      act(() => { vi.advanceTimersByTime(1) })
+      expect(screen.getByRole('alert')).toBe(toast)
+      fireEvent.click(within(toast).getByRole('button', { name: en.close }))
       expect(actions.dismissNotice).toHaveBeenCalledOnce()
       set({ notice: null })
       expect(screen.queryByRole('alert')).toBeNull()
+      expect(store.getSnapshot().refreshStatus).toBe('failed')
     } finally {
       cleanup()
       vi.useRealTimers()
     }
   })
 
-  it('gives a repeated refresh failure its own toast lifetime without extending it for locale changes', () => {
+  it('shows repeated refresh failures and retains them through locale changes until dismissal', async () => {
     vi.useFakeTimers()
     try {
       const { actions, set, setLanguage } = renderTab({ notice: { kind: 'refresh-failed', seq: 1 } })
+      await flushFeedback()
+      fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: en.close }))
+      expect(actions.dismissNotice).toHaveBeenCalledOnce()
+      set({ notice: null })
       act(() => { vi.advanceTimersByTime(2_000) })
       set({ notice: { kind: 'refresh-failed', seq: 2 } })
-      act(() => { vi.advanceTimersByTime(2_000) })
-      expect(actions.dismissNotice).not.toHaveBeenCalled()
-      setLanguage(zh)
-      expect(screen.getByRole('alert').textContent).toBe(zh.refreshError)
+      await flushFeedback()
       act(() => { vi.advanceTimersByTime(2_000) })
       expect(actions.dismissNotice).toHaveBeenCalledOnce()
+      setLanguage(zh)
+      await flushFeedback()
+      expect(within(screen.getByRole('alert')).getByText(zh.refreshError)).toBeTruthy()
+      act(() => { vi.advanceTimersByTime(10_000) })
+      expect(actions.dismissNotice).toHaveBeenCalledOnce()
+      fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: zh.close }))
+      expect(actions.dismissNotice).toHaveBeenCalledTimes(2)
     } finally {
       cleanup()
       vi.useRealTimers()
     }
   })
 
-  it('keeps the read failure and its retry visible while a detail page is open', () => {
+  it('keeps the read failure and its floating retry visible while a detail page is open', async () => {
     const { actions, set } = renderTab({ packages: [pkg()] })
     fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
     expect(screen.queryByRole('alert')).toBeNull()
-    set({ status: 'error' })
-    expect(screen.getByRole('alert').querySelector('[data-state="error"]')).not.toBeNull()
+    const detail = document.querySelector('[data-plugin-detail]')
+    set({ status: 'error', refreshStatus: 'failed', notice: { kind: 'refresh-failed', seq: 1 } })
+    await flushFeedback()
+    expect(within(screen.getByRole('alert')).getByText(en.refreshError)).toBeTruthy()
+    expect(document.querySelector('[data-plugin-panel]')?.contains(screen.getByRole('alert'))).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: en.retry }))
     expect(actions.refresh).toHaveBeenCalledTimes(1)
     // The detail keeps showing the kept data behind the alert.
     expect(document.querySelector('[data-plugin-detail]')).not.toBeNull()
+    expect(document.querySelector('[data-plugin-detail]')).toBe(detail)
   })
 
   it('lists the installed bundles as cards, the installation\'s offered ones as official, and tags a problem the Host reports', () => {
@@ -1243,7 +1264,7 @@ describe('PluginManagerPage', () => {
     })
   })
 
-  it('takes a spec, checks it, and words what the check refused', () => {
+  it('takes a spec, checks it, and floats what the check refused with a retry', async () => {
     const { actions, set } = renderTab({ install: { ...IDLE_INSTALL, open: true } })
     expect(screen.getByText(en.installDescription)).toBeTruthy()
     const install = () => screen.getByRole('button', { name: en.installRun })
@@ -1261,13 +1282,14 @@ describe('PluginManagerPage', () => {
     // The check keeps the field and the button inert.
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', phase: 'checking' } })
     expect(screen.getByRole('textbox', { name: en.installSpecLabel })).toHaveProperty('disabled', true)
-    const checking = screen.getByRole('button', { name: en.installChecking })
+    const checking = screen.getByRole('button', { name: en.installRun })
     expect(checking).toHaveProperty('disabled', true)
+    expect(checking.getAttribute('aria-busy')).toBe('true')
     expect(checking.querySelector('[data-state="ongoing"]')).not.toBeNull()
     fireEvent.keyDown(screen.getByRole('textbox', { name: en.installSpecLabel }), { key: 'Enter' })
     expect(actions.runInstall).toHaveBeenCalledTimes(2)
 
-    // Each refusal reads under the field.
+    // Each refusal retains the field marker and floats outside the form.
     const problems: [string, string][] = [
       ['invalid-spec', en.installProblemInvalid.replace('{reason}', 'r')],
       ['already-installed', en.installProblemInstalled],
@@ -1280,13 +1302,21 @@ describe('PluginManagerPage', () => {
     ]
     for (const [problem, sentence] of problems) {
       set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', inputError: { problem: problem as never, reason: 'r' } } })
-      expect(screen.getByRole('alert').textContent).toBe(sentence)
+      await flushFeedback()
+      const toast = screen.getByRole('alert')
+      expect(within(toast).getByText(sentence)).toBeTruthy()
+      expect(screen.getByRole('dialog').contains(toast)).toBe(false)
+      expect(within(toast).getByRole('button', { name: en.retry })).toBeTruthy()
       expect(screen.getByRole('textbox', { name: en.installSpecLabel }).getAttribute('aria-invalid')).toBe('true')
+      expect(screen.getByRole('textbox', { name: en.installSpecLabel }).getAttribute('title')).toBe(sentence)
     }
     // A check no registry answered names them all.
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'dsh-x', inputError: { problem: 'network', reason: 'r', registries: [null, MIRROR] } } })
-    expect(screen.getByRole('alert').textContent).toBe(en.installProblemNetworkAll.replace('{registries}', `${en.registryDefault}, ${en.registryNpmmirror}`))
-    fireEvent.click(screen.getByRole('button', { name: en.close }))
+    await flushFeedback()
+    expect(within(screen.getByRole('alert')).getByText(en.installProblemNetworkAll.replace('{registries}', `${en.registryDefault}, ${en.registryNpmmirror}`))).toBeTruthy()
+    fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: en.retry }))
+    expect(actions.runInstall).toHaveBeenCalledTimes(3)
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: en.close }))
     expect(actions.closeInstall).toHaveBeenCalledTimes(1)
   })
 
@@ -1333,7 +1363,7 @@ describe('PluginManagerPage', () => {
     expect(actions.closeInstall).toHaveBeenCalledOnce()
   })
 
-  it('waits with the Host through starting, stopping, and applying, and words an unconfirmed stop', () => {
+  it('waits with the Host through starting, stopping, and applying, and words an unconfirmed stop', async () => {
     const subject = { spec: 'slow', status: 'accepted', kind: 'registry', name: 'slow', bundle: true, registry: null } as const
     const { actions, set } = renderTab({ install: { ...IDLE_INSTALL, open: true, spec: 'slow', phase: 'starting', subject } })
     expect(screen.getByRole('status').textContent).toBe(en.installStarting)
@@ -1353,7 +1383,8 @@ describe('PluginManagerPage', () => {
       },
     })
     expect(screen.getByRole('status').textContent).toBe(en.installCancelling)
-    expect(screen.getByRole('button', { name: en.installCancelling })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: en.installCancel })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: en.installCancel }).getAttribute('aria-busy')).toBe('true')
     expect(screen.getByRole('button', { name: en.close })).toHaveProperty('disabled', false)
     expect(within(document.querySelector('[data-terminal]') as HTMLElement).getByText(en.installCancelledShort)).toBeTruthy()
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'slow', phase: 'applying', subject } })
@@ -1362,6 +1393,7 @@ describe('PluginManagerPage', () => {
     expect(screen.getByRole('button', { name: en.close })).toHaveProperty('disabled', false)
     // A stop the Host could not confirm says so over the running screen.
     set({ install: { ...IDLE_INSTALL, open: true, spec: 'slow', phase: 'running', subject, failure: { reason: 'offline', uncertainty: 'cancellation' } } })
+    await flushFeedback()
     expect(screen.getByRole('alert').textContent).toContain('offline')
     expect(screen.getByRole('button', { name: en.installCancel })).toHaveProperty('disabled', false)
   })
@@ -1672,12 +1704,13 @@ describe('PluginManagerPage', () => {
     expect(document.activeElement).toBe(field)
   })
 
-  it('focuses an invalid custom address when submission opens its registry menu', () => {
+  it('focuses an invalid custom address when submission opens its registry menu', async () => {
     const open = { ...IDLE_INSTALL, open: true, spec: 'dsh-new', registry: { kind: 'custom' as const, url: 'invalid' } }
     const { actions, set } = renderTab({ install: open })
     fireEvent.click(screen.getByRole('button', { name: en.installRun }))
     expect(actions.runInstall).toHaveBeenCalledOnce()
     set({ install: { ...open, registryOpen: true, registryError: true } })
+    await flushFeedback()
     const field = screen.getByRole('textbox', { name: en.registryCustom })
     expect(document.activeElement).toBe(field)
     expect(field.getAttribute('aria-invalid')).toBe('true')
@@ -1687,7 +1720,7 @@ describe('PluginManagerPage', () => {
     expect(actions.closeInstall).not.toHaveBeenCalled()
   })
 
-  it('offers the registries under the spec, folded by default, and picks or types one', () => {
+  it('offers the registries under the spec, folded by default, and picks or types one', async () => {
     const open = { ...IDLE_INSTALL, open: true, registries: REGISTRIES }
     const { actions, set } = renderTab({ install: open })
     // Folded, the toggle names the registry the install asks first, by name alone.
@@ -1721,6 +1754,7 @@ describe('PluginManagerPage', () => {
     fireEvent.click(screen.getByRole('radio', { name: new RegExp(en.registryCustom) }))
     expect(actions.chooseRegistry).toHaveBeenLastCalledWith({ kind: 'custom', url: '' })
     set({ install: { ...open, registryOpen: true, registry: { kind: 'custom', url: 'npm.corp' }, registryError: true } })
+    await flushFeedback()
     const field = screen.getByRole('textbox', { name: en.registryCustom })
     expect(field).toHaveProperty('value', 'npm.corp')
     expect(field.getAttribute('aria-invalid')).toBe('true')
@@ -1858,30 +1892,49 @@ describe('PluginManagerPage', () => {
     expect(actions.confirm).toHaveBeenCalledTimes(1)
   })
 
-  it('words every notice as a toast that dismisses itself', () => {
+  it('words every notice as a floating toast and retains failures until dismissal', async () => {
     vi.useFakeTimers()
     try {
       const { actions, set } = renderTab({ notice: { kind: 'restart', packageName: 'x', seq: 1 } })
+      await flushFeedback()
       expect(screen.getByRole('alert').textContent).toContain(en.restartNotice)
       set({ notice: { kind: 'overridden', packageName: 'pkg-1', seq: 2 } })
+      await flushFeedback()
       expect(screen.getByRole('alert').textContent).toContain(en.overriddenNotice.replace('{name}', 'pkg-1'))
       set({ notice: { kind: 'cancelled', seq: 3 } })
+      await flushFeedback()
       expect(screen.getByRole('alert').textContent).toContain(en.installCancelled)
+      set({ notice: { kind: 'cancelled', operation: true, seq: 4 } })
+      await flushFeedback()
+      expect(screen.getByRole('alert').textContent).toContain(en.operationCancelled)
+      expect(screen.getByRole('alert').textContent).not.toContain(en.installCancelled)
       // A failure names what was being done; a refusal is worded by its code, a silent one generically.
       set({ notice: { kind: 'failed', action: 'enable', reason: 'the tree rejected it', packageName: 'pkg-1', seq: 4 } })
+      await flushFeedback()
       expect(screen.getByRole('alert').textContent).toContain(en.failedEnable.replace('{reason}', 'the tree rejected it'))
       set({ notice: { kind: 'failed', action: 'uninstall', code: 'bundle-in-use', reason: '', packageName: 'pkg-1', seq: 5 } })
+      await flushFeedback()
       expect(screen.getByRole('alert').textContent).toContain(en.failedUninstall.replace('{reason}', en.reasonBundleInUse))
       set({ notice: { kind: 'failed', action: 'enable', code: 'incompatible-version', incompatible: [INCOMPATIBLE], reason: '', packageName: 'pkg-1', seq: 5 } })
+      await flushFeedback()
       expect(screen.getByRole('alert').textContent).toContain(en.failedEnable.replace('{reason}', `${incompatibleText()} ${en.reasonIncompatibleInstalled}`))
       set({ notice: { kind: 'failed', action: 'rowDisable', code: 'operation-error', reason: 'EACCES', packageName: 'pkg-1', seq: 6 } })
+      await flushFeedback()
       expect(screen.getByRole('alert').textContent).toContain(en.failedRowDisable.replace('{reason}', 'EACCES'))
       set({ notice: { kind: 'failed', action: 'disable', reason: '', packageName: 'pkg-1', seq: 7 } })
+      await flushFeedback()
       expect(screen.getByRole('alert').textContent).toContain(en.failedDisable.replace('{reason}', en.reasonOperationError))
       set({ notice: { kind: 'failed', action: 'rowEnable', reason: 'x', packageName: 'pkg-1', seq: 8 } })
+      await flushFeedback()
       expect(screen.getByRole('alert').textContent).toContain(en.failedRowEnable.replace('{reason}', 'x'))
+      act(() => { vi.advanceTimersByTime(10_000) })
+      expect(actions.dismissNotice).not.toHaveBeenCalled()
+      fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: en.close }))
+      expect(actions.dismissNotice).toHaveBeenCalledOnce()
+      actions.dismissNotice.mockClear()
       for (const [index, outcome] of (['done', 'failed', 'unconfirmed', 'applying', 'unknown'] as const).entries()) {
         set({ notice: { kind: 'install', outcome, seq: 9 + index } })
+        await flushFeedback()
         const key = ({ done: 'installBackgroundDone', failed: 'installBackgroundFailed', unconfirmed: 'installBackgroundUnconfirmed', applying: 'installBackgroundApplying', unknown: 'installBackgroundUnknown' } as const)[outcome]
         expect(screen.getByRole('alert').textContent).toContain(en[key])
       }
@@ -1896,18 +1949,21 @@ describe('PluginManagerPage', () => {
     }
   })
 
-  it('distinguishes lost results, pending acceptance, and unknown outcomes in both languages', () => {
+  it('distinguishes lost results, pending acceptance, and unknown outcomes in both languages', async () => {
     const { actions, set, setLanguage } = renderTab()
     for (const dict of [en, zh]) {
       setLanguage(dict)
       set({ install: { ...IDLE_INSTALL, open: true, phase: 'unconfirmed', failure: { reason: 'offline', uncertainty: 'result' } } })
-      expect(screen.getByRole('alert').textContent).toBe(dict.installResultUnconfirmed.replace('{reason}', 'offline'))
-      fireEvent.click(screen.getByRole('button', { name: dict.installReconcile }))
+      await flushFeedback()
+      expect(within(screen.getByRole('alert')).getByText(dict.installResultUnconfirmed.replace('{reason}', 'offline'))).toBeTruthy()
+      fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: dict.installReconcile }))
       expect(screen.getByRole('button', { name: dict.installCancelAndEdit }).textContent).toBe(dict.installCancelAndEdit)
       set({ install: { ...IDLE_INSTALL, open: true, phase: 'unconfirmed', failure: { reason: '', uncertainty: 'acceptance' } } })
+      await flushFeedback()
       expect(screen.getByRole('alert').textContent).toBe(dict.installAwaitingAcceptance)
       expect(screen.queryByRole('button', { name: dict.installReconcile })).toBeNull()
       set({ install: { ...IDLE_INSTALL, open: true, phase: 'applying', failure: { reason: 'offline', uncertainty: 'cancellation' } } })
+      await flushFeedback()
       expect(screen.getByRole('alert').textContent).toBe(dict.installApplyingCancellationError.replace('{reason}', 'offline'))
       expect(screen.getByRole('button', { name: dict.installCancel })).toHaveProperty('disabled', true)
       set({ install: { ...IDLE_INSTALL, open: true, phase: 'unknown' } })

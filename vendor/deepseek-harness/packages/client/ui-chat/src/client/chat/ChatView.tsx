@@ -1,7 +1,7 @@
 // An enclosing `[data-conversation-scroll]` owns scrolling when present;
 // otherwise this view owns it. Each row subscribes to one stable node key.
 
-import { memo, useCallback, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import type {
   NodeKey, RenderEntry, RenderMessageImages,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -9,7 +9,7 @@ import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
 import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import {
-  Button, IconChevronDownOutlineRegular, MarkdownDelegateProvider, Modal,
+  Button, IconChevronDownOutlineRegular, MarkdownDelegateProvider, Modal, StateDot, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownPreviewImage } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps, OpenFileOptions } from '../contract/slots.ts'
@@ -144,6 +144,11 @@ export function ChatView({
   const openError = useSession(s => s.openError)
   const hasMore = useSession(s => s.hasMore)
   const loadingOlder = useSession(s => s.loadingOlder)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+  useEffect(() => {
+    setHistoryError(openState === 'error' && openError !== null
+      ? t('chat.loadError', { message: openError.message, code: openError.code }) : null)
+  }, [openState, openError, sessionId, t])
   const [fileOpenError, setFileOpenError] = useState<{ path: string; message: string } | null>(null)
   const [fileOpenBusy, setFileOpenBusy] = useState(false)
   // Close/retry must ignore a settlement that started before the latest
@@ -238,6 +243,8 @@ export function ChatView({
 
   return (
     <div className={css.frame}>
+      {openState === 'loading' && <div className={css.historyPending} role="status" aria-label={t('chat.loadingHistory')}><StateDot state="ongoing" size={28} /></div>}
+      {historyError !== null && <Toast key={historyError} text={historyError} holdMs={null} dismissLabel={t('close')} onDone={() => { setHistoryError(null) }} />}
       {scroll.initialized && (
         <TurnNavigator
           items={railItems}
@@ -250,17 +257,9 @@ export function ChatView({
       <div className={css.root} data-chat-following-tail={scroll.followingTail ? '' : undefined}>
         <div ref={scroll.listRef} className={css.scroll}>
           <div ref={scroll.columnRef} className={css.column} data-chat-flow="">
-            {openState === 'loading' && <div className={css.hint}>{t('chat.loadingHistory')}</div>}
-            {openState === 'error' && openError !== null && (
-              <div className={css.openError}>
-                {t('chat.loadError', { message: openError.message, code: openError.code })}
-              </div>
-            )}
             {hasMore && (
               <div className={css.older}>
-                <button type="button" disabled={loadingOlder} onClick={scroll.loadEarlier}>
-                  {loadingOlder ? t('loading') : t('chat.loadOlder')}
-                </button>
+                <Button size="sm" loading={loadingOlder} onClick={scroll.loadEarlier}>{t('chat.loadOlder')}</Button>
               </div>
             )}
             <MarkdownDelegateProvider openExternalLink={openExternalLink} openFile={requestOpenFile} openImage={openImage} fileImages={fileImages}>
@@ -343,7 +342,7 @@ function FileOpenErrorDialog({
       footer={(
         <>
           <Button variant="outline" className={css.modalAction} onClick={onClose}>{t('cancel')}</Button>
-          <Button variant="primary" className={css.modalAction} disabled={busy} onClick={onRetry}>{t('retry')}</Button>
+          <Button variant="primary" className={css.modalAction} loading={busy} onClick={onRetry}>{t('retry')}</Button>
         </>
       )}
     />

@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ActionButton, FeedbackToast, ConfirmDialog } from '../../feedback.js';
 
 import { WecomLogoGlyph } from '../../channel-logos.js';
 import { CredentialActionIcon, CredentialBindingPanel, QrActionIcon } from '../../credential-binding.js';
@@ -30,7 +31,7 @@ import { installWecomStyles } from './styles.js';
 const ACTIVE_STATES = new Set(['pending', 'refreshing', 'connecting']);
 
 const Button = React.forwardRef(function Button({ children, kind = 'secondary', className = '', ...props }, ref) {
-  return h('button', {
+  return h(ActionButton, {
     ...props,
     ref,
     type: 'button',
@@ -60,8 +61,7 @@ function Heading({ totals, adding, busy, onAdd, onCredential, credentialOpen, ad
           onClick: onAdd,
           disabled: adding || busy,
           ref: addButtonRef,
-          'aria-label': '扫码接入企业微信机器人',
-        }, h(QrActionIcon), adding ? '正在接入' : '扫码接入机器人'),
+          'aria-label': '扫码接入企业微信机器人', loading: adding, }, h(QrActionIcon), '扫码接入机器人'),
         h(Button, {
           kind: 'credential',
           className: 'dim-credentialButton',
@@ -91,8 +91,8 @@ function EmptyView({ busy, onStart }) {
         h('h3', null, '使用企业微信 App 扫码创建智能机器人'),
         h('p', null, '扫码由腾讯官方页面完成，不需要手动填写 Bot ID 或 Secret。创建成功后，机器人会自动连接 DeepSeek Harness。'),
         h('div', { className: 'ddt-actions dim-viewActions' },
-          h(Button, { kind: 'primary', onClick: onStart, disabled: busy },
-            busy ? '正在生成二维码…' : '生成企业微信二维码'))),
+          h(Button, { kind: 'primary', onClick: onStart, disabled: busy, loading: busy, },
+            '生成企业微信二维码'))),
       h('div', { className: 'ddt-brandMark dim-emptyBrand dwecom-brand', 'aria-hidden': 'true' },
         h(WecomLogoGlyph, { size: 64 }))));
 }
@@ -148,13 +148,13 @@ function ProvisionView({ provision, busy, onRetry, onClose }) {
         h(Button, { onClick: onClose, disabled: busy }, '关闭'))));
 }
 
-function RemoveConfirmation({ account, busy, onConfirm, onCancel }) {
-  return h('div', { className: 'ddt-confirm dim-confirm', role: 'alertdialog' },
+function RemoveConfirmation({ account, busy, error, feedbackSequence, onConfirm, onCancel }) {
+  return h(ConfirmDialog, { className: 'ddt-confirm dim-confirm', role: 'alertdialog', onClose: onCancel, busy: Boolean(busy), error, feedbackSequence },
     h('strong', null, `从 DeepSeek Harness 移除“${account.bot.name}”？`),
     h('p', null, '这会停止消息连接，并删除本机保存的应用凭据、机器人配置及会话映射。企业微信平台中的机器人不会被自动删除。'),
     h('div', { className: 'ddt-actions dim-viewActions' },
       h(Button, { onClick: onCancel, disabled: busy }, '保留机器人'),
-      h(Button, { kind: 'danger', onClick: onConfirm, disabled: busy }, busy ? '正在移除…' : '确认移除接入')));
+      h(Button, { kind: 'danger', onClick: onConfirm, disabled: busy, loading: busy, }, '确认移除接入')));
 }
 
 export function AccountCard({
@@ -162,6 +162,8 @@ export function AccountCard({
   busy,
   feedback,
   removing,
+  removeError,
+  removeFeedbackSequence,
   onReconnect,
   onWorkspaceSave,
   onAgentPresetSave,
@@ -200,20 +202,17 @@ export function AccountCard({
       h('div', { className: 'ddt-accountFooter dim-cardFooter' },
         h('div', { className: 'dim-cardFooterLayout' },
           h('div', { className: 'ddt-actions dim-cardActions' },
-            h(Button, { className: 'dim-cardAction', onClick: onReconnect, disabled: Boolean(busy) }, busy === 'reconnect' ? '检查中…' : account.connected ? '检查连接' : '重试连接'),
+            h(Button, { className: 'dim-cardAction', onClick: onReconnect, disabled: Boolean(busy), loading: busy === 'reconnect', }, account.connected ? '检查连接' : '重试连接'),
             h(Button, { className: 'dim-cardAction', kind: 'danger', onClick: onRequestRemove, disabled: Boolean(busy) }, '移除接入')),
           summary ? h('div', { className: 'ddt-summary dim-cardSummary' }, summary) : null,
           account.lastMessageError ? h(LastMessageErrorSummary, {
             className: 'ddt-summary',
             error: account.lastMessageError,
           }) : null,
-          feedback ? h('div', {
-            className: 'ddt-summary dim-cardFeedback',
-            role: 'status',
-            'aria-live': 'polite',
-          }, feedback) : null))),
+          null))),
     removing ? h(RemoveConfirmation, {
-      account, busy: busy === 'delete', onConfirm: onConfirmRemove, onCancel: onCancelRemove,
+      account, busy: busy === 'delete', error: removeError, feedbackSequence: removeFeedbackSequence,
+      onConfirm: onConfirmRemove, onCancel: onCancelRemove,
     }) : null);
 }
 
@@ -227,6 +226,8 @@ export function WecomSettingsTab({ rpcCall }) {
   const [busyByBot, setBusyByBot] = React.useState({});
   const [feedbackByBot, setFeedbackByBot] = React.useState({});
   const [removeTarget, setRemoveTarget] = React.useState(null);
+  const [actionError, setActionError] = React.useState(null);
+  const [removeErrorsByBot, setRemoveErrorsByBot] = React.useState({});
   const [credentialOpen, setCredentialOpen] = React.useState(false);
   const [credentialError, setCredentialError] = React.useState(null);
   const [notice, setNotice] = React.useState('');
@@ -367,7 +368,15 @@ export function WecomSettingsTab({ rpcCall }) {
       if (provision?.attemptId && ACTIVE_STATES.has(provision.status)) {
         await invoke(WECOM_ENDPOINTS.cancelProvisioning, { attemptId: provision.attemptId });
       }
-      if (mounted.current) setProvision(null);
+      if (mounted.current) {
+        setProvision(null);
+        setActionError(null);
+      }
+    } catch (cause) {
+      if (mounted.current) setActionError((current) => ({
+        message: cause?.message ?? '操作失败，请稍后重试。',
+        sequence: (current?.sequence ?? 0) + 1,
+      }));
     } finally {
       if (mounted.current) setBusy(false);
     }
@@ -486,6 +495,8 @@ export function WecomSettingsTab({ rpcCall }) {
             busy: busyByBot[account.botId],
             feedback: feedbackByBot[account.botId],
             removing: removeTarget === account.botId,
+            removeError: removeErrorsByBot[account.botId]?.message,
+            removeFeedbackSequence: removeErrorsByBot[account.botId]?.sequence,
             onReconnect: () => void reconnect(account),
             onWorkspaceSave: (workspace) => botAction(
               account,
@@ -502,8 +513,23 @@ export function WecomSettingsTab({ rpcCall }) {
             onRequestRemove: () => setRemoveTarget(account.botId),
             onCancelRemove: () => setRemoveTarget(null),
             onConfirmRemove: async () => {
-              await botAction(account, 'delete', WECOM_ENDPOINTS.deleteBot, { botId: account.botId, confirm: true });
-              if (mounted.current) setRemoveTarget(null);
+              try {
+                await botAction(account, 'delete', WECOM_ENDPOINTS.deleteBot, { botId: account.botId, confirm: true });
+                if (mounted.current) {
+                  setRemoveTarget(null);
+                  setRemoveErrorsByBot((current) => {
+                    const next = { ...current }; delete next[account.botId]; return next;
+                  });
+                }
+              } catch (cause) {
+                if (mounted.current) setRemoveErrorsByBot((current) => ({
+                  ...current,
+                  [account.botId]: {
+                    message: cause?.message ?? '移除失败，请重试。',
+                    sequence: (current[account.botId]?.sequence ?? 0) + 1,
+                  },
+                }));
+              }
             },
           })))))
     : null;
@@ -525,6 +551,9 @@ export function WecomSettingsTab({ rpcCall }) {
   return h(AgentPresetCatalogContext.Provider, {
     value: model.agentPresetCatalog ?? EMPTY_AGENT_PRESET_CATALOG,
   }, h('section', { className: 'ddt-page dwecom-page dim-channelPage', 'aria-label': '企业微信设置' },
+    actionError ? h(FeedbackToast, { text: actionError.message, tone: 'error', sequence: actionError.sequence }) : null,
+    Object.entries(removeErrorsByBot).map(([botId, failure]) => botId !== removeTarget
+      ? h(FeedbackToast, { key: botId, text: failure.message, tone: 'error', sequence: failure.sequence }) : null),
     h(Heading, {
       totals: model.totals,
       adding: Boolean(provision),
@@ -534,7 +563,7 @@ export function WecomSettingsTab({ rpcCall }) {
       credentialOpen,
       addButtonRef,
     }),
-    h('div', { className: 'ddt-visuallyHidden', role: 'status', 'aria-live': 'polite' }, notice),
+    notice ? h(FeedbackToast, { text: notice }) : null,
     model.phase === 'loading' ? h(LoadingView)
       : model.phase === 'error'
         ? h('div', { className: 'ddt-card dim-surfaceCard' }, h('div', { className: 'ddt-inlineError dim-inlineError' }, h('h3', null, '无法读取企业微信机器人状态'), h('p', null, model.error?.message), h(Button, { onClick: () => void loadStatus() }, '重新读取')))

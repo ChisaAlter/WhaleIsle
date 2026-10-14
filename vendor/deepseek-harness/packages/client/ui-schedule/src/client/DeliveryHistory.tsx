@@ -4,7 +4,7 @@ import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   Button, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconClockOutlineRegular, IconInfoOutlineRegular,
-  IconWarningOutlineRegular, StateDot, Tooltip,
+  StateDot, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ScheduleDeliveryHistoryRequest, ScheduleDeliveryHistoryResult } from '@deepseek-ai/dsh-schedule/client'
 import { formatScheduleNextRun } from './schedule-format.ts'
@@ -71,6 +71,7 @@ export function DeliveryHistory({ id, sessionId, latestMessageId, timeZone, load
   const [page, setPage] = useState<Page>()
   const [loading, setLoading] = useState(true)
   const [failure, setFailure] = useState<Failure>()
+  const [failureDismissed, setFailureDismissed] = useState(false)
   const [retentionOpen, setRetentionOpen] = useState(false)
   const retentionId = useId()
   const request = useRef({ epoch: 0, pending: false })
@@ -80,6 +81,7 @@ export function DeliveryHistory({ id, sessionId, latestMessageId, timeZone, load
     const epoch = ++request.current.epoch
     setLoading(true)
     setFailure(undefined)
+    setFailureDismissed(false)
     let result: RemoteResult<ScheduleDeliveryHistoryResult>
     try {
       result = await loadHistory({ id, sessionId, limit: 20, ...(before === undefined ? {} : { before }) })
@@ -123,26 +125,21 @@ export function DeliveryHistory({ id, sessionId, latestMessageId, timeZone, load
   const formatOccurrence = (value: string): string => formatScheduleNextRun(value, t('time.locale'), timeZone)
   const hasRecords = page !== undefined && page.records.length > 0
   return <div className={css.deliveryHistory} aria-busy={loading}>
+    {failure !== undefined && <Toast
+      text={t(failureDismissed
+        ? failure.key === 'delivery.cursorError' ? 'delivery.refreshAvailable' : 'delivery.retryAvailable'
+        : failure.key)}
+      holdMs={null}
+      dismissLabel={failureDismissed ? undefined : t('detail.close')}
+      actions={[{ label: t(failure.key === 'delivery.cursorError' ? 'delivery.refresh' : 'delivery.retry'), onClick: () => { void load(failure.before) } }]}
+      onDone={() => { setFailureDismissed(true) }}
+    />}
     <div className={css.detailScroll}>
       {loading && !hasRecords && <div className={css.empty} role="status" aria-label={t('delivery.loading')}>
         <StateDot state="ongoing" />
       </div>}
       {/* The compact form concerns records already on screen; a failure with
           nothing loaded centers itself in the panel. */}
-      {failure !== undefined && (hasRecords
-        ? <div className={css.notice}>
-          <p role="alert">{t(failure.key)}</p>
-          <Button variant="outline" size="sm" onClick={() => { void load(failure.before) }}>
-            {t(failure.key === 'delivery.cursorError' ? 'delivery.refresh' : 'delivery.retry')}
-          </Button>
-        </div>
-        : <div className={css.empty}>
-          <IconWarningOutlineRegular size={24} className={css.emptyGlyph} />
-          <p role="alert" className={css.emptyTitle}>{t(failure.key)}</p>
-          <Button variant="outline" className={css.emptyAction} onClick={() => { void load(failure.before) }}>
-            {t(failure.key === 'delivery.cursorError' ? 'delivery.refresh' : 'delivery.retry')}
-          </Button>
-        </div>)}
       {!loading && failure === undefined && page?.records.length === 0
         && <div className={css.empty} role="status">
           <IconClockOutlineRegular size={24} className={css.emptyGlyph} />
@@ -157,7 +154,7 @@ export function DeliveryHistory({ id, sessionId, latestMessageId, timeZone, load
           {record.prompt !== undefined && <SavedPrompt prompt={record.prompt} t={t} />}
         </div>
       </section>)}
-      {page?.nextBefore !== undefined && failure === undefined && <Button variant="outline" disabled={loading}
+      {page?.nextBefore !== undefined && failure === undefined && <Button variant="outline" disabled={loading} loading={loading}
         onClick={() => { void load(page.nextBefore) }}>
         {t('delivery.loadMore')}
       </Button>}

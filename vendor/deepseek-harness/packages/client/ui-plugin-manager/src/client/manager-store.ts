@@ -41,8 +41,8 @@ export type FailedAction = 'enable' | 'disable' | 'uninstall' | 'rowEnable' | 'r
 export type ManagerNotice =
   | { readonly kind: 'restart'; readonly packageName: string; readonly seq: number }
   | { readonly kind: 'overridden'; readonly packageName: string; readonly seq: number }
-  | { readonly kind: 'cancelled'; readonly seq: number }
-  | { readonly kind: 'refresh-failed'; readonly seq: number }
+  | { readonly kind: 'cancelled'; readonly operation?: true; readonly seq: number }
+  | { readonly kind: 'refresh-failed'; readonly initial?: true; readonly seq: number }
   | { readonly kind: 'install'; readonly outcome: 'done' | 'failed' | 'unconfirmed' | 'applying' | 'unknown'; readonly seq: number }
   | {
     readonly kind: 'failed'
@@ -198,7 +198,7 @@ export interface InstallState {
   readonly phase: 'idle' | 'checking' | 'starting' | 'running' | 'cancelling' | 'applying' | 'unconfirmed' | 'unknown' | 'done' | 'failed'
   /** Identifies this dialog's installation, including log and cancellation messages. */
   readonly requestId?: PluginInstallRequestId
-  /** Why the spec was refused before installing; shown under the field. */
+  /** Why the spec was refused before installing; keeps the field invalid while floating feedback explains it. */
   readonly inputError: InstallInputError | null
   /** What the spec names, once the Host has read it. */
   readonly subject: InstallSubject | null
@@ -283,8 +283,8 @@ export interface PluginManagerState {
   readonly status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   /**
    * Manual refresh feedback: `refreshing` until reads settle and the 400 ms minimum elapses;
-   * `failed` after a failed refresh without cached inventory; otherwise `idle`, including
-   * cached refresh failures reported by toast. Background reads do not start the spinner.
+   * `failed` after a failed refresh, including cached inventory failures reported by toast.
+   * Background reads do not start the spinner.
    */
   readonly refreshStatus: 'idle' | 'refreshing' | 'failed'
   readonly packages: readonly PackageView[]
@@ -765,9 +765,9 @@ export class PluginManagerController {
   private settleRefresh(): void {
     if (this.disposed) return
     const failed = this.getSnapshot().status === 'error'
-    this.patch(failed && this.hasCachedInventory
-      ? { status: 'ready', refreshStatus: 'idle', notice: { kind: 'refresh-failed', seq: ++this.noticeSeq } }
-      : { refreshStatus: failed ? 'failed' : 'idle' })
+    this.patch(failed
+      ? { ...this.hasCachedInventory ? { status: 'ready' as const } : {}, refreshStatus: 'failed', notice: { kind: 'refresh-failed', seq: ++this.noticeSeq } }
+      : { refreshStatus: 'idle' })
   }
 
   private async read(): Promise<void> {
@@ -802,11 +802,17 @@ export class PluginManagerController {
         this.patch({
           status: 'ready',
           refreshStatus: this.getSnapshot().refreshStatus === 'refreshing' ? 'refreshing' : 'idle',
+          ...this.getSnapshot().notice?.kind === 'refresh-failed' ? { notice: null } : {},
           packages: sortPackages(bundles.value.map(bundle => packageView(bundle, plugins.value))),
         })
       } while (this.shouldRerun())
+    } catch (_error) {
+      if (!this.disposed) this.patch({ status: 'error' })
     } finally {
       this.inFlight = undefined
+      if (!this.disposed && this.getSnapshot().status === 'error' && this.getSnapshot().refreshStatus !== 'refreshing') {
+        this.patch({ notice: { kind: 'refresh-failed', initial: true, seq: ++this.noticeSeq } })
+      }
     }
   }
 
@@ -1128,7 +1134,7 @@ export class PluginManagerController {
       case 'failed':
         throw new RemoteAnswerError(result.error?.diagnostic ?? '', result.error?.code, result.error?.incompatible)
       case 'cancelled':
-        this.patch({ notice: { kind: 'cancelled', seq: ++this.noticeSeq } })
+        this.patch({ notice: { kind: 'cancelled', operation: true, seq: ++this.noticeSeq } })
         return
       case 'restart-required':
         this.patch({ notice: { kind: 'restart', packageName, seq: ++this.noticeSeq } })

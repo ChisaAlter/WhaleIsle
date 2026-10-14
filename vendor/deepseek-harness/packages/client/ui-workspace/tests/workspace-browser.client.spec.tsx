@@ -138,6 +138,8 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     renameWorkspace: vi.fn(async () => {}),
     deleteWorkspace: vi.fn(async () => {}),
     deleteSession: vi.fn(async () => {}),
+    archiveSessionForBatch: vi.fn(async () => {}),
+    deleteSessionForBatch: vi.fn(async () => {}),
     unarchiveSession: vi.fn(async () => {}),
     insertWorkspaceBefore: vi.fn(async () => {}),
     createWorkspace: vi.fn(async () => workspace('created', [])),
@@ -242,14 +244,14 @@ describe('WorkspaceBrowser', () => {
     expect(b.props.deleteSession).not.toHaveBeenCalled()
   })
 
-  it.each([{ messages: en, common: commonEn }, { messages: zh, common: commonZh }])('shows localized fork failures and dismisses them', ({ messages, common }) => {
+  it.each([{ messages: en, common: commonEn }, { messages: zh, common: commonZh }])('shows localized fork failures and dismisses them', async ({ messages, common }) => {
     const b = mount({ t: makeTranslate(messages, common) })
-    act(() => { b.controls.forkFailed('unavailable') })
+    await act(async () => { b.controls.forkFailed('unavailable') })
     const first = screen.getByRole('alert')
     expect(first.textContent).toBe(messages['shortcut.noCompletedTurn'])
-    act(() => { b.controls.dismissForkError(); b.controls.forkFailed('unavailable') })
+    await act(async () => { b.controls.dismissForkError(); b.controls.forkFailed('unavailable') })
     expect(screen.getByRole('alert')).not.toBe(first)
-    act(() => { b.controls.forkFailed('failed') })
+    await act(async () => { b.controls.forkFailed('failed') })
     expect(screen.getByRole('alert').textContent).toBe(messages['shortcut.forkFailed'])
     act(() => { b.controls.dismissForkError() })
     expect(screen.queryByRole('alert')).toBeNull()
@@ -2349,15 +2351,29 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '重命名' }).disabled).toBe(true)
     fireEvent.change(input, { target: { value: '   ' } })
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '重命名' }).disabled).toBe(true)
-    // A duplicate of another workspace's title shows the inline conflict.
+    // A duplicate is surfaced without moving the input or its confirm action.
     fireEvent.change(input, { target: { value: ' Beta ' } })
-    expect(screen.getByRole('alert').textContent).toBe('已存在名为“Beta”的工作区。')
+    const conflict = await screen.findByRole('alert')
+    expect(conflict.textContent).toBe('已存在名为“Beta”的工作区。')
+    expect(conflict.getAttribute('data-persistent')).toBe('true')
+    expect(screen.getByRole('dialog').contains(conflict)).toBe(false)
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '重命名' }).disabled).toBe(true)
+    fireEvent.click(within(conflict).getByRole('button', { name: '关闭' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(input.value).toBe(' Beta ')
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '重命名' }).disabled).toBe(true)
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(renameWorkspace).not.toHaveBeenCalled()
     fireEvent.change(input, { target: { value: 'Gamma' } })
-    fireEvent.click(screen.getByRole('button', { name: '重命名' }))
+    const confirm = screen.getByRole<HTMLButtonElement>('button', { name: '重命名' })
+    fireEvent.click(confirm)
     expect(renameWorkspace).toHaveBeenCalledWith(wid('alpha'), 'Gamma')
     // While renaming: input disabled, close blocked, Enter ignored.
     expect(input.disabled).toBe(true)
+    expect(screen.getByRole('button', { name: '重命名' })).toBe(confirm)
+    expect(confirm.getAttribute('aria-busy')).toBe('true')
+    expect(confirm.querySelector('[data-state="ongoing"]')).not.toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.getByRole('dialog')).toBeTruthy()
     await act(async () => { resolveRename() })
@@ -2383,7 +2399,7 @@ describe('WorkspaceBrowser', () => {
     const confirm = screen.getByRole<HTMLButtonElement>('button', { name: '重命名' })
     fireEvent.change(input, { target: { value: 'Beta' } })
     expect(confirm.disabled).toBe(true)
-    expect(screen.getByRole('alert').textContent).toBe('已存在名为“Beta”的工作区。')
+    expect((await screen.findByRole('alert')).textContent).toBe('已存在名为“Beta”的工作区。')
     fireEvent.change(input, { target: { value: 'Virtual' } })
     expect(confirm.disabled).toBe(false)
     expect(screen.queryByRole('alert')).toBeNull()
@@ -2450,7 +2466,11 @@ describe('WorkspaceBrowser', () => {
     expect(deleteWorkspace).toHaveBeenCalledWith(wid('alpha'))
     expect(confirm.disabled).toBe(true)
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '取消' }).disabled).toBe(true)
-    expect(screen.getByRole('status').textContent).toBe('正在删除工作区…')
+    expect(screen.getByRole('button', { name: '删除工作区' })).toBe(confirm)
+    expect(confirm.getAttribute('aria-busy')).toBe('true')
+    expect(confirm.querySelector('[data-state="ongoing"]')).not.toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.queryByText('正在删除工作区…')).toBeNull()
     fireEvent.keyDown(document, { key: 'Escape' })
     fireEvent.click(screen.getByRole('button', { name: '关闭' }))
     expect(screen.getByRole('dialog', { name: '删除工作区' })).toBeTruthy()
@@ -2474,8 +2494,15 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('button', { name: '工作区“Alpha”的操作' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '删除工作区' }))
     fireEvent.click(screen.getByRole('button', { name: '删除工作区' }))
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('storage unavailable') })
-    expect(screen.getByRole('dialog', { name: '删除工作区' })).toBeTruthy()
+    const notice = await screen.findByRole('alert')
+    expect(notice.textContent).toBe('storage unavailable')
+    expect(notice.getAttribute('data-persistent')).toBe('true')
+    const dialog = screen.getByRole('dialog', { name: '删除工作区' })
+    expect(dialog.contains(notice)).toBe(false)
+    fireEvent.click(within(notice).getByRole('button', { name: '关闭' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('dialog', { name: '删除工作区' })).toBe(dialog)
+    expect(deleteWorkspace).toHaveBeenCalledOnce()
     fireEvent.click(screen.getByRole('button', { name: '删除工作区' }))
     await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('denied') })
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
@@ -2514,6 +2541,309 @@ describe('WorkspaceBrowser', () => {
   })
 })
 
+
+describe('WorkspaceBrowser batch selection', () => {
+  it.each(['workspace', 'workspace-tree', 'flat'] as const)('selects through checkboxes and row titles without navigation, rename, or drag in %s mode', (mode) => {
+    const requestSessionRename = vi.fn()
+    const b = mount({
+      useSessions: hook(sessionState([
+        summary('first', 3, { displayTitle: 'First conversation' }),
+        summary('second', 2, { displayTitle: 'Second conversation' }),
+        summary('blank', 1, { blank: true }),
+      ], { main: sid('blank') })),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['first', 'second', 'blank'])])),
+      requestSessionRename,
+    })
+    act(() => {
+      b.store.actions.setGroupBy(mode)
+      b.store.actions.setGroupExpanded('alpha', true)
+    })
+    fireEvent.click(screen.getByRole('button', { name: '多选会话' }))
+    const first = screen.getByRole<HTMLInputElement>('checkbox', { name: '选择会话“First conversation”' })
+    fireEvent.click(first)
+    expect(first.checked).toBe(true)
+    fireEvent.click(screen.getByText('Second conversation'))
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '选择会话“Second conversation”' }).checked).toBe(true)
+    expect(screen.getByText('已选 2 项')).toBeTruthy()
+    expect(screen.queryByRole('checkbox', { name: '选择会话“新会话”' })).toBeNull()
+    fireEvent.click(screen.getByText('新会话'))
+    fireEvent.doubleClick(screen.getByText('First conversation'))
+    const dataTransfer = dragData()
+    fireEvent.dragStart(screen.getByText('First conversation').closest('[role="treeitem"]')!, { dataTransfer })
+    expect(dataTransfer.setData).not.toHaveBeenCalled()
+    expect(screen.getByText('已选 2 项')).toBeTruthy()
+    expect(b.props.open).not.toHaveBeenCalled()
+    expect(requestSessionRename).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: '会话“First conversation”的操作' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '退出多选' }))
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    fireEvent.click(screen.getByText('First conversation'))
+    fireEvent.doubleClick(screen.getByText('First conversation'))
+    expect(b.props.open).toHaveBeenCalledWith(sid('first'))
+    expect(requestSessionRename).toHaveBeenCalledWith(sid('first'), 'First conversation')
+  })
+
+  it('cancels archive and permanent deletion confirmation without dispatching a mutation', () => {
+    const b = mount({ useSessions: hook(sessionState([summary('first', 2), summary('second', 1)])) })
+    act(() => { b.store.actions.setGroupBy('flat') })
+    fireEvent.click(screen.getByRole('button', { name: '多选会话' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择会话“first”' }))
+    fireEvent.click(within(screen.getByRole('checkbox', { name: '选择会话“second”' }).closest('[role="treeitem"]')!).getByText('second'))
+    fireEvent.click(screen.getByRole('button', { name: '归档' }))
+    const archive = screen.getByRole('dialog', { name: '归档 2 个会话？' })
+    expect(within(archive).getByRole('list', { name: '已选会话' }).textContent).toBe('firstsecond')
+    expect(archive.textContent).toContain('停止其中正在进行的回合、子智能体、后台任务和定时任务')
+    fireEvent.click(within(archive).getByRole('button', { name: '取消' }))
+    fireEvent.click(screen.getByRole('button', { name: '删除' }))
+    const deletion = screen.getByRole('dialog', { name: '永久删除 2 个会话？' })
+    expect(deletion.textContent).toContain('无法恢复')
+    expect(deletion.textContent).toContain('运行中的回合须先停止；无法删除的会话会保留，并在结果中列出原因。')
+    fireEvent.click(within(deletion).getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByText('已选 2 项')).toBeTruthy()
+    expect(b.props.archiveSessionForBatch).not.toHaveBeenCalled()
+    expect(b.props.deleteSessionForBatch).not.toHaveBeenCalled()
+    expect(b.props.deleteSession).not.toHaveBeenCalled()
+  })
+
+  it('archives sequentially with stopActivity after confirmation and blocks repeat gestures while busy', async () => {
+    let resolveFirst!: () => void
+    let resolveSecond!: () => void
+    const archiveSessionForBatch = vi.fn((id: SessionId) => new Promise<void>((resolve) => {
+      if (id === sid('first')) resolveFirst = resolve
+      else resolveSecond = resolve
+    }))
+    const b = mount({
+      useSessions: hook(sessionState([summary('first', 2), summary('second', 1)])),
+      archiveSessionForBatch,
+    })
+    act(() => { b.store.actions.setGroupBy('flat') })
+    fireEvent.click(screen.getByRole('button', { name: '多选会话' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择会话“first”' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择会话“second”' }))
+    fireEvent.click(screen.getByRole('button', { name: '归档' }))
+    expect(archiveSessionForBatch).not.toHaveBeenCalled()
+    const dialog = screen.getByRole('dialog', { name: '归档 2 个会话？' })
+    const confirm = within(dialog).getByRole<HTMLButtonElement>('button', { name: '停止并归档' })
+    await act(async () => { fireEvent.click(confirm) })
+    fireEvent.click(confirm)
+    expect(archiveSessionForBatch.mock.calls).toEqual([[sid('first'), { stopActivity: true }]])
+    expect(screen.getByRole('alert').textContent).toBe('正在处理 0/2…')
+    expect(dialog.contains(screen.getByRole('alert'))).toBe(false)
+    expect(confirm.getAttribute('aria-busy')).toBe('true')
+    expect(confirm.disabled).toBe(true)
+    expect(within(dialog).getByRole<HTMLButtonElement>('button', { name: '取消' }).disabled).toBe(true)
+    for (const name of ['退出多选', '全选可见', '清空', '归档', '删除']) {
+      expect(screen.getByRole<HTMLButtonElement>('button', { name }).disabled).toBe(true)
+    }
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '选择会话“second”' }).disabled).toBe(true)
+    fireEvent.click(within(screen.getByRole('checkbox', { name: '选择会话“second”' }).closest('[role="treeitem"]')!).getByText('second'))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByRole('dialog', { name: '归档 2 个会话？' })).toBeTruthy()
+    expect(screen.getByText('已选 2 项')).toBeTruthy()
+    await act(async () => { resolveFirst() })
+    expect(archiveSessionForBatch.mock.calls).toEqual([
+      [sid('first'), { stopActivity: true }],
+      [sid('second'), { stopActivity: true }],
+    ])
+    expect(screen.getByRole('alert').textContent).toBe('正在处理 1/2…')
+    // The first Host echo may change rows before the second RPC finishes.
+    rerender(b, { useWorkspaces: hook(workspaceState([], [sid('first')])) })
+    await act(async () => { resolveSecond() })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByRole('alert').textContent).toBe('已归档 2 个会话')
+    expect(screen.getByText('已选 0 项')).toBeTruthy()
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '选择会话“second”' }).checked).toBe(false)
+    expect(b.props.deleteSessionForBatch).not.toHaveBeenCalled()
+    expect(b.props.open).not.toHaveBeenCalled()
+  })
+
+  it('keeps the confirmed deletion targets and their titles, and retains only concrete failures for another attempt', async () => {
+    const deleteSessionForBatch = vi.fn(async (id: SessionId) => {
+      if (id === sid('active')) throw { rpcError: { code: 'workspace/session-active' }, message: 'wire refusal' }
+      if (id === sid('storage')) throw new Error('disk quota exhausted')
+    })
+    const b = mount({
+      useSessions: hook(sessionState([
+        summary('success', 3, { displayTitle: 'Successful original' }),
+        summary('active', 2, { displayTitle: 'Running original' }),
+        summary('storage', 1, { displayTitle: 'Storage original' }),
+      ])),
+      deleteSessionForBatch,
+    })
+    act(() => { b.store.actions.setGroupBy('flat') })
+    fireEvent.click(screen.getByRole('button', { name: '多选会话' }))
+    for (const title of ['Successful original', 'Running original', 'Storage original']) {
+      fireEvent.click(screen.getByRole('checkbox', { name: `选择会话“${title}”` }))
+    }
+    fireEvent.click(screen.getByRole('button', { name: '删除' }))
+    const dialog = screen.getByRole('dialog', { name: '永久删除 3 个会话？' })
+    const updated = sessionState([
+      summary('success', 3, { displayTitle: 'Successful updated' }),
+      summary('active', 2, { displayTitle: 'Running updated' }),
+      summary('storage', 1, { displayTitle: 'Storage updated' }),
+      summary('late', 4, { displayTitle: 'Later arrival' }),
+    ])
+    rerender(b, { useSessions: hook(updated) })
+    expect(within(dialog).getAllByRole('listitem').map(item => item.textContent)).toEqual([
+      'Successful original', 'Running original', 'Storage original',
+    ])
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: '永久删除' })) })
+    expect(deleteSessionForBatch.mock.calls).toEqual([[sid('success')], [sid('active')], [sid('storage')]])
+    const result = screen.getByRole('alert')
+    expect(result.textContent).toContain('已删除 1 个会话；2 个会话未完成')
+    expect(result.textContent).toContain('Running original: 会话仍有正在进行或计划中的工作，未完成此次操作。')
+    expect(result.textContent).toContain('Storage original: disk quota exhausted')
+    expect(result.textContent).not.toContain('wire refusal')
+    expect(result.getAttribute('data-persistent')).toBe('true')
+    expect(screen.getByLabelText('会话批量操作').contains(result)).toBe(false)
+    fireEvent.click(within(result).getByRole('button', { name: '关闭' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByText('已选 2 项')).toBeTruthy()
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '选择会话“Successful updated”' }).checked).toBe(false)
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '选择会话“Running updated”' }).checked).toBe(true)
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '选择会话“Storage updated”' }).checked).toBe(true)
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '选择会话“Later arrival”' }).checked).toBe(false)
+    rerender(b, { useSessions: hook(sessionState(Object.values(updated.byId).filter(item => item.id !== sid('success')))) })
+    expect(screen.queryByRole('checkbox', { name: '选择会话“Successful updated”' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '删除' }))
+    const retry = screen.getByRole('dialog', { name: '永久删除 2 个会话？' })
+    expect(within(retry).getAllByRole('listitem').map(item => item.textContent)).toEqual(['Running original', 'Storage original'])
+    fireEvent.click(within(retry).getByRole('button', { name: '取消' }))
+    expect(b.props.deleteSession).not.toHaveBeenCalled()
+  })
+
+  it('localizes a running-work refusal in English while preserving the selected conversation', async () => {
+    const b = mount({
+      t: makeTranslate(en, commonEn),
+      useSessions: hook(sessionState([summary('active', 1, { displayTitle: 'Active conversation' })])),
+      deleteSessionForBatch: vi.fn(async () => { throw { code: 'workspace/session-active' } }),
+    })
+    act(() => { b.store.actions.setGroupBy('flat') })
+    fireEvent.click(screen.getByRole('button', { name: 'Select sessions' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select session “Active conversation”' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' })) })
+    expect(screen.getByRole('alert').textContent).toContain('Active conversation: This session still has running or scheduled work. The operation was not completed.')
+    expect(screen.getByText('1 selected')).toBeTruthy()
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'Select session “Active conversation”' }).checked).toBe(true)
+    expect(b.props.deleteSessionForBatch).toHaveBeenCalledWith(sid('active'))
+  })
+
+  it('clears choices when the query or archive filter changes', () => {
+    const b = mount({
+      useSessions: hook(sessionState([summary('needle-a', 3), summary('needle-b', 2), summary('needle-stored', 1)])),
+      useWorkspaces: hook(workspaceState([], [sid('needle-stored')])),
+    })
+    act(() => {
+      b.store.actions.setGroupBy('flat')
+      b.store.actions.setShowArchivedList(false)
+    })
+    fireEvent.click(screen.getByRole('button', { name: '多选会话' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择会话“needle-a”' }))
+    fireEvent.click(screen.getByRole('button', { name: '搜索会话' }))
+    fireEvent.change(screen.getByPlaceholderText('搜索会话名称'), { target: { value: 'needle' } })
+    expect(screen.getByText('已选 0 项')).toBeTruthy()
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择会话“needle-a”' }))
+    expect(screen.getByText('已选 1 项')).toBeTruthy()
+    fireEvent.change(screen.getByPlaceholderText('搜索会话名称'), { target: { value: 'needle-b' } })
+    expect(screen.getByText('已选 0 项')).toBeTruthy()
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '选择会话“needle-b”' }).checked).toBe(false)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '删除' }).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: '清除搜索' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择会话“needle-b”' }))
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '仅显示已归档' }))
+    expect(screen.getByText('已选 0 项')).toBeTruthy()
+    const archived = screen.getByRole<HTMLInputElement>('checkbox', { name: '选择会话“needle-stored”' })
+    expect(archived.checked).toBe(false)
+    fireEvent.click(archived)
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '全部对话（显示已归档）' }))
+    expect(screen.getByText('已选 0 项')).toBeTruthy()
+    expect(b.props.archiveSessionForBatch).not.toHaveBeenCalled()
+    expect(b.props.deleteSessionForBatch).not.toHaveBeenCalled()
+  })
+
+  it('deletes selections from the main list and the bottom archive section through Host projection updates', async () => {
+    let remaining = [summary('active', 3), summary('stored', 2), summary('survivor', 1)]
+    let archived = [sid('stored')]
+    let b!: ReturnType<typeof mount>
+    const deleteSessionForBatch = vi.fn(async (id: SessionId) => {
+      remaining = remaining.filter(item => item.id !== id)
+      archived = archived.filter(item => item !== id)
+      rerender(b, { useSessions: hook(sessionState(remaining)), useWorkspaces: hook(workspaceState([], archived)) })
+    })
+    b = mount({
+      useSessions: hook(sessionState(remaining)),
+      useWorkspaces: hook(workspaceState([], archived)),
+      deleteSessionForBatch,
+    })
+    act(() => { b.store.actions.setGroupBy('flat') })
+    fireEvent.click(screen.getByRole('treeitem', { name: '已归档' }))
+    fireEvent.click(screen.getByRole('button', { name: '多选会话' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择会话“active”' }))
+    fireEvent.click(screen.getByText('stored'))
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '选择会话“stored”' }).checked).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: '删除' }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '永久删除' })) })
+    expect(deleteSessionForBatch.mock.calls).toEqual([[sid('active')], [sid('stored')]])
+    expect(screen.queryByRole('checkbox', { name: '选择会话“active”' })).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: '选择会话“stored”' })).toBeNull()
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '选择会话“survivor”' }).checked).toBe(false)
+    expect(screen.getByRole('alert').textContent).toBe('已删除 2 个会话')
+    expect(screen.getByText('已选 0 项')).toBeTruthy()
+    expect(b.props.open).not.toHaveBeenCalled()
+    expect(b.props.unarchiveSession).not.toHaveBeenCalled()
+    expect(b.props.deleteSession).not.toHaveBeenCalled()
+  })
+
+  it('selects title and archived content search results and removes them after confirmed deletion', async () => {
+    vi.useFakeTimers()
+    try {
+      let remaining = [summary('needle-title', 3), summary('stored-content', 2), summary('survivor', 1)]
+      let archived = [sid('stored-content')]
+      let b!: ReturnType<typeof mount>
+      const deleteSessionForBatch = vi.fn(async (id: SessionId) => {
+        remaining = remaining.filter(item => item.id !== id)
+        archived = archived.filter(item => item !== id)
+        rerender(b, { useSessions: hook(sessionState(remaining)), useWorkspaces: hook(workspaceState([], archived)) })
+      })
+      const searchSessions = vi.fn(async () => ({ items: [{ sessionId: sid('stored-content'), snippet: 'needle in a conversation' }], hasMore: false }))
+      b = mount({
+        useSessions: hook(sessionState(remaining)),
+        useWorkspaces: hook(workspaceState([], archived)),
+        searchSessions,
+        deleteSessionForBatch,
+      })
+      act(() => {
+        b.store.actions.setGroupBy('flat')
+        b.store.actions.setArchivedFilter('show')
+        b.store.actions.setShowArchivedList(false)
+      })
+      fireEvent.click(screen.getByRole('button', { name: '多选会话' }))
+      fireEvent.change(screen.getByPlaceholderText('搜索会话名称'), { target: { value: 'needle' } })
+      await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+      const results = within(screen.getByRole('tree', { name: '搜索结果' }))
+      expect(searchSessions).toHaveBeenCalledWith('needle', expect.any(AbortSignal))
+      fireEvent.click(results.getByRole('checkbox', { name: '选择会话“needle-title”' }))
+      fireEvent.click(results.getByText('stored-content'))
+      expect(results.getByRole<HTMLInputElement>('checkbox', { name: '选择会话“stored-content”' }).checked).toBe(true)
+      expect(screen.getByText('已选 2 项')).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: '删除' }))
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: '永久删除' })) })
+      expect(deleteSessionForBatch.mock.calls).toEqual([[sid('needle-title')], [sid('stored-content')]])
+      expect(results.queryByRole('treeitem')).toBeNull()
+      expect(screen.getByRole('alert').textContent).toBe('已删除 2 个会话')
+      expect(screen.getByText('已选 0 项')).toBeTruthy()
+      expect(b.props.open).not.toHaveBeenCalled()
+      expect(b.props.notifyArchivedNotOpenable).not.toHaveBeenCalled()
+      expect(b.props.unarchiveSession).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
 
 describe('Workspace tree grouping', () => {
   beforeEach(() => {

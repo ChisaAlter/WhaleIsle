@@ -14,6 +14,7 @@
  */
 
 import type { ReactNode } from 'react'
+import { Button, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -21,7 +22,7 @@ import styles from './ModelsSection.module.css'
 export interface EditorFooterProps {
   /** Localizer for the row's own labels. */
   t: (key: keyof typeof en) => string
-  /** Whether a commit is in flight; holds Cancel and swaps the commit label. */
+  /** Whether a commit is in flight; holds Cancel and overlays its busy feedback. */
   busy: boolean
   /** Whether the commit is refused, as judged by the owning card. */
   submitDisabled: boolean
@@ -29,6 +30,8 @@ export interface EditorFooterProps {
   submitLabelKey: keyof typeof en
   /** Commit label while a commit is in flight. */
   submitBusyLabelKey: keyof typeof en
+  /** Readable reason the current draft cannot be submitted. */
+  submitHint?: string | undefined
   /** Dismiss label; defaults to the settings editor copy. */
   cancelLabelKey?: keyof typeof en
   /** Dismiss the card without committing. */
@@ -46,22 +49,23 @@ export function EditorFooter(props: EditorFooterProps): ReactNode {
   const { t } = props
   return (
     <div className={styles['editorActions']}>
-      <button
-        type="button"
+      <Button
+        variant="outline"
         className={styles['secondaryButton']}
         disabled={props.busy}
         onClick={props.onCancel}
       >
         {t(props.cancelLabelKey ?? 'cancel')}
-      </button>
-      <button
-        type="button"
-        className={styles['primaryButton']}
-        disabled={props.submitDisabled}
-        onClick={props.onSubmit}
-      >
-        {props.busy ? t(props.submitBusyLabelKey) : t(props.submitLabelKey)}
-      </button>
+      </Button>
+      <Tooltip label={props.submitHint ?? ''} disabled={props.submitHint === undefined || props.busy} portal side="top">
+        <span className={styles['buttonAnchor']} tabIndex={props.submitDisabled && props.submitHint !== undefined ? 0 : undefined}
+          aria-label={props.submitDisabled && props.submitHint !== undefined ? `${t(props.submitLabelKey)}: ${props.submitHint}` : undefined}>
+          <Button variant="primary" className={styles['primaryButton']} disabled={props.submitDisabled}
+            loading={props.busy} feedback={props.busy ? t(props.submitBusyLabelKey) : undefined} title={props.submitHint} onClick={props.onSubmit}>
+            {t(props.submitLabelKey)}
+          </Button>
+        </span>
+      </Tooltip>
     </div>
   )
 }

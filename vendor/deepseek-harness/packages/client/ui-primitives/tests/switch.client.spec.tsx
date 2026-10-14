@@ -34,6 +34,31 @@ describe('Switch', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
+  it('keeps its checked state and blocks interaction while loading, then allows the next toggle', () => {
+    const change = vi.fn()
+    const view = render(<Switch checked label="Toggle" loading onChange={change} />)
+    const control = screen.getByRole('switch', { name: 'Toggle' })
+    expect(control.getAttribute('aria-checked')).toBe('true')
+    expect(control.getAttribute('aria-busy')).toBe('true')
+    expect(control).toHaveProperty('disabled', true)
+    fireEvent.click(control)
+    expect(change).not.toHaveBeenCalled()
+    view.rerender(<Switch checked label="Toggle" onChange={change} />)
+    fireEvent.click(control)
+    expect(change).toHaveBeenCalledExactlyOnceWith(false)
+  })
+
+  it('also blocks the native checkbox form while loading without changing its value', () => {
+    const change = vi.fn()
+    render(<Switch aria-label="Enable sync" defaultChecked loading onChange={change} />)
+    const control = screen.getByRole<HTMLInputElement>('switch', { name: 'Enable sync' })
+    expect(control.getAttribute('aria-busy')).toBe('true')
+    expect(control.disabled).toBe(true)
+    control.click()
+    expect(control.checked).toBe(true)
+    expect(change).not.toHaveBeenCalled()
+  })
+
   it('carries a lock reason as the hover title when the owner names one', () => {
     render(<Switch checked={false} disabled label="Toggle" title="Managed by policy" onChange={() => {}} />)
     expect(screen.getByRole('switch').getAttribute('title')).toBe('Managed by policy')

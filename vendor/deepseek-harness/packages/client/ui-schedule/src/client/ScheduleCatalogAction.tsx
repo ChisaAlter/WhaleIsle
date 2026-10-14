@@ -3,8 +3,11 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import {
+  Button,
   IconClockOutlineRegular,
   IconTrashOutlineRegular,
+  StateDot,
+  Toast,
   useAnchoredPosition,
   useDismissOnOutsidePointer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -41,6 +44,8 @@ export function ScheduleCatalogAction({
   const visible = openState === 'open'
   const [open, setOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+  const [failureDismissed, setFailureDismissed] = useState(false)
+  useEffect(() => { setFailureDismissed(false) }, [status])
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const catalogRef = useRef<HTMLUListElement>(null)
@@ -112,7 +117,9 @@ export function ScheduleCatalogAction({
       data-schedule-reminder-entry=""
       aria-expanded={expandable ? open : undefined}
       aria-label={triggerLabel}
+      aria-busy={status === 'loading'}
       onClick={() => {
+        setFailureDismissed(false)
         if (expandable) {
           toggleCatalog()
           return
@@ -121,7 +128,7 @@ export function ScheduleCatalogAction({
         openTask(soleTask.id)
       }}
     >
-      <IconClockOutlineRegular size={16} />
+      {status === 'loading' ? <StateDot state="ongoing" size={16} /> : <IconClockOutlineRegular size={16} />}
     </button>
   )
   const catalog = open
@@ -133,11 +140,6 @@ export function ScheduleCatalogAction({
         aria-label={t('list.aria')}
         onKeyDown={onKeyDown}
       >
-        {status === 'loading' && <li className={css.row} role="status">{t('list.loading')}</li>}
-        {status === 'error' && <li className={css.row}>
-          <span role="alert">{t('list.error')}</span>
-          <button type="button" onClick={() => { void onRetry() }}>{t('list.retry')}</button>
-        </li>}
         {rows.map((record) => {
           const overdue = Date.parse(record.scheduledAt) <= now
           // One pair per row: both halves come from this one call.
@@ -174,16 +176,17 @@ export function ScheduleCatalogAction({
                   <span className={css.nextRunRelative}>{nextRun.relative}</span>
                 </span>
               </span>
-              <button
+              <Button
                 type="button"
                 className={css.deleteButton}
                 aria-label={t('delete.label', { title: taskName(record) })}
                 title={t(deleting.includes(record.id) ? 'delete.pending' : 'delete.action')}
                 disabled={deleting.includes(record.id)}
+                loading={deleting.includes(record.id)}
                 onClick={() => { void onDelete(record.id) }}
               >
                 <IconTrashOutlineRegular size={14} />
-              </button>
+              </Button>
             </li>
           )
         })}
@@ -195,6 +198,13 @@ export function ScheduleCatalogAction({
     <div ref={rootRef} className={css.root} onKeyDown={onKeyDown}>
       {trigger}
       {catalog}
+      {status === 'error' && !failureDismissed && <Toast
+        text={t('list.error')}
+        holdMs={null}
+        dismissLabel={t('notice.dismiss')}
+        actions={[{ label: t('list.retry'), onClick: () => { void onRetry() } }]}
+        onDone={() => { setFailureDismissed(true) }}
+      />}
     </div>
   )
 }

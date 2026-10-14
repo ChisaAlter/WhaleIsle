@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import {
   Button, DisclosureRow, IconCodeOutline16, IconCompareSplitOutlineRegular, IconNowrapFillRegular,
   IconRefreshOutline16, IconWrapFillRegular, languageForPath, MAX_RENDERED_LINES, Menu, Modal,
-  renderedHunks, ReviewDiff, Tooltip,
+  renderedHunks, ReviewDiff, IconWarningOutline16, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ReviewHunk, ReviewNote } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -111,7 +111,15 @@ export function DiffPanel({
   const [entries, setEntries] = useState<GitStatusEntry[] | null>(null)
   const [truncated, setTruncated] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [opError, setOpError] = useState<string | null>(null)
+  const [notification, setNotification] = useState<{ id: number; text: string; retry: () => void } | null>(null)
+  const notificationId = useRef(0)
+  const [loading, setLoading] = useState(cwd !== undefined)
+  const [branchLoading, setBranchLoading] = useState(false)
+  const [pendingOps, setPendingOps] = useState<Readonly<Record<string, 'stage' | 'unstage' | 'discard'>>>({})
+  const inFlightOps = useRef(new Set<string>())
+  const notifyError = useCallback((text: string, retry: () => void): void => {
+    setNotification({ id: ++notificationId.current, text, retry })
+  }, [])
   const [openPaths, setOpenPaths] = useState<ReadonlySet<string>>(new Set())
   const [discardPath, setDiscardPath] = useState<string | null>(null)
   const [generation, setGeneration] = useState(0)
@@ -138,10 +146,12 @@ export function DiffPanel({
       setEntries(null)
       setTruncated(false)
       setError(null)
-      setOpError(null)
+      setNotification(null)
+      setLoading(false)
       return
     }
     let cancelled = false
+    setLoading(true)
     const options = scope === 'branch' && baseRef !== null ? { baseRef } : undefined
     const porcelainProbe = scope === 'worktree' ? gitStatusEntries(cwd) : Promise.resolve(null)
     void Promise.all([gitStatus(cwd), gitDiff(cwd, options), porcelainProbe]).then(([status, diff, porcelain]) => {
@@ -152,7 +162,7 @@ export function DiffPanel({
         setEntries(null)
         setTruncated(false)
         setError(null)
-        setOpError(null)
+        setNotification(null)
         return
       }
       if (diff === null) {
@@ -161,7 +171,7 @@ export function DiffPanel({
         setEntries(null)
         setTruncated(false)
         setError(t('error.load'))
-        setOpError(null)
+        notifyError(t('error.load'), reload)
         return
       }
       setAvailable(true)
@@ -172,15 +182,17 @@ export function DiffPanel({
         ? new Set()
         : new Set(diff.files.map(file => file.path)))
       setError(null)
-      setOpError(null)
+      setNotification(null)
     }).catch(() => {
       if (!cancelled) {
         setError(t('error.load'))
-        setOpError(null)
+        notifyError(t('error.load'), reload)
       }
+    }).finally(() => {
+      if (!cancelled) setLoading(false)
     })
     return () => { cancelled = true }
-  }, [cwd, gitStatus, gitDiff, gitStatusEntries, t, generation, scope, baseRef])
+  }, [cwd, gitStatus, gitDiff, gitStatusEntries, t, generation, scope, baseRef, notifyError, reload])
 
   const toggle = (path: string): void => {
     const next = new Set(openPaths)
@@ -192,16 +204,37 @@ export function DiffPanel({
   const runOp = async (
     op: (cwd: string, relativePath: string) => Promise<{ ok: boolean; message?: string }>,
     relativePath: string,
+    action: 'stage' | 'unstage' | 'discard',
   ): Promise<void> => {
     /* v8 ignore next -- stage actions are not rendered without a cwd. */
-    if (cwd === undefined) return
-    const result = await op(cwd, relativePath)
-    if (!result.ok) {
-      setOpError(result.message ?? t('error.load'))
-      return
+    if (cwd === undefined || inFlightOps.current.has(relativePath)) return
+    inFlightOps.current.add(relativePath)
+    setPendingOps(previous => ({ ...previous, [relativePath]: action }))
+    const retry = (): void => { void runOp(op, relativePath, action) }
+    try {
+      const result = await op(cwd, relativePath)
+      if (!result.ok) {
+        notifyError(result.message ?? t('error.load'), retry)
+        return
+      }
+      setNotification(null)
+      reload()
+    } catch (reason) {
+      notifyError(reason instanceof Error ? reason.message : t('error.load'), retry)
+    } finally {
+      inFlightOps.current.delete(relativePath)
+      setPendingOps(previous => {
+        const next = { ...previous }
+        delete next[relativePath]
+        return next
+      })
     }
-    setOpError(null)
-    reload()
+  }
+  const openWorkspaceFile = async (path: string): Promise<void> => {
+    try { await openFile(path) }
+    catch (reason) {
+      notifyError(reason instanceof Error ? reason.message : t('error.open'), () => { void openWorkspaceFile(path) })
+    }
   }
 
   const staged = useMemo(() => entries?.filter(entry => isStaged(entry.xy)) ?? [], [entries])
@@ -266,7 +299,7 @@ export function DiffPanel({
       key={path}
       onClick={(event: MouseEvent<HTMLDivElement>) => {
         const target = event.target as HTMLElement
-        if (target.closest(`.${css.fileTitle}`) !== null) void openFile(path)
+        if (target.closest(`.${css.fileTitle}`) !== null) void openWorkspaceFile(path)
       }}
     >
       <DisclosureRow
@@ -298,6 +331,22 @@ export function DiffPanel({
   const closeMenu = (): void => {
     setMenuOpen(false)
     setQuery('')
+  }
+  const loadBranches = (): void => {
+    if (cwd === undefined) return
+    setBranchLoading(true)
+    void gitBranchList(cwd).then((listed) => {
+      if (listed?.ok !== true) {
+        setBranches([])
+        notifyError(listed?.message ?? t('error.branches'), loadBranches)
+        return
+      }
+      const nextBranches = listed.branches ?? []
+      setBranches(nextBranches)
+      if (scope === 'worktree' && baseRef === null) setBaseRef(pickBranchBase(nextBranches, listed.defaultRef))
+    }).catch((reason: unknown) => {
+      notifyError(reason instanceof Error ? reason.message : t('error.branches'), loadBranches)
+    }).finally(() => { setBranchLoading(false) })
   }
 
   return (
@@ -334,30 +383,21 @@ export function DiffPanel({
             ...branchItems,
           ]}
           anchor={(
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               type="button"
               className={css.scope}
               aria-label={scopeLabel}
+              loading={branchLoading}
               onClick={() => {
                 const next = !menuOpen
                 setMenuOpen(next)
-                if (next && cwd !== undefined) {
-                  void gitBranchList(cwd).then((listed) => {
-                    if (listed?.ok !== true) {
-                      setBranches([])
-                      return
-                    }
-                    const nextBranches = listed.branches ?? []
-                    setBranches(nextBranches)
-                    if (scope === 'worktree' && baseRef === null) {
-                      setBaseRef(pickBranchBase(nextBranches, listed.defaultRef))
-                    }
-                  })
-                }
+                if (next) loadBranches()
               }}
             >
               {scopeLabel}
-            </button>
+            </Button>
           )}
         />
         <button
@@ -399,26 +439,28 @@ export function DiffPanel({
           </button>
         </Tooltip>
         <Tooltip label={t('refresh')} side="bottom">
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             className={css.refresh}
             aria-label={t('refresh')}
+            loading={loading}
             onClick={() => { reload() }}
           >
             <IconRefreshOutline16 size={14} />
-          </button>
+          </Button>
         </Tooltip>
       </div>
       <div className={css.body}>
         {cwd === undefined ? (
           <p className={css.message}>{t('empty.cwd')}</p>
         ) : error !== null ? (
-          <p className={css.message}>{error}</p>
+          null
         ) : !available ? (
-          <p className={css.message} data-diff-unavailable>{t('unavailable')}</p>
+          loading ? null : <p className={css.message} data-diff-unavailable>{t('unavailable')}</p>
         ) : (
           <>
-            {opError !== null ? <p className={css.opError} role="alert">{opError}</p> : null}
             {entries !== null ? (
           <>
             {truncated ? <p className={css.message}>{t('truncated')}</p> : null}
@@ -430,16 +472,20 @@ export function DiffPanel({
                   <section>
                     <h4 className={css.group}>{t('group.staged')}</h4>
                     {staged.map(entry => fileRow(entry.path, (
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         type="button"
                         className={css.action}
+                        disabled={pendingOps[entry.path] !== undefined}
+                        loading={pendingOps[entry.path] === 'unstage'}
                         onClick={(event) => {
                           event.stopPropagation()
-                          void runOp(gitUnstage, entry.path)
+                          void runOp(gitUnstage, entry.path, 'unstage')
                         }}
                       >
                         {t('unstage')}
-                      </button>
+                      </Button>
                     )))}
                   </section>
                 ) : null}
@@ -448,26 +494,34 @@ export function DiffPanel({
                     <h4 className={css.group}>{t('group.unstaged')}</h4>
                     {unstaged.map(entry => fileRow(entry.path, (
                       <>
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           type="button"
                           className={css.action}
+                          disabled={pendingOps[entry.path] !== undefined}
+                          loading={pendingOps[entry.path] === 'stage'}
                           onClick={(event) => {
                             event.stopPropagation()
-                            void runOp(gitStage, entry.path)
+                            void runOp(gitStage, entry.path, 'stage')
                           }}
                         >
                           {t('stage')}
-                        </button>
-                        <button
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           type="button"
                           className={css.action}
+                          disabled={pendingOps[entry.path] !== undefined}
+                          loading={pendingOps[entry.path] === 'discard'}
                           onClick={(event) => {
                             event.stopPropagation()
                             setDiscardPath(entry.path)
                           }}
                         >
                           {t('discard')}
-                        </button>
+                        </Button>
                       </>
                     )))}
                   </section>
@@ -501,7 +555,7 @@ export function DiffPanel({
                 const path = discardPath
                 setDiscardPath(null)
                 /* v8 ignore next -- confirm is only rendered while discardPath is set. */
-                if (path !== null) void runOp(gitDiscard, path)
+                if (path !== null) void runOp(gitDiscard, path, 'discard')
               }}
             >
               {t('discard.confirm')}
@@ -509,6 +563,10 @@ export function DiffPanel({
           </>
         )}
       />
+      {notification !== null && <Toast key={notification.id} text={notification.text}
+        icon={<IconWarningOutline16 />} holdMs={null} dismissLabel={t('feedback.close')}
+        actions={[{ label: t('retry'), onClick: notification.retry }]}
+        onDone={() => { setNotification(null) }} />}
     </div>
   )
 }

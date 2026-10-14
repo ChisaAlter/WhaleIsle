@@ -10,7 +10,9 @@
  * showing fields nothing would accept.
  */
 
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Button } from '../Button.tsx'
+import { Toast } from '../Toast.tsx'
 import type { SettingsFormShell } from './form-model.ts'
 import css from './SettingsForm.module.css'
 
@@ -50,6 +52,8 @@ export interface SettingsFormProps {
 export function SettingsForm(props: SettingsFormProps) {
   const { state, labels } = props
   const discard = useRef(props.onDiscard)
+  const [dismissedFailure, setDismissedFailure] = useState(false)
+  useEffect(() => { setDismissedFailure(false) }, [state.failed])
   discard.current = props.onDiscard
   useEffect(() => () => { discard.current() }, [])
   if (!state.available) return <p className={css.unavailable} role="status">{labels.unavailable}</p>
@@ -59,15 +63,19 @@ export function SettingsForm(props: SettingsFormProps) {
       {!state.writable ? <p className={css.readOnly} role="status">{labels.readOnly}</p> : null}
       {props.children}
       <div className={css.footer}>
-        {state.failed ? <p className={css.failed} role="status">{labels.saveFailed}</p> : null}
-        <button
-          type="button"
+        {state.failed && !dismissedFailure ? <Toast text={labels.saveFailed} holdMs={6000}
+          onDone={() => { setDismissedFailure(true) }} /> : null}
+        <Button
+          variant="primary"
+          size="sm"
           className={css.save}
           disabled={blocked}
+          loading={state.saving}
+          aria-label={state.saving ? labels.saving : labels.save}
           onClick={props.onSave}
         >
-          {state.saving ? labels.saving : labels.save}
-        </button>
+          {labels.save}
+        </Button>
       </div>
     </div>
   )

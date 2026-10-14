@@ -1,6 +1,9 @@
 import { useState, type ReactNode } from 'react'
 import {
+  Button,
   IconRightUpOutline16,
+  IconWarningOutline16,
+  Toast,
   Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -50,11 +53,12 @@ export function FloatingPreviewButton({
   const activate = async (target: FloatingPreviewTarget): Promise<void> => {
     if (!target.ok || pending) return
     setPending(true)
-    setError(undefined)
     try {
       const result = await open(target.request)
       if (!floatingPreviewSucceeded(result)) {
         setError(t('preview.floating.failed'))
+      } else {
+        setError(undefined)
       }
     } catch {
       setError(t('preview.floating.failed'))
@@ -66,18 +70,26 @@ export function FloatingPreviewButton({
   return (
     <>
       <Tooltip label={title} side="bottom">
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           type="button"
           className={css.iconButton}
           aria-label={label}
           data-floating-preview
           disabled={!shape.ok || pending}
+          loading={pending}
           onClick={() => { void activate(shape) }}
         >
           <IconRightUpOutline16 size={14} />
-        </button>
+        </Button>
       </Tooltip>
-      {error !== undefined ? <span className={css.saveError} role="alert">{error}</span> : null}
+      {error !== undefined && <Toast
+        text={error} icon={<IconWarningOutline16 />} holdMs={null}
+        dismissLabel={t('unsaved.close')}
+        {...(shape.ok ? { actions: [{ label, onClick: () => { void activate(shape) } }] } : {})}
+        onDone={() => { setError(undefined) }}
+      />}
     </>
   )
 }

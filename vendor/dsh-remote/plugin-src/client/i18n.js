@@ -135,6 +135,7 @@ export const zh = {
   'explorer.menuDeleteDir': '删除目录',
   'explorer.deleteConfirm': '删除远程 {path}？此操作不可撤销。',
   'explorer.copied': '已复制',
+  'explorer.copyFail': '无法写入剪贴板',
   'explorer.newName': '新名称',
   'explorer.root': '远程工作区',
 
@@ -292,6 +293,7 @@ export const en = {
   'explorer.menuDeleteDir': 'Delete directory',
   'explorer.deleteConfirm': 'Delete remote {path}? This cannot be undone.',
   'explorer.copied': 'Copied',
+  'explorer.copyFail': 'Could not write to the clipboard',
   'explorer.newName': 'New name',
   'explorer.root': 'Remote workspace',
 

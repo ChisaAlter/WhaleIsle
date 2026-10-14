@@ -6,7 +6,7 @@ import clsx from 'clsx'
 import {
   Button, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconChevronUpOutlineRegular,
   IconClockOutlineRegular, IconCloseOutlineRegular,
-  IconEllipsisOutlineRegular, IconTrashOutlineRegular, Modal, Pill, ReferenceIconRegular, Tooltip,
+  IconEllipsisOutlineRegular, IconTrashOutlineRegular, Modal, Pill, ReferenceIconRegular, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
@@ -374,6 +374,7 @@ export function TaskDetail({
   }, [edit.shown.kind, edit.shown.draft.seconds])
   const [pending, setPending] = useState(false)
   const [failure, setFailure] = useState<TaskManagerKey>()
+  const [failureDismissed, setFailureDismissed] = useState(false)
   // A locally refused save re-reads the draft on every render, so its message
   // leaves the hint slot as soon as edits remove the cause and the descriptive
   // hint returns; Host failures stay until the next cancel or save.
@@ -632,6 +633,8 @@ export function TaskDetail({
     setFailure(undefined)
   }
   const saveDraft = async (): Promise<void> => {
+    if (pending) return
+    setFailureDismissed(false)
     const invalid = draftError(shown)
     if (invalid !== undefined) {
       setFailure(invalid)
@@ -855,7 +858,7 @@ export function TaskDetail({
               disabled={busy || pending || task.status === 'inactive'}
               values={shown}
               intervalUnit={intervalUnit}
-              failure={shownFailure === 'timing.invalidInterval' ? INTERVAL_ERROR_KEYS[intervalUnit] : shownFailure}
+              failure={undefined}
               onChooseKind={chooseKind}
               onChooseZone={chooseZone}
               onToggleWeekday={toggleWeekday}
@@ -886,18 +889,22 @@ export function TaskDetail({
       {tab === 'rule' && sessionNotice !== undefined && <p id={`${id}-session-state`} className={css.detailNotice} role="status">
         {sessionNotice}
       </p>}
-      {/* On the rule tab a failure shows inside the Run time card's hint slot;
-          this bar-side line covers only a save submitted from the records tab,
-          where that slot is hidden with its panel. */}
-      {tab === 'records' && shownFailure !== undefined && <p className={css.saveFailure} role="alert">
-        {t(shownFailure === 'timing.invalidInterval' ? INTERVAL_ERROR_KEYS[intervalUnit] : shownFailure)}</p>}
+      {/* A failed save preserves its draft and recovery controls without
+          inserting content into either detail tab. */}
+      {shownFailure !== undefined && !failureDismissed && <Toast
+        text={t(shownFailure === 'timing.invalidInterval' ? INTERVAL_ERROR_KEYS[intervalUnit] : shownFailure)}
+        holdMs={null}
+        dismissLabel={t('detail.close')}
+        actions={[{ label: t('rule.save'), disabled: pending || busy, onClick: () => { void saveDraft() } }, { label: t('rule.cancel'), disabled: pending, onClick: cancelDraft }]}
+        onDone={() => { setFailureDismissed(true) }}
+      />}
       {/* The mock's staged-edit bar sits under the detail tab strip and
           appears only while the draft differs from the stored task. */}
       {dirty && !deleted && task.status !== 'inactive' && <footer className={css.saveFooter}>
         <span className={css.saveNotice}>{t('rule.unsaved')}</span>
         <Button disabled={pending} onClick={cancelDraft}>{t('rule.cancel')}</Button>
-        <Button variant="primary" disabled={pending || !dirty} onClick={() => { void saveDraft() }}>
-          {t(pending ? 'rule.saving' : 'rule.save')}
+        <Button variant="primary" disabled={pending || !dirty} loading={pending} onClick={() => { void saveDraft() }}>
+          {t('rule.save')}
         </Button>
       </footer>}
     </aside>

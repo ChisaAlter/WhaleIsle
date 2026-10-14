@@ -1,6 +1,6 @@
 /** General Settings control for shared developer-tool visibility and previews. */
-import { useState } from 'react'
-import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useRef, useState } from 'react'
+import { Switch, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './DeveloperToolsRow.module.css'
@@ -21,17 +21,27 @@ export function DeveloperToolsRow({ useDeveloperTools, setEnabled, t }:
   const enabled = useDeveloperTools(value => value)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
+  const [notice, setNotice] = useState<{ id: number; text: string; success: boolean } | null>(null)
+  const noticeId = useRef(0)
   return <div className={css.row}>
     <div>
       <div className={css.title}>{t('developerTools.title')}</div>
       <div className={css.description}>{t('developerTools.description')}</div>
-      {failed && <div role="alert">{t('developerTools.error')}</div>}
     </div>
-    <Switch checked={enabled} disabled={busy} label={t('developerTools.title')}
+    <Switch checked={enabled} disabled={busy} loading={busy} label={t('developerTools.title')}
+      title={failed ? t('developerTools.error') : undefined}
       onChange={(next: boolean) => {
         setFailed(false)
         setBusy(true)
-        void setEnabled(next).catch(() => { setFailed(true) }).finally(() => { setBusy(false) })
+        void setEnabled(next).then(() => {
+          setNotice({ id: ++noticeId.current, text: t('feedback.saved'), success: true })
+        }).catch(() => {
+          setFailed(true)
+          setNotice({ id: ++noticeId.current, text: t('developerTools.error'), success: false })
+        }).finally(() => { setBusy(false) })
       }} />
+    {notice !== null && <Toast key={notice.id} text={notice.text}
+      {...notice.success ? { tone: 'success' as const } : {}}
+      holdMs={notice.success ? 3000 : null} dismissLabel={t('close')} onDone={() => { setNotice(null) }} />}
   </div>
 }

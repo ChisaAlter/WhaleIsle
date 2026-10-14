@@ -1,8 +1,8 @@
 /** About page inside the official Settings sidebar. */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { desktopShell, type UpdateInfo } from './desktop-shell.ts'
 import css from './AboutSection.module.css'
@@ -45,11 +45,15 @@ export function AboutSection({ t, openDesktopUpdate }: AboutSectionProps): React
   const [version, setVersion] = useState('')
   const [homePath, setHomePath] = useState('')
   const [homeError, setHomeError] = useState('')
+  const [homeBusy, setHomeBusy] = useState(false)
+  const [readError, setReadError] = useState('')
   const [credentialStorage, setCredentialStorage] = useState<'encrypted' | 'plaintext' | ''>('')
   const [busy, setBusy] = useState(false)
   const [percent, setPercent] = useState(0)
   const [status, setStatus] = useState<UpdateStatus>('idle')
   const [info, setInfo] = useState<UpdateInfo | null>(null)
+  const [notice, setNotice] = useState<{ id: number; text: string; success: boolean } | null>(null)
+  const noticeId = useRef(0)
   const shell = desktopShell()
 
   const applyInfo = useCallback((next: UpdateInfo) => {
@@ -66,13 +70,20 @@ export function AboutSection({ t, openDesktopUpdate }: AboutSectionProps): React
     setBusy(true)
     setStatus('checking')
     try {
-      applyInfo(await shell.checkUpdate())
+      const next = await shell.checkUpdate()
+      applyInfo(next)
+      const nextStatus = next.status
+      if (nextStatus === 'none' || nextStatus === 'current' || nextStatus === 'available' || nextStatus === 'error') {
+        setNotice({ id: ++noticeId.current, text: statusCopy(t, nextStatus, next, 0), success: nextStatus !== 'error' })
+      }
     } catch (error) {
-      applyInfo({ status: 'error', message: error instanceof Error ? error.message : String(error) })
+      const next = { status: 'error', message: error instanceof Error ? error.message : String(error) }
+      applyInfo(next)
+      setNotice({ id: ++noticeId.current, text: statusCopy(t, 'error', next, 0), success: false })
     } finally {
       setBusy(false)
     }
-  }, [applyInfo, shell])
+  }, [applyInfo, shell, t])
 
   const install = useCallback(async () => {
     if (status === 'available' && openDesktopUpdate !== undefined) {
@@ -83,28 +94,55 @@ export function AboutSection({ t, openDesktopUpdate }: AboutSectionProps): React
     setBusy(true)
     setPercent(0)
     setStatus('download')
+    setNotice(null)
     try {
       const next = await shell.installUpdate()
       applyInfo(next)
-      if (next.manualInstall) setStatus('manual')
-      else if (next.launched) setStatus('install')
+      if (next.cancelled === true) {
+        setNotice({ id: ++noticeId.current, text: t('about.updateCancelled'), success: false })
+      } else if (next.manualInstall) {
+        setStatus('manual')
+        setNotice({ id: ++noticeId.current, text: t('about.updateManualInstall'), success: true })
+      } else if (next.launched) {
+        setStatus('install')
+        setNotice({ id: ++noticeId.current, text: t('about.updateInstalling'), success: true })
+      } else if (next.openedPage) {
+        setNotice({ id: ++noticeId.current, text: t('about.updateOpenedPage'), success: false })
+      } else {
+        const failed = { ...next, status: 'error', message: next.message || next.code || next.status || '' }
+        applyInfo(failed)
+        setNotice({ id: ++noticeId.current, text: statusCopy(t, 'error', failed, 0), success: false })
+      }
     } catch (error) {
-      applyInfo({ status: 'error', message: error instanceof Error ? error.message : String(error) })
+      const next = { status: 'error', message: error instanceof Error ? error.message : String(error) }
+      applyInfo(next)
+      setNotice({ id: ++noticeId.current, text: statusCopy(t, 'error', next, 0), success: false })
     } finally {
       setBusy(false)
     }
-  }, [applyInfo, openDesktopUpdate, shell, status])
+  }, [applyInfo, openDesktopUpdate, shell, status, t])
 
   const openHome = useCallback(async () => {
     if (!shell?.openDshHome) return
     setHomeError('')
+    setHomeBusy(true)
     try {
       const result = await shell.openDshHome()
-      if (!result.ok) setHomeError(result.error || 'failed')
+      if (!result.ok) {
+        const message = result.error || 'failed'
+        setHomeError(message)
+        setNotice({ id: ++noticeId.current, text: t('about.openHomeError', { message }), success: false })
+      } else {
+        setNotice({ id: ++noticeId.current, text: t('about.openHomeDone'), success: true })
+      }
     } catch (error) {
-      setHomeError(error instanceof Error ? error.message : String(error))
+      const message = error instanceof Error ? error.message : String(error)
+      setHomeError(message)
+      setNotice({ id: ++noticeId.current, text: t('about.openHomeError', { message }), success: false })
+    } finally {
+      setHomeBusy(false)
     }
-  }, [shell])
+  }, [shell, t])
 
   useEffect(() => {
     if (!shell) return undefined
@@ -115,7 +153,13 @@ export function AboutSection({ t, openDesktopUpdate }: AboutSectionProps): React
       if (!cancelled && (config.credentialStorage === 'encrypted' || config.credentialStorage === 'plaintext')) {
         setCredentialStorage(config.credentialStorage)
       }
-    }).catch(() => {})
+      if (!cancelled) setReadError('')
+    }).catch((caught: unknown) => {
+      if (cancelled) return
+      const message = caught instanceof Error ? caught.message : String(caught)
+      setReadError(message)
+      setNotice({ id: ++noticeId.current, text: t('feedback.readError', { message }), success: false })
+    })
     void check()
     const stop = shell.onUpdateProgress?.((payload) => {
       if (payload.phase === 'download') {
@@ -131,15 +175,14 @@ export function AboutSection({ t, openDesktopUpdate }: AboutSectionProps): React
       cancelled = true
       stop?.()
     }
-  }, [check, shell])
+  }, [check, shell, t])
 
   const canInstall = Boolean(shell?.installUpdate || (status === 'available' && openDesktopUpdate)) && !busy && (
     Boolean(info?.assetUrl) || status === 'none' || status === 'available' || status === 'current'
   )
-  const message = statusCopy(t, status, info, percent)
 
   return (
-    <div className={css.section}>
+    <div className={css.section} title={readError ? t('feedback.readError', { message: readError }) : undefined}>
       <h2 className={css.heading}>{t('about.nav')}</h2>
       <p className={css.intro}>{t('about.intro')}</p>
       <ul className={css.list}>
@@ -149,12 +192,16 @@ export function AboutSection({ t, openDesktopUpdate }: AboutSectionProps): React
           <p className={css.meta}>{t('about.appMeta')}</p>
           {shell ? (
             <>
-              {message ? <p className={css.status} role="status">{message}</p> : null}
               <div className={css.actions}>
-                <Button variant="outline" size="sm" disabled={busy} onClick={() => { void check() }}>
+                <Button variant="outline" size="sm" disabled={busy} loading={busy && status === 'checking'}
+                  title={status === 'error' ? statusCopy(t, status, info, percent) : undefined}
+                  onClick={() => { void check() }}>
                   {t('about.checkUpdate')}
                 </Button>
-                <Button variant="primary" size="sm" disabled={!canInstall} onClick={() => { void install() }}>
+                <Button variant="primary" size="sm" disabled={!canInstall} loading={status === 'download' || (busy && status !== 'checking')}
+                  feedback={status === 'download' ? `${String(percent)}%` : undefined}
+                  title={status === 'error' ? statusCopy(t, status, info, percent) : undefined}
+                  onClick={() => { void install() }}>
                   {t('about.installUpdate')}
                 </Button>
               </div>
@@ -174,9 +221,10 @@ export function AboutSection({ t, openDesktopUpdate }: AboutSectionProps): React
           {shell?.openDshHome ? (
             <>
               {homePath ? <p className={css.meta}>{t('about.homePath', { path: homePath })}</p> : null}
-              {homeError ? <p className={css.status} role="status">{t('about.openHomeError', { message: homeError })}</p> : null}
               <div className={css.actions}>
-                <Button variant="outline" size="sm" onClick={() => { void openHome() }}>
+                <Button variant="outline" size="sm" loading={homeBusy}
+                  title={homeError ? t('about.openHomeError', { message: homeError }) : undefined}
+                  onClick={() => { void openHome() }}>
                   {t('about.openHome')}
                 </Button>
               </div>
@@ -192,6 +240,9 @@ export function AboutSection({ t, openDesktopUpdate }: AboutSectionProps): React
           </a>
         </li>
       </ul>
+      {notice !== null && <Toast key={notice.id} text={notice.text}
+        {...notice.success ? { tone: 'success' as const } : {}}
+        holdMs={notice.success ? 3000 : null} dismissLabel={t('close')} onDone={() => { setNotice(null) }} />}
     </div>
   )
 }

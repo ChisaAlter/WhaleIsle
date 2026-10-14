@@ -49,12 +49,19 @@ describe('SettingsValueField', () => {
     expect(onReset).toHaveBeenCalledOnce()
   })
 
-  it('replaces the hint with the reason an invalid draft cannot be saved', () => {
-    render(<SettingsValueField {...frame} invalid text="soon" onEdit={vi.fn()} onReset={vi.fn()} />)
-
-    expect(screen.getByText('Enter a number.')).toBeTruthy()
-    expect(screen.queryByText('How long one command may run.')).toBeNull()
-    expect(screen.getByLabelText('Command timeout').getAttribute('aria-invalid')).toBe('true')
+  it('keeps the hint while exposing an invalid draft through its description and tooltip', () => {
+    const edit = vi.fn(), reset = vi.fn()
+    const view = render(<SettingsValueField {...frame} text="60000" onEdit={edit} onReset={reset} />)
+    const hint = screen.getByText('How long one command may run.')
+    view.rerender(<SettingsValueField {...frame} invalid text="soon" onEdit={edit} onReset={reset} />)
+    const input = screen.getByLabelText('Command timeout')
+    expect(screen.getByText('How long one command may run.')).toBe(hint)
+    expect(input.getAttribute('aria-invalid')).toBe('true')
+    expect(input.getAttribute('aria-describedby')?.split(' ').map(id => document.getElementById(id)?.textContent))
+      .toEqual(['How long one command may run.', 'Enter a number.'])
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    fireEvent.mouseEnter(input)
+    expect(screen.getByRole('tooltip').textContent).toBe('Enter a number.')
   })
 
   it('hints a numeric keypad and renders a placeholder when asked', () => {

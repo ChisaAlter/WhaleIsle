@@ -2,7 +2,7 @@
 import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  IconChevronDownOutlineRegular, IconFolderOpenOutlineRegular, IconRightUpOutlineRegular, Menu, Tooltip,
+  Button, IconChevronDownOutlineRegular, IconFolderOpenOutlineRegular, IconRightUpOutlineRegular, Menu, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -49,7 +49,7 @@ export function useOpenTargetGesture(execute: OpenTargetButtonProps['execute'], 
 } {
   const [pending, setPending] = useState(false)
   const inFlight = useRef(false)
-  const { toast, show } = useOpenFailureToast()
+  const { toast, show } = useOpenFailureToast(t('close'))
   return {
     pending,
     toast,
@@ -133,15 +133,15 @@ export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
           <div className={css.split} data-open-target={kind} data-size={props.prominent ? 'large' : 'compact'}
             data-open-path={kind === 'file' && !props.prominent ? '' : undefined} data-state={disabled ? 'busy' : 'idle'}>
             <Tooltip portal label={primaryLabel} shortcutKeys={props.shortcut?.keys} side="bottom" delayMs={500}>
-              <button type="button" className={css.main} disabled={disabled} aria-label={props.prominent ? undefined : primaryLabel}
+              <Button variant="ghost" size="sm" className={css.main} disabled={disabled} loading={disabled} aria-label={props.prominent ? undefined : primaryLabel}
                 aria-keyshortcuts={props.shortcut?.aria}
                 data-open-path-open={kind === 'file' && !props.prominent ? '' : undefined}
                 data-open-path-unpreviewable={props.prominent ? '' : undefined} onClick={primary}>
                 {icon}{(props.prominent) && (revealDefault ? t('path.reveal') : t('path.open'))}
-              </button>
+              </Button>
             </Tooltip>
-            {hasMenu && <button
-              type="button" className={css.chevron} disabled={disabled}
+            {hasMenu && <Button
+              variant="ghost" size="sm" className={css.chevron} disabled={disabled}
               aria-haspopup="menu" aria-expanded={menuOpen && !disabled} aria-label={t('path.more')}
               data-open-path-more={kind === 'file' && !props.prominent ? '' : undefined}
               onClick={() => {
@@ -150,7 +150,7 @@ export function OpenTargetButton(props: OpenTargetButtonProps): ReactNode {
               }}
             >
               <IconChevronDownOutlineRegular size={props.prominent || kind === 'directory' ? 14 : 10} />
-            </button>}
+            </Button>}
           </div>
         )}
       />

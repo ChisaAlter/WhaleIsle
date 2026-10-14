@@ -8,7 +8,7 @@ import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller
 import type { ReactNode } from 'react'
 import {
   IconChevronDownOutlineRegular, IconCompareSplitOutlineRegular, IconInspectOutlineRegular,
-  IconNowrapFillRegular, IconWrapFillRegular, Menu, PathLabel, Tooltip,
+  IconNowrapFillRegular, IconWrapFillRegular, Menu, PathLabel, StateDot, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -152,7 +152,8 @@ export function ReviewTab({
           })}
         </span>
       </div>
-      {summaryState === 'loading' && <p className={diffCss.status} role="status">{t('diff.loading')}</p>}
+      {summaryState === 'loading' && <Toast text={t('diff.loading')} icon={<StateDot state="ongoing" />}
+        holdMs={null} onDone={() => {}} />}
       {summaryState === 'missing' && <p className={diffCss.status}>{t('diff.missing')}</p>}
       {file !== undefined && <FileDiff state={diffState} split={split} wrap={wrap} t={t}
         retry={() => { void loadChangesDiff(sessionId, seq, index) }} />}

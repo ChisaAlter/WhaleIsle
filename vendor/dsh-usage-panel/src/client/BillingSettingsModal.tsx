@@ -16,7 +16,7 @@
 // no `idle` column exists, so a flat record without `idle` bills half in
 // off-peak hours.
 import * as React from 'react'
-import { Modal, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Modal, Switch, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { I18n } from './locales.ts'
 import type { RpcLike } from './ctx.ts'
 import { type BillingModelOption, type BillingModelOptions, type BillingSettings } from '../shared/contract.ts'
@@ -84,13 +84,19 @@ export function BillingSettingsModal({ rpc, i18n, open, onClose }: BillingSettin
   const [providerId, setProviderId] = React.useState('')
   const [modelName, setModelName] = React.useState('')
   const [buffer, setBuffer] = React.useState<PriceBuffer>({ ...EMPTY_BUFFER })
-  const [editError, setEditError] = React.useState<string | null>(null)
-  const [updated, setUpdated] = React.useState<string | null>(null)
+  const [feedback, setFeedback] = React.useState<{ id: number; text: string; success: boolean } | null>(null)
+  const [dismissedFeedbackId, setDismissedFeedbackId] = React.useState<number | null>(null)
+  const feedbackId = React.useRef(0)
+  const [validationAttempted, setValidationAttempted] = React.useState(false)
   const [loading, setLoading] = React.useState(false)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [loadNonce, setLoadNonce] = React.useState(0)
-  const [saving, setSaving] = React.useState(false)
-  const [saveError, setSaveError] = React.useState<string | null>(null)
+  const [savingAction, setSavingAction] = React.useState<'save' | 'commit' | null>(null)
+  const saving = savingAction !== null
+
+  const showFeedback = (text: string, success = false): void => {
+    setFeedback({ id: ++feedbackId.current, text, success })
+  }
 
   const bumpLoad = (): void => setLoadNonce((n) => n + 1)
 
@@ -102,9 +108,8 @@ export function BillingSettingsModal({ rpc, i18n, open, onClose }: BillingSettin
     let disposed = false
     const snapshot = currentBilling()
     setLoadError(null)
-    setSaveError(null)
-    setEditError(null)
-    setUpdated(null)
+    setFeedback(null)
+    setValidationAttempted(false)
     setOptions({ options: [] })
     setProviderId('')
     setModelName('')
@@ -176,7 +181,8 @@ export function BillingSettingsModal({ rpc, i18n, open, onClose }: BillingSettin
   const selectModel = (provider: string, model: string): void => {
     setProviderId(provider)
     setModelName(model)
-    setEditError(null)
+    setFeedback(null)
+    setValidationAttempted(false)
     const custom = settings?.prices[rowKey(provider, model)] ?? settings?.prices[model]
     setBuffer(seedPriceBuffer(custom, defaultPrice(provider, model)))
   }
@@ -200,6 +206,7 @@ export function BillingSettingsModal({ rpc, i18n, open, onClose }: BillingSettin
    *  periods at the entered single (价格) row. Opening prefills the peak row as
    *  twice the idle values when the peak fields are empty. */
   const toggleIdle = (checked: boolean): void => {
+    setFeedback(null)
     if (!checked) {
       setBuffer({ ...buffer, idleChecked: false })
       return
@@ -220,7 +227,8 @@ export function BillingSettingsModal({ rpc, i18n, open, onClose }: BillingSettin
    *  exist, which is what leaves `commitModel`'s no-model branch reachable. */
   const switchProvider = (provider: string): void => {
     const first = providerOptions.find((p) => p.provider === provider)?.models[0]
-    setEditError(null)
+    setFeedback(null)
+    setValidationAttempted(false)
     if (first === undefined) {
       setProviderId(provider)
       setModelName('')
@@ -236,11 +244,11 @@ export function BillingSettingsModal({ rpc, i18n, open, onClose }: BillingSettin
    *  simply persists the switch settings (no forced pick).
    *  @param close - true = also close the modal (footer 保存); false = stay open (添加/更新). */
   const commitModel = (close: boolean): void => {
-    if (settings === null) return
+    if (settings === null || saving) return
+    setFeedback(null)
     if (modelName === '') {
       if (!close) return // 添加/更新 is disabled without a model anyway
-      setSaving(true)
-      setSaveError(null)
+      setSavingAction('save')
       callBillingSet(rpc, settings)
         .then((saved) => {
           publishBilling(saved)
@@ -248,12 +256,21 @@ export function BillingSettingsModal({ rpc, i18n, open, onClose }: BillingSettin
           onClose()
         })
         .catch((err) => {
-          setSaveError(t('billing.saveError', { msg: String((err as Error)?.message ?? err) }))
+          showFeedback(t('billing.saveError', { msg: String((err as Error)?.message ?? err) }))
         })
-        .finally(() => setSaving(false))
+        .finally(() => setSavingAction(null))
       return
     }
     const key = rowKey(providerId, modelName)
+    setValidationAttempted(true)
+    if (buffer.idleChecked && (!validPrice(buffer.hit) || !validPrice(buffer.miss) || !validPrice(buffer.out))) {
+      showFeedback(t('billing.err.invalidPrice', { key: modelName }))
+      return
+    }
+    if (!validPrice(buffer.idleHit) || !validPrice(buffer.idleMiss) || !validPrice(buffer.idleOut)) {
+      showFeedback(t(buffer.idleChecked ? 'billing.err.invalidIdle' : 'billing.err.invalidSingle', { key: modelName }))
+      return
+    }
     const prices: SessionCostPrices = { ...settings.prices }
     const def = defaultPrice(providerId, modelName)
     const unchanged = def !== null && buffer.idleChecked
@@ -269,14 +286,6 @@ export function BillingSettingsModal({ rpc, i18n, open, onClose }: BillingSettin
       delete prices[modelName]
     } else if (buffer.idleChecked) {
       // 峰谷计价 ON: peak row (fields) + explicit idle row.
-      if (!validPrice(buffer.hit) || !validPrice(buffer.miss) || !validPrice(buffer.out)) {
-        setSaveError(t('billing.err.invalidPrice', { key: modelName }))
-        return
-      }
-      if (!validPrice(buffer.idleHit) || !validPrice(buffer.idleMiss) || !validPrice(buffer.idleOut)) {
-        setSaveError(t('billing.err.invalidIdle', { key: modelName }))
-        return
-      }
       delete prices[modelName] // legacy bare key never wins alongside the composite
       prices[key] = {
         inputCacheHit: Number(buffer.hit),
@@ -286,10 +295,6 @@ export function BillingSettingsModal({ rpc, i18n, open, onClose }: BillingSettin
       }
     } else {
       // 峰谷计价 OFF: the single (价格) row IS the one price for both periods.
-      if (!validPrice(buffer.idleHit) || !validPrice(buffer.idleMiss) || !validPrice(buffer.idleOut)) {
-        setSaveError(t('billing.err.invalidSingle', { key: modelName }))
-        return
-      }
       delete prices[modelName]
       const flat = {
         inputCacheHit: Number(buffer.idleHit),
@@ -305,28 +310,30 @@ export function BillingSettingsModal({ rpc, i18n, open, onClose }: BillingSettin
       // that price; `flat` stays as this plugin's own switch marker.
       prices[key] = { ...flat, idle: { ...flat }, flat: true }
     }
-    setSaving(true)
-    setSaveError(null)
-    setUpdated(null)
+    setSavingAction(close ? 'save' : 'commit')
     callBillingSet(rpc, { ...settings, prices })
       .then((saved) => {
         publishBilling(saved)
         setSettings(saved)
         if (close) onClose()
-        else setUpdated(t('billing.updated', { model: modelName }))
+        else showFeedback(t('billing.updated', { model: modelName }), true)
       })
       .catch((err) => {
-        setSaveError(t('billing.saveError', { msg: String((err as Error)?.message ?? err) }))
+        showFeedback(t('billing.saveError', { msg: String((err as Error)?.message ?? err) }))
       })
-      .finally(() => setSaving(false))
+      .finally(() => setSavingAction(null))
   }
 
   const save = (): void => commitModel(true)
   const addUpdate = (): void => commitModel(false)
 
   const peakValley = settings?.peakValleyEnabled !== false
-  const def = modelName !== '' ? defaultPrice(providerId, modelName) : null
-  const defaultValue = def !== null
+  const idleInvalidReason = t(buffer.idleChecked ? 'billing.err.invalidIdle' : 'billing.err.invalidSingle', { key: modelName })
+  const peakInvalidReason = t('billing.err.invalidPrice', { key: modelName })
+  const editPrice = (field: Exclude<keyof PriceBuffer, 'idleChecked'>, value: string): void => {
+    setFeedback(null)
+    setBuffer({ ...buffer, [field]: value })
+  }
 
   const body = loadError !== null ? (
     <div className="dsw-ust-bill-loading">
@@ -348,6 +355,7 @@ export function BillingSettingsModal({ rpc, i18n, open, onClose }: BillingSettin
             <span>{t('billing.providerLabel')}</span>
             <select
               value={providerId}
+              disabled={saving}
               onChange={(e) => switchProvider(e.target.value)}
             >
               {providerOptions.map((option) => (
@@ -361,6 +369,7 @@ export function BillingSettingsModal({ rpc, i18n, open, onClose }: BillingSettin
             <span>{t('billing.modelLabel')}</span>
             <select
               value={modelName}
+              disabled={saving}
               onChange={(e) => selectModel(providerId, e.target.value)}
             >
               {providerModels.map((model) => (
@@ -375,6 +384,7 @@ export function BillingSettingsModal({ rpc, i18n, open, onClose }: BillingSettin
               <span>{t('billing.idleToggle')}</span>
               <Switch
                 checked={buffer.idleChecked}
+                disabled={saving}
                 onChange={(e) => toggleIdle(e.target.checked)}
               />
             </label>
@@ -388,65 +398,84 @@ export function BillingSettingsModal({ rpc, i18n, open, onClose }: BillingSettin
           <span className={buffer.idleChecked ? 'dsw-ust-bill-period is-idle' : 'dsw-ust-bill-period'}>
             {buffer.idleChecked ? t('billing.periodIdle') : t('billing.periodSingle')}
           </span>
-          <PriceInput label={t('billing.hit')} value={buffer.idleHit} onChange={(v) => setBuffer({ ...buffer, idleHit: v })} />
-          <PriceInput label={t('billing.miss')} value={buffer.idleMiss} onChange={(v) => setBuffer({ ...buffer, idleMiss: v })} />
-          <PriceInput label={t('billing.out')} value={buffer.idleOut} onChange={(v) => setBuffer({ ...buffer, idleOut: v })} />
+          <PriceInput label={t('billing.hit')} value={buffer.idleHit} onChange={(v) => editPrice('idleHit', v)} validationAttempted={validationAttempted} invalidReason={idleInvalidReason} disabled={saving} />
+          <PriceInput label={t('billing.miss')} value={buffer.idleMiss} onChange={(v) => editPrice('idleMiss', v)} validationAttempted={validationAttempted} invalidReason={idleInvalidReason} disabled={saving} />
+          <PriceInput label={t('billing.out')} value={buffer.idleOut} onChange={(v) => editPrice('idleOut', v)} validationAttempted={validationAttempted} invalidReason={idleInvalidReason} disabled={saving} />
         </div>
         {buffer.idleChecked && (
           <div className="dsw-ust-bill-prices">
             <span className="dsw-ust-bill-period is-peak">{t('billing.periodPeak')}</span>
-            <PriceInput label={t('billing.hit')} value={buffer.hit} onChange={(v) => setBuffer({ ...buffer, hit: v })} />
-            <PriceInput label={t('billing.miss')} value={buffer.miss} onChange={(v) => setBuffer({ ...buffer, miss: v })} />
-            <PriceInput label={t('billing.out')} value={buffer.out} onChange={(v) => setBuffer({ ...buffer, out: v })} />
+            <PriceInput label={t('billing.hit')} value={buffer.hit} onChange={(v) => editPrice('hit', v)} validationAttempted={validationAttempted} invalidReason={peakInvalidReason} disabled={saving} />
+            <PriceInput label={t('billing.miss')} value={buffer.miss} onChange={(v) => editPrice('miss', v)} validationAttempted={validationAttempted} invalidReason={peakInvalidReason} disabled={saving} />
+            <PriceInput label={t('billing.out')} value={buffer.out} onChange={(v) => editPrice('out', v)} validationAttempted={validationAttempted} invalidReason={peakInvalidReason} disabled={saving} />
           </div>
         )}
         <div className="dsw-ust-bill-commit-row">
-          <button type="button" className="dsw-ust-bill-commit" onClick={addUpdate} disabled={saving || modelName === ''}>
+          <Button size="sm" className="dsw-ust-bill-commit" onClick={addUpdate} disabled={saving || modelName === ''} loading={savingAction === 'commit'}>
             {t('billing.commit')}
-          </button>
+          </Button>
         </div>
-        {updated !== null && <div className="dsw-ust-bill-error is-ok">{updated}</div>}
-        {editError !== null && <div className="dsw-ust-bill-error">{editError}</div>}
       </section>
-
-      {saveError !== null && <div className="dsw-ust-bill-error">{saveError}</div>}
     </div>
   )
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={t('billing.title')}
-      closeLabel={t('billing.close')}
-      className="dsw-ust-modal"
-      contentClassName="dsw-ust-modal-content"
-      footer={
-        <div className="dsw-ust-bill-footer">
-          <button type="button" className="dsw-ust-bill-cancel" onClick={onClose}>
-            {t('billing.close')}
-          </button>
-          <button type="button" className="dsw-ust-bill-save" onClick={save} disabled={saving || loading}>
-            {saving ? t('billing.saving') : t('billing.save')}
-          </button>
-        </div>
-      }
-    >
-      {body}
-    </Modal>
+    <>
+      <Modal
+        open={open}
+        onClose={() => { if (!saving) onClose() }}
+        title={t('billing.title')}
+        closeLabel={t('billing.close')}
+        className="dsw-ust-modal"
+        contentClassName="dsw-ust-modal-content"
+        footer={
+          <div className="dsw-ust-bill-footer">
+            <button type="button" className="dsw-ust-bill-cancel" onClick={onClose} disabled={saving}>
+              {t('billing.close')}
+            </button>
+            <Button size="sm" className="dsw-ust-bill-save" onClick={save} disabled={saving || loading} loading={savingAction === 'save'}>
+              {t('billing.save')}
+            </Button>
+          </div>
+        }
+      >
+        {body}
+      </Modal>
+      {open && feedback !== null && feedback.id !== dismissedFeedbackId && (
+        <Toast
+          key={feedback.id}
+          text={feedback.text}
+          tone={feedback.success ? 'success' : undefined}
+          holdMs={feedback.success ? undefined : null}
+          dismissLabel={t('billing.close')}
+          onDone={() => setDismissedFeedbackId(feedback.id)}
+        />
+      )}
+    </>
   )
 }
 
-function PriceInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }): JSX.Element {
+function PriceInput({ label, value, onChange, validationAttempted, invalidReason, disabled }: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  validationAttempted: boolean
+  invalidReason: string
+  disabled: boolean
+}): JSX.Element {
+  const invalid = (validationAttempted || value !== '') && !validPrice(value)
   return (
     <label className="dsw-ust-bill-input">
       <span>{label}</span>
       <input
         value={value}
+        disabled={disabled}
         inputMode="decimal"
         placeholder="0.00"
         onChange={(e) => onChange(e.target.value)}
-        className={value === '' ? '' : validPrice(value) ? 'is-ok' : 'is-bad'}
+        className={invalid ? 'is-bad' : value === '' ? '' : 'is-ok'}
+        aria-invalid={invalid}
+        title={invalid ? invalidReason : undefined}
       />
     </label>
   )

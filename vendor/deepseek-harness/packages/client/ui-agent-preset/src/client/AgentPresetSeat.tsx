@@ -16,7 +16,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  FlipText, IconAgentPresetOutlineRegular, IconChevronDownOutlineRegular, IconWarningOutlineRegular, Menu, Toast,
+  FlipText, IconAgentPresetOutlineRegular, IconChevronDownOutlineRegular, IconLoadingOutlineRegular, IconWarningOutlineRegular, Menu, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: pulls the ui-conversation SlotMap merge (the hero seat).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -194,9 +194,12 @@ export function AgentPresetSeat({
             aria-expanded={open && options.length > 0}
             title={(typeof state.error === 'object' ? state.error?.reason : state.error) ?? t('seatHint')}
             disabled={state.busy || options.length === 0}
+            aria-busy={state.busy}
             onClick={() => { setOpen(value => !value) }}
           >
-            <IconAgentPresetOutlineRegular className={introducing ? `${css.seatIcon} ${css.introIcon}` : css.seatIcon} />
+            {state.busy
+              ? <IconLoadingOutlineRegular className={`${css.seatIcon} ${css.spinner}`} />
+              : <IconAgentPresetOutlineRegular className={introducing ? `${css.seatIcon} ${css.introIcon}` : css.seatIcon} />}
             <span className={css.seatLabel}>{shownLabel}</span>
             <IconChevronDownOutlineRegular className={css.chevron} />
           </button>

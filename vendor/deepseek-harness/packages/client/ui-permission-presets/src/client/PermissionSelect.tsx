@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  FlipText, IconChevronDownOutlineRegular, Menu, PermissionIconFullAccessRegular,
-  PermissionIconReadOnlyRegular, PermissionIconWorkspaceWriteRegular, RiskConfirmation,
+  FlipText, IconChevronDownOutlineRegular, IconLoadingOutlineRegular, Menu, PermissionIconFullAccessRegular,
+  PermissionIconReadOnlyRegular, PermissionIconWorkspaceWriteRegular, RiskConfirmation, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
@@ -85,6 +85,9 @@ export function PermissionSelect({
   const [open, setOpen] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
   const [acknowledged, setAcknowledged] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
+  const [showFailure, setShowFailure] = useState(false)
+  const submission = useRef(0)
 
   useEffect(() => {
     if (!locked && selection !== undefined && catalog !== null
@@ -138,13 +141,26 @@ export function PermissionSelect({
   })
 
   const submit = (id: string): void => {
+    const token = ++submission.current
     setPick(id)
+    setFailure(null)
+    setShowFailure(false)
     void select(id)
-      .catch(() => false)
       .then((ok) => {
+        // The timeout can admit another pick while this command is pending.
+        if (token !== submission.current) return
         // A rejected admission publishes no preset events, so no frame will
         // land on the pick — revert immediately.
-        if (!ok) setPick(null)
+        if (!ok) {
+          setPick(null)
+          setFailure(t('switchFailed'))
+          setShowFailure(true)
+        }
+      }).catch((error: unknown) => {
+        if (token !== submission.current) return
+        setPick(null)
+        setFailure(error instanceof Error ? error.message : String(error))
+        setShowFailure(true)
       })
   }
 
@@ -201,6 +217,7 @@ export function PermissionSelect({
             aria-label={t('mode', { name: currentAccessibleLabel })}
             title={current === undefined ? undefined : optionDescription(current, t)}
             disabled={locked || busy}
+            aria-busy={pick !== null}
             onClick={() => { setOpen(!open) }}
           >
             {permissionGlyph(currentValue) !== undefined && (
@@ -211,11 +228,13 @@ export function PermissionSelect({
               <sup className={css.badge}>{currentBadge}</sup>
             )}
             <span className={clsx(css.chevron, open && css.chevronOpen)} aria-hidden>
-              <IconChevronDownOutlineRegular />
+              {pick !== null ? <IconLoadingOutlineRegular className={css.spinner} /> : <IconChevronDownOutlineRegular />}
             </span>
           </button>
         }
       />
+      {failure !== null && showFailure ? <Toast text={failure} holdMs={null} dismissLabel={t('close')}
+        onDone={() => { setShowFailure(false) }} /> : null}
       {confirmation !== null && (
         <RiskConfirmation
           open

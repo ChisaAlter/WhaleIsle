@@ -44,6 +44,17 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+.navigationLoading {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+}
+
+.navigationLoading > * {
+  grid-area: 1 / 1;
+}
+
 .url {
   flex: 1;
   min-width: 0;

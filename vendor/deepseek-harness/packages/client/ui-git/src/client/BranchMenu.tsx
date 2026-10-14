@@ -12,6 +12,7 @@ import {
   IconChevronDownOutline14,
   IconPlusOutline16,
   Menu,
+  StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { NS } from './locales.ts'
@@ -64,6 +65,7 @@ export function BranchMenu({ cwd, currentRef, t, onChanged, onError, disabled = 
   /** Last list failure detail; `null` means the list loaded (or is loading). */
   const [listError, setListError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [listing, setListing] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
 
@@ -84,26 +86,29 @@ export function BranchMenu({ cwd, currentRef, t, onChanged, onError, disabled = 
   useEffect(() => {
     if (!open) {
       setQuery('')
+      setListing(false)
       return
     }
     let cancelled = false
     if (cwd === undefined) return
     setListError(null)
+    setListing(true)
     void gitBranchList(cwd).then((result) => {
       if (cancelled) return
-      // List failure stays inside the open menu as an error row. Reporting it
-      // through onError would mount the Git toast over the titlebar trigger
-      // and cover the picker.
+      setListing(false)
       if (result.ok) {
         setRefs(result.branches ?? [])
         return
       }
       setRefs(null)
       setListError(result.message?.trim() ?? '')
+      onError(result.message?.trim() || t('branch.listFailed'), t('branch.listFailed'))
     }).catch((error: unknown) => {
       if (cancelled) return
       setRefs(null)
       setListError(error instanceof Error ? error.message.trim() : '')
+      setListing(false)
+      onError(error instanceof Error && error.message.trim() !== '' ? error.message : t('branch.listFailed'), t('branch.listFailed'))
     })
     return () => { cancelled = true }
   }, [open, cwd, gitBranchList])
@@ -154,13 +159,10 @@ export function BranchMenu({ cwd, currentRef, t, onChanged, onError, disabled = 
   }
 
   const label = currentRef ?? t('branch.select')
-  // A failed list is an error row, never the "no matching branches" empty
-  // state: an IPC/authorization failure is not an empty repository.
+  // A failed list reports through the progress toast and never masquerades
+  // as the "no matching branches" empty state.
   const items = listError !== null
-    ? [
-      { type: 'label' as const, id: 'list-failed', text: t('branch.listFailed') },
-      ...(listError === '' ? [] : [{ type: 'label' as const, id: 'list-failed-detail', text: listError }]),
-    ]
+    ? []
     : rows.length === 0 && refs !== null
       ? [{ type: 'label' as const, id: 'empty', text: t('branch.empty') }]
       : rows.map(ref => ({
@@ -210,9 +212,10 @@ export function BranchMenu({ cwd, currentRef, t, onChanged, onError, disabled = 
             aria-label={t('branch.open')}
             aria-expanded={open}
             disabled={disabled || busy || cwd === undefined}
+            aria-busy={busy || listing}
             onClick={() => { setOpen(next => !next) }}
           >
-            <IconBranchOutline16 size={14} />
+            {busy || listing ? <StateDot state="ongoing" size={14} /> : <IconBranchOutline16 size={14} />}
             {compact ? null : <FlipText text={label} className={css.name} />}
             <IconChevronDownOutline14 size={14} />
           </button>

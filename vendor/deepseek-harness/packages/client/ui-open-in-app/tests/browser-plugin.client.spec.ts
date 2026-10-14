@@ -12,6 +12,9 @@ import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/c
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { createElement } from 'react'
+import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { LayoutController, type MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -25,6 +28,7 @@ import { OpenPathEmptyAction } from '../src/client/OpenPathEmptyAction.tsx'
 import { en, NS, zh } from '../src/client/locales.ts'
 
 afterEach(() => {
+  cleanup()
   vi.unstubAllGlobals()
   vi.clearAllMocks()
 })
@@ -45,6 +49,7 @@ async function bench() {
   ctx.slots.register({
     name: 'root',
     children: {
+      'shell.overlay': { kind: 'list', scope: 'root' },
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
       'sidebar.right.tab.files.actions': { kind: 'list', scope: 'session' },
       'sidebar.right.tab.document.actions': { kind: 'list', scope: 'session' },
@@ -79,9 +84,20 @@ describe('open-in-app browser half', () => {
   it('refuses absent workspaces and reports failed keyboard launches', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => String(input) === 'open-in-app/apps'
       ? new Response(JSON.stringify({ apps: ['finder'] })) : new Response('failed', { status: 500 })))
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const { fiber, list, commands } = await bench()
+    const { ctx, fiber, list, commands } = await bench()
     try {
+      const overlay = ctx.slots.entries('shell.overlay')[0]!
+      expect(overlay.options.id).toBe('open-in-app.shortcut-failure')
+      const face = overlay.inject!() as {
+        hooks: { openShortcutFailure: ReturnType<typeof createSnapshotStore<number | null>> }
+        dismissShortcutFailure: () => void
+      }
+      const props = {
+        useOpenShortcutFailure: bindSnapshotSelector(face.hooks.openShortcutFailure),
+        dismissShortcutFailure: face.dismissShortcutFailure,
+        t: makeTranslate(zh),
+      }
+      render(createElement(overlay.component as SlotComponent<typeof props>, props))
       const command = commands.get('workspace.openLocal')!
       const context = { region: 'page', modal: null, target: null } as const
       expect(command.resolve(context).status).toBe('blocked')
@@ -93,9 +109,29 @@ describe('open-in-app browser half', () => {
       await vi.waitFor(() => { expect(command.resolve(context).status).toBe('handled') })
       const result = command.resolve(context)
       if (result.status !== 'handled') throw new Error('Expected an available workspace')
-      result.run()
-      await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith('workspace open rejected:', expect.any(Error)) })
-    } finally { await fiber.dispose(); warn.mockRestore() }
+      const focus = document.createElement('button')
+      document.body.append(focus)
+      focus.focus()
+      await act(async () => { result.run() })
+      const alert = await screen.findByRole('alert')
+      expect(alert.textContent).toContain(zh['path.openError'])
+      expect(alert.getAttribute('data-persistent')).toBe('true')
+      expect(document.activeElement).toBe(focus)
+      expect(face.hooks.openShortcutFailure.getSnapshot()).not.toBeNull()
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.close })) })
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(face.hooks.openShortcutFailure.getSnapshot()).toBeNull()
+
+      vi.mocked(fetch).mockResolvedValue(new Response('{}'))
+      const retry = command.resolve(context)
+      if (retry.status !== 'handled') throw new Error('workspace did not recover after launch failure')
+      await act(async () => { retry.run() })
+      await vi.waitFor(() => { expect(command.resolve(context).status).toBe('handled') })
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(document.activeElement).toBe(focus)
+      expect(vi.mocked(fetch).mock.calls.filter(([input]) => input === 'open-in-app/open')).toHaveLength(2)
+      focus.remove()
+    } finally { await fiber.dispose() }
   })
   it('captures the main directory and remembered app before dispatch and shares pointer launch occupancy', async () => {
     let finish!: (response: Response) => void

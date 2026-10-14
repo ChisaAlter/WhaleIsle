@@ -40,7 +40,7 @@ Check this table before writing a control in a feature package. A plugin cannot 
 
 | Export | What it is |
 |---|---|
-| `Button` | Clickable action; `variant` selects `primary`, `ghost`, `outline`, or `toolbar`. Its ref targets the native button for focus and overlay anchoring. |
+| `Button` | Clickable action; `variant` selects `primary`, `ghost`, `outline`, or `toolbar`. Its ref targets the native button for focus and overlay anchoring. `loading` blocks repeat input and shows `StateDot`; `feedback` overlays localized copy while the resting caption preserves the control's dimensions. When busy copy cannot fit, a text button shows an ellipsis beside the loader and keeps the full accessible name and hover title. Long result details use the owner's Toast. |
 | `Switch` | Two-state toggle, 36×20. The off-state thumb reads `--dsw-alias-switch-thumb` so it stays light in both themes, and the on-state thumb contrasts with the brand track. Disabled controls use half opacity. `label` is required, so the control cannot ship unnamed. |
 | `SegmentedControl` | Tablist of two or more equal-width segments with one sliding indicator, for switching a card or panel between a few modes; the owner holds the selection and `label` names the list. `id` seeds each tab's id (`<id>-<value>`) and the panel it controls (`<id>-<value>-panel`), which the owner renders and points back at the tab with `aria-labelledby`; a segment may be `disabled` with a `title`, and `disabled` on the control locks every segment while the shown panel has work in flight. |
 | `Checkbox` | Labeled native checkbox with controlled state, keyboard interaction, and disabled styling; the caller supplies localized `label` text. |
@@ -62,7 +62,7 @@ Check this table before writing a control in a feature package. A plugin cannot 
 | `Tooltip` | Hover and keyboard-focus text anchored to a cloned child; optional `delayMs` controls hover delay and `focusDelayMs` controls keyboard-focus delay, both defaulting to 0 ms. Optional `portal` rendering escapes clipping containers and ancestor stacking contexts that cap the bubble's z-index. |
 | `HoverCard` | Hover preview the pointer can rest on and select from; optional copy button. |
 | `ImageLightbox` | Shared image modal with focus restoration and Escape dismissal. |
-| `Toast` | Transient top-center banner held for the owner's `holdMs`. |
+| `Toast` | Floating operation feedback, held for the owner's `holdMs`; `null` keeps recovery actions available until dismissed. Dismissal only closes presentation, so the owner retains failures, drafts and undo data. Feedback must never insert a row or move the underlying layout. |
 | `SettingsForm`, `SettingsValueField`, `SettingsSecretField` | The frame and the controls of a plugin's settings page: the frame takes its copy as `labels`, saves only on its button, and discards on unmount; a value field shows staged text with the overridden badge and reset; a secret field starts blank, requests no saved-password autofill, and reports only whether a value is configured. |
 | `SettingsFormModel`, `settingsNumberField`, `settingsTextField` | The staged-edit model behind such a page over a settings scope: drafts are staged and written on save, a field is overridden by its presence in the user layer, and a save that did not land keeps its drafts. |
 | `JsonTree`, `JsonBlock` | Read-only JSON inspection. |

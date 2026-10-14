@@ -100,3 +100,15 @@
 .chevronOpen {
   transform: rotate(180deg);
 }
+
+.spinner {
+  animation: permission-busy 1s linear infinite;
+}
+
+@keyframes permission-busy {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+}

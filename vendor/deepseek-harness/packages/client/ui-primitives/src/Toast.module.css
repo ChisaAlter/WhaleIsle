@@ -3,18 +3,31 @@
    component's own default. The fade DURATION still has to agree with FADE_MS
    in Toast.tsx, which no owner varies. */
 
-.toast {
+.stack {
   position: fixed;
   -webkit-app-region: no-drag;
   /* The desktop shell keeps its own titlebar and surface tabs at the top of the
      window, so the banner keeps the 120px offset it shipped with; upstream's
      40px assumes the slimmed upstream chrome. */
   top: 120px;
-  left: 50%;
+  left: 0;
+  right: 0;
+  max-height: calc(100vh - 144px);
+  overflow-y: auto;
   /* Above the 1000 the image lightbox backdrop uses: a failure reported while
      a preview is open must stay readable. */
   z-index: 1100;
   /* Announcements never intercept clicks. */
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toast {
+  position: relative;
+  left: 50%;
+  flex: none;
   pointer-events: none;
   display: flex;
   align-items: center;
@@ -38,7 +51,16 @@
   transform: translateX(-50%);
   animation:
     dsh-toast-in 160ms ease-out,
-    dsh-toast-fade 1000ms ease var(--dsh-toast-hold, 3000ms) forwards;
+    dsh-toast-fade 1000ms ease calc(var(--dsh-toast-hold, 3000ms) - var(--dsh-toast-elapsed, 0ms)) forwards;
+}
+
+.toast[hidden] {
+  display: none;
+}
+
+.toast[inert] .action,
+.toast[inert] .dismiss {
+  pointer-events: none;
 }
 
 .icon {
@@ -48,12 +70,43 @@
   color: var(--dsw-alias-state-warn-label);
 }
 
+.toast[data-persistent] {
+  animation: dsh-toast-in var(--ds-motion-duration-popover) var(--ds-ease-in-out);
+}
+
+.dismiss {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.dismiss:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.dismiss:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid currentColor;
+  outline-offset: 2px;
+}
+
 .icon.success {
   color: var(--dsw-alias-state-success-primary);
 }
 
 .text {
   min-width: 0;
+  overflow-wrap: anywhere;
+  /* Long diagnostics remain selectable and scrollable in the bounded stack. */
+  pointer-events: auto;
 }
 
 .action {
@@ -75,6 +128,16 @@
 
 .action:hover {
   opacity: 0.8;
+}
+
+.action:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: default;
+}
+
+.action:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid currentColor;
+  outline-offset: 2px;
 }
 
 @keyframes dsh-toast-in {
@@ -100,6 +163,9 @@
    not movement) still ends the banner before the timed unmount. */
 @media (prefers-reduced-motion: reduce) {
   .toast {
-    animation: dsh-toast-fade 1000ms ease var(--dsh-toast-hold, 3000ms) forwards;
+    animation: dsh-toast-fade 1000ms ease calc(var(--dsh-toast-hold, 3000ms) - var(--dsh-toast-elapsed, 0ms)) forwards;
+  }
+  .toast[data-persistent] {
+    animation: none;
   }
 }

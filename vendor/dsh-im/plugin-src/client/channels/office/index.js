@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ActionButton, FeedbackToast } from '../../feedback.js';
 
 import { h } from '../../i18n.js';
 import {
@@ -10,7 +11,7 @@ import {
 } from './api.js';
 
 function Button({ children, kind = 'secondary', ...props }) {
-  return h('button', { ...props, type: 'button', className: 'ddt-button', 'data-kind': kind }, children);
+  return h(ActionButton, { ...props, type: 'button', className: 'ddt-button', 'data-kind': kind }, children);
 }
 
 function mapText(value) {
@@ -46,6 +47,7 @@ export function OfficeSettingsTab({ rpcCall, initialStatus }) {
   const [model, setModel] = React.useState(normalizeOfficeStatus(initialStatus));
   const [phase, setPhase] = React.useState(initialStatus === undefined ? 'loading' : 'ready');
   const [busy, setBusy] = React.useState('');
+  const [feedbackSequence, setFeedbackSequence] = React.useState(0);
   const [error, setError] = React.useState('');
   const [notice, setNotice] = React.useState('');
   const [form, setForm] = React.useState({
@@ -82,8 +84,24 @@ export function OfficeSettingsTab({ rpcCall, initialStatus }) {
   React.useEffect(() => { void load(); }, [load]);
 
   const run = async (name, operation) => {
+    if (busy) return;
+    setFeedbackSequence((current) => current + 1);
     setBusy(name); setError(''); setNotice('');
-    try { const value = await operation(); adopt(value); setNotice(name === 'test' ? '连接测试通过。' : '配置已保存。'); }
+    try {
+      const value = await operation();
+      const next = adopt(value);
+      if (name === 'test') {
+        if (value?.tested !== true) throw new Error('连接测试未确认完成。');
+        setNotice('连接测试通过。');
+      } else if (name === 'remove') {
+        if (next.configured) throw new Error('连接配置尚未移除。');
+        setNotice('连接已移除。');
+      } else if (name === 'reconnect') {
+        setNotice(next.connected ? '已重新连接 Office。' : '已发起重新连接，Office 尚未连接。');
+      } else {
+        setNotice(next.connected ? '配置已保存，Office 已连接。' : '配置已保存，Office 尚未连接。');
+      }
+    }
     catch (caught) { setError(caught.message); }
     finally { setBusy(''); }
   };
@@ -128,8 +146,8 @@ export function OfficeSettingsTab({ rpcCall, initialStatus }) {
         h('label', { className: 'dof-field', 'data-wide': 'true' }, 'Instruction Preset 映射',
           h('textarea', { value: form.instructionPresets, placeholder: 'action-items=转换为负责人、截止和验收明确的工单', onChange: (event) => setForm({ ...form, instructionPresets: event.target.value }) }),
           h('small', null, '每行 alias=指令；新增 preset 不需要改 Office 代码。'))),
-      error ? h('p', { className: 'dof-error', role: 'alert' }, error) : null,
-      notice ? h('p', { className: 'dof-notice', role: 'status' }, notice) : null,
+      error ? h(FeedbackToast, { text: error, tone: 'error', sequence: feedbackSequence }) : null,
+      notice ? h(FeedbackToast, { text: notice, holdMs: 6000 }) : null,
       health.error?.message ? h('p', { className: 'dof-error' }, health.error.message) : null,
       h('div', { className: 'dof-actions' },
         h(Button, { kind: 'primary', disabled: Boolean(busy), onClick: () => void run('save', () => invoke(OFFICE_RPC_ENDPOINTS.configure, {
@@ -140,10 +158,10 @@ export function OfficeSettingsTab({ rpcCall, initialStatus }) {
           heartbeatSeconds: Number(form.heartbeatSeconds),
           workspaces: parseMap(form.workspaces, 'Workspace 映射'),
           instructionPresets: parseMap(form.instructionPresets, 'Instruction Preset 映射'),
-        })) }, busy === 'save' ? '保存中…' : '保存并连接'),
-        h(Button, { disabled: !model.configured || Boolean(busy), onClick: () => void run('test', () => invoke(OFFICE_RPC_ENDPOINTS.test)) }, busy === 'test' ? '测试中…' : '测试连接'),
-        h(Button, { disabled: !model.configured || Boolean(busy), onClick: () => void run('reconnect', () => invoke(OFFICE_RPC_ENDPOINTS.reconnect)) }, '重新连接'),
-        h(Button, { kind: 'danger', disabled: !model.configured || Boolean(busy), onClick: () => void run('remove', () => invoke(OFFICE_RPC_ENDPOINTS.remove, { confirm: true })) }, '移除连接'))),
+        })), loading: busy === 'save', }, '保存并连接'),
+        h(Button, { disabled: !model.configured || Boolean(busy), onClick: () => void run('test', () => invoke(OFFICE_RPC_ENDPOINTS.test)), loading: busy === 'test', }, '测试连接'),
+        h(Button, { disabled: !model.configured || Boolean(busy), loading: busy === 'reconnect', onClick: () => void run('reconnect', () => invoke(OFFICE_RPC_ENDPOINTS.reconnect)) }, '重新连接'),
+        h(Button, { kind: 'danger', disabled: !model.configured || Boolean(busy), loading: busy === 'remove', onClick: () => void run('remove', () => invoke(OFFICE_RPC_ENDPOINTS.remove, { confirm: true })) }, '移除连接'))),
     h('div', { className: 'dof-card' },
       h('div', { className: 'dof-cardTitle' }, h('h4', null, '协议 Hook 预览'), h('span', null, '由 Base URL 自动派生，不单独填写')),
       h('div', { className: 'dof-hooks' },

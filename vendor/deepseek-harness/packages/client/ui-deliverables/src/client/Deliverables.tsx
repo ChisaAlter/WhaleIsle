@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { Button, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconWarningOutline16, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GlobalStandardProps, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, SessionStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { PresentedOpenController } from './present-open.ts'
@@ -77,6 +77,10 @@ export function Deliverables({
   const cwd = useSessions(state => sessionWorkingDirectory(state.byId[sessionId]))
   const states = usePresentedOpen(value => value)
   const host = usePresentedHost(value => value)
+  const [dismissedHostNotice, setDismissedHostNotice] = useState<typeof host | undefined>()
+  useEffect(() => {
+    if (host === null) setDismissedHostNotice(undefined)
+  }, [host])
   const announced = showCodeDiff ? matched.changes : null
   const summary = useChangesSummary(value => announced === null ? undefined : value[changesSummaryUrl(sessionId, announced.seq)])
   useEffect(() => {
@@ -101,11 +105,12 @@ export function Deliverables({
       className={css.root}
       data-after-changes={changes !== null || undefined}
     >
-      {host === 'error' && <div className={css.hostStatus}>
-        <span>{t('presented.hostError')}</span>
-        <Button size="sm" onClick={() => { void reloadPresentedHost() }}>{t('presented.retry')}</Button>
-      </div>}
-      {host !== null && host !== 'error' && !host.available && <span className={css.hostStatus}>{t('presented.unavailable')}</span>}
+      {host !== null && host !== dismissedHostNotice && (host === 'error' || !host.available) && <Toast
+        text={t(host === 'error' ? 'presented.hostError' : 'presented.unavailable')}
+        icon={<IconWarningOutline16 />} holdMs={null} dismissLabel={t('feedback.close')}
+        {...(host === 'error' ? { actions: [{ label: t('presented.retry'), onClick: () => { void reloadPresentedHost() } }] } : {})}
+        onDone={() => { setDismissedHostNotice(host) }}
+      />}
       <div className={css.presented} data-presented-files-row data-single={matched.presented.length === 1 ? true : undefined}>
         {presented.map(file => <PresentedFileCard key={`${file.seq}:${file.index}`} file={file} cwd={cwd}
           phase={states[presentedFileUrl(sessionId, file.seq, file.index)]}

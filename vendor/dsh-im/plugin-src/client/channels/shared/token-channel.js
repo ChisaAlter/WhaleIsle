@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ActionButton, FeedbackToast, ConfirmDialog } from '../../feedback.js';
 
 import { CredentialActionIcon, CredentialBindingPanel } from '../../credential-binding.js';
 import { h } from '../../i18n.js';
@@ -20,7 +21,7 @@ const Button = React.forwardRef(function Button(
   { children, kind = 'secondary', className = '', ...props },
   ref,
 ) {
-  return h('button', {
+  return h(ActionButton, {
     ...props,
     ref,
     type: 'button',
@@ -73,7 +74,7 @@ export function createTokenChannelSettings(definition) {
     accountSettingsEndpoint = null,
   } = definition;
 
-  function AccountCard({ account, busy, testNotice, removing, onReconnect, onWorkspaceSave, onAgentPresetSave, onAccountSettingsSave, onRequestRemove, onConfirmRemove, onCancelRemove }) {
+  function AccountCard({ account, busy, testNotice, testNoticeSequence, removeError, removeErrorSequence, removing, onReconnect, onWorkspaceSave, onAgentPresetSave, onAccountSettingsSave, onRequestRemove, onConfirmRemove, onCancelRemove }) {
     const state = busy === 'reconnect' ? 'connecting' : account.state;
     const tone = account.connected ? 'success' : state === 'error' ? 'error' : 'warning';
     const stateLabel = account.connected ? '运行正常' : state === 'connecting' ? '正在连接' : '连接未就绪';
@@ -116,8 +117,7 @@ export function createTokenChannelSettings(definition) {
               h(Button, {
                 className: 'dim-cardAction',
                 onClick: onReconnect,
-                disabled: Boolean(busy),
-              }, busy === 'reconnect' ? '检查中…' : account.connected ? '检查连接' : '重试连接'),
+                disabled: Boolean(busy), loading: busy === 'reconnect', }, account.connected ? '检查连接' : '重试连接'),
               h(Button, {
                 className: 'dim-cardAction',
                 kind: 'danger',
@@ -129,17 +129,14 @@ export function createTokenChannelSettings(definition) {
               className: 'ddt-summary',
               error: account.lastMessageError,
             }) : null,
-            testNotice ? h('div', {
-              className: 'ddt-summary dim-cardFeedback',
-              role: 'status',
-            }, testNotice) : null))),
-      removing ? h('div', { className: 'ddt-confirm dim-confirm', role: 'alertdialog' },
+            testNotice ? h(FeedbackToast, { text: testNotice, sequence: testNoticeSequence }) : null))),
+      removing ? h(ConfirmDialog, { className: 'ddt-confirm dim-confirm', role: 'alertdialog', onClose: onCancelRemove, busy: Boolean(busy), error: removeError, feedbackSequence: removeErrorSequence },
         h('strong', null, `从 DeepSeek Harness 移除“${account.bot.name}”？`),
         h('p', null, `这会停止消息连接，并删除本机保存的 ${credentialNoun}、机器人配置及会话映射。${platformLabel}中的机器人不会被自动删除。`),
         h('div', { className: 'ddt-actions dim-viewActions' },
           h(Button, { onClick: onCancelRemove, disabled: Boolean(busy) }, '保留机器人'),
-          h(Button, { kind: 'danger', onClick: onConfirmRemove, disabled: Boolean(busy) },
-            busy === 'delete' ? '正在移除…' : '确认移除接入'))) : null);
+          h(Button, { kind: 'danger', onClick: onConfirmRemove, disabled: Boolean(busy), loading: busy === 'delete', },
+            '确认移除接入'))) : null);
   }
 
   function SettingsTab({ rpcCall }) {
@@ -152,7 +149,10 @@ export function createTokenChannelSettings(definition) {
     const [busy, setBusy] = React.useState(false);
     const [busyByBot, setBusyByBot] = React.useState({});
     const [testNoticeByBot, setTestNoticeByBot] = React.useState({});
+    const [testNoticeSequenceByBot, setTestNoticeSequenceByBot] = React.useState({});
     const [removeTarget, setRemoveTarget] = React.useState(null);
+    const [actionError, setActionError] = React.useState(null);
+    const [actionErrorSequence, setActionErrorSequence] = React.useState(0);
     const mounted = React.useRef(true);
     const workspaceFence = useWorkspaceSnapshotFence();
 
@@ -268,6 +268,9 @@ export function createTokenChannelSettings(definition) {
           }));
         }
       } finally {
+        if (mounted.current && operation === 'reconnect') {
+          setTestNoticeSequenceByBot((current) => ({ ...current, [account.botId]: (current[account.botId] ?? 0) + 1 }));
+        }
         const shouldRefresh = workspaceFence.endMutation();
         if (shouldRefresh && mounted.current) void loadStatus({ silent: true });
         if (mounted.current) setBusyByBot((current) => {
@@ -290,6 +293,9 @@ export function createTokenChannelSettings(definition) {
               account,
               busy: busyByBot[account.botId],
               testNotice: testNoticeByBot[account.botId],
+              testNoticeSequence: testNoticeSequenceByBot[account.botId],
+              removeError: removeTarget === account.botId ? actionError : null,
+              removeErrorSequence: actionErrorSequence,
               removing: removeTarget === account.botId,
               onReconnect: () => void botAction(
                 account,
@@ -320,11 +326,14 @@ export function createTokenChannelSettings(definition) {
               onRequestRemove: () => setRemoveTarget(account.botId),
               onCancelRemove: () => setRemoveTarget(null),
               onConfirmRemove: async () => {
+                try {
                 await botAction(account, 'delete', endpoints.deleteBot, {
                   botId: account.botId,
                   confirm: true,
                 });
-                if (mounted.current) setRemoveTarget(null);
+                if (mounted.current) { setRemoveTarget(null); setActionError(null); }
+
+                } catch (cause) { setActionError(cause?.message ?? '移除失败，请重试。'); setActionErrorSequence(value => value + 1); }
               },
             })))))
       : null;
@@ -335,6 +344,7 @@ export function createTokenChannelSettings(definition) {
       className: `ddt-page ${pageClass} dim-channelPage`,
       'aria-label': `${channel} 设置`,
     },
+    actionError && !removeTarget ? h(FeedbackToast, { text: actionError, tone: 'error', sequence: actionErrorSequence }) : null,
     h('div', { className: 'ddt-heading' },
       h('div', { className: 'ddt-tools' },
         h('div', { className: 'dim-bindActions' },

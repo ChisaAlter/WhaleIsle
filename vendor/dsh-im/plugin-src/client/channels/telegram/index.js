@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ActionButton, FeedbackToast } from '../../feedback.js';
 
 import { TelegramLogoGlyph } from '../../channel-logos.js';
 import { createTokenChannelSettings } from '../shared/token-channel.js';
@@ -106,14 +107,13 @@ export function TelegramAccessSettings({ account, busy = false, onSave }) {
       ? h('p', { className: 'dtg-accessWarning', role: 'status' },
           '白名单为空；保存后该机器人会拒绝所有入站消息。')
       : null,
-    error ? h('p', { className: 'dtg-accessError', role: 'alert' }, error) : null,
+    error ? h(FeedbackToast, { text: error, tone: "error" }) : null,
     h('div', { className: 'dtg-accessActions' },
-      h('button', {
+      h(ActionButton, {
         type: 'submit',
         className: 'ddt-button',
         'data-kind': 'secondary',
-        disabled: busy,
-      }, busy ? '正在保存…' : '保存访问设置')));
+        disabled: busy, loading: busy, }, '保存访问设置')));
 }
 
 const channel = createTokenChannelSettings({

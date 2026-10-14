@@ -1,6 +1,6 @@
 /** Desktop-market discovery controls, catalog details, and operation history. */
 import { useEffect, useState, type ReactNode } from 'react'
-import { Button, Menu, Modal, MarkdownText, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronRightOutline14, IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Menu, Modal, MarkdownText, Toast, IconRefreshOutline16, IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronRightOutline14, IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarketSectionProps } from './MarketSection.tsx'
 import type { MarketItem, MarketOperation, MarketplaceDetails } from './desktop-shell.ts'
 import type { MarketLocaleKey } from './locales.ts'
@@ -54,19 +54,26 @@ export function MarketDetails({ item, t, onClose, getDetails }: {
   const [facts, setFacts] = useState<MarketplaceDetails | null>(null)
   const [loadFailed, setLoadFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [feedbackDismissed, setFeedbackDismissed] = useState(false)
+  useEffect(() => { if (!loading && loadFailed) setFeedbackDismissed(false) }, [loading, loadFailed])
   useEffect(() => {
     let live = true
     setLoadFailed(false)
+    setLoading(true)
+    setFeedbackDismissed(false)
     void getDetails(item.id, attempt > 0 ? { force: true } : undefined).then(value => {
-      if (live) { setFacts(value); setLoadFailed(value.partial) }
-    }).catch(() => { if (live) setLoadFailed(true) })
+      if (live) { setFacts(value); setLoadFailed(value.ok !== true || value.partial) }
+    }).catch(() => { if (live) setLoadFailed(true) }).finally(() => { if (live) setLoading(false) })
     return () => { live = false }
   }, [item.id, getDetails, attempt])
   const images = (item.screenshots ?? []).filter((url): url is string => typeof url === 'string')
     .map(marketHttpsUrl).filter((url): url is string => url !== null).slice(0, 12)
   const image = images[index]
   const homepage = marketHttpsUrl(item.homepage)
-  return <Modal open title={item.repo} closeLabel={t('close')} onClose={onClose} className={css.detailsModal} contentClassName={css.dialogContent}>
+  return <Modal open title={item.repo} closeLabel={t('close')} onClose={onClose} className={css.detailsModal} contentClassName={css.dialogContent}
+    headerActions={<Button size="sm" variant="ghost" className={css.iconAction} icon={<IconRefreshOutline16 />}
+      loading={loading} aria-label={t('refresh')} title={t('refresh')} onClick={() => { setAttempt(value => value + 1) }} />}>
     <p className={css.detailsCopy}>{item.description}</p>
     <dl className={css.metadata}>
       <dt>{t('author')}</dt><dd>{item.owner}</dd>
@@ -90,9 +97,10 @@ export function MarketDetails({ item, t, onClose, getDetails }: {
       </div>
     </div> : <p className={css.updateSummary}>{t('noScreenshots')}</p>}
     {homepage ? <a href={homepage} target="_blank" rel="noreferrer">{t('readmeHomepage')}</a> : null}
-    {loadFailed ? <div className={css.loadFailure}><p role="alert">{t('detailsFailed')}</p>
-      <Button size="sm" variant="outline" onClick={() => { setAttempt(value => value + 1) }}>{t('retry')}</Button></div> : null}
-    {!facts && !loadFailed ? <p role="status">{t('detailsLoading')}</p> : null}
+    {!feedbackDismissed && (loading || loadFailed) ? <Toast key={attempt} text={t(loading ? 'detailsLoading' : 'detailsFailed')}
+      holdMs={null} dismissLabel={t('close')}
+      {...loadFailed && !loading ? { actions: [{ label: t('retry'), onClick: () => { setAttempt(value => value + 1) } }] } : {}}
+      onDone={() => { setFeedbackDismissed(true) }} /> : null}
     {facts?.readme ? <section className={css.readme} aria-label={t('repositoryReadme')}>
       <h3>{t('repositoryReadme')}</h3>
       <MarkdownText text={facts.readme} labels={{ code: { copyLabel: t('copy'), copiedLabel: t('copied') }, footnotes: t('footnotes') }} />

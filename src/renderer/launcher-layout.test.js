@@ -22,6 +22,11 @@ test('real Electron: error diagnostics and launcher controls survive zoom and lo
     });
   });
   assert.deepEqual(result.diagnostics, { errorCaptured: true, infoCaptured: false, reportHasError: true });
+  assert.equal(result.feedbackSurfaces.length, 4);
+  for (const surface of result.feedbackSurfaces) {
+    assert.equal(surface.floating, true, surface.id + ' belongs to the feedback layer');
+    assert.equal(surface.position, 'fixed', surface.id + ' leaves document flow');
+  }
   for (const item of result.cases) {
     assert.ok(item.items >= 6, 'fixture renders real import choices');
     assert.ok(item.bodyHeight >= 119, `usable list height: ${JSON.stringify(item)}`);

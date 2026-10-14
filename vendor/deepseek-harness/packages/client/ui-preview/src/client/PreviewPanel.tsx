@@ -10,6 +10,8 @@ import {
   IconStopFill16,
   Input,
   Menu,
+  StateDot,
+  Toast,
   Tooltip,
   foregroundModalSurfaces,
   modalSelector,
@@ -145,25 +147,29 @@ function appearanceScheme(id: string): PreviewColorScheme | undefined {
 function ChromeButton({
   label,
   disabled,
+  loading,
   onClick,
   children,
 }: {
   label: string
   disabled?: boolean
+  loading?: boolean
   onClick: () => void
   children: ReactNode
 }): ReactElement {
   return (
     <Tooltip label={label} side="bottom">
-      <button
+      <Button
         type="button"
+        size="sm"
         className={css.icon}
         disabled={disabled}
+        loading={loading === true}
         aria-label={label}
         onClick={onClick}
       >
         {children}
-      </button>
+      </Button>
     </Tooltip>
   )
 }
@@ -240,10 +246,13 @@ export function PreviewPanel({
   const [draft, setDraft] = useState('')
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [pendingAction, setPendingAction] = useState<string | null>(null)
+  const pendingActionRef = useRef<string | null>(null)
   const [canGoBack, setCanGoBack] = useState(false)
   const [canGoForward, setCanGoForward] = useState(false)
   const [loading, setLoading] = useState(false)
   const [unreachable, setUnreachable] = useState(false)
+  const [unreachableNotice, setUnreachableNotice] = useState(false)
   const [zoomFactor, setZoomFactor] = useState(1)
   const [colorScheme, setColorScheme] = useState<PreviewColorScheme>('system')
   const [pipOpen, setPipOpen] = useState(false)
@@ -271,6 +280,18 @@ export function PreviewPanel({
   viewportSettingRef.current = viewportSetting
   const zoomFactorRef = useRef(zoomFactor)
   zoomFactorRef.current = zoomFactor
+  useEffect(() => { setUnreachableNotice(active && unreachable) }, [active, unreachable])
+
+  const runAction = (id: string, work: () => Promise<unknown>): void => {
+    if (pendingActionRef.current !== null) return
+    pendingActionRef.current = id
+    setPendingAction(id)
+    setMessage(null)
+    void work().catch(() => { setMessage(t('operationFailed')) }).finally(() => {
+      pendingActionRef.current = null
+      setPendingAction(null)
+    })
+  }
 
   const rememberHostSize = (occupant: PreviewBounds): void => {
     setHostSize(prev => {
@@ -418,7 +439,7 @@ export function PreviewPanel({
 
   const applyNav = (result: PreviewNavState): void => {
     if (!result.ok) {
-      setMessage(result.message ?? t('rejected'))
+      setMessage(result.message ?? t('operationFailed'))
       return
     }
     setMessage(null)
@@ -451,6 +472,7 @@ export function PreviewPanel({
   }, [onPreviewStateChange])
 
   const launch = (next: string, presentation?: 'mini'): void => {
+    if (pendingActionRef.current !== null) return
     let trimmed: string
     try {
       trimmed = normalizePreviewUrl(next)
@@ -471,13 +493,13 @@ export function PreviewPanel({
         ? { url: trimmed, scope: cwd ?? 'shared' }
         : { url: trimmed, bounds, scope: cwd ?? 'shared' })
       : previewNavigate(currentId, trimmed)
-    void opened.then((result) => {
+    runAction('open', () => opened.then((result) => {
       applyNavRef.current(result)
       if (result.ok && presentation === 'mini') {
         const id = result.id ?? currentId
         if (id !== null && id !== undefined) openMiniPlayer(id, miniPlayerLabelFromUrl(trimmed))
       }
-    }).catch(() => { setMessage(t('rejected')) })
+    }))
   }
 
   useEffect(() => {
@@ -568,33 +590,34 @@ export function PreviewPanel({
   const onMoreSelect = (id: string): void => {
     setMoreOpen(false)
     if (id === 'clearCookies') {
-      void previewClearCookies()
+      runAction(id, () => previewClearCookies().then(result => { if (!result.ok) setMessage(t('operationFailed')) }))
       return
     }
     if (id === 'clearCache') {
-      void previewClearCache()
+      runAction(id, () => previewClearCache().then(result => { if (!result.ok) setMessage(t('operationFailed')) }))
       return
     }
     /* v8 ignore next -- More disables guest actions while no preview is open. */
     if (previewId === null) return
     if (id === 'hardReload') {
-      void previewHardReload(previewId).then(applyNav)
+      runAction(id, () => previewHardReload(previewId).then(applyNav))
       return
     }
     if (id === 'devtools') {
-      void previewOpenDevTools(previewId)
+      runAction(id, () => previewOpenDevTools(previewId).then(result => { if (!result.ok) setMessage(t('operationFailed')) }))
       return
     }
     if (id === 'pip') {
       if (pipOpen) {
-        void previewClosePictureInPicture().then((result) => {
+        runAction(id, () => previewClosePictureInPicture().then((result) => {
           if (result.ok) setPipOpen(false)
-        })
+          else setMessage(t('operationFailed'))
+        }))
       } else {
-        setPipOpen(true)
-        void previewOpenPictureInPicture(previewId).then((result) => {
-          if (!result.ok) setPipOpen(false)
-        })
+        runAction(id, () => previewOpenPictureInPicture(previewId).then((result) => {
+          if (result.ok) setPipOpen(true)
+          else setMessage(t('operationFailed'))
+        }))
       }
       return
     }
@@ -614,8 +637,8 @@ export function PreviewPanel({
     if (id === 'pick') {
       const theme = readPreviewAnnotationTheme()
       void previewSetAnnotationTheme?.(previewId, theme)
-      void previewPickElement(previewId).then((result) => {
-        if (!result.ok) return
+      runAction(id, () => previewPickElement(previewId).then((result) => {
+        if (!result.ok) { if (result.message !== undefined) setMessage(result.message); return }
         const markdown = formatPickedAnnotationMarkdown(result)
         if (appendComposerText !== undefined && sessionId !== undefined) {
           const wrote = appendComposerText(sessionId, markdown)
@@ -623,7 +646,7 @@ export function PreviewPanel({
         }
         const selector = result.annotation?.elements?.[0]?.element?.selector
         setMessage(selector !== undefined && selector.length > 0 ? selector : markdown)
-      })
+      }))
       return
     }
     if (id === 'record') {
@@ -633,44 +656,44 @@ export function PreviewPanel({
         onPreviewRecordingFrame,
         previewSaveRecording,
       }
-      void (recording ? stopBrowserRecording(previewId) : startBrowserRecording(previewId, bridge))
-        .then((result) => { if (result.ok) setRecording(on => !on) })
-        .catch(() => {})
+      runAction(id, () => (recording ? stopBrowserRecording(previewId) : startBrowserRecording(previewId, bridge))
+        .then((result) => { if (result.ok) setRecording(on => !on); else setMessage(result.message ?? t('operationFailed')) }))
       return
     }
     if (id === 'screenshot') {
-      void previewCaptureScreenshot(previewId).then((result) => {
+      runAction(id, () => previewCaptureScreenshot(previewId).then(async (result) => {
         if (!result.ok) {
-          setMessage(result.message ?? t('rejected'))
+          setMessage(result.message ?? t('operationFailed'))
           return
         }
         /* v8 ignore next -- persist always returns path on ok. */
         if (typeof result.path !== 'string') return
-        void previewRevealArtifact(result.path)
-      })
+        const revealed = await previewRevealArtifact(result.path)
+        if (!revealed.ok) setMessage(revealed.message ?? t('operationFailed'))
+      }))
       return
     }
     const scheme = appearanceScheme(id)
     if (scheme !== undefined) {
-      void previewSetColorScheme(previewId, scheme).then((result) => {
+      runAction(id, () => previewSetColorScheme(previewId, scheme).then((result) => {
         applyNav(result)
         if (result.ok) setColorScheme(scheme)
-      })
+      }))
       return
     }
     if (id === 'zoom-out') {
-      void previewZoomOut(previewId).then(applyNav)
+      runAction(id, () => previewZoomOut(previewId).then(applyNav))
       return
     }
     if (id === 'zoom-in') {
-      void previewZoomIn(previewId).then(applyNav)
+      runAction(id, () => previewZoomIn(previewId).then(applyNav))
       return
     }
-    void previewResetZoom(previewId).then(applyNav)
+    runAction(id, () => previewResetZoom(previewId).then(applyNav))
   }
 
   return (
-    <div className={css.root} data-preview-panel>
+    <div className={css.root} data-preview-panel aria-busy={loading || pendingAction !== null}>
       {!previewAvailable ? (
         <p className={css.message} data-preview-unavailable>{t('unavailable')}</p>
       ) : (
@@ -679,35 +702,38 @@ export function PreviewPanel({
             <div className={css.nav} role="group" aria-label={t('navigation')}>
               <ChromeButton
                 label={t('back')}
+                loading={pendingAction === 'back'}
                 disabled={previewId === null || !canGoBack}
                 onClick={() => {
                   /* v8 ignore next -- the control is disabled while no guest is open or cannot go back. */
-                  if (previewId !== null) void previewBack(previewId).then(applyNav)
+                  if (previewId !== null) runAction('back', () => previewBack(previewId).then(applyNav))
                 }}
               >
                 <IconChevronLeftOutline14 size={14} />
               </ChromeButton>
               <ChromeButton
                 label={t('forward')}
+                loading={pendingAction === 'forward'}
                 disabled={previewId === null || !canGoForward}
                 onClick={() => {
                   /* v8 ignore next -- the control is disabled while no guest is open or cannot go forward. */
-                  if (previewId !== null) void previewForward(previewId).then(applyNav)
+                  if (previewId !== null) runAction('forward', () => previewForward(previewId).then(applyNav))
                 }}
               >
                 <IconChevronRightOutline14 size={14} />
               </ChromeButton>
               <ChromeButton
                 label={loading ? t('stop') : t('reload')}
+                loading={pendingAction === 'reload' || pendingAction === 'open'}
                 disabled={previewId === null}
                 onClick={() => {
                   /* v8 ignore next -- the control is disabled while no guest is open. */
                   if (previewId === null) return
-                  void (loading ? previewStop(previewId) : previewReload(previewId)).then(applyNav)
+                  runAction('reload', () => (loading ? previewStop(previewId) : previewReload(previewId)).then(applyNav))
                 }}
               >
                 {loading
-                  ? <IconStopFill16 size={14} />
+                  ? <span className={css.navigationLoading}><StateDot state="ongoing" size={18} /><IconStopFill16 size={8} /></span>
                   : <IconRefreshOutline14 size={14} />}
               </ChromeButton>
             </div>
@@ -756,25 +782,24 @@ export function PreviewPanel({
               onClose={() => { setMoreOpen(false) }}
               anchor={(
                 <Tooltip label={t('more')} side="bottom">
-                  <button
+                  <Button
                     type="button"
+                    size="sm"
                     className={css.icon}
+                    loading={pendingAction !== null && !['back', 'forward', 'reload', 'open'].includes(pendingAction)}
                     aria-label={t('more')}
                     aria-expanded={moreOpen}
                     onClick={() => { setMoreOpen(open => !open) }}
                   >
                     <IconEllipsisOutline16 size={14} />
-                  </button>
+                  </Button>
                 </Tooltip>
               )}
             />
           </form>
-          {unreachable ? (
-            <p className={css.unreachable} data-preview-unreachable>{t('unreachable')}</p>
-          ) : null}
-          {message !== null || previewId === null ? (
-            <p className={css.message}>{message ?? t('empty')}</p>
-          ) : null}
+          {active && (message !== null || unreachableNotice) && <Toast key={message ?? 'unreachable'} text={message ?? t('unreachable')} holdMs={null} dismissLabel={t('dismissFeedback')}
+            onDone={() => { setMessage(null); setUnreachableNotice(false) }} />}
+          {previewId === null ? <p className={css.message}>{t('empty')}</p> : null}
           {servers.length > 0 ? (
             <div className={css.discovered}>
               <p className={css.discoveredTitle}>{t('discovered')}</p>
@@ -783,6 +808,7 @@ export function PreviewPanel({
                   key={server.url}
                   variant="outline"
                   size="sm"
+                  loading={pendingAction === 'open' && draft === server.url}
                   onClick={() => {
                     setDraft(server.url)
                     launch(server.url)

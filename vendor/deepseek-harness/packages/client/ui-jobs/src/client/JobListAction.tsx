@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import type { JobsSnapshot, JobView, ObservedJob } from '@deepseek-ai/dsh-api-job-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
-  IconChevronDownOutlineRegular, IconStopFillRegular, IconCodeOutlineRegular, StateDot, TerminalBlock, useAnchoredPosition, useDismissOnOutsidePointer,
+  Button, IconChevronDownOutlineRegular, IconStopFillRegular, IconCodeOutlineRegular, StateDot, TerminalBlock, Toast, useAnchoredPosition, useDismissOnOutsidePointer,
   type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -183,10 +183,16 @@ function JobItem({ job, view, expanded, now, onToggle, kill, t }: {
   now: number
   onToggle: () => void
   /** Present on running rows: the human-kill button state and press handler. */
-  kill?: { state: KillState; onPress: () => void }
+  kill?: { state: KillState; onPress: () => void; onCancel: () => void }
   t: TranslateNS<typeof NS>
 }) {
   const live = isLive(job)
+  const [dismissedError, setDismissedError] = useState<string>()
+  useEffect(() => { setDismissedError(undefined) }, [view?.error, expanded])
+  const outputError = expanded && view?.error !== undefined && view.error !== dismissedError
+    ? t('output.error', { error: view.error }) : undefined
+  const killNotice = kill?.state === 'armed' ? t('kill.confirm')
+    : kill?.state === 'failed' ? t('kill.failed') : undefined
   const status = statusLabel(job.status, t)
   const detail = jobDetail(job)
   const observable = isObservable(job)
@@ -244,6 +250,18 @@ function JobItem({ job, view, expanded, now, onToggle, kill, t }: {
       : kill.state === 'failed' ? t('kill.failed') : t('kill.stop', { label: job.label })
   return (
     <li className={css.item}>
+      {(outputError !== undefined || killNotice !== undefined) && (
+        <Toast
+          text={[killNotice, outputError].filter(Boolean).join('\n')}
+          holdMs={null}
+          dismissLabel={t('notice.dismiss')}
+          actions={kill?.state === 'armed' ? [{ label: t('kill.confirmAction'), onClick: kill.onPress }] : []}
+          onDone={() => {
+            setDismissedError(view?.error)
+            if (killNotice !== undefined) kill?.onCancel()
+          }}
+        />
+      )}
       <div className={live ? `${css.rowLine} ${css.rowLineLive}` : css.rowLine}>
         {observable
           ? (
@@ -264,7 +282,7 @@ function JobItem({ job, view, expanded, now, onToggle, kill, t }: {
           )}
         {kill !== undefined
           ? (
-            <button
+            <Button
               type="button"
               className={
                 kill.state === 'armed'
@@ -273,15 +291,13 @@ function JobItem({ job, view, expanded, now, onToggle, kill, t }: {
               }
               data-kill-state={kill.state}
               disabled={kill.state === 'pending'}
+              loading={kill.state === 'pending'}
               aria-label={killTitle}
               title={killTitle}
               onClick={kill.onPress}
             >
               <IconStopFillRegular size={10} />
-              {/* The armed press must be legible without hover: the button
-                  widens into a labeled confirm pill instead of a tint only. */}
-              {kill.state === 'armed' ? <span className={css.stopLabel}>{t('kill.confirmAction')}</span> : null}
-            </button>
+            </Button>
           )
           : null}
       </div>
@@ -289,9 +305,6 @@ function JobItem({ job, view, expanded, now, onToggle, kill, t }: {
         ? (
           <div className={css.panel}>
             {view.gapBefore ? <div className={css.notice}>{t('output.gap')}</div> : null}
-            {view.error !== undefined
-              ? <div className={`${css.notice} ${css.noticeError}`}>{t('output.error', { error: view.error })}</div>
-              : null}
             <TerminalBlock
               command={job.label}
               output={view.text}
@@ -434,6 +447,8 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, killJob,
       setKillPhase(current => current?.key === key && !ok
         ? { key, state: 'failed' }
         : current)
+    }, () => {
+      setKillPhase(current => current?.key === key ? { key, state: 'failed' } : current)
     })
   }
 
@@ -477,6 +492,7 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, killJob,
           kill: {
             state: killPhase?.key === String(job.id) ? killPhase.state : 'idle' as const,
             onPress: () => { pressKill(job) },
+            onCancel: () => { setKillPhase(undefined) },
           },
         }
         : {}}

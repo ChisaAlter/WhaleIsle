@@ -1,6 +1,7 @@
 /** Shared value rendering for JSON details and lazy runtime objects with identity links. */
 
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { StateDot, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { InspectorObjects, InspectorObjectReference } from './objects.ts'
 import { InspectorObjectValue, type InspectorObjectEntry } from './object-value.ts'
@@ -39,6 +40,7 @@ function ObjectBranch({ value, name, path, ancestors, root, accessor, absent, na
   const revision = navigation?.revision
   const [expanded, setExpanded] = useState(root === true || json)
   const [limit, setLimit] = useState(json ? Infinity : PAGE_SIZE)
+  const [errorDismissed, setErrorDismissed] = useState(false)
   const content = useMemo(() => {
     try {
       const reference = !root && value !== null && typeof value === 'object' ? objects?.reference(value) : undefined
@@ -58,13 +60,19 @@ function ObjectBranch({ value, name, path, ancestors, root, accessor, absent, na
       return { error: error instanceof Error ? error.message : String(error) }
     }
   }, [value, root, objects, ancestors, accessor, expanded, limit, revision, json])
+  useEffect(() => { setErrorDismissed(false) }, [content.error, path])
   const children = useMemo(() => {
     const next = new Map(ancestors)
     if (value !== null && typeof value === 'object') next.set(value, path)
     return next
   }, [ancestors, value, path])
   const field = <span className={css.objectField}>{name}: </span>
-  if (content.error !== undefined) return <li role="alert">{field}{content.error}</li>
+  if (content.error !== undefined) return <li>{field}
+    <Tooltip label={content.error} portal><span className={css.objectFailure} tabIndex={0}
+      aria-label={`${path}: ${content.error}`}><StateDot state="error" /></span></Tooltip>
+    {!errorDismissed && <Toast text={`${path}: ${content.error}`} holdMs={null}
+      dismissLabel={t('feedback.dismiss')} onDone={() => { setErrorDismissed(true) }} />}
+  </li>
   if (absent) return <li>{field}<span className={css.objectMuted}>{t('object.absent')}</span></li>
   if (accessor) return <li>{field}<span className={css.objectMuted}>{t('object.accessor')}</span></li>
   const reference = content.reference

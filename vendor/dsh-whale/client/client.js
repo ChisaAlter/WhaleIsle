@@ -7,7 +7,7 @@ window.__ModuleLoader__.load({
     const react = require("react");
     const primitives = require("@deepseek-ai/dsh-client-ui-primitives");
     const { createElement: h, useState, useEffect, useMemo, useCallback, useRef, Fragment } = react;
-    const { Button, Input, Modal, SettingsSelect, Switch, Tooltip, IconSettingsOutline16 } = primitives;
+    const { Button, Input, Modal, SettingsSelect, StateDot, Switch, Toast, Tooltip, IconSettingsOutline16 } = primitives;
 
     const NS = "dsh-whale";
     const PANEL_ID = "whale";
@@ -20,6 +20,7 @@ window.__ModuleLoader__.load({
       "page.preparing": "正在准备她的会话…",
       "page.openFailed": "打开失败：{message}",
       "page.gotoSettings": "去设置",
+      "page.settingsUnavailable": "设置导航不可用",
       "gear.tooltip": "助理设置",
       "field.identity": "名字与称呼",
       "field.identityHint": "她的显示名 · 她平时怎么叫你（留空就叫「你」）。",
@@ -52,6 +53,9 @@ window.__ModuleLoader__.load({
       "dialog.close": "关闭",
       "save": "保存",
       "saved": "已保存",
+      "saving": "正在保存…",
+      "loading": "正在读取…",
+      "retry": "重试",
       "saveFailed": "保存失败：{message}",
       "loadFailed": "读取失败：{message}",
     };
@@ -63,6 +67,7 @@ window.__ModuleLoader__.load({
       "page.preparing": "Preparing her session…",
       "page.openFailed": "Open failed: {message}",
       "page.gotoSettings": "Open settings",
+      "page.settingsUnavailable": "Settings navigation is unavailable",
       "gear.tooltip": "Assistant settings",
       "field.identity": "Name & title",
       "field.identityHint": "Her display name · how she addresses you (blank means \"you\").",
@@ -95,6 +100,9 @@ window.__ModuleLoader__.load({
       "dialog.close": "Close",
       "save": "Save",
       "saved": "Saved",
+      "saving": "Saving…",
+      "loading": "Loading…",
+      "retry": "Retry",
       "saveFailed": "Save failed: {message}",
       "loadFailed": "Load failed: {message}",
     };
@@ -136,8 +144,6 @@ window.__ModuleLoader__.load({
 .dsh-whale-skills { max-height: 46vh; overflow: auto; }
 .dsh-whale-modal-hint { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary); }
 .dsh-whale-skill-name { font-size: 13px; font-family: var(--ds-font-family-code, monospace); }
-.dsh-whale-status { font-size: 12px; opacity: 0.7; padding: 6px 0 0; }
-.dsh-whale-error { font-size: 12px; color: var(--dsw-alias-text-error, #e5534b); }
 .dsh-whale-gear { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: none; border-radius: 8px; background: transparent; color: var(--dsw-alias-label-tertiary, currentColor); cursor: pointer; }
 .dsh-whale-gear:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,.14)); color: var(--dsw-alias-label-primary, currentColor); }
 `;
@@ -152,6 +158,22 @@ window.__ModuleLoader__.load({
         throw error;
       }
       return result?.value ?? result;
+    }
+
+    function Feedback({ text, t, success, loading, actions }) {
+      const [visible, setVisible] = useState(true);
+      useEffect(() => { setVisible(true); }, [text]);
+      if (!visible || !text) return null;
+      return h(Toast, {
+        key: text,
+        text,
+        tone: success ? "success" : undefined,
+        holdMs: success ? undefined : null,
+        dismissLabel: loading || actions ? undefined : t("dialog.close"),
+        icon: loading ? h(StateDot, { state: "ongoing", size: 14 }) : undefined,
+        actions,
+        onDone: () => setVisible(false),
+      });
     }
 
     const WHALE_HEAD_URL = "/whale-isle-head.png";
@@ -193,29 +215,41 @@ window.__ModuleLoader__.load({
     function WhaleFooterEntry(props) {
       const { rpc, openSession, t, wide } = props;
       const [busy, setBusy] = useState(false);
+      const [error, setError] = useState("");
+      const [attempt, setAttempt] = useState(0);
       const open = useCallback(async () => {
+        if (busy) return;
+        setAttempt((current) => current + 1);
         setBusy(true);
+        setError("");
         try {
           const ensured = await rpc("assistant/ensure");
           const sessionId = ensured?.sessionId;
-          if (sessionId) await openSession(sessionId);
-        } catch {
-          // Surface nothing in the rail; the page path reports errors.
+          if (!sessionId) throw new Error("no-session");
+          await openSession(sessionId);
+        } catch (err) {
+          setError(t("page.openFailed", { message: err?.message || String(err) }));
         } finally {
           setBusy(false);
         }
-      }, [rpc, openSession]);
-      return h("button", {
+      }, [rpc, openSession, t, busy]);
+      return h(Fragment, null, h(Button, {
         type: "button",
+        variant: "ghost",
+        size: "sm",
         "aria-label": t("tab"),
         disabled: busy,
+        loading: busy,
         onClick: open,
         style: {
           border: "none", background: "transparent", cursor: "pointer",
           font: "inherit", fontSize: "14px", padding: wide ? "4px 8px" : "4px",
+          height: "auto",
           display: "inline-flex", alignItems: "center", gap: "6px",
         },
-      }, h(WhalePanelGlyph, { size: 18 }), wide ? h("span", null, t("tab")) : null);
+      }, h("span", { style: { display: "inline-flex", alignItems: "center", gap: "6px" } },
+        h(WhalePanelGlyph, { size: 18 }), wide ? h("span", null, t("tab")) : null)),
+      error ? h(Feedback, { key: attempt, text: error, t }) : null);
     }
 
     // The 助理 panel row opens her persistent session directly: this `main`
@@ -239,21 +273,27 @@ window.__ModuleLoader__.load({
         })();
         return () => { cancelled = true; };
       }, [rpc, openSession, layout]);
-      const openSettings = useCallback(() => {
-        try { settingsNavigation?.open?.("pet"); } catch { /* not mounted */ }
-      }, [settingsNavigation]);
+      const openSettings = useCallback(async () => {
+        try {
+          if (typeof settingsNavigation?.open !== "function") throw new Error(t("page.settingsUnavailable"));
+          await settingsNavigation.open("pet");
+        } catch (err) {
+          setError(err?.message || String(err));
+        }
+      }, [settingsNavigation, t]);
       return h("div", { className: "dsh-whale-page" },
         h("div", { className: "dsh-whale-hero" },
           h("span", { className: "dsh-whale-badge", "aria-hidden": "true" },
             h(WhalePanelGlyph, { size: 36 })),
           h("div", { className: "dsh-whale-title" }, panelName),
-          h("div", { className: "dsh-whale-sub" }, error
-            ? t("page.openFailed", { message: error })
-            : t("page.preparing")),
+          h("div", { className: "dsh-whale-sub" }, t("page.subtitle")),
         ),
-        error ? h("div", { className: "dsh-whale-links" },
-          h(Button, { variant: "outline", onClick: openSettings }, t("page.gotoSettings")),
-        ) : null,
+        h(Feedback, {
+          text: error ? t("page.openFailed", { message: error }) : t("page.preparing"),
+          t,
+          loading: !error,
+          actions: error ? [{ label: t("page.gotoSettings"), onClick: openSettings }] : undefined,
+        }),
       );
     }
 
@@ -261,20 +301,37 @@ window.__ModuleLoader__.load({
     // session; every other conversation keeps its stock action row.
     function WhaleHeaderGear(props) {
       const { sessionId, useSessions, settingsNavigation, t } = props;
+      const [error, setError] = useState("");
+      const [busy, setBusy] = useState(false);
+      const [attempt, setAttempt] = useState(0);
       const isWhale = useSessions?.((state) =>
         state?.byId?.[sessionId]?.presentation?.owner === "dsh-whale:assistant") ?? false;
-      const openSettings = useCallback(() => {
-        try { settingsNavigation?.open?.("pet"); } catch { /* not mounted */ }
-      }, [settingsNavigation]);
+      const openSettings = useCallback(async () => {
+        if (busy) return;
+        setAttempt((current) => current + 1);
+        setBusy(true);
+        setError("");
+        try {
+          if (typeof settingsNavigation?.open !== "function") throw new Error(t("page.settingsUnavailable"));
+          await settingsNavigation.open("pet");
+        } catch (err) {
+          setError(t("page.openFailed", { message: err?.message || String(err) }));
+        } finally {
+          setBusy(false);
+        }
+      }, [settingsNavigation, t, busy]);
       if (!isWhale) return null;
-      return h(Tooltip, { label: t("gear.tooltip"), side: "bottom" },
-        h("button", {
+      return h(Fragment, null, h(Tooltip, { label: t("gear.tooltip"), side: "bottom" },
+        h(Button, {
           type: "button",
+          variant: "ghost",
           className: "dsh-whale-gear",
           "aria-label": t("gear.tooltip"),
+          disabled: busy,
+          loading: busy,
           onClick: openSettings,
         }, h(IconSettingsOutline16, { size: 16, "aria-hidden": "true" })),
-      );
+      ), error ? h(Feedback, { key: attempt, text: error, t }) : null);
     }
 
     // The host renders presentation titles as text, so the project head is
@@ -295,12 +352,15 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false);
       const [status, setStatus] = useState("");
       const [error, setError] = useState("");
+      const [pending, setPending] = useState("");
+      const pendingRef = useRef("");
+      const [attempt, setAttempt] = useState(0);
       const [modelGroups, setModelGroups] = useState(null);
       const committed = useRef({});
       const [dialog, setDialog] = useState(null);
       const [personaDraft, setPersonaDraft] = useState("");
 
-      const reload = useCallback(async () => {
+      const reload = useCallback(async ({ reportError = true, saved = false } = {}) => {
         try {
           const value = await rpc("catalog");
           setCatalog(value);
@@ -320,9 +380,14 @@ window.__ModuleLoader__.load({
             imDefault: value?.imDefault === true,
           }));
           setMemory(value?.memory ?? "");
-          setError("");
+          return true;
         } catch (err) {
-          setError(t("loadFailed", { message: err?.message || String(err) }));
+          if (reportError) {
+            setStatus("");
+            const message = t("loadFailed", { message: err?.message || String(err) });
+            setError(saved ? `${t("saved")} · ${message}` : message);
+          }
+          return false;
         }
       }, [rpc, t]);
 
@@ -337,7 +402,9 @@ window.__ModuleLoader__.load({
           if (cancelled) return;
           const value = rpcValue(response);
           if (value && Array.isArray(value.groups)) setModelGroups(value.groups);
-        }).catch(() => {});
+        }).catch((err) => {
+          if (!cancelled) setError(t("loadFailed", { message: err?.message || String(err) }));
+        });
         return () => { cancelled = true; };
       }, [props.remote]);
 
@@ -361,29 +428,45 @@ window.__ModuleLoader__.load({
       ], [t]);
 
       if (!catalog || !form) {
-        return h("div", { className: "dsh-whale-form" },
-          error ? h("div", { className: "dsh-whale-error" }, error)
-            : h("div", { className: "dsh-whale-status" }, "…"));
+        return h("div", { className: "dsh-whale-form", "aria-busy": !error },
+          h(Feedback, {
+            key: attempt,
+            text: error || t("loading"), t, loading: !error,
+            actions: error ? [{ label: t("retry"), onClick: () => { setAttempt((current) => current + 1); setError(""); void reload(); } }] : undefined,
+          }));
       }
 
-      // Every control writes through immediately — the endpoint sanitizes and
-      // merges per field, so each commit sends only its own key.
-      const commit = async (patch) => {
+      const beginOperation = (key) => {
+        if (pendingRef.current) return false;
+        pendingRef.current = key;
+        setAttempt((current) => current + 1);
+        setPending(key);
         setBusy(true);
         setError("");
         setStatus("");
+        return true;
+      };
+      const finishOperation = () => {
+        pendingRef.current = "";
+        setPending("");
+        setBusy(false);
+      };
+
+      // Every control writes through immediately — the endpoint sanitizes and
+      // merges per field, so each commit sends only its own key.
+      const commit = async (patch, source = Object.keys(patch)[0]) => {
+        if (!beginOperation(source)) return false;
         try {
-          await rpc("settings/update", patch);
-          if (typeof patch.name === "string") refreshPanelLabel(patch.name);
-          await reload();
-          setStatus(t("saved"));
+          const saved = await rpc("settings/update", patch);
+          if (typeof patch.name === "string" && typeof saved?.name === "string") refreshPanelLabel(saved.name);
+          if (await reload({ saved: true })) setStatus(t("saved"));
           return true;
         } catch (err) {
           setError(t("saveFailed", { message: err?.message || String(err) }));
-          await reload().catch(() => {});
+          await reload({ reportError: false });
           return false;
         } finally {
-          setBusy(false);
+          finishOperation();
         }
       };
 
@@ -400,25 +483,28 @@ window.__ModuleLoader__.load({
 
       // Provider + model + effort are one catalog field — whichever select
       // moved commits all three together.
-      const commitModel = (nextModel, nextEffort) => {
+      const commitModel = (nextModel, nextEffort, source) => {
         const value = String(nextModel || "");
         const slash = value.indexOf("/");
         const provider = slash < 0 ? "" : value.slice(0, slash);
         const model = slash < 0 ? "" : value.slice(slash + 1);
-        void commit({ model: { provider, model, reasoningEffort: nextEffort } });
+        void commit({ model: { provider, model, reasoningEffort: nextEffort } }, source);
       };
 
       const toggleSkill = async (skillName, enabled) => {
+        if (!beginOperation(`skill:${skillName}`)) return;
         try {
           await rpc("skills/toggle", { name: skillName, enabled });
           await reload();
         } catch (err) {
           setError(err?.message || String(err));
+        } finally {
+          finishOperation();
         }
       };
 
       const saveMemory = async () => {
-        setBusy(true);
+        if (!beginOperation("memory-save")) return;
         try {
           await rpc("memory/replace", { text: memory });
           setStatus(t("saved"));
@@ -426,22 +512,22 @@ window.__ModuleLoader__.load({
         } catch (err) {
           setError(err?.message || String(err));
         } finally {
-          setBusy(false);
+          finishOperation();
         }
       };
 
       const clearMemory = async () => {
         if (!window.confirm(t("memory.clearConfirm"))) return;
-        setBusy(true);
+        if (!beginOperation("memory-clear")) return;
         try {
           await rpc("memory/clear");
           setMemory("");
-          setStatus(t("saved"));
+          if (await reload({ saved: true })) setStatus(t("saved"));
           setDialog(null);
         } catch (err) {
           setError(err?.message || String(err));
         } finally {
-          setBusy(false);
+          finishOperation();
         }
       };
 
@@ -457,7 +543,7 @@ window.__ModuleLoader__.load({
       const skills = catalog.skills ?? [];
       const enabledSkills = skills.filter((skill) => skill.enabled === true).length;
 
-      return h("div", { className: "dsh-whale-form" },
+      return h("div", { className: "dsh-whale-form", "aria-busy": busy },
         item(t("field.identity"), t("field.identityHint"),
           h("div", { className: "dsh-whale-controls" },
             h(Input, {
@@ -490,9 +576,10 @@ window.__ModuleLoader__.load({
               value: form.model,
               options: modelOptions,
               disabled: busy || modelOptions.length <= 1,
+              loading: pending === "model",
               onChange: (value) => {
                 setForm({ ...form, model: value });
-                commitModel(value, form.effort);
+                commitModel(value, form.effort, "model");
               },
             }),
             h(SettingsSelect, {
@@ -502,9 +589,10 @@ window.__ModuleLoader__.load({
               value: form.effort,
               options: effortOptions,
               disabled: busy,
+              loading: pending === "effort",
               onChange: (value) => {
                 setForm({ ...form, effort: value });
-                commitModel(form.model, value);
+                commitModel(form.model, value, "effort");
               },
             }))),
 
@@ -512,6 +600,7 @@ window.__ModuleLoader__.load({
           h(Switch, {
             checked: form.imDefault === true,
             disabled: busy,
+            loading: pending === "imDefault",
             "aria-label": t("field.imDefault"),
             onChange: (event) => {
               const next = event.target.checked;
@@ -546,12 +635,14 @@ window.__ModuleLoader__.load({
             onClick: () => setDialog("skills"),
           }, t("skills.manage"))),
 
-        status ? h("div", { className: "dsh-whale-status" }, status) : null,
-        error ? h("div", { className: "dsh-whale-error" }, error) : null,
+        (pending === "name" || pending === "userTitle")
+          ? h(Feedback, { text: t("saving"), t, loading: true }) : null,
+        status ? h(Feedback, { key: `${attempt}:success`, text: status, t, success: true }) : null,
+        error ? h(Feedback, { key: `${attempt}:error`, text: error, t }) : null,
 
         h(Modal, {
           open: dialog === "persona",
-          onClose: () => setDialog(null),
+          onClose: () => { if (!busy) setDialog(null); },
           title: t("field.personaText"),
           closeLabel: t("dialog.close"),
           footer: h(Fragment, null,
@@ -559,6 +650,7 @@ window.__ModuleLoader__.load({
             h(Button, {
               variant: "primary",
               disabled: busy,
+              loading: pending === "personaText",
               onClick: () => {
                 void commit({ personaText: personaDraft }).then((ok) => {
                   if (ok) setDialog(null);
@@ -575,13 +667,13 @@ window.__ModuleLoader__.load({
 
         h(Modal, {
           open: dialog === "memory",
-          onClose: () => setDialog(null),
+          onClose: () => { if (!busy) setDialog(null); },
           title: t("memory.title"),
           description: t("memory.hint"),
           closeLabel: t("dialog.close"),
           footer: h(Fragment, null,
-            h(Button, { variant: "outline", disabled: busy, onClick: () => { void clearMemory(); } }, t("memory.clear")),
-            h(Button, { variant: "primary", disabled: busy, onClick: () => { void saveMemory(); } }, t("memory.save"))),
+            h(Button, { variant: "outline", disabled: busy, loading: pending === "memory-clear", onClick: () => { void clearMemory(); } }, t("memory.clear")),
+            h(Button, { variant: "primary", disabled: busy, loading: pending === "memory-save", onClick: () => { void saveMemory(); } }, t("memory.save"))),
         },
           h("textarea", {
             className: "dsh-whale-textarea dsh-whale-dialog-textarea",
@@ -592,7 +684,7 @@ window.__ModuleLoader__.load({
 
         h(Modal, {
           open: dialog === "skills",
-          onClose: () => setDialog(null),
+          onClose: () => { if (!busy) setDialog(null); },
           title: t("skills.title"),
           closeLabel: t("dialog.close"),
         },
@@ -605,6 +697,8 @@ window.__ModuleLoader__.load({
                   h("div", { className: "dsh-whale-skill-name" }, skill.name)),
                 h(Switch, {
                   checked: skill.enabled === true,
+                  disabled: busy,
+                  loading: pending === `skill:${skill.name}`,
                   "aria-label": skill.name,
                   onChange: (event) => toggleSkill(skill.name, event.target.checked),
                 }),
@@ -631,7 +725,7 @@ window.__ModuleLoader__.load({
         const id = String(sessionId ?? "").trim();
         if (!id) throw new Error("no-session");
         if (uiWorkspace && typeof uiWorkspace.openSession === "function") {
-          uiWorkspace.openSession(id);
+          await uiWorkspace.openSession(id);
           return;
         }
         if (typeof sessions?.open === "function") {

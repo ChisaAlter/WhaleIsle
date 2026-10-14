@@ -2,7 +2,7 @@
  * Crop a wallpaper to the current window aspect before persisting it.
  */
 import { useEffect, useRef, useState } from 'react'
-import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import { cropWallpaper, wallpaperCropRect } from '../wallpaper.ts'
 import type { ThemeKey } from './locales.ts'
 import { sliderFillStyle } from './slider.ts'
@@ -94,6 +94,8 @@ export function WallpaperCropModal({
         return
       }
       onConfirm(cropped)
+    } catch {
+      if (token === session.current) setFailed(true)
     } finally {
       if (token === session.current) setBusy(false)
     }
@@ -110,7 +112,7 @@ export function WallpaperCropModal({
       footer={(
         <>
           <Button type="button" onClick={dismiss}>{t('editor.cancel')}</Button>
-          <Button type="button" variant="primary" disabled={busy || !ready} onClick={() => { void confirm() }}>
+          <Button type="button" variant="primary" loading={busy} disabled={!ready} onClick={() => { void confirm() }}>
             {t('wallpaper.use')}
           </Button>
         </>
@@ -169,7 +171,7 @@ export function WallpaperCropModal({
           />
         ) : null}
       </div>
-      {failed ? <p className={css.hint} role="status">{t('wallpaper.cropFailed')}</p> : null}
+      {open && failed ? <Toast text={t('wallpaper.cropFailed')} holdMs={null} dismissLabel={t('wallpaper.close')} onDone={() => { setFailed(false) }} /> : null}
       <label className={css.field}>
         <span className={css.rowHead}>
           <span>{t('wallpaper.zoom')}</span>

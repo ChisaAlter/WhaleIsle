@@ -27,7 +27,9 @@ import {
   Modal,
   Pill,
   SettingsSelect,
+  StateDot,
   Switch,
+  Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -149,7 +151,6 @@ export function SkillsSection(props: SkillsSectionProps) {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const [details, setDetails] = useState<Readonly<Record<string, SkillInventoryDetail>>>({})
   const [pendingRows, setPendingRows] = useState<Readonly<Record<string, RowAction | undefined>>>({})
-  const [rowErrors, setRowErrors] = useState<Readonly<Record<string, string | undefined>>>({})
   const [editor, setEditor] = useState<EditorState | undefined>()
   const [editorPending, setEditorPending] = useState(false)
   const [editorError, setEditorError] = useState<string | undefined>()
@@ -172,8 +173,30 @@ export function SkillsSection(props: SkillsSectionProps) {
   const [hubConfirm, setHubConfirm] = useState<SkillHubSearchResult | undefined>()
   const [hubInstalling, setHubInstalling] = useState(false)
   const [hubInstalled, setHubInstalled] = useState<ReadonlySet<string>>(() => new Set())
+  const [reading, setReading] = useState(false)
+  const [toast, setToast] = useState<{ seq: number; text: string }>()
+  const toastSeq = useRef(0)
+  const notify = useCallback((text: string): void => { setToast({ seq: ++toastSeq.current, text }) }, [])
+  useEffect(() => { if (editorError !== undefined) notify(editorError) }, [editorError, notify])
+  useEffect(() => { if (deleteError !== undefined) notify(deleteError) }, [deleteError, notify])
+  useEffect(() => { if (hubError !== undefined) notify(hubError) }, [hubError, notify])
+  useEffect(() => { if (refreshFailure) notify(t('refreshFailed')) }, [refreshFailure, t, notify])
+  useEffect(() => { if (view.status === 'error') notify(t('error')) }, [view.status, t, notify])
+  useEffect(() => { if (scopeFallback) notify(t('sessionCatalogUnavailable')) }, [scopeFallback, t, notify])
+  const notice = toast === undefined ? null : <Toast
+    key={toast.seq}
+    text={toast.text}
+    holdMs={null}
+    dismissLabel={t('close')}
+    actions={view.status === 'error' || refreshFailure ? [{ label: t('retry'), onClick: () => { load(view.status === 'error') } }] : undefined}
+    onDone={() => { setToast(undefined) }}
+  />
 
   const load = (replace: boolean): void => {
+    setReading(true)
+    setToast(undefined)
+    setScopeFallback(false)
+    setRefreshFailure(false)
     const sequence = loadSequence.current + 1
     loadSequence.current = sequence
     if (replace) setView({ status: 'loading' })
@@ -189,11 +212,13 @@ export function SkillsSection(props: SkillsSectionProps) {
       .then((snapshot) => {
         if (loadSequence.current !== sequence) return
         setScopeFallback(usedFallback)
+        setReading(false)
         setView({ status: 'ready', snapshot })
         setRefreshFailure(false)
       })
       .catch(() => {
         if (loadSequence.current !== sequence) return
+        setReading(false)
         if (replace) setView({ status: 'error' })
         else setRefreshFailure(true)
       })
@@ -202,7 +227,6 @@ export function SkillsSection(props: SkillsSectionProps) {
   useEffect(() => {
     setDetails({})
     setPendingRows({})
-    setRowErrors({})
     setEditor(undefined)
     setEditorPending(false)
     setEditorError(undefined)
@@ -230,13 +254,13 @@ export function SkillsSection(props: SkillsSectionProps) {
   })
 
   if (view.status === 'loading') {
-    return <div className={styles.section}><p className={styles.intro} role="status">{t('loading')}</p></div>
+    return <div className={styles.section} aria-busy><StateDot state="ongoing" />{notice}</div>
   }
   if (view.status === 'error') {
     return (
       <div className={styles.section}>
-        <p className={styles.error} role="alert">{t('error')}</p>
-        <Button variant="outline" onClick={() => { load(true) }}>{t('retry')}</Button>
+        {notice}
+        <Button variant="outline" disabled={reading} loading={reading} onClick={() => { load(true) }}>{t('retry')}</Button>
       </div>
     )
   }
@@ -244,8 +268,8 @@ export function SkillsSection(props: SkillsSectionProps) {
   const setRowPending = (key: string, action: RowAction | undefined): void => {
     setPendingRows(current => ({ ...current, [key]: action }))
   }
-  const setRowError = (key: string, message: string | undefined): void => {
-    setRowErrors(current => ({ ...current, [key]: message }))
+  const setRowError = (_key: string, message: string | undefined): void => {
+    if (message !== undefined) notify(message)
   }
   const cacheDetail = (key: string, detail: SkillInventoryDetail): void => {
     setDetails(current => ({ ...current, [key]: detail }))
@@ -381,7 +405,6 @@ export function SkillsSection(props: SkillsSectionProps) {
   const renderRow = (skill: SkillInventoryEntry) => {
     const key = skillKey(skill)
     const pending = pendingRows[key]
-    const rowError = rowErrors[key]
     return (
       <li key={key} className={styles.row}>
         <button
@@ -394,29 +417,30 @@ export function SkillsSection(props: SkillsSectionProps) {
             requestDetail(skill)
           }}
         >
-          <span className={styles.skillIcon}><IconSkillOutline16 /></span>
+          <span className={styles.skillIcon}>{pending === 'detail' ? <StateDot state="ongoing" /> : <IconSkillOutline16 />}</span>
           <span className={styles.summary}>
             <span className={styles.name}>{skill.name}</span>
             <span className={styles.description}>{skill.description}</span>
           </span>
         </button>
         <div className={styles.rowMeta}>
-          {pending === 'detail' && <span className={styles.pending} role="status">{t('loadingDetail')}</span>}
           <Pill>{t(sourceLabel(skill.source))}</Pill>
           {skill.directory !== undefined && (
-            <button
+            <Button
               type="button"
               className={styles.iconButton}
               disabled={pending !== undefined}
+              loading={pending === 'open'}
               aria-label={format(t('openDirectoryFor'), { name: skill.name })}
               onClick={() => { openDirectory(skill) }}
             >
               <IconFolderOpenOutline16 />
-            </button>
+            </Button>
           )}
           <Switch
             checked={skill.modelInvocable}
             disabled={!skill.writable || pending === 'invocation'}
+            loading={pending === 'invocation'}
             aria-label={format(t('modelFor'), { name: skill.name })}
             onChange={(event: ChangeEvent<HTMLInputElement>) => {
               setInvocation(skill, event.target.checked, skill.userInvocable)
@@ -436,13 +460,13 @@ export function SkillsSection(props: SkillsSectionProps) {
             </button>
           )}
         </div>
-        {rowError !== undefined && <p className={styles.rowError} role="alert">{rowError}</p>}
       </li>
     )
   }
 
   return (
     <div className={styles.section}>
+      {notice}
       <div className={styles.heading}>
         <div>
           <h2 className={styles.title}>{t('title')}</h2>
@@ -471,20 +495,14 @@ export function SkillsSection(props: SkillsSectionProps) {
             className={styles.iconAction}
             icon={<IconRefreshOutline16 />}
             aria-label={t('refresh')}
+            disabled={reading}
+            loading={reading}
             onClick={() => { load(false) }}
           />
         </div>
       </div>
 
-      {scopeFallback
-        ? <p className={styles.scopeNotice}>{t('sessionCatalogUnavailable')}</p>
-        : cwd === undefined ? <p className={styles.scopeNotice}>{t('projectCatalogUnavailable')}</p> : null}
-      {refreshFailure ? (
-        <div className={styles.loadFailure}>
-          <p role="alert">{t('refreshFailed')}</p>
-          <Button variant="outline" onClick={() => { load(false) }}>{t('retry')}</Button>
-        </div>
-      ) : null}
+      {cwd === undefined && <p className={styles.scopeNotice}>{t('projectCatalogUnavailable')}</p>}
 
       <div className={styles.searchRow}>
         <Input
@@ -559,6 +577,7 @@ export function SkillsSection(props: SkillsSectionProps) {
                       <Switch
                         checked={allEnabled}
                         disabled={!hasWritable || pendingGroup}
+                        loading={pendingGroup}
                         aria-label={format(t('groupToggleFor'), { group: label })}
                         onChange={(event: ChangeEvent<HTMLInputElement>) => {
                           setGroupInvocation(section, event.target.checked)
@@ -582,7 +601,6 @@ export function SkillsSection(props: SkillsSectionProps) {
         cwd={cwd}
         groups={groupOptions}
         pending={editorPending}
-        submitError={editorError}
         t={t}
         onClose={() => { if (!editorPending) setEditor(undefined) }}
         onSave={(draft) => {
@@ -658,7 +676,6 @@ export function SkillsSection(props: SkillsSectionProps) {
         cwd={cwd}
         results={hubResults}
         searching={hubSearching}
-        error={hubError}
         confirming={hubConfirm}
         installing={hubInstalling}
         installed={hubInstalled}
@@ -732,6 +749,7 @@ export function SkillsSection(props: SkillsSectionProps) {
             <Button
               variant="primary"
               disabled={deletePending}
+              loading={deletePending}
               onClick={() => {
                 /* v8 ignore next -- the confirm button only renders while a target is selected */
                 if (deleting === undefined) return
@@ -761,12 +779,11 @@ export function SkillsSection(props: SkillsSectionProps) {
                   })
               }}
             >
-              {deletePending ? t('deleting') : t('deleteConfirm')}
+              {t('deleteConfirm')}
             </Button>
           </>
         )}
       >
-        {deleteError !== undefined && <p className={styles.modalError} role="alert">{deleteError}</p>}
       </Modal>
     </div>
   )
@@ -779,7 +796,6 @@ function SkillHub({
   cwd,
   results,
   searching,
-  error,
   confirming,
   installing,
   installed,
@@ -798,7 +814,6 @@ function SkillHub({
   cwd: string | undefined
   results: readonly SkillHubSearchResult[]
   searching: boolean
-  error: string | undefined
   confirming: SkillHubSearchResult | undefined
   installing: boolean
   installed: ReadonlySet<string>
@@ -816,8 +831,8 @@ function SkillHub({
     : (
       <>
         <Button disabled={installing} onClick={onCancelInstall}>{t('cancel')}</Button>
-        <Button variant="primary" disabled={installing} onClick={onConfirmInstall}>
-          {installing ? t('hubInstalling') : t('hubInstallConfirm')}
+        <Button variant="primary" disabled={installing} loading={installing} onClick={onConfirmInstall}>
+          {t('hubInstallConfirm')}
         </Button>
       </>
     )
@@ -866,11 +881,10 @@ function SkillHub({
               onChange={(event) => { onQueryChange(event.target.value) }}
               onKeyDown={(event) => { if (event.key === 'Enter') onSearch() }}
             />
-            <Button variant="primary" disabled={searching || query.trim().length === 0} onClick={onSearch}>
-              {searching ? t('hubSearching') : t('hubSearch')}
+            <Button variant="primary" disabled={searching || query.trim().length === 0} loading={searching} onClick={onSearch}>
+              {t('hubSearch')}
             </Button>
           </div>
-          {error !== undefined && <p className={styles.modalError} role="alert">{error}</p>}
           {results.length === 0 && !searching
             ? <p className={styles.empty}>{query.trim().length === 0 ? t('hubSearchHint') : t('hubNoResults')}</p>
             : (
@@ -904,30 +918,30 @@ function SkillHub({
             <dt>{t('hubScope')}</dt><dd>{root === 'project-dsh' ? t('scopeProject') : t('scopeUser')}</dd>
           </dl>
           <p className={styles.scopeNotice}>{t('hubNoOverwrite')}</p>
-          {error !== undefined && <p className={styles.modalError} role="alert">{error}</p>}
         </div>
       )}
     </Modal>
   )
 }
 
-function SkillEditor({ open, creating, draft, cwd, groups, pending, submitError, t, onClose, onSave }: {
+function SkillEditor({ open, creating, draft, cwd, groups, pending, t, onClose, onSave }: {
   open: boolean
   creating: boolean
   draft: EditorDraft
   cwd: string | undefined
   groups: readonly string[]
   pending: boolean
-  submitError: string | undefined
   t: SkillsSectionInjected['t']
   onClose: () => void
   onSave: (draft: EditorDraft) => void
 }) {
   const [form, setForm] = useState(draft)
   const [errors, setErrors] = useState<FieldErrors>({})
-  useEffect(() => { setForm(draft); setErrors({}) }, [draft.name, open])
+  const [validationNotice, setValidationNotice] = useState<string>()
+  useEffect(() => { setForm(draft); setErrors({}); setValidationNotice(undefined) }, [draft.name, open])
 
   const setField = <K extends keyof EditorDraft>(field: K, value: EditorDraft[K]): void => {
+    setValidationNotice(undefined)
     setForm(current => ({ ...current, [field]: value }))
     if (field === 'name' || field === 'description' || field === 'content') {
       setErrors(current => ({ ...current, [field]: undefined }))
@@ -955,18 +969,23 @@ function SkillEditor({ open, creating, draft, cwd, groups, pending, submitError,
           <Button
             variant="primary"
             disabled={pending}
+            loading={pending}
             onClick={() => {
               const next = validate()
               setErrors(next)
-              if (Object.values(next).some(Boolean)) return
+              if (Object.values(next).some(Boolean)) {
+                setValidationNotice(Object.values(next).filter(Boolean).join('\n'))
+                return
+              }
               onSave(form)
             }}
           >
-            {pending ? t('saving') : t('save')}
+            {t('save')}
           </Button>
         </>
       )}
     >
+      {validationNotice !== undefined && <Toast text={validationNotice} holdMs={null} dismissLabel={t('close')} onDone={() => { setValidationNotice(undefined) }} />}
       <div className={styles.form}>
         {creating && (
           <fieldset className={styles.scopeField}>
@@ -1062,7 +1081,6 @@ function SkillEditor({ open, creating, draft, cwd, groups, pending, submitError,
             <Switch checked={form.userInvocable} onChange={(event: ChangeEvent<HTMLInputElement>) => { setField('userInvocable', event.target.checked) }} />
           </label>
         </fieldset>
-        {submitError !== undefined && <p className={styles.modalError} role="alert">{submitError}</p>}
       </div>
     </Modal>
   )

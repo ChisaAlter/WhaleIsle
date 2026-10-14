@@ -4,9 +4,11 @@
  * file defaults and application lists come from the serving Host desktop.
  */
 
-import { createElement } from 'react'
+import { createElement, type ReactNode } from 'react'
 import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
-import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { IconWarningOutlineRegular, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -43,6 +45,21 @@ export type { OpenPathEmptyActionProps } from './OpenPathEmptyAction.tsx'
 /** Required services: sessions, layout selection, the slot registry, copy, Remote calls, and shortcuts. */
 export const inject = ['sessions', 'slots', 'locale', 'remote', 'remote.session', 'shortcuts', 'layout']
 
+type ShortcutFailureFace = {
+  hooks: { openShortcutFailure: SnapshotStore<number | null> }
+  dismissShortcutFailure: () => void
+}
+
+/** Keyboard failures have no initiating button, so they use the shell's floating feedback seat. */
+function ShortcutFailureToast({ useOpenShortcutFailure, dismissShortcutFailure, t }: InjectFace<ShortcutFailureFace> & PropsLocale<typeof NS>): ReactNode {
+  const notice = useOpenShortcutFailure(value => value)
+  if (notice === null) return null
+  return createElement(Toast, {
+    key: notice, text: t('path.openError'), icon: createElement(IconWarningOutlineRegular),
+    holdMs: null, dismissLabel: t('close'), onDone: dismissShortcutFailure,
+  })
+}
+
 /**
  * Client plugin body: register dictionaries, workspace directory controls, and
  * document preview path controls.
@@ -54,6 +71,15 @@ export function apply(ctx: ClientContext): void {
   const paths = new OpenInAppPathController(ctx.remote)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'open-in-app: dictionaries')
   const t = ctx.locale.bind(NS)
+  const shortcutFailure = createSnapshotStore<number | null>(null)
+  let shortcutFailureSequence = 0
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay', id: 'open-in-app.shortcut-failure', locale: NS,
+    inject: (): ShortcutFailureFace => ({
+      hooks: { openShortcutFailure: shortcutFailure },
+      dismissShortcutFailure: () => { shortcutFailure.set(null) },
+    }),
+  }, ShortcutFailureToast))
   const target = () => {
     if (ctx.layout.panelInfo.getSnapshot().activePanelId !== null) return undefined
     const session = Object.values(ctx.sessions.list.getSnapshot().byId)
@@ -77,8 +103,9 @@ export function apply(ctx: ClientContext): void {
       const selected = target()
       if (selected === undefined) return { status: 'blocked', reason: t('shortcut.unavailable') }
       return { status: 'handled', run: () => {
-        void controller.launch(selected.appId, selected.path).catch((error: unknown) => {
-          console.warn('workspace open rejected:', error)
+        shortcutFailure.set(null)
+        void controller.launch(selected.appId, selected.path).catch(() => {
+          shortcutFailure.set(++shortcutFailureSequence)
         })
       } }
     },

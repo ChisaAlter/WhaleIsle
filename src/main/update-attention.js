@@ -1,14 +1,14 @@
 'use strict';
 
 /**
- * Best-effort background attention for a downloaded update; never grants
+ * Best-effort background attention for a discovered update; never grants
  * update or task-stop authorization. Ported from upstream update-attention.ts.
  */
 
 const { app, Notification } = require('electron');
 const { systemNotificationsSupported } = require('./system-notifications');
 
-/** Owns one reminder per downloaded version until reset for a new download. */
+/** Owns one reminder per discovered version until reset for a new check. */
 class UpdateAttention {
   /**
    * @param {{ title: string, body: string }} text - notification copy.
@@ -23,9 +23,9 @@ class UpdateAttention {
   }
 
   /**
-   * @param {string} version - prepared target whose confirmation is waiting.
+   * @param {string} version - available target whose update confirmation is waiting.
    * @param {any} parent - taskbar window; never restored or focused by the reminder.
-   * @param {any} [modal] - existing installation confirmation.
+   * @param {any} [modal] - existing update confirmation.
    * @param {() => void} returnToConfirmation - returns to UI without installing.
    */
   ready(version, parent, modal, returnToConfirmation) {
@@ -78,7 +78,7 @@ class UpdateAttention {
     try { stop?.(); } catch (error) { console.warn('dshd update: could not clear attention', error); }
   }
 
-  /** Start a new download episode, or dispose all owned reminders. */
+  /** Start a new update-check episode, or dispose all owned reminders. */
   reset() { this.clear(); this.version = undefined; }
 }
 

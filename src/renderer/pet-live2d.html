@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>桌面宠物</title>
     <link rel="stylesheet" href="dsh-webui-tokens.css">
+    <link rel="stylesheet" href="feedback.css">
     <style>
       html, body {
         margin: 0;
@@ -270,6 +271,9 @@
         opacity: 0.55;
         cursor: default;
       }
+      #pc-feedback { position: fixed; z-index: 14; width: 248px; max-width: calc(100vw - 8px); }
+      #pc-feedback[hidden] { display: none; }
+      #pet-chat .pc-send[aria-busy='true'] { color: transparent; }
     </style>
   </head>
   <body>
@@ -294,6 +298,10 @@
       </div>
     </div>
     <div id="pc-picker" role="menu" aria-label="模型与思考" hidden></div>
+    <div id="pc-feedback" class="shell-feedback-toast" role="alert" hidden>
+      <span id="pc-feedback-text" class="shell-feedback-text"></span>
+      <button id="pc-feedback-close" class="shell-feedback-close" type="button" aria-label="关闭提示"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+    </div>
     <script src="pet-live2d/ort/ort.all.min.js"></script>
     <script src="pet-live2d/anime4k.js"></script>
     <script src="pet-physics.js"></script>

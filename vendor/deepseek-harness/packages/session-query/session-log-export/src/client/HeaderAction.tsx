@@ -65,6 +65,7 @@ export function SessionLogDownloadHeaderAction(props: SessionLogDownloadHeaderPr
           aria-haspopup="menu"
           aria-expanded={open}
           aria-busy={busy}
+          loading={busy}
           onClick={() => { setOpen(value => !value) }}
         >
           <IconEllipsisOutlineRegular />

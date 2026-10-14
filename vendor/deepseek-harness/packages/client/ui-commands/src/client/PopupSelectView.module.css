@@ -106,6 +106,13 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+.busy {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  pointer-events: none;
+}
+
 .search {
   margin: 2px 2px 3px;
   padding: 5px 7px;

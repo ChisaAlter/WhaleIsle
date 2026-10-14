@@ -4126,25 +4126,45 @@ describe('ChatView', () => {
     }
   })
 
-  it('paging button loads older and shows its busy label', () => {
+  it('paging keeps its caption and blocks duplicate loads while busy', () => {
     const h = makeHarness({ nodes: [user(5, 'later')] }, { hasMore: true })
     const view = render(<h.ChatView {...h.props} />)
-    fireEvent.click(view.getByText('加载更早'))
+    const button = view.getByRole('button', { name: '加载更早' }) as HTMLButtonElement
+    fireEvent.click(button)
     expect(h.loadOlder).toHaveBeenCalledTimes(1)
     act(() => { h.setSession({ loadingOlder: true }) })
-    expect(view.getByText('加载中…')).toBeTruthy()
+    expect(view.getByRole('button', { name: '加载更早' })).toBe(button)
+    expect(button.getAttribute('aria-busy')).toBe('true')
+    expect(button.disabled).toBe(true)
+    expect(button.querySelector('[data-state="ongoing"]')).not.toBeNull()
+    fireEvent.click(button)
+    expect(h.loadOlder).toHaveBeenCalledTimes(1)
+    act(() => { h.setSession({ loadingOlder: false }) })
+    expect(button.disabled).toBe(false)
+    expect(view.getByText('later')).toBeTruthy()
   })
 
-  it('shows open error and loading states', () => {
+  it('floats history errors and overlays an accessible loading indicator', async () => {
     const h = makeHarness({}, {
       openState: 'error',
       openError: { code: 'gateway/internal', message: 'boom' } as never,
     })
     const view = render(<h.ChatView {...h.props} />)
-    expect(view.getByText(/历史加载失败：boom/)).toBeTruthy()
+    const notice = await view.findByRole('alert')
+    expect(notice.textContent).toContain('历史加载失败：boom')
+    expect(view.container.contains(notice)).toBe(false)
+    expect(notice.hasAttribute('data-persistent')).toBe(true)
+    fireEvent.click(within(notice).getByRole('button', { name: '关闭' }))
+    expect(view.queryByRole('alert')).toBeNull()
+    view.rerender(<h.ChatView {...h.props} />)
+    expect(view.queryByRole('alert')).toBeNull()
+    act(() => { h.setSession({ openError: { code: 'gateway/internal', message: 'again' } as never }) })
+    expect((await view.findByRole('alert')).textContent).toContain('历史加载失败：again')
+    view.unmount()
     const loading = makeHarness({}, { openState: 'loading' })
     const lv = render(<loading.ChatView {...loading.props} />)
-    expect(lv.getByText('载入历史…')).toBeTruthy()
+    expect(lv.getByRole('status', { name: '载入历史…' }).querySelector('[data-state="ongoing"]')).not.toBeNull()
+    expect(lv.queryByText('载入历史…')).toBeNull()
   })
 
   it('renders command nodes as durable rows: settled text, error state, executing spinner, run-less soft-fall', () => {

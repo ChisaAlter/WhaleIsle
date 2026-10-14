@@ -50,6 +50,6 @@ export function OnboardingProcessStep({ t, heading, busy, process, onSelect, onC
         <span className={css.cardDescription}>{t(option.descriptionKey)}</span>
       </button>)}
     </div>
-    <div className={css.primaryAction}>{process !== null && <Button className={css.action} variant="primary" aria-disabled={busy} onClick={() => { if (!busy) onComplete() }}>{t('onboardingEnter')}</Button>}</div>
+    <div className={css.primaryAction}>{process !== null && <Button className={css.action} variant="primary" aria-disabled={busy} loading={busy} onClick={() => { if (!busy) onComplete() }}>{t('onboardingEnter')}</Button>}</div>
   </div>
 }

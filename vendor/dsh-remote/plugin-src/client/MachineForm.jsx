@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Button, Checkbox, Input, SettingsSelect, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import { remoteApi } from './api.js'
+import { RemoteFeedback } from './Feedback.jsx'
 
 const EMPTY_FORM = {
   name: '', host: '', port: '22', username: 'root',
@@ -94,8 +95,6 @@ export function MachineForm({ t, machine, onSaved, onCancel }) {
     setBusy(true); setNotice(null)
     remoteApi.saveMachine(payloadOf(form))
       .then((r) => {
-        const warning = r && r.warning
-        if (warning) setNotice({ kind: 'err', text: warning + (r.warningDetail ? ` (${r.warningDetail})` : '') })
         onSaved && onSaved(r)
       })
       .catch((e) => setNotice({ kind: 'err', text: String((e && e.message) || e) }))
@@ -165,14 +164,14 @@ export function MachineForm({ t, machine, onSaved, onCancel }) {
           </div>
         </div>
       </div>
-      {notice ? <div className={notice.kind === 'ok' ? 'dshr-ok' : 'dshr-error'}>{notice.text}</div> : null}
+      <RemoteFeedback error={notice && notice.kind === 'err' ? notice.text : ''} message={notice && notice.kind === 'ok' ? notice.text : ''} onClearMessage={() => setNotice(null)} t={t} />
       <div className="dshr-row" style={{ justifyContent: 'flex-end' }}>
-        <Button variant="ghost" size="sm" onClick={test} disabled={testing || !form.host.trim()}>
-          {testing ? t('machines.testing') : t('machines.test')}
+        <Button variant="ghost" size="sm" onClick={test} disabled={busy || testing || !form.host.trim()} loading={testing}>
+          {t('machines.test')}
         </Button>
-        <Button variant="ghost" size="sm" onClick={onCancel}>{t('form.cancel')}</Button>
-        <Button variant="primary" size="sm" onClick={save} disabled={busy || !form.host.trim()}>
-          {busy ? t('form.saving') : t('form.save')}
+        <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy || testing}>{t('form.cancel')}</Button>
+        <Button variant="primary" size="sm" onClick={save} disabled={busy || testing || !form.host.trim()} loading={busy}>
+          {t('form.save')}
         </Button>
       </div>
     </div>

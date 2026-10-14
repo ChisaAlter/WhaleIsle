@@ -171,6 +171,7 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
   // because the rows they annotated are gone.
   const [editing, setEditing] = useState<ReadonlyMap<string, string>>(() => new Map())
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set())
+  const validation = validateDeepSeekModels(props.models)
 
   const update = (index: number, key: CatalogField, value: unknown): void => {
     const next = props.models.map((model, at) => {
@@ -288,6 +289,7 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
                 inputField="inputModalities"
                 expanded={expanded.has(index)}
                 disabled={props.disabled}
+                validation={validation}
                 t={props.t}
                 contextWindow={capacityInput(model, index, 'contextWindow', props.defaultContextWindow)}
                 maxTokens={capacityInput(model, index, 'maxTokens', props.defaultMaxTokens)}

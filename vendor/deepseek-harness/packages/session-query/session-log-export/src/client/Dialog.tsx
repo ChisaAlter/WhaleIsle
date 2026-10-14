@@ -1,6 +1,6 @@
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { StateDot, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SessionLogDownloadState } from './controller.ts'
@@ -22,9 +22,9 @@ export type SessionLogDownloadDialogProps =
   & { sessionId?: SessionId }
 
 /**
- * Modal shared by the Session Header download menu item and this browser's `/export` command.
+ * Floating feedback shared by the Session Header download menu item and this browser's `/export` command.
  * @param props - Session runtime, bound controller state, actions, and localized copy.
- * @returns the modal portal contribution.
+ * @returns the persistent feedback portal contribution.
  */
 export function SessionLogDownloadDialog({
   sessionId, useSessionLogDownload, dismiss, t,
@@ -34,21 +34,17 @@ export function SessionLogDownloadDialog({
   const status = entry?.status
   const open = entry?.open === true
   const error = status === 'error' ? entry?.error || t('dialog.commandFailed') : null
-  const title = status === 'downloading'
-    ? t('dialog.preparingTitle')
-    : status === 'success' ? t('dialog.successTitle') : t('dialog.errorTitle')
-  const description = status === 'downloading'
+  const text = status === 'downloading'
     ? t('dialog.preparingDescription')
-    : status === 'success' ? t('dialog.successDescription') : error ?? t('dialog.commandFailed')
+    : status === 'success' ? t('dialog.successTitle') : error ?? t('dialog.commandFailed')
 
-  return (
-    <Modal
-      open={open}
-      onClose={() => { dismiss(sessionId) }}
-      title={title}
-      description={description}
-      closeLabel={t('dialog.close')}
-      footer={<Button variant="primary" onClick={() => { dismiss(sessionId) }}>{t('dialog.close')}</Button>}
-    />
-  )
+  return open ? <Toast
+    key={`${String(sessionId)}-${status ?? 'idle'}`}
+    text={text}
+    holdMs={null}
+    tone={status === 'success' ? 'success' : undefined}
+    icon={status === 'downloading' ? <StateDot state="ongoing" /> : undefined}
+    dismissLabel={t('dialog.close')}
+    onDone={() => { dismiss(sessionId) }}
+  /> : null
 }

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { Modal, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Switch, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { VisualRepliesSettings } from '../../config.ts'
 import type {} from '../locale.ts'
 import css from './VisualRepliesRow.module.css'
@@ -60,12 +60,12 @@ export function VisualRepliesRow({ useSettings, setEnabled, t }: VisualRepliesRo
       checked={pending ?? enabled}
       label={t('settings.title')}
       disabled={saving || !writable}
+      loading={saving}
       title={!writable ? t('settings.unavailable') : undefined}
       onChange={(next: boolean) => { void save(next) }}
     />
   </div>
-    <Modal open={failed} onClose={() => { setFailed(false) }}
-      title={t('settings.title')} closeLabel={t('settings.close')}
-      description={t('settings.saveFailed')} />
+    {failed && <Toast text={t('settings.saveFailed')} holdMs={null}
+      dismissLabel={t('settings.close')} onDone={() => { setFailed(false) }} />}
   </>
 }

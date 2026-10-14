@@ -239,7 +239,6 @@
 .navigation button:focus-visible { outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 5px; }
 .navigation button:hover:not(:disabled) { color: var(--dsw-alias-label-primary); }
 .backIcon { width: 17px; height: 14px; flex: none; background: currentColor; mask-size: contain; mask-repeat: no-repeat; mask-position: center; }
-.status { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); font-size: 14px; line-height: 22px; }
 .confirmation { padding: 22px 24px 0; color: var(--dsw-alias-label-primary); }
 .confirmationHeading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .confirmation h2 { margin: 0; font-size: 16px; line-height: 24px; font-weight: 500; }

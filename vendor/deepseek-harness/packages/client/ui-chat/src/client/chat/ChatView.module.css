@@ -8,6 +8,16 @@
   container-type: inline-size;
 }
 
+.historyPending {
+  position: absolute;
+  inset-inline: 0;
+  top: 16px;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
 .root {
   position: relative;
   display: flex;

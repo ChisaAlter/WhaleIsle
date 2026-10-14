@@ -100,4 +100,50 @@ describe('ui-settings-market browser plugin', () => {
     await fiber.dispose()
     await b.ctx.fiber.dispose()
   })
+
+  it.each([
+    { status: 'failed', payload: { ok: false, plugins: [] } },
+    { status: 'unknown', payload: { plugins: [] } },
+  ])('rejects the localized installed-read error when the bridge status is $status', async ({ payload }) => {
+    const b = await bench()
+    declare(b.slots)
+    ;(window as Window & { shell?: unknown }).shell = {
+      ...marketShell(),
+      listInstalledPlugins: vi.fn(async () => payload),
+    }
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = b.slots.entries('settings.section')[0]!
+    const injected = (entry.inject as unknown as () => MarketSectionInjected)()
+    await expect(injected.listInstalled()).rejects.toThrow('无法读取已安装插件；当前列表可能不是最新状态。')
+    await b.ctx.fiber.dispose()
+  })
+
+  it('propagates a rejected installed-plugin bridge request', async () => {
+    const b = await bench()
+    declare(b.slots)
+    const failure = new Error('desktop bridge disconnected')
+    ;(window as Window & { shell?: unknown }).shell = {
+      ...marketShell(),
+      listInstalledPlugins: vi.fn(async () => { throw failure }),
+    }
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = b.slots.entries('settings.section')[0]!
+    const injected = (entry.inject as unknown as () => MarketSectionInjected)()
+    await expect(injected.listInstalled()).rejects.toBe(failure)
+    await b.ctx.fiber.dispose()
+  })
+
+  it('accepts a successful installed-plugin payload without rows as an empty list', async () => {
+    const b = await bench()
+    declare(b.slots)
+    ;(window as Window & { shell?: unknown }).shell = {
+      ...marketShell(),
+      listInstalledPlugins: vi.fn(async () => ({ ok: true })),
+    }
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = b.slots.entries('settings.section')[0]!
+    const injected = (entry.inject as unknown as () => MarketSectionInjected)()
+    await expect(injected.listInstalled()).resolves.toEqual([])
+    await b.ctx.fiber.dispose()
+  })
 })

@@ -1,5 +1,6 @@
 /* The tab's own width, not the window's, decides the card columns below. */
 .section {
+  position: relative;
   container: plugin-inventory / inline-size;
   display: flex;
   flex-direction: column;
@@ -7,6 +8,14 @@
   width: 100%;
   max-width: 760px;
   color: var(--dsw-alias-label-primary);
+}
+
+.readRetry {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 28px;
+  padding: 0;
 }
 
 .status,

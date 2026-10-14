@@ -15,7 +15,7 @@ import type { ReactNode, RefObject } from 'react'
 import clsx from 'clsx'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  HoverCard, IconArchiveOutlineRegular, IconEditOutlineRegular,
+  Checkbox, HoverCard, IconArchiveOutlineRegular, IconEditOutlineRegular,
   IconEllipsisOutlineRegular, IconFolderCloseRegular, IconFolderOpenRegular,
   IconNewChatOutlineRegular, IconPinFillRegular, IconPlusOutlineRegular, IconTrashOutlineRegular,
   IconTriangleRightFillRegular, IconUnarchiveOutlineRegular, Menu, MenuItemButton, relativeTime, StateDot, Tooltip,
@@ -27,6 +27,33 @@ import { abbreviateHomePath } from '@deepseek-ai/dsh-util-workspace-path'
 import type { MenuOpenState, WorkspaceBrowserProps } from '../contract/slots.ts'
 import type { GroupNode, SearchResultNode, SessionNode } from '../tree.ts'
 import css from './Rows.module.css'
+import type { SessionRowSelection } from './SessionSelection.tsx'
+
+/** Register a real row for the browser's visible-row selection control. */
+function useRowSelection(id: SessionNode['id'], title: string, blank: boolean, ref: RefObject<HTMLDivElement | null>, selection: SessionRowSelection | undefined) {
+  useEffect(() => {
+    if (blank || selection === undefined || ref.current === null) return
+    return selection.register(id, title, ref.current)
+  }, [id, title, blank, ref, selection?.register])
+}
+
+/** Native checkbox replaces the status cell while selecting conversations. */
+function SessionCheckbox({ id, title, selection, t }: {
+  id: SessionNode['id']
+  title: string
+  selection: SessionRowSelection
+  t: RowTranslate
+}) {
+  return <span onClick={(event) => { event.stopPropagation() }}>
+    <Checkbox
+      className={css.selectionCheckbox}
+      label={t('selection.session.aria', { name: title })}
+      checked={selection.selected.has(id)}
+      disabled={selection.busy}
+      onChange={() => { selection.toggle(id, title) }}
+    />
+  </span>
+}
 
 /** The standard locale seat, prop-passed from the browser root. */
 type RowTranslate = WorkspaceBrowserProps['t']
@@ -542,40 +569,50 @@ function SessionHoverContent({ node, now, renderSlot, t }: {
  * @param props.t - Workspace-browser translation seat.
  * @returns the result row.
  */
-export function SearchResultItem({ result, currentId, onOpen, onUnarchive, onDelete, renderSlot, t }: {
+export function SearchResultItem({ result, currentId, onOpen, onUnarchive, onDelete, renderSlot, selection: providedSelection, t }: {
   result: SearchResultNode
   currentId: string | undefined
   onOpen: (id: SearchResultNode['id']) => void
   onUnarchive: (id: SearchResultNode['id']) => void
   onDelete: (id: SearchResultNode['id'], title: string) => void
   renderSlot: RowRenderSlots
+  selection?: SessionRowSelection | undefined
   t: RowTranslate
 }) {
-  const selected = result.id === currentId
+  const selection = result.owner === undefined ? providedSelection : undefined
   const statuses = sessionStatuses(result, t)
   const primaryStatus = statuses[0]
   const [menuOpen, setMenuOpen] = useState(false)
   const menuOpenState = useMemo((): MenuOpenState => [menuOpen, setMenuOpen], [menuOpen])
   const title = result.title || t('session.untitled')
+  const rowRef = useRef<HTMLDivElement>(null)
+  useRowSelection(result.id, title, false, rowRef, selection)
+  const selected = selection?.enabled ? selection.selected.has(result.id) : result.id === currentId
   return (
     <div
+      ref={rowRef}
       className={clsx(css.searchResultRow, selected && css.selected, result.archived && css.archived, menuOpen && css.menuOpen)}
       role="treeitem"
       aria-selected={selected}
       aria-description={result.archived && result.owner === undefined ? t('toast.archivedNotOpenable') : undefined}
-      onClick={() => { onOpen(result.id) }}
+      onClick={() => {
+        if (selection?.enabled) { selection.toggle(result.id, title) }
+        else onOpen(result.id)
+      }}
     >
       <span className={css.searchResultHeading}>
         {/* Like session rows, the leading slot owns every row marker; on
             archived rows it stays blank — the grayed row carries the
             archived look. */}
         <span className={css.slot}>
-          {!result.archived && primaryStatus.state !== 'idle' && (
+          {selection?.enabled
+            ? <SessionCheckbox id={result.id} title={title} selection={selection} t={t} />
+            : !result.archived && primaryStatus.state !== 'idle' && (
             <SessionStatusDots statuses={statuses} />
           )}
         </span>
         <span className={css.searchResultTitle}>{title}</span>
-        {(result.archived || result.owner !== undefined) && (
+        {(result.archived || result.owner !== undefined) && !selection?.enabled && (
           <span className={css.rowActions} onClick={(e) => { e.stopPropagation() }}>
             <Menu
               open={menuOpen}
@@ -639,7 +676,7 @@ export function SearchResultItem({ result, currentId, onOpen, onUnarchive, onDel
  * @returns the session row.
  */
 export function SessionNodeItem({
-  node, currentId, now, onOpen, onRenameRequest, onDeleteRequest, renderSlot, onReveal, drag, t,
+  node, currentId, now, onOpen, onRenameRequest, onDeleteRequest, renderSlot, onReveal, drag, selection: providedSelection, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -652,6 +689,7 @@ export function SessionNodeItem({
   onReveal?: (() => void) | undefined
   /** Present on reorderable-list rows so every row can remain a drop target. */
   drag?: RowDragProps | undefined
+  selection?: SessionRowSelection | undefined
   t: RowTranslate
 } & PropsRenderSlots<
   | 'sidebar.workspaces.session.menu.item'
@@ -660,19 +698,21 @@ export function SessionNodeItem({
   | 'sidebar.session.row.hover'
 >) {
   const row = node
+  const selection = node.owner === undefined ? providedSelection : undefined
   const title = displayTitle(node, t)
-  const selected = node.id === currentId
   const statuses = sessionStatuses(node, t)
   const primaryStatus = statuses[0]
   const showStatus = primaryStatus.state !== 'idle'
   // Archived rows hold their in-place grayed slot, so manual reorder cannot
   // move them. Pinned rows drag within the pinned block: the browser gates
   // their drop targets to fellow pinned rows.
-  const draggable = drag !== undefined && !row.blank && !row.archived && row.owner === undefined
   const [menuOpen, setMenuOpen] = useState(false)
   // The menu's open state, bound into the row entries' `useMenuOpenState` hook.
   const menuOpenState = useMemo((): MenuOpenState => [menuOpen, setMenuOpen], [menuOpen])
   const rowRef = useRef<HTMLDivElement>(null)
+  useRowSelection(node.id, title, row.blank, rowRef, selection)
+  const selected = selection?.enabled ? selection.selected.has(node.id) : node.id === currentId
+  const draggable = !selection?.enabled && drag !== undefined && !row.blank && !row.archived && row.owner === undefined
   const titleRef = useRef<HTMLSpanElement>(null)
   const marquee = useTitleMarquee(titleRef)
   useEffect(() => {
@@ -693,7 +733,10 @@ export function SessionNodeItem({
       role="treeitem"
       aria-selected={selected}
       aria-description={row.archived && row.owner === undefined ? t('toast.archivedNotOpenable') : undefined}
-      onClick={() => { onOpen(node.id) }}
+      onClick={() => {
+        if (selection?.enabled) { if (!row.blank) selection.toggle(node.id, title) }
+        else onOpen(node.id)
+      }}
       onPointerEnter={marquee.enter}
       onPointerLeave={marquee.leave}
       draggable={draggable}
@@ -727,14 +770,16 @@ export function SessionNodeItem({
           blank — the grayed row carries the archived look — and their live
           status stays on the hover card only. */}
       <span className={css.slot}>
-        {!row.archived && !row.blank && (showStatus
+        {selection?.enabled && !row.blank
+          ? <SessionCheckbox id={node.id} title={title} selection={selection} t={t} />
+          : !row.archived && !row.blank && (showStatus
           ? <SessionStatusDots statuses={statuses} />
           : renderSlot('sidebar.session.row.leading', { sessionId: node.id }))}
       </span>
       <span
         ref={titleRef}
         className={css.title}
-        onDoubleClick={row.blank
+        onDoubleClick={row.blank || selection?.enabled
           ? undefined
           : (e) => { e.stopPropagation(); onRenameRequest(node.id, row.title) }}
       >
@@ -758,7 +803,7 @@ export function SessionNodeItem({
       {/* The strip's clicks stay in the strip: the trigger and every
           row.action entry act without also opening the row, so an entry's
           button needs no propagation handling of its own. */}
-      {!row.blank && (
+      {!row.blank && !selection?.enabled && (
         <span className={css.rowActions} onClick={(e) => { e.stopPropagation() }}>
           <Menu
             open={menuOpen}
@@ -798,7 +843,7 @@ export function SessionNodeItem({
       anchor={ownRow}
       content={<SessionHoverContent node={node} now={now} renderSlot={renderSlot} t={t} />}
       openDelayMs={800}
-      disabled={menuOpen || drag?.active === true}
+      disabled={selection?.enabled || menuOpen || drag?.active === true}
       copyText={row.blank || row.title === '' ? undefined : row.title}
       copyLabel={t('copy')}
       copiedLabel={t('hover.copied')}
@@ -849,7 +894,7 @@ export function ArchivedSectionHeader({ expanded, onToggle, t }: {
  * @param props.t - the browser root's locale seat.
  * @returns the archived session row.
  */
-export function ArchivedSessionNodeItem({ node, currentId, now, onOpen, onUnarchive, onDelete, renderSlot, t }: {
+export function ArchivedSessionNodeItem({ node, currentId, now, onOpen, onUnarchive, onDelete, renderSlot, selection: providedSelection, t }: {
   node: SessionNode
   currentId: string | undefined
   now: number
@@ -857,11 +902,15 @@ export function ArchivedSessionNodeItem({ node, currentId, now, onOpen, onUnarch
   onUnarchive: (id: SessionNode['id']) => void
   onDelete: (id: SessionNode['id'], title: string) => void
   renderSlot: RowRenderSlots
+  selection?: SessionRowSelection | undefined
   t: RowTranslate
 }) {
   const row = node
+  const selection = node.owner === undefined ? providedSelection : undefined
   const title = displayTitle(node, t)
-  const selected = node.id === currentId
+  const rowRef = useRef<HTMLDivElement>(null)
+  useRowSelection(node.id, title, row.blank, rowRef, selection)
+  const selected = selection?.enabled ? selection.selected.has(node.id) : node.id === currentId
   const statuses = sessionStatuses(node, t)
   const primaryStatus = statuses[0]
   const showStatus = primaryStatus.state !== 'done' || row.completed
@@ -873,19 +922,25 @@ export function ArchivedSessionNodeItem({ node, currentId, now, onOpen, onUnarch
   ]
   const ownRow = (
     <div
+      ref={rowRef}
       className={clsx(css.sessionRow, css.archived, selected && css.selected, menuOpen && css.menuOpen)}
       data-row-key={`session:${node.id}`}
       role="treeitem"
       aria-selected={selected}
       aria-description={node.owner === undefined ? t('toast.archivedNotOpenable') : undefined}
-      onClick={node.owner === undefined ? undefined : () => { onOpen?.(node.id) }}
+      onClick={() => {
+        if (selection?.enabled && !row.blank) selection.toggle(node.id, title)
+        else if (node.owner !== undefined) onOpen?.(node.id)
+      }}
     >
       <span className={css.slot}>
-        {showStatus && <SessionStatusDots statuses={statuses} />}
+        {selection?.enabled && !row.blank
+          ? <SessionCheckbox id={node.id} title={title} selection={selection} t={t} />
+          : showStatus && <SessionStatusDots statuses={statuses} />}
       </span>
       <span className={css.title}>{title}</span>
       {!row.blank && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
-      {!row.blank && (
+      {!row.blank && !selection?.enabled && (
         <span className={css.rowActions} onClick={(event) => { event.stopPropagation() }}>
           <Menu
             open={menuOpen}
@@ -920,7 +975,7 @@ export function ArchivedSessionNodeItem({ node, currentId, now, onOpen, onUnarch
     <HoverCard
       anchor={ownRow}
       content={<SessionHoverContent node={node} now={now} renderSlot={renderSlot} t={t} />}
-      disabled={menuOpen}
+      disabled={selection?.enabled || menuOpen}
       copyText={row.blank ? undefined : row.title}
       copyLabel={t('copy')}
       copiedLabel={t('hover.copied')}

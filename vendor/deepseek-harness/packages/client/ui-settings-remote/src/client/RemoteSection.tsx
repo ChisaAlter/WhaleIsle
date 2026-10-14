@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Button, FlipText, FLIP_TEXT_MS, IconChevronRightOutline14, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, FLIP_TEXT_MS, IconChevronRightOutline14, Toast, useModalLayer, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type { RemotePatch, RemoteSnapshot } from './desktop-shell.ts'
@@ -37,8 +37,14 @@ export function RemoteMenuAction({ close, ...props }: RemoteMenuActionProps): Re
   return <RemoteSection {...props} wide menuMode onClose={close} />
 }
 
-const EMPTY: RemoteSnapshot = { urls: [], devices: [] }
 const REFRESH_MS = 2000
+type RemoteAction = { kind: 'load' | 'enable' | 'disable' | 'rotate' | 'rename' | 'unbind'; id?: string }
+type Notice = { id: number; text: string }
+
+function remoteErrorText(error: string, t: RemoteSectionProps['t']): string {
+  const kind = humanizeRemoteError(error)
+  return kind === 'portInUse' ? t('errorPortInUse') : kind === 'bindGone' ? t('errorBindGone') : t('statusErrorGeneric')
+}
 
 function PhoneIcon({ size }: { size: number }): ReactNode {
   return (
@@ -74,30 +80,51 @@ export function RemoteSection({
 }: RemoteSectionProps): ReactNode {
   const [snap, setSnap] = useState<RemoteSnapshot | null>(null)
   const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [pending, setPending] = useState<RemoteAction | null>(null)
   const [open, setOpen] = useState(menuMode)
   const [devicesOpen, setDevicesOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [copying, setCopying] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [healFired, setHealFired] = useState(false)
   const healAttemptedRef = useRef(false)
+  const noticeId = useRef(0)
+  const [notice, setNotice] = useState<Notice | null>(null)
+  const [statusNotice, setStatusNotice] = useState<string | null>(null)
+  const popupRef = useRef<HTMLDivElement | null>(null)
+  const popupOwnerRef = useRef<HTMLSpanElement | null>(null)
+  const devicesRef = useRef<HTMLDivElement | null>(null)
+  const devicesOwnerRef = useRef<HTMLSpanElement | null>(null)
+  const busy = pending !== null
   const closePopup = useCallback((): void => { setOpen(false); onClose?.() }, [onClose])
+  const closeDevices = useCallback((): void => { setDevicesOpen(false) }, [])
+  useModalLayer(popupRef, open, closePopup, popupOwnerRef)
+  useModalLayer(devicesRef, open && devicesOpen, closeDevices, devicesOwnerRef)
 
-  const applySnap = useCallback((next: RemoteSnapshot | null) => {
-    const value = next ?? EMPTY
-    setSnap(value)
-    setError(value.error || '')
+  const showNotice = useCallback((text: string) => {
+    noticeId.current += 1
+    setNotice({ id: noticeId.current, text })
   }, [])
 
+  const applySnap = useCallback((next: RemoteSnapshot | null) => {
+    if (next === null || next.available === false) {
+      setError(t('error'))
+      return false
+    }
+    setSnap(next)
+    setError(next.error || '')
+    return true
+  }, [t])
+
   const load = useCallback(async () => {
-    setBusy(true)
+    setPending({ kind: 'load' })
     try {
       applySnap(await getRemote())
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
-      setBusy(false)
+      setPending(null)
     }
   }, [applySnap, getRemote])
 
@@ -120,6 +147,8 @@ export function RemoteSection({
       setHealFired(false)
       setCopied(false)
       setRenamingId(null)
+      setNotice(null)
+      setStatusNotice(null)
       return
     }
     void refresh()
@@ -127,61 +156,66 @@ export function RemoteSection({
     return () => { window.clearInterval(id) }
   }, [open, refresh])
 
-  useEffect(() => {
-    if (!open) return
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return
-      if (devicesOpen) setDevicesOpen(false)
-      else closePopup()
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => { document.removeEventListener('keydown', onKeyDown) }
-  }, [open, devicesOpen, closePopup])
-
   const save = useCallback(async (patch: RemotePatch) => {
-    setBusy(true)
+    if (busy) return
+    setPending({ kind: patch.remoteEnabled ? 'enable' : 'disable' })
+    setNotice(null)
     try {
-      applySnap(await saveRemote(patch))
+      if (!applySnap(await saveRemote(patch))) showNotice(t('error'))
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      const message = caught instanceof Error ? caught.message : String(caught)
+      setError(message)
+      showNotice(remoteErrorText(message, t))
     } finally {
-      setBusy(false)
+      setPending(null)
     }
-  }, [applySnap, saveRemote])
+  }, [applySnap, busy, saveRemote, showNotice, t])
 
   const rotate = useCallback(async () => {
-    setBusy(true)
+    if (busy) return
+    setPending({ kind: 'rotate' })
+    setNotice(null)
     try {
-      applySnap(await rotateRemoteToken())
+      if (!applySnap(await rotateRemoteToken())) showNotice(t('error'))
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      const message = caught instanceof Error ? caught.message : String(caught)
+      setError(message)
+      showNotice(remoteErrorText(message, t))
     } finally {
-      setBusy(false)
+      setPending(null)
     }
-  }, [applySnap, rotateRemoteToken])
+  }, [applySnap, busy, rotateRemoteToken, showNotice, t])
 
   const unbind = useCallback(async (id: string) => {
-    setBusy(true)
+    if (busy) return
+    setPending({ kind: 'unbind', id })
+    setNotice(null)
     try {
-      applySnap(await unbindRemoteDevice(id))
+      if (!applySnap(await unbindRemoteDevice(id))) showNotice(t('error'))
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      const message = caught instanceof Error ? caught.message : String(caught)
+      setError(message)
+      showNotice(remoteErrorText(message, t))
     } finally {
-      setBusy(false)
+      setPending(null)
     }
-  }, [applySnap, unbindRemoteDevice])
+  }, [applySnap, busy, unbindRemoteDevice, showNotice, t])
 
   const rename = useCallback(async (id: string, name: string) => {
-    setBusy(true)
+    if (busy || !name.trim()) return
+    setPending({ kind: 'rename', id })
+    setNotice(null)
     try {
-      applySnap(await renameRemoteDevice(id, name))
-      setRenamingId(null)
+      if (applySnap(await renameRemoteDevice(id, name))) setRenamingId(null)
+      else showNotice(t('error'))
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      const message = caught instanceof Error ? caught.message : String(caught)
+      setError(message)
+      showNotice(remoteErrorText(message, t))
     } finally {
-      setBusy(false)
+      setPending(null)
     }
-  }, [applySnap, renameRemoteDevice])
+  }, [applySnap, busy, renameRemoteDevice, showNotice, t])
 
   const pairingUrl = snap?.urls?.[0]?.pairingUrl || ''
   const qr = useMemo(() => qrSvg(pairingUrl), [pairingUrl])
@@ -202,13 +236,10 @@ export function RemoteSection({
   }, [open, snap, enabled, listening, pairingUrl, busy, save])
 
   let statusText: string | null = null
-  if (error) {
-    const remoteKind = humanizeRemoteError(error)
-    statusText = remoteKind === 'portInUse'
-      ? t('errorPortInUse')
-      : remoteKind === 'bindGone'
-        ? t('errorBindGone')
-        : t('statusErrorGeneric')
+  if (!snap) {
+    statusText = error ? t('error') : t('loading')
+  } else if (error) {
+    statusText = remoteErrorText(error, t)
   } else if (enabled && !relayConnected) {
     const relayKind = humanizeRelayError(relayError)
     if (relayKind === 'disconnected') statusText = t('relayDownDisconnected')
@@ -218,13 +249,21 @@ export function RemoteSection({
     statusText = t('startingHint')
   }
 
-  let qrHint: string | null = null
-  if (!enabled) qrHint = t('offHint')
-  else if (!qr && listening) qrHint = healFired ? t('noQr') : t('mintingHint')
+  if (statusText === null && enabled && !qr && listening) statusText = healFired ? t('noQr') : t('mintingHint')
 
+  useEffect(() => {
+    setStatusNotice(open ? statusText : null)
+  }, [open, statusText])
 
   return (
     <div className={wide ? css.layer : `${css.layer} ${css.rail}`}>
+      <span ref={popupOwnerRef} hidden data-dsh-modal-owner="" />
+      <span ref={devicesOwnerRef} hidden data-dsh-modal-owner="" />
+      {open && (notice || statusNotice) ? (
+        <Toast key={notice ? `notice-${String(notice.id)}` : `status-${statusNotice}`}
+          text={notice?.text ?? statusNotice ?? ''} holdMs={null} dismissLabel={t('dismiss')}
+          onDone={() => { setNotice(null); setStatusNotice(null) }} />
+      ) : null}
       {!menuMode && <button
         type="button"
         className={css.trigger}
@@ -242,20 +281,17 @@ export function RemoteSection({
         <div className={css.overlay} role="presentation">
           <div className={css.mask} aria-hidden="true" onClick={closePopup} />
           <div
+            ref={popupRef}
             className={css.panel}
             role="dialog"
             aria-modal="true"
             aria-label={t('heading')}
+            tabIndex={-1}
             data-dsh-remote-panel=""
           >
-            <h2 className={css.heading}>{t('heading')}</h2>
-            {!snap && error ? (
-              <>
-                <p className={css.status} role="status">{t('error')}</p>
-                <button type="button" className={css.retry} onClick={() => { void load() }}>{t('retry')}</button>
-              </>
-            ) : !snap ? (
-              <p className={css.status} role="status">{t('loading')}</p>
+            <h2 className={css.heading} data-dsh-modal-header="">{t('heading')}</h2>
+            {!snap ? (
+              <Button size="sm" className={css.retry} disabled={busy} loading={pending?.kind === 'load'} onClick={() => { void load() }}>{t('retry')}</Button>
             ) : (
               <>
                 <div className={css.modes} role="radiogroup" aria-label={t('enable')}>
@@ -266,6 +302,7 @@ export function RemoteSection({
                     role="radio"
                     aria-checked={enabled}
                     disabled={busy}
+                    loading={pending?.kind === 'enable'}
                     onClick={() => {
                       if (!enabled || !listening || !pairingUrl) void save({ remoteEnabled: true })
                     }}
@@ -279,6 +316,7 @@ export function RemoteSection({
                     role="radio"
                     aria-checked={!enabled}
                     disabled={busy}
+                    loading={pending?.kind === 'disable'}
                     onClick={() => { if (enabled) void save({ remoteEnabled: false }) }}
                   >
                     {t('enabledOff')}
@@ -294,11 +332,6 @@ export function RemoteSection({
                     <IconChevronRightOutline14 />
                   </span>
                 </button>
-                {statusText ? (
-                  <p className={css.status} role="status" data-dsh-remote-status="">
-                    {statusText}
-                  </p>
-                ) : null}
                 {enabled && relayConnected && qr ? (
                   <>
                     <div
@@ -308,21 +341,25 @@ export function RemoteSection({
                       data-dsh-remote-qr=""
                       dangerouslySetInnerHTML={{ __html: qr }}
                     />
-                    <div className={css.footer}>
+                    <div className={css.footer} data-dsh-modal-footer="">
                       <Button
                         size="sm"
                         variant="ghost"
                         className={css.footerButton}
                         data-dsh-remote-copy-link=""
+                        loading={copying}
+                        {...copied ? { feedback: t('copiedLink') } : {}}
                         onClick={() => {
+                          if (copying) return
+                          setCopying(true)
                           void writeClipboard(pairingUrl).then((ok) => {
-                            if (!ok) return
+                            if (!ok) { showNotice(t('copyFailed')); return }
                             setCopied(true)
                             window.setTimeout(() => { setCopied(false) }, FLIP_TEXT_MS)
-                          })
+                          }).finally(() => { setCopying(false) })
                         }}
                       >
-                        <FlipText text={copied ? t('copiedLink') : t('copyLink')} />
+                        {t('copyLink')}
                       </Button>
                       <Button
                         size="sm"
@@ -330,23 +367,24 @@ export function RemoteSection({
                         className={css.footerButton}
                         data-dsh-remote-rotate=""
                         disabled={busy}
+                        loading={pending?.kind === 'rotate'}
                         onClick={() => { void rotate() }}
                       >
                         {t('rotateToken')}
                       </Button>
                     </div>
                   </>
-                ) : qrHint ? (
-                  <p className={css.hint}>{qrHint}</p>
+                ) : !enabled ? (
+                  <p className={css.hint}>{t('offHint')}</p>
                 ) : null}
               </>
             )}
           </div>
           {devicesOpen ? (
             <div className={css.deviceLayer} role="presentation">
-              <div className={css.mask} aria-hidden="true" onClick={() => { setDevicesOpen(false) }} />
-              <div className={css.devicePanel} role="dialog" aria-modal="true" aria-label={t('devicesManage')}>
-                <h2 className={css.heading}>{t('devicesManage')}</h2>
+              <div className={css.mask} aria-hidden="true" onClick={closeDevices} />
+              <div ref={devicesRef} className={css.devicePanel} role="dialog" aria-modal="true" aria-label={t('devicesManage')} tabIndex={-1}>
+                <h2 className={css.heading} data-dsh-modal-header="">{t('devicesManage')}</h2>
                 {devices.length === 0 ? (
                   <p className={css.hint}>{t('devicesEmpty')}</p>
                 ) : (
@@ -366,6 +404,7 @@ export function RemoteSection({
                                 className={css.renameInput}
                                 value={renameDraft}
                                 maxLength={120}
+                                disabled={busy}
                                 autoFocus
                                 aria-label={t('renameLabel')}
                                 onChange={(event) => { setRenameDraft(event.target.value) }}
@@ -377,6 +416,7 @@ export function RemoteSection({
                                   className={css.renameButton}
                                   type="submit"
                                   disabled={busy || !renameDraft.trim()}
+                                  loading={pending?.kind === 'rename' && pending.id === device.id}
                                 >
                                   {t('save')}
                                 </Button>
@@ -425,14 +465,16 @@ export function RemoteSection({
                               {t('rename')}
                             </button>
                           ) : null}
-                          <button
+                          <Button
                             type="button"
+                            size="sm"
                             className={css.unbind}
                             disabled={busy}
+                            loading={pending?.kind === 'unbind' && pending.id === device.id}
                             onClick={() => { void unbind(device.id) }}
                           >
                             {t('unbind')}
-                          </button>
+                          </Button>
                         </div>
                       </li>
                     ))}

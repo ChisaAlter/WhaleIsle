@@ -1,8 +1,8 @@
 /**
  * Gallery-window wallpaper source list: add, edit, and delete named sources.
  */
-import { useState } from 'react'
-import { Button, Input, Modal, SettingsSelect } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useEffect, useState } from 'react'
+import { Button, Input, Modal, SettingsSelect, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   sanitizeWallpaperSources,
   type WallpaperSource,
@@ -41,6 +41,8 @@ export function WallpaperSources({
     { mode: 'add' | 'edit'; id?: string; kind: WallpaperSourceKind; name: string; url: string; error?: string }
     | undefined
   >(undefined)
+  const [notice, setNotice] = useState<string>()
+  useEffect(() => { setNotice(editor?.error) }, [editor?.error])
 
   const occupied = (kind: WallpaperSourceKind, exceptId?: string): boolean =>
     wallpaperSources.some(source => source.kind === kind && source.id !== exceptId)
@@ -57,12 +59,16 @@ export function WallpaperSources({
     const name = editor.name.trim()
     if (name.length === 0) return
     if (editor.kind === 'catalog' && editor.url.trim().length === 0) {
-      setEditor({ ...editor, error: t('wallpaper.catalogRejected') })
+      const error = t('wallpaper.catalogRejected')
+      setEditor({ ...editor, error })
+      setNotice(error)
       return
     }
     if (editor.mode === 'add' && (editor.kind === 'bing' || editor.kind === 'wallhaven')
       && occupied(editor.kind)) {
-      setEditor({ ...editor, error: t('wallpaper.sourceExists') })
+      const error = t('wallpaper.sourceExists')
+      setEditor({ ...editor, error })
+      setNotice(error)
       return
     }
     const draft: WallpaperSource = editor.kind === 'catalog'
@@ -72,10 +78,9 @@ export function WallpaperSources({
       ? [...wallpaperSources, draft]
       : wallpaperSources.map(source => source.id === editor.id ? { ...source, ...draft, id: source.id } : source)
     if (!persist(next)) {
-      setEditor({
-        ...editor,
-        error: t(editor.kind === 'catalog' ? 'wallpaper.catalogRejected' : 'wallpaper.sourceExists'),
-      })
+      const error = t(editor.kind === 'catalog' ? 'wallpaper.catalogRejected' : 'wallpaper.sourceExists')
+      setEditor({ ...editor, error })
+      setNotice(error)
       return
     }
     setEditor(undefined)
@@ -147,11 +152,12 @@ export function WallpaperSources({
       >
         {editor !== undefined ? (
           <div className={css.sourceForm}>
+            {notice !== undefined && <Toast key={notice} text={notice} holdMs={null} dismissLabel={t('wallpaper.close')} onDone={() => { setNotice(undefined) }} />}
             <label className={css.field}>
               {t('wallpaper.sourceKind')}
               <SettingsSelect
                 variant="block"
-                aria-label={t('wallpaper.sourceKind')}
+                aria-label={editor.error !== undefined && editor.kind !== 'catalog' ? `${t('wallpaper.sourceKind')} — ${editor.error}` : t('wallpaper.sourceKind')}
                 value={editor.kind}
                 disabled={editor.mode === 'edit'}
                 options={[
@@ -192,6 +198,7 @@ export function WallpaperSources({
                   value={editor.url}
                   placeholder={t('wallpaper.catalogPlaceholder')}
                   aria-label={t('wallpaper.sourceUrl')}
+                  aria-invalid={editor.error !== undefined}
                   onChange={(event) => {
                     const { error: _error, ...rest } = editor
                     setEditor({ ...rest, url: event.currentTarget.value })
@@ -199,7 +206,6 @@ export function WallpaperSources({
                 />
               </label>
             ) : null}
-            {editor.error !== undefined ? <p className={css.hint} role="status">{editor.error}</p> : null}
           </div>
         ) : null}
       </Modal>

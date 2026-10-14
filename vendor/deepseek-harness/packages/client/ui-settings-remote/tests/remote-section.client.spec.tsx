@@ -1,25 +1,23 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RemoteSection } from '../src/client/RemoteSection.tsx'
 import type { RemoteSectionProps } from '../src/client/RemoteSection.tsx'
 import type { RemotePatch, RemoteSnapshot } from '../src/client/desktop-shell.ts'
 import { en, type RemoteLocaleKey } from '../src/client/locales.ts'
 import { humanizeRelayError, humanizeRemoteError, ipcErrorMessage } from '../src/client/relay-copy.ts'
 
-vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => {
-  const actual = await vi.importActual<typeof import('@deepseek-ai/dsh-client-ui-primitives')>(
-    '@deepseek-ai/dsh-client-ui-primitives',
-  )
-  return {
-    ...actual,
-    writeClipboard: vi.fn(async () => true),
-  }
+const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+const writeText = vi.fn(async (_text: string) => {})
+beforeEach(() => {
+  writeText.mockReset().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
 })
-
-import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
-
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  if (clipboardDescriptor) Object.defineProperty(navigator, 'clipboard', clipboardDescriptor)
+  else Reflect.deleteProperty(navigator, 'clipboard')
+})
 
 const t = ((key: RemoteLocaleKey, vars?: Record<string, string>): string => {
   let text: string = en[key]
@@ -226,9 +224,14 @@ describe('RemoteSection', () => {
       getRemote: vi.fn(() => new Promise<RemoteSnapshot>((resolve) => { finish = resolve })),
     })
     fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
-    await screen.findByText(en.loading)
-    finish(snap({ relayConnected: true }))
+    const dialog = await screen.findByRole('dialog', { name: en.heading })
+    const retry = within(dialog).getByRole('button', { name: en.retry }) as HTMLButtonElement
+    expect(retry.disabled).toBe(true)
+    expect(retry.getAttribute('aria-busy')).toBe('true')
+    expect(within(dialog).queryByText(en.loading)).toBeNull()
+    await act(async () => { finish(snap({ relayConnected: true })) })
     await screen.findByRole('img', { name: en.qr })
+    expect(screen.queryByRole('button', { name: en.retry })).toBeNull()
   })
 
   it('shows a retry control when the first read fails, then the QR', async () => {
@@ -368,14 +371,35 @@ describe('RemoteSection', () => {
   })
 
   it('copy link uses writeClipboard and shows copied feedback', async () => {
-    vi.mocked(writeClipboard).mockClear()
     renderRemote({ getRemote: vi.fn(async () => snap({ relayConnected: true })) })
     fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
     fireEvent.click(await screen.findByRole('button', { name: en.copyLink }))
     await waitFor(() => {
-      expect(writeClipboard).toHaveBeenCalledWith('http://10.0.0.4:3180/#offer=abc')
+      expect(writeText).toHaveBeenCalledWith('http://10.0.0.4:3180/#offer=abc')
     })
     await screen.findByRole('button', { name: en.copiedLink })
+  })
+
+  it('keeps the pairing controls when copying fails and dismisses only the message', async () => {
+    writeText.mockRejectedValueOnce(new Error('clipboard denied'))
+    renderRemote({ getRemote: vi.fn(async () => snap({ relayConnected: true })) })
+    fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
+    const dialog = await screen.findByRole('dialog', { name: en.heading })
+    const copy = await screen.findByRole('button', { name: en.copyLink }) as HTMLButtonElement
+    const qr = within(dialog).getByRole('img', { name: en.qr })
+    fireEvent.click(copy)
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe(en.copyFailed)
+    await waitFor(() => { expect(alert.inert).toBe(false) })
+    expect(dialog.contains(alert)).toBe(false)
+    expect(copy.disabled).toBe(false)
+    expect(copy.getAttribute('aria-busy')).toBeNull()
+    expect(screen.queryByRole('button', { name: en.copiedLink })).toBeNull()
+    fireEvent.click(within(alert).getByRole('button', { name: en.dismiss }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('img', { name: en.qr })).toBe(qr)
+    expect(screen.getByRole('button', { name: en.copyLink })).toBe(copy)
+    expect(screen.getByRole('dialog', { name: en.heading })).toBe(dialog)
   })
 
   it('renders the rail trigger without a text label', async () => {
@@ -384,10 +408,27 @@ describe('RemoteSection', () => {
     expect(trigger.textContent).toBe('')
   })
 
-  it('applies an empty snapshot when getRemote returns null', async () => {
-    renderRemote({ getRemote: vi.fn(async () => null) })
+  it.each([null, { available: false } satisfies RemoteSnapshot])('keeps a failed read retryable when getRemote returns %j', async (unavailable) => {
+    const getRemote = vi.fn(async (): Promise<RemoteSnapshot | null> => unavailable)
+    renderRemote({ getRemote })
     fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
-    await screen.findByText(en.offHint)
+    const dialog = await screen.findByRole('dialog', { name: en.heading })
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe(en.error)
+    expect(alert.getAttribute('data-persistent')).toBe('true')
+    await waitFor(() => { expect(alert.inert).toBe(false) })
+    expect(within(dialog).queryByText(en.error)).toBeNull()
+    expect(screen.queryByText(en.offHint)).toBeNull()
+    expect(screen.queryByRole('radio', { name: en.enabledOff })).toBeNull()
+    const retry = within(dialog).getByRole('button', { name: en.retry }) as HTMLButtonElement
+    expect(retry.disabled).toBe(false)
+    fireEvent.click(within(alert).getByRole('button', { name: en.dismiss }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(within(dialog).getByRole('button', { name: en.retry })).toBe(retry)
+    getRemote.mockResolvedValue(snap({ relayConnected: true }))
+    fireEvent.click(retry)
+    await screen.findByRole('img', { name: en.qr })
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('shows the bound-device count and unbinds from the management dialog', async () => {
@@ -445,20 +486,64 @@ describe('RemoteSection', () => {
     expect(manage.getByText('Pixel 8')).toBeTruthy()
   })
 
-  it('surfaces rename failures like unbind failures', async () => {
+  it('keeps a failed rename draft and exposes its dismissible Toast to the device dialog keyboard', async () => {
+    const device = { id: 'dev-2', name: 'Android' }
+    let rejectRename: (error: Error) => void = () => {}
+    const renameRemoteDevice = vi.fn()
+      .mockImplementationOnce(() => new Promise<RemoteSnapshot>((_resolve, reject) => { rejectRename = reject }))
+      .mockResolvedValueOnce(snap({ relayConnected: true, devices: [{ ...device, name: 'Tablet' }] }))
     renderRemote({
       getRemote: vi.fn(async () => snap({
         relayConnected: true,
-        devices: [{ id: 'dev-2', name: 'Android' }],
+        devices: [device],
       })),
-      renameRemoteDevice: vi.fn(async () => { throw 'rename failed' }),
+      renameRemoteDevice,
     })
     fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
     fireEvent.click(await screen.findByRole('button', { name: `${en.devices} 1` }))
-    fireEvent.click(screen.getByRole('button', { name: en.rename }))
-    fireEvent.change(screen.getByRole('textbox', { name: en.renameLabel }), { target: { value: 'Tablet' } })
-    fireEvent.submit(screen.getByRole('textbox', { name: en.renameLabel }).closest('form') as Element)
-    await waitFor(() => { expect(screen.getByText(en.statusErrorGeneric)).toBeTruthy() })
+    const dialog = await screen.findByRole('dialog', { name: en.devicesManage })
+    const manage = within(dialog)
+    fireEvent.click(manage.getByRole('button', { name: en.rename }))
+    const input = manage.getByRole('textbox', { name: en.renameLabel }) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'Tablet' } })
+    const form = input.closest('form')!
+    fireEvent.submit(form)
+    const save = manage.getByRole('button', { name: en.save }) as HTMLButtonElement
+    expect(save.getAttribute('aria-busy')).toBe('true')
+    expect(save.disabled).toBe(true)
+    expect(input.disabled).toBe(true)
+    expect(input.value).toBe('Tablet')
+    expect((manage.getByRole('button', { name: en.renameCancel }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.submit(form)
+    expect(renameRemoteDevice).toHaveBeenCalledTimes(1)
+    expect(renameRemoteDevice).toHaveBeenCalledWith('dev-2', 'Tablet')
+    await act(async () => { rejectRename(new Error('rename failed')) })
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe(en.statusErrorGeneric)
+    expect(alert.getAttribute('data-persistent')).toBe('true')
+    await waitFor(() => { expect(alert.inert).toBe(false) })
+    expect(dialog.contains(alert)).toBe(false)
+    expect(manage.queryByText(en.statusErrorGeneric)).toBeNull()
+    expect(input.disabled).toBe(false)
+    expect(input.value).toBe('Tablet')
+    expect(save.disabled).toBe(false)
+    expect(save.getAttribute('aria-busy')).toBeNull()
+    await act(async () => { await Promise.resolve() })
+    const unbind = manage.getByRole('button', { name: en.unbind })
+    expect((unbind as HTMLButtonElement).disabled).toBe(false)
+    act(() => { unbind.focus() })
+    expect(document.activeElement).toBe(unbind)
+    fireEvent.keyDown(unbind, { key: 'Tab' })
+    const dismiss = within(alert).getByRole('button', { name: en.dismiss })
+    expect(document.activeElement).toBe(dismiss)
+    fireEvent.click(dismiss)
+    expect(screen.queryByRole('alert')).toBeNull()
+    await waitFor(() => { expect(dialog.contains(document.activeElement)).toBe(true) })
+    expect(input.value).toBe('Tablet')
+    fireEvent.submit(form)
+    await waitFor(() => { expect(renameRemoteDevice).toHaveBeenCalledTimes(2) })
+    await waitFor(() => { expect(manage.queryByRole('textbox', { name: en.renameLabel })).toBeNull() })
+    expect(manage.getByText('Tablet')).toBeTruthy()
   })
 
   it('opens an empty device dialog, surfaces unbind failures, and closes inner then outer on Escape', async () => {
@@ -521,10 +606,17 @@ describe('RemoteSection', () => {
       renderRemote({ getRemote })
       fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
       await screen.findByRole('button', { name: `${en.devices} 0` })
-      await vi.advanceTimersByTimeAsync(2000)
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
       await screen.findByRole('button', { name: `${en.devices} 1` })
-      await vi.advanceTimersByTimeAsync(2000)
-      await screen.findByText(en.statusErrorGeneric)
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      const alert = await screen.findByRole('alert')
+      expect(alert.textContent).toBe(en.statusErrorGeneric)
+      fireEvent.click(within(alert).getByRole('button', { name: en.dismiss }))
+      expect(screen.queryByRole('alert')).toBeNull()
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(getRemote).toHaveBeenCalledTimes(5)
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(screen.getByRole('button', { name: `${en.devices} 1` })).toBeTruthy()
     } finally {
       vi.useRealTimers()
     }

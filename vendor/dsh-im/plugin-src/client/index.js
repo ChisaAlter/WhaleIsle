@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { FeedbackToast } from './feedback.js';
 import manifest from '../../package.json' with { type: 'json' };
 
 import {
@@ -42,7 +43,7 @@ import { installWeixinStyles } from './channels/weixin/styles.js';
 import { WHATSAPP_RPC_CHANNEL } from './channels/whatsapp/api.js';
 import { WhatsappSettingsTab } from './channels/whatsapp/index.js';
 import { installWhatsappStyles } from './channels/whatsapp/styles.js';
-import { en, h, IM_LOCALE_NAMESPACE, setImTranslator, zh } from './i18n.js';
+import { en, h, IM_LOCALE_NAMESPACE, localizeText, setImTranslator, zh } from './i18n.js';
 import {
   createLoopbackAwareRpcCalls,
   replacePageLocation,
@@ -129,19 +130,11 @@ function ChannelLogo({ channel }) {
 }
 
 export function LoopbackRecoveryNotice({ recovery, onNavigate = replacePageLocation }) {
-  return h('div', {
-    className: 'dim-loopbackRecovery',
-    role: 'alert',
-  },
-  h('div', { className: 'dim-loopbackRecoveryCopy' },
-    h('strong', null, '请改用 localhost 重新打开'),
-    h('p', null, '页面会在当前端口重新打开，机器人配置不会改变。'),
-    h('code', null, recovery.origin)),
-  h('button', {
-    type: 'button',
-    className: 'dim-loopbackRecoveryAction',
-    onClick: () => onNavigate(recovery.url),
-  }, '使用 localhost 重新打开'));
+  return h(FeedbackToast, {
+    text: [localizeText('请改用 localhost 重新打开'), localizeText('页面会在当前端口重新打开，机器人配置不会改变。'), recovery.origin].join(' '),
+    tone: 'error',
+    actions: [{ label: '使用 localhost 重新打开', onClick: () => onNavigate(recovery.url) }],
+  });
 }
 
 export function IMSettingsTab({

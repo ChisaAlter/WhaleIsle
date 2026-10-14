@@ -503,6 +503,16 @@ function saveFooter(): HTMLElement | null {
   return document.querySelector<HTMLElement>(`.${css.saveFooter}`)
 }
 
+/** The visible floating operation notice with its exact localized message. */
+async function operationToast(message: string): Promise<HTMLElement> {
+  return waitFor(() => {
+    const notice = screen.getAllByRole('alert').find(alert => within(alert).queryByText(message) !== null)
+    expect(notice).toBeDefined()
+    expect(notice!.hasAttribute('data-dsh-toast')).toBe(true)
+    return notice!
+  })
+}
+
 /** The dirty notice of the staged-edit bar, or null while the bar is absent. */
 function saveNotice(): HTMLElement | null {
   return saveFooter()?.querySelector<HTMLElement>(`.${css.saveNotice}`) ?? null
@@ -891,13 +901,13 @@ describe('Task manager catalog', () => {
     expect(screen.getByRole('button', { name: en['statusFilter.all'] }).getAttribute('aria-pressed')).toBe('true')
   })
 
-  it('distinguishes an empty catalog, loading, and a failed read', () => {
+  it('distinguishes an empty catalog, loading, and a failed read', async () => {
     const h = mount({ records: [], status: 'loading' })
     expect(screen.getByRole('status', { name: en['list.loading'] }).textContent).toBe('')
     expect(screen.queryByText(en['list.empty'])).toBeNull()
     expect(screen.getByRole('list').getAttribute('aria-busy')).toBe('true')
     h.update({ status: 'error' })
-    expect(screen.getByRole('alert').textContent).toBe(en['list.error'])
+    await operationToast(en['list.error'])
     expect(screen.queryByText(en['list.empty'])).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en['list.retry'] }))
     expect(h.props.onRetry).toHaveBeenCalledOnce()
@@ -911,7 +921,7 @@ describe('Task manager catalog', () => {
     expect(emptyNewTaskButton().textContent).toBe(en['empty.action'])
   })
 
-  it('keeps previously loaded rows available during loading and errors', () => {
+  it('keeps previously loaded rows available during loading and errors', async () => {
     const h = mount({ status: 'loading' })
     expect(taskNames()).toHaveLength(3)
     fireEvent.click(screen.getByRole('button', { name: 'Review release' }))
@@ -920,7 +930,26 @@ describe('Task manager catalog', () => {
     h.update({ status: 'error' })
     expect(taskNames()).toHaveLength(3)
     expect(screen.getByRole('complementary', { name: en['detail.label'] })).toBeDefined()
-    expect(screen.getByRole('alert').textContent).toBe(en['list.error'])
+    await operationToast(en['list.error'])
+  })
+
+  it.each([{ retained: [] }, { retained: records }])('keeps Retry available after dismissing a failed catalog read', async ({ retained }) => {
+    const h = mount({ records: retained, status: 'error' })
+    const names = retained.toSorted((left, right) => left.scheduledAt.localeCompare(right.scheduledAt)).map(task => task.title)
+    const notice = await operationToast(en['list.error'])
+    fireEvent.click(within(notice).getByRole('button', { name: en['detail.close'] }))
+    const recovery = await operationToast(en['list.retryAvailable'])
+    expect(screen.queryByText(en['list.error'])).toBeNull()
+    expect(taskNames()).toEqual(names)
+    expect(h.props.onRetry).not.toHaveBeenCalled()
+    const retry = within(recovery).getByRole('button', { name: en['list.retry'] })
+    fireEvent.click(retry)
+    expect(h.props.onRetry).toHaveBeenCalledOnce()
+    h.update({ status: 'loading' })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(taskNames()).toEqual(names)
+    h.update({ status: 'ready' })
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })
 
@@ -1043,8 +1072,9 @@ describe.each([['English', en], ['Chinese', zh]] as const)('task detail views in
     expect(within(detail).queryByText(dictionary['list.loading'])).toBeNull()
     h.update({ status: 'error' })
     expect(visibleText(detail, labels.empty)).toHaveLength(0)
-    expect(within(detail).getByRole('alert').textContent).toBe(dictionary['list.error'])
-    fireEvent.click(within(detail).getByRole('button', { name: dictionary['list.retry'] }))
+    const notice = await operationToast(dictionary['list.error'])
+    expect(detail.contains(notice)).toBe(false)
+    fireEvent.click(within(notice).getByRole('button', { name: dictionary['list.retry'] }))
     expect(h.props.onRetry).toHaveBeenCalledOnce()
     await act(async () => {
       pending.resolve({ ok: true, value: {
@@ -1054,7 +1084,7 @@ describe.each([['English', en], ['Chinese', zh]] as const)('task detail views in
       await pending.promise
     })
     expect(visibleText(panel, labels.empty)).toHaveLength(1)
-    expect(within(detail).getByRole('alert').textContent).toBe(dictionary['list.error'])
+    await operationToast(dictionary['list.error'])
   })
 
   it('cycles and focuses tabs with arrows and Home or End without intercepting Tab', () => {
@@ -1438,7 +1468,7 @@ describe('Task manager details', () => {
     expect(detail.textContent).toContain(en['detail.sessionUnavailable'])
   })
 
-  it('keeps loading and query retry in the selected detail without duplicate alerts', () => {
+  it('keeps query retry outside the selected detail without duplicate alerts', async () => {
     const h = mount({ records: [at] })
     fireEvent.click(screen.getByRole('button', { name: 'Review release' }))
     const detail = screen.getByRole('complementary', { name: en['detail.label'] })
@@ -1447,10 +1477,10 @@ describe('Task manager details', () => {
     // spinner over it.
     expect(screen.queryByRole('status')).toBeNull()
     h.update({ status: 'error' })
-    expect(within(detail).getByRole('alert').textContent).toBe(en['list.error'])
+    const notice = await operationToast(en['list.error'])
     expect(screen.getAllByRole('alert')).toHaveLength(1)
-    expect(detail.querySelector(`.${css.detailScroll}`)?.contains(screen.getByRole('alert'))).toBe(true)
-    const retry = within(detail).getByRole('button', { name: en['list.retry'] })
+    expect(detail.contains(notice)).toBe(false)
+    const retry = within(notice).getByRole('button', { name: en['list.retry'] })
     expect(screen.getAllByRole('button', { name: en['list.retry'] })).toHaveLength(1)
     fireEvent.click(retry)
     expect(h.props.onRetry).toHaveBeenCalledOnce()
@@ -1929,7 +1959,7 @@ describe('Task detail rule header and run-time card', () => {
     })
   })
 
-  it.each(['59', 'abc'])('rejects an interval below the supported minimum: %s', (value) => {
+  it.each(['59', 'abc'])('rejects an interval below the supported minimum: %s', async (value) => {
     const h = mount({ records: [every] })
     fireEvent.click(screen.getByRole('button', { name: 'Check metrics' }))
     const interval = screen.getByLabelText<HTMLInputElement>(en['timing.interval'])
@@ -1939,10 +1969,10 @@ describe('Task detail rule header and run-time card', () => {
     expect(screen.queryByRole('alert')).toBeNull()
     clickSave()
     expect(h.updateTiming).not.toHaveBeenCalled()
-    expect(screen.getByRole('alert').textContent).toBe(en['timing.invalidInterval.second'])
+    await operationToast(en['timing.invalidInterval.second'])
   })
 
-  it('states the below-floor message in the unit the row shows', () => {
+  it('states the below-floor message in the unit the row shows', async () => {
     const h = mount({ records: [every] })
     fireEvent.click(screen.getByRole('button', { name: 'Check metrics' }))
     chooseRepeat(en['rule.everyHours'])
@@ -1952,7 +1982,7 @@ describe('Task detail rule header and run-time card', () => {
     fireEvent.change(interval, { target: { value: '0.01' } })
     clickSave()
     expect(h.updateTiming).not.toHaveBeenCalled()
-    expect(screen.getByRole('alert').textContent).toBe(en['timing.invalidInterval.hour'])
+    await operationToast(en['timing.invalidInterval.hour'])
   })
 
   it.each([
@@ -1960,7 +1990,7 @@ describe('Task detail rule header and run-time card', () => {
     ['a time', daily, 'Daily weather', 'not a clock', 'timing.time', 'not a clock'],
   ] as const)(
     'rejects a stored unparsable %s locally without an update',
-    (_case, task, row, broken, field, shown) => {
+    async (_case, task, row, broken, field, shown) => {
       // The pickers only ever stage a complete clock and a real ISO date, so the
       // locally invalid state the guard exists for is a record the Host stored
       // with an unreadable value: another edit makes the draft dirty, and Save
@@ -1982,7 +2012,7 @@ describe('Task detail rule header and run-time card', () => {
       expect(h.updateTiming).not.toHaveBeenCalled()
       clickSave()
       expect(h.updateTiming).not.toHaveBeenCalled()
-      expect(screen.getByRole('alert').textContent).toBe(en['timing.invalid'])
+      await operationToast(en['timing.invalid'])
     },
   )
 
@@ -2516,7 +2546,7 @@ describe('Task detail rule header and run-time card', () => {
     chooseTime('10', '23', '00')
     clickSave()
     await act(async () => { await h.updateTiming.mock.results[0]!.value })
-    expect(screen.getByRole('alert').textContent).toBe(en['rule.error.unknown'])
+    await operationToast(en['rule.error.unknown'])
     // The failed save keeps the draft so the user can retry it.
     expect(timeButton().textContent).toBe('10:23:00')
   })
@@ -2528,7 +2558,7 @@ describe('Task detail rule header and run-time card', () => {
     chooseTime('10', '23', '00')
     clickSave()
     await act(async () => { await h.updateTiming.mock.results[0]!.value })
-    expect(screen.getByRole('alert').textContent).toBe(en['timing.inactive'])
+    await operationToast(en['timing.inactive'])
     expect(timeButton().textContent).toBe('10:23:00')
   })
 
@@ -2739,14 +2769,16 @@ describe('Task detail rule header and run-time card', () => {
     expect(within(weekdayGroup()).getAllByRole('button').every(day => day.hasAttribute('disabled'))).toBe(false)
     clickSave()
     expect(within(weekdayGroup()).getAllByRole('button').every(day => day.hasAttribute('disabled'))).toBe(true)
-    expect(saveFooter()!.textContent).toContain(en['rule.saving'])
-    expect(within(saveFooter()!).getByRole('button', { name: en['rule.saving'] }).hasAttribute('disabled')).toBe(true)
+    const save = within(saveFooter()!).getByRole('button', { name: en['rule.save'] })
+    expect(save.hasAttribute('disabled')).toBe(true)
+    expect(save.getAttribute('aria-busy')).toBe('true')
+    expect(saveFooter()!.textContent).not.toContain(en['rule.saving'])
     await act(async () => {
       pending.resolve({ ok: true, value: { id: weekly.id, updated: false, code: 'schedule_conflict' } })
       await pending.promise
     })
     expect(weekdayPressed(weekdayGroup())).toEqual(['true', 'false', 'true', 'false', 'true', 'false', 'false'])
-    expect(screen.getByRole('alert').textContent).toBe(en['rule.error.conflict'])
+    await operationToast(en['rule.error.conflict'])
   })
 
   it('keeps the last selected weekday when its toggle is pressed again', () => {
@@ -2921,16 +2953,17 @@ describe('Task detail rule header and run-time card', () => {
     clickSave()
     await act(async () => { await h.updateTiming.mock.results[0]!.value })
     expect(screen.getByLabelText<HTMLInputElement>(en['rule.cronLabel']).value).toBe('*/15 * * * *')
-    // The Host failure takes the hint slot in place of the described sentence.
-    const alert = screen.getByRole('alert')
-    expect(alert.textContent).toBe(en['rule.error.conflict'])
-    expect(alert.className).toBe(`${css.ruleHint} ${css.ruleHintError}`)
-    expect(screen.queryByText('Every 15 minutes')).toBeNull()
+    // The Host failure floats separately; the rule still describes the draft.
+    const alert = await operationToast(en['rule.error.conflict'])
+    expect(screen.getByRole('region', { name: en['rule.title'] }).contains(alert)).toBe(false)
+    expect(screen.getByText('Every 15 minutes')).toBeDefined()
+    expect(within(alert).getByRole('button', { name: en['rule.save'] })).toBeDefined()
+    expect(within(alert).getByRole('button', { name: en['rule.cancel'] })).toBeDefined()
     // Typing again keeps the Host failure until Cancel or the next save.
     fireEvent.change(screen.getByLabelText<HTMLInputElement>(en['rule.cronLabel']), {
       target: { value: '*/20 * * * *' },
     })
-    expect(screen.getByRole('alert').textContent).toBe(en['rule.error.conflict'])
+    await operationToast(en['rule.error.conflict'])
   })
 
   it('explains a subagent-owned Session through the ordinary update result', async () => {
@@ -2948,7 +2981,7 @@ describe('Task detail rule header and run-time card', () => {
     await act(async () => { await h.updateTiming.mock.results[0]!.value })
     // The refusal arrives as an ordinary non-mutating result, so the editor
     // names the reason instead of falling back to `rule.error.unknown`.
-    expect(screen.getByRole('alert').textContent).toBe(en['timing.subagentSession'])
+    await operationToast(en['timing.subagentSession'])
   })
 
   it.each([en, zh])('renders a catalog cron rule with its shape rows, preview, zone, and next run', (dictionary) => {
@@ -3220,7 +3253,7 @@ describe('Task detail rule header and run-time card', () => {
     expect(repeat.hasAttribute('disabled')).toBe(false)
     expect(timeButton().textContent).toBe('17:30:00')
     expect(zoneButton().textContent).toContain(displayedZone(DEVICE_ZONE))
-    expect(screen.getByRole('alert').textContent).toBe(en['rule.error.conflict'])
+    await operationToast(en['rule.error.conflict'])
   })
 
   it('disables both rows while a Time zone save is pending', async () => {
@@ -3252,7 +3285,7 @@ describe('Task detail rule header and run-time card', () => {
     // A failed save keeps the draft so the user can retry it.
     expect(zoneButton(dictionary).textContent).toContain(displayedZone('Europe/Berlin', dictionary))
     expect(timeButton(dictionary).textContent).toBe('23:00:00')
-    expect(screen.getByRole('alert').textContent).toBe(dictionary['rule.error.conflict'])
+    await operationToast(dictionary['rule.error.conflict'])
   })
 
   it('keeps a failed Time draft and preserves an untouched stored millisecond value after Cancel', async () => {
@@ -3265,7 +3298,7 @@ describe('Task detail rule header and run-time card', () => {
     await act(async () => { await h.updateTiming.mock.results[0]!.value })
     // The failed save keeps the draft and its localized error.
     expect(timeButton().textContent).toBe('10:23:00')
-    expect(screen.getByRole('alert').textContent).toBe(en['rule.error.conflict'])
+    await operationToast(en['rule.error.conflict'])
     // Cancel restores the stored rule, whose untouched millisecond value the next save keeps.
     clickCancel()
     expect(timeButton().textContent).toBe('23:00:15')
@@ -3287,7 +3320,7 @@ describe('Task detail rule header and run-time card', () => {
     const attempt = h.updateTiming.mock.results[0]?.value as Promise<unknown> | undefined
     await act(async () => { await attempt?.catch(() => {}) })
     expect(timeButton().textContent).toBe('10:23:00')
-    expect(screen.getByRole('alert').textContent).toBe(en['rule.error.unknown'])
+    await operationToast(en['rule.error.unknown'])
   })
 
   it.each(['success', 'reject'] as const)('ignores a %s rule response that arrives after another task is shown', async (outcome) => {
@@ -3573,24 +3606,24 @@ describe('Task detail name and instruction edits', () => {
     })
   })
 
-  it('refuses a blank name locally and keeps the draft', () => {
+  it('refuses a blank name locally and keeps the draft', async () => {
     const h = mount({ records: [at] })
     fireEvent.click(screen.getByRole('button', { name: 'Review release' }))
     fireEvent.change(nameField(), { target: { value: '   ' } })
     clickSave()
     expect(h.updateTiming).not.toHaveBeenCalled()
-    expect(screen.getByRole('alert').textContent).toBe(en['rule.invalidTitle'])
+    await operationToast(en['rule.invalidTitle'])
     expect(nameField().value).toBe('   ')
   })
 
-  it('refuses a name longer than the Host limit locally and keeps the draft', () => {
+  it('refuses a name longer than the Host limit locally and keeps the draft', async () => {
     const h = mount({ records: [at] })
     fireEvent.click(screen.getByRole('button', { name: 'Review release' }))
     const overlong = 'x'.repeat(121)
     fireEvent.change(nameField(), { target: { value: overlong } })
     clickSave()
     expect(h.updateTiming).not.toHaveBeenCalled()
-    expect(screen.getByRole('alert').textContent).toBe(en['rule.invalidTitle'])
+    await operationToast(en['rule.invalidTitle'])
     expect(nameField().value).toBe(overlong)
   })
 
@@ -3605,13 +3638,13 @@ describe('Task detail name and instruction edits', () => {
     })
   })
 
-  it('refuses a blank instruction locally and keeps the draft', () => {
+  it('refuses a blank instruction locally and keeps the draft', async () => {
     const h = mount({ records: [at] })
     fireEvent.click(screen.getByRole('button', { name: 'Review release' }))
     fireEvent.change(instructionField(), { target: { value: '\n \n' } })
     clickSave()
     expect(h.updateTiming).not.toHaveBeenCalled()
-    expect(screen.getByRole('alert').textContent).toBe(en['rule.invalidPrompt'])
+    await operationToast(en['rule.invalidPrompt'])
     expect(instructionField().value).toBe('\n \n')
   })
 
@@ -3636,7 +3669,7 @@ describe('Task detail name and instruction edits', () => {
     fireEvent.change(instructionField(), { target: { value: 'Audit every release' } })
     clickSave()
     await act(async () => { await h.updateTiming.mock.results[0]!.value })
-    expect(screen.getByRole('alert').textContent).toBe(en['rule.error.conflict'])
+    await operationToast(en['rule.error.conflict'])
     expect(nameField().value).toBe('Release audit')
     expect(instructionField().value).toBe('Audit every release')
     expect(saveFooter()).not.toBeNull()
@@ -3908,10 +3941,10 @@ describe('Mock detail metrics shared with the task list', () => {
     expect(stylesheet).toMatch(/@media \(max-width: 1100px\)\s*\{\s*\.detail\s*\{[^}]*--detail-gutter:\s*20px;/)
     expect(stylesheet).toMatch(/@media \(max-width: 400px\)\s*\{\s*\.detail\s*\{[^}]*--detail-gutter:\s*16px;/)
     expect(stylesheet).not.toMatch(/--detail-gutter:\s*18px;/)
-    // The staged-save bar and its failure line consume the stepped gutter
-    // instead of a literal, so the panel edge stays one column.
-    expect(rule('saveFooter')).toMatch(/padding:\s*20px var\(--detail-gutter\);/)
-    expect(rule('saveFailure')).toMatch(/padding:\s*12px var\(--detail-gutter\) 0;/)
+    // The dirty-save controls float over the detail instead of reducing the
+    // scrolling tab's space when an edit or an operation failure appears.
+    expect(rule('saveFooter')).toMatch(/position:\s*absolute;/)
+    expect(rule('saveFooter')).toMatch(/padding:\s*8px 12px;/)
     // The mock's `.automation-detail .detail-titlebar` narrows the strip's gap
     // at this width and closes the actions' group gap, while the strip above
     // the breakpoint keeps its 20px.
@@ -4096,7 +4129,7 @@ describe('Task manager deletion', () => {
     openDelete()
     fireEvent.click(screen.getByRole('button', { name: en['delete.confirm'] }))
     await act(async () => { await expect(h.onDelete.mock.results[0]!.value).resolves.toBe('deleted') })
-    expect(screen.getByRole('alert').textContent).toBe(en['list.error'])
+    await operationToast(en['list.error'])
     expect(screen.getByRole('complementary')).toBeDefined()
     expect(taskNames()).toEqual(['Review release'])
     // The unread list keeps the last known row, so the rule controls stay until

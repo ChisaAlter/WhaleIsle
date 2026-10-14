@@ -6,6 +6,7 @@
 
 import type { InputHTMLAttributes } from 'react'
 import clsx from 'clsx'
+import { StateDot } from './StateDot.tsx'
 import css from './Switch.module.css'
 
 /** Controlled form: the state lives with the owner, the label with the render site. */
@@ -19,6 +20,8 @@ export interface ControlledSwitchProps {
   /** Whether the control refuses input; owners also set it while a write is in
    * flight, not only when a deployment locks the toggle. */
   disabled?: boolean
+  /** A pending write blocks another gesture and shows motion inside the thumb. */
+  loading?: boolean | undefined
   /** Localized hover text, typically why the toggle is locked. */
   title?: string | undefined
   // `| undefined` so a caller can forward an optional class straight through
@@ -30,6 +33,7 @@ export interface ControlledSwitchProps {
 export type NativeSwitchProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'role' | 'label'> & {
   /** Always absent here: a `label` selects the controlled form above. */
   label?: undefined
+  loading?: boolean | undefined
 }
 
 export type SwitchProps = ControlledSwitchProps | NativeSwitchProps
@@ -54,7 +58,7 @@ function isControlled(props: SwitchProps): props is ControlledSwitchProps {
  */
 export function Switch(props: SwitchProps) {
   if (isControlled(props)) {
-    const { checked, onChange, label, disabled = false, title, className } = props
+    const { checked, onChange, label, disabled = false, loading = false, title, className } = props
     return (
       <button
         type="button"
@@ -62,16 +66,17 @@ export function Switch(props: SwitchProps) {
         aria-checked={checked}
         aria-label={label}
         title={title}
-        disabled={disabled}
+        disabled={disabled || loading}
+        aria-busy={loading || undefined}
         className={clsx(css.switch, className)}
         onClick={() => { onChange(!checked) }}
       >
-        <span className={css.thumb} />
+        <span className={css.thumb}>{loading && <StateDot state="ongoing" size={12} className={css.busy} />}</span>
       </button>
     )
   }
 
-  const { className, ...rest } = props
+  const { className, loading = false, ...rest } = props
   return (
     <span className={css.root}>
       <input
@@ -79,9 +84,11 @@ export function Switch(props: SwitchProps) {
         type="checkbox"
         role="switch"
         className={clsx(css.input, className)}
+        disabled={rest.disabled || loading}
+        aria-busy={loading || rest['aria-busy']}
       />
       <span className={css.track} aria-hidden="true">
-        <span className={css.thumb} />
+        <span className={css.thumb}>{loading && <StateDot state="ongoing" size={12} className={css.busy} />}</span>
       </span>
     </span>
   )

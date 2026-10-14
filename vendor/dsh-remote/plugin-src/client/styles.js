@@ -22,6 +22,9 @@ const CSS = `
 .dshr-iconBtn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: none; border-radius: 6px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; }
 .dshr-iconBtn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .dshr-iconBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+.dshr-miniSpinner { display: inline-block; width: 10px; height: 10px; box-sizing: border-box; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: dshr-feedback-spin .8s linear infinite; }
+@keyframes dshr-feedback-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .dshr-miniSpinner { animation: none; } }
 
 .dshr-machineList { display: flex; flex-direction: column; gap: 6px; }
 .dshr-machine { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }

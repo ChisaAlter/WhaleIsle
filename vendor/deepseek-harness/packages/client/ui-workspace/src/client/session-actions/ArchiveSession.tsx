@@ -14,7 +14,7 @@ import type {} from '@deepseek-ai/dsh-jobs/view'
 import type {} from '@deepseek-ai/dsh-schedule/client'
 import type {} from '@deepseek-ai/dsh-subagent/client'
 import {
-  Button, IconArchiveOutlineRegular, IconUnarchiveOutlineRegular, MenuItemButton, Modal, Tooltip,
+  Button, IconArchiveOutlineRegular, IconUnarchiveOutlineRegular, MenuItemButton, Modal, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   ArchiveSessionInjected, SessionArchiveConfirmInjected, SessionArchiveConfirmProps, SessionArchiveConfirmRequest,
@@ -109,6 +109,7 @@ function ArchiveConfirmForm({ request, stopAndArchiveSession, onSettle, t }: {
     onSettle()
   }
   const confirm = () => {
+    if (archiving) return
     setArchiving(true)
     setError(null)
     stopAndArchiveSession(request.sessionId).then(() => {
@@ -133,6 +134,7 @@ function ArchiveConfirmForm({ request, stopAndArchiveSession, onSettle, t }: {
             variant="outline"
             className={browserCss.deleteAction}
             disabled={archiving}
+            loading={archiving}
             onClick={confirm}
           >
             {t('archive.confirm.action')}
@@ -145,8 +147,7 @@ function ArchiveConfirmForm({ request, stopAndArchiveSession, onSettle, t }: {
           <li key={`${entry.kind}-${String(index)}`}>{activityLine(entry, t)}</li>
         ))}
       </ul>
-      {archiving && <div className={browserCss.deleteStatus} role="status">{t('archive.confirm.pending')}</div>}
-      {error !== null && <div className={browserCss.renameError} role="alert">{error}</div>}
+      {error !== null && <Toast text={error} holdMs={null} dismissLabel={t('close')} onDone={() => { setError(null) }} />}
     </Modal>
   )
 }

@@ -2,7 +2,7 @@
  * Wallpaper gallery dialog: source tabs, search, favorites, confirm-then-pick.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Input, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Input, Modal, Pill, StateDot, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { WallpaperFavorite, WallpaperSource } from '../theme-settings.ts'
 import type { ThemeKey } from './locales.ts'
 import type { WallpaperCatalogItem, WallpaperShell } from './wallpaper-shell.ts'
@@ -321,13 +321,11 @@ export function WallpaperGalleryModal({
                 </Pill>
               </div>
             ) : null}
-            {warning ? <p className={css.hint} role="status">{warning}</p> : null}
-            {busyId !== undefined ? <p className={css.hint} role="status">{t('wallpaper.downloading')}</p> : null}
+            {open && warning ? <Toast key={warning} text={warning} holdMs={null} dismissLabel={t('wallpaper.close')} onDone={() => { setWarning(undefined) }} /> : null}
             <div className={css.galleryBody}>
               {loading && visibleItems.length === 0 ? (
-                <div className={css.galleryStatus} role="status" aria-busy="true">
-                  <span className={css.gallerySpinner} aria-hidden />
-                  <span>{t('wallpaper.loading')}</span>
+                <div className={css.galleryStatus} role="status" aria-busy="true" aria-label={t('wallpaper.loading')}>
+                  <StateDot state="ongoing" size={28} />
                 </div>
               ) : visibleItems.length === 0 ? (
                 <div className={css.galleryStatus} role="status">
@@ -349,6 +347,7 @@ export function WallpaperGalleryModal({
                           {item.copyright ? <span className={css.galleryCopyright}>{item.copyright}</span> : null}
                         </span>
                       </button>
+                      {busyId === item.id && <span className={css.galleryDownload} role="status" aria-label={t('wallpaper.downloading')}><StateDot state="ongoing" size={28} /></span>}
                       {setWallpaperFavorites !== undefined ? (
                         <button
                           type="button"
@@ -368,7 +367,7 @@ export function WallpaperGalleryModal({
                 </div>
               )}
               {activeSource?.kind === 'wallhaven' && nextPage !== undefined ? (
-                <Button type="button" variant="outline" disabled={loading || busyId !== undefined} onClick={loadMore}>
+                <Button type="button" variant="outline" loading={loading} disabled={busyId !== undefined} onClick={loadMore}>
                   {t('wallpaper.loadMore')}
                 </Button>
               ) : null}

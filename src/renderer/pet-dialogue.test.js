@@ -16,7 +16,7 @@ const EXPECTED_KEYS = ['greet', 'pickup', 'throw', 'land', 'pat', 'feed', 'come'
   'hungry', 'grumpy', 'clingy',
   // §B4 wander + §B10 cheap items + R2 DSH-link seeds
   'wanderStart', 'wanderEnd', 'wanderStop', 'personalitySet',
-  'settingsChanged', 'fileEat', 'dshWorking', 'dshDone', 'dshError',
+  'settingsChanged', 'settingsOpened', 'fileEat', 'dshWorking', 'dshDone', 'dshError',
   'dshRest', 'dshMilestone', 'dshMiss', 'dshApproval', 'dshQuestion',
   'chatFallback', 'looking', 'lookFallback', 'lookNoModel', 'lookAssistantOff',
   'lookError', 'approvalAllow', 'approvalReject'];
@@ -41,14 +41,15 @@ function withFetchStub(impl, fn) {
 
 // ── data file ──
 
-test('whale.json loads with all 59 categories, ≥10 lines each, ≥1000 unique total', () => {
+test('whale.json keeps rich reaction pools, factual feedback categories and ≥1000 unique total', () => {
   const data = readPreset();
   assert.equal(data._meta.mode, 'whale');
   assert.equal(data._meta.version, 1);
   assert.deepEqual(Object.keys(data.global).sort(), [...EXPECTED_KEYS].sort());
   const all = [];
   for (const key of Object.keys(data.global)) {
-    assert.ok(data.global[key].length >= 10, `${key} has ≥10 lines`);
+    if (key === 'settingsOpened') assert.deepEqual(data.global[key], ['已打开桌宠设置。']);
+    else assert.ok(data.global[key].length >= 10, `${key} reaction pool has ≥10 lines`);
     for (const line of data.global[key]) {
       assert.equal(typeof line, 'string');
       assert.ok(line.length > 0);
@@ -89,6 +90,13 @@ test('whale.json loads with all 59 categories, ≥10 lines each, ≥1000 unique 
   });
 });
 
+test('settingsOpened acknowledges the actual navigation with one factual line', () => {
+  const data = readPreset();
+  assert.deepEqual(data.global.settingsOpened, ['已打开桌宠设置。']);
+  const say = PetDialogue.createSayer(data);
+  assert.equal(say('settingsOpened'), '已打开桌宠设置。');
+});
+
 test('whale.json lines respect the length cap and carry no template slots', () => {
   const data = readPreset();
   // Template categories: {field} placeholders are filled by the say() call
@@ -119,7 +127,7 @@ test('load() fetches, validates and returns the store', async () => {
   }, async () => {
     const store = await PetDialogue.load('pet://pet/');
     assert.ok(store.global.greet.length >= 10);
-    assert.equal(Object.keys(store.global).length, 59);
+    assert.deepEqual(Object.keys(store.global).sort(), [...EXPECTED_KEYS].sort());
     assert.equal(PetDialogue.getStore(), store, 'store is cached for getStore()');
     const say = PetDialogue.createSayer(store);
     const line = say('greet');
@@ -134,7 +142,7 @@ test('load() with a plain relative base url builds a relative url', async () => 
     return { ok: true, json: async () => data };
   }, async () => {
     const store = await PetDialogue.load('./');
-    assert.equal(Object.keys(store.global).length, 59);
+    assert.deepEqual(Object.keys(store.global).sort(), [...EXPECTED_KEYS].sort());
   });
 });
 

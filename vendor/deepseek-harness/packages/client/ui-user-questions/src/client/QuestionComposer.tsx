@@ -6,7 +6,7 @@ import clsx from 'clsx'
 import {
   Button, IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronLeftOutlineRegular,
   IconChevronRightOutlineRegular, IconChevronUpOutlineRegular, IconCloseOutlineRegular,
-  IconEditOutlineRegular, MarkdownText,
+  IconEditOutlineRegular, MarkdownText, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { planReviewOf, type QuestionAnswer, type QuestionCardSnapshot, type QuestionComposerProps } from './contract/slots.ts'
 import type { PendingQuestion } from './contract/slots.ts'
@@ -195,6 +195,7 @@ function QuestionFlow({ pending, t, useStore, useQuestionCard, actions }: Questi
       ? 'editing' : undefined)
   const [busy, setBusy] = useState<'answer' | 'cancel' | null>(null)
   const [error, setError] = useState<Feedback | null>(null)
+  const [dismissedError, setDismissedError] = useState<Feedback | null>(null)
   const card = useQuestionCard(pending.key, snapshot => snapshot ?? REMOVED_CARD)
   const canSubmit = card.channel !== 'none'
   // The answer surface freezes while a submission is in flight, and for good on
@@ -292,6 +293,7 @@ function QuestionFlow({ pending, t, useStore, useQuestionCard, actions }: Questi
   }, [pending])
 
   const dismissFlow = (): void => {
+    if (busy !== null) return
     // A tool-call-keyed panel only leaves the seat; nothing is sent and nothing
     // is persisted, and the tool call row brings it back.
     if (pending.dismissal === 'hide') {
@@ -341,6 +343,7 @@ function QuestionFlow({ pending, t, useStore, useQuestionCard, actions }: Questi
   const completed = (item: QuestionDraftAnswer): boolean => answered(item) || item.skipped
 
   const submitDrafts = (values: QuestionDraftAnswer[]): void => {
+    if (busy !== null || review !== undefined) return
     const missing = values.findIndex(item => !completed(item))
     if (missing >= 0) {
       replaceProgress(missing, values)
@@ -430,10 +433,17 @@ function QuestionFlow({ pending, t, useStore, useQuestionCard, actions }: Questi
   }
 
   return (
-    <div className={css.frame} data-question-key={pending.key}>
+    <div className={css.frame} data-question-key={pending.key} onMouseDownCapture={(event) => {
+      // A pointer press on this panel's notice must not blur the answer and
+      // resume its countdown before the notice's dismiss handler runs.
+      if (event.target instanceof Element && event.target.closest('[data-dsh-toast] button') !== null) event.preventDefault()
+    }}>
+      {error !== null && error !== dismissedError && <Toast text={'key' in error ? t(error.key) : error.text} holdMs={null}
+        dismissLabel={t('close')} onDone={() => { setDismissedError(error) }} />}
       <section
         className={clsx(css.card, minimized && css.cardMinimized)}
         aria-labelledby={`question-${pending.key}-${String(index)}`}
+        aria-busy={busy !== null}
       >
         <header className={css.header}>
           <div className={css.headingBlock}>
@@ -472,14 +482,15 @@ function QuestionFlow({ pending, t, useStore, useQuestionCard, actions }: Questi
             >
               {minimized ? <IconChevronUpOutlineRegular /> : <IconChevronDownOutlineRegular />}
             </button>
-            <button
+            <Button
               type="button" className={css.iconButton}
+              size="sm" loading={busy === 'cancel'}
               aria-label={t(pending.dismissal === 'hide' ? 'nav.close' : 'nav.cancel')}
               title={t(pending.dismissal === 'hide' ? 'nav.close' : 'nav.cancel')}
               disabled={busy !== null} onClick={dismissFlow}
             >
               <IconCloseOutlineRegular />
-            </button>
+            </Button>
           </div>
         </header>
 
@@ -605,9 +616,7 @@ function QuestionFlow({ pending, t, useStore, useQuestionCard, actions }: Questi
                   <IconChevronRightOutlineRegular />
                 </button>
               </div>
-              <div className={css.feedback} role="status">
-                {error === null ? null : 'key' in error ? t(error.key) : error.text}
-              </div>
+              <div className={css.feedback} aria-hidden />
               {/* A review card has nothing to send: the pager alone walks the record. */}
               {review === undefined && (
                 <div className={css.footerActions}>
@@ -616,12 +625,11 @@ function QuestionFlow({ pending, t, useStore, useQuestionCard, actions }: Questi
                   </Button>
                   <Button
                     variant="primary"
+                    loading={busy === 'answer'}
                     disabled={busy !== null || !answered(draft) || (index === questions.length - 1 && !canSubmit)}
                     onClick={continueFlow}
                   >
-                    {busy === 'answer'
-                      ? t('submitting')
-                      : index === questions.length - 1 ? t('submit') : t('action.next')}
+                    {index === questions.length - 1 ? t('submit') : t('action.next')}
                   </Button>
                 </div>
               )}

@@ -160,30 +160,41 @@ describe('ScheduleCatalogAction visibility', () => {
     expect(view.container.innerHTML).toBe('')
   })
 
-  it('renders nothing until a read answers, then distinguishes loading and failure', () => {
+  it('renders nothing until a read answers, then distinguishes loading and failure', async () => {
     // The first read must not mount a chip that an empty answer then removes.
     const first = render(<ScheduleCatalogAction {...props(undefined)} />)
     expect(first.container.innerHTML).toBe('')
 
     // A refresh retains the known reminders, so the entry keeps its count and
-    // its loading row stays visible.
+    // shows loading in the same icon seat.
     const known = record('known', 'after', START + 60_000)
     const p = props([known])
     const view = render(<ScheduleCatalogAction {...p} useCatalog={
       select => select({ records: [known], status: 'loading', deleting: [], settled: true, readRequest: 0, readSettled: 0 })} />)
-    fireEvent.click(screen.getByRole('button', { name: '1 reminder' }))
-    expect(screen.getByRole('status').textContent).toBe(en['list.loading'])
+    const trigger = screen.getByRole('button', { name: '1 reminder' })
+    expect(trigger.getAttribute('aria-busy')).toBe('true')
+    expect(trigger.querySelector('[data-state="ongoing"]')).not.toBeNull()
+    fireEvent.click(trigger)
+    expect(within(screen.getByRole('list', { name: en['list.aria'] })).getAllByRole('listitem')).toHaveLength(1)
+    expect(screen.queryByRole('status')).toBeNull()
 
-    // A failed read with nothing known keeps the entry, and the open popover
-    // replaces its loading row with the retry.
+    // A failed read with nothing known keeps the entry and exposes Retry in
+    // the body Toast, leaving the popover free of operation notices.
     view.rerender(<ScheduleCatalogAction {...p} useCatalog={
       select => select({ records: [], status: 'error', deleting: [], settled: false, readRequest: 0, readSettled: 0 })} />)
-    expect(screen.getByRole('alert').textContent).toBe(en['list.error'])
-    fireEvent.click(screen.getByRole('button', { name: en['list.retry'] }))
+    await act(async () => {})
+    const notice = screen.getByRole('alert')
+    expect(notice.hasAttribute('data-dsh-toast')).toBe(true)
+    expect(view.container.contains(notice)).toBe(false)
+    expect(notice.parentElement?.parentElement).toBe(document.body)
+    expect(within(notice).getByText(en['list.error'], { exact: true })).toBeDefined()
+    expect(within(screen.getByRole('list', { name: en['list.aria'] })).queryByRole('alert')).toBeNull()
+    expect(trigger.getAttribute('aria-busy')).toBe('false')
+    fireEvent.click(within(notice).getByRole('button', { name: en['list.retry'] }))
     expect(p.onRetry).toHaveBeenCalledOnce()
   })
 
-  it('keeps the known count and the loading row while a refresh is in flight', () => {
+  it('keeps the known count and busy trigger while a refresh is in flight', () => {
     // A `schedule/changed` refresh republishes `loading` while retaining the
     // rows, so the entry must keep naming the count it still lists instead of
     // falling back to the generic label for the length of the read.
@@ -197,15 +208,18 @@ describe('ScheduleCatalogAction visibility', () => {
       select => select({ ...state, status: 'loading' })} />)
     const trigger = screen.getByRole('button', { name: '1 reminder' })
     expect(screen.queryByRole('button', { name: en['trigger.label'] })).toBeNull()
+    expect(trigger.getAttribute('aria-busy')).toBe('true')
+    expect(trigger.querySelector('[data-state="ongoing"]')).not.toBeNull()
     fireEvent.click(trigger)
-    expect(screen.getByRole('status').textContent).toBe(en['list.loading'])
+    expect(screen.queryByRole('status')).toBeNull()
     expect(within(screen.getByRole('list', { name: en['list.aria'] })).getAllByRole('listitem')).toHaveLength(1)
 
     // Two known records keep their plural count through the same refresh.
     const second = record('second', 'after', START + 120_000)
     view.rerender(<ScheduleCatalogAction {...p} useCatalog={
       select => select({ records: [only, second], status: 'loading', deleting: [], settled: true, readRequest: 0, readSettled: 0 })} />)
-    expect(screen.getByRole('button', { name: '2 reminders' })).toBeDefined()
+    expect(screen.getByRole('button', { name: '2 reminders' })).toBe(trigger)
+    expect(trigger.getAttribute('aria-busy')).toBe('true')
   })
 
   it('deletes only the selected reminder and marks the pending row', () => {
@@ -214,7 +228,8 @@ describe('ScheduleCatalogAction visibility', () => {
     const p = props([row, other])
     const view = render(<ScheduleCatalogAction {...p} />)
     fireEvent.click(screen.getByRole('button', { name: '2 reminders' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Delete reminder: selected' }))
+    const deleteAction = screen.getByRole('button', { name: 'Delete reminder: selected' })
+    fireEvent.click(deleteAction)
     expect(p.onDelete).toHaveBeenCalledWith(row.id)
     // A failed deletion keeps the row; the app-wide toast, not this popover, announces it.
     view.rerender(<ScheduleCatalogAction {...p} useCatalog={select => select({ records: [row], status: 'ready', deleting: [], settled: true, readRequest: 0, readSettled: 0 })} />)
@@ -222,7 +237,10 @@ describe('ScheduleCatalogAction visibility', () => {
     expect(screen.getByText('selected')).toBeDefined()
     view.rerender(<ScheduleCatalogAction {...p} useCatalog={select => select({ records: [row], status: 'ready', deleting: [row.id], settled: true, readRequest: 0, readSettled: 0 })} />)
     const pending = screen.getByRole('button', { name: 'Delete reminder: selected' })
+    expect(pending).toBe(deleteAction)
     expect(pending.hasAttribute('disabled')).toBe(true)
+    expect(pending.getAttribute('aria-busy')).toBe('true')
+    expect(pending.querySelector('[data-state="ongoing"]')).not.toBeNull()
     // The icon-only delete button keeps its action copy as the tooltip.
     expect(pending.getAttribute('title')).toBe(en['delete.pending'])
     view.rerender(<ScheduleCatalogAction {...props([row], 'error')} />)
@@ -303,8 +321,10 @@ describe('ScheduleCatalogAction task reveal', () => {
     // instead of falling back to the catalog label.
     const trigger = screen.getByRole('button', { name: '1 reminder' })
     expect(trigger.textContent).toBe('')
+    expect(trigger.getAttribute('aria-busy')).toBe('true')
+    expect(trigger.querySelector('[data-state="ongoing"]')).not.toBeNull()
     fireEvent.click(trigger)
-    expect(screen.getByRole('status').textContent).toBe(en['list.loading'])
+    expect(screen.queryByRole('status')).toBeNull()
     expect(within(screen.getByRole('list', { name: en['list.aria'] })).getAllByRole('listitem')).toHaveLength(1)
   })
 
@@ -548,6 +568,33 @@ describe('ScheduleCatalogAction rows', () => {
 
 describe('ScheduleCatalogAction dismissal', () => {
   const active = [record('active', 'after', START + 60_000), record('next', 'after', START + 120_000)]
+
+  it.each([false, true])('restores Retry from the entry after dismissing a failed read with known records=%s', async (known) => {
+    const rows = known ? active : []
+    const p = props(rows)
+    const state: CatalogSnapshot = {
+      records: rows, status: 'error', deleting: [], settled: known, readRequest: 2, readSettled: 2,
+    }
+    const view = render(<ScheduleCatalogAction {...p} useCatalog={select => select(state)} />)
+    await act(async () => {})
+    const notice = screen.getByRole('alert')
+    expect(notice.hasAttribute('data-dsh-toast')).toBe(true)
+    expect(view.container.contains(notice)).toBe(false)
+    expect(within(notice).getByText(en['list.error'], { exact: true })).toBeDefined()
+    fireEvent.click(within(notice).getByRole('button', { name: en['notice.dismiss'] }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByRole('list')).toBeNull()
+    const trigger = screen.getByRole('button', { name: known ? '2 reminders' : en['trigger.label'] })
+    fireEvent.click(trigger)
+    await act(async () => {})
+    const recovered = screen.getByRole('alert')
+    expect(within(recovered).getByText(en['list.error'], { exact: true })).toBeDefined()
+    const list = screen.getByRole('list', { name: en['list.aria'] })
+    expect(within(list).queryAllByRole('listitem')).toHaveLength(rows.length)
+    expect(within(list).queryByRole('alert')).toBeNull()
+    fireEvent.click(within(recovered).getByRole('button', { name: en['list.retry'] }))
+    expect(p.onRetry).toHaveBeenCalledExactlyOnceWith()
+  })
 
   it('closes on Escape inside the catalog and restores trigger focus', () => {
     render(<ScheduleCatalogAction {...props(active)} />)

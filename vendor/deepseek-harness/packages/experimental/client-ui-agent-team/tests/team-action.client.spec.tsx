@@ -253,37 +253,39 @@ describe('TeamAction', () => {
     expect(b.injected.openTeammate).toHaveBeenCalledWith(WORKER, SESSION)
   })
 
-  it.each([false, true])('accepts shared baselines and late capability updates (teammate page: %s)', (addressed) => {
+  it.each([false, true])('accepts shared baselines and late capability updates (teammate page: %s)', async (addressed) => {
     const b = bench({
       ...(addressed ? { sessionId: WORKER, parentSessionId: SESSION } : {}),
       projections: {}, openState: 'loading',
     })
     render(<TeamAction {...b.props} />)
     openPanel()
-    expect(screen.getByRole('status').textContent).toBe(zh.loading)
+    expect((await screen.findByRole('alert')).textContent).toBe(zh.loading)
     act(() => { b.session.set({ ...b.session.getSnapshot(), openState: 'open' }) })
     expect(screen.getByRole('status').textContent).toBe(zh.unavailable)
     setProjectionSnapshot(b.sessions, SESSION, { state: 'idle', error: null, values: { agentTeam: team } })
     expect(screen.getByText('Implement runtime')).toBeTruthy()
     expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
     setProjectionSnapshot(b.sessions, SESSION, { state: 'idle', error: null, values: {} })
     expect(screen.getByRole('status').textContent).toBe(zh.unavailable)
     setProjection(b.sessions, SESSION, { members: [lead], tasks: [] })
     expect(screen.getByText(zh.empty)).toBeTruthy()
   })
 
-  it('waits for the shared Session list and accepts cached projections without an explicit read', () => {
+  it('waits for the shared Session list and accepts cached projections without an explicit read', async () => {
     const b = bench({ projections: {} })
     b.sessions.update((draft) => { draft.phase = 'pending' })
     render(<TeamAction {...b.props} />)
     openPanel()
-    expect(screen.getByRole('status').textContent).toBe(zh.loading)
+    expect((await screen.findByRole('alert')).textContent).toBe(zh.loading)
     act(() => { b.sessions.set({
       ...b.sessions.getSnapshot(), phase: 'ready',
       projectionsBySession: { [SESSION]: { state: 'idle', error: null, values: { agentTeam: team } } },
     }) })
     expect(screen.getByText('Implement runtime')).toBeTruthy()
     expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it.each([false, true])('ignores unrelated Session updates (teammate page: %s)', (addressed) => {
@@ -336,7 +338,7 @@ describe('TeamAction', () => {
     expect(screen.getByText('Implement runtime')).toBeTruthy()
   })
 
-  it('renders roster/task state variants and reports navigation failures', () => {
+  it('renders roster/task state variants and reports navigation failures', async () => {
     const { ownerName: _ownerName, ...unownedTask } = task
     const b = bench({
       projections: {
@@ -381,26 +383,26 @@ describe('TeamAction', () => {
     for (const card of tasks) expect(card.querySelector('button, input, select, textarea')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: /^worker/u }))
-    expect(screen.getByRole('alert').textContent).toBe('Error: navigation failed')
+    expect((await screen.findByRole('alert')).textContent).toBe('navigation failed')
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(document.activeElement).toBe(screen.getByRole('button', { name: /智能体团队/u }))
   })
 
-  it('closes the panel and clears a navigation failure when the conversation switches sessions', () => {
+  it('closes the panel and clears a navigation failure when the conversation switches sessions', async () => {
     const b = bench()
     b.injected.openTeammate = vi.fn(() => { throw new Error('navigation failed') })
     const rendered = render(<TeamAction {...b.props} {...b.injected} />)
     openPanel()
     fireEvent.click(screen.getByRole('button', { name: /^worker/u }))
-    expect(screen.getByRole('alert')).toBeTruthy()
+    expect((await screen.findByRole('alert')).textContent).toBe('navigation failed')
 
     const next = bench({ sessionId: 'next-lead' as SessionId, projections: {}, openState: 'loading' })
     rendered.rerender(<TeamAction {...next.props} />)
     expect(screen.queryByRole('dialog')).toBeNull()
     openPanel()
-    expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.getByRole('status').textContent).toBe(zh.loading)
+    expect((await screen.findByRole('alert')).textContent).toBe(zh.loading)
+    expect(screen.queryByText('navigation failed')).toBeNull()
   })
 
   it('keeps panel interactions open and dismisses on outside pointer or Escape', () => {

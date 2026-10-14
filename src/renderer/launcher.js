@@ -9,7 +9,7 @@ function pageShell() {
 }
 
 function setHint(text, opts = {}) {
-  if (text) void appNotice({ title: opts.title || '提示', body: text });
+  if (text) void appNotice({ title: opts.title || '提示', body: text, tone: opts.tone || (opts.fade ? 'success' : 'error') });
 }
 
 // Keep the original caption in the layout; CSS draws the spinner over it.
@@ -140,32 +140,26 @@ function appConfirm({ title, body, confirmText = '确定', cancelText = '取消'
   return confirmClosed;
 }
 
-async function appNotice({ title = '提示', body }) {
-  // A background result must not answer or replace a destructive confirmation.
-  while (confirmResolve) await confirmClosed;
-  return appConfirm({ title, body, cancelText: null });
+function appNotice({ title = '提示', body, tone = 'info', holdMs }) {
+  return window.shellFeedback.notice({ title, body, tone, ...(holdMs === undefined ? {} : { holdMs }) });
 }
 
 function appProgress({ title, body }) {
-  let owner = null;
-  let closed = false;
-  let text = body;
-  void (async () => {
-    while (confirmResolve) await confirmClosed;
-    if (closed) return;
-    void appConfirm({ title, body: text, loading: true });
-    owner = confirmResolve;
-  })();
-  return {
-    update(value) {
-      text = value;
-      if (owner && confirmResolve === owner) $('app-confirm-body').textContent = value;
-    },
-    close() {
-      closed = true;
-      if (owner && confirmResolve === owner) owner(true);
-    },
-  };
+  return window.shellFeedback.progress({ title, body });
+}
+
+const progressPanels = new Map();
+let importProgressPanel;
+let updateNoticePanel;
+let updateNoticeVersion = '';
+
+function mountFeedbackSurfaces() {
+  for (const prefix of ['install-progress', 'update-progress']) {
+    progressPanels.set(prefix, window.shellFeedback.mountProgress($(`${prefix}-card`), { title: '安装进度' }));
+  }
+  $('install-progress-card').append($('btn-install-cancel'));
+  importProgressPanel = window.shellFeedback.mountProgress($('import-progress-card'), { title: '导入进度' });
+  updateNoticePanel = window.shellFeedback.mountProgress($('home-update'), { title: '更新说明' });
 }
 
 function settleConfirm(ok) {
@@ -642,12 +636,12 @@ async function actPlugin(method, name, button) {
       return;
     }
     if (method === 'removePlugin' && result && result.kernelStopped) {
-      setHint('桌面端已停止，请在首页重新启动。');
+      setHint('桌面端已停止，请在首页重新启动。', { tone: 'info' });
       void refreshStatus();
       return;
     }
     if (aligning) {
-      setHint(slimPackage ? '已写入运行时配置，下次启动桌面端生效。' : '');
+      setHint(slimPackage ? '已写入运行时配置，下次启动桌面端生效。' : '', { tone: 'success' });
       void refreshStatus();
     }
   } catch (error) {
@@ -921,6 +915,7 @@ function installPhaseText(payload) {
     'install-wait': `${payload?.installerDone ? '正在确认安装结果' : '请在安装向导中完成安装，并留意系统授权提示'}${payload?.elapsedMs ? `（已等待 ${Math.floor(payload.elapsedMs / 1000)} 秒）` : ''}…`,
     done: '安装完成',
     cancelled: '已取消',
+    error: errText(payload, '安装失败'),
   };
   if (payload?.phase === 'download') {
     if (payload.retrying) return `下载中断，正在重试（${payload.attempt}/${payload.maxAttempts}）…`;
@@ -961,8 +956,8 @@ function paintProgress(prefix, payload) {
   if (!card) {
     return;
   }
-  card.hidden = false;
   const phase = payload?.phase || '';
+  progressPanels.get(prefix)?.show({ active: !['waiting', 'error', 'cancelled', 'done'].includes(phase) });
   const terminalTitle = { waiting: '安装结果待确认', error: '安装未完成', cancelled: '操作已取消', done: '安装完成' }[phase];
   if (terminalTitle && $(`${prefix}-title`)) $(`${prefix}-title`).textContent = terminalTitle;
   const unsettled = ['waiting', 'error', 'cancelled'].includes(phase);
@@ -1007,11 +1002,12 @@ async function installRuntime() {
     return;
   }
   installBusy = true;
+  progressPanels.get('install-progress')?.show({ reset: true });
   const progress = $('install-progress');
   const title = $('install-progress-title');
   const btnInstall = $('btn-install-runtime');
   const btnCancel = $('btn-install-cancel');
-  btnInstall.disabled = true;
+  const restoreInstall = launcherButtonBusy(btnInstall, '正在安装桌面端…');
   btnCancel.hidden = false;
   if (title) {
     title.textContent = '正在安装桌面端';
@@ -1021,7 +1017,7 @@ async function installRuntime() {
   syncLauncherState();
   try {
     const result = await api.installRuntime({ route });
-    if (result?.status === 'installed' || result?.ok === true) {
+    if (result?.status === 'installed') {
       paintProgress('install-progress', { phase: 'done' });
       progress.textContent = `安装完成${result?.installed?.version ? `：v${result.installed.version}` : ''}`;
       setHint('桌面端已安装，可启动。', { fade: true });
@@ -1029,16 +1025,21 @@ async function installRuntime() {
     } else if (result?.cancelled) {
       paintProgress('install-progress', { phase: result.status === 'waiting' ? 'waiting' : 'cancelled' });
       progress.textContent = result.message || '已取消';
+    } else if (result?.manualInstall || result?.status === 'waiting' || result?.status === 'quit-pending' || result?.launched === true || result?.ok === true) {
+      paintProgress('install-progress', { phase: 'waiting' });
+      progress.textContent = result.message || '安装结果待确认。请完成安装向导并留意系统授权提示，完成后刷新状态。';
     } else {
       paintProgress('install-progress', { phase: result?.status === 'waiting' ? 'waiting' : 'error' });
       progress.textContent = errText(result, '安装失败');
+      if (result?.status !== 'waiting') setHint(progress.textContent);
     }
   } catch (error) {
     paintProgress('install-progress', { phase: 'error' });
     progress.textContent = errText(error, '安装失败');
+    setHint(progress.textContent);
   } finally {
     installBusy = false;
-    btnInstall.disabled = false;
+    restoreInstall();
     btnCancel.hidden = true;
     syncLauncherState();
   }
@@ -1126,7 +1127,14 @@ async function runDesktopAction(method, kind = 'starting', ...args) {
     syncLauncherState();
   };
   paint();
-  const timer = setInterval(() => renderHomeStatus(lastStatus), 1000);
+  const title = method === 'disableSuspectsAndStart' ? '正在禁用插件并启动鲸屿'
+    : method === 'skipUserPlugins' ? '正在跳过用户插件启动'
+      : kind === 'stopping' ? '关闭桌面端' : '启动桌面端';
+  const progress = appProgress({ title, body: '正在处理，请稍候…' });
+  const timer = setInterval(() => {
+    renderHomeStatus(lastStatus);
+    progress.update(`正在处理，已等待 ${Math.floor((Date.now() - desktopOperation.startedAt) / 1000)} 秒…`);
+  }, 1000);
   let result;
   try {
     result = await api[method](...args);
@@ -1139,10 +1147,12 @@ async function runDesktopAction(method, kind = 'starting', ...args) {
     desktopActionError = error?.message || String(error);
   } finally {
     clearInterval(timer);
+    progress.close();
     desktopOperation = null;
     try { await refreshStatus(); }
     catch { setHint('暂时无法读取桌面状态，请稍后重新打开首页。'); }
     paint();
+    if (desktopActionError) setHint(errText(desktopActionError, '启动或关闭未完成'));
   }
   return result;
 }
@@ -1168,18 +1178,9 @@ async function askPluginRecovery(guidance) {
       await appNotice({ title: '排查结果已更新', body: ERROR_LABELS['suspects-changed'] });
       return;
     }
-    const progress = appProgress({
-      title: guidance.kind === 'disable' ? '正在禁用插件并启动鲸屿' : '正在跳过用户插件启动',
-      body: '正在应用插件恢复操作，请稍候。',
-    });
-    let result;
-    try {
-      result = guidance.kind === 'disable'
-        ? await runDesktopAction('disableSuspectsAndStart', 'starting', guidance.names)
-        : await runDesktopAction('skipUserPlugins');
-    } finally {
-      progress.close();
-    }
+    const result = guidance.kind === 'disable'
+      ? await runDesktopAction('disableSuspectsAndStart', 'starting', guidance.names)
+      : await runDesktopAction('skipUserPlugins');
     if (!result && desktopActionError) {
       await appNotice({ title: '启动未完成', body: errText(desktopActionError) });
       return;
@@ -1232,8 +1233,13 @@ function syncUpdateNotice(check) {
     || check?.status === 'current'
     || check?.status === 'skipped';
   const show = Boolean(latest) && !failed;
-  box.hidden = !show;
+  if (!show) {
+    updateNoticePanel?.hide();
+    box.hidden = true;
+  }
   if (show) {
+    updateNoticePanel?.show({ reset: latest !== updateNoticeVersion, active: false });
+    updateNoticeVersion = latest;
     const current = check?.currentVersion ? `（当前 v${String(check.currentVersion).replace(/^v/i, '')}）` : '';
     $('home-update-text').textContent = `可更新至 v${String(latest).replace(/^v/i, '')}${current}`;
   }
@@ -1249,7 +1255,7 @@ function renderUpdateCheck(check) {
 function updateCheckNotice(check) {
   const version = check?.currentVersion || check?.current || (lastStatus?.launcherPackage ? lastStatus?.installed?.version : lastStatus?.version);
   if (check?.status === 'current') {
-    return { title: '已是最新版本', body: version ? `当前版本 v${String(version).replace(/^v/i, '')}，已是最新版本。` : '当前已是最新版本。' };
+    return { title: '已是最新版本', body: version ? `当前版本 v${String(version).replace(/^v/i, '')}，已是最新版本。` : '当前已是最新版本。', tone: 'success' };
   }
   if (check?.status === 'available') {
     return { title: '发现新版本', body: `最新版本 v${String(check.latest || check.stableVersion).replace(/^v/i, '')}。可在首页或版本管理中更新。` };
@@ -1257,7 +1263,7 @@ function updateCheckNotice(check) {
   if (check?.status === 'none') {
     return { title: '暂无可用更新', body: check.hint || '未找到可用的发布版本，请稍后重新检查。' };
   }
-  return { title: check?.status === 'error' ? '更新检查失败' : '更新检查未完成', body: check?.hint || errText(check, '未能获取更新结果，请检查网络后重试。') };
+  return { title: check?.status === 'error' ? '更新检查失败' : '更新检查未完成', body: check?.hint || errText(check, '未能获取更新结果，请检查网络后重试。'), tone: 'error' };
 }
 
 // --- Runtime state + components --------------------------------------------
@@ -1299,12 +1305,16 @@ function syncDesktopControls() {
     // a stopped one only 启动 — reopening a dismissed window rides the tray.
     start.hidden = running || stopping;
     start.disabled = busy;
-    start.textContent = busy ? '启动中…' : (desktopActionError || lastStatus?.lastStart?.ok === false ? '重试启动' : '启动桌面端');
+    start.textContent = desktopActionError || lastStatus?.lastStart?.ok === false ? '重试启动' : '启动桌面端';
+    start.setAttribute('aria-busy', busy && !stopping ? 'true' : 'false');
+    start.setAttribute('aria-label', busy && !stopping ? '正在启动桌面端…' : start.textContent);
   }
   if (stop) {
     stop.hidden = !running && !stopping;
     stop.disabled = busy;
-    stop.textContent = stopping ? '关闭中…' : '关闭桌面端';
+    stop.textContent = '关闭桌面端';
+    stop.setAttribute('aria-busy', stopping ? 'true' : 'false');
+    stop.setAttribute('aria-label', stopping ? '正在关闭桌面端…' : '关闭桌面端');
   }
   for (const id of ['btn-skip', 'btn-retry-full', 'btn-disable-suspects', 'btn-recover-plugins']) {
     if ($(id)) $(id).disabled = busy || $(id).getAttribute('aria-busy') === 'true';
@@ -1315,7 +1325,7 @@ function syncDesktopControls() {
   }
   const runNote = $('home-running-note');
   if (runNote) {
-    runNote.hidden = !running;
+    runNote.hidden = false;
   }
 }
 
@@ -1391,16 +1401,17 @@ async function checkUpdateNow() {
   let notice;
   try {
     const result = await api.checkUpdate();
+    updateNoticeVersion = '';
     renderUpdateCheck(result);
     notice = updateCheckNotice(result);
     void refreshStatus();
   } catch (error) {
-    notice = { title: '更新检查失败', body: errText(error, '更新检查失败，请稍后重试。') };
+    notice = { title: '更新检查失败', body: errText(error, '更新检查失败，请稍后重试。'), tone: 'error' };
   } finally {
     updateCheckBusy = false;
     restore.forEach((done) => done());
   }
-  void appNotice(notice);
+  if (notice.title !== '发现新版本') void appNotice(notice);
 }
 
 let importSourceHome;
@@ -1967,7 +1978,7 @@ async function refreshImport(options = {}) {
     syncSessionClusters();
     syncImportSummary();
     if (showFeedback) {
-      void appNotice({ title: '扫描完成', body: `会话 ${sessions.length} · 技能 ${skills.length} · 插件 ${plugins.length} · MCP ${mcp.length} · 设置 ${settings.length} · 预设 ${presets.length}` });
+      void appNotice({ title: '扫描完成', body: `会话 ${sessions.length} · 技能 ${skills.length} · 插件 ${plugins.length} · MCP ${mcp.length} · 设置 ${settings.length} · 预设 ${presets.length}`, tone: 'success' });
     }
   } catch (error) {
     setHint(errText(error));
@@ -2159,6 +2170,7 @@ async function installTag(tag, kind) {
     return;
   }
   updateBusy = true;
+  progressPanels.get('update-progress')?.show({ reset: true });
   const progressTitle = $('update-progress-title');
   if (progressTitle) {
     progressTitle.textContent = kind === 'update' ? `正在更新到 ${tag}` : `正在安装 ${tag}`;
@@ -2172,7 +2184,7 @@ async function installTag(tag, kind) {
       $('update-progress').textContent = result.message || '已打开安装映像，请将 Whale Isle 拖入 Applications 完成更新，完成后重新打开应用。';
       return;
     }
-    if (result?.status === 'installed' || (launcherPackage && result?.ok === true)) {
+    if (result?.status === 'installed') {
       paintProgress('update-progress', { phase: 'done' });
       $('update-progress').textContent = `安装完成${result?.installed?.version ? `：v${result.installed.version}` : ''}`;
       void refreshStatus();
@@ -2183,18 +2195,22 @@ async function installTag(tag, kind) {
       $('update-progress').textContent = result.message || '已取消';
       return;
     }
-    if (result?.status === 'waiting' || result?.launched) {
+    if (result?.status === 'waiting' || result?.status === 'quit-pending' || result?.launched === true || result?.ok === true) {
       paintProgress('update-progress', { phase: 'waiting' });
-      $('update-progress').textContent = result.message || '安装向导已启动。请完成向导并留意系统授权提示，完成后刷新状态。';
+      $('update-progress').textContent = result.message || (result?.launched === true || result?.status === 'quit-pending'
+        ? '安装向导已启动。请完成向导并留意系统授权提示，完成后刷新状态；尚未确认安装完成。'
+        : '安装结果待确认。请检查安装向导与系统授权，完成后刷新状态。');
       return;
     }
     if (result && (result.status === 'error' || result.ok === false)) {
       paintProgress('update-progress', { phase: 'error' });
       $('update-progress').textContent = errText(result, '安装失败');
+      setHint($('update-progress').textContent);
     }
   } catch (error) {
     paintProgress('update-progress', { phase: 'error' });
     $('update-progress').textContent = errText(error, '安装失败');
+    setHint($('update-progress').textContent);
   } finally {
     updateBusy = false;
   }
@@ -2213,6 +2229,7 @@ async function installDelta(tag) {
     return;
   }
   updateBusy = true;
+  progressPanels.get('update-progress')?.show({ reset: true });
   const title = $('update-progress-title');
   if (title) {
     title.textContent = `正在增量更新到 ${tag}`;
@@ -2231,23 +2248,29 @@ async function installDelta(tag) {
       return;
     }
     if (result?.cancelled) {
+      paintProgress('update-progress', { phase: status === 'waiting' ? 'waiting' : 'cancelled' });
       $('update-progress').textContent = result.message || '已取消';
       return;
     }
     paintProgress('update-progress', { phase: 'error', mode: 'delta' });
     $('update-progress').textContent = `${errText(result, '增量更新失败')}。可返回版本列表选择完全下载。`;
+    setHint($('update-progress').textContent);
   } catch (error) {
+    paintProgress('update-progress', { phase: 'error' });
     $('update-progress').textContent = errText(error, '增量更新失败');
+    setHint($('update-progress').textContent);
   } finally {
     updateBusy = false;
   }
 }
 
-async function saveSettings() {
+async function saveSettings(control) {
   const api = pageShell();
   if (!api) {
     return;
   }
+  control.disabled = true;
+  control.setAttribute('aria-busy', 'true');
   try {
     const patch = {
       quitAfterStart: $('opt-quit').checked,
@@ -2257,9 +2280,13 @@ async function saveSettings() {
     if ($('row-opt-tray') && !$('row-opt-tray').hidden) {
       patch.closeToTray = $('opt-tray').checked;
     }
-    await api.saveLauncherConfig(patch);
+    const result = await api.saveLauncherConfig(patch);
+    if (result?.ok === false) throw new Error(result.message || result.error || '设置保存被拒绝');
   } catch (error) {
     setHint(errText(error, '设置保存失败'));
+  } finally {
+    control.disabled = false;
+    control.removeAttribute('aria-busy');
   }
 }
 
@@ -2395,12 +2422,15 @@ function bind() {
       settleConfirm(false);
     }
   });
-  $('app-confirm').addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
+  document.addEventListener('keydown', (event) => {
+    if (!confirmResolve) return;
+    if (event.key === 'Escape' && $('app-confirm').contains(event.target)) {
       event.stopPropagation();
       settleConfirm(false);
     } else if (event.key === 'Tab') {
-      const focusables = [$('app-confirm-cancel'), $('app-confirm-ok')].filter((button) => !button.hidden && !button.disabled);
+      const feedbackActions = [...document.querySelectorAll('.shell-feedback-stack .shell-feedback-close, .shell-feedback-stack .shell-feedback-task-summary, .shell-feedback-stack .shell-feedback-action, .shell-feedback-stack #btn-install-cancel, .shell-feedback-stack #btn-import-cancel')];
+      const focusables = [$('app-confirm-cancel'), $('app-confirm-ok'), ...feedbackActions]
+        .filter((button) => !button.disabled && button.checkVisibility());
       if (!focusables.length) focusables.push($('app-confirm').querySelector('.modal-card'));
       const idx = focusables.indexOf(document.activeElement);
       const next = event.shiftKey
@@ -2456,13 +2486,15 @@ function bind() {
     const opSeq = ++importOpSeq;
     const myOpId = `ui-import-${Date.now().toString(36)}-${opSeq}`;
     activeImportOpId = myOpId;
-    importRunBtn.disabled = true;
+    const restoreImport = launcherButtonBusy(importRunBtn, '正在导入…');
+    importProgressPanel.show({ reset: true });
     importCancelBtn.hidden = false;
     importCancelBtn.disabled = false;
     $('import-result').textContent = '正在导入…';
     try {
       if (!api || typeof api.runImport !== 'function') {
         $('import-result').textContent = '导入不可用：桌面桥接未连接。';
+        setHint($('import-result').textContent);
         return;
       }
       const result = await api?.runImport({
@@ -2479,21 +2511,28 @@ function bind() {
       });
       if (opSeq === importOpSeq) {
         $('import-result').textContent = summarizeImport(result);
+        if (result?.ok === false && !result.cancelled) {
+          void appNotice({ title: '导入未完成', body: $('import-result').textContent, tone: 'error' });
+        }
       }
     } catch (error) {
       if (opSeq === importOpSeq) {
         $('import-result').textContent = `导入失败：${errText(error, '调用被拒绝')}`;
+        setHint($('import-result').textContent);
       }
     } finally {
       if (opSeq === importOpSeq) {
-        importRunBtn.disabled = false;
+        restoreImport();
         importCancelBtn.hidden = true;
+        importCancelBtn.removeAttribute('aria-busy');
         activeImportOpId = '';
+        importProgressPanel.show({ active: false });
       }
     }
   });
   importCancelBtn.addEventListener('click', async () => {
     importCancelBtn.disabled = true;
+    importCancelBtn.setAttribute('aria-busy', 'true');
     // Capture the op we're cancelling BEFORE awaiting. `activeImportOpId`
     // is shared mutable state the run handler clears on completion — reading
     // it after an await could name a different (or no) operation.
@@ -2513,12 +2552,18 @@ function bind() {
       // Surface it instead of silently showing a cancel that did nothing.
       if (reply && reply.ok === false && stillOwns()) {
         $('import-result').textContent = `取消被拒绝：${errText(reply.error, '无法取消')}`;
+        setHint($('import-result').textContent);
+        importCancelBtn.disabled = false;
+        importCancelBtn.removeAttribute('aria-busy');
       }
     } catch (error) {
       // A rejected cancellation is itself a terminal diagnostic — surface it
       // instead of leaving an unhandled rejection and a stuck-looking state.
       if (stillOwns()) {
         $('import-result').textContent = `取消请求被拒绝：${errText(error, '无法取消')}`;
+        setHint($('import-result').textContent);
+        importCancelBtn.disabled = false;
+        importCancelBtn.removeAttribute('aria-busy');
       }
     }
   });
@@ -2544,7 +2589,7 @@ function bind() {
   $('btn-refresh-releases').addEventListener('click', () => refreshReleases());
   $('btn-refresh-plugins').addEventListener('click', () => refreshPlugins());
   ['opt-quit', 'opt-auto', 'opt-ask', 'opt-tray'].forEach((id) => {
-    $(id).addEventListener('change', () => saveSettings());
+    $(id).addEventListener('change', (event) => saveSettings(event.currentTarget));
   });
   if (api?.onShowTab) {
     api.onShowTab((payload) => {
@@ -2609,6 +2654,7 @@ function bind() {
       if (line && text) {
         line.textContent = text;
       }
+      if (payload?.phase === 'error' && !installBusy && !updateBusy) setHint(text);
     });
   }
   if ($('btn-install-runtime')) {
@@ -2617,15 +2663,19 @@ function bind() {
   if ($('btn-install-cancel')) {
     $('btn-install-cancel').addEventListener('click', async () => {
       const apiNow = pageShell();
+      const restore = launcherButtonBusy($('btn-install-cancel'), '正在请求取消…');
       try {
-        await apiNow?.cancelRuntimeInstall();
-      } catch {
-        // best effort — the install op resolves the cancel state itself
-      }
-      const progress = $('install-progress');
-      if (progress) {
-        progress.hidden = false;
-        progress.textContent = '正在取消…';
+        const result = await apiNow?.cancelRuntimeInstall();
+        if (result?.ok === false) {
+          setHint(errText(result, '取消安装被拒绝'));
+          return;
+        }
+        const progress = $('install-progress');
+        if (progress) progress.textContent = '正在取消…';
+      } catch (error) {
+        setHint(errText(error, '取消安装失败'));
+      } finally {
+        restore();
       }
     });
   }
@@ -2640,6 +2690,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.watchShellTheme();
   }
   bind();
+  mountFeedbackSurfaces();
   window.__launcherComponents?.mountHome($('home-components'), pageShell());
   mountComponents();
   void refreshStatus();

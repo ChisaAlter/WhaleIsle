@@ -105,6 +105,7 @@ export function apply(ctx: ClientContext): void {
     inject: (): PluginRefreshToastFace => ({
       hooks: { pluginManager: face.hooks.pluginManager },
       dismissNotice: face.dismissNotice,
+      refresh: face.refresh,
     }),
   }, PluginRefreshToast))
   ctx.slots.inject('main', function* () {
