@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { logicalRealpathSync } = require('./logical-realpath');
 const { getDesktopDshHome, tryGetDesktopDshHome } = require('../shared/dsh-home');
 
 /**
@@ -69,7 +70,7 @@ function createWorkspaceAuthority({
     let real;
     try {
       if (!fs.statSync(resolved).isDirectory()) return null;
-      real = fs.realpathSync(resolved);
+      real = logicalRealpathSync(resolved);
     } catch {
       return null;
     }
@@ -158,7 +159,7 @@ function collectRoots(candidates) {
     // (/private/var/...), so every accepted root is canonicalized here.
     let real;
     try {
-      real = fs.realpathSync(resolved);
+      real = logicalRealpathSync(resolved);
     } catch {
       continue;
     }
@@ -182,7 +183,7 @@ function identityKey(resolved) {
  */
 function realPathOrNull(target) {
   try {
-    return fs.realpathSync(target);
+    return logicalRealpathSync(target);
   } catch {
     return null;
   }

@@ -56,13 +56,20 @@ test('workspace reads a logically contained file when native realpath redirects 
   const target = path.join(cwd, 'page.html');
   const native = fs.realpathSync.native;
   fs.writeFileSync(target, '<h1>inside</h1>');
-  fs.realpathSync.native = (file, ...args) => path.resolve(file) === target
-    ? path.join(path.dirname(cwd), 'LocalCache', 'page.html')
-    : native(file, ...args);
+  const spellings = new Set([path.resolve(target).toLowerCase(), native(target).toLowerCase()]);
+  let cacheChecks = 0;
+  fs.realpathSync.native = (file, ...args) => {
+    if (spellings.has(path.resolve(file).toLowerCase())) {
+      cacheChecks++;
+      return path.join(path.dirname(cwd), 'LocalCache', 'page.html');
+    }
+    return native(file, ...args);
+  };
   try {
     const result = await readFile(cwd, 'page.html');
     assert.equal(result.ok, true);
     assert.equal(result.text, '<h1>inside</h1>');
+    assert.ok(cacheChecks > 0, 'the native cache redirection was exercised for the authorized file spelling');
     assert.equal((await readFile(cwd, '../outside.html')).ok, false);
   } finally {
     fs.realpathSync.native = native;

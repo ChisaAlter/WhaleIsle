@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { logicalRealpathSync } = require('./logical-realpath');
 const { spawn } = require('node:child_process');
 const {
   loadWorkspaceAuthority,
@@ -78,7 +79,7 @@ async function canonicalInside(cwd, target, authorityForRead = authority()) {
     try {
       // Use the same resolver as authorization, including Windows logical
       // paths for package-virtualized AppData files.
-      real = fs.realpathSync(node);
+      real = logicalRealpathSync(node);
       break;
     } catch (error) {
       if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') return null;

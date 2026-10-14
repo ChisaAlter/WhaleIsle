@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { execFileSync } = require('node:child_process');
 const { createWorkspaceAuthority } = require('./workspace-authority');
 const { normalizePreviewFileTarget } = require('./preview-file-target');
 
@@ -15,6 +16,24 @@ function makeTempDir(prefix) {
 function authorityFor(workspace, extraWorkspaces = []) {
   return createWorkspaceAuthority({ workspace, extraWorkspaces });
 }
+
+test('absolute preview rebases a real Windows DOS directory name onto the logical long root', { skip: process.platform !== 'win32' }, (t) => {
+  const root = process.env.ProgramFiles;
+  const alias = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    '(New-Object -ComObject Scripting.FileSystemObject).GetFolder($env:WHALE_TEST_DIRECTORY).ShortPath'], {
+    env: { ...process.env, WHALE_TEST_DIRECTORY: root }, encoding: 'utf8', windowsHide: true,
+  }).trim();
+  if (alias.toLowerCase() === fs.realpathSync.native(root).toLowerCase()) {
+    t.skip('the existing fixture directory has no DOS short name');
+    return;
+  }
+  assert.equal(fs.realpathSync.native(alias), fs.realpathSync.native(root), 'the fixture uses a real filesystem alias');
+  assert.deepEqual(
+    normalizePreviewFileTarget({ absolutePath: path.join(alias, 'new-preview.txt') }, authorityFor(root)),
+    { ok: true, cwd: fs.realpathSync(root), relativePath: 'new-preview.txt' },
+  );
+  assert.equal(normalizePreviewFileTarget({ absolutePath: path.join(alias, '..', 'outside-preview.txt') }, authorityFor(root)).ok, false);
+});
 
 test('absolute preview resolves an accessible directory alias and refuses its escaping symlink', () => {
   const parent = makeTempDir('dsh-preview-alias-');

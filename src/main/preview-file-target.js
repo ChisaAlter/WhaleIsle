@@ -1,7 +1,7 @@
 'use strict';
 
-const fs = require('node:fs');
 const path = require('node:path');
+const { logicalRealpathSync } = require('./logical-realpath');
 
 function fail(message) {
   return { ok: false, message };
@@ -131,7 +131,7 @@ function canonicalizeTarget(target) {
 
 function realPathOrNull(target) {
   try {
-    return fs.realpathSync(target);
+    return logicalRealpathSync(target);
   } catch {
     return null;
   }
