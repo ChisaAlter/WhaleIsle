@@ -9,15 +9,15 @@
 
 ## User paths
 
-1. 在桌面应用或 Web 展开侧栏时，左上角保持已定稿的字标：透明鲸鱼娘头像、同排以「鲸屿」为主和「WHALE ISLE」为辅，下一行显示「BASED ON DEEPSEEK HARNESS」。
+1. 在桌面应用或 Web 展开侧栏时，左上角保持已定稿的字标：透明鲸鱼娘头像、同排按界面语言排列：中文模式「鲸屿」大字在前、「WHALE ISLE」小字在后；英文模式交换顺序与字级，下一行显示「BASED ON DEEPSEEK HARNESS」。
 2. 收起侧栏时，左上角展开按钮显示同一透明头像；悬停或键盘聚焦时切换为面板图标，点击仍展开侧栏。
-3. 切换浅色、深色主题时，文字与蓝色「屿」随主题 token 变化，头像保持透明原图。
+3. 切换浅色、深色主题时，文字与主名称中的蓝色「屿」或「ISLE」随主题 token 变化，头像保持透明原图。
 4. 窗口、启动器、安装器、快捷方式、托盘、Web/PWA 与手机伴侣界面统一显示 Whale Isle；已有配置和会话继续从原数据目录读取。
 
 ## Invariants
 
 - Windows 窗口先提交图标、重启命令与产品名，再单独声明 AppUserModelID；不得合并为一次 `setAppDetails`，Electron 的原生实现会先写 ID 并过早触发任务栏刷新。
-- 侧栏头像复用 `assets/whale-head.png` 的透明图像，不显示方形底板。沿用既有字标比例与顺序：中文「鲸屿」为主，第二字为品牌蓝；英文「WHALE ISLE」位于同一行作为辅字，完整「BASED ON DEEPSEEK HARNESS」来源说明位于下一行且始终可读。
+- 侧栏头像复用 `assets/whale-head.png` 的透明图像，不显示方形底板。字标随界面语言交换主副名称的顺序与字号：中文模式「鲸屿」在前为 18px 大字，仅「屿」为品牌蓝；英文模式「WHALE ISLE」在前为 18px 大字，仅「ISLE」为品牌蓝。另一名称在同一行后方为 10px 小字；完整「BASED ON DEEPSEEK HARNESS」来源说明位于下一行且始终可读。
 - `appId`、仓库名、包名与数据目录路径保持稳定；安装与更新识别旧版 Deepseek-Harness-Desktop 资产及可执行文件。
 - Windows 主窗和启动器在首次显示前声明既有 Shell 身份、同源图标、成对的产品名与重启命令。源码图标为真实 ICO，安装版为 EXE 内嵌图标；重启不携带会话、认证、调试或 QA 参数。Windows 原始 Electron 源码运行在通知 presenter 初始化前拒绝系统通知注册，安装版通知保持可用。
 - 安装版桌面启动前恢复旧通知生成的 `Electron.lnk`：固定当前用户开始菜单路径、正式 GUI AppID、普通文件、绝对 Electron EXE 目标、空参数及默认 index 0 图标必须全部匹配。原字节移到 userData 的唯一 `Electron.lnk.backup` 备份，不保留 `.lnk` 扩展名；仅在移动成功后异步通知 Shell 该旧开始菜单条目已删除（`SHCNE_DELETE`：旧路径，第二项 NULL；`SHCNF_PATHW | SHCNF_FLUSH`），不把备份路径登记为新入口——RENAME 会让 Shell 把该 AppID 的快捷方式关联延续到不再是 `.lnk` 的备份文件，首启任务栏解析为白色文档（候选 `36839675533` 单变量 A/B/A 证实）。原生回调最多等待 500ms，失败或超时仍保留备份并继续启动；期限只结束启动等待，不取消原生调用。FLUSH 只保证事件投递，不证明任务栏像素正确，首次冷启动另行验收。不碰用户固定项、其它快捷方式或全局缓存；不匹配、读失败或备份失败时保留原条目且不调用原生桥。

@@ -19,7 +19,7 @@ export function OfficialBrandName() {
       <span className={css.nameBlock}>
         <span className={css.titleRow}>
           <span className={css.chineseName}><span>鲸</span><span className={css.isleGlyph}>屿</span></span>
-          <span className={css.englishName}>WHALE ISLE</span>
+          <span className={css.englishName}>WHALE <span className={css.isleWord}>ISLE</span></span>
         </span>
         <span className={css.attribution}>BASED ON DEEPSEEK HARNESS</span>
       </span>
