@@ -15,6 +15,7 @@ const runtimeInstall = require('./runtime-install');
 const forensicsLog = require('./forensics-log');
 const { isLauncherPackage, runtimeTarget, desktopStateDir, desktopUserDataDir } = require('./product');
 const importGuard = require('../main/import-guard');
+const { disableableSuspectNames } = require('../shared/launcher-recovery');
 
 // In the slim package this process's config.json is the LAUNCHER's own file —
 // desktop-owned keys (disabledPlugins, pluginRecovery) live in the runtime's
@@ -90,10 +91,11 @@ function createLauncherService(deps) {
     const logs = (Array.isArray(dsh?.logs)
       ? dsh.logs.map((row) => (typeof row === 'string' ? row : row.message || row.line || String(row)))
       : []).concat(bootTail, lastStart.logTail || []);
-    const corpus = [logs.join('\n'), lastStart.error].filter(Boolean).join('\n');
     const recovery = harness?.pluginRecovery && typeof harness.pluginRecovery === 'object'
       ? harness.pluginRecovery
       : (config.pluginRecovery || {});
+    const recoveryReason = typeof recovery.reason === 'string' ? recovery.reason : '';
+    const corpus = [logs.join('\n'), lastStart.error, recoveryReason].filter(Boolean).join('\n');
     return inspectPlugins({
       logs,
       lastStartError: lastStart.error,
@@ -751,6 +753,38 @@ function createLauncherService(deps) {
         return { ok: false, error: 'import-in-progress' };
       }
       const result = await disablePlugins(names, { dsh, startHarness, configIO: pluginConfigIO });
+      return result.ok === true ? { ...result, forensics: collectForensics() } : result;
+    },
+
+    async disableSuspectsAndStart(names) {
+      const blocked = blockedStartError();
+      if (blocked) {
+        return blocked;
+      }
+      if (importGuard.isMaintenanceHeld()) {
+        return { ok: false, error: 'operation-in-progress' };
+      }
+      const forensics = collectForensics();
+      const suspects = disableableSuspectNames(forensics);
+      const requested = Array.isArray(names) && names.every((name) => typeof name === 'string' && name.trim())
+        ? [...new Set(names.map((name) => name.trim()))]
+        : [];
+      if (!requested.length || requested.length !== suspects.length
+        || requested.some((name) => !suspects.includes(name))) {
+        return { ok: false, error: 'suspects-changed', forensics };
+      }
+      const result = await disablePlugins(requested, {
+        dsh,
+        configIO: pluginConfigIO,
+        startWhenIdle: true,
+        startHarness: async (ownerToken) => {
+          if (isLauncherPackage()) {
+            return retryFullPluginsSlim();
+          }
+          harness.clearPluginRecovery();
+          return startDesktop({ forceRestart: true, recoveryLaunch: true, maintenanceToken: ownerToken });
+        },
+      });
       return result.ok === true ? { ...result, forensics: collectForensics() } : result;
     },
 

@@ -102,6 +102,14 @@
             <header class="home-section-head"><div><h3 id="home-components-title">我的组件</h3><p>按需开启，扩展鲸屿的能力。</p></div><button type="button" class="ghost small" data-goto="components">管理组件</button></header>
             <div class="home-component-grid" id="home-components-list"></div>
           </section>
+          <section id="home-plugin-guidance" class="card" role="status" aria-labelledby="home-plugin-guidance-title" hidden>
+            <h3 class="card-title" id="home-plugin-guidance-title">插件加载失败</h3>
+            <p class="recovery-verdict" id="home-plugin-guidance-body"></p>
+            <div class="actions">
+              <button type="button" class="primary" id="btn-recover-plugins">禁用并启动鲸屿</button>
+              <button type="button" class="ghost" data-goto="plugins">查看插件排查</button>
+            </div>
+          </section>
           <details id="home-recovery" class="recovery-board" hidden>
             <summary class="recovery-head"><h3>启动诊断</h3></summary>
             <p class="recovery-verdict" id="home-recovery-verdict"></p>
@@ -111,7 +119,7 @@
               <button type="button" class="ghost small" id="btn-retry-full">恢复完整插件并启动</button>
             </div>
             <div class="actions recovery-actions">
-              <button type="button" class="ghost small" id="btn-disable-suspects">禁用全部可疑</button>
+              <button type="button" class="ghost small" id="btn-disable-suspects">禁用失败插件并启动</button>
             </div>
             <ul id="home-recovery-list" class="list"></ul>
           </details>

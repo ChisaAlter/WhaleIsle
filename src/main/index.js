@@ -492,6 +492,7 @@ async function startDesktopFromLauncher(options = {}) {
     })) {
       closeLauncherWindow();
     } else if (stickyAfter || recoveryLaunch) {
+      if (stickyAfter) await openLauncher();
       sendToLauncher('shell:show-tab', { tab: 'home' });
     }
     return harness.snapshot();

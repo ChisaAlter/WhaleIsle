@@ -167,6 +167,8 @@ function registerLauncherChannels({ launcher, dsh, harness, startDesktop, record
 
   handle('shell:disable-plugins', LAUNCHER_ONLY, (_event, names) => launcher.disablePlugins(names));
 
+  handle('shell:disable-suspects-and-start', LAUNCHER_ONLY, (_event, names) => launcher.disableSuspectsAndStart(names));
+
   handle('shell:disable-plugin', LAUNCHER_ONLY, (_event, name) => launcher.disablePlugin(name));
 
   handle('shell:enable-plugin', LAUNCHER_ONLY, (_event, name) => launcher.enablePlugin(name));
