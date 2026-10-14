@@ -517,8 +517,9 @@ test('window and composer fitting preserve the latest user placement and only cl
     assert.equal(b.resizes.length, beforeFit + 1);
     composerTop = 700;
     await act(async () => { b.resizeObservers.find(observer => !observer.disconnected).callback(); });
-    await b.press('observerStrip'); assert.deepEqual({ ...b.observer.getSnapshot().panel.rect }, { ...moved, y: 72, height: 38 });
-    await b.press('observerExpand'); assert.deepEqual({ ...b.observer.getSnapshot().panel.rect }, { ...moved, y: 72, height: 520 });
+    // Room returning restores the user's frame; collapsing must not replace it with a default height.
+    await b.press('observerStrip'); assert.deepEqual({ ...b.observer.getSnapshot().panel.rect }, { ...moved, height: 38 });
+    await b.press('observerExpand'); assert.deepEqual({ ...b.observer.getSnapshot().panel.rect }, moved);
   } finally { await b.dispose(); }
 });
 
