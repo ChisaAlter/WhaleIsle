@@ -13,7 +13,7 @@
 
 ## 架构要点
 
-Whale Isle 是应用的对外主名，中文「鲸屿」为辅助名；DeepSeek Harness 只出现在来源说明与底层服务语境。桌面与 Web 侧栏品牌由官方构建中的 `ui-brand-official` 两个槽位提供：标志槽位提供收起态透明头像，名称槽位显示展开态头像；右侧首行保持蓝色「屿」的「鲸屿」为主、英文「WHALE ISLE」为辅，下一行是「BASED ON DEEPSEEK HARNESS」。收起态头像位于左上角展开按钮内，悬停或键盘聚焦时切换为面板图标。源图 `assets/whale-head.png` 也用于应用图标和安装器。合同见 [desktop-branding](../../features/desktop-branding.md)。
+Whale Isle 是应用的对外主名，中文「鲸屿」为辅助名；DeepSeek Harness 只出现在来源说明与底层服务语境。桌面与 Web 侧栏品牌由官方构建中的 `ui-brand-official` 两个槽位提供：标志槽位提供收起态透明头像，名称槽位显示展开态头像；右侧首行随界面语言交换名称顺序和主副字级：中文模式「鲸屿」为主且「屿」为蓝色；英文模式「WHALE ISLE」为主且「ISLE」为蓝色，另一名称在后为小字，下一行是「BASED ON DEEPSEEK HARNESS」。收起态头像位于左上角展开按钮内，悬停或键盘聚焦时切换为面板图标。源图 `assets/whale-head.png` 也用于应用图标和安装器。合同见 [desktop-branding](../../features/desktop-branding.md)。
 
 | 层 | 用途 |
 | --- | --- |

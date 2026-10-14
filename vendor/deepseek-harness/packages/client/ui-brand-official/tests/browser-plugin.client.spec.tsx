@@ -82,7 +82,7 @@ describe('official browser-brand plugin', () => {
   it('renders Whale Isle in Web without a desktop preload', () => {
     const name = render(<OfficialBrandName />)
     expect(name.container.textContent).toContain('鲸屿')
-    expect(name.getByText('WHALE ISLE')).toBeTruthy()
+    expect(name.container.textContent).toContain('WHALE ISLE')
     expect(name.container.textContent!.indexOf('鲸屿')).toBeLessThan(name.container.textContent!.indexOf('WHALE ISLE'))
     expect(name.getByText('BASED ON DEEPSEEK HARNESS')).toBeTruthy()
     expect(name.container.querySelector('img')?.getAttribute('src')).toBe('/whale-isle-head.png')
@@ -99,7 +99,7 @@ describe('official browser-brand plugin', () => {
     ;(window as Window & { shell?: unknown }).shell = { getWindowState: () => ({}) }
     const name = render(<OfficialBrandName />)
     expect(name.container.textContent).toContain('鲸屿')
-    expect(name.getByText('WHALE ISLE')).toBeTruthy()
+    expect(name.container.textContent).toContain('WHALE ISLE')
     expect(name.getByText('BASED ON DEEPSEEK HARNESS')).toBeTruthy()
     expect(name.container.querySelector('img')?.getAttribute('src')).toBe('/whale-isle-head.png')
     name.unmount()
