@@ -1167,21 +1167,20 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
           }
         };
       };
-      ctx.effect(() => {
-        const sync = () => {
-          const open = new Set(ctx.sidebarRight.openTabs.getSnapshot().filter(tab => tab.kind === OBSERVER_KIND)
-            .map(tab => JSON.stringify([tab.sessionId, tab.tabId])));
-          const before = observerRects.getSnapshot();
-          const retained = Object.fromEntries(Object.entries(before).filter(([key]) => open.has(key)));
-          if (Object.keys(retained).length !== Object.keys(before).length) observerRects.set(retained);
-        };
-        sync();
-        return ctx.sidebarRight.openTabs.subscribe(sync);
-      }, 'dsh-project: retain observer frames for saved native tabs');
       ctx.effect(() => ctx.sidebarRight.registerCloseHandler(OBSERVER_KIND, (sessionId, tab, proceed) => {
-        const editor = observerEditors.get(JSON.stringify([sessionId, tab.id]));
-        if (!editor?.isDirty()) return;
-        editor.requestClose(proceed);
+        const key = JSON.stringify([sessionId, tab.id]), editor = observerEditors.get(key);
+        const close = () => {
+          if (!proceed()) return false;
+          const before = observerRects.getSnapshot();
+          if (Object.hasOwn(before, key)) {
+            const retained = { ...before };
+            delete retained[key];
+            observerRects.set(retained);
+          }
+          return true;
+        };
+        if (editor?.isDirty()) editor.requestClose(close);
+        else close();
         return false;
       }), 'dsh-project: preserve unsaved Project notes on panel close');
       const rpc = async (endpoint, input = {}) => {
