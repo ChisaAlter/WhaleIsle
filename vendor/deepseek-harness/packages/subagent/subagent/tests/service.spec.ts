@@ -8,6 +8,7 @@ import SubagentRuntime, {
   foldSubagentDescriptor,
   snapshotSubagentDescriptor,
   SUBAGENT_DESCRIPTOR_VERSION,
+  MANAGED_SUBAGENT_DESCRIPTOR_VERSION,
   SubagentError,
   assertSubagentMaxDepth,
   type ResolvedSubagentStartRequest,
@@ -444,7 +445,7 @@ describe('subagent descriptors', () => {
       }),
     ])).toMatchObject({ toolFilter: { deny: ['bash'] } })
     expect(foldSubagentDescriptor([
-      event({ version: SUBAGENT_DESCRIPTOR_VERSION + 1, provider: 'spawn' }),
+      event({ version: Math.max(SUBAGENT_DESCRIPTOR_VERSION, MANAGED_SUBAGENT_DESCRIPTOR_VERSION) + 1, provider: 'spawn' }),
     ])).toBeUndefined()
     expect(() => snapshotSubagentDescriptor({
       mode: 'continuable',
