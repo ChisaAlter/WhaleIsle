@@ -77,7 +77,7 @@ describe('SkillsSection scoped-catalog fallback', () => {
     render(<SkillsSection {...props({ list })} />)
 
     expect(await screen.findByText(skill.name)).toBeTruthy()
-    expect(screen.getByText(en.sessionCatalogUnavailable)).toBeTruthy()
+    expect(await screen.findByText(en.sessionCatalogUnavailable)).toBeTruthy()
     expect(screen.queryByText(en.projectCatalogUnavailable)).toBeNull()
     expect(screen.getAllByRole('alert')).toHaveLength(1)
     expect(screen.getByRole('alert').textContent).toBe(en.sessionCatalogUnavailable)
@@ -114,7 +114,7 @@ describe('SkillsSection scoped-catalog fallback', () => {
     })
     fireEvent.click(within(container).getByRole('button', { name: en.retry }))
     expect(await screen.findByText(skill.name)).toBeTruthy()
-    expect(screen.getByText(en.sessionCatalogUnavailable)).toBeTruthy()
+    expect(await screen.findByText(en.sessionCatalogUnavailable)).toBeTruthy()
   })
 
   it('clears the fallback notice once a scoped read succeeds again', async () => {
