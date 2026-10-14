@@ -1138,6 +1138,7 @@ if (!gotLock) {
       desktop: {
         project: (payload) => projectEnvironment.dispatch(payload),
         htmlPreview: (input, signal) => require('./html-preview').captureHtmlPreview(input, signal),
+        project: (payload) => projectEnvironment.dispatch(payload),
         state: () => {
           const configNow = loadConfig();
           const listed = listInstalledPlugins();

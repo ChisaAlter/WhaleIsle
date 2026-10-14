@@ -126,6 +126,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     useSessionRetainInfo: () => undefined,
     usePanelInfo, useResource,
     useWorkspaces: hook(workspaceState([])),
+    useSessionNavigation: hook([]),
     useStore: bindSnapshotSelector(store),
     actions: store.actions,
     startSession: vi.fn(),
@@ -2361,6 +2362,34 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByRole('dialog')).toBeTruthy()
     await act(async () => { resolveRename() })
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('native Workspace rename ignores projected Project directory names but retains registered duplicate protection', async () => {
+    const renameWorkspace = vi.fn(async () => {})
+    const directory = '/projects/Virtual'
+    mount({
+      useWorkspaces: hook(workspaceState([workspace('alpha', [], 'Alpha'), workspace('beta', [], 'Beta')])),
+      useSessions: hook(sessionState([summary('lead', 1, {
+        cwd: '/dsh-home/projects/lead', blank: true,
+        presentation: { owner: 'project', title: 'Project Lead', workingDirectory: directory },
+      })])),
+      useSessionNavigation: hook([{ owner: 'project', sessionId: sid('lead'), workingDirectory: directory, archived: false }]),
+      renameWorkspace,
+    })
+    expect(screen.getByText('Virtual')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '工作区“Alpha”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '重命名' }))
+    const input = screen.getByLabelText<HTMLInputElement>('工作区名称')
+    const confirm = screen.getByRole<HTMLButtonElement>('button', { name: '重命名' })
+    fireEvent.change(input, { target: { value: 'Beta' } })
+    expect(confirm.disabled).toBe(true)
+    expect(screen.getByRole('alert').textContent).toBe('已存在名为“Beta”的工作区。')
+    fireEvent.change(input, { target: { value: 'Virtual' } })
+    expect(confirm.disabled).toBe(false)
+    expect(screen.queryByRole('alert')).toBeNull()
+    fireEvent.click(confirm)
+    expect(renameWorkspace).toHaveBeenCalledWith(wid('alpha'), 'Virtual')
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
   })
 
   it('rename via Enter, failure surfaces the error, Cancel closes', async () => {

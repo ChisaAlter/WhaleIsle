@@ -106,6 +106,8 @@ export interface SidebarRightTabDefinition {
   readonly multiple?: boolean
   /** Always present this type in an independent floating panel; docking and pane moves are unavailable. */
   readonly floatingOnly?: boolean
+  /** Hide the disposable-page close affordance for persistent companion panels. */
+  readonly showCloseButton?: boolean
   /** Lazily keep a visited body mounted through hiding, Session changes and docking; default false. */
   readonly keepMounted?: boolean
   /** Mount while the dock is collapsed so an external presentation can consume an opening request. */

@@ -173,6 +173,8 @@ class DependencyModel extends ScriptedModel {
 /** Script goal/stage choices while the real Host owns provenance, permissions and handover. */
 class RequirementModel extends ScriptedModel {
   goals = new Map(); workerInputs = []; priorReports = []; deliveryWaiting = false; batchWaiting = false;
+  visualizeResults = false;
+  handoverViews = new Map();
   deliveryGate = new Promise(done => { this.releaseDelivery = done; });
   batchGate = new Promise(done => { this.releaseBatch = done; });
   async *stream(options) {
@@ -213,8 +215,14 @@ class RequirementModel extends ScriptedModel {
           else yield* blocks('The readonly investigation cannot authorize a repair.');
           return;
         }
-        if (stage === 1) {
-          const view = toolFacts(options).requests.find(item => item.id === request.id);
+        const visualize = this.visualizeResults && receipt.brief === 'GOAL_IMPLEMENT';
+        if (visualize && stage === 1) {
+          this.handoverViews.set(input.id, toolFacts(options).requests.find(item => item.id === request.id));
+          assert.ok(options.tools.some(tool => tool.name === 'html_render'), 'the real Lead receives the enabled publisher without gaining repository tools');
+          yield* call(`goal-page-${++this.counter}`, 'html_render', { html: '<!doctype html><html><body><h1>Recorded answer</h1><p>The saved value changed from 41 to 42.</p></body></html>', title: 'Repair evidence', height: 180 }); return;
+        }
+        if (stage === (visualize ? 2 : 1)) {
+          const view = visualize ? this.handoverViews.get(input.id) : toolFacts(options).requests.find(item => item.id === request.id);
           const declaration = handover(view, `${request.title}: assigned work and readback are complete.`, 'completed', []);
           if (request.title === 'Repair goal') declaration.reportRefs.unshift(...this.priorReports);
           yield* call(`goal-deliver-${++this.counter}`, 'project_deliver', declaration); return;
@@ -345,7 +353,7 @@ async function desktopBridge(root) {
   await new Promise(done => server.listen(0, '127.0.0.1', done));
   return { requests, address: `http://127.0.0.1:${server.address().port}`, close: () => new Promise(done => server.close(done)) };
 }
-async function bootHost(home, model, teamConfig, allowUnavailable = false) {
+async function bootHost(home, model, teamConfig, allowUnavailable = false, visualRepliesEnabled = false) {
   const config = join(home, 'cordis.yml'); await writeFile(config, '[]\n');
   const web = dirname(cliRequire.resolve('@deepseek-ai/dsh-web-app/package.json')), manifest = JSON.parse(readFileSync(join(web, 'package.json'), 'utf8'));
   const patches = [...loadOverlayPatches('project-composition', join(harness, 'packages/bundle/base/cordis.patch.yml')),
@@ -353,6 +361,7 @@ async function bootHost(home, model, teamConfig, allowUnavailable = false) {
     { id: 'storage-json', config: { root: join(home, 'storages') } }, { id: 'session-persistence-jsonl', config: { root: join(home, 'sessions') } },
     { id: 'mcp-servers-file', config: { path: join(home, 'mcp-servers.yaml'), watch: false } }, { id: 'agent-default-model', config: { provider: 'composition', model: 'project-model' } },
     { id: 'agent-preset-registry', config: { default: 'standard' } },
+    ...visualRepliesEnabled ? [{ id: 'visual-replies', config: { enabled: true } }] : [],
     // Project roles explicitly stay native even when a user's ambient mode is PTC.
     { id: 'tools', config: { mode: 'ptc' } },
     ...['webserver', 'hmr', 'web-runtime', 'session-telemetry-otel', 'modules', 'connection', 'session-log-download', 'open-in-app', 'client-hmr', 'directory-picker'].map(id => ({ id, disabled: true })),
@@ -589,14 +598,67 @@ test('native failed work is explicitly replaced without erasing history or bypas
   }
 });
 
+test('native corrected handovers retain real pages through repeated declarations and durable restart without claiming another request', { timeout: 120000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'whale-project-page-correction-')), home = join(root, 'home'), directory = join(root, 'selected');
+  await mkdir(home); await mkdir(directory);
+  const bridge = await desktopBridge(root), model = new class extends ScriptedModel {
+    first; second;
+    async *stream(options) {
+      this.requests.push(options); assert.ok(options.tools.some(tool => tool.name === 'html_render'));
+      const stage = this.stages.get('page-correction') ?? 0; this.stages.set('page-correction', stage + 1);
+      const request = title => ({ title, goal: `Explain the ${title.toLowerCase()} using its published diagram.`, conditions: ['Publish the actual diagram and explain its recorded result'], scopeCeiling: 'readonly' });
+      const publish = title => ({ html: `<!doctype html><html><body><h1>${title}</h1><p>Recorded result evidence.</p></body></html>`, title, height: 180 });
+      if (!stage) { yield* call('first-page-request', 'project_request', request('First result')); return; }
+      if (stage === 1) { this.first = toolFacts(options); yield* call('first-page-publication', 'html_render', publish('First diagram')); return; }
+      if ([2, 3, 7].includes(stage)) { yield* call(`first-page-handover-${stage}`, 'project_deliver', handover(this.first, `First result explanation, correction ${stage}.`, 'completed', [])); return; }
+      if (stage === 4) { yield* call('second-page-request', 'project_request', request('Second result')); return; }
+      if (stage === 5) { this.second = toolFacts(options); yield* call('second-page-publication', 'html_render', publish('Second diagram')); return; }
+      if (stage === 6) { yield* call('second-page-handover', 'project_deliver', handover(this.second, 'Second result explanation.', 'completed', [])); return; }
+      yield* blocks('Both diagrams were published. The first explanation is corrected; the second result keeps its own evidence.');
+    }
+  }(); let ctx;
+  const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
+  try {
+    ctx = await bootHost(home, model, undefined, false, true); const host = ctx.projects;
+    const { project } = await host.command('create', { requestId: 'page-correction-create', workingDirectory: directory }), lead = ctx.agents.get(project.coordinatorSessionId);
+    await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'two-diagram-results', mode: 'queue', content: [{ type: 'text', text: 'Explain the first and second results with their actual diagrams; correct the first explanation if needed.' }] }, signal);
+    await waitFor(() => host.state().deliveries.filter(item => item.status === 'delivered').length === 2, 'corrected native handovers commit their actual pages');
+    await lead.whenIdle(); await host.tail;
+    assert.deepEqual(model.failures, []); assert.equal(host.state().workstreams.length, 0);
+    const events = lead.session.snapshotEvents(), page = title => {
+      const publication = events.find(event => event.type === 'tool/result' && event.data.meta?.visualReply?.title === title);
+      assert.ok(publication && !publication.data.message.isError);
+      return { sessionId: lead.id, callId: publication.data.message.toolCallId,
+        file: publication.data.message.content.find(block => block.type === 'file').attachment, title, height: 180 };
+    };
+    const firstPage = page('First diagram'), secondPage = page('Second diagram'), saved = structuredClone(host.state().deliveries);
+    const firstRows = saved.filter(item => item.requestId === model.first.id), second = saved.find(item => item.requestId === model.second.id);
+    assert.deepEqual(firstRows.map(item => item.status), ['obsolete', 'obsolete', 'delivered']);
+    assert.ok(firstRows.every(item => item.requestRevision === model.first.revision && item.turn === second.turn));
+    for (const item of firstRows) assert.deepEqual(item.pages, [firstPage]);
+    assert.equal(second.status, 'delivered'); assert.deepEqual(second.pages, [secondPage]);
+    assert.equal(await ctx.sessions.flush(lead.session), true);
+    await disposeProfileApplication(ctx); ctx = undefined;
+    const restarted = new ScriptedModel(); ctx = await bootHost(home, restarted);
+    assert.deepEqual(ctx.projects.state().deliveries, saved);
+    assert.equal(restarted.requests.length, 0, 'durable page ownership recovery does not rerun the model or publications');
+  } finally {
+    if (ctx) await ctx.fiber.dispose(); await bridge.close();
+    for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    assert.ok(root.startsWith(join(tmpdir(), 'whale-project-page-correction-'))); await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('native goal stages continue without another human and commit exact delivery before durable restart', { timeout: 120000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'whale-project-goal-')), home = join(root, 'home'), directory = join(root, 'selected');
   await mkdir(home); await mkdir(directory); await writeFile(join(directory, 'answer.txt'), '41\n');
   const bridge = await desktopBridge(root), model = new RequirementModel(); let ctx;
+  model.visualizeResults = true;
   const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
   try {
-    ctx = await bootHost(home, model); const host = ctx.projects;
+    ctx = await bootHost(home, model, undefined, false, true); const host = ctx.projects;
     const { project } = await host.command('create', { requestId: 'goal-create', workingDirectory: directory }), lead = ctx.agents.get(project.coordinatorSessionId);
     assert.equal(model.requests.length, 0);
     await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'whole-goal', mode: 'queue', content: [{ type: 'text', text: 'GOAL_REPAIR' }] }, signal);
@@ -626,6 +688,11 @@ test('native goal stages continue without another human and commit exact deliver
     const reply = events.find(event => event.type === 'assistant/message' && event.data.message.id === delivered.replyMessageId);
     assert.ok(accepted && !accepted.data.message.isError); assert.ok(reply.seq > accepted.seq); assert.equal(reply.data.turn, delivered.turn);
     assert.ok(events.some(event => event.type === 'turn/end' && event.data.turn === delivered.turn && event.data.reason.kind === 'completed'));
+    const pageCall = events.find(event => event.type === 'tool/call' && event.data.name === 'html_render' && event.data.turn === delivered.turn);
+    const pageResult = events.find(event => event.type === 'tool/result' && event.data.message.toolCallId === pageCall?.data.callId);
+    assert.ok(pageResult && !pageResult.data.message.isError);
+    assert.deepEqual(delivered.pages, [{ sessionId: lead.id, callId: pageCall.data.callId,
+      file: pageResult.data.message.content.find(block => block.type === 'file').attachment, title: 'Repair evidence', height: 180 }]);
     assert.ok(host.stream(work.id).delegations.every(item => item.report.summarizedBy === delivered.replyMessageId));
     const manifestA = structuredClone(host.requirements.view(host.requirements.get(project.id, request.id)).requiredWork);
     await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'independent-goal-b', mode: 'queue', content: [{ type: 'text', text: 'GOAL_B' }] }, signal);

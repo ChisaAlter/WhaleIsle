@@ -30,8 +30,20 @@ interface MainSelection {
 }
 
 interface OwnedSessionActions {
-  readonly rename: (sessionId: SessionId) => void
-  readonly archive: (sessionId: SessionId) => void
+  readonly rename: (sessionId: SessionId) => void | Promise<void>
+  readonly archive: (sessionId: SessionId) => void | Promise<void>
+  readonly restore?: (sessionId: SessionId) => void | Promise<void>
+}
+
+/** Display membership supplied by a Session's presentation owner, never a Workspace account. */
+export interface OwnedSessionNavigationEntry {
+  readonly sessionId: SessionId
+  readonly workingDirectory: string
+  readonly archived: boolean
+}
+
+export interface OwnedSessionNavigation extends OwnedSessionNavigationEntry {
+  readonly owner: string
 }
 
 /** A composed feature that adopts a directory from the New Session picker. */
@@ -56,7 +68,9 @@ export interface UiWorkspace {
   /** Register the presentation owner's rename and archive flows; returns their disposer. */
   registerSessionActions(owner: string, actions: OwnedSessionActions): () => void
   /** Resolve an action against the Session's current presentation owner, with its identity bound. */
-  resolveSessionAction(sessionId: SessionId, action: keyof OwnedSessionActions): (() => void) | undefined
+  resolveSessionAction(sessionId: SessionId, action: keyof OwnedSessionActions): (() => void | Promise<void>) | undefined
+  readonly sessionNavigation: HostObservable<readonly OwnedSessionNavigation[]>
+  registerSessionNavigation(owner: string, entries: HostObservable<readonly OwnedSessionNavigationEntry[]>): () => void
   /** Additional directory actions in the New Session picker. */
   readonly directoryActions: HostObservable<readonly WorkspaceDirectoryAction[]>
   /** Register one feature action; removal also updates the picker projection. */
@@ -173,6 +187,9 @@ export class DirectoryBrowseError extends Error {
 /** Implements Workspace archive and directory UI operations. */
 class UiWorkspaceService extends Service implements UiWorkspace {
   private readonly sessionActions = new Map<string, OwnedSessionActions>()
+  private readonly navigationSources = new Map<string, HostObservable<readonly OwnedSessionNavigationEntry[]>>()
+  private readonly navigationStore = createSnapshotStore<readonly OwnedSessionNavigation[]>([])
+  readonly sessionNavigation: HostObservable<readonly OwnedSessionNavigation[]> = this.navigationStore
   private readonly directoryActionStore = createSnapshotStore<readonly WorkspaceDirectoryAction[]>([])
   readonly directoryActions: HostObservable<readonly WorkspaceDirectoryAction[]> = this.directoryActionStore
   private composedPicker: (() => Promise<string | null>) | undefined
@@ -238,10 +255,30 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     }
   }
 
-  resolveSessionAction(sessionId: SessionId, action: keyof OwnedSessionActions): (() => void) | undefined {
+  resolveSessionAction(sessionId: SessionId, action: keyof OwnedSessionActions): (() => void | Promise<void>) | undefined {
     const owner = this.sessions.list.getSnapshot().byId[sessionId]?.presentation?.owner
     const actions = owner === undefined ? undefined : this.sessionActions.get(owner)
-    return actions === undefined ? undefined : () => { actions[action](sessionId) }
+    const execute = actions?.[action]
+    return execute === undefined ? undefined : () => execute(sessionId)
+  }
+
+  registerSessionNavigation(owner: string, entries: HostObservable<readonly OwnedSessionNavigationEntry[]>): () => void {
+    if (this.navigationSources.has(owner)) throw new Error(`uiWorkspace.registerSessionNavigation: duplicate owner ${owner}`)
+    const publish = (): void => {
+      this.navigationStore.set([...this.navigationSources].flatMap(([entryOwner, source]) =>
+        source.getSnapshot().map(entry => ({ ...entry, owner: entryOwner }))))
+    }
+    this.navigationSources.set(owner, entries)
+    const unsubscribe = entries.subscribe(publish)
+    publish()
+    let removed = false
+    return () => {
+      if (removed) return
+      removed = true
+      unsubscribe()
+      this.navigationSources.delete(owner)
+      publish()
+    }
   }
 
   async connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId> {

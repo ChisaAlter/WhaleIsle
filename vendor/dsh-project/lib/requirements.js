@@ -12,6 +12,35 @@ const stableId = (kind, callId) => `${kind}-${createHash('sha256').update(callId
 
 export class ProjectRequirements {
   constructor(service) { this.service = service; }
+  publishedPages(events, sessionId, turn) {
+    const start = events.findLast(event => event.type === 'turn/start' && event.data.turn === turn);
+    if (!start) return [];
+    const calls = new Map(events.filter(event => event.type === 'tool/call' && event.data.turn === turn).map(event => [event.data.callId, event]));
+    const pages = [];
+    for (const event of events) {
+      if (event.seq <= start.seq) continue;
+      let callId, content, presentation;
+      if (event.type === 'tool/result') {
+        const message = event.data.message, call = calls.get(message.toolCallId);
+        if (call?.data.name !== 'html_render' || event.data.turn !== turn || message.isError || event.data.error) continue;
+        const meta = event.data.meta?.visualReply;
+        if (meta?.version !== 1) continue;
+        callId = message.toolCallId; content = message.content; presentation = meta;
+      } else if (event.type === 'tool/ptc-dispatch') {
+        const value = event.data;
+        if (value.name !== 'html_render' || value.isError || value.error || !calls.has(value.rootCallId)) continue;
+        callId = value.subCallId; content = value.content; presentation = value.arguments;
+      } else continue;
+      if (!Array.isArray(content) || content.some(part => part.type !== 'text' && part.type !== 'file')) continue;
+      const files = content.filter(part => part.type === 'file'), file = files[0]?.attachment, height = presentation?.height ?? 480;
+      if (files.length !== 1 || typeof callId !== 'string' || !callId || typeof file?.attachmentId !== 'string' || !file.attachmentId
+        || typeof file.name !== 'string' || !file.name.endsWith('.html') || !Number.isInteger(file.bytes) || file.bytes <= 0
+        || typeof presentation?.title !== 'string' || !presentation.title.trim() || !Number.isInteger(height) || height < 80 || height > 2000) continue;
+      if (!pages.some(page => page.callId === callId)) pages.push({ sessionId, callId,
+        file: { attachmentId: file.attachmentId, name: file.name, bytes: file.bytes }, title: presentation.title, height });
+    }
+    return pages;
+  }
   rows(projectId) { return (this.service.state().requests ?? []).filter(item => item.projectId === projectId); }
   get(projectId, id, revision) {
     const row = this.rows(projectId).find(item => item.id === id);
@@ -182,10 +211,15 @@ export class ProjectRequirements {
       reportRefs: (args.reportRefs ?? []).map(reference => this.validReport(row.projectId, reference, args.outcome === 'completed')),
       terminalRefs: (args.terminalRefs ?? []).map(reference => this.validTerminal(row.projectId, reference)),
       requiredDelegations: this.manifest(row), declaredCallId: exec.rootCallId ?? exec.callId, sessionId: actor.agent.id, turn: input.call.data.turn, status: 'draft', at: Date.now() };
+    const published = this.publishedPages(input.events, actor.agent.id, draft.turn);
     this.validate(draft);
     await service.serial(async () => { this.validate(draft); await service.write(state => {
       state.deliveries ??= [];
       if (!state.deliveries.some(item => item.id === draft.id)) {
+        // Replacing this revision's draft retains its pages; other handovers keep theirs.
+        const claimed = new Set(state.deliveries.filter(item => item.sessionId === draft.sessionId && item.turn === draft.turn
+          && !(item.requestId === draft.requestId && item.requestRevision === draft.requestRevision && ['draft', 'obsolete'].includes(item.status))).flatMap(item => item.pages ?? []).map(page => page.callId));
+        draft.pages = published.filter(page => !claimed.has(page.callId));
         for (const previous of state.deliveries.filter(item => item.requestId === row.id && item.status === 'draft')) previous.status = 'obsolete';
         state.deliveries.push(draft);
       }
@@ -237,6 +271,7 @@ export class ProjectRequirements {
     const reply = events.findLast(event => event.seq > accepted.seq && event.type === 'assistant/message' && event.data.turn === draft.turn
       && !event.data.interrupted && !event.data.message.content?.some(block => block.type === 'tool-call') && text(event.data.message).trim());
     if (!reply) { await this.failed(draft, 'No visible final coordinator reply followed the handover declaration.'); return; }
+    const publications = new Map(this.publishedPages(events, session.id, draft.turn).map(page => [page.callId, page]));
     await this.service.serial(async () => {
       const stored = (this.service.state().deliveries ?? []).find(item => item.id === draft.id); if (stored?.status !== 'draft') return;
       const project = this.service.project(draft.projectId);
@@ -246,6 +281,7 @@ export class ProjectRequirements {
       catch (error) { await this.service.write(state => { const item = state.deliveries.find(item => item.id === draft.id); item.status = 'obsolete'; item.error = error.message; }); return; }
       await this.service.write(state => {
         const item = state.deliveries.find(item => item.id === draft.id); item.status = 'delivered'; item.replyMessageId = reply.data.message.id; delete item.error;
+        item.pages = (item.pages ?? []).filter(page => JSON.stringify(publications.get(page.callId)) === JSON.stringify(page));
         for (const reference of item.reportRefs) {
           const work = state.workstreams.find(work => work.id === reference.workstreamId), receipt = work.delegations.find(receipt => receipt.ref === reference.delegationRef);
           receipt.report.summarizedBy = item.replyMessageId;
@@ -376,7 +412,7 @@ export class ProjectRequirements {
           return count + (item.delegations.find(entry => entry.ref === reference.delegationRef)?.report?.artifacts.length ?? 0);
         }, 0) } };
     const delivery = delivered && { id: delivered.id, outcome: delivered.outcome, summary: delivered.summary, evidence: delivered.evidence,
-      remainingIssues: delivered.remainingIssues, at: delivered.at, applicable, reportRefs: delivered.reportRefs, terminalRefs: delivered.terminalRefs ?? [],
+      remainingIssues: delivered.remainingIssues, at: delivered.at, applicable, reportRefs: delivered.reportRefs, terminalRefs: delivered.terminalRefs ?? [], pages: delivered.pages ?? [],
       artifacts: delivered.reportRefs.flatMap(reference => {
         const item = service.stream(reference.workstreamId, projectId);
         const receipt = item.delegations.find(entry => entry.ref === reference.delegationRef);

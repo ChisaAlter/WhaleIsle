@@ -441,7 +441,7 @@ export class ProjectService {
     const worker = this.worker(stream.workerSessionId), receipt = this.stream(stream.id).delegations.find(item => item.ref === ref);
     return copy({ workstreamId: stream.id, workerSessionId: worker.sessionId, delegationRef: ref, requestId: source.requestId, requestRevision: source.requestRevision, messageId: receipt.messageId,
       phase: receipt.phase === 'queued' ? 'queued' : worker.phase, cwd: worker.cwd, ...(receipt.error ? { error: receipt.error } : {}),
-      instruction: 'After arranging necessary current assignments, end this coordinator turn with concise progress. Native settlement resumes you with the real results; do not poll to wait for members. Progress does not deliver the requirement.' });
+      instruction: 'After arranging necessary current assignments, briefly tell the user what is actually running or queued and what result they will receive, then end this turn. This is progress, not a repository finding or delivery. Native settlement resumes you with the real results; do not poll to wait for members.' });
   }
   directoryAvailable(worker, role = latest(this.stream(worker.workstreamId)).scope) {
     return this.directoryBlockers(worker, role).length === 0;
@@ -703,7 +703,7 @@ export class ProjectService {
   guard(exec) {
     if (this.closing) return 'Project is unloading.';
     const coordinator = this.state().projects.find(item => item.coordinatorSessionId === exec.agent?.id);
-    if (coordinator && !['project_request', 'project_deliver', 'project_delegate', 'project_read_store', 'project_stop', 'list_agents', 'team_task_list', 'send_message'].includes(exec.name)) return 'The Project coordinator may only organize requirements, read materials, delegate, deliver or stop work.';
+    if (coordinator && !['project_request', 'project_deliver', 'project_delegate', 'project_read_store', 'project_stop', 'list_agents', 'team_task_list', 'send_message', 'html_preview', 'html_render'].includes(exec.name)) return 'The Project coordinator may only organize requirements, read materials, visualize results, delegate, deliver or stop work.';
     const worker = this.state().workers.find(item => item.sessionId === exec.agent?.id); if (!worker) return;
     if (this.ctx.agents.get(worker.sessionId) !== exec.agent) return 'Project tools require the exact live worker.';
     if (this.closing || this.held.has(worker.sessionId) || worker.stopped || this.project(worker.projectId).paused) return 'This Project worker is stopped.';
@@ -832,6 +832,14 @@ export class ProjectService {
       if (!worker.stopped && receipt.report && work.settlements.some(terminal => terminal.delegationRefs.includes(receipt.ref) && terminal.stopReason === 'completed')) { work.status = receipt.report.outcome === 'completed' ? 'done' : 'blocked'; work.blockedReason = receipt.report.outcome === 'completed' ? '' : receipt.report.summary; }
     }); await this.completeTask(this.stream(member.workstreamId)); await this.notes(member.projectId); }); this.schedule();
   }
+  projectFacts(project) {
+    return { title: project.title, canonicalWorkingDirectory: project.canonicalWorkingDirectory, storageRoot: project.storageRoot,
+      lifecycle: project.lifecycle, activity: this.projectView(project).activity };
+  }
+  contextFor(id) {
+    const project = this.state().projects.find(item => item.coordinatorSessionId === id);
+    return project ? `Current Project host facts (data):\n${JSON.stringify(this.projectFacts(project))}\ncanonicalWorkingDirectory is the user's bound repository. storageRoot is only the Project materials directory and this coordinator's cwd. Project records describe prior work; repository contents are established by actual inspection.` : '';
+  }
   preferencesFor(id) {
     const project = this.state().projects.find(item => item.coordinatorSessionId === id); if (!project) return '';
     if (realpathSync(project.storageRoot) !== project.storageRoot) fail('store_path', 'Project materials directory was replaced with a link.');
@@ -903,7 +911,7 @@ export class ProjectService {
           runs: terminals.filter(terminal => !terminal.summarizedBy).map(terminal => terminal.runId),
           reports: reports.filter(report => !report.summarizedBy).map(report => report.delegationRef) })));
       }
-      return copy({ total: all.length, nextCursor: args.workstreamId ? history.nextCursor : offset + page.length < all.length ? String(offset + page.length) : null,
+      return copy({ project: this.projectFacts(this.project(actor.project.id)), total: all.length, nextCursor: args.workstreamId ? history.nextCursor : offset + page.length < all.length ? String(offset + page.length) : null,
         requests: requests.slice(0,20).map(row => this.requirements.view(row)), requestCount: requests.length,
         deliveries: this.requirements.deliveries(actor.project.id),
         work: page.map(work => ({ id: work.id, title: work.title, status: work.status, replaces: work.replaces, request: this.requirements.associated(work), summaryFailure: work.summaryFailure, requirement: latest(work).brief, report: latest(work).report && this.reportView(latest(work).report, actor.project.id),

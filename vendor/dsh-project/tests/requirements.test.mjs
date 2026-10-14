@@ -15,6 +15,15 @@ function fixture() {
   const human = texts => { turn++; append('turn/start', { turn }); texts.forEach((text, index) => append('user/message', { id: `human-${turn}-${index}`, source: { kind: 'user' }, content: [{ type: 'text', text }] })); };
   const exec = name => { const callId = `call-${events.length}`; append('tool/call', { turn, callId, name }); return { signal, callId }; };
   const result = (execution, value) => append('tool/result', { turn, message: { toolCallId: execution.callId, isError: false, content: [{ type: 'text', text: JSON.stringify(value) }] } });
+  const publish = ({ nested = false, title = 'Evidence diagram', failed = false, name = 'html_render' } = {}) => {
+    const execution = exec(nested ? 'run_code' : name), callId = nested ? `${execution.callId}:ptc:1` : execution.callId;
+    const file = { attachmentId: `sha256:${callId}`, name: 'visual-reply.html', bytes: 120 }, height = nested ? 480 : 320;
+    const content = [{ type: 'text', text: 'Visual reply published' }, { type: 'file', attachment: file }];
+    if (nested) append('tool/ptc-dispatch', { rootCallId: execution.callId, parentCallId: execution.callId, subCallId: callId,
+      name, arguments: { html: '<!doctype html><html></html>', title }, isError: failed, content });
+    else append('tool/result', { turn, message: { toolCallId: callId, isError: failed, content }, meta: { visualReply: { version: 1, title, height } } });
+    return { sessionId: session.id, callId, file, title, height };
+  };
   const accept = async args => { const execution = exec('project_request'); const value = await service.acceptRequest(actor, { goal: 'Repair and validate login', scopeCeiling: 'development', conditions: ['Login works'], constraints: ['Preserve user work'], ...args }, execution); result(execution, value); return { request: state.requests.find(row => row.id === value.id) }; };
   const add = (request, outcome = 'completed') => {
     const id = `work-${state.workstreams.length}`, ref = `ref-${id}`, runId = `run-${id}`, report = { delegationRef: ref, callId: `report-${id}`, outcome, summary: 'Actual worker finding', artifacts: [], evidence: ['Observed result'], remainingIssues: [], at: Date.now() };
@@ -26,8 +35,29 @@ function fixture() {
   const declare = async (request, refs, extra = {}) => { const execution = exec('project_deliver'); const value = await service.deliver(actor, { requestId: request.id, requestRevision: request.revision, outcome: 'completed', summary: 'The required result is available.', reportRefs: refs.filter(row => row.reportId).map(({ workstreamId, delegationRef, reportId }) => ({ workstreamId, delegationRef, reportId })), terminalRefs: refs.map(({ workstreamId, delegationRef, runId }) => ({ workstreamId, delegationRef, runId })), evidence: ['Actual worker evidence; no independent UI claim'], remainingIssues: [], ...extra }, execution); result(execution, value); return value; };
   const reply = async (id, interrupted = false) => { const event = append('assistant/message', { turn, interrupted, message: { id, content: [{ type: 'text', text: 'Visible useful result.' }] } }); await service.assistantReply(session, event); };
   const end = async kind => { const event = append('turn/end', { turn, reason: { kind } }); await service.assistantReply(session, event); };
-  return { service, state, project, actor, session, events, human, exec, result, accept, add, declare, reply, end, flushes: () => flushes, persist(value) { persist = value; }, checkpoint() { durableEvents = structuredClone(events); } };
+  return { service, state, project, actor, session, events, human, exec, result, publish, accept, add, declare, reply, end, flushes: () => flushes, persist(value) { persist = value; }, checkpoint() { durableEvents = structuredClone(events); } };
 }
+
+test('empty Project history still supplies the authoritative bound repository in notes and Lead context', async () => {
+  const f = fixture();
+  Object.assign(f.project, { title: 'Existing repository', canonicalWorkingDirectory: '/existing-repository' });
+  f.service.workRows = async () => [];
+  f.service.readStore = async () => ({ userText: '' });
+  const notes = await f.service.readStoreTool(f.actor, { path: 'notes.md' });
+  assert.equal(notes.project.title, 'Existing repository');
+  assert.equal(notes.project.canonicalWorkingDirectory, '/existing-repository');
+  assert.equal(notes.project.storageRoot, '/project-materials');
+  assert.equal(notes.project.lifecycle, 'ready');
+  assert.equal(notes.project.activity.state, 'idle');
+  assert.deepEqual(notes.requests, []); assert.deepEqual(notes.work, []); assert.equal(notes.userNotes, '');
+  const context = f.service.contextFor(f.actor.agent.id);
+  const facts = JSON.parse(context.split('\n')[1]);
+  assert.deepEqual(facts, notes.project);
+  assert.equal(f.service.contextFor('unrelated-session'), '');
+  f.actor.agent.status = 'running';
+  assert.equal(JSON.parse(f.service.contextFor(f.actor.agent.id).split('\n')[1]).activity.state, 'running', 'context reflects the current host facts');
+  assert.equal(notes.project.activity.state, 'idle', 'tool replies retain their own snapshot');
+});
 
 test('authority requirements page their original goals by Project without mutating authorization', async () => {
   const f = fixture();
@@ -162,6 +192,53 @@ test('missing persistence keeps results pending; durable reply reconciliation re
   assert.equal(projected.project.activity.state, 'summaryFailed', 'an older successful delivery cannot hide the latest unproven handover');
   assert.equal(projected.project.currentRequests[0].handoverError, f.state.deliveries.at(-1).error);
   assert.equal(f.service.requirements.deliveries(f.project.id).items[0].status, 'historical');
+});
+
+test('handover pages use only successful native and PTC publications from this exact Lead turn', async () => {
+  const f = fixture(); f.human(['Explain an earlier result']); f.publish({ title: 'Older unrelated diagram' }); await f.end('completed');
+  assert.equal((f.state.deliveries ?? []).length, 0, 'publishing a page alone never declares a handover');
+  f.human(['Repair login']); const { request } = await f.accept({}), work = f.add(request);
+  const native = f.publish({ title: 'Native evidence' }), nested = f.publish({ nested: true, title: 'PTC evidence' });
+  f.publish({ failed: true }); f.publish({ nested: true, failed: true });
+  f.publish({ name: 'other_tool' }); f.publish({ nested: true, name: 'other_tool' });
+  await f.declare(request, [work.ref], { pages: [{ sessionId: 'guessed-session', file: { attachmentId: 'guessed-id' } }] });
+  await f.reply('actual-final'); await f.end('completed');
+  const delivery = f.state.deliveries[0];
+  assert.deepEqual(delivery.pages, [native, nested]);
+  assert.deepEqual((await f.service.command('requests/get', { projectId: f.project.id, requestId: request.id })).card.delivery.pages, [native, nested]);
+  assert.deepEqual((await f.service.command('store/list', { projectId: f.project.id, kind: 'deliveries' })).deliveries.items[0].pages, [native, nested]);
+});
+
+test('pages published after the declaration are not attached to an earlier handover', async () => {
+  const f = fixture(); f.human(['Repair login']); const { request } = await f.accept({}), work = f.add(request);
+  await f.declare(request, [work.ref]);
+  f.publish({ title: 'Published after the declared handover' }); f.publish({ nested: true });
+  await f.reply('actual-final'); await f.end('completed');
+  assert.equal(f.state.deliveries[0].status, 'delivered');
+  assert.deepEqual(f.state.deliveries[0].pages, []);
+});
+
+test('same-turn handovers retain their own publication identities without reusing already claimed pages', async () => {
+  const f = fixture(); f.human(['Two independent results']);
+  const first = (await f.accept({ goal: 'Explain first result' })).request, second = (await f.accept({ goal: 'Explain second result' })).request;
+  const firstPage = f.publish({ title: 'First result' }); await f.declare(first, []);
+  const secondPage = f.publish({ nested: true, title: 'Second result' }); await f.declare(second, []);
+  await f.reply('two-results'); await f.end('completed');
+  assert.deepEqual(f.state.deliveries.find(item => item.requestId === first.id).pages, [firstPage]);
+  assert.deepEqual(f.state.deliveries.find(item => item.requestId === second.id).pages, [secondPage]);
+});
+
+test('durable reconciliation retains actual publications and cannot manufacture a page from an undurable reply', async () => {
+  const f = fixture(); f.human(['Repair login']); const { request } = await f.accept({}), work = f.add(request);
+  const page = f.publish({ title: 'Persisted evidence' }), nested = f.publish({ nested: true });
+  await f.declare(request, [work.ref]); await f.reply('durable-final'); f.persist(false);
+  await assert.rejects(f.end('completed'), /No native Session persistence/);
+  await f.service.requirements.reconcile(f.project);
+  assert.equal(f.state.deliveries[0].status, 'draft');
+  f.persist(true); f.checkpoint(); await f.service.requirements.reconcile(f.project);
+  assert.equal(f.state.deliveries[0].status, 'delivered');
+  assert.deepEqual(f.state.deliveries[0].pages, [page, nested]);
+  assert.equal(f.state.deliveries[0].replyMessageId, 'durable-final');
 });
 
 test('revision, missing required result, unsettled work and interrupted replies cannot create complete delivery', async () => {
