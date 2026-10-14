@@ -768,6 +768,12 @@ function radioNextIndex(enabledList, currentIndex, key) {
 function renderRouteControls(status) {
   const routes = Array.isArray(status?.routes) ? status.routes : [];
   const current = status?.downloadRoute || '';
+  const componentRoute = document.querySelector('[data-comp-route]');
+  if (componentRoute) {
+    const selected = routes.find(route => route.id === current);
+    componentRoute.querySelector('.cur-line').textContent = selected?.label || selected?.id || '';
+    componentRoute.hidden = !selected;
+  }
   // Remember which route had focus so an innerHTML re-render (triggered by a
   // status refresh) can restore focus to the same logical option by id.
   const focusedPickerRoute = document.activeElement?.dataset?.routePick;

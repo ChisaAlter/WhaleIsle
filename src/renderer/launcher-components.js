@@ -440,17 +440,6 @@
       <ul class="list" data-comp-list></ul>`;
     state.list = el.querySelector('[data-comp-list]');
     el.querySelector('[data-comp-refresh]').addEventListener('click', () => void refresh(true));
-    const routeNode = el.querySelector('[data-comp-route]');
-    if (routeNode && state.shell && typeof state.shell.launcherStatus === 'function') {
-      void state.shell.launcherStatus().then((status) => {
-        const routes = Array.isArray(status?.routes) ? status.routes : [];
-        const current = routes.find((route) => route.id === status?.downloadRoute);
-        if (current) {
-          routeNode.querySelector('.cur-line').textContent = current.label || current.id;
-          routeNode.hidden = false;
-        }
-      }).catch(() => {});
-    }
     void refresh();
   }
 
