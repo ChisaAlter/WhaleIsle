@@ -1,9 +1,9 @@
-# Whale Isle 0.3.6
+# Whale Isle 0.3.7
 
-- **Mac support**: An ARM64 DMG with native traffic-light buttons, collapsed sidebar controls and fullscreen support.
-- **Next-prompt suggestions**: Click or press Tab to fill the draft without sending it automatically. Enabled by default; turn it off in Settings → Interface. Generation makes an additional model call.
-- **Messages and shutdown**: Fixes for cleanup after message re-editing, and removal of the second confirmation after a failed shutdown.
-- **Interface and performance**: Improved launcher spacing, narrow-window and high-DPI layouts, with lower runtime overhead for file previews, terminals and the whale-girl assistant.
-- **Updates and recovery**: Improved differential and full downloads, installation detection and startup failure recovery.
+- **WhaleBridge downloads**: Read the component manifest from public release attachments and pin the download version, avoiding lookup, installation and update failures when the anonymous GitHub API quota is exhausted. File-size and SHA256 verification remain enabled.
+- **Download routes**: The Components heading follows GitHub/CNB route changes immediately.
+- **Interface feedback**: Fixes for confirmation dialog closing, reopening and focus handling. Account notifications disappear immediately after sign-out.
+- **Web previews**: Fixes for the original page flashing during picture-in-picture transitions, selection cancellation incorrectly reporting failure, and the selection toolbar failing to load in sandboxed previews.
+- **Desktop updates**: Full-installer handoff keeps the update pending until installation is confirmed, preventing premature completion notices.
 
-Supports Windows 10+ x64 and macOS 14+ Apple Silicon. Installers are unsigned; the Mac package is not notarized and does not include the bundled Office runtime. WhaleBridge and the ChatGPT plugin are installed and updated independently, and are not bundled with the desktop package. The Project local coordinator and persistent workers are excluded from this release.
+This release provides the Windows 10+ x64 installer. WhaleBridge and the ChatGPT plugin are installed and updated independently, and are not bundled with the desktop package.
