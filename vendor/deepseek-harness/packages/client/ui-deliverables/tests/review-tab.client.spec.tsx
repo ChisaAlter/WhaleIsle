@@ -2,7 +2,7 @@
 /** The review tab type: its addresses, its store, the row pairing of the split view, and the states its body draws. */
 import { renderFileActions } from './file-actions.tsx'
 import { useSyncExternalStore } from 'react'
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
@@ -369,10 +369,13 @@ describe('ReviewTab', () => {
     const diffs = new ChangesDiffStore()
     const { view, injected } = mount({ summaries, diffs, locale: zh })
     const url = changesDiffUrl(SESSION, 5, 0)
-    expect(view.getByRole('status').textContent).toBe(zh['diff.loading'])
+    expect(view.getByRole('alert').textContent).toBe(zh['diff.loading'])
     act(() => { diffs.state.set({ [url]: 'error' }) })
-    fireEvent.click(view.getByRole('button', { name: zh['presented.retry'] }))
+    const error = within(view.getByRole('alert'))
+    expect(error.getByText(zh['diff.error'])).toBeTruthy()
+    fireEvent.click(error.getByRole('button', { name: zh['presented.retry'] }))
     expect(injected.loadChangesDiff).toHaveBeenCalledTimes(2)
+    expect(injected.loadChangesDiff).toHaveBeenLastCalledWith(SESSION, 5, 0)
     act(() => { diffs.state.set({ [url]: 'missing' }) })
     expect(view.getByText(zh['diff.missing'])).toBeTruthy()
     act(() => { diffs.state.set({ [url]: { kind: 'binary', path: 'p', display: 'p' } }) })

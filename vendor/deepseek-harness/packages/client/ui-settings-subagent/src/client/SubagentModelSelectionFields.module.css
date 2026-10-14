@@ -24,40 +24,14 @@
   gap: 10px;
 }
 
-.hint,
-.notice,
-.invalid,
-.conflict {
+.hint {
   margin: 0;
   font-size: 12px;
   line-height: 1.5;
 }
 
-.hint,
-.notice {
+.hint {
   color: var(--dsw-alias-label-tertiary);
-}
-
-.invalid,
-.conflict {
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.catalogError {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 12px;
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.catalogError button {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--dsw-alias-brand-primary);
-  cursor: pointer;
 }
 
 .models {

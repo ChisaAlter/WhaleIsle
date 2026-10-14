@@ -11,7 +11,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
-import { SettingsSelect } from '@deepseek-ai/dsh-client-ui-primitives'
+import { SettingsSelect, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -118,11 +118,14 @@ export function VisionModelPicker(props: VisionModelPickerProps): ReactNode {
   const [loadFailure, setLoadFailure] = useState<string | undefined>(undefined)
   const [saveFailure, setSaveFailure] = useState<string | undefined>(undefined)
   const [saving, setSaving] = useState(false)
+  const [dismissedFailure, setDismissedFailure] = useState<string | undefined>()
+  const [saveSequence, setSaveSequence] = useState(0)
   const enabled = namespace !== undefined
 
   useEffect(() => {
     if (!enabled) return
     let cancelled = false
+    setLoadFailure(undefined)
     void api.llm.models({})
       .then((response) => {
         if (cancelled) return
@@ -131,6 +134,7 @@ export function VisionModelPicker(props: VisionModelPickerProps): ReactNode {
           return
         }
         setOptions(flattenGroups(response.result.value.groups))
+        setLoadFailure(undefined)
       })
       .catch((error: unknown) => {
         if (!cancelled) setLoadFailure(messageOf(error))
@@ -154,7 +158,9 @@ export function VisionModelPicker(props: VisionModelPickerProps): ReactNode {
     : undefined
 
   const save = (value: string): void => {
+    setSaveSequence(sequence => sequence + 1)
     setSaveFailure(undefined)
+    setDismissedFailure(undefined)
     setSaving(true)
     const ops = value === ''
       ? [{ op: 'unset' as const, path: ['provider'] }, { op: 'unset' as const, path: ['model'] }]
@@ -186,6 +192,7 @@ export function VisionModelPicker(props: VisionModelPickerProps): ReactNode {
           aria-label={t('visionModel')}
           value={current}
           disabled={!writable || saving}
+          loading={saving}
           options={[
             { id: '', label: t('visionModelOff') },
             ...staleOption === undefined ? [] : [{ id: staleOption.value, label: staleOption.label }],
@@ -198,12 +205,10 @@ export function VisionModelPicker(props: VisionModelPickerProps): ReactNode {
         />
       </div>
       <p className={styles['advancedHint']}>{t('visionModelHint')}</p>
-      {loadFailure === undefined
-        ? null
-        : <p className={styles['error']}>{`${t('visionModelLoadFailed')}: ${loadFailure}`}</p>}
-      {saveFailure === undefined
-        ? null
-        : <p className={styles['error']}>{`${t('visionModelSaveFailed')}: ${saveFailure}`}</p>}
+      {saveFailure !== undefined && dismissedFailure !== `save:${saveFailure}`
+        ? <Toast key={saveSequence} text={`${t('visionModelSaveFailed')}: ${saveFailure}`} holdMs={9000} onDone={() => { setDismissedFailure(`save:${saveFailure}`) }} />
+        : loadFailure !== undefined && dismissedFailure !== `load:${loadFailure}`
+          ? <Toast text={`${t('visionModelLoadFailed')}: ${loadFailure}`} holdMs={9000} onDone={() => { setDismissedFailure(`load:${loadFailure}`) }} /> : null}
     </div>
   )
 }

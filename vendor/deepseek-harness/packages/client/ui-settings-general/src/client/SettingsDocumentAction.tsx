@@ -1,8 +1,8 @@
 /** Optional settings-header action for opening a file-backed Host document. */
 
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SettingsDocumentStore } from './settings-document-store.ts'
 import css from './SettingsDocumentAction.module.css'
@@ -28,6 +28,8 @@ export type SettingsDocumentActionProps =
  */
 export function SettingsDocumentAction({ controller, useSnapshot, t }: SettingsDocumentActionProps): ReactNode {
   const state = useSnapshot(snapshot => snapshot)
+  const [notice, setNotice] = useState<{ id: number; text: string; success: boolean } | null>(null)
+  const noticeId = useRef(0)
 
   useEffect(() => {
     void controller.load()
@@ -37,15 +39,24 @@ export function SettingsDocumentAction({ controller, useSnapshot, t }: SettingsD
 
   return (
     <div className={css.action}>
-      {state.error === null ? null : <span className={css.error} role="alert">{t('openDocument.error')}</span>}
       <Button
         variant="outline"
         size="sm"
         disabled={state.opening}
-        onClick={() => { void controller.open() }}
+        loading={state.opening}
+        title={state.error !== null ? t('openDocument.error') : undefined}
+        onClick={() => {
+          void controller.open().then(accepted => {
+            if (accepted === undefined) return
+            setNotice({ id: ++noticeId.current, text: t(accepted ? 'openDocument.done' : 'openDocument.error'), success: accepted })
+          })
+        }}
       >
         {t('openDocument')}
       </Button>
+      {notice !== null && <Toast key={notice.id} text={notice.text}
+        {...notice.success ? { tone: 'success' as const } : {}}
+        holdMs={notice.success ? 3000 : null} dismissLabel={t('close')} onDone={() => { setNotice(null) }} />}
     </div>
   )
 }

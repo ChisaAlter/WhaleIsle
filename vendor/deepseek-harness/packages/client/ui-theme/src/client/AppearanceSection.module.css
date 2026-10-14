@@ -743,6 +743,14 @@
   min-width: 0;
 }
 
+.galleryDownload {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
 .galleryCard {
   display: flex;
   flex-direction: column;

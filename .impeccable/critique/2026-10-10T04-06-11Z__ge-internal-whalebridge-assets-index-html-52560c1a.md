@@ -1,0 +1,70 @@
+---
+target: 鲸桥UI审查
+total_score: 29
+max_score: 40
+na_heuristics:
+p0_count: 0
+p1_count: 0
+target_identity: "file:C:\\AI\\Deepseek-Harness-Desktop\\vendor\\whalebridge\\internal\\whalebridge\\assets\\index.html"
+target_fingerprint: "sha256:f2ac4ecfa0d954da7e77ff75136d998f699fdbb8b7d04c72e3ef4ef700f59f5b"
+target_path: "C:\\AI\\Deepseek-Harness-Desktop\\vendor\\whalebridge\\internal\\whalebridge\\assets\\index.html"
+timestamp: 2026-10-10T04-06-11Z
+slug: ge-internal-whalebridge-assets-index-html-52560c1a
+---
+Method: dual-agent (A: /root/ui_design_review · B: /root/ui_detector_review)
+
+# 鲸桥与启动器 UI 审查
+日期：2026-10-10。使用当前安装的 UI UX Pro Max 与 Impeccable 4.5.2，目标是当前工作区（包含既有未提交修改），未修改产品文件。
+
+两面均延续鲸屿的中性侧栏、语义色与控件几何，主操作清楚；优先补可读性和交互细节，无需整体换皮。评分是已观察路径的设计判断，不代表完整用户流程验收。
+
+| Nielsen 启发式 | 启动器 | 鲸桥 |
+|---|---:|---:|
+| 状态可见 | 3 | 3 |
+| 用户语言 | 3 | 3 |
+| 控制与退出 | 3 | 3 |
+| 一致性 | 3 | 3 |
+| 错误预防 | 2 | 3 |
+| 识别优于记忆 | 3 | 3 |
+| 操作效率 | 3 | 2 |
+| 视觉层级 | 3 | 3 |
+| 错误恢复 | 3 | 3 |
+| 帮助说明 | 2 | 3 |
+| 合计 | 28/40 | 29/40 |
+
+优点：启动器首页聚合状态、启动与更新；组件操作靠近组件说明。鲸桥解释来源→桥接→桌面端路径，表单有明确标签和高级设置折叠。普通及最窄窗口未观察到本次表单按钮裁切，鲸桥 Escape 退出和返回触发按钮已实际确认。
+
+## 五项优先问题
+1. [P2] 两面浅色辅助文字对比度不足（计算样式＋颜色计算）。
+共享辅助色 #81858c 在 #f9fafb / 白底约为 3.5:1 / 3.7:1，低于小字4.5:1目标。影响启动器说明、鲸桥caption/路径等。应提升功能辅助文本的语义色，分别检查浅深主题；保留低权重而非降低可读性。
+定位：src/renderer/launcher.css:122,884,957；vendor/whalebridge/internal/whalebridge/assets/style.css:27,38,50。
+建议：$impeccable colorize。
+
+2. [P2] 鲸桥切换模型显隐会丢失操作位置（当前源码直接证明，长列表未实测）。
+app.js:65通过innerHTML重建列表；237-240点击后重建、成功后load整页；22成功提示scrollTo顶部。连续整理模型和键盘操作会被打断。应保留滚动位置，按模型ID恢复焦点；被筛除时移到相邻模型；成功提示不强制滚动。
+建议：$impeccable harden。
+
+3. [P2] 启动器导入开关隐藏实际影响范围（源码＋页面观察，未执行导入）。
+launcher.html:243-252的title才说明“覆盖同名项/重装插件”“附件整树复制、不按已选会话”。仅看短标签无法判断范围。应把随选项变化的简短影响摘要放到开始导入按钮旁，复用已有选择摘要。
+建议：$impeccable clarify。
+
+4. [P2] 启动器线路弹层缺少方向键和选项焦点管理（源码＋隔离renderer事件检查）。
+launcher.js:1940-1977、2214-2231有listbox语义与Escape关闭，但打开不聚焦当前option、没有上下方向键，关闭不主动恢复所属触发按钮。隔离renderer中ArrowDown后焦点仍在rail-route-btn。应实现选项焦点、方向键/Home/End和关闭后的焦点返回。现有页签与确认框有焦点管理，不能扩大为全局键盘不可用。
+建议：$impeccable harden。
+
+5. [P2] 鲸桥窄窗导航占约43%首屏（本次真实380×522完整截图＋源码）。
+品牌、两行导航与单独帮助行占约223px，再加状态工具栏，配置计数与三步指引被推到首屏外。style.css:217的响应规则未达到项目“紧凑顶栏”意图。应压缩品牌为一行，把使用说明纳入导航第六格，保留原生拖拽空间；整幅窄窗复核主操作和状态。
+建议：$impeccable adapt。
+
+较小问题：鲸桥无模型时新建路由组仍写“点击下方已有模型”，没有前置条件引导；刷新/同步多为禁用按钮而缺动作专属加载反馈；380px连接状态为10px；启动器首页/组件状态缺克制的polite播报。收尾可用$impeccable polish。
+
+## 用户体验与用户画像
+认知负荷：主路径低至中等。六个导航与导入分类可识别，不应单凭数量重构；主要负担来自隐含导入规则、空路由前置条件及高级路由术语。首次使用者容易误判导入范围；键盘/读屏用户受线路菜单焦点与状态播报影响；熟练用户受模型列表定位重置影响。弹窗退出路径和标签表现良好。
+
+## 证据边界
+当前源码鲸桥重新Go编译到独立审查目录，并使用空配置运行真实后端；启动器使用生产prepareLauncher、registerSlimIpc和独立appData/userData，不伪造IPC。
+检查普通窗口、最窄窗口及安全的表单打开/取消；截图包含启动器首页/组件/设置/导入、鲸桥概览/供应商窄窗表单及深色窄窗概览。启动器深色主题未建立可靠截图，不宣称通过。
+CLI一次双markup扫描共15条原始记录（13 warning、2 advisory、3规则）。重复品牌记录合并；线路弹层裁切未证实并排除；“正在连接”来自初始HTML，实际已加载运行中。
+未验证真实订阅/OAuth、付费调用、已配置长模型列表的实际操作、导入后果、安装/更新和读屏实机。原生桌面合成截图取证未作为视觉通过依据。
+问题依据当前源码与本次取证，不使用旧版本截图替代。
+Questions to consider: 后续优先交互、可读性或窄窗布局？范围为前三项或全部五项？

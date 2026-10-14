@@ -5,7 +5,7 @@ import type { PluginEntryId } from '@deepseek-ai/dsh-api-remotes/client'
 import { Context } from '@deepseek-ai/cordis'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { PluginInventorySettingsTab } from '../src/client/PluginInventorySettingsTab.tsx'
 import type {
@@ -627,19 +627,42 @@ describe('PluginInventorySettingsTab', () => {
     const list = vi.fn<PluginInventorySettingsTabInjected['list']>()
       .mockRejectedValueOnce(new Error('private transport detail'))
       .mockResolvedValueOnce({ entries: [] })
-    render(<PluginInventorySettingsTab {...props(list)} />)
+    const view = render(<PluginInventorySettingsTab {...props(list)} />)
 
-    expect((await screen.findByRole('alert')).querySelector('[data-state="error"]')).not.toBeNull()
+    const failure = await screen.findByRole('alert')
+    expect(within(failure).getByText(en.error)).toBeTruthy()
+    expect(view.container.contains(failure)).toBe(false)
     expect(screen.queryByText('private transport detail')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    fireEvent.click(within(failure).getByRole('button', { name: en.retry }))
     await waitFor(() => { expect(list).toHaveBeenCalledTimes(2) })
     expect(await screen.findByText(en.empty)).toBeTruthy()
+  })
+
+  it('keeps a read retry available after dismissal and shows the same failure on the next attempt', async () => {
+    const list = vi.fn<PluginInventorySettingsTabInjected['list']>()
+      .mockRejectedValueOnce(new Error('private transport detail'))
+      .mockRejectedValueOnce(new Error('private transport detail'))
+      .mockResolvedValueOnce({ entries: [] })
+    render(<PluginInventorySettingsTab {...props(list)} />)
+    const first = await screen.findByRole('alert')
+    fireEvent.click(within(first).getByRole('button', { name: en.dismissFeedback }))
+    await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
+    expect(list).toHaveBeenCalledOnce()
+
+    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    const second = await screen.findByRole('alert')
+    expect(within(second).getByText(en.error)).toBeTruthy()
+    expect(screen.queryByText('private transport detail')).toBeNull()
+    fireEvent.click(within(second).getByRole('button', { name: en.retry }))
+    expect(await screen.findByText(en.empty)).toBeTruthy()
+    expect(list).toHaveBeenCalledTimes(3)
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('contains a synchronous Remote failure and ignores a result after unmount', async () => {
     const syncFailure = vi.fn(() => { throw new Error('namespace unavailable') }) as PluginInventorySettingsTabInjected['list']
     const failed = render(<PluginInventorySettingsTab {...props(syncFailure)} />)
-    expect((await screen.findByRole('alert')).textContent).toBe(en.error)
+    expect(within(await screen.findByRole('alert')).getByText(en.error)).toBeTruthy()
     failed.unmount()
 
     const deferred = Promise.withResolvers<Snapshot>()
@@ -659,16 +682,40 @@ describe('PluginInventorySettingsTab', () => {
 it('shows current-page sync errors and retries without re-reading Host inventory', async () => {
   const list = vi.fn(async () => ({ entries: [] }))
   const sync = createSnapshotStore<ClientEntryState>({ syncing: true, failures: [] })
-  const retryClient = vi.fn()
-  render(<PluginInventorySettingsTab {...props(list)} useClientSync={bindSnapshotSelector(sync)} retryClient={retryClient} />)
-  expect(screen.getByText(en.clientSyncing).closest('[role="status"]')?.querySelector('[data-state="ongoing"]')).not.toBeNull()
+  const retryClient = vi.fn(async () => {})
+  const view = render(<PluginInventorySettingsTab {...props(list)} useClientSync={bindSnapshotSelector(sync)} retryClient={retryClient} />)
+  const loading = await screen.findByRole('alert')
+  expect(within(loading).getByText(en.clientSyncing)).toBeTruthy()
+  expect(view.container.contains(loading)).toBe(false)
   await waitFor(() => { expect(list).toHaveBeenCalledOnce() })
   act(() => { sync.set({ syncing: false, failures: [{ id: 'client-addon', message: 'download failed' }] }) })
-  expect(screen.getByRole('alert').querySelector('[data-state="error"]')).not.toBeNull()
-  expect(screen.getByText('client-addon: download failed')).toBeTruthy()
+  await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('client-addon: download failed') })
   fireEvent.click(screen.getByRole('button', { name: 'Retry this page' }))
   expect(retryClient).toHaveBeenCalledOnce()
   expect(list).toHaveBeenCalledOnce()
   act(() => { sync.set({ syncing: false, failures: [] }) })
   expect(screen.queryByRole('alert')).toBeNull()
+})
+
+it('keeps sync recovery available after dismissal and exposes repeated retry transport failures', async () => {
+  const failures = [{ id: 'client-addon', message: 'download failed' }]
+  const list = vi.fn(async () => ({ entries: [] }))
+  const sync = createSnapshotStore<ClientEntryState>({ syncing: false, failures })
+  const retryClient = vi.fn(async () => { throw new Error('retry transport unavailable') })
+  render(<PluginInventorySettingsTab {...props(list)} useClientSync={bindSnapshotSelector(sync)} retryClient={retryClient} />)
+  const failure = await screen.findByRole('alert')
+  expect(failure.textContent).toContain('client-addon: download failed')
+  fireEvent.click(within(failure).getByRole('button', { name: en.dismissFeedback }))
+  const compactRetry = await screen.findByRole('button', { name: en.clientSyncRetry })
+  expect(screen.queryByText(`${en.clientSyncFailed} client-addon: download failed`)).toBeNull()
+  expect(sync.getSnapshot().failures).toEqual(failures)
+
+  fireEvent.click(compactRetry)
+  await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('retry transport unavailable') })
+  fireEvent.click(screen.getByRole('button', { name: en.dismissFeedback }))
+  fireEvent.click(await screen.findByRole('button', { name: en.clientSyncRetry }))
+  await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('retry transport unavailable') })
+  expect(retryClient).toHaveBeenCalledTimes(2)
+  expect(list).toHaveBeenCalledOnce()
+  expect(sync.getSnapshot().failures).toEqual(failures)
 })

@@ -131,7 +131,11 @@ import { en, zh } from '../src/client/locales.ts'
 import { bindPtyListeners } from '../src/client/pty-bridge.ts'
 
 const SID = 'session-term' as SessionId
-const t: TerminalDrawerProps['t'] = key => (en as Record<string, string>)[key] ?? key
+const t: TerminalDrawerProps['t'] = (key, params) => {
+  let text = (en as Record<string, string>)[key] ?? key
+  for (const [name, value] of Object.entries(params ?? {})) text = text.replaceAll(`{${name}}`, String(value))
+  return text
+}
 const neverHook = (() => { throw new Error('terminal drawer must not read this hook') }) as never
 const panelInfoStub = ((selector: (s: unknown) => unknown) => selector({ activePanelId: null })) as never
 const resourceStub = (() => ({ status: 'none' as const, value: undefined, failure: undefined })) as never
@@ -646,12 +650,12 @@ describe('TerminalDrawer', () => {
     document.body.removeAttribute('data-ds-dark-theme')
   })
 
-  it('writes Ghostty init failure copy onto the mount', async () => {
+  it('shows visible Ghostty init failure feedback with the retry instruction', async () => {
     ghosttyState.createError = new Error('wasm-down')
     const b = await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await waitFor(() => {
-      expect(screen.getByRole('log', { name: 'pty-1' }).textContent).toContain('wasm-down')
+      expect(screen.getByRole('alert').textContent).toContain('Could not initialize the terminal: wasm-down. Close and reopen the terminal to retry.')
     })
     expect(b.ptyWrite).not.toHaveBeenCalled()
   })
@@ -661,7 +665,7 @@ describe('TerminalDrawer', () => {
     await mount({ cwd: '/work' })
     fireEvent.click(screen.getByRole('button', { name: 'New terminal' }))
     await waitFor(() => {
-      expect(screen.getByRole('log', { name: 'pty-1' }).textContent).toContain(
+      expect(screen.getByRole('alert').textContent).toContain(
         'Unable to initialize libghostty-vt',
       )
     })

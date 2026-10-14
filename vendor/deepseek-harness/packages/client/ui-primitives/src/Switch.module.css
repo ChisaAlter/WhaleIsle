@@ -68,11 +68,17 @@
 }
 
 .thumb {
+  position: relative;
   display: block;
   width: 16px;
   height: 16px;
   border-radius: 50%;
   corner-shape: round;
+}
+
+.busy {
+  position: absolute;
+  inset: 2px;
 }
 
 .switch .thumb {

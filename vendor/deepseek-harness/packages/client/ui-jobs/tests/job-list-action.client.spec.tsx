@@ -440,8 +440,12 @@ describe('JobListAction human kill', () => {
     expect(killJob).not.toHaveBeenCalled()
     expect(stop.getAttribute('data-kill-state')).toBe('armed')
     expect(screen.getByTitle(zh['kill.confirm'])).toBe(stop)
-    // The armed step is legible without hover: the button carries the label.
-    expect(stop.textContent).toBe(zh['kill.confirmAction'])
+    // Confirmation changes the action's accessible name within the same control.
+    expect(screen.getByRole('button', { name: zh['kill.confirm'] })).toBe(stop)
+    // The floating notice carries the visible confirmation without resizing the row.
+    const confirmation = screen.getByRole('alert')
+    expect(within(confirmation).getByText(zh['kill.confirm'], { exact: true })).toBeTruthy()
+    expect(within(confirmation).getByRole('button', { name: zh['kill.confirmAction'] }).textContent).toBe(zh['kill.confirmAction'])
     await act(async () => { fireEvent.click(stop) })
     expect(killJob).toHaveBeenCalledWith(SESSION, 'bash-1')
     // An admitted kill stays pending: the unary response and the jobs frames

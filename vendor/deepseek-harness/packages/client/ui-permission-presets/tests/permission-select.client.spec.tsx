@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type {
@@ -240,7 +240,71 @@ describe('PermissionSelect', () => {
     expect(triggerText()).toBe('工作区内修改')
     await act(async () => {})
     expect(triggerText()).toBe('Custom')
+    expect(trigger().disabled).toBe(false)
+    const failure = await screen.findByRole('alert')
+    expect(failure.textContent).toBe('rejected')
+    fireEvent.click(within(failure).getByRole('button'))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(triggerText()).toBe('Custom')
     act(() => { selection.set({ value: { currentValue: 'workspace-write' } }) })
     expect(triggerText()).toBe('工作区内修改')
+  })
+
+  it('reports a refused admission and permits a fresh selection without pretending it succeeded', async () => {
+    const rejected = Promise.withResolvers<boolean>()
+    const { select } = setup({ select: () => rejected.promise })
+    fireEvent.click(trigger())
+    fireEvent.click(screen.getByRole('menuitem', { name: '仅可查看' }))
+    expect(trigger().disabled).toBe(true)
+    rejected.resolve(false)
+    await act(async () => { await rejected.promise })
+    expect(trigger().disabled).toBe(false)
+    expect(triggerText()).toBe('工作区内修改')
+    expect((await screen.findByRole('alert')).textContent).toBe(accessZh.switchFailed)
+    fireEvent.click(trigger())
+    fireEvent.click(screen.getByRole('menuitem', { name: '仅可查看' }))
+    expect(select).toHaveBeenCalledTimes(2)
+    await act(async () => {})
+  })
+
+  it.each(['refused', 'rejected'] as const)('ignores a stale %s command after a timed-out choice is retried', async (outcome) => {
+    vi.useFakeTimers()
+    const earlier = Promise.withResolvers<boolean>()
+    const latest = Promise.withResolvers<boolean>()
+    const select = vi.fn()
+      .mockImplementationOnce(() => earlier.promise)
+      .mockImplementationOnce(() => latest.promise)
+    try {
+      const { select: submitted } = setup({ select })
+      const chooseReadOnly = () => {
+        fireEvent.click(trigger())
+        fireEvent.click(screen.getByRole('menuitem', { name: '仅可查看' }))
+      }
+      chooseReadOnly()
+      expect(trigger().disabled).toBe(true)
+      act(() => { vi.advanceTimersByTime(5_000) })
+      expect(trigger().disabled).toBe(false)
+      expect(triggerText()).toBe('工作区内修改')
+
+      chooseReadOnly()
+      expect(submitted).toHaveBeenCalledTimes(2)
+      await act(async () => {
+        if (outcome === 'refused') earlier.resolve(false)
+        else earlier.reject(new Error('stale permission failure'))
+        await Promise.resolve()
+      })
+      expect(triggerText()).toBe('仅可查看')
+      expect(trigger().disabled).toBe(true)
+      expect(trigger().getAttribute('aria-busy')).toBe('true')
+      expect(screen.queryByRole('alert')).toBeNull()
+
+      await act(async () => { latest.resolve(false); await latest.promise })
+      expect(trigger().disabled).toBe(false)
+      expect(triggerText()).toBe('工作区内修改')
+      expect(screen.getByRole('alert').textContent).toBe(accessZh.switchFailed)
+    } finally {
+      cleanup()
+      vi.useRealTimers()
+    }
   })
 })

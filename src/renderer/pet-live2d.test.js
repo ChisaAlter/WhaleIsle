@@ -124,22 +124,110 @@ test('ordinary chatter never evicts queued pinned notifications', () => {
   assert.equal(pet.run('bubbleQueue.filter((entry) => entry.pinned).length'), 6);
 });
 
-test('failed shared turns display their partial reply and a separate error row', async () => {
+test('failed shared turns preserve partial replies and persisted errors while showing feedback outside the thread', async () => {
   const pet = loadPet();
   pet.run(`settings.chatEnabled = true;
     petShell.chat = async () => ({ ok: false, via: 'whale', reason: 'turn-error', reply: '第一步完成' });`);
   await pet.run(`submitChat('执行任务')`);
   assert.equal(pet.run('chatLog.some((entry) => entry.role === "her" && entry.text === "第一步完成")'), true);
   assert.equal(pet.run('chatLog.some((entry) => entry.role === "err" && entry.text.includes("这轮没有完成"))'), true);
+  assert.equal(pet.nodes['pc-feedback'].hidden, false);
+  assert.match(pet.nodes['pc-feedback-text'].textContent, /这轮没有完成/);
+  assert.equal(pet.nodes['pc-thread'].querySelectorAll('.pc-err').length, 0, 'errors do not add a row to the conversation layout');
   pet.run(`chatRenderHistory([
     { role: 'user', text: '执行任务' }, { role: 'her', text: '第一步完成' },
     { role: 'err', text: '这轮出错——点 ↗ 去会话里看详情' }
   ]);`);
   assert.equal(pet.run('chatLog.filter((entry) => entry.role === "err").length'), 1, 'backfill keeps the persisted error role');
+  assert.match(pet.nodes['pc-feedback-text'].textContent, /这轮出错/);
+  assert.equal(pet.nodes['pc-thread'].querySelectorAll('.pc-err').length, 0);
+  pet.nodes['pc-feedback-close'].click();
+  assert.equal(pet.nodes['pc-feedback'].hidden, true);
+  assert.equal(pet.run('chatLog.filter((entry) => entry.role === "err").length'), 1, 'closing feedback preserves the failure record');
+  pet.run('chatRenderHistory(chatLog.map(entry => ({ ...entry })))');
+  assert.equal(pet.nodes['pc-feedback'].hidden, true, 'polling the same persisted failure does not reopen dismissed feedback');
   pet.run(`chatLog.length = 0; petShell.chat = async () => ({ ok: true, via: 'whale', reply: '' });`);
   await pet.run(`submitChat('执行工具任务')`);
   assert.equal(pet.run('chatLog.some((entry) => entry.role === "err")'), false, 'an empty completed turn is not a failed turn');
 });
+
+test('sending keeps its original button content, blocks duplicate turns, and closing feedback does not cancel the pending reply', async () => {
+  const pet = loadPet();
+  pet.run(`settings.chatEnabled = true;
+    globalThis.__chatCalls = 0;
+    petShell.chat = () => {
+      __chatCalls++;
+      return new Promise(resolve => { globalThis.__finishChat = resolve; });
+    };`);
+  const send = pet.nodes['pc-send'];
+  const originalLabel = send.textContent;
+  const pending = pet.run(`submitChat('执行任务')`);
+  assert.equal(send.disabled, true);
+  assert.equal(send.getAttribute('aria-busy'), 'true');
+  assert.equal(send.textContent, originalLabel, 'busy feedback does not replace the button content');
+  pet.nodes['pc-input'].value = '尚未发送的草稿';
+  pet.run(`showChatFeedback('请求仍在处理')`);
+  pet.nodes['pc-feedback-close'].click();
+  assert.equal(pet.nodes['pc-feedback'].hidden, true);
+  assert.equal(pet.run('chatBusy'), true);
+  assert.equal(send.disabled, true);
+  assert.equal(pet.nodes['pc-input'].value, '尚未发送的草稿');
+  await pet.run(`submitChat('重复发送')`);
+  assert.equal(pet.run('__chatCalls'), 1);
+  assert.equal(pet.run('chatLog.filter(entry => entry.role === "user").length'), 1);
+  pet.run(`__finishChat({ ok: true, via: 'whale', reply: '任务已完成' })`);
+  await pending;
+  assert.equal(pet.run('chatBusy'), false);
+  assert.equal(send.disabled, false, 'the remaining draft becomes sendable after the reply settles');
+  assert.equal(send.getAttribute('aria-busy'), 'false');
+  assert.equal(send.textContent, originalLabel);
+  assert.equal(pet.run('chatLog.some(entry => entry.role === "her" && entry.text === "任务已完成")'), true);
+});
+
+test('visible feedback owns only its own hit region and closing it restores the transparent gap', () => {
+  const pet = loadPet();
+  pet.run(`drawPos = { x: 50, y: 50 };
+    homeRect = { x: 0, y: 0, width: 800, height: 600 };
+    lastPaintRect = { x: 50, y: 50, w: 40, h: 50 };
+    chatRect = { x: 500, y: 350, w: 200, h: 120 };
+    globalThis.__surfaceReports = [];
+    petShell.setInteractive = payload => { if (payload.regions) __surfaceReports.push(payload); };
+    showChatFeedback('连接失败'); reportSurfaceRegions();`);
+  const feedback = JSON.parse(pet.run('JSON.stringify(chatFeedbackRect)'));
+  assert.equal(pet.run(`overPet(${feedback.x + 8}, ${feedback.y + 8})`), true);
+  assert.equal(pet.run(`overPet(${feedback.x + 8}, ${feedback.y + feedback.h + 4})`), false, 'the gap below the feedback remains click-through');
+  const regions = JSON.parse(pet.run('JSON.stringify(__surfaceReports.at(-1).regions)'));
+  assert.deepEqual(regions, [
+    { x: 50, y: 50, width: 40, height: 50 },
+    { x: 500, y: 350, width: 200, height: 120 },
+    { x: feedback.x, y: feedback.y, width: feedback.w, height: feedback.h },
+  ]);
+  pet.nodes['pc-feedback-close'].click();
+  pet.run('reportSurfaceRegions()');
+  assert.equal(pet.run('chatFeedbackRect'), null);
+  assert.equal(pet.run(`overPet(${feedback.x + 8}, ${feedback.y + 8})`), false);
+  assert.deepEqual(JSON.parse(pet.run('JSON.stringify(__surfaceReports.at(-1).regions)')), regions.slice(0, 2));
+});
+
+function makeNode(id = '') {
+  const listeners = new Map();
+  const attributes = new Map();
+  return {
+    id, style: {}, hidden: false, value: '', textContent: '', className: '', children: [],
+    offsetWidth: 248, offsetHeight: 48, scrollHeight: 20,
+    addEventListener(type, listener) {
+      if (!listeners.has(type)) listeners.set(type, []);
+      listeners.get(type).push(listener);
+    },
+    click() { for (const listener of listeners.get('click') || []) listener({ target: this }); },
+    setAttribute(name, value) { attributes.set(name, value); },
+    getAttribute(name) { return attributes.get(name) ?? null; },
+    removeAttribute(name) { attributes.delete(name); },
+    appendChild(node) { node.parent = this; this.children.push(node); return node; },
+    remove() { if (this.parent) this.parent.children = this.parent.children.filter(node => node !== this); },
+    querySelectorAll(selector) { return this.children.filter(node => node.className.split(' ').includes(selector.slice(1))); },
+  };
+}
 
 function loadPet() {
   const source = SOURCE.replace(/mount\(\)\.catch[\s\S]*$/, '');
@@ -152,11 +240,19 @@ function loadPet() {
   }
   mathStub.random = () => rand();
   const mainCanvas = makeCanvas();
+  const nodes = Object.fromEntries(['pet-chat', 'pc-thread', 'pc-empty', 'pc-input', 'pc-send',
+    'pc-feedback', 'pc-feedback-text', 'pc-feedback-close'].map(id => [id, makeNode(id)]));
+  nodes['pet-chat'].querySelector = selector => nodes[selector.slice(1)] || null;
+  nodes['pet-chat'].offsetHeight = 120;
+  nodes['pet-chat'].hidden = true;
+  nodes['pc-feedback'].hidden = true;
+  nodes['pc-send'].textContent = '↑';
   const context = vm.createContext({
     document: {
+      ...makeNode('document'),
       documentElement: {},
-      getElementById: () => mainCanvas,
-      createElement: (tag) => (tag === 'canvas' ? makeCanvas() : {}),
+      getElementById: id => id === 'pet' ? mainCanvas : nodes[id] || null,
+      createElement: (tag) => (tag === 'canvas' ? makeCanvas() : makeNode()),
     },
     window: {
       innerWidth: 800,
@@ -190,6 +286,7 @@ function loadPet() {
   return {
     context,
     canvas: mainCanvas,
+    nodes,
     run: (expr) => vm.runInContext(expr, context),
     setNow: (v) => { now = v; },
     now: () => now,
@@ -641,18 +738,19 @@ const EXPECTED_KEYS = ['greet', 'pickup', 'throw', 'land', 'pat', 'feed', 'come'
   'hungry', 'grumpy', 'clingy',
   // §B4 wander + §B10 cheap items + R2 DSH-link seeds
   'wanderStart', 'wanderEnd', 'wanderStop', 'personalitySet',
-  'settingsChanged', 'fileEat', 'dshWorking', 'dshDone', 'dshError',
+  'settingsChanged', 'settingsOpened', 'fileEat', 'dshWorking', 'dshDone', 'dshError',
   'dshRest', 'dshMilestone', 'dshMiss', 'dshApproval', 'dshQuestion',
   'chatFallback', 'looking', 'lookFallback', 'lookNoModel', 'lookAssistantOff',
   'lookError', 'approvalAllow', 'approvalReject'];
 
-test('LINES has all 59 categories with ≥10 distinct lines each', () => {
+test('LINES keeps rich reaction pools and one factual settings-opened acknowledgement', () => {
   const pet = loadPet();
   const lines = pet.run('LINES');
   assert.deepEqual(Object.keys(lines).sort(), [...EXPECTED_KEYS].sort());
   const all = [];
   for (const key of Object.keys(lines)) {
-    assert.ok(lines[key].length >= 10, `${key} has ≥10 lines`);
+    if (key === 'settingsOpened') assert.deepEqual(Array.from(lines[key]), ['已打开桌宠设置。']);
+    else assert.ok(lines[key].length >= 10, `${key} reaction pool has ≥10 lines`);
     for (const line of lines[key]) {
       assert.equal(typeof line, 'string');
       assert.ok(line.length > 0);
@@ -672,13 +770,14 @@ test('say() cycles every pool without repeats and never repeats at the boundary'
       // inside PetDialogue.createSayer's closure, not reachable maps).
       pet.run('wireDialogue()');
       const seen = [];
-      for (let i = 0; i < 20; i += 1) {
+      const cycleLength = lines[key].length;
+      for (let i = 0; i < cycleLength * 2; i += 1) {
         pet.run(`say('${key}')`);
         seen.push(pet.run('bubble.text'));
       }
-      assert.equal(new Set(seen.slice(0, 10)).size, 10, `${key} cycle 1 unique`);
-      assert.equal(new Set(seen.slice(10)).size, 10, `${key} cycle 2 unique`);
-      assert.notEqual(seen[10], seen[9], `${key} boundary repeat`);
+      assert.equal(new Set(seen.slice(0, cycleLength)).size, cycleLength, `${key} cycle 1 unique`);
+      assert.equal(new Set(seen.slice(cycleLength)).size, cycleLength, `${key} cycle 2 unique`);
+      if (cycleLength > 1) assert.notEqual(seen[cycleLength], seen[cycleLength - 1], `${key} boundary repeat`);
       for (const text of seen) {
         assert.ok(lines[key].includes(text));
       }
@@ -720,21 +819,25 @@ test('personality routes say() through the agents layer with global fallback', (
     'natural reads the global pool');
 });
 
-test('every LINES category is reachable via say(), sayAlert(), time-of-day pick, or IDLE_TOPICS', () => {
+test('runtime dialogue categories have live call sites and the retained settings library remains renderable', () => {
   const pet = loadPet();
   const topics = pet.run('IDLE_TOPICS');
   const lines = pet.run('LINES');
   const alertCats = new Set(pet.run('[...ALERT_CATEGORIES]'));
   const timeCats = ['latenight', 'morning', 'noon', 'afternoon', 'evening'];
-  // Every pool has a live call site — the look* categories wired up with
-  // the R3 看看 feature and its failure voices.
-  const PENDING_KEYS = new Set();
+  // settingsChanged remains part of the phrase library. Opening settings
+  // now uses settingsOpened and must not pretend that a save occurred.
   for (const key of Object.keys(lines)) {
+    if (key === 'settingsChanged') {
+      pet.run(`bubble = null; say('settingsChanged')`);
+      assert.ok(lines[key].includes(pet.run('bubble.text')), 'the retained library is still usable by the sayer');
+      continue;
+    }
     const direct = new RegExp(`say\\([^)]*'${key}'`).test(SOURCE);
     const tapDyn = /^tap\d$/.test(key) && SOURCE.includes('say(`tap');
     const timeCat = timeCats.includes(key) && /say\(Math\.random\(\) < 0\.45 \? cat/.test(SOURCE);
     assert.ok(direct || tapDyn || timeCat || topics.includes(key)
-      || alertCats.has(key) || PENDING_KEYS.has(key), `${key} reachable`);
+      || alertCats.has(key), `${key} reachable`);
   }
 });
 
@@ -1318,8 +1421,9 @@ test('panel ⚙ cell navigates to the main-window pet settings section', async (
   pet.run(`dispatchPanelCell({ id: 'settings' })`);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(pet.run('JSON.stringify(window.__calls)'), '["openSettings"]');
-  assert.ok(pet.run('LINES.settingsChanged').includes(pet.run('bubble.text')),
+  assert.ok(pet.run('LINES.settingsOpened').includes(pet.run('bubble.text')),
     'a successful jump gets an acknowledgement line');
+  assert.equal(pet.run('bubble.text'), '已打开桌宠设置。', 'opening settings does not claim a settings save');
   // A failed/absent navigation surfaces the dsh-error pool instead of a
   // dead popup — and no local settings overlay exists to fall back on.
   pet.run(`bubble = null;

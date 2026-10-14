@@ -235,13 +235,17 @@ describe.each([['English', en], ['Chinese', zh]] as const)('task tab body in %s'
 })
 
 describe('task tab states', () => {
-  it('distinguishes a loading catalog, a failed read, and a task that is gone', () => {
+  it('distinguishes a loading catalog, a failed read, and a task that is gone', async () => {
     const loading = mount({ records: [], status: 'loading' })
     // The centered loading state is a bare spinner whose copy is its accessible name.
     expect(screen.getByRole('status', { name: en['list.loading'] }).textContent).toBe('')
     loading.update({ status: 'error' })
-    expect(screen.getByRole('alert').textContent).toBe(en['list.error'])
-    fireEvent.click(screen.getByRole('button', { name: en['list.retry'] }))
+    const notice = await screen.findByRole('alert')
+    expect(notice.hasAttribute('data-dsh-toast')).toBe(true)
+    expect(loading.view.container.contains(notice)).toBe(false)
+    expect(notice.parentElement?.parentElement).toBe(document.body)
+    expect(within(notice).getByText(en['list.error'], { exact: true })).toBeDefined()
+    fireEvent.click(within(notice).getByRole('button', { name: en['list.retry'] }))
     expect(loading.props.onRetry).toHaveBeenCalledOnce()
     loading.update({ status: 'ready' })
     expect(screen.getByRole('status').textContent).toBe(en['detail.missing'])
@@ -263,11 +267,14 @@ describe('task tab states', () => {
     expect(screen.queryByRole('complementary')).toBeNull()
   })
 
-  it('shows the query failure, not the missing-task notice, when the read fails', () => {
+  it('shows the query failure, not the missing-task notice, when the read fails', async () => {
     const h = mount({ records: [], status: 'error' })
-    expect(screen.getByRole('alert').textContent).toBe(en['list.error'])
+    const notice = await screen.findByRole('alert')
+    expect(notice.hasAttribute('data-dsh-toast')).toBe(true)
+    expect(h.view.container.contains(notice)).toBe(false)
+    expect(within(notice).getByText(en['list.error'], { exact: true })).toBeDefined()
     expect(screen.queryByText(en['detail.missing'])).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: en['list.retry'] }))
+    fireEvent.click(within(notice).getByRole('button', { name: en['list.retry'] }))
     expect(h.props.onRetry).toHaveBeenCalledOnce()
   })
 
@@ -282,9 +289,13 @@ describe('task tab states', () => {
     expect(screen.queryByRole('complementary')).toBeNull()
   })
 
-  it('keeps the query failure of a restored tab', () => {
-    mount({ records: [], status: 'error' }, RESTORED)
-    expect(screen.getByRole('alert').textContent).toBe(en['list.error'])
+  it('keeps the query failure of a restored tab', async () => {
+    const h = mount({ records: [], status: 'error' }, RESTORED)
+    const notice = await screen.findByRole('alert')
+    expect(notice.hasAttribute('data-dsh-toast')).toBe(true)
+    expect(h.view.container.contains(notice)).toBe(false)
+    expect(within(notice).getByText(en['list.error'], { exact: true })).toBeDefined()
+    expect(within(notice).getByRole('button', { name: en['list.retry'] })).toBeDefined()
     expect(screen.queryByText(en['detail.missing'])).toBeNull()
   })
 
@@ -312,13 +323,16 @@ describe('task tab states', () => {
     expect(h.bindings.read(SESSION, TAB)).toEqual({ sessionId: SESSION, id: other.id })
   })
 
-  it('keeps a binding whose read has not settled and shows its query failure', () => {
+  it('keeps a binding whose read has not settled and shows its query failure', async () => {
     const h = mount({ records: [], status: 'loading' }, RESTORED, en, sessions, { taskBindings: boundTo(at.id) })
     expect(h.bindings.read(SESSION, TAB)).toEqual({ sessionId: SESSION, id: at.id })
     h.update({ status: 'error' })
-    expect(screen.getByRole('alert').textContent).toBe(en['list.error'])
+    const notice = await screen.findByRole('alert')
+    expect(notice.hasAttribute('data-dsh-toast')).toBe(true)
+    expect(h.view.container.contains(notice)).toBe(false)
+    expect(within(notice).getByText(en['list.error'], { exact: true })).toBeDefined()
     expect(screen.queryByText(en['detail.missing'])).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: en['list.retry'] }))
+    fireEvent.click(within(notice).getByRole('button', { name: en['list.retry'] }))
     expect(h.props.onRetry).toHaveBeenCalledOnce()
     expect(h.bindings.read(SESSION, TAB)).toEqual({ sessionId: SESSION, id: at.id })
   })

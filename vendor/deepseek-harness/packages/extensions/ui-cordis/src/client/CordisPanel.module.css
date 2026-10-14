@@ -129,6 +129,13 @@
   padding: 0 12px 12px;
 }
 
+.loading {
+  position: absolute;
+  top: 14px;
+  right: 12px;
+  pointer-events: none;
+}
+
 .title {
   font-size: 14px;
   font-weight: 500;

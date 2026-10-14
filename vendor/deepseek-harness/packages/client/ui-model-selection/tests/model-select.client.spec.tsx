@@ -622,14 +622,9 @@ describe('ModelSelect keyboard walk', () => {
     expect(screen.queryByRole('searchbox')).toBeNull()
     expect(document.activeElement).toBe(trigger)
 
-    const retry = screen.getByRole('button', { name: '重试' })
+    const retry = screen.getByRole('button', { name: '重新加载' })
     expect(fireEvent.mouseDown(retry)).toBe(false)
-    // The desktop trigger pre-loads the catalog on mount, so assert the retry's
-    // own increment rather than an absolute call count.
-    const calls = load.mock.calls.length
-    fireEvent.click(retry)
-    expect(load).toHaveBeenCalledTimes(calls + 1)
-    expect(screen.getByRole('group', { name: '模型与推理等级' })).toBeTruthy()
+    expect(screen.getByRole('alert').contains(retry)).toBe(true)
     retry.focus()
     // A control that is not a row keeps the browser's traversal.
     expect(fireEvent.keyDown(retry, { key: 'Tab' })).toBe(true)
@@ -639,6 +634,15 @@ describe('ModelSelect keyboard walk', () => {
     const cell = screen.getAllByRole('menuitem')[0]!
     fireEvent.keyDown(cell, { key: 'Escape' })
     expect(screen.queryByRole('menu')).toBeNull()
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: /^模型/ }))
+    // The retry now lives in the Toast portal and clears that notice when
+    // invoked; exercise its keyboard behavior while it is still mounted.
+    const calls = load.mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: '重新加载' }))
+    expect(load).toHaveBeenCalledTimes(calls + 1)
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('group', { name: '模型与推理等级' })).toBeTruthy()
   })
 
   it('focuses the checked model in a small catalog', () => {
@@ -984,7 +988,9 @@ it('shows the unselected model control with the inherited effort', async () => {
   render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
   const trigger = screen.getByRole('button', { name: '请选择模型' })
   expect(trigger.hasAttribute('disabled')).toBe(false)
-  await expect(`${trigger.textContent}\n`).toMatchFileSnapshot('./expected/unselected-model.txt')
+  const currentCaption = [...trigger.querySelectorAll('[data-dsh-motion-part="current"]')]
+    .map(part => part.textContent).join('')
+  await expect(`${currentCaption}\n`).toMatchFileSnapshot('./expected/unselected-model.txt')
   expect(trigger.textContent).toContain('High')
   fireEvent.click(trigger)
   expect(screen.queryByRole('menuitem', { name: /模型/ })).toBeNull()

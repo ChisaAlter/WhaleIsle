@@ -2,7 +2,7 @@
 // Same row template as the cards (dsw-ust-table-head + dsw-ust-srow), pages
 // through the host ranking inside the dialog with its own 显示更多 button.
 import { useState } from 'react'
-import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ProjectRow, SessionSummary } from '../../shared/contract.ts'
 import { fmtTokens } from '../../shared/format.ts'
 import { costCentsFor, sumCostCents, totalCostCents } from '../../shared/cost.ts'
@@ -33,11 +33,14 @@ export function MoreRankModal({ kind, i18n, rpc, open, onClose }: MoreRankModalP
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [appendError, setAppendError] = useState<{ id: number; text: string } | null>(null)
+  const appendErrorId = React.useRef(0)
   const [hasMore, setHasMore] = useState(false)
 
   const resetAndFetch = (nextSort: 'tokens' | 'cost'): void => {
     setSort(nextSort)
     setLoadError(null)
+    setAppendError(null)
     setSessions([])
     setProjects([])
     setHasMore(false)
@@ -45,6 +48,8 @@ export function MoreRankModal({ kind, i18n, rpc, open, onClose }: MoreRankModalP
   }
 
   const fetchPage = (offset: number, nextSort: 'tokens' | 'cost', append: boolean): void => {
+    if (append && (loading || loadingMore)) return
+    setAppendError(null)
     if (append) setLoadingMore(true)
     else setLoading(true)
     const p = kind === 'sessions' ? callSessionPage(rpc, offset, nextSort) : callProjectPage(rpc, offset, nextSort)
@@ -60,7 +65,9 @@ export function MoreRankModal({ kind, i18n, rpc, open, onClose }: MoreRankModalP
       }
     })
       .catch((err) => {
-        setLoadError(String((err as Error)?.message ?? err))
+        const msg = String((err as Error)?.message ?? err)
+        if (append) setAppendError({ id: ++appendErrorId.current, text: t('status.error', { msg }) })
+        else setLoadError(msg)
       })
       .finally(() => {
         setLoading(false)
@@ -89,7 +96,7 @@ export function MoreRankModal({ kind, i18n, rpc, open, onClose }: MoreRankModalP
         <span className="dsw-ust-card-sub">{t('sessions.sub')}</span>
         <label className="dsw-ust-sort">
           <span>{t('sort.by')}</span>
-          <select value={sort} onChange={(e) => resetAndFetch(e.target.value as 'tokens' | 'cost')}>
+          <select value={sort} disabled={loading || loadingMore} onChange={(e) => resetAndFetch(e.target.value as 'tokens' | 'cost')}>
             <option value="tokens">{t('sort.tokens')}</option>
             <option value="cost">{t('sort.cost')}</option>
           </select>
@@ -151,23 +158,35 @@ export function MoreRankModal({ kind, i18n, rpc, open, onClose }: MoreRankModalP
         })
       )}
       {hasMore && (
-        <button type="button" className="dsw-ust-more" onClick={() => fetchPage(kind === 'sessions' ? sessions.length : projects.length, sort, true)} disabled={loadingMore}>
-          {loadingMore ? t('sessions.moreLoading') : t('sessions.more')}
-        </button>
+        <Button size="sm" className="dsw-ust-more" onClick={() => fetchPage(kind === 'sessions' ? sessions.length : projects.length, sort, true)} disabled={loadingMore} loading={loadingMore}>
+          {t('sessions.more')}
+        </Button>
       )}
     </div>
   )
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={title}
-      closeLabel={t('billing.close')}
-      className="dsw-ust-modal"
-      contentClassName="dsw-ust-modal-content"
-    >
-      {body}
-    </Modal>
+    <>
+      <Modal
+        open={open}
+        onClose={onClose}
+        title={title}
+        closeLabel={t('billing.close')}
+        className="dsw-ust-modal"
+        contentClassName="dsw-ust-modal-content"
+      >
+        {body}
+      </Modal>
+      {open && appendError !== null && (
+        <Toast
+          key={appendError.id}
+          text={appendError.text}
+          holdMs={null}
+          dismissLabel={t('billing.close')}
+          actions={[{ label: t('billing.retry'), onClick: () => fetchPage(kind === 'sessions' ? sessions.length : projects.length, sort, true) }]}
+          onDone={() => setAppendError(null)}
+        />
+      )}
+    </>
   )
 }

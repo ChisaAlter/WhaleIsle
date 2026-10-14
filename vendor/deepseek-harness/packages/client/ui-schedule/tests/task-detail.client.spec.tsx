@@ -9,7 +9,7 @@
  * a save failure stated on the Delivery records tab, and the cron rows' close
  * paths and occurrence-seeded day shape.
  */
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
@@ -135,6 +135,7 @@ function mount(
   }
   const view = render(<TaskManagerPage {...props} />)
   return {
+    props,
     updateTiming: vi.mocked(props.onUpdateTiming),
     /** Publish an authoritative catalog snapshot, as a Host refresh does. */
     update(next: readonly ScheduleCatalogEntry[]) {
@@ -258,9 +259,14 @@ function recordsTab(): HTMLElement {
   return screen.getByRole('tab', { name: en['detail.records'] })
 }
 
-/** The bar-side save failure line, or null while no failure shows. */
-function saveFailure(): HTMLElement | null {
-  return document.querySelector<HTMLElement>(`.${css.saveFailure}`)
+/** The visible floating operation notice with its exact localized message. */
+async function operationToast(message: string): Promise<HTMLElement> {
+  return waitFor(() => {
+    const notice = screen.getAllByRole('alert').find(alert => within(alert).queryByText(message) !== null)
+    expect(notice).toBeDefined()
+    expect(notice!.hasAttribute('data-dsh-toast')).toBe(true)
+    return notice!
+  })
 }
 
 describe('TaskDetail authoritative refresh', () => {
@@ -375,24 +381,22 @@ describe('TaskDetail authoritative refresh', () => {
     expect(screen.queryByRole('button', { name: en['rule.save'] })).toBeNull()
   })
 
-  it('leads the scrolling detail with a failed refresh and its Retry', () => {
+  it('keeps a failed refresh and its Retry outside the scrolling detail', async () => {
     const h = mount([daily])
     selectTask('Daily weather')
     const detail = screen.getByRole('complementary', { name: en['detail.label'] })
     const scroll = detail.querySelector<HTMLElement>(`.${css.detailScroll}`)!
 
     h.setStatus('error')
-    const alert = within(detail).getByRole('alert')
-    expect(alert.textContent).toBe(en['list.error'])
-    const retry = within(detail).getByRole('button', { name: en['list.retry'] })
-    expect(alert.parentElement?.contains(retry)).toBe(true)
-    // The feedback leads this region, above the name control and the Run time
-    // card, so a long rule form never pushes it out of view; it stays inside
-    // the region so a start or settle moves no fixed row above it.
-    expect(scroll.firstElementChild?.contains(alert)).toBe(true)
+    const alert = await operationToast(en['list.error'])
+    const retry = within(alert).getByRole('button', { name: en['list.retry'] })
+    // Floating feedback stays readable without adding a row to the form.
+    expect(detail.contains(alert)).toBe(false)
+    expect(scroll.contains(alert)).toBe(false)
     const rule = within(detail).getByRole('region', { name: en['rule.title'] })
     expect(scroll.contains(rule)).toBe(true)
-    expect(alert.compareDocumentPosition(rule) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    fireEvent.click(retry)
+    expect(h.props.onRetry).toHaveBeenCalledOnce()
   })
 })
 
@@ -866,8 +870,7 @@ describe('TaskDetail save identity', () => {
     // The answer describes the record the abandoned save submitted, and the task
     // switch retired it: the draft typed after coming back stays staged.
     expect(screen.getByLabelText<HTMLInputElement>(en['detail.name']).value).toBe('Second draft')
-    expect(screen.getByRole('button', { name: en['rule.save'] })).toBeDefined()
-    expect(screen.queryByRole('button', { name: en['rule.saving'] })).toBeNull()
+    expect(screen.getByRole('button', { name: en['rule.save'] }).getAttribute('aria-busy')).not.toBe('true')
   })
 
   it('does not apply an answered save to the task opened after it', async () => {
@@ -923,16 +926,17 @@ describe('TaskDetail interval stepper', () => {
 })
 
 describe('TaskDetail records-tab save failure', () => {
-  it('states the refused interval in the row unit while the records tab shows', () => {
+  it('states the refused interval in the row unit while the records tab shows', async () => {
     mount([every])
     selectTask('Check metrics')
     fireEvent.change(intervalField(), { target: { value: '59' } })
     fireEvent.click(recordsTab())
     clickSave()
 
-    const bar = saveFailure()
-    expect(bar?.textContent).toBe(en['timing.invalidInterval.second'])
-    expect(bar?.getAttribute('role')).toBe('alert')
+    const notice = await operationToast(en['timing.invalidInterval.second'])
+    expect(within(notice).getByRole('button', { name: en['rule.save'] })).toBeDefined()
+    expect(within(notice).getByRole('button', { name: en['rule.cancel'] })).toBeDefined()
+    expect(screen.getByRole('tabpanel', { name: en['detail.records'] }).contains(notice)).toBe(false)
   })
 
   it('states a save the Host did not answer while the records tab shows', async () => {
@@ -943,7 +947,35 @@ describe('TaskDetail records-tab save failure', () => {
     h.updateTiming.mockRejectedValueOnce(new Error('save response disconnected'))
     await act(async () => { clickSave() })
 
-    expect(saveFailure()?.textContent).toBe(en['rule.error.unknown'])
+    const notice = await operationToast(en['rule.error.unknown'])
+    expect(within(notice).getByRole('button', { name: en['rule.save'] })).toBeDefined()
+    expect(within(notice).getByRole('button', { name: en['rule.cancel'] })).toBeDefined()
+  })
+
+  it('keeps the draft and Save available after dismissing a refused save', async () => {
+    const h = mount([every])
+    selectTask('Check metrics')
+    fireEvent.change(intervalField(), { target: { value: '600' } })
+    h.updateTiming.mockResolvedValueOnce({ ok: true, value: { id: every.id, updated: false, code: 'schedule_conflict' } })
+    await act(async () => { clickSave() })
+    const notice = await operationToast(en['rule.error.conflict'])
+    fireEvent.click(within(notice).getByRole('button', { name: en['detail.close'] }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(intervalField().value).toBe('600')
+    expect(h.updateTiming).toHaveBeenCalledOnce()
+    const save = screen.getByRole('button', { name: en['rule.save'] })
+    expect(save.hasAttribute('disabled')).toBe(false)
+    h.updateTiming.mockResolvedValueOnce({
+      ok: true, value: { id: every.id, updated: true, record: { ...every, everySeconds: 600 } },
+    })
+    await act(async () => { fireEvent.click(save) })
+    expect(h.updateTiming).toHaveBeenCalledTimes(2)
+    expect(h.updateTiming).toHaveBeenLastCalledWith({
+      sessionId: every.sessionId, id: every.id, expected: timingSnapshot(every),
+      change: { kind: 'every', every_seconds: 600 },
+    })
+    expect(screen.queryByRole('button', { name: en['rule.save'] })).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })
 

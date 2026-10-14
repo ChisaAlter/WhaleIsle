@@ -38,6 +38,8 @@ describe('RemoteWorkspaceRow', () => {
     mount()
     const toggle = screen.getByRole('switch', { name: 'Remote workspaces (SSH)' })
     expect(toggle.getAttribute('aria-checked')).toBe('true')
+    expect(toggle).toHaveProperty('disabled', true)
+    await waitFor(() => { expect(toggle).toHaveProperty('disabled', false) })
     fireEvent.click(toggle)
     expect(saveConfig).toHaveBeenCalledWith({ remoteWorkspaceEnabled: false })
     expect(screen.getByRole('switch', { name: 'Remote workspaces (SSH)' }).getAttribute('aria-checked')).toBe('false')

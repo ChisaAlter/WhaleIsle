@@ -1,8 +1,8 @@
 /** Sidebar terminal screen and connection recovery. */
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { Button, IconPlusOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconPlusOutlineRegular, StateDot, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TerminalViewState, TerminalView } from '@deepseek-ai/dsh-api-terminal-controller/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
@@ -26,7 +26,10 @@ export function TerminalBody({ useTabInfo, useTerminal, useTheme, view, t }: Ter
   const theme = useTheme(value => value)
   const model = view(tab.id)
   const state = useTerminal(tab.id)
+  const [notice, setNotice] = useState<string>()
+  const error = state === undefined || state.phase === 'disconnected' ? undefined : state.issue === undefined ? state.error ?? state.info?.error : t(state.issue)
   useEffect(() => model.mount(), [model])
+  useEffect(() => { setNotice(tab.visible ? error : undefined) }, [error, tab.visible])
   if (state === undefined) return null
   const newTerminal = <Button variant="primary" size={state.issue === 'missingTerminal' ? 'md' : 'sm'}
     icon={<span className={css.actionIcon} aria-hidden="true"><IconPlusOutlineRegular /></span>}
@@ -43,10 +46,9 @@ export function TerminalBody({ useTabInfo, useTerminal, useTheme, view, t }: Ter
       {newTerminal}
     </div>
   </section>
-  const error = state.phase === 'disconnected' ? undefined : state.issue === undefined ? state.error ?? state.info?.error : t(state.issue)
+  const pending = state.phase === 'idle' || state.phase === 'loading' || state.phase === 'creating' || state.phase === 'connecting'
   let status: string | undefined
-  if (state.phase === 'idle' || state.phase === 'loading') status = t('loading')
-  else if (state.phase === 'creating' || state.phase === 'connecting' || state.phase === 'disconnected') status = t(state.phase)
+  if (state.phase === 'disconnected') status = t(state.phase)
   else if (state.info?.state === 'exited') status = t('exited', { code: String(state.info.exitCode ?? '—') })
   else if (state.info?.state === 'failed') status = t('unavailable')
   else if (state.phase === 'closed') status = t('closed')
@@ -55,6 +57,7 @@ export function TerminalBody({ useTabInfo, useTerminal, useTheme, view, t }: Ter
   const readOnly = state.phase === 'connected' && state.info?.state === 'running' && !state.writable
   return (
     <section className={css.root} data-sidebar-terminal>
+      {pending && <div className={css.pending} role="status" aria-label={t(state.phase === 'creating' ? 'creating' : state.phase === 'connecting' ? 'connecting' : 'loading')}><StateDot state="ongoing" size={28} /></div>}
       {(status !== undefined || retry || readOnly) && <div className={css.status} role="status">
         {status}
         {readOnly && <>{t('readonly')} <Button variant="outline" size="sm" onClick={() => { model.connect() }}>{t('control')}</Button></>}
@@ -64,7 +67,9 @@ export function TerminalBody({ useTabInfo, useTerminal, useTheme, view, t }: Ter
         {ended && newTerminal}
       </div>}
       {state.info !== undefined && <TerminalScreen state={state} model={model} visible={tab.visible} label={t('title')} theme={theme} />}
-      {error !== undefined && <p className={css.error} role="alert">{t('failed', { message: error })}</p>}
+      {notice !== undefined && <Toast key={notice} text={t('failed', { message: notice })} holdMs={null}
+        dismissLabel={t('dismissFeedback')} onDone={() => { setNotice(undefined) }}
+        {...(ended ? {} : { actions: [{ label: t(state.info === undefined ? 'retry' : 'reconnect'), onClick: () => { setNotice(undefined); if (state.info === undefined) void model.refresh(); else model.connect() } }] })} />}
     </section>
   )
 }

@@ -64,6 +64,9 @@
 
   function stateBadge(row) {
     const label = STATE_LABELS[row.state] || row.state || '未知';
+    if (row.message) {
+      return `<button type="button" class="badge comp-state-details${STATE_VARIANTS[row.state] ? ` ${STATE_VARIANTS[row.state]}` : ''}" data-comp-info="${escapeHtml(row.id)}" aria-label="${escapeHtml(row.name || row.id)}${escapeHtml(label)}，查看状态详情" title="查看状态详情">${escapeHtml(label)}</button>`;
+    }
     return badge(label, STATE_VARIANTS[row.state] || '');
   }
 
@@ -115,12 +118,7 @@
       management.push(btn('uninstall', '卸载', 'danger'));
       buttons.push(`<details class="comp-manage"><summary aria-label="管理${escapeHtml(row.name || row.id)}">管理<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg></summary><div class="comp-manage-menu"><span class="row-meta">当前 v${escapeHtml(row.installedVersion || row.version)}</span>${management.join('')}</div></details>`);
     }
-    if (row.message) buttons.push(statusDetailsButton(row));
     return buttons.join('');
-  }
-
-  function statusDetailsButton(row) {
-    return `<button type="button" class="ghost small" data-comp-info="${escapeHtml(row.id)}">状态详情</button>`;
   }
 
   function renderRows(payload) {
@@ -189,7 +187,7 @@
       button.addEventListener('click', () => {
         const row = state.rows.get(button.dataset.compInfo);
         if (row?.message) {
-          void window.appNotice({ title: `${row.name || row.id}状态`, body: errorText(row.message, '无法读取组件状态') });
+          void window.appNotice({ title: `${row.name || row.id}状态`, body: errorText(row.message, '无法读取组件状态'), holdMs: null });
         }
       });
     });
@@ -204,8 +202,7 @@
       const name = row.name || row.id;
       const control = `<button type="button" class="${running ? 'ghost' : 'primary'} small" data-comp-action="${running ? 'stop' : 'start'}" data-comp-id="${escapeHtml(row.id)}">${running ? '关闭' : '开启'}${escapeHtml(name)}</button>`;
       const settings = row.configurable && running ? `<button type="button" class="ghost small" data-comp-action="open" data-comp-id="${escapeHtml(row.id)}">打开设置</button>` : '';
-      const details = row.message ? statusDetailsButton(row) : '';
-      return `<article class="home-component" data-comp-row="${escapeHtml(row.id)}"><div class="home-component-head">${row.id === 'whalebridge' ? '' : componentIcon(row)}<div class="comp-copy"><h4>${escapeHtml(name)}</h4><span class="row-meta">v${escapeHtml(row.installedVersion)}</span></div>${stateBadge(row)}</div><p class="home-component-description">${escapeHtml(row.description || '鲸屿扩展组件')}</p><div class="home-component-controls">${control}${settings}${details}</div></article>`;
+      return `<article class="home-component" data-comp-row="${escapeHtml(row.id)}"><div class="home-component-head">${row.id === 'whalebridge' ? '' : componentIcon(row)}<div class="comp-copy"><h4>${escapeHtml(name)}</h4><span class="row-meta">v${escapeHtml(row.installedVersion)}</span></div>${stateBadge(row)}</div><p class="home-component-description">${escapeHtml(row.description || '鲸屿扩展组件')}</p><div class="home-component-controls">${control}${settings}</div></article>`;
     }).join('');
     bindActions(state.homeList);
     syncPendingButtons();
@@ -254,7 +251,7 @@
       try {
         renderRows(await state.shell.componentsList(checkUpdates ? { refresh: true } : undefined));
       } catch (error) {
-        if (notifyError) void window.appNotice({ title: '组件列表读取失败', body: errorText(error, '无法读取组件列表') });
+        if (notifyError) void window.appNotice({ title: '组件列表读取失败', body: errorText(error, '无法读取组件列表'), tone: 'error' });
       } finally {
         restore();
         state.refreshing = null;
@@ -392,14 +389,15 @@
     if (failure) {
       const status = document.getElementById('component-status');
       if (status) status.textContent = `${name}操作未完成：${failure}`;
-      void window.appNotice({ title: `${name}操作未完成`, body: failure });
+      void window.appNotice({ title: `${name}操作未完成`, body: failure, tone: 'error' });
     } else if (completed && completionMessage) {
-      void window.appNotice({ title: `${name}操作结果`, body: completionMessage });
+      void window.appNotice({ title: `${name}操作结果`, body: completionMessage, tone: 'success' });
     } else if (completed && (action === 'install' || action === 'update')) {
       const version = state.rows.get(id)?.installedVersion;
       void window.appNotice({
         title: `${name}${action === 'install' ? '安装' : '更新'}完成`,
         body: version ? `当前版本为 v${version}。` : '组件已就绪。',
+        tone: 'success',
       });
     }
   }

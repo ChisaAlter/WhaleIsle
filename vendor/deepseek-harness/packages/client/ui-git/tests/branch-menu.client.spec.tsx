@@ -177,28 +177,31 @@ describe('BranchMenu', () => {
     expect(b.gitSwitchBranch).toHaveBeenCalled()
   })
 
-  it('keeps the menu open and shows an error row when the branch list fails', async () => {
+  it('keeps the menu open and reports a failed branch list on the parent error toast', async () => {
     const b = mountMenu({
       gitBranchList: vi.fn(async () => ({ ok: false, message: 'Git status is unavailable.' })),
     })
     fireEvent.click(screen.getByRole('button', { name: 'Switch branch' }))
-    expect(await screen.findByText('Failed to load branches.')).toBeTruthy()
-    expect(screen.getByText('Git status is unavailable.')).toBeTruthy()
+    await waitFor(() => {
+      expect(b.onError).toHaveBeenCalledExactlyOnceWith('Git status is unavailable.', 'Failed to load branches.')
+    })
     expect(screen.queryByText('No matching branches')).toBeNull()
     expect(screen.getByRole('menuitem', { name: 'Create and checkout new branch…' })).toBeTruthy()
-    expect(b.onError).not.toHaveBeenCalled()
+    expect(b.gitBranchList).toHaveBeenCalledExactlyOnceWith('C:/proj')
     expect(screen.getByRole('button', { name: 'Switch branch' }).getAttribute('aria-expanded')).toBe('true')
   })
 
-  it('shows the error row when the branch list IPC rejects', async () => {
+  it('reports a rejected branch list IPC on the parent error toast', async () => {
     const b = mountMenu({
       gitBranchList: vi.fn(async () => { throw new Error('ipc dropped') }),
     })
     fireEvent.click(screen.getByRole('button', { name: 'Switch branch' }))
-    expect(await screen.findByText('Failed to load branches.')).toBeTruthy()
-    expect(screen.getByText('ipc dropped')).toBeTruthy()
+    await waitFor(() => {
+      expect(b.onError).toHaveBeenCalledExactlyOnceWith('ipc dropped', 'Failed to load branches.')
+    })
     expect(screen.queryByText('No matching branches')).toBeNull()
-    expect(b.onError).not.toHaveBeenCalled()
+    expect(b.gitBranchList).toHaveBeenCalledExactlyOnceWith('C:/proj')
+    expect(screen.getByRole('button', { name: 'Switch branch' }).getAttribute('aria-expanded')).toBe('true')
   })
 
   it('reports a rejected switch IPC promise on the parent error toast', async () => {

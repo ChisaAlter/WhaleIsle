@@ -52,9 +52,9 @@ export class SettingsDocumentStore {
 
   /**
    * Open the loaded document once; concurrent gestures collapse behind the in-flight action.
-   * @returns after the native-open request settles, or immediately when unavailable/already opening.
+   * @returns true after a confirmed open, false after failure, or undefined when unavailable/already opening.
    */
-  async open(): Promise<void> {
+  async open(): Promise<boolean | undefined> {
     const current = this.store.getSnapshot()
     if (current.status !== 'ready' || current.opening) return
     this.store.update((state) => {
@@ -67,6 +67,11 @@ export class SettingsDocumentStore {
         const { message } = result.error
         this.store.update((state) => { state.error = message })
       }
+      return result.ok
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : String(caught)
+      this.store.update((state) => { state.error = message })
+      return false
     } finally {
       this.store.update((state) => { state.opening = false })
     }

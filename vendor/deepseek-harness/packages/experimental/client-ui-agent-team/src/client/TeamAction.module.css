@@ -114,6 +114,18 @@
   padding: 0 9px 16px 14px;
   overflow-y: auto;
   scrollbar-gutter: stable;
+  position: relative;
+}
+
+.body[data-team-loading] {
+  min-height: 32px;
+}
+
+.loading {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .projectToolbar {

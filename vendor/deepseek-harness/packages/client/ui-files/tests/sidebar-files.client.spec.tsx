@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Exercise the native Sidebar adapters, rather than only their inner viewers. */
 import { useSyncExternalStore } from 'react'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
@@ -135,13 +135,16 @@ describe('native Files adapters', () => {
     const editor = await screen.findByLabelText('src/a.ts')
     fireEvent.change(editor, { target: { value: 'edited' } })
     act(() => { expect(state.requestClose('tab-a', ADDRESS, 'src/a.ts', proceed)).toBe(false) })
-    fireEvent.click(screen.getByRole('button', { name: 'Save and close' }))
+    const dialog = screen.getByRole('dialog', { name: 'Unsaved changes' })
+    const saveAndClose = within(dialog).getByRole('button', { name: 'Save and close' })
+    fireEvent.click(saveAndClose)
     await screen.findByRole('alert')
     expect(proceed).not.toHaveBeenCalled()
     expect(new DesktopFileState().read(ADDRESS)?.draft).toBe('edited')
     expect(screen.getByLabelText('src/a.ts')).toBe(editor)
+    expect(within(dialog).getByRole('button', { name: 'Could not save the file.' })).toBe(saveAndClose)
     fail = false
-    fireEvent.click(screen.getByRole('button', { name: 'Save and close' }))
+    fireEvent.click(saveAndClose)
     await waitFor(() => { expect(proceed).toHaveBeenCalledOnce() })
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(new DesktopFileState().read(ADDRESS)).toBeUndefined()

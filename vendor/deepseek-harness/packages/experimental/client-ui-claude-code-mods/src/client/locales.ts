@@ -6,6 +6,7 @@ export const NS = 'claude-code-mods'
 /** Simplified Chinese dictionary and key source. */
 export const zh = {
   band: 'Claude Code 模组',
+  close: '关闭提示',
   pressing: '正在处理…',
   'press.failed': '按钮操作失败：{message}',
   'press.stale': '该按钮属于更早的绘制，面板已刷新',
@@ -17,6 +18,7 @@ export type ModsBandKey = keyof typeof zh
 /** English dictionary checked against the Chinese key set. */
 export const en = {
   band: 'Claude Code mods',
+  close: 'Dismiss notice',
   pressing: 'Working…',
   'press.failed': 'The button failed: {message}',
   'press.stale': 'That button belonged to an earlier drawing; the band has refreshed',

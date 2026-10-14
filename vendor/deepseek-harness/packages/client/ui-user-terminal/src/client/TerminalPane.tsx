@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { StateDot, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import { FIT_SETTLE_MS, hostHasFitSize } from './fit.ts'
 import { sessionBuffer, type TerminalSessionRecord } from './stores.ts'
 import {
@@ -70,6 +71,8 @@ export function TerminalPane({
     onData, onResize, onActivate, cwd, mentionTerminal, writeClipboard, openWorkspacePath, openLocalUrl, openExternal,
   }
   const [selection, setSelection] = useState('')
+  const [initializing, setInitializing] = useState(true)
+  const [failure, setFailure] = useState<string>()
   const sessionRef = useRef(session)
   sessionRef.current = session
   const activeRef = useRef(active)
@@ -79,6 +82,8 @@ export function TerminalPane({
     const host = hostRef.current
     /* v8 ignore next -- the host ref is attached on the div this effect reads. */
     if (host === null) return
+    setInitializing(true)
+    setFailure(undefined)
     let cancelled = false
     let teardown: (() => void) | undefined
     const font = readXtermFont(host)
@@ -130,6 +135,7 @@ export function TerminalPane({
       }
       terminal.setTheme(terminalThemeFromApp(host))
       termRef.current = terminal
+      setInitializing(false)
       const seed = sessionBuffer(sessionRef.current)
       if (seed.length > 0) terminal.resetAndWrite(seed)
       writtenRef.current = seed.length
@@ -175,7 +181,8 @@ export function TerminalPane({
       if (cancelled) return
       const message =
         error instanceof Error ? error.message : 'Unable to initialize libghostty-vt'
-      host.textContent = `${message} — close and reopen the terminal to retry.`
+      setInitializing(false)
+      setFailure(message)
     })
     return () => {
       cancelled = true
@@ -212,6 +219,8 @@ export function TerminalPane({
 
   return (
     <div className={css.paneTerminalWrap}>
+      {initializing && <div className={css.panePending} role="status" aria-label={t('loading')}><StateDot state="ongoing" size={28} /></div>}
+      {active && failure !== undefined && <Toast key={failure} text={t('error.initialize', { message: failure })} holdMs={null} dismissLabel={t('dismissFeedback')} onDone={() => { setFailure(undefined) }} />}
       <div
         ref={hostRef}
         // The `xterm` class declares the terminal input region to the shortcut

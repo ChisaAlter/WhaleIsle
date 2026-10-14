@@ -1,7 +1,7 @@
 /** Coordinates onboarding navigation, transitions and the shared native recharge page. */
 import type { ProductEventMap } from '@deepseek-ai/dsh-client-product-analytics/client'
 import { useEffect, useRef, useState } from 'react'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import { hasOnboardingCredit } from './onboarding-balance.ts'
 import { OnboardingSurface } from './OnboardingSurface.tsx'
 import type { DesktopOnboardingProps } from './onboarding-contract.ts'
@@ -29,6 +29,8 @@ export function DesktopOnboarding({
   state, account, openPlatformPage, update, complete, retry, t, locale, track, exiting = false,
 }: DesktopOnboardingProps) {
   const [dialog, setDialog] = useState<OnboardingConfirmationKind | null>(null)
+  const [failureVisible, setFailureVisible] = useState(state.error !== null)
+  useEffect(() => { setFailureVisible(state.error !== null) }, [state.error])
   const heading = useRef<HTMLHeadingElement>(null)
   const page = useRef<HTMLElement>(null)
   // The one shared native host owns the recharge page; this flow holds only its
@@ -111,13 +113,15 @@ export function DesktopOnboarding({
           onSelect={(purpose) => { void update({ purpose }) }} onContinue={() => { click('next'); purposeNext() }} />}
         {step === 'process' && <OnboardingProcessStep t={t} heading={heading} busy={busy} process={progress.process}
           onSelect={(process) => { void update({ process }) }} onComplete={() => { click('next'); void complete('completed') }} />}
-        {state.error !== null && <div className={css.status} role="alert">{t('onboardingSaveFailed')}<Button disabled={busy} onClick={() => { void retry() }}>{t('onboardingRetry')}</Button></div>}
         {step !== 'welcome' && <footer className={css.navigation}>
           <button type="button" disabled={busy} onClick={() => { click('back'); go(step === 'credit' ? 'welcome' : step === 'purpose' ? 'credit' : 'purpose') }}><span className={css.backIcon} style={{ maskImage: `url(${backIcon})` }} aria-hidden="true" />{t('onboardingBack')}</button>
           <button type="button" disabled={busy} onClick={() => { click('skip'); setDialog(step === 'credit' ? 'credit-skip' : 'skip') }}>{t('onboardingSkip')}</button>
         </footer>}
       </section>
     </OnboardingSurface>
+    {state.error !== null && failureVisible && <Toast text={t('onboardingSaveFailed')} holdMs={null}
+      actions={[{ label: t('onboardingRetry'), onClick: () => { if (!busy) void retry() } }]}
+      onDone={() => { setFailureVisible(false) }} />}
     {dialog !== null && <OnboardingConfirmation kind={dialog} t={t} busy={busy} canRecharge={canRecharge}
       onClose={() => { popupClick('close'); setDialog(null) }} onContinueSetup={() => { popupClick('setting'); setDialog(null) }} onContinue={() => { popupClick('know'); setDialog(null); go('purpose') }} onRecharge={() => { popupClick('charge'); recharge() }}
       onSkip={() => { popupClick(dialog === 'skip' ? 'enter' : 'know'); void complete('skipped').then(() => { setDialog(null) }) }} />}

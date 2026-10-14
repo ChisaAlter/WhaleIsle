@@ -172,11 +172,20 @@
 /* Edit-session banner: one quiet row above the draft naming what the
    composer is doing (re-editing a sent message) plus its cancel exit. */
 .editRow {
+  position: absolute;
+  right: 8px;
+  bottom: calc(100% + 8px);
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 12px;
+  max-width: calc(100% - 16px);
+  padding: 4px 8px;
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  box-shadow: var(--dsw-elevation-panel);
 }
 
 .editLabel {

@@ -1,5 +1,7 @@
 import * as React from 'react';
+import { ActionButton, FeedbackToast } from './feedback.js';
 import { createPortal } from 'react-dom';
+import { useModalLayer } from '@deepseek-ai/dsh-client-ui-primitives';
 
 import { h } from './i18n.js';
 
@@ -53,17 +55,17 @@ export function WorkspaceDirectoryPicker({
   const requestRef = React.useRef(0);
   const controllerRef = React.useRef(null);
   const dialogRef = React.useRef(null);
+  const ownerRef = React.useRef(null);
   const bodyRef = React.useRef(null);
   const titleId = React.useId();
   const noticeId = React.useId();
   const initialPathRef = React.useRef(startPath);
   const onPickedRef = React.useRef(onPicked);
   const onCancelRef = React.useRef(onCancel);
-  const busyRef = React.useRef(busy);
 
   onPickedRef.current = onPicked;
   onCancelRef.current = onCancel;
-  busyRef.current = busy;
+  useModalLayer(dialogRef, open, () => { if (!busy) onCancel?.(); }, ownerRef);
 
   const loadDirectory = React.useCallback(async (path, { reportError = true } = {}) => {
     const request = requestRef.current + 1;
@@ -95,11 +97,6 @@ export function WorkspaceDirectoryPicker({
     setListing(null);
     setError(null);
     setShowHidden(false);
-    dialogRef.current?.focus?.();
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape' && !busyRef.current) onCancelRef.current?.();
-    };
-    if (typeof document !== 'undefined') document.addEventListener('keydown', handleKeyDown);
 
     const start = async () => {
       const initialPath = initialPathRef.current;
@@ -135,7 +132,6 @@ export function WorkspaceDirectoryPicker({
     void start();
     return () => {
       active = false;
-      if (typeof document !== 'undefined') document.removeEventListener('keydown', handleKeyDown);
       requestRef.current += 1;
       controllerRef.current?.abort();
     };
@@ -201,11 +197,10 @@ export function WorkspaceDirectoryPicker({
     listing?.truncated
       ? h('p', { className: 'dim-directoryPickerTruncated' }, '此目录的子文件夹过多，仅显示前一部分。')
       : null,
-    presentedError ? h('div', { className: 'dim-directoryPickerError', role: 'alert' },
-      h('span', null, presentedError),
-      !listing && !busy ? h('button', {
-        type: 'button', onClick: () => setRetryKey((value) => value + 1),
-      }, '重试') : null) : null),
+    presentedError ? h(FeedbackToast, {
+      text: presentedError, tone: 'error',
+      actions: !listing && !busy ? [{ label: '重试', onClick: () => setRetryKey((value) => value + 1) }] : undefined,
+    }) : null),
   h('footer', { className: 'dim-directoryPickerFooter' },
     h('button', {
       type: 'button',
@@ -219,12 +214,13 @@ export function WorkspaceDirectoryPicker({
     h('p', { id: noticeId, className: 'dim-directoryPickerNotice' }, '切换后会清除这个机器人的旧会话映射。'),
     h('div', { className: 'dim-directoryPickerActions' },
       h('button', { type: 'button', onClick: onCancel, disabled: busy }, '取消'),
-      h('button', {
+      h(ActionButton, {
         type: 'button',
         className: 'dim-directoryPickerPrimary',
         disabled: busy || loading || !listing,
-        onClick: () => listing && void onPicked(listing.path),
-      }, busy ? '切换中…' : '选择此目录')))));
+        onClick: () => listing && void onPicked(listing.path), loading: busy, }, '选择此目录')))));
 
-  return typeof document === 'undefined' ? content : createPortal(content, document.body);
+  return h(React.Fragment, null,
+    h('span', { ref: ownerRef, hidden: true, 'data-dsh-modal-owner': '' }),
+    typeof document === 'undefined' ? content : createPortal(content, document.body));
 }

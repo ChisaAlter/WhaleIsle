@@ -11,6 +11,8 @@ English | [中文](README.zh.md)
 
 Use **Upload Session Log when using the official model API** above the version number in **Settings → General** to control Session-log upload with DeepSeek API requests. The switch shows the accepted Host setting and saves each change immediately. It appears only while the Host exposes the upload setting; read-only clients cannot change it.
 
+The pending-write indicator remains inside the switch; mutation outcomes use the shell Toast without moving the settings row.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

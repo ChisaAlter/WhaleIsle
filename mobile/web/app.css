@@ -1045,29 +1045,54 @@ button { cursor: pointer; }
 .commit-card .warn { color: var(--dsw-alias-state-warn-primary); font-size: 12px; line-height: 18px; }
 .field-label { margin: 0; font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary); }
 .toast-layer {
-  position: absolute; top: 8px; right: 12px; left: 12px; z-index: 32;
+  position: absolute; top: calc(8px + env(safe-area-inset-top)); right: 12px; left: 12px; z-index: 40;
+  display: flex; justify-content: center;
+  pointer-events: none;
 }
 .toast {
+  box-sizing: border-box; width: max-content; max-width: min(640px, calc(100vw - 48px));
+  pointer-events: auto; max-height: calc(var(--dsh-viewport-height, 100dvh) - 32px); overflow-y: auto;
   display: flex; align-items: flex-start; gap: 10px;
-  border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-2);
-  box-shadow: var(--dsw-shadow-lv2);
+  border: 0; border-radius: 12px;
+  background: var(--dsw-alias-toast-bg); color: var(--dsw-alias-toast-label);
+  box-shadow: var(--dsw-shadow-lv3);
   padding: 12px 14px;
 }
-.toast .mark { flex: none; font-size: 13px; line-height: 20px; }
-.toast .mark.ok { color: var(--dsw-alias-state-success-primary); }
-.toast .mark.bad { color: var(--dsw-alias-state-error-primary); }
+.toast .mark { flex: none; display: grid; place-items: center; width: 16px; height: 16px; margin-top: 3px; color: var(--dsw-static-deepseek-400); }
+.toast .mark.ok { color: var(--dsw-static-green-400); }
+.toast .mark.bad { color: var(--dsw-static-red-400); }
 .toast .spin {
   flex: none; width: 14px; height: 14px; margin-top: 3px;
-  border: 2px solid var(--dsw-alias-border-l2);
-  border-top-color: var(--dsw-alias-label-primary);
+  border: 2px solid rgba(255, 255, 255, .3);
+  border-top-color: var(--dsw-alias-toast-label);
   border-radius: 50%;
   animation: toast-spin 0.8s linear infinite;
 }
 @keyframes toast-spin { to { transform: rotate(360deg); } }
 .toast-main { flex: 1; min-width: 0; }
-.toast-main b { display: block; font-size: 13px; line-height: 20px; font-weight: 500; }
-.toast-main span { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary); }
+.toast-main b { overflow-wrap: anywhere; }
+.toast-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.toast-actions .ghost-btn { padding: 0; border: 0; background: transparent; color: var(--dsw-static-deepseek-400); font-size: 14px; line-height: 22px; }
+.toast-actions .ghost-btn:hover { background: transparent; opacity: .8; }
+.toast-actions .ghost-btn:disabled { color: var(--dsw-alias-toast-label); opacity: .5; }
+.toast .icon-btn { width: 24px; height: 24px; border-radius: 4px; color: inherit; }
+.toast .icon-btn:hover { background: rgba(255, 255, 255, .1); }
+.toast :is(.icon-btn, .ghost-btn):focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.toast .button-busy::after { border-color: rgba(255, 255, 255, .3); border-top-color: var(--dsw-alias-toast-label); }
+.button-busy { position: relative; color: transparent !important; }
+.button-busy > * { visibility: hidden; }
+.button-busy::after, .surface-busy::after {
+  content: ''; position: absolute; width: 14px; height: 14px;
+  border: 2px solid var(--dsw-alias-border-l2); border-top-color: var(--dsw-alias-label-primary);
+  border-radius: 50%; animation: toast-spin 0.8s linear infinite;
+  pointer-events: none;
+}
+.button-busy::after { top: calc(50% - 7px); left: calc(50% - 7px); }
+.surface-busy::after { top: calc(50% - 7px); left: calc(50% - 7px); z-index: 2; }
+.log, .session-list, .slash-pop, .options { position: relative; }
+.slash-pop.surface-busy { min-height: 36px; }
+.toast-main b { display: block; font-size: 14px; line-height: 22px; font-weight: 400; }
+.toast-main span { font-size: 12px; line-height: 18px; color: inherit; }
 .lightbox-layer {
   position: absolute; inset: 0; z-index: 35;
   display: grid; place-items: center;
@@ -1532,6 +1557,7 @@ button { cursor: pointer; }
 @keyframes bottom-mask-in { from { opacity: 0; } to { opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
+  .button-busy::after, .surface-busy::after { animation: none; }
   .drawer { transition: none; }
   .switch, .switch::after { transition: none; }
   .toast .spin { animation: none; }

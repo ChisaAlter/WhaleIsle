@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ActionButton, FeedbackToast, ConfirmDialog } from '../../feedback.js';
 
 import { CredentialActionIcon, CredentialBindingPanel, QrActionIcon } from '../../credential-binding.js';
 import { h } from '../../i18n.js';
@@ -47,7 +48,7 @@ const Button = React.forwardRef(function Button(
   { children, kind = 'secondary', className = '', ...props },
   ref,
 ) {
-  return h('button', {
+  return h(ActionButton, {
     ...props,
     ref,
     type: 'button',
@@ -70,8 +71,7 @@ function Heading({ totals, adding, busy, onAdd, onCredential, credentialOpen, ad
           onClick: onAdd,
           disabled: adding || busy,
           ref: addButtonRef,
-          'aria-label': '扫码接入钉钉机器人',
-        }, h(QrActionIcon), adding ? '正在接入' : '扫码接入机器人'),
+          'aria-label': '扫码接入钉钉机器人', loading: adding, }, h(QrActionIcon), '扫码接入机器人'),
         h(Button, {
           kind: 'credential',
           className: 'dim-credentialButton',
@@ -101,8 +101,8 @@ function EmptyView({ busy, onStart }) {
         h('h3', null, '扫一次码，自动创建并连接机器人'),
         h('p', null, '授权由钉钉官方页面完成。扫码账号必须已加入一个企业/组织并有权创建机器人；创建成功后，应用凭据会直接写入 Harness Host。'),
         h('div', { className: 'ddt-actions dim-viewActions' },
-          h(Button, { kind: 'primary', onClick: onStart, disabled: busy },
-            busy ? '正在生成二维码…' : '生成钉钉二维码'))),
+          h(Button, { kind: 'primary', onClick: onStart, disabled: busy, loading: busy, },
+            '生成钉钉二维码'))),
       h('div', { className: 'ddt-brandMark dim-emptyBrand', 'aria-hidden': 'true' },
         h(DingtalkIcon, { size: 68 }))));
 }
@@ -193,23 +193,22 @@ function checkedTime(value) {
   }
 }
 
-function RemoveConfirmation({ account, busy, onConfirm, onCancel }) {
+function RemoveConfirmation({ account, busy, error, feedbackSequence, onConfirm, onCancel }) {
   const cancelRef = React.useRef(null);
   React.useEffect(() => cancelRef.current?.focus(), []);
-  return h('div', {
+  return h(ConfirmDialog, {
     className: 'ddt-confirm dim-confirm',
     role: 'alertdialog',
     'aria-label': `移除${account.bot.name}`,
     onKeyDown: (event) => {
       if (event.key === 'Escape' && !busy) onCancel();
-    },
-  },
+    }, onClose: onCancel, busy: Boolean(busy), error, feedbackSequence },
   h('strong', null, `从 DeepSeek Harness 移除“${account.bot.name}”？`),
   h('p', null, '这会停止消息连接，并删除本机保存的应用凭据、机器人配置及会话映射。钉钉开放平台中的机器人不会被自动删除。'),
   h('div', { className: 'ddt-actions dim-viewActions' },
     h(Button, { ref: cancelRef, onClick: onCancel, disabled: busy }, '保留机器人'),
-    h(Button, { kind: 'danger', onClick: onConfirm, disabled: busy },
-      busy ? '正在移除…' : '确认移除接入')));
+    h(Button, { kind: 'danger', onClick: onConfirm, disabled: busy, loading: busy, },
+      '确认移除接入')));
 }
 
 export function AccountCard({
@@ -217,6 +216,8 @@ export function AccountCard({
   busy,
   feedback,
   removing,
+  removeError,
+  removeFeedbackSequence,
   onReconnect,
   onWorkspaceSave,
   onAgentPresetSave,
@@ -257,8 +258,8 @@ export function AccountCard({
       h('div', { className: 'ddt-accountFooter dim-cardFooter' },
         h('div', { className: 'dim-cardFooterLayout' },
           h('div', { className: 'ddt-actions dim-cardActions' },
-            h(Button, { className: 'dim-cardAction', onClick: onReconnect, disabled: Boolean(busy) },
-              busy === 'reconnect' ? '检查中…' : account.connected ? '检查连接' : '重试连接'),
+            h(Button, { className: 'dim-cardAction', onClick: onReconnect, disabled: Boolean(busy), loading: busy === 'reconnect', },
+              account.connected ? '检查连接' : '重试连接'),
             h(Button, { className: 'dim-cardAction', kind: 'danger', onClick: onRequestRemove, disabled: Boolean(busy) },
               '移除接入')),
           summary ? h('div', { className: 'ddt-summary dim-cardSummary' }, summary) : null,
@@ -266,13 +267,12 @@ export function AccountCard({
             className: 'ddt-summary',
             error: account.lastMessageError,
           }) : null,
-          feedback ? h('div', {
-            className: 'ddt-summary dim-cardFeedback',
-            role: 'status',
-          }, feedback) : null))),
+          null))),
     removing ? h(RemoveConfirmation, {
       account,
       busy: busy === 'delete',
+      error: removeError,
+      feedbackSequence: removeFeedbackSequence,
       onConfirm: onConfirmRemove,
       onCancel: onCancelRemove,
     }) : null);
@@ -291,6 +291,8 @@ function AccountList(props) {
         busy: props.busyByBot[account.botId],
         feedback: props.feedbackByBot[account.botId]?.message,
         removing: props.removeTarget === account.botId,
+        removeError: props.removeErrorsByBot[account.botId]?.message,
+        removeFeedbackSequence: props.removeErrorsByBot[account.botId]?.sequence,
         onReconnect: () => props.onReconnect(account),
         onWorkspaceSave: (workspace) => props.onWorkspaceSave(account, workspace),
         onAgentPresetSave: (agentPreset) => props.onAgentPresetSave(account, agentPreset),
@@ -312,6 +314,7 @@ export function DingtalkSettingsTab({ rpcCall }) {
   const [busyByBot, setBusyByBot] = React.useState({});
   const [feedbackByBot, setFeedbackByBot] = React.useState({});
   const [removeTarget, setRemoveTarget] = React.useState(null);
+  const [removeErrorsByBot, setRemoveErrorsByBot] = React.useState({});
   const [credentialOpen, setCredentialOpen] = React.useState(false);
   const [credentialError, setCredentialError] = React.useState(null);
   const [notice, setNotice] = React.useState('');
@@ -690,7 +693,17 @@ export function DingtalkSettingsTab({ rpcCall }) {
           [account.botId]: { message: failureMessage, clearWhenDisconnected: false },
         }));
       }
-      announce(failureMessage);
+      if (operation === 'delete') {
+        setRemoveErrorsByBot((current) => ({
+          ...current,
+          [account.botId]: {
+            message: failureMessage,
+            sequence: (current[account.botId]?.sequence ?? 0) + 1,
+          },
+        }));
+      } else {
+        announce(failureMessage);
+      }
       return undefined;
     } finally {
       const shouldRefresh = workspaceFence.endMutation();
@@ -771,7 +784,12 @@ export function DingtalkSettingsTab({ rpcCall }) {
       payload: { botId: account.botId, confirm: true },
       success: '钉钉机器人及本机凭据已移除。',
     });
-    if (snapshot && mountedRef.current) setRemoveTarget(null);
+    if (snapshot && mountedRef.current) {
+      setRemoveTarget(null);
+      setRemoveErrorsByBot((current) => {
+        const next = { ...current }; delete next[account.botId]; return next;
+      });
+    }
   }, [runBotAction]);
 
   let provisionView = null;
@@ -827,9 +845,11 @@ export function DingtalkSettingsTab({ rpcCall }) {
       credentialOpen,
       addButtonRef,
     }),
-    h('div', { className: 'ddt-visuallyHidden', role: 'status', 'aria-live': 'polite' }, notice),
+    notice ? h(FeedbackToast, { text: notice }) : null,
+    Object.entries(removeErrorsByBot).map(([botId, failure]) => botId !== removeTarget
+      ? h(FeedbackToast, { key: botId, text: failure.message, tone: 'error', sequence: failure.sequence }) : null),
     model.error && model.phase === 'ready'
-      ? h('div', { className: 'ddt-statusNotice dim-statusNotice', role: 'alert' }, `状态刷新失败：${model.error.message}`)
+      ? h(FeedbackToast, { text: `状态刷新失败：${model.error.message}`, tone: "error" })
       : null,
     model.phase === 'loading'
       ? h(LoadingView)
@@ -851,6 +871,7 @@ export function DingtalkSettingsTab({ rpcCall }) {
                   busyByBot,
                   feedbackByBot,
                   removeTarget,
+                  removeErrorsByBot,
                   onReconnect: (account) => void reconnect(account),
                   onWorkspaceSave: saveWorkspace,
                   onAgentPresetSave: saveAgentPreset,

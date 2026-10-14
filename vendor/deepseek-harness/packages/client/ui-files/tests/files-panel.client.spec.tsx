@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, act } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, act, within } from '@testing-library/react'
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', async (importOriginal) => {
@@ -437,12 +437,16 @@ describe('FilesPanel', () => {
     await act(async () => {
       await Promise.resolve()
     })
-    // Copy feedback is its own status marker; the Refresh tooltip is untouched.
-    expect(screen.getByRole('status').textContent).toBe('Copied')
+    // Copy feedback uses the shared fading Toast; the Refresh control is untouched.
+    const copied = screen.getByRole('alert')
+    expect(within(copied).getByText('Copied')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Refresh' }).getAttribute('aria-busy')).toBeNull()
     await act(async () => {
-      vi.advanceTimersByTime(1200)
+      vi.advanceTimersByTime(1199)
     })
-    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.getByRole('alert')).toBe(copied)
+    await act(async () => { vi.advanceTimersByTime(1001) })
+    expect(screen.queryByRole('alert')).toBeNull()
     vi.useRealTimers()
   })
 
@@ -504,13 +508,17 @@ describe('FilesPanel', () => {
         t={t}
       />,
     )
-    expect(screen.getByText('Listing directory…')).toBeTruthy()
+    const refresh = screen.getByRole('button', { name: 'Refresh' }) as HTMLButtonElement
+    expect(refresh.getAttribute('aria-busy')).toBe('true')
+    expect(refresh.disabled).toBe(true)
     expect(screen.queryByText('This directory is empty.')).toBeNull()
     await act(async () => {
       finish({ ok: true, entries: FAKE_ROOT })
     })
     expect(await screen.findByText('README.md')).toBeTruthy()
-    expect(screen.queryByText('Listing directory…')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBe(refresh)
+    expect(refresh.getAttribute('aria-busy')).toBeNull()
+    expect(refresh.disabled).toBe(false)
   })
 
   it('shows the empty-directory message when listing returns no entries', async () => {
@@ -1354,10 +1362,14 @@ describe('FilePreview', () => {
     )
     const editor = await screen.findByLabelText('a.ts')
     fireEvent.change(editor, { target: { value: 'y' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(await screen.findByText('disk full')).toBeTruthy()
+    const save = screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement
+    fireEvent.click(save)
+    const failure = await screen.findByRole('alert')
+    expect(within(failure).getByText('disk full')).toBeTruthy()
     expect((screen.getByLabelText('a.ts') as HTMLTextAreaElement).value).toBe('y')
-    expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy()
+    expect(save.isConnected).toBe(true)
+    expect(save.disabled).toBe(false)
+    expect(within(failure).getByRole('button', { name: 'Save' })).not.toBe(save)
   })
 
   it('keeps characters typed during an explicit save dirty instead of marking them saved', async () => {
@@ -1915,10 +1927,11 @@ describe('FilePreview', () => {
     fireEvent.change(editor, { target: { value: 'mine' } })
     disk = 'theirs'
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(await screen.findByText('The file changed on disk. Save again to overwrite.')).toBeTruthy()
+    const failure = await screen.findByRole('alert')
+    expect(within(failure).getByText('The file changed on disk. Save again to overwrite.')).toBeTruthy()
     expect(writeFile).not.toHaveBeenCalled()
     expect((screen.getByLabelText('a.ts') as HTMLTextAreaElement).value).toBe('mine')
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(within(failure).getByRole('button', { name: 'Save' }))
     await waitFor(() => {
       expect(writeFile).toHaveBeenCalledWith('/tmp/proj', 'a.ts', 'mine')
     })

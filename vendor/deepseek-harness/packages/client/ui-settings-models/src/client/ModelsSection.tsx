@@ -21,9 +21,9 @@
  * post-apply reload.
  */
 
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button, IconPlusOutlineRegular, Modal, SegmentedControl, SettingsSelect } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconPlusOutlineRegular, IconRefreshOutline16, Modal, SegmentedControl, SettingsSelect, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls this package's SlotMap merge (the two Models child slots).
@@ -262,7 +262,12 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   const [deleteTarget, setDeleteTarget] = useState<EditorTarget | undefined>(undefined)
   const [deleting, setDeleting] = useState(false)
   const [deleteFailure, setDeleteFailure] = useState<string | undefined>(undefined)
+  const [deleteFailureDismissed, setDeleteFailureDismissed] = useState(false)
+  const [deleteFailureSequence, setDeleteFailureSequence] = useState(0)
   const [savedTarget, setSavedTarget] = useState<ProviderIdentity | undefined>(undefined)
+  const [loadErrorDismissed, setLoadErrorDismissed] = useState(false)
+  const [loadErrorSequence, setLoadErrorSequence] = useState(0)
+  useEffect(() => { setLoadErrorDismissed(false) }, [state.status, state.error])
   const [dismissedSetup, setDismissedSetup] = useState<ReadonlySet<string>>(() => new Set())
 
   const announceSaved = (target: ProviderIdentity): void => {
@@ -307,13 +312,16 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
     if (deleting) return
     setDeleteTarget(undefined)
     setDeleteFailure(undefined)
+    setDeleteFailureDismissed(false)
   }
 
   const confirmDelete = (): void => {
     /* v8 ignore next -- the action only renders with a target and is disabled while a deletion is pending */
     if (deleteTarget === undefined || deleting) return
     setDeleting(true)
+    setDeleteFailureSequence(sequence => sequence + 1)
     setDeleteFailure(undefined)
+    setDeleteFailureDismissed(false)
     void removeProviderProfile(operations, controller, deleteTarget)
       .then((failure) => {
         if (failure !== undefined) {
@@ -322,6 +330,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
         }
         setDeleteTarget(undefined)
       })
+      .catch((error: unknown) => { setDeleteFailure(error instanceof Error ? error.message : String(error)) })
       .finally(() => { setDeleting(false) })
   }
 
@@ -329,12 +338,19 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   if (state.status === 'error') {
     /* v8 ignore next -- an error status always carries text; the fallback satisfies the nullable type */
     const errorText = state.error ?? ''
+    const retryLoad = (): void => {
+      setLoadErrorDismissed(false)
+      setLoadErrorSequence(sequence => sequence + 1)
+      void controller.load()
+    }
     return (
       <div className={styles['section']}>
-        <p className={styles['error']}>{`${t('loadFailed')}: ${errorText}`}</p>
-        <button type="button" className={styles['secondaryButton']} onClick={() => { void controller.load() }}>
-          {t('retry')}
-        </button>
+        <h2 className={styles['title']}>{t('title')}</h2>
+        <p className={styles['intro']}>{t('intro')}</p>
+        {!loadErrorDismissed && <Toast key={loadErrorSequence} text={`${t('loadFailed')}: ${errorText}`} holdMs={null}
+          dismissLabel={t('close')} actions={[{ label: t('retry'), onClick: retryLoad }]} onDone={() => { setLoadErrorDismissed(true) }} />}
+        <Tooltip label={`${t('loadFailed')}: ${errorText}`} portal><Button size="sm" variant="outline"
+          className={styles['loadRetry']} icon={<IconRefreshOutline16 />} aria-label={t('retry')} onClick={retryLoad} /></Tooltip>
       </div>
     )
   }
@@ -405,9 +421,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
       {savedIdentity === undefined
         ? null
         : (
-          <p className={styles['savedNotice']} role="status" aria-live="polite">
-            {providerCopy(t('savedProvider'), savedIdentity)}
-          </p>
+          <Toast text={providerCopy(t('savedProvider'), savedIdentity)} tone="success" onDone={() => { setSavedTarget(undefined) }} />
         )}
       <ul className={styles['rows']}>
         {configured.map((row) => {
@@ -711,16 +725,18 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
               variant="outline"
               className={styles['deleteConfirm']}
               disabled={deleting}
+              loading={deleting}
+              feedback={deleteTarget !== undefined && deleting ? providerCopy(t('deleting'), deleteTarget) : undefined}
               onClick={confirmDelete}
             >
               {deleteTarget === undefined
                 ? ''
-                : providerCopy(deleting ? t('deleting') : t('deleteConfirm'), deleteTarget)}
+                : providerCopy(t('deleteConfirm'), deleteTarget)}
             </Button>
           </>
         )}
       >
-        {deleteFailure === undefined ? null : <p className={styles['error']}>{deleteFailure}</p>}
+        {deleteFailure === undefined || deleteFailureDismissed ? null : <Toast key={deleteFailureSequence} text={deleteFailure} holdMs={9000} onDone={() => { setDeleteFailureDismissed(true) }} />}
       </Modal>
     </div>
   )

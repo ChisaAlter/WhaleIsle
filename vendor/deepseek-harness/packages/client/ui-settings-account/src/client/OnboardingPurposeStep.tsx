@@ -31,7 +31,7 @@ export function OnboardingPurposeStep({ t, heading, busy, purpose, onSelect, onC
     <div className={css.purposeCards}>
       {(['office', 'development'] as const).map(value => <PurposeCard key={value} purpose={value} checked={selected(value)} t={t} onToggle={() => { toggle(value) }} />)}
     </div>
-    <div className={css.primaryAction}>{purpose !== null && <Button className={css.action} variant="primary" aria-disabled={busy} onClick={() => { if (!busy) onContinue() }}>{t('onboardingContinue')}</Button>}</div>
+    <div className={css.primaryAction}>{purpose !== null && <Button className={css.action} variant="primary" aria-disabled={busy} loading={busy} onClick={() => { if (!busy) onContinue() }}>{t('onboardingContinue')}</Button>}</div>
   </div>
 }
 

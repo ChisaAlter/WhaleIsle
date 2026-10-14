@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { MenuSurface, useAnchoredPosition } from '@deepseek-ai/dsh-client-ui-primitives'
+import { MenuSurface, StateDot, Toast, Tooltip, useAnchoredPosition } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './inspector.module.css'
 
@@ -23,6 +23,7 @@ export function TypeFilter({ value, suggest, apply, t }: InspectorTypeFilterProp
   const [draft, setDraft] = useState(value)
   const [active, setActive] = useState(-1)
   const [result, setResult] = useState<{ query: string; items: readonly string[]; error?: string }>()
+  const [errorDismissed, setErrorDismissed] = useState(false)
   const anchor = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLInputElement>(null)
@@ -54,6 +55,7 @@ export function TypeFilter({ value, suggest, apply, t }: InspectorTypeFilterProp
     if (!open) return
     let current = true
     setResult(undefined)
+    setErrorDismissed(false)
     setActive(-1)
     void Promise.resolve().then(() => suggest(draft)).then((items) => {
       if (current) setResult({ query: draft, items })
@@ -80,6 +82,9 @@ export function TypeFilter({ value, suggest, apply, t }: InspectorTypeFilterProp
         <path d="M2 3h12L9.5 8v5l-3-1.5V8L2 3Z" />
       </svg>
     </button>
+    {open && current === undefined ? <Toast text={t('filter.loading')} icon={<StateDot state="ongoing" />}
+      holdMs={null} onDone={() => {}} /> : open && current?.error !== undefined && !errorDismissed
+        ? <Toast text={`${t('filter.failed')} ${current.error}`} holdMs={9000} onDone={() => { setErrorDismissed(true) }} /> : null}
     {open && createPortal(<MenuSurface compact ref={panel} className={css.typeFilterPanel} role="dialog" aria-label={t('filter.title')}
       style={position ?? { left: 0, top: 0, visibility: 'hidden' }}
       onKeyDown={(event) => {
@@ -90,7 +95,9 @@ export function TypeFilter({ value, suggest, apply, t }: InspectorTypeFilterProp
           && !anchor.current?.contains(event.relatedTarget)) close(false)
       }}>
       <div>
+        <Tooltip label={current?.error ?? ''} disabled={current?.error === undefined} portal side="bottom">
         <input ref={input} className={css.typeFilterInput} value={draft} role="combobox" aria-label={t('filter.input')}
+          aria-describedby={current?.error === undefined ? undefined : `${id}-error`}
           aria-autocomplete="list" aria-expanded aria-controls={listId}
           aria-activedescendant={selected < 0 ? undefined : `${id}-option-${selected}`}
           placeholder={t('filter.placeholder')} onChange={(event) => { setDraft(event.currentTarget.value); setActive(-1) }}
@@ -106,15 +113,15 @@ export function TypeFilter({ value, suggest, apply, t }: InspectorTypeFilterProp
               commit(items[selected] ?? draft)
             }
           }} />
+        </Tooltip>
+        {current?.error === undefined ? null : <span className={css.visuallyHidden} id={`${id}-error`}>{current.error}</span>}
         <div className={css.typeFilterHelp}>{t('filter.help')}</div>
         <div id={listId} role="listbox" aria-label={t('filter.candidates')} aria-busy={current === undefined} className={css.typeFilterOptions}>
           {items.map((type, index) => <button key={type} id={`${id}-option-${index}`} type="button" role="option"
             aria-selected={selected === index} tabIndex={-1} title={type}
             onPointerDown={(event) => { event.preventDefault() }} onClick={() => { commit(type) }}>{type}</button>)}
         </div>
-        {current === undefined && <div role="status">{t('filter.loading')}</div>}
-        {current?.error !== undefined ? <div role="alert">{t('filter.failed')} {current.error}</div>
-          : current !== undefined && items.length === 0 && <div role="status">{t('filter.noCandidates')}</div>}
+        {current !== undefined && current.error === undefined && items.length === 0 && <div role="status">{t('filter.noCandidates')}</div>}
         <div className={css.typeFilterActions}>
           <button type="button" onClick={() => { setDraft(''); setActive(-1); input.current?.focus() }}>{t('filter.clear')}</button>
           <button type="button" onClick={() => { close(true) }}>{t('filter.cancel')}</button>

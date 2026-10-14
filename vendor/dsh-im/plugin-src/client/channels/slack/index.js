@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ActionButton, FeedbackToast } from '../../feedback.js';
 
 import { SlackLogoGlyph } from '../../channel-logos.js';
 import { h } from '../../i18n.js';
@@ -14,15 +15,22 @@ export function SlackCredentialPanel({ busy, error, onSubmit, onCancel }) {
   const [botToken, setBotToken] = React.useState('');
   const [appToken, setAppToken] = React.useState('');
   const [copied, setCopied] = React.useState(false);
+  const [copying, setCopying] = React.useState(false);
+  const [copyError, setCopyError] = React.useState(null);
   const headingId = React.useId();
 
   const copyManifest = async () => {
+    if (copying) return;
+    setCopying(true); setCopyError(null); setCopied(false);
     try {
       await navigator.clipboard.writeText(SLACK_APP_MANIFEST_YAML);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2_000);
-    } catch {
+    } catch (cause) {
       setCopied(false);
+      setCopyError(cause?.message ?? '无法写入剪贴板');
+    } finally {
+      setCopying(false);
     }
   };
 
@@ -44,12 +52,14 @@ export function SlackCredentialPanel({ busy, error, onSubmit, onCancel }) {
       h('strong', null, '先用 Manifest 创建并配置 Slack App'),
       h('p', null, '复制配置后，在 Slack 选择 From a manifest；创建完成后生成 connections:write App Token，并将应用安装到工作区。')),
     h('div', { className: 'dsl-guideActions' },
-      h('button', {
+      h(ActionButton, {
         type: 'button',
         className: 'ddt-button',
         onClick: () => void copyManifest(),
-        disabled: busy,
-      }, copied ? h('span', { className: 'dsl-copyState' }, '已复制 Manifest') : '复制 Manifest'),
+        disabled: busy || copying, loading: copying,
+      }, '复制 Manifest'),
+      copied ? h(FeedbackToast, { text: '已复制 Manifest', holdMs: 2000 }) : null,
+      copyError ? h(FeedbackToast, { text: copyError, tone: 'error' }) : null,
       h('a', {
         className: 'ddt-button',
         href: SLACK_CREATE_APP_URL,
@@ -89,14 +99,13 @@ export function SlackCredentialPanel({ busy, error, onSubmit, onCancel }) {
           required: true,
         })),
       h('p', { className: 'dsl-tokenHint' }, 'Bot Token 来自 OAuth & Permissions；App Token 来自 Basic Information，并且必须包含 connections:write。')),
-    error ? h('p', { className: 'dim-credentialError', role: 'alert' }, error.message ?? String(error)) : null,
+    error ? h(FeedbackToast, { text: error.message ?? String(error), tone: "error" }) : null,
     h('div', { className: 'ddt-actions dim-viewActions dim-credentialActions' },
-      h('button', {
+      h(ActionButton, {
         type: 'submit',
         className: 'ddt-button',
         'data-kind': 'primary',
-        disabled: busy || !botToken.trim() || !appToken.trim(),
-      }, busy ? '正在验证并连接…' : '验证并连接'),
+        disabled: busy || !botToken.trim() || !appToken.trim(), loading: busy, }, '验证并连接'),
       h('button', {
         type: 'button',
         className: 'ddt-button',

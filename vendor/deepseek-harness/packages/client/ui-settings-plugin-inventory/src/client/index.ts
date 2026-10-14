@@ -50,7 +50,7 @@ export function apply(ctx: ClientContext): void {
     list, presetName,
     resolveText: text => ctx.locale.resolveText(text),
     hooks: { clientSync: ctx.modules.entries.state },
-    retryClient: () => { void ctx.modules.entries.retry().catch((error: unknown) => { ctx.logger.error(error) }) },
+    retryClient: () => ctx.modules.entries.retry(),
   })
 
   ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({

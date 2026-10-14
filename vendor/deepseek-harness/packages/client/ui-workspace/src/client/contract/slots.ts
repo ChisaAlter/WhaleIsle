@@ -277,6 +277,16 @@ export type WorkspaceBrowserInjected = {
   deleteWorkspace: (workspaceId: WorkspaceId) => Promise<void>
   /** Permanently delete an archived Session after confirmation. */
   deleteSession: (sessionId: SessionId) => Promise<void>
+  /** Archive one selected Session; stopping its work requires the batch confirmation. */
+  archiveSessionForBatch: (
+    sessionId: SessionId,
+    options?: { readonly stopActivity?: boolean },
+  ) => Promise<void>
+  /**
+   * Delete one selected Session after batch confirmation. An unarchived Session
+   * is first archived without stopping its work, so active work rejects deletion.
+   */
+  deleteSessionForBatch: (sessionId: SessionId) => Promise<void>
   /**
    * Reorder a Workspace in the durable registry display order.
    * Omitted anchor appends to the end.

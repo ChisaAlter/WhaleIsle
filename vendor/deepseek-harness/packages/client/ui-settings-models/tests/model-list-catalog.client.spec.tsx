@@ -100,7 +100,7 @@ it('restores inherited image input after a failed catalog read is retried manual
     probe={{ settingsNs: 'llm-pi-ai', provider: 'openai' }} disabled={false} t={key => en[key]} onBusyChange={() => {}}
     operations={operations(discover)}
   />)
-  await screen.findByText('Catalog unavailable')
+  expect((await screen.findByRole('alert')).textContent).toContain('Catalog unavailable')
   fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
   const image = screen.getByRole<HTMLInputElement>('checkbox', { name: en.modelInputImage })
   expect(image.checked).toBe(false)
@@ -112,4 +112,31 @@ it('restores inherited image input after a failed catalog read is retried manual
   expect(screen.queryByText('Catalog unavailable')).toBeNull()
   expect(discover).toHaveBeenCalledTimes(2)
   expect(onChange).not.toHaveBeenCalled()
+})
+
+it('shows the same rejected fetch again after its feedback expires without changing the draft', async () => {
+  vi.useFakeTimers()
+  try {
+    const discover = vi.fn<ModelsOperations['discoverModels']>().mockRejectedValue(new Error('Endpoint unavailable'))
+    const onChange = vi.fn()
+    render(<ModelListEditor
+      models={[{ id: 'kept-model' }]} onChange={onChange}
+      probe={{ settingsNs: 'llm-pi-ai', provider: 'openai' }} disabled={false} t={key => en[key]} onBusyChange={() => {}}
+      operations={operations(discover)}
+    />)
+    const fetch = screen.getByRole<HTMLButtonElement>('button', { name: en.fetchModels })
+    await act(async () => { fireEvent.click(fetch) })
+    expect(screen.getByRole('alert').textContent).toContain('Endpoint unavailable')
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(fetch.title).toBe('Endpoint unavailable')
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelId} 1`).value).toBe('kept-model')
+
+    await act(async () => { fireEvent.click(fetch) })
+    expect(screen.getByRole('alert').textContent).toContain('Endpoint unavailable')
+    expect(discover).toHaveBeenCalledTimes(2)
+    expect(onChange).not.toHaveBeenCalled()
+  } finally {
+    vi.useRealTimers()
+  }
 })

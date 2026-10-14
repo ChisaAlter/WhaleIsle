@@ -1,4 +1,5 @@
 .root {
+  position: relative;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -230,7 +231,11 @@
 }
 
 .limit {
-  flex: 0 0 auto;
+  position: absolute;
+  bottom: 0;
+  inset-inline: 0;
+  pointer-events: none;
+  background: var(--dsw-alias-bg-base);
   margin: 0;
   padding: 4px 10px;
   overflow: hidden;

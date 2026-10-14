@@ -57,6 +57,7 @@ export function apply(ctx: Context): void {
     listCatalog: async options => shell.listMarketplace({ ...options, locale: activeLocale() }),
     listInstalled: async () => {
       const payload = await shell.listInstalledPlugins()
+      if (payload.ok !== true) throw new Error(t('installedReadFailed'))
       return payload.plugins ?? []
     },
     checkUpdates: options => shell.checkMarketplaceUpdates(options),

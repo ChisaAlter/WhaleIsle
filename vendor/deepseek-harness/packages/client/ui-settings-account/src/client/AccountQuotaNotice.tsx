@@ -55,6 +55,9 @@ export function AccountQuotaNotice({ matched, openPlatformPage, useAccount, useP
     }
     previousSignedIn.current = signedIn
   }, [dismiss, signedIn])
+  // A sign-out retires this account notice. Do not create a fallback Toast in
+  // the render before the effect releases its claims and dismisses the owner.
+  if (previousSignedIn.current && !signedIn) return null
   // Await the first account snapshot without letting a Toast timer discard the
   // notice before the native account action becomes available. A terminal stream
   // failure ends that wait and leaves the generic warning available.

@@ -19,8 +19,8 @@
  * same per-session ModelDirectory as the /model popup; exact-model reasoning
  * metadata and the selected effort come from the Host rather than a
  * client-owned vocabulary. A rejected selection announces through the shared
- * transient Toast anchored to the composer card; the in-menu strip with
- * Retry remains the catalog-load surface. While the directory's pending
+ * transient Toast anchored to the composer card; catalog failures use a
+ * persistent Toast with Retry. While the directory's pending
  * selection is unsettled, the trigger shows a spinner in place of its
  * chevron, and each row whose value that selection carries shows one in place
  * of its check mark.
@@ -75,13 +75,23 @@ export function ModelSelect(
   const [query, setQuery] = useState('')
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null)
   const [selectionFocus, setSelectionFocus] = useState(false)
-  // The in-menu error strip serves catalog loads (its Retry re-runs the
-  // load); a rejected SELECTION announces through the transient toast
-  // instead, so the strip renders only while the latest failure-capable
-  // action was a load.
+  // Catalog failures keep a retryable notice; selection failures retain
+  // their existing transient notice.
   const lastActionRef = useRef<'load' | 'select'>('load')
-  const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
+  const [toast, setToast] = useState<{ seq: number; text: string; catalog?: boolean } | null>(null)
   const toastSeq = useRef(0)
+  useEffect(() => {
+    if (!open || lastActionRef.current !== 'load') return
+    const text = [
+      ...state.error === null ? [] : [t('error.action', { message: state.error })],
+      ...state.failures.map(failure => t('warning.groupLoad', {
+        name: failure.id === 'deepseek-account' ? t('provider.account') : failure.name,
+        message: failure.message,
+      })),
+    ].join('\n')
+    if (text !== '') setToast({ seq: ++toastSeq.current, text, catalog: true })
+    else setToast(current => current?.catalog === true ? null : current)
+  }, [open, state.error, state.failures, t])
   const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const searchRef = useRef<HTMLInputElement | null>(null)
@@ -157,12 +167,14 @@ export function ModelSelect(
 
   const reload = (): void => {
     lastActionRef.current = 'load'
+    setToast(current => current?.catalog === true ? null : current)
     load()
   }
 
   useEffect(() => {
     if (!open) return
     const closeOutside = (event: MouseEvent): void => {
+      if (event.target instanceof Element && event.target.closest('[data-dsh-toast]') !== null) return
       // The portaled card is outside the trigger subtree; check both.
       if (rootRef.current?.contains(event.target as Node) === true) return
       if (menuRef.current?.contains(event.target as Node) === true) return
@@ -386,6 +398,7 @@ export function ModelSelect(
   }
 
   const onBlur = (event: FocusEvent<HTMLDivElement>): void => {
+    if (event.relatedTarget instanceof Element && event.relatedTarget.closest('[data-dsh-toast]') !== null) return
     if (event.relatedTarget instanceof Node && (
       rootRef.current?.contains(event.relatedTarget) === true
       || menuRef.current?.contains(event.relatedTarget) === true
@@ -449,9 +462,7 @@ export function ModelSelect(
   }
 
   const waiting = state.current === null && state.status === 'loading'
-  const modelLabel = waiting
-    ? t('trigger.loading')
-    : currentChoice?.model.name
+  const modelLabel = waiting ? t('trigger.loading') : currentChoice?.model.name
       ?? (state.current === null ? t('trigger.fallback') : `${state.current.provider}/${state.current.model}`)
   const triggerLabel = effortLabel === undefined ? modelLabel : `${modelLabel} · ${effortLabel}`
   const triggerAria = waiting
@@ -489,7 +500,7 @@ export function ModelSelect(
         aria-expanded={open}
         aria-controls={open ? `${id}-menu` : undefined}
         title={triggerLabel}
-        aria-busy={busy}
+        aria-busy={busy || waiting}
         data-selection-focus={selectionFocus ? '' : undefined}
         onBlur={() => { setSelectionFocus(false) }}
         disabled={locked}
@@ -502,10 +513,14 @@ export function ModelSelect(
         }}
       >
         <IconDataOutlineRegular className={css.triggerIcon} size={16} />
-        <FlipText className={css.triggerLabel} text={modelLabel} />
+        {state.current === null ? <span className={clsx(css.triggerLabel, css.initialLabel)}>
+          <span className={css.initialReserve} aria-hidden>{t('trigger.fallback')}</span>
+          <span className={css.initialReserve} aria-hidden>{t('trigger.loading')}</span>
+          <FlipText className={css.initialCaption} text={modelLabel} />
+        </span> : <FlipText className={css.triggerLabel} text={modelLabel} />}
         {effortLabel !== undefined && <FlipText className={css.triggerEffort} text={effortLabel} />}
-        {busy
-          ? <StateDot state="ongoing" />
+        {busy || waiting
+          ? <StateDot state="ongoing" size={16} />
           : <IconChevronDownOutlineRegular className={clsx(css.chevron, open && css.chevronOpen)} />}
       </button>
 
@@ -574,21 +589,6 @@ export function ModelSelect(
                   </button>
                 )}
               </div>}
-              {view.state.status === 'loading' && (
-                <div className={css.status}>{t('status.loading')}</div>
-              )}
-              {view.state.error !== null && view.action === 'load' && (
-                <div className={css.error}>
-                  <span>{t('error.action', { message: view.state.error })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
-                </div>
-              )}
-              {view.state.failures.map(failure => (
-                <div className={css.warning} key={failure.id}>
-                  <span>{t('warning.groupLoad', { name: failure.id === 'deepseek-account' ? t('provider.account') : failure.name, message: failure.message })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('retry')}</button>
-                </div>
-              ))}
               <div
                 ref={groupsRef}
                 id={`${id}-models`}
@@ -648,12 +648,6 @@ export function ModelSelect(
 
           {pane === 'effort' && (
             <>
-              {view.state.error !== null && view.action === 'load' && (
-                <div className={css.error}>
-                  <span>{t('error.action', { message: view.state.error })}</span>
-                  <button type="button" className={css.retry} onClick={reload}>{t('action.reload')}</button>
-                </div>
-              )}
               {view.effortChoices.length === 0
                 ? <div className={css.empty}>{t('empty.efforts')}</div>
                 : view.effortChoices.map(level => (
@@ -688,6 +682,9 @@ export function ModelSelect(
           key={toast.seq}
           text={toast.text}
           icon={<IconWarningOutlineRegular />}
+          holdMs={toast.catalog === true ? null : undefined}
+          dismissLabel={t('close')}
+          actions={toast.catalog === true ? [{ label: t('action.reload'), onClick: reload }] : undefined}
           anchor={rootRef.current?.closest<HTMLElement>('[data-composer-card]') ?? null}
           onDone={() => { setToast(null) }}
         />

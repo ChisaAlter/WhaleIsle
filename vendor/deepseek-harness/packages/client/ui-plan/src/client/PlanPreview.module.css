@@ -35,4 +35,5 @@
 .document { color: var(--dsw-alias-label-primary); font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; }
 .message { padding: 24px; color: var(--dsw-alias-label-secondary); font-size: 14px; }
 .titleIcon { flex: none; }
+.loading { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
 @media (max-width: 767px) { .preview { padding: 16px 18px 32px; } }

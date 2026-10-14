@@ -73,11 +73,15 @@ export function createFocusScope(document) {
   document.addEventListener('keydown', (event) => {
     if (!current || event.key !== 'Tab') return;
     const panel = current.querySelector('.surface-panel') || current;
-    const items = [...panel.querySelectorAll(FOCUSABLE)].filter((node) => node.tabIndex >= 0 && visible(node));
+    const items = [...panel.querySelectorAll(FOCUSABLE), ...document.querySelectorAll('#toast-root button')]
+      .filter((node) => !node.disabled && node.tabIndex >= 0 && visible(node));
     if (!items.length) { event.preventDefault(); return; }
     const index = items.indexOf(document.activeElement);
-    if (event.shiftKey && index <= 0) { event.preventDefault(); items.at(-1).focus(); }
-    else if (!event.shiftKey && (index < 0 || index === items.length - 1)) { event.preventDefault(); items[0].focus(); }
+    const next = index < 0
+      ? (event.shiftKey ? items.length - 1 : 0)
+      : (index + (event.shiftKey ? -1 : 1) + items.length) % items.length;
+    event.preventDefault();
+    items[next].focus();
   });
   return {
     sync(next, nextKey) {

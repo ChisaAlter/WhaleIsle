@@ -11,6 +11,8 @@ kind: "package-reference"
 
 为当前 Web 会话或未来会话选择权限预设。通用设置行只更改之后创建会话所用的默认值；composer 与 `/permission` 选择器切换当前会话。默认 Web 提供仅可查看、工作区内修改与完全权限。显式加载实验 Auto integration 后，当前会话选择器会增加带 `EXP` 标记的 Auto review。通过可见选项选择完全权限或 Auto 时，需要分别确认对应风险；完整的 `/permission <preset>` 命令直接执行。宿主通过 Session 投影确认每次变更。
 
+设置写入与命令拒绝通过可关闭的持久 Toast 显示；忙碌指示留在原选择器或箭头内，权限说明保持原位。
+
 ## 目录
 
 - [使用本包](#use-this-package)

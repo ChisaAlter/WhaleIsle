@@ -210,7 +210,9 @@ describe('PopupSelectView', () => {
     // Nothing is settleable yet, so the keystroke is not swallowed.
     expect(fireEvent.keyDown(search, { key: 'Tab' })).toBe(true)
     expect(document.activeElement).toBe(search)
-    expect(screen.getByText('正在加载选项…')).toBeTruthy()
+    const card = screen.getByLabelText('/theme 选项')
+    expect(card.getAttribute('aria-busy')).toBe('true')
+    expect(card.querySelector('[data-state="ongoing"]')).not.toBeNull()
   })
 
   it('Tab stays the browser\'s on a failed load, so the retry stays reachable', async () => {
@@ -300,35 +302,41 @@ describe('PopupSelectView', () => {
     expect(screen.getByRole<HTMLInputElement>('checkbox').checked).toBe(false)
   })
 
-  it('submitting locks the search input and further Enter/click no-op; the status line waits out a fast settle', async () => {
+  it('submitting keeps busy feedback until settlement and locks further Enter/click', async () => {
     let release!: () => void
     const onSelect = vi.fn(() => new Promise<void>((resolve) => { release = resolve }))
     const { search, consume } = await mountOpen({ onSelect })
     await act(async () => { fireEvent.keyDown(search, { key: 'Enter' }) })
-    // The applying line is gated behind a beat so a settle that lands
-    // quickly never inserts it just to flash back out.
-    expect(screen.queryByText('正在应用…')).toBeNull()
+    // Busy feedback uses the stable shell rather than inserting a status line.
+    const card = screen.getByLabelText('/theme 选项')
+    expect(card.getAttribute('aria-busy')).toBe('true')
+    expect(card.querySelector('[data-state="ongoing"]')).not.toBeNull()
     expect((search as HTMLInputElement).readOnly).toBe(true)
     await act(async () => {
       fireEvent.keyDown(search, { key: 'Enter' })
       fireEvent.click(screen.getAllByRole('option')[1]!)
     })
     expect(onSelect).toHaveBeenCalledTimes(1)
-    // A settle that outlasts the beat earns the line while still open.
+    // The same busy feedback remains while a slow selection is outstanding.
     await act(async () => { await new Promise<void>((resolve) => { setTimeout(resolve, 200) }) })
-    expect(screen.queryByText('正在应用…')).not.toBeNull()
+    expect(card.getAttribute('aria-busy')).toBe('true')
+    expect(card.querySelector('[data-state="ongoing"]')).not.toBeNull()
     await act(async () => {
       release()
       await Promise.resolve()
     })
     expect(consume).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(document.querySelector('[data-state="ongoing"]')).toBeNull()
+    }, { timeout: PRESENCE_EXIT_MS + 500 })
   })
 
-  it('a settle inside the notice beat never shows the applying line', async () => {
+  it('a fast settle leaves no busy feedback after the exit', async () => {
     const { search } = await mountOpen()
     await act(async () => { fireEvent.keyDown(search, { key: 'Enter' }) })
     await act(async () => { await new Promise<void>((resolve) => { setTimeout(resolve, 250) }) })
-    expect(screen.queryByText('正在应用…')).toBeNull()
+    expect(screen.queryByLabelText('/theme 选项')).toBeNull()
+    expect(document.querySelector('[data-state="ongoing"]')).toBeNull()
   })
 
   it('a failed options load shows the error with a retry button that reloads', async () => {

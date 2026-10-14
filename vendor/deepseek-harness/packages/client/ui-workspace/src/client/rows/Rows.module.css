@@ -135,6 +135,20 @@
   white-space: nowrap;
 }
 
+.selectionCheckbox {
+  width: 16px;
+  height: 20px;
+}
+
+.selectionCheckbox > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .folderActive {
   color: var(--dsw-alias-state-business-primary);
 }

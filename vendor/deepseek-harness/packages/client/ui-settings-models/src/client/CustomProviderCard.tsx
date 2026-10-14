@@ -23,10 +23,10 @@
  * wrong — the models under one provider disagree about what they accept.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import { SettingsSelect } from '@deepseek-ai/dsh-client-ui-primitives'
+import { SettingsSelect, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { validateDeepSeekModels } from './DeepSeekModelsEditor.tsx'
@@ -97,6 +97,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   // The write is checked against the revision on which this draft was opened.
   const [openedAt] = useState(() => props.revision)
   const [route, setRoute] = useState('')
+  const errorId = useId()
   const [displayName, setDisplayName] = useState('')
   const [baseURL, setBaseURL] = useState('')
   const [protocol, setProtocol] = useState(protocols[0] ?? '')
@@ -106,6 +107,8 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const [listBusy, setListBusy] = useState(false)
   useEffect(() => { onBusyChange?.(busy || listBusy) }, [busy, listBusy, onBusyChange])
   const [failure, setFailure] = useState<string | undefined>(undefined)
+  const [failureDismissed, setFailureDismissed] = useState(false)
+  const [failureSequence, setFailureSequence] = useState(0)
   /**
    * The profile write landed. Only the key write can still be outstanding, so
    * the fields that describe the provider are settled and the retry path is
@@ -132,8 +135,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const ready = route.length > 0 && !routeInvalid && !routeTaken
     && normalizedBaseURL.length > 0 && !baseUrlInvalid && models.length > 0 && modelFailure === undefined
     && keyFailure === undefined
-  // The one blocked gate worth a line under the form. A satisfied card says
-  // nothing at all rather than printing an empty paragraph.
+  // The first unmet gate explains the disabled commit action in its tooltip.
   const hint = failure !== undefined || ready
     // The key field prints its own failure directly beneath itself, so a card
     // blocked only by the key stays silent here rather than answering with the
@@ -195,6 +197,8 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const create = async (): Promise<void> => {
     setBusy(true)
     setFailure(undefined)
+    setFailureDismissed(false)
+    setFailureSequence(sequence => sequence + 1)
     try {
       const outcome = await createOnce()
       if (outcome !== undefined) {
@@ -202,6 +206,8 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         return
       }
       props.onClose(true)
+    } catch (error) {
+      setFailure(error instanceof Error ? error.message : String(error))
     } finally {
       setBusy(false)
     }
@@ -211,21 +217,24 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
     <div className={styles['editor']}>
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('customRoute')}</span>
+        <Tooltip label={t(routeInvalid ? 'customRouteInvalid' : 'customRouteTaken')} disabled={!routeInvalid && !routeTaken} portal side="bottom">
         <input
           className={styles['input']}
           type="text"
           value={route}
           placeholder="acme-gateway"
           aria-label={t('customRoute')}
+          aria-invalid={routeInvalid || routeTaken}
+          aria-describedby={routeInvalid || routeTaken ? `${errorId}-route` : undefined}
           disabled={profileDisabled}
           onChange={(event) => { setRoute(event.target.value) }}
         />
+        </Tooltip>
       </div>
       {/* A rejected id reads as a fault, not as guidance — the same split the
           key field below already makes between its failure and its hint. */}
-      {routeInvalid || routeTaken
-        ? <p className={styles['error']}>{t(routeInvalid ? 'customRouteInvalid' : 'customRouteTaken')}</p>
-        : <p className={styles['advancedHint']}>{t('customRouteHint')}</p>}
+      <p className={styles['advancedHint']}>{t('customRouteHint')}</p>
+      {routeInvalid || routeTaken ? <span className={styles['visuallyHidden']} id={`${errorId}-route`}>{t(routeInvalid ? 'customRouteInvalid' : 'customRouteTaken')}</span> : null}
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('customDisplayName')}</span>
         <input
@@ -240,6 +249,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
       </div>
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('baseUrl')}</span>
+        <Tooltip label={t('customBaseUrlInvalid')} disabled={!baseUrlInvalid} portal side="bottom">
         <input
           className={styles['input']}
           type="text"
@@ -249,11 +259,13 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
             : 'customBaseUrlPlaceholder')}
           aria-label={t('baseUrl')}
           aria-invalid={baseUrlInvalid}
+          aria-describedby={baseUrlInvalid ? `${errorId}-baseUrl` : undefined}
           disabled={profileDisabled}
           onChange={(event) => { setBaseURL(event.target.value) }}
         />
+        </Tooltip>
       </div>
-      {baseUrlInvalid ? <p className={styles['error']}>{t('customBaseUrlInvalid')}</p> : null}
+      {baseUrlInvalid ? <span className={styles['visuallyHidden']} id={`${errorId}-baseUrl`}>{t('customBaseUrlInvalid')}</span> : null}
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('customApi')}</span>
         <SettingsSelect
@@ -267,6 +279,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
       </div>
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('keyInput')}</span>
+        <Tooltip label={keyFailure === undefined ? '' : t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure)} disabled={keyFailure === undefined} portal side="bottom">
         <input
           className={styles['input']}
           type="password"
@@ -274,15 +287,18 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
           value={keyDraft}
           placeholder={t('keyPlaceholder')}
           aria-label={t('keyInput')}
+          aria-invalid={keyFailure !== undefined}
+          aria-describedby={keyFailure === undefined ? undefined : `${errorId}-key`}
           disabled={disabled}
           onChange={(event) => { setKeyDraft(event.target.value) }}
         />
+        </Tooltip>
         {/* A create card has no stored key to keep, so the blank case says
             what a blank field means here instead: this route may authenticate
             through the provider's own ambient discovery or OAuth. */}
         {keyFailure === undefined
           ? null
-          : <p className={styles['error']}>{t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure)}</p>}
+          : <span className={styles['visuallyHidden']} id={`${errorId}-key`}>{t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure)}</span>}
       </div>
       <ModelListEditor
         models={models}
@@ -301,16 +317,18 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         disabled={profileDisabled}
         onBusyChange={setListBusy}
       />
-      {failure !== undefined ? <p className={styles['error']}>{failure}</p> : null}
+      {failure !== undefined && !failureDismissed ? <Toast key={failureSequence} text={failure} holdMs={9000} onDone={() => { setFailureDismissed(true) }} /> : null}
       {/* Only the gates with something to say render; the route-id gate has its
           own field-level hint, so its blocked state would print an empty line. */}
-      {hint === undefined ? null : <p className={styles['advancedHint']}>{hint}</p>}
       <EditorFooter
         t={t}
         busy={busy}
         submitDisabled={disabled || !ready}
         submitLabelKey="create"
         submitBusyLabelKey="creating"
+        submitHint={failure ?? (routeInvalid || routeTaken ? t(routeInvalid ? 'customRouteInvalid' : 'customRouteTaken')
+          : baseUrlInvalid ? t('customBaseUrlInvalid')
+          : keyFailure !== undefined ? t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure) : hint)}
         onCancel={() => { props.onClose(committed) }}
         onSubmit={() => { void create() }}
       />

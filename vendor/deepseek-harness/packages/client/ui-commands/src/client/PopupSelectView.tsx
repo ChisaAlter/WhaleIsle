@@ -14,7 +14,7 @@ import { MenuGroup, MenuSurface, observeStickyMenuGroups } from '@deepseek-ai/ds
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useSyncExternalStore } from 'react'
 import clsx from 'clsx'
-import { IconCheckOutlineRegular, RiskConfirmation, useAnchoredMaxHeight, usePresence } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutlineRegular, RiskConfirmation, StateDot, Toast, useAnchoredMaxHeight, usePresence } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { filterOptions } from './popup.ts'
 import type { SelectOption } from './contract.ts'
@@ -24,10 +24,6 @@ import css from './PopupSelectView.module.css'
 
 /** Design cap on the card height (same MenuDropdown family as the slash menu). */
 const MAX_HEIGHT = 320
-
-/** A settle must outlast this beat before the status line inserts — faster
- *  settles close first, so the row never pops in just to flash back out. */
-const APPLYING_NOTICE_MS = 160
 
 /** Injected business face of the popupSelect overlay entry. */
 export interface PopupSelectInjected {
@@ -83,6 +79,7 @@ export function PopupSelectView({ popup, t }: PopupSelectViewProps) {
   useEffect(() => {
     if (!state.open || state.confirming !== null) return
     const onPointerDown = (ev: PointerEvent): void => {
+      if (ev.target instanceof Element && ev.target.closest('[data-dsh-toast]') !== null) return
       if (cardRef.current !== null && ev.target instanceof Node && cardRef.current.contains(ev.target)) return
       popup.dismiss()
     }
@@ -95,17 +92,12 @@ export function PopupSelectView({ popup, t }: PopupSelectViewProps) {
     if (mounted && state.open && state.confirming === null) searchRef.current?.focus()
   }, [mounted, state.open, state.confirming])
 
-  // The applying line waits one beat: a settle that lands inside it (the
-  // common case) never inserts the row, so a fast pick doesn't flash the
-  // card open → line → gone. Once earned it stays through the frozen exit
-  // frame, and the next open resets it.
-  const [applyingShown, setApplyingShown] = useState(false)
+  // Dismissing an error only hides the notice; the controller retains its
+  // failure and the draft until a retry succeeds or the popup closes.
+  const [dismissedError, setDismissedError] = useState<string | null>(null)
   useEffect(() => {
-    if (!state.open) return
-    if (!state.submitting) { setApplyingShown(false); return }
-    const timer = setTimeout(() => { setApplyingShown(true) }, APPLYING_NOTICE_MS)
-    return () => { clearTimeout(timer) }
-  }, [state.open, state.submitting])
+    setDismissedError(null)
+  }, [state.error, state.open])
 
   if (!mounted) return null
 
@@ -183,6 +175,7 @@ export function PopupSelectView({ popup, t }: PopupSelectViewProps) {
           aria-hidden={state.open ? undefined : true}
           {...state.open ? {} : { inert: '' }}
           aria-label={t('overlay.aria', { command: String(view.command) })}
+          aria-busy={view.status === 'pending' || view.submitting}
           onKeyDown={onKeyDown}
         >
           <input
@@ -195,16 +188,7 @@ export function PopupSelectView({ popup, t }: PopupSelectViewProps) {
             readOnly={view.submitting}
             onChange={(ev) => { popup.setSearch(ev.currentTarget.value) }}
           />
-          {view.error !== null && (
-            <div className={css.error} role="alert">
-              <span className={css.errorText}>{view.error}</span>
-              {view.status === 'failed' && (
-                <button type="button" className={css.retry} onClick={() => { popup.retry() }}>{t('retry')}</button>
-              )}
-            </div>
-          )}
-          {view.status === 'pending' && <div className={css.status}>{t('status.loading')}</div>}
-          {view.submitting && applyingShown && <div className={css.status}>{t('status.applying')}</div>}
+          {(view.status === 'pending' || view.submitting) && <span className={css.busy}><StateDot state="ongoing" /></span>}
           {view.status === 'ready' && rows.length === 0 && <div className={css.status}>{emptyLabel}</div>}
           {view.status === 'ready' && (
             <div ref={viewportRef} role="listbox" aria-label={t('listbox.aria', { command: String(view.command) })} className={css.viewport}>
@@ -217,6 +201,13 @@ export function PopupSelectView({ popup, t }: PopupSelectViewProps) {
           )}
         </MenuSurface>
       )}
+      {state.open && view.error !== null && view.error !== dismissedError && <Toast
+        text={view.error}
+        holdMs={null}
+        dismissLabel={t('close')}
+        actions={view.status === 'failed' ? [{ label: t('retry'), onClick: () => { popup.retry() } }] : undefined}
+        onDone={() => { setDismissedError(view.error) }}
+      />}
       {confirmation !== undefined && (
         <RiskConfirmation
           open

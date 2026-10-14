@@ -50,6 +50,10 @@
   --dsw-alias-label-tertiary: rgb(129, 133, 140);
   --dsw-alias-label-caption: rgb(173, 178, 184);
   --dsw-alias-label-dimmed: rgb(225, 229, 238);
+  /* Official Toast remains dark in both schemes (bluish-800 / bluish-750). */
+  --dsw-alias-toast-bg: rgb(53, 54, 56);
+  --dsw-alias-toast-label: rgb(255, 255, 255);
+  --dsw-static-deepseek-400: rgb(122, 170, 255);
   --dsw-alias-state-business-primary: rgb(65, 118, 230);
   --dsw-alias-state-error-primary: rgb(236, 19, 19);
   --dsw-alias-state-success-primary: rgb(34, 197, 94);
@@ -105,6 +109,7 @@ body[data-ds-dark-theme] {
   --dsw-alias-label-tertiary: rgb(173, 178, 184);
   --dsw-alias-label-caption: rgb(129, 133, 140);
   --dsw-alias-label-dimmed: rgb(67, 69, 74);
+  --dsw-alias-toast-bg: rgb(67, 69, 74);
   --dsw-alias-state-business-primary: rgb(103, 158, 254);
   --dsw-alias-state-error-primary: rgb(242, 90, 90);
   --dsw-specific-bubble: rgb(44, 44, 46);

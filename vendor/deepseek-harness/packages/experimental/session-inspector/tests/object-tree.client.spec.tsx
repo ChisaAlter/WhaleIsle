@@ -181,10 +181,11 @@ it('expands Maps, bounds collection pages, and terminates unregistered cycles', 
   expect(ui.getByText('74:')).toBeTruthy()
 })
 
-it.each([new Error('object unavailable'), 'object unavailable'])('contains object enumeration failures: %s', (error) => {
+it.each([new Error('object unavailable'), 'object unavailable'])('contains object enumeration failures: %s', async (error) => {
   const value = new Proxy({}, { ownKeys() { throw error } })
   const ui = render(<InspectorObjectTree {...fixture()} value={value} />)
-  expect(ui.getByRole('alert').textContent).toContain('object unavailable')
+  expect((await ui.findByRole('alert')).textContent).toContain('object unavailable')
+  expect(ui.container.querySelector('[role="alert"]')).toBeNull()
 })
 
 it('marks accessors without evaluating them', () => {

@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ActionButton, FeedbackToast, ConfirmDialog } from '../../feedback.js';
 
 import { WeixinLogoGlyph } from '../../channel-logos.js';
 import { QrActionIcon } from '../../credential-binding.js';
@@ -30,7 +31,7 @@ const Button = React.forwardRef(function Button(
   { children, kind = 'secondary', className = '', ...props },
   ref,
 ) {
-  return h('button', {
+  return h(ActionButton, {
     ...props,
     ref,
     type: 'button',
@@ -48,8 +49,7 @@ function Heading({ totals, adding, busy, onAdd, addButtonRef }) {
         onClick: onAdd,
         disabled: adding || busy,
         ref: addButtonRef,
-        'aria-label': '扫码接入微信机器人',
-      }, h(QrActionIcon), adding ? '正在接入' : '扫码接入机器人'),
+        'aria-label': '扫码接入微信机器人', loading: adding, }, h(QrActionIcon), '扫码接入机器人'),
       totals.configured > 0
         ? h('div', { className: 'dxw-badge dim-onlineBadge' },
             h('span', null, `${totals.connected} / ${totals.configured} 在线`))
@@ -73,8 +73,8 @@ function EmptyView({ onStart, busy }) {
         h('h3', null, '扫一次码，就能在微信里使用 Harness'),
         h('p', null, '二维码由腾讯微信 iLink 服务签发。用手机微信扫描并确认后，账号凭据会直接写入 Harness Host，浏览器不会收到 bot_token。'),
         h('div', { className: 'dxw-actions dim-viewActions' },
-          h(Button, { kind: 'primary', onClick: onStart, disabled: busy },
-            busy ? '正在生成二维码…' : '生成微信二维码')),
+          h(Button, { kind: 'primary', onClick: onStart, disabled: busy, loading: busy, },
+            '生成微信二维码')),
       ),
       h('div', { className: 'dxw-logo dim-emptyBrand', 'aria-hidden': 'true' }, h(WeixinLogoGlyph, { size: 64 })),
     ));
@@ -158,12 +158,11 @@ function VerificationPanel({ provision, busy, onSubmit, onCancel }) {
         onChange: (event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 8)),
         autoFocus: true,
       }),
-      h('button', {
+      h(ActionButton, {
         type: 'submit',
         className: 'dxw-button',
         'data-kind': 'primary',
-        disabled: !valid || busy,
-      }, busy ? '正在验证…' : '继续连接')),
+        disabled: !valid || busy, loading: busy, }, '继续连接')),
     h(Button, { onClick: onCancel, disabled: busy }, '取消绑定')));
 }
 
@@ -204,6 +203,8 @@ export function AccountCard({
   busy,
   feedback,
   removing,
+  removeError,
+  removeFeedbackSequence,
   onReconnect,
   onWorkspaceSave,
   onAgentPresetSave,
@@ -241,26 +242,22 @@ export function AccountCard({
       h('div', { className: 'dxw-accountFooter dim-cardFooter' },
         h('div', { className: 'dim-cardFooterLayout' },
           h('div', { className: 'dxw-actions dim-cardActions' },
-            h(Button, { className: 'dim-cardAction', onClick: onReconnect, disabled: Boolean(busy) },
-              busy === 'reconnect' ? '检查中…' : account.connected ? '检查连接' : '重试连接'),
+            h(Button, { className: 'dim-cardAction', onClick: onReconnect, disabled: Boolean(busy), loading: busy === 'reconnect', },
+              account.connected ? '检查连接' : '重试连接'),
             h(Button, { className: 'dim-cardAction', kind: 'danger', onClick: onRequestRemove, disabled: Boolean(busy) }, '移除接入')),
           summary ? h('div', { className: 'dxw-summary dim-cardSummary' }, summary) : null,
           account.lastMessageError ? h(LastMessageErrorSummary, {
             className: 'dxw-summary',
             error: account.lastMessageError,
           }) : null,
-          feedback ? h('div', {
-            className: 'dxw-summary dim-cardFeedback',
-            role: 'status',
-            'aria-live': 'polite',
-          }, feedback) : null))),
-    removing ? h('div', { className: 'dxw-confirm dim-confirm', role: 'alertdialog' },
+          null))),
+    removing ? h(ConfirmDialog, { className: 'dxw-confirm dim-confirm', role: 'alertdialog', onClose: onCancelRemove, busy: Boolean(busy), error: removeError, feedbackSequence: removeFeedbackSequence },
       h('strong', null, '从此 Harness 移除这个微信账号？'),
       h('p', null, '这会停止消息连接，并删除本机保存的 bot_token、账号配置和会话映射。其他微信账号不受影响。'),
       h('div', { className: 'dxw-actions dim-viewActions' },
         h(Button, { onClick: onCancelRemove, disabled: busy === 'delete' }, '保留账号'),
-        h(Button, { kind: 'danger', onClick: onConfirmRemove, disabled: busy === 'delete' },
-          busy === 'delete' ? '正在移除…' : '确认移除')))
+        h(Button, { kind: 'danger', onClick: onConfirmRemove, disabled: busy === 'delete', loading: busy === 'delete', },
+          '确认移除')))
       : null);
 }
 
@@ -277,6 +274,8 @@ function AccountList(props) {
         busy: props.busyByBot[account.botId],
         feedback: props.feedbackByBot[account.botId],
         removing: props.removeTarget === account.botId,
+        removeError: props.removeErrorsByBot[account.botId]?.message,
+        removeFeedbackSequence: props.removeErrorsByBot[account.botId]?.sequence,
         onReconnect: () => props.onReconnect(account),
         onWorkspaceSave: (workspace) => props.onWorkspaceSave(account, workspace),
         onAgentPresetSave: (agentPreset) => props.onAgentPresetSave(account, agentPreset),
@@ -312,6 +311,7 @@ export function WeixinSettingsTab({ rpcCall }) {
   const [busyByBot, setBusyByBot] = React.useState({});
   const [feedbackByBot, setFeedbackByBot] = React.useState({});
   const [removeTarget, setRemoveTarget] = React.useState(null);
+  const [removeErrorsByBot, setRemoveErrorsByBot] = React.useState({});
   const [notice, setNotice] = React.useState('');
   const [now, setNow] = React.useState(() => Date.now());
   const addButtonRef = React.useRef(null);
@@ -631,9 +631,18 @@ export function WeixinSettingsTab({ rpcCall }) {
         }));
       }
       setRemoveTarget(null);
+      setRemoveErrorsByBot((current) => {
+        const next = { ...current }; delete next[account.botId]; return next;
+      });
       announce('微信账号及本机凭据已移除。');
     } catch (error) {
-      announce(`移除失败：${presentError(error).message}`);
+      if (mountedRef.current) setRemoveErrorsByBot((current) => ({
+        ...current,
+        [account.botId]: {
+          message: `移除失败：${presentError(error).message}`,
+          sequence: (current[account.botId]?.sequence ?? 0) + 1,
+        },
+      }));
     } finally {
       const shouldRefresh = workspaceFence.endMutation();
       if (shouldRefresh && mountedRef.current) void loadStatus({ silent: true });
@@ -678,9 +687,11 @@ export function WeixinSettingsTab({ rpcCall }) {
       onAdd: () => void startProvisioning(),
       addButtonRef,
     }),
-    h('div', { className: 'dxw-visuallyHidden', role: 'status', 'aria-live': 'polite' }, notice),
+    notice ? h(FeedbackToast, { text: notice }) : null,
+    Object.entries(removeErrorsByBot).map(([botId, failure]) => botId !== removeTarget
+      ? h(FeedbackToast, { key: botId, text: failure.message, tone: 'error', sequence: failure.sequence }) : null),
     model.error && model.phase === 'ready'
-      ? h('div', { className: 'dxw-statusNotice dim-statusNotice' }, `状态刷新失败：${model.error.message}`)
+      ? h(FeedbackToast, { text: `状态刷新失败：${model.error.message}`, tone: "error" })
       : null,
     model.phase === 'loading'
       ? h(LoadingView)
@@ -701,6 +712,7 @@ export function WeixinSettingsTab({ rpcCall }) {
                   busyByBot,
                   feedbackByBot,
                   removeTarget,
+                  removeErrorsByBot,
                   onReconnect: (account) => void reconnect(account),
                   onWorkspaceSave: saveWorkspace,
                   onAgentPresetSave: saveAgentPreset,

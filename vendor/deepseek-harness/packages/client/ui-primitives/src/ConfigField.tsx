@@ -1,5 +1,6 @@
 /** Controlled configuration input shared by generated and custom forms. */
 import { useId } from 'react'
+import { Tooltip } from './Tooltip.tsx'
 import css from './ConfigField.module.css'
 
 /** Field state and localized controls supplied by the owning form. */
@@ -37,17 +38,22 @@ export function ConfigField(props: ConfigFieldProps) {
       <label htmlFor={id}>{props.label}</label>
       {props.overridden ? <button type="button" disabled={props.disabled} onClick={props.onReset}>{props.labels.reset}</button> : null}
     </div>
+    <Tooltip label={props.labels.invalid} disabled={!props.invalid} side="bottom" portal>
     {props.choices.length > 0
       ? <select id={id} value={props.value} disabled={props.disabled} aria-invalid={props.invalid}
+        aria-describedby={props.invalid ? `${id}-invalid` : undefined}
         onChange={(event) => { if (event.target.value === '') props.onReset(); else props.onChange(event.target.value) }}>
         <option value="">{props.labels.inherited}</option>
         {props.choices.map(choice => <option key={choice} value={choice}>{choice}</option>)}
       </select>
       : props.secret
         ? <input id={id} type="password" autoComplete="new-password" value={props.value} disabled={props.disabled}
-          aria-invalid={props.invalid} onChange={(event) => { props.onChange(event.target.value) }} />
+          aria-invalid={props.invalid} aria-describedby={props.invalid ? `${id}-invalid` : undefined}
+          onChange={(event) => { props.onChange(event.target.value) }} />
         : <textarea id={id} value={props.value} disabled={props.disabled} aria-invalid={props.invalid}
+          aria-describedby={props.invalid ? `${id}-invalid` : undefined}
           rows={Math.min(8, Math.max(1, props.value.split('\n').length))} onChange={(event) => { props.onChange(event.target.value) }} />}
-    {props.invalid ? <p role="status">{props.labels.invalid}</p> : null}
+    </Tooltip>
+    {props.invalid ? <span id={`${id}-invalid`} className={css.visuallyHidden}>{props.labels.invalid}</span> : null}
   </div>
 }

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { McpSection } from '../src/client/McpSection.tsx'
 import type { McpSectionInjected, McpSectionProps } from '../src/client/McpSection.tsx'
@@ -224,7 +224,7 @@ describe('McpSection', () => {
 
     expect(await screen.findByText(en.refreshFailed)).toBeTruthy()
     expect(toggle.getAttribute('disabled')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    fireEvent.click(screen.getByRole('button', { name: en.refresh }))
     await waitFor(() => { expect(screen.queryByText(en.refreshFailed)).toBeNull() })
   })
 
@@ -243,7 +243,7 @@ describe('McpSection', () => {
       .mockResolvedValueOnce({ servers: [compositionHttp] })
     render(<McpSection {...props({ list })} />)
     expect(await screen.findByText(en.error)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    fireEvent.click(screen.getByRole('button', { name: en.refresh }))
     expect(await screen.findByText(en.readOnly)).toBeTruthy()
     expect(screen.queryByRole('switch')).toBeNull()
     expect(screen.getByText(en.composition, { selector: 'span' })).toBeTruthy()
@@ -342,6 +342,24 @@ describe('McpSection', () => {
     fireEvent.click(await screen.findByRole('button', { name: en.testFor.replace('{name}', 'github') }))
     expect((await screen.findAllByRole('alert')).some(item => item.textContent?.includes('connection refused'))).toBe(true)
     expect(screen.getByRole('button', { name: en.refresh })).toBeTruthy()
+  })
+
+  it('gives a repeated identical test success a full new display lifetime', async () => {
+    const test = vi.fn(props().test)
+    render(<McpSection {...props({ list: async () => ({ servers: [managedStdio] }), test })} />)
+    const button = await screen.findByRole('button', { name: en.testFor.replace('{name}', 'github') })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    await act(async () => { fireEvent.click(button) })
+    const first = screen.getByRole('alert')
+    expect(first.textContent).toContain(en.testSuccess.replace('{count}', '0').replace('{tools}', en.testNoTools))
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    await act(async () => { fireEvent.click(button) })
+    expect(test).toHaveBeenCalledTimes(2)
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500) })
+    expect(screen.getByRole('alert').textContent).toBe(first.textContent)
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500) })
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('remounts failed managed rows when refresh is clicked', async () => {
@@ -538,6 +556,28 @@ describe('McpSection', () => {
     expect(headers.getAttribute('aria-describedby')).toContain('headers-error')
   })
 
+  it('shows an identical form validation failure again after its notice expires', async () => {
+    const upsert = vi.fn(async () => {})
+    const dialog = await openAddEditor({ upsert })
+    fireEvent.change(within(dialog).getByLabelText(en.id), { target: { value: 'memory' } })
+    const command = within(dialog).getByLabelText(en.command)
+    const save = within(dialog).getByRole('button', { name: en.save })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+    await act(async () => { fireEvent.click(save) })
+    expect(screen.getByRole('alert').textContent).toContain(en.commandRequired)
+    expect(command.getAttribute('aria-invalid')).toBe('true')
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000) })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(command.getAttribute('aria-invalid')).toBe('true')
+    expect(within(dialog).getByLabelText<HTMLInputElement>(en.id).value).toBe('memory')
+
+    await act(async () => { fireEvent.click(save) })
+    expect(screen.getByRole('alert').textContent).toContain(en.commandRequired)
+    expect(upsert).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog', { name: en.editorTitleAdd })).toBe(dialog)
+  })
+
   it('preserves independent stdio and HTTP drafts while switching transport branches', async () => {
     const dialog = await openAddEditor()
     fireEvent.change(within(dialog).getByLabelText(en.command), { target: { value: 'npx preserved' } })
@@ -557,7 +597,7 @@ describe('McpSection', () => {
     expect(within(dialog).getByLabelText<HTMLTextAreaElement>(en.headers).value).toBe('TOKEN=http')
   })
 
-  it('keeps remote save errors in the Modal and prevents duplicate saves while pending', async () => {
+  it('shows remote save errors in a floating notice and preserves the draft while blocking duplicate saves', async () => {
     const pending = deferred<undefined>()
     const upsert = vi.fn(() => pending.promise)
     const dialog = await openAddEditor({ upsert })
@@ -570,11 +610,16 @@ describe('McpSection', () => {
     expect(save.getAttribute('disabled')).not.toBeNull()
 
     pending.reject(new Error('remote rejected'))
-    expect((await within(dialog).findByRole('alert')).textContent).toContain('remote rejected')
+    const failure = await screen.findByRole('alert')
+    expect(failure.textContent).toContain('remote rejected')
+    expect(dialog.contains(failure)).toBe(false)
     expect(screen.getByRole('dialog', { name: en.editorTitleAdd })).toBeTruthy()
+    expect(within(dialog).getByLabelText<HTMLInputElement>(en.id).value).toBe('memory')
+    expect(within(dialog).getByLabelText<HTMLInputElement>(en.command).value).toBe('memory-server')
+    await waitFor(() => { expect(save.getAttribute('disabled')).toBeNull() })
   })
 
-  it('uses row icon actions for edit and delete and keeps delete errors in the confirmation Modal', async () => {
+  it('uses row icon actions and keeps delete confirmation open when a floating failure appears', async () => {
     const remove = vi.fn(async () => { throw new Error('cannot remove') })
     render(<McpSection {...props({ list: async () => ({ servers: [managedStdio] }), remove })} />)
     await screen.findByText('github')
@@ -586,7 +631,10 @@ describe('McpSection', () => {
     fireEvent.click(screen.getByRole('button', { name: en.removeFor.replace('{name}', 'github') }))
     const confirmation = screen.getByRole('dialog', { name: en.deleteTitle.replace('{name}', 'github') })
     fireEvent.click(within(confirmation).getByRole('button', { name: en.deleteConfirm }))
-    expect((await within(confirmation).findByRole('alert')).textContent).toContain('cannot remove')
+    const failure = await screen.findByRole('alert')
+    expect(failure.textContent).toContain('cannot remove')
+    expect(confirmation.contains(failure)).toBe(false)
+    expect(screen.getByRole('dialog', { name: en.deleteTitle.replace('{name}', 'github') })).toBeTruthy()
     expect(remove).toHaveBeenCalledTimes(1)
   })
 

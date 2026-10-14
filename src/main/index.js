@@ -251,9 +251,17 @@ function shellConfirm() {
   return shellConfirmInstance;
 }
 const updateAttention = new UpdateAttention({
-  title: '鲸屿更新已就绪',
-  body: '新版本已下载完成，回到窗口继续安装。',
+  title: '发现新版本',
+  body: '新版本可用，回到窗口查看更新说明。',
 });
+
+function returnToUpdateConfirmation(win) {
+  if (win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  shellConfirm().focus();
+}
 
 /**
  * Productized confirmation: shell overlay modal when a window can host it,
@@ -585,7 +593,8 @@ function runColdStartGate(options = {}) {
     confirmUpdate: async (check) => {
       const win = getLauncherWindow();
       if (win && !win.isDestroyed() && !win.isFocused()) {
-        updateAttention.ready(String(check.latest || check.version || 'update'), win, shellConfirm().window);
+        updateAttention.ready(String(check.latest || check.version || 'update'), win, shellConfirm().window,
+          () => returnToUpdateConfirmation(win));
       }
       const result = await confirmDialog(win, await updateAskOptions(check));
       updateAttention.clear();
@@ -977,7 +986,8 @@ const drainParkedUpdateCheck = createParkedUpdateDrainer({
     confirmUpdate: async (pending) => {
       const win = getLauncherWindow();
       if (win && !win.isDestroyed() && !win.isFocused()) {
-        updateAttention.ready(String(pending.latest || pending.version || 'update'), win, shellConfirm().window);
+        updateAttention.ready(String(pending.latest || pending.version || 'update'), win, shellConfirm().window,
+          () => returnToUpdateConfirmation(win));
       }
       const result = await confirmDialog(win, await updateAskOptions(pending));
       updateAttention.clear();

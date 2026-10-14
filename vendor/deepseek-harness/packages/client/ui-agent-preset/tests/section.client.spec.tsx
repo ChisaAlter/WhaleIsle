@@ -123,11 +123,14 @@ it('disables the Creator entry while a default is being saved', () => {
   fireEvent.click(button)
   expect(launch).not.toHaveBeenCalled()
 })
-it('reads a declared composition read-only from every card, broken ones included', () => {
+it('reads a declared composition read-only from every card, broken ones included, serializing pending reads', async () => {
   const actions = view({ rows: [{ id: 'standard', isDefault: true }, { id: 'broken', isDefault: false, broken: 'Missing plugin' }] })
   expect(screen.queryByRole('dialog')).toBeNull()
   fireEvent.click(within(rowFor('standard')).getByRole('button', { name: `${en.view}: ${en.presetStandardName}` }))
   expect(actions.view).toHaveBeenCalledWith('standard')
+  fireEvent.click(within(rowFor('broken')).getByRole('button', { name: `${en.view}: broken` }))
+  expect(actions.view).toHaveBeenCalledOnce()
+  await act(async () => {})
   fireEvent.click(within(rowFor('broken')).getByRole('button', { name: `${en.view}: broken` }))
   expect(actions.view).toHaveBeenLastCalledWith('broken')
   expect(actions.makeDefault).not.toHaveBeenCalled()
@@ -144,12 +147,13 @@ it('shows the open composition under the preset display name, without copy, and 
   view({ view: { id: 'gone', title: 'Gone', content: '[]\n' } })
   expect(screen.getByRole('dialog', { name: `${en.view} · Gone` })).toBeTruthy()
 })
-it('keeps Escape inside the composition viewer when Settings is also open', () => {
+it('keeps Escape inside the composition viewer when Settings is also open', async () => {
   const closeSettings = vi.fn()
   const actions = view({}, undefined, closeSettings)
   const trigger = within(rowFor('standard')).getByRole('button', { name: `${en.view}: ${en.presetStandardName}` })
   trigger.focus()
   fireEvent.click(trigger)
+  await act(async () => {})
   act(() => { actions.store.set({ ...actions.store.getSnapshot(), view: { id: 'standard', title: 'standard', content: '[]\n' } }) })
   const dialog = screen.getByRole('dialog', { name: `${en.view} · ${en.presetStandardName}` })
   const [header, footer] = within(dialog).getAllByRole('button', { name: en.close })
@@ -169,12 +173,15 @@ it('clears an open viewer when the settings section unmounts', () => {
   cleanup()
   expect(actions.closeView).toHaveBeenCalledOnce()
 })
-it('shows roster errors without hiding the roster', () => {
+it('shows roster errors without hiding the roster or clearing the failure when its notice is dismissed', async () => {
   const actions = view({ error: 'Roster stale', rows: [
     { id: 'broken', isDefault: false, broken: 'Missing plugin' },
     { id: 'mine', name: 'Mine', isDefault: false },
   ] })
-  expect(screen.getAllByRole('alert').map(node => node.textContent)).toEqual(['Roster stale', 'Missing plugin'])
+  await waitFor(() => { expect(screen.getAllByRole('alert').map(node => node.textContent)).toEqual(['Missing plugin', 'Roster stale']) })
+  fireEvent.click(screen.getByRole('button', { name: en.close }))
+  expect(screen.getAllByRole('alert').map(node => node.textContent)).toEqual(['Missing plugin'])
+  expect(actions.store.getSnapshot().error).toBe('Roster stale')
   fireEvent.click(screen.getByRole('button', { name: `${en.setDefault}: Mine` }))
   expect(actions.makeDefault).toHaveBeenCalledWith('mine')
 })
@@ -222,8 +229,8 @@ it('keeps keyboard focus in help and dismisses only the reader on Escape', () =>
   const panel = within(dialog).getByRole('tabpanel', { name: en.modeExplanation })
   const close = within(dialog).getByRole('button', { name: en.close })
   expect(document.activeElement).toBe(details)
-  expect(fireEvent.keyDown(details, { key: 'Tab' })).toBe(true)
-  panel.focus()
+  fireEvent.keyDown(details, { key: 'Tab' })
+  expect(document.activeElement).toBe(panel)
   fireEvent.keyDown(panel, { key: 'Tab' })
   expect(document.activeElement).toBe(close)
   fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })

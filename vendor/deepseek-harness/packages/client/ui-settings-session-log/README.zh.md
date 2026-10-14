@@ -11,6 +11,8 @@ kind: "package-reference"
 
 使用**设置 → 通用**中版本号上方的**在使用官方模型 API 时上传 Session Log**开关控制随 DeepSeek API 请求上传会话日志。开关显示 Host 已接受的设置，并立即保存每次修改。仅当 Host 提供上传设置时显示该项；只读客户端无法修改。
 
+待完成写入的加载指示留在开关内，结果通过 shell Toast 显示，不挤动设置行。
+
 ## 目录
 
 - [使用本包](#use-this-package)

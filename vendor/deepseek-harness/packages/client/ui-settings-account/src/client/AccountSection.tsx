@@ -1,7 +1,7 @@
 /** Account settings renders safe Host state and explicit login actions. */
 import { Big } from 'big.js'
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
-import { Button, IconRightUpOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconRightUpOutlineRegular, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AccountDetails, AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { PropsRuntime, PropsLocale, InjectFace, HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
@@ -97,6 +97,7 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, openPla
   // and only while it is the latest owner.
   const releasePage = useRef<(() => void) | undefined>(undefined)
   const [failed, setFailed] = useState(false)
+  const [failureVisible, setFailureVisible] = useState(false)
   const [busy, setBusy] = useState(false)
   const profile = details?.profile?.status === 'ready' ? details.profile.value : undefined
   const wallets = details?.balance?.status === 'ready' ? details.balance.value : undefined
@@ -120,7 +121,8 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, openPla
   const run = async (action: () => Promise<void>) => {
     setBusy(true)
     setFailed(false)
-    try { await action() } catch { setFailed(true) } finally { setBusy(false) }
+    setFailureVisible(false)
+    try { await action() } catch { setFailed(true); setFailureVisible(true) } finally { setBusy(false) }
   }
   /**
    * @param event - click on a Platform destination link.
@@ -142,26 +144,30 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, openPla
     <a className={className} href={state?.links.usageUrl} aria-disabled={state === undefined}
       target="_blank" rel="noreferrer" onClick={openUsage}>{label}</a>
   )
-  const status = failed || streamFailed || attempt?.phase === 'failed' ? t('failed')
+  const status = streamFailed || attempt?.phase === 'failed' ? t('failed')
     : attempt?.phase === 'expired' ? t('expired')
       : active ? t(attempt.phase === 'initializing' ? 'initializing' : attempt.phase === 'waiting-browser' ? 'waiting' : 'completing')
         : signedIn ? profile?.contact ?? t(details?.profile === undefined ? 'loading' : 'profileUnavailable') : t('signInDescription')
+  const failureNotice = failed && failureVisible ? <Toast text={t('failed')} holdMs={null} dismissLabel={t('close')}
+    onDone={() => { setFailureVisible(false) }} /> : null
   if (!signedIn && !active) return (
     <section className={css.signedOut} aria-label={t('nav')}>
+      {failureNotice}
       <div className={css.signedOutContent}>
         <div className={css.signedOutCopy}>
           <span className={css.signedOutTitle}>{t('settingsSignedOutTitle')}</span>
           <span className={css.signedOutDescription} role="status">
-            {failed || streamFailed ? t('failed') : t('settingsSignedOutDescription')}
+            {streamFailed ? t('failed') : t('settingsSignedOutDescription')}
           </span>
         </div>
-        <Button variant="primary" className={css.signInButton} disabled={busy || state === undefined}
+        <Button variant="primary" className={css.signInButton} disabled={busy || state === undefined} loading={busy}
           onClick={() => { void run(start) }}>{t('signIn')}</Button>
       </div>
     </section>
   )
   return (
     <section className={css.section} aria-label={t('nav')}>
+      {failureNotice}
       <div className={css.card}>
         <div className={css.identity}>
           <span className={css.avatar}><AccountAvatar url={signedIn ? profile?.avatarUrl : null} /></span>
@@ -179,7 +185,7 @@ export function AccountSection({ t, useAccount, useTheme, start, cancel, openPla
           target="_blank" rel="noreferrer">
           {t('open')}
         </a>}
-        <Button variant="outline" disabled={busy || attempt.phase === 'committing'}
+        <Button variant="outline" disabled={busy || attempt.phase === 'committing'} loading={busy}
           onClick={() => { void run(() => cancel(attempt.id)) }}>{t('cancel')}</Button>
       </div>}
       <div className={css.balanceCard}>

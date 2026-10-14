@@ -5,7 +5,7 @@
  * metadata — its version — and this type's
  * own store holds the content it read through its face. Metadata changes reload
  * the current preview while automatic refresh is enabled. A failed metadata frame — the file gone, its
- * workspace unknown — takes the same bar's place over the pages already loaded,
+ * workspace unknown — uses floating feedback over the pages already loaded,
  * with the same reload. The type's controls, viewer choice, wrap and reload, sit at the end of
  * the path row; the Sidebar's strip carries none of them.
  */
@@ -16,7 +16,7 @@ import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   FileTypeIcon, IconNowrapFillRegular, IconPauseOutlineRegular, IconPlayOutlineRegular,
-  IconRefreshOutlineRegular, IconWrapFillRegular, Menu, PathLabel, Tooltip, classifyFileType,
+  Button, IconRefreshOutlineRegular, IconWrapFillRegular, Menu, PathLabel, Toast, Tooltip, classifyFileType,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { TextInjected } from './face.ts'
@@ -91,6 +91,7 @@ export function TextPreview({
   const scrollportRef = useRef<HTMLElement | null>(null)
   const storedScrollTopRef = useRef(0)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [notice, setNotice] = useState<{ text: string; action: 'reload' | 'next' }>()
   const absolutePath = meta.value?.absolutePath ?? current?.complete?.absolutePath
   const displayPath = absolutePath ?? file.path
   // Contributions that hand the file to the Host wait for its Host path.
@@ -168,15 +169,23 @@ export function TextPreview({
     && observedVersion !== current.version && observedVersion !== current.observedVersion)
     || state?.resourcesDirty === true
   const reload = useCallback((): void => {
-    if (!canRead) return
+    if (!canRead || current?.loading) return
     if (mode === 'text-pages') reloadPages(tab.id, file, signal, observedVersion)
     else if (mode === 'bytes-complete') reloadAll(tab.id, file, signal, observedVersion)
     else rendererReload()
-  }, [canRead, mode, reloadPages, reloadAll, rendererReload, tab.id, file, signal, observedVersion])
+  }, [canRead, current?.loading, mode, reloadPages, reloadAll, rendererReload, tab.id, file, signal, observedVersion])
   useEffect(() => tab.actions.bindCommands({ refresh: reload }), [tab.actions, reload])
   useEffect(() => {
     if (state?.autoRefresh && changed && current !== undefined && !current.loading && meta.status === 'live') reload()
   }, [state?.autoRefresh, changed, current?.loading, meta.status, reload])
+  useEffect(() => {
+    if (!tab.visible) { setNotice(undefined); return }
+    if (meta.failure !== undefined && hasContent) setNotice({ text: failureLine(t, meta.failure), action: 'reload' })
+    else if (current?.failure !== undefined && (hasContent || emptyFailureRecourse(current.failure) === 'retry')) {
+      setNotice({ text: failureLine(t, current.failure), action: hasContent ? 'next' : 'reload' })
+    } else if (changed) setNotice({ text: t('changed'), action: 'reload' })
+    else setNotice(undefined)
+  }, [meta.failure, current?.failure, hasContent, changed, observedVersion, tab.visible, t])
   const content = useMemo((): DocumentContent | undefined => {
     if (mode === 'renderer') {
       if (current === undefined) return undefined
@@ -232,37 +241,9 @@ export function TextPreview({
   }
   return (
     <div className={css.preview} data-textpreview-state="text" data-textpreview-url={tab.contentId} data-document-preview={selected.id}>
-      {meta.failure !== undefined && hasContent
-        ? (
-          // The file's metadata failed — gone, or its workspace unknown — which
-          // outranks a pending change; the pages already read stay under it.
-          // With nothing read the body's own failure already says it, so the
-          // bar would only repeat the same line.
-          <p className={css.changed} data-textpreview-meta-failed={meta.failure.code}>
-            <span>{failureLine(t, meta.failure)}</span>
-            <button
-              type="button"
-              className={css.action}
-              data-textpreview-reload-now
-              onClick={reload}
-            >
-              {t('reloadNow')}
-            </button>
-          </p>
-        )
-        : changed && (
-          <p className={css.changed} data-textpreview-changed>
-            <span>{t('changed')}</span>
-            <button
-              type="button"
-              className={css.action}
-              data-textpreview-reload-now
-              onClick={reload}
-            >
-              {t('reloadNow')}
-            </button>
-          </p>
-        )}
+      {notice !== undefined && <Toast key={`${notice.action}:${notice.text}`} text={notice.text} holdMs={null}
+        dismissLabel={t('dismissFeedback')} onDone={() => { setNotice(undefined) }}
+        actions={[{ label: t(notice.action === 'next' ? 'retry' : 'reloadNow'), onClick: () => { setNotice(undefined); if (notice.action === 'next') loadNext(); else reload() } }]} />}
       <div className={css.header}>
         <PathLabel path={displayPath} className={css.path} data-textpreview-path />
         {candidates.length > 1
@@ -312,16 +293,18 @@ export function TextPreview({
         {/* Preview and file-tree refresh controls own different reload lifecycles and locale namespaces. */}
         {/* jscpd:ignore-start */}
         <Tooltip label={t('reload')} shortcutKeys={tab.refreshShortcut?.keys} side="bottom" delayMs={500}>
-          <button
+          <Button
             type="button"
+            size="sm"
             className={css.tool}
+            loading={current?.loading === true}
             aria-label={t('reload')}
             data-textpreview-tool="reload"
             aria-keyshortcuts={tab.refreshShortcut?.aria}
             onClick={reload}
           >
             <IconRefreshOutlineRegular />
-          </button>
+          </Button>
         </Tooltip>
         {/* jscpd:ignore-end */}
         {fileOwner !== undefined && renderSlot('sidebar.right.tab.document.actions', fileOwner, { hookContext: useTabInfo })}
@@ -352,19 +335,7 @@ export function TextPreview({
           fallback: <p className={css.statusLine}>{t('rendererUnavailable', { name: selected.title() })}</p>,
         })}
         {current?.failure !== undefined && (hasContent
-          ? (
-            <p className={css.statusLine} data-textpreview-failed={current.failure.code}>
-              <span>{failureLine(t, current.failure)}</span>
-              <button
-                type="button"
-                className={css.action}
-                data-textpreview-retry
-                onClick={loadNext}
-              >
-                {t('retry')}
-              </button>
-            </p>
-          )
+          ? null
           : (
             // With no content, the failure names its recourse: retry the
             // selected renderer's read when a second read may resolve it, hand
@@ -373,32 +344,34 @@ export function TextPreview({
             // Metadata observation remains owned by the resource provider.
             <div className={css.empty} data-textpreview-failed={current.failure.code}>
               <FileTypeIcon kind={classifyFileType(name)} size={36} className={css.emptyIcon} />
-              <p className={css.emptyLine}>{failureLine(t, current.failure)}</p>
+              {emptyFailureRecourse(current.failure) !== 'retry' && <p className={css.emptyLine}>{failureLine(t, current.failure)}</p>}
               {emptyFailureRecourse(current.failure) === 'open' && fileOwner !== undefined
                 && renderSlot('sidebar.right.tab.document.unpreviewable', fileOwner)}
               {emptyFailureRecourse(current.failure) === 'retry' && (
-                <button
+                <Button
                   type="button"
                   className={css.retry}
+                  loading={current.loading}
                   data-textpreview-retry
                   onClick={reload}
                 >
                   <IconRefreshOutlineRegular size={14} />
                   {t('retry')}
-                </button>
+                </Button>
               )}
             </div>
           ))}
         {mode === 'text-pages' && current !== undefined && loaded.length > 0 && !current.eof && current.failure === undefined && (
-          <button
+          <Button
             type="button"
+            size="sm"
             className={css.more}
-            disabled={current.loading}
+            loading={current.loading}
             data-textpreview-more
             onClick={loadNext}
           >
-            {current.loading ? <LoadingIndicator inline label={t('loading')} /> : t('loadMore')}
-          </button>
+            {t('loadMore')}
+          </Button>
         )}
       </div>
     </div>

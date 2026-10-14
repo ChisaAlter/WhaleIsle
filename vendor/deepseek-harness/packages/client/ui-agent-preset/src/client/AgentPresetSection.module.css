@@ -157,6 +157,7 @@
 
 /* The card body is the control that picks the preset. */
 .cardMain {
+  position: relative;
   flex: 1;
   appearance: none;
   border: 0;
@@ -174,6 +175,30 @@
 
 .cardMain:disabled {
   cursor: default;
+}
+
+.cardMain[data-loading] > :not(.loadingOverlay) {
+  opacity: 0.35;
+}
+
+.loadingOverlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.spinner {
+  animation: preset-busy 1s linear infinite;
+}
+
+@keyframes preset-busy {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
 }
 
 .cardMain:focus-visible {
@@ -275,6 +300,8 @@
 /* Icon-only actions: the label rides `data-tip` so the row stays quiet until
    someone reaches for it. */
 .iconButton {
+  width: 28px;
+  height: 28px;
   position: relative;
   appearance: none;
   border: 0;
@@ -341,12 +368,6 @@
   tab-size: 2;
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-}
-
-.error {
-  margin: 0;
-  font-size: 12px;
-  color: var(--dsw-alias-state-error-primary);
 }
 
 /* The conversational authoring entry, after the card grid. Dashed like the

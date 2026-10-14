@@ -43,6 +43,7 @@
   height: 28px;
   padding: 0;
   border: none;
+  border-radius: 0;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
@@ -150,6 +151,15 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
+}
+
+.panePending {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
 }
 
 .paneTerminal {

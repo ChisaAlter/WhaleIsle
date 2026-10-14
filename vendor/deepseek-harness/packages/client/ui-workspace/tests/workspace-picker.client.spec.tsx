@@ -338,7 +338,9 @@ describe('WorkspacePicker', () => {
     )
     // An empty list is not final yet: jumping into the directory flow here
     // would pre-empt the workspaces about to arrive.
-    expect(screen.getByRole('status').textContent).toBe('正在加载工作区…')
+    expect(screen.getByRole('alert').textContent).toBe('正在加载工作区…')
+    expect(screen.getByRole('alert').querySelector('[data-state="ongoing"]')).not.toBeNull()
+    expect(screen.getByRole('menu')).toBeTruthy()
     expect(screen.queryByTestId('directory-flow')).toBeNull()
     expect(screen.getByRole('menuitem', { name: '添加工作区…' })).toBeTruthy()
   })

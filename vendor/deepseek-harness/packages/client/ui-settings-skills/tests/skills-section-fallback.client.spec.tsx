@@ -2,7 +2,7 @@
 // Focused spec: the SkillsSection catalog degrades to the global catalog when
 // the session-scoped read fails (a live session whose boot failed, for example
 // a corrupt session log, cannot back the layered view).
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import { fireEvent } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -79,7 +79,9 @@ describe('SkillsSection scoped-catalog fallback', () => {
     expect(await screen.findByText(skill.name)).toBeTruthy()
     expect(screen.getByText(en.sessionCatalogUnavailable)).toBeTruthy()
     expect(screen.queryByText(en.projectCatalogUnavailable)).toBeNull()
-    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(screen.getByRole('alert').textContent).toBe(en.sessionCatalogUnavailable)
+    expect(screen.queryByText(en.error)).toBeNull()
     expect(list).toHaveBeenCalledTimes(2)
     expect(list).toHaveBeenNthCalledWith(1, { sessionId: 'session-1', cwd: '/work/broken' })
     expect(list).toHaveBeenNthCalledWith(2, {})
@@ -100,7 +102,7 @@ describe('SkillsSection scoped-catalog fallback', () => {
       if (scope.sessionId !== undefined) throw new Error('history unavailable')
       throw new Error('catalog down')
     })
-    render(<SkillsSection {...props({ list })} />)
+    const { container } = render(<SkillsSection {...props({ list })} />)
 
     expect((await screen.findByRole('alert')).textContent).toContain(en.error)
     expect(screen.queryByText(en.sessionCatalogUnavailable)).toBeNull()
@@ -110,7 +112,7 @@ describe('SkillsSection scoped-catalog fallback', () => {
       if (scope.sessionId !== undefined) throw new Error('history unavailable')
       return { skills: [skill] }
     })
-    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    fireEvent.click(within(container).getByRole('button', { name: en.retry }))
     expect(await screen.findByText(skill.name)).toBeTruthy()
     expect(screen.getByText(en.sessionCatalogUnavailable)).toBeTruthy()
   })

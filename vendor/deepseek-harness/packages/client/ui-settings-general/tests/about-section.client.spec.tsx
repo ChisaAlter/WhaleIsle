@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { AboutSection } from '../src/client/AboutSection.tsx'
 import type { AboutSectionProps } from '../src/client/AboutSection.tsx'
+import type { UpdateInfo } from '../src/client/desktop-shell.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(() => {
@@ -10,11 +11,11 @@ afterEach(() => {
   delete (window as Window & { shell?: unknown }).shell
 })
 
-function translate(key: string, params?: Record<string, string>) {
+function translate(key: string, params?: Record<string, unknown>) {
   let text = (en as Record<string, string>)[key] ?? key
   if (params) {
     for (const [name, value] of Object.entries(params)) {
-      text = text.replaceAll(`{${name}}`, value)
+      text = text.replaceAll(`{${name}}`, String(value))
     }
   }
   return text
@@ -38,7 +39,7 @@ it('opens the shared Desktop confirmation for an available update without starti
   fireEvent.click(button)
   expect(openDesktopUpdate).toHaveBeenCalledOnce()
   expect(installUpdate).not.toHaveBeenCalled()
-  expect(screen.getByRole('status').textContent).toBe('New version 9.9.9 is available')
+  expect(screen.getByRole('alert').textContent).toBe('New version 9.9.9 is available')
 })
 
 it('retains the shell reinstall action when the checked release is current', async () => {
@@ -55,6 +56,53 @@ it('retains the shell reinstall action when the checked release is current', asy
   expect(await screen.findByText(en['about.updateManualInstall'])).toBeTruthy()
   expect(installUpdate).toHaveBeenCalledOnce()
   expect(openDesktopUpdate).not.toHaveBeenCalled()
+})
+
+const available: UpdateInfo = {
+  status: 'available', current: '1.0.0', latest: '9.9.9', assetUrl: 'https://example.test/app.exe',
+}
+
+it('reports update cancellation and restores the About install action for another attempt', async () => {
+  const pending = Promise.withResolvers<UpdateInfo>()
+  const installUpdate = vi.fn(() => pending.promise)
+  ;(window as Window & { shell?: unknown }).shell = {
+    checkUpdate: async () => available,
+    installUpdate,
+  }
+  mount()
+  const install = await screen.findByRole('button', { name: en['about.installUpdate'] })
+  await waitFor(() => { expect(install).toHaveProperty('disabled', false) })
+  expect((await screen.findByRole('alert')).textContent).toBe(translate('about.updateAvailable', { latest: '9.9.9' }))
+  fireEvent.click(install)
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(install).toHaveProperty('disabled', true)
+  install.click()
+  expect(installUpdate).toHaveBeenCalledOnce()
+  await act(async () => { pending.resolve({ ...available, launched: false, cancelled: true, code: 'cancelled' }) })
+  expect((await screen.findByRole('alert')).textContent).toBe(en['about.updateCancelled'])
+  expect(install).toHaveProperty('disabled', false)
+  expect(install.getAttribute('aria-busy')).toBeNull()
+  expect(screen.queryByText(en['about.updateInstalling'])).toBeNull()
+})
+
+it.each([
+  ['Tasks could not be stopped', 'Tasks could not be stopped'],
+  [undefined, 'install-gated'],
+] as const)('reports a refused installer gate with message %s instead of confirming only the available release', async (message, diagnostic) => {
+  ;(window as Window & { shell?: unknown }).shell = {
+    checkUpdate: async () => available,
+    installUpdate: async () => ({ ...available, launched: false, cancelled: false,
+      code: 'install-gated', ...(message === undefined ? {} : { message }) }),
+  }
+  mount()
+  const install = await screen.findByRole('button', { name: en['about.installUpdate'] })
+  await waitFor(() => { expect(install).toHaveProperty('disabled', false) })
+  fireEvent.click(install)
+  await waitFor(() => {
+    expect(screen.getByRole('alert').textContent).toBe(translate('about.updateError', { message: diagnostic }))
+  })
+  expect(install).toHaveProperty('disabled', false)
+  expect(screen.queryByText(en['about.updateInstalling'])).toBeNull()
 })
 
 it('shows manual DMG instructions and releases busy controls after opening the image', async () => {

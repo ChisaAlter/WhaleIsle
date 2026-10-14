@@ -5,7 +5,7 @@
  * menu; the browser raises the same request from a title double-click.
  */
 import { useRef, useState } from 'react'
-import { Button, IconEditOutlineRegular, MenuItemButton, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconEditOutlineRegular, MenuItemButton, Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   RenameSessionInjected, SessionMenuItemProps, SessionRenameDialogInjected, SessionRenameDialogProps, SessionRenameTarget,
 } from '../contract/slots.ts'
@@ -97,7 +97,7 @@ function RenameForm({ request, renameSession, onSettle, t }: {
       footer={(
         <>
           <Button variant="outline" disabled={renaming} onClick={close}>{t('cancel')}</Button>
-          <Button variant="primary" disabled={blocked} onClick={confirm}>{t('rename')}</Button>
+          <Button variant="primary" disabled={blocked} loading={renaming} onClick={confirm}>{t('rename')}</Button>
         </>
       )}
     >
@@ -118,7 +118,7 @@ function RenameForm({ request, renameSession, onSettle, t }: {
           }
         }}
       />
-      {error !== null && <div className={css.renameError} role="alert">{error}</div>}
+      {error !== null && <Toast text={error} holdMs={null} dismissLabel={t('close')} onDone={() => { setError(null) }} />}
     </Modal>
   )
 }

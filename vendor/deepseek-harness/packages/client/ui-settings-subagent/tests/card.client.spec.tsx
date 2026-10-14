@@ -120,14 +120,16 @@ describe('Subagent model selection fields', () => {
     expect(actions.toggleModel).toHaveBeenCalledWith('alpha\0deep')
   })
 
-  it('renders directory progress, failures, unavailable routes, and validation', () => {
+  it('shows directory progress in its switch and floats failures and validation without removing unavailable routes', async () => {
     renderSubagentModelSelection({ enabled: true, catalogStatus: 'loading', invalid: true })
-    expect(screen.getByText(en.subagentModelSelectionLoading)).toBeTruthy()
-    expect(screen.getByText(en.subagentModelSelectionRequired)).toBeTruthy()
+    expect(screen.getByRole('switch').getAttribute('aria-busy')).toBe('true')
+    expect(screen.getByRole('switch')).toHaveProperty('disabled', true)
+    expect((await screen.findByRole('alert')).textContent).toContain(en.subagentModelSelectionRequired)
+    expect(screen.getByRole('alert').closest('[data-dsh-toast-stack]')?.parentElement).toBe(document.body)
 
     cleanup()
     const errorActions = renderSubagentModelSelection({ enabled: true, catalogStatus: 'error' })
-    fireEvent.click(screen.getByRole('button', { name: en.subagentModelSelectionRetry }))
+    fireEvent.click(await screen.findByRole('button', { name: en.subagentModelSelectionRetry }))
     expect(errorActions.retryCatalog).toHaveBeenCalledOnce()
 
     cleanup()
@@ -145,13 +147,29 @@ describe('Subagent model selection fields', () => {
         selected: true,
       }],
     })
-    expect(screen.getByText(en.subagentModelSelectionPartial)).toBeTruthy()
+    expect((await screen.findByRole('alert')).textContent).toContain(en.subagentModelSelectionPartial)
     expect(screen.getByText(en.subagentModelSelectionUnavailable)).toBeTruthy()
     expect(screen.getByText(en.subagentModelSelectionUnavailableGroup)).toBeTruthy()
 
     cleanup()
     renderSubagentModelSelection({ enabled: true, catalogStatus: 'ready' })
-    expect(screen.getByText(en.subagentModelSelectionEmpty)).toBeTruthy()
+    expect((await screen.findByRole('alert')).textContent).toContain(en.subagentModelSelectionEmpty)
+  })
+
+  it('keeps catalog retry available after failure while guarding writes in flight and retains conflict recovery', async () => {
+    const { actions, models } = renderSubagent({ available: false }, { enabled: true, catalogStatus: 'error', dirty: true })
+    const retry = await screen.findByRole('button', { name: en.subagentModelSelectionRetry })
+    expect(screen.queryByRole('button', { name: en.dismissFeedback })).toBeNull()
+    act(() => { models.set({ ...models.getSnapshot(), saving: true }) })
+    fireEvent.click(retry)
+    expect(actions.retryCatalog).not.toHaveBeenCalled()
+    act(() => { models.set({ ...models.getSnapshot(), saving: false }) })
+    fireEvent.click(retry)
+    expect(actions.retryCatalog).toHaveBeenCalledOnce()
+    act(() => { models.set({ ...models.getSnapshot(), catalogStatus: 'ready', conflicted: true }) })
+    fireEvent.click(await screen.findByRole('button', { name: en.discardDraft }))
+    expect(actions.discard).toHaveBeenCalledOnce()
+    expect(models.getSnapshot()).toMatchObject({ dirty: true, conflicted: true })
   })
 
   it('distinguishes a stale draft from a rejected save', () => {

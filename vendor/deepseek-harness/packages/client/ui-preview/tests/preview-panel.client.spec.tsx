@@ -380,13 +380,13 @@ describe('PreviewPanel', () => {
     expect(screen.queryByRole('textbox', { name: 'Browser' })).toBeNull()
   })
 
-  it('catches a thrown previewOpen and shows the rejected copy', async () => {
+  it('catches a thrown previewOpen and shows visible operation failure feedback', async () => {
     mount({
       open: async () => { throw new Error('unknown preview id') },
     })
     typeUrl('http://127.0.0.1:3000')
     submitBar()
-    expect(await screen.findByText('Invalid URL or unsupported protocol.')).toBeTruthy()
+    expect((await screen.findByRole('alert')).textContent).toContain('The browser action failed. Please try again.')
   })
 
   it('opens http://127.0.0.1 through previewOpen with shared scope', async () => {
@@ -888,7 +888,7 @@ describe('PreviewPanel', () => {
     expect(b.previewRevealArtifact).not.toHaveBeenCalled()
   })
 
-  it('screenshot failure without a message uses rejected copy', async () => {
+  it('screenshot failure without a message uses visible operation failure feedback', async () => {
     const b = mount({
       previewCaptureScreenshot: async () => ({ ok: false }),
     })
@@ -896,7 +896,7 @@ describe('PreviewPanel', () => {
     openMore()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Screenshot' }))
     await waitFor(() => {
-      expect(screen.getByText('Invalid URL or unsupported protocol.')).toBeTruthy()
+      expect(screen.getByRole('alert').textContent).toContain('The browser action failed. Please try again.')
     })
   })
 
@@ -943,6 +943,8 @@ describe('PreviewPanel', () => {
 
   it('keeps the guest hidden after PiP opens and More closes, then shows after PiP close', async () => {
     const b = mount()
+    let finishOpen: (result: { ok: boolean }) => void = () => {}
+    b.previewOpenPictureInPicture.mockImplementationOnce(() => new Promise(resolve => { finishOpen = resolve }))
     await openGuest(b)
     const showAfterGuest = b.previewShow.mock.calls.length
     const hideAfterGuest = b.previewHide.mock.calls.length
@@ -951,6 +953,10 @@ describe('PreviewPanel', () => {
     await waitFor(() => {
       expect(b.previewOpenPictureInPicture).toHaveBeenCalledWith('pv-1')
     })
+    expect(b.previewShow.mock.calls.length).toBe(showAfterGuest)
+    fireEvent(window, new Event('resize'))
+    expect(b.previewShow.mock.calls.length).toBe(showAfterGuest)
+    await act(async () => { finishOpen({ ok: true }) })
     await act(async () => { await Promise.resolve() })
     expect(screen.queryByRole('menuitem', { name: 'Close separate preview window' })).toBeNull()
     await waitFor(() => {
@@ -1202,8 +1208,10 @@ describe('PreviewPanel', () => {
     await waitFor(() => {
       expect(b.previewPickElement).toHaveBeenCalledWith('pv-1')
     })
+    await act(async () => { await Promise.resolve() })
     expect(appendComposerText).not.toHaveBeenCalled()
     expect(screen.queryByText('cancelled')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('passes session cwd as the preview scope and swallows overlay IPC failures', async () => {
@@ -1225,7 +1233,7 @@ describe('PreviewPanel', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Show device toolbar' }))
   })
 
-  it('uses rejected copy when a nav snapshot omits a message', async () => {
+  it('uses visible operation failure feedback when a nav snapshot omits a message', async () => {
     let send: (state: PreviewNavState) => void = () => {}
     const b = mount({
       onPreviewStateChange: (handler) => {
@@ -1237,7 +1245,7 @@ describe('PreviewPanel', () => {
     act(() => {
       send({ ok: false, id: 'pv-1' })
     })
-    expect(screen.getByText('Invalid URL or unsupported protocol.')).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toContain('The browser action failed. Please try again.')
     act(() => {
       send({ ok: false, id: 'pv-1', message: 'blocked' })
     })

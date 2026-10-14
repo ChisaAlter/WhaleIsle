@@ -189,11 +189,11 @@ function createPreviewSessionCache(fromPartition = defaultFromPartition) {
 const sharedPreviewSessions = createPreviewSessionCache();
 
 /**
- * Absolute path to the guest BrowserView preload (pick IPC lands in Task 20).
+ * Absolute path to the single-file sandboxed guest BrowserView preload.
  * @returns {string}
  */
 function previewGuestPreloadPath() {
-  return path.join(__dirname, 'preview-guest-preload.js');
+  return path.join(__dirname, 'preview-guest-preload.bundle.js');
 }
 
 /**

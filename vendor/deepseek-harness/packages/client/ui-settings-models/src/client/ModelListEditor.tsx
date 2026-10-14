@@ -10,15 +10,15 @@
  * candidates the user picks from, never configuration written behind them.
  *
  * A provider that cannot be interrogated (an unreachable endpoint, a protocol
- * with no readable listing) is not a dead end: the failure is shown next to the
- * rows the user can still fill in by hand.
+ * with no readable listing) is not a dead end: a toast and the fetch button's
+ * description retain the failure while the rows can still be filled by hand.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { LlmDiscoveredModel } from '@deepseek-ai/dsh-api-remotes/client'
-import { Button, IconPlusOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
+import { Button, IconPlusOutlineRegular, Modal, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { formatCapacity, parseCapacity, validateDeepSeekModels } from './DeepSeekModelsEditor.tsx'
 import type { ModelsOperations } from './operations.ts'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
 import {
@@ -193,6 +193,11 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   const [busy, setBusy] = useState(false)
   useEffect(() => { onBusyChange(busy) }, [busy, onBusyChange])
   const [failure, setFailure] = useState<string | undefined>(undefined)
+  const failureId = useId()
+  const [failureDismissed, setFailureDismissed] = useState(false)
+  const [failureSequence, setFailureSequence] = useState(0)
+  useEffect(() => { setFailureDismissed(false) }, [failure])
+  const validation = validateDeepSeekModels(models)
   const [inheritedCatalog, setInheritedCatalog] = useState<{
     provider: string
     models: readonly LlmDiscoveredModel[]
@@ -204,7 +209,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
       if (!current) return
       setInheritedCatalog({ provider: catalogProvider, models: answer.kind === 'found' ? answer.models : [] })
       setFailure(answer.kind === 'refused' ? answer.message : undefined)
-    })
+    }).catch((error: unknown) => { if (current) setFailure(messageOf(error)) })
     return () => { current = false }
   }, [catalogProvider, operations, probe.settingsNs])
   const catalog = inheritedCatalog?.provider === catalogProvider ? inheritedCatalog?.models : undefined
@@ -282,6 +287,8 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   }
 
   const fetchModels = async (): Promise<void> => {
+    setFailureDismissed(false)
+    setFailureSequence(sequence => sequence + 1)
     setBusy(true)
     setFailure(undefined)
     try {
@@ -397,17 +404,20 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
             </button>
           )
           : null}
-        <button
-          type="button"
+        <Button
+          size="sm"
           className={styles['linkButton']}
           disabled={disabled || busy || !askable || props.probeBlocked !== undefined}
-          title={props.probeBlocked !== undefined
+          aria-describedby={failure === undefined ? undefined : failureId}
+          title={failure ?? (props.probeBlocked !== undefined
             ? t(props.probeBlocked)
-            : askable ? undefined : t('fetchNeedsBaseUrl')}
+            : askable ? undefined : t('fetchNeedsBaseUrl'))}
           onClick={() => { void fetchModels() }}
+          loading={busy}
+          feedback={busy ? t('fetching') : undefined}
         >
-          {busy ? t('fetching') : t('fetchModels')}
-        </button>
+          {t('fetchModels')}
+        </Button>
       </div>
       {models.length === 0 ? <p className={styles['modelEmpty']}>{t('modelsEmpty')}</p> : null}
       <div className={styles['modelList']}>
@@ -421,6 +431,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
             inputLoading={catalogProvider !== undefined && catalog === undefined}
             expanded={expanded.has(index)}
             disabled={disabled}
+            validation={validation}
             t={t}
             contextWindow={{
               value: capacityText(model, index, 'contextWindow'),
@@ -433,7 +444,10 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
               onChange: (text) => { editCapacity(index, 'maxTokens', text) },
             }}
             extra={(
-              <fieldset className={styles['effortGroup']}>
+              <Tooltip label={t('effortOffAlone')} disabled={validation?.index !== index || validation.key !== 'effortOffAlone'} portal side="top">
+              <fieldset className={styles['effortGroup']} aria-invalid={validation?.index === index && validation.key === 'effortOffAlone'}
+                tabIndex={validation?.index === index && validation.key === 'effortOffAlone' ? 0 : undefined}
+                aria-label={validation?.index === index && validation.key === 'effortOffAlone' ? t('effortOffAlone') : undefined}>
                 <legend className={styles['modelFieldLabel']}>{t('effortTitle')}</legend>
                 <div className={styles['effortOptions']}>
                   {EFFORT_CHOICES.map((choice) => {
@@ -453,6 +467,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                   })}
                 </div>
               </fieldset>
+              </Tooltip>
             )}
             onFieldChange={(field, value) => { patch(index, { [field]: value }) }}
             onChange={(next) => { onChange(models.map((row, at) => at === index ? next : row)) }}
@@ -481,7 +496,8 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
         <IconPlusOutlineRegular size={14} />
         {t('addModel')}
       </button>
-      {failure !== undefined ? <p className={styles['error']}>{failure}</p> : null}
+      {failure !== undefined && !failureDismissed ? <Toast key={failureSequence} text={failure} holdMs={9000} onDone={() => { setFailureDismissed(true) }} /> : null}
+      {failure === undefined ? null : <span className={styles['visuallyHidden']} id={failureId}>{failure}</span>}
       <Modal
         open={candidates !== undefined}
         onClose={closePicker}

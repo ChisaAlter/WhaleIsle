@@ -1,4 +1,5 @@
 import * as React from "react";
+import { ActionButton, BusyIndicator, ConfirmDialog, FeedbackToast } from '../../feedback.js';
 
 import { FeishuLogoGlyph } from "../../channel-logos.js";
 import { CredentialActionIcon, CredentialBindingPanel, QrActionIcon } from "../../credential-binding.js";
@@ -134,7 +135,7 @@ const Button = React.forwardRef(function Button(
   { children, kind = "secondary", size, icon, className = "", ...props },
   ref,
 ) {
-  return h("button", {
+  return h(ActionButton, {
     ...props,
     ref,
     type: "button",
@@ -161,8 +162,7 @@ function Heading({ totals, onAdd, onCredential, credentialOpen, adding, busy, ad
           ref: addButtonRef,
           "aria-busy": busy ? "true" : undefined,
           "aria-label": "扫码接入飞书机器人",
-          icon: h(QrActionIcon),
-        }, adding ? "正在接入" : "扫码接入机器人"),
+          icon: h(QrActionIcon), loading: adding, }, "扫码接入机器人"),
         h(Button, {
           kind: "credential",
           className: "dim-credentialButton",
@@ -204,8 +204,7 @@ function EmptyView({ onStart, busy }) {
         h("div", { className: "bxf-actions dim-viewActions" },
           h(Button, {
             kind: "primary", onClick: onStart,
-            disabled: busy, "aria-busy": busy ? "true" : undefined,
-          }, busy ? "正在生成二维码…" : "生成飞书二维码")),
+            disabled: busy, "aria-busy": busy ? "true" : undefined, loading: busy, }, "生成飞书二维码")),
       ),
       h("div", { className: "bxf-markStage dim-emptyBrand", "aria-hidden": "true" }, h(BrandMark)),
     ),
@@ -320,8 +319,7 @@ function QrPane({ provision, now, onRefresh, onCancel, busy }) {
         h("div", { className: "bxf-actions dim-viewActions" },
           expired
             ? h(Button, {
-                kind: "primary", onClick: onRefresh, disabled: busy,
-              }, busy ? "刷新中…" : "刷新二维码")
+                kind: "primary", onClick: onRefresh, disabled: busy, loading: busy, }, "刷新二维码")
             : href
               ? h("a", {
                   className: "bxf-button bxf-link", "data-kind": "secondary",
@@ -389,8 +387,8 @@ function ProvisionError({ error, provision, onRetry, onCancel, busy }) {
         h("p", null, error.message),
         error.code ? h("span", { className: "bxf-errorCode" }, error.code) : null,
         h("div", { className: "bxf-actions dim-viewActions" },
-          h(Button, { kind: "primary", onClick: onRetry, disabled: busy },
-            busy ? "重试中…" : "重新生成二维码"),
+          h(Button, { kind: "primary", onClick: onRetry, disabled: busy, loading: busy, },
+            "重新生成二维码"),
           h(Button, { onClick: onCancel, disabled: busy }, "关闭")),
       ),
     ),
@@ -425,16 +423,14 @@ function connectionTestNotice(value) {
   return value?.testMessage ? '连接检查完成，但测试消息发送失败。' : null;
 }
 
-function RemoveConfirmation({ bot, busy, onConfirm, onCancel }) {
+function RemoveConfirmation({ bot, busy, error, onConfirm, onCancel }) {
   const cancelRef = React.useRef(null);
   const idPart = bot.botId.replace(/[^a-zA-Z0-9_-]/g, "-");
   const titleId = `bxf-remove-title-${idPart}`;
   const descriptionId = `bxf-remove-description-${idPart}`;
 
-  React.useEffect(() => cancelRef.current?.focus(), []);
-
-  return h("div", {
-    className: "bxf-confirm dim-confirm",
+  return h(ConfirmDialog, {
+    onClose: onCancel, busy, error: error?.message,
     role: "alertdialog",
     "aria-labelledby": titleId,
     "aria-describedby": descriptionId,
@@ -449,9 +445,9 @@ function RemoveConfirmation({ bot, busy, onConfirm, onCancel }) {
     h("p", { id: descriptionId },
       "此操作会停止这个机器人的连接，并删除保存在本机的接入配置和凭据。飞书开放平台中的应用不会被自动删除，其他机器人也不受影响。"),
     h("div", { className: "bxf-actions dim-viewActions" },
-      h(Button, { ref: cancelRef, onClick: onCancel, disabled: busy }, "保留机器人"),
-      h(Button, { kind: "danger", onClick: onConfirm, disabled: busy },
-        busy ? "正在移除…" : "确认移除接入")),
+      h(Button, { ref: cancelRef, onClick: onCancel, disabled: busy, 'data-modal-autofocus': true }, "保留机器人"),
+      h(Button, { kind: "danger", onClick: onConfirm, disabled: busy, loading: busy, },
+        "确认移除接入")),
   );
 }
 
@@ -498,20 +494,18 @@ function GroupResponseModeEditor({
   return h("div", { className: "bxf-responseMode dim-responseMode" },
     h("div", { className: "bxf-responseModeHeader dim-responseModeHeader" },
       h("span", null, "群聊响应方式"),
-      saving || authorizing
-        ? h("span", { className: "bxf-responseModeStatus dim-responseModeStatus" },
-            saving ? "保存中…" : "正在准备授权…")
-        : null),
-    h("select", {
+      null),
+    h("span", { className: "dim-controlBusy" }, h("select", {
       className: "bxf-responseModeSelect dim-responseModeSelect",
       value: current,
       disabled: disabled || saving,
+      "aria-busy": saving || undefined,
       "aria-label": "群聊响应方式",
       onChange: (event) => { void change(event); },
     },
       h("option", { value: "mention" }, "仅在 @机器人时响应（推荐）"),
       h("option", { value: "all" }, "响应所有群消息"),
-    ),
+    ), h(BusyIndicator, { busy: saving })),
     h("small", { className: "bxf-responseModeHelp dim-responseModeHelp" },
       current === "mention"
         ? permissionGranted
@@ -528,13 +522,9 @@ function GroupResponseModeEditor({
             disabled: disabled || authorizationDisabled || saving || authorizing,
             "aria-busy": authorizing ? "true" : undefined,
             "aria-label": permissionGranted ? "重新授权群消息权限" : "授权群消息权限",
-            onClick: () => { void authorize(); },
-          }, authorizing ? "正在准备…" : permissionGranted ? "重新授权" : "去授权"))
+            onClick: () => { void authorize(); }, loading: authorizing, }, permissionGranted ? "重新授权" : "去授权"))
       : null,
-    error ? h("p", {
-      className: "bxf-responseModeError dim-responseModeError",
-      role: "alert",
-    }, error) : null,
+    error ? h(FeedbackToast, { text: error, tone: "error" }) : null,
   );
 }
 
@@ -569,8 +559,7 @@ export function BotCard({
     : stateForDisplay === "connecting"
       ? "warning"
       : "error";
-  const summary = actionError?.message
-    ?? connection.error?.message
+  const summary = connection.error?.message
     ?? (connected ? null : health.summary);
   const titleId = `bxf-bot-${connection.botId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
   return h("article", {
@@ -632,8 +621,7 @@ export function BotCard({
             h(Button, {
               className: "dim-cardAction", onClick: onReconnect,
               disabled: Boolean(busy), "aria-busy": busy === "reconnect" ? "true" : undefined,
-              "aria-label": `${connected ? "检查连接" : "重试连接"}${bot.name}`,
-            }, busy === "reconnect" ? (connected ? "检查中…" : "正在连接…") : connected ? "检查连接" : "重试连接"),
+              "aria-label": `${connected ? "检查连接" : "重试连接"}${bot.name}`, loading: busy === "reconnect", }, connected ? "检查连接" : "重试连接"),
             h("span", { className: "bxf-repairAction" },
               h(Button, {
                 className: "bxf-repairButton dim-cardAction",
@@ -641,8 +629,7 @@ export function BotCard({
                 disabled: Boolean(busy) || repairDisabled,
                 "aria-busy": busy === "callback-repair" ? "true" : undefined,
                 "aria-label": `为${bot.name}补全权限与回调`,
-                "aria-describedby": repairTooltipId,
-              }, busy === "callback-repair" ? "等待扫码…" : "补全权限"),
+                "aria-describedby": repairTooltipId, loading: busy === "callback-repair", }, "补全权限"),
               h("span", {
                 id: repairTooltipId,
                 className: "bxf-repairTooltip",
@@ -655,22 +642,21 @@ export function BotCard({
               disabled: Boolean(busy), ref: removeButtonRef,
               "aria-label": `从 DeepSeek Harness 移除${bot.name}`,
             }, "移除接入")),
-          summary ? h("div", { className: "bxf-healthSummary dim-cardSummary", "data-error": actionError || connection.error ? "true" : undefined },
+
+          summary ? h("div", { className: "bxf-healthSummary dim-cardSummary", "data-error": connection.error ? "true" : undefined },
             summary) : null,
           connection.lastMessageError ? h(LastMessageErrorSummary, {
             className: "bxf-healthSummary",
             error: connection.lastMessageError,
           }) : null,
-          testNotice ? h("div", {
-            className: "bxf-healthSummary dim-cardFeedback",
-            role: "status",
-          }, testNotice) : null),
+          null),
       ),
     ),
     removing
       ? h(RemoveConfirmation, {
           bot: connection,
           busy: busy === "delete",
+          error: actionError,
           onConfirm: onConfirmRemove,
           onCancel: onCancelRemove,
         })
@@ -726,8 +712,8 @@ function PageError({ error, onRetry, busy }) {
         h("p", null, error.message),
         error.code ? h("span", { className: "bxf-errorCode" }, error.code) : null,
         h("div", { className: "bxf-actions dim-viewActions" },
-          h(Button, { kind: "primary", onClick: onRetry, disabled: busy },
-            busy ? "重试中…" : "重新读取"))),
+          h(Button, { kind: "primary", onClick: onRetry, disabled: busy, loading: busy, },
+            "重新读取"))),
     ),
   );
 }
@@ -1392,7 +1378,7 @@ export function FeishuSettingsTab({ rpcCall }) {
       scheduleAnimationFrame(() => addButtonRef.current?.focus(), "focus");
     } catch (error) {
       setBotError(botId, error);
-      announce(`${bot.name}移除失败，请重试。`);
+      announce(error?.message ?? `${bot.name}移除失败，请重试。`);
     } finally {
       const shouldRefresh = workspaceFence.endMutation();
       if (shouldRefresh && mountedRef.current) void loadStatus({ silent: true });
@@ -1483,14 +1469,9 @@ export function FeishuSettingsTab({ rpcCall }) {
       busy: provisionBusy || credentialBusy,
       addButtonRef,
     }),
-    h("div", {
-      className: "bxf-visuallyHidden", role: "status", "aria-live": "polite", "aria-atomic": "true",
-    }, announcement),
+    announcement && !removeTargetId ? h(FeedbackToast, { text: announcement }) : null,
     model.statusError
-      ? h("div", { className: "bxf-statusNotice dim-statusNotice", role: "status" },
-          h(AlertIcon, { size: 16 }),
-          h("span", null, `状态自动刷新失败：${model.statusError.message}`),
-          h(Button, { size: "small", onClick: () => void loadStatus({ silent: true }), disabled: pageBusy }, "立即重试"))
+      ? h(FeedbackToast, { text: `状态自动刷新失败：${model.statusError.message}`, tone: 'error', actions: [{ label: '立即重试', onClick: () => { if (!pageBusy) void loadStatus({ silent: true }); } }] })
       : null,
     model.phase === "loading"
       ? h(LoadingView)

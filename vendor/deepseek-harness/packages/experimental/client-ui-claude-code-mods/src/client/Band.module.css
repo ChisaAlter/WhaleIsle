@@ -70,11 +70,12 @@
 .box[data-border][data-color='blue'] { border-color: var(--dsw-alias-button-info-fill); }
 .box[data-border][data-color='magenta'] { border-color: var(--dsw-alias-state-business-primary); }
 
-.button {
+.band .button {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   margin: 0 2px;
+  height: auto;
   padding: 1px 8px;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
@@ -85,22 +86,17 @@
   cursor: pointer;
 }
 
-.button:hover,
-.button:focus-visible {
+.band .button:hover,
+.band .button:focus-visible {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.button:disabled {
+.band .button:disabled {
   cursor: default;
   opacity: 0.6;
 }
 
 .hotkey {
   color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-}
-
-.notice {
-  color: var(--dsw-alias-state-error-primary);
   font-size: 11px;
 }

@@ -17,6 +17,7 @@ fsPromises.writeFile = async (...args) => {
 }
 
 async function run() {
+  require('./prepare-preview-guest-preload.cjs').preparePreviewGuestPreload()
   if (process.platform === 'win32') {
     // The official NSIS decoder uses BCJ; 7za handles the complete staged directory.
     process.env.ELECTRON_BUILDER_7Z_FILTER = 'BCJ'

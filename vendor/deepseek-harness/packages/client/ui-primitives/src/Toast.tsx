@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { IconCheckCircleOutlineRegular } from './icons/index.tsx'
+import { IconCheckCircleOutlineRegular, IconCloseOutlineRegular } from './icons/index.tsx'
+import { acquireToastStack, registerToastLayer } from './useModalLayer.ts'
 import css from './Toast.module.css'
 
 /** Full-opacity hold before the fade starts, when the owner names none. */
@@ -43,21 +44,52 @@ const FADE_MS = 1000
  * @param props.onDone - called once the fade completes; unmount the toast here.
  * @returns the floating banner.
  */
-export function Toast({ text, icon, tone, anchor, holdMs = HOLD_MS, actions, onDone }: {
+export function Toast({ text, icon, tone, anchor, holdMs = HOLD_MS, actions, dismissLabel, onDone }: {
   text: string
   icon?: ReactNode
-  tone?: 'success'
+  tone?: 'success' | undefined
   anchor?: HTMLElement | null
-  holdMs?: number
-  actions?: readonly { label: string; prefix?: string; onClick: () => void }[]
+  /** Null keeps an actionable notice until its owner or the user dismisses it. */
+  holdMs?: number | null | undefined
+  actions?: readonly { label: string; prefix?: string; disabled?: boolean | undefined; onClick: () => void }[] | undefined
+  /** Localized accessible name for the optional close control. */
+  dismissLabel?: string | undefined
   onDone: () => void
 }) {
+  const owner = useRef<HTMLSpanElement>(null)
+  const surface = useRef<HTMLDivElement>(null)
+  const [stack, setStack] = useState<HTMLElement | null>(null)
+  const [visible, setVisible] = useState(false)
+  const elapsed = useRef(0)
+  const duration = useRef(holdMs)
+  const [animationElapsed, setAnimationElapsed] = useState(0)
   const latestOnDone = useRef(onDone)
   useLayoutEffect(() => { latestOnDone.current = onDone }, [onDone])
-  useEffect(() => {
-    const timer = setTimeout(() => { latestOnDone.current() }, holdMs + FADE_MS)
-    return () => { clearTimeout(timer) }
+  useLayoutEffect(() => {
+    const lease = acquireToastStack(document, css.stack as string)
+    setStack(lease.element)
+    return lease.release
+  }, [])
+  useLayoutEffect(() => {
+    if (owner.current === null || surface.current === null) return
+    return registerToastLayer(owner.current, surface.current, setVisible)
+  }, [stack, text])
+  useLayoutEffect(() => {
+    duration.current = holdMs
+    elapsed.current = 0
+    setAnimationElapsed(0)
   }, [holdMs])
+  useEffect(() => {
+    if (holdMs === null || !visible) return
+    const started = performance.now()
+    const timer = setTimeout(() => { latestOnDone.current() }, Math.max(0, holdMs + FADE_MS - elapsed.current))
+    return () => {
+      clearTimeout(timer)
+      if (duration.current !== holdMs) return
+      elapsed.current += performance.now() - started
+      setAnimationElapsed(elapsed.current)
+    }
+  }, [holdMs, visible])
   // Anchor-centered placement re-measures on window resizes; the banner lives
   // four seconds, so sub-window layout drift within that span stays out of
   // scope.
@@ -72,13 +104,18 @@ export function Toast({ text, icon, tone, anchor, holdMs = HOLD_MS, actions, onD
     window.addEventListener('resize', measure)
     return () => { window.removeEventListener('resize', measure) }
   }, [anchor])
-  return createPortal(
+  return <><span ref={owner} hidden data-dsh-toast-owner="" />{stack === null ? null : createPortal(
     <div
+      ref={surface}
       className={css.toast}
       role="alert"
+      hidden={!visible}
+      data-dsh-toast=""
+      data-persistent={holdMs === null || undefined}
       style={{
         ...left === null ? {} : { left },
-        '--dsh-toast-hold': `${String(holdMs)}ms`,
+        '--dsh-toast-hold': `${String(holdMs ?? HOLD_MS)}ms`,
+        '--dsh-toast-elapsed': `${String(animationElapsed)}ms`,
       } as CSSProperties}
     >
       {tone === 'success'
@@ -89,13 +126,17 @@ export function Toast({ text, icon, tone, anchor, holdMs = HOLD_MS, actions, onD
         {actions?.map(action => (
           <Fragment key={action.label}>
             {action.prefix}
-            <button type="button" className={css.action} onClick={action.onClick}>
+            <button type="button" className={css.action} disabled={action.disabled} onClick={action.onClick}>
               {action.label}
             </button>
           </Fragment>
         ))}
       </span>
+      {dismissLabel !== undefined && <button type="button" className={css.dismiss}
+        aria-label={dismissLabel} onClick={() => { latestOnDone.current() }}>
+        <IconCloseOutlineRegular size={14} />
+      </button>}
     </div>,
-    document.body,
-  )
+    stack,
+  )}</>
 }

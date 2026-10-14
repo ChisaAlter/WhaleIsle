@@ -24,7 +24,7 @@ test('version installation displays manual DMG instructions and releases busy st
   const end = source.indexOf('async function installDelta(', start);
   const elements = new Map(['update-progress-title', 'update-progress'].map((id) => [id, { textContent: '' }]));
   const phases = [];
-  const context = vm.createContext({ updateBusy: false, lastStatus: {},
+  const context = vm.createContext({ updateBusy: false, lastStatus: {}, progressPanels: new Map(),
     pageShell: () => ({ installRelease: async () => ({ manualInstall: true, launched: false, message: 'Drag into Applications' }) }),
     appConfirm: async () => true, $: (id) => elements.get(id),
     paintProgress: (_id, state) => phases.push(state.phase),
@@ -42,6 +42,46 @@ test('installation feedback distinguishes unknown length, retry and waiting for 
   assert.doesNotMatch(text, /%/);
   assert.match(installPhaseText({ phase: 'download', retrying: true, attempt: 2, maxAttempts: 3 }), /重试（2\/3）/);
   assert.match(installPhaseText({ phase: 'install-wait', elapsedMs: 7000 }), /安装向导.*7 秒/);
+});
+
+test('delta fallback reports actual installer stages and only certifies applied installation', async () => {
+  const fs = require('node:fs');
+  const vm = require('node:vm');
+  const source = fs.readFileSync(require('node:path').join(__dirname, 'launcher.js'), 'utf8');
+  const start = source.indexOf('async function installDelta(');
+  const end = source.indexOf('async function saveSettings(', start);
+  const scenarios = [
+    { result: { mode: 'full', ok: true, launched: true, status: 'waiting' }, phase: 'waiting' },
+    { result: { mode: 'full', ok: true, status: 'quit-pending' }, phase: 'waiting' },
+    { result: { mode: 'full', ok: true, launched: true }, phase: 'waiting' },
+    { result: { mode: 'full', ok: true, status: 'fallback-full' }, phase: 'waiting' },
+    { result: { mode: 'full', ok: true, status: 'installed', installed: { version: '9.9.9' } }, phase: 'done' },
+    { result: { status: 'applied', version: '9.9.9' }, phase: 'done' },
+    { result: { mode: 'delta', ok: true, to: '9.9.9' }, phase: 'done' },
+    { result: { mode: 'full', cancelled: true, status: 'waiting', message: '已停止等待，安装向导仍在运行' }, phase: 'waiting' },
+  ];
+  for (const { result, phase } of scenarios) {
+    const elements = new Map(['update-progress-title', 'update-progress'].map(id => [id, { textContent: '' }]));
+    const phases = [];
+    let refreshes = 0;
+    const context = vm.createContext({ updateBusy: false, progressPanels: new Map(),
+      pageShell: () => ({ installDelta: async () => result }), appConfirm: async () => true,
+      $: id => elements.get(id), paintProgress: (_id, state) => phases.push(state.phase),
+      refreshStatus: () => { refreshes++; }, refreshReleases: () => { refreshes++; },
+      errText: error => error.message, setHint: () => assert.fail('valid installer stages are not errors') });
+    await vm.runInContext(`${source.slice(start, end)}; installDelta('v9.9.9')`, context);
+    assert.equal(phases.at(-1), phase, JSON.stringify(result));
+    assert.equal(context.updateBusy, false);
+    const text = elements.get('update-progress').textContent;
+    if (phase === 'waiting') {
+      assert.ok(text.trim(), 'an unconfirmed installation remains visible');
+      assert.doesNotMatch(text, /完成安装：|安装完成：|已增量更新到/);
+      assert.equal(refreshes, 0, 'starting an installer is not a verified installed version');
+    } else {
+      assert.match(text, /(?:完成安装|已增量更新到).*9\.9\.9/);
+      assert.equal(refreshes, 2);
+    }
+  }
 });
 
 test('unconfirmed installation clears activity and a retry restores the progress surface', () => {

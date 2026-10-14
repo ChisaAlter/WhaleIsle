@@ -9,6 +9,7 @@ import {
   Pill,
   Modal,
   Tooltip,
+  Toast,
   IconInfoOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -72,7 +73,7 @@ type Confirmation = { kind: 'install'; item: MarketItem }
   | { kind: 'uninstall'; id: string; name: string }
   | { kind: 'batch'; ids: string[] }
 
-type Notice = { kind: 'ok' | 'error'; text: string } | null
+type Notice = { kind: 'ok' | 'error'; text: string; retry?: 'catalog' } | null
 
 type AllowBuildsAsk = { kind: 'install' | 'update'; item: MarketItem; keys: string[] } | null
 
@@ -217,11 +218,20 @@ export function MarketSection({
   const [busy, setBusy] = useState<BusyOp>(null)
   const [progress, setProgress] = useState<string[]>([])
   const [notice, setNotice] = useState<Notice>(null)
+  const [noticeDismissed, setNoticeDismissed] = useState(false)
+  const [noticeSequence, setNoticeSequence] = useState(0)
+  const [progressDismissed, setProgressDismissed] = useState(false)
+  const marketStateReadFailed = useRef(false)
+  const notify = useCallback((value: Notice): void => {
+    setNotice(value)
+    setNoticeDismissed(false)
+    setNoticeSequence(sequence => sequence + 1)
+  }, [])
   const [ask, setAsk] = useState<AllowBuildsAsk>(null)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const [details, setDetails] = useState<MarketItem | null>(null)
   const [marketState, setMarketState] = useState<MarketplaceState>({ ok: true, favorites: [], operations: [] })
-  const [favoriteBusy, setFavoriteBusy] = useState(false)
+  const [favoriteBusy, setFavoriteBusy] = useState<string | undefined>()
   const [sort, setSort] = useState('catalog')
   const [period, setPeriod] = useState('all')
   const [installedFilter, setInstalledFilter] = useState('all')
@@ -236,11 +246,14 @@ export function MarketSection({
   const reloadMarketState = useCallback(async () => {
     try {
       const next = await getMarketState()
+      if (next.ok !== true) throw new Error(t('stateFailed'))
+      marketStateReadFailed.current = false
       if (alive.current) setMarketState(next)
     } catch {
-      if (alive.current) setNotice({ kind: 'error', text: t('stateFailed') })
+      if (alive.current && !marketStateReadFailed.current) notify({ kind: 'error', text: t('stateFailed') })
+      marketStateReadFailed.current = true
     }
-  }, [getMarketState, t])
+  }, [getMarketState, notify, t])
 
   useEffect(() => {
     void reloadMarketState()
@@ -249,14 +262,15 @@ export function MarketSection({
   }, [reloadMarketState])
 
   const toggleFavorite = async (id: string) => {
-    setFavoriteBusy(true)
+    setFavoriteBusy(id)
     try {
       const next = await setFavorite(id, !marketState.favorites.includes(id))
+      if (next.ok !== true) throw new Error(t('stateFailed'))
       if (alive.current) setMarketState(next)
     } catch {
-      if (alive.current) setNotice({ kind: 'error', text: t('stateFailed') })
+      if (alive.current) notify({ kind: 'error', text: t('stateFailed') })
     } finally {
-      if (alive.current) setFavoriteBusy(false)
+      if (alive.current) setFavoriteBusy(undefined)
     }
   }
 
@@ -265,9 +279,9 @@ export function MarketSection({
       const plugins = await listInstalled()
       if (alive.current) setInstalled(plugins)
     } catch {
-      // The installed list is a secondary annotation; the catalog stays usable.
+      if (alive.current) notify({ kind: 'error', text: t('installedReadFailed') })
     }
-  }, [listInstalled])
+  }, [listInstalled, notify, t])
 
   const reloadUpdates = useCallback(async (force: boolean) => {
     setCheckingUpdates(true)
@@ -289,10 +303,12 @@ export function MarketSection({
   }, [checkUpdates])
 
   const load = useCallback(async (refresh: boolean) => {
+    setNoticeDismissed(true)
     setReloading(true)
     setState(current => (current.status === 'ready' ? current : { status: 'loading' }))
     try {
       const catalog = await listCatalog(refresh ? { refresh: true } : undefined)
+      if (catalog.ok !== true) throw new Error(t('loadError'))
       if (alive.current) {
         setState({ status: 'ready', catalog })
         await Promise.all([reloadInstalled(), reloadUpdates(refresh)])
@@ -304,11 +320,12 @@ export function MarketSection({
         setState(current => (current.status === 'ready'
           ? { ...current, refreshFailed: true }
           : { status: 'error' }))
+        notify({ kind: 'error', text: t('loadError'), retry: 'catalog' })
       }
     } finally {
       if (alive.current) setReloading(false)
     }
-  }, [listCatalog, reloadInstalled, reloadUpdates])
+  }, [listCatalog, reloadInstalled, reloadUpdates, notify, t])
 
   useEffect(() => { void load(false) }, [load])
 
@@ -323,6 +340,7 @@ export function MarketSection({
     setNotice(null)
     setAsk(null)
     setProgress([])
+    setProgressDismissed(false)
     const off = onProgress((payload) => {
       if (!alive.current) return
       const line = payload.phase === 'restart' ? t('restarting') : payload.line
@@ -332,9 +350,12 @@ export function MarketSection({
     try {
       const result = await work()
       if (!alive.current) return
-      if (result.ok) {
-        setNotice(result.harnessStarted === false
-          ? { kind: 'error', text: result.error || t('harnessDown') }
+      const withHistoryWarning = (text: string): string => [text, result.historyWarning].filter(Boolean).join(' ')
+      if (result.ok === true) {
+        notify(result.harnessStarted === false
+          ? { kind: 'error', text: withHistoryWarning(result.error || t('harnessDown')) }
+          : result.harnessStarted !== true
+            ? { kind: 'error', text: withHistoryWarning(t('opOutcomeUnknown')) }
           : result.historyWarning
             ? { kind: 'error', text: result.historyWarning }
           : { kind: 'ok', text: doneText })
@@ -343,18 +364,20 @@ export function MarketSection({
           ? state.catalog.items.find(row => row.id === op.id) ?? null
           : null
         const keys = result.allowBuilds ?? []
-        if (item && keys.length > 0) setAsk({ kind: op.kind, item, keys })
-        else setNotice({ kind: 'error', text: t('opFailed', { message: result.error || t('buildApprovalMissing') }) })
+        if (item && keys.length > 0) {
+          setAsk({ kind: op.kind, item, keys })
+          if (result.historyWarning) notify({ kind: 'error', text: result.historyWarning })
+        } else notify({ kind: 'error', text: withHistoryWarning(t('opFailed', { message: result.error || t('buildApprovalMissing') })) })
         if (result.rolledBack === false) {
           setAsk(null)
-          setNotice({ kind: 'error', text: t('opFailed', { message: result.error || result.rollbackError || t('operationFailed') }) })
+          notify({ kind: 'error', text: withHistoryWarning(t('opFailed', { message: result.error || result.rollbackError || t('operationFailed') })) })
         }
       } else {
-        setNotice({ kind: 'error', text: t('opFailed', { message: result.error || t('unknown') }) })
+        notify({ kind: 'error', text: withHistoryWarning(t('opFailed', { message: result.error || t('unknown') })) })
       }
     } catch (caught) {
       if (alive.current) {
-        setNotice({ kind: 'error', text: t('opFailed', { message: caught instanceof Error ? caught.message : String(caught) }) })
+        notify({ kind: 'error', text: t('opFailed', { message: caught instanceof Error ? caught.message : String(caught) }) })
       }
     } finally {
       off()
@@ -367,7 +390,7 @@ export function MarketSection({
         void reloadMarketState()
       }
     }
-  }, [onProgress, reloadInstalled, reloadUpdates, reloadMarketState, state, t])
+  }, [onProgress, reloadInstalled, reloadUpdates, reloadMarketState, state, notify, t])
 
   const startInstall = useCallback((item: MarketItem, allowBuilds?: string[]) => {
     void runOp(
@@ -431,6 +454,12 @@ export function MarketSection({
 
   return (
     <div className={css.section} aria-busy={state.status === 'loading'}>
+      {busy !== null && !progressDismissed ? <Toast text={progress.at(-1) || t(busy.kind === 'install' ? 'installing' : busy.kind === 'uninstall' ? 'uninstalling' : 'updating')}
+        holdMs={null} dismissLabel={t('close')} onDone={() => { setProgressDismissed(true) }} />
+        : notice === null || noticeDismissed ? null : <Toast key={noticeSequence} text={notice.text}
+          {...notice.kind === 'ok' ? { tone: 'success' as const } : { holdMs: notice.retry ? null : 9000 }}
+          {...notice.retry ? { actions: [{ label: t('retry'), onClick: () => { void load(true) } }], dismissLabel: t('close') } : {}}
+          onDone={() => { setNoticeDismissed(true) }} />}
       {details ? <MarketDetails key={details.id} item={details} getDetails={getDetails} t={t} onClose={() => { setDetails(null) }} /> : null}
       {confirmation ? <Modal open title={t(confirmation.kind === 'install' ? 'confirmInstall' : confirmation.kind === 'batch' ? 'confirmBatch' : 'confirmUninstall')}
         className={css.confirmModal} contentClassName={css.dialogContent}
@@ -458,28 +487,16 @@ export function MarketSection({
             variant="outline"
             className={css.iconAction}
             icon={<IconRefreshOutline16 />}
-            aria-label={reloading ? t('refreshing') : t('refresh')}
-            title={reloading ? t('refreshing') : t('refresh')}
-            disabled={isBusy || reloading}
+            aria-label={state.status === 'loading' ? t('loading') : reloading ? t('refreshing') : t('refresh')}
+            title={state.status === 'loading' ? t('loading') : reloading ? t('refreshing') : t('refresh')}
+            disabled={isBusy || reloading || state.status === 'loading'}
+            loading={reloading || state.status === 'loading'}
             onClick={() => { void load(true) }}
           />
         </div>
       </header>
-      {state.status === 'loading' ? <p className={css.status} role="status">{t('loading')}</p> : null}
-      {state.status === 'error' ? (
-        <div className={css.loadFailure}>
-          <p role="alert">{t('loadError')}</p>
-          <Button size="sm" variant="outline" onClick={() => { void load(true) }}>{t('retry')}</Button>
-        </div>
-      ) : null}
       {state.status === 'ready' ? (
         <>
-          {state.refreshFailed ? (
-            <div className={css.loadFailure}>
-              <p role="alert">{t('loadError')}</p>
-              <Button size="sm" variant="outline" onClick={() => { void load(true) }}>{t('retry')}</Button>
-            </div>
-          ) : null}
           <div className={css.tabs} role="tablist" aria-label={t('heading')}>
             <Pill
               role="tab"
@@ -505,20 +522,9 @@ export function MarketSection({
               aria-selected={tab === value} aria-controls={`market-panel-${value}`} active={tab === value}
               onClick={() => { setTab(value) }}>{t(value === 'favorites' ? 'tabFavorites' : 'tabHistory')}</Pill>)}
           </div>
-          {notice ? (
-            <p
-              className={css.notice}
-              data-kind={notice.kind}
-              role={notice.kind === 'error' ? 'alert' : 'status'}
-            >
-              {notice.text}
-            </p>
-          ) : null}
           {ask ? (
-            <div className={css.allowBuilds} role="alertdialog" aria-label={t('allowBuildsAsk', { name: ask.item.repo })}>
-              <p>{t('allowBuildsAsk', { name: ask.item.repo })}</p>
-              {ask.keys.length > 0 ? <code>{t('allowBuildsKeys', { keys: ask.keys.join(', ') })}</code> : null}
-              <div className={css.allowBuildsActions}>
+            <Modal open title={t('allowBuildsAsk', { name: ask.item.repo })} closeLabel={t('close')} onClose={() => { setAsk(null) }}
+              className={css.confirmModal} contentClassName={css.dialogContent} footer={<>
                 <Button
                   size="sm"
                   variant="primary"
@@ -532,13 +538,9 @@ export function MarketSection({
                 <Button size="sm" variant="ghost" onClick={() => { setAsk(null) }}>
                   {t('allowBuildsCancel')}
                 </Button>
-              </div>
-            </div>
-          ) : null}
-          {busy && progress.length > 0 ? (
-            <div className={css.progress} role="log" aria-label={t('progressHeading')}>
-              {progress.map((line, position) => <code key={`${position}-${line}`}>{line}</code>)}
-            </div>
+              </>}>
+              {ask.keys.length > 0 ? <pre className={css.confirmTarget}>{t('allowBuildsKeys', { keys: ask.keys.join(', ') })}</pre> : null}
+            </Modal>
           ) : null}
           <div
             key={tab}
@@ -627,7 +629,8 @@ export function MarketSection({
                             <Tooltip label={t(marketState.favorites.includes(item.id) ? 'unfavorite' : 'favorite')}>
                               <span className={css.toolAnchor}><Button size="sm" variant="ghost" className={css.iconAction}
                                 aria-label={t(marketState.favorites.includes(item.id) ? 'unfavorite' : 'favorite')}
-                                aria-pressed={marketState.favorites.includes(item.id)} disabled={favoriteBusy}
+                                aria-pressed={marketState.favorites.includes(item.id)} disabled={favoriteBusy !== undefined}
+                                loading={favoriteBusy === item.id}
                                 icon={<span aria-hidden="true">{marketState.favorites.includes(item.id) ? '★' : '☆'}</span>}
                                 onClick={() => { void toggleFavorite(item.id) }} /></span>
                             </Tooltip>
@@ -676,18 +679,22 @@ export function MarketSection({
                                     size="sm"
                                     variant="primary"
                                     disabled={isBusy}
+                                    loading={busyKind === 'update'}
+                                    feedback={busyKind === 'update' ? t('updating') : undefined}
                                     onClick={() => { startUpdate(item) }}
                                   >
-                                    {busyKind === 'update' ? t('updating') : t('update')}
+                                    {t('update')}
                                   </Button>
                                 ) : null}
                                 <Button
                                   size="sm"
                                   variant="ghost"
                                   disabled={isBusy}
+                                  loading={busyKind === 'uninstall'}
+                                  feedback={busyKind === 'uninstall' ? t('uninstalling') : undefined}
                                   onClick={() => { setConfirmation({ kind: 'uninstall', id: item.id, name: installedName }) }}
                                 >
-                                  {busyKind === 'uninstall' ? t('uninstalling') : t('uninstall')}
+                                  {t('uninstall')}
                                 </Button>
                               </div>
                             ) : installable(item) ? (
@@ -695,9 +702,11 @@ export function MarketSection({
                                 size="sm"
                                 variant="primary"
                                 disabled={isBusy}
+                                loading={busyKind === 'install'}
+                                feedback={busyKind === 'install' ? t('installing') : undefined}
                                 onClick={() => { setConfirmation({ kind: 'install', item }) }}
                               >
-                                {busyKind === 'install' ? t('installing') : t('install')}
+                                {t('install')}
                               </Button>
                             ) : null}
                           </div>
@@ -724,6 +733,7 @@ export function MarketSection({
                   <MarketChoice labelKey="installedFilter" value={installedFilter} onChange={setInstalledFilter} t={t}
                     options={[{ id: 'all', labelKey: 'filterAll' }, { id: 'updates', labelKey: 'filterUpdates' }, { id: 'failed', labelKey: 'filterFailed' }]} />
                   <Button size="sm" variant="primary" disabled={isBusy || checkingUpdates || updateCount === 0 || updateCount > 100}
+                    loading={busy?.kind === 'batch'} feedback={busy?.kind === 'batch' ? t('updating') : undefined}
                     onClick={() => { setConfirmation({ kind: 'batch', ids: Object.values(updates).filter(row => row.updateAvailable).map(row => row.id) }) }}>{t('updateAll')}</Button>
                 </div>
                 <p className={css.updateSummary} role="status">
@@ -750,12 +760,14 @@ export function MarketSection({
                           return (
                             <li className={css.installedRow} key={plugin.name}>
                               <div className={css.installedIdentity}>
-                                <span className={css.installedName}>
+                                <Tooltip label={t('updateCheckFailed')} disabled={updateStatus?.checkFailed !== true} portal>
+                                <span className={css.installedName} tabIndex={updateStatus?.checkFailed ? 0 : undefined}
+                                  aria-label={updateStatus?.checkFailed ? `${plugin.name}: ${t('updateCheckFailed')}` : undefined}>
                                   {plugin.name}
                                   {plugin.dropped ? <span className={css.deprecatedTag}>{t('dropped')}</span> : null}
                                 </span>
+                                </Tooltip>
                                 <code className={css.installedSpec}>{plugin.spec}</code>
-                                {updateStatus?.checkFailed ? <span className={css.notice} data-kind="error">{t('updateCheckFailed')}</span> : null}
                                 {updateStatus?.current ? (
                                   <span
                                     className={css.updateMeta}
@@ -785,18 +797,22 @@ export function MarketSection({
                                     size="sm"
                                     variant="primary"
                                     disabled={isBusy}
+                                    loading={busy?.kind === 'update' && busy.id === opId}
+                                    feedback={busy?.kind === 'update' && busy.id === opId ? t('updating') : undefined}
                                     onClick={() => { startUpdate(item) }}
                                   >
-                                    {busy?.kind === 'update' && busy.id === opId ? t('updating') : t('update')}
+                                    {t('update')}
                                   </Button>
                                 ) : null}
                                 <Button
                                   size="sm"
                                   variant="ghost"
                                   disabled={isBusy}
+                                  loading={busy?.kind === 'uninstall' && busy.id === opId}
+                                  feedback={busy?.kind === 'uninstall' && busy.id === opId ? t('uninstalling') : undefined}
                                   onClick={() => { setConfirmation({ kind: 'uninstall', id: opId, name: plugin.name }) }}
                                 >
-                                  {busy?.kind === 'uninstall' && busy.id === opId ? t('uninstalling') : t('uninstall')}
+                                  {t('uninstall')}
                                 </Button>
                               </div>
                             </li>

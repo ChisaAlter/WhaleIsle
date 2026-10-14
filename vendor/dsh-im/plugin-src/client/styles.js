@@ -941,6 +941,25 @@ const CSS = String.raw`
   .dim-page * { transition-duration: .01ms !important; }
   .dim-directoryPickerSpinner { animation-duration: 1.8s; }
 }
+.dim-busyButton { position: relative; }
+.dim-buttonContent { display: contents; }
+.dim-busyButton[data-loading="true"] .dim-buttonContent { visibility: hidden; }
+.dim-buttonSpinner, .dim-controlSpinner { width: 14px; height: 14px; box-sizing: border-box; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: dim-feedback-spin .8s linear infinite; }
+.dim-buttonSpinner { position: absolute; top: 50%; left: 50%; margin: -7px 0 0 -7px; }
+.dim-controlSpinner { position: absolute; right: 28px; top: 50%; margin-top: -7px; pointer-events: none; color: var(--dsw-alias-label-secondary); }
+.dim-controlBusy { position: relative; display: block; min-width: 0; }
+.dim-preset > .dim-controlBusy, .dim-responseMode > .dim-controlBusy { grid-column: 1 / -1; grid-row: 2; }
+.dim-controlBusy > select { display: block; width: 100%; }
+.dim-confirmBackdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: var(--dsw-alias-mask-bg, rgba(0,0,0,.35)); }
+.dim-confirmDialog { width: min(480px, 100%); max-height: calc(100vh - 48px); overflow: auto; box-sizing: border-box; padding: 20px; border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-lg); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); box-shadow: var(--dsw-shadow-lv3); font-size: 14px; line-height: 22px; }
+.dim-confirmDialog strong, .dim-confirmDialog h4 { margin: 0; font: inherit; font-weight: 600; }
+.dim-confirmDialog p { margin: 8px 0 16px; color: var(--dsw-alias-label-secondary); }
+.dim-confirmDialog .dim-viewActions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.dim-confirmDialog button { position: relative; padding: 6px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.dim-confirmDialog button[data-kind="danger"] { color: var(--dsw-alias-state-error-primary); }
+.dim-confirmDialog button:disabled { opacity: .5; cursor: not-allowed; }
+@keyframes dim-feedback-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .dim-buttonSpinner, .dim-controlSpinner { animation: none; } }
 `;
 
 export function installImStyles() {

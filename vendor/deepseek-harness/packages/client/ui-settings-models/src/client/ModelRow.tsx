@@ -1,10 +1,11 @@
 /** Shared model fields and actions for both adapter catalog editors. */
 
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
 import {
   IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconTrashOutlineRegular,
+  Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
+import type { DeepSeekModelDraft, DeepSeekModelsValidationFailure } from './DeepSeekModelsEditor.tsx'
 import type { ModelsKey } from './locales.ts'
 import { ModelInputTypes } from './ModelInputTypes.tsx'
 import styles from './ModelsSection.module.css'
@@ -26,6 +27,7 @@ interface ModelRowProps {
   inputLoading?: boolean
   expanded: boolean
   disabled: boolean
+  validation?: DeepSeekModelsValidationFailure | undefined
   t: (key: ModelsKey) => string
   contextWindow: CapacityInput
   maxTokens: CapacityInput
@@ -45,17 +47,28 @@ interface ModelRowProps {
  */
 export function ModelRow(props: ModelRowProps): ReactNode {
   const { model, position, t, disabled } = props
+  const errorId = useId()
+  const validation = props.validation?.index === position - 1 ? props.validation : undefined
+  const invalidField = validation === undefined ? undefined
+    : validation.key === 'modelIdRequired' || validation.key === 'modelIdDuplicate' ? 'id'
+    : validation.key === 'modelNameInvalid' ? 'name'
+    : validation.key === 'modelContextInvalid' ? 'contextWindow'
+    : validation.key === 'modelMaxTokensInvalid' ? 'maxTokens' : 'reasoningEfforts'
+  const error = validation === undefined ? '' : `${t('model')} ${String(position)}: ${t(validation.key)}`
   return (
     <div className={styles['modelEntry']}>
+      {validation === undefined ? null : <span className={styles['visuallyHidden']} id={errorId}>{error}</span>}
       <div className={styles['modelRow']}>
         {(['id', 'name'] as const).map(field => (
+          <Tooltip key={field} label={error} disabled={invalidField !== field} portal side="bottom">
           <input
-            key={field}
             className={styles['input']}
             type="text"
             value={typeof model[field] === 'string' ? model[field] : ''}
             placeholder={t(field === 'id' ? 'modelId' : 'modelName')}
             aria-label={`${t(field === 'id' ? 'modelId' : 'modelName')} ${String(position)}`}
+            aria-invalid={invalidField === field}
+            aria-describedby={invalidField === field ? errorId : undefined}
             disabled={disabled}
             onChange={(event) => {
               const value = event.target.value
@@ -63,13 +76,15 @@ export function ModelRow(props: ModelRowProps): ReactNode {
             }}
             onBlur={field === 'id' ? event => props.onIdBlur?.(event.target.value) : undefined}
           />
+          </Tooltip>
         ))}
         <button
           type="button"
           className={styles['iconButton']}
           aria-label={`${t('modelAdvanced')} ${String(position)}`}
           aria-expanded={props.expanded}
-          title={t('modelAdvanced')}
+          title={invalidField === 'contextWindow' || invalidField === 'maxTokens' ? error : t('modelAdvanced')}
+          aria-describedby={invalidField === 'contextWindow' || invalidField === 'maxTokens' ? errorId : undefined}
           onClick={props.onToggle}
         >
           {props.expanded ? <IconChevronDownOutlineRegular /> : <IconChevronRightOutlineRegular />}
@@ -91,6 +106,7 @@ export function ModelRow(props: ModelRowProps): ReactNode {
             {(['contextWindow', 'maxTokens'] as const).map(field => (
               <label className={styles['modelField']} key={field}>
                 <span className={styles['modelFieldLabel']}>{t(field)}</span>
+                <Tooltip label={error} disabled={invalidField !== field} portal side="bottom">
                 <input
                   className={styles['input']}
                   type="text"
@@ -98,10 +114,13 @@ export function ModelRow(props: ModelRowProps): ReactNode {
                   value={props[field].value}
                   placeholder={props[field].placeholder}
                   aria-label={`${t(field)} ${String(position)}`}
+                  aria-invalid={invalidField === field}
+                  aria-describedby={invalidField === field ? errorId : undefined}
                   disabled={disabled}
                   onChange={(event) => { props[field].onChange(event.target.value) }}
                   onBlur={props[field].onBlur}
                 />
+                </Tooltip>
               </label>
             ))}
             <ModelInputTypes

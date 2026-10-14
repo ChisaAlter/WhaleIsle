@@ -258,6 +258,7 @@ const state = {
   gitRetry: null,
   commitFiles: null,
   gitProgress: '',
+  gitProgressDismissed: false,
   branchLoading: false,
   branchRequest: 0,
   sessions: [],
@@ -307,6 +308,9 @@ const state = {
   gitBusy: false,
   gitAuthError: '',
   gitToast: '',
+  toastTone: 'info',
+  toastActions: [],
+  toastHoldMs: 2400,
   gitDialog: '',
   pickerSheet: '',
   pickerPage: '',
@@ -339,6 +343,7 @@ let sockets = null;
 let draftStore = null;
 let scanStream = null;
 let scanLoopId = 0;
+let lastInvalidScan = '';
 let torchOn = false;
 let toastTimer = 0;
 let historyPollTimer = 0;
@@ -405,7 +410,7 @@ function scheduleNavigation() {
     const active = lightboxRoot.firstElementChild || dialogRoot.firstElementChild || sheetRoot.firstElementChild
       || (state.settingsOpen ? settings : state.sessionsOpen ? sessionsPage : state.drawerOpen ? el('drawer') : null);
     for (const child of phone.children) {
-      child.inert = Boolean(active && child !== active && !child.contains(active));
+      child.inert = Boolean(active && child !== toastRoot && child !== active && !child.contains(active));
     }
     if (active === el('drawer')) backdrop.inert = false;
     if (!state.drawerOpen) el('drawer').inert = true;
@@ -466,8 +471,36 @@ darkQuery.addEventListener?.('change', () => {
 });
 
 function showError(message) {
-  connectError.textContent = message || '';
-  connectError.classList.toggle('hidden', !message);
+  connectError.textContent = '';
+  connectError.classList.add('hidden');
+  if (message) setToast(message, { tone: 'error', holdMs: null });
+}
+
+function buttonBusy(button, busy) {
+  button.classList.toggle('button-busy', Boolean(busy));
+  button.setAttribute('aria-busy', String(Boolean(busy)));
+  return button;
+}
+
+function surfaceBusy(content, busy) {
+  const panel = content.closest('.surface-panel') || content;
+  panel.classList.toggle('surface-busy', Boolean(busy));
+  panel.setAttribute('aria-busy', String(Boolean(busy)));
+}
+
+function operationError(message, retry, actions = []) {
+  const owner = sessionOwner(state);
+  setToast(message, {
+    tone: 'error', holdMs: null,
+    actions: [...(retry ? [{ label: '重试', onClick: async () => {
+      if (!owner.owns()) {
+        operationError('会话或连接已切换，请从原入口重试');
+        return;
+      }
+      if (state.gitToast === message) setToast('');
+      await retry();
+    } }] : []), ...actions],
+  });
 }
 
 function setPasteExpanded(expanded, { focus = false } = {}) {
@@ -499,6 +532,8 @@ async function runInitialConnect(attempt, { replace = false } = {}) {
   renderSavedComputers();
   el('paste-enter').disabled = true;
   el('scan-open').disabled = true;
+  buttonBusy(el('paste-enter'), true);
+  buttonBusy(el('scan-open'), true);
   deviceLine.textContent = '正在连接电脑…';
   showError('');
   try {
@@ -508,13 +543,15 @@ async function runInitialConnect(attempt, { replace = false } = {}) {
     if (state.chisacode) forceLogout('', { forget: false });
     deviceLine.textContent = '连接失败';
     const reason = /timed? out/i.test(error?.message || '') ? '连接超时' : (error?.message || '电脑没有响应');
-    showError(`${reason}。确认电脑端远程已开启，再重试或重新扫码。`);
+    operationError(`${reason}。确认电脑端远程已开启，再重试或重新扫码。`, () => runInitialConnect(attempt, { replace: true }));
   } finally {
     if (pendingConnect === controller) {
       pendingConnect = null;
       connectBusy = false;
       el('paste-enter').disabled = false;
       el('scan-open').disabled = false;
+      buttonBusy(el('paste-enter'), false);
+      buttonBusy(el('scan-open'), false);
       renderSavedComputers();
     }
   }
@@ -569,9 +606,13 @@ function renderSavedComputers() {
 }
 
 function showBanner(message) {
+  const previous = state.banner;
   state.banner = message || '';
-  bannerEl.textContent = state.banner;
-  bannerEl.classList.toggle('hidden', !state.banner);
+  bannerEl.textContent = '';
+  bannerEl.classList.add('hidden');
+  if (message) {
+    if (!(state.toastTone === 'error' && state.toastActions.length && state.gitToast.includes(message))) operationError(message);
+  } else if (previous && state.gitToast === previous) setToast('');
   scheduleNativeSnapshot();
 }
 
@@ -603,10 +644,8 @@ function openPullRequest() {
     const url = new URL(state.gitStatus.pr?.url || '');
     if (url.protocol !== 'https:') throw new Error('Pull request URL must use HTTPS');
     window.open(url.toString(), '_blank', 'noopener');
-    setToast(`打开拉取请求 #${state.gitStatus.pr?.number ?? ''}`.trim());
   } catch {
     showBanner('拉取请求链接不可用；请在电脑端打开');
-    setToast('拉取请求不可用');
   }
 }
 
@@ -700,6 +739,7 @@ function renderComposer({ nativeSnapshot = true } = {}) {
   composerBehavior.refresh();
   const canSend = Boolean(draft.value.trim()) || state.attachments.length > 0;
   sendBtn.disabled = !canSend || composerOffline() || state.sendBusy;
+  buttonBusy(sendBtn, state.sendBusy);
   const accessLabel = currentModeState().currentLabel || '权限';
   // #access-chip's first child is a whitespace text node; the visually-hidden
   // .chip-label span is the label slot (the shield icon stays visible alone).
@@ -911,17 +951,8 @@ function renderSessions() {
   // title or first turn lands (LIST-006).
   const rows = state.sessions.filter((row) => !row.archived && !isUntitledBlank(row));
   const nodes = [];
-  if (state.sessionsError) {
-    nodes.push(descNode(state.sessionsError));
-    nodes.push(drawerFootButton('重试', {
-      disabled: state.catalogBusy === true,
-      onClick: () => { void runReconnectResync(); },
-    }));
-    sessionList.replaceChildren(...nodes);
-    renderDrawer(rows);
-    scheduleNativeSnapshot();
-    return;
-  }
+  sessionList.classList.toggle('surface-busy', state.searchLoading);
+  sessionList.setAttribute('aria-busy', String(state.searchLoading));
   // On the full-screen sessions page each group's rows live inside one card;
   // the group head stays outside on the canvas.
   const cardOfRows = (rowNodes) => {
@@ -937,11 +968,9 @@ function renderSessions() {
   };
   if (query) {
     const hits = Array.isArray(state.searchHits) ? state.searchHits : [];
-    if (state.searchLoading) {
-      nodes.push(descNode('正在搜索…'));
-    } else if (!hits.length) {
+    if (!state.searchLoading && !hits.length) {
       nodes.push(descNode('没有匹配的会话'));
-    } else {
+    } else if (!state.searchLoading) {
       nodes.push(cardOfRows(hits.map((hit) => sessionRowNode(hit, { subagentTag: isReadOnlyRow(hit) }))));
       if (state.searchHasMore) {
         nodes.push(descNode('还有更多结果，请改用更精确的词'));
@@ -992,17 +1021,9 @@ function renderDrawer(visibleRows) {
     : state.sessions.filter((row) => !row.archived && !isUntitledBlank(row));
   navSessionsCount.textContent = String(rows.length);
   drawerAccount.textContent = (state.hostName || '电').trim().charAt(0) || '电';
-  const statusNodes = [];
-  if (state.sessionsError) {
-    statusNodes.push(descNode(state.sessionsError));
-    statusNodes.push(drawerFootButton('重试', {
-      disabled: state.catalogBusy === true,
-      onClick: () => { void runReconnectResync(); },
-    }));
-  } else if (state.catalogBusy === true) {
-    statusNodes.push(descNode('正在同步会话…'));
-  }
-  drawerStatus.replaceChildren(...statusNodes);
+  drawerStatus.replaceChildren();
+  el('drawer').classList.toggle('surface-busy', state.catalogBusy === true);
+  el('drawer').setAttribute('aria-busy', String(state.catalogBusy === true));
   drawerRecents.replaceChildren(...recentSessionRows(rows).map((row) => {
     const item = document.createElement('button');
     item.type = 'button';
@@ -1051,7 +1072,8 @@ async function runSessionSearch(query) {
     state.searchLoading = false;
     state.searchHits = [];
     state.searchHasMore = false;
-    showBanner(`搜索失败：${error?.message || '电脑没有响应'}`);
+    state.banner = `搜索失败：${error?.message || '电脑没有响应'}`;
+    operationError(state.banner, () => runSessionSearch(state.query.trim()));
     renderSessions();
   }
 }
@@ -1555,25 +1577,6 @@ function logRowNode(row) {
   return node;
 }
 
-/** In-log placeholder when the open session's timeline fetch failed. */
-function timelineErrorNode() {
-  const node = document.createElement('div');
-  node.className = 'timeline-error';
-  const text = document.createElement('p');
-  text.className = 'log-error';
-  text.textContent = `载入会话失败：${state.timelineError}`;
-  const retry = document.createElement('button');
-  retry.type = 'button';
-  retry.className = 'ghost-btn';
-  retry.textContent = '重试';
-  retry.addEventListener('click', () => {
-    showBanner('');
-    openSession(state.sessionId).catch((error) => showBanner(error?.message || '电脑没有响应'));
-  });
-  node.append(text, retry);
-  return node;
-}
-
 /**
  * @param {{ anchor?: 'auto' | 'bottom' | 'preserve' | 'hold' }} options
  * 'preserve' keeps the visual scroll position across a prepend (load-older),
@@ -1598,20 +1601,15 @@ function renderLog({ anchor = 'auto' } = {}) {
     clientHeight: logEl.clientHeight,
   });
   const nodes = [];
-  if (state.timelineError) {
-    nodes.push(timelineErrorNode());
-  } else if (state.timelineLoading && !rows.length) {
-    const loading = document.createElement('p');
-    loading.className = 'meta-row';
-    loading.textContent = '正在载入会话…';
-    nodes.push(loading);
-  }
+  logEl.classList.toggle('surface-busy', state.timelineLoading && !rows.length);
+  logEl.setAttribute('aria-busy', String(state.timelineLoading));
   if (!state.timelineError && state.transport === 'chisacode' && state.timelinePage.hasOlder) {
     const older = document.createElement('button');
     older.type = 'button';
     older.className = 'load-older';
     older.disabled = state.timelineLoadingOlder;
-    older.textContent = state.timelineLoadingOlder ? '正在加载…' : '加载更早消息';
+    older.textContent = '加载更早消息';
+    buttonBusy(older, state.timelineLoadingOlder);
     older.addEventListener('click', () => loadOlderMessages());
     nodes.push(older);
   }
@@ -1652,15 +1650,17 @@ async function loadOlderMessages() {
     if (state.chisacode !== paired || state.sessionId !== sessionId) return;
     state.timelineLoadingOlder = false;
     renderLog({ anchor: 'preserve' });
-    showBanner(`无法加载更早消息：${error?.message || '电脑没有响应'}`);
+    state.banner = `无法加载更早消息：${error?.message || '电脑没有响应'}`;
+    operationError(state.banner, loadOlderMessages);
   }
 }
 
-function approvalActionButton(label, className, onClick) {
+function approvalActionButton(label, className, onClick, actionId) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = className;
   button.textContent = label;
+  button.dataset.approvalAction = actionId;
   button.addEventListener('click', onClick);
   return button;
 }
@@ -1684,16 +1684,17 @@ function renderApproval() {
   if (!pending) return;
   approvalTitle.textContent = pending.title || '需要审批';
   approvalCommand.textContent = pending.command || '';
-  el('approval-error').textContent = pending.error || '';
+  el('approval-error').textContent = '';
+  el('approval-error').classList.add('hidden');
   const buttons = [];
   if (pending.legacy) {
     buttons.push(
       approvalActionButton('拒绝', 'ghost-btn', () => {
-        answerLegacyApproval('rejected').catch((error) => showBanner(error.message));
-      }),
+        answerLegacyApproval('rejected', pending).catch((error) => showBanner(error.message));
+      }, 'rejected'),
       approvalActionButton('允许一次', 'primary-btn', () => {
-        answerLegacyApproval('allowed-once').catch((error) => showBanner(error.message));
-      }),
+        answerLegacyApproval('allowed-once', pending).catch((error) => showBanner(error.message));
+      }, 'allowed-once'),
     );
   } else if (pending.actions.length) {
     // Render exactly the daemon's action list — labels, order, and variants.
@@ -1704,21 +1705,24 @@ function renderApproval() {
       buttons.push(approvalActionButton(action.label, className, () => {
         respondToPendingApproval(pending, responseForAction(action))
           .catch((error) => showBanner(error.message));
-      }));
+      }, action.id));
     }
   } else {
     buttons.push(
       approvalActionButton('拒绝', 'ghost-btn', () => {
         respondToPendingApproval(pending, genericResponse('deny'))
           .catch((error) => showBanner(error.message));
-      }),
+      }, 'deny'),
       approvalActionButton('允许一次', 'primary-btn', () => {
         respondToPendingApproval(pending, genericResponse('allow'))
           .catch((error) => showBanner(error.message));
-      }),
+      }, 'allow'),
     );
   }
-  for (const button of buttons) button.disabled = Boolean(pending.responding);
+  for (const button of buttons) {
+    button.disabled = Boolean(pending.responding);
+    buttonBusy(button, pending.responding && button.dataset.approvalAction === pending.respondingAction);
+  }
   approvalActions.replaceChildren(...buttons);
   renderDrawer();
 }
@@ -2093,6 +2097,7 @@ function forceLogout(message, { forget = true } = {}) {
   resetWorkPanes();
   state.extPane = { mcp: null, skills: null };
   showBanner('');
+  setToast('');
   renderConnBanner();
   renderSheet();
   renderDialog();
@@ -2221,11 +2226,12 @@ async function runReconnectResync() {
     renderComposer();
     showBanner('');
     startLiveFollow();
-    setToast('已重新连接并同步');
+    setToast('已重新连接并同步', { tone: 'success' });
   } catch (error) {
     if (state.chisacode !== paired) return;
     state.sessionsError = `同步失败：${error?.message || '电脑没有响应'}`;
-    showBanner(state.sessionsError);
+    state.banner = state.sessionsError;
+    operationError(state.sessionsError, runReconnectResync);
   } finally {
     paired.resyncing = false;
     if (state.chisacode === paired) {
@@ -2316,6 +2322,7 @@ async function finishChisaCodeConnect(paired, reconnected, signal) {
   deviceLine.replaceChildren();
   deviceLine.append(document.createTextNode(`${reconnected ? '已重连' : '已配对'} ${paired.computerName}`));
   showBanner(loadError);
+  if (loadError) operationError(loadError, runReconnectResync);
   renderSessions();
   renderHeader();
   renderScreen();
@@ -2389,6 +2396,7 @@ async function openSession(sessionId) {
     if (state.sessionId !== sessionId) return;
     state.timelineLoading = false;
     state.timelineError = error?.message || '电脑没有响应';
+    operationError(`载入会话失败：${state.timelineError}`, () => openSession(sessionId));
     renderLog({ anchor: 'bottom' });
     throw error;
   }
@@ -2472,6 +2480,15 @@ function syncModelSelection() {
 function updateNewSession(patch) {
   if (!state.newSession) return;
   Object.assign(state.newSession, patch);
+  if (patch.error) {
+    const task = state.newSession;
+    const retry = task.createdSessionId ? retryCreatedSession : task.retry;
+    operationError(patch.error, retry ? () => {
+      state.newSession = task;
+      renderSheet();
+      return retry();
+    } : null);
+  }
   renderSheet();
 }
 
@@ -2556,6 +2573,7 @@ async function chooseNewSessionWorkspace(workspace, options = {}) {
   }
   if (state.newSession?.creating) return;
   const owner = sessionOwner(state);
+  state.newSession.retry = () => chooseNewSessionWorkspace(workspace, options);
   updateNewSession({ creating: true, loading: true, error: '' });
   const task = state.newSession;
   const extra = !workspace?.id && workspace?.cwd ? { cwd: workspace.cwd } : {};
@@ -2571,6 +2589,7 @@ async function chooseNewSessionWorkspace(workspace, options = {}) {
 async function openDirectoryBrowse() {
   const client = state.chisacode?.client;
   if (!client) return;
+  state.newSession.retry = openDirectoryBrowse;
   if (state.newSession?.browse) {
     updateNewSession({ step: 'browse', loading: false, error: '' });
     return;
@@ -2591,6 +2610,7 @@ async function openDirectoryBrowse() {
 async function browseDirectory(path) {
   const client = state.chisacode?.client;
   if (!client || !state.newSession) return;
+  state.newSession.retry = () => browseDirectory(path);
   updateNewSession({ loading: true, error: '' });
   const session = state.newSession;
   const request = session.browseRequest = (session.browseRequest || 0) + 1;
@@ -2609,6 +2629,7 @@ async function createBrowsedWorkspace() {
   const path = state.newSession?.browse?.path;
   if (!client || !path || state.newSession.creating) return;
   const owner = sessionOwner(state);
+  state.newSession.retry = createBrowsedWorkspace;
   updateNewSession({ loading: true, creating: true, error: '' });
   const active = state.newSession;
   try {
@@ -2645,6 +2666,7 @@ async function submitFolderCreate() {
   const create = state.folderCreate;
   const client = state.chisacode?.client;
   const path = state.newSession?.browse?.path;
+  const task = state.newSession;
   if (!create || create.busy || !client || !path) return;
   const name = create.value.trim();
   if (!name) return;
@@ -2661,6 +2683,13 @@ async function submitFolderCreate() {
     if (state.folderCreate !== create) return;
     create.busy = false;
     create.error = error?.message || '无法创建文件夹';
+    operationError(create.error, () => {
+      state.newSession = task;
+      state.folderCreate = create;
+      renderSheet();
+      renderDialog();
+      return submitFolderCreate();
+    });
     renderDialog();
   }
 }
@@ -2715,13 +2744,22 @@ async function submitWorkspaceRename() {
     if (state.workspaceRename !== rename) return;
     state.workspaceRename = null;
     renderDialog();
-    await refreshHostCatalog();
+    try { await refreshHostCatalog(); }
+    catch (error) {
+      operationError(`工作区已重命名；同步失败：${error?.message || '电脑没有响应'}`, runReconnectResync);
+      return;
+    }
     renderSessions();
-    setToast('已重命名工作区');
+    setToast('已重命名工作区', { tone: 'success' });
   } catch (error) {
     if (state.workspaceRename !== rename) return;
     rename.busy = false;
     rename.error = error?.message || '电脑没有响应';
+    operationError(rename.error, () => {
+      state.workspaceRename = rename;
+      renderDialog();
+      return submitWorkspaceRename();
+    });
     renderDialog();
   }
 }
@@ -2764,11 +2802,16 @@ async function submitSessionRename() {
     renderDialog();
     renderSessions();
     renderHeader();
-    setToast('已重命名');
+    setToast('已重命名', { tone: 'success' });
   } catch (error) {
     if (state.sessionRename !== rename) return;
     rename.busy = false;
     rename.error = error?.message || '电脑没有响应';
+    operationError(rename.error, () => {
+      state.sessionRename = rename;
+      renderDialog();
+      return submitSessionRename();
+    });
     renderDialog();
   }
 }
@@ -2811,7 +2854,7 @@ async function regenerateSessionTitle(row) {
       sessionId: row.sessionId,
       ...promptPayload([textBlock('/rename')]),
     });
-    setToast('已请求重新生成标题');
+    setToast('已请求重新生成标题', { tone: 'info' });
   } catch (error) {
     showBanner(`重新生成标题失败：${error?.message || '电脑没有响应'}`);
   }
@@ -2853,11 +2896,16 @@ async function runSessionConfirm() {
     state.sessionConfirm = null;
     renderDialog();
     renderSessions();
-    setToast(confirm.kind === 'archive' ? '已归档' : confirm.kind === 'workspace-delete' ? '已从列表移除' : '已删除');
+    setToast(confirm.kind === 'archive' ? '已归档' : confirm.kind === 'workspace-delete' ? '已从列表移除' : '已删除', { tone: 'success' });
   } catch (error) {
     if (state.sessionConfirm !== confirm) return;
     confirm.busy = false;
     confirm.error = error?.message || '电脑没有响应';
+    operationError(confirm.error, () => {
+      state.sessionConfirm = confirm;
+      renderDialog();
+      return runSessionConfirm();
+    });
     renderDialog();
   }
 }
@@ -2884,6 +2932,7 @@ async function unarchiveFromHistory(row) {
   const paired = state.chisacode;
   if (!view || !paired || view.busyId) return;
   view.busyId = row.sessionId;
+  view.error = '';
   renderSheet();
   try {
     await hostCall(paired.client, 'workspace.unarchiveSession', { sessionId: row.sessionId });
@@ -2893,11 +2942,16 @@ async function unarchiveFromHistory(row) {
     view.busyId = '';
     renderSheet();
     renderSessions();
-    setToast('已取消归档');
+    setToast('已取消归档', { tone: 'success' });
   } catch (error) {
     if (state.history !== view) return;
     view.busyId = '';
     view.error = `取消归档失败：${error?.message || '电脑没有响应'}`;
+    operationError(view.error, () => {
+      state.history = view;
+      renderSheet();
+      return unarchiveFromHistory(row);
+    });
     renderSheet();
   }
 }
@@ -3006,17 +3060,32 @@ function finishSubmittedDraft(submittedText, images) {
 
 async function cancelRun() {
   if (!state.sessionId) return;
+  if (stopBtn.disabled) return;
+  stopBtn.disabled = true;
+  buttonBusy(stopBtn, true);
   try {
     await call('session.cancel', { sessionId: state.sessionId });
   } catch (error) {
     showBanner(error.message || '无法停止');
+  } finally {
+    stopBtn.disabled = false;
+    buttonBusy(stopBtn, false);
   }
 }
 
 async function respondToPendingApproval(pending, response) {
+  const pendingId = pending.approvalId || pending.rpcId || pending.requestId;
+  const active = state.pendingApprovals.find((item) => (item.approvalId || item.rpcId || item.requestId) === pendingId);
+  if (!active) {
+    operationError('审批已结束，请查看当前会话');
+    return;
+  }
+  pending = active;
   if (pending.responding) return;
   const owner = sessionOwner(state);
   pending.responding = true;
+  pending.respondingAction = response?.selectedActionId || response?.behavior || '';
+  if (pending.error && state.gitToast === pending.error) setToast('');
   pending.error = '';
   renderApproval();
   const outcome = response?.selectedActionId === 'rejected'
@@ -3040,26 +3109,51 @@ async function respondToPendingApproval(pending, response) {
       clearApproval(pending.rpcId); clearApproval(pending.approvalId);
     } else {
       pending.error = result.error?.message || '审批未能送达电脑';
+      operationError(pending.error, () => respondToPendingApproval(pending, response));
     }
   } catch (error) {
-    if (owner.owns()) pending.error = error?.message || '审批未能送达电脑';
+    if (owner.owns()) {
+      pending.error = error?.message || '审批未能送达电脑';
+      operationError(pending.error, () => respondToPendingApproval(pending, response));
+    }
   } finally {
     pending.responding = false;
+    pending.respondingAction = '';
     if (owner.owns()) renderApproval();
   }
 }
 
-async function answerLegacyApproval(outcome) {
+async function answerLegacyApproval(outcome, expected = state.pendingApprovals[0]) {
   const pending = state.pendingApprovals[0];
-  if (!pending || !pending.legacy) return;
-  assertNotLegacyHostRpc();
-  await respond({
-    origin,
-    rpcId: pending.rpcId,
-    value: { sessionId: pending.sessionId, approvalId: pending.approvalId, outcome },
-  });
-  state.pendingApprovals = [];
+  if (!pending || (pending.approvalId || pending.rpcId || pending.requestId) !== (expected?.approvalId || expected?.rpcId || expected?.requestId)) {
+    operationError('审批已结束，请查看当前会话');
+    return;
+  }
+  if (!pending || !pending.legacy || pending.responding) return;
+  const owner = sessionOwner(state);
+  pending.responding = true;
+  pending.respondingAction = outcome;
+  if (pending.error && state.gitToast === pending.error) setToast('');
+  pending.error = '';
   renderApproval();
+  try {
+    assertNotLegacyHostRpc();
+    await respond({
+      origin,
+      rpcId: pending.rpcId,
+      value: { sessionId: pending.sessionId, approvalId: pending.approvalId, outcome },
+    });
+    if (owner.owns()) state.pendingApprovals = state.pendingApprovals.filter((item) => item !== pending);
+  } catch (error) {
+    if (owner.owns()) {
+      pending.error = error?.message || '审批未能送达电脑';
+      operationError(pending.error, () => answerLegacyApproval(outcome, pending));
+    }
+  } finally {
+    pending.responding = false;
+    pending.respondingAction = '';
+    if (owner.owns()) renderApproval();
+  }
 }
 
 // —— Slash 命令 popup（`/` 触发，host commands/list，按会话缓存）—— //
@@ -3071,16 +3165,11 @@ function renderSlashPop() {
   if (!visible) return;
   const nodes = [];
   if (slash.loading) {
-    const note = document.createElement('p');
-    note.className = 'slash-note';
-    note.textContent = '正在读取命令…';
-    nodes.push(note);
+    slashPop.classList.add('surface-busy');
   } else if (slash.error) {
-    const note = document.createElement('p');
-    note.className = 'slash-note slash-error';
-    note.textContent = slash.error;
-    nodes.push(note);
+    slashPop.classList.remove('surface-busy');
   } else {
+    slashPop.classList.remove('surface-busy');
     const rows = filterSlashCommands(slash.commands, slashQuery(draft.value) || '');
     if (!rows.length) {
       const note = document.createElement('p');
@@ -3112,6 +3201,7 @@ function renderSlashPop() {
     }
   }
   slashPop.replaceChildren(...nodes);
+  slashPop.setAttribute('aria-busy', String(slash.loading));
 }
 
 function updateSlashPopup() {
@@ -3161,6 +3251,7 @@ function updateSlashPopup() {
         error: error.message || '无法读取命令',
         commands: [],
       };
+      operationError(state.slash.error, () => updateSlashPopup());
       renderSlashPop();
     })
     .finally(() => {
@@ -3209,7 +3300,10 @@ function closeScan() {
 function handleScanHit(raw) {
   const outcome = classifyScan(raw, origin);
   if (outcome.kind === 'invalid') {
-    scanTip.textContent = '二维码里没有配对密钥，请扫桌面远程弹窗里的二维码';
+    if (raw !== lastInvalidScan) {
+      lastInvalidScan = raw;
+      operationError('二维码里没有配对密钥，请扫桌面远程弹窗里的二维码');
+    }
     return false;
   }
   stopScan();
@@ -3228,6 +3322,7 @@ function handleScanHit(raw) {
 async function startScan() {
   if (!state.scanSupport.supported) return;
   state.route = 'scan';
+  lastInvalidScan = '';
   scanTip.textContent = '将二维码完整放入取景框';
   scanTorch.classList.add('hidden');
   renderScreen();
@@ -3279,6 +3374,9 @@ async function startScan() {
 async function toggleTorch() {
   const track = scanStream?.getVideoTracks?.()[0];
   if (!track) return;
+  if (scanTorch.disabled) return;
+  scanTorch.disabled = true;
+  buttonBusy(scanTorch, true);
   try {
     torchOn = !torchOn;
     await track.applyConstraints({ advanced: [{ torch: torchOn }] });
@@ -3288,6 +3386,9 @@ async function toggleTorch() {
     torchOn = false;
     scanTorch.classList.remove('is-on');
     scanTorch.classList.add('hidden');
+  } finally {
+    scanTorch.disabled = false;
+    buttonBusy(scanTorch, false);
   }
 }
 
@@ -3379,22 +3480,25 @@ async function refreshGit() {
       state.gitAuthError = message;
       state.gitStatus = parseVcsStatus({ isRepo: false, refName: null });
     } else {
-      setToast(message);
+      operationError(message, refreshGit);
     }
   }
   renderHeader();
   if (state.settingsOpen) renderSettings();
 }
 
-function setToast(message) {
+function setToast(message, { tone = 'info', holdMs = 2400, actions = [] } = {}) {
   state.gitToast = message || '';
+  state.toastTone = tone;
+  state.toastHoldMs = holdMs;
+  state.toastActions = actions;
   renderToast();
   clearTimeout(toastTimer);
-  if (state.gitToast && !state.gitBusy) {
+  if (state.gitToast && !state.gitBusy && holdMs !== null) {
     toastTimer = setTimeout(() => {
       state.gitToast = '';
       renderToast();
-    }, 2400);
+    }, holdMs);
   }
 }
 
@@ -3405,6 +3509,9 @@ async function gitAction(name, extra = {}) {
   const retry = extra.retry === true ? state.gitRetry : null;
   if (retry && (retry.cwd !== cwd || retry.client !== owner.client)) return;
   state.gitBusy = true;
+  state.gitProgressDismissed = false;
+  state.gitToast = '';
+  clearTimeout(toastTimer);
   state.gitError = '';
   renderToast();
   renderSettings();
@@ -3451,7 +3558,7 @@ async function gitAction(name, extra = {}) {
     renderSheet();
     renderDialog();
     state.gitBusy = false;
-    setToast('完成');
+    setToast('完成', { tone: 'success' });
     succeeded = true;
     await refreshGit();
   } catch (error) {
@@ -3463,7 +3570,8 @@ async function gitAction(name, extra = {}) {
       state.gitRetry = { action: stacked, completed: error.completedSteps, payload, cwd, client: owner.client };
       state.gitError = `已完成 ${error.completedSteps.map((step) => step.replace('git-', '')).join('、')}；${state.gitError}`;
     }
-    setToast(state.gitError);
+    const errorText = state.gitError;
+    operationError(errorText, () => gitAction(name, state.gitRetry ? { retry: true } : extra), [{ label: '复制错误', onClick: () => copyGitError(errorText) }]);
   }
   if (!owner.owns()) return;
   renderSheet(); renderDialog();
@@ -3544,6 +3652,8 @@ async function loadBranches() {
     if (!owner.owns() || request !== state.branchRequest || state.gitDialog !== 'branch') return;
     state.branchLoading = false;
     state.gitError = error.message || '无法列出分支';
+    const errorText = state.gitError;
+    operationError(errorText, loadBranches, [{ label: '复制错误', onClick: () => copyGitError(errorText) }]);
     renderSheet();
   }
 }
@@ -3576,6 +3686,11 @@ async function loadCommitFiles() {
   } catch (error) {
     if (!owner.owns() || state.commitFiles !== files) return;
     files.error = error.message || '读取更改失败';
+    operationError(files.error, () => {
+      const loading = loadCommitFiles();
+      renderDialog();
+      return loading;
+    });
   }
   files.loading = false;
   if (state.gitDialog === 'commit') renderDialog();
@@ -3859,9 +3974,9 @@ async function requestHost(name, payload = {}) {
   }
   try {
     await shell(name, payload);
-    showBanner(name === 'openGallery'
+    setToast(name === 'openGallery'
       ? '已请求电脑打开外观。请在电脑上点浏览图库。'
-      : name === 'openSettings' ? '已请求在电脑打开设置' : '已发送到电脑');
+      : name === 'openSettings' ? '已请求在电脑打开设置' : '已发送到电脑', { tone: 'info' });
   } catch (error) {
     if (!(error instanceof UnauthorizedError)) {
       showBanner(error.message || '电脑没有响应');
@@ -4510,6 +4625,7 @@ async function changeAgentMode(modeId) {
   state.permission = { ...state.permission, current: modeId, planOn: modeId === 'plan' };
   renderComposer();
   renderSettings();
+  if (state.pickerSheet) renderSheet();
   try {
     await runHostCommand(permissionCommand(modeId));
     if (!owner.owns()) return;
@@ -4519,6 +4635,7 @@ async function changeAgentMode(modeId) {
     state.permission = { ...state.permission, current: before, planOn: before === 'plan' };
     state.pickerError = error?.message || '切换权限失败';
     showBanner(`切换权限模式失败：${error?.message || '电脑没有响应'}`);
+    operationError(`切换权限模式失败：${error?.message || '电脑没有响应'}`, () => changeAgentMode(modeId));
   } finally {
     if (!owner.owns()) return;
     state.modeBusy = false;
@@ -4540,6 +4657,7 @@ function renderModePane() {
     button.type = 'button';
     button.className = 'sheet-item mode-row';
     button.disabled = state.modeBusy;
+    buttonBusy(button, state.modeBusy && mode.id === state.permission.current);
     button.setAttribute('aria-pressed', String(mode.id === state.permission.current));
     const main = document.createElement('span');
     main.className = 'sheet-item-main';
@@ -4571,6 +4689,7 @@ async function changeAgentModel(provider, model, reasoningEffort) {
   };
   renderComposer();
   renderSettings();
+  if (state.pickerSheet === 'model') renderSheet();
   try {
     const selected = await hostCall(owner.client, 'session.selectModel', {
       sessionId: owner.sessionId,
@@ -4589,6 +4708,7 @@ async function changeAgentModel(provider, model, reasoningEffort) {
     state.modelCatalog = { ...state.modelCatalog, current: before };
     state.pickerError = error?.message || '切换模型失败';
     showBanner(`切换模型失败：${error?.message || '电脑没有响应'}`);
+    operationError(`切换模型失败：${error?.message || '电脑没有响应'}`, () => changeAgentModel(provider, model, reasoningEffort));
   } finally {
     if (!owner.owns()) return;
     state.modelBusy = false;
@@ -4615,6 +4735,7 @@ function loadModelPane() {
     .catch((error) => {
       if (state.modelPane !== pane || !owner.owns()) return;
       state.modelPane = { loading: false, error: error?.message || '电脑没有响应', rows: [] };
+      operationError(`读取模型失败：${state.modelPane.error}`, () => { loadModelPane(); renderSettings(); renderSheet(); });
       renderSettings();
       if (state.pickerSheet === 'model') renderSheet();
     });
@@ -4634,19 +4755,11 @@ function renderModelPane() {
     groupNode(hairRow('当前模型', modelChipLabel(current, rows))),
   ));
   if (pane?.loading) {
-    options.append(sectionNode('可选模型', '模型清单来自正在跑的 dsh web；切换会立即写回这个会话。', descNode('正在读取可选模型…')));
+    surfaceBusy(options, true);
     return;
   }
+  surfaceBusy(options, false);
   if (pane?.error) {
-    options.append(sectionNode(
-      '可选模型',
-      null,
-      noticeNode(`读取模型失败：${pane.error}`),
-      ghostButton('重试', () => {
-        loadModelPane();
-        renderSettings();
-      }),
-    ));
     return;
   }
   const group = document.createElement('div');
@@ -4657,6 +4770,7 @@ function renderModelPane() {
     button.className = 'sheet-item mode-row';
     const routable = isRoutable(row);
     button.disabled = state.modelBusy || !routable;
+    buttonBusy(button, state.modelBusy && current?.provider === row.provider && current?.model === row.id);
     button.setAttribute('aria-pressed', String(current?.provider === row.provider && current?.model === row.id));
     const main = document.createElement('span');
     main.className = 'sheet-item-main';
@@ -4684,6 +4798,8 @@ function renderModelPane() {
       button.type = 'button';
       button.className = 'sheet-item mode-row';
       button.setAttribute('aria-pressed', String(current?.reasoningEffort === effort.id));
+      button.disabled = state.modelBusy;
+      buttonBusy(button, state.modelBusy && current?.reasoningEffort === effort.id);
       const main = document.createElement('span');
       main.className = 'sheet-item-main';
       main.textContent = effort.name || effort.id;
@@ -4770,6 +4886,7 @@ function renderSettings() {
   settingsBack.classList.toggle('hidden', !pane);
   el('close-settings').classList.toggle('hidden', Boolean(pane));
   options.replaceChildren();
+  surfaceBusy(options, false);
   if (!pane) {
     renderSettingsHub();
     return;
@@ -4896,10 +5013,6 @@ function sheetLayer(title, closeSheet) {
       : null,
   });
   result.panel.setAttribute('aria-label', title);
-  if (state.gitDialog && state.gitError) {
-    result.content.append(descNode(state.gitError, 'error'));
-    result.content.append(ghostButton('复制错误', copyGitError));
-  }
   return { layer: result.layer, sheet: result.content };
 }
 
@@ -4923,20 +5036,7 @@ function renderNewSessionSheet() {
     state.newSession = null;
     renderSheet();
   });
-  if (session.error) {
-    const error = document.createElement('p');
-    error.className = 'sheet-note sheet-error';
-    error.textContent = session.error;
-    sheet.append(error);
-  }
-  if (session.loading) {
-    const note = document.createElement('p');
-    note.className = 'sheet-note';
-    note.textContent = session.creating ? '正在创建会话…' : '正在读取目录…';
-    sheet.append(note);
-    sheetRoot.append(layer);
-    return;
-  }
+  surfaceBusy(sheet, session.loading);
   if (session.createdSessionId) {
     sheet.append(primaryButton('打开已创建会话', retryCreatedSession));
     sheetRoot.append(layer);
@@ -4947,6 +5047,7 @@ function renderNewSessionSheet() {
       sheet.append(sheetItem({
         label: `预设 · ${preset.name}`,
         hint: '用此智能体预设开新会话',
+        enabled: !session.loading,
         onClick: () => chooseNewSessionWorkspace(null, { agentPreset: preset.id }),
       }));
     }
@@ -4954,6 +5055,7 @@ function renderNewSessionSheet() {
       sheet.append(sheetItem({
         label: workspace.name,
         hint: workspace.cwd || '',
+        enabled: !session.loading,
         onClick: () => chooseNewSessionWorkspace(workspace),
       }));
     }
@@ -4966,6 +5068,7 @@ function renderNewSessionSheet() {
       sheet.append(sheetItem({
         label: '上层目录',
         hint: parent.path,
+        enabled: !session.loading,
         onClick: () => browseDirectory(parent.path),
       }));
     }
@@ -4973,12 +5076,17 @@ function renderNewSessionSheet() {
       sheet.append(sheetItem({
         label: entry.name,
         hint: entry.path,
+        enabled: !session.loading,
         onClick: () => browseDirectory(entry.path),
       }));
     }
     const actions = document.createElement('footer');
     actions.className = 'task-actions';
-    actions.append(ghostButton('新建文件夹', startFolderCreate), primaryButton('使用此目录作为工作区', createBrowsedWorkspace));
+    const createFolder = ghostButton('新建文件夹', startFolderCreate);
+    const useDirectory = buttonBusy(primaryButton('使用此目录作为工作区', createBrowsedWorkspace), session.creating);
+    createFolder.disabled = session.loading;
+    useDirectory.disabled = session.loading;
+    actions.append(createFolder, useDirectory);
     sheet.parentElement.append(actions);
   }
   sheetRoot.append(layer);
@@ -5023,20 +5131,14 @@ function renderHistorySheet() {
   note.className = 'sheet-note';
   note.textContent = '取消归档会让电脑端重新载入这个会话；这不会恢复正在运行的任务。';
   sheet.append(note);
-  if (view.error) {
-    const error = document.createElement('p');
-    error.className = 'sheet-note sheet-error';
-    error.textContent = view.error;
-    sheet.append(error);
-  }
   for (const row of view.rows) {
     const busy = view.busyId === row.sessionId;
-    sheet.append(sheetItem({
+    sheet.append(buttonBusy(sheetItem({
       label: sessionTitle(row),
-      hint: busy ? '正在处理…' : '点按取消归档',
+      hint: '点按取消归档',
       enabled: !view.busyId && !view.loading,
       onClick: () => unarchiveFromHistory(row),
-    }));
+    }), busy));
     sheet.append(sheetItem({
       label: `删除「${sessionTitle(row)}」`,
       hint: '仅已归档会话可删除',
@@ -5044,12 +5146,8 @@ function renderHistorySheet() {
       onClick: () => startSessionConfirm('delete', row),
     }));
   }
-  if (view.loading) {
-    const loading = document.createElement('p');
-    loading.className = 'sheet-note';
-    loading.textContent = '正在读取已归档会话…';
-    sheet.append(loading);
-  } else if (!view.rows.length && !view.error) {
+  surfaceBusy(sheet, view.loading);
+  if (!view.loading && !view.rows.length && !view.error) {
     const empty = document.createElement('p');
     empty.className = 'sheet-note';
     empty.textContent = '没有已归档的会话。';
@@ -5066,11 +5164,12 @@ function renderHistorySheet() {
 }
 
 /** Row inside a picker sheet: label (+ hint) with the current choice marked. */
-function pickerRow({ label, hint = '', current = false, enabled = true, onClick }) {
+function pickerRow({ label, hint = '', current = false, enabled = true, busy = false, onClick }) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'sheet-item mode-row';
   button.disabled = !enabled;
+  buttonBusy(button, busy);
   button.setAttribute('aria-pressed', String(current));
   const main = document.createElement('span');
   main.className = 'sheet-item-main';
@@ -5110,6 +5209,7 @@ function modePickerCard() {
       hint: mode.desc || '',
       current: mode.id === currentModeId,
       enabled: !state.modeBusy,
+      busy: state.modeBusy && mode.id === currentModeId,
       onClick: () => {
         changeAgentMode(mode.id);
       },
@@ -5122,7 +5222,6 @@ function modePickerCard() {
 function renderModePickerSheet() {
   const { layer, sheet } = sheetLayer('权限', closePicker);
   sheet.append(modePickerCard());
-  if (state.pickerError) sheet.append(descNode(state.pickerError, 'error'));
   sheetRoot.append(layer);
 }
 
@@ -5165,6 +5264,7 @@ function modelRowButton(row, current) {
     hint: !routable ? '尚未配置，请在电脑端配置此模型' : (row.reasoning ? '可调整思考强度' : ''),
     current: current?.provider === row.provider && current?.model === row.id,
     enabled: !state.modelBusy && routable,
+    busy: state.modelBusy && current?.provider === row.provider && current?.model === row.id,
     onClick: () => changeAgentModel(row.provider, row.id),
   });
 }
@@ -5228,6 +5328,7 @@ function renderModelPickerEffort(sheet, { current, rows }) {
       label: effort.name || effort.id,
       current: current?.reasoningEffort === effort.id,
       enabled: !state.modelBusy,
+      busy: state.modelBusy && current?.reasoningEffort === effort.id,
       onClick: () => {
         if (current) changeAgentModel(current.provider, current.model, effort.id);
       },
@@ -5272,17 +5373,11 @@ function renderModelPickerSheet() {
   if (!state.modelPane) loadModelPane();
   const pane = state.modelPane;
   const { current, rows } = state.modelCatalog;
-  if (state.pickerError) sheet.append(descNode(state.pickerError, 'error'));
   if (pane?.loading && !rows.length) {
-    const note = document.createElement('p');
-    note.className = 'sheet-note';
-    note.textContent = '正在读取可选模型…';
-    sheet.append(note);
+    surfaceBusy(sheet, true);
   } else if (pane?.error) {
-    const note = document.createElement('p');
-    note.className = 'sheet-note sheet-error';
-    note.textContent = `读取模型失败：${pane.error}`;
-    sheet.append(note, sheetItem({ label: '重试', onClick: () => { loadModelPane(); renderSheet(); } }));
+    // The persistent feedback retains retry; cached model choices stay usable.
+    renderModelPickerRoot(sheet, { current, rows });
   } else if (state.pickerPage === 'effort') {
     renderModelPickerEffort(sheet, { current, rows });
   } else if (state.pickerPage === 'mode') {
@@ -5477,16 +5572,13 @@ function renderSheet() {
   }
   if (state.gitDialog === 'branch') {
     const { layer, sheet } = sheetLayer('切换分支', closeGitLayer);
-    if (state.branchLoading) {
-      sheet.append(descNode('正在读取分支…', 'sheet-note')); sheetRoot.append(layer); return;
-    }
-    if (state.gitError) sheet.append(ghostButton('重试', loadBranches));
+    surfaceBusy(sheet, state.branchLoading);
     const list = document.createElement('div');
     const renderRows = () => {
       const query = state.branchQuery.trim();
       const rows = state.branches.filter((branch) => !query || branch.name.toLowerCase().includes(query.toLowerCase()));
       const nodes = [];
-      if (!rows.length) {
+      if (!rows.length && !state.branchLoading && !state.gitError) {
         const note = document.createElement('p');
         note.className = 'sheet-note';
         note.textContent = '没有匹配的分支';
@@ -5497,7 +5589,7 @@ function renderSheet() {
         const switchable = branch.switchable !== false;
         nodes.push(sheetItem({
           label: branch.name,
-          enabled: !state.gitBusy && !current && switchable,
+          enabled: !state.gitBusy && !state.branchLoading && !current && switchable,
           hint: !switchable
             ? '名称含桌面无法安全传给 git 的字符'
             : (branch.isRemote ? '远程' : current ? '当前' : ''),
@@ -5507,7 +5599,7 @@ function renderSheet() {
       const canCreate = Boolean(query) && !state.branches.some((branch) => branch.name === query && !branch.isRemote);
       nodes.push(sheetItem({
         label: canCreate ? `创建并检出分支「${query}」` : '创建并检出新分支…',
-        enabled: true,
+        enabled: !state.branchLoading,
         onClick: () => {
           if (canCreate) state.newBranchName = query;
           state.gitDialog = 'create-branch';
@@ -5542,22 +5634,25 @@ function dialogHead(dialog, title, lead) {
   dialog.parentElement.querySelector('.surface-title').textContent = title;
   dialog.parentElement.setAttribute('aria-label', title);
   if (lead) dialog.append(descNode(lead, 'lead'));
-  if (state.gitError && state.gitDialog) dialog.append(descNode(state.gitError, 'error'), ghostButton('复制错误', copyGitError));
 }
 
-async function copyGitError() {
+async function copyGitError(errorText = state.gitError) {
+  const text = typeof errorText === 'string' ? errorText : state.gitError;
   try {
-    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(state.gitError);
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
     else {
       const field = document.createElement('textarea');
-      field.value = state.gitError;
+      field.value = text;
+      field.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none';
+      field.tabIndex = -1;
+      field.setAttribute('aria-hidden', 'true');
       const parent = dialogRoot.querySelector('.surface-content') || sheetRoot.querySelector('.surface-content') || phone;
       parent.append(field); field.select();
       const copied = document.execCommand('copy'); field.remove();
       if (!copied) throw new Error('请选择错误文字复制');
     }
-    setToast('已复制');
-  } catch { setToast('无法访问剪贴板，请选择错误文字复制'); }
+    setToast('已复制', { tone: 'success' });
+  } catch { operationError('无法访问剪贴板，请选择错误文字复制', () => copyGitError(text)); }
 }
 
 function dialogFoot(dialog, buttons) {
@@ -5567,7 +5662,7 @@ function dialogFoot(dialog, buttons) {
   dialog.parentElement.append(foot);
 }
 
-function renderNamedDialog({ title, hint, field, placeholder, busyLabel, saveLabel, error, busy, onClose, onSave }) {
+function renderNamedDialog({ title, hint, field, placeholder, saveLabel, busy, onClose, onSave }) {
   const close = () => {
     if (busy) return;
     onClose();
@@ -5580,14 +5675,8 @@ function renderNamedDialog({ title, hint, field, placeholder, busyLabel, saveLab
     saveBtn.disabled = busy || !value.trim();
     onSave.draft(value);
   }));
-  if (error) {
-    const note = document.createElement('p');
-    note.className = 'sheet-note sheet-error';
-    note.textContent = error;
-    body.append(note);
-  }
   dialog.append(body);
-  const saveBtn = primaryButton(busy ? busyLabel : saveLabel, () => onSave.submit());
+  const saveBtn = buttonBusy(primaryButton(saveLabel, () => onSave.submit()), busy);
   saveBtn.disabled = busy || !String(field || '').trim();
   const cancelBtn = ghostButton('取消', close);
   cancelBtn.disabled = busy;
@@ -5602,9 +5691,7 @@ function renderWorkspaceRenameDialog() {
     hint: '名字写回电脑端，两边同步显示。',
     field: rename.value,
     placeholder: '工作区名称',
-    busyLabel: '正在保存…',
     saveLabel: '保存',
-    error: rename.error,
     busy: rename.busy,
     onClose: () => {
       state.workspaceRename = null;
@@ -5624,9 +5711,7 @@ function renderFolderCreateDialog() {
     hint: '在当前浏览目录下创建一个子文件夹。',
     field: create.value,
     placeholder: '文件夹名称',
-    busyLabel: '正在创建…',
     saveLabel: '创建',
-    error: create.error,
     busy: create.busy,
     onClose: () => {
       state.folderCreate = null;
@@ -5654,14 +5739,8 @@ function renderSessionRenameDialog() {
     rename.value = value;
     saveBtn.disabled = rename.busy || !value.trim();
   }));
-  if (rename.error) {
-    const error = document.createElement('p');
-    error.className = 'sheet-note sheet-error';
-    error.textContent = rename.error;
-    body.append(error);
-  }
   dialog.append(body);
-  const saveBtn = primaryButton(rename.busy ? '正在保存…' : '保存', () => submitSessionRename());
+  const saveBtn = buttonBusy(primaryButton('保存', () => submitSessionRename()), rename.busy);
   saveBtn.disabled = rename.busy || !rename.value.trim();
   const cancelBtn = ghostButton('取消', close);
   cancelBtn.disabled = rename.busy;
@@ -5688,20 +5767,13 @@ function renderSessionConfirmDialog() {
         ? '会从电脑端永久删除这个已归档会话，不可恢复。'
         : '会话会移入「已归档会话」，之后可以取消归档。',
   );
-  if (confirm.error) {
-    const error = document.createElement('p');
-    error.className = 'sheet-note sheet-error';
-    error.textContent = confirm.error;
-    dialog.append(error);
-  }
   const cancelBtn = ghostButton('取消', close);
   cancelBtn.disabled = confirm.busy;
   const okBtn = document.createElement('button');
   okBtn.type = 'button';
   okBtn.className = isDelete || isWorkspace ? 'danger-btn' : 'primary-btn';
-  okBtn.textContent = confirm.busy
-    ? (isWorkspace ? '正在移除…' : isDelete ? '正在删除…' : '正在归档…')
-    : (isWorkspace ? '移除' : isDelete ? '删除' : '归档');
+  okBtn.textContent = isWorkspace ? '移除' : isDelete ? '删除' : '归档';
+  buttonBusy(okBtn, confirm.busy);
   okBtn.disabled = confirm.busy;
   okBtn.addEventListener('click', () => runSessionConfirm());
   dialogFoot(dialog, [cancelBtn, okBtn]);
@@ -5772,14 +5844,13 @@ function renderDialog() {
     onBranch.append(check, document.createTextNode(' Commit on new branch'));
     body.append(onBranch);
     const files = state.commitFiles;
-    const submit = primaryButton(state.gitBusy ? '正在执行…' : state.gitRetry ? '继续未完成操作' : state.pendingStacked === 'commit_push_pr' ? 'Commit, push & PR' : state.pendingStacked === 'commit_push' ? 'Commit & push' : '提交',
+    const submit = primaryButton(state.pendingStacked === 'commit_push_pr' ? 'Commit, push & PR' : state.pendingStacked === 'commit_push' ? 'Commit & push' : '提交',
       () => gitAction('gitCommit', state.gitRetry ? { retry: true } : { message: state.commitMessage }));
+    buttonBusy(submit, state.gitBusy || files?.loading);
     const updateSubmit = () => {
       submit.disabled = state.gitBusy || Boolean(!state.gitRetry && (files?.loading || files?.error || (files?.entries.length && !files.selected.size)));
     };
-    if (files?.loading) body.append(descNode('正在读取更改…'));
-    else if (files?.error) body.append(descNode(files.error, 'error'), ghostButton('重新读取更改', () => { void loadCommitFiles(); renderDialog(); }));
-    else if (files?.entries.length) {
+    if (files?.entries.length) {
       body.append(descNode('包含的文件', 'field-label'));
       for (const entry of files.entries) {
         const label = document.createElement('label'); label.className = 'file-choice';
@@ -5811,7 +5882,7 @@ function renderDialog() {
     input.disabled = state.gitBusy || Boolean(state.gitRetry);
     body.append(input);
     dialog.append(body);
-    const createBtn = primaryButton(state.gitRetry ? '继续未完成操作' : 'Create branch', () => createBranch());
+    const createBtn = buttonBusy(primaryButton('Create branch', () => createBranch()), state.gitBusy);
     createBtn.disabled = state.gitBusy || !state.newBranchName.trim();
     dialogFoot(dialog, [ghostButton('取消', closeGitLayer), createBtn]);
     dialogRoot.append(layer);
@@ -5839,10 +5910,11 @@ function renderDialog() {
     }
     body.append(visibility);
     dialog.append(body);
-    const publish = primaryButton(state.gitBusy ? '正在发布…' : 'Publish repository', () => {
+    const publish = primaryButton('Publish repository', () => {
       gitAction('gitPublishRepository', { input: { name: state.publishName, visibility: state.publishVisibility, remoteUrl: state.publishRemoteUrl } });
     });
     publish.disabled = state.gitBusy;
+    buttonBusy(publish, state.gitBusy);
     dialogFoot(dialog, [
       ghostButton('取消', closeGitLayer),
       publish,
@@ -5878,39 +5950,74 @@ function renderDialog() {
 
 function renderToast() {
   toastRoot.replaceChildren();
+  const busy = state.gitBusy && !state.gitProgressDismissed;
   if (!state.gitBusy && !state.gitToast) return;
   const layer = document.createElement('div');
   layer.className = 'toast-layer';
+  if (state.gitBusy && state.gitProgressDismissed) {
+    const summary = document.createElement('button');
+    summary.type = 'button';
+    summary.className = 'toast';
+    summary.textContent = state.gitProgress ? `查看 Git 进度 · ${state.gitProgress}` : '查看 Git 进度';
+    summary.addEventListener('click', () => {
+      state.gitProgressDismissed = false;
+      renderToast();
+    });
+    layer.append(summary);
+    toastRoot.append(layer);
+    return;
+  }
   const toast = document.createElement('div');
   toast.className = 'toast';
-  if (state.gitBusy) {
+  toast.dataset.tone = busy ? 'info' : state.toastTone;
+  toast.setAttribute('role', !busy && state.toastTone === 'error' ? 'alert' : 'status');
+  toast.setAttribute('aria-atomic', 'true');
+  if (busy) {
     const spin = document.createElement('span');
     spin.className = 'spin';
     toast.append(spin);
   } else {
-    const bad = state.gitToast.includes('失败') || state.gitToast.includes('不可用');
+    const bad = state.toastTone === 'error';
     const mark = document.createElement('span');
-    mark.className = `mark ${bad ? 'bad' : 'ok'}`;
-    mark.textContent = bad ? '!' : '✓';
+    mark.className = `mark ${bad ? 'bad' : state.toastTone === 'success' ? 'ok' : ''}`;
+    mark.setAttribute('aria-hidden', 'true');
+    // The standalone SPA uses the same SVG artwork as the shared Toast.
+    mark.append(svgNode(bad
+      ? '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 14.5C11.5899 14.5 14.5 11.5899 14.5 8C14.5 4.41015 11.5899 1.5 8 1.5C4.41015 1.5 1.5 4.41015 1.5 8C1.5 11.5899 4.41015 14.5 8 14.5Z" stroke="currentColor"/><path d="M8 4.29199V9.79199M8 10.708V11.708" stroke="currentColor"/></svg>'
+      : state.toastTone === 'success'
+        ? '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M12.5303 6.53027L8.80273 10.2578C8.54967 10.5109 8.31796 10.7439 8.10645 10.9141C7.88375 11.0932 7.616 11.2602 7.27344 11.3145C7.09229 11.3431 6.90771 11.3431 6.72656 11.3145C6.384 11.2602 6.11625 11.0932 5.89355 10.9141C5.68204 10.7439 5.45033 10.5109 5.19727 10.2578L3.46973 8.53027L4.53027 7.46973L6.25781 9.19727C6.53457 9.47402 6.70036 9.63859 6.83398 9.74609C6.95637 9.84453 6.98241 9.83644 6.96094 9.83301C6.98679 9.83709 7.01321 9.83709 7.03906 9.83301C7.01759 9.83644 7.04363 9.84453 7.16602 9.74609C7.29964 9.63859 7.46543 9.47402 7.74219 9.19727L11.4697 5.46973L12.5303 6.53027Z" fill="currentColor"/><path d="M14.5996 8C14.5996 4.35492 11.6451 1.40039 8 1.40039C4.35492 1.40039 1.40039 4.35492 1.40039 8C1.40039 11.6451 4.35492 14.5996 8 14.5996C11.6451 14.5996 14.5996 11.6451 14.5996 8ZM15.9004 8C15.9004 12.363 12.363 15.9004 8 15.9004C3.63695 15.9004 0.0996094 12.363 0.0996094 8C0.0996094 3.63695 3.63695 0.0996094 8 0.0996094C12.363 0.0996094 15.9004 3.63695 15.9004 8Z" fill="currentColor"/></svg>'
+        : '<svg width="16" height="16" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M12.5757 7.00012C12.5757 3.92085 10.0794 1.42463 7.00012 1.42456C3.9208 1.42456 1.42456 3.9208 1.42456 7.00012C1.42463 10.0794 3.92085 12.5757 7.00012 12.5757C10.0793 12.5756 12.5756 10.0793 12.5757 7.00012ZM13.8002 7.00012C13.8001 10.7559 10.7559 13.8001 7.00012 13.8002C3.2443 13.8002 0.199291 10.7559 0.199219 7.00012C0.199219 3.24426 3.24426 0.199219 7.00012 0.199219C10.7559 0.199291 13.8002 3.2443 13.8002 7.00012Z" fill="currentColor"/><path d="M7.6127 3.18921V4.55986H6.38735V3.18921H7.6127ZM7.6127 5.68921V10.8109H6.38735V5.68921H7.6127Z" fill="currentColor"/></svg>'));
     toast.append(mark);
   }
   const main = document.createElement('span');
   main.className = 'toast-main';
   const title = document.createElement('b');
-  title.textContent = state.gitBusy ? (state.gitProgress ? `Git: ${state.gitProgress}` : 'Git 操作进行中') : (state.gitToast || '完成');
+  title.textContent = busy ? (state.gitProgress ? `Git: ${state.gitProgress}` : 'Git 操作进行中') : state.gitToast;
   main.append(title);
-  if (state.gitStatus.refName != null && !state.gitBusy) {
-    const ref = document.createElement('span');
-    ref.textContent = state.gitStatus.refName;
-    main.append(ref);
+  if (!busy && state.toastActions.length) {
+    const actions = document.createElement('div');
+    actions.className = 'toast-actions';
+    for (const action of state.toastActions) {
+      const button = ghostButton(action.label, async () => {
+        button.disabled = true;
+        buttonBusy(button, true);
+        try { await action.onClick(); }
+        catch (error) { operationError(error?.message || '电脑没有响应', action.onClick); }
+        finally { button.disabled = false; buttonBusy(button, false); }
+      });
+      actions.append(button);
+    }
+    main.append(actions);
   }
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'icon-btn';
   close.setAttribute('aria-label', '关闭');
-  close.textContent = '×';
+  close.append(svgNode('<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 2.5L13.5 13.5M13.5 2.5L2.5 13.5" stroke="currentColor"/></svg>'));
   close.addEventListener('click', () => {
     state.gitToast = '';
+    state.gitProgressDismissed = true;
+    clearTimeout(toastTimer);
     renderToast();
   });
   toast.append(main, close);
@@ -6061,10 +6168,15 @@ el('attach-toggle').addEventListener('click', () => {
 });
 accessChip.addEventListener('click', () => openPicker('mode'));
 planChip.addEventListener('click', () => {
-  if (!state.sessionId) return;
+  if (!state.sessionId || planChip.disabled) return;
+  planChip.disabled = true;
+  buttonBusy(planChip, true);
   runHostCommand('/plan off').then(() => {
     renderComposer();
-  }).catch((error) => showBanner(error.message || '无法关闭计划'));
+  }).catch((error) => showBanner(error.message || '无法关闭计划')).finally(() => {
+    planChip.disabled = false;
+    buttonBusy(planChip, false);
+  });
 });
 el('model-chip').addEventListener('click', () => openPicker('model'));
 blankWorkspaceChip?.addEventListener('click', () => startNewSessionChooser());

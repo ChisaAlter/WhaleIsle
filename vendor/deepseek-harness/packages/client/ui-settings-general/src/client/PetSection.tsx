@@ -4,9 +4,9 @@
  * shell's `saveLive2dPetSettings` channel so the pet manager normalizes,
  * persists, and pushes to the live overlay at once.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button, SegmentedTabs, SettingsSelect, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, SegmentedTabs, SettingsSelect, Switch, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { desktopShell } from './desktop-shell.ts'
@@ -72,13 +72,14 @@ function routeId(provider: string, model: string): string {
 }
 
 /** Flat Setting-Cell row: title (+ optional desc) left, control right. */
-function Row({ title, desc, children }: {
+function Row({ title, desc, error, children }: {
   title: string
   desc?: string | undefined
+  error?: string | undefined
   children?: ReactNode
 }): ReactNode {
   return (
-    <div className={css.item}>
+    <div className={css.item} title={error}>
       <div className={css.itemText}>
         <div className={css.itemTitle}>{title}</div>
         {desc ? <div className={css.itemDesc} title={desc}>{desc}</div> : null}
@@ -97,6 +98,13 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
   const [lookRoutes, setLookRoutes] = useState<readonly LookRoute[] | undefined>(undefined)
   const [lookLoadError, setLookLoadError] = useState('')
   const [error, setError] = useState('')
+  const [readError, setReadError] = useState('')
+  const [configLoading, setConfigLoading] = useState(Boolean(shell?.getConfig))
+  const [saving, setSaving] = useState<string | null>(null)
+  const [whaleBusy, setWhaleBusy] = useState(false)
+  const [whaleError, setWhaleError] = useState('')
+  const [notice, setNotice] = useState<{ id: number; text: string; success: boolean } | null>(null)
+  const noticeId = useRef(0)
   const [view, setView] = useState<'assistant' | 'desktop'>('assistant')
 
   useEffect(() => {
@@ -106,9 +114,15 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
       setEnabled(config?.live2dPet?.enabled !== false)
       setSettings(config?.live2dPet?.settings ?? {})
       setWhaleAssistant(config?.whaleAssistantEnabled === true)
-    }).catch(() => {})
+      setReadError('')
+    }).catch((caught: unknown) => {
+      if (cancelled) return
+      const message = caught instanceof Error ? caught.message : String(caught)
+      setReadError(message)
+      setNotice({ id: ++noticeId.current, text: t('feedback.readError', { message }), success: false })
+    }).finally(() => { if (!cancelled) setConfigLoading(false) })
     return () => { cancelled = true }
-  }, [shell])
+  }, [shell, t])
 
   // The look picker rides the session model catalog — the same source the
   // Models section's vision picker filters on 'image'.
@@ -118,9 +132,12 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
     void modelCatalog().then((res) => {
       if (cancelled) return
       if (!res?.ok || !res.value) {
-        setLookLoadError(res?.error?.message || 'failed')
+        const message = res?.error?.message || 'failed'
+        setLookLoadError(message)
+        setNotice({ id: ++noticeId.current, text: t('pet.lookModelLoadFailed', { message }), success: false })
         return
       }
+      setLookLoadError('')
       setLookRoutes((res.value.groups ?? []).flatMap(group => group.models
         .filter(model => model.inputModalities?.includes('image') === true)
         .map(model => ({
@@ -130,10 +147,13 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
           modelName: model.name,
         }))))
     }).catch((err: unknown) => {
-      if (!cancelled) setLookLoadError(err instanceof Error ? err.message : String(err))
+      if (cancelled) return
+      const message = err instanceof Error ? err.message : String(err)
+      setLookLoadError(message)
+      setNotice({ id: ++noticeId.current, text: t('pet.lookModelLoadFailed', { message }), success: false })
     })
     return () => { cancelled = true }
-  }, [modelCatalog])
+  }, [modelCatalog, t])
 
   // Every write returns the normalized settings — the local echo comes from
   // the same object the pet window just received.
@@ -143,21 +163,29 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
     reset?: boolean
   }): Promise<Live2dPetSettingsResult | undefined> => {
     if (!shell?.saveLive2dPetSettings) return undefined
+    setSaving(body.reset ? 'reset' : body.enabled !== undefined ? 'enabled' : Object.keys(body.patch ?? {})[0] ?? null)
     try {
       const res = await shell.saveLive2dPetSettings(body)
       if (res?.ok === true) {
         setError('')
         if (typeof res.enabled === 'boolean') setEnabled(res.enabled)
         if (res.settings) setSettings(res.settings)
+        setNotice({ id: ++noticeId.current, text: t('feedback.saved'), success: true })
       } else {
-        setError(res?.reason || 'failed')
+        const message = res?.reason || 'failed'
+        setError(message)
+        setNotice({ id: ++noticeId.current, text: t('pet.saveError', { message }), success: false })
       }
       return res
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      const message = err instanceof Error ? err.message : String(err)
+      setError(message)
+      setNotice({ id: ++noticeId.current, text: t('pet.saveError', { message }), success: false })
       return undefined
+    } finally {
+      setSaving(null)
     }
-  }, [shell])
+  }, [shell, t])
 
   const patch = useCallback((next: Live2dPetSettings) => {
     setSettings(prev => ({ ...prev, ...next }))
@@ -201,12 +229,31 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
   const lookCurrent = lookValue === '' && stale !== undefined ? stale.id : lookValue
 
   const toggleWhale = useCallback((next: boolean) => {
+    if (!shell?.saveConfig) return
+    const previous = whaleAssistant
     setWhaleAssistant(next)
-    void shell?.saveConfig?.({ whaleAssistantEnabled: next }).catch(() => {})
-  }, [shell])
+    setWhaleBusy(true)
+    void shell.saveConfig({ whaleAssistantEnabled: next }).then(saved => {
+      if (saved.whaleAssistantEnabled !== next) {
+        setWhaleAssistant(typeof saved.whaleAssistantEnabled === 'boolean' ? saved.whaleAssistantEnabled : previous)
+        setWhaleError(t('feedback.notSaved'))
+        setNotice({ id: ++noticeId.current, text: t('feedback.notSaved'), success: false })
+        return
+      }
+      setWhaleError('')
+      setNotice({ id: ++noticeId.current, text: t('feedback.saved'), success: true })
+    }).catch((caught: unknown) => {
+      setWhaleAssistant(previous)
+      const text = t('feedback.saveError', { message: caught instanceof Error ? caught.message : String(caught) })
+      setWhaleError(text)
+      setNotice({ id: ++noticeId.current, text, success: false })
+    }).finally(() => { setWhaleBusy(false) })
+  }, [shell, t, whaleAssistant])
+
+  const blocked = configLoading || saving !== null || whaleBusy
 
   return (
-    <div className={css.section}>
+    <div className={css.section} title={readError ? t('feedback.readError', { message: readError }) : undefined}>
       <h2 className={css.heading}>{t('pet.nav')}</h2>
       <p className={css.intro}>{t('pet.intro')}</p>
       <SegmentedTabs
@@ -226,6 +273,9 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
             <Switch
               label={t('pet.whaleAssistant')}
               checked={whaleAssistant}
+              disabled={blocked}
+              loading={configLoading || whaleBusy}
+              title={whaleError || undefined}
               onChange={toggleWhale}
             />
           </Row>
@@ -239,6 +289,8 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
             <Switch
               label={t('pet.enabled')}
               checked={enabled}
+              disabled={blocked}
+              loading={configLoading || saving === 'enabled'}
               onChange={(next: boolean) => { setEnabled(next); void save({ enabled: next }) }}
             />
           </Row>
@@ -248,6 +300,8 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
               variant="inline"
               align="end"
               aria-label={t('pet.scale')}
+              disabled={blocked}
+              loading={configLoading || saving === 'scale'}
               value={String(settings.scale ?? 1)}
               options={SCALE_OPTIONS.map(v => ({ id: v, label: `${Math.round(Number(v) * 100)}%` }))}
               onChange={(id) => patch({ scale: Number(id) })}
@@ -256,6 +310,8 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
               variant="inline"
               align="end"
               aria-label={t('pet.opacity')}
+              disabled={blocked}
+              loading={configLoading || saving === 'opacity'}
               value={String(settings.opacity ?? 1)}
               options={OPACITY_OPTIONS.map(v => ({ id: v, label: `${Math.round(Number(v) * 100)}%` }))}
               onChange={(id) => patch({ opacity: Number(id) })}
@@ -266,6 +322,8 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
               variant="inline"
               align="end"
               aria-label={t('pet.personality')}
+              disabled={blocked}
+              loading={configLoading || saving === 'personality'}
               value={settings.personality ?? 'natural'}
               options={PERSONALITY_OPTIONS.map(([id, key]) => ({ id, label: t(key) }))}
               onChange={(id) => patch({ personality: id })}
@@ -277,6 +335,8 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
               variant="inline"
               align="end"
               aria-label={t('pet.activity')}
+              disabled={blocked}
+              loading={configLoading || saving === 'activity'}
               value={settings.activity ?? 'balanced'}
               options={ACTIVITY_OPTIONS.map(([id, key]) => ({ id, label: t(key) }))}
               onChange={(id) => patch({ activity: id })}
@@ -288,6 +348,8 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
               <Switch
                 label={t('pet.selfTalk')}
                 checked={settings.selfTalk === true}
+                disabled={blocked}
+                loading={configLoading || saving === 'selfTalk'}
                 onChange={(next: boolean) => patch({ selfTalk: next })}
               />
             </span>
@@ -296,6 +358,8 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
               <Switch
                 label={t('pet.wander')}
                 checked={settings.wander === true}
+                disabled={blocked}
+                loading={configLoading || saving === 'wander'}
                 onChange={(next: boolean) => patch({ wander: next })}
               />
             </span>
@@ -305,6 +369,8 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
               variant="inline"
               align="end"
               aria-label={t('pet.dragMode')}
+              disabled={blocked}
+              loading={configLoading || saving === 'lockPosition'}
               value={settings.lockPosition === true
                 ? 'locked'
                 : settings.shiftToDrag === true ? 'shift' : 'free'}
@@ -325,6 +391,8 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
               <Switch
                 label={t(labelKey)}
                 checked={settings[key] === true}
+                disabled={blocked}
+                loading={configLoading || saving === key}
                 onChange={(next: boolean) => patch({ [key]: next })}
               />
             </Row>
@@ -335,14 +403,19 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
             <Switch
               label={t('pet.chat')}
               checked={settings.chatEnabled === true}
+              disabled={blocked}
+              loading={configLoading || saving === 'chatEnabled'}
               onChange={(next: boolean) => patch({ chatEnabled: next })}
             />
           </Row>
-          <Row title={t('pet.lookModel')} desc={t('pet.lookModelDesc')}>
+          <Row title={t('pet.lookModel')} desc={t('pet.lookModelDesc')}
+            error={lookLoadError ? t('pet.lookModelLoadFailed', { message: lookLoadError }) : undefined}>
             <SettingsSelect
               variant="inline"
               align="end"
               aria-label={t('pet.lookModel')}
+              disabled={blocked || (lookRoutes === undefined && lookLoadError === '')}
+              loading={configLoading || saving === 'lookModel' || (lookRoutes === undefined && lookLoadError === '')}
               value={lookCurrent}
               placeholder={t('pet.lookModelOff')}
               options={[
@@ -356,24 +429,26 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
               onChange={onLookChange}
             />
           </Row>
-          {lookLoadError === ''
-            ? null
-            : <p className={css.error} role="status">{t('pet.lookModelLoadFailed', { message: lookLoadError })}</p>}
 
           <div className={css.actions}>
             <Button
               variant="outline"
               size="sm"
+              disabled={blocked}
+              loading={saving === 'reset'}
+              title={error ? t('pet.saveError', { message: error }) : undefined}
               onClick={() => {
                 void save({ reset: true })
               }}
             >
               {t('pet.reset')}
             </Button>
-            {error ? <span className={css.error} role="status">{t('pet.saveError', { message: error })}</span> : null}
           </div>
         </div>
       </div>
+      {notice !== null && <Toast key={notice.id} text={notice.text}
+        {...notice.success ? { tone: 'success' as const } : {}}
+        holdMs={notice.success ? 3000 : null} dismissLabel={t('close')} onDone={() => { setNotice(null) }} />}
     </div>
   )
 }

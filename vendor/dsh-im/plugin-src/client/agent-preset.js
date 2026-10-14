@@ -1,6 +1,7 @@
 import * as React from 'react';
 
 import { h } from './i18n.js';
+import { BusyIndicator, FeedbackToast } from './feedback.js';
 
 export const SET_AGENT_PRESET_ENDPOINT = 'bot.preset.set';
 
@@ -93,11 +94,12 @@ export function AgentPresetEditor({ agentPreset = '', disabled = false, onSave }
             className: 'dim-presetTooltip',
             role: 'tooltip',
           }, '只影响新建会话；若当前聊天已有会话，先发送 /new，再发送普通消息生效。'))),
-      saving ? h('span', { className: 'dim-presetStatus' }, '保存中…') : null),
-    React.createElement('select', {
+      null),
+    h('span', { className: 'dim-controlBusy' }, React.createElement('select', {
       className: 'dim-presetSelect',
       value: current,
       disabled: disabled || saving,
+      'aria-busy': saving || undefined,
       'aria-label': 'Agent Preset',
       onChange: (event) => { void change(event); },
     },
@@ -109,11 +111,12 @@ export function AgentPresetEditor({ agentPreset = '', disabled = false, onSave }
           ? [item.id, '（已不可用）']
           : item.label && item.label !== item.id ? `${item.label}（${item.id}）` : item.id,
       )),
-    ),
-    error || currentUnavailable ? h(
+    ), h(BusyIndicator, { busy: saving })),
+    error ? h(FeedbackToast, { text: error, tone: 'error' }) : null,
+    currentUnavailable ? h(
       'p',
-      { className: 'dim-presetError', role: error ? 'alert' : 'status' },
-      error ?? '当前 Agent Preset 已不可用，请选择其他 Preset 或跟随 Host 默认。',
+      { className: 'dim-presetError', role: 'status' },
+      '当前 Agent Preset 已不可用，请选择其他 Preset 或跟随 Host 默认。',
     ) : null,
   );
 }

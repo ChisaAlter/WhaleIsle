@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Terminal startup, title editing and xterm's screen lifetime. */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { cleanup, fireEvent, render, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type { ITheme } from '@xterm/xterm'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
@@ -157,18 +157,18 @@ function mount(initial: TerminalViewState | undefined = idle, dictionary = en) {
 it('mounts automatic startup and offers retry only when startup fails', () => {
   const h = mount({ ...idle, phase: 'loading', environment: undefined })
   expect(h.model.mount).toHaveBeenCalledOnce()
-  expect(h.view.getByRole('status').textContent).toBe(en.loading)
+  expect(h.view.getByRole('status', { name: en.loading }).querySelector('[data-state="ongoing"]')).not.toBeNull()
   expect(h.view.queryByRole('combobox')).toBeNull()
   expect(h.view.queryByRole('button')).toBeNull()
   h.update({ ...idle, phase: 'failed', error: 'unavailable' })
   expect(h.view.getByRole('alert').textContent).toContain('unavailable')
-  fireEvent.click(h.view.getByRole('button', { name: en.retry }))
+  fireEvent.click(within(h.view.getByRole('status')).getByRole('button', { name: en.retry }))
   expect(h.model.refresh).toHaveBeenCalledOnce()
   h.update({ ...idle, phase: 'disconnected' })
   fireEvent.click(h.view.getByRole('button', { name: en.reconnect }))
   expect(h.model.refresh).toHaveBeenCalledTimes(2)
   h.update({ ...idle, phase: 'creating' })
-  expect(h.view.getByRole('status').textContent).toBe(en.creating)
+  expect(h.view.getByRole('status', { name: en.creating }).querySelector('[data-state="ongoing"]')).not.toBeNull()
   h.update({ ...idle, phase: 'closing' })
   expect(h.view.queryByRole('status')).toBeNull()
   expect(h.view.queryByRole('button')).toBeNull()
@@ -216,7 +216,7 @@ it('keeps one emulator across rename and locale updates, applies snapshots and o
 
 it('displays disconnect, close and exit states and offers explicit reconnection and takeover', () => {
   const h = mount({ ...idle, info, phase: 'connecting' })
-  expect(h.view.getByRole('status').textContent).toBe(en.connecting)
+  expect(h.view.getByRole('status', { name: en.connecting }).querySelector('[data-state="ongoing"]')).not.toBeNull()
   h.update({ ...idle, info, phase: 'connected' })
   expect(h.view.getByRole('status').textContent).toContain(en.readonly)
   expect(fake.terminals[0]!.options.disableStdin).toBe(true)

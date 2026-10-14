@@ -31,7 +31,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// plugin-src/client/index.js
+// vendor/dsh-remote/plugin-src/client/index.js
 var index_exports = {};
 __export(index_exports, {
   REMOTE_EXPLORER_ID: () => REMOTE_EXPLORER_ID,
@@ -42,7 +42,7 @@ __export(index_exports, {
 });
 module.exports = __toCommonJS(index_exports);
 
-// plugin-src/client/i18n.js
+// vendor/dsh-remote/plugin-src/client/i18n.js
 var NS = "dsh-remote";
 var zh = {
   "settings.nav": "\u8FDC\u7A0B\u5DE5\u4F5C\u533A",
@@ -169,6 +169,7 @@ var zh = {
   "explorer.menuDeleteDir": "\u5220\u9664\u76EE\u5F55",
   "explorer.deleteConfirm": "\u5220\u9664\u8FDC\u7A0B {path}\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u64A4\u9500\u3002",
   "explorer.copied": "\u5DF2\u590D\u5236",
+  "explorer.copyFail": "\u65E0\u6CD5\u5199\u5165\u526A\u8D34\u677F",
   "explorer.newName": "\u65B0\u540D\u79F0",
   "explorer.root": "\u8FDC\u7A0B\u5DE5\u4F5C\u533A",
   "file.readonly": "\u53EA\u8BFB",
@@ -316,6 +317,7 @@ var en = {
   "explorer.menuDeleteDir": "Delete directory",
   "explorer.deleteConfirm": "Delete remote {path}? This cannot be undone.",
   "explorer.copied": "Copied",
+  "explorer.copyFail": "Could not write to the clipboard",
   "explorer.newName": "New name",
   "explorer.root": "Remote workspace",
   "file.readonly": "Read-only",
@@ -339,7 +341,7 @@ var en = {
   "common.close": "Close"
 };
 
-// plugin-src/client/api.js
+// vendor/dsh-remote/plugin-src/client/api.js
 function withSessionQuery(path, sessionId) {
   if (!sessionId) return path;
   return path + (path.includes("?") ? "&" : "?") + "sessionId=" + encodeURIComponent(sessionId);
@@ -433,7 +435,7 @@ function remoteCrumbs(p) {
   return { sep, parts: out, windows: win };
 }
 
-// plugin-src/client/styles.js
+// vendor/dsh-remote/plugin-src/client/styles.js
 var STYLE_ID = "dsh-remote";
 var CSS = `
 .dshr-page { display: flex; flex-direction: column; gap: 12px; color: var(--dsw-alias-label-primary); font-size: 13px; }
@@ -454,6 +456,9 @@ var CSS = `
 .dshr-iconBtn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: none; border-radius: 6px; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; }
 .dshr-iconBtn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .dshr-iconBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+.dshr-miniSpinner { display: inline-block; width: 10px; height: 10px; box-sizing: border-box; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: dshr-feedback-spin .8s linear infinite; }
+@keyframes dshr-feedback-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .dshr-miniSpinner { animation: none; } }
 
 .dshr-machineList { display: flex; flex-direction: column; gap: 6px; }
 .dshr-machine { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
@@ -521,14 +526,31 @@ function installRemoteStyles() {
   return () => style.remove();
 }
 
-// plugin-src/client/RemoteSettingsSection.jsx
+// vendor/dsh-remote/plugin-src/client/RemoteSettingsSection.jsx
+var React3 = __toESM(require("react"), 1);
+var import_dsh_client_ui_primitives3 = require("@deepseek-ai/dsh-client-ui-primitives");
+
+// vendor/dsh-remote/plugin-src/client/MachineForm.jsx
 var React2 = __toESM(require("react"), 1);
 var import_dsh_client_ui_primitives2 = require("@deepseek-ai/dsh-client-ui-primitives");
 
-// plugin-src/client/MachineForm.jsx
+// vendor/dsh-remote/plugin-src/client/Feedback.jsx
 var React = __toESM(require("react"), 1);
 var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 var import_jsx_runtime = require("react/jsx-runtime");
+function RemoteFeedback({ error, message, onClearMessage, t, actions }) {
+  const [dismissedError, setDismissedError] = React.useState("");
+  React.useEffect(() => {
+    setDismissedError("");
+  }, [error]);
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+    error && error !== dismissedError ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Toast, { text: error, holdMs: null, dismissLabel: t("common.close"), actions, onDone: () => setDismissedError(error) }, "error:" + error) : null,
+    message ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Toast, { text: message, tone: "success", onDone: onClearMessage }, "message:" + message) : null
+  ] });
+}
+
+// vendor/dsh-remote/plugin-src/client/MachineForm.jsx
+var import_jsx_runtime2 = require("react/jsx-runtime");
 var EMPTY_FORM = {
   name: "",
   host: "",
@@ -620,10 +642,10 @@ function testPayloadOf(f) {
 }
 function MachineForm({ t, machine, onSaved, onCancel }) {
   const editing = machine || null;
-  const [form, setForm] = React.useState(() => editing ? formFromMachine(editing) : EMPTY_FORM);
-  const [busy, setBusy] = React.useState(false);
-  const [testing, setTesting] = React.useState(false);
-  const [notice, setNotice] = React.useState(null);
+  const [form, setForm] = React2.useState(() => editing ? formFromMachine(editing) : EMPTY_FORM);
+  const [busy, setBusy] = React2.useState(false);
+  const [testing, setTesting] = React2.useState(false);
+  const [notice, setNotice] = React2.useState(null);
   const set = (key) => (e) => {
     const value = e && e.target ? e.target.value : e;
     setForm((f) => ({ ...f, [key]: value }));
@@ -638,8 +660,6 @@ function MachineForm({ t, machine, onSaved, onCancel }) {
     setBusy(true);
     setNotice(null);
     remoteApi.saveMachine(payloadOf(form)).then((r) => {
-      const warning = r && r.warning;
-      if (warning) setNotice({ kind: "err", text: warning + (r.warningDetail ? ` (${r.warningDetail})` : "") });
       onSaved && onSaved(r);
     }).catch((e) => setNotice({ kind: "err", text: String(e && e.message || e) })).finally(() => setBusy(false));
   };
@@ -652,20 +672,20 @@ function MachineForm({ t, machine, onSaved, onCancel }) {
       else setNotice({ kind: "err", text: t("form.testFail", { error: r && r.error || "?" }) });
     }).catch((e) => setNotice({ kind: "err", text: t("form.testFail", { error: String(e && e.message || e) }) })).finally(() => setTesting(false));
   };
-  const field = (label, node) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(React.Fragment, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dshr-formLabel", children: label }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dshr-row", children: node })
+  const field = (label, node) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(React2.Fragment, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-formLabel", children: label }),
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-row", children: node })
   ] });
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dshr-col", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dshr-cardTitle", children: editing ? t("form.titleEdit") : t("form.titleAdd") }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dshr-form", children: [
-      field(t("form.name"), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Input, { value: form.name, onChange: set("name"), placeholder: t("form.namePlaceholder"), className: "dshr-grow" })),
-      field(t("form.host"), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Input, { value: form.host, onChange: set("host"), placeholder: t("form.hostPlaceholder"), className: "dshr-grow" })),
-      field(t("form.port"), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Input, { value: form.port, onChange: set("port"), inputMode: "numeric", className: "dshr-grow" })),
-      field(t("form.username"), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Input, { value: form.username, onChange: set("username"), className: "dshr-grow" })),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dshr-formFull dshr-cardTitle", style: { marginTop: 4 }, children: t("form.auth") }),
-      field(t("form.password"), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-        import_dsh_client_ui_primitives.Input,
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-col", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-cardTitle", children: editing ? t("form.titleEdit") : t("form.titleAdd") }),
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-form", children: [
+      field(t("form.name"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.name, onChange: set("name"), placeholder: t("form.namePlaceholder"), className: "dshr-grow" })),
+      field(t("form.host"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.host, onChange: set("host"), placeholder: t("form.hostPlaceholder"), className: "dshr-grow" })),
+      field(t("form.port"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.port, onChange: set("port"), inputMode: "numeric", className: "dshr-grow" })),
+      field(t("form.username"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.username, onChange: set("username"), className: "dshr-grow" })),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-formFull dshr-cardTitle", style: { marginTop: 4 }, children: t("form.auth") }),
+      field(t("form.password"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+        import_dsh_client_ui_primitives2.Input,
         {
           type: "password",
           value: form.password,
@@ -674,10 +694,10 @@ function MachineForm({ t, machine, onSaved, onCancel }) {
           className: "dshr-grow"
         }
       )),
-      field(t("form.privateKeyPath"), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Input, { value: form.privateKeyPath, onChange: set("privateKeyPath"), placeholder: t("form.privateKeyPlaceholder"), className: "dshr-grow" })),
-      field(t("form.passphrase"), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Input, { type: "password", value: form.passphrase, onChange: set("passphrase"), placeholder: t("form.passphrasePlaceholder"), className: "dshr-grow" })),
-      field(t("form.hostKeyMode"), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-        import_dsh_client_ui_primitives.SettingsSelect,
+      field(t("form.privateKeyPath"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.privateKeyPath, onChange: set("privateKeyPath"), placeholder: t("form.privateKeyPlaceholder"), className: "dshr-grow" })),
+      field(t("form.passphrase"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { type: "password", value: form.passphrase, onChange: set("passphrase"), placeholder: t("form.passphrasePlaceholder"), className: "dshr-grow" })),
+      field(t("form.hostKeyMode"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+        import_dsh_client_ui_primitives2.SettingsSelect,
         {
           variant: "block",
           value: form.hostKeyMode,
@@ -687,56 +707,56 @@ function MachineForm({ t, machine, onSaved, onCancel }) {
           className: "dshr-grow"
         }
       )),
-      field(t("form.workspace"), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Input, { value: form.workspace, onChange: set("workspace"), placeholder: t("form.workspacePlaceholder"), className: "dshr-grow" })),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dshr-formFull dshr-col", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dshr-checkRow", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Checkbox, { checked: form.useAgent, onChange: (v) => setForm((f) => ({ ...f, useAgent: v })), label: t("form.useAgent") }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dshr-checkRow", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Checkbox, { checked: form.keyboardInteractive, onChange: (v) => setForm((f) => ({ ...f, keyboardInteractive: v })), label: t("form.keyboardInteractive") }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dshr-checkRow", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Switch, { checked: form.encryptPassword, onChange: (v) => setForm((f) => ({ ...f, encryptPassword: v })), label: t("form.encryptPassword") }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: t("form.encryptPassword") })
+      field(t("form.workspace"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.workspace, onChange: set("workspace"), placeholder: t("form.workspacePlaceholder"), className: "dshr-grow" })),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-formFull dshr-col", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-checkRow", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Checkbox, { checked: form.useAgent, onChange: (v) => setForm((f) => ({ ...f, useAgent: v })), label: t("form.useAgent") }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-checkRow", children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Checkbox, { checked: form.keyboardInteractive, onChange: (v) => setForm((f) => ({ ...f, keyboardInteractive: v })), label: t("form.keyboardInteractive") }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-checkRow", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Switch, { checked: form.encryptPassword, onChange: (v) => setForm((f) => ({ ...f, encryptPassword: v })), label: t("form.encryptPassword") }),
+          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: t("form.encryptPassword") })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dshr-formFull", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "dshr-cardTitle", children: t("form.proxy") }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dshr-form", style: { marginTop: 8 }, children: [
-          field(t("form.proxyHost"), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Input, { value: form.proxyHost, onChange: set("proxyHost"), className: "dshr-grow" })),
-          field(t("form.proxyPort"), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Input, { value: form.proxyPort, onChange: set("proxyPort"), inputMode: "numeric", className: "dshr-grow" })),
-          field(t("form.proxyUser"), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Input, { value: form.proxyUser, onChange: set("proxyUser"), className: "dshr-grow" })),
-          field(t("form.proxyPassword"), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Input, { type: "password", value: form.proxyPassword, onChange: set("proxyPassword"), className: "dshr-grow" })),
-          field(t("form.proxyKey"), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Input, { value: form.proxyKey, onChange: set("proxyKey"), className: "dshr-grow" }))
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-formFull", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-cardTitle", children: t("form.proxy") }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-form", style: { marginTop: 8 }, children: [
+          field(t("form.proxyHost"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.proxyHost, onChange: set("proxyHost"), className: "dshr-grow" })),
+          field(t("form.proxyPort"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.proxyPort, onChange: set("proxyPort"), inputMode: "numeric", className: "dshr-grow" })),
+          field(t("form.proxyUser"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.proxyUser, onChange: set("proxyUser"), className: "dshr-grow" })),
+          field(t("form.proxyPassword"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { type: "password", value: form.proxyPassword, onChange: set("proxyPassword"), className: "dshr-grow" })),
+          field(t("form.proxyKey"), /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Input, { value: form.proxyKey, onChange: set("proxyKey"), className: "dshr-grow" }))
         ] })
       ] })
     ] }),
-    notice ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: notice.kind === "ok" ? "dshr-ok" : "dshr-error", children: notice.text }) : null,
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "dshr-row", style: { justifyContent: "flex-end" }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Button, { variant: "ghost", size: "sm", onClick: test, disabled: testing || !form.host.trim(), children: testing ? t("machines.testing") : t("machines.test") }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Button, { variant: "ghost", size: "sm", onClick: onCancel, children: t("form.cancel") }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_dsh_client_ui_primitives.Button, { variant: "primary", size: "sm", onClick: save, disabled: busy || !form.host.trim(), children: busy ? t("form.saving") : t("form.save") })
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(RemoteFeedback, { error: notice && notice.kind === "err" ? notice.text : "", message: notice && notice.kind === "ok" ? notice.text : "", onClearMessage: () => setNotice(null), t }),
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-row", style: { justifyContent: "flex-end" }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Button, { variant: "ghost", size: "sm", onClick: test, disabled: busy || testing || !form.host.trim(), loading: testing, children: t("machines.test") }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Button, { variant: "ghost", size: "sm", onClick: onCancel, disabled: busy || testing, children: t("form.cancel") }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Button, { variant: "primary", size: "sm", onClick: save, disabled: busy || testing || !form.host.trim(), loading: busy, children: t("form.save") })
     ] })
   ] });
 }
 
-// plugin-src/client/RemoteSettingsSection.jsx
-var import_jsx_runtime2 = require("react/jsx-runtime");
+// vendor/dsh-remote/plugin-src/client/RemoteSettingsSection.jsx
+var import_jsx_runtime3 = require("react/jsx-runtime");
 var EMPTY_FORWARD = { direction: "local", listenPort: "", targetHost: "127.0.0.1", targetPort: "", autoStart: false };
 function RemoteSettingsSection({ t }) {
-  const [status, setStatus] = React2.useState(null);
-  const [machines, setMachines] = React2.useState([]);
-  const [currentId, setCurrentId] = React2.useState(null);
-  const [err, setErr] = React2.useState("");
-  const [loadError, setLoadError] = React2.useState("");
-  const [loading, setLoading] = React2.useState(true);
-  const loadGeneration = React2.useRef(0);
-  const [msg, setMsg] = React2.useState("");
-  const [busyId, setBusyId] = React2.useState("");
-  const [formOpen, setFormOpen] = React2.useState(false);
-  const [editing, setEditing] = React2.useState(null);
-  const [sshEntries, setSshEntries] = React2.useState(null);
-  const [forwards, setForwards] = React2.useState([]);
-  const [fwdForm, setFwdForm] = React2.useState(EMPTY_FORWARD);
-  const [audit, setAudit] = React2.useState(null);
-  const [confirmDel, setConfirmDel] = React2.useState(null);
-  const refresh = React2.useCallback(() => {
+  const [status, setStatus] = React3.useState(null);
+  const [machines, setMachines] = React3.useState([]);
+  const [currentId, setCurrentId] = React3.useState(null);
+  const [err, setErr] = React3.useState("");
+  const [loadError, setLoadError] = React3.useState("");
+  const [loading, setLoading] = React3.useState(true);
+  const loadGeneration = React3.useRef(0);
+  const [msg, setMsg] = React3.useState("");
+  const [busyId, setBusyId] = React3.useState("");
+  const [formOpen, setFormOpen] = React3.useState(false);
+  const [editing, setEditing] = React3.useState(null);
+  const [sshEntries, setSshEntries] = React3.useState(null);
+  const [forwards, setForwards] = React3.useState([]);
+  const [fwdForm, setFwdForm] = React3.useState(EMPTY_FORWARD);
+  const [audit, setAudit] = React3.useState(null);
+  const [confirmDel, setConfirmDel] = React3.useState(null);
+  const refresh = React3.useCallback(() => {
     const generation = ++loadGeneration.current;
     setLoading(true);
     setLoadError("");
@@ -752,25 +772,34 @@ function RemoteSettingsSection({ t }) {
       if (generation === loadGeneration.current) setLoading(false);
     });
   }, []);
-  React2.useEffect(() => {
+  React3.useEffect(() => {
     refresh();
     return () => {
       loadGeneration.current++;
     };
   }, [refresh]);
-  const run = (fn, okMsg) => {
+  const run = async (fn, okMsg, operation = "action") => {
+    if (busyId) return false;
+    setBusyId(operation);
     setErr("");
     setMsg("");
-    return fn().then(() => {
+    try {
+      await fn();
       if (okMsg) setMsg(okMsg);
       refresh();
-    }).catch((e) => setErr(String(e && e.message || e)));
+      return true;
+    } catch (e) {
+      setErr(String(e && e.message || e));
+      return false;
+    } finally {
+      setBusyId("");
+    }
   };
   const setCurrent = (id) => {
-    setBusyId(id || "clear");
-    run(() => remoteApi.setCurrent(id), id ? "" : t("settings.cleared")).finally(() => setBusyId(""));
+    void run(() => remoteApi.setCurrent(id), id ? "" : t("settings.cleared"), id || "clear");
   };
   const testMachine = (m) => {
+    if (busyId) return;
     setBusyId("test:" + m.id);
     setErr("");
     setMsg("");
@@ -795,8 +824,11 @@ function RemoteSettingsSection({ t }) {
     setConfirmDel(m);
   };
   const importable = sshEntries || [];
-  React2.useEffect(() => {
-    remoteApi.sshConfig().then((r) => setSshEntries(r && r.entries || [])).catch(() => setSshEntries([]));
+  React3.useEffect(() => {
+    remoteApi.sshConfig().then((r) => setSshEntries(r && r.entries || [])).catch((e) => {
+      setSshEntries([]);
+      setErr(String(e && e.message || e));
+    });
   }, []);
   const addForward = () => {
     const listen = Number(fwdForm.listenPort) || 0;
@@ -809,70 +841,72 @@ function RemoteSettingsSection({ t }) {
       targetHost: fwdForm.targetHost || "127.0.0.1",
       targetPort: target,
       autoStart: fwdForm.autoStart
-    })).then(() => setFwdForm(EMPTY_FORWARD));
+    }), "", "forward:add").then((saved) => {
+      if (saved) setFwdForm(EMPTY_FORWARD);
+    });
   };
   const current = machines.find((m) => m.id === currentId) || null;
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-page", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-caption", children: t("settings.summary") }),
-    loading ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { role: "status", className: "dshr-caption", children: t("settings.loading") }) : null,
-    loadError ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { role: "alert", className: "dshr-error", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { children: t("settings.loadFailed", { error: loadError }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Button, { size: "sm", variant: "ghost", onClick: refresh, children: t("settings.retry") })
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-page", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-caption", children: t("settings.summary") }),
+    loading ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { role: "status", className: "dshr-caption", children: t("settings.loading") }) : null,
+    loadError ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { role: "alert", className: "dshr-error", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { children: t("settings.loadFailed", { error: loadError }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { size: "sm", variant: "ghost", onClick: refresh, children: t("settings.retry") })
     ] }) : null,
-    err ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-error", children: err }) : null,
-    msg ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-ok", children: msg }) : null,
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-card", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-cardTitle", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.StateDot, { state: status && status.connected ? "done" : "idle" }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(RemoteFeedback, { error: err, message: msg, onClearMessage: () => setMsg(""), t }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-card", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-cardTitle", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.StateDot, { state: status && status.connected ? "done" : "idle" }),
         t("settings.active"),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshr-muted dshr-ellipsis", children: current ? current.name || current.host : t("settings.none") })
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "dshr-muted dshr-ellipsis", children: current ? current.name || current.host : t("settings.none") })
       ] }),
-      status ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-col", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-row dshr-secondary", style: { fontSize: 12 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: status.connected ? t("settings.connected") : t("settings.disconnected") }),
-          status.host ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { className: "dshr-mono", children: [
+      status ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-col", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-row dshr-secondary", style: { fontSize: 12 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: status.connected ? t("settings.connected") : t("settings.disconnected") }),
+          status.host ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { className: "dshr-mono", children: [
             status.username,
             "@",
             status.host,
             ":",
             status.port
           ] }) : null,
-          status.connected ? status.hostKeyKnown ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: t("settings.hostKeyKnown") }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: t("settings.hostKeyNew") }) : null
+          status.connected ? status.hostKeyKnown ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: t("settings.hostKeyKnown") }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: t("settings.hostKeyNew") }) : null
         ] }),
-        status.workspace ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-col", style: { fontSize: 12 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { className: "dshr-muted", children: [
+        status.workspace ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-col", style: { fontSize: 12 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { className: "dshr-muted", children: [
             t("settings.workspace"),
             ": ",
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshr-mono", children: status.workspace })
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "dshr-mono", children: status.workspace })
           ] }),
-          status.localMirror ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { className: "dshr-muted", children: [
+          status.localMirror ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { className: "dshr-muted", children: [
             t("settings.mirror"),
             ": ",
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshr-mono", children: status.localMirror })
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "dshr-mono", children: status.localMirror })
           ] }) : null
         ] }) : null,
-        currentId ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-row", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Button, { variant: "ghost", size: "sm", onClick: () => setCurrent(""), disabled: busyId === "clear", children: t("settings.clearCurrent") }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Button, { variant: "ghost", size: "sm", onClick: () => run(() => remoteApi.forgetKey()), children: t("settings.forgetKey") })
+        currentId ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-row", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "ghost", size: "sm", onClick: () => setCurrent(""), disabled: !!busyId, loading: busyId === "clear", children: t("settings.clearCurrent") }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "ghost", size: "sm", onClick: () => run(() => remoteApi.forgetKey(), "", "forgetKey"), disabled: !!busyId, loading: busyId === "forgetKey", children: t("settings.forgetKey") })
         ] }) : null
       ] }) : null
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-card", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-rowBetween", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-cardTitle", children: t("machines.title") }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Button, { variant: "ghost", size: "sm", onClick: () => {
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-card", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-rowBetween", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-cardTitle", children: t("machines.title") }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "ghost", size: "sm", onClick: () => {
           setEditing(null);
           setFormOpen((v) => !v);
         }, children: t("machines.add") })
       ] }),
-      formOpen || editing ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+      formOpen || editing ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
         MachineForm,
         {
           t,
           machine: editing,
-          onSaved: () => {
+          onSaved: (result) => {
             setFormOpen(false);
             setEditing(null);
+            if (result && result.warning) setErr(result.warning + (result.warningDetail ? ` (${result.warningDetail})` : ""));
             refresh();
           },
           onCancel: () => {
@@ -881,50 +915,50 @@ function RemoteSettingsSection({ t }) {
           }
         }
       ) : null,
-      !loading && !loadError && !formOpen && !editing && machines.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-emptyState", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: t("machines.empty") }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshr-caption", children: t("machines.emptyHint") })
+      !loading && !loadError && !formOpen && !editing && machines.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-emptyState", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: t("machines.empty") }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "dshr-caption", children: t("machines.emptyHint") })
       ] }) : null,
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-machineList", children: machines.map((m) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-machine", "data-current": m.id === currentId, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-machineMeta", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-row", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshr-machineName dshr-ellipsis", children: m.name || m.host }),
-            m.id === currentId ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Tag, { tone: "outline", children: t("machines.current") }) : null,
-            m.passwordSet ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshr-caption", children: t("machines.passwordSet") }) : null
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-machineList", children: machines.map((m) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-machine", "data-current": m.id === currentId, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-machineMeta", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-row", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "dshr-machineName dshr-ellipsis", children: m.name || m.host }),
+            m.id === currentId ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Tag, { tone: "outline", children: t("machines.current") }) : null,
+            m.passwordSet ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "dshr-caption", children: t("machines.passwordSet") }) : null
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-machineSub", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { className: "dshr-mono", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-machineSub", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { className: "dshr-mono", children: [
               m.username,
               "@",
               m.host,
               ":",
               m.port
             ] }),
-            m.workspace ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "dshr-mono dshr-ellipsis", children: m.workspace }) : null,
-            m.latencyMs ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: t("settings.latency", { ms: String(m.latencyMs) }) }) : null,
-            m.lastConnectedAt ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { children: t("settings.lastConnected", { time: String(m.lastConnectedAt).replace("T", " ").slice(0, 16) }) }) : null
+            m.workspace ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "dshr-mono dshr-ellipsis", children: m.workspace }) : null,
+            m.latencyMs ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: t("settings.latency", { ms: String(m.latencyMs) }) }) : null,
+            m.lastConnectedAt ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: t("settings.lastConnected", { time: String(m.lastConnectedAt).replace("T", " ").slice(0, 16) }) }) : null
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-row", style: { flexShrink: 0 }, children: [
-          m.id !== currentId ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Button, { variant: "ghost", size: "sm", onClick: () => setCurrent(m.id), disabled: busyId === m.id, children: t("machines.setCurrent") }) : null,
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Button, { variant: "ghost", size: "sm", onClick: () => testMachine(m), disabled: busyId === "test:" + m.id, children: busyId === "test:" + m.id ? t("machines.testing") : t("machines.test") }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Button, { variant: "ghost", size: "sm", onClick: () => {
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-row", style: { flexShrink: 0 }, children: [
+          m.id !== currentId ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "ghost", size: "sm", onClick: () => setCurrent(m.id), disabled: !!busyId, loading: busyId === m.id, children: t("machines.setCurrent") }) : null,
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "ghost", size: "sm", onClick: () => testMachine(m), disabled: !!busyId, loading: busyId === "test:" + m.id, children: t("machines.test") }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "ghost", size: "sm", onClick: () => {
             setEditing(m);
             setFormOpen(false);
           }, children: t("machines.edit") }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Button, { variant: "ghost", size: "sm", onClick: () => removeMachine(m), disabled: busyId === "del:" + m.id, children: t("machines.delete") })
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "ghost", size: "sm", onClick: () => removeMachine(m), disabled: busyId === "del:" + m.id, children: t("machines.delete") })
         ] })
       ] }, m.id)) })
     ] }),
-    importable.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-card", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-cardTitle", children: t("sshconfig.title") }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-caption", children: t("sshconfig.hint", { count: String(importable.length) }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-machineList", children: importable.map((e, i) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-rowBetween", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { className: "dshr-mono dshr-secondary", style: { fontSize: 12 }, children: [
+    importable.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-card", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-cardTitle", children: t("sshconfig.title") }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-caption", children: t("sshconfig.hint", { count: String(importable.length) }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-machineList", children: importable.map((e, i) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-rowBetween", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { className: "dshr-mono dshr-secondary", style: { fontSize: 12 }, children: [
           e.host,
           e.user ? ` (${e.user}@${e.hostName || e.host}${e.port && e.port !== 22 ? ":" + e.port : ""})` : ""
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Button, { variant: "ghost", size: "sm", onClick: () => {
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "ghost", size: "sm", onClick: () => {
           setEditing({
             name: e.host,
             host: e.hostName || e.host,
@@ -937,11 +971,11 @@ function RemoteSettingsSection({ t }) {
         }, children: t("sshconfig.import") })
       ] }, i)) })
     ] }) : null,
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-card", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-cardTitle", children: t("forwards.title") }),
-      !currentId ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-caption", children: t("forwards.needsMachine") }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(React2.Fragment, { children: [
-        forwards.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-caption", children: t("forwards.empty") }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-machineList", children: forwards.map((f) => /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-rowBetween", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { className: "dshr-mono dshr-secondary", style: { fontSize: 12 }, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-card", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-cardTitle", children: t("forwards.title") }),
+      !currentId ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-caption", children: t("forwards.needsMachine") }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(React3.Fragment, { children: [
+        forwards.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-caption", children: t("forwards.empty") }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-machineList", children: forwards.map((f) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-rowBetween", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("span", { className: "dshr-mono dshr-secondary", style: { fontSize: 12 }, children: [
             f.direction === "reverse" ? "R" : "L",
             " :",
             f.listenPort,
@@ -950,15 +984,15 @@ function RemoteSettingsSection({ t }) {
             ":",
             f.targetPort
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-row", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Tag, { tone: "outline", children: f.running ? t("forwards.running") : t("forwards.stopped") }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Button, { variant: "ghost", size: "sm", onClick: () => run(() => remoteApi.forwardAction({ action: f.running ? "stop" : "start", id: f.id })), children: f.running ? t("forwards.stop") : t("forwards.start") }),
-            /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Button, { variant: "ghost", size: "sm", onClick: () => run(() => remoteApi.forwardAction({ action: "remove", id: f.id })), children: t("forwards.remove") })
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-row", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Tag, { tone: "outline", children: f.running ? t("forwards.running") : t("forwards.stopped") }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "ghost", size: "sm", onClick: () => run(() => remoteApi.forwardAction({ action: f.running ? "stop" : "start", id: f.id }), "", "forward:" + f.id), disabled: !!busyId, loading: busyId === "forward:" + f.id, children: f.running ? t("forwards.stop") : t("forwards.start") }),
+            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "ghost", size: "sm", onClick: () => run(() => remoteApi.forwardAction({ action: "remove", id: f.id }), "", "removeForward:" + f.id), disabled: !!busyId, loading: busyId === "removeForward:" + f.id, children: t("forwards.remove") })
           ] })
         ] }, f.id)) }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-row", style: { flexWrap: "wrap" }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-            import_dsh_client_ui_primitives2.SettingsSelect,
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-row", style: { flexWrap: "wrap" }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+            import_dsh_client_ui_primitives3.SettingsSelect,
             {
               variant: "inline",
               value: fwdForm.direction,
@@ -970,8 +1004,8 @@ function RemoteSettingsSection({ t }) {
               "aria-label": t("forwards.title")
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-            import_dsh_client_ui_primitives2.Input,
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+            import_dsh_client_ui_primitives3.Input,
             {
               value: fwdForm.listenPort,
               onChange: (e) => setFwdForm((f) => ({ ...f, listenPort: e.target.value })),
@@ -980,8 +1014,8 @@ function RemoteSettingsSection({ t }) {
               style: { width: 90 }
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-            import_dsh_client_ui_primitives2.Input,
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+            import_dsh_client_ui_primitives3.Input,
             {
               value: fwdForm.targetHost,
               onChange: (e) => setFwdForm((f) => ({ ...f, targetHost: e.target.value })),
@@ -989,8 +1023,8 @@ function RemoteSettingsSection({ t }) {
               style: { width: 130 }
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
-            import_dsh_client_ui_primitives2.Input,
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+            import_dsh_client_ui_primitives3.Input,
             {
               value: fwdForm.targetPort,
               onChange: (e) => setFwdForm((f) => ({ ...f, targetPort: e.target.value })),
@@ -999,46 +1033,49 @@ function RemoteSettingsSection({ t }) {
               style: { width: 90 }
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Checkbox, { checked: fwdForm.autoStart, onChange: (v) => setFwdForm((f) => ({ ...f, autoStart: v })), label: t("forwards.autoStart") }),
-          /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Button, { variant: "ghost", size: "sm", onClick: addForward, disabled: !fwdForm.listenPort, children: t("forwards.add") })
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Checkbox, { checked: fwdForm.autoStart, onChange: (v) => setFwdForm((f) => ({ ...f, autoStart: v })), label: t("forwards.autoStart") }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "ghost", size: "sm", onClick: addForward, disabled: !!busyId || !fwdForm.listenPort, loading: busyId === "forward:add", children: t("forwards.add") })
         ] })
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-card", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dshr-rowBetween", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-cardTitle", children: t("audit.title") }),
-        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(import_dsh_client_ui_primitives2.Button, { variant: "ghost", size: "sm", onClick: () => {
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-card", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-rowBetween", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-cardTitle", children: t("audit.title") }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "ghost", size: "sm", onClick: () => {
           if (audit) {
             setAudit(null);
             return;
           }
-          remoteApi.audit(100).then((r) => setAudit(r)).catch((e) => setErr(String(e && e.message || e)));
-        }, children: audit ? t("audit.hide") : t("audit.show") })
+          setBusyId("audit");
+          remoteApi.audit(100).then((r) => setAudit(r)).catch((e) => setErr(String(e && e.message || e))).finally(() => setBusyId(""));
+        }, disabled: !!busyId, loading: busyId === "audit", children: audit ? t("audit.hide") : t("audit.show") })
       ] }),
-      audit ? audit.auditEnabled === false ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-caption", children: t("audit.disabled") }) : audit.lines && audit.lines.length ? /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-audit", children: audit.lines.join("\n") }) : /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "dshr-caption", children: t("audit.empty") }) : null
+      audit ? audit.auditEnabled === false ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-caption", children: t("audit.disabled") }) : audit.lines && audit.lines.length ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-audit", children: audit.lines.join("\n") }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-caption", children: t("audit.empty") }) : null
     ] })
   ] });
 }
 
-// plugin-src/client/RemoteFlowPane.jsx
-var React3 = __toESM(require("react"), 1);
-var import_dsh_client_ui_primitives3 = require("@deepseek-ai/dsh-client-ui-primitives");
-var import_jsx_runtime3 = require("react/jsx-runtime");
+// vendor/dsh-remote/plugin-src/client/RemoteFlowPane.jsx
+var React4 = __toESM(require("react"), 1);
+var import_dsh_client_ui_primitives4 = require("@deepseek-ai/dsh-client-ui-primitives");
+var import_jsx_runtime4 = require("react/jsx-runtime");
 function RemoteFlowPane({ open, active, busy, onPicked, onCancel, onError, t }) {
-  const [machines, setMachines] = React3.useState(null);
-  const [machineId, setMachineId] = React3.useState("");
-  const [connected, setConnected] = React3.useState(false);
-  const [path, setPath] = React3.useState("");
-  const [items, setItems] = React3.useState(null);
-  const [platform, setPlatform] = React3.useState("");
-  const [loading, setLoading] = React3.useState(false);
-  const [loadingMachines, setLoadingMachines] = React3.useState(false);
-  const [choosing, setChoosing] = React3.useState(false);
-  const [err, setErr] = React3.useState("");
-  const [mkdirOpen, setMkdirOpen] = React3.useState(false);
-  const [mkdirName, setMkdirName] = React3.useState("");
-  const loadedOnce = React3.useRef(false);
-  const list = React3.useCallback((dir) => {
+  const [machines, setMachines] = React4.useState(null);
+  const [machineId, setMachineId] = React4.useState("");
+  const [connected, setConnected] = React4.useState(false);
+  const [path, setPath] = React4.useState("");
+  const [items, setItems] = React4.useState(null);
+  const [platform, setPlatform] = React4.useState("");
+  const [loading, setLoading] = React4.useState(false);
+  const [loadingMachines, setLoadingMachines] = React4.useState(false);
+  const [choosing, setChoosing] = React4.useState(false);
+  const [err, setErr] = React4.useState("");
+  const [mkdirOpen, setMkdirOpen] = React4.useState(false);
+  const [mkdirName, setMkdirName] = React4.useState("");
+  const [creatingDir, setCreatingDir] = React4.useState(false);
+  const [mkdirError, setMkdirError] = React4.useState("");
+  const loadedOnce = React4.useRef(false);
+  const list = React4.useCallback((dir) => {
     setLoading(true);
     setErr("");
     remoteApi.ls(dir).then((res) => {
@@ -1058,7 +1095,7 @@ function RemoteFlowPane({ open, active, busy, onPicked, onCancel, onError, t }) 
       setErr(t("picker.listFail", { error: String(e && e.message || e) }));
     }).finally(() => setLoading(false));
   }, [t]);
-  const loadMachines = React3.useCallback(() => {
+  const loadMachines = React4.useCallback(() => {
     setLoadingMachines(true);
     setErr("");
     remoteApi.machines().then((r) => {
@@ -1075,7 +1112,7 @@ function RemoteFlowPane({ open, active, busy, onPicked, onCancel, onError, t }) 
       setErr(t("picker.loadFail", { error: String(e && e.message || e) }));
     }).finally(() => setLoadingMachines(false));
   }, [list, t]);
-  React3.useEffect(() => {
+  React4.useEffect(() => {
     if (!open || !active || loadedOnce.current) return;
     loadedOnce.current = true;
     loadMachines();
@@ -1137,31 +1174,38 @@ function RemoteFlowPane({ open, active, busy, onPicked, onCancel, onError, t }) 
   };
   const confirmMkdir = () => {
     const name2 = mkdirName.trim();
-    if (!name2) return;
+    if (!name2 || creatingDir) return;
     const base = path || "/";
     const sep = base.includes("\\") ? "\\" : "/";
     const full = base === "/" ? "/" + name2 : base.replace(/[\\/]+$/, "") + sep + name2;
-    setMkdirOpen(false);
-    setMkdirName("");
-    remoteApi.fs("mkdir", { path: full }).then(() => list(base)).catch((e) => setErr(String(e && e.message || e)));
+    setCreatingDir(true);
+    setMkdirError("");
+    remoteApi.fs("mkdir", { path: full }).then(() => {
+      setMkdirOpen(false);
+      setMkdirName("");
+      list(base);
+    }).catch((e) => setMkdirError(String(e && e.message || e))).finally(() => setCreatingDir(false));
   };
   const crumbs = remoteCrumbs(path);
   const machineOptions = (machines || []).map((m) => ({ id: m.id, label: `${m.name || m.host} (${m.username}@${m.host}:${m.port})` }));
   const rootLabel = platform === "windows" ? t("picker.rootPc") : "/";
-  const pending = busy || loading || loadingMachines || choosing;
+  const pending = busy || loading || loadingMachines || choosing || creatingDir;
   const unavailable = pending || !machineId;
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-flow", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-flowContent", children: machines === null ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-flowStatus", children: err ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-error", role: "alert", children: err }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "outline", onClick: loadMachines, disabled: pending, children: t("explorer.retry") })
-    ] }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-caption", role: "status", children: t("picker.loading") }) }) : machines.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-emptyState", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: t("picker.machineEmpty") }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "dshr-caption", children: t("picker.machineEmptyHint") })
-    ] }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-row", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "dshr-formLabel", style: { textAlign: "left" }, children: t("picker.machine") }),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-          import_dsh_client_ui_primitives3.SettingsSelect,
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshr-flow", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(RemoteFeedback, { error: err, t, actions: err && items === null ? [{ label: t("explorer.retry"), disabled: pending, onClick: () => {
+      if (!pending) {
+        if (machines === null) loadMachines();
+        else if (machineId) selectMachine(machineId);
+      }
+    } }] : void 0 }),
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshr-flowContent", children: machines === null ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshr-flowStatus", children: err ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.Button, { variant: "outline", onClick: loadMachines, disabled: pending, loading: loadingMachines, children: t("explorer.retry") }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshr-caption", role: "status", children: t("picker.loading") }) }) : machines.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshr-emptyState", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: t("picker.machineEmpty") }),
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dshr-caption", children: t("picker.machineEmptyHint") })
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshr-row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dshr-formLabel", style: { textAlign: "left" }, children: t("picker.machine") }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          import_dsh_client_ui_primitives4.SettingsSelect,
           {
             variant: "block",
             className: "dshr-grow",
@@ -1169,14 +1213,15 @@ function RemoteFlowPane({ open, active, busy, onPicked, onCancel, onError, t }) 
             options: machineOptions,
             onChange: selectMachine,
             disabled: pending,
+            loading: loadingMachines || loading && items === null,
             "aria-label": t("picker.machine")
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.StateDot, { state: connected ? "done" : loading ? "ongoing" : "idle" })
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.StateDot, { state: connected ? "done" : loading ? "ongoing" : "idle" })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-row", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-          import_dsh_client_ui_primitives3.Input,
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshr-row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+          import_dsh_client_ui_primitives4.Input,
           {
             value: path,
             onChange: (e) => {
@@ -1195,27 +1240,24 @@ function RemoteFlowPane({ open, active, busy, onPicked, onCancel, onError, t }) 
             "aria-label": t("picker.pathPlaceholder")
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", className: "dshr-iconBtn", title: t("picker.home"), "aria-label": t("picker.home"), onClick: goHome, disabled: unavailable, children: "~" }),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", className: "dshr-iconBtn", title: t("picker.up"), "aria-label": t("picker.up"), onClick: goUp, disabled: unavailable || !path, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.IconChevronUpOutline14, {}) }),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", className: "dshr-iconBtn", title: t("picker.refresh"), "aria-label": t("picker.refresh"), onClick: () => list(path), disabled: unavailable, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.IconRefreshOutline16, {}) })
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { type: "button", className: "dshr-iconBtn", title: t("picker.home"), "aria-label": t("picker.home"), onClick: goHome, disabled: unavailable, children: "~" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { type: "button", className: "dshr-iconBtn", title: t("picker.up"), "aria-label": t("picker.up"), onClick: goUp, disabled: unavailable || !path, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.IconChevronUpOutline14, {}) }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.Button, { variant: "ghost", size: "sm", className: "dshr-iconBtn", title: t("picker.refresh"), "aria-label": t("picker.refresh"), onClick: () => list(path), disabled: unavailable, loading, children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.IconRefreshOutline16, {}) })
       ] }),
-      path ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-crumbs", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", className: "dshr-crumb", disabled: unavailable, onClick: () => list(""), children: rootLabel }),
-        crumbs.parts && crumbs.parts.map((c, i) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(React3.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: crumbs.sep === "\\" ? "\\" : "\u203A" }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", disabled: unavailable, className: "dshr-crumb" + (i === crumbs.parts.length - 1 ? " dshr-crumbLast" : ""), onClick: () => list(c.path), children: c.name })
+      path ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshr-crumbs", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { type: "button", className: "dshr-crumb", disabled: unavailable, onClick: () => list(""), children: rootLabel }),
+        crumbs.parts && crumbs.parts.map((c, i) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(React4.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: crumbs.sep === "\\" ? "\\" : "\u203A" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { type: "button", disabled: unavailable, className: "dshr-crumb" + (i === crumbs.parts.length - 1 ? " dshr-crumbLast" : ""), onClick: () => list(c.path), children: c.name })
         ] }, c.path))
       ] }) : null,
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-list", children: [
-        loading && items === null ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-listEmpty", children: t("picker.loading") }) : null,
-        !loading && items === null && err ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-flowStatus", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-error", role: "alert", children: err }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "outline", onClick: () => selectMachine(machineId), disabled: unavailable, children: t("explorer.retry") })
-        ] }) : null,
-        items !== null && items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-listEmpty", children: t("picker.noDirs") }) : null,
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshr-list", children: [
+        loading && items === null ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshr-listEmpty", children: t("picker.loading") }) : null,
+        !loading && items === null && err ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshr-flowStatus", children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.Button, { variant: "outline", onClick: () => selectMachine(machineId), disabled: unavailable, children: t("explorer.retry") }) }) : null,
+        items !== null && items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshr-listEmpty", children: t("picker.noDirs") }) : null,
         (items || []).map((it) => {
           const isDir = it.type === "dir" || !!it.drive;
-          return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+          return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
             "button",
             {
               type: "button",
@@ -1227,84 +1269,96 @@ function RemoteFlowPane({ open, active, busy, onPicked, onCancel, onError, t }) 
               disabled: !isDir || unavailable,
               title: it.path || it.name,
               children: [
-                isDir ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.IconFolderClose16, { size: 14 }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.FileTypeIcon, { path: it.name, size: 14 }),
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "dshr-treeName", children: it.name })
+                isDir ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.IconFolderClose16, { size: 14 }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.FileTypeIcon, { path: it.name, size: 14 }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dshr-treeName", children: it.name })
               ]
             },
             it.path || it.name
           );
         })
       ] }),
-      err && items !== null ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-error", children: err }) : null,
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-caption", children: t("picker.mirrorHint") })
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshr-caption", children: t("picker.mirrorHint") })
     ] }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-flowFooter", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "outline", icon: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.IconPlusOutline16, { size: 14 }), onClick: () => {
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshr-flowFooter", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.Button, { variant: "outline", icon: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.IconPlusOutline16, { size: 14 }), onClick: () => {
         setMkdirName("");
+        setMkdirError("");
         setMkdirOpen(true);
       }, disabled: unavailable || !path || !connected, children: t("picker.mkdir") }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-flowActions", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "outline", onClick: onCancel, disabled: busy || choosing, children: t("form.cancel") }),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "primary", onClick: choose, disabled: unavailable || !path || !connected, children: choosing ? t("picker.choosing") : t("picker.choose") })
+      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshr-flowActions", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.Button, { variant: "outline", onClick: onCancel, disabled: busy || choosing, children: t("form.cancel") }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.Button, { variant: "primary", onClick: choose, disabled: unavailable || !path || !connected, loading: choosing, children: t("picker.choose") })
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-      import_dsh_client_ui_primitives3.Modal,
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+      import_dsh_client_ui_primitives4.Modal,
       {
-        open: mkdirOpen,
-        onClose: () => setMkdirOpen(false),
+        open: open && active && mkdirOpen,
+        onClose: () => {
+          if (!creatingDir) setMkdirOpen(false);
+        },
         title: t("picker.mkdir"),
         closeLabel: t("common.close"),
-        footer: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(React3.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "ghost", size: "sm", onClick: () => setMkdirOpen(false), children: t("form.cancel") }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "primary", size: "sm", onClick: confirmMkdir, disabled: !mkdirName.trim(), children: t("picker.mkdir") })
+        footer: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(React4.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.Button, { variant: "ghost", size: "sm", onClick: () => setMkdirOpen(false), disabled: creatingDir, children: t("form.cancel") }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.Button, { variant: "primary", size: "sm", onClick: confirmMkdir, disabled: creatingDir || !mkdirName.trim(), loading: creatingDir, children: t("picker.mkdir") })
         ] }),
-        children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-          import_dsh_client_ui_primitives3.Input,
-          {
-            value: mkdirName,
-            onChange: (e) => setMkdirName(e.target.value),
-            placeholder: t("picker.mkdirName"),
-            autoFocus: true,
-            onKeyDown: (e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                confirmMkdir();
+        children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(RemoteFeedback, { error: mkdirError, t, actions: [{ label: t("explorer.retry"), disabled: creatingDir || !mkdirName.trim(), onClick: confirmMkdir }] }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
+            import_dsh_client_ui_primitives4.Input,
+            {
+              value: mkdirName,
+              onChange: (e) => setMkdirName(e.target.value),
+              placeholder: t("picker.mkdirName"),
+              disabled: creatingDir,
+              "data-modal-autofocus": true,
+              onKeyDown: (e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  confirmMkdir();
+                }
               }
             }
-          }
-        )
+          )
+        ]
       }
     )
   ] });
 }
 
-// plugin-src/client/RemoteExplorerBody.jsx
-var React4 = __toESM(require("react"), 1);
-var import_dsh_client_ui_primitives4 = require("@deepseek-ai/dsh-client-ui-primitives");
-var import_jsx_runtime4 = require("react/jsx-runtime");
+// vendor/dsh-remote/plugin-src/client/RemoteExplorerBody.jsx
+var React5 = __toESM(require("react"), 1);
+var import_dsh_client_ui_primitives5 = require("@deepseek-ai/dsh-client-ui-primitives");
+var import_jsx_runtime5 = require("react/jsx-runtime");
 function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
   const info = useTabInfo();
   const cwd = useSessions((s) => s.byId && s.byId[sessionId] && s.byId[sessionId].cwd || "");
-  const [root, setRoot] = React4.useState(null);
-  const [mirrorDir, setMirrorDir] = React4.useState("");
-  const [expanded, setExpanded] = React4.useState(() => /* @__PURE__ */ new Set());
-  const [data, setData] = React4.useState({});
-  const [err, setErr] = React4.useState("");
-  const [menu, setMenu] = React4.useState(null);
-  const [namePrompt, setNamePrompt] = React4.useState(null);
-  const [nameDraft, setNameDraft] = React4.useState("");
-  const [confirmDel, setConfirmDel] = React4.useState(null);
-  const [copied, setCopied] = React4.useState("");
-  const dataRef = React4.useRef(data);
+  const [root, setRoot] = React5.useState(null);
+  const [mirrorDir, setMirrorDir] = React5.useState("");
+  const [expanded, setExpanded] = React5.useState(() => /* @__PURE__ */ new Set());
+  const [data, setData] = React5.useState({});
+  const [err, setErr] = React5.useState("");
+  const [retryDir, setRetryDir] = React5.useState("");
+  const [menu, setMenu] = React5.useState(null);
+  const [namePrompt, setNamePrompt] = React5.useState(null);
+  const [nameDraft, setNameDraft] = React5.useState("");
+  const [nameError, setNameError] = React5.useState("");
+  const [confirmDel, setConfirmDel] = React5.useState(null);
+  const [message, setMessage] = React5.useState("");
+  const [busy, setBusy] = React5.useState("");
+  const [resolveRetry, setResolveRetry] = React5.useState(0);
+  const dataRef = React5.useRef(data);
   dataRef.current = data;
   const visible = info.tab.visible;
-  const storeLevel = React4.useCallback((dir, level) => {
+  const storeLevel = React5.useCallback((dir, level) => {
     setData((prev) => ({ ...prev, [dir]: level }));
   }, []);
-  const loadDir = React4.useCallback((dir) => {
+  const loadDir = React5.useCallback((dir) => {
     const existing = dataRef.current[dir];
     if (existing && existing.loading) return;
+    setErr("");
+    setRetryDir("");
     storeLevel(dir, { ...existing, loading: true });
     remoteApi.ls(dir, sessionId).then((res) => {
       const items = Array.isArray(res && res.items) ? res.items.slice() : [];
@@ -1315,11 +1369,14 @@ function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
       });
       storeLevel(dir, { entries: items, missing: !!(res && res.missing) });
     }).catch((e) => {
+      const error = String(e && e.message || e);
       const prev = dataRef.current[dir];
-      storeLevel(dir, prev && prev.entries ? { ...prev, softError: String(e && e.message || e) } : { error: String(e && e.message || e) });
+      storeLevel(dir, prev && prev.entries ? { ...prev, loading: false, softError: error } : { error });
+      setErr(error);
+      setRetryDir(dir);
     });
   }, [sessionId, storeLevel]);
-  React4.useEffect(() => {
+  React5.useEffect(() => {
     let cancelled = false;
     setRoot(null);
     setData({});
@@ -1340,8 +1397,8 @@ function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
     return () => {
       cancelled = true;
     };
-  }, [cwd, sessionId, loadDir]);
-  React4.useEffect(() => {
+  }, [cwd, sessionId, loadDir, resolveRetry]);
+  React5.useEffect(() => {
     if (visible && root) loadDir(root);
   }, [visible, root, loadDir]);
   const toggleDir = (dir) => {
@@ -1358,36 +1415,58 @@ function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
   const openFile = (p) => {
     info.tab.actions.openResource(remoteFileAddress(sessionId, p));
   };
-  const doFs = (op, payload) => {
+  const doFs = async (op, payload) => {
+    if (busy) return false;
+    setBusy(op);
     setErr("");
-    return remoteApi.fs(op, payload, sessionId).then(() => {
-      if (root) loadDir(parentRemotePath(payload.path || root) || root);
-    }).catch((e) => setErr(String(e && e.message || e)));
-  };
-  const copyPath = (text, key) => {
+    setMessage("");
+    setNameError("");
+    setRetryDir("");
     try {
-      navigator.clipboard && navigator.clipboard.writeText(text);
-      setCopied(key);
-      setTimeout(() => setCopied((c) => c === key ? "" : c), 1200);
-    } catch {
+      const result = await remoteApi.fs(op, payload, sessionId);
+      if (op === "download") setMessage(t("file.downloaded", { path: result && result.local ? t("file.downloadedAt", { path: result.local }) : "" }));
+      if (root) loadDir(parentRemotePath(payload.path || root) || root);
+      return true;
+    } catch (e) {
+      if (op === "rename" || op === "mkdir") setNameError(String(e && e.message || e));
+      else setErr(String(e && e.message || e));
+      return false;
+    } finally {
+      setBusy("");
+    }
+  };
+  const copyPath = async (text) => {
+    if (busy) return;
+    setBusy("copy");
+    setErr("");
+    setMessage("");
+    try {
+      if (!navigator.clipboard) throw new Error(t("explorer.copyFail"));
+      await navigator.clipboard.writeText(text);
+      setMessage(t("explorer.copied"));
+    } catch (e) {
+      setErr(String(e && e.message || e));
+    } finally {
+      setBusy("");
     }
   };
   const relPath = (p) => root && p.startsWith(root) ? p.slice(root.length).replace(/^[\\/]+/, "") : p;
-  const confirmName = () => {
+  const confirmName = async () => {
     const name2 = nameDraft.trim();
-    if (!name2 || !namePrompt) return;
+    if (!name2 || !namePrompt || busy) return;
     const { kind, path: target } = namePrompt;
-    setNamePrompt(null);
+    let saved = false;
     if (kind === "rename") {
       const parent = parentRemotePath(target) || root || "/";
       const sep = parent.includes("\\") ? "\\" : "/";
       const dest = parent === "/" ? "/" + name2 : parent.replace(/[\\/]+$/, "") + sep + name2;
-      doFs("rename", { path: target, dest });
+      saved = await doFs("rename", { path: target, dest });
     } else if (kind === "mkdir") {
       const sep = target.includes("\\") ? "\\" : "/";
       const full = target === "/" ? "/" + name2 : target.replace(/[\\/]+$/, "") + sep + name2;
-      doFs("mkdir", { path: full });
+      saved = await doFs("mkdir", { path: full });
     }
+    if (saved) setNamePrompt(null);
   };
   const menuItems = menu ? [
     { id: "open", label: menu.item.type === "dir" ? t("explorer.menuExpand") : t("explorer.menuOpen") },
@@ -1411,10 +1490,12 @@ function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
     else if (id === "copy-rel") copyPath(relPath(it.path), it.path);
     else if (id === "copy-abs") copyPath(it.path, it.path);
     else if (id === "rename") {
+      setNameError("");
       setNamePrompt({ kind: "rename", path: it.path, name: it.name });
       setNameDraft(it.name);
     } else if (id === "mkdir") {
       const base = it.type === "dir" ? it.path : parentRemotePath(it.path) || root || "/";
+      setNameError("");
       setNamePrompt({ kind: "mkdir", path: base, name: "" });
       setNameDraft("");
     } else if (id === "delete") {
@@ -1425,17 +1506,13 @@ function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
     const level = data[dir];
     if (!level || !expanded.has(dir)) return null;
     if (level.loading && !level.entries) {
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshr-listEmpty", style: { paddingLeft: 8 + depth * 14 }, children: t("explorer.loading") }, dir + ":loading");
+      return null;
     }
     if (level.error) {
-      return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshr-error", style: { padding: "4px 8px", paddingLeft: 8 + depth * 14 }, children: [
-        level.error,
-        " ",
-        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.Button, { variant: "ghost", size: "sm", onClick: () => loadDir(dir), children: t("explorer.retry") })
-      ] }, dir + ":err");
+      return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { style: { padding: "4px 8px", paddingLeft: 8 + depth * 14 }, children: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.Button, { variant: "ghost", size: "sm", onClick: () => loadDir(dir), children: t("explorer.retry") }) }, dir + ":err");
     }
-    return (level.entries || []).map((it) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(React4.Fragment, { children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
+    return (level.entries || []).map((it) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(React5.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
         "button",
         {
           type: "button",
@@ -1443,6 +1520,7 @@ function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
           "data-kind": it.type === "dir" ? "dir" : "file",
           style: { paddingLeft: 8 + depth * 14 },
           title: it.path,
+          "aria-busy": it.type === "dir" && data[it.path] && data[it.path].loading || void 0,
           onClick: () => {
             if (it.type === "dir") toggleDir(it.path);
             else openFile(it.path);
@@ -1452,10 +1530,9 @@ function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
             setMenu({ x: e.clientX, y: e.clientY, item: it });
           },
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dshr-treeToggle", children: it.type === "dir" ? expanded.has(it.path) ? "\u25BE" : "\u25B8" : "" }),
-            it.type === "dir" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.FileTypeIcon, { kind: "folder", size: 14 }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.FileTypeIcon, { path: it.name, size: 14 }),
-            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dshr-treeName", children: it.name }),
-            copied === it.path ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dshr-treeBadge", children: t("explorer.copied") }) : null
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dshr-treeToggle", children: it.type === "dir" ? data[it.path] && data[it.path].loading ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dshr-miniSpinner", "aria-hidden": "true" }) : expanded.has(it.path) ? "\u25BE" : "\u25B8" : "" }),
+            it.type === "dir" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.FileTypeIcon, { kind: "folder", size: 14 }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.FileTypeIcon, { path: it.name, size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dshr-treeName", children: it.name })
           ]
         }
       ),
@@ -1463,110 +1540,118 @@ function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
     ] }, it.path));
   };
   if (root === null) {
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshr-listEmpty", children: t("explorer.loading") });
+    return err ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(RemoteFeedback, { error: err, t, actions: [{ label: t("explorer.retry"), onClick: () => setResolveRetry((value) => value + 1) }] }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dshr-listEmpty", children: t("explorer.loading") });
   }
   if (root === "") {
-    return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshr-emptyState", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: t("explorer.empty") }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dshr-caption", children: t("explorer.emptyHint") })
+    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dshr-emptyState", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { children: t("explorer.empty") }),
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dshr-caption", children: t("explorer.emptyHint") })
     ] });
   }
   const rootLevel = data[root];
-  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshr-tree", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { className: "dshr-row", style: { padding: "4px 6px", borderBottom: "1px solid var(--dsw-alias-border-l2)", marginBottom: 4 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.StateDot, { state: rootLevel && rootLevel.entries ? "done" : "ongoing", size: 8 }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dshr-mono dshr-ellipsis dshr-secondary", style: { fontSize: 12 }, title: mirrorDir ? `${root}
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(RemoteFeedback, { error: err, message, onClearMessage: () => setMessage(""), t, actions: retryDir ? [{ label: t("explorer.retry"), disabled: !!busy || !!(data[retryDir] && data[retryDir].loading), onClick: () => loadDir(retryDir) }] : void 0 }),
+    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dshr-tree", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "dshr-row", style: { padding: "4px 6px", borderBottom: "1px solid var(--dsw-alias-border-l2)", marginBottom: 4 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.StateDot, { state: !busy && rootLevel && rootLevel.entries ? "done" : "ongoing", size: 8 }),
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dshr-mono dshr-ellipsis dshr-secondary", style: { fontSize: 12 }, title: mirrorDir ? `${root}
 ${mirrorDir}` : root, children: root }),
-      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("button", { type: "button", className: "dshr-iconBtn", title: t("picker.refresh"), "aria-label": t("picker.refresh"), onClick: () => {
-        setData({});
-        loadDir(root);
-      }, children: "\u27F3" })
-    ] }),
-    err ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshr-error", style: { padding: "4px 6px" }, children: err }) : null,
-    rootLevel && rootLevel.missing ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshr-caption", style: { padding: "4px 6px" }, children: t("explorer.missing") }) : null,
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
-      "button",
-      {
-        type: "button",
-        className: "dshr-treeRow",
-        style: { paddingLeft: 8 },
-        onClick: () => toggleDir(root),
-        onContextMenu: (e) => {
-          e.preventDefault();
-          setMenu({ x: e.clientX, y: e.clientY, item: { type: "dir", path: root, name: root } });
-        },
-        children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dshr-treeToggle", children: expanded.has(root) ? "\u25BE" : "\u25B8" }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.FileTypeIcon, { kind: "folder", size: 14 }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { className: "dshr-treeName", style: { fontWeight: 600 }, children: t("explorer.root") })
-        ]
-      }
-    ),
-    expanded.has(root) ? renderRows(root, 1) : null,
-    rootLevel && rootLevel.entries && rootLevel.entries.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { className: "dshr-listEmpty", children: t("picker.empty") }) : null,
-    menu ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-      import_dsh_client_ui_primitives4.Menu,
-      {
-        open: true,
-        anchor: null,
-        items: menuItems,
-        onClose: () => setMenu(null),
-        onSelect: onMenuSelect,
-        getAnchorRect: () => new DOMRect(menu.x, menu.y, 0, 0),
-        portal: true
-      }
-    ) : null,
-    /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-      import_dsh_client_ui_primitives4.Modal,
-      {
-        open: !!namePrompt,
-        onClose: () => setNamePrompt(null),
-        title: namePrompt && namePrompt.kind === "rename" ? t("explorer.menuRename") : t("explorer.menuMkdir"),
-        closeLabel: t("common.close"),
-        footer: /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(React4.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.Button, { variant: "ghost", size: "sm", onClick: () => setNamePrompt(null), children: t("form.cancel") }),
-          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(import_dsh_client_ui_primitives4.Button, { variant: "primary", size: "sm", onClick: confirmName, disabled: !nameDraft.trim(), children: t("form.save") })
-        ] }),
-        children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
-          import_dsh_client_ui_primitives4.Input,
-          {
-            value: nameDraft,
-            onChange: (e) => setNameDraft(e.target.value),
-            placeholder: t("explorer.newName"),
-            autoFocus: true,
-            onKeyDown: (e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                confirmName();
+        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.Button, { variant: "ghost", size: "sm", className: "dshr-iconBtn", title: t("picker.refresh"), "aria-label": t("picker.refresh"), onClick: () => {
+          setErr("");
+          loadDir(root);
+        }, disabled: !!busy || !!(rootLevel && rootLevel.loading), loading: !!(rootLevel && rootLevel.loading), children: "\u27F3" })
+      ] }),
+      rootLevel && rootLevel.missing ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dshr-caption", style: { padding: "4px 6px" }, children: t("explorer.missing") }) : null,
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+        "button",
+        {
+          type: "button",
+          className: "dshr-treeRow",
+          style: { paddingLeft: 8 },
+          onClick: () => toggleDir(root),
+          onContextMenu: (e) => {
+            e.preventDefault();
+            setMenu({ x: e.clientX, y: e.clientY, item: { type: "dir", path: root, name: root } });
+          },
+          children: [
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dshr-treeToggle", children: expanded.has(root) ? "\u25BE" : "\u25B8" }),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.FileTypeIcon, { kind: "folder", size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dshr-treeName", style: { fontWeight: 600 }, children: t("explorer.root") })
+          ]
+        }
+      ),
+      expanded.has(root) ? renderRows(root, 1) : null,
+      rootLevel && rootLevel.entries && rootLevel.entries.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "dshr-listEmpty", children: t("picker.empty") }) : null,
+      menu ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+        import_dsh_client_ui_primitives5.Menu,
+        {
+          open: visible,
+          anchor: null,
+          items: menuItems,
+          onClose: () => setMenu(null),
+          onSelect: onMenuSelect,
+          getAnchorRect: () => new DOMRect(menu.x, menu.y, 0, 0),
+          portal: true
+        }
+      ) : null,
+      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+        import_dsh_client_ui_primitives5.Modal,
+        {
+          open: visible && !!namePrompt,
+          onClose: () => {
+            if (!busy) setNamePrompt(null);
+          },
+          title: namePrompt && namePrompt.kind === "rename" ? t("explorer.menuRename") : t("explorer.menuMkdir"),
+          closeLabel: t("common.close"),
+          footer: /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(React5.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.Button, { variant: "ghost", size: "sm", onClick: () => setNamePrompt(null), disabled: !!busy, children: t("form.cancel") }),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.Button, { variant: "primary", size: "sm", onClick: confirmName, disabled: !!busy || !nameDraft.trim(), loading: busy === "rename" || busy === "mkdir", children: t("form.save") })
+          ] }),
+          children: [
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(RemoteFeedback, { error: nameError, t, actions: [{ label: t("explorer.retry"), disabled: !!busy || !nameDraft.trim(), onClick: confirmName }] }),
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(
+              import_dsh_client_ui_primitives5.Input,
+              {
+                value: nameDraft,
+                onChange: (e) => setNameDraft(e.target.value),
+                placeholder: t("explorer.newName"),
+                disabled: !!busy,
+                "data-modal-autofocus": true,
+                onKeyDown: (e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    confirmName();
+                  }
+                }
               }
-            }
-          }
-        )
-      }
-    )
+            )
+          ]
+        }
+      )
+    ] })
   ] });
 }
 
-// plugin-src/client/RemoteExplorerTitle.jsx
-var React5 = __toESM(require("react"), 1);
-var import_dsh_client_ui_primitives5 = require("@deepseek-ai/dsh-client-ui-primitives");
-var import_jsx_runtime5 = require("react/jsx-runtime");
+// vendor/dsh-remote/plugin-src/client/RemoteExplorerTitle.jsx
+var React6 = __toESM(require("react"), 1);
+var import_dsh_client_ui_primitives6 = require("@deepseek-ai/dsh-client-ui-primitives");
+var import_jsx_runtime6 = require("react/jsx-runtime");
 function RemoteExplorerTitle({ useTabInfo }) {
   const { tab } = useTabInfo();
-  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(React5.Fragment, { children: [
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.FileTypeIcon, { kind: "folder", size: 16 }),
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(React6.Fragment, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_dsh_client_ui_primitives6.FileTypeIcon, { kind: "folder", size: 16 }),
     tab.title
   ] });
 }
 
-// plugin-src/client/RemoteFileBody.jsx
-var React6 = __toESM(require("react"), 1);
-var import_dsh_client_ui_primitives6 = require("@deepseek-ai/dsh-client-ui-primitives");
-var import_jsx_runtime6 = require("react/jsx-runtime");
+// vendor/dsh-remote/plugin-src/client/RemoteFileBody.jsx
+var React7 = __toESM(require("react"), 1);
+var import_dsh_client_ui_primitives7 = require("@deepseek-ai/dsh-client-ui-primitives");
+var import_jsx_runtime7 = require("react/jsx-runtime");
 var MAX_BYTES = 256 * 1024;
 function RemoteFileBody({ useTabInfo, t }) {
   const info = useTabInfo();
-  const target = React6.useMemo(() => {
+  const target = React7.useMemo(() => {
     try {
       return remoteFileTarget(info.tab.navigation.address);
     } catch {
@@ -1574,16 +1659,17 @@ function RemoteFileBody({ useTabInfo, t }) {
     }
   }, [info.tab.navigation.address]);
   const { sessionId, path } = target;
-  const [data, setData] = React6.useState(null);
-  const [err, setErr] = React6.useState("");
-  const [notice, setNotice] = React6.useState("");
-  const [loading, setLoading] = React6.useState(true);
-  const [edit, setEdit] = React6.useState(false);
-  const [draft, setDraft] = React6.useState("");
-  const [saving, setSaving] = React6.useState(false);
+  const [data, setData] = React7.useState(null);
+  const [err, setErr] = React7.useState("");
+  const [notice, setNotice] = React7.useState("");
+  const [loading, setLoading] = React7.useState(true);
+  const [edit, setEdit] = React7.useState(false);
+  const [draft, setDraft] = React7.useState("");
+  const [saving, setSaving] = React7.useState(false);
+  const [downloading, setDownloading] = React7.useState(false);
   const originalText = (data && data.content != null ? String(data.content) : "").replace(/\n…\[truncated:.*$/, "");
   const dirty = edit && draft !== originalText;
-  const load = React6.useCallback(() => {
+  const load = React7.useCallback(() => {
     if (!path) {
       setLoading(false);
       return void 0;
@@ -1609,7 +1695,7 @@ function RemoteFileBody({ useTabInfo, t }) {
       cancelled = true;
     };
   }, [path, sessionId, t]);
-  React6.useEffect(load, [load]);
+  React7.useEffect(load, [load]);
   const startEdit = () => {
     if (!data || data.binary) return;
     setDraft(originalText);
@@ -1631,33 +1717,33 @@ function RemoteFileBody({ useTabInfo, t }) {
     }).catch((e) => setErr(String(e && e.message || e))).finally(() => setSaving(false));
   };
   const download = () => {
-    setSaving(true);
+    if (downloading) return;
+    setDownloading(true);
     setErr("");
     setNotice("");
-    remoteApi.fs("download", { path }, sessionId).then((r) => setNotice(t("file.downloaded", { path: r && r.local ? t("file.downloadedAt", { path: r.local }) : "" }))).catch((e) => setErr(String(e && e.message || e))).finally(() => setSaving(false));
+    remoteApi.fs("download", { path }, sessionId).then((r) => setNotice(t("file.downloaded", { path: r && r.local ? t("file.downloadedAt", { path: r.local }) : "" }))).catch((e) => setErr(String(e && e.message || e))).finally(() => setDownloading(false));
   };
   const baseName = path.split(/[\\/]/).pop() || path;
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dshr-editor", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dshr-editorHead", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_dsh_client_ui_primitives6.FileTypeIcon, { path: baseName, size: 14 }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dshr-mono dshr-ellipsis dshr-secondary", title: path, children: path }),
-      dirty ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_dsh_client_ui_primitives6.Tag, { tone: "outline", children: t("file.dirty") }) : null,
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "dshr-caption", style: { flexShrink: 0 }, children: edit ? t("file.editing") : t("file.readonly") }),
-      edit ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(React6.Fragment, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_dsh_client_ui_primitives6.Button, { variant: "primary", size: "sm", onClick: save, disabled: saving || !dirty, title: t("file.saveHint"), children: saving ? t("file.saving") : t("file.saveToRemote") }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_dsh_client_ui_primitives6.Button, { variant: "ghost", size: "sm", onClick: () => {
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dshr-editor", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dshr-editorHead", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(import_dsh_client_ui_primitives7.FileTypeIcon, { path: baseName, size: 14 }),
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dshr-mono dshr-ellipsis dshr-secondary", title: path, children: path }),
+      dirty ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(import_dsh_client_ui_primitives7.Tag, { tone: "outline", children: t("file.dirty") }) : null,
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "dshr-caption", style: { flexShrink: 0 }, children: edit ? t("file.editing") : t("file.readonly") }),
+      edit ? /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(React7.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(import_dsh_client_ui_primitives7.Button, { variant: "primary", size: "sm", onClick: save, disabled: saving || !dirty, loading: saving, title: t("file.saveHint"), children: t("file.saveToRemote") }),
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(import_dsh_client_ui_primitives7.Button, { variant: "ghost", size: "sm", onClick: () => {
           setEdit(false);
           setErr("");
-        }, children: t("file.cancel") })
-      ] }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(React6.Fragment, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_dsh_client_ui_primitives6.Button, { variant: "ghost", size: "sm", onClick: startEdit, disabled: !data || !!data.binary, children: t("file.edit") }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(import_dsh_client_ui_primitives6.Button, { variant: "ghost", size: "sm", onClick: download, disabled: saving, children: t("file.download") })
+        }, disabled: saving, children: t("file.cancel") })
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(React7.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(import_dsh_client_ui_primitives7.Button, { variant: "ghost", size: "sm", onClick: startEdit, disabled: downloading || !data || !!data.binary, children: t("file.edit") }),
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(import_dsh_client_ui_primitives7.Button, { variant: "ghost", size: "sm", onClick: download, disabled: downloading, loading: downloading, children: t("file.download") })
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dshr-editorBody", children: [
-      err ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dshr-error", style: { padding: "8px 12px", flexShrink: 0 }, children: err }) : null,
-      notice ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dshr-ok", style: { padding: "8px 12px", flexShrink: 0 }, children: notice }) : null,
-      loading ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dshr-muted", style: { padding: 12, fontSize: 13 }, children: t("file.loading") }) : data && data.binary ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dshr-muted", style: { padding: 12, fontSize: 13 }, children: t("file.binary", { size: data.size != null ? `${data.size} bytes` : t("file.unknownSize") }) }) : edit ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dshr-editorBody", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(RemoteFeedback, { error: err, message: notice, onClearMessage: () => setNotice(""), t, actions: !data && !edit ? [{ label: t("explorer.retry"), onClick: load }] : void 0 }),
+      loading ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "dshr-muted", style: { padding: 12, fontSize: 13 }, children: t("file.loading") }) : data && data.binary ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "dshr-muted", style: { padding: 12, fontSize: 13 }, children: t("file.binary", { size: data.size != null ? `${data.size} bytes` : t("file.unknownSize") }) }) : edit ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
         "textarea",
         {
           className: "dshr-editorText",
@@ -1668,7 +1754,7 @@ function RemoteFileBody({ useTabInfo, t }) {
               e.preventDefault();
               if (!saving && dirty) save();
             }
-            if (e.key === "Escape") {
+            if (e.key === "Escape" && !saving) {
               e.preventDefault();
               setEdit(false);
               setErr("");
@@ -1676,18 +1762,18 @@ function RemoteFileBody({ useTabInfo, t }) {
           },
           spellCheck: false
         }
-      ) : /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "dshr-editorView", children: [
-        data && data.content != null ? data.content : t("file.empty"),
-        data && data.truncated ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "dshr-caption dshr-warn", style: { marginTop: 8 }, children: t("file.truncated") }) : null
+      ) : /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "dshr-editorView", children: [
+        data && data.content != null ? data.content : data ? t("file.empty") : null,
+        data && data.truncated ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "dshr-caption dshr-warn", style: { marginTop: 8 }, children: t("file.truncated") }) : null
       ] })
     ] })
   ] });
 }
 
-// plugin-src/client/RemoteFileTitle.jsx
-var React7 = __toESM(require("react"), 1);
-var import_dsh_client_ui_primitives7 = require("@deepseek-ai/dsh-client-ui-primitives");
-var import_jsx_runtime7 = require("react/jsx-runtime");
+// vendor/dsh-remote/plugin-src/client/RemoteFileTitle.jsx
+var React8 = __toESM(require("react"), 1);
+var import_dsh_client_ui_primitives8 = require("@deepseek-ai/dsh-client-ui-primitives");
+var import_jsx_runtime8 = require("react/jsx-runtime");
 function RemoteFileTitle({ useTabInfo }) {
   const { tab } = useTabInfo();
   let name2 = "";
@@ -1695,13 +1781,13 @@ function RemoteFileTitle({ useTabInfo }) {
     name2 = remoteFileTarget(tab.navigation.address).path.split(/[\\/]/).pop() || "";
   } catch {
   }
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(React7.Fragment, { children: [
-    name2 ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(import_dsh_client_ui_primitives7.FileTypeIcon, { path: name2, size: 16 }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(import_dsh_client_ui_primitives7.FileTypeIcon, { kind: "other", size: 16 }),
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(React8.Fragment, { children: [
+    name2 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(import_dsh_client_ui_primitives8.FileTypeIcon, { path: name2, size: 16 }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(import_dsh_client_ui_primitives8.FileTypeIcon, { kind: "other", size: 16 }),
     tab.title
   ] });
 }
 
-// plugin-src/client/index.js
+// vendor/dsh-remote/plugin-src/client/index.js
 var name = "dsh-remote";
 var inject = ["slots", "locale"];
 var REMOTE_EXPLORER_ID = "dsh-remote/explorer";

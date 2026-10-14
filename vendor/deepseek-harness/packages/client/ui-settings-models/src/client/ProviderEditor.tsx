@@ -21,12 +21,12 @@
  * see instead of rebuilding the whole subtree from a partial descriptor.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
   CredentialInfo, SettingsNamespaceView, SettingsPathOpView,
 } from '@deepseek-ai/dsh-api-remotes/client'
-import { SettingsSelect } from '@deepseek-ai/dsh-client-ui-primitives'
+import { SettingsSelect, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import {
   DeepSeekModelsEditor, modelDrafts, validateDeepSeekModels,
@@ -168,12 +168,15 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const { namespace, schema, settingsPath, operations, t } = props
   const [draft, setDraft] = useState<Record<string, unknown>>(() => draftAt(schema, namespace, settingsPath))
   const [keyDraft, setKeyDraft] = useState('')
+  const keyErrorId = useId()
   const [keyState, setKeyState] = useState<CredentialInfo | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [listBusy, setListBusy] = useState(false)
   const { onBusyChange } = props
   useEffect(() => { onBusyChange?.(busy || listBusy) }, [busy, listBusy, onBusyChange])
   const [failure, setFailure] = useState<string | undefined>(undefined)
+  const [failureDismissed, setFailureDismissed] = useState(false)
+  const [failureSequence, setFailureSequence] = useState(0)
   // A settings success advances both retry baselines immediately. Keeping the
   // derived fields in the draft prevents a pushed namespace refresh from
   // turning them into deletions when the following credential write is retried.
@@ -310,6 +313,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const apply = async (): Promise<void> => {
     setBusy(true)
     setFailure(undefined)
+    setFailureDismissed(false)
+    setFailureSequence(sequence => sequence + 1)
     try {
       const failure = await applyOnce()
       if (failure !== undefined) {
@@ -317,6 +322,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         return
       }
       props.onClose(true)
+    } catch (error) {
+      setFailure(error instanceof Error ? error.message : String(error))
     } finally {
       setBusy(false)
     }
@@ -381,6 +388,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       <>
         <div className={styles['field']}>
           <span className={styles['fieldLabel']}>{t('keyInput')}</span>
+          <Tooltip label={shownKeyFailure === undefined ? '' : t(shownKeyFailure)} disabled={shownKeyFailure === undefined} portal side="bottom">
           <input
             className={styles['input']}
             type="password"
@@ -389,12 +397,14 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
             placeholder={keyPlaceholder}
             aria-label={t('keyInput')}
             aria-invalid={shownKeyFailure !== undefined}
+            aria-describedby={shownKeyFailure === undefined ? undefined : keyErrorId}
             required={props.credentialRequired === true}
             autoFocus={props.autoFocusCredential === true}
             disabled={disabled || keyLocked}
             onChange={(event) => { setKeyDraft(event.target.value) }}
           />
-          {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}
+          </Tooltip>
+          {shownKeyFailure === undefined ? null : <span className={styles['visuallyHidden']} id={keyErrorId}>{t(shownKeyFailure)}</span>}
         </div>
         {props.credentialOnly === true ? null : <details className={styles['customized']}>
           <summary className={styles['customizedSummary']}>{t('customized')}</summary>
@@ -509,14 +519,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       {layout === 'unknown'
         ? <p className={styles['advancedHint']}>{`${t('advancedHint')} (${namespace.ns})`}</p>
         : curatedFields(layout)}
-      {failure !== undefined ? <p className={styles['error']}>{failure}</p> : null}
-      {props.credentialOnly === true || modelFailure === undefined
-        ? null
-        : (
-          <p className={styles['advancedHint']}>
-            {`${t('model')} ${String(modelFailure.index + 1)}: ${t(modelFailure.key)}`}
-          </p>
-        )}
+      {failure !== undefined && !failureDismissed ? <Toast key={failureSequence} text={failure} holdMs={9000} onDone={() => { setFailureDismissed(true) }} /> : null}
       <EditorFooter
         t={t}
         busy={busy}
@@ -526,6 +529,10 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
           || (props.credentialRequired === true && keyValue.length === 0)}
         submitLabelKey={props.submitLabelKey ?? 'apply'}
         submitBusyLabelKey={props.submitBusyLabelKey ?? 'applying'}
+        submitHint={failure ?? (shownKeyFailure !== undefined ? t(shownKeyFailure)
+          : props.credentialRequired === true && keyValue.length === 0 ? t('keyRequired')
+          : props.credentialOnly !== true && modelFailure !== undefined
+            ? `${t('model')} ${String(modelFailure.index + 1)}: ${t(modelFailure.key)}` : undefined)}
         {...props.cancelLabelKey === undefined ? {} : { cancelLabelKey: props.cancelLabelKey }}
         onCancel={() => { props.onClose(false) }}
         onSubmit={() => { props.onSubmitCredential?.(); void apply() }}

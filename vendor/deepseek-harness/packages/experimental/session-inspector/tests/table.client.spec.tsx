@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Virtual Inspector rows expose raw data and flash on updates. */
 
-import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { bindSnapshotSelector, makeTranslate, RemoteError, sessionSnapshot } from '@deepseek-ai/dsh-client-test-runtime'
@@ -143,11 +143,22 @@ it('opens cyclic raw nodes, contains formatter errors, and permits closing and r
   expect(reopened.getByText('$:').closest('ul')!.textContent).toContain('[Circular]')
 })
 
-it('shows the complete row identity in a tooltip outside the table clipping area', () => {
-  vi.stubGlobal('ResizeObserver', class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
+it('shows the complete row identity in a tooltip outside the table clipping area', async () => {
+  vi.stubGlobal('ResizeObserver', class implements ResizeObserver {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe(target: Element): void {
+      const size = { inlineSize: 360, blockSize: 24 }
+      const entry: ResizeObserverEntry = {
+        target,
+        borderBoxSize: [size],
+        contentBoxSize: [size],
+        devicePixelContentBoxSize: [size],
+        contentRect: new DOMRectReadOnly(0, 0, 360, 24),
+      }
+      this.callback([entry], this)
+    }
+    unobserve(_target: Element): void {}
+    disconnect(): void {}
   })
   onTestFinished(() => { cleanup(); vi.unstubAllGlobals() })
   const identity = 'assistant:long-node-identity-that-does-not-fit-the-id-column'
@@ -163,12 +174,12 @@ it('shows the complete row identity in a tooltip outside the table clipping area
   const ui = render(<InspectorTable {...props} />)
   const id = ui.getByText(identity)
   fireEvent.mouseEnter(id)
-  const tooltip = ui.getByRole('tooltip', { hidden: true })
+  const tooltip = await ui.findByRole('tooltip')
   expect(tooltip.textContent).toBe(identity)
   expect(tooltip.parentElement).toBe(document.body)
   expect(ui.container.contains(tooltip)).toBe(false)
   fireEvent.mouseLeave(id)
-  expect(ui.queryByRole('tooltip', { hidden: true })).toBeNull()
+  await waitFor(() => { expect(ui.queryByRole('tooltip')).toBeNull() })
 })
 
 it('handles empty history, pagination retry, loading state, and removal of the selected record', async () => {
@@ -186,11 +197,16 @@ it('handles empty history, pagination retry, loading state, and removal of the s
   }
   const ui = render(<InspectorTable {...props} />)
   expect(ui.getByText(en['table.empty'])).toBeTruthy()
-  await act(async () => { fireEvent.click(ui.getByRole('button', { name: en['table.older'] })) })
-  expect(ui.getByRole('alert').textContent).toContain('page unavailable')
-  fireEvent.click(ui.getByRole('button', { name: en['table.older'] }))
+  const older = ui.getByRole('button', { name: en['table.older'] })
+  await act(async () => { fireEvent.click(older) })
+  expect((await ui.findByRole('alert')).textContent).toContain('page unavailable')
+  expect(ui.container.querySelector('[role="alert"]')).toBeNull()
+  fireEvent.click(older)
   act(() => { session.set({ ...session.getSnapshot(), loadingOlder: true }) })
-  expect((ui.getByRole('button', { name: en['table.loading'] }) as HTMLButtonElement).disabled).toBe(true)
+  expect(ui.getByRole('button', { name: en['table.loading'] })).toBe(older)
+  expect((older as HTMLButtonElement).disabled).toBe(true)
+  expect(older.getAttribute('aria-busy')).toBe('true')
+  expect(older.textContent).toContain(en['table.older'])
   await act(async () => {
     retried.resolve(undefined)
     session.set({ ...session.getSnapshot(), loadingOlder: false, hasMore: false })
@@ -207,7 +223,7 @@ it('handles empty history, pagination retry, loading state, and removal of the s
   expect(ui.container.querySelector('pre')?.textContent).toBe(en['table.removed'])
   act(() => { session.set({ ...session.getSnapshot(), openState: 'error',
     openError: new RemoteError('gateway/internal', 'Session unavailable', {}) }) })
-  expect(ui.getByRole('alert').textContent).toBe('Session unavailable')
+  expect((await ui.findByRole('alert')).textContent).toBe('Session unavailable')
 })
 
 it('keeps reference details navigable after their table row has disappeared', () => {

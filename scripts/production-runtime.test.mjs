@@ -154,13 +154,15 @@ test('actual Electron builder collection keeps the ASAR whitelist and native-hos
   const { getMainFileMatchers, getNodeModuleFileMatcher } = require('app-builder-lib/out/fileMatcher');
   const { computeFileSets } = require('app-builder-lib/out/util/appFileCopier');
   const { expandMacro } = require('app-builder-lib/out/util/macroExpander');
-  const included = ['package.json', 'src/main/index.js', 'assets/icon.ico',
+  const included = ['package.json', 'src/main/index.js', 'src/main/preview-guest-preload.bundle.js', 'assets/icon.ico',
     'mobile/web/chisacode/daemon-client.bundle.js'];
   const excluded = ['.tmp/current-package-audit.json',
     'vendor/deepseek-harness/packages/experimental/inspector/lib/devtools/lighthouse_worker.js',
     'vendor/dsh-im/lib/index.js', 'scripts/production-runtime.js', 'dist/previous-build.bin',
     'src/main/index.test.js', 'mobile/web/chisacode/daemon-client.bundle.js.map'];
   for (const file of [...included, ...excluded]) writeFile(root, file);
+  const bundledPreload = fs.readFileSync(new URL('../src/main/preview-guest-preload.bundle.js', import.meta.url));
+  fs.writeFileSync(path.join(root, 'src/main/preview-guest-preload.bundle.js'), bundledPreload);
   // Publishing uses native Windows/macOS hosts: ${platform} is the host, not the target's win/mac key.
   assert.equal(expandMacro('${platform}', process.arch, {}), process.platform);
   for (const [platform, hostPlatform, arch] of [['win', 'win32', 'x64'], ['mac', 'darwin', 'arm64']]) {

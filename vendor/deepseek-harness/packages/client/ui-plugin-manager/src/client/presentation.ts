@@ -148,8 +148,8 @@ export function noticeText(notice: ManagerNotice, t: Translate): string {
   switch (notice.kind) {
     case 'restart': return t('restartNotice')
     case 'overridden': return t('overriddenNotice', { name: notice.packageName })
-    case 'cancelled': return t('installCancelled')
-    case 'refresh-failed': return t('refreshError')
+    case 'cancelled': return t(notice.operation === true ? 'operationCancelled' : 'installCancelled')
+    case 'refresh-failed': return t(notice.initial === true ? 'error' : 'refreshError')
     case 'install': return t(({
       done: 'installBackgroundDone', failed: 'installBackgroundFailed',
       unconfirmed: 'installBackgroundUnconfirmed', applying: 'installBackgroundApplying', unknown: 'installBackgroundUnknown',

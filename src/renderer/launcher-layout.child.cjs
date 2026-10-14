@@ -32,6 +32,7 @@ app.whenReady().then(async () => {
   attachRendererConsoleTail(win.webContents, tail);
   await win.loadFile(path.join(__dirname, 'launcher.html'));
   const js = (source) => win.webContents.executeJavaScript(source);
+  const feedbackSurfaces = await js("['install-progress-card','update-progress-card','import-progress-card','home-update'].map(id=>({id,floating:!!document.getElementById(id).closest('.shell-feedback-stack'),position:getComputedStyle(document.getElementById(id).closest('.shell-feedback-stack')).position}))");
   await js("console.info('LAYOUT_INFO_CONTROL'); console.error('LAYOUT_ERROR_SENTINEL')");
   await delay(50);
   const report = await writeCrashReport(path.join(root, 'logs'), { time: new Date(), source: 'renderer', phase: 'test', app: { name: 'fixture', electron: process.versions.electron }, error: new Error('fixture'), rendererConsole: tail.snapshot() });
@@ -61,7 +62,7 @@ app.whenReady().then(async () => {
         cases.push({ scheme, width, height, zoom, expanded, ...measured });
         if (evidence && width === 860 && zoom === 1.25 && !expanded) {
           await js("document.querySelector('main').scrollTop = 0");
-          fs.writeFileSync(path.join(evidence, `import-${scheme}-125.png`), (await win.webContents.capturePage()).toPNG());
+          fs.writeFileSync(path.join(evidence, `import-${scheme}-125.png`), (await win.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG());
         }
       }
     }
@@ -82,10 +83,10 @@ app.whenReady().then(async () => {
           return r.top >= 0 && r.bottom <= innerHeight && (hit === el || el.contains(hit));
         }) };
       })()`));
-      if (evidence && zoom === 1.5) fs.writeFileSync(path.join(evidence, `confirm-${text.length}-150.png`), (await win.webContents.capturePage()).toPNG());
+      if (evidence && zoom === 1.5) fs.writeFileSync(path.join(evidence, `confirm-${text.length}-150.png`), (await win.webContents.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG());
     }
   }
-  const result = { diagnostics, cases, heading, dialogs };
+  const result = { diagnostics, cases, heading, dialogs, feedbackSurfaces };
   if (evidence) fs.writeFileSync(path.join(evidence, 'layout.json'), JSON.stringify(result, null, 2));
   process.stdout.write('LAYOUT_RESULT:' + JSON.stringify(result) + '\n');
   win.destroy();

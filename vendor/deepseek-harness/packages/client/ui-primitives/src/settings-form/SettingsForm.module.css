@@ -20,16 +20,8 @@
   padding-top: 16px;
 }
 
-.failed {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--dsw-alias-label-error);
-}
-
-.save {
+.form .save {
+  height: auto;
   appearance: none;
   border: 1px solid transparent;
   border-radius: var(--dsw-radius-md);

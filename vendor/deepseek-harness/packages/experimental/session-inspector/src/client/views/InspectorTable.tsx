@@ -1,11 +1,11 @@
 /** Virtualized raw-data table shared by Session log and Chat structure views. */
 
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { defaultRangeExtractor, useVirtualizer, type Range, type Virtualizer } from '@tanstack/react-virtual'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { InspectorTableHierarchy, inspectorRowCollapsed, type InspectorDisclosure, type InspectorRecord, type InspectorRow } from './table-model.ts'
 import { inspectorPreview } from './format.ts'
 import { inspectorJson } from './raw-json.ts'
@@ -116,6 +116,13 @@ export function InspectorTable({ title, flash, showTime, modeSelector, objects, 
   const loading = useSession(value => value.loadingOlder)
   const openError = useSession(value => value.openError)
   const [failure, setFailure] = useState<string | null>(null)
+  const [failureDismissed, setFailureDismissed] = useState(false)
+  const [noticeDismissed, setNoticeDismissed] = useState(false)
+  const [olderPending, setOlderPending] = useState(false)
+  const failureId = useId()
+  const failureText = [failure, openError?.message].filter(Boolean).join('; ')
+  useEffect(() => { setFailureDismissed(false) }, [failureText])
+  useEffect(() => { setNoticeDismissed(false) }, [notice])
   const [selected, setSelected] = useState<string | null>(null)
   const record = useRecord(selected ?? '')
   const rowLabel = `${record?.type ?? ''} · ${record?.identity ?? selected}`
@@ -277,18 +284,28 @@ export function InspectorTable({ title, flash, showTime, modeSelector, objects, 
   const breadcrumbs = [objectHistory?.rootLabel ?? rowLabel,
     ...(objectHistory?.references.map(reference => `${t(`object.${reference.kind}`)} · ${reference.identity}`) ?? [])]
   const columns = showTime ? 5 : 4
-  return <section className={css.root} aria-label={title}>
+  const loadEarlier = (): void => {
+    if (loading || olderPending) return
+    followMode.current = 'scroll'
+    setFailure(null)
+    setFailureDismissed(false)
+    setOlderPending(true)
+    void loadOlder().catch((error: unknown) => { setFailure(error instanceof Error ? error.message : String(error)) })
+      .finally(() => { setOlderPending(false) })
+  }
+  return <section className={css.root} aria-label={title} aria-describedby={failureText === '' ? undefined : failureId}>
+    {failureText !== '' && !failureDismissed ? <Toast text={failureText} holdMs={null}
+      dismissLabel={t('feedback.dismiss')} onDone={() => { setFailureDismissed(true) }} />
+      : notice !== undefined && !noticeDismissed ? <Toast text={notice} holdMs={null}
+        dismissLabel={t('feedback.dismiss')} onDone={() => { setNoticeDismissed(true) }} /> : null}
+    {failureText === '' ? null : <span className={css.visuallyHidden} id={failureId}>{failureText}</span>}
     <div className={css.toolbar}>
       <span>{modeSelector ?? title} · {typeFilter.active ? `${filtered.matches.size} / ${allRows.length}` : allRows.length}</span>
-      {hasMore && <button type="button" disabled={loading} onClick={() => {
-        followMode.current = 'scroll'
-        setFailure(null)
-        void loadOlder().catch((error: unknown) => { setFailure(String(error)) })
-      }}>{loading ? t('table.loading') : t('table.older')}</button>}
+      {hasMore && <Button className={css.loadEarlier} loading={loading || olderPending}
+        feedback={loading || olderPending ? t('table.loading') : undefined} title={failure ?? undefined}
+        aria-describedby={failure === null ? undefined : failureId} onClick={loadEarlier}>{t('table.older')}</Button>}
       <button type="button" onClick={() => { followMode.current = 'tail'; resetSpacing(value => value + 1) }}>{t('table.latest')}</button>
     </div>
-    {notice !== undefined && <div className={css.pickNotice} role="status">{notice}</div>}
-    {(failure !== null || openError !== null) && <p role="alert">{failure ?? openError?.message}</p>}
     <div ref={scroller} className={css.scroller} onScroll={({ currentTarget }) => {
       viewport.current.offset = currentTarget.scrollTop
       if (followMode.current !== 'manual') {

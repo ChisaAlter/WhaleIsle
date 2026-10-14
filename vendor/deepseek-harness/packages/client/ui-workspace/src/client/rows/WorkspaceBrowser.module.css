@@ -71,7 +71,7 @@
 }
 
 .sectionLabel {
-  flex: none;
+  flex: 0 1 auto;
   max-width: 45%;
   min-width: 0;
   overflow: hidden;

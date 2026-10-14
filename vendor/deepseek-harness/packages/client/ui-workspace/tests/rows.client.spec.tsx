@@ -12,6 +12,7 @@ import type { MenuOpenState, SessionRowOwnerProps } from '../src/client/contract
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { PRESENCE_EXIT_MS } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RowDragProps } from '../src/client/rows/Rows.tsx'
+import type { SessionRowSelection } from '../src/client/rows/SessionSelection.tsx'
 import {
   ArchivedSessionNodeItem, GroupSessionRun, ProjectRowItem, SearchResultItem, SessionNodeItem as SessionNodeItemComponent,
   TasksSectionHeader,
@@ -1186,4 +1187,28 @@ it.each([['未命名', t], ['Untitled', tEn]])('labels unnamed search results as
     onUnarchive={vi.fn()} onDelete={vi.fn()} renderSlot={renderNoRowEntries} t={translate} />)
   fireEvent.click(screen.getByText(label))
   expect(onOpen).toHaveBeenCalledWith(result.id)
+})
+
+it.each(['session', 'archived', 'search'] as const)('keeps %s Project rows with their owner while ordinary Session selection is enabled', (kind) => {
+  const node: SessionNode = { id: sid('project'), title: 'Project', owner: 'project', blank: false,
+    running: false, runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: kind !== 'session' }
+  const onOpen = vi.fn()
+  const selection: SessionRowSelection = {
+    enabled: true, busy: false, selected: new Set(), toggle: vi.fn(), register: vi.fn(() => () => {}),
+  }
+  if (kind === 'search') {
+    render(<SearchResultItem result={{ ...node, workspace: 'Project directory' }} currentId={undefined}
+      onOpen={onOpen} onUnarchive={vi.fn()} onDelete={vi.fn()} renderSlot={renderNoRowEntries} selection={selection} t={t} />)
+  } else if (kind === 'archived') {
+    render(<ArchivedSessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen}
+      onUnarchive={vi.fn()} onDelete={vi.fn()} renderSlot={renderNoRowEntries} selection={selection} t={t} />)
+  } else {
+    render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen} selection={selection} t={t} />)
+  }
+  expect(screen.queryByRole('checkbox')).toBeNull()
+  expect(selection.register).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByText('Project'))
+  expect(onOpen).toHaveBeenCalledWith(node.id)
+  expect(selection.toggle).not.toHaveBeenCalled()
+  expect(screen.getByRole('button', { name: '会话“Project”的操作' })).toBeTruthy()
 })

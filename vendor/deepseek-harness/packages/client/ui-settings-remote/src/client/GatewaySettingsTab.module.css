@@ -99,13 +99,6 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.status {
-  margin: 0;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-secondary);
-}
-
 .actions {
   display: flex;
   flex-wrap: wrap;

@@ -120,7 +120,7 @@ describe('OpenPathEmptyAction', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('announces a failed open once through its own toast, which leaves after its hold and fade', async () => {
+  it('keeps a failed open visible until dismissed and allows a successful retry', async () => {
     vi.useFakeTimers()
     const b = bench({ openPath: vi.fn(async () => 'openError' as const) })
     render(<OpenPathEmptyAction {...b.props} />)
@@ -129,11 +129,18 @@ describe('OpenPathEmptyAction', () => {
     expect(screen.getAllByRole('alert')).toHaveLength(1)
     expect(screen.getByRole('alert').textContent).toContain(zh['path.openError'])
     act(() => { vi.advanceTimersByTime(4_000) })
+    expect(screen.getByRole('alert').getAttribute('data-persistent')).toBe('true')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.close })) })
+    expect(screen.queryByRole('alert')).toBeNull()
+    b.openPath.mockResolvedValue(null)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.open'] })) })
+    expect(b.openPath).toHaveBeenCalledTimes(2)
+    expect(b.openPath).toHaveBeenLastCalledWith(ABSOLUTE_PATH, 'open', undefined)
     expect(screen.queryByRole('alert')).toBeNull()
   })
 })
 
-it('dismisses a failure on schedule even when its owner rerenders', async () => {
+it('keeps a failure through rerenders and shows the same error again after dismissal', async () => {
   vi.useFakeTimers()
   const b = bench({ openPath: vi.fn(async () => 'openError' as const) })
   const view = render(<OpenPathEmptyAction {...b.props} />)
@@ -142,10 +149,14 @@ it('dismisses a failure on schedule even when its owner rerenders', async () => 
   act(() => { vi.advanceTimersByTime(2_000) })
   view.rerender(<OpenPathEmptyAction {...b.props} />)
   await act(async () => {})
-  act(() => { vi.advanceTimersByTime(1_999) })
-  expect(screen.getByRole('alert')).toBeTruthy()
-  act(() => { vi.advanceTimersByTime(1) })
+  act(() => { vi.advanceTimersByTime(10_000) })
+  expect(screen.getByRole('alert').textContent).toContain(zh['path.openError'])
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.close })) })
   expect(screen.queryByRole('alert')).toBeNull()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.open'] })) })
+  expect(screen.getAllByRole('alert')).toHaveLength(1)
+  expect(screen.getByRole('alert').textContent).toContain(zh['path.openError'])
+  expect(b.openPath).toHaveBeenCalledTimes(2)
 })
 
 
@@ -284,9 +295,16 @@ it('uses a skeleton while associations load and pins reveal outside the applicat
   const pending = Promise.withResolvers<readonly { id: string; name: string; default: boolean; icon: null }[]>()
   const view = render(<OpenPathAction {...b.props} applications={() => pending.promise} />)
   expect(view.container.querySelector('[data-open-target-skeleton]')).not.toBeNull()
-  expect(view.container.querySelector('[data-open-path-open] svg')).toBeNull()
+  const main = view.container.querySelector<HTMLButtonElement>('[data-open-path-open]')!
+  expect(main).toHaveProperty('disabled', true)
+  expect(main.getAttribute('aria-busy')).toBe('true')
+  expect(main.querySelector('[data-state="ongoing"]')).not.toBeNull()
+  fireEvent.click(main)
+  expect(b.openPath).not.toHaveBeenCalled()
   await act(async () => { pending.resolve([{ id: 'music', name: 'Music', default: true, icon: null }]) })
   expect(view.container.querySelector('[data-open-target-skeleton]')).toBeNull()
+  expect(main).toHaveProperty('disabled', false)
+  expect(main.querySelector('[data-state="ongoing"]')).toBeNull()
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.more'] })) })
   const menu = screen.getByRole('menu')
   const reveal = screen.getByRole('menuitem', { name: zh['path.reveal'] })

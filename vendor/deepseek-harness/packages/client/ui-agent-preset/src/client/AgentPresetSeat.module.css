@@ -49,6 +49,14 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.spinner {
+  animation: preset-seat-busy 1s linear infinite;
+}
+
+@keyframes preset-seat-busy {
+  to { transform: rotate(360deg); }
+}
+
 .seatLabel {
   min-width: 0;
   overflow: hidden;
@@ -112,7 +120,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .introIcon,
-  .introChar {
+  .introChar,
+  .spinner {
     animation: none;
     opacity: 1;
   }

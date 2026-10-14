@@ -633,7 +633,10 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 24px var(--detail-gutter) 28px;
+  /* Keep the last rule clear of the 49px floating edit bar and its 12px
+     bottom inset in both clean and dirty states, so showing it cannot move
+     the scroll seat or cover the final controls. */
+  padding: 24px var(--detail-gutter) 80px;
   scrollbar-gutter: stable;
   --dsh-scrollbar-width: 9px;
   --dsh-scrollbar-thumb-border: 2px;
@@ -661,7 +664,9 @@
 
 .retentionEnd {
   flex: none;
-  padding: 0 var(--detail-gutter) 16px;
+  /* Records keep the staged-edit bar too. This footer sits outside the
+     reserved scroll seat, so it needs the same permanent bottom clearance. */
+  padding: 0 var(--detail-gutter) 80px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 20px;
@@ -1290,17 +1295,25 @@
   pointer-events: none;
 }
 
-/* The staged-edit bar: it appears under the detail tab strip only while the
+/* The staged-edit bar: it floats over the reserved bottom space only while the
    Run time draft differs from the stored task. */
 .saveFooter {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  z-index: 2;
   display: flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  padding: 20px var(--detail-gutter);
-  border-top: 0.5px solid var(--dsw-alias-border-l4);
-  background: var(--dsw-alias-bg-base);
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  box-shadow: var(--dsw-elevation-panel);
 }
 
 .saveFooter > button {

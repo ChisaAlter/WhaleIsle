@@ -21,7 +21,9 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/clie
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { RemoteError, SlotTestRuntime, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
-import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { COMMON_NS, LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
+import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { MenuItemButton } from '@deepseek-ai/dsh-client-ui-primitives'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-workspace/client'
 
@@ -45,6 +47,7 @@ async function createRuntime(): Promise<SlotTestRuntime> {
   const directoryPicker = {}
   runtime.remote.provideNamespaces({ directoryPicker })
   const locale = new LocaleRuntime(runtime.ctx)
+  locale.register(COMMON_NS, { zh: commonZh, en: commonEn })
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   return runtime
@@ -209,11 +212,18 @@ describe('session rename through the assembled browser', () => {
     fireEvent.change(input, { target: { value: '新名' } })
     fireEvent.click(view.getByRole('button', { name: '重命名' }))
 
-    // Failure: the injected hop rethrows the business error; the dialog
-    // stays open with the alert and the row keeps its title.
+    // Failure stays outside the dialog's layout; dismissing the notice leaves
+    // the rename request, draft and existing row title intact.
     const alert = await view.findByRole('alert')
     expect(alert.textContent).toContain('title write failed')
-    expect(view.getByLabelText('会话名称')).toBeTruthy()
+    expect(alert.getAttribute('data-persistent')).toBe('true')
+    const dialog = view.getByRole('dialog', { name: '重命名会话' })
+    expect(dialog.contains(alert)).toBe(false)
+    fireEvent.click(within(alert).getByRole('button', { name: '关闭' }))
+    expect(view.queryByRole('alert')).toBeNull()
+    expect(view.getByRole('dialog', { name: '重命名会话' })).toBe(dialog)
+    expect((view.getByLabelText('会话名称') as HTMLInputElement).value).toBe('新名')
+    expect(rename).toHaveBeenCalledOnce()
     expect(view.getByText('旧标题')).toBeTruthy()
     await runtime.dispose()
   })

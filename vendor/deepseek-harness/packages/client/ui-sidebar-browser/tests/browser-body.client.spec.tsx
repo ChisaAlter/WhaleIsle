@@ -116,10 +116,10 @@ describe('BrowserBody', () => {
           loadUrl: vi.fn(), goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn(), dispose: async () => {} },
       }
     } })
-    expect(mounted.view.getByRole('status').textContent).toContain('DNS failure')
-    expect(mounted.view.getByRole('status').textContent).toContain('-105')
+    expect(mounted.view.getByRole('alert').textContent).toContain('DNS failure')
+    expect(mounted.view.getByRole('alert').textContent).toContain('-105')
     act(() => { state.set({ ...state.getSnapshot(), error: { code: -105, description: undefined } }) })
-    expect(mounted.view.getByRole('status').textContent).toBe(zh['load.failed'])
+    expect(mounted.view.getByRole('alert').textContent).toBe(zh['load.failed'])
     act(() => { providers[0]!.openRequested('https://new.example/') })
     expect(mounted.tabActions.openTab).toHaveBeenCalledExactlyOnceWith('browser', {
       params: { url: 'https://new.example/' }, revealIfOpened: false,
@@ -156,7 +156,7 @@ describe('BrowserBody', () => {
     const protectedMark = disableSandbox.querySelector('svg path:last-child')?.getAttribute('d')
     fireEvent.click(disableSandbox)
     await waitFor(() => { expect(mounted.view.container.querySelector('iframe')?.getAttribute('sandbox')).toBeNull() })
-    expect(mounted.view.getByRole('status').textContent).toBe(zh['sandbox.warning'])
+    expect(mounted.view.getByRole('alert').textContent).toBe(zh['sandbox.warning'])
     const enableSandbox = mounted.view.getByRole('button', { name: zh['sandbox.enable'] })
     expect(enableSandbox.querySelector('svg path:last-child')?.getAttribute('d')).not.toBe(protectedMark)
     fireEvent.click(enableSandbox)
@@ -176,9 +176,15 @@ describe('BrowserBody', () => {
     await waitFor(() => { expect(mounted.view.container.querySelector('iframe')?.getAttribute('src')).toBe('https://example.com/two') })
     expect(input).toHaveProperty('value', 'https://example.com/two')
 
+    // jsdom does not complete iframe network loads; settle the provider before
+    // using Reload, and verify that submitting again while busy is ignored.
+    fireEvent.load(mounted.view.container.querySelector('iframe')!)
     const beforeReload = mounted.store.getSnapshot().byTab[TAB]!.request!.revision
     fireEvent.click(mounted.view.getByRole('button', { name: zh.reload }))
     expect(mounted.store.getSnapshot().byTab[TAB]!.request?.revision).toBe(beforeReload + 1)
+    fireEvent.submit(input.closest('form')!)
+    expect(mounted.store.getSnapshot().byTab[TAB]!.request?.revision).toBe(beforeReload + 1)
+    fireEvent.load(mounted.view.container.querySelector('iframe')!)
     fireEvent.submit(input.closest('form')!)
     expect(mounted.store.getSnapshot().byTab[TAB]!.request?.revision).toBe(beforeReload + 2)
     act(() => { mounted.tabActions.bindCommands.mock.calls.at(-1)![0].refresh!() })

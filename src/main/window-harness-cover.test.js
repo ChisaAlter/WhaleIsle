@@ -233,13 +233,74 @@ test('harness view keeps painting while the window is hidden so restore does not
   assert.match(src, /backgroundThrottling:\s*false/);
 });
 
-test('boot failure actions include a download-log ghost button', () => {
+test('boot download-log ghost button only stays disabled while saving', async () => {
   const html = fs.readFileSync(path.join(__dirname, '../renderer/boot.html'), 'utf8');
   const boot = fs.readFileSync(path.join(__dirname, '../renderer/boot.js'), 'utf8');
   assert.match(html, /id="save-log"/);
   assert.match(html, /<button type="button" class="ghost" id="save-log">/);
   assert.match(boot, /invoke\('saveBootLog'\)/);
-  assert.doesNotMatch(boot, /saveLogEl\.disabled/);
+  for (const outcome of [
+    { result: { canceled: true }, message: null },
+    { result: { ok: true, path: 'boot.log' }, message: '日志已保存：boot.log' },
+    { result: { ok: false, error: 'write denied' }, message: '保存日志失败：write denied' },
+    { error: new Error('save failed'), message: '保存日志失败：save failed' },
+  ]) {
+    const elements = new Map();
+    function element() {
+      const attributes = new Map();
+      return {
+        disabled: false, hidden: false, dataset: {}, handlers: {},
+        classList: { toggle() {} }, append() {},
+        addEventListener(name, handler) { this.handlers[name] = handler; },
+        getAttribute(name) { return attributes.get(name) ?? null; },
+        setAttribute(name, value) { attributes.set(name, value); },
+        removeAttribute(name) { attributes.delete(name); },
+      };
+    }
+    let onState, resolveSave, rejectSave, saveCalls = 0;
+    const notices = [];
+    const pending = new Promise((resolve, reject) => { resolveSave = resolve; rejectSave = reject; });
+    vm.runInNewContext(boot, {
+      document: {
+        body: element(), createElement: element, addEventListener() {},
+        getElementById(id) {
+          if (!elements.has(id)) elements.set(id, element());
+          return elements.get(id);
+        },
+      },
+      window: {
+        shell: {
+          getState: () => Promise.resolve({ state: 'error' }),
+          onState(handler) { onState = handler; },
+          saveBootLog() { saveCalls += 1; return pending; },
+        },
+        shellFeedback: {
+          mountProgress: () => ({ show() {}, hide() {} }),
+          notice(value) { notices.push(value); },
+        },
+      },
+      setInterval: () => 1, clearInterval() {},
+    });
+    await new Promise(setImmediate);
+    const button = elements.get('save-log');
+    const scheduled = { state: 'error', recovery: { status: 'scheduled', nextRetryAt: Date.now() + 1_000 } };
+    onState(scheduled);
+    assert.equal(button.disabled, false, 'scheduled recovery still allows log download');
+    const saving = button.handlers.click();
+    assert.equal(button.disabled, true);
+    assert.equal(button.getAttribute('aria-busy'), 'true');
+    onState(scheduled);
+    assert.equal(button.disabled, true, 'state updates must preserve an in-flight save');
+    await button.handlers.click();
+    assert.equal(saveCalls, 1, 'a pending save must not invoke the dialog twice');
+    if (outcome.error) rejectSave(outcome.error);
+    else resolveSave(outcome.result);
+    await saving;
+    assert.equal(button.disabled, false, 'every outcome restores log download');
+    assert.equal(button.getAttribute('aria-busy'), null);
+    assert.equal(notices.length, outcome.message === null ? 0 : 1);
+    if (outcome.message !== null) assert.equal(notices[0].body, outcome.message);
+  }
 });
 
 test('boot keeps the sea-horizon scene with a bottom ticker and a log drawer', () => {

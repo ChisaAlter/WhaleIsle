@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Button, FileTypeIcon, Input, Menu, Modal, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import { parentRemotePath, remoteApi, remoteFileAddress } from './api.js'
+import { RemoteFeedback } from './Feedback.jsx'
 
 /**
  * Remote file tree bound to THIS session's mirror: the root resolves through
@@ -16,11 +17,15 @@ export function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
   const [expanded, setExpanded] = React.useState(() => new Set())
   const [data, setData] = React.useState({}) // dir -> { loading?, entries?, error? }
   const [err, setErr] = React.useState('')
+  const [retryDir, setRetryDir] = React.useState('')
   const [menu, setMenu] = React.useState(null) // { x, y, item }
   const [namePrompt, setNamePrompt] = React.useState(null) // { kind, path, name }
   const [nameDraft, setNameDraft] = React.useState('')
+  const [nameError, setNameError] = React.useState('')
   const [confirmDel, setConfirmDel] = React.useState(null) // { path, dir }
-  const [copied, setCopied] = React.useState('')
+  const [message, setMessage] = React.useState('')
+  const [busy, setBusy] = React.useState('')
+  const [resolveRetry, setResolveRetry] = React.useState(0)
   const dataRef = React.useRef(data)
   dataRef.current = data
   const visible = info.tab.visible
@@ -32,6 +37,7 @@ export function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
   const loadDir = React.useCallback((dir) => {
     const existing = dataRef.current[dir]
     if (existing && existing.loading) return
+    setErr(''); setRetryDir('')
     storeLevel(dir, { ...existing, loading: true })
     remoteApi.ls(dir, sessionId)
       .then((res) => {
@@ -44,10 +50,13 @@ export function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
         storeLevel(dir, { entries: items, missing: !!(res && res.missing) })
       })
       .catch((e) => {
+        const error = String((e && e.message) || e)
         const prev = dataRef.current[dir]
         storeLevel(dir, prev && prev.entries
-          ? { ...prev, softError: String((e && e.message) || e) }
-          : { error: String((e && e.message) || e) })
+          ? { ...prev, loading: false, softError: error }
+          : { error })
+        setErr(error)
+        setRetryDir(dir)
       })
   }, [sessionId, storeLevel])
 
@@ -66,7 +75,7 @@ export function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
       })
       .catch((e) => { if (!cancelled) setErr(String((e && e.message) || e)) })
     return () => { cancelled = true }
-  }, [cwd, sessionId, loadDir])
+  }, [cwd, sessionId, loadDir, resolveRetry])
 
   // Refresh on becoming visible again (connection may have recovered).
   React.useEffect(() => {
@@ -86,38 +95,50 @@ export function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
     info.tab.actions.openResource(remoteFileAddress(sessionId, p))
   }
 
-  const doFs = (op, payload) => {
-    setErr('')
-    return remoteApi.fs(op, payload, sessionId)
-      .then(() => { if (root) loadDir(parentRemotePath(payload.path || root) || root); })
-      .catch((e) => setErr(String((e && e.message) || e)))
+  const doFs = async (op, payload) => {
+    if (busy) return false
+    setBusy(op); setErr(''); setMessage(''); setNameError(''); setRetryDir('')
+    try {
+      const result = await remoteApi.fs(op, payload, sessionId)
+      if (op === 'download') setMessage(t('file.downloaded', { path: result && result.local ? t('file.downloadedAt', { path: result.local }) : '' }))
+      if (root) loadDir(parentRemotePath(payload.path || root) || root)
+      return true
+    } catch (e) {
+      if (op === 'rename' || op === 'mkdir') setNameError(String((e && e.message) || e))
+      else setErr(String((e && e.message) || e))
+      return false
+    } finally { setBusy('') }
   }
 
-  const copyPath = (text, key) => {
+  const copyPath = async (text) => {
+    if (busy) return
+    setBusy('copy'); setErr(''); setMessage('')
     try {
-      navigator.clipboard && navigator.clipboard.writeText(text)
-      setCopied(key)
-      setTimeout(() => setCopied((c) => (c === key ? '' : c)), 1200)
-    } catch { /* clipboard unavailable */ }
+      if (!navigator.clipboard) throw new Error(t('explorer.copyFail'))
+      await navigator.clipboard.writeText(text)
+      setMessage(t('explorer.copied'))
+    } catch (e) { setErr(String((e && e.message) || e)) }
+    finally { setBusy('') }
   }
 
   const relPath = (p) => (root && p.startsWith(root) ? p.slice(root.length).replace(/^[\\/]+/, '') : p)
 
-  const confirmName = () => {
+  const confirmName = async () => {
     const name = nameDraft.trim()
-    if (!name || !namePrompt) return
+    if (!name || !namePrompt || busy) return
     const { kind, path: target } = namePrompt
-    setNamePrompt(null)
+    let saved = false
     if (kind === 'rename') {
       const parent = parentRemotePath(target) || root || '/'
       const sep = parent.includes('\\') ? '\\' : '/'
       const dest = parent === '/' ? '/' + name : parent.replace(/[\\/]+$/, '') + sep + name
-      doFs('rename', { path: target, dest })
+      saved = await doFs('rename', { path: target, dest })
     } else if (kind === 'mkdir') {
       const sep = target.includes('\\') ? '\\' : '/'
       const full = target === '/' ? '/' + name : target.replace(/[\\/]+$/, '') + sep + name
-      doFs('mkdir', { path: full })
+      saved = await doFs('mkdir', { path: full })
     }
+    if (saved) setNamePrompt(null)
   }
 
   const menuItems = menu ? [
@@ -140,9 +161,10 @@ export function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
     else if (id === 'download') void doFs('download', { path: it.path })
     else if (id === 'copy-rel') copyPath(relPath(it.path), it.path)
     else if (id === 'copy-abs') copyPath(it.path, it.path)
-    else if (id === 'rename') { setNamePrompt({ kind: 'rename', path: it.path, name: it.name }); setNameDraft(it.name) }
+    else if (id === 'rename') { setNameError(''); setNamePrompt({ kind: 'rename', path: it.path, name: it.name }); setNameDraft(it.name) }
     else if (id === 'mkdir') {
       const base = it.type === 'dir' ? it.path : (parentRemotePath(it.path) || root || '/')
+      setNameError('')
       setNamePrompt({ kind: 'mkdir', path: base, name: '' }); setNameDraft('')
     } else if (id === 'delete') {
       setConfirmDel({ path: it.path, dir: it.type === 'dir' })
@@ -153,12 +175,12 @@ export function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
     const level = data[dir]
     if (!level || !expanded.has(dir)) return null
     if (level.loading && !level.entries) {
-      return <div key={dir + ':loading'} className="dshr-listEmpty" style={{ paddingLeft: 8 + depth * 14 }}>{t('explorer.loading')}</div>
+      return null
     }
     if (level.error) {
       return (
-        <div key={dir + ':err'} className="dshr-error" style={{ padding: '4px 8px', paddingLeft: 8 + depth * 14 }}>
-          {level.error} <Button variant="ghost" size="sm" onClick={() => loadDir(dir)}>{t('explorer.retry')}</Button>
+        <div key={dir + ':err'} style={{ padding: '4px 8px', paddingLeft: 8 + depth * 14 }}>
+          <Button variant="ghost" size="sm" onClick={() => loadDir(dir)}>{t('explorer.retry')}</Button>
         </div>
       )
     }
@@ -168,13 +190,13 @@ export function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
           type="button" className="dshr-treeRow" data-kind={it.type === 'dir' ? 'dir' : 'file'}
           style={{ paddingLeft: 8 + depth * 14 }}
           title={it.path}
+          aria-busy={it.type === 'dir' && data[it.path] && data[it.path].loading || undefined}
           onClick={() => { if (it.type === 'dir') toggleDir(it.path); else openFile(it.path) }}
           onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, item: it }) }}
         >
-          <span className="dshr-treeToggle">{it.type === 'dir' ? (expanded.has(it.path) ? '▾' : '▸') : ''}</span>
+          <span className="dshr-treeToggle">{it.type === 'dir' ? (data[it.path] && data[it.path].loading ? <span className="dshr-miniSpinner" aria-hidden="true" /> : expanded.has(it.path) ? '▾' : '▸') : ''}</span>
           {it.type === 'dir' ? <FileTypeIcon kind="folder" size={14} /> : <FileTypeIcon path={it.name} size={14} />}
           <span className="dshr-treeName">{it.name}</span>
-          {copied === it.path ? <span className="dshr-treeBadge">{t('explorer.copied')}</span> : null}
         </button>
         {it.type === 'dir' ? renderRows(it.path, depth + 1) : null}
       </React.Fragment>
@@ -182,7 +204,9 @@ export function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
   }
 
   if (root === null) {
-    return <div className="dshr-listEmpty">{t('explorer.loading')}</div>
+    return err
+      ? <RemoteFeedback error={err} t={t} actions={[{ label: t('explorer.retry'), onClick: () => setResolveRetry((value) => value + 1) }]} />
+      : <div className="dshr-listEmpty">{t('explorer.loading')}</div>
   }
   if (root === '') {
     return (
@@ -195,13 +219,14 @@ export function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
 
   const rootLevel = data[root]
   return (
+    <>
+    <RemoteFeedback error={err} message={message} onClearMessage={() => setMessage('')} t={t} actions={retryDir ? [{ label: t('explorer.retry'), disabled: !!busy || !!(data[retryDir] && data[retryDir].loading), onClick: () => loadDir(retryDir) }] : undefined} />
     <div className="dshr-tree">
       <div className="dshr-row" style={{ padding: '4px 6px', borderBottom: '1px solid var(--dsw-alias-border-l2)', marginBottom: 4 }}>
-        <StateDot state={rootLevel && rootLevel.entries ? 'done' : 'ongoing'} size={8} />
+        <StateDot state={!busy && rootLevel && rootLevel.entries ? 'done' : 'ongoing'} size={8} />
         <span className="dshr-mono dshr-ellipsis dshr-secondary" style={{ fontSize: 12 }} title={mirrorDir ? `${root}\n${mirrorDir}` : root}>{root}</span>
-        <button type="button" className="dshr-iconBtn" title={t('picker.refresh')} aria-label={t('picker.refresh')} onClick={() => { setData({}); loadDir(root) }}>⟳</button>
+        <Button variant="ghost" size="sm" className="dshr-iconBtn" title={t('picker.refresh')} aria-label={t('picker.refresh')} onClick={() => { setErr(''); loadDir(root) }} disabled={!!busy || !!(rootLevel && rootLevel.loading)} loading={!!(rootLevel && rootLevel.loading)}>⟳</Button>
       </div>
-      {err ? <div className="dshr-error" style={{ padding: '4px 6px' }}>{err}</div> : null}
       {rootLevel && rootLevel.missing ? <div className="dshr-caption" style={{ padding: '4px 6px' }}>{t('explorer.missing')}</div> : null}
       <button
         type="button" className="dshr-treeRow" style={{ paddingLeft: 8 }}
@@ -219,29 +244,31 @@ export function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
 
       {menu ? (
         <Menu
-          open anchor={null} items={menuItems} onClose={() => setMenu(null)} onSelect={onMenuSelect}
+          open={visible} anchor={null} items={menuItems} onClose={() => setMenu(null)} onSelect={onMenuSelect}
           getAnchorRect={() => new DOMRect(menu.x, menu.y, 0, 0)}
           portal
         />
       ) : null}
 
       <Modal
-        open={!!namePrompt} onClose={() => setNamePrompt(null)}
+        open={visible && !!namePrompt} onClose={() => { if (!busy) setNamePrompt(null) }}
         title={namePrompt && namePrompt.kind === 'rename' ? t('explorer.menuRename') : t('explorer.menuMkdir')}
         closeLabel={t('common.close')}
         footer={(
           <React.Fragment>
-            <Button variant="ghost" size="sm" onClick={() => setNamePrompt(null)}>{t('form.cancel')}</Button>
-            <Button variant="primary" size="sm" onClick={confirmName} disabled={!nameDraft.trim()}>{t('form.save')}</Button>
+            <Button variant="ghost" size="sm" onClick={() => setNamePrompt(null)} disabled={!!busy}>{t('form.cancel')}</Button>
+            <Button variant="primary" size="sm" onClick={confirmName} disabled={!!busy || !nameDraft.trim()} loading={busy === 'rename' || busy === 'mkdir'}>{t('form.save')}</Button>
           </React.Fragment>
         )}
       >
+        <RemoteFeedback error={nameError} t={t} actions={[{ label: t('explorer.retry'), disabled: !!busy || !nameDraft.trim(), onClick: confirmName }]} />
         <Input
           value={nameDraft} onChange={(e) => setNameDraft(e.target.value)}
-          placeholder={t('explorer.newName')} autoFocus
+          placeholder={t('explorer.newName')} disabled={!!busy} data-modal-autofocus
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmName() } }}
         />
       </Modal>
     </div>
+    </>
   )
 }

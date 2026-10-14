@@ -2,7 +2,7 @@
  * Appearance wallpaper row: pick or browse, crop to window aspect, then frost and pixelate.
  */
 import { useRef, useState } from 'react'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   DEFAULT_WALLPAPER_EFFECT, MAX_WALLPAPER_EFFECT, MIN_WALLPAPER_EFFECT,
   MAX_WALLPAPER_FILE_BYTES, WALLPAPER_EFFECT_STEP, WALLPAPER_HIGH_GLASS_HINT,
@@ -57,6 +57,7 @@ export function WallpaperRow({
   const request = useRef(0)
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [busyId, setBusyId] = useState<string | undefined>(undefined)
+  const [picking, setPicking] = useState(false)
   const [cropImage, setCropImage] = useState<string | null>(null)
   const [error, setError] = useState<string | undefined>(undefined)
   const hasImage = wallpaperImage.length > 0
@@ -70,6 +71,7 @@ export function WallpaperRow({
       return
     }
     const token = ++request.current
+    setPicking(true)
     try {
       const encoded = await encodeWallpaperFile(file)
       if (token !== request.current) return
@@ -80,6 +82,8 @@ export function WallpaperRow({
       setCropImage(encoded)
     } catch {
       if (token === request.current) setError(t('wallpaper.invalidImage'))
+    } finally {
+      setPicking(false)
     }
   }
 
@@ -129,7 +133,7 @@ export function WallpaperRow({
         <p className={css.hint}>{t('wallpaper.glassHint')}</p>
       ) : null}
       <div className={css.wallpaperActions}>
-        <Button type="button" variant="outline" onClick={() => { fileRef.current?.click() }}>
+        <Button type="button" variant="outline" loading={picking} onClick={() => { fileRef.current?.click() }}>
           {t('wallpaper.choose')}
         </Button>
         {hasImage ? (
@@ -143,7 +147,7 @@ export function WallpaperRow({
           </>
         ) : null}
         {shell !== null ? (
-          <Button type="button" variant="outline" onClick={() => { openGallery() }}>
+          <Button type="button" variant="outline" disabled={picking} onClick={() => { openGallery() }}>
             {t('wallpaper.browse')}
           </Button>
         ) : null}
@@ -159,7 +163,7 @@ export function WallpaperRow({
           }}
         />
       </div>
-      {error ? <p className={css.hint} role="status">{error}</p> : null}
+      {error ? <Toast key={error} text={error} holdMs={null} dismissLabel={t('wallpaper.close')} onDone={() => { setError(undefined) }} /> : null}
       {hasImage ? (
         <>
           <div

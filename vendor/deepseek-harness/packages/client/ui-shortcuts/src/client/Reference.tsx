@@ -125,7 +125,7 @@ export function ShortcutReference({
   const editorProps = { useCatalog, useConfig, useFixedCatalog, platform, runtime, edit: persist, recording, describeBinding, t,
     onClose: closeEditor,
     onSaved: () => { notify(t('saved')); closeEditor() },
-    onError: (message: string) => { notify(message, true) } }
+  }
   useLayoutEffect(() => {
     const input = search.current
     if (open && input !== null && !isBehindModal(input)) focusWithoutRing(input)
@@ -153,10 +153,12 @@ export function ShortcutReference({
   return <><Modal open={open} onClose={closeReference} title={t('title')} headless
     shortcutModal="shortcuts" className={css.dialog as string}>
     <div className={css.contents} onPointerDownCapture={(event) => {
+      if (event.target instanceof Element && event.target.closest('[data-dsh-toast]') !== null) return
       if (target === null || busy || !(event.target instanceof Element) || event.target.closest('button, input, a, [contenteditable="true"], [role="group"]') !== null) return
       event.preventDefault()
       closeEditor()
     }}>
+      <div className={css.headerArea} data-dsh-modal-header="">
       <header className={css.header}>
         <h2 className={css.title}>{t('title')}</h2>
         <button type="button" className={css.close} aria-label={t('close')} disabled={busy} onClick={closeReference}>
@@ -174,6 +176,7 @@ export function ShortcutReference({
           {query !== '' && <button type="button" className={css.clearSearch} aria-label={t('clear-search')}
             onClick={() => { actions.search(''); search.current?.focus() }}><IconCloseOutlineRegular size={10} /></button>}
         </div>
+      </div>
       </div>
       <div className={css.list} aria-busy={config.status === 'loading'}>
         {(['application', 'input', 'menus', 'approval'] as const).map((group) => {
@@ -201,7 +204,7 @@ export function ShortcutReference({
         })}
         {matches.length === 0 && <p className={css.hint} role="status">{t('empty')}</p>}
       </div>
-      <footer className={css.footer}>
+      <footer className={css.footer} data-dsh-modal-footer="">
         <button type="button" className={css.resetAll} disabled={busy || config.status !== 'ready' || modifiedCount === 0}
           onClick={(event) => { event.currentTarget.focus(); setTarget(null); setResetRevision(config.revision) }}>
           <IconRefreshOutlineRegular size={12} />{t('reset-all')}
@@ -214,9 +217,10 @@ export function ShortcutReference({
     closeLabel={t('close-confirmation')} onClose={() => { if (!busy) setResetRevision(null) }}
     footer={<>
       <Button data-modal-autofocus disabled={busy} onClick={() => { setResetRevision(null) }}>{t('cancel')}</Button>
-      <Button variant="primary" disabled={busy || config.status !== 'ready'} onClick={() => { void resetAll() }}>{t('reset')}</Button>
+      <Button variant="primary" disabled={busy || config.status !== 'ready'} loading={busy} onClick={() => { void resetAll() }}>{t('reset')}</Button>
     </>} />
-  {toast !== null && <Toast key={toast.seq} text={toast.text} onDone={dismissToast}
+  {toast !== null && <Toast key={toast.seq} text={toast.text} onDone={dismissToast} holdMs={toast.error ? null : undefined}
+    dismissLabel={t('dismiss-feedback')} {...toast.error ? {} : { tone: 'success' }}
     icon={<ShortcutIcon kind={toast.error ? 'error' : 'success'} className={toast.error ? css.toastError : css.toastSuccess} />} />}
   </>
 }

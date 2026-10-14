@@ -1,0 +1,197 @@
+.shell-feedback-stack {
+  position: fixed;
+  top: 120px;
+  left: 50%;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: min(640px, calc(100vw - 48px));
+  max-height: calc(100dvh - 144px);
+  overflow-y: auto;
+  transform: translateX(-50%);
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+  font-family: var(--dsw-font-family);
+}
+
+button[aria-busy='true']:not(.shell-feedback-task-summary) { position: relative; color: transparent; transition: none; }
+button[aria-busy='true']:not(.shell-feedback-task-summary) > * { visibility: hidden; }
+button[aria-busy='true']:not(.shell-feedback-task-summary)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--dsw-alias-label-primary);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: shell-feedback-spin 700ms linear infinite;
+}
+button.primary[aria-busy='true']:not(.shell-feedback-task-summary)::after { border-color: var(--dsw-alias-label-primary-foreground); border-right-color: transparent; }
+
+.shell-feedback-toast,
+.shell-feedback-pane,
+.shell-feedback-task-summary {
+  box-sizing: border-box;
+  pointer-events: auto;
+  color: var(--dsw-alias-toast-label);
+  background: var(--dsw-alias-toast-bg);
+  border: 0;
+  border-radius: var(--dsw-radius-lg);
+  box-shadow: var(--dsw-shadow-lv3);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.shell-feedback-toast {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: max-content;
+  max-width: 100%;
+  padding: 12px 16px;
+  animation: shell-feedback-in 160ms ease-out;
+}
+
+.shell-feedback-transient {
+  animation: shell-feedback-in 160ms ease-out,
+    shell-feedback-fade 1000ms ease var(--dsh-toast-hold, 3000ms) forwards;
+}
+
+.shell-feedback-text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.shell-feedback-success { display: grid; place-items: center; flex: none; height: 22px; color: var(--dsw-alias-state-success-primary); }
+
+.shell-feedback-close,
+.shell-feedback-action,
+.shell-feedback-pane button:not(.shell-feedback-task-summary) {
+  min-height: 24px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-static-deepseek-400);
+  font: inherit;
+  cursor: pointer;
+}
+
+.shell-feedback-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  color: var(--dsw-alias-toast-label);
+}
+
+.shell-feedback-action { margin-inline-start: 8px; }
+.shell-feedback-close:hover, .shell-feedback-action:hover { opacity: 0.8; }
+.shell-feedback-pane button.shell-feedback-close { color: var(--dsw-alias-toast-label); }
+.shell-feedback-close:focus-visible, .shell-feedback-action:focus-visible,
+.shell-feedback-task-summary:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.shell-feedback-task { width: 100%; }
+.shell-feedback-task[hidden], .shell-feedback-pane[hidden],
+.shell-feedback-task-summary[hidden] { display: none; }
+.shell-feedback-pane {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  max-height: calc(100dvh - 144px);
+  margin: 0;
+  padding: 16px;
+  overflow-y: auto;
+  animation: shell-feedback-in 160ms ease-out;
+}
+.shell-feedback-pane-close { position: absolute; top: 12px; right: 12px; }
+.shell-feedback-pane .progress-head,
+.shell-feedback-progress-title { padding-right: 60px; }
+.shell-feedback-pane[aria-busy='true']::before {
+  content: '';
+  position: absolute;
+  top: 18px;
+  right: 48px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--dsw-alias-toast-label);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: shell-feedback-spin 700ms linear infinite;
+}
+.shell-feedback-pane .progress,
+.shell-feedback-pane .ph-title,
+.shell-feedback-pane .ph-pct,
+.shell-feedback-pane .phase,
+.shell-feedback-pane .row-meta,
+.shell-feedback-pane .home-eyebrow,
+.shell-feedback-pane .recovery-verdict {
+  color: var(--dsw-alias-toast-label);
+}
+.shell-feedback-pane .phases { flex-wrap: wrap; }
+.shell-feedback-pane .import-summary {
+  height: auto;
+  width: auto;
+  max-width: 100%;
+  margin: 0;
+  color: var(--dsw-alias-toast-label);
+  text-align: left;
+}
+.shell-feedback-pane .failure {
+  margin: 0;
+  max-width: 100%;
+  padding-right: 32px;
+  font: inherit;
+  color: var(--dsw-alias-toast-label);
+}
+.shell-feedback-progress { display: flex; flex-direction: column; gap: 8px; }
+.shell-feedback-progress-title { font-weight: 500; }
+.shell-feedback-progress p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.shell-feedback-task-summary { padding: 8px 16px 8px 40px; cursor: pointer; }
+.shell-feedback-task-summary[aria-busy='true'] { padding-left: 40px; }
+.shell-feedback-task-summary[aria-busy='true'] { color: var(--dsw-alias-toast-label); }
+.shell-feedback-task-summary[aria-busy='true']::after { display: none; }
+.shell-feedback-task-summary[aria-busy='true']::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 12px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--dsw-alias-toast-label);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: shell-feedback-spin 700ms linear infinite;
+}
+.shell-feedback-task-summary { position: relative; }
+.shell-feedback-pane button[aria-busy='true']::after {
+  border-color: var(--dsw-alias-toast-label);
+  border-right-color: transparent;
+}
+.shell-feedback-pane.home-update {
+  margin: 0;
+  border: 0;
+  background: var(--dsw-alias-toast-bg);
+  color: var(--dsw-alias-toast-label);
+}
+.shell-feedback-pane.home-update p,
+.shell-feedback-pane.home-update .home-eyebrow,
+.shell-feedback-pane.home-update button { color: var(--dsw-alias-toast-label); }
+.shell-feedback-pane.home-update > div:first-child { padding-right: 36px; }
+@keyframes shell-feedback-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes shell-feedback-fade { to { opacity: 0; visibility: hidden; } }
+@keyframes shell-feedback-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .shell-feedback-toast, .shell-feedback-pane { animation: none; }
+  .shell-feedback-transient { animation: shell-feedback-fade 1000ms ease var(--dsh-toast-hold, 3000ms) forwards; }
+  .shell-feedback-task-summary[aria-busy='true']::before { animation: none; }
+  .shell-feedback-pane[aria-busy='true']::before { animation: none; }
+  button[aria-busy='true']:not(.shell-feedback-task-summary)::after { animation: none; }
+}

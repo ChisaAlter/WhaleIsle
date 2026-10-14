@@ -221,7 +221,8 @@ it('reports a failed developer-tool write and allows retry', async () => {
   expect(toggle.getAttribute('aria-checked')).toBe('false')
   fireEvent.click(toggle)
   await waitFor(() => { expect(toggle.getAttribute('aria-checked')).toBe('true') })
-  expect(screen.queryByRole('alert')).toBeNull()
+  expect((await screen.findByRole('alert')).textContent).toBe(en['feedback.saved'])
+  expect(screen.queryByText('Could not save. Please try again.')).toBeNull()
 })
 
 describe('current version', () => {

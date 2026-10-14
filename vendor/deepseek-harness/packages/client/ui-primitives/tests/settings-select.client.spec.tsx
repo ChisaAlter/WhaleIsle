@@ -59,6 +59,22 @@ describe('SettingsSelect', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
+  it('keeps the selected option visible and blocks a second selection while loading', () => {
+    const change = vi.fn()
+    const view = render(<SettingsSelect aria-label="Pick" value="a" options={OPTIONS} loading onChange={change} />)
+    const trigger = screen.getByRole('button', { name: 'Pick' })
+    expect(trigger.textContent).toContain('Alpha')
+    expect(trigger.getAttribute('aria-busy')).toBe('true')
+    expect(trigger).toHaveProperty('disabled', true)
+    fireEvent.click(trigger)
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(change).not.toHaveBeenCalled()
+    view.rerender(<SettingsSelect aria-label="Pick" value="a" options={OPTIONS} onChange={change} />)
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Off' }))
+    expect(change).toHaveBeenCalledExactlyOnceWith('')
+  })
+
   it('falls back to the raw value when no option matches', () => {
     render(
       <SettingsSelect

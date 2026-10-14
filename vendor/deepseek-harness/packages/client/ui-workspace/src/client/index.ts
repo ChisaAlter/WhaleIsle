@@ -283,6 +283,15 @@ export function apply(ctx: Context): void {
     renameWorkspace: async (workspaceId, title) => { await workspaces.rename(workspaceId, title) },
     deleteWorkspace: async (workspaceId) => { await uiWorkspace.deleteWorkspace(workspaceId) },
     deleteSession: async (sessionId) => { await uiWorkspace.deleteSession(sessionId) },
+    archiveSessionForBatch: async (sessionId, options) => {
+      await uiWorkspace.archiveSession(sessionId, options)
+    },
+    deleteSessionForBatch: async (sessionId) => {
+      if (!workspaces.list.getSnapshot().archivedSessionIds.includes(sessionId)) {
+        await uiWorkspace.archiveSession(sessionId)
+      }
+      await uiWorkspace.deleteSession(sessionId)
+    },
     insertWorkspaceBefore: async (workspaceId, beforeWorkspaceId) => {
       await workspaces.insertBefore(workspaceId, beforeWorkspaceId)
     },

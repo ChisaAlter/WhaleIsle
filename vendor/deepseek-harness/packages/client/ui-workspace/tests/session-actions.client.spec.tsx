@@ -9,7 +9,7 @@
  * chain lives in rename-assembly.client.spec.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId, WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
@@ -302,10 +302,15 @@ describe('SessionRenameDialog', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(renameSession).not.toHaveBeenCalled()
     fireEvent.change(input, { target: { value: '  新标题  ' } })
-    fireEvent.click(screen.getByRole('button', { name: '重命名' }))
+    const confirm = screen.getByRole<HTMLButtonElement>('button', { name: '重命名' })
+    fireEvent.click(confirm)
     expect(renameSession).toHaveBeenCalledWith(sid('one'), '新标题')
     // While the Host call is pending the input locks and closing is blocked.
     expect(input.disabled).toBe(true)
+    expect(screen.getByRole('button', { name: '重命名' })).toBe(confirm)
+    expect(confirm.getAttribute('aria-busy')).toBe('true')
+    expect(confirm.querySelector('[data-state="ongoing"]')).not.toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
     fireEvent.keyDown(document, { key: 'Escape' })
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
     expect(settleSessionRename).not.toHaveBeenCalled()
@@ -345,8 +350,16 @@ describe('SessionRenameDialog', () => {
     fireEvent.change(input, { target: { value: 'Newer' } })
     expect(screen.queryByRole('alert')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '重命名' }))
-    await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('denied') })
-    expect(screen.getByRole('dialog', { name: '重命名会话' })).toBeTruthy()
+    const notice = await screen.findByRole('alert')
+    expect(notice.textContent).toBe('denied')
+    expect(notice.getAttribute('data-persistent')).toBe('true')
+    const dialog = screen.getByRole('dialog', { name: '重命名会话' })
+    expect(dialog.contains(notice)).toBe(false)
+    fireEvent.click(within(notice).getByRole('button', { name: '关闭' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('dialog', { name: '重命名会话' })).toBe(dialog)
+    expect(input.value).toBe('Newer')
+    expect(settleSessionRename).not.toHaveBeenCalled()
   })
 
   it('Cancel, Escape, and Close settle without renaming; a request for another Session starts a fresh draft', () => {
@@ -416,10 +429,18 @@ describe('SessionArchiveConfirmDialog', () => {
       '1 个后台任务：pnpm run build',
       '1 条定时提醒：check the build',
     ])
-    fireEvent.click(screen.getByRole('button', { name: '停止并归档' }))
+    const confirm = screen.getByRole<HTMLButtonElement>('button', { name: '停止并归档' })
+    fireEvent.click(confirm)
     expect(stopAndArchiveSession).toHaveBeenCalledWith(sid('one'))
-    // While the Host call is pending, closing is blocked and the status shows.
-    expect(screen.getByRole('status').textContent).toBe('正在停止并归档…')
+    // The same action caption stays mounted while its spinner is pending.
+    expect(screen.getByRole('button', { name: '停止并归档' })).toBe(confirm)
+    expect(confirm.disabled).toBe(true)
+    expect(confirm.getAttribute('aria-busy')).toBe('true')
+    expect(confirm.querySelector('[data-state="ongoing"]')).not.toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.queryByText('正在停止并归档…')).toBeNull()
+    fireEvent.click(confirm)
+    expect(stopAndArchiveSession).toHaveBeenCalledOnce()
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
     expect(settleSessionArchive).not.toHaveBeenCalled()
     await act(async () => { pending.resolve(undefined) })
@@ -453,6 +474,45 @@ describe('SessionArchiveConfirmDialog', () => {
     await waitFor(() => { expect(screen.getByRole('alert').textContent).toBe('plain failure') })
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(settleSessionArchive).toHaveBeenCalledOnce()
+  })
+
+  it('keeps a rejected stop visible until dismissal, which leaves the confirmation ready to retry', async () => {
+    vi.useFakeTimers()
+    try {
+      const pending = Promise.withResolvers<undefined>()
+      const stopAndArchiveSession = vi.fn<SessionArchiveConfirmInjected['stopAndArchiveSession']>()
+        .mockRejectedValueOnce(new Error('stop exploded'))
+        .mockReturnValueOnce(pending.promise)
+      const { settleSessionArchive, ask } = archiveDialog(stopAndArchiveSession)
+      ask([{ kind: 'turn' }])
+      const dialog = screen.getByRole('dialog', { name: '停止并归档此会话？' })
+      const confirm = screen.getByRole<HTMLButtonElement>('button', { name: '停止并归档' })
+      await act(async () => { fireEvent.click(confirm) })
+      const notice = screen.getByRole('alert')
+      expect(notice.textContent).toBe('stop exploded')
+      expect(notice.getAttribute('data-persistent')).toBe('true')
+      expect(dialog.contains(notice)).toBe(false)
+      await act(async () => { await vi.advanceTimersByTimeAsync(20000) })
+      expect(screen.getByRole('alert')).toBe(notice)
+      expect(settleSessionArchive).not.toHaveBeenCalled()
+
+      fireEvent.click(within(notice).getByRole('button', { name: '关闭' }))
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(screen.getByRole('dialog', { name: '停止并归档此会话？' })).toBe(dialog)
+      expect(confirm.disabled).toBe(false)
+      expect(stopAndArchiveSession).toHaveBeenCalledOnce()
+      fireEvent.click(confirm)
+      expect(stopAndArchiveSession).toHaveBeenCalledTimes(2)
+      expect(confirm.getAttribute('aria-busy')).toBe('true')
+      fireEvent.click(screen.getByRole('button', { name: '取消' }))
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(settleSessionArchive).not.toHaveBeenCalled()
+      await act(async () => { pending.resolve(undefined) })
+      expect(settleSessionArchive).toHaveBeenCalledOnce()
+      expect(screen.queryByRole('dialog')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('describes a family merged by another provider with the generic line', () => {
@@ -515,8 +575,8 @@ describe('RowActionToast', () => {
       />,
     )
     let seq = 0
-    const notify = (notice: RowToast): void => {
-      act(() => { toast.set({ ...notice, seq: ++seq }) })
+    const notify = async (notice: RowToast): Promise<void> => {
+      await act(async () => { toast.set({ ...notice, seq: ++seq }) })
     }
     return { dismissToast, undoArchive, showArchived, notify }
   }
@@ -527,17 +587,17 @@ describe('RowActionToast', () => {
     expect(document.body.textContent).toBe('')
   })
 
-  it('the stopped-and-archived notice offers the same undo and filter actions under its own wording', () => {
+  it('the stopped-and-archived notice offers the same undo and filter actions under its own wording', async () => {
     const { undoArchive, notify } = toastSurface()
-    notify({ kind: 'stoppedAndArchived', sessionId: sid('one') })
+    await notify({ kind: 'stoppedAndArchived', sessionId: sid('one') })
     expect(screen.getByRole('alert').textContent).toBe('已停止并归档，可撤销或查看全部会话')
     fireEvent.click(screen.getByRole('button', { name: '撤销' }))
     expect(undoArchive).toHaveBeenCalledWith(sid('one'))
   })
 
-  it('the archived notice takes itself down, then undoes the archive or shows the archived rows', () => {
+  it('the archived notice takes itself down, then undoes the archive or shows the archived rows', async () => {
     const { dismissToast, undoArchive, showArchived, notify } = toastSurface()
-    notify({ kind: 'archived', sessionId: sid('one') })
+    await notify({ kind: 'archived', sessionId: sid('one') })
     expect(screen.getByRole('alert').textContent).toBe('会话已归档，可撤销或查看全部会话')
     fireEvent.click(screen.getByRole('button', { name: '撤销' }))
     expect(dismissToast).toHaveBeenCalledOnce()
@@ -546,7 +606,7 @@ describe('RowActionToast', () => {
     expect(showArchived).not.toHaveBeenCalled()
     expect(screen.queryByRole('alert')).toBeNull()
 
-    notify({ kind: 'archived', sessionId: sid('two') })
+    await notify({ kind: 'archived', sessionId: sid('two') })
     fireEvent.click(screen.getByRole('button', { name: '查看全部会话' }))
     expect(dismissToast).toHaveBeenCalledTimes(2)
     expect(showArchived).toHaveBeenCalledOnce()
@@ -555,24 +615,24 @@ describe('RowActionToast', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('treats a view without a persisted flag as the visible default and omits the filter action', () => {
+  it('treats a view without a persisted flag as the visible default and omits the filter action', async () => {
     const { notify } = toastSurface({})
-    notify({ kind: 'archived', sessionId: sid('one') })
+    await notify({ kind: 'archived', sessionId: sid('one') })
     expect(screen.getByRole('alert').textContent).toBe('会话已归档，可撤销')
     expect(screen.queryByRole('button', { name: '查看全部会话' })).toBeNull()
   })
 
-  it('omits the filter action while the archived list is already shown', () => {
+  it('omits the filter action while the archived list is already shown', async () => {
     const { notify } = toastSurface({ showArchivedList: true })
-    notify({ kind: 'archived', sessionId: sid('one') })
+    await notify({ kind: 'archived', sessionId: sid('one') })
     expect(screen.getByRole('alert').textContent).toBe('会话已归档，可撤销')
     expect(screen.queryByRole('button', { name: '查看全部会话' })).toBeNull()
     expect(screen.getByRole('button', { name: '撤销' })).toBeTruthy()
   })
 
-  it.each(['show', 'only'] as const)('omits the filter action under %s even when the bottom archive section is hidden', (archivedFilter) => {
+  it.each(['show', 'only'] as const)('omits the filter action under %s even when the bottom archive section is hidden', async (archivedFilter) => {
     const { notify } = toastSurface({ showArchivedList: false, archivedFilter })
-    notify({ kind: 'archived', sessionId: sid('one') })
+    await notify({ kind: 'archived', sessionId: sid('one') })
     expect(screen.getByRole('alert').textContent).toBe('会话已归档，可撤销')
     expect(screen.queryByRole('button', { name: '查看全部会话' })).toBeNull()
   })
@@ -582,11 +642,11 @@ describe('RowActionToast', () => {
     ['unpinFailed', '取消置顶失败，请稍后重试'],
     ['archivedNotOpenable', '已归档对话暂时无法查看，请取消归档后查看'],
     ['defaultWorkspaceFailed', '无法创建默认工作区，请通过“选择工作区”选择文件夹'],
-  ] as const)('shows the %s warning and takes it down when its hold ends', (kind, text) => {
+  ] as const)('shows the %s warning and takes it down when its hold ends', async (kind, text) => {
     vi.useFakeTimers()
     try {
       const { dismissToast, notify } = toastSurface()
-      notify({ kind })
+      await notify({ kind })
       const alert = screen.getByRole('alert')
       expect(alert.textContent).toBe(text)
       expect(alert.querySelector('button')).toBeNull()
@@ -598,11 +658,11 @@ describe('RowActionToast', () => {
     }
   })
 
-  it('shows a refused creation with the Host reason and holds it as long as the archived notice', () => {
+  it('shows a refused creation with the Host reason and holds it as long as the archived notice', async () => {
     vi.useFakeTimers()
     try {
       const { dismissToast, notify } = toastSurface()
-      notify({ kind: 'createFailed', message: 'agent-preset/invalid: agent-presets: preset "broken" failed to mount' })
+      await notify({ kind: 'createFailed', message: 'agent-preset/invalid: agent-presets: preset "broken" failed to mount' })
       const alert = screen.getByRole('alert')
       expect(alert.textContent).toBe('新建会话失败：agent-preset/invalid: agent-presets: preset "broken" failed to mount')
       expect(alert.querySelector('button')).toBeNull()
@@ -616,14 +676,14 @@ describe('RowActionToast', () => {
     }
   })
 
-  it('the archived notice holds longer than a plain notice, and a repeat restarts its hold', () => {
+  it('the archived notice holds longer than a plain notice, and a repeat restarts its hold', async () => {
     vi.useFakeTimers()
     try {
       const { dismissToast, notify } = toastSurface()
-      notify({ kind: 'archived', sessionId: sid('one') })
+      await notify({ kind: 'archived', sessionId: sid('one') })
       act(() => { vi.advanceTimersByTime(4000) })
       expect(screen.getByRole('alert')).toBeTruthy()
-      notify({ kind: 'archived', sessionId: sid('two') })
+      await notify({ kind: 'archived', sessionId: sid('two') })
       act(() => { vi.advanceTimersByTime(6999) })
       expect(dismissToast).not.toHaveBeenCalled()
       act(() => { vi.advanceTimersByTime(1) })

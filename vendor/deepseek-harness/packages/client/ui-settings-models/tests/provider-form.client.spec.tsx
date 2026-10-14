@@ -815,7 +815,7 @@ describe('endpoint interrogation', () => {
 
     fireEvent.click(screen.getByText(en.fetchModels))
 
-    await screen.findByText(/answered 401; check the API key/)
+    expect((await screen.findByRole('alert')).textContent).toContain('answered 401; check the API key')
     // The failure is a detour, not a dead end: hand-entry is still offered.
     expect(screen.getByRole('button', { name: en.addModel })).toBeTruthy()
   })
@@ -825,7 +825,7 @@ describe('endpoint interrogation', () => {
     await mountSection({ discover: empty })
     openEditor('openai')
     fireEvent.click(screen.getByText(en.fetchModels))
-    await screen.findByText(en.fetchEmpty)
+    expect((await screen.findByRole('alert')).textContent).toContain(en.fetchEmpty)
   })
 
   it('can be asked for a configured route even with no endpoint', async () => {
@@ -1181,7 +1181,7 @@ describe('hand-declared providers', () => {
     fireEvent.change(screen.getByLabelText(en.customDisplayName), { target: { value: 'Acme 网关' } })
     fireEvent.click(screen.getByText(en.apply))
 
-    const notice = await screen.findByRole('status')
+    const notice = await screen.findByRole('alert')
     expect(notice.textContent).toBe(providerCopy(en.savedProvider, {
       provider: 'acme-gateway',
       displayName: 'Acme 网关',
@@ -1339,7 +1339,7 @@ describe('hand-declared providers', () => {
     expect(screen.queryByText(en.customRouteInvalid)).toBeNull()
   })
 
-  it('styles a rejected route id as a fault and its guidance as a hint', () => {
+  it('describes a rejected route id as a fault and keeps static guidance', () => {
     mountCard()
     const routeField = screen.getByLabelText(en.customRoute)
     // Same split the key field makes: what the user got wrong reads as a
@@ -1347,10 +1347,13 @@ describe('hand-declared providers', () => {
     expect(screen.getByText(en.customRouteHint).className).toMatch(/advancedHint/)
 
     fireEvent.change(routeField, { target: { value: '2' } })
-    expect(screen.getByText(en.customRouteInvalid).className).toMatch(/error/)
+    expect(routeField.getAttribute('aria-invalid')).toBe('true')
+    expect(document.getElementById(routeField.getAttribute('aria-describedby') ?? '')?.textContent).toBe(en.customRouteInvalid)
+    expect(screen.getByText(en.customRouteHint).className).toMatch(/advancedHint/)
 
     fireEvent.change(routeField, { target: { value: 'openai' } })
-    expect(screen.getByText(en.customRouteTaken).className).toMatch(/error/)
+    expect(routeField.getAttribute('aria-invalid')).toBe('true')
+    expect(document.getElementById(routeField.getAttribute('aria-describedby') ?? '')?.textContent).toBe(en.customRouteTaken)
   })
 
   it.each(['not-a-url', 'localhost:11434', 'ftp://gateway.acme.example/v1'])(
@@ -1416,7 +1419,7 @@ describe('hand-declared providers', () => {
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'http://localhost:11434/v1' } })
     fireEvent.click(screen.getByText(en.fetchModels))
 
-    await screen.findByText('connection refused')
+    expect((await screen.findByRole('alert')).textContent).toContain('connection refused')
     expect(screen.queryByText(en.customBaseUrlInvalid)).toBeNull()
   })
 
@@ -1429,20 +1432,21 @@ describe('hand-declared providers', () => {
     }
   })
 
-  it('names the blocked gate under the form, and nothing once it is satisfied', () => {
+  it('names the blocked gate on the action, and clears it once satisfied', () => {
     mountCard()
     fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
 
     // Endpoint first: the gate names the one thing standing in the way.
-    expect(screen.getByText(en.customNeedsBaseUrl)).toBeTruthy()
+    expect(buttonNamed(en.create).title).toBe(en.customNeedsBaseUrl)
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    expect(screen.getByText(en.customNeedsModels)).toBeTruthy()
+    expect(buttonNamed(en.create).title).toBe(en.customNeedsModels)
 
-    // Satisfied: the shared line disappears rather than rendering empty.
+    // Satisfied: the action's explanation clears without adding a layout row.
     fireEvent.click(screen.getByRole('button', { name: en.addModel }))
     fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'acme-large' } })
     expect(screen.queryByText(en.customNeedsBaseUrl)).toBeNull()
     expect(screen.queryByText(en.customNeedsModels)).toBeNull()
+    expect(buttonNamed(en.create).title).toBe('')
     expect(buttonNamed(en.create).disabled).toBe(false)
   })
 
@@ -1541,9 +1545,9 @@ describe('hand-declared providers', () => {
     expect(screen.getByText(en.customRouteTaken)).toBeTruthy()
 
     fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
-    expect(screen.getByText(en.customNeedsBaseUrl)).toBeTruthy()
+    expect(buttonNamed(en.create).title).toBe(en.customNeedsBaseUrl)
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
-    expect(screen.getByText(en.customNeedsModels)).toBeTruthy()
+    expect(buttonNamed(en.create).title).toBe(en.customNeedsModels)
     expect(buttonNamed(en.create).disabled).toBe(true)
 
     // A model row with no id is not a model.
@@ -1565,6 +1569,23 @@ describe('hand-declared providers', () => {
 
     await screen.findByText('read-only settings')
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('keeps the custom provider draft open when the write transport rejects', async () => {
+    const mutate = vi.fn().mockRejectedValue(new Error('Connection interrupted'))
+    const { onClose } = mountCard({}, { mutate })
+    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'kept-model' } })
+    fireEvent.click(screen.getByRole('button', { name: en.create }))
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Connection interrupted')
+    expect(onClose).not.toHaveBeenCalled()
+    expect(mutate).toHaveBeenCalledOnce()
+    expect(screen.getByLabelText<HTMLInputElement>(en.customRoute).value).toBe('acme')
+    expect(screen.getByLabelText<HTMLInputElement>(`${en.modelId} 1`).value).toBe('kept-model')
+    expect(buttonNamed(en.create).disabled).toBe(false)
   })
 
   it('translates a create refused by a newer namespace revision', async () => {

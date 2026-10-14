@@ -1,7 +1,7 @@
 /** Settings → Remote → Gateway: offer v2 connections and local daemon settings. */
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Button, DisclosureRow, SettingsSelect } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Button, DisclosureRow, SettingsSelect, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RemotePatch, RemoteSnapshot } from './desktop-shell.ts'
 import { ipcErrorMessage } from './relay-copy.ts'
@@ -20,7 +20,8 @@ export type GatewaySettingsTabProps =
   & PropsLocale<'settings.remote'>
   & InjectFace<GatewaySettingsTabInjected>
 
-const EMPTY: RemoteSnapshot = { urls: [], devices: [] }
+type GatewayAction = 'load' | 'relayUrl' | 'relayDefault' | 'relayToken' | 'relayClear' | 'modeLan' | 'modeRelay' | 'port' | 'bind' | 'rotate'
+type Notice = { id: number; text: string; success: boolean }
 
 /**
  * Explain why Relay is unavailable, or the ready-state mode hint.
@@ -53,49 +54,86 @@ export function GatewaySettingsTab({
 }: GatewaySettingsTabProps): ReactNode {
   const [snap, setSnap] = useState<RemoteSnapshot | null>(null)
   const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [validation, setValidation] = useState<'port-invalid' | null>(null)
+  const [pending, setPending] = useState<GatewayAction | null>(null)
   const [portDraft, setPortDraft] = useState('')
   const [relayUrlDraft, setRelayUrlDraft] = useState('')
   const [relayTokenDraft, setRelayTokenDraft] = useState('')
-  const [savedFlash, setSavedFlash] = useState(false)
   const [legacyOpen, setLegacyOpen] = useState(false)
+  const [notice, setNotice] = useState<Notice | null>(null)
+  const noticeId = useRef(0)
+  const busy = pending !== null
 
-  const applySnap = useCallback((next: RemoteSnapshot | null) => {
-    const value = next ?? EMPTY
-    setSnap(value)
-    setError(value.error || '')
-    setPortDraft(String(value.port ?? 3180))
-    setRelayUrlDraft(value.relayUrl || '')
+  const showNotice = useCallback((text: string, success = false) => {
+    noticeId.current += 1
+    setNotice({ id: noticeId.current, text, success })
+  }, [])
+
+  const applySnap = useCallback((next: RemoteSnapshot) => {
+    setSnap(next)
+    setError(next.error || '')
+    setValidation(null)
+    setPortDraft(String(next.port ?? 3180))
+    setRelayUrlDraft(next.relayUrl || '')
   }, [])
 
   const load = useCallback(async () => {
-    setBusy(true)
+    setPending('load')
     try {
-      applySnap(await getRemote())
+      const next = await getRemote()
+      if (next === null || next.available === false) {
+        setError(t('error'))
+        showNotice(t('error'))
+        return
+      }
+      applySnap(next)
+      if (next.error) showNotice(t('statusError', { message: next.error }))
+      else setNotice(null)
     } catch (caught) {
-      setError(ipcErrorMessage(caught))
+      const message = ipcErrorMessage(caught)
+      setError(message)
+      showNotice(t('statusError', { message }))
     } finally {
-      setBusy(false)
+      setPending(null)
     }
-  }, [applySnap, getRemote])
+  }, [applySnap, getRemote, showNotice, t])
 
   useEffect(() => {
     void load()
   }, [load])
 
-  const save = useCallback(async (patch: RemotePatch) => {
-    setBusy(true)
-    setSavedFlash(false)
+  const save = useCallback(async (patch: RemotePatch, action: GatewayAction): Promise<boolean> => {
+    if (busy) return false
+    setPending(action)
+    setNotice(null)
     try {
-      applySnap(await saveRemote(patch))
-      setSavedFlash(true)
-      window.setTimeout(() => { setSavedFlash(false) }, 1500)
+      const next = await saveRemote(patch)
+      if (next === null || next.available === false) {
+        setError(t('error'))
+        showNotice(t('error'))
+        return false
+      }
+      applySnap(next)
+      if (next.error) {
+        showNotice(t('savedServiceError', { message: next.error }))
+        return false
+      }
+      showNotice(t('saved'), true)
+      return true
     } catch (caught) {
-      setError(ipcErrorMessage(caught))
+      const message = ipcErrorMessage(caught)
+      setError(message)
+      showNotice(t('statusError', { message }))
+      return false
     } finally {
-      setBusy(false)
+      setPending(null)
     }
-  }, [applySnap, saveRemote])
+  }, [applySnap, busy, saveRemote, showNotice, t])
+
+  const feedback = notice ? (
+    <Toast key={notice.id} text={notice.text} {...notice.success ? { tone: 'success' as const } : { holdMs: null }}
+      dismissLabel={t('dismiss')} onDone={() => { setNotice(null) }} />
+  ) : null
 
   const bindAddress = snap?.bindAddress || '0.0.0.0'
   const mode = snap?.mode === 'lan' ? 'lan' : 'relay'
@@ -119,21 +157,15 @@ export function GatewaySettingsTab({
     return option
   }
 
-  if (!snap && error) {
-    return (
-      <div className={css.page}>
-        <p className={css.status} role="status">{t('error')}</p>
-        <Button size="sm" variant="ghost" onClick={() => { void load() }}>{t('retry')}</Button>
-      </div>
-    )
-  }
-
   if (!snap) {
-    return <div className={css.page}><p className={css.status} role="status">{t('loading')}</p></div>
+    return <div className={css.page}>{feedback}
+      <Button size="sm" variant="ghost" loading={busy} disabled={busy} title={error || undefined} onClick={() => { void load() }}>{t('retry')}</Button>
+    </div>
   }
 
   return (
     <div className={css.page} data-dsh-remote-gateway="">
+      {feedback}
       <div className={css.row}>
         <div className={css.rowText}>
           <div className={css.title}>{t('relayUrl')}</div>
@@ -155,7 +187,8 @@ export function GatewaySettingsTab({
               size="sm"
               variant="primary"
               disabled={busy}
-              onClick={() => { void save({ remoteRelayUrl: relayUrlDraft.trim() }) }}
+              loading={pending === 'relayUrl'}
+              onClick={() => { void save({ remoteRelayUrl: relayUrlDraft.trim() }, 'relayUrl') }}
             >
               {t('save')}
             </Button>
@@ -163,10 +196,11 @@ export function GatewaySettingsTab({
               size="sm"
               variant="ghost"
               disabled={busy || !snap.defaultRelayUrl}
+              loading={pending === 'relayDefault'}
               onClick={() => {
                 const origin = snap.defaultRelayUrl || ''
                 setRelayUrlDraft(origin)
-                void save({ remoteRelayUrl: origin })
+                void save({ remoteRelayUrl: origin }, 'relayDefault')
               }}
             >
               {t('relayUseDefault')}
@@ -182,7 +216,8 @@ export function GatewaySettingsTab({
           <p className={css.desc}>{t('relayTokenHint')}</p>
           {snap.legacyRelayTokenSet ? (
             <Button size="sm" variant="ghost" disabled={busy}
-              onClick={() => { void save({ remoteRelayToken: '' }) }}>
+              loading={pending === 'relayClear'}
+              onClick={() => { void save({ remoteRelayToken: '' }, 'relayClear') }}>
               {t('relayTokenClear')}
             </Button>
           ) : <p className={css.desc}>{t('legacyEmpty')}</p>}
@@ -210,9 +245,10 @@ export function GatewaySettingsTab({
               size="sm"
               variant="primary"
               disabled={busy || !relayTokenDraft.trim()}
+              loading={pending === 'relayToken'}
               onClick={() => {
                 const token = relayTokenDraft.trim()
-                void save({ remoteRelayToken: token }).then(() => { setRelayTokenDraft('') })
+                void save({ remoteRelayToken: token }, 'relayToken').then(saved => { if (saved) setRelayTokenDraft('') })
               }}
             >
               {t('save')}
@@ -221,9 +257,9 @@ export function GatewaySettingsTab({
               size="sm"
               variant="ghost"
               disabled={busy || !snap.relayTokenSet}
+              loading={pending === 'relayClear'}
               onClick={() => {
-                setRelayTokenDraft('')
-                void save({ remoteRelayToken: '' })
+                void save({ remoteRelayToken: '' }, 'relayClear').then(saved => { if (saved) setRelayTokenDraft('') })
               }}
             >
               {t('relayTokenClear')}
@@ -245,7 +281,8 @@ export function GatewaySettingsTab({
             role="radio"
             aria-checked={mode === 'lan'}
             disabled={busy}
-            onClick={() => { if (mode !== 'lan') void save({ remoteMode: 'lan' }) }}
+            loading={pending === 'modeLan'}
+            onClick={() => { if (mode !== 'lan') void save({ remoteMode: 'lan' }, 'modeLan') }}
           >
             {t('modeLan')}
           </Button>
@@ -256,8 +293,9 @@ export function GatewaySettingsTab({
             role="radio"
             aria-checked={mode === 'relay'}
             disabled={busy || !relayReady}
+            loading={pending === 'modeRelay'}
             title={relayReady ? undefined : modeHint}
-            onClick={() => { if (relayReady && mode !== 'relay') void save({ remoteMode: 'relay' }) }}
+            onClick={() => { if (relayReady && mode !== 'relay') void save({ remoteMode: 'relay' }, 'modeRelay') }}
           >
             {t('modeRelay')}
           </Button>
@@ -277,6 +315,8 @@ export function GatewaySettingsTab({
             max={65535}
             inputMode="numeric"
             aria-label={t('port')}
+            aria-invalid={validation === 'port-invalid' || undefined}
+            title={validation === 'port-invalid' ? t('portInvalid') : undefined}
             value={portDraft}
             disabled={busy}
             onChange={(event) => { setPortDraft(event.target.value) }}
@@ -285,13 +325,17 @@ export function GatewaySettingsTab({
             size="sm"
             variant="primary"
             disabled={busy}
+            loading={pending === 'port'}
             onClick={() => {
               const port = Number(portDraft)
               if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-                setError(t('portHint'))
+                setValidation('port-invalid')
+                setError(t('portInvalid'))
+                showNotice(t('portInvalid'))
                 return
               }
-              void save({ remotePort: port })
+              setValidation(null)
+              void save({ remotePort: port }, 'port')
             }}
           >
             {t('save')}
@@ -309,9 +353,11 @@ export function GatewaySettingsTab({
             align="end"
             aria-label={t('bindScope')}
             value={bindAddress}
+            disabled={busy}
+            loading={pending === 'bind'}
             options={bindOptions.map(option => ({ id: option, label: bindLabel(option) }))}
             onChange={(id) => {
-              if (id !== bindAddress) void save({ remoteBindAddress: id })
+              if (id !== bindAddress) void save({ remoteBindAddress: id }, 'bind')
             }}
           />
         </div>
@@ -334,23 +380,32 @@ export function GatewaySettingsTab({
             size="sm"
             variant="ghost"
             disabled={busy}
+            loading={pending === 'rotate'}
             onClick={() => {
-              setBusy(true)
+              setPending('rotate')
+              setNotice(null)
               void rotateRemoteToken()
-                .then((next) => { applySnap(next) })
-                .catch((caught: unknown) => {
-                  setError(ipcErrorMessage(caught))
+                .then((next) => {
+                  if (next === null || next.available === false) {
+                    setError(t('error'))
+                    showNotice(t('error'))
+                    return
+                  }
+                  applySnap(next)
+                  if (next.error) showNotice(t('statusError', { message: next.error }))
                 })
-                .finally(() => { setBusy(false) })
+                .catch((caught: unknown) => {
+                  const message = ipcErrorMessage(caught)
+                  setError(message)
+                  showNotice(t('statusError', { message }))
+                })
+                .finally(() => { setPending(null) })
             }}
           >
             {t('rotateTokenConfirm')}
           </Button>
         </div>
       </div>
-
-      {savedFlash ? <p className={css.status} role="status">{t('saved')}</p> : null}
-      {error ? <p className={css.status} role="status">{t('statusError', { message: error })}</p> : null}
     </div>
   )
 }

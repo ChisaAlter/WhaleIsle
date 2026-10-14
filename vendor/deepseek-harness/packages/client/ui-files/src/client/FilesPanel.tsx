@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { IconRefreshOutline16, Input, Tooltip, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Button, IconRefreshOutline16, IconWarningOutline16, Input, Toast, Tooltip, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { UseSessions } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -169,7 +169,13 @@ export function FilesPanel({
   const [childrenByPath, setChildrenByPath] = useState<Record<string, TreeEntry[]>>({})
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<number | null>(null)
+  const [notification, setNotification] = useState<{ id: number; text: string } | null>(null)
+  const notificationId = useRef(0)
+  const notifyError = useCallback((message: string): void => {
+    setError(message)
+    setNotification({ id: ++notificationId.current, text: message })
+  }, [])
   const [generation, setGeneration] = useState(0)
   const [query, setQuery] = useState('')
   const [searchPending, setSearchPending] = useState(false)
@@ -196,6 +202,7 @@ export function FilesPanel({
       setRoot([])
       setChildrenByPath({})
       setError(null)
+      setNotification(null)
       setListing('settled')
       return
     }
@@ -204,22 +211,23 @@ export function FilesPanel({
     void listDirectory(cwd, '', () => cancelled).then((result) => {
       if (cancelled || result === undefined) return
       if (!result.ok) {
-        setError(result.code === 'workspace/outside' ? t('error.workspaceAccess') : result.message ?? t('error.list'))
+        notifyError(result.code === 'workspace/outside' ? t('error.workspaceAccess') : result.message ?? t('error.list'))
         setRoot([])
         setListing('settled')
         return
       }
       setError(null)
+      setNotification(null)
       setRoot(toTree('', result.entries ?? []))
       setListing('settled')
     }).catch(() => {
       if (!cancelled) {
-        setError(t('error.list'))
+        notifyError(t('error.list'))
         setListing('settled')
       }
     })
     return () => { cancelled = true }
-  }, [cwd, listDirectory, t, generation])
+  }, [cwd, listDirectory, t, generation, notifyError])
 
   // One walk per search session: traversal runs when the query first becomes
   // non-empty (and on Refresh via `generation`); further keystrokes only
@@ -264,6 +272,8 @@ export function FilesPanel({
       }
       if (cancelled) return
       setError(searchError)
+      if (searchError !== null) notifyError(searchError)
+      else setNotification(null)
       setRoot(acc[''] ?? [])
       setChildrenByPath(acc)
       setExpanded(new Set(Object.keys(acc).filter(path => path !== '')))
@@ -272,7 +282,7 @@ export function FilesPanel({
     }
     void walk()
     return () => { cancelled = true }
-  }, [cwd, listDirectory, searching, generation, t])
+  }, [cwd, listDirectory, searching, generation, t, notifyError])
 
   useEffect(() => {
     if (listEditors === undefined) return
@@ -301,25 +311,24 @@ export function FilesPanel({
     void listDirectory(cwd, path, () => !current()).then((result) => {
       if (!current() || result === undefined) return
       if (!result.ok) {
-        setError(result.code === 'workspace/outside' ? t('error.workspaceAccess') : result.message ?? t('error.list'))
+        notifyError(result.code === 'workspace/outside' ? t('error.workspaceAccess') : result.message ?? t('error.list'))
         return
       }
       setChildrenByPath(current => ({ ...current, [path]: toTree(path, result.entries ?? []) }))
-    }).catch(() => { if (current()) setError(t('error.list')) })
+    }).catch(() => { if (current()) notifyError(t('error.list')) })
   }
 
   const copyPath = (value: string): void => {
     void writeClipboard(value).then((ok) => {
       if (!ok) return
-      setCopied(true)
-      window.setTimeout(() => { setCopied(false) }, 1200)
+      setCopied(++notificationId.current)
     })
   }
 
   const openFileInWorkspace = async (relativePath: string): Promise<void> => {
     try { await openFile(relativePath) }
     catch (_error: unknown) {
-      setError(t('error.open'))
+      notifyError(t('error.open'))
     }
   }
 
@@ -334,6 +343,13 @@ export function FilesPanel({
   const pickerMatches = useMemo(() => searching
     ? getProjectFilePickerMatches(pickerFiles, query)
     : [], [pickerFiles, query, searching])
+  const reload = (): void => {
+    if (!searching) {
+      setChildrenByPath({})
+      setExpanded(new Set())
+    }
+    setGeneration(value => value + 1)
+  }
 
   return (
     <div className={css.root} data-files-panel>
@@ -346,34 +362,28 @@ export function FilesPanel({
           onChange={(event) => { setQuery(event.target.value) }}
           onKeyDown={onSearchKey}
         />
-        {copied && <span className={css.copied} role="status">{t('copied')}</span>}
         <Tooltip label={t('refresh')} side="bottom">
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             className={css.refresh}
             aria-label={t('refresh')}
-            onClick={() => {
-              if (query.trim() === '') {
-                setChildrenByPath({})
-                setExpanded(new Set())
-              }
-              setGeneration(n => n + 1)
-            }}
+            loading={listing === 'pending' || searchPending}
+            onClick={reload}
           >
             <IconRefreshOutline16 size={14} />
-          </button>
+          </Button>
         </Tooltip>
       </div>
       <div className={css.body} aria-busy={searching && searchPending || undefined}>
         {searching && searchPending ? <p className={css.message} role="status">{t('search.pending')}</p> : null}
         {cwd === undefined ? (
           <p className={css.message}>{t('empty.cwd')}</p>
-        ) : error !== null ? (
-          <p className={css.message}>{error}</p>
         ) : listing === 'pending' && root.length === 0 ? (
-          <p className={css.message}>{t('listing')}</p>
+          null
         ) : root.length === 0 ? (
-          <p className={css.message}>{t('empty.dir')}</p>
+          error === null ? <p className={css.message}>{t('empty.dir')}</p> : null
         ) : (
           searching ? (
             <div className={css.picker}>
@@ -423,6 +433,12 @@ export function FilesPanel({
           )
         )}
       </div>
+      {copied !== null && <Toast key={copied} text={t('copied')} tone="success" holdMs={1200}
+        onDone={() => { setCopied(null) }} />}
+      {notification !== null && <Toast key={notification.id} text={notification.text}
+        icon={<IconWarningOutline16 />} holdMs={null} dismissLabel={t('unsaved.close')}
+        actions={[{ label: t('refresh'), onClick: reload }]}
+        onDone={() => { setNotification(null) }} />}
     </div>
   )
 }

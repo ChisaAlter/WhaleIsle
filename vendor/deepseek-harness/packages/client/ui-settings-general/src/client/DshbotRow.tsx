@@ -1,8 +1,8 @@
 /** Desktop-only Interface row: toggle the built-in dshbot Bots plugin mount. */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import { Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Switch, Tag, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import { desktopShell, type DesktopConfig } from './desktop-shell.ts'
 import css from './DshbotRow.module.css'
 
@@ -41,19 +41,26 @@ function FlaskIcon() {
 export function DshbotRow({ t }: DshbotRowProps) {
   const [enabled, setEnabled] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState<{ id: number; text: string; success: boolean } | null>(null)
+  const noticeId = useRef(0)
   const shell = desktopShell()
 
   useEffect(() => {
     let cancelled = false
+    if (shell?.getConfig) setBusy(true)
     void shell?.getConfig?.().then((config: DesktopConfig | null) => {
       if (!cancelled && typeof config?.dshbotEnabled === 'boolean') {
         setEnabled(config.dshbotEnabled)
       }
-    }).catch(() => {
-      // Keep the off default when the desktop config cannot be read.
-    })
+    }).catch((caught: unknown) => {
+      if (cancelled) return
+      const text = t('feedback.readError', { message: caught instanceof Error ? caught.message : String(caught) })
+      setError(text)
+      setNotice({ id: ++noticeId.current, text, success: false })
+    }).finally(() => { if (!cancelled) setBusy(false) })
     return () => { cancelled = true }
-  }, [shell])
+  }, [shell, t])
 
   return (
     <div className={css.row}>
@@ -69,16 +76,35 @@ export function DshbotRow({ t }: DshbotRowProps) {
         label={t('dshbot.title')}
         checked={enabled}
         disabled={busy}
+        loading={busy}
+        title={error || undefined}
         onChange={(next: boolean) => {
+          if (!shell?.saveConfig) return
+          const previous = enabled
           setEnabled(next)
           setBusy(true)
           // Failed writes revert the switch: an optimistic flip that silently
           // stays flipped lies about the mounted overlay state.
-          void Promise.resolve(shell?.saveConfig?.({ dshbotEnabled: next }))
-            .catch(() => setEnabled(!next))
-            .finally(() => setBusy(false))
+          void shell.saveConfig({ dshbotEnabled: next }).then(saved => {
+            if (saved.dshbotEnabled !== next) {
+              setEnabled(typeof saved.dshbotEnabled === 'boolean' ? saved.dshbotEnabled : previous)
+              setError(t('feedback.notSaved'))
+              setNotice({ id: ++noticeId.current, text: t('feedback.notSaved'), success: false })
+              return
+            }
+            setError('')
+            setNotice({ id: ++noticeId.current, text: t('feedback.saved'), success: true })
+          }).catch((error: unknown) => {
+            setEnabled(previous)
+            const text = t('feedback.saveError', { message: error instanceof Error ? error.message : String(error) })
+            setError(text)
+            setNotice({ id: ++noticeId.current, text, success: false })
+          }).finally(() => { setBusy(false) })
         }}
       />
+      {notice !== null && <Toast key={notice.id} text={notice.text}
+        {...notice.success ? { tone: 'success' as const } : {}}
+        holdMs={notice.success ? 3000 : null} dismissLabel={t('close')} onDone={() => { setNotice(null) }} />}
     </div>
   )
 }

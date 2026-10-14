@@ -36,7 +36,11 @@ function loadPlugin({ stateful = false } = {}) {
 
   const stateWrites = [];
   const states = [];
+  const refs = [];
+  const effects = [];
   let cursor = 0;
+  let refCursor = 0;
+  let effectCursor = 0;
   const react = {
     createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }),
     useState: (init) => {
@@ -45,10 +49,22 @@ function loadPlugin({ stateful = false } = {}) {
       if (!(index in states)) states[index] = typeof init === 'function' ? init() : init;
       return [states[index], (value) => { states[index] = typeof value === 'function' ? value(states[index]) : value; }];
     },
-    useEffect: (fn) => fn(),
+    useEffect: (fn, dependencies) => {
+      if (!stateful) return fn();
+      const index = effectCursor++;
+      const previous = effects[index];
+      if (previous && dependencies?.every((value, key) => Object.is(value, previous.dependencies?.[key]))) return;
+      previous?.cleanup?.();
+      effects[index] = { dependencies, cleanup: fn() };
+    },
     useMemo: (fn) => fn(),
     useCallback: (fn) => fn,
-    useRef: (value) => ({ current: value }),
+    useRef: (value) => {
+      if (!stateful) return { current: value };
+      const index = refCursor++;
+      if (!(index in refs)) refs[index] = { current: value };
+      return refs[index];
+    },
     Fragment: Symbol('Fragment'),
   };
   const require = (name) => {
@@ -56,7 +72,51 @@ function loadPlugin({ stateful = false } = {}) {
     return {};
   };
   const exports = spec.current.factory(require);
-  return { exports, window, stateWrites, render: (component, props) => { cursor = 0; return component(props); } };
+  return { exports, window, stateWrites, render: (component, props) => {
+    cursor = 0;
+    refCursor = 0;
+    effectCursor = 0;
+    return component(props);
+  } };
+}
+
+function findElement(node, predicate) {
+  if (!node || typeof node !== 'object') return null;
+  if (predicate(node)) return node;
+  for (const child of (node.children ?? []).flat(Infinity)) {
+    const hit = findElement(child, predicate);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function translate(key, args = {}) {
+  return Object.entries(args).reduce((text, [name, value]) => `${text} ${name}=${value}`, key);
+}
+
+async function settingsBench(rpc) {
+  const plugin = loadPlugin({ stateful: true });
+  const { ctx, registrations } = makeCtx({ specs: ['settings.pet.item'] });
+  plugin.exports.apply(ctx);
+  const component = registrations.find((entry) => entry.decl.name === 'settings.pet.item').component;
+  const props = { t: translate, rpc };
+  const render = () => plugin.render(component, props);
+  render();
+  await settle();
+  return { plugin, render };
+}
+
+const personaDialog = (tree) => findElement(tree, (node) => node.props.title === 'field.personaText');
+const feedback = (tree, predicate) => findElement(tree, (node) => typeof node.props.text === 'string' && predicate(node.props));
+
+async function editPersona(bench, draft) {
+  const edit = findElement(bench.render(), (node) => node.children.includes('edit'));
+  assert.ok(edit, 'the persona editor must be available');
+  edit.props.onClick();
+  const dialog = personaDialog(bench.render());
+  const textarea = findElement(dialog, (node) => node.type === 'textarea');
+  textarea.props.onChange({ target: { value: draft } });
+  return findElement(personaDialog(bench.render()).props.footer, (node) => node.children.includes('save'));
 }
 
 test('the settings model control preserves slashes inside the selected model id', async () => {
@@ -213,10 +273,81 @@ test('sidebar footer fallback opens her session through uiWorkspace on a 0.1.6 h
   const { ctx, calls, registrations } = makeCtx({ specs: ['sidebar.footer.action'] });
   exports.apply(ctx);
   const footer = registrations.find((entry) => entry.decl.name === 'sidebar.footer.action');
-  const button = footer.component(faceOf(registrations, 'sidebar.footer.action'));
+  const tree = footer.component(faceOf(registrations, 'sidebar.footer.action'));
+  const button = findElement(tree, (node) => node.props['aria-label'] === 'tab');
+  assert.ok(button, 'the footer must retain its accessible open action');
   await button.props.onClick();
   await settle();
   assert.deepEqual(calls.openSession, ['session-whale-1']);
+});
+
+test('the footer waits for the workspace result and surfaces a rejected open', async () => {
+  const plugin = loadPlugin({ stateful: true });
+  const { ctx, registrations } = makeCtx({ specs: ['sidebar.footer.action'] });
+  const pending = Promise.withResolvers();
+  ctx.uiWorkspace.openSession = () => pending.promise;
+  plugin.exports.apply(ctx);
+  const footer = registrations.find((entry) => entry.decl.name === 'sidebar.footer.action');
+  const props = faceOf(registrations, 'sidebar.footer.action');
+  props.t = translate;
+  const render = () => plugin.render(footer.component, props);
+  const action = findElement(render(), (node) => node.props['aria-label'] === 'tab').props.onClick();
+  await settle();
+  const busy = findElement(render(), (node) => node.props['aria-label'] === 'tab');
+  assert.equal(busy.props.loading, true);
+  assert.equal(busy.props.disabled, true);
+  pending.reject(new Error('workspace rejected'));
+  await action;
+  const tree = render();
+  assert.equal(findElement(tree, (node) => node.props['aria-label'] === 'tab').props.disabled, false);
+  assert.ok(feedback(tree, (props) => props.text.includes('workspace rejected') && !props.success));
+});
+
+test('a rejected persona save keeps the draft and dialog and shows no saved feedback', async () => {
+  let reject = true;
+  const calls = [];
+  const bench = await settingsBench(async (method, payload) => {
+    calls.push({ method, payload });
+    if (method === 'settings/update' && reject) throw new Error('write rejected');
+    return { name: '鲸鱼娘', personaText: method === 'settings/update' ? payload.personaText : 'server persona', imDefault: true };
+  });
+  const save = await editPersona(bench, 'my unsaved persona');
+  save.props.onClick();
+  await settle();
+  let tree = bench.render();
+  let dialog = personaDialog(tree);
+  assert.equal(dialog.props.open, true);
+  assert.equal(findElement(dialog, (node) => node.type === 'textarea').props.value, 'my unsaved persona');
+  assert.ok(feedback(tree, (props) => props.text.includes('write rejected') && !props.success));
+  assert.equal(feedback(tree, (props) => props.success === true), null);
+  reject = false;
+  findElement(dialog.props.footer, (node) => node.children.includes('save')).props.onClick();
+  await settle();
+  tree = bench.render();
+  assert.equal(personaDialog(tree).props.open, false);
+  assert.ok(feedback(tree, (props) => props.text === 'saved' && props.success === true));
+  const saves = calls.filter((call) => call.method === 'settings/update');
+  assert.equal(saves.length, 2);
+  assert.equal(saves.at(-1).payload.personaText, 'my unsaved persona');
+});
+
+test('an accepted save followed by a failed catalog refresh reports both facts without full success', async () => {
+  let accepted = false;
+  const calls = [];
+  const bench = await settingsBench(async (method, payload) => {
+    calls.push({ method, payload });
+    if (method === 'settings/update') { accepted = true; return { name: '鲸鱼娘', personaText: payload.personaText }; }
+    if (accepted) throw new Error('catalog refresh rejected');
+    return { name: '鲸鱼娘', personaText: 'server persona', imDefault: true };
+  });
+  const save = await editPersona(bench, 'accepted persona');
+  save.props.onClick();
+  await settle();
+  const tree = bench.render();
+  assert.equal(personaDialog(tree).props.open, false);
+  assert.equal(calls.filter((call) => call.method === 'settings/update').length, 1);
+  assert.equal(feedback(tree, (props) => props.success === true), null);
+  assert.ok(feedback(tree, (props) => props.text.includes('saved') && props.text.includes('catalog refresh rejected') && !props.success));
 });
 
 test('whale slots use the project head and keep normal sessions untouched', () => {

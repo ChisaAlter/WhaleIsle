@@ -1,5 +1,6 @@
 /* Button sizes share the global control-radius scale. */
 .button {
+  position: relative;
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
@@ -74,4 +75,57 @@
   height: 16px;
   align-items: center;
   justify-content: center;
+}
+
+/* The resting caption alone sizes the control; transient copy never enters flow. */
+.caption {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: inherit;
+}
+
+.reserve {
+  display: inline-flex;
+  align-items: center;
+  gap: inherit;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.reserveVisible {
+  opacity: 1;
+}
+
+.feedback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding-inline: 4px;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.busyIcon {
+  visibility: hidden;
+}
+
+.feedbackLabel {
+  flex-shrink: 0;
+  width: max-content;
+  white-space: nowrap;
+}
+
+/* Hidden copy retains its natural measurement without clipping a partial caption. */
+.feedbackLabelHidden {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.feedback > svg {
+  flex-shrink: 0;
 }

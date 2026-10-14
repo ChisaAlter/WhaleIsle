@@ -1,10 +1,10 @@
 /** Product-wide, versioned preview notice. */
 
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { WelcomeNoticeState, WelcomeNoticeStore } from './welcome-store.ts'
 import type { en } from './locales.ts'
 import { OnboardingModal } from './OnboardingModal.tsx'
@@ -34,6 +34,9 @@ export type WelcomeNoticeProps =
 export function WelcomeNotice(props: WelcomeNoticeProps): ReactNode {
   const { complete, controller, useWelcome, t } = props
   const state = useWelcome(snapshot => snapshot)
+  const [errorDismissed, setErrorDismissed] = useState(false)
+  const [acknowledgeSequence, setAcknowledgeSequence] = useState(0)
+  useEffect(() => { if (state.error === null) setErrorDismissed(false) }, [state.error])
   const finished = useRef(false)
   const finish = useCallback((): void => {
     if (finished.current) return
@@ -52,6 +55,8 @@ export function WelcomeNotice(props: WelcomeNoticeProps): ReactNode {
   if (state.status === 'idle' || state.status === 'loading' || state.acknowledged) return null
 
   const acknowledge = async (): Promise<void> => {
+    setErrorDismissed(false)
+    setAcknowledgeSequence(sequence => sequence + 1)
     if (await controller.acknowledge()) finish()
   }
   const paragraphs = t('welcomeBody').split('\n\n')
@@ -61,12 +66,13 @@ export function WelcomeNotice(props: WelcomeNoticeProps): ReactNode {
       <div className={css.copy}>
         {paragraphs.map(paragraph => <p key={paragraph}>{paragraph}</p>)}
       </div>
-      {state.error === null ? null : <p className={css.error} role="alert">{t('welcomeError')}</p>}
+      {state.error === null || errorDismissed ? null : <Toast key={acknowledgeSequence} text={t('welcomeError')} holdMs={9000} onDone={() => { setErrorDismissed(true) }} />}
       <div className={css.actions}>
         <Button
           variant="primary"
           className={css.primary}
           disabled={state.status === 'saving'}
+          loading={state.status === 'saving'}
           onClick={() => { void acknowledge() }}
         >
           {t('welcomeContinue')}

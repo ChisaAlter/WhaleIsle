@@ -161,6 +161,27 @@ describe('permission settings store', () => {
     })
   })
 
+  it('settles a rejected write, retains the accepted value, and allows retry at the same revision', async () => {
+    const write = Promise.withResolvers<ReturnType<typeof ok<SettingsNamespaceView>>>()
+    const mutate = vi.fn().mockImplementationOnce(() => write.promise)
+      .mockResolvedValueOnce(ok(view('workspace-write', 5)))
+    const { controller } = permissionController({
+      describe: async () => ok({ writable: true, hasDocument: false, namespaces: [view('read-only', 4)] }), mutate,
+    })
+    await controller.load()
+    const pending = controller.select('workspace-write')
+    expect(controller.store.getSnapshot()).toMatchObject({ status: 'saving', currentValue: 'read-only', revision: 4 })
+    await controller.select('workspace-write')
+    expect(mutate).toHaveBeenCalledOnce()
+    write.reject(new Error('disconnected'))
+    await pending
+    expect(controller.store.getSnapshot()).toMatchObject({ status: 'error', error: 'disconnected', currentValue: 'read-only', revision: 4 })
+    await controller.select('workspace-write')
+    expect(mutate).toHaveBeenLastCalledWith('permission', [{ op: 'set', path: ['defaultPreset'], value: 'workspace-write' }], 4)
+    expect(controller.store.getSnapshot()).toMatchObject({ status: 'ready', error: null, currentValue: 'workspace-write', revision: 5 })
+    controller.dispose()
+  })
+
   it('hides the row in a remote browser instead of loading forever', async () => {
     const describeCall = vi.fn()
     const mutate = vi.fn()

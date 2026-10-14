@@ -13,6 +13,22 @@ const retryEl = document.getElementById('retry');
 const cancelRestartEl = document.getElementById('cancel-restart');
 const openLauncherEl = document.getElementById('open-launcher');
 const saveLogEl = document.getElementById('save-log');
+const failurePanel = document.createElement('div');
+failurePanel.append(failureEl);
+const failureFeedback = window.shellFeedback.mountProgress(failurePanel, { title: '启动详情' });
+let lastFailureText = '';
+
+function showFailure(text) {
+  failureEl.textContent = text;
+  failureEl.hidden = !text;
+  if (text) failureFeedback.show({ active: false, reset: text !== lastFailureText });
+  else failureFeedback.hide();
+  lastFailureText = text;
+}
+
+function actionFeedback(body, tone = 'error') {
+  window.shellFeedback.notice({ body, tone });
+}
 
 const HINTS = {
   idle: '',
@@ -159,8 +175,7 @@ function applyPluginBootCopy(payload) {
     statusTextEl.textContent = '插件加载失败';
     statusEl.className = 'status error';
     setHint(payload.error || '运行时已就绪，但客户端插件未能完成装载。');
-    failureEl.textContent = payload.error || '';
-    failureEl.hidden = !failureEl.textContent;
+    showFailure(payload.error || '运行时已就绪，但客户端插件未能完成装载。');
     document.body.dataset.state = 'error';
     return;
   }
@@ -244,8 +259,7 @@ function renderState(snapshot) {
       : (HINTS[state] ?? HINTS.starting));
   }
 
-  failureEl.textContent = state === 'error' ? failureText(failure, snapshot) : '';
-  failureEl.hidden = !failureEl.textContent;
+  showFailure(state === 'error' ? failureText(failure, snapshot) : '');
 
   const canAct = state === 'error' || recoveryScheduled || recoveryBusy;
   if (!canAct) {
@@ -272,7 +286,7 @@ function renderState(snapshot) {
     ? globalThis.BootRecovery.showLauncherBridge(state, recoveryStatus)
     : state === 'error' && recoveryStatus !== 'scheduled' && recoveryStatus !== 'restarting');
   cancelRestartEl.hidden = !recoveryScheduled;
-  cancelRestartEl.disabled = recoveryBusy;
+  cancelRestartEl.disabled = recoveryBusy || cancelRestartEl.getAttribute('aria-busy') === 'true';
 
   if (Array.isArray(snapshot?.logs)) {
     // Merge streamed DOM with the snapshot instead of replacing it: the
@@ -355,51 +369,55 @@ retryEl.addEventListener('click', () => {
     });
 });
 
-cancelRestartEl.addEventListener('click', () => {
+cancelRestartEl.addEventListener('click', async () => {
+  if (cancelRestartEl.getAttribute('aria-busy') === 'true') return;
   cancelRestartEl.disabled = true;
-  invoke('cancelRestart')
-    .then(renderState)
-    .catch((error) => {
-      actionNotice = `取消失败：${error.message || String(error)}`;
-      refreshCountdown();
-      cancelRestartEl.disabled = false;
-    });
+  cancelRestartEl.setAttribute('aria-busy', 'true');
+  try {
+    renderState(await invoke('cancelRestart'));
+  } catch (error) {
+    actionFeedback(`取消失败：${error.message || String(error)}`);
+  } finally {
+    cancelRestartEl.removeAttribute('aria-busy');
+    cancelRestartEl.disabled = latestSnapshot?.recovery?.status === 'restarting';
+  }
 });
 
-openLauncherEl.addEventListener('click', () => {
+openLauncherEl.addEventListener('click', async () => {
+  if (openLauncherEl.getAttribute('aria-busy') === 'true') return;
   openLauncherEl.disabled = true;
-  invoke('openLauncher')
-    .then((result) => {
-      openLauncherEl.disabled = false;
-      if (result && result.ok === false) {
-        actionNotice = `打开启动器失败：${result.error || result.reason || '未知错误'}`;
-        refreshCountdown();
-      }
-    })
-    .catch((error) => {
-      openLauncherEl.disabled = false;
-      actionNotice = `打开启动器失败：${error.message || String(error)}`;
-      refreshCountdown();
-    });
+  openLauncherEl.setAttribute('aria-busy', 'true');
+  try {
+    const result = await invoke('openLauncher');
+    if (result && result.ok === false) {
+      actionFeedback(`打开启动器失败：${result.error || result.reason || '未知错误'}`);
+    }
+  } catch (error) {
+    actionFeedback(`打开启动器失败：${error.message || String(error)}`);
+  } finally {
+    openLauncherEl.disabled = false;
+    openLauncherEl.removeAttribute('aria-busy');
+  }
 });
 
-saveLogEl.addEventListener('click', () => {
-  invoke('saveBootLog')
-    .then((result) => {
-      if (!result || result.canceled) {
-        return;
-      }
-      if (result.ok) {
-        actionNotice = `日志已保存：${result.path}`;
-      } else {
-        actionNotice = `保存日志失败：${result.error || '未知错误'}`;
-      }
-      refreshCountdown();
-    })
-    .catch((error) => {
-      actionNotice = `保存日志失败：${error.message || String(error)}`;
-      refreshCountdown();
-    });
+saveLogEl.addEventListener('click', async () => {
+  if (saveLogEl.getAttribute('aria-busy') === 'true') return;
+  saveLogEl.disabled = true;
+  saveLogEl.setAttribute('aria-busy', 'true');
+  try {
+    const result = await invoke('saveBootLog');
+    if (!result || result.canceled) return;
+    if (result.ok) {
+      actionFeedback(`日志已保存：${result.path}`, 'success');
+    } else {
+      actionFeedback(`保存日志失败：${result.error || '未知错误'}`);
+    }
+  } catch (error) {
+    actionFeedback(`保存日志失败：${error.message || String(error)}`);
+  } finally {
+    saveLogEl.disabled = false;
+    saveLogEl.removeAttribute('aria-busy');
+  }
 });
 
 invoke('getState')

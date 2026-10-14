@@ -2,7 +2,7 @@
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { useSyncExternalStore } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { AskUserQuestionAnswerItem } from '@deepseek-ai/dsh-user-questions/types'
@@ -230,15 +230,23 @@ describe('QuestionComposer', () => {
     }
   })
 
-  it('treats Enter on an unselected option as submit, without selecting it', () => {
+  it('treats Enter on an unselected option as submit, without selecting it', async () => {
     const { carrier, answer } = wait([{
       id: 'mode', question: 'Which mode?', options: [{ label: 'Alpha' }, { label: 'Beta' }],
     }])
-    render(<QuestionComposer matched={carrier} {...kit} />)
+    const ui = render(<QuestionComposer matched={carrier} {...kit} />)
     const option = screen.getByRole('radio', { name: 'Alpha' })
     expect(fireEvent.keyDown(option, { key: 'Enter' })).toBe(false)
     expect(option.getAttribute('aria-checked')).toBe('false')
-    expect(screen.getByRole('status').textContent).toBe('请先完成这道问题。')
+    const notice = await screen.findByRole('alert')
+    expect(notice.textContent).toBe('请先完成这道问题。')
+    expect(ui.container.contains(notice)).toBe(false)
+    expect(ui.container.querySelector('footer')?.textContent).not.toContain('请先完成这道问题。')
+    fireEvent.click(within(notice).getByRole('button', { name: commonZh.close }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(option.getAttribute('aria-checked')).toBe('false')
+    fireEvent.keyDown(option, { key: 'Enter' })
+    expect((await screen.findByRole('alert')).textContent).toBe('请先完成这道问题。')
     expect(answer).not.toHaveBeenCalled()
   })
 
@@ -287,7 +295,12 @@ describe('QuestionComposer', () => {
       { id: 'detail', selected: [], custom: '要能独立排查线上问题' },
       { id: 'signals', selected: ['系统设计', '代码质量', '产品判断'], custom: '沟通能力' },
     ]))
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: '正在提交…' }).disabled).toBe(true)
+    const submit = screen.getByRole<HTMLButtonElement>('button', { name: '提交' })
+    expect(submit.disabled).toBe(true)
+    expect(submit.getAttribute('aria-busy')).toBe('true')
+    expect(submit.querySelector('[data-state="ongoing"]')).not.toBeNull()
+    fireEvent.click(submit)
+    expect(answer).toHaveBeenCalledOnce()
   })
 
   it('renders plan detail through the shared assistant Markdown primitive', () => {
@@ -713,7 +726,9 @@ describe('timed card', () => {
     fireEvent.click(screen.getByRole('button', { name: '提交' }))
 
     await expect(request.result).resolves.toEqual({ answers: [{ id: 'scope', selected: ['仅工具'] }] })
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: '正在提交…' }).disabled).toBe(true)
+    const submit = screen.getByRole<HTMLButtonElement>('button', { name: '提交' })
+    expect(submit.disabled).toBe(true)
+    expect(submit.getAttribute('aria-busy')).toBe('true')
     expect(draftInstance.getSnapshot().progressByRequest[carrier.key]).toBeDefined()
 
     act(() => { carrier.setState('continued') })

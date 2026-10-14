@@ -45,7 +45,7 @@ function expandRow(position: number): void {
 
 /** The capacity inputs of every open row, in row order. */
 function capacityInputs(label: string): HTMLInputElement[] {
-  return screen.getAllByLabelText<HTMLInputElement>(new RegExp(label))
+  return screen.getAllByRole<HTMLInputElement>('textbox', { name: new RegExp(label) })
 }
 
 const PiAiConfig = Schema.object({
@@ -614,11 +614,11 @@ describe('ModelsSection', () => {
     // The saved key re-loads the join; the settings answer rides the shared
     // mirror, so the reload shows as a directory read rather than a describe.
     await waitFor(() => { expect(face.llm.listProviders.mock.calls.length).toBeGreaterThan(1) })
-    expect((await screen.findByRole('status')).textContent).toBe(
+    expect((await screen.findByRole('alert')).textContent).toBe(
       providerCopy(en.savedProvider, { provider: 'deepseek-official', displayName: 'DeepSeek' }),
     )
     fireEvent.click(screen.getByText(en.add))
-    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('reuses the provider editor as a required credential-only onboarding form', async () => {
@@ -981,7 +981,7 @@ describe('ModelsSection', () => {
     fireEvent.click(screen.getByText(en.customized))
     const windows = (): HTMLInputElement[] => capacityInputs(en.contextWindow)
     const removeRow = (at: number): void => {
-      fireEvent.click(screen.getAllByLabelText(new RegExp(en.removeModel))[at] as HTMLElement)
+      fireEvent.click(screen.getAllByRole('button', { name: new RegExp(en.removeModel) })[at] as HTMLElement)
     }
     // Three rows, with text parked on the outer two.
     fireEvent.click(screen.getByText(en.addModel))
@@ -996,6 +996,7 @@ describe('ModelsSection', () => {
     // Dropping the middle row leaves the row above untouched and carries the
     // row below down with its own text, rather than stranding it.
     removeRow(1)
+    expect(windows().map(input => input.getAttribute('aria-label'))).toEqual([`${en.contextWindow} 1`, `${en.contextWindow} 2`])
     expect(windows()).toHaveLength(2)
     expect((windows()[0] as HTMLInputElement).value).toBe('top text')
     expect((windows()[1] as HTMLInputElement).value).toBe('bottom text')
@@ -1861,7 +1862,7 @@ describe('ModelsSection', () => {
     const dialog = screen.getByRole('dialog', { name: openaiCopy(en.deleteTitle) })
     const confirm = within(dialog).getByRole('button', { name: openaiCopy(en.deleteConfirm) })
     fireEvent.click(confirm)
-    await within(dialog).findByText('the host refused')
+    expect((await screen.findByRole('alert')).textContent).toContain('the host refused')
     expect(screen.getByRole('dialog', { name: openaiCopy(en.deleteTitle) })).toBe(dialog)
     expect(unset).toHaveBeenCalledOnce()
     expect(mutate).toHaveBeenCalledOnce()

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { HarnessRestartRow } from '../src/client/HarnessRestartRow.tsx'
 import type { HarnessRestartRowProps } from '../src/client/HarnessRestartRow.tsx'
@@ -42,7 +42,7 @@ function loadedShell(saveConfig: () => Promise<object>) {
 }
 
 describe('HarnessRestartRow', () => {
-  it('applies a switch click immediately without a saving flash', async () => {
+  it('applies a switch click immediately and blocks duplicate writes without a saving row', async () => {
     let resolveSave: (value: object) => void = () => {}
     const saveConfig = vi.fn(() => new Promise<object>((resolve) => { resolveSave = resolve }))
     loadedShell(saveConfig)
@@ -54,15 +54,19 @@ describe('HarnessRestartRow', () => {
 
     expect(saveConfig).toHaveBeenCalledWith({ harnessAutoRestart: false })
     expect(screen.getByRole('switch', { name: 'Enable auto-restart' })).toHaveProperty('checked', false)
-    expect(screen.getByRole('switch', { name: 'Enable auto-restart' })).toHaveProperty('disabled', false)
+    expect(toggle).toHaveProperty('disabled', true)
+    toggle.click()
+    expect(saveConfig).toHaveBeenCalledOnce()
     expect(screen.queryByText('Saving…')).toBeNull()
     expect(screen.queryByRole('status')).toBeNull()
 
     await act(async () => { resolveSave({ harnessAutoRestart: false }) })
     expect(screen.getByRole('switch', { name: 'Enable auto-restart' })).toHaveProperty('checked', false)
+    expect(toggle).toHaveProperty('disabled', false)
+    expect((await screen.findByRole('alert')).textContent).toBe(en['feedback.saved'])
   })
 
-  it('commits a retry-count pick immediately without disabling the trigger', async () => {
+  it('retains the resting caption while saving and shows the accepted retry count after settlement', async () => {
     let resolveSave: (value: object) => void = () => {}
     const saveConfig = vi.fn(() => new Promise<object>((resolve) => { resolveSave = resolve }))
     loadedShell(saveConfig)
@@ -74,12 +78,13 @@ describe('HarnessRestartRow', () => {
 
     expect(saveConfig).toHaveBeenCalledWith({ harnessRestartMaxAttempts: 5 })
     const trigger = screen.getByRole('button', { name: 'Max restart attempts' })
-    expect(trigger.textContent).toContain('5')
-    expect(trigger).toHaveProperty('disabled', false)
+    expect(trigger.textContent).toBe('3')
+    expect(trigger).toHaveProperty('disabled', true)
     expect(screen.queryByText('Saving…')).toBeNull()
 
     await act(async () => { resolveSave({ harnessRestartMaxAttempts: 5 }) })
-    expect(screen.getByRole('button', { name: 'Max restart attempts' }).textContent).toContain('5')
+    await waitFor(() => { expect(screen.getByRole('button', { name: 'Max restart attempts' }).textContent).toContain('5') })
+    expect(trigger).toHaveProperty('disabled', false)
   })
 
   it('reverts the switch and reports when the write fails', async () => {

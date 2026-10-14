@@ -28,6 +28,8 @@ export type RemoteSnapshot = {
   protocol?: string
   /** Stored retired credentials; unrelated to v2 relay readiness. */
   legacyRelayTokenSet?: boolean
+  /** False when the desktop has parked or cannot supply the remote gateway. */
+  available?: boolean
   enabled?: boolean
   listening?: boolean
   port?: number

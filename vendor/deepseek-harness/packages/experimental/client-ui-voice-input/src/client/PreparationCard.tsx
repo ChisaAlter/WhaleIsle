@@ -1,6 +1,6 @@
 /** Provider-owned preparation steps and persisted recognition preferences. */
 import { useEffect, useState } from 'react'
-import { Button, DisclosureRow, IconChevronDownOutlineRegular, StateDot, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, DisclosureRow, IconChevronDownOutlineRegular, StateDot, Toast, type StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SpeechPreparationState, SpeechProviderId, SpeechProviderView, SpeechSelectionPatch } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
 import type { VoiceInputInjected } from './VoiceInput.tsx'
@@ -29,15 +29,15 @@ function DownloadProgress({ state, t }: { state: SpeechPreparationState } & Prop
     ? <progress className={css.progress} aria-label={t('downloadProgress')} value={state.completedBytes} max={state.totalBytes} /> : null
 }
 
-function PreparationFailure({ state, t }: { state: Extract<SpeechPreparationState, { phase: 'failed' }> } & PropsLocale<typeof NS>) {
+function preparationFailureText(state: Extract<SpeechPreparationState, { phase: 'failed' }>, t: PropsLocale<typeof NS>['t']): string {
   const failure = state.download
-  if (!failure) return <p className={css.preparationError} role="alert">{t('preparationFailed', { message: state.message })}</p>
-  return <div className={css.downloadFailure} role="alert">
-    <p className={css.preparationError}>{t(`download.${failure.reason}`, { resource: failure.resource, status: String(failure.status) })}</p>
-    <p>{t(`downloadAdvice.${failure.reason}`)}</p>
-    <small className={css.metric}>{t('downloadSource', { source: failure.source })}</small>
-    {failure.code && <small className={css.metric}>{t('downloadCode', { code: failure.code })}</small>}
-  </div>
+  if (!failure) return t('preparationFailed', { message: state.message })
+  return [
+    t(`download.${failure.reason}`, { resource: failure.resource, status: String(failure.status) }),
+    t(`downloadAdvice.${failure.reason}`),
+    t('downloadSource', { source: failure.source }),
+    ...failure.code ? [t('downloadCode', { code: failure.code })] : [],
+  ].join('\n')
 }
 
 /** Render a collapsed current-step summary or all Host-owned preparation steps. */
@@ -45,6 +45,7 @@ export function PreparationCard({ provider, connected, prepare, cancelPreparatio
   const state = provider.preparation
   const [expanded, setExpanded] = useState(false), [now, setNow] = useState(Date.now), [error, setError] = useState('')
   const [source, setSource] = useState(''), [submitting, setSubmitting] = useState(false)
+  const [dismissedError, setDismissedError] = useState<string>()
   const sources = provider.downloadSources ?? []
   const [firstSource = ''] = sources
   const selectedSource = sources.includes(source) ? source : sources.length === 1 ? firstSource : ''
@@ -58,7 +59,7 @@ export function PreparationCard({ provider, connected, prepare, cancelPreparatio
     return () => { clearInterval(timer) }
   }, [preparing, startedAt])
   const run = async (action: () => Promise<unknown>): Promise<void> => {
-    setError(''); setSubmitting(true)
+    setError(''); setDismissedError(undefined); setSubmitting(true)
     try { await action() } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)) }
     finally { setSubmitting(false) }
   }
@@ -69,7 +70,18 @@ export function PreparationCard({ provider, connected, prepare, cancelPreparatio
       : state.phase === 'failed' ? t('short.failed')
         : state.phase === 'ready' && provider.location === 'cloud' ? t('cloudReady')
           : t(`preparation.${state.phase}`, { name: provider.name })
+  const errorText = [
+    ...state.phase === 'failed' ? [preparationFailureText(state, t)] : [],
+    ...error ? [t('failed', { message: error })] : [],
+  ].join('\n')
+  useEffect(() => { setDismissedError(undefined) }, [errorText])
   return <section className={css.preparation} data-speech-provider={provider.id}>
+    {errorText !== '' && dismissedError !== errorText && <Toast
+      text={t('providerFeedback', { name: provider.name, message: errorText })}
+      holdMs={null}
+      dismissLabel={t('dismissFeedback')}
+      onDone={() => { setDismissedError(errorText) }}
+    />}
     <strong>{provider.name}</strong>
     {state.phase === 'unprepared' && provider.location === 'host-local' && provider.setupEstimate && <div className={css.setupEstimate}>
       <p>{t('setup.local')}</p>
@@ -105,7 +117,6 @@ export function PreparationCard({ provider, connected, prepare, cancelPreparatio
       </ol>
     </DisclosureRow>
     {!expanded && <DownloadProgress state={state} t={t} />}
-    {state.phase === 'failed' && <PreparationFailure state={state} t={t} />}
     {canPrepare && sources.length > 0 && <div className={css.sourceChoice}>
       <label>{t('sourceChoice')}<select aria-label={t('sourceChoice')} value={selectedSource} disabled={!connected || submitting || sources.length === 1}
         onChange={(event) => { setSource(event.target.value) }}>
@@ -118,12 +129,11 @@ export function PreparationCard({ provider, connected, prepare, cancelPreparatio
       <small className={css.metric}>{t(selectedSource === '' ? 'sourceAutoHelp' : 'sourceManualHelp')}</small>
     </div>}
     <div className={css.preparationActions}>
-      {canPrepare && <Button variant="outline" size="sm" disabled={!connected || submitting}
+      {canPrepare && <Button variant="outline" size="sm" disabled={!connected || submitting} loading={submitting}
         onClick={() => { void run(() => selectedSource === '' ? prepare(provider.id) : prepare(provider.id, { downloadSource: selectedSource })) }}>{t(state.phase === 'unprepared' ? 'prepare' : 'retryPrepare')}</Button>}
-      {preparing && state.phase !== 'waking' && <Button variant="ghost" size="sm" disabled={!connected || submitting || state.phase === 'cancelling'}
+      {preparing && state.phase !== 'waking' && <Button variant="ghost" size="sm" disabled={!connected || submitting || state.phase === 'cancelling'} loading={submitting || state.phase === 'cancelling'}
         onClick={() => { void run(() => cancelPreparation(provider.id)) }}>{t('cancelPrepare')}</Button>}
     </div>
-    {error && <p className={css.preparationError} role="alert">{t('failed', { message: error })}</p>}
   </section>
 }
 
@@ -132,8 +142,9 @@ export function VoicePreparation({ useSpeechReadiness, ...props }: Pick<InjectFa
   'useSpeechReadiness' | 'configure' | 'prepare' | 'cancelPreparation'> & PropsLocale<typeof NS>) {
   const readiness = useSpeechReadiness(value => value), catalog = readiness.catalog
   const [saving, setSaving] = useState(false), [error, setError] = useState('')
+  const [dismissedFeedback, setDismissedFeedback] = useState<string>()
   const configure = async (patch: SpeechSelectionPatch): Promise<void> => {
-    setSaving(true); setError('')
+    setSaving(true); setError(''); setDismissedFeedback(undefined)
     try { await props.configure(patch) } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)) }
     finally { setSaving(false) }
   }
@@ -141,7 +152,20 @@ export function VoicePreparation({ useSpeechReadiness, ...props }: Pick<InjectFa
   const languageNames: Readonly<Record<string, string>> = {
     auto: props.t('auto'), zh: props.t('zh'), en: props.t('en'), yue: props.t('yue'), ja: props.t('ja'), ko: props.t('ko'),
   }
+  const errorText = [
+    ...error ? [props.t('failed', { message: error })] : [],
+    ...readiness.error ? [props.t('failed', { message: readiness.error })] : [],
+  ].join('\n')
+  const feedback = errorText || (!catalog ? props.t('loading') : saving ? props.t('saving') : '')
+  useEffect(() => { setDismissedFeedback(undefined) }, [feedback])
   return <div>
+    {feedback !== '' && dismissedFeedback !== feedback && <Toast
+      text={feedback}
+      holdMs={null}
+      icon={errorText === '' ? <StateDot state="ongoing" /> : undefined}
+      dismissLabel={props.t('dismissFeedback')}
+      onDone={() => { setDismissedFeedback(feedback) }}
+    />}
     {catalog && <div className={css.preferences}>
       <label>{props.t('provider')}<select value={catalog.selection.providerId} disabled={!readiness.connected || saving}
         onChange={(event) => { void configure({ providerId: event.target.value as SpeechProviderId }) }}>
@@ -153,11 +177,8 @@ export function VoicePreparation({ useSpeechReadiness, ...props }: Pick<InjectFa
           <option key={language} value={language}>{languageNames[language] ?? language}</option>)}
       </select></label>
       <p>{props.t(selected?.location === 'cloud' ? 'cloud' : 'local')}</p>
-      {error && <p role="alert">{props.t('failed', { message: error })}</p>}
     </div>}
     {catalog?.providers.map(provider =>
       <PreparationCard key={provider.id} provider={provider} connected={readiness.connected} {...props} />)}
-    {!catalog && <p role="status">{props.t('loading')}</p>}
-    {readiness.error && <p role="alert">{props.t('failed', { message: readiness.error })}</p>}
   </div>
 }

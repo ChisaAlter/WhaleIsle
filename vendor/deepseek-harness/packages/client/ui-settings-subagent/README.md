@@ -11,6 +11,8 @@ English | [中文](README.zh.md)
 
 Open **Plugins** in the sidebar and select **Subagent** in the Official group to set how deep and how wide delegation may go, and which models agents may choose for their subagents. The page groups the two Host namespaces, `subagent` and `subagent-model-selection`, under one save; it exists while the Host serves either and shows the sections it serves.
 
+Catalog failures, validation and revision conflicts use floating Toast feedback, with retry or discard actions where needed. Loading stays inside the existing switch and save button; notices do not add rows to the form.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

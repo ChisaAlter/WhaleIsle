@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ActionButton, FeedbackToast } from './feedback.js';
 import { h } from './i18n.js';
 
 function ActionIcon({ children }) {
@@ -99,14 +100,13 @@ export function CredentialBindingPanel({
         disabled: busy,
         required: true,
       })),
-    error ? h('p', { className: 'dim-credentialError', role: 'alert' }, error.message ?? String(error)) : null,
+    error ? h(FeedbackToast, { text: error.message ?? String(error), tone: "error" }) : null,
     h('div', { className: 'ddt-actions dim-viewActions dim-credentialActions' },
-      h('button', {
+      h(ActionButton, {
         type: 'submit',
         className: 'ddt-button',
         'data-kind': 'primary',
-        disabled: busy || (hasIdentity && !identity.trim()) || !secret.trim(),
-      }, busy ? '正在绑定…' : '绑定并连接'),
+        disabled: busy || (hasIdentity && !identity.trim()) || !secret.trim(), loading: busy, }, '绑定并连接'),
       h('button', {
         type: 'button',
         className: 'ddt-button',

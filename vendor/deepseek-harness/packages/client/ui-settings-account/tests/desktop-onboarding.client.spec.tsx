@@ -117,7 +117,7 @@ it('supports radio arrow keys and requires a process choice before finishing', a
   expect(operations.complete).toHaveBeenCalledWith('completed')
 })
 
-it.each(['purpose', 'process'] as const)('keeps the %s action mounted without native disabled dimming while a choice saves', async (step) => {
+it.each(['purpose', 'process'] as const)('keeps the %s action mounted and blocks submissions while a choice saves', async (step) => {
   const operations = mount(step)
   const choices = screen.getAllByRole(step === 'purpose' ? 'checkbox' : 'radio')
   await act(async () => { fireEvent.click(choices[0]!) })
@@ -126,7 +126,8 @@ it.each(['purpose', 'process'] as const)('keeps the %s action mounted without na
   operations.update.mockImplementationOnce(() => new Promise<boolean>((resolve) => { finish = resolve }))
   fireEvent.click(choices[1]!)
   expect(button.getAttribute('aria-disabled')).toBe('true')
-  expect(button.hasAttribute('disabled')).toBe(false)
+  expect(button.hasAttribute('disabled')).toBe(true)
+  expect(button.getAttribute('aria-busy')).toBe('true')
   const writes = operations.update.mock.calls.length
   fireEvent.click(button)
   expect(operations.update).toHaveBeenCalledTimes(writes)
@@ -134,6 +135,8 @@ it.each(['purpose', 'process'] as const)('keeps the %s action mounted without na
   await act(async () => { finish(true) })
   expect(screen.getByRole('button', { name: button.textContent })).toBe(button)
   expect(button.getAttribute('aria-disabled')).toBe('false')
+  expect(button.hasAttribute('disabled')).toBe(false)
+  expect(button.getAttribute('aria-busy')).not.toBe('true')
 })
 
 it('requires explicit skip confirmation and Escape only closes that dialog', async () => {
@@ -220,8 +223,10 @@ it.each(['zero', 'positive', 'bonus', 'failed', 'loading'] as const)('confirms s
   expect(operations.update).not.toHaveBeenCalled()
 })
 
-it('retries a rejected settings write from the page alert', async () => {
+it('retries a rejected settings write from its floating notice', async () => {
   const h = mount('purpose', 'positive', 'error')
+  await act(async () => {})
+  expect(screen.getByRole('alert').textContent).toContain(zh.onboardingSaveFailed)
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.onboardingRetry })) })
   expect(h.retry).toHaveBeenCalledOnce()
 })

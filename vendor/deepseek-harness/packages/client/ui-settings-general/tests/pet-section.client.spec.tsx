@@ -102,7 +102,12 @@ describe('PetSection', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(toggle)
     expect(saveLive2dPetSettings).toHaveBeenCalledWith({ enabled: false })
-    fireEvent.click(screen.getByRole('button', { name: en['pet.reset'] }))
+    const reset = screen.getByRole('button', { name: en['pet.reset'] })
+    expect(reset).toHaveProperty('disabled', true)
+    reset.click()
+    expect(saveLive2dPetSettings).toHaveBeenCalledOnce()
+    await waitFor(() => { expect(reset).toHaveProperty('disabled', false) })
+    fireEvent.click(reset)
     expect(saveLive2dPetSettings).toHaveBeenCalledWith({ reset: true })
   })
 

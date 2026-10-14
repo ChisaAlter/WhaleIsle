@@ -1,7 +1,7 @@
 /** Settings modal for the running composer beam's bounded visual tuning. */
 import { useEffect, useState, type ChangeEvent } from 'react'
 import {
-  Button, IconCloseOutline16, Input, Modal, SettingsSelect, writeClipboard,
+  Button, IconCloseOutline16, Input, Modal, SettingsSelect, Toast, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import {
@@ -262,6 +262,7 @@ export function BeamSettingsModal({ open, value, presets, onClose, onSave, t }: 
   const [presetName, setPresetName] = useState('')
   const [error, setError] = useState<string | undefined>()
   const [saving, setSaving] = useState(false)
+  const [exchangePending, setExchangePending] = useState<'export' | 'import'>()
 
   useEffect(() => {
     if (!open) return
@@ -331,12 +332,20 @@ export function BeamSettingsModal({ open, value, presets, onClose, onSave, t }: 
   }
 
   const exportJson = async (): Promise<void> => {
-    const accepted = await writeClipboard(serializeComposerBeamConfiguration(draft, draftPresets))
-    if (!accepted) setError(t('settings.beam.panel.clipboardWriteFailed'))
-    else setError(undefined)
+    if (exchangePending !== undefined) return
+    setExchangePending('export')
+    try {
+      const accepted = await writeClipboard(serializeComposerBeamConfiguration(draft, draftPresets))
+      if (!accepted) setError(t('settings.beam.panel.clipboardWriteFailed'))
+      else setError(undefined)
+    } finally {
+      setExchangePending(undefined)
+    }
   }
 
   const importJson = async (): Promise<void> => {
+    if (exchangePending !== undefined) return
+    setExchangePending('import')
     try {
       const payload = parseComposerBeamConfiguration(await navigator.clipboard.readText())
       setDraft(payload.style)
@@ -345,10 +354,13 @@ export function BeamSettingsModal({ open, value, presets, onClose, onSave, t }: 
       setError(undefined)
     } catch {
       setError(t('settings.beam.panel.clipboardReadFailed'))
+    } finally {
+      setExchangePending(undefined)
     }
   }
 
   const save = async (): Promise<void> => {
+    if (saving) return
     setSaving(true)
     setError(undefined)
     try {
@@ -373,7 +385,6 @@ export function BeamSettingsModal({ open, value, presets, onClose, onSave, t }: 
       contentClassName={css.contentScroll}
       footer={(
         <div className={css.footer}>
-          {error !== undefined && <span className={css.error} role="alert">{error}</span>}
           <Button variant="outline" disabled={saving} onClick={() => {
             setDraft(normalizeComposerBeamStyle(DEFAULT_COMPOSER_BEAM_STYLE))
             setSelectedPreset('')
@@ -383,12 +394,13 @@ export function BeamSettingsModal({ open, value, presets, onClose, onSave, t }: 
           </Button>
           <span className={css.footerSpacer} />
           <Button variant="outline" disabled={saving} onClick={onClose}>{t('settings.beam.panel.cancel')}</Button>
-          <Button variant="primary" disabled={saving} onClick={() => { void save() }}>
+          <Button variant="primary" disabled={saving} loading={saving} onClick={() => { void save() }}>
             {t('settings.beam.panel.save')}
           </Button>
         </div>
       )}
     >
+      {error !== undefined && <Toast text={error} holdMs={null} dismissLabel={t('settings.beam.panel.close')} onDone={() => { setError(undefined) }} />}
       <div className={css.body}>
         <div className={css.previewStage} aria-label={t('settings.beam.panel.preview')}>
           <div className={css.previewCard}>
@@ -710,10 +722,10 @@ export function BeamSettingsModal({ open, value, presets, onClose, onSave, t }: 
         <section className={css.section}>
           <h3 className={css.sectionTitle}>{t('settings.beam.panel.exchange')}</h3>
           <div className={css.exchangeRow}>
-            <Button variant="outline" size="sm" onClick={() => { void exportJson() }}>
+            <Button variant="outline" size="sm" disabled={exchangePending !== undefined} loading={exchangePending === 'export'} onClick={() => { void exportJson() }}>
               {t('settings.beam.panel.exportJson')}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => { void importJson() }}>
+            <Button variant="outline" size="sm" disabled={exchangePending !== undefined} loading={exchangePending === 'import'} onClick={() => { void importJson() }}>
               {t('settings.beam.panel.importJson')}
             </Button>
           </div>

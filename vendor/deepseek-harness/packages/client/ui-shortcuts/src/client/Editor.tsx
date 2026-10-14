@@ -1,7 +1,7 @@
 /** Inline physical-key recording and revision-aware command editing. */
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { ShortcutKeys, focusWithoutRing, observeComposition } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, ShortcutKeys, StateDot, Toast, focusWithoutRing, observeComposition } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ShortcutBinding, ShortcutCommandId, ShortcutEdit, ShortcutRevision } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -14,7 +14,6 @@ type EditorProps = InjectFace<EditorInjected> & PropsLocale<'shortcuts'> & {
   target: ShortcutCatalogEntry
   onClose(this: void): void
   onSaved(this: void): void
-  onError(this: void, message: string): void
 }
 
 /**
@@ -22,7 +21,7 @@ type EditorProps = InjectFace<EditorInjected> & PropsLocale<'shortcuts'> & {
  * @param props - command, accepted snapshots, and storage/feedback callbacks.
  * @returns inline command controls; failures retain the draft and allow another recording.
  */
-export function ShortcutEditor({ target, onClose, onSaved, onError, useCatalog, useConfig, useFixedCatalog,
+export function ShortcutEditor({ target, onClose, onSaved, useCatalog, useConfig, useFixedCatalog,
   edit, recording, describeBinding, runtime, platform, t }:
 EditorProps) {
   const config = useConfig(value => value)
@@ -32,8 +31,11 @@ EditorProps) {
   const [candidate, setCandidate] = useState<ShortcutBinding | null>(null)
   const [captured, setCaptured] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [busyAction, setBusyAction] = useState<'reset' | 'clear' | 'record'>()
+  const [noticeDismissed, setNoticeDismissed] = useState(false)
   const [nativeReady, setNativeReady] = useState(runtime === 'web')
   const [message, setMessage] = useState('')
+  const [feedbackText, setFeedbackText] = useState('')
   const [retry, setRetry] = useState<ShortcutBinding | null>(null)
   const descriptionId = useId()
   const recorder = useRef<HTMLButtonElement>(null)
@@ -44,15 +46,20 @@ EditorProps) {
   const desktopChords = runtime === 'desktop' && (platform === 'macos' || platform === 'windows')
   const targetId = target.id
   const stale = revision !== config.revision
-  const report = (text: string): void => { setMessage(text); onError(text) }
+  // The accepted snapshot can arrive before our edit promise settles. Keep
+  // the write gated, then evaluate external changes after its result arrives.
+  const reviewRequired = stale && !busy
+  const report = (text: string): void => { setMessage(text); setFeedbackText(text); setNoticeDismissed(false) }
   const save = async (operation: ShortcutEdit, reviewedRevision = revision): Promise<void> => {
     if (writing.current) return
     writing.current = true
     setBusy(true)
+    setBusyAction(operation.type === 'reset' ? 'reset' : operation.type === 'set' && operation.binding === null ? 'clear' : 'record')
     const result = await edit(operation, reviewedRevision)
     if (!mounted.current) return
     writing.current = false
     setBusy(false)
+    setBusyAction(undefined)
     if (result.status === 'saved') onSaved()
     else { setRetry(operation.type === 'set' ? operation.binding : null); report(shortcutFailure(result, [...catalog, ...fixed], t, runtime)) }
   }
@@ -156,26 +163,31 @@ EditorProps) {
     if (nativeReady && element !== null) focusWithoutRing(element)
   }, [nativeReady])
   const readonly = busy || stale || config.status !== 'ready'
-  const review = stale && <div className={css.review}>
-    <span>{t('stale')}</span><button type="button" className={css.inlineAction} disabled={busy}
-      onClick={() => { setRevision(config.revision); setMessage('') }}>{t('review')}</button>
-  </div>
+  useEffect(() => { setNoticeDismissed(false) }, [stale])
   return <div className={css.inlineEditor} role="group" aria-label={target.label} data-shortcut-modal="shortcut-edit" aria-busy={busy}>
+    {(!noticeDismissed || reviewRequired || retry !== null) && (feedbackText !== '' || reviewRequired || retry !== null) && <Toast
+      text={noticeDismissed ? t(reviewRequired ? 'review-required' : 'retry-needed') : reviewRequired ? t('stale') : feedbackText}
+      holdMs={null}
+      dismissLabel={noticeDismissed ? undefined : t('dismiss-feedback')}
+      actions={reviewRequired ? [{ label: t('review'), disabled: busy, onClick: () => { setRevision(config.revision); setMessage(''); setFeedbackText('') } }]
+        : retry === null ? [] : [{ label: t('retry-save'), disabled: readonly, onClick: () => { capture(retry, target.id) } }]}
+      onDone={() => { setNoticeDismissed(true) }}
+    />}
     <div className={css.inlineControls}>
-      <button type="button" className={css.inlineAction} disabled={readonly} onClick={() => { void save({ type: 'reset', id: target.id }) }}>{t('reset')}</button>
-      {target.binding !== null && <button type="button" className={css.inlineAction} disabled={readonly}
-        onClick={() => { void save({ type: 'set', id: target.id, binding: null }) }}>{t('clear')}</button>}
-      <button ref={recorder} type="button" className={clsx(css.recorder, message && css.invalid)} disabled={!nativeReady} aria-disabled={busy || !nativeReady}
+      <Button type="button" className={css.inlineAction} disabled={readonly} loading={busyAction === 'reset'} onClick={() => { void save({ type: 'reset', id: target.id }) }}>{t('reset')}</Button>
+      {target.binding !== null && <Button type="button" className={css.inlineAction} disabled={readonly} loading={busyAction === 'clear'}
+        onClick={() => { void save({ type: 'set', id: target.id, binding: null }) }}>{t('clear')}</Button>}
+      <button ref={recorder} type="button" className={clsx(css.recorder, message && css.invalid)} disabled={!nativeReady} aria-busy={busyAction === 'record'} aria-disabled={busy || !nativeReady}
         onBlur={() => { restart.current() }}
         aria-label={t('record')} aria-invalid={message !== ''} aria-describedby={descriptionId}
-        onClick={() => { if (!writing.current) { restart.current(); setCaptured(false); setMessage(''); setRetry(null) } }}>
-        {captured && message === '' ? <ShortcutKeys keys={describeBinding(candidate).keys} className={css.recorded} /> : t('record')}
+        onClick={() => { if (!writing.current) { restart.current(); setCaptured(false); setMessage(''); setFeedbackText(''); setRetry(null) } }}>
+        <span className={busyAction === 'record' ? css.recordBusy : undefined}>
+          {captured && message === '' ? <ShortcutKeys keys={describeBinding(candidate).keys} className={css.recorded} /> : t('record')}
+        </span>
+        {busyAction === 'record' && <span className={css.recordSpinner}><StateDot state="ongoing" size={12} /></span>}
       </button>
     </div>
     <span id={descriptionId} className={css.srOnly}>{message || (desktopChords ? '' : t(runtime === 'web'
       ? platform === 'windows' ? 'windows-web-help' : platform === 'macos' ? 'macos-web-help' : 'web-help' : 'record-help'))}</span>
-    {review}
-    {retry !== null && !stale && <button type="button" className={css.inlineAction} disabled={readonly}
-      onClick={() => { capture(retry, target.id) }}>{t('retry-save')}</button>}
   </div>
 }
