@@ -131,7 +131,7 @@ function canonicalizeTarget(target) {
 
 function realPathOrNull(target) {
   try {
-    return fs.realpathSync.native(target);
+    return fs.realpathSync(target);
   } catch {
     return null;
   }

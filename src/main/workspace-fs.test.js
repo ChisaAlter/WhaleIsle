@@ -17,7 +17,7 @@ function makeTempDir() {
   return dir;
 }
 
-test('native path normalization agrees with the authorized root when legacy realpath retains an alias', async () => {
+test('workspace reads keep a consistent alias and still refuse a symlink escape', async () => {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-fs-alias-'));
   const root = path.join(parent, 'long-name');
   const alias = path.join(parent, 'short-name');
@@ -48,6 +48,52 @@ test('native path normalization agrees with the authorized root when legacy real
     fs.realpathSync = legacy;
     setWorkspaceAuthority(null);
     fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+test('workspace reads a logically contained file when native realpath redirects it to an application cache', async () => {
+  const cwd = makeTempDir();
+  const target = path.join(cwd, 'page.html');
+  const native = fs.realpathSync.native;
+  fs.writeFileSync(target, '<h1>inside</h1>');
+  fs.realpathSync.native = (file, ...args) => path.resolve(file) === target
+    ? path.join(path.dirname(cwd), 'LocalCache', 'page.html')
+    : native(file, ...args);
+  try {
+    const result = await readFile(cwd, 'page.html');
+    assert.equal(result.ok, true);
+    assert.equal(result.text, '<h1>inside</h1>');
+    assert.equal((await readFile(cwd, '../outside.html')).ok, false);
+  } finally {
+    fs.realpathSync.native = native;
+    setWorkspaceAuthority(null);
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('logical workspace paths do not allow a short alias to Git metadata', async () => {
+  const cwd = makeTempDir();
+  const metadata = path.join(cwd, '.git');
+  const alias = path.join(cwd, 'GIT~1');
+  fs.mkdirSync(path.join(metadata, 'hooks'), { recursive: true });
+  const hook = path.join(metadata, 'hooks', 'pre-commit');
+  fs.writeFileSync(hook, 'original');
+  if (!fs.existsSync(alias)) fs.symlinkSync(metadata, alias, 'junction');
+  const legacy = fs.realpathSync;
+  const retainedAlias = (file, ...args) => {
+    const absolute = path.resolve(file);
+    return absolute === alias || absolute.startsWith(alias + path.sep) ? absolute : legacy(file, ...args);
+  };
+  retainedAlias.native = legacy.native;
+  fs.realpathSync = retainedAlias;
+  try {
+    assert.equal((await readFile(cwd, 'GIT~1/hooks/pre-commit')).ok, false);
+    assert.equal((await writeFile(cwd, 'GIT~1/hooks/pre-commit', 'replacement')).ok, false);
+    assert.equal(fs.readFileSync(hook, 'utf8'), 'original');
+  } finally {
+    fs.realpathSync = legacy;
+    setWorkspaceAuthority(null);
+    fs.rmSync(cwd, { recursive: true, force: true });
   }
 });
 

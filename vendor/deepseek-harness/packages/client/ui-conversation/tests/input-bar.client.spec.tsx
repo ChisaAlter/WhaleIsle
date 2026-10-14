@@ -317,9 +317,9 @@ describe('built-in next-prompt suggestions', () => {
 
   const suggestion = { turn: 1, seq: 12, text: '请补充一个具体例子' }
 
-  it('offers the completed-turn suggestion by default and Tab only adopts the draft', async () => {
+  it.each(['', '  \n'])('offers the completed-turn suggestion for an empty draft and Tab only adopts it (%j)', async (draft) => {
     const requestNextPrompt = vi.fn(() => Promise.resolve(suggestion))
-    const { view, session, textarea, shell, sink } = bench({ requestNextPrompt })
+    const { view, session, textarea, shell, sink } = bench({ requestNextPrompt, draft })
     readySession(session)
     await waitFor(() => { expect(view.getByRole('button', { name: `采纳下一句提示: ${suggestion.text}` })).toBeTruthy() })
     fireEvent.keyDown(textarea, { key: 'Tab', keyCode: 9 })
@@ -329,8 +329,8 @@ describe('built-in next-prompt suggestions', () => {
     expect(requestNextPrompt).toHaveBeenCalledTimes(1)
   })
 
-  it('clicking the suggestion adopts it without sending or losing the editor focus', async () => {
-    const { view, session, shell, textarea, sink } = bench({ requestNextPrompt: () => Promise.resolve(suggestion) })
+  it.each(['', '  \n'])('clicking the suggestion adopts an empty draft without sending or losing focus (%j)', async (draft) => {
+    const { view, session, shell, textarea, sink } = bench({ requestNextPrompt: () => Promise.resolve(suggestion), draft })
     readySession(session)
     const button = await view.findByRole('button', { name: /采纳下一句提示/ })
     fireEvent.mouseDown(button)

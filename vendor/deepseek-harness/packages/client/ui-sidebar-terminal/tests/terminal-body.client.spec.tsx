@@ -17,7 +17,7 @@ const fake = vi.hoisted(() => ({
   dimensions: { cols: 120, rows: 40 } as { cols: number; rows: number } | undefined,
 }))
 class FakeTerminal {
-  options: { disableStdin?: boolean; theme?: ITheme }
+  options: { allowTransparency?: boolean; disableStdin?: boolean; theme?: ITheme }
   textarea: HTMLTextAreaElement | undefined = document.createElement('textarea')
   input: ((data: string) => void) | undefined
   readonly disposeInput = vi.fn()
@@ -52,6 +52,18 @@ beforeEach(() => {
   boxHeight = 600
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => boxWidth)
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => boxHeight)
+  const context: Pick<CanvasRenderingContext2D, 'fillStyle' | 'clearRect' | 'fillRect' | 'getImageData'> = {
+    fillStyle: '', clearRect() {}, fillRect() {},
+    getImageData() {
+      const fillStyle = String(this.fillStyle)
+      const channels = fillStyle.match(/[\d.]+/gu)?.map(Number) ?? [0, 0, 0, 0]
+      const multiplier = fillStyle.startsWith('color(srgb') ? 255 : 1
+      return { width: 1, height: 1, colorSpace: 'srgb', data: Uint8ClampedArray.from([
+        ...channels.slice(0, 3).map(channel => channel * multiplier), (channels[3] ?? 1) * 255,
+      ]) }
+    },
+  }
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as CanvasRenderingContext2D)
   vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { measure = callback } observe() {} disconnect = disconnect })
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); disconnect.mockClear(); measure = undefined })
@@ -228,13 +240,14 @@ it('displays disconnect, close and exit states and offers explicit reconnection 
   expect(h.view.getByRole('status').textContent).toBe(en.unavailable)
 })
 
-it('updates screen, cursor and selection colors without replacing the terminal or clearing output', () => {
-  const colors = { backgroundColor: 'rgb(255, 255, 255)', color: 'rgb(23, 25, 29)' }
+it('normalizes modern translucent CSS colors without repainting the pane tint or clearing output', () => {
+  const colors = { backgroundColor: 'color(srgb 0.0823529 0.0823529 0.0901961 / 0.75)', color: 'rgb(23, 25, 29)' }
   vi.spyOn(window, 'getComputedStyle').mockImplementation(() => colors as CSSStyleDeclaration)
   const h = mount({ ...idle, info, phase: 'connected', writable: true })
   const terminal = fake.terminals[0]!
+  expect(terminal.options.allowTransparency).toBe(true)
   expect(terminal.options.theme).toMatchObject({
-    background: colors.backgroundColor, foreground: colors.color, cursor: colors.color, selectionForeground: colors.backgroundColor,
+    background: '#15151700', foreground: '#17191dff', cursor: '#17191dff', cursorAccent: '#151517', selectionForeground: '#151517',
   })
   const appliedTheme = terminal.options.theme
   h.changeTheme()
@@ -243,8 +256,8 @@ it('updates screen, cursor and selection colors without replacing the terminal o
   colors.color = 'rgb(231, 233, 238)'
   h.changeTheme()
   expect(terminal.options.theme).toEqual({
-    background: colors.backgroundColor, foreground: colors.color, cursor: colors.color, cursorAccent: colors.backgroundColor,
-    selectionBackground: colors.color, selectionForeground: colors.backgroundColor, selectionInactiveBackground: colors.color,
+    background: '#17191d00', foreground: '#e7e9eeff', cursor: '#e7e9eeff', cursorAccent: '#17191d',
+    selectionBackground: '#e7e9eeff', selectionForeground: '#17191d', selectionInactiveBackground: '#e7e9eeff',
   })
   expect(fake.terminals).toEqual([terminal])
   expect(terminal.reset).not.toHaveBeenCalled()
@@ -275,7 +288,7 @@ it('reads the current theme on xterm render and releases the cursor listener on 
   colors.color = 'rgb(231, 233, 238)'
   h.changeTheme()
   terminal.renderFrame?.()
-  expect(screen.style.getPropertyValue('--terminal-cursor')).toBe(colors.color)
+  expect(screen.style.getPropertyValue('--terminal-cursor')).toBe('#e7e9eeff')
   expect(fake.terminals).toEqual([terminal])
   h.view.unmount()
   expect(terminal.disposeRender).toHaveBeenCalledOnce()

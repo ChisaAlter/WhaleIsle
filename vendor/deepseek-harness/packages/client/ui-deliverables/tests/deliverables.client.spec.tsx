@@ -28,7 +28,7 @@ import { Deliverables, DeliverablesTail, selectDeliverables, type DeliverablesIn
 import type { ReviewInjected } from '../src/client/ReviewTab.tsx'
 import { ChangesDiffStore } from '../src/client/changes-diff.ts'
 import { ChangesSummaryStore } from '../src/client/changes-summary.ts'
-import { changesSummaryUrl, type ChangesSummary } from '../src/changes.ts'
+import { changedFileUrl, changesSummaryUrl, type ChangesSummary } from '../src/changes.ts'
 import { PresentedOpenController } from '../src/client/present-open.ts'
 import {
   basename, changesForClosing, deliverablesDefinition, presentedForClosing, producedFileMentions, producedForClosing,
@@ -668,6 +668,39 @@ describe('ChangedFiles card', () => {
     expect(view.getByText(en[`changes.${flag}`])).toBeTruthy()
     expect(view.queryByText('+0')).toBeNull()
     expect(view.queryByRole('list')).toBeNull()
+  })
+
+  it('opens and reveals an automatically changed HTML file without a present declaration', () => {
+    const single = servedStore({ turn: 1, files: [changedFile('pelican_bicycle.html', 111, 0)], total: 1, added: 111, deleted: 0 })
+    const { props, view } = renderCard(new PresentedOpenController(), en, { changes, presented: [] }, single)
+    const actions = within(view.getByRole('group', { name: 'pelican_bicycle.html' }))
+    fireEvent.click(actions.getByRole('button', { name: 'Native file action' }))
+    fireEvent.click(actions.getByRole('button', { name: 'Native file reveal' }))
+    expect(props.openChanged.mock.calls).toEqual([
+      ['child-session', 5, 0, 'open', undefined],
+      ['child-session', 5, 0, 'reveal', undefined],
+    ])
+    expect(props.openPresented).not.toHaveBeenCalled()
+    expect(props.openChangesReview).not.toHaveBeenCalled()
+    fireEvent.click(view.getByRole('button', { name: 'View changes to pelican_bicycle.html' }))
+    expect(props.openChangesReview).toHaveBeenCalledExactlyOnceWith({ sessionId: 'child-session', seq: 5, turn: 1 }, 0)
+  })
+
+  it('keeps each automatic row action on its original file index and pending state through expansion', () => {
+    const controller = new PresentedOpenController()
+    controller.state.set({ [changedFileUrl(SessionId('child-session'), 5, 1)]: 'revealing' })
+    const { props, view } = renderCard(controller)
+    const pending = within(view.getByRole('group', { name: 'config/feature-flags.json' }))
+    expect((pending.getByRole('button', { name: 'Native file action' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((pending.getByRole('button', { name: 'Native file reveal' }) as HTMLButtonElement).disabled).toBe(true)
+    const first = within(view.getByRole('group', { name: 'config/design-token' }))
+    fireEvent.click(first.getByRole('button', { name: 'Native file action' }))
+    expect(props.openChanged).toHaveBeenLastCalledWith('child-session', 5, 0, 'open', undefined)
+    fireEvent.click(view.getByRole('button', { name: 'Show all 5 changed files' }))
+    const last = within(view.getByRole('group', { name: '/home/u/.zshrc' }))
+    fireEvent.click(last.getByRole('button', { name: 'Native file reveal' }))
+    expect(props.openChanged).toHaveBeenLastCalledWith('child-session', 5, 4, 'reveal', undefined)
+    expect(props.openChangesReview).not.toHaveBeenCalled()
   })
 
   it('hides changed files and avoids summary reads when developer tools are off', () => {

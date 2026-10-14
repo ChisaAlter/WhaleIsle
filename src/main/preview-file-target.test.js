@@ -16,25 +16,25 @@ function authorityFor(workspace, extraWorkspaces = []) {
   return createWorkspaceAuthority({ workspace, extraWorkspaces });
 }
 
-test('absolute preview agrees with native authority when legacy realpath retains an alias', (t) => {
-  const root = makeTempDir('dsh-preview-native-');
-  const native = fs.realpathSync.native;
-  const realRoot = native(root);
+test('absolute preview resolves an accessible directory alias and refuses its escaping symlink', () => {
+  const parent = makeTempDir('dsh-preview-alias-');
+  const root = path.join(parent, 'workspace');
+  const alias = path.join(parent, 'alias');
+  const outside = path.join(parent, 'outside');
+  fs.mkdirSync(root);
+  fs.mkdirSync(outside);
+  fs.symlinkSync(root, alias, 'junction');
+  fs.symlinkSync(outside, path.join(root, 'escape'), 'junction');
   fs.writeFileSync(path.join(root, 'note.txt'), 'inside');
-  const retainedAlias = (file) => {
-    const real = native(file);
-    return real.startsWith(realRoot) ? real.replace(realRoot, `${realRoot}-alias`) : real;
-  };
-  retainedAlias.native = native;
+  fs.writeFileSync(path.join(outside, 'secret.txt'), 'outside');
   try {
-    t.mock.method(fs, 'realpathSync', retainedAlias);
     assert.deepEqual(
-      normalizePreviewFileTarget({ absolutePath: path.join(root, 'note.txt') }, authorityFor(root)),
-      { ok: true, cwd: realRoot, relativePath: 'note.txt' },
+      normalizePreviewFileTarget({ absolutePath: path.join(alias, 'note.txt') }, authorityFor(alias)),
+      { ok: true, cwd: fs.realpathSync(root), relativePath: 'note.txt' },
     );
+    assert.equal(normalizePreviewFileTarget({ absolutePath: path.join(alias, 'escape', 'secret.txt') }, authorityFor(alias)).ok, false);
   } finally {
-    t.mock.restoreAll();
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(parent, { recursive: true, force: true });
   }
 });
 

@@ -1,6 +1,10 @@
 /** Changed-files card: filled header, file rows with line counts, and a bottom fold control. */
 .card { --changes-fill: var(--dsw-static-neutral-50); --changes-hover: var(--dsw-static-neutral-100); display: flex; flex-direction: column; min-width: 0; margin-top: 4px; overflow: hidden; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-lg); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); }
 .card[data-single='true'] { border-color: var(--dsw-alias-border-l1); }
+.headerRow, .fileRow { display: flex; align-items: center; min-width: 0; }
+.headerRow { background: var(--changes-fill); }
+.headerRow > :first-child, .fileRow > :first-child { flex: 1; min-width: 0; }
+.actions { display: flex; flex: none; align-items: center; margin-right: 10px; }
 :global(body[data-ds-dark-theme]) .card { --changes-fill: var(--dsw-static-neutral-850); --changes-hover: var(--dsw-static-neutral-800); }
 .header { display: flex; align-items: center; gap: 10px; box-sizing: border-box; width: 100%; min-width: 0; height: 60px; margin: 0; padding: 8px 10px; border: 0; background: var(--changes-fill); color: inherit; font: inherit; text-align: left; }
 button.header { cursor: pointer; transition: background-color 120ms ease; }

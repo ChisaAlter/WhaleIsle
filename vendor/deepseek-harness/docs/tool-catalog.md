@@ -642,7 +642,7 @@ The bash tool is the model-facing consumer of the bash executor seam. With a job
 
 ### `present`
 
-Declare existing files as final deliverables for the user. Use it when the user needs a separate file, especially Office documents, spreadsheets, and slide decks; prefer your final response when that suffices. The user opens the current files; their contents are not copied.
+Declare existing files as final deliverables for the user. When the user explicitly requests a file deliverable, you must call this tool after creating or updating each requested file and before your final response. This includes HTML, images, Office documents, spreadsheets, and slide decks. A prose file link or inline preview does not replace this declaration. Ordinary source-code edits do not require this tool. The user opens the current files; their contents are not copied.
 
 ```json
 {

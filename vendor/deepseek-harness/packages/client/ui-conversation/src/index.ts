@@ -63,7 +63,7 @@ export const Config = z.object({
  */
 export function apply(ctx: Context, config: Config): void {
   ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
-  ctx.inject(['connection', 'llm', 'sessions'], (child) => {
+  ctx.inject(['connection', 'llm', 'sessions', 'sessionProjections', 'sessionController'], (child) => {
     applyNextPrompt(child, () => config.nextPrompt?.get() !== false)
   })
 }

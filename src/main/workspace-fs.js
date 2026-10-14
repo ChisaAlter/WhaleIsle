@@ -4,6 +4,7 @@ const { spawn } = require('node:child_process');
 const {
   loadWorkspaceAuthority,
   hasGitDirSegment,
+  hasGitMetadataTarget,
   isPathInside,
 } = require('./workspace-authority');
 
@@ -75,7 +76,9 @@ async function canonicalInside(cwd, target, authorityForRead = authority()) {
   let real = null;
   while (true) {
     try {
-      real = await fs.promises.realpath(node);
+      // Use the same resolver as authorization, including Windows logical
+      // paths for package-virtualized AppData files.
+      real = fs.realpathSync(node);
       break;
     } catch (error) {
       if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') return null;
@@ -91,7 +94,7 @@ async function canonicalInside(cwd, target, authorityForRead = authority()) {
     }
   }
   if (!isPathInside(base, real)) return null;
-  if (hasGitDirSegment(path.relative(base, real))) return null;
+  if (hasGitDirSegment(path.relative(base, real)) || hasGitMetadataTarget(real)) return null;
   return tail.length === 0 ? real : path.join(real, ...tail);
 }
 

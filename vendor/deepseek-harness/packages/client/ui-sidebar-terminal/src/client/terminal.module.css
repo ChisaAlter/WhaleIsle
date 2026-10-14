@@ -4,7 +4,7 @@
    inside the merged sidebar dock bg-base resolves transparent. */
 .screen { flex: 1; min-height: 0; min-width: 0; overflow: hidden; padding: 8px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-terminal-pane, var(--dsw-alias-bg-base)); }
 .screen :global(.xterm) { height: 100%; }
-.screen :global(.xterm-viewport) { background: var(--dsw-alias-terminal-pane, var(--dsw-alias-bg-base)); }
+.screen :global(.xterm-viewport) { background: transparent; }
 .status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 5px 12px; background: var(--dsw-alias-bg-l2); }
 .error { margin: 0; padding: 10px 12px; overflow-wrap: anywhere; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-l2); }
 .empty { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 16px; min-height: 0; padding: 24px; overflow: auto; text-align: center; }

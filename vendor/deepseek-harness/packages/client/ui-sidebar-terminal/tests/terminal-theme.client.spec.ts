@@ -56,6 +56,23 @@ it('restores selected entries, all indexed colors and special colors to the curr
   expect(h.options.theme).toMatchObject({ background: '#151517', foreground: '#f9fafb', cursor: '#f9fafb' })
 })
 
+it('keeps the pane tint transparent while preserving opaque cursor text and application backgrounds', () => {
+  const h = harness()
+  h.theme.update('#15151700', '#f9fafb', '#151517')
+  expect(h.options.theme).toMatchObject({
+    background: '#15151700', cursorAccent: '#151517', selectionForeground: '#151517',
+  })
+  h.send(4, '0;#000000')
+  h.send(11, '#123456')
+  h.theme.update('#17191d00', '#e7e9ee', '#17191d')
+  expect(h.options.theme).toMatchObject({
+    black: '#000000', background: '#123456', cursorAccent: '#17191d', selectionForeground: '#17191d',
+  })
+  h.send(111)
+  expect(h.options.theme?.background).toBe('#17191d00')
+  expect(h.options.theme?.black).toBe('#000000')
+})
+
 it.each([
   ['#f00', '#f00000'], ['#123456', '#123456'], ['#123456789', '#124578'], ['#123456789abc', '#12569a'],
   ['rgb:f/0/0', '#ff0000'], ['RGB:FF/00/00', '#ff0000'], ['rgb:abc/def/123', '#abde12'],

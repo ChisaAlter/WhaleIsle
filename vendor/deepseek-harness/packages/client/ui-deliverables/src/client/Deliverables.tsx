@@ -66,7 +66,7 @@ export function DeliverablesTail(props: PropsRuntime<'conversation.chat.turnTail
  * @returns the closing turn's file rows.
  */
 export function Deliverables({
-  matched, openFile, t, sessionId, useSessions, openPresented, openChangesReview, usePresentedOpen, usePresentedHost,
+  matched, openFile, t, sessionId, useSessions, openPresented, openChanged, openChangesReview, usePresentedOpen, usePresentedHost,
   useChangesDiff, loadChangesDiff, useChangesSummary, reloadPresentedHost, loadChangesSummary, useShowCodeDiff, renderSlot,
 }: Pick<TurnTailOwnerProps, 'openFile'> & {
   matched: DeliverablesMatch
@@ -94,6 +94,7 @@ export function Deliverables({
   return <>
     {changes !== null && <ChangedFiles changes={changes} cwd={cwd} t={t}
       sessionId={sessionId} useChangesDiff={useChangesDiff} loadChangesDiff={loadChangesDiff}
+      usePresentedOpen={usePresentedOpen} usePresentedHost={usePresentedHost} openChanged={openChanged} renderSlot={renderSlot}
       openReview={(index) => { openChangesReview({ sessionId, seq: changes.seq, turn: changes.turn }, index) }} />}
     {matched.presented.length > 0 && <div
       className={css.root}

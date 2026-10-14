@@ -38,8 +38,9 @@ export function apply(ctx: Context, config: Config): void {
   ctx.tools.register(defineTool({
     name: 'present',
     description: 'Declare existing files as final deliverables for the user. '
-      + 'Use it when the user needs a separate file, especially Office documents, spreadsheets, and slide decks; '
-      + 'prefer your final response when that suffices. The user opens the current files; their contents are not copied.',
+      + 'When the user explicitly requests a file deliverable, you must call this tool after creating or updating each requested file and before your final response. '
+      + 'This includes HTML, images, Office documents, spreadsheets, and slide decks. A prose file link or inline preview does not replace this declaration. '
+      + 'Ordinary source-code edits do not require this tool. The user opens the current files; their contents are not copied.',
     parameters: {
       files: {
         type: 'array', required: true,
