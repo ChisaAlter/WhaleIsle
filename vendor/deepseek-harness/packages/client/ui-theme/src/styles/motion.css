@@ -31,6 +31,21 @@
   transition-duration: var(--ds-motion-duration-overlay-out);
 }
 
+/* A translucent dialog owns a descendant material layer. Intermediate ancestor
+ * opacity would limit its backdrop to the dialog instead of the page. */
+[data-dsh-motion='overlay'] [data-dsh-motion-part='panel'][role='dialog'] {
+  transition:
+    opacity 0s,
+    transform var(--ds-motion-duration-overlay) var(--ds-ease-in-out);
+}
+
+[data-dsh-motion='overlay'][data-state='closed'] [data-dsh-motion-part='panel'][role='dialog'] {
+  /* Keep the material intact during the exit movement, then hide it at once. */
+  transition:
+    opacity var(--ds-motion-duration-overlay-out) step-end,
+    transform var(--ds-motion-duration-overlay-out) var(--ds-ease-in-out);
+}
+
 [data-dsh-motion='popover'] {
   /* Keep the backdrop root stable while descendant menu material samples the
    * page. Fading this container clips that sampling until opacity reaches 1. */

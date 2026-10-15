@@ -34,6 +34,7 @@ export const zh = {
   'machines.empty': '还没有保存的 SSH 机器',
   'machines.emptyHint': '添加一台机器后，新建工作区时可以选择「远程」标签页。',
   'machines.deleteConfirm': '删除机器「{name}」？本机保存的凭据会一并移除。',
+  'machines.deleted': '已删除机器「{name}」',
   'machines.passwordSet': '已存密码',
 
   'form.titleAdd': '添加 SSH 机器',
@@ -192,6 +193,7 @@ export const en = {
   'machines.empty': 'No saved SSH machines yet',
   'machines.emptyHint': 'Once a machine is added, the "Remote" tab appears when creating a workspace.',
   'machines.deleteConfirm': 'Delete machine "{name}"? Locally stored credentials are removed too.',
+  'machines.deleted': 'Deleted machine "{name}"',
   'machines.passwordSet': 'Password saved',
 
   'form.titleAdd': 'Add SSH machine',

@@ -48,7 +48,10 @@ window.__ModuleLoader__.load({
       "memory.hint": "MEMORY.md 的内容会随她的会话一起注入。可以直接编辑，或让她用 whale_remember 自己记。",
       "memory.save": "保存记忆",
       "memory.clear": "清空记忆",
+      "memory.clearTitle": "清空长期记忆",
       "memory.clearConfirm": "确定清空她的长期记忆？此操作不可撤销。",
+      "memory.clearAction": "确认清空",
+      "memory.cleared": "长期记忆已清空",
       "dialog.cancel": "取消",
       "dialog.close": "关闭",
       "save": "保存",
@@ -95,7 +98,10 @@ window.__ModuleLoader__.load({
       "memory.hint": "MEMORY.md is injected with her session. Edit it here, or let her write via whale_remember.",
       "memory.save": "Save memory",
       "memory.clear": "Clear memory",
+      "memory.clearTitle": "Clear long-term memory",
       "memory.clearConfirm": "Clear her long-term memory? This cannot be undone.",
+      "memory.clearAction": "Confirm clear",
+      "memory.cleared": "Long-term memory cleared",
       "dialog.cancel": "Cancel",
       "dialog.close": "Close",
       "save": "Save",
@@ -141,6 +147,7 @@ window.__ModuleLoader__.load({
 .dsh-whale-textarea { width: 100%; min-height: 96px; resize: vertical; box-sizing: border-box; padding: 8px 10px; font: inherit; font-size: 13px; line-height: 20px; border-radius: 8px; border: 0.5px solid var(--dsw-alias-border-l2, rgba(128,128,128,.3)); background: var(--dsw-alias-bg-primary, transparent); color: var(--dsw-alias-label-primary, inherit); }
 .dsh-whale-textarea:focus { outline: none; border-color: var(--dsw-alias-border-l2, rgba(128,128,128,.3)); }
 .dsh-whale-dialog-textarea { min-height: 220px; }
+.dsh-whale-danger-button { --dsw-alias-button-primary-fill: var(--dsw-alias-state-error-primary); --dsw-alias-button-primary-hover: var(--dsw-alias-state-error-primary); }
 .dsh-whale-skills { max-height: 46vh; overflow: auto; }
 .dsh-whale-modal-hint { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary); }
 .dsh-whale-skill-name { font-size: 13px; font-family: var(--ds-font-family-code, monospace); }
@@ -358,9 +365,10 @@ window.__ModuleLoader__.load({
       const [modelGroups, setModelGroups] = useState(null);
       const committed = useRef({});
       const [dialog, setDialog] = useState(null);
+      const [memoryConfirm, setMemoryConfirm] = useState(false);
       const [personaDraft, setPersonaDraft] = useState("");
 
-      const reload = useCallback(async ({ reportError = true, saved = false } = {}) => {
+      const reload = useCallback(async ({ reportError = true, completed = "" } = {}) => {
         try {
           const value = await rpc("catalog");
           setCatalog(value);
@@ -385,7 +393,7 @@ window.__ModuleLoader__.load({
           if (reportError) {
             setStatus("");
             const message = t("loadFailed", { message: err?.message || String(err) });
-            setError(saved ? `${t("saved")} · ${message}` : message);
+            setError(completed ? `${completed} · ${message}` : message);
           }
           return false;
         }
@@ -459,7 +467,7 @@ window.__ModuleLoader__.load({
         try {
           const saved = await rpc("settings/update", patch);
           if (typeof patch.name === "string" && typeof saved?.name === "string") refreshPanelLabel(saved.name);
-          if (await reload({ saved: true })) setStatus(t("saved"));
+          if (await reload({ completed: t("saved") })) setStatus(t("saved"));
           return true;
         } catch (err) {
           setError(t("saveFailed", { message: err?.message || String(err) }));
@@ -517,12 +525,11 @@ window.__ModuleLoader__.load({
       };
 
       const clearMemory = async () => {
-        if (!window.confirm(t("memory.clearConfirm"))) return;
         if (!beginOperation("memory-clear")) return;
         try {
           await rpc("memory/clear");
           setMemory("");
-          if (await reload({ saved: true })) setStatus(t("saved"));
+          if (await reload({ completed: t("memory.cleared") })) setStatus(t("memory.cleared"));
           setDialog(null);
         } catch (err) {
           setError(err?.message || String(err));
@@ -622,7 +629,7 @@ window.__ModuleLoader__.load({
             type: "button",
             className: "dsh-whale-edit",
             disabled: busy,
-            onClick: () => setDialog("memory"),
+            onClick: () => { setMemoryConfirm(false); setDialog("memory"); },
           }, t("field.memoryEdit"))),
 
         item(t("skills.title"), skills.length === 0
@@ -667,15 +674,19 @@ window.__ModuleLoader__.load({
 
         h(Modal, {
           open: dialog === "memory",
-          onClose: () => { if (!busy) setDialog(null); },
-          title: t("memory.title"),
-          description: t("memory.hint"),
+          onClose: () => { if (!busy) { if (memoryConfirm) setMemoryConfirm(false); else setDialog(null); } },
+          title: t(memoryConfirm ? "memory.clearTitle" : "memory.title"),
+          description: t(memoryConfirm ? "memory.clearConfirm" : "memory.hint"),
           closeLabel: t("dialog.close"),
-          footer: h(Fragment, null,
-            h(Button, { variant: "outline", disabled: busy, loading: pending === "memory-clear", onClick: () => { void clearMemory(); } }, t("memory.clear")),
-            h(Button, { variant: "primary", disabled: busy, loading: pending === "memory-save", onClick: () => { void saveMemory(); } }, t("memory.save"))),
+          footer: memoryConfirm
+            ? h(Fragment, null,
+              h(Button, { variant: "outline", disabled: busy, onClick: () => setMemoryConfirm(false) }, t("dialog.cancel")),
+              h(Button, { variant: "primary", className: "dsh-whale-danger-button", disabled: busy, loading: pending === "memory-clear", onClick: () => { void clearMemory(); } }, t("memory.clearAction")))
+            : h(Fragment, null,
+              h(Button, { variant: "outline", disabled: busy, onClick: () => setMemoryConfirm(true) }, t("memory.clear")),
+              h(Button, { variant: "primary", disabled: busy, loading: pending === "memory-save", onClick: () => { void saveMemory(); } }, t("memory.save"))),
         },
-          h("textarea", {
+          memoryConfirm ? undefined : h("textarea", {
             className: "dsh-whale-textarea dsh-whale-dialog-textarea",
             value: memory,
             disabled: busy,

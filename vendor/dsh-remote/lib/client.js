@@ -74,6 +74,7 @@ var zh = {
   "machines.empty": "\u8FD8\u6CA1\u6709\u4FDD\u5B58\u7684 SSH \u673A\u5668",
   "machines.emptyHint": "\u6DFB\u52A0\u4E00\u53F0\u673A\u5668\u540E\uFF0C\u65B0\u5EFA\u5DE5\u4F5C\u533A\u65F6\u53EF\u4EE5\u9009\u62E9\u300C\u8FDC\u7A0B\u300D\u6807\u7B7E\u9875\u3002",
   "machines.deleteConfirm": "\u5220\u9664\u673A\u5668\u300C{name}\u300D\uFF1F\u672C\u673A\u4FDD\u5B58\u7684\u51ED\u636E\u4F1A\u4E00\u5E76\u79FB\u9664\u3002",
+  "machines.deleted": "\u5DF2\u5220\u9664\u673A\u5668\u300C{name}\u300D",
   "machines.passwordSet": "\u5DF2\u5B58\u5BC6\u7801",
   "form.titleAdd": "\u6DFB\u52A0 SSH \u673A\u5668",
   "form.titleEdit": "\u7F16\u8F91 SSH \u673A\u5668",
@@ -222,6 +223,7 @@ var en = {
   "machines.empty": "No saved SSH machines yet",
   "machines.emptyHint": 'Once a machine is added, the "Remote" tab appears when creating a workspace.',
   "machines.deleteConfirm": 'Delete machine "{name}"? Locally stored credentials are removed too.',
+  "machines.deleted": 'Deleted machine "{name}"',
   "machines.passwordSet": "Password saved",
   "form.titleAdd": "Add SSH machine",
   "form.titleEdit": "Edit SSH machine",
@@ -821,6 +823,7 @@ function RemoteSettingsSection({ t }) {
     }).catch((e) => setErr(t("form.testFail", { error: String(e && e.message || e) }))).finally(() => setBusyId(""));
   };
   const removeMachine = (m) => {
+    if (busyId) return;
     setConfirmDel(m);
   };
   const importable = sshEntries || [];
@@ -848,7 +851,7 @@ function RemoteSettingsSection({ t }) {
   const current = machines.find((m) => m.id === currentId) || null;
   return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "dshr-page", children: [
     /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-caption", children: t("settings.summary") }),
-    loading ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { role: "status", className: "dshr-caption", children: t("settings.loading") }) : null,
+    loading && !status ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { role: "status", className: "dshr-caption", children: t("settings.loading") }) : null,
     loadError ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { role: "alert", className: "dshr-error", children: [
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { children: t("settings.loadFailed", { error: loadError }) }),
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { size: "sm", variant: "ghost", onClick: refresh, children: t("settings.retry") })
@@ -946,7 +949,7 @@ function RemoteSettingsSection({ t }) {
             setEditing(m);
             setFormOpen(false);
           }, children: t("machines.edit") }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "ghost", size: "sm", onClick: () => removeMachine(m), disabled: busyId === "del:" + m.id, children: t("machines.delete") })
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "ghost", size: "sm", onClick: () => removeMachine(m), disabled: !!busyId, children: t("machines.delete") })
         ] })
       ] }, m.id)) })
     ] }),
@@ -1051,7 +1054,39 @@ function RemoteSettingsSection({ t }) {
         }, disabled: !!busyId, loading: busyId === "audit", children: audit ? t("audit.hide") : t("audit.show") })
       ] }),
       audit ? audit.auditEnabled === false ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-caption", children: t("audit.disabled") }) : audit.lines && audit.lines.length ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-audit", children: audit.lines.join("\n") }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dshr-caption", children: t("audit.empty") }) : null
-    ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      import_dsh_client_ui_primitives3.Modal,
+      {
+        open: !!confirmDel,
+        onClose: () => {
+          if (!busyId) setConfirmDel(null);
+        },
+        title: t("machines.delete"),
+        closeLabel: t("common.close"),
+        description: confirmDel ? t("machines.deleteConfirm", { name: confirmDel.name || confirmDel.host }) : "",
+        footer: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(React3.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(import_dsh_client_ui_primitives3.Button, { variant: "ghost", size: "sm", onClick: () => setConfirmDel(null), disabled: !!busyId, children: t("form.cancel") }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+            import_dsh_client_ui_primitives3.Button,
+            {
+              variant: "primary",
+              size: "sm",
+              disabled: !!busyId,
+              loading: !!confirmDel && busyId === "del:" + confirmDel.id,
+              onClick: () => {
+                if (!confirmDel || busyId) return;
+                const machine = confirmDel;
+                void run(() => remoteApi.deleteMachine(machine.id), t("machines.deleted", { name: machine.name || machine.host }), "del:" + machine.id).then((removed) => {
+                  if (removed) setConfirmDel(null);
+                });
+              },
+              children: t("machines.delete")
+            }
+          )
+        ] })
+      }
+    )
   ] });
 }
 
