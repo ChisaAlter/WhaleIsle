@@ -5,7 +5,7 @@ const id = z.string().min(1);
 const project = z.object({ id, title: id, workspaceId: id.optional(), canonicalWorkingDirectory: id, directoryIdentity: id,
   coordinatorSessionId: id, storageRoot: id, lifecycle: z.enum(['creating', 'ready', 'archived']),
   paused: z.boolean(), holdSourceMessageId: z.string(), diagnostics: z.array(z.string()), creationRequestId: id, createdAt: z.number(), updatedAt: z.number() });
-const source = z.object({ sessionId: id, messageId: id, callId: id, text: z.string(), messageIds: z.array(id).optional(), importedInputs: z.array(z.object({ messageId: id, text: z.string() })).optional(), authorizationCallId: id.optional(), requestId: id.optional(), requestRevision: z.number().int().positive().optional() });
+const source = z.object({ sessionId: id, messageId: id, callId: id, text: z.string(), messageIds: z.array(id).optional(), continuationMessageId: id.optional(), importedInputs: z.array(z.object({ messageId: id, text: z.string() })).optional(), authorizationCallId: id.optional(), requestId: id.optional(), requestRevision: z.number().int().positive().optional() });
 const humanInput = z.object({ messageId: id, text: z.string() });
 const workReference = z.object({ workstreamId: id, delegationRef: id });
 const evidenceReference = workReference.extend({ runId: id, reportId: id.optional() });
@@ -14,7 +14,9 @@ const importedRequest = z.object({ inputs: z.array(humanInput), requiredWork: z.
 const importedDelivery = z.object({ callId: id, callSeq: z.number(), references: z.array(evidenceReference), requiredWork: z.array(workReference),
   basisHeads: z.array(basisHead).optional(), basisAlreadyChanged: z.boolean().optional(), messageId: id.optional(), committedAt: z.number().optional(), supersededBy: id.optional() });
 const requestVersion = z.object({ revision: z.number().int().positive(), title: id.optional(), goal: id, constraints: z.array(z.string()), conditions: z.array(z.string()), scope: z.enum(['worker', 'readonly', 'docs']), writePaths: z.array(z.string()), source: source.optional(), authorityError: id.optional(), imported035: importedRequest.optional(), at: z.number() });
-const request = z.object({ id, projectId: id, title: id, revision: z.number().int().positive(), versions: z.array(requestVersion), archivedAt: z.number().optional(), createdAt: z.number(), updatedAt: z.number() });
+const requestQueue = z.object({ state: z.enum(['discussing', 'queued', 'active', 'cancelled']), order: z.number().optional(),
+  released: z.boolean().optional(), resumeRequested: z.boolean().optional(), activation: z.object({ messageId: id, requestRevision: z.number().int().positive(), resume: z.boolean().optional() }).optional() });
+const request = z.object({ id, projectId: id, title: id, revision: z.number().int().positive(), versions: z.array(requestVersion), queue: requestQueue.optional(), archivedAt: z.number().optional(), createdAt: z.number(), updatedAt: z.number() });
 const resultReference = z.object({ workstreamId: id, delegationRef: id, reportId: id.optional() });
 const terminalReference = z.object({ workstreamId: id, delegationRef: id, runId: id });
 const visualReplyPage = z.object({ sessionId: id, callId: id, file: z.object({ attachmentId: id, name: id, bytes: z.number().int().positive() }), title: id, height: z.number().int().min(80).max(2000) });

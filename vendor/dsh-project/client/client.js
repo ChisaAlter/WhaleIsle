@@ -1,13 +1,15 @@
 window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   const { createElement: h, useState, useEffect, useLayoutEffect, useRef, useCallback, Fragment } = require('react');
   const { createPortal } = require('react-dom');
-  const { Button, Input, Menu, Modal, Pill, SegmentedTabs, MarkdownText, Toast, IconFolderCloseRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular } = require('@deepseek-ai/dsh-client-ui-primitives');
+  const { Button, Input, Menu, Modal, Pill, SegmentedTabs, MarkdownText, Toast, IconFolderCloseRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconChevronRightOutlineRegular, IconPlusOutlineRegular, IconEllipsisOutlineRegular } = require('@deepseek-ai/dsh-client-ui-primitives');
   const { createSnapshotStore, defineStore } = require('@deepseek-ai/dsh-client-store');
   const { teamEnglish, teamChinese } = require('@deepseek-ai/dsh-experimental-client-ui-agent-team');
   const NS = 'dsh-project';
   const zh = {
     diffTruncated: '差异过长，仅显示前一部分；请打开目录查看完整改动。', tab: 'Project', more: '更多', rename: '重命名', cancel: '取消', archiveActive: '停止后台工作并归档', archiveHint: '后台工作会停止，工作目录、对话和成果将保留。', team: '团队', add: '添加 Project…', loading: '正在读取…', close: '关闭', refresh: '刷新',
-    archivedHint: '项目已归档。恢复后可继续对话，旧工作不会自动启动。', archiving: '正在停止后台工作并归档…', queued: '排队中', empty: '从新建对话的工作目录菜单添加 Project。', archived: '已归档', history: '显示归档项目',
+    requirementGoal: '完整目标', requirementConstraints: '约束', requirementConditions: '完成条件', noRequirementConstraints: '未记录约束。', noRequirementConditions: '未记录完成条件。',
+    requestRoleDevelopment: '开发', requestRoleReview: '检查', requestRoleDocs: '文档', requestHandover: '等待协调者交付', requestArranging: '正在安排', requestArrangingHint: '协调者正在安排团队开发。', deleted: '已移除', requestDiscussing: '讨论中', requestQueued: '等待开发', requestCancelled: '已取消', requestQueuePosition: '队列第 {position} 项', requestQueueCount: '{count} 项排队', requestEnqueue: '加入开发队列', requestMoveUp: '上移一位', requestMoveDown: '下移一位', requestCancel: '取消需求', requestRejoin: '重新加入队列', requestResume: '继续当前需求', requestResumeQueue: '继续队列', requestRestarted: '应用已重启，等待你继续当前需求', requestQueuePaused: '队列已暂停', requestQueueWaiting: '前一项需求交付后自动开始', requestQueueReady: '等待协调者安排开发', requestDiscussingHint: '需求仍在讨论，确认后加入开发队列。', requestCancelledHint: '已从开发队列取消，要求和已有成果仍保留。', taskCancelled: '已取消需求', taskCancelledEmpty: '还没有取消的需求。',
+    archivedHint: '项目已归档。恢复后可继续对话，旧工作不会自动启动。', archiving: '正在停止后台工作并归档…', queued: '排队中', empty: '添加项目目录，开始持续对话。', emptyArchived: '暂无归档 Project。', archived: '已归档', history: '显示归档项目',
     directory: 'Project 工作目录', openDirectory: '打开项目目录', materials: '项目资料', progress: '工作进度',
     noWork: '在这里提出需求，后续可以继续同一项工作。', process: '成员记录', viewProcess: '查看记录', viewResult: '查看成果', workDetails: '详情', executionInfo: '执行信息', earlierWork: '更早工作',
     processHint: '需要调整这项工作时，在主对话中继续说明。', noProcess: '暂无记录。', priorWorkFailed: '此前工作失败', priorWorkStopped: '此前工作已停止', priorReportPending: '此前报告待汇总', priorWorkPending: '此前工作尚未完成',
@@ -37,10 +39,14 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     teamLeadWaiting: '等待主对话继续安排', teamLeadBackground: '团队成员在后台工作，协调者当前未运行', teamAssigned: '已分配，当前未运行', teamReported: '已提交报告', teamReady: '待命',
     teamStatusUnavailable: '当前运行状态不可用', teamNoAssignment: '暂无分配工作', teamNoMatch: '没有匹配的成员或工作。',
     teamOtherWork: '其他工作', teamTarget: '消息目标', teamSession: '会话 ID',
+    observerTaskProgress: '任务进度', observerTodo: '当前待办', observerTodoPending: '待完成', observerExecutor: '当前执行者', observerFlow: '从需求到交付', observerNoTodo: '尚未安排具体工作', observerCard: '收起详情', observerIsland: '收为灵动浮条', observerReturnCurrent: '返回当前任务', observerTaskCount: '项当前任务', observerReports: '份报告已提交', observerAwaitDelivery: '等待协调者交付', observerDeliverToYou: '交付给你', observerRegistered: '已登记', observerReportCount: '{count} 份', observerNoCurrent: '没有当前任务',
+
   };
   const en = {
+    requirementGoal: 'Full goal', requirementConstraints: 'Constraints', requirementConditions: 'Completion conditions', noRequirementConstraints: 'No constraints recorded.', noRequirementConditions: 'No completion conditions recorded.',
+    requestRoleDevelopment: 'Development', requestRoleReview: 'Review', requestRoleDocs: 'Documentation', requestHandover: 'Awaiting coordinator delivery', requestArranging: 'Arranging work', requestArrangingHint: 'The coordinator is arranging development with the team.', deleted: 'Removed', requestDiscussing: 'Discussing', requestQueued: 'Awaiting development', requestCancelled: 'Cancelled', requestQueuePosition: 'Queue position {position}', requestQueueCount: '{count} queued', requestEnqueue: 'Add to development queue', requestMoveUp: 'Move up', requestMoveDown: 'Move down', requestCancel: 'Cancel request', requestRejoin: 'Rejoin queue', requestResume: 'Continue current request', requestResumeQueue: 'Continue queue', requestRestarted: 'Application restarted; waiting for explicit continuation.', requestQueuePaused: 'Queue paused', requestQueueWaiting: 'Starts automatically after the previous request is delivered', requestQueueReady: 'Waiting for the coordinator to arrange development', requestDiscussingHint: 'This request is being discussed. Add it to the development queue when ready.', requestCancelledHint: 'Removed from the development queue. Requirements and existing results are retained.', taskCancelled: 'Cancelled requests', taskCancelledEmpty: 'No cancelled requests yet.',
     diffTruncated: 'The diff is truncated. Open the directory for the complete changes.', tab: 'Project', more: 'More', rename: 'Rename', cancel: 'Cancel', archiveActive: 'Stop work and archive', archiveHint: 'Background work will stop. Files, conversation and results are retained.', team: 'Team', add: 'Add Project…', loading: 'Loading…', close: 'Close', refresh: 'Refresh',
-    archivedHint: 'This Project is archived. Restore it to continue; previous work will not restart automatically.', archiving: 'Stopping work and archiving…', queued: 'Queued', empty: 'Add a Project from the working-directory menu in New Conversation.', archived: 'Archived', history: 'Show archived projects',
+    archivedHint: 'This Project is archived. Restore it to continue; previous work will not restart automatically.', archiving: 'Stopping work and archiving…', queued: 'Queued', empty: 'Add a project directory to start a continuing conversation.', emptyArchived: 'No archived Projects.', archived: 'Archived', history: 'Show archived projects',
     directory: 'Project working directory', openDirectory: 'Open project directory', materials: 'Project materials', progress: 'Work progress',
     noWork: 'Describe what you need here, and continue the same work later.', process: 'Member history', viewProcess: 'View history', viewResult: 'View results', workDetails: 'Details', executionInfo: 'Execution details', earlierWork: 'Earlier work',
     processHint: 'Continue in the main conversation to request changes to this work.', noProcess: 'No records yet.', priorWorkFailed: 'Earlier work failed', priorWorkStopped: 'Earlier work stopped', priorReportPending: 'Earlier report awaits handover', priorWorkPending: 'Earlier work is unfinished',
@@ -70,83 +76,190 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     teamLeadWaiting: 'Awaiting the next request in the main conversation', teamLeadBackground: 'Team members are working in the background; the coordinator is not running.', teamAssigned: 'Assigned · not running', teamReported: 'Report submitted', teamReady: 'Ready',
     teamStatusUnavailable: 'Current runtime status unavailable', teamNoAssignment: 'No work assigned', teamNoMatch: 'No matching members or work.',
     teamOtherWork: 'Other work', teamTarget: 'Message target', teamSession: 'Session ID',
+    observerTaskProgress: 'Task progress', observerTodo: 'Current to-dos', observerTodoPending: 'Pending', observerExecutor: 'Current executor', observerFlow: 'From request to delivery', observerNoTodo: 'No work has been assigned yet', observerCard: 'Collapse details', observerIsland: 'Collapse to status strip', observerReturnCurrent: 'Back to current task', observerTaskCount: 'current tasks', observerReports: 'reports submitted', observerAwaitDelivery: 'Awaiting the coordinator’s delivery', observerDeliverToYou: 'Delivery to you', observerRegistered: 'Registered', observerReportCount: '{count} reports', observerNoCurrent: 'No current task',
+
   };
   const CSS = `
     .dsh-project-page{padding:12px 0 8px;display:flex;flex-direction:column;gap:4px;min-width:0}
-    .dsh-project-row-wrap{display:flex;align-items:center;min-width:0}.dsh-project-row-wrap>.dsh-project-row{flex:1}.dsh-project-category{flex:1;min-width:0;display:flex;align-items:center;gap:4px;height:36px;padding:0 8px;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;text-align:left;cursor:pointer}
+    .dsh-project-page>.dsh-project-empty{text-align:left;padding:12px 8px}
+    .dsh-project-row-wrap{display:flex;align-items:center;gap:4px;min-width:0;min-height:32px;padding:0 8px;box-sizing:border-box;border-radius:var(--dsw-radius-md);color:var(--dsw-alias-label-primary)}
+    .dsh-project-row-wrap>.dsh-project-row{flex:1}
+    .dsh-project-row-wrap:hover,.dsh-project-row-wrap:focus-within,.dsh-project-row-wrap[aria-current=page],.dsh-project-row-wrap[data-menu-open=true]{background:var(--dsw-alias-interactive-bg-hover)}
+    .dsh-project-category{flex:1;min-width:0;display:flex;align-items:center;gap:4px;height:36px;padding:0 4px;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;line-height:20px;text-align:left;cursor:pointer}
     .dsh-project-category:hover{background:var(--dsw-alias-interactive-bg-hover)}
-    .dsh-project-category span{flex:1}.dsh-project-category-count{font-size:12px;font-weight:400}
+    .dsh-project-category span{flex:1}
+    .dsh-project-category-count{font-size:12px;font-weight:400}
     .dsh-project-heading,.dsh-project-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-    .dsh-project-heading{justify-content:space-between}.dsh-project-list{display:flex;flex-direction:column;gap:4px}
+    .dsh-project-heading{justify-content:space-between;gap:4px;flex-wrap:nowrap}
+    .dsh-project-list{display:flex;flex-direction:column;gap:2px}
+    .dsh-project-sidebar-button{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-height:28px;padding:0;border:0;border-radius:var(--dsw-radius-sm);color:var(--dsw-alias-label-secondary)}
+    .dsh-project-row-menu{visibility:hidden;flex:none}
+    .dsh-project-row-wrap:hover .dsh-project-row-menu,.dsh-project-row-wrap:focus-within .dsh-project-row-menu,.dsh-project-row-wrap[data-menu-open=true] .dsh-project-row-menu{visibility:visible}
+    .dsh-project-page button:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
     .dsh-project-header{display:flex;align-items:center;flex:0 0 auto;white-space:nowrap}
-    .dsh-project-header-directory{min-width:0;max-width:100%}.dsh-project-header-label{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;flex:0 0 auto}
+    .dsh-project-header-directory{min-width:0;max-width:100%}
+    .dsh-project-header-label{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;flex:0 0 auto}
     .dsh-project-header-path{min-width:0;max-width:280px;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .dsh-project-return-materials{max-width:min(240px,25vw);min-width:0}.dsh-project-return-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsh-project-materials-frame{display:flex;flex:1;min-height:0;overflow:hidden}
-    .dsh-project-row{border:0;border-radius:12px;background:transparent;color:var(--dsw-alias-label-primary);padding:10px;display:flex;align-items:center;gap:8px;text-align:left;cursor:pointer;min-width:0}
-    .dsh-project-row:hover,.dsh-project-row[aria-current=page]{background:var(--dsw-alias-interactive-bg-hover)}
-    .dsh-project-row-text{display:flex;flex:1;flex-direction:column;min-width:0}.dsh-project-row-title,.dsh-project-row-text>.dsh-project-muted{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsh-project-row-meta{display:flex;align-items:center;gap:8px;min-width:0}.dsh-project-row-meta>.dsh-project-muted{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .dsh-project-archive-notice{padding:16px 20px;border:1px solid var(--dsw-alias-border-l2);border-radius:16px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.5}.dsh-project-row small{flex-shrink:0;font-size:11px;color:var(--dsw-alias-label-tertiary)}
-    .dsh-project-muted{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:1.5}.dsh-project-error{color:var(--dsw-alias-state-error-primary);white-space:pre-wrap;font-size:13px}
+    .dsh-project-return-materials{max-width:min(240px,25vw);min-width:0}
+    .dsh-project-return-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .dsh-project-materials-frame{display:flex;flex:1;min-height:0;overflow:hidden}
+    .dsh-project-row{border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-primary);padding:0;min-height:32px;display:flex;align-items:center;gap:4px;font:inherit;font-size:14px;line-height:20px;text-align:left;cursor:pointer;min-width:0}
+    .dsh-project-row>svg{flex:none}
+    .dsh-project-row-text{display:flex;flex:1;flex-direction:column;min-width:0}
+    .dsh-project-row-title,.dsh-project-row-text>.dsh-project-muted{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .dsh-project-row-meta{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+    .dsh-project-row-meta>.dsh-project-muted{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .dsh-project-row-state{flex:none;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+    .dsh-project-row-wrap[data-archived=true] .dsh-project-row,.dsh-project-row-wrap[data-archived=true] .dsh-project-row-state{color:var(--dsw-alias-label-caption)}
+    .dsh-project-archive-notice{padding:16px 20px;border:1px solid var(--dsw-alias-border-l2);border-radius:16px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.5}
+    .dsh-project-row small{flex-shrink:0;font-size:11px;color:var(--dsw-alias-label-tertiary)}
+    .dsh-project-muted{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:1.5}
+    .dsh-project-error{color:var(--dsw-alias-state-error-primary);white-space:pre-wrap;font-size:13px}
     .dsh-project-progress{max-height:180px;overflow:auto;display:flex;flex-direction:column;gap:8px;color:var(--dsw-alias-label-primary);font-size:13px}
-    .dsh-project-progress>p{margin:0}.dsh-project-work{border-top:1px solid var(--dsw-alias-border-l2);padding-top:6px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;min-width:0}.dsh-project-work>.dsh-project-actions{grid-column:2;grid-row:1}.dsh-project-work>p,.dsh-project-work>button,.dsh-project-work>details{grid-column:1/-1}.dsh-project-work>button{justify-self:start}.dsh-project-work>p{margin:0}
-    .dsh-project-work-heading{flex-wrap:nowrap;min-width:0}.dsh-project-work-heading strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dsh-project-work-details>summary,.dsh-project-work-history>summary{cursor:pointer;font-size:12px;color:var(--dsw-alias-label-secondary)}.dsh-project-work-details[open]>summary{margin-bottom:8px}.dsh-project-work-detail-body{display:flex;flex-direction:column;gap:6px;min-width:0}.dsh-project-work-history{display:flex;flex-direction:column;gap:8px}
-    .dsh-project-path{color:var(--dsw-alias-label-tertiary);font:12px monospace;overflow-wrap:anywhere}.dsh-project-body{display:flex;flex-direction:column;gap:12px;min-width:0}
-    .dsh-project-artifact{display:flex;flex-direction:column;gap:4px;min-width:0}.dsh-project-artifact-row{display:flex;align-items:center;gap:8px;min-width:0}.dsh-project-artifact-title{flex:1;min-width:0;height:auto;min-height:32px;white-space:normal;overflow-wrap:anywhere;text-align:left;justify-content:flex-start}.dsh-project-artifact-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-left:8px}.dsh-project-artifact-row>span{flex-shrink:0}.dsh-project-artifact>.dsh-project-path{padding:8px}.dsh-project-error-details>summary{cursor:pointer;font-size:12px;color:var(--dsw-alias-label-secondary)}.dsh-project-error-details pre{margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace;color:var(--dsw-alias-label-secondary)}
-    .dsh-project-modal{width:min(760px,calc(100vw - 32px))}.dsh-project-modal-content{max-height:80vh;overflow:hidden}.dsh-project-modal-content>:first-child{flex-shrink:0}.dsh-project-modal-content>:last-child{min-height:0;overflow:auto}
+    .dsh-project-progress>p{margin:0}
+    .dsh-project-work{border-top:1px solid var(--dsw-alias-border-l2);padding-top:6px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;min-width:0}
+    .dsh-project-work>.dsh-project-actions{grid-column:2;grid-row:1}
+    .dsh-project-work>p,.dsh-project-work>button,.dsh-project-work>details{grid-column:1/-1}
+    .dsh-project-work>button{justify-self:start}
+    .dsh-project-work>p{margin:0}
+    .dsh-project-work-heading{flex-wrap:nowrap;min-width:0}
+    .dsh-project-work-heading strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .dsh-project-work-details>summary,.dsh-project-work-history>summary{cursor:pointer;font-size:12px;color:var(--dsw-alias-label-secondary)}
+    .dsh-project-work-details[open]>summary{margin-bottom:8px}
+    .dsh-project-work-detail-body{display:flex;flex-direction:column;gap:6px;min-width:0}
+    .dsh-project-work-history{display:flex;flex-direction:column;gap:8px}
+    .dsh-project-path{color:var(--dsw-alias-label-tertiary);font:12px monospace;overflow-wrap:anywhere}
+    .dsh-project-body{display:flex;flex-direction:column;gap:12px;min-width:0}
+    .dsh-project-artifact{display:flex;flex-direction:column;gap:4px;min-width:0}
+    .dsh-project-artifact-row{display:flex;align-items:center;gap:8px;min-width:0}
+    .dsh-project-artifact-title{flex:1;min-width:0;height:auto;min-height:32px;white-space:normal;overflow-wrap:anywhere;text-align:left;justify-content:flex-start}
+    .dsh-project-artifact-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-left:8px}
+    .dsh-project-artifact-row>span{flex-shrink:0}
+    .dsh-project-artifact>.dsh-project-path{padding:8px}
+    .dsh-project-error-details>summary{cursor:pointer;font-size:12px;color:var(--dsw-alias-label-secondary)}
+    .dsh-project-error-details pre{margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace;color:var(--dsw-alias-label-secondary)}
+    .dsh-project-modal{width:min(760px,calc(100vw - 32px))}
+    .dsh-project-modal-content{max-height:80vh;overflow:hidden}
+    .dsh-project-modal-content>:first-child{flex-shrink:0}
+    .dsh-project-modal-content>:last-child{min-height:0;overflow:auto}
     .dsh-project-editor{width:100%;min-height:240px;resize:vertical;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;padding:12px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;line-height:1.6;box-sizing:border-box}
-    .dsh-project-materials{min-height:0;overflow:hidden!important}.dsh-project-materials-tabs{flex-shrink:0}.dsh-project-materials-content{min-height:0;overflow:auto;display:flex;flex-direction:column;gap:16px}.dsh-project-materials-footer{flex-shrink:0;display:flex;align-items:center;justify-content:flex-end;gap:12px}.dsh-project-materials-footer>.dsh-project-muted{flex:1}
-    .dsh-project-result{display:flex;flex-direction:column;gap:8px;padding:16px 0;border-bottom:1px solid var(--dsw-alias-border-l2);min-width:0}.dsh-project-result:first-child{padding-top:0}.dsh-project-result-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;min-width:0}.dsh-project-result-heading strong{min-width:0;overflow-wrap:anywhere}.dsh-project-result-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.dsh-project-result-body{display:flex;flex-direction:column;gap:8px;min-width:0}.dsh-project-result-disclosure>summary,.dsh-project-documents>summary{cursor:pointer;font-size:13px;color:var(--dsw-alias-label-secondary)}.dsh-project-result-disclosure[open]>summary{margin-bottom:8px}.dsh-project-result-details{display:flex;flex-direction:column;gap:8px}.dsh-project-work-detail-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.dsh-project-empty{margin:0;padding:4px 12px;color:var(--dsw-alias-label-secondary);font-size:13px;text-align:center;line-height:1.5}
-    .dsh-project-result-conclusion{margin:0;font-size:14px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}.dsh-project-result-checks{display:flex;flex-direction:column;gap:4px;font-size:13px;line-height:1.6;min-width:0}.dsh-project-result-checks ul{margin:0;padding-left:20px;overflow-wrap:anywhere}.dsh-project-materials-host{display:flex;flex-direction:column;min-height:0;overflow:hidden;flex:1}.dsh-project-materials-host[hidden],.dsh-project-results-list[hidden]{display:none}.dsh-project-results-list{display:flex;flex-direction:column;gap:16px;min-width:0}.dsh-project-context{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;margin-bottom:12px}.dsh-project-context-label{font-size:13px;color:var(--dsw-alias-label-secondary);min-width:0;overflow-wrap:anywhere}.dsh-project-record-heading{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}.dsh-project-record-time{font-size:12px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}.dsh-project-record-round{padding-top:16px;display:flex;flex-direction:column;gap:6px}.dsh-project-record-runs{display:flex;flex-direction:column;gap:4px}.dsh-project-record-runs button{height:auto;white-space:normal;text-align:left;justify-content:flex-start}
+    .dsh-project-materials{min-height:0;overflow:hidden!important}
+    .dsh-project-materials-tabs{flex-shrink:0}
+    .dsh-project-materials-content{min-height:0;overflow:auto;display:flex;flex-direction:column;gap:16px}
+    .dsh-project-materials-footer{flex-shrink:0;display:flex;align-items:center;justify-content:flex-end;gap:12px}
+    .dsh-project-materials-footer>.dsh-project-muted{flex:1}
+    .dsh-project-result{display:flex;flex-direction:column;gap:8px;padding:16px 0;border-bottom:1px solid var(--dsw-alias-border-l2);min-width:0}
+    .dsh-project-result:first-child{padding-top:0}
+    .dsh-project-result-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;min-width:0}
+    .dsh-project-result-heading strong{min-width:0;overflow-wrap:anywhere}
+    .dsh-project-result-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .dsh-project-result-body{display:flex;flex-direction:column;gap:8px;min-width:0}
+    .dsh-project-result-disclosure>summary,.dsh-project-documents>summary{cursor:pointer;font-size:13px;color:var(--dsw-alias-label-secondary)}
+    .dsh-project-result-disclosure[open]>summary{margin-bottom:8px}
+    .dsh-project-result-details{display:flex;flex-direction:column;gap:8px}
+    .dsh-project-work-detail-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .dsh-project-empty{margin:0;padding:4px 12px;color:var(--dsw-alias-label-secondary);font-size:13px;text-align:center;line-height:1.5}
+    .dsh-project-result-conclusion{margin:0;font-size:14px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
+    .dsh-project-result-checks{display:flex;flex-direction:column;gap:4px;font-size:13px;line-height:1.6;min-width:0}
+    .dsh-project-result-checks ul{margin:0;padding-left:20px;overflow-wrap:anywhere}
+    .dsh-project-materials-host{display:flex;flex-direction:column;min-height:0;overflow:hidden;flex:1}
+    .dsh-project-materials-host[hidden],.dsh-project-results-list[hidden]{display:none}
+    .dsh-project-results-list{display:flex;flex-direction:column;gap:16px;min-width:0}
+    .dsh-project-context{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;margin-bottom:12px}
+    .dsh-project-context-label{font-size:13px;color:var(--dsw-alias-label-secondary);min-width:0;overflow-wrap:anywhere}
+    .dsh-project-record-heading{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+    .dsh-project-record-time{font-size:12px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
+    .dsh-project-record-round{padding-top:16px;display:flex;flex-direction:column;gap:6px}
+    .dsh-project-record-runs{display:flex;flex-direction:column;gap:4px}
+    .dsh-project-record-runs button{height:auto;white-space:normal;text-align:left;justify-content:flex-start}
     .dsh-project-result-heading>:last-child{flex-shrink:0;white-space:nowrap}
     .dsh-project-record{font:12px/1.6 monospace;white-space:pre;overflow:auto;padding:10px;background:var(--dsw-alias-markdown-code-block);border-radius:12px;max-height:320px}
-    .dsh-project-record-row{border-top:1px solid var(--dsw-alias-border-l2);padding-top:8px}.dsh-project-check{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-tertiary)}
-    .dsh-project-observer-title{display:flex;align-items:center;gap:8px;min-width:0;width:100%;height:28px;color:var(--dsw-alias-label-primary);font-size:13px}
-    [data-dockkit-float-title]:has(.dsh-project-observer-title){flex:1 1 auto;max-width:none}
-    .dsh-project-observer-title-text{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .dsh-project-observer-title-state{flex:none;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:12px}
-    .dsh-project-mode-controls{display:flex;align-items:center;gap:2px;flex:none;margin-left:auto}
-    .dsh-project-mode-button{display:flex;align-items:center;justify-content:center;gap:2px;height:28px;padding:0 6px;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;white-space:nowrap;cursor:pointer}
-    .dsh-project-mode-button:hover{background:var(--dsw-alias-interactive-bg-hover)}.dsh-project-mode-button[aria-pressed=true]{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary)}
-    .dsh-project-mode-button:focus-visible,.dsh-project-observer button:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
-    .dsh-project-observer{display:flex;flex-direction:column;height:100%;min-height:0;min-width:0;background:var(--dsw-alias-bg-panel-solid);color:var(--dsw-alias-label-primary);font-size:14px;line-height:1.6}
-    .dsh-project-observer-toolbar{display:flex;align-items:center;justify-content:space-between;gap:6px;min-height:44px;padding:4px 16px;border-bottom:.5px solid var(--dsw-alias-border-l2)}
-    .dsh-project-observer-sections{display:flex;align-items:center;min-width:0;gap:4px}.dsh-project-observer-sections button{border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;cursor:pointer;padding:6px 9px;white-space:nowrap}
-    .dsh-project-observer-sections button:hover{background:var(--dsw-alias-interactive-bg-hover)}
-    .dsh-project-observer-sections button[aria-current=page]{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary);font-weight:600}
-    .dsh-project-observer-scroll{flex:1;min-height:0;overflow:auto;scrollbar-color:var(--dsw-alias-border-l3) transparent}
-    .dsh-project-observer-full-body{height:100%;min-height:0}.dsh-project-observer-full-body[hidden]{display:none}
-    .dsh-project-observer-list,.dsh-project-observer-detail,.dsh-project-observer-subview{display:flex;flex-direction:column;gap:8px;padding:16px;min-width:0}
-    .dsh-project-observer-empty{display:flex;flex:1;flex-direction:column;justify-content:center;gap:8px;padding:12px;min-width:0}.dsh-project-observer-empty strong{font-size:14px;color:var(--dsw-alias-label-primary)}.dsh-project-observer-empty p{margin:0;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
-    .dsh-project-task-group-title{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:20px 0 4px;color:var(--dsw-alias-label-secondary);font-size:13px}.dsh-project-task-group-title:first-child{padding-top:0}
-    .dsh-project-task-card{display:flex;flex-direction:column;gap:8px;min-width:0;padding:12px 0 16px;border-bottom:.5px solid var(--dsw-alias-border-l2)}
-    .dsh-project-task-card-heading,.dsh-project-task-meta,.dsh-project-task-footer,.dsh-project-task-members{display:flex;align-items:center;gap:8px;min-width:0}.dsh-project-task-card-heading{justify-content:space-between}
-    .dsh-project-task-title{flex:1;min-width:0;padding:0;border:0;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:15px;line-height:24px;font-weight:600;text-align:left;white-space:normal;overflow-wrap:anywhere;cursor:pointer}
-    .dsh-project-task-title:hover{text-decoration:underline;text-underline-offset:3px}.dsh-project-task-meta{justify-content:space-between;color:var(--dsw-alias-label-tertiary);font-size:12px}
-    .dsh-project-task-goal,.dsh-project-task-outcome{margin:0;color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px;overflow-wrap:anywhere}
-    .dsh-project-task-footer{justify-content:space-between;flex-wrap:wrap;font-size:13px}.dsh-project-task-state{color:var(--dsw-alias-label-primary)}.dsh-project-task-waiting{margin:0;color:var(--dsw-alias-label-secondary);font-size:13px;overflow-wrap:anywhere}
-    .dsh-project-task-preview{display:flex;flex-direction:column;gap:8px;padding-top:4px}.dsh-project-task-preview>div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px}.dsh-project-task-preview span{overflow-wrap:anywhere;color:var(--dsw-alias-label-secondary)}.dsh-project-task-preview small{color:var(--dsw-alias-label-secondary);white-space:nowrap}.dsh-project-task-preview p{grid-column:1/-1;margin:0;color:var(--dsw-alias-label-secondary);font-size:13px;overflow-wrap:anywhere}
-    .dsh-project-task-members{gap:4px}.dsh-project-task-avatar{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary);font-size:11px;font-weight:600}
-    .dsh-project-task-pagination{display:flex;gap:8px;justify-content:flex-end}.dsh-project-task-detail{display:flex;flex-direction:column;gap:10px;min-width:0}
-    .dsh-project-task-detail-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.dsh-project-task-detail-heading h2{margin:0;min-width:0;overflow-wrap:anywhere;font-size:16px;line-height:24px}
+    .dsh-project-record-row{border-top:1px solid var(--dsw-alias-border-l2);padding-top:8px}
+    .dsh-project-check{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-tertiary)}
+    .dsh-project-task-group-title{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:20px 0 4px;color:var(--dsw-alias-label-secondary);font-size:13px}
+    .dsh-project-task-group-title:first-child{padding-top:0}
+    .dsh-project-task-pagination{display:flex;gap:8px;justify-content:flex-end}
+    .dsh-project-task-detail{display:flex;flex-direction:column;gap:10px;min-width:0}
+    .dsh-project-task-queue-actions{display:flex;align-items:center;gap:8px;flex:0 1 auto;flex-wrap:wrap;min-width:0}
+    .dsh-project-task-queue-actions>button{min-height:28px}
+    .dsh-project-task-detail-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+    .dsh-project-task-detail-heading h2{margin:0;min-width:0;overflow-wrap:anywhere;font-size:16px;line-height:24px}
     .dsh-project-task-tabs{flex:none;min-width:0}
-    .dsh-project-task-tab-body{min-width:0}.dsh-project-task-section{display:flex;flex-direction:column;gap:8px;min-width:0;padding:8px 0}.dsh-project-task-section p,.dsh-project-task-member p{margin:0}
-    .dsh-project-task-section ul{margin:0;padding-left:20px;overflow-wrap:anywhere}.dsh-project-task-member{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;padding:10px 0;border-bottom:.5px solid var(--dsw-alias-border-l2)}.dsh-project-task-member .dsh-project-actions{grid-column:1/-1}
-    .dsh-project-task-event{display:grid;grid-template-columns:100px minmax(0,1fr);gap:2px 8px;padding:8px 0;border-bottom:.5px solid var(--dsw-alias-border-l2);min-width:0}.dsh-project-task-event>span:last-child{grid-column:2;overflow-wrap:anywhere;color:var(--dsw-alias-label-secondary)}
-    .dsh-project-observer-team{display:flex;flex-direction:column;gap:8px;padding:16px;min-width:0}.dsh-project-observer-team>input{width:100%;box-sizing:border-box}.dsh-project-observer-team input::placeholder{color:var(--dsw-alias-label-secondary);opacity:1}
+    .dsh-project-task-tab-body{min-width:0}
+    .dsh-project-task-section{display:flex;flex-direction:column;gap:8px;min-width:0;padding:8px 0}
+    .dsh-project-task-section p,.dsh-project-task-member p{margin:0}
+    .dsh-project-task-section ul{margin:0;padding-left:20px;overflow-wrap:anywhere}
+    .dsh-project-task-member{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;padding:10px 0;border-bottom:.5px solid var(--dsw-alias-border-l2)}
+    .dsh-project-task-member .dsh-project-actions{grid-column:1/-1}
+    .dsh-project-task-event{display:grid;grid-template-columns:100px minmax(0,1fr);gap:2px 8px;padding:8px 0;border-bottom:.5px solid var(--dsw-alias-border-l2);min-width:0}
+    .dsh-project-task-event>span:last-child{grid-column:2;overflow-wrap:anywhere;color:var(--dsw-alias-label-secondary)}
+    .dsh-project-task-version{padding:8px 0;border-bottom:.5px solid var(--dsw-alias-border-l2);min-width:0;overflow-wrap:anywhere}
+    .dsh-project-task-version>summary{line-height:1.5}
+    .dsh-project-task-version>summary time{margin-right:8px}
+    .dsh-project-task-version>summary strong{color:var(--dsw-alias-label-primary)}
+    .dsh-project-task-version .dsh-project-task-section{gap:4px}
     .dsh-project-team-member{display:flex;flex-direction:column;gap:8px;padding:12px 0 16px;border-bottom:.5px solid var(--dsw-alias-border-l2);min-width:0}
-    .dsh-project-team-row{display:flex;align-items:flex-start;gap:8px;min-width:0;flex-wrap:wrap}.dsh-project-team-row>:not(.dsh-project-team-row-content){flex-shrink:0}
-    .dsh-project-team-row-content{display:flex;flex:1;flex-direction:column;gap:4px;min-width:160px}.dsh-project-team-row-content strong{font-size:14px;line-height:22px;overflow-wrap:anywhere}.dsh-project-team-row-content small{color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
-    .dsh-project-team-context{margin:0;color:var(--dsw-alias-label-secondary);font-size:13px;overflow-wrap:anywhere}.dsh-project-team-details>summary,.dsh-project-team-technical>summary{cursor:pointer;color:var(--dsw-alias-label-secondary);font-size:13px}
-    .dsh-project-team-assignments{display:flex;flex-direction:column;gap:8px;padding-top:8px;min-width:0}.dsh-project-team-technical dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;font-size:12px}.dsh-project-team-technical dt{color:var(--dsw-alias-label-secondary)}.dsh-project-team-technical dd{margin:0;overflow-wrap:anywhere}
-    .dsh-project-visual-results,.dsh-project-result-files{display:flex;flex-direction:column;gap:12px;min-width:0;padding:8px 0}.dsh-project-visual-page{min-width:0;max-width:100%;overflow:hidden}.dsh-project-result-checks{padding:8px 0}.dsh-project-result-heading{align-items:flex-start;flex-wrap:wrap;line-height:24px}
-    .dsh-project-team-work{display:flex;flex-direction:column;gap:5px;padding:10px 0;border-bottom:.5px solid var(--dsw-alias-border-l2);min-width:0}.dsh-project-team-work strong{min-width:0;overflow-wrap:anywhere}.dsh-project-team-work p{margin:0}.dsh-project-team-work details p{white-space:pre-wrap;overflow-wrap:anywhere}
-    .dsh-project-observer-materials{display:flex;flex-direction:column;height:100%;min-height:0}.dsh-project-observer-materials[hidden]{display:none}.dsh-project-observer-materials>.dsh-project-materials{flex:1;height:100%;box-sizing:border-box;padding:12px}.dsh-project-observer-error{margin:6px 12px}
+    .dsh-project-team-row{display:flex;align-items:flex-start;gap:8px;min-width:0;flex-wrap:wrap}
+    .dsh-project-team-row>:not(.dsh-project-team-row-content){flex-shrink:0}
+    .dsh-project-team-row-content{display:flex;flex:1;flex-direction:column;gap:4px;min-width:160px}
+    .dsh-project-team-row-content strong{font-size:14px;line-height:22px;overflow-wrap:anywhere}
+    .dsh-project-team-row-content small{color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
+    .dsh-project-team-context{margin:0;color:var(--dsw-alias-label-secondary);font-size:13px;overflow-wrap:anywhere}
+    .dsh-project-team-details>summary,.dsh-project-team-technical>summary{cursor:pointer;color:var(--dsw-alias-label-secondary);font-size:13px}
+    .dsh-project-team-assignments{display:flex;flex-direction:column;gap:8px;padding-top:8px;min-width:0}
+    .dsh-project-team-technical dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;font-size:12px}
+    .dsh-project-team-technical dt{color:var(--dsw-alias-label-secondary)}
+    .dsh-project-team-technical dd{margin:0;overflow-wrap:anywhere}
+    .dsh-project-visual-results,.dsh-project-result-files{display:flex;flex-direction:column;gap:12px;min-width:0;padding:8px 0}
+    .dsh-project-visual-page{min-width:0;max-width:100%;overflow:hidden}
+    .dsh-project-result-checks{padding:8px 0}
+    .dsh-project-result-heading{align-items:flex-start;flex-wrap:wrap;line-height:24px}
+    .dsh-project-team-work{display:flex;flex-direction:column;gap:5px;padding:10px 0;border-bottom:.5px solid var(--dsw-alias-border-l2);min-width:0}
+    .dsh-project-team-work strong{min-width:0;overflow-wrap:anywhere}
+    .dsh-project-team-work p{margin:0}
+    .dsh-project-team-work details p{white-space:pre-wrap;overflow-wrap:anywhere}
+    @keyframes dsh-project-ticker{0%,15%{transform:translateX(0)}85%,100%{transform:translateX(var(--project-ticker-end))}}
+    .dsh-project-task-tabs button{min-height:28px;height:28px;padding:0 8px;font:var(--dsw-font-xxs-12)}
+    .dsh-project-task-tabs{position:sticky;top:0;z-index:1;padding:4px 0 8px;background:var(--dsw-alias-bg-panel-solid)}
+    .dsh-project-observer{display:flex;flex-direction:column;height:100%;min-height:0;min-width:0;background:transparent;color:var(--dsw-alias-label-primary);font:var(--dsw-font-s-14)}
+    .dsh-project-observer-scroll{flex:1;min-height:0;overflow:auto;scrollbar-color:var(--dsw-alias-border-l3) transparent;scrollbar-gutter:stable}
+    .dsh-project-observer-stack{display:flex;flex-direction:column;gap:8px;height:auto;min-width:0;padding:0 4px 4px}
+    .dsh-project-observer-drag{display:flex;align-items:center;gap:4px;min-width:0;height:32px;flex:none;cursor:grab;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12)}
+    .dsh-project-observer-drag>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-left:8px}.dsh-project-observer-drag>button{flex:none}
+    .dsh-project-observer-sections{display:flex;align-items:center;flex:none;gap:0}.dsh-project-observer-sections button{height:28px;min-height:28px;padding:0 6px;font:var(--dsw-font-xxs-12)}
+    .dsh-project-observer-sections button[aria-current=page]{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary)}
+    .dsh-project-observer-current{position:sticky;top:0;z-index:2;min-width:0}.dsh-project-observer-list,.dsh-project-observer-completed{display:flex;flex-direction:column;gap:8px;min-width:0}
+    .dsh-project-observer-aux{padding:12px;background:var(--dsw-alias-bg-panel-solid);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;min-width:0}.dsh-project-observer-aux[hidden]{display:none}
+    .dsh-project-observer-empty{padding:16px;background:var(--dsw-alias-bg-panel-solid);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;font:var(--dsw-font-s-14)}.dsh-project-observer-empty p{margin:8px 0 0;color:var(--dsw-alias-label-secondary)}
+    .dsh-project-task-card{position:relative;isolation:isolate;min-width:0;border-radius:14px;color:var(--dsw-alias-label-primary)}
+    .dsh-project-task-surface{position:absolute;inset:0;z-index:-1;pointer-events:none;border-radius:inherit;background:var(--dsw-alias-bg-panel-solid);border:1px solid var(--dsw-alias-border-l2)}
+    .dsh-project-task-card:not([data-project-request-mode=strip]){padding:14px 16px 8px}.dsh-project-task-card[data-project-request-mode=strip]{height:44px;min-height:44px}
+    .dsh-project-task-strip{display:flex;align-items:center;gap:0;height:44px;padding:0 4px;min-width:0}.dsh-project-task-strip-open{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex:1;min-width:0;height:44px;padding:0 8px;font:var(--dsw-font-xxs-12)}
+    .dsh-project-task-strip-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}.dsh-project-task-strip-open>small{max-width:38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:inherit;color:var(--dsw-alias-label-secondary)}.dsh-project-task-strip-open>svg,.dsh-project-task-strip>.dsh-project-task-queue-actions{flex:none}
+    .dsh-project-task-card-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-width:0}.dsh-project-task-title{display:block;flex:1;min-width:0;font:var(--dsw-font-base-strong-16);font-weight:600;line-height:24px;overflow-wrap:anywhere}
+    .dsh-project-task-queue-actions{display:flex;align-items:center;gap:0;flex:none}.dsh-project-task-queue-actions>button{height:28px;min-height:28px;padding:0 6px}
+    .dsh-project-task-meta{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;min-width:0;padding:8px 0;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12)}.dsh-project-task-meta>span{min-width:0;overflow-wrap:anywhere}.dsh-project-task-meta>span:last-child{text-align:right;max-width:65%}.dsh-project-task-state{color:var(--dsw-alias-label-primary)}
+    .dsh-project-task-summary{min-width:0;padding-top:8px;border-top:1px solid var(--dsw-alias-border-l1)}.dsh-project-task-summary>p{margin:0 0 8px;overflow-wrap:anywhere;font:var(--dsw-font-xxs-12)}
+    .dsh-project-task-step{display:flex;align-items:flex-start;gap:8px;min-width:0;padding:6px 0;font:var(--dsw-font-xxs-12)}.dsh-project-task-step>span:not(.dsh-project-task-state-dot){flex:1;min-width:0;overflow-wrap:anywhere}.dsh-project-task-step>small{max-width:46%;min-width:0;text-align:right;color:var(--dsw-alias-label-secondary);font:inherit;overflow-wrap:anywhere}.dsh-project-task-step>svg{flex:none;margin-top:2px;color:var(--dsw-alias-state-success-primary)}
+    .dsh-project-task-state-dot{display:block;flex:none;width:6px;height:6px;margin:6px 4px 0;border-radius:50%;background:var(--dsw-alias-label-secondary)}.dsh-project-task-strip .dsh-project-task-state-dot{margin-top:0}.dsh-project-task-state-dot[data-state=running]{background:var(--dsw-alias-state-business-primary)}.dsh-project-task-state-dot[data-state=blocked]{background:var(--dsw-alias-state-warn-primary)}
+    .dsh-project-task-waiting{color:var(--dsw-alias-label-secondary)}.dsh-project-task-outcome{color:var(--dsw-alias-label-primary);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+    .dsh-project-task-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;padding-top:8px}.dsh-project-task-footer button{height:28px;min-height:28px;padding:0 8px;font:var(--dsw-font-xxs-12)}
+    .dsh-project-task-full{min-height:0;max-height:min(420px,calc(100vh - 240px));overflow:auto;scrollbar-gutter:stable;scrollbar-color:var(--dsw-alias-border-l3) transparent}.dsh-project-task-tabs{position:sticky;top:0;z-index:1;padding:4px 0 8px;background:var(--dsw-alias-bg-panel-solid)}.dsh-project-task-tabs button{height:28px;min-height:28px;padding:0 8px;font:var(--dsw-font-xxs-12)}
+    .dsh-project-observer-section-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;font:var(--dsw-font-xxs-strong-12)}.dsh-project-observer-section-heading>span{color:var(--dsw-alias-label-secondary);font-weight:400}
+    .dsh-project-task-progress-track{height:3px;background:var(--dsw-alias-interactive-bg-active);border-radius:2px;margin:4px 0 6px;overflow:hidden}.dsh-project-task-progress-track>span{display:block;height:100%;background:var(--dsw-alias-state-business-primary)}
+    .dsh-project-observer-flow{display:flex;align-items:center;gap:4px;min-width:0}.dsh-project-observer-flow>svg{flex:none;width:12px}.dsh-project-observer-flow-node{display:flex;flex:1;flex-direction:column;gap:4px;min-width:0;padding:8px 4px;text-align:center;background:var(--dsw-alias-interactive-bg-hover);border-radius:8px;font:var(--dsw-font-xxs-12);overflow-wrap:anywhere}.dsh-project-observer-flow-node>span{color:var(--dsw-alias-label-secondary)}
+    .dsh-project-observer-blocker,.dsh-project-observer-request-info{font:var(--dsw-font-xxs-12);overflow-wrap:anywhere}.dsh-project-observer-blocker{color:var(--dsw-alias-label-secondary)}
+    .dsh-project-observer-team{display:flex;flex-direction:column;gap:8px;min-width:0}.dsh-project-observer-team>input{width:100%;box-sizing:border-box;height:32px;min-height:32px}.dsh-project-observer-materials .dsh-project-materials{max-height:420px;overflow:auto}.dsh-project-observer-materials[hidden]{display:none}
+    .dsh-project-observer-completed>.dsh-project-task-group-title{padding:8px 4px 0;font:var(--dsw-font-xxs-12)}
+    [data-dockkit-float]:has(.dsh-project-observer[data-project-observer-compact-only=true]) [data-dockkit-float-resize]{display:none}
+
   `;
   const requestId = () => globalThis.crypto.randomUUID();
   const button = (label, onClick, disabled = false) => h(Button, { variant: 'outline', onClick, disabled }, label);
   const markdown = (t, text) => h(MarkdownText, { text, labels: { code: { copyLabel: t('copy'), copiedLabel: t('copied') }, footnotes: t('footnotes') } });
   const stateLabel = (t, state) => Object.hasOwn(zh, state) ? t(state) : String(state ?? '');
   const waitingLabel = (t, waiting) => waiting ? `${t({ dependencies: 'waitingDependencies', directory: 'waitingDirectory', capacity: 'waitingCapacity' }[waiting.kind])}${waiting.workTitles?.length ? ` · ${waiting.workTitles.join('、')}` : ''}` : '';
+  const workBlockedLabel = (t, reason) => reason === 'Application restarted; waiting for explicit continuation.' ? t('requestRestarted') : reason;
   const errorText = failure => failure?.message ?? String(failure);
   const messageText = message => (message?.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
   const processRecords = entries => entries.filter(entry => entry.type === 'event' && ['turn/start', 'user/message', 'assistant/message', 'tool/call', 'tool/result', 'turn/end'].includes(entry.event.type)).map(entry => entry.event);
@@ -220,24 +333,26 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
 
   function ProjectRow({ project, directoryLabel, currentSession, openProject, command, read, openLifecycle, t }) {
     const [menu, setMenu] = useState(false);
-    const [busy, setBusy] = useState(false), [error, setError] = useState('');
-    const execute = async (action, input) => { setBusy(true); setError(''); try { await command(project.id, action, input); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
+    const [busy, setBusy] = useState(false), [error, setError] = useState(null);
+    const fail = failure => setError(previous => ({ seq: (previous?.seq ?? 0) + 1, text: errorText(failure) }));
+    const execute = async (action, input) => { setBusy(true); setError(null); try { await command(project.id, action, input); } catch (failure) { fail(failure); } finally { setBusy(false); } };
     const select = async action => {
-      setMenu(false); setError('');
+      setMenu(false); setError(null);
       try {
         if (action === 'rename' || action === 'archive') { await openLifecycle(project.id, action); return; }
         if (action === 'openDirectory') { await read(project.id, 'open'); return; }
         await execute(action);
-      } catch (failure) { setError(errorText(failure)); }
+      } catch (failure) { fail(failure); }
     };
     const activity = project.activity?.state;
     const status = project.lifecycle === 'archived' ? t('archived') : activity && !['idle', 'done'].includes(activity) ? t({ summaryFailed: 'sidebarSummaryFailed', pendingSummary: 'sidebarPendingSummary' }[activity] ?? activity) : '';
     return h(Fragment, null,
-      h('div', { className: 'dsh-project-row-wrap', onContextMenu: event => { event.preventDefault(); setMenu(true); }, onKeyDown: event => { if (event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10') { event.preventDefault(); setMenu(true); } } },
+      h('div', { className: 'dsh-project-row-wrap', 'aria-current': currentSession === project.coordinatorSessionId ? 'page' : undefined, 'data-menu-open': menu, 'data-archived': project.lifecycle === 'archived', onContextMenu: event => { event.preventDefault(); setMenu(true); }, onKeyDown: event => { if (event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10') { event.preventDefault(); setMenu(true); } } },
         h('button', { type: 'button', className: 'dsh-project-row', title: `${project.title}\n${project.canonicalWorkingDirectory}`, 'aria-current': currentSession === project.coordinatorSessionId ? 'page' : undefined, onClick: () => { void openProject(project.id); } },
-          h(IconFolderCloseRegular, { size: 16 }), h('span', { className: 'dsh-project-row-text' }, h('span', { className: 'dsh-project-row-title' }, project.title), directoryLabel || status ? h('span', { className: 'dsh-project-row-meta' }, directoryLabel ? h('span', { className: 'dsh-project-muted' }, directoryLabel) : null, status ? h('small', { title: `${stateLabel(t, activity)} · ${project.activity?.running ?? 0} ${t('running')} · ${project.activity?.queued ?? 0} ${t('queued')}` }, status) : null) : null)),
-        h(Menu, { open: menu, onClose: () => setMenu(false), portal: true, align: 'end', compact: true, onSelect: action => { void select(action); }, items: [{ id: 'rename', label: t('rename') }, { id: 'openDirectory', label: t('openDirectory') }, { id: project.lifecycle === 'archived' ? 'restore' : 'archive', label: t(project.lifecycle === 'archived' ? 'restore' : 'archive') }], anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': t('more'), onClick: () => setMenu(value => !value) }, '…') })),
-      error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null);
+          h(IconFolderCloseRegular, { size: 16 }), h('span', { className: 'dsh-project-row-text' }, h('span', { className: 'dsh-project-row-title' }, project.title), directoryLabel ? h('span', { className: 'dsh-project-row-meta' }, h('span', { className: 'dsh-project-muted' }, directoryLabel)) : null),
+          status ? h('span', { className: 'dsh-project-row-state', title: `${stateLabel(t, activity)} · ${project.activity?.running ?? 0} ${t('running')} · ${project.activity?.queued ?? 0} ${t('queued')}` }, status) : null),
+        h('span', { className: 'dsh-project-row-menu' }, h(Menu, { open: menu, onClose: () => setMenu(false), portal: true, align: 'end', compact: true, onSelect: action => { void select(action); }, items: [{ id: 'rename', label: t('rename') }, { id: 'openDirectory', label: t('openDirectory') }, { id: project.lifecycle === 'archived' ? 'restore' : 'archive', label: t(project.lifecycle === 'archived' ? 'restore' : 'archive') }], anchor: h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-sidebar-button', 'aria-label': `${t('more')}: ${project.title}`, 'aria-expanded': menu, disabled: busy, onClick: () => setMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) }))),
+      error ? h(Toast, { key: error.seq, text: error.text, holdMs: 6000, onDone: () => setError(null) }) : null);
   }
 
   function SidebarPage({ query = '', useProjects, useProjectSessions, useStore, actions, openProject, command, read, openLifecycle, addProject, t }) {
@@ -245,14 +360,16 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const currentSession = useProjectSessions(value => Object.values(value.byId).find(session => (session.retainedBy.mainView ?? 0) > 0)?.id);
     const [expanded, setExpanded] = useState(true), [menu, setMenu] = useState(false);
     const projects = snapshot.projects.filter(project => (view.history ? project.lifecycle === 'archived' : project.lifecycle !== 'archived') && (!query || project.title.toLocaleLowerCase().includes(query.toLocaleLowerCase())));
+    if (!snapshot.available && !snapshot.projects.length) return null;
     return h('section', { className: 'dsh-project-page', 'aria-label': t('tab') },
       h('div', { className: 'dsh-project-heading' }, h('button', { type: 'button', className: 'dsh-project-category', 'aria-expanded': expanded, onClick: () => setExpanded(value => !value) },
         h(expanded ? IconChevronDownOutlineRegular : IconChevronRightOutlineRegular, { size: 14 }), h('span', null, t('tab'), view.history ? ' · ' + t('archived') : '')),
-        h(Button, { variant: 'ghost', size: 'sm', 'aria-label': t('add'), onClick: () => { void addProject(); } }, '+'),
-        h(Menu, { open: menu, onClose: () => setMenu(false), portal: true, compact: true, items: [{ id: 'history', label: t(view.history ? 'tab' : 'history') }], onSelect: () => { actions.setHistory(!view.history); setMenu(false); }, anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': t('more'), onClick: () => setMenu(value => !value) }, '…') })),
+        h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-sidebar-button', 'aria-label': t('add'), title: t('add'), disabled: !snapshot.available, onClick: () => { void addProject(); } }, h(IconPlusOutlineRegular, { size: 16 })),
+        h(Menu, { open: menu, onClose: () => setMenu(false), portal: true, compact: true, items: [{ id: 'history', label: t(view.history ? 'tab' : 'history') }], onSelect: () => { actions.setHistory(!view.history); setExpanded(true); setMenu(false); }, anchor: h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-sidebar-button', 'aria-label': `${t('tab')}: ${t('more')}`, 'aria-expanded': menu, onClick: () => setMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) })),
       expanded ? h(Fragment, null,
         snapshot.error ? h('p', { role: 'alert', className: 'dsh-project-error' }, snapshot.error) : null,
         snapshot.loading && !snapshot.projects.length ? h('p', { role: 'status' }, t('loading')) : null,
+        !snapshot.loading && !projects.length ? h('p', { className: 'dsh-project-empty' }, t(view.history ? 'emptyArchived' : 'empty')) : null,
         h('div', { className: 'dsh-project-list' }, projects.map(project => h(ProjectRow, { key: project.id, project, directoryLabel: projectDirectoryLabel(project, projects), currentSession, openProject, command, read, openLifecycle, t })))) : null);
   }
 
@@ -271,60 +388,107 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
 
   const OBSERVER_KIND = 'project';
   const OBSERVER_TAB = 'dsh-project/observer';
-  function observerRect(mode, current) {
+  function observerRect(current, contentHeight) {
     const root = document.documentElement;
-    const caption = root.hasAttribute('data-windows-titlebar') && !root.hasAttribute('data-fullscreen')
-      ? Number.parseFloat(root.style.getPropertyValue('--dsh-windows-titlebar-height')) || 0 : 0;
+    const caption = root.hasAttribute('data-windows-titlebar') && !root.hasAttribute('data-fullscreen') ? Number.parseFloat(root.style.getPropertyValue('--dsh-windows-titlebar-height')) || 0 : 0;
     const desktopCaption = Number.parseFloat(getComputedStyle(root).getPropertyValue('--dshd-wco-caption')) || 0;
-    const top = Math.max(12, caption + 20, desktopCaption + 20), width = Math.min(current?.width ?? 480, Math.max(1, window.innerWidth - 16));
-    const composer = [...document.querySelectorAll('[data-composer-card]')].map(element => element.getBoundingClientRect())
-      .find(rect => rect.height > 0 && rect.top > top + 140);
+    const header = [...document.querySelectorAll('.dsh-project-header')].map(element => element.getBoundingClientRect()).find(rect => rect.width > 0 && rect.height > 0);
+    const top = Math.max(12, caption + 20, desktopCaption + 20, header ? header.bottom + 12 : 0);
+    const width = Math.min(current?.width ?? 400, Math.max(1, window.innerWidth - 16));
+    const composer = [...document.querySelectorAll('[data-composer-card]')].map(element => element.getBoundingClientRect()).find(rect => rect.height > 0 && rect.top > top + 80);
     const bottom = Math.min(window.innerHeight - 12, composer ? composer.top - 12 : window.innerHeight - 12);
-    const minimumHeight = mode === 'strip' ? 38 : 140, availableHeight = Math.max(minimumHeight, bottom - top);
-    const height = Math.max(minimumHeight, Math.min(mode === 'strip' ? 38 : current?.height ?? 520, availableHeight));
+    const height = Math.max(44, Math.min(contentHeight ?? current?.height ?? 240, Math.max(44, bottom - top)));
     return { x: Math.max(8, Math.min(current?.x ?? window.innerWidth - width - 12, window.innerWidth - width - 8)),
       y: Math.max(top, Math.min(current?.y ?? top, bottom - height)), width, height };
   }
-  const panelMode = panel => panel.host === 'float' && panel.rect?.height <= 38 ? 'strip' : 'full';
 
-  function ProjectObserverTitle({ sessionId, useTabInfo, useProjects, useObserverModes, read, resizeObserver, t }) {
-    const { panel, tab } = useTabInfo();
-    const project = useProjects(value => value.projects.find(item => item.coordinatorSessionId === sessionId));
-    const selectedMode = useObserverModes(value => value[sessionId]?.[panel.id]);
-    const mode = panel.host === 'float' && (selectedMode === 'strip' || !selectedMode && panelMode(panel) === 'strip') ? 'strip' : 'full';
-    const state = project?.archiving ? 'archiving' : project?.lifecycle === 'archived' ? 'archived' : project?.activity?.state ?? 'idle';
-    const status = stateLabel(t, ({ idle: 'observerIdle', archiving: 'observerArchiving', summaryFailed: 'sidebarSummaryFailed' })[state] ?? state);
-    return h('span', { className: 'dsh-project-observer-title' },
-      h(IconFolderCloseRegular, { size: 16 }), h('span', { className: 'dsh-project-observer-title-text', title: project?.canonicalWorkingDirectory }, project?.title || t('tab')),
-      h('span', { className: 'dsh-project-observer-title-state', role: 'status', title: stateLabel(t, state) }, status),
-      panel.host === 'float' ? h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-mode-button',
-        'aria-expanded': mode !== 'strip', onPointerDown: event => event.stopPropagation(),
-        onClick: event => { event.stopPropagation(); resizeObserver(sessionId, panel, tab.id, mode === 'strip' ? 'full' : 'strip'); },
-      }, t(mode === 'strip' ? 'observerExpand' : 'observerStrip')) : null);
+  const requestStateLabel = (t, card, position = true) => card.status === 'completed' ? t('completed')
+    : card.queue?.state === 'queued' ? `${t('requestQueued')}${position && card.queue.position ? ` · ${t('requestQueuePosition').replace('{position}', card.queue.position)}` : ''}`
+    : card.queue?.state === 'discussing' ? t('requestDiscussing') : card.queue?.state === 'cancelled' ? t('requestCancelled') : stateLabel(t, card.status);
+  const requestQueueNote = (t, card, queue) => card.status === 'completed' ? ''
+    : card.queue?.state === 'queued' ? t(queue?.paused ? 'requestQueuePaused' : !queue?.active && card.queue.position === 1 ? 'requestQueueReady' : 'requestQueueWaiting')
+    : card.queue?.state === 'discussing' ? t('requestDiscussingHint') : card.queue?.state === 'cancelled' ? t('requestCancelledHint') : '';
+  const requestQueueItems = (card, queue, busy, t) => {
+    if (!card.queue || card.status === 'completed' || card.archivedAt) return [];
+    const state = card.queue.state, index = queue?.queued?.findIndex(item => item.id === card.id) ?? -1;
+    return [
+      ...(state === 'discussing' ? [{ id: 'enqueue', label: t('requestEnqueue'), disabled: busy }] : []),
+      ...(state === 'cancelled' || card.queue.released ? [{ id: 'enqueue', label: t('requestRejoin'), disabled: busy }] : []),
+      ...(card.id === queue?.active?.id && !card.queue.released && (queue.paused || card.status === 'paused') ? [{ id: 'resume', label: t('requestResume'), disabled: busy }] : []),
+      ...(state === 'queued' && queue?.paused && !queue.active && index === 0 ? [{ id: 'resume', label: t('requestResumeQueue'), disabled: busy }] : []),
+      ...(state === 'queued' ? [{ id: 'moveUp', label: t('requestMoveUp'), disabled: busy || index <= 0 },
+        { id: 'moveDown', label: t('requestMoveDown'), disabled: busy || index < 0 || index >= queue.queued.length - 1 }] : []),
+      ...(['discussing', 'queued', 'active'].includes(state) ? [{ id: 'cancel', label: t('requestCancel'), danger: true, disabled: busy }] : []),
+    ];
+  };
+  function ProjectRequestQueueActions({ card, queue, changeQueue, busy, t }) {
+    const [menu, setMenu] = useState(false);
+    const items = requestQueueItems(card, queue, busy, t);
+    if (!items.length) return null;
+    const primary = items.find(item => ['enqueue', 'resume'].includes(item.id));
+    return h('div', { className: 'dsh-project-task-queue-actions' },
+      primary ? h(Button, { variant: 'ghost', size: 'sm', disabled: busy, onClick: () => changeQueue(card, primary.id) }, primary.label) : null,
+      h(Menu, { open: menu, onClose: () => setMenu(false), portal: true, compact: true, align: 'end', items,
+        onSelect: action => { setMenu(false); changeQueue(card, action); },
+        anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${card.title} · ${t('more')}`, disabled: busy, onClick: () => setMenu(value => !value) }, '…') }));
   }
 
-  function ProjectTaskCard({ card, open, openResult, archive, archivable, t }) {
-    const [menu, setMenu] = useState(false), done = card.status === 'completed';
-    const activeWork = (card.workPreview ?? []).filter(item => !['done', 'completed'].includes(item.status));
-    const preview = done ? [] : activeWork.filter(item => item.title !== card.title).slice(0, 2);
-    const waiting = activeWork.find(item => item.waitingReason || item.blockedReason);
-    return h('article', { className: 'dsh-project-task-card', 'data-project-request-id': card.id,
-      onContextMenu: event => { event.preventDefault(); setMenu(true); } },
-      h('div', { className: 'dsh-project-task-card-heading' },
-        h('button', { type: 'button', className: 'dsh-project-task-title', onClick: open, title: card.title }, card.title),
-        h(Menu, { open: menu, onClose: () => setMenu(false), portal: true, compact: true, align: 'end',
-          items: [{ id: 'open', label: t('taskDetail') }, ...(archivable && (done || card.archivedAt) ? [{ id: 'archive', label: t(card.archivedAt ? 'taskRestoreAction' : 'taskArchiveAction') }] : [])],
-          onSelect: action => { setMenu(false); if (action === 'archive') archive(); else open(); },
-          anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${card.title} · ${t('more')}`, onClick: () => setMenu(value => !value) }, '…') })),
-      h('div', { className: 'dsh-project-task-meta' }, h('span', { className: 'dsh-project-task-state' }, stateLabel(t, card.status)),
-        card.counts?.total ? h('span', null, `${card.counts.completed ?? 0} / ${card.counts.total} ${t('taskWorkCount')}`) : null),
-      done && card.delivery?.summaryPreview ? h('p', { className: 'dsh-project-task-outcome' }, summaryPreview(card.delivery.summaryPreview)) : null,
-      waiting ? h('p', { className: 'dsh-project-task-waiting' }, waitingLabel(t, waiting.waitingReason) || waiting.blockedReason) : null,
-      preview.length ? h('div', { className: 'dsh-project-task-preview' }, preview.map(item => h('div', { key: item.delegationRef },
-        h('span', null, item.title), h('small', null, stateLabel(t, item.status))))) : null,
-      h('div', { className: 'dsh-project-task-footer' },
-        card.memberTotal ? h('span', { className: 'dsh-project-muted' }, `${card.memberTotal} ${t('taskMemberCount')}`) : null,
-        h(Button, { variant: 'ghost', size: 'sm', onClick: done ? openResult : open }, t(done ? 'viewResult' : 'taskDetail'))));
+  function ProjectObserverTitle({ sessionId, useProjects, t }) {
+    const project = useProjects(value => value.projects.find(item => item.coordinatorSessionId === sessionId));
+    return h('span', null, project?.title || t('tab'));
+  }
+
+  function ProjectTaskCard({ card: preview, project, resourceRevision, mode, setMode, read, team, sessions, controls, queue, changeQueue, archive, retryHandover, showProcess, showReport, renderFactorySlot, t }) {
+    const [saved, setSaved] = useState(null), [error, setError] = useState(''), [menu, setMenu] = useState(false), [tab, setTab] = useState('overview');
+    const bodyRef = useRef(null), expanded = mode !== 'strip';
+    useEffect(() => {
+      if (!expanded) return;
+      let live = true;
+      void read(project.id, 'requests/get', { requestId: preview.id }).then(value => { if (live) { setSaved(value.card); setError(''); } })
+        .catch(failure => { if (live) setError(errorText(failure)); });
+      return () => { live = false; };
+    }, [project.id, preview.id, preview.revision, resourceRevision, expanded]);
+    useLayoutEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = 0; }, [tab]);
+    const card = saved?.revision === preview.revision ? saved : preview;
+    const done = card.status === 'completed', steps = projectRequestSteps(card, team, t, sessions);
+    const executor = projectRequestExecutor(project, card, team, t, sessions), state = projectRequestStage(project, card, steps);
+    const label = ['requestArranging', 'requestHandover'].includes(state) ? t(state) : requestStateLabel(t, card);
+    const waiting = steps.find(item => item.waitingReason || item.blockedReason);
+    const queueNote = requestQueueNote(t, card, queue), queueItems = project.lifecycle === 'ready' && !project.archiving ? requestQueueItems(card, queue, controls.busy, t) : [];
+    const primary = queueItems.find(item => ['enqueue', 'resume'].includes(item.id));
+    const archiveItems = project.lifecycle === 'ready' && !project.archiving && (done || card.archivedAt)
+      ? [{ id: 'archive', label: t(card.archivedAt ? 'taskRestoreAction' : 'taskArchiveAction'), disabled: controls.busy }] : [];
+    const more = h(Menu, { open: menu, onClose: () => setMenu(false), portal: true, compact: true, align: 'end',
+      items: [...queueItems, ...archiveItems], onSelect: action => { setMenu(false); if (action === 'archive') archive(card); else changeQueue(card, action); },
+      anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${card.title} · ${t('more')}`, onClick: () => setMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) });
+    return h('article', { className: 'dsh-project-task-card', 'data-project-request-id': card.id, 'data-project-request-mode': mode, 'data-project-request-status': state },
+      h('div', { className: 'dsh-project-task-surface', 'data-dockkit-float-motion-part': card.id, 'data-dockkit-float-motion-shell': true, 'aria-hidden': true }),
+      mode === 'strip' ? h('div', { className: 'dsh-project-task-strip' },
+        h(Button, { variant: 'ghost', className: 'dsh-project-task-strip-open', 'aria-label': `${card.title} · ${label}`, 'aria-expanded': false, onClick: () => setMode('card'), title: `${card.title} · ${label} · ${executor.name}` },
+          done ? h(IconCheckOutlineRegular, { size: 14 }) : h('span', { className: 'dsh-project-task-state-dot', 'data-state': state, 'aria-hidden': true }),
+          h('span', { className: 'dsh-project-task-strip-title' }, card.title), h('small', null, card.queue?.position ? `${t('requestQueuePosition').replace('{position}', card.queue.position)} · ${t('requestQueued')}` : `${label} · ${executor.name}`),
+          h(IconChevronDownOutlineRegular, { size: 14 })), queueItems.length || archiveItems.length ? more : null) : h(Fragment, null,
+        h('div', { className: 'dsh-project-task-card-heading' }, h('strong', { className: 'dsh-project-task-title' }, card.title),
+          h('div', { className: 'dsh-project-task-queue-actions' }, queueItems.length || archiveItems.length ? more : null,
+            h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${card.title} · ${t('observerStrip')}`, onClick: () => setMode('strip') }, h(IconChevronUpOutlineRegular, { size: 14 })))),
+        h('div', { className: 'dsh-project-task-meta' }, h('span', { role: 'status', className: 'dsh-project-task-state' }, label),
+          h('span', null, executor.name, ' · ', state === 'requestArranging' ? t('requestArranging') : executor.stage)),
+        mode === 'card' ? h('div', { className: 'dsh-project-task-summary' },
+          done && card.delivery?.summaryPreview ? h('p', { className: 'dsh-project-task-outcome' }, summaryPreview(card.delivery.summary ?? card.delivery.summaryPreview)) : null,
+          steps.length ? h(Fragment, null, h('div', { className: 'dsh-project-observer-section-heading' }, h('strong', null, t('observerTaskProgress')),
+            h('span', null, `${steps.filter(item => item.status === 'completed').length} / ${steps.length} ${t('taskWorkCount')}`)),
+            h('div', { className: 'dsh-project-task-progress-track', role: 'progressbar', 'aria-label': t('observerTaskProgress'), 'aria-valuemin': 0, 'aria-valuemax': steps.length, 'aria-valuenow': steps.filter(item => item.status === 'completed').length }, h('span', { style: { width: `${steps.filter(item => item.status === 'completed').length / steps.length * 100}%` } })),
+            steps.slice(0, 3).map(item => h('div', { key: `${item.workstreamId}:${item.delegationRef}`, className: 'dsh-project-task-step' },
+              item.status === 'completed' ? h(IconCheckOutlineRegular, { size: 14 }) : h('span', { className: 'dsh-project-task-state-dot', 'data-state': item.status, 'aria-hidden': true }),
+              h('span', null, item.title), h('small', null, item.executor, ' · ', stateLabel(t, item.status)))))
+            : h('p', { className: 'dsh-project-task-waiting' }, done ? t('completed') : state === 'requestArranging' ? t('requestArrangingHint') : queueNote || t('observerNoTodo')),
+          waiting ? h('p', { className: 'dsh-project-task-waiting' }, waitingLabel(t, waiting.waitingReason) || workBlockedLabel(t, waiting.blockedReason)) : null,
+          h('div', { className: 'dsh-project-task-footer' }, primary ? h(Button, { variant: 'ghost', size: 'sm', disabled: controls.busy, onClick: () => changeQueue(card, primary.id) }, primary.label) : h('span'),
+            h(Button, { variant: 'ghost', size: 'sm', onClick: () => { setTab('overview'); setMode('full'); } }, t('taskDetail'), h(IconChevronRightOutlineRegular, { size: 14 }))))
+          : h(Fragment, null, h('div', { ref: bodyRef, className: 'dsh-project-task-full' }, saved ? h(ProjectTaskDetail, { projectId: project.id, card, tab, setTab,
+              read, showProcess, showReport, controls, retryHandover, queue, changeQueue, renderFactorySlot, embedded: true, t }) : h('p', { role: 'status' }, t('loading'))),
+            h('div', { className: 'dsh-project-task-footer' }, h(Button, { variant: 'ghost', size: 'sm', onClick: () => setMode('card') }, t('observerCard'), h(IconChevronUpOutlineRegular, { size: 14 }))))),
+      error ? h(Toast, { text: error, onDone: () => setError('') }) : null);
   }
 
   function projectMemberDisplayName(member, work, t) {
@@ -333,6 +497,57 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const internalName = name === `member-${member.id?.replace(/^session-/, '')}`
       || /^member-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name ?? '');
     return name && !internalName ? name : work?.title || work?.subject || member.description || t('teamMember');
+  }
+
+  function projectRequestSteps(card, team, t, sessions = {}) {
+    return (card?.work ?? card?.workPreview ?? []).map(work => {
+      const historical = card.status === 'completed' || card.queue?.released || work.current === false;
+      const task = historical ? undefined : team?.tasks?.find(item => item.id === work.workstreamId);
+      const member = historical ? undefined : team?.members?.find(item => task?.ownerName ? item.name === task.ownerName : item.id === work.workerSessionId);
+      const title = task?.subject || work.title, name = projectMemberDisplayName(member ?? { name: work.memberName }, work, t);
+      const roleKey = { development: 'requestRoleDevelopment', readonly: 'requestRoleReview', docs: 'requestRoleDocs' }[work.memberRole];
+      const executorName = name === title || name === work.title ? t('teamMember') : name;
+      const executor = roleKey ? executorName === t('teamMember') ? t(roleKey) : `${t(roleKey)} · ${executorName}` : executorName;
+      const blocked = task?.blockedBy?.filter(id => team.tasks.find(item => item.id === id)?.status !== 'completed') ?? [];
+      const dependencyBlocked = blocked.length > 0 || task?.status === 'pending' && task.ready === false;
+      const running = sessions[member?.id ?? work.workerSessionId]?.running;
+      const status = task ? task.status === 'completed' ? 'completed' : task.status === 'deleted' ? 'deleted' : dependencyBlocked ? 'blocked'
+        : task.status === 'in_progress' ? running === true ? 'running' : 'teamAssigned' : 'queued' : work.status;
+      return { ...work, title, status, executor,
+        ...(dependencyBlocked ? { waitingReason: { kind: 'dependencies', workTitles: blocked.map(id => team.tasks.find(item => item.id === id)?.subject).filter(Boolean) } } : {}) };
+    });
+  }
+
+  function projectRequestStage(project, card, steps) {
+    return card?.queue?.state === 'active' && !card.queue.released && !project.paused && !steps.length && !card.delivery && !card.handoverError && !card.authorityError
+      ? 'requestArranging' : card?.status === 'pendingDelivery' && steps.length && steps.every(item => item.status === 'completed') ? 'requestHandover' : card?.status ?? project.activity?.state ?? 'idle';
+  }
+
+  function projectRequestExecutor(project, card, team, t, sessions) {
+    if (card?.status === 'completed') return { name: t('teamLead'), stage: t('completed') };
+    if (project.archiving || project.activity?.state === 'stopping') return { name: t('teamLead'), stage: t('stopping') };
+    const steps = projectRequestSteps(card, team, t, sessions);
+    if (projectRequestStage(project, card, steps) === 'requestArranging') return { name: t('teamLead'), stage: t('requestArranging') };
+    if (card?.queue && (card.queue.state !== 'active' || card.queue.released)) return { name: t('teamLead'), stage: requestStateLabel(t, card, false) };
+    const work = steps.find(item => item.status === 'running');
+    if (work) return { name: work.executor, stage: stateLabel(t, work.status), title: work.title, sessionId: work.workerSessionId };
+    if (project.activity?.coordinatorRunning) return { name: t('teamLead'), stage: stateLabel(t, project.activity.pendingSummary ? 'pendingSummary' : 'running'), sessionId: project.coordinatorSessionId };
+    return { name: t('teamLead'), stage: stateLabel(t, card?.status ?? 'observerIdle') };
+  }
+
+  function ProjectRequestFlow({ card, t }) {
+    const work = card.work ?? [], reports = work.filter(item => item.reportId).length;
+    const nodes = [
+      { title: t('workRequest'), label: t('observerRegistered'), state: 'registered' },
+      { title: t('team'), label: work.length ? `${work.filter(item => item.status === 'completed').length} / ${work.length}` : t('observerNoTodo'), state: 'assigned' },
+      { title: t('reportSource'), label: t('observerReportCount').replace('{count}', reports), state: 'reported' },
+      { title: t('observerDeliverToYou'), label: stateLabel(t, card.status), state: card.status },
+    ];
+    return h('section', { className: 'dsh-project-task-section', 'aria-label': t('observerFlow') },
+      h('div', { className: 'dsh-project-observer-section-heading' }, h('strong', null, t('observerFlow'))),
+      h('div', { className: 'dsh-project-observer-flow' }, nodes.map((node, index) => h(Fragment, { key: node.title },
+        index ? h(IconChevronRightOutlineRegular, { size: 12, 'aria-hidden': true }) : null,
+        h('div', { className: 'dsh-project-observer-flow-node', 'data-state': node.state }, h('strong', null, node.title), h('span', null, node.label))))));
   }
 
   function ProjectTeamOverview({ team, detail, sessions, openMember, teamT, t }) {
@@ -367,7 +582,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       const waiting = work?.delegation?.phase === 'queued' ? waitingLabel(t, work.delegation.waitingReason) : '';
       const blockers = !work && tasks[0]?.blockedBy?.filter(id => allWork.find(item => item.id === id)?.status !== 'completed');
       const reason = waiting || (blockers?.length ? `${t('waitingDependencies')} · ${blockers.map(id => allWork.find(item => item.id === id)?.subject || teamT('project.missingDependency')).join('、')}` : '')
-        || (!worker?.stopped && (worker?.error || work?.blockedReason !== 'stopped' && work?.blockedReason))
+        || (!worker?.stopped && (worker?.error || workBlockedLabel(t, work?.blockedReason) !== 'stopped' && work?.blockedReason))
         || (state === 'sidebarSummaryFailed' ? t('summaryErrorHint') : state === 'paused' ? t('resumeHint') : '');
       const title = current?.title || current?.subject;
       const leadContext = member.role !== 'lead' ? null : running ? 'teamLeadWorking'
@@ -465,33 +680,43 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     return h('div', { className: 'dsh-project-task-member' },
       h('div', null, h('strong', null, projectMemberDisplayName({ name: item.memberName, description: item.title }, item, t)), recordedTime(item.updatedAt)),
       h(Pill, null, stateLabel(t, item.status)),
-      item.waitingReason || item.blockedReason ? h('p', { className: 'dsh-project-muted' }, waitingLabel(t, item.waitingReason) || item.blockedReason) : null,
+      item.waitingReason || item.blockedReason ? h('p', { className: 'dsh-project-muted' }, waitingLabel(t, item.waitingReason) || workBlockedLabel(t, item.blockedReason)) : null,
       h('div', { className: 'dsh-project-actions' }, h(Button, { variant: 'ghost', size: 'sm', onClick: () => controls.showProcess(projectId, item.workstreamId, false, { delegationRef: item.delegationRef }) }, t('viewProcess')),
         item.reportId ? h(Button, { variant: 'ghost', size: 'sm', onClick: () => controls.showMaterials(projectId, item.workstreamId, { delegationRef: item.delegationRef }) }, t('viewResult')) : null),
       error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null);
   }
 
-  function ProjectTaskDetail({ projectId, card, tab, setTab, read, showProcess, showReport, controls, retryHandover, renderFactorySlot, t }) {
+  function ProjectTaskDetail({ projectId, card, tab, setTab, read, showProcess, showReport, controls, retryHandover, queue, changeQueue, renderFactorySlot, embedded = false, t }) {
     const work = card.work ?? [], delivery = card.delivery && { ...card.delivery, requestId: card.id, requestRevision: card.revision, title: card.title,
       reportRefs: card.delivery.reportRefs ?? [], terminalRefs: card.delivery.terminalRefs ?? [] };
     const tabs = [['overview', 'taskOverview'], ['team', 'taskTeam'], ['results', 'taskResults'], ['activity', 'taskActivity']];
+    const waiting = work.find(item => item.waitingReason || item.blockedReason);
+    const blocker = summaryPreview(card.authorityError ? t('authorityErrorHint') : card.handoverError ? t('handoverErrorHint')
+      : waiting ? waitingLabel(t, waiting.waitingReason) || workBlockedLabel(t, waiting.blockedReason) : delivery?.remainingIssues?.[0]);
     return h('div', { className: 'dsh-project-task-detail', 'data-project-detail-id': card.id },
-      h('div', { className: 'dsh-project-task-detail-heading' }, h('h2', null, card.title), h(Pill, null, stateLabel(t, card.status))),
-      h('div', { className: 'dsh-project-task-meta' }, recordedTime(card.updatedAt), h('span', null, `${t('requestVersion')} ${card.revision}`)),
+      !embedded ? h('div', { className: 'dsh-project-task-detail-heading' }, h('h2', null, card.title), h(Pill, null, requestStateLabel(t, card, false))) : null,
+      !embedded && card.queue && card.status !== 'completed' ? h('div', { className: 'dsh-project-task-footer' },
+        requestQueueNote(t, card, queue) ? h('span', { className: 'dsh-project-muted' }, requestQueueNote(t, card, queue)) : null,
+        h(ProjectRequestQueueActions, { card, queue, changeQueue, busy: controls.busy, t })) : null,
       h(SegmentedTabs, { className: 'dsh-project-task-tabs', label: t('taskDetail'), value: tab, onChange: setTab,
         items: tabs.map(([id, label]) => ({ value: id, label: t(label), id: `${card.id}-tab-${id}`, panelId: `${card.id}-panel-${id}` })) }),
       h('div', { className: 'dsh-project-task-tab-body', role: 'tabpanel', id: `${card.id}-panel-${tab}`, 'aria-labelledby': `${card.id}-tab-${tab}` },
         tab === 'overview' ? h(Fragment, null,
+          h(ProjectRequestFlow, { card, t }),
+          blocker ? h('p', { className: 'dsh-project-observer-blocker' }, blocker.length > 140 ? blocker.slice(0, 140) + '…' : blocker) : null,
+          h(ProjectVisualResults, { pages: delivery?.pages, renderFactorySlot, t }),
+          delivery ? h('div', { className: 'dsh-project-task-section' }, h('strong', null, t('result')), h('p', null, summaryPreview(delivery.summary)))
+            : h('p', { className: 'dsh-project-muted' }, t('taskNoResults')),
+          h('details', { className: 'dsh-project-result-disclosure dsh-project-observer-request-info' }, h('summary', null, t('workRequest')),
+            markdown(t, card.goal),
+            card.conditions?.length ? h('div', { className: 'dsh-project-task-section' }, h('strong', null, t('keyEvidence')), h('ul', null, card.conditions.map((item, index) => h('li', { key: index }, item)))) : null,
+            card.constraints?.length ? h('div', { className: 'dsh-project-task-section' }, h('strong', null, t('executionInfo')), h('ul', null, card.constraints.map((item, index) => h('li', { key: index }, item)))) : null),
           card.authorityError ? h(RequestAuthority, { request: card, t }) : null,
-          card.handoverError && !card.authorityError ? h('div', { className: 'dsh-project-task-section' },
-            h('p', { className: 'dsh-project-error' }, t('handoverErrorHint')),
-            button(t('retrySummary'), () => retryHandover(card), controls.busy),
-            h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), h('pre', null, card.handoverError))) : null,
-          h('div', { className: 'dsh-project-task-section' }, h('strong', null, t('workRequest')), markdown(t, card.goal)),
-          card.conditions?.length ? h('div', { className: 'dsh-project-task-section' }, h('strong', null, t('keyEvidence')), h('ul', null, card.conditions.map((item, index) => h('li', { key: index }, item)))) : null,
-          card.constraints?.length ? h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, t('executionInfo')), h('ul', null, card.constraints.map((item, index) => h('li', { key: index }, item)))) : null,
-          delivery ? h('div', { className: 'dsh-project-task-section' }, h('strong', null, t('result')), h('p', null, summaryPreview(delivery.summary)),
-            delivery.remainingIssues?.length ? h('p', { className: 'dsh-project-muted' }, `${t('remainingIssues')}: ${delivery.remainingIssues.join('；')}`) : null) : null) : null,
+          card.handoverError && !card.authorityError ? h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, t('errorDetails')),
+            h('p', { className: 'dsh-project-error' }, t('handoverErrorHint')), button(t('retrySummary'), () => retryHandover(card), controls.busy),
+            h('pre', null, card.handoverError)) : null,
+          delivery?.remainingIssues?.length ? h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, t('remainingIssues')),
+            h('ul', null, delivery.remainingIssues.map((item, index) => h('li', { key: index }, item)))) : null) : null,
         tab === 'team' ? h('div', { className: 'dsh-project-task-section' }, work.length ? work.map(item => h(ProjectTaskWork, {
           key: item.workstreamId + ':' + item.delegationRef, projectId, item, read, controls, t,
         })) : h('p', { className: 'dsh-project-muted' }, t('taskNoMembers'))) : null,
@@ -502,91 +727,93 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
            work.filter(item => item.reportId && !delivery?.reportRefs?.some(ref => ref.workstreamId === item.workstreamId && ref.delegationRef === item.delegationRef))
             .map(item => h(Button, { key: item.workstreamId + ':' + item.delegationRef, variant: 'ghost', size: 'sm', onClick: () => showReport(item) }, item.title, ' · ', t('reportSource')))) : null,
         tab === 'activity' ? h('div', { className: 'dsh-project-task-section' },
-          [...(card.versions ?? []).map(version => ({ key: `version-${version.revision}`, at: version.at, label: `${t('requestVersion')} ${version.revision}`, detail: version.title })),
+          [...(card.versions ?? []).map(version => ({ key: `version-${version.revision}`, at: version.at, label: `${t('requestVersion')} ${version.revision}`, detail: version.title, version })),
             ...work.flatMap(item => [{ key: `${item.delegationRef}-assignment`, at: item.assignmentAt, label: item.title, detail: item.memberName },
               ...(item.reportAt ? [{ key: `${item.delegationRef}-report`, at: item.reportAt, label: t('reportSource'), detail: item.title }] : []),
               ...(item.terminalAt ? [{ key: `${item.delegationRef}-terminal`, at: item.terminalAt, label: stateLabel(t, item.status), detail: item.title }] : [])]),
             ...(delivery ? [{ key: `delivery-${delivery.id}`, at: delivery.at, label: t('delivered'), detail: delivery.summary }] : [])]
             .filter(item => Number.isFinite(item.at)).sort((a, b) => b.at - a.at)
-            .map(item => h('div', { key: item.key, className: 'dsh-project-task-event' }, recordedTime(item.at), h('strong', null, item.label), h('span', null, summaryPreview(item.detail)))),
-          !card.versions?.length && !work.length && !delivery ? h('p', { className: 'dsh-project-muted' }, t('taskNoActivity')) : null) : null));
+            .map(item => item.version ? h('details', { key: item.key, className: 'dsh-project-task-version dsh-project-result-disclosure' },
+              h('summary', null, recordedTime(item.at), h('strong', null, item.label), ' · ', item.detail),
+              h('div', { className: 'dsh-project-result-details' },
+                h('div', { className: 'dsh-project-task-section' }, h('strong', null, t('requirementGoal')), markdown(t, item.version.goal)),
+                ...[['constraints', 'requirementConstraints', 'noRequirementConstraints'], ['conditions', 'requirementConditions', 'noRequirementConditions']].map(([field, label, empty]) =>
+                  h('div', { key: field, className: 'dsh-project-task-section' }, h('strong', null, t(label)), item.version[field]?.length
+                    ? h('ul', null, item.version[field].map((text, index) => h('li', { key: index }, markdown(t, text))))
+                    : h('p', { className: 'dsh-project-muted' }, t(empty))))))
+              : h('div', { key: item.key, className: 'dsh-project-task-event' }, recordedTime(item.at), h('strong', null, item.label), h('span', null, summaryPreview(item.detail)))),
+          !card.versions?.length && !work.length && !delivery ? h('p', { className: 'dsh-project-muted' }, t('taskNoActivity')) : null) : null),
+      h('details', { className: 'dsh-project-result-disclosure dsh-project-observer-request-info' }, h('summary', null, t('executionInfo')),
+        h('div', { className: 'dsh-project-task-meta' }, recordedTime(card.updatedAt), h('span', null, `${t('requestVersion')} ${card.revision}`))));
   }
 
-  function ProjectObserver({ sessionId, useTabInfo, useProjects, useProjectSessions, useObserverModes, useSidebarMounted, readDetail, read, command, sendUserRequest, openModelSettings, retainProcess, resizeObserver, registerObserverEditor, renderFactorySlot, teamT, t }) {
-    const { panel, tab } = useTabInfo();
-    const selectedMode = useObserverModes(value => value[sessionId]?.[panel.id]);
-    const active = useSidebarMounted(value => value === sessionId);
-    const mode = panel.host === 'float' && (selectedMode === 'strip' || !selectedMode && panelMode(panel) === 'strip') ? 'strip' : 'full';
+  function ProjectObserver({ sessionId, useTabInfo, useProjects, useProjectSessions, useProjectSessionStatus, useObserverModes, useSidebarMounted, readDetail, read, command, sendUserRequest, openModelSettings, retainProcess, resizeObserver, rememberObserverSize, setRequestMode, registerObserverEditor, renderFactorySlot, teamT, t }) {
+    const { panel, tab } = useTabInfo(), active = useSidebarMounted(value => value === sessionId);
     const project = useProjects(value => value.projects.find(item => item.coordinatorSessionId === sessionId));
     const detail = useProjects(value => project ? value.details[project.id] : undefined);
     const team = useProjectSessions(value => value.projectionsBySession[sessionId]?.values.agentTeam);
-    const sessions = useProjectSessions(value => value.byId);
-    const [section, setSection] = useState('tasks'), [archiveView, setArchiveView] = useState(false), [selectedId, setSelectedId] = useState(null);
-    const [taskTab, setTaskTab] = useState('overview'), [subview, setSubview] = useState(null), [subviewReturn, setSubviewReturn] = useState('tasks');
-    const observerRef = useRef(null), subviewBackRef = useRef(null), subviewOrigin = useRef(null);
-    useLayoutEffect(() => {
-      if (!active || mode !== 'full') return;
-      if (subview) { subviewBackRef.current?.focus({ preventScroll: true }); return; }
-      const origin = subviewOrigin.current;
-      subviewOrigin.current = null;
-      if (observerRef.current?.contains(origin) && origin.getClientRects().length) origin.focus({ preventScroll: true });
-    }, [subview]);
-    const [materialsVisited, setMaterialsVisited] = useState(false);
-    const cursorScope = `${project?.id ?? ''}:${detail?.revision ?? ''}`;
-    const [cursorState, setCursorState] = useState({ scope: cursorScope, current: [null], completed: [null], archived: [null] });
-    const activeCursors = cursorState.scope === cursorScope ? cursorState : { scope: cursorScope, current: [null], completed: [null], archived: [null] };
-    const [pages, setPages] = useState({}), [cardsBusy, setCardsBusy] = useState(false), [card, setCard] = useState(null), [cardBusy, setCardBusy] = useState(false);
-    const [actionBusy, setActionBusy] = useState(false);
-    const panelRef = useRef(panel);
+    const summarySessions = useProjectSessions(value => value.byId), statuses = useProjectSessionStatus(value => value);
+    const requestModes = useObserverModes(value => value[sessionId]?.[panel.id]?.requests);
+    const sessions = Object.fromEntries([...new Set([...Object.keys(summarySessions), ...statuses.keys()])].map(id => [id, { ...summarySessions[id], running: statuses.get(id)?.running ?? summarySessions[id]?.running }]));
+    const [section, setSection] = useState('tasks'), [historyKind, setHistoryKind] = useState(null), [historyMenu, setHistoryMenu] = useState(false);
+    const [subview, setSubview] = useState(null), [subviewReturn, setSubviewReturn] = useState('tasks'), [materialsVisited, setMaterialsVisited] = useState(false);
+    const observerRef = useRef(null), contentRef = useRef(null), panelRef = useRef(panel), resizingRef = useRef(false);
     panelRef.current = panel;
-    useLayoutEffect(() => {
-      if (!active || panel.host !== 'float') return;
-      const fit = () => resizeObserver(sessionId, panelRef.current, tab.id, mode, false);
-      const observer = new ResizeObserver(fit);
-      document.querySelectorAll('[data-composer-card]').forEach(element => observer.observe(element));
-      window.addEventListener('resize', fit);
-      fit();
-      return () => { observer.disconnect(); window.removeEventListener('resize', fit); };
-    }, [sessionId, panel.id, panel.host, mode, active]);
-    const [error, setError] = useState(''), [refreshKey, setRefreshKey] = useState(0), [materialsDirty, setMaterialsDirty] = useState(false), [pendingRoute, setPendingRoute] = useState(null);
-    const editorRef = useRef(null), materialsDirtyRef = useRef(false);
+    const cursorScope = `${project?.id ?? ''}:${detail?.revision ?? ''}`;
+    const newCursors = () => ({ scope: cursorScope, current: [null], completed: [null], archived: [null], cancelled: [null] });
+    const [cursorState, setCursorState] = useState(newCursors), [pages, setPages] = useState({}), [cardsBusy, setCardsBusy] = useState(false);
+    const activeCursors = cursorState.scope === cursorScope ? cursorState : newCursors();
+    const [actionBusy, setActionBusy] = useState(false), [queueFailure, setQueueFailure] = useState(null), [error, setError] = useState(''), [refreshKey, setRefreshKey] = useState(0);
+    const [materialsDirty, setMaterialsDirty] = useState(false), [pendingRoute, setPendingRoute] = useState(null);
+    const queueChanging = useRef(false), editorRef = useRef(null), materialsDirtyRef = useRef(false);
     const onMaterialsDirty = useCallback(value => { materialsDirtyRef.current = value; setMaterialsDirty(value); }, []);
     useEffect(() => { if (section === 'materials') setMaterialsVisited(true); }, [section]);
-    useEffect(() => registerObserverEditor(sessionId, tab.id, {
-      getPanel: () => panelRef.current,
-      isDirty: () => materialsDirtyRef.current,
-      requestClose: proceed => setPendingRoute({ close: proceed }),
-    }), [sessionId, tab.id]);
+    useEffect(() => registerObserverEditor(sessionId, tab.id, { getPanel: () => panelRef.current, isDirty: () => materialsDirtyRef.current,
+      requestClose: proceed => setPendingRoute({ close: proceed }) }), [sessionId, tab.id]);
+    useLayoutEffect(() => {
+      if (!active || panel.host !== 'float') return;
+      const fit = () => { if (!resizingRef.current) resizeObserver(sessionId, panelRef.current, tab.id, contentRef.current?.scrollHeight); };
+      const observer = new ResizeObserver(fit);
+      if (contentRef.current) observer.observe(contentRef.current);
+      document.querySelectorAll('[data-composer-card],.dsh-project-header').forEach(element => observer.observe(element));
+      window.addEventListener('resize', fit); fit();
+      return () => { observer.disconnect(); window.removeEventListener('resize', fit); };
+    }, [sessionId, panel.id, panel.host, active]);
     useEffect(() => {
-      if (!project) return;
-      void readDetail(project.id).catch(failure => setError(errorText(failure)));
-    }, [project?.id]);
+      if (!active || panel.host !== 'float') return;
+      let gesture;
+      const down = event => {
+        const resize = event.target.closest?.('[data-dockkit-float-resize]');
+        if (resize?.getAttribute('data-dockkit-float-resize') !== panel.id) return;
+        resizingRef.current = true; gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, rect: panelRef.current.rect };
+      };
+      const up = event => {
+        if (!gesture || gesture.id !== event.pointerId) return;
+        const started = gesture; gesture = undefined;
+        requestAnimationFrame(() => {
+          const current = panelRef.current;
+          if (Math.abs(event.clientX - started.x) + Math.abs(event.clientY - started.y) > 2
+            && ['width', 'height'].some(field => current.rect[field] !== started.rect[field])) rememberObserverSize(sessionId, current, tab.id);
+          resizingRef.current = false;
+          resizeObserver(sessionId, current, tab.id, contentRef.current?.scrollHeight);
+        });
+      };
+      document.addEventListener('pointerdown', down, true); document.addEventListener('pointerup', up, true); document.addEventListener('pointercancel', up, true);
+      return () => { document.removeEventListener('pointerdown', down, true); document.removeEventListener('pointerup', up, true); document.removeEventListener('pointercancel', up, true); resizingRef.current = false; };
+    }, [sessionId, panel.id, panel.host, active]);
+    useEffect(() => { if (project) void readDetail(project.id).catch(failure => setError(errorText(failure))); }, [project?.id]);
     useEffect(() => {
       if (!project) return;
       let live = true; setCardsBusy(true);
-      const kinds = ['current', 'completed', 'archived'];
-      const cursor = { current: activeCursors.current.at(-1), completed: activeCursors.completed.at(-1), archived: activeCursors.archived.at(-1) };
-      void Promise.all(kinds.map(kind => read(project.id, 'requests/list', { kind, ...(cursor[kind] ? { cursor: cursor[kind] } : {}) }).then(page => [kind, page])))
-        .then(rows => { if (live) {
-          setPages(before => ({ ...before, ...Object.fromEntries(rows) }));
-          setError('');
-        } })
-        .catch(failure => { if (live) setError(errorText(failure)); })
-        .finally(() => { if (live) setCardsBusy(false); });
+      const kinds = ['current', 'completed', 'archived', 'cancelled'];
+      void Promise.all(kinds.map(kind => read(project.id, 'requests/list', { kind, ...(activeCursors[kind].at(-1) ? { cursor: activeCursors[kind].at(-1) } : {}) }).then(page => [kind, page])))
+        .then(rows => { if (live) { setPages(Object.fromEntries(rows)); setError(''); } })
+        .catch(failure => { if (live) setError(errorText(failure)); }).finally(() => { if (live) setCardsBusy(false); });
       return () => { live = false; };
-    }, [project?.id, detail?.revision, refreshKey, activeCursors.current.at(-1), activeCursors.completed.at(-1), activeCursors.archived.at(-1)]);
-    useEffect(() => {
-      if (!project || !selectedId) { setCard(null); return; }
-      let live = true; setCard(null); setCardBusy(true);
-      void read(project.id, 'requests/get', { requestId: selectedId }).then(value => { if (live) { setCard(value.card); setError(''); } })
-        .catch(failure => { if (live) setError(errorText(failure)); }).finally(() => { if (live) setCardBusy(false); });
-      return () => { live = false; };
-    }, [project?.id, selectedId, detail?.revision, refreshKey]);
+    }, [project?.id, detail?.revision, refreshKey, activeCursors.current.at(-1), activeCursors.completed.at(-1), activeCursors.archived.at(-1), activeCursors.cancelled.at(-1)]);
     if (!project) return h('p', { className: 'dsh-project-empty' }, t('unavailable'));
-
-    const applyRoute = route => { setSection(route.section ?? 'tasks'); setSubview(route.subview ?? null); if (route.returnSection) setSubviewReturn(route.returnSection); if (Object.hasOwn(route, 'selectedId')) setSelectedId(route.selectedId); };
+    const applyRoute = route => { setSection(route.section ?? 'tasks'); setSubview(route.subview ?? null); if (route.returnSection) setSubviewReturn(route.returnSection); };
     const navigate = route => {
-      if (route.subview && !subview) subviewOrigin.current = document.activeElement;
       if (section === 'materials' && materialsDirty && route.section !== 'materials' && !route.subview) setPendingRoute(route);
       else applyRoute(route);
     };
@@ -594,29 +821,37 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const leaveMaterials = async save => {
       if (save && !(await editorRef.current?.save())) return;
       if (!save && !pendingRoute?.close) editorRef.current?.discard();
-      if (pendingRoute?.close) pendingRoute.close();
-      else applyRoute(pendingRoute);
+      if (pendingRoute?.close) pendingRoute.close(); else applyRoute(pendingRoute);
       setPendingRoute(null);
     };
     const archive = async item => {
       setError('');
       try {
         await command(project.id, item.archivedAt ? 'requests/restore' : 'requests/archive', { requestId: item.id });
-        setSelectedId(null); setCard(null); setCursorState({ scope: cursorScope, current: [null], completed: [null], archived: [null] }); setRefreshKey(value => value + 1);
+        setCursorState(newCursors()); setRefreshKey(value => value + 1);
       } catch (failure) { setError(errorText(failure)); }
     };
+    const queue = project.queue;
+    const changeQueue = async (item, action) => {
+      if (queueChanging.current || project.lifecycle !== 'ready' || project.archiving) return;
+      queueChanging.current = true; setActionBusy(true);
+      try {
+        const index = queue?.queued?.findIndex(row => row.id === item.id) ?? -1;
+        if (action === 'moveUp' && index <= 0 || action === 'moveDown' && (index < 0 || index >= queue.queued.length - 1)) return;
+        const beforeRequestId = action === 'moveUp' ? queue.queued[index - 1].id : action === 'moveDown' ? queue.queued[index + 2]?.id : undefined;
+        await command(project.id, 'requests/queue', { requestId: item.id, requestRevision: item.revision,
+          action: ['moveUp', 'moveDown'].includes(action) ? 'move' : action, ...(beforeRequestId ? { beforeRequestId } : {}) });
+        setCursorState(newCursors()); setRefreshKey(value => value + 1);
+      } catch (failure) {
+        setQueueFailure(previous => ({ seq: (previous?.seq ?? 0) + 1, text: errorText(failure) }));
+      } finally { queueChanging.current = false; setActionBusy(false); }
+    };
     const updateCursors = (kind, change) => setCursorState(before => {
-      const current = before.scope === cursorScope ? before : { scope: cursorScope, current: [null], completed: [null], archived: [null] };
-      return { ...current, [kind]: change(current[kind]) };
+      const current = before.scope === cursorScope ? before : newCursors(); return { ...current, [kind]: change(current[kind]) };
     });
-    const pageControls = (kind, page) => h('div', { className: 'dsh-project-task-pagination' },
+    const pageControls = kind => activeCursors[kind].length > 1 || pages[kind]?.nextCursor ? h('div', { className: 'dsh-project-task-pagination' },
       activeCursors[kind].length > 1 ? button(t('previous'), () => updateCursors(kind, before => before.slice(0, -1)), cardsBusy) : null,
-      page?.nextCursor ? button(t('taskMore'), () => updateCursors(kind, before => [...before, page.nextCursor]), cardsBusy) : null);
-    const list = kind => h(Fragment, null,
-      (pages[kind]?.items ?? []).map(item => h(ProjectTaskCard, { key: item.id, card: item,
-        open: () => { setSelectedId(item.id); setTaskTab('overview'); }, openResult: () => { setSelectedId(item.id); setTaskTab('results'); },
-        archive: () => { void archive(item); }, archivable: project.lifecycle === 'ready' && !project.archiving, t })),
-      pageControls(kind, pages[kind]));
+      pages[kind]?.nextCursor ? button(t('taskMore'), () => updateCursors(kind, before => [...before, pages[kind].nextCursor]), cardsBusy) : null) : null;
     const showProcess = item => navigate({ section: 'tasks', returnSection: section, subview: { kind: 'process',
       ...(item.workstreamId ? { workstreamId: item.workstreamId } : { workerSessionId: item.workerSessionId }), delegationRef: item.delegationRef } });
     const showReport = item => navigate({ section: 'tasks', returnSection: section, subview: { kind: 'report', workstreamId: item.workstreamId, delegationRef: item.delegationRef } });
@@ -647,47 +882,46 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     };
     const controls = { paused: project.paused, act, retrySummary, openModelSettings, busy: actionBusy || project.lifecycle !== 'ready' || project.archiving,
       showProcess: (_id, workstreamId, member, context = {}) => showProcess({ ...(member ? { workerSessionId: workstreamId } : { workstreamId }), delegationRef: context.delegationRef }),
-      showMaterials: (_id, workstreamId, context = {}) => showReport({ workstreamId, delegationRef: context.delegationRef ?? card?.work.find(item => item.workstreamId === workstreamId && item.current)?.delegationRef }),
+      showMaterials: (_id, workstreamId, context = {}) => showReport({ workstreamId, delegationRef: context.delegationRef }),
       showDiff: (_id, workstreamId) => navigate({ section: 'tasks', returnSection: section, subview: { kind: 'diff', workstreamId } }) };
-    const emptyBody = h('div', { className: 'dsh-project-observer-empty' }, h('strong', null, t('taskEmptyTitle')), h('p', null, t('taskEmpty')));
-    const taskBody = subview ? h('div', { className: 'dsh-project-observer-subview' },
-        h(Button, { ref: subviewBackRef, variant: 'ghost', size: 'sm', onClick: () => subviewReturn === 'tasks' ? setSubview(null) : applyRoute({ section: subviewReturn }) },
-          t(subviewReturn === 'materials' ? 'backToResults' : subviewReturn === 'team' ? 'teamBack' : 'taskBack')),
-        subview.kind === 'process' && detail ? h(ProcessPreview, { key: (subview.workstreamId ?? subview.workerSessionId) + ':' + (subview.delegationRef ?? ''), project: detail.project,
-          workstreamId: subview.workstreamId, workerSessionId: subview.workerSessionId, delegationRef: subview.delegationRef, read, retainProcess, t }) :
-          subview.kind === 'report' ? h(ProjectReportView, { projectId: project.id, reference: subview, read, showProcess: (_id, workstreamId, _member, context) => showProcess({ workstreamId, delegationRef: context?.delegationRef }), t }) :
-          subview.kind === 'diff' ? h(FileDiff, { projectId: project.id, workstreamId: subview.workstreamId, read, t }) : null) :
-      selectedId ? h('div', { className: 'dsh-project-observer-detail' },
-        h(Button, { variant: 'ghost', size: 'sm', onClick: () => setSelectedId(null) }, t(archiveView ? 'taskArchive' : 'taskBack')),
-        cardBusy && !card ? h('p', { role: 'status' }, t('loading')) : card ? h(ProjectTaskDetail, { projectId: project.id, card, tab: taskTab, setTab: setTaskTab,
-          read, showProcess, showReport, controls, retryHandover, renderFactorySlot, t }) : null) :
-      h('div', { className: 'dsh-project-observer-list' }, archiveView ? h(Fragment, null,
-        h('div', { className: 'dsh-project-task-group-title' }, h('strong', null, t('taskArchive')), h('span', null, pages.archived?.total ?? 0)),
-        list('archived'), !pages.archived?.total && !cardsBusy ? h('p', { className: 'dsh-project-empty' }, t('taskArchiveEmpty')) : null) : h(Fragment, null,
-        h('div', { className: 'dsh-project-task-group-title' }, h('strong', null, t('taskCurrent')), h('span', null, pages.current?.total ?? 0)),
-        list('current'),
-        h('div', { className: 'dsh-project-task-group-title' }, h('strong', null, t('taskCompleted')), h('span', null, pages.completed?.total ?? 0)),
-        list('completed'),
-        !pages.current?.total && !pages.completed?.total && !cardsBusy ? emptyBody : null));
-    const fullBody = h(Fragment, null,
-      materialsVisited || section === 'materials' ? h('div', { className: 'dsh-project-observer-materials', hidden: section !== 'materials' },
-        h(Materials, { key: project.id, projectId: project.id, resourceRevision: detail?.revision, active: section === 'materials' && mode === 'full', read, command, onDirtyChange: onMaterialsDirty, editorRef,
-          readonly: project.lifecycle === 'archived' || project.archiving, showProcess: (_id, workstreamId, _member, context) => showProcess({ workstreamId, delegationRef: context?.delegationRef }), renderFactorySlot, t })) : null,
-      h('div', { hidden: section === 'materials' }, section === 'team'
-        ? h(ProjectTeamOverview, { team, sessions, detail, openMember: workerSessionId => showProcess({ workerSessionId }), teamT, t }) : taskBody));
-    return h('section', { ref: observerRef, className: 'dsh-project-observer', 'data-project-observer-mode': mode, 'aria-label': t('observerOpen') },
-      mode === 'full' ? h('div', { className: 'dsh-project-observer-toolbar' },
-        h('div', { className: 'dsh-project-observer-sections' },
-           h('button', { type: 'button', 'aria-current': section === 'tasks' ? 'page' : undefined, onClick: () => navigate({ section: 'tasks', selectedId: null }) }, t('taskList')),
-           h('button', { type: 'button', 'aria-current': section === 'team' ? 'page' : undefined, onClick: () => navigate({ section: 'team' }) }, t('team')),
-          h('button', { type: 'button', 'aria-current': section === 'materials' ? 'page' : undefined, onClick: () => navigate({ section: 'materials' }) }, t('taskMaterials'))),
-        section === 'tasks' ? h(Button, { variant: 'ghost', size: 'sm', onClick: () => { setSelectedId(null); setArchiveView(value => !value); } }, t(archiveView ? 'taskBack' : 'taskArchive'), archiveView ? '' : ` · ${pages.archived?.total ?? 0}`) : null) : null,
-      error ? h('p', { role: 'alert', className: 'dsh-project-error dsh-project-observer-error' }, error) : null,
-      mode === 'full' && project.diagnostics?.length ? h('details', { className: 'dsh-project-error-details dsh-project-observer-error' },
-        h('summary', null, t('blocked'), ' · ', t('errorDetails')),
-        project.diagnostics.map((item, index) => h('pre', { key: index }, typeof item === 'string' ? item : item.message))) : null,
-      cardsBusy && !pages.current && !pages.completed && !pages.archived ? h('p', { role: 'status', className: 'dsh-project-empty' }, t('loading')) : null,
-      h('div', { className: 'dsh-project-observer-scroll' }, h('div', { className: 'dsh-project-observer-full-body', hidden: mode !== 'full' }, fullBody)),
+    const cardMode = (item, initialMode = 'strip') => requestModes?.[item.id]?.completed === (item.status === 'completed') ? requestModes[item.id].mode : initialMode;
+    const renderCard = (item, initialMode = 'strip') => h(ProjectTaskCard, { key: item.id, card: item, project, resourceRevision: detail?.revision,
+      mode: cardMode(item, initialMode), setMode: mode => setRequestMode(sessionId, panelRef.current, item.id, mode, item.status === 'completed'),
+      read, team, sessions, controls, queue, changeQueue, archive, retryHandover, showProcess, showReport, renderFactorySlot, t });
+    const current = pages.current?.items ?? [], activeCard = current.find(item => item.id === queue?.active?.id) ?? queue?.active;
+    const waiting = current.filter(item => item.id !== activeCard?.id);
+    const cards = [...current, ...(pages.completed?.items ?? []), ...(pages[historyKind]?.items ?? [])];
+    const expanded = cards.some(item => cardMode(item, item.id === activeCard?.id ? 'card' : 'strip') !== 'strip');
+    return h('section', { ref: observerRef, className: 'dsh-project-observer', 'data-project-observer-stack': true, 'data-project-observer-compact-only': !expanded,
+      'data-dockkit-float-chrome': 'content', 'data-dockkit-float-motion': 'morph', 'aria-label': t('observerOpen') },
+      h('div', { className: 'dsh-project-observer-scroll' }, h('div', { ref: contentRef, className: 'dsh-project-observer-stack' },
+        h('header', { className: 'dsh-project-observer-drag', 'data-dockkit-float-drag-handle': true },
+          h('span', { title: project.canonicalWorkingDirectory }, project.title),
+          h('nav', { className: 'dsh-project-observer-sections', 'aria-label': t('projectOverview') },
+            ...[['tasks', 'taskList'], ['team', 'team'], ['materials', 'taskMaterials']].map(([id, label]) => h(Button, { key: id, variant: 'ghost', size: 'sm', 'aria-current': section === id ? 'page' : undefined, onClick: () => navigate({ section: id }) }, t(label)))),
+          h(Menu, { open: historyMenu, onClose: () => setHistoryMenu(false), portal: true, compact: true, align: 'end',
+            items: [{ id: 'cancelled', label: `${t('taskCancelled')} · ${pages.cancelled?.total ?? 0}` }, { id: 'archived', label: `${t('taskArchive')} · ${pages.archived?.total ?? 0}` }],
+            onSelect: kind => { setHistoryMenu(false); setHistoryKind(value => value === kind ? null : kind); },
+            anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': t('more'), onClick: () => setHistoryMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) })),
+        activeCard ? h('div', { className: 'dsh-project-observer-current' }, renderCard(activeCard, 'card')) : null,
+        !activeCard && !current.length && !pages.completed?.total && !cardsBusy ? h('div', { className: 'dsh-project-observer-empty' }, h('strong', null, t('taskEmptyTitle')), h('p', null, t('taskEmpty'))) : null,
+        waiting.length ? h('div', { className: 'dsh-project-observer-list', 'aria-label': t('requestQueued') }, waiting.map(item => renderCard(item))) : null,
+        pageControls('current'),
+        subview ? h('section', { className: 'dsh-project-observer-aux' }, h(Button, { variant: 'ghost', size: 'sm', onClick: () => subviewReturn === 'tasks' ? setSubview(null) : applyRoute({ section: subviewReturn }) }, t(subviewReturn === 'materials' ? 'backToResults' : subviewReturn === 'team' ? 'teamBack' : 'taskBack')),
+          h('div', { className: 'dsh-project-task-full' }, subview.kind === 'process' && detail ? h(ProcessPreview, { key: (subview.workstreamId ?? subview.workerSessionId) + ':' + (subview.delegationRef ?? ''), project: detail.project,
+            workstreamId: subview.workstreamId, workerSessionId: subview.workerSessionId, delegationRef: subview.delegationRef, read, retainProcess, t }) : subview.kind === 'report' ? h(ProjectReportView, { projectId: project.id, reference: subview, read, showProcess: (_id, workstreamId, _member, context) => showProcess({ workstreamId, delegationRef: context?.delegationRef }), t })
+            : subview.kind === 'diff' ? h(FileDiff, { projectId: project.id, workstreamId: subview.workstreamId, read, t }) : null)) : null,
+        section === 'team' ? h('section', { className: 'dsh-project-observer-aux' }, h(ProjectTeamOverview, { team, sessions, detail, openMember: workerSessionId => showProcess({ workerSessionId }), teamT, t })) : null,
+        materialsVisited || section === 'materials' ? h('section', { className: 'dsh-project-observer-aux dsh-project-observer-materials', hidden: section !== 'materials' },
+          h(Materials, { key: project.id, projectId: project.id, resourceRevision: detail?.revision, active: section === 'materials', read, command, onDirtyChange: onMaterialsDirty, editorRef,
+            readonly: project.lifecycle === 'archived' || project.archiving, showProcess: (_id, workstreamId, _member, context) => showProcess({ workstreamId, delegationRef: context?.delegationRef }), renderFactorySlot, t })) : null,
+        historyKind ? h('section', { className: 'dsh-project-observer-list' }, h('div', { className: 'dsh-project-task-group-title' }, h('strong', null, t(historyKind === 'archived' ? 'taskArchive' : 'taskCancelled')), h(Button, { variant: 'ghost', size: 'sm', onClick: () => setHistoryKind(null) }, t('taskBack'))),
+          (pages[historyKind]?.items ?? []).map(item => renderCard(item)), pageControls(historyKind)) : null,
+        pages.completed?.total ? h('section', { className: 'dsh-project-observer-completed' }, h('div', { className: 'dsh-project-task-group-title' }, h('strong', null, t('taskCompleted')), h('span', null, pages.completed.total)),
+          (pages.completed.items ?? []).map(item => renderCard(item)), pageControls('completed')) : null,
+        cardsBusy && !pages.current ? h('p', { role: 'status', className: 'dsh-project-empty' }, t('loading')) : null,
+        project.diagnostics?.length ? h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), project.diagnostics.map((item, index) => h('pre', { key: index }, typeof item === 'string' ? item : item.message))) : null)),
+      error || queueFailure ? h(Toast, { text: queueFailure?.text ?? error, onDone: () => { setError(''); setQueueFailure(null); } }) : null,
       pendingRoute ? h(Modal, { open: true, onClose: closePending, closeLabel: t('keepEditing'), title: t('unsaved'), className: 'dsh-project-confirm',
         footer: h('div', { className: 'dsh-project-actions' }, button(t('keepEditing'), closePending), button(t(pendingRoute.close ? 'discard' : 'discardAndSwitch'), () => { void leaveMaterials(false); }),
           h(Button, { variant: 'primary', disabled: editorRef.current?.busy || editorRef.current?.tooLong, onClick: () => { void leaveMaterials(true); } }, t(pendingRoute.close ? 'saveAndClose' : 'saveAndSwitch'))) },
@@ -715,7 +949,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const state = worker?.phase === 'stopping' ? 'stopping' : worker?.phase === 'failed' ? 'failed' : worker?.stopped && work.status !== 'done' ? 'paused' : worker && isLive(worker) ? 'running' : work.delegation?.phase === 'queued' ? 'queued' : work.delegation?.phase === 'preparing' ? 'provisioning' : work.status === 'running' ? 'running' : summaryFailure ? 'sidebarSummaryFailed' : work.pendingSummary && !worker?.stopped && !paused ? 'pendingSummary' : work.status;
     return h('div', { className: 'dsh-project-work', 'data-workstream-id': work.id },
       h('div', { className: 'dsh-project-heading dsh-project-work-heading' }, h('strong', { title: work.title }, work.title), h(Pill, null, stateLabel(t, state))),
-      worker?.error || !worker?.stopped && work.blockedReason && work.blockedReason !== 'stopped' ? h('p', { className: 'dsh-project-error' }, worker?.error || work.blockedReason) : null,
+      worker?.error || !worker?.stopped && work.blockedReason && work.blockedReason !== 'stopped' ? h('p', { className: 'dsh-project-error' }, worker?.error || workBlockedLabel(t, work.blockedReason)) : null,
       work.delegation?.phase === 'queued' ? h('p', { className: 'dsh-project-muted' }, waiting ? `${t({ dependencies: 'waitingDependencies', directory: 'waitingDirectory', capacity: 'waitingCapacity' }[waiting.kind])}${waiting.workTitles.length ? ` · ${waiting.workTitles.join('、')}` : ''}` : t('queued')) : null,
       summaryFailure && !work.request?.authorityError ? h(SummaryFailure, { failure: summaryFailure, openModelSettings, t }) : null,
       work.prerequisitesChanged ? h('p', { className: 'dsh-project-muted', title: t('prerequisitesHint') }, t('prerequisitesChanged')) : null,
@@ -1129,13 +1363,13 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   }
 
   return {
-    inject: ['slots', 'connection', 'locale', 'uiWorkspace', 'uiSidebar', 'sidebarRight', 'sidebarRightTabs', 'workspaces', 'sessions', 'conversation', 'settingsNavigation'],
+    inject: ['slots', 'connection', 'locale', 'uiWorkspace', 'uiSidebar', 'sidebarRight', 'sidebarRightTabs', 'workspaces', 'sessions', 'uiSession', 'conversation', 'settingsNavigation'],
     apply(ctx) {
       const t = ctx.locale.bind(NS);
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-project: locale');
       ctx.effect(() => ctx.locale.register('project-team', { zh: teamChinese, en: teamEnglish }), 'dsh-project: team locale');
       const snapshot = createSnapshotStore({ projects: [], details: {}, available: false, loading: true, error: '' });
-      const observerModes = createSnapshotStore({});
+      const observerModes = createSnapshotStore({}, { persist: { name: 'dsh-project.observer-modes' } });
       const archiveRequests = new Set();
       const viewHandle = defineStore({ init: () => ({ selected: null, modal: null, modalDirty: false, pendingModal: null, modalRevision: 0, materialsPreview: false, lifecycle: null, history: false }), actions: {
         selectProject: (draft, id) => { draft.selected = id; },
@@ -1157,7 +1391,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       let navigationGeneration = 0, refreshGeneration = 0;
       const detailSequences = new Map(), detailPages = new Map();
       const observerEditors = new Map();
-      const observerRects = createSnapshotStore({}, { persist: { name: 'dsh-project.observer-rects.v1' } });
+      const observerRects = createSnapshotStore({}, { persist: { name: 'dsh-project.observer-layout.v2' } });
       const registerObserverEditor = (sessionId, tabId, editor) => {
         const key = JSON.stringify([sessionId, tabId]);
         observerEditors.set(key, editor);
@@ -1198,6 +1432,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       const read = async (projectId, endpoint, input, isCurrent) => {
         const originalView = viewInstance.getSnapshot(), origin = document.activeElement;
         const originPanel = endpoint === 'open' && input?.path ? ctx.sidebarRight.focusedTarget(origin) : undefined;
+        const originRequest = origin?.closest?.('[data-project-request-id]'), originRequestId = originRequest?.getAttribute('data-project-request-id');
         const scrollTop = endpoint === 'open' && input?.path && originalView.modal?.kind === 'materials' && originalView.modal.projectId === projectId
           ? document.querySelector('.dsh-project-materials-host:not([hidden]) .dsh-project-materials-content')?.scrollTop : undefined;
         const value = await rpc(endpoint, { ...input, projectId });
@@ -1210,7 +1445,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
           if (originPanel?.sessionId === project.coordinatorSessionId && ctx.sidebarRight.mounted.getSnapshot() === project.coordinatorSessionId && originPanel.host === 'float'
             && ctx.sidebarRight.tabsIn(project.coordinatorSessionId).some(tab => tab.id === originPanel.tabId && tab.kind === OBSERVER_KIND)) {
             const panel = observerEditors.get(JSON.stringify([project.coordinatorSessionId, originPanel.tabId]))?.getPanel();
-            if (panel?.id === originPanel.paneId) resizeObserver(project.coordinatorSessionId, panel, originPanel.tabId, 'strip');
+            if (panel?.id === originPanel.paneId && originRequestId) setRequestMode(project.coordinatorSessionId, panel, originRequestId, 'strip', originRequest.getAttribute('data-project-request-status') === 'completed');
           }
           const currentView = viewInstance.getSnapshot();
           if (originalView.modal?.kind === 'materials' && originalView.modal.projectId === projectId && originalView.modalRevision === currentView.modalRevision && !currentView.pendingModal && (!isCurrent || isCurrent())) { fileReturn = { origin, modal: originalView.modal, scrollTop, isCurrent }; viewInstance.actions.suspendMaterials(projectId, originalView.modalRevision); }
@@ -1291,15 +1526,6 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         archive: sessionId => { const project = snapshot.getSnapshot().projects.find(item => item.coordinatorSessionId === sessionId); void openLifecycle(project?.id, 'archive'); },
         restore: sessionId => { const project = snapshot.getSnapshot().projects.find(item => item.coordinatorSessionId === sessionId); if (project) return command(project.id, 'restore'); },
       }), 'dsh-project: Project lifecycle commands');
-      ctx.effect(() => {
-        const entries = createSnapshotStore([]);
-        const sync = () => entries.set(snapshot.getSnapshot().projects.map(project => ({ sessionId: project.coordinatorSessionId,
-          workingDirectory: project.canonicalWorkingDirectory, archived: project.lifecycle === 'archived' })));
-        sync();
-        const off = snapshot.subscribe(sync);
-        const unregister = ctx.uiWorkspace.registerSessionNavigation('project', entries);
-        return () => { off(); unregister(); };
-      }, 'dsh-project: workspace navigation');
       const sendUserRequest = async (projectId, text) => {
         const project = snapshot.getSnapshot().projects.find(item => item.id === projectId);
         if (!project || project.lifecycle !== 'ready' || project.archiving) throw new Error(t('unavailable'));
@@ -1314,36 +1540,32 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         if (existing) {
           ctx.sidebarRight.focus(existing.id);
           const panel = observerEditors.get(JSON.stringify([project.coordinatorSessionId, existing.id]))?.getPanel();
-          if (panel?.host === 'float' && panel.rect?.height <= 38) resizeObserver(project.coordinatorSessionId, panel, existing.id, 'full');
           return true;
         }
-        return ctx.sidebarRight.openTabIn(project.coordinatorSessionId, OBSERVER_KIND, { expand: false, floating: observerRect('full') });
+        return ctx.sidebarRight.openTabIn(project.coordinatorSessionId, OBSERVER_KIND, { expand: false, floating: observerRect() });
       };
-      const resizeObserver = (sessionId, panel, tabId, mode, remember = true) => {
-        // Pane ids are local to a Session; retained background bodies cannot resize the foreground one.
-        if (ctx.sidebarRight.mounted.getSnapshot() !== sessionId) return;
-        // Desktop boot mounts Harness at 0x0 until reveal; do not save that temporary viewport.
-        if (window.innerWidth === 0 || window.innerHeight === 0) return;
-        const key = JSON.stringify([sessionId, tabId]), previous = observerRects.getSnapshot()[key];
-        const current = panel.host === 'float' ? panel.rect : undefined;
-        const unchanged = current && previous?.paneId === panel.id
-          && ['x', 'y', 'width', 'height'].every(field => current[field] === previous.applied[field]);
-        // Viewport fits only change the displayed frame; a real user gesture replaces the preferred frame.
-        const fullHeight = previous?.paneId === panel.id ? previous.preferred.height : 520;
-        const preferred = unchanged ? previous.preferred : current ? {
-          ...current, height: panelMode(panel) === 'strip' ? fullHeight : current.height,
-        } : undefined;
-        const rect = observerRect(mode, preferred);
-        observerRects.set({ ...observerRects.getSnapshot(), [key]: { paneId: panel.id, preferred: preferred ?? rect, applied: rect } });
-        if (remember || panel.host === 'float' && panelMode({ ...panel, rect }) !== mode) {
-          const modes = observerModes.getSnapshot();
-          observerModes.set({ ...modes, [sessionId]: { ...modes[sessionId], [panel.id]: mode } });
-        }
-        if (panel.host === 'float') ctx.sidebarRight.resizeFloat(panel.id, rect);
-        else if (tabId) ctx.sidebarRight.float(tabId, rect);
+      const setRequestMode = (sessionId, panel, id, mode, completed = false) => {
+        const before = observerModes.getSnapshot(), saved = before[sessionId]?.[panel.id];
+        observerModes.set({ ...before, [sessionId]: { ...before[sessionId], [panel.id]: { requests: { ...saved?.requests, [id]: { mode, completed } } } } });
       };
-      const face = () => ({ hooks: { projects: snapshot, projectSessions: ctx.sessions.list, projectView: viewInstance, observerModes, sidebarMounted: ctx.sidebarRight.mounted }, read, command, refresh, openProject, openLifecycle, readDetail, sendUserRequest, getFileReturn: () => fileReturn, teamT: ctx.locale.bind('project-team'),
-        openObserver, resizeObserver, registerObserverEditor,
+      const rememberObserverSize = (sessionId, panel, tabId) => {
+        const key = JSON.stringify([sessionId, tabId]), before = observerRects.getSnapshot();
+        observerRects.set({ ...before, [key]: { paneId: panel.id, preferred: panel.rect, applied: panel.rect, userSized: true } });
+      };
+      const resizeObserver = (sessionId, panel, tabId, contentHeight) => {
+        if (ctx.sidebarRight.mounted.getSnapshot() !== sessionId || window.innerWidth === 0 || window.innerHeight === 0) return;
+        const key = JSON.stringify([sessionId, tabId]), saved = observerRects.getSnapshot()[key], current = panel.host === 'float' ? panel.rect : undefined;
+        const previous = saved?.paneId === panel.id ? saved : undefined;
+        const unchanged = current && previous?.applied && ['x', 'y', 'width', 'height'].every(field => current[field] === previous.applied[field]);
+        const preferred = unchanged ? previous.preferred : previous?.userSized ? { ...previous.preferred, x: current?.x, y: current?.y } : previous ? current : current ? { ...current, width: 400, x: current.x + current.width - 400 } : undefined;
+        const height = previous?.userSized ? previous.preferred.height : contentHeight;
+        const rect = observerRect(preferred, height);
+        observerRects.set({ ...observerRects.getSnapshot(), [key]: { paneId: panel.id, preferred: { ...preferred ?? rect, height: height ?? rect.height }, applied: rect, userSized: previous?.userSized === true } });
+        if (panel.host === 'float') ctx.sidebarRight.resizeFloat(panel.id, rect); else if (tabId) ctx.sidebarRight.float(tabId, rect);
+        return rect;
+      };
+      const face = () => ({ hooks: { projects: snapshot, projectSessions: ctx.sessions.list, projectSessionStatus: ctx.uiSession.sessionStatus, projectView: viewInstance, observerModes, sidebarMounted: ctx.sidebarRight.mounted }, read, command, refresh, openProject, openLifecycle, readDetail, sendUserRequest, getFileReturn: () => fileReturn, teamT: ctx.locale.bind('project-team'),
+        openObserver, resizeObserver, rememberObserverSize, setRequestMode, registerObserverEditor,
         trackActiveProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; }; },
         openModelSettings: () => ctx.settingsNavigation.open('models'),
         addProject: async () => { try { const path = await ctx.uiWorkspace.selectDirectory(); if (!path) return; const result = await rpc('create', { workingDirectory: path, requestId: requestId() }); acceptDetail({ project: result.project }); await openProject(result.project.id); } catch (failure) { snapshot.set({ ...snapshot.getSnapshot(), error: errorText(failure) }); } },
@@ -1351,6 +1573,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         trackProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; }; },
         retainProcess: (project, work) => ctx.sessions.retain({ parentSessionId: project.coordinatorSessionId, childSessionId: work.workerSessionId, mode: 'continuable' }, { source: 'projectPreview' }),
       });
+      ctx.slots.inject('sidebar.workspaces.sections', () => ctx.slots.register({ name: 'sidebar.workspaces.sections', id: NS, order: 20, locale: NS, store: viewStore, inject: face }, SidebarPage));
       ctx.effect(() => ctx.sidebarRightTabs.register({ id: OBSERVER_TAB, kind: OBSERVER_KIND, priority: 'extension', title: () => t('tab'), keepMounted: true, floatingOnly: true, showCloseButton: false }), 'dsh-project: observer tab type');
       ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({ name: 'sidebar.right.pane.tab', key: OBSERVER_TAB, locale: NS,
         inject: sessionId => ({ ...face(), sessionId }) }, ProjectObserver));

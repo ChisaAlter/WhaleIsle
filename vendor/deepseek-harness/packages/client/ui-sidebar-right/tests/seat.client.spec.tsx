@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 /** Sidebar presentation and tab subscriptions through the production slot renderer. */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { act, fireEvent, waitFor } from '@testing-library/react'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { SlotTestRuntime, type SlotView } from '@deepseek-ai/dsh-client-test-runtime'
@@ -21,6 +23,7 @@ import type { createSidebarRightStore } from '../src/client/stores.ts'
 import { apply as applyPreview, inject as previewInject } from '../../ui-preview/src/client/apply.ts'
 import { clearMiniPlayer, readMiniPlayer } from '../../ui-preview/src/client/mini-player-state.ts'
 import { apply as applySurfaces, inject as surfacesInject } from '../../ui-surfaces/src/client/apply.ts'
+import css from '../src/client/shell/SidebarRight.module.css'
 
 declare module '../src/client/contract/params.ts' {
   interface SidebarRightResourceParamsMap {
@@ -243,6 +246,37 @@ it('keeps duplicate Session Tabs independent and preserves a body through dockin
   expect(h.layout().expanded).toBe(true)
   expect(body.closest('[aria-hidden="true"]')).toBeNull()
   expect(body.closest('[data-dockkit-host]')).toBe(cell)
+})
+
+it('lets a content-owned floating surface escape the tab clip while ordinary tab bodies remain clipped', async () => {
+  const h = await mountSeat()
+  const style = document.createElement('style')
+  style.textContent = readFileSync(resolve(import.meta.dirname, '../src/client/shell/SidebarRight.module.css'), 'utf8')
+    .replace(/\.([a-zA-Z][\w-]*)/g, (selector, name: string) => css[name] ? `.${css[name]}` : selector)
+  document.head.append(style)
+  onTestFinished(() => { style.remove() })
+  await act(async () => {
+    h.runtime.ctx.sidebarRightTabs.register({ id: 'test/content-chrome', kind: 'content-chrome', keepMounted: true, title: () => 'Content surface' })
+    h.runtime.slots.register({ name: 'sidebar.right.pane.tab', key: 'test/content-chrome' }, () => (
+      <section data-content-surface data-dockkit-float-chrome="content"><input defaultValue="Retained draft" /></section>
+    ))
+  })
+  act(() => { h.controller.openTab('content-chrome') })
+  const tab = h.controller.active()!
+  act(() => { h.controller.float(tab.id) })
+  const surface = document.querySelector<HTMLElement>('[data-content-surface]')!
+  const occurrence = surface.closest<HTMLElement>('[data-sidebar-right-tab]')!
+  expect(occurrence.matches(`.${css.tabBody}`)).toBe(true)
+  expect(surface.parentElement?.getAttribute('data-slot')).toBe('sidebar.right.pane.tab')
+  expect(getComputedStyle(occurrence).overflow).toBe('visible')
+  const draft = surface.querySelector('input')!
+  fireEvent.change(draft, { target: { value: 'Unsent content' } })
+  const ordinary = h.open('ordinary-clipped.txt')
+  const ordinaryBody = document.querySelector<HTMLElement>(`[data-tab-body="${ordinary.id}"]`)!.closest<HTMLElement>(`.${css.tabBody}`)!
+  expect(getComputedStyle(ordinaryBody).overflow).toBe('auto')
+  expect(getComputedStyle(occurrence).overflow).toBe('visible')
+  expect(document.querySelector('[data-content-surface] input')).toBe(draft)
+  expect(draft.value).toBe('Unsent content')
 })
 
 it('retains a collapsed Session Tab and remounts an unretained hidden body', async () => {
