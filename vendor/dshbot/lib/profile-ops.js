@@ -416,6 +416,48 @@ export function createProfileOperations(ctx, scope, {
       schema: descriptor.schema ?? {}, applies: descriptor.applies ?? 'live', secrets: [] };
   };
 
+  // session.create now means a new conversation, not adoption of a non-blank
+  // identity. Restore existing Bot bindings explicitly so their history and
+  // composition stay on the Session the caller selected.
+  const ensureProfileSession = async (item, input) => {
+    const service = controller();
+    const request = createRequest(item, input);
+    const resolved = await service.resolveAgent(item.sessionId);
+    if (resolved.error) {
+      if (resolved.error.code !== 'session/not-found') throw resolved.error;
+      return service.create(request);
+    }
+    const workspace = request.workspaceId
+      ? (ctx.get?.('workspaceRegistry') ?? ctx.workspaceRegistry)?.get(request.workspaceId)
+      : undefined;
+    if (request.workspaceId && !workspace) fail(`Workspace is unavailable: ${request.workspaceId}`);
+    const cwd = workspace?.path ?? request.cwd;
+    if (resolved.agent.session.header.cwd !== cwd) {
+      fail(`Session "${item.sessionId}" belongs to "${resolved.agent.session.header.cwd}", not "${cwd}".`);
+    }
+    if (request.agentPreset !== undefined) {
+      const projections = ctx.get?.('sessionProjections') ?? ctx.sessionProjections;
+      const existingPreset = projections.stateOf(resolved.agent.session, 'agentPreset');
+      if (existingPreset !== request.agentPreset) {
+        fail(`Session "${item.sessionId}" does not run agent preset "${request.agentPreset}".`);
+      }
+    }
+    if (workspace) await workspace.attachSession(item.sessionId);
+    await service.setPresentation({ sessionId: item.sessionId, presentation: request.presentation });
+    return { sessionId: item.sessionId };
+  };
+
+  const bindCreatedSession = async (item, result) => {
+    const sessionId = string(result.sessionId, 240, 'created session id', true);
+    if (sessionId === item.sessionId) return item;
+    const bound = { ...item, sessionId };
+    await projectCatalog(scope, (latest) => ({ ...latest,
+      items: latest.items.map((candidate) => candidate.id === item.id && candidate.sessionId === item.sessionId
+        ? { ...candidate, sessionId } : candidate),
+    }));
+    return bound;
+  };
+
   const sectionById = (catalog, id) => (catalog.sections ?? []).find((section) => section.id === id);
   const sectionNameKey = (name) => String(name ?? '').trim().toLocaleLowerCase();
   const ensureSectionNameAvailable = (catalog, name, exceptId = '') => {
@@ -559,7 +601,7 @@ export function createProfileOperations(ctx, scope, {
   const create = async (input) => {
       checkRevision(input.revision);
       const previous = scope.get();
-      const item = normalizeBotDraft(input, undefined, previous, now());
+      let item = normalizeBotDraft(input, undefined, previous, now());
       await validateCapabilities(capabilities, item);
       await validateModel(ctx, item);
       const auditId = crypto.randomUUID();
@@ -567,7 +609,7 @@ export function createProfileOperations(ctx, scope, {
         fromId: 'user', toId: item.id, detail: `Created ${botDisplayName(item)}.`, at: item.updatedAt }].slice(-200);
       await scope.set({ ...previous, items: [...previous.items, item], audit }, previous);
       try {
-        await controller().create(createRequest(item, input));
+        item = await bindCreatedSession(item, await ensureProfileSession(item, input));
       } catch (error) {
         try {
           await projectCatalog(scope, (latest) => ({ ...latest,
@@ -580,6 +622,7 @@ export function createProfileOperations(ctx, scope, {
         }
         throw error;
       }
+      if (item.kind !== 'room') objective?.requestSync?.(item);
       return { view: currentView(), item, sessionId: item.sessionId };
   };
 
@@ -602,7 +645,7 @@ export function createProfileOperations(ctx, scope, {
         sessionId: item.sessionId,
         presentation,
         lookup: () => controller().list({}),
-        create: () => controller().create(createRequest(item, input)),
+        create: () => ensureProfileSession(item, input),
       });
       await controller().setPresentation({ sessionId: item.sessionId, presentation });
       return {
@@ -616,7 +659,7 @@ export function createProfileOperations(ctx, scope, {
       checkRevision(input.revision);
       const previous = scope.get();
       const current = previous.items.find((item) => item.id === input.id) ?? fail('Bot profile is unavailable.');
-      const next = normalizeBotDraft(input, current, previous, now());
+      let next = normalizeBotDraft(input, current, previous, now());
       await validateCapabilities(capabilities, next);
       await validateModel(ctx, next);
       if ((current.workspaceId || '') !== (next.workspaceId || '')) {
@@ -653,7 +696,7 @@ export function createProfileOperations(ctx, scope, {
       } else {
         await scope.set(nextCatalog, previous);
         try {
-          await controller().create(createRequest(next, input));
+          next = await bindCreatedSession(next, await ensureProfileSession(next, input));
         } catch (error) {
           await projectCatalog(scope, (latest) => ({ ...latest, items: latest.items.map((item) =>
             item.id === next.id && item.sessionId === next.sessionId ? { ...current, inbox: item.inbox } : item) }));

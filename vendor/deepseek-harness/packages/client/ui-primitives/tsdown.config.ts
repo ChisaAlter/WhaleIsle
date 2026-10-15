@@ -3,7 +3,7 @@ import { Rolldown, type UserConfig } from 'tsdown'
 import { staticLinked } from '../tsdown.client.ts'
 
 const bundle = staticLinked(
-  '@deepseek-ai/dsh-client-ui-primitives',
+  import.meta.dirname,
   ['lib/types/index.js'],
 )
 

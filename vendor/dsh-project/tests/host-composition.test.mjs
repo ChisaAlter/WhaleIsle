@@ -930,7 +930,8 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     assert.equal(restartedModel.requests.length, 0); assert.equal(resumed.project(project.id).coordinatorSessionId, project.coordinatorSessionId); assert.equal(resumed.stream(plan.id).workerSessionId, workerId);
     assert.equal(resumed.stream(pathWork.id).status, 'blocked'); assert.equal(resumed.stream(pathWork.id).pendingSummary, true); assert.equal(resumed.stream(pathWork.id).settlements.length, 0);
     assert.equal(resumed.stream(plan.id).pendingSummary, true); assert.match((await resumed.command('store/read', { projectId: project.id, path: 'notes.md' })).text, /no associated visible coordinator summary/);
-    await ctx.sessionController.create({ sessionId: project.coordinatorSessionId, cwd: project.storageRoot });
+    const originalLead = await ctx.sessionController.resolveAgent(project.coordinatorSessionId);
+    assert.equal(originalLead.agent?.id, project.coordinatorSessionId, 'recovery resumes the original used Session instead of creating a blank replacement');
     await ctx.sessionController.prompt({ sessionId: project.coordinatorSessionId, requestId: 'read-pending', mode: 'queue', content: [{ type: 'text', text: 'READ_PENDING' }] }, signal);
     await waitFor(() => !resumed.stream(plan.id).pendingSummary, 'real visible coordinator reply summarizes durable pending facts');
     assert.equal(resumed.stream(plan.id).workerSessionId, workerId); assert.equal(resumed.worker(workerId).stopped, true);
@@ -1372,8 +1373,8 @@ test('failed warm admission keeps occupancy, expanding stops drain every worker,
     return id;
   };
   const tasks = new Map();
-  const ctx = { sessionPersistence: { stat: async () => ({}) }, agentTeams: { registerPolicy: () => () => {}, bindPolicy: async () => {}, cancelMessages: async () => {}, setCold: async () => {}, listTasks: () => [...tasks.values()], createTask: async (_root, input) => { if (!tasks.has(input.taskId)) tasks.set(input.taskId, { id: input.taskId, subject: input.subject, description: input.description, blockedBy: [], status: 'in_progress', ready: true }); return tasks.get(input.taskId); }, getTask: (_root, id) => tasks.get(id) }, agents, get: name => name === 'jobs' ? { list: () => [] } : undefined, logger: { warn() {} }, subagents: {
-    registerContinuationPolicy: () => () => {}, async drainContinuableChildren(_parent, ids) { drained.push(...ids); if (ids.includes('worker-a')) await gateA; },
+  const ctx = { sessionPersistence: { stat: async () => ({}) }, sessionController: { resolveAgent: async id => ({ agent: agents.get(id) }) }, agentTeams: { registerPolicy: () => () => {}, bindPolicy: async () => {}, cancelMessages: async () => {}, setCold: async () => {}, listTasks: () => [...tasks.values()], createTask: async (_root, input) => { if (!tasks.has(input.taskId)) tasks.set(input.taskId, { id: input.taskId, subject: input.subject, description: input.description, blockedBy: [], status: 'in_progress', ready: true }); return tasks.get(input.taskId); }, getTask: (_root, id) => tasks.get(id) }, agents, get: name => name === 'jobs' ? { list: () => [] } : undefined, logger: { warn() {} }, subagents: {
+    registerContinuationPolicy: () => () => {}, async drainChildren(_parent, ids) { drained.push(...ids); if (ids.includes('worker-a')) await gateA; },
   } };
   const table = { get: () => state, async update(_key, change) { state = change(state); } };
   const service = new ProjectService(ctx, table, { home, desktop: async () => { throw new Error('Actual binding changed'); } });

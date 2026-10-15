@@ -4,6 +4,7 @@ import { Button, DisclosureRow, IconChevronDownOutlineRegular, StateDot, Toast, 
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SpeechPreparationState, SpeechProviderId, SpeechProviderView, SpeechSelectionPatch } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
 import type { VoiceInputInjected } from './VoiceInput.tsx'
+import { MicrophonePicker } from './MicrophonePicker.tsx'
 import { NS } from './locales.ts'
 import css from './VoiceInput.module.css'
 
@@ -139,7 +140,7 @@ export function PreparationCard({ provider, connected, prepare, cancelPreparatio
 
 /** Recognition preferences and preparation cards shared by plugin details and Settings. */
 export function VoicePreparation({ useSpeechReadiness, ...props }: Pick<InjectFace<VoiceInputInjected>,
-  'useSpeechReadiness' | 'configure' | 'prepare' | 'cancelPreparation'> & PropsLocale<typeof NS>) {
+  'useSpeechReadiness' | 'configure' | 'prepare' | 'cancelPreparation' | 'createRecording' | 'useMicrophoneDevice' | 'selectMicrophone'> & PropsLocale<typeof NS>) {
   const readiness = useSpeechReadiness(value => value), catalog = readiness.catalog
   const [saving, setSaving] = useState(false), [error, setError] = useState('')
   const [dismissedFeedback, setDismissedFeedback] = useState<string>()
@@ -167,6 +168,7 @@ export function VoicePreparation({ useSpeechReadiness, ...props }: Pick<InjectFa
       onDone={() => { setDismissedFeedback(feedback) }}
     />}
     {catalog && <div className={css.preferences}>
+      <MicrophonePicker {...props} />
       <label>{props.t('provider')}<select value={catalog.selection.providerId} disabled={!readiness.connected || saving}
         onChange={(event) => { void configure({ providerId: event.target.value as SpeechProviderId }) }}>
         {catalog.providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}</option>)}

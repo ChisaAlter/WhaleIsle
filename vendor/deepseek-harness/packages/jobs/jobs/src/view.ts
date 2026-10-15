@@ -31,7 +31,6 @@ declare module '@deepseek-ai/dsh-workspace/types' {
  */
 export interface JobKindMap {
   bash: 'bash'
-  subagent: 'subagent'
 }
 
 /** The merge-extensible union of registered producer kind names. */
@@ -63,7 +62,7 @@ export interface JobChunk {
  * stream all consume this one shape.
  */
 export interface JobView {
-  /** The registry-issued id (`<kind>-N`). */
+  /** The registry-issued id (`<kind>-<short-uuid>`). */
   readonly id: JobId
   /**
    * The producer kind the job was registered with: a Host-registered

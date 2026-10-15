@@ -17,7 +17,7 @@ import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import { DEFAULT_MAX_REQUEST_IMAGE_BYTES, resolveProfiles } from '../src/config.ts'
 import { memoryAuth } from './auth-double.ts'
 import { assemble } from './assemble.ts'
-import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
+import { anthropicTextEvents, closeMockServers, mockServer, textEvents } from './mock-server.ts'
 
 afterEach(async () => {
   vi.useRealTimers()
@@ -788,42 +788,56 @@ describe('provider profile lifecycle', () => {
     expect(server.requests[0]).not.toHaveProperty('reasoning_effort')
   })
 
-  it('sends the system prompt as system when the route declines the developer role', async () => {
+  it('reports efforts in ascending order and dispatches the level a caller selects', async () => {
     vi.stubEnv('PI_TEST_KEY', 'test-key')
-    const server = await mockServer([{ events: textEvents }])
+    const server = await mockServer([
+      { events: anthropicTextEvents },
+      { events: anthropicTextEvents },
+      { events: anthropicTextEvents },
+    ])
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmPiAi, {
       providers: {
-        'acme-gateway': {
+        'adaptive-gateway': {
           apiKeyEnv: 'PI_TEST_KEY',
-          api: 'openai-completions',
-          baseURL: `${server.url}/v1`,
-          compat: { supportsDeveloperRole: false },
-          models: [{
-            id: 'acme-think',
-            contextWindow: 65_536,
-            maxTokens: 4096,
-            reasoningEfforts: { off: null, high: 'high' },
-          }],
+          api: 'anthropic-messages',
+          baseURL: server.url,
+          reasoning: 'max',
+          compat: { forceAdaptiveThinking: true },
+          models: [
+            // Declaring no `off` level means the model cannot stop reasoning.
+            { id: 'always-thinks', reasoningEfforts: { low: 'low', high: 'high', max: 'max' } },
+            { id: 'may-think', reasoningEfforts: { off: null, low: 'low', high: 'high', max: 'max' } },
+          ],
         },
       },
     })
-
-    await assemble(ctx, {
-      provider: 'acme-gateway',
-      model: 'acme-think',
-      reasoningEffort: ReasoningEffortId('high'),
-      system: 'be helpful',
-      messages: [createUserMessage({
-        content: [{ type: 'text', text: 'hi' }],
-        source: { kind: 'user' },
-      })],
+    const request = (model: string, effort: string): Promise<unknown> => assemble(ctx, {
+      provider: 'adaptive-gateway',
+      model,
+      reasoningEffort: ReasoningEffortId(effort),
+      maxTokens: 64,
+      messages: [],
     })
 
-    expect(server.requests[0]).toMatchObject({
-      messages: [{ role: 'system', content: 'be helpful' }, { role: 'user', content: 'hi' }],
+    await expect(ctx.llm.resolveModelInfo('adaptive-gateway', 'always-thinks'))
+      .resolves.toMatchObject({ reasoning: { efforts: [{ id: 'low' }, { id: 'high' }, { id: 'max' }] } })
+    await expect(ctx.llm.resolveModelInfo('adaptive-gateway', 'may-think'))
+      .resolves.toMatchObject({ reasoning: { efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }, { id: 'max' }] } })
+
+    await request('always-thinks', 'max')
+    await request('always-thinks', 'low')
+    await request('may-think', 'off')
+
+    expect(server.requests[0]).toMatchObject({ thinking: { type: 'adaptive' }, output_config: { effort: 'max' } })
+    expect(server.requests[1]).toMatchObject({
+      max_tokens: 64,
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'low' },
     })
+    expect(server.requests[2]).toMatchObject({ max_tokens: 64, thinking: { type: 'disabled' } })
+    expect(server.requests[2]).not.toHaveProperty('output_config')
   })
 
   it('accepts absent credentials for pi-ai ambient authentication', async () => {
@@ -1088,11 +1102,58 @@ it.each([
   new LlmError('missing credential', 'MISSING_CREDENTIAL'),
   new LlmError('invalid credential', 'INVALID_CREDENTIAL'),
   new Error('credential storage failed'),
-])('retains its configured catalog independently of credential failures: $message', async (error) => {
+])('distinguishes missing credentials from catalog failures: $message', async (error) => {
   const adapter = new PiAiAdapter({
     profiles: () => resolveProfiles({ deepseek: { apiKeyEnv: 'PI_TEST_KEY' } }),
     resolveApiKey: () => Promise.reject(error),
     auth: memoryAuth(),
   })
-  expect(await adapter.listModels('deepseek')).not.toHaveLength(0)
+  if (error instanceof LlmError && error.code === 'MISSING_CREDENTIAL') {
+    expect(await adapter.listModels('deepseek')).toEqual([])
+  } else await expect(adapter.listModels('deepseek')).rejects.toBe(error)
 })
+
+it('resolves the exact pi-ai image budget for screenshot coordinates', () => {
+  const adapter = adapterOf({ deepseek: { apiKeyEnv: 'PI_TEST_KEY', requestImagePixelBudget: 10_000, requestImageMaxBytes: 50_000 } })
+  expect(adapter.imageRequestTarget('deepseek', 'deepseek-flash', { ...IMAGE_REF, width: 1000, height: 1000 }))
+    .toEqual({ width: 100, height: 100, maxBytes: 50_000 })
+  expect(() => adapter.imageRequestTarget('missing', 'deepseek-flash', IMAGE_REF)).toThrow('does not own provider')
+})
+
+  it('sends the system prompt as system when the route declines the developer role', async () => {
+    vi.stubEnv('PI_TEST_KEY', 'test-key')
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        'acme-gateway': {
+          apiKeyEnv: 'PI_TEST_KEY',
+          api: 'openai-completions',
+          baseURL: `${server.url}/v1`,
+          compat: { supportsDeveloperRole: false },
+          models: [{
+            id: 'acme-think',
+            contextWindow: 65_536,
+            maxTokens: 4096,
+            reasoningEfforts: { off: null, high: 'high' },
+          }],
+        },
+      },
+    })
+
+    await assemble(ctx, {
+      provider: 'acme-gateway',
+      model: 'acme-think',
+      reasoningEffort: ReasoningEffortId('high'),
+      system: 'be helpful',
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'hi' }],
+        source: { kind: 'user' },
+      })],
+    })
+
+    expect(server.requests[0]).toMatchObject({
+      messages: [{ role: 'system', content: 'be helpful' }, { role: 'user', content: 'hi' }],
+    })
+  })

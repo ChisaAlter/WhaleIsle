@@ -15,6 +15,8 @@ import { serialize } from './serialize.ts'
 import { parseSse } from './sse.ts'
 import { translate } from './translate.ts'
 import { providerError, providerErrorDetail } from './transport.ts'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import { resolveRequestImageTarget } from './request-pricing.ts'
 
 /** DeepSeek provider using Messages content and native thinking replay. */
 export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapter {
@@ -34,18 +36,30 @@ export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapt
   override async listModels(provider: string) {
     return this.dependencies.discoverModels?.(provider) ?? []
   }
-  override resolveModel(provider: string, model: string, _signal?: AbortSignal) {
-    return Promise.resolve(modelInfo(this.dependencies.options(), provider, model))
+  override async resolveModel(provider: string, model: string, signal?: AbortSignal) {
+    return modelInfo(await this.connection(signal), provider, model)
   }
   override imageRequestPricing(_provider: string, model: string) {
     return imagePricing(this.dependencies.options(), model, this.imageAccess)
   }
-  override prepareCall(provider: string, model: string, _signal?: AbortSignal): Promise<PreparedAdapterCall> {
-    const connection = this.dependencies.options()
-    return Promise.resolve({ model: modelInfo(connection, provider, model), stream: options => this.generate(options, connection) })
+  override imageRequestTarget(_provider: string, model: string, image: ImageAttachmentRef) {
+    const entry = this.dependencies.options().models.find(entry => entry.id === model)
+    if (entry === undefined) throw new LlmError(`DeepSeek model "${model}" has no declared image projection`, 'UNKNOWN_MODEL')
+    return resolveRequestImageTarget(entry, image)
+  }
+  override async prepareCall(provider: string, model: string, signal?: AbortSignal): Promise<PreparedAdapterCall> {
+    const connection = await this.connection(signal)
+    this.dependencies.admit?.(connection, model)
+    return { model: modelInfo(connection, provider, model), stream: options => this.generate(options, connection) }
   }
   stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    return this.generate(options, this.dependencies.options())
+    const connection = this.dependencies.options()
+    this.dependencies.admit?.(connection, options.model)
+    return this.generate(options, connection)
+  }
+
+  private connection(signal: AbortSignal | undefined): Promise<C> {
+    return this.dependencies.connect?.(signal) ?? Promise.resolve(this.dependencies.options())
   }
 
   private async * generate(options: GenerateOptions, connection: C): AsyncGenerator<StreamChunk> {
@@ -66,9 +80,11 @@ export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapt
       throw new LlmError('DeepSeek Messages transport failed', 'TRANSPORT', { cause: error })
     } finally {
       consumer.abort()
-      try { await iterator.return(undefined) } catch (_abortedRequestCleanup) {
-        // The request already settled; aborting its reader cannot replace that outcome.
-      }
+      // The abort above owns the socket teardown. A demand the deadline abandoned
+      // can stay pending forever, and this generator queues its own return behind
+      // that demand, so awaiting the drain would re-hang the settled outcome.
+      /* v8 ignore next -- the detached drain only rejects while unwinding an abandoned request. */
+      void iterator.return(undefined).catch(() => {})
     }
   }
 
@@ -109,6 +125,8 @@ export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapt
           ...options.purpose === undefined ? {} : { purpose: options.purpose },
         }, this.dependencies.prepareExtensions, (fields, error) => {
           this.dependencies.onExtensionsOmitted?.({ provider: options.provider, model: options.model, fields, error })
+        }, (error) => {
+          this.dependencies.onExtensionsUnaccepted?.({ provider: options.provider, model: options.model, error })
         })
         signal.throwIfAborted()
         const betas = [

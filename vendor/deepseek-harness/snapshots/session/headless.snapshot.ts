@@ -1,7 +1,7 @@
 /** Recorded-session replay through the shipped headless `dsh` profile. */
 
 import { startHttpMcpFixture } from '../../packages/mcp/mcp-client/tests/http-fixture.ts'
-import { cp, copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises'
+import { cp, copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, utimes, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
@@ -102,6 +102,17 @@ interface SessionLog {
   readonly header: JsonObject
 }
 
+/** Keep the cwd text priced by compaction independent of the platform's temporary-root length. */
+async function compactionWorkspaceOptions(): Promise<{ tempDirParent: string; tempDirPrefix: string }> {
+  const tempDirParent = await realpath(tmpdir())
+  const prefix = 'dsh-log-snap-'
+  // mkdtemp appends six characters; JSON quoting is part of the runtime-context text.
+  const unpaddedLength = JSON.stringify(join(tempDirParent, `${prefix}XXXXXX`)).length
+  const paddingLength = 192 - unpaddedLength
+  if (paddingLength < 0) throw new Error('compaction snapshot temporary root exceeds its fixed cwd text length')
+  return { tempDirParent, tempDirPrefix: prefix + '-'.repeat(paddingLength) }
+}
+
 function propertyName(node: ts.PropertyName): string | undefined {
   if (ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNumericLiteral(node)) return node.text
   return undefined
@@ -111,6 +122,8 @@ function bindsOsAssignedPort(argument: ts.Expression | undefined): boolean {
   if (argument === undefined) return false
   if (ts.isNumericLiteral(argument)) return Number(argument.text) === 0
   if (!ts.isObjectLiteralExpression(argument)) return false
+  if (argument.properties.some(property => !ts.isSpreadAssignment(property) && propertyName(property.name) === 'path')
+    && argument.properties.every(property => !ts.isSpreadAssignment(property) && propertyName(property.name) !== 'port')) return true
   let portIsZero: boolean | undefined
   for (const property of argument.properties) {
     if (ts.isSpreadAssignment(property)) {
@@ -181,9 +194,11 @@ function headerOf(log: string): JsonObject {
 
 function contextOf(logs: readonly string[]): NormalizeContext {
   const headers = logs.map(headerOf)
+  const cwd = typeof headers[0]?.cwd === 'string' ? headers[0].cwd : '\0missing-cwd\0'
   return {
     sessionIds: headers.flatMap(header => typeof header.id === 'string' ? [header.id] : []),
-    cwd: typeof headers[0]?.cwd === 'string' ? headers[0].cwd : '\0missing-cwd\0',
+    cwd,
+    cwdAliases: [cwd.split(sep).join('/')],
   }
 }
 
@@ -245,6 +260,9 @@ async function writeSessionFixtures(
   const replacements = mode === 'refresh'
     ? refreshFixtureReplacements(actualLogs.map(harvested), prior)
     : []
+  for (const replacement of [...replacements]) {
+    if (replacement.from === ctx.cwd) replacements.push({ from: ctx.cwd.split(sep).join('/'), to: replacement.to })
+  }
   const fresh = actualLogs.map((log, index) => {
     const stable = tokenizeSessionFixtureCwd(mode === 'refresh'
       ? stabilizeRefreshLog(log.content, prior[index] as string, replacements, ctx)
@@ -478,6 +496,9 @@ async function seedWorkspace(scenario: HeadlessScenario, cwd: string): Promise<v
   await prepare(cwd)
 }
 
+const WORKTREE_CHECKOUT_FILTER = "printf 'FILTERED CHECKOUT CONTENT\\n'"
+const WORKTREE_CHECKOUT_ATTRIBUTES = 'tracked.txt filter=dsh-snapshot-checkout\n'
+
 const workspaceSetups: Record<string, (cwd: string) => Promise<void>> = {
   async 'windows-acl-skill'(cwd) {
     const target = join(cwd, '.dsh', 'skills', 'diagnose-windows-sandbox-acl', 'SKILL.md')
@@ -486,8 +507,27 @@ const workspaceSetups: Record<string, (cwd: string) => Promise<void>> = {
   },
   async 'office-skills'(cwd) {
     await cp(join(repoRoot, 'packages/skill/skill-office/assets'), join(cwd, 'office-skills'), { recursive: true })
-    await symlink(process.execPath, join(cwd, 'office-node'))
-    await symlink(join(repoRoot, 'packages/skill/skill-office/node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js'), join(cwd, 'office-cli.js'))
+    // A copied macOS Node binary cannot find its adjacent libnode.dylib.
+    const nodePath = process.execPath.replaceAll("'", "'\\''")
+    await writeFile(join(cwd, 'office-node'), `#!/bin/sh\nexec '${nodePath}' "$@"\n`, { mode: 0o755 })
+    await copyFile(join(repoRoot, 'packages/skill/skill-office/node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js'), join(cwd, 'office-cli.js'))
+  },
+  async 'office-retired-ptc'(cwd) {
+    await workspaceSetups['office-skills']!(cwd)
+    // Keep the removed-tool error without process-specific stack locations.
+    await writeFile(join(cwd, 'office-ptc-node'), '#!/bin/sh\nexec "$(dirname "$0")/office-node" --stack-trace-limit=0 "$@"\n', { mode: 0o755 })
+  },
+  async 'git-worktree'(cwd) {
+    snapshotGit(cwd, ['init', '--initial-branch=main', '--object-format=sha1'])
+    snapshotGit(cwd, ['config', 'core.autocrlf', 'false'])
+    snapshotGit(cwd, ['add', 'tracked.txt'])
+    snapshotGit(cwd, ['commit', '-m', 'Snapshot seed'])
+    await writeFile(join(cwd, '.git', 'info', 'attributes'), WORKTREE_CHECKOUT_ATTRIBUTES)
+    snapshotGit(cwd, ['config', 'filter.dsh-snapshot-checkout.smudge', WORKTREE_CHECKOUT_FILTER])
+    await copyFile(join(cwd, '.git', 'config'), join(cwd, '.git', 'config.before-worktree'))
+    await writeFile(join(cwd, '.git', 'info', 'exclude'), '/.dsh/\n/.snapshot-patches/\n')
+    await writeFile(join(cwd, 'tracked.txt'), 'DIRTY SOURCE\n')
+    await writeFile(join(cwd, 'local.txt'), 'UNTRACKED SOURCE\n')
   },
   async 'editing-cordis-skill'(cwd) {
     const target = join(cwd, '.dsh', 'skills', 'editing-cordis-compositions', 'SKILL.md')
@@ -630,6 +670,42 @@ async function verifySessionQuerySpill(log: string, spillRoot: string, locatorRo
   expect(full).toContain('session_event_search')
 }
 
+/** Preserve successful native, program, direct-child, and workflow execution in one flow. */
+function verifyAdvancedToolchain(logs: readonly SessionLog[]): void {
+  expect(logs).toHaveLength(3)
+  const events = parseSessionLog(logs[0]!.content)
+  const calls = events.flatMap(event => event.type === 'tool/call' ? [event.data.name] : [])
+  expect(calls).toEqual(['cordis_inspect_list', 'run_code', 'subagent', 'workflow', 'cordis_inspect_list'])
+  const results = events.flatMap(event => event.type === 'tool/result' ? [event.data.message] : [])
+  expect(results).toHaveLength(5)
+  expect(results.every(result => result.isError === false)).toBe(true)
+  const dispatches = events.flatMap(event => event.type === 'tool/ptc-dispatch' ? [event.data] : [])
+  expect(dispatches).toEqual([expect.objectContaining({ name: 'cordis_inspect_list', isError: false })])
+  const textOf = (index: number) => results[index]!.content
+    .flatMap(block => block.type === 'text' ? [block.text] : []).join('')
+  expect(JSON.parse(textOf(1))).toEqual(['Service', 'Event', 'Config', 'Tool'])
+  expect(textOf(2)).toBe(`started subagent ${logs[1]!.header.id}`)
+  const completions = events.flatMap(event => event.type === 'user/message'
+    && event.data.source.kind === 'subagent-settled' ? [{
+      sender: event.data.source.senderSessionId,
+      text: event.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n'),
+    }] : [])
+  expect(completions).toHaveLength(1)
+  expect(completions[0]?.sender).toBe(logs[1]!.header.id)
+  expect(completions[0]?.text).toContain('DIRECT_CHILD_OK')
+  expect(textOf(3)).toContain('WORKFLOW_CHILD_OK')
+  expect(finalTextFromSession(logs[1]!.content)).toBe('DIRECT_CHILD_OK')
+  expect(finalTextFromSession(logs[2]!.content)).toBe('WORKFLOW_CHILD_OK')
+  const headers = events.flatMap(event => event.type === 'request/header' ? [event.data.header] : [])
+  expect(headers).toHaveLength(3)
+  expect(headers[1]!.tools?.map(tool => tool.name)).toEqual(['run_code'])
+  for (const header of [headers[0]!, headers[2]!]) {
+    const names = header.tools?.map(tool => tool.name) ?? []
+    expect(names).toEqual(expect.arrayContaining(['cordis_inspect_list', 'subagent', 'workflow']))
+    expect(names).not.toContain('run_code')
+  }
+}
+
 /** Require real resource results and literal instructions before recording or replay succeeds. */
 function verifyMcpResources(log: string, ptc: boolean): void {
   const events = parseSessionLog(log)
@@ -682,15 +758,84 @@ function verifyNoMcpServers(log: string, ptc: boolean): void {
 
 /** Require an admitted failed job and zero process allocations before updating its recorded oracle. */
 async function verifyBackgroundConfinementFailure(log: string, cwd: string): Promise<void> {
-  const results = parseSessionLog(log).flatMap(event => event.type === 'tool/result' ? [event.data.message] : [])
+  const events = parseSessionLog(log)
+  const results = events.flatMap(event => event.type === 'tool/result' ? [event.data.message] : [])
   const started = results.find(result => result.toolCallId === 'async-confinement-start')
   const inspected = results.find(result => result.toolCallId === 'async-confinement-result')
-  expect(started).toMatchObject({ isError: false, content: [{ type: 'text', text: 'started background job bash-1' }] })
+  const registered = events.find(event => event.type === 'job/registered')
+  if (registered?.type !== 'job/registered') throw new Error('missing registered job')
+  expect(registered.data.jobId).toMatch(/^bash-[0-9a-f]{16}$/)
+  expect(started).toMatchObject({
+    isError: false, content: [{ type: 'text', text: `started background job ${registered.data.jobId}` }],
+  })
   expect(inspected?.isError).toBe(false)
   const text = inspected?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
   expect(text).toContain('[status: failed,')
   expect(text).toContain('fixture asynchronous confinement refused')
   expect(JSON.parse(await readFile(join(cwd, 'confinement-audit.json'), 'utf8'))).toEqual({ confineCalls: 1, spawnCalls: 0 })
+}
+
+/** Directory changes remain user context while relative tools follow the committed directory. */
+function verifyWorkingDirectory(log: string, cwd: string): void {
+  const events = records(log)
+  const directories = events.filter(event => event.type === 'working-directory/change')
+    .map(event => (event.data as JsonObject).cwd)
+  expect(directories).toEqual([join(cwd, 'selected'), join(cwd, 'second'), cwd])
+  expect(events.filter(event => event.type === 'system/message')).toHaveLength(1)
+  const users = events.filter(event => event.type === 'user/message').map(event => event.data as JsonObject)
+  const contexts = users.flatMap(message => {
+    const source = message.source as JsonObject
+    if (source.kind !== 'runtime-context') return []
+    return (source.sections as JsonObject[]).filter(section => section.name === 'working-directory:current')
+      .map(section => section.text)
+  })
+  expect(contexts).toEqual([cwd, join(cwd, 'selected'), join(cwd, 'second'), cwd]
+    .map(directory => `Current working directory: ${JSON.stringify(directory)}.`))
+  const notices = users.filter(message => (message.source as JsonObject).kind === 'working-directory')
+    .map(message => (message.content as JsonObject[]).map(block => block.text).join(''))
+  expect(notices).toEqual([
+    `The working directory changed from ${JSON.stringify(cwd)} to ${JSON.stringify(join(cwd, 'selected'))}.`,
+    `The working directory changed from ${JSON.stringify(join(cwd, 'selected'))} to ${JSON.stringify(join(cwd, 'second'))}.`,
+    `The working directory ${JSON.stringify(join(cwd, 'second'))} is unavailable. The working directory is now ${JSON.stringify(cwd)}.`,
+  ])
+}
+
+/** Run fixture Git with deterministic commit identity and no user hooks or configuration. */
+function snapshotGit(cwd: string, args: string[]): string {
+  const result = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'core.autocrlf=false', '-c', 'commit.gpgSign=false', ...args], {
+    cwd,
+    encoding: 'utf8',
+    env: {
+      ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_'))),
+      GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+      GIT_AUTHOR_NAME: 'DSH Snapshot', GIT_COMMITTER_NAME: 'DSH Snapshot',
+      GIT_AUTHOR_EMAIL: 'snapshot@example.invalid', GIT_COMMITTER_EMAIL: 'snapshot@example.invalid',
+      GIT_AUTHOR_DATE: '2000-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2000-01-01T00:00:00Z',
+    },
+  })
+  if (result.status !== 0) throw new Error(`snapshot Git failed: ${result.stderr}`)
+  return result.stdout.trim()
+}
+
+/** Verify Git-owned state independently of the Session and exclude only its volatile administration files from the file oracle. */
+async function verifyWorktree(log: string, cwd: string): Promise<void> {
+  const checkout = join(cwd, '.agents', 'worktrees', 'isolated')
+  expect(await readFile(join(cwd, '.git', 'config'))).toEqual(await readFile(join(cwd, '.git', 'config.before-worktree')))
+  expect(await readFile(join(cwd, '.git', 'info', 'attributes'), 'utf8')).toBe(WORKTREE_CHECKOUT_ATTRIBUTES)
+  expect(snapshotGit(cwd, ['config', 'filter.dsh-snapshot-checkout.smudge'])).toBe(WORKTREE_CHECKOUT_FILTER)
+  expect(await readFile(join(checkout, 'tracked.txt'), 'utf8')).toBe('COMMITTED CONTENT\n')
+  expect(await readFile(join(checkout, 'result.txt'), 'utf8')).toBe('WORKTREE RESULT\n')
+  expect(existsSync(join(checkout, 'local.txt'))).toBe(false)
+  expect(await readFile(join(cwd, '.agents', 'worktrees', '.gitignore'), 'utf8')).toBe('*\n')
+  expect(snapshotGit(cwd, ['branch', '--show-current'])).toBe('main')
+  expect(snapshotGit(checkout, ['branch', '--show-current'])).toBe('isolated')
+  expect(snapshotGit(checkout, ['rev-parse', 'HEAD'])).toBe(snapshotGit(cwd, ['rev-parse', 'HEAD']))
+  expect(snapshotGit(cwd, ['worktree', 'list', '--porcelain'])).toContain(`worktree ${checkout}`)
+  expect(snapshotGit(cwd, ['check-ignore', '.agents/worktrees/isolated/result.txt'])).toBe('.agents/worktrees/isolated/result.txt')
+  const events = records(log)
+  expect(events.filter(event => event.type === 'working-directory/change').map(event => (event.data as JsonObject).cwd))
+    .toEqual([checkout, cwd])
+  expect(events.filter(event => event.type === 'system/message')).toHaveLength(1)
 }
 
 /** Exercise provider-cwd adoption through the shipped launcher without normalizing away the observation. */
@@ -823,12 +968,16 @@ describe('headless recorded-session snapshots', () => {
       "server.listen(0, '127.0.0.1')",
       "server.listen({ port: 0, host: '127.0.0.1' })",
       'server.listen({ ...options, port: 0 })',
+      'server.listen({ path: socketPath })',
     ].join('\n'))).toEqual([])
     expect(listenerPortViolations('fixed.mjs', 'server.listen(43118)')).toEqual([
       'fixed.mjs:1: listener port 43118 must use listen(0, ...) or listen({ port: 0, ... })',
     ])
     expect(listenerPortViolations('dynamic.mjs', 'server.listen({ port, ...options })')).toEqual([
       'dynamic.mjs:1: listener port { port, ...options } must use listen(0, ...) or listen({ port: 0, ... })',
+    ])
+    expect(listenerPortViolations('mixed.mjs', 'server.listen({ path, port: 43118 })')).toEqual([
+      'mixed.mjs:1: listener port { path, port: 43118 } must use listen(0, ...) or listen({ port: 0, ... })',
     ])
   })
 
@@ -1096,6 +1245,8 @@ describe('headless recorded-session snapshots', () => {
       const task = taskFromSession(primaryFixture) ?? scenario.manifest.input?.task
       if (task === undefined) throw new Error(`${scenario.name}: no accepted or exceptional task input`)
       const pin = pinOf(scenario)
+      const ignoredWorkspaceEntries = scenario.manifest.workspace?.setup === 'git-worktree'
+        ? [...RUNTIME_WORKSPACE_ENTRIES.filter(entry => entry !== '.agents'), '.git'] : RUNTIME_WORKSPACE_ENTRIES
       let model: { provider: string; model: string }
       try {
         model = modelFromSession(primaryFixture)
@@ -1111,11 +1262,10 @@ describe('headless recorded-session snapshots', () => {
         join(baseComposition.dir, 'cordis.yml'),
         ...composition === baseComposition && !replaying ? [] : [compositionPatch],
         join(baseComposition.dir, 'model.cordis.yml'),
+        ...existsSync(join(scenario.dir, 'runtime.cordis.yml')) ? [join(scenario.dir, 'runtime.cordis.yml')] : [],
       ]
       const patchRoot = '.snapshot-patches'
-      const patches = patchSources.map((source, index) => source.endsWith('.snapshot.yml')
-        ? join(patchRoot, `${String(index)}-${basename(source)}`)
-        : source)
+      const patches = patchSources.map((source, index) => join(patchRoot, `${String(index)}-${basename(source)}`))
 
       let actualLogs: SessionLog[] = []
       let initialWorkspace: WorkspaceSnapshotEntry[] | undefined
@@ -1128,6 +1278,7 @@ describe('headless recorded-session snapshots', () => {
         result = await runLoaderSmoke({
           label: `${scenario.name} headless snapshot`,
           tempDirPrefix: 'dsh-log-snap-',
+          ...(scenario.name === 'compaction-recovery' ? await compactionWorkspaceOptions() : {}),
           ...(scenario.manifest.workspace?.parent === 'outside-temp' ? { tempDirParent: outsideTempWorkspaceParent() } : {}),
           binScript: dshBin,
           sourceImport: 'tsx/esm',
@@ -1170,9 +1321,7 @@ describe('headless recorded-session snapshots', () => {
             if (scenario.manifest.workspace?.parent === 'outside-temp') assertWorkspaceOutsideTemp(cwd)
             await mkdir(join(cwd, patchRoot), { recursive: true })
             patchSources.forEach((source, index) => {
-              if (source.endsWith('.snapshot.yml')) {
-                materializeProfilePatch(source, cwd, 'headless', join(cwd, patchRoot), index)
-              }
+              materializeProfilePatch(source, cwd, 'headless', join(cwd, patchRoot), index)
             })
             if (mcpDemo !== undefined) {
               const profileDir = join(cwd, '.dsh/profiles/headless')
@@ -1181,7 +1330,7 @@ describe('headless recorded-session snapshots', () => {
             }
             await seedWorkspace(scenario, cwd)
             initialWorkspace = await captureWorkspaceSnapshot(cwd, {
-              ignoredRootEntries: RUNTIME_WORKSPACE_ENTRIES,
+              ignoredRootEntries: ignoredWorkspaceEntries,
             })
           },
           inspect: async (cwd) => {
@@ -1198,6 +1347,14 @@ describe('headless recorded-session snapshots', () => {
               expect(saved).toContain('id: demo')
               expect(saved).toContain('disabled: false')
             }
+            if (scenario.name.startsWith('office-progressive-')) {
+              const log = actualLogs[0]!.content
+              const results = parseSessionLog(log).flatMap(event => event.type === 'tool/result' ? [event.data.message] : [])
+              expect(results).toHaveLength(4)
+              expect(results.every(result => result.isError === false)).toBe(true)
+              expect(log).toContain('# Office task routing')
+            }
+            if (scenario.name === 'advanced-toolchain') verifyAdvancedToolchain(actualLogs)
             if (scenario.name === 'session-query-spill') {
               await verifySessionQuerySpill(actualLogs[0]!.content, spillRoot, locatorRoot)
             }
@@ -1215,9 +1372,19 @@ describe('headless recorded-session snapshots', () => {
             if (scenario.name === 'background-confinement-failure') {
               await verifyBackgroundConfinementFailure(actualLogs[0]!.content, cwd)
             }
+            if (scenario.name === 'working-directory') {
+              verifyWorkingDirectory(actualLogs[0]!.content, await realpath(cwd))
+            }
+            if (scenario.name === 'worktree') {
+              await verifyWorktree(actualLogs[0]!.content, await realpath(cwd))
+            }
             finalWorkspace = await captureWorkspaceSnapshot(cwd, {
-              ignoredRootEntries: RUNTIME_WORKSPACE_ENTRIES,
+              ignoredRootEntries: ignoredWorkspaceEntries,
             })
+            if (scenario.name === 'worktree') {
+              // The linked checkout's .git pointer contains the temporary source path; Git assertions verify it separately.
+              finalWorkspace = finalWorkspace.filter(entry => entry.path !== '.agents/worktrees/isolated/.git')
+            }
           },
         })
       } finally {
@@ -1255,7 +1422,10 @@ describe('headless recorded-session snapshots', () => {
         expect(writerFiles, 'native writer oracle inventory').toEqual(scenario.manifest.sessionFormat === undefined
           ? [] : fixtures.map((_, index) => writerSnapshotName(index)).sort())
       }
-      let expected = fixtures
+      let expected = retainedToolInput === undefined ? fixtures : await fixtureSessions(scenario)
+      if (retainedToolInput !== undefined) {
+        expect(await readFile(join(scenario.dir, retainedToolInput), 'utf8'), 'retained replay input bytes').toBe(primaryFixture)
+      }
       if (scenario.manifest.sessionFormat !== undefined) {
         if (mode === 'refresh') await writeSessionFixtures(scenario, actualLogs, fixtures, actualContext)
         expected = await Promise.all(fixtures.map((_, index) => readFile(join(scenario.dir, writerSnapshotName(index)), 'utf8')))

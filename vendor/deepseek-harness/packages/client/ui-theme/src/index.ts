@@ -7,9 +7,9 @@ import z from '@deepseek-ai/schemastery'
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { bootThemeInjections } from './boot-theme.ts'
+import { bootThemeInjections, buildThemeBootPayload } from './boot-theme.ts'
 import {
-  ThemeSettingsFields,
+  ThemeSettingsFields, ThemeSettingsSchema,
 } from './theme-settings.ts'
 
 export {
@@ -27,6 +27,7 @@ export type Config = { [K in keyof ThemeSettings]: Volatile<ThemeSettings[K]> }
 export const Config = z.object({
   preference: ThemeSettingsFields.preference.volatile(),
   fontSize: ThemeSettingsFields.fontSize.volatile(),
+  terminalFontSize: ThemeSettingsFields.terminalFontSize.volatile(),
   activeLightThemeId: ThemeSettingsFields.activeLightThemeId.volatile(),
   activeDarkThemeId: ThemeSettingsFields.activeDarkThemeId.volatile(),
   customThemes: ThemeSettingsFields.customThemes.volatile(),
@@ -69,6 +70,8 @@ export const Config = z.object({
 export function apply(ctx: Context, config: Config): void {
   ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
   ctx.on('webserver/index-inject', (table) => {
-    table.push(...bootThemeInjections(config.preference.get(), config.fontSize.get()))
+    const values = Object.fromEntries(Object.entries(config).map(([field, value]) => [field, value.get()]))
+    const section: ThemeSettings = z.resolve(values, ThemeSettingsSchema, {})[0]
+    table.push(...bootThemeInjections(buildThemeBootPayload(section)))
   }, { prepend: true })
 }

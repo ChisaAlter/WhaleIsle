@@ -58,7 +58,8 @@ interface Replacement {
   value: string
 }
 
-type LinkNode = Extract<Nodes, { type: 'link' | 'definition' }>
+/** Markdown nodes whose destinations translation links resolve. */
+export type LinkNode = Extract<Nodes, { type: 'link' | 'definition' }>
 
 /** Offset of the one top-level switcher link immediately following the H1. */
 export function languageSwitcherLinkOffset(
@@ -229,8 +230,8 @@ function visitDocumentLinkNodes(
   markdown: string,
   skipTargets: readonly string[],
   visitor: (node: LinkNode) => void,
+  tree: Nodes = parseMarkdown(markdown),
 ): void {
-  const tree = parseMarkdown(markdown)
   const switcherOffset = languageSwitcherLinkOffset(tree, markdown, skipTargets)
   const referencedIdentifiers = new Set<string>()
   const visitedDefinitions = new Set<string>()
@@ -255,20 +256,29 @@ function visitResolvedDocumentLinks(
   context: TranslationLinkContext,
   skipTargets: readonly string[],
   visitor: (node: LinkNode, destination: MarkdownDestination, resolved: ResolvedTranslationLink) => void,
+  tree?: Nodes,
 ): void {
   visitDocumentLinkNodes(markdown, skipTargets, (node) => {
     if (isExternalOrAbsoluteMarkdownUrl(node.url)) return
     const destination = markdownDestination(markdown, node)
     const resolved = resolveTranslationLink(node.url, context, destination.url)
     if (resolved !== undefined) visitor(node, destination, resolved)
-  })
+  }, tree)
 }
 
-/** Return one violation per wrong-locale link or link definition. */
+/**
+ * Return one violation per wrong-locale link or link definition.
+ * @param markdown - Exact authored Markdown text used for link offsets.
+ * @param context - Repository and locale used to resolve relative links.
+ * @param skipTargets - Accepted language-switcher destinations.
+ * @param tree - Optional GFM parse of this exact Markdown text; never a normalized or edited document.
+ * @returns Wrong-locale links in document order.
+ */
 export function translationLinkLocaleViolations(
   markdown: string,
   context: TranslationLinkContext,
   skipTargets: readonly string[] = [],
+  tree?: Nodes,
 ): TranslationLinkLocaleViolation[] {
   const violations: TranslationLinkLocaleViolation[] = []
   visitResolvedDocumentLinks(markdown, context, skipTargets, (node, destination, resolved) => {
@@ -279,7 +289,7 @@ export function translationLinkLocaleViolations(
       url: destination.url,
       expectedUrl: resolved.expectedUrl,
     })
-  })
+  }, tree)
   return violations
 }
 
@@ -297,20 +307,66 @@ export function rewriteTranslationLinkLocales(
   return { content: applyReplacements(markdown, replacements), rewritten: replacements.length }
 }
 
-/** Normalize only paired-document locale paths while retaining every other byte and URL suffix. */
+/** One authored destination that link normalization replaced. */
+export interface TranslationLinkDestinationEdit {
+  /** Inline link or referenced definition whose destination was replaced. */
+  node: LinkNode
+  /** Absolute source offset where the authored destination text starts. */
+  start: number
+  /** Absolute source offset where the authored destination text ends. */
+  end: number
+  /** Semantic target text that replaces `markdown.slice(start, end)`. */
+  value: string
+}
+
+/** Normalized Markdown text and the destination edits that produced it. */
+export interface TranslationLinkNormalization {
+  /** Markdown with paired-document destinations replaced by semantic targets. */
+  content: string
+  /** Applied edits in ascending source order; empty when `content` equals the input. */
+  edits: TranslationLinkDestinationEdit[]
+}
+
+/**
+ * Normalize only paired-document locale paths and report each replaced destination.
+ * @param markdown - Exact authored Markdown text used for link offsets.
+ * @param context - Repository and locale used to resolve relative links.
+ * @param skipTargets - Accepted language-switcher destinations.
+ * @param tree - Optional GFM parse of this exact Markdown text; never a normalized or edited document.
+ * @returns The normalized text plus the authored destination ranges it replaced.
+ */
+export function normalizeTranslationMarkdownLinkEdits(
+  markdown: string,
+  context: TranslationLinkContext,
+  skipTargets: readonly string[] = [],
+  tree?: Nodes,
+): TranslationLinkNormalization {
+  const edits: TranslationLinkDestinationEdit[] = []
+  visitResolvedDocumentLinks(markdown, context, skipTargets, (node, destination, resolved) => {
+    edits.push({
+      node,
+      ...replacementFor(destination, `dsh-translation-target:${resolved.pair.source}${resolved.suffix}`),
+    })
+  }, tree)
+  const content = applyReplacements(markdown, [...edits])
+  return { content, edits: edits.sort((left, right) => left.start - right.start) }
+}
+
+/**
+ * Normalize only paired-document locale paths while retaining every other byte and URL suffix.
+ * @param markdown - Exact authored Markdown text used for link offsets.
+ * @param context - Repository and locale used to resolve relative links.
+ * @param skipTargets - Accepted language-switcher destinations.
+ * @param tree - Optional GFM parse of this exact Markdown text; never a normalized or edited document.
+ * @returns Markdown with paired-document destinations replaced by semantic targets.
+ */
 export function normalizeTranslationMarkdownLinks(
   markdown: string,
   context: TranslationLinkContext,
   skipTargets: readonly string[] = [],
+  tree?: Nodes,
 ): string {
-  const replacements: Replacement[] = []
-  visitResolvedDocumentLinks(markdown, context, skipTargets, (_node, destination, resolved) => {
-    replacements.push(replacementFor(
-      destination,
-      `dsh-translation-target:${resolved.pair.source}${resolved.suffix}`,
-    ))
-  })
-  return applyReplacements(markdown, replacements)
+  return normalizeTranslationMarkdownLinkEdits(markdown, context, skipTargets, tree).content
 }
 
 /** Semantic target of one authored inline link or referenced definition. */

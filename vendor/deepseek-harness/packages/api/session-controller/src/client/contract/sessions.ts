@@ -79,26 +79,34 @@ export interface ISessions {
    */
   readonly searchResultLimit: number
   /**
-   * Create or adopt a Session on the Host.
-   * @param opts - target workspace, directory, and optional preallocated identity.
-   * @returns the catalogued identity; retain it before borrowing its binding.
+   * Create a Session for a new conversation on the Host. The Host reuses the
+   * named blank Session while it is reusable and otherwise creates another; the
+   * Session runs the named preset, or the Host default when none is named.
+   * @param opts - target workspace or directory, an optional blank Session to reuse, and an optional Agent preset.
+   * @returns the catalogued identity the Host created or reused; retain it before borrowing its binding.
    */
   create(opts?: {
     workspaceId?: WorkspaceId
     cwd?: string
     sessionId?: SessionId
+    agentPreset?: string
   }): Promise<SessionId>
-  /** Ask the Host whether a blank Session can be reused without opening it. */
+  /**
+   * Ask the Host whether a blank Session can be reused without opening it.
+   * @param sessionId - blank Session identity to inspect.
+   * @param signal - optional cancellation for the Host request.
+   * @returns whether the Host currently permits reuse; this check does not reserve the Session.
+   */
   canReuseBlank(sessionId: SessionId, signal?: AbortSignal): Promise<boolean>
   /**
    * Resolve an already discovered direct-parent address without opening it.
    * @param id - possible addressed child id.
-   * @returns a retained or loaded-catalog address, without retaining a new selection or scope.
+   * @returns a retained, catalog-derived, or unknown-mode listed address, without retaining a new selection or scope.
    */
   subagentAddress(id: SessionId): SubagentAddress | undefined
 
   /**
-   * Load all Session projections once per connection; retry an unsuccessful initial read.
+   * Read projections without starting migration; retry failed or migration-deferred reads.
    * @param sessionId - Session to inspect without opening its conversation.
    * @returns completion of the current or newly started refresh.
    */
@@ -137,6 +145,8 @@ export interface ISessions {
     beforeSeq?: number
     increaseTitle?: boolean
     onCreated?: (childId: SessionId) => void
+    /** False refuses source migration; omission preserves the Host default. */
+    allowMigration?: boolean
   }): Promise<SessionId>
   /**
    * Destroy one archived Session log. On resolution the deleted ids are gone

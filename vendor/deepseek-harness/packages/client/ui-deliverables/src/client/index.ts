@@ -105,9 +105,9 @@ export function apply(ctx: ClientContext): void {
       const paths = selectProducedFiles(owner)
       const presented = presentedForClosing(owner)
       if (paths === null && presented.length === 0) return undefined
-      return producedFileMentions([...new Set([...paths ?? [], ...presented.map(file => file.path)])],
-        path => { owner.openFile(path, { presentation: 'mini' }) },
-        path => t('presented.previewButton', { name: path }))
+      return producedFileMentions([...new Set([...paths ?? [], ...presented.map(file => file.path)])], path => { owner.openFile(path, { presentation: 'mini' }) },
+        path => t('presented.previewButton', { name: path }),
+        owner.turn.data.get('deliverables')?.produced.filter(operation => operation.seq <= owner.seq))
     },
   }
   ctx.provide('chatFileMentions', mentions)

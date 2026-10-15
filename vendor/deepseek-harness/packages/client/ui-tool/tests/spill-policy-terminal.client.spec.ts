@@ -40,7 +40,8 @@ async function executeShell(text: string, nested: boolean, name = 'bash', maxInl
   const ctx = new Context()
   try {
     await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime, { mode: 'both' })
+    await ctx.plugin(ToolRuntime, { mode: nested ? 'ptc' : 'native' })
+    ctx.provide('workingDirectory', { ensure: async () => process.cwd() })
     await ctx.plugin(MemorySpillStore)
     await ctx.plugin(SpillPolicy, { maxInlineTokens })
     if (nested) {
@@ -71,8 +72,8 @@ async function executeShell(text: string, nested: boolean, name = 'bash', maxInl
       async execute() { return [{ type: 'text', text }] },
     })))
     const session = Session.create(SessionId('spill-terminal'))
-    // The tool pipeline reads only the owner session; no agent loop runs here.
-    const agent = { session } as Agent
+    // Nested PTC registers retained-environment cleanup on the owning context.
+    const agent = { ctx, session } as Agent
     const callId = ToolCallId('shell-call')
     const result = await ctx.tools.execute({
       callId,

@@ -146,16 +146,28 @@ describe.skipIf(mode === 'record')('web e2e: workspace shortcuts', () => {
     await workspaceRow.getByText(workspaceLabel, { exact: true }).hover()
     await details.waitFor()
     await workspaceRow.getByRole('button', { name: `New session in ${workspaceLabel}`, exact: true }).hover()
-    await page.getByRole('tooltip').filter({ hasText: 'New Session' }).waitFor()
-    await expect.poll(() => details.count()).toBe(0)
+    const newSessionTooltip = page.getByRole('tooltip').filter({ hasText: 'New Session' })
+    await newSessionTooltip.waitFor()
+    expect(await details.isVisible()).toBe(true)
+    expect(await newSessionTooltip.evaluate(element => Number(getComputedStyle(element).zIndex)))
+      .toBeGreaterThan(await details.evaluate(element => Number(getComputedStyle(element).zIndex)))
     await workspaceRow.getByText(workspaceLabel, { exact: true }).hover()
     await details.waitFor()
     await page.mouse.move(700, 100)
 
+    const previousSessionIds = [...workspace.sessionIds]
     await bind('New Session')
+    const newSessionCreated = page.waitForResponse('**/api/session/create')
     await page.keyboard.press('Meta+Shift+Comma')
+    const newSessionResponse = await newSessionCreated
+    const newSessionBody = await newSessionResponse.json() as { result: { ok: boolean; value: { sessionId: string } } }
+    expect(newSessionBody.result.ok).toBe(true)
+    const newSessionId = newSessionBody.result.value.sessionId
+    expect(previousSessionIds).not.toContain(newSessionId)
+    await page.locator(`[data-conversation-session="${newSessionId}"]`).waitFor()
     await expect.poll(() => page.getByRole('treeitem', { selected: true }).textContent()).toContain('New Session')
-    expect(workspace.sessionIds.length).toBe(1)
+    await expect.poll(() => workspace.sessionIds).toHaveLength(previousSessionIds.length + 1)
+    expect(workspace.sessionIds).toEqual(expect.arrayContaining([...previousSessionIds, newSessionId]))
 
     await bind('Open locally')
     await page.keyboard.press('Meta+Shift+Comma')

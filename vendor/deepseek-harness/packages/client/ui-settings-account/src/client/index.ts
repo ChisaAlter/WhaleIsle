@@ -1,4 +1,4 @@
-/** Desktop account settings registration and reconnecting Remote subscription. */
+/** Account settings registration and reconnecting Remote subscription. */
 import type {} from '@deepseek-ai/dsh-client-product-analytics/client'
 import type { TranscriptViewMode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { Context } from '@deepseek-ai/cordis'
@@ -16,6 +16,7 @@ import type { PlatformBridge } from './PlatformOverlay.tsx'
 import { ContactConfig, CONTACT_CONFIG_GLOBAL } from '../contact-config.ts'
 import { contactUrl } from './contact-url.ts'
 import { authorizeUrlWithTheme } from './authorize-url.ts'
+import { BrowserLogin } from './browser-login.ts'
 import { AccountOnboarding } from './AccountOnboarding.tsx'
 import { AccountPlatformHost, type AccountPlatformHostInjected } from './AccountPlatformHost.tsx'
 import { AccountMenu } from './AccountMenu.tsx'
@@ -30,6 +31,7 @@ import { DesktopOnboardingController } from './onboarding-state.ts'
 import { DesktopOnboardingEntry, type DesktopOnboardingInjected } from './DesktopOnboardingEntry.tsx'
 import { readOnboardingApiKeyPresence } from './onboarding-credentials.ts'
 import { refreshAfterReturn } from './account-refresh.ts'
+import { AccountAvatarLoader } from './account-avatar.ts'
 export type { AccountSectionInjected, AccountSectionProps } from './AccountSection.tsx'
 export type { AccountMenuProps } from './AccountMenu.tsx'
 export type { AccountSnapshot } from './AccountSection.tsx'
@@ -41,26 +43,26 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Services required by account settings. */
 export const inject = ['slots', 'locale', 'remote', 'remote.account', 'remote.session', 'theme', 'configForms']
-function isDesktopAccountHost(): boolean {
-  if ('dshDesktop' in globalThis) return true
-  const shell = (globalThis as typeof globalThis & {
-    shell?: { getConfig?: unknown; saveConfig?: unknown }
-  }).shell
-  return typeof shell?.getConfig === 'function' && typeof shell.saveConfig === 'function'
-}
-/** Register account UI only in the Desktop renderer. @param ctx - client plugin context. */
+/** Register account UI in Desktop and plain Web clients. @param ctx - client plugin context. */
 export function apply(ctx: Context): void {
-  if (!isDesktopAccountHost()) return
-  const shell = (globalThis as typeof globalThis & {
-    shell?: { openExternal?: (url: string) => Promise<unknown> }
-  }).shell
+  const shell = (globalThis as typeof globalThis & { shell?: { openExternal?: (url: string) => Promise<unknown>; getConfig?: unknown; saveConfig?: unknown } }).shell
+  const desktop = 'dshDesktop' in globalThis || (typeof shell?.getConfig === 'function' && typeof shell.saveConfig === 'function')
+  const desktopBridge = (globalThis as typeof globalThis & { dshDesktop?: { onboarding?: boolean } }).dshDesktop
+  const automaticOnboarding = desktopBridge !== undefined && desktopBridge.onboarding !== false
   ctx.effect(() => ctx.locale.register('settings.account', { en, zh }), 'account: dictionaries')
   const t = ctx.locale.bind('settings.account')
   const page = globalThis as Partial<Record<typeof CONTACT_CONFIG_GLOBAL, unknown>>
   const config = ContactConfig(page[CONTACT_CONFIG_GLOBAL] ?? {})
-  let snapshot: AccountSnapshot = { view: undefined, details: undefined, failed: false, loginVisible: false }
+  let snapshot: AccountSnapshot = {
+    view: undefined, details: undefined, avatar: undefined, failed: false, loginVisible: false, desktopOnboardingVisible: automaticOnboarding,
+  }
+  // Desktop main opens the authorization page natively; a plain browser opens it in a tab it owns.
+  const browser = new BrowserLogin(url => authorizeUrlWithTheme(url, ctx.theme.getTheme().active.colorScheme))
+  ctx.effect(() => () => { browser.dispose() }, 'account: pending browser window')
   const listeners = new Set<() => void>()
   const publish = (value: AccountSnapshot) => { snapshot = value; for (const listener of listeners) listener() }
+  const avatar = new AccountAvatarLoader((value) => { publish({ ...snapshot, avatar: value }) })
+  ctx.effect(() => () => { avatar.dispose() }, 'account: profile picture lifetime')
   /** @returns the client identity for one account call, read at call time so it carries the language and zone in effect then. */
   const client = () => accountClientMetadata(ctx.locale.getSnapshot().active, process.env.DSH_CLIENT_VERSION)
   // The browser half of the notice lifecycle: reads when the account becomes
@@ -101,12 +103,14 @@ export function apply(ctx: Context): void {
       let value: AccountDetails[K] | null
       try { value = await query() }
       catch { value = { status: 'failed' } }
+      if (value?.status === 'failed') console.error('[deepseek-account] account read failed', { field })
       if (generation === revision && value !== null) publish({ ...snapshot, details: { ...snapshot.details, [field]: value } })
     }
     const request = Promise.all([
       read('profile', async () => {
         const result = await ctx.remote.account.getProfile(client())
         if (!result.ok) throw new Error('account profile failed')
+        if (generation === revision && result.value?.status === 'ready') avatar.setUrl(result.value.value.avatarUrl)
         return result.value
       }),
       read('balance', async () => {
@@ -130,20 +134,22 @@ export function apply(ctx: Context): void {
     for await (const frame of stream) {
       revision++
       refreshing = undefined
+      avatar.reset()
       const initialize = frame.value.status === 'credential-stored' && frame.value.attempt?.phase === 'succeeded'
         && snapshot.view?.attempt?.phase !== 'succeeded'
       const { notice, ...previous } = snapshot
-      publish({ ...previous, view: frame.value, details: undefined, failed: false,
+      publish({ ...previous, view: frame.value, details: undefined, avatar: undefined, failed: false,
         ...(frame.value.status === 'credential-stored' && notice ? { notice } : {}) })
+      browser.update(frame.value)
       frame.accept()
       if (frame.value.status === 'credential-stored') notices.begin()
       else notices.end()
       if (initialize) void (async () => {
         try {
           const initialized = await ctx.remote.session.initializeDefaultModel()
-          if (!initialized.ok) console.info('[deepseek-account] default model initialization failed', { reason: 'refused' })
+          if (!initialized.ok) console.error('[deepseek-account] default model initialization failed', { reason: 'refused' })
         } catch (_error) {
-          console.info('[deepseek-account] default model initialization failed', { reason: 'disconnected' })
+          console.error('[deepseek-account] default model initialization failed', { reason: 'disconnected' })
         }
       })()
       void refresh()
@@ -168,7 +174,10 @@ export function apply(ctx: Context): void {
   // One account refresh: the recharge/bonus wallet and the unnotified-bonus read,
   // whichever surface asks — a Settings entry, or returning from top-up. Both
   // reads are independent, and a concurrent refresh shares the in-flight request.
-  const refreshAccount = async (): Promise<void> => { await Promise.all([refresh(), notices.refresh()]) }
+  const refreshAccount = async (): Promise<void> => {
+    avatar.retry()
+    await Promise.all([refresh(), notices.refresh()])
+  }
   /**
    * Narrow the shared channel to one surface's post-return read: only a viewer
    * returning from top-up re-reads, so a superseded page or a plugin teardown
@@ -182,6 +191,7 @@ export function apply(ctx: Context): void {
       if (reason === 'returned' && page === 'top-up') void refreshAfterReturn(refreshing, reRead)
     })
   const operations: AccountSectionInjected = {
+    avatarFailed: (value) => { avatar.failed(value) },
     subscribeSessionExpired: listener => ctx.remote.$on('deepseek-account/session-expired', listener),
     subscribeModelSignInRequired: listener => ctx.remote.$on('deepseek-account/model-sign-in-required', listener),
     ...nativePlatform === undefined ? {} : { openPlatformPage: platformPageOpener(refreshAccount) },
@@ -202,7 +212,7 @@ export function apply(ctx: Context): void {
         dshDesktop?: { deviceInfo?: () => Promise<string> }
       }).dshDesktop?.deviceInfo
       if (readDeviceInfo === undefined) {
-        // A Desktop bridge without the optional reader reports the renderer user agent.
+        // A plain browser, or a Desktop bridge without the optional reader, reports the renderer user agent.
         openForm(navigator.userAgent)
         return
       }
@@ -258,11 +268,16 @@ export function apply(ctx: Context): void {
       const transport = (globalThis as typeof globalThis & {
         __DSH_TRANSPORT__?: { streamBaseUrl?: string }
       }).__DSH_TRANSPORT__
-      try {
+      const request = async () => {
         const result = await ctx.remote.account.startSignIn(client(),
-          transport?.streamBaseUrl !== undefined ? new URL(transport.streamBaseUrl).origin : window.location.origin,
-          'desktop')
+          desktop && transport?.streamBaseUrl !== undefined ? new URL(transport.streamBaseUrl).origin : window.location.origin,
+          desktop ? 'desktop' : 'web')
         if (!result.ok) throw new Error('account start failed')
+        return result.value
+      }
+      try {
+        if (desktop) await request()
+        else await browser.start(request, () => snapshot.view)
       } catch (error) {
         publish({ ...snapshot, loginFailed: true })
         throw error
@@ -280,8 +295,7 @@ export function apply(ctx: Context): void {
       throw result.error
     },
   }
-  const desktop = (globalThis as typeof globalThis & { dshDesktop?: { onboarding?: boolean } }).dshDesktop
-  if (desktop !== undefined && desktop.onboarding !== false) {
+  if (automaticOnboarding) {
     const controller = new DesktopOnboardingController(
       ctx.configForms.get<OnboardingSettings>(DESKTOP_ONBOARDING_NAMESPACE),
       ctx.configForms.get<{ transcriptView?: TranscriptViewMode | null; performanceUsage: 'compact' | 'detailed' }>('ui-chat'),
@@ -304,6 +318,9 @@ export function apply(ctx: Context): void {
       name: 'shell.overlay', id: 'desktop-onboarding', locale: 'settings.account',
       inject: (): DesktopOnboardingInjected => ({
         hooks: { account: operations.hooks.account, onboarding: controller.state },
+        setVisible: (visible: boolean) => {
+          if (snapshot.desktopOnboardingVisible !== visible) publish({ ...snapshot, desktopOnboardingVisible: visible })
+        },
         // Onboarding's recharge return re-reads profile and balance only.
         ...nativePlatform === undefined ? {} : { openPlatformPage: platformPageOpener(refresh) },
         update: (change: OnboardingChange) => controller.update(change),

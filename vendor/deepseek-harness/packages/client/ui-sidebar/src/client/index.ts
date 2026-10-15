@@ -29,6 +29,10 @@ export type { SidebarNavTabRow } from './stores.ts'
 
 /** Cross-plugin region selection, backed by the sidebar's own viewing store. */
 export interface UiSidebar {
+  /**
+   * Select the sidebar region tab in its persisted viewing store.
+   * @param id - `sessions` for the built-in browser, or a registered `sidebar.nav.tab` id.
+   */
   selectTab(id: string): void
 }
 

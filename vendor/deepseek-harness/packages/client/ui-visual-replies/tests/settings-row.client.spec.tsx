@@ -13,7 +13,7 @@ afterEach(cleanup)
 
 function fixture() {
   const state = createSnapshotStore<ConfigFormSnapshot<VisualRepliesSettings>>({
-    status: 'ready', value: { enabled: false }, base: {}, user: {}, revision: 0, writable: true, mode: 'host',
+    status: 'ready', value: { enabled: false }, base: {}, user: {}, revision: 0, writable: true,
   })
   const pending = Promise.withResolvers<boolean>()
   const setEnabled = vi.fn(() => pending.promise)

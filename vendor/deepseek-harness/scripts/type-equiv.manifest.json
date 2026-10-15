@@ -128,6 +128,16 @@
     },
     {
       "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "LlmCallControls",
+      "source": "packages/llm/llm/src/call-config.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "ConfigureCall",
+      "source": "packages/llm/llm/src/call-config.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
       "symbol": "LlmCallConfigAdapterDefaults",
       "source": "packages/llm/llm/src/call-config.ts"
     },
@@ -622,6 +632,21 @@
     {
       "doc": "docs/subsystems/session.md",
       "symbol": "SessionEvent",
+      "source": "packages/core/session/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/session.md",
+      "symbol": "PluginRecordType",
+      "source": "packages/core/session/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/session.md",
+      "symbol": "PluginRecordMap",
+      "source": "packages/core/session/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/session.md",
+      "symbol": "PluginRecord",
       "source": "packages/core/session/src/types.ts"
     },
     {
@@ -1203,6 +1228,21 @@
     },
     {
       "doc": "docs/subsystems/jobs.md",
+      "symbol": "JobRegisteredData",
+      "source": "packages/jobs/jobs/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/jobs.md",
+      "symbol": "JobSettledData",
+      "source": "packages/jobs/jobs/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/jobs.md",
+      "symbol": "JobToolCall",
+      "source": "packages/jobs/jobs/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/jobs.md",
       "symbol": "JobSpec",
       "source": "packages/jobs/jobs/src/types.ts"
     },
@@ -1568,16 +1608,6 @@
     },
     {
       "doc": "docs/subsystems/subagent.md",
-      "symbol": "SubagentDescendantListEntry",
-      "source": "packages/subagent/subagent/src/list-children.ts"
-    },
-    {
-      "doc": "docs/subsystems/subagent.md",
-      "symbol": "ContinuableStart",
-      "source": "packages/subagent/subagent/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/subagent.md",
       "symbol": "ContinuableCreateRequest",
       "source": "packages/subagent/subagent/src/types.ts"
     },
@@ -1872,6 +1902,11 @@
       "source": "packages/llm/llm/src/types.ts"
     },
     {
+      "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "LlmNativeAuth",
+      "source": "packages/llm/llm/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/permission-presets.md",
       "symbol": "Config",
       "source": "packages/interaction/permission-presets/src/index.ts"
@@ -1899,6 +1934,11 @@
     {
       "doc": "docs/subsystems/web-server.md",
       "symbol": "Config",
+      "source": "packages/host/webserver/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/web-server.md",
+      "symbol": "TlsConfig",
       "source": "packages/host/webserver/src/index.ts"
     },
     {
@@ -2048,13 +2088,53 @@
     },
     {
       "doc": "docs/subsystems/typert.md",
+      "symbol": "PrincipalMap",
+      "source": "packages/typert/protocol/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/typert.md",
+      "symbol": "Principal",
+      "source": "packages/typert/protocol/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/typert.md",
       "symbol": "PeerScope",
+      "source": "packages/typert/protocol/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/typert.md",
+      "symbol": "RemoteUplinkWindow",
       "source": "packages/typert/protocol/src/types.ts"
     },
     {
       "doc": "docs/subsystems/typert.md",
       "symbol": "RemoteInvocation",
       "source": "packages/typert/protocol/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/typert.md",
+      "symbol": "TypertResourceMap",
+      "source": "packages/typert/protocol/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/typert.md",
+      "symbol": "RemoteAccessResourceKind",
+      "source": "packages/typert/protocol/src/remote-access.ts"
+    },
+    {
+      "doc": "docs/subsystems/typert.md",
+      "symbol": "RemoteAccessResource",
+      "source": "packages/typert/protocol/src/remote-access.ts"
+    },
+    {
+      "doc": "docs/subsystems/typert.md",
+      "symbol": "RemoteScopeOptions",
+      "source": "packages/typert/protocol/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/typert.md",
+      "symbol": "RemoteMethodOptions",
+      "source": "packages/typert/protocol/src/index.ts"
     },
     {
       "doc": "docs/subsystems/typert.md",
@@ -2293,6 +2373,11 @@
     },
     {
       "doc": "docs/subsystems/ssh.md",
+      "symbol": "HelperLaunch",
+      "source": "packages/ssh/ssh/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/ssh.md",
       "symbol": "Config",
       "source": "packages/ssh/ssh/src/index.ts"
     },
@@ -2343,6 +2428,16 @@
       "source": "packages/deliverables/workspace-changes/src/types.ts"
     },
     {
+      "doc": "docs/subsystems/subagent.md",
+      "symbol": "SubagentActivationSpec",
+      "source": "packages/subagent/subagent/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
+      "symbol": "SubagentActivation",
+      "source": "packages/subagent/subagent/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/product-telemetry.md",
       "symbol": "ProductTelemetryScalar",
       "source": "packages/host/product-telemetry-otel/src/index.ts"
@@ -2351,6 +2446,36 @@
       "doc": "docs/subsystems/product-telemetry.md",
       "symbol": "ProductTelemetryRecord",
       "source": "packages/host/product-telemetry-otel/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
+      "symbol": "SubagentDescendantListEntry",
+      "source": "packages/subagent/subagent/src/list-children.ts"
+    },
+    {
+      "doc": "docs/subsystems/system-prompt.md",
+      "symbol": "AssembledContext",
+      "source": "packages/core/system-prompt/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/worktrees.md",
+      "symbol": "CreateWorktreeRequest",
+      "source": "packages/experimental/worktree/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/worktrees.md",
+      "symbol": "CreatedWorktree",
+      "source": "packages/experimental/worktree/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "ProfileReconciliation",
+      "source": "packages/boot/hmr/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/boot.md",
+      "symbol": "PendingModule",
+      "source": "packages/boot/hmr/src/index.ts"
     }
   ]
 }

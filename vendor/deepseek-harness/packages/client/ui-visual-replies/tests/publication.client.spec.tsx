@@ -8,14 +8,13 @@ import { createToolResultMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionSeq, type SessionEvent, type SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionLiveEventEntry } from '@deepseek-ai/dsh-api-session-controller/client'
 import { ConversationNodeAssembler, UiConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { ChatNode, ChatNodeInjected, ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { ChatNode, ChatNodeHookContext, ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { RemoteError, SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { PropsRenderSlots, PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
-import { useTurnDataValue } from '@deepseek-ai/dsh-client-ui-chat/src/client/chat/use-turn-data.ts'
-import { bindDisclosure } from '@deepseek-ai/dsh-client-ui-chat/src/client/chat/use-disclosure.ts'
+import { CHAT_NODE_INJECT } from '@deepseek-ai/dsh-client-ui-chat/src/client/apply.ts'
 import { chatViewDefinition } from '@deepseek-ai/dsh-client-ui-chat/src/client/conversation-nodes/chat-snapshot-builder.ts'
 import { processGroupDefinition } from '@deepseek-ai/dsh-client-ui-chat/src/client/conversation-nodes/process-groups.ts'
 import { toolDefinition } from '@deepseek-ai/dsh-client-ui-chat/src/client/conversation-nodes/tool.ts'
@@ -126,16 +125,8 @@ describe('published visual replies', () => {
     await reference.ready
     await remoteContext.plugin({ inject: [...inject], apply }).await()
     const pageSession = permitted ? publishingSession : SID
-    const chatInject: ChatNodeInjected = {
-      hooks: {
-        turnData: (_standard, { turnData }) => function useTurnData(key) {
-          return useTurnDataValue(turnData, key)
-        },
-        disclosure: (_standard, { disclosureReset }) => bindDisclosure(disclosureReset),
-      },
-    }
     await runtime.root.declare({
-      'conversation.chat.node': { kind: 'keyed', scope: 'session', inject: chatInject },
+      'conversation.chat.node': { kind: 'keyed', scope: 'session', inject: CHAT_NODE_INJECT },
     }, ({ renderFactorySlot, SessionProvider }: PropsRenderSlots<'conversation.chat.node'> & PropsRenderFactories) =>
       <SessionProvider session={reference}>
         {renderFactorySlot('visual-reply.page', { sessionId: pageSession, file: FILE, title: 'Shared evidence', height: 180 })}
@@ -230,25 +221,18 @@ describe('published visual replies', () => {
     binding.activate('chat')
     const snapshot = binding.target('chat').getSnapshot()!
     const node = snapshot.nodes.values().find((value): value is ChatNode<'visual-reply'> => value.kind === 'visual-reply')!
-    const chatInject: ChatNodeInjected = {
-      hooks: {
-        turnData: (_standard, { turnData }) => function useTurnData(key) {
-          return useTurnDataValue(turnData, key)
-        },
-        disclosure: (_standard, { disclosureReset }) => bindDisclosure(disclosureReset),
-      },
-    }
     const hookContext = {
       turnData: node.location.kind === 'turn' || node.location.kind === 'step' ? node.location.turn.data : undefined,
       disclosureReset: createSnapshotStore(0),
-    }
+      useGroupAction: () => { throw new Error('Visual replies do not request process-group visibility') },
+    } satisfies ChatNodeHookContext
     await runtime.root.declare({
-      'conversation.chat.node': { kind: 'keyed', scope: 'session', inject: chatInject },
+      'conversation.chat.node': { kind: 'keyed', scope: 'session', inject: CHAT_NODE_INJECT },
     }, ({ renderSlot, SessionProvider }: PropsRenderSlots<'conversation.chat.node'>) =>
       <SessionProvider session={reference}>
         {renderSlot('conversation.chat.node', {
-          node, openFile: vi.fn(), openSkill: vi.fn(), inspectCall: undefined, forkAt: vi.fn(),
-          loadImage: vi.fn(), renderMessageImages: () => null, fileMentions: () => undefined,
+          node, openFile: vi.fn(), inspectCall: undefined, forkAt: vi.fn(),
+          loadImage: vi.fn(), fileMentions: () => undefined,
         }, { entryKey: 'visual-reply', hookContext })}
       </SessionProvider>)
     const view = runtime.renderRoot()

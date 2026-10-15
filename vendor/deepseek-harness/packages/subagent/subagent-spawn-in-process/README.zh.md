@@ -51,7 +51,9 @@ kind: "package-reference"
 
 ### 一次委派会做什么
 
-一次工具调用启动一个子 agent 并等待其结果：子 agent 在自有会话中工作，父级只接收其最终输出；若运行被取消、拒绝、被 token 上限截断或在启动时被拒，则收到出错的工具结果。被拒绝的启动不会留下已发布的子 agent；完成的运行在结果收集后即被 dispose（资源释放）。
+一次工具调用创建后台子 agent 并立即返回子会话 ID。子级在自己的会话中工作，父级通过完成通知收到其最终答案。子级也可以通过 `send_message` 发送消息。被拒绝的启动不会留下已发布的子 agent；工作流等程序调用方可以直接等待 activation 的结果。
+
+显式 `agentPreset` 独立选择当前注册的 preset；省略时加入父方的活跃代际。只有 spawn 支持此选择。persona 与工具放在 [preset 定义](../../preset/agent-preset-registry/README.zh.md)中。冷恢复遵守共享的[子级组装规则](../subagent/README.zh.md#restoring-child-composition)。
 
 -----
 
@@ -61,25 +63,25 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-本节解释后端的构建方式以及[使用本包](#use-this-package)中行为的来源；共享机制属于进程内驱动器。
+本节说明提供方准备工作，以及由 subagent 服务拥有的 activation 生命周期。
 
 ### 设计理念
 
-职责划分如下：本后端只贡献提供方注册与「全新开始」的决定，其余全部运行机制——深度检查、子 agent 创建、按子 agent 定制、结构化输出、取消、结果读取与 dispose——都在 `dsh-subagent-in-process-driver` 中。agent 工厂的创建事务拥有未发布设置窗口及其回滚；发布之后，调用方拥有该运行。
+本后端注册提供方并准备全新子会话。`dsh-subagent` 拥有 activation 的深度检查、子 agent 创建、preset 组装、结构化输出、结果收集及资源释放；发布前的调用方信号取消创建，发布后的句柄通过 `dispose()` 取消并等待完全停稳。
 
 ### 源码地图
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 提供方注册：`Config` schema、能力声明、`start()` |
+| [`src/index.ts`](src/index.ts) | 提供方注册：`Config` schema、能力声明、`prepareContinuable()` |
 
 ### 运行流程
 
-启动请求先由 subagent 服务解析，然后共享驱动器校验深度、生成子会话 id、通过宿主 agent 工厂以调用方信号创建子 agent、在创建窗口内应用 persona、工具过滤器与结构化输出、发布子 agent、驱动一项任务、读取子 agent 自身的最终输出，最后完全停稳地 dispose 句柄。
+`startActivation()` 解析提供方并调用 `prepareContinuable()`，随后创建并发布子 agent。每次 activation 单独安装结构化输出。调用方可以等待 `result`，并通过 `dispose()` 等待整个子树完全停稳。
 
 ### 所有权与作用域
 
-子 agent 获得全新的扁平注册作用域：父级工具限制与权限绝不会被导入，工具所施加的过滤属于组合而非父级派生授权。后端声明包括 `agentOptions` 在内的全部五项启动时能力，因为它控制子 agent 的创建窗口，可以逐一强制执行。
+子级在继承或独立选择的 preset 之下拥有自身注册作用域，不导入父方的 Agent 局部工具限制。后端在其他启动时能力之外声明 `agentPreset` 和 `agentOptions`，由 subagent manager 在创建子级时应用。
 
 </details>
 
@@ -91,7 +93,6 @@ kind: "package-reference"
 当包级约定不够用时阅读以下页面；它们从共享 subagent 模型进入兄弟后端与穷尽式配置。
 
 - [Subagent 子系统](../../../docs/subsystems/subagent.zh.md)——启动请求、结果、实时运行与提供方约定。
-- [dsh-subagent-in-process-driver](../subagent-in-process-driver/README.zh.md)——本后端调用的共享运行驱动器。
 - [dsh-subagent-fork-in-process](../subagent-fork-in-process/README.zh.md)——以已完成父级轮次作初始内容的兄弟后端。
 - [dsh-tool-subagent](../tool-subagent/README.zh.md)——指向该提供方的面向模型委派工具。
 - [生成配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-subagent-spawn-in-process)——每个受支持配置字段及其源声明。
@@ -105,21 +106,21 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-全新子 agent 逐字接收任务内容，作为新空对话中的唯一用户消息，默认使用父级提供方、模型、推理强度、输出 token 上限与工作目录。配置的 persona 会在子 agent 作用域中遮蔽全局提示词文本；工具过滤器会从其 schema、可执行工具查找与 PTC mode SDK 绑定中移除指定的全局工具，但保留独立注册的指导内容。不包含任何父级对话消息；过滤属于组合，而非继承的权限授予。
+全新子 agent 逐字接收任务内容，作为新空对话中的唯一用户消息，默认使用父级提供方、模型、推理强度、输出 token 上限与工作目录。继承或选定的 preset 提供工具和提示词片段。不包含任何父级对话消息。
 
 #### Token 影响
 
-子 agent 会为全新的独立上下文与历史消耗 token，不复制任何父级历史 token。persona 会改变该子 agent 反复使用的提示词成本；工具过滤器会改变其 schema 或生成 SDK 的成本。
+子 agent 会为全新的独立上下文与历史消耗 token，不复制任何父级历史 token。preset 的提示词和工具决定重复提示词、schema 和生成 SDK 的成本。
 
 #### KV Cache 影响
 
-子 agent 的请求缓存与父级相互独立。子 agent 历史仅追加；persona、工具过滤、生成 SDK、提供方或模型变化会建立不同的子 agent 前缀。
+子 agent 的请求缓存与父级相互独立。子 agent 历史仅追加；preset、生成 SDK、提供方或模型变化会建立不同的子 agent 前缀。
 
 ### 父级工具结果（间接）
 
 #### 模型看到什么
 
-通过 `dsh-tool-subagent`，父级只接收子 agent 的最终输出，或非完成终止原因对应的出错结果；子 agent 的中间工作绝不会到达父级。
+通过 `dsh-tool-subagent`，父级先收到子会话 ID，随后收到包含最终答案的完成通知。子级自行编写的消息通过 `send_message` 到达。子级内部工具调用保留在子会话中。
 
 #### Token 影响
 
@@ -136,7 +137,7 @@ kind: "package-reference"
 
 这些限制说明何时选择该后端是错误的；它们是当前包约束。
 
-- **全新表示不含父级 transcript（文本记录）**——子 agent 继承 cwd、谱系、提供方、模型、推理强度、输出 token 上限及显式配置的 persona/工具限制，但不继承父级的任何对话；需要已完成轮次上下文时，请使用 fork 后端。
+- **全新表示不含父级 transcript（文本记录）**——子 agent 继承 cwd、谱系、提供方、模型、推理强度及输出 token 上限，但不继承父级的任何对话；需要已完成轮次上下文时，请使用 fork 后端。
 
 <a id="dev-note"></a>
 ### 开发备注

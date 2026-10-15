@@ -4,26 +4,30 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
-import { DEFAULT_THEME_SETTINGS } from '@deepseek-ai/dsh-client-ui-theme/src/theme-settings.ts'
+import { DEFAULT_FONT_SIZES, DEFAULT_THEME_SETTINGS } from '@deepseek-ai/dsh-client-ui-theme/src/theme-settings.ts'
 import { AccountOnboarding } from '../src/client/AccountOnboarding.tsx'
 import type { AccountSnapshot } from '../src/client/AccountSection.tsx'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
 const theme: ThemeSnapshot = {
-  ...DEFAULT_THEME_SETTINGS, preference: 'light',
+  ...DEFAULT_THEME_SETTINGS,
+  fontSizes: DEFAULT_FONT_SIZES,
+  fontFamilies: { text: '', code: '', terminal: '' },
+  preference: 'light',
   active: { id: 'light', colorScheme: 'light', tokens: {} }, themes: [], revision: 0,
   families: [],
 }
 
 it('claims onboarding while loading, offers API key fallback, and completes after login', () => {
-  let account: AccountSnapshot = { view: undefined, details: undefined, failed: false }
+  let account: AccountSnapshot = { view: undefined, details: undefined, avatar: undefined, failed: false }
   const unused = (): never => { throw new Error('AccountOnboarding does not consume global hooks') }
   const globals: GlobalStandardProps = {
     usePanelInfo: unused, useSessions: unused, useSessionStatus: unused,
     useSessionRetainInfo: unused, useResource: unused, useWorkspaces: unused,
+    ...allowAllAccess,
   }
   const props = {
     ...globals,
@@ -35,6 +39,7 @@ it('claims onboarding while loading, offers API key fallback, and completes afte
     start: vi.fn(async () => {}), cancel: vi.fn(async () => {}), signOut: vi.fn(async () => {}),
     contactUs: vi.fn(), t: makeTranslate(en),
     refreshAccount: vi.fn(async () => {}), bonusNoticeShown: vi.fn(), bonusNoticeDismissed: vi.fn(),
+    avatarFailed: vi.fn(),
   }
   const view = render(<AccountOnboarding {...props} />)
   expect(props.setOnboarding).toHaveBeenCalledExactlyOnceWith(true)

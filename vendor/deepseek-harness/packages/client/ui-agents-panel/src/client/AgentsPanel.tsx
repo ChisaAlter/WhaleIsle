@@ -59,12 +59,13 @@ export function AgentsPanel({ sessionId, useSessions, openAgent, jobs: jobsSourc
                 <button
                   type="button"
                   className={css.open}
+                  disabled={agent.mode === 'external'}
                   onClick={() => { openAgent(agent.id) }}
                 >
-                  <StateDot state={agent.activity === 'running' ? 'ongoing' : 'done'} />
+                  {agent.mode !== 'external' && <StateDot state={agent.activity === 'running' ? 'ongoing' : 'done'} />}
                   <span className={css.label}>{agent.label}</span>
                   <span className={css.meta}>
-                    {t(agent.activity === 'running' ? 'activity.running' : 'activity.inactive')}
+                    {agent.mode === 'external' ? t('mode.external') : t(agent.activity === 'running' ? 'activity.running' : 'activity.inactive')}
                     {agent.mode === 'one-shot' ? ` · ${t('mode.oneShot')}` : null}
                     {agent.mode === 'continuable' ? ` · ${t('mode.continuable')}` : null}
                   </span>

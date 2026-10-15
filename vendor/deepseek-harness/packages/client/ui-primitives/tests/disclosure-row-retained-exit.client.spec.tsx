@@ -15,6 +15,7 @@ import { zh as chatZh } from '../../ui-chat/src/client/locale.ts'
 import { zh as toolZh } from '../../ui-conversation/src/client/locales.ts'
 import { bindDisclosure, useDisclosure } from '../../ui-chat/src/client/chat/use-disclosure.ts'
 import { useDetailedPresentation } from '../../ui-chat/tests/presentation-fixture.client.ts'
+import { renderReasoningSlot } from '../../ui-chat/tests/reasoning-component-fixture.tsx'
 import { ReasoningRow } from '../../ui-chat/src/client/chat/ReasoningRow.tsx'
 import { ToolRow } from '../../ui-tool/src/client/tool/components/ToolRow.tsx'
 import { PRESENCE_EXIT_MS } from '../src/usePresence.ts'
@@ -34,6 +35,7 @@ describe('DisclosureRow retained exit frame', () => {
     const useBoundDisclosure = bindDisclosure(reset)
     const view = render(
       <ReasoningRow
+        renderSlot={renderReasoningSlot}
         useDisclosure={useBoundDisclosure}
         usePresentation={useDetailedPresentation}
         text={'First line\n\nDetailed reasoning body'}

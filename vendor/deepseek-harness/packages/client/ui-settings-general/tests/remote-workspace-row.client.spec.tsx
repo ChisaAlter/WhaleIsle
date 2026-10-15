@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime'
 import { RemoteWorkspaceRow } from '../src/client/RemoteWorkspaceRow.tsx'
 import type { RemoteWorkspaceRowProps } from '../src/client/RemoteWorkspaceRow.tsx'
 import { en, zh } from '../src/client/locales.ts'
@@ -17,6 +18,7 @@ const unusedHook = (() => { throw new Error('unused by RemoteWorkspaceRow') }) a
 
 function mount(dict: Record<string, string> = en) {
   const props: RemoteWorkspaceRowProps = {
+    ...allowAllAccess,
     usePanelInfo: panelInfoStub,
     useResource: resourceStub,
     useSessions: unusedHook,

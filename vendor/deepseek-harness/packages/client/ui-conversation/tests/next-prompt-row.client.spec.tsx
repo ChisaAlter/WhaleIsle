@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { NextPromptRow } from '../src/client/settings/NextPromptRow.tsx'
 import type { NextPromptRowProps } from '../src/client/settings/NextPromptRow.tsx'
@@ -17,6 +17,7 @@ function mount(copy: typeof en | typeof zh = en, writable = true) {
   const policy = new ComposerSubmissionPolicy()
   const setNextPrompt = vi.fn((value: boolean) => { policy.setNextPrompt(value) })
   const props: NextPromptRowProps = {
+    ...allowAllAccess,
     usePanelInfo: selector => selector({ activePanelId: null }),
     useResource,
     useSessions: unused,

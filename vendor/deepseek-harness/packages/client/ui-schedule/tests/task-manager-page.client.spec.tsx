@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { act, cleanup, fireEvent, isInaccessible, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { bindSnapshotSelector, makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, bindSnapshotSelector, makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
@@ -116,9 +116,9 @@ function sessionsWithTitles(titles: Partial<Record<SessionId, string>>): Session
 afterEach(() => {
   try {
     cleanup()
-    vi.restoreAllMocks()
     localStorage.clear()
   } finally {
+    vi.restoreAllMocks()
     installedStyles?.remove()
     installedStyles = undefined
   }
@@ -139,10 +139,13 @@ function pinSystemZone(timeZone: string): void {
 // the open clock panel calls to bring the staged value into view.
 /** Device zone the cases pin: a rule without a stored zone seeds its clock in it. */
 const DEVICE_ZONE = 'Asia/Shanghai'
+/** Reference instant for static schedule assertions; timers retain their real scheduling. */
+const FIXTURE_NOW = Date.parse('2026-09-18T12:00:00.000Z')
 /** Elements whose `scrollIntoView` the open pickers called, in call order. */
 const scrolledIntoView: Element[] = []
 const scrollIntoView = vi.fn(function (this: Element) { scrolledIntoView.push(this) })
 beforeEach(() => {
+  vi.spyOn(Date, 'now').mockReturnValue(FIXTURE_NOW)
   pinSystemZone(DEVICE_ZONE)
   Element.prototype.scrollIntoView = scrollIntoView
   scrollIntoView.mockClear()
@@ -171,6 +174,7 @@ function mount(
     useSessionStatus: select => select(new Map()),
     useSessionRetainInfo: () => undefined,
     useResource: () => { throw new Error('The task manager does not load document resources') },
+    ...allowAllAccess,
     onDelete: vi.fn<TaskManagerPageProps['onDelete']>(async () => 'deleted'),
     onRetry: vi.fn(async () => {}),
     onNewTask: vi.fn(),
@@ -278,9 +282,7 @@ function relativeText(root: HTMLElement): string | null {
 /**
  * The relative next-run text both the row and the detail render for one instant.
  *
- * The components sample their reference clock once per mount, so the assertion
- * reads the same clock at assert time; every fixture instant is days away, where
- * one unit of drift cannot change the rendered value.
+ * Expected durations use the same pinned clock as component renders.
  * @param scheduledAt - stored target instant.
  * @param dictionary - active locale dictionary.
  * @returns the localized time remaining, or overdue text.
@@ -769,9 +771,7 @@ describe('Task manager catalog', () => {
 
   it('states the time remaining until the next run in each locale', () => {
     // The row and the detail state a duration, not a date: zh reads `2小时后`
-    // and en reads `in 2 hours`, and neither renders a clock time for it. The
-    // fixture is two hours out, where a few milliseconds of clock drift cannot
-    // change the rendered unit.
+    // and en reads `in 2 hours`, and neither renders a clock time for it.
     const soon: ScheduleCatalogEntry = {
       ...at, title: 'Two hours out', prompt: 'Two hours out',
       scheduledAt: new Date(Date.now() + 2 * 3_600_000).toISOString(),
@@ -1629,6 +1629,7 @@ describe('Task manager details', () => {
       useResource={unread}
       useSessionStatus={unread}
       useSessionRetainInfo={unread}
+      {...allowAllAccess}
     />)
   }
 

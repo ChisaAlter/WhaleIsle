@@ -12,6 +12,7 @@ import { performance } from 'node:perf_hooks'
 import { CLIENT_BUILD_PROFILE_SELECTOR } from './client-build-environment.ts'
 import { COVERAGE_EXEMPT_ENV, coverageExemptHeavySuites } from './coverage-exempt.ts'
 import { COVERAGE_PARTITIONS_ENV, parseCoveragePartitionCount } from './coverage-partitions.ts'
+import { LOCAL_TEST_PARALLELISM_CAP, defaultParallelism, describeDefaultParallelism } from './parallelism.ts'
 import { pnpmInvocation } from './pnpm-invocation.ts'
 
 /** A named aggregate exposed by the gate runner. */
@@ -82,13 +83,17 @@ interface RunningGate {
   promise: Promise<GateResult>
 }
 
-interface ConcurrencyDefault {
+/** The worker count an aggregate uses when `DSH_GATE_CONCURRENCY` is unset, with its diagnostic source. */
+export interface ConcurrencyDefault {
   workers: number
   source: string
 }
 
 type GateExecutor = (gate: Gate, signal?: AbortSignal) => Promise<GateResult>
 type ResultObserver = (result: GateResult) => void
+
+/** Worker cap of the documentation and hygiene aggregates, locally and in CI, whose leaves each build a full ts.Program. */
+const PROGRAM_MODE_CAP = 8
 
 const root = resolve(import.meta.dirname, '..')
 if (import.meta.main) {
@@ -101,7 +106,20 @@ async function main(args: string[]): Promise<number> {
   Object.assign(process.env, workerEnv)
   if (Object.keys(workerEnv).length > 0) console.log(`run-gates: worker settings ${JSON.stringify(workerEnv)}`)
   const gates = gatesForMode(mode)
-  const concurrencyDefault = defaultConcurrency(mode, gates.length)
+  return runAggregate(mode, gates, defaultConcurrency(mode, gates.length))
+}
+
+/**
+ * Run one aggregate through the real child-process executor with the CLI's
+ * environment-selected scheduling and reporting: `DSH_GATE_CONCURRENCY`
+ * overrides the worker default, `DSH_GATE_FAIL_FAST=1` stops at the first
+ * blocking failure, and every settled gate plus a final summary is printed.
+ * @param name - aggregate name printed in the start line.
+ * @param gates - complete aggregate to execute.
+ * @param concurrencyDefault - worker count used when `DSH_GATE_CONCURRENCY` is unset.
+ * @returns 1 when a blocking gate failed or was skipped, otherwise 0.
+ */
+export async function runAggregate(name: string, gates: Gate[], concurrencyDefault: ConcurrencyDefault): Promise<number> {
   const concurrencyOverride = process.env.DSH_GATE_CONCURRENCY
   const maxConcurrency = concurrencyFromEnv('DSH_GATE_CONCURRENCY', concurrencyDefault.workers)
   const concurrencySource = concurrencyOverride === undefined || concurrencyOverride === ''
@@ -109,7 +127,7 @@ async function main(args: string[]): Promise<number> {
     : '$DSH_GATE_CONCURRENCY'
   const failFast = flagEnabled('DSH_GATE_FAIL_FAST')
   const startedAt = performance.now()
-  console.log(`run-gates: ${mode} running ${gates.length} gate(s) with ${maxConcurrency} worker(s) from ${concurrencySource}${failFast ? ', fail-fast after first blocking failure' : ''}.`)
+  console.log(`run-gates: ${name} running ${gates.length} gate(s) with ${maxConcurrency} worker(s) from ${concurrencySource}${failFast ? ', fail-fast after first blocking failure' : ''}.`)
 
   const results = await runGates(gates, maxConcurrency, runGate, printResult, cliGateOptions(failFast))
   printSummary(results, performance.now() - startedAt)
@@ -161,41 +179,43 @@ function parseMode(raw: string | undefined): Mode {
  * Resolve the default worker count for one aggregate.
  * @param selectedMode - aggregate whose resource posture applies.
  * @param total - number of gates in the aggregate.
- * @param available - host CPU availability for ordinary modes.
+ * @param cpus - CPU count Node reports for this process.
+ * @param env - environment whose `CI` value selects the CI or local [worker budget](./parallelism.ts).
  * @returns the default worker count and its diagnostic source.
  */
 export function defaultConcurrency(
   selectedMode: Mode,
   total: number,
-  available = availableParallelism(),
+  cpus = availableParallelism(),
+  env: NodeJS.ProcessEnv = process.env,
 ): ConcurrencyDefault {
-  // Local modes cap workers: several doc gates each build a full ts.Program,
+  const budget = defaultParallelism(env, cpus)
+  const budgetSource = describeDefaultParallelism(env, cpus)
+  // These modes cap workers: several doc gates each build a full ts.Program,
   // so an uncapped default on a large host trades wall clock for memory blowups.
   const localCap = selectedMode === 'check-all'
     || selectedMode === 'hygiene'
     || selectedMode === 'doc-sync'
     || selectedMode === 'doc-quick'
-  const modeLimit = localCap ? Math.min(4, available) : available
+  const modeLimit = localCap ? Math.min(PROGRAM_MODE_CAP, budget) : budget
   return {
     workers: Math.min(total, modeLimit),
-    source: localCap
-      ? `${available} available CPU(s), ${selectedMode} cap 4`
-      : `${available} available CPU(s)`,
+    source: localCap ? `${budgetSource}, ${selectedMode} cap ${String(PROGRAM_MODE_CAP)}` : budgetSource,
   }
 }
 
 /**
- * Fill CI worker defaults from the CPU allocation without replacing explicit overrides.
+ * Fill CI worker defaults from the [worker budget](./parallelism.ts) without replacing explicit overrides.
  * Coverage shares one budget; artifact readers share CPUs with sibling commands.
  * @param mode - aggregate selected by the caller.
- * @param env - inherited worker overrides, including serial reference settings.
- * @param available - CPUs available to this runner process.
+ * @param env - inherited worker overrides, including serial reference settings, and the `CI` value that selects the budget.
+ * @param cpus - CPU count Node reports for this runner process.
  * @returns environment additions for this aggregate and its children.
  */
 export function ciWorkerEnvironment(
   mode: Mode,
   env: NodeJS.ProcessEnv,
-  available = availableParallelism(),
+  cpus = availableParallelism(),
 ): Record<string, string> {
   // ci-unit's gates read none of these settings, while the inventory it runs
   // reads the same variables (run-gates.spec.ts builds coverage gates from
@@ -203,18 +223,20 @@ export function ciWorkerEnvironment(
   // reads DSH_OXLINT_THREADS), so the aggregate leaves the environment as
   // `pnpm run test` finds it.
   if (!mode.startsWith('ci-') || mode === 'ci-unit') return {}
+  const budget = defaultParallelism(env, cpus)
+  const testBudget = defaultParallelism(env, cpus, LOCAL_TEST_PARALLELISM_CAP)
   const additions: Record<string, string> = {}
   const setDefault = (name: string, value: number): void => {
     if (env[name] === undefined || env[name] === '') additions[name] = String(value)
   }
-  const shared = Math.max(1, Math.floor(available / 2))
+  const shared = Math.max(1, Math.floor(budget / 2))
   setDefault('DSH_OXLINT_THREADS', shared)
   setDefault('DSH_PUBLINT_CONCURRENCY', shared)
   setDefault('DSH_SNAPSHOT_MAX_WORKERS', 1)
   setDefault('DSH_SNAPSHOT_MAX_CONCURRENCY', shared)
-  setDefault('DSH_WEB_SNAPSHOT_WORKERS', env.DSH_GATE_CONCURRENCY === '1' ? 1 : available)
-  setDefault('DSH_COVERAGE_MAX_WORKERS', available)
-  const coverageBudget = env.DSH_COVERAGE_MAX_WORKERS || String(available)
+  setDefault('DSH_WEB_SNAPSHOT_WORKERS', env.DSH_GATE_CONCURRENCY === '1' ? 1 : budget)
+  setDefault('DSH_COVERAGE_MAX_WORKERS', testBudget)
+  const coverageBudget = env.DSH_COVERAGE_MAX_WORKERS || String(testBudget)
   const total = Number(coverageBudget)
   if (!Number.isSafeInteger(total) || total < 1) {
     throw new Error(`run-gates: DSH_COVERAGE_MAX_WORKERS must be a positive integer, got ${JSON.stringify(coverageBudget)}.`)
@@ -285,7 +307,7 @@ export function gatesForMode(selected: Mode): Gate[] {
     case 'ci-unit':
       return ciUnitGates()
     case 'ci-bench':
-      return [pnpmScript('bench', 'test:bench', { label: 'performance benchmarks' })]
+      return [pnpmExec('bench', ['tsx', 'scripts/run-ci-bench.ts'], { label: 'performance benchmarks' })]
     case 'ci-snapshot':
       return [ciBuildGate(), snapshotGate()]
     case 'ci-artifacts':
@@ -345,6 +367,9 @@ function ciSharedStaticGates(): Gate[] {
   return [
     pnpmScript('runtime-closure', 'verify-runtime-closure', { label: 'runtime closure' }),
     pnpmScript('default-product-isolation', 'verify-default-product-isolation', { label: 'default product isolation' }),
+    pnpmScript('product-use', 'verify-product-use', { label: 'product package classification' }),
+    pnpmScript('official-bundle-catalog', 'verify-official-bundle-catalog', { label: 'Official bundle catalog' }),
+    pnpmScript('provider-data', 'verify-provider-data', { label: 'pi-ai provider metadata' }),
     pnpmScript('application-entrypoints', 'verify-application-entrypoints', { label: 'application entrypoints' }),
     pnpmScript('constraints', 'constraints'),
     pnpmScript('package-dependencies', 'verify-package-dependencies', { label: 'package dependencies' }),
@@ -366,6 +391,7 @@ function sharedHygieneGates(): Gate[] {
     pnpmScript('client-ui-i18n', 'verify-client-ui-i18n', { label: 'client UI i18n' }),
     pnpmScript('client-route-resolution', 'verify-client-route-resolution', { label: 'client route resolution' }),
     pnpmScript('no-bare-dispatcher', 'verify-no-bare-dispatcher', { label: 'proxy-aware dispatchers' }),
+    pnpmScript('plugin-record-callers', 'verify-plugin-record-callers', { label: 'plugin record callers' }),
     pnpmScript('no-unknown-casts', 'verify-no-unknown-casts', { label: 'no new unknown casts' }),
   ]
 }
@@ -407,12 +433,8 @@ function nodeCompatGates(): Gate[] {
   }
   return [
     ...typecheck,
-    pnpmScript('build', 'build', {
+    pnpmScript('build', 'build:artifacts', {
       ...typecheck.length === 0 ? {} : { needs: ['typecheck'] },
-    }),
-    pnpmScript('build:web', 'build:web', {
-      label: 'Web frontend build',
-      needs: ['build'],
     }),
     ...nodeCompatSmokeGates({ cliSmoke: true }),
   ]
@@ -420,33 +442,21 @@ function nodeCompatGates(): Gate[] {
 
 function nodeCompatSmokeGates(options: { cliSmoke?: boolean } = {}): Gate[] {
   const gates: Gate[] = [
-    pnpmExec('source-worker-smoke', [
+    // Serial files keep CLI and PTC children from overlapping. Vitest's
+    // environment worker override takes precedence over its CLI flags.
+    pnpmExec('source-compat-smokes', [
       'vitest',
       'run',
       'packages/workflow/workflow-ptc/tests/source-runtime.compat.spec.ts',
-    ], { label: 'source worker smoke' }),
-    pnpmExec('jsonl-zstd-smoke', [
-      'vitest',
-      'run',
       'packages/session/session-persistence-jsonl/tests/zstd.compat.spec.ts',
-    ], { label: 'JSONL Zstandard smoke' }),
-    pnpmExec('dsh-source-launch-smoke', [
-      'vitest',
-      'run',
       'apps/cli/tests/source-launch.compat.spec.ts',
-    ], { label: 'dsh source-launch smoke' }),
-    pnpmExec('vitest-jsdom-smoke', [
-      'vitest',
-      'run',
       'scripts/vitest-environment.compat.spec.ts',
-    ], { label: 'Vitest jsdom smoke' }),
-    pnpmExec('profile-resolution-smoke', [
-      'vitest',
-      'run',
       'packages/boot/app-boot/tests/profile-resolution.spec.ts',
       'packages/boot/app-boot/tests/profile-resolution-service.spec.ts',
       'packages/boot/app-boot/tests/profile-resolution-worker-bootstrap.spec.ts',
-    ], { label: 'profile resolution smoke' }),
+      '--no-file-parallelism',
+      '--maxWorkers=1',
+    ], { label: 'source compatibility smokes', env: { VITEST_MAX_WORKERS: '1' } }),
   ]
   if (options.cliSmoke) {
     gates.push(
@@ -457,7 +467,7 @@ function nodeCompatSmokeGates(options: { cliSmoke?: boolean } = {}): Gate[] {
       ], {
         label: 'CLI lazy-search startup smoke',
         env: { DSH_REQUIRE_BUILT_CLI_SMOKE: '1' },
-        needs: ['build:web'],
+        needs: ['build'],
       }),
     )
   }
@@ -635,8 +645,14 @@ function ciWindowsObservationalGates(): Gate[] {
   ]
 }
 
+// Host package compilation and the bundle-free Typert pass produce the
+// declarations that prepared typecheck, lint, and doc-typecheck read; none of
+// them reads a bundle or the Host aggregate program's noEmit check, which
+// `build` owns.
 function typertContractsGate(): Gate {
-  return pnpmScript('typert-contracts', 'build:lib:host', { label: 'Typert contracts' })
+  return pnpmExec('typert-contracts', ['tsx', 'scripts/compile-referenced-projects.ts', 'host-contracts'], {
+    label: 'Typert contracts',
+  })
 }
 
 function lintGate(options: { needs?: string[] } = {}): Gate {
@@ -771,6 +787,9 @@ function hygieneLeafGates(options: { artifactNeeds?: string[] } = {}): Gate[] {
     pnpmScript('publint', 'publint', artifactOptions),
     pnpmScript('constraints', 'constraints'),
     pnpmScript('default-product-isolation', 'verify-default-product-isolation', { label: 'default product isolation' }),
+    pnpmScript('product-use', 'verify-product-use', { label: 'product package classification' }),
+    pnpmScript('official-bundle-catalog', 'verify-official-bundle-catalog', { label: 'Official bundle catalog' }),
+    pnpmScript('provider-data', 'verify-provider-data', { label: 'pi-ai provider metadata' }),
     pnpmScript('package-dependencies', 'verify-package-dependencies', { label: 'package dependencies' }),
     pnpmScript('application-entrypoints', 'verify-application-entrypoints', { label: 'application entrypoints' }),
     pnpmScript('dsh-package-licenses', 'verify-dsh-package-licenses', { label: 'DSH package licenses' }),
@@ -799,6 +818,7 @@ function docSyncLeafGates(options: {
       : [pnpmScript('doc-typecheck', options.docTypecheckScript ?? 'doc-typecheck', docTypecheckOptions)],
     pnpmScript('docs-site-build', options.docsBuildScript ?? 'docs:build', { label: 'documentation build' }),
     pnpmScript('doc-graphs', 'verify-doc-graphs', { label: 'doc graphs' }),
+    pnpmScript('cli-help', 'verify-cli-help', { label: 'CLI help reference' }),
     pnpmScript('markdown-links', 'verify-md-links', { label: 'markdown links', quick: true }),
     pnpmScript('type-equivalence', 'verify-type-equiv', { label: 'type equivalence', quick: true }),
     pnpmScript('cordis-catalog', 'verify-cordis-catalog', { label: 'cordis catalog' }),

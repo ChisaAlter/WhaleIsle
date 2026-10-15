@@ -533,7 +533,9 @@ export function lineSpans(line: ThemedToken[]): HighlightSpan[] {
 export function tokenizeLines(code: string, lang: string | undefined): HighlightSpan[][] | undefined {
   const resolved = grammarForHint(lang)
   if (resolved === undefined || !grammarRegistered(resolved)) return undefined
-  const { tokens } = highlighter().codeToTokens(code, { lang: resolved, theme: 'css-variables' })
+  const { tokens } = highlighter().codeToTokens(code, {
+    lang: resolved, theme: 'css-variables', tokenizeMaxLineLength: 1000,
+  })
   // shiki tokenizes `a\nb` into two lines; a trailing newline (`a\n`) adds a
   // third, empty line the caller's own line array does not carry. Drop that
   // one terminator line so the two structures stay in step.

@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import { useDisclosure } from '@deepseek-ai/dsh-client-ui-chat/src/client/chat/use-disclosure.ts'
 import type { StartedToolCall, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import type { SessionProjectionMap } from '@deepseek-ai/dsh-api-session-controller/client'
+import { allowAllAccess, makeTranslate, sessionSnapshot } from '@deepseek-ai/dsh-client-test-runtime'
 import { en } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 import { en as common } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { PartialArguments } from '@deepseek-ai/dsh-util-values'
@@ -24,19 +25,37 @@ afterEach(cleanup)
 
 type Props = Parameters<typeof TodoRow>[0] & Parameters<typeof ReadImageRow>[0] & Parameters<typeof AskQuestionRow>[0]
 
+function useAbsentProjection<K extends Extract<keyof SessionProjectionMap, string>>(key: K): SessionProjectionMap[K] | undefined
+function useAbsentProjection<K extends Extract<keyof SessionProjectionMap, string>, S>(
+  key: K, selector: (value: SessionProjectionMap[K] | undefined) => S, equal?: (left: S, right: S) => boolean,
+): S
+function useAbsentProjection<K extends Extract<keyof SessionProjectionMap, string>, S>(
+  _key: K, selector?: (value: SessionProjectionMap[K] | undefined) => S,
+): SessionProjectionMap[K] | S | undefined {
+  return selector === undefined ? undefined : selector(undefined)
+}
+
 function preparation(name: string, args = new PartialArguments()): Extract<Props, { phase: 'preparing' }> {
+  const sessionId = 'preparing-session' as Props['sessionId']
   return {
+    ...allowAllAccess,
     phase: 'preparing', callId: 'call', toolName: name,
-    sessionId: 'preparing-session' as Props['sessionId'],
-    useConversation: vi.fn(), useInput: vi.fn(), inputActions: {} as Props['inputActions'], useSessions: vi.fn(),
+    sessionId,
+    useConversation: vi.fn(), useInput: vi.fn(),
+    inputActions: {
+      captureInsertion: vi.fn<Props['inputActions']['captureInsertion']>(),
+      insertText: vi.fn(() => false), setDraft: vi.fn(), persistDraft: vi.fn(),
+      addAttachments: vi.fn(() => false), removeAttachment: vi.fn(), pruneAttachments: vi.fn(), submit: vi.fn(),
+    },
+    useSessions: vi.fn(),
     useChat: vi.fn(), useTrajectory: vi.fn(),
     usePanelInfo: vi.fn(), useSessionStatus: vi.fn(), useSessionRetainInfo: vi.fn(),
     useWorkspaces: vi.fn(), useResource: vi.fn(),
     block: { phase: 'preparing', args, callId: 'call', name, turn: 1, step: 1, time: 1, subCalls: [] },
-    t: makeTranslate(en, common), useDisclosure, openFile: vi.fn(), loadImage: vi.fn(),
-    useTodoHistory: vi.fn(), useSession: vi.fn(() => false), renderSlot: vi.fn(() => null),
-    useProjection: vi.fn(() => undefined), revealPanel: vi.fn(() => false), reviewPanel: vi.fn(() => false),
-  } as Extract<Props, { phase: 'preparing' }>
+    cwd: '/workspace', t: makeTranslate(en, common), useDisclosure, openFile: vi.fn(), loadImage: vi.fn(async () => ''),
+    useTodoHistory: selector => selector(undefined), useSession: selector => selector(sessionSnapshot(sessionId)),
+    useProjection: useAbsentProjection, revealPanel: vi.fn(() => false), reviewPanel: vi.fn(() => false),
+  }
 }
 
 describe('tool preparation', () => {
@@ -95,7 +114,7 @@ describe('tool preparation', () => {
     view.rerender(<FileMutationRow {...props} block={{ ...props.block }} />)
     expect(view.getByText('1KB')).toBeTruthy()
     fireEvent.click(view.getByText('hello.txt'))
-    expect(props.openFile).toHaveBeenCalledWith('hello.txt')
+    expect(props.openFile).not.toHaveBeenCalled()
     const started: StartedToolCall = {
       phase: 'start', args: PartialArguments.fromText('{"file_path":"hello.txt","content":"hello"}'), callId: 'call', name: 'write', turn: 1, step: 1, time: 2, subCalls: [],
       argsRaw: '{"file_path":"hello.txt","content":"hello"}',
@@ -107,16 +126,21 @@ describe('tool preparation', () => {
     expect(view.container.querySelector('[data-state="running"]')).not.toBeNull()
     expect(view.getByText('1KB')).toBeTruthy()
     expect(row?.textContent).toMatch(/1KB.*\+1 -0/)
+    fireEvent.click(view.getByText('hello.txt'))
+    expect(props.openFile).not.toHaveBeenCalled()
     const result: ToolResultNode = {
       kind: 'tool-result', seq: 3, time: 3, callId: 'call', callTime: 2,
       name: 'write', args: PartialArguments.fromText(started.argsRaw),
       call: { name: 'write', argsRaw: started.argsRaw }, content: [], isError: false, subCalls: [],
+      meta: { operation: 'create', path: '/workspace/hello.txt' },
     }
     view.rerender(<FileMutationRow {...props} phase="result" block={result} />)
     expect(view.container.querySelector('[data-tool="write"]')).toBe(row)
     expect(view.container.querySelector('[data-state="ok"]')).not.toBeNull()
     expect(view.getByText('1KB')).toBeTruthy()
     expect(row?.textContent).toMatch(/1KB.*\+1 -0/)
+    fireEvent.click(view.getByRole('button', { name: 'hello.txt' }))
+    expect(props.openFile).toHaveBeenCalledWith('/workspace/hello.txt')
   })
 
   it('keeps the combined edit size before diff totals in every stage', () => {

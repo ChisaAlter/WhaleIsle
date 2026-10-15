@@ -1,9 +1,11 @@
 /**
  * Turn-scoped produced-file Definition and readers. Client-only and
- * model-free: produced paths come from successful first-party mutation calls,
- * changed files from the Host's recorded git summary, and deliveries from
- * `present`; never from presentation data or the closing prose.
+ * model-free: produced paths come from successful first-party mutation calls and
+ * their recorded file targets, changed files from the Host's recorded git
+ * summary, and deliveries from `present`; never from presentation data or
+ * the closing prose.
  */
+import { isAbsoluteWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
@@ -24,6 +26,7 @@ export interface PresentedPath extends PresentedFile {
 interface ProducedPath {
   readonly seq: number
   readonly path: string
+  readonly argumentPath?: string
 }
 
 /** The latest `workspace/changes` announcement of one Turn; the Host serves its summary by this sequence. */
@@ -122,6 +125,13 @@ function pathValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null
 }
 
+/** Resolve a settled mutation from recorded metadata, retaining legacy argument paths. */
+function mutationResultPath(argumentPath: string, meta: unknown): string | null {
+  if (!isRecord(meta) || !Object.hasOwn(meta, 'path')) return argumentPath
+  if (typeof meta.path === 'string' && isAbsoluteWorkspacePath(meta.path)) return meta.path
+  return isAbsoluteWorkspacePath(argumentPath) ? argumentPath : null
+}
+
 /** Narrow parsed JSON to an argument object. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -130,12 +140,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /**
  * Files produced by one Turn data value.
  *
- * The source is the arguments of successful `write`, `edit`, and mutating
-  * `str_replace_editor` calls, or one successful PTC child of those tools, not
-  * the closing prose: a produced file must be listed whether or not the model
-  * remembered to name it. Reads, unsupported tools, malformed calls, and
-  * failed results contribute nothing. Paths keep first-seen order and appear
-  * once, so a file written and then edited in the same turn is one entry.
+ * The source is successful `write`, `edit`, and mutating `str_replace_editor`
+ * calls and their recorded absolute targets; legacy results use arguments. A produced file must be
+ * listed whether or not the model remembered to name it. Reads, unsupported
+ * tools, malformed calls, and failed results contribute nothing. Paths keep
+ * first-seen order and appear once, so a file written and then edited in the
+ * same turn is one entry.
  *
  * The Conversation Location index owns turn membership before this function
  * runs, so paths cannot spill across turns and this derivation does not infer
@@ -213,18 +223,29 @@ export const deliverablesDefinition: ConversationNodeDefinition<DeliverablesStat
     }
     if (match.event.type === 'tool/ptc-dispatch') {
       if (match.event.data.isError) return context.state
-      const path = mutationPath(match.event.data.name, match.event.data.arguments)
+      const argumentPath = mutationPath(match.event.data.name, match.event.data.arguments)
+      if (argumentPath === null) return context.state
+      const path = mutationResultPath(argumentPath, match.event.data.meta)
       return path === null
         ? context.state
-        : { ...context.state, produced: [...context.state.produced, { seq: match.event.seq, path }] }
+        : { ...context.state, produced: [...context.state.produced, {
+          seq: match.event.seq, path, ...path === argumentPath ? {} : { argumentPath },
+        }] }
     }
     if (match.event.type !== 'tool/result') return context.state
     if (match.event.data.message.isError === true) return context.state
     const callId = String(match.event.data.message.source.callId)
-    const path = context.state.calls.get(callId)
-    return path === null || path === undefined
+    const argumentPath = context.state.calls.get(callId)
+    if (argumentPath === null || argumentPath === undefined) return context.state
+    const path = mutationResultPath(argumentPath, match.event.data.meta)
+    return path === null
       ? context.state
-      : { ...context.state, produced: [...context.state.produced, { seq: match.event.seq, path }] }
+      : {
+        ...context.state,
+        produced: [...context.state.produced, {
+          seq: match.event.seq, path, ...path === argumentPath ? {} : { argumentPath },
+        }],
+      }
   },
   buildLocationData: (context, scope, previous) => {
     if (scope !== 'turn' || context.state === undefined) return null
@@ -278,11 +299,12 @@ export { basename } from '../presented.ts'
 
 /**
  * Resolves inline-code references against one turn's produced or delivered
- * paths. Exact paths resolve directly; a basename resolves only when exactly
- * one supplied path has that basename. Ambiguous and unknown tokens stay inert.
+ * paths and explicit mutation arguments. A reference resolves only when every
+ * exact or basename match identifies one target. Ambiguous and unknown tokens stay inert.
  * @param paths - The turn's produced or delivered paths, already deduplicated.
  * @param openFile - The chat view's file opener.
  * @param label - Localizes the accessible open-label for a resolved path.
+ * @param operations - successful mutations whose literal arguments may name the same canonical targets.
  * @returns The resolver MarkdownText consumes; the full path rides `title`,
  * the same disambiguator the row's chips carry.
  */
@@ -290,18 +312,17 @@ export function producedFileMentions(
   paths: readonly string[],
   openFile: (path: string) => void,
   label: (path: string) => string,
+  operations: readonly Pick<ProducedPath, 'path' | 'argumentPath'>[] = [],
 ): MarkdownFileMentions {
   return {
     resolve(value) {
-      const path = paths.includes(value) ? value : onlyPathWithBasename(paths, value)
+      const matches = new Set(paths.filter(path => path === value || basename(path) === value))
+      for (const operation of operations) {
+        if (operation.argumentPath === value) matches.add(operation.path)
+      }
+      const path = matches.size === 1 ? matches.values().next().value : undefined
       if (path === undefined) return undefined
       return { open: () => { openFile(path) }, label: label(path), title: path }
     },
   }
-}
-
-/** The single supplied path whose basename is exactly `value`, else undefined. */
-function onlyPathWithBasename(paths: readonly string[], value: string): string | undefined {
-  const matches = paths.filter(path => basename(path) === value)
-  return matches.length === 1 ? matches[0] : undefined
 }

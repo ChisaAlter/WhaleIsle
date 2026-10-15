@@ -77,6 +77,19 @@ afterEach(() => {
 })
 
 describe('build stage credentials', () => {
+  it('rebuilds the Client copy gate when a terminal payload is missing', async () => {
+    const root = repository()
+    const environment = { DSH_CLIENT_COMMIT_HASH: 'aaaaaaa' }
+    const assets = resolve(root, 'packages/client/ui-user-terminal/lib/assets')
+    mkdirSync(assets, { recursive: true })
+    const wasm = resolve(assets, 'ghostty-vt.wasm')
+    writeFileSync(wasm, 'wasm payload')
+    await recordAll(root, environment)
+    rmSync(wasm)
+    await expect(stagesToRun(root, environment, readStageCredentials(root)))
+      .resolves.toEqual(['client', 'web'])
+  })
+
   it('rebuilds after a build-helper edit without a Git commit change', async () => {
     const root = repository()
     const environment = { DSH_CLIENT_COMMIT_HASH: 'aaaaaaa' }

@@ -43,6 +43,8 @@ export async function buildModelCatalog(
           id: model.id,
           name: model.name,
           ...(model.description === undefined ? {} : { description: model.description }),
+          ...(resolved.context === undefined ? {} : { contextWindow: resolved.context.contextWindow }),
+          ...(resolved.defaultMaxTokens === undefined ? {} : { maxTokens: resolved.defaultMaxTokens }),
           ...(reasoning === undefined ? {} : { reasoning }),
           ...(model.inputModalities === undefined ? {} : { inputModalities: [...model.inputModalities] }),
         }

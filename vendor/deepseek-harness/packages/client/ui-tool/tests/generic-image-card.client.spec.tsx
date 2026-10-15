@@ -104,7 +104,7 @@ describe('genericImageCardModel', () => {
       { type: 'image', attachment: image(2, 'two.png') },
     ]))
     expect(model?.images.map(entry => entry.attachment.name)).toEqual(['one.png', 'two.png'])
-    expect(model?.text).toBe('first frame\nsecond frame')
+    expect(model?.extraText).toBe('first frame\nsecond frame')
   })
 
   it('declines running, error, and image-free results', () => {

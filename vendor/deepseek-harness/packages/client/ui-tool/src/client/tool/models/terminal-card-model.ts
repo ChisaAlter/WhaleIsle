@@ -1,10 +1,11 @@
 /** Pure terminal-card derivation from raw Tool call and result fields. @module */
 import type { TerminalBlockLabels, TerminalBlockProps } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
+import { isAbsoluteWorkspacePath, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import { hasSpillNotice } from '@deepseek-ai/dsh-spill-policy/notice'
 import type { ToolCallBlock } from './tool-call-model.ts'
 import { parsedToolCall, singleResultText } from './raw-tool-call.ts'
+import { recordedAbsolutePath } from './recorded-path.ts'
 
 /**
  * Build the TerminalBlock display copy from the conversation locale seat —
@@ -16,6 +17,7 @@ import { parsedToolCall, singleResultText } from './raw-tool-call.ts'
  */
 export function terminalBlockLabels(t: TranslateNS<'conversation'>): TerminalBlockLabels {
   return {
+    commandLine: line => t('terminal.commandLine', { n: line }),
     signal: signal => t('terminal.signal', { signal }),
     exitCode: code => t('terminal.exitCode', { code }),
     noExitCode: t('terminal.noExitCode'),
@@ -42,7 +44,7 @@ export interface TerminalCardModel {
    * The locale-neutral props {@link TerminalBlock} draws. The render site adds
    * `command` after resolving {@link copy} through its locale seat.
    */
-  card: Pick<TerminalBlockProps, 'cwd' | 'output' | 'exitCode' | 'signal' | 'running'>
+  card: Pick<TerminalBlockProps, 'cwd' | 'output' | 'exitCode' | 'signal' | 'running' | 'background'>
   /**
    * Verbatim Tool data or semantic `terminal_send` data. Product copy stays
    * unresolved until a render site supplies its locale seat.
@@ -53,7 +55,7 @@ export interface TerminalCardModel {
 }
 
 interface LocalizedTerminalCardModel {
-  readonly card: Pick<TerminalBlockProps, 'command' | 'cwd' | 'output' | 'exitCode' | 'signal' | 'running'>
+  readonly card: Pick<TerminalBlockProps, 'command' | 'cwd' | 'output' | 'exitCode' | 'signal' | 'running' | 'background'>
   readonly description: string | undefined
 }
 
@@ -210,6 +212,16 @@ function shellCall(name: string, args: Record<string, unknown>): ShellCall | nul
 }
 
 /**
+ * Identify a background shell launch whose result acknowledges a job, not its exit.
+ * @param block - Tool block at any call stage.
+ * @returns whether the call requests a background shell job.
+ */
+export function isBackgroundShellCall(block: ToolCallBlock): boolean {
+  const parsed = parsedToolCall(block)
+  return parsed !== null && shellCall(parsed.name, parsed.args)?.background === true
+}
+
+/**
  * Identify a settled root call from the persistent Bash or PowerShell tool.
  * Its result stays on the generic input/output path because the persistent
  * shell can report resets and partial output without one process exit status.
@@ -276,11 +288,12 @@ function parseExitStatus(text: string): { output: string; exitCode?: number; sig
 /**
  * Derive terminal props for supported shell and terminal-send calls, including
  * nested PTC dispatch calls. Standard shell results parse their final status
- * marker; persistent shell results, spill previews, background calls, errors,
- * and malformed input use the generic path. {@link isSettledPersistentShellCall} lets that generic
+ * marker. Successful background shell launches retain only their command after
+ * settlement; persistent shell results, spill previews, background terminal sends,
+ * errors, and malformed input use the generic path. {@link isSettledPersistentShellCall} lets that generic
  * persistent result remain expandable without inventing one process status.
  * @param block - running or settled Tool block.
- * @param sessionCwd - session workspace root used to resolve workdir.
+ * @param sessionCwd - original workspace root used only for old results without recorded cwd.
  * @returns locale-neutral terminal-card data, or null for the generic path.
  */
 export function terminalCardModel(
@@ -290,12 +303,17 @@ export function terminalCardModel(
   const parsed = parsedToolCall(block)
   if (parsed === null) return null
   const call = shellCall(parsed.name, parsed.args) ?? terminalSendCall(parsed.name, parsed.args)
-  if (call === null || call.background) return null
+  if (call === null || (call.kind === 'terminal-send' && call.background)) return null
 
   const copy: TerminalCardModel['copy'] = call.kind === 'shell'
     ? { kind: 'shell', command: call.command, description: call.description }
     : { kind: 'terminal-send', text: call.text, sessionId: call.sessionId }
-  const cwd = resolveTerminalCwd(call.kind === 'shell' ? call.workdir : undefined, sessionCwd)
+  const workdir = call.kind === 'shell' ? call.workdir : undefined
+  const absoluteRequestCwd = workdir !== undefined && isAbsoluteWorkspacePath(workdir) ? normalizeSegments(workdir) : undefined
+  const cwd = 'kind' in block
+    ? recordedAbsolutePath(block.meta, 'cwd') ?? (call.kind === 'shell' && block.parentCallId === undefined
+      ? resolveTerminalCwd(workdir, sessionCwd) : absoluteRequestCwd)
+    : absoluteRequestCwd
   if (!('kind' in block)) {
     return {
       copy,
@@ -305,10 +323,14 @@ export function terminalCardModel(
         exitCode: undefined,
         signal: undefined,
         running: true,
+        ...(call.kind === 'shell' && call.background ? { background: call.background } : {}),
       },
     }
   }
   if (block.isError || (call.kind === 'shell' && call.persistent) || isSpilledShellCall(block)) return null
+  if (call.kind === 'shell' && call.background) {
+    return { copy, card: { cwd, running: false, background: call.background } }
+  }
   const output = singleResultText(block)
   if (output === undefined) return null
   const status = call.kind === 'terminal-send' ? { output } : parseExitStatus(output)

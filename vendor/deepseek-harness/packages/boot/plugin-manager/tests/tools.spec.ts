@@ -1,15 +1,17 @@
+import { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 /** Agent controls use the same manager methods as the Web and bound inventory reads. */
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import SandboxPolicy, { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
+import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
 import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import ApprovalService, { type ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import type PluginManager from '../src/index.ts'
+import type { BundleInfo } from '../src/types.ts'
 import * as tool from '../src/tools.ts'
 
 function resultText(result: Awaited<ReturnType<ToolRuntime['execute']>>): string {
@@ -71,6 +73,40 @@ it('preserves selected bundle load errors in the agent list result', async () =>
           },
           "name": "bundle",
           "overrides": [],
+          "rows": [],
+        },
+      ],
+      "nextOffset": null,
+      "total": 1,
+    }
+  `)
+})
+
+it('exposes an absent Official bundle installation target without display metadata', async () => {
+  const { manager, call } = await fixture()
+  const offered: BundleInfo = {
+    name: '@deepseek-ai/dsh-subagent-codex', official: true, availability: 'missing',
+    installed: false, enabled: false, optional: false, removable: false, rows: [], overrides: [],
+    installTarget: { spec: '@deepseek-ai/dsh-subagent-codex@1.2.3', version: '1.2.3' },
+    meta: { title: 'Codex subagent' },
+  }
+  manager.listBundles.mockResolvedValue([offered])
+  expect(JSON.parse(resultText(await call({ action: 'list_bundles' })))).toMatchInlineSnapshot(`
+    {
+      "entries": [
+        {
+          "availability": "missing",
+          "enabled": false,
+          "installTarget": {
+            "spec": "@deepseek-ai/dsh-subagent-codex@1.2.3",
+            "version": "1.2.3",
+          },
+          "installed": false,
+          "name": "@deepseek-ai/dsh-subagent-codex",
+          "official": true,
+          "optional": false,
+          "overrides": [],
+          "removable": false,
           "rows": [],
         },
       ],
@@ -245,4 +281,26 @@ it('presents reads and changes distinctly and disposes its registration', async 
   expect(definition.presentCall?.({ action: 'remove_bundle', target: 'bundle' })).toMatchObject({ kind: 'other' })
   await fiber.dispose()
   expect(ctx.tools.get('plugin_manager')).toBeUndefined()
+})
+
+it('tells the agent the next step for each change outcome it can act on', async () => {
+  const { manager, call } = await fixture()
+  const outcome = async (result: object): Promise<unknown> => {
+    manager.setBundleEnabled.mockResolvedValueOnce(result as never)
+    return (JSON.parse(resultText(await call({ action: 'set_bundle', target: 'bundle', enabled: true }))) as { nextStep?: string }).nextStep
+  }
+  expect(await outcome({ changed: true, application: 'applied' })).toBeUndefined()
+  expect(await outcome({ changed: false, application: 'cancelled' })).toContain('nothing changed')
+  expect(await outcome({ changed: true, application: 'overridden' })).toContain('higher-priority layer')
+  expect(await outcome({ changed: true, application: 'restart-required', restartReason: 'host-module' }))
+    .toBe('Tell the user to restart DSH to apply this change: the change reaches modules DSH itself loaded.')
+  expect(await outcome({ changed: true, application: 'restart-required' })).toBe('Tell the user to restart DSH to apply this change.')
+  expect(await outcome({ changed: false, application: 'failed', packageResult: { kind: 'build-blocked' } })).toContain('approvedBuilds')
+  // A refusal code is more specific than the package manager's failure kind.
+  expect(await outcome({ changed: false, application: 'failed', packageResult: { kind: 'network' }, error: { code: 'stale-approval' } }))
+    .toContain('without approvedBuilds')
+  // A failure kind without its own step falls back to the refusal code.
+  expect(await outcome({ changed: false, application: 'failed', packageResult: { kind: 'unknown' }, error: { code: 'operation-error' } }))
+    .toContain('Report the diagnostic')
+  expect(await outcome({ changed: false, application: 'failed' })).toContain('Report the diagnostic')
 })

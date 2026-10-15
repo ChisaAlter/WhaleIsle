@@ -8,9 +8,9 @@ import type { ChatConversationViewNode, ChatNode } from '../contract/chat-nodes.
 import type { ProcessActivitySummary, ProcessGroupData } from '../contract/process-groups.ts'
 import { hasAssistantReplyContent } from '../contract/assistant-content.ts'
 import { isVisibleChatNode } from '../contract/chat-visibility.ts'
+import { isAtOrOutside } from '../contract/group-tree.ts'
 import { processActivity } from './process-activity.ts'
 
-const INDEPENDENT = new Set(['user', 'steering', 'turn-trigger', 'model-retry', 'turn-error', 'turn-max-tokens', 'turn-tail'])
 type ProcessInput = ConversationGroupInput<ChatConversationViewNode>
 
 function turnOf(node: ChatNode): number | undefined {
@@ -45,6 +45,7 @@ function structureChanged(previous: ChatNode | undefined, current: ChatNode): bo
     || previous.processVisibility !== current.processVisibility
     || turnOf(previous) !== turnOf(current)
     || isVisibleChatNode(previous) !== isVisibleChatNode(current)
+    || previous.groupTree !== current.groupTree
     || reasoning(previous) !== reasoning(current) || reply(previous) !== reply(current)
 }
 
@@ -163,13 +164,11 @@ class TurnGroups {
       const node = readNode(input, key)
       // Both Definitions retain the same message id; only its question presentation renders.
       if (node.kind === 'turn-trigger' && replies.has(node.id)) continue
-      if (node.processVisibility === 'independent' || INDEPENDENT.has(node.kind)) {
+      if (node.processVisibility === 'independent' || isAtOrOutside(node, 'process')) {
         flush(true)
         emit(key, { kind: 'node', key })
-      } else if (node.kind === 'turn-process') {
-        // A coalesced opening reply can sort before the control that folds its group.
-        emit(pending[0]?.key ?? key, { kind: 'node', key })
       } else if (node.kind === 'assistant-step') {
+        // One Node, two rows: reasoning joins the step run, a reply stands outside it.
         if (reasoning(node)) pending.push({ kind: 'node', key, groupPart: 'reasoning' })
         if (reply(node)) {
           flush(true)

@@ -347,7 +347,7 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
             )}
           />
         )}
-        {onCreate !== undefined && <Tooltip label={t('actions.newSession')} shortcutKeys={newShortcut?.keys} side="bottom" align="end" delayMs={500}>
+        {onCreate !== undefined && <Tooltip label={t('actions.newSession')} shortcutKeys={newShortcut?.keys} side="bottom" align="end" delayMs={500} portal>
           <button
             type="button"
             className={css.iconButton}
@@ -373,6 +373,7 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
         t={t}
       />}
       openDelayMs={800}
+      grouped
       disabled={menuOpen}
       copyText={row.cwd}
       copyLabel={t('copy')}
@@ -843,6 +844,7 @@ export function SessionNodeItem({
       anchor={ownRow}
       content={<SessionHoverContent node={node} now={now} renderSlot={renderSlot} t={t} />}
       openDelayMs={800}
+      grouped
       disabled={selection?.enabled || menuOpen || drag?.active === true}
       copyText={row.blank || row.title === '' ? undefined : row.title}
       copyLabel={t('copy')}

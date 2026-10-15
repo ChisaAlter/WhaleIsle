@@ -31,7 +31,7 @@
   white-space: nowrap;
 }
 
-@container (max-width: 520px) {
+@container (max-width: 560px) {
   .text {
     display: none;
   }

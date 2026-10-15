@@ -43,6 +43,8 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'hook/invoked',
   'hook/result',
   'image/offload',
+  'job/registered',
+  'job/settled',
   'llm/retry',
   'llm/retry-started',
   'model/selection',
@@ -84,6 +86,7 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'user/message',
   'vision/describe',
   'web/deepseek-search-llm-request',
+  'working-directory/change',
   'workspace/changes',
 ])
 

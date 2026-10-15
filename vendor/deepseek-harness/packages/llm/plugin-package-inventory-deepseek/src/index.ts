@@ -60,20 +60,14 @@ function barePackageName(specifier: string): string | undefined {
   return first.startsWith('@') ? `${first}/${second}` : first
 }
 
-/**
- * Read one manifest identity. A loose module's nearest manifest may be an
- * unrelated ancestor marker (a profile or workspace package.json), so
- * nameless or private incomplete manifests contribute nothing; only a
- * package entry's malformed manifest fails the request.
- */
-function identityFromManifest(path: string, allowAnonymous: boolean): DeepSeekPluginPackageIdentity | undefined {
+/** Read a named identity, including its version only when it is a non-blank string. */
+function identityFromManifest(path: string, ancestorMarker = false): DeepSeekPluginPackageIdentity | undefined {
   const manifest = JSON.parse(readFileSync(path, 'utf8')) as PackageManifest
-  if (typeof manifest.name === 'string' && manifest.name.length > 0
-    && typeof manifest.version === 'string' && manifest.version.length > 0) {
-    return { name: manifest.name, version: manifest.version }
-  }
-  if (allowAnonymous && (manifest.name === undefined || manifest.private === true)) return undefined
-  throw new Error(`plugin-package-inventory-deepseek: ${path} must declare non-empty name and version`)
+  if (ancestorMarker && manifest.private === true && (typeof manifest.version !== 'string' || manifest.version.trim().length === 0)) return undefined
+  if (typeof manifest.name !== 'string' || manifest.name.trim().length === 0) return undefined
+  return typeof manifest.version === 'string' && manifest.version.trim().length > 0
+    ? { name: manifest.name, version: manifest.version }
+    : { name: manifest.name }
 }
 
 /** Resolve a bare package without requiring it to export `./package.json`. */
@@ -124,6 +118,7 @@ class PackageIdentityResolver {
 
     const packageName = barePackageName(moduleName)
     let manifest: string | undefined
+    let ancestorMarker = false
     if (packageName !== undefined) {
       manifest = barePackageManifest(packageName, anchors, this.packages)
       if (manifest === undefined) {
@@ -133,9 +128,13 @@ class PackageIdentityResolver {
       const moduleUrl = isAbsolute(moduleName)
         ? pathToFileURL(moduleName)
         : new URL(moduleName, treeBase)
-      if (moduleUrl.protocol === 'file:') manifest = nearestManifest(fileURLToPath(moduleUrl))
+      if (moduleUrl.protocol === 'file:') {
+        const modulePath = fileURLToPath(moduleUrl)
+        manifest = nearestManifest(modulePath)
+        ancestorMarker = manifest !== undefined && dirname(manifest) !== dirname(modulePath)
+      }
     }
-    const identity = manifest === undefined ? undefined : identityFromManifest(manifest, packageName === undefined)
+    const identity = manifest === undefined ? undefined : identityFromManifest(manifest, ancestorMarker)
     this.cache.set(key, identity)
     return identity
   }
@@ -158,11 +157,12 @@ function compareWireText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
-/** Collect the full active package set for one request. */
+/** Collect available identities from active packages for one request. */
 function collectActivePluginPackages(
   ctx: Context,
   resolver: PackageIdentityResolver,
   hostBaseUrl: string,
+  unreadable: Set<string>,
   sessionId?: string,
 ): DeepSeekPluginPackageIdentity[] {
   const entries = activeEntries(ctx.loader)
@@ -180,12 +180,21 @@ function collectActivePluginPackages(
   }
   const unique = new Map<string, DeepSeekPluginPackageIdentity>()
   for (const activeEntry of entries) {
-    const identity = resolver.resolve(activeEntry)
+    let identity: DeepSeekPluginPackageIdentity | undefined
+    try {
+      identity = resolver.resolve(activeEntry)
+    } catch (error) {
+      if (!unreadable.has(activeEntry.moduleName)) {
+        unreadable.add(activeEntry.moduleName)
+        ctx.logger.warn('plugin-package-inventory-deepseek: omitting unreadable package identity for %s: %o', activeEntry.moduleName, error)
+      }
+      continue
+    }
     if (identity === undefined) continue
-    unique.set(`${identity.name}\u0000${identity.version}`, identity)
+    unique.set(`${identity.name}\u0000${identity.version ?? ''}`, identity)
   }
   return [...unique.values()].sort((left, right) => (
-    compareWireText(left.name, right.name) || compareWireText(left.version, right.version)
+    compareWireText(left.name, right.name) || compareWireText(left.version ?? '', right.version ?? '')
   ))
 }
 
@@ -198,11 +207,13 @@ export function apply(ctx: Context, config: Config): void {
   if (config.enabled === false) return
   const hostBaseUrl = ctx.baseUrl ?? import.meta.url
   const resolver = new PackageIdentityResolver(hostBaseUrl, ctx.get('pluginPackages'))
+  // Unreadable identities are re-resolved on every request; log each module once.
+  const unreadable = new Set<string>()
   ctx.deepseekLlmApiExtensions.register('dsh_plugin_packages', {
     prepare: (request) => {
       const value: DeepSeekPluginPackageInventoryExtension = {
         version: 1,
-        packages: collectActivePluginPackages(ctx, resolver, hostBaseUrl, request.sessionId),
+        packages: collectActivePluginPackages(ctx, resolver, hostBaseUrl, unreadable, request.sessionId),
       }
       return { value }
     },

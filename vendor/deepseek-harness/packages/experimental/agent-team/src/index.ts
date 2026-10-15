@@ -1,4 +1,7 @@
-/** Agent Teams service façade over roster, mailbox, task, and runtime lifecycle owners. */
+import { randomUUID } from 'node:crypto'
+import type { MessageId } from '@deepseek-ai/dsh-llm'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
+/** Agent Teams service façade over roster, messaging, task, and runtime lifecycle owners. */
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -7,16 +10,18 @@ import type {} from '@deepseek-ai/dsh-session-persistence'
 import { TeamManagement } from './management.ts'
 import type { TeamPolicy } from './management.ts'
 export type { TeamPolicy } from './management.ts'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { steerHostSubagentPrompt } from '@deepseek-ai/dsh-subagent/internal'
 import { TeamActivity } from './activity.ts'
 import { errorMessage, TeamError } from './error.ts'
 import { TeamJournal } from './journal.ts'
+import { readPersistedSession } from './persisted.ts'
 import { TeamRuntimeLifecycle } from './lifecycle.ts'
-import { TeamMailbox } from './mailbox.ts'
 import { teamProjectionDefinition } from './projection.ts'
-import { TeamRoster } from './roster.ts'
+import { resolveActiveMember, TeamRoster } from './roster.ts'
 import type { TeamMembership } from './roster.ts'
 import { TeamTaskBoard } from './task-board.ts'
-import { TeamId, TeamTaskId } from './types.ts'
+import { TeamId, TeamTaskId, TeamMessageId } from './types.ts'
 import type {
   Config,
   CreateTeamTaskRequest,
@@ -43,7 +48,6 @@ declare module '@deepseek-ai/cordis' {
 
 const DEFAULT_MAX_MEMBERS = 16
 const DEFAULT_MAX_TASKS = 256
-const DEFAULT_MAX_PENDING_MESSAGES = 64
 const DEFAULT_MAX_MESSAGE_BYTES = 65_536
 const DEFAULT_DISPOSAL_TIMEOUT_MS = 5_000
 
@@ -62,7 +66,6 @@ export class TeamService extends Service {
   static Config: z<Config> = z.object({
     maxMembers: z.number().step(1).min(1).default(DEFAULT_MAX_MEMBERS),
     maxTasks: z.number().step(1).min(1).default(DEFAULT_MAX_TASKS),
-    maxPendingMessagesPerMember: z.number().step(1).min(1).default(DEFAULT_MAX_PENDING_MESSAGES),
     maxMessageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_MESSAGE_BYTES),
     disposalTimeoutMs: z.number().step(1).min(1).default(DEFAULT_DISPOSAL_TIMEOUT_MS),
   })
@@ -70,12 +73,12 @@ export class TeamService extends Service {
   /** Validated deployment limits used by every Team operation. */
   private readonly config: Required<Config>
 
+  private readonly managedSends = new Map<TeamMessageId, Promise<SendTeamMessageResult>>()
   private readonly management: TeamManagement
   private readonly activity: TeamActivity
   private readonly lifecycle: TeamRuntimeLifecycle
   private readonly journal: TeamJournal
   private readonly roster: TeamRoster
-  private readonly mailbox: TeamMailbox
   private readonly tasks: TeamTaskBoard
 
   constructor(ctx: Context, config: Config = {}) {
@@ -83,10 +86,6 @@ export class TeamService extends Service {
     this.config = {
       maxMembers: positiveLimit('maxMembers', config.maxMembers ?? DEFAULT_MAX_MEMBERS),
       maxTasks: positiveLimit('maxTasks', config.maxTasks ?? DEFAULT_MAX_TASKS),
-      maxPendingMessagesPerMember: positiveLimit(
-        'maxPendingMessagesPerMember',
-        config.maxPendingMessagesPerMember ?? DEFAULT_MAX_PENDING_MESSAGES,
-      ),
       maxMessageBytes: positiveLimit('maxMessageBytes', config.maxMessageBytes ?? DEFAULT_MAX_MESSAGE_BYTES),
       disposalTimeoutMs: positiveLimit(
         'disposalTimeoutMs',
@@ -99,18 +98,8 @@ export class TeamService extends Service {
     this.journal = new TeamJournal(ctx, (root) => { this.activity.notify(TeamId(root.id)) })
     this.management = new TeamManagement(this.journal, this.config.maxMembers, this.config.maxTasks)
     this.roster = new TeamRoster(ctx, this.journal, this.lifecycle, this.config.maxMembers, this.management)
-    this.mailbox = new TeamMailbox(
-      ctx,
-      this.journal,
-      this.roster,
-      this.lifecycle,
-      this.config.maxPendingMessagesPerMember,
-      this.config.maxMessageBytes,
-      this.management,
-    )
     this.tasks = new TeamTaskBoard(this.journal, this.config.maxTasks, this.management)
 
-    ctx.on('session/event', (session, event) => { this.mailbox.observeSessionEvent(session, event) })
     ctx.on('agent/created', ({ agent }) => { this.scheduleRecovery(agent) })
     ctx.on('agent/status', ({ agent }) => {
       const membership = this.roster.tryMembership(agent)
@@ -159,13 +148,17 @@ export class TeamService extends Service {
   }
 
   /**
-   * Queue one durable peer message, then attempt immediate delivery.
+   * Steer one peer message into the target inbox or reject the attempt.
    * @param caller - exact live sending Team member.
-   * @param request - target name, content, and pre-queue cancellation.
-   * @returns durable message identity and immediate-delivery observation.
+   * @param request - target name, content, and cancellation before acceptance.
+   * @returns accepted inbox identity; acceptance follows normal Agent persistence and does not await model processing.
    */
   async sendMessage(caller: Agent, request: SendTeamMessageRequest): Promise<SendTeamMessageResult> {
-    return await this.mailbox.send(caller, request)
+    if (this.lifecycle.disposed) throw new TeamError('Agent Teams service is disposing', 'TEAM_DISPOSED')
+    return await this.lifecycle.track(this.sendAdmitted(caller, {
+      ...request,
+      signal: AbortSignal.any([request.signal, this.lifecycle.signal]),
+    }))
   }
 
   /**
@@ -272,21 +265,106 @@ export class TeamService extends Service {
   /** Adopt only an existing continuation verified against its durable descriptor. */
   async adoptMember(root: Agent, request: SpawnTeammateRequest): Promise<void> { await this.roster.adopt(root, request) }
 
-  /** Queue one contained recovery pass after publication has unwound. */
+  /** Deliver an admitted send using the Lead's authority and the actual sender's identity. */
+  private async sendAdmitted(caller: Agent, request: SendTeamMessageRequest): Promise<SendTeamMessageResult> {
+    const membership = this.roster.membership(caller)
+    request.signal.throwIfAborted()
+    const { root } = membership
+    if (this.management.state(root).policy !== undefined) {
+      await this.management.admit(root, 'send', { caller, request })
+      const id = request.messageId ?? TeamMessageId(`team-message-${randomUUID()}`)
+      const pending = this.managedSends.get(id)
+      const send = (): Promise<SendTeamMessageResult> => this.sendManaged(caller, { ...request, messageId: id })
+      const operation = pending === undefined ? send() : pending.then(send, send)
+      this.managedSends.set(id, operation)
+      try { return await operation } finally { if (this.managedSends.get(id) === operation) this.managedSends.delete(id) }
+    }
+    const target = resolveActiveMember(root, this.journal.state(root), request.target)
+    if (target.id === caller.id) throw new TeamError('a Team member cannot message itself', 'TEAM_SELF_MESSAGE')
+    const content = [
+      { type: 'text' as const, text: `Team message from ${membership.name}:` },
+      ...structuredClone(request.content),
+    ]
+    if (Buffer.byteLength(JSON.stringify(content), 'utf8') > this.config.maxMessageBytes) {
+      throw new TeamError(`team message exceeds ${this.config.maxMessageBytes} bytes`, 'TEAM_MESSAGE_TOO_LARGE')
+    }
+    const source = { kind: 'agent-message' as const, form: 'relay' as const, senderSessionId: caller.id }
+    let messageId
+    if (target.id === root.id) {
+      const input = createUserMessage({ content, source })
+      root.steer(input)
+      messageId = input.id
+    } else {
+      messageId = await steerHostSubagentPrompt(this.ctx.subagents, root, target.id, content, source, request.signal)
+    }
+    this.activity.notify(membership.id)
+    return { messageId }
+  }
+
+  /** Managed Hosts retain assignment facts, but delivery is one direct Inbox attempt with no outbox replay. */
+  private async sendManaged(caller: Agent, request: SendTeamMessageRequest & { messageId: TeamMessageId }): Promise<SendTeamMessageResult> {
+    const { root, name } = this.roster.membership(caller)
+    const target = resolveActiveMember(root, this.journal.state(root), request.target)
+    if (target.id === caller.id) throw new TeamError('a Team member cannot message itself', 'TEAM_SELF_MESSAGE')
+    const message = await this.journal.transact(root.id, async () => {
+      request.signal.throwIfAborted()
+      const prior = this.journal.state(root).messages.find(item => item.id === request.messageId)
+      if (prior !== undefined) {
+        if (prior.senderId !== caller.id || prior.targetId !== target.id || JSON.stringify(prior.content) !== JSON.stringify(request.content)) throw new TeamError('Message identity reused with different content', 'TEAM_MESSAGE_CONFLICT')
+        return prior
+      }
+      const message = { id: request.messageId, senderId: caller.id, senderName: name, targetId: target.id, content: structuredClone(request.content) }
+      if (Buffer.byteLength(JSON.stringify(this.managedContent(message)), 'utf8') > this.config.maxMessageBytes) throw new TeamError(`team message exceeds ${this.config.maxMessageBytes} bytes`, 'TEAM_MESSAGE_TOO_LARGE')
+      await this.journal.appendAndFlush(root, 'team/message/queued', { version: 2, teamId: TeamId(root.id), message })
+      return message
+    })
+    if (this.management.state(root).cancelled.has(message.id)) throw new TeamError('Managed message was cancelled', 'TEAM_MESSAGE_CANCELLED')
+    await this.management.admit(root, 'deliver', message)
+    request.signal.throwIfAborted()
+    const live = target.id === root.id ? root : this.ctx.agents.get(target.id)
+    let accepted: MessageId | undefined
+    if (live !== undefined) accepted = this.acceptedManagedMessage(live.session.snapshotEvents(live.session.inheritedEventCount), message.id)
+    else {
+      const observed = await readPersistedSession(this.ctx.sessionPersistence, target.id, request.signal)
+      accepted = this.acceptedManagedMessage(observed.events.slice(observed.inheritedEventCount), message.id)
+    }
+    if (accepted === undefined) {
+      const source = { kind: 'team-message' as const, teamId: TeamId(root.id), messageId: message.id, senderId: caller.id, senderName: name }
+      if (target.id === root.id) {
+        const input = createUserMessage({ content: this.managedContent(message), source })
+        root.steer(input)
+        accepted = input.id
+      } else accepted = await steerHostSubagentPrompt(this.ctx.subagents, root, target.id, this.managedContent(message), source, request.signal)
+    }
+    const receiver = this.ctx.agents.get(target.id)
+    if (receiver !== undefined) await this.ctx.sessions.flush(receiver.session)
+    await this.journal.transact(root.id, async () => {
+      if (!this.journal.state(root).delivered.includes(message.id)) await this.journal.appendAndFlush(root, 'team/message/delivered', { version: 2, teamId: TeamId(root.id), messageId: message.id, targetId: target.id })
+    })
+    return { messageId: accepted }
+  }
+
+  private managedContent(message: import('./types.ts').TeamMessageSnapshot): import('@deepseek-ai/dsh-llm').ContentBlock[] {
+    return [{ type: 'text', text: `Team message ${message.id} from ${message.senderName}:` }, ...structuredClone(message.content)]
+  }
+
+  private acceptedManagedMessage(events: readonly SessionEvent[], id: TeamMessageId): MessageId | undefined {
+    for (const event of events) {
+      const messages = event.type === 'user/message' ? [event.data] : event.type === 'agent/inbox/spliced' ? event.data.inserted : []
+      const found = messages.find(item => item.source.kind === 'team-message' && item.source.messageId === id)
+      if (found !== undefined) return found.id
+    }
+  }
+
+  /** Queue one contained provisioning reconciliation after publication has unwound. */
   private scheduleRecovery(agent: Agent): void {
     queueMicrotask(() => {
       if (this.lifecycle.disposed) return
-      void this.recoverFor(agent).catch((error: unknown) => {
+      void this.roster.recoverFor(agent, this.lifecycle.signal).catch((error: unknown) => {
         if (this.lifecycle.disposed) return
         this.ctx.logger.warn(`Agent Teams recovery for "${agent.id}" failed: ${errorMessage(error)}`)
       })
     })
-  }
-
-  /** Reconcile roster provisioning before retrying that member's pending mailbox. */
-  private async recoverFor(agent: Agent): Promise<void> {
-    await this.roster.recoverFor(agent, this.lifecycle.signal)
-    await this.mailbox.recoverFor(agent, this.lifecycle.signal)
   }
 
   /** Stop Team-owned live branches and release every waiter before service disposal completes. */
@@ -295,8 +373,7 @@ export class TeamService extends Service {
     this.activity.close()
 
     const failures: unknown[] = []
-    await this.lifecycle.settle(this.roster.pendingCreations(), failures)
-    await this.lifecycle.settle(this.mailbox.pendingDispatches(), failures)
+    await this.lifecycle.settle(this.lifecycle.pending(), failures)
     for (const [root, childIds] of this.roster.liveChildrenByRoot()) {
       try {
         await this.roster.stopTeammates(root, childIds)

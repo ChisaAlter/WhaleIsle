@@ -63,6 +63,33 @@ async function tempDir(prefix: string): Promise<string> {
 }
 
 describe('DeepSeekHarness', () => {
+  it('returns a restored handle that can run followups on the same identity', async () => {
+    const harness = harnessWith()
+    const session = await harness.resumeSession('saved-session')
+    expect(session.id).toBe('saved-session')
+    expect((await session.run('continue')).sessionId).toBe('saved-session')
+  })
+
+  it('propagates resume failures', async () => {
+    await expect(harnessWith({ FAKE_RESUME_ERROR: '1' }).resumeSession('missing'))
+      .rejects.toThrow('session not found')
+  })
+
+  it('reads and changes directories independently for each lazy Session', async () => {
+    const harness = harnessWith()
+    const first = harness.session('directory-first')
+    const second = harness.session('directory-second')
+    const origin = await first.getWorkingDirectory()
+    expect(await first.setWorkingDirectory('child')).toBe(join(origin, 'child'))
+    expect(await first.getWorkingDirectory()).toBe(join(origin, 'child'))
+    expect(await second.getWorkingDirectory()).toBe(origin)
+  })
+
+  it('rejects a malformed working-directory response', async () => {
+    const harness = harnessWith({ FAKE_MALFORMED_DIRECTORY: '1' })
+    await expect(harness.session().getWorkingDirectory()).rejects.toThrow('returned no working directory')
+    await expect(harness.session().setWorkingDirectory('.')).rejects.toThrow('returned no working directory')
+  })
   it('ignores notifications that precede the submitted message receipt', async () => {
     const notifications = [
       { method: 'session.status', params: { sessionId: 'owned', status: 'running' } },
@@ -173,6 +200,7 @@ describe('DeepSeekHarness', () => {
         arguments: { command: 'git push --force' },
         isError: true,
         content: [{ type: 'text', text: 'Error: blocked by policy' }],
+        meta: { cwd: '/selected', path: '/selected/note.txt', view: { line: 3 } },
         error: {
           name: 'AutoReviewDeniedError',
           code: 'AUTO_REVIEW_DENIED',
@@ -207,6 +235,8 @@ describe('DeepSeekHarness', () => {
     const result = await new HarnessSession(harness, 'owned').run('go')
 
     expect(result.events).toEqual([receipt, nativeResult, ptcStart, ptcResult])
+    expect(result.events.find(event => event.type === 'tool/ptc-dispatch')?.data.meta)
+      .toEqual({ cwd: '/selected', path: '/selected/note.txt', view: { line: 3 } })
     for (const event of result.events.filter(event => event.type.startsWith('tool/ptc-dispatch'))) {
       expect(event.data).not.toHaveProperty('description')
       expect(event.data).not.toHaveProperty('parameters')
