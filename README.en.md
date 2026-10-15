@@ -31,12 +31,12 @@ Independently maintained by the community, not an official DeepSeek product. Bui
 
 ## Download and get started
 
-| Platform | v0.3.6 |
+| Platform | v0.3.8 |
 | --- | --- |
-| Windows 10+ · x64 | [Download installer](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.6/Whale-Isle-Setup-0.3.6.exe) |
-| macOS 14+ · Apple Silicon | [Download ARM64 DMG](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.6/Whale-Isle-0.3.6-mac-arm64.dmg) |
+| Windows 10+ · x64 | [Download installer](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.8/Whale-Isle-Setup-0.3.8.exe) |
+| macOS 14+ · Apple Silicon | [Download ARM64 DMG](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.8/Whale-Isle-0.3.8-mac-arm64.dmg) |
 
-[CNB mirror](https://cnb.cool/ayasealter/WhaleIsle/-/releases/tag/v0.3.6) · [Full release notes](https://github.com/ChisaAlter/WhaleIsle/releases/tag/v0.3.6)
+[CNB mirror](https://cnb.cool/ayasealter/WhaleIsle/-/releases/tag/v0.3.8) · [Full release notes](https://github.com/ChisaAlter/WhaleIsle/releases/tag/v0.3.8)
 
 The Windows package is unsigned. The Mac package is unsigned and not notarized, and does not include the Windows-only bundled Office runtime. The release page provides `SHA512SUMS.txt` for integrity checks.
 

@@ -31,12 +31,12 @@
 
 ## 下载与开始使用
 
-| 平台 | v0.3.6 |
+| 平台 | v0.3.8 |
 | --- | --- |
-| Windows 10+ · x64 | [下载安装包](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.6/Whale-Isle-Setup-0.3.6.exe) |
-| macOS 14+ · Apple Silicon | [下载 ARM64 DMG](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.6/Whale-Isle-0.3.6-mac-arm64.dmg) |
+| Windows 10+ · x64 | [下载安装包](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.8/Whale-Isle-Setup-0.3.8.exe) |
+| macOS 14+ · Apple Silicon | [下载 ARM64 DMG](https://github.com/ChisaAlter/WhaleIsle/releases/download/v0.3.8/Whale-Isle-0.3.8-mac-arm64.dmg) |
 
-[国内镜像](https://cnb.cool/ayasealter/WhaleIsle/-/releases/tag/v0.3.6) · [完整更新说明](https://github.com/ChisaAlter/WhaleIsle/releases/tag/v0.3.6)
+[国内镜像](https://cnb.cool/ayasealter/WhaleIsle/-/releases/tag/v0.3.8) · [完整更新说明](https://github.com/ChisaAlter/WhaleIsle/releases/tag/v0.3.8)
 
 Windows 包未签名，Mac 包未签名或公证；Mac 不包含 Windows 专用的内置 Office 运行时。发布页提供 `SHA512SUMS.txt` 校验文件。
 

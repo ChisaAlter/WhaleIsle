@@ -6,4 +6,4 @@
 - **AI Office**: Operation and connection-health errors use floating feedback. Shared buttons keep busy states in place, and notices distinguish saved configuration from a connection that is not yet established.
 - **Long-term memory**: Clearing uses the shared in-app confirmation dialog. Cancel preserves the draft, failures can be retried, and success accurately reports that long-term memory was cleared.
 
-This release provides the Windows 10+ x64 installer. WhaleBridge and the ChatGPT plugin are installed and updated independently, and are not bundled with the desktop package.
+This release provides the Windows 10+ x64 installer and a macOS 14+ Apple Silicon ARM64 DMG. The Mac package retains native window buttons, titlebar safe areas and fullscreen support; it is unsigned and not notarized. WhaleBridge and the ChatGPT plugin are installed and updated independently, and are not bundled with the desktop package.

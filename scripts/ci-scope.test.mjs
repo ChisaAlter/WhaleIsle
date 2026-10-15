@@ -26,7 +26,7 @@ test('upstream runtime, lock and native window changes select their actual consu
   assert.equal(selectChecks(['src/main/update.test.js']).product, true)
 })
 test('tool test edits run independently and manual builds have full scope', () => {
-  assert.deepEqual(selectChecks(['scripts/release-download.test.mjs', 'scripts/verify-md-links.mjs', 'scripts/publish-release.mjs']),
+  assert.deepEqual(selectChecks(['scripts/release-download.test.mjs', 'scripts/verify-md-links.mjs', 'scripts/publish-release.mjs', 'scripts/publish-macos-supplement.mjs', '.github/workflows/cnb-mirror.yml']),
     { product: false, tools: true, vendor: false, motion: false })
   assert.ok(Object.values(selectChecks([], { manual: true })).every(Boolean))
 })

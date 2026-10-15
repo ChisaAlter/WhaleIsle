@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { newestMtime } from './source-scan.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -28,7 +28,10 @@ for (const client of clients) {
     continue;
   }
   console.log(`[${client.name}] rebuilding client bundle`);
-  const result = spawnSync(process.execPath, [path.join(packageRoot, client.build)], {
+  const result = spawnSync(process.execPath, [
+    '--import', pathToFileURL(path.join(root, 'scripts', 'plugin-build-esbuild.mjs')).href,
+    path.join(packageRoot, client.build),
+  ], {
     cwd: packageRoot,
     stdio: 'inherit',
     shell: false,
