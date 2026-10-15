@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { ActionButton, FeedbackToast } from '../../feedback.js';
+import { Button as PrimitiveButton } from '@deepseek-ai/dsh-client-ui-primitives';
+import { FeedbackToast } from '../../feedback.js';
 
 import { h } from '../../i18n.js';
 import {
@@ -11,7 +12,7 @@ import {
 } from './api.js';
 
 function Button({ children, kind = 'secondary', ...props }) {
-  return h(ActionButton, { ...props, type: 'button', className: 'ddt-button', 'data-kind': kind }, children);
+  return h(PrimitiveButton, { ...props, variant: kind === 'primary' ? 'primary' : 'outline', type: 'button', className: 'ddt-button', 'data-kind': kind }, children);
 }
 
 function mapText(value) {

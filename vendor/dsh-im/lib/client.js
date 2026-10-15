@@ -31,7 +31,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// plugin-src/client/index.js
+// vendor/dsh-im/plugin-src/client/index.js
 var index_exports = {};
 __export(index_exports, {
   IMSettingsTab: () => IMSettingsTab,
@@ -44,12 +44,12 @@ __export(index_exports, {
 module.exports = __toCommonJS(index_exports);
 var React21 = __toESM(require("react"), 1);
 
-// plugin-src/client/feedback.js
+// vendor/dsh-im/plugin-src/client/feedback.js
 var React2 = __toESM(require("react"), 1);
 var import_react_dom = require("react-dom");
 var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 
-// plugin-src/client/i18n.js
+// vendor/dsh-im/plugin-src/client/i18n.js
 var React = __toESM(require("react"), 1);
 var IM_LOCALE_NAMESPACE = "dsh-im";
 var EN = Object.freeze({
@@ -772,7 +772,7 @@ function h(type, props, ...children) {
   return React.createElement(type, localizedProps, ...children.map(localizeChild));
 }
 
-// plugin-src/client/feedback.js
+// vendor/dsh-im/plugin-src/client/feedback.js
 var ActionButton = React2.forwardRef(function ActionButton2({ children, loading = false, className = "", disabled, ...props }, ref) {
   return React2.createElement(
     "button",
@@ -840,7 +840,7 @@ function ConfirmDialog({ children, onClose, busy = false, className = "", error,
   );
 }
 
-// package.json
+// vendor/dsh-im/package.json
 var package_default = {
   name: "@xmanrui/dsh-im",
   version: "3.0.1",
@@ -953,7 +953,7 @@ var package_default = {
   }
 };
 
-// plugin-src/client/channel-logos.js
+// vendor/dsh-im/plugin-src/client/channel-logos.js
 var React3 = __toESM(require("react"), 1);
 var h2 = React3.createElement;
 function dimensions(size) {
@@ -1097,7 +1097,7 @@ function OfficeLogoGlyph({ size } = {}) {
   );
 }
 
-// plugin-src/client/agent-preset.js
+// vendor/dsh-im/plugin-src/client/agent-preset.js
 var React4 = __toESM(require("react"), 1);
 var SET_AGENT_PRESET_ENDPOINT = "bot.preset.set";
 var PRESET_ID = /^[a-z0-9][a-z0-9-]*$/;
@@ -1214,7 +1214,7 @@ function AgentPresetEditor({ agentPreset = "", disabled = false, onSave }) {
   );
 }
 
-// plugin-src/client/last-message-error.js
+// vendor/dsh-im/plugin-src/client/last-message-error.js
 function text(value, maxLength) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -1230,7 +1230,7 @@ function normalizeLastMessageError(value) {
   return code && reason && message && referenceId && at !== null ? { code, reason, message, referenceId, at } : null;
 }
 
-// plugin-src/client/channels/dingtalk/api.js
+// vendor/dsh-im/plugin-src/client/channels/dingtalk/api.js
 var DINGTALK_RPC_CHANNEL = "/dingtalk";
 var DINGTALK_ENDPOINTS = Object.freeze({
   status: "connection.status",
@@ -1431,10 +1431,10 @@ function formatRemaining(milliseconds) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-// plugin-src/client/channels/dingtalk/index.js
+// vendor/dsh-im/plugin-src/client/channels/dingtalk/index.js
 var React10 = __toESM(require("react"), 1);
 
-// plugin-src/client/credential-binding.js
+// vendor/dsh-im/plugin-src/client/credential-binding.js
 var React5 = __toESM(require("react"), 1);
 function ActionIcon({ children }) {
   return h("svg", {
@@ -1576,10 +1576,10 @@ function CredentialBindingPanel({
   );
 }
 
-// plugin-src/client/workspace-editor.js
+// vendor/dsh-im/plugin-src/client/workspace-editor.js
 var React7 = __toESM(require("react"), 1);
 
-// plugin-src/client/workspace-directory-picker.js
+// vendor/dsh-im/plugin-src/client/workspace-directory-picker.js
 var React6 = __toESM(require("react"), 1);
 var import_react_dom2 = require("react-dom");
 var import_dsh_client_ui_primitives2 = require("@deepseek-ai/dsh-client-ui-primitives");
@@ -1834,7 +1834,7 @@ function WorkspaceDirectoryPicker({
   );
 }
 
-// plugin-src/client/workspace-editor.js
+// vendor/dsh-im/plugin-src/client/workspace-editor.js
 var WorkspaceDirectoryPickerContext = React7.createContext(null);
 function WorkspaceEditor({ workspace, directoryPicker, disabled = false, onSave }) {
   const sharedDirectoryPicker = React7.useContext(WorkspaceDirectoryPickerContext);
@@ -1902,7 +1902,7 @@ function WorkspaceEditor({ workspace, directoryPicker, disabled = false, onSave 
   );
 }
 
-// plugin-src/client/workspace-snapshot-fence.js
+// vendor/dsh-im/plugin-src/client/workspace-snapshot-fence.js
 var React8 = __toESM(require("react"), 1);
 function useWorkspaceSnapshotFence() {
   const state = React8.useRef({ version: 0, pendingMutations: 0 });
@@ -1928,7 +1928,7 @@ function useWorkspaceSnapshotFence() {
   }), []);
 }
 
-// plugin-src/client/channel-card-meta.js
+// vendor/dsh-im/plugin-src/client/channel-card-meta.js
 var React9 = __toESM(require("react"), 1);
 function messageErrorTime(value) {
   try {
@@ -2034,7 +2034,7 @@ function LastMessageErrorSummary({ className = "", error }) {
   );
 }
 
-// plugin-src/client/channels/dingtalk/styles.js
+// vendor/dsh-im/plugin-src/client/channels/dingtalk/styles.js
 var DINGTALK_STYLE_ID = "xmanrui-dsh-im-dingtalk-settings";
 var CSS = String.raw`
 .ddt-page {
@@ -2170,7 +2170,7 @@ function installDingtalkStyles() {
   return () => style.remove();
 }
 
-// plugin-src/client/channels/dingtalk/index.js
+// vendor/dsh-im/plugin-src/client/channels/dingtalk/index.js
 var ACTIVE_PROVISION_STATES = /* @__PURE__ */ new Set(["pending", "scanned", "authorizing", "creating", "connecting"]);
 function DingtalkIcon({ size = 28 }) {
   return h("svg", {
@@ -3114,7 +3114,7 @@ function DingtalkSettingsTab({ rpcCall }) {
   ));
 }
 
-// plugin-src/client/channels/shared/token-api.js
+// vendor/dsh-im/plugin-src/client/channels/shared/token-api.js
 var ACCOUNT_STATES2 = /* @__PURE__ */ new Set(["connected", "connecting", "offline", "error"]);
 function isRecord2(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -3204,7 +3204,7 @@ function createTokenChannelApi(channel4, connectionSummary, {
   return Object.freeze({ unwrapRpcResult: unwrapRpcResult10, normalizeSnapshot: normalizeSnapshot9, presentError: presentError10 });
 }
 
-// plugin-src/client/channels/discord/api.js
+// vendor/dsh-im/plugin-src/client/channels/discord/api.js
 var DISCORD_RPC_CHANNEL = "/discord";
 var DISCORD_ENDPOINTS = TOKEN_BOT_ENDPOINTS;
 var api = createTokenChannelApi("Discord", " Gateway \u957F\u8FDE\u63A5");
@@ -3212,7 +3212,7 @@ var unwrapRpcResult2 = api.unwrapRpcResult;
 var normalizeSnapshot2 = api.normalizeSnapshot;
 var presentError2 = api.presentError;
 
-// plugin-src/client/channels/shared/token-channel.js
+// vendor/dsh-im/plugin-src/client/channels/shared/token-channel.js
 var React11 = __toESM(require("react"), 1);
 var Button3 = React11.forwardRef(function Button4({ children, kind = "secondary", className = "", ...props }, ref) {
   return h(ActionButton, {
@@ -3684,7 +3684,7 @@ function createTokenChannelSettings(definition) {
   return { SettingsTab, AccountCard: AccountCard5 };
 }
 
-// plugin-src/client/channels/discord/styles.js
+// vendor/dsh-im/plugin-src/client/channels/discord/styles.js
 var DISCORD_STYLE_ID = "xmanrui-dsh-im-discord-settings";
 var CSS2 = String.raw`
 .ddc-page { --ddt-accent: #5865f2; --ddt-accent-deep: #4752c4; --ddt-accent-wash: #eef0ff; }
@@ -3705,7 +3705,7 @@ function installDiscordStyles() {
   return () => style.remove();
 }
 
-// plugin-src/client/channels/discord/index.js
+// vendor/dsh-im/plugin-src/client/channels/discord/index.js
 var channel = createTokenChannelSettings({
   channel: "Discord",
   endpoints: DISCORD_ENDPOINTS,
@@ -3723,10 +3723,10 @@ var channel = createTokenChannelSettings({
 var DiscordSettingsTab = channel.SettingsTab;
 var DiscordAccountCard = channel.AccountCard;
 
-// plugin-src/client/channels/feishu/index.js
+// vendor/dsh-im/plugin-src/client/channels/feishu/index.js
 var React13 = __toESM(require("react"), 1);
 
-// plugin-src/client/channels/feishu/api.js
+// vendor/dsh-im/plugin-src/client/channels/feishu/api.js
 var FEISHU_RPC_CHANNEL = "/feishu";
 var FEISHU_ENDPOINTS = Object.freeze({
   status: "connection.status",
@@ -3983,7 +3983,7 @@ function formatRemaining2(milliseconds) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-// plugin-src/client/lifecycle.js
+// vendor/dsh-im/plugin-src/client/lifecycle.js
 var React12 = __toESM(require("react"), 1);
 function createPollScheduler({ setTimeoutFn, clearTimeoutFn }) {
   let disposed = false;
@@ -4064,7 +4064,7 @@ function useAnimationFrameScheduler() {
   );
 }
 
-// plugin-src/client/channels/feishu/index.js
+// vendor/dsh-im/plugin-src/client/channels/feishu/index.js
 var CALLBACK_REPAIR_OPERATION = FEISHU_REGISTRATION_OPERATIONS.CALLBACK_REPAIR;
 var GROUP_MESSAGE_PERMISSION_OPERATION = FEISHU_REGISTRATION_OPERATIONS.GROUP_MESSAGE_PERMISSION;
 function isCallbackRepair(value) {
@@ -5453,7 +5453,7 @@ function FeishuSettingsTab({ rpcCall }) {
   ));
 }
 
-// plugin-src/client/channels/feishu/styles.js
+// vendor/dsh-im/plugin-src/client/channels/feishu/styles.js
 var FEISHU_STYLE_ID = "xmanrui-dsh-im-feishu-settings";
 var CSS3 = String.raw`
 .bxf-page {
@@ -6026,7 +6026,7 @@ function installFeishuStyles() {
   };
 }
 
-// plugin-src/client/channels/qq/api.js
+// vendor/dsh-im/plugin-src/client/channels/qq/api.js
 var QQ_RPC_CHANNEL = "/qq";
 var QQ_ENDPOINTS = Object.freeze({
   status: "connection.status",
@@ -6158,10 +6158,10 @@ function formatRemaining3(milliseconds) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-// plugin-src/client/channels/qq/index.js
+// vendor/dsh-im/plugin-src/client/channels/qq/index.js
 var React14 = __toESM(require("react"), 1);
 
-// plugin-src/client/channels/qq/styles.js
+// vendor/dsh-im/plugin-src/client/channels/qq/styles.js
 var QQ_STYLE_ID = "xmanrui-dsh-im-qq-settings";
 var CSS4 = String.raw`
 .dqq-page { --ddt-accent: #1677ff; --ddt-accent-deep: #0958d9; --ddt-accent-wash: #eaf3ff; }
@@ -6182,7 +6182,7 @@ function installQqStyles() {
   return () => style.remove();
 }
 
-// plugin-src/client/channels/qq/index.js
+// vendor/dsh-im/plugin-src/client/channels/qq/index.js
 var ACTIVE_STATES = /* @__PURE__ */ new Set(["pending", "refreshing", "connecting"]);
 var Button7 = React14.forwardRef(function Button8({ children, kind = "secondary", className = "", ...props }, ref) {
   return h(ActionButton, {
@@ -6819,7 +6819,7 @@ function QqSettingsTab({ rpcCall }) {
   ));
 }
 
-// src/channels/office/protocol.mjs
+// vendor/dsh-im/src/channels/office/protocol.mjs
 var OFFICE_PROTOCOL_VERSION = "office-harness.v1";
 var OFFICE_RPC_CHANNEL = "/office";
 var OFFICE_RPC_ENDPOINTS = Object.freeze({
@@ -6860,7 +6860,7 @@ function officeHookUrls(baseUrl) {
   ]));
 }
 
-// plugin-src/client/channels/office/api.js
+// vendor/dsh-im/plugin-src/client/channels/office/api.js
 function record(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -6897,10 +6897,11 @@ function normalizeOfficeStatus(value) {
   };
 }
 
-// plugin-src/client/channels/office/index.js
+// vendor/dsh-im/plugin-src/client/channels/office/index.js
 var React15 = __toESM(require("react"), 1);
+var import_dsh_client_ui_primitives3 = require("@deepseek-ai/dsh-client-ui-primitives");
 function Button9({ children, kind = "secondary", ...props }) {
-  return h(ActionButton, { ...props, type: "button", className: "ddt-button", "data-kind": kind }, children);
+  return h(import_dsh_client_ui_primitives3.Button, { ...props, variant: kind === "primary" ? "primary" : "outline", type: "button", className: "ddt-button", "data-kind": kind }, children);
 }
 function mapText(value) {
   return Object.entries(value ?? {}).map(([key, item]) => `${key}=${item}`).join("\n");
@@ -7123,7 +7124,7 @@ function OfficeSettingsTab({ rpcCall, initialStatus }) {
   );
 }
 
-// plugin-src/client/channels/office/styles.js
+// vendor/dsh-im/plugin-src/client/channels/office/styles.js
 var OFFICE_STYLE_ID = "xmanrui-dsh-im-office-settings";
 var CSS5 = `
 .dof-page { --dof-accent: var(--dsw-alias-brand-primary, #3964fe); }
@@ -7176,7 +7177,7 @@ function installOfficeStyles() {
   return () => style.remove();
 }
 
-// plugin-src/client/channels/slack/api.js
+// vendor/dsh-im/plugin-src/client/channels/slack/api.js
 var SLACK_RPC_CHANNEL = "/slack";
 var SLACK_ENDPOINTS = TOKEN_BOT_ENDPOINTS;
 var api2 = createTokenChannelApi("Slack", " Socket Mode \u957F\u8FDE\u63A5");
@@ -7184,10 +7185,10 @@ var unwrapRpcResult5 = api2.unwrapRpcResult;
 var normalizeSnapshot4 = api2.normalizeSnapshot;
 var presentError5 = api2.presentError;
 
-// plugin-src/client/channels/slack/index.js
+// vendor/dsh-im/plugin-src/client/channels/slack/index.js
 var React16 = __toESM(require("react"), 1);
 
-// src/channels/slack/manifest.mjs
+// vendor/dsh-im/src/channels/slack/manifest.mjs
 var SLACK_APP_MANIFEST_YAML = `_metadata:
   major_version: 1
 display_information:
@@ -7222,7 +7223,7 @@ settings:
 `;
 var SLACK_CREATE_APP_URL = "https://api.slack.com/apps?new_app=1";
 
-// plugin-src/client/channels/slack/styles.js
+// vendor/dsh-im/plugin-src/client/channels/slack/styles.js
 var SLACK_STYLE_ID = "xmanrui-dsh-im-slack-settings";
 var CSS6 = String.raw`
 .dsl-page { --ddt-accent: #4a154b; --ddt-accent-deep: #321033; --ddt-accent-wash: #f7eef7; }
@@ -7258,7 +7259,7 @@ function installSlackStyles() {
   return () => style.remove();
 }
 
-// plugin-src/client/channels/slack/index.js
+// vendor/dsh-im/plugin-src/client/channels/slack/index.js
 function SlackCredentialPanel({ busy, error, onSubmit, onCancel }) {
   const [botToken, setBotToken] = React16.useState("");
   const [appToken, setAppToken] = React16.useState("");
@@ -7413,7 +7414,7 @@ var channel2 = createTokenChannelSettings({
 var SlackSettingsTab = channel2.SettingsTab;
 var SlackAccountCard = channel2.AccountCard;
 
-// plugin-src/client/channels/telegram/api.js
+// vendor/dsh-im/plugin-src/client/channels/telegram/api.js
 var TELEGRAM_RPC_CHANNEL = "/telegram";
 var TELEGRAM_ENDPOINTS = Object.freeze({
   ...TOKEN_BOT_ENDPOINTS,
@@ -7431,10 +7432,10 @@ var unwrapRpcResult6 = api3.unwrapRpcResult;
 var normalizeSnapshot5 = api3.normalizeSnapshot;
 var presentError6 = api3.presentError;
 
-// plugin-src/client/channels/telegram/index.js
+// vendor/dsh-im/plugin-src/client/channels/telegram/index.js
 var React17 = __toESM(require("react"), 1);
 
-// plugin-src/client/channels/telegram/styles.js
+// vendor/dsh-im/plugin-src/client/channels/telegram/styles.js
 var TELEGRAM_STYLE_ID = "xmanrui-dsh-im-telegram-settings";
 var CSS7 = String.raw`
 .dtg-page { --ddt-accent: #229ed9; --ddt-accent-deep: #1687bd; --ddt-accent-wash: #eaf7fd; }
@@ -7483,7 +7484,7 @@ function installTelegramStyles() {
   return () => style.remove();
 }
 
-// plugin-src/client/channels/telegram/index.js
+// vendor/dsh-im/plugin-src/client/channels/telegram/index.js
 function policyFor(account) {
   return {
     accessMode: account?.accessPolicy?.accessMode === "private-allowlist" ? "private-allowlist" : "compatible",
@@ -7644,7 +7645,7 @@ var channel3 = createTokenChannelSettings({
 var TelegramSettingsTab = channel3.SettingsTab;
 var TelegramAccountCard = channel3.AccountCard;
 
-// plugin-src/client/channels/wecom/api.js
+// vendor/dsh-im/plugin-src/client/channels/wecom/api.js
 var WECOM_RPC_CHANNEL = "/wecom";
 var WECOM_ENDPOINTS = Object.freeze({
   status: "connection.status",
@@ -7765,10 +7766,10 @@ function formatRemaining4(milliseconds) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-// plugin-src/client/channels/wecom/index.js
+// vendor/dsh-im/plugin-src/client/channels/wecom/index.js
 var React18 = __toESM(require("react"), 1);
 
-// plugin-src/client/channels/wecom/styles.js
+// vendor/dsh-im/plugin-src/client/channels/wecom/styles.js
 var WECOM_STYLE_ID = "xmanrui-dsh-im-wecom-settings";
 var CSS8 = String.raw`
 .dwecom-page { --ddt-accent: #3370ff; --ddt-accent-deep: #245bdb; --ddt-accent-wash: #eef4ff; }
@@ -7789,7 +7790,7 @@ function installWecomStyles() {
   return () => style.remove();
 }
 
-// plugin-src/client/channels/wecom/index.js
+// vendor/dsh-im/plugin-src/client/channels/wecom/index.js
 var ACTIVE_STATES2 = /* @__PURE__ */ new Set(["pending", "refreshing", "connecting"]);
 var Button10 = React18.forwardRef(function Button11({ children, kind = "secondary", className = "", ...props }, ref) {
   return h(ActionButton, {
@@ -8458,10 +8459,10 @@ function WecomSettingsTab({ rpcCall }) {
   ));
 }
 
-// plugin-src/client/channels/weixin/index.js
+// vendor/dsh-im/plugin-src/client/channels/weixin/index.js
 var React19 = __toESM(require("react"), 1);
 
-// plugin-src/client/channels/weixin/api.js
+// vendor/dsh-im/plugin-src/client/channels/weixin/api.js
 var WEIXIN_RPC_CHANNEL = "/weixin";
 var WEIXIN_ENDPOINTS = Object.freeze({
   status: "connection.status",
@@ -8613,7 +8614,7 @@ function formatRemaining5(milliseconds) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-// plugin-src/client/channels/weixin/index.js
+// vendor/dsh-im/plugin-src/client/channels/weixin/index.js
 var Button12 = React19.forwardRef(function Button13({ children, kind = "secondary", className = "", ...props }, ref) {
   return h(ActionButton, {
     ...props,
@@ -9415,7 +9416,7 @@ function WeixinSettingsTab({ rpcCall }) {
   ));
 }
 
-// plugin-src/client/channels/weixin/styles.js
+// vendor/dsh-im/plugin-src/client/channels/weixin/styles.js
 var WEIXIN_STYLE_ID = "xmanrui-dsh-im-weixin-settings";
 var CSS9 = String.raw`
 .dxw-page {
@@ -9532,7 +9533,7 @@ function installWeixinStyles() {
   return () => style.remove();
 }
 
-// plugin-src/client/channels/whatsapp/api.js
+// vendor/dsh-im/plugin-src/client/channels/whatsapp/api.js
 var WHATSAPP_RPC_CHANNEL = "/whatsapp";
 var WHATSAPP_ENDPOINTS = Object.freeze({
   status: "connection.status",
@@ -9655,10 +9656,10 @@ function formatRemaining6(milliseconds) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-// plugin-src/client/channels/whatsapp/index.js
+// vendor/dsh-im/plugin-src/client/channels/whatsapp/index.js
 var React20 = __toESM(require("react"), 1);
 
-// plugin-src/client/channels/whatsapp/styles.js
+// vendor/dsh-im/plugin-src/client/channels/whatsapp/styles.js
 var WHATSAPP_STYLE_ID = "xmanrui-dsh-im-whatsapp-settings";
 var CSS10 = String.raw`
 .dwa-page { --ddt-accent: #25d366; --ddt-accent-deep: #128c7e; --ddt-accent-wash: #eafbf0; }
@@ -9706,7 +9707,7 @@ function installWhatsappStyles() {
   return () => style.remove();
 }
 
-// plugin-src/client/channels/whatsapp/index.js
+// vendor/dsh-im/plugin-src/client/channels/whatsapp/index.js
 var ACTIVE_STATES3 = /* @__PURE__ */ new Set(["pending", "connecting"]);
 function accessPolicyFor(account) {
   const accessMode = ["self-only", "private-allowlist", "open"].includes(
@@ -10504,7 +10505,7 @@ function WhatsappSettingsTab({ rpcCall }) {
   ));
 }
 
-// plugin-src/client/loopback-recovery.js
+// vendor/dsh-im/plugin-src/client/loopback-recovery.js
 var TRANSPORT_FORBIDDEN = /^transport failure for \/[A-Za-z0-9._~-]+\/[A-Za-z0-9_$./~-]+: HTTP 403$/;
 var LOOPBACK_RECOVERY_ERROR_CODE = "loopback-recovery-required";
 var LOOPBACK_RECOVERY_ERROR_MESSAGE = "\u5F53\u524D\u5730\u5740\u4E0E\u6D4F\u89C8\u5668\u7684\u672C\u673A\u8BF7\u6C42\u6821\u9A8C\u4E0D\u517C\u5BB9\u3002\u8BF7\u4F7F\u7528\u4E0A\u65B9\u6309\u94AE\u6539\u7528 localhost \u91CD\u65B0\u6253\u5F00\u3002";
@@ -10559,7 +10560,7 @@ function replacePageLocation(url, location = globalThis.location) {
   location?.replace?.(url);
 }
 
-// plugin-src/client/styles.js
+// vendor/dsh-im/plugin-src/client/styles.js
 var IM_STYLE_ID = "xmanrui-dsh-im-settings";
 var CSS11 = String.raw`
 .dim-page {
@@ -11535,7 +11536,7 @@ function installImStyles() {
   return () => style.remove();
 }
 
-// plugin-src/client/index.js
+// vendor/dsh-im/plugin-src/client/index.js
 var name = "im-settings";
 var inject = ["slots", "connection", "locale", "workspaces"];
 var IM_PLUGIN_VERSION = package_default.version;
