@@ -14,6 +14,10 @@ on:
         description: Published GitHub stable release to mirror (blank uses latest)
         type: string
         required: false
+      macos_run_id:
+        description: Successful tagged macOS build to supplement (requires tag)
+        type: string
+        required: false
 permissions:
   contents: read
 concurrency:
@@ -25,7 +29,7 @@ jobs:
       github.repository == 'ChisaAlter/WhaleIsle' &&
       (github.event_name == 'push' ||
        (github.event_name == 'release' && !github.event.release.prerelease && !github.event.release.draft) ||
-       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.macos_run_id == '') ||
        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.head_branch == 'main' &&
         github.event.workflow_run.head_repository.full_name == github.repository))
@@ -50,3 +54,31 @@ jobs:
           MIRROR_RELEASE: ${{ github.event_name != 'push' && '1' || '0' }}
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: node scripts/sync-cnb.mjs
+  supplement-macos:
+    if: >-
+      github.repository == 'ChisaAlter/WhaleIsle' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' && inputs.macos_run_id != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Supplement the original tagged macOS installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+          CNB_REPO: ${{ vars.CNB_REPO }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          MACOS_RUN_ID: ${{ inputs.macos_run_id }}
+        run: node scripts/publish-macos-supplement.mjs

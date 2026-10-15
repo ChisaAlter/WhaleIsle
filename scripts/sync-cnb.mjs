@@ -57,6 +57,30 @@ async function verifyDownload(asset, expected, fetchImpl) {
   }
 }
 
+async function uploadMirrorAsset({ file, overwrite, targetId, prefix, request, fetchImpl }) {
+  const upload = await request(prefix + '/releases/' + targetId + '/asset-upload-url', {
+    method: 'POST', body: { asset_name: file.name, size: file.size, overwrite, ttl: 0 },
+  })
+  const destination = new URL(upload.upload_url)
+  const confirmation = new URL(upload.verify_url, 'https://api.cnb.cool')
+  if (destination.protocol !== 'https:' || confirmation.origin !== 'https://api.cnb.cool' ||
+      !confirmation.pathname.startsWith(prefix + '/releases/' + targetId + '/asset-upload-confirmation/')) {
+    throw new Error('CNB returned an invalid upload destination')
+  }
+  let response
+  try {
+    response = await fetchImpl(destination, { method: 'PUT', body: await openAsBlob(file.file),
+      redirect: 'error', signal: AbortSignal.timeout(30 * 60 * 1000) })
+  } catch { throw new Error('CNB asset upload failed: ' + file.name) }
+  if (!response.ok) throw new Error('CNB asset upload failed: ' + file.name + ' (HTTP ' + response.status + ')')
+  confirmation.searchParams.set('ttl', '0')
+  await request(confirmation.pathname + confirmation.search, { method: 'POST' })
+  const refreshed = await request(prefix + '/releases/' + targetId)
+  const asset = refreshed?.assets?.find(row => row.name === file.name)
+  await verifyDownload(asset, file, fetchImpl)
+  return asset
+}
+
 export async function validateMirrorAssets(release, directory) {
   if (!stableTag.test(release.tag_name) || release.draft || release.prerelease) {
     throw new Error('Mirror requires a published stable GitHub release')
@@ -125,27 +149,10 @@ export async function mirrorRelease({ release, directory, sha, request, fetchImp
     if (!asset) {
       if (!staged) throw new Error('Published CNB release is incomplete: ' + file.name)
       output('Uploading ' + file.name)
-      const upload = await request(prefix + '/releases/' + target.id + '/asset-upload-url', {
-        method: 'POST', body: { asset_name: file.name, size: file.size, overwrite: false, ttl: 0 },
-      })
-      const destination = new URL(upload.upload_url)
-      const confirmation = new URL(upload.verify_url, 'https://api.cnb.cool')
-      if (destination.protocol !== 'https:' || confirmation.origin !== 'https://api.cnb.cool' ||
-          !confirmation.pathname.startsWith(prefix + '/releases/' + target.id + '/asset-upload-confirmation/')) {
-        throw new Error('CNB returned an invalid upload destination')
-      }
-      let response
-      try {
-        response = await fetchImpl(destination, { method: 'PUT', body: await openAsBlob(file.file),
-          redirect: 'error', signal: AbortSignal.timeout(30 * 60 * 1000) })
-      } catch { throw new Error('CNB asset upload failed: ' + file.name) }
-      if (!response.ok) throw new Error('CNB asset upload failed: ' + file.name + ' (HTTP ' + response.status + ')')
-      confirmation.searchParams.set('ttl', '0')
-      await request(confirmation.pathname + confirmation.search, { method: 'POST' })
-      const refreshed = await request(prefix + '/releases/' + target.id)
-      asset = refreshed?.assets?.find(row => row.name === file.name)
+      await uploadMirrorAsset({ file, overwrite: false, targetId: target.id, prefix, request, fetchImpl })
+    } else {
+      await verifyDownload(asset, file, fetchImpl)
     }
-    await verifyDownload(asset, file, fetchImpl)
   }
   if (staged) await request(prefix + '/releases/' + target.id, { method: 'PATCH', body: {
     name: body.name, body: body.body, draft: false, prerelease: false,
@@ -154,6 +161,112 @@ export async function mirrorRelease({ release, directory, sha, request, fetchImp
   const url = 'https://cnb.cool/' + repo + '/-/releases/tag/' + tag
   output('Verified CNB mirror: ' + url)
   return { url, assets: files.length }
+}
+
+function checksumRows(bytes) {
+  const rows = new Map()
+  const lines = bytes.toString('utf8').split(/\r?\n/)
+  if (lines.at(-1) === '') lines.pop()
+  for (const line of lines) {
+    const match = line.match(/^([a-f0-9]{128})  ([\w.-]+)$/)
+    if (!match || rows.has(match[2])) throw new Error('Invalid or duplicate supplement checksum entry')
+    rows.set(match[2], match[1])
+  }
+  return rows
+}
+
+// Explicit same-tag Mac supplementation; ordinary published mirrors remain immutable.
+export async function supplementMacosMirror({ release, directory, sha, request, fetchImpl = fetch, repo, expectedMacos }) {
+  if (!safeRepo.test(repo) || !/^[a-f0-9]{40}$/.test(sha) || !/^v\d+\.\d+\.\d+$/.test(release.tag_name) ||
+      release.target_commitish !== sha) throw new Error('Mac supplement requires a stable release on the source commit')
+  const tag = release.tag_name
+  const version = tag.slice(1)
+  const macName = 'Whale-Isle-' + version + '-mac-arm64.dmg'
+  if (expectedMacos?.name !== macName || !Number.isSafeInteger(expectedMacos.size) || expectedMacos.size <= 0 ||
+      !/^[a-f0-9]{128}$/.test(expectedMacos.sha512)) throw new Error('Verified source Mac artifact is required')
+  const files = await validateMirrorAssets(release, directory)
+  const windowsNames = ['Whale-Isle-Setup-' + version + '.exe', 'Whale-Isle-Setup-' + version + '.exe.blockmap', 'latest.yml']
+  const names = [...windowsNames, 'SHA512SUMS.txt', macName]
+  if (files.length !== names.length || files.some(file => !names.includes(file.name))) {
+    throw new Error('Mac supplement has unexpected GitHub assets')
+  }
+  const mac = files.find(file => file.name === macName)
+  if (mac.size !== expectedMacos.size || mac.sha512 !== expectedMacos.sha512) throw new Error('Mac source artifact mismatch')
+  const sums = files.find(file => file.name === 'SHA512SUMS.txt')
+  const newSums = await readFile(sums.file)
+  const rows = checksumRows(newSums)
+  if (rows.size !== 4 || [...windowsNames, macName].some(name => rows.get(name) !== files.find(file => file.name === name).sha512)) {
+    throw new Error('Mac supplement checksum entries do not match the release')
+  }
+  const prefix = '/' + repo + '/-'
+  const sourceTag = await request(prefix + '/git/tags/' + encodeURIComponent(tag))
+  if (sourceTag?.commit?.sha !== sha) throw new Error('CNB tag does not match GitHub source: ' + tag)
+  const target = await request(prefix + '/releases/tags/' + encodeURIComponent(tag))
+  if (!target?.id || target.tag_name !== tag || target.draft !== false || target.prerelease !== false || !Array.isArray(target.assets)) {
+    throw new Error('Mac supplement requires an existing published CNB release')
+  }
+  const oldAssets = new Map(target.assets.map(asset => [asset.name, { ...asset }]))
+  if (oldAssets.size !== target.assets.length || [...oldAssets.keys()].some(name => !names.includes(name)) ||
+      [...windowsNames, sums.name].some(name => !oldAssets.get(name)?.id)) throw new Error('Unexpected or missing existing CNB assets')
+  const stateKeys = ['id', 'tag_name', 'name', 'body', 'draft', 'prerelease']
+  const oldState = stateKeys.map(key => target[key])
+  const latest = await request(prefix + '/releases/latest')
+  const oldLatest = { id: latest?.id, tag: latest?.tag_name }
+  for (const name of windowsNames) {
+    const file = files.find(row => row.name === name)
+    if (oldAssets.get(name).size !== file.size) throw new Error('Existing CNB asset size mismatch: ' + name)
+    await verifyDownload(oldAssets.get(name), file, fetchImpl)
+  }
+  const oldMac = oldAssets.get(macName)
+  if (oldMac) {
+    if (!oldMac.id || oldMac.size !== mac.size) throw new Error('Existing CNB Mac asset size mismatch')
+    await verifyDownload(oldMac, mac, fetchImpl)
+  }
+  const oldSumsAsset = oldAssets.get(sums.name)
+  const oldSumsUrl = oldSumsAsset.browser_download_url
+  if (!oldSumsUrl || new URL(oldSumsUrl).protocol !== 'https:' || new URL(oldSumsUrl).hostname !== 'cnb.cool' ||
+      !Number.isSafeInteger(oldSumsAsset.size) || oldSumsAsset.size > newSums.length) throw new Error('Invalid existing CNB checksum asset')
+  const response = await fetchImpl(oldSumsUrl, { signal: AbortSignal.timeout(30 * 60 * 1000) })
+  if (!response.ok) throw new Error('CNB checksum download failed')
+  const oldSums = Buffer.from(await response.arrayBuffer())
+  if (oldSums.length !== oldSumsAsset.size) throw new Error('Existing CNB checksum size mismatch')
+  const oldRows = checksumRows(oldSums)
+  const sameSums = oldSums.equals(newSums)
+  const macLine = Buffer.from(mac.sha512 + '  ' + macName + '\n')
+  if (!sameSums && (oldRows.size !== 3 || windowsNames.some(name => oldRows.get(name) !== rows.get(name)) ||
+      !Buffer.concat([oldSums, macLine]).equals(newSums))) throw new Error('CNB checksum change is not an append-only Mac supplement')
+
+  const uploaded = []
+  const verifiedIds = new Map([[sums.name, oldSumsAsset.id], [macName, oldMac?.id]])
+  for (const [file, overwrite] of [[sums, true], [mac, false]]) {
+    if (file === sums ? sameSums : Boolean(oldMac)) continue
+    const asset = await uploadMirrorAsset({ file, overwrite, targetId: target.id, prefix, request, fetchImpl })
+    verifiedIds.set(file.name, asset.id)
+    uploaded.push(file.name)
+  }
+  const final = await request(prefix + '/releases/' + target.id)
+  if (!final || stateKeys.some((key, index) => final[key] !== oldState[index]) || !Array.isArray(final.assets) ||
+      final.assets.length !== names.length || new Set(final.assets.map(asset => asset.name)).size !== names.length ||
+      final.assets.some(asset => !names.includes(asset.name))) throw new Error('CNB release state changed during Mac supplement')
+  for (const name of windowsNames) {
+    const before = oldAssets.get(name)
+    const after = final.assets.find(asset => asset.name === name)
+    if (after?.id !== before.id || after.size !== before.size || after.digest !== before.digest) {
+      throw new Error('Existing CNB asset changed during Mac supplement: ' + name)
+    }
+  }
+  for (const file of [sums, mac]) {
+    const asset = final.assets.find(row => row.name === file.name)
+    if (!asset?.id || asset.id !== verifiedIds.get(file.name) || asset.size !== file.size) {
+      throw new Error('CNB supplemental asset metadata mismatch: ' + file.name)
+    }
+  }
+  const finalTag = await request(prefix + '/git/tags/' + encodeURIComponent(tag))
+  const finalLatest = await request(prefix + '/releases/latest')
+  if (finalTag?.commit?.sha !== sha || finalLatest?.id !== oldLatest.id || finalLatest?.tag_name !== oldLatest.tag) {
+    throw new Error('CNB tag or latest changed during Mac supplement')
+  }
+  return { url: 'https://cnb.cool/' + repo + '/-/releases/tag/' + tag, assets: names.length, uploaded }
 }
 
 export async function syncSource({ repo, token, git = (args, options) => execFileSync('git', args, options) }) {

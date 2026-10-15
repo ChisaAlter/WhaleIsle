@@ -11,7 +11,7 @@
 - 上游和窗口检查仅在相应改动时执行。
 - 工具测试独立运行，不混入 `npm test`。
 - 需要 macOS 时手动运行 Development CI，勾选 `include_macos`；默认只交付 Windows。
-- `Release macOS single-file diagnosis` 的手动运行仅做当前工作分支的 Mac 打包与真实包内窗口验收，适合定向排查 Mac 截图；它不负责发布，也不替代正式发布所用的同次 main Development CI 原始附件。
+- `Release macOS single-file diagnosis` 的手动运行负责 Mac 打包与真实包内窗口验收。普通运行检查当前 ref；显式填写 `source_tag` 时检出该不可变产品标签，只覆盖两项已记录哈希的客户端构建工具，并输出产品提交与构建工具提交的来源记录。工作流本身不发布；新版本仍使用同次 main Development CI 原始附件，既有版本的 Mac 补发使用下述独立入口。
 - 汇总检查名为 `CI`，失败或取消不会变成通过。main 的 GitHub 分支保护要求经 PR 合并，并要求 GitHub Actions 的 `CI` 检查通过；管理员同样受保护，禁止强推与删除。不强制第二位审查者批准，合并仍由用户决定。保护设置不要求分支必须追上最新 main，避免仅因无关合并重复构建。
 
 安装或升级行为发生变化时，在开发阶段验证相应实际操作，并在 PR 说明结果。没有固定的每版人工验收全表。
@@ -23,6 +23,14 @@
 它使用同一次 CI 的 `Whale-Isle-windows-x64`（及存在时的 macOS）资产，核对版本、Setup、blockmap 和 latest.yml，生成更新器需要的 `SHA512SUMS.txt`，上传至 draft release，上传完成后公开。tag 指向产生资产的源码提交。不会运行产品测试、重新构建或要求验收 JSON。
 
 同版本已发布、版本不高于 latest、或该 CI 只有文档/工具而没有安装包时不发布。PR 和 fork 的构建不能进入自动分发。现有正式版本与 tag 不覆盖。
+
+### 既有正式版本补发 Mac
+
+用户明确要求补发时，先在 `Release macOS single-file diagnosis` 填写既有 `source_tag`，完成该标签的 Mac 打包、原生按钮及窗口检查，并实际审阅普通、窄窗、侧栏和全屏截图。产品源码保持标签提交；构建来源附件记录两项编译工具的原始哈希。工具提交须经评审合入 main。
+
+随后在 main 手动运行 `CNB mirror`，同时填写 `tag` 和成功的 `macos_run_id`。该入口核验同仓库成功运行、不可变产品提交、已合入 main 的工具提交和唯一原始 ARM64 DMG，复用原包向 GitHub 与 CNB 补发。保留已发布 Windows EXE、blockmap、latest.yml 的字节及资产 ID，保留 release/tag/latest；唯一可扩展的旧附件是 `SHA512SUMS.txt`，原条目逐字不变，只增加该 DMG 一行。先扩展清单，再新增 DMG，完成后匿名校验镜像。普通镜像的缺失或变更保护保持不变，不使用补发入口重传 Windows。
+
+Mac 更新走完整 DMG 下载并使用 `SHA512SUMS.txt` 校验，不生成 `latest-mac.yml`。当前提供 Apple Silicon arm64 包，未签名、未公证。
 
 ## CNB 国内镜像
 

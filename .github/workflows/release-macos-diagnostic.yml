@@ -3,6 +3,11 @@ on:
   push:
     branches: [codex/release-macos-diagnostic-463b3455]
   workflow_dispatch:
+    inputs:
+      source_tag:
+        description: Immutable product tag to build with the current compiler binding
+        type: string
+        required: false
 permissions:
   contents: read
 jobs:
@@ -37,6 +42,31 @@ jobs:
       LEFTHOOK: '0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Select tagged product source and record build tools
+        if: inputs.source_tag != ''
+        shell: bash
+        env:
+          SOURCE_TAG: ${{ inputs.source_tag }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          export TOOLING_SHA=$(git rev-parse HEAD)
+          tools="$RUNNER_TEMP/whale-macos-build-tools"
+          mkdir -p "$tools"
+          cp scripts/prepare-dsh-feedback-clients.mjs scripts/plugin-build-esbuild.mjs "$tools/"
+          git fetch origin "refs/tags/$SOURCE_TAG:refs/tags/$SOURCE_TAG"
+          git checkout --detach "$SOURCE_TAG"
+          cp "$tools/prepare-dsh-feedback-clients.mjs" "$tools/plugin-build-esbuild.mjs" scripts/
+          export SOURCE_SHA=$(git rev-parse HEAD)
+          node --input-type=module <<'NODE'
+          import { createHash } from 'node:crypto';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const paths = ['scripts/prepare-dsh-feedback-clients.mjs', 'scripts/plugin-build-esbuild.mjs'];
+          const record = { schemaVersion: 1, sourceTag: process.env.SOURCE_TAG, sourceSha: process.env.SOURCE_SHA,
+            toolingSha: process.env.TOOLING_SHA, buildTools: paths.map(path => ({ path,
+              sha256: createHash('sha256').update(readFileSync(path)).digest('hex') })) };
+          writeFileSync(process.env.RUNNER_TEMP + '/whale-macos-build-tools/macos-build-source.json', JSON.stringify(record, null, 2) + '\n');
+          NODE
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version-file: .nvmrc
@@ -60,5 +90,12 @@ jobs:
         with:
           name: Whale-Isle-macos-arm64
           path: dist/Whale-Isle-*.dmg
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: success() && inputs.source_tag != ''
+        with:
+          name: Whale-Isle-macos-build-source
+          path: ${{ runner.temp }}/whale-macos-build-tools/macos-build-source.json
           if-no-files-found: error
           retention-days: 30
