@@ -52,7 +52,7 @@
   },
   "devDependencies": {
     "@types/ws": "^8.18.1",
-    "electron": "^44.2.0",
+    "electron": "^44.3.0",
     "electron-builder": "^26.15.3",
     "esbuild": "0.25.9",
     "pnpm": "12.3.4",
