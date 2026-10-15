@@ -84,6 +84,7 @@ export function RemoteSettingsSection({ t }) {
   }
 
   const removeMachine = (m) => {
+    if (busyId) return
     setConfirmDel(m)
   }
 
@@ -111,7 +112,7 @@ export function RemoteSettingsSection({ t }) {
     <div className="dshr-page">
       <div className="dshr-caption">{t('settings.summary')}</div>
 
-      {loading ? <div role="status" className="dshr-caption">{t('settings.loading')}</div> : null}
+      {loading && !status ? <div role="status" className="dshr-caption">{t('settings.loading')}</div> : null}
       {loadError ? <div role="alert" className="dshr-error">
         <p>{t('settings.loadFailed', { error: loadError })}</p>
         <Button size="sm" variant="ghost" onClick={refresh}>{t('settings.retry')}</Button>
@@ -205,7 +206,7 @@ export function RemoteSettingsSection({ t }) {
                 <Button variant="ghost" size="sm" onClick={() => { setEditing(m); setFormOpen(false) }}>
                   {t('machines.edit')}
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => removeMachine(m)} disabled={busyId === 'del:' + m.id}>
+                <Button variant="ghost" size="sm" onClick={() => removeMachine(m)} disabled={!!busyId}>
                   {t('machines.delete')}
                 </Button>
               </div>
@@ -307,6 +308,27 @@ export function RemoteSettingsSection({ t }) {
                 : <div className="dshr-caption">{t('audit.empty')}</div>)
         ) : null}
       </div>
+
+      <Modal
+        open={!!confirmDel}
+        onClose={() => { if (!busyId) setConfirmDel(null) }}
+        title={t('machines.delete')}
+        closeLabel={t('common.close')}
+        description={confirmDel ? t('machines.deleteConfirm', { name: confirmDel.name || confirmDel.host }) : ''}
+        footer={(
+          <React.Fragment>
+            <Button variant="ghost" size="sm" onClick={() => setConfirmDel(null)} disabled={!!busyId}>{t('form.cancel')}</Button>
+            <Button variant="primary" size="sm" disabled={!!busyId} loading={!!confirmDel && busyId === 'del:' + confirmDel.id}
+              onClick={() => {
+                if (!confirmDel || busyId) return
+                const machine = confirmDel
+                void run(() => remoteApi.deleteMachine(machine.id), t('machines.deleted', { name: machine.name || machine.host }), 'del:' + machine.id)
+                  .then((removed) => { if (removed) setConfirmDel(null) })
+              }}
+            >{t('machines.delete')}</Button>
+          </React.Fragment>
+        )}
+      />
     </div>
   )
 }

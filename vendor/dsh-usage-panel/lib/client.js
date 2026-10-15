@@ -119,6 +119,7 @@ window.__ModuleLoader__.load({
       "export.file.daily": "dsh-usage-panel-daily.csv",
       "export.file.models": "dsh-usage-panel-models.csv",
       "export.file.json": "dsh-usage-panel-overview.json",
+      "export.failed": "\u5BFC\u51FA\u5931\u8D25\uFF1A{msg}",
       "refresh.button": "\u5237\u65B0",
       "refresh.loading": "\u5237\u65B0\u4E2D\u2026",
       "refresh.title": "\u91CD\u65B0\u62C9\u53D6\u6700\u65B0\u7EDF\u8BA1",
@@ -132,6 +133,7 @@ window.__ModuleLoader__.load({
       "status.repairLoading": "\u4FEE\u590D\u4E2D\u2026",
       "status.repairHint": "{count} \u4E2A\u4F1A\u8BDD\u65E5\u5FD7\u8BFB\u53D6\u5931\u8D25",
       "status.repairDone": "\u5DF2\u4FEE\u590D\u5E76\u6062\u590D {count} \u6761\u4E8B\u4EF6\uFF08\u539F\u4EF6\u5DF2\u5907\u4EFD\uFF09",
+      "status.repairRefreshFailed": "\u5DF2\u4FEE\u590D\u5E76\u6062\u590D {count} \u6761\u4E8B\u4EF6\uFF08\u539F\u4EF6\u5DF2\u5907\u4EFD\uFF09\uFF1B\u7EDF\u8BA1\u5237\u65B0\u5931\u8D25\uFF0C\u8BF7\u5237\u65B0\u91CD\u8BD5",
       "status.repairStill": "\u4FEE\u590D\u5DF2\u751F\u6548(\u6587\u4EF6\u5DF2\u91CD\u5199);\u82E5\u63D0\u793A\u4ECD\u663E\u793A,\u8BF7\u91CD\u542F dsh \u6E05\u9664\u5BBF\u4E3B\u5185\u5B58\u72B6\u6001",
       "status.repairFailed": "\u4FEE\u590D\u5931\u8D25\uFF1A{msg}",
       "empty.title": "\u6682\u65E0\u7EDF\u8BA1\u6570\u636E",
@@ -262,6 +264,7 @@ window.__ModuleLoader__.load({
       "export.file.daily": "dsh-usage-panel-daily.csv",
       "export.file.models": "dsh-usage-panel-models.csv",
       "export.file.json": "dsh-usage-panel-overview.json",
+      "export.failed": "Export failed: {msg}",
       "refresh.button": "Refresh",
       "refresh.loading": "Refreshing\u2026",
       "refresh.title": "Fetch the latest statistics",
@@ -275,6 +278,7 @@ window.__ModuleLoader__.load({
       "status.repairLoading": "Repairing\u2026",
       "status.repairHint": "{count} session log(s) failed to read",
       "status.repairDone": "Repaired and restored {count} events (original backed up)",
+      "status.repairRefreshFailed": "Repaired and restored {count} events (original backed up); statistics failed to refresh. Please refresh again.",
       "status.repairStill": "Repair is durable; if the hint persists, restart dsh to clear host in-memory state",
       "status.repairFailed": "Repair failed: {msg}",
       "empty.title": "No statistics yet",
@@ -430,7 +434,7 @@ window.__ModuleLoader__.load({
       ".dsw-ust-repair{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-top:4px;font-size:12px;line-height:18px;color:var(--dsw-alias-state-warn-primary)}",
       ".dsw-ust-repair-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}",
       ".dsw-ust-repair-hint{white-space:nowrap}",
-      ".dsw-ust-repair .dsw-ust-more{margin:0;padding:0 4px}",
+      ".dsw-ust-repair .dsw-ust-more{height:18px;margin:0;padding:0 4px}",
       ".dsw-ust-repair-msg{color:var(--dsw-alias-label-secondary);max-width:560px;line-height:18px}",
       ".dsw-ust-head-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}",
       ".dsw-ust-card{background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:16px;min-width:0}",
@@ -514,7 +518,7 @@ window.__ModuleLoader__.load({
       ".dsw-ust-table-head{display:flex;align-items:center;gap:12px;padding:4px 4px 6px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}",
       ".dsw-ust-sort{display:inline-flex;align-items:center;gap:6px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}",
       ".dsw-ust-sort select{padding:2px 6px;border-radius:4px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:12px;line-height:18px}",
-      ".dsw-ust-more{display:block;margin:10px auto 0;border:none;background:transparent;color:var(--dsw-alias-state-business-primary);font-size:12px;line-height:18px;cursor:pointer;padding:2px 8px}",
+      "button.dsw-ust-more{display:block;height:22px;margin:10px auto 0;border:none;background:transparent;color:var(--dsw-alias-state-business-primary);font-size:12px;line-height:18px;cursor:pointer;padding:2px 8px}",
       ".dsw-ust-more:disabled{opacity:0.5;cursor:default}",
       // Rank-column widths shared by the session/project tables (fixed header).
       ".dsw-ust-th-rank{width:20px;flex-shrink:0}",
@@ -566,7 +570,7 @@ window.__ModuleLoader__.load({
       ".dsw-ust-bill-pick{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;width:100%}",
       ".dsw-ust-bill-select{display:flex;flex-direction:column;gap:2px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);flex:1 1 160px;min-width:120px}",
       ".dsw-ust-bill-select select{padding:3px 8px;border-radius:4px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:12px;line-height:18px;width:100%;min-width:0}",
-      ".dsw-ust-bill-commit{margin-left:auto;flex-shrink:0;border:1px solid var(--dsw-static-deepseek-500);background:color-mix(in srgb, var(--dsw-static-deepseek-500) 12%, transparent);color:var(--dsw-alias-label-primary);border-radius:6px;font-size:12px;line-height:18px;padding:3px 12px;cursor:pointer;font-weight:600}",
+      "button.dsw-ust-bill-commit{height:26px;margin-left:auto;flex-shrink:0;border:1px solid var(--dsw-static-deepseek-500);background:color-mix(in srgb, var(--dsw-static-deepseek-500) 12%, transparent);color:var(--dsw-alias-label-primary);border-radius:6px;font-size:12px;line-height:18px;padding:3px 12px;cursor:pointer;font-weight:600}",
       ".dsw-ust-bill-commit:disabled{opacity:0.45;cursor:default}",
       ".dsw-ust-bill-commit-row{display:flex;justify-content:flex-end;margin-top:2px}",
       ".dsw-ust-bill-prices{display:grid;grid-template-columns:56px repeat(3,minmax(120px,1fr));gap:10px;align-items:center;max-width:520px}",
@@ -600,7 +604,8 @@ window.__ModuleLoader__.load({
       ".dsw-ust-bill-error.is-ok{color:var(--dsw-alias-state-success-primary)}",
       ".dsw-ust-bill-footer{display:flex;justify-content:flex-end;gap:8px}",
       ".dsw-ust-bill-cancel{border:1px solid var(--dsw-alias-border-l1);background:transparent;color:var(--dsw-alias-label-secondary);border-radius:6px;font-size:12px;line-height:18px;padding:4px 12px;cursor:pointer}",
-      ".dsw-ust-bill-save{border:none;background:var(--dsw-static-deepseek-500);color:#fff;border-radius:6px;font-size:12px;line-height:18px;padding:4px 12px;cursor:pointer;font-weight:600}",
+      ".dsw-ust-bill-cancel:disabled{opacity:0.5;cursor:default}",
+      "button.dsw-ust-bill-save{height:26px;border:none;background:var(--dsw-static-deepseek-500);color:#fff;border-radius:6px;font-size:12px;line-height:18px;padding:4px 12px;cursor:pointer;font-weight:600}",
       ".dsw-ust-bill-save:disabled{opacity:0.5;cursor:default}"
     ].join("\n");
 
@@ -1464,16 +1469,21 @@ window.__ModuleLoader__.load({
       const [loading, setLoading] = (0, import_react5.useState)(false);
       const [loadingMore, setLoadingMore] = (0, import_react5.useState)(false);
       const [loadError, setLoadError] = (0, import_react5.useState)(null);
+      const [appendError, setAppendError] = (0, import_react5.useState)(null);
+      const appendErrorId = React5.useRef(0);
       const [hasMore, setHasMore] = (0, import_react5.useState)(false);
       const resetAndFetch = (nextSort) => {
         setSort(nextSort);
         setLoadError(null);
+        setAppendError(null);
         setSessions([]);
         setProjects([]);
         setHasMore(false);
         fetchPage(0, nextSort, false);
       };
       const fetchPage = (offset, nextSort, append) => {
+        if (append && (loading || loadingMore)) return;
+        setAppendError(null);
         if (append) setLoadingMore(true);
         else setLoading(true);
         const p = kind === "sessions" ? callSessionPage(rpc, offset, nextSort) : callProjectPage(rpc, offset, nextSort);
@@ -1488,7 +1498,9 @@ window.__ModuleLoader__.load({
             setHasMore(result.hasMore);
           }
         }).catch((err) => {
-          setLoadError(String(err?.message ?? err));
+          const msg = String(err?.message ?? err);
+          if (append) setAppendError({ id: ++appendErrorId.current, text: t("status.error", { msg }) });
+          else setLoadError(msg);
         }).finally(() => {
           setLoading(false);
           setLoadingMore(false);
@@ -1499,7 +1511,7 @@ window.__ModuleLoader__.load({
         resetAndFetch(sort);
       }, [open]);
       const title = kind === "sessions" ? t("sessions.title") : t("projects.title");
-      const body = loadError !== null && (kind === "sessions" ? sessions.length === 0 : projects.length === 0) ? /* @__PURE__ */ React5.createElement("div", { className: "dsw-ust-bill-loading" }, /* @__PURE__ */ React5.createElement("div", null, t("billing.loadError", { msg: loadError })), /* @__PURE__ */ React5.createElement("button", { type: "button", className: "dsw-ust-bill-cancel", onClick: () => resetAndFetch(sort) }, t("billing.retry"))) : /* @__PURE__ */ React5.createElement("div", { className: "dsw-ust-more-modal" }, /* @__PURE__ */ React5.createElement("div", { className: "dsw-ust-card-head" }, /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-card-sub" }, t("sessions.sub")), /* @__PURE__ */ React5.createElement("label", { className: "dsw-ust-sort" }, /* @__PURE__ */ React5.createElement("span", null, t("sort.by")), /* @__PURE__ */ React5.createElement("select", { value: sort, onChange: (e) => resetAndFetch(e.target.value) }, /* @__PURE__ */ React5.createElement("option", { value: "tokens" }, t("sort.tokens")), /* @__PURE__ */ React5.createElement("option", { value: "cost" }, t("sort.cost"))))), /* @__PURE__ */ React5.createElement("div", { className: "dsw-ust-table-head" }, /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-rank" }, "#"), kind === "sessions" ? /* @__PURE__ */ React5.createElement(React5.Fragment, null, /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-session" }, t("sessions.hSession")), /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-type" }, t("sessions.hType")), /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-date" }, t("sessions.hActive")), /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-cost" }, t("sessions.hCost")), /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-tokens" }, t("sessions.hTokens"))) : /* @__PURE__ */ React5.createElement(React5.Fragment, null, /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-session" }, t("projects.hProject")), /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-cost" }, t("projects.hCost")), /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-tokens" }, t("projects.hTokens")))), loading ? /* @__PURE__ */ React5.createElement("div", { className: "dsw-ust-empty" }, t("projects.loading")) : kind === "sessions" ? sessions.map((s, i) => {
+      const body = loadError !== null && (kind === "sessions" ? sessions.length === 0 : projects.length === 0) ? /* @__PURE__ */ React5.createElement("div", { className: "dsw-ust-bill-loading" }, /* @__PURE__ */ React5.createElement("div", null, t("billing.loadError", { msg: loadError })), /* @__PURE__ */ React5.createElement("button", { type: "button", className: "dsw-ust-bill-cancel", onClick: () => resetAndFetch(sort) }, t("billing.retry"))) : /* @__PURE__ */ React5.createElement("div", { className: "dsw-ust-more-modal" }, /* @__PURE__ */ React5.createElement("div", { className: "dsw-ust-card-head" }, /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-card-sub" }, t("sessions.sub")), /* @__PURE__ */ React5.createElement("label", { className: "dsw-ust-sort" }, /* @__PURE__ */ React5.createElement("span", null, t("sort.by")), /* @__PURE__ */ React5.createElement("select", { value: sort, disabled: loading || loadingMore, onChange: (e) => resetAndFetch(e.target.value) }, /* @__PURE__ */ React5.createElement("option", { value: "tokens" }, t("sort.tokens")), /* @__PURE__ */ React5.createElement("option", { value: "cost" }, t("sort.cost"))))), /* @__PURE__ */ React5.createElement("div", { className: "dsw-ust-table-head" }, /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-rank" }, "#"), kind === "sessions" ? /* @__PURE__ */ React5.createElement(React5.Fragment, null, /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-session" }, t("sessions.hSession")), /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-type" }, t("sessions.hType")), /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-date" }, t("sessions.hActive")), /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-cost" }, t("sessions.hCost")), /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-tokens" }, t("sessions.hTokens"))) : /* @__PURE__ */ React5.createElement(React5.Fragment, null, /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-session" }, t("projects.hProject")), /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-cost" }, t("projects.hCost")), /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-th-tokens" }, t("projects.hTokens")))), loading ? /* @__PURE__ */ React5.createElement("div", { className: "dsw-ust-empty" }, t("projects.loading")) : kind === "sessions" ? sessions.map((s, i) => {
         const d = new Date(s.lastActive);
         const date = d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0");
         const cents = billing === null ? null : sumCostCents(s.models.map((m) => costCentsFor(m.cost, m.provider, m.model, billing.prices, billing.peakValleyEnabled)));
@@ -1507,8 +1519,8 @@ window.__ModuleLoader__.load({
       }) : projects.map((row, i) => {
         const cents = billing === null ? null : totalCostCents(row.models, billing.prices, billing.peakValleyEnabled);
         return /* @__PURE__ */ React5.createElement("div", { key: i, className: "dsw-ust-srow" }, /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-srank" }, i + 1), /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-sname", title: row.project ?? "" }, row.name), /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-scost" + (cents === null ? " is-unpriced" : ""), title: cents === null ? t("sessions.cost.none") : t("strip.estimate") }, cents === null ? "\u2014" : formatCost(cents)), /* @__PURE__ */ React5.createElement("span", { className: "dsw-ust-stokens" }, fmtTokens(row.totals.total, locale)));
-      }), hasMore && /* @__PURE__ */ React5.createElement("button", { type: "button", className: "dsw-ust-more", onClick: () => fetchPage(kind === "sessions" ? sessions.length : projects.length, sort, true), disabled: loadingMore }, loadingMore ? t("sessions.moreLoading") : t("sessions.more")));
-      return /* @__PURE__ */ React5.createElement(
+      }), hasMore && /* @__PURE__ */ React5.createElement(import_dsh_client_ui_primitives.Button, { size: "sm", className: "dsw-ust-more", onClick: () => fetchPage(kind === "sessions" ? sessions.length : projects.length, sort, true), disabled: loadingMore, loading: loadingMore }, t("sessions.more")));
+      return /* @__PURE__ */ React5.createElement(React5.Fragment, null, /* @__PURE__ */ React5.createElement(
         import_dsh_client_ui_primitives.Modal,
         {
           open,
@@ -1519,7 +1531,17 @@ window.__ModuleLoader__.load({
           contentClassName: "dsw-ust-modal-content"
         },
         body
-      );
+      ), open && appendError !== null && /* @__PURE__ */ React5.createElement(
+        import_dsh_client_ui_primitives.Toast,
+        {
+          key: appendError.id,
+          text: appendError.text,
+          holdMs: null,
+          dismissLabel: t("billing.close"),
+          actions: [{ label: t("billing.retry"), onClick: () => fetchPage(kind === "sessions" ? sessions.length : projects.length, sort, true) }],
+          onDone: () => setAppendError(null)
+        }
+      ));
     }
 
     // src/client/components/SessionsCard.tsx
@@ -1738,10 +1760,14 @@ window.__ModuleLoader__.load({
       const a = document.createElement("a");
       a.href = url;
       a.download = filename;
+      a.hidden = true;
       document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1e3);
+      try {
+        a.click();
+      } finally {
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1e3);
+      }
     }
 
     // src/client/components/ExportMenu.tsx
@@ -1749,17 +1775,25 @@ window.__ModuleLoader__.load({
     function ExportMenu({ overview, i18n, rpc }) {
       const t = i18n.t;
       const [open, setOpen] = (0, import_react8.useState)(false);
+      const [failure, setFailure] = (0, import_react8.useState)(null);
+      const failureId = React10.useRef(0);
       const billing = useBillingSettings(rpc);
       const prices = billing === null ? {} : billing.prices;
       const peakValley = billing === null ? true : billing.peakValleyEnabled;
       const modelProviders = Object.fromEntries(overview.allTime.byModel.map((m) => [m.model, m.provider]));
       const run = (kind) => {
-        if (kind === "json") download(t("export.file.json"), buildJson(overview), "application/json");
-        else if (kind === "daily") download(t("export.file.daily"), buildDailyCsv(overview.days, prices, peakValley, modelProviders), "text/csv");
-        else download(t("export.file.models"), buildModelCsv(overview.byModel, prices, peakValley), "text/csv");
-        setOpen(false);
+        setFailure(null);
+        try {
+          if (kind === "json") download(t("export.file.json"), buildJson(overview), "application/json");
+          else if (kind === "daily") download(t("export.file.daily"), buildDailyCsv(overview.days, prices, peakValley, modelProviders), "text/csv");
+          else download(t("export.file.models"), buildModelCsv(overview.byModel, prices, peakValley), "text/csv");
+        } catch (err) {
+          setFailure({ id: ++failureId.current, text: t("export.failed", { msg: String(err?.message ?? err) }) });
+        } finally {
+          setOpen(false);
+        }
       };
-      return /* @__PURE__ */ React10.createElement(
+      return /* @__PURE__ */ React10.createElement(React10.Fragment, null, /* @__PURE__ */ React10.createElement(
         import_dsh_client_ui_primitives2.Menu,
         {
           open,
@@ -1776,7 +1810,16 @@ window.__ModuleLoader__.load({
           },
           onClose: () => setOpen(false)
         }
-      );
+      ), failure !== null && /* @__PURE__ */ React10.createElement(
+        import_dsh_client_ui_primitives2.Toast,
+        {
+          key: failure.id,
+          text: failure.text,
+          holdMs: null,
+          dismissLabel: t("billing.close"),
+          onDone: () => setFailure(null)
+        }
+      ));
     }
 
     // src/client/BillingSettingsModal.tsx
@@ -1854,22 +1897,26 @@ window.__ModuleLoader__.load({
       const [providerId, setProviderId] = React11.useState("");
       const [modelName, setModelName] = React11.useState("");
       const [buffer, setBuffer] = React11.useState({ ...EMPTY_BUFFER });
-      const [editError, setEditError] = React11.useState(null);
-      const [updated, setUpdated] = React11.useState(null);
+      const [feedback, setFeedback] = React11.useState(null);
+      const [dismissedFeedbackId, setDismissedFeedbackId] = React11.useState(null);
+      const feedbackId = React11.useRef(0);
+      const [validationAttempted, setValidationAttempted] = React11.useState(false);
       const [loading, setLoading] = React11.useState(false);
       const [loadError, setLoadError] = React11.useState(null);
       const [loadNonce, setLoadNonce] = React11.useState(0);
-      const [saving, setSaving] = React11.useState(false);
-      const [saveError, setSaveError] = React11.useState(null);
+      const [savingAction, setSavingAction] = React11.useState(null);
+      const saving = savingAction !== null;
+      const showFeedback = (text, success = false) => {
+        setFeedback({ id: ++feedbackId.current, text, success });
+      };
       const bumpLoad = () => setLoadNonce((n) => n + 1);
       React11.useEffect(() => {
         if (!open) return;
         let disposed = false;
         const snapshot2 = currentBilling();
         setLoadError(null);
-        setSaveError(null);
-        setEditError(null);
-        setUpdated(null);
+        setFeedback(null);
+        setValidationAttempted(false);
         setOptions({ options: [] });
         setProviderId("");
         setModelName("");
@@ -1927,7 +1974,8 @@ window.__ModuleLoader__.load({
       const selectModel = (provider, model) => {
         setProviderId(provider);
         setModelName(model);
-        setEditError(null);
+        setFeedback(null);
+        setValidationAttempted(false);
         const custom = settings?.prices[rowKey(provider, model)] ?? settings?.prices[model];
         setBuffer(seedPriceBuffer(custom, defaultPrice(provider, model)));
       };
@@ -1938,6 +1986,7 @@ window.__ModuleLoader__.load({
         selectModel(providerId, first);
       }, [open, modelName, providerId, providerModels]);
       const toggleIdle = (checked) => {
+        setFeedback(null);
         if (!checked) {
           setBuffer({ ...buffer, idleChecked: false });
           return;
@@ -1953,7 +2002,8 @@ window.__ModuleLoader__.load({
       };
       const switchProvider = (provider) => {
         const first = providerOptions.find((p) => p.provider === provider)?.models[0];
-        setEditError(null);
+        setFeedback(null);
+        setValidationAttempted(false);
         if (first === void 0) {
           setProviderId(provider);
           setModelName("");
@@ -1963,36 +2013,37 @@ window.__ModuleLoader__.load({
         selectModel(provider, first);
       };
       const commitModel = (close) => {
-        if (settings === null) return;
+        if (settings === null || saving) return;
+        setFeedback(null);
         if (modelName === "") {
           if (!close) return;
-          setSaving(true);
-          setSaveError(null);
+          setSavingAction("save");
           callBillingSet(rpc, settings).then((saved) => {
             publishBilling(saved);
             setSettings(saved);
             onClose();
           }).catch((err) => {
-            setSaveError(t("billing.saveError", { msg: String(err?.message ?? err) }));
-          }).finally(() => setSaving(false));
+            showFeedback(t("billing.saveError", { msg: String(err?.message ?? err) }));
+          }).finally(() => setSavingAction(null));
           return;
         }
         const key = rowKey(providerId, modelName);
+        setValidationAttempted(true);
+        if (buffer.idleChecked && (!validPrice(buffer.hit) || !validPrice(buffer.miss) || !validPrice(buffer.out))) {
+          showFeedback(t("billing.err.invalidPrice", { key: modelName }));
+          return;
+        }
+        if (!validPrice(buffer.idleHit) || !validPrice(buffer.idleMiss) || !validPrice(buffer.idleOut)) {
+          showFeedback(t(buffer.idleChecked ? "billing.err.invalidIdle" : "billing.err.invalidSingle", { key: modelName }));
+          return;
+        }
         const prices = { ...settings.prices };
-        const def2 = defaultPrice(providerId, modelName);
-        const unchanged = def2 !== null && buffer.idleChecked && Number(buffer.idleHit) === def2.idle.inputCacheHit && Number(buffer.idleMiss) === def2.idle.inputCacheMiss && Number(buffer.idleOut) === def2.idle.output && Number(buffer.hit) === def2.peak.inputCacheHit && Number(buffer.miss) === def2.peak.inputCacheMiss && Number(buffer.out) === def2.peak.output;
+        const def = defaultPrice(providerId, modelName);
+        const unchanged = def !== null && buffer.idleChecked && Number(buffer.idleHit) === def.idle.inputCacheHit && Number(buffer.idleMiss) === def.idle.inputCacheMiss && Number(buffer.idleOut) === def.idle.output && Number(buffer.hit) === def.peak.inputCacheHit && Number(buffer.miss) === def.peak.inputCacheMiss && Number(buffer.out) === def.peak.output;
         if (unchanged) {
           delete prices[key];
           delete prices[modelName];
         } else if (buffer.idleChecked) {
-          if (!validPrice(buffer.hit) || !validPrice(buffer.miss) || !validPrice(buffer.out)) {
-            setSaveError(t("billing.err.invalidPrice", { key: modelName }));
-            return;
-          }
-          if (!validPrice(buffer.idleHit) || !validPrice(buffer.idleMiss) || !validPrice(buffer.idleOut)) {
-            setSaveError(t("billing.err.invalidIdle", { key: modelName }));
-            return;
-          }
           delete prices[modelName];
           prices[key] = {
             inputCacheHit: Number(buffer.hit),
@@ -2001,10 +2052,6 @@ window.__ModuleLoader__.load({
             idle: { inputCacheHit: Number(buffer.idleHit), inputCacheMiss: Number(buffer.idleMiss), output: Number(buffer.idleOut) }
           };
         } else {
-          if (!validPrice(buffer.idleHit) || !validPrice(buffer.idleMiss) || !validPrice(buffer.idleOut)) {
-            setSaveError(t("billing.err.invalidSingle", { key: modelName }));
-            return;
-          }
           delete prices[modelName];
           const flat = {
             inputCacheHit: Number(buffer.idleHit),
@@ -2013,27 +2060,30 @@ window.__ModuleLoader__.load({
           };
           prices[key] = { ...flat, idle: { ...flat }, flat: true };
         }
-        setSaving(true);
-        setSaveError(null);
-        setUpdated(null);
+        setSavingAction(close ? "save" : "commit");
         callBillingSet(rpc, { ...settings, prices }).then((saved) => {
           publishBilling(saved);
           setSettings(saved);
           if (close) onClose();
-          else setUpdated(t("billing.updated", { model: modelName }));
+          else showFeedback(t("billing.updated", { model: modelName }), true);
         }).catch((err) => {
-          setSaveError(t("billing.saveError", { msg: String(err?.message ?? err) }));
-        }).finally(() => setSaving(false));
+          showFeedback(t("billing.saveError", { msg: String(err?.message ?? err) }));
+        }).finally(() => setSavingAction(null));
       };
       const save = () => commitModel(true);
       const addUpdate = () => commitModel(false);
       const peakValley = settings?.peakValleyEnabled !== false;
-      const def = modelName !== "" ? defaultPrice(providerId, modelName) : null;
-      const defaultValue = def !== null;
+      const idleInvalidReason = t(buffer.idleChecked ? "billing.err.invalidIdle" : "billing.err.invalidSingle", { key: modelName });
+      const peakInvalidReason = t("billing.err.invalidPrice", { key: modelName });
+      const editPrice = (field, value) => {
+        setFeedback(null);
+        setBuffer({ ...buffer, [field]: value });
+      };
       const body = loadError !== null ? /* @__PURE__ */ React11.createElement("div", { className: "dsw-ust-bill-loading" }, /* @__PURE__ */ React11.createElement("div", null, t("billing.loadError", { msg: loadError })), /* @__PURE__ */ React11.createElement("button", { type: "button", onClick: bumpLoad, className: "dsw-ust-bill-cancel" }, t("billing.retry"))) : loading || settings === null ? /* @__PURE__ */ React11.createElement("div", { className: "dsw-ust-bill-loading" }, t("billing.loading")) : /* @__PURE__ */ React11.createElement("div", { className: "dsw-ust-bill" }, /* @__PURE__ */ React11.createElement("section", { className: "dsw-ust-bill-section" }, /* @__PURE__ */ React11.createElement("div", { className: "dsw-ust-bill-section-head" }, /* @__PURE__ */ React11.createElement("h4", null, t("billing.modelsTitle"))), /* @__PURE__ */ React11.createElement("div", { className: "dsw-ust-bill-pick" }, /* @__PURE__ */ React11.createElement("label", { className: "dsw-ust-bill-select" }, /* @__PURE__ */ React11.createElement("span", null, t("billing.providerLabel")), /* @__PURE__ */ React11.createElement(
         "select",
         {
           value: providerId,
+          disabled: saving,
           onChange: (e) => switchProvider(e.target.value)
         },
         providerOptions.map((option) => /* @__PURE__ */ React11.createElement("option", { key: option.provider, value: option.provider }, option.providerName))
@@ -2041,6 +2091,7 @@ window.__ModuleLoader__.load({
         "select",
         {
           value: modelName,
+          disabled: saving,
           onChange: (e) => selectModel(providerId, e.target.value)
         },
         providerModels.map((model) => /* @__PURE__ */ React11.createElement("option", { key: model, value: model }, model))
@@ -2048,32 +2099,49 @@ window.__ModuleLoader__.load({
         import_dsh_client_ui_primitives3.Switch,
         {
           checked: buffer.idleChecked,
+          disabled: saving,
           onChange: (e) => toggleIdle(e.target.checked)
         }
-      ))), /* @__PURE__ */ React11.createElement("div", { className: "dsw-ust-bill-prices", "data-period": "idle" }, /* @__PURE__ */ React11.createElement("span", { className: buffer.idleChecked ? "dsw-ust-bill-period is-idle" : "dsw-ust-bill-period" }, buffer.idleChecked ? t("billing.periodIdle") : t("billing.periodSingle")), /* @__PURE__ */ React11.createElement(PriceInput, { label: t("billing.hit"), value: buffer.idleHit, onChange: (v) => setBuffer({ ...buffer, idleHit: v }) }), /* @__PURE__ */ React11.createElement(PriceInput, { label: t("billing.miss"), value: buffer.idleMiss, onChange: (v) => setBuffer({ ...buffer, idleMiss: v }) }), /* @__PURE__ */ React11.createElement(PriceInput, { label: t("billing.out"), value: buffer.idleOut, onChange: (v) => setBuffer({ ...buffer, idleOut: v }) })), buffer.idleChecked && /* @__PURE__ */ React11.createElement("div", { className: "dsw-ust-bill-prices" }, /* @__PURE__ */ React11.createElement("span", { className: "dsw-ust-bill-period is-peak" }, t("billing.periodPeak")), /* @__PURE__ */ React11.createElement(PriceInput, { label: t("billing.hit"), value: buffer.hit, onChange: (v) => setBuffer({ ...buffer, hit: v }) }), /* @__PURE__ */ React11.createElement(PriceInput, { label: t("billing.miss"), value: buffer.miss, onChange: (v) => setBuffer({ ...buffer, miss: v }) }), /* @__PURE__ */ React11.createElement(PriceInput, { label: t("billing.out"), value: buffer.out, onChange: (v) => setBuffer({ ...buffer, out: v }) })), /* @__PURE__ */ React11.createElement("div", { className: "dsw-ust-bill-commit-row" }, /* @__PURE__ */ React11.createElement("button", { type: "button", className: "dsw-ust-bill-commit", onClick: addUpdate, disabled: saving || modelName === "" }, t("billing.commit"))), updated !== null && /* @__PURE__ */ React11.createElement("div", { className: "dsw-ust-bill-error is-ok" }, updated), editError !== null && /* @__PURE__ */ React11.createElement("div", { className: "dsw-ust-bill-error" }, editError)), saveError !== null && /* @__PURE__ */ React11.createElement("div", { className: "dsw-ust-bill-error" }, saveError));
-      return /* @__PURE__ */ React11.createElement(
+      ))), /* @__PURE__ */ React11.createElement("div", { className: "dsw-ust-bill-prices", "data-period": "idle" }, /* @__PURE__ */ React11.createElement("span", { className: buffer.idleChecked ? "dsw-ust-bill-period is-idle" : "dsw-ust-bill-period" }, buffer.idleChecked ? t("billing.periodIdle") : t("billing.periodSingle")), /* @__PURE__ */ React11.createElement(PriceInput, { label: t("billing.hit"), value: buffer.idleHit, onChange: (v) => editPrice("idleHit", v), validationAttempted, invalidReason: idleInvalidReason, disabled: saving }), /* @__PURE__ */ React11.createElement(PriceInput, { label: t("billing.miss"), value: buffer.idleMiss, onChange: (v) => editPrice("idleMiss", v), validationAttempted, invalidReason: idleInvalidReason, disabled: saving }), /* @__PURE__ */ React11.createElement(PriceInput, { label: t("billing.out"), value: buffer.idleOut, onChange: (v) => editPrice("idleOut", v), validationAttempted, invalidReason: idleInvalidReason, disabled: saving })), buffer.idleChecked && /* @__PURE__ */ React11.createElement("div", { className: "dsw-ust-bill-prices" }, /* @__PURE__ */ React11.createElement("span", { className: "dsw-ust-bill-period is-peak" }, t("billing.periodPeak")), /* @__PURE__ */ React11.createElement(PriceInput, { label: t("billing.hit"), value: buffer.hit, onChange: (v) => editPrice("hit", v), validationAttempted, invalidReason: peakInvalidReason, disabled: saving }), /* @__PURE__ */ React11.createElement(PriceInput, { label: t("billing.miss"), value: buffer.miss, onChange: (v) => editPrice("miss", v), validationAttempted, invalidReason: peakInvalidReason, disabled: saving }), /* @__PURE__ */ React11.createElement(PriceInput, { label: t("billing.out"), value: buffer.out, onChange: (v) => editPrice("out", v), validationAttempted, invalidReason: peakInvalidReason, disabled: saving })), /* @__PURE__ */ React11.createElement("div", { className: "dsw-ust-bill-commit-row" }, /* @__PURE__ */ React11.createElement(import_dsh_client_ui_primitives3.Button, { size: "sm", className: "dsw-ust-bill-commit", onClick: addUpdate, disabled: saving || modelName === "", loading: savingAction === "commit" }, t("billing.commit")))));
+      return /* @__PURE__ */ React11.createElement(React11.Fragment, null, /* @__PURE__ */ React11.createElement(
         import_dsh_client_ui_primitives3.Modal,
         {
           open,
-          onClose,
+          onClose: () => {
+            if (!saving) onClose();
+          },
           title: t("billing.title"),
           closeLabel: t("billing.close"),
           className: "dsw-ust-modal",
           contentClassName: "dsw-ust-modal-content",
-          footer: /* @__PURE__ */ React11.createElement("div", { className: "dsw-ust-bill-footer" }, /* @__PURE__ */ React11.createElement("button", { type: "button", className: "dsw-ust-bill-cancel", onClick: onClose }, t("billing.close")), /* @__PURE__ */ React11.createElement("button", { type: "button", className: "dsw-ust-bill-save", onClick: save, disabled: saving || loading }, saving ? t("billing.saving") : t("billing.save")))
+          footer: /* @__PURE__ */ React11.createElement("div", { className: "dsw-ust-bill-footer" }, /* @__PURE__ */ React11.createElement("button", { type: "button", className: "dsw-ust-bill-cancel", onClick: onClose, disabled: saving }, t("billing.close")), /* @__PURE__ */ React11.createElement(import_dsh_client_ui_primitives3.Button, { size: "sm", className: "dsw-ust-bill-save", onClick: save, disabled: saving || loading, loading: savingAction === "save" }, t("billing.save")))
         },
         body
-      );
+      ), open && feedback !== null && feedback.id !== dismissedFeedbackId && /* @__PURE__ */ React11.createElement(
+        import_dsh_client_ui_primitives3.Toast,
+        {
+          key: feedback.id,
+          text: feedback.text,
+          tone: feedback.success ? "success" : void 0,
+          holdMs: feedback.success ? void 0 : null,
+          dismissLabel: t("billing.close"),
+          onDone: () => setDismissedFeedbackId(feedback.id)
+        }
+      ));
     }
-    function PriceInput({ label, value, onChange }) {
+    function PriceInput({ label, value, onChange, validationAttempted, invalidReason, disabled }) {
+      const invalid = (validationAttempted || value !== "") && !validPrice(value);
       return /* @__PURE__ */ React11.createElement("label", { className: "dsw-ust-bill-input" }, /* @__PURE__ */ React11.createElement("span", null, label), /* @__PURE__ */ React11.createElement(
         "input",
         {
           value,
+          disabled,
           inputMode: "decimal",
           placeholder: "0.00",
           onChange: (e) => onChange(e.target.value),
-          className: value === "" ? "" : validPrice(value) ? "is-ok" : "is-bad"
+          className: invalid ? "is-bad" : value === "" ? "" : "is-ok",
+          "aria-invalid": invalid,
+          title: invalid ? invalidReason : void 0
         }
       ));
     }
@@ -2094,27 +2162,27 @@ window.__ModuleLoader__.load({
       const [heatTip, setHeatTip] = (0, import_react9.useState)(null);
       const [billingOpen, setBillingOpen] = (0, import_react9.useState)(false);
       const [repairing, setRepairing] = (0, import_react9.useState)(false);
-      const [repairMsg, setRepairMsg] = (0, import_react9.useState)(null);
+      const [repairFeedback, setRepairFeedback] = (0, import_react9.useState)(null);
+      const repairFeedbackId = React12.useRef(0);
       const billing = useBillingSettings(rpc);
       const dataRef = useLatest(data);
       const repairFirst = () => {
         const targets = data?.coverage.failedSessionIds ?? [];
         if (targets.length === 0 || repairing) return;
         setRepairing(true);
-        setRepairMsg(null);
+        setRepairFeedback(null);
         const chain = targets.reduce(
           (acc, id) => acc.then((count) => callRepairSession(rpc, id).then((result) => count + result.repaired)),
           Promise.resolve(0)
         );
         chain.then((total) => {
-          setRepairMsg(t("status.repairDone", { count: total }));
-          return load(true);
-        }).then((fresh) => {
-          if (fresh !== void 0 && fresh.coverage.failedSessionIds.length > 0) {
-            setRepairMsg(t("status.repairStill"));
-          }
+          return load(true).then((fresh) => {
+            const success = fresh !== void 0 && fresh.coverage.failedSessionIds.length === 0;
+            const text = fresh === void 0 ? t("status.repairRefreshFailed", { count: total }) : success ? t("status.repairDone", { count: total }) : t("status.repairStill");
+            setRepairFeedback({ id: ++repairFeedbackId.current, text, success });
+          });
         }).catch((err) => {
-          setRepairMsg(t("status.repairFailed", { msg: String(err?.message ?? err) }));
+          setRepairFeedback({ id: ++repairFeedbackId.current, text: t("status.repairFailed", { msg: String(err?.message ?? err) }), success: false });
         }).finally(() => setRepairing(false));
       };
       const load = (0, import_react9.useCallback)(
@@ -2179,7 +2247,7 @@ window.__ModuleLoader__.load({
           }
         ), /* @__PURE__ */ React12.createElement(BarChart, { days, byModel: recentByModel, i18n, onTip: setBarTip }), /* @__PURE__ */ React12.createElement(SessionsCard, { sessions: overview.topSessions, i18n, rpc }), /* @__PURE__ */ React12.createElement(ProjectRankCard, { i18n, rpc }), /* @__PURE__ */ React12.createElement(ProvidersCard, { providers: overview.providers, i18n }), /* @__PURE__ */ React12.createElement(ModelDonut, { byModel: allTime.byModel, total: allTimeTotal, i18n, onTip: setDonutTip }));
       }
-      return /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-root" }, /* @__PURE__ */ React12.createElement(Tooltip, { tip: barTip }), /* @__PURE__ */ React12.createElement(Tooltip, { tip: donutTip }), /* @__PURE__ */ React12.createElement(Tooltip, { tip: heatTip }), /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-head" }, /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-head-title" }, /* @__PURE__ */ React12.createElement("svg", { className: "dsw-ust-page-icon", width: 16, height: 16, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", "aria-hidden": "true" }, /* @__PURE__ */ React12.createElement("path", { d: "M3 13V9.5" }), /* @__PURE__ */ React12.createElement("path", { d: "M8 13V5.5" }), /* @__PURE__ */ React12.createElement("path", { d: "M13 13V3" }), /* @__PURE__ */ React12.createElement("path", { d: "M2 13.5h12" })), /* @__PURE__ */ React12.createElement("div", null, /* @__PURE__ */ React12.createElement("h2", null, t("nav.label")), subText ? /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-sub" }, subText) : null, data && data.coverage.failedSessionIds.length > 0 && /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-repair" }, /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-repair-row" }, /* @__PURE__ */ React12.createElement("span", { className: "dsw-ust-repair-hint" }, t("status.repairHint", { count: data.coverage.failedSessionIds.length })), /* @__PURE__ */ React12.createElement("button", { type: "button", className: "dsw-ust-more", onClick: repairFirst, disabled: repairing }, repairing ? t("status.repairLoading") : t("status.repair"))), repairMsg !== null && /* @__PURE__ */ React12.createElement("span", { className: "dsw-ust-repair-msg" }, repairMsg)))), /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-head-actions" }, data ? /* @__PURE__ */ React12.createElement(ExportMenu, { overview: data, i18n, rpc }) : null, /* @__PURE__ */ React12.createElement(
+      return /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-root" }, /* @__PURE__ */ React12.createElement(Tooltip, { tip: barTip }), /* @__PURE__ */ React12.createElement(Tooltip, { tip: donutTip }), /* @__PURE__ */ React12.createElement(Tooltip, { tip: heatTip }), /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-head" }, /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-head-title" }, /* @__PURE__ */ React12.createElement("svg", { className: "dsw-ust-page-icon", width: 16, height: 16, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", "aria-hidden": "true" }, /* @__PURE__ */ React12.createElement("path", { d: "M3 13V9.5" }), /* @__PURE__ */ React12.createElement("path", { d: "M8 13V5.5" }), /* @__PURE__ */ React12.createElement("path", { d: "M13 13V3" }), /* @__PURE__ */ React12.createElement("path", { d: "M2 13.5h12" })), /* @__PURE__ */ React12.createElement("div", null, /* @__PURE__ */ React12.createElement("h2", null, t("nav.label")), subText ? /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-sub" }, subText) : null, data && data.coverage.failedSessionIds.length > 0 && /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-repair" }, /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-repair-row" }, /* @__PURE__ */ React12.createElement("span", { className: "dsw-ust-repair-hint" }, t("status.repairHint", { count: data.coverage.failedSessionIds.length })), /* @__PURE__ */ React12.createElement(import_dsh_client_ui_primitives4.Button, { size: "sm", className: "dsw-ust-more", onClick: repairFirst, disabled: repairing, loading: repairing }, t("status.repair")))))), /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-head-actions" }, data ? /* @__PURE__ */ React12.createElement(ExportMenu, { overview: data, i18n, rpc }) : null, /* @__PURE__ */ React12.createElement(
         import_dsh_client_ui_primitives4.Button,
         {
           variant: "outline",
@@ -2196,11 +2264,22 @@ window.__ModuleLoader__.load({
           size: "sm",
           onClick: () => load(true),
           disabled: loading,
+          loading,
           title: t("refresh.title"),
           icon: /* @__PURE__ */ React12.createElement("svg", { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" }, /* @__PURE__ */ React12.createElement("path", { d: "M21 12a9 9 0 1 1-2.64-6.36" }), /* @__PURE__ */ React12.createElement("polyline", { points: "21 3 21 9 15 9" }))
         },
-        loading ? t("refresh.loading") : t("refresh.button")
-      ))), body, /* @__PURE__ */ React12.createElement(BillingSettingsModal, { rpc, i18n, open: billingOpen, onClose: () => setBillingOpen(false) }));
+        t("refresh.button")
+      ))), body, /* @__PURE__ */ React12.createElement(BillingSettingsModal, { rpc, i18n, open: billingOpen, onClose: () => setBillingOpen(false) }), repairFeedback !== null && /* @__PURE__ */ React12.createElement(
+        import_dsh_client_ui_primitives4.Toast,
+        {
+          key: repairFeedback.id,
+          text: repairFeedback.text,
+          tone: repairFeedback.success ? "success" : void 0,
+          holdMs: repairFeedback.success ? void 0 : null,
+          dismissLabel: t("billing.close"),
+          onDone: () => setRepairFeedback(null)
+        }
+      ));
     }
 
     // src/client/boundary.tsx
@@ -2228,7 +2307,7 @@ window.__ModuleLoader__.load({
     };
 
     // src/client/primitives.ts
-    var REQUIRED_PRIMITIVES = ["Button", "Menu", "Modal", "Switch"];
+    var REQUIRED_PRIMITIVES = ["Button", "Menu", "Modal", "Switch", "Toast"];
     function missingPrimitives(mod) {
       const src = mod || {};
       return REQUIRED_PRIMITIVES.filter((name) => src[name] === void 0);

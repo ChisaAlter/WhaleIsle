@@ -42,268 +42,15 @@ __export(index_exports, {
   name: () => name
 });
 module.exports = __toCommonJS(index_exports);
-var React20 = __toESM(require("react"), 1);
+var React21 = __toESM(require("react"), 1);
 
-// package.json
-var package_default = {
-  name: "@xmanrui/dsh-im",
-  version: "3.0.1",
-  description: "\u628A\u4E5D\u79CD IM \u673A\u5668\u4EBA\u548C\u516C\u7F51 AI Office \u63A5\u5165\u672C\u673A DeepSeek Harness\u3002 Connect nine IM channels and a public AI Office to a local DeepSeek Harness.",
-  keywords: [
-    "deepseek-harness",
-    "dsh",
-    "dsh-plugin",
-    "ai-agent",
-    "im",
-    "instant-messaging",
-    "chatbot",
-    "feishu",
-    "lark",
-    "wechat",
-    "wecom",
-    "dingtalk",
-    "qq",
-    "slack",
-    "telegram",
-    "discord",
-    "whatsapp",
-    "ai-office"
-  ],
-  author: {
-    name: "xmanrui",
-    url: "https://github.com/xmanrui"
-  },
-  contributors: [
-    {
-      name: "C3H3-AI",
-      url: "https://github.com/C3H3-AI"
-    }
-  ],
-  license: "MIT",
-  type: "module",
-  repository: {
-    type: "git",
-    url: "git+https://github.com/xmanrui/dsh-im.git"
-  },
-  homepage: "https://github.com/xmanrui/dsh-im#readme",
-  bugs: "https://github.com/xmanrui/dsh-im/issues",
-  publishConfig: {
-    access: "public"
-  },
-  bin: {
-    "dsh-im": "bin/dsh-im.mjs"
-  },
-  main: "./lib/index.js",
-  exports: {
-    ".": "./lib/index.js",
-    "./client": "./lib/client.js",
-    "./package.json": "./package.json"
-  },
-  files: [
-    "assets",
-    "bin",
-    "cordis.patch.yml",
-    "lib",
-    "plugin-src",
-    "scripts",
-    "src",
-    "LICENSE",
-    "README.md",
-    "README.en.md",
-    "THIRD_PARTY_NOTICES.md"
-  ],
-  dsh: {
-    bundle: {
-      patch: "./cordis.patch.yml"
-    },
-    client: {
-      inject: [
-        "@deepseek-ai/dsh-client-connection",
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-settings",
-        "@deepseek-ai/dsh-client-ui-slots",
-        "@deepseek-ai/dsh-client-locale"
-      ],
-      platform: "web"
-    }
-  },
-  scripts: {
-    "test:desktop": "node --test *.test.mjs",
-    build: "node plugin-src/client/build.mjs && node plugin-src/host/build.mjs",
-    test: "npm run test:desktop",
-    check: "npm run build && npm test && node scripts/verify-package.mjs"
-  },
-  engines: {
-    node: ">=22.19"
-  },
-  dependencies: {
-    "@tencent-connect/qqbot-connector": "1.2.0",
-    "@tencent-connect/qqbot-nodejs": "1.0.4",
-    "@wecom/aibot-node-sdk": "1.0.7",
-    "dingtalk-stream": "2.1.4",
-    qrcode: "1.5.4"
-  },
-  devDependencies: {
-    ws: "8.21.3",
-    "@larksuiteoapi/node-sdk": "1.73.0",
-    "@whiskeysockets/baileys": "7.0.0-rc14",
-    esbuild: "0.25.9",
-    "https-proxy-agent": "5.0.1",
-    react: "18.3.1",
-    "react-dom": "18.3.1",
-    "react-test-renderer": "18.3.1"
-  }
-};
-
-// plugin-src/client/channel-logos.js
-var React = __toESM(require("react"), 1);
-var h = React.createElement;
-function dimensions(size) {
-  return size === void 0 ? {} : { width: size, height: size };
-}
-function WeixinLogoGlyph({ size } = {}) {
-  return h("svg", {
-    ...dimensions(size),
-    viewBox: "0 0 24 24",
-    focusable: "false",
-    "aria-hidden": "true",
-    "data-im-channel-logo": "weixin"
-  }, h("path", {
-    fill: "currentColor",
-    d: "M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348zM5.785 5.991c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178A1.17 1.17 0 0 1 4.623 7.17c0-.651.52-1.18 1.162-1.18zm5.813 0c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178 1.17 1.17 0 0 1-1.162-1.178c0-.651.52-1.18 1.162-1.18zm5.34 2.867c-1.797-.052-3.746.512-5.28 1.786-1.72 1.428-2.687 3.72-1.78 6.22.942 2.453 3.666 4.229 6.884 4.229.826 0 1.622-.12 2.361-.336a.722.722 0 0 1 .598.082l1.584.926a.272.272 0 0 0 .14.047c.134 0 .24-.111.24-.247 0-.06-.023-.12-.038-.177l-.327-1.233a.582.582 0 0 1-.023-.156.49.49 0 0 1 .201-.398C23.024 18.48 24 16.82 24 14.98c0-3.21-2.931-5.837-6.656-6.088V8.89c-.135-.01-.27-.027-.407-.03zm-2.53 3.274c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.97-.982zm4.844 0c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.969-.982z"
-  }));
-}
-function FeishuLogoGlyph({ size } = {}) {
-  return h(
-    "svg",
-    {
-      ...dimensions(size),
-      viewBox: "0 0 24 24",
-      focusable: "false",
-      "aria-hidden": "true",
-      "data-im-channel-logo": "feishu"
-    },
-    h("path", { fill: "#00D6B9", d: "M7.2 4.5h7.6c1.2 0 2.1.55 2.7 1.58 1.05 1.8 1.55 3.45 1.58 4.95-2.04-.62-4.2-.15-6.22 1.45C11.3 9.7 9.42 7.04 7.2 4.5Z" }),
-    h("path", { fill: "#1456B8", d: "M10.8 13.55c3.3-2.93 5.72-4.24 9.47-2.52-1.2 1.45-2.27 4.18-3.86 5.43-1.67 1.31-3.9.5-5.61-.64v-2.27Z" }),
-    h("path", { fill: "#3370FF", d: "M4.4 8.35c3.47 3.61 7.25 6.1 10.33 5.7 1.06-.14 2.2-.72 3.4-1.72-1.04 2.65-2.6 4.8-5.06 6-2.46 1.2-5.56.52-7.42-.72A2.76 2.76 0 0 1 4.4 15.3V8.35Z" })
-  );
-}
-function DingtalkLogoGlyph({ size } = {}) {
-  return h("svg", {
-    ...dimensions(size),
-    viewBox: "0 0 48 48",
-    focusable: "false",
-    "aria-hidden": "true",
-    "data-im-channel-logo": "dingtalk"
-  }, h("path", {
-    fill: "currentColor",
-    d: "M37.05 22.783c-6.758-5.216-14.378-12.128-22.73-19.538-.655-.585-1.242-.354-1.536.42-1.88 4.973-.058 9.386 2.889 11.932s7.368 4.912 10.058 6.155c.105.049.013.203-.093.163-4.953-2.182-8.397-3.765-13.07-7.368-.497-.388-1.01-.242-1.07.521-.384 4.748 2.657 8.483 6.058 9.745 2.1.781 4.398 1.212 6.53 1.474.109.015.084.178-.027.178-2.747.01-6.058-.654-8.935-1.751-.606-.233-.818.25-.722.633.491 2.008 2.974 5.076 6.926 5.73a12 12 0 0 0 2.228.115c.164 0 .208.089.154.217q-2.685 4.6-2.803 4.797c-.091.152-.036.275.156.275h3.543c.164 0 .264.106.18.246l-4.958 8.196c-.191.328.035.565.395.301s15.212-11.133 15.636-11.448c.195-.142.148-.327-.124-.327h-3.18c-.206 0-.252-.14-.111-.28.14-.141 3.602-3.594 4.837-4.888 1.283-1.35 1.938-3.825-.231-5.498"
-  }));
-}
-function QqLogoGlyph({ size } = {}) {
-  return h("svg", {
-    ...dimensions(size),
-    viewBox: "0 0 24 24",
-    focusable: "false",
-    "aria-hidden": "true",
-    "data-im-channel-logo": "qq"
-  }, h("path", {
-    fill: "currentColor",
-    d: "M21.395 15.035a40 40 0 0 0-.803-2.264l-1.079-2.695c.001-.032.014-.562.014-.836C19.526 4.632 17.351 0 12 0S4.474 4.632 4.474 9.241c0 .274.013.804.014.836l-1.08 2.695a39 39 0 0 0-.802 2.264c-1.021 3.283-.69 4.643-.438 4.673.54.065 2.103-2.472 2.103-2.472 0 1.469.756 3.387 2.394 4.771-.612.188-1.363.479-1.845.835-.434.32-.379.646-.301.778.343.578 5.883.369 7.482.189 1.6.18 7.14.389 7.483-.189.078-.132.132-.458-.301-.778-.483-.356-1.233-.646-1.846-.836 1.637-1.384 2.393-3.302 2.393-4.771 0 0 1.563 2.537 2.103 2.472.251-.03.581-1.39-.438-4.673"
-  }));
-}
-function WecomLogoGlyph({ size } = {}) {
-  return h(
-    "svg",
-    {
-      ...dimensions(size),
-      viewBox: "0 0 24 24",
-      focusable: "false",
-      "aria-hidden": "true",
-      "data-im-channel-logo": "wecom"
-    },
-    h("path", {
-      fill: "none",
-      stroke: "#3370FF",
-      strokeWidth: "2.35",
-      strokeLinecap: "round",
-      strokeLinejoin: "round",
-      d: "M17.7 14.5c1.05-1.12 1.65-2.52 1.65-4.03 0-3.82-3.58-6.92-8-6.92s-8 3.1-8 6.92 3.58 6.92 8 6.92c1.17 0 2.28-.22 3.28-.62"
-    }),
-    h("path", { fill: "#07C160", d: "M16.1 15.15c.7-.7 1.83-.7 2.53 0s.7 1.83 0 2.53-1.83.7-2.53 0-.7-1.83 0-2.53Z" }),
-    h("path", { fill: "#FFB800", d: "M19.25 13.45a1.36 1.36 0 1 1 1.92 1.92 1.36 1.36 0 0 1-1.92-1.92Z" }),
-    h("path", { fill: "#FF7A00", d: "M19.55 18.05a1.16 1.16 0 1 1 1.64 1.64 1.16 1.16 0 0 1-1.64-1.64Z" }),
-    h("path", { fill: "#3370FF", d: "M15.25 18.75a.92.92 0 1 1 1.3 1.3.92.92 0 0 1-1.3-1.3Z" })
-  );
-}
-function TelegramLogoGlyph({ size } = {}) {
-  return h("svg", {
-    ...dimensions(size),
-    viewBox: "0 0 24 24",
-    focusable: "false",
-    "aria-hidden": "true",
-    "data-im-channel-logo": "telegram"
-  }, h("path", {
-    fill: "currentColor",
-    d: "M23.95 4.57c-.36-1.45-1.43-1.76-2.82-1.24L1.5 10.9c-1.34.52-1.32 1.27-.24 1.6l5.03 1.57 11.66-7.36c.55-.34 1.05-.16.64.21l-9.44 8.52-.37 5.12c.54 0 .78-.24 1.08-.53l2.59-2.51 5.38 3.97c.99.55 1.7.27 1.95-.92L23.95 4.57Z"
-  }));
-}
-function DiscordLogoGlyph({ size } = {}) {
-  return h("svg", {
-    ...dimensions(size),
-    viewBox: "0 0 24 24",
-    focusable: "false",
-    "aria-hidden": "true",
-    "data-im-channel-logo": "discord"
-  }, h("path", {
-    fill: "currentColor",
-    d: "M20.32 4.37a19.8 19.8 0 0 0-4.89-1.51c-.21.38-.46.89-.63 1.29a18.4 18.4 0 0 0-5.59 0 13 13 0 0 0-.64-1.29c-1.71.29-3.36.8-4.89 1.52C.59 9.09-.25 13.68.17 18.2a19.9 19.9 0 0 0 6 3.04c.48-.66.91-1.36 1.28-2.1-.7-.26-1.37-.58-2-.96.17-.12.33-.25.49-.38 3.86 1.79 8.04 1.79 11.86 0 .16.13.32.26.49.38-.64.38-1.31.7-2.01.97.37.73.8 1.44 1.28 2.09a19.8 19.8 0 0 0 6-3.04c.49-5.24-.84-9.79-3.24-13.83ZM8.02 15.42c-1.16 0-2.11-1.07-2.11-2.38s.93-2.38 2.11-2.38c1.18 0 2.13 1.08 2.11 2.38 0 1.31-.93 2.38-2.11 2.38Zm7.95 0c-1.16 0-2.11-1.07-2.11-2.38s.93-2.38 2.11-2.38c1.18 0 2.13 1.08 2.11 2.38 0 1.31-.93 2.38-2.11 2.38Z"
-  }));
-}
-function SlackLogoGlyph({ size } = {}) {
-  return h("svg", {
-    ...dimensions(size),
-    viewBox: "0 0 24 24",
-    focusable: "false",
-    "aria-hidden": "true",
-    "data-im-channel-logo": "slack"
-  }, h("path", {
-    fill: "currentColor",
-    d: "M6 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 1 1 4 0v5a2 2 0 1 1-4 0v-5Zm2-8a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 1 1 0 4H4a2 2 0 1 1 0-4h5Zm8 2a2 2 0 1 1 2 2h-2v-2Zm-1 0a2 2 0 1 1-4 0V5a2 2 0 1 1 4 0v5Zm-2 8a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 1 1 0-4h5a2 2 0 1 1 0 4h-5Z"
-  }));
-}
-function WhatsappLogoGlyph({ size } = {}) {
-  return h("svg", {
-    ...dimensions(size),
-    viewBox: "0 0 24 24",
-    focusable: "false",
-    "aria-hidden": "true",
-    "data-im-channel-logo": "whatsapp"
-  }, h("path", {
-    fill: "currentColor",
-    d: "M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.521.149-.173.198-.297.298-.495.099-.198.05-.372-.025-.521-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479s1.065 2.875 1.213 3.074c.149.198 2.095 3.2 5.077 4.487.709.306 1.262.489 1.694.626.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.29.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.981.999-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.83 9.83 0 0 1 2.893 6.991c-.003 5.45-4.437 9.884-9.886 9.884m8.413-18.297A11.8 11.8 0 0 0 12.055 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.9 11.9 0 0 0 5.688 1.448h.005c6.557 0 11.892-5.335 11.895-11.893a11.82 11.82 0 0 0-3.486-8.413"
-  }));
-}
-function OfficeLogoGlyph({ size } = {}) {
-  return h(
-    "svg",
-    {
-      ...dimensions(size),
-      viewBox: "0 0 24 24",
-      focusable: "false",
-      "aria-hidden": "true",
-      "data-im-channel-logo": "office"
-    },
-    h("path", { fill: "currentColor", d: "M4 3.5h10.5a2 2 0 0 1 2 2v13H4v-15Zm2.2 3v1.8h2V6.5h-2Zm4.1 0v1.8h2V6.5h-2Zm-4.1 4v1.8h2v-1.8h-2Zm4.1 0v1.8h2v-1.8h-2ZM8.4 15v3.5h3V15h-3Z" }),
-    h("path", { fill: "currentColor", d: "M18.3 8.2h1.5v3h3v1.5h-3v3h-1.5v-3h-3v-1.5h3v-3Z" })
-  );
-}
-
-// plugin-src/client/agent-preset.js
-var React3 = __toESM(require("react"), 1);
+// plugin-src/client/feedback.js
+var React2 = __toESM(require("react"), 1);
+var import_react_dom = require("react-dom");
+var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 
 // plugin-src/client/i18n.js
-var React2 = __toESM(require("react"), 1);
+var React = __toESM(require("react"), 1);
 var IM_LOCALE_NAMESPACE = "dsh-im";
 var EN = Object.freeze({
   "$locale": "en",
@@ -346,6 +93,14 @@ var EN = Object.freeze({
   "\u79FB\u9664\u8FDE\u63A5": "Remove connection",
   "\u8FDE\u63A5\u6D4B\u8BD5\u901A\u8FC7\u3002": "Connection test passed.",
   "\u914D\u7F6E\u5DF2\u4FDD\u5B58\u3002": "Configuration saved.",
+  "\u8FDE\u63A5\u6D4B\u8BD5\u672A\u786E\u8BA4\u5B8C\u6210\u3002": "Connection test completion was not confirmed.",
+  "\u8FDE\u63A5\u914D\u7F6E\u5C1A\u672A\u79FB\u9664\u3002": "The connection configuration has not been removed.",
+  "\u8FDE\u63A5\u5DF2\u79FB\u9664\u3002": "Connection removed.",
+  "\u5DF2\u91CD\u65B0\u8FDE\u63A5 Office\u3002": "Reconnected to Office.",
+  "\u5DF2\u53D1\u8D77\u91CD\u65B0\u8FDE\u63A5\uFF0COffice \u5C1A\u672A\u8FDE\u63A5\u3002": "Reconnect requested; Office is not connected yet.",
+  "\u914D\u7F6E\u5DF2\u4FDD\u5B58\uFF0COffice \u5DF2\u8FDE\u63A5\u3002": "Configuration saved; Office is connected.",
+  "\u914D\u7F6E\u5DF2\u4FDD\u5B58\uFF0COffice \u5C1A\u672A\u8FDE\u63A5\u3002": "Configuration saved; Office is not connected yet.",
+  "\u65E0\u6CD5\u5199\u5165\u526A\u8D34\u677F": "Could not write to the clipboard",
   "\u534F\u8BAE Hook \u9884\u89C8": "Protocol hook preview",
   "\u7531 Base URL \u81EA\u52A8\u6D3E\u751F\uFF0C\u4E0D\u5355\u72EC\u586B\u5199": "Derived from Base URL; no separate input",
   "Base URL \u65E0\u6548": "Invalid Base URL",
@@ -1004,7 +759,7 @@ function localizeChild(child) {
   if (Array.isArray(child)) return child.map(localizeChild);
   return child;
 }
-function h2(type, props, ...children) {
+function h(type, props, ...children) {
   let localizedProps = props;
   if (props) {
     for (const key of LOCALIZED_PROPS) {
@@ -1014,17 +769,343 @@ function h2(type, props, ...children) {
       }
     }
   }
-  return React2.createElement(type, localizedProps, ...children.map(localizeChild));
+  return React.createElement(type, localizedProps, ...children.map(localizeChild));
+}
+
+// plugin-src/client/feedback.js
+var ActionButton = React2.forwardRef(function ActionButton2({ children, loading = false, className = "", disabled, ...props }, ref) {
+  return React2.createElement(
+    "button",
+    {
+      type: "button",
+      ...props,
+      ref,
+      className: `${className} dim-busyButton`.trim(),
+      disabled: disabled || loading,
+      "aria-busy": loading || props["aria-busy"] || void 0,
+      "data-loading": loading || void 0
+    },
+    React2.createElement("span", { className: "dim-buttonContent" }, children),
+    loading ? React2.createElement("span", { className: "dim-buttonSpinner", "aria-hidden": true }) : null
+  );
+});
+function BusyIndicator({ busy }) {
+  return busy ? React2.createElement("span", { className: "dim-controlSpinner", "aria-hidden": true }) : null;
+}
+function FeedbackToast({ text: text6, tone, holdMs = null, actions, sequence = 0 }) {
+  const [dismissed, setDismissed] = React2.useState(null);
+  const showing = `${sequence}:${holdMs}:${text6}`;
+  React2.useEffect(() => {
+    setDismissed(null);
+  }, [showing]);
+  if (!text6 || dismissed === showing) return null;
+  return React2.createElement(import_dsh_client_ui_primitives.Toast, {
+    key: showing,
+    text: localizeText(text6),
+    holdMs,
+    tone: tone === "success" ? "success" : void 0,
+    icon: tone === "error" ? React2.createElement(import_dsh_client_ui_primitives.IconWarningOutlineRegular) : void 0,
+    actions: actions?.map((action) => ({ ...action, label: localizeText(action.label) })),
+    dismissLabel: holdMs === null ? localizeText("\u5173\u95ED") : void 0,
+    onDone: () => setDismissed(showing)
+  });
+}
+function ConfirmDialog({ children, onClose, busy = false, className = "", error, feedbackSequence, ...props }) {
+  const dialogRef = React2.useRef(null);
+  const ownerRef = React2.useRef(null);
+  const heading = React2.Children.toArray(children).find((child) => React2.isValidElement(child) && ["strong", "h4"].includes(child.type));
+  (0, import_dsh_client_ui_primitives.useModalLayer)(dialogRef, true, () => {
+    if (!busy) onClose?.();
+  }, ownerRef);
+  const content = React2.createElement("div", {
+    className: "dim-confirmBackdrop",
+    onMouseDown: (event) => {
+      if (event.target === event.currentTarget && !busy) onClose?.();
+    }
+  }, React2.createElement("section", {
+    ...props,
+    ref: dialogRef,
+    className: `dim-confirmDialog ${className}`.trim(),
+    role: "dialog",
+    "aria-modal": true,
+    "aria-label": props["aria-label"] ?? (props["aria-labelledby"] ? void 0 : heading?.props.children),
+    tabIndex: -1,
+    onKeyDown: void 0
+  }, children, error ? React2.createElement(FeedbackToast, { text: error, tone: "error", sequence: feedbackSequence }) : null));
+  return React2.createElement(
+    React2.Fragment,
+    null,
+    React2.createElement("span", { ref: ownerRef, hidden: true, "data-dsh-modal-owner": "" }),
+    typeof document === "undefined" ? content : (0, import_react_dom.createPortal)(content, document.body)
+  );
+}
+
+// package.json
+var package_default = {
+  name: "@xmanrui/dsh-im",
+  version: "3.0.1",
+  description: "\u628A\u4E5D\u79CD IM \u673A\u5668\u4EBA\u548C\u516C\u7F51 AI Office \u63A5\u5165\u672C\u673A DeepSeek Harness\u3002 Connect nine IM channels and a public AI Office to a local DeepSeek Harness.",
+  keywords: [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "ai-agent",
+    "im",
+    "instant-messaging",
+    "chatbot",
+    "feishu",
+    "lark",
+    "wechat",
+    "wecom",
+    "dingtalk",
+    "qq",
+    "slack",
+    "telegram",
+    "discord",
+    "whatsapp",
+    "ai-office"
+  ],
+  author: {
+    name: "xmanrui",
+    url: "https://github.com/xmanrui"
+  },
+  contributors: [
+    {
+      name: "C3H3-AI",
+      url: "https://github.com/C3H3-AI"
+    }
+  ],
+  license: "MIT",
+  type: "module",
+  repository: {
+    type: "git",
+    url: "git+https://github.com/xmanrui/dsh-im.git"
+  },
+  homepage: "https://github.com/xmanrui/dsh-im#readme",
+  bugs: "https://github.com/xmanrui/dsh-im/issues",
+  publishConfig: {
+    access: "public"
+  },
+  bin: {
+    "dsh-im": "bin/dsh-im.mjs"
+  },
+  main: "./lib/index.js",
+  exports: {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  files: [
+    "assets",
+    "bin",
+    "cordis.patch.yml",
+    "lib",
+    "plugin-src",
+    "scripts",
+    "src",
+    "LICENSE",
+    "README.md",
+    "README.en.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  dsh: {
+    bundle: {
+      patch: "./cordis.patch.yml"
+    },
+    client: {
+      inject: [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-locale"
+      ],
+      platform: "web"
+    }
+  },
+  scripts: {
+    "test:desktop": "node --test *.test.mjs",
+    build: "node plugin-src/client/build.mjs && node plugin-src/host/build.mjs",
+    test: "npm run test:desktop",
+    check: "npm run build && npm test && node scripts/verify-package.mjs"
+  },
+  engines: {
+    node: ">=22.19"
+  },
+  dependencies: {
+    "@tencent-connect/qqbot-connector": "1.2.0",
+    "@tencent-connect/qqbot-nodejs": "1.0.4",
+    "@wecom/aibot-node-sdk": "1.0.7",
+    "dingtalk-stream": "2.1.4",
+    qrcode: "1.5.4",
+    sharp: "0.35.3"
+  },
+  devDependencies: {
+    ws: "8.21.3",
+    "@larksuiteoapi/node-sdk": "1.73.0",
+    "@whiskeysockets/baileys": "7.0.0-rc14",
+    esbuild: "0.25.9",
+    "https-proxy-agent": "5.0.1",
+    react: "18.3.1",
+    "react-dom": "18.3.1",
+    "react-test-renderer": "18.3.1"
+  }
+};
+
+// plugin-src/client/channel-logos.js
+var React3 = __toESM(require("react"), 1);
+var h2 = React3.createElement;
+function dimensions(size) {
+  return size === void 0 ? {} : { width: size, height: size };
+}
+function WeixinLogoGlyph({ size } = {}) {
+  return h2("svg", {
+    ...dimensions(size),
+    viewBox: "0 0 24 24",
+    focusable: "false",
+    "aria-hidden": "true",
+    "data-im-channel-logo": "weixin"
+  }, h2("path", {
+    fill: "currentColor",
+    d: "M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348zM5.785 5.991c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178A1.17 1.17 0 0 1 4.623 7.17c0-.651.52-1.18 1.162-1.18zm5.813 0c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178 1.17 1.17 0 0 1-1.162-1.178c0-.651.52-1.18 1.162-1.18zm5.34 2.867c-1.797-.052-3.746.512-5.28 1.786-1.72 1.428-2.687 3.72-1.78 6.22.942 2.453 3.666 4.229 6.884 4.229.826 0 1.622-.12 2.361-.336a.722.722 0 0 1 .598.082l1.584.926a.272.272 0 0 0 .14.047c.134 0 .24-.111.24-.247 0-.06-.023-.12-.038-.177l-.327-1.233a.582.582 0 0 1-.023-.156.49.49 0 0 1 .201-.398C23.024 18.48 24 16.82 24 14.98c0-3.21-2.931-5.837-6.656-6.088V8.89c-.135-.01-.27-.027-.407-.03zm-2.53 3.274c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.97-.982zm4.844 0c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.969-.982z"
+  }));
+}
+function FeishuLogoGlyph({ size } = {}) {
+  return h2(
+    "svg",
+    {
+      ...dimensions(size),
+      viewBox: "0 0 24 24",
+      focusable: "false",
+      "aria-hidden": "true",
+      "data-im-channel-logo": "feishu"
+    },
+    h2("path", { fill: "#00D6B9", d: "M7.2 4.5h7.6c1.2 0 2.1.55 2.7 1.58 1.05 1.8 1.55 3.45 1.58 4.95-2.04-.62-4.2-.15-6.22 1.45C11.3 9.7 9.42 7.04 7.2 4.5Z" }),
+    h2("path", { fill: "#1456B8", d: "M10.8 13.55c3.3-2.93 5.72-4.24 9.47-2.52-1.2 1.45-2.27 4.18-3.86 5.43-1.67 1.31-3.9.5-5.61-.64v-2.27Z" }),
+    h2("path", { fill: "#3370FF", d: "M4.4 8.35c3.47 3.61 7.25 6.1 10.33 5.7 1.06-.14 2.2-.72 3.4-1.72-1.04 2.65-2.6 4.8-5.06 6-2.46 1.2-5.56.52-7.42-.72A2.76 2.76 0 0 1 4.4 15.3V8.35Z" })
+  );
+}
+function DingtalkLogoGlyph({ size } = {}) {
+  return h2("svg", {
+    ...dimensions(size),
+    viewBox: "0 0 48 48",
+    focusable: "false",
+    "aria-hidden": "true",
+    "data-im-channel-logo": "dingtalk"
+  }, h2("path", {
+    fill: "currentColor",
+    d: "M37.05 22.783c-6.758-5.216-14.378-12.128-22.73-19.538-.655-.585-1.242-.354-1.536.42-1.88 4.973-.058 9.386 2.889 11.932s7.368 4.912 10.058 6.155c.105.049.013.203-.093.163-4.953-2.182-8.397-3.765-13.07-7.368-.497-.388-1.01-.242-1.07.521-.384 4.748 2.657 8.483 6.058 9.745 2.1.781 4.398 1.212 6.53 1.474.109.015.084.178-.027.178-2.747.01-6.058-.654-8.935-1.751-.606-.233-.818.25-.722.633.491 2.008 2.974 5.076 6.926 5.73a12 12 0 0 0 2.228.115c.164 0 .208.089.154.217q-2.685 4.6-2.803 4.797c-.091.152-.036.275.156.275h3.543c.164 0 .264.106.18.246l-4.958 8.196c-.191.328.035.565.395.301s15.212-11.133 15.636-11.448c.195-.142.148-.327-.124-.327h-3.18c-.206 0-.252-.14-.111-.28.14-.141 3.602-3.594 4.837-4.888 1.283-1.35 1.938-3.825-.231-5.498"
+  }));
+}
+function QqLogoGlyph({ size } = {}) {
+  return h2("svg", {
+    ...dimensions(size),
+    viewBox: "0 0 24 24",
+    focusable: "false",
+    "aria-hidden": "true",
+    "data-im-channel-logo": "qq"
+  }, h2("path", {
+    fill: "currentColor",
+    d: "M21.395 15.035a40 40 0 0 0-.803-2.264l-1.079-2.695c.001-.032.014-.562.014-.836C19.526 4.632 17.351 0 12 0S4.474 4.632 4.474 9.241c0 .274.013.804.014.836l-1.08 2.695a39 39 0 0 0-.802 2.264c-1.021 3.283-.69 4.643-.438 4.673.54.065 2.103-2.472 2.103-2.472 0 1.469.756 3.387 2.394 4.771-.612.188-1.363.479-1.845.835-.434.32-.379.646-.301.778.343.578 5.883.369 7.482.189 1.6.18 7.14.389 7.483-.189.078-.132.132-.458-.301-.778-.483-.356-1.233-.646-1.846-.836 1.637-1.384 2.393-3.302 2.393-4.771 0 0 1.563 2.537 2.103 2.472.251-.03.581-1.39-.438-4.673"
+  }));
+}
+function WecomLogoGlyph({ size } = {}) {
+  return h2(
+    "svg",
+    {
+      ...dimensions(size),
+      viewBox: "0 0 24 24",
+      focusable: "false",
+      "aria-hidden": "true",
+      "data-im-channel-logo": "wecom"
+    },
+    h2("path", {
+      fill: "none",
+      stroke: "#3370FF",
+      strokeWidth: "2.35",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      d: "M17.7 14.5c1.05-1.12 1.65-2.52 1.65-4.03 0-3.82-3.58-6.92-8-6.92s-8 3.1-8 6.92 3.58 6.92 8 6.92c1.17 0 2.28-.22 3.28-.62"
+    }),
+    h2("path", { fill: "#07C160", d: "M16.1 15.15c.7-.7 1.83-.7 2.53 0s.7 1.83 0 2.53-1.83.7-2.53 0-.7-1.83 0-2.53Z" }),
+    h2("path", { fill: "#FFB800", d: "M19.25 13.45a1.36 1.36 0 1 1 1.92 1.92 1.36 1.36 0 0 1-1.92-1.92Z" }),
+    h2("path", { fill: "#FF7A00", d: "M19.55 18.05a1.16 1.16 0 1 1 1.64 1.64 1.16 1.16 0 0 1-1.64-1.64Z" }),
+    h2("path", { fill: "#3370FF", d: "M15.25 18.75a.92.92 0 1 1 1.3 1.3.92.92 0 0 1-1.3-1.3Z" })
+  );
+}
+function TelegramLogoGlyph({ size } = {}) {
+  return h2("svg", {
+    ...dimensions(size),
+    viewBox: "0 0 24 24",
+    focusable: "false",
+    "aria-hidden": "true",
+    "data-im-channel-logo": "telegram"
+  }, h2("path", {
+    fill: "currentColor",
+    d: "M23.95 4.57c-.36-1.45-1.43-1.76-2.82-1.24L1.5 10.9c-1.34.52-1.32 1.27-.24 1.6l5.03 1.57 11.66-7.36c.55-.34 1.05-.16.64.21l-9.44 8.52-.37 5.12c.54 0 .78-.24 1.08-.53l2.59-2.51 5.38 3.97c.99.55 1.7.27 1.95-.92L23.95 4.57Z"
+  }));
+}
+function DiscordLogoGlyph({ size } = {}) {
+  return h2("svg", {
+    ...dimensions(size),
+    viewBox: "0 0 24 24",
+    focusable: "false",
+    "aria-hidden": "true",
+    "data-im-channel-logo": "discord"
+  }, h2("path", {
+    fill: "currentColor",
+    d: "M20.32 4.37a19.8 19.8 0 0 0-4.89-1.51c-.21.38-.46.89-.63 1.29a18.4 18.4 0 0 0-5.59 0 13 13 0 0 0-.64-1.29c-1.71.29-3.36.8-4.89 1.52C.59 9.09-.25 13.68.17 18.2a19.9 19.9 0 0 0 6 3.04c.48-.66.91-1.36 1.28-2.1-.7-.26-1.37-.58-2-.96.17-.12.33-.25.49-.38 3.86 1.79 8.04 1.79 11.86 0 .16.13.32.26.49.38-.64.38-1.31.7-2.01.97.37.73.8 1.44 1.28 2.09a19.8 19.8 0 0 0 6-3.04c.49-5.24-.84-9.79-3.24-13.83ZM8.02 15.42c-1.16 0-2.11-1.07-2.11-2.38s.93-2.38 2.11-2.38c1.18 0 2.13 1.08 2.11 2.38 0 1.31-.93 2.38-2.11 2.38Zm7.95 0c-1.16 0-2.11-1.07-2.11-2.38s.93-2.38 2.11-2.38c1.18 0 2.13 1.08 2.11 2.38 0 1.31-.93 2.38-2.11 2.38Z"
+  }));
+}
+function SlackLogoGlyph({ size } = {}) {
+  return h2("svg", {
+    ...dimensions(size),
+    viewBox: "0 0 24 24",
+    focusable: "false",
+    "aria-hidden": "true",
+    "data-im-channel-logo": "slack"
+  }, h2("path", {
+    fill: "currentColor",
+    d: "M6 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 1 1 4 0v5a2 2 0 1 1-4 0v-5Zm2-8a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 1 1 0 4H4a2 2 0 1 1 0-4h5Zm8 2a2 2 0 1 1 2 2h-2v-2Zm-1 0a2 2 0 1 1-4 0V5a2 2 0 1 1 4 0v5Zm-2 8a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 1 1 0-4h5a2 2 0 1 1 0 4h-5Z"
+  }));
+}
+function WhatsappLogoGlyph({ size } = {}) {
+  return h2("svg", {
+    ...dimensions(size),
+    viewBox: "0 0 24 24",
+    focusable: "false",
+    "aria-hidden": "true",
+    "data-im-channel-logo": "whatsapp"
+  }, h2("path", {
+    fill: "currentColor",
+    d: "M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.521.149-.173.198-.297.298-.495.099-.198.05-.372-.025-.521-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479s1.065 2.875 1.213 3.074c.149.198 2.095 3.2 5.077 4.487.709.306 1.262.489 1.694.626.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.29.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.981.999-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.83 9.83 0 0 1 2.893 6.991c-.003 5.45-4.437 9.884-9.886 9.884m8.413-18.297A11.8 11.8 0 0 0 12.055 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.9 11.9 0 0 0 5.688 1.448h.005c6.557 0 11.892-5.335 11.895-11.893a11.82 11.82 0 0 0-3.486-8.413"
+  }));
+}
+function OfficeLogoGlyph({ size } = {}) {
+  return h2(
+    "svg",
+    {
+      ...dimensions(size),
+      viewBox: "0 0 24 24",
+      focusable: "false",
+      "aria-hidden": "true",
+      "data-im-channel-logo": "office"
+    },
+    h2("path", { fill: "currentColor", d: "M4 3.5h10.5a2 2 0 0 1 2 2v13H4v-15Zm2.2 3v1.8h2V6.5h-2Zm4.1 0v1.8h2V6.5h-2Zm-4.1 4v1.8h2v-1.8h-2Zm4.1 0v1.8h2v-1.8h-2ZM8.4 15v3.5h3V15h-3Z" }),
+    h2("path", { fill: "currentColor", d: "M18.3 8.2h1.5v3h3v1.5h-3v3h-1.5v-3h-3v-1.5h3v-3Z" })
+  );
 }
 
 // plugin-src/client/agent-preset.js
+var React4 = __toESM(require("react"), 1);
 var SET_AGENT_PRESET_ENDPOINT = "bot.preset.set";
 var PRESET_ID = /^[a-z0-9][a-z0-9-]*$/;
 var EMPTY_AGENT_PRESET_CATALOG = Object.freeze({
   defaultId: "",
   items: Object.freeze([])
 });
-var AgentPresetCatalogContext = React3.createContext(EMPTY_AGENT_PRESET_CATALOG);
+var AgentPresetCatalogContext = React4.createContext(EMPTY_AGENT_PRESET_CATALOG);
 function normalizeAgentPresetId(value) {
   if (typeof value !== "string") return "";
   const id5 = value.trim();
@@ -1049,11 +1130,11 @@ function normalizeAgentPresetCatalog(value) {
   };
 }
 function AgentPresetEditor({ agentPreset = "", disabled = false, onSave }) {
-  const catalog = React3.useContext(AgentPresetCatalogContext) ?? EMPTY_AGENT_PRESET_CATALOG;
-  const helpId = React3.useId();
+  const catalog = React4.useContext(AgentPresetCatalogContext) ?? EMPTY_AGENT_PRESET_CATALOG;
+  const helpId = React4.useId();
   const current = normalizeAgentPresetId(agentPreset);
-  const [saving, setSaving] = React3.useState(false);
-  const [error, setError] = React3.useState(null);
+  const [saving, setSaving] = React4.useState(false);
+  const [error, setError] = React4.useState(null);
   const items = [];
   const seen = /* @__PURE__ */ new Set();
   for (const item of Array.isArray(catalog.items) ? catalog.items : []) {
@@ -1077,56 +1158,58 @@ function AgentPresetEditor({ agentPreset = "", disabled = false, onSave }) {
       setSaving(false);
     }
   };
-  return h2(
+  return h(
     "div",
     { className: "dim-preset" },
-    h2(
+    h(
       "div",
       { className: "dim-presetHeader" },
-      h2(
+      h(
         "span",
         { className: "dim-presetTitle" },
-        h2("span", null, "Agent Preset"),
-        h2(
+        h("span", null, "Agent Preset"),
+        h(
           "span",
           { className: "dim-presetHelp" },
-          h2("button", {
+          h("button", {
             type: "button",
             className: "dim-presetHelpButton",
             "aria-label": "\u67E5\u770B Agent Preset \u8BF4\u660E",
             "aria-describedby": helpId
-          }, h2("span", { "aria-hidden": "true" }, "?")),
-          h2("span", {
+          }, h("span", { "aria-hidden": "true" }, "?")),
+          h("span", {
             id: helpId,
             className: "dim-presetTooltip",
             role: "tooltip"
           }, "\u53EA\u5F71\u54CD\u65B0\u5EFA\u4F1A\u8BDD\uFF1B\u82E5\u5F53\u524D\u804A\u5929\u5DF2\u6709\u4F1A\u8BDD\uFF0C\u5148\u53D1\u9001 /new\uFF0C\u518D\u53D1\u9001\u666E\u901A\u6D88\u606F\u751F\u6548\u3002")
         )
       ),
-      saving ? h2("span", { className: "dim-presetStatus" }, "\u4FDD\u5B58\u4E2D\u2026") : null
+      null
     ),
-    React3.createElement(
+    h("span", { className: "dim-controlBusy" }, React4.createElement(
       "select",
       {
         className: "dim-presetSelect",
         value: current,
         disabled: disabled || saving,
+        "aria-busy": saving || void 0,
         "aria-label": "Agent Preset",
         onChange: (event) => {
           void change(event);
         }
       },
-      h2("option", { value: "" }, inheritLabel),
-      ...items.map((item) => h2(
+      h("option", { value: "" }, inheritLabel),
+      ...items.map((item) => h(
         "option",
         { key: item.id, value: item.id },
         item.unavailable ? [item.id, "\uFF08\u5DF2\u4E0D\u53EF\u7528\uFF09"] : item.label && item.label !== item.id ? `${item.label}\uFF08${item.id}\uFF09` : item.id
       ))
-    ),
-    error || currentUnavailable ? h2(
+    ), h(BusyIndicator, { busy: saving })),
+    error ? h(FeedbackToast, { text: error, tone: "error" }) : null,
+    currentUnavailable ? h(
       "p",
-      { className: "dim-presetError", role: error ? "alert" : "status" },
-      error ?? "\u5F53\u524D Agent Preset \u5DF2\u4E0D\u53EF\u7528\uFF0C\u8BF7\u9009\u62E9\u5176\u4ED6 Preset \u6216\u8DDF\u968F Host \u9ED8\u8BA4\u3002"
+      { className: "dim-presetError", role: "status" },
+      "\u5F53\u524D Agent Preset \u5DF2\u4E0D\u53EF\u7528\uFF0C\u8BF7\u9009\u62E9\u5176\u4ED6 Preset \u6216\u8DDF\u968F Host \u9ED8\u8BA4\u3002"
     ) : null
   );
 }
@@ -1349,12 +1432,12 @@ function formatRemaining(milliseconds) {
 }
 
 // plugin-src/client/channels/dingtalk/index.js
-var React9 = __toESM(require("react"), 1);
+var React10 = __toESM(require("react"), 1);
 
 // plugin-src/client/credential-binding.js
-var React4 = __toESM(require("react"), 1);
+var React5 = __toESM(require("react"), 1);
 function ActionIcon({ children }) {
-  return h2("svg", {
+  return h("svg", {
     className: "dim-actionIcon",
     width: 15,
     height: 15,
@@ -1366,33 +1449,33 @@ function ActionIcon({ children }) {
   }, children);
 }
 function QrActionIcon() {
-  return h2(
+  return h(
     ActionIcon,
     null,
-    h2("path", {
+    h("path", {
       d: "M2.5 2.5h5v5h-5v-5Zm10 0h5v5h-5v-5Zm-10 10h5v5h-5v-5Z",
       stroke: "currentColor",
       strokeWidth: "1.6",
       strokeLinejoin: "round"
     }),
-    h2("path", {
+    h("path", {
       d: "M11.5 11.5h2v2h-2v-2Zm4 0h2v3h-2v-3Zm-4 4h3v2h-3v-2Zm5 1h1v1h-1v-1Z",
       fill: "currentColor"
     })
   );
 }
 function CredentialActionIcon() {
-  return h2(
+  return h(
     ActionIcon,
     null,
-    h2("circle", {
+    h("circle", {
       cx: "6.25",
       cy: "10",
       r: "3.5",
       stroke: "currentColor",
       strokeWidth: "1.6"
     }),
-    h2("path", {
+    h("path", {
       d: "M9.75 10h7.75m-2.5 0v2m-2.5-2v2",
       stroke: "currentColor",
       strokeWidth: "1.6",
@@ -1412,9 +1495,9 @@ function CredentialBindingPanel({
   onSubmit,
   onCancel
 }) {
-  const [identity, setIdentity] = React4.useState("");
-  const [secret, setSecret] = React4.useState("");
-  const headingId = React4.useId();
+  const [identity, setIdentity] = React5.useState("");
+  const [secret, setSecret] = React5.useState("");
+  const headingId = React5.useId();
   const hasIdentity = Boolean(identityLabel);
   const submit = (event) => {
     event.preventDefault();
@@ -1423,24 +1506,24 @@ function CredentialBindingPanel({
     if (hasIdentity && !normalizedIdentity || !normalizedSecret || busy) return;
     void onSubmit?.({ identity: normalizedIdentity, secret: normalizedSecret });
   };
-  return h2(
+  return h(
     "section",
     {
       className: "ddt-card dim-surfaceCard dim-credentialPanel",
       "aria-labelledby": headingId
     },
-    h2("h3", { id: headingId, className: "dim-credentialTitle" }, `\u624B\u52A8\u63A5\u5165${channel4}\u673A\u5668\u4EBA`),
-    h2(
+    h("h3", { id: headingId, className: "dim-credentialTitle" }, `\u624B\u52A8\u63A5\u5165${channel4}\u673A\u5668\u4EBA`),
+    h(
       "form",
       {
         className: `dim-credentialForm${hasIdentity ? "" : " dim-credentialFormSingle"}`,
         onSubmit: submit
       },
-      hasIdentity ? h2(
+      hasIdentity ? h(
         "label",
         { className: "dim-credentialField" },
-        h2("span", null, identityLabel),
-        h2("input", {
+        h("span", null, identityLabel),
+        h("input", {
           value: identity,
           onChange: (event) => setIdentity(event.target.value),
           placeholder: identityPlaceholder,
@@ -1453,11 +1536,11 @@ function CredentialBindingPanel({
           required: true
         })
       ) : null,
-      h2(
+      h(
         "label",
         { className: "dim-credentialField" },
-        h2("span", null, secretLabel),
-        h2("input", {
+        h("span", null, secretLabel),
+        h("input", {
           type: "password",
           value: secret,
           onChange: (event) => setSecret(event.target.value),
@@ -1471,17 +1554,18 @@ function CredentialBindingPanel({
           required: true
         })
       ),
-      error ? h2("p", { className: "dim-credentialError", role: "alert" }, error.message ?? String(error)) : null,
-      h2(
+      error ? h(FeedbackToast, { text: error.message ?? String(error), tone: "error" }) : null,
+      h(
         "div",
         { className: "ddt-actions dim-viewActions dim-credentialActions" },
-        h2("button", {
+        h(ActionButton, {
           type: "submit",
           className: "ddt-button",
           "data-kind": "primary",
-          disabled: busy || hasIdentity && !identity.trim() || !secret.trim()
-        }, busy ? "\u6B63\u5728\u7ED1\u5B9A\u2026" : "\u7ED1\u5B9A\u5E76\u8FDE\u63A5"),
-        h2("button", {
+          disabled: busy || hasIdentity && !identity.trim() || !secret.trim(),
+          loading: busy
+        }, "\u7ED1\u5B9A\u5E76\u8FDE\u63A5"),
+        h("button", {
           type: "button",
           className: "ddt-button",
           onClick: onCancel,
@@ -1493,11 +1577,12 @@ function CredentialBindingPanel({
 }
 
 // plugin-src/client/workspace-editor.js
-var React6 = __toESM(require("react"), 1);
+var React7 = __toESM(require("react"), 1);
 
 // plugin-src/client/workspace-directory-picker.js
-var React5 = __toESM(require("react"), 1);
-var import_react_dom = require("react-dom");
+var React6 = __toESM(require("react"), 1);
+var import_react_dom2 = require("react-dom");
+var import_dsh_client_ui_primitives2 = require("@deepseek-ai/dsh-client-ui-primitives");
 function pickerErrorCode(error) {
   return error?.rpcError?.code ?? error?.code;
 }
@@ -1508,7 +1593,7 @@ function pickerErrorMessage(error) {
   return error?.rpcError?.message ?? error?.message ?? "\u65E0\u6CD5\u8BFB\u53D6\u76EE\u5F55\uFF0C\u8BF7\u91CD\u8BD5\u3002";
 }
 function FolderIcon() {
-  return React5.createElement(
+  return React6.createElement(
     "svg",
     {
       viewBox: "0 0 24 24",
@@ -1519,11 +1604,11 @@ function FolderIcon() {
       strokeLinejoin: "round",
       "aria-hidden": "true"
     },
-    React5.createElement("path", { d: "M3.5 7.25A2.25 2.25 0 0 1 5.75 5h4.1l1.8 2h6.6a2.25 2.25 0 0 1 2.25 2.25v7A2.75 2.75 0 0 1 17.75 19h-12A2.25 2.25 0 0 1 3.5 16.75v-9.5Z" })
+    React6.createElement("path", { d: "M3.5 7.25A2.25 2.25 0 0 1 5.75 5h4.1l1.8 2h6.6a2.25 2.25 0 0 1 2.25 2.25v7A2.75 2.75 0 0 1 17.75 19h-12A2.25 2.25 0 0 1 3.5 16.75v-9.5Z" })
   );
 }
 function ChevronIcon() {
-  return React5.createElement("svg", {
+  return React6.createElement("svg", {
     viewBox: "0 0 20 20",
     fill: "none",
     stroke: "currentColor",
@@ -1531,7 +1616,7 @@ function ChevronIcon() {
     strokeLinecap: "round",
     strokeLinejoin: "round",
     "aria-hidden": "true"
-  }, React5.createElement("path", { d: "m7.5 4.5 5 5.5-5 5.5" }));
+  }, React6.createElement("path", { d: "m7.5 4.5 5 5.5-5 5.5" }));
 }
 function displayCrumbs(listing) {
   const homeIndex = listing.crumbs.findIndex((crumb) => crumb.path === listing.home);
@@ -1547,25 +1632,27 @@ function WorkspaceDirectoryPicker({
   onPicked,
   onCancel
 }) {
-  const [listing, setListing] = React5.useState(null);
-  const [loading, setLoading] = React5.useState(false);
-  const [error, setError] = React5.useState(null);
-  const [showHidden, setShowHidden] = React5.useState(false);
-  const [retryKey, setRetryKey] = React5.useState(0);
-  const requestRef = React5.useRef(0);
-  const controllerRef = React5.useRef(null);
-  const dialogRef = React5.useRef(null);
-  const bodyRef = React5.useRef(null);
-  const titleId = React5.useId();
-  const noticeId = React5.useId();
-  const initialPathRef = React5.useRef(startPath);
-  const onPickedRef = React5.useRef(onPicked);
-  const onCancelRef = React5.useRef(onCancel);
-  const busyRef = React5.useRef(busy);
+  const [listing, setListing] = React6.useState(null);
+  const [loading, setLoading] = React6.useState(false);
+  const [error, setError] = React6.useState(null);
+  const [showHidden, setShowHidden] = React6.useState(false);
+  const [retryKey, setRetryKey] = React6.useState(0);
+  const requestRef = React6.useRef(0);
+  const controllerRef = React6.useRef(null);
+  const dialogRef = React6.useRef(null);
+  const ownerRef = React6.useRef(null);
+  const bodyRef = React6.useRef(null);
+  const titleId = React6.useId();
+  const noticeId = React6.useId();
+  const initialPathRef = React6.useRef(startPath);
+  const onPickedRef = React6.useRef(onPicked);
+  const onCancelRef = React6.useRef(onCancel);
   onPickedRef.current = onPicked;
   onCancelRef.current = onCancel;
-  busyRef.current = busy;
-  const loadDirectory = React5.useCallback(async (path, { reportError = true } = {}) => {
+  (0, import_dsh_client_ui_primitives2.useModalLayer)(dialogRef, open, () => {
+    if (!busy) onCancel?.();
+  }, ownerRef);
+  const loadDirectory = React6.useCallback(async (path, { reportError = true } = {}) => {
     const request = requestRef.current + 1;
     requestRef.current = request;
     controllerRef.current?.abort();
@@ -1588,17 +1675,12 @@ function WorkspaceDirectoryPicker({
       if (request === requestRef.current) setLoading(false);
     }
   }, [picker]);
-  React5.useEffect(() => {
+  React6.useEffect(() => {
     if (!open) return void 0;
     let active = true;
     setListing(null);
     setError(null);
     setShowHidden(false);
-    dialogRef.current?.focus?.();
-    const handleKeyDown = (event) => {
-      if (event.key === "Escape" && !busyRef.current) onCancelRef.current?.();
-    };
-    if (typeof document !== "undefined") document.addEventListener("keydown", handleKeyDown);
     const start = async () => {
       const initialPath = initialPathRef.current;
       const initial = await loadDirectory(initialPath || void 0, { reportError: false });
@@ -1630,7 +1712,6 @@ function WorkspaceDirectoryPicker({
     void start();
     return () => {
       active = false;
-      if (typeof document !== "undefined") document.removeEventListener("keydown", handleKeyDown);
       requestRef.current += 1;
       controllerRef.current?.abort();
     };
@@ -1639,7 +1720,7 @@ function WorkspaceDirectoryPicker({
   const entries = (listing?.entries ?? []).filter((entry) => showHidden || !entry.hidden);
   const crumbs = listing ? displayCrumbs(listing) : [];
   const presentedError = saveError ?? error;
-  const content = h2(
+  const content = h(
     "div",
     {
       className: "dim-directoryPickerBackdrop",
@@ -1647,7 +1728,7 @@ function WorkspaceDirectoryPicker({
         if (event.target === event.currentTarget && !busy) onCancel();
       }
     },
-    h2(
+    h(
       "section",
       {
         ref: dialogRef,
@@ -1658,39 +1739,39 @@ function WorkspaceDirectoryPicker({
         "aria-describedby": noticeId,
         tabIndex: -1
       },
-      h2(
+      h(
         "header",
         { className: "dim-directoryPickerHeader" },
-        h2("h3", { id: titleId }, "\u9009\u62E9\u673A\u5668\u4EBA\u5DE5\u4F5C\u533A\u76EE\u5F55"),
-        listing ? h2(
+        h("h3", { id: titleId }, "\u9009\u62E9\u673A\u5668\u4EBA\u5DE5\u4F5C\u533A\u76EE\u5F55"),
+        listing ? h(
           "nav",
           { className: "dim-directoryCrumbs", "aria-label": "\u5F53\u524D\u76EE\u5F55" },
-          crumbs.map((crumb, index) => h2(
-            React5.Fragment,
+          crumbs.map((crumb, index) => h(
+            React6.Fragment,
             { key: crumb.path },
-            index > 0 ? h2("span", { className: "dim-directoryCrumbSeparator", "aria-hidden": "true" }, "\u203A") : null,
-            React5.createElement("button", {
+            index > 0 ? h("span", { className: "dim-directoryCrumbSeparator", "aria-hidden": "true" }, "\u203A") : null,
+            React6.createElement("button", {
               type: "button",
               title: crumb.path,
               disabled: loading || busy,
               "aria-current": index === crumbs.length - 1 ? "page" : void 0,
               onClick: () => void loadDirectory(crumb.path)
-            }, crumb.path === listing.home ? h2("span", null, "\u4E3B\u76EE\u5F55") : crumb.name || crumb.path)
+            }, crumb.path === listing.home ? h("span", null, "\u4E3B\u76EE\u5F55") : crumb.name || crumb.path)
           ))
-        ) : h2("p", null, "\u6B63\u5728\u51C6\u5907\u76EE\u5F55\u9009\u62E9\u5668\u2026")
+        ) : h("p", null, "\u6B63\u5728\u51C6\u5907\u76EE\u5F55\u9009\u62E9\u5668\u2026")
       ),
-      h2(
+      h(
         "div",
         { ref: bodyRef, className: "dim-directoryPickerBody", "aria-busy": loading },
-        loading && !listing ? h2(
+        loading && !listing ? h(
           "div",
           { className: "dim-directoryPickerState" },
-          h2("span", { className: "dim-directoryPickerSpinner", "aria-hidden": "true" }),
-          h2("p", null, "\u6B63\u5728\u8BFB\u53D6\u76EE\u5F55\u2026")
-        ) : listing ? entries.length > 0 ? h2("ul", { className: "dim-directoryList" }, entries.map((entry) => h2(
+          h("span", { className: "dim-directoryPickerSpinner", "aria-hidden": "true" }),
+          h("p", null, "\u6B63\u5728\u8BFB\u53D6\u76EE\u5F55\u2026")
+        ) : listing ? entries.length > 0 ? h("ul", { className: "dim-directoryList" }, entries.map((entry) => h(
           "li",
           { key: entry.path },
-          React5.createElement(
+          React6.createElement(
             "button",
             {
               type: "button",
@@ -1698,30 +1779,26 @@ function WorkspaceDirectoryPicker({
               disabled: loading || busy,
               onClick: () => void loadDirectory(entry.path)
             },
-            h2("span", { className: "dim-directoryFolder" }, h2(FolderIcon)),
-            React5.createElement("span", { className: "dim-directoryName" }, entry.name),
-            h2("span", { className: "dim-directoryChevron" }, h2(ChevronIcon))
+            h("span", { className: "dim-directoryFolder" }, h(FolderIcon)),
+            React6.createElement("span", { className: "dim-directoryName" }, entry.name),
+            h("span", { className: "dim-directoryChevron" }, h(ChevronIcon))
           )
-        ))) : h2(
+        ))) : h(
           "div",
           { className: "dim-directoryPickerState" },
-          h2("p", null, "\u8FD9\u4E2A\u76EE\u5F55\u4E2D\u6CA1\u6709\u5B50\u6587\u4EF6\u5939\u3002")
+          h("p", null, "\u8FD9\u4E2A\u76EE\u5F55\u4E2D\u6CA1\u6709\u5B50\u6587\u4EF6\u5939\u3002")
         ) : null,
-        listing?.truncated ? h2("p", { className: "dim-directoryPickerTruncated" }, "\u6B64\u76EE\u5F55\u7684\u5B50\u6587\u4EF6\u5939\u8FC7\u591A\uFF0C\u4EC5\u663E\u793A\u524D\u4E00\u90E8\u5206\u3002") : null,
-        presentedError ? h2(
-          "div",
-          { className: "dim-directoryPickerError", role: "alert" },
-          h2("span", null, presentedError),
-          !listing && !busy ? h2("button", {
-            type: "button",
-            onClick: () => setRetryKey((value) => value + 1)
-          }, "\u91CD\u8BD5") : null
-        ) : null
+        listing?.truncated ? h("p", { className: "dim-directoryPickerTruncated" }, "\u6B64\u76EE\u5F55\u7684\u5B50\u6587\u4EF6\u5939\u8FC7\u591A\uFF0C\u4EC5\u663E\u793A\u524D\u4E00\u90E8\u5206\u3002") : null,
+        presentedError ? h(FeedbackToast, {
+          text: presentedError,
+          tone: "error",
+          actions: !listing && !busy ? [{ label: "\u91CD\u8BD5", onClick: () => setRetryKey((value) => value + 1) }] : void 0
+        }) : null
       ),
-      h2(
+      h(
         "footer",
         { className: "dim-directoryPickerFooter" },
-        h2(
+        h(
           "button",
           {
             type: "button",
@@ -1730,43 +1807,49 @@ function WorkspaceDirectoryPicker({
             onClick: () => setShowHidden((value) => !value),
             disabled: busy || !listing
           },
-          h2("span", { className: "dim-directoryHiddenBox", "aria-hidden": "true" }),
-          h2("span", null, "\u663E\u793A\u9690\u85CF\u6587\u4EF6\u5939")
+          h("span", { className: "dim-directoryHiddenBox", "aria-hidden": "true" }),
+          h("span", null, "\u663E\u793A\u9690\u85CF\u6587\u4EF6\u5939")
         ),
-        h2("p", { id: noticeId, className: "dim-directoryPickerNotice" }, "\u5207\u6362\u540E\u4F1A\u6E05\u9664\u8FD9\u4E2A\u673A\u5668\u4EBA\u7684\u65E7\u4F1A\u8BDD\u6620\u5C04\u3002"),
-        h2(
+        h("p", { id: noticeId, className: "dim-directoryPickerNotice" }, "\u5207\u6362\u540E\u4F1A\u6E05\u9664\u8FD9\u4E2A\u673A\u5668\u4EBA\u7684\u65E7\u4F1A\u8BDD\u6620\u5C04\u3002"),
+        h(
           "div",
           { className: "dim-directoryPickerActions" },
-          h2("button", { type: "button", onClick: onCancel, disabled: busy }, "\u53D6\u6D88"),
-          h2("button", {
+          h("button", { type: "button", onClick: onCancel, disabled: busy }, "\u53D6\u6D88"),
+          h(ActionButton, {
             type: "button",
             className: "dim-directoryPickerPrimary",
             disabled: busy || loading || !listing,
-            onClick: () => listing && void onPicked(listing.path)
-          }, busy ? "\u5207\u6362\u4E2D\u2026" : "\u9009\u62E9\u6B64\u76EE\u5F55")
+            onClick: () => listing && void onPicked(listing.path),
+            loading: busy
+          }, "\u9009\u62E9\u6B64\u76EE\u5F55")
         )
       )
     )
   );
-  return typeof document === "undefined" ? content : (0, import_react_dom.createPortal)(content, document.body);
+  return h(
+    React6.Fragment,
+    null,
+    h("span", { ref: ownerRef, hidden: true, "data-dsh-modal-owner": "" }),
+    typeof document === "undefined" ? content : (0, import_react_dom2.createPortal)(content, document.body)
+  );
 }
 
 // plugin-src/client/workspace-editor.js
-var WorkspaceDirectoryPickerContext = React6.createContext(null);
+var WorkspaceDirectoryPickerContext = React7.createContext(null);
 function WorkspaceEditor({ workspace, directoryPicker, disabled = false, onSave }) {
-  const sharedDirectoryPicker = React6.useContext(WorkspaceDirectoryPickerContext);
+  const sharedDirectoryPicker = React7.useContext(WorkspaceDirectoryPickerContext);
   const activeDirectoryPicker = directoryPicker ?? sharedDirectoryPicker;
-  const [open, setOpen] = React6.useState(false);
-  const [saving, setSaving] = React6.useState(false);
-  const [error, setError] = React6.useState(null);
-  const editButtonRef = React6.useRef(null);
-  const savingRef = React6.useRef(false);
-  const close = React6.useCallback(() => {
+  const [open, setOpen] = React7.useState(false);
+  const [saving, setSaving] = React7.useState(false);
+  const [error, setError] = React7.useState(null);
+  const editButtonRef = React7.useRef(null);
+  const savingRef = React7.useRef(false);
+  const close = React7.useCallback(() => {
     setOpen(false);
     setError(null);
     queueMicrotask(() => editButtonRef.current?.focus?.());
   }, []);
-  const pick = React6.useCallback(async (value) => {
+  const pick = React7.useCallback(async (value) => {
     if (!value || savingRef.current || disabled) return;
     if (value === workspace) {
       close();
@@ -1785,14 +1868,14 @@ function WorkspaceEditor({ workspace, directoryPicker, disabled = false, onSave 
       setSaving(false);
     }
   }, [close, disabled, onSave, workspace]);
-  return h2(
+  return h(
     "div",
     { className: "dim-workspace" },
-    h2(
+    h(
       "div",
       { className: "dim-workspaceHeader" },
-      h2("span", null, "\u5F53\u524D\u5DE5\u4F5C\u533A"),
-      h2("button", {
+      h("span", null, "\u5F53\u524D\u5DE5\u4F5C\u533A"),
+      h("button", {
         type: "button",
         ref: editButtonRef,
         className: "dim-workspaceEdit",
@@ -1803,11 +1886,11 @@ function WorkspaceEditor({ workspace, directoryPicker, disabled = false, onSave 
         disabled: disabled || !activeDirectoryPicker
       }, "\u9009\u62E9\u76EE\u5F55")
     ),
-    workspace ? React6.createElement("code", {
+    workspace ? React7.createElement("code", {
       className: "dim-workspacePath",
       title: workspace
-    }, workspace) : h2("code", { className: "dim-workspacePath" }, "\u672A\u8BBE\u7F6E"),
-    open ? h2(WorkspaceDirectoryPicker, {
+    }, workspace) : h("code", { className: "dim-workspacePath" }, "\u672A\u8BBE\u7F6E"),
+    open ? h(WorkspaceDirectoryPicker, {
       open,
       startPath: workspace,
       picker: activeDirectoryPicker,
@@ -1820,10 +1903,10 @@ function WorkspaceEditor({ workspace, directoryPicker, disabled = false, onSave 
 }
 
 // plugin-src/client/workspace-snapshot-fence.js
-var React7 = __toESM(require("react"), 1);
+var React8 = __toESM(require("react"), 1);
 function useWorkspaceSnapshotFence() {
-  const state = React7.useRef({ version: 0, pendingMutations: 0 });
-  return React7.useMemo(() => Object.freeze({
+  const state = React8.useRef({ version: 0, pendingMutations: 0 });
+  return React8.useMemo(() => Object.freeze({
     beginStatus() {
       return state.current.pendingMutations === 0 ? state.current.version : null;
     },
@@ -1846,7 +1929,7 @@ function useWorkspaceSnapshotFence() {
 }
 
 // plugin-src/client/channel-card-meta.js
-var React8 = __toESM(require("react"), 1);
+var React9 = __toESM(require("react"), 1);
 function messageErrorTime(value) {
   try {
     return new Intl.DateTimeFormat(isEnglish() ? "en-US" : "zh-CN", {
@@ -1861,32 +1944,32 @@ function messageErrorTime(value) {
   }
 }
 function ChannelListHeading({ className = "", id: id5, title, connectionLabel }) {
-  const helpId = React8.useId();
-  return h2(
+  const helpId = React9.useId();
+  return h(
     "div",
     { className: `${className} dim-listHeading`.trim() },
-    h2(
+    h(
       "div",
       { className: "dim-listTitle" },
-      h2("h3", id5 ? { id: id5 } : null, title),
-      h2(
+      h("h3", id5 ? { id: id5 } : null, title),
+      h(
         "span",
         { className: "dim-channelHelp" },
-        h2("button", {
+        h("button", {
           type: "button",
           className: "dim-channelHelpButton",
           "aria-label": "\u67E5\u770B\u6D88\u606F\u901A\u9053\u8BF4\u660E",
           "aria-describedby": helpId
-        }, h2("span", { "aria-hidden": "true" }, "?")),
-        h2(
+        }, h("span", { "aria-hidden": "true" }, "?")),
+        h(
           "span",
           {
             id: helpId,
             className: "dim-channelTooltip",
             role: "tooltip"
           },
-          h2("span", null, "\u6D88\u606F\u901A\u9053"),
-          h2("strong", null, connectionLabel)
+          h("span", null, "\u6D88\u606F\u901A\u9053"),
+          h("strong", null, connectionLabel)
         )
       )
     )
@@ -1901,51 +1984,51 @@ function BotStatusMeta({
   formatCheckedTime: formatCheckedTime2,
   healthState
 }) {
-  return h2(
+  return h(
     "div",
     { className: "dim-botHealthGroup" },
-    h2(
+    h(
       "div",
       {
         className: `${className} dim-botHealth`.trim(),
         ...healthState ? { "data-health": healthState } : {}
       },
-      h2("span", {
+      h("span", {
         className: `${dotClassName} dim-healthDot`.trim(),
         "data-tone": tone
       }),
-      h2("span", null, stateLabel2)
+      h("span", null, stateLabel2)
     ),
-    h2(
+    h(
       "div",
       { className: "dim-lastChecked" },
-      h2("span", null, "\u6700\u8FD1\u68C0\u67E5"),
-      h2("span", null, formatCheckedTime2(lastCheckedAt))
+      h("span", null, "\u6700\u8FD1\u68C0\u67E5"),
+      h("span", null, formatCheckedTime2(lastCheckedAt))
     )
   );
 }
 function LastMessageErrorSummary({ className = "", error }) {
   if (!error) return null;
   const occurredAt = messageErrorTime(error.at);
-  return h2(
+  return h(
     "div",
     {
       className: `${className} dim-cardSummary`.trim(),
       role: "status"
     },
-    h2("strong", null, "\u6700\u8FD1\u4E00\u6761\u6D88\u606F\u5904\u7406\u5931\u8D25"),
+    h("strong", null, "\u6700\u8FD1\u4E00\u6761\u6D88\u606F\u5904\u7406\u5931\u8D25"),
     "\uFF1A",
-    h2("span", null, error.message),
+    h("span", null, error.message),
     "\uFF08",
-    h2("span", null, "\u9519\u8BEF\u7801"),
+    h("span", null, "\u9519\u8BEF\u7801"),
     ` ${error.code} \xB7 `,
-    h2("span", null, "\u53C2\u8003\u53F7"),
+    h("span", null, "\u53C2\u8003\u53F7"),
     ` ${error.referenceId}`,
-    occurredAt ? h2(
-      React8.Fragment,
+    occurredAt ? h(
+      React9.Fragment,
       null,
       " \xB7 ",
-      h2("time", { dateTime: new Date(error.at).toISOString() }, occurredAt)
+      h("time", { dateTime: new Date(error.at).toISOString() }, occurredAt)
     ) : null,
     "\uFF09"
   );
@@ -2090,7 +2173,7 @@ function installDingtalkStyles() {
 // plugin-src/client/channels/dingtalk/index.js
 var ACTIVE_PROVISION_STATES = /* @__PURE__ */ new Set(["pending", "scanned", "authorizing", "creating", "connecting"]);
 function DingtalkIcon({ size = 28 }) {
-  return h2("svg", {
+  return h("svg", {
     width: size,
     height: size,
     viewBox: "0 0 48 48",
@@ -2098,13 +2181,13 @@ function DingtalkIcon({ size = 28 }) {
     xmlns: "http://www.w3.org/2000/svg",
     "aria-hidden": "true",
     focusable: "false"
-  }, h2("path", {
+  }, h("path", {
     fill: "currentColor",
     d: "M37.05 22.783c-6.758-5.216-14.378-12.128-22.73-19.538-.655-.585-1.242-.354-1.536.42-1.88 4.973-.058 9.386 2.889 11.932s7.368 4.912 10.058 6.155c.105.049.013.203-.093.163-4.953-2.182-8.397-3.765-13.07-7.368-.497-.388-1.01-.242-1.07.521-.384 4.748 2.657 8.483 6.058 9.745 2.1.781 4.398 1.212 6.53 1.474.109.015.084.178-.027.178-2.747.01-6.058-.654-8.935-1.751-.606-.233-.818.25-.722.633.491 2.008 2.974 5.076 6.926 5.73a12 12 0 0 0 2.228.115c.164 0 .208.089.154.217q-2.685 4.6-2.803 4.797c-.091.152-.036.275.156.275h3.543c.164 0 .264.106.18.246l-4.958 8.196c-.191.328.035.565.395.301s15.212-11.133 15.636-11.448c.195-.142.148-.327-.124-.327h-3.18c-.206 0-.252-.14-.111-.28.14-.141 3.602-3.594 4.837-4.888 1.283-1.35 1.938-3.825-.231-5.498"
   }));
 }
-var Button = React9.forwardRef(function Button2({ children, kind = "secondary", className = "", ...props }, ref) {
-  return h2("button", {
+var Button = React10.forwardRef(function Button2({ children, kind = "secondary", className = "", ...props }, ref) {
+  return h(ActionButton, {
     ...props,
     ref,
     type: "button",
@@ -2113,158 +2196,159 @@ var Button = React9.forwardRef(function Button2({ children, kind = "secondary", 
   }, children);
 });
 function Heading({ totals, adding, busy, onAdd, onCredential, credentialOpen, addButtonRef }) {
-  return h2(
+  return h(
     "div",
     { className: "ddt-heading" },
-    h2(
+    h(
       "div",
       { className: "ddt-headingCopy" },
-      h2("div", { className: "ddt-eyebrow" }, "Channel"),
-      h2("h2", null, "\u9489\u9489\u673A\u5668\u4EBA"),
-      h2("p", null, "\u901A\u8FC7\u626B\u7801\u628A\u9489\u9489\u673A\u5668\u4EBA\u63A5\u5165 DeepSeek Harness")
+      h("div", { className: "ddt-eyebrow" }, "Channel"),
+      h("h2", null, "\u9489\u9489\u673A\u5668\u4EBA"),
+      h("p", null, "\u901A\u8FC7\u626B\u7801\u628A\u9489\u9489\u673A\u5668\u4EBA\u63A5\u5165 DeepSeek Harness")
     ),
-    h2(
+    h(
       "div",
       { className: "ddt-tools" },
-      h2(
+      h(
         "div",
         { className: "dim-bindActions" },
-        h2(Button, {
+        h(Button, {
           kind: "primary",
           className: "dim-scanButton",
           onClick: onAdd,
           disabled: adding || busy,
           ref: addButtonRef,
-          "aria-label": "\u626B\u7801\u63A5\u5165\u9489\u9489\u673A\u5668\u4EBA"
-        }, h2(QrActionIcon), adding ? "\u6B63\u5728\u63A5\u5165" : "\u626B\u7801\u63A5\u5165\u673A\u5668\u4EBA"),
-        h2(Button, {
+          "aria-label": "\u626B\u7801\u63A5\u5165\u9489\u9489\u673A\u5668\u4EBA",
+          loading: adding
+        }, h(QrActionIcon), "\u626B\u7801\u63A5\u5165\u673A\u5668\u4EBA"),
+        h(Button, {
           kind: "credential",
           className: "dim-credentialButton",
           onClick: onCredential,
           disabled: adding || busy,
           "aria-pressed": credentialOpen,
           "aria-label": "\u4F7F\u7528 Client ID \u548C Client Secret \u7ED1\u5B9A\u9489\u9489\u673A\u5668\u4EBA"
-        }, h2(CredentialActionIcon), credentialOpen ? "\u6536\u8D77\u51ED\u636E" : "\u624B\u52A8\u63A5\u5165")
+        }, h(CredentialActionIcon), credentialOpen ? "\u6536\u8D77\u51ED\u636E" : "\u624B\u52A8\u63A5\u5165")
       ),
-      totals.configured > 0 ? h2(
+      totals.configured > 0 ? h(
         "div",
         { className: "ddt-badge dim-onlineBadge" },
-        h2("span", null, `${totals.connected} / ${totals.configured} \u5728\u7EBF`)
+        h("span", null, `${totals.connected} / ${totals.configured} \u5728\u7EBF`)
       ) : null
     )
   );
 }
 function LoadingView() {
-  return h2(
+  return h(
     "div",
     { className: "ddt-card ddt-loading dim-surfaceCard dim-loadingView", "aria-busy": "true" },
-    h2("div", { className: "ddt-spinner dim-spinner" }),
-    h2("span", null, "\u6B63\u5728\u8BFB\u53D6\u9489\u9489\u8FDE\u63A5\u72B6\u6001\u2026")
+    h("div", { className: "ddt-spinner dim-spinner" }),
+    h("span", null, "\u6B63\u5728\u8BFB\u53D6\u9489\u9489\u8FDE\u63A5\u72B6\u6001\u2026")
   );
 }
 function EmptyView({ busy, onStart }) {
-  return h2(
+  return h(
     "div",
     { className: "ddt-card dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "ddt-cardBody ddt-empty dim-surfaceBody dim-emptyView" },
-      h2(
+      h(
         "div",
         { className: "dim-emptyCopy" },
-        h2(
+        h(
           "div",
           { className: "ddt-stateLabel dim-stateLabel" },
-          h2("span", { className: "ddt-dot dim-stateDot" }),
-          h2("span", null, "\u5C1A\u672A\u63A5\u5165\u9489\u9489\u673A\u5668\u4EBA")
+          h("span", { className: "ddt-dot dim-stateDot" }),
+          h("span", null, "\u5C1A\u672A\u63A5\u5165\u9489\u9489\u673A\u5668\u4EBA")
         ),
-        h2("h3", null, "\u626B\u4E00\u6B21\u7801\uFF0C\u81EA\u52A8\u521B\u5EFA\u5E76\u8FDE\u63A5\u673A\u5668\u4EBA"),
-        h2("p", null, "\u6388\u6743\u7531\u9489\u9489\u5B98\u65B9\u9875\u9762\u5B8C\u6210\u3002\u626B\u7801\u8D26\u53F7\u5FC5\u987B\u5DF2\u52A0\u5165\u4E00\u4E2A\u4F01\u4E1A/\u7EC4\u7EC7\u5E76\u6709\u6743\u521B\u5EFA\u673A\u5668\u4EBA\uFF1B\u521B\u5EFA\u6210\u529F\u540E\uFF0C\u5E94\u7528\u51ED\u636E\u4F1A\u76F4\u63A5\u5199\u5165 Harness Host\u3002"),
-        h2(
+        h("h3", null, "\u626B\u4E00\u6B21\u7801\uFF0C\u81EA\u52A8\u521B\u5EFA\u5E76\u8FDE\u63A5\u673A\u5668\u4EBA"),
+        h("p", null, "\u6388\u6743\u7531\u9489\u9489\u5B98\u65B9\u9875\u9762\u5B8C\u6210\u3002\u626B\u7801\u8D26\u53F7\u5FC5\u987B\u5DF2\u52A0\u5165\u4E00\u4E2A\u4F01\u4E1A/\u7EC4\u7EC7\u5E76\u6709\u6743\u521B\u5EFA\u673A\u5668\u4EBA\uFF1B\u521B\u5EFA\u6210\u529F\u540E\uFF0C\u5E94\u7528\u51ED\u636E\u4F1A\u76F4\u63A5\u5199\u5165 Harness Host\u3002"),
+        h(
           "div",
           { className: "ddt-actions dim-viewActions" },
-          h2(
+          h(
             Button,
-            { kind: "primary", onClick: onStart, disabled: busy },
-            busy ? "\u6B63\u5728\u751F\u6210\u4E8C\u7EF4\u7801\u2026" : "\u751F\u6210\u9489\u9489\u4E8C\u7EF4\u7801"
+            { kind: "primary", onClick: onStart, disabled: busy, loading: busy },
+            "\u751F\u6210\u9489\u9489\u4E8C\u7EF4\u7801"
           )
         )
       ),
-      h2(
+      h(
         "div",
         { className: "ddt-brandMark dim-emptyBrand", "aria-hidden": "true" },
-        h2(DingtalkIcon, { size: 68 })
+        h(DingtalkIcon, { size: 68 })
       )
     )
   );
 }
 function QrPanel({ provision, now, busy, onRefresh, onCancel }) {
-  const [imageFailed, setImageFailed] = React9.useState(false);
+  const [imageFailed, setImageFailed] = React10.useState(false);
   const source = safeQrSource(provision.qrCodeDataUrl);
   const remaining = Math.max(0, provision.expiresAt - now);
   const expired = remaining === 0 || provision.status === "expired";
   const duration = Math.max(1, provision.durationMs ?? 10 * 6e4);
   const progress = Math.round(Math.min(1, remaining / duration) * 100);
-  React9.useEffect(() => setImageFailed(false), [source]);
-  return h2(
+  React10.useEffect(() => setImageFailed(false), [source]);
+  return h(
     "div",
     { className: "ddt-card dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "ddt-cardBody ddt-qrLayout dim-surfaceBody dim-qrLayout" },
-      h2(
+      h(
         "div",
         { className: "ddt-qrColumn dim-qrColumn" },
-        h2(
+        h(
           "div",
           { className: "ddt-qrFrame dim-qrFrame" },
-          source && !imageFailed ? h2("img", {
+          source && !imageFailed ? h("img", {
             src: source,
             alt: "\u7528\u4E8E\u628A\u9489\u9489\u673A\u5668\u4EBA\u63A5\u5165 DeepSeek Harness \u7684\u4E00\u6B21\u6027\u4E8C\u7EF4\u7801",
             onError: () => setImageFailed(true)
-          }) : h2("div", { className: "ddt-qrFallback dim-qrFallback" }, "\u4E8C\u7EF4\u7801\u56FE\u7247\u672A\u5C31\u7EEA\uFF0C\u8BF7\u91CD\u65B0\u751F\u6210\u3002"),
-          expired ? h2("div", { className: "ddt-expired dim-qrExpired" }, "\u4E8C\u7EF4\u7801\u5DF2\u8FC7\u671F\n\u8BF7\u91CD\u65B0\u751F\u6210") : null
+          }) : h("div", { className: "ddt-qrFallback dim-qrFallback" }, "\u4E8C\u7EF4\u7801\u56FE\u7247\u672A\u5C31\u7EEA\uFF0C\u8BF7\u91CD\u65B0\u751F\u6210\u3002"),
+          expired ? h("div", { className: "ddt-expired dim-qrExpired" }, "\u4E8C\u7EF4\u7801\u5DF2\u8FC7\u671F\n\u8BF7\u91CD\u65B0\u751F\u6210") : null
         ),
-        h2(
+        h(
           "div",
           { className: "ddt-countdown dim-countdown" },
-          h2(
+          h(
             "div",
             { className: "ddt-countdownTop dim-countdownTop" },
-            h2("span", null, "\u4E8C\u7EF4\u7801\u6709\u6548\u65F6\u95F4"),
-            h2("strong", null, formatRemaining(remaining))
+            h("span", null, "\u4E8C\u7EF4\u7801\u6709\u6548\u65F6\u95F4"),
+            h("strong", null, formatRemaining(remaining))
           ),
-          h2(
+          h(
             "div",
             { className: "ddt-progress dim-progress", "aria-hidden": "true" },
-            h2("span", { style: { "--ddt-progress": `${progress}%` } })
+            h("span", { style: { "--ddt-progress": `${progress}%` } })
           )
         )
       ),
-      h2(
+      h(
         "div",
         { className: "ddt-qrCopy dim-qrCopy" },
-        h2(
+        h(
           "div",
           { className: "ddt-stateLabel dim-stateLabel" },
-          h2("span", { className: "ddt-dot dim-stateDot", "data-tone": expired ? "error" : "warning" }),
-          h2("span", null, expired ? "\u4E8C\u7EF4\u7801\u5DF2\u5931\u6548" : "\u7B49\u5F85\u9489\u9489\u626B\u7801\u6388\u6743")
+          h("span", { className: "ddt-dot dim-stateDot", "data-tone": expired ? "error" : "warning" }),
+          h("span", null, expired ? "\u4E8C\u7EF4\u7801\u5DF2\u5931\u6548" : "\u7B49\u5F85\u9489\u9489\u626B\u7801\u6388\u6743")
         ),
-        h2("h3", null, expired ? "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801\u540E\u7EE7\u7EED" : "\u4F7F\u7528\u9489\u9489 App \u5B8C\u6210\u673A\u5668\u4EBA\u6388\u6743"),
-        h2("p", null, "\u626B\u7801\u8D26\u53F7\u5FC5\u987B\u5DF2\u52A0\u5165\u4F01\u4E1A/\u7EC4\u7EC7\u3002\u5982\u679C\u9489\u9489\u63D0\u793A\u5C1A\u672A\u52A0\u5165\u7EC4\u7EC7\uFF0C\u8BF7\u5728\u63D0\u793A\u9875\u521B\u5EFA\u7EC4\u7EC7\uFF0C\u6216\u6362\u7528\u5DF2\u52A0\u5165\u7EC4\u7EC7\u7684\u8D26\u53F7\u3002"),
-        h2(
+        h("h3", null, expired ? "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801\u540E\u7EE7\u7EED" : "\u4F7F\u7528\u9489\u9489 App \u5B8C\u6210\u673A\u5668\u4EBA\u6388\u6743"),
+        h("p", null, "\u626B\u7801\u8D26\u53F7\u5FC5\u987B\u5DF2\u52A0\u5165\u4F01\u4E1A/\u7EC4\u7EC7\u3002\u5982\u679C\u9489\u9489\u63D0\u793A\u5C1A\u672A\u52A0\u5165\u7EC4\u7EC7\uFF0C\u8BF7\u5728\u63D0\u793A\u9875\u521B\u5EFA\u7EC4\u7EC7\uFF0C\u6216\u6362\u7528\u5DF2\u52A0\u5165\u7EC4\u7EC7\u7684\u8D26\u53F7\u3002"),
+        h(
           "ol",
           { className: "ddt-steps dim-steps" },
-          h2("li", null, "\u4F7F\u7528\u5DF2\u52A0\u5165\u4F01\u4E1A/\u7EC4\u7EC7\u7684\u9489\u9489\u8D26\u53F7\u626B\u63CF\u5DE6\u4FA7\u4E8C\u7EF4\u7801"),
-          h2("li", null, "\u5728\u6388\u6743\u9875\u70B9\u51FB\u201C\u4E00\u952E\u521B\u5EFA\u65B0\u673A\u5668\u4EBA\u201D"),
-          h2("li", null, "\u4FDD\u6301\u672C\u9875\u6253\u5F00\uFF0C\u7B49\u5F85\u673A\u5668\u4EBA\u81EA\u52A8\u8FDE\u63A5")
+          h("li", null, "\u4F7F\u7528\u5DF2\u52A0\u5165\u4F01\u4E1A/\u7EC4\u7EC7\u7684\u9489\u9489\u8D26\u53F7\u626B\u63CF\u5DE6\u4FA7\u4E8C\u7EF4\u7801"),
+          h("li", null, "\u5728\u6388\u6743\u9875\u70B9\u51FB\u201C\u4E00\u952E\u521B\u5EFA\u65B0\u673A\u5668\u4EBA\u201D"),
+          h("li", null, "\u4FDD\u6301\u672C\u9875\u6253\u5F00\uFF0C\u7B49\u5F85\u673A\u5668\u4EBA\u81EA\u52A8\u8FDE\u63A5")
         ),
-        h2(
+        h(
           "div",
           { className: "ddt-actions dim-viewActions" },
-          expired ? h2(Button, { kind: "primary", onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801") : null,
-          !expired ? h2(Button, { onClick: onRefresh, disabled: busy }, "\u6362\u4E00\u4E2A\u4E8C\u7EF4\u7801") : null,
-          h2(Button, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
+          expired ? h(Button, { kind: "primary", onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801") : null,
+          !expired ? h(Button, { onClick: onRefresh, disabled: busy }, "\u6362\u4E00\u4E2A\u4E8C\u7EF4\u7801") : null,
+          h(Button, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
         )
       )
     )
@@ -2273,16 +2357,16 @@ function QrPanel({ provision, now, busy, onRefresh, onCancel }) {
 function ProgressPanel({ status, busy, onCancel }) {
   const connecting = status === "connecting";
   const creating = status === "creating";
-  return h2(
+  return h(
     "div",
     { className: "ddt-card ddt-loading dim-surfaceCard dim-loadingView", "aria-busy": "true" },
-    h2("div", { className: "ddt-spinner dim-spinner" }),
-    h2("h3", null, connecting ? "\u673A\u5668\u4EBA\u5DF2\u521B\u5EFA\uFF0C\u6B63\u5728\u5EFA\u7ACB\u6D88\u606F\u8FDE\u63A5" : creating ? "\u6388\u6743\u5DF2\u786E\u8BA4\uFF0C\u6B63\u5728\u521B\u5EFA\u9489\u9489\u673A\u5668\u4EBA" : "\u6B63\u5728\u786E\u8BA4\u9489\u9489\u6388\u6743"),
-    h2("p", null, connecting ? "\u6B63\u5728\u68C0\u67E5\u9489\u9489 Stream \u957F\u8FDE\u63A5\uFF0C\u6210\u529F\u540E\u4F1A\u81EA\u52A8\u663E\u793A\u4E3A\u5728\u7EBF\u3002" : "\u8BF7\u52FF\u5173\u95ED\u672C\u9875\uFF0C\u9489\u9489\u5B8C\u6210\u6388\u6743\u540E\u5C06\u81EA\u52A8\u7EE7\u7EED\u3002"),
-    h2(
+    h("div", { className: "ddt-spinner dim-spinner" }),
+    h("h3", null, connecting ? "\u673A\u5668\u4EBA\u5DF2\u521B\u5EFA\uFF0C\u6B63\u5728\u5EFA\u7ACB\u6D88\u606F\u8FDE\u63A5" : creating ? "\u6388\u6743\u5DF2\u786E\u8BA4\uFF0C\u6B63\u5728\u521B\u5EFA\u9489\u9489\u673A\u5668\u4EBA" : "\u6B63\u5728\u786E\u8BA4\u9489\u9489\u6388\u6743"),
+    h("p", null, connecting ? "\u6B63\u5728\u68C0\u67E5\u9489\u9489 Stream \u957F\u8FDE\u63A5\uFF0C\u6210\u529F\u540E\u4F1A\u81EA\u52A8\u663E\u793A\u4E3A\u5728\u7EBF\u3002" : "\u8BF7\u52FF\u5173\u95ED\u672C\u9875\uFF0C\u9489\u9489\u5B8C\u6210\u6388\u6743\u540E\u5C06\u81EA\u52A8\u7EE7\u7EED\u3002"),
+    h(
       "div",
       { className: "ddt-actions dim-viewActions", style: { justifyContent: "center", marginTop: 14 } },
-      h2(Button, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88\u63A5\u5165")
+      h(Button, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88\u63A5\u5165")
     )
   );
 }
@@ -2291,20 +2375,20 @@ function ProvisionError({ provision, busy, onRetry, onClose }) {
     code: "DINGTALK_PROVISION_FAILED",
     message: "\u9489\u9489\u673A\u5668\u4EBA\u6CA1\u6709\u63A5\u5165\u5B8C\u6210"
   };
-  return h2(
+  return h(
     "div",
     { className: "ddt-card dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "ddt-inlineError dim-inlineError", role: "alert" },
-      h2("h3", null, provision.status === "expired" ? "\u4E8C\u7EF4\u7801\u5DF2\u8FC7\u671F" : "\u9489\u9489\u673A\u5668\u4EBA\u6CA1\u6709\u63A5\u5165\u5B8C\u6210"),
-      h2("p", null, error.message),
-      h2("span", { className: "ddt-errorCode" }, error.code),
-      h2(
+      h("h3", null, provision.status === "expired" ? "\u4E8C\u7EF4\u7801\u5DF2\u8FC7\u671F" : "\u9489\u9489\u673A\u5668\u4EBA\u6CA1\u6709\u63A5\u5165\u5B8C\u6210"),
+      h("p", null, error.message),
+      h("span", { className: "ddt-errorCode" }, error.code),
+      h(
         "div",
         { className: "ddt-actions dim-viewActions" },
-        h2(Button, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
-        h2(Button, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
+        h(Button, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
+        h(Button, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
       )
     )
   );
@@ -2321,29 +2405,33 @@ function checkedTime(value) {
     return "\u521A\u521A";
   }
 }
-function RemoveConfirmation({ account, busy, onConfirm, onCancel }) {
-  const cancelRef = React9.useRef(null);
-  React9.useEffect(() => cancelRef.current?.focus(), []);
-  return h2(
-    "div",
+function RemoveConfirmation({ account, busy, error, feedbackSequence, onConfirm, onCancel }) {
+  const cancelRef = React10.useRef(null);
+  React10.useEffect(() => cancelRef.current?.focus(), []);
+  return h(
+    ConfirmDialog,
     {
       className: "ddt-confirm dim-confirm",
       role: "alertdialog",
       "aria-label": `\u79FB\u9664${account.bot.name}`,
       onKeyDown: (event) => {
         if (event.key === "Escape" && !busy) onCancel();
-      }
+      },
+      onClose: onCancel,
+      busy: Boolean(busy),
+      error,
+      feedbackSequence
     },
-    h2("strong", null, `\u4ECE DeepSeek Harness \u79FB\u9664\u201C${account.bot.name}\u201D\uFF1F`),
-    h2("p", null, "\u8FD9\u4F1A\u505C\u6B62\u6D88\u606F\u8FDE\u63A5\uFF0C\u5E76\u5220\u9664\u672C\u673A\u4FDD\u5B58\u7684\u5E94\u7528\u51ED\u636E\u3001\u673A\u5668\u4EBA\u914D\u7F6E\u53CA\u4F1A\u8BDD\u6620\u5C04\u3002\u9489\u9489\u5F00\u653E\u5E73\u53F0\u4E2D\u7684\u673A\u5668\u4EBA\u4E0D\u4F1A\u88AB\u81EA\u52A8\u5220\u9664\u3002"),
-    h2(
+    h("strong", null, `\u4ECE DeepSeek Harness \u79FB\u9664\u201C${account.bot.name}\u201D\uFF1F`),
+    h("p", null, "\u8FD9\u4F1A\u505C\u6B62\u6D88\u606F\u8FDE\u63A5\uFF0C\u5E76\u5220\u9664\u672C\u673A\u4FDD\u5B58\u7684\u5E94\u7528\u51ED\u636E\u3001\u673A\u5668\u4EBA\u914D\u7F6E\u53CA\u4F1A\u8BDD\u6620\u5C04\u3002\u9489\u9489\u5F00\u653E\u5E73\u53F0\u4E2D\u7684\u673A\u5668\u4EBA\u4E0D\u4F1A\u88AB\u81EA\u52A8\u5220\u9664\u3002"),
+    h(
       "div",
       { className: "ddt-actions dim-viewActions" },
-      h2(Button, { ref: cancelRef, onClick: onCancel, disabled: busy }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
-      h2(
+      h(Button, { ref: cancelRef, onClick: onCancel, disabled: busy }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
+      h(
         Button,
-        { kind: "danger", onClick: onConfirm, disabled: busy },
-        busy ? "\u6B63\u5728\u79FB\u9664\u2026" : "\u786E\u8BA4\u79FB\u9664\u63A5\u5165"
+        { kind: "danger", onClick: onConfirm, disabled: busy, loading: busy },
+        "\u786E\u8BA4\u79FB\u9664\u63A5\u5165"
       )
     )
   );
@@ -2353,6 +2441,8 @@ function AccountCard({
   busy,
   feedback,
   removing,
+  removeError,
+  removeFeedbackSequence,
   onReconnect,
   onWorkspaceSave,
   onAgentPresetSave,
@@ -2364,27 +2454,27 @@ function AccountCard({
   const tone = account.connected ? "success" : state === "error" ? "error" : "warning";
   const stateLabel2 = account.connected ? "\u8FD0\u884C\u6B63\u5E38" : state === "connecting" ? "\u6B63\u5728\u8FDE\u63A5" : "\u8FDE\u63A5\u672A\u5C31\u7EEA";
   const summary = account.error?.message ?? (account.connected ? null : account.health.summary);
-  return h2(
+  return h(
     "article",
     { className: "ddt-card dim-botCard", tabIndex: -1, "data-bot-id": account.botId },
-    h2(
+    h(
       "div",
       { className: "ddt-cardBody dim-botCardBody" },
-      h2(
+      h(
         "div",
         { className: "ddt-accountTop dim-botCardTop" },
-        h2(
+        h(
           "div",
           { className: "ddt-accountIdentity dim-botIdentity" },
-          h2("div", { className: "ddt-avatar dim-botAvatar", "aria-hidden": "true" }, h2(DingtalkIcon, { size: 29 })),
-          h2(
+          h("div", { className: "ddt-avatar dim-botAvatar", "aria-hidden": "true" }, h(DingtalkIcon, { size: 29 })),
+          h(
             "div",
             { className: "dim-botName" },
-            h2("h3", { title: account.bot.name }, account.bot.name),
-            h2("p", { title: account.bot.clientIdMasked }, account.bot.clientIdMasked)
+            h("h3", { title: account.bot.name }, account.bot.name),
+            h("p", { title: account.bot.clientIdMasked }, account.bot.clientIdMasked)
           )
         ),
-        h2(BotStatusMeta, {
+        h(BotStatusMeta, {
           className: "ddt-health",
           dotClassName: "ddt-dot",
           tone,
@@ -2393,73 +2483,74 @@ function AccountCard({
           formatCheckedTime: checkedTime
         })
       ),
-      h2(WorkspaceEditor, {
+      h(WorkspaceEditor, {
         workspace: account.workspace,
         disabled: Boolean(busy),
         onSave: onWorkspaceSave
       }),
-      h2(AgentPresetEditor, {
+      h(AgentPresetEditor, {
         agentPreset: account.agentPreset,
         disabled: Boolean(busy),
         onSave: onAgentPresetSave
       }),
-      h2(
+      h(
         "div",
         { className: "ddt-accountFooter dim-cardFooter" },
-        h2(
+        h(
           "div",
           { className: "dim-cardFooterLayout" },
-          h2(
+          h(
             "div",
             { className: "ddt-actions dim-cardActions" },
-            h2(
+            h(
               Button,
-              { className: "dim-cardAction", onClick: onReconnect, disabled: Boolean(busy) },
-              busy === "reconnect" ? "\u68C0\u67E5\u4E2D\u2026" : account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"
+              { className: "dim-cardAction", onClick: onReconnect, disabled: Boolean(busy), loading: busy === "reconnect" },
+              account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"
             ),
-            h2(
+            h(
               Button,
               { className: "dim-cardAction", kind: "danger", onClick: onRequestRemove, disabled: Boolean(busy) },
               "\u79FB\u9664\u63A5\u5165"
             )
           ),
-          summary ? h2("div", { className: "ddt-summary dim-cardSummary" }, summary) : null,
-          account.lastMessageError ? h2(LastMessageErrorSummary, {
+          summary ? h("div", { className: "ddt-summary dim-cardSummary" }, summary) : null,
+          account.lastMessageError ? h(LastMessageErrorSummary, {
             className: "ddt-summary",
             error: account.lastMessageError
           }) : null,
-          feedback ? h2("div", {
-            className: "ddt-summary dim-cardFeedback",
-            role: "status"
-          }, feedback) : null
+          null
         )
       )
     ),
-    removing ? h2(RemoveConfirmation, {
+    removing ? h(RemoveConfirmation, {
       account,
       busy: busy === "delete",
+      error: removeError,
+      feedbackSequence: removeFeedbackSequence,
       onConfirm: onConfirmRemove,
       onCancel: onCancelRemove
     }) : null
   );
 }
 function AccountList(props) {
-  return h2(
+  return h(
     "section",
     { className: "dim-listSection" },
-    h2(ChannelListHeading, {
+    h(ChannelListHeading, {
       className: "ddt-listHeading",
       title: "\u5DF2\u63A5\u5165\u7684\u9489\u9489\u673A\u5668\u4EBA",
       connectionLabel: "Stream \u957F\u8FDE\u63A5"
     }),
-    h2("ul", { className: "ddt-list dim-botList" }, props.bots.map((account) => h2(
+    h("ul", { className: "ddt-list dim-botList" }, props.bots.map((account) => h(
       "li",
       { key: account.botId },
-      h2(AccountCard, {
+      h(AccountCard, {
         account,
         busy: props.busyByBot[account.botId],
         feedback: props.feedbackByBot[account.botId]?.message,
         removing: props.removeTarget === account.botId,
+        removeError: props.removeErrorsByBot[account.botId]?.message,
+        removeFeedbackSequence: props.removeErrorsByBot[account.botId]?.sequence,
         onReconnect: () => props.onReconnect(account),
         onWorkspaceSave: (workspace) => props.onWorkspaceSave(account, workspace),
         onAgentPresetSave: (agentPreset) => props.onAgentPresetSave(account, agentPreset),
@@ -2472,7 +2563,7 @@ function AccountList(props) {
 }
 var EMPTY_TOTALS = Object.freeze({ configured: 0, connected: 0 });
 function DingtalkSettingsTab({ rpcCall }) {
-  const [model, setModel] = React9.useState({
+  const [model, setModel] = React10.useState({
     phase: "loading",
     bots: [],
     totals: EMPTY_TOTALS,
@@ -2480,22 +2571,23 @@ function DingtalkSettingsTab({ rpcCall }) {
     error: null,
     agentPresetCatalog: EMPTY_AGENT_PRESET_CATALOG
   });
-  const [provision, setProvision] = React9.useState(null);
-  const [busy, setBusy] = React9.useState(false);
-  const [busyByBot, setBusyByBot] = React9.useState({});
-  const [feedbackByBot, setFeedbackByBot] = React9.useState({});
-  const [removeTarget, setRemoveTarget] = React9.useState(null);
-  const [credentialOpen, setCredentialOpen] = React9.useState(false);
-  const [credentialError, setCredentialError] = React9.useState(null);
-  const [notice, setNotice] = React9.useState("");
-  const [now, setNow] = React9.useState(() => Date.now());
-  const addButtonRef = React9.useRef(null);
-  const mountedRef = React9.useRef(true);
-  const statusRequestRef = React9.useRef(0);
+  const [provision, setProvision] = React10.useState(null);
+  const [busy, setBusy] = React10.useState(false);
+  const [busyByBot, setBusyByBot] = React10.useState({});
+  const [feedbackByBot, setFeedbackByBot] = React10.useState({});
+  const [removeTarget, setRemoveTarget] = React10.useState(null);
+  const [removeErrorsByBot, setRemoveErrorsByBot] = React10.useState({});
+  const [credentialOpen, setCredentialOpen] = React10.useState(false);
+  const [credentialError, setCredentialError] = React10.useState(null);
+  const [notice, setNotice] = React10.useState("");
+  const [now, setNow] = React10.useState(() => Date.now());
+  const addButtonRef = React10.useRef(null);
+  const mountedRef = React10.useRef(true);
+  const statusRequestRef = React10.useRef(0);
   const workspaceFence = useWorkspaceSnapshotFence();
-  const noticeFrameRef = React9.useRef(null);
-  const focusFrameRef = React9.useRef(null);
-  React9.useEffect(() => {
+  const noticeFrameRef = React10.useRef(null);
+  const focusFrameRef = React10.useRef(null);
+  React10.useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
@@ -2510,8 +2602,8 @@ function DingtalkSettingsTab({ rpcCall }) {
       }
     };
   }, []);
-  React9.useEffect(() => installDingtalkStyles(), []);
-  const announce = React9.useCallback((message) => {
+  React10.useEffect(() => installDingtalkStyles(), []);
+  const announce = React10.useCallback((message) => {
     if (!mountedRef.current) return;
     if (noticeFrameRef.current !== null) {
       window.cancelAnimationFrame(noticeFrameRef.current);
@@ -2525,7 +2617,7 @@ function DingtalkSettingsTab({ rpcCall }) {
       });
     }
   }, []);
-  const discardStaleFeedback = React9.useCallback((snapshot) => {
+  const discardStaleFeedback = React10.useCallback((snapshot) => {
     const botsById = new Map(snapshot.bots.map((bot) => [bot.botId, bot]));
     setFeedbackByBot((current) => {
       let changed = false;
@@ -2540,7 +2632,7 @@ function DingtalkSettingsTab({ rpcCall }) {
       return changed ? next : current;
     });
   }, []);
-  const focusAddButton = React9.useCallback(() => {
+  const focusAddButton = React10.useCallback(() => {
     if (!mountedRef.current) return;
     if (focusFrameRef.current !== null) window.cancelAnimationFrame(focusFrameRef.current);
     focusFrameRef.current = window.requestAnimationFrame(() => {
@@ -2548,11 +2640,11 @@ function DingtalkSettingsTab({ rpcCall }) {
       if (mountedRef.current) addButtonRef.current?.focus();
     });
   }, []);
-  const invoke = React9.useCallback(async (endpoint, payload = {}, signal) => {
+  const invoke = React10.useCallback(async (endpoint, payload = {}, signal) => {
     if (typeof rpcCall !== "function") throw new TypeError("\u9489\u9489\u8BBE\u7F6E\u9875\u7F3A\u5C11 RPC \u8FDE\u63A5");
     return unwrapRpcResult(await rpcCall(endpoint, payload, signal));
   }, [rpcCall]);
-  const loadStatus = React9.useCallback(async ({
+  const loadStatus = React10.useCallback(async ({
     signal,
     silent = false,
     restoreProvisioning = false
@@ -2596,12 +2688,12 @@ function DingtalkSettingsTab({ rpcCall }) {
       return void 0;
     }
   }, [discardStaleFeedback, invoke, workspaceFence]);
-  React9.useEffect(() => {
+  React10.useEffect(() => {
     const controller = new AbortController();
     void loadStatus({ signal: controller.signal, restoreProvisioning: true });
     return () => controller.abort();
   }, [loadStatus]);
-  React9.useEffect(() => {
+  React10.useEffect(() => {
     if (model.phase !== "ready") return void 0;
     const controller = new AbortController();
     let running = false;
@@ -2620,14 +2712,14 @@ function DingtalkSettingsTab({ rpcCall }) {
       window.clearInterval(timer);
     };
   }, [loadStatus, model.phase]);
-  React9.useEffect(() => {
+  React10.useEffect(() => {
     if (!provision || !ACTIVE_PROVISION_STATES.has(provision.status)) return void 0;
     const timer = window.setInterval(() => {
       if (mountedRef.current) setNow(Date.now());
     }, 1e3);
     return () => window.clearInterval(timer);
   }, [provision?.attemptId, provision?.status]);
-  const startProvisioning = React9.useCallback(async ({ replace = false } = {}) => {
+  const startProvisioning = React10.useCallback(async ({ replace = false } = {}) => {
     if (!mountedRef.current) return;
     setCredentialOpen(false);
     setCredentialError(null);
@@ -2665,7 +2757,7 @@ function DingtalkSettingsTab({ rpcCall }) {
       if (mountedRef.current) setBusy(false);
     }
   }, [announce, invoke, provision?.attemptId]);
-  const bindCredentials = React9.useCallback(async ({ identity, secret }) => {
+  const bindCredentials = React10.useCallback(async ({ identity, secret }) => {
     if (!mountedRef.current) return;
     const snapshotVersion = workspaceFence.beginMutation();
     setBusy(true);
@@ -2697,7 +2789,7 @@ function DingtalkSettingsTab({ rpcCall }) {
       if (mountedRef.current) setBusy(false);
     }
   }, [announce, discardStaleFeedback, invoke, loadStatus, workspaceFence]);
-  const cancelProvisioning = React9.useCallback(async () => {
+  const cancelProvisioning = React10.useCallback(async () => {
     if (!mountedRef.current) return;
     setBusy(true);
     try {
@@ -2715,7 +2807,7 @@ function DingtalkSettingsTab({ rpcCall }) {
       if (mountedRef.current) setBusy(false);
     }
   }, [announce, focusAddButton, invoke, provision?.attemptId, provision?.status]);
-  React9.useEffect(() => {
+  React10.useEffect(() => {
     const attemptId = provision?.attemptId;
     if (!attemptId || !ACTIVE_PROVISION_STATES.has(provision.status)) return void 0;
     const controller = new AbortController();
@@ -2774,7 +2866,7 @@ function DingtalkSettingsTab({ rpcCall }) {
       timer = null;
     };
   }, [announce, invoke, loadStatus, provision?.attemptId, provision?.pollIntervalMs, provision?.status]);
-  const setBotBusy = React9.useCallback((botId, operation) => {
+  const setBotBusy = React10.useCallback((botId, operation) => {
     if (!mountedRef.current) return;
     setBusyByBot((current) => {
       const next = { ...current };
@@ -2783,7 +2875,7 @@ function DingtalkSettingsTab({ rpcCall }) {
       return next;
     });
   }, []);
-  const runBotAction = React9.useCallback(async ({ account, operation, endpoint, payload, success }) => {
+  const runBotAction = React10.useCallback(async ({ account, operation, endpoint, payload, success }) => {
     if (!mountedRef.current) return void 0;
     const snapshotVersion = workspaceFence.beginMutation();
     setBotBusy(account.botId, operation);
@@ -2829,7 +2921,17 @@ function DingtalkSettingsTab({ rpcCall }) {
           [account.botId]: { message: failureMessage, clearWhenDisconnected: false }
         }));
       }
-      announce(failureMessage);
+      if (operation === "delete") {
+        setRemoveErrorsByBot((current) => ({
+          ...current,
+          [account.botId]: {
+            message: failureMessage,
+            sequence: (current[account.botId]?.sequence ?? 0) + 1
+          }
+        }));
+      } else {
+        announce(failureMessage);
+      }
       return void 0;
     } finally {
       const shouldRefresh = workspaceFence.endMutation();
@@ -2837,7 +2939,7 @@ function DingtalkSettingsTab({ rpcCall }) {
       if (mountedRef.current) setBotBusy(account.botId, null);
     }
   }, [announce, discardStaleFeedback, invoke, loadStatus, setBotBusy, workspaceFence]);
-  const reconnect = React9.useCallback((account) => runBotAction({
+  const reconnect = React10.useCallback((account) => runBotAction({
     account,
     operation: "reconnect",
     endpoint: DINGTALK_ENDPOINTS.reconnectBot,
@@ -2848,7 +2950,7 @@ function DingtalkSettingsTab({ rpcCall }) {
       return connectionTestFeedback(snapshot.testMessage) ?? "\u9489\u9489\u8FDE\u63A5\u68C0\u67E5\u5B8C\u6210\u3002";
     }
   }), [runBotAction]);
-  const saveWorkspace = React9.useCallback(async (account, workspace) => {
+  const saveWorkspace = React10.useCallback(async (account, workspace) => {
     const workspaceVersion = workspaceFence.beginMutation();
     setBotBusy(account.botId, "workspace");
     try {
@@ -2873,7 +2975,7 @@ function DingtalkSettingsTab({ rpcCall }) {
       if (mountedRef.current) setBotBusy(account.botId, null);
     }
   }, [discardStaleFeedback, invoke, loadStatus, setBotBusy, workspaceFence]);
-  const saveAgentPreset = React9.useCallback(async (account, agentPreset) => {
+  const saveAgentPreset = React10.useCallback(async (account, agentPreset) => {
     const snapshotVersion = workspaceFence.beginMutation();
     setBotBusy(account.botId, "preset");
     try {
@@ -2898,7 +3000,7 @@ function DingtalkSettingsTab({ rpcCall }) {
       if (mountedRef.current) setBotBusy(account.botId, null);
     }
   }, [discardStaleFeedback, invoke, loadStatus, setBotBusy, workspaceFence]);
-  const remove = React9.useCallback(async (account) => {
+  const remove = React10.useCallback(async (account) => {
     const snapshot = await runBotAction({
       account,
       operation: "delete",
@@ -2906,18 +3008,25 @@ function DingtalkSettingsTab({ rpcCall }) {
       payload: { botId: account.botId, confirm: true },
       success: "\u9489\u9489\u673A\u5668\u4EBA\u53CA\u672C\u673A\u51ED\u636E\u5DF2\u79FB\u9664\u3002"
     });
-    if (snapshot && mountedRef.current) setRemoveTarget(null);
+    if (snapshot && mountedRef.current) {
+      setRemoveTarget(null);
+      setRemoveErrorsByBot((current) => {
+        const next = { ...current };
+        delete next[account.botId];
+        return next;
+      });
+    }
   }, [runBotAction]);
   let provisionView = null;
   if (provision?.status === "starting") {
-    provisionView = h2(
+    provisionView = h(
       "div",
       { className: "ddt-card ddt-loading", "aria-busy": "true" },
-      h2("div", { className: "ddt-spinner" }),
-      h2("span", null, "\u6B63\u5728\u7533\u8BF7\u9489\u9489\u6388\u6743\u4E8C\u7EF4\u7801\u2026")
+      h("div", { className: "ddt-spinner" }),
+      h("span", null, "\u6B63\u5728\u7533\u8BF7\u9489\u9489\u6388\u6743\u4E8C\u7EF4\u7801\u2026")
     );
   } else if (provision?.status === "pending") {
-    provisionView = h2(QrPanel, {
+    provisionView = h(QrPanel, {
       provision,
       now,
       busy,
@@ -2925,20 +3034,20 @@ function DingtalkSettingsTab({ rpcCall }) {
       onCancel: () => void cancelProvisioning()
     });
   } else if (["scanned", "authorizing", "creating", "connecting"].includes(provision?.status)) {
-    provisionView = h2(ProgressPanel, {
+    provisionView = h(ProgressPanel, {
       status: provision.status,
       busy,
       onCancel: () => void cancelProvisioning()
     });
   } else if (provision && ["failed", "expired", "cancelled"].includes(provision.status)) {
-    provisionView = h2(ProvisionError, {
+    provisionView = h(ProvisionError, {
       provision,
       busy,
       onRetry: () => void startProvisioning({ replace: Boolean(provision.attemptId) }),
       onClose: () => void cancelProvisioning()
     });
   }
-  const credentialView = credentialOpen ? h2(CredentialBindingPanel, {
+  const credentialView = credentialOpen ? h(CredentialBindingPanel, {
     channel: "\u9489\u9489",
     identityLabel: "Client ID",
     identityPlaceholder: "\u586B\u5199\u9489\u9489\u5E94\u7528 Client ID",
@@ -2952,12 +3061,12 @@ function DingtalkSettingsTab({ rpcCall }) {
       setCredentialError(null);
     }
   }) : null;
-  return h2(AgentPresetCatalogContext.Provider, {
+  return h(AgentPresetCatalogContext.Provider, {
     value: model.agentPresetCatalog ?? EMPTY_AGENT_PRESET_CATALOG
-  }, h2(
+  }, h(
     "section",
     { className: "ddt-page dim-channelPage", "aria-label": "\u9489\u9489\u8BBE\u7F6E" },
-    h2(Heading, {
+    h(Heading, {
       totals: model.totals,
       adding: Boolean(provision),
       busy,
@@ -2969,29 +3078,31 @@ function DingtalkSettingsTab({ rpcCall }) {
       credentialOpen,
       addButtonRef
     }),
-    h2("div", { className: "ddt-visuallyHidden", role: "status", "aria-live": "polite" }, notice),
-    model.error && model.phase === "ready" ? h2("div", { className: "ddt-statusNotice dim-statusNotice", role: "alert" }, `\u72B6\u6001\u5237\u65B0\u5931\u8D25\uFF1A${model.error.message}`) : null,
-    model.phase === "loading" ? h2(LoadingView) : model.phase === "error" ? h2(
+    notice ? h(FeedbackToast, { text: notice }) : null,
+    Object.entries(removeErrorsByBot).map(([botId, failure]) => botId !== removeTarget ? h(FeedbackToast, { key: botId, text: failure.message, tone: "error", sequence: failure.sequence }) : null),
+    model.error && model.phase === "ready" ? h(FeedbackToast, { text: `\u72B6\u6001\u5237\u65B0\u5931\u8D25\uFF1A${model.error.message}`, tone: "error" }) : null,
+    model.phase === "loading" ? h(LoadingView) : model.phase === "error" ? h(
       "div",
       { className: "ddt-card dim-surfaceCard" },
-      h2(
+      h(
         "div",
         { className: "ddt-inlineError dim-inlineError", role: "alert" },
-        h2("h3", null, "\u65E0\u6CD5\u8BFB\u53D6\u9489\u9489\u673A\u5668\u4EBA\u72B6\u6001"),
-        h2("p", null, model.error?.message ?? "\u8BF7\u7A0D\u540E\u91CD\u8BD5"),
-        h2(Button, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6")
+        h("h3", null, "\u65E0\u6CD5\u8BFB\u53D6\u9489\u9489\u673A\u5668\u4EBA\u72B6\u6001"),
+        h("p", null, model.error?.message ?? "\u8BF7\u7A0D\u540E\u91CD\u8BD5"),
+        h(Button, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6")
       )
-    ) : h2(
-      React9.Fragment,
+    ) : h(
+      React10.Fragment,
       null,
       credentialView,
       provisionView,
-      model.bots.length === 0 && !provision && !credentialOpen ? h2(EmptyView, { busy, onStart: () => void startProvisioning() }) : null,
-      model.bots.length > 0 ? h2(AccountList, {
+      model.bots.length === 0 && !provision && !credentialOpen ? h(EmptyView, { busy, onStart: () => void startProvisioning() }) : null,
+      model.bots.length > 0 ? h(AccountList, {
         bots: model.bots,
         busyByBot,
         feedbackByBot,
         removeTarget,
+        removeErrorsByBot,
         onReconnect: (account) => void reconnect(account),
         onWorkspaceSave: saveWorkspace,
         onAgentPresetSave: saveAgentPreset,
@@ -3102,9 +3213,9 @@ var normalizeSnapshot2 = api.normalizeSnapshot;
 var presentError2 = api.presentError;
 
 // plugin-src/client/channels/shared/token-channel.js
-var React10 = __toESM(require("react"), 1);
-var Button3 = React10.forwardRef(function Button4({ children, kind = "secondary", className = "", ...props }, ref) {
-  return h2("button", {
+var React11 = __toESM(require("react"), 1);
+var Button3 = React11.forwardRef(function Button4({ children, kind = "secondary", className = "", ...props }, ref) {
+  return h(ActionButton, {
     ...props,
     ref,
     type: "button",
@@ -3155,37 +3266,37 @@ function createTokenChannelSettings(definition) {
     AccountSettings = null,
     accountSettingsEndpoint = null
   } = definition;
-  function AccountCard5({ account, busy, testNotice, removing, onReconnect, onWorkspaceSave, onAgentPresetSave, onAccountSettingsSave, onRequestRemove, onConfirmRemove, onCancelRemove }) {
+  function AccountCard5({ account, busy, testNotice, testNoticeSequence, removeError, removeErrorSequence, removing, onReconnect, onWorkspaceSave, onAgentPresetSave, onAccountSettingsSave, onRequestRemove, onConfirmRemove, onCancelRemove }) {
     const state = busy === "reconnect" ? "connecting" : account.state;
     const tone = account.connected ? "success" : state === "error" ? "error" : "warning";
     const stateLabel2 = account.connected ? "\u8FD0\u884C\u6B63\u5E38" : state === "connecting" ? "\u6B63\u5728\u8FDE\u63A5" : "\u8FDE\u63A5\u672A\u5C31\u7EEA";
     const summary = account.error?.message ?? (account.connected ? null : account.health.summary);
     const identity = account.bot.username ? `@${account.bot.username}` : account.bot.idMasked;
-    return h2(
+    return h(
       "article",
       { className: "ddt-card dim-botCard", "data-bot-id": account.botId },
-      h2(
+      h(
         "div",
         { className: "ddt-cardBody dim-botCardBody" },
-        h2(
+        h(
           "div",
           { className: "ddt-accountTop dim-botCardTop" },
-          h2(
+          h(
             "div",
             { className: "ddt-accountIdentity dim-botIdentity" },
-            h2(
+            h(
               "div",
               { className: `ddt-avatar dim-botAvatar ${avatarClass}`, "aria-hidden": "true" },
-              h2(LogoGlyph, { size: 29 })
+              h(LogoGlyph, { size: 29 })
             ),
-            h2(
+            h(
               "div",
               { className: "dim-botName" },
-              h2("h3", null, account.bot.name),
-              h2("p", null, identity)
+              h("h3", null, account.bot.name),
+              h("p", null, identity)
             )
           ),
-          h2(BotStatusMeta, {
+          h(BotStatusMeta, {
             className: "ddt-health",
             dotClassName: "ddt-dot",
             tone,
@@ -3194,89 +3305,90 @@ function createTokenChannelSettings(definition) {
             formatCheckedTime: checkedTime2
           })
         ),
-        h2(WorkspaceEditor, {
+        h(WorkspaceEditor, {
           workspace: account.workspace,
           disabled: Boolean(busy),
           onSave: onWorkspaceSave
         }),
-        h2(AgentPresetEditor, {
+        h(AgentPresetEditor, {
           agentPreset: account.agentPreset,
           disabled: Boolean(busy),
           onSave: onAgentPresetSave
         }),
-        AccountSettings ? h2(AccountSettings, {
+        AccountSettings ? h(AccountSettings, {
           account,
           busy: Boolean(busy),
           onSave: onAccountSettingsSave
         }) : null,
-        h2(
+        h(
           "div",
           { className: "ddt-accountFooter dim-cardFooter" },
-          h2(
+          h(
             "div",
             { className: "dim-cardFooterLayout" },
-            h2(
+            h(
               "div",
               { className: "ddt-actions dim-cardActions" },
-              h2(Button3, {
+              h(Button3, {
                 className: "dim-cardAction",
                 onClick: onReconnect,
-                disabled: Boolean(busy)
-              }, busy === "reconnect" ? "\u68C0\u67E5\u4E2D\u2026" : account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"),
-              h2(Button3, {
+                disabled: Boolean(busy),
+                loading: busy === "reconnect"
+              }, account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"),
+              h(Button3, {
                 className: "dim-cardAction",
                 kind: "danger",
                 onClick: onRequestRemove,
                 disabled: Boolean(busy)
               }, "\u79FB\u9664\u63A5\u5165")
             ),
-            summary ? h2("div", { className: "ddt-summary dim-cardSummary" }, summary) : null,
-            account.lastMessageError ? h2(LastMessageErrorSummary, {
+            summary ? h("div", { className: "ddt-summary dim-cardSummary" }, summary) : null,
+            account.lastMessageError ? h(LastMessageErrorSummary, {
               className: "ddt-summary",
               error: account.lastMessageError
             }) : null,
-            testNotice ? h2("div", {
-              className: "ddt-summary dim-cardFeedback",
-              role: "status"
-            }, testNotice) : null
+            testNotice ? h(FeedbackToast, { text: testNotice, sequence: testNoticeSequence }) : null
           )
         )
       ),
-      removing ? h2(
-        "div",
-        { className: "ddt-confirm dim-confirm", role: "alertdialog" },
-        h2("strong", null, `\u4ECE DeepSeek Harness \u79FB\u9664\u201C${account.bot.name}\u201D\uFF1F`),
-        h2("p", null, `\u8FD9\u4F1A\u505C\u6B62\u6D88\u606F\u8FDE\u63A5\uFF0C\u5E76\u5220\u9664\u672C\u673A\u4FDD\u5B58\u7684 ${credentialNoun}\u3001\u673A\u5668\u4EBA\u914D\u7F6E\u53CA\u4F1A\u8BDD\u6620\u5C04\u3002${platformLabel}\u4E2D\u7684\u673A\u5668\u4EBA\u4E0D\u4F1A\u88AB\u81EA\u52A8\u5220\u9664\u3002`),
-        h2(
+      removing ? h(
+        ConfirmDialog,
+        { className: "ddt-confirm dim-confirm", role: "alertdialog", onClose: onCancelRemove, busy: Boolean(busy), error: removeError, feedbackSequence: removeErrorSequence },
+        h("strong", null, `\u4ECE DeepSeek Harness \u79FB\u9664\u201C${account.bot.name}\u201D\uFF1F`),
+        h("p", null, `\u8FD9\u4F1A\u505C\u6B62\u6D88\u606F\u8FDE\u63A5\uFF0C\u5E76\u5220\u9664\u672C\u673A\u4FDD\u5B58\u7684 ${credentialNoun}\u3001\u673A\u5668\u4EBA\u914D\u7F6E\u53CA\u4F1A\u8BDD\u6620\u5C04\u3002${platformLabel}\u4E2D\u7684\u673A\u5668\u4EBA\u4E0D\u4F1A\u88AB\u81EA\u52A8\u5220\u9664\u3002`),
+        h(
           "div",
           { className: "ddt-actions dim-viewActions" },
-          h2(Button3, { onClick: onCancelRemove, disabled: Boolean(busy) }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
-          h2(
+          h(Button3, { onClick: onCancelRemove, disabled: Boolean(busy) }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
+          h(
             Button3,
-            { kind: "danger", onClick: onConfirmRemove, disabled: Boolean(busy) },
-            busy === "delete" ? "\u6B63\u5728\u79FB\u9664\u2026" : "\u786E\u8BA4\u79FB\u9664\u63A5\u5165"
+            { kind: "danger", onClick: onConfirmRemove, disabled: Boolean(busy), loading: busy === "delete" },
+            "\u786E\u8BA4\u79FB\u9664\u63A5\u5165"
           )
         )
       ) : null
     );
   }
   function SettingsTab({ rpcCall }) {
-    const [model, setModel] = React10.useState({
+    const [model, setModel] = React11.useState({
       phase: "loading",
       bots: [],
       totals: { configured: 0, connected: 0 },
       error: null,
       agentPresetCatalog: EMPTY_AGENT_PRESET_CATALOG
     });
-    const [credentialOpen, setCredentialOpen] = React10.useState(false);
-    const [credentialError, setCredentialError] = React10.useState(null);
-    const [busy, setBusy] = React10.useState(false);
-    const [busyByBot, setBusyByBot] = React10.useState({});
-    const [testNoticeByBot, setTestNoticeByBot] = React10.useState({});
-    const [removeTarget, setRemoveTarget] = React10.useState(null);
-    const mounted = React10.useRef(true);
+    const [credentialOpen, setCredentialOpen] = React11.useState(false);
+    const [credentialError, setCredentialError] = React11.useState(null);
+    const [busy, setBusy] = React11.useState(false);
+    const [busyByBot, setBusyByBot] = React11.useState({});
+    const [testNoticeByBot, setTestNoticeByBot] = React11.useState({});
+    const [testNoticeSequenceByBot, setTestNoticeSequenceByBot] = React11.useState({});
+    const [removeTarget, setRemoveTarget] = React11.useState(null);
+    const [actionError, setActionError] = React11.useState(null);
+    const [actionErrorSequence, setActionErrorSequence] = React11.useState(0);
+    const mounted = React11.useRef(true);
     const workspaceFence = useWorkspaceSnapshotFence();
-    React10.useEffect(() => {
+    React11.useEffect(() => {
       const disposeDingtalk = installDingtalkStyles();
       const disposeChannel = installStyles();
       mounted.current = true;
@@ -3286,11 +3398,11 @@ function createTokenChannelSettings(definition) {
         disposeDingtalk();
       };
     }, []);
-    const invoke = React10.useCallback(async (endpoint, payload = {}, signal) => {
+    const invoke = React11.useCallback(async (endpoint, payload = {}, signal) => {
       if (typeof rpcCall !== "function") throw new TypeError(`${channel4} \u8BBE\u7F6E\u9875\u7F3A\u5C11 RPC \u8FDE\u63A5`);
       return api4.unwrapRpcResult(await rpcCall(endpoint, payload, signal));
     }, [rpcCall]);
-    const loadStatus = React10.useCallback(async ({ signal, silent = false } = {}) => {
+    const loadStatus = React11.useCallback(async ({ signal, silent = false } = {}) => {
       const workspaceVersion = workspaceFence.beginStatus();
       if (workspaceVersion === null) return;
       if (!silent && mounted.current) setModel((current) => ({ ...current, phase: "loading", error: null }));
@@ -3314,12 +3426,12 @@ function createTokenChannelSettings(definition) {
         }
       }
     }, [invoke, workspaceFence]);
-    React10.useEffect(() => {
+    React11.useEffect(() => {
       const controller = new AbortController();
       void loadStatus({ signal: controller.signal });
       return () => controller.abort();
     }, [loadStatus]);
-    React10.useEffect(() => {
+    React11.useEffect(() => {
       if (model.phase !== "ready") return void 0;
       const controller = new AbortController();
       const timer = window.setInterval(
@@ -3331,7 +3443,7 @@ function createTokenChannelSettings(definition) {
         window.clearInterval(timer);
       };
     }, [loadStatus, model.phase]);
-    const bindCredentials = React10.useCallback(async (values) => {
+    const bindCredentials = React11.useCallback(async (values) => {
       const snapshotVersion = workspaceFence.beginMutation();
       setBusy(true);
       setCredentialError(null);
@@ -3359,7 +3471,7 @@ function createTokenChannelSettings(definition) {
         if (mounted.current) setBusy(false);
       }
     }, [invoke, loadStatus, workspaceFence]);
-    const botAction = React10.useCallback(async (account, operation, endpoint, payload) => {
+    const botAction = React11.useCallback(async (account, operation, endpoint, payload) => {
       const snapshotVersion = workspaceFence.beginMutation();
       setBusyByBot((current) => ({ ...current, [account.botId]: operation }));
       try {
@@ -3389,6 +3501,9 @@ function createTokenChannelSettings(definition) {
           }));
         }
       } finally {
+        if (mounted.current && operation === "reconnect") {
+          setTestNoticeSequenceByBot((current) => ({ ...current, [account.botId]: (current[account.botId] ?? 0) + 1 }));
+        }
         const shouldRefresh = workspaceFence.endMutation();
         if (shouldRefresh && mounted.current) void loadStatus({ silent: true });
         if (mounted.current) setBusyByBot((current) => {
@@ -3398,18 +3513,21 @@ function createTokenChannelSettings(definition) {
         });
       }
     }, [invoke, loadStatus, workspaceFence]);
-    const botList = model.bots.length > 0 ? h2(
+    const botList = model.bots.length > 0 ? h(
       "section",
       { className: "dim-listSection" },
-      h2(ChannelListHeading, {
+      h(ChannelListHeading, {
         className: "ddt-listHeading",
         title: `\u5DF2\u63A5\u5165\u7684 ${channel4} \u673A\u5668\u4EBA`,
         connectionLabel
       }),
-      h2("ul", { className: "ddt-list dim-botList" }, model.bots.map((account) => h2("li", { key: account.botId }, h2(AccountCard5, {
+      h("ul", { className: "ddt-list dim-botList" }, model.bots.map((account) => h("li", { key: account.botId }, h(AccountCard5, {
         account,
         busy: busyByBot[account.botId],
         testNotice: testNoticeByBot[account.botId],
+        testNoticeSequence: testNoticeSequenceByBot[account.botId],
+        removeError: removeTarget === account.botId ? actionError : null,
+        removeErrorSequence: actionErrorSequence,
         removing: removeTarget === account.botId,
         onReconnect: () => void botAction(
           account,
@@ -3438,32 +3556,41 @@ function createTokenChannelSettings(definition) {
         onRequestRemove: () => setRemoveTarget(account.botId),
         onCancelRemove: () => setRemoveTarget(null),
         onConfirmRemove: async () => {
-          await botAction(account, "delete", endpoints.deleteBot, {
-            botId: account.botId,
-            confirm: true
-          });
-          if (mounted.current) setRemoveTarget(null);
+          try {
+            await botAction(account, "delete", endpoints.deleteBot, {
+              botId: account.botId,
+              confirm: true
+            });
+            if (mounted.current) {
+              setRemoveTarget(null);
+              setActionError(null);
+            }
+          } catch (cause) {
+            setActionError(cause?.message ?? "\u79FB\u9664\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5\u3002");
+            setActionErrorSequence((value) => value + 1);
+          }
         }
       }))))
     ) : null;
-    return h2(AgentPresetCatalogContext.Provider, {
+    return h(AgentPresetCatalogContext.Provider, {
       value: model.agentPresetCatalog ?? EMPTY_AGENT_PRESET_CATALOG
-    }, h2(
+    }, h(
       "section",
       {
         className: `ddt-page ${pageClass} dim-channelPage`,
         "aria-label": `${channel4} \u8BBE\u7F6E`
       },
-      h2(
+      actionError && !removeTarget ? h(FeedbackToast, { text: actionError, tone: "error", sequence: actionErrorSequence }) : null,
+      h(
         "div",
         { className: "ddt-heading" },
-        h2(
+        h(
           "div",
           { className: "ddt-tools" },
-          h2(
+          h(
             "div",
             { className: "dim-bindActions" },
-            h2(Button3, {
+            h(Button3, {
               kind: "credential",
               className: "dim-credentialButton",
               onClick: () => {
@@ -3473,32 +3600,32 @@ function createTokenChannelSettings(definition) {
               disabled: busy,
               "aria-pressed": credentialOpen,
               "aria-label": credentialAriaLabel
-            }, h2(CredentialActionIcon), credentialOpen ? credentialCloseLabel : credentialOpenLabel)
+            }, h(CredentialActionIcon), credentialOpen ? credentialCloseLabel : credentialOpenLabel)
           ),
-          model.totals.configured > 0 ? h2(
+          model.totals.configured > 0 ? h(
             "div",
             { className: "ddt-badge dim-onlineBadge" },
-            h2("span", null, `${model.totals.connected} / ${model.totals.configured} \u5728\u7EBF`)
+            h("span", null, `${model.totals.connected} / ${model.totals.configured} \u5728\u7EBF`)
           ) : null
         )
       ),
-      model.phase === "loading" ? h2("div", {
+      model.phase === "loading" ? h("div", {
         className: "ddt-card ddt-loading dim-surfaceCard dim-loadingView",
         "aria-busy": "true"
-      }, h2("div", { className: "ddt-spinner dim-spinner" }), `\u6B63\u5728\u8BFB\u53D6 ${channel4} \u673A\u5668\u4EBA\u72B6\u6001\u2026`) : model.phase === "error" ? h2(
+      }, h("div", { className: "ddt-spinner dim-spinner" }), `\u6B63\u5728\u8BFB\u53D6 ${channel4} \u673A\u5668\u4EBA\u72B6\u6001\u2026`) : model.phase === "error" ? h(
         "div",
         { className: "ddt-card dim-surfaceCard" },
-        h2(
+        h(
           "div",
           { className: "ddt-inlineError dim-inlineError" },
-          h2("h3", null, `\u65E0\u6CD5\u8BFB\u53D6 ${channel4} \u673A\u5668\u4EBA\u72B6\u6001`),
-          h2("p", null, model.error?.message),
-          h2(Button3, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6")
+          h("h3", null, `\u65E0\u6CD5\u8BFB\u53D6 ${channel4} \u673A\u5668\u4EBA\u72B6\u6001`),
+          h("p", null, model.error?.message),
+          h(Button3, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6")
         )
-      ) : h2(
-        React10.Fragment,
+      ) : h(
+        React11.Fragment,
         null,
-        credentialOpen ? CredentialPanel ? h2(CredentialPanel, {
+        credentialOpen ? CredentialPanel ? h(CredentialPanel, {
           busy,
           error: credentialError,
           onSubmit: bindCredentials,
@@ -3506,7 +3633,7 @@ function createTokenChannelSettings(definition) {
             setCredentialOpen(false);
             setCredentialError(null);
           }
-        }) : h2(CredentialBindingPanel, {
+        }) : h(CredentialBindingPanel, {
           channel: channel4,
           secretLabel: "Bot Token",
           secretPlaceholder: tokenPlaceholder,
@@ -3518,36 +3645,36 @@ function createTokenChannelSettings(definition) {
             setCredentialError(null);
           }
         }) : null,
-        model.bots.length === 0 && !credentialOpen ? h2(
+        model.bots.length === 0 && !credentialOpen ? h(
           "div",
           { className: "ddt-card dim-surfaceCard" },
-          h2(
+          h(
             "div",
             { className: "ddt-cardBody ddt-empty dim-surfaceBody dim-emptyView" },
-            h2(
+            h(
               "div",
               { className: "dim-emptyCopy" },
-              h2(
+              h(
                 "div",
                 { className: "ddt-stateLabel dim-stateLabel" },
-                h2("span", { className: "ddt-dot dim-stateDot" }),
-                h2("span", null, `\u5C1A\u672A\u63A5\u5165 ${channel4} \u673A\u5668\u4EBA`)
+                h("span", { className: "ddt-dot dim-stateDot" }),
+                h("span", null, `\u5C1A\u672A\u63A5\u5165 ${channel4} \u673A\u5668\u4EBA`)
               ),
-              h2("h3", null, emptyTitle),
-              h2("p", null, emptyDescription),
-              h2(
+              h("h3", null, emptyTitle),
+              h("p", null, emptyDescription),
+              h(
                 "div",
                 { className: "ddt-actions dim-viewActions" },
-                h2(Button3, {
+                h(Button3, {
                   kind: "primary",
                   onClick: () => setCredentialOpen(true)
                 }, emptyActionLabel)
               )
             ),
-            h2("div", {
+            h("div", {
               className: `ddt-brandMark dim-emptyBrand ${avatarClass}`,
               "aria-hidden": "true"
-            }, h2(LogoGlyph, { size: 64 }))
+            }, h(LogoGlyph, { size: 64 }))
           )
         ) : null,
         botList
@@ -3597,7 +3724,7 @@ var DiscordSettingsTab = channel.SettingsTab;
 var DiscordAccountCard = channel.AccountCard;
 
 // plugin-src/client/channels/feishu/index.js
-var React12 = __toESM(require("react"), 1);
+var React13 = __toESM(require("react"), 1);
 
 // plugin-src/client/channels/feishu/api.js
 var FEISHU_RPC_CHANNEL = "/feishu";
@@ -3857,7 +3984,7 @@ function formatRemaining2(milliseconds) {
 }
 
 // plugin-src/client/lifecycle.js
-var React11 = __toESM(require("react"), 1);
+var React12 = __toESM(require("react"), 1);
 function createPollScheduler({ setTimeoutFn, clearTimeoutFn }) {
   let disposed = false;
   let timer;
@@ -3919,8 +4046,8 @@ function createAnimationFrameScheduler({ requestFrame, cancelFrame }) {
   };
 }
 function useAnimationFrameScheduler() {
-  const schedulerRef = React11.useRef(null);
-  React11.useEffect(() => {
+  const schedulerRef = React12.useRef(null);
+  React12.useEffect(() => {
     const scheduler = createAnimationFrameScheduler({
       requestFrame: (callback) => window.requestAnimationFrame(callback),
       cancelFrame: (frame) => window.cancelAnimationFrame(frame)
@@ -3931,7 +4058,7 @@ function useAnimationFrameScheduler() {
       if (schedulerRef.current === scheduler) schedulerRef.current = null;
     };
   }, []);
-  return React11.useCallback(
+  return React12.useCallback(
     (callback, key) => schedulerRef.current?.schedule(callback, key) ?? false,
     []
   );
@@ -3950,7 +4077,7 @@ function isTargetedAppUpdate2(value) {
   return isCallbackRepair(value) || isGroupMessagePermission(value);
 }
 function SvgIcon({ children, size = 18, className, viewBox = "0 0 24 24" }) {
-  return h2("svg", {
+  return h("svg", {
     width: size,
     height: size,
     viewBox,
@@ -3962,10 +4089,10 @@ function SvgIcon({ children, size = 18, className, viewBox = "0 0 24 24" }) {
   }, children);
 }
 function RobotIcon({ size = 26 }) {
-  return h2(
+  return h(
     SvgIcon,
     { size },
-    h2("rect", {
+    h("rect", {
       x: "5",
       y: "7.5",
       width: "14",
@@ -3974,7 +4101,7 @@ function RobotIcon({ size = 26 }) {
       stroke: "currentColor",
       strokeWidth: "1.7"
     }),
-    h2("path", {
+    h("path", {
       d: "M12 4.5v3M8.7 12h.01M15.3 12h.01M9.2 15.3c1.67 1.08 3.93 1.08 5.6 0M3.5 11.5v3M20.5 11.5v3",
       stroke: "currentColor",
       strokeWidth: "1.7",
@@ -3982,55 +4109,37 @@ function RobotIcon({ size = 26 }) {
     })
   );
 }
-function AlertIcon({ size = 22 }) {
-  return h2(
-    SvgIcon,
-    { size },
-    h2("path", {
-      d: "M12 3.4 21 19H3L12 3.4Z",
-      stroke: "currentColor",
-      strokeWidth: "1.7",
-      strokeLinejoin: "round"
-    }),
-    h2("path", {
-      d: "M12 9v4.4M12 16.6v.01",
-      stroke: "currentColor",
-      strokeWidth: "1.9",
-      strokeLinecap: "round"
-    })
-  );
-}
 function QrIcon({ size = 58 }) {
-  return h2(SvgIcon, { size }, h2("path", {
+  return h(SvgIcon, { size }, h("path", {
     d: "M4 4h6v6H4V4Zm10 0h6v6h-6V4ZM4 14h6v6H4v-6Zm10 0h2v2h-2v-2Zm4 0h2v4h-2v-4Zm-4 4h4v2h-4v-2Z",
     fill: "currentColor"
   }));
 }
-var Button5 = React12.forwardRef(function Button6({ children, kind = "secondary", size, icon, className = "", ...props }, ref) {
-  return h2("button", {
+var Button5 = React13.forwardRef(function Button6({ children, kind = "secondary", size, icon, className = "", ...props }, ref) {
+  return h(ActionButton, {
     ...props,
     ref,
     type: "button",
     className: `bxf-button ${className}`.trim(),
     "data-kind": kind,
     "data-size": size
-  }, icon, h2("span", null, children));
+  }, icon, h("span", null, children));
 });
 function BrandMark() {
-  return h2("div", { className: "bxf-brandMark" }, h2(RobotIcon, { size: 34 }));
+  return h("div", { className: "bxf-brandMark" }, h(RobotIcon, { size: 34 }));
 }
 function Heading2({ totals, onAdd, onCredential, credentialOpen, adding, busy, addButtonRef }) {
   const hasBots = totals.configured > 0;
-  return h2(
+  return h(
     "div",
     { className: "bxf-heading" },
-    h2(
+    h(
       "div",
       { className: "bxf-headingTools" },
-      h2(
+      h(
         "div",
         { className: "dim-bindActions" },
-        h2(Button5, {
+        h(Button5, {
           kind: "primary",
           className: "bxf-bindButton dim-scanButton",
           onClick: onAdd,
@@ -4038,67 +4147,69 @@ function Heading2({ totals, onAdd, onCredential, credentialOpen, adding, busy, a
           ref: addButtonRef,
           "aria-busy": busy ? "true" : void 0,
           "aria-label": "\u626B\u7801\u63A5\u5165\u98DE\u4E66\u673A\u5668\u4EBA",
-          icon: h2(QrActionIcon)
-        }, adding ? "\u6B63\u5728\u63A5\u5165" : "\u626B\u7801\u63A5\u5165\u673A\u5668\u4EBA"),
-        h2(Button5, {
+          icon: h(QrActionIcon),
+          loading: adding
+        }, "\u626B\u7801\u63A5\u5165\u673A\u5668\u4EBA"),
+        h(Button5, {
           kind: "credential",
           className: "dim-credentialButton",
           onClick: onCredential,
           disabled: adding || busy,
           "aria-pressed": credentialOpen,
           "aria-label": "\u4F7F\u7528 App ID \u548C App Secret \u7ED1\u5B9A\u98DE\u4E66\u673A\u5668\u4EBA",
-          icon: h2(CredentialActionIcon)
+          icon: h(CredentialActionIcon)
         }, credentialOpen ? "\u6536\u8D77\u51ED\u636E" : "\u624B\u52A8\u63A5\u5165")
       ),
-      hasBots ? h2("div", {
+      hasBots ? h("div", {
         className: "bxf-totalBadge dim-onlineBadge",
         "aria-label": `\u5DF2\u63A5\u5165 ${totals.configured} \u4E2A\u673A\u5668\u4EBA\uFF0C\u5176\u4E2D ${totals.connected} \u4E2A\u5728\u7EBF`
-      }, h2("span", null, `${totals.connected} / ${totals.configured} \u5728\u7EBF`)) : null
+      }, h("span", null, `${totals.connected} / ${totals.configured} \u5728\u7EBF`)) : null
     )
   );
 }
 function LoadingView2() {
-  return h2(
+  return h(
     "div",
     {
       className: "bxf-card dim-surfaceCard dim-loadingView",
       "aria-busy": "true",
       "aria-label": "\u6B63\u5728\u8BFB\u53D6\u98DE\u4E66\u673A\u5668\u4EBA\u5217\u8868"
     },
-    h2("div", { className: "dim-spinner", "aria-hidden": "true" }),
-    h2("span", null, "\u6B63\u5728\u8BFB\u53D6\u98DE\u4E66\u8FDE\u63A5\u72B6\u6001\u2026")
+    h("div", { className: "dim-spinner", "aria-hidden": "true" }),
+    h("span", null, "\u6B63\u5728\u8BFB\u53D6\u98DE\u4E66\u8FDE\u63A5\u72B6\u6001\u2026")
   );
 }
 function EmptyView2({ onStart, busy }) {
-  return h2(
+  return h(
     "div",
     { className: "bxf-card dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "bxf-cardBody bxf-intro dim-surfaceBody dim-emptyView" },
-      h2(
+      h(
         "div",
         { className: "bxf-introCopy dim-emptyCopy" },
-        h2(
+        h(
           "div",
           { className: "bxf-stateLabel dim-stateLabel" },
-          h2("span", { className: "bxf-dot dim-stateDot" }),
-          h2("span", null, "\u5C1A\u672A\u63A5\u5165\u673A\u5668\u4EBA")
+          h("span", { className: "bxf-dot dim-stateDot" }),
+          h("span", null, "\u5C1A\u672A\u63A5\u5165\u673A\u5668\u4EBA")
         ),
-        h2("h3", null, "\u626B\u7801\uFF0C\u521B\u5EFA\u7B2C\u4E00\u4E2A\u98DE\u4E66\u5165\u53E3"),
-        h2("p", null, "\u65E0\u9700\u624B\u52A8\u586B\u5199 App ID\u3002\u4EE5\u540E\u8FD8\u53EF\u4EE5\u7EE7\u7EED\u6DFB\u52A0\u673A\u5668\u4EBA\uFF0C\u5206\u522B\u670D\u52A1\u4E0D\u540C\u56E2\u961F\u6216\u98DE\u4E66\u79DF\u6237\u3002"),
-        h2(
+        h("h3", null, "\u626B\u7801\uFF0C\u521B\u5EFA\u7B2C\u4E00\u4E2A\u98DE\u4E66\u5165\u53E3"),
+        h("p", null, "\u65E0\u9700\u624B\u52A8\u586B\u5199 App ID\u3002\u4EE5\u540E\u8FD8\u53EF\u4EE5\u7EE7\u7EED\u6DFB\u52A0\u673A\u5668\u4EBA\uFF0C\u5206\u522B\u670D\u52A1\u4E0D\u540C\u56E2\u961F\u6216\u98DE\u4E66\u79DF\u6237\u3002"),
+        h(
           "div",
           { className: "bxf-actions dim-viewActions" },
-          h2(Button5, {
+          h(Button5, {
             kind: "primary",
             onClick: onStart,
             disabled: busy,
-            "aria-busy": busy ? "true" : void 0
-          }, busy ? "\u6B63\u5728\u751F\u6210\u4E8C\u7EF4\u7801\u2026" : "\u751F\u6210\u98DE\u4E66\u4E8C\u7EF4\u7801")
+            "aria-busy": busy ? "true" : void 0,
+            loading: busy
+          }, "\u751F\u6210\u98DE\u4E66\u4E8C\u7EF4\u7801")
         )
       ),
-      h2("div", { className: "bxf-markStage dim-emptyBrand", "aria-hidden": "true" }, h2(BrandMark))
+      h("div", { className: "bxf-markStage dim-emptyBrand", "aria-hidden": "true" }, h(BrandMark))
     )
   );
 }
@@ -4121,7 +4232,7 @@ function safeQrSource2(value) {
   return /^data:image\/(?:png|webp|svg\+xml)(?:;charset=[^;,]+)?;base64,/i.test(value) ? value : void 0;
 }
 function QrPane({ provision, now, onRefresh, onCancel, busy }) {
-  const [imageFailed, setImageFailed] = React12.useState(false);
+  const [imageFailed, setImageFailed] = React13.useState(false);
   const qrSource = safeQrSource2(provision.qrCodeDataUrl);
   const href = safeVerificationHref(provision.verificationUrl);
   const remaining = Math.max(0, provision.expiresAt - now);
@@ -4130,87 +4241,88 @@ function QrPane({ provision, now, onRefresh, onCancel, busy }) {
   const repairing = isCallbackRepair(provision);
   const grantingGroupMessages = isGroupMessagePermission(provision);
   const botName = provision.botName ?? "\u6B64\u673A\u5668\u4EBA";
-  React12.useEffect(() => setImageFailed(false), [qrSource]);
-  return h2(
+  React13.useEffect(() => setImageFailed(false), [qrSource]);
+  return h(
     "div",
     { className: "bxf-card bxf-provisionCard dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "bxf-cardBody bxf-qrLayout dim-surfaceBody dim-qrLayout" },
-      h2(
+      h(
         "div",
         { className: "bxf-qrColumn dim-qrColumn" },
-        h2(
+        h(
           "div",
           { className: "bxf-qrFrame dim-qrFrame" },
-          qrSource && !imageFailed ? h2("img", {
+          qrSource && !imageFailed ? h("img", {
             src: qrSource,
             alt: repairing ? `\u7528\u4E8E\u4E3A${botName}\u8865\u5168\u6743\u9650\u4E0E\u56DE\u8C03\u7684\u4E00\u6B21\u6027\u6388\u6743\u4E8C\u7EF4\u7801` : grantingGroupMessages ? `\u7528\u4E8E\u4E3A${botName}\u5F00\u901A\u7FA4\u6D88\u606F\u6743\u9650\u7684\u4E00\u6B21\u6027\u6388\u6743\u4E8C\u7EF4\u7801` : "\u7528\u4E8E\u65B0\u589E DeepSeek Harness \u98DE\u4E66\u673A\u5668\u4EBA\u7684\u4E00\u6B21\u6027\u6388\u6743\u4E8C\u7EF4\u7801",
             onError: () => setImageFailed(true)
-          }) : h2(
+          }) : h(
             "div",
             { className: "bxf-qrFallback dim-qrFallback" },
-            h2("div", null, h2(QrIcon), h2("span", null, "\u4E8C\u7EF4\u7801\u672A\u5C31\u7EEA\uFF0C\u8BF7\u6253\u5F00\u6388\u6743\u94FE\u63A5"))
+            h("div", null, h(QrIcon), h("span", null, "\u4E8C\u7EF4\u7801\u672A\u5C31\u7EEA\uFF0C\u8BF7\u6253\u5F00\u6388\u6743\u94FE\u63A5"))
           ),
-          expired ? h2(
+          expired ? h(
             "div",
             { className: "bxf-expiredOverlay dim-qrExpired", role: "status" },
-            h2("div", null, "\u4E8C\u7EF4\u7801\u5DF2\u5931\u6548", h2("br"), "\u8BF7\u5237\u65B0\u540E\u91CD\u65B0\u626B\u7801")
+            h("div", null, "\u4E8C\u7EF4\u7801\u5DF2\u5931\u6548", h("br"), "\u8BF7\u5237\u65B0\u540E\u91CD\u65B0\u626B\u7801")
           ) : null
         ),
-        h2(
+        h(
           "div",
           {
             className: "bxf-countdown dim-countdown",
             "aria-label": expired ? "\u4E8C\u7EF4\u7801\u5DF2\u5931\u6548" : `\u4E8C\u7EF4\u7801\u5269\u4F59 ${formatRemaining2(remaining)}`
           },
-          h2(
+          h(
             "div",
             { className: "bxf-countdownTop dim-countdownTop", "aria-hidden": "true" },
-            h2("span", null, expired ? "\u7B49\u5F85\u5237\u65B0" : "\u4E8C\u7EF4\u7801\u6709\u6548\u65F6\u95F4"),
-            h2("strong", null, formatRemaining2(remaining))
+            h("span", null, expired ? "\u7B49\u5F85\u5237\u65B0" : "\u4E8C\u7EF4\u7801\u6709\u6548\u65F6\u95F4"),
+            h("strong", null, formatRemaining2(remaining))
           ),
-          h2(
+          h(
             "div",
             { className: "bxf-progress dim-progress", "aria-hidden": "true" },
-            h2("span", { style: { "--bxf-progress": `${Math.round(progress * 100)}%` } })
+            h("span", { style: { "--bxf-progress": `${Math.round(progress * 100)}%` } })
           )
         )
       ),
-      h2(
+      h(
         "div",
         { className: "bxf-qrCopy dim-qrCopy" },
-        h2(
+        h(
           "div",
           { className: "bxf-stateLabel dim-stateLabel" },
-          h2("span", { className: "bxf-dot dim-stateDot", "data-tone": "warning" }),
-          h2("span", null, repairing ? `\u6B63\u5728\u4E3A\u300C${botName}\u300D\u8865\u5168\u6743\u9650\u4E0E\u56DE\u8C03` : grantingGroupMessages ? `\u6B63\u5728\u4E3A\u300C${botName}\u300D\u5F00\u901A\u7FA4\u6D88\u606F\u6743\u9650` : "\u6B63\u5728\u6DFB\u52A0\u65B0\u673A\u5668\u4EBA")
+          h("span", { className: "bxf-dot dim-stateDot", "data-tone": "warning" }),
+          h("span", null, repairing ? `\u6B63\u5728\u4E3A\u300C${botName}\u300D\u8865\u5168\u6743\u9650\u4E0E\u56DE\u8C03` : grantingGroupMessages ? `\u6B63\u5728\u4E3A\u300C${botName}\u300D\u5F00\u901A\u7FA4\u6D88\u606F\u6743\u9650` : "\u6B63\u5728\u6DFB\u52A0\u65B0\u673A\u5668\u4EBA")
         ),
-        h2("h3", null, expired ? "\u5237\u65B0\u4E8C\u7EF4\u7801\u540E\u7EE7\u7EED" : repairing ? "\u4F7F\u7528\u98DE\u4E66\u626B\u7801\u8865\u5168\u6743\u9650" : grantingGroupMessages ? "\u4F7F\u7528\u98DE\u4E66\u786E\u8BA4\u7FA4\u6D88\u606F\u6743\u9650" : "\u4F7F\u7528\u98DE\u4E66\u626B\u7801\u521B\u5EFA\u673A\u5668\u4EBA"),
-        h2("p", null, repairing ? "\u626B\u7801\u4F1A\u66F4\u65B0\u73B0\u6709\u98DE\u4E66\u5E94\u7528\uFF0C\u6700\u591A\u589E\u91CF\u8865\u5145\u5361\u7247\u6309\u94AE\u56DE\u8C03\u3001\u8BFB\u53D6\u7528\u6237\u6D88\u606F\u5185\u56FE\u7247\u6216\u6587\u4EF6\u6240\u9700\u7684 im:message:readonly\uFF08\u98DE\u4E66\u663E\u793A\u4E3A\u201C\u83B7\u53D6\u5355\u804A\u3001\u7FA4\u7EC4\u6D88\u606F\u201D\uFF09\uFF0C\u4EE5\u53CA\u4E0A\u4F20\u673A\u5668\u4EBA\u56FE\u7247\u6216\u6587\u4EF6\u6240\u9700\u7684 im:resource\uFF1B\u4E0D\u4F1A\u521B\u5EFA\u65B0\u5E94\u7528\u3002\u786E\u8BA4\u9875\u53EA\u663E\u793A\u5F53\u524D\u7F3A\u5C11\u9879\uFF0C\u5B8C\u6210\u540E\u6B64\u673A\u5668\u4EBA\u4F1A\u77ED\u6682\u91CD\u8FDE\uFF0C\u5176\u4ED6\u673A\u5668\u4EBA\u4E0D\u53D7\u5F71\u54CD\u3002" : grantingGroupMessages ? "\u626B\u7801\u4F1A\u66F4\u65B0\u73B0\u6709\u98DE\u4E66\u5E94\u7528\uFF0C\u53EA\u589E\u91CF\u5F00\u901A\u201C\u83B7\u53D6\u7FA4\u7EC4\u4E2D\u6240\u6709\u6D88\u606F\u201D\u6743\u9650\uFF1B\u4E0D\u4F1A\u521B\u5EFA\u65B0\u5E94\u7528\u3002\u786E\u8BA4\u540E\u4F1A\u81EA\u52A8\u542F\u7528\u201C\u54CD\u5E94\u6240\u6709\u7FA4\u6D88\u606F\u201D\uFF0C\u5176\u4ED6\u673A\u5668\u4EBA\u4E0D\u53D7\u5F71\u54CD\u3002" : "\u626B\u7801\u53EA\u4F1A\u65B0\u589E\u4E00\u4E2A\u673A\u5668\u4EBA\uFF0C\u5DF2\u63A5\u5165\u7684\u673A\u5668\u4EBA\u4F1A\u7EE7\u7EED\u6B63\u5E38\u6536\u53D1\u6D88\u606F\u3002"),
-        h2(
+        h("h3", null, expired ? "\u5237\u65B0\u4E8C\u7EF4\u7801\u540E\u7EE7\u7EED" : repairing ? "\u4F7F\u7528\u98DE\u4E66\u626B\u7801\u8865\u5168\u6743\u9650" : grantingGroupMessages ? "\u4F7F\u7528\u98DE\u4E66\u786E\u8BA4\u7FA4\u6D88\u606F\u6743\u9650" : "\u4F7F\u7528\u98DE\u4E66\u626B\u7801\u521B\u5EFA\u673A\u5668\u4EBA"),
+        h("p", null, repairing ? "\u626B\u7801\u4F1A\u66F4\u65B0\u73B0\u6709\u98DE\u4E66\u5E94\u7528\uFF0C\u6700\u591A\u589E\u91CF\u8865\u5145\u5361\u7247\u6309\u94AE\u56DE\u8C03\u3001\u8BFB\u53D6\u7528\u6237\u6D88\u606F\u5185\u56FE\u7247\u6216\u6587\u4EF6\u6240\u9700\u7684 im:message:readonly\uFF08\u98DE\u4E66\u663E\u793A\u4E3A\u201C\u83B7\u53D6\u5355\u804A\u3001\u7FA4\u7EC4\u6D88\u606F\u201D\uFF09\uFF0C\u4EE5\u53CA\u4E0A\u4F20\u673A\u5668\u4EBA\u56FE\u7247\u6216\u6587\u4EF6\u6240\u9700\u7684 im:resource\uFF1B\u4E0D\u4F1A\u521B\u5EFA\u65B0\u5E94\u7528\u3002\u786E\u8BA4\u9875\u53EA\u663E\u793A\u5F53\u524D\u7F3A\u5C11\u9879\uFF0C\u5B8C\u6210\u540E\u6B64\u673A\u5668\u4EBA\u4F1A\u77ED\u6682\u91CD\u8FDE\uFF0C\u5176\u4ED6\u673A\u5668\u4EBA\u4E0D\u53D7\u5F71\u54CD\u3002" : grantingGroupMessages ? "\u626B\u7801\u4F1A\u66F4\u65B0\u73B0\u6709\u98DE\u4E66\u5E94\u7528\uFF0C\u53EA\u589E\u91CF\u5F00\u901A\u201C\u83B7\u53D6\u7FA4\u7EC4\u4E2D\u6240\u6709\u6D88\u606F\u201D\u6743\u9650\uFF1B\u4E0D\u4F1A\u521B\u5EFA\u65B0\u5E94\u7528\u3002\u786E\u8BA4\u540E\u4F1A\u81EA\u52A8\u542F\u7528\u201C\u54CD\u5E94\u6240\u6709\u7FA4\u6D88\u606F\u201D\uFF0C\u5176\u4ED6\u673A\u5668\u4EBA\u4E0D\u53D7\u5F71\u54CD\u3002" : "\u626B\u7801\u53EA\u4F1A\u65B0\u589E\u4E00\u4E2A\u673A\u5668\u4EBA\uFF0C\u5DF2\u63A5\u5165\u7684\u673A\u5668\u4EBA\u4F1A\u7EE7\u7EED\u6B63\u5E38\u6536\u53D1\u6D88\u606F\u3002"),
+        h(
           "ol",
           { className: "bxf-steps dim-steps" },
-          h2("li", null, "\u6253\u5F00\u98DE\u4E66\u79FB\u52A8\u7AEF\uFF0C\u4F7F\u7528\u626B\u4E00\u626B\u8BFB\u53D6\u4E8C\u7EF4\u7801"),
-          h2("li", null, repairing ? "\u6838\u5BF9\u73B0\u6709\u5E94\u7528\u540D\u79F0\uFF0C\u5E76\u786E\u8BA4\u53EA\u65B0\u589E\u5F53\u524D\u7F3A\u5C11\u7684\u4E0A\u8FF0\u914D\u7F6E" : grantingGroupMessages ? "\u6838\u5BF9\u73B0\u6709\u5E94\u7528\uFF0C\u5E76\u786E\u8BA4\u201C\u83B7\u53D6\u7FA4\u7EC4\u4E2D\u6240\u6709\u6D88\u606F\u201D\u6743\u9650" : "\u6838\u5BF9\u5E94\u7528\u540D\u79F0\u4E0E\u6743\u9650\u8303\u56F4\uFF0C\u5E76\u786E\u8BA4\u521B\u5EFA"),
-          h2("li", null, repairing ? "\u4FDD\u6301\u672C\u9875\u6253\u5F00\uFF0C\u7B49\u5F85\u6743\u9650\u4E0E\u56DE\u8C03\u8865\u5168\u5B8C\u6210" : grantingGroupMessages ? "\u4FDD\u6301\u672C\u9875\u6253\u5F00\uFF0C\u7B49\u5F85\u6743\u9650\u751F\u6548\u5E76\u81EA\u52A8\u5207\u6362\u54CD\u5E94\u65B9\u5F0F" : "\u4FDD\u6301\u672C\u9875\u6253\u5F00\uFF0C\u7B49\u5F85\u65B0\u673A\u5668\u4EBA\u7684\u957F\u8FDE\u63A5\u5C31\u7EEA")
+          h("li", null, "\u6253\u5F00\u98DE\u4E66\u79FB\u52A8\u7AEF\uFF0C\u4F7F\u7528\u626B\u4E00\u626B\u8BFB\u53D6\u4E8C\u7EF4\u7801"),
+          h("li", null, repairing ? "\u6838\u5BF9\u73B0\u6709\u5E94\u7528\u540D\u79F0\uFF0C\u5E76\u786E\u8BA4\u53EA\u65B0\u589E\u5F53\u524D\u7F3A\u5C11\u7684\u4E0A\u8FF0\u914D\u7F6E" : grantingGroupMessages ? "\u6838\u5BF9\u73B0\u6709\u5E94\u7528\uFF0C\u5E76\u786E\u8BA4\u201C\u83B7\u53D6\u7FA4\u7EC4\u4E2D\u6240\u6709\u6D88\u606F\u201D\u6743\u9650" : "\u6838\u5BF9\u5E94\u7528\u540D\u79F0\u4E0E\u6743\u9650\u8303\u56F4\uFF0C\u5E76\u786E\u8BA4\u521B\u5EFA"),
+          h("li", null, repairing ? "\u4FDD\u6301\u672C\u9875\u6253\u5F00\uFF0C\u7B49\u5F85\u6743\u9650\u4E0E\u56DE\u8C03\u8865\u5168\u5B8C\u6210" : grantingGroupMessages ? "\u4FDD\u6301\u672C\u9875\u6253\u5F00\uFF0C\u7B49\u5F85\u6743\u9650\u751F\u6548\u5E76\u81EA\u52A8\u5207\u6362\u54CD\u5E94\u65B9\u5F0F" : "\u4FDD\u6301\u672C\u9875\u6253\u5F00\uFF0C\u7B49\u5F85\u65B0\u673A\u5668\u4EBA\u7684\u957F\u8FDE\u63A5\u5C31\u7EEA")
         ),
-        h2(
+        h(
           "div",
           { className: "bxf-actions dim-viewActions" },
-          expired ? h2(Button5, {
+          expired ? h(Button5, {
             kind: "primary",
             onClick: onRefresh,
-            disabled: busy
-          }, busy ? "\u5237\u65B0\u4E2D\u2026" : "\u5237\u65B0\u4E8C\u7EF4\u7801") : href ? h2("a", {
+            disabled: busy,
+            loading: busy
+          }, "\u5237\u65B0\u4E8C\u7EF4\u7801") : href ? h("a", {
             className: "bxf-button bxf-link",
             "data-kind": "secondary",
             href,
             target: "_blank",
             rel: "noopener noreferrer"
-          }, h2("span", null, "\u5728\u98DE\u4E66\u4E2D\u6253\u5F00")) : null,
-          !expired ? h2(Button5, { onClick: onRefresh, disabled: busy }, "\u6362\u4E00\u4E2A\u4E8C\u7EF4\u7801") : null,
-          h2(Button5, { onClick: onCancel, disabled: busy }, repairing ? "\u53D6\u6D88\u8865\u5168" : grantingGroupMessages ? "\u53D6\u6D88\u6388\u6743" : "\u53D6\u6D88\u6DFB\u52A0")
+          }, h("span", null, "\u5728\u98DE\u4E66\u4E2D\u6253\u5F00")) : null,
+          !expired ? h(Button5, { onClick: onRefresh, disabled: busy }, "\u6362\u4E00\u4E2A\u4E8C\u7EF4\u7801") : null,
+          h(Button5, { onClick: onCancel, disabled: busy }, repairing ? "\u53D6\u6D88\u8865\u5168" : grantingGroupMessages ? "\u53D6\u6D88\u6388\u6743" : "\u53D6\u6D88\u6DFB\u52A0")
         )
       )
     )
@@ -4220,46 +4332,46 @@ function ProvisionProgress({ phase, provision, onCancel, busy }) {
   const connecting = phase === "connecting";
   const repairing = isCallbackRepair(provision);
   const grantingGroupMessages = isGroupMessagePermission(provision);
-  return h2(
+  return h(
     "div",
     {
       className: "bxf-card bxf-provisionCard dim-surfaceCard dim-loadingView",
       "aria-busy": "true"
     },
-    h2("div", { className: "dim-spinner", "aria-hidden": "true" }),
-    h2("h3", null, connecting ? repairing ? "\u5DF2\u786E\u8BA4\uFF0C\u6B63\u5728\u5B8C\u6210\u6743\u9650\u4E0E\u56DE\u8C03\u914D\u7F6E" : grantingGroupMessages ? "\u5DF2\u786E\u8BA4\uFF0C\u6B63\u5728\u542F\u7528\u5168\u90E8\u6D88\u606F\u6A21\u5F0F" : "\u5DF2\u786E\u8BA4\uFF0C\u6B63\u5728\u8FDE\u63A5\u65B0\u673A\u5668\u4EBA" : repairing ? "\u6B63\u5728\u51C6\u5907\u6743\u9650\u8865\u5168\u4E8C\u7EF4\u7801" : grantingGroupMessages ? "\u6B63\u5728\u51C6\u5907\u6743\u9650\u6388\u6743\u4E8C\u7EF4\u7801" : "\u6B63\u5728\u51C6\u5907\u6388\u6743\u4E8C\u7EF4\u7801"),
-    h2("p", null, connecting ? repairing ? "\u914D\u7F6E\u5DF2\u63D0\u4EA4\uFF0C\u6B63\u5728\u4FDD\u5B58\u6743\u9650\u3001\u9A8C\u8BC1\u5361\u7247\u56DE\u8C03\u5E76\u91CD\u8FDE\u6B64\u673A\u5668\u4EBA\uFF1B\u6B64\u9636\u6BB5\u65E0\u6CD5\u53D6\u6D88\uFF0C\u5176\u4ED6\u673A\u5668\u4EBA\u4E0D\u4F1A\u4E2D\u65AD\u3002" : grantingGroupMessages ? "\u6743\u9650\u914D\u7F6E\u5DF2\u63D0\u4EA4\uFF0C\u6B63\u5728\u4FDD\u5B58\u8BBE\u7F6E\u5E76\u91CD\u8FDE\u6B64\u673A\u5668\u4EBA\uFF1B\u6B64\u9636\u6BB5\u65E0\u6CD5\u53D6\u6D88\uFF0C\u5176\u4ED6\u673A\u5668\u4EBA\u4E0D\u4F1A\u4E2D\u65AD\u3002" : "\u6B63\u5728\u5B89\u5168\u4FDD\u5B58\u51ED\u636E\u5E76\u68C0\u67E5\u65B0\u673A\u5668\u4EBA\u7684\u6D88\u606F\u901A\u9053\uFF0C\u5176\u4ED6\u673A\u5668\u4EBA\u4E0D\u4F1A\u4E2D\u65AD\u3002" : repairing ? "\u6B63\u5728\u4E3A\u73B0\u6709\u98DE\u4E66\u5E94\u7528\u7533\u8BF7\u4E00\u6B21\u6027\u66F4\u65B0\u4E8C\u7EF4\u7801\uFF0C\u8BF7\u7A0D\u5019\u3002" : grantingGroupMessages ? "\u6B63\u5728\u4E3A\u73B0\u6709\u98DE\u4E66\u5E94\u7528\u7533\u8BF7\u7FA4\u6D88\u606F\u6743\u9650\u4E8C\u7EF4\u7801\uFF0C\u8BF7\u7A0D\u5019\u3002" : "\u6B63\u5728\u5411\u98DE\u4E66\u7533\u8BF7\u4E00\u6B21\u6027\u6388\u6743\u4E8C\u7EF4\u7801\uFF0C\u8BF7\u7A0D\u5019\u3002"),
-    connecting && onCancel ? h2(
+    h("div", { className: "dim-spinner", "aria-hidden": "true" }),
+    h("h3", null, connecting ? repairing ? "\u5DF2\u786E\u8BA4\uFF0C\u6B63\u5728\u5B8C\u6210\u6743\u9650\u4E0E\u56DE\u8C03\u914D\u7F6E" : grantingGroupMessages ? "\u5DF2\u786E\u8BA4\uFF0C\u6B63\u5728\u542F\u7528\u5168\u90E8\u6D88\u606F\u6A21\u5F0F" : "\u5DF2\u786E\u8BA4\uFF0C\u6B63\u5728\u8FDE\u63A5\u65B0\u673A\u5668\u4EBA" : repairing ? "\u6B63\u5728\u51C6\u5907\u6743\u9650\u8865\u5168\u4E8C\u7EF4\u7801" : grantingGroupMessages ? "\u6B63\u5728\u51C6\u5907\u6743\u9650\u6388\u6743\u4E8C\u7EF4\u7801" : "\u6B63\u5728\u51C6\u5907\u6388\u6743\u4E8C\u7EF4\u7801"),
+    h("p", null, connecting ? repairing ? "\u914D\u7F6E\u5DF2\u63D0\u4EA4\uFF0C\u6B63\u5728\u4FDD\u5B58\u6743\u9650\u3001\u9A8C\u8BC1\u5361\u7247\u56DE\u8C03\u5E76\u91CD\u8FDE\u6B64\u673A\u5668\u4EBA\uFF1B\u6B64\u9636\u6BB5\u65E0\u6CD5\u53D6\u6D88\uFF0C\u5176\u4ED6\u673A\u5668\u4EBA\u4E0D\u4F1A\u4E2D\u65AD\u3002" : grantingGroupMessages ? "\u6743\u9650\u914D\u7F6E\u5DF2\u63D0\u4EA4\uFF0C\u6B63\u5728\u4FDD\u5B58\u8BBE\u7F6E\u5E76\u91CD\u8FDE\u6B64\u673A\u5668\u4EBA\uFF1B\u6B64\u9636\u6BB5\u65E0\u6CD5\u53D6\u6D88\uFF0C\u5176\u4ED6\u673A\u5668\u4EBA\u4E0D\u4F1A\u4E2D\u65AD\u3002" : "\u6B63\u5728\u5B89\u5168\u4FDD\u5B58\u51ED\u636E\u5E76\u68C0\u67E5\u65B0\u673A\u5668\u4EBA\u7684\u6D88\u606F\u901A\u9053\uFF0C\u5176\u4ED6\u673A\u5668\u4EBA\u4E0D\u4F1A\u4E2D\u65AD\u3002" : repairing ? "\u6B63\u5728\u4E3A\u73B0\u6709\u98DE\u4E66\u5E94\u7528\u7533\u8BF7\u4E00\u6B21\u6027\u66F4\u65B0\u4E8C\u7EF4\u7801\uFF0C\u8BF7\u7A0D\u5019\u3002" : grantingGroupMessages ? "\u6B63\u5728\u4E3A\u73B0\u6709\u98DE\u4E66\u5E94\u7528\u7533\u8BF7\u7FA4\u6D88\u606F\u6743\u9650\u4E8C\u7EF4\u7801\uFF0C\u8BF7\u7A0D\u5019\u3002" : "\u6B63\u5728\u5411\u98DE\u4E66\u7533\u8BF7\u4E00\u6B21\u6027\u6388\u6743\u4E8C\u7EF4\u7801\uFF0C\u8BF7\u7A0D\u5019\u3002"),
+    connecting && onCancel ? h(
       "div",
       { className: "bxf-actions dim-viewActions", style: { justifyContent: "center" } },
-      h2(Button5, { onClick: onCancel, disabled: busy }, repairing ? "\u53D6\u6D88\u8865\u5168" : grantingGroupMessages ? "\u53D6\u6D88\u6388\u6743" : "\u53D6\u6D88\u6DFB\u52A0")
+      h(Button5, { onClick: onCancel, disabled: busy }, repairing ? "\u53D6\u6D88\u8865\u5168" : grantingGroupMessages ? "\u53D6\u6D88\u6388\u6743" : "\u53D6\u6D88\u6DFB\u52A0")
     ) : null
   );
 }
 function ProvisionError2({ error, provision, onRetry, onCancel, busy }) {
   const repairing = isCallbackRepair(provision);
   const grantingGroupMessages = isGroupMessagePermission(provision);
-  return h2(
+  return h(
     "div",
     { className: "bxf-card bxf-provisionCard dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "bxf-inlineError dim-inlineError", role: "alert" },
-      h2(
+      h(
         "div",
         null,
-        h2("h3", null, repairing ? "\u6743\u9650\u4E0E\u56DE\u8C03\u6CA1\u6709\u8865\u5168\u5B8C\u6210" : grantingGroupMessages ? "\u7FA4\u6D88\u606F\u6743\u9650\u6CA1\u6709\u5F00\u901A\u5B8C\u6210" : "\u65B0\u673A\u5668\u4EBA\u6CA1\u6709\u6DFB\u52A0\u5B8C\u6210"),
-        h2("p", null, error.message),
-        error.code ? h2("span", { className: "bxf-errorCode" }, error.code) : null,
-        h2(
+        h("h3", null, repairing ? "\u6743\u9650\u4E0E\u56DE\u8C03\u6CA1\u6709\u8865\u5168\u5B8C\u6210" : grantingGroupMessages ? "\u7FA4\u6D88\u606F\u6743\u9650\u6CA1\u6709\u5F00\u901A\u5B8C\u6210" : "\u65B0\u673A\u5668\u4EBA\u6CA1\u6709\u6DFB\u52A0\u5B8C\u6210"),
+        h("p", null, error.message),
+        error.code ? h("span", { className: "bxf-errorCode" }, error.code) : null,
+        h(
           "div",
           { className: "bxf-actions dim-viewActions" },
-          h2(
+          h(
             Button5,
-            { kind: "primary", onClick: onRetry, disabled: busy },
-            busy ? "\u91CD\u8BD5\u4E2D\u2026" : "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"
+            { kind: "primary", onClick: onRetry, disabled: busy, loading: busy },
+            "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"
           ),
-          h2(Button5, { onClick: onCancel, disabled: busy }, "\u5173\u95ED")
+          h(Button5, { onClick: onCancel, disabled: busy }, "\u5173\u95ED")
         )
       )
     )
@@ -4292,16 +4404,17 @@ function connectionTestNotice2(value) {
   }
   return value?.testMessage ? "\u8FDE\u63A5\u68C0\u67E5\u5B8C\u6210\uFF0C\u4F46\u6D4B\u8BD5\u6D88\u606F\u53D1\u9001\u5931\u8D25\u3002" : null;
 }
-function RemoveConfirmation2({ bot, busy, onConfirm, onCancel }) {
-  const cancelRef = React12.useRef(null);
+function RemoveConfirmation2({ bot, busy, error, onConfirm, onCancel }) {
+  const cancelRef = React13.useRef(null);
   const idPart = bot.botId.replace(/[^a-zA-Z0-9_-]/g, "-");
   const titleId = `bxf-remove-title-${idPart}`;
   const descriptionId = `bxf-remove-description-${idPart}`;
-  React12.useEffect(() => cancelRef.current?.focus(), []);
-  return h2(
-    "div",
+  return h(
+    ConfirmDialog,
     {
-      className: "bxf-confirm dim-confirm",
+      onClose: onCancel,
+      busy,
+      error: error?.message,
       role: "alertdialog",
       "aria-labelledby": titleId,
       "aria-describedby": descriptionId,
@@ -4312,20 +4425,20 @@ function RemoveConfirmation2({ bot, busy, onConfirm, onCancel }) {
         }
       }
     },
-    h2("h4", { id: titleId }, `\u4ECE DeepSeek Harness \u79FB\u9664\u201C${bot.bot.name}\u201D\uFF1F`),
-    h2(
+    h("h4", { id: titleId }, `\u4ECE DeepSeek Harness \u79FB\u9664\u201C${bot.bot.name}\u201D\uFF1F`),
+    h(
       "p",
       { id: descriptionId },
       "\u6B64\u64CD\u4F5C\u4F1A\u505C\u6B62\u8FD9\u4E2A\u673A\u5668\u4EBA\u7684\u8FDE\u63A5\uFF0C\u5E76\u5220\u9664\u4FDD\u5B58\u5728\u672C\u673A\u7684\u63A5\u5165\u914D\u7F6E\u548C\u51ED\u636E\u3002\u98DE\u4E66\u5F00\u653E\u5E73\u53F0\u4E2D\u7684\u5E94\u7528\u4E0D\u4F1A\u88AB\u81EA\u52A8\u5220\u9664\uFF0C\u5176\u4ED6\u673A\u5668\u4EBA\u4E5F\u4E0D\u53D7\u5F71\u54CD\u3002"
     ),
-    h2(
+    h(
       "div",
       { className: "bxf-actions dim-viewActions" },
-      h2(Button5, { ref: cancelRef, onClick: onCancel, disabled: busy }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
-      h2(
+      h(Button5, { ref: cancelRef, onClick: onCancel, disabled: busy, "data-modal-autofocus": true }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
+      h(
         Button5,
-        { kind: "danger", onClick: onConfirm, disabled: busy },
-        busy ? "\u6B63\u5728\u79FB\u9664\u2026" : "\u786E\u8BA4\u79FB\u9664\u63A5\u5165"
+        { kind: "danger", onClick: onConfirm, disabled: busy, loading: busy },
+        "\u786E\u8BA4\u79FB\u9664\u63A5\u5165"
       )
     )
   );
@@ -4339,9 +4452,9 @@ function GroupResponseModeEditor({
   onAuthorize
 }) {
   const current = normalizeGroupResponseMode(value);
-  const [saving, setSaving] = React12.useState(false);
-  const [authorizing, setAuthorizing] = React12.useState(false);
-  const [error, setError] = React12.useState(null);
+  const [saving, setSaving] = React13.useState(false);
+  const [authorizing, setAuthorizing] = React13.useState(false);
+  const [error, setError] = React13.useState(null);
   const change = async (event) => {
     const next = normalizeGroupResponseMode(event.target.value);
     if (next === current || saving || disabled) return;
@@ -4367,42 +4480,39 @@ function GroupResponseModeEditor({
       setAuthorizing(false);
     }
   };
-  return h2(
+  return h(
     "div",
     { className: "bxf-responseMode dim-responseMode" },
-    h2(
+    h(
       "div",
       { className: "bxf-responseModeHeader dim-responseModeHeader" },
-      h2("span", null, "\u7FA4\u804A\u54CD\u5E94\u65B9\u5F0F"),
-      saving || authorizing ? h2(
-        "span",
-        { className: "bxf-responseModeStatus dim-responseModeStatus" },
-        saving ? "\u4FDD\u5B58\u4E2D\u2026" : "\u6B63\u5728\u51C6\u5907\u6388\u6743\u2026"
-      ) : null
+      h("span", null, "\u7FA4\u804A\u54CD\u5E94\u65B9\u5F0F"),
+      null
     ),
-    h2(
+    h("span", { className: "dim-controlBusy" }, h(
       "select",
       {
         className: "bxf-responseModeSelect dim-responseModeSelect",
         value: current,
         disabled: disabled || saving,
+        "aria-busy": saving || void 0,
         "aria-label": "\u7FA4\u804A\u54CD\u5E94\u65B9\u5F0F",
         onChange: (event) => {
           void change(event);
         }
       },
-      h2("option", { value: "mention" }, "\u4EC5\u5728 @\u673A\u5668\u4EBA\u65F6\u54CD\u5E94\uFF08\u63A8\u8350\uFF09"),
-      h2("option", { value: "all" }, "\u54CD\u5E94\u6240\u6709\u7FA4\u6D88\u606F")
-    ),
-    h2(
+      h("option", { value: "mention" }, "\u4EC5\u5728 @\u673A\u5668\u4EBA\u65F6\u54CD\u5E94\uFF08\u63A8\u8350\uFF09"),
+      h("option", { value: "all" }, "\u54CD\u5E94\u6240\u6709\u7FA4\u6D88\u606F")
+    ), h(BusyIndicator, { busy: saving })),
+    h(
       "small",
       { className: "bxf-responseModeHelp dim-responseModeHelp" },
       current === "mention" ? permissionGranted ? "\u79C1\u804A\u59CB\u7EC8\u54CD\u5E94\uFF1B\u7FA4\u804A\u4EC5\u5904\u7406\u660E\u786E @\u5F53\u524D\u673A\u5668\u4EBA\u7684\u6D88\u606F\u3002\u7FA4\u6D88\u606F\u6743\u9650\u5DF2\u5F00\u901A\uFF0C\u518D\u6B21\u5207\u6362\u65E0\u9700\u6388\u6743\u3002" : "\u79C1\u804A\u59CB\u7EC8\u54CD\u5E94\uFF1B\u7FA4\u804A\u4EC5\u5904\u7406\u660E\u786E @\u5F53\u524D\u673A\u5668\u4EBA\u7684\u6D88\u606F\u3002\u9009\u62E9\u5168\u90E8\u6D88\u606F\u540E\u4F1A\u6253\u5F00\u98DE\u4E66\u5B98\u65B9\u6388\u6743\u6D41\u7A0B\u3002" : permissionGranted ? "\u5DF2\u5F00\u901A\u201C\u83B7\u53D6\u7FA4\u7EC4\u4E2D\u6240\u6709\u6D88\u606F\u201D\u6743\u9650\uFF08im:message.group_msg\uFF09\uFF1B\u673A\u5668\u4EBA\u4F1A\u5904\u7406\u7FA4\u804A\u4E2D\u7684\u6240\u6709\u53EF\u89C1\u6D88\u606F\u3002" : "\u5C1A\u672A\u786E\u8BA4\u201C\u83B7\u53D6\u7FA4\u7EC4\u4E2D\u6240\u6709\u6D88\u606F\u201D\u6743\u9650\uFF0C\u8BF7\u5B8C\u6210\u98DE\u4E66\u6388\u6743\u3002"
     ),
-    current === "all" ? h2(
+    current === "all" ? h(
       "div",
       { className: "bxf-responseModePermissionAction dim-responseModePermissionAction" },
-      h2(Button5, {
+      h(Button5, {
         className: "bxf-responseModePermissionButton",
         size: "small",
         disabled: disabled || authorizationDisabled || saving || authorizing,
@@ -4410,13 +4520,11 @@ function GroupResponseModeEditor({
         "aria-label": permissionGranted ? "\u91CD\u65B0\u6388\u6743\u7FA4\u6D88\u606F\u6743\u9650" : "\u6388\u6743\u7FA4\u6D88\u606F\u6743\u9650",
         onClick: () => {
           void authorize();
-        }
-      }, authorizing ? "\u6B63\u5728\u51C6\u5907\u2026" : permissionGranted ? "\u91CD\u65B0\u6388\u6743" : "\u53BB\u6388\u6743")
+        },
+        loading: authorizing
+      }, permissionGranted ? "\u91CD\u65B0\u6388\u6743" : "\u53BB\u6388\u6743")
     ) : null,
-    error ? h2("p", {
-      className: "bxf-responseModeError dim-responseModeError",
-      role: "alert"
-    }, error) : null
+    error ? h(FeedbackToast, { text: error, tone: "error" }) : null
   );
 }
 function BotCard({
@@ -4441,12 +4549,12 @@ function BotCard({
   removeButtonRef
 }) {
   const { bot, health, state, connected } = connection;
-  const repairTooltipId = React12.useId();
+  const repairTooltipId = React13.useId();
   const stateForDisplay = busy === "reconnect" ? "connecting" : state;
   const tone = stateForDisplay === "connected" ? "success" : stateForDisplay === "connecting" ? "warning" : "error";
-  const summary = actionError?.message ?? connection.error?.message ?? (connected ? null : health.summary);
+  const summary = connection.error?.message ?? (connected ? null : health.summary);
   const titleId = `bxf-bot-${connection.botId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
-  return h2(
+  return h(
     "article",
     {
       className: "bxf-card bxf-botCard dim-botCard",
@@ -4455,28 +4563,28 @@ function BotCard({
       tabIndex: -1,
       ref: cardRef
     },
-    h2(
+    h(
       "div",
       { className: "bxf-cardBody dim-botCardBody" },
-      h2(
+      h(
         "div",
         { className: "bxf-connectedTop dim-botCardTop" },
-        h2(
+        h(
           "div",
           { className: "bxf-botIdentity dim-botIdentity" },
-          h2(
+          h(
             "div",
             { className: "bxf-avatar dim-botAvatar", "aria-hidden": "true" },
-            h2(FeishuLogoGlyph, { size: 34 })
+            h(FeishuLogoGlyph, { size: 34 })
           ),
-          h2(
+          h(
             "div",
             { className: "bxf-botName dim-botName" },
-            h2("h3", { id: titleId, title: bot.name }, bot.name),
-            h2("p", { title: bot.appIdMasked }, bot.appIdMasked ?? "\u5E94\u7528\u6807\u8BC6\u5DF2\u5B89\u5168\u4FDD\u5B58")
+            h("h3", { id: titleId, title: bot.name }, bot.name),
+            h("p", { title: bot.appIdMasked }, bot.appIdMasked ?? "\u5E94\u7528\u6807\u8BC6\u5DF2\u5B89\u5168\u4FDD\u5B58")
           )
         ),
-        h2(BotStatusMeta, {
+        h(BotStatusMeta, {
           className: "bxf-healthPill",
           dotClassName: "bxf-dot",
           tone,
@@ -4486,17 +4594,17 @@ function BotCard({
           healthState: stateForDisplay
         })
       ),
-      h2(WorkspaceEditor, {
+      h(WorkspaceEditor, {
         workspace: connection.workspace,
         disabled: Boolean(busy),
         onSave: onWorkspaceSave
       }),
-      h2(AgentPresetEditor, {
+      h(AgentPresetEditor, {
         agentPreset: connection.agentPreset,
         disabled: Boolean(busy),
         onSave: onAgentPresetSave
       }),
-      h2(GroupResponseModeEditor, {
+      h(GroupResponseModeEditor, {
         value: connection.groupResponseMode,
         permissionGranted: connection.groupMessagePermissionGranted,
         disabled: Boolean(busy),
@@ -4504,52 +4612,54 @@ function BotCard({
         onSave: onGroupResponseModeSave,
         onAuthorize: onGroupMessagePermissionAuthorize
       }),
-      provisionContent ? h2("section", {
+      provisionContent ? h("section", {
         className: "bxf-botProvision dim-botProvision",
         "aria-label": `${bot.name}\u7684\u98DE\u4E66\u6388\u6743\u6D41\u7A0B`,
         "data-provision-for": connection.botId,
         ref: provisionRef,
         tabIndex: -1
       }, provisionContent) : null,
-      h2(
+      h(
         "div",
         { className: "bxf-connectedFooter dim-cardFooter" },
-        h2(
+        h(
           "div",
           { className: "dim-cardFooterLayout" },
-          h2(
+          h(
             "div",
             { className: "bxf-actions bxf-botActions dim-cardActions" },
-            h2(Button5, {
+            h(Button5, {
               className: "dim-cardAction",
               onClick: onReconnect,
               disabled: Boolean(busy),
               "aria-busy": busy === "reconnect" ? "true" : void 0,
-              "aria-label": `${connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"}${bot.name}`
-            }, busy === "reconnect" ? connected ? "\u68C0\u67E5\u4E2D\u2026" : "\u6B63\u5728\u8FDE\u63A5\u2026" : connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"),
-            h2(
+              "aria-label": `${connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"}${bot.name}`,
+              loading: busy === "reconnect"
+            }, connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"),
+            h(
               "span",
               { className: "bxf-repairAction" },
-              h2(Button5, {
+              h(Button5, {
                 className: "bxf-repairButton dim-cardAction",
                 onClick: onRepairCallback,
                 disabled: Boolean(busy) || repairDisabled,
                 "aria-busy": busy === "callback-repair" ? "true" : void 0,
                 "aria-label": `\u4E3A${bot.name}\u8865\u5168\u6743\u9650\u4E0E\u56DE\u8C03`,
-                "aria-describedby": repairTooltipId
-              }, busy === "callback-repair" ? "\u7B49\u5F85\u626B\u7801\u2026" : "\u8865\u5168\u6743\u9650"),
-              h2(
+                "aria-describedby": repairTooltipId,
+                loading: busy === "callback-repair"
+              }, "\u8865\u5168\u6743\u9650"),
+              h(
                 "span",
                 {
                   id: repairTooltipId,
                   className: "bxf-repairTooltip",
                   role: "tooltip"
                 },
-                h2("strong", null, "\u8865\u5168\u8303\u56F4"),
-                h2("span", null, "\u6700\u591A\u589E\u91CF\u6DFB\u52A0\u5361\u7247\u56DE\u8C03 card.action.trigger\u3001\u8BFB\u53D6\u6D88\u606F\u5185\u56FE\u7247\u6216\u6587\u4EF6\u6240\u9700\u7684 im:message:readonly\uFF08\u98DE\u4E66\u663E\u793A\u4E3A\u201C\u83B7\u53D6\u5355\u804A\u3001\u7FA4\u7EC4\u6D88\u606F\u201D\uFF09\uFF0C\u4EE5\u53CA\u4E0A\u4F20\u673A\u5668\u4EBA\u56FE\u7247\u6216\u6587\u4EF6\u6240\u9700\u7684 im:resource\uFF1B\u786E\u8BA4\u9875\u53EA\u663E\u793A\u5F53\u524D\u7F3A\u5C11\u9879\uFF0C\u4E0D\u4F1A\u521B\u5EFA\u65B0\u5E94\u7528\u3002")
+                h("strong", null, "\u8865\u5168\u8303\u56F4"),
+                h("span", null, "\u6700\u591A\u589E\u91CF\u6DFB\u52A0\u5361\u7247\u56DE\u8C03 card.action.trigger\u3001\u8BFB\u53D6\u6D88\u606F\u5185\u56FE\u7247\u6216\u6587\u4EF6\u6240\u9700\u7684 im:message:readonly\uFF08\u98DE\u4E66\u663E\u793A\u4E3A\u201C\u83B7\u53D6\u5355\u804A\u3001\u7FA4\u7EC4\u6D88\u606F\u201D\uFF09\uFF0C\u4EE5\u53CA\u4E0A\u4F20\u673A\u5668\u4EBA\u56FE\u7247\u6216\u6587\u4EF6\u6240\u9700\u7684 im:resource\uFF1B\u786E\u8BA4\u9875\u53EA\u663E\u793A\u5F53\u524D\u7F3A\u5C11\u9879\uFF0C\u4E0D\u4F1A\u521B\u5EFA\u65B0\u5E94\u7528\u3002")
               )
             ),
-            h2(Button5, {
+            h(Button5, {
               className: "dim-cardAction",
               kind: "danger",
               onClick: onRequestRemove,
@@ -4558,47 +4668,45 @@ function BotCard({
               "aria-label": `\u4ECE DeepSeek Harness \u79FB\u9664${bot.name}`
             }, "\u79FB\u9664\u63A5\u5165")
           ),
-          summary ? h2(
+          summary ? h(
             "div",
-            { className: "bxf-healthSummary dim-cardSummary", "data-error": actionError || connection.error ? "true" : void 0 },
+            { className: "bxf-healthSummary dim-cardSummary", "data-error": connection.error ? "true" : void 0 },
             summary
           ) : null,
-          connection.lastMessageError ? h2(LastMessageErrorSummary, {
+          connection.lastMessageError ? h(LastMessageErrorSummary, {
             className: "bxf-healthSummary",
             error: connection.lastMessageError
           }) : null,
-          testNotice ? h2("div", {
-            className: "bxf-healthSummary dim-cardFeedback",
-            role: "status"
-          }, testNotice) : null
+          null
         )
       )
     ),
-    removing ? h2(RemoveConfirmation2, {
+    removing ? h(RemoveConfirmation2, {
       bot: connection,
       busy: busy === "delete",
+      error: actionError,
       onConfirm: onConfirmRemove,
       onCancel: onCancelRemove
     }) : null
   );
 }
 function BotList(props) {
-  return h2(
+  return h(
     "section",
     { className: "bxf-listSection dim-listSection", "aria-labelledby": "bxf-bot-list-title" },
-    h2(ChannelListHeading, {
+    h(ChannelListHeading, {
       className: "bxf-listHeading",
       id: "bxf-bot-list-title",
       title: "\u5DF2\u63A5\u5165\u7684\u673A\u5668\u4EBA",
       connectionLabel: "\u957F\u8FDE\u63A5"
     }),
-    h2(
+    h(
       "ul",
       { className: "bxf-botList dim-botList", role: "list" },
-      props.bots.map((bot) => h2(
+      props.bots.map((bot) => h(
         "li",
         { key: bot.botId },
-        h2(BotCard, {
+        h(BotCard, {
           connection: bot,
           busy: props.busyByBot[bot.botId] ?? (isTargetedAppUpdate2(props.provisioning) && props.provisioning.botId === bot.botId ? props.provisioning.operation : void 0),
           repairDisabled: Boolean(props.provisioning),
@@ -4624,25 +4732,25 @@ function BotList(props) {
   );
 }
 function PageError({ error, onRetry, busy }) {
-  return h2(
+  return h(
     "div",
     { className: "bxf-card dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "bxf-error dim-inlineError", role: "alert" },
-      h2(
+      h(
         "div",
         null,
-        h2("h3", null, "\u65E0\u6CD5\u8BFB\u53D6\u98DE\u4E66\u673A\u5668\u4EBA"),
-        h2("p", null, error.message),
-        error.code ? h2("span", { className: "bxf-errorCode" }, error.code) : null,
-        h2(
+        h("h3", null, "\u65E0\u6CD5\u8BFB\u53D6\u98DE\u4E66\u673A\u5668\u4EBA"),
+        h("p", null, error.message),
+        error.code ? h("span", { className: "bxf-errorCode" }, error.code) : null,
+        h(
           "div",
           { className: "bxf-actions dim-viewActions" },
-          h2(
+          h(
             Button5,
-            { kind: "primary", onClick: onRetry, disabled: busy },
-            busy ? "\u91CD\u8BD5\u4E2D\u2026" : "\u91CD\u65B0\u8BFB\u53D6"
+            { kind: "primary", onClick: onRetry, disabled: busy, loading: busy },
+            "\u91CD\u65B0\u8BFB\u53D6"
           )
         )
       )
@@ -4675,7 +4783,7 @@ function mergeFeishuSnapshotState(current, snapshot, { restoreProvisioning = fal
   };
 }
 function FeishuSettingsTab({ rpcCall }) {
-  const [model, setModel] = React12.useState({
+  const [model, setModel] = React13.useState({
     phase: "loading",
     revision: 0,
     bots: [],
@@ -4685,41 +4793,41 @@ function FeishuSettingsTab({ rpcCall }) {
     statusError: null,
     agentPresetCatalog: EMPTY_AGENT_PRESET_CATALOG
   });
-  const [pageBusy, setPageBusy] = React12.useState(false);
-  const [provisionBusy, setProvisionBusy] = React12.useState(false);
-  const [credentialOpen, setCredentialOpen] = React12.useState(false);
-  const [credentialBusy, setCredentialBusy] = React12.useState(false);
-  const [credentialError, setCredentialError] = React12.useState(null);
-  const [busyByBot, setBusyByBot] = React12.useState({});
-  const [errorsByBot, setErrorsByBot] = React12.useState({});
-  const [testNoticesByBot, setTestNoticesByBot] = React12.useState({});
-  const [removeTargetId, setRemoveTargetId] = React12.useState(null);
-  const [announcement, setAnnouncement] = React12.useState("");
-  const [now, setNow] = React12.useState(() => Date.now());
-  const [focusBotId, setFocusBotId] = React12.useState(null);
-  const cardRefs = React12.useRef(/* @__PURE__ */ new Map());
-  const removeButtonRefs = React12.useRef(/* @__PURE__ */ new Map());
-  const targetedProvisionRef = React12.useRef(null);
-  const addButtonRef = React12.useRef(null);
-  const mountedRef = React12.useRef(true);
+  const [pageBusy, setPageBusy] = React13.useState(false);
+  const [provisionBusy, setProvisionBusy] = React13.useState(false);
+  const [credentialOpen, setCredentialOpen] = React13.useState(false);
+  const [credentialBusy, setCredentialBusy] = React13.useState(false);
+  const [credentialError, setCredentialError] = React13.useState(null);
+  const [busyByBot, setBusyByBot] = React13.useState({});
+  const [errorsByBot, setErrorsByBot] = React13.useState({});
+  const [testNoticesByBot, setTestNoticesByBot] = React13.useState({});
+  const [removeTargetId, setRemoveTargetId] = React13.useState(null);
+  const [announcement, setAnnouncement] = React13.useState("");
+  const [now, setNow] = React13.useState(() => Date.now());
+  const [focusBotId, setFocusBotId] = React13.useState(null);
+  const cardRefs = React13.useRef(/* @__PURE__ */ new Map());
+  const removeButtonRefs = React13.useRef(/* @__PURE__ */ new Map());
+  const targetedProvisionRef = React13.useRef(null);
+  const addButtonRef = React13.useRef(null);
+  const mountedRef = React13.useRef(true);
   const workspaceFence = useWorkspaceSnapshotFence();
   const scheduleAnimationFrame = useAnimationFrameScheduler();
-  React12.useEffect(() => {
+  React13.useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
   }, []);
-  const announce = React12.useCallback((message) => {
+  const announce = React13.useCallback((message) => {
     setAnnouncement("");
     scheduleAnimationFrame(() => {
       if (message) setAnnouncement(message);
     }, "announcement");
   }, [scheduleAnimationFrame]);
-  const invoke = React12.useCallback(async (endpoint, payload = {}, signal) => {
+  const invoke = React13.useCallback(async (endpoint, payload = {}, signal) => {
     return unwrapRpcResult3(await rpcCall(endpoint, payload, signal));
   }, [rpcCall]);
-  const mergeSnapshot = React12.useCallback((snapshot, { restoreProvisioning = false } = {}) => {
+  const mergeSnapshot = React13.useCallback((snapshot, { restoreProvisioning = false } = {}) => {
     const now2 = Date.now();
     setModel((current) => mergeFeishuSnapshotState(
       current,
@@ -4727,7 +4835,7 @@ function FeishuSettingsTab({ rpcCall }) {
       { restoreProvisioning, now: now2 }
     ));
   }, []);
-  const loadStatus = React12.useCallback(async ({ signal, silent = false, restoreProvisioning = false } = {}) => {
+  const loadStatus = React13.useCallback(async ({ signal, silent = false, restoreProvisioning = false } = {}) => {
     const workspaceVersion = workspaceFence.beginStatus();
     if (workspaceVersion === null || !mountedRef.current) return void 0;
     if (!silent) setPageBusy(true);
@@ -4745,12 +4853,12 @@ function FeishuSettingsTab({ rpcCall }) {
       if (!silent && !signal?.aborted && mountedRef.current) setPageBusy(false);
     }
   }, [invoke, mergeSnapshot, workspaceFence]);
-  React12.useEffect(() => {
+  React13.useEffect(() => {
     const controller = new AbortController();
     void loadStatus({ signal: controller.signal, restoreProvisioning: true });
     return () => controller.abort();
   }, [loadStatus]);
-  React12.useEffect(() => {
+  React13.useEffect(() => {
     if (model.phase !== "ready") return void 0;
     const controller = new AbortController();
     let inFlight = false;
@@ -4769,7 +4877,7 @@ function FeishuSettingsTab({ rpcCall }) {
       window.clearInterval(timer);
     };
   }, [loadStatus, model.phase]);
-  React12.useEffect(() => {
+  React13.useEffect(() => {
     if (!focusBotId) return;
     const node = cardRefs.current.get(focusBotId);
     if (!node) return;
@@ -4778,7 +4886,7 @@ function FeishuSettingsTab({ rpcCall }) {
     setFocusBotId(null);
   }, [focusBotId, model.bots]);
   const targetedProvisionFocusKey = isTargetedAppUpdate2(model.provisioning) ? `${model.provisioning.botId}:${model.provisioning.attemptId ?? "preparing"}:${model.provisioning.phase}` : null;
-  React12.useEffect(() => {
+  React13.useEffect(() => {
     if (!targetedProvisionFocusKey) return;
     scheduleAnimationFrame(() => {
       const node = targetedProvisionRef.current;
@@ -4787,7 +4895,7 @@ function FeishuSettingsTab({ rpcCall }) {
       node.focus?.({ preventScroll: true });
     }, "targeted-provision-focus");
   }, [scheduleAnimationFrame, targetedProvisionFocusKey]);
-  const startProvisioning = React12.useCallback(async ({
+  const startProvisioning = React13.useCallback(async ({
     replace = false,
     operation = FEISHU_REGISTRATION_OPERATIONS.PROVISION,
     bot
@@ -4863,7 +4971,7 @@ function FeishuSettingsTab({ rpcCall }) {
     model.provisioning?.botId,
     model.provisioning?.botName
   ]);
-  const bindCredentials = React12.useCallback(async ({ identity, secret }) => {
+  const bindCredentials = React13.useCallback(async ({ identity, secret }) => {
     const snapshotVersion = workspaceFence.beginMutation();
     setCredentialBusy(true);
     setCredentialError(null);
@@ -4885,7 +4993,7 @@ function FeishuSettingsTab({ rpcCall }) {
       setCredentialBusy(false);
     }
   }, [announce, invoke, loadStatus, mergeSnapshot, workspaceFence]);
-  const cancelProvisioning = React12.useCallback(async () => {
+  const cancelProvisioning = React13.useCallback(async () => {
     const activeProvision = model.provisioning;
     const attemptId = activeProvision?.attemptId;
     const repairing = isCallbackRepair(activeProvision);
@@ -4950,7 +5058,7 @@ function FeishuSettingsTab({ rpcCall }) {
   const countdownPhase = model.provisioning?.phase;
   const countdownExpiresAt = model.provisioning?.expiresAt;
   const countdownExpired = model.provisioning?.expired;
-  React12.useEffect(() => {
+  React13.useEffect(() => {
     if (!countdownAttemptId || countdownPhase !== "qr" || countdownExpired) return void 0;
     const tick = () => {
       const timestamp7 = Date.now();
@@ -4963,7 +5071,7 @@ function FeishuSettingsTab({ rpcCall }) {
     const timer = window.setInterval(tick, 1e3);
     return () => window.clearInterval(timer);
   }, [countdownAttemptId, countdownPhase, countdownExpiresAt, countdownExpired]);
-  React12.useEffect(() => {
+  React13.useEffect(() => {
     const provision2 = model.provisioning;
     if (!provision2 || !["qr", "connecting"].includes(provision2.phase) || !provision2.attemptId || provision2.expired) return void 0;
     const controller = new AbortController();
@@ -5031,7 +5139,7 @@ function FeishuSettingsTab({ rpcCall }) {
       window.clearTimeout(timer);
     };
   }, [announce, invoke, loadStatus, model.provisioning]);
-  const setBotBusy = React12.useCallback((botId, value) => {
+  const setBotBusy = React13.useCallback((botId, value) => {
     setBusyByBot((current) => {
       const next = { ...current };
       if (value) next[botId] = value;
@@ -5039,7 +5147,7 @@ function FeishuSettingsTab({ rpcCall }) {
       return next;
     });
   }, []);
-  const setBotError = React12.useCallback((botId, error) => {
+  const setBotError = React13.useCallback((botId, error) => {
     setErrorsByBot((current) => {
       const next = { ...current };
       if (error) next[botId] = presentError3(error);
@@ -5047,7 +5155,7 @@ function FeishuSettingsTab({ rpcCall }) {
       return next;
     });
   }, []);
-  const repairCallback = React12.useCallback((connection) => {
+  const repairCallback = React13.useCallback((connection) => {
     if (model.provisioning) return;
     setRemoveTargetId(null);
     setBotError(connection.botId, null);
@@ -5061,7 +5169,7 @@ function FeishuSettingsTab({ rpcCall }) {
       bot: connection
     });
   }, [model.provisioning, setBotError, startProvisioning]);
-  const reconnectOneBot = React12.useCallback(async (connection) => {
+  const reconnectOneBot = React13.useCallback(async (connection) => {
     const { botId, bot } = connection;
     const snapshotVersion = workspaceFence.beginMutation();
     setBotBusy(botId, "reconnect");
@@ -5101,7 +5209,7 @@ function FeishuSettingsTab({ rpcCall }) {
       setBotBusy(botId, null);
     }
   }, [announce, invoke, loadStatus, mergeSnapshot, setBotBusy, setBotError, workspaceFence]);
-  const saveWorkspace = React12.useCallback(async (connection, workspace) => {
+  const saveWorkspace = React13.useCallback(async (connection, workspace) => {
     const { botId } = connection;
     const workspaceVersion = workspaceFence.beginMutation();
     setBotBusy(botId, "workspace");
@@ -5120,7 +5228,7 @@ function FeishuSettingsTab({ rpcCall }) {
       if (mountedRef.current) setBotBusy(botId, null);
     }
   }, [invoke, loadStatus, mergeSnapshot, setBotBusy, setBotError, workspaceFence]);
-  const saveAgentPreset = React12.useCallback(async (connection, agentPreset) => {
+  const saveAgentPreset = React13.useCallback(async (connection, agentPreset) => {
     const { botId } = connection;
     const snapshotVersion = workspaceFence.beginMutation();
     setBotBusy(botId, "preset");
@@ -5139,7 +5247,7 @@ function FeishuSettingsTab({ rpcCall }) {
       if (mountedRef.current) setBotBusy(botId, null);
     }
   }, [invoke, loadStatus, mergeSnapshot, setBotBusy, setBotError, workspaceFence]);
-  const authorizeGroupMessages = React12.useCallback(async (connection) => {
+  const authorizeGroupMessages = React13.useCallback(async (connection) => {
     const { botId } = connection;
     if (model.provisioning) {
       throw new Error("\u8BF7\u5148\u5B8C\u6210\u5F53\u524D\u98DE\u4E66\u6388\u6743\u64CD\u4F5C\uFF0C\u518D\u5F00\u901A\u7FA4\u6D88\u606F\u6743\u9650\u3002");
@@ -5156,7 +5264,7 @@ function FeishuSettingsTab({ rpcCall }) {
       bot: connection
     });
   }, [model.provisioning, setBotError, startProvisioning]);
-  const saveGroupResponseMode = React12.useCallback(async (connection, groupResponseMode) => {
+  const saveGroupResponseMode = React13.useCallback(async (connection, groupResponseMode) => {
     const { botId } = connection;
     if (groupResponseMode === "all" && connection.groupMessagePermissionGranted !== true) {
       await authorizeGroupMessages(connection);
@@ -5187,15 +5295,15 @@ function FeishuSettingsTab({ rpcCall }) {
     setBotError,
     workspaceFence
   ]);
-  const requestRemove = React12.useCallback((connection) => {
+  const requestRemove = React13.useCallback((connection) => {
     setRemoveTargetId(connection.botId);
   }, []);
-  const cancelRemove = React12.useCallback(() => {
+  const cancelRemove = React13.useCallback(() => {
     const botId = removeTargetId;
     setRemoveTargetId(null);
     scheduleAnimationFrame(() => removeButtonRefs.current.get(botId)?.focus(), "focus");
   }, [removeTargetId, scheduleAnimationFrame]);
-  const confirmRemove = React12.useCallback(async (connection) => {
+  const confirmRemove = React13.useCallback(async (connection) => {
     const { botId, bot } = connection;
     const snapshotVersion = workspaceFence.beginMutation();
     setBotBusy(botId, "delete");
@@ -5213,7 +5321,7 @@ function FeishuSettingsTab({ rpcCall }) {
       scheduleAnimationFrame(() => addButtonRef.current?.focus(), "focus");
     } catch (error) {
       setBotError(botId, error);
-      announce(`${bot.name}\u79FB\u9664\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5\u3002`);
+      announce(error?.message ?? `${bot.name}\u79FB\u9664\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5\u3002`);
     } finally {
       const shouldRefresh = workspaceFence.endMutation();
       if (shouldRefresh && mountedRef.current) void loadStatus({ silent: true });
@@ -5230,13 +5338,13 @@ function FeishuSettingsTab({ rpcCall }) {
   });
   let provisionContent = null;
   if (provision?.phase === "creating") {
-    provisionContent = h2(ProvisionProgress, {
+    provisionContent = h(ProvisionProgress, {
       phase: "creating",
       provision,
       busy: provisionBusy
     });
   } else if (provision?.phase === "qr") {
-    provisionContent = h2(QrPane, {
+    provisionContent = h(QrPane, {
       provision,
       now,
       onRefresh: () => void restartProvisioning({ replace: true }),
@@ -5244,14 +5352,14 @@ function FeishuSettingsTab({ rpcCall }) {
       busy: provisionBusy || model.phase !== "ready"
     });
   } else if (provision?.phase === "connecting") {
-    provisionContent = h2(ProvisionProgress, {
+    provisionContent = h(ProvisionProgress, {
       phase: "connecting",
       provision,
       onCancel: isTargetedAppUpdate2(provision) ? void 0 : () => void cancelProvisioning(),
       busy: provisionBusy
     });
   } else if (provision?.phase === "error") {
-    provisionContent = h2(ProvisionError2, {
+    provisionContent = h(ProvisionError2, {
       error: provision.error,
       provision,
       onRetry: () => void restartProvisioning({ replace: Boolean(provision.attemptId) }),
@@ -5267,7 +5375,7 @@ function FeishuSettingsTab({ rpcCall }) {
       busy: provisionBusy
     });
   }
-  const credentialContent = credentialOpen ? h2(CredentialBindingPanel, {
+  const credentialContent = credentialOpen ? h(CredentialBindingPanel, {
     channel: "\u98DE\u4E66",
     identityLabel: "App ID",
     identityPlaceholder: "\u586B\u5199\u98DE\u4E66\u5F00\u653E\u5E73\u53F0 App ID",
@@ -5281,20 +5389,20 @@ function FeishuSettingsTab({ rpcCall }) {
       setCredentialError(null);
     }
   }) : null;
-  const setCardRef = React12.useCallback((botId, node) => {
+  const setCardRef = React13.useCallback((botId, node) => {
     if (node) cardRefs.current.set(botId, node);
     else cardRefs.current.delete(botId);
   }, []);
-  const setRemoveButtonRef = React12.useCallback((botId, node) => {
+  const setRemoveButtonRef = React13.useCallback((botId, node) => {
     if (node) removeButtonRefs.current.set(botId, node);
     else removeButtonRefs.current.delete(botId);
   }, []);
-  return h2(AgentPresetCatalogContext.Provider, {
+  return h(AgentPresetCatalogContext.Provider, {
     value: model.agentPresetCatalog ?? EMPTY_AGENT_PRESET_CATALOG
-  }, h2(
+  }, h(
     "section",
     { className: "bxf-page dim-channelPage", "aria-label": "\u98DE\u4E66\u673A\u5668\u4EBA\u8BBE\u7F6E" },
-    h2(Heading2, {
+    h(Heading2, {
       totals: model.totals,
       onAdd: () => void startProvisioning(),
       onCredential: () => {
@@ -5306,30 +5414,21 @@ function FeishuSettingsTab({ rpcCall }) {
       busy: provisionBusy || credentialBusy,
       addButtonRef
     }),
-    h2("div", {
-      className: "bxf-visuallyHidden",
-      role: "status",
-      "aria-live": "polite",
-      "aria-atomic": "true"
-    }, announcement),
-    model.statusError ? h2(
-      "div",
-      { className: "bxf-statusNotice dim-statusNotice", role: "status" },
-      h2(AlertIcon, { size: 16 }),
-      h2("span", null, `\u72B6\u6001\u81EA\u52A8\u5237\u65B0\u5931\u8D25\uFF1A${model.statusError.message}`),
-      h2(Button5, { size: "small", onClick: () => void loadStatus({ silent: true }), disabled: pageBusy }, "\u7ACB\u5373\u91CD\u8BD5")
-    ) : null,
-    model.phase === "loading" ? h2(LoadingView2) : model.phase === "error" ? h2(PageError, {
+    announcement && !removeTargetId ? h(FeedbackToast, { text: announcement }) : null,
+    model.statusError ? h(FeedbackToast, { text: `\u72B6\u6001\u81EA\u52A8\u5237\u65B0\u5931\u8D25\uFF1A${model.statusError.message}`, tone: "error", actions: [{ label: "\u7ACB\u5373\u91CD\u8BD5", onClick: () => {
+      if (!pageBusy) void loadStatus({ silent: true });
+    } }] }) : null,
+    model.phase === "loading" ? h(LoadingView2) : model.phase === "error" ? h(PageError, {
       error: model.pageError ?? { message: "\u65E0\u6CD5\u8BFB\u53D6\u8FDE\u63A5\u72B6\u6001" },
       onRetry: () => void loadStatus(),
       busy: pageBusy
-    }) : h2(
-      React12.Fragment,
+    }) : h(
+      React13.Fragment,
       null,
       credentialContent,
       targetedProvisioning ? null : provisionContent,
-      model.bots.length === 0 && !provision && !credentialOpen ? h2(EmptyView2, { onStart: () => void startProvisioning(), busy: provisionBusy }) : null,
-      model.bots.length > 0 ? h2(BotList, {
+      model.bots.length === 0 && !provision && !credentialOpen ? h(EmptyView2, { onStart: () => void startProvisioning(), busy: provisionBusy }) : null,
+      model.bots.length > 0 ? h(BotList, {
         bots: model.bots,
         busyByBot,
         errorsByBot,
@@ -6060,7 +6159,7 @@ function formatRemaining3(milliseconds) {
 }
 
 // plugin-src/client/channels/qq/index.js
-var React13 = __toESM(require("react"), 1);
+var React14 = __toESM(require("react"), 1);
 
 // plugin-src/client/channels/qq/styles.js
 var QQ_STYLE_ID = "xmanrui-dsh-im-qq-settings";
@@ -6085,8 +6184,8 @@ function installQqStyles() {
 
 // plugin-src/client/channels/qq/index.js
 var ACTIVE_STATES = /* @__PURE__ */ new Set(["pending", "refreshing", "connecting"]);
-var Button7 = React13.forwardRef(function Button8({ children, kind = "secondary", className = "", ...props }, ref) {
-  return h2("button", {
+var Button7 = React14.forwardRef(function Button8({ children, kind = "secondary", className = "", ...props }, ref) {
+  return h(ActionButton, {
     ...props,
     ref,
     type: "button",
@@ -6107,80 +6206,81 @@ function checkedTime3(value) {
   }
 }
 function Heading3({ totals, adding, busy, onAdd, onCredential, credentialOpen, addButtonRef }) {
-  return h2(
+  return h(
     "div",
     { className: "ddt-heading" },
-    h2(
+    h(
       "div",
       { className: "ddt-tools" },
-      h2(
+      h(
         "div",
         { className: "dim-bindActions" },
-        h2(Button7, {
+        h(Button7, {
           kind: "primary",
           className: "dim-scanButton",
           onClick: onAdd,
           disabled: adding || busy,
           ref: addButtonRef,
-          "aria-label": "\u626B\u7801\u63A5\u5165 QQ \u673A\u5668\u4EBA"
-        }, h2(QrActionIcon), adding ? "\u6B63\u5728\u63A5\u5165" : "\u626B\u7801\u63A5\u5165\u673A\u5668\u4EBA"),
-        h2(Button7, {
+          "aria-label": "\u626B\u7801\u63A5\u5165 QQ \u673A\u5668\u4EBA",
+          loading: adding
+        }, h(QrActionIcon), "\u626B\u7801\u63A5\u5165\u673A\u5668\u4EBA"),
+        h(Button7, {
           kind: "credential",
           className: "dim-credentialButton",
           onClick: onCredential,
           disabled: adding || busy,
           "aria-pressed": credentialOpen,
           "aria-label": "\u4F7F\u7528 AppID \u548C AppSecret \u7ED1\u5B9A QQ \u673A\u5668\u4EBA"
-        }, h2(CredentialActionIcon), credentialOpen ? "\u6536\u8D77\u51ED\u636E" : "\u624B\u52A8\u63A5\u5165")
+        }, h(CredentialActionIcon), credentialOpen ? "\u6536\u8D77\u51ED\u636E" : "\u624B\u52A8\u63A5\u5165")
       ),
-      totals.configured > 0 ? h2(
+      totals.configured > 0 ? h(
         "div",
         { className: "ddt-badge dim-onlineBadge" },
-        h2("span", null, `${totals.connected} / ${totals.configured} \u5728\u7EBF`)
+        h("span", null, `${totals.connected} / ${totals.configured} \u5728\u7EBF`)
       ) : null
     )
   );
 }
 function LoadingView3() {
-  return h2(
+  return h(
     "div",
     { className: "ddt-card ddt-loading dim-surfaceCard dim-loadingView", "aria-busy": "true" },
-    h2("div", { className: "ddt-spinner dim-spinner" }),
-    h2("span", null, "\u6B63\u5728\u8BFB\u53D6 QQ \u673A\u5668\u4EBA\u72B6\u6001\u2026")
+    h("div", { className: "ddt-spinner dim-spinner" }),
+    h("span", null, "\u6B63\u5728\u8BFB\u53D6 QQ \u673A\u5668\u4EBA\u72B6\u6001\u2026")
   );
 }
 function EmptyView3({ busy, onStart }) {
-  return h2(
+  return h(
     "div",
     { className: "ddt-card dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "ddt-cardBody ddt-empty dim-surfaceBody dim-emptyView" },
-      h2(
+      h(
         "div",
         { className: "dim-emptyCopy" },
-        h2(
+        h(
           "div",
           { className: "ddt-stateLabel dim-stateLabel" },
-          h2("span", { className: "ddt-dot dim-stateDot" }),
-          h2("span", null, "\u5C1A\u672A\u7ED1\u5B9A QQ \u673A\u5668\u4EBA")
+          h("span", { className: "ddt-dot dim-stateDot" }),
+          h("span", null, "\u5C1A\u672A\u7ED1\u5B9A QQ \u673A\u5668\u4EBA")
         ),
-        h2("h3", null, "\u4F7F\u7528\u624B\u673A QQ \u626B\u7801\u521B\u5EFA\u5E76\u7ED1\u5B9A\u673A\u5668\u4EBA"),
-        h2("p", null, "\u626B\u7801\u7531\u817E\u8BAF\u5B98\u65B9\u9875\u9762\u5B8C\u6210\uFF0C\u4E0D\u9700\u8981\u624B\u52A8\u586B\u5199 AppID \u6216 AppSecret\u3002\u626B\u7801\u6210\u529F\u540E\uFF0C\u673A\u5668\u4EBA\u4F1A\u81EA\u52A8\u8FDE\u63A5 DeepSeek Harness\u3002"),
-        h2(
+        h("h3", null, "\u4F7F\u7528\u624B\u673A QQ \u626B\u7801\u521B\u5EFA\u5E76\u7ED1\u5B9A\u673A\u5668\u4EBA"),
+        h("p", null, "\u626B\u7801\u7531\u817E\u8BAF\u5B98\u65B9\u9875\u9762\u5B8C\u6210\uFF0C\u4E0D\u9700\u8981\u624B\u52A8\u586B\u5199 AppID \u6216 AppSecret\u3002\u626B\u7801\u6210\u529F\u540E\uFF0C\u673A\u5668\u4EBA\u4F1A\u81EA\u52A8\u8FDE\u63A5 DeepSeek Harness\u3002"),
+        h(
           "div",
           { className: "ddt-actions dim-viewActions" },
-          h2(
+          h(
             Button7,
-            { kind: "primary", onClick: onStart, disabled: busy },
-            busy ? "\u6B63\u5728\u751F\u6210\u4E8C\u7EF4\u7801\u2026" : "\u751F\u6210 QQ \u4E8C\u7EF4\u7801"
+            { kind: "primary", onClick: onStart, disabled: busy, loading: busy },
+            "\u751F\u6210 QQ \u4E8C\u7EF4\u7801"
           )
         )
       ),
-      h2(
+      h(
         "div",
         { className: "ddt-brandMark dim-emptyBrand dqq-brand", "aria-hidden": "true" },
-        h2(QqLogoGlyph, { size: 64 })
+        h(QqLogoGlyph, { size: 64 })
       )
     )
   );
@@ -6191,59 +6291,59 @@ function QrPanel2({ provision, now, busy, onRefresh, onCancel }) {
   const duration = Math.max(1, provision.durationMs ?? 5 * 6e4);
   const progress = Math.round(Math.min(1, remaining / duration) * 100);
   const refreshing = provision.status === "refreshing";
-  return h2(
+  return h(
     "div",
     { className: "ddt-card dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "ddt-cardBody ddt-qrLayout dim-surfaceBody dim-qrLayout" },
-      h2(
+      h(
         "div",
         { className: "ddt-qrColumn dim-qrColumn" },
-        h2(
+        h(
           "div",
           { className: "ddt-qrFrame dim-qrFrame" },
-          source ? h2("img", { src: source, alt: "\u7528\u4E8E\u7ED1\u5B9A QQ \u673A\u5668\u4EBA\u7684\u4E00\u6B21\u6027\u4E8C\u7EF4\u7801" }) : h2(
+          source ? h("img", { src: source, alt: "\u7528\u4E8E\u7ED1\u5B9A QQ \u673A\u5668\u4EBA\u7684\u4E00\u6B21\u6027\u4E8C\u7EF4\u7801" }) : h(
             "div",
             { className: "ddt-qrFallback dim-qrFallback" },
             refreshing ? "\u4E8C\u7EF4\u7801\u6B63\u5728\u81EA\u52A8\u5237\u65B0\u2026" : "\u4E8C\u7EF4\u7801\u56FE\u7247\u6B63\u5728\u751F\u6210\u2026"
           )
         ),
-        h2(
+        h(
           "div",
           { className: "ddt-countdown dim-countdown" },
-          h2(
+          h(
             "div",
             { className: "ddt-countdownTop dim-countdownTop" },
-            h2("span", null, "\u5F53\u524D\u4E8C\u7EF4\u7801\u6709\u6548\u65F6\u95F4"),
-            h2("strong", null, refreshing ? "--:--" : formatRemaining3(remaining))
+            h("span", null, "\u5F53\u524D\u4E8C\u7EF4\u7801\u6709\u6548\u65F6\u95F4"),
+            h("strong", null, refreshing ? "--:--" : formatRemaining3(remaining))
           ),
-          h2("div", { className: "ddt-progress dim-progress", style: { "--ddt-progress": `${progress}%` } }, h2("span"))
+          h("div", { className: "ddt-progress dim-progress", style: { "--ddt-progress": `${progress}%` } }, h("span"))
         )
       ),
-      h2(
+      h(
         "div",
         { className: "ddt-qrCopy dim-qrCopy" },
-        h2(
+        h(
           "div",
           { className: "ddt-stateLabel dim-stateLabel" },
-          h2("span", { className: "ddt-dot dim-stateDot", "data-tone": "warning" }),
-          h2("span", null, refreshing ? "\u6B63\u5728\u5237\u65B0\u4E8C\u7EF4\u7801" : "\u7B49\u5F85\u624B\u673A QQ \u626B\u7801")
+          h("span", { className: "ddt-dot dim-stateDot", "data-tone": "warning" }),
+          h("span", null, refreshing ? "\u6B63\u5728\u5237\u65B0\u4E8C\u7EF4\u7801" : "\u7B49\u5F85\u624B\u673A QQ \u626B\u7801")
         ),
-        h2("h3", null, "\u4F7F\u7528\u624B\u673A QQ \u5B8C\u6210\u673A\u5668\u4EBA\u7ED1\u5B9A"),
-        h2("p", null, "\u817E\u8BAF\u9875\u9762\u4F1A\u521B\u5EFA\u6216\u7ED1\u5B9A\u4E00\u4E2A QQ \u673A\u5668\u4EBA\uFF0C\u5E76\u628A\u8FDE\u63A5\u51ED\u636E\u5B89\u5168\u4EA4\u7ED9\u672C\u673A Harness Host\u3002"),
-        h2(
+        h("h3", null, "\u4F7F\u7528\u624B\u673A QQ \u5B8C\u6210\u673A\u5668\u4EBA\u7ED1\u5B9A"),
+        h("p", null, "\u817E\u8BAF\u9875\u9762\u4F1A\u521B\u5EFA\u6216\u7ED1\u5B9A\u4E00\u4E2A QQ \u673A\u5668\u4EBA\uFF0C\u5E76\u628A\u8FDE\u63A5\u51ED\u636E\u5B89\u5168\u4EA4\u7ED9\u672C\u673A Harness Host\u3002"),
+        h(
           "ol",
           { className: "ddt-steps dim-steps" },
-          h2("li", null, "\u6253\u5F00\u624B\u673A QQ\uFF0C\u626B\u63CF\u5DE6\u4FA7\u4E8C\u7EF4\u7801"),
-          h2("li", null, "\u5728\u817E\u8BAF\u6388\u6743\u9875\u9762\u786E\u8BA4\u521B\u5EFA\u6216\u7ED1\u5B9A\u673A\u5668\u4EBA"),
-          h2("li", null, "\u8FD4\u56DE\u8FD9\u91CC\u7B49\u5F85\u8FDE\u63A5\u5B8C\u6210")
+          h("li", null, "\u6253\u5F00\u624B\u673A QQ\uFF0C\u626B\u63CF\u5DE6\u4FA7\u4E8C\u7EF4\u7801"),
+          h("li", null, "\u5728\u817E\u8BAF\u6388\u6743\u9875\u9762\u786E\u8BA4\u521B\u5EFA\u6216\u7ED1\u5B9A\u673A\u5668\u4EBA"),
+          h("li", null, "\u8FD4\u56DE\u8FD9\u91CC\u7B49\u5F85\u8FDE\u63A5\u5B8C\u6210")
         ),
-        h2(
+        h(
           "div",
           { className: "ddt-actions dim-viewActions" },
-          h2(Button7, { onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
-          h2(Button7, { kind: "quiet", onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
+          h(Button7, { onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
+          h(Button7, { kind: "quiet", onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
         )
       )
     )
@@ -6251,44 +6351,44 @@ function QrPanel2({ provision, now, busy, onRefresh, onCancel }) {
 }
 function ProvisionView({ provision, busy, onRetry, onClose }) {
   if (provision.status === "connecting") {
-    return h2(
+    return h(
       "div",
       { className: "ddt-card ddt-loading dim-surfaceCard dim-specialView", "aria-busy": "true" },
-      h2("div", { className: "ddt-spinner dim-spinner" }),
-      h2("h3", null, "QQ \u5DF2\u6388\u6743\uFF0C\u6B63\u5728\u8FDE\u63A5\u673A\u5668\u4EBA"),
-      h2("p", null, "\u51ED\u636E\u6B63\u5728\u5199\u5165\u672C\u673A\uFF0C\u5E76\u542F\u52A8 QQ WebSocket \u6D88\u606F\u8FDE\u63A5\u3002")
+      h("div", { className: "ddt-spinner dim-spinner" }),
+      h("h3", null, "QQ \u5DF2\u6388\u6743\uFF0C\u6B63\u5728\u8FDE\u63A5\u673A\u5668\u4EBA"),
+      h("p", null, "\u51ED\u636E\u6B63\u5728\u5199\u5165\u672C\u673A\uFF0C\u5E76\u542F\u52A8 QQ WebSocket \u6D88\u606F\u8FDE\u63A5\u3002")
     );
   }
   const error = provision.error ?? { code: "QQ_PROVISION_FAILED", message: "QQ \u673A\u5668\u4EBA\u6CA1\u6709\u7ED1\u5B9A\u5B8C\u6210" };
-  return h2(
+  return h(
     "div",
     { className: "ddt-card dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "ddt-inlineError dim-inlineError", role: "alert" },
-      h2("h3", null, "QQ \u673A\u5668\u4EBA\u6CA1\u6709\u7ED1\u5B9A\u5B8C\u6210"),
-      h2("p", null, error.message),
-      h2("span", { className: "ddt-errorCode" }, error.code),
-      h2(
+      h("h3", null, "QQ \u673A\u5668\u4EBA\u6CA1\u6709\u7ED1\u5B9A\u5B8C\u6210"),
+      h("p", null, error.message),
+      h("span", { className: "ddt-errorCode" }, error.code),
+      h(
         "div",
         { className: "ddt-actions dim-viewActions" },
-        h2(Button7, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
-        h2(Button7, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
+        h(Button7, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
+        h(Button7, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
       )
     )
   );
 }
-function RemoveConfirmation3({ account, busy, onConfirm, onCancel }) {
-  return h2(
-    "div",
-    { className: "ddt-confirm dim-confirm", role: "alertdialog" },
-    h2("strong", null, `\u4ECE DeepSeek Harness \u79FB\u9664\u201C${account.bot.name}\u201D\uFF1F`),
-    h2("p", null, "\u8FD9\u4F1A\u505C\u6B62\u6D88\u606F\u8FDE\u63A5\uFF0C\u5E76\u5220\u9664\u672C\u673A\u4FDD\u5B58\u7684\u5E94\u7528\u51ED\u636E\u3001\u673A\u5668\u4EBA\u914D\u7F6E\u53CA\u4F1A\u8BDD\u6620\u5C04\u3002\u817E\u8BAF\u5E73\u53F0\u4E2D\u7684\u673A\u5668\u4EBA\u4E0D\u4F1A\u88AB\u81EA\u52A8\u5220\u9664\u3002"),
-    h2(
+function RemoveConfirmation3({ account, busy, error, feedbackSequence, onConfirm, onCancel }) {
+  return h(
+    ConfirmDialog,
+    { className: "ddt-confirm dim-confirm", role: "alertdialog", onClose: onCancel, busy: Boolean(busy), error, feedbackSequence },
+    h("strong", null, `\u4ECE DeepSeek Harness \u79FB\u9664\u201C${account.bot.name}\u201D\uFF1F`),
+    h("p", null, "\u8FD9\u4F1A\u505C\u6B62\u6D88\u606F\u8FDE\u63A5\uFF0C\u5E76\u5220\u9664\u672C\u673A\u4FDD\u5B58\u7684\u5E94\u7528\u51ED\u636E\u3001\u673A\u5668\u4EBA\u914D\u7F6E\u53CA\u4F1A\u8BDD\u6620\u5C04\u3002\u817E\u8BAF\u5E73\u53F0\u4E2D\u7684\u673A\u5668\u4EBA\u4E0D\u4F1A\u88AB\u81EA\u52A8\u5220\u9664\u3002"),
+    h(
       "div",
       { className: "ddt-actions dim-viewActions" },
-      h2(Button7, { onClick: onCancel, disabled: busy }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
-      h2(Button7, { kind: "danger", onClick: onConfirm, disabled: busy }, busy ? "\u6B63\u5728\u79FB\u9664\u2026" : "\u786E\u8BA4\u79FB\u9664\u63A5\u5165")
+      h(Button7, { onClick: onCancel, disabled: busy }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
+      h(Button7, { kind: "danger", onClick: onConfirm, disabled: busy, loading: busy }, "\u786E\u8BA4\u79FB\u9664\u63A5\u5165")
     )
   );
 }
@@ -6297,6 +6397,8 @@ function AccountCard2({
   busy,
   feedback,
   removing,
+  removeError,
+  removeFeedbackSequence,
   onReconnect,
   onWorkspaceSave,
   onAgentPresetSave,
@@ -6307,27 +6409,27 @@ function AccountCard2({
   const tone = account.connected ? "success" : account.state === "error" ? "error" : "warning";
   const stateLabel2 = account.connected ? "\u8FD0\u884C\u6B63\u5E38" : account.state === "connecting" ? "\u6B63\u5728\u8FDE\u63A5" : "\u8FDE\u63A5\u672A\u5C31\u7EEA";
   const summary = account.error?.message ?? (account.connected ? null : account.health.summary);
-  return h2(
+  return h(
     "article",
     { className: "ddt-card dim-botCard", "data-bot-id": account.botId },
-    h2(
+    h(
       "div",
       { className: "ddt-cardBody dim-botCardBody" },
-      h2(
+      h(
         "div",
         { className: "ddt-accountTop dim-botCardTop" },
-        h2(
+        h(
           "div",
           { className: "ddt-accountIdentity dim-botIdentity" },
-          h2("div", { className: "ddt-avatar dim-botAvatar dqq-avatar", "aria-hidden": "true" }, h2(QqLogoGlyph, { size: 29 })),
-          h2(
+          h("div", { className: "ddt-avatar dim-botAvatar dqq-avatar", "aria-hidden": "true" }, h(QqLogoGlyph, { size: 29 })),
+          h(
             "div",
             { className: "dim-botName" },
-            h2("h3", null, account.bot.name),
-            h2("p", null, account.bot.appIdMasked)
+            h("h3", null, account.bot.name),
+            h("p", null, account.bot.appIdMasked)
           )
         ),
-        h2(BotStatusMeta, {
+        h(BotStatusMeta, {
           className: "ddt-health",
           dotClassName: "ddt-dot",
           tone,
@@ -6336,69 +6438,69 @@ function AccountCard2({
           formatCheckedTime: checkedTime3
         })
       ),
-      h2(WorkspaceEditor, {
+      h(WorkspaceEditor, {
         workspace: account.workspace,
         disabled: Boolean(busy),
         onSave: onWorkspaceSave
       }),
-      h2(AgentPresetEditor, {
+      h(AgentPresetEditor, {
         agentPreset: account.agentPreset,
         disabled: Boolean(busy),
         onSave: onAgentPresetSave
       }),
-      h2(
+      h(
         "div",
         { className: "ddt-accountFooter dim-cardFooter" },
-        h2(
+        h(
           "div",
           { className: "dim-cardFooterLayout" },
-          h2(
+          h(
             "div",
             { className: "ddt-actions dim-cardActions" },
-            h2(Button7, { className: "dim-cardAction", onClick: onReconnect, disabled: Boolean(busy) }, busy === "reconnect" ? "\u68C0\u67E5\u4E2D\u2026" : account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"),
-            h2(Button7, { className: "dim-cardAction", kind: "danger", onClick: onRequestRemove, disabled: Boolean(busy) }, "\u79FB\u9664\u63A5\u5165")
+            h(Button7, { className: "dim-cardAction", onClick: onReconnect, disabled: Boolean(busy), loading: busy === "reconnect" }, account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"),
+            h(Button7, { className: "dim-cardAction", kind: "danger", onClick: onRequestRemove, disabled: Boolean(busy) }, "\u79FB\u9664\u63A5\u5165")
           ),
-          summary ? h2("div", { className: "ddt-summary dim-cardSummary" }, summary) : null,
-          account.lastMessageError ? h2(LastMessageErrorSummary, {
+          summary ? h("div", { className: "ddt-summary dim-cardSummary" }, summary) : null,
+          account.lastMessageError ? h(LastMessageErrorSummary, {
             className: "ddt-summary",
             error: account.lastMessageError
           }) : null,
-          feedback ? h2("div", {
-            className: "ddt-summary dim-cardFeedback",
-            role: "status",
-            "aria-live": "polite"
-          }, feedback) : null
+          feedback ? h(FeedbackToast, { text: feedback }) : null
         )
       )
     ),
-    removing ? h2(RemoveConfirmation3, {
+    removing ? h(RemoveConfirmation3, {
       account,
       busy: busy === "delete",
+      error: removeError,
+      feedbackSequence: removeFeedbackSequence,
       onConfirm: onConfirmRemove,
       onCancel: onCancelRemove
     }) : null
   );
 }
 function QqSettingsTab({ rpcCall }) {
-  const [model, setModel] = React13.useState({
+  const [model, setModel] = React14.useState({
     phase: "loading",
     bots: [],
     totals: { configured: 0, connected: 0 },
     error: null,
     agentPresetCatalog: EMPTY_AGENT_PRESET_CATALOG
   });
-  const [provision, setProvision] = React13.useState(null);
-  const [busy, setBusy] = React13.useState(false);
-  const [busyByBot, setBusyByBot] = React13.useState({});
-  const [feedbackByBot, setFeedbackByBot] = React13.useState({});
-  const [removeTarget, setRemoveTarget] = React13.useState(null);
-  const [credentialOpen, setCredentialOpen] = React13.useState(false);
-  const [credentialError, setCredentialError] = React13.useState(null);
-  const [now, setNow] = React13.useState(Date.now());
-  const mounted = React13.useRef(true);
+  const [provision, setProvision] = React14.useState(null);
+  const [busy, setBusy] = React14.useState(false);
+  const [busyByBot, setBusyByBot] = React14.useState({});
+  const [feedbackByBot, setFeedbackByBot] = React14.useState({});
+  const [removeTarget, setRemoveTarget] = React14.useState(null);
+  const [actionError, setActionError] = React14.useState(null);
+  const [removeErrorsByBot, setRemoveErrorsByBot] = React14.useState({});
+  const [credentialOpen, setCredentialOpen] = React14.useState(false);
+  const [credentialError, setCredentialError] = React14.useState(null);
+  const [now, setNow] = React14.useState(Date.now());
+  const mounted = React14.useRef(true);
   const workspaceFence = useWorkspaceSnapshotFence();
-  const addButtonRef = React13.useRef(null);
-  React13.useEffect(() => {
+  const addButtonRef = React14.useRef(null);
+  React14.useEffect(() => {
     const disposeDingtalk = installDingtalkStyles();
     const disposeQq = installQqStyles();
     mounted.current = true;
@@ -6408,11 +6510,11 @@ function QqSettingsTab({ rpcCall }) {
       disposeDingtalk();
     };
   }, []);
-  const invoke = React13.useCallback(async (endpoint, payload = {}, signal) => {
+  const invoke = React14.useCallback(async (endpoint, payload = {}, signal) => {
     if (typeof rpcCall !== "function") throw new TypeError("QQ \u8BBE\u7F6E\u9875\u7F3A\u5C11 RPC \u8FDE\u63A5");
     return unwrapRpcResult4(await rpcCall(endpoint, payload, signal));
   }, [rpcCall]);
-  const loadStatus = React13.useCallback(async ({ signal, silent = false, restore = false } = {}) => {
+  const loadStatus = React14.useCallback(async ({ signal, silent = false, restore = false } = {}) => {
     const workspaceVersion = workspaceFence.beginStatus();
     if (workspaceVersion === null) return void 0;
     if (!silent && mounted.current) setModel((current) => ({ ...current, phase: "loading", error: null }));
@@ -6438,12 +6540,12 @@ function QqSettingsTab({ rpcCall }) {
       return void 0;
     }
   }, [invoke, workspaceFence]);
-  React13.useEffect(() => {
+  React14.useEffect(() => {
     const controller = new AbortController();
     void loadStatus({ signal: controller.signal, restore: true });
     return () => controller.abort();
   }, [loadStatus]);
-  React13.useEffect(() => {
+  React14.useEffect(() => {
     if (model.phase !== "ready") return void 0;
     const controller = new AbortController();
     const timer = window.setInterval(() => void loadStatus({ signal: controller.signal, silent: true }), 15e3);
@@ -6452,12 +6554,12 @@ function QqSettingsTab({ rpcCall }) {
       window.clearInterval(timer);
     };
   }, [loadStatus, model.phase]);
-  React13.useEffect(() => {
+  React14.useEffect(() => {
     if (!provision || !ACTIVE_STATES.has(provision.status)) return void 0;
     const timer = window.setInterval(() => mounted.current && setNow(Date.now()), 1e3);
     return () => window.clearInterval(timer);
   }, [provision?.attemptId, provision?.status]);
-  const startProvisioning = React13.useCallback(async (replace = false) => {
+  const startProvisioning = React14.useCallback(async (replace = false) => {
     setCredentialOpen(false);
     setCredentialError(null);
     setBusy(true);
@@ -6475,7 +6577,7 @@ function QqSettingsTab({ rpcCall }) {
       if (mounted.current) setBusy(false);
     }
   }, [invoke, provision?.attemptId]);
-  const bindCredentials = React13.useCallback(async ({ identity, secret }) => {
+  const bindCredentials = React14.useCallback(async ({ identity, secret }) => {
     const snapshotVersion = workspaceFence.beginMutation();
     setBusy(true);
     setCredentialError(null);
@@ -6503,18 +6605,26 @@ function QqSettingsTab({ rpcCall }) {
       if (mounted.current) setBusy(false);
     }
   }, [invoke, loadStatus, workspaceFence]);
-  const closeProvision = React13.useCallback(async () => {
+  const closeProvision = React14.useCallback(async () => {
     setBusy(true);
     try {
       if (provision?.attemptId && ACTIVE_STATES.has(provision.status)) {
         await invoke(QQ_ENDPOINTS.cancelProvisioning, { attemptId: provision.attemptId });
       }
-      if (mounted.current) setProvision(null);
+      if (mounted.current) {
+        setProvision(null);
+        setActionError(null);
+      }
+    } catch (cause) {
+      if (mounted.current) setActionError((current) => ({
+        message: cause?.message ?? "\u64CD\u4F5C\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002",
+        sequence: (current?.sequence ?? 0) + 1
+      }));
     } finally {
       if (mounted.current) setBusy(false);
     }
   }, [invoke, provision?.attemptId, provision?.status]);
-  React13.useEffect(() => {
+  React14.useEffect(() => {
     const attemptId = provision?.attemptId;
     if (!attemptId || !ACTIVE_STATES.has(provision.status)) return void 0;
     const controller = new AbortController();
@@ -6544,7 +6654,7 @@ function QqSettingsTab({ rpcCall }) {
       window.clearTimeout(timer);
     };
   }, [invoke, loadStatus, provision?.attemptId, provision?.pollIntervalMs, provision?.status]);
-  const botAction = React13.useCallback(async (account, operation, endpoint, payload) => {
+  const botAction = React14.useCallback(async (account, operation, endpoint, payload) => {
     const snapshotVersion = workspaceFence.beginMutation();
     setBusyByBot((current) => ({ ...current, [account.botId]: operation }));
     try {
@@ -6569,7 +6679,7 @@ function QqSettingsTab({ rpcCall }) {
       });
     }
   }, [invoke, loadStatus, workspaceFence]);
-  const reconnect = React13.useCallback(async (account) => {
+  const reconnect = React14.useCallback(async (account) => {
     setFeedbackByBot((current) => {
       const next = { ...current };
       delete next[account.botId];
@@ -6598,33 +6708,35 @@ function QqSettingsTab({ rpcCall }) {
     }
   }, [botAction]);
   let provisionView = null;
-  if (provision?.status === "starting") provisionView = h2("div", { className: "ddt-card ddt-loading dim-surfaceCard" }, h2("div", { className: "ddt-spinner" }), "\u6B63\u5728\u7533\u8BF7 QQ \u4E8C\u7EF4\u7801\u2026");
-  else if (["pending", "refreshing"].includes(provision?.status)) provisionView = h2(QrPanel2, {
+  if (provision?.status === "starting") provisionView = h("div", { className: "ddt-card ddt-loading dim-surfaceCard" }, h("div", { className: "ddt-spinner" }), "\u6B63\u5728\u7533\u8BF7 QQ \u4E8C\u7EF4\u7801\u2026");
+  else if (["pending", "refreshing"].includes(provision?.status)) provisionView = h(QrPanel2, {
     provision,
     now,
     busy,
     onRefresh: () => void startProvisioning(true),
     onCancel: () => void closeProvision()
   });
-  else if (provision) provisionView = h2(ProvisionView, {
+  else if (provision) provisionView = h(ProvisionView, {
     provision,
     busy,
     onRetry: () => void startProvisioning(true),
     onClose: () => void closeProvision()
   });
-  const botList = model.bots.length > 0 ? h2(
+  const botList = model.bots.length > 0 ? h(
     "section",
     { className: "dim-listSection" },
-    h2(ChannelListHeading, {
+    h(ChannelListHeading, {
       className: "ddt-listHeading",
       title: "\u5DF2\u7ED1\u5B9A\u7684 QQ \u673A\u5668\u4EBA",
       connectionLabel: "WebSocket \u957F\u8FDE\u63A5"
     }),
-    h2("ul", { className: "ddt-list dim-botList" }, model.bots.map((account) => h2("li", { key: account.botId }, h2(AccountCard2, {
+    h("ul", { className: "ddt-list dim-botList" }, model.bots.map((account) => h("li", { key: account.botId }, h(AccountCard2, {
       account,
       busy: busyByBot[account.botId],
       feedback: feedbackByBot[account.botId],
       removing: removeTarget === account.botId,
+      removeError: removeErrorsByBot[account.botId]?.message,
+      removeFeedbackSequence: removeErrorsByBot[account.botId]?.sequence,
       onReconnect: () => void reconnect(account),
       onWorkspaceSave: (workspace) => botAction(
         account,
@@ -6641,12 +6753,29 @@ function QqSettingsTab({ rpcCall }) {
       onRequestRemove: () => setRemoveTarget(account.botId),
       onCancelRemove: () => setRemoveTarget(null),
       onConfirmRemove: async () => {
-        await botAction(account, "delete", QQ_ENDPOINTS.deleteBot, { botId: account.botId, confirm: true });
-        if (mounted.current) setRemoveTarget(null);
+        try {
+          await botAction(account, "delete", QQ_ENDPOINTS.deleteBot, { botId: account.botId, confirm: true });
+          if (mounted.current) {
+            setRemoveTarget(null);
+            setRemoveErrorsByBot((current) => {
+              const next = { ...current };
+              delete next[account.botId];
+              return next;
+            });
+          }
+        } catch (cause) {
+          if (mounted.current) setRemoveErrorsByBot((current) => ({
+            ...current,
+            [account.botId]: {
+              message: cause?.message ?? "\u79FB\u9664\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5\u3002",
+              sequence: (current[account.botId]?.sequence ?? 0) + 1
+            }
+          }));
+        }
       }
     }))))
   ) : null;
-  const credentialView = credentialOpen ? h2(CredentialBindingPanel, {
+  const credentialView = credentialOpen ? h(CredentialBindingPanel, {
     channel: "QQ",
     identityLabel: "AppID",
     identityPlaceholder: "\u586B\u5199 QQ \u5F00\u653E\u5E73\u53F0 AppID",
@@ -6660,12 +6789,14 @@ function QqSettingsTab({ rpcCall }) {
       setCredentialError(null);
     }
   }) : null;
-  return h2(AgentPresetCatalogContext.Provider, {
+  return h(AgentPresetCatalogContext.Provider, {
     value: model.agentPresetCatalog ?? EMPTY_AGENT_PRESET_CATALOG
-  }, h2(
+  }, h(
     "section",
     { className: "ddt-page dqq-page dim-channelPage", "aria-label": "QQ \u8BBE\u7F6E" },
-    h2(Heading3, {
+    actionError ? h(FeedbackToast, { text: actionError.message, tone: "error", sequence: actionError.sequence }) : null,
+    Object.entries(removeErrorsByBot).map(([botId, failure]) => botId !== removeTarget ? h(FeedbackToast, { key: botId, text: failure.message, tone: "error", sequence: failure.sequence }) : null),
+    h(Heading3, {
       totals: model.totals,
       adding: Boolean(provision),
       busy,
@@ -6677,12 +6808,12 @@ function QqSettingsTab({ rpcCall }) {
       credentialOpen,
       addButtonRef
     }),
-    model.phase === "loading" ? h2(LoadingView3) : model.phase === "error" ? h2("div", { className: "ddt-card dim-surfaceCard" }, h2("div", { className: "ddt-inlineError dim-inlineError" }, h2("h3", null, "\u65E0\u6CD5\u8BFB\u53D6 QQ \u673A\u5668\u4EBA\u72B6\u6001"), h2("p", null, model.error?.message), h2(Button7, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6"))) : h2(
-      React13.Fragment,
+    model.phase === "loading" ? h(LoadingView3) : model.phase === "error" ? h("div", { className: "ddt-card dim-surfaceCard" }, h("div", { className: "ddt-inlineError dim-inlineError" }, h("h3", null, "\u65E0\u6CD5\u8BFB\u53D6 QQ \u673A\u5668\u4EBA\u72B6\u6001"), h("p", null, model.error?.message), h(Button7, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6"))) : h(
+      React14.Fragment,
       null,
       credentialView,
       provisionView,
-      model.bots.length === 0 && !provision && !credentialOpen ? h2(EmptyView3, { busy, onStart: () => void startProvisioning() }) : null,
+      model.bots.length === 0 && !provision && !credentialOpen ? h(EmptyView3, { busy, onStart: () => void startProvisioning() }) : null,
       botList
     )
   ));
@@ -6767,9 +6898,9 @@ function normalizeOfficeStatus(value) {
 }
 
 // plugin-src/client/channels/office/index.js
-var React14 = __toESM(require("react"), 1);
+var React15 = __toESM(require("react"), 1);
 function Button9({ children, kind = "secondary", ...props }) {
-  return h2("button", { ...props, type: "button", className: "ddt-button", "data-kind": kind }, children);
+  return h(ActionButton, { ...props, type: "button", className: "ddt-button", "data-kind": kind }, children);
 }
 function mapText(value) {
   return Object.entries(value ?? {}).map(([key, item]) => `${key}=${item}`).join("\n");
@@ -6796,12 +6927,13 @@ function stateLabel(model) {
   return "\u5DF2\u914D\u7F6E";
 }
 function OfficeSettingsTab({ rpcCall, initialStatus }) {
-  const [model, setModel] = React14.useState(normalizeOfficeStatus(initialStatus));
-  const [phase, setPhase] = React14.useState(initialStatus === void 0 ? "loading" : "ready");
-  const [busy, setBusy] = React14.useState("");
-  const [error, setError] = React14.useState("");
-  const [notice, setNotice] = React14.useState("");
-  const [form, setForm] = React14.useState({
+  const [model, setModel] = React15.useState(normalizeOfficeStatus(initialStatus));
+  const [phase, setPhase] = React15.useState(initialStatus === void 0 ? "loading" : "ready");
+  const [busy, setBusy] = React15.useState("");
+  const [feedbackSequence, setFeedbackSequence] = React15.useState(0);
+  const [error, setError] = React15.useState("");
+  const [notice, setNotice] = React15.useState("");
+  const [form, setForm] = React15.useState({
     baseUrl: "",
     deviceId: "local-harness",
     deviceToken: "",
@@ -6810,11 +6942,11 @@ function OfficeSettingsTab({ rpcCall, initialStatus }) {
     workspaces: "",
     instructionPresets: ""
   });
-  const invoke = React14.useCallback(async (endpoint, payload = {}) => {
+  const invoke = React15.useCallback(async (endpoint, payload = {}) => {
     if (typeof rpcCall !== "function") throw new Error("AI Office \u8BBE\u7F6E\u9875\u7F3A\u5C11 RPC \u8FDE\u63A5");
     return unwrapOfficeRpc(await rpcCall(endpoint, payload));
   }, [rpcCall]);
-  const adopt = React14.useCallback((value) => {
+  const adopt = React15.useCallback((value) => {
     const next = normalizeOfficeStatus(value?.snapshot ?? value);
     setModel(next);
     if (next.config) setForm((current) => ({
@@ -6829,7 +6961,7 @@ function OfficeSettingsTab({ rpcCall, initialStatus }) {
     }));
     return next;
   }, []);
-  const load = React14.useCallback(async () => {
+  const load = React15.useCallback(async () => {
     try {
       adopt(await invoke(OFFICE_RPC_ENDPOINTS.status));
       setPhase("ready");
@@ -6839,24 +6971,36 @@ function OfficeSettingsTab({ rpcCall, initialStatus }) {
       setError(caught.message);
     }
   }, [adopt, invoke]);
-  React14.useEffect(() => {
+  React15.useEffect(() => {
     void load();
   }, [load]);
   const run = async (name2, operation) => {
+    if (busy) return;
+    setFeedbackSequence((current) => current + 1);
     setBusy(name2);
     setError("");
     setNotice("");
     try {
       const value = await operation();
-      adopt(value);
-      setNotice(name2 === "test" ? "\u8FDE\u63A5\u6D4B\u8BD5\u901A\u8FC7\u3002" : "\u914D\u7F6E\u5DF2\u4FDD\u5B58\u3002");
+      const next = adopt(value);
+      if (name2 === "test") {
+        if (value?.tested !== true) throw new Error("\u8FDE\u63A5\u6D4B\u8BD5\u672A\u786E\u8BA4\u5B8C\u6210\u3002");
+        setNotice("\u8FDE\u63A5\u6D4B\u8BD5\u901A\u8FC7\u3002");
+      } else if (name2 === "remove") {
+        if (next.configured) throw new Error("\u8FDE\u63A5\u914D\u7F6E\u5C1A\u672A\u79FB\u9664\u3002");
+        setNotice("\u8FDE\u63A5\u5DF2\u79FB\u9664\u3002");
+      } else if (name2 === "reconnect") {
+        setNotice(next.connected ? "\u5DF2\u91CD\u65B0\u8FDE\u63A5 Office\u3002" : "\u5DF2\u53D1\u8D77\u91CD\u65B0\u8FDE\u63A5\uFF0COffice \u5C1A\u672A\u8FDE\u63A5\u3002");
+      } else {
+        setNotice(next.connected ? "\u914D\u7F6E\u5DF2\u4FDD\u5B58\uFF0COffice \u5DF2\u8FDE\u63A5\u3002" : "\u914D\u7F6E\u5DF2\u4FDD\u5B58\uFF0COffice \u5C1A\u672A\u8FDE\u63A5\u3002");
+      }
     } catch (caught) {
       setError(caught.message);
     } finally {
       setBusy("");
     }
   };
-  const hooks = React14.useMemo(() => {
+  const hooks = React15.useMemo(() => {
     try {
       return officeHookUrls(form.baseUrl);
     } catch {
@@ -6864,95 +7008,94 @@ function OfficeSettingsTab({ rpcCall, initialStatus }) {
     }
   }, [form.baseUrl]);
   const health = model.health ?? {};
-  if (phase === "loading") return h2("div", { className: "ddt-card ddt-loading", "aria-busy": "true" }, "\u6B63\u5728\u8BFB\u53D6 AI Office Connector\u2026");
-  return h2(
+  const feedbackError = error || health.error?.message;
+  if (phase === "loading") return h("div", { className: "ddt-card ddt-loading", "aria-busy": "true" }, "\u6B63\u5728\u8BFB\u53D6 AI Office Connector\u2026");
+  return h(
     "section",
     { className: "dof-page", "aria-label": "AI Office \u8BBE\u7F6E" },
-    h2(
+    h(
       "div",
       { className: "dof-hero" },
-      h2(
+      h(
         "div",
         { className: "dof-heroCopy" },
-        h2("h3", null, "AI Office Connector"),
-        h2("p", null, "\u672C\u673A\u4E3B\u52A8\u8FDE\u63A5\u516C\u7F51 Office\uFF1BHarness \u4E0D\u5F00\u653E\u7AEF\u53E3\u3002\u534F\u8BAE Hook \u56FA\u5B9A\u4E3A ", OFFICE_PROTOCOL_VERSION, "\u3002")
+        h("h3", null, "AI Office Connector"),
+        h("p", null, "\u672C\u673A\u4E3B\u52A8\u8FDE\u63A5\u516C\u7F51 Office\uFF1BHarness \u4E0D\u5F00\u653E\u7AEF\u53E3\u3002\u534F\u8BAE Hook \u56FA\u5B9A\u4E3A ", OFFICE_PROTOCOL_VERSION, "\u3002")
       ),
-      h2(
+      h(
         "span",
         { className: "dof-status", "data-connected": String(model.connected) },
-        h2("span", { className: "dof-dot" }),
+        h("span", { className: "dof-dot" }),
         stateLabel(model)
       )
     ),
-    model.configured ? h2(
+    model.configured ? h(
       "div",
       { className: "dof-metrics" },
-      h2("div", { className: "dof-metric" }, h2("span", null, "\u6700\u8FD1\u5FC3\u8DF3"), h2("strong", null, health.lastHeartbeatAt ?? "\u5C1A\u65E0")),
-      h2("div", { className: "dof-metric" }, h2("span", null, "\u6700\u8FD1\u4E8B\u4EF6"), h2("strong", null, health.lastEventType ?? "\u5C1A\u65E0")),
-      h2("div", { className: "dof-metric" }, h2("span", null, "\u91CD\u8FDE\u6B21\u6570"), h2("strong", null, String(health.reconnects ?? 0))),
-      h2("div", { className: "dof-metric" }, h2("span", null, "Job Offer"), h2("strong", null, String(health.jobsOffered ?? 0))),
-      h2("div", { className: "dof-metric" }, h2("span", null, "\u8FD0\u884C Job"), h2("strong", null, String(health.jobs?.running ?? 0))),
-      h2("div", { className: "dof-metric" }, h2("span", null, "\u5B8C\u6210 Job"), h2("strong", null, String(health.jobs?.completed ?? 0)))
+      h("div", { className: "dof-metric" }, h("span", null, "\u6700\u8FD1\u5FC3\u8DF3"), h("strong", null, health.lastHeartbeatAt ?? "\u5C1A\u65E0")),
+      h("div", { className: "dof-metric" }, h("span", null, "\u6700\u8FD1\u4E8B\u4EF6"), h("strong", null, health.lastEventType ?? "\u5C1A\u65E0")),
+      h("div", { className: "dof-metric" }, h("span", null, "\u91CD\u8FDE\u6B21\u6570"), h("strong", null, String(health.reconnects ?? 0))),
+      h("div", { className: "dof-metric" }, h("span", null, "Job Offer"), h("strong", null, String(health.jobsOffered ?? 0))),
+      h("div", { className: "dof-metric" }, h("span", null, "\u8FD0\u884C Job"), h("strong", null, String(health.jobs?.running ?? 0))),
+      h("div", { className: "dof-metric" }, h("span", null, "\u5B8C\u6210 Job"), h("strong", null, String(health.jobs?.completed ?? 0)))
     ) : null,
-    h2(
+    h(
       "div",
       { className: "dof-card" },
-      h2("div", { className: "dof-cardTitle" }, h2("h4", null, "\u8BBE\u5907\u8FDE\u63A5"), h2("span", null, "Token \u53EA\u5199\u5165\u672C\u673A\u51ED\u636E\u5B58\u50A8")),
-      h2(
+      h("div", { className: "dof-cardTitle" }, h("h4", null, "\u8BBE\u5907\u8FDE\u63A5"), h("span", null, "Token \u53EA\u5199\u5165\u672C\u673A\u51ED\u636E\u5B58\u50A8")),
+      h(
         "div",
         { className: "dof-grid" },
-        h2(
+        h(
           "label",
           { className: "dof-field", "data-wide": "true" },
           "Office Base URL",
-          h2("input", { value: form.baseUrl, placeholder: "https://office.example.com", onChange: (event) => setForm({ ...form, baseUrl: event.target.value }) })
+          h("input", { value: form.baseUrl, placeholder: "https://office.example.com", onChange: (event) => setForm({ ...form, baseUrl: event.target.value }) })
         ),
-        h2(
+        h(
           "label",
           { className: "dof-field" },
           "Device ID",
-          h2("input", { value: form.deviceId, placeholder: "local-harness", onChange: (event) => setForm({ ...form, deviceId: event.target.value }) })
+          h("input", { value: form.deviceId, placeholder: "local-harness", onChange: (event) => setForm({ ...form, deviceId: event.target.value }) })
         ),
-        h2(
+        h(
           "label",
           { className: "dof-field" },
           "Device Token",
-          h2("input", { type: "password", value: form.deviceToken, placeholder: model.tokenConfigured ? "\u5DF2\u5B89\u5168\u4FDD\u5B58\uFF1B\u7559\u7A7A\u4FDD\u6301\u4E0D\u53D8" : "\u7C98\u8D34 Office \u4E00\u6B21\u6027\u51ED\u636E", autoComplete: "new-password", onChange: (event) => setForm({ ...form, deviceToken: event.target.value }) })
+          h("input", { type: "password", value: form.deviceToken, placeholder: model.tokenConfigured ? "\u5DF2\u5B89\u5168\u4FDD\u5B58\uFF1B\u7559\u7A7A\u4FDD\u6301\u4E0D\u53D8" : "\u7C98\u8D34 Office \u4E00\u6B21\u6027\u51ED\u636E", autoComplete: "new-password", onChange: (event) => setForm({ ...form, deviceToken: event.target.value }) })
         ),
-        h2(
+        h(
           "label",
           { className: "dof-field" },
           "\u6700\u5927\u5E76\u53D1",
-          h2("input", { type: "number", min: 1, max: 4, value: form.maxConcurrency, onChange: (event) => setForm({ ...form, maxConcurrency: event.target.value }) })
+          h("input", { type: "number", min: 1, max: 4, value: form.maxConcurrency, onChange: (event) => setForm({ ...form, maxConcurrency: event.target.value }) })
         ),
-        h2(
+        h(
           "label",
           { className: "dof-field" },
           "Heartbeat \u79D2\u6570",
-          h2("input", { type: "number", min: 10, max: 300, value: form.heartbeatSeconds, onChange: (event) => setForm({ ...form, heartbeatSeconds: event.target.value }) })
+          h("input", { type: "number", min: 10, max: 300, value: form.heartbeatSeconds, onChange: (event) => setForm({ ...form, heartbeatSeconds: event.target.value }) })
         ),
-        h2(
+        h(
           "label",
           { className: "dof-field", "data-wide": "true" },
           "Workspace \u6620\u5C04",
-          h2("textarea", { value: form.workspaces, placeholder: "office-project=/Users/you/projects/ai-office", onChange: (event) => setForm({ ...form, workspaces: event.target.value }) }),
-          h2("small", null, "\u6BCF\u884C alias=/\u672C\u673A/\u7EDD\u5BF9\u8DEF\u5F84\uFF1BOffice \u53EA\u80FD\u770B\u5230 alias\u3002")
+          h("textarea", { value: form.workspaces, placeholder: "office-project=/Users/you/projects/ai-office", onChange: (event) => setForm({ ...form, workspaces: event.target.value }) }),
+          h("small", null, "\u6BCF\u884C alias=/\u672C\u673A/\u7EDD\u5BF9\u8DEF\u5F84\uFF1BOffice \u53EA\u80FD\u770B\u5230 alias\u3002")
         ),
-        h2(
+        h(
           "label",
           { className: "dof-field", "data-wide": "true" },
           "Instruction Preset \u6620\u5C04",
-          h2("textarea", { value: form.instructionPresets, placeholder: "action-items=\u8F6C\u6362\u4E3A\u8D1F\u8D23\u4EBA\u3001\u622A\u6B62\u548C\u9A8C\u6536\u660E\u786E\u7684\u5DE5\u5355", onChange: (event) => setForm({ ...form, instructionPresets: event.target.value }) }),
-          h2("small", null, "\u6BCF\u884C alias=\u6307\u4EE4\uFF1B\u65B0\u589E preset \u4E0D\u9700\u8981\u6539 Office \u4EE3\u7801\u3002")
+          h("textarea", { value: form.instructionPresets, placeholder: "action-items=\u8F6C\u6362\u4E3A\u8D1F\u8D23\u4EBA\u3001\u622A\u6B62\u548C\u9A8C\u6536\u660E\u786E\u7684\u5DE5\u5355", onChange: (event) => setForm({ ...form, instructionPresets: event.target.value }) }),
+          h("small", null, "\u6BCF\u884C alias=\u6307\u4EE4\uFF1B\u65B0\u589E preset \u4E0D\u9700\u8981\u6539 Office \u4EE3\u7801\u3002")
         )
       ),
-      error ? h2("p", { className: "dof-error", role: "alert" }, error) : null,
-      notice ? h2("p", { className: "dof-notice", role: "status" }, notice) : null,
-      health.error?.message ? h2("p", { className: "dof-error" }, health.error.message) : null,
-      h2(
+      feedbackError ? h(FeedbackToast, { text: feedbackError, tone: "error", sequence: feedbackSequence }) : notice ? h(FeedbackToast, { text: notice, holdMs: 6e3 }) : null,
+      h(
         "div",
         { className: "dof-actions" },
-        h2(Button9, { kind: "primary", disabled: Boolean(busy), onClick: () => void run("save", () => invoke(OFFICE_RPC_ENDPOINTS.configure, {
+        h(Button9, { kind: "primary", disabled: Boolean(busy), onClick: () => void run("save", () => invoke(OFFICE_RPC_ENDPOINTS.configure, {
           baseUrl: form.baseUrl,
           deviceId: form.deviceId,
           ...form.deviceToken ? { deviceToken: form.deviceToken } : {},
@@ -6960,23 +7103,23 @@ function OfficeSettingsTab({ rpcCall, initialStatus }) {
           heartbeatSeconds: Number(form.heartbeatSeconds),
           workspaces: parseMap(form.workspaces, "Workspace \u6620\u5C04"),
           instructionPresets: parseMap(form.instructionPresets, "Instruction Preset \u6620\u5C04")
-        })) }, busy === "save" ? "\u4FDD\u5B58\u4E2D\u2026" : "\u4FDD\u5B58\u5E76\u8FDE\u63A5"),
-        h2(Button9, { disabled: !model.configured || Boolean(busy), onClick: () => void run("test", () => invoke(OFFICE_RPC_ENDPOINTS.test)) }, busy === "test" ? "\u6D4B\u8BD5\u4E2D\u2026" : "\u6D4B\u8BD5\u8FDE\u63A5"),
-        h2(Button9, { disabled: !model.configured || Boolean(busy), onClick: () => void run("reconnect", () => invoke(OFFICE_RPC_ENDPOINTS.reconnect)) }, "\u91CD\u65B0\u8FDE\u63A5"),
-        h2(Button9, { kind: "danger", disabled: !model.configured || Boolean(busy), onClick: () => void run("remove", () => invoke(OFFICE_RPC_ENDPOINTS.remove, { confirm: true })) }, "\u79FB\u9664\u8FDE\u63A5")
+        })), loading: busy === "save" }, "\u4FDD\u5B58\u5E76\u8FDE\u63A5"),
+        h(Button9, { disabled: !model.configured || Boolean(busy), onClick: () => void run("test", () => invoke(OFFICE_RPC_ENDPOINTS.test)), loading: busy === "test" }, "\u6D4B\u8BD5\u8FDE\u63A5"),
+        h(Button9, { disabled: !model.configured || Boolean(busy), loading: busy === "reconnect", onClick: () => void run("reconnect", () => invoke(OFFICE_RPC_ENDPOINTS.reconnect)) }, "\u91CD\u65B0\u8FDE\u63A5"),
+        h(Button9, { kind: "danger", disabled: !model.configured || Boolean(busy), loading: busy === "remove", onClick: () => void run("remove", () => invoke(OFFICE_RPC_ENDPOINTS.remove, { confirm: true })) }, "\u79FB\u9664\u8FDE\u63A5")
       )
     ),
-    h2(
+    h(
       "div",
       { className: "dof-card" },
-      h2("div", { className: "dof-cardTitle" }, h2("h4", null, "\u534F\u8BAE Hook \u9884\u89C8"), h2("span", null, "\u7531 Base URL \u81EA\u52A8\u6D3E\u751F\uFF0C\u4E0D\u5355\u72EC\u586B\u5199")),
-      h2(
+      h("div", { className: "dof-cardTitle" }, h("h4", null, "\u534F\u8BAE Hook \u9884\u89C8"), h("span", null, "\u7531 Base URL \u81EA\u52A8\u6D3E\u751F\uFF0C\u4E0D\u5355\u72EC\u586B\u5199")),
+      h(
         "div",
         { className: "dof-hooks" },
-        [["SSE", hooks.stream], ["Heartbeat", hooks.heartbeat], ["Job", hooks.job], ["Result", hooks.result]].map(([label, url]) => h2("div", { className: "dof-hook", key: label }, h2("strong", null, label), h2("code", null, url ?? "Base URL \u65E0\u6548")))
+        [["SSE", hooks.stream], ["Heartbeat", hooks.heartbeat], ["Job", hooks.job], ["Result", hooks.result]].map(([label, url]) => h("div", { className: "dof-hook", key: label }, h("strong", null, label), h("code", null, url ?? "Base URL \u65E0\u6548")))
       )
     ),
-    h2("p", { className: "dof-notice" }, "Office Hook \u5C1A\u672A\u90E8\u7F72\u65F6\uFF0C\u914D\u7F6E\u4F1A\u5B89\u5168\u4FDD\u5B58\u5E76\u81EA\u52A8\u91CD\u8BD5\uFF1B\u51FA\u73B0 HTTP 404 \u4EE3\u8868\u534F\u8BAE\u7AEF\u70B9\u5F85\u4E0A\u7EBF\uFF0C\u4E0D\u4EE3\u8868 Harness \u6545\u969C\u3002")
+    h("p", { className: "dof-notice" }, "Office Hook \u5C1A\u672A\u90E8\u7F72\u65F6\uFF0C\u914D\u7F6E\u4F1A\u5B89\u5168\u4FDD\u5B58\u5E76\u81EA\u52A8\u91CD\u8BD5\uFF1B\u51FA\u73B0 HTTP 404 \u4EE3\u8868\u534F\u8BAE\u7AEF\u70B9\u5F85\u4E0A\u7EBF\uFF0C\u4E0D\u4EE3\u8868 Harness \u6545\u969C\u3002")
   );
 }
 
@@ -7042,7 +7185,7 @@ var normalizeSnapshot4 = api2.normalizeSnapshot;
 var presentError5 = api2.presentError;
 
 // plugin-src/client/channels/slack/index.js
-var React15 = __toESM(require("react"), 1);
+var React16 = __toESM(require("react"), 1);
 
 // src/channels/slack/manifest.mjs
 var SLACK_APP_MANIFEST_YAML = `_metadata:
@@ -7117,17 +7260,26 @@ function installSlackStyles() {
 
 // plugin-src/client/channels/slack/index.js
 function SlackCredentialPanel({ busy, error, onSubmit, onCancel }) {
-  const [botToken, setBotToken] = React15.useState("");
-  const [appToken, setAppToken] = React15.useState("");
-  const [copied, setCopied] = React15.useState(false);
-  const headingId = React15.useId();
+  const [botToken, setBotToken] = React16.useState("");
+  const [appToken, setAppToken] = React16.useState("");
+  const [copied, setCopied] = React16.useState(false);
+  const [copying, setCopying] = React16.useState(false);
+  const [copyError, setCopyError] = React16.useState(null);
+  const headingId = React16.useId();
   const copyManifest = async () => {
+    if (copying) return;
+    setCopying(true);
+    setCopyError(null);
+    setCopied(false);
     try {
       await navigator.clipboard.writeText(SLACK_APP_MANIFEST_YAML);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2e3);
-    } catch {
+    } catch (cause) {
       setCopied(false);
+      setCopyError(cause?.message ?? "\u65E0\u6CD5\u5199\u5165\u526A\u8D34\u677F");
+    } finally {
+      setCopying(false);
     }
   };
   const submit = (event) => {
@@ -7137,32 +7289,35 @@ function SlackCredentialPanel({ busy, error, onSubmit, onCancel }) {
     if (!normalizedBotToken || !normalizedAppToken || busy) return;
     void onSubmit?.({ botToken: normalizedBotToken, appToken: normalizedAppToken });
   };
-  return h2(
+  return h(
     "section",
     {
       className: "ddt-card dim-surfaceCard dim-credentialPanel dsl-setup",
       "aria-labelledby": headingId
     },
-    h2("h3", { id: headingId, className: "dim-credentialTitle" }, "\u63A5\u5165 Slack \u673A\u5668\u4EBA"),
-    h2(
+    h("h3", { id: headingId, className: "dim-credentialTitle" }, "\u63A5\u5165 Slack \u673A\u5668\u4EBA"),
+    h(
       "div",
       { className: "dsl-guide" },
-      h2(
+      h(
         "div",
         { className: "dsl-guideCopy" },
-        h2("strong", null, "\u5148\u7528 Manifest \u521B\u5EFA\u5E76\u914D\u7F6E Slack App"),
-        h2("p", null, "\u590D\u5236\u914D\u7F6E\u540E\uFF0C\u5728 Slack \u9009\u62E9 From a manifest\uFF1B\u521B\u5EFA\u5B8C\u6210\u540E\u751F\u6210 connections:write App Token\uFF0C\u5E76\u5C06\u5E94\u7528\u5B89\u88C5\u5230\u5DE5\u4F5C\u533A\u3002")
+        h("strong", null, "\u5148\u7528 Manifest \u521B\u5EFA\u5E76\u914D\u7F6E Slack App"),
+        h("p", null, "\u590D\u5236\u914D\u7F6E\u540E\uFF0C\u5728 Slack \u9009\u62E9 From a manifest\uFF1B\u521B\u5EFA\u5B8C\u6210\u540E\u751F\u6210 connections:write App Token\uFF0C\u5E76\u5C06\u5E94\u7528\u5B89\u88C5\u5230\u5DE5\u4F5C\u533A\u3002")
       ),
-      h2(
+      h(
         "div",
         { className: "dsl-guideActions" },
-        h2("button", {
+        h(ActionButton, {
           type: "button",
           className: "ddt-button",
           onClick: () => void copyManifest(),
-          disabled: busy
-        }, copied ? h2("span", { className: "dsl-copyState" }, "\u5DF2\u590D\u5236 Manifest") : "\u590D\u5236 Manifest"),
-        h2("a", {
+          disabled: busy || copying,
+          loading: copying
+        }, "\u590D\u5236 Manifest"),
+        copied ? h(FeedbackToast, { text: "\u5DF2\u590D\u5236 Manifest", holdMs: 2e3 }) : null,
+        copyError ? h(FeedbackToast, { text: copyError, tone: "error" }) : null,
+        h("a", {
           className: "ddt-button",
           href: SLACK_CREATE_APP_URL,
           target: "_blank",
@@ -7170,17 +7325,17 @@ function SlackCredentialPanel({ busy, error, onSubmit, onCancel }) {
         }, "\u6253\u5F00 Slack \u521B\u5EFA\u9875")
       )
     ),
-    h2(
+    h(
       "form",
       { className: "dim-credentialForm dim-credentialFormSingle", onSubmit: submit },
-      h2(
+      h(
         "div",
         { className: "dsl-fields" },
-        h2(
+        h(
           "label",
           { className: "dim-credentialField" },
-          h2("span", null, "Bot Token"),
-          h2("input", {
+          h("span", null, "Bot Token"),
+          h("input", {
             type: "password",
             value: botToken,
             onChange: (event) => setBotToken(event.target.value),
@@ -7194,11 +7349,11 @@ function SlackCredentialPanel({ busy, error, onSubmit, onCancel }) {
             required: true
           })
         ),
-        h2(
+        h(
           "label",
           { className: "dim-credentialField" },
-          h2("span", null, "App Token"),
-          h2("input", {
+          h("span", null, "App Token"),
+          h("input", {
             type: "password",
             value: appToken,
             onChange: (event) => setAppToken(event.target.value),
@@ -7212,19 +7367,20 @@ function SlackCredentialPanel({ busy, error, onSubmit, onCancel }) {
             required: true
           })
         ),
-        h2("p", { className: "dsl-tokenHint" }, "Bot Token \u6765\u81EA OAuth & Permissions\uFF1BApp Token \u6765\u81EA Basic Information\uFF0C\u5E76\u4E14\u5FC5\u987B\u5305\u542B connections:write\u3002")
+        h("p", { className: "dsl-tokenHint" }, "Bot Token \u6765\u81EA OAuth & Permissions\uFF1BApp Token \u6765\u81EA Basic Information\uFF0C\u5E76\u4E14\u5FC5\u987B\u5305\u542B connections:write\u3002")
       ),
-      error ? h2("p", { className: "dim-credentialError", role: "alert" }, error.message ?? String(error)) : null,
-      h2(
+      error ? h(FeedbackToast, { text: error.message ?? String(error), tone: "error" }) : null,
+      h(
         "div",
         { className: "ddt-actions dim-viewActions dim-credentialActions" },
-        h2("button", {
+        h(ActionButton, {
           type: "submit",
           className: "ddt-button",
           "data-kind": "primary",
-          disabled: busy || !botToken.trim() || !appToken.trim()
-        }, busy ? "\u6B63\u5728\u9A8C\u8BC1\u5E76\u8FDE\u63A5\u2026" : "\u9A8C\u8BC1\u5E76\u8FDE\u63A5"),
-        h2("button", {
+          disabled: busy || !botToken.trim() || !appToken.trim(),
+          loading: busy
+        }, "\u9A8C\u8BC1\u5E76\u8FDE\u63A5"),
+        h("button", {
           type: "button",
           className: "ddt-button",
           onClick: onCancel,
@@ -7276,7 +7432,7 @@ var normalizeSnapshot5 = api3.normalizeSnapshot;
 var presentError6 = api3.presentError;
 
 // plugin-src/client/channels/telegram/index.js
-var React16 = __toESM(require("react"), 1);
+var React17 = __toESM(require("react"), 1);
 
 // plugin-src/client/channels/telegram/styles.js
 var TELEGRAM_STYLE_ID = "xmanrui-dsh-im-telegram-settings";
@@ -7344,11 +7500,11 @@ function allowedUsersFromText(value) {
 function TelegramAccessSettings({ account, busy = false, onSave }) {
   const policy = policyFor(account);
   const sourceUsers = policy.allowedUsers.join("\n");
-  const accessHelpId = React16.useId();
-  const [accessMode, setAccessMode] = React16.useState(policy.accessMode);
-  const [allowedUsers, setAllowedUsers] = React16.useState(sourceUsers);
-  const [error, setError] = React16.useState(null);
-  React16.useEffect(() => {
+  const accessHelpId = React17.useId();
+  const [accessMode, setAccessMode] = React17.useState(policy.accessMode);
+  const [allowedUsers, setAllowedUsers] = React17.useState(sourceUsers);
+  const [error, setError] = React17.useState(null);
+  React17.useEffect(() => {
     setAccessMode(policy.accessMode);
     setAllowedUsers(sourceUsers);
     setError(null);
@@ -7367,58 +7523,58 @@ function TelegramAccessSettings({ account, busy = false, onSave }) {
   const privateAllowlist = accessMode === "private-allowlist";
   const savedPrivateAllowlist = policy.accessMode === "private-allowlist";
   const emptyAllowlist = privateAllowlist && allowedUsers.trim() === "";
-  return h2(
+  return h(
     "form",
     { className: "dtg-access", onSubmit: save },
-    h2(
+    h(
       "div",
       { className: "dtg-accessHeading" },
-      h2("strong", null, "\u8BBF\u95EE\u8BBE\u7F6E"),
-      h2(
+      h("strong", null, "\u8BBF\u95EE\u8BBE\u7F6E"),
+      h(
         "span",
         { className: "dtg-accessStatus" },
-        h2(
+        h(
           "span",
           { className: "dtg-accessBadge", "data-mode": policy.accessMode },
           savedPrivateAllowlist ? "\u5DF2\u751F\u6548\uFF1A\u5B89\u5168\u6A21\u5F0F" : "\u5DF2\u751F\u6548\uFF1A\u517C\u5BB9\u6A21\u5F0F"
         ),
-        h2(
+        h(
           "span",
           { className: "dtg-accessHelp" },
-          h2("button", {
+          h("button", {
             type: "button",
             className: "dtg-accessHelpButton",
             "aria-label": "\u67E5\u770B Telegram \u8BBF\u95EE\u6A21\u5F0F\u8BF4\u660E",
             "aria-describedby": accessHelpId
-          }, h2("span", { "aria-hidden": "true" }, "?")),
-          h2(
+          }, h("span", { "aria-hidden": "true" }, "?")),
+          h(
             "span",
             {
               id: accessHelpId,
               className: "dtg-accessTooltip",
               role: "tooltip"
             },
-            h2(
+            h(
               "span",
               { className: "dtg-accessTooltipItem" },
-              h2("strong", null, "\u517C\u5BB9\u6A21\u5F0F"),
-              h2("span", null, "\u4FDD\u6301\u539F\u6709\u884C\u4E3A\uFF1A\u79C1\u804A\u76F4\u63A5\u54CD\u5E94\uFF0C\u7FA4\u804A\u5728\u88AB\u63D0\u53CA\u6216\u56DE\u590D\u65F6\u54CD\u5E94\u3002")
+              h("strong", null, "\u517C\u5BB9\u6A21\u5F0F"),
+              h("span", null, "\u4FDD\u6301\u539F\u6709\u884C\u4E3A\uFF1A\u79C1\u804A\u76F4\u63A5\u54CD\u5E94\uFF0C\u7FA4\u804A\u5728\u88AB\u63D0\u53CA\u6216\u56DE\u590D\u65F6\u54CD\u5E94\u3002")
             ),
-            h2(
+            h(
               "span",
               { className: "dtg-accessTooltipItem" },
-              h2("strong", null, "\u5B89\u5168\u6A21\u5F0F"),
-              h2("span", null, "\u7FA4\u804A\u5168\u90E8\u5FFD\u7565\uFF0C\u79C1\u804A\u4EC5\u5141\u8BB8\u767D\u540D\u5355\u7528\u6237\u3002")
+              h("strong", null, "\u5B89\u5168\u6A21\u5F0F"),
+              h("span", null, "\u7FA4\u804A\u5168\u90E8\u5FFD\u7565\uFF0C\u79C1\u804A\u4EC5\u5141\u8BB8\u767D\u540D\u5355\u7528\u6237\u3002")
             )
           )
         )
       )
     ),
-    h2(
+    h(
       "label",
       { className: "dtg-accessField" },
-      h2("span", null, "\u6A21\u5F0F"),
-      h2(
+      h("span", null, "\u6A21\u5F0F"),
+      h(
         "select",
         {
           value: accessMode,
@@ -7429,15 +7585,15 @@ function TelegramAccessSettings({ account, busy = false, onSave }) {
             setError(null);
           }
         },
-        h2("option", { value: "compatible" }, "\u517C\u5BB9\u6A21\u5F0F\uFF08\u9ED8\u8BA4\uFF09"),
-        h2("option", { value: "private-allowlist" }, "\u5B89\u5168\u6A21\u5F0F\uFF08\u79C1\u804A\u767D\u540D\u5355\uFF09")
+        h("option", { value: "compatible" }, "\u517C\u5BB9\u6A21\u5F0F\uFF08\u9ED8\u8BA4\uFF09"),
+        h("option", { value: "private-allowlist" }, "\u5B89\u5168\u6A21\u5F0F\uFF08\u79C1\u804A\u767D\u540D\u5355\uFF09")
       )
     ),
-    h2(
+    h(
       "label",
       { className: "dtg-accessField" },
-      h2("span", null, "\u5141\u8BB8\u79C1\u804A\u7684 Telegram User ID"),
-      h2("textarea", {
+      h("span", null, "\u5141\u8BB8\u79C1\u804A\u7684 Telegram User ID"),
+      h("textarea", {
         value: allowedUsers,
         disabled: busy || !privateAllowlist,
         rows: 3,
@@ -7448,23 +7604,24 @@ function TelegramAccessSettings({ account, busy = false, onSave }) {
           setError(null);
         }
       }),
-      h2("small", null, privateAllowlist ? "\u767D\u540D\u5355\u4EC5\u5C5E\u4E8E\u5F53\u524D\u673A\u5668\u4EBA\u3002" : "\u517C\u5BB9\u6A21\u5F0F\u4E0B\u6682\u4E0D\u4F7F\u7528\u767D\u540D\u5355\uFF0C\u5207\u6362\u6A21\u5F0F\u65F6\u4F1A\u4FDD\u7559\u3002")
+      h("small", null, privateAllowlist ? "\u767D\u540D\u5355\u4EC5\u5C5E\u4E8E\u5F53\u524D\u673A\u5668\u4EBA\u3002" : "\u517C\u5BB9\u6A21\u5F0F\u4E0B\u6682\u4E0D\u4F7F\u7528\u767D\u540D\u5355\uFF0C\u5207\u6362\u6A21\u5F0F\u65F6\u4F1A\u4FDD\u7559\u3002")
     ),
-    emptyAllowlist ? h2(
+    emptyAllowlist ? h(
       "p",
       { className: "dtg-accessWarning", role: "status" },
       "\u767D\u540D\u5355\u4E3A\u7A7A\uFF1B\u4FDD\u5B58\u540E\u8BE5\u673A\u5668\u4EBA\u4F1A\u62D2\u7EDD\u6240\u6709\u5165\u7AD9\u6D88\u606F\u3002"
     ) : null,
-    error ? h2("p", { className: "dtg-accessError", role: "alert" }, error) : null,
-    h2(
+    error ? h(FeedbackToast, { text: error, tone: "error" }) : null,
+    h(
       "div",
       { className: "dtg-accessActions" },
-      h2("button", {
+      h(ActionButton, {
         type: "submit",
         className: "ddt-button",
         "data-kind": "secondary",
-        disabled: busy
-      }, busy ? "\u6B63\u5728\u4FDD\u5B58\u2026" : "\u4FDD\u5B58\u8BBF\u95EE\u8BBE\u7F6E")
+        disabled: busy,
+        loading: busy
+      }, "\u4FDD\u5B58\u8BBF\u95EE\u8BBE\u7F6E")
     )
   );
 }
@@ -7609,7 +7766,7 @@ function formatRemaining4(milliseconds) {
 }
 
 // plugin-src/client/channels/wecom/index.js
-var React17 = __toESM(require("react"), 1);
+var React18 = __toESM(require("react"), 1);
 
 // plugin-src/client/channels/wecom/styles.js
 var WECOM_STYLE_ID = "xmanrui-dsh-im-wecom-settings";
@@ -7634,8 +7791,8 @@ function installWecomStyles() {
 
 // plugin-src/client/channels/wecom/index.js
 var ACTIVE_STATES2 = /* @__PURE__ */ new Set(["pending", "refreshing", "connecting"]);
-var Button10 = React17.forwardRef(function Button11({ children, kind = "secondary", className = "", ...props }, ref) {
-  return h2("button", {
+var Button10 = React18.forwardRef(function Button11({ children, kind = "secondary", className = "", ...props }, ref) {
+  return h(ActionButton, {
     ...props,
     ref,
     type: "button",
@@ -7656,80 +7813,81 @@ function checkedTime4(value) {
   }
 }
 function Heading4({ totals, adding, busy, onAdd, onCredential, credentialOpen, addButtonRef }) {
-  return h2(
+  return h(
     "div",
     { className: "ddt-heading" },
-    h2(
+    h(
       "div",
       { className: "ddt-tools" },
-      h2(
+      h(
         "div",
         { className: "dim-bindActions" },
-        h2(Button10, {
+        h(Button10, {
           kind: "primary",
           className: "dim-scanButton",
           onClick: onAdd,
           disabled: adding || busy,
           ref: addButtonRef,
-          "aria-label": "\u626B\u7801\u63A5\u5165\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA"
-        }, h2(QrActionIcon), adding ? "\u6B63\u5728\u63A5\u5165" : "\u626B\u7801\u63A5\u5165\u673A\u5668\u4EBA"),
-        h2(Button10, {
+          "aria-label": "\u626B\u7801\u63A5\u5165\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA",
+          loading: adding
+        }, h(QrActionIcon), "\u626B\u7801\u63A5\u5165\u673A\u5668\u4EBA"),
+        h(Button10, {
           kind: "credential",
           className: "dim-credentialButton",
           onClick: onCredential,
           disabled: adding || busy,
           "aria-pressed": credentialOpen,
           "aria-label": "\u4F7F\u7528 Bot ID \u548C Secret \u7ED1\u5B9A\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA"
-        }, h2(CredentialActionIcon), credentialOpen ? "\u6536\u8D77\u51ED\u636E" : "\u624B\u52A8\u63A5\u5165")
+        }, h(CredentialActionIcon), credentialOpen ? "\u6536\u8D77\u51ED\u636E" : "\u624B\u52A8\u63A5\u5165")
       ),
-      totals.configured > 0 ? h2(
+      totals.configured > 0 ? h(
         "div",
         { className: "ddt-badge dim-onlineBadge" },
-        h2("span", null, `${totals.connected} / ${totals.configured} \u5728\u7EBF`)
+        h("span", null, `${totals.connected} / ${totals.configured} \u5728\u7EBF`)
       ) : null
     )
   );
 }
 function LoadingView4() {
-  return h2(
+  return h(
     "div",
     { className: "ddt-card ddt-loading dim-surfaceCard dim-loadingView", "aria-busy": "true" },
-    h2("div", { className: "ddt-spinner dim-spinner" }),
-    h2("span", null, "\u6B63\u5728\u8BFB\u53D6\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA\u72B6\u6001\u2026")
+    h("div", { className: "ddt-spinner dim-spinner" }),
+    h("span", null, "\u6B63\u5728\u8BFB\u53D6\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA\u72B6\u6001\u2026")
   );
 }
 function EmptyView4({ busy, onStart }) {
-  return h2(
+  return h(
     "div",
     { className: "ddt-card dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "ddt-cardBody ddt-empty dim-surfaceBody dim-emptyView" },
-      h2(
+      h(
         "div",
         { className: "dim-emptyCopy" },
-        h2(
+        h(
           "div",
           { className: "ddt-stateLabel dim-stateLabel" },
-          h2("span", { className: "ddt-dot dim-stateDot" }),
-          h2("span", null, "\u5C1A\u672A\u7ED1\u5B9A\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA")
+          h("span", { className: "ddt-dot dim-stateDot" }),
+          h("span", null, "\u5C1A\u672A\u7ED1\u5B9A\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA")
         ),
-        h2("h3", null, "\u4F7F\u7528\u4F01\u4E1A\u5FAE\u4FE1 App \u626B\u7801\u521B\u5EFA\u667A\u80FD\u673A\u5668\u4EBA"),
-        h2("p", null, "\u626B\u7801\u7531\u817E\u8BAF\u5B98\u65B9\u9875\u9762\u5B8C\u6210\uFF0C\u4E0D\u9700\u8981\u624B\u52A8\u586B\u5199 Bot ID \u6216 Secret\u3002\u521B\u5EFA\u6210\u529F\u540E\uFF0C\u673A\u5668\u4EBA\u4F1A\u81EA\u52A8\u8FDE\u63A5 DeepSeek Harness\u3002"),
-        h2(
+        h("h3", null, "\u4F7F\u7528\u4F01\u4E1A\u5FAE\u4FE1 App \u626B\u7801\u521B\u5EFA\u667A\u80FD\u673A\u5668\u4EBA"),
+        h("p", null, "\u626B\u7801\u7531\u817E\u8BAF\u5B98\u65B9\u9875\u9762\u5B8C\u6210\uFF0C\u4E0D\u9700\u8981\u624B\u52A8\u586B\u5199 Bot ID \u6216 Secret\u3002\u521B\u5EFA\u6210\u529F\u540E\uFF0C\u673A\u5668\u4EBA\u4F1A\u81EA\u52A8\u8FDE\u63A5 DeepSeek Harness\u3002"),
+        h(
           "div",
           { className: "ddt-actions dim-viewActions" },
-          h2(
+          h(
             Button10,
-            { kind: "primary", onClick: onStart, disabled: busy },
-            busy ? "\u6B63\u5728\u751F\u6210\u4E8C\u7EF4\u7801\u2026" : "\u751F\u6210\u4F01\u4E1A\u5FAE\u4FE1\u4E8C\u7EF4\u7801"
+            { kind: "primary", onClick: onStart, disabled: busy, loading: busy },
+            "\u751F\u6210\u4F01\u4E1A\u5FAE\u4FE1\u4E8C\u7EF4\u7801"
           )
         )
       ),
-      h2(
+      h(
         "div",
         { className: "ddt-brandMark dim-emptyBrand dwecom-brand", "aria-hidden": "true" },
-        h2(WecomLogoGlyph, { size: 64 })
+        h(WecomLogoGlyph, { size: 64 })
       )
     )
   );
@@ -7740,59 +7898,59 @@ function QrPanel3({ provision, now, busy, onRefresh, onCancel }) {
   const duration = Math.max(1, provision.durationMs ?? 5 * 6e4);
   const progress = Math.round(Math.min(1, remaining / duration) * 100);
   const refreshing = provision.status === "refreshing";
-  return h2(
+  return h(
     "div",
     { className: "ddt-card dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "ddt-cardBody ddt-qrLayout dim-surfaceBody dim-qrLayout" },
-      h2(
+      h(
         "div",
         { className: "ddt-qrColumn dim-qrColumn" },
-        h2(
+        h(
           "div",
           { className: "ddt-qrFrame dim-qrFrame" },
-          source ? h2("img", { src: source, alt: "\u7528\u4E8E\u7ED1\u5B9A\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA\u7684\u4E00\u6B21\u6027\u4E8C\u7EF4\u7801" }) : h2(
+          source ? h("img", { src: source, alt: "\u7528\u4E8E\u7ED1\u5B9A\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA\u7684\u4E00\u6B21\u6027\u4E8C\u7EF4\u7801" }) : h(
             "div",
             { className: "ddt-qrFallback dim-qrFallback" },
             refreshing ? "\u4E8C\u7EF4\u7801\u6B63\u5728\u81EA\u52A8\u5237\u65B0\u2026" : "\u4E8C\u7EF4\u7801\u56FE\u7247\u6B63\u5728\u751F\u6210\u2026"
           )
         ),
-        h2(
+        h(
           "div",
           { className: "ddt-countdown dim-countdown" },
-          h2(
+          h(
             "div",
             { className: "ddt-countdownTop dim-countdownTop" },
-            h2("span", null, "\u5F53\u524D\u4E8C\u7EF4\u7801\u6709\u6548\u65F6\u95F4"),
-            h2("strong", null, refreshing ? "--:--" : formatRemaining4(remaining))
+            h("span", null, "\u5F53\u524D\u4E8C\u7EF4\u7801\u6709\u6548\u65F6\u95F4"),
+            h("strong", null, refreshing ? "--:--" : formatRemaining4(remaining))
           ),
-          h2("div", { className: "ddt-progress dim-progress", style: { "--ddt-progress": `${progress}%` } }, h2("span"))
+          h("div", { className: "ddt-progress dim-progress", style: { "--ddt-progress": `${progress}%` } }, h("span"))
         )
       ),
-      h2(
+      h(
         "div",
         { className: "ddt-qrCopy dim-qrCopy" },
-        h2(
+        h(
           "div",
           { className: "ddt-stateLabel dim-stateLabel" },
-          h2("span", { className: "ddt-dot dim-stateDot", "data-tone": "warning" }),
-          h2("span", null, refreshing ? "\u6B63\u5728\u5237\u65B0\u4E8C\u7EF4\u7801" : "\u7B49\u5F85\u4F01\u4E1A\u5FAE\u4FE1 App \u626B\u7801")
+          h("span", { className: "ddt-dot dim-stateDot", "data-tone": "warning" }),
+          h("span", null, refreshing ? "\u6B63\u5728\u5237\u65B0\u4E8C\u7EF4\u7801" : "\u7B49\u5F85\u4F01\u4E1A\u5FAE\u4FE1 App \u626B\u7801")
         ),
-        h2("h3", null, "\u4F7F\u7528\u4F01\u4E1A\u5FAE\u4FE1 App \u5B8C\u6210\u667A\u80FD\u673A\u5668\u4EBA\u6388\u6743"),
-        h2("p", null, "\u4F01\u4E1A\u5FAE\u4FE1\u5B98\u65B9\u9875\u9762\u4F1A\u521B\u5EFA\u4E00\u4E2A\u667A\u80FD\u673A\u5668\u4EBA\uFF0C\u5E76\u628A\u8FDE\u63A5\u51ED\u636E\u5B89\u5168\u4EA4\u7ED9\u672C\u673A Harness Host\u3002"),
-        h2(
+        h("h3", null, "\u4F7F\u7528\u4F01\u4E1A\u5FAE\u4FE1 App \u5B8C\u6210\u667A\u80FD\u673A\u5668\u4EBA\u6388\u6743"),
+        h("p", null, "\u4F01\u4E1A\u5FAE\u4FE1\u5B98\u65B9\u9875\u9762\u4F1A\u521B\u5EFA\u4E00\u4E2A\u667A\u80FD\u673A\u5668\u4EBA\uFF0C\u5E76\u628A\u8FDE\u63A5\u51ED\u636E\u5B89\u5168\u4EA4\u7ED9\u672C\u673A Harness Host\u3002"),
+        h(
           "ol",
           { className: "ddt-steps dim-steps" },
-          h2("li", null, "\u6253\u5F00\u4F01\u4E1A\u5FAE\u4FE1 App\uFF0C\u626B\u63CF\u5DE6\u4FA7\u4E8C\u7EF4\u7801"),
-          h2("li", null, "\u5728\u817E\u8BAF\u6388\u6743\u9875\u9762\u786E\u8BA4\u521B\u5EFA\u667A\u80FD\u673A\u5668\u4EBA"),
-          h2("li", null, "\u8FD4\u56DE\u8FD9\u91CC\u7B49\u5F85\u8FDE\u63A5\u5B8C\u6210")
+          h("li", null, "\u6253\u5F00\u4F01\u4E1A\u5FAE\u4FE1 App\uFF0C\u626B\u63CF\u5DE6\u4FA7\u4E8C\u7EF4\u7801"),
+          h("li", null, "\u5728\u817E\u8BAF\u6388\u6743\u9875\u9762\u786E\u8BA4\u521B\u5EFA\u667A\u80FD\u673A\u5668\u4EBA"),
+          h("li", null, "\u8FD4\u56DE\u8FD9\u91CC\u7B49\u5F85\u8FDE\u63A5\u5B8C\u6210")
         ),
-        h2(
+        h(
           "div",
           { className: "ddt-actions dim-viewActions" },
-          h2(Button10, { onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
-          h2(Button10, { kind: "quiet", onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
+          h(Button10, { onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
+          h(Button10, { kind: "quiet", onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
         )
       )
     )
@@ -7800,44 +7958,44 @@ function QrPanel3({ provision, now, busy, onRefresh, onCancel }) {
 }
 function ProvisionView2({ provision, busy, onRetry, onClose }) {
   if (provision.status === "connecting") {
-    return h2(
+    return h(
       "div",
       { className: "ddt-card ddt-loading dim-surfaceCard dim-specialView", "aria-busy": "true" },
-      h2("div", { className: "ddt-spinner dim-spinner" }),
-      h2("h3", null, "\u4F01\u4E1A\u5FAE\u4FE1\u5DF2\u6388\u6743\uFF0C\u6B63\u5728\u8FDE\u63A5\u673A\u5668\u4EBA"),
-      h2("p", null, "\u51ED\u636E\u6B63\u5728\u5199\u5165\u672C\u673A\uFF0C\u5E76\u542F\u52A8\u4F01\u4E1A\u5FAE\u4FE1 WebSocket \u6D88\u606F\u8FDE\u63A5\u3002")
+      h("div", { className: "ddt-spinner dim-spinner" }),
+      h("h3", null, "\u4F01\u4E1A\u5FAE\u4FE1\u5DF2\u6388\u6743\uFF0C\u6B63\u5728\u8FDE\u63A5\u673A\u5668\u4EBA"),
+      h("p", null, "\u51ED\u636E\u6B63\u5728\u5199\u5165\u672C\u673A\uFF0C\u5E76\u542F\u52A8\u4F01\u4E1A\u5FAE\u4FE1 WebSocket \u6D88\u606F\u8FDE\u63A5\u3002")
     );
   }
   const error = provision.error ?? { code: "WECOM_PROVISION_FAILED", message: "\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA\u6CA1\u6709\u7ED1\u5B9A\u5B8C\u6210" };
-  return h2(
+  return h(
     "div",
     { className: "ddt-card dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "ddt-inlineError dim-inlineError", role: "alert" },
-      h2("h3", null, "\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA\u6CA1\u6709\u7ED1\u5B9A\u5B8C\u6210"),
-      h2("p", null, error.message),
-      h2("span", { className: "ddt-errorCode" }, error.code),
-      h2(
+      h("h3", null, "\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA\u6CA1\u6709\u7ED1\u5B9A\u5B8C\u6210"),
+      h("p", null, error.message),
+      h("span", { className: "ddt-errorCode" }, error.code),
+      h(
         "div",
         { className: "ddt-actions dim-viewActions" },
-        h2(Button10, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
-        h2(Button10, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
+        h(Button10, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
+        h(Button10, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
       )
     )
   );
 }
-function RemoveConfirmation4({ account, busy, onConfirm, onCancel }) {
-  return h2(
-    "div",
-    { className: "ddt-confirm dim-confirm", role: "alertdialog" },
-    h2("strong", null, `\u4ECE DeepSeek Harness \u79FB\u9664\u201C${account.bot.name}\u201D\uFF1F`),
-    h2("p", null, "\u8FD9\u4F1A\u505C\u6B62\u6D88\u606F\u8FDE\u63A5\uFF0C\u5E76\u5220\u9664\u672C\u673A\u4FDD\u5B58\u7684\u5E94\u7528\u51ED\u636E\u3001\u673A\u5668\u4EBA\u914D\u7F6E\u53CA\u4F1A\u8BDD\u6620\u5C04\u3002\u4F01\u4E1A\u5FAE\u4FE1\u5E73\u53F0\u4E2D\u7684\u673A\u5668\u4EBA\u4E0D\u4F1A\u88AB\u81EA\u52A8\u5220\u9664\u3002"),
-    h2(
+function RemoveConfirmation4({ account, busy, error, feedbackSequence, onConfirm, onCancel }) {
+  return h(
+    ConfirmDialog,
+    { className: "ddt-confirm dim-confirm", role: "alertdialog", onClose: onCancel, busy: Boolean(busy), error, feedbackSequence },
+    h("strong", null, `\u4ECE DeepSeek Harness \u79FB\u9664\u201C${account.bot.name}\u201D\uFF1F`),
+    h("p", null, "\u8FD9\u4F1A\u505C\u6B62\u6D88\u606F\u8FDE\u63A5\uFF0C\u5E76\u5220\u9664\u672C\u673A\u4FDD\u5B58\u7684\u5E94\u7528\u51ED\u636E\u3001\u673A\u5668\u4EBA\u914D\u7F6E\u53CA\u4F1A\u8BDD\u6620\u5C04\u3002\u4F01\u4E1A\u5FAE\u4FE1\u5E73\u53F0\u4E2D\u7684\u673A\u5668\u4EBA\u4E0D\u4F1A\u88AB\u81EA\u52A8\u5220\u9664\u3002"),
+    h(
       "div",
       { className: "ddt-actions dim-viewActions" },
-      h2(Button10, { onClick: onCancel, disabled: busy }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
-      h2(Button10, { kind: "danger", onClick: onConfirm, disabled: busy }, busy ? "\u6B63\u5728\u79FB\u9664\u2026" : "\u786E\u8BA4\u79FB\u9664\u63A5\u5165")
+      h(Button10, { onClick: onCancel, disabled: busy }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
+      h(Button10, { kind: "danger", onClick: onConfirm, disabled: busy, loading: busy }, "\u786E\u8BA4\u79FB\u9664\u63A5\u5165")
     )
   );
 }
@@ -7846,6 +8004,8 @@ function AccountCard3({
   busy,
   feedback,
   removing,
+  removeError,
+  removeFeedbackSequence,
   onReconnect,
   onWorkspaceSave,
   onAgentPresetSave,
@@ -7856,27 +8016,27 @@ function AccountCard3({
   const tone = account.connected ? "success" : account.state === "error" ? "error" : "warning";
   const stateLabel2 = account.connected ? "\u8FD0\u884C\u6B63\u5E38" : account.state === "connecting" ? "\u6B63\u5728\u8FDE\u63A5" : "\u8FDE\u63A5\u672A\u5C31\u7EEA";
   const summary = account.error?.message ?? (account.connected ? null : account.health.summary);
-  return h2(
+  return h(
     "article",
     { className: "ddt-card dim-botCard", "data-bot-id": account.botId },
-    h2(
+    h(
       "div",
       { className: "ddt-cardBody dim-botCardBody" },
-      h2(
+      h(
         "div",
         { className: "ddt-accountTop dim-botCardTop" },
-        h2(
+        h(
           "div",
           { className: "ddt-accountIdentity dim-botIdentity" },
-          h2("div", { className: "ddt-avatar dim-botAvatar dwecom-avatar", "aria-hidden": "true" }, h2(WecomLogoGlyph, { size: 29 })),
-          h2(
+          h("div", { className: "ddt-avatar dim-botAvatar dwecom-avatar", "aria-hidden": "true" }, h(WecomLogoGlyph, { size: 29 })),
+          h(
             "div",
             { className: "dim-botName" },
-            h2("h3", null, account.bot.name),
-            h2("p", null, account.bot.appIdMasked)
+            h("h3", null, account.bot.name),
+            h("p", null, account.bot.appIdMasked)
           )
         ),
-        h2(BotStatusMeta, {
+        h(BotStatusMeta, {
           className: "ddt-health",
           dotClassName: "ddt-dot",
           tone,
@@ -7885,71 +8045,71 @@ function AccountCard3({
           formatCheckedTime: checkedTime4
         })
       ),
-      h2(WorkspaceEditor, {
+      h(WorkspaceEditor, {
         workspace: account.workspace,
         disabled: Boolean(busy),
         onSave: onWorkspaceSave
       }),
-      h2(AgentPresetEditor, {
+      h(AgentPresetEditor, {
         agentPreset: account.agentPreset,
         disabled: Boolean(busy),
         onSave: onAgentPresetSave
       }),
-      h2(
+      h(
         "div",
         { className: "ddt-accountFooter dim-cardFooter" },
-        h2(
+        h(
           "div",
           { className: "dim-cardFooterLayout" },
-          h2(
+          h(
             "div",
             { className: "ddt-actions dim-cardActions" },
-            h2(Button10, { className: "dim-cardAction", onClick: onReconnect, disabled: Boolean(busy) }, busy === "reconnect" ? "\u68C0\u67E5\u4E2D\u2026" : account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"),
-            h2(Button10, { className: "dim-cardAction", kind: "danger", onClick: onRequestRemove, disabled: Boolean(busy) }, "\u79FB\u9664\u63A5\u5165")
+            h(Button10, { className: "dim-cardAction", onClick: onReconnect, disabled: Boolean(busy), loading: busy === "reconnect" }, account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"),
+            h(Button10, { className: "dim-cardAction", kind: "danger", onClick: onRequestRemove, disabled: Boolean(busy) }, "\u79FB\u9664\u63A5\u5165")
           ),
-          summary ? h2("div", { className: "ddt-summary dim-cardSummary" }, summary) : null,
-          account.lastMessageError ? h2(LastMessageErrorSummary, {
+          summary ? h("div", { className: "ddt-summary dim-cardSummary" }, summary) : null,
+          account.lastMessageError ? h(LastMessageErrorSummary, {
             className: "ddt-summary",
             error: account.lastMessageError
           }) : null,
-          feedback ? h2("div", {
-            className: "ddt-summary dim-cardFeedback",
-            role: "status",
-            "aria-live": "polite"
-          }, feedback) : null
+          null
         )
       )
     ),
-    removing ? h2(RemoveConfirmation4, {
+    removing ? h(RemoveConfirmation4, {
       account,
       busy: busy === "delete",
+      error: removeError,
+      feedbackSequence: removeFeedbackSequence,
       onConfirm: onConfirmRemove,
       onCancel: onCancelRemove
     }) : null
   );
 }
 function WecomSettingsTab({ rpcCall }) {
-  const [model, setModel] = React17.useState({
+  const [model, setModel] = React18.useState({
     phase: "loading",
     bots: [],
     totals: { configured: 0, connected: 0 },
     error: null,
     agentPresetCatalog: EMPTY_AGENT_PRESET_CATALOG
   });
-  const [provision, setProvision] = React17.useState(null);
-  const [busy, setBusy] = React17.useState(false);
-  const [busyByBot, setBusyByBot] = React17.useState({});
-  const [feedbackByBot, setFeedbackByBot] = React17.useState({});
-  const [removeTarget, setRemoveTarget] = React17.useState(null);
-  const [credentialOpen, setCredentialOpen] = React17.useState(false);
-  const [credentialError, setCredentialError] = React17.useState(null);
-  const [notice, setNotice] = React17.useState("");
-  const [now, setNow] = React17.useState(Date.now());
-  const mounted = React17.useRef(true);
+  const [provision, setProvision] = React18.useState(null);
+  const [busy, setBusy] = React18.useState(false);
+  const [busyByBot, setBusyByBot] = React18.useState({});
+  const [feedbackByBot, setFeedbackByBot] = React18.useState({});
+  const [removeTarget, setRemoveTarget] = React18.useState(null);
+  const [actionError, setActionError] = React18.useState(null);
+  const [removeErrorsByBot, setRemoveErrorsByBot] = React18.useState({});
+  const [credentialOpen, setCredentialOpen] = React18.useState(false);
+  const [credentialError, setCredentialError] = React18.useState(null);
+  const [notice, setNotice] = React18.useState("");
+  const [now, setNow] = React18.useState(Date.now());
+  const mounted = React18.useRef(true);
   const workspaceFence = useWorkspaceSnapshotFence();
-  const addButtonRef = React17.useRef(null);
-  const noticeFrameRef = React17.useRef(null);
-  const announce = React17.useCallback((message) => {
+  const addButtonRef = React18.useRef(null);
+  const noticeFrameRef = React18.useRef(null);
+  const announce = React18.useCallback((message) => {
     if (!mounted.current) return;
     if (noticeFrameRef.current !== null) {
       window.cancelAnimationFrame(noticeFrameRef.current);
@@ -7963,7 +8123,7 @@ function WecomSettingsTab({ rpcCall }) {
       });
     }
   }, []);
-  React17.useEffect(() => {
+  React18.useEffect(() => {
     const disposeDingtalk = installDingtalkStyles();
     const disposeWecom = installWecomStyles();
     mounted.current = true;
@@ -7977,11 +8137,11 @@ function WecomSettingsTab({ rpcCall }) {
       disposeDingtalk();
     };
   }, []);
-  const invoke = React17.useCallback(async (endpoint, payload = {}, signal) => {
+  const invoke = React18.useCallback(async (endpoint, payload = {}, signal) => {
     if (typeof rpcCall !== "function") throw new TypeError("\u4F01\u4E1A\u5FAE\u4FE1\u8BBE\u7F6E\u9875\u7F3A\u5C11 RPC \u8FDE\u63A5");
     return unwrapRpcResult7(await rpcCall(endpoint, payload, signal));
   }, [rpcCall]);
-  const loadStatus = React17.useCallback(async ({ signal, silent = false, restore = false } = {}) => {
+  const loadStatus = React18.useCallback(async ({ signal, silent = false, restore = false } = {}) => {
     const workspaceVersion = workspaceFence.beginStatus();
     if (workspaceVersion === null) return void 0;
     if (!silent && mounted.current) setModel((current) => ({ ...current, phase: "loading", error: null }));
@@ -8007,12 +8167,12 @@ function WecomSettingsTab({ rpcCall }) {
       return void 0;
     }
   }, [invoke, workspaceFence]);
-  React17.useEffect(() => {
+  React18.useEffect(() => {
     const controller = new AbortController();
     void loadStatus({ signal: controller.signal, restore: true });
     return () => controller.abort();
   }, [loadStatus]);
-  React17.useEffect(() => {
+  React18.useEffect(() => {
     if (model.phase !== "ready") return void 0;
     const controller = new AbortController();
     const timer = window.setInterval(() => void loadStatus({ signal: controller.signal, silent: true }), 15e3);
@@ -8021,12 +8181,12 @@ function WecomSettingsTab({ rpcCall }) {
       window.clearInterval(timer);
     };
   }, [loadStatus, model.phase]);
-  React17.useEffect(() => {
+  React18.useEffect(() => {
     if (!provision || !ACTIVE_STATES2.has(provision.status)) return void 0;
     const timer = window.setInterval(() => mounted.current && setNow(Date.now()), 1e3);
     return () => window.clearInterval(timer);
   }, [provision?.attemptId, provision?.status]);
-  const startProvisioning = React17.useCallback(async (replace = false) => {
+  const startProvisioning = React18.useCallback(async (replace = false) => {
     setCredentialOpen(false);
     setCredentialError(null);
     setBusy(true);
@@ -8044,7 +8204,7 @@ function WecomSettingsTab({ rpcCall }) {
       if (mounted.current) setBusy(false);
     }
   }, [invoke, provision?.attemptId]);
-  const bindCredentials = React17.useCallback(async ({ identity, secret }) => {
+  const bindCredentials = React18.useCallback(async ({ identity, secret }) => {
     const snapshotVersion = workspaceFence.beginMutation();
     setBusy(true);
     setCredentialError(null);
@@ -8072,18 +8232,26 @@ function WecomSettingsTab({ rpcCall }) {
       if (mounted.current) setBusy(false);
     }
   }, [invoke, loadStatus, workspaceFence]);
-  const closeProvision = React17.useCallback(async () => {
+  const closeProvision = React18.useCallback(async () => {
     setBusy(true);
     try {
       if (provision?.attemptId && ACTIVE_STATES2.has(provision.status)) {
         await invoke(WECOM_ENDPOINTS.cancelProvisioning, { attemptId: provision.attemptId });
       }
-      if (mounted.current) setProvision(null);
+      if (mounted.current) {
+        setProvision(null);
+        setActionError(null);
+      }
+    } catch (cause) {
+      if (mounted.current) setActionError((current) => ({
+        message: cause?.message ?? "\u64CD\u4F5C\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002",
+        sequence: (current?.sequence ?? 0) + 1
+      }));
     } finally {
       if (mounted.current) setBusy(false);
     }
   }, [invoke, provision?.attemptId, provision?.status]);
-  React17.useEffect(() => {
+  React18.useEffect(() => {
     const attemptId = provision?.attemptId;
     if (!attemptId || !ACTIVE_STATES2.has(provision.status)) return void 0;
     const controller = new AbortController();
@@ -8113,7 +8281,7 @@ function WecomSettingsTab({ rpcCall }) {
       window.clearTimeout(timer);
     };
   }, [invoke, loadStatus, provision?.attemptId, provision?.pollIntervalMs, provision?.status]);
-  const botAction = React17.useCallback(async (account, operation, endpoint, payload) => {
+  const botAction = React18.useCallback(async (account, operation, endpoint, payload) => {
     const snapshotVersion = workspaceFence.beginMutation();
     setBusyByBot((current) => ({ ...current, [account.botId]: operation }));
     try {
@@ -8138,7 +8306,7 @@ function WecomSettingsTab({ rpcCall }) {
       });
     }
   }, [invoke, loadStatus, workspaceFence]);
-  const reconnect = React17.useCallback(async (account) => {
+  const reconnect = React18.useCallback(async (account) => {
     setFeedbackByBot((current) => {
       const next = { ...current };
       delete next[account.botId];
@@ -8178,33 +8346,35 @@ function WecomSettingsTab({ rpcCall }) {
     }
   }, [announce, botAction]);
   let provisionView = null;
-  if (provision?.status === "starting") provisionView = h2("div", { className: "ddt-card ddt-loading dim-surfaceCard" }, h2("div", { className: "ddt-spinner" }), "\u6B63\u5728\u7533\u8BF7\u4F01\u4E1A\u5FAE\u4FE1\u4E8C\u7EF4\u7801\u2026");
-  else if (["pending", "refreshing"].includes(provision?.status)) provisionView = h2(QrPanel3, {
+  if (provision?.status === "starting") provisionView = h("div", { className: "ddt-card ddt-loading dim-surfaceCard" }, h("div", { className: "ddt-spinner" }), "\u6B63\u5728\u7533\u8BF7\u4F01\u4E1A\u5FAE\u4FE1\u4E8C\u7EF4\u7801\u2026");
+  else if (["pending", "refreshing"].includes(provision?.status)) provisionView = h(QrPanel3, {
     provision,
     now,
     busy,
     onRefresh: () => void startProvisioning(true),
     onCancel: () => void closeProvision()
   });
-  else if (provision) provisionView = h2(ProvisionView2, {
+  else if (provision) provisionView = h(ProvisionView2, {
     provision,
     busy,
     onRetry: () => void startProvisioning(true),
     onClose: () => void closeProvision()
   });
-  const botList = model.bots.length > 0 ? h2(
+  const botList = model.bots.length > 0 ? h(
     "section",
     { className: "dim-listSection" },
-    h2(ChannelListHeading, {
+    h(ChannelListHeading, {
       className: "ddt-listHeading",
       title: "\u5DF2\u7ED1\u5B9A\u7684\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA",
       connectionLabel: "WebSocket \u957F\u8FDE\u63A5"
     }),
-    h2("ul", { className: "ddt-list dim-botList" }, model.bots.map((account) => h2("li", { key: account.botId }, h2(AccountCard3, {
+    h("ul", { className: "ddt-list dim-botList" }, model.bots.map((account) => h("li", { key: account.botId }, h(AccountCard3, {
       account,
       busy: busyByBot[account.botId],
       feedback: feedbackByBot[account.botId],
       removing: removeTarget === account.botId,
+      removeError: removeErrorsByBot[account.botId]?.message,
+      removeFeedbackSequence: removeErrorsByBot[account.botId]?.sequence,
       onReconnect: () => void reconnect(account),
       onWorkspaceSave: (workspace) => botAction(
         account,
@@ -8221,12 +8391,29 @@ function WecomSettingsTab({ rpcCall }) {
       onRequestRemove: () => setRemoveTarget(account.botId),
       onCancelRemove: () => setRemoveTarget(null),
       onConfirmRemove: async () => {
-        await botAction(account, "delete", WECOM_ENDPOINTS.deleteBot, { botId: account.botId, confirm: true });
-        if (mounted.current) setRemoveTarget(null);
+        try {
+          await botAction(account, "delete", WECOM_ENDPOINTS.deleteBot, { botId: account.botId, confirm: true });
+          if (mounted.current) {
+            setRemoveTarget(null);
+            setRemoveErrorsByBot((current) => {
+              const next = { ...current };
+              delete next[account.botId];
+              return next;
+            });
+          }
+        } catch (cause) {
+          if (mounted.current) setRemoveErrorsByBot((current) => ({
+            ...current,
+            [account.botId]: {
+              message: cause?.message ?? "\u79FB\u9664\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5\u3002",
+              sequence: (current[account.botId]?.sequence ?? 0) + 1
+            }
+          }));
+        }
       }
     }))))
   ) : null;
-  const credentialView = credentialOpen ? h2(CredentialBindingPanel, {
+  const credentialView = credentialOpen ? h(CredentialBindingPanel, {
     channel: "\u4F01\u4E1A\u5FAE\u4FE1",
     identityLabel: "Bot ID",
     identityPlaceholder: "\u586B\u5199\u4F01\u4E1A\u5FAE\u4FE1\u667A\u80FD\u673A\u5668\u4EBA Bot ID",
@@ -8240,12 +8427,14 @@ function WecomSettingsTab({ rpcCall }) {
       setCredentialError(null);
     }
   }) : null;
-  return h2(AgentPresetCatalogContext.Provider, {
+  return h(AgentPresetCatalogContext.Provider, {
     value: model.agentPresetCatalog ?? EMPTY_AGENT_PRESET_CATALOG
-  }, h2(
+  }, h(
     "section",
     { className: "ddt-page dwecom-page dim-channelPage", "aria-label": "\u4F01\u4E1A\u5FAE\u4FE1\u8BBE\u7F6E" },
-    h2(Heading4, {
+    actionError ? h(FeedbackToast, { text: actionError.message, tone: "error", sequence: actionError.sequence }) : null,
+    Object.entries(removeErrorsByBot).map(([botId, failure]) => botId !== removeTarget ? h(FeedbackToast, { key: botId, text: failure.message, tone: "error", sequence: failure.sequence }) : null),
+    h(Heading4, {
       totals: model.totals,
       adding: Boolean(provision),
       busy,
@@ -8257,20 +8446,20 @@ function WecomSettingsTab({ rpcCall }) {
       credentialOpen,
       addButtonRef
     }),
-    h2("div", { className: "ddt-visuallyHidden", role: "status", "aria-live": "polite" }, notice),
-    model.phase === "loading" ? h2(LoadingView4) : model.phase === "error" ? h2("div", { className: "ddt-card dim-surfaceCard" }, h2("div", { className: "ddt-inlineError dim-inlineError" }, h2("h3", null, "\u65E0\u6CD5\u8BFB\u53D6\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA\u72B6\u6001"), h2("p", null, model.error?.message), h2(Button10, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6"))) : h2(
-      React17.Fragment,
+    notice ? h(FeedbackToast, { text: notice }) : null,
+    model.phase === "loading" ? h(LoadingView4) : model.phase === "error" ? h("div", { className: "ddt-card dim-surfaceCard" }, h("div", { className: "ddt-inlineError dim-inlineError" }, h("h3", null, "\u65E0\u6CD5\u8BFB\u53D6\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA\u72B6\u6001"), h("p", null, model.error?.message), h(Button10, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6"))) : h(
+      React18.Fragment,
       null,
       credentialView,
       provisionView,
-      model.bots.length === 0 && !provision && !credentialOpen ? h2(EmptyView4, { busy, onStart: () => void startProvisioning() }) : null,
+      model.bots.length === 0 && !provision && !credentialOpen ? h(EmptyView4, { busy, onStart: () => void startProvisioning() }) : null,
       botList
     )
   ));
 }
 
 // plugin-src/client/channels/weixin/index.js
-var React18 = __toESM(require("react"), 1);
+var React19 = __toESM(require("react"), 1);
 
 // plugin-src/client/channels/weixin/api.js
 var WEIXIN_RPC_CHANNEL = "/weixin";
@@ -8425,8 +8614,8 @@ function formatRemaining5(milliseconds) {
 }
 
 // plugin-src/client/channels/weixin/index.js
-var Button12 = React18.forwardRef(function Button13({ children, kind = "secondary", className = "", ...props }, ref) {
-  return h2("button", {
+var Button12 = React19.forwardRef(function Button13({ children, kind = "secondary", className = "", ...props }, ref) {
+  return h(ActionButton, {
     ...props,
     ref,
     type: "button",
@@ -8435,150 +8624,151 @@ var Button12 = React18.forwardRef(function Button13({ children, kind = "secondar
   }, children);
 });
 function Heading5({ totals, adding, busy, onAdd, addButtonRef }) {
-  return h2(
+  return h(
     "div",
     { className: "dxw-heading" },
-    h2(
+    h(
       "div",
       { className: "dxw-tools" },
-      h2(Button12, {
+      h(Button12, {
         kind: "primary",
         className: "dim-scanButton",
         onClick: onAdd,
         disabled: adding || busy,
         ref: addButtonRef,
-        "aria-label": "\u626B\u7801\u63A5\u5165\u5FAE\u4FE1\u673A\u5668\u4EBA"
-      }, h2(QrActionIcon), adding ? "\u6B63\u5728\u63A5\u5165" : "\u626B\u7801\u63A5\u5165\u673A\u5668\u4EBA"),
-      totals.configured > 0 ? h2(
+        "aria-label": "\u626B\u7801\u63A5\u5165\u5FAE\u4FE1\u673A\u5668\u4EBA",
+        loading: adding
+      }, h(QrActionIcon), "\u626B\u7801\u63A5\u5165\u673A\u5668\u4EBA"),
+      totals.configured > 0 ? h(
         "div",
         { className: "dxw-badge dim-onlineBadge" },
-        h2("span", null, `${totals.connected} / ${totals.configured} \u5728\u7EBF`)
+        h("span", null, `${totals.connected} / ${totals.configured} \u5728\u7EBF`)
       ) : null
     )
   );
 }
 function LoadingView5() {
-  return h2(
+  return h(
     "div",
     { className: "dxw-card dxw-loading dim-surfaceCard dim-loadingView", "aria-busy": "true" },
-    h2("div", { className: "dxw-spinner dim-spinner" }),
-    h2("span", null, "\u6B63\u5728\u8BFB\u53D6\u5FAE\u4FE1\u8FDE\u63A5\u72B6\u6001\u2026")
+    h("div", { className: "dxw-spinner dim-spinner" }),
+    h("span", null, "\u6B63\u5728\u8BFB\u53D6\u5FAE\u4FE1\u8FDE\u63A5\u72B6\u6001\u2026")
   );
 }
 function EmptyView5({ onStart, busy }) {
-  return h2(
+  return h(
     "div",
     { className: "dxw-card dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "dxw-cardBody dxw-empty dim-surfaceBody dim-emptyView" },
-      h2(
+      h(
         "div",
         { className: "dim-emptyCopy" },
-        h2(
+        h(
           "div",
           { className: "dxw-stateLabel dim-stateLabel" },
-          h2("span", { className: "dxw-dot dim-stateDot" }),
-          h2("span", null, "\u5C1A\u672A\u7ED1\u5B9A\u5FAE\u4FE1")
+          h("span", { className: "dxw-dot dim-stateDot" }),
+          h("span", null, "\u5C1A\u672A\u7ED1\u5B9A\u5FAE\u4FE1")
         ),
-        h2("h3", null, "\u626B\u4E00\u6B21\u7801\uFF0C\u5C31\u80FD\u5728\u5FAE\u4FE1\u91CC\u4F7F\u7528 Harness"),
-        h2("p", null, "\u4E8C\u7EF4\u7801\u7531\u817E\u8BAF\u5FAE\u4FE1 iLink \u670D\u52A1\u7B7E\u53D1\u3002\u7528\u624B\u673A\u5FAE\u4FE1\u626B\u63CF\u5E76\u786E\u8BA4\u540E\uFF0C\u8D26\u53F7\u51ED\u636E\u4F1A\u76F4\u63A5\u5199\u5165 Harness Host\uFF0C\u6D4F\u89C8\u5668\u4E0D\u4F1A\u6536\u5230 bot_token\u3002"),
-        h2(
+        h("h3", null, "\u626B\u4E00\u6B21\u7801\uFF0C\u5C31\u80FD\u5728\u5FAE\u4FE1\u91CC\u4F7F\u7528 Harness"),
+        h("p", null, "\u4E8C\u7EF4\u7801\u7531\u817E\u8BAF\u5FAE\u4FE1 iLink \u670D\u52A1\u7B7E\u53D1\u3002\u7528\u624B\u673A\u5FAE\u4FE1\u626B\u63CF\u5E76\u786E\u8BA4\u540E\uFF0C\u8D26\u53F7\u51ED\u636E\u4F1A\u76F4\u63A5\u5199\u5165 Harness Host\uFF0C\u6D4F\u89C8\u5668\u4E0D\u4F1A\u6536\u5230 bot_token\u3002"),
+        h(
           "div",
           { className: "dxw-actions dim-viewActions" },
-          h2(
+          h(
             Button12,
-            { kind: "primary", onClick: onStart, disabled: busy },
-            busy ? "\u6B63\u5728\u751F\u6210\u4E8C\u7EF4\u7801\u2026" : "\u751F\u6210\u5FAE\u4FE1\u4E8C\u7EF4\u7801"
+            { kind: "primary", onClick: onStart, disabled: busy, loading: busy },
+            "\u751F\u6210\u5FAE\u4FE1\u4E8C\u7EF4\u7801"
           )
         )
       ),
-      h2("div", { className: "dxw-logo dim-emptyBrand", "aria-hidden": "true" }, h2(WeixinLogoGlyph, { size: 64 }))
+      h("div", { className: "dxw-logo dim-emptyBrand", "aria-hidden": "true" }, h(WeixinLogoGlyph, { size: 64 }))
     )
   );
 }
 function QrPanel4({ provision, now, busy, onRefresh, onCancel }) {
-  const [imageFailed, setImageFailed] = React18.useState(false);
+  const [imageFailed, setImageFailed] = React19.useState(false);
   const source = safeQrSource5(provision.qrCodeDataUrl);
   const href = safeVerificationUrl(provision.verificationUrl);
   const remaining = Math.max(0, provision.expiresAt - now);
   const expired = remaining === 0 || provision.status === "expired";
   const duration = Math.max(1, provision.durationMs ?? 5 * 6e4);
   const progress = Math.round(Math.min(1, remaining / duration) * 100);
-  React18.useEffect(() => setImageFailed(false), [source]);
-  return h2(
+  React19.useEffect(() => setImageFailed(false), [source]);
+  return h(
     "div",
     { className: "dxw-card dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "dxw-cardBody dxw-qrLayout dim-surfaceBody dim-qrLayout" },
-      h2(
+      h(
         "div",
         { className: "dxw-qrColumn dim-qrColumn" },
-        h2(
+        h(
           "div",
           { className: "dxw-qrFrame dim-qrFrame" },
-          source && !imageFailed ? h2("img", {
+          source && !imageFailed ? h("img", {
             src: source,
             alt: "\u7528\u4E8E\u628A\u5FAE\u4FE1\u673A\u5668\u4EBA\u7ED1\u5B9A\u5230 DeepSeek Harness \u7684\u4E00\u6B21\u6027\u4E8C\u7EF4\u7801",
             onError: () => setImageFailed(true)
-          }) : h2("div", { className: "dxw-qrFallback dim-qrFallback" }, "\u4E8C\u7EF4\u7801\u56FE\u7247\u672A\u5C31\u7EEA\uFF0C\u8BF7\u4F7F\u7528\u5907\u7528\u94FE\u63A5\u3002"),
-          expired ? h2("div", { className: "dxw-expired dim-qrExpired" }, "\u4E8C\u7EF4\u7801\u5DF2\u8FC7\u671F\n\u8BF7\u91CD\u65B0\u751F\u6210") : null
+          }) : h("div", { className: "dxw-qrFallback dim-qrFallback" }, "\u4E8C\u7EF4\u7801\u56FE\u7247\u672A\u5C31\u7EEA\uFF0C\u8BF7\u4F7F\u7528\u5907\u7528\u94FE\u63A5\u3002"),
+          expired ? h("div", { className: "dxw-expired dim-qrExpired" }, "\u4E8C\u7EF4\u7801\u5DF2\u8FC7\u671F\n\u8BF7\u91CD\u65B0\u751F\u6210") : null
         ),
-        h2(
+        h(
           "div",
           { className: "dxw-countdown dim-countdown" },
-          h2("div", { className: "dim-countdownTop" }, h2("span", null, "\u4E8C\u7EF4\u7801\u6709\u6548\u65F6\u95F4"), h2("strong", null, formatRemaining5(remaining))),
-          h2(
+          h("div", { className: "dim-countdownTop" }, h("span", null, "\u4E8C\u7EF4\u7801\u6709\u6548\u65F6\u95F4"), h("strong", null, formatRemaining5(remaining))),
+          h(
             "div",
             { className: "dxw-progress dim-progress", "aria-hidden": "true" },
-            h2("span", { style: { "--dxw-progress": `${progress}%` } })
+            h("span", { style: { "--dxw-progress": `${progress}%` } })
           )
         )
       ),
-      h2(
+      h(
         "div",
         { className: "dxw-qrCopy dim-qrCopy" },
-        h2(
+        h(
           "div",
           { className: "dxw-stateLabel dim-stateLabel" },
-          h2("span", { className: "dxw-dot dim-stateDot", "data-tone": provision.status === "scanned" ? "success" : "warning" }),
-          h2("span", null, provision.status === "scanned" ? "\u5DF2\u626B\u7801\uFF0C\u8BF7\u5728\u624B\u673A\u4E0A\u786E\u8BA4" : "\u7B49\u5F85\u5FAE\u4FE1\u626B\u7801")
+          h("span", { className: "dxw-dot dim-stateDot", "data-tone": provision.status === "scanned" ? "success" : "warning" }),
+          h("span", null, provision.status === "scanned" ? "\u5DF2\u626B\u7801\uFF0C\u8BF7\u5728\u624B\u673A\u4E0A\u786E\u8BA4" : "\u7B49\u5F85\u5FAE\u4FE1\u626B\u7801")
         ),
-        h2("h3", null, expired ? "\u4E8C\u7EF4\u7801\u5DF2\u5931\u6548" : "\u4F7F\u7528\u624B\u673A\u5FAE\u4FE1\u626B\u63CF\u4E8C\u7EF4\u7801"),
-        h2("p", null, "\u8BF7\u5728\u624B\u673A\u4E0A\u6838\u5BF9\u5E76\u786E\u8BA4\u6388\u6743\u3002\u90E8\u5206\u8D26\u53F7\u4F1A\u989D\u5916\u663E\u793A\u4E00\u4E2A\u914D\u5BF9\u6570\u5B57\uFF0C\u9875\u9762\u4F1A\u5728\u9700\u8981\u65F6\u63D0\u793A\u8F93\u5165\u3002"),
-        h2(
+        h("h3", null, expired ? "\u4E8C\u7EF4\u7801\u5DF2\u5931\u6548" : "\u4F7F\u7528\u624B\u673A\u5FAE\u4FE1\u626B\u63CF\u4E8C\u7EF4\u7801"),
+        h("p", null, "\u8BF7\u5728\u624B\u673A\u4E0A\u6838\u5BF9\u5E76\u786E\u8BA4\u6388\u6743\u3002\u90E8\u5206\u8D26\u53F7\u4F1A\u989D\u5916\u663E\u793A\u4E00\u4E2A\u914D\u5BF9\u6570\u5B57\uFF0C\u9875\u9762\u4F1A\u5728\u9700\u8981\u65F6\u63D0\u793A\u8F93\u5165\u3002"),
+        h(
           "ol",
           { className: "dxw-steps dim-steps" },
-          h2("li", null, "\u6253\u5F00\u624B\u673A\u5FAE\u4FE1\u5E76\u626B\u63CF\u5DE6\u4FA7\u4E8C\u7EF4\u7801"),
-          h2("li", null, "\u5728\u5FAE\u4FE1\u4E2D\u786E\u8BA4\u8FDE\u63A5\u8BE5\u673A\u5668\u4EBA"),
-          h2("li", null, "\u4FDD\u6301\u672C\u9875\u6253\u5F00\uFF0C\u7B49\u5F85\u6D88\u606F\u957F\u8F6E\u8BE2\u53D8\u4E3A\u5728\u7EBF")
+          h("li", null, "\u6253\u5F00\u624B\u673A\u5FAE\u4FE1\u5E76\u626B\u63CF\u5DE6\u4FA7\u4E8C\u7EF4\u7801"),
+          h("li", null, "\u5728\u5FAE\u4FE1\u4E2D\u786E\u8BA4\u8FDE\u63A5\u8BE5\u673A\u5668\u4EBA"),
+          h("li", null, "\u4FDD\u6301\u672C\u9875\u6253\u5F00\uFF0C\u7B49\u5F85\u6D88\u606F\u957F\u8F6E\u8BE2\u53D8\u4E3A\u5728\u7EBF")
         ),
-        h2(
+        h(
           "div",
           { className: "dxw-actions dim-viewActions" },
-          expired ? h2(Button12, { kind: "primary", onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801") : null,
-          href ? h2("a", {
+          expired ? h(Button12, { kind: "primary", onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801") : null,
+          href ? h("a", {
             className: "dxw-button",
             href,
             target: "_blank",
             rel: "noopener noreferrer"
           }, "\u6253\u5F00\u5907\u7528\u94FE\u63A5") : null,
-          !expired ? h2(Button12, { onClick: onRefresh, disabled: busy }, "\u6362\u4E00\u4E2A\u4E8C\u7EF4\u7801") : null,
-          h2(Button12, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
+          !expired ? h(Button12, { onClick: onRefresh, disabled: busy }, "\u6362\u4E00\u4E2A\u4E8C\u7EF4\u7801") : null,
+          h(Button12, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
         )
       )
     )
   );
 }
 function VerificationPanel({ provision, busy, onSubmit, onCancel }) {
-  const [code, setCode] = React18.useState("");
+  const [code, setCode] = React19.useState("");
   const valid = /^\d{4,8}$/.test(code);
-  React18.useEffect(() => setCode(""), [provision.attemptId]);
-  return h2(
+  React19.useEffect(() => setCode(""), [provision.attemptId]);
+  return h(
     "div",
     { className: "dxw-card dim-surfaceCard" },
-    h2(
+    h(
       "form",
       {
         className: "dxw-verify dim-specialView",
@@ -8587,18 +8777,18 @@ function VerificationPanel({ provision, busy, onSubmit, onCancel }) {
           if (valid && !busy) onSubmit(code);
         }
       },
-      h2(
+      h(
         "div",
         { className: "dxw-stateLabel" },
-        h2("span", { className: "dxw-dot", "data-tone": "warning" }),
-        h2("span", null, "\u9700\u8981\u914D\u5BF9\u7801")
+        h("span", { className: "dxw-dot", "data-tone": "warning" }),
+        h("span", null, "\u9700\u8981\u914D\u5BF9\u7801")
       ),
-      h2("h3", null, "\u8F93\u5165\u624B\u673A\u5FAE\u4FE1\u663E\u793A\u7684\u6570\u5B57"),
-      h2("p", null, "\u8FD9\u662F\u5FAE\u4FE1\u9644\u52A0\u7684\u5B89\u5168\u786E\u8BA4\u6B65\u9AA4\u3002\u914D\u5BF9\u7801\u53EA\u7528\u4E8E\u672C\u6B21\u626B\u7801\u8F6E\u8BE2\uFF0C\u4E0D\u4F1A\u5199\u5165\u914D\u7F6E\u6216\u65E5\u5FD7\u3002"),
-      h2(
+      h("h3", null, "\u8F93\u5165\u624B\u673A\u5FAE\u4FE1\u663E\u793A\u7684\u6570\u5B57"),
+      h("p", null, "\u8FD9\u662F\u5FAE\u4FE1\u9644\u52A0\u7684\u5B89\u5168\u786E\u8BA4\u6B65\u9AA4\u3002\u914D\u5BF9\u7801\u53EA\u7528\u4E8E\u672C\u6B21\u626B\u7801\u8F6E\u8BE2\uFF0C\u4E0D\u4F1A\u5199\u5165\u914D\u7F6E\u6216\u65E5\u5FD7\u3002"),
+      h(
         "div",
         { className: "dxw-codeRow" },
-        h2("input", {
+        h("input", {
           className: "dxw-input",
           value: code,
           inputMode: "numeric",
@@ -8608,47 +8798,48 @@ function VerificationPanel({ provision, busy, onSubmit, onCancel }) {
           onChange: (event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 8)),
           autoFocus: true
         }),
-        h2("button", {
+        h(ActionButton, {
           type: "submit",
           className: "dxw-button",
           "data-kind": "primary",
-          disabled: !valid || busy
-        }, busy ? "\u6B63\u5728\u9A8C\u8BC1\u2026" : "\u7EE7\u7EED\u8FDE\u63A5")
+          disabled: !valid || busy,
+          loading: busy
+        }, "\u7EE7\u7EED\u8FDE\u63A5")
       ),
-      h2(Button12, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88\u7ED1\u5B9A")
+      h(Button12, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88\u7ED1\u5B9A")
     )
   );
 }
 function ProgressPanel2({ scanned, onCancel, busy }) {
-  return h2(
+  return h(
     "div",
     { className: "dxw-card dxw-loading dim-surfaceCard dim-loadingView", "aria-busy": "true" },
-    h2("div", { className: "dxw-spinner dim-spinner" }),
-    h2("h3", null, scanned ? "\u5FAE\u4FE1\u5DF2\u786E\u8BA4\uFF0C\u6B63\u5728\u542F\u52A8\u6D88\u606F\u8FDE\u63A5" : "\u6B63\u5728\u51C6\u5907\u5FAE\u4FE1\u4E8C\u7EF4\u7801"),
-    h2("p", null, scanned ? "\u6B63\u5728\u4FDD\u5B58\u51ED\u636E\u5E76\u9A8C\u8BC1 Harness \u4E0E\u5FAE\u4FE1\u957F\u8F6E\u8BE2\u3002" : "\u6B63\u5728\u8054\u7CFB\u817E\u8BAF\u5FAE\u4FE1 iLink \u670D\u52A1\u3002"),
-    onCancel ? h2(
+    h("div", { className: "dxw-spinner dim-spinner" }),
+    h("h3", null, scanned ? "\u5FAE\u4FE1\u5DF2\u786E\u8BA4\uFF0C\u6B63\u5728\u542F\u52A8\u6D88\u606F\u8FDE\u63A5" : "\u6B63\u5728\u51C6\u5907\u5FAE\u4FE1\u4E8C\u7EF4\u7801"),
+    h("p", null, scanned ? "\u6B63\u5728\u4FDD\u5B58\u51ED\u636E\u5E76\u9A8C\u8BC1 Harness \u4E0E\u5FAE\u4FE1\u957F\u8F6E\u8BE2\u3002" : "\u6B63\u5728\u8054\u7CFB\u817E\u8BAF\u5FAE\u4FE1 iLink \u670D\u52A1\u3002"),
+    onCancel ? h(
       "div",
       { className: "dxw-actions dim-viewActions", style: { justifyContent: "center", marginTop: 14 } },
-      h2(Button12, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
+      h(Button12, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
     ) : null
   );
 }
 function ProvisionError3({ provision, busy, onRetry, onClose }) {
   const error = provision.error ?? { code: "WEIXIN_PROVISION_FAILED", message: "\u5FAE\u4FE1\u7ED1\u5B9A\u6CA1\u6709\u5B8C\u6210" };
-  return h2(
+  return h(
     "div",
     { className: "dxw-card dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "dxw-error dim-inlineError", role: "alert" },
-      h2("h3", null, provision.status === "expired" ? "\u4E8C\u7EF4\u7801\u5DF2\u8FC7\u671F" : "\u5FAE\u4FE1\u6CA1\u6709\u7ED1\u5B9A\u5B8C\u6210"),
-      h2("p", null, error.message),
-      h2("span", { className: "dxw-errorCode" }, error.code),
-      h2(
+      h("h3", null, provision.status === "expired" ? "\u4E8C\u7EF4\u7801\u5DF2\u8FC7\u671F" : "\u5FAE\u4FE1\u6CA1\u6709\u7ED1\u5B9A\u5B8C\u6210"),
+      h("p", null, error.message),
+      h("span", { className: "dxw-errorCode" }, error.code),
+      h(
         "div",
         { className: "dxw-actions dim-viewActions" },
-        h2(Button12, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
-        h2(Button12, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
+        h(Button12, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
+        h(Button12, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
       )
     )
   );
@@ -8670,6 +8861,8 @@ function AccountCard4({
   busy,
   feedback,
   removing,
+  removeError,
+  removeFeedbackSequence,
   onReconnect,
   onWorkspaceSave,
   onAgentPresetSave,
@@ -8680,22 +8873,22 @@ function AccountCard4({
   const state = busy === "reconnect" ? "connecting" : account.state;
   const tone = account.connected ? "success" : state === "error" ? "error" : "warning";
   const summary = account.error?.message ?? (account.connected ? null : account.health.summary);
-  return h2(
+  return h(
     "article",
     { className: "dxw-card dim-botCard", tabIndex: -1, "data-bot-id": account.botId },
-    h2(
+    h(
       "div",
       { className: "dxw-cardBody dim-botCardBody" },
-      h2(
+      h(
         "div",
         { className: "dxw-accountTop dim-botCardTop" },
-        h2(
+        h(
           "div",
           { className: "dxw-accountIdentity dim-botIdentity" },
-          h2("div", { className: "dxw-avatar dim-botAvatar", "aria-hidden": "true" }, h2(WeixinLogoGlyph, { size: 27 })),
-          h2("div", { className: "dim-botName" }, h2("h3", null, account.bot.name), h2("p", null, account.bot.accountIdMasked))
+          h("div", { className: "dxw-avatar dim-botAvatar", "aria-hidden": "true" }, h(WeixinLogoGlyph, { size: 27 })),
+          h("div", { className: "dim-botName" }, h("h3", null, account.bot.name), h("p", null, account.bot.accountIdMasked))
         ),
-        h2(BotStatusMeta, {
+        h(BotStatusMeta, {
           className: "dxw-health",
           dotClassName: "dxw-dot",
           tone,
@@ -8704,80 +8897,78 @@ function AccountCard4({
           formatCheckedTime: checkedTime5
         })
       ),
-      h2(WorkspaceEditor, {
+      h(WorkspaceEditor, {
         workspace: account.workspace,
         disabled: Boolean(busy),
         onSave: onWorkspaceSave
       }),
-      h2(AgentPresetEditor, {
+      h(AgentPresetEditor, {
         agentPreset: account.agentPreset,
         disabled: Boolean(busy),
         onSave: onAgentPresetSave
       }),
-      h2(
+      h(
         "div",
         { className: "dxw-accountFooter dim-cardFooter" },
-        h2(
+        h(
           "div",
           { className: "dim-cardFooterLayout" },
-          h2(
+          h(
             "div",
             { className: "dxw-actions dim-cardActions" },
-            h2(
+            h(
               Button12,
-              { className: "dim-cardAction", onClick: onReconnect, disabled: Boolean(busy) },
-              busy === "reconnect" ? "\u68C0\u67E5\u4E2D\u2026" : account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"
+              { className: "dim-cardAction", onClick: onReconnect, disabled: Boolean(busy), loading: busy === "reconnect" },
+              account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"
             ),
-            h2(Button12, { className: "dim-cardAction", kind: "danger", onClick: onRequestRemove, disabled: Boolean(busy) }, "\u79FB\u9664\u63A5\u5165")
+            h(Button12, { className: "dim-cardAction", kind: "danger", onClick: onRequestRemove, disabled: Boolean(busy) }, "\u79FB\u9664\u63A5\u5165")
           ),
-          summary ? h2("div", { className: "dxw-summary dim-cardSummary" }, summary) : null,
-          account.lastMessageError ? h2(LastMessageErrorSummary, {
+          summary ? h("div", { className: "dxw-summary dim-cardSummary" }, summary) : null,
+          account.lastMessageError ? h(LastMessageErrorSummary, {
             className: "dxw-summary",
             error: account.lastMessageError
           }) : null,
-          feedback ? h2("div", {
-            className: "dxw-summary dim-cardFeedback",
-            role: "status",
-            "aria-live": "polite"
-          }, feedback) : null
+          null
         )
       )
     ),
-    removing ? h2(
-      "div",
-      { className: "dxw-confirm dim-confirm", role: "alertdialog" },
-      h2("strong", null, "\u4ECE\u6B64 Harness \u79FB\u9664\u8FD9\u4E2A\u5FAE\u4FE1\u8D26\u53F7\uFF1F"),
-      h2("p", null, "\u8FD9\u4F1A\u505C\u6B62\u6D88\u606F\u8FDE\u63A5\uFF0C\u5E76\u5220\u9664\u672C\u673A\u4FDD\u5B58\u7684 bot_token\u3001\u8D26\u53F7\u914D\u7F6E\u548C\u4F1A\u8BDD\u6620\u5C04\u3002\u5176\u4ED6\u5FAE\u4FE1\u8D26\u53F7\u4E0D\u53D7\u5F71\u54CD\u3002"),
-      h2(
+    removing ? h(
+      ConfirmDialog,
+      { className: "dxw-confirm dim-confirm", role: "alertdialog", onClose: onCancelRemove, busy: Boolean(busy), error: removeError, feedbackSequence: removeFeedbackSequence },
+      h("strong", null, "\u4ECE\u6B64 Harness \u79FB\u9664\u8FD9\u4E2A\u5FAE\u4FE1\u8D26\u53F7\uFF1F"),
+      h("p", null, "\u8FD9\u4F1A\u505C\u6B62\u6D88\u606F\u8FDE\u63A5\uFF0C\u5E76\u5220\u9664\u672C\u673A\u4FDD\u5B58\u7684 bot_token\u3001\u8D26\u53F7\u914D\u7F6E\u548C\u4F1A\u8BDD\u6620\u5C04\u3002\u5176\u4ED6\u5FAE\u4FE1\u8D26\u53F7\u4E0D\u53D7\u5F71\u54CD\u3002"),
+      h(
         "div",
         { className: "dxw-actions dim-viewActions" },
-        h2(Button12, { onClick: onCancelRemove, disabled: busy === "delete" }, "\u4FDD\u7559\u8D26\u53F7"),
-        h2(
+        h(Button12, { onClick: onCancelRemove, disabled: busy === "delete" }, "\u4FDD\u7559\u8D26\u53F7"),
+        h(
           Button12,
-          { kind: "danger", onClick: onConfirmRemove, disabled: busy === "delete" },
-          busy === "delete" ? "\u6B63\u5728\u79FB\u9664\u2026" : "\u786E\u8BA4\u79FB\u9664"
+          { kind: "danger", onClick: onConfirmRemove, disabled: busy === "delete", loading: busy === "delete" },
+          "\u786E\u8BA4\u79FB\u9664"
         )
       )
     ) : null
   );
 }
 function AccountList2(props) {
-  return h2(
+  return h(
     "section",
     { className: "dim-listSection" },
-    h2(ChannelListHeading, {
+    h(ChannelListHeading, {
       className: "dxw-listHeading",
       title: "\u5DF2\u63A5\u5165\u7684\u5FAE\u4FE1\u8D26\u53F7",
       connectionLabel: "iLink \u957F\u8F6E\u8BE2"
     }),
-    h2("ul", { className: "dxw-list dim-botList" }, props.bots.map((account) => h2(
+    h("ul", { className: "dxw-list dim-botList" }, props.bots.map((account) => h(
       "li",
       { key: account.botId },
-      h2(AccountCard4, {
+      h(AccountCard4, {
         account,
         busy: props.busyByBot[account.botId],
         feedback: props.feedbackByBot[account.botId],
         removing: props.removeTarget === account.botId,
+        removeError: props.removeErrorsByBot[account.botId]?.message,
+        removeFeedbackSequence: props.removeErrorsByBot[account.botId]?.sequence,
         onReconnect: () => props.onReconnect(account),
         onWorkspaceSave: (workspace) => props.onWorkspaceSave(account, workspace),
         onAgentPresetSave: (agentPreset) => props.onAgentPresetSave(account, agentPreset),
@@ -8799,7 +8990,7 @@ function mergeWeixinProvisioningSnapshot(current, incoming, { restoreProvisionin
   };
 }
 function WeixinSettingsTab({ rpcCall }) {
-  const [model, setModel] = React18.useState({
+  const [model, setModel] = React19.useState({
     phase: "loading",
     bots: [],
     totals: EMPTY_TOTALS3,
@@ -8807,33 +8998,34 @@ function WeixinSettingsTab({ rpcCall }) {
     error: null,
     agentPresetCatalog: EMPTY_AGENT_PRESET_CATALOG
   });
-  const [provision, setProvision] = React18.useState(null);
-  const [busy, setBusy] = React18.useState(false);
-  const [busyByBot, setBusyByBot] = React18.useState({});
-  const [feedbackByBot, setFeedbackByBot] = React18.useState({});
-  const [removeTarget, setRemoveTarget] = React18.useState(null);
-  const [notice, setNotice] = React18.useState("");
-  const [now, setNow] = React18.useState(() => Date.now());
-  const addButtonRef = React18.useRef(null);
-  const mountedRef = React18.useRef(true);
+  const [provision, setProvision] = React19.useState(null);
+  const [busy, setBusy] = React19.useState(false);
+  const [busyByBot, setBusyByBot] = React19.useState({});
+  const [feedbackByBot, setFeedbackByBot] = React19.useState({});
+  const [removeTarget, setRemoveTarget] = React19.useState(null);
+  const [removeErrorsByBot, setRemoveErrorsByBot] = React19.useState({});
+  const [notice, setNotice] = React19.useState("");
+  const [now, setNow] = React19.useState(() => Date.now());
+  const addButtonRef = React19.useRef(null);
+  const mountedRef = React19.useRef(true);
   const workspaceFence = useWorkspaceSnapshotFence();
   const scheduleAnimationFrame = useAnimationFrameScheduler();
-  React18.useEffect(() => {
+  React19.useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
   }, []);
-  const announce = React18.useCallback((value) => {
+  const announce = React19.useCallback((value) => {
     setNotice("");
     scheduleAnimationFrame(() => {
       if (value) setNotice(value);
     }, "announcement");
   }, [scheduleAnimationFrame]);
-  const invoke = React18.useCallback(async (endpoint, payload = {}, signal) => {
+  const invoke = React19.useCallback(async (endpoint, payload = {}, signal) => {
     return unwrapRpcResult8(await rpcCall(endpoint, payload, signal));
   }, [rpcCall]);
-  const loadStatus = React18.useCallback(async ({
+  const loadStatus = React19.useCallback(async ({
     signal,
     silent = false,
     restoreProvisioning = false
@@ -8870,12 +9062,12 @@ function WeixinSettingsTab({ rpcCall }) {
       return void 0;
     }
   }, [invoke, workspaceFence]);
-  React18.useEffect(() => {
+  React19.useEffect(() => {
     const controller = new AbortController();
     void loadStatus({ signal: controller.signal, restoreProvisioning: true });
     return () => controller.abort();
   }, [loadStatus]);
-  React18.useEffect(() => {
+  React19.useEffect(() => {
     if (model.phase !== "ready") return void 0;
     const controller = new AbortController();
     let running = false;
@@ -8894,12 +9086,12 @@ function WeixinSettingsTab({ rpcCall }) {
       window.clearInterval(timer);
     };
   }, [loadStatus, model.phase]);
-  React18.useEffect(() => {
+  React19.useEffect(() => {
     if (!provision || !["pending", "scanned"].includes(provision.status)) return void 0;
     const timer = window.setInterval(() => setNow(Date.now()), 1e3);
     return () => window.clearInterval(timer);
   }, [provision?.attemptId, provision?.status]);
-  const startProvisioning = React18.useCallback(async ({ replace = false } = {}) => {
+  const startProvisioning = React19.useCallback(async ({ replace = false } = {}) => {
     setBusy(true);
     try {
       if (replace && provision?.attemptId) {
@@ -8920,7 +9112,7 @@ function WeixinSettingsTab({ rpcCall }) {
       setBusy(false);
     }
   }, [announce, invoke, provision?.attemptId]);
-  const cancelProvisioning = React18.useCallback(async () => {
+  const cancelProvisioning = React19.useCallback(async () => {
     setBusy(true);
     try {
       if (provision?.attemptId && !["failed", "expired", "cancelled"].includes(provision.status)) {
@@ -8935,7 +9127,7 @@ function WeixinSettingsTab({ rpcCall }) {
       setBusy(false);
     }
   }, [announce, invoke, provision?.attemptId, provision?.status, scheduleAnimationFrame]);
-  const submitVerification = React18.useCallback(async (verifyCode) => {
+  const submitVerification = React19.useCallback(async (verifyCode) => {
     if (!provision?.attemptId) return;
     setBusy(true);
     try {
@@ -8951,7 +9143,7 @@ function WeixinSettingsTab({ rpcCall }) {
       setBusy(false);
     }
   }, [announce, invoke, provision?.attemptId]);
-  React18.useEffect(() => {
+  React19.useEffect(() => {
     const attemptId = provision?.attemptId;
     if (!attemptId || !["pending", "scanned", "connecting"].includes(provision.status)) return void 0;
     const controller = new AbortController();
@@ -8999,7 +9191,7 @@ function WeixinSettingsTab({ rpcCall }) {
       controller.abort();
     };
   }, [announce, invoke, loadStatus, provision?.attemptId, provision?.status, provision?.pollIntervalMs]);
-  const setBotBusy = React18.useCallback((botId, value) => {
+  const setBotBusy = React19.useCallback((botId, value) => {
     setBusyByBot((current) => {
       const next = { ...current };
       if (value) next[botId] = value;
@@ -9007,7 +9199,7 @@ function WeixinSettingsTab({ rpcCall }) {
       return next;
     });
   }, []);
-  const reconnect = React18.useCallback(async (account) => {
+  const reconnect = React19.useCallback(async (account) => {
     const snapshotVersion = workspaceFence.beginMutation();
     setBotBusy(account.botId, "reconnect");
     setFeedbackByBot((current) => {
@@ -9058,7 +9250,7 @@ function WeixinSettingsTab({ rpcCall }) {
       setBotBusy(account.botId, null);
     }
   }, [announce, invoke, loadStatus, setBotBusy, workspaceFence]);
-  const saveWorkspace = React18.useCallback(async (account, workspace) => {
+  const saveWorkspace = React19.useCallback(async (account, workspace) => {
     const workspaceVersion = workspaceFence.beginMutation();
     setBotBusy(account.botId, "workspace");
     try {
@@ -9082,7 +9274,7 @@ function WeixinSettingsTab({ rpcCall }) {
       if (mountedRef.current) setBotBusy(account.botId, null);
     }
   }, [invoke, loadStatus, setBotBusy, workspaceFence]);
-  const saveAgentPreset = React18.useCallback(async (account, agentPreset) => {
+  const saveAgentPreset = React19.useCallback(async (account, agentPreset) => {
     const snapshotVersion = workspaceFence.beginMutation();
     setBotBusy(account.botId, "preset");
     try {
@@ -9106,7 +9298,7 @@ function WeixinSettingsTab({ rpcCall }) {
       if (mountedRef.current) setBotBusy(account.botId, null);
     }
   }, [invoke, loadStatus, setBotBusy, workspaceFence]);
-  const remove = React18.useCallback(async (account) => {
+  const remove = React19.useCallback(async (account) => {
     const snapshotVersion = workspaceFence.beginMutation();
     setBotBusy(account.botId, "delete");
     try {
@@ -9124,9 +9316,20 @@ function WeixinSettingsTab({ rpcCall }) {
         }));
       }
       setRemoveTarget(null);
+      setRemoveErrorsByBot((current) => {
+        const next = { ...current };
+        delete next[account.botId];
+        return next;
+      });
       announce("\u5FAE\u4FE1\u8D26\u53F7\u53CA\u672C\u673A\u51ED\u636E\u5DF2\u79FB\u9664\u3002");
     } catch (error) {
-      announce(`\u79FB\u9664\u5931\u8D25\uFF1A${presentError8(error).message}`);
+      if (mountedRef.current) setRemoveErrorsByBot((current) => ({
+        ...current,
+        [account.botId]: {
+          message: `\u79FB\u9664\u5931\u8D25\uFF1A${presentError8(error).message}`,
+          sequence: (current[account.botId]?.sequence ?? 0) + 1
+        }
+      }));
     } finally {
       const shouldRefresh = workspaceFence.endMutation();
       if (shouldRefresh && mountedRef.current) void loadStatus({ silent: true });
@@ -9135,9 +9338,9 @@ function WeixinSettingsTab({ rpcCall }) {
   }, [announce, invoke, loadStatus, setBotBusy, workspaceFence]);
   let provisionView = null;
   if (provision?.status === "starting") {
-    provisionView = h2(ProgressPanel2, { busy });
+    provisionView = h(ProgressPanel2, { busy });
   } else if (["pending", "scanned"].includes(provision?.status)) {
-    provisionView = h2(QrPanel4, {
+    provisionView = h(QrPanel4, {
       provision,
       now,
       busy,
@@ -9145,60 +9348,62 @@ function WeixinSettingsTab({ rpcCall }) {
       onCancel: () => void cancelProvisioning()
     });
   } else if (provision?.status === "needs_verification") {
-    provisionView = h2(VerificationPanel, {
+    provisionView = h(VerificationPanel, {
       provision,
       busy,
       onSubmit: (code) => void submitVerification(code),
       onCancel: () => void cancelProvisioning()
     });
   } else if (provision?.status === "connecting") {
-    provisionView = h2(ProgressPanel2, {
+    provisionView = h(ProgressPanel2, {
       scanned: true,
       busy,
       onCancel: () => void cancelProvisioning()
     });
   } else if (provision && ["failed", "expired", "cancelled"].includes(provision.status)) {
-    provisionView = h2(ProvisionError3, {
+    provisionView = h(ProvisionError3, {
       provision,
       busy,
       onRetry: () => void startProvisioning({ replace: Boolean(provision.attemptId) }),
       onClose: () => void cancelProvisioning()
     });
   }
-  return h2(AgentPresetCatalogContext.Provider, {
+  return h(AgentPresetCatalogContext.Provider, {
     value: model.agentPresetCatalog ?? EMPTY_AGENT_PRESET_CATALOG
-  }, h2(
+  }, h(
     "section",
     { className: "dxw-page dim-channelPage", "aria-label": "\u5FAE\u4FE1\u8BBE\u7F6E" },
-    h2(Heading5, {
+    h(Heading5, {
       totals: model.totals,
       adding: Boolean(provision),
       busy,
       onAdd: () => void startProvisioning(),
       addButtonRef
     }),
-    h2("div", { className: "dxw-visuallyHidden", role: "status", "aria-live": "polite" }, notice),
-    model.error && model.phase === "ready" ? h2("div", { className: "dxw-statusNotice dim-statusNotice" }, `\u72B6\u6001\u5237\u65B0\u5931\u8D25\uFF1A${model.error.message}`) : null,
-    model.phase === "loading" ? h2(LoadingView5) : model.phase === "error" ? h2(
+    notice ? h(FeedbackToast, { text: notice }) : null,
+    Object.entries(removeErrorsByBot).map(([botId, failure]) => botId !== removeTarget ? h(FeedbackToast, { key: botId, text: failure.message, tone: "error", sequence: failure.sequence }) : null),
+    model.error && model.phase === "ready" ? h(FeedbackToast, { text: `\u72B6\u6001\u5237\u65B0\u5931\u8D25\uFF1A${model.error.message}`, tone: "error" }) : null,
+    model.phase === "loading" ? h(LoadingView5) : model.phase === "error" ? h(
       "div",
       { className: "dxw-card dim-surfaceCard" },
-      h2(
+      h(
         "div",
         { className: "dxw-error dim-inlineError" },
-        h2("h3", null, "\u65E0\u6CD5\u8BFB\u53D6\u5FAE\u4FE1\u72B6\u6001"),
-        h2("p", null, model.error?.message ?? "\u8BF7\u7A0D\u540E\u91CD\u8BD5"),
-        h2(Button12, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6")
+        h("h3", null, "\u65E0\u6CD5\u8BFB\u53D6\u5FAE\u4FE1\u72B6\u6001"),
+        h("p", null, model.error?.message ?? "\u8BF7\u7A0D\u540E\u91CD\u8BD5"),
+        h(Button12, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6")
       )
-    ) : h2(
-      React18.Fragment,
+    ) : h(
+      React19.Fragment,
       null,
       provisionView,
-      model.bots.length === 0 && !provision ? h2(EmptyView5, { onStart: () => void startProvisioning(), busy }) : null,
-      model.bots.length > 0 ? h2(AccountList2, {
+      model.bots.length === 0 && !provision ? h(EmptyView5, { onStart: () => void startProvisioning(), busy }) : null,
+      model.bots.length > 0 ? h(AccountList2, {
         bots: model.bots,
         busyByBot,
         feedbackByBot,
         removeTarget,
+        removeErrorsByBot,
         onReconnect: (account) => void reconnect(account),
         onWorkspaceSave: saveWorkspace,
         onAgentPresetSave: saveAgentPreset,
@@ -9451,7 +9656,7 @@ function formatRemaining6(milliseconds) {
 }
 
 // plugin-src/client/channels/whatsapp/index.js
-var React19 = __toESM(require("react"), 1);
+var React20 = __toESM(require("react"), 1);
 
 // plugin-src/client/channels/whatsapp/styles.js
 var WHATSAPP_STYLE_ID = "xmanrui-dsh-im-whatsapp-settings";
@@ -9523,11 +9728,11 @@ function allowedNumbersFromText(value) {
 function WhatsappAccessSettings({ account, busy = false, onSave }) {
   const policy = accessPolicyFor(account);
   const sourceNumbers = policy.allowedNumbers.join("\n");
-  const helpId = React19.useId();
-  const [accessMode, setAccessMode] = React19.useState(policy.accessMode);
-  const [allowedNumbers, setAllowedNumbers] = React19.useState(sourceNumbers);
-  const [error, setError] = React19.useState(null);
-  React19.useEffect(() => {
+  const helpId = React20.useId();
+  const [accessMode, setAccessMode] = React20.useState(policy.accessMode);
+  const [allowedNumbers, setAllowedNumbers] = React20.useState(sourceNumbers);
+  const [error, setError] = React20.useState(null);
+  React20.useEffect(() => {
     setAccessMode(policy.accessMode);
     setAllowedNumbers(sourceNumbers);
     setError(null);
@@ -9549,60 +9754,60 @@ function WhatsappAccessSettings({ account, busy = false, onSave }) {
     "private-allowlist": "\u6307\u5B9A\u8054\u7CFB\u4EBA\u6A21\u5F0F",
     open: "\u5F00\u653E\u54CD\u5E94\u6A21\u5F0F"
   };
-  return h2(
+  return h(
     "form",
     { className: "dwa-access", onSubmit: save },
-    h2(
+    h(
       "div",
       { className: "dwa-accessHeading" },
-      h2("strong", null, "\u8BBF\u95EE\u8BBE\u7F6E"),
-      h2(
+      h("strong", null, "\u8BBF\u95EE\u8BBE\u7F6E"),
+      h(
         "span",
         { className: "dwa-accessStatus" },
-        h2(
+        h(
           "span",
           { className: "dwa-accessBadge", "data-mode": policy.accessMode },
           ["\u5DF2\u751F\u6548\uFF1A", labels[policy.accessMode]]
         ),
-        h2(
+        h(
           "span",
           { className: "dwa-accessHelp" },
-          h2("button", {
+          h("button", {
             type: "button",
             className: "dwa-accessHelpButton",
             "aria-label": "\u67E5\u770B WhatsApp \u8BBF\u95EE\u6A21\u5F0F\u8BF4\u660E",
             "aria-describedby": helpId
-          }, h2("span", { "aria-hidden": "true" }, "?")),
-          h2(
+          }, h("span", { "aria-hidden": "true" }, "?")),
+          h(
             "span",
             { id: helpId, className: "dwa-accessTooltip", role: "tooltip" },
-            h2(
+            h(
               "span",
               { className: "dwa-accessTooltipItem" },
-              h2("strong", null, "\u4EC5\u81EA\u5DF1\u6A21\u5F0F"),
-              h2("span", null, "\u53EA\u54CD\u5E94\u5DF2\u7ED1\u5B9A WhatsApp \u8D26\u53F7\u7684\u81EA\u804A\u6D88\u606F\u3002")
+              h("strong", null, "\u4EC5\u81EA\u5DF1\u6A21\u5F0F"),
+              h("span", null, "\u53EA\u54CD\u5E94\u5DF2\u7ED1\u5B9A WhatsApp \u8D26\u53F7\u7684\u81EA\u804A\u6D88\u606F\u3002")
             ),
-            h2(
+            h(
               "span",
               { className: "dwa-accessTooltipItem" },
-              h2("strong", null, "\u6307\u5B9A\u8054\u7CFB\u4EBA\u6A21\u5F0F"),
-              h2("span", null, "\u54CD\u5E94\u81EA\u804A\u548C\u767D\u540D\u5355\u8054\u7CFB\u4EBA\u7684\u79C1\u804A\uFF0C\u5FFD\u7565\u7FA4\u804A\u3002")
+              h("strong", null, "\u6307\u5B9A\u8054\u7CFB\u4EBA\u6A21\u5F0F"),
+              h("span", null, "\u54CD\u5E94\u81EA\u804A\u548C\u767D\u540D\u5355\u8054\u7CFB\u4EBA\u7684\u79C1\u804A\uFF0C\u5FFD\u7565\u7FA4\u804A\u3002")
             ),
-            h2(
+            h(
               "span",
               { className: "dwa-accessTooltipItem" },
-              h2("strong", null, "\u5F00\u653E\u54CD\u5E94\u6A21\u5F0F"),
-              h2("span", null, "\u54CD\u5E94\u6240\u6709\u79C1\u804A\u3001\u5DF2\u7ED1\u5B9A\u8D26\u53F7\u81EA\u5DF1\u53D1\u51FA\u7684\u7FA4\u804A\u6D88\u606F\uFF0C\u4EE5\u53CA\u5176\u4ED6\u7FA4\u6210\u5458\u7684\u63D0\u53CA\u6216\u56DE\u590D\u3002")
+              h("strong", null, "\u5F00\u653E\u54CD\u5E94\u6A21\u5F0F"),
+              h("span", null, "\u54CD\u5E94\u6240\u6709\u79C1\u804A\u3001\u5DF2\u7ED1\u5B9A\u8D26\u53F7\u81EA\u5DF1\u53D1\u51FA\u7684\u7FA4\u804A\u6D88\u606F\uFF0C\u4EE5\u53CA\u5176\u4ED6\u7FA4\u6210\u5458\u7684\u63D0\u53CA\u6216\u56DE\u590D\u3002")
             )
           )
         )
       )
     ),
-    h2(
+    h(
       "label",
       { className: "dwa-accessField" },
-      h2("span", null, "\u6A21\u5F0F"),
-      h2(
+      h("span", null, "\u6A21\u5F0F"),
+      h(
         "select",
         {
           value: accessMode,
@@ -9613,16 +9818,16 @@ function WhatsappAccessSettings({ account, busy = false, onSave }) {
             setError(null);
           }
         },
-        h2("option", { value: "self-only" }, "\u4EC5\u81EA\u5DF1\u6A21\u5F0F\uFF08\u9ED8\u8BA4\uFF09"),
-        h2("option", { value: "private-allowlist" }, "\u6307\u5B9A\u8054\u7CFB\u4EBA\u6A21\u5F0F"),
-        h2("option", { value: "open" }, "\u5F00\u653E\u54CD\u5E94\u6A21\u5F0F")
+        h("option", { value: "self-only" }, "\u4EC5\u81EA\u5DF1\u6A21\u5F0F\uFF08\u9ED8\u8BA4\uFF09"),
+        h("option", { value: "private-allowlist" }, "\u6307\u5B9A\u8054\u7CFB\u4EBA\u6A21\u5F0F"),
+        h("option", { value: "open" }, "\u5F00\u653E\u54CD\u5E94\u6A21\u5F0F")
       )
     ),
-    allowlistEnabled ? h2(
+    allowlistEnabled ? h(
       "label",
       { className: "dwa-accessField" },
-      h2("span", null, "\u5141\u8BB8\u79C1\u804A\u7684 WhatsApp \u7535\u8BDD\u53F7\u7801"),
-      h2("textarea", {
+      h("span", null, "\u5141\u8BB8\u79C1\u804A\u7684 WhatsApp \u7535\u8BDD\u53F7\u7801"),
+      h("textarea", {
         value: allowedNumbers,
         disabled: busy,
         rows: 3,
@@ -9633,28 +9838,29 @@ function WhatsappAccessSettings({ account, busy = false, onSave }) {
           setError(null);
         }
       }),
-      h2("small", null, "\u53EF\u4EE5\u5305\u542B\u5F00\u5934\u7684 +\uFF0C\u4FDD\u5B58\u65F6\u4F1A\u81EA\u52A8\u79FB\u9664\u3002")
+      h("small", null, "\u53EF\u4EE5\u5305\u542B\u5F00\u5934\u7684 +\uFF0C\u4FDD\u5B58\u65F6\u4F1A\u81EA\u52A8\u79FB\u9664\u3002")
     ) : null,
-    allowlistEnabled && allowedNumbers.trim() === "" ? h2(
+    allowlistEnabled && allowedNumbers.trim() === "" ? h(
       "p",
       { className: "dwa-accessWarning", role: "status" },
       "\u767D\u540D\u5355\u4E3A\u7A7A\uFF1B\u4FDD\u5B58\u540E\u5C06\u53EA\u63A5\u53D7\u81EA\u804A\u6D88\u606F\u3002"
     ) : null,
-    error ? h2("p", { className: "dwa-accessError", role: "alert" }, error) : null,
-    h2(
+    error ? h(FeedbackToast, { text: error, tone: "error" }) : null,
+    h(
       "div",
       { className: "dwa-accessActions" },
-      h2("button", {
+      h(ActionButton, {
         type: "submit",
         className: "ddt-button",
         "data-kind": "secondary",
-        disabled: busy
-      }, busy ? "\u6B63\u5728\u4FDD\u5B58\u2026" : "\u4FDD\u5B58\u8BBF\u95EE\u8BBE\u7F6E")
+        disabled: busy,
+        loading: busy
+      }, "\u4FDD\u5B58\u8BBF\u95EE\u8BBE\u7F6E")
     )
   );
 }
-var Button14 = React19.forwardRef(function Button15({ children, kind = "secondary", className = "", ...props }, ref) {
-  return h2("button", {
+var Button14 = React20.forwardRef(function Button15({ children, kind = "secondary", className = "", ...props }, ref) {
+  return h(ActionButton, {
     ...props,
     ref,
     type: "button",
@@ -9684,70 +9890,71 @@ function connectionTestNotice3(value) {
   return value?.testMessage ? "\u8FDE\u63A5\u68C0\u67E5\u5B8C\u6210\uFF0C\u4F46\u6D4B\u8BD5\u6D88\u606F\u53D1\u9001\u5931\u8D25\u3002" : null;
 }
 function Heading6({ totals, busy, onAdd, addButtonRef }) {
-  return h2(
+  return h(
     "div",
     { className: "ddt-heading" },
-    h2(
+    h(
       "div",
       { className: "ddt-tools" },
-      h2(
+      h(
         "div",
         { className: "dim-bindActions" },
-        h2(Button14, {
+        h(Button14, {
           kind: "primary",
           className: "dim-scanButton",
           onClick: onAdd,
           disabled: busy,
           ref: addButtonRef,
-          "aria-label": "\u626B\u7801\u63A5\u5165 WhatsApp \u673A\u5668\u4EBA"
-        }, h2(QrActionIcon), busy ? "\u6B63\u5728\u63A5\u5165" : "\u626B\u7801\u63A5\u5165\u673A\u5668\u4EBA")
+          "aria-label": "\u626B\u7801\u63A5\u5165 WhatsApp \u673A\u5668\u4EBA",
+          loading: busy
+        }, h(QrActionIcon), "\u626B\u7801\u63A5\u5165\u673A\u5668\u4EBA")
       ),
-      totals.configured > 0 ? h2(
+      totals.configured > 0 ? h(
         "div",
         { className: "ddt-badge dim-onlineBadge" },
-        h2("span", null, `${totals.connected} / ${totals.configured} \u5728\u7EBF`)
+        h("span", null, `${totals.connected} / ${totals.configured} \u5728\u7EBF`)
       ) : null
     )
   );
 }
 function LoadingView6() {
-  return h2("div", {
+  return h("div", {
     className: "ddt-card ddt-loading dim-surfaceCard dim-loadingView",
     "aria-busy": "true"
-  }, h2("div", { className: "ddt-spinner dim-spinner" }), "\u6B63\u5728\u8BFB\u53D6 WhatsApp \u673A\u5668\u4EBA\u72B6\u6001\u2026");
+  }, h("div", { className: "ddt-spinner dim-spinner" }), "\u6B63\u5728\u8BFB\u53D6 WhatsApp \u673A\u5668\u4EBA\u72B6\u6001\u2026");
 }
 function EmptyView6({ busy, onStart }) {
-  return h2(
+  return h(
     "div",
     { className: "ddt-card dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "ddt-cardBody ddt-empty dim-surfaceBody dim-emptyView" },
-      h2(
+      h(
         "div",
         { className: "dim-emptyCopy" },
-        h2(
+        h(
           "div",
           { className: "ddt-stateLabel dim-stateLabel" },
-          h2("span", { className: "ddt-dot dim-stateDot" }),
-          h2("span", null, "\u5C1A\u672A\u63A5\u5165 WhatsApp \u673A\u5668\u4EBA")
+          h("span", { className: "ddt-dot dim-stateDot" }),
+          h("span", null, "\u5C1A\u672A\u63A5\u5165 WhatsApp \u673A\u5668\u4EBA")
         ),
-        h2("h3", null, "\u626B\u7801\u7ED1\u5B9A WhatsApp \u673A\u5668\u4EBA"),
-        h2("p", null, "\u4F7F\u7528\u624B\u673A WhatsApp \u626B\u63CF\u4E8C\u7EF4\u7801\u5373\u53EF\u63A5\u5165\u3002"),
-        h2(
+        h("h3", null, "\u626B\u7801\u7ED1\u5B9A WhatsApp \u673A\u5668\u4EBA"),
+        h("p", null, "\u4F7F\u7528\u624B\u673A WhatsApp \u626B\u63CF\u4E8C\u7EF4\u7801\u5373\u53EF\u63A5\u5165\u3002"),
+        h(
           "div",
           { className: "ddt-actions dim-viewActions" },
-          h2(
+          h(
             Button14,
-            { kind: "primary", onClick: onStart, disabled: busy },
-            busy ? "\u6B63\u5728\u751F\u6210\u4E8C\u7EF4\u7801\u2026" : "\u751F\u6210\u4E8C\u7EF4\u7801"
+            { kind: "primary", onClick: onStart, disabled: busy, loading: busy },
+            "\u751F\u6210\u4E8C\u7EF4\u7801"
           )
         )
       ),
-      h2("div", {
+      h("div", {
         className: "ddt-brandMark dim-emptyBrand dwa-avatar",
         "aria-hidden": "true"
-      }, h2(WhatsappLogoGlyph, { size: 64 }))
+      }, h(WhatsappLogoGlyph, { size: 64 }))
     )
   );
 }
@@ -9756,59 +9963,59 @@ function QrPanel5({ provision, now, busy, onRefresh, onCancel }) {
   const remaining = Math.max(0, provision.expiresAt - now);
   const duration = Math.max(1, provision.durationMs ?? 6e4);
   const progress = Math.round(Math.min(1, remaining / duration) * 100);
-  return h2(
+  return h(
     "div",
     { className: "ddt-card dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "ddt-cardBody ddt-qrLayout dim-surfaceBody dim-qrLayout" },
-      h2(
+      h(
         "div",
         { className: "ddt-qrColumn dim-qrColumn" },
-        h2(
+        h(
           "div",
           { className: "ddt-qrFrame dim-qrFrame" },
-          source ? h2("img", {
+          source ? h("img", {
             src: source,
             alt: "\u7528\u4E8E\u5173\u8054 WhatsApp \u8BBE\u5907\u7684\u4E00\u6B21\u6027\u4E8C\u7EF4\u7801"
-          }) : h2("div", { className: "ddt-qrFallback dim-qrFallback" }, "\u4E8C\u7EF4\u7801\u6B63\u5728\u751F\u6210\u2026")
+          }) : h("div", { className: "ddt-qrFallback dim-qrFallback" }, "\u4E8C\u7EF4\u7801\u6B63\u5728\u751F\u6210\u2026")
         ),
-        h2(
+        h(
           "div",
           { className: "ddt-countdown dim-countdown" },
-          h2(
+          h(
             "div",
             { className: "ddt-countdownTop dim-countdownTop" },
-            h2("span", null, "\u5F53\u524D\u4E8C\u7EF4\u7801\u6709\u6548\u65F6\u95F4"),
-            h2("strong", null, formatRemaining6(remaining))
+            h("span", null, "\u5F53\u524D\u4E8C\u7EF4\u7801\u6709\u6548\u65F6\u95F4"),
+            h("strong", null, formatRemaining6(remaining))
           ),
-          h2("div", {
+          h("div", {
             className: "ddt-progress dim-progress",
             style: { "--ddt-progress": `${progress}%` }
-          }, h2("span"))
+          }, h("span"))
         )
       ),
-      h2(
+      h(
         "div",
         { className: "ddt-qrCopy dim-qrCopy" },
-        h2(
+        h(
           "div",
           { className: "ddt-stateLabel dim-stateLabel" },
-          h2("span", { className: "ddt-dot dim-stateDot", "data-tone": "warning" }),
-          h2("span", null, "\u7B49\u5F85 WhatsApp \u626B\u7801")
+          h("span", { className: "ddt-dot dim-stateDot", "data-tone": "warning" }),
+          h("span", null, "\u7B49\u5F85 WhatsApp \u626B\u7801")
         ),
-        h2("h3", null, "\u7528\u624B\u673A WhatsApp \u626B\u63CF\u4E8C\u7EF4\u7801"),
-        h2(
+        h("h3", null, "\u7528\u624B\u673A WhatsApp \u626B\u63CF\u4E8C\u7EF4\u7801"),
+        h(
           "ol",
           { className: "ddt-steps dim-steps" },
-          h2("li", null, "\u6253\u5F00 WhatsApp \u2192 \u8BBE\u7F6E \u2192 \u5DF2\u5173\u8054\u8BBE\u5907"),
-          h2("li", null, "\u70B9\u51FB\u201C\u5173\u8054\u8BBE\u5907\u201D\u5E76\u626B\u63CF\u5DE6\u4FA7\u4E8C\u7EF4\u7801")
+          h("li", null, "\u6253\u5F00 WhatsApp \u2192 \u8BBE\u7F6E \u2192 \u5DF2\u5173\u8054\u8BBE\u5907"),
+          h("li", null, "\u70B9\u51FB\u201C\u5173\u8054\u8BBE\u5907\u201D\u5E76\u626B\u63CF\u5DE6\u4FA7\u4E8C\u7EF4\u7801")
         ),
-        h2(
+        h(
           "div",
           { className: "ddt-actions dim-viewActions" },
-          h2(Button14, { onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
-          h2(Button14, { kind: "quiet", onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
+          h(Button14, { onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
+          h(Button14, { kind: "quiet", onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
         )
       )
     )
@@ -9817,53 +10024,53 @@ function QrPanel5({ provision, now, busy, onRefresh, onCancel }) {
 function ProvisionView3({ provision, busy, onRetry, onClose }) {
   if (provision.status === "starting" || provision.status === "connecting") {
     const starting = provision.status === "starting";
-    return h2(
+    return h(
       "div",
       {
         className: "ddt-card ddt-loading dim-surfaceCard dim-specialView",
         "aria-busy": "true"
       },
-      h2("div", { className: "ddt-spinner dim-spinner" }),
-      h2("h3", null, starting ? "\u6B63\u5728\u751F\u6210 WhatsApp \u4E8C\u7EF4\u7801" : "\u5DF2\u626B\u7801\uFF0C\u6B63\u5728\u8FDE\u63A5 WhatsApp"),
-      h2("p", null, starting ? "\u6B63\u5728\u5EFA\u7ACB\u5B89\u5168\u7684\u5173\u8054\u8BBE\u5907\u4F1A\u8BDD\u3002" : "\u5173\u8054\u8BBE\u5907\u6B63\u5728\u63A5\u5165 DeepSeek Harness\u3002")
+      h("div", { className: "ddt-spinner dim-spinner" }),
+      h("h3", null, starting ? "\u6B63\u5728\u751F\u6210 WhatsApp \u4E8C\u7EF4\u7801" : "\u5DF2\u626B\u7801\uFF0C\u6B63\u5728\u8FDE\u63A5 WhatsApp"),
+      h("p", null, starting ? "\u6B63\u5728\u5EFA\u7ACB\u5B89\u5168\u7684\u5173\u8054\u8BBE\u5907\u4F1A\u8BDD\u3002" : "\u5173\u8054\u8BBE\u5907\u6B63\u5728\u63A5\u5165 DeepSeek Harness\u3002")
     );
   }
   const error = provision.error ?? {
     code: "WHATSAPP_PROVISION_FAILED",
     message: "WhatsApp \u6CA1\u6709\u63A5\u5165\u5B8C\u6210"
   };
-  return h2(
+  return h(
     "div",
     { className: "ddt-card dim-surfaceCard" },
-    h2(
+    h(
       "div",
       { className: "ddt-inlineError dim-inlineError", role: "alert" },
-      h2("h3", null, "WhatsApp \u6CA1\u6709\u63A5\u5165\u5B8C\u6210"),
-      h2("p", null, error.message),
-      h2("span", { className: "ddt-errorCode" }, error.code),
-      h2(
+      h("h3", null, "WhatsApp \u6CA1\u6709\u63A5\u5165\u5B8C\u6210"),
+      h("p", null, error.message),
+      h("span", { className: "ddt-errorCode" }, error.code),
+      h(
         "div",
         { className: "ddt-actions dim-viewActions" },
-        h2(Button14, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
-        h2(Button14, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
+        h(Button14, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
+        h(Button14, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
       )
     )
   );
 }
-function RemoveConfirmation5({ account, busy, onConfirm, onCancel }) {
-  return h2(
-    "div",
-    { className: "ddt-confirm dim-confirm", role: "alertdialog" },
-    h2("strong", null, `\u4ECE DeepSeek Harness \u79FB\u9664\u201C${account.bot.name}\u201D\uFF1F`),
-    h2("p", null, "\u8FD9\u4F1A\u505C\u6B62\u6D88\u606F\u8FDE\u63A5\uFF0C\u5E76\u5220\u9664\u672C\u673A\u4FDD\u5B58\u7684 WhatsApp \u5173\u8054\u8BBE\u5907\u548C\u4F1A\u8BDD\u6620\u5C04\u3002"),
-    h2(
+function RemoveConfirmation5({ account, busy, error, feedbackSequence, onConfirm, onCancel }) {
+  return h(
+    ConfirmDialog,
+    { className: "ddt-confirm dim-confirm", role: "alertdialog", onClose: onCancel, busy: Boolean(busy), error, feedbackSequence },
+    h("strong", null, `\u4ECE DeepSeek Harness \u79FB\u9664\u201C${account.bot.name}\u201D\uFF1F`),
+    h("p", null, "\u8FD9\u4F1A\u505C\u6B62\u6D88\u606F\u8FDE\u63A5\uFF0C\u5E76\u5220\u9664\u672C\u673A\u4FDD\u5B58\u7684 WhatsApp \u5173\u8054\u8BBE\u5907\u548C\u4F1A\u8BDD\u6620\u5C04\u3002"),
+    h(
       "div",
       { className: "ddt-actions dim-viewActions" },
-      h2(Button14, { onClick: onCancel, disabled: busy }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
-      h2(
+      h(Button14, { onClick: onCancel, disabled: busy }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
+      h(
         Button14,
-        { kind: "danger", onClick: onConfirm, disabled: busy },
-        busy ? "\u6B63\u5728\u79FB\u9664\u2026" : "\u786E\u8BA4\u79FB\u9664\u63A5\u5165"
+        { kind: "danger", onClick: onConfirm, disabled: busy, loading: busy },
+        "\u786E\u8BA4\u79FB\u9664\u63A5\u5165"
       )
     )
   );
@@ -9873,6 +10080,8 @@ function WhatsappAccountCard({
   busy,
   testNotice,
   removing,
+  removeError,
+  removeFeedbackSequence,
   onReconnect,
   onWorkspaceSave,
   onAgentPresetSave,
@@ -9885,30 +10094,30 @@ function WhatsappAccountCard({
   const tone = account.connected ? "success" : state === "error" ? "error" : "warning";
   const stateLabel2 = account.connected ? "\u8FD0\u884C\u6B63\u5E38" : state === "connecting" ? "\u6B63\u5728\u8FDE\u63A5" : "\u8FDE\u63A5\u672A\u5C31\u7EEA";
   const summary = account.error?.message ?? (account.connected ? null : account.health.summary);
-  return h2(
+  return h(
     "article",
     { className: "ddt-card dim-botCard", "data-bot-id": account.botId },
-    h2(
+    h(
       "div",
       { className: "ddt-cardBody dim-botCardBody" },
-      h2(
+      h(
         "div",
         { className: "ddt-accountTop dim-botCardTop" },
-        h2(
+        h(
           "div",
           { className: "ddt-accountIdentity dim-botIdentity" },
-          h2("div", {
+          h("div", {
             className: "ddt-avatar dim-botAvatar dwa-avatar",
             "aria-hidden": "true"
-          }, h2(WhatsappLogoGlyph, { size: 29 })),
-          h2(
+          }, h(WhatsappLogoGlyph, { size: 29 })),
+          h(
             "div",
             { className: "dim-botName" },
-            h2("h3", null, account.bot.name),
-            h2("p", null, account.bot.idMasked)
+            h("h3", null, account.bot.name),
+            h("p", null, account.bot.idMasked)
           )
         ),
-        h2(BotStatusMeta, {
+        h(BotStatusMeta, {
           className: "ddt-health",
           dotClassName: "ddt-dot",
           tone,
@@ -9917,80 +10126,82 @@ function WhatsappAccountCard({
           formatCheckedTime: checkedTime6
         })
       ),
-      h2(WorkspaceEditor, {
+      h(WorkspaceEditor, {
         workspace: account.workspace,
         disabled: Boolean(busy),
         onSave: onWorkspaceSave
       }),
-      h2(AgentPresetEditor, {
+      h(AgentPresetEditor, {
         agentPreset: account.agentPreset,
         disabled: Boolean(busy),
         onSave: onAgentPresetSave
       }),
-      h2(WhatsappAccessSettings, {
+      h(WhatsappAccessSettings, {
         account,
         busy: Boolean(busy),
         onSave: onAccessPolicySave
       }),
-      h2(
+      h(
         "div",
         { className: "ddt-accountFooter dim-cardFooter" },
-        h2(
+        h(
           "div",
           { className: "dim-cardFooterLayout" },
-          h2(
+          h(
             "div",
             { className: "ddt-actions dim-cardActions" },
-            h2(Button14, {
+            h(Button14, {
               className: "dim-cardAction",
               onClick: onReconnect,
-              disabled: Boolean(busy)
-            }, busy === "reconnect" ? "\u68C0\u67E5\u4E2D\u2026" : account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"),
-            h2(Button14, {
+              disabled: Boolean(busy),
+              loading: busy === "reconnect"
+            }, account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"),
+            h(Button14, {
               className: "dim-cardAction",
               kind: "danger",
               onClick: onRequestRemove,
               disabled: Boolean(busy)
             }, "\u79FB\u9664\u63A5\u5165")
           ),
-          summary ? h2("div", { className: "ddt-summary dim-cardSummary" }, summary) : null,
-          account.lastMessageError ? h2(LastMessageErrorSummary, {
+          summary ? h("div", { className: "ddt-summary dim-cardSummary" }, summary) : null,
+          account.lastMessageError ? h(LastMessageErrorSummary, {
             className: "ddt-summary",
             error: account.lastMessageError
           }) : null,
-          testNotice ? h2("div", {
-            className: "ddt-summary dim-cardFeedback",
-            role: "status"
-          }, testNotice) : null
+          testNotice ? h(FeedbackToast, { text: testNotice }) : null
         )
       )
     ),
-    removing ? h2(RemoveConfirmation5, {
+    removing ? h(RemoveConfirmation5, {
       account,
       busy: busy === "delete",
+      error: removeError,
+      feedbackSequence: removeFeedbackSequence,
       onConfirm: onConfirmRemove,
       onCancel: onCancelRemove
     }) : null
   );
 }
 function WhatsappSettingsTab({ rpcCall }) {
-  const [model, setModel] = React19.useState({
+  const [model, setModel] = React20.useState({
     phase: "loading",
     bots: [],
     totals: { configured: 0, connected: 0 },
     error: null,
     agentPresetCatalog: EMPTY_AGENT_PRESET_CATALOG
   });
-  const [provision, setProvision] = React19.useState(null);
-  const [busy, setBusy] = React19.useState(false);
-  const [busyByBot, setBusyByBot] = React19.useState({});
-  const [testNoticeByBot, setTestNoticeByBot] = React19.useState({});
-  const [removeTarget, setRemoveTarget] = React19.useState(null);
-  const [now, setNow] = React19.useState(Date.now());
-  const mounted = React19.useRef(true);
+  const [provision, setProvision] = React20.useState(null);
+  const [busy, setBusy] = React20.useState(false);
+  const [busyByBot, setBusyByBot] = React20.useState({});
+  const [testNoticeByBot, setTestNoticeByBot] = React20.useState({});
+  const [removeTarget, setRemoveTarget] = React20.useState(null);
+  const [actionError, setActionError] = React20.useState(null);
+  const [removeErrorsByBot, setRemoveErrorsByBot] = React20.useState({});
+  const [now, setNow] = React20.useState(Date.now());
+  const mounted = React20.useRef(true);
   const workspaceFence = useWorkspaceSnapshotFence();
-  const addButtonRef = React19.useRef(null);
-  React19.useEffect(() => {
+  const addButtonRef = React20.useRef(null);
+  React20.useEffect(() => {
     const disposeDingtalk = installDingtalkStyles();
     const disposeWhatsapp = installWhatsappStyles();
     mounted.current = true;
@@ -10000,11 +10211,11 @@ function WhatsappSettingsTab({ rpcCall }) {
       disposeDingtalk();
     };
   }, []);
-  const invoke = React19.useCallback(async (endpoint, payload = {}, signal) => {
+  const invoke = React20.useCallback(async (endpoint, payload = {}, signal) => {
     if (typeof rpcCall !== "function") throw new TypeError("WhatsApp \u8BBE\u7F6E\u9875\u7F3A\u5C11 RPC \u8FDE\u63A5");
     return unwrapRpcResult9(await rpcCall(endpoint, payload, signal));
   }, [rpcCall]);
-  const loadStatus = React19.useCallback(async ({ signal, silent = false, restore = false } = {}) => {
+  const loadStatus = React20.useCallback(async ({ signal, silent = false, restore = false } = {}) => {
     const workspaceVersion = workspaceFence.beginStatus();
     if (workspaceVersion === null) return void 0;
     if (!silent && mounted.current) setModel((current) => ({ ...current, phase: "loading", error: null }));
@@ -10034,12 +10245,12 @@ function WhatsappSettingsTab({ rpcCall }) {
       return void 0;
     }
   }, [invoke, workspaceFence]);
-  React19.useEffect(() => {
+  React20.useEffect(() => {
     const controller = new AbortController();
     void loadStatus({ signal: controller.signal, restore: true });
     return () => controller.abort();
   }, [loadStatus]);
-  React19.useEffect(() => {
+  React20.useEffect(() => {
     if (model.phase !== "ready") return void 0;
     const controller = new AbortController();
     const timer = window.setInterval(
@@ -10051,12 +10262,12 @@ function WhatsappSettingsTab({ rpcCall }) {
       window.clearInterval(timer);
     };
   }, [loadStatus, model.phase]);
-  React19.useEffect(() => {
+  React20.useEffect(() => {
     if (!provision || !ACTIVE_STATES3.has(provision.status)) return void 0;
     const timer = window.setInterval(() => mounted.current && setNow(Date.now()), 1e3);
     return () => window.clearInterval(timer);
   }, [provision?.attemptId, provision?.status]);
-  const startProvisioning = React19.useCallback(async (replace = false) => {
+  const startProvisioning = React20.useCallback(async (replace = false) => {
     setBusy(true);
     try {
       if (replace && provision?.attemptId) {
@@ -10074,18 +10285,26 @@ function WhatsappSettingsTab({ rpcCall }) {
       if (mounted.current) setBusy(false);
     }
   }, [invoke, provision?.attemptId]);
-  const closeProvision = React19.useCallback(async () => {
+  const closeProvision = React20.useCallback(async () => {
     setBusy(true);
     try {
       if (provision?.attemptId && ACTIVE_STATES3.has(provision.status)) {
         await invoke(WHATSAPP_ENDPOINTS.cancelProvisioning, { attemptId: provision.attemptId });
       }
-      if (mounted.current) setProvision(null);
+      if (mounted.current) {
+        setProvision(null);
+        setActionError(null);
+      }
+    } catch (cause) {
+      if (mounted.current) setActionError((current) => ({
+        message: cause?.message ?? "\u64CD\u4F5C\u5931\u8D25\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002",
+        sequence: (current?.sequence ?? 0) + 1
+      }));
     } finally {
       if (mounted.current) setBusy(false);
     }
   }, [invoke, provision?.attemptId, provision?.status]);
-  React19.useEffect(() => {
+  React20.useEffect(() => {
     const attemptId = provision?.attemptId;
     if (!attemptId || !ACTIVE_STATES3.has(provision.status)) return void 0;
     const controller = new AbortController();
@@ -10126,7 +10345,7 @@ function WhatsappSettingsTab({ rpcCall }) {
       if (timer) window.clearTimeout(timer);
     };
   }, [invoke, loadStatus, provision?.attemptId, provision?.status]);
-  const botAction = React19.useCallback(async (account, operation, endpoint, payload) => {
+  const botAction = React20.useCallback(async (account, operation, endpoint, payload) => {
     const snapshotVersion = workspaceFence.beginMutation();
     setBusyByBot((current) => ({ ...current, [account.botId]: operation }));
     if (operation === "reconnect") {
@@ -10172,19 +10391,21 @@ function WhatsappSettingsTab({ rpcCall }) {
       });
     }
   }, [invoke, loadStatus, workspaceFence]);
-  const botList = model.bots.length > 0 ? h2(
+  const botList = model.bots.length > 0 ? h(
     "section",
     { className: "dim-listSection" },
-    h2(ChannelListHeading, {
+    h(ChannelListHeading, {
       className: "ddt-listHeading",
       title: "\u5DF2\u63A5\u5165\u7684 WhatsApp \u673A\u5668\u4EBA",
       connectionLabel: "WhatsApp Web"
     }),
-    h2("ul", { className: "ddt-list dim-botList" }, model.bots.map((account) => h2("li", { key: account.botId }, h2(WhatsappAccountCard, {
+    h("ul", { className: "ddt-list dim-botList" }, model.bots.map((account) => h("li", { key: account.botId }, h(WhatsappAccountCard, {
       account,
       busy: busyByBot[account.botId],
       testNotice: testNoticeByBot[account.botId],
       removing: removeTarget === account.botId,
+      removeError: removeErrorsByBot[account.botId]?.message,
+      removeFeedbackSequence: removeErrorsByBot[account.botId]?.sequence,
       onReconnect: () => void botAction(
         account,
         "reconnect",
@@ -10212,53 +10433,72 @@ function WhatsappSettingsTab({ rpcCall }) {
       onRequestRemove: () => setRemoveTarget(account.botId),
       onCancelRemove: () => setRemoveTarget(null),
       onConfirmRemove: async () => {
-        await botAction(account, "delete", WHATSAPP_ENDPOINTS.deleteBot, {
-          botId: account.botId,
-          confirm: true
-        });
-        if (mounted.current) setRemoveTarget(null);
+        try {
+          await botAction(account, "delete", WHATSAPP_ENDPOINTS.deleteBot, {
+            botId: account.botId,
+            confirm: true
+          });
+          if (mounted.current) {
+            setRemoveTarget(null);
+            setRemoveErrorsByBot((current) => {
+              const next = { ...current };
+              delete next[account.botId];
+              return next;
+            });
+          }
+        } catch (cause) {
+          if (mounted.current) setRemoveErrorsByBot((current) => ({
+            ...current,
+            [account.botId]: {
+              message: cause?.message ?? "\u79FB\u9664\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5\u3002",
+              sequence: (current[account.botId]?.sequence ?? 0) + 1
+            }
+          }));
+        }
       }
     }))))
   ) : null;
-  return h2(AgentPresetCatalogContext.Provider, {
+  return h(AgentPresetCatalogContext.Provider, {
     value: model.agentPresetCatalog ?? EMPTY_AGENT_PRESET_CATALOG
-  }, h2(
+  }, h(
     "section",
     {
       className: "ddt-page dwa-page dim-channelPage",
       "aria-label": "WhatsApp \u8BBE\u7F6E"
     },
-    h2(Heading6, {
+    actionError ? h(FeedbackToast, { text: actionError.message, tone: "error", sequence: actionError.sequence }) : null,
+    Object.entries(removeErrorsByBot).map(([botId, failure]) => botId !== removeTarget ? h(FeedbackToast, { key: botId, text: failure.message, tone: "error", sequence: failure.sequence }) : null),
+    h(Heading6, {
       totals: model.totals,
       busy,
       onAdd: () => void startProvisioning(false),
       addButtonRef
     }),
-    model.phase === "loading" ? h2(LoadingView6) : model.phase === "error" ? h2(
+    model.phase === "loading" ? h(LoadingView6) : model.phase === "error" ? h(
       "div",
       { className: "ddt-card dim-surfaceCard" },
-      h2(
+      h(
         "div",
         { className: "ddt-inlineError dim-inlineError" },
-        h2("h3", null, "\u65E0\u6CD5\u8BFB\u53D6 WhatsApp \u673A\u5668\u4EBA\u72B6\u6001"),
-        h2("p", null, model.error?.message),
-        h2(Button14, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6")
+        h("h3", null, "\u65E0\u6CD5\u8BFB\u53D6 WhatsApp \u673A\u5668\u4EBA\u72B6\u6001"),
+        h("p", null, model.error?.message),
+        h(Button14, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6")
       )
-    ) : h2(
-      React19.Fragment,
+    ) : h(
+      React20.Fragment,
       null,
-      provision?.status === "pending" ? h2(QrPanel5, {
+      provision?.status === "pending" ? h(QrPanel5, {
         provision,
         now,
         busy,
         onRefresh: () => void startProvisioning(true),
         onCancel: () => void closeProvision()
-      }) : provision ? h2(ProvisionView3, {
+      }) : provision ? h(ProvisionView3, {
         provision,
         busy,
         onRetry: () => void startProvisioning(true),
         onClose: () => void closeProvision()
-      }) : model.bots.length === 0 ? h2(EmptyView6, { busy, onStart: () => void startProvisioning(false) }) : null,
+      }) : model.bots.length === 0 ? h(EmptyView6, { busy, onStart: () => void startProvisioning(false) }) : null,
       botList
     )
   ));
@@ -11261,6 +11501,25 @@ var CSS11 = String.raw`
   .dim-page * { transition-duration: .01ms !important; }
   .dim-directoryPickerSpinner { animation-duration: 1.8s; }
 }
+.dim-busyButton { position: relative; }
+.dim-buttonContent { display: contents; }
+.dim-busyButton[data-loading="true"] .dim-buttonContent { visibility: hidden; }
+.dim-buttonSpinner, .dim-controlSpinner { width: 14px; height: 14px; box-sizing: border-box; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: dim-feedback-spin .8s linear infinite; }
+.dim-buttonSpinner { position: absolute; top: 50%; left: 50%; margin: -7px 0 0 -7px; }
+.dim-controlSpinner { position: absolute; right: 28px; top: 50%; margin-top: -7px; pointer-events: none; color: var(--dsw-alias-label-secondary); }
+.dim-controlBusy { position: relative; display: block; min-width: 0; }
+.dim-preset > .dim-controlBusy, .dim-responseMode > .dim-controlBusy { grid-column: 1 / -1; grid-row: 2; }
+.dim-controlBusy > select { display: block; width: 100%; }
+.dim-confirmBackdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: var(--dsw-alias-mask-bg, rgba(0,0,0,.35)); }
+.dim-confirmDialog { width: min(480px, 100%); max-height: calc(100vh - 48px); overflow: auto; box-sizing: border-box; padding: 20px; border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-lg); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); box-shadow: var(--dsw-shadow-lv3); font-size: 14px; line-height: 22px; }
+.dim-confirmDialog strong, .dim-confirmDialog h4 { margin: 0; font: inherit; font-weight: 600; }
+.dim-confirmDialog p { margin: 8px 0 16px; color: var(--dsw-alias-label-secondary); }
+.dim-confirmDialog .dim-viewActions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.dim-confirmDialog button { position: relative; padding: 6px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.dim-confirmDialog button[data-kind="danger"] { color: var(--dsw-alias-state-error-primary); }
+.dim-confirmDialog button:disabled { opacity: .5; cursor: not-allowed; }
+@keyframes dim-feedback-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .dim-buttonSpinner, .dim-controlSpinner { animation: none; } }
 `;
 function installImStyles() {
   if (typeof document === "undefined") return () => {
@@ -11293,99 +11552,85 @@ var CHANNELS = Object.freeze([
   { id: "office", label: "AI Office", note: "\uFF08\u5B9E\u9A8C\u529F\u80FD\uFF09" }
 ]);
 function WeixinLogo() {
-  return h2(
+  return h(
     "span",
     { className: "dim-logo dim-logoWeixin", "aria-hidden": "true" },
-    h2(WeixinLogoGlyph)
+    h(WeixinLogoGlyph)
   );
 }
 function FeishuLogo() {
-  return h2(
+  return h(
     "span",
     { className: "dim-logo dim-logoFeishu", "aria-hidden": "true" },
-    h2(FeishuLogoGlyph)
+    h(FeishuLogoGlyph)
   );
 }
 function DingtalkLogo() {
-  return h2(
+  return h(
     "span",
     { className: "dim-logo dim-logoDingtalk", "aria-hidden": "true" },
-    h2(DingtalkLogoGlyph)
+    h(DingtalkLogoGlyph)
   );
 }
 function QqLogo() {
-  return h2("span", { className: "dim-logo dim-logoQq", "aria-hidden": "true" }, h2(QqLogoGlyph));
+  return h("span", { className: "dim-logo dim-logoQq", "aria-hidden": "true" }, h(QqLogoGlyph));
 }
 function WecomLogo() {
-  return h2("span", { className: "dim-logo dim-logoWecom", "aria-hidden": "true" }, h2(WecomLogoGlyph));
+  return h("span", { className: "dim-logo dim-logoWecom", "aria-hidden": "true" }, h(WecomLogoGlyph));
 }
 function TelegramLogo() {
-  return h2(
+  return h(
     "span",
     { className: "dim-logo dim-logoTelegram", "aria-hidden": "true" },
-    h2(TelegramLogoGlyph)
+    h(TelegramLogoGlyph)
   );
 }
 function SlackLogo() {
-  return h2(
+  return h(
     "span",
     { className: "dim-logo dim-logoSlack", "aria-hidden": "true" },
-    h2(SlackLogoGlyph)
+    h(SlackLogoGlyph)
   );
 }
 function DiscordLogo() {
-  return h2(
+  return h(
     "span",
     { className: "dim-logo dim-logoDiscord", "aria-hidden": "true" },
-    h2(DiscordLogoGlyph)
+    h(DiscordLogoGlyph)
   );
 }
 function WhatsappLogo() {
-  return h2(
+  return h(
     "span",
     { className: "dim-logo dim-logoWhatsapp", "aria-hidden": "true" },
-    h2(WhatsappLogoGlyph)
+    h(WhatsappLogoGlyph)
   );
 }
 function OfficeLogo() {
-  return h2(
+  return h(
     "span",
     { className: "dim-logo dim-logoOffice", "aria-hidden": "true" },
-    h2(OfficeLogoGlyph)
+    h(OfficeLogoGlyph)
   );
 }
 function ChannelLogo({ channel: channel4 }) {
-  if (channel4 === "weixin") return h2(WeixinLogo);
-  if (channel4 === "feishu") return h2(FeishuLogo);
-  if (channel4 === "dingtalk") return h2(DingtalkLogo);
-  if (channel4 === "wecom") return h2(WecomLogo);
-  if (channel4 === "qq") return h2(QqLogo);
-  if (channel4 === "slack") return h2(SlackLogo);
-  if (channel4 === "telegram") return h2(TelegramLogo);
-  if (channel4 === "discord") return h2(DiscordLogo);
-  if (channel4 === "whatsapp") return h2(WhatsappLogo);
-  return h2(OfficeLogo);
+  if (channel4 === "weixin") return h(WeixinLogo);
+  if (channel4 === "feishu") return h(FeishuLogo);
+  if (channel4 === "dingtalk") return h(DingtalkLogo);
+  if (channel4 === "wecom") return h(WecomLogo);
+  if (channel4 === "qq") return h(QqLogo);
+  if (channel4 === "slack") return h(SlackLogo);
+  if (channel4 === "telegram") return h(TelegramLogo);
+  if (channel4 === "discord") return h(DiscordLogo);
+  if (channel4 === "whatsapp") return h(WhatsappLogo);
+  return h(OfficeLogo);
 }
 function LoopbackRecoveryNotice({ recovery, onNavigate = replacePageLocation }) {
-  return h2(
-    "div",
-    {
-      className: "dim-loopbackRecovery",
-      role: "alert"
-    },
-    h2(
-      "div",
-      { className: "dim-loopbackRecoveryCopy" },
-      h2("strong", null, "\u8BF7\u6539\u7528 localhost \u91CD\u65B0\u6253\u5F00"),
-      h2("p", null, "\u9875\u9762\u4F1A\u5728\u5F53\u524D\u7AEF\u53E3\u91CD\u65B0\u6253\u5F00\uFF0C\u673A\u5668\u4EBA\u914D\u7F6E\u4E0D\u4F1A\u6539\u53D8\u3002"),
-      h2("code", null, recovery.origin)
-    ),
-    h2("button", {
-      type: "button",
-      className: "dim-loopbackRecoveryAction",
-      onClick: () => onNavigate(recovery.url)
-    }, "\u4F7F\u7528 localhost \u91CD\u65B0\u6253\u5F00")
-  );
+  return h(FeedbackToast, {
+    text: [localizeText("\u8BF7\u6539\u7528 localhost \u91CD\u65B0\u6253\u5F00"), localizeText("\u9875\u9762\u4F1A\u5728\u5F53\u524D\u7AEF\u53E3\u91CD\u65B0\u6253\u5F00\uFF0C\u673A\u5668\u4EBA\u914D\u7F6E\u4E0D\u4F1A\u6539\u53D8\u3002"), recovery.origin].join(" "),
+    tone: "error",
+    actions: [{ label: "\u4F7F\u7528 localhost \u91CD\u65B0\u6253\u5F00", onClick: () => onNavigate(recovery.url) }]
+  });
 }
 function IMSettingsTab({
   dingtalkRpcCall,
@@ -11402,13 +11647,13 @@ function IMSettingsTab({
   browserLocation = globalThis.location,
   navigateToRecoveryUrl = replacePageLocation
 }) {
-  const [selected, setSelected] = React20.useState("weixin");
-  const [loopbackRecovery, setLoopbackRecovery] = React20.useState(null);
+  const [selected, setSelected] = React21.useState("weixin");
+  const [loopbackRecovery, setLoopbackRecovery] = React21.useState(null);
   const active = CHANNELS.find((channel4) => channel4.id === selected) ?? CHANNELS[0];
-  const reportLoopbackRecovery = React20.useCallback((recovery) => {
+  const reportLoopbackRecovery = React21.useCallback((recovery) => {
     setLoopbackRecovery((current) => current?.url === recovery.url ? current : recovery);
   }, []);
-  const rpcCalls = React20.useMemo(() => createLoopbackAwareRpcCalls({
+  const rpcCalls = React21.useMemo(() => createLoopbackAwareRpcCalls({
     dingtalkRpcCall,
     discordRpcCall,
     feishuRpcCall,
@@ -11436,19 +11681,19 @@ function IMSettingsTab({
     weixinRpcCall,
     whatsappRpcCall
   ]);
-  return h2(
+  return h(
     WorkspaceDirectoryPickerContext.Provider,
     { value: workspaceDirectoryPicker },
-    h2(
+    h(
       "section",
       { className: "dim-page", "aria-label": "\u6D88\u606F\u6E20\u9053" },
-      h2(
+      h(
         "div",
         { className: "dim-layout" },
-        h2(
+        h(
           "nav",
           { className: "dim-rail", role: "tablist", "aria-label": "\u6D88\u606F\u6E20\u9053" },
-          CHANNELS.map((channel4) => h2(
+          CHANNELS.map((channel4) => h(
             "button",
             {
               key: channel4.id,
@@ -11460,17 +11705,17 @@ function IMSettingsTab({
               "aria-controls": `dim-panel-${channel4.id}`,
               onClick: () => setSelected(channel4.id)
             },
-            h2(ChannelLogo, { channel: channel4.id }),
-            h2(
+            h(ChannelLogo, { channel: channel4.id }),
+            h(
               "span",
               { className: "dim-channelCopy" },
-              h2("strong", null, channel4.label),
-              channel4.note ? h2("small", { className: "dim-channelNote" }, channel4.note) : null
+              h("strong", null, channel4.label),
+              channel4.note ? h("small", { className: "dim-channelNote" }, channel4.note) : null
             )
           ))
         ),
-        h2("div", { className: "dim-divider", "aria-hidden": "true" }),
-        h2(
+        h("div", { className: "dim-divider", "aria-hidden": "true" }),
+        h(
           "main",
           {
             className: "dim-panel",
@@ -11478,11 +11723,11 @@ function IMSettingsTab({
             id: `dim-panel-${active.id}`,
             "aria-labelledby": `dim-tab-${active.id}`
           },
-          loopbackRecovery ? h2(LoopbackRecoveryNotice, {
+          loopbackRecovery ? h(LoopbackRecoveryNotice, {
             recovery: loopbackRecovery,
             onNavigate: navigateToRecoveryUrl
           }) : null,
-          active.id === "weixin" ? h2(WeixinSettingsTab, { rpcCall: rpcCalls.weixinRpcCall }) : active.id === "feishu" ? h2(FeishuSettingsTab, { rpcCall: rpcCalls.feishuRpcCall }) : active.id === "dingtalk" ? h2(DingtalkSettingsTab, { rpcCall: rpcCalls.dingtalkRpcCall }) : active.id === "wecom" ? h2(WecomSettingsTab, { rpcCall: rpcCalls.wecomRpcCall }) : active.id === "qq" ? h2(QqSettingsTab, { rpcCall: rpcCalls.qqRpcCall }) : active.id === "slack" ? h2(SlackSettingsTab, { rpcCall: rpcCalls.slackRpcCall }) : active.id === "telegram" ? h2(TelegramSettingsTab, { rpcCall: rpcCalls.telegramRpcCall }) : active.id === "discord" ? h2(DiscordSettingsTab, { rpcCall: rpcCalls.discordRpcCall }) : active.id === "whatsapp" ? h2(WhatsappSettingsTab, { rpcCall: rpcCalls.whatsappRpcCall }) : h2(OfficeSettingsTab, { rpcCall: rpcCalls.officeRpcCall })
+          active.id === "weixin" ? h(WeixinSettingsTab, { rpcCall: rpcCalls.weixinRpcCall }) : active.id === "feishu" ? h(FeishuSettingsTab, { rpcCall: rpcCalls.feishuRpcCall }) : active.id === "dingtalk" ? h(DingtalkSettingsTab, { rpcCall: rpcCalls.dingtalkRpcCall }) : active.id === "wecom" ? h(WecomSettingsTab, { rpcCall: rpcCalls.wecomRpcCall }) : active.id === "qq" ? h(QqSettingsTab, { rpcCall: rpcCalls.qqRpcCall }) : active.id === "slack" ? h(SlackSettingsTab, { rpcCall: rpcCalls.slackRpcCall }) : active.id === "telegram" ? h(TelegramSettingsTab, { rpcCall: rpcCalls.telegramRpcCall }) : active.id === "discord" ? h(DiscordSettingsTab, { rpcCall: rpcCalls.discordRpcCall }) : active.id === "whatsapp" ? h(WhatsappSettingsTab, { rpcCall: rpcCalls.whatsappRpcCall }) : h(OfficeSettingsTab, { rpcCall: rpcCalls.officeRpcCall })
         )
       )
     )

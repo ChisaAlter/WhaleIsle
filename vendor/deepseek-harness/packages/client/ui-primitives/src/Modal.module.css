@@ -27,7 +27,6 @@
   position: absolute;
   inset: 0;
   background: var(--dsw-alias-bg-mask-1);
-  animation: modalEnter var(--ds-transition-duration) var(--ds-ease-in-out);
 }
 
 /* Dialogs use the prominent elevation on the secondary layer. */
@@ -45,7 +44,6 @@
   border: 0;
   border-radius: var(--dsw-radius-panel);
   box-shadow: var(--dsw-elevation-prominent);
-  animation: modalEnter var(--ds-transition-duration) var(--ds-ease-in-out);
 }
 
 /* Blur only the fill so fixed descendants keep their viewport coordinates. */
@@ -58,15 +56,6 @@
   backdrop-filter: var(--dsw-menu-backdrop-filter);
   content: '';
   pointer-events: none;
-}
-
-@keyframes modalEnter {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mask::after, .dialog { animation: none; }
 }
 
 .dialog:focus {

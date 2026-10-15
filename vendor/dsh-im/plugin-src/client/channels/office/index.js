@@ -110,6 +110,7 @@ export function OfficeSettingsTab({ rpcCall, initialStatus }) {
     try { return officeHookUrls(form.baseUrl); } catch { return {}; }
   }, [form.baseUrl]);
   const health = model.health ?? {};
+  const feedbackError = error || health.error?.message;
 
   if (phase === 'loading') return h('div', { className: 'ddt-card ddt-loading', 'aria-busy': 'true' }, '正在读取 AI Office Connector…');
 
@@ -146,9 +147,9 @@ export function OfficeSettingsTab({ rpcCall, initialStatus }) {
         h('label', { className: 'dof-field', 'data-wide': 'true' }, 'Instruction Preset 映射',
           h('textarea', { value: form.instructionPresets, placeholder: 'action-items=转换为负责人、截止和验收明确的工单', onChange: (event) => setForm({ ...form, instructionPresets: event.target.value }) }),
           h('small', null, '每行 alias=指令；新增 preset 不需要改 Office 代码。'))),
-      error ? h(FeedbackToast, { text: error, tone: 'error', sequence: feedbackSequence }) : null,
-      notice ? h(FeedbackToast, { text: notice, holdMs: 6000 }) : null,
-      health.error?.message ? h('p', { className: 'dof-error' }, health.error.message) : null,
+      feedbackError
+        ? h(FeedbackToast, { text: feedbackError, tone: 'error', sequence: feedbackSequence })
+        : notice ? h(FeedbackToast, { text: notice, holdMs: 6000 }) : null,
       h('div', { className: 'dof-actions' },
         h(Button, { kind: 'primary', disabled: Boolean(busy), onClick: () => void run('save', () => invoke(OFFICE_RPC_ENDPOINTS.configure, {
           baseUrl: form.baseUrl,
