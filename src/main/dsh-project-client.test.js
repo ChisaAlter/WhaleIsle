@@ -64,7 +64,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
   project.currentRequests = cards.filter(card => card.status !== 'completed');
   if (project.currentRequests.length && !detail?.activity) project.activity = { running: 1, blocked: 0, queued: 0, state: 'running' };
   const notesMarker = '<!-- whale-project:user-notes -->', generatedNotes = '# Generated current work records';
-  const stored = { 'notes.md': `${generatedNotes}\n${notesMarker}\nInitial notes`, 'preferences.md': 'Initial preferences', 'docs/report.md': 'Saved report' };
+  const stored = { 'notes.md': `${generatedNotes}\n${notesMarker}\nInitial notes`, 'preferences.md': 'Initial preferences', 'charter.md': '', 'docs/report.md': 'Saved report' };
   const eventSource = projection({ entries: [...Array.from({ length: 60 }, (_, index) => turnRecord(index + 21)), ...toolRecords], hasMore: true, revision: 1 });
   const session = projection({ openState: 'open', openError: null });
   session.loadOlder = async () => { const previous = eventSource.getSnapshot(); eventSource.set({ entries: [...Array.from({ length: 20 }, (_, index) => turnRecord(index + 1)), ...previous.entries], hasMore: false, revision: 2 }); };
@@ -88,7 +88,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
   const SegmentedTabs = ({ items, value, onChange, label }) => h('div', { role: 'tablist', 'aria-label': label }, items.map(item => h('button', {
     key: item.value, id: item.id, role: 'tab', 'aria-selected': item.value === value, 'aria-controls': item.panelId, onClick: () => onChange(item.value),
   }, item.label)));
-  const primitives = { Button, Modal, TaskDock, Menu, SegmentedTabs, Toast: ({ text }) => clientRequire('react-dom').createPortal(h('div', { role: 'alert' }, text), dom.window.document.body), Input: props => h('input', props), IconCheckOutlineRegular: () => null, IconChevronUpOutlineRegular: () => null, IconChevronDownOutlineRegular: () => null, IconChevronRightOutlineRegular: () => null, IconPlusOutlineRegular: () => null, IconEllipsisOutlineRegular: () => null, Pill: ({ children }) => h('span', null, children), MarkdownText: ({ text }) => h('div', { 'data-markdown': true }, text), IconFolderCloseRegular: () => h('span', { 'aria-hidden': true }) };
+  const primitives = { Button, Modal, TaskDock, Menu, SegmentedTabs, Toast: ({ text }) => clientRequire('react-dom').createPortal(h('div', { role: 'alert' }, text), dom.window.document.body), Input: props => h('input', props), IconCheckOutlineRegular: () => null, IconChevronUpOutlineRegular: () => null, IconChevronDownOutlineRegular: () => null, IconChevronRightOutlineRegular: () => null, IconPlusOutlineRegular: () => null, IconEllipsisOutlineRegular: () => null, Pill: ({ children, onClick, active, ...rest }) => onClick ? h('button', { ...rest, type: 'button', 'aria-pressed': active, onClick }, children) : h('span', null, children), Tag: ({ children }) => h('span', null, children), MarkdownText: ({ text }) => h('div', { 'data-markdown': true }, text), IconFolderCloseRegular: () => h('span', { 'aria-hidden': true }) };
   const observer = projection(null), mounted = projection(project.coordinatorSessionId), observerSources = projection({ [project.coordinatorSessionId]: observer }), tabTypes = new Map(), closeHandlers = new Map();
   const observerIn = sessionId => observerSources.getSnapshot()[sessionId];
   const ensureObserver = sessionId => {
@@ -724,8 +724,8 @@ test('the current card exposes the real requirement queue and sends exact enqueu
     const card = b.requestElement(current.id);
     assert.ok(isVisible(card)); assert.equal(card.dataset.projectRequestMode, 'card');
     assert.deepEqual([first, second].map(item => b.requestElement(item.id).dataset.projectRequestMode), ['strip', 'strip']);
-    assert.match(visibleText(b.requestElement(first.id)), /Queued B.*requestQueuePosition/s);
-    assert.match(visibleText(b.requestElement(second.id)), /Queued C.*requestQueuePosition/s);
+    assert.match(visibleText(b.requestElement(first.id)), /Queued B.*statusQueuePosition/s);
+    assert.match(visibleText(b.requestElement(second.id)), /Queued C.*statusQueuePosition/s);
     await b.openTaskList(); await b.openRequest(second.id); await b.press(`${second.title} · more`); await b.press('requestMoveUp');
     const actions = () => b.requests.filter(request => request.method === 'requests/queue').map(request => ({ ...request.input }));
     assert.deepEqual(actions()[0], { projectId: b.project.id, requestId: second.id, requestRevision: 1, action: 'move', beforeRequestId: first.id });
@@ -2092,5 +2092,137 @@ test('results keep earlier reports reachable and opening changed artifacts expla
     const opened = b.requests.filter(request => request.method === 'open').at(-1); assert.equal(opened.input.delegationRef, 'old-assignment'); assert.equal(opened.input.workstreamId, 'work-one'); assert.equal(opened.input.path, 'src/old.js');
     assert.ok(isVisible(b.document.querySelector('[data-project-observer-stack]')));
     await b.expandObserver(); assert.match(b.document.querySelector('.dsh-project-materials').textContent, /modifiedArtifact/);
+  } finally { await b.dispose(); }
+});
+
+test('the board summarizes the whole Project and each card states its plain status, next step and undo', async () => {
+  const current = taskCard('active-a', 'Current A'), first = taskCard('queued-b', 'Queued B'), draft = taskCard('draft-d', 'Discuss D'), done = taskCard('done-e', 'Delivered E', 'completed');
+  current.queue = { state: 'active', released: false }; first.queue = { state: 'queued', position: 1 }; draft.queue = { state: 'discussing' };
+  const queue = { active: current, queued: [{ ...first, position: 1 }], discussingCount: 1, paused: false };
+  const b = bench({ cards: [current, first, draft, done], queue });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    const board = b.document.querySelector('.dsh-project-board'); assert.ok(board && isVisible(board));
+    const cells = Object.fromEntries([...board.querySelectorAll('.dsh-project-board-cell')].map(cell => [cell.querySelector('.dsh-project-board-label').textContent, cell.querySelector('strong').textContent]));
+    assert.deepEqual(cells, { boardActive: '1', boardBlocked: '0', boardWaiting: '2', boardDelivered: '1' });
+    assert.match(visibleText(b.requestElement(current.id).querySelector('.dsh-project-task-state')), /statusActive/);
+    assert.match(visibleText(b.requestElement(first.id)), /Queued B.*statusQueued/s);
+    const discussing = await b.openRequest(draft.id, false);
+    assert.match(visibleText(discussing.querySelector('.dsh-project-task-state')), /statusDiscussing/);
+    assert.match(visibleText(discussing.querySelector('.dsh-project-task-next')), /nextStep.*nextDiscussing/s);
+    await b.press('requestUndo');
+    assert.deepEqual({ ...b.requests.filter(request => request.method === 'requests/queue').at(-1).input }, { projectId: b.project.id, requestId: draft.id, requestRevision: 1, action: 'cancel' });
+    assert.equal(b.sent.length, 0);
+  } finally { await b.dispose(); }
+});
+
+test('Project rules edit charter.md with common-rule toggles, a size meter and a blocked oversized save', async () => {
+  const b = bench();
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush(); await b.press('charter');
+    assert.equal(b.document.querySelector('[role=tab][aria-selected=true]').textContent, 'charter');
+    assert.equal(b.document.querySelector('textarea').getAttribute('aria-label'), 'charter');
+    await b.press('charterExampleTests');
+    assert.equal(b.document.querySelector('textarea').value, 'charterLineTests');
+    assert.equal(b.button('charterExampleTests').getAttribute('aria-pressed'), 'true');
+    await b.press('charterExampleTests'); assert.equal(b.document.querySelector('textarea').value, '');
+    await b.changeNotes('- Keep the public API stable'); await b.press('save');
+    const write = b.requests.filter(request => request.method === 'store/write').at(-1);
+    assert.equal(write.input.path, 'charter.md'); assert.equal(write.input.text, '- Keep the public API stable'); assert.equal(b.stored['charter.md'], '- Keep the public API stable');
+    await b.changeNotes('x'.repeat(16001));
+    assert.equal(b.document.querySelector('.dsh-project-charter-meter').dataset.over, 'true');
+    assert.equal(b.button('save').disabled, true);
+  } finally { await b.dispose(); }
+});
+
+test('a delivered card lists its files, opens them with exact authority and shows a per-file colored diff', async () => {
+  const task = taskCard('delivered-files', 'Login remember me', 'completed');
+  task.work = [{ workstreamId: 'work-one', delegationRef: 'actual-assignment', workerSessionId: 'worker-one', title: 'Remember-me login', status: 'completed', memberRole: 'worker', current: true }];
+  task.delivery.artifacts = [{ path: 'src/login.js', size: 120, sha256: 'a', type: 'file', workstreamId: 'work-one', delegationRef: 'actual-assignment' },
+    { path: 'src/login.test.js', size: 80, sha256: 'b', type: 'file', workstreamId: 'work-one', delegationRef: 'actual-assignment' }];
+  task.delivery.pages = [];
+  const diff = ['diff --git a/src/login.js b/src/login.js', 'index 1..2 100644', '--- a/src/login.js', '+++ b/src/login.js', '@@ -1,2 +1,3 @@', ' const a = 1;', '-const b = 2;', '+const b = 3;', '+const remember = true;',
+    'diff --git a/src/new.js b/src/new.js', 'new file mode 100644', '--- /dev/null', '+++ b/src/new.js', '@@ -0,0 +1 @@', '+export {};', ''].join('\n');
+  const b = bench({ cards: [task], rpcOverride: method => method === 'diff' ? { ok: true, value: { worker: { cwd: 'C:/workspace/real', mode: 'existing' },
+    snapshot: { isGit: true, diff, truncated: false, files: [{ path: 'src/login.js', status: ' M' }, { path: 'src/new.js', status: 'A ' }, { path: 'notes.txt', status: '??' }] } } } : undefined });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    const card = await b.openRequest(task.id, false); await b.flush();
+    const delivery = card.querySelector('.dsh-project-task-delivery'); assert.ok(delivery && isVisible(delivery));
+    assert.deepEqual([...delivery.querySelectorAll('.dsh-project-task-file')].map(item => item.getAttribute('title')), ['src/login.js', 'src/login.test.js']);
+    await b.press('viewChanges'); await b.flush();
+    const files = [...b.document.querySelectorAll('.dsh-project-diff-file')];
+    assert.deepEqual(files.map(item => item.dataset.diffPath), ['src/login.js', 'src/new.js', 'notes.txt']);
+    assert.match(files[0].querySelector('summary').textContent, /diff_modified.*\+2.*−1/s);
+    assert.match(files[1].querySelector('summary').textContent, /diff_added/);
+    assert.match(files[2].textContent, /diff_untracked.*diffUntrackedHint/s);
+    assert.deepEqual([...files[0].querySelectorAll('.dsh-project-diff-line')].map(line => line.dataset.kind), ['hunk', 'context', 'del', 'add', 'add']);
+    assert.match(b.document.querySelector('.dsh-project-diff-summary').textContent, /diffFileCount.*\+3.*−1/s);
+    assert.match(b.document.querySelector('.dsh-project-observer-aux').textContent, /diffScope/);
+    // Opening a file contracts the observer for the native preview, so it comes last.
+    await b.press('openFile: login.js');
+    const opened = b.requests.filter(request => request.method === 'open').at(-1).input;
+    assert.equal(opened.workstreamId, 'work-one'); assert.equal(opened.delegationRef, 'actual-assignment'); assert.equal(opened.path, 'src/login.js');
+  } finally { await b.dispose(); }
+});
+
+test('a delivered requirement shows its own changes, reverts after confirmation and hands a conflicting revert to the coordinator', async () => {
+  const task = taskCard('delivered-changes', 'Login remember me', 'completed');
+  task.work = [{ workstreamId: 'work-one', delegationRef: 'actual-assignment', workerSessionId: 'worker-one', title: 'Remember-me login', status: 'completed', memberRole: 'worker', current: true }];
+  task.changes = { isGit: true, revertible: true, fileCount: 2, added: 4, removed: 1 };
+  let conflict = true;
+  const diff = ['diff --git a/src/login.js b/src/login.js', '--- a/src/login.js', '+++ b/src/login.js', '@@ -1 +1,2 @@', '-old', '+new', '+remember', ''].join('\n');
+  const b = bench({ cards: [task], rpcOverride: (method, input) => method === 'requests/changes'
+    ? { ok: true, value: { files: [{ path: 'src/login.js', status: 'M', added: 2, removed: 1 }, { path: 'assets/logo.png', status: 'A', added: 0, removed: 0, binary: true }], diff, truncated: false, final: true } }
+    : method === 'requests/revert' ? conflict ? { ok: false, error: { code: 'revert_conflict', message: 'error: patch failed: src/login.js:1' } } : { ok: true, value: { requestId: input.requestId, reverted: true } } : undefined });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    const card = await b.openRequest(task.id, false); await b.flush();
+    assert.match(card.querySelector('.dsh-project-task-changes').textContent, /changeStats.*\+4.*−1/s);
+    await b.press('viewChanges'); await b.flush();
+    assert.equal(b.requests.filter(request => request.method === 'requests/changes').at(-1).input.requestId, task.id);
+    assert.match(b.document.querySelector('[data-request-diff]').textContent, /requestDiffScope/);
+    assert.deepEqual([...b.document.querySelectorAll('.dsh-project-diff-file')].map(item => item.dataset.diffPath), ['src/login.js', 'assets/logo.png']);
+    assert.match(b.document.querySelector('[data-diff-path="assets/logo.png"]').textContent, /diff_added.*diffBinary/s);
+    await b.press('revertChanges');
+    assert.ok(b.document.querySelector('[role=dialog][aria-label=revertTitle]'));
+    assert.equal(b.requests.some(request => request.method === 'requests/revert'), false, 'revert waits for confirmation');
+    await b.press('revertConfirm');
+    assert.deepEqual({ ...b.requests.filter(request => request.method === 'requests/revert').at(-1).input }, { projectId: b.project.id, requestId: task.id, requestRevision: 1 });
+    const conflictDialog = b.document.querySelector('[role=dialog][aria-label=revertConflictTitle]'); assert.ok(conflictDialog);
+    assert.match(conflictDialog.textContent, /patch failed: src\/login\.js/);
+    await b.press('revertAsk');
+    assert.deepEqual(b.sent.map(item => item.text), ['revertAskPrompt']);
+    assert.equal(b.document.querySelector('[role=dialog]'), null);
+    conflict = false;
+    await b.press('revertChanges'); await b.press('revertConfirm'); await b.flush();
+    assert.equal(b.requests.filter(request => request.method === 'requests/revert').length, 2);
+    assert.ok([...b.document.querySelectorAll('[role=alert]')].some(item => item.textContent === 'revertDone'));
+  } finally { await b.dispose(); }
+});
+
+test('notes show the Project decision log without its internal markers', async () => {
+  const b = bench({ rpcOverride: (method, input, _project, stored) => {
+    if (method === 'store/read' && input.path === 'decisions.md') stored['decisions.md'] = '# 决策日志\n\n## 2026-10-16 · Remember me（第 1 版）\n<!-- decision:delivery-a -->\n- 结果：完整交付\n- 决策：Use an HttpOnly cookie.\n';
+  } });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.press('materials'); await b.flush(); await b.press('notes'); await b.flush();
+    await b.disclose('decisionLog');
+    const log = b.document.querySelector('[data-decision-log]');
+    assert.match(log.textContent, /Use an HttpOnly cookie/); assert.doesNotMatch(log.textContent, /decision:delivery-a|# 决策日志/);
+  } finally { await b.dispose(); }
+});
+
+test('a queued requirement that is already investigating says so while development still waits', async () => {
+  const current = taskCard('active-a', 'Current A'), next = taskCard('queued-b', 'Queued B');
+  current.queue = { state: 'active', released: false }; next.queue = { state: 'queued', position: 1 };
+  next.workPreview = [{ workstreamId: 'work-b', delegationRef: 'b-read', title: 'Investigate B', status: 'running', memberName: 'member-b', workerSessionId: 'worker-b' }];
+  next.work = [{ ...next.workPreview[0], memberRole: 'readonly', current: true }];
+  const b = bench({ cards: [current, next], queue: { active: current, queued: [{ ...next, position: 1 }], paused: false } });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    const card = await b.openRequest(next.id, false);
+    assert.match(visibleText(card.querySelector('.dsh-project-task-state')), /statusQueued/);
+    assert.match(visibleText(card.querySelector('.dsh-project-task-next')), /nextStep.*nextQueuedPreparing/s);
   } finally { await b.dispose(); }
 });

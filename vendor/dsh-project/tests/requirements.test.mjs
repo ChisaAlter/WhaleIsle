@@ -462,7 +462,7 @@ test('discussion, approval, reordering and cancellation preserve one whole-goal 
   f.human(['Develop A and verify the result']); const { request: a } = await f.accept({ title: 'A' }), work = f.add(a);
   f.human(['Discuss B, but do not develop it yet']);
   const { request: draft } = await f.accept({ title: 'B', goal: 'Export the project report', disposition: 'discussing', constraints: ['Keep existing exports'], conditions: ['CSV includes all rows'] });
-  const assignment = request => f.service.requirements.assignment(f.actor, { requestId: request.id, requestRevision: request.revision, scope: 'readonly' }, f.exec('project_delegate'));
+  const assignment = (request, scope = 'readonly') => f.service.requirements.assignment(f.actor, { requestId: request.id, requestRevision: request.revision, scope }, f.exec('project_delegate'));
   await assert.rejects(assignment(draft), { code: 'request_queued' });
   await f.service.queue.pump(f.project.id);
   assert.equal(f.followups.length, 0); assert.equal(f.service.projectView(f.project).queue.discussingCount, 1);
@@ -478,7 +478,9 @@ test('discussion, approval, reordering and cancellation preserve one whole-goal 
   await f.queue(c, 'cancel');
   assert.deepEqual(f.service.projectView(f.project).queue.queued.map(row => [row.id, row.position]), [[b.id, 1]]);
   assert.equal((await f.service.command('requests/list', { projectId: f.project.id, kind: 'cancelled' })).items[0].id, c.id);
-  await assert.rejects(assignment(b), { code: 'request_queued' });
+  await assert.rejects(assignment(b, 'development'), { code: 'request_queued' }, 'a queued requirement cannot start writing');
+  await assert.rejects(assignment(b, 'docs'), { code: 'request_queued' });
+  await assignment(b); // an authorized queued requirement may already investigate read-only
 
   f.human(['Report what remains for A']);
   await f.declare(a, [work.ref], { outcome: 'partial', remainingIssues: ['A still needs final acceptance'] });

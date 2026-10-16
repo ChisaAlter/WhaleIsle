@@ -512,7 +512,7 @@ test('archive waits only for its own Project drain and preserves a failed stoppi
 });
 
 test('the native launch boundary cannot execute discussed, queued or superseded requirement revisions', async () => {
-  for (const kind of ['discussing', 'queued', 'superseded']) {
+  for (const kind of ['discussing', 'queued', 'superseded', 'queued-readonly']) {
     const f = setup(); f.service.recovering = false; f.service.notes = async () => {};
     const actor = f.service.actor(f.lead);
     const accept = async (title, extra = {}) => {
@@ -521,15 +521,23 @@ test('the native launch boundary cannot execute discussed, queued or superseded 
       f.append('tool/call', { turn: 1, callId, name: 'project_request' });
       return f.service.acceptRequest(actor, { title, goal: title, scopeCeiling: 'readonly', ...extra }, { callId, signal: new AbortController().signal });
     };
-    if (kind === 'queued') await accept('A is still developing');
+    if (kind.startsWith('queued')) await accept('A is still developing');
     const request = await accept('B', { disposition: kind === 'discussing' ? 'discussing' : 'queued' });
     const work = f.add(`work-${kind}`, true, 1);
     work.receipt.source = { ...f.service.requirements.version(f.service.requirements.get(f.project.id, request.id)).source };
+    if (kind === 'queued') work.receipt.scope = 'worker';
     if (kind === 'superseded') await accept('B revised before launch', { requestId: request.id });
     f.service.ensureTask = async () => ({ id: work.work.id, status: 'pending', ready: true });
     f.tasks.find(task => task.id === work.work.id).ready = true;
     let workspaceCalls = 0;
     f.service.desktop = async () => { workspaceCalls++; throw new Error('An ineligible requirement reached workspace preparation'); };
+    if (kind === 'queued-readonly') {
+      f.service.teams.setCold = async () => {}; f.service.teams.cancelMessages = async () => {};
+      await f.service.doLaunch(work.work.id, new AbortController().signal).catch(() => {});
+      // Passing the requirement gate reserves the work; this fixture's materials root then stops it before preparation.
+      assert.notEqual(f.service.stream(work.work.id).delegations[0].phase, 'queued', 'an authorized queued requirement may start read-only preparation');
+      continue;
+    }
     await f.service.doLaunch(work.work.id, new AbortController().signal);
     assert.equal(workspaceCalls, 0, `${kind} requirements never prepare or start worker work`);
     const saved = f.service.stream(work.work.id), worker = f.service.worker(work.worker.sessionId);

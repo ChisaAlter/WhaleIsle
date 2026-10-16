@@ -126,7 +126,7 @@ export class ProjectRequirements {
     }
     if (!row && work && latest(work).source.requestId) row = this.get(actor.project.id, latest(work).source.requestId);
     if (!row) fail('request_missing', 'Declare the user requirement before arranging new stages.');
-    service.queue.assertActive(row, args.requestRevision ?? row.revision);
+    service.queue.assertWork(row, args.requestRevision ?? row.revision, args.scope === 'readonly' ? 'readonly' : 'write');
     const version = this.version(row);
     if (version.authorityError || !version.source) fail('request_authority', 'The saved requirement has no verified original authorization. Accept a new actual user revision before arranging work.');
     const related = input.messages.some(event => {
@@ -219,7 +219,8 @@ export class ProjectRequirements {
       title: row.title, summary: string(args.summary, 'delivery summary', 16000), outcome: args.outcome, evidence, remainingIssues,
       reportRefs: (args.reportRefs ?? []).map(reference => this.validReport(row.projectId, reference, args.outcome === 'completed')),
       terminalRefs: (args.terminalRefs ?? []).map(reference => this.validTerminal(row.projectId, reference)),
-      requiredDelegations: this.manifest(row), declaredCallId: exec.rootCallId ?? exec.callId, sessionId: actor.agent.id, turn: input.call.data.turn, status: 'draft', at: Date.now() };
+      requiredDelegations: this.manifest(row), declaredCallId: exec.rootCallId ?? exec.callId, sessionId: actor.agent.id, turn: input.call.data.turn, status: 'draft', at: Date.now(),
+      ...(typeof args.decision === 'string' && args.decision.trim() ? { decision: args.decision.trim().slice(0, 2000) } : {}) };
     const published = this.publishedPages(input.events, actor.agent.id, draft.turn);
     this.validate(draft);
     await service.serial(async () => { this.validate(draft); await service.write(state => {
@@ -281,6 +282,7 @@ export class ProjectRequirements {
       && !event.data.interrupted && !event.data.message.content?.some(block => block.type === 'tool-call') && text(event.data.message).trim());
     if (!reply) { await this.failed(draft, 'No visible final coordinator reply followed the handover declaration.'); return; }
     const publications = new Map(this.publishedPages(events, session.id, draft.turn).map(page => [page.callId, page]));
+    let committed = false;
     await this.service.serial(async () => {
       const stored = (this.service.state().deliveries ?? []).find(item => item.id === draft.id); if (stored?.status !== 'draft') return;
       const project = this.service.project(draft.projectId);
@@ -306,8 +308,11 @@ export class ProjectRequirements {
           if (work.summaryFailure?.delegationRef === reference.delegationRef) delete work.summaryFailure;
         }
       });
+      committed = true;
       await this.service.notes(project.id);
     });
+    // Record this requirement's own changes before the next requirement can start writing.
+    if (committed) await this.service.afterDelivery(draft.id);
     if (!reconciling) await this.service.queue.pump(draft.projectId);
   }
   applicable(delivery) {
@@ -405,7 +410,10 @@ export class ProjectRequirements {
       { sessionId: item.workerSessionId, name: item.memberName, status: item.status });
     const members = [...memberRows.values()];
     const base = { id: row.id, projectId, title: row.title, revision: row.revision, createdAt: row.createdAt,
-      updatedAt: row.updatedAt, ...(row.archivedAt !== undefined ? { archivedAt: row.archivedAt } : {}), queue: service.queue.view(row), status, counts };
+      updatedAt: row.updatedAt, ...(row.archivedAt !== undefined ? { archivedAt: row.archivedAt } : {}), queue: service.queue.view(row), status, counts,
+      ...(row.changes ? { changes: { isGit: row.changes.isGit, revertible: Boolean(row.changes.isGit && row.changes.baseline && row.changes.end && !row.changes.revertedAt),
+        ...(row.changes.end ? { fileCount: row.changes.fileCount ?? 0, added: row.changes.added ?? 0, removed: row.changes.removed ?? 0 } : {}),
+        ...(row.changes.revertedAt ? { revertedAt: row.changes.revertedAt } : {}), ...(full && row.changes.files ? { files: row.changes.files.slice(0, 50) } : {}) } } : {}) };
     if (!full) return { ...base, goalPreview: version.goal.slice(0, 180), members: members.slice(0, 3), memberTotal: members.length,
       workPreview: work.slice(0, 3).map(item => ({ workstreamId: item.workstreamId, delegationRef: item.delegationRef,
         title: item.title, status: item.status, memberName: item.memberName, workerSessionId: item.workerSessionId,

@@ -16,6 +16,9 @@ export class ProjectQueue {
   view(row) { const pending = this.pending(row.projectId), index = pending.findIndex(item => item.id === row.id);
     return { state: this.state(row), ...(row.queue?.released ? { released: true } : {}), ...(index >= 0 ? { position: index + 1, total: pending.length } : {}) }; }
   accepts(row, revision = row.revision) { return this.state(row) === 'active' && row.revision === revision && this.active(row.projectId)?.id === row.id && this.unfinished(row); }
+  // Read-only preparation may start for an authorized queued requirement; any write waits for activation.
+  acceptsWork(row, revision, scope) { return this.accepts(row, revision) || scope === 'readonly' && this.state(row) === 'queued' && row.revision === revision && !row.queue?.released && this.unfinished(row); }
+  assertWork(row, revision, scope) { if (!this.acceptsWork(row, revision, scope)) fail('request_queued', scope === 'readonly' ? 'Only the active or an authorized queued requirement may run read-only work. Discussed or cancelled requirements cannot run.' : 'Only the current active requirement may write. A queued requirement may only run read-only preparation.'); }
   assertActive(row, revision) { if (!this.accepts(row, revision)) fail('request_queued', 'Only the current active requirement may execute. Discussed, queued or cancelled requirements cannot run.'); }
   busy(projectId) { return this.service.state().workers.some(worker => worker.projectId === projectId
     && (worker.activeRunId || worker.reservationRef && this.service.stream(worker.workstreamId).delegations.some(receipt => receipt.ref === worker.reservationRef && receipt.phase === 'preparing') || worker.directoryHeld || worker.phase === 'stopping'
@@ -109,8 +112,7 @@ export class ProjectQueue {
       if (!promoted && !row.queue?.resumeRequested && service.requirements.manifest(row).length) return;
       // No extra activation is needed while the original human turn can arrange
       // its accepted work. Later handoffs use one exact native plugin message.
-      const lead = service.ctx.agents.get(project.coordinatorSessionId), human = service.userTurns.get(project.coordinatorSessionId);
-      if (!promoted && !row.queue?.resumeRequested && lead?.status === 'running' && human?.agent === lead && human.turn === lead.session.snapshotEvents().findLast(event => event.type === 'turn/start')?.data.turn) return;
+      if (!promoted && !row.queue?.resumeRequested && service.humanTurnOpen(project.coordinatorSessionId)) return;
       message = createUserMessage({ source: { kind: queuePlugin, form: 'notice', summary: boundContextSummary(`Project activated: ${row.title}`) }, content: [{ type: 'text', text: `The Project host activated the next user-authorized requirement. Read notes.md, preserve this requirement's stored scope and restrictions, delegate its actual work, then report progress. This is queue continuation, not new human authorization.\n${JSON.stringify(service.requirements.view(row))}` }] });
       selected = { id: row.id, revision: row.revision };
       await service.write(state => { const item = state.requests.find(item => item.id === row.id); item.queue.activation = { messageId: message.id, requestRevision: row.revision, ...(item.queue.resumeRequested ? { resume: true } : {}) }; delete item.queue.resumeRequested; });

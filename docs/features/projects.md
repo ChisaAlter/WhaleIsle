@@ -73,6 +73,25 @@ Focused checks exercise the actual Harness Host, tools, Team tasks, Sessions and
 
 Real configured-model observations in an isolated profile already cover continuing members in a long-path non-Git directory, bidirectional native peer messages, dependent document delivery, actual preview and changed-file warning, stop and archive/restore. The original development member also passed the normal default `node --test` command through native allow-once approval; reject and stop were checked against actual approval and Session records. Earlier sandbox failure remains in history. These results do not certify arbitrary build tools.
 
+### Steward redesign source changes (4.2)
+
+Branch `project-steward-p1` implements P1–P4 of the [steward redesign](../superpowers/specs/2026-10-15-project-steward-redesign.md). These are uncommitted source changes; they are not installed and have no real-provider or visible desktop acceptance. The [manual acceptance checklist](projects-steward-acceptance.md) covers what remains.
+
+- **Project rules**: `charter.md` (16 KB) is injected into every Lead step and worker brief. Rules override the model's own defaults; an explicit user exception is confirmed once and stated. Older Projects create the file lazily. The materials editor adds a Project rules tab with common-rule toggles and a size meter; the former instructions tab is labelled Preferences.
+- **Board**: plain-language status badges with a reason and next step, a whole-Project overview strip, undo on discussed or queued cards, and direct requirement creation for clear goals.
+- **Deliveries**: delivered cards list their files, open them with their recorded authority, and link to changes and result pages. The diff view is split by file with line counts and colouring.
+- **Requirement changes**: the first write of a requirement records a baseline tree through a private temporary Git index; the user's index, refs and files are untouched. Delivery records the end tree before the next requirement can start. Users view only that requirement's changes and can revert them after confirmation. A revert that would overwrite later edits changes nothing and can be handed to the Lead. Non-Git directories have no requirement baseline.
+- **Decision log**: `project_deliver` accepts a `decision`; after a durable delivery the host appends it (or the summary's first line) to `decisions.md` once, and recent entries are injected into the Lead. Reverts are logged.
+- **Queued preparation**: an authorized queued requirement may run read-only investigation; docs and development still wait for activation, and discussed or cancelled requirements cannot run. The Lead's open human turn is queried through `humanTurnOpen()`. No Agent Teams source change is required: system prompt sections are re-rendered every step and compaction keeps the system head.
+- Deferred: automatic cross-requirement worktree parallelism and the architecture map, for the reasons recorded in the design.
+
+Verification in an isolated Linux workspace (Node 22.9/22.20, harness dependencies installed from its lockfile, prebuilt native addon), compared with the unchanged branch base:
+
+- `host-composition` (real Host, Team, Session and storage with a scripted model): 26/26 on the base and on the changes, repeated three times each. One earlier run of the changes failed a single test while removing its temporary directory (`ENOTEMPTY`); it did not reproduce in about fifteen subsequent runs and its source was not established.
+- Other Project tests: 54/54, including new steward tests for baselines, delivery changes, decision logs, reverts and queue admission. Two existing assertions were updated for the intended read-only preparation rule.
+- `project-environment` with real Git repositories: 12/12, including private-index capture, requirement-only changes, clean revert and refused conflicting revert.
+- Desktop client module with React and jsdom: 90 tests, 79 passed. The 11 failures are identical on the unchanged base; new tests cover the board, rules page, delivery files, requirement diff, revert and conflict hand-off, decision log and queued preparation.
+
 ### Source Request observer observations
 
 The later observer fixes were validated from `codex/project-installed-acceptance` at base commit `366f4e693b549344a334464e27b00fc03e96e082` plus the uncommitted changes, not from the installed candidate. The source Electron used a separate QA profile and the official startup build. Restarting that owned instance refreshed its profile's Project runtime copy; the actual served client was checked against the final source SHA-256 `cb37cad6f2db310ba3865f4c54d888c9e6f88c196de37f912e34273403ae6dcc`. The ordinary running application and dirty primary checkout were not changed by this observer validation.

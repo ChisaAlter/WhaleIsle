@@ -514,8 +514,8 @@ test('native requirement queue keeps discussion separate, preserves edits and or
       { type: 'request', title: 'C', disposition: 'queued' }, { type: 'delegate', title: 'C' }, { type: 'request', title: 'D', disposition: 'queued' }]);
     assert.equal(request('B').queue.state, 'discussing'); assert.deepEqual(host.queue.pending(project.id).map(row => row.title), ['C', 'D']);
     assert.deepEqual(model.failures.map(item => item.name), ['project_delegate', 'project_delegate']);
-    for (const failure of model.failures) assert.match(failure.error.message, /Only the current active requirement may execute/);
-    assert.deepEqual(host.state().workstreams.map(row => row.title), ['A work'], 'neither tentative nor approved waiting requirements can prestart even a repository stage');
+    for (const failure of model.failures) assert.match(failure.error.message, /Only the current active requirement may write/);
+    assert.deepEqual(host.state().workstreams.map(row => row.title), ['A work'], 'neither tentative nor approved waiting requirements can prestart development; queued ones may only investigate read-only');
     assert.deepEqual(request('A'), a, 'discussing B and approving C/D never revise A or its authorization');
     await prompt([{ type: 'queue', title: 'B', action: 'enqueue', before: 'C' }]);
     assert.deepEqual(host.queue.pending(project.id).map(row => row.title), ['B', 'C', 'D']);

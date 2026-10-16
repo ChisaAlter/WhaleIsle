@@ -23,6 +23,7 @@ const boundedNotesGenerated = text => {
   while ((bytes[end] & 0xc0) === 0x80) end--;
   return bytes.subarray(0, end).toString('utf8') + notice;
 };
+const charterLimit = 16000, decisionLimit = 4000;
 const policy = 'dsh-project-local';
 const directoryDiagnosticPrefix = root => `Project directory check (${root}): `;
 const isDirectoryDiagnostic = (message, root) => message.startsWith(directoryDiagnosticPrefix(root))
@@ -159,8 +160,8 @@ export class ProjectService {
       const { request, caller } = value, worker = this.worker(request.childId);
       if (caller !== root || worker.projectId !== project.id || request.environment?.cwd !== worker.cwd || request.environment?.agentPreset !== 'project-worker' || request.environment?.admissionPolicy !== policy) fail('team_environment', 'Team member must use its assigned Project environment.');
       if (operation === 'adopt') return;
-      const source = latest(this.stream(worker.workstreamId)).source;
-      if (source.requestId) this.queue.assertActive(this.requirements.get(project.id, source.requestId), source.requestRevision);
+      const { source, scope } = latest(this.stream(worker.workstreamId));
+      if (source.requestId) this.queue.assertWork(this.requirements.get(project.id, source.requestId), source.requestRevision, scope);
       if (this.recovering || this.projectHolds.has(project.id) || worker.stopped || this.held.has(worker.sessionId) || project.paused || this.archiving.has(project.id)) fail('stopped', 'Project work is stopped.');
       if (operation === 'startMember') await this.assignTask(root, this.stream(worker.workstreamId), worker);
       return;
@@ -187,7 +188,7 @@ export class ProjectService {
         return;
       }
       const worker = this.worker(value.targetId), work = this.stream(worker.workstreamId), receipt = latest(work);
-      if (receipt.source.requestId) this.queue.assertActive(this.requirements.get(project.id, receipt.source.requestId), receipt.source.requestRevision);
+      if (receipt.source.requestId) this.queue.assertWork(this.requirements.get(project.id, receipt.source.requestId), receipt.source.requestRevision, receipt.scope);
       if (worker.stopped || this.held.has(worker.sessionId) || receipt.report || !this.directoryAvailable(worker)) fail('stopped', 'This member is not accepting executable messages.');
       const tasks = this.teams.listTasks(root);
       if ((work.blockedBy ?? []).some(id => !tasks.some(task => task.id === id && task.status === 'completed'))) fail('dependencies', 'This work is waiting for its dependencies to complete.');
@@ -278,6 +279,7 @@ export class ProjectService {
   async finishCreation(project) {
     await safeProjectSubdirectory(this.home, project.id, 'docs'); await safeProjectSubdirectory(this.home, project.id, 'internal');
     try { await fs.writeFile(join(project.storageRoot, 'preferences.md'), '', { flag: 'wx', mode: 0o600 }); } catch (error) { if (error.code !== 'EEXIST') throw error; }
+    try { await fs.writeFile(join(project.storageRoot, 'charter.md'), '', { flag: 'wx', mode: 0o600 }); } catch (error) { if (error.code !== 'EEXIST') throw error; }
     await this.ctx.sessionController.create({ sessionId: project.coordinatorSessionId, cwd: project.storageRoot, agentPreset: 'project-coordinator', presentation: { owner: 'project', title: project.title, workingDirectory: project.canonicalWorkingDirectory } });
     await this.ctx.sessions.flush(this.ctx.agents.get(project.coordinatorSessionId).session);
     await this.teams.bindPolicy(this.ctx.agents.get(project.coordinatorSessionId), policy);
@@ -370,6 +372,63 @@ export class ProjectService {
     const tail = result.then(() => {}, () => {}); this.delegationTails.set(id, tail);
     try { return await result; } finally { if (this.delegationTails.get(id) === tail) this.delegationTails.delete(id); }
   }
+  // Record the working tree before a requirement's first write so its own changes can be shown and reverted.
+  async captureBaseline(projectId, requestId) {
+    const row = (this.state().requests ?? []).find(item => item.id === requestId && item.projectId === projectId);
+    if (!row || row.changes && !row.changes.revertedAt) return;
+    let snapshot;
+    try { snapshot = await this.desktop('baseline', { projectId, workingDirectory: this.project(projectId).canonicalWorkingDirectory }); }
+    catch (error) { this.ctx.logger.warn('Project baseline could not be recorded: %s', error.message); return; }
+    await this.serial(() => this.write(state => { const item = state.requests.find(entry => entry.id === requestId);
+      item.changes = snapshot.isGit ? { isGit: true, baseline: snapshot.tree, capturedAt: Date.now() } : { isGit: false, capturedAt: Date.now() }; }));
+  }
+  // After a durable handover: record the requirement's own changes and append its decision to the log.
+  async afterDelivery(deliveryId) {
+    const delivery = (this.state().deliveries ?? []).find(item => item.id === deliveryId);
+    if (!delivery || delivery.status !== 'delivered') return;
+    const project = this.project(delivery.projectId), row = (this.state().requests ?? []).find(item => item.id === delivery.requestId);
+    if (row?.changes?.isGit && row.changes.baseline && !row.changes.revertedAt) {
+      try {
+        const value = await this.desktop('changes', { projectId: project.id, workingDirectory: project.canonicalWorkingDirectory, base: row.changes.baseline });
+        await this.serial(() => this.write(state => { const item = state.requests.find(entry => entry.id === row.id);
+          item.changes = { ...item.changes, end: value.end, endedAt: Date.now(), files: value.files.slice(0, 300), fileCount: value.files.length,
+            added: value.files.reduce((sum, file) => sum + file.added, 0), removed: value.files.reduce((sum, file) => sum + file.removed, 0) }; }));
+      } catch (error) { this.ctx.logger.warn('Project requirement changes could not be recorded: %s', error.message); }
+    }
+    const fallback = delivery.summary.split('\n').map(line => line.replace(/^[#>*\-\s]+/, '').trim()).find(Boolean)?.slice(0, 300) ?? '';
+    await this.appendDecision(project, { id: delivery.id, title: delivery.title, revision: delivery.requestRevision, outcome: delivery.outcome, text: delivery.decision || fallback })
+      .catch(error => this.ctx.logger.warn('Project decision log could not be updated: %s', error.message));
+  }
+  async appendDecision(project, entry) {
+    const path = await this.storePath(project, 'decisions.md'), old = await fs.readFile(path, 'utf8'), tag = `<!-- decision:${entry.id} -->`;
+    if (old.includes(tag)) return;
+    const label = { completed: '完整交付', partial: '部分交付', reverted: '已撤销改动' }[entry.outcome] ?? entry.outcome;
+    const block = `## ${new Date().toISOString().slice(0, 10)} · ${entry.title}${entry.revision ? `（第 ${entry.revision} 版）` : ''}\n${tag}\n- 结果：${label}\n${entry.text ? `- 决策：${entry.text.replace(/\s*\n\s*/g, ' ')}\n` : ''}`;
+    let next = `${old.trim() ? old.replace(/\s*$/, '\n\n') : '# 决策日志\n\n'}${block}`;
+    if (Buffer.byteLength(next) > 400000) { const cut = next.indexOf('\n## ', next.length - 300000); next = `# 决策日志\n\n${next.slice(cut + 1)}`; }
+    await atomicText(path, next);
+  }
+  async requestChanges(projectId, input) {
+    const project = this.project(projectId), row = this.requirements.get(projectId, required(input.requestId, 'task identity', 200)), changes = row.changes;
+    if (!changes?.isGit || !changes.baseline) fail('changes_unavailable', 'This requirement has no recorded starting point; view the directory changes instead.');
+    const value = await this.desktop('changes', { projectId, workingDirectory: project.canonicalWorkingDirectory, base: changes.baseline, ...(changes.end ? { end: changes.end } : {}), diff: true });
+    return { files: value.files, diff: value.diff, truncated: value.truncated, final: Boolean(changes.end), ...(changes.revertedAt ? { revertedAt: changes.revertedAt } : {}) };
+  }
+  async revertRequest(projectId, input) {
+    return this.serial(async () => {
+      const project = this.project(projectId), row = this.requirements.get(projectId, required(input.requestId, 'task identity', 200)), changes = row.changes;
+      if (this.closing || project.lifecycle !== 'ready' || this.archiving.has(projectId)) fail('unavailable', 'Restore this Project before reverting its changes.');
+      if (this.queue.busy(projectId)) fail('busy', 'Background work is still running in this directory. Wait for it to finish or stop it before reverting.');
+      if (!changes?.isGit || !changes.baseline || !changes.end || changes.revertedAt) fail('revert_unavailable', 'This requirement has no delivered changes that can be reverted.');
+      const result = await this.desktop('revert', { projectId, workingDirectory: project.canonicalWorkingDirectory, base: changes.baseline, end: changes.end });
+      if (result.conflict) fail('revert_conflict', result.message || 'Files changed after delivery, so the revert does not apply cleanly.');
+      await this.write(state => { const item = state.requests.find(entry => entry.id === row.id); item.changes = { ...item.changes, revertedAt: Date.now() }; item.updatedAt = Date.now(); });
+      await this.appendDecision(project, { id: `revert-${row.id}-${changes.end.slice(0, 12)}`, title: row.title, outcome: 'reverted', text: '用户撤销了这条需求带来的改动，相关文件已恢复到开始开发前的状态。' })
+        .catch(error => this.ctx.logger.warn('Project decision log could not be updated: %s', error.message));
+      await this.notes(projectId);
+      return { requestId: row.id, reverted: true };
+    });
+  }
   async doDelegate(actor, args, exec) {
     this.coordinatorOnly(actor); exec.signal.throwIfAborted();
     const existing = args.workstreamId ? this.stream(args.workstreamId, actor.project.id) : undefined;
@@ -379,6 +438,7 @@ export class ProjectService {
     const stopGeneration = existing ? this.workerStops.get(existing.workerSessionId)?.generation ?? 0 : 0;
     if (existing && this.workerStops.get(existing.workerSessionId)?.sourceMessageId === continuationId) fail('stopped', 'The request was stopped; a new actual user message is required.');
     if (!role) fail('invalid_scope', 'Choose readonly, docs or development.');
+    if (role !== 'readonly' && source.requestId) await this.captureBaseline(actor.project.id, source.requestId);
     const blockers = args.blockedBy === undefined ? existing?.blockedBy ?? [] : args.blockedBy;
     if (!Array.isArray(blockers) || blockers.length > 64) fail('dependencies', 'Dependencies must reference existing work in this Project.');
     const validateDependencies = () => {
@@ -421,7 +481,7 @@ export class ProjectService {
       const project = this.project(actor.project.id);
       if (this.closing || this.archiving.has(project.id) || project.lifecycle !== 'ready') fail('unavailable', 'Restore this Project before delegating.');
       this.requirements.get(project.id, source.requestId, source.requestRevision);
-      this.queue.assertActive(this.requirements.get(project.id, source.requestId), source.requestRevision);
+      this.queue.assertWork(this.requirements.get(project.id, source.requestId), source.requestRevision, role);
       if (this.projectHolds.get(project.id) === continuationId || project.holdSourceMessageId === continuationId) fail('stopped', 'The request was stopped; a new actual user message is required.');
       if (existing && (this.workerStops.get(existing.workerSessionId)?.generation ?? 0) !== stopGeneration) fail('stopped', 'The work was stopped while its continuation was being prepared.');
       const replay = this.state().workstreams.find(item => item.projectId === project.id && item.delegations.some(receipt => receipt.ref === ref));
@@ -498,7 +558,7 @@ export class ProjectService {
       const requirement = receipt.source.requestId && this.requirements.rows(project.id).find(row => row.id === receipt.source.requestId);
       const version = requirement?.versions.find(version => version.revision === receipt.source.requestRevision);
       if (receipt.source.requestId && (!version || version.authorityError || !version.source)) return;
-      if (requirement && !this.queue.accepts(requirement, receipt.source.requestRevision)) return;
+      if (requirement && !this.queue.acceptsWork(requirement, receipt.source.requestRevision, receipt.scope)) return;
       const tasks = this.teams.listTasks(this.ctx.agents.get(project.coordinatorSessionId));
       task = tasks.find(candidate => candidate.id === id);
       const upstream = (stream.blockedBy ?? []).map(dependency => this.stream(dependency, project.id));
@@ -527,7 +587,7 @@ export class ProjectService {
         await this.serial(() => this.write(state => { const member = state.workers.find(item => item.sessionId === worker.sessionId); member.cwd = cwd; member.workspace = copy(workspace); if (workspace.branch) member.branch = workspace.branch; }));
       } else await this.desktop('check-workspace', { projectId: project.id, workstreamId: id, workspace: worker.workspace });
       worker = this.worker(worker.sessionId); stream = this.stream(id);
-      if (worker.stopped || this.held.has(worker.sessionId) || this.project(project.id).paused || receipt.source.requestId && !this.queue.accepts(this.requirements.get(project.id, receipt.source.requestId), receipt.source.requestRevision)) return;
+      if (worker.stopped || this.held.has(worker.sessionId) || this.project(project.id).paused || receipt.source.requestId && !this.queue.acceptsWork(this.requirements.get(project.id, receipt.source.requestId), receipt.source.requestRevision, receipt.scope)) return;
       const internal = await safeProjectSubdirectory(this.home, project.id, 'internal', id), docs = await safeProjectSubdirectory(this.home, project.id, 'docs', id);
       const previous = stream.delegations.slice(0, stream.delegations.findIndex(item => item.ref === receipt.ref)).findLast(item => item.report)?.report;
       const requirement = receipt.source.requestId && this.requirements.rows(project.id).find(row => row.id === receipt.source.requestId);
@@ -538,7 +598,7 @@ export class ProjectService {
         goal: requirementVersion.goal, constraints: requirementVersion.constraints, conditions: requirementVersion.conditions,
         scopeCeiling: requirementVersion.scope, writePaths: requirementVersion.writePaths, sourceMessageIds: requirementVersion.source.messageIds ?? [requirementVersion.source.messageId],
         ...(stream.replaces ? { replaces: stream.replaces } : {}) })}\n\n` : '';
-      const brief = `${stream.delegations.length > 1 ? 'Continue the same work and original Session. Preserve correct previous work; implement only the current changes.' : 'First assignment for this continuing work.'}\nProject ${project.title}\nTeam: ${project.coordinatorSessionId}\nWorkstream ${id}: ${stream.title}\nDelegationRef: ${receipt.ref}\nWorking directory: ${worker.cwd}\nBranch: ${worker.branch || 'not applicable; selected project directory'}\n${process.platform === 'win32' ? 'Windows Git: use git -c core.longpaths=true for commands in this directory. Do not persist this setting. A Filename too long error does not prove deletion or a clean directory.\n' : ''}Scope: ${receipt.scope}; exact repository write paths: ${JSON.stringify(receipt.writePaths)}\nProject deliverables: ${docs}\nPrivate work notes: ${internal}\nActual user source (${receipt.source.messageId}):\n${receipt.source.text}\n\n${requirementBrief}Current assignment and completion criteria:\n${receipt.brief}\n\n${this.preferencesFor(project.coordinatorSessionId)}\n${previous ? `Previous recorded result (historical, not proof of this request):\n${JSON.stringify(previous)}\n` : ''}${prerequisites.length ? `Prerequisite results:\n${JSON.stringify(prerequisites)}\n` : ''}Use the actual user's language. Use project_report for this delegationRef with real artifacts, verification and remaining issues, then finish. Do not send a duplicate completion message.`;
+      const brief = `${stream.delegations.length > 1 ? 'Continue the same work and original Session. Preserve correct previous work; implement only the current changes.' : 'First assignment for this continuing work.'}\nProject ${project.title}\nTeam: ${project.coordinatorSessionId}\nWorkstream ${id}: ${stream.title}\nDelegationRef: ${receipt.ref}\nWorking directory: ${worker.cwd}\nBranch: ${worker.branch || 'not applicable; selected project directory'}\n${process.platform === 'win32' ? 'Windows Git: use git -c core.longpaths=true for commands in this directory. Do not persist this setting. A Filename too long error does not prove deletion or a clean directory.\n' : ''}Scope: ${receipt.scope}; exact repository write paths: ${JSON.stringify(receipt.writePaths)}\nProject deliverables: ${docs}\nPrivate work notes: ${internal}\nActual user source (${receipt.source.messageId}):\n${receipt.source.text}\n\n${requirementBrief}Current assignment and completion criteria:\n${receipt.brief}\n\n${this.charterFor(project.coordinatorSessionId)}${this.preferencesFor(project.coordinatorSessionId)}\n${previous ? `Previous recorded result (historical, not proof of this request):\n${JSON.stringify(previous)}\n` : ''}${prerequisites.length ? `Prerequisite results:\n${JSON.stringify(prerequisites)}\n` : ''}Use the actual user's language. Use project_report for this delegationRef with real artifacts, verification and remaining issues, then finish. Do not send a duplicate completion message.`;
       const parent = await this.coordinator(project), saved = await this.ctx.sessionPersistence.stat(worker.sessionId); let messageId;
       if (worker.materialized && !saved) fail('session_missing', 'The original worker Session is missing; no replacement is created.');
       const request = this.memberRequest(worker, stream, signal, brief);
@@ -585,7 +645,7 @@ export class ProjectService {
     if (settlement) await this.runEnded({ id: childId, runId: settlement.runId, stopReason: settlement.stopReason, lastAssistantMessage: settlement.output });
     const worker = this.worker(childId), project = this.project(worker.projectId);
     const assignment = latest(this.stream(worker.workstreamId));
-    if (assignment.source.requestId && !this.queue.accepts(this.requirements.get(project.id, assignment.source.requestId), assignment.source.requestRevision)) fail('request_queued', 'The requirement is no longer active.');
+    if (assignment.source.requestId && !this.queue.acceptsWork(this.requirements.get(project.id, assignment.source.requestId), assignment.source.requestRevision, assignment.scope)) fail('request_queued', 'The requirement is no longer active.');
     if (this.closing || this.recovering || this.projectHolds.has(project.id) || this.held.has(childId) || this.archiving.has(project.id) || parent.id !== project.coordinatorSessionId || this.ctx.agents.get(parent.id) !== parent || project.lifecycle !== 'ready' || project.paused || worker.stopped || worker.phase === 'stopping') fail('paused', 'Project continuation is stopped or paused.');
     if (reason !== 'settlement' && (!worker.cwd || !this.directoryAvailable(worker))) fail('directory_busy', 'The writable directory is occupied.');
     if (reason !== 'settlement') {
@@ -864,6 +924,33 @@ export class ProjectService {
     const project = this.state().projects.find(item => item.coordinatorSessionId === id);
     return project ? `Current Project host facts (data):\n${JSON.stringify(this.projectFacts(project))}\ncanonicalWorkingDirectory is the user's bound repository. storageRoot is only the Project materials directory and this coordinator's cwd. Project records describe prior work; repository contents are established by actual inspection.` : '';
   }
+  charterFor(id) {
+    const project = this.state().projects.find(item => item.coordinatorSessionId === id); if (!project) return '';
+    if (realpathSync(project.storageRoot) !== project.storageRoot) fail('store_path', 'Project materials directory was replaced with a link.');
+    const path = join(project.storageRoot, 'charter.md');
+    let value;
+    try { if (realpathSync(path) !== path) fail('store_path', 'Charter was replaced with a link.'); value = readFileSync(path, 'utf8'); }
+    catch (error) { if (error.code === 'ENOENT') return ''; throw error; }
+    if (!value.trim()) return '';
+    const bytes = Buffer.from(value);
+    if (bytes.length > charterLimit) { let end = charterLimit; while ((bytes[end] & 0xc0) === 0x80) end--; value = bytes.subarray(0, end).toString('utf8') + '\n[Project rules truncated at the size limit; ask the user to shorten them.]'; }
+    return `Project rules (the user's standing rules for this Project):\n${value}\nFollow these rules over your own defaults and habits. If the user explicitly asks in the current conversation to deviate, confirm the exception once, then follow the user and mention the exception in your reply.\n`;
+  }
+  // Whether the human's own coordinator turn is still running and can arrange accepted work itself.
+  humanTurnOpen(sessionId) {
+    const lead = this.ctx.agents.get(sessionId), human = this.userTurns.get(sessionId);
+    return Boolean(lead?.status === 'running' && human?.agent === lead && human.turn === lead.session.snapshotEvents().findLast(event => event.type === 'turn/start')?.data.turn);
+  }
+  decisionsFor(id) {
+    const project = this.state().projects.find(item => item.coordinatorSessionId === id); if (!project) return '';
+    const path = join(project.storageRoot, 'decisions.md'); let value;
+    try { if (realpathSync(path) !== path) return ''; value = readFileSync(path, 'utf8'); } catch (error) { if (error.code === 'ENOENT') return ''; throw error; }
+    let recent = value.replace(/^# .*\n+/, '');
+    if (!recent.trim()) return '';
+    const bytes = Buffer.from(recent);
+    if (bytes.length > decisionLimit) { recent = bytes.subarray(bytes.length - decisionLimit).toString('utf8'); const start = recent.indexOf('\n## '); recent = start >= 0 ? recent.slice(start + 1) : recent; }
+    return `Recent Project decisions (oldest first; the full log is decisions.md through project_read_store). Keep later work consistent with them unless the user decides otherwise:\n${recent}`;
+  }
   preferencesFor(id) {
     const project = this.state().projects.find(item => item.coordinatorSessionId === id); if (!project) return '';
     if (realpathSync(project.storageRoot) !== project.storageRoot) fail('store_path', 'Project materials directory was replaced with a link.');
@@ -885,8 +972,10 @@ export class ProjectService {
     return checkedRoot(root);
   }
   async storePath(project, path) {
-    if (typeof path !== 'string' || !(path === 'notes.md' || path === 'preferences.md' || path.startsWith('docs/')) || isAbsolute(path) || path.split(/[\\/]/).some(part => part === '..' || part.toLowerCase() === 'internal' || part.toLowerCase() === '.git')) fail('store_path', 'Only notes.md, preferences.md and docs files are readable.');
-    const root = await this.storeRoot(project), actual = await fs.realpath(resolve(root, path)), docs = await checkedRoot(join(root, 'docs'));
+    if (typeof path !== 'string' || !(path === 'notes.md' || path === 'preferences.md' || path === 'charter.md' || path === 'decisions.md' || path.startsWith('docs/')) || isAbsolute(path) || path.split(/[\\/]/).some(part => part === '..' || part.toLowerCase() === 'internal' || part.toLowerCase() === '.git')) fail('store_path', 'Only notes.md, preferences.md, charter.md, decisions.md and docs files are readable.');
+    const root = await this.storeRoot(project);
+    if (path === 'charter.md' || path === 'decisions.md') { try { await fs.writeFile(join(root, path), '', { flag: 'wx', mode: 0o600 }); } catch (error) { if (error.code !== 'EEXIST') throw error; } }
+    const actual = await fs.realpath(resolve(root, path)), docs = await checkedRoot(join(root, 'docs'));
     if ((path.startsWith('docs/') ? !within(docs, actual) : actual !== join(root, path)) || !(await fs.stat(actual)).isFile()) fail('store_path', 'Material is outside the allowed root or is not a file.'); return actual;
   }
   async readStore(id, path) {
@@ -1056,6 +1145,8 @@ export class ProjectService {
     if (endpoint === 'requests/list') return this.requirements.listCards(project.id, input);
     if (endpoint === 'requests/get') return this.requirements.getCard(project.id, required(input.requestId, 'task identity', 200));
     if (endpoint === 'requests/queue') return this.queue.change(project.id, input);
+    if (endpoint === 'requests/changes') return this.requestChanges(project.id, input);
+    if (endpoint === 'requests/revert') return this.revertRequest(project.id, input);
     if (endpoint === 'requests/archive' || endpoint === 'requests/restore') return this.requirements.setArchived(project.id, required(input.requestId, 'task identity', 200), endpoint === 'requests/archive');
     if (endpoint === 'workstreams/list') return this.listWorkstreams(project.id, input);
     if (endpoint === 'workstreams/get') return this.getWorkstream(project.id, input);
@@ -1067,7 +1158,7 @@ export class ProjectService {
     if (endpoint === 'store/list') return this.listStore(project.id, input);
     if (endpoint === 'store/results') return this.resultHistory(project.id, input);
     if (endpoint === 'store/read') return this.readStore(project.id, input.path);
-    if (endpoint === 'store/write') return this.serial(async () => { if (this.project(project.id).lifecycle !== 'ready' || this.archiving.has(project.id)) fail('archived', 'Restore this Project before editing its materials.'); if (!['notes.md', 'preferences.md'].includes(input.path) || typeof input.text !== 'string' || Buffer.byteLength(input.text, 'utf8') > 256000) fail('store_path', 'Only notes正文 and preferences may be edited.'); const path = await this.storePath(project, input.path);
+    if (endpoint === 'store/write') return this.serial(async () => { if (this.project(project.id).lifecycle !== 'ready' || this.archiving.has(project.id)) fail('archived', 'Restore this Project before editing its materials.'); if (!['notes.md', 'preferences.md', 'charter.md'].includes(input.path) || typeof input.text !== 'string' || Buffer.byteLength(input.text, 'utf8') > 256000) fail('store_path', 'Only notes正文, preferences and charter may be edited.'); if (input.path === 'charter.md' && Buffer.byteLength(input.text, 'utf8') > charterLimit) fail('store_size', `Project rules are limited to ${charterLimit} bytes; shorten them before saving.`); const path = await this.storePath(project, input.path);
       if (input.path === 'notes.md') { if (input.text.includes(marker)) fail('store_path', 'Edit only the user notes body, not the generated section.'); const old = await fs.readFile(path, 'utf8'); if (!old.includes(marker)) fail('store_path', 'The generated notes separator is missing.'); await atomicText(path, boundedNotesGenerated(old.slice(0, old.indexOf(marker))) + marker + '\n' + input.text); } else await atomicText(path, input.text);
       await this.write(state => { state.projects.find(item => item.id === project.id).updatedAt = Date.now(); }); return this.readStore(project.id, input.path); });
     if (endpoint === 'open') {

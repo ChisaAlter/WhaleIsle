@@ -198,3 +198,42 @@ test('optional exact PR observations preserve closed state and checks on the act
   assert.deepEqual(requested.slice(0, 5), ['pr', 'view', '7', '--repo', 'example/project']);
   await assert.rejects(environment.dispatch({ action: 'pull-request', workingDirectory: source, repository: '../elsewhere', number: 7 }), /PR 身份/);
 });
+
+test('requirement changes use a private index, exclude earlier edits, revert cleanly and refuse conflicting reverts', async t => {
+  const { source, git, environment } = await fixture(t);
+  fs.writeFileSync(path.join(source, 'earlier.txt'), 'user work before the requirement\n');
+  await git(source, ['add', 'earlier.txt']);
+  const statusBefore = await git(source, ['status', '--porcelain']), stagedBefore = await git(source, ['diff', '--cached', '--name-only']);
+  const start = await environment.dispatch({ action: 'baseline', workingDirectory: source });
+  assert.equal(start.isGit, true); assert.match(start.tree, /^[a-f0-9]{40,64}$/);
+  assert.equal(await git(source, ['status', '--porcelain']), statusBefore, 'capturing a baseline leaves the user index and files untouched');
+  assert.equal(await git(source, ['diff', '--cached', '--name-only']), stagedBefore);
+
+  fs.writeFileSync(path.join(source, 'file.txt'), 'changed by the requirement\n');
+  fs.writeFileSync(path.join(source, 'added.txt'), 'new file\n');
+  const delivered = await environment.dispatch({ action: 'changes', workingDirectory: source, base: start.tree, diff: true });
+  assert.deepEqual(delivered.files.map(file => [file.path, file.status, file.added, file.removed]), [['added.txt', 'A', 1, 0], ['file.txt', 'M', 1, 1]]);
+  assert.match(delivered.diff, /\+changed by the requirement/); assert.doesNotMatch(delivered.diff, /earlier\.txt/);
+  const again = await environment.dispatch({ action: 'changes', workingDirectory: source, base: start.tree, end: delivered.end });
+  assert.equal(again.end, delivered.end);
+
+  const reverted = await environment.dispatch({ action: 'revert', workingDirectory: source, base: start.tree, end: delivered.end });
+  assert.equal(reverted.applied, true);
+  assert.equal(fs.readFileSync(path.join(source, 'file.txt'), 'utf8'), 'baseline\n');
+  assert.equal(fs.existsSync(path.join(source, 'added.txt')), false);
+  assert.equal(fs.readFileSync(path.join(source, 'earlier.txt'), 'utf8'), 'user work before the requirement\n', 'earlier user work survives the revert');
+
+  const second = await environment.dispatch({ action: 'baseline', workingDirectory: source });
+  fs.writeFileSync(path.join(source, 'file.txt'), 'requirement edit\n');
+  const end = (await environment.dispatch({ action: 'changes', workingDirectory: source, base: second.tree })).end;
+  fs.writeFileSync(path.join(source, 'file.txt'), 'user edit after delivery\n');
+  const conflict = await environment.dispatch({ action: 'revert', workingDirectory: source, base: second.tree, end });
+  assert.equal(conflict.applied, false); assert.equal(conflict.conflict, true); assert.ok(conflict.message);
+  assert.equal(fs.readFileSync(path.join(source, 'file.txt'), 'utf8'), 'user edit after delivery\n', 'a conflicting revert changes nothing');
+  await assert.rejects(environment.dispatch({ action: 'revert', workingDirectory: source, base: 'not-a-tree', end }), /无效的改动记录/);
+});
+
+test('requirement baselines report non-Git directories without failing', async t => {
+  const { source, environment } = await fixture(t, false);
+  assert.deepEqual(await environment.dispatch({ action: 'baseline', workingDirectory: source }), { ok: true, isGit: false });
+});
