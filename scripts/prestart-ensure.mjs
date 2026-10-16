@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { createFileScanner } from './source-scan.mjs';
 import { readStageCredentials, stagesToRun } from '../vendor/deepseek-harness/scripts/build-stage-credentials.mjs';
 import { preparePreviewGuestPreload } from './prepare-preview-guest-preload.cjs';
+import { prepareOpenUi } from './prepare-openui.mjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const harness = path.join(root, 'vendor', 'deepseek-harness');
@@ -82,10 +83,11 @@ function run(command, args, cwd = root, { shell = process.platform === 'win32' }
   }
 }
 
+await prepareOpenUi();
 const buildReason = await officialBuildReason();
 if (buildReason) {
   console.log(`[prestart] ${buildReason}; rebuilding official client`);
-  const pnpm = path.join(root, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs');
+  const pnpm = path.join(harness, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs');
   run(process.execPath, [pnpm, '--dir', harness, 'run', 'build:official'], root, { shell: false });
 }
 

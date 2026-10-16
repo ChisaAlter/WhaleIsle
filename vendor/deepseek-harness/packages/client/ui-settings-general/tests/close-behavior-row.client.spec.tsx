@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime'
 import { CloseBehaviorRow } from '../src/client/CloseBehaviorRow.tsx'
 import type { CloseBehaviorRowProps } from '../src/client/CloseBehaviorRow.tsx'
 import { en } from '../src/client/locales.ts'
@@ -17,6 +18,7 @@ const unusedHook = (() => { throw new Error('unused by CloseBehaviorRow') }) as 
 
 function mount() {
   const props: CloseBehaviorRowProps = {
+    ...allowAllAccess,
     usePanelInfo: panelInfoStub,
     useResource: resourceStub,
     useSessions: unusedHook,
@@ -101,6 +103,7 @@ describe('CloseBehaviorRow', () => {
       saveConfig: async () => ({ closeToTray: true }),
     }
     const view = render(<CloseBehaviorRow
+      {...allowAllAccess}
       useSessions={unusedHook}
       useSessionStatus={unusedHook}
       useSessionRetainInfo={() => undefined}

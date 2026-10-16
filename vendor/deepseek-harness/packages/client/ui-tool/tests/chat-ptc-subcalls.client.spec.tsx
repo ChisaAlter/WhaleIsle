@@ -234,7 +234,7 @@ describe('run_code sub-calls through the real chat machinery', () => {
   it('a file sub-row click opens the shared Workspace path; bash sub-rows do not open details', async () => {
     const parent = 'call-64'
     const subCalls = [
-      subCall(11, parent, 1, 'read', { path: 'notes/demo.txt' }, 'ok'),
+      { ...subCall(11, parent, 1, 'read', { path: 'notes/demo.txt' }, 'ok'), meta: { path: '/w/notes/demo.txt' } },
       subCall(12, parent, 2, 'bash', { command: 'ls notes', description: 'List notes' }, 'demo.txt'),
     ]
     const b = await bench(snapshotWith([codeResult(10, parent)], subCalls))

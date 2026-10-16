@@ -78,6 +78,9 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
   ].join('\n'));
   for (const marker of FORK_FILE_MARKERS) {
     const content = {
+      'packages/client/ui-primitives/src/markdown/MarkdownText.tsx': 'renderCodeFence MarkdownCodeFenceRenderer\n',
+      'packages/client/ui-chat/src/index.ts': "DSHD_OPENUI_ENABLED name: 'openui'\n",
+      'packages/client/ui-chat/src/client/chat/AssistantMarkdown.tsx': 'OpenUiFrame renderCodeFence\n',
       'packages/experimental/agent-team/src/index.ts': 'registerManagedPolicy\n',
       'packages/experimental/agent-team/src/managed.ts': 'ManagedTeamController\n',
       'packages/experimental/agent-team/src/types.ts': 'PrepareTeamMemberRequest\n',
@@ -243,14 +246,12 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
     const projectSeams = {
       'apps/cli/src/profile-boot.ts': 'export async function disposeProfileApplication\nfor (const release of [() => projects?.dispose?.(), () => ctx?.fiber.dispose()])\ndisposeProfileApplication(app.current)\ninstallFailLoud(NAME, process, dispose)\n',
       'packages/subagent/subagent/src/types.ts': 'interface ContinuableEnvironment { readonly cwd?: string; readonly agentPreset?: string; readonly admissionPolicy?: string }\n',
-      'packages/subagent/subagent/src/child-agent.ts': 'environment?.cwd ?? parentHeader.cwd\nenvironment?.agentPreset ?? agentPreset\nawait presets.mount(childCtx, composition.agentPreset)\n',
+      'packages/subagent/subagent/src/child-agent.ts': 'const cwd = selectedCwd ?? parentHeader.cwd\nreturn presets.mount(childCtx, composition.agentPreset)\n',
       'packages/subagent/subagent/src/descriptor.ts': 'agentPreset admissionPolicy\n',
-      'packages/subagent/subagent/src/continuation.ts': "admitContinuation reason: 'start' reason: 'message' agentPreset: descriptor.agentPreset\n",
-      'packages/subagent/subagent/src/continuation-activation.ts': "notifyManagedSettlement reason: 'settlement' activation.observer.runId\n",
+      'packages/subagent/subagent/src/manager.ts': "spec.environment?.cwd spec.environment?.agentPreset this.host.admitContinuation this.admitActivation(activation, parent, 'message') descriptor.agentPreset await applyChildComposition private async notifySettlement reason: 'settlement' activation.observer.runId\n",
       'packages/subagent/subagent/src/continuation-messages.ts': 'readonly runId?: SubagentRunId\n',
       'packages/subagent/subagent/src/lifecycle.ts': 'readonly runId: SubagentRunId\n',
       'packages/subagent/subagent/src/index.ts': 'registerContinuationPolicy\n',
-      'packages/subagent/subagent-in-process-driver/src/index.ts': 'const setup = async\nawait applyChildComposition\n',
       'packages/api/session-controller/src/commands.ts': "await this.ctx.serial('session/before-cancel'\nasync cancel(request:\n&& !pluginPresentation\n",
       'packages/api/session-controller/src/index.ts': "'session/before-cancel'\ncancel(request: SessionCancelRequest): Promise<SessionCancelValue>\n",
       'packages/client/ui-sidebar/src/client/index.ts': 'selectTab\n',

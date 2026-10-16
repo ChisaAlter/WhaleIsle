@@ -1,5 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
-import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { PerformanceUsageMode } from '../../chat-settings.ts'
 import type { ChatPresentationPolicy } from '../presentation-policy.ts'
 import { NS } from '../locale.ts'
@@ -9,10 +11,12 @@ import {
   CompactionNodeView, ContextMessageNodeView, RetryNodeView, TurnErrorNodeView,
   TurnMaxTokensNodeView, UnknownNodeView, SteeringMessageNodeView, UserMessageNodeView,
 } from './MessageItem.tsx'
+import { DefaultReasoningBody, ReasoningContent } from './ReasoningContent.tsx'
 import { SystemPromptNodeView } from './SystemPromptRow.tsx'
 import { TurnProcessNodeView } from './TurnProcessNodeView.tsx'
 import { TurnTailNodeView } from './TurnTailNodeView.tsx'
 import { TurnTriggerNodeView } from './TurnTriggerNodeView.tsx'
+import { openUiActionText, readOpenUiState, saveOpenUiState, type OpenUiInjected } from './openui.ts'
 
 /**
  * Register this package's business renderers behind the keyed Chat Node seat.
@@ -27,6 +31,20 @@ export function registerChatNodeRenderers(
   performanceUsage: ObservableSnapshot<PerformanceUsageMode>,
   presentation: ObservableSnapshot<ChatPresentationPolicy>,
 ): void {
+  ctx.effect(() => ctx.slots.registerFactory({
+    name: 'conversation.chat.reasoning.content',
+    scope: 'root',
+    locale: NS,
+  }, ReasoningContent))
+  ctx.slots.inject('conversation.chat.reasoning.body', () => ctx.slots.register({
+    name: 'conversation.chat.reasoning.body',
+    priority: 100,
+  }, DefaultReasoningBody))
+  const openUiTheme = createSnapshotStore<ThemeSnapshot | null>(null)
+  ctx.inject(['theme'], (child) => {
+    openUiTheme.set(child.theme.getTheme())
+    child.on('theme/change', snapshot => { openUiTheme.set(snapshot) })
+  })
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
     key: 'user',
@@ -48,7 +66,21 @@ export function registerChatNodeRenderers(
     name: 'conversation.chat.node',
     key: 'assistant-step',
     locale: NS,
-    inject: () => ({ hooks: { presentation } }),
+    children: {
+      'conversation.chat.reasoning.body': { kind: 'single', scope: 'session' },
+      'conversation.chat.message.images': { kind: 'single', scope: 'session' },
+    },
+    inject: (sessionId): OpenUiInjected & { hooks: { presentation: typeof presentation } } => ({
+      hooks: { presentation, openUiTheme },
+      readOpenUiState,
+      saveOpenUiState,
+      sendOpenUiAction: async (action) => {
+        const binding = ctx.sessions.binding(sessionId)
+        if (binding === undefined) throw new Error('The OpenUI conversation is no longer available.')
+        const result = await binding.session.prompt([{ type: 'text', text: openUiActionText(action) }], 'queue')
+        if (!result.ok) throw new Error(result.error.message)
+      },
+    }),
   }, AssistantNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',

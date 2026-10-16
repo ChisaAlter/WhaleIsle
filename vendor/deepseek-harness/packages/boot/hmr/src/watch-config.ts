@@ -1,5 +1,5 @@
 /** Exact-path watching for live profile patch files outside Cordis module roots. */
-import { dirname, relative, resolve } from 'node:path'
+import { dirname, relative, resolve, sep } from 'node:path'
 import { realpath, stat } from 'node:fs/promises'
 import { watch, type ChokidarOptions } from 'chokidar'
 import type { Context } from '@deepseek-ai/cordis'
@@ -25,7 +25,8 @@ async function findWatchRoot(filename: string): Promise<{ filename: string; root
 }
 
 /**
- * Watch one patch path, including missing parents, and serialize refresh callbacks.
+ * Watch one patch path and its parent chain without subscribing to sibling files or directories.
+ * Missing parents are observed as they appear; refresh callbacks run serially.
  * @param ctx Context that owns watcher disposal and receives refresh failures.
  * @param filename Absolute patch-file path.
  * @param options Deployment watcher options; configuration watches enable write stabilization by default.
@@ -46,6 +47,10 @@ export async function watchConfig(
   const watcher = watch(target.root, {
     // Stabilized events bypass Chokidar's lossy 50 ms change-event throttle.
     awaitWriteFinish: true, ...watchOptions, depth: target.depth, ignoreInitial: false,
+    ignored: (path) => {
+      const remainder = relative(resolve(path), target.filename)
+      return remainder === '..' || remainder.startsWith(`..${sep}`)
+    },
   })
   paths.add(target.filename)
   const state = { dirty: false }
@@ -73,12 +78,24 @@ export async function watchConfig(
   watcher.on('unlink', onChange)
   const ready = Promise.withResolvers<void>()
   let pending = true
+  let disposed = false
   watcher.once('ready', () => { pending = false; ready.resolve() })
-  watcher.on('error', (error) => {
+  const onError = (error: unknown): void => {
+    // A watcher error after disposal is not actionable: this registration's
+    // path is gone and no refresh will run.
+    if (disposed) return
     if (pending) { pending = false; ready.reject(error) } else { ctx.logger.warn(error) }
-  })
+  }
+  watcher.on('error', onError)
   const dispose = async () => {
-    await watcher.close()
+    disposed = true
+    // `close()` drops every listener but leaves a scheduled write-settle poll;
+    // its straggler stats a file this teardown is deleting, which Windows
+    // reports as EPERM, and an 'error' emission with no listener is rethrown
+    // as an uncaught exception. Re-attach across the close.
+    const closing = watcher.close()
+    watcher.on('error', onError)
+    await closing
     paths.delete(target.filename)
     if (!inTransaction()) await running
   }

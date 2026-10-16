@@ -5,7 +5,7 @@ export interface AgentRow {
   id: SessionId
   label: string
   activity: 'running' | 'inactive'
-  mode?: 'one-shot' | 'continuable'
+  mode?: 'one-shot' | 'continuable' | 'external'
 }
 
 function fromCatalog(

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { stubConfigForm, type StubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import type {
   ThemeSettings,
@@ -64,7 +65,7 @@ describe('ThemeRuntime', () => {
     const { theme } = make()
     const snapshot = theme.getTheme()
     expect(snapshot.preference).toBe('system')
-    expect(snapshot.fontSize).toBe(14)
+    expect(snapshot.fontSizes.text).toBe(14)
     // jsdom matchMedia is absent; system resolves to light.
     expect(snapshot.active.id).toBe('deepseek')
     expect(snapshot.active.colorScheme).toBe('light')
@@ -87,9 +88,9 @@ describe('ThemeRuntime', () => {
     // runs; the first snapshot must match it so activation never flashes 14.
     document.body.style.setProperty('--dsh-content-font-size', '22px')
     try {
-      expect(make().theme.getTheme().fontSize).toBe(22)
+      expect(make().theme.getTheme().fontSizes.text).toBe(22)
       document.body.style.setProperty('--dsh-content-font-size', '23px')
-      expect(make().theme.getTheme().fontSize).toBe(14)
+      expect(make().theme.getTheme().fontSizes.text).toBe(14)
     } finally {
       document.body.style.removeProperty('--dsh-content-font-size')
     }
@@ -97,22 +98,94 @@ describe('ThemeRuntime', () => {
 
   it.each([10, 22])('setFontSize(%i) switches, writes through the scope, and republishes; same value is a no-op', (fontSize) => {
     const { theme, events, host } = make()
-    theme.setFontSize(fontSize)
-    expect(theme.getTheme().fontSize).toBe(fontSize)
+    theme.setFontSize('text', fontSize)
+    expect(theme.getTheme().fontSizes.text).toBe(fontSize)
     expect(host.set).toHaveBeenCalledWith('fontSize', fontSize)
     expect(events).toHaveLength(1)
-    theme.setFontSize(fontSize)
+    theme.setFontSize('text', fontSize)
     expect(events).toHaveLength(1)
     expect(host.set).toHaveBeenCalledOnce()
+  })
+
+  it('keeps saved WhaleIsle typography and numeric font-size callers on the same role settings', () => {
+    const host = stubConfigForm<ThemeSettings>()
+    const legacy = { ...DEFAULT_THEME_SETTINGS, fontSize: 18, fontSizeCode: 19,
+      fontFamilySans: 'Segoe UI, sans-serif', fontFamilyCode: 'Cascadia Code',
+      fontFamilyTerminal: 'MesloLGS NF', fontFamilyComposer: 'Inter', fontSizeInterface: 17 }
+    // Existing documents have no terminalFontSize field; the new role starts at its default.
+    const { terminalFontSize: _added, ...saved } = legacy
+    expect(_added).toBe(13)
+    const accepted: ThemeSettings = z.resolve(saved, ThemeSettingsSchema, {})[0]
+    host.publish({ status: 'ready', value: accepted, revision: 1, writable: true })
+    const { theme } = make(host)
+    expect(theme.getTheme()).toMatchObject({ fontSize: 18, fontSizeInterface: 17, fontFamilyComposer: 'Inter',
+      fontSizes: { text: 18, code: 19, terminal: 13 },
+      fontFamilies: { text: '"Segoe UI", sans-serif', code: '"Cascadia Code"', terminal: '"MesloLGS NF"' } })
+    expect(host.set).not.toHaveBeenCalled()
+    theme.setFontSize(20)
+    expect(theme.getTheme().fontSize).toBe(20)
+    expect(theme.getTheme().fontSizes.text).toBe(20)
+    expect(host.set).toHaveBeenCalledWith('fontSize', 20)
+    theme.setFontFamily('code', 'Fira Code</script>, monospace')
+    expect(host.set).toHaveBeenCalledWith('fontFamilyCode', '"Fira Code/script", monospace')
+    expect(theme.getTheme().fontFamilyCode).toBe('"Fira Code/script", monospace')
+    expect(theme.getTheme().fontFamilies.code).toBe('"Fira Code/script", monospace')
+    theme.setTypography({ fontSizeCode: 16, fontFamilyTerminal: 'Cascadia Mono' })
+    expect(theme.getTheme().fontSizes.code).toBe(16)
+    expect(theme.getTheme().fontFamilies.terminal).toBe('"Cascadia Mono"')
   })
 
   it('rejects out-of-range and fractional font sizes', () => {
     const { theme, events, host } = make()
     for (const px of [9, 23, 14.5, Number.NaN]) {
-      expect(() => { theme.setFontSize(px) }).toThrow('outside 10..22')
+      expect(() => { theme.setFontSize('text', px) }).toThrow('outside 10..22')
     }
     expect(events).toHaveLength(0)
     expect(host.set).not.toHaveBeenCalled()
+  })
+
+  it('sets code and terminal sizes independently within their own ranges', () => {
+    const { theme, host } = make()
+    theme.setFontSize('code', 16)
+    theme.setFontSize('terminal', 20)
+    expect(theme.getTheme().fontSizes).toEqual({ text: 14, code: 16, terminal: 20 })
+    expect(host.set).toHaveBeenCalledWith('fontSizeCode', 16)
+    expect(host.set).toHaveBeenCalledWith('terminalFontSize', 20)
+    expect(() => { theme.setFontSize('code', 21) }).toThrow('code font size 21 is outside 10..20')
+    expect(() => { theme.setFontSize('terminal', 9) }).toThrow('outside 10..20')
+  })
+
+  it('seeds code and terminal sizes from the boot-script body variables, ignoring junk', () => {
+    document.body.style.setProperty('--dsh-code-font-size', '14px')
+    document.body.style.setProperty('--dsh-terminal-font-size', '99px')
+    try {
+      expect(make().theme.getTheme().fontSizes).toEqual({ text: 14, code: 14, terminal: 13 })
+    } finally {
+      document.body.style.removeProperty('--dsh-code-font-size')
+      document.body.style.removeProperty('--dsh-terminal-font-size')
+    }
+  })
+
+  it('seeds initial font lists from the boot-script body variables, normalizing them', () => {
+    document.body.style.setProperty('--dsh-font-family-code', 'Iosevka')
+    try {
+      expect(make().theme.getTheme().fontFamilies).toEqual({ text: '', code: '"Iosevka"', terminal: '' })
+    } finally {
+      document.body.style.removeProperty('--dsh-font-family-code')
+    }
+  })
+
+  it('setFontFamily normalizes, writes one role through the scope, and republishes; same list is a no-op', () => {
+    const { theme, events, host } = make()
+    theme.setFontFamily('terminal', ' MesloLGS NF ,monospace,, ')
+    expect(theme.getTheme().fontFamilies).toEqual({ text: '', code: '', terminal: '"MesloLGS NF", monospace' })
+    expect(host.set).toHaveBeenCalledWith('fontFamilyTerminal', '"MesloLGS NF", monospace')
+    expect(events).toHaveLength(1)
+    theme.setFontFamily('terminal', '"MesloLGS NF", monospace')
+    expect(events).toHaveLength(1)
+    theme.setFontFamily('terminal', ' , ')
+    expect(theme.getTheme().fontFamilies.terminal).toBe('')
+    expect(host.set).toHaveBeenLastCalledWith('fontFamilyTerminal', '')
   })
 
   it('adopts a published Host font size without writing it back', () => {
@@ -149,6 +222,21 @@ describe('ThemeRuntime', () => {
     expect(host.set).not.toHaveBeenCalled()
     host.publish({ value: section({ preference: 'dark' }), revision: 2 })
     expect(events).toHaveLength(1)
+  })
+
+  it('holds its own changes while writes are pending, then converges on the durable section', async () => {
+    const { theme, host } = make()
+    const section = { ...DEFAULT_THEME_SETTINGS, preference: 'system' as const, fontSize: 14, fontSizeCode: 11, terminalFontSize: 13, fontFamilySans: '', fontFamilyCode: '', fontFamilyTerminal: '' }
+    host.publish({ status: 'ready', value: section, revision: 1, writable: true })
+    const write = Promise.withResolvers<boolean>()
+    host.set.mockReturnValue(write.promise)
+    theme.setFontSize('code', 13)
+    // A Host echo of an earlier write must not revert the pending local change.
+    host.publish({ value: { ...section, terminalFontSize: 15 }, revision: 2 })
+    expect(theme.getTheme().fontSizes).toEqual({ text: 14, code: 13, terminal: 13 })
+    host.publish({ value: { ...section, fontSizeCode: 13, terminalFontSize: 15 }, revision: 3 })
+    write.resolve(true)
+    await vi.waitFor(() => { expect(theme.getTheme().fontSizes).toEqual({ text: 14, code: 13, terminal: 15 }) })
   })
 
   it('adopts a section already standing at construction', () => {

@@ -1,13 +1,15 @@
-import { Fragment, memo, useMemo } from 'react'
+import { Fragment, memo, useCallback, useMemo } from 'react'
 import { fileMediaUrl } from '@deepseek-ai/dsh-util-workspace-path'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ReactNode } from 'react'
 import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { MarkdownFileMentions, MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ChatNodeOwnerProps, ChatViewSlotProps, UseDisclosure, UsePresentation } from '../contract/slots.ts'
+import type { MarkdownCodeFenceRenderer, MarkdownFileMentions, MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { ChatNodeOwnerProps, ChatViewSlotProps, UseDisclosure, UsePresentation, UseGroupAction } from '../contract/slots.ts'
 import type { AssistantBlock } from '../contract/snapshot.ts'
 import { markdownLabels } from '../markdown-labels.ts'
 import { ReasoningRow } from './ReasoningRow.tsx'
-import { useSearchableHidden } from './searchable-hidden.ts'
+import { OpenUiFrame } from './OpenUiFrame.tsx'
+import type { AssistantOpenUi } from './openui.ts'
 import css from './AssistantMarkdown.module.css'
 
 /**
@@ -27,7 +29,9 @@ export function localPathMediaUrl(base: string, value: string): string | undefin
   return fileMediaUrl(base, path)
 }
 
-export interface AssistantMarkdownProps {
+export interface AssistantMarkdownProps extends
+  Pick<PropsRenderSlots<'conversation.chat.reasoning.body' | 'conversation.chat.message.images'>, 'renderSlot'>,
+  Pick<ChatNodeOwnerProps, 'loadImage'> {
   /** Render only the requested business portion, preserving original block indexes. */
   groupPart?: string | undefined
   /** Stable Hook forwarded to each independently expandable reasoning block. */
@@ -36,24 +40,26 @@ export interface AssistantMarkdownProps {
   streaming: boolean
   /** Frozen partial of an aborted turn: rendered with a stopped marker. */
   interrupted?: boolean | undefined
-  /** Render consecutive image blocks through the attachment slot. */
-  renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
   /** Hide reasoning that belongs to the Turn-level process disclosure. */
   reasoningHidden?: boolean | undefined
+  /** Process hiding bound by the node slot to its current viewport. */
+  useGroupAction: UseGroupAction
   /** Live display policy for reasoning summaries. */
   usePresentation: UsePresentation
   /** Reveal the disclosure that hides this reasoning. */
   revealProcess?: (() => void) | undefined
   /** Resolved prose file mentions for this Assistant's closing turn. */
   mentions?: MarkdownFileMentions | undefined
+  /** Available only to Assistant prose in the owning Session. */
+  openUi?: AssistantOpenUi | undefined
   /** The owning view's locale seat, passed down as a plain prop. */
   t: ChatViewSlotProps['t']
 }
 
-/** Reasoning block as the Think variant summary row (figma 39:28304). */
+/** Renders non-blank reasoning blocks as independent disclosures alongside the response. */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
-  blocks, streaming, interrupted, renderMessageImages, groupPart, useDisclosure,
-  reasoningHidden = false, usePresentation, revealProcess, mentions, t,
+  blocks, streaming, interrupted, loadImage, groupPart, useDisclosure,
+  reasoningHidden = false, usePresentation, revealProcess, mentions, renderSlot, useGroupAction, openUi, t,
 }: AssistantMarkdownProps) {
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
@@ -79,25 +85,30 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
     switch (block.kind) {
       case 'text':
         rendered.push(
-          <MarkdownText
+          <AssistantText
             key={i}
             text={block.text}
             streaming={streaming}
             labels={labels}
             fileMentions={mentions}
             pathImages={pathImages}
+            openUi={openUi}
+            blockIndex={i}
+            t={t}
           />,
         )
         break
       case 'reasoning':
+        if (block.text.trim() === '') break
         rendered.push(
           <ProcessReasoning
             key={i}
             hidden={reasoningHidden}
             reveal={revealProcess}
+            useGroupAction={useGroupAction}
           >
-            <ReasoningRow text={block.text} running={streaming && i === last} pathImages={pathImages} usePresentation={usePresentation}
-              useDisclosure={useDisclosure} t={t} />
+            <ReasoningRow text={block.text} running={streaming && i === last} usePresentation={usePresentation}
+              useDisclosure={useDisclosure} renderSlot={renderSlot} t={t} />
           </ProcessReasoning>,
         )
         break
@@ -117,9 +128,8 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
         }
         rendered.push(
           <Fragment key={start}>
-            {renderMessageImages({
-              images: group.map(({ attachment }) => ({ attachment })),
-              align: 'start',
+            {renderSlot('conversation.chat.message.images', {
+              images: group.map(({ attachment }) => ({ attachment })), loadImage, align: 'start',
             })}
           </Fragment>,
         )
@@ -151,12 +161,28 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
   )
 })
 
-function ProcessReasoning({ hidden, reveal, children }: {
+/** Bind one Markdown block's durable identity without changing ordinary Markdown output. */
+function AssistantText({ openUi, blockIndex, t, ...props }: Parameters<typeof MarkdownText>[0] & {
+  openUi: AssistantOpenUi | undefined
+  blockIndex: number
+  t: ChatViewSlotProps['t']
+}) {
+  const renderCodeFence = useCallback<MarkdownCodeFenceRenderer>((fence) => {
+    if (openUi === undefined || (fence.language !== 'openui' && fence.language !== 'openui-lang')) return undefined
+    const instanceId = `${openUi.identity}:${blockIndex}:${fence.sourceOffset}`
+    return <OpenUiFrame key={instanceId} instanceId={instanceId} program={fence.code}
+      streaming={fence.streaming} openUi={openUi} t={t} />
+  }, [openUi, blockIndex, t])
+  return <MarkdownText {...props} renderCodeFence={openUi === undefined ? undefined : renderCodeFence} />
+}
+
+function ProcessReasoning({ hidden, reveal, useGroupAction, children }: {
   hidden: boolean
   reveal?: (() => void) | undefined
+  useGroupAction: UseGroupAction
   children: ReactNode
 }) {
-  const ref = useSearchableHidden(hidden, reveal ?? NOOP)
+  const ref = useGroupAction(hidden, reveal ?? NOOP)
   return <div ref={ref} data-turn-process-inline={hidden || undefined}>{children}</div>
 }
 

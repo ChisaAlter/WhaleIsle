@@ -446,7 +446,15 @@ describe('Web session model selection', () => {
 
   it('preserves optional catalog metadata and string provider failures', async () => {
     const { ctx } = await harness()
-    ctx.llm.registerAdapter(['plain'], new CatalogAdapter('Plain', [
+    ctx.llm.registerAdapter(['plain'], new class extends CatalogAdapter {
+      override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+        return {
+          ...await super.resolveModel(provider, model),
+          context: { contextWindow: 262_144 },
+          defaultMaxTokens: 32_768,
+        }
+      }
+    }('Plain', [
       { provider: 'plain', id: 'plain-model', name: 'Plain Model' },
     ]))
     ctx.llm.registerAdapter(['described-reasoning'], new CatalogAdapter('Described Reasoning', [
@@ -475,7 +483,10 @@ describe('Web session model selection', () => {
 
     const catalog = await buildModelCatalog(ctx)
     expect(catalog.groups).toEqual(expect.arrayContaining([
-      { id: 'plain', name: 'Plain', models: [{ id: 'plain-model', name: 'Plain Model' }] },
+      {
+        id: 'plain', name: 'Plain',
+        models: [{ id: 'plain-model', name: 'Plain Model', contextWindow: 262_144, maxTokens: 32_768 }],
+      },
       {
         id: 'described-reasoning',
         name: 'Described Reasoning',

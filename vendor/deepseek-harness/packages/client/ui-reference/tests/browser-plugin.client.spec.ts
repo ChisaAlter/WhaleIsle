@@ -6,6 +6,10 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+import { UiConversation } from '@deepseek-ai/dsh-client-ui-conversation/src/client/conversation/assembly.ts'
+import { FileReference, FolderReference, type FileReferenceInjected } from '../src/client/FileReference.tsx'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { RemoteError, TestSessions } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionFixture } from '@deepseek-ai/dsh-client-test-runtime'
@@ -56,6 +60,19 @@ function request(
   }
 }
 
+function TextSlotDeclaration(_props: PropsRenderSlots<'conversation.user.text.node'>): null {
+  return null
+}
+
+async function installTextSlots(ctx: Context, sessions: TestSessions): Promise<void> {
+  new UiConversation(ctx, sessions)
+  await ctx.plugin(SlotRegistry).await()
+  ctx.slots.register({
+    name: 'root',
+    children: { 'conversation.user.text.node': { kind: 'keyed', scope: 'session' } },
+  }, TextSlotDeclaration)
+}
+
 async function bench(
   files: RemoteLookup<FileReferenceCandidate> = vi.fn(() => Promise.resolve({
     ok: true as const,
@@ -85,6 +102,7 @@ async function bench(
 ) {
   const ctx = new Context()
   ctx.provide('sidebarRight', { openResource: vi.fn() })
+  ctx.provide('workspaces', { openPath: vi.fn(async () => {}) })
   let source: InputTriggerSource | undefined
   ctx.provide('inputTriggers', {
     registerSource(candidate: InputTriggerSource) {
@@ -114,6 +132,7 @@ async function bench(
   for (const [id, summary] of Object.entries(listed)) {
     if (id !== session.sessionId) await sessionStore.add({ id, summary })
   }
+  await installTextSlots(ctx, sessionStore)
   const owner = sessionStore.retainFor(ctx, session.sessionId)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
@@ -125,12 +144,14 @@ describe('apply', () => {
   it('declares its services and releases the @ reference registration on disposal', async () => {
     expect(inject).toEqual([
       'inputTriggers', 'locale', 'sessions', 'remote', 'remote.fileReferences',
-      'remote.sessionReferenceResolver', 'sidebarRight',
+      'remote.sessionReferenceResolver', 'sidebarRight', 'slots', 'uiConversation', 'workspaces',
     ])
     const { fiber } = await bench()
     let registered: InputTriggerSource | undefined
     const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
     ctx.provide('sidebarRight', { openResource: vi.fn() })
+  ctx.provide('workspaces', { openPath: vi.fn(async () => {}) })
     ctx.provide('inputTriggers', {
       registerSource(source: InputTriggerSource) {
         registered = source
@@ -148,12 +169,23 @@ describe('apply', () => {
     ctx.provide('remote.fileReferences', { list: () => Promise.resolve({ ok: true, value: [] }) })
     ctx.provide('remote.sessionReferenceResolver', { candidates: () => Promise.resolve({ ok: true, value: [] }) })
     ctx.provide('locale', new LocaleRuntime(ctx))
-    ctx.provide('sessions', { list: { getSnapshot: () => ({ byId: {} }) } })
+    const sessions = new TestSessions(async (action) => { await action() }, ctx)
+    onTestFinished(() => sessions.disposeScopes())
+    ctx.provide('sessions', sessions)
+    await installTextSlots(ctx, sessions)
     const ownFiber = ctx.plugin({ inject: [...inject], apply })
     await ownFiber.await()
     expect(registered).toMatchObject({ trigger: '@', name: 'reference', showGroupTitle: false })
+    expect(ctx.uiConversation.userText.entries().map(rule => rule.id)).toEqual(['file', 'folder'])
+    expect(ctx.slots.entries('conversation.user.text.node')).toMatchObject([
+      { options: { key: 'file' }, component: FileReference },
+      { options: { key: 'folder' }, component: FolderReference },
+    ])
+    expect(ctx.slots.entries('conversation.user.text.node')[0]?.inject).toBeTypeOf('function')
     await ownFiber.dispose()
     expect(registered).toBeUndefined()
+    expect(ctx.uiConversation.userText.entries()).toHaveLength(0)
+    expect(ctx.slots.entries('conversation.user.text.node')).toHaveLength(0)
     await fiber.dispose()
   })
 
@@ -648,6 +680,19 @@ describe('pick and codec', () => {
 })
 
 describe('reference preview', () => {
+  it('binds each inline file action to its originating Session', async () => {
+    const { ctx } = await bench()
+    const entry = ctx.slots.entries('conversation.user.text.node').find(candidate => candidate.options.key === 'file')!
+    const factory = entry.inject as NonNullable<typeof entry.inject> & ((id: SessionId) => FileReferenceInjected)
+    const openPath = vi.mocked((ctx.workspaces as typeof ctx.workspaces & { openPath: ReturnType<typeof vi.fn> }).openPath)
+    await factory(session.sessionId).openFile('docs/a b.md')
+    await factory(sid('other')).openFile('notes.md')
+    expect(openPath.mock.calls).toEqual([
+      ['docs/a b.md', { sessionId: session.sessionId }],
+      ['notes.md', { sessionId: sid('other') }],
+    ])
+  })
+
   it('opens plain and quoted file references without treating folders or sessions as files', async () => {
     const { ctx, source, fiber } = await bench()
     const openResource = vi.spyOn(ctx.sidebarRight, 'openResource')

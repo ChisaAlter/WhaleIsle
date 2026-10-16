@@ -17,13 +17,15 @@ import {
   type GroupKey,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import {
-  apply as applyChat, inject as injectChat, type ChatViewInjected,
+  apply as applyChat, inject as injectChat, type ChatFlowDataInjected, type ChatViewInjected,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { createChatStore } from '../src/client/stores.ts'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../src/chat-settings.ts'
 import type { LinkOpeningRowInjected } from '../src/client/settings/LinkOpeningRow.tsx'
+import type { TranscriptViewRowInjected } from '../src/client/settings/TranscriptViewRow.tsx'
+import type { OpenUiInjected } from '../src/client/chat/openui.ts'
 
 usePinnedBrowserLanguages('zh-CN')
 
@@ -122,6 +124,12 @@ async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true,
     ) => ChatViewInjected)(id, instance.actions)
     return { instance, injected }
   }
+  const chatFlowApi = (reference: SessionReference) => {
+    const entry = runtime.slots.entries('conversation.chat.flow')[0]!
+    const instance = runtime.storeOf('conversation.chat.flow', reference) as ChatInstance
+    const injectFlow = entry.inject as (sessionId: SessionId) => ChatFlowDataInjected
+    return { instance, injected: injectFlow(reference.sessionId) }
+  }
   return {
     get linkPreference() {
       const row = runtime.slots.entries('settings.general.item').find(entry => entry.options.id === 'link-opening')!
@@ -129,15 +137,65 @@ async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true,
       return preference as LinkOpeningRowInjected
     },
     runtime, chat, chatSettings, browserAvailable,
-    layout, openPath, openWorkspacePath, sidebarRight, sidebarRightTabs, session, chatViewApi, rootReference, openSession,
+    layout, openPath, openWorkspacePath, sidebarRight, sidebarRightTabs, session, chatViewApi, chatFlowApi, rootReference, openSession,
   }
 }
 
 describe('Chat inject API', () => {
+  it('projects independent Settings choices and saves timing to Host settings', async () => {
+    const b = await bench()
+    try {
+      const row = b.runtime.slots.entries('settings.general.item')
+        .find(entry => entry.options.id === 'transcript-view')!
+      const preference = row.inject!()
+      const setCollapseTiming = preference.setCollapseTiming as TranscriptViewRowInjected['setCollapseTiming']
+      const { injected } = b.chatViewApi(b.rootReference)
+      const presentation = injected.hooks.presentation
+      expect(presentation.getSnapshot()).toMatchObject({ mode: 'detailed', collapseTiming: 'completion' })
+      setCollapseTiming('next-input')
+      expect(presentation.getSnapshot()).toMatchObject({ mode: 'detailed', collapseTiming: 'next-input' })
+      expect(b.chatSettings.set).toHaveBeenCalledWith('collapseTiming', 'next-input')
+      b.chatSettings.publish({ status: 'ready', value: { linkOpening: 'sidebar', transcriptView: 'standard', performanceUsage: 'detailed', collapseTiming: 'next-input' }, revision: 1, writable: true })
+      expect(presentation.getSnapshot()).toMatchObject({ mode: 'standard', collapseTiming: 'next-input' })
+      setCollapseTiming('completion')
+      expect(presentation.getSnapshot()).toMatchObject({ mode: 'standard', collapseTiming: 'completion' })
+      expect(b.chatSettings.set).toHaveBeenLastCalledWith('collapseTiming', 'completion')
+      expect(b.session.prompt).not.toHaveBeenCalled()
+      expect(b.session.cancel).not.toHaveBeenCalled()
+    } finally {
+      await b.runtime.dispose()
+    }
+  })
+
+  it('routes an OpenUI action to its original Session with form and context in the logged prompt', async () => {
+    const b = await bench()
+    const other = sessionFakeFor()
+    const otherId = 'other-selected-session' as SessionId
+    try {
+      await b.runtime.sessions.add({ id: otherId, session: other })
+      const reference = b.runtime.sessions.retain(otherId)
+      await reference.ready
+      const entry = b.runtime.slots.entries('conversation.chat.node').find(row => row.options.key === 'assistant-step')!
+      const inject = entry.inject as unknown as (id: SessionId) => OpenUiInjected
+      const original = inject(ROOT)
+      const second = inject(otherId)
+      await second.sendOpenUiAction({ message: 'Other action' })
+      await original.sendOpenUiAction({ message: 'Apply filter', formState: { selected: ['west'] }, context: { chart: 'sales' } })
+      expect(b.session.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'Apply filter\n\nOpenUI form state:\n{"selected":["west"]}\n\nOpenUI context:\n{"chart":"sales"}' }], 'queue')
+      expect(other.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'Other action' }], 'queue')
+      expect(b.session.prompt).toHaveBeenCalledOnce()
+      b.session.prompt.mockRejectedValueOnce(new Error('Original Session unavailable'))
+      await expect(original.sendOpenUiAction({ message: 'Rejected action' })).rejects.toThrow('Original Session unavailable')
+      reference.release()
+    } finally {
+      await b.runtime.dispose()
+    }
+  })
+
   it('resolves keyed Group sources across registration, activation, and removal', async () => {
     const b = await bench(undefined, true, false)
     try {
-      const { injected } = b.chatViewApi(b.rootReference)
+      const { injected } = b.chatFlowApi(b.rootReference)
       const key = 'injected-group' as GroupKey
       expect(injected.keyedHooks.chatGroup(key)).toBeUndefined()
       const conversation = b.runtime.ctx.uiConversation
@@ -368,7 +426,7 @@ describe('Chat inject API', () => {
     const open = vi.spyOn(window, 'open').mockImplementation(() => null)
     try {
       const { injected } = b.chatViewApi(b.rootReference)
-      b.chatSettings.publish({ mode: 'memory', status: 'unavailable' })
+      b.chatSettings.publish({ status: 'unavailable' })
       b.chatSettings.set.mockResolvedValueOnce(false)
       b.linkPreference.setLinkOpening('new-tab')
       b.chatSettings.publish({ value: undefined })
@@ -387,20 +445,14 @@ describe('Chat inject API', () => {
     }
   })
 
-  it('routes sent skill previews through the viewed Session source and tolerates an absent provider', async () => {
+  it('leaves skill preview injection to the skill reference owner', async () => {
     const b = await bench()
-    const { injected } = b.chatViewApi(b.rootReference)
-    injected.openSkill('review')
-    const openReference = vi.fn(() => true)
-    const sessionOf = vi.fn(() => ({ openReference }))
-    b.runtime.ctx.provide('inputTriggers', { sessionOf } as never)
-    injected.openSkill('review')
-    expect(sessionOf).toHaveBeenCalledWith(b.runtime.sessions.scope(ROOT))
-    expect(openReference).toHaveBeenCalledWith('skill', { ref: '/review' })
-    vi.spyOn(b.runtime.sessions, 'scope').mockReturnValueOnce(undefined)
-    injected.openSkill('review')
-    expect(openReference).toHaveBeenCalledTimes(1)
-    await b.runtime.dispose()
+    try {
+      const { injected } = b.chatViewApi(b.rootReference)
+      expect(injected).not.toHaveProperty('openSkill')
+    } finally {
+      await b.runtime.dispose()
+    }
   })
 
   it('keeps a relative path under the Session without a cwd, and addresses a path outside the workspace absolutely', async () => {
@@ -429,6 +481,9 @@ describe('Chat inject API', () => {
     ) => ChatViewInjected
     expect(() => injectView('never-listed' as SessionId, {} as ChatActions))
       .toThrow(/unknown session/)
+    const flowEntry = b.runtime.slots.entries('conversation.chat.flow')[0]!
+    const injectFlow = flowEntry.inject as (sessionId: SessionId) => ChatFlowDataInjected
+    expect(() => injectFlow('never-listed' as SessionId)).toThrow(/unknown session/)
     await b.runtime.dispose()
   })
 
@@ -437,8 +492,11 @@ describe('Chat inject API', () => {
     const { injected } = b.chatViewApi(b.rootReference)
     const owner = {} as never
 
-    expect(injected.keyedHooks.chatNode('missing')).toBeDefined()
-    expect(injected.keyedHooks.chatNodeProcess('missing')).toBeDefined()
+    const flow = b.chatFlowApi(b.rootReference)
+    expect(flow.instance).toBe(b.chatViewApi(b.rootReference).instance)
+    expect(flow.injected.keyedHooks.chatNode('missing')).toBe(injected.keyedHooks.chatNode('missing'))
+    expect(flow.injected.keyedHooks.chatNodeProcess('missing')).toBe(injected.keyedHooks.chatNodeProcess('missing'))
+    expect(flow.injected.keyedHooks.chatNodeBottom('missing')).toBe(injected.keyedHooks.chatNodeBottom('missing'))
 
     expect(injected.fileMentions(owner)).toBeUndefined()
     const mentions = { resolve: vi.fn() } as never

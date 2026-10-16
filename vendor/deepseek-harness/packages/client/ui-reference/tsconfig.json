@@ -42,10 +42,19 @@
       "path": "../ui-primitives"
     },
     {
+      "path": "../ui-conversation/tsconfig.client.json"
+    },
+    {
+      "path": "../ui-renderer"
+    },
+    {
       "path": "../ui-slots"
     },
     {
       "path": "../ui-sidebar-right"
+    },
+    {
+      "path": "../../api/workspace-controller/tsconfig.client.json"
     }
   ]
 }

@@ -7,7 +7,7 @@
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {
-  CredentialInfo, LlmDiscoveredModel, LlmModelDiscoveryRequest,
+  LlmDiscoveredModel, LlmModelDiscoveryRequest,
   SettingsNamespaceView, SettingsPathOpView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 
@@ -51,12 +51,6 @@ export function discoveredModelsOf(value: unknown): readonly LlmDiscoveredModel[
 /** The Host operations the Models page and its cards invoke. */
 export interface ModelsOperations {
   /**
-   * Read one credential reference's state.
-   * @param ref - credential reference name.
-   * @returns the state, or undefined when the reference is unknown or the read was refused.
-   */
-  describeCredential(ref: string): Promise<CredentialInfo | undefined>
-  /**
    * Store one credential literal under its reference.
    * @param ref - credential reference name.
    * @param value - the literal to store.
@@ -99,10 +93,6 @@ export interface ModelsOperations {
  */
 export function createModelsOperations(ctx: ClientContext): ModelsOperations {
   return {
-    describeCredential: async (ref) => {
-      const response = await ctx.remote.credentials.describe([ref])
-      return response.ok ? response.value[ref] : undefined
-    },
     storeCredential: async (ref, value) => {
       const response = await ctx.remote.credentials.set(ref, value)
       return response.ok ? undefined : response.error.message

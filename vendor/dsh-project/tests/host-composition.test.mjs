@@ -1,25 +1,17 @@
 /** Real Loader/Sessions/continuations/tools/storage; only external model and desktop I/O are scripted. */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createRequire, registerHooks } from 'node:module';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, writeFile, readFile, realpath, rm, rename, symlink } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-const projectPackage = resolve(dirname(fileURLToPath(import.meta.url)), '..'), harness = resolve(projectPackage, '../deepseek-harness');
-const cliRequire = createRequire(join(harness, 'apps/cli/package.json'));
-const anchors = [cliRequire, ...['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-experimental-agent-team-profile'].map(name => createRequire(cliRequire.resolve(`${name}/package.json`)))];
-anchors.push(createRequire(anchors[1].resolve('@deepseek-ai/dsh-storage-domain/package.json')));
-function resolvePackage(name) { for (const anchor of anchors) try { return anchor.resolve(name); } catch (error) { if (!['MODULE_NOT_FOUND', 'ERR_PACKAGE_PATH_NOT_EXPORTED'].includes(error.code)) throw error; } throw new Error(`Missing built Harness dependency ${name}.`); }
-const projectUrl = pathToFileURL(`${projectPackage}${sep}`).href;
-registerHooks({ resolve(specifier, context, next) { if (context.parentURL?.startsWith(projectUrl) && !specifier.startsWith('.') && !specifier.startsWith('node:') && !specifier.startsWith('file:')) return { url: pathToFileURL(resolvePackage(specifier)).href, shortCircuit: true }; return next(specifier, context); } });
+import { pathToFileURL } from 'node:url';
+import { projectPackage, harness, cliRequire, resolvePackage, projectUrl, ProjectService } from './harness-runtime.mjs';
 const { boot, loadOverlayPatches, bundlePatchPaths } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-app-boot')).href);
 const { LlmAdapter, LlmError } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-llm')).href);
 const { provideCmdline } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-cmdline')).href);
 const { disposeProfileApplication } = await import(pathToFileURL(join(harness, 'apps/cli/lib/profile-boot.js')).href);
-const { ProjectService } = await import(pathToFileURL(join(projectPackage, 'lib/service.js')).href);
 const blocks = value => [{ type: 'block-start', index: 0, blockType: 'text' }, { type: 'text-delta', index: 0, text: value }, { type: 'block-end', index: 0, block: { type: 'text', text: value } }, { type: 'finish', reason: { kind: 'stop' } }];
 const call = (id, name, args) => [{ type: 'block-start', index: 0, blockType: 'tool-call' }, { type: 'tool-call-delta', index: 0, id, name, argumentsDelta: JSON.stringify(args) }, { type: 'block-end', index: 0, block: { type: 'tool-call', id, name, arguments: JSON.stringify(args) } }, { type: 'finish', reason: { kind: 'tool-calls' } }];
 const messageText = message => (message.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
@@ -35,6 +27,8 @@ const handover = (request, summary, outcome = 'partial', remainingIssues = ['Rea
 
 class ScriptedModel extends LlmAdapter {
   requests = []; failures = []; stages = new Map(); settlementInputs = []; counter = 0; state = () => null;
+  sharedInputs = new Set(); sharedDeclarations = new Map(); workflowId;
+  workflow() { return this.state()?.requests.find(row => row.id === this.workflowId) ?? this.state()?.requests.find(row => row.queue?.state === 'active' && !row.queue.released); }
   pendingHandovers = new Map();
   coordinatorWaiting = false; coordinatorGate = new Promise(done => { this.releaseCoordinator = done; });
   async resolveModel(provider, model) { return { provider, id: model, name: model }; }
@@ -42,15 +36,31 @@ class ScriptedModel extends LlmAdapter {
     this.requests.push(options); const names = (options.tools ?? []).map(tool => tool.name);
     if (names.includes('project_delegate')) {
       const input = options.messages.findLast(message => message.role === 'user' && ['user', 'subagent-settled'].includes(message.source.kind));
-      const key = `coordinator:${input?.id}`, stage = this.stages.get(key) ?? 0; this.stages.set(key, stage + 1);
+      const key = `coordinator:${input?.id}`, rawStage = this.stages.get(key) ?? 0; this.stages.set(key, rawStage + 1);
       const text = input ? messageText(input) : '';
+      const sharedAction = input?.source.kind === 'user' && /^(MAKE_DOCS|IMPLEMENT_PLAN|HOLD_WORK|PEER_RECEIVER|PEER_DEPENDENT|PEER_SENDER|READ_ONLY|MAKE_PATH_HOLD|EXTEND_DOC_PATHS|CAPACITY_HOLDER|CAPACITY_WAITING)$/.test(text);
+      if (sharedAction && !rawStage) {
+        this.sharedInputs.add(input.id); const row = this.workflow();
+        const scope = ['MAKE_DOCS', 'MAKE_PATH_HOLD', 'EXTEND_DOC_PATHS'].includes(text) ? 'docs' : ['IMPLEMENT_PLAN', 'HOLD_WORK'].includes(text) ? 'development' : 'readonly';
+        const paths = text === 'MAKE_DOCS' ? ['docs/plan.md'] : text === 'MAKE_PATH_HOLD' ? ['docs/first.md'] : text === 'EXTEND_DOC_PATHS' ? ['docs/first.md', 'docs/second.md'] : [];
+        const version = row?.versions.find(item => item.revision === row.revision), revise = !row || this.state().projects.some(project => project.paused)
+          || version.scope !== ({ development: 'worker' }[scope] ?? scope) || JSON.stringify(version.writePaths) !== JSON.stringify(paths)
+          || text === 'HOLD_WORK' && this.state().workstreams.some(work => work.title === 'Plan work' && this.state().workers.find(worker => worker.sessionId === work.workerSessionId)?.stopped);
+        this.sharedDeclarations.set(input.id, revise);
+        yield* call(`workflow-request-${++this.counter}`, 'project_request', { ...(revise && row ? { requestId: row.id } : {}), title: revise ? 'Native workflow' : `Discuss workflow instruction ${this.counter}`, disposition: revise ? 'queued' : 'discussing',
+          goal: `Continue the same whole native workflow, preserving correct prior work. Current human instruction: ${text}.`,
+          conditions: ['Complete the currently requested stage and report its real evidence'], constraints: ['Preserve existing correct work and the original directory'], scopeCeiling: scope, writePaths: paths }); return;
+      }
+      if (sharedAction && rawStage === 1 && this.sharedDeclarations.get(input.id)) this.workflowId = toolFacts(options).id;
+      const stage = rawStage - (this.sharedInputs.has(input?.id) ? 1 : 0);
+      const delegate = (id, args) => { const row = this.workflow(); return call(id, 'project_delegate', { ...args, ...(row ? { requestId: row.id, requestRevision: row.revision } : {}) }); };
       if (text.includes('PAUSE_OLD_DELEGATE')) {
         if (!stage) yield* call(`notes-${++this.counter}`, 'project_read_store', { path: 'notes.md' });
         else if (stage === 1) { this.coordinatorWaiting = true; await this.coordinatorGate; yield* call(`late-${++this.counter}`, 'project_delegate', { title: 'Stopped old request', brief: 'Must not restart', scope: 'readonly' }); }
         else yield* blocks('The old request is stopped.'); return;
       }
       const pathWork = this.state()?.workstreams.find(item => item.title === 'Path work');
-      if (text.includes('MAKE_PATH_HOLD') && stage === 1) { yield* call(`expand-${++this.counter}`, 'project_delegate', { workstreamId: pathWork.id, brief: 'Unauthorized path expansion', scope: 'docs', writePaths: ['docs/first.md', 'docs/second.md'] }); return; }
+      if (text.includes('MAKE_PATH_HOLD') && stage === 1) { yield* delegate(`expand-${++this.counter}`, { workstreamId: pathWork.id, brief: 'Unauthorized path expansion', scope: 'docs', writePaths: ['docs/first.md', 'docs/second.md'] }); return; }
       if (input?.source.kind === 'subagent-settled') {
         const appendix = input.content.find(block => block.type === 'text' && block.text.startsWith('Project recorded outcome for this native settlement'));
         assert.ok(appendix, 'the real native notice must carry the persisted Project outcome even with no closing prose');
@@ -61,7 +71,10 @@ class ScriptedModel extends LlmAdapter {
         }
         if (stage === 1) {
           const request = toolFacts(options).requests.find(item => item.id === facts.request.id); assert.ok(request);
-          yield* call(`handover-${++this.counter}`, 'project_deliver', handover(request, `${facts.title}: native results are available.`)); return;
+          const declaration = handover(request, `${facts.title}: native results are available.`);
+          declaration.reportRefs = declaration.reportRefs.filter(reference => !this.state().workstreams.find(work => work.id === reference.workstreamId).delegations.find(receipt => receipt.ref === reference.delegationRef).report.summarizedBy);
+          declaration.terminalRefs = declaration.terminalRefs.filter(reference => !this.state().workstreams.find(work => work.id === reference.workstreamId).settlements.find(terminal => terminal.runId === reference.runId).summarizedBy);
+          yield* call(`handover-${++this.counter}`, 'project_deliver', declaration); return;
         }
         yield* blocks(`${facts.title}: ${facts.reports.map(report => report.summary).join('; ') || `Worker ended ${facts.stopReason}`}. This is a worker report, not an independent verification.`); return;
       }
@@ -85,18 +98,18 @@ class ScriptedModel extends LlmAdapter {
       }
       if (stage || text.includes('SHORT_QUESTION')) { yield* blocks('The Project conversation is ready.'); return; }
       const stream = this.state()?.workstreams.find(item => item.title === 'Plan work');
-      if (text.includes('CAPACITY_HOLDER')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { title: 'Capacity holder', brief: 'HOLD_FOR_STOP', scope: 'readonly' });
-      else if (text.includes('CAPACITY_WAITING')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { title: 'Capacity waiting', brief: 'Complete after capacity is released', scope: 'readonly' });
-      else if (text.includes('PEER_RECEIVER')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { title: 'Peer receiver', brief: 'WAIT_FOR_PEER_EVIDENCE', scope: 'readonly' });
-      else if (text.includes('PEER_DEPENDENT')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { title: 'Dependent work', brief: 'AFTER_PEER_EVIDENCE', scope: 'readonly', blockedBy: [this.state().workstreams.find(work => work.title === 'Peer receiver').id] });
-      else if (text.includes('PEER_SENDER')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { title: 'Peer sender', brief: 'SEND_PEER_EVIDENCE', scope: 'readonly' });
-      else if (text.includes('MAKE_PATH_HOLD')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { title: 'Path work', brief: 'HOLD_FOR_PATH_CHANGE', scope: 'docs', writePaths: ['docs/first.md'] });
-      else if (text.includes('EXTEND_DOC_PATHS')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { workstreamId: pathWork.id, brief: 'WRITE_EXTRA_DOC', scope: 'docs', writePaths: ['docs/first.md', 'docs/second.md'] });
+      if (text.includes('CAPACITY_HOLDER')) yield* delegate(`delegate-${++this.counter}`, { title: 'Capacity holder', brief: 'HOLD_FOR_STOP', scope: 'readonly' });
+      else if (text.includes('CAPACITY_WAITING')) yield* delegate(`delegate-${++this.counter}`, { title: 'Capacity waiting', brief: 'Complete after capacity is released', scope: 'readonly' });
+      else if (text.includes('PEER_RECEIVER')) yield* delegate(`delegate-${++this.counter}`, { title: 'Peer receiver', brief: 'WAIT_FOR_PEER_EVIDENCE', scope: 'readonly' });
+      else if (text.includes('PEER_DEPENDENT')) yield* delegate(`delegate-${++this.counter}`, { title: 'Dependent work', brief: 'AFTER_PEER_EVIDENCE', scope: 'readonly', blockedBy: [this.state().workstreams.find(work => work.title === 'Peer receiver').id] });
+      else if (text.includes('PEER_SENDER')) yield* delegate(`delegate-${++this.counter}`, { title: 'Peer sender', brief: 'SEND_PEER_EVIDENCE', scope: 'readonly' });
+      else if (text.includes('MAKE_PATH_HOLD')) yield* delegate(`delegate-${++this.counter}`, { title: 'Path work', brief: 'HOLD_FOR_PATH_CHANGE', scope: 'docs', writePaths: ['docs/first.md'] });
+      else if (text.includes('EXTEND_DOC_PATHS')) yield* delegate(`delegate-${++this.counter}`, { workstreamId: pathWork.id, brief: 'WRITE_EXTRA_DOC', scope: 'docs', writePaths: ['docs/first.md', 'docs/second.md'] });
       else if (text.includes('DOCS_CODE_PATH')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { title: 'Invalid docs', brief: 'Change code as docs', scope: 'docs', writePaths: ['src/forbidden.js'] });
-      else if (text.includes('MAKE_DOCS')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { title: 'Plan work', brief: 'WRITE_PLAN', scope: 'docs', writePaths: ['docs/plan.md'] });
-      else if (text.includes('IMPLEMENT_PLAN')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { workstreamId: stream.id, brief: 'DEVELOP_CONTINUE', scope: 'development' });
-      else if (text.includes('HOLD_WORK')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { workstreamId: stream.id, brief: 'HOLD_FOR_STOP', scope: 'development' });
-      else if (text.includes('READ_ONLY')) yield* call(`delegate-${++this.counter}`, 'project_delegate', { title: 'Readonly work', brief: 'READONLY_GUARD', scope: 'readonly' });
+      else if (text.includes('MAKE_DOCS')) yield* delegate(`delegate-${++this.counter}`, { title: 'Plan work', brief: 'WRITE_PLAN', scope: 'docs', writePaths: ['docs/plan.md'] });
+      else if (text.includes('IMPLEMENT_PLAN')) yield* delegate(`delegate-${++this.counter}`, { workstreamId: stream.id, brief: 'DEVELOP_CONTINUE', scope: 'development' });
+      else if (text.includes('HOLD_WORK')) yield* delegate(`delegate-${++this.counter}`, { workstreamId: stream.id, brief: 'HOLD_FOR_STOP', scope: 'development' });
+      else if (text.includes('READ_ONLY')) yield* delegate(`delegate-${++this.counter}`, { title: 'Readonly work', brief: 'READONLY_GUARD', scope: 'readonly' });
       else yield* blocks('No worker requested.'); return;
     }
     assert.ok(names.includes('project_report'), 'worker gets its independent preset');
@@ -127,6 +140,7 @@ class ScriptedModel extends LlmAdapter {
 /** Script only model choices; dependency admission and lifecycle remain native. */
 class DependencyModel extends ScriptedModel {
   actions = new Map(); gates = new Map(); workerInputs = []; coordinatorGates = new Set();
+  dependencyDeclarations = new Map();
   gate(name) {
     if (!this.gates.has(name)) {
       let release; const promise = new Promise(done => { release = done; });
@@ -140,13 +154,23 @@ class DependencyModel extends ScriptedModel {
       const input = options.messages.findLast(message => message.role === 'user' && ['user', 'subagent-settled'].includes(message.source.kind));
       if (input?.source.kind !== 'user' || !messageText(input).startsWith('DEPENDENCY_ACTIONS:')) { yield* super.stream(options); return; }
       this.requests.push(options);
-      const actions = JSON.parse(messageText(input).slice('DEPENDENCY_ACTIONS:'.length)), stage = this.actions.get(input.id) ?? 0;
-      this.actions.set(input.id, stage + 1);
+      const actions = JSON.parse(messageText(input).slice('DEPENDENCY_ACTIONS:'.length)), rawStage = this.actions.get(input.id) ?? 0;
+      this.actions.set(input.id, rawStage + 1);
+      if (!rawStage) {
+        const row = this.workflow(), revise = !row || this.state().projects.some(project => project.paused) || actions.some(action => action.work && this.state().workstreams.some(work => work.title === action.work && this.state().workers.find(worker => worker.sessionId === work.workerSessionId)?.stopped));
+        this.dependencyDeclarations.set(input.id, revise);
+        yield* call(`dependency-request-${++this.counter}`, 'project_request', { ...(revise && row ? { requestId: row.id } : {}),
+          title: revise ? 'Dependency workflow' : `Discuss dependency instruction ${this.counter}`, disposition: revise ? 'queued' : 'discussing',
+          goal: revise ? 'Complete this continuing readonly dependency workflow, including parallel prerequisite stages and later dependency adjustments.' : `The user requested these stages within the existing workflow: ${actions.map(item => item.title ?? item.work).join(', ')}.`,
+          constraints: ['Keep the original members and completed evidence'], conditions: ['Complete the requested stages according to their current dependencies'], scopeCeiling: 'readonly' }); return;
+      }
+      if (rawStage === 1 && this.dependencyDeclarations.get(input.id)) this.workflowId = toolFacts(options).id;
+      const stage = rawStage - 1;
       if (stage >= actions.length) { yield* blocks('Dependency request processed.'); return; }
       const action = actions[stage], work = action.work && this.state().workstreams.find(item => item.title === action.work);
       if (action.awaitRunning) await waitFor(() => this.workerInputs.some(item => item.ref === this.state().workstreams.find(item => item.title === action.work)?.currentDelegationRef), 'original request reaches the real worker before dependency adjustment');
       if (action.gate) { this.coordinatorGates.add(action.gate); await this.gate(action.gate).promise; }
-      const args = { title: action.title, brief: action.brief, scope: 'readonly', ...(work ? { workstreamId: work.id } : {}),
+      const row = this.workflow(), args = { requestId: row.id, requestRevision: row.revision, title: action.title, brief: action.brief, scope: 'readonly', ...(work ? { workstreamId: work.id } : {}),
         ...(action.deps === undefined ? {} : { blockedBy: action.deps.map(title => { const dependency = this.state().workstreams.find(item => item.title === title); assert.ok(dependency, title); return dependency.id; }) }) };
       yield* call(`dependency-${++this.counter}`, 'project_delegate', args); return;
     }
@@ -167,6 +191,93 @@ class DependencyModel extends ScriptedModel {
     }
     yield* call(`dependency-report-${++this.counter}`, 'project_report', { delegationRef: ref, outcome: 'completed', summary: brief,
       artifacts: [], evidence: ['External model scripted; native Team tools and settlement exercised.'], remainingIssues: [] });
+  }
+}
+
+/** Script only user/model decisions; queue admission, notices and deliveries remain native. */
+class QueueModel extends DependencyModel {
+  holdTitles = new Set(); deliveryBarriers = new Set(); barriersReached = new Set(); queueInputs = []; workerAborts = []; streamErrors = [];
+  async barrier(name, signal) {
+    this.barriersReached.add(name);
+    await new Promise((done, reject) => {
+      const abort = () => reject(new Error('scripted queue model cancelled'));
+      if (signal?.aborted) { abort(); return; }
+      signal?.addEventListener('abort', abort, { once: true });
+      this.gate(name).promise.then(() => { signal?.removeEventListener('abort', abort); done(); });
+    });
+  }
+  row(title) { const row = this.state().requests.find(item => item.title === title); assert.ok(row, title); return row; }
+  delegate(row) {
+    const work = this.state().workstreams.find(item => item.delegations.at(-1).source.requestId === row.id);
+    return { requestId: row.id, requestRevision: row.revision, ...(work ? { workstreamId: work.id } : { title: `${row.title} work` }), brief: `QUEUE_WORK:${row.title}`, scope: 'development' };
+  }
+  async *stream(options) {
+    try { yield* this.queueStream(options); }
+    catch (error) { if (!options.signal.aborted) this.streamErrors.push(error); throw error; }
+  }
+  async *queueStream(options) {
+    this.requests.push(options);
+    const names = (options.tools ?? []).map(tool => tool.name);
+    if (!names.length) { yield* blocks('Queued project development'); return; }
+    if (names.includes('project_request')) {
+      const input = options.messages.findLast(message => message.role === 'user' && (['user', 'subagent-settled'].includes(message.source.kind)
+        || message.source.kind === 'whale-project:queue'));
+      assert.ok(input); const key = `queue:${input.id}`, stage = this.actions.get(key) ?? 0; this.actions.set(key, stage + 1);
+      if (input.source.kind === 'user') {
+        assert.ok(messageText(input).startsWith('QUEUE_ACTIONS:'));
+        const actions = JSON.parse(messageText(input).slice('QUEUE_ACTIONS:'.length)), action = actions[stage];
+        if (!action) { yield* blocks('The requested discussion and queue changes are recorded in this same Project conversation.'); return; }
+        if (action.type === 'request' || action.type === 'revise') {
+          yield* call(`queue-request-${++this.counter}`, 'project_request', { ...(action.type === 'revise' ? { requestId: this.row(action.title).id } : {}),
+            title: action.title, goal: action.goal ?? `Develop ${action.title}, save its result to ${action.title}.txt and read it back.`,
+            constraints: ['Preserve seed.txt and the existing project directory.'], conditions: [`${action.title}.txt contains the accepted requirement title and revision`, 'Read back the actual saved file'],
+            scopeCeiling: 'development', ...(action.disposition ? { disposition: action.disposition } : {}) }); return;
+        }
+        const row = this.row(action.title);
+        if (action.type === 'delegate') { yield* call(`queue-delegate-${++this.counter}`, 'project_delegate', this.delegate(row)); return; }
+        assert.equal(action.type, 'queue');
+        yield* call(`queue-change-${++this.counter}`, 'project_queue', { requestId: row.id, requestRevision: row.revision, action: action.action,
+          ...(action.before ? { beforeRequestId: this.row(action.before).id } : {}) }); return;
+      }
+      if (input.source.kind === 'whale-project:queue') {
+        const recorded = JSON.parse(messageText(input).split('\n')[1]), row = this.row(recorded.title);
+        assert.equal(recorded.id, row.id); assert.equal(recorded.revision, row.revision); assert.equal(recorded.scopeCeiling, 'worker');
+        if (!stage) { this.queueInputs.push({ id: input.id, requestId: row.id, revision: row.revision, title: row.title });
+          yield* call(`queue-activation-read-${++this.counter}`, 'project_read_store', { path: 'notes.md', requestId: row.id }); return; }
+        if (stage === 1) { yield* call(`queue-activation-delegate-${++this.counter}`, 'project_delegate', this.delegate(row)); return; }
+        yield* blocks(`${row.title} is now developing under its saved scope and completion conditions.`); return;
+      }
+      const appendix = input.content.find(block => block.type === 'text' && block.text.startsWith('Project recorded outcome for this native settlement'));
+      assert.ok(appendix); const facts = JSON.parse(appendix.text.split('\n')[1]), row = this.state().requests.find(item => item.id === facts.request.id); assert.ok(row);
+      if (row.queue.state === 'cancelled') { yield* blocks(`${row.title} was cancelled; its old settlement cannot restart it.`); return; }
+      if (!stage) { yield* call(`queue-result-read-${++this.counter}`, 'project_read_store', { path: 'notes.md', requestId: row.id }); return; }
+      if (stage === 1) {
+        if (this.deliveryBarriers.has(row.title)) await this.barrier(`before-delivery:${row.title}`, options.signal);
+        const view = toolFacts(options).requests.find(item => item.id === row.id); assert.ok(view);
+        yield* call(`queue-delivery-${++this.counter}`, 'project_deliver', handover(view, `${row.title}: the actual file was written and read back.`, 'completed', [])); return;
+      }
+      if (stage === 2 && this.deliveryBarriers.has(row.title)) await this.barrier(`before-reply:${row.title}`, options.signal);
+      yield* blocks(`${row.title} is delivered with its actual saved file and readback evidence.`); return;
+    }
+    assert.ok(names.includes('project_report'));
+    const assignment = options.messages.findLast(message => message.role === 'user' && messageText(message).includes('DelegationRef:'));
+    const envelope = messageText(assignment), ref = /DelegationRef: ([^\n]+)/.exec(envelope)?.[1], cwd = /Working directory: ([^\n]+)/.exec(envelope)?.[1];
+    const brief = envelope.split('Current assignment and completion criteria:\n')[1]?.split('\n\n')[0];
+    const accepted = JSON.parse(envelope.split('Requirement context (the accepted whole goal; execute only the current assigned stage):\n')[1].split('\n')[0]);
+    const context = { ...accepted, title: brief?.slice('QUEUE_WORK:'.length), revision: accepted.requestRevision };
+    assert.ok(ref && cwd); assert.equal(brief, `QUEUE_WORK:${context.title}`);
+    const stage = this.stages.get(ref) ?? 0; this.stages.set(ref, stage + 1);
+    if (!stage) { this.workerInputs.push({ ref, cwd, brief, context, source: assignment.source, signal: options.signal });
+      yield* call(`queue-seed-read-${++this.counter}`, 'project_read', { path: 'seed.txt' }); return; }
+    if (stage === 1) {
+      if (this.holdTitles.has(context.title)) try { await this.barrier(`worker:${context.title}`, options.signal); }
+      catch (error) { this.workerAborts.push({ ref, title: context.title }); throw error; }
+      yield* call(`queue-native-write-${++this.counter}`, 'write', { file_path: join(cwd, `${context.title}.txt`), content: `${context.title} revision ${context.revision}\n` }); return;
+    }
+    if (stage === 2) { yield* call(`queue-native-readback-${++this.counter}`, 'project_read', { path: `${context.title}.txt` }); return; }
+    const actual = toolFacts(options); assert.equal(actual.text, `${context.title} revision ${context.revision}\n`);
+    yield* call(`queue-native-report-${++this.counter}`, 'project_report', { delegationRef: ref, outcome: 'completed', summary: `Saved and read back ${context.title} revision ${context.revision}.`,
+      artifacts: [join(cwd, `${context.title}.txt`)], evidence: [JSON.stringify(actual)], remainingIssues: [] });
   }
 }
 
@@ -375,6 +486,152 @@ async function bootHost(home, model, teamConfig, allowUnavailable = false, visua
   let contextVersion = 0; ctx.systemPrompt.context({ name: 'composition:actual-dynamic-context', order: 99999, text: () => `Runtime context snapshot ${++contextVersion}; it supplies no user authorization.` });
   ctx.llm.registerAdapter(['composition'], model); model.state = () => ctx.projects.state(); return ctx;
 }
+test('native requirement queue keeps discussion separate, preserves edits and order, and relays only a durable whole delivery', { timeout: 120000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'whale-project-native-queue-')), home = join(root, 'home'), directory = join(root, 'selected');
+  await mkdir(home); await mkdir(directory); await writeFile(join(directory, 'seed.txt'), 'preserved\n');
+  const bridge = await desktopBridge(root), model = new QueueModel(); model.holdTitles = new Set(['A', 'B']); model.deliveryBarriers.add('A'); let ctx;
+  const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
+  try {
+    ctx = await bootHost(home, model); const host = ctx.projects;
+    const { project } = await host.command('create', { requestId: 'native-queue-create', workingDirectory: directory }), lead = ctx.agents.get(project.coordinatorSessionId);
+    let promptNumber = 0;
+    const prompt = async actions => { await ctx.sessionController.prompt({ sessionId: lead.id, requestId: `native-queue-human-${++promptNumber}`, mode: 'queue', content: [{ type: 'text', text: `QUEUE_ACTIONS:${JSON.stringify(actions)}` }] }, signal); await lead.whenIdle(); };
+    const request = title => host.state().requests.find(row => row.title === title), work = title => host.state().workstreams.find(row => row.title === `${title} work`);
+    const delivered = title => host.state().deliveries.find(row => row.requestId === request(title)?.id && row.status === 'delivered');
+    await prompt([{ type: 'request', title: 'A', disposition: 'queued' }, { type: 'delegate', title: 'A' }]);
+    await waitFor(() => model.barriersReached.has('worker:A'), 'A actually reads the repository and remains in its background worker');
+    const a = structuredClone(request('A'));
+    await prompt([{ type: 'request', title: 'B', disposition: 'discussing' }, { type: 'delegate', title: 'B' },
+      { type: 'request', title: 'C', disposition: 'queued' }, { type: 'delegate', title: 'C' }, { type: 'request', title: 'D', disposition: 'queued' }]);
+    assert.equal(request('B').queue.state, 'discussing'); assert.deepEqual(host.queue.pending(project.id).map(row => row.title), ['C', 'D']);
+    assert.deepEqual(model.failures.map(item => item.name), ['project_delegate', 'project_delegate']);
+    for (const failure of model.failures) assert.match(failure.error.message, /Only the current active requirement may write/);
+    assert.deepEqual(host.state().workstreams.map(row => row.title), ['A work'], 'neither tentative nor approved waiting requirements can prestart development; queued ones may only investigate read-only');
+    assert.deepEqual(request('A'), a, 'discussing B and approving C/D never revise A or its authorization');
+    await prompt([{ type: 'queue', title: 'B', action: 'enqueue', before: 'C' }]);
+    assert.deepEqual(host.queue.pending(project.id).map(row => row.title), ['B', 'C', 'D']);
+    await prompt([{ type: 'request', title: 'E', disposition: 'discussing' }, { type: 'revise', title: 'B', goal: 'Develop the revised B, preserve seed.txt, save B.txt and verify its actual contents.' }]);
+    assert.equal(request('B').revision, 2); assert.equal(host.queue.view(request('B')).position, 1);
+    assert.deepEqual(host.queue.pending(project.id).map(row => row.title), ['B', 'C', 'D'], 'editing an approved goal preserves its exact waiting position');
+    await prompt([{ type: 'queue', title: 'D', action: 'move', before: 'B' }]);
+    assert.deepEqual(host.queue.pending(project.id).map(row => row.title), ['D', 'B', 'C']);
+    await prompt([{ type: 'queue', title: 'D', action: 'cancel' }]);
+    assert.deepEqual(host.queue.pending(project.id).map(row => row.title), ['B', 'C']); assert.equal(request('D').queue.state, 'cancelled');
+    model.gate('worker:A').release();
+    await waitFor(() => model.barriersReached.has('before-delivery:A'), 'native A report and settlement reach the Lead before its handover declaration');
+    assert.equal(work('A').status, 'done'); assert.ok(work('A').latestReport); assert.equal(work('A').settlements.length, 1);
+    assert.equal(delivered('A'), undefined); assert.equal(host.queue.active(project.id).id, request('A').id); assert.equal(model.queueInputs.length, 0); assert.equal(work('B'), undefined);
+    model.gate('before-delivery:A').release();
+    await waitFor(() => model.barriersReached.has('before-reply:A'), 'A delivery draft exists while its final native reply is still held');
+    assert.equal(host.state().deliveries.find(row => row.requestId === request('A').id).status, 'draft');
+    assert.equal(host.queue.active(project.id).id, request('A').id); assert.equal(model.queueInputs.length, 0); assert.equal(work('B'), undefined, 'a successful declaration alone cannot advance the queue');
+    model.gate('before-reply:A').release();
+    await waitFor(() => { assert.deepEqual(model.streamErrors, []); assert.equal(model.failures.length, 2, JSON.stringify(model.failures)); return model.barriersReached.has('worker:B'); }, 'durable completed A hands off to the actual revised B worker automatically');
+    assert.equal(delivered('A').outcome, 'completed'); assert.equal(host.queue.active(project.id).id, request('B').id);
+    assert.equal(model.workerInputs.find(item => item.context.title === 'B').context.revision, 2); assert.equal(work('C'), undefined);
+    model.gate('worker:B').release();
+    await waitFor(() => delivered('C'), 'B actual write/readback/delivery automatically hands off to C and C delivers'); await lead.whenIdle(); await host.tail;
+    assert.equal(await ctx.sessions.flush(lead.session), true);
+    for (const title of ['A', 'B', 'C']) assert.equal(await readFile(join(directory, `${title}.txt`), 'utf8'), `${title} revision ${title === 'B' ? 2 : 1}\n`);
+    assert.equal(await readFile(join(directory, 'seed.txt'), 'utf8'), 'preserved\n'); assert.equal(work('D'), undefined); assert.equal(work('E'), undefined);
+    assert.deepEqual(model.queueInputs.map(item => item.title), ['B', 'C']); assert.equal(new Set(model.queueInputs.map(item => item.id)).size, 2);
+    const notices = lead.session.snapshotEvents().filter(event => event.type === 'user/message' && event.data.source.kind === 'whale-project:queue');
+    assert.deepEqual(notices.map(event => event.data.id), model.queueInputs.map(item => item.id), 'each saved activation produces one exact producer-owned native notice in the original Lead');
+    assert.deepEqual(host.queue.pending(project.id), []); assert.equal(host.queue.active(project.id), undefined);
+    assert.equal((await host.requirements.listCards(project.id, { kind: 'completed' })).items.length, 3);
+    assert.equal((await host.requirements.listCards(project.id, { kind: 'cancelled' })).items[0].id, request('D').id);
+    assert.equal(model.failures.length, 2, 'only the two deliberate attempts to prestart discussed/queued work failed'); assert.deepEqual(model.streamErrors, []);
+  } finally {
+    for (const gate of model.gates.values()) gate.release(); if (ctx) await ctx.fiber.dispose(); await bridge.close();
+    for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-native-queue-`)); await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('native requirement cancellation drains its active member before the next requirement and cannot revive a late result', { timeout: 120000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'whale-project-native-queue-cancel-')), home = join(root, 'home'), directory = join(root, 'selected');
+  await mkdir(home); await mkdir(directory); await writeFile(join(directory, 'seed.txt'), 'preserved\n');
+  const bridge = await desktopBridge(root), model = new QueueModel(); model.holdTitles = new Set(['A', 'B']); let ctx, releaseDrain = () => {};
+  const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret' });
+  try {
+    ctx = await bootHost(home, model); const host = ctx.projects;
+    const { project } = await host.command('create', { requestId: 'native-queue-cancel-create', workingDirectory: directory }), lead = ctx.agents.get(project.coordinatorSessionId);
+    let promptNumber = 0;
+    const prompt = actions => ctx.sessionController.prompt({ sessionId: lead.id, requestId: `native-queue-cancel-human-${++promptNumber}`, mode: 'queue', content: [{ type: 'text', text: `QUEUE_ACTIONS:${JSON.stringify(actions)}` }] }, signal);
+    await prompt([{ type: 'request', title: 'A', disposition: 'queued' }, { type: 'delegate', title: 'A' }]); await lead.whenIdle();
+    await waitFor(() => model.barriersReached.has('worker:A'), 'A native worker is active before cancellation');
+    await prompt([{ type: 'request', title: 'B', disposition: 'queued' }]); await lead.whenIdle();
+    const a = host.state().workstreams[0], aId = a.workerSessionId, oldRef = a.currentDelegationRef, drain = host.drainWorker;
+    const drainGate = new Promise(done => { releaseDrain = done; }); let draining = false;
+    host.drainWorker = async function (owner, id) { if (id === aId) { draining = true; await drainGate; } return drain.call(this, owner, id); };
+    try {
+      await prompt([{ type: 'queue', title: 'A', action: 'cancel' }]);
+      await waitFor(() => draining && model.workerAborts.some(item => item.ref === oldRef), 'active cancellation aborts A but its native drain is still pending'); await host.tail;
+      assert.equal(host.state().requests.find(row => row.title === 'A').queue.state, 'cancelled'); assert.equal(host.worker(aId).phase, 'stopping');
+      assert.equal(model.workerInputs.some(item => item.context.title === 'B'), false); assert.equal(model.queueInputs.length, 0);
+      assert.equal(host.state().workstreams.length, 1, 'B cannot be arranged while cancelled A still owns stopping activity');
+      releaseDrain();
+      await waitFor(() => { assert.deepEqual(model.streamErrors, []); assert.deepEqual(model.failures, []); return model.barriersReached.has('worker:B'); }, 'completed native drain activates B automatically'); await lead.whenIdle();
+    } finally { releaseDrain(); host.drainWorker = drain; }
+    const stopped = host.worker(aId);
+    assert.equal(stopped.phase, 'idle'); assert.equal(stopped.activeRunId, ''); assert.equal(stopped.directoryHeld, false); assert.deepEqual(host.jobs(aId), []);
+    model.gate('worker:A').release(); await host.queue.pump(project.id); await host.tail;
+    assert.equal(host.stream(a.id).currentDelegationRef, oldRef); assert.equal(host.stream(a.id).latestReport, undefined);
+    assert.equal(host.state().deliveries.some(row => row.requestId === a.delegations[0].source.requestId), false);
+    await assert.rejects(readFile(join(directory, 'A.txt')), { code: 'ENOENT' });
+    model.gate('worker:B').release();
+    await waitFor(() => host.state().deliveries.some(row => row.status === 'delivered' && row.title === 'B'), 'B completes normally after active A cancellation'); await lead.whenIdle(); await host.tail;
+    assert.deepEqual(model.queueInputs.map(item => item.title), ['B']); assert.equal(await readFile(join(directory, 'B.txt'), 'utf8'), 'B revision 1\n');
+    assert.equal(host.state().requests.find(row => row.title === 'A').queue.state, 'cancelled'); assert.deepEqual(model.failures, []);
+  } finally {
+    releaseDrain(); for (const gate of model.gates.values()) gate.release(); if (ctx) await ctx.fiber.dispose(); await bridge.close();
+    for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-native-queue-cancel-`)); await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('native requirement queue survives cold restart without model calls and explicit resume keeps its original member and goal authority', { timeout: 120000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'whale-project-native-queue-restart-')), home = join(root, 'home'), directory = join(root, 'selected');
+  await mkdir(home); await mkdir(directory); await writeFile(join(directory, 'seed.txt'), 'preserved\n');
+  const bridge = await desktopBridge(root), model = new QueueModel(); model.holdTitles.add('A'); let ctx, restarted;
+  const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret' });
+  try {
+    ctx = await bootHost(home, model); let host = ctx.projects;
+    const { project } = await host.command('create', { requestId: 'native-queue-restart-create', workingDirectory: directory }), lead = ctx.agents.get(project.coordinatorSessionId);
+    let promptNumber = 0;
+    const prompt = actions => ctx.sessionController.prompt({ sessionId: project.coordinatorSessionId, requestId: `native-queue-restart-human-${++promptNumber}`, mode: 'queue', content: [{ type: 'text', text: `QUEUE_ACTIONS:${JSON.stringify(actions)}` }] }, signal);
+    await prompt([{ type: 'request', title: 'A', disposition: 'queued' }, { type: 'delegate', title: 'A' }]); await lead.whenIdle();
+    await waitFor(() => model.barriersReached.has('worker:A'), 'A is genuinely active before application interruption');
+    await prompt([{ type: 'request', title: 'B', disposition: 'queued' }, { type: 'request', title: 'C', disposition: 'discussing' }, { type: 'request', title: 'D', disposition: 'queued' }, { type: 'queue', title: 'D', action: 'cancel' }]); await lead.whenIdle(); await host.tail;
+    const original = structuredClone(host.state().requests), a = structuredClone(host.state().workstreams[0]), originalWorker = a.workerSessionId;
+    assert.equal(await ctx.sessions.flush(lead.session), true); await ctx.fiber.dispose(); ctx = undefined;
+    restarted = new QueueModel(); restarted.counter = model.counter; ctx = await bootHost(home, restarted); host = ctx.projects;
+    assert.equal(restarted.requests.length, 0); assert.equal(host.project(project.id).coordinatorSessionId, lead.id); assert.equal(host.project(project.id).paused, true);
+    assert.deepEqual(host.state().requests.map(row => ({ id: row.id, revision: row.revision, versions: row.versions, queue: row.queue })), original.map(row => ({ id: row.id, revision: row.revision, versions: row.versions, queue: row.queue })));
+    assert.equal(host.stream(a.id).workerSessionId, originalWorker); assert.equal(host.worker(originalWorker).stopped, true);
+    assert.deepEqual(host.queue.pending(project.id).map(row => row.title), ['B']);
+    await host.command('detail', { projectId: project.id }); await host.queue.pump(project.id); assert.equal(restarted.requests.length, 0, 'reading and scheduling a recovered Project cannot silently resume work');
+    await prompt([{ type: 'queue', title: 'A', action: 'resume' }]);
+    await waitFor(() => { assert.deepEqual(restarted.streamErrors, []); assert.deepEqual(restarted.failures, []); return host.state().deliveries.some(row => row.status === 'delivered' && row.title === 'B'); }, 'explicit continuation resumes the original A worker, delivers A and automatically develops B');
+    const restoredLead = ctx.agents.get(project.coordinatorSessionId); await restoredLead.whenIdle(); await host.tail;
+    const resumed = host.stream(a.id), second = resumed.delegations.at(-1), aRequest = host.state().requests.find(row => row.title === 'A');
+    assert.equal(resumed.workerSessionId, originalWorker); assert.equal(resumed.delegations.length, 2); assert.notEqual(second.ref, a.currentDelegationRef);
+    assert.equal(aRequest.revision, 1); assert.deepEqual(aRequest.versions, original.find(row => row.title === 'A').versions, 'resume continues frozen goal authorization without manufacturing a human revision');
+    assert.equal(second.source.messageId, a.delegations[0].source.messageId); assert.equal(second.source.authorizationCallId, a.delegations[0].source.authorizationCallId);
+    assert.equal(second.source.continuationMessageId, restarted.queueInputs.find(item => item.title === 'A').id);
+    assert.deepEqual(restarted.queueInputs.map(item => item.title), ['A', 'B']); assert.equal(restarted.workerInputs.filter(item => item.context.title === 'A').length, 1);
+    assert.equal(host.state().workstreams.some(row => ['C work', 'D work'].includes(row.title)), false);
+    assert.equal(await readFile(join(directory, 'A.txt'), 'utf8'), 'A revision 1\n'); assert.equal(await readFile(join(directory, 'B.txt'), 'utf8'), 'B revision 1\n'); assert.deepEqual(restarted.failures, []);
+  } finally {
+    for (const current of [model, restarted].filter(Boolean)) for (const gate of current.gates.values()) gate.release(); if (ctx) await ctx.fiber.dispose(); await bridge.close();
+    for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-native-queue-restart-`)); await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('both shipped catalogs migrate before admission while durable authority, history and original identities remain intact', { timeout: 240000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'whale-project-catalog-migration-')), home = join(root, 'home'), directory = join(root, 'selected');
   await mkdir(home); await mkdir(directory); await writeFile(join(directory, 'answer.txt'), '41\n');
@@ -610,10 +867,10 @@ test('native corrected handovers retain real pages through repeated declarations
       const publish = title => ({ html: `<!doctype html><html><body><h1>${title}</h1><p>Recorded result evidence.</p></body></html>`, title, height: 180 });
       if (!stage) { yield* call('first-page-request', 'project_request', request('First result')); return; }
       if (stage === 1) { this.first = toolFacts(options); yield* call('first-page-publication', 'html_render', publish('First diagram')); return; }
-      if ([2, 3, 7].includes(stage)) { yield* call(`first-page-handover-${stage}`, 'project_deliver', handover(this.first, `First result explanation, correction ${stage}.`, 'completed', [])); return; }
-      if (stage === 4) { yield* call('second-page-request', 'project_request', request('Second result')); return; }
-      if (stage === 5) { this.second = toolFacts(options); yield* call('second-page-publication', 'html_render', publish('Second diagram')); return; }
-      if (stage === 6) { yield* call('second-page-handover', 'project_deliver', handover(this.second, 'Second result explanation.', 'completed', [])); return; }
+      if ([2, 3, 4].includes(stage)) { yield* call(`first-page-handover-${stage}`, 'project_deliver', handover(this.first, `First result explanation, correction ${stage}.`, 'completed', [])); return; }
+      if (stage === 6) { yield* call('second-page-request', 'project_request', request('Second result')); return; }
+      if (stage === 7) { this.second = toolFacts(options); yield* call('second-page-publication', 'html_render', publish('Second diagram')); return; }
+      if (stage === 8) { yield* call('second-page-handover', 'project_deliver', handover(this.second, 'Second result explanation.', 'completed', [])); return; }
       yield* blocks('Both diagrams were published. The first explanation is corrected; the second result keeps its own evidence.');
     }
   }(); let ctx;
@@ -623,6 +880,9 @@ test('native corrected handovers retain real pages through repeated declarations
     ctx = await bootHost(home, model, undefined, false, true); const host = ctx.projects;
     const { project } = await host.command('create', { requestId: 'page-correction-create', workingDirectory: directory }), lead = ctx.agents.get(project.coordinatorSessionId);
     await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'two-diagram-results', mode: 'queue', content: [{ type: 'text', text: 'Explain the first and second results with their actual diagrams; correct the first explanation if needed.' }] }, signal);
+    await waitFor(() => host.state().deliveries.filter(item => item.status === 'delivered').length === 1, 'the first corrected result is durably delivered before beginning the independent second result'); await lead.whenIdle();
+    const firstDelivery = structuredClone(host.state().deliveries.find(item => item.status === 'delivered'));
+    await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'second-diagram-result', mode: 'queue', content: [{ type: 'text', text: 'Continue with the second result and keep the first result and its corrected diagram intact.' }] }, signal);
     await waitFor(() => host.state().deliveries.filter(item => item.status === 'delivered').length === 2, 'corrected native handovers commit their actual pages');
     await lead.whenIdle(); await host.tail;
     assert.deepEqual(model.failures, []); assert.equal(host.state().workstreams.length, 0);
@@ -635,7 +895,9 @@ test('native corrected handovers retain real pages through repeated declarations
     const firstPage = page('First diagram'), secondPage = page('Second diagram'), saved = structuredClone(host.state().deliveries);
     const firstRows = saved.filter(item => item.requestId === model.first.id), second = saved.find(item => item.requestId === model.second.id);
     assert.deepEqual(firstRows.map(item => item.status), ['obsolete', 'obsolete', 'delivered']);
-    assert.ok(firstRows.every(item => item.requestRevision === model.first.revision && item.turn === second.turn));
+    assert.ok(firstRows.every(item => item.requestRevision === model.first.revision && item.turn === firstDelivery.turn));
+    assert.ok(second.turn > firstDelivery.turn, 'independent requirements execute serially in the same continuing Lead');
+    assert.deepEqual(saved.find(item => item.id === firstDelivery.id), firstDelivery, 'the second requirement cannot claim or rewrite the first delivered result');
     for (const item of firstRows) assert.deepEqual(item.pages, [firstPage]);
     assert.equal(second.status, 'delivered'); assert.deepEqual(second.pages, [secondPage]);
     assert.equal(await ctx.sessions.flush(lead.session), true);
@@ -834,7 +1096,14 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     assert.equal(names.includes('run_code'), false);
     await assert.rejects(() => host.command('delegate', { projectId: project.id }), /actual Agent tool provenance/);
     let promptNumber = 0;
-    const prompt = value => ctx.sessionController.prompt({ sessionId: project.coordinatorSessionId, requestId: `user-${++promptNumber}`, mode: 'queue', content: [{ type: 'text', text: value }] }, signal);
+    const prompt = async value => {
+      await ctx.agents.get(project.coordinatorSessionId).whenIdle();
+      if (!host.project(project.id).paused) await waitFor(() => host.state().workstreams.every(work => {
+        const receipt = work.delegations.find(item => item.ref === work.currentDelegationRef), terminal = work.settlements.find(item => item.runId === receipt.runId);
+        return receipt.report ? Boolean(receipt.report.summarizedBy) : terminal ? Boolean(terminal.summarizedBy) : true;
+      }), 'the current assignment notices are summarized before the next scripted human instruction');
+      return ctx.sessionController.prompt({ sessionId: project.coordinatorSessionId, requestId: `user-${++promptNumber}`, mode: 'queue', content: [{ type: 'text', text: value }] }, signal);
+    };
     await prompt('SHORT_QUESTION'); await ctx.agents.get(project.coordinatorSessionId).whenIdle(); assert.equal(host.state().workstreams.length, 0);
     await prompt('PAUSE_OLD_DELEGATE'); await waitFor(() => model.coordinatorWaiting, 'coordinator is still processing the old user request');
     await host.command('pause', { projectId: project.id }); model.releaseCoordinator(); await ctx.agents.get(project.coordinatorSessionId).whenIdle();
@@ -885,9 +1154,12 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     assert.equal(notes.userText, 'My own project notes.'); assert.equal(notes.text.split('<!-- whale-project:user-notes -->').length, 2);
     assert.match(await readFile(join(directory, 'implementation.txt'), 'utf8'), /Same worker continued/);
     await ctx.agents.get(project.coordinatorSessionId).whenIdle();
-    await prompt('PEER_RECEIVER');
+    await waitFor(() => !host.stream(plan.id).pendingSummary, 'the prior Plan settlement is visibly summarized before the next user instruction'); await ctx.agents.get(project.coordinatorSessionId).whenIdle();
+    const failuresBeforePeer = model.failures.length; await prompt('PEER_RECEIVER'); await ctx.agents.get(project.coordinatorSessionId).whenIdle();
+    assert.equal(model.failures.length, failuresBeforePeer, JSON.stringify(model.failures.slice(failuresBeforePeer)));
     const receiver = await waitFor(() => host.state().workstreams.find(work => work.title === 'Peer receiver' && work.settlements.length), 'receiver settles without falsely completing');
     assert.equal(ctx.agentTeams.getTask(ctx.agents.get(project.coordinatorSessionId), receiver.id).status, 'in_progress');
+    await waitFor(() => !host.stream(receiver.id).pendingSummary, 'the waiting receiver terminal is summarized before changing the parallel workflow');
     await ctx.agents.get(project.coordinatorSessionId).whenIdle();
     await prompt('PEER_DEPENDENT'); await ctx.agents.get(project.coordinatorSessionId).whenIdle();
     const dependent = host.state().workstreams.find(work => work.title === 'Dependent work');
@@ -904,6 +1176,7 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     assert.ok(peer, 'peer evidence used the native durable mailbox');
     assert.deepEqual(ctx.agentTeams.messageContext(ctx.agents.get(project.coordinatorSessionId), peer.data.message.id), { senderAssignment: sender.currentDelegationRef, targetAssignment: receiver.currentDelegationRef });
     assert.equal(model.failures.some(item => ['list_agents', 'send_message'].includes(item.name)), false);
+    await waitFor(() => [receiver.id, dependent.id, sender.id].every(id => !host.stream(id).pendingSummary), 'all parallel peer results have their actual visible summaries before starting the next stage'); await ctx.agents.get(project.coordinatorSessionId).whenIdle();
     await prompt('READ_ONLY'); const investigation = await waitFor(() => host.state().workstreams.find(item => item.title === 'Readonly work' && item.status === 'done'), 'read-only worker settles');
     assert.equal(host.worker(investigation.workerSessionId).role, 'readonly'); assert.ok(model.failures.some(item => item.error.code === 'TOOL_GUARD_DENIED' || /shell|repository write/i.test(item.error.message)));
     assert.ok(model.failures.some(item => item.name === 'run_code'));
@@ -930,7 +1203,8 @@ test('real coordinator tools delegate, preserve worker scope/cwd, stop and recov
     assert.equal(restartedModel.requests.length, 0); assert.equal(resumed.project(project.id).coordinatorSessionId, project.coordinatorSessionId); assert.equal(resumed.stream(plan.id).workerSessionId, workerId);
     assert.equal(resumed.stream(pathWork.id).status, 'blocked'); assert.equal(resumed.stream(pathWork.id).pendingSummary, true); assert.equal(resumed.stream(pathWork.id).settlements.length, 0);
     assert.equal(resumed.stream(plan.id).pendingSummary, true); assert.match((await resumed.command('store/read', { projectId: project.id, path: 'notes.md' })).text, /no associated visible coordinator summary/);
-    await ctx.sessionController.create({ sessionId: project.coordinatorSessionId, cwd: project.storageRoot });
+    const originalLead = await ctx.sessionController.resolveAgent(project.coordinatorSessionId);
+    assert.equal(originalLead.agent?.id, project.coordinatorSessionId, 'recovery resumes the original used Session instead of creating a blank replacement');
     await ctx.sessionController.prompt({ sessionId: project.coordinatorSessionId, requestId: 'read-pending', mode: 'queue', content: [{ type: 'text', text: 'READ_PENDING' }] }, signal);
     await waitFor(() => !resumed.stream(plan.id).pendingSummary, 'real visible coordinator reply summarizes durable pending facts');
     assert.equal(resumed.stream(plan.id).workerSessionId, workerId); assert.equal(resumed.worker(workerId).stopped, true);
@@ -993,8 +1267,9 @@ test('native Team dependency changes preserve continuing identity, reject cycles
     assert.equal(receipt('Frontend').phase, 'queued'); assert.deepEqual(task('Frontend').blockedBy, [work('Backend').id]);
     assert.equal(work('Frontend').id, frontendId); assert.equal(work('Frontend').workerSessionId, frontendWorker);
     assert.equal(host.worker(frontendWorker).cwd, frontendCwd); assert.equal(model.workerInputs.some(item => item.brief === 'AFTER_BACKEND'), false);
+    const firstGoal = host.state().requests.find(row => row.id === firstSource.requestId).versions.find(version => version.revision === firstSource.requestRevision);
     assert.deepEqual((await host.command('store/results', { projectId: project.id, workstreamId: frontendId })).items[0], { ...firstReport, prerequisitesChanged: false,
-      request: { id: firstSource.requestId, title: 'Frontend', revision: firstSource.requestRevision, goal: 'FIRST_FRONTEND' } });
+      request: { id: firstSource.requestId, title: firstGoal.title, revision: firstSource.requestRevision, goal: firstGoal.goal } });
     await prompt({ work: 'Frontend', brief: 'OMITTED_DEPS_STILL_WAIT' }); await lead.whenIdle();
     assert.deepEqual(work('Frontend').blockedBy, [work('Backend').id]); assert.deepEqual(task('Frontend').blockedBy, [work('Backend').id]);
     assert.equal(receipt('Frontend').phase, 'queued'); assert.equal(model.workerInputs.some(item => item.brief === 'OMITTED_DEPS_STILL_WAIT'), false);
@@ -1256,6 +1531,7 @@ test('native task capacity releases a failed pre-child launch and recovers its o
     assert.equal(ctx.agents.get(project.coordinatorSessionId).session.snapshotEvents().filter(event => event.type === 'team/control' && event.data.control.kind === 'cold' && event.data.control.taskId === failed.id).at(-1)?.data.control.cold, true, 'recovery releases the legacy failed native task before any model request');
     await prompt({ title: 'After restart', brief: 'Complete after recovery released the old failed task' });
     await waitFor(() => recovered.state().workstreams.find(work => work.title === 'After restart')?.status === 'done', 'legacy failed task no longer consumes the only task slot');
+    await waitFor(() => !recovered.state().workstreams.find(work => work.title === 'After restart').pendingSummary, 'the recovered capacity result is summarized before explicitly continuing the failed member');
     await ctx.agents.get(project.coordinatorSessionId).whenIdle();
     await prompt({ work: 'Missing directory', brief: 'Continue the original task now its directory is restored' });
     await waitFor(() => recovered.stream(failed.id).status === 'done', 'explicit continuation activates the original failed task');
@@ -1372,8 +1648,8 @@ test('failed warm admission keeps occupancy, expanding stops drain every worker,
     return id;
   };
   const tasks = new Map();
-  const ctx = { sessionPersistence: { stat: async () => ({}) }, agentTeams: { registerPolicy: () => () => {}, bindPolicy: async () => {}, cancelMessages: async () => {}, setCold: async () => {}, listTasks: () => [...tasks.values()], createTask: async (_root, input) => { if (!tasks.has(input.taskId)) tasks.set(input.taskId, { id: input.taskId, subject: input.subject, description: input.description, blockedBy: [], status: 'in_progress', ready: true }); return tasks.get(input.taskId); }, getTask: (_root, id) => tasks.get(id) }, agents, get: name => name === 'jobs' ? { list: () => [] } : undefined, logger: { warn() {} }, subagents: {
-    registerContinuationPolicy: () => () => {}, async drainContinuableChildren(_parent, ids) { drained.push(...ids); if (ids.includes('worker-a')) await gateA; },
+  const ctx = { sessionPersistence: { stat: async () => ({}) }, sessionController: { resolveAgent: async id => ({ agent: agents.get(id) }) }, agentTeams: { registerPolicy: () => () => {}, bindPolicy: async () => {}, cancelMessages: async () => {}, setCold: async () => {}, listTasks: () => [...tasks.values()], createTask: async (_root, input) => { if (!tasks.has(input.taskId)) tasks.set(input.taskId, { id: input.taskId, subject: input.subject, description: input.description, blockedBy: [], status: 'in_progress', ready: true }); return tasks.get(input.taskId); }, getTask: (_root, id) => tasks.get(id) }, agents, get: name => name === 'jobs' ? { list: () => [] } : undefined, logger: { warn() {} }, subagents: {
+    registerContinuationPolicy: () => () => {}, async drainChildren(_parent, ids) { drained.push(...ids); if (ids.includes('worker-a')) await gateA; },
   } };
   const table = { get: () => state, async update(_key, change) { state = change(state); } };
   const service = new ProjectService(ctx, table, { home, desktop: async () => { throw new Error('Actual binding changed'); } });

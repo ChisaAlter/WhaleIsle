@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import type { JobsSnapshot, JobView, ObservedJob } from '@deepseek-ai/dsh-api-job-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
-  Button, IconChevronDownOutlineRegular, IconStopFillRegular, IconCodeOutlineRegular, StateDot, TerminalBlock, Toast, useAnchoredPosition, useDismissOnOutsidePointer,
+  MenuSurface, Button, IconChevronDownOutlineRegular, IconStopFillRegular, IconCodeOutlineRegular, StateDot, TerminalBlock, Toast, useAnchoredPosition, useDismissOnOutsidePointer,
   type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -47,8 +47,14 @@ export type JobListActionProps =
 /** Stable empty list so a session with no jobs keeps one array identity. */
 const NO_JOBS: readonly JobView[] = []
 
-/** Hide the portaled panel until its first anchor measurement completes. */
+/** Distance between the trigger's bottom edge and the popover. */
+const MENU_GAP = 5
+
+/** Unplaced list: hidden but laid out so the first placement measures real dimensions. */
 const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
+
+/** Keyboard-reachable controls inside the list, in document order. */
+const FOCUSABLE = 'button:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])'
 
 /** How long an armed kill waits for its confirming press before disarming. */
 const KILL_ARM_MS = 3_000
@@ -127,6 +133,7 @@ function formatDuration(elapsedMs: number, t: TranslateNS<typeof NS>): string {
 /** Localized display copy for the embedded terminal panel. */
 function terminalLabels(t: TranslateNS<typeof NS>): TerminalBlockLabels {
   return {
+    commandLine: line => t('terminal.commandLine', { n: line }),
     // The labels contract requires exit-fact formatters, but this panel never
     // passes exit facts, so TerminalBlock never invokes them.
     /* v8 ignore next */
@@ -352,15 +359,7 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, killJob,
   const [killPhase, setKillPhase] = useState<{ key: string; state: Exclude<KillState, 'idle'> } | undefined>(undefined)
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
-  const menuRef = useRef<HTMLUListElement>(null)
-  const menuPosition = useAnchoredPosition({
-    open,
-    anchorRef: triggerRef,
-    panelRef: menuRef,
-    side: 'bottom',
-    gap: 5,
-    margin: 12,
-  })
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const rows = useMemo(() => ordered(jobs), [jobs])
   const liveRows = useMemo(() => rows.filter(isLive), [rows])
@@ -371,6 +370,12 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, killJob,
   const settledExpanded = settledOpen ?? liveRows.length === 0
   const visibleCount = liveRows.length + settledRows.length
 
+  // The popover portals to the document body: the session header sits in a
+  // clipping column that the right sidebar borders or overlaps, so an in-place
+  // popover is cut off or covered there.
+  const menuPosition = useAnchoredPosition({
+    open, anchorRef: rootRef, panelRef: menuRef, gap: MENU_GAP, margin: 12,
+  })
   useDismissOnOutsidePointer(rootRef, open, setOpen, menuRef)
 
   // The roster follows the mounted session: one stream while this control
@@ -470,11 +475,33 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, killJob,
     }
   }
 
+  // The portaled list sits at the end of the document, so Tab is bridged to
+  // keep the in-place order: the trigger leads into the list, and leaving
+  // either end of the list returns to the trigger's position in the page.
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key !== 'Escape' || !open) return
-    event.preventDefault()
-    setOpen(false)
-    triggerRef.current?.focus()
+    if (!open) return
+    const trigger = triggerRef.current
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      setOpen(false)
+      trigger?.focus()
+      return
+    }
+    const menu = menuRef.current
+    /* v8 ignore next -- both refs are attached while the open list renders. */
+    if (event.key !== 'Tab' || trigger === null || menu === null) return
+    const focusable = [...menu.querySelectorAll<HTMLElement>(FOCUSABLE)]
+    if (event.target === trigger) {
+      // Every list carries a control: a live row's toggle or the settled section's buttons.
+      if (event.shiftKey) return
+      event.preventDefault()
+      focusable[0]?.focus()
+    } else if (event.shiftKey ? event.target === focusable[0] : event.target === focusable.at(-1)) {
+      // Shift+Tab lands on the trigger itself; Tab continues from it to the
+      // control that follows the trigger.
+      if (event.shiftKey) event.preventDefault()
+      trigger.focus()
+    }
   }
 
   const item = (job: JobView) => (
@@ -524,33 +551,36 @@ export function JobListAction({ sessionId, useJobs, watchRows, observe, killJob,
         <IconChevronDownOutlineRegular size={12} className={`${css.triggerChevron} ${open ? css.triggerOpen : ''}`} />
       </button>
       {open
-        ? createPortal((
-          <ul ref={menuRef} className={css.menu} style={menuPosition ?? MEASURE_STYLE} aria-label={t('list.aria')}>
-            {liveRows.length > 0
-              ? <li className={css.sectionHeader} aria-hidden="true">{t('section.live')}</li>
-              : null}
-            {liveRows.map(item)}
-            {settledRows.length > 0
-              ? (
-                <li className={css.sectionHeader}>
-                  <button
-                    type="button"
-                    className={css.sectionToggle}
-                    aria-expanded={settledExpanded}
-                    onClick={() => { setSettledOpen(!settledExpanded) }}
-                  >
-                    <IconChevronDownOutlineRegular size={12} className={settledExpanded ? `${css.sectionChevron} ${css.sectionChevronOpen}` : css.sectionChevron} />
-                    {t('section.settledCount', { count: settledRows.length })}
-                  </button>
-                  <button type="button" className={css.sectionClear} onClick={clearSettled}>
-                    {t('section.clear')}
-                  </button>
-                </li>
-              )
-              : null}
-            {settledExpanded ? settledRows.map(item) : null}
-          </ul>
-        ), document.body)
+        ? createPortal(
+          <MenuSurface ref={menuRef} className={css.menu} style={menuPosition ?? MEASURE_STYLE}>
+            <ul className={css.menuBody} aria-label={t('list.aria')}>
+              {liveRows.length > 0
+                ? <li className={css.sectionHeader} aria-hidden="true">{t('section.live')}</li>
+                : null}
+              {liveRows.map(item)}
+              {settledRows.length > 0
+                ? (
+                  <li className={css.sectionHeader}>
+                    <button
+                      type="button"
+                      className={css.sectionToggle}
+                      aria-expanded={settledExpanded}
+                      onClick={() => { setSettledOpen(!settledExpanded) }}
+                    >
+                      <IconChevronDownOutlineRegular size={12} className={settledExpanded ? `${css.sectionChevron} ${css.sectionChevronOpen}` : css.sectionChevron} />
+                      {t('section.settledCount', { count: settledRows.length })}
+                    </button>
+                    <button type="button" className={css.sectionClear} onClick={clearSettled}>
+                      {t('section.clear')}
+                    </button>
+                  </li>
+                )
+                : null}
+              {settledExpanded ? settledRows.map(item) : null}
+            </ul>
+          </MenuSurface>,
+          document.body,
+        )
         : null}
     </div>
   )

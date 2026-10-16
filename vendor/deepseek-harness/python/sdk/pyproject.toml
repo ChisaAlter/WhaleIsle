@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling==1.30.1"]
+requires = ["hatchling==1.32.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -22,7 +22,7 @@ Issues = "https://github.com/deepseek-ai/deepseek-harness/issues"
 Source = "https://github.com/deepseek-ai/deepseek-harness"
 
 [dependency-groups]
-test = ["pytest>=8.0"]
+test = ["pytest>=8.0", "Pillow==12.3.0"]
 
 [tool.pytest.ini_options]
 addopts = "-q"
@@ -30,6 +30,8 @@ testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/deepseek_harness"]
+# The release job uses Twine 6.2.0, which accepts core metadata through 2.4.
+core-metadata-version = "2.4"
 
 # Editable installs see runtime executables injected after installation instead
 # of freezing a wheel snapshot.

@@ -2,6 +2,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import { en } from '../src/client/locales.ts'
@@ -69,6 +70,7 @@ function mount(opts: {
   render(
     <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
       usePanelInfo={panelInfoStub}
       useResource={resourceStub}
       sessionId={'session-1' as SessionId}
@@ -191,6 +193,7 @@ describe('SurfacesRoot', () => {
     render(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -352,6 +355,7 @@ describe('SurfacesRoot', () => {
     render(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -405,6 +409,7 @@ describe('SurfacesRoot', () => {
     render(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -468,6 +473,7 @@ describe('SurfacesRoot', () => {
     render(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -589,6 +595,7 @@ describe('SurfacesRoot', () => {
     const view = render(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={current}
@@ -617,6 +624,7 @@ describe('SurfacesRoot', () => {
     view.rerender(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={other}
@@ -642,6 +650,7 @@ describe('SurfacesRoot', () => {
     view.rerender(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={current}
@@ -676,6 +685,7 @@ describe('SurfacesRoot', () => {
     render(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={undefined}
@@ -709,6 +719,7 @@ describe('SurfacesRoot', () => {
     render(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={undefined}
@@ -758,6 +769,7 @@ describe('SurfacesRoot', () => {
     render(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={current}
@@ -804,6 +816,7 @@ describe('SurfacesRoot', () => {
     render(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -933,6 +946,7 @@ describe('SurfacesRoot', () => {
     const view = render(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={current}
@@ -960,6 +974,7 @@ describe('SurfacesRoot', () => {
     view.rerender(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={other}
@@ -987,6 +1002,7 @@ describe('SurfacesRoot', () => {
     view.rerender(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={current}
@@ -1012,6 +1028,7 @@ describe('SurfacesRoot', () => {
     view.rerender(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={other}
@@ -1089,6 +1106,7 @@ describe('SurfacesRoot', () => {
     render(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -1160,6 +1178,7 @@ describe('SurfacesRoot', () => {
     render(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -1241,6 +1260,7 @@ describe('SurfacesRoot', () => {
     render(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -1275,6 +1295,7 @@ describe('SurfacesRoot', () => {
     render(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}
@@ -1335,6 +1356,7 @@ describe('SurfacesRoot', () => {
     render(
       <SurfacesRoot
         SessionProvider={({ children }) => children}
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         sessionId={'session-1' as SessionId}

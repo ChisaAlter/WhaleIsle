@@ -94,6 +94,7 @@ class ShellConfirmDialog {
       message: options.message ?? '', detail: options.detail ?? '',
       kind: options.kind === 'update' ? 'update' : 'confirmation',
       context: options.context ?? '',
+      detailTabs: options.kind === 'update' && Array.isArray(options.detailTabs) ? options.detailTabs : [],
       downloadMethods: Array.isArray(options.downloadMethods) ? options.downloadMethods : [],
       buttons, cancelId, closeLabel: this.text.close,
       technicalDetails: options.technicalDetails ?? '',

@@ -51,7 +51,7 @@ Chat 中 Markdown 撰写的图片（助手正文与展开的思考行）激活�
 <details>
 <summary>实现细节——点击展开</summary>
 
-插件通过 `ctx.slots.inject` 等待 `conversation.input.attachments`、`conversation.message.images`、`conversation.trajectory.images`、`tool.call.images` 与 `conversation.image.preview`。随后它注册 composer rail、文档拖放目标、供 Chat、Trajectory 与工具结果共用的历史图片 gallery，以及原图灯箱。呈现组件仅依赖 props：slot 持有方提供附件数据、图片加载、回调与语言包翻译器；包入口不导出任何组件。
+插件提供 root 作用域的 `conversation.images.content` Factory。官方 `MessageImages` 条目通过 `ctx.slots.inject`，以优先级 100 填入 `conversation.chat.user.images`、`conversation.chat.message.images`、`conversation.trajectory.images` 和 `tool.call.images`。较低优先级的条目只替换自身所在位置，移除后恢复官方条目。各默认条目复用同一画廊，显式传入图片引用、授权 loader、布局参数和可选的完整 labels。Factory 负责画廊展示与默认文案，不拥有 Session 状态或读取授权。各领域拥有自己的 Slot 声明。Composer 附件栏仍为独立条目，包入口不导出任何组件。 `conversation.image.preview` 条目为 Markdown 图片提供共享原图灯箱。
 
 | 文件 | 职责 |
 |---|---|

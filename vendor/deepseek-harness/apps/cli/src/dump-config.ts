@@ -70,7 +70,7 @@ export function dumpConfigLayers(profile: string, options: DumpConfigOptions): {
  * never parsed).
  * @param patches - `--patch` overlay paths, in argv order.
  * @param skipUserPlugins - list template bundles and `--patch` files only, never user layers.
- * @param fromDefaultProfile - shipped template used once to initialize a missing profile.
+ * @param fromDefaultProfile - shipped template that replaces the custom profile.
  */
 export function runDumpConfig(
   profile: string,

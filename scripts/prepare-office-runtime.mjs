@@ -20,6 +20,7 @@ import { spawnSync, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { OFFICE_SKILL_FOLDERS } from '../src/main/office-runtime.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const vendorRoot = join(root, 'vendor', 'deepseek-harness');
@@ -50,8 +51,10 @@ if (prepare.status !== 0) {
 
 const payload = join(output, 'primary-runtime');
 const manifest = JSON.parse(readFileSync(join(payload, 'runtime.json'), 'utf8'));
-const checkScript = join(output, 'office-skills', 'scripts', 'check_office.py');
-for (const required of [join(payload, 'dependencies', 'node', 'bin', 'node.exe'), checkScript]) {
+for (const required of [
+  join(payload, 'dependencies', 'node', 'bin', 'node.exe'),
+  ...OFFICE_SKILL_FOLDERS.map((name) => join(output, 'office-skills', name, 'SKILL.md')),
+]) {
   if (!existsSync(required)) {
     console.error(`Office 运行时产物缺失：${required}`);
     process.exit(1);

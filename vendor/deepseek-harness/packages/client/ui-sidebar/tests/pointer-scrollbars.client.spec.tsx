@@ -8,6 +8,7 @@
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
+import { allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SidebarRootComponentProps, SidebarSectionOwnerProps } from '../src/client/contract/slots.ts'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { SidebarRoot } from '../src/client/SidebarRoot.tsx'
@@ -47,6 +48,7 @@ function mountColumn(): { column: HTMLElement; quiet: () => boolean } {
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])} useShortcuts={selector => selector([])}
       useResource={useResource} useWorkspaces={neverHook} useNavTabs={sel => sel([])}
       useStore={bindSnapshotSelector(nav.store)} actions={nav.actions}
+      {...allowAllAccess}
       startSession={vi.fn()} toggleSidebar={vi.fn()} t={t}
       renderSlot={((_key: string, owner: SidebarSectionOwnerProps) =>
         <div data-testid="region" data-wide={owner.wide} />) as SidebarRootComponentProps['renderSlot']}

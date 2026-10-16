@@ -18,11 +18,11 @@
   en: 78623be74507229d
   zh: b0ed9c9d0c6eb040
 /deepseek-ai-dsh-subagent-acp/use-this-package/when-to-choose-it:
-  en: 56946ab7637bb8f9
-  zh: c54c4da98092dd9c
+  en: d18adbe82d4a362d
+  zh: 3b9c0cca1f67a587
 /deepseek-ai-dsh-subagent-acp/use-this-package/configuration:
-  en: 6f5fdf9a955841ce
-  zh: 7193a3c07fc54199
+  en: 8d725f040ad14301
+  zh: 379664b42a38b3e5
 /deepseek-ai-dsh-subagent-acp/use-this-package/what-you-get:
   en: 0a809bd7b8cebddc
   zh: e2c1edf8f485e8f8
@@ -39,8 +39,8 @@
   en: c98e6bcd784bbf8a
   zh: b96218f6e639755c
 /deepseek-ai-dsh-subagent-acp/understand-the-implementation/start-and-ownership-flow:
-  en: c0f7f78468f84c3b
-  zh: c9cb417d84d868ce
+  en: 4a857c21457f917d
+  zh: ef980a48deb2fca0
 /deepseek-ai-dsh-subagent-acp/understand-the-implementation/stop-reason-mapping:
   en: 88bb2b62c6e2f114
   zh: f6b720ca8ce90343
@@ -57,8 +57,8 @@
   en: 05e6180f1498fdf9
   zh: 2b05d2b97bfa67da
 /deepseek-ai-dsh-subagent-acp/model-experience/child-agent-request/what-the-model-sees:
-  en: f7f619ca78d74c6f
-  zh: f642dc7b4ff69a10
+  en: 5d8a1acb2e0510ce
+  zh: 34b446c2770f35ff
 /deepseek-ai-dsh-subagent-acp/model-experience/child-agent-request/token-effect:
   en: c0b78d334d5d0a9c
   zh: d54bf504933e132d
@@ -69,17 +69,17 @@
   en: 75d061c2151624a7
   zh: 71e58e020b60ff90
 /deepseek-ai-dsh-subagent-acp/model-experience/parent-tool-result-indirectly/what-the-model-sees:
-  en: 6779463ffe1c724c
-  zh: 9797d5910039fd3a
+  en: 5e4e3efe7517f782
+  zh: 0465e164583f6bc3
 /deepseek-ai-dsh-subagent-acp/model-experience/parent-tool-result-indirectly/token-effect:
-  en: 600ac97cdd163650
-  zh: cd26bb541f56699b
+  en: 4fae54e2ff0c4874
+  zh: 1574bfe874f66a1f
 /deepseek-ai-dsh-subagent-acp/model-experience/parent-tool-result-indirectly/kv-cache-effect:
   en: f5d5f97a153f7c70
   zh: 3d6bc05b9eadfbc2
 /deepseek-ai-dsh-subagent-acp/known-limitations-and-deferred-work:
-  en: 53a0e7fb49fe6e23
-  zh: 51096d4eb51fb4ba
+  en: eb44a9bebc00b3f7
+  zh: 6e65866e85086207
 /deepseek-ai-dsh-subagent-acp/known-limitations-and-deferred-work/dev-note:
   en: d8323b3200db6ac9
   zh: f8a5273b887b9552

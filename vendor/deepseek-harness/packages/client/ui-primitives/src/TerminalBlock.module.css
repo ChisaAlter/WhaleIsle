@@ -87,11 +87,11 @@
 /* Out of flow inside the card's own gutter padding, so the reservation and the
    dot move together and no consumer margin can pull them apart; the dot neither
    indents its command nor depends on the command's text metrics to line up.
-   Centered against the row's line box, not the code font's baseline. */
+   Centered against the first visual line box, not the code font's baseline. */
 .runState {
   position: absolute;
   left: calc(-1 * var(--dsl-terminal-gutter) + 8px);
-  top: 50%;
+  top: calc(var(--dsl-terminal-line-height) / 2);
   transform: translateY(-50%);
 }
 
@@ -110,18 +110,11 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* Default `pre`, not `nowrap`: the prompt row renders the command verbatim,
-   and `nowrap` would collapse the repeated spaces, tabs, and alignment of an
-   indented continuation. Hosts opt into wrapping long commands by rebinding
-   the variable to `pre-wrap`; the ellipsis then simply never engages, and
-   overflow-wrap is inert while white-space stays `pre`. */
+/* Each authored command line scrolls independently of its prompt and status.
+   `pre` preserves whitespace; hosts can opt into wrapping with `pre-wrap`. */
 .command {
-  min-width: 0;
+  --dsl-command-whitespace: var(--dsl-terminal-command-whitespace, pre);
   color: var(--dsw-alias-label-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: var(--dsl-terminal-command-whitespace, pre);
-  overflow-wrap: anywhere;
 }
 
 /* Capped to the prompt's line height (Pill's own 24px height would exceed a

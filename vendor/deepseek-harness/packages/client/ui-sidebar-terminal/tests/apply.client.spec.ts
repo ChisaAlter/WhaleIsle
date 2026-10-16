@@ -33,7 +33,7 @@ afterEach(() => { cleanup(); renderedTerminal.mockClear() })
 function themeSnapshot(): ThemeSnapshot {
   const active = { id: 'light', colorScheme: 'light' as const, tokens: {} }
   return {
-    ...DEFAULT_THEME_SETTINGS,
+    ...DEFAULT_THEME_SETTINGS, fontSizes: { text: 14, code: 13, terminal: 13 }, fontFamilies: { text: '', code: '', terminal: '' },
     preference: 'light',
     active,
     themes: [active],

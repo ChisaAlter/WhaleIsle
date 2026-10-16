@@ -50,6 +50,19 @@ export interface MarkdownLabels {
   footnotes: string
 }
 
+/** A fenced block offered to an explicit document owner before ordinary code rendering. */
+export interface MarkdownCodeFence {
+  readonly code: string
+  readonly language: string | undefined
+  readonly meta: string | undefined
+  /** Absolute character offset in this Markdown document, stable across streamed chunks. */
+  readonly sourceOffset: number
+  readonly streaming: boolean
+}
+
+/** Return undefined to retain the standard code block. */
+export type MarkdownCodeFenceRenderer = (fence: MarkdownCodeFence) => ReactNode | undefined
+
 function sanitizeUrl(url: string): string {
   try {
     switch (new URL(url).protocol) {
@@ -187,6 +200,10 @@ export interface MarkdownRenderContext {
   readonly streaming: boolean
   /** Localized fence copy-button labels. */
   readonly labels: MarkdownLabels
+  /** Explicit, document-local fenced-block extension; other Markdown remains unchanged. */
+  readonly renderCodeFence?: MarkdownCodeFenceRenderer | undefined
+  /** Position base of the parser slice currently being rendered. */
+  readonly sourceOffsetBase?: number | undefined
   /** Inside a blockquote's children: tables there always fill the quote's width. */
   readonly inBlockquote?: boolean
   /** Inline-code file mentions; absent wherever no opener vocabulary exists. */
@@ -223,7 +240,10 @@ export function renderBlocks(
   context: MarkdownRenderContext,
 ): ReactNode[] {
   return blocks
-    .map(block => renderNode(block.node, block.key, context))
+    .map(block => renderNode(block.node, block.key, context.renderCodeFence === undefined ? context : {
+      ...context,
+      sourceOffsetBase: block.key - (block.node.position?.start.offset ?? 0),
+    }))
     .filter(element => element !== null)
 }
 
@@ -381,6 +401,14 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
 
 function renderCode(node: Md.Code, key: Key, context: MarkdownRenderContext): ReactNode {
   const language = node.lang ?? undefined
+  const custom = context.renderCodeFence?.({
+    code: node.value,
+    language,
+    meta: node.meta ?? undefined,
+    sourceOffset: (context.sourceOffsetBase ?? 0) + (node.position?.start.offset ?? 0),
+    streaming: context.streaming,
+  })
+  if (custom !== undefined) return <Fragment key={key}>{custom}</Fragment>
   if (node.value === '') {
     // Parity: the replaced pipeline kept the stock <pre> for an empty fence.
     return (

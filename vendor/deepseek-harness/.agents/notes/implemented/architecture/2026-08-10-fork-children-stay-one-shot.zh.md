@@ -12,11 +12,13 @@ fork 与 spawn 的差异在于：fork 会用 parent 已完成轮次的前缀作�
 
 ## 决策
 
+共享 activation 入口、外部执行所有权，以及调用方与父级之间的结果投递选择由[统一 subagent activation](../simplification/2026-09-17-unified-subagent-activations.zh.md) 决策拥有。本记录保留下述独立理由。
+
 面向模型的 `send_message` 工具在组合中的每个 Agent 上全局注册。因此，可继续 fork child 获得与 parent 相同的工具名称、描述、schema 和顺序。其初始任务追加在继承的 Session 种子之后；当 child 可以看到该工具时，任务还会包含直接 parent id，以及使用 `send_message({ agent_id, message })` 返回结果的指引。
 
-base 与 headless 组合保留 one-shot fork 作为其保守生命周期策略。`cordis`、`standard` 和 `ptc` CLI preset 可以把 fork 绑定为可继续生命周期，因为该绑定不再插入 child-only 请求头字段。`ForkInProcessProvider.prepareContinuable()` 与 `ctx.subagents.startContinuable()` 仍是这些 preset 使用的实现 seam。
+base 组合包与 `cordis`、`standard` 和 `ptc` CLI preset 将 fork 绑定为可继续生命周期。基于 base 的 profile（包括 headless）继承这一默认值。`ForkInProcessProvider.prepareContinuable()` 与 `ctx.subagents.startActivation()` 在这些组合中保持相同的请求前缀行为。
 
-逐字节相同的前缀复用受显式部署选择约束。配置 child persona 或 `toolFilter` 的 fork 委派仍可能改变请求头。尤其是过滤掉 `send_message` 时，child 会同时失去该 schema 与返回指引；运行时不会绕过显式 allow-list。
+逐字节相同的前缀复用取决于组装输入。结构化输出或生成 SDK 差异可以改变请求头。历史子级 descriptor 也可在冷恢复时恢复 persona 或工具限制；过滤掉 `send_message` 会同时移除其 schema 和返回指引。新 fork 启动继承父级 preset，不含这些覆盖字段。
 
 ## 考虑过的替代方案
 
@@ -26,16 +28,16 @@ base 与 headless 组合保留 one-shot fork 作为其保守生命周期策略�
 
 **把返回指令放进系统提示词。** 这会在继承消息之前加入 child-only 字节。将其追加到初始用户任务，可以保留继承前缀，并让 parent id 紧邻需要它的任务。
 
-**忽略显式 child `toolFilter`。** 结构性返回工具过去会绕过 child allow-list。否决该方案，因为声明的工具限制必须同时决定 schema 可见性与指引；隐藏权限会让面向模型的工具清单失真。
+**恢复时忽略历史子级 `toolFilter`。** 存储的限制必须继续决定 schema 可见性和指引；静默丢弃它会改变恢复 agent 的行为。
 
 ## 后果
 
-- 未请求 persona 或工具过滤时，parent 与可继续 fork child 暴露逐字节相同且顺序一致的工具 schema。
+- 使用相同 preset 且没有子级专属结构化输出或恢复的历史覆盖时，父级与可继续的 fork 子级公开逐字节相同、顺序一致的工具 schema。
 - 继承的 Session 种子位于 child 初始任务及其返回指引之前。
-- base 与 headless profile 保持 one-shot fork；选定的 CLI preset 会在没有 child-only 请求头增量的前提下使用可继续 fork。
-- child 显式向直接 parent 发送零条或多条消息；最终回答不会被隐式复制。管理器负责的结算通知仍然无条件执行，并且与 Agent 消息分离。
+- base 组合包与完整 CLI preset 对 parent 和 caller 投递均使用本地可继续 fork，不增加 child-only 请求头字段。
+- child 可以通过 `send_message` 向直接 parent 发消息。parent 投递会追加独立的运行时结算通知；caller 投递通过 activation 回执返回结果。
 - keyless snapshot 与包测试固定 schema 相等性、继承历史顺序、parent-id 指引，以及通过同一个 `send_message` 操作完成的 child-to-parent 投递。
 
 ### 已接受风险
 
-提供方侧前缀复用仍取决于选定的提供方和模型，以及是否不存在显式 persona 或工具过滤差异。harness 证明的是自己组装出的请求头输入相等，而不是提供方的缓存行为。
+提供方侧前缀复用仍取决于所选提供方和模型，以及组装输入是否相同。harness 测试的是自身组装请求头输入相等，而非提供方的缓存行为。

@@ -672,6 +672,26 @@ describe('UiWorkspaceService', () => {
     expect(b.sessions.retained[0]!.release).not.toHaveBeenCalled()
   })
 
+  it.each([undefined, false, true])('forwards migration permission %s without retaining or selecting a Session', async (allowMigration) => {
+    const b = bench()
+    const onCreated = vi.fn<(childId: SessionId) => void>()
+    b.sessions.fork.mockImplementationOnce(async (options) => {
+      options.onCreated?.(sid('forked'))
+      return sid('forked')
+    })
+    const options = allowMigration === undefined ? undefined : { allowMigration }
+
+    await expect(b.uiWorkspace.forkSession(sid('source'), onCreated, options)).resolves.toBe(sid('forked'))
+
+    expect(b.sessions.fork).toHaveBeenCalledExactlyOnceWith({
+      sessionId: sid('source'), increaseTitle: true, onCreated,
+      ...allowMigration === undefined ? {} : { allowMigration },
+    })
+    expect(onCreated).toHaveBeenCalledExactlyOnceWith(sid('forked'))
+    expect(b.sessions.retain).not.toHaveBeenCalled()
+    expect(b.selectPanel).not.toHaveBeenCalled()
+  })
+
   it('does not supersede a pending Workspace selection when a sidebar fork completes', async () => {
     const b = bench({ workspaces: workspaceState([workspace('a')]) })
     const created = Promise.withResolvers<SessionId>()
@@ -764,8 +784,7 @@ describe('UiWorkspaceService', () => {
       workspaces: workspaceState([workspace('a', [sid('blank')]), workspace('b', [sid('archived')])], [sid('archived')]),
     })
     await expect(b.uiWorkspace.connectWorkspace(wid('a'))).resolves.toBe(sid('blank'))
-    expect(b.sessions.canReuseBlank).toHaveBeenCalledWith(sid('blank'), expect.any(AbortSignal))
-    expect(b.sessions.create).not.toHaveBeenCalled()
+    expect(b.sessions.create).toHaveBeenCalledExactlyOnceWith({ workspaceId: wid('a'), sessionId: sid('blank') })
     b.sessions.create.mockClear()
     b.sessions.retain.mockClear()
     const created = Promise.withResolvers<SessionId>()
@@ -777,6 +796,90 @@ describe('UiWorkspaceService', () => {
     await expect(Promise.all([first, second])).resolves.toEqual([sid('new'), sid('new')])
     await expect(b.uiWorkspace.connectWorkspace(wid('missing'))).rejects.toThrow('unknown workspace')
     expect(b.sessions.retain).not.toHaveBeenCalled()
+  })
+
+  it('reuses an ordinary blank through the Host on explicit New Session', async () => {
+    const b = bench({
+      sessions: sessionState([summary('blank', { blank: true, cwd: '/w/a' })], 'pending'),
+      workspaces: workspaceState([workspace('a', [sid('blank')])]),
+    })
+    b.uiWorkspace.startSession(wid('a'))
+    await vi.waitFor(() => {
+      expect(b.sessions.create).toHaveBeenCalledExactlyOnceWith({ workspaceId: wid('a'), sessionId: sid('blank') })
+    })
+    await vi.waitFor(() => { expect(b.sessions.retain).toHaveBeenCalledWith(sid('blank'), expect.anything()) })
+  })
+
+  it.each([
+    { title: 'A named blank' },
+    { parentId: sid('parent') },
+    { origin: 'subagent' },
+    { presentation: { owner: 'project', title: 'Project' } },
+  ] satisfies Partial<SessionSummary>[])('preserves an existing blank identity %j when starting New Session', async (identity) => {
+    const b = bench({
+      sessions: sessionState([summary('existing', { blank: true, cwd: '/w/a', ...identity })], 'pending'),
+      workspaces: workspaceState([workspace('a', [sid('existing')])]),
+    })
+    b.uiWorkspace.startSession(wid('a'))
+    await vi.waitFor(() => {
+      expect(b.sessions.create).toHaveBeenCalledExactlyOnceWith({ workspaceId: wid('a') })
+      expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('created-a'), { source: 'mainView' })
+    })
+  })
+
+  it.each([
+    { title: 'A named blank' },
+    { parentId: sid('parent') },
+    { origin: 'subagent' },
+    { presentation: { owner: 'project', title: 'Project' } },
+  ] satisfies Partial<SessionSummary>[])('restores an existing blank identity %j without reusing it as a draft', async (identity) => {
+    persistSelection({ sessionId: sid('existing') })
+    const b = bench({
+      sessions: sessionState([summary('existing', { blank: true, cwd: '/w/a', ...identity })]),
+      workspaces: workspaceState([workspace('a', [sid('existing')])]),
+    })
+    await vi.waitFor(() => {
+      expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('existing'), { source: 'mainView' })
+    })
+    expect(b.sessions.create).not.toHaveBeenCalled()
+  })
+
+  it('resets a reusable no-directory blank to the Host default when no preset is requested', async () => {
+    const b = bench({
+      sessions: sessionState([summary('scratch', {
+        blank: true, cwd: '/dsh-home/no-workspace', projectionValues: { agentPreset: 'cordis' },
+      })], 'pending'),
+      workspaces: workspaceState(),
+    })
+    await expect(b.uiWorkspace.connectNoDirectory()).resolves.toBe(sid('scratch'))
+    expect(b.sessions.create).toHaveBeenCalledExactlyOnceWith({ cwd: '/dsh-home/no-workspace', sessionId: sid('scratch') })
+  })
+
+  it.each([{}, { agentPreset: 'cordis' }])('reloads a declined no-directory blank with preset options %j', async (options) => {
+    const b = bench({
+      sessions: sessionState([summary('scratch', {
+        blank: true, cwd: '/dsh-home/no-workspace', projectionValues: { agentPreset: 'ptc' },
+      })], 'pending'),
+      workspaces: workspaceState(),
+      configureSessions: (sessions) => { sessions.create.mockResolvedValueOnce(sid('fresh')) },
+    })
+
+    await expect(b.uiWorkspace.connectNoDirectory(options)).resolves.toBe(sid('fresh'))
+
+    expect(b.sessions.create).toHaveBeenCalledExactlyOnceWith({
+      cwd: '/dsh-home/no-workspace', sessionId: sid('scratch'), ...options,
+    })
+    expect(b.sessions.refreshProjections).toHaveBeenCalledExactlyOnceWith(sid('scratch'))
+  })
+
+  it('passes the requested preset into a no-directory Creator draft before opening it', async () => {
+    const b = bench({ sessions: sessionState([], 'pending'), workspaces: workspaceState() })
+    const beforeOpen = vi.fn()
+    b.uiWorkspace.startSession(undefined, { agentPreset: 'cordis', beforeOpen })
+    await vi.waitFor(() => {
+      expect(b.sessions.create).toHaveBeenCalledExactlyOnceWith({ cwd: '/dsh-home/no-workspace', agentPreset: 'cordis' })
+      expect(beforeOpen).toHaveBeenCalledExactlyOnceWith(sid('created-none'))
+    })
   })
 
   it('reports a refused explicit Session creation through the Workspace notice', async () => {
@@ -956,7 +1059,8 @@ describe('UiWorkspaceService', () => {
       const opening = vi.spyOn(b.uiWorkspace, 'openWorkspace')
 
       b.uiWorkspace.startSession(wid('a'), options)
-      await lastOpening(opening)
+      if (options === undefined) await vi.waitFor(() => { expect(b.sessions.retain).toHaveBeenCalledOnce() })
+      else await lastOpening(opening)
 
       expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('created-a'), { source: 'mainView' })
       expect(b.sessions.binding).not.toHaveBeenCalled()
@@ -1179,24 +1283,26 @@ describe('UiWorkspaceService', () => {
 
   it('reclaims the saved blank before opening history, even when another blank is listed first', async () => {
     persistSelection({ sessionId: sid('saved') })
-    const acquired = Promise.withResolvers<boolean>()
+    const acquired = Promise.withResolvers<SessionId>()
     const b = bench({
       sessions: sessionState([
         summary('other', { blank: true, cwd: '/w/a' }),
         summary('saved', { blank: true, cwd: '/w/a' }),
       ]),
       workspaces: workspaceState([workspace('a', [sid('other'), sid('saved')])]),
-      configureSessions: (sessions) => { sessions.canReuseBlank.mockReturnValue(acquired.promise) },
+      configureSessions: (sessions) => { sessions.create.mockReturnValue(acquired.promise) },
     })
-    expect(b.sessions.canReuseBlank).toHaveBeenCalledWith(sid('saved'), expect.any(AbortSignal))
+    await vi.waitFor(() => {
+      expect(b.sessions.create).toHaveBeenCalledExactlyOnceWith({ workspaceId: wid('a'), sessionId: sid('saved') })
+    })
     expect(b.sessions.retain).not.toHaveBeenCalled()
-    acquired.resolve(true)
+    acquired.resolve(sid('saved'))
     await vi.waitFor(() => {
       expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('saved'), { source: 'mainView' })
     })
   })
 
-  it.each(['saved', 'workspace'])('creates when the chosen blank cannot be reused', async (source) => {
+  it.each(['saved', 'workspace'])('opens the Session the Host returns for the selected %s blank', async (source) => {
     if (source === 'saved') persistSelection({ sessionId: sid('held') })
     const b = bench({
       sessions: sessionState([
@@ -1204,7 +1310,7 @@ describe('UiWorkspaceService', () => {
         summary('free', { blank: true, cwd: '/w/a' }),
       ], source === 'saved' ? 'ready' : 'pending'),
       workspaces: workspaceState([workspace('a', [sid('held'), sid('free')])]),
-      configureSessions: (sessions) => { sessions.canReuseBlank.mockResolvedValue(false) },
+      configureSessions: (sessions) => { sessions.create.mockResolvedValueOnce(sid('created-a')) },
     })
     if (source === 'saved') {
       await vi.waitFor(() => {
@@ -1213,49 +1319,207 @@ describe('UiWorkspaceService', () => {
     } else {
       await expect(b.uiWorkspace.connectWorkspace(wid('a'))).resolves.toBe(sid('created-a'))
     }
-    expect(b.sessions.create).toHaveBeenCalledExactlyOnceWith({ workspaceId: wid('a') })
+    expect(b.sessions.create.mock.calls).toEqual([[{ workspaceId: wid('a'), sessionId: sid('held') }]])
+  })
+
+  it('reloads the projections of a blank the Host declined so a stale blank row is corrected', async () => {
+    const b = bench({
+      sessions: sessionState([summary('stale', { blank: true, cwd: '/w/a' })], 'pending'),
+      workspaces: workspaceState([workspace('a', [sid('stale')])]),
+      configureSessions: (sessions) => { sessions.create.mockResolvedValueOnce(sid('fresh')) },
+    })
+
+    await expect(b.uiWorkspace.connectWorkspace(wid('a'))).resolves.toBe(sid('fresh'))
+
+    expect(b.sessions.refreshProjections).toHaveBeenCalledExactlyOnceWith(sid('stale'))
+  })
+
+  it('leaves the projections of a reused blank to its own follow', async () => {
+    const b = bench({
+      sessions: sessionState([summary('blank', { blank: true, cwd: '/w/a' })], 'pending'),
+      workspaces: workspaceState([workspace('a', [sid('blank')])]),
+    })
+
+    await expect(b.uiWorkspace.connectWorkspace(wid('a'))).resolves.toBe(sid('blank'))
+
+    expect(b.sessions.refreshProjections).not.toHaveBeenCalled()
+  })
+
+  it('reports a failed projection reload of a declined blank without failing the connection', async () => {
+    const failure = new Error('projection reader crashed')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const b = bench({
+      sessions: sessionState([summary('stale', { blank: true, cwd: '/w/a' })], 'pending'),
+      workspaces: workspaceState([workspace('a', [sid('stale')])]),
+      configureSessions: (sessions) => {
+        sessions.create.mockResolvedValueOnce(sid('fresh'))
+        sessions.refreshProjections.mockRejectedValueOnce(failure)
+      },
+    })
+
+    await expect(b.uiWorkspace.connectWorkspace(wid('a'))).resolves.toBe(sid('fresh'))
+
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalledExactlyOnceWith('declined blank Session projection reload failed:', failure)
+    })
+  })
+
+  it('restores a saved blank under the preset it recorded', async () => {
+    persistSelection({ sessionId: sid('saved') })
+    const b = bench({
+      sessions: sessionState([summary('saved', { blank: true, cwd: '/w/a', projectionValues: { agentPreset: 'ptc' } })]),
+      workspaces: workspaceState([workspace('a', [sid('saved')])]),
+    })
+    await vi.waitFor(() => {
+      expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('saved'), { source: 'mainView' })
+    })
+    expect(b.sessions.create.mock.calls).toEqual([[{ workspaceId: wid('a'), sessionId: sid('saved'), agentPreset: 'ptc' }]])
+  })
+
+  it('restores a saved blank under the preset its log recorded when the listed value lags', async () => {
+    persistSelection({ sessionId: sid('saved') })
+    const b = bench({
+      sessions: sessionState([summary('saved', { blank: true, cwd: '/w/a', projectionValues: { agentPreset: 'standard' } })]),
+      workspaces: workspaceState([workspace('a', [sid('saved')])]),
+      configureSessions: (sessions) => {
+        sessions.refreshProjections.mockImplementation(async (id) => {
+          sessions.list.update(state => ({
+            ...state,
+            byId: { ...state.byId, [id]: { ...state.byId[id]!, projectionValues: { agentPreset: 'ptc' } } },
+          }))
+        })
+      },
+    })
+    await vi.waitFor(() => {
+      expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('saved'), { source: 'mainView' })
+    })
+    expect(b.sessions.refreshProjections).toHaveBeenCalledExactlyOnceWith(sid('saved'))
+    expect(b.sessions.create.mock.calls).toEqual([[{ workspaceId: wid('a'), sessionId: sid('saved'), agentPreset: 'ptc' }]])
+  })
+
+  it.each(['agent-preset/not-found', 'agent-preset/invalid'] as const)(
+    'restores a saved blank under the default when its recorded preset fails with %s',
+    async (code) => {
+      persistSelection({ sessionId: sid('saved') })
+      const b = bench({
+        sessions: sessionState([summary('saved', { blank: true, cwd: '/w/a', projectionValues: { agentPreset: 'liangshen' } })]),
+        workspaces: workspaceState([workspace('a', [sid('saved')])]),
+        configureSessions: (sessions) => {
+          const refusal = code === 'agent-preset/not-found'
+            ? new RemoteError(code, 'unknown preset', { agentPreset: 'liangshen', available: ['standard'] })
+            : new RemoteError(code, 'activation failed', { agentPreset: 'liangshen', reason: 'activation failed' })
+          sessions.create.mockRejectedValueOnce(new SessionCreateError(refusal, sid('saved')))
+        },
+      })
+      await vi.waitFor(() => {
+        expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('saved'), { source: 'mainView' })
+      })
+      expect(b.sessions.create.mock.calls).toEqual([
+        [{ workspaceId: wid('a'), sessionId: sid('saved'), agentPreset: 'liangshen' }],
+        [{ workspaceId: wid('a'), sessionId: sid('saved') }],
+      ])
+      expect(b.notify).not.toHaveBeenCalled()
+    },
+  )
+
+  it('does not retry a saved blank restoration refused for another reason', async () => {
+    persistSelection({ sessionId: sid('saved') })
+    const refused = new SessionCreateError(new RemoteError('gateway/internal', 'read failed', {}), sid('saved'))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const b = bench({
+      sessions: sessionState([summary('saved', { blank: true, cwd: '/w/a', projectionValues: { agentPreset: 'ptc' } })]),
+      workspaces: workspaceState([workspace('a', [sid('saved')])]),
+      configureSessions: (sessions) => { sessions.create.mockRejectedValueOnce(refused) },
+    })
+    await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith('initial Session restoration failed:', refused) })
+    expect(b.sessions.create).toHaveBeenCalledOnce()
+    expect(b.sessions.retain).not.toHaveBeenCalled()
+  })
+
+  it('requests the New Session preset from the Host with the reusable blank', async () => {
+    const b = bench({
+      sessions: sessionState([summary('blank', { blank: true, cwd: '/w/a' })], 'pending'),
+      workspaces: workspaceState([workspace('a', [sid('blank')])]),
+    })
+    b.uiWorkspace.startSession(wid('a'), { agentPreset: 'ptc' })
+    await vi.waitFor(() => {
+      expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('blank'), { source: 'mainView' })
+    })
+    expect(b.sessions.create).toHaveBeenCalledExactlyOnceWith({ workspaceId: wid('a'), sessionId: sid('blank'), agentPreset: 'ptc' })
+  })
+
+  it('coalesces only Workspace connections that request the same preset', async () => {
+    const acquired = Promise.withResolvers<SessionId>()
+    const b = bench({
+      sessions: sessionState([summary('blank', { blank: true, cwd: '/w/a' })], 'pending'),
+      workspaces: workspaceState([workspace('a', [sid('blank')])]),
+      configureSessions: (sessions) => { sessions.create.mockReturnValue(acquired.promise) },
+    })
+    const plain = b.uiWorkspace.connectWorkspace(wid('a'))
+    const creator = b.uiWorkspace.connectWorkspace(wid('a'), { agentPreset: 'ptc' })
+    const again = b.uiWorkspace.connectWorkspace(wid('a'), { agentPreset: 'ptc' })
+    expect(b.sessions.create.mock.calls).toEqual([
+      [{ workspaceId: wid('a'), sessionId: sid('blank') }],
+      [{ workspaceId: wid('a'), sessionId: sid('blank'), agentPreset: 'ptc' }],
+    ])
+    acquired.resolve(sid('blank'))
+    await expect(Promise.all([plain, creator, again])).resolves.toEqual([sid('blank'), sid('blank'), sid('blank')])
+  })
+
+  it('does not join an earlier Workspace connection that a different preset request superseded', async () => {
+    const earliest = Promise.withResolvers<SessionId>()
+    const b = bench({
+      sessions: sessionState([summary('blank', { blank: true, cwd: '/w/a' })], 'pending'),
+      workspaces: workspaceState([workspace('a', [sid('blank')])]),
+      configureSessions: (sessions) => { sessions.create.mockReturnValueOnce(earliest.promise) },
+    })
+    const plain = b.uiWorkspace.connectWorkspace(wid('a'))
+    const creator = b.uiWorkspace.connectWorkspace(wid('a'), { agentPreset: 'ptc' })
+    const latest = b.uiWorkspace.connectWorkspace(wid('a'))
+    expect(b.sessions.create.mock.calls).toEqual([
+      [{ workspaceId: wid('a'), sessionId: sid('blank') }],
+      [{ workspaceId: wid('a'), sessionId: sid('blank'), agentPreset: 'ptc' }],
+      [{ workspaceId: wid('a'), sessionId: sid('blank') }],
+    ])
+    earliest.resolve(sid('blank'))
+    await expect(Promise.all([plain, creator, latest])).resolves.toEqual([sid('blank'), sid('blank'), sid('blank')])
   })
 
   it.each(['workspace', 'panel'])('does not let saved blank restoration replace a later %s navigation', async (target) => {
     persistSelection({ sessionId: sid('saved') })
-    const acquired = Promise.withResolvers<boolean>()
+    const acquired = Promise.withResolvers<SessionId>()
     const created = Promise.withResolvers<SessionId>()
-    const acquisitionDone = vi.fn()
     const b = bench({
       sessions: sessionState([summary('saved', { blank: true, cwd: '/w/a' })]),
       workspaces: workspaceState([workspace('a', [sid('saved')]), workspace('b')]),
       configureSessions: (sessions) => {
-        sessions.canReuseBlank.mockImplementation(async () => {
-          const reusable = await acquired.promise
-          acquisitionDone()
-          return reusable
-        })
-        sessions.create.mockReturnValue(created.promise)
+        sessions.create.mockImplementation(options => options?.workspaceId === wid('a') ? acquired.promise : created.promise)
       },
     })
+    await vi.waitFor(() => { expect(b.sessions.create).toHaveBeenCalledWith({ workspaceId: wid('a'), sessionId: sid('saved') }) })
     const opening = target === 'workspace' ? b.uiWorkspace.openWorkspace(wid('b')) : undefined
     if (target === 'panel') b.layout.selectPanel('other-panel' as MainPanelId)
-    acquired.resolve(true)
-    await vi.waitFor(() => { expect(acquisitionDone).toHaveBeenCalledOnce() })
+    acquired.resolve(sid('saved'))
+    await setImmediate()
     expect(b.sessions.retain).not.toHaveBeenCalled()
     created.resolve(sid('created-b'))
     await opening
     expect(b.sessions.retain.mock.calls.map(([id]) => id)).toEqual(target === 'workspace' ? [sid('created-b')] : [])
   })
 
-  it('coalesces overlapping blank reuse checks before starting history', async () => {
-    const reusable = Promise.withResolvers<boolean>()
+  it('coalesces overlapping Host blank resolutions before starting history', async () => {
+    const reusable = Promise.withResolvers<SessionId>()
     const b = bench({
       sessions: sessionState([summary('blank', { blank: true, cwd: '/w/a' })], 'pending'),
       workspaces: workspaceState([workspace('a', [sid('blank')])]),
-      configureSessions: (sessions) => { sessions.canReuseBlank.mockReturnValue(reusable.promise) },
+      configureSessions: (sessions) => { sessions.create.mockReturnValue(reusable.promise) },
     })
     const first = b.uiWorkspace.connectWorkspace(wid('a'))
     const second = b.uiWorkspace.connectWorkspace(wid('a'))
-    expect(b.sessions.canReuseBlank).toHaveBeenCalledOnce()
-    reusable.resolve(true)
+    expect(b.sessions.create).toHaveBeenCalledExactlyOnceWith({ workspaceId: wid('a'), sessionId: sid('blank') })
+    reusable.resolve(sid('blank'))
     await expect(Promise.all([first, second])).resolves.toEqual([sid('blank'), sid('blank')])
-    expect(b.sessions.create).not.toHaveBeenCalled()
+    expect(b.sessions.create).toHaveBeenCalledOnce()
   })
 
   it.each([
@@ -1267,7 +1531,6 @@ describe('UiWorkspaceService', () => {
       sessions: sessionState([summary('blank', { blank: true, cwd: '/w/a' })], 'pending'),
       workspaces: workspaceState([workspace('a', [sid('blank')])]),
       configureSessions: (sessions) => {
-        sessions.canReuseBlank.mockResolvedValue(false)
         sessions.create.mockRejectedValue(error)
       },
     })
@@ -1294,7 +1557,7 @@ describe('UiWorkspaceService', () => {
     expect(b.sessions.retain).not.toHaveBeenCalled()
     b.sessions.list.set(b.sessions.list.getSnapshot())
     await vi.waitFor(() => {
-      expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('created-a'), { source: 'mainView' })
+      expect(b.sessions.retain).toHaveBeenCalledExactlyOnceWith(sid('blank'), { source: 'mainView' })
     })
   })
 

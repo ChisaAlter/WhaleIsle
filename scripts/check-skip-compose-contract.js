@@ -320,8 +320,6 @@ function writeOfficeRuntimeFixture(home) {
     'utf8',
   );
   const assetRoot = path.join(path.dirname(source), OFFICE_SKILLS_DIRNAME);
-  fs.mkdirSync(path.join(assetRoot, 'scripts'), { recursive: true });
-  fs.writeFileSync(path.join(assetRoot, 'scripts', 'check_office.py'), '# stub\n', 'utf8');
   for (const folder of OFFICE_SKILL_FOLDERS) {
     fs.mkdirSync(path.join(assetRoot, folder), { recursive: true });
     fs.writeFileSync(path.join(assetRoot, folder, 'SKILL.md'), '---\ndescription: stub\n---\n', 'utf8');

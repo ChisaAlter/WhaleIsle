@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use `dsh-tool-jobs` to inspect and control background commands, PTY work, and subagents through `job_output`, `job_list`, and `job_kill`. Reads can wait within a configured timeout, list results identify each job's kind and status, and cancellation settles only after the work stops. When owned work finishes, the agent receives an in-session notice: busy agents receive it in their next step, while idle agents are woken by a follow-up turn. Configuration controls wait limits, completion delivery, and an optional cap on consecutive wakeups. Stream output is consumed by one reader, and pending notices do not survive owner disposal.
+Use `dsh-tool-jobs` to inspect and control background commands and PTY work through `job_output`, `job_list`, and `job_kill`. Reads can wait within a configured timeout, list results identify each job's kind and status, and cancellation settles only after the work stops. When owned work finishes, the agent receives an in-session notice: busy agents receive it in their next step, while idle agents are woken by a follow-up turn. Configuration controls wait limits, completion delivery, and an optional cap on consecutive wakeups. Stream output is consumed by one reader, and pending notices do not survive owner disposal.
 
 ## Table of Contents
 
@@ -74,7 +74,7 @@ This section explains the design decisions behind the tools and points at the co
 
 ### Design philosophy
 
-- **Kind-independent controls.** The same three tools read, list, and cancel jobs of every producer kind — bash, subagent, PTY — because all of them register through the generic `ctx.jobs` runtime.
+- **Kind-independent controls.** The same three tools read, list, and cancel jobs of every producer kind — bash, PTY — because all of them register through the generic `ctx.jobs` runtime.
 - **Delivery is owned here; recipients are the registry's.** The plugin decides how an unreported completion reaches the owner — injected into a busy step, or a woken turn on an idle owner — while the registry routes each settlement to the listeners its owner's scope chain reaches, so a mount under one preset never sees another preset's agents, and an agent reads exactly one notice per completion however many presets are mounted.
 - **Producer-owned output bounds.** When a producer supplies `outputLimitBytes`, the complete model-facing result — output read, terminal kill snapshot, or completion notice — is capped after status and notice metadata are added; producers that omit it keep unbounded behavior.
 
@@ -87,7 +87,7 @@ This section explains the design decisions behind the tools and points at the co
 
 ### Output capping
 
-`job_output` and `job_kill` capture the caller-visible job in a prepended pre-execute listener before policy runs, so the producer's cap applies to the complete rendered result. `job_output` preserves its output/status split when policy left the default rendering intact, bounding the output tail and the `[status: ...]` suffix; other single-text results — denials, short-circuits, normalized tool or pipeline failures, replacements, and blocks — are bounded as one text, while structured multi-block policy results keep their shape. A bounded completion notice reserves the stable `background job <id>` prefix and the `job_output` collection instruction before spending remaining bytes on variable kind, label, status, detail, and truncation marker, so the notice stays actionable at the PTY's supported 64-byte minimum; an existing producer truncation marker is reused rather than duplicated.
+`job_output` and `job_kill` capture the caller-visible job in a prepended pre-execute listener before policy runs, so the producer's cap applies to the complete rendered result. `job_output` preserves its output/status split when policy left the default rendering intact, bounding the output tail and the `[status: ...]` suffix; other single-text results — denials, short-circuits, normalized tool or pipeline failures, replacements, and blocks — are bounded as one text, while structured multi-block policy results keep their shape. A bounded completion notice retains the full job id and `job_output` action when both fit. Otherwise it directs the model to `job_list` when at least eight bytes fit; a smaller cap can carry only a prefix. The PTY's supported 64-byte minimum fits the complete `job_list` instruction. Existing producer truncation markers are reused.
 
 ### Notice delivery lanes
 

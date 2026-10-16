@@ -72,6 +72,21 @@ test('accepted download mode is validated against the main-owned available choic
   f.dialog.dispose();
 });
 
+test('only update confirmations carry the complete language-tab content', () => {
+  const f = dialogFixture();
+  const detailTabs = [
+    { id: 'zh-CN', label: '中文', text: '完整中文说明' },
+    { id: 'en', label: 'English', text: 'Complete English notes' },
+  ];
+  void f.dialog.show(f.parent, { kind: 'update', detail: 'Native dialog reading text', detailTabs });
+  assert.deepEqual(f.dialog.active.view.detailTabs, detailTabs);
+  assert.equal(f.dialog.active.view.detail, 'Native dialog reading text');
+  void f.dialog.show(f.parent, { detail: '普通确认', detailTabs });
+  assert.equal(f.dialog.active.view.detailTabs.length, 0);
+  assert.equal(f.dialog.active.view.detail, '普通确认');
+  f.dialog.dispose();
+});
+
 test('both available download choices survive confirmation and cancellation never selects a mode', async () => {
   for (const mode of ['delta', 'full']) {
     const f = dialogFixture();

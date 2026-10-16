@@ -1,5 +1,6 @@
 /** Shipped sidebar terminal over the real Loader, Remote mux, Chromium and local PTY. */
 import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Browser, type Page } from 'playwright'
 import { afterEach, beforeEach, describe, expect, it, onTestFailed, vi } from 'vitest'
@@ -246,8 +247,49 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     expect(tripwire.pageErrors).toEqual([])
   })
 
+  it('starts in the current directory while earlier terminals and sandbox roots stay independent', async () => {
+    onTestFailed(() => saveFailureShot(page, 'sidebar-terminal-directory'))
+    const agent = scaffold.ctx.agents.list()[0]!
+    const directories = agent.ctx.get('workingDirectory')
+    if (directories === undefined) throw new Error('Session working-directory provider is missing')
+    const original = directories.get(agent.session)
+    const child = join(original, 'terminal-child')
+    await mkdir(child)
+    const sandboxPolicy = agent.ctx.get('sandboxPolicy')
+    if (sandboxPolicy === undefined) throw new Error('Session sandbox policy provider is missing')
+    const policy = sandboxPolicy.resolve({ session: agent.session })
+    const sandbox = agent.ctx.get('sandbox')
+    if (sandbox === undefined) throw new Error('Session sandbox provider is missing')
+    const confine = vi.spyOn(sandbox, 'confine')
+    const selected = await directories.set(agent, child)
+
+    await openTerminal(page)
+    const firstProcess = processIdentity(0)
+    const screen = page.locator('.xterm-rows:visible')
+    const checkDirectory = async (marker: string, directory: string): Promise<void> => {
+      const literal = `'${directory.replaceAll("'", "'\\''")}'`
+      await command(page, `[ "$PWD" = ${literal} ]; printf '${marker}:%s\\n' "$?"`)
+      await expect.poll(async () => await screen.innerText()).toContain(`${marker}:0`)
+    }
+    await checkDirectory('FIRST_DIRECTORY_STATUS', selected)
+    const returned = await directories.set(agent, original)
+    await checkDirectory('RETAINED_DIRECTORY_STATUS', selected)
+
+    await openTerminal(page)
+    await checkDirectory('SECOND_DIRECTORY_STATUS', returned)
+    expect(scaffold.ctx.terminalController.list(agent.id).map(terminal => terminal.cwd)).toEqual([selected, returned])
+    expect(alive(firstProcess)).toBe(true)
+    expect(sandboxPolicy.resolve({ session: agent.session })).toEqual(policy)
+    expect(confine).not.toHaveBeenCalled()
+    expect(tripwire.pageErrors).toEqual([])
+  })
+
   it('completes commands, preserves the process through collapse and reload, resizes, and kills on tab close', async () => {
     onTestFailed(() => saveFailureShot(page, 'sidebar-terminal'))
+    const unaryInput: string[] = []
+    page.on('request', (request) => {
+      if (/\/api\/terminal\/(write|resize|follow)$/u.test(new URL(request.url()).pathname)) unaryInput.push(request.url())
+    })
     await openTerminal(page)
     const terminal = page.locator('[data-sidebar-terminal]')
     await command(page, "PS1=''; printf '\\033cTERMINAL_READY\\n'")
@@ -332,6 +374,7 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     await expect.poll(() => alive(firstProcess), { timeout: 10_000 }).toBe(false)
     await expect.poll(() => descendants.some(alive), { timeout: 10_000 }).toBe(false)
     await expect.poll(() => scaffold.ctx.terminalController.list(scaffold.ctx.agents.list()[0]!.id).length).toBe(0)
+    expect(unaryInput).toEqual([])
     expect(tripwire.pageErrors).toEqual([])
   })
 
@@ -514,6 +557,107 @@ describe.skipIf(process.platform === 'win32')('Web sidebar terminal', () => {
     await command(page, "printf 'NEW_TERMINAL_READY\\n'")
     await expect.poll(() => page.locator('.xterm-rows:visible').innerText()).toContain('NEW_TERMINAL_READY')
     expect(tripwire.pageErrors).toEqual([])
+  })
+
+  it('validates terminal uplink frames and keeps a read-only attachment following output', async () => {
+    await openTerminal(page)
+    const sessionId = scaffold.ctx.agents.list()[0]!.id
+    const terminalId = scaffold.ctx.terminalController.list(sessionId)[0]!.id
+    const result = await page.evaluate(async ({ sessionId, terminalId }) => {
+      const socket = new WebSocket(new URL('/api/remote.mux', location.href).href.replace(/^http/u, 'ws'))
+      const frames: {
+        type: string
+        streamId: string
+        value?: {
+          type: string
+          data?: string
+          sequence?: number
+          writable?: boolean
+          refusal?: string
+          inputWindow?: { maxBytes: number; frameOverheadBytes: number }
+        }
+        error?: { code: string }
+      }[] = []
+      const waiters = new Set<() => void>()
+      socket.addEventListener('message', (event) => {
+        frames.push(JSON.parse(String(event.data)) as (typeof frames)[number])
+        for (const wake of waiters) wake()
+      })
+      const wait = async (predicate: () => boolean) => {
+        if (predicate()) return
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => { waiters.delete(inspect); reject(new Error('Terminal wire event timed out')) }, 10_000)
+          const inspect = () => { if (predicate()) { clearTimeout(timer); waiters.delete(inspect); resolve() } }
+          waiters.add(inspect)
+        })
+      }
+      const send = (frame: object) => { socket.send(JSON.stringify(frame)) }
+      const open = (streamId: string) => { send({ type: 'open', streamId, endpoint: 'terminal/attach', payload: { args: { agentId: sessionId, id: terminalId } } }) }
+      await new Promise<void>((resolve, reject) => {
+        socket.addEventListener('open', () => { resolve() }, { once: true })
+        socket.addEventListener('error', () => { reject(new Error('Terminal socket failed')) }, { once: true })
+      })
+      try {
+        open('first')
+        await wait(() => frames.some(frame => frame.streamId === 'first' && frame.value?.type === 'snapshot'))
+        open('second')
+        await wait(() => frames.some(frame => frame.streamId === 'second' && frame.value?.type === 'snapshot'))
+        send({ type: 'item', streamId: 'first', value: { type: 'write', sequence: 1, data: 'IGNORED' } })
+        await wait(() => frames.some(frame => frame.streamId === 'first' && frame.value?.type === 'ack'))
+        send({ type: 'item', streamId: 'second', value: { type: 'write', sequence: 1, data: "printf 'DUPLEX_%s\\n' PROOF\r" } })
+        await wait(() => frames.filter(frame => frame.streamId === 'first').map(frame => frame.value?.data ?? '').join('').includes('DUPLEX_PROOF'))
+        send({ type: 'item', streamId: 'second', value: { type: 'write', sequence: 2, data: 42 } })
+        await wait(() => frames.some(frame => frame.streamId === 'second' && frame.type === 'error'))
+        return frames
+      } finally {
+        socket.close()
+        await new Promise<void>((resolve) => { socket.addEventListener('close', () => { resolve() }, { once: true }) })
+      }
+    }, { sessionId, terminalId })
+    const window = result.find(frame => frame.streamId === 'first' && frame.value?.type === 'snapshot')?.value?.inputWindow
+    expect(window).toEqual({
+      maxBytes: 262_144,
+      frameOverheadBytes: Buffer.byteLength(JSON.stringify({ type: 'item', streamId: 'first', value: null }), 'utf8') - 'null'.length,
+    })
+    expect(result.some(frame => frame.streamId === 'first' && frame.value?.type === 'state' && !frame.value.writable)).toBe(true)
+    expect(result.find(frame => frame.streamId === 'first' && frame.value?.type === 'ack')?.value)
+      .toEqual({ type: 'ack', sequence: 1, refusal: 'read-only' })
+    expect(result.find(frame => frame.streamId === 'second' && frame.type === 'error')?.error?.code).toBe('gateway/input-invalid')
+    expect(handles).toHaveLength(1)
+    expect(tripwire.pageErrors).toEqual([])
+  })
+
+  it('delivers a short-key burst through the real mux while the provider pauses input', async () => {
+    onTestFailed(() => saveFailureShot(page, 'sidebar-terminal-input-window'))
+    await openTerminal(page)
+    const handle = handles[0]!
+    const write = handle.write.bind(handle)
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const burst = `printf 'BUFFER_%s\\n' OK # ${'a'.repeat(3000)}`
+    let delivered = ''
+    const paused = vi.spyOn(handle, 'write').mockImplementation(async (data) => {
+      entered.resolve(undefined)
+      await release.promise
+      await write(data)
+      delivered += data
+    })
+    try {
+      await page.locator('.xterm-helper-textarea:visible').click()
+      await page.keyboard.type(burst)
+      await page.keyboard.press('Enter')
+      await entered.promise
+      expect(paused).toHaveBeenCalledTimes(1)
+      release.resolve(undefined)
+      // The concurrent browser lane needs separate completion waits for queued input and rendered output.
+      await expect.poll(() => delivered.endsWith('\r'), { timeout: 30_000, message: 'The queued Enter must reach the PTY' }).toBe(true)
+      expect(delivered).toBe(`${burst}\r`)
+      await page.locator('.xterm-rows:visible').filter({ hasText: 'BUFFER_OK' }).waitFor({ timeout: 30_000 })
+      expect(handles).toHaveLength(1)
+      expect(tripwire.pageErrors).toEqual([])
+    } finally {
+      release.resolve(undefined)
+    }
   })
 
   it('offers reconnection after transport loss and resumes the same process without a new terminal', async () => {

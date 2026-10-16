@@ -25,7 +25,7 @@ import { useEffect, useId, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button, IconPlusOutlineRegular, IconRefreshOutline16, Modal, SegmentedControl, SettingsSelect, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { LlmNativeAuth, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls this package's SlotMap merge (the two Models child slots).
 import type {} from './slot-contract.ts'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
@@ -95,6 +95,12 @@ interface EditorTarget extends ProviderIdentity {
   credentialRef?: string
   /** The adapter reports this route as one it does not ship (see {@link ProviderEditorProps.declared}). */
   declared?: boolean
+  /** The route's catalog endpoint (see {@link ProviderEditorProps.defaultBaseURL}). */
+  defaultBaseURL?: string
+  /** Environment used to construct an endpoint (see {@link ProviderEditorProps.baseURLEnv}). */
+  baseURLEnv?: readonly string[]
+  /** The route's native authentication (see {@link ProviderEditorProps.nativeAuth}). */
+  nativeAuth?: LlmNativeAuth
 }
 
 /** A dormant directory row the add card can adopt, with its registered namespace. */
@@ -115,16 +121,23 @@ interface ProviderEditorRenderProps extends Pick<
   'namespace' | 'schema' | 'operations' | 't' | 'readOnly' | 'onClose'
 > {
   target: EditorTarget
+  row: ProviderRow
 }
 
 /** Render an editor for either the setup posture or an expanded provider row. */
-function renderProviderEditor({ target, ...props }: ProviderEditorRenderProps): ReactNode {
+function renderProviderEditor({ target, row, ...props }: ProviderEditorRenderProps): ReactNode {
   return (
     <ProviderEditor
       provider={target.provider}
       displayName={target.displayName}
       settingsPath={target.settingsPath}
       {...target.declared === true ? { declared: true } : {}}
+      {...target.defaultBaseURL === undefined ? {} : { defaultBaseURL: target.defaultBaseURL }}
+      {...target.baseURLEnv === undefined ? {} : { baseURLEnv: target.baseURLEnv }}
+      {...target.nativeAuth === undefined ? {} : { nativeAuth: target.nativeAuth }}
+      {...row.credential === undefined ? {} : { credential: row.credential }}
+      {...row.credentialChecks === undefined ? {} : { credentialChecks: row.credentialChecks }}
+      {...row.accountModels === undefined ? {} : { catalogModels: row.accountModels }}
       {...props}
     />
   )
@@ -203,6 +216,9 @@ function targetOf(row: ProviderRow): EditorTarget {
     ...credentialRef === undefined ? {} : { credentialRef },
     // Only declared routes may expose route-owned fields.
     ...row.entry.declared === true ? { declared: true } : {},
+    ...row.entry.defaultBaseURL === undefined ? {} : { defaultBaseURL: row.entry.defaultBaseURL },
+    ...row.entry.baseURLEnv === undefined ? {} : { baseURLEnv: row.entry.baseURLEnv },
+    ...row.entry.nativeAuth === undefined ? {} : { nativeAuth: row.entry.nativeAuth },
   }
 }
 
@@ -249,6 +265,10 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   const snapshot = injected.useSnapshot(value => value)
   const state = { ...snapshot, rows: snapshot.rows.map(row => row.entry.provider === 'deepseek-account'
     ? { ...row, entry: { ...row.entry, displayName: t('deepSeekAccount') } } : row) }
+  /** A new or failed surface waits for a current snapshot; background refreshes preserve its drafts. */
+  const [hasReadySnapshot, setHasReadySnapshot] = useState(state.status === 'ready')
+  if (state.status === 'ready' && !hasReadySnapshot) setHasReadySnapshot(true)
+  if (state.status === 'error' && hasReadySnapshot) setHasReadySnapshot(false)
   const [editing, setEditing] = useState<EditorTarget | undefined>(undefined)
   const [addOpen, setAddOpen] = useState(false)
   const [addMode, setAddMode] = useState<AddMode>('catalog')
@@ -354,6 +374,14 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
       </div>
     )
   }
+  if (!hasReadySnapshot && state.status !== 'ready') {
+    return (
+      <div className={styles['section']}>
+        <h2 className={styles['title']}>{t('title')}</h2>
+        <p className={styles['intro']}>{t('intro')}</p>
+      </div>
+    )
+  }
 
   // The saved provider as the directory currently names it. The route id is
   // what the apply cannot change, so it is what the notice is keyed by; a row
@@ -440,6 +468,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                 {error}
                 {renderProviderEditor({
                   target,
+                  row,
                   namespace,
                   schema,
                   operations,
@@ -471,6 +500,15 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                   {row.entry.declared === true
                     ? <span className={styles['rowTag']}>{t('customTag')}</span>
                     : null}
+                  {/* An empty saved catalog stays editable without claiming sign-in. */}
+                  {row.entry.provider === 'deepseek-account' && row.accountAvailable === true
+                    ? (
+                      <span className={styles['accountStatus']}>
+                        <span className={`${styles['credentialDot']} ${styles['credentialDotConfigured']}`} aria-hidden="true" />
+                        {t('accountSignedIn')}
+                      </span>
+                    )
+                    : null}
                   {credentialConfigured
                     ? (
                       <span
@@ -496,7 +534,9 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                     type="button"
                     className={styles['secondaryButton']}
                     aria-label={providerCopy(t('editProvider'), target)}
+                    disabled={!open && state.status !== 'ready'}
                     onClick={() => {
+                      if (!open && controller.store.getSnapshot().status !== 'ready') return
                       setSavedTarget(undefined)
                       // One card at a time: the add card closes with whatever
                       // it held, since closing either card would otherwise
@@ -513,8 +553,9 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                         type="button"
                         className={styles['dangerButton']}
                         aria-label={providerCopy(t('removeProvider'), target)}
-                        disabled={!state.writable}
+                        disabled={!state.writable || state.status !== 'ready'}
                         onClick={() => {
+                          if (controller.store.getSnapshot().status !== 'ready') return
                           setSavedTarget(undefined)
                           setDeleteFailure(undefined)
                           setDeleteTarget(target)
@@ -535,6 +576,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
               {open
                 ? renderProviderEditor({
                   target,
+                  row,
                   namespace,
                   schema,
                   operations,
@@ -623,6 +665,10 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                       schema={schema}
                       settingsPath={draft.target.settingsPath}
                       operations={operations}
+                      {...draft.target.defaultBaseURL === undefined ? {} : { defaultBaseURL: draft.target.defaultBaseURL }}
+                      {...draft.target.baseURLEnv === undefined ? {} : { baseURLEnv: draft.target.baseURLEnv }}
+                      {...draft.target.nativeAuth === undefined ? {} : { nativeAuth: draft.target.nativeAuth }}
+                      {...addRow?.credentialChecks === undefined ? {} : { credentialChecks: addRow.credentialChecks }}
                       t={t}
                       readOnly={!state.writable}
                       onClose={(changed) => { closeEditor(changed, draft.target) }}
@@ -672,8 +718,9 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                 <button
                   type="button"
                   className={styles['addButton']}
-                  disabled={!state.writable || (!catalogEnabled && !customEnabled)}
+                  disabled={!state.writable || state.status !== 'ready' || (!catalogEnabled && !customEnabled)}
                   onClick={() => {
+                    if (controller.store.getSnapshot().status !== 'ready') return
                     const first = addable[0]
                     const initial: AddMode = catalogEnabled ? 'catalog' : 'custom'
                     setSavedTarget(undefined)

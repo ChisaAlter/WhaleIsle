@@ -206,7 +206,7 @@ describe('ModelSelect reasoning effort', () => {
       .toEqual(['Default', 'Standard'])
   })
 
-  it('shows the durable model id when the catalog has no matching display name', () => {
+  it('keeps a saved route visible while opening only current catalog choices', () => {
     const directory = createSnapshotStore(state({
       current: { provider: 'deepseek-official', model: 'removed-model' },
     }))
@@ -221,16 +221,20 @@ describe('ModelSelect reasoning effort', () => {
     />)
 
     const trigger = screen.getByRole('button', { name: '选择模型，当前 deepseek-official/removed-model' })
-    expect(trigger.textContent).toContain('deepseek-official/removed-model')
+    expect(trigger.textContent).toBe('deepseek-official/removed-model')
     fireEvent.click(trigger)
     expect(screen.queryByRole('menuitem', { name: /推理等级/ })).toBeNull()
-    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    expect(screen.queryByRole('menuitem', { name: /模型/ })).toBeNull()
     expect(screen.queryByRole('menuitemradio', { name: 'removed-model' })).toBeNull()
     expect(screen.getByRole('menuitemradio', { name: 'DeepSeek-V4-Flash' })).toBeTruthy()
     expect(screen.queryByText('Fast catalog description')).toBeNull()
+    expect(select).not.toHaveBeenCalled()
+    expect(directory.getSnapshot().current).toEqual({ provider: 'deepseek-official', model: 'removed-model' })
+    fireEvent.keyDown(screen.getByRole('menuitemradio', { name: 'DeepSeek-V4-Flash' }), { key: 'Escape' })
+    expect(screen.queryByRole('group', { name: '模型与推理等级' })).toBeNull()
   })
 
-  it.each(['model', 'provider'])('keeps the saved id and effort when the selected %s disappears', (removed) => {
+  it.each(['model', 'provider'])('retains the saved id and effort when the selected %s disappears', (removed) => {
     const directory = createSnapshotStore(state({ retainedEffort: 'High' }))
     render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
     expect(screen.getByRole('button', { name: /选择模型，当前/ }).textContent).toContain('DeepSeek-V4-Flash')
@@ -242,11 +246,15 @@ describe('ModelSelect reasoning effort', () => {
     expect([...trigger.querySelectorAll('[data-dsh-motion-part="current"]')].map(node => node.textContent))
       .toEqual(['deepseek-official/deepseek-v4-flash', 'High'])
     expect(directory.getSnapshot().current).toEqual(state().current)
+    fireEvent.click(trigger)
+    expect(screen.getByRole('status').textContent).toBe(zh['empty.models'])
+    fireEvent.keyDown(trigger, { key: 'Tab', shiftKey: true })
+    expect(screen.queryByRole('group', { name: '模型与推理等级' })).toBeNull()
   })
 
-  it('shows loading until the catalog and Session projection are both ready', async () => {
+  it.each([null, state().current])('shows loading until the catalog and Session projection are both ready (%j)', async (current) => {
     const directory = createSnapshotStore<ModelDirectoryState>(state({
-      current: null,
+      current,
       routable: null,
       groups: [],
       status: 'loading',
@@ -260,8 +268,11 @@ describe('ModelSelect reasoning effort', () => {
       t={t}
     />)
 
-    expect(screen.getByRole('button', { name: '正在加载模型…' }).textContent)
-      .toContain('正在加载模型…')
+    if (current === null) {
+      expect(screen.getByRole('button', { name: '正在加载模型…' }).textContent).toContain('正在加载模型…')
+    } else {
+      expect(screen.getByRole('button', { name: '选择模型，当前 deepseek-official/deepseek-v4-flash' }).textContent).toContain('deepseek-official/deepseek-v4-flash')
+    }
     directory.set(state())
     await waitFor(() => {
       expect(screen.getByRole('button', {
@@ -618,7 +629,6 @@ describe('ModelSelect keyboard walk', () => {
     />)
     const trigger = screen.getByRole('button', { name: /选择模型/ })
     fireEvent.click(trigger)
-    fireEvent.click(screen.getByRole('menuitem', { name: /^模型/ }))
     expect(screen.queryByRole('searchbox')).toBeNull()
     expect(document.activeElement).toBe(trigger)
 
@@ -628,14 +638,10 @@ describe('ModelSelect keyboard walk', () => {
     retry.focus()
     // A control that is not a row keeps the browser's traversal.
     expect(fireEvent.keyDown(retry, { key: 'Tab' })).toBe(true)
-    // Escape still backs out of the pane and then closes the card.
     fireEvent.keyDown(retry, { key: 'Escape' })
-    // Back on the root pane, whose only cell remains (no model means no effort row).
-    const cell = screen.getAllByRole('menuitem')[0]!
-    fireEvent.keyDown(cell, { key: 'Escape' })
+    // Without a catalog match Escape closes the direct model pane.
     expect(screen.queryByRole('menu')).toBeNull()
     fireEvent.click(trigger)
-    fireEvent.click(screen.getByRole('menuitem', { name: /^模型/ }))
     // The retry now lives in the Toast portal and clears that notice when
     // invoked; exercise its keyboard behavior while it is still mounted.
     const calls = load.mock.calls.length
@@ -688,7 +694,6 @@ describe('ModelSelect keyboard walk', () => {
       t={t}
     />)
     fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /^模型/ }))
     const rows = screen.getAllByRole('menuitemradio')
     expect(rows.every(row => row.getAttribute('aria-checked') === 'false')).toBe(true)
     expect(screen.queryByRole('searchbox')).toBeNull()
@@ -704,7 +709,7 @@ describe('ModelSelect catalog size', () => {
       load={vi.fn()} select={vi.fn()} t={t} />)
     const trigger = screen.getByRole('button', { name: /选择模型/ })
     fireEvent.click(trigger)
-    fireEvent.click(screen.getByRole('menuitem', { name: /^模型/ }))
+    if (count > 0) fireEvent.click(screen.getByRole('menuitem', { name: /^模型/ }))
     const rows = screen.queryAllByRole('menuitemradio')
     expect(rows).toHaveLength(count)
     if (count > 4) {
@@ -739,7 +744,7 @@ describe('ModelSelect catalog size', () => {
     const directory = createSnapshotStore(state({ groups: modelGroups(5), current }))
     render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
     fireEvent.click(screen.getByRole('button', { name: /选择模型/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /^模型/ }))
+    if (checked) fireEvent.click(screen.getByRole('menuitem', { name: /^模型/ }))
     const search = screen.getByRole('searchbox')
     fireEvent.change(search, { target: { value: 'Model 5' } })
     expect(screen.getAllByRole('menuitemradio')).toHaveLength(1)
@@ -983,7 +988,7 @@ describe('ModelSelect search', () => {
   })
 })
 
-it('shows the unselected model control with the inherited effort', async () => {
+it('retains the inherited effort while awaiting a model selection', async () => {
   const directory = createSnapshotStore<ModelDirectoryState>(state({ current: null, routable: false, retainedEffort: 'High' }))
   render(<ModelSelect locked={false} available directory={directory} load={vi.fn()} select={vi.fn()} t={t} />)
   const trigger = screen.getByRole('button', { name: '请选择模型' })

@@ -28,6 +28,7 @@ import type { ReactNode } from 'react'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { SettingsSelect, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { apiKeyFailure } from './apiKey.ts'
+import { ApiKeyInput } from './ApiKeyInput.tsx'
 import { EditorFooter } from './EditorFooter.tsx'
 import { validateDeepSeekModels } from './DeepSeekModelsEditor.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
@@ -280,10 +281,8 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('keyInput')}</span>
         <Tooltip label={keyFailure === undefined ? '' : t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure)} disabled={keyFailure === undefined} portal side="bottom">
-        <input
-          className={styles['input']}
-          type="password"
-          autoComplete="new-password"
+        <ApiKeyInput
+          t={t}
           value={keyDraft}
           placeholder={t('keyPlaceholder')}
           aria-label={t('keyInput')}

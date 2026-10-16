@@ -40,7 +40,7 @@ const { createTray, invokeTrayAction, refreshTrayMenu } = require('./tray');
 const { DESKTOP_PET_FEATURE, configureDesktopPet, getDesktopPet } = require('./desktop-pet');
 const { LIVE2D_PET_FEATURE, configureLive2dPet, getLive2dPet } = require('./desktop-live2d');
 const { checkUpdate, updateDownloadMethods, setGithubTokenProvider, setUpdateStateSink, currentVersion } = require('./update');
-const { plainReleaseNotes } = require('../shared/release-notes');
+const { plainReleaseNotes, releaseNotesTabs } = require('../shared/release-notes');
 const { createUpdatesState } = require('./updates-state');
 const { BrowserGuests, installBrowserGuests } = require('./browser-guests');
 const { connectWelcome } = require('./welcome-backend');
@@ -565,7 +565,7 @@ async function updateAskOptions(check) {
     title: '发现新版本', message: `更新到 v${check.latest || check.version || ''}`,
     kind: 'update',
     context: `当前版本 v${check.current || currentVersion()} → v${check.latest || check.version || ''}`,
-    detail: updateAskDetail(check), downloadMethods, noLink: true,
+    detail: updateAskDetail(check), detailTabs: releaseNotesTabs(check?.notes), downloadMethods, noLink: true,
   };
 }
 

@@ -37,11 +37,39 @@ interface TabHostProps extends LayoutProps {
   readonly focusRequest: MutableRefObject<{ readonly tabId: TabId; readonly origin: Element | null } | undefined>
 }
 
+/** The untransformed viewport box behind an opt-in floating morph. */
+interface FloatMorphRect {
+  readonly right: number
+  readonly top: number
+  readonly width: number
+  readonly height: number
+}
+
+interface FloatMorphPart {
+  readonly element: HTMLElement
+  readonly rect: FloatMorphRect
+  readonly shellStyle?: { background: string; borderRadius: string; boxShadow: string; cornerShape: string }
+}
+
+interface FloatMorphSkin {
+  readonly element: HTMLElement
+  readonly rect: FloatMorphRect
+}
+
+function presentedFloatRect(element: HTMLElement, rect: FloatMorphRect): FloatMorphRect {
+  const transform = getComputedStyle(element).transform
+  if (!transform || transform === 'none') return rect
+  const matrix = new DOMMatrixReadOnly(transform)
+  return { right: rect.right + matrix.e, top: rect.top + matrix.f,
+    width: rect.width * matrix.a, height: rect.height * matrix.d }
+}
+
 /** A tab's ancestors stay identical across selection, pane moves and floating. */
 function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRequest, keepMounted, mountOnOpen,
   active = true }: TabHostProps): ReactNode {
   const floating = pane.host === 'float'
-  const minimized = floating && (pane.rect?.height ?? 0) <= FLOAT_MINIMIZED_HEIGHT
+  const [contentChrome, setContentChrome] = useState(false)
+  const minimized = floating && !contentChrome && (pane.rect?.height ?? 0) <= FLOAT_MINIMIZED_HEIGHT
   const selected = floating || pane.activeTabId === tab.id
   const visible = active && selected && (floating || state.expanded)
   const retained = keepMounted?.(tab) ?? false
@@ -50,6 +78,26 @@ function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRe
   if (ready && !visited) setVisited(true)
   const host = useRef<HTMLElement | null>(null)
   const body = useRef<HTMLDivElement | null>(null)
+  const morph = useRef<{ animations: Animation[]; skins: Map<HTMLElement, FloatMorphSkin[]>;
+    shells: Map<HTMLElement, { background: string; shadow: string }>; pending: number } | undefined>()
+  const morphRect = useRef<FloatMorphRect | undefined>()
+  const morphParts = useRef(new Map<string, FloatMorphPart>())
+  const stopMorph = (): void => {
+    const running = morph.current
+    morph.current = undefined
+    running?.animations.forEach(animation => { animation.cancel() })
+    running?.skins.forEach(skins => { skins.forEach(skin => { skin.element.remove() }) })
+    running?.shells.forEach((style, element) => {
+      element.style.backgroundColor = style.background
+      element.style.boxShadow = style.shadow
+    })
+    host.current?.removeAttribute('data-dockkit-float-morphing')
+  }
+  useLayoutEffect(() => {
+    // Content may own the float's chrome without changing its retained ancestors.
+    const owned = Boolean(body.current?.querySelector('[data-dockkit-float-chrome="content"]'))
+    if (owned !== contentChrome) setContentChrome(owned)
+  })
   useLayoutEffect(() => {
     const element = body.current as HTMLDivElement
     element.inert = minimized
@@ -85,6 +133,134 @@ function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRe
   const lifted = floating && floats.preview?.paneId === pane.id ? floats.preview.rect : undefined
   const rect = floating ? floats.visibleRect(lifted ?? floatRect(pane)) : undefined
   const depth = lifted === undefined ? state.floats.indexOf(pane.id) + 1 : state.floats.length + 1
+  useLayoutEffect(() => {
+    const section = host.current as HTMLElement
+    const enabled = section.querySelector('[data-dockkit-float-motion="morph"]') !== null
+    if (!enabled || !floating || !visible) {
+      stopMorph()
+      morphRect.current = undefined
+      morphParts.current.clear()
+      return
+    }
+    const previous = morphRect.current
+    const previousParts = morphParts.current
+    // Each stable part continues from its own presented box. Foreground text
+    // and history rows keep their natural metrics.
+    const presented = new Map<string, FloatMorphPart>()
+    for (const [key, part] of previousParts) {
+      presented.set(key, { ...part, rect: presentedFloatRect(part.element, part.rect) })
+    }
+    // Preserve each presented skin on interruption, before canceling its
+    // compositor animation. The real shell stays at its natural geometry.
+    const carried = new Map<HTMLElement, Array<FloatMorphSkin & { presented: FloatMorphRect; opacity: string }>>()
+    morph.current?.skins.forEach((skins, element) => {
+      carried.set(element, skins.map(skin => {
+        const current = { ...skin, presented: presentedFloatRect(skin.element, skin.rect),
+          opacity: getComputedStyle(skin.element).opacity }
+        skin.element.remove()
+        return current
+      }))
+    })
+    stopMorph()
+    const next = section.getBoundingClientRect()
+    morphRect.current = next
+    const parts = new Map<string, FloatMorphPart>()
+    section.querySelectorAll<HTMLElement>('[data-dockkit-float-motion-part]').forEach(element => {
+      const key = element.dataset.dockkitFloatMotionPart as string
+      const shellStyle = element.hasAttribute('data-dockkit-float-motion-shell') ? getComputedStyle(element) : undefined
+      parts.set(key, { element, rect: element.getBoundingClientRect(), ...(shellStyle ? { shellStyle: {
+        background: shellStyle.backgroundColor, borderRadius: shellStyle.borderRadius,
+        boxShadow: shellStyle.boxShadow, cornerShape: shellStyle.getPropertyValue('corner-shape'),
+      } } : {}) })
+    })
+    morphParts.current = parts
+    if (lifted || !previous
+      || previous.width === next.width && previous.height === next.height
+      || Math.min(next.width, next.height) <= 0
+      || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const style = getComputedStyle(section)
+    const token = style.getPropertyValue('--ds-motion-duration-flip').trim()
+    const duration = Number.parseFloat(token) * (token.endsWith('ms') ? 1 : 1000)
+    if (!(duration > 0)) return
+    const running = { animations: [] as Animation[], skins: new Map<HTMLElement, FloatMorphSkin[]>(),
+      shells: new Map<HTMLElement, { background: string; shadow: string }>(), pending: 0 }
+    morph.current = running
+    const follow = (animation: Animation): void => {
+      running.animations.push(animation)
+      running.pending++
+      animation.onfinish = () => {
+        if (morph.current !== running) return
+        if (--running.pending === 0) stopMorph()
+      }
+    }
+    for (const [key, part] of parts) {
+      const from = presented.get(key)
+      const previousPart = previousParts.get(key)
+      if (!from || !previousPart || from.element !== part.element || Math.min(from.rect.width, from.rect.height, part.rect.width, part.rect.height) <= 0) continue
+      const dx = from.rect.right - part.rect.right, dy = from.rect.top - part.rect.top
+      const shell = part.element.hasAttribute('data-dockkit-float-motion-shell')
+      const retained = carried.get(part.element)
+      // A second natural-height fit can leave the shell's box unchanged while
+      // its decorative layers are still morphing. Continue those layers.
+      if (dx === 0 && dy === 0 && from.rect.width === part.rect.width && from.rect.height === part.rect.height && !retained) continue
+      const options = { duration, easing: style.getPropertyValue('--ds-ease-in-out').trim() || 'ease-in-out', fill: 'forwards' as const }
+      if (shell && from.shellStyle && part.shellStyle) {
+        const makeSkin = (rect: FloatMorphRect, skinStyle: NonNullable<FloatMorphPart['shellStyle']>): FloatMorphSkin => {
+          const element = document.createElement('div')
+          element.className = css.floatMorphGhost!
+          element.setAttribute('aria-hidden', 'true')
+          Object.assign(element.style, {
+            width: `${rect.width}px`, height: `${rect.height}px`,
+            backgroundColor: skinStyle.background, borderRadius: skinStyle.borderRadius,
+            boxShadow: skinStyle.boxShadow,
+          })
+          element.style.setProperty('corner-shape', skinStyle.cornerShape)
+          return { element, rect }
+        }
+        const sources = retained ?? [{ ...makeSkin(previousPart.rect, from.shellStyle), presented: from.rect, opacity: '1' }]
+        const target = makeSkin(part.rect, part.shellStyle)
+        const skins: FloatMorphSkin[] = [target]
+        running.shells.set(part.element, { background: part.element.style.backgroundColor, shadow: part.element.style.boxShadow })
+        part.element.style.backgroundColor = 'transparent'
+        part.element.style.boxShadow = 'none'
+        // The incoming skin always uses its natural target geometry. A pill is
+        // never stretched into the old card's large rounded ellipse.
+        part.element.append(target.element)
+        follow(target.element.animate([{ opacity: 0 }, { opacity: 1 }], options))
+        for (const source of sources) {
+          const rect = { right: part.rect.right, top: part.rect.top, width: source.rect.width, height: source.rect.height }
+          skins.push({ element: source.element, rect })
+          part.element.append(source.element)
+          // Outgoing skins can shrink, but never grow beyond their presented
+          // box: reversing a strip must not magnify its pill while it fades.
+          follow(source.element.animate([
+            { transform: `translate(${source.presented.right - rect.right}px, ${source.presented.top - rect.top}px) scale(${source.presented.width / rect.width}, ${source.presented.height / rect.height})`, opacity: source.opacity },
+            { transform: `translate(0, 0) scale(${Math.min(part.rect.width, source.presented.width) / rect.width}, ${Math.min(part.rect.height, source.presented.height) / rect.height})`, opacity: 0 },
+          ], options))
+        }
+        running.skins.set(part.element, skins)
+        continue
+      }
+      // Top-right is the anchor; ordinary parts only translate.
+      const animation = part.element.animate([
+        { transform: `translate(${dx}px, ${dy}px)` },
+        { transform: 'translate(0, 0)' },
+      ], { duration, easing: style.getPropertyValue('--ds-ease-in-out').trim() || 'ease-in-out' })
+      follow(animation)
+    }
+    if (running.pending) section.setAttribute('data-dockkit-float-morphing', 'true')
+    else morph.current = undefined
+  }, [floating, visible, contentChrome, lifted, rect?.x, rect?.y, rect?.width, rect?.height])
+  useEffect(() => {
+    if (!host.current?.querySelector('[data-dockkit-float-motion="morph"]')) return
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const stop = (): void => { if (preference.matches) stopMorph() }
+    preference.addEventListener('change', stop)
+    return () => {
+      preference.removeEventListener('change', stop)
+      stopMorph()
+    }
+  }, [contentChrome, floating])
   return (
     <div className={clsx(css.tabCell, floating && css.floatingCell)} hidden={!selected}
       data-dockkit-host={floating ? 'float' : 'dock'} data-dockkit-column={floating ? undefined : column}
@@ -100,7 +276,16 @@ function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRe
         style={rect === undefined ? undefined : {
           left: rect.x, top: `max(var(--dsh-dockkit-float-top, 0px), ${rect.y}px)`, width: rect.width, height: rect.height,
         }}
-        onPointerDown={() => { if (floating) floats.raise(pane.id) }}
+        onPointerDown={(event) => {
+          if (!floating) return
+          const target = event.target instanceof Element ? event.target : undefined
+          const handle = target?.closest('[data-dockkit-float-drag-handle]')
+          if (handle && host.current?.contains(handle)
+            && !target?.closest('button, a[href], input, textarea, select, summary, [contenteditable="true"], [role="button"], [role="link"]')) {
+            stopMorph()
+            floats.drag('move', pane.id, event)
+          } else floats.raise(pane.id)
+        }}
         onClick={() => { if (!floating && state.activePaneId !== pane.id) callbacks.onFocusPane(pane.id) }}>
         <div className={css.tabHostHeader}>
           {selected && (floating
@@ -115,7 +300,7 @@ function TabHost({ state, callbacks, intents, tab, pane, column, floats, focusRe
           {!floating && <PaneDropHints pane={pane} callbacks={callbacks} />}
         </div>
         {floating && !minimized && <div className={css.floatResize} data-dockkit-float-resize={pane.id}
-          onPointerDown={(event) => { floats.drag('resize', pane.id, event) }} />}
+          onPointerDown={(event) => { stopMorph(); floats.drag('resize', pane.id, event) }} />}
       </section>
     </div>
   )

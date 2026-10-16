@@ -54,7 +54,7 @@
   display: none;
 }
 
-@container (max-width: 520px) {
+@container (max-width: 560px) {
   .trigger {
     box-sizing: border-box;
     width: 28px;
@@ -158,7 +158,7 @@
   width: 336px;
   max-width: min(400px, calc(100vw - 32px));
   max-height: min(560px, calc(100vh - 140px));
-  padding: 3px;
+  padding: 4px;
   overflow: hidden;
   border-radius: var(--dsw-radius-lg);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
@@ -207,7 +207,7 @@
   min-height: 44px;
   padding: 6px 7px 6px 9px;
   border: 0;
-  border-radius: var(--dsw-radius-lg);
+  border-radius: var(--dsw-radius-md);
   background: transparent;
   color: var(--dsw-alias-label-primary);
   font-size: 12px;
@@ -232,7 +232,7 @@
   min-width: 0;
   margin: -6px -7px -6px;
   padding: 6px 7px;
-  border-radius: var(--dsw-radius-lg);
+  border-radius: var(--dsw-radius-md);
 }
 
 .rowActivitySlot {

@@ -96,12 +96,24 @@ export class DeepSeekHarness implements AsyncDisposable {
 
   /**
    * Open a session handle (no wire traffic; the runtime creates the session
-   * on its first prompt).
+   * on its first prompt or working-directory operation).
    * @param sessionId - explicit id to reuse; omitted mints a fresh one.
    * @returns the session handle.
    */
   session(sessionId?: string): HarnessSession {
     return new HarnessSession(this, sessionId ?? `session-${randomUUID().replaceAll('-', '')}`)
+  }
+
+  /**
+   * Start the runtime and restore a persisted session without sending input.
+   * The configured Harness home must contain its history; missing or occupied sessions reject.
+   * @param sessionId - exact persisted identity to continue.
+   * @returns a handle ready to run new prompts on the restored history.
+   */
+  async resumeSession(sessionId: string): Promise<HarnessSession> {
+    await this.start()
+    await this.client.resumeSession(sessionId)
+    return new HarnessSession(this, sessionId)
   }
 
   /**
@@ -165,6 +177,25 @@ export class HarnessSession {
    * @param id - the wire session id this handle runs on.
    */
   constructor(readonly harness: DeepSeekHarness, readonly id: string) {}
+
+  /**
+   * Read the effective directory and recover a missing directory to the Session origin.
+   * @returns the absolute directory used by new independent operations.
+   */
+  async getWorkingDirectory(): Promise<string> {
+    await this.harness.start()
+    return this.harness.client.getWorkingDirectory(this.id)
+  }
+
+  /**
+   * Change the effective directory without moving existing processes or changing permissions.
+   * @param path - absolute or Session-current-directory-relative directory.
+   * @returns the validated absolute directory.
+   */
+  async setWorkingDirectory(path: string): Promise<string> {
+    await this.harness.start()
+    return this.harness.client.setWorkingDirectory(this.id, path)
+  }
 
   /**
    * Queue one prompt, then observe the whole session through its next idle.
@@ -260,8 +291,12 @@ function validatedTurnEndReason(value: unknown): TurnEndReason {
   return value as TurnEndReason
 }
 
-/** Validate the fields in a wire `session.event` envelope before returning the typed result. */
-function validatedSessionEvent(value: unknown): SessionEvent {
+/**
+ * Validate the event envelope and assistant/turn fields consumed by SDK readers.
+ * @param value - the raw `session.event` event payload.
+ * @returns the event, or throws a protocol error for malformed consumed fields.
+ */
+export function validatedSessionEvent(value: unknown): SessionEvent {
   if (!isRecord(value) || typeof value.type !== 'string') {
     throw new SdkProtocolError(`session.event carried no event envelope: ${JSON.stringify(value)}`)
   }

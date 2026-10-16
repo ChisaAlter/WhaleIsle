@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 async function fixture() {
-  const { ProjectService } = await import('../../vendor/dsh-project/lib/service.js');
+  const { ProjectService } = await import('../../vendor/dsh-project/tests/harness-runtime.mjs');
   const events = [
     { seq: 10, type: 'turn/start', data: { turn: 2 } },
     { seq: 11, type: 'user/message', data: { id: 'human-B', source: { kind: 'user' }, content: [{ type: 'text', text: 'Stop the earlier work.' }] } },
@@ -18,8 +18,8 @@ async function fixture() {
       delegations: [{ ref: id, source: { messageId: 'human-A' }, scope: 'worker', writePaths: [], phase: 'accepted', runId: '' }] })) };
   const warnings = [], agents = new Map([['main', parent]]);
   const tasks = new Map(state.workstreams.map(work => [work.id, { id: work.id, revision: 1, status: 'in_progress', blockedBy: [] }]));
-  const ctx = { agentTeams: { registerPolicy: () => () => {}, cancelMessages: async () => {}, setCold: async () => {}, listTasks: () => [...tasks.values()], getTask: (_root, id) => tasks.get(id), updateTask: async (_root, request) => { const task = tasks.get(request.taskId); task.status = request.action === 'complete' ? 'completed' : 'pending'; task.revision++; return task; } }, agents, get: () => undefined, logger: { warn: (...args) => warnings.push(args) }, subagents: {
-    registerContinuationPolicy: () => () => {}, drainContinuableChildren: async () => {},
+  const ctx = { agentTeams: { registerPolicy: () => () => {}, cancelMessages: async () => {}, setCold: async () => {}, listTasks: () => [...tasks.values()], getTask: (_root, id) => tasks.get(id), updateTask: async (_root, request) => { const task = tasks.get(request.taskId); task.status = request.action === 'complete' ? 'completed' : 'pending'; task.revision++; return task; } }, agents, sessionController: { resolveAgent: async id => ({ agent: agents.get(id) }) }, get: () => undefined, logger: { warn: (...args) => warnings.push(args) }, subagents: {
+    registerContinuationPolicy: () => () => {}, drainChildren: async () => {},
   } };
   const table = { get: () => state, update: async (_key, change) => { state = change(state); } };
   const service = new ProjectService(ctx, table, { home: '', desktop: async () => ({}) });
@@ -67,7 +67,7 @@ test('recovery clears only resolved directory diagnostics and reconciles the ori
   Object.assign(state().projects[0], { storageRoot: await fs.realpath(storage), canonicalWorkingDirectory: selected,
     diagnostics: ['Unresolved settlement accounting failure'] });
   const inspected = [], reconciled = []; let inspectionFailed = true;
-  service.ctx.sessionController = { inspect: async id => { inspected.push(id); if (inspectionFailed) throw new Error('Unresolved settlement accounting failure'); } };
+  service.ctx.sessionController.inspect = async id => { inspected.push(id); if (inspectionFailed) throw new Error('Unresolved settlement accounting failure'); };
   service.ctx.sessionPersistence = { stat: async () => ({}) };
   service.teams.bindPolicy = async root => { reconciled.push(root.id); };
   await service.recover();
@@ -87,6 +87,30 @@ test('recovery clears only resolved directory diagnostics and reconciles the ori
   assert.equal(state().projects[0].coordinatorSessionId, 'main');
   assert.equal(state().projects[0].paused, true, 'successful recovery still requires new user input');
   assert.equal(service.projectView(state().projects[0]).activity.state, 'idle', 'an empty Project retains its safety hold without claiming interrupted work');
+});
+
+test('interrupted Project creation resumes its stored coordinator without creating a replacement conversation', async t => {
+  const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'whale-project-create-recovery-')));
+  t.after(() => fs.rm(temporary, { recursive: true, force: true }));
+  const { projectDirectory } = await import('../../vendor/dsh-project/lib/files.js');
+  const { service, parent, agents, state } = await fixture();
+  const project = state().projects[0], resolved = [], flushed = [], bound = [];
+  service.home = temporary;
+  Object.assign(project, { storageRoot: await projectDirectory(temporary, project.id), lifecycle: 'creating', diagnostics: [] });
+  agents.delete(parent.id);
+  service.ctx.sessionPersistence = { stat: async () => ({}) };
+  service.ctx.sessionController = {
+    resolveAgent: async id => { resolved.push(id); agents.set(id, parent); return { agent: parent }; },
+    create: async () => assert.fail('a stored coordinator must not use new-conversation creation'),
+  };
+  service.ctx.sessions = { flush: async session => flushed.push(session) };
+  service.teams.bindPolicy = async root => bound.push(root.id);
+  await service.finishCreation(project);
+  assert.deepEqual(resolved, ['main']);
+  assert.deepEqual(flushed, [parent.session]);
+  assert.deepEqual(bound, ['main']);
+  assert.equal(state().projects[0].coordinatorSessionId, 'main');
+  assert.equal(state().projects[0].lifecycle, 'ready');
 });
 
 test('a newly queued request is not assigned to the native run of the previously submitted brief', async () => {
@@ -167,7 +191,7 @@ test('unwritable generated notes do not prevent cancellation and native draining
   const { service, agents, state, warnings } = await fixture();
   let cancelled = 0, drained = 0;
   agents.set('a', { status: 'running', cancel() { cancelled++; }, async whenIdle() {} });
-  service.ctx.subagents.drainContinuableChildren = async () => { drained++; };
+  service.ctx.subagents.drainChildren = async () => { drained++; };
   service.notes = async () => { throw new Error('Disk write failed'); };
   await service.sessionStop('main'); await Promise.all([...service.stops.values()]);
   assert.equal(cancelled, 2); assert.equal(drained, 2);
@@ -181,7 +205,7 @@ test('a failed stop write still cancels the Lead and denies delegation from that
   let cancelled = false;
   const drained = [];
   parent.cancel = () => { cancelled = true; };
-  service.ctx.subagents.drainContinuableChildren = async (_parent, ids) => { drained.push(...ids); };
+  service.ctx.subagents.drainChildren = async (_parent, ids) => { drained.push(...ids); };
   service.table.update = async () => { throw new Error('Catalog is unwritable'); };
   await assert.rejects(service.stop('p'), /Catalog is unwritable/);
   assert.equal(cancelled, true);

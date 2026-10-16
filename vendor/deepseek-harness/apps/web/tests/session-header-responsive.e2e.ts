@@ -11,6 +11,18 @@ import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
 import { launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts'
 import { connectFreshWorkspaceZh } from './support.ts'
 
+const AGENT_ACTIONS = ['2 个子智能体', '智能体团队', '1 个后台任务运行中']
+const SESSION_TITLE = '创建智能体并检查较长的会话标题：上游同步后保留智能体、后台任务与工作目录入口'
+
+async function settleLayout(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    await Promise.allSettled(document.getAnimations()
+      .filter(animation => animation.effect?.getComputedTiming().endTime !== Infinity)
+      .map(animation => animation.finished))
+  })
+}
+
 describe('session header responsive actions', () => {
   let scaffold: WebScaffold
   let browser: Browser
@@ -44,7 +56,7 @@ describe('session header responsive actions', () => {
     }, { surfaceOp: 'append' })
     agent.session.append('step/end', { turn: 1, step: 1 })
     agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-    agent.session.append('session/title', { title: '创建智能体并检查较长的会话标题', messageSeqs: [], source: { kind: 'user' } })
+    await scaffold.ctx.sessionController.rename({ sessionId: agent.id, title: SESSION_TITLE })
     for (const child of ['one', 'two']) agent.session.append('subagent/catalog', {
       version: 0, childId: SessionId(`header-${child}`), childCreatedAt: Date.now(), mode: 'one-shot', label: child,
     })
@@ -64,12 +76,13 @@ describe('session header responsive actions', () => {
     await scaffold?.close()
   })
 
-  it('truncates labels, preserves icon hit areas and opens every action at narrow widths', async () => {
+  it('truncates the long title, preserves icon hit areas and opens every action at narrow widths', async () => {
     const row = page.locator('[data-dshd-caption="title"]')
     let sawEllipsis = false
     let sawIcons = false
     for (const width of [1440, 1280, 1100, 900, 760, 600]) {
       await page.setViewportSize({ width, height: 900 })
+      await settleLayout(page)
       // Wait for the actual row width and its density to settle after sidebar transitions.
       await row.evaluate(async element => {
         let last = 0
@@ -83,8 +96,10 @@ describe('session header responsive actions', () => {
         }
         throw new Error('Header did not settle')
       })
-      const metrics = await row.evaluate(element => {
-        const buttons = [...element.querySelectorAll<HTMLButtonElement>('[class*="headerActions"] button')]
+      const metrics = await row.evaluate((element, names) => {
+        const targets = new Set(names)
+        const buttons = [...element.querySelectorAll<HTMLButtonElement>('button')]
+          .filter(button => targets.has(button.getAttribute('aria-label') ?? ''))
         const box = element.getBoundingClientRect()
         return buttons.map(button => {
           const rect = button.getBoundingClientRect()
@@ -99,7 +114,7 @@ describe('session header responsive actions', () => {
             ellipsis: style.textOverflow === 'ellipsis' && label.scrollWidth > label.clientWidth,
           }
         })
-      })
+      }, AGENT_ACTIONS)
       expect(metrics, `viewport ${width}`).toHaveLength(3)
       for (const metric of metrics) {
         expect(metric.visible && metric.hit, `${width}: ${metric.name}`).toBe(true)
@@ -107,12 +122,24 @@ describe('session header responsive actions', () => {
         expect(metric.width).toBeGreaterThanOrEqual(28)
         expect(metric.iconOnly || metric.oneLine).toBe(true)
       }
-      const truncated = metrics.some(metric => !metric.iconOnly && metric.ellipsis)
+      const more = row.getByRole('button', { name: '更多操作', exact: true })
+      expect(await more.evaluate(button => {
+        const rect = button.getBoundingClientRect()
+        return rect.width >= 28 && rect.height >= 27
+          && button.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2))
+      }), `${width}: More actions`).toBe(true)
+      if (width === 1440) await page.screenshot({ path: join(tmpdir(), 'whale-isle-header-normal.png') })
+      const titleEllipsis = await row.locator('[class*="crumbCurrent"]').last().evaluate(title => {
+        const style = getComputedStyle(title)
+        return style.textOverflow === 'ellipsis' && title.scrollWidth > title.clientWidth
+      })
+      const truncated = titleEllipsis || metrics.some(metric => !metric.iconOnly && metric.ellipsis)
       if (truncated && !sawEllipsis) await page.screenshot({ path: join(tmpdir(), 'whale-isle-header-ellipsis.png') })
       sawEllipsis ||= truncated
       sawIcons ||= metrics.every(metric => metric.iconOnly)
       if (width === 600) {
         expect(metrics.every(metric => metric.iconOnly)).toBe(true)
+        expect(titleEllipsis).toBe(true)
         await page.screenshot({ path: join(tmpdir(), 'whale-isle-header-compact.png') })
         for (const [name, role, panel] of [
           ['2 个子智能体', 'tree', '子智能体会话'],
@@ -125,6 +152,10 @@ describe('session header responsive actions', () => {
           await page.keyboard.press('Escape')
           await page.getByRole(role, { name: panel, exact: true }).waitFor({ state: 'detached' })
         }
+        await more.click()
+        await page.getByRole('menuitem', { name: '下载会话日志', exact: true }).waitFor()
+        await page.keyboard.press('Escape')
+        await page.getByRole('menuitem', { name: '下载会话日志', exact: true }).waitFor({ state: 'detached' })
       }
     }
     expect(sawEllipsis).toBe(true)
@@ -137,17 +168,21 @@ describe('session header responsive actions', () => {
     const toggle = page.getByRole('button', { name: '切换右侧栏', exact: true })
     await toggle.click()
     await page.locator('[data-sidebar-right-open]').waitFor()
+    await settleLayout(page)
     const row = page.locator('[data-dshd-caption="title"]')
-    await expect.poll(() => row.evaluate(element => {
+    await expect.poll(() => row.evaluate((element, names) => {
       const bounds = element.getBoundingClientRect()
-      const buttons = [...element.querySelectorAll('[class*="headerActions"] button')]
+      const targets = new Set(names)
+      const buttons = [...element.querySelectorAll('button')]
+        .filter(button => targets.has(button.getAttribute('aria-label') ?? ''))
       return buttons.length === 3 && buttons.every(button => {
         const rect = button.getBoundingClientRect()
         return rect.width >= 28 && rect.height === 28
           && rect.left >= bounds.left && rect.right <= bounds.right
           && button.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2))
       })
-    })).toBe(true)
+    }, AGENT_ACTIONS)).toBe(true)
+    await page.screenshot({ path: join(tmpdir(), 'whale-isle-header-right-panel.png') })
     await row.getByRole('button', { name: '智能体团队', exact: true }).click()
     await page.getByRole('dialog', { name: '智能体团队', exact: true }).waitFor()
     await page.keyboard.press('Escape')

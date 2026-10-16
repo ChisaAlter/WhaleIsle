@@ -10,13 +10,44 @@ The [boot package group](../../packages/boot/README.md) owns launcher-provided p
 
 `PluginInfo` carries module identity, effective enablement, fiber phase and optional display `meta`, plus a unique `patchId` or a `readOnlyReason`.
 
-`BundleInfo` carries the package name, optional installed version, selected enablement, removal availability, optional resolution error, and, for a bundle the profile's own dependency supplies and the installation does not, `source`: that dependency as a spec `pnpm add` accepts. Its optional `meta` and each `BundleRowInfo.meta` contain display text or a metadata diagnostic; Clients select a language at render time.
+`BundleInfo.official` identifies project-maintained shipped optional bundles and on-demand catalog entries independently of installation. `availability` identifies a readable installation-provided or profile package, or `missing`; on-demand catalog entries exclude undeclared transitive copies. `installed` records the profile dependency declaration. An on-demand `installTarget` carries the host-derived exact spec and version. `BundleInfo` also carries the package name, optional installed version, selected enablement, removal availability, optional resolution error, and, for a bundle the profile's own dependency supplies and the installation does not, `source`: that dependency as a spec `pnpm add` accepts. Its optional `meta` and each `BundleRowInfo.meta` contain display text or a metadata diagnostic; Clients select a language at render time.
 
-`InstallBundleOptions.enabled` defaults to true. False installs without selecting the bundle layer. `approvedBuilds` grants persistent script permission to the supplied pending package names before installation. `registry` names the registry asked first; absent, the configured one.
+`InstallBundleOptions.saveExact` passes `--save-exact` to the shared package installer. `InstallBundleOptions.enabled` defaults to true. False installs without selecting the bundle layer. `approvedBuilds` grants persistent script permission to the supplied pending package names before installation. `registry` names the registry asked first; absent, the configured one.
 
 `PluginRegistries` carries the configured first registry, `null` for the one pnpm's own configuration names, the fallbacks asked after it, and `resolved`, the URL pnpm's own configuration names or `null` while unread. `InspectOptions.registry` names the registry a lookup asks first.
 
 `ChangeResult.changed` reports a disk edit independently of `application`: `applied`, `restart-required`, `overridden` or `failed`. Optional `error` carries a localizable code and external diagnostic. `packageResult` records the pnpm exit code, bounded output, truncation flag and complete diagnostic log path, plus `timedOut` when the manager terminated a run that stopped printing. A terminated run is classified `timeout` whatever exit status the signal left behind, so installation and removal report failure instead of success and no further registry is asked. `pendingBuilds` lists undecided packages across the profile; `approvedBuilds` records the names granted permission by this operation; `registries` lists the registries an installation asked, in order; `bundle` and `version` name the package a finished installation added and its manifest version; `failedAt` says whether the last failed run could not reach the registry it asked or the host a git or tarball spec is fetched from.
+
+## Profile reconciliation
+
+<a id="profile-reconciliation"></a>
+
+```ts type-equiv
+/** Outcome of {@link Hmr.reconcileProfile}. */
+interface ProfileReconciliation {
+  /** Diagnostics for Loader entries left inactive. */
+  warnings: string[]
+  /** Loaded modules whose files changed on disk and whose previous code keeps running until a restart. */
+  pending: PendingModule[]
+  /**
+   * Why every change waits for a restart: `module-comparison` when module caches cannot be inspected or their files
+   * compared, even when no URLs are known; `package-moved` when the runtime resolution cannot publish a moved package.
+   */
+  restartReason?: 'module-comparison' | 'package-moved'
+}
+```
+
+```ts type-equiv
+/** A changed module that loads only after a restart. */
+interface PendingModule {
+  url: string
+  /**
+   * `host-module`: the process entry point's static graph imports it. `unmanaged-plugin`: it is imported by a plugin
+   * that runs outside a traversable Loader entry. `module-comparison`: loaded modules could not be compared with disk.
+   */
+  reason: 'host-module' | 'unmanaged-plugin' | 'module-comparison'
+}
+```
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -78,6 +109,21 @@ async watchConfig(filename: string, refresh: () => Promise<void>): Promise<() =>
  * @returns Linked module URLs, or an empty list for an uncached module.
  */
 async getLinked(url: string): Promise<string[]>
+
+/**
+ * Recompose the profile from its manifest and patch files, replacing running plugins whose loaded files below the
+ * profile directory or its linked package targets changed on disk, and publishing its runtime resolution. Changed
+ * modules are evicted and the Loader entries running them stop; app-boot's {@link recomposeProfile} then publishes the
+ * resolution, applies the generation, starts the stopped entries with the current files and configuration,
+ * imports entries whose import failed again, and judges activation. Afterwards the modules below the mappings the
+ * recomposition dropped are evicted, so a removed or deselected package is imported afresh when it returns. Callers run
+ * inside {@link runExclusive}.
+ * @param requiredIds Entry ids whose inactive state is reported as a failure even when it predates this call.
+ * @returns Inactive-entry diagnostics, the changed modules that load after a restart, and a profile-wide restart reason.
+ * @throws The patch read, publication, preparation, apply, or activation failure of the recomposition, including a
+ * replacement plugin that fails to load or start, whose previous code no longer runs.
+ */
+async reconcileProfile(requiredIds: readonly string[] = []): Promise<ProfileReconciliation>
 ```
 
 Source: [`packages/boot/hmr/src/index.ts`](../../packages/boot/hmr/src/index.ts)
@@ -109,7 +155,7 @@ Manage profile files and apply their declared reload lifecycle.
  */
 @Remote async listPlugins(): Promise<PluginInfo[]>
 
-/** Read the profile's installed bundles, the bundles this dsh installation supplies, and the selected names that are not bundles.
+/** Read installed, installation-provided, and offline Official catalog bundles, plus selected non-bundle names.
  * A dependency without a bundle patch is listed, as a `not-bundle` problem, only while it is selected.
  * @returns Package versions, manifest descriptions, the installable spec of profile dependencies, rows, optional
  * display metadata, activation selections, whether the installation offers the bundle, and removal availability.
@@ -151,7 +197,7 @@ Manage profile files and apply their declared reload lifecycle.
  * `package.json` and `pnpm-lock.yaml` as they were; downloaded files can stay.
  * @param spec One package spec, including local paths relative to the invocation directory.
  * @param options Whether to activate the installed bundle (defaults to true), the request id a cancellation names,
- * the pending build scripts to allow for this profile before pnpm runs, and the registry asked first.
+ * the pending build scripts to allow, whether to save an exact dependency, and the registry asked first.
  * @returns Package-manager diagnostics, the registries asked, and the observed activation outcome.
  */
 @Remote installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult>

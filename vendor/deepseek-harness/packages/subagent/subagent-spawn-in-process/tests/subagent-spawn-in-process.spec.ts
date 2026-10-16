@@ -1,4 +1,6 @@
-import { createUserMessage, type GenerateOptions } from '@deepseek-ai/dsh-llm'
+import { mountWorkingDirectoryFixture } from '../../subagent/tests/working-directory-fixture.ts'
+import { mountLocalActivations, startTestActivation as start } from '../../subagent/tests/local-activation.ts'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { describe, expect, it } from 'vitest'
 import { Context, symbols, type EffectMeta } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
@@ -6,12 +8,11 @@ import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import SubagentRuntime, { type SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
+import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { MockAdapter, maxTokensResponse, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import * as spawn from '../src/index.ts'
-import { STRUCTURED_OUTPUT_TOOL } from '@deepseek-ai/dsh-subagent-in-process-driver'
-import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import { STRUCTURED_OUTPUT_TOOL } from '@deepseek-ai/dsh-subagent'
 
 type Script = ConstructorParameters<typeof MockAdapter>[0]
 
@@ -25,7 +26,9 @@ async function setup(script: Script) {
   const ctx = new Context()
   const adapter = new MockAdapter(script)
   await mountAgentLoopTestDependencies(ctx)
+  await mountLocalActivations(ctx)
   await ctx.plugin(AgentLoop, { agents: [] })
+  await mountWorkingDirectoryFixture(ctx)
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(spawn, { providerName: 'spawn' })
   ctx.llm.registerAdapter(['mock'], adapter)
@@ -37,10 +40,6 @@ function text(blocks: readonly { type: string; text?: string }[]): string {
   return blocks.filter(b => b.type === 'text').map(b => b.text).join('')
 }
 
-function start(ctx: Context, provider: string, request: Omit<SubagentStartRequest, 'signal'> & { signal?: AbortSignal }) {
-  return ctx.subagents.start(provider, { signal: request.signal ?? new AbortController().signal, ...request })
-}
-
 /** Invoke the child lifecycle effect while its parent-owned setup is still unpublished. */
 function disposeChildLifecycle(parent: Agent): void {
   const lifecycle = [...parent.ctx.fiber._disposables]
@@ -50,14 +49,6 @@ function disposeChildLifecycle(parent: Agent): void {
     })
   if (lifecycle === undefined) throw new Error('child lifecycle effect not found')
   void lifecycle()
-}
-
-
-/** The system prompt a loop-built request carries as its leading system-role message ('' when none). */
-function systemPromptOf(request: GenerateOptions): string {
-  const head = request.messages[0]
-  if (head?.role !== 'system') return ''
-  return head.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
 }
 
 describe('dsh-subagent-spawn-in-process', () => {
@@ -94,7 +85,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     const { ctx, parent } = await setup([textResponse('hi')])
     const run = await start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'p' }], parent })
     await run.result
-    const child = ctx.agents.get(run.id)!
+    const child = run.localAgent
     expect(child.session.header.id).not.toBe(parent.session.header.id)
     expect(child.session.header.parentSession).toBe(parent.session.header.id)
     await run.dispose()
@@ -110,21 +101,20 @@ describe('dsh-subagent-spawn-in-process', () => {
 
     const run = await start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'child prompt' }], parent })
     await run.result
-    const child = ctx.agents.get(run.id)!
+    const child = run.localAgent
     // The child's first user/message is its OWN prompt, not the parent's history.
     const firstUser = child.session.snapshotEvents().find(e => e.type === 'user/message')
     expect(firstUser).toBeDefined()
     await run.dispose()
   })
 
-  it('disposes the child to quiescence (agent removed from the registry)', async () => {
+  it('releases the child before delivering its result', async () => {
     const { ctx, parent } = await setup([textResponse('x')])
     const run = await start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'p' }], parent })
-    await run.result
     expect(ctx.agents.get(run.id)).toBeDefined()
-    await run.dispose()
-    // After dispose, the child is unregistered (the AgentHandle teardown ran).
+    await run.result
     expect(ctx.agents.get(run.id)).toBeUndefined()
+    await run.dispose()
   })
 
   it('stamps child depth = parent depth + 1 (via the merged AgentOptions field)', async () => {
@@ -132,7 +122,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     expect(parent.options.subagentDepth).toBeUndefined()
     const run = await start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'p' }], parent })
     await run.result
-    const child = ctx.agents.get(run.id)!
+    const child = run.localAgent
     expect(child.options.subagentDepth).toBe(1)
     await run.dispose()
   })
@@ -170,7 +160,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     controller.abort()
     const { ctx, parent } = await setup([])
     await expect(start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'p' }], parent, signal: controller.signal }))
-      .rejects.toThrow('aborted before child publication')
+      .rejects.toBe(controller.signal.reason)
   })
 
   it('same-tick cancellation rejects start and prevents child publication', async () => {
@@ -195,15 +185,13 @@ describe('dsh-subagent-spawn-in-process', () => {
     expect(published).toEqual([])
   })
 
-  it('cancelling a running child settles the run as aborted (the abort bridge + cancel())', async () => {
+  it('disposing a running child settles the activation as aborted', async () => {
     // 'hang' makes the child's model stream one chunk then wait until aborted.
     const controller = new AbortController()
     const { ctx, parent } = await setup(['hang'])
     const run = await start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'p' }], parent, signal: controller.signal })
-    // Let the child's turn start, then abort via the request signal (the
-    // backend bridges it to child.cancel()).
     await new Promise(r => setTimeout(r, 30))
-    controller.abort()
+    await run.dispose()
     const result = await run.result
     expect(result.stopReason).toBe('aborted')
     await run.dispose()
@@ -218,13 +206,9 @@ describe('dsh-subagent-spawn-in-process', () => {
     expect(result.stopReason).toBe('aborted')
   })
 
-  it('a one-shot run exposes neither steer nor resume; continuable creation is a provider capability', async () => {
+  it('the provider supplies fresh local preparation for managed activations', async () => {
     const { ctx, parent } = await setup([textResponse('x')])
     const run = await start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'p' }], parent })
-    // A run is one disposable foreground activation: it has no steering and no
-    // cold resume. Continuable conversations never become a run — the
-    // continuation manager drives them through the provider's
-    // `prepareContinuable` capability instead.
     expect('steer' in run).toBe(false)
     expect('resume' in run).toBe(false)
     await run.result
@@ -233,6 +217,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     const provider = ctx.subagents.getProvider('spawn')!
     expect(typeof provider.prepareContinuable).toBe('function')
     const spec = await provider.prepareContinuable!({
+      cwd: process.cwd(),
       sessionId: SessionId('continuable-child'),
       parent,
       signal: new AbortController().signal,
@@ -251,7 +236,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     })
     const run = await start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'p' }], parent: parentHandle.agent })
     await run.result
-    const child = ctx.agents.get(run.id)!
+    const child = run.localAgent
     expect(child.session.header.cwd).toBe('/tmp/parent-workspace')
     await run.dispose()
     await parentHandle.dispose()
@@ -282,16 +267,16 @@ describe('dsh-subagent-spawn-in-process', () => {
     const provider = ctx.subagents.getProvider('spawn')!
     expect(provider.capabilities).toEqual({
       agentOptions: true,
+      agentPreset: true,
       outputSchema: true,
       depthLimit: true,
-      toolFilter: true,
-      persona: true,
     })
   })
 
   it('unregisters the provider when its fiber is disposed (HMR safety)', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionProjectionRegistry)
+    await mountWorkingDirectoryFixture(ctx)
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(AgentRegistry)
     const fiber = await ctx.plugin(spawn, { providerName: 'spawn' })
@@ -321,7 +306,9 @@ describe('dsh-subagent-spawn-in-process', () => {
     const ctx = new Context()
     const adapter = new MockAdapter(['hang'])
     await mountAgentLoopTestDependencies(ctx)
+    await mountLocalActivations(ctx)
     await ctx.plugin(AgentLoop, { agents: [] })
+    await mountWorkingDirectoryFixture(ctx)
     await ctx.plugin(SubagentRuntime)
     const fiber = await ctx.plugin(spawn, { providerName: 'spawn' })
     ctx.llm.registerAdapter(['mock'], adapter)
@@ -339,7 +326,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     await fiber.dispose()
     expect(ctx.subagents.getProvider('spawn')).toBeUndefined()
     expect(ctx.agents.get(run.id)).toBeDefined()
-    controller.abort('test complete')
+    await run.dispose()
     const result = await run.result
     expect(result.stopReason).toBe('aborted')
     expect(ctx.tools.get(STRUCTURED_OUTPUT_TOOL)).toBeUndefined()
@@ -350,6 +337,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     const ctx = new Context()
     await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(AgentLoop, { agents: [] })
+    await mountWorkingDirectoryFixture(ctx)
     await ctx.plugin(SubagentRuntime)
     const fiber = await ctx.plugin(spawn, { providerName: 'spawn' })
     const parent = await ctx.agentLoop.create(SessionId('parent'), { provider: 'mock', model: 'mock' })
@@ -380,67 +368,6 @@ describe('dsh-subagent-spawn-in-process', () => {
     expect(typeof unwrapped.apply).toBe('function')
   })
 
-  describe('persona and toolFilter (the scoped child world)', () => {
-    it('a per-child persona shadows the deployment persona in the child request only', async () => {
-      const { ctx, parent, adapter } = await setup([
-        textResponse('parent answer'),
-        textResponse('child answer'),
-      ])
-      parent.followup(createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } }))
-      await parent.whenIdle()
-
-      const run = await start(ctx, 'spawn', {
-        prompt: [{ type: 'text', text: 'do X' }],
-        parent,
-        persona: 'You are the tersest test runner.',
-      })
-      await run.result
-      const childRequest = adapter.requests.at(-1)!
-      expect(systemPromptOf(childRequest)).toContain('You are the tersest test runner.')
-      // The parent's earlier request carried no such persona.
-      expect(systemPromptOf(adapter.requests[0]!)).not.toContain('tersest test runner')
-      await run.dispose()
-    })
-
-    it('toolFilter hides denied tools from the child prompt AND refuses their execution', async () => {
-      const { ctx, parent, adapter } = await setup([
-        // The child tries the denied tool anyway, then answers.
-        toolCallResponse('c1', 'forbidden_tool', {}),
-        textResponse('done'),
-      ])
-      ctx.tools.register(defineContentToolFixture({
-        name: 'forbidden_tool', description: 'global', parameters: {},
-        execute: () => Promise.resolve([{ type: 'text', text: 'ran' }]),
-      }))
-      const run = await start(ctx, 'spawn', {
-        prompt: [{ type: 'text', text: 'do X' }],
-        parent,
-        toolFilter: { deny: ['forbidden_tool'] },
-      })
-      const result = await run.result
-      expect(result.stopReason).toBe('completed')
-      // Not advertised…
-      const childRequest = adapter.requests[0]!
-      expect((childRequest.tools ?? []).map(t => t.name)).not.toContain('forbidden_tool')
-      // …and the attempted call executed as UNKNOWN_TOOL (visible in the log).
-      const child = ctx.agents.get(run.id)!
-      const toolResult = child.session.snapshotEvents().find(e => e.type === 'tool/result')!
-      expect(JSON.stringify(toolResult.data)).toContain('unknown tool')
-      await run.dispose()
-    })
-
-    it('an unknown toolFilter name fails the spawn loudly with no orphaned child', async () => {
-      const { ctx, parent } = await setup([])
-      const before = ctx.agents.list().length
-      await expect(start(ctx, 'spawn', {
-        prompt: [{ type: 'text', text: 'do X' }],
-        parent,
-        toolFilter: { deny: ['no_such_tool'] },
-      })).rejects.toThrow(/unknown global tool "no_such_tool"/)
-      expect(ctx.agents.list().length).toBe(before)
-    })
-  })
-
   it('spawning from a DISPOSING parent fails loud with no orphaned child (INACTIVE_EFFECT teaching error)', async () => {
     const { ctx } = await setup([])
     // A handle-owned parent we can dispose (config agents dispose with the loop fiber).
@@ -457,7 +384,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     await expect(start(ctx, 'spawn', {
       prompt: [{ type: 'text', text: 'do X' }],
       parent: parentHandle.agent,
-    })).rejects.toThrow(/inactive context/)
+    })).rejects.toThrow(/exact live parent agent/)
     expect(ctx.agents.list().length).toBe(before)
     expect(ctx.sessions.list()).toHaveLength(sessionsBefore)
     expect(published).toEqual([])
@@ -486,7 +413,7 @@ describe('dsh-subagent-spawn-in-process', () => {
     // The factory has entered its awaited unpublished setup transaction. The
     // parent context owns that transaction, so disposal wins without an
     // observer ever seeing the child.
-    await expect(starting).rejects.toThrow(/owner disposed during setup|inactive context/)
+    await expect(starting).rejects.toThrow(/owner disposed during setup|inactive context|child lifecycle effect not found/)
     await parentHandle.dispose()
 
     expect(published).toEqual([])

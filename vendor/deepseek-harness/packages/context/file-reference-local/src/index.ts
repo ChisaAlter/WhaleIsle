@@ -4,6 +4,7 @@
  * @module @deepseek-ai/dsh-file-reference-local
  */
 
+import type {} from '@deepseek-ai/dsh-working-directory'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -42,7 +43,7 @@ export interface Config {
 
 /** Local-filesystem owner of the file-reference discovery service. */
 export class LocalFileReferenceService extends FileReferenceService {
-  static inject = ['agents']
+  static inject = ['agents', 'workingDirectory']
   static Config: z<Config> = z.object({
     maxResults: z.number().step(1).min(1).default(DEFAULT_FILE_SEARCH_MAX_RESULTS),
     maxEntries: z.number().step(1).min(1).default(DEFAULT_FILE_SEARCH_MAX_ENTRIES),
@@ -112,20 +113,20 @@ export class LocalFileReferenceService extends FileReferenceService {
     }, 'file-reference-local: search cache')
   }
 
-  override list(
+  override async list(
     agent: Agent,
     query: string,
     signal: AbortSignal,
     workingDirectory?: string,
   ): Promise<FileReferenceCandidate[]> {
-    const cwd = workingDirectory ?? agent.session.header.cwd ?? process.cwd()
-    let entry = this.searches.get(agent)
-    if (entry === undefined || entry.cwd !== cwd) {
-      entry?.search.dispose()
-      entry = { cwd, search: new WorkspaceFileSearch(cwd, this.config) }
-      this.searches.set(agent, entry)
+    const cwd = workingDirectory ?? await this.ctx.workingDirectory.ensure(agent, signal)
+    let cached = this.searches.get(agent)
+    if (cached?.cwd !== cwd) {
+      cached?.search.dispose()
+      cached = { cwd, search: new WorkspaceFileSearch(cwd, this.config) }
+      this.searches.set(agent, cached)
     }
-    return entry.search.list(query, signal)
+    return cached.search.list(query, signal)
   }
 }
 

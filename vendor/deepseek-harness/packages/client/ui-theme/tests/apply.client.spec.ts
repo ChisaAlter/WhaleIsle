@@ -2,15 +2,19 @@
  * locale service, declaration-aware Appearance section + font-size row
  * registration, snapshot projection into the stores, and HMR collapse recovery. */
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
+import { TestRemote, stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
-import { apply, inject, SETTINGS_NS } from '@deepseek-ai/dsh-client-ui-theme/client'
-import type { AppearanceSectionInjected, FontSizeRowInjected, ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
-import { THEME_SETTINGS_NAMESPACE, ThemeSettingsSchema } from '../src/theme-settings.ts'
-import type { createAppearanceRowStore, createFontSizeRowStore } from '../src/client/settings-store.ts'
+import { apply, inject, SETTINGS_NS, ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
+import type { AppearanceSectionInjected, FontSettingsInjected, ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
+import { DEFAULT_THEME_SETTINGS, THEME_SETTINGS_NAMESPACE, ThemeSettingsSchema, type ThemeSettings } from '../src/theme-settings.ts'
+import type { createAppearanceRowStore, createFontRowStore } from '../src/client/settings-store.ts'
+
+import type { Shortcuts, ShortcutContext, ShortcutFixedInput, ShortcutGesture, ShortcutPlatform } from '@deepseek-ai/dsh-client-shortcuts/client'
+import { bindingKey, normalizeBinding, presentBinding } from '@deepseek-ai/dsh-client-shortcuts/protocol'
+import { ShortcutRegistry } from '../../shortcuts/src/client/registry.ts'
 
 // These specs assert the shipped Chinese copy. The lane has no jsdom `window`,
 // so browser-language detection never runs and a fresh LocaleRuntime opens on
@@ -38,7 +42,7 @@ async function bench(isLoopback = true) {
     }) } },
     isLoopback: true,
   } as never)
-  const section: Record<string, unknown> = { preference: 'system', fontSize: 14 }
+  const section: Record<string, unknown> = { ...DEFAULT_THEME_SETTINGS, fontSizeCode: 11 }
   const namespace = () => ({
     ns: THEME_SETTINGS_NAMESPACE,
     schema: ThemeSettingsSchema.toJSON(),
@@ -52,8 +56,7 @@ async function bench(isLoopback = true) {
     value: { writable: true, hasDocument: true, namespaces: [namespace()] },
   }))
   const mutate = vi.fn((_ns: string, ops: { path: string[]; value: unknown }[]) => {
-    const op = ops[0]!
-    section[op.path[0]!] = op.value
+    for (const op of ops) section[op.path[0]!] = op.value
     return Promise.resolve({ ok: true as const, value: namespace() })
   })
   const events = new TestRemote(ctx, { settings: { describe, mutate } })
@@ -91,13 +94,222 @@ function faceOf(slots: SlotRegistry) {
 /** The same choreography for the font-size row entry. */
 function fontSizeFaceOf(slots: SlotRegistry) {
   const entry = slots.entries(ITEM_SLOT).find(e => e.options.id === 'font-size')!
-  const handle = entry.store as ReturnType<typeof createFontSizeRowStore>
+  const handle = entry.store as ReturnType<typeof createFontRowStore>
   const instance = handle.create()
-  const face = (entry.inject as unknown as (a: typeof instance.actions) => FontSizeRowInjected)(instance.actions)
+  const face = (entry.inject as unknown as (a: typeof instance.actions) => FontSettingsInjected)(instance.actions)
   return { entry, instance, face }
 }
 
+const declareItems = declareSlots
+const fontSettingsFaceOf = fontSizeFaceOf
+
+/** Deliver the keyboard service's arbitrated input while keeping its real catalog and bindings. */
+function fontKeyboard(ctx: Context, runtime: Shortcuts['runtime'] = 'desktop', platform: ShortcutPlatform = 'macos') {
+  onTestFinished(() => ctx.fiber.dispose())
+  const registry = new ShortcutRegistry(runtime, platform)
+  const listeners = new Set<(input: ShortcutFixedInput) => void>()
+  const shortcuts: Pick<Shortcuts, 'runtime' | 'platform' | 'registerFixed' | 'describeBinding' | 'observeFixedInput'> = {
+    runtime, platform,
+    registerFixed: command => registry.registerFixed(command),
+    describeBinding: (candidate) => {
+      const binding = candidate === null ? null : normalizeBinding(candidate, platform)
+      return { binding, keys: presentBinding(binding, platform).keys, issue: null, conflicts: [] }
+    },
+    observeFixedInput: (listener) => {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+  }
+  ctx.provide('shortcuts', shortcuts)
+  return {
+    registry,
+    press: (gesture: Partial<ShortcutGesture> = {}, context: Partial<ShortcutContext> = {}) => {
+      const consume = vi.fn()
+      for (const listener of listeners) listener({
+        type: 'keydown', consume,
+        gesture: { code: 'Equal', meta: platform === 'macos', control: platform !== 'macos', alt: false,
+          shift: false, repeat: false, composing: false, defaultPrevented: false, ...gesture },
+        context: { region: 'page', modal: null, target: null, ...context },
+      })
+      return consume
+    },
+    reset: () => { for (const listener of listeners) listener({ type: 'reset' }) },
+  }
+}
+
+/** Isolate theme write outcomes behind the same registered keyboard input. */
+async function keyboardTheme(host = stubConfigForm<ThemeSettings>()) {
+  const ctx = new Context()
+  ctx.provide('locale', new LocaleRuntime(ctx))
+  const keyboard = fontKeyboard(ctx)
+  const events: ThemeSnapshot[] = []
+  ctx.on('theme/change', (snapshot) => { events.push(snapshot) })
+  await ctx.plugin({ apply: (scope) => {
+    scope.provide('theme', new ThemeRuntime(scope, host.scope))
+  } }).await()
+  return { theme: ctx.get('theme') as ThemeRuntime, keyboard, events, host }
+}
+
 describe('ui-theme apply', () => {
+  it('steps all font sizes in one settings mutation and one snapshot', async () => {
+    const { theme, keyboard, events, host } = await keyboardTheme()
+    keyboard.press()
+    expect(theme.getTheme().fontSizes).toEqual({ text: 15, code: 14, terminal: 14 })
+    expect(host.mutate).toHaveBeenCalledExactlyOnceWith([
+      { op: 'set', path: ['fontSize'], value: 15 },
+      { op: 'set', path: ['fontSizeCode'], value: 14 },
+      { op: 'set', path: ['terminalFontSize'], value: 14 },
+    ])
+    expect(host.set).not.toHaveBeenCalled()
+    expect(events).toHaveLength(1)
+    expect(events[0]?.fontSizes).toEqual({ text: 15, code: 14, terminal: 14 })
+  })
+
+  it('continues stepping other font roles when one has reached its own limit', async () => {
+    const { theme, keyboard, host } = await keyboardTheme()
+    theme.setFontSize('text', 22)
+    theme.setFontSize('code', 10)
+    theme.setFontSize('terminal', 20)
+    keyboard.press()
+    expect(theme.getTheme().fontSizes).toEqual({ text: 22, code: 11, terminal: 20 })
+    expect(host.mutate).toHaveBeenCalledExactlyOnceWith([
+      { op: 'set', path: ['fontSizeCode'], value: 11 },
+    ])
+    keyboard.press({ code: 'Minus' })
+    expect(theme.getTheme().fontSizes).toEqual({ text: 21, code: 10, terminal: 19 })
+    keyboard.press({ code: 'Minus' })
+    expect(theme.getTheme().fontSizes).toEqual({ text: 20, code: 10, terminal: 18 })
+    expect(host.mutate).toHaveBeenLastCalledWith([
+      { op: 'set', path: ['fontSize'], value: 20 },
+      { op: 'set', path: ['terminalFontSize'], value: 18 },
+    ])
+  })
+
+  it('adopts all durable font sizes together after a refused batch settles', async () => {
+    const host = stubConfigForm<ThemeSettings>()
+    const section: ThemeSettings = { ...DEFAULT_THEME_SETTINGS, preference: 'system', fontSize: 14, fontSizeCode: 11, terminalFontSize: 13,
+      fontFamilySans: '', fontFamilyCode: '', fontFamilyTerminal: '' }
+    host.publish({ status: 'ready', value: section, revision: 1, writable: true })
+    const { theme, keyboard } = await keyboardTheme(host)
+    const write = Promise.withResolvers<boolean>()
+    host.mutate.mockReturnValue(write.promise)
+    keyboard.press()
+    host.publish({ value: section, revision: 2 })
+    expect(theme.getTheme().fontSizes).toEqual({ text: 15, code: 12, terminal: 14 })
+    write.resolve(false)
+    await vi.waitFor(() => { expect(theme.getTheme().fontSizes).toEqual({ text: 14, code: 11, terminal: 13 }) })
+  })
+
+  it.each(['macos', 'windows', 'linux'] as const)('shares %s font shortcuts with the settings control and durable values', async (platform) => {
+    const b = await bench()
+    const keyboard = fontKeyboard(b.ctx, 'desktop', platform)
+    declareItems(b.slots)
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const theme = b.ctx.get('theme') as ThemeRuntime
+    const { instance, face } = fontSettingsFaceOf(b.slots)
+
+    expect(keyboard.press()).toHaveBeenCalledOnce()
+    expect(theme.getTheme().fontSizes).toEqual({ text: 15, code: 12, terminal: 14 })
+    keyboard.press({ shift: true }, { region: 'editable' })
+    expect(instance.getSnapshot().fontSizes).toEqual({ text: 16, code: 13, terminal: 15 })
+    keyboard.press({ code: 'Minus' })
+    expect(instance.getSnapshot().fontSizes).toEqual({ text: 15, code: 12, terminal: 14 })
+    face.setFontSize('text', 20)
+    keyboard.press()
+    expect(theme.getTheme().fontSizes).toEqual({ text: 21, code: 13, terminal: 15 })
+    await vi.waitFor(() => { expect(b.mutate).toHaveBeenCalledTimes(5) })
+    expect(b.mutate.mock.calls.at(-1)?.[1]).toEqual([
+      { op: 'set', path: ['fontSize'], value: 21 },
+      { op: 'set', path: ['fontSizeCode'], value: 13 },
+      { op: 'set', path: ['terminalFontSize'], value: 15 },
+    ])
+    expect(theme.getTheme().fontSizes).toEqual({ text: 21, code: 13, terminal: 15 })
+
+    await fiber.dispose()
+    expect(keyboard.registry.fixedCatalog.getSnapshot()).toEqual([])
+    expect(keyboard.press()).not.toHaveBeenCalled()
+    expect(theme.getTheme().fontSizes.text).toBe(21)
+    await b.ctx.fiber.dispose()
+  })
+
+  it('presents both desktop font actions with their accepted physical combinations', async () => {
+    const b = await bench()
+    const keyboard = fontKeyboard(b.ctx)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    expect(keyboard.registry.fixedCatalog.getSnapshot().map(row => ({
+      label: row.label, keys: row.keys, bindings: row.bindings.map(bindingKey),
+    }))).toMatchInlineSnapshot(`
+      [
+        {
+          "bindings": [
+            "meta+Equal",
+            "shift+meta+Equal",
+          ],
+          "keys": [
+            "⌘",
+            "=",
+          ],
+          "label": "增大字号",
+        },
+        {
+          "bindings": [
+            "meta+Minus",
+          ],
+          "keys": [
+            "⌘",
+            "-",
+          ],
+          "label": "减小字号",
+        },
+      ]
+    `)
+    await b.ctx.fiber.dispose()
+  })
+
+  it('consumes font shortcuts at either size limit without persisting another write', async () => {
+    const b = await bench()
+    const keyboard = fontKeyboard(b.ctx)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const theme = b.ctx.get('theme') as ThemeRuntime
+    theme.setFontSize('text', 22)
+    theme.setFontSize('code', 20)
+    theme.setFontSize('terminal', 20)
+    await vi.waitFor(() => { expect(b.mutate).toHaveBeenCalledTimes(3) })
+    expect(keyboard.press()).toHaveBeenCalledOnce()
+    expect(keyboard.press({ shift: true })).toHaveBeenCalledOnce()
+    theme.setFontSize('text', 10)
+    theme.setFontSize('code', 10)
+    theme.setFontSize('terminal', 10)
+    await vi.waitFor(() => { expect(b.mutate).toHaveBeenCalledTimes(6) })
+    expect(keyboard.press({ code: 'Minus' })).toHaveBeenCalledOnce()
+    expect(theme.getTheme().fontSizes).toEqual({ text: 10, code: 10, terminal: 10 })
+    expect(b.mutate).toHaveBeenCalledTimes(6)
+    await b.ctx.fiber.dispose()
+  })
+
+  it('leaves browser zoom and locally owned input unchanged', async () => {
+    const browser = await bench()
+    const web = fontKeyboard(browser.ctx, 'web')
+    await browser.ctx.plugin({ inject: [...inject], apply }).await()
+    expect(web.registry.fixedCatalog.getSnapshot()).toEqual([])
+    expect(web.press()).not.toHaveBeenCalled()
+    await browser.ctx.fiber.dispose()
+
+    const b = await bench()
+    const keyboard = fontKeyboard(b.ctx)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    for (const gesture of [
+      { composing: true }, { defaultPrevented: true }, { repeat: true }, { alt: true },
+      { meta: false }, { control: true }, { code: 'KeyA' }, { code: 'Minus', shift: true },
+    ]) expect(keyboard.press(gesture)).not.toHaveBeenCalled()
+    expect(keyboard.press({}, { region: 'terminal' })).not.toHaveBeenCalled()
+    keyboard.reset()
+    expect((b.ctx.get('theme') as ThemeRuntime).getTheme().fontSizes.text).toBe(14)
+    expect(b.mutate).not.toHaveBeenCalled()
+    await b.ctx.fiber.dispose()
+  })
+
   it('declares the slot and locale services', () => {
     expect(inject).toEqual(['slots', 'locale', 'remote', 'configForms'])
   })
@@ -107,7 +319,7 @@ describe('ui-theme apply', () => {
     declareSlots(before.slots)
     await before.ctx.plugin({ inject: [...inject], apply }).await()
     expect(before.locale.bind(SETTINGS_NS)('appearance.title')).toBe('外观')
-    expect(before.locale.bind(SETTINGS_NS)('fontSize.title')).toBe('字号大小')
+    expect(before.locale.bind(SETTINGS_NS)('fontSize.text.title')).toBe('字号大小')
     before.locale.setLocale('en')
     expect(before.locale.bind(SETTINGS_NS)('appearance.title')).toBe('Appearance')
     const entry = before.slots.entries(SECTION_SLOT).find(e => e.options.id === 'appearance')!
@@ -155,19 +367,36 @@ describe('ui-theme apply', () => {
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const theme = b.ctx.get('theme') as ThemeRuntime
     // An event ahead of any inject hits the unbound-actions arm.
-    theme.setFontSize(16)
+    theme.setFontSize('text', 16)
 
-    const { instance, face } = fontSizeFaceOf(b.slots)
+    const { instance, face } = fontSettingsFaceOf(b.slots)
     // The inject-time re-sync sealed the init window: the mirror is current.
-    expect(instance.getSnapshot().fontSize).toBe(16)
+    expect(instance.getSnapshot().fontSizes.text).toBe(16)
 
-    face.setFontSize(12)
-    expect(theme.getTheme().fontSize).toBe(12)
-    expect(instance.getSnapshot().fontSize).toBe(12)
+    face.setFontSize('text', 12)
+    expect(theme.getTheme().fontSizes.text).toBe(12)
+    expect(instance.getSnapshot().fontSizes.text).toBe(12)
     await vi.waitFor(() => { expect(b.mutate).toHaveBeenCalledTimes(2) })
   })
 
-  it('loads Host settings at boot, refreshes its namespace, and keeps remote browsers process-local', async () => {
+  it('projects font snapshots into the shared font store and routes group writes by role', async () => {
+    const b = await bench()
+    declareItems(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const theme = b.ctx.get('theme') as ThemeRuntime
+    theme.setFontFamily('code', 'Iosevka')
+
+    const group = fontSettingsFaceOf(b.slots)
+    expect(group.instance.getSnapshot().fontFamilies.code).toBe('"Iosevka"')
+
+    group.face.setFontFamily('terminal', 'MesloLGS NF')
+    group.face.setFontSize('terminal', 16)
+    expect(theme.getTheme().fontFamilies).toEqual({ text: '', code: '"Iosevka"', terminal: '"MesloLGS NF"' })
+    expect(group.instance.getSnapshot().fontSizes.terminal).toBe(16)
+    await vi.waitFor(() => { expect(b.mutate).toHaveBeenCalledTimes(3) })
+  })
+
+  it('loads Host settings at boot, refreshes its namespace, and persists for a trusted remote page', async () => {
     const b = await bench()
     b.setHostSection({ preference: 'dark', fontSize: 17 })
     b.events.emit('settings/document-updated', [THEME_SETTINGS_NAMESPACE, 0])
@@ -186,14 +415,15 @@ describe('ui-theme apply', () => {
     b.ctx.emit('connection/reset')
     await vi.waitFor(() => { expect(theme.getTheme().preference).toBe('dark') })
 
+    // A non-loopback page persists through the same path as loopback.
     const remote = await bench(false)
     declareSlots(remote.slots)
     await remote.ctx.plugin({ inject: [...inject], apply }).await()
     const remoteTheme = remote.ctx.get('theme') as ThemeRuntime
     remoteTheme.setTheme('dark')
-    await Promise.resolve()
-    expect(remote.describe).not.toHaveBeenCalled()
-    expect(remote.mutate).not.toHaveBeenCalled()
+    await vi.waitFor(() => {
+      expect(remote.mutate).toHaveBeenCalledWith(THEME_SETTINGS_NAMESPACE, [{ op: 'set', path: ['preference'], value: 'dark' }], 0)
+    })
   })
 
   it('activates before a slow settings refresh and converges when it settles', async () => {

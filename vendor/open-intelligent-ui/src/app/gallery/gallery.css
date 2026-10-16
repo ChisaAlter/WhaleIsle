@@ -1,0 +1,38 @@
+/* The gallery page around the rendered programs. */
+.gallery { min-height: 100dvh; background: var(--iui-canvas); color: var(--iui-ink); font-family: var(--iui-font); }
+.gallery-top { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; height: 64px; padding: 0 28px; border-bottom: 1px solid var(--iui-border); background: var(--iui-canvas); }
+.gallery-top > div { display: flex; align-items: center; gap: 14px; }
+.gallery-name { font-size: 19px; font-weight: 600; letter-spacing: -0.6px; }
+.gallery-divider { width: 1px; height: 17px; background: var(--iui-border); }
+.gallery-sub { color: var(--iui-muted); font-size: 14px; }
+.gallery-theme { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--iui-surface); }
+.gallery-theme a { padding: 5px 12px; border-radius: 999px; color: var(--iui-muted); font-size: 12px; }
+.gallery-theme a[aria-current="page"] { background: var(--iui-canvas); color: var(--iui-ink); font-weight: 500; box-shadow: var(--iui-shadow-sm), 0 0 0 1px var(--iui-border); }
+.gallery-content { max-width: 800px; margin: 0 auto; padding: 40px 24px 96px; }
+.gallery-intro h1 { font-size: 30px; line-height: 1.2; font-weight: 500; letter-spacing: -1px; }
+.gallery-intro p { margin-top: 10px; color: var(--iui-muted); font-size: 14px; line-height: 1.6; }
+.gallery-index { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0 8px; padding-bottom: 22px; border-bottom: 1px solid var(--iui-border); }
+.gallery-index a { padding: 6px 11px; border: 1px solid var(--iui-border); border-radius: 999px; color: var(--iui-muted); font-size: 12px; }
+.gallery-index a:hover { background: var(--iui-surface); color: var(--iui-ink); }
+.gallery-index::before { content: attr(aria-label); width: 100%; color: var(--iui-muted); font-size: 12px; font-weight: 500; }
+.gallery-index:has(+ .gallery-index) { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
+.gallery-section { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--iui-border); font-size: 20px; font-weight: 500; letter-spacing: -0.4px; }
+.gallery-section:first-of-type { margin-top: 36px; padding-top: 0; border-top: 0; }
+.gallery-example { margin-top: 44px; scroll-margin-top: 84px; }
+.gallery-example > header { margin-bottom: 14px; }
+.gallery-example > header h2 { font-size: 15px; font-weight: 500; }
+.gallery-example > header p { margin-top: 3px; color: var(--iui-muted); font-size: 12px; line-height: 1.6; }
+.gallery-preview { min-width: 0; font-size: 16px; line-height: 1.6; }
+.gallery-errors { margin-top: 10px; padding: 10px 14px 10px 30px; border-radius: 10px; background: var(--iui-danger-soft); color: var(--iui-danger); font-size: 12px; }
+.gallery-source { margin-top: 10px; font-size: 12px; }
+.gallery-source summary { color: var(--iui-muted); cursor: pointer; width: fit-content; }
+.gallery-source pre { margin-top: 8px; padding: 14px 16px; overflow-x: auto; border-radius: 12px; background: var(--iui-surface); font: 12px/1.6 var(--iui-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.gallery-notice { position: fixed; left: 50%; bottom: 20px; z-index: 30; display: flex; align-items: center; gap: 16px; width: min(640px, calc(100% - 32px)); padding: 13px 18px; transform: translateX(-50%); border-radius: 14px; background: var(--iui-ink); color: var(--iui-on-ink); box-shadow: var(--iui-shadow); font-size: 13px; }
+.gallery-notice span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.gallery-notice button { flex: none; font-size: 20px; line-height: 1; color: inherit; }
+@media (max-width: 640px) {
+  .gallery-top { height: 56px; padding: 0 16px; }
+  .gallery-sub { font-size: 13px; }
+  .gallery-content { padding: 26px 16px 72px; }
+  .gallery-intro h1 { font-size: 25px; }
+}

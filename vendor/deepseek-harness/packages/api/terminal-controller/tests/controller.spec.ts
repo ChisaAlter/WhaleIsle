@@ -11,8 +11,10 @@ import { SubprocessExecutableNotFoundError, type SubprocessRuntime, type Subproc
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TerminalController, type Config } from '../src/index.ts'
+import { inputChannel } from './input.ts'
+import type { RemoteInvocation, PeerId } from '@deepseek-ai/dsh-typert-protocol'
 import { resolveShell } from '../src/shells.ts'
-import type { TerminalAttachmentId, WebTerminalId } from '../src/types.ts'
+import type { TerminalInput, WebTerminalId } from '../src/types.ts'
 
 const roots: Context[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(ctx => ctx.fiber.dispose())) })
@@ -30,7 +32,12 @@ function fixture(overrides: Partial<Config> = {}) {
   roots.push(ctx)
   const effects = vi.spyOn(ctx.fiber, 'effect')
   const sandboxPolicy = { defaultMode: 'danger-full-access', workspaceRoot: '/workspace', resolve: vi.fn((): SandboxExecutionPolicy => ({ mode: 'danger-full-access', workspaceRoot: '/workspace' })) }
+  const workingDirectory = {
+    get: vi.fn<(session: Agent['session']) => string>(session => session.header.cwd ?? '/workspace'),
+    ensure: vi.fn<(agent: Agent, signal?: AbortSignal) => Promise<string>>(async agent => agent.session.header.cwd ?? '/workspace'),
+  }
   ctx.provide('sandboxPolicy', sandboxPolicy as never)
+  ctx.provide('workingDirectory', workingDirectory as never)
   const output = new PassThrough()
   const done = Promise.withResolvers<{ exitCode: number; signal: null }>()
   const handle = {
@@ -48,7 +55,7 @@ function fixture(overrides: Partial<Config> = {}) {
     if (result?.type !== 'return' || typeof result.value !== 'function') throw new Error(`Missing effect: ${label}`)
     return result.value()
   }
-  return { ctx, agent: owner(ctx), controller, subprocess, handle, sandboxPolicy, disposeEffect }
+  return { ctx, agent: owner(ctx), controller, subprocess, handle, sandboxPolicy, workingDirectory, disposeEffect }
 }
 
 describe('TerminalController', () => {
@@ -65,7 +72,7 @@ describe('TerminalController', () => {
   it('creates the environment default shell and keeps an existing identity when that default changes', async () => {
     const { controller, agent, subprocess } = fixture({ shell: undefined })
     subprocess.terminalEnvironment.mockResolvedValue({ platform: 'posix', defaultShell: '/usr/local/bin/zsh' })
-    expect(controller.environment(agent, signal())).toEqual({ cwd: '/workspace', maxCols: 200, maxRows: 100, maxInputBytes: 1000, scrollback: 100 })
+    expect(controller.environment(agent, signal())).toEqual({ cwd: '/workspace', maxCols: 200, maxRows: 100, maxInputBytes: 1000, maxBufferedBytes: 100_000, scrollback: 100 })
     expect(subprocess.terminalEnvironment).not.toHaveBeenCalled()
     const created = await controller.create(agent, request, signal())
     expect(created.shell.path).toBe('/usr/local/bin/zsh')
@@ -82,7 +89,7 @@ describe('TerminalController', () => {
     subprocess.resolveExecutable.mockRejectedValue(new SubprocessExecutableNotFoundError('default shell was removed'))
     expect(controller.environment(agent, signal())).toMatchObject({ cwd: '/workspace', maxInputBytes: 1000 })
     expect(controller.list(agent.id)).toMatchObject([{ id, state: 'running' }])
-    const stream = controller.follow(agent, id, 'restored' as TerminalAttachmentId, signal())[Symbol.asyncIterator]()
+    const stream = attachController(agent, id, signal())[Symbol.asyncIterator]()
     try {
       expect(await stream.next()).toMatchObject({ done: false, value: { type: 'snapshot', info: { id, state: 'running' } } })
       expect(subprocess.resolveExecutable).toHaveBeenCalledOnce()
@@ -100,6 +107,75 @@ describe('TerminalController', () => {
     expect(sandboxPolicy.resolve).not.toHaveBeenCalled()
   })
 
+  it('uses the current directory for new user terminals while retaining earlier directories and permissions', async () => {
+    const { ctx, controller, agent, subprocess, sandboxPolicy, workingDirectory } = fixture()
+    const policy: SandboxExecutionPolicy = { mode: 'workspace-write', workspaceRoot: '/workspace', sessionId: agent.id }
+    sandboxPolicy.resolve.mockReturnValue(policy)
+    const confine = vi.fn(async (argv: readonly string[], _policy: SandboxExecutionPolicy) => ({ argv: [...argv] }))
+    ctx.provide('sandbox', { confine } as never)
+    const first = await controller.create(agent, request, signal())
+    workingDirectory.get.mockReturnValue('/workspace/selected')
+    workingDirectory.ensure.mockResolvedValue('/workspace/selected')
+
+    expect(controller.environment(agent, signal()).cwd).toBe('/workspace/selected')
+    expect(workingDirectory.ensure).toHaveBeenCalledOnce()
+    expect(await controller.create(agent, request, signal())).toBe(first)
+    expect(first.cwd).toBe('/workspace')
+    const second = await controller.create(agent, { ...request, id: 'second' as WebTerminalId }, signal())
+
+    expect(second.cwd).toBe('/workspace/selected')
+    expect(subprocess.spawnTerminal).toHaveBeenNthCalledWith(1, expect.objectContaining({ cwd: '/workspace' }))
+    expect(subprocess.spawnTerminal).toHaveBeenNthCalledWith(2, expect.objectContaining({ cwd: '/workspace/selected' }))
+    expect(confine).not.toHaveBeenCalled()
+    expect(sandboxPolicy.resolve).not.toHaveBeenCalled()
+    expect(controller.list(agent.id).map(terminal => terminal.cwd)).toEqual(['/workspace', '/workspace/selected'])
+  })
+
+  it('captures the validated directory before a delayed shell lookup', async () => {
+    const { controller, agent, subprocess, workingDirectory } = fixture()
+    workingDirectory.ensure.mockResolvedValue('/workspace/starting')
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    subprocess.resolveExecutable.mockImplementationOnce(async (path) => {
+      entered.resolve(undefined)
+      await release.promise
+      return path
+    })
+    const creating = controller.create(agent, request, signal())
+    try {
+      await entered.promise
+      workingDirectory.get.mockReturnValue('/workspace/later')
+      workingDirectory.ensure.mockResolvedValue('/workspace/later')
+      release.resolve(undefined)
+      expect((await creating).cwd).toBe('/workspace/starting')
+      expect(subprocess.spawnTerminal).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/workspace/starting' }))
+      expect(workingDirectory.ensure).toHaveBeenCalledOnce()
+    } finally {
+      release.resolve(undefined)
+      await creating
+    }
+  })
+
+  it('uses recovered directory values for new creation and leaves environment reads unvalidated', async () => {
+    const { controller, agent, subprocess, workingDirectory } = fixture()
+    workingDirectory.get.mockReturnValue('/missing')
+    workingDirectory.ensure.mockResolvedValue('/workspace/recovered')
+    expect(controller.environment(agent, signal()).cwd).toBe('/missing')
+    expect(workingDirectory.ensure).not.toHaveBeenCalled()
+
+    const created = await controller.create(agent, request, signal())
+
+    expect(created.cwd).toBe('/workspace/recovered')
+    expect(workingDirectory.ensure).toHaveBeenCalledWith(agent, expect.any(AbortSignal))
+    expect(subprocess.spawnTerminal).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/workspace/recovered' }))
+    workingDirectory.ensure.mockRejectedValue(new Error('original directory is unavailable'))
+    expect(controller.environment(agent, signal()).cwd).toBe('/missing')
+    expect(await controller.create(agent, request, signal())).toBe(created)
+    await expect(controller.create(agent, { ...request, id: 'unavailable' as WebTerminalId }, signal()))
+      .rejects.toThrow('original directory is unavailable')
+    expect(subprocess.spawnTerminal).toHaveBeenCalledOnce()
+  })
+
   it('deduplicates concurrent creates, scopes access by Session, and preserves terminals when a stream aborts', async () => {
     const { controller, agent, ctx, subprocess, handle } = fixture()
     const [first, second] = await Promise.all([controller.create(agent, request, signal()), controller.create(agent, request, signal())])
@@ -107,9 +183,9 @@ describe('TerminalController', () => {
     expect(subprocess.spawnTerminal).toHaveBeenCalledOnce()
     expect(subprocess.spawnTerminal).toHaveBeenCalledWith(expect.objectContaining({ terminalType: 'xterm-256color', cwd: '/workspace' }))
     expect(controller.list('other' as SessionId)).toEqual([])
-    expect(() => controller.follow(owner(ctx, 'other'), id, 'writer' as TerminalAttachmentId, signal())).toThrow('no longer exists')
+    expect(() => attachController(owner(ctx, 'other'), id, signal())).toThrow('no longer exists')
     const abort = new AbortController()
-    const stream = controller.follow(agent, id, 'writer' as TerminalAttachmentId, abort.signal)[Symbol.asyncIterator]()
+    const stream = attachController(agent, id, abort.signal)[Symbol.asyncIterator]()
     const firstFrame = await stream.next()
     if (firstFrame.done === true) throw new Error('Terminal stream ended before its snapshot')
     expect(firstFrame.value.type).toBe('snapshot')
@@ -192,13 +268,13 @@ describe('TerminalController', () => {
     expect(controller.list(agent.id)).toHaveLength(0)
   })
 
-  it('rejects invalid dimensions, unavailable shells and oversized input before executing them', async () => {
+  it('rejects invalid dimensions and unavailable shells before allocating a process', async () => {
     const { controller, agent, subprocess } = fixture()
     await expect(controller.create(agent, { ...request, cols: 1 }, signal())).rejects.toThrow('dimensions')
     subprocess.resolveExecutable.mockRejectedValueOnce(new SubprocessExecutableNotFoundError('shell unavailable'))
     await expect(controller.create(agent, request, signal())).rejects.toThrow('unavailable')
     expect(subprocess.spawnTerminal).not.toHaveBeenCalled()
-    await expect(controller.write(agent, id, 'writer' as TerminalAttachmentId, 'x'.repeat(1001))).rejects.toThrow('input')
+
   })
 
   it('keeps the committed identity on repeated creation and counts pending reservations toward the Session limit', async () => {
@@ -245,27 +321,32 @@ describe('TerminalController', () => {
     expect(controller.list(agent.id)).toEqual([])
   })
 
-  it('routes input, resize and trimmed names through the active attachment', async () => {
+  it('routes ordered input and resize through the current Remote attachment', async () => {
     const { controller, agent, handle } = fixture({ maxInputBytes: 6 })
     await controller.create(agent, request, signal())
-    const attachmentId = 'writer' as TerminalAttachmentId
-    const stream = controller.follow(agent, id, attachmentId, signal())[Symbol.asyncIterator]()
+    const input = inputChannel<TerminalInput>()
+    const stream = attachController(agent, id, signal(), input.source)[Symbol.asyncIterator]()
     await stream.next()
     try {
-      await controller.write(agent, id, attachmentId, '终端')
+      input.push({ type: 'write', sequence: 1, data: '终端' })
+      expect((await stream.next()).value).toMatchObject({ type: 'ack', sequence: 1 })
       expect(handle.write).toHaveBeenCalledWith('终端')
-      await expect(controller.write(agent, id, attachmentId, '终端!')).rejects.toThrow('input exceeds')
-      await controller.resize(agent, id, attachmentId, 200, 100)
+      input.push({ type: 'resize', sequence: 2, cols: 200, rows: 100 })
+      expect((await stream.next()).value).toMatchObject({ type: 'state', info: { cols: 200, rows: 100 } })
+      expect((await stream.next()).value).toMatchObject({ type: 'ack', sequence: 2 })
       expect(handle.resize).toHaveBeenCalledWith(200, 100)
       controller.rename(agent, id, '  server logs  ')
       expect(controller.list(agent.id)).toMatchObject([{ title: 'server logs', cols: 200, rows: 100 }])
+      input.push({ type: 'write', sequence: 3, data: '终端!' })
+      await stream.next()
+      await expect(stream.next()).rejects.toThrow('input exceeds')
     } finally { await stream.return?.() }
   })
 
-  it.each([{ cols: 1.5, rows: 24 }, { cols: 201, rows: 24 }, { cols: 80, rows: 1.5 }, { cols: 80, rows: 0 }, { cols: 80, rows: 101 }])('rejects dimensions $cols × $rows before allocation or resize', async (dimensions) => {
+  it.each([{ cols: 1.5, rows: 24 }, { cols: 201, rows: 24 }, { cols: 80, rows: 1.5 }, { cols: 80, rows: 0 }, { cols: 80, rows: 101 }])('rejects dimensions $cols × $rows before allocation', async (dimensions) => {
     const { controller, agent, subprocess, handle } = fixture()
     await expect(controller.create(agent, { ...request, ...dimensions }, signal())).rejects.toThrow('dimensions')
-    await expect(controller.resize(agent, id, 'writer' as TerminalAttachmentId, dimensions.cols, dimensions.rows)).rejects.toThrow('dimensions')
+
     expect(subprocess.spawnTerminal).not.toHaveBeenCalled()
     expect(handle.resize).not.toHaveBeenCalled()
   })
@@ -273,7 +354,7 @@ describe('TerminalController', () => {
   it('rejects invalid wire identities and names without changing retained terminals', async () => {
     const { controller, agent } = fixture()
     await expect(controller.create(agent, { ...request, id: '../terminal' as WebTerminalId }, signal())).rejects.toThrow('Invalid terminal identity')
-    expect(() => controller.follow(agent, id, '' as TerminalAttachmentId, signal())).toThrow('attachment identity')
+    expect(() => controller.attach(agent, id, signal())).toThrow('Remote invocation')
     expect(() => { controller.rename(agent, id, '  ') }).toThrow('1–120')
     expect(() => { controller.rename(agent, id, 'x'.repeat(121)) }).toThrow('1–120')
     await controller.close(agent, id)
@@ -299,13 +380,15 @@ describe('TerminalController', () => {
     expect(subprocess.spawnTerminal).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/another-workspace' }))
   })
 
-  it.each(['subprocess', 'sandboxPolicy'] as const)('fails clearly when the Session lacks %s', (missing) => {
-    const { controller, subprocess, sandboxPolicy } = fixture()
+  it.each(['subprocess', 'sandboxPolicy', 'workingDirectory'] as const)('fails clearly when the Session lacks %s', (missing) => {
+    const { controller, subprocess, sandboxPolicy, workingDirectory } = fixture()
     const isolated = new Context()
     roots.push(isolated)
     if (missing !== 'subprocess') isolated.provide('subprocess', subprocess as never)
     if (missing !== 'sandboxPolicy') isolated.provide('sandboxPolicy', sandboxPolicy as never)
-    expect(() => controller.environment(owner(isolated), signal())).toThrow('requires subprocess and sandbox policy providers')
+    if (missing !== 'workingDirectory') isolated.provide('workingDirectory', workingDirectory as never)
+    expect(() => controller.environment(owner(isolated), signal())).toThrow(missing === 'workingDirectory'
+      ? 'requires a working-directory provider' : 'requires subprocess and sandbox policy providers')
   })
 
   it('allows Agent sandbox-mode changes while retaining the same user terminal', async () => {
@@ -623,12 +706,40 @@ it.each(['allocation', 'committed'] as const)('retains failed %s cleanup, report
 
 it('classifies missing and closing terminal identities for localized recovery actions', async () => {
   const h = fixture()
-  expect(() => h.controller.follow(h.agent, id, 'view' as TerminalAttachmentId, signal()))
+  expect(() => attachController(h.agent, id, signal()))
     .toThrow(expect.objectContaining({ code: 'terminal/unavailable' }))
   await h.controller.create(h.agent, request, signal())
   h.handle.terminate.mockRejectedValueOnce(new Error('cleanup pending'))
   await expect(h.controller.close(h.agent, id)).rejects.toThrow('cleanup pending')
-  expect(() => h.controller.follow(h.agent, id, 'view' as TerminalAttachmentId, signal()))
+  expect(() => attachController(h.agent, id, signal()))
     .toThrow(expect.objectContaining({ code: 'terminal/unavailable' }))
   await expect(h.controller.create(h.agent, request, signal())).rejects.toMatchObject({ code: 'terminal/unavailable' })
 })
+
+it('publishes the carrier input window in the attachment snapshot', async () => {
+  const { controller, agent } = fixture()
+  await controller.create(agent, request, signal())
+  const abort = new AbortController()
+  const window = { maxBytes: 512, frameOverheadBytes: 76 }
+  const frames = attachController(agent, id, abort.signal, inputChannel<TerminalInput>().source, window)[Symbol.asyncIterator]()
+  try {
+    expect(await frames.next()).toMatchObject({ value: { type: 'snapshot', inputWindow: window } })
+  } finally {
+    abort.abort()
+    await frames.return?.()
+  }
+})
+
+function attachController(
+  agent: Agent, terminalId: WebTerminalId, signal: AbortSignal,
+  input: AsyncIterable<unknown> = inputChannel<TerminalInput>().source,
+  uplinkWindow?: RemoteInvocation['uplinkWindow'],
+) {
+  const invocation: RemoteInvocation = {
+    request: { namespace: 'terminal', method: 'attach', args: {} }, service: 'terminalController', signal,
+    peer: { id: 'test-peer' as PeerId, ctx: agent.ctx, principal: { kind: 'owner' }, interactions: 'answer', signal, dispose: async () => {} },
+    uplink: <In>() => input as AsyncIterable<In>,
+    uplinkWindow,
+  }
+  return agent.ctx.extend({ invocation }).terminalController.attach(agent, terminalId, signal)
+}

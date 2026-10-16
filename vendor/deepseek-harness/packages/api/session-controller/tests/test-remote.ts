@@ -31,6 +31,7 @@ import {
   remoteErrorOf,
   type RemoteResult,
 } from '@deepseek-ai/dsh-typert-protocol'
+import RemoteAccessService from '@deepseek-ai/dsh-api-remote-access'
 import SessionController from '../src/index.ts'
 import type {
   ModelCatalog,
@@ -253,6 +254,7 @@ function installControllers(
     ctx.provide('typert', {
       lookups: { configure: () => dispose },
       contexts: { configureHost: () => dispose },
+      resources: { register: () => dispose },
     } as never)
   }
   if (ctx.get('agentDefaultModel') === undefined) {
@@ -299,6 +301,7 @@ function installControllers(
     } as never)
   }
   installSessionReadTestServices(ctx)
+  if (ctx.get('remoteAccess') === undefined) new RemoteAccessService(ctx)
   const cwd = vi.spyOn(process, 'cwd').mockReturnValue(defaults.cwd)
   let controller: SessionController
   try {

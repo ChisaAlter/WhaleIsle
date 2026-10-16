@@ -12,7 +12,7 @@ import SessionStore, { KNOWN_SESSION_EVENT_TYPES, Session as StoredSession, Sess
 import type { Session, SessionEvent, TurnEndReason } from '@deepseek-ai/dsh-session'
 import { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { validateStoredEvents } from '@deepseek-ai/dsh-session-persistence'
 import { HostConnectionService, serverResponseSchema } from '@deepseek-ai/dsh-client-connection'
 import type { BrowserAuth } from '../../connection/src/browser-auth.ts'
@@ -92,7 +92,7 @@ async function mounted(seed?: readonly SessionEvent[]) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ type: 'client-request', rpcId, method: NEXT_PROMPT_ENDPOINT, payload }),
       ...signal === undefined ? {} : { signal },
-    }))
+    }), ctx.connection.browserPeer)
     expect(response.status).toBe(200)
     const envelope = serverResponseSchema.parse(await response.json())
     expect(envelope.rpcId).toBe(rpcId)
@@ -401,7 +401,7 @@ describe('next-message suggestions through the Connection Fetch route', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ type: 'client-request', rpcId: 'cold-next-prompt',
         method: NEXT_PROMPT_ENDPOINT, payload: { sessionId: previous.session.id } }),
-    }))
+    }), ctx.connection.browserPeer)
     expect(serverResponseSchema.parse(await response.json()).result).toEqual({
       ok: true, value: { turn: 1, seq: end.seq, text: 'Run the focused tests' },
     })
@@ -497,7 +497,7 @@ describe('next-message suggestions through the Connection Fetch route', () => {
   it('withdraws its public route when the feature fiber is disposed', async () => {
     const host = await mounted()
     await host.featureFiber.dispose()
-    const response = await host.shared.fetch(new Request(`http://host/api/${NEXT_PROMPT_ENDPOINT}`, { method: 'POST' }))
+    const response = await host.shared.fetch(new Request(`http://host/api/${NEXT_PROMPT_ENDPOINT}`, { method: 'POST' }), host.ctx.connection.browserPeer)
     expect(response.status).toBe(404)
   })
 })

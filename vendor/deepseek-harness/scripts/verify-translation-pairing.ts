@@ -115,11 +115,10 @@ if (request.scope === 'pairs') {
     if (!indexMode && !repositoryFileExists(anchor)) files.add(anchor)
   }
 } else {
-  for (const pattern of SCOPE_PATTERNS) {
-    for (const match of globSync(pattern, { cwd: root, exclude: TRANSLATION_SCOPE_GLOB_EXCLUDES })) {
-      const normalized = match.split(sep).join('/')
-      if (isTranslationScopeFile(normalized)) files.add(normalized)
-    }
+  // One call shares a single directory walk across every pattern.
+  for (const match of globSync(SCOPE_PATTERNS, { cwd: root, exclude: TRANSLATION_SCOPE_GLOB_EXCLUDES })) {
+    const normalized = match.split(sep).join('/')
+    if (isTranslationScopeFile(normalized)) files.add(normalized)
   }
 }
 const translations = [...files].filter(f => f.endsWith('.zh.md')).sort()
@@ -239,8 +238,12 @@ for (const source of [...pairAnchors].sort()) {
   const sourceText = sourceContent.toString('utf8')
   const zhText = zhContent.toString('utf8')
   let current: ReturnType<typeof computeTranslationPairingRecord>
+  let sourceTree: ReturnType<typeof parseTranslationMarkdown>
+  let zhTree: ReturnType<typeof parseTranslationMarkdown>
   try {
-    current = computeTranslationPairingRecord(paths, sourceText, zhText, recordContext)
+    sourceTree = parseTranslationMarkdown(sourceText)
+    zhTree = parseTranslationMarkdown(zhText)
+    current = computeTranslationPairingRecord(paths, sourceText, zhText, recordContext, { en: sourceTree, zh: zhTree })
   } catch (error) {
     errors.push(`${source} ↔ ${zh}: ${error instanceof Error ? error.message : String(error)}`)
     state.set(source, 'out-of-sync')
@@ -265,13 +268,13 @@ for (const source of [...pairAnchors].sort()) {
       sourcePath: source,
       isTranslationPairSource,
       repositoryFileExists,
-    }, zhSwitcherTargets),
+    }, zhSwitcherTargets, sourceTree),
     ...translationLinkLocaleViolations(zhText, {
       repoRoot: root,
       sourcePath: zh,
       isTranslationPairSource,
       repositoryFileExists,
-    }, sourceSwitcherTargets),
+    }, sourceSwitcherTargets, zhTree),
   ]) {
     errors.push(`${violation.sourcePath}:${violation.line}: link target ${JSON.stringify(violation.url)} uses the wrong locale; expected ${JSON.stringify(violation.expectedUrl)}`)
     state.set(source, 'out-of-sync')
@@ -309,8 +312,6 @@ for (const source of [...pairAnchors].sort()) {
     state.set(source, 'out-of-sync')
   }
 
-  const sourceTree = parseTranslationMarkdown(sourceText)
-  const zhTree = parseTranslationMarkdown(zhText)
   if (!hasLanguageSwitcher(zhTree, zhText, sourceSwitcherTargets)) {
     errors.push(`${zh}: missing language switcher — no link to ${basename(source)}`)
   }

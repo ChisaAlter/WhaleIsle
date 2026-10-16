@@ -8,6 +8,7 @@
   "main": "src/main/index.js",
   "private": true,
   "scripts": {
+    "prepare:openui": "node scripts/prepare-openui.mjs",
     "start": "node scripts/prestart-ensure.mjs && node scripts/run-electron.js",
     "icon": "node scripts/run-render-icon.js",
     "icon:pet": "node scripts/run-render-pet-head.js",
@@ -52,10 +53,10 @@
   },
   "devDependencies": {
     "@types/ws": "^8.18.1",
-    "electron": "^44.2.0",
+    "electron": "^44.3.0",
     "electron-builder": "^26.15.3",
-    "esbuild": "0.25.9",
-    "pnpm": "12.3.4",
+    "esbuild": "0.28.2",
+    "pnpm": "12.4.1",
     "semver": "^7.8.5"
   },
   "overrides": {
@@ -73,6 +74,7 @@
     },
     "files": [
       "src/**/*",
+      "!src/openui-viewer/**",
       "!**/*.test.js",
       "!src/renderer/pet-live2d/avatar/model_hd.onnx",
       "!src/renderer/pet-live2d/avatar/character_hd.png",

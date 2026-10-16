@@ -71,7 +71,7 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
     order: ctx.systemPrompt.getSectionOrder('TOOL_READ'),
     text: ({ scope }) => ctx.tools.get('read', scope) === undefined
       ? ''
-      : 'Use the read tool — not shell commands like cat — to inspect text files. Use offset and limit to continue reading large files.',
+      : 'Use the read tool — not shell commands like cat, sed, head, or tail — to inspect text files. Use offset and limit to read a line range or continue a large file.',
   })
 
   ctx.tools.register(defineTool({
@@ -87,7 +87,7 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
         type: 'object',
         additionalProperties: false,
         properties: {
-          path: { type: 'string', required: true },
+          path: { type: 'string', required: true, description: 'Canonical absolute path in the filesystem execution world.' },
           offset: { type: 'integer', required: true },
           lines: {
             type: 'array',
@@ -152,7 +152,7 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
       )
 
       const outcome = {
-        path: target.displayPath,
+        path: ctx.fs.processPath(target),
         offset: input.offset,
         lines: window.lines,
         totalLines: window.totalLines,

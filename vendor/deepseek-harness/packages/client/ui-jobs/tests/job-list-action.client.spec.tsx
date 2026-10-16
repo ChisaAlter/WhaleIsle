@@ -10,6 +10,7 @@ import { zh } from '../src/client/locales.ts'
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   vi.useRealTimers()
 })
 
@@ -105,7 +106,7 @@ describe('JobListAction rows', () => {
     render(<JobListAction {...props([job({ label: 'warming up' })])} />)
     openList()
     const menu = screen.getByRole('list', { name: zh['list.aria'] })
-    expect(menu.parentElement).toBe(document.body)
+    expect(menu.closest('[data-menu-material]')?.parentElement).toBe(document.body)
     fireEvent.pointerDown(menu)
     fireEvent.click(screen.getByRole('button', { name: zh['row.expandAria'].replace('{label}', 'warming up') }))
     expect(screen.getByRole('button', { name: '1 个后台任务运行中' }).getAttribute('aria-expanded')).toBe('true')
@@ -294,41 +295,86 @@ describe('JobListAction observation', () => {
     expect(writeText).toHaveBeenCalledWith('pnpm run build')
   })
 
-  it('shifts an overflowing popover back inside the viewport and follows resizes', () => {
+  it('anchors the portaled list in viewport coordinates and follows resize and ancestor scroll', () => {
+    vi.stubGlobal('innerWidth', 700)
+    vi.stubGlobal('innerHeight', 600)
     vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(440)
-    vi.spyOn(HTMLButtonElement.prototype, 'getBoundingClientRect').mockReturnValue({ left: 344, bottom: 30 } as DOMRect)
-    const originalWidth = window.innerWidth
-    Object.defineProperty(window, 'innerWidth', { value: 700, configurable: true, writable: true })
-    try {
-      render(<JobListAction {...props([outputJob()])} />)
-      openList()
-      const menu = screen.getByRole('list', { name: zh['list.aria'] })
-      expect(menu.parentElement).toBe(document.body)
-      // Fixed viewport coordinates escape the clipped Session header.
-      expect(menu.style.left).toBe('248px')
-      expect(menu.style.top).toBe('35px')
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(120)
+    const { container } = render(<JobListAction {...props([outputJob()])} />)
+    const trigger = screen.getByRole('button', { name: '1 个后台任务运行中' })
+    const anchor = vi.spyOn(trigger.parentElement!, 'getBoundingClientRect')
+      .mockReturnValue(new DOMRect(344, 40, 180, 28))
+    fireEvent.click(trigger)
+    const list = screen.getByRole('list', { name: zh['list.aria'] })
+    const menu = list.closest<HTMLElement>('[data-menu-material]')
+    expect(menu?.parentElement).toBe(document.body)
+    expect(container.contains(list)).toBe(false)
+    expect(menu?.style.left).toBe('248px')
+    expect(menu?.style.top).toBe('73px')
 
-      window.innerWidth = 900
-      fireEvent(window, new Event('resize'))
-      expect(menu.style.left).toBe('344px')
-    } finally {
-      Object.defineProperty(window, 'innerWidth', { value: originalWidth, configurable: true, writable: true })
-    }
+    vi.stubGlobal('innerWidth', 900)
+    fireEvent(window, new Event('resize'))
+    expect(menu?.style.left).toBe('344px')
+    anchor.mockReturnValue(new DOMRect(80, 110, 180, 28))
+    fireEvent.scroll(container)
+    expect(menu?.style.left).toBe('80px')
+    expect(menu?.style.top).toBe('143px')
   })
 
-  it('never crosses the left viewport margin when the anchor is near the edge', () => {
-    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(560)
-    vi.spyOn(HTMLButtonElement.prototype, 'getBoundingClientRect').mockReturnValue({ left: 4, bottom: 30 } as DOMRect)
-    const originalWidth = window.innerWidth
-    Object.defineProperty(window, 'innerWidth', { value: 700, configurable: true, writable: true })
-    try {
-      render(<JobListAction {...props([outputJob()])} />)
-      openList()
-      const menu = screen.getByRole('list', { name: zh['list.aria'] })
-      expect(menu.style.left).toBe('12px')
-    } finally {
-      Object.defineProperty(window, 'innerWidth', { value: originalWidth, configurable: true, writable: true })
-    }
+  it('keeps a near-edge anchored list inside both viewport margins', () => {
+    vi.stubGlobal('innerWidth', 700)
+    vi.stubGlobal('innerHeight', 600)
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(600)
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(120)
+    render(<JobListAction {...props([outputJob()])} />)
+    const trigger = screen.getByRole('button', { name: '1 个后台任务运行中' })
+    vi.spyOn(trigger.parentElement!, 'getBoundingClientRect').mockReturnValue(new DOMRect(4, 540, 180, 28))
+    fireEvent.click(trigger)
+    const menu = screen.getByRole('list', { name: zh['list.aria'] })
+      .closest<HTMLElement>('[data-menu-material]')
+    expect(menu?.style.left).toBe('12px')
+    expect(menu?.style.top).toBe('468px')
+  })
+
+  it('keeps portaled controls interactive and releases observation on dismissal and unmount', () => {
+    const stop = vi.fn()
+    const observe = vi.fn(() => stop)
+    const { container, unmount } = render(<JobListAction {...props([outputJob()], observe)} />)
+    const trigger = screen.getByRole('button', { name: '1 个后台任务运行中' })
+    trigger.focus()
+    fireEvent.click(trigger)
+    const list = screen.getByRole('list', { name: zh['list.aria'] })
+    expect(container.contains(list)).toBe(false)
+    const row = screen.getByRole('button', {
+      name: zh['row.expandAria'].replace('{label}', 'pnpm run build'),
+    })
+    fireEvent.pointerDown(row)
+    fireEvent.click(row)
+    expect(screen.getByRole('list', { name: zh['list.aria'] })).toBe(list)
+    expect(observe).toHaveBeenCalledTimes(1)
+    expect(stop).not.toHaveBeenCalled()
+    const kill = screen.getByTitle(zh['kill.stop'].replace('{label}', 'pnpm run build'))
+    fireEvent.pointerDown(kill)
+    fireEvent.click(kill)
+    expect(kill.getAttribute('data-kill-state')).toBe('armed')
+    expect(screen.getByRole('list', { name: zh['list.aria'] })).toBe(list)
+
+    row.focus()
+    fireEvent.keyDown(row, { key: 'Escape' })
+    expect(screen.queryByRole('list', { name: zh['list.aria'] })).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+    expect(stop).toHaveBeenCalledTimes(1)
+    fireEvent.click(trigger)
+    expect(observe).toHaveBeenCalledTimes(2)
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('list', { name: zh['list.aria'] })).toBeNull()
+    expect(stop).toHaveBeenCalledTimes(2)
+    fireEvent.click(trigger)
+    expect(observe).toHaveBeenCalledTimes(3)
+    const reopened = screen.getByRole('list', { name: zh['list.aria'] })
+    unmount()
+    expect(document.body.contains(reopened)).toBe(false)
+    expect(stop).toHaveBeenCalledTimes(3)
   })
 
   it('ignores other keys while open and closes once the roster empties', () => {
@@ -376,7 +422,7 @@ describe('JobListAction observation', () => {
     render(<JobListAction {...props([job()], undefined, { 'bash-1': view })} />)
     openList()
     fireEvent.click(screen.getByRole('button', { name: zh['row.expandAria'].replace('{label}', 'pnpm run build') }))
-    expect(document.querySelector('[data-running]')).not.toBeNull()
+    expect(screen.getByRole('list', { name: zh['list.aria'] }).querySelector('[data-running]')).not.toBeNull()
     expect(screen.queryByText(zh['terminal.noOutput'])).toBeNull()
   })
 
@@ -393,6 +439,34 @@ describe('JobListAction observation', () => {
     fireEvent.click(screen.getByRole('button', { name: zh['row.expandAria'].replace('{label}', 'pnpm run build') }))
     expect(screen.getByText(zh['output.gap'])).toBeDefined()
     expect(screen.getByText('实时输出流中断：connection lost')).toBeDefined()
+  })
+
+  it('bridges Tab between the trigger and the portaled list and closes on Escape', () => {
+    render(<JobListAction {...props([job()])} />)
+    const trigger = screen.getAllByRole('button')[0]!
+    fireEvent.keyDown(trigger, { key: 'Tab' })
+    openList()
+    const [first, last] = within(screen.getByRole('list', { name: zh['list.aria'] })).getAllByRole('button')
+    trigger.focus()
+    // Shift+Tab from the trigger leaves toward the controls before it.
+    expect(fireEvent.keyDown(trigger, { key: 'Tab', shiftKey: true })).toBe(true)
+    expect(document.activeElement).toBe(trigger)
+    // Tab from the trigger enters the list.
+    expect(fireEvent.keyDown(trigger, { key: 'Tab' })).toBe(false)
+    expect(document.activeElement).toBe(first)
+    // Inside the list Tab stays the browser's until an end is reached.
+    expect(fireEvent.keyDown(first!, { key: 'Tab' })).toBe(true)
+    // Tab off the last control resumes from the trigger's place in the page.
+    expect(fireEvent.keyDown(last!, { key: 'Tab' })).toBe(true)
+    expect(document.activeElement).toBe(trigger)
+    // Shift+Tab off the first control returns to the trigger itself.
+    first!.focus()
+    expect(fireEvent.keyDown(first!, { key: 'Tab', shiftKey: true })).toBe(false)
+    expect(document.activeElement).toBe(trigger)
+    first!.focus()
+    fireEvent.keyDown(first!, { key: 'Escape' })
+    expect(screen.queryByRole('list', { name: zh['list.aria'] })).toBeNull()
+    expect(document.activeElement).toBe(trigger)
   })
 
   it('stops observation when the popover closes via Escape', () => {

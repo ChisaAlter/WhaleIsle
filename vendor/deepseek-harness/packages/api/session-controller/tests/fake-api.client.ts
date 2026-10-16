@@ -21,6 +21,7 @@ import type {
   SessionPageRequest,
   SessionProjectionBaseline,
   SessionProjectionsRequest,
+  SessionProjectionsValue,
   SessionSelectModelRequest,
   SessionSelectModelValue,
   SessionVisualReplyRequest,
@@ -169,8 +170,8 @@ export class FakeApiClient {
     () => Promise.resolve(ok({ opened: true as const }))
   onWorkspacePathApplications: (payload: { readonly path: string }) => Promise<RemoteResult<readonly SessionWorkspacePathApplication[]>> =
     () => Promise.resolve(ok([]))
-  onProjections: (payload: SessionProjectionsRequest) => Promise<RemoteResult<SessionProjectionBaseline | null>> =
-    () => Promise.resolve(ok({ asOfSeq: -1, values: {} }))
+  onProjections: (payload: SessionProjectionsRequest) => Promise<RemoteResult<SessionProjectionsValue>> =
+    () => Promise.resolve(ok({ kind: 'sequenced', asOfSeq: -1, values: {} }))
 
   private readonly followConns = new Map<SessionId, ValueStreamConn<SessionFollowFrame>[]>()
   private readonly controlConns: ValueStreamConn<SessionControlFrame>[] = []

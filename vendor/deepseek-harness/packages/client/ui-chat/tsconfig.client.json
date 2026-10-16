@@ -103,6 +103,9 @@
       "path": "../ui-settings/tsconfig.client.json"
     },
     {
+      "path": "../ui-theme/tsconfig.client.json"
+    },
+    {
       "path": "../ui-slots"
     },
     {
@@ -119,6 +122,7 @@
     }
   ],
   "exclude": [
-    "src/index.ts"
+    "src/index.ts",
+    "src/openui-guide.ts"
   ]
 }

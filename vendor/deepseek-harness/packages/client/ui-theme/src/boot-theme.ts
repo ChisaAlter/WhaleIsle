@@ -14,6 +14,8 @@ import {
 } from './theme-family.ts'
 import { resolveThemeFamily } from './builtin-families.ts'
 import {
+  FONT_ROLES, FONT_SIZE_SPECS, fontFamilyVariable, normalizeFontFamily, sectionFontSizes,
+  type FontFamilies, type FontSizes,
   DEFAULT_FONT_SIZE, DEFAULT_PREFERENCE, DEFAULT_THEME_SETTINGS, resolveThemeSettings,
   type ThemePreference, type ThemeSettings,
 } from './theme-settings.ts'
@@ -25,6 +27,9 @@ export interface ThemeBootPayload {
   preference: ThemePreference
   /** Conversation content font size in px. */
   fontSize: number
+  /** Role-specific sizes and normalized family lists. */
+  fontSizes: FontSizes
+  fontFamilies: FontFamilies
   /** Derived tokens for the light half (empty for the DeepSeek family). */
   lightTokens: ThemeTokens
   /** Derived tokens for the dark half (empty for the DeepSeek family). */
@@ -58,6 +63,8 @@ export function buildThemeBootPayload(section: ThemeSettings | undefined): Theme
   return {
     preference: settings.preference,
     fontSize: settings.fontSize,
+    fontSizes: sectionFontSizes(settings),
+    fontFamilies: { text: settings.fontFamilySans, code: settings.fontFamilyCode, terminal: settings.fontFamilyTerminal },
     lightTokens: tokensFor(settings, 'light'),
     darkTokens: tokensFor(settings, 'dark'),
     fontSizeInterface: settings.fontSizeInterface,
@@ -67,11 +74,16 @@ export function buildThemeBootPayload(section: ThemeSettings | undefined): Theme
 
 function resolveBootPayload(
   preferenceOrPayload: ThemeBootPayload | ThemePreference = DEFAULT_PREFERENCE,
-  fontSize: number = DEFAULT_FONT_SIZE,
+  fontSize: number | FontSizes = DEFAULT_FONT_SIZE,
+  fontFamilies?: FontFamilies,
 ): ThemeBootPayload {
   if (typeof preferenceOrPayload === 'string') {
     const payload = buildThemeBootPayload({ ...DEFAULT_THEME_SETTINGS, preference: preferenceOrPayload })
-    return { ...payload, fontSize }
+    return { ...payload,
+      fontSize: typeof fontSize === 'number' ? fontSize : fontSize.text,
+      fontSizes: typeof fontSize === 'number' ? { ...payload.fontSizes, text: fontSize } : fontSize,
+      fontFamilies: fontFamilies ?? payload.fontFamilies,
+    }
   }
   return preferenceOrPayload
 }
@@ -90,6 +102,13 @@ function bootThemeStyle(preference: ThemePreference): string {
 
 /** Build the inline script body for one schema-validated boot payload. */
 function bootThemeScript(payload: ThemeBootPayload): string {
+  const sizes = FONT_ROLES.map(role =>
+    `\n  document.body.style.setProperty(${JSON.stringify(FONT_SIZE_SPECS[role].variable)}, ${JSON.stringify(`${payload.fontSizes[role]}px`)})`).join('')
+  const families = FONT_ROLES.flatMap((kind) => {
+    const list = normalizeFontFamily(payload.fontFamilies[kind])
+    return list === '' ? [] : [`\n  document.body.style.setProperty(${JSON.stringify(fontFamilyVariable(kind))}, ${JSON.stringify(list)})`]
+  }).join('')
+
   return `(() => {
   const preference = ${JSON.stringify(payload.preference)}
   const lightTokens = ${JSON.stringify(payload.lightTokens)}
@@ -109,7 +128,7 @@ function bootThemeScript(payload: ThemeBootPayload): string {
     document.body.style.setProperty(name, value)
   }
   document.body.style.setProperty('--dsw-alias-glass-opacity', glassOpacity + '%')
-  document.body.style.setProperty('--dsh-content-font-size', ${JSON.stringify(`${payload.fontSize}px`)})
+${sizes}${families}
 })()`
 }
 
@@ -156,16 +175,18 @@ export function bootThemeInjection(
 /**
  * Theme bootstrap rows: head CSS colors the document canvas before
  * first paint, then the body script installs the palette selector and font
- * size before the shell mount and module script.
+ * size and font families before the shell mount and module script.
  * @param preference - Current Host-backed built-in preference.
- * @param fontSize - Current Host-backed content font size in px.
+ * @param fontSizes - Current Host-backed font sizes in px by role.
+ * @param fontFamilies - Current Host-backed font lists; each is normalized before embedding.
  * @returns head and body script rows in execution order.
  */
 export function bootThemeInjections(
   preferenceOrPayload: ThemePreference | ThemeBootPayload = DEFAULT_PREFERENCE,
-  fontSize: number = DEFAULT_FONT_SIZE,
+  fontSize: number | FontSizes = DEFAULT_FONT_SIZE,
+  fontFamilies?: FontFamilies,
 ): IndexInjection[] {
-  const payload = resolveBootPayload(preferenceOrPayload, fontSize)
+  const payload = resolveBootPayload(preferenceOrPayload, fontSize, fontFamilies)
   return [
     { kind: 'style', text: bootThemeStyle(payload.preference) },
     { kind: 'script', placement: 'body', text: bootThemeScript(payload) },

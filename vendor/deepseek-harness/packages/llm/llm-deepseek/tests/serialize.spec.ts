@@ -23,6 +23,40 @@ const capable = resolveAdapterOptions({ models: [{ id: MODEL, systemPromptUpdate
 const nativeBody = (messages: Message[]) => serialize(options({ messages }), capable, messages, new Map(), () => undefined)
 
 describe('Messages request conversion', () => {
+  it('omits saved empty assistant text without changing tool ids or thinking signatures', () => {
+    const id = 'toolu_example|toolu_example'
+    const content: ContentBlock[] = [
+      { type: 'text', text: '' }, { type: 'reasoning', text: 'reason' }, call(id), { type: 'text', text: '' },
+    ]
+    const message = createAssistantMessage({ content, source: {
+      provider: 'deepseek-official', model: MODEL,
+      replayState: replayState(MODEL, [{ type: 'text' }, { type: 'reasoning', signature: 'signed' }, { type: 'tool-call' }, { type: 'text' }]),
+    } })
+    const request = body([user(), assistant([{ type: 'text', text: '' }]), message, result(id)])
+    expect(request.messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+      { role: 'assistant', content: [
+        { type: 'thinking', thinking: 'reason', signature: 'signed' },
+        { type: 'tool_use', id, name: 'read', input: { path: 'a' } },
+      ] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: [{ type: 'text', text: 'result' }], is_error: false }] },
+    ])
+    expect(message.content).toEqual(content)
+    expect(body([assistant([{ type: 'text', text: ' ' }])]).messages[0]?.content).toEqual([{ type: 'text', text: ' ' }])
+  })
+
+  it('does not flush a system update at an omitted empty assistant message', () => {
+    const request = nativeBody([
+      user(), createSystemMessage('updated'), assistant([{ type: 'text', text: '' }]),
+      user(), assistant([{ type: 'text', text: 'answer' }]),
+    ])
+    expect(request.messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'hello' }, { type: 'text', text: 'hello' }] },
+      { role: 'system', content: [{ type: 'text', text: 'updated' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'answer' }] },
+    ])
+  })
+
   it('rejects unknown plugin content without interpreting its payload', () => {
     expect(() => body([createUserMessage({ source: { kind: 'user' }, content: [
       { type: 'plugin:text', text: 'opaque' } as never,
@@ -285,8 +319,9 @@ describe('Messages request conversion', () => {
     expect(request.output_config).toEqual(effort === 'off' ? undefined : { effort })
   })
 
-  it('disables thinking for titles, passes temperature with thinking and refuses unsupported effort', () => {
-    expect(body([user()], { purpose: 'session-title', temperature: 0 })).toMatchObject({ thinking: { type: 'disabled' }, temperature: 0 })
+  it('disables thinking for the off effort, passes temperature with thinking and refuses unsupported effort', () => {
+    expect(body([user()], { reasoningEffort: ReasoningEffortId('off'), temperature: 0 }))
+      .toMatchObject({ thinking: { type: 'disabled' }, temperature: 0 })
     expect(body([user()], { temperature: 0 })).toMatchObject({ thinking: { type: 'enabled' }, temperature: 0 })
     expect(() => body([user()], { reasoningEffort: ReasoningEffortId('medium') })).toThrow(/effort/)
     const disabled = resolveAdapterOptions({ thinking: 'disabled' })
@@ -396,7 +431,7 @@ describe('Messages request conversion', () => {
 
 describe('validated configuration', () => {
   it('advertises exact model metadata and allows unlisted text models', () => {
-    expect(modelInfo(connection, 'deepseek-official', MODEL)).toMatchObject({ context: { contextWindow: 1_000_000 }, defaultMaxTokens: 256_000, reasoning: { defaultEffort: 'high' } })
+    expect(modelInfo(connection, 'deepseek-official', MODEL)).toMatchObject({ context: { contextWindow: 1_000_000 }, defaultMaxTokens: 256_000, reasoning: { efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }, { id: 'max' }], defaultEffort: 'high' } })
     expect(modelInfo(connection, 'deepseek-official', 'custom').inputModalities).toEqual(['text'])
     expect(modelInfo(connection, 'deepseek-official', MODEL).systemPromptUpdate).toBeUndefined()
     expect(modelInfo(connection, 'deepseek-official', 'custom').systemPromptUpdate).toBeUndefined()

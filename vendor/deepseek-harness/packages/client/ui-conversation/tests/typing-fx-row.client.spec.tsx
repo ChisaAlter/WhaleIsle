@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { TypingFxRow } from '../src/client/settings/TypingFxRow.tsx'
 import type { TypingFxRowProps } from '../src/client/settings/TypingFxRow.tsx'
@@ -19,6 +19,7 @@ function mount(opts: { enabled?: boolean; writable?: boolean } = {}) {
   const setTypingFx = vi.fn()
   const saveTypingFxConfiguration = vi.fn()
   const props: TypingFxRowProps = {
+    ...allowAllAccess,
     usePanelInfo: panelInfoStub,
     useResource: resourceStub,
     useSessions: unused,

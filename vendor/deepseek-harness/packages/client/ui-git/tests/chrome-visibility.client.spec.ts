@@ -7,12 +7,12 @@ interface Section {
 }
 
 describe('ChromeVisibility', () => {
-  it('stays shown while the Host section is loading, unavailable, or a remote memory snapshot', () => {
+  it('stays shown while the Host section is loading or unavailable', () => {
     const host = stubSettingsScope<Section>()
     const chrome = new ChromeVisibility(host.scope, 'titlebarGit')
     expect(chrome.visible.getSnapshot()).toBe(true)
     expect(chrome.writable.getSnapshot()).toBe(false)
-    host.publish({ status: 'unavailable', value: undefined, writable: false, mode: 'memory' })
+    host.publish({ status: 'unavailable', value: undefined, writable: false })
     expect(chrome.visible.getSnapshot()).toBe(true)
     expect(chrome.writable.getSnapshot()).toBe(false)
   })

@@ -242,9 +242,9 @@ button.crumb:hover {
   min-width: 0;
 }
 
-/* Keep every action reachable. Occupants truncate their own labels, then
-   shed text at this row's actual width, including the trailing reserve. */
-@container (max-width: 520px) {
+/* Keep the title readable beside the preset and More menu. Occupants share
+   this 560px compact threshold on the row's actual available width. */
+@container (max-width: 560px) {
   .headerActions {
     gap: 4px;
   }
@@ -682,6 +682,20 @@ button.crumb:hover {
      card when a saved narrow width is restored in the Hero; the right inset
      keeps the trailing preset seat off the card edge. */
   padding: 0 16px 0 20px;
+}
+
+/* Plugin options share the row, pushed to its right edge. */
+.heroOptions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.heroOptions:empty {
+  display: none;
 }
 
 /* Hero: the composer sits inside the session scroll body; center there so

@@ -285,8 +285,8 @@ export function ModelSelect(
     triggerRef.current?.focus()
     setQuery('')
     setHighlightedIndex(null)
-    if (state.current === null) paneFocus.current = 'drill'
-    setPane(state.current === null ? 'model' : 'root')
+    if (currentChoice === undefined) paneFocus.current = 'drill'
+    setPane(currentChoice === undefined ? 'model' : 'root')
     setOpen(true)
     reload()
   }
@@ -337,7 +337,7 @@ export function ModelSelect(
     if (event.key === 'Escape' && open) {
       event.preventDefault()
       // Escape backs out of a drilled pane first, then closes.
-      if (pane !== 'root' && state.current !== null) back(pane)
+      if (pane !== 'root' && currentChoice !== undefined) back(pane)
       else close(true)
       return
     }
@@ -365,7 +365,7 @@ export function ModelSelect(
     if (event.key === 'Tab') {
       if (event.shiftKey) {
         event.preventDefault()
-        if (pane !== 'root' && state.current !== null) back(pane)
+        if (pane !== 'root' && currentChoice !== undefined) back(pane)
         else close(true)
         return
       }
