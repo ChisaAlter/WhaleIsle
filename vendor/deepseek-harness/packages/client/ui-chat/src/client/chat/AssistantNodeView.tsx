@@ -2,14 +2,24 @@ import { memo, useCallback, useMemo } from 'react'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChatNodeViewProps, PresentationInjected, TurnTailOwnerProps } from '../contract/slots.ts'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
+import type { AssistantOpenUi, OpenUiInjected } from './openui.ts'
 
-type AssistantNodeViewProps = ChatNodeViewProps<'assistant-step'> & InjectFace<PresentationInjected>
+type AssistantNodeViewProps = ChatNodeViewProps<'assistant-step'> & InjectFace<PresentationInjected & OpenUiInjected>
 
 /** Streaming, settled, and interrupted Assistant states share one keyed renderer instance. */
 export const AssistantNodeView = memo(function AssistantNodeView({
-  node, groupPart, useDisclosure, useTurnData, turnProcess, openFile, renderMessageImages, fileMentions, usePresentation, t,
+  node, sessionId, groupPart, useDisclosure, useTurnData, turnProcess, openFile, renderMessageImages, fileMentions, usePresentation,
+  useOpenUiTheme, sendOpenUiAction, readOpenUiState, saveOpenUiState, t,
 }: AssistantNodeViewProps) {
   const data = node.data
+  const theme = useOpenUiTheme(value => value)
+  const openUi = useMemo<AssistantOpenUi>(() => ({
+    identity: `${encodeURIComponent(sessionId)}:${encodeURIComponent(node.id)}`,
+    theme,
+    send: sendOpenUiAction,
+    readState: readOpenUiState,
+    saveState: saveOpenUiState,
+  }), [sessionId, node.id, theme, sendOpenUiAction, readOpenUiState, saveOpenUiState])
   const turn = node.location.kind === 'turn' || node.location.kind === 'step'
     ? node.location.turn
     : undefined
@@ -41,6 +51,7 @@ export const AssistantNodeView = memo(function AssistantNodeView({
       usePresentation={usePresentation}
       revealProcess={revealProcess}
       mentions={mentions}
+      openUi={openUi}
       t={t}
     />
   )

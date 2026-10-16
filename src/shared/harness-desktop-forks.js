@@ -52,6 +52,10 @@ const LAYOUT_MARKERS = ['surfaces', 'shell.titlebar.trailing', 'shell.terminalDr
 // cannot see these: sync:harness keeps them only via git merge, so a conflict
 // resolved towards upstream would drop them without failing any other assert.
 const FORK_FILE_MARKERS = [
+  // Full Open Intelligent UI is hosted only in assistant-authored fences.
+  { file: 'packages/client/ui-primitives/src/markdown/MarkdownText.tsx', includes: ['renderCodeFence', 'MarkdownCodeFenceRenderer'] },
+  { file: 'packages/client/ui-chat/src/index.ts', includes: ['DSHD_OPENUI_ENABLED', "name: 'openui'"] },
+  { file: 'packages/client/ui-chat/src/client/chat/AssistantMarkdown.tsx', includes: ['OpenUiFrame', 'renderCodeFence'] },
   // Local Project continuations use explicit cwd/preset and admission policy.
   // Ordinary Team and Session ownership are not changed by this feature.
   { file: 'apps/cli/src/profile-boot.ts', includes: ['export async function disposeProfileApplication', 'for (const release of [() => projects?.dispose?.(), () => ctx?.fiber.dispose()])', 'disposeProfileApplication(app.current)', 'installFailLoud(NAME, process, dispose)'] },

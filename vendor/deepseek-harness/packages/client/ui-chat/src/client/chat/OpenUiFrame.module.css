@@ -1,0 +1,84 @@
+.root {
+  min-width: 0;
+  width: 100%;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  overflow: hidden;
+}
+
+.toolbar {
+  min-height: 36px;
+  padding: 2px 8px 2px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.body {
+  position: relative;
+  min-width: 0;
+  min-height: 120px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.frame {
+  display: block;
+  width: 100%;
+  height: var(--openui-height, 320px);
+  border: 0;
+}
+
+.frame[hidden] {
+  display: none;
+}
+
+.loading {
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+}
+
+.frame + .loading {
+  position: absolute;
+  inset: 0;
+  background: var(--dsw-alias-bg-base);
+}
+
+.error {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  max-height: calc(100% - 16px);
+  overflow: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-bg-panel-solid);
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.error > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

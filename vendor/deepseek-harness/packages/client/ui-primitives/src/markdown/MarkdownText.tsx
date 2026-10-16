@@ -20,11 +20,11 @@ import {
   collectReferenceTargets, createReferenceTargets, renderBlocks, renderFootnoteSection,
   wrapBlockChildren,
 } from './render.tsx'
-import type { MarkdownFileMentions, MarkdownLabels, MarkdownPathImages, MarkdownRenderContext, ReferenceTargets } from './render.tsx'
+import type { MarkdownCodeFenceRenderer, MarkdownFileMentions, MarkdownLabels, MarkdownPathImages, MarkdownRenderContext, ReferenceTargets } from './render.tsx'
 import 'katex/dist/katex.min.css'
 import css from './MarkdownText.module.css'
 
-export type { MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels, MarkdownPathImages } from './render.tsx'
+export type { MarkdownCodeFence, MarkdownCodeFenceRenderer, MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels, MarkdownPathImages } from './render.tsx'
 
 /** One settled full render: parse with math, resolve references, append the footnote section. */
 function renderSettled(
@@ -32,6 +32,7 @@ function renderSettled(
   labels: MarkdownLabels,
   fileMentions: MarkdownFileMentions | undefined,
   pathImages: MarkdownPathImages | undefined,
+  renderCodeFence: MarkdownCodeFenceRenderer | undefined,
 ): ReactNode[] {
   const root = parseGfmWithMath(text)
   const targets = createReferenceTargets()
@@ -41,6 +42,7 @@ function renderSettled(
     labels,
     fileMentions,
     pathImages,
+    renderCodeFence,
     targets,
     footnoteOrder: [],
     footnoteCounts: new Map(),
@@ -75,7 +77,10 @@ class StreamingRenderer {
   private lastRendered: ReactNode[] = []
 
   /** @param labels - Localized Markdown chrome baked into cached elements; the owner replaces the renderer when it changes. */
-  constructor(private readonly labels: MarkdownLabels) {}
+  constructor(
+    private readonly labels: MarkdownLabels,
+    private readonly renderCodeFence: MarkdownCodeFenceRenderer | undefined,
+  ) {}
 
   /**
    * Render the current accumulated text. Idempotent per text value, so React
@@ -108,6 +113,7 @@ class StreamingRenderer {
       const frozenContext: MarkdownRenderContext = {
         streaming: true,
         labels: this.labels,
+        renderCodeFence: this.renderCodeFence,
         fileMentions: undefined,
         pathImages: undefined,
         targets: frameTargets,
@@ -127,6 +133,7 @@ class StreamingRenderer {
     const tailContext: MarkdownRenderContext = {
       streaming: true,
       labels: this.labels,
+      renderCodeFence: this.renderCodeFence,
       fileMentions: undefined,
       pathImages: undefined,
       targets: frameTargets,
@@ -174,28 +181,32 @@ class StreamingRenderer {
  * absolute HTTP(S) images render directly.
  */
 export const MarkdownText = memo(function MarkdownText({
-  text, streaming = false, labels, fileMentions, pathImages, variant = 'body',
+  text, streaming = false, labels, fileMentions, pathImages, renderCodeFence, variant = 'body',
 }: {
   text: string
   streaming?: boolean
   labels: MarkdownLabels
   fileMentions?: MarkdownFileMentions | undefined
   pathImages?: MarkdownPathImages | undefined
+  /** Reference-stable renderer for this document's explicitly supported fenced blocks. */
+  renderCodeFence?: MarkdownCodeFenceRenderer | undefined
   variant?: 'body' | 'compact'
 }) {
   const streamRef = useRef<StreamingRenderer | null>(null)
   const streamLabelsRef = useRef<MarkdownLabels>(labels)
+  const streamFenceRef = useRef<MarkdownCodeFenceRenderer | undefined>(renderCodeFence)
   const children = useMemo(() => {
     if (!streaming) {
       streamRef.current = null
-      return renderSettled(text, labels, fileMentions, pathImages)
+      return renderSettled(text, labels, fileMentions, pathImages, renderCodeFence)
     }
-    if (streamRef.current === null || streamLabelsRef.current !== labels) {
-      streamRef.current = new StreamingRenderer(labels)
+    if (streamRef.current === null || streamLabelsRef.current !== labels || streamFenceRef.current !== renderCodeFence) {
+      streamRef.current = new StreamingRenderer(labels, renderCodeFence)
       streamLabelsRef.current = labels
+      streamFenceRef.current = renderCodeFence
     }
     return streamRef.current.render(text)
-  }, [text, streaming, labels, fileMentions, pathImages])
+  }, [text, streaming, labels, fileMentions, pathImages, renderCodeFence])
   return <div className={clsx(css.markdown, variant === 'compact' && css.compact)}
     data-markdown-variant={variant === 'compact' ? variant : undefined}>{children}</div>
 })

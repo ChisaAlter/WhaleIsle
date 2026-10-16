@@ -254,16 +254,19 @@ function createMainWindow({ activate = true } = {}) {
  */
 function attachPrivilegedNavigationGuards(contents, options) {
   const { allowUrl, openDeniedExternal = false, openDeniedLoopback = false } = options;
-  // A generated document may run scripts, but must keep its original CSP.
+  // Generated documents may run scripts, but must keep their original CSP.
   // Remember the frame identity before its scripts can change window.name.
-  const visualReplyFrames = new Set();
+  const generatedFrames = new Set();
+  const isGeneratedFrame = (frame) => frame?.name === 'whale-visual-reply'
+    || (typeof frame?.name === 'string' && frame.name.startsWith('whale-openui:'));
   contents.on('frame-created', (_event, { frame }) => {
-    if (frame?.name === 'whale-visual-reply') visualReplyFrames.add(frame.frameTreeNodeId);
+    if (isGeneratedFrame(frame)) generatedFrames.add(frame.frameTreeNodeId);
   });
   contents.on('will-frame-navigate', event => {
     const frame = event.frame;
+    if (isGeneratedFrame(frame)) generatedFrames.add(frame.frameTreeNodeId);
     if (!event.isMainFrame && frame
-      && (visualReplyFrames.has(frame.frameTreeNodeId) || frame.name === 'whale-visual-reply')
+      && generatedFrames.has(frame.frameTreeNodeId)
       && event.url !== 'about:srcdoc') {
       event.preventDefault();
     }

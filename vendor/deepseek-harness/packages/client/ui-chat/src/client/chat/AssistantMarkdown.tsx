@@ -1,13 +1,15 @@
-import { Fragment, memo, useMemo } from 'react'
+import { Fragment, memo, useCallback, useMemo } from 'react'
 import { fileMediaUrl } from '@deepseek-ai/dsh-util-workspace-path'
 import type { ReactNode } from 'react'
 import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { MarkdownFileMentions, MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MarkdownCodeFenceRenderer, MarkdownFileMentions, MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeOwnerProps, ChatViewSlotProps, UseDisclosure, UsePresentation } from '../contract/slots.ts'
 import type { AssistantBlock } from '../contract/snapshot.ts'
 import { markdownLabels } from '../markdown-labels.ts'
 import { ReasoningRow } from './ReasoningRow.tsx'
 import { useSearchableHidden } from './searchable-hidden.ts'
+import { OpenUiFrame } from './OpenUiFrame.tsx'
+import type { AssistantOpenUi } from './openui.ts'
 import css from './AssistantMarkdown.module.css'
 
 /**
@@ -46,6 +48,8 @@ export interface AssistantMarkdownProps {
   revealProcess?: (() => void) | undefined
   /** Resolved prose file mentions for this Assistant's closing turn. */
   mentions?: MarkdownFileMentions | undefined
+  /** Available only to Assistant prose in the owning Session. */
+  openUi?: AssistantOpenUi | undefined
   /** The owning view's locale seat, passed down as a plain prop. */
   t: ChatViewSlotProps['t']
 }
@@ -53,7 +57,7 @@ export interface AssistantMarkdownProps {
 /** Reasoning block as the Think variant summary row (figma 39:28304). */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
   blocks, streaming, interrupted, renderMessageImages, groupPart, useDisclosure,
-  reasoningHidden = false, usePresentation, revealProcess, mentions, t,
+  reasoningHidden = false, usePresentation, revealProcess, mentions, openUi, t,
 }: AssistantMarkdownProps) {
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
@@ -79,13 +83,16 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
     switch (block.kind) {
       case 'text':
         rendered.push(
-          <MarkdownText
+          <AssistantText
             key={i}
             text={block.text}
             streaming={streaming}
             labels={labels}
             fileMentions={mentions}
             pathImages={pathImages}
+            openUi={openUi}
+            blockIndex={i}
+            t={t}
           />,
         )
         break
@@ -150,6 +157,21 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
     </div>
   )
 })
+
+/** Bind one Markdown block's durable identity without changing ordinary Markdown output. */
+function AssistantText({ openUi, blockIndex, t, ...props }: Parameters<typeof MarkdownText>[0] & {
+  openUi: AssistantOpenUi | undefined
+  blockIndex: number
+  t: ChatViewSlotProps['t']
+}) {
+  const renderCodeFence = useCallback<MarkdownCodeFenceRenderer>((fence) => {
+    if (openUi === undefined || (fence.language !== 'openui' && fence.language !== 'openui-lang')) return undefined
+    const instanceId = `${openUi.identity}:${blockIndex}:${fence.sourceOffset}`
+    return <OpenUiFrame key={instanceId} instanceId={instanceId} program={fence.code}
+      streaming={fence.streaming} openUi={openUi} t={t} />
+  }, [openUi, blockIndex, t])
+  return <MarkdownText {...props} renderCodeFence={openUi === undefined ? undefined : renderCodeFence} />
+}
 
 function ProcessReasoning({ hidden, reveal, children }: {
   hidden: boolean

@@ -310,6 +310,7 @@ function makeHarness(
   const chat = createChatStore().create()
   const transcriptView = createSnapshotStore<TranscriptViewMode>('compact')
   const performanceUsage = createSnapshotStore<'compact' | 'detailed'>('detailed')
+  const openUiTheme = createSnapshotStore(null)
   const t = makeTranslate(zh, commonZh)
   const toolOwners: Array<{
     callId: string
@@ -342,7 +343,9 @@ function makeHarness(
       case 'context':
         return <ContextMessageNodeView {...nodeProps} node={nodeOwner.node} />
       case 'assistant-step':
-        return <AssistantNodeView {...nodeProps} node={nodeOwner.node} usePresentation={props.usePresentation} />
+        return <AssistantNodeView {...nodeProps} node={nodeOwner.node} usePresentation={props.usePresentation}
+          useOpenUiTheme={bindSnapshotSelector(openUiTheme)} sendOpenUiAction={async () => {}}
+          readOpenUiState={() => ({})} saveOpenUiState={() => {}} />
       case 'command':
         return (
           <CommandNodeView

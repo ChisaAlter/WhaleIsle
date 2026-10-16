@@ -1,0 +1,1 @@
+Open Intelligent UI answering "I just bought an IKEA KALLAX. Can you walk me through building it?" with an interactive step-by-step guide and an exploded drawing of the shelf.

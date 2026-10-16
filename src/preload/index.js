@@ -75,6 +75,8 @@ function harnessApi(renderer, remoteFeature) {
     ...windowApi(renderer),
     ...configApi(renderer),
     openExternal: invoke(renderer, 'shell:open-external'),
+    openuiViewer: invoke(renderer, 'shell:openui-viewer'),
+    openuiApi: invoke(renderer, 'shell:openui-api'),
     openSettings: invoke(renderer, 'shell:open-settings'),
     // Live2D pet settings section writes — normalize + persist + push to
     // the live pet window through the pet manager.
