@@ -8,9 +8,11 @@
 
 页面随回复流式更新，结束生成和切换源码不会重建 iframe。交互状态按会话、消息、文本块和代码块位置保存在当前浏览器本地存储，历史查看、切换会话和重新加载会恢复；它不提供跨设备状态同步。原始程序保留在既有会话 Markdown 中。
 
+对象字面量中的中文键需加引号，例如 `{"数量": $quantity, "备注": $note}`；上游 SDK 的裸标识符只支持 ASCII，未引号的中文键会变成 `?`。
+
 ## 装配与权限
 
-- 原始快照与来源：`vendor/open-intelligent-ui/UPSTREAM.md`。底层 SDK 的 MIT 不作为该演示仓库自身的许可证声明。
+- 原始快照与来源：`vendor/open-intelligent-ui/UPSTREAM.md`。
 - `scripts/prepare-openui.mjs` 从固定依赖构建完整 viewer、内嵌地图 worker/字体和三个资源 handler，随产物保留来源记录及 SDK 许可正文；启动过期检查及打包入口都会准备这些产物。
 - `src/openui-viewer/` 承载独立 React 19 runtime。原聊天仍用 React 18，不升级全局 React，也不引入上游 Next.js 聊天服务或模型代理。
 - `ui-chat` 的 assistant Markdown 提供专用 fence renderer；普通 Markdown、推理和现有 `html_render` 路径保持原约定。只有桌面 Harness 进程通过 `DSHD_OPENUI_ENABLED=1` 宣告这一能力。
@@ -27,6 +29,10 @@
 
 官方 native-system、host、client、web 及独立 viewer 构建通过；定向检查覆盖 Markdown fence 身份、流式状态、恢复与错误清除、原会话动作、IPC、导航和打包文件契约。Standards 与 Spec 独立评审发现的问题均已修复复核。
 
-真实源码 Electron 中，经原 composer、provider、assistant 回复链路验证了流式程序、本地计算、源码切换、重载恢复、发送表单到原会话及生成期间排队；模型请求实际包含完整指导。模型服务使用本地 OpenAI-compatible SSE stub，未调用真实模型。地图矢量底图、拖动缩放、街道路线、标记状态、Wikipedia 图片搜索、SVG 与 HtmlView 交互均已实测。明暗主题与 1440×920 / 960×640 renderer 视口完整画面已检查；没有调整用户原生窗口。
+源码 Electron 中，经原 composer、provider、assistant 回复链路验证了流式程序、本地计算、源码切换、重载恢复、发送表单到原会话及生成期间排队；模型请求实际包含完整指导。上述交互验收使用本地 OpenAI-compatible SSE stub。地图矢量底图、拖动缩放、街道路线、标记状态、Wikipedia 图片搜索、SVG 与 HtmlView 交互均已实测；明暗主题与 1440×920 / 960×640 renderer 视口完整画面已检查。
 
-尚未打包、安装或发布。完整 `prestart-ensure.mjs` 在本环境的既有 Chisa remote 准备阶段因 `npm.cmd` 不在 PATH 未通过；本机已找到现有 npm，正在补全该启动检查。OpenUI 准备、官方客户端构建及直接源码启动已通过。
+追加实机检查对应产品提交 `be0c26f60b`：通过用户指定的本地 Magpie / `gpt/gpt-6.1-sol`，从原 composer 真实生成计算器。本地输入与加一保持一轮一步；点击确认才把数量 5 和中文备注送回所属 Session，真实第二轮回复正确确认。重新加载同一程序后，用目标 iframe 的真实鼠标及输入事件验证 4→5、平方 16→25；再次重载仍保留 5／25 和备注，没有新增模型调用。
+
+已实际调整正常与最窄原生窗口，`getBounds()` 分别为 1441×920、961×640（DPI 舍入）。完整画面中的控件、结果及会话回执均可达：[正常窗口](../images/openui-native-normal.png)、[最窄窗口](../images/openui-native-narrow.png)。
+
+完整 `prestart-ensure.mjs`、OpenUI 准备、官方客户端构建及直接源码启动已通过。尚未打包、安装或发布。
