@@ -185,6 +185,11 @@
   overflow: auto;
 }
 
+/* Content-owned floats clip their foreground and scrolling regions internally. */
+.tabBody:has([data-dockkit-float-chrome='content']) {
+  overflow: visible;
+}
+
 /* Pane tabs sit beneath the application caption, for both guide and content. */
 .panel :global([data-dockkit-strip]) {
   height: 48px;

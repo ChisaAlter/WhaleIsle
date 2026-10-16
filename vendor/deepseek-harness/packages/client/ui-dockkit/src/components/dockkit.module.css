@@ -785,6 +785,45 @@
   pointer-events: none;
 }
 
+/* A retained body can own its complete floating surface. The dockkit still
+   owns positioning, focus, drag gestures and the resize corner. */
+.float:has([data-dockkit-float-chrome='content']) {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.float:has([data-dockkit-float-chrome='content'])::before {
+  display: none;
+}
+
+.float:has([data-dockkit-float-chrome='content']) > .tabHostHeader {
+  display: none;
+}
+
+.float:has([data-dockkit-float-chrome='content']) > .floatBody {
+  overflow: visible;
+}
+
+.float:has([data-dockkit-float-motion='morph']) [data-dockkit-float-motion-part] {
+  transform-origin: top right;
+}
+
+.floatMorphGhost {
+  position: absolute;
+  top: 0;
+  right: 0;
+  transform-origin: top right;
+  pointer-events: none;
+}
+
+.float:has([data-dockkit-float-chrome='content']) [data-dockkit-float-drag-handle] {
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+
 /* The active panel keeps the same frame: it is already on top of the z order
    and casts the same shadow, and a heavier or darker frame read as a defect.
    `data-dockkit-float-active` stays on the element for tests. */
