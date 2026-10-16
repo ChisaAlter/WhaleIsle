@@ -39,8 +39,6 @@ function writePayload(root) {
     'utf8',
   );
   const assetRoot = path.join(path.dirname(source), 'office-skills');
-  fs.mkdirSync(path.join(assetRoot, 'scripts'), { recursive: true });
-  fs.writeFileSync(path.join(assetRoot, 'scripts', 'check_office.py'), '# stub\n', 'utf8');
   for (const folder of OFFICE_SKILL_FOLDERS) {
     fs.mkdirSync(path.join(assetRoot, folder), { recursive: true });
     fs.writeFileSync(path.join(assetRoot, folder, 'SKILL.md'), '---\ndescription: stub\n---\n', 'utf8');
@@ -99,6 +97,14 @@ function options(home, extra = {}) {
   };
 }
 
+test('Office asset requirements match the current bundled provider', () => {
+  const assets = path.join(__dirname, '..', '..', 'vendor', 'deepseek-harness', 'packages', 'skill', 'skill-office', 'assets');
+  const bundled = fs.readdirSync(assets, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && fs.existsSync(path.join(assets, entry.name, 'SKILL.md')))
+    .map((entry) => entry.name);
+  assert.deepEqual([...OFFICE_SKILL_FOLDERS].sort(), bundled.sort());
+});
+
 test('writes the office overlay with absolute source/root/assetRoot/node/cli', () => {
   const home = tempHome();
   const source = writePayload(home);
@@ -119,6 +125,22 @@ test('writes the office overlay with absolute source/root/assetRoot/node/cli', (
   assert.equal(result.assetRoot, path.join(path.dirname(source), 'office-skills'));
   assert.equal(path.basename(result.cli), 'cli.js');
   assert.equal(result.payloadDigest, 'sha256-test');
+});
+
+test('every bundled Office skill is required before writing the overlay', (t) => {
+  const home = tempHome();
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const source = writePayload(home);
+  const config = options(home, { bundledRuntimeDir: source });
+  for (const folder of OFFICE_SKILL_FOLDERS) {
+    const skill = path.join(path.dirname(source), 'office-skills', folder, 'SKILL.md');
+    const contents = fs.readFileSync(skill);
+    fs.unlinkSync(skill);
+    const result = ensureDesktopOfficeRuntime(config);
+    assert.equal(result.ok, false, folder);
+    assert.ok(result.error.includes(skill), result.error);
+    fs.writeFileSync(skill, contents);
+  }
 });
 
 test('dev without a payload only warns and leaves no overlay', () => {

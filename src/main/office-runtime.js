@@ -42,7 +42,10 @@ const OFFICE_DIR_NAME = 'office';
 const OFFICE_OVERLAY_FILENAME = 'desktop-office.patch.yml';
 const PRIMARY_RUNTIME_DIRNAME = 'dsh-primary-runtime';
 const OFFICE_SKILLS_DIRNAME = 'office-skills';
-const OFFICE_SKILL_FOLDERS = ['office-docx', 'office-pptx', 'office-xlsx'];
+const OFFICE_SKILL_FOLDERS = [
+  'office', 'office-docx', 'office-pptx', 'office-xlsx',
+  'office-render', 'office-recalculate', 'office-export-pdf',
+];
 const KIT_PACKAGE = '@deepseek-ai/libreoffice-kit';
 const KIT_CLI_ENTRY = path.join('lib', 'cli.js');
 const WORKSPACE_DEPENDENCIES_PACKAGE = '@deepseek-ai/dsh-tool-workspace-dependencies';
@@ -314,9 +317,7 @@ function ensureDesktopOfficeRuntime(options = {}) {
     return { ok: false, error: `Office 运行时缺少独立 Node：${node}` };
   }
   const assetRoot = path.join(path.dirname(source), OFFICE_SKILLS_DIRNAME);
-  const checkScript = path.join(assetRoot, 'scripts', 'check_office.py');
-  const missingAssets = [checkScript]
-    .concat(OFFICE_SKILL_FOLDERS.map((name) => path.join(assetRoot, name, 'SKILL.md')))
+  const missingAssets = OFFICE_SKILL_FOLDERS.map((name) => path.join(assetRoot, name, 'SKILL.md'))
     .filter((file) => !fs.existsSync(file));
   if (missingAssets.length) {
     return { ok: false, error: `Office 技能资源缺失：${missingAssets.join('；')}` };

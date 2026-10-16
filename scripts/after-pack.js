@@ -8,6 +8,7 @@ const {
   auditRuntimeClosure,
 } = require('../src/main/plugin-runtime-files');
 const { DESKTOP_PACKAGES } = require('../src/shared/harness-desktop-forks');
+const { OFFICE_SKILL_FOLDERS } = require('../src/main/office-runtime');
 const { runSkipComposeContract } = require('./check-skip-compose-contract');
 const { assembleRuntimeInstances } = require('./runtime-instance-graph');
 const { selectHarnessRuntimeSources, prunePluginDevDependencies, runtimeFileExclusion,
@@ -1843,10 +1844,7 @@ function assertOfficeRuntime(resources, harnessDest) {
     path.join(payload, 'dependencies', 'python', 'Lib', 'site-packages'),
   ];
   const skills = path.join(resources, 'runtime', 'office-skills');
-  const requiredSkills = [
-    path.join(skills, 'scripts', 'check_office.py'),
-    ...['office-docx', 'office-pptx', 'office-xlsx'].map((dir) => path.join(skills, dir, 'SKILL.md')),
-  ];
+  const requiredSkills = OFFICE_SKILL_FOLDERS.map((dir) => path.join(skills, dir, 'SKILL.md'));
   const missingPayload = [...requiredPayload, ...requiredSkills]
     .filter((file) => !fs.existsSync(file));
   if (missingPayload.length > 0) {

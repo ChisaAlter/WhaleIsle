@@ -8,7 +8,8 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { productionClosure, prunePluginDevDependencies, runtimeFileExclusion,
   pruneRuntimeFiles, pruneOfficeRuntime, officePayloadDigest } = require('./production-runtime');
-const { collectFiles } = require('./after-pack');
+const { collectFiles, assertOfficeRuntime } = require('./after-pack');
+const { OFFICE_SKILL_FOLDERS } = require('../src/main/office-runtime');
 const entries = pkg => new Map([
   ...Object.keys(pkg.dependencies || {}).map(name => [name, 'required']),
   ...Object.keys(pkg.optionalDependencies || {}).map(name => [name, 'optional']),
@@ -231,4 +232,35 @@ test('Office trimming keeps Python APIs and source files, binds actual payload b
   assert.notEqual(officePayloadDigest(staged, manifest), digest);
   assert.notEqual(officePayloadDigest(staged, { ...manifest, pnpmVersion: '11.8.0' }), digest);
   assert.equal(JSON.parse(fs.readFileSync(path.join(source, 'runtime.json'), 'utf8')).payloadDigest, 'original-input-digest');
+});
+
+test('packaged Office closure accepts current assets and requires every bundled skill', t => {
+  const { root, write } = fixture(t);
+  const resources = path.join(root, 'resources');
+  const payload = path.join(resources, 'runtime', 'primary-runtime');
+  for (const file of ['node/bin/node.exe', 'python/python.exe', 'pnpm/bin/pnpm.mjs']) {
+    writeFile(payload, `dependencies/${file}`);
+  }
+  fs.mkdirSync(path.join(payload, 'dependencies/python/Lib/site-packages'), { recursive: true });
+  const manifest = { platform: 'win32', arch: 'x64' };
+  manifest.payloadDigest = officePayloadDigest(payload, manifest);
+  writeFile(payload, 'runtime.json', JSON.stringify(manifest));
+  const assets = path.join(resources, 'runtime', 'office-skills');
+  fs.cpSync(new URL('../vendor/deepseek-harness/packages/skill/skill-office/assets/', import.meta.url), assets, { recursive: true });
+  for (const name of ['dsh-office-to-pdf', 'dsh-skill-office', 'dsh-tool-workspace-dependencies',
+    'libreoffice-kit', 'libreoffice-kit-win32-x64']) {
+    write(`@deepseek-ai/${name}`, { version: '0.1.1' });
+  }
+  writeFile(root, 'node_modules/@deepseek-ai/libreoffice-kit/lib/cli.js');
+  writeFile(root, 'node_modules/@deepseek-ai/libreoffice-kit-win32-x64/bin/libreoffice-kit.exe');
+  writeFile(root, 'node_modules/@deepseek-ai/libreoffice-kit-win32-x64/prebuilds.json',
+    JSON.stringify({ version: '0.1.1', platform: 'win32-x64', status: 'built' }));
+  assert.doesNotThrow(() => assertOfficeRuntime(resources, root));
+  for (const folder of OFFICE_SKILL_FOLDERS) {
+    const skill = path.join(assets, folder, 'SKILL.md');
+    const contents = fs.readFileSync(skill);
+    fs.unlinkSync(skill);
+    assert.throws(() => assertOfficeRuntime(resources, root), error => error.message.includes(skill), folder);
+    fs.writeFileSync(skill, contents);
+  }
 });
