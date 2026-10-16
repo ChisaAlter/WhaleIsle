@@ -1400,6 +1400,21 @@ test('leaving a Project auxiliary view through top navigation keeps focus on the
   }
 });
 
+test('returning from result records restores the original task result entry rather than the unmounted report control', async () => {
+  const detail = workDetail(), task = taskForWork(detail), b = bench({ detail, cards: [task] });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(task.id); await b.press('taskTeam'); await b.flush();
+    const origin = b.button('viewResult'); await b.press('viewResult'); await b.flush();
+    assert.ok(b.document.activeElement === b.button('taskBack'));
+    const reportControl = b.button('viewProcess'); await b.press('viewProcess'); await b.flush();
+    assert.equal(reportControl.isConnected, false, 'The report control is replaced by the records view');
+    assert.ok(b.document.activeElement === b.button('taskBack'));
+    await b.press('taskBack');
+    assert.ok(b.document.activeElement === origin, 'The explicit return restores the original task result entry');
+    assert.ok(isVisible(origin)); assert.equal(b.document.querySelector('.dsh-project-observer-aux'), null);
+  } finally { await b.dispose(); }
+});
+
 test('registered artifacts open in the application under their authorized directory and non-Git diff stays explicit', async () => {
   const detail = workDetail(), task = taskForWork(detail), b = bench({ detail, cards: [task] });
   try {

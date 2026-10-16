@@ -1044,9 +1044,9 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const pageControls = kind => activeCursors[kind].length > 1 || pages[kind]?.nextCursor ? h('div', { className: 'dsh-project-task-pagination' },
       activeCursors[kind].length > 1 ? button(t('previous'), () => updateCursors(kind, before => before.slice(0, -1)), cardsBusy) : null,
       pages[kind]?.nextCursor ? button(t('taskMore'), () => updateCursors(kind, before => [...before, pages[kind].nextCursor]), cardsBusy) : null) : null;
-    const showProcess = item => { subviewOriginRef.current = document.activeElement; navigate({ section: 'tasks', returnSection: section, subview: { kind: 'process',
+    const showProcess = item => { if (!subview) subviewOriginRef.current = document.activeElement; navigate({ section: 'tasks', returnSection: section, subview: { kind: 'process',
       ...(item.workstreamId ? { workstreamId: item.workstreamId } : { workerSessionId: item.workerSessionId }), delegationRef: item.delegationRef } }); };
-    const showReport = item => { subviewOriginRef.current = document.activeElement; navigate({ section: 'tasks', returnSection: section, subview: { kind: 'report', workstreamId: item.workstreamId, delegationRef: item.delegationRef } }); };
+    const showReport = item => { if (!subview) subviewOriginRef.current = document.activeElement; navigate({ section: 'tasks', returnSection: section, subview: { kind: 'report', workstreamId: item.workstreamId, delegationRef: item.delegationRef } }); };
     const act = async (endpoint, input) => {
       setActionBusy(true); setError('');
       try { await command(project.id, endpoint, input); } catch (failure) { setError(errorText(failure)); } finally { setActionBusy(false); }
