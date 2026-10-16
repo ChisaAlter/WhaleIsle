@@ -663,8 +663,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
           null,
           h('div', { className: 'dsh-project-task-footer' }, h('div', { className: 'dsh-project-task-footer-actions' }, primary ? h(Button, { variant: 'ghost', size: 'sm', disabled: controls.busy, onClick: () => changeQueue(card, primary.id) }, primary.label) : null,
             ['discussing', 'queued'].includes(card.queue?.state) && queueItems.some(item => item.id === 'cancel') ? h(Button, { variant: 'ghost', size: 'sm', disabled: controls.busy, onClick: () => changeQueue(card, 'cancel') }, t('requestUndo')) : null),
-            h(Button, { variant: 'ghost', size: 'sm', onClick: () => { setTab('overview'); setMode('full'); } }, t('taskDetail'), h(IconChevronRightOutlineRegular, { size: 14 }))))
-          : h(Fragment, null, h('div', { ref: bodyRef, className: 'dsh-project-task-full' }, saved ? h(ProjectTaskDetail, { projectId: project.id, card, tab, setTab,
+            h(Button, { variant: 'ghost', size: 'sm', onClick: () => setMode('full') }, t('taskDetail'), h(IconChevronRightOutlineRegular, { size: 14 }))))
+          : h(Fragment, null, h('div', { ref: bodyRef, className: 'dsh-project-task-full' }, saved ? h(ProjectTaskDetail, { projectId: project.id, card, tab, setTab, resourceRevision,
               read, showProcess, showReport, controls, retryHandover, queue, changeQueue, renderFactorySlot, embedded: true, t }) : h('p', { role: 'status' }, t('loading'))),
             h('div', { className: 'dsh-project-task-footer' }, h(Button, { variant: 'ghost', size: 'sm', onClick: () => setMode('card') }, t('observerCard'), h(IconChevronUpOutlineRegular, { size: 14 }))))),
       error ? h(Toast, { text: error, onDone: () => setError('') }) : null);
@@ -843,7 +843,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       ? h(ResultEntry, { projectId, result, read, showProcess, t }) : h('p', { role: 'status' }, t('loading'));
   }
 
-  function ProjectTaskWork({ projectId, item, read, controls, t }) {
+  function ProjectTaskWork({ projectId, item, resourceRevision, read, controls, t }) {
     const [value, setValue] = useState(null), [error, setError] = useState('');
     useEffect(() => {
       if (!item.current) return;
@@ -853,7 +853,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       return () => { live = false; };
     }, [projectId, item.workstreamId, item.delegationRef, item.updatedAt, item.status]);
     if (value?.workstream.currentDelegationRef === item.delegationRef) return h(WorkProgressItem, {
-      projectId, work: { ...value.workstream, id: item.workstreamId, hasReport: Boolean(value.workstream.latestReport) }, worker: value.worker,
+      projectId, resourceRevision, work: { ...value.workstream, id: item.workstreamId, hasReport: Boolean(value.workstream.latestReport) }, worker: value.worker,
       read, ...controls, t,
     });
     return h('div', { className: 'dsh-project-task-member' },
@@ -865,7 +865,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null);
   }
 
-  function ProjectTaskDetail({ projectId, card, tab, setTab, read, showProcess, showReport, controls, retryHandover, queue, changeQueue, renderFactorySlot, embedded = false, t }) {
+  function ProjectTaskDetail({ projectId, card, tab, setTab, resourceRevision, read, showProcess, showReport, controls, retryHandover, queue, changeQueue, renderFactorySlot, embedded = false, t }) {
     const work = card.work ?? [], delivery = card.delivery && { ...card.delivery, requestId: card.id, requestRevision: card.revision, title: card.title,
       reportRefs: card.delivery.reportRefs ?? [], terminalRefs: card.delivery.terminalRefs ?? [] };
     const tabs = [['overview', 'taskOverview'], ['team', 'taskTeam'], ['results', 'taskResults'], ['activity', 'taskActivity']];
@@ -897,7 +897,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
           delivery?.remainingIssues?.length ? h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, t('remainingIssues')),
             h('ul', null, delivery.remainingIssues.map((item, index) => h('li', { key: index }, item)))) : null) : null,
         tab === 'team' ? h('div', { className: 'dsh-project-task-section' }, work.length ? work.map(item => h(ProjectTaskWork, {
-          key: item.workstreamId + ':' + item.delegationRef, projectId, item, read, controls, t,
+          key: item.workstreamId + ':' + item.delegationRef, projectId, item, resourceRevision, read, controls, t,
         })) : h('p', { className: 'dsh-project-muted' }, t('taskNoMembers'))) : null,
         tab === 'results' ? h('div', { className: 'dsh-project-task-section' }, delivery
           ? h(DeliveryEntry, { projectId, delivery, results: work.map(item => ({ workstreamId: item.workstreamId, title: item.title })), read,
@@ -936,6 +936,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const sessions = Object.fromEntries([...new Set([...Object.keys(summarySessions), ...statuses.keys()])].map(id => [id, { ...summarySessions[id], running: statuses.get(id)?.running ?? summarySessions[id]?.running }]));
     const [section, setSection] = useState('tasks'), [historyKind, setHistoryKind] = useState(null), [historyMenu, setHistoryMenu] = useState(false);
     const [subview, setSubview] = useState(null), [subviewReturn, setSubviewReturn] = useState('tasks'), [materialsVisited, setMaterialsVisited] = useState(false);
+    const subviewBackRef = useRef(null), subviewOriginRef = useRef(null), subviewReturnFocusRef = useRef(null);
     const observerRef = useRef(null), contentRef = useRef(null), panelRef = useRef(panel), resizingRef = useRef(false);
     panelRef.current = panel;
     const cursorScope = `${project?.id ?? ''}:${detail?.revision ?? ''}`;
@@ -946,6 +947,10 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const [materialsDirty, setMaterialsDirty] = useState(false), [pendingRoute, setPendingRoute] = useState(null);
     const queueChanging = useRef(false), editorRef = useRef(null), materialsDirtyRef = useRef(false);
     const onMaterialsDirty = useCallback(value => { materialsDirtyRef.current = value; setMaterialsDirty(value); }, []);
+    useLayoutEffect(() => {
+      if (subview) subviewBackRef.current?.focus();
+      else { const origin = subviewReturnFocusRef.current; subviewReturnFocusRef.current = null; if (origin?.isConnected) origin.focus(); }
+    }, [subview]);
     useEffect(() => { if (section === 'materials') setMaterialsVisited(true); }, [section]);
     useEffect(() => registerObserverEditor(sessionId, tab.id, { getPanel: () => panelRef.current, isDirty: () => materialsDirtyRef.current,
       requestClose: proceed => setPendingRoute({ close: proceed }) }), [sessionId, tab.id]);
@@ -991,7 +996,15 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       return () => { live = false; };
     }, [project?.id, detail?.revision, refreshKey, activeCursors.current.at(-1), activeCursors.completed.at(-1), activeCursors.archived.at(-1), activeCursors.cancelled.at(-1)]);
     if (!project) return h('p', { className: 'dsh-project-empty' }, t('unavailable'));
-    const applyRoute = route => { setSection(route.section ?? 'tasks'); setSubview(route.subview ?? null); if (route.returnSection) setSubviewReturn(route.returnSection); };
+    const applyRoute = route => {
+      if (!route.subview) { subviewOriginRef.current = null; subviewReturnFocusRef.current = null; }
+      setSection(route.section ?? 'tasks'); setSubview(route.subview ?? null); if (route.returnSection) setSubviewReturn(route.returnSection);
+    };
+    const returnFromSubview = () => {
+      const origin = subviewOriginRef.current;
+      applyRoute({ section: subviewReturn });
+      subviewReturnFocusRef.current = origin;
+    };
     const navigate = route => {
       if (section === 'materials' && materialsDirty && route.section !== 'materials' && !route.subview) setPendingRoute(route);
       else applyRoute(route);
@@ -1031,9 +1044,9 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const pageControls = kind => activeCursors[kind].length > 1 || pages[kind]?.nextCursor ? h('div', { className: 'dsh-project-task-pagination' },
       activeCursors[kind].length > 1 ? button(t('previous'), () => updateCursors(kind, before => before.slice(0, -1)), cardsBusy) : null,
       pages[kind]?.nextCursor ? button(t('taskMore'), () => updateCursors(kind, before => [...before, pages[kind].nextCursor]), cardsBusy) : null) : null;
-    const showProcess = item => navigate({ section: 'tasks', returnSection: section, subview: { kind: 'process',
-      ...(item.workstreamId ? { workstreamId: item.workstreamId } : { workerSessionId: item.workerSessionId }), delegationRef: item.delegationRef } });
-    const showReport = item => navigate({ section: 'tasks', returnSection: section, subview: { kind: 'report', workstreamId: item.workstreamId, delegationRef: item.delegationRef } });
+    const showProcess = item => { subviewOriginRef.current = document.activeElement; navigate({ section: 'tasks', returnSection: section, subview: { kind: 'process',
+      ...(item.workstreamId ? { workstreamId: item.workstreamId } : { workerSessionId: item.workerSessionId }), delegationRef: item.delegationRef } }); };
+    const showReport = item => { subviewOriginRef.current = document.activeElement; navigate({ section: 'tasks', returnSection: section, subview: { kind: 'report', workstreamId: item.workstreamId, delegationRef: item.delegationRef } }); };
     const act = async (endpoint, input) => {
       setActionBusy(true); setError('');
       try { await command(project.id, endpoint, input); } catch (failure) { setError(errorText(failure)); } finally { setActionBusy(false); }
@@ -1099,7 +1112,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         !activeCard && !current.length && !pages.completed?.total && !cardsBusy ? h('div', { className: 'dsh-project-observer-empty' }, h('strong', null, t('taskEmptyTitle')), h('p', null, t('taskEmpty'))) : null,
         waiting.length ? h('div', { className: 'dsh-project-observer-list', 'aria-label': t('requestQueued') }, waiting.map(item => renderCard(item))) : null,
         pageControls('current'),
-        subview ? h('section', { className: 'dsh-project-observer-aux' }, h(Button, { variant: 'ghost', size: 'sm', onClick: () => subviewReturn === 'tasks' ? setSubview(null) : applyRoute({ section: subviewReturn }) }, t(subviewReturn === 'materials' ? 'backToResults' : subviewReturn === 'team' ? 'teamBack' : 'taskBack')),
+        subview ? h('section', { className: 'dsh-project-observer-aux' }, h(Button, { ref: subviewBackRef, variant: 'ghost', size: 'sm', onClick: returnFromSubview }, t(subviewReturn === 'materials' ? 'backToResults' : subviewReturn === 'team' ? 'teamBack' : 'taskBack')),
           h('div', { className: 'dsh-project-task-full' }, subview.kind === 'process' && detail ? h(ProcessPreview, { key: (subview.workstreamId ?? subview.workerSessionId) + ':' + (subview.delegationRef ?? ''), project: detail.project,
             workstreamId: subview.workstreamId, workerSessionId: subview.workerSessionId, delegationRef: subview.delegationRef, read, retainProcess, t }) : subview.kind === 'report' ? h(ProjectReportView, { projectId: project.id, reference: subview, read, showProcess: (_id, workstreamId, _member, context) => showProcess({ workstreamId, delegationRef: context?.delegationRef }), t })
             : subview.kind === 'diff' ? h(FileDiff, { projectId: project.id, workstreamId: subview.workstreamId, read, t })
@@ -1128,14 +1141,14 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     return h('div', { className: 'dsh-project-archive-notice', role: 'status' }, h('p', null, t(project?.archiving ? 'archiving' : 'archivedHint')), project?.lifecycle === 'archived' ? button(t('restore'), restore, busy) : null, error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null);
   }
 
-  function WorkProgressItem({ projectId, work, worker, paused, act, read, retrySummary, openModelSettings, showProcess, showDiff, showMaterials, busy, t }) {
+  function WorkProgressItem({ projectId, work, worker, resourceRevision, paused, act, read, retrySummary, openModelSettings, showProcess, showDiff, showMaterials, busy, t }) {
     const [expanded, setExpanded] = useState(false), [value, setValue] = useState(null), [error, setError] = useState('');
     useEffect(() => {
       if (!expanded) return;
       let live = true; setValue(null); setError('');
       void read(projectId, 'workstreams/get', { workstreamId: work.id }).then(result => { if (live) setValue(result); }).catch(failure => { if (live) setError(errorText(failure)); });
       return () => { live = false; };
-    }, [expanded, projectId, work.id, work.updatedAt, work.prerequisitesChanged]);
+    }, [expanded, projectId, work.id, work.updatedAt, work.prerequisitesChanged, resourceRevision]);
     const report = value?.workstream.latestReport, member = value?.worker;
     const waiting = work.delegation?.waitingReason;
     const summaryFailure = work.summaryFailure && (!work.currentDelegationRef || work.summaryFailure.delegationRef === work.currentDelegationRef) ? work.summaryFailure : null;
@@ -1145,8 +1158,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       worker?.error || !worker?.stopped && work.blockedReason && work.blockedReason !== 'stopped' ? h('p', { className: 'dsh-project-error' }, worker?.error || workBlockedLabel(t, work.blockedReason)) : null,
       work.delegation?.phase === 'queued' ? h('p', { className: 'dsh-project-muted' }, waiting ? `${t({ dependencies: 'waitingDependencies', directory: 'waitingDirectory', capacity: 'waitingCapacity' }[waiting.kind])}${waiting.workTitles.length ? ` · ${waiting.workTitles.join('、')}` : ''}` : t('queued')) : null,
       summaryFailure && !work.request?.authorityError ? h(SummaryFailure, { failure: summaryFailure, openModelSettings, t }) : null,
-      work.prerequisitesChanged ? h('p', { className: 'dsh-project-muted', title: t('prerequisitesHint') }, t('prerequisitesChanged')) : null,
-      h('div', { className: 'dsh-project-actions' }, work.hasReport ? h(Button, { variant: 'ghost', size: 'sm', onClick: () => showMaterials(projectId, work.id) }, t('viewResult')) : null,
+      (value?.workstream.prerequisitesChanged ?? work.prerequisitesChanged) ? h('p', { className: 'dsh-project-muted', title: t('prerequisitesHint') }, t('prerequisitesChanged')) : null,
+      h('div', { className: 'dsh-project-actions' }, work.hasReport ? h(Button, { variant: 'ghost', size: 'sm', onClick: () => showMaterials(projectId, work.id, { delegationRef: work.currentDelegationRef }) }, t('viewResult')) : null,
         summaryFailure && !work.request?.authorityError ? button(t('retrySummary'), () => retrySummary(work), busy) : null,
         worker && !worker.stopped && (isLive(worker) || ['queued', 'preparing'].includes(work.delegation?.phase)) ? button(t('stopWork'), () => act('stop', { workstreamId: work.id }), busy) : null),
       h('details', { className: 'dsh-project-work-details', open: expanded, onToggle: event => setExpanded(event.currentTarget.open) }, h('summary', null, t('workDetails')),
@@ -1155,7 +1168,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
           !value && !error ? h('p', { role: 'status' }, t('loading')) : null,
           error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null,
           h('div', { className: 'dsh-project-work-detail-actions' }, work.workerSessionId ? h(Button, { variant: 'ghost', size: 'sm', onClick: () => showProcess(projectId, work.id) }, t('viewProcess')) : null,
-            report && !work.hasReport ? h(Button, { variant: 'ghost', size: 'sm', onClick: () => showMaterials(projectId, work.id) }, t('viewResult')) : null,
+            report && !work.hasReport ? h(Button, { variant: 'ghost', size: 'sm', onClick: () => showMaterials(projectId, work.id, { delegationRef: report.delegationRef }) }, t('viewResult')) : null,
             member && member.role !== 'readonly' ? h(Button, { variant: 'ghost', size: 'sm', onClick: () => showDiff(projectId, work.id) }, t('diff')) : null),
           member ? h('details', null, h('summary', null, t('executionInfo')),
             h('p', { className: 'dsh-project-muted' }, t(member.role === 'readonly' ? 'readonly' : member.role === 'docs' ? 'docsScope' : 'developmentScope')),

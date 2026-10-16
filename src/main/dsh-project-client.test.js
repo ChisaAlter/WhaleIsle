@@ -55,7 +55,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
   }
   const { createRoot } = clientRequire('react-dom/client');
-  let registration, directoryAction, timer, root;
+  let registration, directoryAction, timer, root, adopted = false;
   const cleanups = [], entries = [], requests = [], navigation = [], retained = [], released = [], opened = [], sent = [], resizes = [], resizeObservers = [], factoryCalls = [], events = new Map(), sessionActions = new Map(), sessionNavigation = new Map(), locales = new Map();
   const project = { id: 'project-one', title: 'Project', coordinatorSessionId: 'coordinator-existing', workspaceId: 'workspace-existing',
     storageRoot: 'C:/profile/projects/project-one', canonicalWorkingDirectory: 'C:/workspace/real', lifecycle: 'ready', paused: false, diagnostics: [], ...(queue ? { queue } : {}), activity: detail?.activity ?? { running: 0, blocked: 0, queued: 0, state: 'idle' } };
@@ -163,10 +163,12 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
       projectionsBySession: { [project.coordinatorSessionId]: { values: { agentTeam: team } } } }), retain: (address, options) => { retained.push({ address, options }); return { ready: Promise.resolve(binding), release: () => released.push(address.childSessionId) }; } },
     connection: { rpc: { call: async (prefix, method, input) => {
       assert.equal(prefix, '/dsh-project'); requests.push({ method, input });
+      // The real RPC boundary returns independent JSON snapshots, never mutable fixture objects.
+      return structuredClone(await (async () => {
       const override = rpcOverride?.(method, input, project, stored);
       if (override !== undefined) return await override;
-      if (method === 'list') return { ok: true, value: { projects: [], available } };
-      if (method === 'create') return rejectCreation ? { ok: false, error: { code: 'project/rejected', message: 'Creation failed' } } : { ok: true, value: { project, reused: true } };
+      if (method === 'list') return { ok: true, value: { projects: adopted ? [project] : [], available } };
+      if (method === 'create') { if (!rejectCreation) adopted = true; return rejectCreation ? { ok: false, error: { code: 'project/rejected', message: 'Creation failed' } } : { ok: true, value: { project, reused: true } }; }
       if (method === 'detail') return { ok: true, value: { project, workstreams: [], workers: [], revision: 'revision-1', ...detail, ...(detail?.workstreams ? { workstreams: detail.workstreams.map(({ latestReport, ...work }) => ({ ...work, hasReport: Boolean(latestReport) })) } : {}) } };
       if (method === 'requests/list') {
         const rows = cards.filter(card => input.kind === 'archived' ? card.archivedAt !== undefined : input.kind === 'completed' ? card.status === 'completed' && card.archivedAt === undefined : input.kind === 'cancelled' ? card.queue?.state === 'cancelled' : card.status !== 'completed' && card.queue?.state !== 'cancelled');
@@ -206,6 +208,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
       if (['resume', 'archive', 'restore'].includes(method)) return { ok: true, value: { project } };
       if (method === 'rename') { project.title = input.title; return { ok: true, value: { project } }; }
       throw new Error(`Unexpected method ${method}`);
+      })());
     } } },
   };
   plugin.apply(ctx);
@@ -1361,7 +1364,7 @@ test('background process renders real Session records in pages and never opens a
     const heading = b.document.querySelector('[data-workstream-id=work-one] .dsh-project-work-heading'); assert.match(heading.textContent, /running/); assert.doesNotMatch(heading.textContent, /pendingSummary/);
     await b.press('viewResult'); await b.flush(); assert.match(b.document.querySelector('.dsh-project-observer-aux').textContent, /An actual integration check remains/); await b.press('taskBack');
     const navigation = b.navigation.length;
-    await b.disclose('workDetails', b.document.querySelector('[data-workstream-id=work-one]'));
+    assert.equal(b.document.querySelector('[data-workstream-id=work-one] .dsh-project-work-details').open, true, 'Returning preserves the expanded work details');
     await b.press('viewProcess'); await b.flush();
     assert.equal(b.retained[0].address.parentSessionId, 'coordinator-existing'); assert.equal(b.retained[0].address.childSessionId, 'worker-one'); assert.equal(b.retained[0].address.mode, 'continuable');
     assert.equal(b.document.querySelector('.dsh-project-observer-aux').querySelectorAll('textarea,input').length, 0); assert.equal(b.navigation.length, navigation);
@@ -1380,6 +1383,21 @@ test('background process renders real Session records in pages and never opens a
     assert.deepEqual(b.eventSource.getSnapshot().entries.slice(-2), emptyRecords);
     assert.equal(b.requests.some(request => ['delegate', 'message', 'prompt'].includes(request.method)), false);
   } finally { await b.dispose(); }
+});
+
+test('leaving a Project auxiliary view through top navigation keeps focus on the chosen destination', async () => {
+  for (const destination of ['taskList', 'team', 'taskMaterials']) {
+    const detail = workDetail(), task = taskForWork(detail), b = bench({ detail, cards: [task] });
+    try {
+      await b.flush(); await b.adopt(); await b.mount(); await b.openRequest(task.id); await b.press('taskTeam'); await b.flush();
+      const origin = b.button('viewResult'); await b.press('viewResult'); await b.flush();
+      assert.ok(b.document.activeElement === b.button('taskBack'), 'Auxiliary view receives focus on its return control');
+      const destinationButton = b.button(destination); await b.press(destination);
+      assert.ok(b.document.activeElement === destinationButton, 'Ordinary navigation must not restore the old result entry focus');
+      assert.ok(b.document.activeElement !== origin);
+      assert.equal(destinationButton.getAttribute('aria-current'), 'page');
+    } finally { await b.dispose(); }
+  }
 });
 
 test('registered artifacts open in the application under their authorized directory and non-Git diff stays explicit', async () => {
@@ -1434,7 +1452,8 @@ test('a failed authorized file read or native preview keeps the original materia
     try {
       await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList(); await b.openRequest(task.id); await b.press('taskTeam'); await b.flush(); await b.press('viewResult'); await b.flush();
       const originalResult = b.document.querySelector('.dsh-project-observer-aux [data-result-workstream-id=work-one]');
-      await b.press('openFile: app.js'); assert.ok(isVisible(originalResult)); assert.equal(b.observer.getSnapshot().panel.rect.height > 44, true);
+      const originalFrame = { ...b.observer.getSnapshot().panel.rect };
+      await b.press('openFile: app.js'); assert.ok(isVisible(originalResult)); assert.deepEqual({ ...b.observer.getSnapshot().panel.rect }, originalFrame);
       assert.match(originalResult.querySelector('[role=alert]').textContent, boundary === 'authority' ? /Actual file access failed/ : /Actual native preview failed/); assert.equal(b.opened.length, 0);
       assert.equal(b.requests.filter(request => request.method === 'open').length, 1);
     } finally { await b.dispose(); }
@@ -1487,8 +1506,9 @@ test('a pending file preview cannot hide a different tab or result in the same m
       await b.press('openFile: report.md'); assert.equal(typeof finishPreview, 'function');
       await b.press(destination); await b.flush();
       const content = b.document.querySelector('.dsh-project-materials-content'); content.scrollTop = 257;
+      const originalFrame = { ...b.observer.getSnapshot().panel.rect };
       await act(async () => { finishPreview(); await new Promise(resolve => setImmediate(resolve)); });
-      assert.equal(b.observer.getSnapshot().panel.rect.height > 44, true);
+      assert.deepEqual({ ...b.observer.getSnapshot().panel.rect }, originalFrame);
       assert.ok(isVisible(content)); assert.equal(content.scrollTop, 257);
       assert.equal(b.document.querySelector('[role=tab][aria-selected=true]').textContent, destination);
       assert.equal(b.opened.length, 1); assert.equal(b.sent.length, 0);
@@ -1902,9 +1922,9 @@ test('a failed Request handover without member rows offers a fresh scoped summar
     assert.match(b.sent[0].text, /retrySummaryPrompt\nRepair the import · requestVersion 2\nFix and verify the import/);
     assert.equal(draft.value, 'Unsent follow-up');
     stale = true; await b.press('retrySummary'); assert.equal(b.sent.length, 1);
-    assert.match(b.document.querySelector('.dsh-project-observer').textContent, /resultUpdated/);
+    assert.match(b.document.querySelector('[role=alert]').textContent, /resultUpdated/);
     stale = false; authorityMissing = true; await b.press('retrySummary'); assert.equal(b.sent.length, 1);
-    assert.match(b.document.querySelector('.dsh-project-observer').textContent, /authorityErrorHint/);
+    assert.match(b.document.querySelector('[role=alert]').textContent, /authorityErrorHint/);
     assert.equal(b.requests.some(request => ['delegate', 'resume', 'store/write'].includes(request.method)), false);
   } finally { await b.dispose(); }
 });
@@ -1970,7 +1990,7 @@ test('a partial delivery without a report opens its exact terminal records and r
     await b.press('viewProcess'); await b.flush();
     content.scrollTop = 0;
     assert.ok(dialog.querySelector('.dsh-project-observer-aux')); assert.equal(isVisible(materials), false);
-    assert.equal(b.document.activeElement, b.button('backToResults'));
+    assert.ok(b.document.activeElement === b.button('backToResults'), 'The process preview receives focus on its return control');
     assert.match(dialog.textContent, /Actual inspection before the failure/); assert.match(dialog.textContent, /Actual terminal provider failure/); assert.doesNotMatch(dialog.textContent, /runRecordsMissing/);
     assert.deepEqual(b.retained.map(item => ({ ...item.address })), [{ parentSessionId: 'coordinator-existing', childSessionId: 'worker-one', mode: 'continuable' }]);
     assert.equal(b.requests.filter(request => request.method === 'workstreams/get').at(-1).input.workstreamId, work.id); assert.equal(b.requests.some(request => request.method === 'store/results'), false);
@@ -2052,7 +2072,7 @@ test('queued work explains the actual gate and an open report refreshes changed 
       await b.flush(); await b.adopt(); await b.mount(); await b.openTaskList(); await b.openRequest(task.id); await b.press('taskTeam'); assert.match(b.document.body.textContent, new RegExp(label));
       if (kind !== 'capacity') assert.match(b.document.body.textContent, /API contract/);
       await b.disclose('workDetails'); const previousReads = b.requests.filter(request => request.method === 'workstreams/get').length;
-      work.prerequisitesChanged = true; work.latestReport.prerequisitesChanged = true;
+      work.prerequisitesChanged = true; work.latestReport.prerequisitesChanged = true; detail.revision = 'dependency-result-changed';
       await b.poll(); await b.flush(); assert.match(b.document.body.textContent, /prerequisitesChanged/);
       assert.equal(b.requests.filter(request => request.method === 'workstreams/get').length, previousReads + 1, 'dependency warning refreshes expanded details even when downstream updatedAt stays unchanged');
       assert.equal(b.requests.some(request => request.method === 'delegate'), false);
