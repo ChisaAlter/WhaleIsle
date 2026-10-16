@@ -1045,7 +1045,7 @@ test('explicit incremental update uses its confirmed release and publishes downl
     const info = { ...summarizeRelease(releaseWithChecksum(), '0.2.5'), status: 'available', latest: '0.2.6' };
     const result = await installUpdate(null, {
       expectedCheck: info, downloadMode: 'delta',
-      updaterDeps: { isPackaged: true, platform: 'win32', autoUpdater: fake, existsSync: () => true },
+      updaterDeps: { isPackaged: true, platform: 'win32', autoUpdater: fake, prepareDifferentialBase: async () => ({ ok: true }) },
       quitAfterInstall: false,
       spawn: (file, args) => {
         assert.equal(file, installer);
@@ -1132,7 +1132,7 @@ test('failed incremental update stops without silently requesting the full insta
   const info = { ...summarizeRelease(releaseWithChecksum(), '0.2.5'), status: 'available', latest: '0.2.6' };
   await assert.rejects(installUpdate(null, {
     expectedCheck: info, downloadMode: 'delta',
-    updaterDeps: { isPackaged: true, platform: 'win32', autoUpdater: fake, existsSync: () => true },
+    updaterDeps: { isPackaged: true, platform: 'win32', autoUpdater: fake, prepareDifferentialBase: async () => ({ ok: true }) },
   }), /manifest unreachable/);
   assert.equal(fake.calls.checkForUpdates, 1);
   assert.equal(fake.calls.downloadUpdate, 0);
@@ -1155,7 +1155,7 @@ test('download methods expose exact metadata and disable delta for missing cache
     assert.equal(info.updaterMetadataUrl, 'https://example.test/latest.yml');
   }
   const fake = fakeUpdaterChannel();
-  const deps = { isPackaged: true, platform: 'win32', autoUpdater: fake, existsSync: () => true };
+  const deps = { isPackaged: true, platform: 'win32', autoUpdater: fake, prepareDifferentialBase: async () => ({ ok: true }) };
   assert.deepEqual(await updateDownloadMethods(checked, deps), [
     { id: 'delta', label: '增量更新', description: '只下载发生变化的部分，节省流量。' },
     { id: 'full', label: '完全下载', description: '下载完整安装包，适合修复或重新安装。' },
@@ -1165,7 +1165,9 @@ test('download methods expose exact metadata and disable delta for missing cache
   const missingMetadata = summarizeRelease(wrongBlockmap, '0.2.5');
   assert.equal(missingMetadata.blockmapUrl, '');
   assert.match((await updateDownloadMethods(missingMetadata, deps))[0].disabledReason, /所需文件/);
-  assert.match((await updateDownloadMethods(checked, { ...deps, existsSync: () => false }))[0].disabledReason, /缓存/);
+  assert.match((await updateDownloadMethods(checked, { ...deps,
+    prepareDifferentialBase: async () => ({ ok: false, reason: 'missing-cached-installer', message: '未找到安装包缓存' }),
+  }))[0].disabledReason, /缓存/);
   assert.match((await updateDownloadMethods(checked, { ...deps, isPackaged: false }))[0].disabledReason, /源码/);
   assert.equal(fake.calls.checkForUpdates, 0, 'capability projection must not create another update check');
 });

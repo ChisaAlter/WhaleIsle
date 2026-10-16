@@ -25,7 +25,7 @@ document.getElementById('close').addEventListener('click', () => { respond(view.
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && view !== undefined) { event.preventDefault(); respond(view.cancelId); }
   if (event.key !== 'Tab') return;
-  const controls = [...document.querySelectorAll('button:not(:disabled), input:not(:disabled), #content:not([hidden]), details:not([hidden]) > summary, details[open]:not([hidden]) > pre')];
+  const controls = [...document.querySelectorAll('button:not(:disabled):not([tabindex="-1"]), input:not(:disabled), #content:not([hidden]), details:not([hidden]) > summary, details[open]:not([hidden]) > pre')];
   const current = controls.indexOf(document.activeElement);
   const next = current < 0 ? (event.shiftKey ? controls.length - 1 : 0)
     : (current + (event.shiftKey ? -1 : 1) + controls.length) % controls.length;
@@ -34,6 +34,58 @@ document.addEventListener('keydown', (event) => {
 });
 function applyWindowState(state) {
   document.documentElement.toggleAttribute('data-window-maximized', Boolean(state.maximized));
+}
+function renderNotes(state) {
+  const tabs = document.getElementById('notes-tabs');
+  const content = document.getElementById('content');
+  const detail = document.getElementById('detail');
+  const sections = state.kind === 'update' ? state.detailTabs || [] : [];
+  const tabbed = sections.length > 1;
+  tabs.replaceChildren();
+  tabs.hidden = !tabbed;
+  document.getElementById('dialog').classList.toggle('has-notes-tabs', tabbed);
+  content.setAttribute('role', tabbed ? 'tabpanel' : 'region');
+  content.removeAttribute('aria-labelledby');
+  detail.removeAttribute('lang');
+  detail.textContent = state.detail;
+  detail.hidden = !state.detail;
+  if (!tabbed) return;
+
+  const select = (index, focus = false) => {
+    for (const [i, tab] of [...tabs.children].entries()) {
+      tab.setAttribute('aria-selected', String(i === index));
+      tab.tabIndex = i === index ? 0 : -1;
+    }
+    const tab = tabs.children[index];
+    content.setAttribute('aria-labelledby', tab.id);
+    detail.textContent = sections[index].text;
+    detail.lang = sections[index].id;
+    detail.hidden = false;
+    content.scrollTop = 0;
+    if (focus) tab.focus();
+  };
+  for (const [index, section] of sections.entries()) {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.id = `notes-tab-${section.id}`;
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-controls', 'content');
+    tab.textContent = section.label;
+    tab.addEventListener('click', () => select(index));
+    tab.addEventListener('keydown', (event) => {
+      let next;
+      if (event.key === 'ArrowRight') next = (index + 1) % sections.length;
+      else if (event.key === 'ArrowLeft') next = (index + sections.length - 1) % sections.length;
+      else if (event.key === 'Home') next = 0;
+      else if (event.key === 'End') next = sections.length - 1;
+      else return;
+      event.preventDefault();
+      select(next, true);
+    });
+    tabs.append(tab);
+  }
+  const preferred = sections.findIndex((section) => section.id === state.locale);
+  select(preferred < 0 ? 0 : preferred);
 }
 function render(state) {
   if (state === null) {
@@ -75,8 +127,7 @@ function render(state) {
     label.append(input, copy);
     options.append(label);
   }
-  document.getElementById('detail').textContent = state.detail;
-  document.getElementById('detail').hidden = state.detail === '';
+  renderNotes(state);
   document.getElementById('close').setAttribute('aria-label', state.closeLabel);
   document.getElementById('technical-details').hidden = state.technicalDetails === '';
   document.getElementById('technical-details-label').textContent = state.technicalDetailsLabel;

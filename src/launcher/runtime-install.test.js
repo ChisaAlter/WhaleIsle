@@ -218,6 +218,23 @@ test('releaseFor returns null on 404 and an error shape on failure', async () =>
   }
 });
 
+test('current-release lookups propagate the caller cancellation to both supported routes', async (t) => {
+  const previousFetch = global.fetch;
+  t.after(() => { global.fetch = previousFetch; });
+  for (const route of ['github', 'cnb']) {
+    const controller = new AbortController();
+    let observed;
+    global.fetch = (_url, { signal }) => new Promise((_resolve, reject) => {
+      observed = signal;
+      signal.addEventListener('abort', () => reject(Object.assign(new Error('cancelled'), { name: 'AbortError' })), { once: true });
+    });
+    const pending = releaseSource.releaseFor(route, 'v1.0.0', { signal: controller.signal });
+    controller.abort();
+    await assert.rejects(pending);
+    assert.equal(observed.aborted, true);
+  }
+});
+
 // --- install-detect target ---------------------------------------------------
 
 test('getInstalledAppInfo with an explicit target never claims the running process', () => {

@@ -34,6 +34,24 @@ main {
 main[data-kind="update"] {
   width: min(640px, calc(100vw - 48px));
 }
+main.has-notes-tabs { height: min(720px, calc(100vh - 48px)); }
+#notes-tabs {
+  display: flex;
+  gap: 4px;
+  flex: none;
+  padding: 8px 24px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+#notes-tabs button {
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+#notes-tabs button:hover { background: var(--dsw-alias-interactive-bg-hover); }
+#notes-tabs button[aria-selected="true"] {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+main[data-kind="update"].has-notes-tabs #content { flex: 1; border-top: 0; padding-top: 8px; }
 header {
   display: flex;
   align-items: center;

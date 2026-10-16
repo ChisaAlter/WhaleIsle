@@ -9,6 +9,14 @@ const fs = require('fs');
 const { app } = require('electron');
 
 let strictUpdater;
+const checkedBases = new Map();
+const preparingBases = new Map();
+
+async function removeBlockmap(file) {
+  try { await fs.promises.unlink(file); } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+}
 
 function assertConfirmedTarget(updateInfoAndProvider, expectedCheck) {
   const info = updateInfoAndProvider?.info;
@@ -30,23 +38,37 @@ function assertConfirmedTarget(updateInfoAndProvider, expectedCheck) {
 /** electron-updater 6.8.9 returns true when its differential path failed. */
 function strictNsisUpdaterClass(NsisUpdater) {
   return class StrictNsisUpdater extends NsisUpdater {
-    doDownloadUpdate(options) {
+    async doDownloadUpdate(options) {
       // Bind again at the actual library boundary, before a cache or transfer
       // can be selected from its mutable updateInfoAndProvider field.
       assertConfirmedTarget(options.updateInfoAndProvider, this.confirmedDownloadTarget);
+      const helper = await this.getOrCreateDownloadHelper();
+      // A valid pending installer bypasses differentialDownloadInstaller, but
+      // 6.8.9 would still promote its anonymous map in executeDownload.done().
+      await removeBlockmap(path.join(helper.cacheDirForPendingUpdate, 'current.blockmap'));
+      await removeBlockmap(path.join(helper.cacheDir, 'current.blockmap'));
       return super.doDownloadUpdate({
         ...options, disableWebInstaller: true, disableDifferentialDownload: false,
       });
     }
 
     async differentialDownloadInstaller(...args) {
-      const needsFullDownload = await super.differentialDownloadInstaller(...args);
-      if (needsFullDownload) {
-        throw Object.assign(new Error('增量更新失败，已停止下载。请重新选择完全下载。'), {
-          code: 'ERR_UPDATER_DIFFERENTIAL_FAILED',
-        });
+      const helper = await this.getOrCreateDownloadHelper();
+      // 6.8.9 promotes the new map as soon as download finishes, before NSIS
+      // replaces installer.exe. Always fetch the old release's map for our
+      // verified base, and prevent that premature promotion on this channel.
+      await removeBlockmap(path.join(helper.cacheDir, 'current.blockmap'));
+      try {
+        const needsFullDownload = await super.differentialDownloadInstaller(...args);
+        if (needsFullDownload) {
+          throw Object.assign(new Error('增量更新失败，已停止下载。请重新选择完全下载。'), {
+            code: 'ERR_UPDATER_DIFFERENTIAL_FAILED',
+          });
+        }
+        return false;
+      } finally {
+        await removeBlockmap(path.join(helper.cacheDirForPendingUpdate, 'current.blockmap'));
       }
-      return false;
     }
   };
 }
@@ -84,6 +106,114 @@ async function cachedInstallerPath(autoUpdater) {
   return path.join(helper.cacheDir, CURRENT_APP_INSTALLER_FILE_NAME);
 }
 
+function installerStat(file) {
+  try {
+    const stat = fs.statSync(file);
+    if (!stat.isFile()) throw new Error('安装包缓存不是文件');
+    return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+/** Recover only a verified installer for the version that is actually running. */
+async function prepareDifferentialBase(autoUpdater, info, deps = {}) {
+  const update = require('./update');
+  const { signal } = deps;
+  const checkCancelled = () => { if (signal?.aborted) throw update.cancelledError(); };
+  checkCancelled();
+  const installer = await cachedInstallerPath(autoUpdater);
+  const version = String(autoUpdater.app?.version || '').trim().replace(/^v/i, '');
+  if (!version) throw new Error('无法读取当前运行版本');
+  const key = `${info.route || 'github'}:${version}:${installer}`;
+  const stat = installerStat(installer);
+  const checked = checkedBases.get(key);
+  if (checked && checked.stat === stat
+    && (!checked.sources || checked.sources.every(source => installerStat(source.path) === source.stat))
+    && (!checked.pendingInfo || installerStat(checked.pendingInfo.path) === checked.pendingInfo.stat)) return checked.result;
+  if (preparingBases.has(key)) return preparingBases.get(key);
+  deps.onBasePreparation?.();
+  const pending = (async () => {
+    const resolveRelease = deps.resolveCurrentRelease || require('../launcher/release-source').releaseFor;
+    const release = await resolveRelease(info.route || 'github', `v${version}`, { installedVersion: version, signal });
+    checkCancelled();
+    if (!release?.assetName || !release.checksumUrl || !release.blockmapUrl
+      || String(release.tag || '').replace(/^v/i, '') !== version) {
+      return { ok: false, reason: 'missing-base-release', message: `当前版本 v${version} 未提供可校验的增量基底，请选择完全下载。` };
+    }
+    const expected = await update.readAssetChecksum(release.assetName, release.checksumUrl, { signal });
+    checkCancelled();
+    const sizeMatches = (file) => !release.assetSize || fs.statSync(file).size === release.assetSize;
+    if (stat && sizeMatches(installer)) {
+      const before = installerStat(installer);
+      const matches = await update.sha512HexOfFile(installer, signal) === expected;
+      checkCancelled();
+      if (before !== installerStat(installer)) throw new Error('安装包缓存已变化，请重新检查更新');
+      if (matches) {
+        checkedBases.set(key, { stat: before, result: { ok: true } });
+        return { ok: true };
+      }
+    }
+    // Whole downloads already live here. NSIS may finish successfully even
+    // when its best-effort cache copy fails. Do not overwrite the current base
+    // until a new process actually runs that downloaded version.
+    const full = update.fullInstallerPath(release, { userDataDir: autoUpdater.app.userDataPath });
+    const sources = [{ path: full, stat: installerStat(full) }];
+    const helper = await autoUpdater.getOrCreateDownloadHelper();
+    checkCancelled();
+    let pendingInfo;
+    const rememberFailure = (result) => {
+      checkedBases.set(key, { stat, sources, pendingInfo, result });
+      return result;
+    };
+    for (let index = 0; index < 2; index++) {
+      if (index === 1) {
+        const pendingInfoPath = helper.getUpdateInfoFile?.();
+        pendingInfo = pendingInfoPath ? { path: pendingInfoPath, stat: installerStat(pendingInfoPath) } : undefined;
+        if (!pendingInfo?.stat) break;
+        const pending = JSON.parse(await fs.promises.readFile(pendingInfo.path, 'utf8'));
+        checkCancelled();
+        // Only this exact running release may be recovered. A future installer
+        // waiting in pending is not the currently installed differential base.
+        if (pending.fileName !== release.assetName || path.basename(pending.fileName) !== pending.fileName) break;
+        const file = path.join(helper.cacheDirForPendingUpdate, pending.fileName);
+        sources.push({ path: file, stat: installerStat(file) });
+      }
+      const source = sources[index];
+      if (!source.stat || !sizeMatches(source.path)) continue;
+      await fs.promises.mkdir(path.dirname(installer), { recursive: true });
+      checkCancelled();
+      const staged = `${installer}.preparing-${process.pid}`;
+      try {
+        await fs.promises.copyFile(source.path, staged);
+        checkCancelled();
+        const before = installerStat(staged);
+        if (await update.sha512HexOfFile(staged, signal) !== expected) continue;
+        checkCancelled();
+        if (before !== installerStat(staged)) throw new Error('本地安装包已变化，请重新检查更新');
+        await fs.promises.rename(staged, installer);
+        const recovered = installerStat(installer);
+        // Rename can update ctime, but must preserve the verified inode/size/mtime.
+        if (recovered?.split(':').slice(0, 4).join(':') !== before.split(':').slice(0, 4).join(':')) {
+          throw new Error('安装包缓存已变化，请重新检查更新');
+        }
+        await removeBlockmap(path.join(path.dirname(installer), 'current.blockmap'));
+        checkedBases.set(key, { stat: recovered, result: { ok: true } });
+        return { ok: true };
+      } finally {
+        try { await fs.promises.unlink(staged); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      }
+    }
+    const mismatch = Boolean(stat || sources.some(source => source.stat));
+    return rememberFailure({ ok: false, reason: mismatch ? 'base-installer-mismatch' : 'missing-cached-installer',
+      message: mismatch ? `本地安装包缓存与当前版本 v${version} 的正式安装包不一致，请选择完全下载。`
+        : '未找到当前版本的安装包缓存，请选择完全下载。' });
+  })();
+  preparingBases.set(key, pending);
+  try { return await pending; } finally { preparingBases.delete(key); }
+}
+
 async function differentialAvailability(info, deps = {}) {
   if (!readPackagedFlag(deps)) {
     return { ok: false, reason: 'not-packaged', message: '源码运行暂不支持增量更新，请选择完全下载。' };
@@ -97,13 +227,13 @@ async function differentialAvailability(info, deps = {}) {
   }
   try {
     const autoUpdater = getStrictUpdater(deps);
-    const cachedInstaller = await cachedInstallerPath(autoUpdater);
-    if (!(deps.existsSync || fs.existsSync)(cachedInstaller)) {
-      return { ok: false, reason: 'missing-cached-installer', message: '未找到当前版本的安装包缓存，请选择完全下载。' };
-    }
+    const prepared = await (deps.prepareDifferentialBase || prepareDifferentialBase)(autoUpdater, info, deps);
+    if (!prepared.ok) return prepared;
     return { ok: true, autoUpdater };
-  } catch {
-    return { ok: false, reason: 'updater-config-unavailable', message: '无法读取增量更新配置，请选择完全下载。' };
+  } catch (error) {
+    if (deps.signal?.aborted) return { ok: false, reason: 'cancelled', message: '下载已取消' };
+    return { ok: false, reason: error.code || 'updater-config-unavailable',
+      message: `无法准备增量更新缓存：${error.message || String(error)}。请选择完全下载。` };
   }
 }
 
@@ -147,21 +277,14 @@ function makeLogger(tracker, sink) {
  * @param {number} args.timeoutMs - wall-clock budget for the whole download.
  * @param {function} [onProgress] - receives `{phase:'download'|'install', percent, differential}`.
  * @param {object} [deps] - test seams: `autoUpdater`, `isPackaged`,
- *   `existsSync`, `CancellationToken`, `logger`, `setTimeout`/`clearTimeout`.
+ *   `prepareDifferentialBase`, `CancellationToken`, `logger`, `setTimeout`/`clearTimeout`.
  * @returns {Promise<{ok:true, installer:string, differential:boolean, version:string}|{ok:false, reason:string}>}
  *   `ok:false` stops this action; only another explicit full choice may retry.
  */
 async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {}, onProgress, deps = {}) {
-  const available = await differentialAvailability(expectedCheck, deps);
-  if (!available.ok) return available;
-  const autoUpdater = available.autoUpdater;
   const CancellationToken = deps.CancellationToken || require('builder-util-runtime').CancellationToken;
   const tracker = makeDifferentialTracker();
-  autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = false;
-  autoUpdater.disableWebInstaller = true;
-  autoUpdater.disableDifferentialDownload = false;
-  autoUpdater.logger = makeLogger(tracker, deps.logger || null);
+  let autoUpdater;
 
   const onProgressEvent = (progress) => {
     if (typeof onProgress !== 'function') {
@@ -171,22 +294,20 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
     onProgress({ phase: 'download', percent, differential: true });
   };
   const onErrorEvent = () => {};
-  autoUpdater.on('download-progress', onProgressEvent);
-  // 'error' must have a listener or EventEmitter throws unhandled; the
-  // checkForUpdates/downloadUpdate rejections carry the real failure.
-  autoUpdater.on('error', onErrorEvent);
-
   const setTimeoutFn = deps.setTimeout || setTimeout;
   const clearTimeoutFn = deps.clearTimeout || clearTimeout;
   const timeoutSentinel = Symbol('updater-timeout');
   let cancelled = false;
   let timeoutHandle;
   const token = new CancellationToken();
+  const controller = new AbortController();
+  const requestSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
   const onAbort = () => token.cancel();
-  signal?.addEventListener('abort', onAbort, { once: true });
+  requestSignal.addEventListener('abort', onAbort, { once: true });
   const timeoutPromise = new Promise((resolve) => {
     timeoutHandle = setTimeoutFn(() => {
       cancelled = true;
+      controller.abort();
       try {
         token.cancel();
       } catch {
@@ -206,6 +327,19 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
 
   try {
     if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '下载已取消' };
+    const available = await timed(differentialAvailability(expectedCheck, { ...deps, signal: requestSignal }));
+    if (available === timeoutSentinel || cancelled) return timeoutOutcome();
+    if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '下载已取消' };
+    if (!available.ok) return available;
+    autoUpdater = available.autoUpdater;
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = false;
+    autoUpdater.disableWebInstaller = true;
+    autoUpdater.disableDifferentialDownload = false;
+    autoUpdater.logger = makeLogger(tracker, deps.logger || null);
+    autoUpdater.on('download-progress', onProgressEvent);
+    // Keep EventEmitter errors observed; promise rejections carry the failure.
+    autoUpdater.on('error', onErrorEvent);
     const check = await timed(autoUpdater.checkForUpdates());
     if (check === timeoutSentinel) {
       return timeoutOutcome();
@@ -242,12 +376,12 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
     if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '下载已取消' };
     return { ok: false, reason: error?.code || 'updater-error', message: `${error?.message || String(error)} 增量下载已停止，可重新选择完全下载。` };
   } finally {
-    signal?.removeEventListener('abort', onAbort);
-    autoUpdater.confirmedDownloadTarget = undefined;
+    requestSignal.removeEventListener('abort', onAbort);
+    if (autoUpdater) autoUpdater.confirmedDownloadTarget = undefined;
     clearTimeoutFn(timeoutHandle);
     try {
-      autoUpdater.removeListener('download-progress', onProgressEvent);
-      autoUpdater.removeListener('error', onErrorEvent);
+      autoUpdater?.removeListener('download-progress', onProgressEvent);
+      autoUpdater?.removeListener('error', onErrorEvent);
     } catch {
       // listener cleanup must never mask the result
     }
@@ -259,5 +393,6 @@ module.exports = {
   differentialAvailability,
   strictNsisUpdaterClass,
   cachedInstallerPath,
+  prepareDifferentialBase,
   makeDifferentialTracker,
 };
