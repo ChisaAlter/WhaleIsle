@@ -20,10 +20,13 @@ test('plugin builds use a matching root esbuild host and binary despite a vendor
   for (const file of ['package.json', 'lib/main.js']) {
     fs.copyFileSync(path.join(trackedHost, file), path.join(host, file));
   }
+  const hostVersion = JSON.parse(fs.readFileSync(path.join(host, 'package.json'), 'utf8')).version;
 
   // This is the actual macOS resolution pattern: the plugin has an old JS
   // package, no local native package, and sees the newer ancestor binary.
   const platformPackage = `@esbuild/${process.platform}-${process.arch}`;
+  const binaryVersion = require(`${platformPackage}/package.json`).version;
+  assert.notEqual(hostVersion, binaryVersion, 'the fixture must exercise mismatched host and binary versions');
   const binary = process.platform === 'win32' ? 'esbuild.exe' : 'bin/esbuild';
   const binaryTarget = path.join(fixture, 'node_modules', platformPackage, binary);
   fs.mkdirSync(path.dirname(binaryTarget), { recursive: true });
@@ -40,7 +43,7 @@ console.log(JSON.stringify({ version, code: transformSync('const answer: number 
   });
   const broken = run([]);
   assert.equal(broken.status, 1, `${broken.stdout}\n${broken.stderr}`);
-  assert.match(broken.stderr, /Host version "0\.24\.2" does not match binary version "0\.25\.9"/);
+  assert.ok(broken.stderr.includes(`Host version "${hostVersion}" does not match binary version "${binaryVersion}"`), broken.stderr);
 
   const fixed = run(['--import', pathToFileURL(path.join(root, 'scripts', 'plugin-build-esbuild.mjs')).href]);
   assert.equal(fixed.status, 0, `${fixed.error || ''}\n${fixed.stdout}\n${fixed.stderr}`);
