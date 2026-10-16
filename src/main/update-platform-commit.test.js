@@ -50,7 +50,7 @@ test('updater download success followed by spawn failure releases protection and
   updater.quitAndInstall = () => { throw new Error('unobservable installer must not be used'); };
   let launches = 0;
   const options = { downloadMode: 'delta', platform: 'win32', quitAfterInstall: true, taskProtection: protection,
-    updaterDeps: { isPackaged: true, platform: 'win32', autoUpdater: updater, existsSync: () => true },
+    updaterDeps: { isPackaged: true, platform: 'win32', autoUpdater: updater, prepareDifferentialBase: async () => ({ ok: true }) },
     spawn: () => { launches++; const child = new EventEmitter(); child.unref = () => {};
       setImmediate(() => child.emit('error', Object.assign(new Error('spawn denied'), { code: 'EACCES' }))); return child; } };
   for (let attempt = 0; attempt < 2; attempt++) {

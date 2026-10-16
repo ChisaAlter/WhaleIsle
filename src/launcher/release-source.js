@@ -44,7 +44,7 @@ function listRoutes() {
   }));
 }
 
-async function cnbJson(url, timeoutMs = update.CHECK_TIMEOUT_MS) {
+async function cnbJson(url, timeoutMs = update.CHECK_TIMEOUT_MS, { signal } = {}) {
   let response;
   try {
     response = await fetch(url, {
@@ -52,7 +52,7 @@ async function cnbJson(url, timeoutMs = update.CHECK_TIMEOUT_MS) {
         Accept: 'application/vnd.cnb.api+json',
         'User-Agent': `Deepseek-Harness-Desktop/${update.currentVersion()}`,
       },
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
@@ -69,8 +69,8 @@ async function cnbJson(url, timeoutMs = update.CHECK_TIMEOUT_MS) {
   return response.json();
 }
 
-function fetchJson(route, url, timeoutMs) {
-  return route === 'cnb' ? cnbJson(url, timeoutMs) : update.githubJson(url, timeoutMs);
+function fetchJson(route, url, timeoutMs, options) {
+  return route === 'cnb' ? cnbJson(url, timeoutMs, options) : update.githubJson(url, timeoutMs, options);
 }
 
 // Both providers expose GitHub-shaped release fields.
@@ -147,7 +147,7 @@ function routeSnapshot(route, extra = {}) {
 // Raw release payload with assets intact (releaseFor's summary drops them).
 // Mirror uploads are staged as prereleases. Select stable versions by version
 // number so a later backfill of an older release does not become the update.
-async function releaseRaw(route, tag, { timeoutMs } = {}) {
+async function releaseRaw(route, tag, { timeoutMs, signal } = {}) {
   const desc = ROUTES[route];
   if (!desc) {
     return null;
@@ -157,6 +157,7 @@ async function releaseRaw(route, tag, { timeoutMs } = {}) {
       route,
       `${desc.apiBase}/releases/tags/${encodeURIComponent(String(tag).trim())}`,
       timeoutMs,
+      { signal },
     );
     return route === 'cnb' && (release?.draft || release?.prerelease) ? null : release;
   }
@@ -225,8 +226,8 @@ async function listFor(route, { installedVersion = '', timeoutMs } = {}) {
   }
 }
 
-async function releaseFor(route, tag, { installedVersion = '', timeoutMs } = {}) {
-  const release = await releaseRaw(route, tag, { timeoutMs });
+async function releaseFor(route, tag, { installedVersion = '', timeoutMs, signal } = {}) {
+  const release = await releaseRaw(route, tag, { timeoutMs, signal });
   return release ? summarizeForRoute(route, release, installedVersion) : null;
 }
 

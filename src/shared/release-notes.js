@@ -21,10 +21,25 @@
     .trim();
   }
 
+  // Published releases put the English translation in one folded section.
+  // Split before stripping markup so the two complete translations stay apart.
+  function releaseNotesTabs(body) {
+    const source = String(body || '');
+    const english = /<details>\s*<summary>\s*English\s*<\/summary>([\s\S]*?)<\/details>/i.exec(source);
+    if (!english) return [];
+    const chineseText = plainReleaseNotes(source.slice(0, english.index) + source.slice(english.index + english[0].length));
+    const englishText = plainReleaseNotes(english[1]);
+    if (!chineseText || !englishText) return [];
+    return [
+      { id: 'zh-CN', label: '中文', text: chineseText },
+      { id: 'en', label: 'English', text: englishText },
+    ];
+  }
+
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { plainReleaseNotes };
+    module.exports = { plainReleaseNotes, releaseNotesTabs };
   }
   if (typeof window !== 'undefined') {
-    window.releaseNotes = { plainReleaseNotes };
+    window.releaseNotes = { plainReleaseNotes, releaseNotesTabs };
   }
 })();

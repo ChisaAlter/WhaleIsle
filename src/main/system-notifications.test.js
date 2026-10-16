@@ -81,6 +81,7 @@ for (const argument of ['check', 'pending']) {
       shellConfirm: () => modal,
       getLauncherWindow: () => parent,
       updateAskDetail: () => 'release notes',
+      releaseNotesTabs: require('../shared/release-notes').releaseNotesTabs,
       updateDownloadMethods: async () => [],
       isLauncherPackage: () => false,
       currentVersion: () => '0.3.9',

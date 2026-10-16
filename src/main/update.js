@@ -132,14 +132,22 @@ function installerMetadata(assets, asset) {
 }
 
 async function updateDownloadMethods(info, deps) {
-  const available = await differentialAvailability(info, deps);
-  return [
-    {
-      id: 'delta', label: '增量更新', description: '只下载发生变化的部分，节省流量。',
-      ...(!available.ok ? { disabledReason: available.message } : {}),
-    },
-    { id: 'full', label: '完全下载', description: '下载完整安装包，适合修复或重新安装。' },
-  ];
+  let preparing = false;
+  try {
+    const available = await differentialAvailability(info, { ...deps, onBasePreparation: () => {
+      preparing = true;
+      publishState({ phase: 'checking' });
+    } });
+    return [
+      {
+        id: 'delta', label: '增量更新', description: '只下载发生变化的部分，节省流量。',
+        ...(!available.ok ? { disabledReason: available.message } : {}),
+      },
+      { id: 'full', label: '完全下载', description: '下载完整安装包，适合修复或重新安装。' },
+    ];
+  } finally {
+    if (preparing) publishState({ phase: 'available', version: info.latest || info.version });
+  }
 }
 
 /**
@@ -170,14 +178,12 @@ function sha512HexOfFile(file, signal) {
 }
 
 /**
- * Mandatory verification once a release carries SHA512SUMS.txt: any failure
- * (manifest fetch, missing entry, digest mismatch) throws so the installer
- * is never launched from a partial or tampered download.
- * @param {string} dest - downloaded installer path.
+ * Read one exact SHA512SUMS.txt entry. Base validation and recovery share
+ * this manifest rather than fetching it again for each local candidate.
  * @param {string} assetName - original release asset name (manifest key).
  * @param {string} checksumUrl - browser_download_url of SHA512SUMS.txt.
  */
-async function verifyAssetChecksum(dest, assetName, checksumUrl, { signal } = {}) {
+async function readAssetChecksum(assetName, checksumUrl, { signal } = {}) {
   if (signal?.aborted) throw cancelledError();
   let response;
   try {
@@ -200,10 +206,22 @@ async function verifyAssetChecksum(dest, assetName, checksumUrl, { signal } = {}
   if (!expected) {
     throw new Error(`校验清单缺少 ${assetName} 的条目`);
   }
+  return expected;
+}
+
+/** Reject an incomplete or tampered download before the installer can launch. */
+async function verifyAssetChecksum(dest, assetName, checksumUrl, { signal } = {}) {
+  const expected = await readAssetChecksum(assetName, checksumUrl, { signal });
   const actual = await sha512HexOfFile(dest, signal);
   if (actual !== expected) {
     throw Object.assign(new Error('安装包校验失败（sha512 不匹配）'), { code: 'ERR_UPDATER_CHECKSUM_MISMATCH' });
   }
+}
+
+function fullInstallerPath(info, { userDataDir } = {}) {
+  const dir = path.join(userDataDir || app.getPath('userData'), 'updates');
+  const safeName = path.basename(info.assetName || 'Whale-Isle-Setup.exe').replace(/[^\w.\-]+/g, '_');
+  return path.join(dir, safeName);
 }
 
 function isTimeoutError(error) {
@@ -211,12 +229,12 @@ function isTimeoutError(error) {
     && (error.name === 'TimeoutError' || error.name === 'AbortError');
 }
 
-async function githubJson(url, timeoutMs = CHECK_TIMEOUT_MS) {
+async function githubJson(url, timeoutMs = CHECK_TIMEOUT_MS, { signal } = {}) {
   let response;
   try {
     response = await fetch(url, {
       headers: githubHeaders(),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     if (isTimeoutError(error)) {
@@ -644,9 +662,8 @@ async function installFromAsset(info, onProgress, options = {}) {
       preparedOptions = { ...options, installerArgs: ['--updated', '/S', '--force-run'] };
       extra = { ...extra, updater: true, differential: Boolean(outcome.differential), downloadPercent: outcome.downloadPercent ?? null };
     } else {
-      const dir = path.join(options.userDataDir || app.getPath('userData'), 'updates');
-      const safeName = path.basename(info.assetName || 'Whale-Isle-Setup.exe').replace(/[^\w.\-]+/g, '_');
-      dest = path.join(dir, safeName);
+      dest = fullInstallerPath(info, options);
+      const dir = path.dirname(dest);
       partial = `${dest}.part`;
       // Completed downloads survive a cancelled wizard. Reuse only after checking
       // this release's current manifest again; file name/existence is not trust.
@@ -838,6 +855,9 @@ module.exports = {
   cancelledError,
   parseSha512Sums,
   verifyAssetChecksum,
+  readAssetChecksum,
+  sha512HexOfFile,
+  fullInstallerPath,
   // Release-source (GitHub/CNB mirror routes) builds on these primitives.
   githubJson,
   githubHeaders,
