@@ -74,12 +74,14 @@ describe('subagent working directories', () => {
       request: { parent, cwd: form === 'absolute' ? second : 'second', prompt: [{ type: 'text', text: 'child' }] },
       signal: new AbortController().signal,
     })
-    await vi.waitFor(() => { expect(ctx.agents.get(started.childId)).toBeUndefined() })
+    await started.result
+    expect(ctx.agents.get(started.childId) === undefined, 'initial activation is released before cold resume').toBe(true)
     await ctx.workingDirectory.set(parent, first)
     await ctx.subagents.sendMessage(parent, started.childId, [{ type: 'text', text: 'continue' }], {
       signal: new AbortController().signal,
     })
-    await vi.waitFor(() => { expect(ctx.agents.get(started.childId)).toBeUndefined() })
+    await ctx.subagents.waitForChildren(parent)
+    expect(ctx.agents.get(started.childId) === undefined, 'resumed activation is released before reading persistence').toBe(true)
     using observed = await ctx.sessionQuery.observeSession(started.childId)
     expect(observed.header.cwd).toBe(origin)
     const last = observed.events.findLast(event => event.type === 'working-directory/change')
