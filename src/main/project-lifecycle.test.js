@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 async function fixture() {
-  const { ProjectService } = await import('../../vendor/dsh-project/lib/service.js');
+  const { ProjectService } = await import('../../vendor/dsh-project/tests/harness-runtime.mjs');
   const events = [
     { seq: 10, type: 'turn/start', data: { turn: 2 } },
     { seq: 11, type: 'user/message', data: { id: 'human-B', source: { kind: 'user' }, content: [{ type: 'text', text: 'Stop the earlier work.' }] } },

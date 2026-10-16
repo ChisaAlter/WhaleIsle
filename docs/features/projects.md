@@ -75,7 +75,7 @@ Real configured-model observations in an isolated profile already cover continui
 
 ### Steward redesign source changes (4.2)
 
-The source implements P1–P4 of the [steward redesign](../superpowers/specs/2026-10-15-project-steward-redesign.md). The changes are committed on `main`; they are not installed and have no real-provider or visible desktop acceptance. The [manual acceptance checklist](projects-steward-acceptance.md) covers what remains.
+The source implements P1–P4 of the [steward redesign](../superpowers/specs/2026-10-15-project-steward-redesign.md). The changes are committed on `main`; they are not installed, and full real-provider and visible desktop acceptance remains incomplete. The [manual acceptance checklist](projects-steward-acceptance.md) covers what remains.
 
 - **Project rules**: `charter.md` (16 KB) is injected into every Lead step and worker brief. Rules override the model's own defaults; an explicit user exception is confirmed once and stated. Older Projects create the file lazily. The materials editor adds a Project rules tab with common-rule toggles and a size meter; the former instructions tab is labelled Preferences.
 - **Board**: plain-language status badges with a reason and next step, a whole-Project overview strip, undo on discussed or queued cards, and direct requirement creation for clear goals.
