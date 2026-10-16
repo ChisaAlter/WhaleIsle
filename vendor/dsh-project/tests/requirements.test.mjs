@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ProjectService } from '../lib/service.js';
+import { ProjectService } from './harness-runtime.mjs';
 
 function fixture() {
   const events = [], followups = [], project = { id: 'project', coordinatorSessionId: 'lead', storageRoot: '/project-materials', lifecycle: 'ready', paused: false, diagnostics: [], updatedAt: 0 };
   const session = { id: 'lead', snapshotEvents: () => events }, lead = { id: 'lead', session, status: 'idle', cancel() {}, followup: message => followups.push(message) }, state = { revision: 0, projects: [project], workstreams: [], workers: [] };
   let persist = true, flushes = 0, durableEvents = [];
-  const ctx = { agents: new Map([['lead', lead]]), logger: { warn() {} }, get: () => undefined, sessions: { flush: async () => { flushes++; if (persist instanceof Error) throw persist; if (persist) durableEvents = structuredClone(events); return persist; } }, sessionPersistence: { stat: async () => ({}), open: async () => ({ read: async () => ({ events: durableEvents }), close: async () => {} }) }, subagents: { registerContinuationPolicy: () => () => {}, drainContinuableChildren: async () => {} }, agentTeams: { registerPolicy: () => () => {}, listTasks: () => [] } };
+  const ctx = { agents: new Map([['lead', lead]]), logger: { warn() {} }, get: () => undefined, sessions: { flush: async () => { flushes++; if (persist instanceof Error) throw persist; if (persist) durableEvents = structuredClone(events); return persist; } }, sessionPersistence: { stat: async () => ({}), open: async () => ({ read: async () => ({ events: durableEvents }), close: async () => {} }) }, subagents: { registerContinuationPolicy: () => () => {}, drainChildren: async () => {} }, agentTeams: { registerPolicy: () => () => {}, listTasks: () => [] } };
   ctx.sessionController = { resolveAgent: async id => ({ agent: ctx.agents.get(id) }) };
   const service = new ProjectService(ctx, { get: () => state, update: async (_key, change) => Object.assign(state, change(state)) }, { home: '', desktop: async () => ({}) });
   service.recovering = false; service.notes = async () => {};
@@ -553,7 +553,7 @@ test('failed cancellation drain keeps the next requirement waiting and exposes t
   f.human(['Develop B next']); const { request: b } = await f.accept({ title: 'B' });
   const workerId = work.work.workerSessionId;
   f.service.ctx.agents.set(workerId, { id: workerId, status: 'running', cancel() {}, whenIdle: async () => {} });
-  f.service.ctx.subagents.drainContinuableChildren = async () => { throw new Error('Native child could not stop'); };
+  f.service.ctx.subagents.drainChildren = async () => { throw new Error('Native child could not stop'); };
   await f.queue(a, 'cancel'); await f.service.queue.pump(f.project.id);
   assert.equal(f.service.requirements.get(f.project.id, a.id).queue.state, 'cancelled');
   assert.equal(f.service.worker(workerId).phase, 'stopping'); assert.equal(f.service.worker(workerId).error, 'Native child could not stop');

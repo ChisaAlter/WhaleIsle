@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import { join } from 'node:path';
-import { ProjectService } from '../lib/service.js';
+import { ProjectService } from './harness-runtime.mjs';
 import { projectDirectory, safeProjectSubdirectory } from '../lib/files.js';
 
 const tree = 'a'.repeat(40), end = 'b'.repeat(40);
@@ -19,7 +19,7 @@ async function fixture(t, handlers = {}) {
   const state = { revision: 0, projects: [project], workstreams: [], workers: [], requests: [request], deliveries: [] }, calls = [];
   const desktop = async (action, payload) => { calls.push({ action, payload }); if (!handlers[action]) throw new Error(`unexpected desktop ${action}`); return handlers[action](payload); };
   const ctx = { agents: new Map(), logger: { warn() {} }, get: () => undefined, sessions: { flush: async () => true }, sessionPersistence: { stat: async () => ({}) },
-    subagents: { registerContinuationPolicy: () => () => {}, drainContinuableChildren: async () => {} }, agentTeams: { registerPolicy: () => () => {}, listTasks: () => [] } };
+    subagents: { registerContinuationPolicy: () => () => {}, drainChildren: async () => {} }, agentTeams: { registerPolicy: () => () => {}, listTasks: () => [] } };
   const service = new ProjectService(ctx, { get: () => state, update: async (_key, change) => Object.assign(state, change(state)) }, { home, desktop });
   service.recovering = false; service.notes = async () => {};
   return { service, state, calls, storageRoot };

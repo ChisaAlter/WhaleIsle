@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ProjectService } from '../lib/service.js';
+import { ProjectService } from './harness-runtime.mjs';
 import { projectDirectory, safeProjectSubdirectory } from '../lib/files.js';
 
 function setup() {
@@ -480,7 +480,7 @@ test('archive waits only for its own Project drain and preserves a failed stoppi
   const ownDrain = new Promise(resolve => { releaseOwn = resolve; }), otherDrain = new Promise(resolve => { releaseOther = resolve; });
   const drainingOwn = new Promise(resolve => { ownEntered = resolve; });
   t.after(() => { releaseOwn(); releaseOther(); });
-  f.service.ctx.subagents.drainContinuableChildren = async (_parent, ids) => {
+  f.service.ctx.subagents.drainChildren = async (_parent, ids) => {
     if (ids.includes(own.worker.sessionId)) { ownEntered(); await ownDrain; }
     if (ids.includes(other.worker.sessionId)) await otherDrain;
   };
@@ -504,7 +504,7 @@ test('archive waits only for its own Project drain and preserves a failed stoppi
   const failed = setup(); configure(failed);
   const stuck = failed.add('Failed drain', true, 1);
   failed.service.ctx.agents.set(stuck.worker.sessionId, { id: stuck.worker.sessionId, status: 'running', cancel() {}, whenIdle: async () => {} });
-  failed.service.ctx.subagents.drainContinuableChildren = async () => { throw new Error('Native worker drain failed'); };
+  failed.service.ctx.subagents.drainChildren = async () => { throw new Error('Native worker drain failed'); };
   await assert.rejects(failed.read('archive'), { code: 'stopping' });
   assert.equal(failed.service.project(failed.project.id).lifecycle, 'ready');
   assert.equal(failed.service.worker(stuck.worker.sessionId).phase, 'stopping');

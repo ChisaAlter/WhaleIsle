@@ -1,25 +1,17 @@
 /** Real Loader/Sessions/continuations/tools/storage; only external model and desktop I/O are scripted. */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createRequire, registerHooks } from 'node:module';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, writeFile, readFile, realpath, rm, rename, symlink } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-const projectPackage = resolve(dirname(fileURLToPath(import.meta.url)), '..'), harness = resolve(projectPackage, '../deepseek-harness');
-const cliRequire = createRequire(join(harness, 'apps/cli/package.json'));
-const anchors = [cliRequire, ...['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-experimental-agent-team-profile'].map(name => createRequire(cliRequire.resolve(`${name}/package.json`)))];
-anchors.push(createRequire(anchors[1].resolve('@deepseek-ai/dsh-storage-domain/package.json')));
-function resolvePackage(name) { for (const anchor of anchors) try { return anchor.resolve(name); } catch (error) { if (!['MODULE_NOT_FOUND', 'ERR_PACKAGE_PATH_NOT_EXPORTED'].includes(error.code)) throw error; } throw new Error(`Missing built Harness dependency ${name}.`); }
-const projectUrl = pathToFileURL(`${projectPackage}${sep}`).href;
-registerHooks({ resolve(specifier, context, next) { if (context.parentURL?.startsWith(projectUrl) && !specifier.startsWith('.') && !specifier.startsWith('node:') && !specifier.startsWith('file:')) return { url: pathToFileURL(resolvePackage(specifier)).href, shortCircuit: true }; return next(specifier, context); } });
+import { pathToFileURL } from 'node:url';
+import { projectPackage, harness, cliRequire, resolvePackage, projectUrl, ProjectService } from './harness-runtime.mjs';
 const { boot, loadOverlayPatches, bundlePatchPaths } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-app-boot')).href);
 const { LlmAdapter, LlmError } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-llm')).href);
 const { provideCmdline } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-cmdline')).href);
 const { disposeProfileApplication } = await import(pathToFileURL(join(harness, 'apps/cli/lib/profile-boot.js')).href);
-const { ProjectService } = await import(pathToFileURL(join(projectPackage, 'lib/service.js')).href);
 const blocks = value => [{ type: 'block-start', index: 0, blockType: 'text' }, { type: 'text-delta', index: 0, text: value }, { type: 'block-end', index: 0, block: { type: 'text', text: value } }, { type: 'finish', reason: { kind: 'stop' } }];
 const call = (id, name, args) => [{ type: 'block-start', index: 0, blockType: 'tool-call' }, { type: 'tool-call-delta', index: 0, id, name, argumentsDelta: JSON.stringify(args) }, { type: 'block-end', index: 0, block: { type: 'tool-call', id, name, arguments: JSON.stringify(args) } }, { type: 'finish', reason: { kind: 'tool-calls' } }];
 const messageText = message => (message.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
