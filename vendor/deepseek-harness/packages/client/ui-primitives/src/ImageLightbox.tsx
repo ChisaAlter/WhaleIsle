@@ -64,11 +64,13 @@ export function ImageLightbox({ open = true, src, alt, labels, onClose }: {
       data-state={state}
       aria-hidden={open ? undefined : true}
     >
-      <div className={css.mask} data-dsh-motion-part="mask" aria-hidden="true" onMouseDown={onClose} />
-      <img className={css.image} data-dsh-motion-part="panel" src={src} alt={alt} />
-      <button ref={closeRef} type="button" className={css.close} aria-label={labels.close} onClick={onClose}>
-        <IconCloseOutlineRegular size={16} />
-      </button>
+      <div className={css.stage}>
+        <div className={css.mask} data-dsh-motion-part="mask" aria-hidden="true" onMouseDown={onClose} />
+        <img className={css.image} data-dsh-motion-part="panel" src={src} alt={alt} />
+        <button ref={closeRef} type="button" className={css.close} aria-label={labels.close} onClick={onClose}>
+          <IconCloseOutlineRegular size={16} />
+        </button>
+      </div>
     </div>,
     document.body,
   )

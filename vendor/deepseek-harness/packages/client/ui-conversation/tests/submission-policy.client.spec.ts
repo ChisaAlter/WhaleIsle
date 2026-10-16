@@ -258,7 +258,7 @@ describe('ComposerSubmissionPolicy', () => {
     const policy = new ComposerSubmissionPolicy(host.scope)
     expect(policy.composerBeam.getSnapshot()).toBe(true)
     expect(policy.writable.getSnapshot()).toBe(false)
-    host.publish({ status: 'unavailable', value: undefined, writable: false, mode: 'memory' })
+    host.publish({ status: 'unavailable', value: undefined, writable: false })
     expect(policy.composerBeam.getSnapshot()).toBe(true)
     host.publish({
       status: 'ready',
@@ -392,7 +392,7 @@ describe('ComposerSubmissionPolicy', () => {
     const host = stubConfigForm<ConversationSettings>()
     const policy = new ComposerSubmissionPolicy(host.scope)
     expect(policy.composerResize.getSnapshot()).toBe(false)
-    host.publish({ status: 'unavailable', value: undefined, writable: false, mode: 'memory' })
+    host.publish({ status: 'unavailable', value: undefined, writable: false })
     expect(policy.composerResize.getSnapshot()).toBe(false)
     host.publish({
       status: 'ready',
@@ -450,7 +450,7 @@ describe('ComposerSubmissionPolicy', () => {
     const policy = new ComposerSubmissionPolicy(host.scope)
     expect(policy.statsLine.getSnapshot()).toBe(true)
     expect(policy.viewTabs.getSnapshot()).toBe(true)
-    host.publish({ status: 'unavailable', value: undefined, writable: false, mode: 'memory' })
+    host.publish({ status: 'unavailable', value: undefined, writable: false })
     expect(policy.statsLine.getSnapshot()).toBe(true)
     expect(policy.viewTabs.getSnapshot()).toBe(true)
     host.publish({
@@ -490,7 +490,7 @@ describe('ComposerSubmissionPolicy', () => {
     const host = stubConfigForm<ConversationSettings>()
     const policy = new ComposerSubmissionPolicy(host.scope)
     expect(policy.officialPeakValley.getSnapshot()).toBe(false)
-    host.publish({ status: 'unavailable', value: undefined, writable: false, mode: 'memory' })
+    host.publish({ status: 'unavailable', value: undefined, writable: false })
     expect(policy.officialPeakValley.getSnapshot()).toBe(false)
     host.publish({
       status: 'ready',
@@ -523,7 +523,7 @@ describe('ComposerSubmissionPolicy', () => {
     const host = stubConfigForm<ConversationSettings>()
     const policy = new ComposerSubmissionPolicy(host.scope)
     expect(policy.typingFx.getSnapshot()).toBe(false)
-    host.publish({ status: 'unavailable', value: undefined, writable: false, mode: 'memory' })
+    host.publish({ status: 'unavailable', value: undefined, writable: false })
     expect(policy.typingFx.getSnapshot()).toBe(false)
     host.publish({
       status: 'ready',

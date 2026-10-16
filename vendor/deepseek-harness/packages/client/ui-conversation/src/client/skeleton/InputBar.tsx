@@ -41,6 +41,7 @@ import {
 import { resolveSubmitMode } from '../input/submission-policy.ts'
 import { resolveTypingFxColors } from '../../submission-settings.ts'
 import { attachmentErrorText, imageSizeText } from '../image-labels.ts'
+import { isImageMediaType } from '../service.ts'
 import { ContextMeter } from './ContextMeter.tsx'
 import { ComposerResizeHandles, useComposerResizeDrag } from './ComposerResizeHandles.tsx'
 import css from './InputBar.module.css'
@@ -244,7 +245,11 @@ export const InputBar = memo(function InputBar({
   // The host enforces the same image limits at submit for callers that bypass
   // this composer.
   const intakeFiles = useCallback((files: readonly File[], directories?: ReadonlySet<File>): void => {
-    if (subagent !== null || addFiles === undefined) return
+    if (locked || machineBusy || (subagent !== null && !continuable) || addFiles === undefined || (files.length === 0 && (directories?.size ?? 0) === 0)) return
+    if (continuable && ((directories?.size ?? 0) > 0 || files.some(file => !isImageMediaType(file.type)))) {
+      showToast(t('image.unsupportedType'))
+      return
+    }
     const rejected = directories === undefined ? [] : [...directories]
     const accepted = directories === undefined ? files : files.filter(file => !directories.has(file))
     // One toast slot: collect every refusal from this batch into a single
@@ -279,9 +284,9 @@ export const InputBar = memo(function InputBar({
       if (refused !== null) notices.push(refused)
     }
     if (notices.length > 0) showToast(notices.join('\n'))
-  }, [subagent, addFiles, attachments, imageLimits, showToast, t])
+  }, [locked, machineBusy, subagent, continuable, addFiles, attachments, imageLimits, showToast, t])
 
-  const canAcceptDrop = subagent === null && !locked && !machineBusy && addFiles !== undefined
+  const canAcceptDrop = (subagent === null || continuable) && !locked && !machineBusy && addFiles !== undefined
 
   const [nextPrompt, setNextPrompt] = useState<NextPromptResult | null>(null)
   const acceptedPrompt = useRef<{ sessionId: string; seq: number } | null>(null)
@@ -388,6 +393,20 @@ export const InputBar = memo(function InputBar({
   // not moved, and the next keystroke gets the browser's native one.
   const keepFocus = (e: MouseEvent<HTMLButtonElement>): void => {
     keepDraftFocus(e, editor)
+  }
+
+  const onCardMouseDown = (e: MouseEvent<HTMLDivElement>): void => {
+    if (!editable || editor === null || e.button !== 0 || e.defaultPrevented) return
+    const target = e.target
+    if (!(target instanceof Element) || !e.currentTarget.contains(target)) return
+    if (target.closest('[data-composer-overlay]') !== null) return
+    if (scrollRef.current?.contains(target)) return
+    const control = target.closest('button, a, input, select, textarea, [role="button"], [contenteditable], [tabindex]')
+    if (control !== null && e.currentTarget.contains(control)) return
+    e.preventDefault()
+    // Lexical's stored selection can lag behind native caret moves, so calling
+    // editor.focus() on a focused editor can restore an older caret.
+    if (document.activeElement !== editor.getRootElement()) focusDraftEditor(editor, revealSelection)
   }
 
   const onToggleCommandMenu = (): void => {
@@ -504,6 +523,7 @@ export const InputBar = memo(function InputBar({
         data-beam={showBeam || undefined}
         onClick={workspaceTrigger ? onRequestWorkspace : undefined}
         onPointerDown={workspaceTrigger ? (e) => { e.stopPropagation() } : undefined}
+        onMouseDown={onCardMouseDown}
       >
         {composerResize && !workspaceTrigger && (
           <ComposerResizeHandles
@@ -520,7 +540,7 @@ export const InputBar = memo(function InputBar({
         <ComposerBeam active={showBeam} appearance={composerBeamStyle} />
         <div className={css.cardBody}>
           {sessionId !== undefined && (
-            <div className={css.overlayAnchor}>{renderSlot('conversation.input.overlay', {})}</div>
+            <div className={css.overlayAnchor} data-composer-overlay>{renderSlot('conversation.input.overlay', {})}</div>
           )}
           {accessory !== undefined && <div className={css.accessory}>{accessory}</div>}
           {edit !== null && (

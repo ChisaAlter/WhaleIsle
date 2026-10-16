@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime'
 import { DshbotRow } from '../src/client/DshbotRow.tsx'
 import type { DshbotRowProps } from '../src/client/DshbotRow.tsx'
 import { en, zh } from '../src/client/locales.ts'
@@ -17,6 +18,7 @@ const unusedHook = (() => { throw new Error('unused by DshbotRow') }) as never
 
 function mount(dict: Record<string, string> = en) {
   const props: DshbotRowProps = {
+    ...allowAllAccess,
     usePanelInfo: panelInfoStub,
     useResource: resourceStub,
     useSessions: unusedHook,

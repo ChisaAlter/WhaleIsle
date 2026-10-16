@@ -44,7 +44,7 @@ import { arch, platform } from 'node:os'
 import { join, relative, resolve, sep } from 'node:path'
 
 /** Schema version of a persisted stage credential. Bump on any shape change. */
-export const STAGE_CREDENTIAL_FORMAT = 1
+export const STAGE_CREDENTIAL_FORMAT = 2
 
 /** Repository-relative path of the persisted stage credentials. */
 export const STAGE_CREDENTIAL_PATH = '.dsh-build/build-stage-credentials.json'
@@ -104,6 +104,10 @@ function isGeneratedArtifact(path) {
  */
 const CLIENT_BUNDLE_ARTIFACT = /(^|\/)client(?:\.[^/]+)?\.js(?:\.map)?$/u
 
+/** Browser bundles and the Ghostty payload copied by the Client build gate. */
+const isClientArtifact = path => CLIENT_BUNDLE_ARTIFACT.test(path)
+  || path.startsWith('packages/client/ui-user-terminal/lib/assets/')
+
 /** Every artifact under a package's generated `lib` tree belongs to a lib face. */
 const anyLibArtifact = path => /(^|\/)lib\//u.test(path)
 
@@ -150,7 +154,7 @@ const STAGE_LAYOUTS = {
     ],
     outputs: ['packages', 'vendor', 'native/system/packages', 'apps/cli', 'apps/desktop', 'apps/desktop-host'],
     // The Node pass owns every `lib` artifact except the browser bundles.
-    ownsOutput: path => anyLibArtifact(path) && !CLIENT_BUNDLE_ARTIFACT.test(path),
+    ownsOutput: path => anyLibArtifact(path) && !isClientArtifact(path),
     requiresOutputs: true,
   },
   client: {
@@ -170,7 +174,7 @@ const STAGE_LAYOUTS = {
     ],
     outputs: ['packages', 'vendor', 'apps/cli', 'apps/desktop', 'apps/desktop-host'],
     // The browser pass owns the dynamic bundles the module loader fetches.
-    ownsOutput: path => anyLibArtifact(path) && CLIENT_BUNDLE_ARTIFACT.test(path),
+    ownsOutput: path => anyLibArtifact(path) && isClientArtifact(path),
     requiresOutputs: true,
   },
   web: {

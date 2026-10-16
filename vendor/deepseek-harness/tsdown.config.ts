@@ -1,22 +1,13 @@
-import { defineConfig } from 'tsdown'
 import { globSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { defineConfig } from 'tsdown'
 import { typertPlugin } from './packages/typert/generator/lib/types/tsdown-plugin.js'
+import { WORKSPACE_TYPERT_FACES } from './scripts/typert-faces.ts'
+import { workspacePackageGlobs } from './scripts/workspace-package-globs.ts'
 
 function isBuildFaceClient(value: unknown): boolean {
   if (value === undefined || value === 'host') return false
   if (value === 'client') return true
   throw new Error(`tsdown: --env.DSH_BUILD_FACE must be host or client, received ${String(value)}`)
-}
-
-function workspacePackages(client: boolean): string[] {
-  const patterns = [
-    'vendor/*/package.json',
-    'packages/*/*/package.json',
-    client ? 'apps/cli/package.json' : 'apps/{cli,desktop-host}/package.json',
-  ]
-  return patterns.flatMap(pattern => globSync(pattern, { cwd: import.meta.dirname })
-    .map(manifest => dirname(manifest).replaceAll('\\', '/'))).sort()
 }
 
 /**
@@ -30,14 +21,9 @@ function workspacePackages(client: boolean): string[] {
  */
 export default defineConfig(({ env }) => {
   const client = isBuildFaceClient(env?.DSH_BUILD_FACE)
+  const packages = workspacePackageGlobs(globSync(['vendor/*/package.json', 'packages/*/*/package.json'], { cwd: import.meta.dirname }))
   return {
-    // A deleted package may leave lib/ and node_modules/ behind locally. Only
-    // manifest-bearing workspaces are eligible for the inherited entry glob.
-    workspace: workspacePackages(client),
-    // Some alpha.4 bundles intentionally have no invariant companion
-    // (notably headless/base). Package-local configs build invariant entries
-    // where they exist; the workspace aggregate must not require a missing
-    // optional file on Windows.
+    workspace: [...packages, 'apps/cli', ...client ? [] : ['apps/desktop-host']],
     entry: client ? '' : ['lib/types/{index,startup}.js'],
     outDir: 'lib',
     format: ['esm'],
@@ -46,6 +32,6 @@ export default defineConfig(({ env }) => {
     fixedExtension: false,
     dts: false,
     clean: false,
-    plugins: client ? [] : [typertPlugin({ mode: 'workspace', faces: ['host'] })],
+    plugins: client ? [] : [typertPlugin({ mode: 'workspace', faces: WORKSPACE_TYPERT_FACES })],
   }
 })

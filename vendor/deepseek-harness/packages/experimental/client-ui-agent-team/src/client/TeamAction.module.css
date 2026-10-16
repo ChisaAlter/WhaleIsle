@@ -38,7 +38,7 @@
 }
 
 /* The row accounts for sidebars and native caption controls. */
-@container (max-width: 520px) {
+@container (max-width: 560px) {
   .triggerLabel {
     display: none;
   }

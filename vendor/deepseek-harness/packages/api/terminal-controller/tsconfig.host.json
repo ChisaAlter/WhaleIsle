@@ -39,6 +39,9 @@
       "path": "../../session/session-projection"
     },
     {
+      "path": "../../session/working-directory"
+    },
+    {
       "path": "../../subprocess/subprocess"
     },
     {
@@ -52,6 +55,9 @@
     },
     {
       "path": "../../util/lazy-require"
+    },
+    {
+      "path": "../../util/values"
     }
   ]
 }

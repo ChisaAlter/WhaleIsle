@@ -88,6 +88,17 @@ function mount(state: SessionListState, openAgent = () => {}, jobRows: readonly 
 afterEach(cleanup)
 
 describe('AgentsPanel', () => {
+  it('shows external executions without offering a nonexistent local conversation', () => {
+    const openAgent = vi.fn()
+    mount(sessionList({ catalog: [{ id: CHILD, createdAt: 1, mode: 'external', label: 'External worker' }] }), openAgent)
+    const row = screen.getByRole('button', { name: /External worker/ }) as HTMLButtonElement
+    expect(row.disabled).toBe(true)
+    expect(screen.getByText('External task')).toBeTruthy()
+    expect(screen.queryByText('not running')).toBeNull()
+    fireEvent.click(row)
+    expect(openAgent).not.toHaveBeenCalled()
+  })
+
   it('keeps the Jobs source receiver for snapshot reads and live subscriptions', () => {
     const jobsSource = {
       snapshot: { rows: {}, observed: {} } as JobsSnapshot,

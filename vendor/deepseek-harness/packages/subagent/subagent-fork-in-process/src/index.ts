@@ -14,11 +14,9 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {
   ContinuableCreateRequest,
   ContinuableCreateSpec,
-  ResolvedSubagentStartRequest,
   SubagentCapabilities,
   SubagentProvider,
 } from '@deepseek-ai/dsh-subagent'
-import { startInProcessRun } from '@deepseek-ai/dsh-subagent-in-process-driver'
 
 export const name = 'subagent-fork-in-process'
 // `tools` is deliberately NOT injected — same rationale as subagent-spawn-in-process: the
@@ -57,30 +55,19 @@ function completedTurnPrefix(parent: Agent): SessionEvent[] {
 /**
  * The fork provider. Supports `depthLimit` and `outputSchema` (via the shared
  * in-process structured runtime), `agentOptions` (merged over the parent
- * route), and `toolFilter`/`persona` (scoped restrict() and a scoped shadowing
- * persona section).
+ * route). The child inherits its parent's preset composition.
  */
 class ForkInProcessProvider implements SubagentProvider {
   readonly capabilities: SubagentCapabilities = {
     agentOptions: true,
+    agentPreset: false,
     outputSchema: true,
     depthLimit: true,
-    toolFilter: true,
-    persona: true,
   }
   // Context contract: a forked child IS seeded with the parent's completed-turn prefix.
   readonly inheritsParentContext = true
 
   constructor(readonly name: string) {}
-
-  start(request: ResolvedSubagentStartRequest) {
-    const seed = completedTurnPrefix(request.parent)
-    return startInProcessRun(request, {
-      // Only pass a seed when there's a completed turn to inherit; an empty seed
-      // is equivalent to a fresh child, so omit it to keep the session unseeded.
-      ...seed.length > 0 ? { seed } : {},
-    })
-  }
 
   prepareContinuable(request: ContinuableCreateRequest): Promise<ContinuableCreateSpec> {
     // The fork prefix is captured ONCE, at creation: it becomes part of the

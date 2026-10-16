@@ -14,6 +14,7 @@ function setup() {
   const teams = { registerPolicy: () => () => {}, listTasks: () => tasks };
   const ctx = { agents: new Map([['lead', lead]]), sessionPersistence: { stat: async () => ({}) }, sessions: { flush: async () => true }, get: () => undefined,
     subagents: { registerContinuationPolicy: () => () => {} }, agentTeams: teams };
+  ctx.sessionController = { resolveAgent: async id => ({ agent: ctx.agents.get(id) }) };
   const service = new ProjectService(ctx, { get: () => state, update: async (_key, change) => { Object.assign(state, change(state)); } }, { home: '', desktop: async () => ({}) });
   function add(id, current, updatedAt) {
     const report = { delegationRef: `ref-${id}`, summary: `Full report ${id}`, outcome: 'completed', evidence: [], remainingIssues: [], at: updatedAt, callId: `report-${id}`, artifacts: [{ path: `/original-cwd/result/${id}`, sha256: 'recorded-hash', size: 1, type: 'file' }] };

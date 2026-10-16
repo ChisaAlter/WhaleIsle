@@ -19,7 +19,7 @@ that `sync:harness` and `setup:harness` operate against.
 
 The ChisaCode workspace lock resolves its root `@types/node` override to 22.20.4 with npm registry integrity metadata, matching npm 11's clean-install resolution under Node 24.21.0. Other locked packages are unchanged; the packaging path still uses `npm ci`.
 
-The source baseline is `dsh-v0.1.7-rc.2` (`477b4f420553e8a52c2fbccc464d7561b239c443`). Desktop consumers use retained Session references and workspace navigation, including draft transfer before releasing the previous Session. Compatibility decisions and validation gates live in [harness-upstream-sync](../docs/features/harness-upstream-sync.md).
+The source baseline is `dsh-v0.2.1-alpha.3` (`2fbf4359b82fb94c03dcce0b831660d87f12ea5c`). Desktop consumers use retained Session references and workspace navigation, including draft transfer before releasing the previous Session. Compatibility decisions and validation gates live in [harness-upstream-sync](../docs/features/harness-upstream-sync.md).
 
 The desktop session-statistics strip consumes the Interface switch's live preference through its composer dock, so hiding figures does not wait for Host persistence. See the [live toggle repair](../docs/decisions/implemented/bug-fix/2026-09-29-session-stats-live-toggle.md).
 

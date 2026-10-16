@@ -7,6 +7,7 @@ function fixture() {
   const session = { id: 'lead', snapshotEvents: () => events }, lead = { id: 'lead', session, status: 'idle', cancel() {}, followup: message => followups.push(message) }, state = { revision: 0, projects: [project], workstreams: [], workers: [] };
   let persist = true, flushes = 0, durableEvents = [];
   const ctx = { agents: new Map([['lead', lead]]), logger: { warn() {} }, get: () => undefined, sessions: { flush: async () => { flushes++; if (persist instanceof Error) throw persist; if (persist) durableEvents = structuredClone(events); return persist; } }, sessionPersistence: { stat: async () => ({}), open: async () => ({ read: async () => ({ events: durableEvents }), close: async () => {} }) }, subagents: { registerContinuationPolicy: () => () => {}, drainContinuableChildren: async () => {} }, agentTeams: { registerPolicy: () => () => {}, listTasks: () => [] } };
+  ctx.sessionController = { resolveAgent: async id => ({ agent: ctx.agents.get(id) }) };
   const service = new ProjectService(ctx, { get: () => state, update: async (_key, change) => Object.assign(state, change(state)) }, { home: '', desktop: async () => ({}) });
   service.recovering = false; service.notes = async () => {};
   service.teams.cancelMessages = async () => {}; service.teams.setCold = async () => {};

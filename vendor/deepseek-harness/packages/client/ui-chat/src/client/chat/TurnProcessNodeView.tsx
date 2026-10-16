@@ -22,17 +22,18 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
   if (turn?.status !== 'closed') return null
   const canCollapse = turnProcess.foldable && turnProcess.hasContent && !turnProcessAlwaysOpen(node)
   const reason = turn.end?.data.reason.kind
+  const stopped = reason === 'aborted' || reason === 'interrupted'
   const elapsedMs = turn.start === undefined || turn.end === undefined ? undefined
     : Math.max(1000, turn.end.time - turn.start.time)
-  const duration = elapsedMs === undefined || reason === 'aborted' || reason === 'error' ? undefined
+  const duration = elapsedMs === undefined || stopped || reason === 'error' ? undefined
     : formatRunDuration(elapsedMs, t)
   const replied = projectCoordinator && reason === 'completed'
   // Other end reasons retain elapsed time; only cancellation and failure replace it.
-  const label = reason === 'aborted' ? t('message.stopped')
+  const label = stopped ? t('message.stopped')
     : reason === 'error' ? t('message.turnProcess.failed')
       : duration === undefined ? t(replied ? 'message.turnProcess.projectReplied' : 'message.turnProcess.worked')
         : t(replied ? 'message.turnProcess.projectRepliedTook' : 'message.turnProcess.took')
-  const announcement = reason === 'aborted' ? t('message.stopped')
+  const announcement = stopped ? t('message.stopped')
     : reason === 'error' ? t('message.turnProcess.failed')
       : t(replied ? 'message.turnProcess.projectReplied' : 'message.turnProcess.worked')
   return (

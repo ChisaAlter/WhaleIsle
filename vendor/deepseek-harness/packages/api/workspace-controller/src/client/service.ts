@@ -47,7 +47,10 @@ export interface WorkspaceSource {
 export interface IWorkspaces {
   /** Host-authoritative Workspace rows, order, archive set, and follow lifecycle. */
   readonly list: WorkspaceSource
-  /** Apply the archive-set echo returned by a Session deletion immediately. */
+  /**
+   * Apply the archive-set echo returned by a Session deletion immediately.
+   * @param sessionIds - complete Host archive set replacing the local archive projection.
+   */
   applyArchivedEcho(sessionIds: readonly SessionId[]): void
   /**
    * Register an existing path as a Workspace.

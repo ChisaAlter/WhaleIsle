@@ -5,6 +5,7 @@ import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime'
 import type { GitActionsProps } from '../src/client/GitActionsControl.tsx'
 import { GitActionsControl } from '../src/client/GitActionsControl.tsx'
 import type { VcsStatus } from '../src/client/git-logic.ts'
@@ -128,6 +129,7 @@ function mount(opts: {
   const openExternal = vi.fn(async () => true)
   const view = render(
     <GitActionsControl
+      {...allowAllAccess}
       usePanelInfo={panelInfoStub}
       useResource={resourceStub}
       surfaces={0}
@@ -337,6 +339,7 @@ describe('GitActionsControl', () => {
       ? new Promise<VcsStatus>(resolve => { resolveOther = resolve })
       : Promise.resolve(status({ aheadCount: 2 })))
     const shared = {
+      ...allowAllAccess,
       surfaces: 0,
       terminalDrawer: 0,
       managedSession: false,
@@ -481,6 +484,7 @@ describe('GitActionsControl', () => {
     expect(onWorkspacesChanged).toHaveBeenCalledTimes(1)
     b.rerender(
       <GitActionsControl
+        {...allowAllAccess}
         usePanelInfo={panelInfoStub}
         useResource={resourceStub}
         surfaces={0}

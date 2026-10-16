@@ -28,9 +28,9 @@ import { CONVERSATION_NS as NS } from '../../locale.ts'
  * slot the parent Tool node declares.
  */
 export function ReadImageRow(props: ReadImageRowProps) {
-  const { block, cwd, home, renderToolImages, loadImage } = props
+  const { block, renderToolImages, loadImage } = props
   return readFamilyRow(props, {
-    image: imageCardModel(block, cwd, home),
+    image: imageCardModel(block),
     renderToolImages,
     loadImage,
   })

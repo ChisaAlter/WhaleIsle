@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  FlipText, IconChevronDownOutlineRegular, IconLoadingOutlineRegular, Menu, PermissionIconFullAccessRegular,
+  FlipText, IconChevronDownOutlineRegular, IconLoadingOutlineRegular, Menu, PermissionIconAutoReviewRegular, PermissionIconFullAccessRegular,
   PermissionIconReadOnlyRegular, PermissionIconWorkspaceWriteRegular, RiskConfirmation, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -29,6 +29,7 @@ const permissionGlyphs = new Map<string, ReactNode>([
   ['read-only', <PermissionIconReadOnlyRegular />],
   ['workspace-write', <PermissionIconWorkspaceWriteRegular />],
   [FULL_ACCESS, <PermissionIconFullAccessRegular />],
+  [AUTO_REVIEW, <PermissionIconAutoReviewRegular />],
 ])
 
 /** Glyph for a permission option value; host-configured names outside the design set get none. */
@@ -120,6 +121,7 @@ export function PermissionSelect({
   const currentLabel = current === undefined
     ? permissionLabel(currentValue, currentValue, t)
     : permissionLabel(current.value, current.name, t)
+  const currentBadge = optionBadge(currentValue, t)
   const busy = pick !== null || confirmation !== null
 
   const items: MenuEntry[] = catalog.options.map((option) => {
@@ -133,7 +135,7 @@ export function PermissionSelect({
         : (
           <span className={css.optionLabel} aria-label={`${label} ${badge}`}>
             <span className={css.optionLabelText}>{label}</span>
-            <sup className={css.badge}>{badge}</sup>
+            <span className={css.badge}>{badge}</span>
           </span>
         ),
       ...icon === undefined ? {} : { icon },
@@ -197,8 +199,6 @@ export function PermissionSelect({
   const confirmationEnable = confirmation === AUTO_REVIEW
     ? t('auto.confirm.enable')
     : t('confirm.enable')
-  const currentBadge = optionBadge(currentValue, t)
-  const currentAccessibleLabel = currentBadge === undefined ? currentLabel : `${currentLabel} ${currentBadge}`
 
   return (
     <>
@@ -214,7 +214,7 @@ export function PermissionSelect({
           <button
             type="button"
             className={css.trigger}
-            aria-label={t('mode', { name: currentAccessibleLabel })}
+            aria-label={t('mode', { name: currentLabel })}
             title={current === undefined ? undefined : optionDescription(current, t)}
             disabled={locked || busy}
             aria-busy={pick !== null}

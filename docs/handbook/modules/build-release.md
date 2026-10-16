@@ -18,7 +18,7 @@ Harness 来源由 `vendor/harness-upstream.json` 记录；同步用 `npm run syn
 - 内置插件的暂存依赖树完成完整性检查后，删除生产闭包外的包；只处理 `node_modules` 中的包槽位，不把包内子路径当成独立依赖。运行时文件筛选保留 LICENSE、LICENCE、NOTICE、第三方许可说明，以及含独立许可证正文的 README。只裁剪分发副本中的声明、source map、已确认的插件开发目录/宣传图、Zod 的 `src`、node-pty 非目标 prebuild 和第三方 ConPTY 构建副本、domino 的测试/锁文件、web 的重复 public 树及移动端 map；目标 ConPTY 与包的 JS 子路径仍保留。
 - 两份 pnpm 保持各自版本与调用入口，均剔除非目标平台的 reflink 原生包。桌面 pnpm 12 使用 `bin/pnpm.mjs`，复制 `package.json`、`bin`、`dist`、`native-binary.mjs` 及包中的许可证/第三方许可说明，再从同版本目标平台的 `@pnpm/exe.*` 复制一份 `pnpm-native`（Windows 为 `pnpm-native.exe`）；随包运行不需要首次联网下载，也不携带重复的别名可执行文件。
 - `afterPack` 对 Harness 归档计算 SHA256。Windows Setup 在暂存安装目录运行 `scripts/install-harness.cjs`，核验大小和摘要、提取 Harness 并创建指向最终目录的 junction，随后删除 tar；目录晋级后应用直接使用安装目录内的运行时。`pack --dir`、macOS 和旧 tar 布局仍保留启动时提取与内容身份校验，不能用文件长度或版本号替代摘要。
-- 上游 `scripts/build-stage-credentials.mjs` 按 native/host/client/web 的输入与产物身份复用阶段，避免无变化时重复编译。该缓存属于构建实现，不是人工验收凭据。
+- 桌面 `scripts/build-stage-credentials.mjs` 按 native/host/client/web 的输入与产物身份复用阶段，避免无变化时重复编译。`dsh-v0.2.1-alpha.3` 的包编译与聚合检查依赖图保持，Node 与浏览器 Client 分别构建；旧阶段缓存失效后重新生成。源码预启动优先直接使用 Harness 已安装的 pnpm 11.28.5，避免由桌面 pnpm 12 代管旧版工具。该缓存属于构建实现，不是人工验收凭据。
 - Office runtime 通过 `prepare:office-runtime` 进入 Windows 安装包。`afterPack` 仅在分发副本中移除 Python 的 `test`、`tests`、`benchmarks` 目录及存在对应 `.py` 源码的字节码；`numpy.testing`、`pandas.testing`、`pandas._testing` 等公开 API 保留。暂存载荷按实际文件内容与版本元数据重新计算 `runtime.json.payloadDigest`，装配断言复算，避免复用旧的未裁剪载荷。其资源、依赖和能力边界见[Office runtime](../../features/office-runtime.md)。
 
 ## CI 产物与分发

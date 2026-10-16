@@ -256,8 +256,9 @@ export class ProjectService {
   }
   async coordinator(project) {
     if (!await this.ctx.sessionPersistence.stat(project.coordinatorSessionId)) fail('session_missing', 'The original coordinator Session is missing; its association is preserved.');
-    if (!this.ctx.agents.get(project.coordinatorSessionId)) await this.ctx.sessionController.create({ sessionId: project.coordinatorSessionId, cwd: project.storageRoot, agentPreset: 'project-coordinator', presentation: { owner: 'project', title: project.title, workingDirectory: project.canonicalWorkingDirectory } });
-    return this.ctx.agents.get(project.coordinatorSessionId);
+    const resolved = await this.ctx.sessionController.resolveAgent(project.coordinatorSessionId);
+    if ('error' in resolved) throw resolved.error;
+    return resolved.agent;
   }
   async create(input) {
     return this.serial(async () => {
@@ -280,7 +281,8 @@ export class ProjectService {
     await safeProjectSubdirectory(this.home, project.id, 'docs'); await safeProjectSubdirectory(this.home, project.id, 'internal');
     try { await fs.writeFile(join(project.storageRoot, 'preferences.md'), '', { flag: 'wx', mode: 0o600 }); } catch (error) { if (error.code !== 'EEXIST') throw error; }
     try { await fs.writeFile(join(project.storageRoot, 'charter.md'), '', { flag: 'wx', mode: 0o600 }); } catch (error) { if (error.code !== 'EEXIST') throw error; }
-    await this.ctx.sessionController.create({ sessionId: project.coordinatorSessionId, cwd: project.storageRoot, agentPreset: 'project-coordinator', presentation: { owner: 'project', title: project.title, workingDirectory: project.canonicalWorkingDirectory } });
+    if (await this.ctx.sessionPersistence.stat(project.coordinatorSessionId)) await this.coordinator(project);
+    else await this.ctx.sessionController.create({ sessionId: project.coordinatorSessionId, cwd: project.storageRoot, agentPreset: 'project-coordinator', presentation: { owner: 'project', title: project.title, workingDirectory: project.canonicalWorkingDirectory } });
     await this.ctx.sessions.flush(this.ctx.agents.get(project.coordinatorSessionId).session);
     await this.teams.bindPolicy(this.ctx.agents.get(project.coordinatorSessionId), policy);
     await this.write(state => { const row = state.projects.find(item => item.id === project.id); row.lifecycle = 'ready'; row.diagnostics = []; row.updatedAt = Date.now(); });
@@ -887,7 +889,7 @@ export class ProjectService {
     for (const job of owned) jobs.kill(job.id, id, 'Project work stopped');
     // Waiters precede native disposal, which removes owner records.
     const waits = owned.map(job => jobs.wait(job.id, 30000, id)); agent?.cancel({ kind: 'user' });
-    const parent = this.ctx.agents.get(project.coordinatorSessionId); if (parent) await this.ctx.subagents.drainContinuableChildren(parent, [id]);
+    const parent = this.ctx.agents.get(project.coordinatorSessionId); if (parent) await this.ctx.subagents.drainChildren(parent, [id]);
     if (agent) await agent.whenIdle();
     for (const after of await Promise.all(waits)) if (['running', 'stopping'].includes(after.status)) fail('stopping', 'A worker-owned job has not stopped; the directory stays occupied.');
   }

@@ -3,7 +3,7 @@
  * for {@link SubagentProvider}, plus the `subagent/start` and `subagent/end`
  * payloads that plugins and hosts observe. Internal control interfaces belong
  * with their implementation — the lifecycle observer in `./lifecycle.ts`, the
- * continuation host in `./continuation.ts` — so this module stays the published
+ * manager host in `./manager.ts` — so this module stays the published
  * surface rather than a bag of everything type-shaped.
  *
  * @module @deepseek-ai/dsh-subagent/types
@@ -13,8 +13,7 @@ import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
-import type { ObjectJsonSchema, ToolRestriction } from '@deepseek-ai/dsh-tools'
-import type { SubagentDescriptorData } from './descriptor.ts'
+import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 
 /** Identifies one accepted subagent run across its lifecycle event pair. */
 export type SubagentRunId = Branded<'SubagentRunId'>
@@ -28,53 +27,51 @@ export function SubagentRunId(id: string): SubagentRunId {
   return id as SubagentRunId
 }
 
-/** What a caller asks for when starting a continuable background child. */
-export interface ContinuableStartSpec {
-  /** Host-assigned execution environment; never populated from model arguments. */
-  readonly environment?: ContinuableEnvironment
-  /** The `ctx.subagents` provider whose continuable-creation capability establishes the child. */
-  readonly provider: string
-  /** The initial delegation's short `description`, persisted as the child's creation label. */
-  readonly label: string
-  /**
-   * Optional caller-reserved child identity. Omission preserves the manager's
-   * UUID allocation; supplying one lets a durable parent record provisioning
-   * before child materialization without a second identity handshake.
-   */
-  readonly childId?: SessionId
-  /**
-   * The delegation request. The manager reserves the stable child id, resolves
-   * the durable descriptor, and composes the child itself.
-   */
-  readonly request: Omit<SubagentStartRequest, 'label' | 'signal' | 'outputSchema'>
-  /** Caller cancellation, owning the operation only until inbox acceptance. */
-  readonly signal: AbortSignal
-}
-
-/** Durable, host-selected inputs for a managed continuable child. */
+/** One managed child execution and its result delivery policy. */
 export interface ContinuableEnvironment {
   readonly cwd?: string
   readonly agentPreset?: string
-  /** Registered host admission policy required on every activation and delivery. */
   readonly admissionPolicy?: string
 }
 
-/** Admission before managed child input or an automatic wake of its parent. */
+/** Host admission for managed child input and automatic parent wakes. */
 export interface ContinuationAdmission {
   readonly parent: Agent
   readonly childId: SessionId
-  /** Settlement admission controls waking; the owner persists its own outcome. */
   readonly reason: 'start' | 'message' | 'settlement'
-  /** Captured after teardown, before the single parent notice. Never wait for subagent/end here. */
   readonly settlement?: { readonly runId: SubagentRunId; readonly stopReason: SubagentResult['stopReason']; readonly output?: readonly ContentBlock[] }
 }
 
-/** Identities returned once a continuable child accepted its initial prompt. */
-export interface ContinuableStart {
-  /** The durable child session id, stable across activations. */
+export interface SubagentActivationSpec {
+  /** Trusted host-selected environment, not model arguments. */
+  readonly environment?: ContinuableEnvironment
+  /** Registered backend to use. */
+  readonly provider: string
+  /** Short task label retained in cataloged child membership. */
+  readonly label: string
+  /** Optional reserved identity for a local child; external backends allocate their own ids. */
+  readonly childId?: SessionId
+  /** Task, parent, and backend-supported execution options. */
+  readonly request: Omit<SubagentStartRequest, 'label' | 'signal'>
+  /** Cancellation before publication; callers own later cancellation through dispose. */
+  readonly signal: AbortSignal
+  /** Parent delivery notifies the model; caller delivery only returns the result. Local children always enter the parent catalog. */
+  readonly delivery: 'parent' | 'caller'
+}
+
+/** A managed execution; disposal addresses this exact activation, never a later resume. */
+export interface SubagentActivation {
+  /** Stable identity of the child. */
   readonly childId: SessionId
-  /** The accepted initial prompt's inbox message id. */
-  readonly messageId: MessageId
+  /** Accepted inbox message, when the backend has a local inbox. */
+  readonly messageId?: MessageId
+  /**
+   * Execution result after teardown settles and notifications are sent; capture failures reject.
+   * Teardown failures are reported by dispose() without replacing a captured result.
+   */
+  readonly result: Promise<SubagentResult>
+  /** Stop and release this activation and its owned descendants; rejects on teardown failure. */
+  dispose(): Promise<void>
 }
 
 /**
@@ -94,22 +91,19 @@ export interface SubagentSendMessageOptions {
 
 /**
  * Observe-only identifying detail for a published subagent run, carried by
- * `subagent/start`. One-shot runs and continuable Activation epochs share this
- * payload, so an observer sees the same vocabulary for both.
+ * `subagent/start`. Local and external activations share this payload.
  */
 export interface SubagentRunInfo {
   /** Unique identity shared with the paired terminal event. */
   readonly runId: SubagentRunId
   /**
-   * Provider name recorded when the child was first created. The provider may
-   * be absent when an accepted one-shot run becomes ready or a persisted
-   * Activation cold-resumes, because neither lifecycle depends on continued
-   * registration.
+   * Provider name recorded when the child was first created, retained even
+   * after that provider is unregistered.
    */
   readonly provider: string
   /** The child agent's id. */
   readonly id: SessionId
-  /** Snapshot of whether `SubagentRun.localAgent` was present when start fulfilled. */
+  /** Whether this activation owns a local Agent, fixed at publication. */
   readonly local: boolean
 }
 
@@ -124,7 +118,7 @@ export interface SubagentRunEndInfo {
   readonly provider: string
   /** The child agent's id. */
   readonly id: SessionId
-  /** Snapshot of whether `SubagentRun.localAgent` was present when start fulfilled. */
+  /** Whether this activation owns a local Agent, fixed at publication. */
   readonly local: boolean
   /** The terminal stop reason. */
   readonly stopReason: SubagentResult['stopReason']
@@ -137,40 +131,40 @@ export interface SubagentRunEndInfo {
 }
 
 /**
- * Which START-TIME features a provider supports. Checked by the service before delegating to
- * {@link SubagentProvider.start}: a request that needs a capability the chosen provider lacks
- * is rejected with a typed error rather than accepted-then-ignored (the "fail loud, no silent
- * degradation" rule). These flags describe the ONE-SHOT
- * {@link SubagentProvider.start} path, where the provider composes the child;
- * continuable children are composed by the continuation manager itself and are
- * gated by {@link SubagentProvider.prepareContinuable} instead. Each flag
- * corresponds one-to-one to a {@link SubagentStartRequest} option: `depthLimit`
- * to `maxDepth`; the other names match.
+ * Start-time options supported by a registered backend. The manager checks
+ * every requested option before preparing a local child or starting an external
+ * execution. depthLimit controls maxDepth; the remaining flag names match
+ * SubagentStartRequest fields.
  */
 export interface SubagentCapabilities {
   readonly agentOptions: boolean
+  /** Supports selecting a preset independently of the parent's composition. */
+  readonly agentPreset: boolean
   readonly outputSchema: boolean
   readonly depthLimit: boolean
-  readonly toolFilter: boolean
-  readonly persona: boolean
 }
 
 /**
- * What a caller asks for when starting a ONE-SHOT subagent. The tool layer
- * builds this from the model's `{ description, prompt }` plus its own config;
- * the service validates {@link SubagentCapabilities} against the named provider
- * and resolves the durable descriptor before dispatching to
- * {@link SubagentProvider.start}.
+ * Task and optional capabilities supplied to a backend. startActivation carries
+ * these fields in request while owning its label, cancellation, and delivery
+ * policy separately.
  */
 export interface SubagentStartRequest {
+  /** Initial child directory; relative paths resolve against the parent's current directory. Omitted inherits that directory at start. */
+  readonly cwd?: string
+  /**
+   * Independent preset id; omission joins the parent's current generation.
+   * Requires a provider with `capabilities.agentPreset` that does not inherit
+   * parent context.
+   */
+  readonly agentPreset?: string
   /** Optional short display label persisted with a session-backed child. */
   readonly label?: string
   /** Content delivered as the child's user message. */
   readonly prompt: ContentBlock[]
   /**
-   * The spawning agent. In-process providers derive workspace, lineage, and
-   * delegation depth from its durable session state. ACP reads only its cwd,
-   * and only when no deployment `cwd` override is configured.
+   * The spawning agent. Its effective directory supplies the default cwd;
+   * in-process children retain its origin, lineage, and delegation depth.
    */
   readonly parent: Agent
   /**
@@ -202,31 +196,12 @@ export interface SubagentStartRequest {
    * start otherwise.
    */
   readonly maxDepth?: number
-  /**
-   * Optional child tool scoping. Requires {@link SubagentCapabilities.toolFilter};
-   * rejected at start otherwise. In-process backends apply it as a scoped
-   * `tools.restrict()` in the child's creation window: the named tools vanish
-   * from the child's prompt AND refuse to execute (one visibility), with loud
-   * unknown-name validation.
-   */
-  readonly toolFilter?: ToolRestriction
-  /**
-   * Optional per-child persona. Requires {@link SubagentCapabilities.persona};
-   * rejected at start otherwise. In-process backends register it as a scoped
-   * `deployment:persona-prefix` section on the child, SHADOWING the deployment's
-   * persona for this child alone — same template semantics as the deployment
-   * persona (strict `{{…}}` interpolation against the registered variables).
-   */
-  readonly persona?: string
 }
 
-/**
- * Provider-facing one-shot request after {@link SubagentRuntime.start} resolves
- * the durable child descriptor.
- */
+/** Provider-facing request with an absolute directory selected before startup. */
 export interface ResolvedSubagentStartRequest extends SubagentStartRequest {
-  /** Detached descriptor a session-backed provider persists in the child log. */
-  readonly descriptor: SubagentDescriptorData
+  /** Absolute child directory captured from the parent or explicit request. */
+  readonly cwd: string
 }
 
 /**
@@ -237,6 +212,8 @@ export interface ResolvedSubagentStartRequest extends SubagentStartRequest {
  * history.
  */
 export interface ContinuableCreateRequest {
+  /** Absolute initial directory captured before provider preparation. */
+  readonly cwd: string
   /** The reserved durable child session id, for provider diagnostics. */
   readonly sessionId: SessionId
   /** The delegating parent agent whose history a seeding provider reads. */
@@ -317,27 +294,15 @@ export interface SubagentResult {
 }
 
 /**
- * ONE-SHOT child handle returned after publication. Prompt submission, turn
- * work, and infrastructure faults after that boundary belong to {@link result}.
- * Consumers await that result and must always {@link dispose} to cancel
- * remaining work and reach quiescence. A run is one disposable foreground
- * delegation with one result; continuable conversations have no run — the
- * continuation manager holds their `AgentHandle` directly and orders every
- * turn through the child's own inbox.
+ * Backend execution handle owned directly by the activation registry.
+ * A result may become available before resource release; the manager always
+ * disposes the handle and awaits cleanup. Backend startup failures clean up
+ * partial resources before rejecting, while accepted execution failures settle
+ * through result.
  */
 export interface SubagentRun {
-  /**
-   * Parent-scoped run id. For a local run, this MUST equal the published child
-   * session id, whose `parentSession` records `request.parent.session.id`; a
-   * remote provider mints an id unique in the parent namespace.
-   */
+  /** Provider-minted id, unique across all parents, providers, and local Sessions in this runtime. */
   readonly id: SessionId
-  /**
-   * The exact published in-process child, or `undefined` for a remote run.
-   * When present, its id is {@link id}; the provider retains no ownership
-   * implication beyond the run's ordinary {@link dispose} contract.
-   */
-  readonly localAgent: Agent | undefined
   /**
    * Resolves with the child's terminal {@link SubagentResult} when the run
    * settles. Does NOT reject on a child-level failure — a model/transport
@@ -373,31 +338,28 @@ export interface SubagentProvider {
    */
   readonly inheritsParentContext: boolean
   /**
-   * Optional static provider-owned provider/model route for one-shot Agent
+   * Optional static provider-owned provider/model route for child Agent
    * options. Consumers merge tool/model overrides over these values before
    * preflight; providers whose route derives from the parent omit it. The value
    * is detached immutable data and requires `agentOptions` support.
    */
   readonly agentRouteDefaults?: Readonly<{ provider: string; model: string }>
   /**
-   * Establish a ONE-SHOT child and return its handle after publication.
+   * Establish one external execution and return its owned handle.
    * The service has already validated that every requested start-time
-   * capability is supported and resolved `request.descriptor`, so a
-   * session-backed implementation appends that descriptor inside the child's
-   * initial turn. Before fulfillment, the provider owns setup and cleans any
-   * unpublished partial resources before rejecting. Ownership transfers on
+   * capability is supported. Before fulfillment, the provider owns setup and
+   * cleans any unpublished partial resources before rejecting. Ownership transfers on
    * fulfillment; subsequent turn or infrastructure failure settles through
    * the returned run. Distinct starts may overlap; cancellation, failure,
    * result settlement, and disposal remain independent for each run.
    */
-  start(request: ResolvedSubagentStartRequest): Promise<SubagentRun>
+  start?(request: ResolvedSubagentStartRequest): Promise<SubagentRun>
   /**
    * OPTIONAL (continuable-creation capability): contribute the detached
    * creation inputs that distinguish this provider's continuable children —
    * only whether the child session is seeded with parent history. Method
-   * presence IS the capability: the service rejects continuable starts on
-   * providers without it, while a provider that has it may still serve
-   * ordinary one-shot delegations.
+   * presence selects local activation execution. Providers without it execute
+   * through start and do not accept subsequent messages.
    *
    * This is the provider's ONLY participation in a continuable child. The
    * continuation manager owns identity reservation, composition, Agent

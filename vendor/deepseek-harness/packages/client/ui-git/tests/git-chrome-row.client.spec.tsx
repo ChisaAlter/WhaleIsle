@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { GitChromeRow } from '../src/client/GitChromeRow.tsx'
 import type { GitChromeRowProps } from '../src/client/GitChromeRow.tsx'
@@ -17,6 +17,7 @@ const unused = (() => { throw new Error('unused by GitChromeRow') }) as never
 function mount(opts: { visible?: boolean; writable?: boolean } = {}) {
   const setTitlebarGit = vi.fn()
   const props: GitChromeRowProps = {
+    ...allowAllAccess,
     usePanelInfo: panelInfoStub,
     useResource: resourceStub,
     useSessions: unused,

@@ -79,6 +79,14 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+.open:disabled {
+  cursor: default;
+}
+
+.open:disabled:hover {
+  background: transparent;
+}
+
 .label {
   flex: 1;
   min-width: 0;

@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-settings-market",
   "description": "Desktop-owned plugin marketplace settings section: curated catalog browse/search, install/update/uninstall with progress via window.shell",
-  "version": "0.2.1-alpha.1",
+  "version": "0.2.1-alpha.3",
   "publishConfig": {
     "access": "public"
   },

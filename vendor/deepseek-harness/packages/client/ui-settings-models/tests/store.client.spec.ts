@@ -1,10 +1,31 @@
 /** Page-store join: directory × namespaces × credentials, with last-good rows on failure. */
 import { describe, expect, it } from 'vitest'
-import type { RpcResponse } from '@deepseek-ai/dsh-api-remotes/client'
+import type { RpcResponse, SettingsDescribeValue } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { settingsSchema } from './settings-schema.client.ts'
-import { joinProviderDirectory, ModelsSettingsStore, providerUsable } from '../src/client/store.ts'
+import { deriveKeyRef, joinProviderDirectory, ModelsSettingsStore, providerUsable } from '../src/client/store.ts'
+
+it.each([
+  ['anthropic', 'ANTHROPIC_API_KEY'],
+  ['moonshotai', 'MOONSHOTAI_API_KEY'],
+  ['moonshotai-cn', 'MOONSHOTAI_CN_API_KEY'],
+  ['google-vertex', 'GOOGLE_VERTEX_API_KEY'],
+  ['constructor', 'CONSTRUCTOR_API_KEY'],
+])('stores a typed key for route %s under a reference derived from the route id', (provider, ref) => {
+  expect(deriveKeyRef(provider)).toBe(ref)
+})
+
+it('carries the endpoint and native authentication the adapter reports onto the row', () => {
+  const nativeAuth = { env: ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'], oauth: true }
+  expect(joinProviderDirectory([], [{
+    provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'anthropic'],
+    defaultBaseURL: 'https://api.anthropic.com', baseURLEnv: ['ENDPOINT'], nativeAuth,
+  }])).toEqual([{
+    provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'anthropic'],
+    active: false, defaultBaseURL: 'https://api.anthropic.com', baseURLEnv: ['ENDPOINT'], nativeAuth,
+  }])
+})
 
 it.each([false, true])('retains configuration diagnostics when the route is active: %s', (active) => {
   expect(joinProviderDirectory(active ? [{ id: 'openai', name: 'openai' }] : [], [{
@@ -85,7 +106,7 @@ const NAMESPACES = [
 function api(overrides: {
   accountAvailable?: boolean
   providers?: () => Promise<RpcResponse<{ providers: typeof DIRECTORY }>>
-  describeSettings?: () => Promise<RemoteAnswer<{ writable: boolean; hasDocument: boolean; namespaces: typeof NAMESPACES }>>
+  describeSettings?: () => Promise<RemoteAnswer<SettingsDescribeValue>>
   describeCredentials?: (refs: readonly string[]) => Promise<RemoteAnswer<Record<string, unknown>>>
 } = {}) {
   const seenRefs: string[][] = []
@@ -141,6 +162,20 @@ function api(overrides: {
 }
 
 describe('ModelsSettingsStore', () => {
+  it('describes native variables without exposing secret values and respects the 64-reference limit', async () => {
+    const providers = Array.from({ length: 65 }, (_, index) => ({
+      provider: `fixture-${index}`, displayName: 'fixture', settingsNs: 'llm-pi-ai', settingsPath: ['providers', `fixture-${index}`], active: false,
+      nativeAuth: { env: [`NATIVE_${index}`], oauth: false },
+    }))
+    const { ctx, mirror, seenRefs } = api({ providers: () => Promise.resolve(ok({ providers })) })
+    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+    await store.load()
+    expect(seenRefs.map(refs => refs.length)).toEqual([64, 64, 2])
+    expect(seenRefs.flat()).toContain('NATIVE_64')
+    expect(store.store.getSnapshot().rows[64]!.credentialChecks)
+      .toEqual({ NATIVE_64: { configured: false, writable: true } })
+  })
+
   it('joins rows with configured, removable, and credential state', async () => {
     const { ctx, mirror, seenRefs } = api()
     const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
@@ -230,6 +265,158 @@ describe('ModelsSettingsStore', () => {
     await Promise.all([first, second])
     expect(store.store.getSnapshot().status).toBe('ready')
   })
+
+  it('keeps superseded callers pending until the latest joined snapshot is published', async () => {
+    const firstRead = Promise.withResolvers<RemoteAnswer<Record<string, unknown>>>()
+    const latestRead = Promise.withResolvers<RemoteAnswer<Record<string, unknown>>>()
+    const firstStarted = Promise.withResolvers<undefined>()
+    const latestStarted = Promise.withResolvers<undefined>()
+    let calls = 0
+    const { ctx, mirror } = api({ describeCredentials: () => {
+      calls += 1
+      if (calls === 1) { firstStarted.resolve(undefined); return firstRead.promise }
+      latestStarted.resolve(undefined)
+      return latestRead.promise
+    } })
+    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+    let firstSettled = false
+    const first = store.load().then(() => { firstSettled = true })
+    await firstStarted.promise
+    const latest = store.load()
+    await latestStarted.promise
+    try {
+      firstRead.resolve(remoteOk({}))
+      await firstRead.promise
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      expect(firstSettled).toBe(false)
+      expect(store.store.getSnapshot().status).toBe('loading')
+      latestRead.resolve(remoteOk({}))
+      await Promise.all([first, latest])
+      expect(firstSettled).toBe(true)
+      expect(store.store.getSnapshot().status).toBe('ready')
+    } finally {
+      firstRead.resolve(remoteOk({}))
+      latestRead.resolve(remoteOk({}))
+      await Promise.all([first, latest])
+    }
+  })
+
+  it('settles callers after the latest credential refusal without waiting for an obsolete read', async () => {
+    const obsoleteRead = Promise.withResolvers<RemoteAnswer<Record<string, unknown>>>()
+    const latestRead = Promise.withResolvers<RemoteAnswer<Record<string, unknown>>>()
+    const obsoleteStarted = Promise.withResolvers<undefined>()
+    const latestStarted = Promise.withResolvers<undefined>()
+    let calls = 0
+    const { ctx, mirror } = api({ describeCredentials: () => {
+      calls += 1
+      if (calls === 1) { obsoleteStarted.resolve(undefined); return obsoleteRead.promise }
+      latestStarted.resolve(undefined)
+      return latestRead.promise
+    } })
+    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+    let obsoleteSettled = false
+    const obsolete = store.load().then(() => { obsoleteSettled = true })
+    await obsoleteStarted.promise
+    const latest = store.load()
+    await latestStarted.promise
+    try {
+      latestRead.resolve(remoteFail('latest credentials unavailable'))
+      await latest
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      expect(obsoleteSettled).toBe(true)
+      expect(store.store.getSnapshot()).toMatchObject({ status: 'ready', credentialError: 'latest credentials unavailable' })
+      obsoleteRead.reject(new Error('obsolete transport unavailable'))
+      await Promise.allSettled([obsoleteRead.promise])
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      expect(store.store.getSnapshot()).toMatchObject({ status: 'ready', credentialError: 'latest credentials unavailable' })
+    } finally {
+      obsoleteRead.resolve(remoteOk({}))
+      latestRead.resolve(remoteOk({}))
+      await Promise.all([obsolete, latest])
+    }
+  })
+
+  it('propagates the latest unexpected rejection to every waiting caller', async () => {
+    const obsoleteRead = Promise.withResolvers<RemoteAnswer<Record<string, unknown>>>()
+    const latestRead = Promise.withResolvers<RemoteAnswer<Record<string, unknown>>>()
+    const obsoleteStarted = Promise.withResolvers<undefined>()
+    const latestStarted = Promise.withResolvers<undefined>()
+    let calls = 0
+    const { ctx, mirror } = api({ describeCredentials: () => {
+      calls += 1
+      if (calls === 1) { obsoleteStarted.resolve(undefined); return obsoleteRead.promise }
+      latestStarted.resolve(undefined)
+      return latestRead.promise
+    } })
+    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+    let firstSettlement: PromiseSettledResult<void> | undefined
+    const first = store.load()
+    const firstObserved = Promise.allSettled([first]).then(([settlement]) => { firstSettlement = settlement })
+    await obsoleteStarted.promise
+    const second = store.load()
+    await latestStarted.promise
+    const latestSettlement = Promise.allSettled([second])
+    const rejection = new Error('latest transport unavailable')
+    try {
+      latestRead.reject(rejection)
+      expect(await latestSettlement).toEqual([{ status: 'rejected', reason: rejection }])
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      expect(firstSettlement).toEqual({ status: 'rejected', reason: rejection })
+      obsoleteRead.reject(new Error('obsolete transport unavailable'))
+      await Promise.allSettled([obsoleteRead.promise])
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      expect(store.store.getSnapshot().status).toBe('loading')
+    } finally {
+      obsoleteRead.resolve(remoteOk({}))
+      latestRead.resolve(remoteOk({}))
+      await firstObserved
+      await latestSettlement
+    }
+  })
+
+  it.each(['loading', 'ready', 'error'] as const)('waits for a refresh started by a %s subscriber', async (phase) => {
+    const heldRead = Promise.withResolvers<RemoteAnswer<Record<string, unknown>>>()
+    const heldStarted = Promise.withResolvers<undefined>()
+    let calls = 0
+    let providerReads = 0
+    const { ctx, mirror } = api({ providers: () => {
+      providerReads += 1
+      return Promise.resolve(phase === 'error' && providerReads === 1 ? fail('first directory refused') : ok({ providers: DIRECTORY }))
+    }, describeCredentials: () => {
+      calls += 1
+      if ((phase !== 'ready' && calls === 1) || (phase === 'ready' && calls === 2)) {
+        heldStarted.resolve(undefined)
+        return heldRead.promise
+      }
+      return Promise.resolve(remoteOk({}))
+    } })
+    const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+    let followup: Promise<void> | undefined
+    let triggered = false
+    const off = store.store.subscribe(() => {
+      if (!triggered && store.store.getSnapshot().status === phase) {
+        triggered = true
+        followup = store.load()
+      }
+    })
+    let settled = false
+    const first = store.load().then(() => { settled = true })
+    try {
+      await heldStarted.promise
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      expect(settled).toBe(false)
+      expect(store.store.getSnapshot().status).toBe('loading')
+      heldRead.resolve(remoteOk({}))
+      await first
+      await followup
+      expect(store.store.getSnapshot().status).toBe('ready')
+    } finally {
+      off()
+      heldRead.resolve(remoteOk({}))
+      await first
+      await followup
+    }
+  })
 })
 
 describe('edge joins', () => {
@@ -287,24 +474,23 @@ describe('edge joins', () => {
     expect(state.rows[0]?.derivedCredential).toMatchObject({ configured: true })
   })
 
-  it('surfaces a settings describe failure', async () => {
-    const { ctx, mirror } = api({ describeSettings: () => Promise.resolve(remoteFail('settings down')) })
+  it('recovers the provider directory when an initial settings failure is retried', async () => {
+    let settingsCall = 0
+    const { ctx, mirror } = api({
+      describeSettings: () => Promise.resolve(++settingsCall === 1
+        ? remoteFail('settings down')
+        : remoteOk({ writable: true, hasDocument: false, namespaces: NAMESPACES })),
+    })
     const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
     await store.load()
     expect(store.store.getSnapshot()).toMatchObject({ status: 'error', error: 'settings down' })
-  })
-
-  it('reports a terminally unavailable settings mirror precisely', async () => {
-    const { ctx } = api()
-    const store = new ModelsSettingsStore(
-      ctx,
-      settingsSchema,
-      new SettingsDescribeMirror(ctx, 'memory'),
-    )
     await store.load()
-    expect(store.store.getSnapshot()).toMatchObject({
-      status: 'error',
-      error: 'settings are unavailable in this browser',
+    const state = store.store.getSnapshot()
+    expect(state).toMatchObject({ status: 'ready', error: null, writable: true })
+    expect(state.rows.find(row => row.entry.provider === 'openai')).toMatchObject({
+      configured: true,
+      apiKeyEnv: 'OPENAI_API_KEY',
+      credential: { configured: true, writable: true },
     })
   })
 
@@ -384,4 +570,24 @@ it('removes the account row after sign-out and restores it after sign-in', async
   overrides.accountAvailable = true
   await store.load()
   expect(store.store.getSnapshot().rows[0]?.entry.provider).toBe('deepseek-account')
+})
+
+it.each([
+  { models: [] },
+  { modelOverrides: { 'deepseek-v4-flash': { disabled: true } } },
+])('keeps an empty saved account catalog manageable without marking it usable: %j', async (saved) => {
+  const namespaces = NAMESPACES.map(view => view.ns === 'llm-deepseek-account'
+    ? { ...view, user: saved, value: { ...view.value, ...saved } } : view)
+  const { ctx, mirror, seenRefs } = api({
+    providers: async () => ok({ providers: [{ provider: 'deepseek-account', displayName: 'DeepSeek Account',
+      settingsNs: 'llm-deepseek-account', settingsPath: [], active: true }] }),
+    describeSettings: async () => remoteOk({ writable: true, hasDocument: true, namespaces }),
+  })
+  const store = new ModelsSettingsStore(ctx, settingsSchema, mirror)
+  await store.load()
+  const rows = store.store.getSnapshot().rows
+  expect(rows).toHaveLength(1)
+  expect(rows[0]).toMatchObject({ accountAvailable: false, accountManaged: true })
+  expect(providerUsable(rows[0]!)).toBe(false)
+  expect(seenRefs).toEqual([])
 })
