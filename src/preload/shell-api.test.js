@@ -73,6 +73,26 @@ test('targeted plugin recovery forwards names only from the launcher surface', a
   }
 });
 
+test('OpenUI shell calls forward unchanged only from the harness role', async () => {
+  const calls = [];
+  const viewer = '<!doctype html><title>trusted viewer</title>';
+  const result = { status: 400, body: { error: { message: 'title is required' } } };
+  const renderer = { ...fakeRenderer(), invoke: async (channel, ...args) => {
+    calls.push([channel, ...args]);
+    return channel === 'shell:openui-viewer' ? viewer : result;
+  } };
+  const api = buildShellApi('harness', renderer);
+  const request = { path: '/api/wiki', query: { title: '' } };
+  assert.equal(await api.openuiViewer(), viewer);
+  assert.deepEqual(await api.openuiApi(request), result);
+  assert.deepEqual(calls, [['shell:openui-viewer'], ['shell:openui-api', request]]);
+  for (const role of ['boot', 'launcher', 'pet', 'pet-live2d']) {
+    const other = buildShellApi(role, renderer);
+    assert.equal(other.openuiViewer, undefined);
+    assert.equal(other.openuiApi, undefined);
+  }
+});
+
 test('shellRole accepts only explicit desktop roles', () => {
   assert.equal(shellRole(['electron', '--dshd-shell-role=boot']), 'boot');
   assert.equal(shellRole(['electron', '--dshd-shell-role=harness']), 'harness');

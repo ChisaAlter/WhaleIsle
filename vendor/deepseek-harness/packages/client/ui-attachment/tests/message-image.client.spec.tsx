@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import type { PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
@@ -298,7 +298,7 @@ describe('ImageGallery', () => {
     fireEvent.click(view.getByRole('button', { name: 'Default labels' }))
     const defaultFrame = view.getByRole('button', { name: 'preview.png, click to view original' })
     expect(defaultFrame).toBe(frame)
-    expect(view.getByAltText('preview.png')).toBe(image)
+    expect(within(defaultFrame).getByAltText('preview.png')).toBe(image)
     expect(defaultFrame.getAttribute('title')).toBe('View original')
     fireEvent.click(defaultFrame)
     expect(view.getByRole('dialog', { name: 'Original image preview' })).toBeTruthy()

@@ -1,5 +1,6 @@
 /** Host registration for browser Chat preferences. */
 import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-system-prompt'
 
 import type { Volatile, Context } from '@deepseek-ai/cordis'
 import type { ChatSettings, CollapseTiming, LinkOpening, PerformanceUsageMode } from './chat-settings.ts'
@@ -7,6 +8,7 @@ import z from '@deepseek-ai/schemastery'
 import { TRANSCRIPT_VIEW_FIELD } from './chat-settings.ts'
 
 import { ChatSettingsFields } from './chat-settings.ts'
+import { OPENUI_GUIDE } from './openui-guide.ts'
 
 export {
   CHAT_SETTINGS_NAMESPACE, DEFAULT_TRANSCRIPT_VIEW_MODE, LEGACY_TRANSCRIPT_VIEW_MODE,
@@ -39,4 +41,11 @@ export const Config = z.object({
  */
 export function apply(ctx: Context): void {
   ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
+  // Only the desktop declares this renderer; ordinary web/headless profiles
+  // retain their existing prompt and do not advertise an unavailable surface.
+  if (process.env.DSHD_OPENUI_ENABLED === '1') {
+    ctx.inject(['systemPrompt'], child => {
+      child.systemPrompt.section({ name: 'openui', order: 79, text: OPENUI_GUIDE, interpolate: false })
+    })
+  }
 }

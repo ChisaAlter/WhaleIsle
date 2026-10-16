@@ -121,7 +121,7 @@ export type {
   MarkdownDelegate, MarkdownDelegateProviderProps, MarkdownExternalLinkHandler, MarkdownPreviewImage,
 } from './markdown/MarkdownDelegate.tsx'
 export { MarkdownText } from './markdown/MarkdownText.tsx'
-export type { MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels, MarkdownPathImages } from './markdown/MarkdownText.tsx'
+export type { MarkdownCodeFence, MarkdownCodeFenceRenderer, MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels, MarkdownPathImages } from './markdown/MarkdownText.tsx'
 export { extractMarkdownPlainText } from './markdown/plain-text.ts'
 export type { MarkdownPlainTextMode, MarkdownPlainTextOptions } from './markdown/plain-text.ts'
 export * from './icons/index.tsx'

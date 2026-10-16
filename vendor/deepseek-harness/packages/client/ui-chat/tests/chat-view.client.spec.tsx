@@ -25,6 +25,7 @@ import type {
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { KeyedSnapshotSelectorHook, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { allowAllAccess, bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -293,11 +294,12 @@ function HarnessChatFlow({ standard, owner, hookContext, renderSlot }: {
   return <ChatFlow {...shared} {...owner} {...hooks} renderSlot={renderSlot} />
 }
 
-function HarnessChatNode({ standard, owner, hookContext, usePerformanceUsage, toolOwners, fallback, renderAssistantSlot }: {
+function HarnessChatNode({ standard, owner, hookContext, usePerformanceUsage, useOpenUiTheme, toolOwners, fallback, renderAssistantSlot }: {
   readonly standard: HarnessStandardProps
   readonly owner: RoutedChatNodeOwner
   readonly hookContext: ChatNodeHookContext
   readonly usePerformanceUsage: React.ComponentProps<typeof TurnTailNodeView>['usePerformanceUsage']
+  readonly useOpenUiTheme: React.ComponentProps<typeof AssistantNodeView>['useOpenUiTheme']
   readonly toolOwners: ToolOwner[]
   readonly fallback: React.ReactNode
   readonly renderAssistantSlot: React.ComponentProps<typeof AssistantNodeView>['renderSlot']
@@ -317,7 +319,9 @@ function HarnessChatNode({ standard, owner, hookContext, usePerformanceUsage, to
     case 'context':
       return <ContextMessageNodeView {...nodeProps} node={owner.node} />
     case 'assistant-step':
-      return <AssistantNodeView {...nodeProps} node={owner.node} renderSlot={renderAssistantSlot} />
+      return <AssistantNodeView {...nodeProps} node={owner.node} renderSlot={renderAssistantSlot}
+        useOpenUiTheme={useOpenUiTheme} sendOpenUiAction={async () => {}}
+        readOpenUiState={() => ({})} saveOpenUiState={() => {}} />
     case 'command':
       return <CommandNodeView {...nodeProps} node={owner.node} renderSlot={renderCommandSlot} />
     case 'manual-compaction':
@@ -417,9 +421,11 @@ function makeHarness(
   const transcriptView = createSnapshotStore<TranscriptViewMode>('compact')
   const collapseTiming = createSnapshotStore<CollapseTiming>('completion')
   const performanceUsage = createSnapshotStore<'compact' | 'detailed'>('detailed')
+  const openUiTheme = createSnapshotStore<ThemeSnapshot | null>(null)
   const t = makeTranslate(zh, commonZh)
   const toolOwners: ToolOwner[] = []
   const usePerformanceUsage = bindSnapshotSelector(performanceUsage)
+  const useOpenUiTheme = bindSnapshotSelector(openUiTheme)
   let nodeSlotOverride: NodeRenderer | undefined
   let imageSlotOverride: ImageRenderer | undefined
   const renderImages = (name: string, owner: object, options?: { fallback?: React.ReactNode }) => {
@@ -433,7 +439,7 @@ function makeHarness(
   const renderNodeSlot: NodeRenderer = (key, owner, opts) => {
     if (nodeSlotOverride !== undefined) return nodeSlotOverride(key, owner, opts)
     return <HarnessChatNode standard={props} owner={owner}
-      hookContext={opts.hookContext} usePerformanceUsage={usePerformanceUsage}
+      hookContext={opts.hookContext} usePerformanceUsage={usePerformanceUsage} useOpenUiTheme={useOpenUiTheme}
       toolOwners={toolOwners} fallback={opts.fallback} renderAssistantSlot={renderAssistantSlot} />
   }
   const renderFlowSlot: ChatFlowSlotProps['renderSlot'] = (key: string, owner: object, opts?: {

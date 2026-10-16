@@ -4,6 +4,8 @@
 
 Windows 任务栏品牌在窗口首次显示前完成：先提交图标、产品名与重启命令，再声明窗口 AppUserModelID，使任务栏刷新时读取完整的品牌信息。
 
+聊天内 [Open Intelligent UI](features/openui.md) 是用户要求整套引入的生成内容库：内容保留上游组件原语与布局能力，通过主题变量映射衔接宿主明暗色；页面外框和源码操作仍使用现有桌面原语与 token，不替换聊天壳。此内容库不受下文“同一套原语”的重写要求约束，也不将其样式传播到其他界面。
+
 DSHD（Deepseek-Harness-Desktop，本仓库的桌面端应用；区别于 `dsh` CLI，也区别于 `src/main` 里的 dshd 守护进程）的设计语言定义在本文档：它是 DSHD 全部可见界面的唯一视觉权威。语言的基线固定为随仓库钉版的 `vendor/deepseek-harness` Web UI——当前钉 `dsh-v0.2.1-alpha.3`（`2fbf4359b82fb94c03dcce0b831660d87f12ea5c`），记录在 [`vendor/harness-upstream.json`](../vendor/harness-upstream.json)，由 `npm run sync:harness` 更新。桌面壳、关闭遮罩、标题栏注入、右边栏、手机远程打开的 Web UI 页、以及任何新增前端，都实现同一套语言，不得另起一套皮肤。
 
 「与基线一致」不靠主观印象，按三条硬标准判定，全部落在实物上：

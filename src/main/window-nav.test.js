@@ -225,3 +225,37 @@ test('visual reply frame cannot navigate after changing its window name', () => 
     loaded.restore();
   }
 });
+
+test('OpenUI frames retain their navigation veto across names and viewer updates', () => {
+  const opened = [];
+  const loaded = loadWindowWithOpenExternal(opened);
+  try {
+    const contents = createFakeContents('http://127.0.0.1:3080/');
+    loaded.attachPrivilegedNavigationGuards(contents, { allowUrl: isLoopbackHttpUrl, openDeniedExternal: true });
+    const navigate = (frame, url) => {
+      const event = { frame, url, isMainFrame: false, prevented: false, preventDefault() { this.prevented = true; } };
+      contents.emit('will-frame-navigate', event);
+      return event.prevented;
+    };
+    const first = { name: 'whale-openui:message-1', frameTreeNodeId: 81 };
+    contents.emit('frame-created', {}, { frame: first });
+    first.name = 'renamed';
+    const next = { name: '', frameTreeNodeId: 82 };
+    contents.emit('frame-created', {}, { frame: next });
+    next.name = 'whale-openui:message-2';
+    assert.equal(navigate(next, 'about:srcdoc'), false);
+    next.name = 'renamed-too';
+
+    for (const frame of [first, next]) {
+      assert.equal(navigate(frame, 'about:srcdoc'), false);
+      for (const url of ['https://external.example/', 'http://127.0.0.1:3080/private',
+        'file:///C:/private', 'data:text/html,new-document', 'about:blank']) {
+        assert.equal(navigate(frame, url), true, `${frame.frameTreeNodeId}: ${url}`);
+      }
+    }
+    assert.equal(navigate({ name: 'ordinary', frameTreeNodeId: 83 }, 'https://external.example/'), false);
+    assert.deepEqual(opened, []);
+  } finally {
+    loaded.restore();
+  }
+});

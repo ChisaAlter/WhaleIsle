@@ -5,6 +5,17 @@ export const NS = 'chat'
 
 /** Simplified Chinese dictionary and key-set source of truth. */
 export const zh = {
+  'openui.title': '交互式回复',
+  'openui.source': '源码',
+  'openui.preview': '预览',
+  'openui.loading': '正在载入交互式回复…',
+  'openui.sending': '正在发送…',
+  'openui.desktopOnly': '请在 Whale Isle 桌面端打开此交互式回复。',
+  'openui.emptyViewer': 'OpenUI 渲染器内容为空。',
+  'openui.loadFailed': '无法载入交互式回复。',
+  'openui.stateFailed': '无法恢复或保存交互状态。',
+  'openui.actionFailed': '操作未完成。',
+  'openui.dismiss': '关闭错误提示',
   'message.stepProcess.thinking': '正在分析请求',
   'message.stepProcess.read': '正在读取文件',
   'message.stepProcess.readImage': '正在读取图片',
@@ -207,6 +218,17 @@ export type ChatKey = keyof typeof zh
 
 /** English dictionary, checked against the Chinese key set. */
 export const en = {
+  'openui.title': 'Interactive reply',
+  'openui.source': 'Source',
+  'openui.preview': 'Preview',
+  'openui.loading': 'Loading interactive reply…',
+  'openui.sending': 'Sending…',
+  'openui.desktopOnly': 'Open this interactive reply in Whale Isle desktop.',
+  'openui.emptyViewer': 'The OpenUI renderer document is empty.',
+  'openui.loadFailed': 'Could not load the interactive reply.',
+  'openui.stateFailed': 'Could not restore or save the interaction state.',
+  'openui.actionFailed': 'The action did not complete.',
+  'openui.dismiss': 'Dismiss error',
   'message.stepProcess.thinking': 'Analyzing the request',
   'message.stepProcess.read': 'Reading files',
   'message.stepProcess.readImage': 'Reading images',

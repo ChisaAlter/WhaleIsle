@@ -1,0 +1,97 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  border: 0 solid;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: inherit;
+}
+
+img,
+svg,
+video,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+img,
+video {
+  height: auto;
+}
+
+table {
+  border-collapse: collapse;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: transparent;
+  cursor: pointer;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+/* Default text takes the theme's Regular weight and tracking, like the
+   react-ui typography tokens; grayscale smoothing keeps macOS from
+   rendering text a shade heavier. */
+body {
+  font-weight: var(--openui-font-weight-regular);
+  font-variation-settings: var(--openui-font-variation-regular);
+  letter-spacing: var(--openui-letter-spacing-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+b,
+strong {
+  font-variation-settings: var(--openui-font-variation-medium);
+}
+
+.chat-shell {
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.welcome-mascot {
+  width: 112px;
+  height: auto;
+}
+
+/* Eight starters: two rows of four cards instead of one squeezed row. */
+.chat-shell .openui-agent-conversation-starter--card {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}

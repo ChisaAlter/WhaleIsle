@@ -8,6 +8,7 @@
   "main": "src/main/index.js",
   "private": true,
   "scripts": {
+    "prepare:openui": "node scripts/prepare-openui.mjs",
     "start": "node scripts/prestart-ensure.mjs && node scripts/run-electron.js",
     "icon": "node scripts/run-render-icon.js",
     "icon:pet": "node scripts/run-render-pet-head.js",
@@ -73,6 +74,7 @@
     },
     "files": [
       "src/**/*",
+      "!src/openui-viewer/**",
       "!**/*.test.js",
       "!src/renderer/pet-live2d/avatar/model_hd.onnx",
       "!src/renderer/pet-live2d/avatar/character_hd.png",

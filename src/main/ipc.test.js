@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
-const { IPC_ROLES } = require('./ipc-authorization');
+const { IPC_ROLES, assertIpcSender } = require('./ipc-authorization');
 const launcherGate = require('./launcher-gate');
 const pluginForensics = require('./plugin-forensics');
 
@@ -169,6 +169,7 @@ function loadIpc(options = {}) {
   stub('./window', {
     getMainWindow: options.getMainWindow || (() => null),
     getHarnessWebContents: options.getHarnessWebContents || (() => null),
+    getHarnessOrigin: options.getHarnessOrigin || (() => null),
     getLauncherWindow: () => null,
     hideHarnessView: options.hideHarnessView || (() => {}),
     dismissMainWindow: options.dismissMainWindow || (() => false),
@@ -325,9 +326,13 @@ function loadIpc(options = {}) {
     readFileMedia() { return null; },
     writeFile() {},
   });
+  stub('./openui', {
+    openuiViewer: options.openuiViewer || (async () => ''),
+    openuiApi: options.openuiApi || (async () => ({ status: 200, body: {} })),
+  });
   stub('./ipc-authorization', {
     IPC_ROLES,
-    assertIpcSender(event, roles) {
+    assertIpcSender: options.actualAuthorization ? assertIpcSender : function (event, roles) {
       const allowed = new Set(roles);
       if (!event?.role || !allowed.has(event.role)) {
         const error = new Error('Unauthorized IPC sender');
@@ -415,6 +420,39 @@ function loadIpc(options = {}) {
     runtimeInstallCalls,
   };
 }
+
+test('OpenUI IPC accepts only the trusted harness main frame and preserves its result', async () => {
+  const mainFrame = { url: 'http://127.0.0.1:3080/' };
+  const harness = { mainFrame, isDestroyed: () => false };
+  const calls = [];
+  const viewer = '<!doctype html><title>trusted viewer</title>';
+  const response = { status: 502, body: { error: { message: 'Wikipedia unavailable' } } };
+  const ipc = loadIpc({
+    actualAuthorization: true,
+    getHarnessWebContents: () => harness,
+    getHarnessOrigin: () => mainFrame.url,
+    openuiViewer: async () => { calls.push(['viewer']); return viewer; },
+    openuiApi: async (input) => { calls.push(['api', input]); return response; },
+  });
+  try {
+    const request = { path: '/api/wiki', query: { title: 'Kyoto' } };
+    const trusted = { sender: harness, senderFrame: mainFrame };
+    assert.equal(await ipc.invoke('shell:openui-viewer', trusted), viewer);
+    assert.deepEqual(await ipc.invoke('shell:openui-api', trusted, request), response);
+    assert.deepEqual(calls, [['viewer'], ['api', request]]);
+    for (const channel of ['shell:openui-viewer', 'shell:openui-api']) {
+      for (const event of [bootEvent(), launcherEvent(),
+        { sender: harness, senderFrame: { url: mainFrame.url } },
+        { sender: { ...harness }, senderFrame: mainFrame },
+        { sender: harness, senderFrame: { url: 'about:srcdoc' } }]) {
+        await assert.rejects(() => ipc.invoke(channel, event, request), error => error.code === 'ERR_DSH_IPC_SENDER');
+      }
+    }
+    assert.equal(calls.length, 2);
+  } finally {
+    ipc.restore();
+  }
+});
 
 test('shell:git-branch-list resolves the guard failure payload when the handler throws', async () => {
   const ipc = loadIpc({

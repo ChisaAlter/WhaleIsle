@@ -25,6 +25,7 @@ import { createChatStore } from '../src/client/stores.ts'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../src/chat-settings.ts'
 import type { LinkOpeningRowInjected } from '../src/client/settings/LinkOpeningRow.tsx'
 import type { TranscriptViewRowInjected } from '../src/client/settings/TranscriptViewRow.tsx'
+import type { OpenUiInjected } from '../src/client/chat/openui.ts'
 
 usePinnedBrowserLanguages('zh-CN')
 
@@ -161,6 +162,31 @@ describe('Chat inject API', () => {
       expect(b.chatSettings.set).toHaveBeenLastCalledWith('collapseTiming', 'completion')
       expect(b.session.prompt).not.toHaveBeenCalled()
       expect(b.session.cancel).not.toHaveBeenCalled()
+    } finally {
+      await b.runtime.dispose()
+    }
+  })
+
+  it('routes an OpenUI action to its original Session with form and context in the logged prompt', async () => {
+    const b = await bench()
+    const other = sessionFakeFor()
+    const otherId = 'other-selected-session' as SessionId
+    try {
+      await b.runtime.sessions.add({ id: otherId, session: other })
+      const reference = b.runtime.sessions.retain(otherId)
+      await reference.ready
+      const entry = b.runtime.slots.entries('conversation.chat.node').find(row => row.options.key === 'assistant-step')!
+      const inject = entry.inject as unknown as (id: SessionId) => OpenUiInjected
+      const original = inject(ROOT)
+      const second = inject(otherId)
+      await second.sendOpenUiAction({ message: 'Other action' })
+      await original.sendOpenUiAction({ message: 'Apply filter', formState: { selected: ['west'] }, context: { chart: 'sales' } })
+      expect(b.session.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'Apply filter\n\nOpenUI form state:\n{"selected":["west"]}\n\nOpenUI context:\n{"chart":"sales"}' }], 'queue')
+      expect(other.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'Other action' }], 'queue')
+      expect(b.session.prompt).toHaveBeenCalledOnce()
+      b.session.prompt.mockRejectedValueOnce(new Error('Original Session unavailable'))
+      await expect(original.sendOpenUiAction({ message: 'Rejected action' })).rejects.toThrow('Original Session unavailable')
+      reference.release()
     } finally {
       await b.runtime.dispose()
     }
