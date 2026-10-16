@@ -1,7 +1,7 @@
 window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   const { createElement: h, useState, useEffect, useLayoutEffect, useRef, useCallback, Fragment } = require('react');
   const { createPortal } = require('react-dom');
-  const { Button, Input, Menu, Modal, Pill, SegmentedTabs, MarkdownText, Toast, IconFolderCloseRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconChevronRightOutlineRegular, IconPlusOutlineRegular, IconEllipsisOutlineRegular } = require('@deepseek-ai/dsh-client-ui-primitives');
+  const { Button, Input, Menu, Modal, Pill, SegmentedTabs, Tag, MarkdownText, Toast, IconFolderCloseRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconChevronRightOutlineRegular, IconPlusOutlineRegular, IconEllipsisOutlineRegular } = require('@deepseek-ai/dsh-client-ui-primitives');
   const { createSnapshotStore, defineStore } = require('@deepseek-ai/dsh-client-store');
   const { teamEnglish, teamChinese } = require('@deepseek-ai/dsh-experimental-client-ui-agent-team');
   const NS = 'dsh-project';
@@ -79,6 +79,55 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     observerTaskProgress: 'Task progress', observerTodo: 'Current to-dos', observerTodoPending: 'Pending', observerExecutor: 'Current executor', observerFlow: 'From request to delivery', observerNoTodo: 'No work has been assigned yet', observerCard: 'Collapse details', observerIsland: 'Collapse to status strip', observerReturnCurrent: 'Back to current task', observerTaskCount: 'current tasks', observerReports: 'reports submitted', observerAwaitDelivery: 'Awaiting the coordinator’s delivery', observerDeliverToYou: 'Delivery to you', observerRegistered: 'Registered', observerReportCount: '{count} reports', observerNoCurrent: 'No current task',
 
   };
+  const charterLimit = 16000;
+  Object.assign(zh, {
+    preferences: '偏好', preferencesHint: '软性的习惯与偏好，例如回复风格、常用命令。必须遵守的内容请写进「项目规则」。',
+    charter: '项目规则', charterHint: '写下这个项目长期要遵守的规则，每条一行。协调者和每位成员每次工作都会读到；你在对话里明确要求破例时，协调者会先和你确认。',
+    charterPlaceholder: '例如：\n- 新增或修改的功能必须附带测试\n- 不要修改 vendor/ 目录\n- 交付前运行项目测试并报告结果',
+    charterUsage: '{used} / {limit} KB', charterTooLong: '规则超过 16 KB，请精简后再保存。', charterExamples: '常用规则',
+    charterExampleTests: '附带测试', charterExampleScope: '只改相关文件', charterExampleVerify: '交付前跑测试', charterExampleLanguage: '中文文案',
+    charterLineTests: '- 新增或修改的功能必须附带测试', charterLineScope: '- 只修改与需求相关的文件，不顺手重构无关代码',
+    charterLineVerify: '- 交付前运行项目测试，并在交付中报告结果', charterLineLanguage: '- 界面文案使用中文，代码注释使用英文',
+    statusDiscussing: '讨论中', statusQueued: '排队中', statusActive: '进行中', statusBlocked: '受阻', statusPartial: '部分交付', statusDelivered: '已交付',
+    statusNeedsReview: '需复查', statusPaused: '已暂停', statusStopping: '正在停止', statusCancelled: '已取消', statusArchived: '已归档', statusQueuePosition: '第 {position} 位',
+    nextStep: '下一步：', nextDependencies: '前置工作完成后自动继续', nextDirectory: '目录空出后自动继续', nextCapacity: '有空闲成员后自动继续',
+    nextFailure: '打开详情查看原因，或在对话里让协调者重试', nextSummary: '打开详情重新汇总', nextAuthority: '在对话里重新说明这个需求',
+    nextPartial: '在对话里补充，或让协调者继续未完成的部分', nextNeedsReview: '交付依据已变化，查看详情后重新加入队列', nextPaused: '点「继续」恢复',
+    nextDiscussing: '确认要做时，点「加入开发队列」', nextQueued: '前一项交付后自动开始', nextQueuedPaused: '队列已暂停，点「继续队列」恢复', nextCancelled: '需要时可从菜单重新加入队列',
+    boardSummary: '需求概况', boardActive: '进行中', boardBlocked: '受阻', boardWaiting: '待开始', boardDelivered: '已交付', requestUndo: '撤销',
+    deliveryFiles: '交付文件', deliveryFileCount: '{count} 个', stripFileCount: '{count} 个文件', viewChanges: '查看改动', viewResultPage: '查看结果页', moreFiles: '查看全部 {count} 个文件',
+    diffFileCount: '{count} 个文件有改动', diff_added: '新增', diff_deleted: '删除', diff_renamed: '重命名', diff_untracked: '未跟踪', diff_modified: '修改',
+    diffUntrackedHint: '新文件尚未纳入 Git，差异中不含其内容；可在目录中打开查看。', diffBinary: '二进制文件，不显示内容。', diffNoContent: '没有可显示的文本差异。', diffLinesCapped: '仅显示前 {count} 行；完整内容请打开目录查看。',
+    changeStats: '{count} 个文件', revertChanges: '撤销改动', revertTitle: '撤销这条需求的改动？', revertBody: '会把这条需求改动过的文件恢复到开始开发前的状态，其他文件不受影响。如果这些文件在交付后又被改过，撤销不会执行，你可以交给协调者处理。',
+    revertConfirm: '撤销改动', revertDone: '已撤销这条需求的改动。', revertConflictTitle: '无法自动撤销', revertConflictBody: '这些文件在交付后又被修改过，自动撤销会覆盖新的修改，因此没有执行任何更改。',
+    revertAsk: '交给协调者处理', revertAskPrompt: '请撤销需求「{title}」带来的改动。自动撤销遇到冲突（文件在交付后被修改过），请检查冲突文件，只还原这条需求的改动，保留之后的其他修改。',
+    statusReverted: '已撤销改动', nextReverted: '如需重新实现，在对话里说一声', requestDiffScope: '这条需求从开始开发到交付的改动。', requestDiffLive: '这条需求从开始开发至今的改动，尚未交付。', requestDiffReverted: '这些改动已被撤销。',
+    decisionLog: '决策日志', decisionLogEmpty: '交付后，协调者的关键决策会自动记录在这里。',
+  });
+  Object.assign(en, {
+    preferences: 'Preferences', preferencesHint: 'Soft habits and preferences, such as reply style or common commands. Put anything that must always be followed in Project rules.',
+    charter: 'Project rules', charterHint: 'Write the standing rules for this Project, one per line. The coordinator and every member read them on every assignment; if you explicitly ask for an exception in the conversation, the coordinator confirms it with you first.',
+    charterPlaceholder: 'For example:\n- New or changed features must include tests\n- Do not modify the vendor/ directory\n- Run the project tests before delivery and report the result',
+    charterUsage: '{used} / {limit} KB', charterTooLong: 'Rules exceed 16 KB. Shorten them before saving.', charterExamples: 'Common rules',
+    charterExampleTests: 'Include tests', charterExampleScope: 'Related files only', charterExampleVerify: 'Test before delivery', charterExampleLanguage: 'Product language',
+    charterLineTests: '- New or changed features must include tests', charterLineScope: '- Change only files related to the requirement; no unrelated refactoring',
+    charterLineVerify: '- Run the project tests before delivery and report the result', charterLineLanguage: '- Keep user-facing text in the product language; write code comments in English',
+    statusDiscussing: 'Discussing', statusQueued: 'Queued', statusActive: 'In progress', statusBlocked: 'Blocked', statusPartial: 'Partly delivered', statusDelivered: 'Delivered',
+    statusNeedsReview: 'Needs review', statusPaused: 'Paused', statusStopping: 'Stopping', statusCancelled: 'Cancelled', statusArchived: 'Archived', statusQueuePosition: '#{position}',
+    nextStep: 'Next: ', nextDependencies: 'Continues automatically after its prerequisites finish', nextDirectory: 'Continues automatically when the directory is free', nextCapacity: 'Continues automatically when a member is free',
+    nextFailure: 'Open details for the cause, or ask the coordinator to retry', nextSummary: 'Open details to summarize again', nextAuthority: 'Restate this requirement in the conversation',
+    nextPartial: 'Add details in the conversation, or ask the coordinator to finish the rest', nextNeedsReview: 'Its delivery evidence changed; review details, then queue it again', nextPaused: 'Choose Continue to resume',
+    nextDiscussing: 'When you want it built, choose Add to development queue', nextQueued: 'Starts automatically after the previous delivery', nextQueuedPaused: 'The queue is paused; choose Continue queue', nextCancelled: 'You can queue it again from the menu',
+    boardSummary: 'Requirements overview', boardActive: 'In progress', boardBlocked: 'Blocked', boardWaiting: 'Up next', boardDelivered: 'Delivered', requestUndo: 'Undo',
+    deliveryFiles: 'Delivered files', deliveryFileCount: '{count}', stripFileCount: '{count} files', viewChanges: 'View changes', viewResultPage: 'View result page', moreFiles: 'View all {count} files',
+    diffFileCount: '{count} changed files', diff_added: 'Added', diff_deleted: 'Deleted', diff_renamed: 'Renamed', diff_untracked: 'Untracked', diff_modified: 'Modified',
+    diffUntrackedHint: 'This new file is not tracked by Git yet, so the diff has no content; open the directory to view it.', diffBinary: 'Binary file; content is not shown.', diffNoContent: 'No text differences to show.', diffLinesCapped: 'Showing the first {count} lines; open the directory for the full content.',
+    changeStats: '{count} files', revertChanges: 'Revert changes', revertTitle: 'Revert this requirement’s changes?', revertBody: 'Files changed by this requirement return to their state before development started; other files are untouched. If they changed again after delivery, nothing is reverted and you can hand it to the coordinator.',
+    revertConfirm: 'Revert changes', revertDone: 'This requirement’s changes were reverted.', revertConflictTitle: 'Could not revert automatically', revertConflictBody: 'These files changed after delivery. Reverting automatically would overwrite the newer edits, so nothing was changed.',
+    revertAsk: 'Ask the coordinator', revertAskPrompt: 'Please revert the changes from the requirement “{title}”. The automatic revert hit a conflict because the files changed after delivery; inspect the conflicting files and restore only this requirement’s changes while keeping later edits.',
+    statusReverted: 'Changes reverted', nextReverted: 'Say so in the conversation if you want it implemented again', requestDiffScope: 'Changes made by this requirement from the start of development to delivery.', requestDiffLive: 'Changes made by this requirement since development started; not delivered yet.', requestDiffReverted: 'These changes have been reverted.',
+    decisionLog: 'Decision log', decisionLogEmpty: 'After deliveries, the coordinator’s key decisions are recorded here automatically.',
+  });
   const CSS = `
     .dsh-project-page{padding:12px 0 8px;display:flex;flex-direction:column;gap:4px;min-width:0}
     .dsh-project-page>.dsh-project-empty{text-align:left;padding:12px 8px}
@@ -252,6 +301,65 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     .dsh-project-observer-team{display:flex;flex-direction:column;gap:8px;min-width:0}.dsh-project-observer-team>input{width:100%;box-sizing:border-box;height:32px;min-height:32px}.dsh-project-observer-materials .dsh-project-materials{max-height:420px;overflow:auto}.dsh-project-observer-materials[hidden]{display:none}
     .dsh-project-observer-completed>.dsh-project-task-group-title{padding:8px 4px 0;font:var(--dsw-font-xxs-12)}
     [data-dockkit-float]:has(.dsh-project-observer[data-project-observer-compact-only=true]) [data-dockkit-float-resize]{display:none}
+    .dsh-project-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:4px;background:var(--dsw-alias-bg-panel-solid);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;min-width:0}
+    .dsh-project-board-cell{display:flex;flex-direction:column;gap:2px;min-width:0;padding:8px 12px}
+    .dsh-project-board-cell+.dsh-project-board-cell{border-left:1px solid var(--dsw-alias-border-l1)}
+    .dsh-project-board-cell>strong{font-size:16px;line-height:24px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary)}
+    .dsh-project-board-cell[data-empty=true]>strong{color:var(--dsw-alias-label-tertiary);font-weight:400}
+    .dsh-project-board-label{display:flex;align-items:center;gap:6px;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .dsh-project-tone-dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-state-idle-primary)}
+    .dsh-project-tone-dot[data-tone=info],.dsh-project-task-state-dot[data-tone=info]{background:var(--dsw-alias-state-business-primary)}
+    .dsh-project-tone-dot[data-tone=warning],.dsh-project-task-state-dot[data-tone=warning]{background:var(--dsw-alias-state-warn-primary)}
+    .dsh-project-tone-dot[data-tone=success],.dsh-project-task-state-dot[data-tone=success]{background:var(--dsw-alias-state-success-primary)}
+    .dsh-project-tone-dot[data-tone=danger],.dsh-project-task-state-dot[data-tone=danger]{background:var(--dsw-alias-state-error-primary)}
+    .dsh-project-task-state-dot[data-tone=neutral],.dsh-project-task-state-dot[data-tone=outline]{background:var(--dsw-alias-label-tertiary)}
+    .dsh-project-task-status{display:flex;flex-direction:column;gap:8px;min-width:0;padding:8px 0}
+    .dsh-project-task-status-row{display:flex;align-items:center;gap:8px;min-width:0}
+    .dsh-project-task-status-row>.dsh-project-task-state{flex:none;display:inline-flex}
+    .dsh-project-task-status-row>span:last-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
+    .dsh-project-task-next{display:flex;flex-direction:column;gap:2px;min-width:0;padding:8px 12px;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
+    .dsh-project-task-next[data-tone=warning]{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 8%,transparent)}
+    .dsh-project-task-next[data-tone=info]{background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 6%,transparent)}
+    .dsh-project-task-next>span:first-child:not(:last-child){color:var(--dsw-alias-label-primary)}
+    .dsh-project-task-next strong{font-weight:500;color:var(--dsw-alias-label-primary)}
+    .dsh-project-task-footer-actions{display:flex;align-items:center;gap:4px;min-width:0}
+    .dsh-project-charter-intro{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:12px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1)}
+    .dsh-project-charter-intro>strong{font-size:14px;line-height:22px;font-weight:600;color:var(--dsw-alias-label-primary)}
+    .dsh-project-charter-intro>p{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
+    .dsh-project-charter-examples{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+    .dsh-project-charter-examples>span{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+    .dsh-project-charter-meter{display:flex;align-items:center;gap:12px;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
+    .dsh-project-charter-meter-track{flex:1;height:3px;border-radius:2px;background:var(--dsw-alias-interactive-bg-active);overflow:hidden}
+    .dsh-project-charter-meter-track>span{display:block;height:100%;background:var(--dsw-alias-label-tertiary)}
+    .dsh-project-charter-meter[data-over=true]{color:var(--dsw-alias-state-error-primary)}
+    .dsh-project-charter-meter[data-over=true] .dsh-project-charter-meter-track>span{background:var(--dsw-alias-state-error-primary)}
+    .dsh-project-task-delivery{display:flex;flex-direction:column;gap:4px;min-width:0;padding:4px 0 8px}
+    .dsh-project-task-files{display:flex;flex-direction:column;gap:0;min-width:0;margin:0 -8px}
+    .dsh-project-task-file{display:flex;align-items:baseline;justify-content:flex-start;gap:8px;width:100%;min-width:0;height:auto;min-height:28px;padding:5px 8px;font-size:12px;line-height:18px;text-align:left}
+    .dsh-project-task-file>span{flex:none;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--ds-font-family-code);color:var(--dsw-alias-label-primary)}
+    .dsh-project-task-file>small{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:inherit;color:var(--dsw-alias-label-tertiary)}
+    .dsh-project-task-delivery-actions{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-left:-8px}
+    .dsh-project-diff{gap:12px}
+    .dsh-project-diff-summary{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:13px;line-height:20px}
+    .dsh-project-diff-summary>strong{font-weight:600}
+    .dsh-project-diff-add{color:var(--dsw-alias-state-success-primary);font-variant-numeric:tabular-nums;font-size:12px}
+    .dsh-project-diff-del{color:var(--dsw-alias-state-error-primary);font-variant-numeric:tabular-nums;font-size:12px}
+    .dsh-project-diff-file{min-width:0;overflow:hidden;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-panel-solid)}
+    .dsh-project-diff-file>summary{display:flex;align-items:center;gap:8px;min-width:0;padding:8px 12px;list-style:none;cursor:pointer;font-size:12px;line-height:18px}
+    .dsh-project-diff-file>summary:hover{background:var(--dsw-alias-interactive-bg-hover)}
+    .dsh-project-diff-file[open]>summary{border-bottom:1px solid var(--dsw-alias-border-l1)}
+    .dsh-project-diff-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--ds-font-family-code);color:var(--dsw-alias-label-primary)}
+    .dsh-project-diff-name>span{color:var(--dsw-alias-label-tertiary)}
+    .dsh-project-diff-lines{margin:0;padding:4px 0;max-height:360px;overflow:auto;font:12px/18px var(--ds-font-family-code);white-space:pre;tab-size:2;color:var(--dsw-alias-label-primary)}
+    .dsh-project-diff-line{display:block;min-width:max-content;padding:0 12px}
+    .dsh-project-diff-line[data-kind=add]{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent)}
+    .dsh-project-diff-line[data-kind=del]{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent)}
+    .dsh-project-diff-line[data-kind=hunk]{color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-interactive-bg-hover)}
+    .dsh-project-diff-line[data-kind=note]{color:var(--dsw-alias-label-tertiary)}
+    .dsh-project-diff-note{margin:0;padding:8px 12px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+    .dsh-project-task-changes{display:inline-flex;align-items:baseline;gap:6px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
+    .dsh-project-task-delivery-actions>.dsh-project-task-changes{margin-right:auto;padding-left:8px}
+    .dsh-project-confirm-detail{margin:0;padding:8px 12px;max-height:160px;overflow:auto;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);font:12px/18px var(--ds-font-family-code);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-secondary)}
 
   `;
   const requestId = () => globalThis.crypto.randomUUID();
@@ -421,6 +529,72 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       ...(['discussing', 'queued', 'active'].includes(state) ? [{ id: 'cancel', label: t('requestCancel'), danger: true, disabled: busy }] : []),
     ];
   };
+  const humanNextKeys = { dependencies: 'nextDependencies', directory: 'nextDirectory', capacity: 'nextCapacity' };
+  // One plain-language status per requirement: tone for the badge, an optional reason and the user's next step.
+  const requestHumanStatus = (project, card, state, steps, queue, t) => {
+    const status = (tone, label, next, reason) => ({ tone, label: t(label), ...(next ? { next: t(next) } : {}), ...(reason ? { reason } : {}) });
+    const waiting = steps.find(item => item.waitingReason || item.blockedReason);
+    if (card.archivedAt) return status('neutral', 'statusArchived');
+    if (card.queue?.state === 'cancelled') return status('neutral', 'statusCancelled', 'nextCancelled');
+    if (card.status === 'completed' && card.changes?.revertedAt) return status('neutral', 'statusReverted', 'nextReverted');
+    if (card.status === 'completed') return status('success', 'statusDelivered');
+    if (card.status === 'needsReview') return status('warning', 'statusNeedsReview', 'nextNeedsReview');
+    if (card.queue?.state === 'discussing') return status('neutral', 'statusDiscussing', 'nextDiscussing');
+    if (card.queue?.state === 'queued') return { ...status('outline', 'statusQueued', queue?.paused ? 'nextQueuedPaused' : 'nextQueued'),
+      label: card.queue.position ? `${t('statusQueued')} · ${t('statusQueuePosition').replace('{position}', card.queue.position)}` : t('statusQueued') };
+    if (card.status === 'stopping' || project.activity?.state === 'stopping') return status('neutral', 'statusStopping');
+    if (card.status === 'paused' || project.paused) return status('warning', 'statusPaused', 'nextPaused');
+    if (card.authorityError) return status('warning', 'statusBlocked', 'nextAuthority', t('authorityErrorHint'));
+    if (card.status === 'summaryFailed' || card.handoverError) return status('warning', 'statusBlocked', 'nextSummary', t('summaryFailed'));
+    if (card.status === 'blocked' && card.delivery?.outcome === 'partial') return status('warning', 'statusPartial', 'nextPartial');
+    if (waiting?.waitingReason) return card.status === 'blocked'
+      ? status('warning', 'statusBlocked', humanNextKeys[waiting.waitingReason.kind], waitingLabel(t, waiting.waitingReason))
+      : status('info', 'statusActive', humanNextKeys[waiting.waitingReason.kind], waitingLabel(t, waiting.waitingReason));
+    if (card.status === 'blocked') return status('warning', 'statusBlocked', 'nextFailure', waiting?.blockedReason ? workBlockedLabel(t, waiting.blockedReason) : '');
+    return status('info', 'statusActive', '', state === 'requestArranging' ? t('requestArrangingHint') : '');
+  };
+  // Delivered files, the requirement's own changes, revert and its result page, shown on the task card itself.
+  function ProjectTaskDelivery({ project, card, controls, read, openResults, t }) {
+    const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [confirm, setConfirm] = useState(null);
+    const delivery = card.delivery, changes = card.changes;
+    if (!delivery || !Array.isArray(delivery.artifacts) || !(card.status === 'completed' || delivery.outcome === 'partial')) return null;
+    const files = delivery.artifacts, pages = delivery.pages ?? [], diffWork = (card.work ?? []).find(item => item.memberRole && item.memberRole !== 'readonly');
+    const requirementDiff = changes?.isGit && changes.fileCount !== undefined;
+    if (!files.length && !pages.length && !diffWork && !requirementDiff) return null;
+    const open = async file => {
+      setBusy(true);
+      try { const value = await read(project.id, 'open', { workstreamId: file.workstreamId, delegationRef: file.delegationRef, path: file.path }); if (value?.modifiedSinceReport) setMessage(t('modifiedArtifact')); }
+      catch (failure) { setMessage(errorText(failure)); } finally { setBusy(false); }
+    };
+    const revert = async () => {
+      setBusy(true);
+      try { await controls.revert(card); setConfirm(null); setMessage(t('revertDone')); }
+      catch (failure) { setConfirm(failure.code === 'revert_conflict' ? { conflict: errorText(failure) } : null); if (failure.code !== 'revert_conflict') setMessage(errorText(failure)); }
+      finally { setBusy(false); }
+    };
+    const ask = async () => { setConfirm(null); try { await controls.ask(t('revertAskPrompt').replace('{title}', card.title)); } catch (failure) { setMessage(errorText(failure)); } };
+    return h('section', { className: 'dsh-project-task-delivery', 'aria-label': t('deliveryFiles') },
+      files.length ? h(Fragment, null,
+        h('div', { className: 'dsh-project-observer-section-heading' }, h('strong', null, t('deliveryFiles')), h('span', null, t('deliveryFileCount').replace('{count}', files.length))),
+        h('div', { className: 'dsh-project-task-files' }, files.slice(0, 4).map(file => {
+          const name = fileName(file.path), folder = file.path.slice(0, file.path.length - name.length).replace(/[\\/]$/, '');
+          return h(Button, { key: `${file.workstreamId}:${file.delegationRef}:${file.path}`, variant: 'ghost', size: 'sm', className: 'dsh-project-task-file', title: file.path,
+            'aria-label': `${t('openFile')}: ${name}`, disabled: busy, onClick: () => { void open(file); } }, h('span', null, name), folder ? h('small', null, folder) : null);
+        }))) : null,
+      h('div', { className: 'dsh-project-task-delivery-actions' },
+        requirementDiff ? h('span', { className: 'dsh-project-task-changes' }, t('changeStats').replace('{count}', changes.fileCount),
+          changes.added ? h('span', { className: 'dsh-project-diff-add' }, `+${changes.added}`) : null, changes.removed ? h('span', { className: 'dsh-project-diff-del' }, `−${changes.removed}`) : null) : null,
+        requirementDiff || diffWork ? h(Button, { variant: 'ghost', size: 'sm', onClick: () => requirementDiff ? controls.showRequestDiff(card.id) : controls.showDiff(project.id, diffWork.workstreamId) }, t('viewChanges')) : null,
+        pages.length ? h(Button, { variant: 'ghost', size: 'sm', onClick: openResults }, t('viewResultPage'))
+          : files.length > 4 ? h(Button, { variant: 'ghost', size: 'sm', onClick: openResults }, t('moreFiles').replace('{count}', files.length)) : null,
+        changes?.revertible && project.lifecycle === 'ready' && !project.archiving ? h(Button, { variant: 'ghost', size: 'sm', disabled: busy || controls.busy, onClick: () => setConfirm({}) }, t('revertChanges')) : null),
+      confirm ? h(Modal, { open: true, onClose: () => { if (!busy) setConfirm(null); }, closeLabel: t('cancel'), title: t(confirm.conflict ? 'revertConflictTitle' : 'revertTitle'), className: 'dsh-project-confirm',
+        footer: h('div', { className: 'dsh-project-actions' }, button(t('cancel'), () => setConfirm(null), busy),
+          confirm.conflict ? h(Button, { variant: 'primary', onClick: () => { void ask(); } }, t('revertAsk'))
+            : h(Button, { variant: 'primary', disabled: busy, onClick: () => { void revert(); } }, t('revertConfirm'))) },
+        h('p', null, t(confirm.conflict ? 'revertConflictBody' : 'revertBody')), confirm.conflict ? h('pre', { className: 'dsh-project-confirm-detail' }, confirm.conflict) : null) : null,
+      message ? h(Toast, { text: message, onDone: () => setMessage('') }) : null);
+  }
   function ProjectRequestQueueActions({ card, queue, changeQueue, busy, t }) {
     const [menu, setMenu] = useState(false);
     const items = requestQueueItems(card, queue, busy, t);
@@ -453,8 +627,9 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const done = card.status === 'completed', steps = projectRequestSteps(card, team, t, sessions);
     const executor = projectRequestExecutor(project, card, team, t, sessions), state = projectRequestStage(project, card, steps);
     const label = ['requestArranging', 'requestHandover'].includes(state) ? t(state) : requestStateLabel(t, card);
+    const human = requestHumanStatus(project, card, state, steps, queue, t);
     const waiting = steps.find(item => item.waitingReason || item.blockedReason);
-    const queueNote = requestQueueNote(t, card, queue), queueItems = project.lifecycle === 'ready' && !project.archiving ? requestQueueItems(card, queue, controls.busy, t) : [];
+    const queueItems = project.lifecycle === 'ready' && !project.archiving ? requestQueueItems(card, queue, controls.busy, t) : [];
     const primary = queueItems.find(item => ['enqueue', 'resume'].includes(item.id));
     const archiveItems = project.lifecycle === 'ready' && !project.archiving && (done || card.archivedAt)
       ? [{ id: 'archive', label: t(card.archivedAt ? 'taskRestoreAction' : 'taskArchiveAction'), disabled: controls.busy }] : [];
@@ -465,25 +640,29 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       h('div', { className: 'dsh-project-task-surface', 'data-dockkit-float-motion-part': card.id, 'data-dockkit-float-motion-shell': true, 'aria-hidden': true }),
       mode === 'strip' ? h('div', { className: 'dsh-project-task-strip' },
         h(Button, { variant: 'ghost', className: 'dsh-project-task-strip-open', 'aria-label': `${card.title} · ${label}`, 'aria-expanded': false, onClick: () => setMode('card'), title: `${card.title} · ${label} · ${executor.name}` },
-          done ? h(IconCheckOutlineRegular, { size: 14 }) : h('span', { className: 'dsh-project-task-state-dot', 'data-state': state, 'aria-hidden': true }),
-          h('span', { className: 'dsh-project-task-strip-title' }, card.title), h('small', null, card.queue?.position ? `${t('requestQueuePosition').replace('{position}', card.queue.position)} · ${t('requestQueued')}` : `${label} · ${executor.name}`),
+          done ? h(IconCheckOutlineRegular, { size: 14 }) : h('span', { className: 'dsh-project-task-state-dot', 'data-state': state, 'data-tone': human.tone, 'aria-hidden': true }),
+          h('span', { className: 'dsh-project-task-strip-title' }, card.title), h('small', null, card.queue?.state === 'queued' ? human.label : done && (card.delivery?.artifactCount ?? card.delivery?.artifacts?.length) ? `${human.label} · ${t('stripFileCount').replace('{count}', card.delivery.artifactCount ?? card.delivery.artifacts.length)}` : `${human.label} · ${executor.name}`),
           h(IconChevronDownOutlineRegular, { size: 14 })), queueItems.length || archiveItems.length ? more : null) : h(Fragment, null,
         h('div', { className: 'dsh-project-task-card-heading' }, h('strong', { className: 'dsh-project-task-title' }, card.title),
           h('div', { className: 'dsh-project-task-queue-actions' }, queueItems.length || archiveItems.length ? more : null,
             h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${card.title} · ${t('observerStrip')}`, onClick: () => setMode('strip') }, h(IconChevronUpOutlineRegular, { size: 14 })))),
-        h('div', { className: 'dsh-project-task-meta' }, h('span', { role: 'status', className: 'dsh-project-task-state' }, label),
+        h('div', { className: 'dsh-project-task-status' }, h('div', { className: 'dsh-project-task-status-row' }, h('span', { role: 'status', className: 'dsh-project-task-state' }, h(Tag, { tone: human.tone }, human.label)),
           h('span', null, executor.name, ' · ', state === 'requestArranging' ? t('requestArranging') : executor.stage)),
+          mode === 'card' && (human.reason || human.next) ? h('div', { className: 'dsh-project-task-next', 'data-tone': human.tone },
+            human.reason ? h('span', null, human.reason) : null, human.next ? h('span', null, h('strong', null, t('nextStep')), human.next) : null) : null),
         mode === 'card' ? h('div', { className: 'dsh-project-task-summary' },
           done && card.delivery?.summaryPreview ? h('p', { className: 'dsh-project-task-outcome' }, summaryPreview(card.delivery.summary ?? card.delivery.summaryPreview)) : null,
+          h(ProjectTaskDelivery, { project, card, controls, read, openResults: () => { setTab('results'); setMode('full'); }, t }),
           steps.length ? h(Fragment, null, h('div', { className: 'dsh-project-observer-section-heading' }, h('strong', null, t('observerTaskProgress')),
             h('span', null, `${steps.filter(item => item.status === 'completed').length} / ${steps.length} ${t('taskWorkCount')}`)),
             h('div', { className: 'dsh-project-task-progress-track', role: 'progressbar', 'aria-label': t('observerTaskProgress'), 'aria-valuemin': 0, 'aria-valuemax': steps.length, 'aria-valuenow': steps.filter(item => item.status === 'completed').length }, h('span', { style: { width: `${steps.filter(item => item.status === 'completed').length / steps.length * 100}%` } })),
             steps.slice(0, 3).map(item => h('div', { key: `${item.workstreamId}:${item.delegationRef}`, className: 'dsh-project-task-step' },
               item.status === 'completed' ? h(IconCheckOutlineRegular, { size: 14 }) : h('span', { className: 'dsh-project-task-state-dot', 'data-state': item.status, 'aria-hidden': true }),
               h('span', null, item.title), h('small', null, item.executor, ' · ', stateLabel(t, item.status)))))
-            : h('p', { className: 'dsh-project-task-waiting' }, done ? t('completed') : state === 'requestArranging' ? t('requestArrangingHint') : queueNote || t('observerNoTodo')),
-          waiting ? h('p', { className: 'dsh-project-task-waiting' }, waitingLabel(t, waiting.waitingReason) || workBlockedLabel(t, waiting.blockedReason)) : null,
-          h('div', { className: 'dsh-project-task-footer' }, primary ? h(Button, { variant: 'ghost', size: 'sm', disabled: controls.busy, onClick: () => changeQueue(card, primary.id) }, primary.label) : h('span'),
+            : !done && !human.next && !human.reason ? h('p', { className: 'dsh-project-task-waiting' }, t('observerNoTodo')) : null,
+          null,
+          h('div', { className: 'dsh-project-task-footer' }, h('div', { className: 'dsh-project-task-footer-actions' }, primary ? h(Button, { variant: 'ghost', size: 'sm', disabled: controls.busy, onClick: () => changeQueue(card, primary.id) }, primary.label) : null,
+            ['discussing', 'queued'].includes(card.queue?.state) && queueItems.some(item => item.id === 'cancel') ? h(Button, { variant: 'ghost', size: 'sm', disabled: controls.busy, onClick: () => changeQueue(card, 'cancel') }, t('requestUndo')) : null),
             h(Button, { variant: 'ghost', size: 'sm', onClick: () => { setTab('overview'); setMode('full'); } }, t('taskDetail'), h(IconChevronRightOutlineRegular, { size: 14 }))))
           : h(Fragment, null, h('div', { ref: bodyRef, className: 'dsh-project-task-full' }, saved ? h(ProjectTaskDetail, { projectId: project.id, card, tab, setTab,
               read, showProcess, showReport, controls, retryHandover, queue, changeQueue, renderFactorySlot, embedded: true, t }) : h('p', { role: 'status' }, t('loading'))),
@@ -883,13 +1062,24 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const controls = { paused: project.paused, act, retrySummary, openModelSettings, busy: actionBusy || project.lifecycle !== 'ready' || project.archiving,
       showProcess: (_id, workstreamId, member, context = {}) => showProcess({ ...(member ? { workerSessionId: workstreamId } : { workstreamId }), delegationRef: context.delegationRef }),
       showMaterials: (_id, workstreamId, context = {}) => showReport({ workstreamId, delegationRef: context.delegationRef }),
-      showDiff: (_id, workstreamId) => navigate({ section: 'tasks', returnSection: section, subview: { kind: 'diff', workstreamId } }) };
+      showDiff: (_id, workstreamId) => navigate({ section: 'tasks', returnSection: section, subview: { kind: 'diff', workstreamId } }),
+      showRequestDiff: id => navigate({ section: 'tasks', returnSection: section, subview: { kind: 'requestDiff', requestId: id } }),
+      revert: async item => { await command(project.id, 'requests/revert', { requestId: item.id, requestRevision: item.revision }); setCursorState(newCursors()); setRefreshKey(value => value + 1); },
+      ask: text => sendUserRequest(project.id, text) };
     const cardMode = (item, initialMode = 'strip') => requestModes?.[item.id]?.completed === (item.status === 'completed') ? requestModes[item.id].mode : initialMode;
     const renderCard = (item, initialMode = 'strip') => h(ProjectTaskCard, { key: item.id, card: item, project, resourceRevision: detail?.revision,
       mode: cardMode(item, initialMode), setMode: mode => setRequestMode(sessionId, panelRef.current, item.id, mode, item.status === 'completed'),
       read, team, sessions, controls, queue, changeQueue, archive, retryHandover, showProcess, showReport, renderFactorySlot, t });
     const current = pages.current?.items ?? [], activeCard = current.find(item => item.id === queue?.active?.id) ?? queue?.active;
     const waiting = current.filter(item => item.id !== activeCard?.id);
+    const activeSteps = activeCard ? projectRequestSteps(activeCard, team, t, sessions) : [];
+    const activeHuman = activeCard ? requestHumanStatus(project, activeCard, projectRequestStage(project, activeCard, activeSteps), activeSteps, queue, t) : null;
+    const board = [
+      { id: 'active', label: 'boardActive', tone: 'info', count: activeHuman && activeHuman.tone !== 'warning' ? 1 : 0 },
+      { id: 'blocked', label: 'boardBlocked', tone: 'warning', count: activeHuman?.tone === 'warning' ? 1 : 0 },
+      { id: 'waiting', label: 'boardWaiting', tone: 'neutral', count: (queue?.queued?.length ?? 0) + (queue?.discussingCount ?? 0) },
+      { id: 'delivered', label: 'boardDelivered', tone: 'success', count: pages.completed?.total ?? 0 },
+    ];
     const cards = [...current, ...(pages.completed?.items ?? []), ...(pages[historyKind]?.items ?? [])];
     const expanded = cards.some(item => cardMode(item, item.id === activeCard?.id ? 'card' : 'strip') !== 'strip');
     return h('section', { ref: observerRef, className: 'dsh-project-observer', 'data-project-observer-stack': true, 'data-project-observer-compact-only': !expanded,
@@ -903,6 +1093,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
             items: [{ id: 'cancelled', label: `${t('taskCancelled')} · ${pages.cancelled?.total ?? 0}` }, { id: 'archived', label: `${t('taskArchive')} · ${pages.archived?.total ?? 0}` }],
             onSelect: kind => { setHistoryMenu(false); setHistoryKind(value => value === kind ? null : kind); },
             anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': t('more'), onClick: () => setHistoryMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) })),
+        board.some(item => item.count) ? h('div', { className: 'dsh-project-board', role: 'group', 'aria-label': t('boardSummary') }, board.map(item => h('div', { key: item.id, className: 'dsh-project-board-cell', 'data-empty': !item.count },
+          h('strong', null, item.count), h('span', { className: 'dsh-project-board-label' }, h('span', { className: 'dsh-project-tone-dot', 'data-tone': item.count ? item.tone : 'idle', 'aria-hidden': true }), t(item.label))))) : null,
         activeCard ? h('div', { className: 'dsh-project-observer-current' }, renderCard(activeCard, 'card')) : null,
         !activeCard && !current.length && !pages.completed?.total && !cardsBusy ? h('div', { className: 'dsh-project-observer-empty' }, h('strong', null, t('taskEmptyTitle')), h('p', null, t('taskEmpty'))) : null,
         waiting.length ? h('div', { className: 'dsh-project-observer-list', 'aria-label': t('requestQueued') }, waiting.map(item => renderCard(item))) : null,
@@ -910,7 +1102,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         subview ? h('section', { className: 'dsh-project-observer-aux' }, h(Button, { variant: 'ghost', size: 'sm', onClick: () => subviewReturn === 'tasks' ? setSubview(null) : applyRoute({ section: subviewReturn }) }, t(subviewReturn === 'materials' ? 'backToResults' : subviewReturn === 'team' ? 'teamBack' : 'taskBack')),
           h('div', { className: 'dsh-project-task-full' }, subview.kind === 'process' && detail ? h(ProcessPreview, { key: (subview.workstreamId ?? subview.workerSessionId) + ':' + (subview.delegationRef ?? ''), project: detail.project,
             workstreamId: subview.workstreamId, workerSessionId: subview.workerSessionId, delegationRef: subview.delegationRef, read, retainProcess, t }) : subview.kind === 'report' ? h(ProjectReportView, { projectId: project.id, reference: subview, read, showProcess: (_id, workstreamId, _member, context) => showProcess({ workstreamId, delegationRef: context?.delegationRef }), t })
-            : subview.kind === 'diff' ? h(FileDiff, { projectId: project.id, workstreamId: subview.workstreamId, read, t }) : null)) : null,
+            : subview.kind === 'diff' ? h(FileDiff, { projectId: project.id, workstreamId: subview.workstreamId, read, t })
+            : subview.kind === 'requestDiff' ? h(RequestDiff, { projectId: project.id, requestId: subview.requestId, read, t }) : null)) : null,
         section === 'team' ? h('section', { className: 'dsh-project-observer-aux' }, h(ProjectTeamOverview, { team, sessions, detail, openMember: workerSessionId => showProcess({ workerSessionId }), teamT, t })) : null,
         materialsVisited || section === 'materials' ? h('section', { className: 'dsh-project-observer-aux dsh-project-observer-materials', hidden: section !== 'materials' },
           h(Materials, { key: project.id, projectId: project.id, resourceRevision: detail?.revision, active: section === 'materials', read, command, onDirtyChange: onMaterialsDirty, editorRef,
@@ -1075,7 +1268,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   function Materials({ projectId, workstreamId, delegationRef, resourceRevision, active = true, read: readOriginal, command, onDirtyChange, editorRef, readonly, showProcess: showProcessOriginal, renderFactorySlot, t }) {
     const [listing, setListing] = useState(null), [path, setPath] = useState('docs'), [text, setText] = useState('');
     const [loadedPath, setLoadedPath] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
-    const [savedText, setSavedText] = useState(''), [generatedText, setGeneratedText] = useState('');
+    const [savedText, setSavedText] = useState(''), [generatedText, setGeneratedText] = useState(''), [decisionText, setDecisionText] = useState('');
     const [resultCursors, setResultCursors] = useState([null]), resultsCursor = resultCursors.at(-1);
     const [deliveryCursors, setDeliveryCursors] = useState([null]), deliveryCursor = deliveryCursors.at(-1);
     const [deliveries, setDeliveries] = useState(null), [deliveriesBusy, setDeliveriesBusy] = useState(false);
@@ -1139,19 +1332,23 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       let live = true;
       if (path === 'docs') { setLoadedPath('docs'); setBusy(false); setError(''); return; }
       setLoadedPath(null); setBusy(true); setError(''); setNotice(''); setGeneratedText('');
+      if (path === 'notes.md') read(projectId, 'store/read', { path: 'decisions.md' }).then(value => { if (live) setDecisionText(value?.text ?? ''); }).catch(() => { if (live) setDecisionText(''); });
       read(projectId, 'store/read', { path }).then(value => { if (live) { const editableText = path === 'notes.md' ? value.userText : value.text; setText(editableText); setSavedText(editableText); setGeneratedText(value.generatedText ?? ''); setLoadedPath(path); } })
         .catch(failure => { if (live) setError(errorText(failure)); }).finally(() => { if (live) setBusy(false); });
       return () => { live = false; };
     }, [projectId, path]);
-    const editable = path === 'notes.md' || path === 'preferences.md';
-    const tooLong = editable && loadedPath === path && new TextEncoder().encode(text).byteLength > 256000;
+    const editable = path === 'notes.md' || path === 'preferences.md' || path === 'charter.md';
+    const textBytes = editable && loadedPath === path ? new TextEncoder().encode(text).byteLength : 0, tooLong = textBytes > (path === 'charter.md' ? charterLimit : 256000);
+    const charterLines = ['Tests', 'Scope', 'Verify', 'Language'].map(key => ({ key, label: t(`charterExample${key}`), line: t(`charterLine${key}`) }));
+    const hasRule = line => text.split('\n').some(item => item.trim() === line);
+    const toggleRule = line => { if (readonly || pending) return; setText(hasRule(line) ? text.split('\n').filter(item => item.trim() !== line).join('\n') : `${text.replace(/\s+$/, '')}${text.trim() ? '\n' : ''}${line}`); setNotice(''); };
     const save = async () => {
       if (tooLong) return false;
       setBusy(true); setError(''); setNotice('');
       try { const value = await command(projectId, 'store/write', { path, text }); setSavedText(text); if (path === 'notes.md') setGeneratedText(value.generatedText ?? generatedText); setNotice(t('saved')); return true; } catch (failure) { setError(errorText(failure)); return false; } finally { setBusy(false); }
     };
     useEffect(() => { if (editorRef) editorRef.current = { save, discard: () => { setText(savedText); setNotice(''); }, dirty, busy: pending, tooLong }; return () => { if (editorRef) editorRef.current = null; }; }, [editorRef, save, savedText, dirty, pending, tooLong]);
-    const tabs = ['docs', 'notes.md', 'preferences.md'].map(file => ({ value: file, label: t(file === 'docs' ? 'workResults' : file === 'notes.md' ? 'notes' : 'preferences'), id: `${projectId}-material-tab-${file}`, panelId: `${projectId}-material-panel-${file}` }));
+    const tabs = ['docs', 'charter.md', 'preferences.md', 'notes.md'].map(file => ({ value: file, label: t({ docs: 'workResults', 'charter.md': 'charter', 'preferences.md': 'preferences', 'notes.md': 'notes' }[file]), id: `${projectId}-material-tab-${file}`, panelId: `${projectId}-material-panel-${file}` }));
     const switchPath = next => { if (pending || next === path) return; if (dirty) { setError(''); setPendingPath(next); } else setPath(next); };
     const finishSwitch = () => { setPath(pendingPath); setPendingPath(null); setNotice(''); };
     const openReport = reference => { returnScroll.current = contentRef.current?.scrollTop ?? 0; setSelectedDelegation(reference.delegationRef); setSelectedWork(reference.workstreamId); };
@@ -1183,10 +1380,17 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       h('details', { className: 'dsh-project-documents' }, h('summary', null, t('docs'), ` (${listing?.docs.length ?? 0})`), listing?.docs.length ? h('div', { className: 'dsh-project-list' }, listing.docs.map(file => h(Artifact, {
         key: file.path, file: { ...file, location: 'materials' }, busy: pending, t, open: path => { void read(projectId, 'open', { path }).catch(failure => setError(errorText(failure))); },
       }))) : h('p', { className: 'dsh-project-muted' }, t('noDocs')))) : loadedPath === path ? h(Fragment, null,
-        h('p', { className: 'dsh-project-muted' }, t(path === 'notes.md' ? 'notesHint' : 'preferencesHint')),
-        h('textarea', { className: 'dsh-project-editor', value: text, disabled: pending, readOnly: readonly, 'aria-label': t(path === 'notes.md' ? 'userNotes' : 'preferences'), onChange: event => { setText(event.target.value); setNotice(''); } }),
-        tooLong ? h('p', { role: 'alert', className: 'dsh-project-error' }, t('textTooLong')) : null,
-        path === 'notes.md' ? h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, t('generatedNotes')), markdown(t, generatedText)) : null) : null,
+        path === 'charter.md' ? h('div', { className: 'dsh-project-charter-intro' }, h('strong', null, t('charter')), h('p', null, t('charterHint'))) : h('p', { className: 'dsh-project-muted' }, t(path === 'notes.md' ? 'notesHint' : 'preferencesHint')),
+        path === 'charter.md' && !readonly ? h('div', { className: 'dsh-project-charter-examples' }, h('span', null, t('charterExamples')),
+          charterLines.map(item => h(Pill, { key: item.key, active: hasRule(item.line), 'aria-pressed': hasRule(item.line), disabled: pending, title: item.line.replace(/^-\s*/, ''), onClick: () => toggleRule(item.line) }, item.label))) : null,
+        h('textarea', { className: 'dsh-project-editor', value: text, placeholder: path === 'charter.md' ? t('charterPlaceholder') : undefined, disabled: pending, readOnly: readonly, 'aria-label': t(path === 'notes.md' ? 'userNotes' : path === 'charter.md' ? 'charter' : 'preferences'), onChange: event => { setText(event.target.value); setNotice(''); } }),
+        path === 'charter.md' ? h('div', { className: 'dsh-project-charter-meter', 'data-over': tooLong },
+          h('div', { className: 'dsh-project-charter-meter-track', 'aria-hidden': true }, h('span', { style: { width: `${Math.min(100, textBytes / charterLimit * 100)}%` } })),
+          h('span', { role: tooLong ? 'alert' : undefined }, tooLong ? t('charterTooLong') : t('charterUsage').replace('{used}', (textBytes / 1000).toFixed(1)).replace('{limit}', String(charterLimit / 1000))))
+          : tooLong ? h('p', { role: 'alert', className: 'dsh-project-error' }, t('textTooLong')) : null,
+        path === 'notes.md' ? h('details', { className: 'dsh-project-result-disclosure' }, h('summary', null, t('generatedNotes')), markdown(t, generatedText)) : null,
+        path === 'notes.md' ? h('details', { className: 'dsh-project-result-disclosure', 'data-decision-log': true }, h('summary', null, t('decisionLog')),
+          decisionText.replace(/^# .*\n+/, '').trim() ? markdown(t, decisionText.replace(/^# .*\n+/, '').replace(/<!-- decision:[^>]* -->\n?/g, '')) : h('p', { className: 'dsh-project-muted' }, t('decisionLogEmpty'))) : null) : null,
       pending ? h('p', { role: 'status' }, t('loading')) : null,
       error ? h(Fragment, null, h('p', { role: 'alert', className: 'dsh-project-error' }, t(editable && dirty ? 'saveFailed' : 'materialsError')), h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), h('pre', null, error))) : null),
       editable ? h('div', { className: 'dsh-project-materials-footer' }, readonly ? h('p', { className: 'dsh-project-muted' }, t('archivedMaterials')) : h(Fragment, null,
@@ -1273,6 +1477,47 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         pageEnd !== null ? button(t('newer'), () => { setPageStart(null); setPageEnd(null); }, busy || locating || targetUnresolved) : null));
   }
 
+  const diffLineLimit = 400;
+  const diffLineKind = line => line.startsWith('@@') ? 'hunk' : line.startsWith('+') ? 'add' : line.startsWith('-') ? 'del' : line.startsWith('\\') ? 'note' : 'context';
+  const diffStatusKind = status => status === '??' ? 'untracked' : /D/.test(status) ? 'deleted' : /A/.test(status) ? 'added' : /R/.test(status) ? 'renamed' : 'modified';
+  // Split a unified `git diff` into per-file sections with added/removed line counts.
+  function parseUnifiedDiff(text) {
+    const files = []; let current = null;
+    for (const line of String(text ?? '').replace(/\n$/, '').split('\n')) {
+      const header = /^diff --git a\/(.*?) b\/(.*)$/.exec(line);
+      if (header) { current = { path: header[2], lines: [], added: 0, removed: 0, kind: header[1] !== header[2] ? 'renamed' : 'modified' }; files.push(current); continue; }
+      if (!current) continue;
+      if (!current.lines.length && /^new file mode/.test(line)) current.kind = 'added';
+      else if (!current.lines.length && /^deleted file mode/.test(line)) current.kind = 'deleted';
+      else if (!current.lines.length && /^(index |similarity |dissimilarity |rename |copy |old mode|new mode|--- |\+\+\+ )/.test(line)) continue;
+      else if (/^Binary files /.test(line)) current.binary = true;
+      else { if (line.startsWith('+')) current.added++; else if (line.startsWith('-')) current.removed++; current.lines.push(line); }
+    }
+    return files;
+  }
+  const diffTone = { added: 'success', deleted: 'danger', renamed: 'info', untracked: 'outline', modified: 'neutral' };
+  function DiffFile({ file, open, t }) {
+    const slash = file.path.lastIndexOf('/'), shown = file.lines.slice(0, diffLineLimit);
+    return h('details', { className: 'dsh-project-diff-file', open, 'data-diff-path': file.path },
+      h('summary', null, h(Tag, { tone: diffTone[file.kind] }, t(`diff_${file.kind}`)),
+        h('span', { className: 'dsh-project-diff-name', title: file.path }, slash >= 0 ? h('span', null, file.path.slice(0, slash + 1)) : null, file.path.slice(slash + 1)),
+        file.added ? h('span', { className: 'dsh-project-diff-add' }, `+${file.added}`) : null, file.removed ? h('span', { className: 'dsh-project-diff-del' }, `−${file.removed}`) : null),
+      file.kind === 'untracked' ? h('p', { className: 'dsh-project-diff-note' }, t('diffUntrackedHint'))
+        : file.binary ? h('p', { className: 'dsh-project-diff-note' }, t('diffBinary'))
+        : shown.length ? h('pre', { className: 'dsh-project-diff-lines' }, shown.map((line, index) => h('span', { key: index, className: 'dsh-project-diff-line', 'data-kind': diffLineKind(line) }, line || ' ')))
+        : h('p', { className: 'dsh-project-diff-note' }, t('diffNoContent')),
+      file.lines.length > diffLineLimit ? h('p', { className: 'dsh-project-diff-note' }, t('diffLinesCapped').replace('{count}', diffLineLimit)) : null);
+  }
+
+  function DiffView({ files, truncated, t }) {
+    const added = files.reduce((sum, file) => sum + file.added, 0), removed = files.reduce((sum, file) => sum + file.removed, 0);
+    return !files.length ? h('p', { className: 'dsh-project-muted' }, t('noDiff')) : h(Fragment, null,
+      h('div', { className: 'dsh-project-diff-summary' }, h('strong', null, t('diffFileCount').replace('{count}', files.length)),
+        h('span', { className: 'dsh-project-diff-add' }, `+${added}`), h('span', { className: 'dsh-project-diff-del' }, `−${removed}`)),
+      files.map((file, index) => h(DiffFile, { key: file.path, file, open: index < 3, t })),
+      truncated ? h('p', { className: 'dsh-project-muted' }, t('diffTruncated')) : null);
+  }
+
   function FileDiff({ projectId, workstreamId, read, t }) {
     const [value, setValue] = useState(null), [error, setError] = useState('');
     useEffect(() => {
@@ -1280,14 +1525,31 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       read(projectId, 'diff', { workstreamId }).then(result => { if (live) setValue(result); }).catch(failure => { if (live) setError(errorText(failure)); });
       return () => { live = false; };
     }, [projectId, workstreamId]);
-    return h('div', { className: 'dsh-project-body' }, error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error)
-      : !value ? h('p', { role: 'status' }, t('loading')) : h('div', null,
-        h('p', { className: 'dsh-project-muted' }, t('diffScope')),
-        h('p', { className: 'dsh-project-path' }, value.worker.cwd, value.worker.branch ? ` · ${t('branch')}: ${value.worker.branch}` : ''),
-        value.snapshot.files?.length ? h('ul', null, value.snapshot.files.map(file => h('li', { key: file.path, className: 'dsh-project-path' }, file.path))) : null,
-        value.snapshot.truncated ? h('p', { className: 'dsh-project-muted' }, t('diffTruncated')) : null,
-        value.snapshot.isGit === false ? h('p', { className: 'dsh-project-muted' }, t('notGit'))
-          : value.snapshot.diff ? h('pre', { className: 'dsh-project-record' }, value.snapshot.diff) : !value.snapshot.files?.length ? h('p', { className: 'dsh-project-muted' }, t('noDiff')) : null));
+    if (error) return h('div', { className: 'dsh-project-body' }, h('p', { role: 'alert', className: 'dsh-project-error' }, error));
+    if (!value) return h('div', { className: 'dsh-project-body' }, h('p', { role: 'status' }, t('loading')));
+    const parsed = parseUnifiedDiff(value.snapshot.diff), known = new Set(parsed.map(file => file.path));
+    const files = [...parsed, ...(value.snapshot.files ?? []).filter(file => !known.has(file.path)).map(file => ({ path: file.path, lines: [], added: 0, removed: 0, kind: diffStatusKind(file.status) }))];
+    return h('div', { className: 'dsh-project-body dsh-project-diff' },
+      h('p', { className: 'dsh-project-muted' }, t('diffScope')),
+      h('p', { className: 'dsh-project-path' }, value.worker.cwd, value.worker.branch ? ` · ${t('branch')}: ${value.worker.branch}` : ''),
+      value.snapshot.isGit === false ? h('p', { className: 'dsh-project-muted' }, t('notGit')) : h(DiffView, { files, truncated: value.snapshot.truncated, t }));
+  }
+
+  // One requirement's own changes: from its recorded starting point to its delivery (or to now before delivery).
+  function RequestDiff({ projectId, requestId, read, t }) {
+    const [value, setValue] = useState(null), [error, setError] = useState('');
+    useEffect(() => {
+      let live = true;
+      read(projectId, 'requests/changes', { requestId }).then(result => { if (live) setValue(result); }).catch(failure => { if (live) setError(errorText(failure)); });
+      return () => { live = false; };
+    }, [projectId, requestId]);
+    if (error) return h('div', { className: 'dsh-project-body' }, h('p', { role: 'alert', className: 'dsh-project-error' }, error));
+    if (!value) return h('div', { className: 'dsh-project-body' }, h('p', { role: 'status' }, t('loading')));
+    const parsed = parseUnifiedDiff(value.diff), known = new Set(parsed.map(file => file.path));
+    const files = [...parsed, ...(value.files ?? []).filter(file => !known.has(file.path)).map(file => ({ path: file.path, lines: [], added: file.added, removed: file.removed, binary: file.binary, kind: diffStatusKind(file.status) }))];
+    return h('div', { className: 'dsh-project-body dsh-project-diff', 'data-request-diff': requestId },
+      h('p', { className: 'dsh-project-muted' }, t(value.final ? 'requestDiffScope' : 'requestDiffLive'), value.revertedAt ? ` ${t('requestDiffReverted')}` : ''),
+      h(DiffView, { files, truncated: value.truncated, t }));
   }
 
   function ProcessPreview({ project, workstreamId, workerSessionId, delegationRef, read, retainProcess, t }) {
@@ -1419,7 +1681,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       }), 'dsh-project: preserve unsaved Project notes on panel close');
       const rpc = async (endpoint, input = {}) => {
         const response = await ctx.connection.rpc.call('/dsh-project', endpoint, input), result = response?.result ?? response;
-        if (result?.ok === false) throw new Error(result.error?.message ?? result.error?.code ?? t('unavailable'));
+        if (result?.ok === false) throw Object.assign(new Error(result.error?.message ?? result.error?.code ?? t('unavailable')), { code: result.error?.code });
         return result?.value ?? result;
       };
       const acceptDetail = detail => {

@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const os = require('node:os');
 const { getDesktopDshHome } = require('../shared/dsh-home');
 const { loadWorkspaceAuthority, createWorkspaceAuthority, isPathInside, filterRegisteredWorkspaceRoots } = require('./workspace-authority');
 const { run, runGit, safeRefName, gitFailureMessage, GH_TIMEOUT_MS } = require('./git-exec');
@@ -234,6 +235,65 @@ function createProjectEnvironment(options = {}) {
       reviewDecision: value.reviewDecision || null, checks: value.statusCheckRollup || [],
       mergedAt: value.mergedAt, closedAt: value.closedAt, updatedAt: value.updatedAt };
   }
+  // Requirement change tracking. A private temporary index records the working tree as a Git tree object;
+  // the user's index, refs and files are never modified, only unreferenced objects are added.
+  async function changeScope(workingDirectory) {
+    const current = await repository(workingDirectory);
+    if (!current.isGit) return { current };
+    const pathspec = path.relative(current.repositoryRoot, current.canonicalPath).split(path.sep).join('/') || '.';
+    return { current, root: current.repositoryRoot, pathspec };
+  }
+  async function captureTree(root, pathspec) {
+    const indexPath = path.resolve(root, await command(root, ['rev-parse', '--git-path', 'index']));
+    const temporary = path.join(os.tmpdir(), `whale-project-index-${crypto.randomUUID()}`);
+    try {
+      if (fs.existsSync(indexPath)) fs.copyFileSync(indexPath, temporary);
+      const limits = { env: { GIT_INDEX_FILE: temporary } };
+      await command(root, ['add', '--all', '--', pathspec], limits);
+      return await command(root, ['write-tree'], limits);
+    } finally { fs.rmSync(temporary, { force: true }); }
+  }
+  const treeId = value => { if (typeof value !== 'string' || !SHA.test(value)) throw new Error('无效的改动记录'); return value; };
+  function changeRows(numstat, nameStatus) {
+    const kinds = new Map(nameStatus.split('\n').filter(Boolean).map(line => { const [status, ...rest] = line.split('\t'); return [rest.join('\t'), status]; }));
+    return numstat.split('\n').filter(Boolean).map(line => {
+      const [added, removed, ...rest] = line.split('\t'), file = rest.join('\t'), binary = added === '-';
+      return { path: file, status: kinds.get(file) || 'M', added: binary ? 0 : Number(added), removed: binary ? 0 : Number(removed), ...(binary ? { binary: true } : {}) };
+    });
+  }
+  async function baseline(payload) {
+    const { current, root, pathspec } = await changeScope(payload.workingDirectory);
+    if (!current.isGit) return { ok: true, isGit: false };
+    return { ok: true, isGit: true, tree: await captureTree(root, pathspec), headCommit: current.headCommit };
+  }
+  async function changes(payload) {
+    const { current, root, pathspec } = await changeScope(payload.workingDirectory);
+    if (!current.isGit) throw new Error('该目录不是 Git 仓库，无法读取需求改动');
+    const base = treeId(payload.base), end = payload.end ? treeId(payload.end) : await captureTree(root, pathspec);
+    const args = ['-c', 'core.quotepath=off', 'diff', '--no-renames', base, end];
+    const files = changeRows(await command(root, [...args, '--numstat', '--', pathspec]), await command(root, [...args, '--name-status', '--', pathspec]));
+    if (!payload.diff) return { ok: true, files, end };
+    const diff = await git(root, [...args, '--', pathspec], { maxBytes: 1024 * 1024 });
+    if (diff.code !== 0) throw new Error(gitFailureMessage(diff, '读取需求改动失败'));
+    return { ok: true, files, end, diff: diff.stdout, truncated: Boolean(diff.truncated) };
+  }
+  // Revert applies the delivered-to-baseline patch only when it applies cleanly; otherwise nothing is changed.
+  async function revert(payload) {
+    const { current, root, pathspec } = await changeScope(payload.workingDirectory);
+    if (!current.isGit) throw new Error('该目录不是 Git 仓库，无法撤销');
+    const base = treeId(payload.base), end = treeId(payload.end);
+    const patch = await git(root, ['diff', '--binary', '--no-renames', end, base, '--', pathspec], { maxBytes: 64 * 1024 * 1024 });
+    if (patch.code !== 0 || patch.truncated) throw new Error(gitFailureMessage(patch, '生成撤销补丁失败'));
+    if (!patch.stdout.trim()) return { ok: true, applied: false };
+    const file = path.join(os.tmpdir(), `whale-project-revert-${crypto.randomUUID()}.patch`);
+    fs.writeFileSync(file, patch.stdout, { mode: 0o600 });
+    try {
+      const check = await git(root, ['apply', '--check', '--whitespace=nowarn', file]);
+      if (check.code !== 0) return { ok: true, applied: false, conflict: true, message: redact(check.stderr || check.stdout).slice(0, 4000) };
+      await command(root, ['apply', '--whitespace=nowarn', file]);
+      return { ok: true, applied: true };
+    } finally { fs.rmSync(file, { force: true }); }
+  }
   async function dispatch(payload = {}) {
     switch (payload.action) {
       // Only the authenticated Project creation command uses this selection
@@ -262,10 +322,13 @@ function createProjectEnvironment(options = {}) {
       case 'open-path': return openPath(payload);
       case 'resolve-path': return openPath(payload);
       case 'pull-request': return pullRequest(payload);
+      case 'baseline': return baseline(payload);
+      case 'changes': return changes(payload);
+      case 'revert': return revert(payload);
       default: throw new Error(`不支持的 Project 操作：${String(payload.action || '')}`);
     }
   }
-  return { dispatch, canonicalize, repository, prepareWorkspace, checkWorkspace, snapshot, cleanupWorkspace, openPath };
+  return { dispatch, canonicalize, repository, prepareWorkspace, checkWorkspace, snapshot, cleanupWorkspace, openPath, baseline, changes, revert };
 }
 
 module.exports = { createProjectEnvironment, redact };
