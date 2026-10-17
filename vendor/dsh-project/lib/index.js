@@ -1,4 +1,3 @@
-import TeamService from '@deepseek-ai/dsh-experimental-agent-team';
 import { randomUUID } from 'node:crypto';
 import z from '@deepseek-ai/schemastery';
 import { projectDomain, initialState } from './domain.js';
@@ -8,7 +7,7 @@ import { ProjectService } from './service.js';
 import { registerProjectTransport } from './transport.js';
 import { registerProjectPresets } from './presets.js';
 export const name = 'whale-project';
-export const inject = ['storageDomain', 'sessionController', 'sessionPersistence', 'sessions', 'agents', 'subagents', 'agentPresets', 'tools', 'workspaceRegistry'];
+export const inject = ['storageDomain', 'sessionController', 'sessionPersistence', 'sessions', 'agents', 'subagents', 'agentPresets', 'tools', 'workspaceRegistry', 'agentTeams'];
 export const Config = z.object({});
 
 /** Optional Project failure must leave ordinary conversations available. */
@@ -19,8 +18,7 @@ export async function apply(ctx) {
     finally { try { await domain?.close(); } finally { await releaseWriter?.(); } }
   });
   try {
-    if (!ctx.get('agentTeams')) await ctx.plugin(TeamService);
-    const teams = ctx.get('agentTeams');
+    const teams = ctx.agentTeams;
     const home = process.env.DSH_HOME || process.env.DSHD_HOME;
     if (!home) throw new Error('Project requires the active desktop profile DSH_HOME.');
     releaseWriter = await acquireWriter(home, randomUUID());

@@ -70,7 +70,11 @@ function copyRuntime(source, target) {
   }
 }
 
-/** Mount this optional feature without changing the profile's Team or user patch. */
+/**
+ * Mount this optional feature without changing the user patch. Project owns the
+ * single Team service and Team UI rows under its own ids; the optional Agent
+ * Teams bundle's rows are disabled so its tools share that service.
+ */
 async function ensureDesktopDshProject(options = {}) {
   const sourceDir = options.sourceDir || path.join(require('./paths').projectRoot(), 'vendor', DSH_PROJECT_PACKAGE);
   const profileDir = options.profileDir || webProfileDir();
@@ -110,10 +114,18 @@ async function ensureDesktopDshProject(options = {}) {
     '# Desktop-owned optional Project overlay.',
     '# The user cordis.patch.yml is never changed by this overlay.',
     '- insert:',
-    '    - id: ui-agent-team',
+    '    - id: dsh-project-teams',
+    '      name: "@deepseek-ai/dsh-experimental-agent-team"',
+    '    - id: dsh-project-team-ui',
     '      name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"',
     '    - id: dsh-project',
     `      name: ${JSON.stringify(pathToFileURL(path.join(runtimeDir, 'lib', 'index.js')).href)}`,
+    '- id: agent-team',
+    '  name: "@deepseek-ai/dsh-experimental-agent-team"',
+    '  disabled: true',
+    '- id: ui-agent-team',
+    '  name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"',
+    '  disabled: true',
     '',
   ].join('\n');
   fs.writeFileSync(`${overlayFile}.tmp`, contents, 'utf8');
