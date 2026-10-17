@@ -200,6 +200,23 @@ private fun NativeGitPage(vm: DshViewModel) {
             vm.gitAction(listOf("git-publish"), obj("remoteUrl" to remote, "name" to repositoryName, "visibility" to "private"))
         }
     }
+    if (vm.gitReview) AlertDialog(
+        onDismissRequest = { vm.cancelGitReview() },
+        title = { Text("确认 PR / MR 标题与正文") },
+        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("生成只准备草稿。确认后才创建请求；已完成的提交与推送不会重复。")
+            Text("工作区：${vm.currentSession()?.cwd.orEmpty()}")
+            OutlinedTextField(vm.gitDraftTitle, { vm.gitDraftTitle = it }, label = { Text("标题") }, enabled = !vm.panelBusy)
+            OutlinedTextField(vm.gitDraftBody, { vm.gitDraftBody = it }, label = { Text("正文（Markdown）") }, enabled = !vm.panelBusy, minLines = 4)
+            WorkButton("生成 / 重新生成草稿", available) { vm.generateGitDraft() }
+            vm.gitDraftCandidate?.let { candidate ->
+                SelectionContainer { Text(candidate.string("title") + "\n\n" + candidate.string("body")) }
+                WorkButton("应用生成草稿", available) { vm.applyGitDraft() }
+            }
+        } },
+        confirmButton = { TextButton(onClick = { vm.confirmGitReview() }, enabled = available && vm.gitDraftTitle.isNotBlank()) { Text("确认并创建 PR / MR") } },
+        dismissButton = { TextButton(onClick = { vm.cancelGitReview() }) { Text("取消并保留草稿") } },
+    )
     defaultConfirmation?.let { steps -> AlertDialog(onDismissRequest = { defaultConfirmation = null }, title = { Text("在默认分支继续？") },
         text = { Text("当前分支是默认分支。可返回创建工作分支，或确认继续此操作。") },
         confirmButton = { TextButton(onClick = { defaultConfirmation = null; vm.gitAction(steps, payload) }) { Text("继续") } },
