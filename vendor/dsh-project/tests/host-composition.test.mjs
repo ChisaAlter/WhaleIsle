@@ -750,6 +750,49 @@ test('both shipped catalogs migrate before admission while durable authority, hi
       return catalog;
     };
     const writeCatalog = async catalog => { const document = structuredClone(envelope); document.tables.state.catalog = catalog; await writeFile(catalogFile, `${JSON.stringify(document, null, 2)}\n`); };
+    const emptyIdentity = () => {
+      const saved = structuredClone(original), id = saved.requests[0].id;
+      saved.projects.forEach(project => { project.paused = true; });
+      const row = saved.requests[0]; row.id = '';
+      for (const version of row.versions) if (version.source?.requestId === id) version.source.requestId = '';
+      for (const work of saved.workstreams) {
+        for (const receipt of work.delegations) if (receipt.source.requestId === id) receipt.source.requestId = '';
+        if (work.replaces?.requestId === id) work.replaces.requestId = '';
+      }
+      for (const delivery of saved.deliveries) if (delivery.requestId === id) delivery.requestId = '';
+      return saved;
+    };
+    await t.test('empty-v2-identity-restores-persists-and-reopens-without-model-execution', async () => {
+      await writeCatalog(emptyIdentity());
+      let restarted = new RequirementModel(); ctx = await bootHost(home, restarted);
+      const restored = ctx.projects.state(), row = restored.requests[0], source = original.requests[0].versions[0].source;
+      assert.equal(row.id, original.requests[0].id);
+      assert.deepEqual(row.identityRecovery, { originalId: '', sessionId: source.sessionId, callId: source.callId });
+      assert.deepEqual(row.versions, original.requests[0].versions, 'original authorization is preserved exactly');
+      assert.deepEqual(restored.workstreams.map(work => work.delegations), original.workstreams.map(work => work.delegations));
+      assert.deepEqual(restored.deliveries, original.deliveries);
+      assert.ok(restored.projects.every(project => project.paused)); assert.equal(restarted.requests.length, 0);
+      assert.equal((await ctx.projects.command('list')).available, true);
+      const disk = JSON.parse(await readFile(catalogFile, 'utf8')).tables.state.catalog;
+      assert.deepEqual(disk.requests[0], row, 'normal recovery commits the restored identity through the real storage domain');
+      await disposeProfileApplication(ctx); ctx = undefined;
+      restarted = new RequirementModel(); ctx = await bootHost(home, restarted);
+      assert.deepEqual(ctx.projects.state().requests[0], row); assert.equal(restarted.requests.length, 0);
+      assert.ok(ctx.projects.state().projects.every(project => project.paused));
+      const handle = await ctx.sessionPersistence.open(lead.id, 'read');
+      try { assert.deepEqual((await handle.read()).events.slice(0, events.length), events, 'identity recovery never rewrites native Session history'); }
+      finally { await handle.close(); }
+      await disposeProfileApplication(ctx); ctx = undefined;
+    });
+    await t.test('ambiguous-empty-v2-reference-remains-unavailable-with-the-original-catalog-intact', async () => {
+      const saved = emptyIdentity(); saved.workstreams[0].delegations[0].source.authorizationCallId = 'unrelated-original-authorization';
+      await writeCatalog(saved); const bytes = await readFile(catalogFile, 'utf8'), restarted = new RequirementModel();
+      ctx = await bootHost(home, restarted, undefined, true);
+      assert.equal(ctx.projects.error, 'Project catalog needs review: An empty requirement reference cannot be matched to its original version and authorization. Original records were not changed.');
+      const listing = await ctx.projects.command('list'); assert.equal(listing.available, false); assert.equal(listing.error, ctx.projects.error);
+      assert.equal(restarted.requests.length, 0); assert.equal(await readFile(catalogFile, 'utf8'), bytes);
+      await disposeProfileApplication(ctx); ctx = undefined;
+    });
     for (const kind of ['final-v1', 'published-v1', 'missing-declaration', 'mismatched-call-id', 'missing-authority']) await t.test(kind, async () => {
       const saved = kind === 'final-v1' ? { ...structuredClone(original), version: 1 } : published();
       if (kind === 'missing-declaration') saved.deliveries[0].callSeq = -1;

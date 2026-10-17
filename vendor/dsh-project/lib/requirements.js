@@ -1,6 +1,7 @@
 /** User goals and handover records; native Team/Session retain execution ownership. */
 import { createHash } from 'node:crypto';
 import { isAbsolute } from 'node:path';
+import { optionalRequestId, requestIdForCall } from './catalog-recovery.js';
 
 const fail = (code, message) => { const error = new Error(message); error.code = code; throw error; };
 const text = message => (message.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
@@ -64,11 +65,11 @@ export class ProjectRequirements {
     const goal = string(args.goal, 'goal'), title = string(args.title ?? goal.slice(0, 100), 'title', 240);
     const disposition = args.disposition ?? 'queued';
     if (!['discussing', 'queued'].includes(disposition)) fail('queue_state', 'A requirement is either being discussed or approved for the development queue.');
-    const id = args.requestId ?? stableId('request', `${actor.agent.id}:${exec.callId}`);
+    const providedId = optionalRequestId(args.requestId), id = providedId ?? requestIdForCall(actor.agent.id, exec.callId);
     await service.serial(async () => {
       const project = service.project(actor.project.id);
       if (service.closing || service.archiving.has(project.id) || project.lifecycle !== 'ready') fail('unavailable', 'Restore this Project before accepting work.');
-      const existing = args.requestId ? this.get(project.id, id) : this.rows(project.id).find(item => item.id === id);
+      const existing = providedId ? this.get(project.id, id) : this.rows(project.id).find(item => item.id === id);
       if (existing?.versions.some(item => item.source?.authorizationCallId === exec.callId)) return;
       if (project.holdSourceMessageId === last.data.id || service.projectHolds.get(project.id) === last.data.id) fail('stopped', 'Stopped work needs a new human continuation.');
       exec.signal.throwIfAborted();
@@ -108,7 +109,8 @@ export class ProjectRequirements {
   }
   async assignment(actor, args, exec, work) {
     const input = this.inputs(actor, exec), service = this.service;
-    let row = args.requestId ? this.get(actor.project.id, args.requestId, args.requestRevision) : undefined;
+    const requestId = optionalRequestId(args.requestId);
+    let row = requestId ? this.get(actor.project.id, requestId, args.requestRevision) : undefined;
     if (!row && input.human.length) {
       const ids = input.human.map(item => item.data.id);
       const declared = this.rows(actor.project.id).filter(item => {

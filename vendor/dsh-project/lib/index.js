@@ -66,9 +66,10 @@ export async function apply(ctx) {
     ctx.inject(['jobs'], host => host.effect(() => host.jobs.events.subscribe({ owners: 'all' }, event => { void service.jobChanged(event).catch(error => ctx.logger.warn('Project job observation failed: %s', error.message)); })));
     await service.recover();
   } catch (error) {
-    ctx.logger.warn('Project unavailable: %s', error.message);
-    if (service) { service.available = false; service.error = error.message; }
-    else { service = { available: false, error: error.message, async command(endpoint) { if (endpoint === 'list') return { projects: [], available: false, error: this.error }; throw new Error(this.error); } }; ctx.provide('projects', service); }
+    const message = error.cause?.issues?.find(issue => issue.code === 'custom')?.message ?? error.message;
+    ctx.logger.warn('Project unavailable: %s', message);
+    if (service) { service.available = false; service.error = message; }
+    else { service = { available: false, error: message, async command(endpoint) { if (endpoint === 'list') return { projects: [], available: false, error: this.error }; throw new Error(this.error); } }; ctx.provide('projects', service); }
   }
   registerProjectTransport(ctx, service);
 }
