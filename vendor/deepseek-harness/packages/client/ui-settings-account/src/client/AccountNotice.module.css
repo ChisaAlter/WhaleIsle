@@ -4,6 +4,7 @@
 .stack { position: fixed; -webkit-app-region: no-drag; z-index: 40; isolation: isolate; width: 260px; max-width: calc(100vw - 16px); }
 .card { position: relative; box-sizing: border-box; width: 100%; padding: 20px; border: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin); border-radius: 16px; background: var(--dsw-specific-input-major); box-shadow: var(--dsw-elevation-panel); color: var(--dsw-alias-label-secondary); font-size: 14px; line-height: 22px; z-index: calc(0 - var(--notice-depth)); transform: translateY(calc(-4px * var(--notice-depth))) scaleX(var(--notice-scale)); transform-origin: center top; transition: transform 250ms ease-out; }
 .card[data-front="false"] { position: absolute; inset: 0; height: 100%; overflow: hidden; pointer-events: none; }
+.card[data-front="false"] > * { visibility: hidden; }
 @media (prefers-reduced-motion: reduce) { .card { transition: none; } }
 .copy { display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .copy p { margin: 0; white-space: pre-wrap; }

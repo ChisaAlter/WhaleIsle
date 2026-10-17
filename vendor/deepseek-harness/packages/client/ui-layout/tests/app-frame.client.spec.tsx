@@ -35,9 +35,10 @@ const useSessionStatus: AppFrameProps['useSessionStatus'] = selector => selector
 let observers: ResizeObserverStub[]
 class ResizeObserverStub {
   disconnected = false
+  targets = new Set<Element>()
   constructor(private callback: ResizeObserverCallback) { observers.push(this) }
-  observe(): void {}
-  unobserve(): void {}
+  observe(target: Element): void { this.targets.add(target) }
+  unobserve(target: Element): void { this.targets.delete(target) }
   disconnect(): void { this.disconnected = true }
   fire(): void { this.callback([], this) }
 }
@@ -881,6 +882,33 @@ describe('AppFrame — surfaces column and terminal drawer', () => {
 })
 
 describe('AppFrame — titlebar density and conversation reserve', () => {
+  it('updates an asynchronously populated Session trailing seat without a viewport resize', () => {
+    document.documentElement.dataset.platform = 'win32'
+    frameWidth = 1441
+    trailingClusterWidth = 68
+    selectedSessionManaged.current = true
+    const { frame, rerenderFrame } = mountFrame()
+    const trailing = frame.querySelector<HTMLElement>('[data-titlebar-trailing]')!
+    trailing.style.marginRight = '112px'
+    act(rerenderFrame)
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('180px')
+    const previousSeatObserver = observers.find(observer => !observer.disconnected && observer.targets.has(trailing))!
+    const frameObserver = observers.find(observer => !observer.disconnected && observer.targets.has(frame))!
+
+    selectedSession.current = 's-image' as SessionId
+    selectedSessionManaged.current = false
+    act(rerenderFrame)
+    expect(previousSeatObserver.disconnected).toBe(true)
+    expect(frameObserver.disconnected).toBe(false)
+    const seatObserver = observers.find(observer => !observer.disconnected && observer.targets.has(trailing))!
+    expect(seatObserver).not.toBe(previousSeatObserver)
+
+    // The Git slot fills later, without re-rendering AppFrame or resizing it.
+    trailingClusterWidth = 306.5
+    act(() => { seatObserver.fire() })
+    expect(frame.style.getPropertyValue('--dshd-titlebar-conversation-reserve')).toBe('419px')
+  })
+
   it('reserves the measured trailing width in the conversation column when the rightbar is closed', () => {
     trailingClusterWidth = 400
     const { frame } = mountFrame()
