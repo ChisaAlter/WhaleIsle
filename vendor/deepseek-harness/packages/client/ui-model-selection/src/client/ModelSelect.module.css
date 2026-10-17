@@ -49,6 +49,22 @@
   white-space: nowrap;
 }
 
+/* A label extension shares the original ellipsis seat with the animated name. */
+.modelLabelSlot {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  vertical-align: top;
+}
+
+.modelLabelSlot > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Composer row is a size container (InputBar .row). Shrink the chip before
    the permission / plan / send cluster overflows a phone-width card. */
 @container (max-width: 520px) {

@@ -331,6 +331,15 @@
   content: none;
 }
 
+/* A selected command chip stands in for the caret until the next key. */
+.input[data-composer-chip-selected] {
+  caret-color: transparent;
+}
+
+.input[data-composer-chip-selected] ~ [data-typing-fx] [data-typing-fx-caret] {
+  visibility: hidden;
+}
+
 .input[data-composer-composing] + .placeholder {
   visibility: hidden;
 }

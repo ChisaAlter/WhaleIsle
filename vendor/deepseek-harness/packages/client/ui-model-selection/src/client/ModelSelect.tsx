@@ -37,8 +37,8 @@ import {
   IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconCloseFillRegular,
   IconDataOutlineRegular, IconWarningOutlineRegular, Input, rankByName, StateDot, Toast, usePresence, FlipText,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ModelSelectInjected } from './slots.ts'
+import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ModelLabelOwner, ModelSelectInjected } from './slots.ts'
 import css from './ModelSelect.module.css'
 import { orderModelProviders } from './provider-order.ts'
 
@@ -62,8 +62,9 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * @returns the trigger and, while open, the two-level menu.
  */
 export function ModelSelect(
-  { locked, available, directory, load, select, t }:
-  ModelSelectInjected & { locked: boolean } & PropsLocale<'model'>,
+  { locked, available, directory, load, select, t, renderSlot }:
+  ModelSelectInjected & Pick<PropsRuntime<'conversation.input.model'>, 'locked'> & PropsLocale<'model'>
+    & Omit<PropsRenderSlots<'conversation.input.model.label'>, 'SessionProvider'>,
 ) {
   const state = useSyncExternalStore(
     fn => directory.subscribe(fn),
@@ -108,7 +109,14 @@ export function ModelSelect(
     if (available) load()
   }, [available, load])
 
-  const groups = useMemo(() => orderModelProviders(state.groups), [state.groups])
+  const accountProviderName = t('provider.account')
+  const groups = useMemo(() => orderModelProviders(state.groups).map(group => ({
+    ...group,
+    provider: {
+      id: group.id,
+      name: group.id === 'deepseek-account' ? accountProviderName : group.name,
+    },
+  })), [state.groups, accountProviderName])
   const choices = useMemo(() => groups.flatMap(group =>
     group.models.map(model => ({
       group,
@@ -266,12 +274,16 @@ export function ModelSelect(
       if (lh > 0) y = Math.min(Math.max(y, MARGIN), window.innerHeight - lh - MARGIN)
       setMenuPos({ left: x, top: y })
     }
-    // First run measures the hidden pre-render (same commit as `open`), so
-    // the card lands placed before anything paints.
     place()
     window.addEventListener('scroll', place, true)
     window.addEventListener('resize', place)
+    const menu = menuRef.current
+    const observer = typeof ResizeObserver !== 'undefined' && menu !== null
+      ? new ResizeObserver(place)
+      : null
+    if (menu !== null) observer?.observe(menu)
     return () => {
+      observer?.disconnect()
       window.removeEventListener('scroll', place, true)
       window.removeEventListener('resize', place)
     }
@@ -472,7 +484,16 @@ export function ModelSelect(
       : effortLabel === undefined
         ? t('trigger.aria', { model: modelLabel })
         : t('trigger.ariaEffort', { model: modelLabel, effort: effortLabel })
-  itemRefs.current = []
+  const renderModelLabel = (
+    provider: ModelLabelOwner['provider'], model: ModelLabelOwner['model'],
+    placement: ModelLabelOwner['placement'], selected: boolean,
+  ) => (
+    <span className={css.modelLabelSlot} data-provider-id={provider.id} data-model-id={model.id}>
+      {renderSlot('conversation.input.model.label', {
+        provider, model, placement, selected,
+      }, { fallback: placement === 'trigger' ? <FlipText text={model.name} /> : model.name })}
+    </span>
+  )
   let itemIndex = 0
   let modelIndex = 0
   const itemRef = () => {
@@ -517,7 +538,11 @@ export function ModelSelect(
           <span className={css.initialReserve} aria-hidden>{t('trigger.fallback')}</span>
           <span className={css.initialReserve} aria-hidden>{t('trigger.loading')}</span>
           <FlipText className={css.initialCaption} text={modelLabel} />
-        </span> : <FlipText className={css.triggerLabel} text={modelLabel} />}
+        </span> : <span className={css.triggerLabel}>
+          {currentChoice === undefined
+            ? <FlipText text={modelLabel} />
+            : renderModelLabel(currentChoice.group.provider, currentChoice.model, 'trigger', true)}
+        </span>}
         {effortLabel !== undefined && <FlipText className={css.triggerEffort} text={effortLabel} />}
         {busy || waiting
           ? <StateDot state="ongoing" size={16} />
@@ -545,7 +570,9 @@ export function ModelSelect(
             <>
               <button type="button" role="menuitem" className={css.cell} onClick={() => { drill('model') }}>
                 <span className={css.cellLabel}>{t('menu.model')}</span>
-                <span className={css.cellValue}>{modelLabel}</span>
+                <span className={css.cellValue}>
+                  {currentChoice === undefined ? modelLabel : renderModelLabel(currentChoice.group.provider, currentChoice.model, 'menu', true)}
+                </span>
                 <IconChevronRightOutlineRegular className={css.cellChevron} />
               </button>
               {reasoning !== undefined && (
@@ -599,7 +626,7 @@ export function ModelSelect(
               >
                 {view.filteredGroups.map((group) => {
                   return (
-                    <MenuGroup key={group.id} label={group.id === 'deepseek-account' ? t('provider.account') : group.name}>
+                    <MenuGroup key={group.id} label={group.provider.name}>
                       {group.models.map((model) => {
                         const index = modelIndex++
                         const selected = view.state.current?.provider === group.id && view.state.current.model === model.id
@@ -626,7 +653,7 @@ export function ModelSelect(
                             onClick={() => { choose({ provider: group.id, model: model.id }) }}
                           >
                             <span className={css.optionCopy}>
-                              <span className={css.modelName}>{model.name}</span>
+                              <span className={css.modelName}>{renderModelLabel(group.provider, model, 'option', selected)}</span>
                             </span>
                             <span className={css.check}>
                               {view.state.pending?.provider === group.id && view.state.pending.model === model.id

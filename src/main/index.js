@@ -1252,6 +1252,7 @@ if (!gotLock) {
       dsh,
       harness,
       startHarness: restartWithCleanup,
+      reloadPage: reloadWithCleanup,
       startDesktop: startDesktopFromLauncher,
       stopDesktopCleanup: cleanupDesktopResources,
       remote,

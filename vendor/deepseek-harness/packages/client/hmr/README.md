@@ -27,6 +27,8 @@ English | [中文](README.zh.md)
 
 The shipped Web composition mounts this transport for live plugin changes. During development, a bundle watcher also supplies code rebuilds. Disabling the transport stops graph delivery to open pages.
 
+WhaleIsle opens a native `EventSource` only for a loopback page, keeping phone and relay pages from holding that extra connection. A shell-provided `__DSH_TRANSPORT__.fetch` carries its own stream and remains available off-loopback.
+
 ### Starting the reload chain
 
 Run `pnpm run dev:web`, which starts the host and the rebuild watchers together (`--no-serve` attaches only the watchers to a host started elsewhere, as does any watch process using the shared Client tsdown preset); rebuilt plugins are then swapped into the running browser automatically, one at a time. The preset stamps `lib/client.js` after all package-local chunks are written, so a chunk-only rebuild also advances the package revision without Host-side chunk scanning.
@@ -78,7 +80,7 @@ Download failures leave the running plugin active. After the old fiber is torn d
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Node half: bundle stat-poll, `rebuilt` reporting, `/plugins/events` SSE channel |
-| [`src/client/index.ts`](src/client/index.ts) | Browser half: SSE subscription and delegation to the shared entry controller |
+| [`src/client/index.ts`](src/client/index.ts) | Browser half: SSE subscription through the page's `__DSH_TRANSPORT__.fetch` when a shell provides one (the worker preview's tunnel), otherwise through `EventSource`, and delegation to the shared entry controller |
 | [`src/events.ts`](src/events.ts) | Shared frame types (`graph` / `rebuilt`) and the endpoint constant |
 
 </details>

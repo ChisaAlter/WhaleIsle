@@ -138,7 +138,8 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-goal/src/client/GoalBar.module.css': '.bar { max-width: calc(var(--dsh-composer-resized-width, 100%) - 32px); }\n',
       'packages/client/ui-theme/src/wallpaper.ts': "export const TRANSPARENT_ATTR = 'data-dsh-transparent'\n",
       'packages/client/ui-theme/src/styles/wallpaper.css': 'html[data-dsh-transparent] #dsh-wallpaper::after { background: transparent }\n',
-      'packages/client/ui-model-selection/src/client/ModelSelect.tsx': "<FlipText className={css.triggerLabel} text={modelLabel} />\n<FlipText className={css.triggerEffort} text={effortLabel} />\n",
+      'packages/client/ui-model-selection/src/client/ModelSelect.tsx': "<span className={css.triggerLabel}>\n<FlipText text={modelLabel} />\nfallback: placement === 'trigger' ? <FlipText text={model.name} /> : model.name\n<FlipText className={css.triggerEffort} text={effortLabel} />\n",
+      'packages/client/ui-deepseek-model-label-1017/src/client/DeepSeekModelLabel.tsx': "placement === 'trigger' ? <FlipText className={css.name} text={model.name} /> : model.name\n<Tag tone=\"info\">\n",
       'packages/client/ui-model-selection/src/client/ModelSelect.module.css': "/* FlipText's recipe root is inline-grid;\n.triggerLabel[data-dsh-motion='flip'],\n.triggerEffort[data-dsh-motion='flip'] {\n  display: var(--dsh-composer-model-text-display, inline-grid);\n}\n",
       'packages/client/ui-chat/src/client/settings/PreferenceRow.tsx': '<FlipText className={css.selectorLabel} text={selectedLabel} />\n',
       'packages/client/ui-primitives/src/Menu.tsx': 'const { mounted, state } = usePresence(open)\ndata-dsh-motion="popover"\ndata-state={state}\n',
@@ -284,14 +285,14 @@ test('assertDesktopForks throws when the ModelSelect model label stops using Fli
   const modelSelectPath = path.join(root, ...'packages/client/ui-model-selection/src/client/ModelSelect.tsx'.split('/'));
   const text = fs.readFileSync(modelSelectPath, 'utf8');
   const reverted = text.replace(
-    '<FlipText className={css.triggerLabel} text={modelLabel} />',
-    '<span className={css.triggerLabel}>{modelLabel}</span>',
+    '<FlipText text={modelLabel} />',
+    '<span>{modelLabel}</span>',
   );
   assert.notStrictEqual(reverted, text);
   fs.writeFileSync(modelSelectPath, reverted);
   assert.throws(
     () => assertDesktopForks(root, '0.1.0-rc.5'),
-    /ModelSelect\.tsx no longer contains .*triggerLabel} text=\{modelLabel\}/,
+    /ModelSelect\.tsx no longer contains .*FlipText text=\{modelLabel\}/,
   );
 });
 

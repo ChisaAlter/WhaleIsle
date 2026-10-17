@@ -2,7 +2,7 @@
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { LexicalEditor, NodeKey } from 'lexical'
 import {
-  $addUpdateTag, $createParagraphNode, $createTextNode, $getRoot, $getSelection, $isRangeSelection,
+  $addUpdateTag, $createParagraphNode, $createTextNode, $getRoot, $getSelection, $isRangeSelection, $nodesOfType, $setSelection,
   BLUR_COMMAND, CLEAR_HISTORY_COMMAND, COMMAND_PRIORITY_CRITICAL, createEditor, HISTORY_MERGE_TAG, PASTE_TAG,
   RootNode, SELECTION_CHANGE_COMMAND, SKIP_DOM_SELECTION_TAG,
 } from 'lexical'
@@ -10,13 +10,15 @@ import { registerPlainText } from '@lexical/plain-text'
 import { createEmptyHistoryState, registerHistory } from '@lexical/history'
 import { mergeRegister } from '@lexical/utils'
 import type { DraftReference, ReferenceInsert } from '../../contract/draft-editor.ts'
+import type { CommandClaim } from '../../contract/input.ts'
 import { registerReferenceActivation } from './reference-activation.ts'
 import { ReferenceChipNode, $createReferenceChipNode } from './chip-node.tsx'
-import { refreshClaimDecoration, registerClaimDecoration } from './claim-decor.ts'
+import { CommandChipNode, $createCommandChipNode, registerCommandChipSeat } from './command-chip-node.tsx'
+import { registerCommandChipSelection } from './command-chip-selection.ts'
 import { registerTextRefDecoration, rescanTextRefs, TextRefNode } from './text-ref.ts'
 import type { EditorProjection } from './projection.ts'
-import { $composerLayout, $projectComposer, detectOffsetOfClipboardOffset } from './projection.ts'
-import { $replaceDetectSpanWithNodes, $replaceDetectSpanWithText } from './span-map.ts'
+import { $composerLayout, $detectOffsetOfPoint, $projectComposer, detectOffsetOfClipboardOffset } from './projection.ts'
+import { $replaceDetectSpanWithNodes, $replaceDetectSpanWithText, $selectDetectPoints } from './span-map.ts'
 import type { DetectSpan } from './span-map.ts'
 
 type Lexicon = ReadonlyMap<'/' | '@', readonly string[]>
@@ -25,9 +27,9 @@ type Lexicon = ReadonlyMap<'/' | '@', readonly string[]>
 interface DraftEditorRuntimeDeps {
   readonly onUpdate: () => void
   readonly openReference: (source: string | undefined, reference: Pick<ReferenceInsert, 'ref' | 'appearance'>) => boolean
-  readonly activeClaimToken: () => string | null
   readonly lexicon: () => Lexicon
   readonly resolveLexicon: () => ObservableSnapshot<Lexicon> | undefined
+  readonly commandsAllowed: () => boolean
 }
 
 /**
@@ -45,7 +47,9 @@ const HISTORY_MERGE_DELAY_MS = 1000
 export class DraftEditorRuntime {
   /** The editor bound by the Composer's contenteditable host. */
   readonly editor: LexicalEditor
-  private projected: EditorProjection = { detectText: '', clipboardText: '', occurrences: [], selection: null, caret: null }
+  private projected: EditorProjection = {
+    detectText: '', clipboardText: '', occurrences: [], selection: null, caret: null, command: undefined,
+  }
   /** Stable occurrence ids per chip NodeKey (undo restores keys, so ids survive it too). */
   private readonly occurrenceIds = new Map<NodeKey, number>()
   private occurrenceSeq = 0
@@ -57,7 +61,7 @@ export class DraftEditorRuntime {
   constructor(private readonly deps: DraftEditorRuntimeDeps) {
     this.editor = createEditor({
       namespace: 'dsh-composer',
-      nodes: [ReferenceChipNode, TextRefNode],
+      nodes: [ReferenceChipNode, CommandChipNode, TextRefNode],
       onError: (error) => { throw error },
     })
   }
@@ -87,9 +91,24 @@ export class DraftEditorRuntime {
       registerReferenceActivation(this.editor, (source, reference) =>
         this.deps.openReference(source, reference)),
       registerHistory(this.editor, createEmptyHistoryState(), HISTORY_MERGE_DELAY_MS),
-      this.editor.registerUpdateListener(() => { this.deps.onUpdate() }),
-      registerClaimDecoration(this.editor, () => this.deps.activeClaimToken()),
-      registerTextRefDecoration(this.editor, () => this.deps.lexicon(), () => this.deps.activeClaimToken()),
+      this.editor.registerUpdateListener(({ editorState }) => {
+        // History installs an EditorState without running node transforms.
+        // Normalize a restored claim before publishing it into an edit session;
+        // the follow-up commit preserves both literal text and ordinary undo.
+        if (!this.deps.commandsAllowed()) {
+          const chips = editorState.read(() => $nodesOfType(CommandChipNode))
+          if (chips.length > 0) {
+            this.editor.update(() => { for (const chip of chips) chip.markDirty() }, {
+              discrete: true, tag: HISTORY_MERGE_TAG,
+            })
+            return
+          }
+        }
+        this.deps.onUpdate()
+      }),
+      registerCommandChipSeat(this.editor, this.deps.commandsAllowed),
+      registerCommandChipSelection(this.editor),
+      registerTextRefDecoration(this.editor, () => this.deps.lexicon()),
       () => {
         this.lexiconOff?.()
         this.lexiconOff = undefined
@@ -167,7 +186,8 @@ export class DraftEditorRuntime {
    */
   setDraft(text: string): void {
     const clean = text.replace(REFERENCE_PLACEHOLDER_RE, '')
-    if (clean === this.projection.clipboardText && this.projection.occurrences.length === 0) return
+    if (clean === this.projection.clipboardText && this.projection.occurrences.length === 0
+      && this.projection.command === undefined) return
     this.editor.update(() => {
       const root = $getRoot()
       root.clear()
@@ -262,6 +282,48 @@ export class DraftEditorRuntime {
   }
 
   /**
+   * Replace a span with a command chip followed by the claim token's
+   * argument separator, unless the separator already follows.
+   * @param span - detect-coordinate range.
+   * @param claim - the command claim the chip anchors.
+   * @param tail - the character following the range before editing.
+   * @param restoring - rebuild a saved chip without changing its separator,
+   * merged into the seed's history entry rather than a new undoable step.
+   * @returns whether the range mapped and the edit applied.
+   */
+  insertCommand(span: DetectSpan, claim: CommandClaim, tail: string, restoring = false): boolean {
+    const separator = restoring ? '' : claim.token.slice(claim.token.trimEnd().length)
+    let applied = false
+    this.applyEdit(() => {
+      // Catalog resolution changes representation, not the user's selection.
+      // Read it now: selection-only moves while awaiting resolution do not change draftRev.
+      const selection = restoring ? $getSelection() : null
+      const layout = restoring && $isRangeSelection(selection) ? $composerLayout() : undefined
+      const anchor = layout !== undefined && $isRangeSelection(selection) ? $detectOffsetOfPoint(layout, selection.anchor) : null
+      const focus = layout !== undefined && $isRangeSelection(selection) ? $detectOffsetOfPoint(layout, selection.focus) : null
+      const retained = selection?.clone() ?? null
+      const nodes = separator === '' || tail === separator.charAt(0)
+        ? [$createCommandChipNode(claim)]
+        : [$createCommandChipNode(claim), $createTextNode(separator)]
+      applied = $replaceDetectSpanWithNodes(span, nodes)
+      if (!restoring || !applied) return
+      if (anchor === null || focus === null) {
+        $setSelection(retained)
+        return
+      }
+      // An atomic chip replaces the literal token. A range crossing its
+      // interior expands to the chip edge; a caret inside lands after it.
+      const remap = (offset: number, towardEnd: boolean): number => {
+        if (offset <= span.start) return offset
+        if (offset >= span.end) return offset + 1 - (span.end - span.start)
+        return span.start + (towardEnd ? 1 : 0)
+      }
+      $selectDetectPoints(remap(anchor, anchor >= focus), remap(focus, focus >= anchor))
+    }, restoring ? HISTORY_MERGE_TAG : undefined)
+    return applied
+  }
+
+  /**
    * Insert an ordered file-reference batch after the live selection without deleting it.
    * @param references - validated references in source order.
    * @returns whether the live insertion position accepted the batch.
@@ -278,11 +340,6 @@ export class DraftEditorRuntime {
       applied = $replaceDetectSpanWithNodes({ start: at, end: at }, nodes)
     }, PASTE_TAG)
     return applied
-  }
-
-  /** Refresh claim-token decoration after the model's claim changes. */
-  refreshClaimDecoration(): void {
-    refreshClaimDecoration(this.editor)
   }
 
   /**

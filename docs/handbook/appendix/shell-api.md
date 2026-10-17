@@ -47,6 +47,7 @@
 | --- | --- |
 | `openExternal` | `shell:open-external` |
 | `openSettings` | `shell:open-settings` |
+| `reloadPage` | `shell:reload-page`（仅 Harness；复用活动工作确认和 PTY / preview 清理，不重启 ready Host） |
 | `retryFullPlugins` | `shell:retry-full-plugins` |
 | `checkUpdate` / `installUpdate` | `shell:check-update` / `shell:install-update` |
 | `onUpdateProgress` | `shell:update-progress` |

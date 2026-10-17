@@ -132,7 +132,8 @@ const FORK_FILE_MARKERS = [
   // deleting the theme recipes docs/motion.md requires: FlipText on the
   // model/reasoning and transcript triggers, and the presence markers on
   // menus, disclosure bodies, the compact hover card, and the tooltip.
-  { file: 'packages/client/ui-model-selection/src/client/ModelSelect.tsx', includes: ['<FlipText className={css.triggerLabel} text={modelLabel} />', '<FlipText className={css.triggerEffort} text={effortLabel} />'] },
+  { file: 'packages/client/ui-model-selection/src/client/ModelSelect.tsx', includes: ['<span className={css.triggerLabel}>', '<FlipText text={modelLabel} />', "fallback: placement === 'trigger' ? <FlipText text={model.name} /> : model.name", '<FlipText className={css.triggerEffort} text={effortLabel} />'] },
+  { file: 'packages/client/ui-deepseek-model-label-1017/src/client/DeepSeekModelLabel.tsx', includes: ["placement === 'trigger' ? <FlipText className={css.name} text={model.name} /> : model.name", '<Tag tone="info">'] },
   { file: 'packages/client/ui-model-selection/src/client/ModelSelect.module.css', includes: ["/* FlipText's recipe root is inline-grid;", ".triggerLabel[data-dsh-motion='flip'],", ".triggerEffort[data-dsh-motion='flip'] {", 'display: var(--dsh-composer-model-text-display, inline-grid);'] },
   { file: 'packages/client/ui-chat/src/client/settings/PreferenceRow.tsx', includes: ['<FlipText className={css.selectorLabel} text={selectedLabel} />'] },
   { file: 'packages/client/ui-primitives/src/Menu.tsx', includes: ['const { mounted, state } = usePresence(open)', 'data-dsh-motion="popover"', 'data-state={state}'] },

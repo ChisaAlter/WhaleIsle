@@ -294,7 +294,9 @@ describe('candidates', () => {
     await expect(source.candidates(proj('s1'), req(''))).resolves.toEqual([])
     expect(listCalls).toEqual([])
     expect(source.matchSpace!(proj('s1'), '/goal')).toBeUndefined()
+    await expect(source.matchClaim!(proj('s1'), '/goal', new AbortController().signal)).resolves.toBeUndefined()
     await expect(source.matchEnter!(proj('s1'), '/goal', new AbortController().signal, { attachments: 0 })).resolves.toBeUndefined()
+    expect(listCalls).toEqual([])
   })
 
   it('ranks rows through the shared name ranker: prefixes first, then alignment, then source order', async () => {
@@ -788,6 +790,34 @@ describe('matchEnter (enter column)', () => {
       commands: () => Promise.reject(new Error('warmup boom')),
     })
     await expect(source.matchEnter!(proj('s1'), '/goal', signal(), { attachments: 0 })).rejects.toThrow('warmup boom')
+  })
+
+  it('matchClaim waits for a cold catalog and answers only the space column claim without acting', async () => {
+    let release!: (value: { commands: CommandDescriptor[] }) => void
+    const { command, source, mint, executeCalls } = await bench({
+      commands: () => new Promise((resolve) => { release = resolve }),
+    })
+    const run = vi.fn()
+    command.register({ name: 'file', label: () => 'file', available: () => true, ui: { kind: 'action', run } })
+    const consumes: ConsumeTokenRequest[] = []
+    mint('s1').ctx.on('slash/input-consume-token', (r) => { consumes.push(r); return true })
+    const wait = source.matchClaim!(proj('s1'), '/goal', signal())
+    await vi.waitFor(() => { expect(release).toBeTypeOf('function') })
+    release({ commands: S1_CMDS })
+    await expect(wait).resolves.toMatchObject({ name: 'goal', token: '/goal ' })
+    for (const token of ['/plan', '/file', '/xyz', 'goal']) {
+      await expect(source.matchClaim!(proj('s1'), token, signal())).resolves.toBeUndefined()
+    }
+    expect(run).not.toHaveBeenCalled()
+    expect(consumes).toEqual([])
+    expect(executeCalls).toEqual([])
+  })
+
+  it('matchClaim rejects when warmup fails', async () => {
+    const { source } = await bench({
+      commands: () => Promise.reject(new Error('warmup boom')),
+    })
+    await expect(source.matchClaim!(proj('s1'), '/goal', signal())).rejects.toThrow('warmup boom')
   })
 
   it('leadingInput claims args-tolerant (bare and with trailing text)', async () => {

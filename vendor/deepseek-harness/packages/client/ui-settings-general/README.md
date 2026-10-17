@@ -33,6 +33,10 @@ Users reach the shell through the sidebar's bottom Settings control; feature plu
 
 Settings uses the [frame’s shared overlay inset](../ui-layout/README.md#window-chrome-seat) and keeps at least 24px of viewport margin. Its mask leaves the Windows caption unpainted; the full-viewport layer still blocks background clicks.
 
+When the page reconnects to a Host running another release, a **Service version changed** dialog draws two lines: **Service** from the Host's previous release (gray) to its current release, joined by a thin solid green arrow because the Host already switched, and **Page** from the release this page booted from to the Host's release (gray), joined by an equally thin dashed gray arrow because only a reload completes it. A line shows versions when its two versions differ and commits otherwise. The page applies no plugin update from that release. **Reload to load the new version** loads it; **Not now**, the close control, a mask click, and Escape keep the page at its own release and stop asking about that Host release. When the Host returns to the page's release, the dialog closes and live updates resume.
+
+In WhaleIsle, this reload uses the desktop's existing active-work confirmation and waits for PTY and preview cleanup. It refreshes the page without restarting a ready Host or entering the application updater. A browser without the desktop shell reloads normally.
+
 When the section navigation exceeds the panel's available height, the list scrolls independently of the settings content and keeps the Settings title fixed.
 
 In Desktop, one 36px update icon shares the account or Settings entry's fixed 44px footer row. Connection feedback occupies the same status position, except during shell-reported installation, when update status takes priority. When no status action is rendered, the expanded account or More entry fills the row with matching left and right spacing. The collapsed rail keeps its reserved status position above the account entry, so availability, progress, and errors never move the account avatar. The icon remains actionable in both sidebar widths; its tooltip carries the complete phase, version, progress, or classified failure, and its accessible name follows the active settings locale. One Desktop preload subscription feeds both the footer action and the non-interactive notification dot on the collapsed sidebar expand button. Selecting the action opens the shell-owned check, confirmation, and install flow; the About section delegates its available-update action to this same flow. Browser code cannot choose packages or authorize installation. Ordinary browsers show no update control. [Desktop updates](../../../apps/desktop/README.md) owns the release workflow.
@@ -80,6 +84,10 @@ Settings visibility and the requested section are held by `ctx.settingsNavigatio
 ### Connection recovery
 
 The shell is an explicit recovery consumer, so it injects Connection directly rather than adding lifecycle controls to `ctx.remote`. Its private hooks compartment binds `ctx.connection.state`, while the component receives only the selected state and an injected callback for `ctx.connection.reconnect()`. `ConnectionIndicator` owns the inline presentation and receives all visible and accessible copy from the `settings` locale namespace; the shell owns the 800ms minimum-visible hold for the connecting state and the two-second recovered-state timer, which starts when the recovered pill becomes visible after the hold.
+
+### Host release changes
+
+The `shell.overlay` entry `host-release-change` binds `ctx.modules.entries.releaseChange` in its hooks compartment and receives two callbacks: one calls `ctx.modules.entries.dismissRelease()`, the other reloads the page. Release identities are Host data and render verbatim; [Client Modules](../modules/README.md#host-release-changes) owns which release counts as current.
 
 ### Document availability
 
