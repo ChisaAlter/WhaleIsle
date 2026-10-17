@@ -103,7 +103,7 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
   const [saving, setSaving] = useState<string | null>(null)
   const [whaleBusy, setWhaleBusy] = useState(false)
   const [whaleError, setWhaleError] = useState('')
-  const [notice, setNotice] = useState<{ id: number; text: string; success: boolean } | null>(null)
+  const [notice, setNotice] = useState<{ id: number; text: string } | null>(null)
   const noticeId = useRef(0)
   const [view, setView] = useState<'assistant' | 'desktop'>('assistant')
 
@@ -119,7 +119,7 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
       if (cancelled) return
       const message = caught instanceof Error ? caught.message : String(caught)
       setReadError(message)
-      setNotice({ id: ++noticeId.current, text: t('feedback.readError', { message }), success: false })
+      setNotice({ id: ++noticeId.current, text: t('feedback.readError', { message }) })
     }).finally(() => { if (!cancelled) setConfigLoading(false) })
     return () => { cancelled = true }
   }, [shell, t])
@@ -134,7 +134,7 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
       if (!res?.ok || !res.value) {
         const message = res?.error?.message || 'failed'
         setLookLoadError(message)
-        setNotice({ id: ++noticeId.current, text: t('pet.lookModelLoadFailed', { message }), success: false })
+        setNotice({ id: ++noticeId.current, text: t('pet.lookModelLoadFailed', { message }) })
         return
       }
       setLookLoadError('')
@@ -150,7 +150,7 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
       if (cancelled) return
       const message = err instanceof Error ? err.message : String(err)
       setLookLoadError(message)
-      setNotice({ id: ++noticeId.current, text: t('pet.lookModelLoadFailed', { message }), success: false })
+      setNotice({ id: ++noticeId.current, text: t('pet.lookModelLoadFailed', { message }) })
     })
     return () => { cancelled = true }
   }, [modelCatalog, t])
@@ -170,17 +170,17 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
         setError('')
         if (typeof res.enabled === 'boolean') setEnabled(res.enabled)
         if (res.settings) setSettings(res.settings)
-        setNotice({ id: ++noticeId.current, text: t('feedback.saved'), success: true })
+        setNotice(null)
       } else {
         const message = res?.reason || 'failed'
         setError(message)
-        setNotice({ id: ++noticeId.current, text: t('pet.saveError', { message }), success: false })
+        setNotice({ id: ++noticeId.current, text: t('pet.saveError', { message }) })
       }
       return res
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setError(message)
-      setNotice({ id: ++noticeId.current, text: t('pet.saveError', { message }), success: false })
+      setNotice({ id: ++noticeId.current, text: t('pet.saveError', { message }) })
       return undefined
     } finally {
       setSaving(null)
@@ -237,16 +237,16 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
       if (saved.whaleAssistantEnabled !== next) {
         setWhaleAssistant(typeof saved.whaleAssistantEnabled === 'boolean' ? saved.whaleAssistantEnabled : previous)
         setWhaleError(t('feedback.notSaved'))
-        setNotice({ id: ++noticeId.current, text: t('feedback.notSaved'), success: false })
+        setNotice({ id: ++noticeId.current, text: t('feedback.notSaved') })
         return
       }
       setWhaleError('')
-      setNotice({ id: ++noticeId.current, text: t('feedback.saved'), success: true })
+      setNotice(null)
     }).catch((caught: unknown) => {
       setWhaleAssistant(previous)
       const text = t('feedback.saveError', { message: caught instanceof Error ? caught.message : String(caught) })
       setWhaleError(text)
-      setNotice({ id: ++noticeId.current, text, success: false })
+      setNotice({ id: ++noticeId.current, text })
     }).finally(() => { setWhaleBusy(false) })
   }, [shell, t, whaleAssistant])
 
@@ -446,9 +446,7 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
           </div>
         </div>
       </div>
-      {notice !== null && <Toast key={notice.id} text={notice.text}
-        {...notice.success ? { tone: 'success' as const } : {}}
-        holdMs={notice.success ? 3000 : null} dismissLabel={t('close')} onDone={() => { setNotice(null) }} />}
+      {notice !== null && <Toast key={notice.id} text={notice.text} onDone={() => { setNotice(null) }} />}
     </div>
   )
 }

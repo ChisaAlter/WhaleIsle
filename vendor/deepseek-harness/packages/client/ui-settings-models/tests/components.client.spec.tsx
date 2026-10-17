@@ -882,11 +882,11 @@ describe('ModelsSection', () => {
     // The saved key re-loads the join; the settings answer rides the shared
     // mirror, so the reload shows as a directory read rather than a describe.
     await waitFor(() => { expect(face.llm.listProviders.mock.calls.length).toBeGreaterThan(1) })
-    expect((await screen.findByRole('alert')).textContent).toBe(
+    expect((await screen.findByRole('status')).textContent).toBe(
       providerCopy(en.savedProvider, { provider: 'deepseek-official', displayName: 'DeepSeek' }),
     )
     fireEvent.click(screen.getByText(en.add))
-    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('reuses the provider editor as a required credential-only onboarding form', async () => {

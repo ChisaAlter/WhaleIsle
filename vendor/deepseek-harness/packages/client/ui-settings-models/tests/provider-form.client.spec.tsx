@@ -1204,7 +1204,7 @@ describe('hand-declared providers', () => {
     fireEvent.change(screen.getByLabelText(en.customDisplayName), { target: { value: 'Acme 网关' } })
     fireEvent.click(screen.getByText(en.apply))
 
-    const notice = await screen.findByRole('alert')
+    const notice = await screen.findByRole('status')
     expect(notice.textContent).toBe(providerCopy(en.savedProvider, {
       provider: 'acme-gateway',
       displayName: 'Acme 网关',

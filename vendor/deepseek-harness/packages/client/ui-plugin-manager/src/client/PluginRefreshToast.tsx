@@ -6,7 +6,7 @@ import type { PluginManagerFace } from './manager-store.ts'
 import { noticeText } from './presentation.ts'
 
 /** The controller's shared notice source and dismissal action. */
-export type PluginRefreshToastFace = Pick<PluginManagerFace, 'dismissNotice' | 'refresh'> & {
+export type PluginRefreshToastFace = Pick<PluginManagerFace, 'dismissNotice'> & {
   hooks: Pick<PluginManagerFace['hooks'], 'pluginManager'>
 }
 
@@ -18,7 +18,7 @@ export type PluginRefreshToastProps = InjectFace<PluginRefreshToastFace> & Props
  * @param props - shared notice hook, dismissal action, and locale seat.
  * @returns the refresh failure toast, or null for other notices.
  */
-export function PluginRefreshToast({ usePluginManager, dismissNotice, refresh, t }: PluginRefreshToastProps): ReactNode {
+export function PluginRefreshToast({ usePluginManager, dismissNotice, t }: PluginRefreshToastProps): ReactNode {
   const notice = usePluginManager(state => state.notice)
   if (notice?.kind !== 'refresh-failed') return null
   return (
@@ -26,9 +26,6 @@ export function PluginRefreshToast({ usePluginManager, dismissNotice, refresh, t
       key={notice.seq}
       text={noticeText(notice, t)}
       icon={<IconWarningOutlineRegular />}
-      holdMs={null}
-      dismissLabel={t('close')}
-      actions={[{ label: t('retry'), onClick: refresh }]}
       onDone={dismissNotice}
     />
   )

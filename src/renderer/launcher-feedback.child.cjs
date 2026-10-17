@@ -94,7 +94,7 @@ app.whenReady().then(async () => {
       updateVisible: document.getElementById('home-update').checkVisibility(), updateText: document.getElementById('home-update-text').textContent,
       toastCount: document.querySelectorAll('.shell-feedback-toast').length };
   })()`);
-  const clearNotices = () => js("document.querySelectorAll('.shell-feedback-toast .shell-feedback-close').forEach(button => button.click())");
+  const clearNotices = () => js("document.querySelectorAll('.shell-feedback-toast').forEach(node => node.remove())");
   const key = async keyCode => {
     win.webContents.sendInputEvent({ type: 'keyDown', keyCode });
     win.webContents.sendInputEvent({ type: 'keyUp', keyCode });
@@ -149,8 +149,6 @@ app.whenReady().then(async () => {
     result.confirmRetry = await js('document.activeElement.className');
     await js('document.activeElement.click()');
     result.retryCalls = await js('window.retryCalls');
-    await key('Tab');
-    result.confirmToastClose = await js('document.activeElement.className');
     await key('Escape');
     result.confirmAfterToastEscape = await js("({ title: document.getElementById('app-confirm-title').textContent, hidden: document.getElementById('app-confirm').hidden, answer: window.confirmAnswer, toasts:document.querySelectorAll('.shell-feedback-toast').length })");
     await key('Tab');
@@ -222,7 +220,7 @@ app.whenReady().then(async () => {
     await waitFor("[...document.querySelectorAll('.shell-feedback-text')].some(node => node.textContent.startsWith('插件已禁用，仍需排查：'))");
     result.recoveryStillSkipped = await read();
     statusReadFails = false;
-    await js("[...document.querySelectorAll('.shell-feedback-toast .shell-feedback-close')].at(-1).click()");
+    await js("[...document.querySelectorAll('.shell-feedback-toast')].at(-1).remove()");
     await waitFor("document.querySelector('.shell-feedback-text').textContent.includes('暂时无法读取桌面状态')");
     result.statusReadFailure = await read();
     await clearNotices();
@@ -297,7 +295,7 @@ app.whenReady().then(async () => {
     if (bootOnly) {
       const buttonState = id => bootJs(`(() => {const b=document.getElementById(${JSON.stringify(id)}),r=b.getBoundingClientRect();return {busy:b.getAttribute('aria-busy'),disabled:b.disabled,hidden:b.hidden,width:r.width,height:r.height,text:b.textContent}})()`);
       const clearBootNotices = async () => {
-        await bootJs("document.querySelectorAll('.shell-feedback-toast .shell-feedback-close').forEach(button => button.click())");
+        await bootJs("document.querySelectorAll('.shell-feedback-toast').forEach(node => node.remove())");
         await bootWait("!document.querySelector('.shell-feedback-toast')");
       };
       const startAction = async (id, calls) => {

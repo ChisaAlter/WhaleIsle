@@ -139,6 +139,21 @@ test('failed updated process restores the previous native version and keeps prov
   assert.equal(fs.readFileSync(file, 'utf8'), '{"secret":"kept"}');
 });
 
+test('an install whose first start fails stays installed and reports the component log', async t => {
+  const f = fixture(t);
+  f.fail('1.0.0');
+  fs.mkdirSync(path.join(f.deps.root, 'data'), { recursive: true });
+  fs.writeFileSync(path.join(f.deps.root, 'data', 'component.log'), 'booting\n鲸桥网关端口不可用: listen tcp 127.0.0.1:3427: bind: address already in use\n');
+  const result = await f.service.install();
+  assert.equal(result.ok, false);
+  assert.match(result.message, /^鲸桥已安装，但启动失败：鲸桥启动退出（1）/);
+  assert.match(result.message, /address already in use/);
+  assert.equal(f.service.installed().version, '1.0.0');
+  assert.equal(f.service.row().state, 'stopped');
+  f.fail('');
+  assert.equal((await f.service.start()).ok, true);
+});
+
 test('taskkill child error is accepted only when the gateway actually exited', async t => {
   const f = fixture(t);
   const exited = createWhaleBridgeService({ ...f.deps, killPid: pid => { f.live.delete(pid); return false; } });

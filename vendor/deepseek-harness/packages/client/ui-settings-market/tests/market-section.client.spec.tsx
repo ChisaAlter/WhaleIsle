@@ -708,46 +708,16 @@ describe('MarketSection', () => {
     })
   })
 
-  it('floats the latest progress line during an install without adding an in-flow log', async () => {
-    let publish: ((payload: { phase: string; line?: string }) => void) | null = null
-    let resolveInstall: ((value: { ok: boolean; harnessStarted: boolean }) => void) | null = null
-    renderMarket({
-      onProgress: vi.fn((listener: (payload: { phase: string; line?: string }) => void) => {
-        publish = listener
-        return () => { publish = null }
-      }) as unknown as MarketSectionProps['onProgress'],
-      install: vi.fn(() => new Promise((resolve) => { resolveInstall = resolve })) as unknown as MarketSectionProps['install'],
-    })
-    await clickMutation(await screen.findByRole('button', { name: en.install }))
-    await waitFor(() => { expect(publish).not.toBeNull() })
-    publish!({ phase: 'log', line: 'resolving demo' })
-    const resolving = await screen.findByText('resolving demo')
-    expect(resolving.closest('[data-dsh-toast]')).toBeTruthy()
-    expect(screen.queryByRole('log')).toBeNull()
-    expect(screen.getByRole('button', { name: en.installing }).getAttribute('aria-busy')).toBe('true')
-    publish!({ phase: 'restart' })
-    expect((await screen.findByText(en.restarting)).closest('[data-dsh-toast]')).toBeTruthy()
-    expect(screen.queryByText('resolving demo')).toBeNull()
-    resolveInstall!({ ok: true, harnessStarted: true })
-    await screen.findByText(en.installDone)
-  })
-
-  it('dismisses progress presentation without cancelling or repeating the install', async () => {
+  it('keeps an install in its busy button without a progress log or floating notice', async () => {
     let resolveInstall: ((value: PluginOpResult) => void) | undefined
-    const unsubscribe = vi.fn()
     const install = vi.fn(() => new Promise<PluginOpResult>((resolve) => { resolveInstall = resolve }))
-    renderMarket({ install, onProgress: vi.fn(() => unsubscribe) })
+    renderMarket({ install })
     await clickMutation(await screen.findByRole('button', { name: en.install }))
-    const progress = await screen.findByRole('alert')
-    expect(within(progress).getByText(en.installing)).toBeTruthy()
-    fireEvent.click(within(progress).getByRole('button', { name: en.close }))
+    expect(screen.getByRole('button', { name: en.installing }).getAttribute('aria-busy')).toBe('true')
+    expect(screen.queryByRole('log')).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.getByRole('button', { name: en.installing })).toHaveProperty('disabled', true)
-    expect(unsubscribe).not.toHaveBeenCalled()
-    expect(install).toHaveBeenCalledTimes(1)
     await act(async () => { resolveInstall!({ ok: true, harnessStarted: true }) })
-    await screen.findByText(en.installDone)
-    expect(unsubscribe).toHaveBeenCalledTimes(1)
+    expect((await screen.findByText(en.installDone)).getAttribute('role')).toBe('status')
     expect(install).toHaveBeenCalledTimes(1)
   })
 })

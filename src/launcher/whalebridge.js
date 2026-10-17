@@ -182,6 +182,14 @@ function createWhaleBridgeService(deps = {}) {
     }
   }
 
+  // The component writes its startup failure to this log; show its end in the error itself.
+  function logTail() {
+    try {
+      const lines = fs.readFileSync(path.join(root, 'data', 'component.log'), 'utf8').trim().split(/\r?\n/);
+      return lines.slice(-5).join('\n').slice(-1200);
+    } catch { return ''; }
+  }
+
   async function startRuntime(version, progress) {
     const current = state();
     if (current) {
@@ -218,6 +226,8 @@ function createWhaleBridgeService(deps = {}) {
     } catch (error) {
       if (child.pid && alive(child.pid)) kill(child.pid, { force: true });
       fs.rmSync(stateFile, { force: true });
+      const tail = logTail();
+      if (tail) error.message = `${error.message}\n${tail}`;
       throw error;
     }
   }
@@ -264,7 +274,8 @@ function createWhaleBridgeService(deps = {}) {
     if ((deps.platform || process.platform) !== 'win32' || (deps.arch || process.arch) !== 'x64') throw new Error('鲸桥首版支持 Windows x64');
     const version = await stage(progress);
     writeJson(installedFile, { version, previous: null });
-    await startRuntime(version, progress);
+    try { await startRuntime(version, progress); }
+    catch (error) { throw new Error(`鲸桥已安装，但启动失败：${error.message}`); }
     return { ok: true, component: row() };
   }); }
   function start(progress) { return locked(async () => {

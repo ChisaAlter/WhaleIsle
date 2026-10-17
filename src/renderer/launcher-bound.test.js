@@ -108,15 +108,13 @@ test('component feedback preserves buttons and layout, shows floating progress a
   }
   assert.match(r.downloading.progressBody, /正在下载组件 42%/);
   assert.match(r.verifying.progressBody, /正在校验组件 60%/);
-  assert.equal(r.installed.noticeTitle, '鲸桥安装完成');
-  assert.match(r.installed.noticeBody, /当前版本为 v1\.0\.3/);
+  assert.equal(r.installed.noticeVisible, false, 'the component card reports a completed install without a notice');
   assert.equal(r.installed.progressVisible, false, 'completed operation removes its progress panel');
   assert.equal(r.installed.modalVisible, false);
-  assert.equal(r.installed.noticeRole, 'status');
   assert.match(r.updating.progressBody, /正在下载组件 51%/);
   assert.equal(r.updateFailed.noticeTitle, '鲸桥操作未完成');
   assert.equal(r.updateFailed.notices.filter(notice => notice.body === 'fixture package refused').length, 1);
-  assert.equal(r.updateFailed.notices.length, 3, 'update has one result after the earlier failure and install result');
+  assert.equal(r.updateFailed.notices.length, 2, 'update has one result after the earlier failure');
 
   assert.equal(r.persistentErrorInline, false, 'catalog error stays available without a raw inline message');
   assert.equal(r.statusDetails.noticeTitle, '鲸桥状态');

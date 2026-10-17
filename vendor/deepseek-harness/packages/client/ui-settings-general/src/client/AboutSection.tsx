@@ -132,8 +132,6 @@ export function AboutSection({ t, openDesktopUpdate }: AboutSectionProps): React
         const message = result.error || 'failed'
         setHomeError(message)
         setNotice({ id: ++noticeId.current, text: t('about.openHomeError', { message }), success: false })
-      } else {
-        setNotice({ id: ++noticeId.current, text: t('about.openHomeDone'), success: true })
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

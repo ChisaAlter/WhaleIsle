@@ -391,14 +391,7 @@
       if (status) status.textContent = `${name}操作未完成：${failure}`;
       void window.appNotice({ title: `${name}操作未完成`, body: failure, tone: 'error' });
     } else if (completed && completionMessage) {
-      void window.appNotice({ title: `${name}操作结果`, body: completionMessage, tone: 'success' });
-    } else if (completed && (action === 'install' || action === 'update')) {
-      const version = state.rows.get(id)?.installedVersion;
-      void window.appNotice({
-        title: `${name}${action === 'install' ? '安装' : '更新'}完成`,
-        body: version ? `当前版本为 v${version}。` : '组件已就绪。',
-        tone: 'success',
-      });
+      void window.appNotice({ title: `${name}操作结果`, body: completionMessage });
     }
   }
 

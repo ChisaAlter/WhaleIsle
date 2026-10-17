@@ -7317,8 +7317,7 @@ function SlackCredentialPanel({ busy, error, onSubmit, onCancel }) {
           onClick: () => void copyManifest(),
           disabled: busy || copying,
           loading: copying
-        }, "\u590D\u5236 Manifest"),
-        copied ? h(FeedbackToast, { text: "\u5DF2\u590D\u5236 Manifest", holdMs: 2e3 }) : null,
+        }, copied ? h("span", { className: "dsl-copyState" }, "\u5DF2\u590D\u5236 Manifest") : "\u590D\u5236 Manifest"),
         copyError ? h(FeedbackToast, { text: copyError, tone: "error" }) : null,
         h("a", {
           className: "ddt-button",

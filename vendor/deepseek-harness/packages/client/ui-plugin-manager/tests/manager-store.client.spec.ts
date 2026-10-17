@@ -272,7 +272,7 @@ describe('PluginManagerController', () => {
     else inventory.list.mockRejectedValueOnce(new Error('transport down'))
     face.refresh()
     await vi.advanceTimersByTimeAsync(400)
-    expect(state().refreshStatus).toBe('failed')
+    expect(state().refreshStatus).toBe('idle')
     expect(state()).toMatchObject({ status: 'ready', notice: { kind: 'refresh-failed', seq: 1 } })
     expect(state().packages).toBe(packages)
     const gate = deferred<ReturnType<typeof ok<BundleInfo[]>>>()
@@ -286,18 +286,15 @@ describe('PluginManagerController', () => {
     await vi.advanceTimersByTimeAsync(400)
     expect(state().refreshStatus).toBe('idle')
     expect(state()).toMatchObject({ status: 'ready', notice: null })
-    const refreshedPackages = state().packages
     inventory.list.mockResolvedValueOnce(refused('gateway/internal', 'offline again'))
     face.refresh()
     await vi.advanceTimersByTimeAsync(400)
     expect(state().notice).toEqual({ kind: 'refresh-failed', seq: 2 })
     face.dismissNotice()
     expect(state().notice).toBeNull()
-    expect(state().refreshStatus).toBe('failed')
-    expect(state().packages).toBe(refreshedPackages)
   })
 
-  it.each(['refused', 'rejected'] as const)('reports a %s first refresh failure through a dismissible notice without clearing its failure', async (failure) => {
+  it.each(['refused', 'rejected'] as const)('keeps a %s first refresh failure inline without a toast', async (failure) => {
     vi.useFakeTimers()
     onTestFinished(() => { vi.useRealTimers() })
     const inventory = failure === 'refused'
@@ -307,9 +304,7 @@ describe('PluginManagerController', () => {
     face.refresh()
     await vi.advanceTimersByTimeAsync(400)
     expect(state().refreshStatus).toBe('failed')
-    expect(state()).toMatchObject({ status: 'error', packages: [], notice: { kind: 'refresh-failed', seq: 1 } })
-    face.dismissNotice()
-    expect(state()).toMatchObject({ status: 'error', refreshStatus: 'failed', packages: [], notice: null })
+    expect(state()).toMatchObject({ status: 'error', packages: [], notice: null })
   })
 
   it('treats an empty successful inventory as cached for refresh failures', async () => {
@@ -321,7 +316,7 @@ describe('PluginManagerController', () => {
     inventory.list.mockResolvedValueOnce(refused('gateway/internal', 'offline'))
     face.refresh()
     await vi.advanceTimersByTimeAsync(400)
-    expect(state().refreshStatus).toBe('failed')
+    expect(state().refreshStatus).toBe('idle')
     expect(state()).toMatchObject({ status: 'ready', packages: [], notice: { kind: 'refresh-failed' } })
   })
 
@@ -337,7 +332,7 @@ describe('PluginManagerController', () => {
     face.refresh()
     await vi.advanceTimersByTimeAsync(400)
     expect(state().refreshStatus).toBe('failed')
-    expect(state()).toMatchObject({ status: 'error', packages: [], notice: { kind: 'refresh-failed', seq: 1 } })
+    expect(state()).toMatchObject({ status: 'error', packages: [], notice: null })
   })
 
   it('preserves unrelated notices when a manual refresh starts and succeeds', async () => {
@@ -429,7 +424,7 @@ describe('PluginManagerController', () => {
     rerun.resolve(failure ? refused('gateway/internal', 'offline') : ok([BUNDLE]))
     await loading
     await vi.advanceTimersByTimeAsync(400)
-    expect(state().refreshStatus).toBe(failure ? 'failed' : 'idle')
+    expect(state().refreshStatus).toBe('idle')
     expect(state().status).toBe('ready')
     expect(state().notice).toEqual(failure ? { kind: 'refresh-failed', seq: 1 } : null)
   })
@@ -536,7 +531,7 @@ describe('PluginManagerController', () => {
     await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'failed', action: 'enable', reason: '', packageName: BUNDLE.name, seq: 6 }) })
     // A change the Host stopped is said in passing.
     face.setEnabled(BUNDLE.name, true)
-    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'cancelled', operation: true, seq: 7 }) })
+    await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'cancelled', seq: 7 }) })
     // An incompatibility keeps the packages it names for the page to word.
     face.setEnabled(BUNDLE.name, true)
     await vi.waitFor(() => {

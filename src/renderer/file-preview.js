@@ -80,7 +80,7 @@ function render(state) {
     const wrap = document.createElement('div');
     wrap.className = 'textWrap';
     if (state.truncated) {
-      truncationNotice = window.shellFeedback.notice({ body: textFor(state, 'truncated'), holdMs: null, dismissLabel: state.locale === 'en' ? 'Dismiss notice' : '关闭提示' });
+      truncationNotice = window.shellFeedback.notice({ body: textFor(state, 'truncated') });
     }
     const code = document.createElement('pre');
     code.className = 'code';

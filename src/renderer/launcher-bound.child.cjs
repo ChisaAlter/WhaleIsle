@@ -492,7 +492,7 @@ app.whenReady().then(async () => {
         button.focus(); button.click();
       })()`);
       const closeNotice = async () => {
-        await win.webContents.executeJavaScript('document.querySelector(".shell-feedback-toast .shell-feedback-close").click()');
+        await win.webContents.executeJavaScript('document.querySelectorAll(".shell-feedback-toast").forEach(node => node.remove())');
         await waitForDom('!document.querySelector(".shell-feedback-toast")');
       };
       const componentProgress = payload => win.webContents.send('shell:components-progress', { id: 'whalebridge', ...payload });
@@ -540,7 +540,7 @@ app.whenReady().then(async () => {
       await waitForDom('document.querySelector(".shell-feedback-progress p").textContent.includes("校验")');
       const verifying = await readFeedback();
       componentInstallResolve();
-      await waitForDom('document.querySelector(".shell-feedback-toast .shell-feedback-text")?.textContent.startsWith("鲸桥安装完成：")');
+      await waitForDom('!document.querySelector(".shell-feedback-progress")');
       const installed = await readFeedback();
       await captureBound('bound-component-installed.png');
       await closeNotice();

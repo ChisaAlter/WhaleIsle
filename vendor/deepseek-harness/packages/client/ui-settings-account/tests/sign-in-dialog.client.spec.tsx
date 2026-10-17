@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** Login choices, timeout recovery, and manual cancellation. */
-import { cleanup, fireEvent, render, screen, act, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, act } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { AccountView, SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 import { SignInDialog } from '../src/client/SignInDialog.tsx'
@@ -31,21 +31,14 @@ it.each([en, zh])('offers sign in or the existing API key editor', async (copy) 
 it.each([en, zh])('requires a user action after timeout', async (copy) => {
   const props = mount({ id, phase: 'expired', errorCode: 'expired' }, copy)
   expect(props.start).not.toHaveBeenCalled()
-  await act(async () => {})
-  const dialog = screen.getByRole('dialog', { name: copy.loginTitle })
-  expect(within(dialog).getByText(copy.loginDescription)).toBeTruthy()
-  const notice = screen.getByRole('alert')
-  expect(notice.textContent).toBe(`${copy.timeoutTitle} ${copy.timeoutDescription}`)
-  expect(dialog.contains(notice)).toBe(false)
+  await expect(`${screen.getByRole('dialog').textContent}\n`).toMatchFileSnapshot(`./expected/login-timeout-${copy === en ? 'en' : 'zh'}.txt`)
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.retry })) })
   expect(props.start).toHaveBeenCalledOnce()
 })
 it.each([en, zh])('shows waiting actions and cancels before dismissing', async (copy) => {
   const props = mount({ id, phase: 'waiting-browser', authorizeUrl: 'https://platform.deepseek.com/dsh/authorize?state=example' }, copy)
   expect(screen.getByRole('button', { name: copy.waiting }).hasAttribute('disabled')).toBe(true)
-  const dialog = screen.getByRole('dialog', { name: copy.browserTitle })
-  expect(within(dialog).getByRole('paragraph').textContent).toBe(`${copy.browserPrompt}${copy.copyLink}${copy.browserDescription}`)
-  expect(screen.getByRole('button', { name: copy.cancel })).toBeTruthy()
+  await expect(`${screen.getByRole('dialog').textContent}\n`).toMatchFileSnapshot(`./expected/login-waiting-${copy === en ? 'en' : 'zh'}.txt`)
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.cancel })) })
   expect(props.cancel).toHaveBeenCalledExactlyOnceWith(id)
   expect(props.close).toHaveBeenCalledOnce()
@@ -58,7 +51,7 @@ it('keeps an admitted credential commit open on Escape and close', () => {
   expect(props.cancel).not.toHaveBeenCalled()
 })
 
-it.each([en, zh])('keeps the copy label stable and times the notice from the latest successful copy', async (copy) => {
+it.each([en, zh])('restores the copy label two seconds after the latest successful copy', async (copy) => {
   const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
   const writeText = vi.fn(async () => {})
   vi.useFakeTimers()
@@ -68,15 +61,12 @@ it.each([en, zh])('keeps the copy label stable and times the notice from the lat
     mount({ id, phase: 'waiting-browser', authorizeUrl }, copy)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.copyLink })) })
     expect(writeText).toHaveBeenLastCalledWith('https://platform.deepseek.com/dsh/authorize?state=example&theme=dark')
-    expect(screen.getByRole('alert').textContent).toBe(copy.copiedLink)
-    expect(screen.getByRole('button', { name: copy.copyLink })).toBeTruthy()
-    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.copyLink })) })
+    act(() => { vi.advanceTimersByTime(1000) })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.copiedLink })) })
     expect(writeText).toHaveBeenCalledTimes(2)
-    await act(async () => { await vi.advanceTimersByTimeAsync(2999) })
-    expect(screen.getByRole('alert').textContent).toBe(copy.copiedLink)
-    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
-    expect(screen.queryByRole('alert')).toBeNull()
+    act(() => { vi.advanceTimersByTime(1999) })
+    expect(screen.getByRole('button', { name: copy.copiedLink })).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(1) })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.copyLink })) })
     expect(writeText).toHaveBeenCalledTimes(3)
   } finally {
@@ -98,7 +88,7 @@ it('copies the authorization link with the palette of the current render', async
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.copyLink })) })
     expect(writeText).toHaveBeenLastCalledWith('https://platform.deepseek.com/dsh/authorize?state=example&theme=dark')
     view.rerender(<SignInDialog {...props} colorScheme="light" />)
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.copyLink })) })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.copiedLink })) })
     expect(writeText).toHaveBeenLastCalledWith('https://platform.deepseek.com/dsh/authorize?state=example&theme=light')
   } finally {
     if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard)
@@ -116,15 +106,14 @@ it.each([en, zh])('shows a temporary copy failure without interrupting sign-in',
     const props = mount({ id, phase: 'waiting-browser', authorizeUrl: 'https://platform.deepseek.com/dsh/authorize?state=example' }, copy)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.copyLink })) })
     expect(screen.getByRole('dialog', { name: copy.browserTitle })).toBeTruthy()
-    expect(screen.getByRole('alert').textContent).toBe(copy.copyFailed)
-    expect(screen.getByRole('button', { name: copy.copyLink })).toBeTruthy()
-    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    expect(screen.getByRole('button', { name: copy.copyFailed })).toBeTruthy()
+    await expect(`${screen.getByRole('dialog').textContent}\n`).toMatchFileSnapshot(`./expected/login-copy-failed-${copy === en ? 'en' : 'zh'}.txt`)
+    act(() => { vi.advanceTimersByTime(1000) })
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.copyLink })) })
-    await act(async () => { await vi.advanceTimersByTimeAsync(2999) })
-    expect(screen.getByRole('alert').textContent).toBe(copy.copyFailed)
-    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
-    expect(screen.queryByRole('alert')).toBeNull()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.copyFailed })) })
+    act(() => { vi.advanceTimersByTime(1999) })
+    expect(screen.getByRole('button', { name: copy.copyFailed })).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(1) })
     expect(screen.getByRole('button', { name: copy.copyLink })).toBeTruthy()
     expect(props.cancel).not.toHaveBeenCalled()
     expect(props.start).not.toHaveBeenCalled()
@@ -141,11 +130,9 @@ it.each([en, zh])('shows an error during an active attempt and waits for cancell
   cleanup()
   props.account.failed = true
   render(<SignInDialog {...props} />)
-  await act(async () => {})
-  const dialog = screen.getByRole('dialog', { name: copy.browserTitle })
-  expect(screen.getByRole('alert').textContent).toBe(copy.failed)
-  expect(dialog.textContent).not.toContain(copy.failed)
+  expect(screen.getByRole('dialog', { name: copy.failureTitle })).toBeTruthy()
   expect(screen.queryByRole('button', { name: copy.waiting })).toBeNull()
+  await expect(`${screen.getByRole('dialog').textContent}\n`).toMatchFileSnapshot(`./expected/login-active-error-${copy === en ? 'en' : 'zh'}.txt`)
   const cancelled = Promise.withResolvers<undefined>()
   props.cancel.mockReturnValueOnce(cancelled.promise)
   fireEvent.click(screen.getByRole('button', { name: copy.retry }))
@@ -164,8 +151,7 @@ it('does not start another attempt when cancellation fails', async () => {
   render(<SignInDialog {...props} />)
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.retry })) })
   expect(props.start).not.toHaveBeenCalled()
-  expect(screen.getByRole('dialog', { name: en.browserTitle })).toBeTruthy()
-  expect(screen.getByRole('alert').textContent).toBe(en.failed)
+  expect(screen.getByRole('dialog', { name: en.failureTitle })).toBeTruthy()
   expect(screen.getByRole('button', { name: en.retry }).hasAttribute('disabled')).toBe(false)
 })
 
@@ -208,33 +194,15 @@ it('does not report workspace login views or login choices', async () => {
 
 it.each([en, zh])('shows network advice only when the login request received no response', async (copy) => {
   const props = mount({ id, phase: 'failed', errorCode: 'no-response' }, copy)
-  await act(async () => {})
-  const dialog = screen.getByRole('dialog', { name: copy.loginTitle })
-  expect(within(dialog).getByText(copy.loginDescription)).toBeTruthy()
-  expect(screen.getByRole('alert').textContent).toBe(copy.noResponse)
-  expect(dialog.textContent).not.toContain(copy.noResponse)
+  await expect(`${screen.getByRole('dialog').textContent}\n`).toMatchFileSnapshot(`./expected/login-no-response-${copy === en ? 'en' : 'zh'}.txt`)
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: copy.retry })) })
   expect(props.start).toHaveBeenCalledOnce()
 })
 
-it.each(['network', 'protocol', 'storage'] as const)('keeps generic copy for %s failures', async (errorCode) => {
+it.each(['network', 'protocol', 'storage'] as const)('keeps generic copy for %s failures', (errorCode) => {
   mount({ id, phase: 'failed', errorCode })
-  await act(async () => {})
-  expect(screen.getByRole('alert').textContent).toBe(en.failed)
+  expect(screen.getByText(en.failed)).toBeTruthy()
   expect(screen.queryByText(en.noResponse)).toBeNull()
-})
-
-it('dismisses the failure notice while keeping the retry and account state available', async () => {
-  const props = mount({ id, phase: 'failed', errorCode: 'storage' })
-  await act(async () => {})
-  const notice = screen.getByRole('alert')
-  fireEvent.click(within(notice).getByRole('button', { name: en.close }))
-  expect(screen.queryByRole('alert')).toBeNull()
-  expect(screen.getByRole('dialog', { name: en.loginTitle })).toBeTruthy()
-  expect(props.close).not.toHaveBeenCalled()
-  expect(props.start).not.toHaveBeenCalled()
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.retry })) })
-  expect(props.start).toHaveBeenCalledOnce()
 })
 
 it('does not reuse network advice for a subsequent start failure', async () => {

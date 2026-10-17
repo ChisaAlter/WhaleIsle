@@ -28,7 +28,7 @@ export type SettingsDocumentActionProps =
  */
 export function SettingsDocumentAction({ controller, useSnapshot, t }: SettingsDocumentActionProps): ReactNode {
   const state = useSnapshot(snapshot => snapshot)
-  const [notice, setNotice] = useState<{ id: number; text: string; success: boolean } | null>(null)
+  const [notice, setNotice] = useState<{ id: number; text: string } | null>(null)
   const noticeId = useRef(0)
 
   useEffect(() => {
@@ -47,16 +47,13 @@ export function SettingsDocumentAction({ controller, useSnapshot, t }: SettingsD
         title={state.error !== null ? t('openDocument.error') : undefined}
         onClick={() => {
           void controller.open().then(accepted => {
-            if (accepted === undefined) return
-            setNotice({ id: ++noticeId.current, text: t(accepted ? 'openDocument.done' : 'openDocument.error'), success: accepted })
+            if (accepted === false) setNotice({ id: ++noticeId.current, text: t('openDocument.error') })
           })
         }}
       >
         {t('openDocument')}
       </Button>
-      {notice !== null && <Toast key={notice.id} text={notice.text}
-        {...notice.success ? { tone: 'success' as const } : {}}
-        holdMs={notice.success ? 3000 : null} dismissLabel={t('close')} onDone={() => { setNotice(null) }} />}
+      {notice !== null && <Toast key={notice.id} text={notice.text} onDone={() => { setNotice(null) }} />}
     </div>
   )
 }

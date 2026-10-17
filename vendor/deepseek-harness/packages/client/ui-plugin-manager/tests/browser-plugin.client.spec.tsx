@@ -170,8 +170,7 @@ describe('ui-plugin-manager browser plugin', () => {
     const overlayFace = overlayInjected as PluginRefreshToastFace
     expect(overlayFace.hooks.pluginManager).toBe(face.hooks.pluginManager)
     expect(overlayFace.dismissNotice).toBe(face.dismissNotice)
-    expect(overlayFace.refresh).toBe(face.refresh)
-    expect(Object.keys(overlayFace).sort()).toEqual(['dismissNotice', 'hooks', 'refresh'])
+    expect(Object.keys(overlayFace).sort()).toEqual(['dismissNotice', 'hooks'])
     expect(Object.keys(overlayFace.hooks)).toEqual(['pluginManager'])
     const text = { en: 'Local tools', zh: '本地工具' }
     expect(face.resolveText(text)).toBe('本地工具')

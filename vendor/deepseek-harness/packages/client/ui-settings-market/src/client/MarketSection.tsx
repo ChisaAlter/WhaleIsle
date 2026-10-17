@@ -77,7 +77,6 @@ type Notice = { kind: 'ok' | 'error'; text: string; retry?: 'catalog' } | null
 
 type AllowBuildsAsk = { kind: 'install' | 'update'; item: MarketItem; keys: string[] } | null
 
-const PROGRESS_LINES = 6
 
 /**
  * Discover cards rendered per page. The curated registry carries thousands of
@@ -201,7 +200,6 @@ export function MarketSection({
   install,
   update,
   uninstall,
-  onProgress,
 }: MarketSectionProps): ReactNode {
   const [state, setState] = useState<CatalogState>({ status: 'loading' })
   const [reloading, setReloading] = useState(false)
@@ -216,11 +214,9 @@ export function MarketSection({
   const [categoriesExpanded, setCategoriesExpanded] = useState(false)
   const [visibleCount, setVisibleCount] = useState(DISCOVER_PAGE_SIZE)
   const [busy, setBusy] = useState<BusyOp>(null)
-  const [progress, setProgress] = useState<string[]>([])
   const [notice, setNotice] = useState<Notice>(null)
   const [noticeDismissed, setNoticeDismissed] = useState(false)
   const [noticeSequence, setNoticeSequence] = useState(0)
-  const [progressDismissed, setProgressDismissed] = useState(false)
   const marketStateReadFailed = useRef(false)
   const notify = useCallback((value: Notice): void => {
     setNotice(value)
@@ -339,14 +335,6 @@ export function MarketSection({
     setBusy(op)
     setNotice(null)
     setAsk(null)
-    setProgress([])
-    setProgressDismissed(false)
-    const off = onProgress((payload) => {
-      if (!alive.current) return
-      const line = payload.phase === 'restart' ? t('restarting') : payload.line
-      if (!line) return
-      setProgress(current => [...current.slice(-(PROGRESS_LINES - 1)), line])
-    })
     try {
       const result = await work()
       if (!alive.current) return
@@ -380,17 +368,15 @@ export function MarketSection({
         notify({ kind: 'error', text: t('opFailed', { message: caught instanceof Error ? caught.message : String(caught) }) })
       }
     } finally {
-      off()
       operationLock.current = false
       if (alive.current) {
         setBusy(null)
-        setProgress([])
         void reloadInstalled()
         void reloadUpdates(true)
         void reloadMarketState()
       }
     }
-  }, [onProgress, reloadInstalled, reloadUpdates, reloadMarketState, state, notify, t])
+  }, [reloadInstalled, reloadUpdates, reloadMarketState, state, notify, t])
 
   const startInstall = useCallback((item: MarketItem, allowBuilds?: string[]) => {
     void runOp(
@@ -454,12 +440,9 @@ export function MarketSection({
 
   return (
     <div className={css.section} aria-busy={state.status === 'loading'}>
-      {busy !== null && !progressDismissed ? <Toast text={progress.at(-1) || t(busy.kind === 'install' ? 'installing' : busy.kind === 'uninstall' ? 'uninstalling' : 'updating')}
-        holdMs={null} dismissLabel={t('close')} onDone={() => { setProgressDismissed(true) }} />
-        : notice === null || noticeDismissed ? null : <Toast key={noticeSequence} text={notice.text}
-          {...notice.kind === 'ok' ? { tone: 'success' as const } : { holdMs: notice.retry ? null : 9000 }}
-          {...notice.retry ? { actions: [{ label: t('retry'), onClick: () => { void load(true) } }], dismissLabel: t('close') } : {}}
-          onDone={() => { setNoticeDismissed(true) }} />}
+      {notice?.kind !== 'error' || noticeDismissed ? null : <Toast key={noticeSequence} text={notice.text}
+        {...notice.retry ? { holdMs: null, actions: [{ label: t('retry'), onClick: () => { void load(true) } }] } : { holdMs: 9000 }}
+        onDone={() => { setNoticeDismissed(true) }} />}
       {details ? <MarketDetails key={details.id} item={details} getDetails={getDetails} t={t} onClose={() => { setDetails(null) }} /> : null}
       {confirmation ? <Modal open title={t(confirmation.kind === 'install' ? 'confirmInstall' : confirmation.kind === 'batch' ? 'confirmBatch' : 'confirmUninstall')}
         className={css.confirmModal} contentClassName={css.dialogContent}
@@ -522,6 +505,7 @@ export function MarketSection({
               aria-selected={tab === value} aria-controls={`market-panel-${value}`} active={tab === value}
               onClick={() => { setTab(value) }}>{t(value === 'favorites' ? 'tabFavorites' : 'tabHistory')}</Pill>)}
           </div>
+          {notice?.kind === 'ok' ? <p className={css.notice} data-kind="ok" role="status">{notice.text}</p> : null}
           {ask ? (
             <Modal open title={t('allowBuildsAsk', { name: ask.item.repo })} closeLabel={t('close')} onClose={() => { setAsk(null) }}
               className={css.confirmModal} contentClassName={css.dialogContent} footer={<>

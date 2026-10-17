@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { IconCheckCircleOutlineRegular, IconCloseOutlineRegular } from './icons/index.tsx'
+import { IconCheckCircleOutlineRegular } from './icons/index.tsx'
 import { acquireToastStack, registerToastLayer } from './useModalLayer.ts'
 import css from './Toast.module.css'
 
@@ -9,6 +9,8 @@ import css from './Toast.module.css'
 const HOLD_MS = 3000
 /** Fade duration. Must agree with the stylesheet's toast-fade duration. */
 const FADE_MS = 1000
+/** Hold for a notice that carries a recovery action, long enough to reach it. */
+const ACTION_HOLD_MS = 6000
 
 /**
  * Transient top-center banner: slides in, holds at full opacity, fades out,
@@ -38,24 +40,27 @@ const FADE_MS = 1000
  * change, then unmount the toast). The banner surface stays click-through —
  * only the action text takes the pointer.
  * @param props.holdMs - full-opacity hold before the fade; defaults to 3000.
+ * Every banner fades on its own: `null` holds for {@link ACTION_HOLD_MS}, and
+ * `dismissLabel` no longer renders a close control.
  * @param props.anchor - optional element whose horizontal center the banner
  * follows (e.g. the composer card, so the banner centers over the chat column
  * rather than the whole window); omitted, it centers on the viewport.
  * @param props.onDone - called once the fade completes; unmount the toast here.
  * @returns the floating banner.
  */
-export function Toast({ text, icon, tone, anchor, holdMs = HOLD_MS, actions, dismissLabel, onDone }: {
+export function Toast({ text, icon, tone, anchor, holdMs: requestedHold = HOLD_MS, actions, onDone }: {
   text: string
   icon?: ReactNode
   tone?: 'success' | undefined
   anchor?: HTMLElement | null
-  /** Null keeps an actionable notice until its owner or the user dismisses it. */
+  /** Null asks for the longer hold of a notice with a recovery action. */
   holdMs?: number | null | undefined
   actions?: readonly { label: string; prefix?: string; disabled?: boolean | undefined; onClick: () => void }[] | undefined
-  /** Localized accessible name for the optional close control. */
+  /** Accepted from existing owners; banners render no close control. */
   dismissLabel?: string | undefined
   onDone: () => void
 }) {
+  const holdMs = requestedHold ?? ACTION_HOLD_MS
   const owner = useRef<HTMLSpanElement>(null)
   const surface = useRef<HTMLDivElement>(null)
   const [stack, setStack] = useState<HTMLElement | null>(null)
@@ -80,7 +85,7 @@ export function Toast({ text, icon, tone, anchor, holdMs = HOLD_MS, actions, dis
     setAnimationElapsed(0)
   }, [holdMs])
   useEffect(() => {
-    if (holdMs === null || !visible) return
+    if (!visible) return
     const started = performance.now()
     const timer = setTimeout(() => { latestOnDone.current() }, Math.max(0, holdMs + FADE_MS - elapsed.current))
     return () => {
@@ -111,10 +116,9 @@ export function Toast({ text, icon, tone, anchor, holdMs = HOLD_MS, actions, dis
       role="alert"
       hidden={!visible}
       data-dsh-toast=""
-      data-persistent={holdMs === null || undefined}
       style={{
         ...left === null ? {} : { left },
-        '--dsh-toast-hold': `${String(holdMs ?? HOLD_MS)}ms`,
+        '--dsh-toast-hold': `${String(holdMs)}ms`,
         '--dsh-toast-elapsed': `${String(animationElapsed)}ms`,
       } as CSSProperties}
     >
@@ -132,10 +136,6 @@ export function Toast({ text, icon, tone, anchor, holdMs = HOLD_MS, actions, dis
           </Fragment>
         ))}
       </span>
-      {dismissLabel !== undefined && <button type="button" className={css.dismiss}
-        aria-label={dismissLabel} onClick={() => { latestOnDone.current() }}>
-        <IconCloseOutlineRegular size={14} />
-      </button>}
     </div>,
     stack,
   )}</>

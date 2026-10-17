@@ -62,7 +62,6 @@ test('real Electron: floating results preserve layout, safe confirmation and tas
   assert.deepEqual(result.confirmSafe, { title: '确认删除', focus: 'app-confirm-cancel' });
   assert.equal(result.confirmRetry, 'shell-feedback-action');
   assert.equal(result.retryCalls, 1);
-  assert.equal(result.confirmToastClose, 'shell-feedback-close');
   assert.deepEqual(result.confirmAfterToastEscape, { title: '确认删除', hidden: false, answer: null, toasts: 0 });
   assert.equal(result.confirmAnswer, false);
   assert.equal(result.progress.modalHidden, true);

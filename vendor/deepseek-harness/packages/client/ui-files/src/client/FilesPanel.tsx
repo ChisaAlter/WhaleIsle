@@ -169,7 +169,7 @@ export function FilesPanel({
   const [childrenByPath, setChildrenByPath] = useState<Record<string, TreeEntry[]>>({})
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState<number | null>(null)
+  const [copied, setCopied] = useState(false)
   const [notification, setNotification] = useState<{ id: number; text: string } | null>(null)
   const notificationId = useRef(0)
   const notifyError = useCallback((message: string): void => {
@@ -321,7 +321,8 @@ export function FilesPanel({
   const copyPath = (value: string): void => {
     void writeClipboard(value).then((ok) => {
       if (!ok) return
-      setCopied(++notificationId.current)
+      setCopied(true)
+      window.setTimeout(() => { setCopied(false) }, 1200)
     })
   }
 
@@ -362,6 +363,7 @@ export function FilesPanel({
           onChange={(event) => { setQuery(event.target.value) }}
           onKeyDown={onSearchKey}
         />
+        {copied && <span className={css.copied} role="status">{t('copied')}</span>}
         <Tooltip label={t('refresh')} side="bottom">
           <Button
             variant="ghost"
@@ -433,8 +435,6 @@ export function FilesPanel({
           )
         )}
       </div>
-      {copied !== null && <Toast key={copied} text={t('copied')} tone="success" holdMs={1200}
-        onDone={() => { setCopied(null) }} />}
       {notification !== null && <Toast key={notification.id} text={notification.text}
         icon={<IconWarningOutline16 />} holdMs={null} dismissLabel={t('unsaved.close')}
         actions={[{ label: t('refresh'), onClick: reload }]}
