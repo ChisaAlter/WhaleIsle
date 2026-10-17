@@ -72,7 +72,7 @@ function createProjectEnvironment(options = {}) {
     if (result.code !== 0 || result.truncated) throw new Error(gitFailureMessage(result, `git ${args[0]} 失败`));
     return result.stdout.trim();
   }
-  async function repositoryAt(canonicalPath) {
+  async function repositoryAt(canonicalPath, readStatus = true) {
     const detected = await git(canonicalPath, ['rev-parse', '--show-toplevel']);
     if (detected.code !== 0) return { ok: true, canonicalPath, isGit: false, repoIdentity: null,
       repositoryRoot: null, branch: null, headCommit: null, dirty: null };
@@ -81,9 +81,9 @@ function createProjectEnvironment(options = {}) {
     const commonPath = fs.realpathSync.native(path.resolve(canonicalPath, common));
     const head = await git(canonicalPath, ['rev-parse', '--verify', 'HEAD^{commit}']);
     const branch = await git(canonicalPath, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
-    const status = await command(canonicalPath, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
+    const status = readStatus ? await command(canonicalPath, ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all']) : null;
     return { ok: true, canonicalPath, isGit: true, repositoryRoot, repoIdentity: digest(identity(commonPath)),
-      branch: branch.code === 0 ? branch.stdout.trim() : null, headCommit: head.code === 0 ? head.stdout.trim() : null, dirty: Boolean(status) };
+      branch: branch.code === 0 ? branch.stdout.trim() : null, headCommit: head.code === 0 ? head.stdout.trim() : null, dirty: readStatus ? Boolean(status) : null };
   }
   const repository = workingDirectory => repositoryAt(canonicalize(workingDirectory).canonicalPath);
   async function worktreeRegistration(root, cwd) {
@@ -96,7 +96,7 @@ function createProjectEnvironment(options = {}) {
     }
     return null;
   }
-  async function checkWorkspace(projectId, workstreamId, expected) {
+  async function checkWorkspace(projectId, workstreamId, expected, readStatus = true) {
     const { binding } = bindingFor(projectId, workstreamId);
     if (binding.state !== 'ready') throw new Error('后台工作目录尚未准备完成或已清理');
     const cwd = fs.realpathSync.native(binding.canonicalPath);
@@ -108,7 +108,7 @@ function createProjectEnvironment(options = {}) {
       if (identity(cwd) !== identity(ownedPath('project-worktrees', projectId, workstreamId))) throw new Error('独立工作目录不属于该 Project');
     } else if (binding.ownership === 'user') canonicalize(cwd);
     else throw new Error('后台工作目录所有权无效');
-    const current = await repositoryAt(cwd);
+    const current = await repositoryAt(cwd, readStatus);
     if (current.repoIdentity !== binding.repoIdentity || current.branch !== binding.branch) throw new Error('工作目录的仓库或分支已变化；请先核对续接条件');
     if (binding.ownership === 'project') {
       const registered = await worktreeRegistration(binding.repositoryRoot, cwd);
@@ -237,18 +237,79 @@ function createProjectEnvironment(options = {}) {
   }
   // Requirement change tracking. A private temporary index records the working tree as a Git tree object;
   // the user's index, refs and files are never modified, only unreferenced objects are added.
-  async function changeScope(workingDirectory) {
-    const current = await repository(workingDirectory);
+  async function changeScope(payload) {
+    const current = payload.workstreamId
+      ? await repositoryAt((await checkWorkspace(payload.projectId, payload.workstreamId, payload.workspace, false)).canonicalPath, false)
+      : await repositoryAt(canonicalize(payload.workingDirectory).canonicalPath, false);
     if (!current.isGit) return { current };
-    const pathspec = path.relative(current.repositoryRoot, current.canonicalPath).split(path.sep).join('/') || '.';
+    const relative = path.relative(current.repositoryRoot, current.canonicalPath).split(path.sep).join('/') || '.';
+    const pathspec = `:(literal)${relative}`;
     return { current, root: current.repositoryRoot, pathspec };
   }
-  async function captureTree(root, pathspec) {
+  function authorizeChangePaths(root, workingDirectory, names) {
+    const scoped = createWorkspaceAuthority({ workspace: workingDirectory });
+    for (const relativePath of names.split('\0').filter(Boolean)) {
+      if (!scoped.resolveInside(workingDirectory, path.relative(workingDirectory, path.resolve(root, relativePath)))) {
+        throw new Error(`需求快照路径超出授权工作目录：${relativePath}`);
+      }
+    }
+  }
+  function authorizeDiffPaths(root, workingDirectory, names) {
+    authorizeChangePaths(root, workingDirectory, names);
+    const attributes = new Set();
+    for (const name of names.split('\0').filter(Boolean)) {
+      let directory = path.dirname(path.resolve(root, name));
+      while (isPathInside(root, directory)) {
+        attributes.add(path.relative(root, path.join(directory, '.gitattributes')));
+        if (identity(directory) === identity(root)) break;
+        directory = path.dirname(directory);
+      }
+    }
+    // Tree-to-tree numstat and patches still consult working-tree attributes.
+    // Repository ancestors remain valid metadata for a Project bound to a subdirectory.
+    authorizeChangePaths(root, root, [...attributes].join('\0'));
+  }
+  async function authorizeUntrackedPaths(root, workingDirectory, limits) {
+    const pending = [{ directory: workingDirectory, ancestors: [] }];
+    const scoped = createWorkspaceAuthority({ workspace: workingDirectory });
+    while (pending.length) {
+      const { directory, ancestors } = pending.pop(), real = identity(fs.realpathSync.native(directory));
+      if (ancestors.includes(real)) throw new Error('需求快照包含循环目录链接');
+      const children = fs.readdirSync(directory).filter(name => name.toLowerCase() !== '.git');
+      if (!children.length) continue;
+      const specs = children.map(name => `:(literal)${path.relative(root, path.join(directory, name)).split(path.sep).join('/')}`);
+      // Do not load ignore files yet: a directory junction can hide an external
+      // .gitignore. Explicit child specs keep untracked directories opaque here.
+      const listed = await git(root, ['ls-files', '--others', '--directory', '-z', '--', ...specs], limits);
+      if (listed.code !== 0 || listed.truncated) throw new Error(gitFailureMessage(listed, '读取需求快照路径失败'));
+      const candidates = listed.stdout.split('\0').filter(Boolean);
+      for (const name of candidates) {
+        if (['.gitignore', '.gitattributes'].includes(path.basename(name))) authorizeChangePaths(root, workingDirectory, name);
+      }
+      for (const name of candidates) {
+        const target = path.resolve(root, name), isDirectory = name.endsWith('/');
+        if (isDirectory || !scoped.resolveInside(workingDirectory, path.relative(workingDirectory, target))) {
+          const ignored = await git(root, ['check-ignore', '--no-index', '--quiet', '--', name.replace(/\/$/, '')], limits);
+          if (ignored.code === 0 && !ignored.truncated) continue;
+          if (ignored.code !== 1 || ignored.truncated) throw new Error(gitFailureMessage(ignored, '检查需求快照忽略规则失败'));
+        }
+        authorizeChangePaths(root, workingDirectory, name);
+        if (isDirectory && !fs.existsSync(path.join(target, '.git'))) pending.push({ directory: target, ancestors: [...ancestors, real] });
+      }
+    }
+  }
+  async function captureTree(root, pathspec, workingDirectory) {
     const indexPath = path.resolve(root, await command(root, ['rev-parse', '--git-path', 'index']));
     const temporary = path.join(os.tmpdir(), `whale-project-index-${crypto.randomUUID()}`);
     try {
       if (fs.existsSync(indexPath)) fs.copyFileSync(indexPath, temporary);
       const limits = { env: { GIT_INDEX_FILE: temporary } };
+      // Check tracked paths before any working-tree scan can read through a replaced
+      // parent, then authorize untracked directories before loading their ignore files.
+      const candidates = await git(root, ['ls-files', '--cached', '-z', '--', pathspec], limits);
+      if (candidates.code !== 0 || candidates.truncated) throw new Error(gitFailureMessage(candidates, '读取需求快照路径失败'));
+      authorizeChangePaths(root, workingDirectory, candidates.stdout);
+      await authorizeUntrackedPaths(root, workingDirectory, limits);
       await command(root, ['add', '--all', '--', pathspec], limits);
       return await command(root, ['write-tree'], limits);
     } finally { fs.rmSync(temporary, { force: true }); }
@@ -262,15 +323,18 @@ function createProjectEnvironment(options = {}) {
     });
   }
   async function baseline(payload) {
-    const { current, root, pathspec } = await changeScope(payload.workingDirectory);
+    const { current, root, pathspec } = await changeScope(payload);
     if (!current.isGit) return { ok: true, isGit: false };
-    return { ok: true, isGit: true, tree: await captureTree(root, pathspec), headCommit: current.headCommit };
+    return { ok: true, isGit: true, tree: await captureTree(root, pathspec, current.canonicalPath), headCommit: current.headCommit };
   }
   async function changes(payload) {
-    const { current, root, pathspec } = await changeScope(payload.workingDirectory);
+    const { current, root, pathspec } = await changeScope(payload);
     if (!current.isGit) throw new Error('该目录不是 Git 仓库，无法读取需求改动');
-    const base = treeId(payload.base), end = payload.end ? treeId(payload.end) : await captureTree(root, pathspec);
+    const base = treeId(payload.base), end = payload.end ? treeId(payload.end) : await captureTree(root, pathspec, current.canonicalPath);
     const args = ['-c', 'core.quotepath=off', 'diff', '--no-renames', base, end];
+    const targets = await git(root, [...args, '--name-only', '-z', '--', pathspec]);
+    if (targets.code !== 0 || targets.truncated) throw new Error(gitFailureMessage(targets, '读取需求改动路径失败'));
+    authorizeDiffPaths(root, current.canonicalPath, targets.stdout);
     const files = changeRows(await command(root, [...args, '--numstat', '--', pathspec]), await command(root, [...args, '--name-status', '--', pathspec]));
     if (!payload.diff) return { ok: true, files, end };
     const diff = await git(root, [...args, '--', pathspec], { maxBytes: 1024 * 1024 });
@@ -279,9 +343,12 @@ function createProjectEnvironment(options = {}) {
   }
   // Revert applies the delivered-to-baseline patch only when it applies cleanly; otherwise nothing is changed.
   async function revert(payload) {
-    const { current, root, pathspec } = await changeScope(payload.workingDirectory);
+    const { current, root, pathspec } = await changeScope(payload);
     if (!current.isGit) throw new Error('该目录不是 Git 仓库，无法撤销');
     const base = treeId(payload.base), end = treeId(payload.end);
+    const targets = await git(root, ['diff', '--name-only', '--no-renames', '-z', end, base, '--', pathspec]);
+    if (targets.code !== 0 || targets.truncated) throw new Error(gitFailureMessage(targets, '读取撤销路径失败'));
+    authorizeDiffPaths(root, current.canonicalPath, targets.stdout);
     const patch = await git(root, ['diff', '--binary', '--no-renames', end, base, '--', pathspec], { maxBytes: 64 * 1024 * 1024 });
     if (patch.code !== 0 || patch.truncated) throw new Error(gitFailureMessage(patch, '生成撤销补丁失败'));
     if (!patch.stdout.trim()) return { ok: true, applied: false };
@@ -290,6 +357,7 @@ function createProjectEnvironment(options = {}) {
     try {
       const check = await git(root, ['apply', '--check', '--whitespace=nowarn', file]);
       if (check.code !== 0) return { ok: true, applied: false, conflict: true, message: redact(check.stderr || check.stdout).slice(0, 4000) };
+      if (payload.checkOnly) return { ok: true, applied: false };
       await command(root, ['apply', '--whitespace=nowarn', file]);
       return { ok: true, applied: true };
     } finally { fs.rmSync(file, { force: true }); }

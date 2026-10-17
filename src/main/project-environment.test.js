@@ -217,6 +217,12 @@ test('requirement changes use a private index, exclude earlier edits, revert cle
   const again = await environment.dispatch({ action: 'changes', workingDirectory: source, base: start.tree, end: delivered.end });
   assert.equal(again.end, delivered.end);
 
+  const checked = await environment.dispatch({ action: 'revert', workingDirectory: source, base: start.tree, end: delivered.end, checkOnly: true });
+  assert.deepEqual(checked, { ok: true, applied: false });
+  assert.equal(fs.readFileSync(path.join(source, 'file.txt'), 'utf8'), 'changed by the requirement\n', 'preflight does not apply the patch');
+  assert.equal(fs.readFileSync(path.join(source, 'added.txt'), 'utf8'), 'new file\n');
+  assert.equal(await git(source, ['diff', '--cached', '--name-only']), stagedBefore);
+
   const reverted = await environment.dispatch({ action: 'revert', workingDirectory: source, base: start.tree, end: delivered.end });
   assert.equal(reverted.applied, true);
   assert.equal(fs.readFileSync(path.join(source, 'file.txt'), 'utf8'), 'baseline\n');
@@ -229,6 +235,8 @@ test('requirement changes use a private index, exclude earlier edits, revert cle
   fs.writeFileSync(path.join(source, 'file.txt'), 'user edit after delivery\n');
   const conflict = await environment.dispatch({ action: 'revert', workingDirectory: source, base: second.tree, end });
   assert.equal(conflict.applied, false); assert.equal(conflict.conflict, true); assert.ok(conflict.message);
+  const preflightConflict = await environment.dispatch({ action: 'revert', workingDirectory: source, base: second.tree, end, checkOnly: true });
+  assert.equal(preflightConflict.applied, false); assert.equal(preflightConflict.conflict, true);
   assert.equal(fs.readFileSync(path.join(source, 'file.txt'), 'utf8'), 'user edit after delivery\n', 'a conflicting revert changes nothing');
   await assert.rejects(environment.dispatch({ action: 'revert', workingDirectory: source, base: 'not-a-tree', end }), /无效的改动记录/);
 });
@@ -236,4 +244,131 @@ test('requirement changes use a private index, exclude earlier edits, revert cle
 test('requirement baselines report non-Git directories without failing', async t => {
   const { source, environment } = await fixture(t, false);
   assert.deepEqual(await environment.dispatch({ action: 'baseline', workingDirectory: source }), { ok: true, isGit: false });
+});
+
+test('requirement capture refuses junction escapes before writing Git objects or changing the user index', async t => {
+  const { source, directory, home, authority, git } = await fixture(t);
+  const environment = createProjectEnvironment({ home, authority, runGit: (cwd, args, limits) => {
+    assert.ok(!args.includes('status'), 'requirement tracking must authorize paths before any status scan');
+    return runGit(cwd, args, limits);
+  } });
+  const scope = path.join(source, 'project[1]'), outside = path.join(directory, 'outside-snapshot');
+  fs.mkdirSync(scope); fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(scope, 'local.txt'), 'authorized project content\n');
+  fs.writeFileSync(path.join(outside, 'external.txt'), 'outside the selected project\n');
+  fs.writeFileSync(path.join(outside, '.gitignore'), '*\n');
+  const start = await environment.baseline({ workingDirectory: scope });
+  fs.symlinkSync(outside, path.join(scope, 'linked'), process.platform === 'win32' ? 'junction' : 'dir');
+  const objects = await git(source, ['cat-file', '--batch-all-objects', '--batch-check=%(objectname) %(objecttype)']);
+  const index = fs.readFileSync(path.join(source, '.git', 'index'));
+  const refs = await git(source, ['for-each-ref', '--format=%(refname) %(objectname)']);
+
+  await assert.rejects(environment.baseline({ workingDirectory: scope }), /需求快照路径超出授权工作目录.*linked/);
+  await assert.rejects(environment.changes({ workingDirectory: scope, base: start.tree }), /需求快照路径超出授权工作目录.*linked/);
+  assert.equal(await git(source, ['cat-file', '--batch-all-objects', '--batch-check=%(objectname) %(objecttype)']), objects,
+    'rejected captures do not even add an unreferenced external blob');
+  assert.deepEqual(fs.readFileSync(path.join(source, '.git', 'index')), index);
+  assert.equal(await git(source, ['for-each-ref', '--format=%(refname) %(objectname)']), refs);
+  assert.equal(fs.readFileSync(path.join(outside, 'external.txt'), 'utf8'), 'outside the selected project\n');
+  assert.equal(fs.readFileSync(path.join(scope, 'local.txt'), 'utf8'), 'authorized project content\n');
+});
+
+test('requirement capture also validates tracked files after their parent is replaced by a junction', async t => {
+  const { source, directory, git, environment } = await fixture(t);
+  const tracked = path.join(source, 'tracked'), outside = path.join(directory, 'outside-tracked');
+  fs.mkdirSync(tracked); fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(tracked, 'file.txt'), 'tracked local content\n');
+  fs.writeFileSync(path.join(outside, 'file.txt'), 'external replacement content\n');
+  await git(source, ['add', 'tracked/file.txt']);
+  await git(source, ['commit', '-m', 'tracked directory']);
+  fs.renameSync(tracked, path.join(source, 'saved-tracked'));
+  fs.symlinkSync(outside, tracked, process.platform === 'win32' ? 'junction' : 'dir');
+  await git(source, ['read-tree', '--empty']);
+  await git(source, ['read-tree', 'HEAD']);
+  const index = fs.readFileSync(path.join(source, '.git', 'index'));
+  const objects = await git(source, ['cat-file', '--batch-all-objects', '--batch-check=%(objectname) %(objecttype)']);
+
+  await assert.rejects(environment.baseline({ workingDirectory: source }), /需求快照路径超出授权工作目录.*tracked/);
+  assert.equal(await git(source, ['cat-file', '--batch-all-objects', '--batch-check=%(objectname) %(objecttype)']), objects);
+  assert.deepEqual(fs.readFileSync(path.join(source, '.git', 'index')), index, 'read-only repository inspection does not refresh the user index');
+  assert.equal(fs.readFileSync(path.join(source, 'saved-tracked', 'file.txt'), 'utf8'), 'tracked local content\n');
+  assert.equal(fs.readFileSync(path.join(outside, 'file.txt'), 'utf8'), 'external replacement content\n');
+});
+
+test('requirement capture keeps in-directory links and Git-ignored external junctions usable', async t => {
+  const { source, directory, git, environment } = await fixture(t);
+  const inside = path.join(source, 'inside'), outside = path.join(directory, 'ignored-outside');
+  fs.mkdirSync(inside); fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(inside, 'result.txt'), 'authorized linked content\n');
+  fs.writeFileSync(path.join(outside, 'ignored.txt'), 'excluded from capture\n');
+  fs.writeFileSync(path.join(source, '.gitignore'), 'ignored-link\n');
+  fs.symlinkSync(inside, path.join(source, 'inside-link'), process.platform === 'win32' ? 'junction' : 'dir');
+  fs.symlinkSync(outside, path.join(source, 'ignored-link'), process.platform === 'win32' ? 'junction' : 'dir');
+  const status = await git(source, ['status', '--porcelain']);
+
+  const start = await environment.baseline({ workingDirectory: source });
+  const entries = await git(source, ['ls-tree', '-r', start.tree]);
+  assert.match(entries, /inside\/result\.txt/);
+  assert.match(entries, process.platform === 'win32' ? /inside-link\/result\.txt/ : /120000 blob [a-f0-9]+\tinside-link/);
+  assert.doesNotMatch(entries, /ignored-link|ignored\.txt/);
+  assert.equal(await git(source, ['status', '--porcelain']), status);
+});
+
+test('requirement revert refuses a delivered path redirected outside the project after capture', async t => {
+  const { source, directory, environment } = await fixture(t);
+  const target = path.join(source, 'linked'), outside = path.join(directory, 'outside-revert');
+  fs.mkdirSync(target); fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(target, 'result.txt'), 'before the requirement\n');
+  const start = await environment.baseline({ workingDirectory: source });
+  fs.writeFileSync(path.join(target, 'result.txt'), 'delivered requirement\n');
+  const delivered = await environment.changes({ workingDirectory: source, base: start.tree });
+  fs.renameSync(target, path.join(source, 'saved-local'));
+  fs.writeFileSync(path.join(outside, 'result.txt'), 'delivered requirement\n');
+  fs.writeFileSync(path.join(outside, '.gitattributes'), '*.txt -diff\n');
+  fs.symlinkSync(outside, target, process.platform === 'win32' ? 'junction' : 'dir');
+
+  await assert.rejects(environment.changes({ workingDirectory: source, base: start.tree, end: delivered.end, diff: true }), /需求快照路径超出授权工作目录.*linked/);
+  for (const checkOnly of [true, false]) {
+    await assert.rejects(environment.revert({ workingDirectory: source, base: start.tree, end: delivered.end, checkOnly }), /需求快照路径超出授权工作目录.*linked/);
+  }
+  assert.equal(fs.readFileSync(path.join(outside, 'result.txt'), 'utf8'), 'delivered requirement\n');
+  assert.equal(fs.readFileSync(path.join(source, 'saved-local', 'result.txt'), 'utf8'), 'delivered requirement\n');
+});
+
+test('saved requirement changes retain ordinary repository ancestor attributes for a Project subdirectory', async t => {
+  const { source, environment } = await fixture(t);
+  const scope = path.join(source, 'app'); fs.mkdirSync(scope);
+  fs.writeFileSync(path.join(source, '.gitattributes'), '*.txt -diff\n');
+  fs.writeFileSync(path.join(scope, 'result.txt'), 'before the requirement\n');
+  const start = await environment.baseline({ workingDirectory: scope });
+  fs.writeFileSync(path.join(scope, 'result.txt'), 'delivered requirement\n');
+  const delivered = await environment.changes({ workingDirectory: scope, base: start.tree });
+  const saved = await environment.changes({ workingDirectory: scope, base: start.tree, end: delivered.end, diff: true });
+  assert.deepEqual(saved.files.map(file => [file.path, file.binary]), [['app/result.txt', true]]);
+  assert.match(saved.diff, /Binary files/);
+  assert.equal((await environment.revert({ workingDirectory: scope, base: start.tree, end: delivered.end })).applied, true);
+  assert.equal(fs.readFileSync(path.join(scope, 'result.txt'), 'utf8'), 'before the requirement\n');
+});
+
+test('requirement tracking uses the registered workstream directory and rejects a mismatched receipt', async t => {
+  const { source, home, authority, environment: preparing } = await fixture(t);
+  const payload = { projectId: 'snapshot-project', workstreamId: 'snapshot-stream', workingDirectory: source, mode: 'worktree' };
+  const workspace = await preparing.prepareWorkspace(payload);
+  const environment = createProjectEnvironment({ home, authority, runGit: (cwd, args, limits) => {
+    assert.ok(!args.includes('status'), 'tracking a registered workspace must use metadata-only receipt checks');
+    return runGit(cwd, args, limits);
+  } });
+  const scoped = { projectId: payload.projectId, workstreamId: payload.workstreamId, workspace, workingDirectory: source };
+  const start = await environment.baseline(scoped);
+  fs.writeFileSync(path.join(workspace.canonicalPath, 'file.txt'), 'registered member result\n');
+  const end = await environment.changes({ ...scoped, base: start.tree, diff: true });
+  assert.deepEqual(end.files.map(file => file.path), ['file.txt']);
+  assert.match(end.diff, /registered member result/);
+  assert.equal(fs.readFileSync(path.join(source, 'file.txt'), 'utf8'), 'baseline\n');
+  await assert.rejects(environment.baseline({ ...scoped, workspace: { ...workspace, receipt: 'wrong' } }), /回执不一致/);
+  await assert.rejects(environment.revert({ ...scoped, workspace: { ...workspace, receipt: 'wrong' }, base: start.tree, end: end.end }), /回执不一致/);
+  assert.equal((await environment.revert({ ...scoped, base: start.tree, end: end.end, checkOnly: true })).applied, false);
+  assert.equal(fs.readFileSync(path.join(workspace.canonicalPath, 'file.txt'), 'utf8'), 'registered member result\n');
+  assert.equal((await environment.revert({ ...scoped, base: start.tree, end: end.end })).applied, true);
+  assert.equal(fs.readFileSync(path.join(workspace.canonicalPath, 'file.txt'), 'utf8'), 'baseline\n');
 });

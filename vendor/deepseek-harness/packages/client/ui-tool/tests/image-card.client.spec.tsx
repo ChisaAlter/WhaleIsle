@@ -36,7 +36,8 @@ const t: ToolTreeProps['t'] = makeTranslate(zh, commonZh)
 const ARGS = '{"file_path":"shots/card.png"}'
 
 /** The envelope read_image writes beside its image block. */
-const ENVELOPE = '<path>shots/card.png</path>\n<type>image</type>\n<content>\nimage/png image, 1496x260 px, 24588 bytes\n</content>'
+const IMAGE_DETAILS = 'image/png image, 1496x260 px, 24588 bytes'
+const ENVELOPE = `<path>shots/card.png</path>\n<type>image</type>\n<content>\n${IMAGE_DETAILS}\n</content>`
 
 /** The durable reference read_image persists through presentationMeta. */
 const sampleImage: ImageAttachmentRef = {
@@ -114,7 +115,7 @@ describe('imageCardModel', () => {
     expect(imageCardModel(settled())).toEqual({
       path: 'shots/card.png',
       images: [{ attachment: sampleImage }],
-      extraText: null,
+      extraText: IMAGE_DETAILS,
     })
   })
 
@@ -153,8 +154,22 @@ describe('imageCardModel', () => {
         { type: 'image', attachment: appended },
       ],
     } as never))
-    expect(model?.extraText).toBe('analysis: the card area is empty')
+    expect(model?.extraText).toBe(`${IMAGE_DETAILS}\nanalysis: the card area is empty`)
     expect(model?.images).toEqual([{ attachment: sampleImage }, { attachment: appended }])
+  })
+
+  it('preserves the complete envelope body and surrounding notes in result order', () => {
+    const body = `${IMAGE_DETAILS}\nTo map to the original image, multiply coordinates by 2.00.\nNote: the highlighted area needs review.`
+    const model = imageCardModel(settled({
+      content: [
+        { type: 'text', text: 'before the image' },
+        { type: 'text', text: ENVELOPE.replace(IMAGE_DETAILS, body) },
+        { type: 'image', attachment: { ...sampleImage, originalDimensions: { width: 2992, height: 520 } } },
+        { type: 'text', text: 'after the image' },
+      ],
+    } as never))
+    expect(model?.extraText).toBe(`before the image\n${body}\nafter the image`)
+    expect(model?.images[0]?.attachment.originalDimensions).toEqual({ width: 2992, height: 520 })
   })
 
   it('declines when the content carries a block type the card does not render', () => {
@@ -322,7 +337,21 @@ describe('ReadImageRow keyed toolview', () => {
     expect(text).not.toContain('"attachmentId"')
     expect(text).not.toContain('"type": "image"')
     expect(text).not.toContain('<path>')
-    expect(text).not.toContain('image/png image')
+    expect(text).toContain(IMAGE_DETAILS)
+  })
+
+  it('shows MIME, coordinate scaling and notes from inside the envelope', () => {
+    const details = `${IMAGE_DETAILS}\nTo map to the original image, multiply coordinates by 2.00.\nNote: the highlighted area needs review.`
+    const view = render(<ReadImageRow {...rowProps(settled({
+      content: [
+        { type: 'text', text: ENVELOPE.replace(IMAGE_DETAILS, details) },
+        { type: 'image', attachment: { ...sampleImage, originalDimensions: { width: 2992, height: 520 } } },
+      ],
+    } as never), stubRenderToolImages())} />)
+    toggleRow(view)
+    expect(view.container.querySelector('[class*="imageExtra"]')?.textContent).toBe(details)
+    expect(view.container.textContent).not.toContain('<content>')
+    expect(view.container.textContent).not.toContain('"attachmentId"')
   })
 
   it('shows the full path once, then the image size, under the picture', () => {
@@ -356,6 +385,7 @@ describe('ReadImageRow keyed toolview', () => {
     expect(emptySlot).toHaveBeenCalled()
     expect(view.container.querySelector('[data-images]')).toBeNull()
     expect(view.container.textContent).toContain('1496x260px，24588 字节')
+    expect(view.container.textContent).toContain(IMAGE_DETAILS)
   })
 
   it('degrades to the text body when neither the slot nor the loader is supplied', () => {

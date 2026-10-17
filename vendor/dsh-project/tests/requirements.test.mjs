@@ -42,6 +42,50 @@ function fixture() {
   return { service, state, project, actor, session, events, followups, human, activate, exec, result, publish, accept, add, declare, reply, end, queue, flushes: () => flushes, persist(value) { persist = value; }, checkpoint() { durableEvents = structuredClone(events); } };
 }
 
+test('delivery end trees finish before public enqueue can activate the next requirement', async () => {
+  const f = fixture(); f.human(['Implement A']);
+  const { request: a } = await f.accept({ title: 'A' }), work = f.add(a);
+  const { request: b } = await f.accept({ title: 'B', disposition: 'discussing' });
+  f.state.requests.find(row => row.id === a.id).changes = { isGit: true, baseline: 'a'.repeat(40), capturedAt: 1 };
+  let release, startedResolve, captures = 0;
+  const started = new Promise(resolve => { startedResolve = resolve; });
+  f.service.desktop = async action => {
+    assert.equal(action, 'changes'); captures++; startedResolve();
+    return new Promise(resolve => { release = resolve; });
+  };
+  await f.declare(a, [work.ref]); await f.reply('A reply');
+  const finishing = f.end('completed'); await started;
+  const enqueuing = f.queue(b, 'enqueue');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.state.deliveries[0].status, 'draft', 'completion is not exposed before its end tree');
+  assert.equal(f.state.requests.find(row => row.id === a.id).queue.released, undefined);
+  assert.equal(f.service.queue.active(f.project.id)?.id, a.id);
+  assert.equal(f.followups.length, 0, 'the native queue cannot start B while the A capture awaits disk I/O');
+  release({ end: 'b'.repeat(40), files: [{ path: 'A.txt', status: 'A', added: 1, removed: 0 }] });
+  await Promise.all([finishing, enqueuing]);
+  assert.equal(f.state.requests.find(row => row.id === a.id).changes.end, 'b'.repeat(40));
+  assert.equal(f.service.queue.active(f.project.id)?.id, b.id);
+  assert.equal(f.followups.length, 1);
+  await f.service.afterDelivery(f.state.deliveries[0].id);
+  assert.equal(captures, 1, 'later delivery callbacks cannot recapture B writes into A');
+});
+
+test('an end-tree failure keeps delivery pending and does not release the next writer', async () => {
+  const f = fixture(); f.human(['Implement A']);
+  const { request: a } = await f.accept({ title: 'A' }), work = f.add(a);
+  const { request: b } = await f.accept({ title: 'B' });
+  f.state.requests.find(row => row.id === a.id).changes = { isGit: true, baseline: 'a'.repeat(40), capturedAt: 1 };
+  f.service.desktop = async () => { throw new Error('End tree capture failed'); };
+  await f.declare(a, [work.ref]); await f.reply('A reply');
+  await assert.rejects(f.end('completed'), /End tree capture failed/);
+  await f.service.queue.pump(f.project.id);
+  assert.equal(f.state.deliveries[0].status, 'draft');
+  assert.match(f.state.deliveries[0].error, /End tree capture failed/);
+  assert.equal(f.service.queue.active(f.project.id)?.id, a.id);
+  assert.equal(f.service.requirements.get(f.project.id, b.id).queue.state, 'queued');
+  assert.equal(f.followups.length, 0);
+});
+
 test('empty Project history still supplies the authoritative bound repository in notes and Lead context', async () => {
   const f = fixture();
   Object.assign(f.project, { title: 'Existing repository', canonicalWorkingDirectory: '/existing-repository' });

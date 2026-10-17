@@ -28,7 +28,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     openFile: '打开文件', fileMore: '文件操作', diff: '当前目录改动', diffScope: '可能包含原有改动及其他工作的修改。',
     fileLocation: '文件位置', artifactMaterials: '项目资料', artifactExisting: '项目目录', artifactWorktree: '独立分支', errorDetails: '错误详情', modelSettings: '模型设置',
     summaryCredentialHint: '当前模型未配置凭据。请补充凭据，或在输入框选择已配置的模型，再重新汇总。', summaryErrorHint: '本次汇总未完成。请查看错误详情，处理原因后重新汇总。', sidebarSummaryFailed: '汇总失败', sidebarPendingSummary: '等待汇总',
-    noDiff: '当前没有文件差异。', branch: '分支', readonly: '查看项目文件，不修改文件', docsScope: '修改已授权的文档', developmentScope: '执行已授权的开发工作', worktree: '独立分支', existing: '项目目录',
+    noDiff: '当前没有文件差异。', diffWorkingDirectory: '工作目录', diffRepositoryPath: '仓库内路径', branch: '分支', readonly: '查看项目文件，不修改文件', docsScope: '修改已授权的文档', developmentScope: '执行已授权的开发工作', worktree: '独立分支', existing: '项目目录',
     copy: '复制', copied: '已复制', footnotes: '脚注', unavailable: 'Project 暂不可用',
     evidence: '验证记录', pendingSummary: '正在汇总', pendingDelivery: '交付未完成', needsReview: '结果需复核', roundDelivered: '本轮已交付', summaryFailed: '成果已保存，汇总未完成', retrySummary: '重新汇总', resultUpdated: '结果已更新，请查看最新结果。', handoverErrorHint: '本次交付未完成。已有成果仍保留，处理错误后可重新汇总。', authorityErrorHint: '这项要求缺少可核对的原始授权记录。请在主对话中重新说明或修订要求，再继续工作。',
     retrySummaryPrompt: '请重新汇总以下已保存结果，说明成果、验证和剩余问题；只读取已有报告，不重新执行后台工作：', waitingDependencies: '等待前置工作完成', waitingDirectory: '等待其他工作释放目录', waitingCapacity: '等待团队空出执行名额', prerequisitesChanged: '依据已变化', prerequisitesHint: '前置工作已收到新要求。这份报告保留原有结果，需按当前要求复核。', deliveryChangedHint: '要求或依据已变化。这份交付保留原版本结果，需按当前要求复核。',
@@ -65,7 +65,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     openFile: 'Open file', fileMore: 'File actions', diff: 'Current directory changes', diffScope: 'May include pre-existing changes and changes from other work.',
     fileLocation: 'File location', artifactMaterials: 'Project materials', artifactExisting: 'Project directory', artifactWorktree: 'Independent branch', errorDetails: 'Error details', modelSettings: 'Model settings',
     summaryCredentialHint: 'The current model has no credentials. Add credentials or choose a configured model in the composer, then summarize again.', summaryErrorHint: 'The summary did not finish. Review the error details, address the cause, then summarize again.', sidebarSummaryFailed: 'Summary failed', sidebarPendingSummary: 'Awaiting summary',
-    noDiff: 'There are no current file changes.', branch: 'Branch', readonly: 'Inspect Project files without modifying them', docsScope: 'Edit authorized documents', developmentScope: 'Perform authorized development', worktree: 'Independent branch', existing: 'Project directory',
+    noDiff: 'There are no current file changes.', diffWorkingDirectory: 'Working directory', diffRepositoryPath: 'Repository path', branch: 'Branch', readonly: 'Inspect Project files without modifying them', docsScope: 'Edit authorized documents', developmentScope: 'Perform authorized development', worktree: 'Independent branch', existing: 'Project directory',
     copy: 'Copy', copied: 'Copied', footnotes: 'Footnotes', unavailable: 'Project is currently unavailable',
     evidence: 'Verification records', pendingSummary: 'Preparing summary', pendingDelivery: 'Delivery incomplete', needsReview: 'Results need review', roundDelivered: 'This request is delivered', summaryFailed: 'Results saved; summary incomplete', retrySummary: 'Summarize again', resultUpdated: 'The result changed. View the latest result.', handoverErrorHint: 'The handover did not complete. Saved results remain available; resolve the error and summarize again.', authorityErrorHint: 'The original authorization for this request cannot be verified. Restate or revise the request in the main conversation before continuing.',
     retrySummaryPrompt: 'Summarize the following saved result again, including changes, verification and remaining issues. Read the existing report without rerunning background work:', waitingDependencies: 'Waiting for prerequisite work', waitingDirectory: 'Waiting for other work to release the directory', waitingCapacity: 'Waiting for an available team slot', prerequisitesChanged: 'Prerequisites changed', prerequisitesHint: 'Prerequisite work has received a new request. This report retains the original result and needs review against the current request.', deliveryChangedHint: 'The request or its prerequisites changed. This delivery retains its original version and needs review against the current request.',
@@ -129,22 +129,33 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     decisionLog: 'Decision log', decisionLogEmpty: 'After deliveries, the coordinator’s key decisions are recorded here automatically.',
   });
   const CSS = `
-    .dsh-project-page{padding:12px 0 8px;display:flex;flex-direction:column;gap:4px;min-width:0}
-    .dsh-project-page>.dsh-project-empty{text-align:left;padding:12px 8px}
-    .dsh-project-row-wrap{display:flex;align-items:center;gap:4px;min-width:0;min-height:32px;padding:0 8px;box-sizing:border-box;border-radius:var(--dsw-radius-md);color:var(--dsw-alias-label-primary)}
+    .dsh-project-page{padding:8px 0;display:flex;flex-direction:column;gap:4px;min-width:0}
+    .dsh-project-page>.dsh-project-empty{text-align:left;padding:8px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+    .dsh-project-row-wrap{position:relative;display:flex;align-items:center;gap:4px;min-width:0;min-height:36px;padding:0 4px 0 8px;box-sizing:border-box;border-radius:var(--dsw-radius-md);color:var(--dsw-alias-label-primary)}
     .dsh-project-row-wrap>.dsh-project-row{flex:1}
-    .dsh-project-row-wrap:hover,.dsh-project-row-wrap:focus-within,.dsh-project-row-wrap[aria-current=page],.dsh-project-row-wrap[data-menu-open=true]{background:var(--dsw-alias-interactive-bg-hover)}
-    .dsh-project-category{flex:1;min-width:0;display:flex;align-items:center;gap:4px;height:36px;padding:0 4px;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:13px;line-height:20px;text-align:left;cursor:pointer}
-    .dsh-project-category:hover{background:var(--dsw-alias-interactive-bg-hover)}
-    .dsh-project-category span{flex:1}
-    .dsh-project-category-count{font-size:12px;font-weight:400}
+    .dsh-project-row-wrap:hover,.dsh-project-row-wrap:focus-within,.dsh-project-row-wrap[data-menu-open=true]{background:var(--dsw-alias-interactive-bg-hover)}
+    .dsh-project-row-wrap[aria-current=page]{background:var(--dsw-alias-interactive-bg-active)}
+    .dsh-project-row-wrap[aria-current=page] .dsh-project-row-title{font-weight:500}
+    .dsh-project-row-wrap[aria-current=page] .dsh-project-row>svg{color:var(--dsw-alias-label-primary)}
+    .dsh-project-category{flex:1;min-width:0;display:flex;align-items:center;gap:4px;height:36px;padding:0 4px;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;line-height:20px;text-align:left;cursor:pointer}
+    .dsh-project-category:hover{color:var(--dsw-alias-label-secondary)}
+    .dsh-project-category>svg{flex:none;transition:transform var(--ds-transition-duration-fast) var(--ds-ease-in-out)}
+    .dsh-project-category>span{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .dsh-project-category-count{flex:none;min-width:18px;padding:0 6px;box-sizing:border-box;border-radius:9px;background:var(--dsw-alias-interactive-bg-hover);font-size:11px;line-height:18px;font-weight:500;text-align:center;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}
+    .dsh-project-empty-add{display:flex;align-items:flex-start;gap:12px;width:100%;margin:4px 0;padding:12px;box-sizing:border-box;border:1px dashed var(--dsw-alias-border-l3);border-radius:12px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;text-align:left;cursor:pointer;transition:background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out)}
+    .dsh-project-empty-add:hover{background:var(--dsw-alias-interactive-bg-hover)}
+    .dsh-project-empty-add-icon{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary)}
+    .dsh-project-empty-add-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+    .dsh-project-empty-add-text>strong{font-size:14px;line-height:20px;font-weight:500}
+    .dsh-project-empty-add-text>span{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
     .dsh-project-heading,.dsh-project-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     .dsh-project-heading{justify-content:space-between;gap:4px;flex-wrap:nowrap}
     .dsh-project-list{display:flex;flex-direction:column;gap:2px}
     .dsh-project-sidebar-button{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-height:28px;padding:0;border:0;border-radius:var(--dsw-radius-sm);color:var(--dsw-alias-label-secondary)}
-    .dsh-project-row-menu{visibility:hidden;flex:none}
-    .dsh-project-row-wrap:hover .dsh-project-row-menu,.dsh-project-row-wrap:focus-within .dsh-project-row-menu,.dsh-project-row-wrap[data-menu-open=true] .dsh-project-row-menu{visibility:visible}
-    .dsh-project-page button:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
+    .dsh-project-sidebar-button:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+    .dsh-project-row-menu{display:none;flex:none}
+    .dsh-project-row-wrap:hover .dsh-project-row-menu,.dsh-project-row-wrap:focus-within .dsh-project-row-menu,.dsh-project-row-wrap[data-menu-open=true] .dsh-project-row-menu{display:block}
+    .dsh-project-page button:focus-visible,.dsh-project-empty-add:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
     .dsh-project-header{display:flex;align-items:center;flex:0 0 auto;white-space:nowrap}
     .dsh-project-header-directory{min-width:0;max-width:100%}
     .dsh-project-header-label{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;flex:0 0 auto}
@@ -152,13 +163,17 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     .dsh-project-return-materials{max-width:min(240px,25vw);min-width:0}
     .dsh-project-return-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .dsh-project-materials-frame{display:flex;flex:1;min-height:0;overflow:hidden}
-    .dsh-project-row{border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-primary);padding:0;min-height:32px;display:flex;align-items:center;gap:4px;font:inherit;font-size:14px;line-height:20px;text-align:left;cursor:pointer;min-width:0}
-    .dsh-project-row>svg{flex:none}
+    .dsh-project-row{border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-primary);padding:6px 0;min-height:36px;box-sizing:border-box;display:flex;align-items:center;gap:8px;font:inherit;font-size:14px;line-height:20px;text-align:left;cursor:pointer;min-width:0}
+    .dsh-project-row>svg{flex:none;color:var(--dsw-alias-label-secondary)}
     .dsh-project-row-text{display:flex;flex:1;flex-direction:column;min-width:0}
     .dsh-project-row-title,.dsh-project-row-text>.dsh-project-muted{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .dsh-project-row-meta{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
     .dsh-project-row-meta>.dsh-project-muted{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .dsh-project-row-state{flex:none;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+    .dsh-project-row-state{flex:none;display:inline-flex;align-items:center;gap:4px;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+    .dsh-project-row-state[data-tone=info]{color:var(--dsw-alias-state-business-primary)}
+    .dsh-project-row-state[data-tone=warning]{color:var(--dsw-alias-state-warn-primary)}
+    .dsh-project-row-state[data-tone=neutral]>.dsh-project-tone-dot{background:var(--dsw-alias-label-tertiary)}
+    .dsh-project-row-wrap:hover .dsh-project-row-state,.dsh-project-row-wrap:focus-within .dsh-project-row-state,.dsh-project-row-wrap[data-menu-open=true] .dsh-project-row-state{display:none}
     .dsh-project-row-wrap[data-archived=true] .dsh-project-row,.dsh-project-row-wrap[data-archived=true] .dsh-project-row-state{color:var(--dsw-alias-label-caption)}
     .dsh-project-archive-notice{padding:16px 20px;border:1px solid var(--dsw-alias-border-l2);border-radius:16px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.5}
     .dsh-project-row small{flex-shrink:0;font-size:11px;color:var(--dsw-alias-label-tertiary)}
@@ -360,6 +375,57 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     .dsh-project-task-changes{display:inline-flex;align-items:baseline;gap:6px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
     .dsh-project-task-delivery-actions>.dsh-project-task-changes{margin-right:auto;padding-left:8px}
     .dsh-project-confirm-detail{margin:0;padding:8px 12px;max-height:160px;overflow:auto;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);font:12px/18px var(--ds-font-family-code);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--dsw-alias-label-secondary)}
+    /* Observer redesign: every floating layer is an opaque panel, so nothing reads directly over chat text. */
+    .dsh-project-observer-stack{gap:8px;padding:2px 4px 6px}
+    .dsh-project-observer-summary{flex:none;min-width:0;overflow:hidden;background:var(--dsw-alias-bg-panel-solid);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;box-shadow:var(--dsw-shadow-lv2)}
+    .dsh-project-observer-drag{height:44px;gap:8px;padding:0 6px 0 14px;color:var(--dsw-alias-label-secondary)}
+    .dsh-project-observer-drag>svg{flex:none}
+    .dsh-project-observer-drag>span{padding-left:0;font-size:14px;line-height:20px;font-weight:500;color:var(--dsw-alias-label-primary)}
+    .dsh-project-observer-sections{gap:2px;padding:2px;border-radius:10px;background:var(--dsw-alias-interactive-bg-hover)}
+    .dsh-project-observer-sections button{height:24px;min-height:24px;padding:0 10px;border-radius:8px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}
+    .dsh-project-observer-sections button[aria-current=page]{background:var(--dsw-alias-bg-panel-solid);color:var(--dsw-alias-label-primary);font-weight:500;box-shadow:var(--dsw-shadow-lv1)}
+    .dsh-project-observer-summary>.dsh-project-board{padding:0 4px 4px;background:transparent;border:0;border-top:1px solid var(--dsw-alias-border-l1);border-radius:0;box-shadow:none}
+    .dsh-project-board-cell{gap:4px;padding:10px 10px 8px}
+    .dsh-project-board-cell>strong{font-size:20px;line-height:28px}
+    .dsh-project-task-surface{box-shadow:var(--dsw-shadow-lv2)}
+    .dsh-project-task-card:not([data-project-request-mode=strip]){padding:14px 16px 10px}
+    .dsh-project-task-title{font-size:15px;line-height:22px}
+    .dsh-project-task-strip-open{font-size:13px;line-height:20px}
+    .dsh-project-task-strip-open>small{font-size:12px}
+    .dsh-project-task-summary>p,.dsh-project-task-step{font-size:13px;line-height:20px}
+    .dsh-project-observer-aux,.dsh-project-observer-empty{padding:14px 16px;box-shadow:var(--dsw-shadow-lv2)}
+    .dsh-project-observer-empty>strong{display:block;font-size:14px;line-height:22px;font-weight:600}
+    .dsh-project-observer-empty p{font-size:13px;line-height:20px}
+    .dsh-project-observer-materials .dsh-project-materials{gap:12px}
+    .dsh-project-materials-tabs{padding:2px;border-radius:10px;background:var(--dsw-alias-interactive-bg-hover)}
+    .dsh-project-materials-tabs button{height:28px;min-height:28px;padding:0 10px;border-radius:8px;font-size:13px;line-height:20px}
+    .dsh-project-materials-content{gap:12px}
+    .dsh-project-materials-content .dsh-project-results-list>.dsh-project-muted{margin:0;padding:20px 12px;border-radius:12px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;text-align:center}
+    .dsh-project-documents{border-top:1px solid var(--dsw-alias-border-l1);padding-top:8px}
+    .dsh-project-documents>summary{display:flex;align-items:center;gap:4px;height:28px;padding:0 4px;border-radius:8px;list-style:none;color:var(--dsw-alias-label-secondary)}
+    .dsh-project-documents>summary::-webkit-details-marker{display:none}
+    .dsh-project-documents>summary::before{content:'';flex:none;width:6px;height:6px;margin:0 6px 0 2px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform var(--ds-transition-duration-fast) var(--ds-ease-in-out)}
+    .dsh-project-documents[open]>summary::before{transform:rotate(45deg)}
+    .dsh-project-documents>summary:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+    .dsh-project-documents>.dsh-project-muted{margin:4px 0 0;padding:0 8px}
+    .dsh-project-result-disclosure>summary{line-height:20px}
+    .dsh-project-task-group-title{font-size:12px;line-height:18px;font-weight:500}
+    .dsh-project-capsule{display:flex;align-items:center;gap:8px;height:40px;padding:0 4px 0 14px;box-sizing:border-box;cursor:grab;background:var(--dsw-alias-bg-panel-solid);border:1px solid var(--dsw-alias-border-l2);border-radius:20px;box-shadow:var(--dsw-shadow-lv2);min-width:0}
+    .dsh-project-capsule>.dsh-project-tone-dot{width:8px;height:8px}
+    .dsh-project-capsule[data-tone=info]>.dsh-project-tone-dot{animation:dsh-project-pulse 1.6s var(--ds-ease-in-out) infinite}
+    @keyframes dsh-project-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+    @media (prefers-reduced-motion:reduce){.dsh-project-capsule>.dsh-project-tone-dot{animation:none}}
+    .dsh-project-capsule-open{display:flex;align-items:center;gap:8px;flex:1;min-width:0;height:32px;padding:0 4px;border:0;border-radius:14px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;text-align:left;cursor:pointer}
+    .dsh-project-capsule-open:hover{background:var(--dsw-alias-interactive-bg-hover)}
+    .dsh-project-capsule-open:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
+    .dsh-project-capsule-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;line-height:20px;font-weight:500}
+    .dsh-project-capsule-state{flex:none;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+    .dsh-project-capsule[data-tone=info] .dsh-project-capsule-state{color:var(--dsw-alias-state-business-primary)}
+    .dsh-project-capsule[data-tone=warning] .dsh-project-capsule-state{color:var(--dsw-alias-state-warn-primary)}
+    .dsh-project-capsule[data-tone=success] .dsh-project-capsule-state{color:var(--dsw-alias-state-success-primary)}
+    .dsh-project-capsule-count{flex:none;padding:0 6px;border-radius:9px;background:var(--dsw-alias-interactive-bg-hover);font-size:11px;line-height:18px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}
+    .dsh-project-capsule-toggle{flex:none;width:28px;height:28px;min-height:28px;padding:0;border-radius:14px;color:var(--dsw-alias-label-secondary)}
+    .dsh-project-observer[data-project-observer-capsule=true]>.dsh-project-observer-stack{padding:2px 4px 6px}
 
   `;
   const requestId = () => globalThis.crypto.randomUUID();
@@ -454,11 +520,12 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     };
     const activity = project.activity?.state;
     const status = project.lifecycle === 'archived' ? t('archived') : activity && !['idle', 'done'].includes(activity) ? t({ summaryFailed: 'sidebarSummaryFailed', pendingSummary: 'sidebarPendingSummary' }[activity] ?? activity) : '';
+    const tone = project.lifecycle === 'archived' ? 'neutral' : ['running', 'arranging', 'active', 'queued'].includes(activity) ? 'info' : ['blocked', 'paused', 'summaryFailed', 'pendingSummary', 'needsReview'].includes(activity) ? 'warning' : 'neutral';
     return h(Fragment, null,
       h('div', { className: 'dsh-project-row-wrap', 'aria-current': currentSession === project.coordinatorSessionId ? 'page' : undefined, 'data-menu-open': menu, 'data-archived': project.lifecycle === 'archived', onContextMenu: event => { event.preventDefault(); setMenu(true); }, onKeyDown: event => { if (event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10') { event.preventDefault(); setMenu(true); } } },
         h('button', { type: 'button', className: 'dsh-project-row', title: `${project.title}\n${project.canonicalWorkingDirectory}`, 'aria-current': currentSession === project.coordinatorSessionId ? 'page' : undefined, onClick: () => { void openProject(project.id); } },
           h(IconFolderCloseRegular, { size: 16 }), h('span', { className: 'dsh-project-row-text' }, h('span', { className: 'dsh-project-row-title' }, project.title), directoryLabel ? h('span', { className: 'dsh-project-row-meta' }, h('span', { className: 'dsh-project-muted' }, directoryLabel)) : null),
-          status ? h('span', { className: 'dsh-project-row-state', title: `${stateLabel(t, activity)} · ${project.activity?.running ?? 0} ${t('running')} · ${project.activity?.queued ?? 0} ${t('queued')}` }, status) : null),
+          status ? h('span', { className: 'dsh-project-row-state', 'data-tone': tone, title: `${stateLabel(t, activity)} · ${project.activity?.running ?? 0} ${t('running')} · ${project.activity?.queued ?? 0} ${t('queued')}` }, h('span', { className: 'dsh-project-tone-dot', 'data-tone': tone, 'aria-hidden': true }), status) : null),
         h('span', { className: 'dsh-project-row-menu' }, h(Menu, { open: menu, onClose: () => setMenu(false), portal: true, align: 'end', compact: true, onSelect: action => { void select(action); }, items: [{ id: 'rename', label: t('rename') }, { id: 'openDirectory', label: t('openDirectory') }, { id: project.lifecycle === 'archived' ? 'restore' : 'archive', label: t(project.lifecycle === 'archived' ? 'restore' : 'archive') }], anchor: h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-sidebar-button', 'aria-label': `${t('more')}: ${project.title}`, 'aria-expanded': menu, disabled: busy, onClick: () => setMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) }))),
       error ? h(Toast, { key: error.seq, text: error.text, holdMs: 6000, onDone: () => setError(null) }) : null);
   }
@@ -471,13 +538,15 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     if (!snapshot.available && !snapshot.projects.length) return null;
     return h('section', { className: 'dsh-project-page', 'aria-label': t('tab') },
       h('div', { className: 'dsh-project-heading' }, h('button', { type: 'button', className: 'dsh-project-category', 'aria-expanded': expanded, onClick: () => setExpanded(value => !value) },
-        h(expanded ? IconChevronDownOutlineRegular : IconChevronRightOutlineRegular, { size: 14 }), h('span', null, t('tab'), view.history ? ' · ' + t('archived') : '')),
+        h(expanded ? IconChevronDownOutlineRegular : IconChevronRightOutlineRegular, { size: 14 }), h('span', null, t('tab'), view.history ? ' · ' + t('archived') : ''), projects.length ? h('small', { className: 'dsh-project-category-count' }, projects.length) : null),
         h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-sidebar-button', 'aria-label': t('add'), title: t('add'), disabled: !snapshot.available, onClick: () => { void addProject(); } }, h(IconPlusOutlineRegular, { size: 16 })),
         h(Menu, { open: menu, onClose: () => setMenu(false), portal: true, compact: true, items: [{ id: 'history', label: t(view.history ? 'tab' : 'history') }], onSelect: () => { actions.setHistory(!view.history); setExpanded(true); setMenu(false); }, anchor: h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-sidebar-button', 'aria-label': `${t('tab')}: ${t('more')}`, 'aria-expanded': menu, onClick: () => setMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) })),
       expanded ? h(Fragment, null,
         snapshot.error ? h('p', { role: 'alert', className: 'dsh-project-error' }, snapshot.error) : null,
         snapshot.loading && !snapshot.projects.length ? h('p', { role: 'status' }, t('loading')) : null,
-        !snapshot.loading && !projects.length ? h('p', { className: 'dsh-project-empty' }, t(view.history ? 'emptyArchived' : 'empty')) : null,
+        !snapshot.loading && !projects.length ? view.history || !snapshot.available || query ? h('p', { className: 'dsh-project-empty' }, t(view.history ? 'emptyArchived' : 'empty'))
+          : h('button', { type: 'button', className: 'dsh-project-empty-add', onClick: () => { void addProject(); } }, h('span', { className: 'dsh-project-empty-add-icon', 'aria-hidden': true }, h(IconPlusOutlineRegular, { size: 16 })),
+            h('span', { className: 'dsh-project-empty-add-text' }, h('strong', null, t('add')), h('span', null, t('empty')))) : null,
         h('div', { className: 'dsh-project-list' }, projects.map(project => h(ProjectRow, { key: project.id, project, directoryLabel: projectDirectoryLabel(project, projects), currentSession, openProject, command, read, openLifecycle, t })))) : null);
   }
 
@@ -926,6 +995,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         h('div', { className: 'dsh-project-task-meta' }, recordedTime(card.updatedAt), h('span', null, `${t('requestVersion')} ${card.revision}`))));
   }
 
+  // Capsule vs. full panel, remembered per coordinator session for this window's lifetime.
+  const observerCapsules = new Map();
   function ProjectObserver({ sessionId, useTabInfo, useProjects, useProjectSessions, useProjectSessionStatus, useObserverModes, useSidebarMounted, readDetail, read, command, sendUserRequest, openModelSettings, retainProcess, resizeObserver, rememberObserverSize, setRequestMode, registerObserverEditor, renderFactorySlot, teamT, t }) {
     const { panel, tab } = useTabInfo(), active = useSidebarMounted(value => value === sessionId);
     const project = useProjects(value => value.projects.find(item => item.coordinatorSessionId === sessionId));
@@ -934,6 +1005,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const summarySessions = useProjectSessions(value => value.byId), statuses = useProjectSessionStatus(value => value);
     const requestModes = useObserverModes(value => value[sessionId]?.[panel.id]?.requests);
     const sessions = Object.fromEntries([...new Set([...Object.keys(summarySessions), ...statuses.keys()])].map(id => [id, { ...summarySessions[id], running: statuses.get(id)?.running ?? summarySessions[id]?.running }]));
+    const [capsule, setCapsuleState] = useState(() => observerCapsules.get(sessionId) ?? true);
+    const setCapsule = value => { observerCapsules.set(sessionId, value); setCapsuleState(value); };
     const [section, setSection] = useState('tasks'), [historyKind, setHistoryKind] = useState(null), [historyMenu, setHistoryMenu] = useState(false);
     const [subview, setSubview] = useState(null), [subviewReturn, setSubviewReturn] = useState('tasks'), [materialsVisited, setMaterialsVisited] = useState(false);
     const subviewBackRef = useRef(null), subviewOriginRef = useRef(null), subviewReturnFocusRef = useRef(null);
@@ -962,7 +1035,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       document.querySelectorAll('[data-composer-card],.dsh-project-header').forEach(element => observer.observe(element));
       window.addEventListener('resize', fit); fit();
       return () => { observer.disconnect(); window.removeEventListener('resize', fit); };
-    }, [sessionId, panel.id, panel.host, active]);
+      // The capsule and the full panel render different content nodes; rebind when switching.
+    }, [sessionId, panel.id, panel.host, active, capsule]);
     useEffect(() => {
       if (!active || panel.host !== 'float') return;
       let gesture;
@@ -1095,19 +1169,36 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     ];
     const cards = [...current, ...(pages.completed?.items ?? []), ...(pages[historyKind]?.items ?? [])];
     const expanded = cards.some(item => cardMode(item, item.id === activeCard?.id ? 'card' : 'strip') !== 'strip');
+    if (capsule) {
+      const lead = activeCard ?? waiting[0];
+      const tone = activeCard ? activeHuman.tone : lead ? 'neutral' : pages.completed?.total ? 'success' : 'idle';
+      const label = activeCard ? activeHuman.label : lead ? requestStateLabel(t, lead) : pages.completed?.total ? `${t('boardDelivered')} ${pages.completed.total}` : t('observerIdle');
+      const queued = activeCard ? waiting.length : Math.max(0, waiting.length - 1);
+      return h('section', { ref: observerRef, className: 'dsh-project-observer', 'data-project-observer-stack': true, 'data-project-observer-compact-only': true, 'data-project-observer-capsule': true,
+        'data-dockkit-float-chrome': 'content', 'data-dockkit-float-motion': 'morph', 'aria-label': t('observerOpen') },
+        h('div', { ref: contentRef, className: 'dsh-project-observer-stack' },
+          h('header', { className: 'dsh-project-capsule', 'data-dockkit-float-drag-handle': true, 'data-tone': tone },
+            h('span', { className: 'dsh-project-tone-dot', 'data-tone': tone, 'aria-hidden': true }),
+            h('button', { type: 'button', className: 'dsh-project-capsule-open', title: `${project.title}${lead ? ` · ${lead.title}` : ''} · ${label}`, onClick: () => setCapsule(false) },
+              h('span', { className: 'dsh-project-capsule-title' }, lead?.title ?? project.title), h('span', { className: 'dsh-project-capsule-state', role: 'status' }, label),
+              queued ? h('span', { className: 'dsh-project-capsule-count', title: t('boardWaiting') }, `+${queued}`) : null),
+            h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-capsule-toggle', 'aria-label': t('observerExpand'), 'aria-expanded': false, onClick: () => setCapsule(false) }, h(IconChevronDownOutlineRegular, { size: 14 }))),
+          error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null));
+    }
     return h('section', { ref: observerRef, className: 'dsh-project-observer', 'data-project-observer-stack': true, 'data-project-observer-compact-only': !expanded,
       'data-dockkit-float-chrome': 'content', 'data-dockkit-float-motion': 'morph', 'aria-label': t('observerOpen') },
       h('div', { className: 'dsh-project-observer-scroll' }, h('div', { ref: contentRef, className: 'dsh-project-observer-stack' },
-        h('header', { className: 'dsh-project-observer-drag', 'data-dockkit-float-drag-handle': true },
-          h('span', { title: project.canonicalWorkingDirectory }, project.title),
+        h('div', { className: 'dsh-project-observer-summary' }, h('header', { className: 'dsh-project-observer-drag', 'data-dockkit-float-drag-handle': true },
+          h(IconFolderCloseRegular, { size: 14 }), h('span', { title: project.canonicalWorkingDirectory }, project.title),
           h('nav', { className: 'dsh-project-observer-sections', 'aria-label': t('projectOverview') },
             ...[['tasks', 'taskList'], ['team', 'team'], ['materials', 'taskMaterials']].map(([id, label]) => h(Button, { key: id, variant: 'ghost', size: 'sm', 'aria-current': section === id ? 'page' : undefined, onClick: () => navigate({ section: id }) }, t(label)))),
           h(Menu, { open: historyMenu, onClose: () => setHistoryMenu(false), portal: true, compact: true, align: 'end',
             items: [{ id: 'cancelled', label: `${t('taskCancelled')} · ${pages.cancelled?.total ?? 0}` }, { id: 'archived', label: `${t('taskArchive')} · ${pages.archived?.total ?? 0}` }],
             onSelect: kind => { setHistoryMenu(false); setHistoryKind(value => value === kind ? null : kind); },
-            anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': t('more'), onClick: () => setHistoryMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) })),
+            anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': t('more'), onClick: () => setHistoryMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) }),
+          h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-capsule-toggle', 'aria-label': t('observerIsland'), 'aria-expanded': true, onClick: () => { if (section === 'materials' && materialsDirty) setPendingRoute({ close: () => setCapsule(true) }); else setCapsule(true); } }, h(IconChevronUpOutlineRegular, { size: 14 }))),
         board.some(item => item.count) ? h('div', { className: 'dsh-project-board', role: 'group', 'aria-label': t('boardSummary') }, board.map(item => h('div', { key: item.id, className: 'dsh-project-board-cell', 'data-empty': !item.count },
-          h('strong', null, item.count), h('span', { className: 'dsh-project-board-label' }, h('span', { className: 'dsh-project-tone-dot', 'data-tone': item.count ? item.tone : 'idle', 'aria-hidden': true }), t(item.label))))) : null,
+          h('strong', null, item.count), h('span', { className: 'dsh-project-board-label' }, h('span', { className: 'dsh-project-tone-dot', 'data-tone': item.count ? item.tone : 'idle', 'aria-hidden': true }), t(item.label))))) : null),
         activeCard ? h('div', { className: 'dsh-project-observer-current' }, renderCard(activeCard, 'card')) : null,
         !activeCard && !current.length && !pages.completed?.total && !cardsBusy ? h('div', { className: 'dsh-project-observer-empty' }, h('strong', null, t('taskEmptyTitle')), h('p', null, t('taskEmpty'))) : null,
         waiting.length ? h('div', { className: 'dsh-project-observer-list', 'aria-label': t('requestQueued') }, waiting.map(item => renderCard(item))) : null,
@@ -1509,11 +1600,23 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     return files;
   }
   const diffTone = { added: 'success', deleted: 'danger', renamed: 'info', untracked: 'outline', modified: 'neutral' };
-  function DiffFile({ file, open, t }) {
+  function diffDirectoryLabel(directory, directories) {
+    const parts = directoryParts({ canonicalWorkingDirectory: directory });
+    if (!parts.length || /^[a-z]:[\\/]*$/i.test(directory)) return directory;
+    const peers = directories.filter(other => other !== directory).map(other => directoryParts({ canonicalWorkingDirectory: other }));
+    for (let count = 1; count < parts.length; count++) {
+      const label = parts.slice(-count).join('/');
+      if (peers.every(other => other.slice(-count).join('/') !== label)) return `…/${label}`;
+    }
+    return directory;
+  }
+  function DiffFile({ file, directoryLabel, open, t }) {
     const slash = file.path.lastIndexOf('/'), shown = file.lines.slice(0, diffLineLimit);
-    return h('details', { className: 'dsh-project-diff-file', open, 'data-diff-path': file.path },
+    const location = file.workingDirectory ? `${t('diffWorkingDirectory')}: ${file.workingDirectory}\n${t('diffRepositoryPath')}: ${file.path}` : file.path;
+    return h('details', { className: 'dsh-project-diff-file', open, 'data-diff-path': file.path, 'data-diff-directory': file.workingDirectory },
       h('summary', null, h(Tag, { tone: diffTone[file.kind] }, t(`diff_${file.kind}`)),
-        h('span', { className: 'dsh-project-diff-name', title: file.path }, slash >= 0 ? h('span', null, file.path.slice(0, slash + 1)) : null, file.path.slice(slash + 1)),
+        h('span', { className: 'dsh-project-diff-name', title: location }, slash >= 0 ? h('span', null, file.path.slice(0, slash + 1)) : null, file.path.slice(slash + 1),
+          file.workingDirectory ? h('span', null, ` · ${directoryLabel}`) : null),
         file.added ? h('span', { className: 'dsh-project-diff-add' }, `+${file.added}`) : null, file.removed ? h('span', { className: 'dsh-project-diff-del' }, `−${file.removed}`) : null),
       file.kind === 'untracked' ? h('p', { className: 'dsh-project-diff-note' }, t('diffUntrackedHint'))
         : file.binary ? h('p', { className: 'dsh-project-diff-note' }, t('diffBinary'))
@@ -1524,10 +1627,12 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
 
   function DiffView({ files, truncated, t }) {
     const added = files.reduce((sum, file) => sum + file.added, 0), removed = files.reduce((sum, file) => sum + file.removed, 0);
+    const directories = [...new Set(files.map(file => file.workingDirectory).filter(Boolean))];
+    const labels = new Map(directories.map(directory => [directory, diffDirectoryLabel(directory, directories)]));
     return !files.length ? h('p', { className: 'dsh-project-muted' }, t('noDiff')) : h(Fragment, null,
       h('div', { className: 'dsh-project-diff-summary' }, h('strong', null, t('diffFileCount').replace('{count}', files.length)),
         h('span', { className: 'dsh-project-diff-add' }, `+${added}`), h('span', { className: 'dsh-project-diff-del' }, `−${removed}`)),
-      files.map((file, index) => h(DiffFile, { key: file.path, file, open: index < 3, t })),
+      files.map((file, index) => h(DiffFile, { key: `${file.workingDirectory ?? ''}:${file.path}`, file, directoryLabel: labels.get(file.workingDirectory), open: index < 3, t })),
       truncated ? h('p', { className: 'dsh-project-muted' }, t('diffTruncated')) : null);
   }
 
@@ -1558,8 +1663,11 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     }, [projectId, requestId]);
     if (error) return h('div', { className: 'dsh-project-body' }, h('p', { role: 'alert', className: 'dsh-project-error' }, error));
     if (!value) return h('div', { className: 'dsh-project-body' }, h('p', { role: 'status' }, t('loading')));
-    const parsed = parseUnifiedDiff(value.diff), known = new Set(parsed.map(file => file.path));
-    const files = [...parsed, ...(value.files ?? []).filter(file => !known.has(file.path)).map(file => ({ path: file.path, lines: [], added: file.added, removed: file.removed, binary: file.binary, kind: diffStatusKind(file.status) }))];
+    const files = (value.workspaces ?? [value]).flatMap(scope => {
+      const parsed = parseUnifiedDiff(scope.diff), known = new Set(parsed.map(file => file.path));
+      return [...parsed, ...(scope.files ?? []).filter(file => !known.has(file.path)).map(file => ({ path: file.path, lines: [], added: file.added, removed: file.removed, binary: file.binary, kind: diffStatusKind(file.status) }))]
+        .map(file => ({ ...file, ...(scope.workingDirectory ? { workingDirectory: scope.workingDirectory } : {}) }));
+    });
     return h('div', { className: 'dsh-project-body dsh-project-diff', 'data-request-diff': requestId },
       h('p', { className: 'dsh-project-muted' }, t(value.final ? 'requestDiffScope' : 'requestDiffLive'), value.revertedAt ? ` ${t('requestDiffReverted')}` : ''),
       h(DiffView, { files, truncated: value.truncated, t }));
