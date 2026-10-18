@@ -9,6 +9,7 @@ import type { DeepSeekModelDraft, DeepSeekModelsValidationFailure } from './Deep
 import type { ModelsKey } from './locales.ts'
 import { ModelInputTypes } from './ModelInputTypes.tsx'
 import { ModelReasoningEfforts } from './ModelReasoningEfforts.tsx'
+import type { ReasoningEffortsFailure } from './ModelReasoningEfforts.tsx'
 import styles from './ModelsSection.module.css'
 
 /** A capacity's editable text and adapter-specific inherited hint. */
@@ -30,7 +31,7 @@ interface ModelRowProps {
   reasoningLevels?: readonly string[] | undefined
   expanded: boolean
   disabled: boolean
-  validation?: DeepSeekModelsValidationFailure | undefined
+  validation?: DeepSeekModelsValidationFailure | ReasoningEffortsFailure | undefined
   t: (key: ModelsKey) => string
   contextWindow: CapacityInput
   maxTokens: CapacityInput

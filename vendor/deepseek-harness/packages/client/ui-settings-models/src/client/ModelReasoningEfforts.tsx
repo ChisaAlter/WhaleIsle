@@ -2,9 +2,9 @@
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { IconPlusOutlineRegular, IconTrashOutlineRegular, Switch, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
-import { modelDrafts } from './DeepSeekModelsEditor.tsx'
+import { IconPlusOutlineRegular, IconTrashOutlineRegular, SettingsSelect, Switch, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { DeepSeekModelDraft, DeepSeekModelsValidationFailure } from './DeepSeekModelsEditor.tsx'
+import { modelDrafts, validateDeepSeekModels } from './DeepSeekModelsEditor.tsx'
 import type { ModelsKey } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -82,6 +82,19 @@ export function validateReasoningEfforts(value: unknown): ReasoningEffortsFailur
     if (!entries.some(([level]) => level !== 'off')) return { index, key: 'modelReasoningNeedsLevel' }
   }
   return undefined
+}
+
+/**
+ * Check a hand-declared route's rows: the shared row checks, then this editor's
+ * refusals. An Off-only row is named by this editor's refusal rather than the
+ * shared checker's `effortOffAlone`, which serves the desktop checkbox rows.
+ * @param value - drafted `models` value, or `undefined` while inherited.
+ * @returns the first refused row, or `undefined` when every row is accepted.
+ */
+export function validateDeclaredModels(value: unknown): DeepSeekModelsValidationFailure | ReasoningEffortsFailure | undefined {
+  const shared = validateDeepSeekModels(value)
+  if (shared !== undefined && shared.key !== 'effortOffAlone') return shared
+  return validateReasoningEfforts(value) ?? shared
 }
 
 /** Props of {@link ModelReasoningEfforts}. */
@@ -193,17 +206,14 @@ export function ModelReasoningEfforts({ model, levels, position, disabled, t, on
               // so the position is the row's identity. Keying by level would remount
               // the select on every change and drop keyboard focus.
               <div key={index} className={styles['modelReasoningRow']}>
-                <select
-                  className={`${styles['input']} ${styles['selectInput']}`}
+                <SettingsSelect
+                  variant="block"
                   value={level}
                   aria-label={`${t('modelReasoningLevel')} ${String(index + 1)}`}
                   disabled={disabled}
-                  onChange={(event) => { changeLevel(entries, index, level, wire, event.target.value) }}
-                >
-                  {choicesFor(level).map(choice => (
-                    <option key={choice} value={choice}>{choice}</option>
-                  ))}
-                </select>
+                  onChange={(next) => { changeLevel(entries, index, level, wire, next) }}
+                  options={choicesFor(level).map(choice => ({ id: choice, label: choice }))}
+                />
                 <input
                   className={`${styles['input']} ${styles['modelReasoningValueInput']}`}
                   type="text"

@@ -35,6 +35,7 @@ async function bench() {
   remote.$host = { home: undefined, isLoopback: false }
   ctx.provide('configForms', { get: () => stubConfigForm().scope } as never)
   ctx.provide('shortcuts', { register: () => () => {} } as never)
+  ctx.provide('modules', { entries: { dismissRelease: () => {}, releaseChange: () => {} } } as never)
   return { ctx, slots: ctx.get('slots') as SlotRegistry }
 }
 

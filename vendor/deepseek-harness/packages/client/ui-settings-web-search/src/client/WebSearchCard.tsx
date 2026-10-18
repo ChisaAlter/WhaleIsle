@@ -38,7 +38,7 @@ export function WebSearchCard(props: WebSearchCardProps) {
           <label className={styles.toggleRow}>
             <span>{t('useSearchApi')}</span>
             <Switch checked={searchApi} label={t('useSearchApi')} disabled={disabled || state.apiSwitchBlocked}
-              onChange={(checked) => { props.setSearchApi(checked) }} />
+              onChange={(checked: boolean) => { props.setSearchApi(checked) }} />
           </label>
           <p className={styles.hint}>
             {t('useSearchApiHint')}

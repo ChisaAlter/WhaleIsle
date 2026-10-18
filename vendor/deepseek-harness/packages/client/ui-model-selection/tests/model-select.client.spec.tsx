@@ -146,7 +146,8 @@ describe('ModelSelect label slot', () => {
     expect(renderSlot).not.toHaveBeenCalled()
     expect(document.querySelector('[data-provider-id]')).toBeNull()
     act(() => { directory.set(state({ groups: [] })) })
-    expect(screen.getByRole('button', { name: '请选择模型' })).toBeTruthy()
+    // The desktop trigger names a selection missing from the catalog by its ids.
+    expect(screen.getByRole('button', { name: /deepseek-official\/deepseek-v4-flash/ })).toBeTruthy()
     expect(renderSlot).not.toHaveBeenCalled()
   })
 })
@@ -176,7 +177,7 @@ describe('ModelSelect reasoning effort', () => {
       const load = vi.fn(() => { void directory.load() })
       const props = {
         locked: false, available: true, directory: directory.store,
-        load, select: vi.fn().mockResolvedValue({ ok: true, value: undefined }), t,
+        load, select: vi.fn().mockResolvedValue({ ok: true, value: undefined }), t, renderSlot: renderLabel,
       }
       const view = render(<ModelSelect {...props} />)
       return { directory, load, view, props }
@@ -370,6 +371,7 @@ describe('ModelSelect reasoning effort', () => {
       return new Promise<{ ok: true; value: undefined }>((resolve) => { release = resolve })
     })
     render(<ModelSelect
+      renderSlot={renderLabel}
       locked={false}
       available
       directory={directory}

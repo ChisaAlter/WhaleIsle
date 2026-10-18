@@ -34,7 +34,7 @@ import { accountModelRows, accountOverrides, editedAccountOverrides } from './ac
 import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
-import { validateReasoningEfforts } from './ModelReasoningEfforts.tsx'
+import { validateDeclaredModels } from './ModelReasoningEfforts.tsx'
 import type { ReasoningEffortsFailure } from './ModelReasoningEfforts.tsx'
 import { deriveKeyRef, protocolChoices, reasoningLevelChoices } from './store.ts'
 import { protocolLabel } from './protocol-label.ts'
@@ -254,7 +254,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   )
   const editsReasoning = reasoningLevels.length > 0
   const validateModels = (value: unknown): DeepSeekModelsValidationFailure | ReasoningEffortsFailure | undefined =>
-    validateDeepSeekModels(value) ?? (editsReasoning ? validateReasoningEfforts(value) : undefined)
+    editsReasoning ? validateDeclaredModels(value) : validateDeepSeekModels(value)
   const modelFailure = validateModels(accountProvider ? accountDraft.models : schema.getPath(draft, ['models']))
   const keyFailure = apiKeyFailure(keyDraft)
   // What a probe or a write must carry: the typed key with paste whitespace

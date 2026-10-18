@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-user-terminal",
   "description": "Shared user terminal: bottom drawer and right-panel surface over one PTY session table",
-  "version": "0.2.1-alpha.3",
+  "version": "0.2.1-rc.2",
   "publishConfig": {
     "access": "public"
   },

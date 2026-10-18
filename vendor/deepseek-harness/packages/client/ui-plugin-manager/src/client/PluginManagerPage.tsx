@@ -1006,7 +1006,8 @@ function InstallFeedbackToast({ install, t, onReconcile, onRun }: {
   let retry: 'check' | 'run' | null = null
   if (install.registryError) {
     messages.push(t('registryCustomInvalid'))
-  } else if (input !== null) {
+  } else if (input !== null && install.confirmed === undefined) {
+    // A confirmed version's dialog states its own refusal beside Retry.
     messages.push(inputProblemSentence(input, t, resolved))
     retry = 'run'
   } else if (install.failure?.uncertainty !== undefined) {

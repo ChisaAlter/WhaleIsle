@@ -28,6 +28,7 @@ import {
 import { discoveredModelsOf } from './operations.ts'
 import type { en } from './locales.ts'
 import { ModelRow } from './ModelRow.tsx'
+import { validateDeclaredModels } from './ModelReasoningEfforts.tsx'
 import styles from './ModelsSection.module.css'
 
 function messageOf(error: unknown): string {
@@ -203,10 +204,10 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   const [failureDismissed, setFailureDismissed] = useState(false)
   const [failureSequence, setFailureSequence] = useState(0)
   useEffect(() => { setFailureDismissed(false) }, [failure])
-  const validation = validateDeepSeekModels(models)
   // A hand-declared route's rows edit levels and wire values through ModelRow's
   // reasoning editor; the checkbox group serves every other row.
   const rowEditsReasoning = props.reasoningLevels !== undefined && props.reasoningLevels.length > 0
+  const validation = rowEditsReasoning ? validateDeclaredModels(models) : validateDeepSeekModels(models)
   const [inheritedCatalog, setInheritedCatalog] = useState<{
     provider: string
     models: readonly LlmDiscoveredModel[]

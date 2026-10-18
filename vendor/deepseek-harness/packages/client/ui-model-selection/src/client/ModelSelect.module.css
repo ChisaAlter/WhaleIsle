@@ -95,6 +95,12 @@
   display: var(--dsh-composer-model-text-display, inline-grid);
 }
 
+/* The label slot's identity wrapper on the trigger stays out of the flex row,
+   so the FlipText fallback keeps the label recipe above. */
+.triggerSlot {
+  display: contents;
+}
+
 .chevron {
   flex: 0 0 auto;
   color: var(--dsw-alias-label-caption);

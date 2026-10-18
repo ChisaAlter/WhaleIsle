@@ -26906,7 +26906,7 @@
       "digest": "201525de00c233a99a14787a124f25b23b6845e941e8ada339be7424cabc5e00",
       "names": [],
       "sources": [
-        "packages/api/session-controller/src/types.ts:504"
+        "packages/api/session-controller/src/types.ts:508"
       ]
     },
     {
@@ -27568,7 +27568,7 @@
         "packages/workflow/workflow/src/types.ts#WorkflowRunId"
       ],
       "sources": [
-        "packages/api/session-controller/src/types.ts:494",
+        "packages/api/session-controller/src/types.ts:498",
         "packages/attachment/attachment/src/brand.ts:6",
         "packages/compaction/compaction/src/brand.ts:4",
         "packages/core/session/src/types.ts:21",
@@ -28229,7 +28229,7 @@
       "digest": "77baf54894168c696b015d0f6be11582cbd065230f628feb5c11838149dc88e1",
       "names": [],
       "sources": [
-        "packages/api/session-controller/src/types.ts:499"
+        "packages/api/session-controller/src/types.ts:503"
       ]
     },
     {
@@ -28645,13 +28645,6 @@
       "digest": "914b65dd567868ccb9c77c69d7e76294cd1091354cb20b42cbd1859fd7ba47f5",
       "names": [],
       "sources": []
-    },
-    {
-      "digest": "930a6567a10bb62ddd157bd8abdf4b182810c8c3b49d91309b3b009a5fed9731",
-      "names": [],
-      "sources": [
-        "packages/web/web-search-deepseek/src/provider.ts:61"
-      ]
     },
     {
       "digest": "930c1cd289def119d443e19dd90008916bf035f0a4d23e07241e7f050f2b89b7",
@@ -29105,6 +29098,15 @@
       "names": [],
       "sources": [
         "packages/interaction/user-questions/src/types.ts:180"
+      ]
+    },
+    {
+      "digest": "abd6ca62a5ab166553848324a23fef90eed7f59c8021bd63e7ea5bc6fd666b0c",
+      "names": [
+        "packages/web/web-search-deepseek/src/provider.ts#DeepSeekSearchLlmRequest"
+      ],
+      "sources": [
+        "packages/web/web-search-deepseek/src/provider.ts:55"
       ]
     },
     {
@@ -29653,11 +29655,6 @@
       "sources": [
         "packages/subagent/subagent/src/descriptor.ts:74"
       ]
-    },
-    {
-      "digest": "cf6e3aaf1e2de6480aa0157730a41b9a492108a55304100b0f7e112711dd4331",
-      "names": [],
-      "sources": []
     },
     {
       "digest": "cffcdc19881ab61ec0a9ce18743996f7ac44ac8889f34dfac36ae745574aa22f",

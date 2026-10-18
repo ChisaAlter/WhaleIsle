@@ -487,8 +487,9 @@ export function ModelSelect(
   const renderModelLabel = (
     provider: ModelLabelOwner['provider'], model: ModelLabelOwner['model'],
     placement: ModelLabelOwner['placement'], selected: boolean, fallback: ReactNode = model.name,
+    className?: string,
   ) => (
-    <span data-provider-id={provider.id} data-model-id={model.id}>
+    <span className={className} data-provider-id={provider.id} data-model-id={model.id}>
       {renderSlot('conversation.input.model.label', {
         provider, model, placement, selected,
       }, { fallback })}
@@ -538,11 +539,12 @@ export function ModelSelect(
           <span className={css.initialReserve} aria-hidden>{t('trigger.fallback')}</span>
           <span className={css.initialReserve} aria-hidden>{t('trigger.loading')}</span>
           <FlipText className={css.initialCaption} text={modelLabel} />
-        </span> : <span className={css.triggerLabel}>
-          {currentChoice === undefined
-            ? <FlipText text={modelLabel} />
-            : renderModelLabel(currentChoice.group.provider, currentChoice.model, 'trigger', true, <FlipText text={currentChoice.model.name} />)}
-        </span>}
+        </span> : currentChoice === undefined
+          ? <FlipText className={css.triggerLabel} text={modelLabel} />
+          : renderModelLabel(
+            currentChoice.group.provider, currentChoice.model, 'trigger', true,
+            <FlipText className={css.triggerLabel} text={modelLabel} />, css.triggerSlot,
+          )}
         {effortLabel !== undefined && <FlipText className={css.triggerEffort} text={effortLabel} />}
         {busy || waiting
           ? <StateDot state="ongoing" size={16} />

@@ -1272,11 +1272,11 @@ describe('hand-declared providers', () => {
   })
 
   it.each([
-    ['blocks a hand-declared route', true],
-    ['leaves a catalog route to the adapter', false],
-  ])('%s whose stored reasoning levels the adapter refuses', async (_label, declared) => {
-    // Only a hand-declared route's rows edit reasoning levels, so only there
-    // can the card name the row and offer the switch that repairs it.
+    ['blocks a hand-declared route', true, 'modelReasoningNeedsLevel'],
+    ['blocks a catalog route through the desktop intensity checkboxes', false, 'effortOffAlone'],
+  ] as const)('%s whose stored reasoning levels the adapter refuses', async (_label, declared, key) => {
+    // A hand-declared route's rows edit reasoning levels in their own editor;
+    // other rows keep the desktop intensity checkboxes and their Off-only check.
     await mountSection({
       providers: {
         'acme-gateway': {
@@ -1288,9 +1288,8 @@ describe('hand-declared providers', () => {
     })
     openEditor('acme-gateway')
 
-    const refusal = `${en.model} 1: ${en.modelReasoningNeedsLevel}`
-    expect(screen.queryByText(refusal) !== null).toBe(declared)
-    expect(buttonNamed(en.apply).disabled).toBe(declared)
+    expect(screen.getByText(`${en.model} 1: ${en[key]}`)).toBeTruthy()
+    expect(buttonNamed(en.apply).disabled).toBe(true)
   })
 
   it('retries only the key after the profile landed, and reports the provider on cancel', async () => {
@@ -1570,8 +1569,11 @@ describe('hand-declared providers', () => {
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
     fireEvent.click(screen.getByRole('button', { name: en.addModel }))
     fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'thinker' } })
-    fireEvent.click(screen.getByLabelText(`${en['effort.low']} 1`))
-    fireEvent.click(screen.getByLabelText(`${en['effort.medium']} 1`))
+    // A hand-declared route's row edits its levels in the reasoning editor.
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelAdvanced} 1` }))
+    fireEvent.click(screen.getByRole('switch', { name: `${en.modelReasoning} 1` }))
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelReasoningRemove} off` }))
+    fireEvent.click(screen.getByRole('button', { name: `${en.modelReasoningRemove} high` }))
     fireEvent.click(screen.getByText(en.create))
 
     await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
