@@ -16,7 +16,7 @@ import { deriveReplayScript, parseSessionLog, type ReplayEntry } from '@deepseek
 import { launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
-const FIXTURE = fileURLToPath(new URL('./snapshots/live-interactions/session.jsonl', import.meta.url))
+const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/live-interactions/session.v3.jsonl', import.meta.url))
 const ACTIVE_PROMPT = 'Reply with a one-sentence description of event sourcing, then stop.'
 const Q1 = 'Queue first'
 const Q2 = 'Queue second'
@@ -40,16 +40,16 @@ describe('desktop fork: input.dock panels follow the composer drag width', () =>
       recorded[0]!,
     ] satisfies ReplayEntry[]))
 
-    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, replayOverride: overridePath, harnessHome: home })
+    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, replayOverride: overridePath, harnessHome: home, compareReplaySession: false })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     const tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
     onTestFailed(() => saveFailureShot(page!, 'web-fork-composer-width'))
 
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     await input.fill(ACTIVE_PROMPT)
     await input.press('Enter')
     await expect.poll(() => existsSync(readyFile), { timeout: 15_000 }).toBe(true)

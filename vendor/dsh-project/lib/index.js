@@ -57,13 +57,13 @@ export async function apply(ctx) {
       else if (worker) agent.session.append('session/presentation', { owner: 'project', title: service.stream(worker.workstreamId).title, composer: 'managed' });
       service.approvals.created(agent);
     });
-    ctx.on('subagent/start', info => { void service.runStarted(info).catch(error => ctx.logger.warn('Project start accounting failed: %s', error.message)); });
-    ctx.on('subagent/end', info => { void service.runEnded(info).catch(error => ctx.logger.warn('Project end accounting failed: %s', error.message)); });
+    ctx.on('subagent/start', info => { service.track(service.runStarted(info), 'Project start accounting failed'); });
+    ctx.on('subagent/end', info => { service.track(service.runEnded(info), 'Project end accounting failed'); });
     ctx.on('agent/pre-step', (input, next) => service.preStep(input, next));
-    ctx.on('session/event', (session, event) => { void service.assistantReply(session, event).catch(error => ctx.logger.warn('Project summary accounting failed: %s', error.message)); });
+    ctx.on('session/event', (session, event) => { service.track(service.assistantReply(session, event), 'Project summary accounting failed'); });
     ctx.on('session/before-cancel', ({ agent }) => service.sessionStop(agent.id));
     ctx.on('workspace/session-stop', ({ sessionId }) => service.sessionStop(sessionId));
-    ctx.inject(['jobs'], host => host.effect(() => host.jobs.events.subscribe({ owners: 'all' }, event => { void service.jobChanged(event).catch(error => ctx.logger.warn('Project job observation failed: %s', error.message)); })));
+    ctx.inject(['jobs'], host => host.effect(() => host.jobs.events.subscribe({ owners: 'all' }, event => { service.track(service.jobChanged(event), 'Project job observation failed'); })));
     await service.recover();
   } catch (error) {
     ctx.logger.warn('Project unavailable: %s', error.message);

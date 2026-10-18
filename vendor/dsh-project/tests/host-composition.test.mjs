@@ -1324,7 +1324,12 @@ test('native Team dependency changes preserve continuing identity, reject cycles
       await waitFor(() => drainReached, 'internal dependency change reaches native drain boundary'); await host.tail;
       const race = work('Stop storage race'), originalRef = race.currentDelegationRef, failuresBeforeStop = model.failures.length;
       let failWrite = true;
-      host.write = async function (change) { if (failWrite) { failWrite = false; throw new Error('User stop persistence fault'); } return originalWrite.call(this, change); };
+      // Fail only the user stop's own save, the one write that records its
+      // hold: cancelling the worker also queues accounting writes, and under
+      // load one of those can reach write first.
+      const hold = state => state.workers.find(item => item.sessionId === race.workerSessionId)?.holdSourceMessageId;
+      const marksStopped = change => { const probe = structuredClone(host.state()); change(probe); return Boolean(hold(probe)) && hold(probe) !== hold(host.state()); };
+      host.write = async function (change) { if (failWrite && marksStopped(change)) { failWrite = false; throw new Error('User stop persistence fault'); } return originalWrite.call(this, change); };
       await assert.rejects(() => host.command('stop', { projectId: project.id, workstreamId: race.id }), /User stop persistence fault/);
       assert.equal(failWrite, false, 'the injected failure reached the actual stop persistence boundary'); host.write = originalWrite;
       releaseDrain(); await lead.whenIdle(); await Promise.all([...host.stops.values()]);
