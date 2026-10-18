@@ -24,6 +24,23 @@ function lastContent(snapshot: ChatSnapshot, turn: number, skipWarning: boolean)
   return undefined
 }
 
+/**
+ * The turn whose finished response keeps its actions in view: the newest turn,
+ * or the one before it while the newest has not closed yet. A send then leaves
+ * the previous answer's actions in place until the new answer settles, rather
+ * than hiding them the moment the next turn opens.
+ */
+function revealTurn(snapshot: ChatSnapshot): number | undefined {
+  const order = snapshot.timeline.turnOrder
+  const newest = order.at(-1)
+  if (newest === undefined) return undefined
+  const closed = snapshot.locations.getTurn(newest).some((key) => {
+    const node = snapshot.nodes.get(key as string) as ChatNode | undefined
+    return node?.kind === 'turn-tail' && node.data.closing !== null
+  })
+  return closed || order.length < 2 ? newest : order.at(-2)
+}
+
 /** Turn-local actions and feature tail over the Location index, independent of Assistant placement. */
 export const TurnTailNodeView = memo(function TurnTailNodeView({
   node, openFile, forkAt, renderSlot, t, useAccess, useChat, usePerformanceUsage,
@@ -34,7 +51,7 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
   const hasLaterChatNode = useChat(snapshot =>
     (lastContent(snapshot, data.turn, true)?.anchorSeq ?? -1) > (data.closing?.finalNode.seq ?? data.seq))
   const endsWithResponse = useChat((snapshot) => {
-    if (snapshot.timeline.turnOrder.at(-1) !== data.turn) return false
+    if (revealTurn(snapshot) !== data.turn) return false
     const last = lastContent(snapshot, data.turn, false)
     const block = last?.kind === 'assistant-step' ? last.data.blocks.findLast(candidate =>
       (candidate.kind !== 'text' && candidate.kind !== 'reasoning') || candidate.text.trim() !== '') : undefined

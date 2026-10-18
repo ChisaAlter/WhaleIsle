@@ -3441,6 +3441,31 @@ describe('ChatView', () => {
     expect(view.container.querySelectorAll('[data-chat-flow-kind="user"]')).toHaveLength(2)
   })
 
+  it('keeps the previous answer actions visible until the next turn settles', () => {
+    const turnTimings = new Map([[1, { startTime: 1_000, endTime: 2_000 }], [2, { startTime: 4_000 }]])
+    const reveal = (container: HTMLElement) => new Map([...container.querySelectorAll('[data-turn-tail]')].map(tail => [
+      tail.getAttribute('data-turn-tail'), tail.getAttribute('data-actions-reveal'),
+    ]))
+    // The next message was sent and its turn is still open: the answer above
+    // keeps its actions instead of hiding them the moment the send lands.
+    const running = makeHarness({
+      nodes: [user(1, 'hi'), assistant(2, 'answer'), user(4, 'again')],
+      turnTimings,
+      turnEnds: new Map([[1, 3]]),
+    }, { running: true })
+    const open = render(<running.ChatView {...running.props} />)
+    expect(reveal(open.container).get('1')).toBe('always')
+    open.unmount()
+    // Once the new answer settles, it takes over and the earlier one reveals on hover.
+    const settled = makeHarness({
+      nodes: [user(1, 'hi'), assistant(2, 'answer'), user(4, 'again'), assistant(5, 'later answer', 2)],
+      turnTimings: new Map([[1, { startTime: 1_000, endTime: 2_000 }], [2, { startTime: 4_000, endTime: 5_000 }]]),
+      turnEnds: new Map([[1, 3], [2, 6]]),
+    })
+    const done = render(<settled.ChatView {...settled.props} />)
+    expect(reveal(done.container)).toEqual(new Map([['1', 'hover'], ['2', 'always']]))
+  })
+
   it('the run-time label is withheld when the turn start is outside the window', () => {
     const h = makeHarness({
       nodes: [assistant(16, 'tail without trigger')],
