@@ -130,7 +130,7 @@ composer 上四个浮层共用此时长：加号斜杠菜单、权限 `Menu`、�
 | 产品面 | 行为 |
 | --- | --- |
 | 侧栏 / 栏开合 | `AppFrame` 过渡 `grid-template-columns` / `rows`、把手 `left`、图标位移；拖拽中暂停；减弱动效时停下 |
-| 草稿首次发送 | `ConversationRoot` 测量输入卡位移，短暂停留期间钉住草稿位置；仅真实布局变化延长停留，自身样式写入不重置静默计时。放行后以 `transform: translateY()` 在合成层滑到会话位置，使用 `--ds-transition-duration-slow` 与 `--ds-ease-in-out`；内置 fixed 浮层使用页面 portal，结束后移除 transform；减弱动效归零，切换会话取消 |
+| 草稿首次发送 | `ConversationContent` 测量输入卡位移，在离开草稿页的同一提交、首帧绘制前开始 `transform: translateY()` 合成层滑动（`--ds-transition-duration-slow`、`--ds-ease-in-out`），不由定时器放行；会话标题区与对话内容同时以 swap 淡入。内置 fixed 浮层使用页面 portal，结束后移除 transform；减弱动效归零，切换会话取消 |
 | 开关 | `Switch` 滑块 `transform`，`--ds-transition-duration-fast` |
 | 按钮、输入、行 hover | 交互色 token，不是进出场 recipe |
 | 微交互 | 图标按钮按压、卡片按压位移等 `transform` 反馈，`--ds-transition-duration-fast`；卡片级 hover（边框 / 底色）用 `--ds-motion-duration-popover` |

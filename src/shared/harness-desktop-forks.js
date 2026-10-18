@@ -161,6 +161,12 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx', includes: ['TasksSectionHeader', 'connectNoDirectory', 'GroupSessionRun'] },
   { file: 'packages/client/ui-workspace/src/client/locales.ts', includes: ['menu.noDirectory'], excludes: ['Ungrouped'] },
   { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx', includes: ['selectNoDirectory', 'noDirectorySession'] },
+  // First send: the glide starts in the send commit (no timer-released hold),
+  // the Session header and transcript fade in, and the previous answer keeps
+  // its actions until the next turn settles.
+  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx', includes: ["stack.dataset.composerEntering = ''"], excludes: ['animation-play-state'] },
+  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css', includes: ['conversation-enter-swap'], excludes: ['animation-play-state: paused'] },
+  { file: 'packages/client/ui-chat/src/client/chat/TurnTailNodeView.tsx', includes: ['function revealTurn', 'revealTurn(snapshot) !== data.turn'] },
   { file: 'packages/client/ui-conversation/src/client/apply.ts', includes: ['selectNoDirectory', 'openNoDirectory'] },
   { file: 'packages/client/ui-conversation/src/client/locales.ts', includes: ['hero.noDirectory'] },
   // Desktop launcher recovery flag reaches normal profile boot, not only dumps.

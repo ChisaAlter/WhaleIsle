@@ -847,120 +847,39 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.container.querySelector('[data-composer-entering]')).toBeNull()
   })
 
-  it('pins the held card at the draft position while the send commit settles', async () => {
+  it('starts the glide in the send commit without waiting for the main thread', () => {
     const b = mount(sessionSnapshotOf({ blank: true }))
     const card = b.view.container.querySelector<HTMLElement>('[data-composer-card]')!
     const scroller = b.view.container.querySelector<HTMLElement>('[data-conversation-scroll]')!
     let base = 400
-    vi.spyOn(card, 'getBoundingClientRect').mockImplementation(() => {
-      const entering = card.closest<HTMLElement>('[data-composer-entering]')
-      const offset = Number.parseFloat(entering?.style.getPropertyValue('--dsh-composer-enter-offset') ?? '') || 0
-      const top = base + offset
-      return { top, bottom: top + 100, left: 0, right: 600, width: 600, height: 100, x: 0, y: top, toJSON: () => ({}) }
-    })
+    vi.spyOn(card, 'getBoundingClientRect').mockImplementation(() => ({
+      top: base, bottom: base + 100, left: 0, right: 600, width: 600, height: 100, x: 0, y: base, toJSON: () => ({}),
+    }))
     fireResize(scroller)
     vi.useFakeTimers()
     try {
       base = 800
       act(() => { b.session.set(sessionSnapshotOf({ blank: true, promptAttempted: true })) })
       const entering = b.view.container.querySelector<HTMLElement>('[data-composer-entering]')!
-      // 400 (held draft top) - 800 (resting spot) = the initial hold offset.
+      // Set before paint with no paused hold: the compositor runs the glide
+      // even while the commit's own work keeps the main thread busy.
       expect(entering.style.getPropertyValue('--dsh-composer-enter-offset')).toBe('-400px')
-      // A quiet settle notification leaves the offset alone.
-      act(() => { fireResize(entering) })
-      expect(entering.style.getPropertyValue('--dsh-composer-enter-offset')).toBe('-400px')
-      // Drift from the send commit folds back into the offset so the rendered
-      // card stays pinned at the draft position.
-      base = 804
-      act(() => { fireResize(entering) })
-      expect(entering.style.getPropertyValue('--dsh-composer-enter-offset')).toBe('-404px')
-      base = 806
-      fireEvent.scroll(scroller)
-      expect(entering.style.getPropertyValue('--dsh-composer-enter-offset')).toBe('-406px')
-      base = 812
-      await act(async () => { entering.setAttribute('data-probe-settle', '') })
-      expect(entering.style.getPropertyValue('--dsh-composer-enter-offset')).toBe('-412px')
-      // Structural churn re-arms the quiet window, so the glide stays paused.
-      act(() => { vi.advanceTimersByTime(60) })
       expect(entering.style.getPropertyValue('animation-play-state')).toBe('')
-      const text = document.createTextNode('a')
-      await act(async () => { entering.appendChild(text) })
-      act(() => { vi.advanceTimersByTime(60) })
-      expect(entering.style.getPropertyValue('animation-play-state')).toBe('')
-      // Streaming-class text edits still pin drift but do not extend the hold.
-      await act(async () => { text.data = 'b' })
-      act(() => { vi.advanceTimersByTime(25) })
-      expect(entering.style.getPropertyValue('animation-play-state')).toBe('running')
-      // Once the glide runs the card owns the motion; late drift is not
-      // pinned back.
+      expect(vi.getTimerCount()).toBe(0)
+      // Later layout changes do not rewrite the running glide.
       base = 900
       act(() => { fireResize(entering) })
       fireEvent.scroll(scroller)
-      await act(async () => { entering.setAttribute('data-probe-late', '') })
-      expect(entering.style.getPropertyValue('--dsh-composer-enter-offset')).toBe('-412px')
+      expect(entering.style.getPropertyValue('--dsh-composer-enter-offset')).toBe('-400px')
       fireEvent.animationEnd(entering)
       expect(entering.dataset.composerEntering).toBeUndefined()
       expect(entering.style.getPropertyValue('--dsh-composer-enter-offset')).toBe('')
-      expect(entering.style.getPropertyValue('animation-play-state')).toBe('')
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it('does not extend the first-send hold for its own pin style', async () => {
-    const b = mount(sessionSnapshotOf({ blank: true }))
-    vi.useFakeTimers()
-    try {
-      act(() => { b.session.set(sessionSnapshotOf({ blank: true, promptAttempted: true })) })
-      const entering = b.view.container.querySelector<HTMLElement>('[data-composer-entering]')!
-      await act(async () => {})
-      act(() => { vi.advanceTimersByTime(60) })
-      await act(async () => {
-        entering.style.setProperty('--dsh-composer-enter-offset', '-1px')
-      })
-      act(() => { vi.advanceTimersByTime(20) })
-      expect(entering.style.getPropertyValue('animation-play-state')).toBe('running')
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('releases the hold pin when the transition clears before the glide', async () => {
-    const b = mount(sessionSnapshotOf({ blank: true }))
-    const card = b.view.container.querySelector<HTMLElement>('[data-composer-card]')!
-    const scroller = b.view.container.querySelector<HTMLElement>('[data-conversation-scroll]')!
-    let base = 400
-    vi.spyOn(card, 'getBoundingClientRect').mockImplementation(() => {
-      const entering = card.closest<HTMLElement>('[data-composer-entering]')
-      const offset = Number.parseFloat(entering?.style.getPropertyValue('--dsh-composer-enter-offset') ?? '') || 0
-      const top = base + offset
-      return { top, bottom: top + 100, left: 0, right: 600, width: 600, height: 100, x: 0, y: top, toJSON: () => ({}) }
-    })
-    fireResize(scroller)
-    vi.useFakeTimers()
-    try {
-      base = 800
-      act(() => { b.session.set(sessionSnapshotOf({ blank: true, promptAttempted: true })) })
-      const entering = b.view.container.querySelector<HTMLElement>('[data-composer-entering]')!
-      fireEvent.animationEnd(entering)
-      expect(entering.dataset.composerEntering).toBeUndefined()
-      // A hold timer firing after the transition cleared is a no-op: it must
-      // not resurrect the offset or release a play-state that was never held.
-      act(() => { vi.advanceTimersByTime(500) })
-      expect(entering.style.getPropertyValue('animation-play-state')).toBe('')
-      // The removal itself is an observed mutation; the pin sees the cleared
-      // transition and disconnects instead of pinning a dead offset.
-      await act(async () => {})
-      base = 900
-      act(() => { fireResize(entering) })
-      fireEvent.scroll(scroller)
-      expect(entering.style.getPropertyValue('--dsh-composer-enter-offset')).toBe('')
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('settles immediately under reduced motion instead of holding', async () => {
+  it('runs the same zero-length glide under reduced motion and clears it', () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: query === '(prefers-reduced-motion: reduce)',
       media: query,
@@ -974,14 +893,12 @@ describe('ConversationRoot resident composer', () => {
     const b = mount(sessionSnapshotOf({ blank: true }))
     act(() => { b.session.set(sessionSnapshotOf({ blank: true, promptAttempted: true })) })
     const entering = b.view.container.querySelector<HTMLElement>('[data-composer-entering]')!
-    // Zero-length timers release the paused glide on the next task, so the
-    // settled position lands without a held beat.
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
-    expect(entering.style.getPropertyValue('animation-play-state')).toBe('running')
+    // The reduced-motion theme zeroes the duration token, so the card lands
+    // at once; the end event still clears the marker.
+    expect(entering.style.getPropertyValue('animation-play-state')).toBe('')
     fireEvent.animationEnd(entering)
     expect(entering.dataset.composerEntering).toBeUndefined()
   })
-
   it('does not animate when loaded history replaces an empty shell', () => {
     const b = mount(sessionSnapshotOf({ blank: true }))
     act(() => { b.session.set(sessionSnapshotOf({ blank: false })) })
