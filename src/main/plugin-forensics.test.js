@@ -27,11 +27,18 @@ test('extractSuspectNames reads bundle, package, and compose failures', () => {
   ]);
 });
 
-test('optional shipped Project remains disableable and is not desktop runtime damage', () => {
+test('optional shipped Project remains disableable and is not desktop runtime damage', t => {
+  const prior = process.env.WHALE_PROJECT;
+  t.after(() => { if (prior === undefined) delete process.env.WHALE_PROJECT; else process.env.WHALE_PROJECT = prior; });
+  process.env.WHALE_PROJECT = '1';
   const report = inspectPlugins({ plugins: [], disabledPlugins: ['dsh-project'], logs: "Cannot find package 'dsh-project'" });
   const project = report.plugins.find(row => row.name === 'dsh-project');
   assert.equal(project.disabled, true); assert.equal(project.preset, true); assert.equal(project.orphan, false);
   assert.equal(isInBoxPackageName('dsh-project'), false); assert.equal(report.desktopRuntimeDamage, false);
+  // Held back from the release, Project is never mounted, so the board does not offer it.
+  delete process.env.WHALE_PROJECT;
+  const hidden = inspectPlugins({ plugins: [], disabledPlugins: [], logs: '' });
+  assert.equal(hidden.plugins.some(row => row.name === 'dsh-project'), false); assert.equal(hidden.desktopRuntimeDamage, false);
 });
 
 test('generic crashes are not blamed on a plugin', () => {

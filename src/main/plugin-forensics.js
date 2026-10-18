@@ -4,7 +4,7 @@ const { OFFICIAL_TEMPLATE_BUNDLES } = require('./plugins');
 const { DESKTOP_PACKAGES } = require('../shared/harness-desktop-forks');
 const { DSH_IM_ALIASES } = require('./dsh-im-desktop');
 const { DSHBOT_ALIASES } = require('./dshbot-desktop');
-const { DSH_PROJECT_ALIASES } = require('./dsh-project-desktop');
+const { DSH_PROJECT_ALIASES, projectAvailable } = require('./dsh-project-desktop');
 const { DSH_WHALE_ALIASES } = require('./dsh-whale-desktop');
 const { DSH_REMOTE_ALIASES } = require('./dsh-remote-desktop');
 const { USAGE_PANEL_ALIASES } = require('./usage-panel-preset');
@@ -189,9 +189,10 @@ function inspectPlugins({
   const suspectSet = new Set(suspects);
   const disabled = new Set(Array.isArray(disabledPlugins) ? disabledPlugins : []);
   const bundleSet = new Set(Array.isArray(bundles) ? bundles : []);
-  // Project is shipped through an overlay, but remains disableable in the existing board.
+  // Project is shipped through an overlay, but remains disableable in the existing board
+  // whenever it is mounted at all.
   const listed = [...(plugins || [])];
-  if (!listed.some(row => DSH_PROJECT_ALIASES.includes(row.name || row))) listed.push({ name: 'dsh-project', spec: 'desktop' });
+  if (projectAvailable() && !listed.some(row => DSH_PROJECT_ALIASES.includes(row.name || row))) listed.push({ name: 'dsh-project', spec: 'desktop' });
   const rows = listed.map((row) => {
     const name = row.name || row;
     return {

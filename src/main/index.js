@@ -14,7 +14,7 @@ const { ensureUsagePanelPlugin } = require('./usage-panel-preset');
 const { ensureSessionSearchOverlay } = require('./session-search-overlay');
 const { ensureDshImPlugin } = require('./dsh-im-desktop');
 const { ensureDshbotPlugin } = require('./dshbot-desktop');
-const { ensureDesktopDshProject } = require('./dsh-project-desktop');
+const { ensureDesktopDshProject, projectAvailable } = require('./dsh-project-desktop');
 const { createProjectEnvironment } = require('./project-environment');
 const { ensureDesktopTaskControl } = require('./task-control-overlay');
 const { ensureDesktopPlatformSession } = require('./platform-session-overlay');
@@ -640,6 +640,7 @@ const harness = new HarnessController({
   ensureDshImPlugin,
   ensureDshbotPlugin,
   ensureDshProjectPlugin: ensureDesktopDshProject,
+  projectAvailable,
   ensureTaskControlPlugin: ensureDesktopTaskControl,
   ensureDesktopPlatformSession,
   ensureDshWhalePlugin: ensureDesktopDshWhale,

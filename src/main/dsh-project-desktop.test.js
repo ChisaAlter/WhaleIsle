@@ -113,3 +113,10 @@ test('mount refuses unknown package data and linked runtime files without modify
   await assert.rejects(ensureDesktopDshProject({ sourceDir, profileDir }), /unknown content/);
   assert.equal(fs.readFileSync(path.join(unknown, 'sentinel'), 'utf8'), 'keep');
 });
+
+test('Project is held back from releases unless development opts in', () => {
+  const { projectAvailable } = require('./dsh-project-desktop');
+  assert.equal(projectAvailable({}), false);
+  assert.equal(projectAvailable({ WHALE_PROJECT: '0' }), false);
+  assert.equal(projectAvailable({ WHALE_PROJECT: '1' }), true);
+});
