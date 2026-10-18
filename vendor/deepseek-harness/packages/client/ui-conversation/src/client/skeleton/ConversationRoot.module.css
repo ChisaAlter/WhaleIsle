@@ -438,20 +438,33 @@ button.crumb:hover {
   gap: var(--dsh-composer-stack-gap);
 }
 
-/* The first-send hold starts paused while transcript and dock structure settle.
-   The moving stack then gets a compositor-driven transform; built-in fixed
-   overlays live in page portals, outside its temporary containing block. */
+/* The first-send glide starts with the commit that leaves the hero: the
+   moving stack gets a compositor-driven transform that does not wait for the
+   main thread; built-in fixed overlays live in page portals, outside its
+   temporary containing block. */
 .composerStack[data-composer-entering] {
   position: relative;
   animation: composer-enter var(--ds-transition-duration-slow) var(--ds-ease-in-out);
   animation-fill-mode: backwards;
-  animation-play-state: paused;
   will-change: transform;
 }
 
 @keyframes composer-enter {
   from { transform: translateY(var(--dsh-composer-enter-offset)); }
   to { transform: translateY(0); }
+}
+
+/* The same first send replaces the hero in one commit. The Session header
+   content and the transcript enter with the swap fade (opacity only, the
+   shared swap duration) instead of appearing in one frame; resident header
+   controls stay as they are. */
+.root:has([data-composer-entering]) .header > :not([data-conversation-header-leading]),
+.root:has([data-composer-entering]) [data-chat-flow] {
+  animation: conversation-enter-swap var(--ds-motion-duration-swap) var(--ds-ease-in-out);
+}
+
+@keyframes conversation-enter-swap {
+  from { opacity: 0; }
 }
 
 /* Common seat for the composer chain (fallback + elected overlay siblings). */

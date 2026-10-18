@@ -153,76 +153,14 @@ export function ConversationContent(props: ConversationContentProps) {
     if (stack === null || card === undefined || card === null) return
     const top = card.getBoundingClientRect().top
     if (!hero && previous !== null) {
-      let offset = previous.top - top
-      stack.style.setProperty('--dsh-composer-enter-offset', `${offset}px`)
+      // The first-send commit mounts the transcript, running chrome and dock
+      // projections, and the main thread can stay busy with that work for
+      // several frames. The glide therefore starts in this same commit, before
+      // paint: a compositor transform keeps moving while the main thread works,
+      // where a timer-released start waited for it and froze the card
+      // mid-column. The dock reserves its rows, so the target does not move.
+      stack.style.setProperty('--dsh-composer-enter-offset', `${previous.top - top}px`)
       stack.dataset.composerEntering = ''
-      // The glide starts paused: the first-send commit mounts the transcript,
-      // running chrome, and dock projections on the same frames a layout-
-      // driven `top` animation would lose to that work. The card holds at the
-      // draft position until the churn is quiet (or the cap passes); measured
-      // drift meanwhile folds back into the offset so the hold stays exact.
-      const holdTop = previous.top
-      // jsdom leaves matchMedia unimplemented; the DOM type claims it always exists.
-      const media = globalThis as { matchMedia?: (query: string) => MediaQueryList }
-      const motionless = media.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
-      const quietMs = motionless ? 0 : 80
-      const capMs = motionless ? 0 : 450
-      let live = true
-      let quietTimer: number | undefined
-      const pin = () => {
-        if (!live) return
-        if (stack.dataset.composerEntering === undefined) {
-          teardown()
-          return
-        }
-        const drift = card.getBoundingClientRect().top - holdTop
-        if (Math.abs(drift) > 0.5) {
-          offset -= drift
-          stack.style.setProperty('--dsh-composer-enter-offset', `${offset}px`)
-        }
-      }
-      const rearm = () => {
-        clearTimeout(quietTimer)
-        quietTimer = setTimeout(start, quietMs)
-      }
-      const signal = () => {
-        pin()
-        if (live) rearm()
-      }
-      const onMutations = (records: MutationRecord[]) => {
-        pin()
-        // Text edits (the reply streaming in, typing into the live editor)
-        // are light enough to paint through; only structural churn extends
-        // the hold.
-        if (live && records.some(record => record.type !== 'characterData'
-          && !(record.type === 'attributes' && record.target === stack && record.attributeName === 'style'))) {
-          rearm()
-        }
-      }
-      const mutations = new MutationObserver(onMutations)
-      const resizes = new ResizeObserver(signal)
-      const scroller = stack.closest('[data-conversation-scroll]')
-      const teardown = () => {
-        live = false
-        mutations.disconnect()
-        resizes.disconnect()
-        clearTimeout(quietTimer)
-        scroller?.removeEventListener('scroll', signal)
-      }
-      const start = () => {
-        const entering = stack.dataset.composerEntering !== undefined
-        teardown()
-        clearTimeout(capTimer)
-        if (entering) stack.style.setProperty('animation-play-state', 'running')
-      }
-      const capTimer = setTimeout(start, capMs)
-      mutations.observe(scroller ?? stack, { attributes: true, characterData: true, childList: true, subtree: true })
-      resizes.observe(stack)
-      if (scroller !== null) {
-        resizes.observe(scroller)
-        scroller.addEventListener('scroll', signal)
-      }
-      quietTimer = setTimeout(start, quietMs)
     }
     previousComposer.current = { sessionId, hero, top }
   })
@@ -232,7 +170,6 @@ export function ConversationContent(props: ConversationContentProps) {
     const finish = () => {
       delete stack.dataset.composerEntering
       stack.style.removeProperty('--dsh-composer-enter-offset')
-      stack.style.removeProperty('animation-play-state')
     }
     const onEnd = (event: AnimationEvent) => {
       if (event.target === stack) finish()
