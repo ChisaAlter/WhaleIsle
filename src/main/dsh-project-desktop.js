@@ -67,6 +67,12 @@ function copyRuntime(source, target) {
   }
 }
 
+// Project is held back from releases while it is refined. Hidden means not
+// mounted: its data on disk is kept. WHALE_PROJECT=1 mounts it for development.
+function projectAvailable(env = process.env) {
+  return env.WHALE_PROJECT === '1';
+}
+
 /** Mount this optional feature without changing the profile's Team or user patch. */
 async function ensureDesktopDshProject(options = {}) {
   const sourceDir = options.sourceDir || path.join(require('./paths').projectRoot(), 'vendor', DSH_PROJECT_PACKAGE);
@@ -118,4 +124,4 @@ async function ensureDesktopDshProject(options = {}) {
   return { ok: true, sourceDir, runtimeDir, overlayFile, added };
 }
 
-module.exports = { DSH_PROJECT_PACKAGE, DSH_PROJECT_ALIASES, DSH_PROJECT_OVERLAY_FILENAME, ensureDesktopDshProject, projectPeerDirectories };
+module.exports = { DSH_PROJECT_PACKAGE, DSH_PROJECT_ALIASES, DSH_PROJECT_OVERLAY_FILENAME, ensureDesktopDshProject, projectAvailable, projectPeerDirectories };
