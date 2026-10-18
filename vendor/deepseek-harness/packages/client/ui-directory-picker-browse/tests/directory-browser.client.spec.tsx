@@ -150,7 +150,6 @@ function expectOpenBusy(busy: boolean): HTMLButtonElement {
 function expectErrorToast(text: string): HTMLElement {
   const toast = screen.getByRole('alert')
   expect(within(toast).getByText(text, { exact: true })).toBeTruthy()
-  expect(toast.getAttribute('data-persistent')).toBe('true')
   expect(within(toast).getByRole('button', { name: 'browser.retry' })).toBeTruthy()
   expect(within(toast).getByRole('button', { name: 'browser.dismiss' })).toBeTruthy()
   return toast

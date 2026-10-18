@@ -31,7 +31,7 @@ export interface DirLevel {
 /** What one directory level is doing right now. */
 export type LevelState =
   | { readonly kind: 'loading' }
-  | { readonly kind: 'ready'; readonly level: DirLevel; readonly failure?: RemoteFailure; readonly loading?: boolean }
+  | { readonly kind: 'ready'; readonly level: DirLevel; readonly failure?: RemoteFailure }
   | { readonly kind: 'failed'; readonly failure: RemoteFailure }
 
 /**
@@ -112,8 +112,7 @@ export function createFilesStore(): EngineStoreHandle<FilesState, FilesActions> 
        */
       loading: (d, tabId: TabId, path: string) => {
         const state = bucket(d, tabId)
-        const previous = state.levels[path]
-        state.levels[path] = previous?.kind === 'ready' ? { ...previous, loading: true } : { kind: 'loading' }
+        if (state.levels[path]?.kind !== 'ready') state.levels[path] = { kind: 'loading' }
       },
       /**
        * Record one directory's contents.
@@ -147,7 +146,7 @@ export function createFilesStore(): EngineStoreHandle<FilesState, FilesActions> 
       failed: (d, tabId: TabId, path: string, failure: RemoteFailure) => {
         const level = bucket(d, tabId).levels[path]
         bucket(d, tabId).levels[path] = level?.kind === 'ready'
-          ? { ...level, failure, loading: false }
+          ? { ...level, failure }
           : { kind: 'failed', failure }
       },
       /**

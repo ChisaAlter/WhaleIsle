@@ -147,23 +147,24 @@ describe('Toast', () => {
     expect(document.querySelector('[data-dsh-toast-stack]')).toBeNull()
   })
 
-  it('keeps actionable failures until dismissed and preserves disabled action gates', async () => {
+  it('holds actionable failures for the action window, then fades, and preserves disabled action gates', async () => {
     vi.useFakeTimers()
     try {
       const retry = vi.fn(), discard = vi.fn(), dismissed = vi.fn()
-      render(<Toast text="Rejected" holdMs={null} dismissLabel="Dismiss notice" onDone={dismissed}
+      render(<Toast text="Rejected" holdMs={null} onDone={dismissed}
         actions={[{ label: 'Retry', disabled: true, onClick: retry }, { label: 'Discard', onClick: discard }]} />)
       await settle()
-      act(() => { vi.advanceTimersByTime(60_000) })
+      act(() => { vi.advanceTimersByTime(6_000) })
       expect(screen.getByRole('alert').textContent).toContain('Rejected')
       expect(dismissed).not.toHaveBeenCalled()
+      expect(screen.getAllByRole('button').map(button => button.textContent)).toEqual(['Retry', 'Discard'])
       const retryButton = screen.getByRole('button', { name: 'Retry' })
       expect(retryButton).toHaveProperty('disabled', true)
       fireEvent.click(retryButton)
       expect(retry).not.toHaveBeenCalled()
       fireEvent.click(screen.getByRole('button', { name: 'Discard' }))
       expect(discard).toHaveBeenCalledOnce()
-      fireEvent.click(screen.getByRole('button', { name: 'Dismiss notice' }))
+      act(() => { vi.advanceTimersByTime(1_000) })
       expect(dismissed).toHaveBeenCalledOnce()
     } finally { vi.useRealTimers() }
   })
@@ -200,8 +201,8 @@ describe('Toast', () => {
           onKeyDownCapture={event => { if (event.key === 'Tab') event.preventDefault() }}>
           <button>Inside</button>
         </Modal>
-        {notice && <Toast text="Conflict" holdMs={null} dismissLabel="Dismiss conflict" onDone={() => { setNotice(false) }}
-          actions={[{ label: 'Retry', onClick: retry }, { label: 'Discard', onClick: discard }]} />}
+        {notice && <Toast text="Conflict" holdMs={null} onDone={() => { setNotice(false) }}
+          actions={[{ label: 'Retry', onClick: retry }, { label: 'Discard', onClick: discard }, { label: 'Dismiss conflict', onClick: () => { setNotice(false) } }]} />}
       </section>{withBackground && <section><Toast text="Background" holdMs={null} onDone={() => {}} actions={[{ label: 'Background action', onClick: vi.fn() }]} /></section>}</>
     }
     render(<Owner />)
@@ -241,7 +242,7 @@ describe('Toast', () => {
     try {
       render(<section><Modal open title="Add connection" closeLabel="Close connection" onClose={() => {}}
         footer={<button>Cancel connection</button>}><input aria-label="Connection name" /></Modal>
-      <Toast text="A connection name is required" holdMs={null} dismissLabel="Dismiss validation" onDone={() => {}} /></section>)
+      <Toast text="A connection name is required" holdMs={null} onDone={() => {}} actions={[{ label: 'Dismiss validation', onClick: () => {} }]} /></section>)
       await settle()
       const notice = screen.getByRole('alert')
       const stack = notice.parentElement!
@@ -275,8 +276,8 @@ describe('Toast', () => {
         <header data-dsh-modal-header=""><button>Close shortcuts</button></header>
         <input aria-label="Search shortcuts" />
       </Modal>
-      <Toast text="Saved" tone="success" dismissLabel="Dismiss result" onDone={() => {}} />
-      <Toast text="Conflict" holdMs={null} dismissLabel="Dismiss conflict" onDone={() => {}} /></section>)
+      <Toast text="Saved" tone="success" onDone={() => {}} actions={[{ label: 'Dismiss result', onClick: () => {} }]} />
+      <Toast text="Conflict" holdMs={null} onDone={() => {}} actions={[{ label: 'Dismiss conflict', onClick: () => {} }]} /></section>)
       await settle()
       const notices = screen.getAllByRole('alert')
       const stack = notices[0]!.parentElement!
@@ -305,8 +306,8 @@ describe('Toast', () => {
             <input aria-label="Draft price" defaultValue="invalid price" />
             <button onClick={() => { setFailure(true) }}>Save prices</button>
           </Modal>
-          {failure && <Toast text="Prices rejected" holdMs={null} dismissLabel="Dismiss price error"
-            onDone={() => { setFailure(false) }} />}
+          {failure && <Toast text="Prices rejected" holdMs={null} onDone={() => { setFailure(false) }}
+            actions={[{ label: 'Dismiss price error', onClick: () => { setFailure(false) } }]} />}
         </section>
       </Modal>
     }
@@ -335,7 +336,7 @@ describe('Toast', () => {
       return <Modal open title="Settings" closeLabel="Close settings" onClose={() => {}}>
         <section>
           <button onClick={() => { setEditor(true); setNotice('Prices rejected') }}>Edit prices</button>
-          <Toast text={notice} holdMs={null} dismissLabel="Dismiss price error" onDone={() => {}} />
+          <Toast text={notice} holdMs={null} onDone={() => {}} actions={[{ label: 'Dismiss price error', onClick: () => {} }]} />
           <Modal open={editor} title="Prices" closeLabel="Close prices" onClose={() => { setEditor(false) }}>
             <input aria-label="Draft price" />
           </Modal>
@@ -371,7 +372,7 @@ describe('Toast', () => {
             <Modal open={editor} title="Prices" closeLabel="Close prices" onClose={() => { setEditor(false) }}>
               <input aria-label="Draft price" defaultValue="invalid price" />
             </Modal>
-            <Toast text="Prices rejected" holdMs={null} dismissLabel="Dismiss price error" onDone={() => {}} />
+            <Toast text="Prices rejected" holdMs={null} onDone={() => {}} actions={[{ label: 'Dismiss price error', onClick: () => {} }]} />
           </section>
         </Modal>
       }

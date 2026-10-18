@@ -5,7 +5,7 @@ import type { SettingsFormLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 /** Locale keys the page renders. */
 export type SubagentSettingsLocaleKey =
   | 'overridden' | 'reset' | 'readOnly' | 'unavailable'
-  | 'save' | 'saving' | 'saveFailed' | 'dismissFeedback' | 'discardDraft'
+  | 'save' | 'saving' | 'saveFailed'
   | 'subagentTitle' | 'subagentDescription' | 'subagentLimitsTitle'
   | 'subagentMaxDepth'
   | 'subagentDepthHelpLabel' | 'subagentDepthHelp'
@@ -30,8 +30,6 @@ export const en: Record<SubagentSettingsLocaleKey, string> = {
   save: 'Save',
   saving: 'Saving…',
   saveFailed: 'The deployment did not accept these values; they were left for you to correct.',
-  dismissFeedback: 'Dismiss',
-  discardDraft: 'Discard changes',
   subagentTitle: 'Subagent',
   subagentDescription: 'Set Subagent recursion depth, count, and models.',
   subagentLimitsTitle: 'Limits',
@@ -71,8 +69,6 @@ export const zh: Record<SubagentSettingsLocaleKey, string> = {
   save: '保存',
   saving: '保存中…',
   saveFailed: '本部署没有接受这些值，已保留供你修改。',
-  dismissFeedback: '关闭提示',
-  discardDraft: '放弃修改',
   subagentTitle: '子智能体',
   subagentDescription: '设置子智能体的递归层级、数量和模型。',
   subagentLimitsTitle: '运行限制',

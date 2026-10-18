@@ -52,10 +52,10 @@ describe('createFilesStore', () => {
     actions.loaded(TAB, ROOT, LEVEL)
     const cached = store.getSnapshot().byTab[TAB]!.levels[ROOT]
     actions.loading(TAB, ROOT)
-    expect(store.getSnapshot().byTab[TAB]!.levels[ROOT]).toEqual({ ...cached, loading: true })
+    expect(store.getSnapshot().byTab[TAB]!.levels[ROOT]).toBe(cached)
     const failure = new RemoteError('workspace-file/not-found', 'gone', { path: ROOT })
     actions.failed(TAB, ROOT, failure)
-    expect(store.getSnapshot().byTab[TAB]!.levels[ROOT]).toEqual({ kind: 'ready', level: LEVEL, failure, loading: false })
+    expect(store.getSnapshot().byTab[TAB]!.levels[ROOT]).toEqual({ kind: 'ready', level: LEVEL, failure })
     actions.loaded(TAB, ROOT, LEVEL)
     expect(store.getSnapshot().byTab[TAB]!.levels[ROOT]).toEqual({ kind: 'ready', level: LEVEL })
   })

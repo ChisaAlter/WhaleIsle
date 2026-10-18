@@ -43,8 +43,7 @@ export function SubagentCard(props: SubagentCardProps) {
           <section className={css.section} aria-labelledby={`${headingId}-models`}>
             <h3 className={css.heading} id={`${headingId}-models`}>{t('subagentModelSelectionTitle')}</h3>
             <SubagentModelSelectionFields t={t} state={{ ...models, saving: state.saving }}
-              toggleEnabled={props.toggleEnabled} toggleModel={props.toggleModel} retryCatalog={props.retryCatalog}
-              discard={props.discard} />
+              toggleEnabled={props.toggleEnabled} toggleModel={props.toggleModel} retryCatalog={props.retryCatalog} />
           </section>
         )
         : null}

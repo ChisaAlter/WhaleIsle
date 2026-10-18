@@ -1,7 +1,6 @@
 /** User control for model-selectable subagent delegation in new sessions. */
 
-import { useEffect, useState } from 'react'
-import { Switch, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
   SubagentModelCandidate,
@@ -12,7 +11,7 @@ import css from './SubagentModelSelectionFields.module.css'
 
 /** Plain model state and callbacks supplied by the owning Subagent card. */
 export type SubagentModelSelectionFieldsProps = PropsLocale<'settings.subagent'>
-  & Pick<SubagentModelSelectionCardFace, 'toggleEnabled' | 'toggleModel' | 'retryCatalog' | 'discard'>
+  & Pick<SubagentModelSelectionCardFace, 'toggleEnabled' | 'toggleModel' | 'retryCatalog'>
   & { state: SubagentModelSelectionCardState }
 
 /**
@@ -22,17 +21,6 @@ export type SubagentModelSelectionFieldsProps = PropsLocale<'settings.subagent'>
  */
 export function SubagentModelSelectionFields(props: SubagentModelSelectionFieldsProps) {
   const { t, state } = props
-  const catalogFailed = state.enabled && state.catalogStatus === 'error'
-  const notice = [
-    catalogFailed ? t('subagentModelSelectionLoadFailed') : '',
-    state.enabled && state.catalogPartial ? t('subagentModelSelectionPartial') : '',
-    state.enabled && state.catalogStatus === 'ready' && state.candidates.length === 0
-      ? t('subagentModelSelectionEmpty') : '',
-    state.enabled && state.invalid ? t('subagentModelSelectionRequired') : '',
-    state.conflicted ? t('subagentModelSelectionConflict') : '',
-  ].filter(Boolean).join(' ')
-  const [dismissedNotice, setDismissedNotice] = useState('')
-  useEffect(() => { setDismissedNotice('') }, [notice])
   const availableGroups = new Map<string, {
     providerName: string
     candidates: SubagentModelCandidate[]
@@ -79,7 +67,6 @@ export function SubagentModelSelectionFields(props: SubagentModelSelectionFields
             checked={state.enabled}
             label={t('subagentModelSelectionToggle')}
             disabled={!state.writable || state.saving}
-            loading={state.saving || state.catalogStatus === 'loading'}
             onChange={props.toggleEnabled}
           />
         </div>
@@ -90,6 +77,22 @@ export function SubagentModelSelectionFields(props: SubagentModelSelectionFields
       {state.enabled
         ? (
           <div className={css.selection}>
+            {state.catalogStatus === 'loading'
+              ? <p className={css.notice} role="status">{t('subagentModelSelectionLoading')}</p>
+              : null}
+            {state.catalogStatus === 'error'
+              ? (
+                <div className={css.catalogError} role="alert">
+                  <span>{t('subagentModelSelectionLoadFailed')}</span>
+                  <button type="button" disabled={state.saving} onClick={props.retryCatalog}>
+                    {t('subagentModelSelectionRetry')}
+                  </button>
+                </div>
+              )
+              : null}
+            {state.catalogPartial
+              ? <p className={css.notice}>{t('subagentModelSelectionPartial')}</p>
+              : null}
             {state.candidates.length > 0
               ? (
                 <fieldset className={css.models}>
@@ -110,19 +113,16 @@ export function SubagentModelSelectionFields(props: SubagentModelSelectionFields
                     : null}
                 </fieldset>
               )
-              : null}
+              : state.catalogStatus === 'ready'
+                ? <p className={css.notice}>{t('subagentModelSelectionEmpty')}</p>
+                : null}
+            {state.invalid ? <p className={css.invalid}>{t('subagentModelSelectionRequired')}</p> : null}
           </div>
         )
         : null}
-      {notice && notice !== dismissedNotice ? <Toast key={notice} text={notice} holdMs={null}
-        {...catalogFailed ? {} : { dismissLabel: t('dismissFeedback') }}
-        actions={[
-          ...catalogFailed ? [{ label: t('subagentModelSelectionRetry'), onClick: () => {
-            if (!state.saving) props.retryCatalog()
-          } }] : [],
-          ...state.conflicted ? [{ label: t('discardDraft'), onClick: props.discard }] : [],
-        ]}
-        onDone={() => { setDismissedNotice(notice) }} /> : null}
+      {state.conflicted
+        ? <p className={css.conflict} role="status">{t('subagentModelSelectionConflict')}</p>
+        : null}
     </>
   )
 }

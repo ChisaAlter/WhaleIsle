@@ -587,8 +587,6 @@ describe('MarketSection', () => {
     fireEvent.click(screen.getByRole('button', { name: en.refresh }))
     const failure = await screen.findByText(en.loadError)
     const alert = failure.closest('[role="alert"]') as HTMLElement
-    fireEvent.click(within(alert).getByRole('button', { name: en.close }))
-    expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByText('demo')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en.refresh }))
     await screen.findByText('Recovered catalog')
@@ -604,8 +602,6 @@ describe('MarketSection', () => {
     const dialog = await screen.findByRole('dialog', { name: 'demo' })
     const failure = await screen.findByText(en.detailsFailed)
     const alert = failure.closest('[role="alert"]') as HTMLElement
-    fireEvent.click(within(alert).getByRole('button', { name: en.close }))
-    expect(screen.queryByRole('alert')).toBeNull()
     expect(within(dialog).getByText('A demo plugin')).toBeTruthy()
     fireEvent.click(within(dialog).getByRole('button', { name: en.refresh }))
     await screen.findByRole('heading', { name: 'Recovered documentation' })

@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GoalActivation, GoalSnapshot } from '@deepseek-ai/dsh-goal/client'
 import {
   IconCheckOutlineRegular, IconCloseOutlineRegular, IconEditOutlineRegular, IconGoalOutlineRegular,
-  Button, IconPauseOutlineRegular, IconPlayOutlineRegular, IconTrashOutlineRegular, InlineEditor, Toast, Tooltip,
+  IconPauseOutlineRegular, IconPlayOutlineRegular, IconTrashOutlineRegular, InlineEditor, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GoalActionResult, GoalBarActions, GoalBarInjected } from './slots.ts'
@@ -43,7 +43,6 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState(false)
-  const [pendingAction, setPendingAction] = useState<'save' | 'clear' | 'pause' | 'resume'>()
   const [actionError, setActionError] = useState<string | null>(null)
   const [clearedGoalId, setClearedGoalId] = useState<GoalSnapshot['id'] | null>(null)
   const pendingRef = useRef(false)
@@ -59,16 +58,14 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
 
   // React state disables the controls on the next render; the ref closes the
   // same-render window so rapid clicks cannot submit the same CAS twice.
-  const runAction = useCallback(async (kind: 'save' | 'clear' | 'pause' | 'resume', action: () => Promise<GoalActionResult>): Promise<GoalActionResult | undefined> => {
+  const runAction = useCallback(async (action: () => Promise<GoalActionResult>): Promise<GoalActionResult | undefined> => {
     if (pendingRef.current) return undefined
     pendingRef.current = true
     setPending(true)
-    setPendingAction(kind)
     setActionError(null)
     const result = await action()
     pendingRef.current = false
     setPending(false)
-    setPendingAction(undefined)
     if (!result.ok) setActionError(`${result.error.message} (${result.error.code})`)
     return result
   }, [])
@@ -76,12 +73,12 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
   const handleEdit = useCallback(async () => {
     const trimmed = draft.trim()
     if (trimmed === '') return
-    const result = await runAction('save', () => onEdit(trimmed))
+    const result = await runAction(() => onEdit(trimmed))
     if (result?.ok) setEditing(false)
   }, [draft, onEdit, runAction])
 
   const handleClear = useCallback(async (clearedId: GoalSnapshot['id']) => {
-    const result = await runAction('clear', onClear)
+    const result = await runAction(onClear)
     if (result?.ok) setClearedGoalId(clearedId)
   }, [onClear, runAction])
 
@@ -99,19 +96,18 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
             onSave={() => { void handleEdit() }}
             onCancel={() => { setEditing(false) }}
           />
-          {actionError !== null && <Toast text={actionError} holdMs={null} dismissLabel={t('action.dismiss')} onDone={() => { setActionError(null) }} />}
+          {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
           <div className={css.actions}>
             <Tooltip portal label={t('action.save')} side="bottom" delayMs={500}>
-              <Button
+              <button
                 type="button"
                 className={css.iconBtn}
                 onClick={() => { void handleEdit() }}
                 disabled={pending || draft.trim() === ''}
-                loading={pendingAction === 'save'}
                 aria-label={t('action.save')}
               >
                 <IconCheckOutlineRegular size={14} />
-              </Button>
+              </button>
             </Tooltip>
             <Tooltip portal label={t('action.cancel')} side="bottom" delayMs={500}>
               <button
@@ -140,20 +136,20 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
         <span className={css.goalGlyph}><IconGoalOutlineRegular size={14} /></span>
         <span className={css.label}>{label}</span>
         <span className={css.objective}>{goal.objective}</span>
-        {actionError !== null && <Toast text={actionError} holdMs={null} dismissLabel={t('action.dismiss')} onDone={() => { setActionError(null) }} />}
+        {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
         <div className={css.actions}>
           {goal.phase === 'active' && activation === 'armed' && (
             <Tooltip portal label={t('action.pause')} side="bottom" delayMs={500}>
-              <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'pause'} onClick={() => { void runAction('pause', onPause) }} aria-label={t('action.pause')}>
+              <button type="button" className={css.iconBtn} disabled={pending} onClick={() => { void runAction(onPause) }} aria-label={t('action.pause')}>
                 <IconPauseOutlineRegular size={14} />
-              </Button>
+              </button>
             </Tooltip>
           )}
           {showResume && (
             <Tooltip portal label={t('action.resume')} side="bottom" delayMs={500}>
-              <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'resume'} onClick={() => { void runAction('resume', onResume) }} aria-label={t('action.resume')}>
+              <button type="button" className={css.iconBtn} disabled={pending} onClick={() => { void runAction(onResume) }} aria-label={t('action.resume')}>
                 <IconPlayOutlineRegular size={14} />
-              </Button>
+              </button>
             </Tooltip>
           )}
           <Tooltip portal label={t('action.edit')} side="bottom" delayMs={500}>
@@ -168,9 +164,9 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
             </button>
           </Tooltip>
           <Tooltip portal label={t('action.clear')} side="bottom" delayMs={500}>
-            <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'clear'} onClick={() => { void handleClear(goal.id) }} aria-label={t('action.clear')}>
+            <button type="button" className={css.iconBtn} disabled={pending} onClick={() => { void handleClear(goal.id) }} aria-label={t('action.clear')}>
               <IconTrashOutlineRegular size={14} />
-            </Button>
+            </button>
           </Tooltip>
         </div>
       </div>

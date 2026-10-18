@@ -634,8 +634,6 @@ describe('PluginInventorySettingsTab', () => {
       .mockResolvedValueOnce({ entries: [] })
     render(<PluginInventorySettingsTab {...props(list)} />)
     const first = await screen.findByRole('alert')
-    fireEvent.click(within(first).getByRole('button', { name: en.dismissFeedback }))
-    await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
     expect(list).toHaveBeenCalledOnce()
 
     fireEvent.click(screen.getByRole('button', { name: en.retry }))

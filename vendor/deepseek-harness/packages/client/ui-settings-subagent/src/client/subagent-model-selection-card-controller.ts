@@ -318,15 +318,7 @@ export class SubagentModelSelectionCardController {
     this.catalogStatus = 'loading'
     this.catalogPartial = false
     this.publish()
-    let response
-    try {
-      response = await this.ctx.remote.session.modelCatalog()
-    } catch (_error) {
-      if (generation !== this.catalogGeneration) return
-      this.catalogStatus = 'error'
-      this.publish()
-      return
-    }
+    const response = await this.ctx.remote.session.modelCatalog()
     if (generation !== this.catalogGeneration) return
     if (response.ok) {
       this.catalogGroups = response.value.groups

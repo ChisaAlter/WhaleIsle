@@ -245,8 +245,6 @@ describe('QuestionComposer', () => {
     expect(notice.textContent).toBe('请先完成这道问题。')
     expect(ui.container.contains(notice)).toBe(false)
     expect(ui.container.querySelector('footer')?.textContent).not.toContain('请先完成这道问题。')
-    fireEvent.click(within(notice).getByRole('button', { name: commonZh.close }))
-    expect(screen.queryByRole('alert')).toBeNull()
     expect(option.getAttribute('aria-checked')).toBe('false')
     fireEvent.keyDown(option, { key: 'Enter' })
     expect((await screen.findByRole('alert')).textContent).toBe('请先完成这道问题。')

@@ -581,8 +581,6 @@ describe('ScheduleCatalogAction dismissal', () => {
     expect(notice.hasAttribute('data-dsh-toast')).toBe(true)
     expect(view.container.contains(notice)).toBe(false)
     expect(within(notice).getByText(en['list.error'], { exact: true })).toBeDefined()
-    fireEvent.click(within(notice).getByRole('button', { name: en['notice.dismiss'] }))
-    expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.queryByRole('list')).toBeNull()
     const trigger = screen.getByRole('button', { name: known ? '2 reminders' : en['trigger.label'] })
     fireEvent.click(trigger)

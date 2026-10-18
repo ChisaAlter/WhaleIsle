@@ -249,8 +249,6 @@ describe('PermissionSelect', () => {
     expect(trigger().disabled).toBe(false)
     const failure = await screen.findByRole('alert')
     expect(failure.textContent).toBe('rejected')
-    fireEvent.click(within(failure).getByRole('button'))
-    expect(screen.queryByRole('alert')).toBeNull()
     expect(triggerText()).toBe('Custom')
     act(() => { selection.set({ value: { currentValue: 'workspace-write' } }) })
     expect(triggerText()).toBe('工作区内修改')

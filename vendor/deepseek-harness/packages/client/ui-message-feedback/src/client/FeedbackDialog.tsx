@@ -93,10 +93,10 @@ export function FeedbackDialog({
           <Button
             variant="primary"
             className={css.submit}
-            loading={state.submitting}
+            disabled={state.submitting}
             onClick={() => { void submit() }}
           >
-            {t('submit')}
+            {state.submitting ? t('submitting') : t('submit')}
           </Button>
         )}
       >

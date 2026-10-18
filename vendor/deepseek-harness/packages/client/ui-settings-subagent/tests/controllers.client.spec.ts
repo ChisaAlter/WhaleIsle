@@ -235,25 +235,6 @@ describe('SubagentModelSelectionCardController', () => {
     await vi.waitFor(() => { expect(models.models).toHaveBeenCalledTimes(2) })
   })
 
-  it('settles a rejected directory request and retries without dropping staged authorization', async () => {
-    const host = stubConfigForm<SubagentModelSelectionSettings>()
-    const models = modelsApi({ groups: [{ id: 'alpha', name: 'Alpha', models: [{ id: 'fast', name: 'Fast' }] }] })
-    models.models.mockRejectedValueOnce(new Error('disconnected'))
-    const controller = new SubagentModelSelectionCardController(host.scope, models.ctx)
-    host.publish({ status: 'ready', writable: true, value: { enabled: false, allowedModels: [{ provider: 'alpha', model: 'fast' }] }, user: {} })
-    const face = controller.inject()
-    const state = () => face.hooks.subagentModelSelectionCard.getSnapshot()
-    face.toggleEnabled()
-    await vi.waitFor(() => { expect(state()).toMatchObject({ catalogStatus: 'error', enabled: true, dirty: true }) })
-    expect(host.mutate).not.toHaveBeenCalled()
-    face.retryCatalog()
-    await vi.waitFor(() => { expect(state().catalogStatus).toBe('ready') })
-    expect(models.models).toHaveBeenCalledTimes(2)
-    expect(state()).toMatchObject({ enabled: true, dirty: true })
-    expect(state().candidates).toMatchObject([{ key: 'alpha\0fast', selected: true }])
-    controller.dispose()
-  })
-
   it('rejects a draft after the Host revision changes', async () => {
     const host = stubConfigForm<SubagentModelSelectionSettings>()
     const models = modelsApi({
