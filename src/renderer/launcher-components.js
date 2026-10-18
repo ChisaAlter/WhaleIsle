@@ -36,6 +36,7 @@
     stopped: '已停止',
     running: '运行中',
     error: '异常',
+    unsupported: '暂不支持',
   };
 
   const STATE_VARIANTS = {
@@ -85,7 +86,7 @@
     if (row.description) {
       bits.push(row.description);
     }
-    bits.push(`v${row.version || '?'}`);
+    if (row.state !== 'unsupported') bits.push(`v${row.version || '?'}`);
     if (row.installedVersion && row.installedVersion !== row.version) {
       bits.push(`已装 v${row.installedVersion}`);
     }
@@ -103,6 +104,7 @@
   function rowActions(row) {
     const buttons = [];
     const btn = (action, label, cls) => `<button type="button" class="${cls} small" data-comp-action="${action}" data-comp-id="${escapeHtml(row.id)}">${label}</button>`;
+    if (row.state === 'unsupported') return '';
     if (row.state === 'available') {
       buttons.push(btn('install', '安装', 'primary'));
     } else {

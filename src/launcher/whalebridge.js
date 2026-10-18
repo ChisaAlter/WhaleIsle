@@ -3,7 +3,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
-const { spawn, execFileSync } = require('node:child_process');
+const { spawn, execFile } = require('node:child_process');
+const { promisify } = require('node:util');
 const { isPidAlive, killPid } = require('./components/lifecycle');
 const { compareVersions } = require('./components/registry');
 
@@ -14,6 +15,10 @@ const TAG_PREFIX = 'whalebridge-v';
 // The component owns its GitHub releases. CNB keeps the existing shared
 // distribution mirror, including releases used by already-installed clients.
 const GITHUB_RELEASES = 'https://github.com/ChisaAlter/WhaleBridge/releases';
+// The DSH channel stores this address, so the gateway keeps one fixed port.
+const GATEWAY = '127.0.0.1:3427';
+const LOG_MAX_BYTES = 1024 * 1024;
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function defaultPaths() {
   const { app } = require('electron');
@@ -59,6 +64,12 @@ function createWhaleBridgeService(deps = {}) {
   const alive = deps.isPidAlive || isPidAlive;
   const run = deps.spawn || spawn;
   const kill = deps.killPid || killPid;
+  const platform = deps.platform || process.platform, arch = deps.arch || process.arch;
+  const supported = platform === 'win32' && arch === 'x64';
+  const runTool = deps.execFile || (deps.execFileSync
+    ? async (...args) => deps.execFileSync(...args)
+    : async (...args) => (await promisify(execFile)(...args)).stdout);
+  const logFile = path.join(root, 'data', 'component.log');
   let catalog = readJson(path.join(root, 'catalog.json'));
   let catalogError = '';
   let pending = false;
@@ -68,7 +79,7 @@ function createWhaleBridgeService(deps = {}) {
   const env = () => {
     const value = { ...process.env, LAUNCHER_COMPONENT_ID: ID,
       LAUNCHER_COMPONENT_DATA_DIR: path.join(root, 'data'), WHALEBRIDGE_DSH_HOME: dshHome,
-      MAGPIE_ADDR: '127.0.0.1:3427' };
+      MAGPIE_ADDR: GATEWAY };
     delete value.ELECTRON_RUN_AS_NODE;
     delete value.MAGPIE_WEB_KEY;
     delete value.MAGPIE_WEB_RUNKEY;
@@ -98,6 +109,34 @@ function createWhaleBridgeService(deps = {}) {
     return result;
   }
 
+  // A forced exit (crash, Windows shutdown) leaves state.json behind, and the
+  // recorded PID can later belong to another process. The fixed gateway port
+  // names the PID really serving it; only a connection failure or another
+  // answer proves the record stale. A slow answer is not proof.
+  async function stale(current) {
+    try {
+      const identity = await fetchJson(`http://${GATEWAY}/whalebridge/identity`, {});
+      return identity?.pid !== current.pid;
+    } catch (error) {
+      return error?.name !== 'TimeoutError' && error?.name !== 'AbortError';
+    }
+  }
+  async function liveState() {
+    const current = state();
+    if (!current) return null;
+    try {
+      await api('status', undefined, current);
+      return current;
+    } catch (error) {
+      if (!await stale(current)) throw error;
+      fs.rmSync(stateFile, { force: true });
+      return null;
+    }
+  }
+  async function reconcile() {
+    try { await liveState(); } catch { /* the row keeps reporting the running record */ }
+  }
+
   async function alerts(current = state()) {
     if (!current) return { sequence: 0, alerts: [] };
     const access = management(current);
@@ -109,6 +148,7 @@ function createWhaleBridgeService(deps = {}) {
 
   async function refreshCatalog() {
     catalogError = '';
+    if (!supported) return row();
     try {
       if (devPackage && fs.existsSync(path.join(devPackage, MANIFEST))) {
         catalog = { manifest: validateManifest(readJson(path.join(devPackage, MANIFEST))), local: devPackage, route: 'development' };
@@ -147,6 +187,14 @@ function createWhaleBridgeService(deps = {}) {
   function row() {
     const rec = installed(), live = state();
     const m = catalog?.manifest;
+    if (!rec && !supported) {
+      return {
+        id: ID, name: '鲸桥', description: '将 API 供应商和订阅账号接入鲸屿，统一管理模型、请求路由与用量。',
+        version: '', installedVersion: '', latest: '', previousVersion: '', state: 'unsupported',
+        source: 'official', kind: 'service', pid: null, url: '', updateAvailable: false,
+        message: '鲸桥目前只提供 Windows x64 版本。', configurable: false,
+      };
+    }
     return {
       id: ID, name: '鲸桥', description: '将 API 供应商和订阅账号接入鲸屿，统一管理模型、请求路由与用量。',
       version: m?.version || rec?.version || '1.0.0', installedVersion: rec?.version || '',
@@ -167,8 +215,11 @@ function createWhaleBridgeService(deps = {}) {
     try {
       fs.mkdirSync(root, { recursive: true });
       if (fs.existsSync(lock)) {
-        const owner = readJson(lock);
+        let owner = null;
+        try { owner = readJson(lock); } catch { /* a holder that died before writing its PID */ }
         if (owner?.pid && alive(owner.pid)) return { ok: false, error: 'busy' };
+        // An unreadable record may still be in the middle of being written.
+        if (!owner?.pid && Date.now() - fs.statSync(lock).mtimeMs < 10_000) return { ok: false, error: 'busy' };
         fs.unlinkSync(lock);
       }
       fs.writeFileSync(lock, JSON.stringify({ pid: process.pid }), { flag: 'wx' });
@@ -182,18 +233,33 @@ function createWhaleBridgeService(deps = {}) {
     }
   }
 
+  // The component's own error line, so a failed start names its cause.
+  function logTail(from) {
+    try {
+      const data = fs.readFileSync(logFile);
+      const lines = data.subarray(Math.max(from, data.length - 4096)).toString('utf8').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      return lines.slice(-3).join(' / ');
+    } catch { return ''; }
+  }
+  function startFailure(summary, from) {
+    const tail = logTail(from);
+    return new Error(tail ? `${summary}：${tail}` : `${summary}，详见组件日志：${logFile}`);
+  }
+
   async function startRuntime(version, progress) {
-    const current = state();
+    const current = await liveState();
     if (current) {
       if (current.version !== version) throw new Error('鲸桥运行版本与安装记录不一致');
-      await api('status', undefined, current);
       await unfreeze(current);
       return { ok: true };
     }
     fs.mkdirSync(path.join(root, 'data'), { recursive: true });
     fs.rmSync(stateFile, { force: true });
     emit(progress, 'spawn', 75);
-    const log = fs.openSync(path.join(root, 'data', 'component.log'), 'a');
+    let size = 0;
+    try { size = fs.statSync(logFile).size; } catch { /* first start */ }
+    const log = fs.openSync(logFile, size > LOG_MAX_BYTES ? 'w' : 'a');
+    const logStart = size > LOG_MAX_BYTES ? 0 : size;
     let child;
     try { child = run(binary(version), ['whalebridge'], { cwd: path.dirname(binary(version)), env: env(), stdio: ['ignore', log, log], detached: true, windowsHide: true }); }
     finally { fs.closeSync(log); }
@@ -204,7 +270,7 @@ function createWhaleBridgeService(deps = {}) {
     try {
       while (Date.now() < deadline) {
         if (failure) throw failure;
-        if (child.exitCode !== null) throw new Error(`鲸桥启动退出（${child.exitCode}），详见组件日志`);
+        if (child.exitCode !== null) throw startFailure(`鲸桥启动退出（${child.exitCode}）`, logStart);
         const ready = state();
         if (ready?.pid === child.pid) {
           if (ready.version !== version) throw new Error('鲸桥程序版本与发布清单不一致');
@@ -214,7 +280,7 @@ function createWhaleBridgeService(deps = {}) {
         }
         await new Promise(resolve => setTimeout(resolve, 100));
       }
-      throw new Error('鲸桥启动超时，详见组件日志');
+      throw startFailure('鲸桥启动超时', logStart);
     } catch (error) {
       if (child.pid && alive(child.pid)) kill(child.pid, { force: true });
       fs.rmSync(stateFile, { force: true });
@@ -247,21 +313,45 @@ function createWhaleBridgeService(deps = {}) {
   }
 
   async function freeze() {
-    const current = state();
-    if (current) { await api('status', undefined, current); await api('maintenance', { on: true }, current); }
+    const current = await liveState();
+    if (current) await api('maintenance', { on: true }, current);
     return current;
   }
   async function unfreeze(current) { if (current && alive(current.pid)) await api('maintenance', { on: false }, current); }
-  function terminate(current) {
+  async function terminate(current) {
     // taskkill /T may fail on a console-host child after stopping the gateway.
     // The gateway's actual liveness decides whether termination succeeded.
     if (current && !kill(current.pid, { force: true }) && alive(current.pid)) throw new Error('无法停止鲸桥进程');
+    // taskkill returns before Windows has released the image; files of this
+    // version are moved or reused only after the process is really gone.
+    const deadline = Date.now() + (deps.exitTimeoutMs ?? 5000);
+    while (current && alive(current.pid)) {
+      if (Date.now() >= deadline) throw new Error('鲸桥进程未能退出');
+      await delay(100);
+    }
     fs.rmSync(stateFile, { force: true });
+  }
+  // Keep the active version and the one rollback target.
+  function prune(keep) {
+    let entries = [];
+    try { entries = fs.readdirSync(path.join(root, 'versions')); } catch { return; }
+    for (const name of entries) {
+      if (name.startsWith('.') || keep.includes(name)) continue;
+      try { fs.rmSync(path.join(root, 'versions', name), { recursive: true, force: true }); } catch { /* retried on the next switch */ }
+    }
+  }
+  async function rename(from, to) {
+    for (let attempt = 1; ; attempt++) {
+      try { return fs.renameSync(from, to); } catch (error) {
+        if (attempt >= 5 || !['EBUSY', 'EPERM', 'EACCES'].includes(error.code)) throw error;
+        await delay(200 * attempt);
+      }
+    }
   }
 
   function install(progress) { return locked(async () => {
     if (installed()) throw new Error('鲸桥已安装');
-    if ((deps.platform || process.platform) !== 'win32' || (deps.arch || process.arch) !== 'x64') throw new Error('鲸桥首版支持 Windows x64');
+    if (!supported) throw new Error('鲸桥目前只提供 Windows x64 版本');
     const version = await stage(progress);
     writeJson(installedFile, { version, previous: null });
     await startRuntime(version, progress);
@@ -274,7 +364,7 @@ function createWhaleBridgeService(deps = {}) {
   }); }
   function stop(progress) { return locked(async () => {
     const current = await freeze();
-    try { terminate(current); }
+    try { await terminate(current); }
     catch (error) { await unfreeze(current); throw error; }
     emit(progress, 'done', 100);
     return { ok: true };
@@ -282,7 +372,7 @@ function createWhaleBridgeService(deps = {}) {
   async function switchVersion(version, previous, progress) {
     const old = installed(), current = await freeze();
     try {
-      terminate(current);
+      await terminate(current);
       writeJson(installedFile, { version, previous });
       await startRuntime(version, progress);
     } catch (error) {
@@ -291,11 +381,12 @@ function createWhaleBridgeService(deps = {}) {
         await unfreeze(current);
         throw error;
       }
-      terminate(live);
+      await terminate(live);
       writeJson(installedFile, old);
       await startRuntime(old.version, progress);
       throw new Error(`更新未生效，已恢复原版本：${error.message}`);
     }
+    prune([version, previous]);
     return { ok: true, component: row() };
   }
   function update(progress) { return locked(async () => {
@@ -316,12 +407,12 @@ function createWhaleBridgeService(deps = {}) {
     const staged = path.join(root, `.uninstall-${process.pid}`);
     let moved = false;
     try {
-      terminate(current);
+      await terminate(current);
       // Keep the payload recoverable until the atomic DSH disconnect commits.
-      fs.renameSync(versions, staged);
+      await rename(versions, staged);
       moved = true;
       fs.unlinkSync(installedFile);
-      (deps.execFileSync || execFileSync)(path.join(staged, rec.version, ASSET), ['whalebridge-disconnect'], { env: env(), windowsHide: true, timeout: 15_000, stdio: 'pipe' });
+      await runTool(path.join(staged, rec.version, ASSET), ['whalebridge-disconnect'], { env: env(), windowsHide: true, timeout: 15_000 });
     } catch (error) {
       if (moved) fs.renameSync(staged, versions);
       writeJson(installedFile, rec);
@@ -341,16 +432,16 @@ function createWhaleBridgeService(deps = {}) {
   async function uninstallInfo() {
     const rec = installed();
     if (!rec) return { defaultModel: false };
-    const current = state();
+    const current = await liveState();
     if (current) return api('status', undefined, current);
-    const output = (deps.execFileSync || execFileSync)(binary(rec.version), ['whalebridge-status'], {
-      env: env(), windowsHide: true, timeout: 15_000, encoding: 'utf8', stdio: 'pipe',
+    const output = await runTool(binary(rec.version), ['whalebridge-status'], {
+      env: env(), windowsHide: true, timeout: 15_000, encoding: 'utf8',
     });
     const info = JSON.parse(output);
     if (typeof info.defaultModel !== 'boolean') throw new Error('鲸桥配置状态无效');
     return info;
   }
-  return { row, refreshCatalog, install, start, stop, update, rollback, uninstall, uninstallInfo, installed, state, api, alerts };
+  return { row, refreshCatalog, reconcile, install, start, stop, update, rollback, uninstall, uninstallInfo, installed, state, api, alerts };
 }
 
 let singleton;
