@@ -27,12 +27,18 @@ function silentUninstallFailureScript(source) {
 /** Commit the new installation before reporting a failed retirement cleanup. */
 function directoryTransactionsScript(source) {
   let adapted = directoryRemovalScript(source.replaceAll('\r\n', '\n'));
+  // The upstream failure log needs its installer.nsh; this build reports through build/installer.nsh,
+  // and NSIS rejects the variable that would stay unset here.
+  adapted = replaceOnce(adapted, 'Var dshDirectoryLogDirectory\n', '');
+  adapted = replaceOnce(adapted,
+    '  !ifdef DSH_INSTALLER_LOG_DIR\n    ; electron-builder defines the cache name after including our function bodies, before this section expands.\n    StrCpy $dshDirectoryLogDirectory "${DSH_INSTALLER_LOG_DIR}"\n  !endif\n',
+    '');
   adapted = replaceOnce(adapted,
     '    !insertmacro dshRemoveDirectory "" "$dshFinalDirectory"\n    StrCpy $dshNewMoved ""',
     '    !insertmacro dshRemoveDirectory "" "$dshFinalDirectory"\n    ${If} ${Errors}\n      !insertmacro dshReportDirectoryRollback "$dshFinalDirectory" "$dshOldDirectory"\n      Return\n    ${EndIf}\n    StrCpy $dshNewMoved ""');
   adapted = replaceOnce(adapted,
-    '      ; Leave the complete backup in place if another process prevents restoration.\n      DetailPrint $dshOldDirectory\n      Return',
-    '      !insertmacro dshReportDirectoryRollback "$dshFinalDirectory" "$dshOldDirectory"\n      Return');
+    '      ; Leave the complete backup in place if another process prevents restoration.\n      DetailPrint $dshOldDirectory\n      !insertmacro dshRemoveDirectory "" "$dshNewDirectory"\n      Return',
+    '      !insertmacro dshRemoveDirectory "" "$dshNewDirectory"\n      !insertmacro dshReportDirectoryRollback "$dshFinalDirectory" "$dshOldDirectory"\n      Return');
   adapted = replaceOnce(adapted, '    StrCpy $dshOldMoved ""\n  ${EndIf}\n  ${If} $dshNewDirectory != ""',
     '    StrCpy $dshOldMoved ""\n    Delete "$dshOldDirectory.rollback.txt"\n  ${EndIf}\n  ${If} $dshNewDirectory != ""');
   return replaceOnce(adapted,

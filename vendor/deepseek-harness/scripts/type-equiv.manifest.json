@@ -2008,6 +2008,11 @@
     },
     {
       "doc": "docs/subsystems/client-modules.md",
+      "symbol": "WebBootRelease",
+      "source": "packages/client/modules/src/client/manifest.ts"
+    },
+    {
+      "doc": "docs/subsystems/client-modules.md",
       "symbol": "WebBootGraph",
       "source": "packages/client/modules/src/client/manifest.ts"
     },

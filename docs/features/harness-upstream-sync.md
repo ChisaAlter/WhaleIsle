@@ -6,7 +6,7 @@
 | **last verified (release catalog)** | 2026-09-29 — 会话统计 dock 的 `statsLine` 注入同步到官方生成的 slot catalog；`gen-client-catalog --check` 与 `gen-third-party-notices --check` 通过。仅生成产物补齐，见 [候选记录](../qa/results/2026-09-29-release-candidate/README.md)。 |
 | **status** | `active` |
 | **last verified (window gate)** | 2026-09-29 — 新增 Windows HWND 样式/真实 IPC 回归与可见动画验收要求；本次未变更上游 pin。 |
-| **last verified** | 2026-09-25 — 将 `dsh-v0.1.7-rc.2`（`477b4f4`，alpha.2 是其祖先）三方合并至桌面树：快照提交后隔离 worktree 解冲突，`--continue` 落盘。官方构建（host tsc + tsdown + client vite）通过；client/host typecheck 零错误；client slot catalog 重新生成。合并回归修复：pwsh `sandbox_permissions` 审批理由的 description 兜底重新接入 execute 路径；durable-question 重入驱动移到 setup maintenance 结算之后（原序会被 maintenance finally 重置 running 相位）。桌面自有断言同步更新（caption 拖拽、面包屑 span、归档分组、模型选择 pending 语义、session-log-export configForms 注入）。广跑其余失败均为与上游 rc.2 逐字节相同的环境性用例（Windows 签名/真实 git/pnpm 子进程/网络/长迁移），非合并回归。治理门禁 6/6 通过。此前 2026-09-23 — 会话头部交互座位、通用交互元素与顶部固定浮层从 48px 拖拽带扣除；样式测试 11/11、源码构建、重启后顶部按钮命中区与 Agent Team / 打开方式 / Git 菜单点击复核通过。此前 2026-09-23 — 设置侧栏键盘焦点轮廓改用设计语言规定的中性描边；CDP 实测鼠标选中无轮廓、键盘聚焦为深色 2px 内描边，源码构建通过。此前 2026-09-23 — 设置侧栏选中底色恢复上游中性 token；源码构建和重启成功，治理门禁 6/6；设置页定向测试 27/29，另 2 例在侧栏入口测试处失败。此前 2026-09-23 — 同步后回归修复：会话 header 双层网格压缩使右栏顶部下移约 29px，合并为单层后 CDP 实测恢复；Host `Config` 漏登记会话偏好 volatile 导致输入框大小开关被 `settings/rejected` 回退，补齐所有字段后真实 RPC 成功，开/关两态均经页面重载持久。定向测试与官方构建通过。此前 2026-09-23 — 将 `dsh-v0.1.7-alpha.2` 三方合并至桌面树：原始本地修改已另行提交；官方构建通过；桌面 `npm test` 2215 通过/2 跳过；vendor `ui-primitives` 1226/1226、`ui-workspace` + `ui-files` 558/558、聊天与代理定向测试 577/577、设置定向测试 340/340、Web E2E 15/15；`smoke:source` 的 UI、标题栏及 PTY 探针通过；`check:governance` 6/6、`doc-sync` 8/8。`npm start` 预构建通过，但已安装版持有单实例锁，未替换其窗口；独立数据目录下的源码启动已由冒烟验证。 |
+| **last verified** | 2026-10-18 — 将 `dsh-v0.2.1-rc.2`（`687f282`）从 alpha.3 pin 三方合并至桌面树，24 处冲突按下方合并裁定解决；persistence 目录重新生成，lockfile 无变化。官方构建通过；冲突相关 vendor 包 vitest 全过；桌面 `npm test` 仅余 `vendor/dsh-project` 原有竞态用例（合并前 main 同样间歇失败）；`smoke:source` 的 UI、标题栏命中与 PTY 探针通过。`verify-config-catalog`（composer-beam JSDoc）与 `verify-cordis-catalog`（`session/before-cancel` @param）的失败来自合并未改动的桌面文件。更早记录见本文件 Git 历史。 |
 
 ## User paths
 
@@ -25,6 +25,8 @@
 - 不创建分支或发布；仅在用户明确要求时提交同步结果。保留任务开始时本地修改的原始快照及其他任务后续的独立更新。
 - 设计语言、关闭按钮在标题右侧、独立桌面家目录和插件恢复契约保持。
 - 新槽位拆出的常驻会话 header 与 Session header 共用一层网格和内边距，不能让右栏起点因重复标题容器而下移；`ui-conversation` 的所有浏览器可编辑设置字段须在 Host `Config` 中声明 volatile，以便 `ConfigForm` 写入真正持久化。
+
+- rc.2 合并裁定：模型设置里手写路由的行使用上游推理等级编辑器（等级 + API 值，只剩 Off 时报 `modelReasoningNeedsLevel`），其余行保留桌面思考强度复选框及 `effortOffAlone`；上游编辑器的档位选择改用 `SettingsSelect`，模型设置界面不出现原生 `<select>`。插件管理器“已确认版本”弹窗自行显示拒绝原因与重试，桌面安装 Toast 不再重复该输入错误；其余安装反馈仍走 Toast。模型选择器触发器的标签插槽外层为 `display: contents`，回退时仍是 `FlipText className={css.triggerLabel}`。
 
 ## Allowed touch
 

@@ -33,6 +33,8 @@ kind: "package-reference"
 
 设置面板使用[框架共享的浮层起点](../ui-layout/README.zh.md#window-chrome-seat)，视口边距至少为 24px。其遮罩不绘制 Windows 顶栏区域，覆盖整个视口的模态层仍阻挡背景点击。
 
+页面重连到运行另一个 release 的 Host 时，会弹出**服务版本变化**对话框，画出两条线：**服务**从 Host 之前的 release（灰色）指向它当前的 release，用细的绿色实线箭头连接，表示 Host 已经切换；**页面**从页面启动时的 release 指向 Host 的 release（灰色），用同样细的灰色虚线箭头连接，表示要刷新后才完成。每行两端版本号不同时显示版本号，否则显示 commit。页面不应用该 release 的任何插件更新。**刷新以加载新版本**加载它；**暂不刷新**、关闭按钮、点击遮罩和 Escape 都让页面保持自己的 release，并不再为该 Host release 提示。Host 回到页面的 release 时，对话框关闭，热更新恢复。
+
 当分区导航超出面板可用高度时，列表独立于设置内容滚动，并保持「设置」标题固定。
 
 在 Desktop 中，唯一的 36px 更新图标与账户或设置入口共用固定 44px 底栏。连接反馈占用同一个预留状态位置，但壳报告正在安装时更新状态优先。收起侧栏在账户入口上方固定预留状态位置，可用版本、进度与错误的变化不会移动账户头像。两种侧栏宽度下图标均可操作；悬浮提示包含完整阶段、版本、进度或分类失败原因，无障碍名称跟随当前 settings locale。一次 Desktop 预加载订阅同时提供底栏操作和收起侧栏顶部展开按钮上的非交互通知圆点。点击更新操作进入壳拥有的检查、确认与安装流程；关于页的可用更新操作也委托同一流程。浏览器代码不能选择安装包或授权安装。普通浏览器不显示更新控件。[Desktop 更新](../../../apps/desktop/README.zh.md)负责发布流程。
@@ -80,6 +82,10 @@ Settings 的可见状态与请求分区由本包提供的可观察服务 `ctx.se
 ### 连接恢复
 
 外壳是明确的恢复功能消费方，因此直接注入 Connection，而不把生命周期控制放进 `ctx.remote`。它的私有 hooks compartment 绑定 `ctx.connection.state`，组件只接收选出的状态与调用 `ctx.connection.reconnect()` 的注入回调。`ConnectionIndicator` 拥有内联展示并从 `settings` locale namespace 接收全部可见与无障碍文案；连接中状态的 800ms 最短可见驻留与 2 秒恢复确认计时器归外壳所有；恢复计时从驻留结束、恢复药丸实际可见时开始。
+
+### Host release 变化
+
+`shell.overlay` 条目 `host-release-change` 在其 hooks compartment 中绑定 `ctx.modules.entries.releaseChange`，并接收两个回调：一个调用 `ctx.modules.entries.dismissRelease()`，另一个刷新页面。release 身份是 Host 数据，按原样显示；哪个 release 算当前由 [Client Modules](../modules/README.zh.md#host-release-changes) 决定。
 
 ### 文档可用性
 
