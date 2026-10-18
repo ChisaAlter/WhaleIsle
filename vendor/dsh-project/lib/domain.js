@@ -18,7 +18,7 @@ const requestQueue = z.object({ state: z.enum(['discussing', 'queued', 'active',
   released: z.boolean().optional(), resumeRequested: z.boolean().optional(), activation: z.object({ messageId: id, requestRevision: z.number().int().positive(), resume: z.boolean().optional() }).optional() });
 const requestChanges = z.object({ isGit: z.boolean(), baseline: z.string().optional(), capturedAt: z.number(), end: z.string().optional(), endedAt: z.number().optional(),
   files: z.array(z.object({ path: z.string(), status: z.string(), added: z.number(), removed: z.number(), binary: z.boolean().optional() })).optional(),
-  fileCount: z.number().optional(), added: z.number().optional(), removed: z.number().optional(), revertedAt: z.number().optional() });
+  fileCount: z.number().optional(), added: z.number().optional(), removed: z.number().optional(), isolated: z.boolean().optional(), revertedAt: z.number().optional() });
 const request = z.object({ id, projectId: id, title: id, revision: z.number().int().positive(), versions: z.array(requestVersion), queue: requestQueue.optional(), archivedAt: z.number().optional(), changes: requestChanges.optional(), createdAt: z.number(), updatedAt: z.number() });
 const resultReference = z.object({ workstreamId: id, delegationRef: id, reportId: id.optional() });
 const terminalReference = z.object({ workstreamId: id, delegationRef: id, runId: id });

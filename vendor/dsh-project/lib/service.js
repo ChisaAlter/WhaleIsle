@@ -396,7 +396,10 @@ export class ProjectService {
       try {
         const value = await this.desktop('changes', { projectId: project.id, workingDirectory: project.canonicalWorkingDirectory, base: row.changes.baseline });
         await this.serial(() => this.write(state => { const item = state.requests.find(entry => entry.id === row.id);
-          item.changes = { ...item.changes, end: value.end, endedAt: Date.now(), files: value.files.slice(0, 300), fileCount: value.files.length,
+          // Writes made in an isolated worktree stay on its own branch and are not part of this directory's diff.
+          const isolated = state.workstreams.some(work => work.delegations.some(receipt => receipt.source?.requestId === row.id && receipt.scope !== 'readonly')
+            && state.workers.find(worker => worker.sessionId === work.workerSessionId)?.mode === 'worktree');
+          item.changes = { ...item.changes, ...(isolated ? { isolated: true } : {}), end: value.end, endedAt: Date.now(), files: value.files.slice(0, 300), fileCount: value.files.length,
             added: value.files.reduce((sum, file) => sum + file.added, 0), removed: value.files.reduce((sum, file) => sum + file.removed, 0) }; }));
       } catch (error) { this.ctx.logger.warn('Project requirement changes could not be recorded: %s', error.message); }
     }
@@ -417,16 +420,18 @@ export class ProjectService {
     const project = this.project(projectId), row = this.requirements.get(projectId, required(input.requestId, 'task identity', 200)), changes = row.changes;
     if (!changes?.isGit || !changes.baseline) fail('changes_unavailable', 'This requirement has no recorded starting point; view the directory changes instead.');
     const value = await this.desktop('changes', { projectId, workingDirectory: project.canonicalWorkingDirectory, base: changes.baseline, ...(changes.end ? { end: changes.end } : {}), diff: true });
-    return { files: value.files, diff: value.diff, truncated: value.truncated, final: Boolean(changes.end), ...(changes.revertedAt ? { revertedAt: changes.revertedAt } : {}) };
+    return { files: value.files, diff: value.diff, truncated: value.truncated, final: Boolean(changes.end), ...(changes.isolated ? { isolated: true } : {}), ...(changes.revertedAt ? { revertedAt: changes.revertedAt } : {}) };
   }
   async revertRequest(projectId, input) {
     return this.serial(async () => {
       const project = this.project(projectId), row = this.requirements.get(projectId, required(input.requestId, 'task identity', 200)), changes = row.changes;
       if (this.closing || project.lifecycle !== 'ready' || this.archiving.has(projectId)) fail('unavailable', 'Restore this Project before reverting its changes.');
-      if (this.queue.busy(projectId)) fail('busy', 'Background work is still running in this directory. Wait for it to finish or stop it before reverting.');
+      if (this.queue.busy(projectId) || this.directoryInUse(project.canonicalWorkingDirectory)) fail('busy', 'Background work is still running in this directory. Wait for it to finish or stop it before reverting.');
+      if (changes?.isolated) fail('revert_unavailable', 'Part of this requirement was developed in an isolated worktree, so its changes cannot be reverted from the Project directory.');
       if (!changes?.isGit || !changes.baseline || !changes.end || changes.revertedAt) fail('revert_unavailable', 'This requirement has no delivered changes that can be reverted.');
       const result = await this.desktop('revert', { projectId, workingDirectory: project.canonicalWorkingDirectory, base: changes.baseline, end: changes.end });
       if (result.conflict) fail('revert_conflict', result.message || 'Files changed after delivery, so the revert does not apply cleanly.');
+      if (!result.applied) fail('revert_unavailable', 'This requirement left no changes in the Project directory to revert.');
       await this.write(state => { const item = state.requests.find(entry => entry.id === row.id); item.changes = { ...item.changes, revertedAt: Date.now() }; item.updatedAt = Date.now(); });
       await this.appendDecision(project, { id: `revert-${row.id}-${changes.end.slice(0, 12)}`, title: row.title, outcome: 'reverted', text: '用户撤销了这条需求带来的改动，相关文件已恢复到开始开发前的状态。' })
         .catch(error => this.ctx.logger.warn('Project decision log could not be updated: %s', error.message));
@@ -525,6 +530,14 @@ export class ProjectService {
   }
   directoryAvailable(worker, role = latest(this.stream(worker.workstreamId)).scope) {
     return this.directoryBlockers(worker, role).length === 0;
+  }
+  // Any Project's busy member whose directory overlaps this one, parent or child, blocks a direct write such as revert.
+  directoryInUse(directory) {
+    return this.state().workers.some(worker => {
+      if (!this.queue.workerBusy(worker)) return false;
+      const occupied = worker.cwd || (worker.mode === 'existing' ? this.project(worker.projectId).canonicalWorkingDirectory : '');
+      return occupied && (within(directory, occupied) || within(occupied, directory));
+    });
   }
   directoryBlockers(worker, role) {
     if (role === 'readonly') return [];
