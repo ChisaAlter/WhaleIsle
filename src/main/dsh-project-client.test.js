@@ -522,7 +522,7 @@ test('a saved per-requirement strip reopens without replacing the observer or ex
     await b.flush(); await b.adopt();
     const tab = { id: 'saved-tab', kind: 'project', title: 'Project' }, panel = { id: 'saved-pane', host: 'float', rect: { x: 96, y: 80, width: 400, height: 240 } };
     b.face().hooks.observerModes.set({ [b.project.coordinatorSessionId]: { [panel.id]: { requests: { [current.id]: { mode: 'strip', completed: false } } } } });
-    b.observer.set({ tab, panel }); await b.mount(); const root = b.document.querySelector('[data-project-observer-stack]');
+    b.observer.set({ tab, panel }); await b.mount(); await b.openObserver(); const root = b.document.querySelector('[data-project-observer-stack]');
     assert.equal(b.requestElement(current.id).dataset.projectRequestMode, 'strip');
     await b.openObserver(); assert.equal(b.requestElement(current.id).dataset.projectRequestMode, 'strip');
     await b.openRequest(current.id); assert.equal(b.requestElement(current.id).dataset.projectRequestMode, 'full');
