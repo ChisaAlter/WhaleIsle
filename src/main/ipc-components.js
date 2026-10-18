@@ -38,6 +38,7 @@ function register({ handle, LAUNCHER_ONLY, send, onQuitCommit }) {
     const list = svc.list();
     if (!bridge) return list;
     if (!bridgeListed || options?.refresh === true) { await bridge.refreshCatalog(); bridgeListed = true; }
+    await bridge.reconcile?.();
     return { ...list, components: [bridge.row(), ...list.components] };
   });
 

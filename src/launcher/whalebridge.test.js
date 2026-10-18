@@ -163,3 +163,110 @@ test('update, rollback and reinstall retain settings; lower catalog never delete
   assert.equal((await f.service.install()).ok, true); assert.equal(fs.readFileSync(file, 'utf8'), 'kept');
   assert.equal((await f.service.uninstall({ removeData: true })).ok, true); assert.equal(fs.existsSync(file), false);
 });
+
+test('a state record left by a forced exit is dropped when its PID now belongs to another process', async t => {
+  const f = fixture(t); assert.equal((await f.service.install()).ok, true);
+  const { pid } = f.service.state();
+  f.live.delete(pid); f.live.add(4242);
+  const stateFile = path.join(f.deps.root, 'data', 'state.json');
+  fs.writeFileSync(stateFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(stateFile)), pid: 4242 }));
+  const refused = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
+  const identities = [];
+  const service = createWhaleBridgeService({ ...f.deps, fetchJson: async (url, options) => {
+    if (url.endsWith('/whalebridge/identity')) { identities.push(url); throw refused; }
+    const current = JSON.parse(fs.readFileSync(stateFile));
+    if (current.pid === 4242) throw refused;
+    return f.deps.fetchJson(url, options);
+  } });
+  assert.equal(service.row().state, 'running');
+  await service.reconcile();
+  assert.equal(service.row().state, 'stopped');
+  assert.deepEqual(identities, ['http://127.0.0.1:3427/whalebridge/identity']);
+  assert.equal(f.live.has(4242), true, 'the unrelated process is never killed');
+  fs.writeFileSync(stateFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(f.deps.root, 'installed.json'))), id: 'whalebridge', ready: true, pid: 4242, url: 'http://127.0.0.1:2222/?k=' + 'a'.repeat(32) }));
+  assert.equal((await service.start()).ok, true);
+  assert.notEqual(service.state().pid, 4242);
+  assert.equal((await service.uninstall()).ok, true);
+  assert.equal(f.killed.includes(4242), false);
+});
+
+test('a slow gateway is not mistaken for a stale record', async t => {
+  const f = fixture(t); assert.equal((await f.service.install()).ok, true);
+  const timeout = Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
+  const service = createWhaleBridgeService({ ...f.deps, fetchJson: async () => { throw timeout; } });
+  const result = await service.stop();
+  assert.equal(result.ok, false);
+  assert.ok(service.state(), 'the running record stays');
+  assert.equal(f.killed.length, 0);
+});
+
+test('a failed start reports the component error line instead of only pointing at the log', async t => {
+  const f = fixture(t);
+  const logFile = path.join(f.deps.root, 'data', 'component.log');
+  fs.mkdirSync(path.dirname(logFile), { recursive: true });
+  fs.writeFileSync(logFile, 'an earlier run\n');
+  const service = createWhaleBridgeService({ ...f.deps, spawn: () => {
+    fs.appendFileSync(logFile, '鲸桥网关端口不可用: listen tcp 127.0.0.1:3427: bind: address already in use\n');
+    const child = new EventEmitter(); child.pid = 7001; child.exitCode = 1; child.unref = () => {};
+    return child;
+  } });
+  const result = await service.install();
+  assert.equal(result.ok, false);
+  assert.equal(result.message, '鲸桥启动退出（1）：鲸桥网关端口不可用: listen tcp 127.0.0.1:3427: bind: address already in use');
+});
+
+test('the component log restarts once it outgrows its limit', async t => {
+  const f = fixture(t);
+  const logFile = path.join(f.deps.root, 'data', 'component.log');
+  fs.mkdirSync(path.dirname(logFile), { recursive: true });
+  fs.writeFileSync(logFile, Buffer.alloc(1024 * 1024 + 1, 'x'));
+  assert.equal((await f.service.install()).ok, true);
+  assert.equal(fs.statSync(logFile).size, 0);
+});
+
+test('an empty operation lock from a crashed launcher is recovered once it is old', async t => {
+  const f = fixture(t);
+  const lock = path.join(f.deps.root, 'operation.lock');
+  fs.mkdirSync(f.deps.root, { recursive: true });
+  fs.writeFileSync(lock, '');
+  assert.deepEqual(await f.service.install(), { ok: false, error: 'busy' });
+  const old = new Date(Date.now() - 60_000);
+  fs.utimesSync(lock, old, old);
+  assert.equal((await f.service.install()).ok, true);
+  assert.equal(fs.existsSync(lock), false);
+});
+
+test('a switch keeps only the active version and its rollback target', async t => {
+  const f = fixture(t); assert.equal((await f.service.install()).ok, true);
+  for (const version of ['1.0.1', '1.0.2', '1.0.3']) { f.publish(version); assert.equal((await f.service.update()).ok, true); }
+  assert.deepEqual(fs.readdirSync(path.join(f.deps.root, 'versions')).sort(), ['1.0.2', '1.0.3']);
+  assert.equal((await f.service.rollback()).ok, true);
+  assert.deepEqual(fs.readdirSync(path.join(f.deps.root, 'versions')).sort(), ['1.0.2', '1.0.3']);
+});
+
+test('files are moved only after the killed process has really exited', async t => {
+  const f = fixture(t); assert.equal((await f.service.install()).ok, true);
+  const { pid } = f.service.state();
+  let checks = 0;
+  const lingering = createWhaleBridgeService({ ...f.deps,
+    killPid: () => true,
+    isPidAlive: value => value === process.pid || (value === pid && ++checks < 4),
+  });
+  assert.equal((await lingering.uninstall()).ok, true);
+  assert.ok(checks >= 4);
+  assert.equal((await f.service.install()).ok, true);
+  const stuck = createWhaleBridgeService({ ...f.deps, killPid: () => true, exitTimeoutMs: 150 });
+  const result = await stuck.uninstall();
+  assert.equal(result.ok, false); assert.match(result.message, /未能退出/);
+  assert.equal(stuck.installed().version, '1.0.0');
+});
+
+test('non-Windows hosts show WhaleBridge as unsupported without fetching a catalog', async t => {
+  const f = fixture(t);
+  let fetched = false;
+  const service = createWhaleBridgeService({ ...f.deps, platform: 'darwin', arch: 'arm64', devPackage: '', fetchJson: async () => { fetched = true; } });
+  const row = await service.refreshCatalog();
+  assert.equal(row.state, 'unsupported'); assert.match(row.message, /Windows x64/);
+  assert.equal(fetched, false);
+  assert.match((await service.install()).message, /Windows x64/);
+});
