@@ -100,6 +100,43 @@ test('reverting refuses busy directories and conflicts, then records one revert 
   assert.equal(baselines, 1); assert.equal(state.requests[0].changes.baseline, 'c'.repeat(40)); assert.equal(state.requests[0].changes.revertedAt, undefined);
 });
 
+test('reverting waits for overlapping writers in any Project and never records a revert that changed nothing', async t => {
+  let reverts = 0, applied = false;
+  const { service, state } = await fixture(t, { revert: () => { reverts++; return { ok: true, applied }; } });
+  state.requests[0].changes = { isGit: true, baseline: tree, end, capturedAt: 1, endedAt: 2, fileCount: 1, added: 1, removed: 0, files: [] };
+  // Another Project bound to a subdirectory is still running in place.
+  state.projects.push({ ...state.projects[0], id: 'other', title: 'Other', canonicalWorkingDirectory: join('/repo', 'packages', 'api'), coordinatorSessionId: 'other-lead' });
+  state.workers.push({ sessionId: 'other-worker', projectId: 'other', workstreamId: 'other-work', cwd: '', role: 'worker', mode: 'existing', phase: 'active', directoryHeld: true, stopped: false, materialized: true, activeRunId: 'run-1', reservationRef: '' });
+  await assert.rejects(service.revertRequest('project', { requestId: 'request-a' }), error => error.code === 'busy');
+  assert.equal(reverts, 0, 'no patch is applied while the overlapping directory is in use');
+  Object.assign(state.workers[0], { phase: 'idle', directoryHeld: false, activeRunId: '' });
+  await assert.rejects(service.revertRequest('project', { requestId: 'request-a' }), error => error.code === 'revert_unavailable');
+  assert.equal(reverts, 1); assert.equal(state.requests[0].changes.revertedAt, undefined, 'an empty patch is not reported as reverted');
+  applied = true;
+  assert.deepEqual(await service.revertRequest('project', { requestId: 'request-a' }), { requestId: 'request-a', reverted: true });
+});
+
+test('requirement work in an isolated worktree is marked, shown honestly and not reverted from the Project directory', async t => {
+  let reverts = 0;
+  const { service, state } = await fixture(t, {
+    baseline: () => ({ ok: true, isGit: true, tree }),
+    changes: () => ({ ok: true, end: tree, files: [] }),
+    revert: () => { reverts++; return { ok: true, applied: true }; },
+  });
+  await service.captureBaseline('project', 'request-a');
+  state.workstreams.push({ id: 'work-a', projectId: 'project', title: 'Isolated', workerSessionId: 'worker-a', delegations: [{ ref: 'ref-a', scope: 'worker', source: { requestId: 'request-a', requestRevision: 1 } }] });
+  state.workers.push({ sessionId: 'worker-a', projectId: 'project', workstreamId: 'work-a', cwd: '/worktrees/work-a', role: 'worker', mode: 'worktree', phase: 'idle', directoryHeld: false, stopped: false, materialized: true, activeRunId: '', reservationRef: '' });
+  state.deliveries.push({ id: 'delivery-i', projectId: 'project', requestId: 'request-a', requestRevision: 1, title: 'Remember me', summary: 'Done.',
+    outcome: 'completed', status: 'delivered', evidence: [], remainingIssues: [], reportRefs: [], terminalRefs: [], requiredDelegations: [], at: 3 });
+  await service.afterDelivery('delivery-i');
+  assert.equal(state.requests[0].changes.isolated, true);
+  state.workstreams.length = 0; // the marker is durable; the card no longer needs the member rows
+  const card = service.requirements.card('project', state.requests[0], new Map());
+  assert.equal(card.changes.revertible, false); assert.equal(card.changes.isolated, true);
+  await assert.rejects(service.revertRequest('project', { requestId: 'request-a' }), error => error.code === 'revert_unavailable');
+  assert.equal(reverts, 0); assert.equal(state.requests[0].changes.revertedAt, undefined);
+});
+
 test('requirement changes need a recorded starting point and non-Git directories record no baseline', async t => {
   const { service, state } = await fixture(t, { baseline: () => ({ ok: true, isGit: false }) });
   await assert.rejects(service.requestChanges('project', { requestId: 'request-a' }), error => error.code === 'changes_unavailable');

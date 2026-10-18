@@ -101,7 +101,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     changeStats: '{count} 个文件', revertChanges: '撤销改动', revertTitle: '撤销这条需求的改动？', revertBody: '会把这条需求改动过的文件恢复到开始开发前的状态，其他文件不受影响。如果这些文件在交付后又被改过，撤销不会执行，你可以交给协调者处理。',
     revertConfirm: '撤销改动', revertDone: '已撤销这条需求的改动。', revertConflictTitle: '无法自动撤销', revertConflictBody: '这些文件在交付后又被修改过，自动撤销会覆盖新的修改，因此没有执行任何更改。',
     revertAsk: '交给协调者处理', revertAskPrompt: '请撤销需求「{title}」带来的改动。自动撤销遇到冲突（文件在交付后被修改过），请检查冲突文件，只还原这条需求的改动，保留之后的其他修改。',
-    statusReverted: '已撤销改动', nextReverted: '如需重新实现，在对话里说一声', requestDiffScope: '这条需求从开始开发到交付的改动。', requestDiffLive: '这条需求从开始开发至今的改动，尚未交付。', requestDiffReverted: '这些改动已被撤销。',
+    statusReverted: '已撤销改动', nextReverted: '如需重新实现，在对话里说一声', requestDiffIsolated: '部分开发在独立工作目录中进行，那些改动不在此列，也不能从这里撤销。', requestDiffScope: '这条需求从开始开发到交付的改动。', requestDiffLive: '这条需求从开始开发至今的改动，尚未交付。', requestDiffReverted: '这些改动已被撤销。',
     decisionLog: '决策日志', decisionLogEmpty: '交付后，协调者的关键决策会自动记录在这里。',
   });
   Object.assign(en, {
@@ -125,7 +125,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     changeStats: '{count} files', revertChanges: 'Revert changes', revertTitle: 'Revert this requirement’s changes?', revertBody: 'Files changed by this requirement return to their state before development started; other files are untouched. If they changed again after delivery, nothing is reverted and you can hand it to the coordinator.',
     revertConfirm: 'Revert changes', revertDone: 'This requirement’s changes were reverted.', revertConflictTitle: 'Could not revert automatically', revertConflictBody: 'These files changed after delivery. Reverting automatically would overwrite the newer edits, so nothing was changed.',
     revertAsk: 'Ask the coordinator', revertAskPrompt: 'Please revert the changes from the requirement “{title}”. The automatic revert hit a conflict because the files changed after delivery; inspect the conflicting files and restore only this requirement’s changes while keeping later edits.',
-    statusReverted: 'Changes reverted', nextReverted: 'Say so in the conversation if you want it implemented again', requestDiffScope: 'Changes made by this requirement from the start of development to delivery.', requestDiffLive: 'Changes made by this requirement since development started; not delivered yet.', requestDiffReverted: 'These changes have been reverted.',
+    statusReverted: 'Changes reverted', nextReverted: 'Say so in the conversation if you want it implemented again', requestDiffIsolated: 'Part of this work ran in an isolated worktree; those changes are not listed here and cannot be reverted from here.', requestDiffScope: 'Changes made by this requirement from the start of development to delivery.', requestDiffLive: 'Changes made by this requirement since development started; not delivered yet.', requestDiffReverted: 'These changes have been reverted.',
     decisionLog: 'Decision log', decisionLogEmpty: 'After deliveries, the coordinator’s key decisions are recorded here automatically.',
   });
   const CSS = `
@@ -1561,7 +1561,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const parsed = parseUnifiedDiff(value.diff), known = new Set(parsed.map(file => file.path));
     const files = [...parsed, ...(value.files ?? []).filter(file => !known.has(file.path)).map(file => ({ path: file.path, lines: [], added: file.added, removed: file.removed, binary: file.binary, kind: diffStatusKind(file.status) }))];
     return h('div', { className: 'dsh-project-body dsh-project-diff', 'data-request-diff': requestId },
-      h('p', { className: 'dsh-project-muted' }, t(value.final ? 'requestDiffScope' : 'requestDiffLive'), value.revertedAt ? ` ${t('requestDiffReverted')}` : ''),
+      h('p', { className: 'dsh-project-muted' }, t(value.final ? 'requestDiffScope' : 'requestDiffLive'), value.revertedAt ? ` ${t('requestDiffReverted')}` : '', value.isolated ? ` ${t('requestDiffIsolated')}` : ''),
       h(DiffView, { files, truncated: value.truncated, t }));
   }
 

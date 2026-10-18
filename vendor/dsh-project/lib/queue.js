@@ -20,9 +20,9 @@ export class ProjectQueue {
   acceptsWork(row, revision, scope) { return this.accepts(row, revision) || scope === 'readonly' && this.state(row) === 'queued' && row.revision === revision && !row.queue?.released && this.unfinished(row); }
   assertWork(row, revision, scope) { if (!this.acceptsWork(row, revision, scope)) fail('request_queued', scope === 'readonly' ? 'Only the active or an authorized queued requirement may run read-only work. Discussed or cancelled requirements cannot run.' : 'Only the current active requirement may write. A queued requirement may only run read-only preparation.'); }
   assertActive(row, revision) { if (!this.accepts(row, revision)) fail('request_queued', 'Only the current active requirement may execute. Discussed, queued or cancelled requirements cannot run.'); }
-  busy(projectId) { return this.service.state().workers.some(worker => worker.projectId === projectId
-    && (worker.activeRunId || worker.reservationRef && this.service.stream(worker.workstreamId).delegations.some(receipt => receipt.ref === worker.reservationRef && receipt.phase === 'preparing') || worker.directoryHeld || worker.phase === 'stopping'
-      || this.service.jobs(worker.sessionId).length || this.service.launches.has(worker.workstreamId))); }
+  busy(projectId) { return this.service.state().workers.some(worker => worker.projectId === projectId && this.workerBusy(worker)); }
+  workerBusy(worker) { return Boolean(worker.activeRunId || worker.reservationRef && this.service.stream(worker.workstreamId).delegations.some(receipt => receipt.ref === worker.reservationRef && receipt.phase === 'preparing') || worker.directoryHeld || worker.phase === 'stopping'
+      || this.service.jobs(worker.sessionId).length || this.service.launches.has(worker.workstreamId)); }
   notice(row, message) { return message.source?.kind === queuePlugin
     && row.queue?.activation?.messageId === message.id && row.queue.activation.requestRevision === row.revision && this.accepts(row); }
   authorized(row, messages) { return messages.some(event => this.notice(row, event.data ?? event)); }

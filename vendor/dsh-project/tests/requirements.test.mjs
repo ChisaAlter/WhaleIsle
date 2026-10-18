@@ -82,6 +82,13 @@ test('authority requirements page their original goals by Project without mutati
   assert.deepEqual(f.state, before, 'Reading original requirements cannot restore authority, revise requests or start work');
 });
 
+test('an empty requestId records a new requirement with a durable identity', async () => {
+  const f = fixture(); f.human(['Fix login']);
+  const { request } = await f.accept({ requestId: '' });
+  assert.ok(request.id.startsWith('request-'), 'an empty identity is never persisted');
+  assert.equal(request.versions[0].source.requestId, request.id);
+});
+
 test('all consumed human inputs retain their order; independent goals and revisions preserve source authority', async () => {
   const f = fixture(); f.human(['Investigate and fix login', 'Preserve the existing credentials']);
   const { request } = await f.accept({});

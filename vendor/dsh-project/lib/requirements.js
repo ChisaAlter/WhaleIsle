@@ -64,7 +64,8 @@ export class ProjectRequirements {
     const goal = string(args.goal, 'goal'), title = string(args.title ?? goal.slice(0, 100), 'title', 240);
     const disposition = args.disposition ?? 'queued';
     if (!['discussing', 'queued'].includes(disposition)) fail('queue_state', 'A requirement is either being discussed or approved for the development queue.');
-    const id = args.requestId ?? stableId('request', `${actor.agent.id}:${exec.callId}`);
+    // An empty requestId means a new requirement, as the existing lookup below reads it.
+    const id = args.requestId || stableId('request', `${actor.agent.id}:${exec.callId}`);
     await service.serial(async () => {
       const project = service.project(actor.project.id);
       if (service.closing || service.archiving.has(project.id) || project.lifecycle !== 'ready') fail('unavailable', 'Restore this Project before accepting work.');
@@ -411,7 +412,8 @@ export class ProjectRequirements {
     const members = [...memberRows.values()];
     const base = { id: row.id, projectId, title: row.title, revision: row.revision, createdAt: row.createdAt,
       updatedAt: row.updatedAt, ...(row.archivedAt !== undefined ? { archivedAt: row.archivedAt } : {}), queue: service.queue.view(row), status, counts,
-      ...(row.changes ? { changes: { isGit: row.changes.isGit, revertible: Boolean(row.changes.isGit && row.changes.baseline && row.changes.end && !row.changes.revertedAt),
+      ...(row.changes ? { changes: { isGit: row.changes.isGit, revertible: Boolean(row.changes.isGit && row.changes.baseline && row.changes.end && !row.changes.revertedAt && !row.changes.isolated),
+        ...(row.changes.isolated ? { isolated: true } : {}),
         ...(row.changes.end ? { fileCount: row.changes.fileCount ?? 0, added: row.changes.added ?? 0, removed: row.changes.removed ?? 0 } : {}),
         ...(row.changes.revertedAt ? { revertedAt: row.changes.revertedAt } : {}), ...(full && row.changes.files ? { files: row.changes.files.slice(0, 50) } : {}) } } : {}) };
     if (!full) return { ...base, goalPreview: version.goal.slice(0, 180), members: members.slice(0, 3), memberTotal: members.length,
