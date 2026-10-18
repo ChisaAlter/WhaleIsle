@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-root",
-  "version": "0.2.1-alpha.3",
+  "version": "0.2.1-rc.2",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -148,6 +148,7 @@
     "verify-client-ui-i18n": "tsx scripts/verify-client-ui-i18n.ts",
     "verify-client-route-resolution": "tsx scripts/verify-client-route-resolution.ts",
     "verify-no-bare-dispatcher": "tsx scripts/verify-no-bare-dispatcher.ts",
+    "verify-no-top-level-await": "tsx scripts/verify-no-top-level-await.ts",
     "verify-plugin-record-callers": "tsx scripts/verify-plugin-record-callers.ts",
     "verify-cordis-config": "tsx scripts/verify-cordis-config.ts",
     "rescope-vendor": "tsx scripts/rescope-vendor.ts",

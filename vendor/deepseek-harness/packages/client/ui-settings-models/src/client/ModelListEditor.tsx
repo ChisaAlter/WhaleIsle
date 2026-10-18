@@ -76,6 +76,12 @@ export interface ModelListEditorProps {
   models: readonly ModelDraft[]
   /** Installed provider whose catalog supplies defaults without endpoint I/O. */
   catalogProvider?: string | undefined
+  /**
+   * Reasoning levels a hand-declared route's rows may declare in
+   * `reasoningEfforts`, in escalation order; absent or empty shows no
+   * reasoning control, leaving a catalog model's levels to the catalog.
+   */
+  reasoningLevels?: readonly string[] | undefined
   /** Route input types for models absent from the installed catalog. */
   defaultInput?: readonly string[] | undefined
   /** Whether the user layer currently owns the whole array; absent on a create. */
@@ -198,6 +204,9 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   const [failureSequence, setFailureSequence] = useState(0)
   useEffect(() => { setFailureDismissed(false) }, [failure])
   const validation = validateDeepSeekModels(models)
+  // A hand-declared route's rows edit levels and wire values through ModelRow's
+  // reasoning editor; the checkbox group serves every other row.
+  const rowEditsReasoning = props.reasoningLevels !== undefined && props.reasoningLevels.length > 0
   const [inheritedCatalog, setInheritedCatalog] = useState<{
     provider: string
     models: readonly LlmDiscoveredModel[]
@@ -429,6 +438,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
             inputField="input"
             inputFallback={inputDefaults.get(textOf(model, 'id')) ?? props.defaultInput}
             inputLoading={catalogProvider !== undefined && catalog === undefined}
+            reasoningLevels={props.reasoningLevels}
             expanded={expanded.has(index)}
             disabled={disabled}
             validation={validation}
@@ -443,7 +453,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
               placeholder: CAPACITY_HINT.maxTokens,
               onChange: (text) => { editCapacity(index, 'maxTokens', text) },
             }}
-            extra={(
+            extra={rowEditsReasoning ? undefined : (
               <Tooltip label={t('effortOffAlone')} disabled={validation?.index !== index || validation.key !== 'effortOffAlone'} portal side="top">
               <fieldset className={styles['effortGroup']} aria-invalid={validation?.index === index && validation.key === 'effortOffAlone'}
                 tabIndex={validation?.index === index && validation.key === 'effortOffAlone' ? 0 : undefined}
