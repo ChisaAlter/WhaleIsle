@@ -33,7 +33,7 @@ export class ProjectService {
   constructor(ctx, table, { home, desktop, teams = ctx.agentTeams }) {
     this.ctx = ctx; this.teams = teams; this.table = table; this.home = home; this.desktop = desktop; this.available = true;
     this.tail = Promise.resolve(); this.delegationTails = new Map(); this.launches = new Map(); this.stops = new Map(); this.terminals = new Map(); this.consumed = new Map(); this.userTurns = new Map();
-    this.closing = false; this.recovering = true; this.scheduling = false; this.scheduleRevision = 0; this.held = new Set(); this.workerStops = new Map(); this.projectHolds = new Map(); this.archiving = new Set();
+    this.background = new Set(); this.closing = false; this.recovering = true; this.scheduling = false; this.scheduleRevision = 0; this.held = new Set(); this.workerStops = new Map(); this.projectHolds = new Map(); this.archiving = new Set();
     this.approvals = new ProjectApprovals(this);
     this.requirements = new ProjectRequirements(this);
     this.queue = new ProjectQueue(this);
@@ -42,6 +42,9 @@ export class ProjectService {
     this.unpolicy = ctx.subagents.registerContinuationPolicy(policy, args => this.admit(args));
   }
   state() { return this.closing && !this.persistOnDispose ? this.catalog : (this.catalog = this.table.get('catalog')); }
+  // Event-driven accounting runs outside the caller; disposal waits for it so no
+  // Project file is written after the writer lock is released.
+  track(work, label) { const settled = work.catch(error => this.ctx.logger.warn(`${label}: %s`, error.message)).finally(() => this.background.delete(settled)); this.background.add(settled); }
   serial(work) { const result = this.tail.then(work); this.tail = result.catch(() => {}); return result; }
   async write(change) { if (this.closing && !this.persistOnDispose) fail('unavailable', 'Project is unloading; only runtime cleanup remains.'); await this.table.update('catalog', before => { const next = structuredClone(before); change(next); next.revision++; return next; }); this.catalog = this.table.get('catalog'); }
   project(id) { const row = this.state().projects.find(item => item.id === id); if (!row) fail('missing', 'Project does not exist.'); return row; }
@@ -1187,5 +1190,5 @@ export class ProjectService {
     for (const agent of coordinators) agent.cancel({ kind: 'user' });
     await Promise.all(coordinators.map(agent => agent.whenIdle()));
     if (!persist) await Promise.all(this.state().workers.map(worker => this.drainWorker(this.project(worker.projectId), worker.sessionId)));
-    await Promise.all([...this.launches.values()].map(promise => promise.catch(() => {}))); await Promise.all([...this.stops.values()]); await this.tail; this.unpolicy(); this.unteam(); this.available = false; }
+    await Promise.all([...this.launches.values()].map(promise => promise.catch(() => {}))); await Promise.all([...this.stops.values()]); while (this.background.size) await Promise.all([...this.background]); await this.tail; this.unpolicy(); this.unteam(); this.available = false; }
 }

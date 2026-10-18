@@ -50,6 +50,25 @@ test('a requirement records one baseline, its delivered changes and an idempoten
   assert.deepEqual(card.changes, { isGit: true, revertible: true, fileCount: 2, added: 8, removed: 1 });
 });
 
+test('unloading waits for in-flight delivery accounting before releasing Project files', async t => {
+  let releaseChanges;
+  const changesGate = new Promise(done => { releaseChanges = done; });
+  const { service, state, storageRoot } = await fixture(t, {
+    baseline: () => ({ ok: true, isGit: true, tree }),
+    changes: async () => { await changesGate; return { ok: true, end, files: [] }; },
+  });
+  await service.captureBaseline('project', 'request-a');
+  state.deliveries.push({ id: 'delivery-c', projectId: 'project', requestId: 'request-a', requestRevision: 1, title: 'Remember me', summary: 'Done.',
+    outcome: 'completed', status: 'delivered', decision: 'Late decision', evidence: [], remainingIssues: [], reportRefs: [], terminalRefs: [], requiredDelegations: [], at: 3 });
+  service.track(service.afterDelivery('delivery-c'), 'Project summary accounting failed');
+  let disposed = false;
+  const disposal = service.dispose({ persist: false }).then(() => { disposed = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(disposed, false, 'disposal waits while the decision is still being recorded');
+  releaseChanges(); await disposal;
+  assert.match(await fs.readFile(join(storageRoot, 'decisions.md'), 'utf8'), /decision:delivery-c/, 'the decision lands before the writer is released');
+});
+
 test('a delivery without a decision falls back to its first summary line', async t => {
   const { service, state, storageRoot } = await fixture(t);
   state.deliveries.push({ id: 'delivery-b', projectId: 'project', requestId: 'request-a', requestRevision: 1, title: 'Remember me', summary: '# Result\n\n- Added the checkbox and tests.', outcome: 'partial', status: 'delivered' });
