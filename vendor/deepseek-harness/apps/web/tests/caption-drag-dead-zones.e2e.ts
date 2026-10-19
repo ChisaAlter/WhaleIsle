@@ -71,6 +71,10 @@ function sweep(page: Page): Promise<string[]> {
         const control = owner.el.matches(interactive) || isControl(document.elementFromPoint(x, y))
         if (owner.drag === !control) continue
         if (!owner.drag && nearControl(x, y)) continue
+        // Fractional control edges: integer hit testing reaches a control a sub-pixel
+        // before its box does, so its outermost pixel column is not a swallowed click.
+        const edge = owner.drag ? document.elementFromPoint(x, y)?.closest(interactive)?.getBoundingClientRect() : undefined
+        if (edge !== undefined && (x < edge.left + 1 || x >= edge.right - 1 || y < edge.top + 1 || y >= edge.bottom - 1)) continue
         const kind = owner.drag ? 'swallowed control' : 'dead no-drag'
         const r = owner.rect
         const hit = document.elementFromPoint(x, y)
