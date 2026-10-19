@@ -56,7 +56,8 @@ function keepCaretInDraft(root: HTMLElement): void {
   const selection = doc.getSelection()
   if (selection === null || selection.rangeCount === 0 || !selection.isCollapsed) return
   const range = selection.getRangeAt(0)
-  if (!root.contains(range.startContainer)) return
+  // Layout-free documents (jsdom) have ranges without client rects.
+  if (!root.contains(range.startContainer) || typeof range.getBoundingClientRect !== 'function') return
   let caret = range.getBoundingClientRect()
   if (caret.height === 0) {
     // A collapsed range on an empty line has no box; its line element does.
