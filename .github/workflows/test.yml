@@ -67,8 +67,8 @@ jobs:
         run: npm run setup:harness
       - name: Install the Chromium build apps/web's Playwright pins
         run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness/apps/web exec playwright install --with-deps chromium
-      - name: Caption drag band and composer takeover geometry
-        run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run --config vitest.web.config.ts apps/web/tests/caption-drag-dead-zones.e2e.ts apps/web/tests/approval-resize-geometry.e2e.ts
+      - name: Desktop web composition lanes
+        run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run --config vitest.web.config.ts apps/web/tests/caption-drag-dead-zones.e2e.ts apps/web/tests/approval-resize-geometry.e2e.ts apps/web/tests/composer-typing-keeps-reading.e2e.ts
   windows:
     needs: scope
     if: needs.scope.outputs.product == 'true'

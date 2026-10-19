@@ -127,6 +127,9 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-approval/src/client/ApprovalPanel.tsx', includes: ['--dsh-approval-card-inset-top'] },
   { file: 'packages/client/ui-approval/src/client/ApprovalPanel.module.css', includes: ['var(--dsh-approval-card-inset-top'] },
   { file: 'apps/web/tests/approval-resize-geometry.e2e.ts', includes: ['places the approval card on the input card rect'] },
+  // Typing never scrolls a reader-scrolled transcript.
+  { file: 'packages/client/ui-conversation/src/client/input/editor/runtime.ts', includes: ['SKIP_SCROLL_INTO_VIEW_TAG', 'keepCaretInDraft'] },
+  { file: 'apps/web/tests/composer-typing-keeps-reading.e2e.ts', includes: ['types, grows, and overflows the draft without moving the transcript'] },
   { file: 'packages/client/ui-conversation/src/client/queue/QueueDock.module.css', includes: ['dsh-composer-resized-width'] },
   { file: 'packages/client/ui-primitives/src/TaskDock.module.css', includes: ['dsh-composer-resized-width'] },
   { file: 'packages/client/ui-primitives/src/TaskDock.tsx', includes: ["import css from './TaskDock.module.css'", 'className={css.root}'] },
