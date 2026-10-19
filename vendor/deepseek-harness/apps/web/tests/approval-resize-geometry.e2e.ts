@@ -87,11 +87,15 @@ describe('desktop fork: approval takeover covers the resized composer card', () 
     // rect the approval card covered.
     await panel.getByRole('button', { name: 'Allow once' }).click()
     await panel.waitFor({ state: 'detached', timeout: 10_000 })
-    const after = (await cardBox(page, 'input'))!
-    const off = (['left', 'top', 'width', 'height'] as const)
-      .filter(key => Math.abs(approval[key] - after[key]) > 1)
-      .map(key => `${key} ${approval[key].toFixed(1)} vs ${after[key].toFixed(1)}`)
-    expect(off.join(', ') || 'aligned').toBe('aligned')
+    // The returning card settles within a few frames of the takeover's removal.
+    await expect.poll(async () => {
+      const after = await cardBox(page, 'input')
+      if (after === null) return 'no input card'
+      const off = (['left', 'top', 'width', 'height'] as const)
+        .filter(key => Math.abs(approval[key] - after[key]) > 1)
+        .map(key => `${key} ${approval[key].toFixed(1)} vs ${after[key].toFixed(1)}`)
+      return off.join(', ') || 'aligned'
+    }, { timeout: 3_000 }).toBe('aligned')
     await settled
     expect(tripwire.pageErrors).toEqual([])
   }, 120_000)
