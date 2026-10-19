@@ -57,6 +57,7 @@ function Viewer() {
   const [message, setMessage] = useState<RenderMessage | null>(null);
   const root = useRef<HTMLElement>(null);
   const lastHeight = useRef(0);
+  const lastTitle = useRef("");
   const previousVariables = useRef<string[]>([]);
   const latestState = useRef<OpenUiState | null>(null);
   const validation = useRef<{ program: string; parsed: boolean; errors: OpenUIError[] }>({ program: "", parsed: false, errors: [] });
@@ -77,6 +78,10 @@ function Viewer() {
         const height = Math.ceil(Math.max(element.getBoundingClientRect().height,
           ...overlays.map((overlay) => overlay.getBoundingClientRect().bottom + 12)));
         if (height !== lastHeight.current) { lastHeight.current = height; bridge.post({ type: "height", height }); }
+        // The answer's own first heading names the card in the host toolbar.
+        const heading = element.querySelector("h1, h2, h3, [role='heading']");
+        const title = (heading?.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+        if (title !== lastTitle.current) { lastTitle.current = title; bridge.post({ type: "title", title }); }
       });
     };
     const observer = new ResizeObserver(measure);

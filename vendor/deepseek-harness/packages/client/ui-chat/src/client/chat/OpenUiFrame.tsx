@@ -46,6 +46,7 @@ export function OpenUiFrame({ instanceId, program, streaming, openUi, t }: Props
   const [loaded, setLoaded] = useState(false)
   const [source, setSource] = useState(false)
   const [height, setHeight] = useState(320)
+  const [title, setTitle] = useState('')
   const [pending, setPending] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [viewerError, setViewerError] = useState<string | null>(null)
@@ -104,6 +105,9 @@ export function OpenUiFrame({ instanceId, program, streaming, openUi, t }: Props
           if (typeof data.height === 'number' && Number.isFinite(data.height)) {
             setHeight(Math.max(80, Math.min(2000, Math.ceil(data.height))))
           }
+          break
+        case 'title':
+          if (typeof data.title === 'string') setTitle(data.title.trim().slice(0, 120))
           break
         case 'state':
           if (!record(data.state)) return
@@ -185,7 +189,7 @@ export function OpenUiFrame({ instanceId, program, streaming, openUi, t }: Props
 
   return <section className={css.root} data-openui-instance={instanceId} aria-busy={(!loaded && error === null) || pending > 0}>
     <header className={css.toolbar}>
-      <span className={css.label} role="status">{t(pending > 0 ? 'openui.sending' : 'openui.title')}</span>
+      <span className={css.label} role="status">{pending > 0 ? t('openui.sending') : title || t('openui.title')}</span>
       <Button size="sm" onClick={() => setSource(value => !value)} aria-pressed={source}>
         {t(source ? 'openui.preview' : 'openui.source')}
       </Button>
@@ -194,7 +198,7 @@ export function OpenUiFrame({ instanceId, program, streaming, openUi, t }: Props
       {html !== null && <iframe
         ref={frame}
         name={`whale-openui:${instanceId}`}
-        title={t('openui.title')}
+        title={title || t('openui.title')}
         className={css.frame}
         sandbox="allow-scripts"
         allow="fullscreen; picture-in-picture; encrypted-media"
