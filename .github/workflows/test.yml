@@ -87,7 +87,7 @@ jobs:
       - name: Caption drag band
         if: needs.scope.outputs.vendor == 'true'
         run: |
-          node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec playwright install chromium
+          node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness/apps/web exec playwright install chromium
           node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run --config vitest.web.config.ts apps/web/tests/caption-drag-dead-zones.e2e.ts
       - name: Native window behavior
         if: needs.scope.outputs.motion == 'true'
