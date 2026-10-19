@@ -39,6 +39,7 @@ test('updater download success followed by spawn failure releases protection and
   info.blockmapUrl = 'https://example.test/Setup.exe.blockmap';
   info.updaterMetadataUrl = 'https://example.test/latest.yml';
   updater.getOrCreateDownloadHelper = async () => ({ cacheDir: path.dirname(file) });
+  updater.setFeedURL = () => {};
   updater.checkForUpdates = async () => {
     const updateInfo = { version: '9.9.9' };
     updater.updateInfoAndProvider = { info: updateInfo, provider: { resolveFiles: () => [{

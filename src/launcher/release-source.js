@@ -235,6 +235,7 @@ module.exports = {
   ROUTES,
   normalizeRoute,
   listRoutes,
+  normalizeAssets,
   latestFor,
   listFor,
   releaseFor,

@@ -111,7 +111,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-settings-general/src/client/CloseBehaviorRow.tsx': 'export const close = () => <SettingsSelect aria-label="close" />\n',
       'packages/client/ui-settings-general/src/client/AutoStartDesktopRow.tsx': 'export const autoStart = () => <SettingsSelect aria-label="auto-start" />\n',
       'packages/client/ui-settings-general/src/client/HarnessRestartRow.tsx': 'export const restart = () => <SettingsSelect aria-label="restart" />\n',
-      'packages/client/ui-settings-general/src/client/AboutSection.tsx': 'export function AboutSection() { return shell.openDshHome() }\n',
+      'packages/client/ui-settings-general/src/client/AboutSection.tsx': 'export function AboutSection() { return shell.openDshHome(), config.downloadRoute }\n',
       'packages/client/ui-settings-general/src/client/RemoteWorkspaceRow.tsx': 'export const remote = () => shell.saveConfig({ remoteWorkspaceEnabled: next })\n',
       'packages/client/ui-settings-general/src/client/RemoteWorkspaceRow.module.css': '.row { display: flex; }\n',
       'packages/client/ui-settings-general/src/client/index.ts': "import { RemoteWorkspaceRow } from './RemoteWorkspaceRow.tsx'\n",

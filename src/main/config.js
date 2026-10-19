@@ -171,6 +171,13 @@ function normalizeRendererConfigPatch(patch) {
       next.theme = value;
       continue;
     }
+    if (key === 'downloadRoute') {
+      if (!['', 'github', 'cnb'].includes(value)) {
+        throw new TypeError('downloadRoute must be "", "github" or "cnb"');
+      }
+      next[key] = value;
+      continue;
+    }
     if (key === 'githubToken') {
       if (typeof value !== 'string' || value.length > 512 || /[\r\n\0]/.test(value)) {
         throw new TypeError('githubToken must be a valid string');
