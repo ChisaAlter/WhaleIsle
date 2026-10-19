@@ -9,6 +9,13 @@ import css from './ApprovalPanel.module.css'
  * @param props - selector-matched request and standard Slot props.
  * @returns The approval composer takeover.
  */
+
+/** Untransformed distance from the offset root, summed through offset parents. */
+function layoutTop(element: HTMLElement): number {
+  let top = 0
+  for (let node: HTMLElement | null = element; node !== null; node = node.offsetParent as HTMLElement | null) top += node.offsetTop
+  return top
+}
 export function ApprovalPanel(props: ApprovalComposerProps) {
   const approval = props.matched
   const detail = approval.callId === undefined
@@ -42,9 +49,11 @@ function ApprovalFlow({ pending, reason, detail, controls, t }: {
       root.style.setProperty('--dsh-approval-card-width', `${box.width}px`)
       root.style.setProperty('--dsh-approval-card-height', `${box.height}px`)
       if (frame === null) return
-      const outer = frame.getBoundingClientRect()
-      root.style.setProperty('--dsh-approval-card-inset-top', `${box.top - outer.top}px`)
-      root.style.setProperty('--dsh-approval-card-inset-bottom', `${outer.bottom - box.bottom}px`)
+      // Layout offsets, not client rects: the card may still be gliding under a
+      // transform, and the observer does not fire again when that motion ends.
+      const top = layoutTop(card) - layoutTop(frame)
+      root.style.setProperty('--dsh-approval-card-inset-top', `${top}px`)
+      root.style.setProperty('--dsh-approval-card-inset-bottom', `${frame.offsetHeight - card.offsetHeight - top}px`)
     }
     const observer = new ResizeObserver(syncSize)
     observer.observe(card)

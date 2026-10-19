@@ -80,8 +80,15 @@ describe('desktop fork: approval takeover covers the resized composer card', () 
     await input.press('Enter')
     const panel = page.locator('[data-approval-key]')
     await panel.waitFor({ timeout: 60_000 })
-    await expect.poll(() => cardBox(page, 'approval'), { timeout: 5_000 }).not.toBeNull()
-    const approval = (await cardBox(page, 'approval'))!
+    // The seat settles a frame or two after the takeover mounts (both cards
+    // move together), so record the approval rect once two reads agree.
+    let approval: Box | null = null
+    await expect.poll(async () => {
+      const previous = approval
+      approval = await cardBox(page, 'approval')
+      return approval !== null && previous !== null
+        && (['left', 'top', 'width', 'height'] as const).every(key => Math.abs(approval![key] - previous[key]) < 0.5)
+    }, { timeout: 5_000, interval: 100 }).toBe(true)
 
     // The answered takeover hands the seat back: the input card returns to the
     // rect the approval card covered.
@@ -92,8 +99,8 @@ describe('desktop fork: approval takeover covers the resized composer card', () 
       const after = await cardBox(page, 'input')
       if (after === null) return 'no input card'
       const off = (['left', 'top', 'width', 'height'] as const)
-        .filter(key => Math.abs(approval[key] - after[key]) > 1)
-        .map(key => `${key} ${approval[key].toFixed(1)} vs ${after[key].toFixed(1)}`)
+        .filter(key => Math.abs(approval![key] - after[key]) > 1)
+        .map(key => `${key} ${approval![key].toFixed(1)} vs ${after[key].toFixed(1)}`)
       return off.join(', ') || 'aligned'
     }, { timeout: 3_000 }).toBe('aligned')
     await settled
