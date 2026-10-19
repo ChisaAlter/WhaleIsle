@@ -74,9 +74,9 @@ function sweep(page: Page): Promise<string[]> {
         const kind = owner.drag ? 'swallowed control' : 'dead no-drag'
         const r = owner.rect
         const hit = document.elementFromPoint(x, y)
-        const control = hit?.closest(interactive) ?? null
-        const cr = control?.getBoundingClientRect()
-        const under = hit === null ? '' : ` over ${name(hit)}${control === null ? '' : ` in ${name(control)} ${Math.round(cr!.left)},${Math.round(cr!.top)} ${Math.round(cr!.width)}x${Math.round(cr!.height)}`}`
+        const hitControl = hit?.closest(interactive) ?? null
+        const cr = hitControl?.getBoundingClientRect()
+        const under = hit === null ? '' : ` over ${name(hit)}${hitControl === null || cr === undefined ? '' : ` in ${name(hitControl)} ${Math.round(cr.left)},${Math.round(cr.top)} ${Math.round(cr.width)}x${Math.round(cr.height)}`}`
         const key = `${kind}: ${name(owner.el)} ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}${under}`
         const entry = found.get(key) ?? { kind, points: 0, from: x, to: x }
         entry.points += 1
