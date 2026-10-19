@@ -143,6 +143,14 @@ function artifactSiteSlug(rawUrl) {
   }
 }
 
+// A floating host rounds its guest to match its own frame; docked bounds carry
+// no radius and stay square.
+function placeView(view, bounds) {
+  view.setBounds({ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height });
+  const radius = Number(bounds.radius);
+  view.setBorderRadius(Number.isFinite(radius) && radius > 0 ? Math.round(radius) : 0);
+}
+
 function defaultAttach({ bounds, partition }) {
   const { WebContentsView } = require('electron');
   const { getMainWindow } = require('./window');
@@ -155,7 +163,7 @@ function defaultAttach({ bounds, partition }) {
     webPreferences: previewGuestWebPreferences({ session: ses }),
   });
   win.contentView.addChildView(view);
-  if (bounds) view.setBounds(bounds);
+  if (bounds) placeView(view, bounds);
   view.webContents.setWindowOpenHandler(({ url }) => {
     const next = resolvePreviewLoadUrl(url);
     if (next) view.webContents.loadURL(next);
@@ -168,7 +176,7 @@ function defaultAttach({ bounds, partition }) {
     webContents: view.webContents,
     webRequest: ses.webRequest,
     setBounds(next) {
-      view.setBounds(next);
+      placeView(view, next);
     },
     setVisible(next) {
       if (next === visible) return;

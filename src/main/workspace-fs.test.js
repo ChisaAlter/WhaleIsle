@@ -271,6 +271,13 @@ test('readFileMedia returns png bytes and rejects non-images and traversal', asy
     assert.equal(ts.ok, false);
     const escaped = await readFileMedia(cwd, path.join('..', 'icon.png'));
     assert.equal(escaped.ok, false);
+    // Past the 1 MB text read limit an image still arrives whole: a prefix
+    // would not decode, and the preview showed only the truncation notice.
+    const large = Buffer.alloc(3 * 1024 * 1024, 7);
+    fs.writeFileSync(path.join(cwd, 'large.png'), large);
+    const big = await readFileMedia(cwd, 'large.png');
+    assert.equal(big.truncated, false);
+    assert.equal(Buffer.from(big.base64, 'base64').length, large.length);
   } finally {
     setWorkspaceAuthority(null);
     fs.rmSync(cwd, { recursive: true, force: true });

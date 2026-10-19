@@ -27,7 +27,9 @@ describe('dshd mini-player', () => {
       openMiniPlayer('preview-first', 'first.html')
       render(<DshdMiniPlayer {...({ t } as Parameters<typeof DshdMiniPlayer>[0])} />)
       expect(readMiniPlayer().runtime).toBeNull()
-      const bounds = { x: 480, y: 40, width: 320, height: 172 }
+      // The native guest takes the viewport card's corner, which CSS cannot clip.
+      document.querySelector<HTMLElement>('[data-preview-mini-player-viewport]')!.style.borderTopLeftRadius = '22px'
+      const bounds = { x: 480, y: 40, width: 320, height: 172, radius: 22 }
       const runtime = { previewShow: vi.fn(async () => {}), previewResize: vi.fn(async () => {}), previewHide: vi.fn(async () => {}) }
       act(() => { setMiniPlayerRuntime('preview-first', runtime) })
       await waitFor(() => expect(runtime.previewShow).toHaveBeenCalledWith('preview-first', bounds))
