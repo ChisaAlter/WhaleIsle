@@ -18,7 +18,7 @@
 - DWM 非客户区绘制必须关闭，透明角外不能有系统矩形描边、填充或阴影；保留 caption/thick-frame 和过渡策略。Harness/启动器缘线宽为一个物理像素，按 DPR 换算，保留 alpha 抗锯齿。交互桌面检查四角，在激活、失焦、resize、还原后均必须通过。
 - 原生桥监听 `WM_DWMNCRENDERINGCHANGED`；系统通知非客户区绘制重新开启时，在该原生操作提交后关闭该层，不能只在创建窗口时设置一次或在通知内重入原生操作。关闭中的页面也保留透明窗口底色与 20px 剪影，最大化时圆角为 0。
 - 最大化/还原必须经 `ShowWindowAsync(SW_MAXIMIZE / SW_RESTORE)`，状态以 Windows `IsZoomed` 为准；Electron `isMaximized()` 可能只是工作区几何判定，不得仅以 `setBounds()` 或几何覆盖充当 Windows 壳窗最大化。
-- 顶部 48px 标题带（`AppFrame` `.captionDrag`）除控件外处处可拖动。只有控件给拖动区挖洞：ui-web `base.css` 的控件选择器、按钮组外框（Git 分组）、悬浮层与缩放把手；会话标题行、动作座位、对话页签行、标题栏尾簇等容器不声明 `-webkit-app-region`，它们的留白、间隙和静态标签属于拖动区。`apps/web/tests/caption-drag-dead-zones.e2e.ts` 在空窗口、带后台任务的会话、菜单开合、侧栏收展、右栏开合下扫描整条标题带，任何「无控件却不可拖」或「控件被拖动吞掉」的点都会失败，并作为 Windows CI 的「Caption drag band」步骤运行。
+- 顶部 48px 标题带（`AppFrame` `.captionDrag`）除控件外处处可拖动。只有控件给拖动区挖洞：ui-web `base.css` 的控件选择器、按钮组外框（Git 分组）、悬浮层与缩放把手；会话标题行、动作座位、对话页签行、标题栏尾簇等容器不声明 `-webkit-app-region`，它们的留白、间隙和静态标签属于拖动区。`apps/web/tests/caption-drag-dead-zones.e2e.ts` 在空窗口、带后台任务的会话、菜单开合、侧栏收展、右栏开合下扫描整条标题带，任何「无控件却不可拖」或「控件被拖动吞掉」的点都会失败，在 Development CI 的 Linux `web` 作业中运行（与上游 web e2e 同平台）。
 - 桌宠及透明覆盖层保留自己的窗口类型；非 Windows 保留现有剪影路径。不得改系统动画偏好。
 - 改动实际影响窗口行为时，使用下面相关检查并观察动画；无关上游同步不自动触发窗口全套验证。
 
