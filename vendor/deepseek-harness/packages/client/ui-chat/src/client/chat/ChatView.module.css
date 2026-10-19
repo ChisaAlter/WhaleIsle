@@ -67,9 +67,18 @@
    column host publishes --dsh-composer-resized-width and the transcript
    follows (card minus both side clearances) so the shared width axis holds;
    the fallback keeps the resting width. */
+/* A width drag writes the flow width on the column element itself. The property
+   does not inherit, so a drag frame restyles this one box instead of every
+   message under it (the inherited --dsh-composer-resized-width on the column
+   host is published once, when the drag ends). */
+@property --dsh-composer-flow-width {
+  syntax: '*';
+  inherits: false;
+}
+
 .column {
   max-width: calc(
-    var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width)) -
+    var(--dsh-composer-flow-width, var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width))) -
     var(--dsh-composer-side-clearance) -
     var(--dsh-composer-side-clearance)
   );

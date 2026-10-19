@@ -34,13 +34,21 @@ function ApprovalFlow({ pending, reason, detail, controls, t }: {
       '[data-chain-overlay-fallback="conversation.composer"] [data-composer-card]',
     )
     if (root === null || card == null) return
+    // The hidden composer keeps its layout under the takeover, so its card's
+    // insets inside the composer box place the approval card on the same rect.
+    const frame = card.closest<HTMLElement>('[data-chain-overlay-fallback="conversation.composer"]')
     const syncSize = () => {
-      const { width, height } = card.getBoundingClientRect()
-      root.style.setProperty('--dsh-approval-card-width', `${width}px`)
-      root.style.setProperty('--dsh-approval-card-height', `${height}px`)
+      const box = card.getBoundingClientRect()
+      root.style.setProperty('--dsh-approval-card-width', `${box.width}px`)
+      root.style.setProperty('--dsh-approval-card-height', `${box.height}px`)
+      if (frame === null) return
+      const outer = frame.getBoundingClientRect()
+      root.style.setProperty('--dsh-approval-card-inset-top', `${box.top - outer.top}px`)
+      root.style.setProperty('--dsh-approval-card-inset-bottom', `${outer.bottom - box.bottom}px`)
     }
     const observer = new ResizeObserver(syncSize)
     observer.observe(card)
+    if (frame !== null) observer.observe(frame)
     syncSize()
     return () => observer.disconnect()
   }, [])

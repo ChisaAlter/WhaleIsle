@@ -82,6 +82,7 @@
     "tests/sidebar-browser.e2e.ts",
     "tests/jobs-menu-layering.e2e.ts",
     "tests/caption-drag-dead-zones.e2e.ts",
+    "tests/approval-resize-geometry.e2e.ts",
     "tests/plugin-config.e2e.ts",
     "tests/input-plugin-extensions.e2e.ts",
     "tests/plugin-manager.e2e.ts",
