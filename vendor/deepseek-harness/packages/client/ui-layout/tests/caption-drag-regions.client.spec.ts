@@ -77,17 +77,15 @@ describe('caption drag regions across client stylesheets', () => {
     ])
   })
 
-  it('keeps every Session header action seat clickable above the caption band on all platforms', () => {
-    const conversation = files.find(file => file.path === 'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css')
-    expect(conversation).toBeDefined()
-    const noDragSelectors = blocks(conversation!.text)
+  it('leaves Session header seats and the titlebar cluster to the band; their controls punch the holes', () => {
+    // A seat's padding, gaps, and labels are blank titlebar. caption-drag-dead-zones.e2e.ts
+    // sweeps the composed band; this pins the authored side of the same rule.
+    const noDrag = (path: string) => blocks(files.find(file => file.path === path)!.text)
       .filter(block => /-webkit-app-region:\s*no-drag/.test(block.body))
-      .filter(block => !block.selector.includes(':global('))
       .flatMap(block => block.selector.split(',').map(selector => selector.trim()))
-    expect(noDragSelectors).toEqual(expect.arrayContaining([
-      '.headerLeading', '.crumbSeg', '.headerActions', '.headerUtilities', '.headerCorner',
-    ]))
-    expect(noDragSelectors).not.toContain('.crumbs')
+    expect(noDrag('packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css')).toEqual([])
+    expect(noDrag('packages/client/ui-layout/src/client/AppFrame.module.css')).not.toContain('.titlebarTrailing')
+    expect(noDrag('packages/client/ui-titlebar/src/client/PanelToggles.module.css')).not.toContain('.cluster')
   })
 
   it('subtracts native and custom interactive controls from drag regions on every platform', () => {

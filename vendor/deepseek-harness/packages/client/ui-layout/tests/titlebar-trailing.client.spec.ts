@@ -33,12 +33,12 @@ describe('AppFrame.module.css titlebar trailing cluster', () => {
     expect(band?.get('z-index')).toBeUndefined()
   })
 
-  it('packs cluster controls with an 8px gap and marks the cluster no-drag', () => {
+  it('packs cluster controls with an 8px gap and leaves its gaps to the caption band', () => {
     const trailing = declarations('.titlebarTrailing')
     expect(trailing?.get('gap')).toBe('8px')
     expect(trailing?.get('width')).toBe('max-content')
     expect(trailing?.get('max-width')).toBe('100%')
-    expect(trailing?.get('-webkit-app-region')).toBe('no-drag')
+    expect(trailing?.get('-webkit-app-region')).toBeUndefined()
     expect(trailing?.get('display')).toBe('flex')
     expect(trailing?.get('margin-right')).toBe('var(--dshd-wco-controls, 8px)')
     expect(css).not.toContain('--dshd-wco-pad')

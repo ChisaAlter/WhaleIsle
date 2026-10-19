@@ -84,6 +84,11 @@ jobs:
       - name: Built desktop styling
         if: needs.scope.outputs.vendor == 'true'
         run: node scripts/check-built-shell.mjs
+      - name: Caption drag band
+        if: needs.scope.outputs.vendor == 'true'
+        run: |
+          node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec playwright install chromium
+          node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run --config vitest.web.config.ts apps/web/tests/caption-drag-dead-zones.e2e.ts
       - name: Native window behavior
         if: needs.scope.outputs.motion == 'true'
         run: node scripts/run-window-motion-qa.mjs

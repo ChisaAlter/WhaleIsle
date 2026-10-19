@@ -243,7 +243,6 @@ const NO_DRAG_FILES = [
   'packages/client/ui-attachment/src/DropOverlay.module.css',
   'packages/client/ui-primitives/src/ImageLightbox.module.css',
   'packages/client/ui-chat/src/client/chat/stat-dialog.module.css',
-  'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css',
   'packages/client/ui-dockkit/src/components/dockkit.module.css',
   'packages/client/ui-files/src/client/FileTree.module.css',
   'packages/client/ui-git/src/client/GitActionsControl.module.css',
