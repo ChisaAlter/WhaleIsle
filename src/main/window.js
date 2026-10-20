@@ -5,6 +5,7 @@ const { applyWindowsAppDetails } = require('./window-app-details');
 const { REMOTE_FEATURE_ENABLED } = require('./config');
 const { shellWindowChrome, attachIntegratedChrome, hideNativeMenu, prepareHarnessChrome, syncHarnessChrome, currentTheme, markWindowTransparent, paintBackground } = require('./chrome');
 const { normalizeSettingsSection, buildSettingsSectionScript } = require('./settings-jump');
+const { buildMarketplaceScript } = require('./marketplace-jump');
 const {
   isLoopbackHttpUrl,
   isSameOriginLoopbackUrl,
@@ -866,7 +867,9 @@ function openHarnessSettings(sectionId) {
 }
 
 function jumpToMarketplaceTab() {
-  return openHarnessSettings('market');
+  const win = getMainWindow();
+  if (!win || !isHarnessLoaded(win)) return Promise.resolve(false);
+  return harnessPageContents(win).executeJavaScript(buildMarketplaceScript()).catch(() => false);
 }
 
 function consumePendingMarketplaceJump(win) {

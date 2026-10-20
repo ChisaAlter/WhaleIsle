@@ -126,7 +126,7 @@ function SettingsPanel({ rows, renderSlot, activeId, motionState, open, onSelect
         <div className={css.content}>
           <div className={css.header}>
             <div className={css.actions}>{renderSlot('settings.action', {})}</div>
-            <button type="button" className={css.close} onClick={onClose}>
+            <button type="button" className={css.close} data-dsh-settings-close onClick={onClose}>
               <IconCloseOutline16 size={14} />
               <span className={css.hiddenLabel}>{renderSlot('settings.close', {})}</span>
             </button>

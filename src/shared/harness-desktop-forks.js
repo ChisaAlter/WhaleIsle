@@ -52,6 +52,12 @@ const LAYOUT_MARKERS = ['surfaces', 'shell.titlebar.trailing', 'shell.terminalDr
 // cannot see these: sync:harness keeps them only via git merge, so a conflict
 // resolved towards upstream would drop them without failing any other assert.
 const FORK_FILE_MARKERS = [
+  // Desktop default Discover source and stable menu navigation targets.
+  { file: 'packages/boot/app-boot/src/profile.ts', includes: ['DSHD_PLUGIN_MARKET_INDEX', '.desktop-plugin-market-v1'] },
+  { file: 'packages/experimental/plugin-market-bundle/cordis.patch.yml', includes: ['DSHD_PLUGIN_MARKET_INDEX'] },
+  { file: 'packages/client/ui-sidebar/src/client/SidebarRoot.tsx', includes: ['data-dsh-panel={id}'] },
+  { file: 'packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx', includes: ['data-plugin-back'] },
+  { file: 'packages/client/ui-settings-general/src/client/SettingsRoot.tsx', includes: ['data-dsh-settings-close'] },
   // Full Open Intelligent UI is hosted only in assistant-authored fences.
   { file: 'packages/client/ui-primitives/src/markdown/MarkdownText.tsx', includes: ['renderCodeFence', 'MarkdownCodeFenceRenderer'] },
   { file: 'packages/client/ui-chat/src/index.ts', includes: ['DSHD_OPENUI_ENABLED', "name: 'openui'"] },

@@ -361,6 +361,10 @@ function composeContractProblems(round, stdout) {
       problems.push(`${round}: ${label}行出现 ${count} 次——受管块残留与 overlay 双挂载`);
     }
   }
+  const marketRow = text.split(new RegExp(`^- id: ${MARKET_ID}\\r?$`, 'm'))[1]?.split(/^\- id:/m)[0];
+  if (marketRow !== undefined && !/^\s+disabled: true\s*$/m.test(marketRow)) {
+    problems.push(`${round}: 旧设置市场行 ${MARKET_ID} 必须禁用`);
+  }
   // The base Web bundle always has session-query-sqlite with openAt: never;
   // only the desktop overlay changes it to first-search on full starts.
   const searchCount = countConfigLines(text, 'openAt: first-search');

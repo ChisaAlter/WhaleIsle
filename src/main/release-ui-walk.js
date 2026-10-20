@@ -1939,42 +1939,26 @@ async function runReleaseUiWalk(wc, helpers) {
   }), 10_000, 200, (state) => state?.nav || state?.heading);
   rec('plugins.heading', Boolean(pluginsOpened && (plugins?.heading || plugins?.nav)), '');
 
-  const marketOpened = await openSettings('market');
-  const market = await waitUntil(() => pageEval(wc, () => {
-    const nav = document.querySelector('[data-dsh-settings-section="market"]');
-    const dialog = dshDialogNamed('^设置$|^settings$');
-    const text = dialog ? (dialog.innerText || '') : '';
-    return {
-      nav: Boolean(dialog && nav?.getAttribute('aria-current') === 'true'),
-      discover: /discover|发现/i.test(text),
-    };
-  }), 10_000, 200, (state) => state?.nav);
-  rec('market.section', Boolean(marketOpened && market?.nav), marketOpened ? '' : 'market section missing');
-  await clickNamed(wc, '^(discover|发现)$');
+  const oldMarketHidden = await pageEval(wc, () => !document.querySelector('[data-dsh-settings-section="market"]'));
+  await dismiss();
+  const { buildMarketplaceScript } = require('./marketplace-jump');
+  const marketOpened = await wc.executeJavaScript(buildMarketplaceScript());
+  rec('market.section', oldMarketHidden && marketOpened, 'official Discover replaces the hidden Settings market');
   const discover = await waitUntil(() => pageEval(wc, () => {
-    const dialog = dshDialog();
-    const text = dialog ? (dialog.innerText || '') : '';
-    const tab = dshFind('^(discover|发现)$', dialog);
-    const selected = Boolean(tab && (tab.getAttribute('aria-selected') === 'true' || tab.getAttribute('aria-current') === 'true'));
-    return /discover|发现/i.test(text) || selected ? { discover: true } : null;
+    const panel = document.querySelector('[data-plugin-panel]');
+    const tab = panel?.querySelector('[role="tab"][id$="-discover"]');
+    return tab?.getAttribute('aria-selected') === 'true' ? { ready: true } : null;
   }), 10_000);
-  rec('market.discover', Boolean(market?.discover || discover?.discover), '');
+  rec('market.discover', Boolean(discover), '');
 
-  // Installed plugin ownership comes from the profile, not a named bundled plugin.
-  const { listInstalledPlugins } = require('./plugins');
-  const profile = listInstalledPlugins();
-  const names = (profile.plugins || []).map((row) => row.name);
-  await clickNamed(wc, '^(installed|已安装)( \\(\\d+\\))?$');
-  const installed = await waitUntil(() => pageEval(wc, (expectedNames) => {
-    const dialog = dshDialog();
-    if (!dialog) return null;
-    const text = dialog.innerText || '';
-    if (expectedNames.length > 0) {
-      return expectedNames.every((name) => text.includes(name)) ? { ready: true } : null;
-    }
-    return /还没有装过社区插件|No community plugins yet/i.test(text) ? { ready: true } : null;
-  }, names), 10_000);
-  rec('market.installed', profile.ok && Boolean(installed), installed ? '' : 'Installed tab missing or incomplete');
+  await pageEval(wc, () => document.querySelector('[data-plugin-panel] [role="tab"][id$="-installed"]')?.click());
+  const installed = await waitUntil(() => pageEval(wc, () => {
+    const panel = document.querySelector('[data-plugin-panel]');
+    const tab = panel?.querySelector('[role="tab"][id$="-installed"]');
+    return tab?.getAttribute('aria-selected') === 'true'
+      && panel?.getAttribute('aria-busy') === 'false' ? { ready: true } : null;
+  }), 10_000);
+  rec('market.installed', Boolean(installed), installed ? '' : 'Installed tab missing or incomplete');
 
   const usageOpened = await openSettings('usage-stats');
   const usage = await waitUntil(() => pageEval(wc, () => {

@@ -33,6 +33,7 @@ test('childSpawnEnv 强制桌面 DSH_HOME 并清掉 Electron 启动变量', () =
   assert.equal(env.ELECTRON_RUN_AS_NODE, undefined);
   assert.equal(env.ELECTRON_NO_ASAR, undefined);
   assert.equal(env.npm_config_update_notifier, 'false');
+  assert.equal(env.DSHD_PLUGIN_MARKET_INDEX, 'https://realguan.github.io/dsh-plugin-market/dsh-index.json');
 });
 
 test('childSpawnEnv 按调用方给定顺序把 extras 前置到 PATH', () => {
