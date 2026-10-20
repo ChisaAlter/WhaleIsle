@@ -1,16 +1,10 @@
-# Project owns the only Team service and Team UI rows while it is mounted, under
-# its own ids so the optional Agent Teams bundle cannot insert duplicates.
+# Project reuses a configured Team service, or supplies one when absent.
+# Its Team UI row replaces the optional bundle's duplicate UI only.
 - insert:
-    - id: dsh-project-teams
-      name: "@deepseek-ai/dsh-experimental-agent-team"
     - id: dsh-project-team-ui
       name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"
     - id: dsh-project
       name: dsh-project
-# Agent Teams tools keep working on the shared Project-owned service.
-- id: agent-team
-  name: "@deepseek-ai/dsh-experimental-agent-team"
-  disabled: true
 - id: ui-agent-team
   name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"
   disabled: true

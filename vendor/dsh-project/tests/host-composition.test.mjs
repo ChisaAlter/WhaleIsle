@@ -7,11 +7,15 @@ import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { projectPackage, harness, cliRequire, resolvePackage, projectUrl, ProjectService } from './harness-runtime.mjs';
+import { projectPackage, harness, cliRequire, resolvePackage, ProjectService } from './harness-runtime.mjs';
 const { boot, loadOverlayPatches, bundlePatchPaths, composeEntries } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-app-boot')).href);
 const { LlmAdapter, LlmError } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-llm')).href);
 const { provideCmdline } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-cmdline')).href);
 const { disposeProfileApplication } = await import(pathToFileURL(join(harness, 'apps/cli/lib/profile-boot.js')).href);
+const { FiberState } = await import(pathToFileURL(resolvePackage('@deepseek-ai/cordis')).href);
+const { default: TeamService } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-experimental-agent-team')).href);
+const teamUi = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-experimental-client-ui-agent-team')).href);
+const { ensureDesktopDshProject } = cliRequire(join(projectPackage, '../../src/main/dsh-project-desktop.js'));
 const blocks = value => [{ type: 'block-start', index: 0, blockType: 'text' }, { type: 'text-delta', index: 0, text: value }, { type: 'block-end', index: 0, block: { type: 'text', text: value } }, { type: 'finish', reason: { kind: 'stop' } }];
 const call = (id, name, args) => [{ type: 'block-start', index: 0, blockType: 'tool-call' }, { type: 'tool-call-delta', index: 0, id, name, argumentsDelta: JSON.stringify(args) }, { type: 'block-end', index: 0, block: { type: 'tool-call', id, name, arguments: JSON.stringify(args) } }, { type: 'finish', reason: { kind: 'tool-calls' } }];
 const messageText = message => (message.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
@@ -466,11 +470,15 @@ async function desktopBridge(root, handlers = {}) {
   await new Promise(done => server.listen(0, '127.0.0.1', done));
   return { requests, address: `http://127.0.0.1:${server.address().port}`, close: () => new Promise(done => server.close(done)) };
 }
-async function bootHost(home, model, teamConfig, allowUnavailable = false, visualRepliesEnabled = false) {
+async function bootHost(home, model, teamConfig, allowUnavailable = false, visualRepliesEnabled = false, composition = {}) {
   const config = join(home, 'cordis.yml'); await writeFile(config, '[]\n');
   const web = dirname(cliRequire.resolve('@deepseek-ai/dsh-web-app/package.json')), manifest = JSON.parse(readFileSync(join(web, 'package.json'), 'utf8'));
   const patches = [...loadOverlayPatches('project-composition', join(harness, 'packages/bundle/base/cordis.patch.yml')),
-    ...bundlePatchPaths(web, manifest.dsh.bundle).flatMap(path => loadOverlayPatches('project-composition', path)), ...loadOverlayPatches('project-composition', join(projectPackage, 'cordis.patch.yml')), ...teamConfig ? [{ id: 'dsh-project-teams', config: teamConfig }] : [],
+    ...bundlePatchPaths(web, manifest.dsh.bundle).flatMap(path => loadOverlayPatches('project-composition', path)),
+    ...composition.optionalTeams ? loadOverlayPatches('project-composition', join(harness, 'packages/experimental/agent-team-profile/cordis.patch.yml'))
+      : teamConfig ? [{ insert: [{ id: 'agent-team', name: '@deepseek-ai/dsh-experimental-agent-team', config: teamConfig }] }] : [],
+    ...composition.userPatch ? loadOverlayPatches('project-composition', composition.userPatch) : [],
+    ...composition.project === false ? [] : loadOverlayPatches('project-composition', composition.overlayFile ?? join(projectPackage, 'cordis.patch.yml')),
     { id: 'storage-json', config: { root: join(home, 'storages') } }, { id: 'session-persistence-jsonl', config: { root: join(home, 'sessions') } },
     { id: 'mcp-servers-file', config: { path: join(home, 'mcp-servers.yaml'), watch: false } }, { id: 'agent-default-model', config: { provider: 'composition', model: 'project-model' } },
     { id: 'agent-preset-registry', config: { default: 'standard' } },
@@ -482,11 +490,17 @@ async function bootHost(home, model, teamConfig, allowUnavailable = false, visua
   const ctx = await boot('project-composition', config, patches, ctx => {
     ctx.on('tools/result', (exec, result) => { if (result.error) model.failures.push({ name: exec.name, error: result.error }); });
     ctx.provide('connection', { fetch: { register: () => () => {} }, rpc: { intercept: () => () => {} } }); provideCmdline(ctx, { args: [], exit: () => {} });
-    ctx.loader.internal = { version: 'v2', async import(name) { if (name === 'dsh-project' || name.startsWith('dsh-project/')) return import(pathToFileURL(join(projectPackage, 'lib', `${name === 'dsh-project' ? 'index' : name.slice(12)}.js`)).href); if (name.startsWith(projectUrl)) return import(name); return import(pathToFileURL(resolvePackage(name)).href); } };
+    ctx.loader.internal = { version: 'v2', async import(name) {
+      if (name === '@deepseek-ai/dsh-experimental-agent-team' && composition.beforeTeamImport) await composition.beforeTeamImport(ctx);
+      if (name === 'dsh-project' || name.startsWith('dsh-project/')) return import(pathToFileURL(join(projectPackage, 'lib', `${name === 'dsh-project' ? 'index' : name.slice(12)}.js`)).href);
+      if (name.startsWith('file:')) return import(name);
+      return import(pathToFileURL(resolvePackage(name)).href);
+    } };
   });
-  assert.equal(ctx.get('projects')?.available, !allowUnavailable, ctx.get('projects')?.error);
+  if (composition.project === false) assert.equal(ctx.get('projects'), undefined);
+  else assert.equal(ctx.get('projects')?.available, !allowUnavailable, ctx.get('projects')?.error);
   let contextVersion = 0; ctx.systemPrompt.context({ name: 'composition:actual-dynamic-context', order: 99999, text: () => `Runtime context snapshot ${++contextVersion}; it supplies no user authorization.` });
-  ctx.llm.registerAdapter(['composition'], model); model.state = () => ctx.projects.state(); return ctx;
+  ctx.llm.registerAdapter(['composition'], model); model.state = () => ctx.get('projects')?.state(); return ctx;
 }
 test('Project and the optional Agent Teams bundle compose one Team service and one Team UI', () => {
   const web = dirname(cliRequire.resolve('@deepseek-ai/dsh-web-app/package.json')), manifest = JSON.parse(readFileSync(join(web, 'package.json'), 'utf8'));
@@ -495,9 +509,116 @@ test('Project and the optional Agent Teams bundle compose one Team service and o
   const active = rows => rows.flatMap(row => row.disabled === true ? [] : row.group && Array.isArray(row.config) ? [row, ...active(row.config)] : [row]);
   const rows = active(composeEntries(layers));
   for (const name of ['@deepseek-ai/dsh-experimental-agent-team', '@deepseek-ai/dsh-experimental-client-ui-agent-team']) {
-    assert.deepEqual(rows.filter(row => row.name === name).map(row => row.id), [name === '@deepseek-ai/dsh-experimental-agent-team' ? 'dsh-project-teams' : 'dsh-project-team-ui']);
+    assert.deepEqual(rows.filter(row => row.name === name).map(row => row.id), [name === '@deepseek-ai/dsh-experimental-agent-team' ? 'agent-team' : 'dsh-project-team-ui']);
   }
   assert.ok(rows.some(row => row.id === 'tool-agent-team'), 'Agent Teams tools stay mounted on the shared service');
+});
+
+class TeamLimitModel extends LlmAdapter {
+  requests = []; failures = [];
+  async resolveModel(provider, model) { return { provider, id: model, name: model }; }
+  async *stream(options) { this.requests.push(options); yield* blocks('Team member ready.'); }
+}
+
+function assertTeamComposition(ctx, expected, project, optionalTeams) {
+  const activeFibers = plugin => [...(ctx.registry.get(plugin)?.fibers ?? [])].filter(fiber => fiber.state === FiberState.ACTIVE);
+  assert.equal(activeFibers(TeamService).length, expected ? 1 : 0, 'exactly one live TeamService provider');
+  assert.equal(activeFibers(teamUi).length, project || optionalTeams ? 1 : 0, 'exactly one live Team UI plugin');
+  assert.equal([...ctx.loader.entries()].filter(entry => entry.options.name === '@deepseek-ai/dsh-experimental-client-ui-agent-team' && !entry.disabled).length, project || optionalTeams ? 1 : 0);
+  if (!expected) { assert.equal(ctx.get('agentTeams'), undefined); return; }
+  assert.deepEqual(ctx.agentTeams.config, expected, 'the actual shared service retains every effective limit');
+  if (project) assert.equal(ctx.projects.teams.config, ctx.agentTeams.config, 'Project consumes the configured provider instance');
+  if (optionalTeams) {
+    const tool = [...ctx.loader.entries()].find(entry => entry.options.id === 'tool-agent-team');
+    assert.equal(tool.fiber.state, FiberState.ACTIVE, 'optional Team tools remain active on the shared provider');
+  }
+}
+
+async function assertTeamLimits(ctx, expected, id) {
+  const lead = await ctx.agentLoop.create(id, { provider: 'composition', model: 'project-model' });
+  let first;
+  for (let index = 0; index < expected.maxMembers; index++) {
+    const result = await ctx.agentTeams.spawnTeammate(lead, { name: `member-${index}`, description: `Capacity member ${index}`,
+      prompt: [{ type: 'text', text: 'Observe Team capacity.' }], context: 'fresh', provider: 'spawn', signal });
+    first ??= result.member.name;
+  }
+  await waitFor(() => ctx.agentTeams.listMembers(lead).every(member => member.status === 'inactive'), 'capacity members settle through the actual continuable runtime');
+  assert.equal(ctx.agentTeams.listMembers(lead).length, expected.maxMembers + 1, 'the configured teammate limit excludes the Lead');
+  await assert.rejects(ctx.agentTeams.spawnTeammate(lead, { name: 'over-capacity', description: 'Must be rejected before creation',
+    prompt: [{ type: 'text', text: 'Must not run.' }], context: 'fresh', provider: 'spawn', signal }), { code: 'TEAM_MEMBER_LIMIT' });
+  assert.equal(ctx.agentTeams.listMembers(lead).length, expected.maxMembers + 1, 'rejection does not add a member');
+  await assert.rejects(ctx.agentTeams.sendMessage(lead, { target: first, content: [{ type: 'text', text: '鲸'.repeat(expected.maxMessageBytes) }], signal }), { code: 'TEAM_MESSAGE_TOO_LARGE' });
+  if (expected.maxTasks <= 4) {
+    for (let index = 0; index < expected.maxTasks; index++) await ctx.agentTeams.createTask(lead, { subject: `Task ${index}`, description: 'Configured task capacity.' });
+    await assert.rejects(ctx.agentTeams.createTask(lead, { subject: 'Overflow task', description: 'Must not be created.' }), { code: 'TEAM_TASK_LIMIT' });
+  }
+  assert.equal(await ctx.sessions.flush(lead.session), true);
+}
+
+test('real Loader preserves Team limits through cold restart and Project toggle without duplicate providers or UI', { timeout: 180000 }, async t => {
+  const defaults = { maxMembers: 8, maxTasks: 256, maxMessageBytes: 65536, disposalTimeoutMs: 5000 };
+  for (const scenario of [
+    { name: 'optional bundle defaults and delayed provider import', optionalTeams: true, expected: defaults, delayImport: true },
+    { name: 'user limits with desktop overlay', optionalTeams: true, desktop: true, expected: { maxMembers: 2, maxTasks: 3, maxMessageBytes: 1024, disposalTimeoutMs: 750 } },
+    { name: 'Project alone with desktop overlay', optionalTeams: false, desktop: true, expected: { ...defaults, maxMembers: 16 } },
+  ]) await t.test(scenario.name, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'whale-project-team-config-')), home = join(root, 'home'), directory = join(root, 'selected');
+    await mkdir(home); await mkdir(directory); const bridge = await desktopBridge(root); let ctx, mounted, projectId;
+    const userPatch = join(home, 'cordis.patch.yml'), userText = scenario.optionalTeams && scenario.desktop
+      ? '- id: agent-team\n  config:\n    maxMembers: !!js 1 + 1\n    maxTasks: 3\n    maxMessageBytes: 1024\n    disposalTimeoutMs: 750\n' : '[]\n';
+    await writeFile(userPatch, userText);
+    const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+    Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
+    try {
+      for (const [index, stage] of ['initial', 'cold-restart', 'Project-disabled', 'Project-restored'].entries()) {
+        const project = stage !== 'Project-disabled', model = new TeamLimitModel();
+        if (scenario.desktop) {
+          mounted = await ensureDesktopDshProject({ sourceDir: projectPackage, harnessRoot: harness, profileDir: home, enabled: project });
+          assert.equal(mounted.ok, true);
+          if (project) assert.ok(mounted.overlayFile);
+        }
+        let delayed = false;
+        ctx = await bootHost(home, model, undefined, false, false, { optionalTeams: scenario.optionalTeams, project, userPatch,
+          ...(scenario.desktop && project ? { overlayFile: mounted.overlayFile } : {}),
+          ...(scenario.delayImport && project ? { beforeTeamImport: async loading => {
+            await waitFor(() => [...loading.registry.values()].flatMap(runtime => [...runtime.fibers]).some(fiber => fiber.runtime?.name === 'whale-project' && fiber.state === FiberState.LOADING), 'Project starts before the configured Team module import finishes');
+            delayed = true;
+          } } : {}),
+        });
+        assert.equal(model.requests.length, 0, 'boot, restart and toggle start no model work');
+        if (scenario.delayImport && project) assert.equal(delayed, true);
+        const expected = project || scenario.optionalTeams ? scenario.expected : undefined;
+        assertTeamComposition(ctx, expected, project, scenario.optionalTeams);
+        if (project) {
+          if (!projectId) projectId = (await ctx.projects.command('create', { requestId: 'team-config-create', workingDirectory: directory })).project.id;
+          assert.deepEqual(ctx.projects.state().projects.map(row => row.id), [projectId], 'the same Project survives restart and disable/enable');
+        }
+        if (project && scenario.optionalTeams && stage === 'initial') {
+          const entries = [...ctx.loader.entries()], provider = entries.find(entry => entry.options.id === 'agent-team');
+          await provider.fiber.restart();
+          await waitFor(() => ctx.get('projects')?.available && ctx.projects.teams.config === ctx.agentTeams.config, 'Project follows the configured provider restart');
+          assertTeamComposition(ctx, expected, true, true);
+          const teamConfig = ctx.agentTeams.config, projectEntry = entries.find(entry => entry.options.id === 'dsh-project');
+          await projectEntry.update({ disabled: true }); await projectEntry.fiber.await();
+          assert.equal(ctx.get('projects'), undefined);
+          assert.equal(ctx.agentTeams.config, teamConfig, 'live Project disable retains the optional provider instance');
+          assertTeamComposition(ctx, expected, false, true);
+          await projectEntry.update({ disabled: false }); await ctx.loader.await();
+          assert.equal(ctx.projects.available, true, ctx.projects.error);
+          assert.equal(ctx.agentTeams.config, teamConfig, 'live Project re-enable reuses the optional provider');
+          assertTeamComposition(ctx, expected, true, true);
+          assert.equal(model.requests.length, 0, 'live provider restart and Project toggle start no model work');
+        }
+        if (expected) await assertTeamLimits(ctx, expected, `session-team-config-${index}`);
+        assert.equal(await readFile(userPatch, 'utf8'), userText, 'desktop composition never edits the user patch');
+        await disposeProfileApplication(ctx); ctx = undefined;
+      }
+    } finally {
+      if (ctx) await disposeProfileApplication(ctx); await bridge.close();
+      for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+      assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-team-config-`)); await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 test('native requirement queue keeps discussion separate, preserves edits and order, and relays only a durable whole delivery', { timeout: 120000 }, async () => {

@@ -23,7 +23,7 @@ function fixture(t, peers = {}) {
 
 test('optional Project mount preserves user Team settings and data across disable and recovery', async t => {
   const { sourceDir, profileDir } = fixture(t);
-  const userPatch = '# user-owned\n- id: custom\n  disabled: true\n- id: agent-team\n  disabled: true\n';
+  const userPatch = '# user-owned\n- id: custom\n  disabled: true\n- id: agent-team\n  disabled: true\n  config:\n    maxMembers: 3\n    maxTasks: 5\n    maxMessageBytes: 1024\n    disposalTimeoutMs: 750\n';
   fs.writeFileSync(path.join(profileDir, 'cordis.patch.yml'), userPatch);
   const first = await ensureDesktopDshProject({ sourceDir, profileDir });
   assert.equal(first.ok, true);
@@ -32,11 +32,9 @@ test('optional Project mount preserves user Team settings and data across disabl
   const overlay = fs.readFileSync(first.overlayFile, 'utf8');
   const projectName = JSON.stringify(pathToFileURL(path.join(first.runtimeDir, 'lib', 'index.js')).href);
   assert.equal(overlay.split(`name: ${projectName}`).length - 1, 1);
-  // Project owns the Team rows under its own ids and only ever disables the optional Agent Teams bundle rows.
-  assert.doesNotMatch(overlay, /disabled: false|- id: (agent-team|ui-agent-team)\r?\n {6}name/);
-  assert.match(overlay, /- id: dsh-project-teams\n {6}name: "@deepseek-ai\/dsh-experimental-agent-team"\n/);
+  // Keep the optional provider and its effective config; deduplicate only Team UI.
+  assert.doesNotMatch(overlay, /disabled: false|- id: agent-team\b|dsh-project-teams/);
   assert.match(overlay, /- id: dsh-project-team-ui\n {6}name: "@deepseek-ai\/dsh-experimental-client-ui-agent-team"\n/);
-  assert.match(overlay, /\n- id: agent-team\n  name: "@deepseek-ai\/dsh-experimental-agent-team"\n  disabled: true\n/);
   assert.match(overlay, /\n- id: ui-agent-team\n  name: "@deepseek-ai\/dsh-experimental-client-ui-agent-team"\n  disabled: true\n/);
   const data = path.join(profileDir, 'projects', 'existing'); fs.mkdirSync(data, { recursive: true });
   fs.writeFileSync(path.join(data, 'notes.md'), 'user material');
