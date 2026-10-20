@@ -78,6 +78,11 @@ test('real rc.2 profile preflight and Loader expose SSH tools and the optional C
       provideCmdline(ctx, { args: [], exit: () => {} });
       ctx.loader.internal = { version: 'v2', async import(name) { return name.startsWith('file:') ? import(name) : import(pathToFileURL(resolveHarness(name)).href); } };
     });
+    for (const { name } of plugins) {
+      const entry = [...ctx.loader.entries()].find(row => row.options.id === name);
+      assert.ok(entry?.fiber, `${name} must import and activate before checking its tools`);
+      assert.equal(entry.fiber.state, 2, `${name} must be active`);
+    }
     const created = await ctx.sessionController.create({ requestId: 'rc2-native-create', cwd: directory });
     const first = ctx.agents.get(created.sessionId);
     assert.ok(first, 'Session creation publishes an actual live Agent');

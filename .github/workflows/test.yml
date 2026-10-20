@@ -91,6 +91,8 @@ jobs:
         run: npm run setup:harness
       - name: Whale UI behavior tests
         run: npm run test:whale-ui
+      - name: Build optional ChatGPT bundle for native compatibility checks
+        run: npm run prepare:dsh-with-chatgpt-bundle
       - name: Desktop behavior tests
         run: npm test
       - name: Update download network recovery
