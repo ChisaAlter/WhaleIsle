@@ -38,8 +38,18 @@ class DshViewModel(private val store: DeviceStore) : ViewModel() {
         private set
     internal var gitCompleted by mutableStateOf(emptyList<String>())
         private set
+    internal var gitReview by mutableStateOf(false)
+        private set
+    internal var gitDraftTitle by mutableStateOf("")
+    internal var gitDraftBody by mutableStateOf("")
+    internal var gitDraftCandidate by mutableStateOf<JsonObject?>(null)
+        private set
+    private var gitReviewEpoch = -1L
+    private var gitReviewRevision = 0L
     private var gitPayload = obj()
     private var gitSession = ""
+    private var gitRunEpoch = -1L
+    private var gitRoot = ""
     var computers by mutableStateOf(readComputers())
         private set
     val hasRememberedComputer get() = computers.isNotEmpty()
@@ -85,6 +95,7 @@ class DshViewModel(private val store: DeviceStore) : ViewModel() {
         connect(saved.offer(), saved)
     }
     fun leaveComputer() {
+        cancelGitReview()
         generation++; connectionJob?.cancel(); observerJob?.cancel(); pollJob?.cancel(); client?.close(); client = null
         chat = NativeChatState(); panel = ""; route = Route.Connect
     }
@@ -98,6 +109,7 @@ class DshViewModel(private val store: DeviceStore) : ViewModel() {
         viewModelScope.launch { computers = readComputers() }
     }
     private fun connect(offer: Offer, saved: SavedComputer?) {
+        cancelGitReview()
         generation++
         val epoch = generation
         connectionJob?.cancel(); observerJob?.cancel(); pollJob?.cancel(); client?.close(); client = null
@@ -422,7 +434,7 @@ class DshViewModel(private val store: DeviceStore) : ViewModel() {
         require(status.isNotEmpty()) { "Git 状态不可用，请确认电脑端的工作区权限" }
         val branches = connection.git("git-branch-list", cwd)
         val entries = connection.git("git-status-entries", cwd)
-        if (epoch == generation) { gitRemaining = emptyList(); gitCompleted = emptyList(); panelData = obj("status" to status, "branches" to branches, "entries" to entries); panel = "git" }
+        if (epoch == generation) { cancelGitReview(); gitRemaining = emptyList(); gitCompleted = emptyList(); panelData = obj("status" to status, "branches" to branches, "entries" to entries); panel = "git" }
     }
     internal fun viewPullRequest() = panelAction { connection, epoch ->
         val cwd = currentSession()?.cwd ?: throw IllegalStateException("当前会话没有工作目录")
@@ -432,21 +444,59 @@ class DshViewModel(private val store: DeviceStore) : ViewModel() {
         require(url.startsWith("https://") || url.startsWith("http://")) { "当前分支没有可查看的 PR" }
         if (epoch == generation) externalUrl = url
     }
-    internal fun gitAction(steps: List<String>, payload: JsonObject = obj(), completed: List<String> = emptyList()) = panelAction { connection, epoch ->
+    internal fun gitAction(steps: List<String>, payload: JsonObject = obj(), completed: List<String> = emptyList(), reviewedPR: JsonObject? = null) = panelAction { connection, epoch ->
         val cwd = currentSession()?.cwd ?: error("当前会话没有工作目录")
         val owner = chat.sessionId
-        gitPayload = payload; gitSession = owner; gitRemaining = steps; gitCompleted = completed
+        if (gitSession != owner || gitReviewEpoch != epoch || gitRoot != cwd) { gitDraftTitle = ""; gitDraftBody = "" }
+        gitPayload = payload; gitSession = owner; gitRunEpoch = epoch; gitRoot = cwd; gitRemaining = steps; gitCompleted = completed
         for (step in steps) {
-            require(epoch == generation && chat.sessionId == owner) { "电脑或会话已切换，剩余 Git 操作已停止" }
-            val result = connection.git(step, cwd, payload).objectValue()
+            require(epoch == generation && chat.sessionId == owner && currentSession()?.cwd == cwd) { "电脑或工作区已切换，剩余 Git 操作已停止" }
+            if (step == "git-create-change-request" && reviewedPR == null) {
+                gitReviewEpoch = epoch
+                gitReviewRevision++
+                gitDraftCandidate = null
+                gitReview = true
+                return@panelAction
+            }
+            val request = if (step == "git-create-change-request") obj("input" to reviewedPR) else payload
+            val result = connection.git(step, cwd, request).objectValue()
+            require(epoch == generation && chat.sessionId == owner && currentSession()?.cwd == cwd) { "电脑或工作区已切换，剩余 Git 操作已停止" }
             require(result.string("status") != "confirmation_required") { "请先创建并切换工作分支，再执行此操作" }
             gitCompleted = gitCompleted + step
             gitRemaining = gitRemaining.drop(1)
         }
-        if (epoch == generation) { panel = ""; report("Git 操作完成") }
+        if (epoch == generation && chat.sessionId == owner && currentSession()?.cwd == cwd) { panel = ""; report("Git 操作完成") }
+    }
+    internal fun cancelGitReview() {
+        gitReview = false
+        gitReviewRevision++
+        gitDraftCandidate = null
+    }
+    private fun ownsGitReview() = gitReview && gitReviewEpoch == generation && chat.sessionId == gitSession && currentSession()?.cwd == gitRoot
+    internal fun generateGitDraft() = panelAction { connection, epoch ->
+        require(ownsGitReview()) { "电脑或会话已切换，请重新打开 Git" }
+        val revision = gitReviewRevision
+        val cwd = currentSession()?.cwd ?: error("当前会话没有工作目录")
+        val result = connection.git("git-create-change-request", cwd, obj("input" to obj("generateOnly" to true))).objectValue()
+        if (epoch == generation && ownsGitReview() && revision == gitReviewRevision) gitDraftCandidate = result
+    }
+    internal fun applyGitDraft() {
+        if (!ownsGitReview() || panelBusy) return
+        val candidate = gitDraftCandidate ?: return
+        gitDraftTitle = candidate.string("title")
+        gitDraftBody = candidate.string("body")
+        gitDraftCandidate = null
+    }
+    internal fun confirmGitReview() {
+        if (panelBusy || chat.offline) return
+        if (!ownsGitReview()) { cancelGitReview(); report("电脑或会话已切换，请重新打开 Git"); return }
+        if (gitDraftTitle.isBlank()) return
+        val reviewed = obj("title" to gitDraftTitle.trim(), "body" to gitDraftBody, "preserveProvided" to true)
+        cancelGitReview()
+        gitAction(gitRemaining, gitPayload, gitCompleted, reviewed)
     }
     internal fun retryGit() {
-        if (chat.sessionId != gitSession) { report("请先回到原会话再继续 Git 操作"); return }
+        if (gitRunEpoch != generation || chat.sessionId != gitSession || currentSession()?.cwd != gitRoot) { report("电脑或工作区已切换，请重新打开 Git"); return }
         val completed = gitCompleted
         val remaining = gitRemaining
         gitAction(remaining, gitPayload, completed)
