@@ -513,7 +513,7 @@ function DetailTop({ crumbLabel, crumbText, onBack, icon, actions }: {
 }): ReactNode {
   return (
     <div className={css.detailTop} data-window-drag>
-      <button type="button" className={css.crumb} aria-label={crumbLabel} onClick={onBack}>
+      <button type="button" className={css.crumb} data-plugin-back aria-label={crumbLabel} onClick={onBack}>
         <IconChevronDownOutlineRegular className={css.crumbIcon} aria-hidden="true" />
         <span>{crumbText}</span>
       </button>
@@ -1668,7 +1668,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         : null}
       {showsMoreList ? (
         <header className={css.moreHead} data-window-drag>
-          <Button size="sm" className={css.moreBack} aria-label={t('backToList')} onClick={() => { setView({ kind: 'list' }) }}>
+          <Button size="sm" className={css.moreBack} data-plugin-back aria-label={t('backToList')} onClick={() => { setView({ kind: 'list' }) }}>
             <IconChevronLeftOutlineMedium size={20} aria-hidden="true" />
           </Button>
           <h1 className={css.pageTitle}>{t('moreTitle')}</h1>

@@ -1,11 +1,11 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawn, execFileSync } = require('child_process');
-const { app } = require('electron');
+const { spawn } = require('child_process');
 const { loadConfig } = require('./config');
 const { resolveNodeBin, sourceHarnessStatus } = require('./dsh');
-const { projectRoot, harnessRoot } = require('./paths');
+const { harnessRoot } = require('./paths');
+const { resolvePnpmEntry, desktopCliArgs } = require('./pnpm-runtime');
 const { childSpawnEnv } = require('../shared/child-spawn-env');
 const { ensureDirectoryLink } = require('./desktop-plugin-link');
 const { DROPPED, isDroppedPluginName, webProfileDir, PROFILE, listInstalledPlugins } = require('./plugins');
@@ -42,70 +42,8 @@ function isBuildApprovalFailure(code, allowBuilds) {
   return code !== 0 && Array.isArray(allowBuilds) && allowBuilds.length > 0;
 }
 
-function whichAll(command) {
-  try {
-    const bin = process.platform === 'win32' ? 'where.exe' : 'which';
-    const out = execFileSync(bin, [command], { encoding: 'utf8' });
-    return out.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  } catch {
-    // where/which exited non-zero; the command is absent from PATH.
-    return [];
-  }
-}
-
-function firstExisting(candidates) {
-  for (const candidate of candidates) {
-    if (candidate && fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  return null;
-}
-
-function resolvePnpmEntry() {
-  return firstExisting([
-    path.join(process.resourcesPath || '', 'pnpm', 'bin', 'pnpm.mjs'),
-    path.join(projectRoot(), 'node_modules', 'pnpm', 'bin', 'pnpm.mjs'),
-    path.join(harnessRoot(), 'node_modules', 'pnpm', 'bin', 'pnpm.mjs'),
-  ]);
-}
-
-function resolvePnpmBin() {
-  const fromPath = whichAll(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm')[0]
-    || whichAll('pnpm')[0];
-  if (fromPath && fs.existsSync(fromPath)) {
-    return fromPath;
-  }
-  return null;
-}
-
-function shimDir() {
-  return path.join(app.getPath('userData'), 'bin');
-}
-
-function ensurePnpmShim(nodeBin) {
-  const entry = resolvePnpmEntry();
-  if (!entry || !nodeBin) {
-    return resolvePnpmBin() ? path.dirname(resolvePnpmBin()) : null;
-  }
-  const dir = shimDir();
-  fs.mkdirSync(dir, { recursive: true });
-  if (process.platform === 'win32') {
-    const cmd = path.join(dir, 'pnpm.cmd');
-    fs.writeFileSync(cmd, `@echo off\r\n"${nodeBin}" "${entry}" %*\r\n`, 'utf8');
-  } else {
-    const sh = path.join(dir, 'pnpm');
-    fs.writeFileSync(sh, `#!/bin/sh\nexec "${nodeBin}" "${entry}" "$@"\n`, { encoding: 'utf8', mode: 0o755 });
-  }
-  return dir;
-}
-
 function pluginEnv(nodeBin) {
   const extras = [];
-  const shim = ensurePnpmShim(nodeBin);
-  if (shim) {
-    extras.push(shim);
-  }
   if (nodeBin) {
     extras.push(path.dirname(nodeBin));
   }
@@ -161,8 +99,8 @@ function resolveCli() {
   if (!cli || !fs.existsSync(cli)) {
     return { ok: false, error: 'dsh CLI 未构建。请先运行 npm run setup:harness。' };
   }
-  if (!resolvePnpmEntry() && !resolvePnpmBin()) {
-    return { ok: false, error: '未找到 pnpm。安装包应已内置；开发时请在本机安装 pnpm。' };
+  if (!resolvePnpmEntry()) {
+    return { ok: false, error: '未找到桌面内置 pnpm。源码运行请安装项目依赖；安装包请重新安装当前版本。' };
   }
   return { ok: true, nodeBin, cli };
 }
@@ -174,7 +112,7 @@ function runPlugin(args, onProgress) {
   }
   const env = pluginEnv(resolved.nodeBin);
   return new Promise((resolve) => {
-    const child = spawn(resolved.nodeBin, [resolved.cli, 'plugin', '--profile', PROFILE, ...args], {
+    const child = spawn(resolved.nodeBin, desktopCliArgs(resolved.cli, ['plugin', '--profile', PROFILE, ...args]), {
       cwd: os.homedir(),
       env,
       windowsHide: true,

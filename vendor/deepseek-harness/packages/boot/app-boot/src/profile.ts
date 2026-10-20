@@ -181,7 +181,8 @@ export const PROFILE_TEMPLATES: Record<string, ProfileTemplate> = {
     bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-acp-app'],
   },
   web: {
-    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
+    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app',
+      ...(process.env.DSHD_PLUGIN_MARKET_INDEX ? ['@deepseek-ai/dsh-experimental-plugin-market-bundle'] : [])],
   },
   headless: {
     bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
@@ -809,7 +810,19 @@ export function loadProfile(
     initProfile(dir, template.bundles)
   }
   removeLinkProjections(dir)
-  if (options.bundles !== 'template') normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
+  if (options.bundles !== 'template') {
+    const manifest = normalizeShippedProfile(name, dir, readProfileManifest(binName, dir))
+    // Only a normal desktop launch migrates selection; recovery and subsequent reads stay read-only.
+    if (name === 'web' && process.env.DSHD_PLUGIN_MARKET_INDEX) {
+      const marker = join(dir, '.desktop-plugin-market-v1')
+      if (!existsSync(marker)) {
+        const bundles = manifest.dsh?.profile?.bundles ?? []
+        const market = '@deepseek-ai/dsh-experimental-plugin-market-bundle'
+        if (!bundles.includes(market)) writeProfileManifest(dir, withBundles(manifest, [...bundles, market]))
+        writeFileSync(marker, '1\n')
+      }
+    }
+  }
   return loadProfileDirectory(binName, dir, installAnchor, options)
 }
 

@@ -66,7 +66,7 @@ test('packaged startup writes the market overlay before the runtime is extracted
   }
 });
 
-test('ensureDesktopMarket writes the desktop overlay carrying the package-name insert', () => {
+test('ensureDesktopMarket keeps the legacy settings market disabled', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-market-'));
   try {
     const source = makeSource(root);
@@ -80,6 +80,7 @@ test('ensureDesktopMarket writes the desktop overlay carrying the package-name i
     const overlay = fs.readFileSync(result.overlayFile, 'utf8');
     assert.match(overlay, new RegExp(`id: ${DSH_MARKET_INSERT_ID}`));
     assert.match(overlay, /@deepseek-ai\/dsh-client-ui-settings-market/);
+    assert.match(overlay, /disabled: true/);
     assert.doesNotMatch(overlay, /file:\/\//);
 
     // The user-owned cordis.patch.yml is never written by the market module.

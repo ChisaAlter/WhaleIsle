@@ -2,44 +2,18 @@
 
 ## 步骤
 
-1. 用户打开设置 → **市场**（section id `market`，由桌面自有包 `ui-settings-market` 注册）。无独立 Electron 市场窗；`openMarketplace` 在 Harness 就绪后跳到该 section。
-2. 浏览 / 搜索 / 分类过滤，刷新目录（`listMarketplace` / `refresh`）。
-3. 按 catalog id 安装（`installMarketplacePlugin`）；进度经 `onPluginProgress` 流入分区内进度日志。
-4. 安装走桌面 IPC → main `marketplace-install.js` / Host 安装客户端，落点 `userData/dsh-home/profiles/web`（不是 `~/.dsh`）；失败以 `role="alert"` 呈现，不静默吞。`needsAllowBuilds` 时分区内确认 allowBuilds key 后重试。
-5. 成功后主进程 `restartAfterProfileWrite` 重启 Harness（HarnessController 所有）。
-6. 卸载：`uninstallPlugin`；与「装完在 Composer 里塞草稿」的旧路径无关。
+1. 打开侧栏「插件 → 发现」，或通过托盘 / 菜单的「插件市场」进入。桌面默认开启官方自定义插件市场，并提供 realguan 社区索引。Harness 未就绪时等待主界面完成启动后跳转；无独立市场窗口。
+2. 浏览、搜索插件；「索引源」中可添加、替换或删除源。用户源配置保存在当前 web profile，清空后重启仍为空；已有自定义源保持不变。
+3. 通过官方发现页查看并安装 bundle。官方 `pluginMarket` / `pluginManager` 负责规格检查、构建授权、安装反馈和运行时重载；桌面向 `runCli` 注入内置 Node / pnpm，不要求系统另装 pnpm。
+4. 在「插件 → 已安装」查看、配置、停用或卸载插件。停用自定义插件市场后发现页签消失；保存的源仍在，再次启用可恢复。
 
-## 更新步骤
+旧「设置 → 市场」入口隐藏，原收藏和操作历史文件保留。会话内 `install_dsh_plugin`、launcher 导入及旧桌面 IPC 继续使用桌面安装引擎和原有事务、授权、回滚与重启行为；这些行为不等同于官方发现页的安装流程。
 
-1. 分区加载已安装列表后调用 `checkMarketplaceUpdates`；手动刷新目录时强制重查。
-2. npm 行读取实际安装版本并与 registry `latest` 做前向 semver 比较；GitHub 行读取 lockfile
-   commit 并与远端 HEAD 比较。无法证明目标更高 / 不同则不显示更新入口；远端查询失败
-   进入检查失败状态，不显示“全部最新”。
-3. 用户按 catalog id 调用 `updateMarketplacePlugin`。主进程固定目标版本 / commit，快照 profile
-   manifest、lockfile 与承载 allowBuilds 的 workspace 文件，再执行 `dsh plugin --profile web add <target>`。
-4. CLI 失败、目标未变化、入口不可加载或 loader id 冲突时恢复快照并运行 profile install；
-   UI 在错误行报告回滚成功或失败。成功后由 `restartAfterProfileWrite` 重启 Harness。
-
-```mermaid
-sequenceDiagram
-  participant User
-  participant Market as ui_settings_market
-  participant Shell as window.shell
-  participant Main as marketplace_install
-  participant Host as install_client
-  User->>Market: install by catalog id
-  Market->>Shell: installMarketplacePlugin
-  Shell->>Main: shell:install-marketplace-plugin
-  Main->>Host: install into dsh-home/profiles/web
-  Main-->>Market: progress / result（含 needsAllowBuilds）
-```
-
-## 门槛
-
-- QA：`TC-EXT-001` … `TC-EXT-005`
-- Feature card：`marketplace-settings`（[../../features/marketplace-settings.md](../../features/marketplace-settings.md)）
+默认源、配置层优先级和两个引擎的实现见[插件市场模块](../modules/marketplace.md)。
 
 ## 入口
 
-- Main：`marketplace-install.js`、`marketplace-catalog.js`、`dshmarket-preset.js`（仅残留清理）、`desktop-install-control.js`
-- UI：`vendor/deepseek-harness/packages/client/ui-settings-market` → settings section `market`
+- 导航：`src/main/window.js`、`src/main/marketplace-jump.js`
+- 官方 UI：`vendor/deepseek-harness/packages/client/ui-plugin-manager`、`ui-plugin-market`
+- 默认配置：`src/shared/child-spawn-env.js`、官方 `app-boot/src/profile.ts`、`plugin-market-bundle/cordis.patch.yml`
+- 保留的桌面安装：`src/main/marketplace-install.js`、`desktop-install-control.js`、`src/host/install-dsh-plugin-client.js`

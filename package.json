@@ -95,6 +95,7 @@
       "package.json"
     ],
     "asarUnpack": [
+      "src/main/dsh-cli-runner.mjs",
       "src/renderer/whale-ui/host.cjs",
       "src/main/dshd-daemon-runner.mjs",
       "src/main/dshd-daemon-hooks.mjs",

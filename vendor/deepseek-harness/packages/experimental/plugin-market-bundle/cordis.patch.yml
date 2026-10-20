@@ -6,5 +6,7 @@
     - id: plugin-market
       name: '@deepseek-ai/dsh-plugin-market'
       disabled: !!js "!ctx.get('profileContext')"
+      config:
+        indexes: !!js "process.env.DSHD_PLUGIN_MARKET_INDEX ? [process.env.DSHD_PLUGIN_MARKET_INDEX] : []"
     - id: ui-plugin-market
       name: '@deepseek-ai/dsh-client-ui-plugin-market'

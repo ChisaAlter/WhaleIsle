@@ -17,6 +17,7 @@ const { prependPath } = require('./env-path');
  * - `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` are only written when the shell
  *   gateway is empty or the official https endpoint;
  * - npm update notifications are silenced;
+ * - desktop market defaults are supplied beneath the editable profile layer;
  * - callers pass their own PATH `extras` (order defines precedence) and add
  *   caller-specific entries on the returned object.
  *
@@ -30,6 +31,7 @@ function childSpawnEnv(config, { extras = [], baseEnv = process.env } = {}) {
   delete env.ELECTRON_NO_ASAR;
   applyOfficialDeepSeekSpawnEnv(env, config);
   env.npm_config_update_notifier = 'false';
+  env.DSHD_PLUGIN_MARKET_INDEX = 'https://realguan.github.io/dsh-plugin-market/dsh-index.json';
   prependPath(env, extras);
   return env;
 }

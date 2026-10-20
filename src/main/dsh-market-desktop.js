@@ -34,14 +34,9 @@ function defaultSourceDir() {
 }
 
 /**
- * Wire the desktop-owned marketplace settings section from the vendored
- * harness fork package: a desktop-owned `--patch` overlay
- * (`desktop-plugins/dsh-market/desktop-dsh-market.patch.yml`) carries the
- * package-name insert. The package resolves through the profile node_modules
- * junction to vendor (created by the desktop fork setup), so the section is
- * no longer a static bundle-patch row. The overlay rides EVERY start (full
- * and skip) — the marketplace is desktop built-in, not a user plugin, so the
- * disable list never applies (config normalization strips the aliases).
+ * Keep the legacy Settings market disabled through a desktop-owned overlay.
+ * The official Plugins → Discover page owns browsing; existing desktop
+ * installation APIs and stored operation history remain available.
  *
  * @param {{ sourceDir?: string, profileDir?: string }} [options]
  * @returns {{
@@ -59,20 +54,18 @@ function ensureDesktopMarket(options = {}) {
   }
   const profileDir = options.profileDir || webProfileDir();
 
-  // Regenerate the desktop-managed overlay on every start (atomic tmp+rename,
-  // only when content changed). The package-name insert rides --patch below
-  // the profile's own user layer; the CLI `insert` does not dedupe by id, so
-  // the bundle patch must never carry this row (guarded by FORK_FILE_MARKERS).
+  // Retain the managed row id for older profiles, but never mount its UI.
   const destDir = path.join(profileDir, 'desktop-plugins', 'dsh-market');
   fs.mkdirSync(destDir, { recursive: true });
   const overlayFile = path.join(destDir, DSH_MARKET_OVERLAY_FILENAME);
   const overlayContents = [
     '# Desktop-managed overlay passed to EVERY start (full and skip) via',
-    '# --patch: only the built-in market section insert, never the bundle',
-    '# layer. Regenerated on every start; do not edit.',
+    '# --patch: the legacy Settings market stays disabled.',
+    '# Browsing lives in Plugins > Discover. Regenerated; do not edit.',
     '- insert:',
     `    - id: ${DSH_MARKET_INSERT_ID}`,
     `      name: ${JSON.stringify(DSH_MARKET_PACKAGE)}`,
+    '      disabled: true',
     '',
   ].join('\n');
   const existed = fs.existsSync(overlayFile);

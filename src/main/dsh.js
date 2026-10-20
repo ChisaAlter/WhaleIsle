@@ -14,6 +14,7 @@ const { desktopInstallEnv } = require('./desktop-install-control');
 const { officeRuntimeEnv } = require('./office-runtime');
 const { taskControlToken } = require('./task-protection');
 const { platformToken } = require('./platform-session');
+const { desktopCliArgs } = require('./pnpm-runtime');
 const { readPin } = require('../shared/harness-upstream');
 const { probeHarnessReady, isUnpublishedHarnessNpm } = require('./harness-browser-auth');
 
@@ -800,7 +801,7 @@ class DshManager extends EventEmitter {
       }
       return {
         command: nodeBin,
-        args: [source.bin, ...args],
+        args: desktopCliArgs(source.bin, args),
         nodeBin,
         kind: 'source',
         host,

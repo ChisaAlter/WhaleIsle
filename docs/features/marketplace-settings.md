@@ -1,4 +1,6 @@
-# Feature: Marketplace in Settings
+# Feature: Plugin Marketplace
+
+当前浏览入口为「插件 → 发现」，旧「设置 → 市场」隐藏。桌面默认启用官方市场和 realguan 社区索引；既有源、后续源编辑及停用选择保留。当前路径与配置规则见[市场安装流程](../handbook/flows/marketplace-install.md)和[插件市场模块](../handbook/modules/marketplace.md)。下文记录旧桌面引擎的保留功能及原设置 UI 的历史交付，不代表官方发现页具有全部旧界面功能。
 
 | Field | Value |
 | --- | --- |
