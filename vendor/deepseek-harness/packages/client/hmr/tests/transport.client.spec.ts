@@ -47,6 +47,7 @@ it('forwards full graphs and rebuilt frames, contains wire errors and closes its
 })
 
 it('reads the event stream through the page transport when the shell provides one', async () => {
+  vi.stubGlobal('location', { hostname: 'worker-preview.example' })
   const ctx = new Context()
   const sync = vi.fn(async () => {})
   const reload = vi.fn(async () => {})
@@ -86,6 +87,22 @@ it('reads the event stream through the page transport when the shell provides on
   expect(signal?.aborted).toBe(true)
   await Promise.resolve()
   expect(errors).not.toHaveBeenCalled()
+})
+
+it('withholds the native EventSource from a phone or relay page without a shell transport', async () => {
+  vi.stubGlobal('location', { hostname: '198.51.100.7' })
+  const eventSource = vi.fn()
+  vi.stubGlobal('EventSource', eventSource)
+  const ctx = new Context()
+  provideModules(ctx, vi.fn(), vi.fn())
+  const fiber = ctx.plugin({ apply, inject })
+  try {
+    await fiber.await()
+    expect(eventSource).not.toHaveBeenCalled()
+  } finally {
+    await fiber.dispose()
+    await ctx.fiber.dispose()
+  }
 })
 
 it.each([

@@ -3,7 +3,7 @@
 import { setImmediate } from 'node:timers/promises'
 import { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { $getRoot, $nodesOfType, REDO_COMMAND, UNDO_COMMAND } from 'lexical'
+import { $getRoot, $getSelection, $isRangeSelection, $nodesOfType, $setSelection, REDO_COMMAND, UNDO_COMMAND } from 'lexical'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { DraftReference, DraftSnapshot, Occurrence } from '../src/client/contract/draft-editor.ts'
 import type {
@@ -14,6 +14,8 @@ import { scanTextRefs } from '../src/client/input/decorations.ts'
 import { ReferenceChipNode } from '../src/client/input/editor/chip-node.tsx'
 import { CommandChipNode } from '../src/client/input/editor/command-chip-node.tsx'
 import { TextRefNode } from '../src/client/input/editor/text-ref.ts'
+import { $selectDetectPoints } from '../src/client/input/editor/span-map.ts'
+import { $composerLayout, $detectOffsetOfPoint } from '../src/client/input/editor/projection.ts'
 import { SessionInputShell, type SessionInputDeps } from '../src/client/input/facade.ts'
 
 type ReferenceContent = Omit<DraftReference, 'offset' | 'length'>
@@ -300,6 +302,67 @@ describe('draft documents in the input shell', () => {
     expect(commandChips(shell)).toBe(1)
     shell.submit()
     await vi.waitFor(() => { expect(claim.submitted).toEqual(['ship']) })
+  })
+
+  it.each(['/goal', '/goal发布', '/goal\tship', '/goal\nship', '/goal ship'])(
+    'restores the command representation without changing saved text %j or its end caret', async (text) => {
+      const resolution = Promise.withResolvers<CommandClaim | undefined>()
+      const provider: InputTriggerController = {
+        ...triggerProvider(createSnapshotStore(new Map())), resolveClaim: () => resolution.promise,
+      }
+      const shell = makeShell({ inputTriggers: () => provider })
+      shell.setDraft({ text, references: [], command: { token: '/goal ' } })
+      resolution.resolve(goalClaim())
+      await setImmediate()
+
+      expect(shell.snapshot.draft).toBe(text)
+      expect(shell.snapshot.phase).toBe('claimed')
+      expect(shell.caretSpan()).toEqual({ start: text.length - 4, end: text.length - 4 })
+    },
+  )
+
+  it.each([
+    { name: 'new caret', anchor: 8, focus: 8, expected: [4, 4] },
+    { name: 'forward args range', anchor: 6, focus: 10, expected: [2, 6] },
+    { name: 'backward args range', anchor: 10, focus: 6, expected: [6, 2] },
+    { name: 'part-token range', anchor: 2, focus: 8, expected: [0, 4] },
+    { name: 'caret within token', anchor: 2, focus: 2, expected: [1, 1] },
+    { name: 'leading caret', anchor: 0, focus: 0, expected: [0, 0] },
+  ])('preserves the live $name when asynchronous command resolution finishes', async ({ anchor, focus, expected }) => {
+    const resolution = Promise.withResolvers<CommandClaim | undefined>()
+    const provider: InputTriggerController = {
+      ...triggerProvider(createSnapshotStore(new Map())), resolveClaim: () => resolution.promise,
+    }
+    const shell = makeShell({ inputTriggers: () => provider })
+    shell.setDraft({ text: '/goal ship', references: [], command: { token: '/goal ' } })
+    const rev = shell.snapshot.draftRev
+    shell.editor.update(() => { $selectDetectPoints(anchor, focus) }, { discrete: true })
+    expect(shell.snapshot.draftRev).toBe(rev)
+    resolution.resolve(goalClaim())
+    await setImmediate()
+
+    const actual = shell.editor.getEditorState().read(() => {
+      const selection = $getSelection()
+      if (!$isRangeSelection(selection)) throw new Error('Expected a range selection')
+      const layout = $composerLayout()
+      return [$detectOffsetOfPoint(layout, selection.anchor), $detectOffsetOfPoint(layout, selection.focus)]
+    })
+    expect(actual).toEqual(expected)
+    expect(shell.snapshot.draft).toBe('/goal ship')
+  })
+
+  it('keeps an absent selection absent when restoring a saved command', async () => {
+    const resolution = Promise.withResolvers<CommandClaim | undefined>()
+    const provider: InputTriggerController = {
+      ...triggerProvider(createSnapshotStore(new Map())), resolveClaim: () => resolution.promise,
+    }
+    const shell = makeShell({ inputTriggers: () => provider })
+    shell.setDraft({ text: '/goal ship', references: [], command: { token: '/goal ' } })
+    shell.editor.update(() => { $setSelection(null) }, { discrete: true })
+    resolution.resolve(goalClaim())
+    await setImmediate()
+    expect(shell.editor.getEditorState().read($getSelection)).toBeNull()
+    expect(shell.snapshot.draft).toBe('/goal ship')
   })
 
   it('waits for the trigger pipeline before resolving a restored command chip', async () => {

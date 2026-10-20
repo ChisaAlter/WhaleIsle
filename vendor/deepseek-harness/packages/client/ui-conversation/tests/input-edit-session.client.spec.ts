@@ -8,10 +8,11 @@
  * observes the edit text.
  */
 import { describe, expect, it, vi } from 'vitest'
+import { UNDO_COMMAND } from 'lexical'
 import type { Context } from '@deepseek-ai/cordis'
 import type { InputTriggerController, SubmitOutcome } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { SessionInputShell } from '../src/client/input/facade.ts'
-import type { DraftAttachmentId, InputEditSpec } from '../src/client/contract/input.ts'
+import type { CommandClaim, DraftAttachmentId, InputEditSpec } from '../src/client/contract/input.ts'
 
 const commandAttachments = {
   serialize: () => Promise.resolve([]),
@@ -61,6 +62,85 @@ function hungTriggers(overrides: Partial<InputTriggerController> = {}): () => In
 }
 
 describe('composer edit session', () => {
+  it('undo restores command text, not its executable claim, during an edit', async () => {
+    const command = vi.fn<CommandClaim['submit']>(() => Promise.resolve({ kind: 'success' }))
+    const { shell, editSink, spec } = bench()
+    shell.setDraft('/goal')
+    shell.beginCommand({ name: 'goal', token: '/goal ', submit: command }, {
+      start: 0, end: 5, draftRev: shell.snapshot.draftRev,
+    })
+    shell.paste('ship')
+    expect(shell.snapshot.draft).toBe('/goal ship')
+    shell.beginEdit(spec)
+    const phases: string[] = []
+    const unsubscribe = shell.state.subscribe(() => { phases.push(shell.snapshot.phase) })
+
+    shell.editor.dispatchCommand(UNDO_COMMAND, undefined)
+    shell.editor.update(() => {}, { discrete: true })
+    expect(shell.snapshot.edit?.key).toBe(spec.key)
+    expect(shell.snapshot.phase).toBe('plain')
+    expect(shell.draftSnapshot.command).toBeUndefined()
+    expect(shell.snapshot.draft).toBe('/goal ')
+    expect(phases).not.toContain('claimed')
+    unsubscribe()
+    shell.submit()
+
+    await vi.waitFor(() => { expect(shell.snapshot.edit).toBeUndefined() })
+    expect(editSink).toHaveBeenCalledWith('/goal', [], expect.any(AbortSignal))
+    expect(command).not.toHaveBeenCalled()
+  })
+
+  it('submits a same-text edit through the edit sink instead of the stashed command claim', async () => {
+    const command = vi.fn<CommandClaim['submit']>(() => Promise.resolve({ kind: 'success' }))
+    const { shell, editSink, spec } = bench()
+    shell.setDraft('/goal ship')
+    expect(shell.beginCommand({ name: 'goal', token: '/goal ', submit: command }, {
+      start: 0, end: 5, draftRev: shell.snapshot.draftRev,
+    })).toBe(true)
+    expect(shell.snapshot.phase).toBe('claimed')
+
+    expect(shell.beginEdit({ ...spec, seed: shell.snapshot.draft })).toBe(true)
+    expect(shell.snapshot.phase).toBe('plain')
+    expect(shell.draftSnapshot.command).toBeUndefined()
+    shell.submit()
+
+    await vi.waitFor(() => { expect(shell.snapshot.edit).toBeUndefined() })
+    expect(editSink).toHaveBeenCalledWith('/goal ship', [], expect.any(AbortSignal))
+    expect(command).not.toHaveBeenCalled()
+  })
+
+  it('restores a stashed command chip and attachments after cancelling an edit', async () => {
+    const claim: CommandClaim = { name: 'goal', token: '/goal ', submit: vi.fn() }
+    const resolveClaim = vi.fn(() => Promise.resolve(claim))
+    const { shell, spec } = bench({ inputTriggers: hungTriggers({ resolveClaim }) })
+    shell.setDraft('/goal ship')
+    expect(shell.beginCommand(claim, { start: 0, end: 5, draftRev: shell.snapshot.draftRev })).toBe(true)
+    shell.addAttachments([id('stashed-image')])
+    const stashed = shell.draftSnapshot
+
+    shell.beginEdit(spec)
+    shell.addAttachments([id('edit-image')])
+    shell.cancelEdit()
+
+    await vi.waitFor(() => { expect(shell.snapshot.phase).toBe('claimed') })
+    expect(shell.draftSnapshot).toEqual(stashed)
+    expect(shell.snapshot.attachmentIds).toEqual([id('stashed-image')])
+    expect(resolveClaim).toHaveBeenCalledWith('/goal', expect.any(AbortSignal))
+  })
+
+  it('refuses an asynchronous restored command claim while an edit is live', async () => {
+    const pending = Promise.withResolvers<CommandClaim | undefined>()
+    const { shell, spec } = bench({ inputTriggers: hungTriggers({ resolveClaim: () => pending.promise }) })
+    shell.beginEdit(spec)
+    shell.setDraft({ text: '/goal revision', references: [], command: { token: '/goal ' } })
+    pending.resolve({ name: 'goal', token: '/goal ', submit: vi.fn() })
+    await pending.promise
+
+    expect(shell.snapshot.edit?.key).toBe(spec.key)
+    expect(shell.snapshot.phase).toBe('plain')
+    expect(shell.draftSnapshot.command).toBeUndefined()
+  })
+
   it('restores structured references when cancelling an edit', () => {
     const { shell, spec } = bench()
     const draft = { text: 'carry @one.ts', references: [{ source: 'reference', ref: '@one.ts', label: 'one.ts', appearance: 'file' as const, clipboardText: '@one.ts', offset: 6, length: 7 }] }

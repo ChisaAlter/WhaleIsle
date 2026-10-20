@@ -368,6 +368,7 @@ function loadIpc(options = {}) {
       startHarnessCalls += 1;
       return startHarnessImpl();
     },
+    reloadPage: options.reloadPage,
     startDesktop: async (opts) => {
       startDesktopCalls += 1;
       startDesktopArgs.push(opts || {});
@@ -620,6 +621,24 @@ test('config surfaces reject leftover marketplace senders', async () => {
     await assert.rejects(() => ipc.invoke('shell:get-config', sender), unauthorized);
     await assert.rejects(() => ipc.invoke('shell:save-config', sender, { theme: 'midnight' }), unauthorized);
     await assert.rejects(() => ipc.invoke('shell:open-external', sender, 'https://example.com'), unauthorized);
+  } finally {
+    ipc.restore();
+  }
+});
+
+test('shell:reload-page delegates only the Harness sender to the protected reload', async () => {
+  let reloadCalls = 0;
+  const cancelled = { proceeded: false, code: 'cancelled' };
+  const ipc = loadIpc({ reloadPage: async () => { reloadCalls += 1; return cancelled; } });
+  try {
+    for (const sender of [bootEvent(), launcherEvent(), leftoverMarketplaceEvent()]) {
+      await assert.rejects(() => ipc.invoke('shell:reload-page', sender),
+        (error) => error.code === 'ERR_DSH_IPC_SENDER');
+    }
+    assert.equal(reloadCalls, 0);
+    assert.deepEqual(await ipc.invoke('shell:reload-page', harnessEvent()), cancelled);
+    assert.equal(reloadCalls, 1);
+    assert.equal(ipc.startHarness(), 0);
   } finally {
     ipc.restore();
   }

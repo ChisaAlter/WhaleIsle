@@ -99,7 +99,7 @@ async function restartAfterProfileWrite(event, result, startHarness, downError, 
 }
 
 function registerIpc({
-  dsh, harness, startHarness, startDesktop, stopDesktopCleanup, remote, onOpenLauncher,
+  dsh, harness, startHarness, reloadPage, startDesktop, stopDesktopCleanup, remote, onOpenLauncher,
   getLive2dPet,
 }) {
   const handle = (channel, roles, listener) => {
@@ -236,6 +236,7 @@ function registerIpc({
   });
 
   handle('shell:open-settings', HARNESS_ONLY, (_event, sectionId) => openHarnessSettings(sectionId));
+  handle('shell:reload-page', HARNESS_ONLY, () => reloadPage());
 
   // 桌宠 settings writes: the settings page lives in this window (section
   // `pet`), and every change must route through the pet manager so it

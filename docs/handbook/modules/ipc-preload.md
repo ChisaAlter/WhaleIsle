@@ -32,6 +32,7 @@ flowchart LR
 
 - Boot / harness 页不得调用仅 launcher 的导入、装版本、问诊 API。
 - Boot 页不得调用仅 harness 的破坏性 API。
+- Host 版本切换后的页面刷新仅允许 Harness sender，经现有活动任务确认后等待 PTY 与预览资源清理；取消时保留当前页面，已就绪 Host 不因此重启。
 - FS / Git / 打开路径必须落在工作区权威之内。
 
 ## 门槛

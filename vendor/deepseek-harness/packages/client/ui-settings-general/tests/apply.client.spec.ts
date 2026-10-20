@@ -374,4 +374,37 @@ describe('ui-settings-general apply', () => {
     await c.flush()
     expect(overlay()).toBeUndefined()
   })
+
+  it('reloads a desktop page through the shell protection instead of the browser or updater', async ({ mock, start }) => {
+    const reload = vi.fn()
+    const reloadPage = vi.fn(async () => ({ proceeded: false, code: 'cancelled' }))
+    const openUpdate = vi.fn()
+    vi.stubGlobal('shell', { reloadPage })
+    vi.stubGlobal('dshDesktop', { protocolVersion: 1, updates: { status: async () => ({ phase: 'idle' }), subscribe: () => () => {}, open: openUpdate } })
+    onTestFinished(() => { vi.unstubAllGlobals() })
+    const { c } = await client(mock, start)
+    vi.stubGlobal('location', { reload })
+    const overlay = c.ctx.slots.entries('shell.overlay').find(row => row.options.id === 'host-release-change')!
+    const injected = overlay.inject!()
+    if (typeof injected.reloadPage !== 'function') throw new TypeError('host-release-change reload callback is unavailable')
+    injected.reloadPage()
+    expect(reloadPage).toHaveBeenCalledOnce()
+    expect(reload).not.toHaveBeenCalled()
+    expect(openUpdate).not.toHaveBeenCalled()
+  })
+
+  it('keeps a desktop page in place when its reload bridge is unavailable', async ({ mock, start }) => {
+    const reload = vi.fn()
+    vi.stubGlobal('shell', {})
+    onTestFinished(() => { vi.unstubAllGlobals() })
+    const { c } = await client(mock, start)
+    const errors = vi.spyOn(c.ctx.logger, 'error').mockImplementation(() => {})
+    vi.stubGlobal('location', { reload })
+    const overlay = c.ctx.slots.entries('shell.overlay').find(row => row.options.id === 'host-release-change')!
+    const injected = overlay.inject!()
+    if (typeof injected.reloadPage !== 'function') throw new TypeError('host-release-change reload callback is unavailable')
+    injected.reloadPage()
+    expect(reload).not.toHaveBeenCalled()
+    expect(errors).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('reload bridge is unavailable') as string }))
+  })
 })

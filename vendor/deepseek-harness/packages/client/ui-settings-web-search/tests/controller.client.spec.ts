@@ -78,6 +78,31 @@ function serve(b: ReturnType<typeof bench>, selection: SelectionLayers = {}): vo
 }
 
 describe('WebSearchCardController credential', () => {
+  it('saves the existing Messages key without either new settings namespace', async () => {
+    const b = bench()
+    b.messages.publish({ status: 'ready', writable: true, value: { apiKeyEnv: 'LEGACY_KEY', maxUses: 5 }, base: {}, user: {} })
+    b.web.publish({ status: 'unavailable', writable: false })
+    b.api.publish({ status: 'unavailable', writable: false })
+    b.face.edit('apiKey', ' legacy-secret ')
+    expect(b.state()).toMatchObject({ available: true, writable: true, dirty: true, apiSwitchAvailable: false })
+    b.face.save()
+    await vi.waitFor(() => { expect(b.credentials.set).toHaveBeenCalledWith('LEGACY_KEY', 'legacy-secret') })
+    await vi.waitFor(() => { expect(b.state()).toMatchObject({ dirty: false, failed: false }) })
+    for (const host of [b.web, b.messages, b.api]) expect(host.mutate).not.toHaveBeenCalled()
+    b.controller.dispose()
+  })
+
+  it('retains a refused legacy key draft for retry without the new namespaces', async () => {
+    const b = bench({ configured: false })
+    b.messages.publish({ status: 'ready', writable: true, value: {}, base: {}, user: {} })
+    b.web.publish({ status: 'unavailable', writable: false })
+    b.api.publish({ status: 'unavailable', writable: false })
+    b.face.edit('apiKey', 'legacy-secret')
+    b.face.save()
+    await vi.waitFor(() => { expect(b.state()).toMatchObject({ dirty: true, failed: true, apiKey: { text: 'legacy-secret' } }) })
+    b.controller.dispose()
+  })
+
   it('reads the credential state for the reference the selected section names', async () => {
     const b = bench()
     await vi.waitFor(() => { expect(b.credentials.describe).toHaveBeenCalled() })

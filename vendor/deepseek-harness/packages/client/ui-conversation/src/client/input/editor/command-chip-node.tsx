@@ -142,12 +142,15 @@ function $releaseChip(chip: CommandChipNode): void {
  * sibling before the chip or moving it to another block marks the chip dirty;
  * a block inserted before the chip's block marks only that block dirty.
  * @param editor - the shell-owned editor.
+ * @param commandsAllowed - whether the current input mode accepts command chips;
+ * defaults to true. A disallowed chip becomes its literal token, including on history restore.
  * @returns the unregister disposer.
  */
-export function registerCommandChipSeat(editor: LexicalEditor): () => void {
+export function registerCommandChipSeat(editor: LexicalEditor, commandsAllowed: () => boolean = () => true): () => void {
   return mergeRegister(
     editor.registerNodeTransform(CommandChipNode, (chip) => {
-      if (chip.getPreviousSibling() !== null || chip.getParentOrThrow().getPreviousSibling() !== null) $releaseChip(chip)
+      if (!commandsAllowed() || chip.getPreviousSibling() !== null
+        || chip.getParentOrThrow().getPreviousSibling() !== null) $releaseChip(chip)
     }),
     editor.registerNodeTransform(ParagraphNode, (block) => {
       const first = block.getFirstChild()

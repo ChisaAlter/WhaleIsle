@@ -294,7 +294,9 @@ describe('candidates', () => {
     await expect(source.candidates(proj('s1'), req(''))).resolves.toEqual([])
     expect(listCalls).toEqual([])
     expect(source.matchSpace!(proj('s1'), '/goal')).toBeUndefined()
+    await expect(source.matchClaim!(proj('s1'), '/goal', new AbortController().signal)).resolves.toBeUndefined()
     await expect(source.matchEnter!(proj('s1'), '/goal', new AbortController().signal, { attachments: 0 })).resolves.toBeUndefined()
+    expect(listCalls).toEqual([])
   })
 
   it('ranks rows through the shared name ranker: prefixes first, then alignment, then source order', async () => {

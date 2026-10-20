@@ -206,7 +206,7 @@ export interface InputEditSpec extends InputEditState {
 
 /** Per-session input facade owned by the conversation wiring layer. */
 export interface SessionInput extends InputTarget {
-  /** Replace the whole draft with plain text, removing inline reference chips. */
+  /** Replace the whole draft with plain text, removing reference and command chips. */
   setDraft(text: string): void
   /**
    * Begin one edit session: stash the current draft and attachments, seed the

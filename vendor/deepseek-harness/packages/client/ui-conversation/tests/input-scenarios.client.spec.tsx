@@ -13,7 +13,8 @@ import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
-  $createTextNode, $getRoot, $isElementNode, BEFORE_INPUT_COMMAND, COMMAND_PRIORITY_LOW, DELETE_CHARACTER_COMMAND,
+  $createTextNode, $getRoot, $isElementNode, BEFORE_INPUT_COMMAND, COMMAND_PRIORITY_HIGH, COMMAND_PRIORITY_LOW,
+  DELETE_CHARACTER_COMMAND, KEY_BACKSPACE_COMMAND,
   UNDO_COMMAND,
 } from 'lexical'
 import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -330,6 +331,39 @@ describe('scenario D: execute-kind /compact', () => {
 })
 
 describe('scenario: images ride an accepting command through the real pipeline', () => {
+  it('retries an enter-only accepting source without requiring a command chip or restore hook', async () => {
+    const submit = vi.fn<CommandClaim['submit']>()
+      .mockResolvedValueOnce({ kind: 'error', text: 'reply rejected' })
+      .mockResolvedValueOnce({ kind: 'success' })
+    const claim: CommandClaim = { name: 'room-reply', token: '/reply ', attachments: true, submit }
+    const b = await scopedBench((triggers) => {
+      triggers.registerSource({
+        trigger: '/', name: 'room-reply',
+        candidates: () => Promise.resolve([]),
+        onPick: () => undefined,
+        matchEnter: () => Promise.resolve({ claim }),
+      })
+    })
+    act(() => {
+      b.shell.setDraft('/reply thread-7 answer')
+      b.shell.addAttachments(['reply-image' as DraftAttachmentId])
+    })
+    fireEvent.keyDown(b.textarea, { key: 'Enter' })
+    await vi.waitFor(() => { expect(b.shell.notices.getSnapshot()?.text).toBe('reply rejected') })
+    expect(submit).toHaveBeenNthCalledWith(1, 'thread-7 answer', expect.anything(), [PNG])
+    expect(b.shell.snapshot.phase).toBe('plain')
+    expect(b.shell.snapshot.draft).toBe('/reply thread-7 answer')
+    expect(b.shell.snapshot.attachmentIds).toEqual(['reply-image'])
+    expect(b.release).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(b.textarea, { key: 'Enter' })
+    await vi.waitFor(() => { expect(b.shell.snapshot.draft).toBe('') })
+    expect(submit).toHaveBeenNthCalledWith(2, 'thread-7 answer', expect.anything(), [PNG])
+    expect(b.shell.snapshot.attachmentIds).toEqual([])
+    expect(b.release).toHaveBeenCalledOnce()
+    expect(b.sink).not.toHaveBeenCalled()
+  })
+
   it('adjudication reports the image count; the claim chain serializes, submits, and consumes', async () => {
     const b = await bench()
     act(() => { b.shell.addAttachments(['img-1' as DraftAttachmentId]) })
@@ -416,6 +450,11 @@ describe('scenario H: the command chip deletes whole', () => {
     fireEvent.keyDown(b.textarea, { key: 'Shift' })
     await act(async () => {})
     expect(chip()?.hasAttribute('data-selected')).toBe(true)
+    // Ctrl+H is not a deletion binding on this non-Apple platform.
+    fireEvent.keyDown(b.textarea, { key: 'h', ctrlKey: true })
+    expect(chip()?.hasAttribute('data-selected')).toBe(false)
+    b.deleteCharacter(true)
+    expect(chip()?.hasAttribute('data-selected')).toBe(true)
     fireEvent.keyDown(b.textarea, { key: 'Escape' })
     await act(async () => {})
     expect(chip()?.hasAttribute('data-selected')).toBe(false)
@@ -426,29 +465,6 @@ describe('scenario H: the command chip deletes whole', () => {
     expect(chip()?.hasAttribute('data-selected')).toBe(false)
     expect(b.shell.snapshot.draft).toBe('/goal发布')
     expect(b.shell.snapshot.phase).toBe('claimed')
-  })
-
-  it('a platform deletion shortcut keeps the selection its first press made and deletes on the second', async () => {
-    const b = await bench()
-    b.type('/goal')
-    await vi.waitFor(() => { expect(b.controller.menu.getSnapshot().open).toBe(true) })
-    await b.space()
-    b.erase(1, 2)
-    const chip = (): Element | null => b.view.container.querySelector('[data-composer-command]')
-    // macOS maps Ctrl+H to a backward character deletion inside the same keydown.
-    const pressCtrlH = async (): Promise<void> => {
-      act(() => {
-        fireEvent.keyDown(b.textarea, { key: 'h', ctrlKey: true })
-        b.shell.editor.dispatchCommand(DELETE_CHARACTER_COMMAND, true)
-        b.shell.editor.update(() => {}, { discrete: true })
-      })
-      await act(async () => {})
-    }
-    await pressCtrlH()
-    expect(chip()?.hasAttribute('data-selected')).toBe(true)
-    await pressCtrlH()
-    expect(chip()).toBeNull()
-    expect(b.shell.snapshot.phase).toBe('plain')
   })
 
   it('a deletion input event selects the chip first and lets the second one delete it', async () => {
@@ -462,7 +478,11 @@ describe('scenario H: the command chip deletes whole', () => {
     // deleteContentBackward there directly, so the selecting step must consume it first.
     const reachedDefault = vi.fn(() => false)
     onTestFinished(b.shell.editor.registerCommand(BEFORE_INPUT_COMMAND, reachedDefault, COMMAND_PRIORITY_LOW))
-    const deleteByInput = (): InputEvent => {
+    // Model iOS: keydown defers character deletion to a later beforeinput.
+    onTestFinished(b.shell.editor.registerCommand(KEY_BACKSPACE_COMMAND, () => true, COMMAND_PRIORITY_HIGH))
+    const deleteByInput = async (): Promise<InputEvent> => {
+      fireEvent.keyDown(b.textarea, { key: 'Backspace' })
+      await act(async () => {})
       const event = new InputEvent('beforeinput', { inputType: 'deleteContentBackward', cancelable: true })
       act(() => {
         b.shell.editor.dispatchCommand(BEFORE_INPUT_COMMAND, event)
@@ -470,11 +490,11 @@ describe('scenario H: the command chip deletes whole', () => {
       })
       return event
     }
-    expect(deleteByInput().defaultPrevented).toBe(true)
+    expect((await deleteByInput()).defaultPrevented).toBe(true)
     expect(reachedDefault).not.toHaveBeenCalled()
     expect(chip()?.hasAttribute('data-selected')).toBe(true)
     expect(b.shell.snapshot.phase).toBe('claimed')
-    deleteByInput()
+    await deleteByInput()
     expect(reachedDefault).toHaveBeenCalledTimes(1)
     expect(chip()).toBeNull()
     expect(b.shell.snapshot.phase).toBe('plain')
