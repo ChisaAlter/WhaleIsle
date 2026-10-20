@@ -172,9 +172,9 @@ async function confirmUpdateAsk(check) {
 // polling rather than by this process quitting.
 function gateInstallUpdate(onProgress, check) {
   return runtimeInstall.installRuntime(
-    check && check.tag ? { tag: check.tag } : {},
+    check ? { tag: check.tag, route: check.route } : {},
     onProgress,
-    { confirmUnverified },
+    { confirmUnverified, expectedCheck: check },
   );
 }
 

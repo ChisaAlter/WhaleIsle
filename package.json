@@ -27,6 +27,7 @@
     "installer:assets": "node scripts/run-render-installer-assets.js",
     "smoke:source": "node scripts/run-source-smoke.mjs",
     "qa:source": "node scripts/run-source-qa.mjs",
+    "qa:update-download": "node scripts/qa-update-download.cjs",
     "qa:composer": "node scripts/run-composer-official-qa.mjs",
     "qa:composer-beam": "electron scripts/run-composer-beam-corners.cjs",
     "qa:remote": "node scripts/prestart-ensure.mjs && node scripts/run-remote-gate-qa.mjs",

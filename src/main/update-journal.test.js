@@ -46,3 +46,17 @@ test('updateJournalState whitelists fields and classifies error codes', () => {
     errorCode: 'UNCLASSIFIED',
   });
 });
+
+test('recovery diagnostics distinguish checksum, transfer and cancellation without recording private data', () => {
+  for (const [stage, code] of [['checksum', 'HTTP_ERROR_503'], ['checksum', 'ETIMEDOUT'],
+    ['checksum', 'ERR_UPDATER_CHECKSUM_ENTRY_MISSING'], ['transfer', 'ERR_UPDATER_DIFFERENTIAL_FAILED'],
+    ['verification', 'ERR_UPDATER_CHECKSUM_MISMATCH'], ['verification', 'ERR_UPDATER_CANCELLED']]) {
+    const state = updateJournalState({ phase: 'error', failedOperation: 'download', route: 'cnb',
+      downloadMode: 'delta', stage, message: `${code} https://secret.test?token=private`, token: 'private' });
+    assert.deepEqual(state, { phase: 'error', failedOperation: 'download', errorCode: code,
+      route: 'cnb', downloadMode: 'delta', stage });
+    assert.doesNotMatch(JSON.stringify(state), /private|https:/);
+  }
+  assert.deepEqual(updateJournalState({ phase: 'checking', route: 'unknown', stage: 'secret', downloadMode: 'unknown' }),
+    { phase: 'checking' });
+});

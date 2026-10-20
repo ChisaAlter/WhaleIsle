@@ -11,7 +11,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ERROR_CODES = ['ETIMEDOUT', 'ENOSPC', 'ERR_INTERNET_DISCONNECTED', 'ERR_CONNECTION_RESET',
-  'ERR_CONNECTION_CLOSED', 'ERR_NAME_NOT_RESOLVED', 'ERR_UPDATER_INVALID_SIGNATURE', 'ERR_UPDATER_CHECKSUM_MISMATCH'];
+  'ERR_CONNECTION_CLOSED', 'ERR_NAME_NOT_RESOLVED', 'ERR_UPDATER_INVALID_SIGNATURE', 'ERR_UPDATER_CHECKSUM_MISMATCH',
+  'ERR_UPDATER_CHECKSUM_FETCH_FAILED', 'ERR_UPDATER_CHECKSUM_ENTRY_MISSING', 'ERR_UPDATER_DIFFERENTIAL_FAILED',
+  'ERR_UPDATER_CANCELLED', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH',
+  ...[400, 401, 403, 404, 408, 429, 500, 502, 503, 504].map(status => `HTTP_ERROR_${status}`)];
 
 const ACTIONS = new Set(['started', 'workspace-ready', 'workspace-failed',
   'check-requested', 'download-requested', 'install-confirmed', 'quit-requested']);
@@ -22,6 +25,9 @@ function updateJournalState(state) {
     phase: state.phase,
     ...(state.version !== undefined ? { targetVersion: state.version } : {}),
     ...(state.phase === 'downloading' && state.percent !== undefined ? { percent: Math.floor(state.percent) } : {}),
+    ...(['github', 'cnb'].includes(state.route) ? { route: state.route } : {}),
+    ...(['full', 'delta'].includes(state.downloadMode) ? { downloadMode: state.downloadMode } : {}),
+    ...(['checksum', 'transfer', 'verification', 'installation'].includes(state.stage) ? { stage: state.stage } : {}),
     ...(state.phase === 'error' ? {
       failedOperation: state.failedOperation,
       errorCode: ERROR_CODES.find((code) => String(state.message ?? '').includes(code)) ?? 'UNCLASSIFIED',

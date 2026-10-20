@@ -34,14 +34,13 @@ function baseDeps(overrides = {}) {
     route: 'github',
     fetchRelease: async () => RELEASE,
     update: {
-      downloadFile: async (_url, dest, onProgress) => {
+      downloadReleaseAsset: async (_info, dest, onProgress) => {
         if (typeof onProgress === 'function') {
           onProgress({ phase: 'download', percent: 42 });
         }
         fs.writeFileSync(dest, 'zip-bytes');
         return dest;
       },
-      verifyAssetChecksum: async () => {},
     },
     applyFile: async () => ({ ok: true, applied: { added: 1, patched: 2, deleted: 1, skipped: 0 } }),
     fullInstall: async () => ({ ok: true, launched: true }),
@@ -156,8 +155,12 @@ test('installDelta downloads and verifies before protected shutdown, then applie
   const events = [];
   const result = await installDelta('v2.0.0', null, baseDeps({
     update: {
-      downloadFile: async (_url, dest) => { events.push('download'); fs.writeFileSync(dest, 'zip-bytes'); },
-      verifyAssetChecksum: async () => { events.push('checksum'); },
+      downloadReleaseAsset: async (info, dest, _progress, { signal }) => {
+        assert.equal(info.assetName, RELEASE.assets[1].name);
+        assert.equal(info.checksumUrl, 'https://x.test/sums.txt');
+        assert.equal(signal, undefined);
+        events.push('download'); fs.writeFileSync(dest, 'zip-bytes'); events.push('checksum');
+      },
     },
     beforeApply: async () => { events.push('stop'); return { ok: true }; },
     applyFile: async (_file, _target, options) => {
@@ -179,11 +182,7 @@ test('installDelta leaves the desktop running after download and SHA512 verifica
     let fullCalls = 0;
     const result = await installDelta('v2.0.0', null, baseDeps({
       update: {
-        downloadFile: async (_url, dest) => {
-          if (failedPhase === 'download') throw new Error('download-failed');
-          fs.writeFileSync(dest, 'unverified-bytes');
-        },
-        verifyAssetChecksum: async () => { throw new Error('checksum-failed'); },
+        downloadReleaseAsset: async () => { throw new Error(`${failedPhase}-failed`); },
       },
       beforeApply: async () => { stopped++; return { ok: true }; },
       applyFile: async () => { assert.fail('unverified delta must not be applied'); },
@@ -193,6 +192,53 @@ test('installDelta leaves the desktop running after download and SHA512 verifica
     assert.equal(stopped, 0);
     assert.equal(fullCalls, 0);
   }
+});
+
+test('standalone delta revalidates a completed cancelled download before protected apply', async (t) => {
+  const { EventEmitter } = require('node:events');
+  const { PassThrough } = require('node:stream');
+  const crypto = require('node:crypto');
+  const https = require('node:https');
+  const dir = tmpdir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const bytes = Buffer.from('complete standalone delta');
+  const hash = crypto.createHash('sha512').update(bytes).digest('hex');
+  let downloads = 0, manifests = 0, applied = 0;
+  t.mock.method(global, 'fetch', async url => {
+    assert.equal(url, RELEASE.assets[2].browser_download_url);
+    manifests++;
+    return { ok: true, text: async () => `${hash}  ${RELEASE.assets[1].name}` };
+  });
+  t.mock.method(https, 'get', (url, _options, callback) => {
+    assert.equal(url, RELEASE.assets[1].browser_download_url);
+    assert.ok(manifests > 0);
+    downloads++;
+    const request = new EventEmitter(); request.destroy = () => {};
+    setImmediate(() => {
+      const response = new PassThrough(); response.statusCode = 200;
+      response.headers = { 'content-length': String(bytes.length) };
+      callback(response); response.end(bytes);
+    });
+    return request;
+  });
+  const controller = new AbortController();
+  const deps = baseDeps({ deltaDir: dir, signal: controller.signal,
+    update: require('../../main/update'),
+    applyFile: async (file) => {
+      assert.deepEqual(fs.readFileSync(file), bytes);
+      assert.equal(manifests, 2, 'retry obtains a new checksum before using the completed candidate');
+      applied++;
+      return { ok: true, applied: {} };
+    } });
+  const first = await installDelta('v2.0.0', p => { if (p.phase === 'verify') controller.abort(); }, deps);
+  assert.equal(first.cancelled, true);
+  assert.equal(applied, 0);
+  assert.equal(fs.existsSync(path.join(dir, RELEASE.assets[1].name + '.json')), false);
+  const next = await installDelta('v2.0.0', null, { ...deps, signal: undefined });
+  assert.equal(next.ok, true);
+  assert.equal(downloads, 1);
+  assert.equal(applied, 1);
+  assert.deepEqual(fs.readdirSync(dir), [], 'consumed candidate and sidecar are removed');
 });
 
 test('pickDeltaAsset matches only the installed→target version pair', () => {
@@ -225,8 +271,10 @@ test('installDelta end-to-end: a product name with spaces validates before prote
   const deps = baseDeps({
     installedInfo: async () => ({ registeredInstall: true, installPath: installDir, version: '1.0.0' }),
     update: {
-      downloadFile: async (_url, dest) => { events.push('download'); fs.writeFileSync(dest, wireBytes); return dest; },
-      verifyAssetChecksum: async (dest) => { assert.equal(await manifest.sha512File(dest), built.sha512); events.push('checksum'); },
+      downloadReleaseAsset: async (_info, dest) => {
+        events.push('download'); fs.writeFileSync(dest, wireBytes);
+        assert.equal(await manifest.sha512File(dest), built.sha512); events.push('checksum'); return dest;
+      },
     },
     beforeApply: async () => {
       assert.deepEqual(events, ['download', 'checksum']);

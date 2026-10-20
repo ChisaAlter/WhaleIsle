@@ -91,6 +91,8 @@ jobs:
         run: npm run setup:harness
       - name: Desktop behavior tests
         run: npm test
+      - name: Update download network recovery
+        run: npm run qa:update-download
       - name: GUI behavior tests
         if: needs.scope.outputs.vendor == 'true'
         run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness run test:gui

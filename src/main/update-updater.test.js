@@ -130,11 +130,12 @@ test('updater feed follows the confirmed route', async () => {
   github.feed = 'previous';
   github.clientPromise = Promise.resolve('cnb client');
   await installLatestViaUpdater({ expectedCheck }, null, packagedDeps(github));
-  assert.equal(github.feed, 'previous', 'GitHub keeps the packaged app-update.yml provider');
-  assert.equal(github.clientPromise, null, 'an earlier CNB feed is dropped');
+  assert.deepEqual(github.feed, { provider: 'generic', url: 'https://example.test/', useMultipleRangeRequest: false },
+    'GitHub pins the confirmed asset directory instead of an obsolete packaged repository name');
 
   const cnb = fakeAutoUpdater();
-  await installLatestViaUpdater({ expectedCheck: { ...expectedCheck, route: 'cnb' } }, null, packagedDeps(cnb));
+  await installLatestViaUpdater({ expectedCheck: { ...expectedCheck, route: 'cnb',
+    updaterMetadataUrl: 'https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v9.9.9/latest.yml' } }, null, packagedDeps(cnb));
   // CNB answers one range per request; a multi-range request gets only the first.
   assert.deepEqual(cnb.feed, {
     provider: 'generic',
@@ -446,7 +447,7 @@ test('manifest target changes stop before any installer download, including prer
   }
 });
 
-async function realUpdaterFixture(t, { incompatibleBlockmap = false } = {}) {
+async function realUpdaterFixture(t, { incompatibleBlockmap = false, stallRange = false, rangeStatus = 206 } = {}) {
   const { NsisUpdater } = require('electron-updater');
   assert.equal(require('electron-updater/package.json').version, '6.8.9', 'protected seam is tested against the pinned library');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-strict-delta-'));
@@ -462,6 +463,10 @@ async function realUpdaterFixture(t, { incompatibleBlockmap = false } = {}) {
       .update(buffer.subarray(index * blockSize, (index + 1) * blockSize)).digest('hex')),
   }] });
   const requests = [];
+  let markRange;
+  const rangeStarted = new Promise(resolve => { markRange = resolve; });
+  let rangeClosed;
+  const closedRange = new Promise(resolve => { rangeClosed = resolve; });
   const server = http.createServer((req, res) => {
     const pathname = new URL(req.url, 'http://127.0.0.1').pathname;
     requests.push({ pathname, range: req.headers.range });
@@ -471,6 +476,8 @@ async function realUpdaterFixture(t, { incompatibleBlockmap = false } = {}) {
       res.end(zlib.gzipSync(JSON.stringify(blockmap(newBytes, incompatibleBlockmap ? '3' : '2'))));
     } else if (pathname === `/${oldAssetName}.blockmap`) {
       res.end(zlib.gzipSync(JSON.stringify(blockmap(oldBytes))));
+    } else if (pathname === '/SHA512SUMS.txt') {
+      res.end(`${crypto.createHash('sha512').update(newBytes).digest('hex')}  ${assetName}`);
     } else if (pathname === '/base-sums') {
       res.end(`${crypto.createHash('sha512').update(oldBytes).digest('hex')}  ${oldAssetName}`);
     } else if (pathname === `/${assetName}`) {
@@ -478,12 +485,18 @@ async function realUpdaterFixture(t, { incompatibleBlockmap = false } = {}) {
       if (!range) { res.statusCode = 500; res.end('whole download forbidden'); return; }
       const start = Number(range[1]);
       const end = Number(range[2]);
-      res.writeHead(206, { 'content-range': `bytes ${start}-${end}/${newBytes.length}` });
-      res.end(newBytes.subarray(start, end + 1));
+      res.writeHead(rangeStatus, { 'content-range': `bytes ${start}-${end}/${newBytes.length}`,
+        'content-type': 'application/octet-stream' });
+      if (stallRange) {
+        req.once('close', rangeClosed);
+        res.write(newBytes.subarray(start, start + 10));
+        markRange();
+      } else res.end(newBytes.subarray(start, end + 1));
     } else { res.statusCode = 404; res.end(); }
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => {
+    server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(dir, { recursive: true, force: true });
   });
@@ -515,7 +528,8 @@ async function realUpdaterFixture(t, { incompatibleBlockmap = false } = {}) {
   const deps = { isPackaged: true, platform: 'win32', autoUpdater: updater,
     resolveCurrentRelease: async () => ({ tag: 'v1.0.0', assetName: oldAssetName, assetSize: oldBytes.length,
       checksumUrl: `${baseUrl}base-sums`, blockmapUrl: `${baseUrl}${oldAssetName}.blockmap` }) };
-  return { updater, target, cacheDir, requests, newBytes, oldBytes, deps, fullDownloads: () => fullDownloads };
+  return { updater, target, cacheDir, requests, newBytes, oldBytes, deps, rangeStarted, closedRange,
+    resumeRange: () => { stallRange = false; }, fullDownloads: () => fullDownloads };
 }
 
 test('pinned NSIS updater reconstructs verified bytes with only an actual HTTP range transfer', async (t) => {
@@ -557,4 +571,108 @@ test('pinned NSIS updater rejects its internal whole-download fallback on incomp
   assert.equal(fixture.fullDownloads(), 0);
   assert.equal(fixture.requests.some((entry) => entry.pathname.endsWith('.exe')), false,
     'a failed differential plan cannot start a full installer request');
+});
+
+test('cancelling a stalled real Range closes it before a same-instance explicit retry', { timeout: 5000 }, async (t) => {
+  const f = await realUpdaterFixture(t, { stallRange: true });
+  const controller = new AbortController();
+  const first = installLatestViaUpdater({ expectedCheck: f.target, signal: controller.signal }, null, f.deps);
+  await f.rangeStarted;
+  controller.abort();
+  const cancelled = await first;
+  assert.equal(cancelled.reason, 'cancelled');
+  await f.closedRange;
+  assert.equal(f.updater.downloadPromise, null, 'old download cleanup must finish before returning');
+  assert.deepEqual(fs.readFileSync(path.join(f.cacheDir, 'installer.exe')), f.oldBytes);
+  f.resumeRange();
+  const retried = await installLatestViaUpdater({ expectedCheck: f.target }, null, f.deps);
+  assert.equal(retried.ok, true, retried.message);
+  assert.deepEqual(fs.readFileSync(retried.installer), f.newBytes);
+  assert.equal(f.requests.filter(req => req.pathname.endsWith('.exe')).length, 2);
+  assert.equal(f.fullDownloads(), 0);
+});
+
+test('host rejects damaged same-process pending bytes and the next delta really downloads again', async (t) => {
+  const f = await realUpdaterFixture(t);
+  const { installFromAsset } = require('./update');
+  let verifiedFile;
+  let installGates = 0;
+  const options = { downloadMode: 'delta', updaterDeps: f.deps, quitAfterInstall: false,
+    beforeInstall: ({ dest }) => { verifiedFile = dest; installGates++; return { ok: false, cancelled: true }; },
+    spawn: () => { throw new Error('no installer launch'); } };
+  await installFromAsset(f.target, null, options);
+  assert.equal(installGates, 1);
+  const damaged = Buffer.from(f.newBytes); damaged[0] ^= 1;
+  fs.writeFileSync(verifiedFile, damaged);
+  await assert.rejects(installFromAsset(f.target, null, options), { code: 'ERR_UPDATER_CHECKSUM_MISMATCH' });
+  assert.equal(installGates, 1);
+  assert.equal(fs.existsSync(verifiedFile), false);
+  await installFromAsset(f.target, null, options);
+  assert.equal(installGates, 2);
+  assert.deepEqual(fs.readFileSync(verifiedFile), f.newBytes);
+  assert.equal(f.requests.filter(req => req.pathname.endsWith('.exe')).length, 2);
+  assert.equal(f.requests.filter(req => req.pathname === '/SHA512SUMS.txt').length, 3);
+  assert.deepEqual(fs.readFileSync(path.join(f.cacheDir, 'installer.exe')), f.oldBytes);
+});
+
+test('Electron request close before its response is not a completed transfer', { timeout: 5000 }, async (t) => {
+  const f = await realUpdaterFixture(t, { stallRange: true });
+  const executor = f.updater.httpExecutor;
+  const createRequest = executor.createRequest;
+  // Electron net closes the writable request before receiving a response;
+  // node:http normally emits close after the response, so model that order.
+  executor.createRequest = function (...args) {
+    const request = createRequest.apply(this, args);
+    request.once('finish', () => request.emit('close'));
+    return request;
+  };
+  const controller = new AbortController();
+  const pending = installLatestViaUpdater({ expectedCheck: f.target, signal: controller.signal }, null, f.deps);
+  await f.rangeStarted;
+  controller.abort();
+  assert.equal((await pending).reason, 'cancelled');
+  await f.closedRange;
+  assert.equal(f.updater.downloadPromise, null);
+});
+
+test('failed Range responses close even when the server never ends the error body', { timeout: 5000 }, async (t) => {
+  const f = await realUpdaterFixture(t, { stallRange: true, rangeStatus: 503 });
+  const result = await installLatestViaUpdater({ expectedCheck: f.target }, null, f.deps);
+  assert.equal(result.reason, 'ERR_UPDATER_DIFFERENTIAL_FAILED');
+  await f.closedRange;
+  assert.equal(f.updater.downloadPromise, null);
+  assert.equal(f.fullDownloads(), 0);
+});
+
+test('a real stopped Range budget reports timeout, cleans up, and permits retry', { timeout: 5000 }, async (t) => {
+  const f = await realUpdaterFixture(t, { stallRange: true });
+  let expire;
+  const pending = installLatestViaUpdater({ expectedCheck: f.target }, null, { ...f.deps,
+    setTimeout: fn => { expire = fn; return 1; }, clearTimeout() {} });
+  await f.rangeStarted;
+  expire();
+  assert.equal((await pending).reason, 'timeout');
+  await f.closedRange;
+  assert.equal(f.updater.downloadPromise, null);
+  f.resumeRange();
+  assert.equal((await installLatestViaUpdater({ expectedCheck: f.target }, null, f.deps)).ok, true);
+});
+
+test('cancel ends a stalled manifest immediately and a mismatched provider cannot cross routes', async (t) => {
+  const fake = fakeAutoUpdater();
+  let releaseCheck;
+  let checked;
+  const started = new Promise(resolve => { checked = resolve; });
+  fake.checkForUpdates = () => { checked(); return new Promise(resolve => { releaseCheck = resolve; }); };
+  const controller = new AbortController();
+  const first = installLatestViaUpdater({ expectedCheck, signal: controller.signal }, null, packagedDeps(fake));
+  await started;
+  controller.abort();
+  assert.equal((await first).reason, 'cancelled');
+  releaseCheck({ updateInfo: { version: '9.9.9' } });
+  const other = fakeAutoUpdater();
+  const result = await installLatestViaUpdater({ expectedCheck: { ...expectedCheck,
+    route: 'cnb', assetUrl: 'https://cnb.cool/Setup.exe' } }, null, packagedDeps(other));
+  assert.equal(result.reason, 'asset-changed', 'same version/name on another host is not the confirmed asset');
+  assert.equal(other.calls.downloadUpdate, 0);
 });

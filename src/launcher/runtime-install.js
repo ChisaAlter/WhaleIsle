@@ -254,7 +254,10 @@ async function installRuntime(options = {}, onProgress, deps = {}) {
   const ensureExited = typeof deps.ensureDesktopExited === 'function'
     ? deps.ensureDesktopExited
     : () => ensureExternalDesktopExited(deps);
-  const route = source.normalizeRoute(options.route)
+  // Only main-owned callers pass a confirmed asset snapshot through deps.
+  // Renderer options remain limited to choosing a route/tag.
+  const expectedCheck = deps.expectedCheck && { ...deps.expectedCheck };
+  const route = source.normalizeRoute(expectedCheck?.route || options.route)
     || configuredRoute(deps)
     || 'github';
   const tag = typeof options.tag === 'string' ? options.tag.trim() : '';
@@ -265,9 +268,11 @@ async function installRuntime(options = {}, onProgress, deps = {}) {
       onProgress({ phase: 'resolve', percent: 0 });
     }
     const installed = installedInfo({ fresh: true, deps });
-    const info = tag
-      ? await source.releaseFor(route, tag, { installedVersion: installed.version })
-      : await source.latestFor(route, { installedVersion: installed.version });
+    const resolution = { installedVersion: installed.version, signal: controller.signal };
+    const info = expectedCheck || (tag
+      ? await source.releaseFor(route, tag, resolution)
+      : await source.latestFor(route, resolution));
+    if (controller.signal.aborted) throw update.cancelledError();
     if (!info || info.status === 'error') {
       return {
         ok: false,
@@ -393,7 +398,7 @@ async function installRuntime(options = {}, onProgress, deps = {}) {
       installed: found,
     };
   } catch (error) {
-    if (error && error.name === 'AbortError') {
+    if (controller.signal.aborted || error?.name === 'AbortError') {
       return { ok: false, route, cancelled: true, status: 'cancelled', message: '已取消下载' };
     }
     return { ok: false, route, status: 'error', message: error?.message || String(error) };
