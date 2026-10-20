@@ -94,12 +94,14 @@ export async function adoptRegisteredWorkspaceSession(client, value, options = {
     sessionId,
     await client.rpc('session.list', {}, timeoutMs, options),
   );
-  const adopted = await client.rpc('session.create', {
-    workspaceId: workspace.workspaceId,
+  // Opening the existing history keeps its identity; session.create may mint a
+  // new Session when the requested conversation has already started.
+  const history = await client.rpc('session.history', {
     sessionId,
+    maxMessages: 1,
   }, timeoutMs, options);
-  if (!adopted || adopted.sessionId !== sessionId) {
-    throw new Error('Harness returned an invalid response for session.create');
+  if (!Array.isArray(history?.events)) {
+    throw new Error('Harness returned an invalid response for session.history');
   }
   return {
     sessionId,

@@ -60,7 +60,10 @@ function copyRuntime(source, target) {
   if (info.isDirectory()) {
     if (destination && !destination.isDirectory()) throw new Error(`Project runtime directory contains a file: ${target}`);
     if (!destination) fs.mkdirSync(target);
-    for (const name of fs.readdirSync(source)) copyRuntime(path.join(source, name), path.join(target, name));
+    const names = fs.readdirSync(source);
+    // Drop entries the current source no longer ships so stale modules cannot be imported after an upgrade.
+    for (const name of fs.readdirSync(target)) if (!names.includes(name)) fs.rmSync(path.join(target, name), { recursive: true, force: true });
+    for (const name of names) copyRuntime(path.join(source, name), path.join(target, name));
   } else {
     if (destination && !destination.isFile()) throw new Error(`Project runtime file contains a directory: ${target}`);
     fs.copyFileSync(source, target);

@@ -14,7 +14,9 @@ See `bridge/NOTICE.md` for upstream revision and retained license.
 
 ## Install and use
 
-Requires Node 22.19+ and a DSH host providing tools, skills and Agents. Use the
+Requires Node 22.19+ and a DSH `0.2.1-alpha.1` or `0.2.1-alpha.3` host providing
+tools, skills and Agents. The development lockfile targets alpha.3; later
+prereleases need their own compatibility check. Use the
 host's Plugin Manager `install_bundle` with this built package's absolute
 directory or tarball. From the plugin's own distribution, download the
 `dsh-with-chatgpt-0.1.0.tgz` asset, then ask the DSH agent to install its absolute

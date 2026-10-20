@@ -196,7 +196,7 @@ class DependencyModel extends ScriptedModel {
 
 /** Script only user/model decisions; queue admission, notices and deliveries remain native. */
 class QueueModel extends DependencyModel {
-  holdTitles = new Set(); deliveryBarriers = new Set(); barriersReached = new Set(); queueInputs = []; workerAborts = []; streamErrors = [];
+  holdTitles = new Set(); isolateTitles = new Set(); deliveryBarriers = new Set(); barriersReached = new Set(); queueInputs = []; workerAborts = []; streamErrors = [];
   async barrier(name, signal) {
     this.barriersReached.add(name);
     await new Promise((done, reject) => {
@@ -209,7 +209,7 @@ class QueueModel extends DependencyModel {
   row(title) { const row = this.state().requests.find(item => item.title === title); assert.ok(row, title); return row; }
   delegate(row) {
     const work = this.state().workstreams.find(item => item.delegations.at(-1).source.requestId === row.id);
-    return { requestId: row.id, requestRevision: row.revision, ...(work ? { workstreamId: work.id } : { title: `${row.title} work` }), brief: `QUEUE_WORK:${row.title}`, scope: 'development' };
+    return { requestId: row.id, requestRevision: row.revision, ...(work ? { workstreamId: work.id } : { title: `${row.title} work`, ...(this.isolateTitles.has(row.title) ? { isolate: true } : {}) }), brief: `QUEUE_WORK:${row.title}`, scope: 'development' };
   }
   async *stream(options) {
     try { yield* this.queueStream(options); }
@@ -448,15 +448,17 @@ class ReplacementModel extends ScriptedModel {
   }
 }
 
-async function desktopBridge(root) {
+async function desktopBridge(root, handlers = {}) {
   const bindings = new Map(), requests = [];
   const server = createServer(async (req, res) => { try {
     assert.equal(req.headers.authorization, 'Bearer composition-secret'); const chunks = []; for await (const chunk of req) chunks.push(chunk);
     const input = JSON.parse(Buffer.concat(chunks)); requests.push(input); let value;
-    if (input.action === 'select-directory') { const path = await realpath(input.workingDirectory); value = { canonicalPath: path, identity: path.toLowerCase() }; }
-    else if (input.action === 'prepare-workspace') { assert.equal(input.mode, 'existing'); value = { canonicalPath: await realpath(input.workingDirectory), ownership: 'user', receipt: input.workstreamId, isGit: false }; bindings.set(input.workstreamId, value); }
+    if (input.action === 'prepare-workspace') { if (handlers[input.action]) value = await handlers[input.action](input); else { assert.equal(input.mode, 'existing'); value = { canonicalPath: await realpath(input.workingDirectory), ownership: 'user', receipt: input.workstreamId, isGit: false }; } bindings.set(input.workstreamId, value); }
+    else if (handlers[input.action]) value = await handlers[input.action](input);
+    else if (input.action === 'select-directory') { const path = await realpath(input.workingDirectory); value = { canonicalPath: path, identity: path.toLowerCase() }; }
     else if (input.action === 'check-workspace') { assert.deepEqual(input.workspace, bindings.get(input.workstreamId)); value = { valid: true }; }
     else if (input.action === 'snapshot') value = { isGit: false, dirty: null, fingerprint: null };
+    else if (input.action === 'baseline') value = { isGit: false };
     else if (input.action === 'resolve-path') value = { canonicalPath: await realpath(input.path), root: bindings.get(input.workstreamId).canonicalPath };
     else throw new Error(`Unexpected desktop action ${input.action}`);
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(value));
@@ -546,6 +548,72 @@ test('native requirement queue keeps discussion separate, preserves edits and or
     for (const gate of model.gates.values()) gate.release(); if (ctx) await ctx.fiber.dispose(); await bridge.close();
     for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
     assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-native-queue-`)); await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('native delivery tracking waits for actual workspace snapshots and excludes another Project writer during revert', { timeout: 120000 }, async () => {
+  // Plain data fixtures stand in for desktop-owned directories: no Git repository,
+  // branch or worktree is created. Real Host tools write and read the data.
+  const root = await mkdtemp(join(tmpdir(), 'whale-project-native-tracking-')), home = join(root, 'home'), directory = join(root, 'selected'), isolated = join(root, 'isolated-data'), child = join(isolated, 'nested-data');
+  await mkdir(home); await mkdir(directory); await mkdir(isolated); await mkdir(child);
+  for (const cwd of [directory, isolated, child]) await writeFile(join(cwd, 'seed.txt'), 'preserved\n');
+  let releaseCapture, captureStarted = false, ctx;
+  const captureGate = new Promise(resolve => { releaseCapture = resolve; }), model = new QueueModel();
+  model.isolateTitles.add('A'); model.holdTitles = new Set(['B', 'Foreign']);
+  const bridge = await desktopBridge(root, {
+    'prepare-workspace': async input => ({ canonicalPath: await realpath(input.mode === 'worktree' ? isolated : input.workingDirectory), ownership: input.mode === 'worktree' ? 'project' : 'user', receipt: input.workstreamId, isGit: true }),
+    baseline: () => ({ isGit: true, tree: 'a'.repeat(40) }),
+    changes: async input => {
+      const title = input.workingDirectory === await realpath(isolated) ? 'A' : 'B';
+      assert.equal(await readFile(join(input.workingDirectory, `${title}.txt`), 'utf8'), `${title} revision 1\n`);
+      if (title === 'A' && !input.end) { captureStarted = true; await captureGate; }
+      return { end: title === 'A' ? 'b'.repeat(40) : 'c'.repeat(40), files: [{ path: `${title}.txt`, status: 'A', added: 1, removed: 0 }], diff: `diff --git a/${title}.txt b/${title}.txt\nnew file mode 100644\n--- /dev/null\n+++ b/${title}.txt\n@@ -0,0 +1 @@\n+${title} revision 1\n` };
+    },
+    revert: async input => {
+      assert.equal(input.workingDirectory, await realpath(isolated));
+      assert.ok(input.workspace.receipt && input.workstreamId);
+      if (!input.checkOnly) await rm(join(isolated, 'A.txt'));
+      return { ok: true, applied: !input.checkOnly };
+    },
+  });
+  const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
+  try {
+    ctx = await bootHost(home, model); const host = ctx.projects;
+    const { project } = await host.command('create', { requestId: 'tracking-primary', workingDirectory: directory }), lead = ctx.agents.get(project.coordinatorSessionId);
+    const prompt = (sessionId, requestId, actions) => ctx.sessionController.prompt({ sessionId, requestId, mode: 'queue', content: [{ type: 'text', text: `QUEUE_ACTIONS:${JSON.stringify(actions)}` }] }, signal);
+    await prompt(lead.id, 'tracking-human', [{ type: 'request', title: 'A' }, { type: 'delegate', title: 'A' }, { type: 'request', title: 'B', disposition: 'discussing' }]);
+    await waitFor(() => { assert.deepEqual(model.streamErrors, []); return captureStarted; }, 'the native completed A reply reaches its delayed end snapshot');
+    const a = () => host.state().requests.find(row => row.title === 'A'), b = () => host.state().requests.find(row => row.title === 'B');
+    const enqueue = host.command('requests/queue', { projectId: project.id, requestId: b().id, requestRevision: 1, action: 'enqueue' });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(host.state().deliveries.find(row => row.requestId === a().id).status, 'draft');
+    assert.equal(host.queue.active(project.id)?.id, a().id); assert.equal(model.workerInputs.some(input => input.context.title === 'B'), false);
+    assert.equal(a().changes.workspaces[0].workingDirectory, await realpath(isolated), 'baseline is in the assigned member cwd, not the bound root');
+    releaseCapture(); await enqueue;
+    await waitFor(() => model.barriersReached.has('worker:B'), 'B starts only after A end tree is saved');
+    assert.equal(a().changes.workspaces[0].end, 'b'.repeat(40));
+    assert.equal(model.workerInputs.find(input => input.context.title === 'A').cwd, await realpath(isolated));
+    const diff = await host.command('requests/changes', { projectId: project.id, requestId: a().id });
+    assert.equal(diff.workspaces[0].workingDirectory, await realpath(isolated)); assert.equal(diff.files[0].path, 'A.txt');
+    model.gate('worker:B').release();
+    await waitFor(() => host.state().deliveries.some(row => row.title === 'B' && row.status === 'delivered'), 'ordinary B writes, reads back and completes');
+    const { project: foreign } = await host.command('create', { requestId: 'tracking-overlap', workingDirectory: child });
+    await prompt(foreign.coordinatorSessionId, 'tracking-foreign-human', [{ type: 'request', title: 'Foreign' }, { type: 'delegate', title: 'Foreign' }]);
+    await waitFor(() => model.barriersReached.has('worker:Foreign'), 'another Project holds a child-directory writer');
+    await assert.rejects(host.command('requests/revert', { projectId: project.id, requestId: a().id }), { code: 'busy' });
+    assert.equal(bridge.requests.filter(input => input.action === 'revert').length, 0);
+    await host.command('stop', { projectId: foreign.id });
+    await host.command('requests/revert', { projectId: project.id, requestId: a().id });
+    await assert.rejects(readFile(join(isolated, 'A.txt')), { code: 'ENOENT' });
+    assert.equal(await readFile(join(directory, 'B.txt'), 'utf8'), 'B revision 1\n');
+    assert.equal(await readFile(join(directory, 'seed.txt'), 'utf8'), 'preserved\n');
+    assert.ok(a().changes.revertedAt); assert.deepEqual(model.failures, []); assert.deepEqual(model.streamErrors, []);
+    assert.deepEqual(bridge.requests.filter(input => input.action === 'baseline').map(input => input.workingDirectory).slice(0, 2), [await realpath(isolated), await realpath(directory)]);
+  } finally {
+    releaseCapture(); for (const gate of model.gates.values()) gate.release(); if (ctx) await ctx.fiber.dispose(); await bridge.close();
+    for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-native-tracking-`)); await rm(root, { recursive: true, force: true });
   }
 });
 

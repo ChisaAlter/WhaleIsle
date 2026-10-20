@@ -17,10 +17,9 @@ export interface ImageCardModel {
   /** The durable images this result returned, in result order. */
   images: readonly { readonly attachment: ImageAttachmentRef }[]
   /**
-   * Text blocks other than the model-facing envelope (for example, text a
-   * post-execute hook appended), joined in order; null when there are none.
-   * The envelope itself is not repeated: its path and image facts are already
-   * `path` and `images`.
+   * Result text joined in order, including the complete read_image envelope
+   * body and any post-execute notes. The envelope's XML wrapper is omitted;
+   * its recorded path is displayed separately.
    */
   extraText: string | null
 }
@@ -64,7 +63,7 @@ function positiveInteger(value: unknown): value is number {
 }
 
 /** The envelope `formatImageReadOutput` writes, matched by shape. */
-const IMAGE_ENVELOPE = /^<path>[^\n]*<\/path>\n<type>image<\/type>\n<content>\n[\s\S]*\n<\/content>$/u
+const IMAGE_ENVELOPE = /^<path>[^\n]*<\/path>\n<type>image<\/type>\n<content>\n([\s\S]*)\n<\/content>$/u
 
 /** The media types a durable image block may claim; anything else declines.
  *  Hand-written mirror of `ImageMediaType` from dsh-attachment — the wire
@@ -187,15 +186,15 @@ export function genericImageCardModel(block: ToolCallBlock): ImageCardModel | nu
 }
 
 /**
- * Join the text blocks other than the image envelope, in order. A post-execute
- * hook that appends further text blocks keeps them visible under the gallery
- * instead of being dropped.
+ * Keep every result text block in order. For the image envelope, display its
+ * complete body: attachment dimensions alone cannot reconstruct its MIME,
+ * coordinate-scaling instructions or additional notes.
  * @param content - the settled result's text blocks.
  * @returns the joined text, or null when there is none.
  */
 function extraTexts(content: readonly { type: string; text?: string }[]): string | null {
-  const parts = content.flatMap(part => part.type === 'text' && typeof part.text === 'string' && !IMAGE_ENVELOPE.test(part.text)
-    ? [part.text]
+  const parts = content.flatMap(part => part.type === 'text' && typeof part.text === 'string'
+    ? [part.text.replace(IMAGE_ENVELOPE, '$1')]
     : [])
   return parts.length > 0 ? parts.join('\n') : null
 }

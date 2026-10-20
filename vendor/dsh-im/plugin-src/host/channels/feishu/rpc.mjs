@@ -15,7 +15,7 @@ import {
 import {
   FEISHU_ENDPOINTS,
   FEISHU_RPC_CHANNEL,
-} from '../../../client/channels/feishu/api.js';
+} from '../../../../src/channels/feishu/rpc-protocol.mjs';
 
 export { FEISHU_ENDPOINTS, FEISHU_RPC_CHANNEL };
 export const FEISHU_MULTI_ENDPOINTS = Object.freeze({
