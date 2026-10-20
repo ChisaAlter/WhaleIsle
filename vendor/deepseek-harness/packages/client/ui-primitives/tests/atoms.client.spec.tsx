@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Button, ConnectionIndicator, Input, Menu, MenuItemButton, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import { POINTER_GRACE_MS } from '../src/pointer-grace.ts'
+import buttonCss from '../src/Button.module.css'
+import inputCss from '../src/Input.module.css'
 
 afterEach(cleanup)
 
@@ -67,6 +69,23 @@ describe('Button', () => {
     expect(screen.getByTestId('ic')).toBeDefined()
     fireEvent.click(button)
     expect(onClick).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['md', 'sm'] as const)('opts into pill corners without changing the %s size or native button', (size) => {
+    const ref = createRef<HTMLButtonElement>()
+    const onClick = vi.fn()
+    const view = render(<Button ref={ref} size={size} onClick={onClick}>Save</Button>)
+    const button = screen.getByRole('button', { name: 'Save' })
+    const roundedClasses = button.className
+    view.rerender(<Button ref={ref} size={size} shape="pill" onClick={onClick}>Save</Button>)
+    expect(ref.current).toBe(button)
+    expect(button.classList.contains(buttonCss[size]!)).toBe(true)
+    expect(button.classList.contains(buttonCss.pill!)).toBe(true)
+    expect(button.hasAttribute('shape')).toBe(false)
+    fireEvent.click(button)
+    expect(onClick).toHaveBeenCalledOnce()
+    view.rerender(<Button ref={ref} size={size} shape="rounded" onClick={onClick}>Save</Button>)
+    expect(button.className).toBe(roundedClasses)
   })
 
   it('disabled blocks interaction', () => {
@@ -235,6 +254,36 @@ describe('Input', () => {
     ref.current?.focus()
     expect(document.activeElement).toBe(ref.current)
     unmount()
+    expect(ref.current).toBeNull()
+  })
+
+  it('keeps form attributes and ref on the native input and layout classes on its wrapper', () => {
+    const ref = createRef<HTMLInputElement>()
+    const onChange = vi.fn()
+    const view = render(<Input ref={ref} variant="form" className="field-layout" aria-label="Model" name="model"
+      placeholder="Model ID" autoComplete="off" required aria-invalid="true" onChange={onChange} />)
+    const input = screen.getByRole('textbox', { name: 'Model' }) as HTMLInputElement
+    const wrapper = input.parentElement!
+    expect(ref.current).toBe(input)
+    expect(wrapper.classList.contains(inputCss.form!)).toBe(true)
+    expect(wrapper.classList.contains('field-layout')).toBe(true)
+    expect(input.classList.contains('field-layout')).toBe(false)
+    expect(input.getAttribute('name')).toBe('model')
+    expect(input.getAttribute('autocomplete')).toBe('off')
+    expect(input.required).toBe(true)
+    expect(input.getAttribute('aria-invalid')).toBe('true')
+    expect(screen.getByPlaceholderText('Model ID')).toBe(input)
+    expect(input.hasAttribute('variant')).toBe(false)
+    fireEvent.change(input, { target: { value: 'example-model' } })
+    expect(onChange).toHaveBeenCalledOnce()
+    input.focus()
+    expect(document.activeElement).toBe(input)
+    view.rerender(<Input ref={ref} variant="form" aria-label="Model" disabled />)
+    expect(ref.current).toBe(input)
+    expect(input.disabled).toBe(true)
+    view.rerender(<Input ref={ref} aria-label="Model" />)
+    expect(input.parentElement?.classList.contains(inputCss.form!)).toBe(false)
+    view.unmount()
     expect(ref.current).toBeNull()
   })
 
@@ -668,6 +717,29 @@ describe('Menu', () => {
     expect(onSelect).toHaveBeenCalledWith('ok')
     fireEvent.mouseLeave(wrap)
     expect(screen.queryByRole('menuitem', { name: 'Create ok' })).toBeNull()
+  })
+
+  it('shares an opt-in solid material with submenus and restores the translucent default', () => {
+    const onSelect = vi.fn()
+    const props = {
+      open: true,
+      anchor: <button type="button">Trigger</button>,
+      items: [{ id: 'parent', label: 'Parent', submenu: [{ id: 'child', label: 'Child' }] }],
+      onClose: () => {},
+      onSelect,
+    }
+    const view = render(<Menu {...props} material="solid" />)
+    const trigger = screen.getByRole('button', { name: 'Trigger' })
+    trigger.focus()
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Parent' }))
+    fireEvent.focus(screen.getByRole('menuitem', { name: 'Parent' }))
+    expect(screen.getAllByRole('menu')).toHaveLength(2)
+    for (const menu of screen.getAllByRole('menu')) expect(menu.getAttribute('data-menu-material')).toBe('solid')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Child' }))
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('child')
+    view.rerender(<Menu {...props} />)
+    for (const menu of screen.getAllByRole('menu')) expect(menu.getAttribute('data-menu-material')).toBe('translucent')
   })
 
   it('portal matchAnchorWidth sizes the list to the anchor rect width', () => {

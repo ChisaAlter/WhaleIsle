@@ -7,7 +7,7 @@
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { IconPlusOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconPlusOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { en } from './locales.ts'
 import { ModelRow } from './ModelRow.tsx'
 import styles from './ModelsSection.module.css'
@@ -266,14 +266,13 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
         </div>
         {props.overridden
           ? (
-            <button
-              type="button"
+            <Button size="sm" shape="pill"
               className={styles['linkButton']}
               disabled={props.disabled}
               onClick={reset}
             >
               {props.t('resetModels')}
-            </button>
+            </Button>
           )
           : null}
       </div>
@@ -305,15 +304,14 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
             ))}
           </div>
         )}
-      <button
-        type="button"
+      <Button size="sm" shape="pill" variant="outline"
+        icon={<IconPlusOutlineRegular size={16} />}
         className={styles['addModelButton']}
         disabled={props.disabled}
         onClick={() => { props.onChange([...props.models.map(model => ({ ...model })), { id: '' }]) }}
       >
-        <IconPlusOutlineRegular size={14} />
         {props.t('addModel')}
-      </button>
+      </Button>
     </section>
   )
 }

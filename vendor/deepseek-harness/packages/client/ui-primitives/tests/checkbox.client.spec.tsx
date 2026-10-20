@@ -25,6 +25,14 @@ it('refuses label activation while disabled', () => {
   expect(screen.getByRole<HTMLInputElement>('checkbox').checked).toBe(true)
 })
 
+it('distinguishes repeated choices with a caller-provided accessible name', () => {
+  const onChange = vi.fn()
+  render(<Checkbox label="High" aria-label="High 2" checked={false} onChange={onChange} />)
+  fireEvent.click(screen.getByRole('checkbox', { name: 'High 2' }))
+  expect(screen.getByText('High')).toBeTruthy()
+  expect(onChange).toHaveBeenLastCalledWith(true)
+})
+
 it('preserves caller hover text', () => {
   const onChange = vi.fn()
   render(<Checkbox label="Office" checked={false} onChange={onChange} title="Office tools" />)

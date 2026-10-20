@@ -13,6 +13,8 @@ export type ButtonVariant = 'primary' | 'ghost' | 'outline' | 'toolbar'
 type ButtonProps = {
   variant?: ButtonVariant
   size?: 'md' | 'sm'
+  /** Circular capsule corners instead of the default rounded control. */
+  shape?: 'rounded' | 'pill'
   icon?: ReactNode
   className?: string | undefined
   children?: ReactNode
@@ -25,13 +27,14 @@ type ButtonProps = {
 /**
  * Render a button.
  * @param props.variant - visual family (default 'ghost').
- * @param props.size - 'md' 36px control with 12px corners or 'sm' 28px control with 8px corners.
+ * @param props.size - 'md' 36px control or 'sm' 28px control.
+ * @param props.shape - 'rounded' 12px/8px corners (default) or 'pill' 18px/14px circular corners.
  * @param props.icon - optional leading 16px icon node.
  * @param ref - native button for focus management and overlay anchors.
  * @returns the button element; native button attributes pass through.
  */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({
-  variant = 'ghost', size = 'md', icon, className, children, loading = false, feedback, ...rest
+  variant = 'ghost', size = 'md', shape = 'rounded', icon, className, children, loading = false, feedback, ...rest
 }, ref) {
   const busy = loading || rest['aria-busy'] === true || rest['aria-busy'] === 'true'
   const showingFeedback = feedback !== undefined
@@ -79,7 +82,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   }, [busy, showingFeedback, feedbackLabel])
   const compact = (busy || showingFeedback) && !labelFits
   return (
-    <button ref={attachButton} type="button" className={clsx(css.button, css[variant], css[size], className)} {...rest}
+    <button ref={attachButton} type="button" className={clsx(css.button, css[variant], css[size], shape === 'pill' && css.pill, className)} {...rest}
       disabled={rest.disabled || busy} aria-busy={busy ? true : rest['aria-busy']}
       aria-label={busy || showingFeedback ? statusLabel : rest['aria-label']}
       title={compact && statusLabel !== undefined ? statusLabel : rest.title}

@@ -1,14 +1,12 @@
-/* Every color resolves through a `--dsw-alias-*` token. Bare `--border` /
- * `--surface` / `--text-*` names, which nothing in this app defines, would
- * render the light-mode literals written as their fallbacks and stay light
- * under the dark theme. */
-
+/* Models compose shared controls; local styles own layout and semantic states. */
 .section {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
   max-width: 720px;
+  container-type: inline-size;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -25,7 +23,6 @@
   font-size: 16px;
   line-height: 24px;
   font-weight: 500;
-  color: var(--dsw-alias-label-primary);
 }
 
 .intro {
@@ -35,18 +32,30 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.notice {
+.notice,
+.savedNotice,
+.advancedHint,
+.error {
   margin: 0;
   font-size: 12px;
   line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.notice {
   color: var(--dsw-alias-state-warn-label);
 }
 
 .savedNotice {
-  margin: 0;
-  font-size: 12px;
-  line-height: 18px;
   color: var(--dsw-alias-state-success-primary);
+}
+
+.advancedHint {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.error {
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .visuallyHidden {
@@ -63,60 +72,62 @@
 
 .buttonAnchor {
   display: inline-flex;
+  min-width: 0;
 }
 
 .rows {
   list-style: none;
-  /* Extra air between the title/intro block and the first provider card. */
   margin: 12px 0 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 
-/* Provider cards share the settings material; editors use the inset module fill. */
 .rowCard {
   border: 0.5px solid var(--dsw-alias-settings-card-stroke);
   background: var(--dsw-alias-settings-card-fill);
-  border-radius: var(--dsw-radius-xl);
-  padding: 12px 14px;
+  border-radius: var(--dsw-radius-md);
+  padding: 12px 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 
 .rowHead {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
 }
 
 .rowIdentity {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 8px;
   min-width: 0;
+  flex: 1;
 }
 
 .rowName {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 14px;
   line-height: 22px;
   font-weight: 500;
-  color: var(--dsw-alias-label-primary);
 }
 
-/* Reads as an annotation on the name, not as a second name: caption size and
-   the secondary label tone, so it never competes with the row's own title. It
-   sits inside `rowIdentity` with the credential dot, which is what keeps it
-   beside the name rather than drifting toward the actions. */
 .rowTag {
   flex: none;
-  padding: 1px 6px;
+  padding: 0 4px;
   border: 0.5px solid var(--dsw-alias-border-l3);
   border-radius: var(--dsw-radius-xs);
-  font-size: 11px;
-  line-height: 16px;
+  font-size: 12px;
+  line-height: 18px;
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -140,213 +151,109 @@
 
 .accountStatus {
   display: inline-flex;
-  flex: none;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  line-height: 20px;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 18px;
   color: var(--dsw-alias-state-success-primary);
 }
 
 .rowActions {
   display: inline-flex;
   align-items: center;
+  flex: none;
   gap: 4px;
   margin-left: auto;
 }
 
-/* `box-sizing` on every control here: the app has no global border-box reset,
-   so without it the outlined variants stand 2px taller than the filled ones
-   they sit beside (Cancel next to Apply, Edit next to Delete). */
-.primaryButton,
-.secondaryButton,
-.addButton {
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 36px;
-  padding: 0 14px;
-  border: none;
-  border-radius: var(--dsw-radius-md);
-  font: inherit;
-  font-size: 14px;
-  line-height: 22px;
-  cursor: pointer;
-}
-
-.primaryButton {
-  background: var(--dsw-alias-button-primary-fill);
-  color: var(--dsw-alias-label-primary-foreground);
-}
-
-.primaryButton:hover:not(:disabled) {
-  background: var(--dsw-alias-button-primary-hover);
-}
-
-.secondaryButton,
-.addButton {
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  background: transparent;
-  color: var(--dsw-alias-label-primary);
-}
-
-.secondaryButton:hover:not(:disabled),
-.addButton:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.secondaryButton:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover-solid);
-}
-
-.dangerButton {
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 36px;
-  padding: 0 14px;
-  border: none;
-  border-radius: var(--dsw-radius-md);
-  background: transparent;
+.dangerButton,
+.deleteConfirm:not(:disabled) {
   color: var(--dsw-alias-state-error-primary);
-  font: inherit;
-  font-size: 14px;
-  line-height: 22px;
-  cursor: pointer;
 }
 
-.dangerButton:hover:not(:disabled) {
+.dangerButton:hover:not(:disabled),
+.iconButtonDanger:hover:not(:disabled),
+.deleteConfirm:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
 }
 
-/* Provider-row controls use the compact Button size. */
-.rowActions .secondaryButton,
-.rowActions .dangerButton {
-  height: 28px;
-  padding: 0 10px;
-  border-radius: var(--dsw-radius-sm);
-  font-size: 12px;
-  line-height: 18px;
+.deleteConfirm:not(:disabled) {
+  border-color: var(--dsw-alias-state-error-primary);
 }
 
-.primaryButton:disabled,
-.secondaryButton:disabled,
-.dangerButton:disabled,
-.addButton:disabled,
-.linkButton:disabled,
-.addModelButton:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.primaryButton:focus-visible,
-.secondaryButton:focus-visible,
-.dangerButton:focus-visible,
-.addButton:focus-visible,
-.linkButton:focus-visible,
-.addModelButton:focus-visible,
-.iconButton:focus-visible,
-.customizedSummary:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
-}
-
-/* Editing surface: a filled module on the panel, matching the settings
-   selector fill rather than adding another outline inside the row. */
-.editor {
-  border-radius: var(--dsw-radius-lg);
+.editor,
+.addCard,
+.setupCard {
+  border-radius: var(--dsw-radius-md);
   background: var(--dsw-alias-bg-module-platform);
-  padding: 14px 16px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
+  min-width: 0;
+  list-style: none;
+}
+
+.addCard .editor,
+.setupCard .editor {
+  background: none;
+  padding: 0;
 }
 
 .editorHeader {
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: 8px;
+  min-width: 0;
 }
 
 .editorTitle {
   font-size: 14px;
   line-height: 22px;
   font-weight: 500;
-  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
 }
 
 .editorRoute {
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  min-width: 0;
+  gap: 8px;
 }
 
 .fieldLabel {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   font-size: 12px;
   line-height: 18px;
   font-weight: 500;
   color: var(--dsw-alias-label-secondary);
 }
 
-.helpButton {
-  width: 16px;
-  height: 16px;
+.helpButton,
+.iconButton {
+  flex: none;
+  width: 28px;
   padding: 0;
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: 50%;
-  corner-shape: round;
-  background: transparent;
   color: var(--dsw-alias-label-tertiary);
-  font: inherit;
-  font-size: 11px;
-  line-height: 15px;
-  text-align: center;
-  cursor: help;
 }
 
-.helpButton:hover,
-.helpButton:focus-visible {
+.helpButton:hover:not(:disabled),
+.iconButton:hover:not(:disabled) {
   color: var(--dsw-alias-label-primary);
-  border-color: var(--dsw-alias-label-tertiary);
 }
 
 .linkButton {
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  height: 28px;
-  padding: 0 10px;
-  border: none;
-  border-radius: var(--dsw-radius-sm);
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  font: inherit;
-  font-size: 12px;
-  line-height: 18px;
-  cursor: pointer;
-}
-
-.linkButton:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-secondary);
-}
-
-.advancedHint {
-  margin: 0;
-  font-size: 12px;
-  line-height: 18px;
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -356,83 +263,48 @@
   gap: 8px;
 }
 
-.addBlock {
+.addBlock,
+.addPanel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
+  min-width: 0;
 }
 
-/* The one entry to the add card, spanning the same width as the rows above. */
 .addActions {
   display: flex;
 }
 
 .addButton {
-  /* Overrides the shared button base above: this is not a pill sitting in a
-     footer but the last slot of the provider list, so it fills the row and
-     repeats the row cards' corner. Dashed, like every other "nothing here yet"
-     affordance on this page, to read as a place rather than a command. */
-  flex: 1 1 0;
-  min-width: 180px;
-  gap: 6px;
-  height: 44px;
-  border: 1px dashed var(--dsw-alias-border-l3);
-  border-radius: var(--dsw-radius-lg);
+  flex: 1;
+  min-width: 0;
 }
 
-/* The add card's mode switch with the one-line purpose of the chosen mode
-   beneath it; the switch hugs its labels rather than spanning the card. */
 .addModes {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
-}
-
-/* One panel per mode. Both stay mounted while the card is open; the hidden
-   attribute must win over the panel's own display, or the inactive draft
-   would show beneath the active one. */
-.addPanel {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  min-width: 0;
 }
 
 .addPanel[hidden] {
   display: none;
 }
 
-.addCard,
-.setupCard {
-  border-radius: var(--dsw-radius-lg);
-  background: var(--dsw-alias-bg-module-platform);
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  list-style: none;
-}
-
-/* Nested in a card that already carries the module chrome. */
-.addCard .editor,
-.setupCard .editor {
-  background: none;
-  padding: 0;
-}
-
 .customized {
   border-top: 0.5px solid var(--dsw-alias-border-l2);
-  padding-top: 10px;
+  padding-top: 12px;
+  min-width: 0;
 }
 
-/* Native disclosure marker replaced by a rotating chevron: the built-in
-   triangle differs per engine and cannot take the label color. */
 .customizedSummary {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: fit-content;
-  padding: 2px 4px;
+  min-height: 28px;
+  padding: 0 4px;
   margin-left: -4px;
   border-radius: var(--dsw-radius-sm);
   cursor: pointer;
@@ -447,50 +319,56 @@
   display: none;
 }
 
-.customizedSummary::before {
-  content: '';
-  width: 5px;
-  height: 5px;
-  border-right: 1.5px solid currentcolor;
-  border-bottom: 1.5px solid currentcolor;
-  transform: rotate(-45deg) translate(-1px, -1px);
+.customizedSummary > svg {
+  flex: none;
+  transform: rotate(-90deg);
   transition: transform var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
 
-.customized[open] > .customizedSummary::before {
-  transform: rotate(45deg) translate(-1px, -1px);
+.customized[open] > .customizedSummary > svg {
+  transform: rotate(0);
 }
 
 .customizedSummary:hover {
   color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.customizedBody {
+.customizedSummary:focus-visible {
+  outline: 2px solid var(--dsw-alias-label-primary);
+  outline-offset: -2px;
+}
+
+.customizedBody,
+.modelCatalog {
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding-top: 12px;
+  min-width: 0;
 }
 
 .modelCatalog {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-top: 12px;
   border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .modelCatalogHeading {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.modelCatalogTitle,
+.modelFieldLabel {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
 }
 
 .modelCatalogTitle {
-  font-size: 12px;
-  line-height: 18px;
   font-weight: 500;
-  color: var(--dsw-alias-label-secondary);
 }
 
 .modelCatalogMeta,
@@ -505,65 +383,35 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 
 .modelListHead {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .modelEntry {
-  border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: var(--dsw-radius-lg);
-  padding: 6px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  padding: 8px;
+  min-width: 0;
 }
 
 .modelRow {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 6px;
-}
-
-/* Square, label-free affordances: the row's own inputs carry the meaning, so
-   the actions stay glyphs and announce themselves through aria-label. */
-.iconButton {
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: var(--dsw-radius-sm);
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  cursor: pointer;
-}
-
-.iconButton:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.iconButton:disabled {
-  cursor: default;
-  opacity: 0.4;
-}
-
-/* The delete glyph keeps the danger tint the rest of the section uses. */
-.iconButtonDanger:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover-danger);
-  color: var(--dsw-alias-state-error-primary);
+  gap: 8px;
 }
 
 .modelAdvanced {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  padding: 8px 4px 2px;
+  gap: 12px;
+  padding-top: 12px;
 }
 
 .modelField {
@@ -590,208 +438,84 @@
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
-  min-height: 32px;
+  min-height: 28px;
   align-items: center;
 }
 
-.modelFieldLabel {
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 18px;
+.modelCheckbox {
+  gap: 8px;
+  font-size: 14px;
+  line-height: 22px;
 }
 
 .effortGroup {
   margin: 0;
-  padding: 8px 4px 4px;
+  padding: 12px 0 0;
   border: none;
   min-width: 0;
 }
 
 .effortGroup legend {
   padding: 0;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .effortOptions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 8px;
-}
-
-.inputOptions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.inputGroup {
-  padding: 10px 4px;
-}
-
-.inputGroup legend {
-  margin-bottom: 0;
-}
-
-.inputGroupBody {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-top: 8px;
-}
-
-.inputHint {
-  margin: 0;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 18px;
-  letter-spacing: normal;
-}
-
-.effortOption {
-  box-sizing: border-box;
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 28px;
-  padding: 0 10px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: var(--dsw-radius-button-sm);
-  color: var(--dsw-alias-label-primary);
-  font-size: 12px;
-  line-height: 18px;
-  white-space: nowrap;
-  cursor: pointer;
-  user-select: none;
-}
-
-.effortOption:hover:not(:has(input:disabled)):not(:has(input:checked)) {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.effortOption:has(input:checked) {
-  border-color: var(--dsw-alias-state-business-primary);
-  background: var(--dsw-alias-interactive-bg-active);
-}
-
-.effortOption:has(input:focus-visible) {
-  --dsw-focus-ring-color: var(--dsw-alias-border-l3);
-  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color);
-}
-
-.effortOption input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  margin: 0;
-  appearance: none;
-}
-
-.effortOption:has(input:disabled) {
-  cursor: default;
-  opacity: 0.4;
 }
 
 .modelReasoning {
   grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
-.modelReasoningLabel {
+.modelReasoningLabel,
+.modelReasoningHead {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .modelReasoningHead {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 8px;
 }
 
-/* Level select, API value, and delete action; the column labels share the grid. */
 .modelReasoningRow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
-.modelReasoningRow .selectInput {
-  max-width: none;
-}
-
-.modelReasoningValueInput {
+.modelReasoningValueInput input {
   font-family: var(--ds-font-family-code);
-  font-size: 13px;
 }
 
 .modelEmpty {
   padding: 12px;
   border: 1px dashed var(--dsw-alias-border-l3);
-  border-radius: var(--dsw-radius-lg);
+  border-radius: var(--dsw-radius-md);
   text-align: center;
 }
 
 .addModelButton {
-  box-sizing: border-box;
   align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 28px;
-  padding: 0 10px;
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: var(--dsw-radius-sm);
-  background: transparent;
-  color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: 12px;
-  line-height: 18px;
-  cursor: pointer;
-}
-
-.addModelButton:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .input {
-  box-sizing: border-box;
+  min-width: 0;
   width: 100%;
-  height: 32px;
-  padding: 0 10px;
-  border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: var(--dsw-radius-md);
-  font: inherit;
-  font-size: 14px;
-  line-height: 22px;
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-primary);
-}
-
-.input:focus {
-  outline: none;
-  border-color: var(--dsw-alias-state-business-primary);
-}
-
-.input::placeholder {
-  color: var(--dsw-alias-label-placeholder);
-}
-
-.input:disabled {
-  opacity: 0.6;
-  cursor: default;
 }
 
 .keyInput {
   position: relative;
+  min-width: 0;
 }
 
 .keyInputFilled {
@@ -800,112 +524,48 @@
 
 .keyToggle {
   position: absolute;
-  inset: 1px 1px 1px auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
+  top: 4px;
+  right: 4px;
+  width: 28px;
   padding: 0;
-  border: none;
-  border-radius: var(--dsw-radius-md);
-  background: none;
   color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-}
-
-.keyToggle:hover:not(:disabled) {
-  color: var(--dsw-alias-label-primary);
-}
-
-.keyToggle:focus-visible {
-  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
-  outline-offset: -2px;
-}
-
-.keyToggle:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-/* Select variant of .input: replaces the OS arrow (which sits flush against
-   the right edge) with the shared 12px chevron inset like the composer's
-   .select chips; the right pad reserves its cell. */
-.selectInput {
-  appearance: none;
-  padding-right: 32px;
-  /* Data-URI SVGs cannot resolve CSS variables; #81858C is the caption gray
-     shared by both themes. */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2381858C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  background-size: 12px 12px;
-}
-
-.error {
-  margin: 0;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-state-error-primary);
 }
 
 .deleteDialog {
   width: min(480px, 100%);
-}
-
-.deleteConfirm:not(:disabled) {
-  border-color: var(--dsw-alias-state-error-primary);
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.deleteConfirm:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover-danger);
-}
-
-/* Icon-button label seat: named for assistive tech and for the tests that
-   query these controls by their text. */
-.hiddenLabel {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .customizedSummary::before,
-  .switchThumb {
-    transition: none;
-  }
+  border-radius: var(--dsw-radius-dialog);
 }
 
 .fetchDialog {
-  max-width: 520px;
-
-  /* The candidate list scrolls inside this dialog, an elevated surface, so the
-     scrollbar indirection is rebound here rather than on the scrolling child:
-     the elevation choice belongs with the surface and inherits down (see
-     ui-theme styles/scrollbar.css for the contract). */
+  width: min(520px, 100%);
+  max-height: 100%;
+  min-height: 0;
+  border-radius: var(--dsw-radius-dialog);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
+.fetchDialogContent {
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .candidateToolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .candidateSearch {
-  min-width: 0;
-  flex: 1 1 240px;
+  flex: 1 1 160px;
 }
 
 .candidateList {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   max-height: 320px;
   margin: 0;
   overflow-y: auto;
@@ -914,31 +574,61 @@
 }
 
 .candidate {
-  border-radius: var(--dsw-radius-md);
+  border-radius: var(--dsw-radius-sm);
+}
+
+.candidate:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .candidateLabel {
+  box-sizing: border-box;
   display: flex;
-  align-items: center;
+  width: 100%;
   gap: 8px;
-  padding: 6px 8px;
-  cursor: pointer;
+  padding: 8px;
+  font-size: 14px;
+  line-height: 22px;
 }
 
-.candidateId {
-  flex: 1 1 auto;
+.candidateLabel > span {
   min-width: 0;
+  overflow-wrap: anywhere;
   font-family: var(--ds-font-family-code);
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .candidateEmpty {
   margin: 24px 0;
   color: var(--dsw-alias-label-secondary);
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 14px;
+  line-height: 22px;
   text-align: center;
+}
+
+@container (max-width: 480px) {
+  .modelRow {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .modelRow > :first-child {
+    grid-column: 1 / -1;
+  }
+
+  .modelAdvanced {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rowIdentity {
+    flex-basis: 100%;
+  }
+
+  .rowActions {
+    margin-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .customizedSummary > svg {
+    transition: none;
+  }
 }

@@ -25,7 +25,7 @@ import { useEffect, useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { CredentialInfo, LlmNativeAuth, SettingsNamespaceView, SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import { SettingsSelect, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconChevronDownOutlineRegular, IconQuestionOutlineRegular, Input, SettingsSelect, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   DeepSeekModelsEditor, modelDrafts, validateDeepSeekModels,
 } from './DeepSeekModelsEditor.tsx'
@@ -205,7 +205,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const accountProvider = props.provider === 'deepseek-account'
   const layout = accountProvider ? 'deepseek' : layoutOf(namespace.ns)
   const accountModelNode = schema.nodeAtPath(root, [...settingsPath, 'models'])
-  const accountDefaults = modelDrafts(accountModelNode?.meta.extra?.legacyModelDefaults
+  const legacyModelDefaults = schema.getPath(accountModelNode?.meta.extra, ['legacyModelDefaults'])
+  const accountDefaults = modelDrafts(legacyModelDefaults
     ?? schema.getPath(namespace.base, [...settingsPath, 'models'])
     ?? accountModelNode?.meta.default)
   const catalogModels = props.catalogModels?.map(model => ({
@@ -447,7 +448,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       : t('keyHelp').replace('{env}', () => visibleRefs.join(' / '))
     const authHelp = keyHelp === undefined ? null : (
       <Tooltip label={keyHelp} side="right" delayMs={0} focusDelayMs={0} portal openOnClick>
-        <button type="button" className={styles['helpButton']} aria-label={t('authHelp')}>?</button>
+        <Button size="sm" className={styles['helpButton']} icon={<IconQuestionOutlineRegular size={16} />} aria-label={t('authHelp')} />
       </Tooltip>
     )
     // A provider with no native key authentication has no key for this field to store.
@@ -476,24 +477,24 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               {authHelp}
             </span>
             <Tooltip label={shownKeyFailure === undefined ? '' : t(shownKeyFailure)} disabled={shownKeyFailure === undefined} portal side="bottom">
-            <ApiKeyInput
-              t={t}
-              value={keyDraft}
-              placeholder={keyPlaceholder}
-              aria-label={t('keyInput')}
-              aria-invalid={shownKeyFailure !== undefined}
-              aria-describedby={[credentialHint === undefined ? undefined : `${props.provider}-credential-hint`, shownKeyFailure === undefined ? undefined : keyErrorId].filter(Boolean).join(' ') || undefined}
-              required={props.credentialRequired === true}
-              autoFocus={props.autoFocusCredential === true}
-              disabled={disabled}
-              onChange={(event) => { setKeyDraft(event.target.value) }}
-            />
+              <ApiKeyInput
+                t={t}
+                value={keyDraft}
+                placeholder={keyPlaceholder}
+                aria-label={t('keyInput')}
+                aria-invalid={shownKeyFailure !== undefined}
+                aria-describedby={[credentialHint === undefined ? undefined : `${props.provider}-credential-hint`, shownKeyFailure === undefined ? undefined : keyErrorId].filter(Boolean).join(' ') || undefined}
+                required={props.credentialRequired === true}
+                autoFocus={props.autoFocusCredential === true}
+                disabled={disabled}
+                onChange={(event) => { setKeyDraft(event.target.value) }}
+              />
             </Tooltip>
             {credentialHint === undefined ? null : <p id={`${props.provider}-credential-hint`} className={styles[missingRefs ? 'notice' : detectedRef === undefined ? 'advancedHint' : 'savedNotice']}>{credentialHint}</p>}
             {shownKeyFailure === undefined ? null : <span className={styles['visuallyHidden']} id={keyErrorId}>{t(shownKeyFailure)}</span>}
           </div>}
         {props.credentialOnly === true ? null : <details className={styles['customized']}>
-          <summary className={styles['customizedSummary']}>{t('customized')}</summary>
+          <summary className={styles['customizedSummary']}><IconChevronDownOutlineRegular size={16} />{t('customized')}</summary>
           <div className={styles['customizedBody']}>
             {/* The name and the protocol are the create card's two remaining
                 profile fields; a route the adapter ships defaults both from
@@ -502,7 +503,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               ? (
                 <div className={styles['field']}>
                   <span className={styles['fieldLabel']}>{t('customDisplayName')}</span>
-                  <input
+                  <Input variant="form"
                     className={styles['input']}
                     type="text"
                     value={stringAt(draft, 'displayName') ?? ''}
@@ -524,7 +525,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               : null}
             <div className={styles['field']}>
               <span className={styles['fieldLabel']}>{t('baseUrl')}</span>
-              <input
+              <Input variant="form"
                 className={styles['input']}
                 type="text"
                 value={stringAt(draft, 'baseURL') ?? ''}
@@ -607,7 +608,9 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       {layout === 'unknown'
         ? <p className={styles['advancedHint']}>{`${t('advancedHint')} (${namespace.ns})`}</p>
         : curatedFields(layout)}
-      {failure !== undefined && !failureDismissed ? <Toast key={failureSequence} text={failure} holdMs={9000} onDone={() => { setFailureDismissed(true) }} /> : null}
+      {failure !== undefined && !failureDismissed
+        ? <Toast key={failureSequence} text={failure} holdMs={9000} onDone={() => { setFailureDismissed(true) }} />
+        : null}
       <EditorFooter
         t={t}
         busy={busy}
@@ -619,8 +622,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         submitBusyLabelKey={props.submitBusyLabelKey ?? 'applying'}
         submitHint={failure ?? (shownKeyFailure !== undefined ? t(shownKeyFailure)
           : props.credentialRequired === true && keyValue.length === 0 ? t('keyRequired')
-          : props.credentialOnly !== true && modelFailure !== undefined
-            ? `${t('model')} ${String(modelFailure.index + 1)}: ${t(modelFailure.key)}` : undefined)}
+            : props.credentialOnly !== true && modelFailure !== undefined
+              ? `${t('model')} ${String(modelFailure.index + 1)}: ${t(modelFailure.key)}` : undefined)}
         {...props.cancelLabelKey === undefined ? {} : { cancelLabelKey: props.cancelLabelKey }}
         onCancel={() => { props.onClose(false) }}
         onSubmit={() => { props.onSubmitCredential?.(); void apply() }}

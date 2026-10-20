@@ -1,6 +1,7 @@
 /** Write-only credential input with the same reveal behavior as masked conversation text. */
 import { forwardRef, useState } from 'react'
 import type { InputHTMLAttributes, ReactNode } from 'react'
+import { Button, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -26,7 +27,7 @@ export const ApiKeyInput = forwardRef<HTMLInputElement, ApiKeyInputProps>(functi
   const revealed = value.length > 0 && revealedValue === value
   return (
     <div className={styles['keyInput']}>
-      <input
+      <Input variant="form"
         {...props}
         ref={ref}
         className={`${styles['input']} ${value.length > 0 ? styles['keyInputFilled'] : ''}`}
@@ -38,8 +39,8 @@ export const ApiKeyInput = forwardRef<HTMLInputElement, ApiKeyInputProps>(functi
           props.onChange?.(event)
         }}
       />
-      {value.length === 0 ? null : <button
-        type="button"
+      {value.length === 0 ? null : <Button
+        size="sm"
         className={styles['keyToggle']}
         aria-label={t(revealed ? 'keyHide' : 'keyReveal')}
         aria-pressed={revealed}
@@ -49,7 +50,7 @@ export const ApiKeyInput = forwardRef<HTMLInputElement, ApiKeyInputProps>(functi
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" aria-hidden="true">
           <path d={revealed ? EYE_OFF_PATH : EYE_PATH} />
         </svg>
-      </button>}
+      </Button>}
     </div>
   )
 })
