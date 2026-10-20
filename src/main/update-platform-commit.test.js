@@ -36,6 +36,7 @@ test('updater download success followed by spawn failure releases protection and
         : { ok: true, lockId: 'qa-lock', owner: 'qa' } };
     } });
   const updater = new EventEmitter();
+  info.assetUrl = 'https://example.test/Setup.exe';
   info.blockmapUrl = 'https://example.test/Setup.exe.blockmap';
   info.updaterMetadataUrl = 'https://example.test/latest.yml';
   updater.getOrCreateDownloadHelper = async () => ({ cacheDir: path.dirname(file) });

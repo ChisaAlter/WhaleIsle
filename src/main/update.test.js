@@ -664,7 +664,7 @@ test('installer reuses a freshly verified cache, but never launches a corrupt re
   assert.equal(result.cancelled, true);
   assert.equal(downloads, 0);
   assert.equal(installs, 1);
-  assert.deepEqual(states[0], { phase: 'downloading', version: '9.9.9', percent: 0 });
+  assert.deepEqual(states[0], { phase: 'checking', version: '9.9.9', route: 'github', downloadMode: 'full', stage: 'checksum' });
   assert.ok(states.some((state) => state.phase === 'verifying' && state.version === '9.9.9'));
   assert.ok(states.some((state) => state.phase === 'installing' && state.version === '9.9.9'));
   fs.writeFileSync(file, 'damaged-cache');
@@ -1031,7 +1031,7 @@ function releaseWithChecksum() {
     html_url: 'https://example.test/r',
     body: '',
     assets: [
-      { name: 'Deepseek-Harness-Desktop-Setup-0.2.6.exe', size: 123456, browser_download_url: 'https://example.test/setup.exe' },
+      { name: 'Deepseek-Harness-Desktop-Setup-0.2.6.exe', size: 123456, browser_download_url: 'https://example.test/Deepseek-Harness-Desktop-Setup-0.2.6.exe' },
       { name: CHECKSUM_ASSET_NAME, browser_download_url: 'https://example.test/SHA512SUMS.txt' },
       { name: 'Deepseek-Harness-Desktop-Setup-0.2.6.exe.blockmap', browser_download_url: 'https://example.test/setup.exe.blockmap' },
       { name: 'latest.yml', browser_download_url: 'https://example.test/latest.yml' },
@@ -1120,7 +1120,7 @@ test('explicit incremental update uses its confirmed release and publishes downl
     assert.equal(fetched.some((url) => url.includes('setup.exe')), false);
     assert.deepEqual(fetched, ['https://example.test/SHA512SUMS.txt'], 'confirmed metadata bypasses releases/latest');
     assert.deepEqual(states.map((state) => [state.phase, state.version]), [
-      ['downloading', '0.2.6'], ['downloading', '0.2.6'], ['verifying', '0.2.6'], ['installing', '0.2.6'],
+      ['checking', '0.2.6'], ['downloading', '0.2.6'], ['downloading', '0.2.6'], ['verifying', '0.2.6'], ['installing', '0.2.6'],
     ]);
   } finally {
     setUpdateStateSink(null);
@@ -1137,7 +1137,8 @@ test('default full download bypasses the updater and publishes its actual failur
   const seenGet = [];
   const states = [];
   setUpdateStateSink((state) => states.push(state));
-  global.fetch = async () => ({ ok: true, status: 200, json: async () => releaseWithChecksum() });
+  global.fetch = async () => ({ ok: true, status: 200, json: async () => releaseWithChecksum(),
+    text: async () => `${'0'.repeat(128)}  Deepseek-Harness-Desktop-Setup-0.2.6.exe` });
   https.get = (target, _options, onResponse) => {
     seenGet.push(String(target));
     const response = new EventEmitter();
@@ -1162,7 +1163,7 @@ test('default full download bypasses the updater and publishes its actual failur
     );
     assert.equal(fake.calls.checkForUpdates, 0, 'full never attempts the updater channel');
     assert.equal(fake.calls.downloadUpdate, 0);
-    assert.ok(seenGet.some((url) => url.includes('setup.exe')), 'full must reach downloadFile');
+    assert.ok(seenGet.some((url) => url.endsWith('Deepseek-Harness-Desktop-Setup-0.2.6.exe')), 'full must reach downloadFile');
     assert.equal(states.at(-1).phase, 'error');
     assert.equal(states.at(-1).version, '0.2.6');
     assert.equal(states.at(-1).failedOperation, 'download');
@@ -1175,6 +1176,8 @@ test('default full download bypasses the updater and publishes its actual failur
 
 test('failed incremental update stops without silently requesting the full installer', async (t) => {
   useReleasePlatform(t, 'win32');
+  t.mock.method(global, 'fetch', async () => ({ ok: true,
+    text: async () => `${'0'.repeat(128)}  Deepseek-Harness-Desktop-Setup-0.2.6.exe` }));
   const previousGet = https.get;
   const states = [];
   let fullDownloads = 0;

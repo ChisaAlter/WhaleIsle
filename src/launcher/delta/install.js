@@ -22,7 +22,7 @@ function fetchRelease(route, tag, deps = {}) {
   if (typeof deps.fetchRelease === 'function') {
     return deps.fetchRelease(route, tag);
   }
-  return releaseSource.releaseRaw(route, tag, { timeoutMs: deps.timeoutMs });
+  return releaseSource.releaseRaw(route, tag, { timeoutMs: deps.timeoutMs, signal: deps.signal });
 }
 
 function assetUrl(asset) {
@@ -121,11 +121,8 @@ async function installDelta(tag, onProgress, deps = {}) {
     const dest = path.join(deltaDir, safeName);
 
     const updateMod = deps.update || update;
-    await updateMod.downloadFile(assetUrl(asset), dest, (payload) => {
-      progress({ ...payload, phase: 'download', differential: true });
-    }, { signal: deps.signal });
-    progress({ phase: 'verify' });
-    await updateMod.verifyAssetChecksum(dest, asset.name, checksumUrl);
+    await updateMod.downloadReleaseAsset({ assetUrl: assetUrl(asset), assetName: asset.name, checksumUrl }, dest,
+      (payload) => progress({ ...payload, differential: true }), { signal: deps.signal });
     try {
       // Sidecar lets contributeStatus report the tag the cached artifact
       // belongs to (the filename only carries from/to versions).

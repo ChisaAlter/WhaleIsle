@@ -168,10 +168,13 @@ function AssistantText({ openUi, blockIndex, t, ...props }: Parameters<typeof Ma
   t: ChatViewSlotProps['t']
 }) {
   const renderCodeFence = useCallback<MarkdownCodeFenceRenderer>((fence) => {
-    if (openUi === undefined || (fence.language !== 'openui' && fence.language !== 'openui-lang')) return undefined
+    if (openUi === undefined || (fence.language !== 'whale-ui' && fence.language !== 'openui'
+      && fence.language !== 'openui-lang' && fence.language !== 'dsh-ui')) return undefined
     const instanceId = `${openUi.identity}:${blockIndex}:${fence.sourceOffset}`
-    return <OpenUiFrame key={instanceId} instanceId={instanceId} program={fence.code}
-      streaming={fence.streaming} openUi={openUi} t={t} />
+    const panelSource = openUi.seq === undefined ? undefined
+      : { sourceId: instanceId, order: [openUi.seq, blockIndex, fence.sourceOffset] as const }
+    return <OpenUiFrame key={instanceId} instanceId={instanceId} program={fence.code} language={fence.language}
+      streaming={fence.streaming} panelSource={panelSource} openUi={openUi} t={t} />
   }, [openUi, blockIndex, t])
   return <MarkdownText {...props} renderCodeFence={openUi === undefined ? undefined : renderCodeFence} />
 }

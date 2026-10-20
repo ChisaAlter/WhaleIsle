@@ -237,7 +237,7 @@ test('OpenUI frames retain their navigation veto across names and viewer updates
       contents.emit('will-frame-navigate', event);
       return event.prevented;
     };
-    const first = { name: 'whale-openui:message-1', frameTreeNodeId: 81 };
+    const first = { name: 'whale-ui:message-1', frameTreeNodeId: 81 };
     contents.emit('frame-created', {}, { frame: first });
     first.name = 'renamed';
     const next = { name: '', frameTreeNodeId: 82 };

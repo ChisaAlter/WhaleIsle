@@ -83,7 +83,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx': 'data-plugin-back\n',
       'packages/client/ui-settings-general/src/client/SettingsRoot.tsx': 'data-dsh-settings-close\n',
       'packages/client/ui-primitives/src/markdown/MarkdownText.tsx': 'renderCodeFence MarkdownCodeFenceRenderer\n',
-      'packages/client/ui-chat/src/index.ts': "DSHD_OPENUI_ENABLED name: 'openui'\n",
+      'packages/client/ui-chat/src/index.ts': "DSHD_WHALE_UI_ENABLED name: 'whale-ui' renderUiTool\n",
       'packages/client/ui-chat/src/client/chat/AssistantMarkdown.tsx': 'OpenUiFrame renderCodeFence\n',
       'packages/experimental/agent-team/src/index.ts': 'registerManagedPolicy\n',
       'packages/experimental/agent-team/src/managed.ts': 'ManagedTeamController\n',

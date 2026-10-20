@@ -10,7 +10,7 @@ Desktop product events use the optional [product analytics service](../product-a
 
 ## Summary
 
-Use this package to render a browser chat from recorded Session conversations, including historical images, localized actions, and restored scroll position. Work-details modes control reasoning previews and process visibility without hiding final answers; Verbose keeps completed-turn process rows visible. Local transcript and steering submissions appear immediately, remain in their original surface, and disappear atomically when authoritative Session records arrive, while queued submissions stay outside Chat. The package does not assemble or modify model requests.
+Use this package to render a browser chat from recorded Session conversations, including historical images, localized actions, and restored scroll position. Work-details modes control reasoning previews and process visibility without hiding final answers; Verbose keeps completed-turn process rows visible. Local transcript and steering submissions appear immediately, remain in their original surface, and disappear atomically when authoritative Session records arrive, while queued submissions stay outside Chat. Desktop capability registration also supplies the generated Whale UI guide and render_ui tool; other profiles retain ordinary Chat presentation.
 
 User-authored surface replacements with Host edit metadata remain visible as revised user messages. Chat accumulates their replaced turn ids, hiding all old turn rows (including failures, retries, process, and tools) from its order, navigation, and legacy summary on live updates, full replay, and pagination. Committing an edit also dismisses a live quota notice owned by that replaced turn without dismissing notices from other turns or Sessions. Compaction replacements remain model-only; recorded events and tool side effects are unchanged.
 
@@ -175,13 +175,21 @@ Active-Turn highlighting is approximate: `readVisibleTurn` binary-searches the f
 -----
 
 <a id="model-experience"></a>
+## Whale UI
+
+When the desktop declares `DSHD_WHALE_UI_ENABLED=1`, its fixed `DSHD_WHALE_UI_HOST` validator supplies the `render_ui` tool and the generated registry guide. New assistant programs use `whale-ui`; `openui`, `openui-lang` and declarative `dsh-ui` history use the same opaque viewer. Tool cards read successful program metadata from the persisted tool result and render through the `tool.call.whale-ui` child slot. They do not infer a Session from current selection.
+
+One Session-scoped store owns assistant panel publications and the input dock. Publications use real log sequence, block index and source offset; hydration, append, source replacement and a clear barrier are deterministic. Browser-local document state remains versioned and opaque to Chat, and legacy storage is retained. State/panel persistence failures stay visible. Actions await the exact Session's prompt queue result and report failures; unrelated bindings are excluded from Form submissions.
+
+The desktop build owns the isolated React19 viewer, resource handlers and fixed engine bundles; the Chat shell remains React18. [Whale UI source](../../../../../src/whale-ui/README.md) and the [product behavior](../../../../../docs/features/openui.md) document the owned runtime and resource limits. Ordinary web/headless profiles do not advertise the desktop surface.
+
 ## Model Experience
 
-None, as this package renders logged conversation state in the browser and registers nothing model-facing.
+On the desktop, the generated Whale UI guide describes the actual registry and adds the render_ui schema to the normal logged tool assembly. `render_ui` returns a short completion result and persists the complete validated program as presentation metadata. User message actions use the ordinary logged prompt path. Other profiles add no model-facing content.
 
 #### KV Cache effect
 
-None; Chat presentation does not assemble or mutate provider requests.
+The desktop guide and tool schema add stable prompt content. A user action creates a normal new prompt; local controls, source inspection, theme changes and persistence do not make model requests.
 
 ## Known Limitations and Deferred Work
 

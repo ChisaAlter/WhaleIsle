@@ -58,9 +58,9 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-sidebar/src/client/SidebarRoot.tsx', includes: ['data-dsh-panel={id}'] },
   { file: 'packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx', includes: ['data-plugin-back'] },
   { file: 'packages/client/ui-settings-general/src/client/SettingsRoot.tsx', includes: ['data-dsh-settings-close'] },
-  // Full Open Intelligent UI is hosted only in assistant-authored fences.
+  // Source-owned Whale UI uses assistant fences and tool-result metadata.
   { file: 'packages/client/ui-primitives/src/markdown/MarkdownText.tsx', includes: ['renderCodeFence', 'MarkdownCodeFenceRenderer'] },
-  { file: 'packages/client/ui-chat/src/index.ts', includes: ['DSHD_OPENUI_ENABLED', "name: 'openui'"] },
+  { file: 'packages/client/ui-chat/src/index.ts', includes: ['DSHD_WHALE_UI_ENABLED', "name: 'whale-ui'", 'renderUiTool'] },
   { file: 'packages/client/ui-chat/src/client/chat/AssistantMarkdown.tsx', includes: ['OpenUiFrame', 'renderCodeFence'] },
   // Local Project continuations use explicit cwd/preset and admission policy.
   // Ordinary Team and Session ownership are not changed by this feature.

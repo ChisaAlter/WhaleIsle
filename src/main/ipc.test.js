@@ -215,6 +215,12 @@ function loadIpc(options = {}) {
     stopExternalDesktop: async () => ({ ok: true, stopped: false }),
     ...(options.runtimeInstall || {}),
   });
+  if (options.launcherPackage !== undefined) {
+    stub('../launcher/product', {
+      ...require('../launcher/product'),
+      isLauncherPackage: () => options.launcherPackage,
+    });
+  }
   stub('../launcher/delta/install', {
     installDelta: options.installDelta || (async () => ({ ok: true, mode: 'delta' })),
   });
@@ -329,6 +335,7 @@ function loadIpc(options = {}) {
   stub('./openui', {
     openuiViewer: options.openuiViewer || (async () => ''),
     openuiApi: options.openuiApi || (async () => ({ status: 200, body: {} })),
+    openuiBundle: options.openuiBundle || (async () => ''),
   });
   stub('./ipc-authorization', {
     IPC_ROLES,
@@ -433,14 +440,16 @@ test('OpenUI IPC accepts only the trusted harness main frame and preserves its r
     getHarnessOrigin: () => mainFrame.url,
     openuiViewer: async () => { calls.push(['viewer']); return viewer; },
     openuiApi: async (input) => { calls.push(['api', input]); return response; },
+    openuiBundle: async (input) => { calls.push(['bundle', input]); return 'd2hhbGU='; },
   });
   try {
     const request = { path: '/api/wiki', query: { title: 'Kyoto' } };
     const trusted = { sender: harness, senderFrame: mainFrame };
     assert.equal(await ipc.invoke('shell:openui-viewer', trusted), viewer);
     assert.deepEqual(await ipc.invoke('shell:openui-api', trusted, request), response);
-    assert.deepEqual(calls, [['viewer'], ['api', request]]);
-    for (const channel of ['shell:openui-viewer', 'shell:openui-api']) {
+    assert.equal(await ipc.invoke('shell:openui-bundle', trusted, { name: 'mermaid.js' }), 'd2hhbGU=');
+    assert.deepEqual(calls, [['viewer'], ['api', request], ['bundle', { name: 'mermaid.js' }]]);
+    for (const channel of ['shell:openui-viewer', 'shell:openui-api', 'shell:openui-bundle']) {
       for (const event of [bootEvent(), launcherEvent(),
         { sender: harness, senderFrame: { url: mainFrame.url } },
         { sender: { ...harness }, senderFrame: mainFrame },
@@ -448,7 +457,7 @@ test('OpenUI IPC accepts only the trusted harness main frame and preserves its r
         await assert.rejects(() => ipc.invoke(channel, event, request), error => error.code === 'ERR_DSH_IPC_SENDER');
       }
     }
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 3);
   } finally {
     ipc.restore();
   }
@@ -2345,6 +2354,150 @@ test('main-confirmed update keeps the exact release and shares the import mainte
   } finally {
     finishInstall();
     importGuard.releaseMaintenance(foreign);
+    ipc.restore();
+  }
+});
+
+test('slim main-confirmed update preserves route and snapshot through the shared maintenance boundary', async () => {
+  const importGuard = require('./import-guard');
+  const calls = [];
+  let finishInstall;
+  let enterInstall;
+  let pending;
+  const installation = new Promise((resolve) => { finishInstall = () => resolve({ ok: true, status: 'installed' }); });
+  const entered = new Promise((resolve) => { enterInstall = resolve; });
+  const expectedCheck = {
+    status: 'available', current: '1.0.0', latest: '9.9.9', tag: 'v9.9.9', route: 'cnb',
+    assetName: 'Whale-Isle-Setup-9.9.9.exe',
+    assetUrl: 'https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v9.9.9/confirmed.exe',
+    checksumUrl: 'https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v9.9.9/SHA512SUMS.txt',
+  };
+  const confirmUnverified = async () => false;
+  const ipc = loadIpc({
+    launcherPackage: true,
+    config: { downloadRoute: 'github' },
+    installUpdate: async () => { assert.fail('slim updates must use managed-runtime installation'); },
+    runtimeInstall: {
+      installRuntime: async (options, onProgress, deps) => {
+        calls.push({ options, deps });
+        assert.equal(importGuard.maintenanceOwner()?.kind, 'install');
+        onProgress({ phase: 'download', percent: 42 });
+        enterInstall();
+        return installation;
+      },
+    },
+  });
+  const foreign = importGuard.acquireMaintenance('import');
+  const progress = [];
+  try {
+    const blocked = await ipc.launcher.installUpdate(null, { expectedCheck, confirmUnverified, downloadMode: 'full' });
+    assert.equal(blocked.error, 'operation-in-progress');
+    assert.equal(calls.length, 0);
+    assert.equal(importGuard.holdsMaintenance(foreign), true);
+    importGuard.releaseMaintenance(foreign);
+
+    pending = ipc.launcher.installUpdate((payload) => progress.push(payload), { expectedCheck, confirmUnverified, downloadMode: 'full' });
+    await Promise.race([entered, pending.then(() => assert.fail('managed-runtime install callback was not reached'))]);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].options, { tag: 'v9.9.9', route: 'cnb', downloadMode: 'full', confirmUnverified });
+    assert.equal(calls[0].options.expectedCheck, undefined, 'trusted installer metadata must travel separately from renderer options');
+    assert.equal(calls[0].deps.expectedCheck, expectedCheck, 'the complete main-confirmed snapshot must retain its identity');
+    assert.equal(calls[0].deps.confirmUnverified, confirmUnverified);
+    assert.deepEqual(progress, [{ phase: 'download', percent: 42 }]);
+    assert.equal(importGuard.acquireMaintenance('import'), null);
+    const competitor = await ipc.invoke('shell:run-import', launcherEvent(), {});
+    assert.equal(competitor.error, 'import-in-progress');
+    assert.equal(ipc.runImportCalls.length, 0);
+
+    finishInstall();
+    assert.equal((await pending).status, 'installed');
+    assert.equal(importGuard.isMaintenanceHeld(), false);
+    assert.equal((await ipc.invoke('shell:run-import', launcherEvent(), {})).ok, true);
+    assert.equal(ipc.runImportCalls.length, 1, 'a later operation must be admitted once the install settles');
+  } finally {
+    finishInstall();
+    if (pending) await pending.catch(() => {});
+    importGuard.releaseMaintenance(foreign);
+    ipc.restore();
+  }
+});
+
+test('slim install IPC never promotes renderer asset metadata to main-owned expectedCheck', async () => {
+  const importGuard = require('./import-guard');
+  const forged = {
+    status: 'available', latest: '9.9.9', tag: 'v9.9.9', route: 'cnb',
+    assetUrl: 'https://attacker.invalid/payload.exe', checksumUrl: 'https://attacker.invalid/SHA512SUMS.txt',
+  };
+  const calls = [];
+  const ipc = loadIpc({
+    launcherPackage: true,
+    runtimeInstall: {
+      installRuntime: async (options, onProgress, deps) => {
+        calls.push({ options, deps });
+        if (onProgress) onProgress({ phase: 'resolve', percent: 0 });
+        return { ok: true, status: 'installed' };
+      },
+    },
+  });
+  const progress = [];
+  try {
+    await ipc.invoke('shell:install-update', launcherEvent(progress), { expectedCheck: forged, downloadMode: 'delta' });
+    assert.equal(calls[0].options.tag, undefined);
+    assert.equal(calls[0].options.route, undefined, 'renderer update metadata must not choose the resolved route');
+    assert.equal(calls[0].options.downloadMode, 'full');
+    assert.equal(calls[0].options.expectedCheck, undefined);
+    assert.equal(calls[0].deps.expectedCheck, undefined);
+
+    await ipc.invoke('shell:install-runtime', launcherEvent(progress), { route: 'github', tag: 'v2.0.0', expectedCheck: forged });
+    assert.equal(calls[1].options.route, 'github');
+    assert.equal(calls[1].options.tag, 'v2.0.0');
+    assert.equal(calls[1].deps.expectedCheck, undefined, 'installRuntimeOp must not copy renderer options.expectedCheck into trusted deps');
+
+    // Only the service's third argument is a main-owned confirmation, even
+    // when a forged renderer field is present in the same call.
+    const mainCheck = { ...forged, tag: 'v2.0.0', route: 'github', assetUrl: 'https://github.com/confirmed.exe' };
+    await ipc.launcher.installRuntime({ expectedCheck: forged }, null, mainCheck);
+    assert.equal(calls[2].deps.expectedCheck, mainCheck);
+    assert.notEqual(calls[2].deps.expectedCheck.assetUrl, forged.assetUrl);
+    assert.equal(progress.length, 2);
+    assert.ok(progress.every((row) => row.channel === 'shell:update-progress'));
+    assert.equal(importGuard.isMaintenanceHeld(), false);
+  } finally {
+    ipc.restore();
+  }
+});
+
+test('slim main-confirmed update refuses unresolved recovery and releases maintenance after failure', async () => {
+  const importGuard = require('./import-guard');
+  const expectedCheck = { status: 'available', tag: 'v9.9.9', route: 'cnb', assetUrl: 'https://cnb.cool/confirmed.exe' };
+  let journal = { phase: 'blocked', pendingTxns: ['slim-import'] };
+  let installs = 0;
+  const ipc = loadIpc({
+    launcherPackage: true,
+    readImportJournal: () => journal,
+    runtimeInstall: {
+      installRuntime: async () => {
+        installs += 1;
+        if (installs === 1) throw new Error('runtime download failed');
+        return { ok: true, status: 'installed' };
+      },
+    },
+  });
+  try {
+    for (const blockedJournal of [journal, { unreadable: true }]) {
+      journal = blockedJournal;
+      const blocked = await ipc.launcher.installUpdate(null, { expectedCheck });
+      assert.equal(blocked.error, 'import-recovery-blocked');
+      assert.equal(installs, 0);
+      assert.equal(importGuard.isMaintenanceHeld(), false);
+    }
+    journal = null;
+    await assert.rejects(() => ipc.launcher.installUpdate(null, { expectedCheck }), /runtime download failed/);
+    assert.equal(importGuard.isMaintenanceHeld(), false, 'a failed managed-runtime install must release the shared slot');
+    assert.equal((await ipc.launcher.installUpdate(null, { expectedCheck })).status, 'installed');
+    assert.equal(installs, 2);
+    assert.equal(importGuard.isMaintenanceHeld(), false);
+  } finally {
     ipc.restore();
   }
 });

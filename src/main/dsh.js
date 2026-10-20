@@ -872,7 +872,8 @@ class DshManager extends EventEmitter {
     Object.assign(env, officeRuntimeEnv());
     env.DSHD_TASK_CONTROL_TOKEN = taskControlToken();
     env.DSHD_PLATFORM_TOKEN = platformToken();
-    env.DSHD_OPENUI_ENABLED = '1';
+    env.DSHD_WHALE_UI_ENABLED = '1';
+    env.DSHD_WHALE_UI_HOST = require('./whale-ui-host').whaleUiHostFile();
     // Producer-coverage declarations: the control plugin reports these as
     // `unavailable` (not `intentional-disabled`) when the flag is set but the
     // service is missing — a load failure must never read as "deliberately off".

@@ -6,8 +6,12 @@ const test = require('node:test');
 
 function loadOpenui(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-openui-'));
-  fs.mkdirSync(path.join(root, 'openui/api'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'openui/viewer.html'), '<!doctype html><title>Trusted local viewer</title>');
+  fs.mkdirSync(path.join(root, 'whale-ui/api'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'whale-ui/assets'), { recursive: true });
+  for (const name of ['mermaid.js', 'three.js', 'echarts-core.js', 'echarts-full.js', 'icons.js', 'standalone-runtime.js']) {
+    fs.writeFileSync(path.join(root, 'whale-ui/assets', name), `trusted:${name}`);
+  }
+  fs.writeFileSync(path.join(root, 'whale-ui/viewer.html'), '<!doctype html><title>Trusted local viewer</title>');
   // The generated route contract is GET(Request) -> JSON Response. A module-
   // local cache makes reloading the handler observable without network calls.
   const routeSource = `
@@ -23,7 +27,7 @@ function loadOpenui(t) {
     };
   `;
   for (const name of ['wiki', 'image-search', 'street-route']) {
-    fs.writeFileSync(path.join(root, `openui/api/${name}.cjs`), routeSource);
+    fs.writeFileSync(path.join(root, `whale-ui/api/${name}.cjs`), routeSource);
   }
   const pathsPath = require.resolve('./paths');
   const openuiPath = require.resolve('./openui');
@@ -40,7 +44,7 @@ function loadOpenui(t) {
     if (previousOpenui) require.cache[openuiPath] = previousOpenui;
     else delete require.cache[openuiPath];
     for (const name of ['wiki', 'image-search', 'street-route']) {
-      delete require.cache[path.join(root, `openui/api/${name}.cjs`)];
+      delete require.cache[path.join(root, `whale-ui/api/${name}.cjs`)];
     }
     fs.rmSync(root, { recursive: true, force: true });
   });
@@ -50,6 +54,16 @@ function loadOpenui(t) {
 test('OpenUI viewer reads only the fixed local HTML artifact', async (t) => {
   const { openuiViewer } = loadOpenui(t);
   assert.equal(await openuiViewer('../../private.html'), '<!doctype html><title>Trusted local viewer</title>');
+});
+
+test('Whale UI bundles accept only the six fixed engine names', async (t) => {
+  const { openuiBundle } = loadOpenui(t);
+  for (const name of ['mermaid.js', 'three.js', 'echarts-core.js', 'echarts-full.js', 'icons.js', 'standalone-runtime.js']) {
+    assert.equal(Buffer.from(await openuiBundle({ name }), 'base64').toString(), `trusted:${name}`);
+  }
+  for (const name of ['../../private.js', 'host.cjs', 'viewer.html', '/mermaid.js', 'MERMAID.js', 'unknown.js', null]) {
+    await assert.rejects(() => openuiBundle({ name }), /Invalid Whale UI bundle request/);
+  }
 });
 
 test('OpenUI API dispatches the three fixed GET handlers with encoded query values', async (t) => {
