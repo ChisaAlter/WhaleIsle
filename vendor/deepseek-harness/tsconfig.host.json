@@ -188,6 +188,7 @@
     "apps/web/tests/jobs-menu-layering.e2e.ts",
     "apps/web/tests/caption-drag-dead-zones.e2e.ts",
     "apps/web/tests/approval-resize-geometry.e2e.ts",
+    "apps/web/tests/composer-typing-keeps-reading.e2e.ts",
     "apps/web/tests/live-job-stream.e2e.ts",
     "apps/web/tests/bash-abort-row.e2e.ts",
     "apps/web/tests/skill-tool-row.e2e.ts",
