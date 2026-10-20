@@ -104,18 +104,23 @@ function Viewer() {
     if (!element) return;
     let frame = 0;
     let lastHeight = 0;
+    let lastTitle = '';
     const measure = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const height = Math.ceil(element.getBoundingClientRect().height);
         if (height !== lastHeight) { lastHeight = height; bridge.post({ type: 'height', height }); }
+        const title = (element.querySelector('h1, h2, h3, [role="heading"]')?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
+        if (title !== lastTitle) { lastTitle = title; bridge.post({ type: 'title', title }); }
       });
     };
     const observer = new ResizeObserver(measure);
     observer.observe(element);
+    const content = new MutationObserver(measure);
+    content.observe(element, { childList: true, subtree: true, characterData: true });
     measure();
     bridge.post({ type: 'ready' });
-    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+    return () => { observer.disconnect(); content.disconnect(); cancelAnimationFrame(frame); };
   }, [bridge]);
 
   useEffect(() => {

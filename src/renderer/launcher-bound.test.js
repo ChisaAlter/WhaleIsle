@@ -76,14 +76,16 @@ test('home component controls track lifecycle and keep rollback separate; availa
   assert.equal(r.calls.filter(call => call.op === 'component-rollback').length, 0, 'cancel preserves the current version');
 });
 
-test('component feedback preserves buttons and layout, shows floating progress and one result, and restores focus', { skip: !hasElectron }, async () => {
+test('component feedback stays on its buttons, shows one result, and restores focus', { skip: !hasElectron }, async () => {
   const r = await runBound({ QA_COMPONENT_FEEDBACK: '1' });
   for (const [before, pending] of [[r.startBefore, r.starting], [r.installBefore, r.installing],
     [r.updateBefore, r.updating], [r.refreshBefore, r.refreshing], [r.uninstallBefore, r.uninstallReading]]) {
     assert.equal(pending.sameButton, true, 'operation preserves its original button DOM');
-    assert.equal(pending.caption, before.caption, 'loading does not replace the original caption');
-    assert.equal(pending.width, before.width, 'spinner preserves button width');
-    assert.equal(pending.height, before.height, 'spinner preserves button height');
+    assert.equal(pending.spinner, true, 'the button shows its own spinner');
+    assert.match(pending.caption, /^(\S{2}(中…?)?|(\S{2} )?\d+%)?$/, 'the button names the pending step');
+    assert.ok(pending.caption || pending.spinner, 'a busy button always shows progress');
+    assert.equal(pending.width, before.width, 'loading keeps the button width');
+    assert.equal(pending.height, before.height, 'loading preserves button height');
     assert.equal(pending.busy, 'true');
     assert.equal(pending.extraFeedbackNodes, 0, 'no extra inline operation text surface');
   }
@@ -100,23 +102,21 @@ test('component feedback preserves buttons and layout, shows floating progress a
   assert.equal(r.failed.modalVisible, false, 'failure result keeps confirmation free');
 
   for (const progress of [r.installing, r.downloading, r.verifying, r.updating]) {
-    assert.equal(progress.progressVisible, true);
-    assert.equal(progress.progressBusy, 'true');
+    assert.equal(progress.progressVisible, false, 'no floating progress panel');
+    assert.equal(progress.busy, 'true');
     assert.equal(progress.modalVisible, false, 'progress does not occupy the confirmation dialog');
     assert.equal(progress.noticeVisible, false, 'pending progress cannot report a completed result');
     assert.equal(progress.extraFeedbackNodes, 0);
   }
-  assert.match(r.downloading.progressBody, /正在下载组件 42%/);
-  assert.match(r.verifying.progressBody, /正在校验组件 60%/);
-  assert.equal(r.installed.noticeTitle, '鲸桥安装完成');
-  assert.match(r.installed.noticeBody, /当前版本为 v1\.0\.3/);
-  assert.equal(r.installed.progressVisible, false, 'completed operation removes its progress panel');
+  assert.match(r.downloading.loadingLabel, /正在下载组件 42%/);
+  assert.match(r.verifying.loadingLabel, /正在校验组件 60%/);
+  assert.equal(r.installed.noticeVisible, false, 'the refreshed row reports a plain install');
+  assert.equal(r.installed.progressVisible, false);
   assert.equal(r.installed.modalVisible, false);
-  assert.equal(r.installed.noticeRole, 'status');
-  assert.match(r.updating.progressBody, /正在下载组件 51%/);
+  assert.match(r.updating.loadingLabel, /正在下载组件 51%/);
   assert.equal(r.updateFailed.noticeTitle, '鲸桥操作未完成');
   assert.equal(r.updateFailed.notices.filter(notice => notice.body === 'fixture package refused').length, 1);
-  assert.equal(r.updateFailed.notices.length, 3, 'update has one result after the earlier failure and install result');
+  assert.equal(r.updateFailed.notices.length, 2, 'update has one result after the earlier failure');
 
   assert.equal(r.persistentErrorInline, false, 'catalog error stays available without a raw inline message');
   assert.equal(r.statusDetails.noticeTitle, '鲸桥状态');
@@ -166,7 +166,7 @@ test('home uses one guarded start action and hides stale diagnostics throughout 
   assert.equal(r.pending.skipDisabled, true);
   assert.equal(r.pending.fullDisabled, true);
   assert.equal(r.pending.diagnosticsHidden, true);
-  assert.equal(r.pending.startText, r.initial.startText, 'loading preserves the retry caption');
+  assert.match(r.pending.startText, /^启动(中…?)?$/, 'the start button shows its pending step');
   assert.equal(r.pending.startBusy, 'true');
   assert.match(r.pending.startLabel, /正在启动/);
   assert.match(r.pending.status, /[1-9]\d* 秒/);
@@ -185,7 +185,7 @@ test('home uses one guarded start action and hides stale diagnostics throughout 
   assert.equal(r.readyHome.diagnosticsHidden, true);
   assert.equal(r.stops, 1);
   assert.equal(r.stopping.stopDisabled, true);
-  assert.equal(r.stopping.stopText, r.readyHome.stopText, 'loading preserves the stop caption');
+  assert.match(r.stopping.stopText, /^关闭(中…?)?$/, 'the stop button shows its pending step');
   assert.equal(r.stopping.stopBusy, 'true');
   assert.match(r.stopping.stopLabel, /正在关闭/);
   assert.equal(r.stopping.startHidden, true);

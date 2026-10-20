@@ -86,6 +86,18 @@ function getStrictUpdater(deps) {
   return strictUpdater;
 }
 
+/**
+ * The generic feed for a CNB-confirmed release: CNB serves the release
+ * directory (latest.yml, installer, blockmaps) and answers single ranges only,
+ * so multi-range requests stay off. GitHub uses the packaged app-update.yml.
+ */
+function feedFor(info) {
+  if (info?.route !== 'cnb') return null;
+  const { ROUTES } = require('../launcher/release-source');
+  const tag = String(info.tag || `v${info.latest || info.version || ''}`).trim();
+  return { provider: 'generic', url: `${ROUTES.cnb.page}/download/${encodeURIComponent(tag)}/`, useMultipleRangeRequest: false };
+}
+
 function readPackagedFlag(deps) {
   if (deps && deps.isPackaged !== undefined) {
     return deps.isPackaged;
@@ -332,6 +344,9 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
     if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '下载已取消' };
     if (!available.ok) return available;
     autoUpdater = available.autoUpdater;
+    const feed = feedFor(expectedCheck);
+    // electron-updater 6.8.9 rebuilds its client from app-update.yml when this is null.
+    if (feed) autoUpdater.setFeedURL(feed); else autoUpdater.clientPromise = null;
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.disableWebInstaller = true;
@@ -390,6 +405,7 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
 
 module.exports = {
   downloadLatestViaUpdater,
+  feedFor,
   differentialAvailability,
   strictNsisUpdaterClass,
   cachedInstallerPath,

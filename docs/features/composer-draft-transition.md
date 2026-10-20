@@ -21,10 +21,12 @@
 - 动效只属于首次草稿发送，不影响滚动、浮层定位和持久化尺寸。
 - 普通输入框的底部预留统计行高度，准入、运行状态和统计投影分别更新时不得折叠；首次发送使用共享慢速 token 和合成层位移；内置 fixed 浮层保留页面 portal，滑行结束清除 transform。
 - Dock 预留统计行和峰谷行的高度，滑动期间终点不随投影更新移动；这是取消发送后停留的前提。
+- 输入不滚动对话：输入框座位渲染在对话滚动容器内、但位于其盒子下方，Lexical 自带的「光标滚入视野」会逐级滚动祖先，曾让上翻阅读中的对话每次按键都往下滑。草稿编辑器的内容变更与光标移动都带 `skip-scroll-into-view`，光标只在草稿自身滚动区（`[data-input-scroll]`）内保持可见（`input/editor/runtime.ts`）。`composer-typing-keeps-reading.e2e.ts` 在上翻后输入、换行增高、超出草稿上限，断言对话 `scrollTop` 不变且光标留在草稿区内。
 
 ## Allowed touch
 
 - `vendor/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/` 及本包定向测试、README 对。
+- `vendor/deepseek-harness/packages/client/ui-conversation/src/client/input/editor/runtime.ts`（输入不滚动对话）与 `apps/web/tests/composer-typing-keeps-reading.e2e.ts`。
 - `vendor/deepseek-harness/packages/client/ui-chat/src/client/chat/TurnTailNodeView.tsx` 与 `ui-chat/tests/chat-view.client.spec.tsx`（操作行保持）。
 - `src/shared/harness-desktop-forks.js` 及其测试（差异标记）。
 - `vendor/deepseek-harness/apps/web/tests/composer-draft-transition.e2e.ts` 及对应 geometry golden；`apps/web/tsconfig.json` 与 `tsconfig.host.json` 仅登记该测试所属编译面。

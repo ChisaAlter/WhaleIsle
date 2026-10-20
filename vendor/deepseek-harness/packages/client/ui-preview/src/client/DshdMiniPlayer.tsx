@@ -21,6 +21,7 @@ import {
 } from './mini-player-state.ts'
 import css from './PreviewPanel.module.css'
 import { BrowserSurfaceSlot } from './BrowserSurfaceSlot.tsx'
+import type { PreviewBounds } from './shell.ts'
 
 type Props = PropsRuntime<'shell.overlay'> & PropsLocale<typeof NS>
 
@@ -38,13 +39,21 @@ function frameRect(): DOMRect | undefined {
   return document.querySelector('[data-shell-overlay]')?.getBoundingClientRect()
 }
 
-function boundsFor(node: HTMLElement): { rect: { x: number; y: number; width: number; height: number }; visible: boolean } | undefined {
+function boundsFor(node: HTMLElement): { rect: PreviewBounds; visible: boolean } | undefined {
   const frame = frameRect()
   if (!frame) return undefined
-  const rect = (node.querySelector('[data-preview-mini-player-viewport]') as HTMLElement | null)?.getBoundingClientRect() ?? node.getBoundingClientRect()
+  const viewport = node.querySelector<HTMLElement>('[data-preview-mini-player-viewport]')
+  const rect = viewport?.getBoundingClientRect() ?? node.getBoundingClientRect()
+  return { rect: guestBounds(rect, viewport), visible: rect.width > 0 && rect.height > 0 }
+}
+
+/** Native guest bounds over the viewport, rounded like the viewport's own corners. */
+function guestBounds(rect: DOMRect, viewport: HTMLElement | null): PreviewBounds {
+  const radius = viewport === null ? 0 : Number.parseFloat(getComputedStyle(viewport).borderTopLeftRadius) || 0
   return {
-    rect: { x: Math.round(rect.left), y: Math.round(rect.top), width: Math.max(1, Math.round(rect.width)), height: Math.max(1, Math.round(rect.height)) },
-    visible: rect.width > 0 && rect.height > 0,
+    x: Math.round(rect.left), y: Math.round(rect.top),
+    width: Math.max(1, Math.round(rect.width)), height: Math.max(1, Math.round(rect.height)),
+    radius,
   }
 }
 
@@ -100,13 +109,10 @@ export function DshdMiniPlayer({ t }: Props): ReactNode {
     const root = rootRef.current
     const runtime = readMiniPlayer().runtime
     if (!root || !runtime) return
-    const viewport = (root.querySelector('[data-preview-mini-player-viewport]') as HTMLElement | null)
+    const viewport = root.querySelector<HTMLElement>('[data-preview-mini-player-viewport]')
     const rect = viewport?.getBoundingClientRect()
     if (!rect || rect.width <= 0 || rect.height <= 0) return
-    void runtime.previewResize(state.previewId, {
-      x: Math.round(rect.left), y: Math.round(rect.top),
-      width: Math.max(1, Math.round(rect.width)), height: Math.max(1, Math.round(rect.height)),
-    })
+    void runtime.previewResize(state.previewId, guestBounds(rect, viewport))
   }, [geometry.x, geometry.y, geometry.width, geometry.height, state.open, state.previewId, state.runtime, state.suspended])
 
   useEffect(() => {

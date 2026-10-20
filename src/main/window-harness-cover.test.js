@@ -276,6 +276,7 @@ test('boot download-log ghost button only stays disabled while saving', async ()
         },
         shellFeedback: {
           mountProgress: () => ({ show() {}, hide() {} }),
+          buttonBusy: () => () => {},
           notice(value) { notices.push(value); },
         },
       },

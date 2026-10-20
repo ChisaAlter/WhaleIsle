@@ -3,7 +3,6 @@
   align-items: center;
   gap: 4px;
   height: 32px;
-  -webkit-app-region: no-drag;
 }
 
 .toggle {

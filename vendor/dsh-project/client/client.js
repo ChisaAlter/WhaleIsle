@@ -1,13 +1,13 @@
 window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   const { createElement: h, useState, useEffect, useLayoutEffect, useRef, useCallback, Fragment } = require('react');
   const { createPortal } = require('react-dom');
-  const { Button, Input, Menu, Modal, Pill, SegmentedTabs, Tag, MarkdownText, Toast, IconFolderCloseRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconChevronRightOutlineRegular, IconPlusOutlineRegular, IconEllipsisOutlineRegular } = require('@deepseek-ai/dsh-client-ui-primitives');
+  const { Button, Input, Menu, Modal, Pill, SegmentedTabs, Tag, MarkdownText, Toast, IconFolderCloseRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconChevronRightOutlineRegular, IconPlusOutlineRegular, IconEllipsisOutlineRegular, IconUsersOutlineRegular, IconChecklistOutlineRegular, useAnchoredPosition } = require('@deepseek-ai/dsh-client-ui-primitives');
   const { createSnapshotStore, defineStore } = require('@deepseek-ai/dsh-client-store');
   const { teamEnglish, teamChinese } = require('@deepseek-ai/dsh-experimental-client-ui-agent-team');
   const NS = 'dsh-project';
   const zh = {
     diffTruncated: '差异过长，仅显示前一部分；请打开目录查看完整改动。', tab: 'Project', more: '更多', rename: '重命名', cancel: '取消', archiveActive: '停止后台工作并归档', archiveHint: '后台工作会停止，工作目录、对话和成果将保留。', team: '团队', add: '添加 Project…', loading: '正在读取…', close: '关闭', refresh: '刷新',
-    requirementGoal: '完整目标', requirementConstraints: '约束', requirementConditions: '完成条件', noRequirementConstraints: '未记录约束。', noRequirementConditions: '未记录完成条件。',
+    requirements: '需求', requirementGoal: '完整目标', requirementConstraints: '约束', requirementConditions: '完成条件', noRequirementConstraints: '未记录约束。', noRequirementConditions: '未记录完成条件。',
     requestRoleDevelopment: '开发', requestRoleReview: '检查', requestRoleDocs: '文档', requestHandover: '等待协调者交付', requestArranging: '正在安排', requestArrangingHint: '协调者正在安排团队开发。', deleted: '已移除', requestDiscussing: '讨论中', requestQueued: '等待开发', requestCancelled: '已取消', requestQueuePosition: '队列第 {position} 项', requestQueueCount: '{count} 项排队', requestEnqueue: '加入开发队列', requestMoveUp: '上移一位', requestMoveDown: '下移一位', requestCancel: '取消需求', requestRejoin: '重新加入队列', requestResume: '继续当前需求', requestResumeQueue: '继续队列', requestRestarted: '应用已重启，等待你继续当前需求', requestQueuePaused: '队列已暂停', requestQueueWaiting: '前一项需求交付后自动开始', requestQueueReady: '等待协调者安排开发', requestDiscussingHint: '需求仍在讨论，确认后加入开发队列。', requestCancelledHint: '已从开发队列取消，要求和已有成果仍保留。', taskCancelled: '已取消需求', taskCancelledEmpty: '还没有取消的需求。',
     archivedHint: '项目已归档。恢复后可继续对话，旧工作不会自动启动。', archiving: '正在停止后台工作并归档…', queued: '排队中', empty: '添加项目目录，开始持续对话。', emptyArchived: '暂无归档 Project。', archived: '已归档', history: '显示归档项目',
     directory: 'Project 工作目录', openDirectory: '打开项目目录', materials: '项目资料', progress: '工作进度',
@@ -43,7 +43,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
 
   };
   const en = {
-    requirementGoal: 'Full goal', requirementConstraints: 'Constraints', requirementConditions: 'Completion conditions', noRequirementConstraints: 'No constraints recorded.', noRequirementConditions: 'No completion conditions recorded.',
+    requirements: 'Requests', requirementGoal: 'Full goal', requirementConstraints: 'Constraints', requirementConditions: 'Completion conditions', noRequirementConstraints: 'No constraints recorded.', noRequirementConditions: 'No completion conditions recorded.',
     requestRoleDevelopment: 'Development', requestRoleReview: 'Review', requestRoleDocs: 'Documentation', requestHandover: 'Awaiting coordinator delivery', requestArranging: 'Arranging work', requestArrangingHint: 'The coordinator is arranging development with the team.', deleted: 'Removed', requestDiscussing: 'Discussing', requestQueued: 'Awaiting development', requestCancelled: 'Cancelled', requestQueuePosition: 'Queue position {position}', requestQueueCount: '{count} queued', requestEnqueue: 'Add to development queue', requestMoveUp: 'Move up', requestMoveDown: 'Move down', requestCancel: 'Cancel request', requestRejoin: 'Rejoin queue', requestResume: 'Continue current request', requestResumeQueue: 'Continue queue', requestRestarted: 'Application restarted; waiting for explicit continuation.', requestQueuePaused: 'Queue paused', requestQueueWaiting: 'Starts automatically after the previous request is delivered', requestQueueReady: 'Waiting for the coordinator to arrange development', requestDiscussingHint: 'This request is being discussed. Add it to the development queue when ready.', requestCancelledHint: 'Removed from the development queue. Requirements and existing results are retained.', taskCancelled: 'Cancelled requests', taskCancelledEmpty: 'No cancelled requests yet.',
     diffTruncated: 'The diff is truncated. Open the directory for the complete changes.', tab: 'Project', more: 'More', rename: 'Rename', cancel: 'Cancel', archiveActive: 'Stop work and archive', archiveHint: 'Background work will stop. Files, conversation and results are retained.', team: 'Team', add: 'Add Project…', loading: 'Loading…', close: 'Close', refresh: 'Refresh',
     archivedHint: 'This Project is archived. Restore it to continue; previous work will not restart automatically.', archiving: 'Stopping work and archiving…', queued: 'Queued', empty: 'Add a project directory to start a continuing conversation.', emptyArchived: 'No archived Projects.', archived: 'Archived', history: 'Show archived projects',
@@ -147,7 +147,6 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     .dsh-project-page button:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
     .dsh-project-header{display:flex;align-items:center;flex:0 0 auto;white-space:nowrap}
     .dsh-project-header-directory{min-width:0;max-width:100%}
-    .dsh-project-header-label{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;flex:0 0 auto}
     .dsh-project-header-path{min-width:0;max-width:280px;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .dsh-project-return-materials{max-width:min(240px,25vw);min-width:0}
     .dsh-project-return-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -270,16 +269,20 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     @keyframes dsh-project-ticker{0%,15%{transform:translateX(0)}85%,100%{transform:translateX(var(--project-ticker-end))}}
     .dsh-project-task-tabs button{min-height:28px;height:28px;padding:0 8px;font:var(--dsw-font-xxs-12)}
     .dsh-project-task-tabs{position:sticky;top:0;z-index:1;padding:4px 0 8px;background:var(--dsw-alias-bg-panel-solid)}
-    .dsh-project-observer{display:flex;flex-direction:column;height:100%;min-height:0;min-width:0;background:transparent;color:var(--dsw-alias-label-primary);font:var(--dsw-font-s-14)}
-    .dsh-project-observer-scroll{flex:1;min-height:0;overflow:auto;scrollbar-color:var(--dsw-alias-border-l3) transparent;scrollbar-gutter:stable}
-    .dsh-project-observer-stack{display:flex;flex-direction:column;gap:8px;height:auto;min-width:0;padding:0 4px 4px}
-    .dsh-project-observer-drag{display:flex;align-items:center;gap:4px;min-width:0;height:32px;flex:none;cursor:grab;color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12)}
-    .dsh-project-observer-drag>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-left:8px}.dsh-project-observer-drag>button{flex:none}
-    .dsh-project-observer-sections{display:flex;align-items:center;flex:none;gap:0}.dsh-project-observer-sections button{height:28px;min-height:28px;padding:0 6px;font:var(--dsw-font-xxs-12)}
-    .dsh-project-observer-sections button[aria-current=page]{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary)}
-    .dsh-project-observer-current{position:sticky;top:0;z-index:2;min-width:0}.dsh-project-observer-list,.dsh-project-observer-completed{display:flex;flex-direction:column;gap:8px;min-width:0}
-    .dsh-project-observer-aux{padding:12px;background:var(--dsw-alias-bg-panel-solid);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;min-width:0}.dsh-project-observer-aux[hidden]{display:none}
-    .dsh-project-observer-empty{padding:16px;background:var(--dsw-alias-bg-panel-solid);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;font:var(--dsw-font-s-14)}.dsh-project-observer-empty p{margin:8px 0 0;color:var(--dsw-alias-label-secondary)}
+    .dsh-project-header-panel{position:relative;flex:none;min-width:28px}
+    .dsh-project-header-trigger{display:inline-flex;align-items:center;gap:5px;min-height:28px;min-width:28px;max-width:100%;padding:3px 7px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;white-space:nowrap;cursor:pointer}
+    .dsh-project-header-trigger svg{flex:none}.dsh-project-header-trigger:hover,.dsh-project-header-trigger:focus-visible,.dsh-project-header-trigger[aria-expanded=true]{color:var(--dsw-alias-label-primary)}
+    .dsh-project-header-trigger-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .dsh-project-header-badge{min-width:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;text-align:center;font-variant-numeric:tabular-nums}
+    .dsh-project-header-badge[data-tone=info]{color:var(--dsw-alias-label-primary)}.dsh-project-header-badge[data-tone=warning]{color:var(--dsw-alias-state-warn-primary)}
+    @container (max-width:560px){.dsh-project-header-trigger-label{display:none}.dsh-project-header-trigger{padding:0 4px;justify-content:center}}
+    .dsh-project-header-surface{position:fixed;z-index:100;display:flex;flex-direction:column;box-sizing:border-box;width:min(460px,100vw - 32px);max-height:min(680px,calc(100vh - 32px));padding:8px 2px 0;overflow:hidden;border-radius:12px;--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-primary);font:var(--dsw-font-s-14);outline:none}
+    .dsh-project-header-surface[hidden]{display:none}.dsh-project-header-surface::before{content:'';position:absolute;z-index:-1;inset:0;border-radius:12px;background:var(--dsw-specific-menu);backdrop-filter:var(--dsw-menu-backdrop-filter)}
+    .dsh-project-panel-body{display:flex;flex-direction:column;gap:8px;flex:1 1 auto;min-height:0;min-width:0;padding:0 9px 16px 14px;overflow-y:auto;scrollbar-gutter:stable}
+    .dsh-project-requests-toolbar{display:flex;align-items:center;gap:4px;min-width:0;min-height:32px;flex:none}
+    .dsh-project-requests-toolbar>strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:var(--dsw-font-xxs-strong-12)}.dsh-project-requests-toolbar button{flex:none}
+    .dsh-project-requests-current,.dsh-project-requests-list{display:flex;flex-direction:column;gap:8px;min-width:0}
+    .dsh-project-requests-empty{padding:16px;background:var(--dsw-alias-bg-panel-solid);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;font:var(--dsw-font-s-14)}.dsh-project-requests-empty p{margin:8px 0 0;color:var(--dsw-alias-label-secondary)}
     .dsh-project-task-card{position:relative;isolation:isolate;min-width:0;border-radius:14px;color:var(--dsw-alias-label-primary)}
     .dsh-project-task-surface{position:absolute;inset:0;z-index:-1;pointer-events:none;border-radius:inherit;background:var(--dsw-alias-bg-panel-solid);border:1px solid var(--dsw-alias-border-l2)}
     .dsh-project-task-card:not([data-project-request-mode=strip]){padding:14px 16px 8px}.dsh-project-task-card[data-project-request-mode=strip]{height:44px;min-height:44px}
@@ -298,9 +301,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     .dsh-project-task-progress-track{height:3px;background:var(--dsw-alias-interactive-bg-active);border-radius:2px;margin:4px 0 6px;overflow:hidden}.dsh-project-task-progress-track>span{display:block;height:100%;background:var(--dsw-alias-state-business-primary)}
     .dsh-project-observer-flow{display:flex;align-items:center;gap:4px;min-width:0}.dsh-project-observer-flow>svg{flex:none;width:12px}.dsh-project-observer-flow-node{display:flex;flex:1;flex-direction:column;gap:4px;min-width:0;padding:8px 4px;text-align:center;background:var(--dsw-alias-interactive-bg-hover);border-radius:8px;font:var(--dsw-font-xxs-12);overflow-wrap:anywhere}.dsh-project-observer-flow-node>span{color:var(--dsw-alias-label-secondary)}
     .dsh-project-observer-blocker,.dsh-project-observer-request-info{font:var(--dsw-font-xxs-12);overflow-wrap:anywhere}.dsh-project-observer-blocker{color:var(--dsw-alias-label-secondary)}
-    .dsh-project-observer-team{display:flex;flex-direction:column;gap:8px;min-width:0}.dsh-project-observer-team>input{width:100%;box-sizing:border-box;height:32px;min-height:32px}.dsh-project-observer-materials .dsh-project-materials{max-height:420px;overflow:auto}.dsh-project-observer-materials[hidden]{display:none}
-    .dsh-project-observer-completed>.dsh-project-task-group-title{padding:8px 4px 0;font:var(--dsw-font-xxs-12)}
-    [data-dockkit-float]:has(.dsh-project-observer[data-project-observer-compact-only=true]) [data-dockkit-float-resize]{display:none}
+    .dsh-project-observer-team{display:flex;flex-direction:column;gap:8px;min-width:0}.dsh-project-observer-team>input{width:100%;box-sizing:border-box;height:32px;min-height:32px}
+    .dsh-project-requests-list>.dsh-project-task-group-title{padding:8px 4px 0;font:var(--dsw-font-xxs-12)}
     .dsh-project-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:4px;background:var(--dsw-alias-bg-panel-solid);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;min-width:0}
     .dsh-project-board-cell{display:flex;flex-direction:column;gap:2px;min-width:0;padding:8px 12px}
     .dsh-project-board-cell+.dsh-project-board-cell{border-left:1px solid var(--dsw-alias-border-l1)}
@@ -481,33 +483,93 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         h('div', { className: 'dsh-project-list' }, projects.map(project => h(ProjectRow, { key: project.id, project, directoryLabel: projectDirectoryLabel(project, projects), currentSession, openProject, command, read, openLifecycle, t })))) : null);
   }
 
-  function ProjectHeader({ sessionId, useProjects, read, openObserver, trackActiveProject, t }) {
+  // One header trigger with an anchored panel, matching the native Team action:
+  // hover opens after 150ms when the label is visible, a click pins it, and
+  // Escape, an outside pointer or a native file preview closes it. Project
+  // dialogs open above it, so closing one returns to the same panel.
+  function HeaderPanel({ id, icon, label, badge, tone, useDismissals, children }) {
+    const [open, setOpen] = useState(false), [visited, setVisited] = useState(false), rootRef = useRef(null), triggerRef = useRef(null), labelRef = useRef(null), panelRef = useRef(null);
+    const timer = useRef(), pinned = useRef(false), dismissedByKey = useRef(false), dismissals = useDismissals(value => value);
+    const position = useAnchoredPosition({ open, anchorRef: triggerRef, panelRef, gap: 5, margin: 16 });
+    const cancel = () => { clearTimeout(timer.current); timer.current = undefined; };
+    const change = next => { cancel(); if (!next) pinned.current = false; else setVisited(true); setOpen(next); };
+    useEffect(() => cancel, []);
+    useEffect(() => { change(false); }, [dismissals]);
+    useLayoutEffect(() => { if (open && position && pinned.current) panelRef.current?.focus(); }, [open, Boolean(position)]);
+    useEffect(() => {
+      if (!open) return;
+      const outside = event => {
+        const target = event.target;
+        if (!target || rootRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+        // Menus inside the panel portal their lists to the body; dialogs stack above it.
+        if (target.closest?.('[role="menu"], [role="dialog"][aria-modal="true"]')) return;
+        change(false);
+      };
+      const escape = event => {
+        if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('[role="menu"], [role="dialog"][aria-modal="true"]')) return;
+        event.preventDefault(); dismissedByKey.current = true;
+        const inside = panelRef.current?.contains(document.activeElement);
+        change(false); if (inside) triggerRef.current?.focus();
+      };
+      document.addEventListener('pointerdown', outside); document.addEventListener('keydown', escape);
+      return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
+    }, [open]);
+    const hoverOpen = () => {
+      cancel();
+      if (open || dismissedByKey.current || !labelRef.current || getComputedStyle(labelRef.current).display === 'none') return;
+      timer.current = setTimeout(() => change(true), 150);
+    };
+    const hoverClose = () => {
+      cancel(); dismissedByKey.current = false;
+      if (!pinned.current) timer.current = setTimeout(() => change(false), 120);
+    };
+    return h('div', { ref: rootRef, className: 'dsh-project-header-panel', 'data-project-header-panel': id, onMouseLeave: hoverClose },
+      h('button', { type: 'button', ref: triggerRef, className: 'dsh-project-header-trigger', 'aria-label': label, title: label, 'aria-haspopup': 'dialog', 'aria-expanded': open,
+        onMouseEnter: hoverOpen, onClick: () => { cancel(); dismissedByKey.current = false; pinned.current = true; if (!open) change(true); else panelRef.current?.focus(); } },
+        icon, h('span', { ref: labelRef, className: 'dsh-project-header-trigger-label' }, label),
+        badge ? h('span', { className: 'dsh-project-header-badge', 'data-tone': tone }, badge) : null),
+      // Once opened, the contents stay mounted while hidden so tabs, pages and expanded cards survive a close.
+      visited ? createPortal(h('div', { ref: panelRef, className: 'dsh-project-header-surface', 'data-project-panel': id, role: 'dialog', tabIndex: -1, 'aria-label': label, hidden: !open,
+        style: position ?? { visibility: 'hidden', left: 0, top: 0 }, onMouseEnter: cancel, onMouseLeave: hoverClose,
+        onFocusCapture: () => { pinned.current = true; }, onPointerDownCapture: () => { pinned.current = true; } }, children), document.body) : null);
+  }
+
+  function useProjectLive({ useProjects, useProjectSessions, useProjectSessionStatus }, sessionId, project) {
+    const detail = useProjects(value => project ? value.details[project.id] : undefined);
+    const team = useProjectSessions(value => value.projectionsBySession[sessionId]?.values.agentTeam);
+    const summarySessions = useProjectSessions(value => value.byId), statuses = useProjectSessionStatus(value => value);
+    const sessions = Object.fromEntries([...new Set([...Object.keys(summarySessions), ...statuses.keys()])].map(id => [id, { ...summarySessions[id], running: statuses.get(id)?.running ?? summarySessions[id]?.running }]));
+    return { detail, team, sessions };
+  }
+
+  function ProjectTeamPanel(props) {
+    const { sessionId, project, readDetail, showProcess, teamT, t } = props;
+    const { detail, team, sessions } = useProjectLive(props, sessionId, project);
+    const [error, setError] = useState('');
+    useEffect(() => { void readDetail(project.id).catch(failure => setError(errorText(failure))); }, [project.id]);
+    return h('section', { className: 'dsh-project-panel-body', 'aria-label': t('team') },
+      h(ProjectTeamOverview, { team, sessions, detail, openMember: workerSessionId => showProcess(project.id, workerSessionId, true), teamT, t }),
+      error ? h(Toast, { text: error, onDone: () => setError('') }) : null);
+  }
+
+  function ProjectHeader(props) {
+    const { sessionId, useProjects, useDismissals, read, trackActiveProject, teamT, t } = props;
     const project = useProjects(value => value.projects.find(item => item.coordinatorSessionId === sessionId));
     const [openFailure, setOpenFailure] = useState(null);
     useEffect(() => { if (project) return trackActiveProject(project.id); }, [project?.id]);
     if (!project) return null;
     const directory = directoryParts(project).at(-1) || project.canonicalWorkingDirectory;
+    const queue = project.queue, waiting = (queue?.queued?.length ?? 0) + (queue?.discussingCount ?? 0);
+    const tone = project.paused || project.activity?.blocked ? 'warning' : queue?.active ? 'info' : 'neutral';
     return h('div', { className: 'dsh-project-header' },
       h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-header-directory', onClick: () => { void read(project.id, 'open').catch(failure => setOpenFailure(previous => ({ seq: (previous?.seq ?? 0) + 1, text: `${t('openDirectory')}: ${errorText(failure)}` }))); }, title: project.canonicalWorkingDirectory },
         h(IconFolderCloseRegular, { size: 16 }), h('span', { className: 'dsh-project-header-path' }, directory)),
-      h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-header-label', onClick: () => openObserver(project.id), title: t('projectOverview') }, t('projectOverview')),
+      h(HeaderPanel, { id: 'team', icon: h(IconUsersOutlineRegular, { size: 14 }), label: teamT('trigger'), useDismissals },
+        h(ProjectTeamPanel, { ...props, project })),
+      h(HeaderPanel, { id: 'requests', icon: h(IconChecklistOutlineRegular, { size: 14 }), label: t('requirements'), useDismissals,
+        badge: queue?.active || waiting ? String((queue?.active ? 1 : 0) + waiting) : '', tone },
+        h(ProjectRequirements, { ...props, project })),
       openFailure ? h(Toast, { key: openFailure.seq, text: openFailure.text, holdMs: 6000, onDone: () => setOpenFailure(null) }) : null);
-  }
-
-  const OBSERVER_KIND = 'project';
-  const OBSERVER_TAB = 'dsh-project/observer';
-  function observerRect(current, contentHeight) {
-    const root = document.documentElement;
-    const caption = root.hasAttribute('data-windows-titlebar') && !root.hasAttribute('data-fullscreen') ? Number.parseFloat(root.style.getPropertyValue('--dsh-windows-titlebar-height')) || 0 : 0;
-    const desktopCaption = Number.parseFloat(getComputedStyle(root).getPropertyValue('--dshd-wco-caption')) || 0;
-    const header = [...document.querySelectorAll('.dsh-project-header')].map(element => element.getBoundingClientRect()).find(rect => rect.width > 0 && rect.height > 0);
-    const top = Math.max(12, caption + 20, desktopCaption + 20, header ? header.bottom + 12 : 0);
-    const width = Math.min(current?.width ?? 400, Math.max(1, window.innerWidth - 16));
-    const composer = [...document.querySelectorAll('[data-composer-card]')].map(element => element.getBoundingClientRect()).find(rect => rect.height > 0 && rect.top > top + 80);
-    const bottom = Math.min(window.innerHeight - 12, composer ? composer.top - 12 : window.innerHeight - 12);
-    const height = Math.max(44, Math.min(contentHeight ?? current?.height ?? 240, Math.max(44, bottom - top)));
-    return { x: Math.max(8, Math.min(current?.x ?? window.innerWidth - width - 12, window.innerWidth - width - 8)),
-      y: Math.max(top, Math.min(current?.y ?? top, bottom - height)), width, height };
   }
 
   const requestStateLabel = (t, card, position = true) => card.status === 'completed' ? t('completed')
@@ -607,11 +669,6 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${card.title} · ${t('more')}`, disabled: busy, onClick: () => setMenu(value => !value) }, '…') }));
   }
 
-  function ProjectObserverTitle({ sessionId, useProjects, t }) {
-    const project = useProjects(value => value.projects.find(item => item.coordinatorSessionId === sessionId));
-    return h('span', null, project?.title || t('tab'));
-  }
-
   function ProjectTaskCard({ card: preview, project, resourceRevision, mode, setMode, read, team, sessions, controls, queue, changeQueue, archive, retryHandover, showProcess, showReport, renderFactorySlot, t }) {
     const [saved, setSaved] = useState(null), [error, setError] = useState(''), [menu, setMenu] = useState(false), [tab, setTab] = useState('overview');
     const bodyRef = useRef(null), expanded = mode !== 'strip';
@@ -637,7 +694,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       items: [...queueItems, ...archiveItems], onSelect: action => { setMenu(false); if (action === 'archive') archive(card); else changeQueue(card, action); },
       anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': `${card.title} · ${t('more')}`, onClick: () => setMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) });
     return h('article', { className: 'dsh-project-task-card', 'data-project-request-id': card.id, 'data-project-request-mode': mode, 'data-project-request-status': state },
-      h('div', { className: 'dsh-project-task-surface', 'data-dockkit-float-motion-part': card.id, 'data-dockkit-float-motion-shell': true, 'aria-hidden': true }),
+      h('div', { className: 'dsh-project-task-surface', 'aria-hidden': true }),
       mode === 'strip' ? h('div', { className: 'dsh-project-task-strip' },
         h(Button, { variant: 'ghost', className: 'dsh-project-task-strip-open', 'aria-label': `${card.title} · ${label}`, 'aria-expanded': false, onClick: () => setMode('card'), title: `${card.title} · ${label} · ${executor.name}` },
           done ? h(IconCheckOutlineRegular, { size: 14 }) : h('span', { className: 'dsh-project-task-state-dot', 'data-state': state, 'data-tone': human.tone, 'aria-hidden': true }),
@@ -926,96 +983,29 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         h('div', { className: 'dsh-project-task-meta' }, recordedTime(card.updatedAt), h('span', null, `${t('requestVersion')} ${card.revision}`))));
   }
 
-  function ProjectObserver({ sessionId, useTabInfo, useProjects, useProjectSessions, useProjectSessionStatus, useObserverModes, useSidebarMounted, readDetail, read, command, sendUserRequest, openModelSettings, retainProcess, resizeObserver, rememberObserverSize, setRequestMode, registerObserverEditor, renderFactorySlot, teamT, t }) {
-    const { panel, tab } = useTabInfo(), active = useSidebarMounted(value => value === sessionId);
-    const project = useProjects(value => value.projects.find(item => item.coordinatorSessionId === sessionId));
-    const detail = useProjects(value => project ? value.details[project.id] : undefined);
-    const team = useProjectSessions(value => value.projectionsBySession[sessionId]?.values.agentTeam);
-    const summarySessions = useProjectSessions(value => value.byId), statuses = useProjectSessionStatus(value => value);
-    const requestModes = useObserverModes(value => value[sessionId]?.[panel.id]?.requests);
-    const sessions = Object.fromEntries([...new Set([...Object.keys(summarySessions), ...statuses.keys()])].map(id => [id, { ...summarySessions[id], running: statuses.get(id)?.running ?? summarySessions[id]?.running }]));
-    const [section, setSection] = useState('tasks'), [historyKind, setHistoryKind] = useState(null), [historyMenu, setHistoryMenu] = useState(false);
-    const [subview, setSubview] = useState(null), [subviewReturn, setSubviewReturn] = useState('tasks'), [materialsVisited, setMaterialsVisited] = useState(false);
-    const subviewBackRef = useRef(null), subviewOriginRef = useRef(null), subviewReturnFocusRef = useRef(null);
-    const observerRef = useRef(null), contentRef = useRef(null), panelRef = useRef(panel), resizingRef = useRef(false);
-    panelRef.current = panel;
-    const cursorScope = `${project?.id ?? ''}:${detail?.revision ?? ''}`;
+  // The requirement list: the current requirement first, waiting requirements in
+  // queue order, delivered ones as strips. Records, results and changes open in
+  // the Project dialog above it, so this panel never owns an editor.
+  function ProjectRequirements(props) {
+    const { sessionId, project, useRequestModes, readDetail, read, command, sendUserRequest, openModelSettings, setRequestMode, renderFactorySlot, t } = props;
+    const { detail, team, sessions } = useProjectLive(props, sessionId, project);
+    const requestModes = useRequestModes(value => value[sessionId]?.requests);
+    const [historyKind, setHistoryKind] = useState(null), [historyMenu, setHistoryMenu] = useState(false);
+    const cursorScope = `${project.id}:${detail?.revision ?? ''}`;
     const newCursors = () => ({ scope: cursorScope, current: [null], completed: [null], archived: [null], cancelled: [null] });
     const [cursorState, setCursorState] = useState(newCursors), [pages, setPages] = useState({}), [cardsBusy, setCardsBusy] = useState(false);
     const activeCursors = cursorState.scope === cursorScope ? cursorState : newCursors();
     const [actionBusy, setActionBusy] = useState(false), [queueFailure, setQueueFailure] = useState(null), [error, setError] = useState(''), [refreshKey, setRefreshKey] = useState(0);
-    const [materialsDirty, setMaterialsDirty] = useState(false), [pendingRoute, setPendingRoute] = useState(null);
-    const queueChanging = useRef(false), editorRef = useRef(null), materialsDirtyRef = useRef(false);
-    const onMaterialsDirty = useCallback(value => { materialsDirtyRef.current = value; setMaterialsDirty(value); }, []);
-    useLayoutEffect(() => {
-      if (subview) subviewBackRef.current?.focus();
-      else { const origin = subviewReturnFocusRef.current; subviewReturnFocusRef.current = null; if (origin?.isConnected) origin.focus(); }
-    }, [subview]);
-    useEffect(() => { if (section === 'materials') setMaterialsVisited(true); }, [section]);
-    useEffect(() => registerObserverEditor(sessionId, tab.id, { getPanel: () => panelRef.current, isDirty: () => materialsDirtyRef.current,
-      requestClose: proceed => setPendingRoute({ close: proceed }) }), [sessionId, tab.id]);
-    useLayoutEffect(() => {
-      if (!active || panel.host !== 'float') return;
-      const fit = () => { if (!resizingRef.current) resizeObserver(sessionId, panelRef.current, tab.id, contentRef.current?.scrollHeight); };
-      const observer = new ResizeObserver(fit);
-      if (contentRef.current) observer.observe(contentRef.current);
-      document.querySelectorAll('[data-composer-card],.dsh-project-header').forEach(element => observer.observe(element));
-      window.addEventListener('resize', fit); fit();
-      return () => { observer.disconnect(); window.removeEventListener('resize', fit); };
-    }, [sessionId, panel.id, panel.host, active]);
+    const queueChanging = useRef(false);
+    useEffect(() => { void readDetail(project.id).catch(failure => setError(errorText(failure))); }, [project.id]);
     useEffect(() => {
-      if (!active || panel.host !== 'float') return;
-      let gesture;
-      const down = event => {
-        const resize = event.target.closest?.('[data-dockkit-float-resize]');
-        if (resize?.getAttribute('data-dockkit-float-resize') !== panel.id) return;
-        resizingRef.current = true; gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, rect: panelRef.current.rect };
-      };
-      const up = event => {
-        if (!gesture || gesture.id !== event.pointerId) return;
-        const started = gesture; gesture = undefined;
-        requestAnimationFrame(() => {
-          const current = panelRef.current;
-          if (Math.abs(event.clientX - started.x) + Math.abs(event.clientY - started.y) > 2
-            && ['width', 'height'].some(field => current.rect[field] !== started.rect[field])) rememberObserverSize(sessionId, current, tab.id);
-          resizingRef.current = false;
-          resizeObserver(sessionId, current, tab.id, contentRef.current?.scrollHeight);
-        });
-      };
-      document.addEventListener('pointerdown', down, true); document.addEventListener('pointerup', up, true); document.addEventListener('pointercancel', up, true);
-      return () => { document.removeEventListener('pointerdown', down, true); document.removeEventListener('pointerup', up, true); document.removeEventListener('pointercancel', up, true); resizingRef.current = false; };
-    }, [sessionId, panel.id, panel.host, active]);
-    useEffect(() => { if (project) void readDetail(project.id).catch(failure => setError(errorText(failure))); }, [project?.id]);
-    useEffect(() => {
-      if (!project) return;
       let live = true; setCardsBusy(true);
       const kinds = ['current', 'completed', 'archived', 'cancelled'];
       void Promise.all(kinds.map(kind => read(project.id, 'requests/list', { kind, ...(activeCursors[kind].at(-1) ? { cursor: activeCursors[kind].at(-1) } : {}) }).then(page => [kind, page])))
         .then(rows => { if (live) { setPages(Object.fromEntries(rows)); setError(''); } })
         .catch(failure => { if (live) setError(errorText(failure)); }).finally(() => { if (live) setCardsBusy(false); });
       return () => { live = false; };
-    }, [project?.id, detail?.revision, refreshKey, activeCursors.current.at(-1), activeCursors.completed.at(-1), activeCursors.archived.at(-1), activeCursors.cancelled.at(-1)]);
-    if (!project) return h('p', { className: 'dsh-project-empty' }, t('unavailable'));
-    const applyRoute = route => {
-      if (!route.subview) { subviewOriginRef.current = null; subviewReturnFocusRef.current = null; }
-      setSection(route.section ?? 'tasks'); setSubview(route.subview ?? null); if (route.returnSection) setSubviewReturn(route.returnSection);
-    };
-    const returnFromSubview = () => {
-      const origin = subviewOriginRef.current;
-      applyRoute({ section: subviewReturn });
-      subviewReturnFocusRef.current = origin;
-    };
-    const navigate = route => {
-      if (section === 'materials' && materialsDirty && route.section !== 'materials' && !route.subview) setPendingRoute(route);
-      else applyRoute(route);
-    };
-    const closePending = () => setPendingRoute(null);
-    const leaveMaterials = async save => {
-      if (save && !(await editorRef.current?.save())) return;
-      if (!save && !pendingRoute?.close) editorRef.current?.discard();
-      if (pendingRoute?.close) pendingRoute.close(); else applyRoute(pendingRoute);
-      setPendingRoute(null);
-    };
+    }, [project.id, detail?.revision, refreshKey, activeCursors.current.at(-1), activeCursors.completed.at(-1), activeCursors.archived.at(-1), activeCursors.cancelled.at(-1)]);
     const archive = async item => {
       setError('');
       try {
@@ -1044,9 +1034,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const pageControls = kind => activeCursors[kind].length > 1 || pages[kind]?.nextCursor ? h('div', { className: 'dsh-project-task-pagination' },
       activeCursors[kind].length > 1 ? button(t('previous'), () => updateCursors(kind, before => before.slice(0, -1)), cardsBusy) : null,
       pages[kind]?.nextCursor ? button(t('taskMore'), () => updateCursors(kind, before => [...before, pages[kind].nextCursor]), cardsBusy) : null) : null;
-    const showProcess = item => { if (!subview) subviewOriginRef.current = document.activeElement; navigate({ section: 'tasks', returnSection: section, subview: { kind: 'process',
-      ...(item.workstreamId ? { workstreamId: item.workstreamId } : { workerSessionId: item.workerSessionId }), delegationRef: item.delegationRef } }); };
-    const showReport = item => { if (!subview) subviewOriginRef.current = document.activeElement; navigate({ section: 'tasks', returnSection: section, subview: { kind: 'report', workstreamId: item.workstreamId, delegationRef: item.delegationRef } }); };
+    const showProcess = item => props.showProcess(project.id, item.workstreamId ?? item.workerSessionId, !item.workstreamId, { delegationRef: item.delegationRef });
+    const showReport = item => props.showReport(project.id, item.workstreamId, { delegationRef: item.delegationRef });
     const act = async (endpoint, input) => {
       setActionBusy(true); setError('');
       try { await command(project.id, endpoint, input); } catch (failure) { setError(errorText(failure)); } finally { setActionBusy(false); }
@@ -1073,15 +1062,15 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       } catch (failure) { setError(errorText(failure)); } finally { setActionBusy(false); }
     };
     const controls = { paused: project.paused, act, retrySummary, openModelSettings, busy: actionBusy || project.lifecycle !== 'ready' || project.archiving,
-      showProcess: (_id, workstreamId, member, context = {}) => showProcess({ ...(member ? { workerSessionId: workstreamId } : { workstreamId }), delegationRef: context.delegationRef }),
+      showProcess: (_id, workstreamId, member, context = {}) => props.showProcess(project.id, workstreamId, member, { delegationRef: context.delegationRef }),
       showMaterials: (_id, workstreamId, context = {}) => showReport({ workstreamId, delegationRef: context.delegationRef }),
-      showDiff: (_id, workstreamId) => navigate({ section: 'tasks', returnSection: section, subview: { kind: 'diff', workstreamId } }),
-      showRequestDiff: id => navigate({ section: 'tasks', returnSection: section, subview: { kind: 'requestDiff', requestId: id } }),
+      showDiff: (_id, workstreamId) => props.showDiff(project.id, workstreamId),
+      showRequestDiff: id => props.showRequestDiff(project.id, id),
       revert: async item => { await command(project.id, 'requests/revert', { requestId: item.id, requestRevision: item.revision }); setCursorState(newCursors()); setRefreshKey(value => value + 1); },
       ask: text => sendUserRequest(project.id, text) };
     const cardMode = (item, initialMode = 'strip') => requestModes?.[item.id]?.completed === (item.status === 'completed') ? requestModes[item.id].mode : initialMode;
     const renderCard = (item, initialMode = 'strip') => h(ProjectTaskCard, { key: item.id, card: item, project, resourceRevision: detail?.revision,
-      mode: cardMode(item, initialMode), setMode: mode => setRequestMode(sessionId, panelRef.current, item.id, mode, item.status === 'completed'),
+      mode: cardMode(item, initialMode), setMode: mode => setRequestMode(sessionId, item.id, mode, item.status === 'completed'),
       read, team, sessions, controls, queue, changeQueue, archive, retryHandover, showProcess, showReport, renderFactorySlot, t });
     const current = pages.current?.items ?? [], activeCard = current.find(item => item.id === queue?.active?.id) ?? queue?.active;
     const waiting = current.filter(item => item.id !== activeCard?.id);
@@ -1093,45 +1082,27 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       { id: 'waiting', label: 'boardWaiting', tone: 'neutral', count: (queue?.queued?.length ?? 0) + (queue?.discussingCount ?? 0) },
       { id: 'delivered', label: 'boardDelivered', tone: 'success', count: pages.completed?.total ?? 0 },
     ];
-    const cards = [...current, ...(pages.completed?.items ?? []), ...(pages[historyKind]?.items ?? [])];
-    const expanded = cards.some(item => cardMode(item, item.id === activeCard?.id ? 'card' : 'strip') !== 'strip');
-    return h('section', { ref: observerRef, className: 'dsh-project-observer', 'data-project-observer-stack': true, 'data-project-observer-compact-only': !expanded,
-      'data-dockkit-float-chrome': 'content', 'data-dockkit-float-motion': 'morph', 'aria-label': t('observerOpen') },
-      h('div', { className: 'dsh-project-observer-scroll' }, h('div', { ref: contentRef, className: 'dsh-project-observer-stack' },
-        h('header', { className: 'dsh-project-observer-drag', 'data-dockkit-float-drag-handle': true },
-          h('span', { title: project.canonicalWorkingDirectory }, project.title),
-          h('nav', { className: 'dsh-project-observer-sections', 'aria-label': t('projectOverview') },
-            ...[['tasks', 'taskList'], ['team', 'team'], ['materials', 'taskMaterials']].map(([id, label]) => h(Button, { key: id, variant: 'ghost', size: 'sm', 'aria-current': section === id ? 'page' : undefined, onClick: () => navigate({ section: id }) }, t(label)))),
-          h(Menu, { open: historyMenu, onClose: () => setHistoryMenu(false), portal: true, compact: true, align: 'end',
-            items: [{ id: 'cancelled', label: `${t('taskCancelled')} · ${pages.cancelled?.total ?? 0}` }, { id: 'archived', label: `${t('taskArchive')} · ${pages.archived?.total ?? 0}` }],
-            onSelect: kind => { setHistoryMenu(false); setHistoryKind(value => value === kind ? null : kind); },
-            anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': t('more'), onClick: () => setHistoryMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) })),
-        board.some(item => item.count) ? h('div', { className: 'dsh-project-board', role: 'group', 'aria-label': t('boardSummary') }, board.map(item => h('div', { key: item.id, className: 'dsh-project-board-cell', 'data-empty': !item.count },
-          h('strong', null, item.count), h('span', { className: 'dsh-project-board-label' }, h('span', { className: 'dsh-project-tone-dot', 'data-tone': item.count ? item.tone : 'idle', 'aria-hidden': true }), t(item.label))))) : null,
-        activeCard ? h('div', { className: 'dsh-project-observer-current' }, renderCard(activeCard, 'card')) : null,
-        !activeCard && !current.length && !pages.completed?.total && !cardsBusy ? h('div', { className: 'dsh-project-observer-empty' }, h('strong', null, t('taskEmptyTitle')), h('p', null, t('taskEmpty'))) : null,
-        waiting.length ? h('div', { className: 'dsh-project-observer-list', 'aria-label': t('requestQueued') }, waiting.map(item => renderCard(item))) : null,
-        pageControls('current'),
-        subview ? h('section', { className: 'dsh-project-observer-aux' }, h(Button, { ref: subviewBackRef, variant: 'ghost', size: 'sm', onClick: returnFromSubview }, t(subviewReturn === 'materials' ? 'backToResults' : subviewReturn === 'team' ? 'teamBack' : 'taskBack')),
-          h('div', { className: 'dsh-project-task-full' }, subview.kind === 'process' && detail ? h(ProcessPreview, { key: (subview.workstreamId ?? subview.workerSessionId) + ':' + (subview.delegationRef ?? ''), project: detail.project,
-            workstreamId: subview.workstreamId, workerSessionId: subview.workerSessionId, delegationRef: subview.delegationRef, read, retainProcess, t }) : subview.kind === 'report' ? h(ProjectReportView, { projectId: project.id, reference: subview, read, showProcess: (_id, workstreamId, _member, context) => showProcess({ workstreamId, delegationRef: context?.delegationRef }), t })
-            : subview.kind === 'diff' ? h(FileDiff, { projectId: project.id, workstreamId: subview.workstreamId, read, t })
-            : subview.kind === 'requestDiff' ? h(RequestDiff, { projectId: project.id, requestId: subview.requestId, read, t }) : null)) : null,
-        section === 'team' ? h('section', { className: 'dsh-project-observer-aux' }, h(ProjectTeamOverview, { team, sessions, detail, openMember: workerSessionId => showProcess({ workerSessionId }), teamT, t })) : null,
-        materialsVisited || section === 'materials' ? h('section', { className: 'dsh-project-observer-aux dsh-project-observer-materials', hidden: section !== 'materials' },
-          h(Materials, { key: project.id, projectId: project.id, resourceRevision: detail?.revision, active: section === 'materials', read, command, onDirtyChange: onMaterialsDirty, editorRef,
-            readonly: project.lifecycle === 'archived' || project.archiving, showProcess: (_id, workstreamId, _member, context) => showProcess({ workstreamId, delegationRef: context?.delegationRef }), renderFactorySlot, t })) : null,
-        historyKind ? h('section', { className: 'dsh-project-observer-list' }, h('div', { className: 'dsh-project-task-group-title' }, h('strong', null, t(historyKind === 'archived' ? 'taskArchive' : 'taskCancelled')), h(Button, { variant: 'ghost', size: 'sm', onClick: () => setHistoryKind(null) }, t('taskBack'))),
-          (pages[historyKind]?.items ?? []).map(item => renderCard(item)), pageControls(historyKind)) : null,
-        pages.completed?.total ? h('section', { className: 'dsh-project-observer-completed' }, h('div', { className: 'dsh-project-task-group-title' }, h('strong', null, t('taskCompleted')), h('span', null, pages.completed.total)),
-          (pages.completed.items ?? []).map(item => renderCard(item)), pageControls('completed')) : null,
-        cardsBusy && !pages.current ? h('p', { role: 'status', className: 'dsh-project-empty' }, t('loading')) : null,
-        project.diagnostics?.length ? h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), project.diagnostics.map((item, index) => h('pre', { key: index }, typeof item === 'string' ? item : item.message))) : null)),
-      error || queueFailure ? h(Toast, { text: queueFailure?.text ?? error, onDone: () => { setError(''); setQueueFailure(null); } }) : null,
-      pendingRoute ? h(Modal, { open: true, onClose: closePending, closeLabel: t('keepEditing'), title: t('unsaved'), className: 'dsh-project-confirm',
-        footer: h('div', { className: 'dsh-project-actions' }, button(t('keepEditing'), closePending), button(t(pendingRoute.close ? 'discard' : 'discardAndSwitch'), () => { void leaveMaterials(false); }),
-          h(Button, { variant: 'primary', disabled: editorRef.current?.busy || editorRef.current?.tooLong, onClick: () => { void leaveMaterials(true); } }, t(pendingRoute.close ? 'saveAndClose' : 'saveAndSwitch'))) },
-        h('p', null, t(pendingRoute.close ? 'saveBeforeClose' : 'saveBeforeSwitch'))) : null);
+    return h('section', { className: 'dsh-project-panel-body dsh-project-requests', 'aria-label': t('requirements') },
+      h('header', { className: 'dsh-project-requests-toolbar' },
+        h('strong', { title: project.canonicalWorkingDirectory }, project.title),
+        h(Button, { variant: 'ghost', size: 'sm', onClick: () => props.showMaterials(project.id) }, t('taskMaterials')),
+        h(Menu, { open: historyMenu, onClose: () => setHistoryMenu(false), portal: true, compact: true, align: 'end',
+          items: [{ id: 'cancelled', label: `${t('taskCancelled')} · ${pages.cancelled?.total ?? 0}` }, { id: 'archived', label: `${t('taskArchive')} · ${pages.archived?.total ?? 0}` }],
+          onSelect: kind => { setHistoryMenu(false); setHistoryKind(value => value === kind ? null : kind); },
+          anchor: h(Button, { variant: 'ghost', size: 'sm', 'aria-label': t('more'), onClick: () => setHistoryMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) })),
+      board.some(item => item.count) ? h('div', { className: 'dsh-project-board', role: 'group', 'aria-label': t('boardSummary') }, board.map(item => h('div', { key: item.id, className: 'dsh-project-board-cell', 'data-empty': !item.count },
+        h('strong', null, item.count), h('span', { className: 'dsh-project-board-label' }, h('span', { className: 'dsh-project-tone-dot', 'data-tone': item.count ? item.tone : 'idle', 'aria-hidden': true }), t(item.label))))) : null,
+      activeCard ? h('div', { className: 'dsh-project-requests-current' }, renderCard(activeCard, 'card')) : null,
+      !activeCard && !current.length && !pages.completed?.total && !cardsBusy ? h('div', { className: 'dsh-project-requests-empty' }, h('strong', null, t('taskEmptyTitle')), h('p', null, t('taskEmpty'))) : null,
+      waiting.length ? h('div', { className: 'dsh-project-requests-list', 'aria-label': t('requestQueued') }, waiting.map(item => renderCard(item))) : null,
+      pageControls('current'),
+      historyKind ? h('section', { className: 'dsh-project-requests-list' }, h('div', { className: 'dsh-project-task-group-title' }, h('strong', null, t(historyKind === 'archived' ? 'taskArchive' : 'taskCancelled')), h(Button, { variant: 'ghost', size: 'sm', onClick: () => setHistoryKind(null) }, t('taskBack'))),
+        (pages[historyKind]?.items ?? []).map(item => renderCard(item)), pageControls(historyKind)) : null,
+      pages.completed?.total ? h('section', { className: 'dsh-project-requests-list' }, h('div', { className: 'dsh-project-task-group-title' }, h('strong', null, t('taskCompleted')), h('span', null, pages.completed.total)),
+        (pages.completed.items ?? []).map(item => renderCard(item)), pageControls('completed')) : null,
+      cardsBusy && !pages.current ? h('p', { role: 'status', className: 'dsh-project-empty' }, t('loading')) : null,
+      project.diagnostics?.length ? h('details', { className: 'dsh-project-error-details' }, h('summary', null, t('errorDetails')), project.diagnostics.map((item, index) => h('pre', { key: index }, typeof item === 'string' ? item : item.message))) : null,
+      error || queueFailure ? h(Toast, { text: queueFailure?.text ?? error, onDone: () => { setError(''); setQueueFailure(null); } }) : null);
   }
 
   function ProjectArchiveComposer({ matched, useProjects, command, t }) {
@@ -1620,13 +1591,15 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       setChild({ kind: 'process', workstreamId, ...(member ? { workerSessionId: workstreamId } : {}), ...context });
     };
     const saveAndLeave = async () => { if (!editorRef.current || editorRef.current.busy || transitionBusy) return; setTransitionBusy(true); setTransitionFailed(false); try { if (await editorRef.current.save()) actions.completeModalTransition(); else setTransitionFailed(true); } finally { setTransitionBusy(false); } };
-    const title = `${t(child ? 'process' : modal.kind)}${project ? ' · ' + project.title : ''}`;
+    const title = `${t(child ? 'process' : { report: 'reportSource', requestDiff: 'viewChanges' }[modal.kind] ?? modal.kind)}${project ? ' · ' + project.title : ''}`;
     return h(Fragment, null, h('div', { hidden: true, ref: parking }),
       modal.kind === 'materials' ? createPortal(h(Materials, { key: `${modal.projectId}:${modal.workstreamId ?? ''}:${modal.delegationRef ?? ''}`, projectId: modal.projectId, resourceRevision: detail?.revision, workstreamId: modal.workstreamId, delegationRef: modal.delegationRef, read, command, onDirtyChange: actions.setModalDirty, editorRef, readonly: detail?.project.lifecycle === 'archived' || detail?.project.archiving, showProcess: openRecords, renderFactorySlot, t }), materialsContainer) : null,
       h(Modal, { open: !materialsPreview, onClose: close, closeLabel: t(child ? 'backToResults' : 'close'), title, className: 'dsh-project-modal', contentClassName: 'dsh-project-modal-content' },
       child ? h('div', { className: 'dsh-project-context' }, h(Button, { ref: backRef, variant: 'ghost', size: 'sm', onClick: () => setChild(null) }, t('backToResults')), child.request ? h('span', { className: 'dsh-project-context-label' }, requestLabel(t, child.request)) : child.reportAt ? recordedTime(child.reportAt) : null) : null,
       modal.kind === 'materials' ? h('div', { className: 'dsh-project-materials-frame', ref: element => { materialsHost.current = element; if (element && !materialsPreview) { element.append(materialsContainer); restoreMaterialsScroll(); } } })
         : modal.kind === 'diff' ? h(FileDiff, { key: modal.workstreamId, projectId: modal.projectId, workstreamId: modal.workstreamId, read, t })
+          : modal.kind === 'requestDiff' ? h(RequestDiff, { key: modal.requestId, projectId: modal.projectId, requestId: modal.requestId, read, t })
+          : modal.kind === 'report' ? h('div', { hidden: Boolean(child) }, h(ProjectReportView, { key: `${modal.workstreamId}:${modal.delegationRef ?? ''}`, projectId: modal.projectId, reference: modal, read, showProcess: openRecords, t }))
           : detail ? h(ProcessPreview, { key: modal.workstreamId ?? modal.workerSessionId, project: detail.project, workstreamId: modal.workstreamId, workerSessionId: modal.workerSessionId, delegationRef: modal.delegationRef, read, retainProcess, t }) : h('p', { role: 'status' }, t('loading')),
       child && detail ? h(ProcessPreview, { key: child.workstreamId + ':' + (child.delegationRef ?? ''), project: detail.project, workstreamId: child.workerSessionId ? undefined : child.workstreamId, workerSessionId: child.workerSessionId, delegationRef: child.delegationRef, read, retainProcess, t }) : null),
       h(Modal, { open: Boolean(transition), onClose: () => { if (!transitionBusy) actions.cancelModalTransition(); }, closeLabel: t('keepEditing'), className: 'dsh-project-confirm', title: t('unsaved'), footer: h('div', { className: 'dsh-project-actions' },
@@ -1638,18 +1611,21 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   }
 
   return {
-    inject: ['slots', 'connection', 'locale', 'uiWorkspace', 'uiSidebar', 'sidebarRight', 'sidebarRightTabs', 'workspaces', 'sessions', 'uiSession', 'conversation', 'settingsNavigation'],
+    inject: ['slots', 'connection', 'locale', 'uiWorkspace', 'uiSidebar', 'workspaces', 'sessions', 'uiSession', 'conversation', 'settingsNavigation'],
     apply(ctx) {
       const t = ctx.locale.bind(NS);
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-project: locale');
       ctx.effect(() => ctx.locale.register('project-team', { zh: teamChinese, en: teamEnglish }), 'dsh-project: team locale');
       const snapshot = createSnapshotStore({ projects: [], details: {}, available: false, loading: true, error: '' });
-      const observerModes = createSnapshotStore({}, { persist: { name: 'dsh-project.observer-modes' } });
+      const requestModes = createSnapshotStore({}, { persist: { name: 'dsh-project.request-modes' } });
+      // Bumped to close the header panels when a native file preview takes over.
+      const dismissals = createSnapshotStore(0);
+      const dismissPanels = () => dismissals.set(dismissals.getSnapshot() + 1);
       const archiveRequests = new Set();
       const viewHandle = defineStore({ init: () => ({ selected: null, modal: null, modalDirty: false, pendingModal: null, modalRevision: 0, materialsPreview: false, lifecycle: null, history: false }), actions: {
         selectProject: (draft, id) => { draft.selected = id; },
         setModal: (draft, modal) => {
-          if (draft.modal?.kind === modal?.kind && draft.modal?.projectId === modal?.projectId && draft.modal?.workstreamId === modal?.workstreamId && draft.modal?.workerSessionId === modal?.workerSessionId && draft.modal?.delegationRef === modal?.delegationRef) return;
+          if (draft.modal?.kind === modal?.kind && draft.modal?.projectId === modal?.projectId && draft.modal?.workstreamId === modal?.workstreamId && draft.modal?.workerSessionId === modal?.workerSessionId && draft.modal?.delegationRef === modal?.delegationRef && draft.modal?.requestId === modal?.requestId) return;
           if (draft.modal?.kind === 'materials' && draft.modalDirty) { draft.materialsPreview = false; draft.pendingModal = { target: modal }; return; }
           draft.modal = modal; draft.modalDirty = false; draft.pendingModal = null; draft.materialsPreview = false; draft.modalRevision++;
         },
@@ -1665,33 +1641,6 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       let alive = true, refreshing, disposeAction, trackedProject, fileReturn;
       let navigationGeneration = 0, refreshGeneration = 0;
       const detailSequences = new Map(), detailPages = new Map();
-      const observerEditors = new Map();
-      const observerRects = createSnapshotStore({}, { persist: { name: 'dsh-project.observer-layout.v2' } });
-      const registerObserverEditor = (sessionId, tabId, editor) => {
-        const key = JSON.stringify([sessionId, tabId]);
-        observerEditors.set(key, editor);
-        return () => {
-          if (observerEditors.get(key) === editor) {
-            observerEditors.delete(key);
-          }
-        };
-      };
-      ctx.effect(() => ctx.sidebarRight.registerCloseHandler(OBSERVER_KIND, (sessionId, tab, proceed) => {
-        const key = JSON.stringify([sessionId, tab.id]), editor = observerEditors.get(key);
-        const close = () => {
-          if (!proceed()) return false;
-          const before = observerRects.getSnapshot();
-          if (Object.hasOwn(before, key)) {
-            const retained = { ...before };
-            delete retained[key];
-            observerRects.set(retained);
-          }
-          return true;
-        };
-        if (editor?.isDirty()) editor.requestClose(close);
-        else close();
-        return false;
-      }), 'dsh-project: preserve unsaved Project notes on panel close');
       const rpc = async (endpoint, input = {}) => {
         const response = await ctx.connection.rpc.call('/dsh-project', endpoint, input), result = response?.result ?? response;
         if (result?.ok === false) throw Object.assign(new Error(result.error?.message ?? result.error?.code ?? t('unavailable')), { code: result.error?.code });
@@ -1706,8 +1655,6 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       };
       const read = async (projectId, endpoint, input, isCurrent) => {
         const originalView = viewInstance.getSnapshot(), origin = document.activeElement;
-        const originPanel = endpoint === 'open' && input?.path ? ctx.sidebarRight.focusedTarget(origin) : undefined;
-        const originRequest = origin?.closest?.('[data-project-request-id]'), originRequestId = originRequest?.getAttribute('data-project-request-id');
         const scrollTop = endpoint === 'open' && input?.path && originalView.modal?.kind === 'materials' && originalView.modal.projectId === projectId
           ? document.querySelector('.dsh-project-materials-host:not([hidden]) .dsh-project-materials-content')?.scrollTop : undefined;
         const value = await rpc(endpoint, { ...input, projectId });
@@ -1717,11 +1664,9 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
           const project = snapshot.getSnapshot().projects.find(item => item.id === projectId);
           await ctx.workspaces.openPath(value.canonicalPath, { sessionId: project.coordinatorSessionId, workingDirectory: value.root, presentation: 'mini' });
           if (isCurrent && !isCurrent()) return value;
-          if (originPanel?.sessionId === project.coordinatorSessionId && ctx.sidebarRight.mounted.getSnapshot() === project.coordinatorSessionId && originPanel.host === 'float'
-            && ctx.sidebarRight.tabsIn(project.coordinatorSessionId).some(tab => tab.id === originPanel.tabId && tab.kind === OBSERVER_KIND)) {
-            const panel = observerEditors.get(JSON.stringify([project.coordinatorSessionId, originPanel.tabId]))?.getPanel();
-            if (panel?.id === originPanel.paneId && originRequestId) setRequestMode(project.coordinatorSessionId, panel, originRequestId, 'strip', originRequest.getAttribute('data-project-request-status') === 'completed');
-          }
+          dismissPanels();
+          // Only Materials can be suspended and returned to; other dialogs give way to the preview.
+          if (originalView.modal && originalView.modal.kind !== 'materials' && viewInstance.getSnapshot().modalRevision === originalView.modalRevision) viewInstance.actions.setModal(null);
           const currentView = viewInstance.getSnapshot();
           if (originalView.modal?.kind === 'materials' && originalView.modal.projectId === projectId && originalView.modalRevision === currentView.modalRevision && !currentView.pendingModal && (!isCurrent || isCurrent())) { fileReturn = { origin, modal: originalView.modal, scrollTop, isCurrent }; viewInstance.actions.suspendMaterials(projectId, originalView.modalRevision); }
         }
@@ -1808,52 +1753,21 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         if (!scope) throw new Error(t('unavailable'));
         await scope.get('conversation').send(text);
       };
-      const openObserver = projectId => {
-        const project = snapshot.getSnapshot().projects.find(item => item.id === projectId);
-        if (!project) return false;
-        const existing = ctx.sidebarRight.tabsIn(project.coordinatorSessionId).find(tab => tab.kind === OBSERVER_KIND);
-        if (existing) {
-          ctx.sidebarRight.focus(existing.id);
-          const panel = observerEditors.get(JSON.stringify([project.coordinatorSessionId, existing.id]))?.getPanel();
-          return true;
-        }
-        return ctx.sidebarRight.openTabIn(project.coordinatorSessionId, OBSERVER_KIND, { expand: false, floating: observerRect() });
+      const setRequestMode = (sessionId, id, mode, completed = false) => {
+        const before = requestModes.getSnapshot();
+        requestModes.set({ ...before, [sessionId]: { requests: { ...before[sessionId]?.requests, [id]: { mode, completed } } } });
       };
-      const setRequestMode = (sessionId, panel, id, mode, completed = false) => {
-        const before = observerModes.getSnapshot(), saved = before[sessionId]?.[panel.id];
-        observerModes.set({ ...before, [sessionId]: { ...before[sessionId], [panel.id]: { requests: { ...saved?.requests, [id]: { mode, completed } } } } });
-      };
-      const rememberObserverSize = (sessionId, panel, tabId) => {
-        const key = JSON.stringify([sessionId, tabId]), before = observerRects.getSnapshot();
-        observerRects.set({ ...before, [key]: { paneId: panel.id, preferred: panel.rect, applied: panel.rect, userSized: true } });
-      };
-      const resizeObserver = (sessionId, panel, tabId, contentHeight) => {
-        if (ctx.sidebarRight.mounted.getSnapshot() !== sessionId || window.innerWidth === 0 || window.innerHeight === 0) return;
-        const key = JSON.stringify([sessionId, tabId]), saved = observerRects.getSnapshot()[key], current = panel.host === 'float' ? panel.rect : undefined;
-        const previous = saved?.paneId === panel.id ? saved : undefined;
-        const unchanged = current && previous?.applied && ['x', 'y', 'width', 'height'].every(field => current[field] === previous.applied[field]);
-        const preferred = unchanged ? previous.preferred : previous?.userSized ? { ...previous.preferred, x: current?.x, y: current?.y } : previous ? current : current ? { ...current, width: 400, x: current.x + current.width - 400 } : undefined;
-        const height = previous?.userSized ? previous.preferred.height : contentHeight;
-        const rect = observerRect(preferred, height);
-        observerRects.set({ ...observerRects.getSnapshot(), [key]: { paneId: panel.id, preferred: { ...preferred ?? rect, height: height ?? rect.height }, applied: rect, userSized: previous?.userSized === true } });
-        if (panel.host === 'float') ctx.sidebarRight.resizeFloat(panel.id, rect); else if (tabId) ctx.sidebarRight.float(tabId, rect);
-        return rect;
-      };
-      const face = () => ({ hooks: { projects: snapshot, projectSessions: ctx.sessions.list, projectSessionStatus: ctx.uiSession.sessionStatus, projectView: viewInstance, observerModes, sidebarMounted: ctx.sidebarRight.mounted }, read, command, refresh, openProject, openLifecycle, readDetail, sendUserRequest, getFileReturn: () => fileReturn, teamT: ctx.locale.bind('project-team'),
-        openObserver, resizeObserver, rememberObserverSize, setRequestMode, registerObserverEditor,
+      const face = () => ({ hooks: { projects: snapshot, projectSessions: ctx.sessions.list, projectSessionStatus: ctx.uiSession.sessionStatus, projectView: viewInstance, requestModes, dismissals }, read, command, refresh, openProject, openLifecycle, readDetail, sendUserRequest, getFileReturn: () => fileReturn, teamT: ctx.locale.bind('project-team'),
+        setRequestMode,
         trackActiveProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; }; },
         openModelSettings: () => ctx.settingsNavigation.open('models'),
         addProject: async () => { try { const path = await ctx.uiWorkspace.selectDirectory(); if (!path) return; const result = await rpc('create', { workingDirectory: path, requestId: requestId() }); acceptDetail({ project: result.project }); await openProject(result.project.id); } catch (failure) { snapshot.set({ ...snapshot.getSnapshot(), error: errorText(failure) }); } },
         showMaterials: (projectId, workstreamId, context) => { const view = viewInstance.getSnapshot(); if (!workstreamId && view.materialsPreview && view.modal?.projectId === projectId) viewInstance.actions.returnMaterials(projectId); else show('materials', projectId, workstreamId, context); }, showProcess: (projectId, workstreamId, member = false, context = {}) => { viewInstance.actions.setModal({ kind: 'process', projectId, ...(member ? { workerSessionId: workstreamId } : { workstreamId }), ...context }); }, showDiff: (projectId, workstreamId) => show('diff', projectId, workstreamId),
+        showReport: (projectId, workstreamId, context) => show('report', projectId, workstreamId, context), showRequestDiff: (projectId, requestId) => show('requestDiff', projectId, undefined, { requestId }),
         trackProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; }; },
         retainProcess: (project, work) => ctx.sessions.retain({ parentSessionId: project.coordinatorSessionId, childSessionId: work.workerSessionId, mode: 'continuable' }, { source: 'projectPreview' }),
       });
       ctx.slots.inject('sidebar.workspaces.sections', () => ctx.slots.register({ name: 'sidebar.workspaces.sections', id: NS, order: 20, locale: NS, store: viewStore, inject: face }, SidebarPage));
-      ctx.effect(() => ctx.sidebarRightTabs.register({ id: OBSERVER_TAB, kind: OBSERVER_KIND, priority: 'extension', title: () => t('tab'), keepMounted: true, floatingOnly: true, showCloseButton: false }), 'dsh-project: observer tab type');
-      ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({ name: 'sidebar.right.pane.tab', key: OBSERVER_TAB, locale: NS,
-        inject: sessionId => ({ ...face(), sessionId }) }, ProjectObserver));
-      ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register({ name: 'sidebar.right.pane.tab.title', key: OBSERVER_TAB, locale: NS,
-        inject: sessionId => ({ ...face(), sessionId }) }, ProjectObserverTitle));
       ctx.slots.inject('conversation.composer', () => {
         const mounted = new Map();
         const sync = () => {
@@ -1864,7 +1778,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         const off = snapshot.subscribe(sync); sync();
         return () => { off(); for (const dispose of mounted.values()) dispose(); };
       });
-      ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({ name: 'conversation.session.header.actions', id: NS, locale: NS, inject: face }, ProjectHeader));
+      ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({ name: 'conversation.session.header.actions', id: NS, order: -20, locale: NS, inject: face }, ProjectHeader));
       ctx.slots.inject('conversation.input.right', () => ctx.slots.register({ name: 'conversation.input.right', id: NS, order: 30, locale: NS, inject: face }, ProjectStop));
       ctx.slots.inject('conversation.approval.actions', () => ctx.slots.register({ name: 'conversation.approval.actions', id: NS, locale: NS, inject: face }, ProjectApprovalStop));
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: NS, locale: NS, store: viewStore, inject: face }, ProjectOverlay));

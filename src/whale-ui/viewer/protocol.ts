@@ -19,6 +19,7 @@ export type HostMessage = Envelope & (
 export type ViewerMessage = Envelope & (
   | { type: 'ready' }
   | { type: 'height'; height: number }
+  | { type: 'title'; title: string }
   | { type: 'state'; state: InteractionState }
   | { type: 'action'; requestId: string; action: 'assistant'; message: string; formState?: unknown; context?: unknown }
   | { type: 'action'; requestId: string; action: 'open-url'; url: string }

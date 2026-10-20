@@ -280,6 +280,58 @@ test('checkUpdate and listReleases send Authorization only when a githubToken is
   }
 });
 
+test('the configured CNB route drives check, list and tag installs without touching GitHub', async (t) => {
+  useReleasePlatform(t, 'win32');
+  const { setUpdateRouteProvider, setGithubTokenProvider } = require('./update');
+  const previousFetch = global.fetch;
+  const seen = [];
+  const base = 'https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v99.0.0/';
+  const release = {
+    tag_name: 'v99.0.0', html_url: 'https://cnb.cool/ayasealter/WhaleIsle/-/releases/tag/v99.0.0', body: 'notes',
+    assets: ['Whale-Isle-Setup-99.0.0.exe', 'Whale-Isle-Setup-99.0.0.exe.blockmap', 'latest.yml', 'SHA512SUMS.txt']
+      .map(name => ({ name, size: 10, browser_download_url: base + name })),
+  };
+  global.fetch = async (url, options) => {
+    seen.push({ url: String(url), headers: options?.headers || {} });
+    const href = String(url);
+    const body = href.includes('/releases/tags/') ? { ...release, assets: [] }
+      : [{ ...release, tag_name: 'v100.0.0', prerelease: true }, release];
+    return { ok: true, status: 200, json: async () => body };
+  };
+  setGithubTokenProvider(() => 'ghp_never_sent_to_cnb');
+  setUpdateRouteProvider(() => 'cnb');
+  try {
+    const check = await checkUpdate();
+    assert.equal(check.status, 'available');
+    assert.equal(check.route, 'cnb');
+    assert.equal(check.latest, '99.0.0', 'unfinished mirror prereleases are never offered');
+    assert.equal(check.assetUrl, base + 'Whale-Isle-Setup-99.0.0.exe');
+    assert.equal(check.checksumUrl, base + 'SHA512SUMS.txt');
+    assert.equal(check.blockmapUrl, base + 'Whale-Isle-Setup-99.0.0.exe.blockmap');
+    assert.equal(check.updaterMetadataUrl, base + 'latest.yml');
+    assert.equal(check.releasesUrl, 'https://cnb.cool/ayasealter/WhaleIsle/-/releases');
+
+    const listed = await listReleases();
+    assert.equal(listed.route, 'cnb');
+    assert.deepEqual(listed.releases.map(row => row.tag), ['v99.0.0']);
+
+    const tagged = await installRelease('v99.0.0');
+    assert.equal(tagged.message, 'no-installer');
+    assert.equal(tagged.route, 'cnb');
+    assert.ok(seen.at(-1).url.endsWith('/-/releases/tags/v99.0.0'));
+
+    assert.ok(seen.length >= 3);
+    for (const request of seen) {
+      assert.equal(new URL(request.url).hostname, 'cnb.cool');
+      assert.equal(request.headers.Authorization, undefined);
+    }
+  } finally {
+    setUpdateRouteProvider(null);
+    setGithubTokenProvider(null);
+    global.fetch = previousFetch;
+  }
+});
+
 test('download headers carry the token only on the first hop toward GitHub hosts', async () => {
   const { setGithubTokenProvider } = require('./update');
   const previousGet = https.get;
@@ -991,6 +1043,7 @@ function fakeUpdaterChannel(overrides = {}) {
   const updater = new EventEmitter();
   updater.calls = { checkForUpdates: 0, downloadUpdate: 0, quitAndInstall: [] };
   updater.getOrCreateDownloadHelper = async () => ({ cacheDir: 'C:/configured-cache' });
+  updater.setFeedURL = (feed) => { updater.feed = feed; };
   updater.checkForUpdates = async () => {
     updater.calls.checkForUpdates += 1;
     if (overrides.failCheck) {

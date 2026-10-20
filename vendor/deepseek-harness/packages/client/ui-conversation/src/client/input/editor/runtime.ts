@@ -4,7 +4,7 @@ import type { LexicalEditor, NodeKey } from 'lexical'
 import {
   $addUpdateTag, $createParagraphNode, $createTextNode, $getRoot, $getSelection, $isRangeSelection,
   BLUR_COMMAND, CLEAR_HISTORY_COMMAND, COMMAND_PRIORITY_CRITICAL, createEditor, HISTORY_MERGE_TAG, PASTE_TAG,
-  RootNode, SELECTION_CHANGE_COMMAND, SKIP_DOM_SELECTION_TAG,
+  RootNode, SELECTION_CHANGE_COMMAND, SKIP_DOM_SELECTION_TAG, SKIP_SCROLL_INTO_VIEW_TAG,
 } from 'lexical'
 import { registerPlainText } from '@lexical/plain-text'
 import { createEmptyHistoryState, registerHistory } from '@lexical/history'
@@ -42,6 +42,36 @@ const REFERENCE_PLACEHOLDER_RE = /[\uE100-\uE11D\uFFFC]/gu
 /** Undo merge window for contiguous typing, in ms (the old machine's mergeWindowMs). */
 const HISTORY_MERGE_DELAY_MS = 1000
 
+/**
+ * Keep the caret visible inside the draft's own scrollport only. Lexical's
+ * built-in scroll-into-view walks every scrolling ancestor, and the composer
+ * seat renders inside the conversation scroller while sitting below its box,
+ * so each edit scrolled a reader-scrolled transcript down toward the latest
+ * turn. Composer updates opt out of it and land the caret here instead.
+ * @param root - the editor's contenteditable root.
+ */
+function keepCaretInDraft(root: HTMLElement): void {
+  const doc = root.ownerDocument
+  if (!root.contains(doc.activeElement)) return
+  const selection = doc.getSelection()
+  if (selection === null || selection.rangeCount === 0 || !selection.isCollapsed) return
+  const range = selection.getRangeAt(0)
+  // Layout-free documents (jsdom) have ranges without client rects.
+  if (!root.contains(range.startContainer) || typeof range.getBoundingClientRect !== 'function') return
+  let caret = range.getBoundingClientRect()
+  if (caret.height === 0) {
+    // A collapsed range on an empty line has no box; its line element does.
+    const container = range.startContainer
+    const line = container instanceof Element ? container : container.parentElement
+    if (line === null) return
+    caret = line.getBoundingClientRect()
+  }
+  const scrollport = root.closest<HTMLElement>('[data-input-scroll]') ?? root
+  const box = scrollport.getBoundingClientRect()
+  if (caret.bottom > box.bottom) scrollport.scrollTop += caret.bottom - box.bottom
+  else if (caret.top < box.top) scrollport.scrollTop -= box.top - caret.top
+}
+
 /** One model-owned editor; registration and disposal remain with its model. */
 export class DraftEditorRuntime {
   /** The editor bound by the Composer's contenteditable host. */
@@ -78,8 +108,22 @@ export class DraftEditorRuntime {
       }
       return false
     }
+    const scrollOnlyDraft = (): false => {
+      $addUpdateTag(SKIP_SCROLL_INTO_VIEW_TAG)
+      return false
+    }
     const unregister = mergeRegister(
       registerPlainText(this.editor),
+      // Content edits mark the root dirty; caret moves arrive as selection changes.
+      this.editor.registerNodeTransform(RootNode, scrollOnlyDraft),
+      this.editor.registerCommand(SELECTION_CHANGE_COMMAND, scrollOnlyDraft, COMMAND_PRIORITY_CRITICAL),
+      this.editor.registerUpdateListener(({ dirtyElements, dirtyLeaves, prevEditorState, editorState }) => {
+        const root = this.editor.getRootElement()
+        if (root === null) return
+        if (dirtyElements.size === 0 && dirtyLeaves.size === 0
+          && prevEditorState._selection?.is(editorState._selection ?? null) === true) return
+        keepCaretInDraft(root)
+      }),
       this.editor.registerCommand(BLUR_COMMAND, () => {
         // Finish this batch before an explicit focus can restore its updated selection.
         this.editor.update(preserveExternalSelection, { discrete: true })

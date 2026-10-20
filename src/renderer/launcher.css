@@ -272,13 +272,13 @@ html[data-window-maximized] .shell::after { border: 0; }
   padding: calc(var(--caption-h) + 8px) 24px 24px;
 }
 
-button[aria-busy="true"] {
+button[aria-busy="true"]:not([data-button-label]) {
   position: relative;
   color: transparent;
   transition: none;
 }
-button[aria-busy="true"] > * { visibility: hidden; }
-button[aria-busy="true"]::after,
+button[aria-busy="true"]:not([data-button-label]) > * { visibility: hidden; }
+button[aria-busy="true"]:not([data-button-label])::after,
 .modal-mask.is-loading .modal-title::before {
   content: '';
   display: inline-block;
@@ -289,12 +289,12 @@ button[aria-busy="true"]::after,
   border-radius: 50%;
   animation: launcher-loading 800ms linear infinite;
 }
-button[aria-busy="true"]::after {
+button[aria-busy="true"]:not([data-button-label])::after {
   position: absolute;
   inset: 0;
   margin: auto;
 }
-button.primary[aria-busy="true"]::after {
+button.primary[aria-busy="true"]:not([data-button-label])::after {
   border-color: var(--dsw-alias-label-primary-foreground);
   border-right-color: transparent;
 }
@@ -302,7 +302,7 @@ button.primary[aria-busy="true"]::after {
 .modal-mask.is-loading .modal-actions { display: none; }
 @keyframes launcher-loading { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
-  button[aria-busy="true"]::after,
+  button[aria-busy="true"]:not([data-button-label])::after,
   .modal-mask.is-loading .modal-title::before { animation: none; }
 }
 

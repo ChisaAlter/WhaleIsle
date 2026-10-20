@@ -87,7 +87,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-settings-general/src/client/CloseBehaviorRow.tsx', includes: ['SettingsSelect'] },
   { file: 'packages/client/ui-settings-general/src/client/AutoStartDesktopRow.tsx', includes: ['SettingsSelect'] },
   { file: 'packages/client/ui-settings-general/src/client/HarnessRestartRow.tsx', includes: ['SettingsSelect'] },
-  { file: 'packages/client/ui-settings-general/src/client/AboutSection.tsx', includes: ['openDshHome'] },
+  { file: 'packages/client/ui-settings-general/src/client/AboutSection.tsx', includes: ['openDshHome', 'downloadRoute'] },
   // Remote workspace (SSH) toggle: desktop-only Interface row + config field
   // + dictionaries riding the upstream settings-general files.
   { file: 'packages/client/ui-settings-general/src/client/RemoteWorkspaceRow.tsx', includes: ['remoteWorkspaceEnabled'] },
@@ -119,8 +119,17 @@ const FORK_FILE_MARKERS = [
   // rc.1 renamed the stats row to StatsPills (stat-dialog pair); the follow
   // contract moved with it.
   { file: 'packages/client/ui-conversation/src/client/skeleton/InputBar.module.css', includes: ['dsh-composer-resized-width'] },
-  { file: 'packages/client/ui-chat/src/client/chat/ChatView.module.css', includes: ['dsh-composer-resized-width'] },
-  { file: 'packages/client/ui-conversation/src/client/skeleton/ComposerResizeHandles.tsx', includes: ['data-conversation-scroll'] },
+  { file: 'packages/client/ui-chat/src/client/chat/ChatView.module.css', includes: ['dsh-composer-resized-width', '@property --dsh-composer-flow-width'] },
+  { file: 'packages/client/ui-conversation/src/client/skeleton/ComposerResizeHandles.tsx', includes: ['data-conversation-scroll', 'FLOW_VAR', 'settle'] },
+  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx', includes: ['data-composer-flow=""'] },
+  { file: 'packages/client/ui-conversation/tests/composer-resize-publish.client.spec.tsx', includes: ['--dsh-composer-flow-width'] },
+  // Approval takeover: the card covers the drag-resized composer card's rect.
+  { file: 'packages/client/ui-approval/src/client/ApprovalPanel.tsx', includes: ['--dsh-approval-card-inset-top'] },
+  { file: 'packages/client/ui-approval/src/client/ApprovalPanel.module.css', includes: ['var(--dsh-approval-card-inset-top'] },
+  { file: 'apps/web/tests/approval-resize-geometry.e2e.ts', includes: ['places the approval card on the input card rect'] },
+  // Typing never scrolls a reader-scrolled transcript.
+  { file: 'packages/client/ui-conversation/src/client/input/editor/runtime.ts', includes: ['SKIP_SCROLL_INTO_VIEW_TAG', 'keepCaretInDraft'] },
+  { file: 'apps/web/tests/composer-typing-keeps-reading.e2e.ts', includes: ['types, grows, and overflows the draft without moving the transcript'] },
   { file: 'packages/client/ui-conversation/src/client/queue/QueueDock.module.css', includes: ['dsh-composer-resized-width'] },
   { file: 'packages/client/ui-primitives/src/TaskDock.module.css', includes: ['dsh-composer-resized-width'] },
   { file: 'packages/client/ui-primitives/src/TaskDock.tsx', includes: ["import css from './TaskDock.module.css'", 'className={css.root}'] },
@@ -140,7 +149,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-input-trigger/src/client/MenuView.tsx', includes: ['const lastOpen = useRef(state)', 'lastOpenCrumbs', 'lastOpen.current = state', 'const view = state.open ? state : lastOpen.current', 'const { mounted, state: motionState } = usePresence(state.open)', 'data-dsh-motion="popover"', 'data-state={motionState}'] },
   { file: 'packages/client/ui-primitives/src/HoverCard.tsx', includes: ["const compactMotion = variant === 'compact' && !inline", 'usePresence(compactMotion && open)', "data-dsh-motion={compactMotion ? 'popover' : undefined}", "data-state={compactMotion ? cardState : closing ? 'closed' : 'open'}"] },
   { file: 'packages/client/ui-primitives/src/Tooltip.tsx', includes: ["data-dsh-motion=\"fade\"", 'data-state={state}', 'usePresence(requestedVisible && !disabled)'] },
-  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css', includes: [':not([data-dsh-transparent])', '.heroWorkspaceRow', 'max-width: var(--dsh-composer-resized-width', 'align-self: center'] },
+  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css', includes: [':not([data-dsh-transparent])', '.heroWorkspaceRow', 'max-width: var(--dsh-composer-flow-width, var(--dsh-composer-resized-width', 'align-self: center'] },
   { file: 'packages/client/ui-conversation/src/client/ComposerBeam.tsx', includes: ['data-composer-beam', '--dsh-composer-beam-period', '--dsh-composer-beam-bloom-opacity', '--dsh-composer-beam-track-width', 'data-beam-breathing'] },
   { file: 'packages/client/ui-conversation/src/client/ComposerBeam.module.css', includes: ['.beamBloom::before', 'inset: -4px', 'blur(var(--dsh-composer-beam-glow-blur', '.beamStroke {', 'padding: var(--dsh-composer-beam-track-width', 'transparent 30%', '-webkit-mask-composite: source-in, xor', 'mask-composite: intersect, exclude', 'mask-composite: add', 'corner-shape: round'] },
   { file: 'packages/client/ui-chat/src/client/chat/StatsPills.tsx', includes: ['data-stats-line'] },
@@ -165,7 +174,13 @@ const FORK_FILE_MARKERS = [
   // the Session header and transcript fade in, and the previous answer keeps
   // its actions until the next turn settles.
   { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx', includes: ["stack.dataset.composerEntering = ''"], excludes: ['animation-play-state'] },
-  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css', includes: ['conversation-enter-swap'], excludes: ['animation-play-state: paused'] },
+  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css', includes: ['conversation-enter-swap'], excludes: ['animation-play-state: paused', '-webkit-app-region: no-drag'] },
+  // Caption band: seats and the titlebar cluster leave their blank space to the window drag region.
+  { file: 'packages/client/ui-layout/src/client/AppFrame.module.css', includes: ['No app-region: its controls subtract themselves'] },
+  { file: 'packages/client/ui-layout/tests/caption-drag-regions.client.spec.ts', includes: ['leaves Session header seats and the titlebar cluster to the band'] },
+  { file: 'apps/web/tests/caption-drag-dead-zones.e2e.ts', includes: ['dead no-drag', 'swallowed control'] },
+  { file: 'apps/web/tsconfig.json', includes: ['tests/caption-drag-dead-zones.e2e.ts'] },
+  { file: 'tsconfig.host.json', includes: ['apps/web/tests/caption-drag-dead-zones.e2e.ts'] },
   { file: 'packages/client/ui-chat/src/client/chat/TurnTailNodeView.tsx', includes: ['function revealTurn', 'revealTurn(snapshot) !== data.turn'] },
   { file: 'packages/client/ui-conversation/src/client/apply.ts', includes: ['selectNoDirectory', 'openNoDirectory'] },
   { file: 'packages/client/ui-conversation/src/client/locales.ts', includes: ['hero.noDirectory'] },

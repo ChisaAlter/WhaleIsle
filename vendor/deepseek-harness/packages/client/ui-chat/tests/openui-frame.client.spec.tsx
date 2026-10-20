@@ -82,6 +82,21 @@ describe('Whale UI parent bridge', () => {
     expect(h.shell.openuiViewer).toHaveBeenCalledOnce()
   })
 
+  it('names the card by the answer heading the viewer reports and falls back to the generic label', async () => {
+    const h = harness()
+    const view = render(<OpenUiFrame {...h.props} />)
+    const { frame } = await connect(view)
+    const label = () => view.container.querySelector('header [role="status"]')!.textContent
+    expect(label()).toBe(en['openui.title'])
+    emit(frame, { type: 'title', title: '  ChisaBot repository overview ' })
+    expect(label()).toBe('ChisaBot repository overview')
+    expect(frame.title).toBe('ChisaBot repository overview')
+    emit(frame, { type: 'title', title: 42 })
+    expect(label()).toBe('ChisaBot repository overview')
+    emit(frame, { type: 'title', title: '' })
+    expect(label()).toBe(en['openui.title'])
+  })
+
   it('requires the exact contentWindow, channel, version and instance for actions and state', async () => {
     const h = harness()
     const saveState = vi.fn(h.props.openUi.saveState)

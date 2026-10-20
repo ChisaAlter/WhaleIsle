@@ -16,9 +16,9 @@
   font-family: var(--dsw-font-family);
 }
 
-button[aria-busy='true']:not(.shell-feedback-task-summary) { position: relative; color: transparent; transition: none; }
-button[aria-busy='true']:not(.shell-feedback-task-summary) > * { visibility: hidden; }
-button[aria-busy='true']:not(.shell-feedback-task-summary)::after {
+button[aria-busy='true']:not(.shell-feedback-task-summary):not([data-button-label]) { position: relative; color: transparent; transition: none; }
+button[aria-busy='true']:not(.shell-feedback-task-summary):not([data-button-label]) > * { visibility: hidden; }
+button[aria-busy='true']:not(.shell-feedback-task-summary):not([data-button-label])::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -30,7 +30,32 @@ button[aria-busy='true']:not(.shell-feedback-task-summary)::after {
   border-radius: 50%;
   animation: shell-feedback-spin 700ms linear infinite;
 }
-button.primary[aria-busy='true']:not(.shell-feedback-task-summary)::after { border-color: var(--dsw-alias-label-primary-foreground); border-right-color: transparent; }
+button.primary[aria-busy='true']:not(.shell-feedback-task-summary):not([data-button-label])::after { border-color: var(--dsw-alias-label-primary-foreground); border-right-color: transparent; }
+button[data-button-label]:not([data-button-label='measure']) { position: relative; color: transparent !important; }
+button[data-button-label]:not([data-button-label='measure']) > :not(.shell-button-overlay) { visibility: hidden; }
+.shell-button-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.shell-button-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.shell-button-spinner {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: shell-feedback-spin 700ms linear infinite;
+}
 
 .shell-feedback-toast,
 .shell-feedback-pane,
@@ -193,5 +218,6 @@ button.primary[aria-busy='true']:not(.shell-feedback-task-summary)::after { bord
   .shell-feedback-transient { animation: shell-feedback-fade 1000ms ease var(--dsh-toast-hold, 3000ms) forwards; }
   .shell-feedback-task-summary[aria-busy='true']::before { animation: none; }
   .shell-feedback-pane[aria-busy='true']::before { animation: none; }
-  button[aria-busy='true']:not(.shell-feedback-task-summary)::after { animation: none; }
+  button[aria-busy='true']:not(.shell-feedback-task-summary):not([data-button-label])::after { animation: none; }
+  .shell-button-spinner { animation: none; }
 }

@@ -121,18 +121,10 @@
   min-height: 0;
 }
 
-/* AppFrame's caption band spans the first 48px on desktop. Its drag region
-   must leave the Session header's actual content clickable on every platform;
-   only breadcrumb segments subtract themselves, not the flex-grown navigation's
-   empty space before the actions, which remains available for window dragging. */
-.headerLeading,
-.crumbSeg,
-.headerActions,
-.tabs,
-.headerUtilities,
-.headerCorner {
-  -webkit-app-region: no-drag;
-}
+/* AppFrame's caption band spans the first 48px on desktop. Header seats
+   declare no app-region: the controls inside subtract themselves through the
+   ui-web base.css control rule, and the seats' own padding, gaps, and labels
+   stay part of the window drag region (caption-drag-dead-zones.e2e.ts). */
 
 /* The bottom hairline is the tab strip's underline; with no strip rendered
    (view-tabs off, a single view, or a managed session) it is a stray rule. */
@@ -687,7 +679,7 @@ button.crumb:hover {
   align-self: center;
   gap: 2px;
   width: 100%;
-  max-width: var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width));
+  max-width: var(--dsh-composer-flow-width, var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width)));
   min-width: 0;
   margin-top: 4px;
   /* Figma drew px 8; nudged +12 so the folder glyph aligns with the card's

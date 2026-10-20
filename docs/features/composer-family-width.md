@@ -14,7 +14,9 @@
 
 ## Invariants
 
-- 单一事实源：座位（`[data-composer-seat]`）**和**列宿主（`[data-conversation-scroll]`）同值发布 `--dsh-composer-resized-width`；各消费方只读该变量，**不得**另存宽度或自行计算。双发原因：聊天流转列（`.column`）是 seat 的兄弟，读不到只发在 seat 上的变量。
+- 单一事实源：`--dsh-composer-resized-width` 由座位（`[data-composer-seat]`）发布，拖动结束（及恢复已存宽度）时再写到会话根和列宿主（`[data-conversation-scroll]`），供之后挂载的聊天列读取；各消费方只读变量，**不得**另存宽度或自行计算。
+- 拖动性能：继承型自定义属性写在 transcript 祖先上会让全部消息重算样式（20 轮会话每次移动约 60ms）。拖动帧因此只写座位（小子树）与不继承的 `--dsh-composer-flow-width`（`@property … inherits: false`，写在 `[data-chat-flow]` 聊天列和 `[data-composer-flow]` Hero 行本身）；聊天列与 Hero 行先读 flow 宽度，再回退到继承值。`composer-resize-publish.client.spec.tsx` 钉住拖动中不写列宿主。
+- 审批接管：审批卡宽高取被隐藏输入卡的实测尺寸，上下内边距取输入卡在输入区内的实测偏移，覆盖输入卡原位置；`approval-resize-geometry.e2e.ts` 在拉宽拉高后比较两张卡的位置与尺寸（误差 ≤1px）。
 - 静止回退：`var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width))`，变量缺失时 = 旧值。
 - 关系钉死：统计 dock = 卡宽 − 2×side-clearance；聊天流转列 = 卡宽 − 2×side-clearance；QueueDock = 卡宽 − 2×dock-inset；TodoPanel / GoalBar = 卡宽 − 4×dock-inset。TodoPanel 使用共享 `ui-primitives/TaskDock`，宽度约定位于 `TaskDock.module.css` 的 `.root`。0.2.1-alpha.1 起 ActivityPill 与 UsagePill 各自占一个 dock 条目，宽度约定位于 `InputBar.module.css` 的 `.dock`；`PeakValleyRow` 在该容器中独占下一行。
 - Hero 行直接以 `var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width))` 为 `max-width`，在外层 stack 内 `align-self: center`；不得按 stack 满宽留在左缘。
@@ -36,14 +38,14 @@
 
 - 上游 composer-resize 的手势/几何数学（`composer-resize.ts` 纯函数）
 - 高度线（`--dsh-composer-resized-height`）
-- 其它槽：approval / question / sidebar / settings
+- 其它槽：question / sidebar / settings（approval 只承接输入卡尺寸与位置，见上）
 - `--dsh-chat-content-width` 值本身（748px 静止轴）
 
 ## Gates
 
 | Kind | What |
 | --- | --- |
-| Automated | `node --test src/shared/composer-family-width.test.js`；`npm test`（桌面全集含 fork 标记 fixture）；vendor `pnpm vitest run packages/client/ui-chat packages/client/ui-conversation packages/client/ui-goal`；vendor `DSH_SNAPSHOT=replay vitest run --config vitest.web.config.ts apps/web/tests/composer-resize-dock.e2e.ts` |
+| Automated | `node --test src/shared/composer-family-width.test.js`；vendor `vitest run packages/client/ui-conversation/tests/composer-resize-publish.client.spec.tsx`；vendor web e2e `approval-resize-geometry.e2e.ts`；`npm test`（桌面全集含 fork 标记 fixture）；vendor `pnpm vitest run packages/client/ui-chat packages/client/ui-conversation packages/client/ui-goal`；vendor `DSH_SNAPSHOT=replay vitest run --config vitest.web.config.ts apps/web/tests/composer-resize-dock.e2e.ts` |
 | Manual / QA | 开 composerResize → 左右拖动输入卡 → 统计行/Dock 卡同宽联动；回到 blank-session Hero → workspace / preset 行与窄卡同宽居中；关闭开关 → 全部回退；切换会话 + 刷新后尺寸保持 |
 
 ## Sources

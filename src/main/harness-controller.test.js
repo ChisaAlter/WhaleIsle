@@ -230,6 +230,14 @@ test('Project enable and recovery flags reach the optional mount without enablin
   }
 });
 
+test('a held-back Project is not mounted even when its plugin is enabled', async () => {
+  const calls = [], f = fixture({ projectAvailable: () => false,
+    ensureDshProjectPlugin: async options => { calls.push(options); return { ok: true, disabled: !options.enabled }; } });
+  await f.controller.start();
+  assert.equal(calls[0].enabled, false);
+  await f.controller.shutdown();
+});
+
 test('writes the desktop install plugin before launching Harness', async () => {
   const calls = [];
   const f = fixture({

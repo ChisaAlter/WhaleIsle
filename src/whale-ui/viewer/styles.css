@@ -23,7 +23,7 @@
 :root[data-theme="dark"] { --whale-fg: #e8ebf0; --whale-fg-muted: #a2aaba; --whale-bg: #1b1d23; --whale-surface: #252931; --whale-border: #3a414d; --whale-accent: #8ba9ff; --whale-ok: #72c79c; --whale-warn: #e5b35f; --whale-danger: #ee8c99; }
 * { box-sizing: border-box; }
 html,body { padding: 0; margin: 0; color: var(--whale-fg); background: transparent; font-family: var(--whale-font); font-size: var(--whale-font-size, 14px); line-height: 1.5; }
-.whale-viewer-root { min-width: 0; padding: 8px 2px; overflow-wrap: anywhere; }
+.whale-viewer-root { width: 100%; min-width: 0; display: flow-root; padding: 16px 20px 20px; overflow-wrap: anywhere; }
 .whale-viewer-error { color: var(--whale-danger); white-space: pre-wrap; font-size: .875rem; padding: 8px; border-inline-start: 2px solid var(--whale-danger); }
 .whale-viewer-diagnostics { font: .8rem/1.5 var(--whale-font); color: var(--whale-fg-muted); margin: 8px 0; }
 .whale-viewer-diagnostics summary { cursor: pointer; }

@@ -86,6 +86,25 @@ test('actual Viewer never labels a new broken source complete using the previous
   } finally { await app.close(); }
 });
 
+test('actual Viewer reports changing content titles and clears the heading on source replacement', async () => {
+  const app = await mount();
+  const title = () => app.events.findLast(event => event.type === 'title')?.title;
+  try {
+    await app.render('root = Col([Title("First page"),Button("Rename",@Set($heading,"Other page")),Title($heading)])\n$heading = "Other heading"');
+    await act(async () => { await new Promise(resolve => setImmediate(resolve)); });
+    assert.equal(title(), 'First page');
+    await app.render('root = Col([Title($heading),Button("Rename",@Set($heading,"Other page"))])\n$heading = "First page"');
+    await act(async () => { await new Promise(resolve => setImmediate(resolve)); });
+    assert.equal(title(), 'First page');
+    await click(app.element.querySelector('button'));
+    await act(async () => { await new Promise(resolve => setImmediate(resolve)); });
+    assert.equal(title(), 'Other page');
+    await app.render(good);
+    await act(async () => { await new Promise(resolve => setImmediate(resolve)); });
+    assert.equal(title(), '');
+  } finally { await app.close(); }
+});
+
 test('actual Viewer reports unsupported business operations even when their results are unused', async () => {
   const app = await mount();
   try {

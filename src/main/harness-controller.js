@@ -63,6 +63,7 @@ class HarnessController extends EventEmitter {
       || (async () => ({ ok: true, added: false }));
     this.ensureDshProjectPlugin = options.ensureDshProjectPlugin
       || (async () => ({ ok: true, added: false }));
+    this.projectAvailable = options.projectAvailable || (() => true);
     this.ensureDshWhalePlugin = options.ensureDshWhalePlugin
       || (async () => ({ ok: true, added: false }));
     this.ensureDshRemotePlugin = options.ensureDshRemotePlugin
@@ -806,7 +807,7 @@ class HarnessController extends EventEmitter {
     const prepareProjectPlugin = async ({ harnessRoot } = {}) => {
       try {
         const project = await this.ensureDshProjectPlugin({ skipUserPlugins,
-          enabled: !(startConfig.disabledPlugins || []).includes('dsh-project'),
+          enabled: this.projectAvailable() && !(startConfig.disabledPlugins || []).includes('dsh-project'),
           ...(harnessRoot ? { harnessRoot } : {}) });
         checkCurrent();
         if (project?.ok === false) this.dsh.log(`Project 不可用：${project.error || 'missing runtime'}`, 'app');

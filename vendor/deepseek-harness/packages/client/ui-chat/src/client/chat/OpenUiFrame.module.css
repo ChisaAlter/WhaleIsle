@@ -63,11 +63,9 @@
 }
 
 .error {
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 8px;
-  max-height: calc(100% - 16px);
+  /* In flow under the answer: a diagnostic never covers the rendered content. */
+  margin: 0 8px 8px;
+  max-height: 160px;
   overflow: auto;
   display: flex;
   align-items: flex-start;

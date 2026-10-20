@@ -222,7 +222,7 @@
         if (!host) continue;
         host.querySelectorAll(`[data-comp-id="${CSS.escape(id)}"]`).forEach((button) => {
           if (button.dataset.compAction === pending.action) {
-            pending.restoreButtons.push(window.launcherButtonBusy(button, pending.label));
+            pending.restoreButtons.push(window.launcherButtonBusy(button, pending.label, buttonLabel(pending.label)));
           } else {
             const disabled = button.disabled;
             button.disabled = true;
@@ -231,6 +231,15 @@
         });
       }
     }
+  }
+
+  // The button keeps a short form of the phase ("正在下载组件 42%：…" →
+  // "下载中 42%"); the full sentence stays in the status line and aria-label.
+  function buttonLabel(text) {
+    const head = String(text).split('：')[0];
+    const percent = head.match(/\d+%/)?.[0];
+    const base = head.startsWith('正在') ? `${head.slice(2, 4)}中` : head.replace(/\s*\d+%$/, '').split('，').at(-1);
+    return percent ? `${base.replace(/中$/, '')} ${percent}` : `${base.replace(/…$/, '')}…`;
   }
 
   function progressText(payload) {
@@ -324,7 +333,6 @@
     const pending = {
       action,
       label: action === 'uninstall' && id === 'whalebridge' ? '正在读取鲸桥状态…' : ACTION_LOADING[action],
-      progress: null,
       restoreButtons: [],
     };
     state.pending.set(id, pending);
@@ -365,12 +373,6 @@
       const status = document.getElementById('component-status');
       if (status) status.textContent = `${name}：${pending.label}`;
       syncPendingButtons();
-      if (action === 'install' || action === 'update') {
-        pending.progress = window.appProgress({
-          title: `${action === 'install' ? '安装' : '更新'}${name}`,
-          body: '正在获取组件版本…',
-        });
-      }
       const result = await state.shell[method](argument);
       if (result && result.ok === false) {
         failure = ACTION_ERRORS[result.error] || errorText(result, '操作失败');
@@ -381,7 +383,6 @@
     } catch (error) {
       failure = errorText(error, action === 'uninstall' ? '无法卸载组件' : '操作失败');
     } finally {
-      pending.progress?.close();
       const restoreFocus = canRestoreActionFocus(button, focusHost);
       pending.restoreButtons.forEach(restore => restore());
       state.pending.delete(id);
@@ -394,14 +395,9 @@
       void window.appNotice({ title: `${name}操作未完成`, body: failure, tone: 'error' });
     } else if (completed && completionMessage) {
       void window.appNotice({ title: `${name}操作结果`, body: completionMessage, tone: 'success' });
-    } else if (completed && (action === 'install' || action === 'update')) {
-      const version = state.rows.get(id)?.installedVersion;
-      void window.appNotice({
-        title: `${name}${action === 'install' ? '安装' : '更新'}完成`,
-        body: version ? `当前版本为 v${version}。` : '组件已就绪。',
-        tone: 'success',
-      });
     }
+    // A plain install/update needs no notice: the refreshed row shows the
+    // installed version and state.
   }
 
   function onProgress(payload) {
@@ -411,7 +407,8 @@
     const pending = state.pending.get(payload.id);
     if (pending) {
       const text = progressText(payload);
-      pending.progress?.update(text);
+      const status = document.getElementById('component-status');
+      if (status) status.textContent = `${state.rows.get(payload.id)?.name || payload.id}：${text}`;
       pending.label = text;
       syncPendingButtons();
     } else if (payload.phase === 'done' || payload.phase === 'error') {

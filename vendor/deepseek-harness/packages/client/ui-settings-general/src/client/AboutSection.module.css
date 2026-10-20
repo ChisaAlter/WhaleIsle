@@ -66,3 +66,15 @@
   gap: 8px;
   margin: 10px 0 8px;
 }
+
+.route {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0 0;
+}
+
+.routeLabel {
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+}
