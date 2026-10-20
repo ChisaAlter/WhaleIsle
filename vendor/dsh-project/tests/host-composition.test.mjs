@@ -495,7 +495,7 @@ test('Project and the optional Agent Teams bundle compose one Team service and o
   const active = rows => rows.flatMap(row => row.disabled === true ? [] : row.group && Array.isArray(row.config) ? [row, ...active(row.config)] : [row]);
   const rows = active(composeEntries(layers));
   for (const name of ['@deepseek-ai/dsh-experimental-agent-team', '@deepseek-ai/dsh-experimental-client-ui-agent-team']) {
-    assert.deepEqual(rows.filter(row => row.name === name).map(row => row.id), [name.endsWith('-agent-team') ? 'dsh-project-teams' : 'dsh-project-team-ui']);
+    assert.deepEqual(rows.filter(row => row.name === name).map(row => row.id), [name === '@deepseek-ai/dsh-experimental-agent-team' ? 'dsh-project-teams' : 'dsh-project-team-ui']);
   }
   assert.ok(rows.some(row => row.id === 'tool-agent-team'), 'Agent Teams tools stay mounted on the shared service');
 });
@@ -616,6 +616,7 @@ test('native delivery tracking waits for actual workspace snapshots and excludes
     await assert.rejects(host.command('requests/revert', { projectId: project.id, requestId: a().id }), { code: 'busy' });
     assert.equal(bridge.requests.filter(input => input.action === 'revert').length, 0);
     await host.command('stop', { projectId: foreign.id });
+    await waitFor(() => !host.directoryInUse(isolated), 'the stopped foreign member and its actual jobs release the directory');
     await host.command('requests/revert', { projectId: project.id, requestId: a().id });
     await assert.rejects(readFile(join(isolated, 'A.txt')), { code: 'ENOENT' });
     assert.equal(await readFile(join(directory, 'B.txt'), 'utf8'), 'B revision 1\n');

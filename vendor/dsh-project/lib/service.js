@@ -448,6 +448,9 @@ export class ProjectService {
       Object.assign(area, { end: value.end, endedAt: Date.now(), files: value.files.slice(0, 300), fileCount: value.files.length,
         added: value.files.reduce((sum, file) => sum + file.added, 0), removed: value.files.reduce((sum, file) => sum + file.removed, 0) });
     }
+    // Unload may begin while the desktop snapshot is outstanding. Its catalog
+    // is closing; the tracked caller still drains the accepted decision log.
+    if (this.closing && !this.persistOnDispose) return;
     await this.write(state => {
       const changes = state.requests.find(item => item.id === row.id).changes;
       if (changes.workspaces) Object.assign(changes, this.changeSummary(areas), { workspaces: areas, endedAt: Date.now(), deliveryId: delivery.id });
@@ -459,7 +462,9 @@ export class ProjectService {
   async afterDelivery(deliveryId) {
     const delivery = (this.state().deliveries ?? []).find(item => item.id === deliveryId);
     if (!delivery || delivery.status !== 'delivered') return;
-    await this.serial(() => this.captureDeliveryChanges(delivery));
+    // Live delivery records its end trees before release. Unload drains only
+    // the already accepted decision without writing to the closing catalog.
+    if (!this.closing || this.persistOnDispose) await this.serial(() => this.captureDeliveryChanges(delivery));
     await this.deliveryDecision(delivery);
   }
   async deliveryDecision(delivery) {
