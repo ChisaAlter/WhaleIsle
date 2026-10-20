@@ -47,6 +47,28 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node node_modules/electron/install.js
       - run: npm run test:tools
+  web:
+    # Browser lanes for desktop forks of the web composition. They follow the
+    # upstream web e2e platform (Linux shell, sandbox and approval semantics).
+    needs: scope
+    if: needs.scope.outputs.vendor == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      LEFTHOOK: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Build the shipped Harness profile
+        run: npm run setup:harness
+      - name: Install the Chromium build apps/web's Playwright pins
+        run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness/apps/web exec playwright install --with-deps chromium
+      - name: Caption drag band
+        run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run --config vitest.web.config.ts apps/web/tests/caption-drag-dead-zones.e2e.ts
   windows:
     needs: scope
     if: needs.scope.outputs.product == 'true'
@@ -143,7 +165,7 @@ jobs:
   result:
     name: CI
     if: always()
-    needs: [scope, tools, windows, macos]
+    needs: [scope, tools, web, windows, macos]
     runs-on: ubuntu-latest
     steps:
       - env:

@@ -373,7 +373,8 @@
   height: 32px;
   margin-top: 8px;
   margin-right: var(--dshd-wco-controls, 8px);
-  -webkit-app-region: no-drag;
+  /* No app-region: its controls subtract themselves (ui-web base.css), and the
+     gaps between them keep dragging the window. */
 }
 
 /* Windows window controls have their own caption row above the content. */

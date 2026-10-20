@@ -165,7 +165,13 @@ const FORK_FILE_MARKERS = [
   // the Session header and transcript fade in, and the previous answer keeps
   // its actions until the next turn settles.
   { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx', includes: ["stack.dataset.composerEntering = ''"], excludes: ['animation-play-state'] },
-  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css', includes: ['conversation-enter-swap'], excludes: ['animation-play-state: paused'] },
+  { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css', includes: ['conversation-enter-swap'], excludes: ['animation-play-state: paused', '-webkit-app-region: no-drag'] },
+  // Caption band: seats and the titlebar cluster leave their blank space to the window drag region.
+  { file: 'packages/client/ui-layout/src/client/AppFrame.module.css', includes: ['No app-region: its controls subtract themselves'] },
+  { file: 'packages/client/ui-layout/tests/caption-drag-regions.client.spec.ts', includes: ['leaves Session header seats and the titlebar cluster to the band'] },
+  { file: 'apps/web/tests/caption-drag-dead-zones.e2e.ts', includes: ['dead no-drag', 'swallowed control'] },
+  { file: 'apps/web/tsconfig.json', includes: ['tests/caption-drag-dead-zones.e2e.ts'] },
+  { file: 'tsconfig.host.json', includes: ['apps/web/tests/caption-drag-dead-zones.e2e.ts'] },
   { file: 'packages/client/ui-chat/src/client/chat/TurnTailNodeView.tsx', includes: ['function revealTurn', 'revealTurn(snapshot) !== data.turn'] },
   { file: 'packages/client/ui-conversation/src/client/apply.ts', includes: ['selectNoDirectory', 'openNoDirectory'] },
   { file: 'packages/client/ui-conversation/src/client/locales.ts', includes: ['hero.noDirectory'] },

@@ -186,6 +186,7 @@
     "apps/web/tests/sidebar-subagent-activity.e2e.ts",
     "apps/web/tests/background-job-list.e2e.ts",
     "apps/web/tests/jobs-menu-layering.e2e.ts",
+    "apps/web/tests/caption-drag-dead-zones.e2e.ts",
     "apps/web/tests/live-job-stream.e2e.ts",
     "apps/web/tests/bash-abort-row.e2e.ts",
     "apps/web/tests/skill-tool-row.e2e.ts",
