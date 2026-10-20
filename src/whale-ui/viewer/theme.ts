@@ -7,6 +7,7 @@ const TOKENS: Record<string, readonly string[]> = {
   '--whale-surface': ['--dsw-alias-bg-layer-1', '--surface'],
   '--whale-border': ['--dsw-alias-border-l2', '--border'],
   '--whale-accent': ['--dsw-alias-brand-primary', '--accent'],
+  '--whale-on-accent': ['--dsw-alias-label-primary-foreground'],
   '--whale-ok': ['--dsw-alias-status-success', '--dsw-static-green-500'],
   '--whale-warn': ['--dsw-alias-status-warning', '--dsw-static-amber-500'],
   '--whale-danger': ['--dsw-alias-status-error', '--dsw-static-red-500'],

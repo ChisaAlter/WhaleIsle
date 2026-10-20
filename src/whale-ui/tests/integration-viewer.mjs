@@ -105,6 +105,24 @@ test('actual Viewer reports changing content titles and clears the heading on so
   } finally { await app.close(); }
 });
 
+test('transparent host surfaces retain explicit primary button foreground across theme changes', async () => {
+  const app = await mount();
+  try {
+    const program = 'root = Col([Input($count,"Count","number"),Button("Add",@Set($count,$count+1))])\n$count = 2';
+    for (const [appearance, accent, foreground] of [['light','#101116','#ffffff'], ['dark','#f1f2f4','#101116']]) {
+      await app.render(program, { theme: { appearance, variables: { '--dsw-alias-bg-base': 'transparent', '--dsw-alias-brand-primary': accent, '--dsw-alias-label-primary-foreground': foreground } } });
+      assert.equal(document.documentElement.style.getPropertyValue('--whale-on-accent'), foreground);
+      assert.equal(document.documentElement.style.getPropertyValue('--whale-accent'), accent);
+      assert.equal(document.documentElement.style.getPropertyValue('--whale-bg'), 'transparent');
+    }
+    await click(app.element.querySelector('button'));
+    assert.equal(app.element.querySelector('input').value, '3');
+    await app.render(program, { theme: baseTheme });
+    assert.equal(document.documentElement.style.getPropertyValue('--whale-on-accent'), '');
+    assert.equal(app.element.querySelector('input').value, '3');
+  } finally { await app.close(); }
+});
+
 test('actual Viewer reports unsupported business operations even when their results are unused', async () => {
   const app = await mount();
   try {
