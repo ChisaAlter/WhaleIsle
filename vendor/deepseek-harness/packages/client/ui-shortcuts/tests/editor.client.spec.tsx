@@ -53,16 +53,16 @@ it('identifies a conflicting command that has left the displayed catalog', async
   const f = await mount({ describe: binding => ({ binding: binding === null ? null : normalizeBinding(binding, 'macos'),
     keys: [], issue: null, conflicts: [missing] }) })
   press('KeyJ')
-  expect((await screen.findByRole('alert')).textContent).toContain(missing)
+  expect(f.onError).toHaveBeenCalledWith(expect.stringContaining(missing))
   expect(f.storage.write).not.toHaveBeenCalled()
 })
 
 it('explains an unreadable preference result returned while saving', async () => {
-  await mount({ result: async () => ({ status: 'unreadable', snapshot: {
+  const f = await mount({ result: async () => ({ status: 'unreadable', snapshot: {
     ...initialShortcutConfig(), status: 'unreadable', error: 'invalid',
   } }) })
   press('KeyJ')
-  await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('keybindings.json') })
+  await waitFor(() => { expect(f.onError).toHaveBeenCalledWith(expect.stringContaining('keybindings.json')) })
 })
 const id = 'test.toggle' as ShortcutCommandId
 async function mount(options: {
@@ -101,7 +101,7 @@ async function mount(options: {
   const persistence = new ShortcutPersistence(storage, runtime, platform, false, (value) => { registry.configure(value) })
   persistence.setDefinitions(registry.definitions()); await persistence.readCurrent()
   options.setup?.(registry)
-  const onClose = vi.fn(), onSaved = vi.fn(), recording = vi.fn(options.recording ?? (async () => {}))
+  const onClose = vi.fn(), onSaved = vi.fn(), onError = vi.fn(), recording = vi.fn(options.recording ?? (async () => {}))
   const view = render(<ShortcutEditor target={registry.catalog.getSnapshot()[0]!}
     useFixedCatalog={bindSnapshotSelector(registry.fixedCatalog)}
     useCatalog={bindSnapshotSelector(registry.catalog)} useConfig={bindSnapshotSelector(registry.config)}
@@ -109,9 +109,9 @@ async function mount(options: {
     edit={(edit, revision) => options.result?.() ?? persistence.edit(edit, revision)}
     describeBinding={options.describe ?? describeBinding}
     recording={recording} t={makeTranslate(en)}
-    onClose={onClose} onSaved={onSaved} />)
+    onClose={onClose} onSaved={onSaved} onError={onError} />)
   if (options.recording === undefined) await waitFor(() => { expect((screen.getByRole('button', { name: 'Press a shortcut' })).hasAttribute('disabled')).toBe(false) })
-  return { registry, persistence, storage, onClose, onSaved, recording, view }
+  return { registry, persistence, storage, onClose, onSaved, onError, recording, view }
 }
 const press = (code: string, extra: KeyboardEventInit = {}) => {
   const recorder = screen.getByRole('button', { name: 'Press a shortcut' }); recorder.focus()
@@ -189,13 +189,9 @@ it('records on release, keeps the draft on write failure, and updates all key la
   expect(f.storage.write).not.toHaveBeenCalled()
   f.storage.write.mockRejectedValueOnce(new Error('disk full'))
   fireEvent.keyUp(recorder, { code: 'KeyJ' })
-  await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain(en['write-failed']) })
+  await screen.findByText(en['write-failed'])
   expect(f.registry.catalog.getSnapshot()[0]?.keys).toEqual(['⌘', 'B'])
   expect(recorder.getAttribute('aria-invalid')).toBe('true')
-  fireEvent.click(screen.getByRole('button', { name: en['dismiss-feedback'] }))
-  expect((await screen.findByRole('alert')).textContent).toContain(en['retry-needed'])
-  expect(recorder.getAttribute('aria-invalid')).toBe('true')
-  expect(screen.getByRole('button', { name: en['retry-save'] }).hasAttribute('disabled')).toBe(false)
   fireEvent.click(screen.getByRole('button', { name: en['retry-save'] }))
   await waitFor(() => { expect(f.onSaved).toHaveBeenCalledOnce() })
   expect(f.registry.catalog.getSnapshot()[0]?.keys).toEqual(['⌘', 'J'])
@@ -228,24 +224,7 @@ it.each(['macos', 'windows'] as const)('ignores the accent character after a %s 
   })
   expect(f.storage.write).not.toHaveBeenCalled()
   expect(f.onSaved).not.toHaveBeenCalled()
-  expect(screen.queryByRole('alert')).toBeNull()
-})
-
-it('requires review after an external update and cancels Escape outside the recorder', async () => {
-  const f = await mount()
-  const recorder = screen.getByRole('button', { name: en.record }); recorder.focus()
-  fireEvent.keyDown(recorder, { code: 'KeyJ', key: 'j', metaKey: true })
-  await act(async () => { await f.persistence.edit({ type: 'set', id, binding: null }, f.registry.config.getSnapshot().revision) })
-  fireEvent.keyUp(recorder, { code: 'KeyJ' })
-  expect((await screen.findByRole('alert')).textContent).toContain(en.stale)
-  expect(f.onSaved).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button', { name: en['dismiss-feedback'] }))
-  expect((await screen.findByRole('alert')).textContent).toContain(en['review-required'])
-  fireEvent.click(screen.getByRole('button', { name: en.review }))
-  expect(screen.getByRole('button', { name: en['retry-save'] }).hasAttribute('disabled')).toBe(false)
-  screen.getByRole('button', { name: en.reset }).focus()
-  fireEvent.keyDown(document.activeElement!, { code: 'Escape', key: 'Escape' })
-  expect(f.onClose).toHaveBeenCalledOnce(); expect(f.onSaved).not.toHaveBeenCalled()
+  expect(f.onError).not.toHaveBeenCalled()
 })
 
 it('keeps its own published shortcut snapshot from warning before the write acknowledgement', async () => {
@@ -259,7 +238,7 @@ it('keeps its own published shortcut snapshot from warning before the write ackn
   })
   expect(screen.getByRole('button', { name: en.record }).getAttribute('aria-busy')).toBe('true')
   expect(screen.getByRole('button', { name: en.clear })).toHaveProperty('disabled', true)
-  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.queryByText(en.stale)).toBeNull()
   expect(f.onSaved).not.toHaveBeenCalled()
   await act(async () => { acknowledge({ status: 'saved', snapshot: f.registry.config.getSnapshot() }); await pending })
   expect(f.onSaved).toHaveBeenCalledOnce()
@@ -271,11 +250,26 @@ it('still requires review after a concurrent update rejects the pending shortcut
   const f = await mount({ result: () => pending })
   press('KeyJ')
   await act(async () => { await f.persistence.edit({ type: 'set', id, binding: null }, f.registry.config.getSnapshot().revision) })
-  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.queryByText(en.stale)).toBeNull()
   await act(async () => { acknowledge({ status: 'stale', snapshot: f.registry.config.getSnapshot() }); await pending })
-  expect(screen.getByRole('alert').textContent).toContain(en.stale)
+  expect(screen.getAllByText(en.stale).length).toBeGreaterThan(0)
   expect(screen.getByRole('button', { name: en.review })).toHaveProperty('disabled', false)
   expect(f.onSaved).not.toHaveBeenCalled()
+})
+
+it('requires review after an external update and cancels Escape outside the recorder', async () => {
+  const f = await mount()
+  const recorder = screen.getByRole('button', { name: en.record }); recorder.focus()
+  fireEvent.keyDown(recorder, { code: 'KeyJ', key: 'j', metaKey: true })
+  await act(async () => { await f.persistence.edit({ type: 'set', id, binding: null }, f.registry.config.getSnapshot().revision) })
+  fireEvent.keyUp(recorder, { code: 'KeyJ' })
+  expect(screen.getAllByText(en.stale).length).toBeGreaterThan(0)
+  expect(f.onSaved).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: en.review }))
+  expect(screen.getByRole('button', { name: en['retry-save'] }).hasAttribute('disabled')).toBe(false)
+  screen.getByRole('button', { name: en.reset }).focus()
+  fireEvent.keyDown(document.activeElement!, { code: 'Escape', key: 'Escape' })
+  expect(f.onClose).toHaveBeenCalledOnce(); expect(f.onSaved).not.toHaveBeenCalled()
 })
 
 it('requires review when available commands change during recording', async () => {
@@ -289,7 +283,7 @@ it('requires review when available commands change during recording', async () =
     await f.persistence.readCurrent()
   })
   fireEvent.keyUp(recorder, { code: 'KeyJ' })
-  expect((await screen.findByRole('alert')).textContent).toContain(en.stale)
+  expect(screen.getAllByText('Shortcut configuration or available commands changed. Review the latest bindings before saving.').length).toBeGreaterThan(0)
   expect(f.storage.write).not.toHaveBeenCalled()
   expect(f.onSaved).not.toHaveBeenCalled()
 })
@@ -304,7 +298,7 @@ it.each(['Remove', 'Restore default'])('performs %s through the same persistence
 it('reports unsupported codes, abandons unreleased keys on blur, and previews Tab', async () => {
   const f = await mount()
   press('Unidentified')
-  expect((await screen.findByRole('alert')).textContent).toContain(en['unsupported-key'])
+  expect(screen.getByText(en['unsupported-key'])).toBeTruthy()
   const recorder = screen.getByRole('button', { name: en.record })
   fireEvent.click(recorder)
   expect(screen.queryByText(en['unsupported-key'])).toBeNull()
@@ -325,9 +319,9 @@ it('shows conflicting command labels and preserves a blocked draft', async () =>
       } } } })
   } })
   press('KeyJ')
-  expect((await screen.findByRole('alert')).textContent).toContain('Already used by “Other action”')
+  expect(screen.getByText('Already used by “Other action”')).toBeTruthy()
   expect(f.storage.write).not.toHaveBeenCalled()
-  expect((await screen.findByRole('alert')).textContent).toContain('Already used by “Other action”')
+  expect(f.onError).toHaveBeenCalledWith('Already used by “Other action”')
 })
 
 it.each(['reserved', 'conflict', 'unknown-conflict', 'empty-conflict'] as const)('shows the save-time %s diagnosis', async (status) => {
@@ -337,13 +331,13 @@ it.each(['reserved', 'conflict', 'unknown-conflict', 'empty-conflict'] as const)
         : status === 'unknown-conflict' ? { conflicts: ['dormant.action' as ShortcutCommandId] } : {}) }) })
   press('KeyJ')
   const message = status === 'reserved' ? en.reserved : `Already used by “${status === 'conflict' ? 'Toggle sidebar' : status === 'unknown-conflict' ? 'dormant.action' : ''}”`
-  await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain(message) })
+  await screen.findByText(message)
   expect(f.onClose).not.toHaveBeenCalled(); expect(f.onSaved).not.toHaveBeenCalled()
 })
 
 it('keeps Desktop recording disabled on bridge failure and tolerates a rejected release', async () => {
   const f = await mount({ recording: async () => { throw new Error('disconnected') } })
-  await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain(en['native-failed']) })
+  await screen.findByText(en['native-failed'])
   expect(screen.getByRole('button', { name: en.record }).hasAttribute('disabled')).toBe(true)
   f.view.unmount()
   await waitFor(() => { expect(f.recording).toHaveBeenLastCalledWith(false) })
@@ -392,8 +386,8 @@ it.each(['loading', 'unreadable'] as const)('retains the binding if configuratio
   const f = await mount()
   act(() => { f.registry.configure({ ...f.registry.config.getSnapshot(), status }) })
   press('KeyJ')
-  if (status === 'loading') expect((await screen.findByRole('alert')).textContent).toContain(en['not-ready'])
-  else expect((await screen.findByRole('alert')).textContent).toContain('userData/keybindings.json')
+  if (status === 'loading') expect(f.onError).toHaveBeenCalledWith(en['not-ready'])
+  else expect(f.onError).toHaveBeenCalledWith(expect.stringContaining('userData/keybindings.json'))
   expect(f.storage.write).not.toHaveBeenCalled()
 })
 
@@ -451,13 +445,12 @@ it.each(['macos', 'windows'] as const)('rejects %s fixed-action keys and their o
     { code: 'Enter', key: 'Enter', metaKey: true }, { code: 'ArrowUp', key: 'ArrowUp' },
     { code: 'ArrowDown', key: 'ArrowDown' }, { code: 'Slash', key: '/' }, { code: 'Digit2', key: '@', shiftKey: true },
   ]) {
-    if (screen.queryByRole('alert') !== null) fireEvent.click(screen.getByRole('button', { name: en['dismiss-feedback'] }))
-    expect(screen.queryByRole('alert')).toBeNull()
+    const errors = f.onError.mock.calls.length
     fireEvent.keyDown(recorder, input); fireEvent.keyUp(recorder, input)
-    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(f.onError).toHaveBeenCalledTimes(errors + 1)
     expect(document.activeElement).toBe(recorder)
     expect(recorder.getAttribute('aria-invalid')).toBe('true')
-    expect(screen.getByRole('alert').textContent).toContain('Already used by')
+    expect(f.onError).toHaveBeenLastCalledWith(expect.stringContaining('Already used by'))
   }
   fireEvent.keyDown(recorder, { code: 'KeyA', key: 'a' })
   fireEvent.keyDown(recorder, { code: 'Escape', key: 'Escape' })
@@ -487,7 +480,7 @@ it.each(['macos', 'windows'] as const)('accepts a new %s combination after all k
   const recorder = screen.getByRole('button', { name: en.record }); recorder.focus()
   for (const code of ['KeyA', 'KeyB', 'KeyC']) fireEvent.keyDown(recorder, { code, key: code.slice(3) })
   for (const code of ['KeyA', 'KeyB', 'KeyC']) fireEvent.keyUp(recorder, { code })
-  expect((await screen.findByRole('alert')).textContent).toContain(en['too-many-keys'])
+  expect(screen.getByText(en['too-many-keys'])).toBeTruthy()
   expect(f.storage.write).not.toHaveBeenCalled()
   expect(document.activeElement).toBe(recorder)
   fireEvent.keyDown(recorder, { code: 'KeyJ', key: 'j' })
@@ -506,7 +499,7 @@ it.each(['macos', 'windows'] as const)('retries a %s command conflict while cont
   const modifiers = platform === 'macos' ? { metaKey: true } : { ctrlKey: true }
   fireEvent.keyDown(recorder, { code: 'KeyK', key: 'k', ...modifiers })
   fireEvent.keyUp(recorder, { code: 'KeyK', ...modifiers })
-  expect((await screen.findByRole('alert')).textContent).toContain('Already used by “Other action”')
+  expect(f.onError).toHaveBeenCalledWith('Already used by “Other action”')
   expect(f.storage.write).not.toHaveBeenCalled()
   expect(document.activeElement).toBe(recorder)
   fireEvent.keyDown(recorder, { code: 'KeyJ', key: 'j', ...modifiers })
@@ -522,16 +515,14 @@ it.each(['macos', 'windows'] as const)('waits for the remaining %s chord keys be
   fireEvent.keyDown(recorder, { code: 'KeyA', key: 'a' })
   fireEvent.keyDown(recorder, { code: 'Escape', key: 'Escape' })
   fireEvent.keyUp(recorder, { code: 'Escape' })
-  const failure = await screen.findByRole('alert')
-  const failureText = failure.textContent
+  expect(f.onError).toHaveBeenCalledOnce()
   fireEvent.keyDown(recorder, { code: 'KeyA', key: 'a', repeat: true })
   fireEvent.keyDown(recorder, { code: 'KeyJ', key: 'j' })
   fireEvent.keyUp(recorder, { code: 'KeyA' })
   fireEvent.keyDown(recorder, { code: 'KeyK', key: 'k' })
   fireEvent.keyUp(recorder, { code: 'KeyJ' })
   fireEvent.keyUp(recorder, { code: 'KeyK' })
-  expect(screen.getByRole('alert')).toBe(failure)
-  expect(failure.textContent).toBe(failureText)
+  expect(f.onError).toHaveBeenCalledOnce()
   expect(f.storage.write).not.toHaveBeenCalled()
   fireEvent.keyDown(recorder, { code: 'KeyJ', key: 'j' })
   fireEvent.keyUp(recorder, { code: 'KeyJ' })
@@ -543,12 +534,12 @@ it('retries unsupported keys and macOS conflicts whose character keyup is omitte
   const f = await mount()
   const recorder = screen.getByRole('button', { name: en.record })
   fireEvent.keyDown(recorder, { code: 'Unidentified', key: 'Unidentified', metaKey: true })
-  expect((await screen.findByRole('alert')).textContent).toContain(en['unsupported-key'])
+  expect(f.onError).toHaveBeenLastCalledWith(en['unsupported-key'])
   fireEvent.keyUp(recorder, { code: 'MetaLeft', key: 'Meta' })
   fireEvent.keyDown(recorder, { code: 'Enter', key: 'Enter', metaKey: true })
   fireEvent.keyUp(recorder, { code: 'MetaLeft', key: 'Meta' })
-  expect((await screen.findByRole('alert')).textContent).toContain('Already used by')
-  expect(screen.queryByText(en['unsupported-key'])).toBeNull()
+  expect(f.onError).toHaveBeenCalledTimes(2)
+  expect(f.onError).toHaveBeenLastCalledWith(expect.stringContaining('Already used by'))
   fireEvent.keyDown(recorder, { code: 'KeyJ', key: 'j', metaKey: true })
   fireEvent.keyUp(recorder, { code: 'MetaLeft', key: 'Meta' })
   await waitFor(() => { expect(f.onSaved).toHaveBeenCalledOnce() })
@@ -571,7 +562,7 @@ it('keeps recorder focus during a write and accepts another combination after fa
   await waitFor(() => { expect(f.storage.write).toHaveBeenCalledOnce() })
   expect(recorder.textContent).toContain('J')
   await act(async () => { reject(new Error('disk full')); await write.catch(() => {}) })
-  await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain(en['write-failed']) })
+  await screen.findByText(en['write-failed'])
   expect(document.activeElement).toBe(recorder)
   fireEvent.keyDown(recorder, { code: 'KeyK', key: 'k', metaKey: true })
   fireEvent.keyUp(recorder, { code: 'KeyK' })
@@ -592,7 +583,7 @@ it.each(['focus', 'composition'] as const)('abandons an unfinished Desktop recor
 it.each(['macos', 'windows'] as const)('retains %s Web Escape cancellation, Tab navigation and single-key validation', async (platform) => {
   const f = await mount({ runtime: 'web', platform })
   press('KeyA', { metaKey: false })
-  expect((await screen.findByRole('alert')).textContent).toContain(en['modifier-required'])
+  expect(f.onError).toHaveBeenCalledWith(en['modifier-required'])
   const recorder = screen.getByRole('button', { name: en.record })
   expect(fireEvent.keyDown(recorder, { code: 'Tab', key: 'Tab' })).toBe(true)
   fireEvent.keyDown(recorder, { code: 'Escape', key: 'Escape' })

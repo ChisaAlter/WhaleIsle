@@ -176,6 +176,11 @@ export function FilesPanel({
     setError(message)
     setNotification({ id: ++notificationId.current, text: message })
   }, [])
+  useEffect(() => {
+    if (copied === null) return
+    const timer = window.setTimeout(() => { setCopied(null) }, 1200)
+    return () => { window.clearTimeout(timer) }
+  }, [copied])
   const [generation, setGeneration] = useState(0)
   const [query, setQuery] = useState('')
   const [searchPending, setSearchPending] = useState(false)
@@ -362,6 +367,7 @@ export function FilesPanel({
           onChange={(event) => { setQuery(event.target.value) }}
           onKeyDown={onSearchKey}
         />
+        {copied !== null && <span className={css.copied} role="status">{t('copied')}</span>}
         <Tooltip label={t('refresh')} side="bottom">
           <Button
             variant="ghost"
@@ -433,8 +439,6 @@ export function FilesPanel({
           )
         )}
       </div>
-      {copied !== null && <Toast key={copied} text={t('copied')} tone="success" holdMs={1200}
-        onDone={() => { setCopied(null) }} />}
       {notification !== null && <Toast key={notification.id} text={notification.text}
         icon={<IconWarningOutline16 />} holdMs={null} dismissLabel={t('unsaved.close')}
         actions={[{ label: t('refresh'), onClick: reload }]}

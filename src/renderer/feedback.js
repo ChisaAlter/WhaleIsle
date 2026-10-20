@@ -91,7 +91,9 @@
     return button;
   }
 
-  function notice({ title = '', body, tone = 'info', holdMs = tone === 'error' ? null : 3000, dismissLabel = '关闭提示', actions = [] }) {
+  // Every notice fades on its own; failures and notices with actions hold longer.
+  function notice({ title = '', body, tone = 'info', holdMs, actions = [] }) {
+    const hold = holdMs ?? (tone === 'error' || actions.length ? 6000 : 3000);
     if (!body) return { close() {} };
     const node = document.createElement('div');
     node.className = 'shell-feedback-toast';
@@ -119,13 +121,11 @@
     node.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') { event.stopPropagation(); close(); }
     });
-    node.append(text, closeButton(dismissLabel, close));
+    node.append(text);
     host().append(node);
-    if (holdMs !== null) {
-      node.style.setProperty('--dsh-toast-hold', holdMs + 'ms');
-      node.classList.add('shell-feedback-transient');
-      timer = setTimeout(close, holdMs + 1000);
-    }
+    node.style.setProperty('--dsh-toast-hold', hold + 'ms');
+    node.classList.add('shell-feedback-transient');
+    timer = setTimeout(close, hold + 1000);
     return { close };
   }
 

@@ -127,6 +127,7 @@ export function ShortcutReference({
   const editorProps = { useCatalog, useConfig, useFixedCatalog, platform, runtime, edit: persist, recording, describeBinding, t,
     onClose: closeEditor,
     onSaved: () => { notify(t('saved')); closeEditor() },
+    onError: (message: string) => { notify(message, true) },
   }
   useLayoutEffect(() => {
     const input = search.current
@@ -221,8 +222,7 @@ export function ShortcutReference({
       <Button data-modal-autofocus disabled={busy} onClick={() => { setResetRevision(null) }}>{t('cancel')}</Button>
       <Button variant="primary" disabled={busy || config.status !== 'ready'} loading={busy} onClick={() => { void resetAll() }}>{t('reset')}</Button>
     </>} />
-  {toast !== null && <Toast key={toast.seq} text={toast.text} onDone={dismissToast} holdMs={toast.error ? null : undefined}
-    dismissLabel={t('dismiss-feedback')} {...toast.error ? {} : { tone: 'success' }}
+  {toast !== null && <Toast key={toast.seq} text={toast.text} onDone={dismissToast}
     icon={<ShortcutIcon kind={toast.error ? 'error' : 'success'} className={toast.error ? css.toastError : css.toastSuccess} />} />}
   </>
 }

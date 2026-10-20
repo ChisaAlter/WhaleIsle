@@ -394,7 +394,7 @@
       if (status) status.textContent = `${name}操作未完成：${failure}`;
       void window.appNotice({ title: `${name}操作未完成`, body: failure, tone: 'error' });
     } else if (completed && completionMessage) {
-      void window.appNotice({ title: `${name}操作结果`, body: completionMessage, tone: 'success' });
+      void window.appNotice({ title: `${name}操作结果`, body: completionMessage });
     }
     // A plain install/update needs no notice: the refreshed row shows the
     // installed version and state.

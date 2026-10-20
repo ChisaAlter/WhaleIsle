@@ -354,7 +354,8 @@ function createWhaleBridgeService(deps = {}) {
     if (!supported) throw new Error('鲸桥目前只提供 Windows x64 版本');
     const version = await stage(progress);
     writeJson(installedFile, { version, previous: null });
-    await startRuntime(version, progress);
+    try { await startRuntime(version, progress); }
+    catch (error) { throw new Error(`鲸桥已安装，但启动失败：${error.message}`); }
     return { ok: true, component: row() };
   }); }
   function start(progress) { return locked(async () => {

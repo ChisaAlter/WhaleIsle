@@ -58,8 +58,7 @@
   display: none;
 }
 
-.toast[inert] .action,
-.toast[inert] .dismiss {
+.toast[inert] .action {
   pointer-events: none;
 }
 
@@ -68,34 +67,6 @@
   place-items: center;
   flex: none;
   color: var(--dsw-alias-state-warn-label);
-}
-
-.toast[data-persistent] {
-  animation: dsh-toast-in var(--ds-motion-duration-popover) var(--ds-ease-in-out);
-}
-
-.dismiss {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--dsw-radius-sm);
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  pointer-events: auto;
-}
-
-.dismiss:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.dismiss:focus-visible {
-  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
-  outline-offset: 2px;
 }
 
 .icon.success {
@@ -164,8 +135,5 @@
 @media (prefers-reduced-motion: reduce) {
   .toast {
     animation: dsh-toast-fade 1000ms ease calc(var(--dsh-toast-hold, 3000ms) - var(--dsh-toast-elapsed, 0ms)) forwards;
-  }
-  .toast[data-persistent] {
-    animation: none;
   }
 }

@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Button, IconDislikeFillRegular, IconDislikeOutlineRegular, IconLikeFillRegular, IconLikeOutlineRegular, Toast, Tooltip,
+  Button, IconDislikeFillRegular, IconDislikeOutlineRegular, IconLikeFillRegular, IconLikeOutlineRegular, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MessageFeedbackRating } from '@deepseek-ai/dsh-message-feedback/types'
 import type { MessageFeedbackActionFailure } from './controller.ts'
@@ -20,12 +20,13 @@ import css from './MessageFeedbackActions.module.css'
  * One message's feedback controls.
  * @param props - the owner's message identity, the injected verbs, and the
  * shared feedback hook.
- * @returns the rating buttons with floating failure feedback.
+ * @returns the rating buttons with any failure notice beside them.
  */
 export function MessageFeedbackActions({
   messageId, ensure, current, retract, openDialog, useFeedback, t,
 }: MessageFeedbackActionProps) {
   const item = useFeedback(view => view.items.get(messageId))
+  const loadFailed = useFeedback(view => view.status === 'error')
   const rating = item?.rating
   const [pending, setPending] = useState<MessageFeedbackRating | null>(null)
   // Failure copy is display state; the controller retains the rating and load state.
@@ -113,7 +114,8 @@ export function MessageFeedbackActions({
           {rating === 'negative' ? <IconDislikeFillRegular /> : <IconDislikeOutlineRegular />}
         </Button>
       </Tooltip>
-      {failure !== null && <Toast key={failure} text={failure} holdMs={null} dismissLabel={t('close')} onDone={() => { setFailure(null) }} />}
+      {failure === null && loadFailed && <span className={css.failure} role="status">{t('error.load')}</span>}
+      {failure !== null && <span className={css.failure} role="status">{failure}</span>}
     </>
   )
 }

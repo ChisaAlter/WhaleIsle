@@ -21,7 +21,7 @@ export function DeveloperToolsRow({ useDeveloperTools, setEnabled, t }:
   const enabled = useDeveloperTools(value => value)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
-  const [notice, setNotice] = useState<{ id: number; text: string; success: boolean } | null>(null)
+  const [notice, setNotice] = useState<{ id: number; text: string } | null>(null)
   const noticeId = useRef(0)
   return <div className={css.row}>
     <div>
@@ -32,16 +32,13 @@ export function DeveloperToolsRow({ useDeveloperTools, setEnabled, t }:
       title={failed ? t('developerTools.error') : undefined}
       onChange={(next: boolean) => {
         setFailed(false)
+        setNotice(null)
         setBusy(true)
-        void setEnabled(next).then(() => {
-          setNotice({ id: ++noticeId.current, text: t('feedback.saved'), success: true })
-        }).catch(() => {
+        void setEnabled(next).catch(() => {
           setFailed(true)
-          setNotice({ id: ++noticeId.current, text: t('developerTools.error'), success: false })
+          setNotice({ id: ++noticeId.current, text: t('developerTools.error') })
         }).finally(() => { setBusy(false) })
       }} />
-    {notice !== null && <Toast key={notice.id} text={notice.text}
-      {...notice.success ? { tone: 'success' as const } : {}}
-      holdMs={notice.success ? 3000 : null} dismissLabel={t('close')} onDone={() => { setNotice(null) }} />}
+    {notice !== null && <Toast key={notice.id} text={notice.text} onDone={() => { setNotice(null) }} />}
   </div>
 }

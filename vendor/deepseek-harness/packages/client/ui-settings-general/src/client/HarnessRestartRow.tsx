@@ -37,7 +37,7 @@ export function HarnessRestartRow({ t }: HarnessRestartRowProps) {
   const [phase, setPhase] = useState<RowPhase>('loading')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
-  const [notice, setNotice] = useState<{ id: number; text: string; success: boolean } | null>(null)
+  const [notice, setNotice] = useState<{ id: number; text: string } | null>(null)
   const noticeId = useRef(0)
   const saveGen = useRef(0)
   const current = config ?? normalizeHarnessRestart(undefined)
@@ -55,7 +55,7 @@ export function HarnessRestartRow({ t }: HarnessRestartRowProps) {
       const message = caught instanceof Error ? caught.message : String(caught)
       setError(message)
       setPhase('error')
-      setNotice({ id: ++noticeId.current, text: t('harnessRestart.error', { message }), success: false })
+      setNotice({ id: ++noticeId.current, text: t('harnessRestart.error', { message }) })
     })
     return () => { cancelled = true }
   }, [shell, t])
@@ -79,18 +79,18 @@ export function HarnessRestartRow({ t }: HarnessRestartRowProps) {
         setConfig(normalizeHarnessRestart(saved))
         setError(t('feedback.notSaved'))
         setPhase('error')
-        setNotice({ id: ++noticeId.current, text: t('feedback.notSaved'), success: false })
+        setNotice({ id: ++noticeId.current, text: t('feedback.notSaved') })
         return
       }
       setConfig(normalizeHarnessRestart({ ...next, ...saved }))
-      setNotice({ id: ++noticeId.current, text: t('feedback.saved'), success: true })
+      setNotice(null)
     } catch (caught) {
       if (gen !== saveGen.current) return
       setConfig(previous)
       const message = caught instanceof Error ? caught.message : String(caught)
       setError(message)
       setPhase('error')
-      setNotice({ id: ++noticeId.current, text: t('harnessRestart.error', { message }), success: false })
+      setNotice({ id: ++noticeId.current, text: t('harnessRestart.error', { message }) })
     } finally {
       if (gen === saveGen.current) setSaving(false)
     }
@@ -151,9 +151,7 @@ export function HarnessRestartRow({ t }: HarnessRestartRowProps) {
           </div>
         </div>
       </div>
-      {notice !== null && <Toast key={notice.id} text={notice.text}
-        {...notice.success ? { tone: 'success' as const } : {}}
-        holdMs={notice.success ? 3000 : null} dismissLabel={t('close')} onDone={() => { setNotice(null) }} />}
+      {notice !== null && <Toast key={notice.id} text={notice.text} onDone={() => { setNotice(null) }} />}
     </div>
   )
 }

@@ -14,7 +14,7 @@ import type {
 } from '../src/client/PluginInventorySettingsTab.tsx'
 import { en, zh, type PluginInventoryLocaleKey } from '../src/client/locales.ts'
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.useRealTimers() })
 
 type Snapshot = Awaited<ReturnType<PluginInventorySettingsTabInjected['list']>>
 const t = ((key: PluginInventoryLocaleKey, params?: Record<string, string>): string =>
@@ -634,11 +634,9 @@ describe('PluginInventorySettingsTab', () => {
       .mockResolvedValueOnce({ entries: [] })
     render(<PluginInventorySettingsTab {...props(list)} />)
     const first = await screen.findByRole('alert')
-    fireEvent.click(within(first).getByRole('button', { name: en.dismissFeedback }))
-    await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
     expect(list).toHaveBeenCalledOnce()
 
-    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    fireEvent.click(within(first).getByRole('button', { name: en.retry }))
     const second = await screen.findByRole('alert')
     expect(within(second).getByText(en.error)).toBeTruthy()
     expect(screen.queryByText('private transport detail')).toBeNull()
@@ -686,24 +684,29 @@ it('shows current-page sync errors and retries without re-reading Host inventory
   expect(screen.queryByRole('alert')).toBeNull()
 })
 
-it('keeps sync recovery available after dismissal and exposes repeated retry transport failures', async () => {
+it('keeps sync recovery available after the toast fades and exposes repeated retry transport failures', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   const failures = [{ id: 'client-addon', message: 'download failed' }]
   const list = vi.fn(async () => ({ entries: [] }))
   const sync = createSnapshotStore<ClientEntryState>({ syncing: false, failures })
   const retryClient = vi.fn(async () => { throw new Error('retry transport unavailable') })
   render(<PluginInventorySettingsTab {...props(list)} useClientSync={bindSnapshotSelector(sync)} retryClient={retryClient} />)
-  const failure = await screen.findByRole('alert')
+  await act(async () => {})
+  const failure = screen.getByRole('alert')
   expect(failure.textContent).toContain('client-addon: download failed')
-  fireEvent.click(within(failure).getByRole('button', { name: en.dismissFeedback }))
-  const compactRetry = await screen.findByRole('button', { name: en.clientSyncRetry })
+  expect(within(failure).queryByRole('button', { name: en.dismissFeedback })).toBeNull()
+  act(() => { vi.advanceTimersByTime(7_000) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  const compactRetry = screen.getByRole('button', { name: en.clientSyncRetry })
   expect(screen.queryByText(`${en.clientSyncFailed} client-addon: download failed`)).toBeNull()
   expect(sync.getSnapshot().failures).toEqual(failures)
 
-  fireEvent.click(compactRetry)
-  await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('retry transport unavailable') })
-  fireEvent.click(screen.getByRole('button', { name: en.dismissFeedback }))
-  fireEvent.click(await screen.findByRole('button', { name: en.clientSyncRetry }))
-  await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('retry transport unavailable') })
+  await act(async () => { fireEvent.click(compactRetry) })
+  expect(screen.getByRole('alert').textContent).toContain('retry transport unavailable')
+  act(() => { vi.advanceTimersByTime(7_000) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.clientSyncRetry })) })
+  expect(screen.getByRole('alert').textContent).toContain('retry transport unavailable')
   expect(retryClient).toHaveBeenCalledTimes(2)
   expect(list).toHaveBeenCalledOnce()
   expect(sync.getSnapshot().failures).toEqual(failures)

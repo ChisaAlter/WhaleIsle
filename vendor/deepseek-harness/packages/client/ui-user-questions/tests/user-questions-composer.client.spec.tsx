@@ -2,7 +2,7 @@
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { useSyncExternalStore } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -245,8 +245,6 @@ describe('QuestionComposer', () => {
     expect(notice.textContent).toBe('请先完成这道问题。')
     expect(ui.container.contains(notice)).toBe(false)
     expect(ui.container.querySelector('footer')?.textContent).not.toContain('请先完成这道问题。')
-    fireEvent.click(within(notice).getByRole('button', { name: commonZh.close }))
-    expect(screen.queryByRole('alert')).toBeNull()
     expect(option.getAttribute('aria-checked')).toBe('false')
     fireEvent.keyDown(option, { key: 'Enter' })
     expect((await screen.findByRole('alert')).textContent).toBe('请先完成这道问题。')

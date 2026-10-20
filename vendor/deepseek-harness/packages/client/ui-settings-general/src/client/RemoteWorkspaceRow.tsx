@@ -22,7 +22,7 @@ export function RemoteWorkspaceRow({ t }: RemoteWorkspaceRowProps) {
   const [enabled, setEnabled] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState<{ id: number; text: string; success: boolean } | null>(null)
+  const [notice, setNotice] = useState<{ id: number; text: string } | null>(null)
   const noticeId = useRef(0)
   const shell = desktopShell()
 
@@ -37,7 +37,7 @@ export function RemoteWorkspaceRow({ t }: RemoteWorkspaceRowProps) {
       if (cancelled) return
       const text = t('feedback.readError', { message: caught instanceof Error ? caught.message : String(caught) })
       setError(text)
-      setNotice({ id: ++noticeId.current, text, success: false })
+      setNotice({ id: ++noticeId.current, text })
     }).finally(() => { if (!cancelled) setBusy(false) })
     return () => { cancelled = true }
   }, [shell, t])
@@ -63,22 +63,20 @@ export function RemoteWorkspaceRow({ t }: RemoteWorkspaceRowProps) {
             if (saved.remoteWorkspaceEnabled !== next) {
               setEnabled(typeof saved.remoteWorkspaceEnabled === 'boolean' ? saved.remoteWorkspaceEnabled : previous)
               setError(t('feedback.notSaved'))
-              setNotice({ id: ++noticeId.current, text: t('feedback.notSaved'), success: false })
+              setNotice({ id: ++noticeId.current, text: t('feedback.notSaved') })
               return
             }
             setError('')
-            setNotice({ id: ++noticeId.current, text: t('feedback.saved'), success: true })
+            setNotice(null)
           }).catch((error: unknown) => {
             setEnabled(previous)
             const text = t('feedback.saveError', { message: error instanceof Error ? error.message : String(error) })
             setError(text)
-            setNotice({ id: ++noticeId.current, text, success: false })
+            setNotice({ id: ++noticeId.current, text })
           }).finally(() => { setBusy(false) })
         }}
       />
-      {notice !== null && <Toast key={notice.id} text={notice.text}
-        {...notice.success ? { tone: 'success' as const } : {}}
-        holdMs={notice.success ? 3000 : null} dismissLabel={t('close')} onDone={() => { setNotice(null) }} />}
+      {notice !== null && <Toast key={notice.id} text={notice.text} onDone={() => { setNotice(null) }} />}
     </div>
   )
 }

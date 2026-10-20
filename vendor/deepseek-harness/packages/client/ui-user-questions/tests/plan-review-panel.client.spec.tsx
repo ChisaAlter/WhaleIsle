@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
@@ -366,8 +366,6 @@ describe('PlanReviewPanel', () => {
     const failure = await screen.findByRole('alert')
     expect(failure.textContent).toBe('question response rejected: not-pending')
     expect(document.querySelector('[data-plan-review-key] section')?.contains(failure)).toBe(false)
-    fireEvent.click(within(failure).getByRole('button', { name: commonZh.close }))
-    expect(screen.queryByRole('alert')).toBeNull()
     // Re-armed for the retry: a lost click must not leave a dead card.
     expect(screen.getByRole('button', { name: zh['plan.approve'] }).hasAttribute('disabled')).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: zh['plan.approve'] }))

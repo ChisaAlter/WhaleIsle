@@ -122,11 +122,11 @@ export function McpSection(props: McpSectionProps) {
   const [rowFailures, setRowFailures] = useState<Readonly<Record<string, string>>>({})
   const [refreshFailure, setRefreshFailure] = useState(false)
   const [refreshPending, setRefreshPending] = useState(false)
-  const [notice, setNotice] = useState<{ text: string; success: boolean } | undefined>()
+  const [notice, setNotice] = useState<{ text: string } | undefined>()
   const [noticeDismissed, setNoticeDismissed] = useState(false)
   const [noticeSequence, setNoticeSequence] = useState(0)
-  const notify = useCallback((text: string, success = false): void => {
-    setNotice({ text, success })
+  const notify = useCallback((text: string): void => {
+    setNotice({ text })
     setNoticeDismissed(false)
     setNoticeSequence(sequence => sequence + 1)
   }, [])
@@ -332,7 +332,6 @@ export function McpSection(props: McpSectionProps) {
     void props.test(entry.id).then((result) => {
       if (!mountedRef.current) return
       setTestResults(current => ({ ...current, [entry.id]: { status: 'success', result } }))
-      notify(`${entry.spec.serverName}: ${format(t('testSuccess'), { count: String(result.toolCount), tools: toolSummary(result.toolNames, t) })}`, true)
     }).catch((error: unknown) => {
       if (!mountedRef.current) return
       setTestResults(current => ({
@@ -352,7 +351,7 @@ export function McpSection(props: McpSectionProps) {
   return (
     <div className={styles.section} aria-busy={view.status === 'loading'}>
       {notice === undefined || noticeDismissed ? null : <Toast key={noticeSequence} text={notice.text}
-        {...notice.success ? { tone: 'success' as const } : { holdMs: 9000 }} onDone={() => { setNoticeDismissed(true) }} />}
+        holdMs={9000} onDone={() => { setNoticeDismissed(true) }} />}
       <div className={styles.heading}>
         <div>
           <h2 className={styles.title}>{t('title')}</h2>

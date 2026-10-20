@@ -8,7 +8,7 @@
  * chain lives in rename-assembly.client.spec.
  */
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId, WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
@@ -380,11 +380,8 @@ describe('SessionRenameDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: '重命名' }))
     const notice = await screen.findByRole('alert')
     expect(notice.textContent).toBe('denied')
-    expect(notice.getAttribute('data-persistent')).toBe('true')
     const dialog = screen.getByRole('dialog', { name: '重命名会话' })
     expect(dialog.contains(notice)).toBe(false)
-    fireEvent.click(within(notice).getByRole('button', { name: '关闭' }))
-    expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByRole('dialog', { name: '重命名会话' })).toBe(dialog)
     expect(input.value).toBe('Newer')
     expect(settleSessionRename).not.toHaveBeenCalled()
@@ -504,7 +501,7 @@ describe('SessionArchiveConfirmDialog', () => {
     expect(settleSessionArchive).toHaveBeenCalledOnce()
   })
 
-  it('keeps a rejected stop visible until dismissal, which leaves the confirmation ready to retry', async () => {
+  it('fades a rejected stop notice on its own and leaves the confirmation ready to retry', async () => {
     vi.useFakeTimers()
     try {
       const pending = Promise.withResolvers<undefined>()
@@ -518,14 +515,11 @@ describe('SessionArchiveConfirmDialog', () => {
       await act(async () => { fireEvent.click(confirm) })
       const notice = screen.getByRole('alert')
       expect(notice.textContent).toBe('stop exploded')
-      expect(notice.getAttribute('data-persistent')).toBe('true')
       expect(dialog.contains(notice)).toBe(false)
       await act(async () => { await vi.advanceTimersByTimeAsync(20000) })
-      expect(screen.getByRole('alert')).toBe(notice)
+      expect(screen.queryByRole('alert')).toBeNull()
       expect(settleSessionArchive).not.toHaveBeenCalled()
 
-      fireEvent.click(within(notice).getByRole('button', { name: '关闭' }))
-      expect(screen.queryByRole('alert')).toBeNull()
       expect(screen.getByRole('dialog', { name: '停止并归档此会话？' })).toBe(dialog)
       expect(confirm.disabled).toBe(false)
       expect(stopAndArchiveSession).toHaveBeenCalledOnce()

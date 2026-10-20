@@ -21,7 +21,7 @@ export type GatewaySettingsTabProps =
   & InjectFace<GatewaySettingsTabInjected>
 
 type GatewayAction = 'load' | 'relayUrl' | 'relayDefault' | 'relayToken' | 'relayClear' | 'modeLan' | 'modeRelay' | 'port' | 'bind' | 'rotate'
-type Notice = { id: number; text: string; success: boolean }
+type Notice = { id: number; text: string }
 
 /**
  * Explain why Relay is unavailable, or the ready-state mode hint.
@@ -64,9 +64,9 @@ export function GatewaySettingsTab({
   const noticeId = useRef(0)
   const busy = pending !== null
 
-  const showNotice = useCallback((text: string, success = false) => {
+  const showNotice = useCallback((text: string) => {
     noticeId.current += 1
-    setNotice({ id: noticeId.current, text, success })
+    setNotice({ id: noticeId.current, text })
   }, [])
 
   const applySnap = useCallback((next: RemoteSnapshot) => {
@@ -118,7 +118,7 @@ export function GatewaySettingsTab({
         showNotice(t('savedServiceError', { message: next.error }))
         return false
       }
-      showNotice(t('saved'), true)
+      setNotice(null)
       return true
     } catch (caught) {
       const message = ipcErrorMessage(caught)
@@ -131,8 +131,7 @@ export function GatewaySettingsTab({
   }, [applySnap, busy, saveRemote, showNotice, t])
 
   const feedback = notice ? (
-    <Toast key={notice.id} text={notice.text} {...notice.success ? { tone: 'success' as const } : { holdMs: null }}
-      dismissLabel={t('dismiss')} onDone={() => { setNotice(null) }} />
+    <Toast key={notice.id} text={notice.text} holdMs={null} onDone={() => { setNotice(null) }} />
   ) : null
 
   const bindAddress = snap?.bindAddress || '0.0.0.0'

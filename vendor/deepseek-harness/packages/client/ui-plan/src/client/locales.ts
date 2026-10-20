@@ -19,7 +19,6 @@ export const zh = {
   'chip.on.aria': '计划模式已开启，按下关闭',
   'chip.on.title': '计划模式已开启 — 点击关闭（/plan off）',
   'chip.exitFailed': '退出计划模式失败',
-  'notice.dismiss': '关闭提示',
 } satisfies Record<string, string>
 
 /** The plan namespace key union. */
@@ -44,5 +43,4 @@ export const en = {
   'chip.on.aria': 'Plan mode on, press to turn off',
   'chip.on.title': 'Plan mode on — click to turn off (/plan off)',
   'chip.exitFailed': 'Failed to exit plan mode',
-  'notice.dismiss': 'Dismiss notice',
 } satisfies Record<PlanKey, string>

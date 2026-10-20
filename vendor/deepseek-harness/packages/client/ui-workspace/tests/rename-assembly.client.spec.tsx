@@ -228,11 +228,8 @@ describe('session rename through the assembled browser', () => {
     // the rename request, draft and existing row title intact.
     const alert = await view.findByRole('alert')
     expect(alert.textContent).toContain('title write failed')
-    expect(alert.getAttribute('data-persistent')).toBe('true')
     const dialog = view.getByRole('dialog', { name: '重命名会话' })
     expect(dialog.contains(alert)).toBe(false)
-    fireEvent.click(within(alert).getByRole('button', { name: '关闭' }))
-    expect(view.queryByRole('alert')).toBeNull()
     expect(view.getByRole('dialog', { name: '重命名会话' })).toBe(dialog)
     expect((view.getByLabelText('会话名称') as HTMLInputElement).value).toBe('新名')
     expect(rename).toHaveBeenCalledOnce()
