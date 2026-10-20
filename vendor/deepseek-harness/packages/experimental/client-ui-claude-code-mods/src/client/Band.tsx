@@ -1,6 +1,6 @@
 import { useState } from 'react'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { HostObservable, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { Button, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SerializedElement, SerializedNode, SurfaceSnapshot } from '@deepseek-ai/dsh-experimental-claude-code-mods/types'
 import { NS } from './locales.ts'
 import css from './Band.module.css'
@@ -108,29 +108,27 @@ export function Band({ press, useBand, t }: BandProps) {
   const snapshot = useBand(value => value)
   const [pending, setPending] = useState<string | undefined>(undefined)
   const [notice, setNotice] = useState<string | undefined>(undefined)
-  const [noticeOpen, setNoticeOpen] = useState(false)
   const onPress = (generation: number, actionId: string): void => {
     setPending(actionId)
-    setNoticeOpen(false)
+    setNotice(undefined)
     press(generation, actionId).then(
       () => { setPending(undefined) },
       (error: unknown) => {
         setPending(undefined)
         setNotice(t('press.failed', { message: error instanceof Error ? error.message : String(error) }))
-        setNoticeOpen(true)
       },
     )
   }
-  return <>
-    {snapshot === undefined || snapshot.tree === null ? null : <div className={css.band} role="group" aria-label={t('band')} data-generation={snapshot.generation}>
-      {snapshot.tree.map((node, index) => (
-        <span key={`${snapshot.generation}.${index}`} className={css.text}>
-          <Node node={node} path={String(index)} generation={snapshot.generation} pending={pending}
-            onPress={actionId => { onPress(snapshot.generation, actionId) }} hotkeyLabel={hotkey => `[${hotkey}]`} />
-        </span>
-      ))}
-    </div>}
-    {noticeOpen && notice !== undefined && <Toast text={notice} holdMs={null} dismissLabel={t('close')}
-      onDone={() => { setNoticeOpen(false) }} />}
-  </>
+  return (
+    <>
+      {snapshot === undefined || snapshot.tree === null ? null : <div className={css.band} role="group" aria-label={t('band')} data-generation={snapshot.generation}>
+        {snapshot.tree.map((node, index) => (
+          <span key={`${snapshot.generation}.${index}`} className={css.text}>
+            <Node node={node} path={String(index)} generation={snapshot.generation} pending={pending} onPress={actionId => { onPress(snapshot.generation, actionId) }} hotkeyLabel={hotkey => `[${hotkey}]`} />
+          </span>
+        ))}
+      </div>}
+      {notice === undefined ? null : <div className={css.notice} role="status">{notice}</div>}
+    </>
+  )
 }

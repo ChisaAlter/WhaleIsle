@@ -120,16 +120,14 @@ describe('Subagent model selection fields', () => {
     expect(actions.toggleModel).toHaveBeenCalledWith('alpha\0deep')
   })
 
-  it('shows directory progress in its switch and floats failures and validation without removing unavailable routes', async () => {
+  it('renders directory progress, failures, unavailable routes, and validation', () => {
     renderSubagentModelSelection({ enabled: true, catalogStatus: 'loading', invalid: true })
-    expect(screen.getByRole('switch').getAttribute('aria-busy')).toBe('true')
-    expect(screen.getByRole('switch')).toHaveProperty('disabled', true)
-    expect((await screen.findByRole('alert')).textContent).toContain(en.subagentModelSelectionRequired)
-    expect(screen.getByRole('alert').closest('[data-dsh-toast-stack]')?.parentElement).toBe(document.body)
+    expect(screen.getByText(en.subagentModelSelectionLoading)).toBeTruthy()
+    expect(screen.getByText(en.subagentModelSelectionRequired)).toBeTruthy()
 
     cleanup()
     const errorActions = renderSubagentModelSelection({ enabled: true, catalogStatus: 'error' })
-    fireEvent.click(await screen.findByRole('button', { name: en.subagentModelSelectionRetry }))
+    fireEvent.click(screen.getByRole('button', { name: en.subagentModelSelectionRetry }))
     expect(errorActions.retryCatalog).toHaveBeenCalledOnce()
 
     cleanup()
@@ -147,13 +145,13 @@ describe('Subagent model selection fields', () => {
         selected: true,
       }],
     })
-    expect((await screen.findByRole('alert')).textContent).toContain(en.subagentModelSelectionPartial)
+    expect(screen.getByText(en.subagentModelSelectionPartial)).toBeTruthy()
     expect(screen.getByText(en.subagentModelSelectionUnavailable)).toBeTruthy()
     expect(screen.getByText(en.subagentModelSelectionUnavailableGroup)).toBeTruthy()
 
     cleanup()
     renderSubagentModelSelection({ enabled: true, catalogStatus: 'ready' })
-    expect((await screen.findByRole('alert')).textContent).toContain(en.subagentModelSelectionEmpty)
+    expect(screen.getByText(en.subagentModelSelectionEmpty)).toBeTruthy()
   })
 
   it('keeps catalog retry available after failure while guarding writes in flight and retains conflict recovery', async () => {

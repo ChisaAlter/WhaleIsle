@@ -183,7 +183,7 @@ function installedGroups(
 /**
  * Marketplace settings section: a Discover tab (curated catalog browse/search
  * with per-card install) and an Installed tab (profile rows grouped by catalog
- * category with uninstall), plus allow-builds approval and progress lines.
+ * category with uninstall), plus allow-builds approval and progress inside the active button.
  * All engine work happens in the desktop main process behind the injected
  * callbacks.
  * @param props - composed slot props plus the desktop inject face.
@@ -220,7 +220,6 @@ export function MarketSection({
   const [notice, setNotice] = useState<Notice>(null)
   const [noticeDismissed, setNoticeDismissed] = useState(false)
   const [noticeSequence, setNoticeSequence] = useState(0)
-  const [progressDismissed, setProgressDismissed] = useState(false)
   const marketStateReadFailed = useRef(false)
   const notify = useCallback((value: Notice): void => {
     setNotice(value)
@@ -340,7 +339,6 @@ export function MarketSection({
     setNotice(null)
     setAsk(null)
     setProgress([])
-    setProgressDismissed(false)
     const off = onProgress((payload) => {
       if (!alive.current) return
       const line = payload.phase === 'restart' ? t('restarting') : payload.line
@@ -454,12 +452,9 @@ export function MarketSection({
 
   return (
     <div className={css.section} aria-busy={state.status === 'loading'}>
-      {busy !== null && !progressDismissed ? <Toast text={progress.at(-1) || t(busy.kind === 'install' ? 'installing' : busy.kind === 'uninstall' ? 'uninstalling' : 'updating')}
-        holdMs={null} dismissLabel={t('close')} onDone={() => { setProgressDismissed(true) }} />
-        : notice === null || noticeDismissed ? null : <Toast key={noticeSequence} text={notice.text}
-          {...notice.kind === 'ok' ? { tone: 'success' as const } : { holdMs: notice.retry ? null : 9000 }}
-          {...notice.retry ? { actions: [{ label: t('retry'), onClick: () => { void load(true) } }], dismissLabel: t('close') } : {}}
-          onDone={() => { setNoticeDismissed(true) }} />}
+      {notice?.kind !== 'error' || noticeDismissed ? null : <Toast key={noticeSequence} text={notice.text}
+        {...notice.retry ? { holdMs: null, actions: [{ label: t('retry'), onClick: () => { void load(true) } }] } : { holdMs: 9000 }}
+        onDone={() => { setNoticeDismissed(true) }} />}
       {details ? <MarketDetails key={details.id} item={details} getDetails={getDetails} t={t} onClose={() => { setDetails(null) }} /> : null}
       {confirmation ? <Modal open title={t(confirmation.kind === 'install' ? 'confirmInstall' : confirmation.kind === 'batch' ? 'confirmBatch' : 'confirmUninstall')}
         className={css.confirmModal} contentClassName={css.dialogContent}
@@ -522,6 +517,7 @@ export function MarketSection({
               aria-selected={tab === value} aria-controls={`market-panel-${value}`} active={tab === value}
               onClick={() => { setTab(value) }}>{t(value === 'favorites' ? 'tabFavorites' : 'tabHistory')}</Pill>)}
           </div>
+          {notice?.kind === 'ok' ? <p className={css.notice} data-kind="ok" role="status">{notice.text}</p> : null}
           {ask ? (
             <Modal open title={t('allowBuildsAsk', { name: ask.item.repo })} closeLabel={t('close')} onClose={() => { setAsk(null) }}
               className={css.confirmModal} contentClassName={css.dialogContent} footer={<>
@@ -680,7 +676,7 @@ export function MarketSection({
                                     variant="primary"
                                     disabled={isBusy}
                                     loading={busyKind === 'update'}
-                                    feedback={busyKind === 'update' ? t('updating') : undefined}
+                                    feedback={busyKind === 'update' ? progress.at(-1) || t('updating') : undefined}
                                     onClick={() => { startUpdate(item) }}
                                   >
                                     {t('update')}
@@ -691,7 +687,7 @@ export function MarketSection({
                                   variant="ghost"
                                   disabled={isBusy}
                                   loading={busyKind === 'uninstall'}
-                                  feedback={busyKind === 'uninstall' ? t('uninstalling') : undefined}
+                                  feedback={busyKind === 'uninstall' ? progress.at(-1) || t('uninstalling') : undefined}
                                   onClick={() => { setConfirmation({ kind: 'uninstall', id: item.id, name: installedName }) }}
                                 >
                                   {t('uninstall')}
@@ -703,7 +699,7 @@ export function MarketSection({
                                 variant="primary"
                                 disabled={isBusy}
                                 loading={busyKind === 'install'}
-                                feedback={busyKind === 'install' ? t('installing') : undefined}
+                                feedback={busyKind === 'install' ? progress.at(-1) || t('installing') : undefined}
                                 onClick={() => { setConfirmation({ kind: 'install', item }) }}
                               >
                                 {t('install')}
@@ -733,7 +729,7 @@ export function MarketSection({
                   <MarketChoice labelKey="installedFilter" value={installedFilter} onChange={setInstalledFilter} t={t}
                     options={[{ id: 'all', labelKey: 'filterAll' }, { id: 'updates', labelKey: 'filterUpdates' }, { id: 'failed', labelKey: 'filterFailed' }]} />
                   <Button size="sm" variant="primary" disabled={isBusy || checkingUpdates || updateCount === 0 || updateCount > 100}
-                    loading={busy?.kind === 'batch'} feedback={busy?.kind === 'batch' ? t('updating') : undefined}
+                    loading={busy?.kind === 'batch'} feedback={busy?.kind === 'batch' ? progress.at(-1) || t('updating') : undefined}
                     onClick={() => { setConfirmation({ kind: 'batch', ids: Object.values(updates).filter(row => row.updateAvailable).map(row => row.id) }) }}>{t('updateAll')}</Button>
                 </div>
                 <p className={css.updateSummary} role="status">
@@ -798,7 +794,7 @@ export function MarketSection({
                                     variant="primary"
                                     disabled={isBusy}
                                     loading={busy?.kind === 'update' && busy.id === opId}
-                                    feedback={busy?.kind === 'update' && busy.id === opId ? t('updating') : undefined}
+                                    feedback={busy?.kind === 'update' && busy.id === opId ? progress.at(-1) || t('updating') : undefined}
                                     onClick={() => { startUpdate(item) }}
                                   >
                                     {t('update')}
@@ -809,7 +805,7 @@ export function MarketSection({
                                   variant="ghost"
                                   disabled={isBusy}
                                   loading={busy?.kind === 'uninstall' && busy.id === opId}
-                                  feedback={busy?.kind === 'uninstall' && busy.id === opId ? t('uninstalling') : undefined}
+                                  feedback={busy?.kind === 'uninstall' && busy.id === opId ? progress.at(-1) || t('uninstalling') : undefined}
                                   onClick={() => { setConfirmation({ kind: 'uninstall', id: opId, name: plugin.name }) }}
                                 >
                                   {t('uninstall')}

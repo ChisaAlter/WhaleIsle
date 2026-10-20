@@ -161,6 +161,11 @@ function rerender(b: ReturnType<typeof mount>, overrides: Partial<WorkspaceBrows
   b.view.rerender(<WorkspaceBrowser {...b.props} />)
 }
 
+/** Workspace/Session ordering excludes the separate archive manager, whose visibility is asserted independently. */
+function mainListRows(): HTMLElement[] {
+  return screen.getAllByRole('treeitem').filter(row => row.closest('[data-row-key="archived-section"]') === null)
+}
+
 describe('WorkspaceBrowser', () => {
   it('keeps a Project directory in its category without a duplicate unused ordinary blank', () => {
     const lead = summary('lead', 4, { cwd: '/dsh-home/projects/project',
@@ -219,7 +224,45 @@ describe('WorkspaceBrowser', () => {
     expect(row.compareDocumentPosition(category) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it.each(['workspace', 'flat'] as const)('toggles archived rows from Interface Settings in %s mode', (mode) => {
+  it.each(['workspace', 'workspace-tree', 'flat'] as const)('keeps the empty archive manager controlled by Interface Settings in %s mode', (mode) => {
+    const b = mount()
+    act(() => { b.store.actions.setGroupBy(mode) })
+    render(<ShowArchivedListRow {...b.props} />)
+    const toggle = screen.getByRole('switch', { name: '显示底部归档管理区' })
+    const header = () => screen.getByRole('treeitem', { name: '已归档' })
+    expect((toggle as HTMLInputElement).checked).toBe(true)
+    expect(header().getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByText('暂无已归档会话')).toBeNull()
+    fireEvent.click(header())
+    expect(screen.getByText('暂无已归档会话')).toBeTruthy()
+    fireEvent.click(toggle)
+    expect(screen.queryByRole('treeitem', { name: '已归档' })).toBeNull()
+    expect(screen.queryByText('暂无已归档会话')).toBeNull()
+    fireEvent.click(toggle)
+    expect(header().getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText('暂无已归档会话')).toBeTruthy()
+
+    for (const filter of ['show', 'only'] as const) {
+      act(() => { b.store.actions.setArchivedFilter(filter) })
+      expect(screen.queryByRole('treeitem', { name: '已归档' })).toBeNull()
+    }
+    act(() => { b.store.actions.setArchivedFilter('default') })
+    expect(header()).toBeTruthy()
+    rerender(b, {
+      useSessions: hook(sessionState([summary('first-archive', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['first-archive'])], [sid('first-archive')])),
+    })
+    expect(screen.getByText('first-archive')).toBeTruthy()
+    expect(screen.queryByText('暂无已归档会话')).toBeNull()
+    rerender(b, { useSessions: hook(sessionState([])), useWorkspaces: hook(workspaceState([])) })
+    expect(header()).toBeTruthy()
+    expect(screen.getByText('暂无已归档会话')).toBeTruthy()
+    expect(b.props.open).not.toHaveBeenCalled()
+    expect(b.props.unarchiveSession).not.toHaveBeenCalled()
+    expect(b.props.deleteSession).not.toHaveBeenCalled()
+  })
+
+  it.each(['workspace', 'workspace-tree', 'flat'] as const)('toggles archived rows from Interface Settings in %s mode', (mode) => {
     const b = mount({
       useSessions: hook(sessionState([summary('archived-history', 1)])),
       useWorkspaces: hook(workspaceState([workspace('project', ['archived-history'])], [sid('archived-history')])),
@@ -261,7 +304,7 @@ describe('WorkspaceBrowser', () => {
       useSessions: hook(sessionState([summary('newer', 100)])),
       useWorkspaces: hook(workspaceState(mode === 'ungrouped' ? [] : [workspace(account, ['older', 'newer'])])),
     })
-    const names = () => screen.getAllByRole('treeitem')
+    const names = () => mainListRows()
       .filter(row => row.getAttribute('aria-expanded') === null)
       .map(row => row.textContent?.includes('newer') ? 'newer' : 'older')
     expect(names()).toEqual(['newer'])
@@ -294,7 +337,7 @@ describe('WorkspaceBrowser', () => {
       useSessions: hook(sessionState([summary('a', 30), summary('b', 20), summary('c', 10)])),
       useWorkspaces: hook(workspaceState(mode === 'ungrouped' ? [] : [workspace('alpha', ['c', 'a', 'b'])])),
     })
-    const names = () => screen.getAllByRole('treeitem').filter(row => row.getAttribute('aria-expanded') === null)
+    const names = () => mainListRows().filter(row => row.getAttribute('aria-expanded') === null)
       .map(row => row.querySelector('[class*="title"]')?.textContent)
     const pick = (name: string) => {
       fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
@@ -334,7 +377,7 @@ describe('WorkspaceBrowser', () => {
       ], { main: sid('blank') })),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['missing', 'tie-b', 'blank', 'tie-a'])])),
     })
-    const rows = () => screen.getAllByRole('treeitem').filter(row => row.getAttribute('aria-expanded') === null)
+    const rows = () => mainListRows().filter(row => row.getAttribute('aria-expanded') === null)
     expect(rows().map(row => row.textContent)).toEqual([
       expect.stringContaining('新会话'), expect.stringContaining('tie-a'), expect.stringContaining('tie-b'),
     ])
@@ -383,7 +426,7 @@ describe('WorkspaceBrowser', () => {
         }])),
         useHostInfo: selector => selector({ home: '/home/u', isLoopback: true }),
       })
-      fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
+      fireEvent.pointerEnter(screen.getByRole('treeitem', { name: 'Project' }).parentElement as HTMLElement)
       act(() => { vi.advanceTimersByTime(800) })
       expect(screen.getByText('~/Documents/project')).toBeTruthy()
     } finally {
@@ -425,7 +468,7 @@ describe('WorkspaceBrowser', () => {
       useSessions: hook(sessionState([old, absent])),
       useWorkspaces: hook(groups(['old', 'absent'])),
     })
-    const names = () => screen.getAllByRole('treeitem')
+    const names = () => mainListRows()
       .filter(row => row.getAttribute('aria-expanded') === null)
       .map(row => row.textContent)
     rerender(b, {
@@ -481,7 +524,7 @@ describe('WorkspaceBrowser', () => {
     })
 
     rerender(b, { wide: true })
-    expect(screen.getAllByRole('treeitem').slice(1).map(row => row.textContent)).toEqual([
+    expect(mainListRows().slice(1).map(row => row.textContent)).toEqual([
       expect.stringContaining('blank'),
       expect.stringContaining('old'),
     ])
@@ -653,12 +696,14 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('active')).toBeNull()
   })
 
-  it('persists the archive visibility switch while expansion resets on remount', () => {
+  it.each([false, true])('persists the archive visibility switch while expansion resets on remount (has archives: %s)', (hasArchives) => {
     const seats = {
-      useSessions: hook(sessionState([summary('stored', 1)])),
-      useWorkspaces: hook(workspaceState([workspace('alpha', ['stored'])], [sid('stored')])),
+      useSessions: hook(sessionState(hasArchives ? [summary('stored', 1)] : [])),
+      useWorkspaces: hook(workspaceState(hasArchives ? [workspace('alpha', ['stored'])] : [], hasArchives ? [sid('stored')] : [])),
     }
     const b = mount(seats)
+    fireEvent.click(screen.getByRole('treeitem', { name: '已归档' }))
+    expect(screen.getByRole('treeitem', { name: '已归档' }).getAttribute('aria-expanded')).toBe('true')
     act(() => { b.store.actions.setShowArchivedList(false) })
     expect(screen.queryByRole('treeitem', { name: '已归档' })).toBeNull()
     cleanup()
@@ -733,7 +778,7 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
     await waitFor(() => {
-      expect(screen.getAllByRole('treeitem').map(row => row.textContent)).toEqual([
+      expect(mainListRows().map(row => row.textContent)).toEqual([
         expect.stringContaining('one'), expect.stringContaining('two'), expect.stringContaining('three'),
       ])
       expect(b.store.getSnapshot().sessionOrderByAccount).toEqual({})
@@ -748,7 +793,7 @@ describe('WorkspaceBrowser', () => {
     const restored = mount({ useSessions: hook(sessions), useWorkspaces: hook(workspaces) })
     expect(restored.store.getSnapshot().groupBy).toBe('flat')
     expect(restored.store.getSnapshot().orderBy).toBe('manual')
-    expect(screen.getAllByRole('treeitem').map(row => row.textContent)).toEqual([
+    expect(mainListRows().map(row => row.textContent)).toEqual([
       expect.stringContaining('two'),
       expect.stringContaining('three'),
       expect.stringContaining('one'),
@@ -848,7 +893,7 @@ describe('WorkspaceBrowser', () => {
         running: false, pendingInteraction: undefined, completionUnread: false, ...value,
       }]]))
     const expectVisible = (count: number) => {
-      expect(screen.getAllByRole('treeitem').map(row => within(row).getByText(/^(alpha|session-\d+)$/u).textContent))
+      expect(mainListRows().map(row => within(row).getByText(/^(alpha|session-\d+)$/u).textContent))
         .toEqual(['alpha', ...items.slice(0, count).map(item => item.displayTitle)])
     }
     fireEvent.click(screen.getByText('alpha'))
@@ -967,7 +1012,7 @@ describe('WorkspaceBrowser', () => {
       for (const [index, item] of ordinary.entries()) {
         expect(screen.queryByText(item.displayTitle) !== null).toBe(index < count)
       }
-      expect(screen.getAllByRole('treeitem')).toHaveLength(count + 1 + Number(withBlank))
+      expect(mainListRows()).toHaveLength(count + 1 + Number(withBlank))
       expect(screen.queryByText('新会话') !== null).toBe(withBlank)
     }
     expectVisible(5)
@@ -1106,7 +1151,7 @@ describe('WorkspaceBrowser', () => {
       'blank', 'session-1', 'session-2', 'session-3', 'session-4', 'session-5',
       'session-10', 'session-6', 'session-7', 'session-8', 'session-9', 'session-11', 'session-12',
     ])
-    expect(screen.getAllByRole('treeitem').slice(1).map(row => row.querySelector('[class*="title"]')?.textContent)).toEqual([
+    expect(mainListRows().slice(1).map(row => row.querySelector('[class*="title"]')?.textContent)).toEqual([
       '新会话', 'session-1', 'session-2', 'session-3', 'session-4', 'session-5',
       'session-10', 'session-6', 'session-7', 'session-8', 'session-9',
     ])
@@ -1125,12 +1170,12 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
     await waitFor(() => {
-      const rows = screen.getAllByRole('treeitem').slice(1)
+      const rows = mainListRows().slice(1)
       expect(rows[0]?.textContent).toContain('one')
       expect(rows[1]?.textContent).toContain('two')
     })
 
-    const [one, two] = screen.getAllByRole('treeitem').slice(1) as [HTMLElement, HTMLElement]
+    const [one, two] = mainListRows().slice(1) as [HTMLElement, HTMLElement]
     two.getBoundingClientRect = () => ({
       top: 150, bottom: 184, left: 0, right: 200, width: 200, height: 34, x: 0, y: 150, toJSON: () => ({}),
     })
@@ -1144,25 +1189,25 @@ describe('WorkspaceBrowser', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '手动排序' }))
-    expect(screen.getAllByRole('treeitem').slice(1)[0]?.textContent).toContain('two')
+    expect(mainListRows().slice(1)[0]?.textContent).toContain('two')
 
     const updated = sessionState([summary('one', 4), summary('two', 2)])
     rerender(b, { useSessions: hook(updated) })
     expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['two', 'one'])
-    expect(screen.getAllByRole('treeitem').slice(1)[0]?.textContent).toContain('two')
+    expect(mainListRows().slice(1)[0]?.textContent).toContain('two')
 
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
     await waitFor(() => {
       expect(b.store.getSnapshot().sessionOrderByAccount).toEqual({})
-      expect(screen.getAllByRole('treeitem').slice(1)[0]?.textContent).toContain('one')
+      expect(mainListRows().slice(1)[0]?.textContent).toContain('one')
     })
 
     const promoted = sessionState([summary('one', 4), summary('two', 5)])
     rerender(b, { useSessions: hook(promoted) })
     await waitFor(() => {
       expect(b.store.getSnapshot().sessionOrderByAccount).toEqual({})
-      expect(screen.getAllByRole('treeitem').slice(1)[0]?.textContent).toContain('two')
+      expect(mainListRows().slice(1)[0]?.textContent).toContain('two')
     })
 
     b.view.unmount()
@@ -1171,7 +1216,7 @@ describe('WorkspaceBrowser', () => {
       useWorkspaces: hook(workspaceState([workspace('alpha', ['two', 'one'])])),
     })
     expect(restored.store.getSnapshot().sessionOrderByAccount).toEqual({})
-    expect(screen.getAllByRole('treeitem').slice(1)[0]?.textContent).toContain('two')
+    expect(mainListRows().slice(1)[0]?.textContent).toContain('two')
   })
 
   it('hides archived rows in both modes once the archive set carries them', () => {
@@ -1442,7 +1487,7 @@ describe('WorkspaceBrowser', () => {
       useSessions: hook(sessionState([summary('old', 100), summary('mid', 200)])),
       useWorkspaces: groups(['old', 'mid']),
     })
-    const names = () => screen.getAllByRole('treeitem').filter(row => row.getAttribute('aria-expanded') === null)
+    const names = () => mainListRows().filter(row => row.getAttribute('aria-expanded') === null)
       .map(row => row.querySelector('[class*="title"]')?.textContent)
     const pick = (name: string) => {
       fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
@@ -2069,7 +2114,7 @@ describe('WorkspaceBrowser', () => {
       useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two', 'three'])])),
     })
     fireEvent.click(screen.getByText('alpha'))
-    const rows = screen.getAllByRole('treeitem').slice(1) // drop the group header
+    const rows = mainListRows().slice(1) // drop the group header
     const [one, , three] = rows as [HTMLElement, HTMLElement, HTMLElement]
     three.getBoundingClientRect = () => ({
       top: 200, bottom: 234, left: 0, right: 200, width: 200, height: 34, x: 0, y: 200, toJSON: () => ({}),
@@ -2107,7 +2152,7 @@ describe('WorkspaceBrowser', () => {
       )),
     })
     fireEvent.click(screen.getByText('alpha'))
-    expect(screen.getAllByRole('treeitem').slice(1).map(row => row.textContent)).toEqual([
+    expect(mainListRows().slice(1).map(row => row.textContent)).toEqual([
       expect.stringContaining('one'), expect.stringContaining('two'),
       expect.stringContaining('three'), expect.stringContaining('four'),
     ])
@@ -2120,7 +2165,7 @@ describe('WorkspaceBrowser', () => {
     fireDrag(one, 'dragOver', 105)
     fireDrag(one, 'drop', 105)
     expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['three', 'two', 'one', 'four'])
-    expect(screen.getAllByRole('treeitem').slice(1).map(row => row.textContent)).toEqual([
+    expect(mainListRows().slice(1).map(row => row.textContent)).toEqual([
       expect.stringContaining('two'), expect.stringContaining('one'),
       expect.stringContaining('three'), expect.stringContaining('four'),
     ])
@@ -2270,7 +2315,7 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '最近更新' }))
     await waitFor(() => {
-      expect(screen.getAllByRole('treeitem').slice(1).map(row => row.textContent)).toEqual([
+      expect(mainListRows().slice(1).map(row => row.textContent)).toEqual([
         expect.stringContaining('one'), expect.stringContaining('two'), expect.stringContaining('three'),
       ])
       expect(b.store.getSnapshot().sessionOrderByAccount).toEqual({})
@@ -2284,7 +2329,7 @@ describe('WorkspaceBrowser', () => {
       useWorkspaces: hook(workspaceState([])),
     })
     expect(restored.store.getSnapshot().sessionOrderByAccount[UNGROUPED_KEY]).toEqual(['two', 'three', 'one'])
-    expect(screen.getAllByRole('treeitem').slice(1).map(row => row.textContent)).toEqual([
+    expect(mainListRows().slice(1).map(row => row.textContent)).toEqual([
       expect.stringContaining('two'),
       expect.stringContaining('three'),
       expect.stringContaining('one'),
@@ -2318,7 +2363,7 @@ describe('WorkspaceBrowser', () => {
       useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])])),
     })
     fireEvent.click(screen.getByText('alpha'))
-    const [one, two] = screen.getAllByRole('treeitem').slice(1) as [HTMLElement, HTMLElement]
+    const [one, two] = mainListRows().slice(1) as [HTMLElement, HTMLElement]
     two.getBoundingClientRect = () => ({
       top: 150, bottom: 184, left: 0, right: 200, width: 200, height: 34, x: 0, y: 150, toJSON: () => ({}),
     })
@@ -2342,7 +2387,7 @@ describe('WorkspaceBrowser', () => {
       useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'two'])])),
     })
     fireEvent.click(screen.getByText('alpha'))
-    const [one, two] = screen.getAllByRole('treeitem').slice(1) as [HTMLElement, HTMLElement]
+    const [one, two] = mainListRows().slice(1) as [HTMLElement, HTMLElement]
     two.getBoundingClientRect = () => ({
       top: 150, bottom: 184, left: 0, right: 200, width: 200, height: 34, x: 0, y: 150, toJSON: () => ({}),
     })
@@ -2399,11 +2444,8 @@ describe('WorkspaceBrowser', () => {
     fireEvent.change(input, { target: { value: ' Beta ' } })
     const conflict = await screen.findByRole('alert')
     expect(conflict.textContent).toBe('已存在名为“Beta”的工作区。')
-    expect(conflict.getAttribute('data-persistent')).toBe('true')
     expect(screen.getByRole('dialog').contains(conflict)).toBe(false)
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '重命名' }).disabled).toBe(true)
-    fireEvent.click(within(conflict).getByRole('button', { name: '关闭' }))
-    expect(screen.queryByRole('alert')).toBeNull()
     expect(input.value).toBe(' Beta ')
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '重命名' }).disabled).toBe(true)
     fireEvent.keyDown(input, { key: 'Enter' })
@@ -2540,11 +2582,8 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('button', { name: '删除工作区' }))
     const notice = await screen.findByRole('alert')
     expect(notice.textContent).toBe('storage unavailable')
-    expect(notice.getAttribute('data-persistent')).toBe('true')
     const dialog = screen.getByRole('dialog', { name: '删除工作区' })
     expect(dialog.contains(notice)).toBe(false)
-    fireEvent.click(within(notice).getByRole('button', { name: '关闭' }))
-    expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByRole('dialog', { name: '删除工作区' })).toBe(dialog)
     expect(deleteWorkspace).toHaveBeenCalledOnce()
     fireEvent.click(screen.getByRole('button', { name: '删除工作区' }))
@@ -2739,10 +2778,7 @@ describe('WorkspaceBrowser batch selection', () => {
     expect(result.textContent).toContain('Running original: 会话仍有正在进行或计划中的工作，未完成此次操作。')
     expect(result.textContent).toContain('Storage original: disk quota exhausted')
     expect(result.textContent).not.toContain('wire refusal')
-    expect(result.getAttribute('data-persistent')).toBe('true')
     expect(screen.getByLabelText('会话批量操作').contains(result)).toBe(false)
-    fireEvent.click(within(result).getByRole('button', { name: '关闭' }))
-    expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByText('已选 2 项')).toBeTruthy()
     expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '选择会话“Successful updated”' }).checked).toBe(false)
     expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '选择会话“Running updated”' }).checked).toBe(true)
@@ -3040,7 +3076,7 @@ describe('Workspace tree grouping', () => {
     fireEvent.dragEnd(source)
     expect(b.props.insertWorkspaceBefore).toHaveBeenCalledExactlyOnceWith(root.workspaceId, undefined)
     rerender(b, { useWorkspaces: hook(workspaceState([team, child, other, outside, root])) })
-    expect(screen.getAllByRole('treeitem').map(row => row.textContent)).toEqual([
+    expect(mainListRows().map(row => row.textContent)).toEqual([
       'outside', 'Projects', 'Team', 'Child', 'other',
     ])
     expect(within(section('Team')).getByText('Child')).toBeTruthy()

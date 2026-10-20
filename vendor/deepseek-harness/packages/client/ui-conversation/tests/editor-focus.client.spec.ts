@@ -39,6 +39,7 @@ function fixture(start = 1, end = 4) {
     onUpdate: () => { runtime.refreshProjection(); onUpdate() },
     openReference: () => false,
     lexicon: () => new Map(), resolveLexicon: () => undefined,
+    commandsAllowed: () => true,
   })
   const dispose = runtime.register()
   const { editor } = runtime

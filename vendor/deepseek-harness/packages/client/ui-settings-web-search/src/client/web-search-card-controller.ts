@@ -130,6 +130,7 @@ export class WebSearchCardController {
   private readonly selection: SettingsFormModel<WebProviderSelection>
   private readonly messages: SettingsFormModel<WebSearchSettings>
   private readonly api: SettingsFormModel<WebApiSettings>
+  private readonly key: SettingsFormModel<WebSearchSettings>
   private readonly store: SnapshotStore<WebSearchCardState>
   private readonly unsubscribe: (() => void)[]
   private credential: CredentialState = { ref: '', configured: false, writable: true }
@@ -145,7 +146,7 @@ export class WebSearchCardController {
   ) {
     this.selection = new SettingsFormModel(scopes.web, [
       settingsTextField('searchProvider'), settingsTextField('fetchProvider'),
-    ], [{ field: API_KEY_FIELD, write: text => this.writeKey(text) }])
+    ])
     this.messages = new SettingsFormModel(scopes.messages, [
       settingsTextField('baseURL'), settingsNumberField('maxUses'),
     ])
@@ -160,6 +161,11 @@ export class WebSearchCardController {
         },
       },
     ])
+    // The existing Messages page owns the key even when the newer provider
+    // selection namespace is absent. Save it last, after the section writes.
+    this.key = new SettingsFormModel(scopes.messages, [], [
+      { field: API_KEY_FIELD, write: text => this.writeKey(text) },
+    ])
     this.store = createSnapshotStore(this.projection())
     // A staged switch can change which section names the key, without any
     // scope publishing; a scope change can rename the reference itself.
@@ -168,7 +174,7 @@ export class WebSearchCardController {
       if (this.ref() !== this.credential.ref) void this.readCredential()
     }
     this.unsubscribe = [
-      ...[this.selection, this.messages, this.api].map(form => form.bind(() => form.shell()).subscribe(publish)),
+      ...[this.selection, this.messages, this.api, this.key].map(form => form.bind(() => form.shell()).subscribe(publish)),
       ...[scopes.web, scopes.messages, scopes.api].map(scope => scope.subscribe(() => { void this.readCredential() })),
     ]
     void this.readCredential()
@@ -186,7 +192,7 @@ export class WebSearchCardController {
 
   private projection(): WebSearchCardState {
     const primary = this.messages.shell()
-    const served = [primary, this.selection.shell(), this.api.shell()].filter(item => item.available)
+    const served = [primary, this.selection.shell(), this.api.shell(), this.key.shell()].filter(item => item.available)
     const shell: SettingsFormShell = {
       available: primary.available,
       writable: served.every(item => item.writable),
@@ -204,7 +210,7 @@ export class WebSearchCardController {
       baseURL: (searchApi ? this.api : this.messages).field('baseURL'),
       maxUses: this.messages.field('maxUses'),
       count: this.api.field('count'),
-      apiKey: this.selection.field(API_KEY_FIELD),
+      apiKey: this.key.field(API_KEY_FIELD),
       apiKeyConfigured: this.credential.configured,
       apiKeyWritable: this.credential.writable,
     }
@@ -266,7 +272,7 @@ export class WebSearchCardController {
    */
   inject(): WebSearchCardFace {
     const formOf = (field: string): { actions(): SettingsFormActions } => {
-      if (field === API_KEY_FIELD) return this.selection
+      if (field === API_KEY_FIELD) return this.key
       if (field === 'maxUses') return this.messages
       if (field === 'count') return this.api
       return this.searchApi() ? this.api : this.messages
@@ -278,7 +284,7 @@ export class WebSearchCardController {
       setSearchApi: (enabled) => { this.select(enabled) },
       save: () => { void this.save() },
       discard: () => {
-        for (const form of [this.selection, this.messages, this.api]) form.actions().discard()
+        for (const form of [this.selection, this.messages, this.api, this.key]) form.actions().discard()
       },
     }
   }
@@ -300,9 +306,9 @@ export class WebSearchCardController {
   }
 
   /**
-   * Save the provider sections before the selection, so a switch takes effect
-   * only after the endpoint it uses has landed. A refused section stops the
-   * selection from saving and keeps every remaining draft for correction.
+   * Save provider sections before the selection and the credential last, so
+   * a switch takes effect only after its endpoint lands. A refused write
+   * stops later writes and keeps every remaining draft for correction.
    * @returns settlement after every attempted write.
    */
   private async save(): Promise<void> {
@@ -314,6 +320,8 @@ export class WebSearchCardController {
       if (form.shell().failed) return
     }
     if (this.selection.shell().dirty) await this.selection.save()
+    if (this.selection.shell().failed) return
+    if (this.key.shell().dirty) await this.key.save()
   }
 
   /**
@@ -332,7 +340,7 @@ export class WebSearchCardController {
   /** Release configuration subscriptions. */
   dispose(): void {
     for (const off of this.unsubscribe) off()
-    for (const form of [this.selection, this.messages, this.api]) form.dispose()
+    for (const form of [this.selection, this.messages, this.api, this.key]) form.dispose()
   }
 }
 

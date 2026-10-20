@@ -150,9 +150,8 @@ function expectOpenBusy(busy: boolean): HTMLButtonElement {
 function expectErrorToast(text: string): HTMLElement {
   const toast = screen.getByRole('alert')
   expect(within(toast).getByText(text, { exact: true })).toBeTruthy()
-  expect(toast.getAttribute('data-persistent')).toBe('true')
   expect(within(toast).getByRole('button', { name: 'browser.retry' })).toBeTruthy()
-  expect(within(toast).getByRole('button', { name: 'browser.dismiss' })).toBeTruthy()
+  expect(within(toast).queryByRole('button', { name: 'browser.dismiss' })).toBeNull()
   return toast
 }
 
@@ -1275,23 +1274,27 @@ describe('DirectoryBrowser', () => {
     fireEvent.click(screen.getByRole('button', { name: 'browser.editPath' }))
     const input = screen.getByLabelText('browser.editPath')
     fireEvent.change(input, { target: { value: '/nope' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
-    await waitFor(() => { expectErrorToast('cannot list /nope') })
-    expect(screen.getByLabelText<HTMLInputElement>('browser.editPath').value).toBe('/nope')
-    expect(itemNamed('Documents').textContent).toBe('Documents')
-    // Retry targets the failed submission, keeping its draft and listed
-    // content rather than falling back to Home or starting a draft scan.
-    fireEvent.click(within(expectErrorToast('cannot list /nope')).getByRole('button', { name: 'browser.retry' }))
-    await waitFor(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }) })
+      expectErrorToast('cannot list /nope')
+      expect(screen.getByLabelText<HTMLInputElement>('browser.editPath').value).toBe('/nope')
+      expect(itemNamed('Documents').textContent).toBe('Documents')
+      await act(async () => {
+        fireEvent.click(within(expectErrorToast('cannot list /nope')).getByRole('button', { name: 'browser.retry' }))
+      })
       expect(b.listDirectory.mock.calls.map(call => call[0])).toEqual([undefined, '/home', '/nope', '/nope'])
       expectErrorToast('cannot list /nope')
-    })
-    expect(screen.getByLabelText<HTMLInputElement>('browser.editPath').value).toBe('/nope')
-    expect(itemNamed('Documents').textContent).toBe('Documents')
-    fireEvent.click(within(expectErrorToast('cannot list /nope')).getByRole('button', { name: 'browser.dismiss' }))
-    expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.getByLabelText<HTMLInputElement>('browser.editPath').value).toBe('/nope')
-    expect(b.onClose).not.toHaveBeenCalled()
+      expect(screen.getByLabelText<HTMLInputElement>('browser.editPath').value).toBe('/nope')
+      expect(itemNamed('Documents').textContent).toBe('Documents')
+      act(() => { vi.advanceTimersByTime(7_000) })
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(screen.getByLabelText<HTMLInputElement>('browser.editPath').value).toBe('/nope')
+      expect(b.onClose).not.toHaveBeenCalled()
+      await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }) })
+      expectErrorToast('cannot list /nope')
+      expect(b.listDirectory).toHaveBeenCalledTimes(5)
+    } finally { vi.useRealTimers() }
   })
 
   it('folds non-typed failures into readable text (Error message, String otherwise)', async () => {

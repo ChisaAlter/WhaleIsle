@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, render } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { SessionLogDownloadController } from '../src/client/controller.ts'
@@ -28,35 +28,50 @@ function bench(
   return { controller, dismiss, view }
 }
 
-afterEach(cleanup)
+beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }) })
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 
 describe('SessionLogDownloadDialog', () => {
-  it('shows a controller failure and closes it without reading Session history', async () => {
+  it('shows a controller failure and dismisses it after fading without reading Session history', async () => {
     const b = bench()
     act(() => {
       b.controller.store.set({
         bySession: { [SID]: { open: true, status: 'error', error: 'toolbar failed' } },
       })
     })
-    const dialog = await b.view.findByRole('dialog', { name: 'Session export failed' })
-    expect(dialog.textContent).toContain('toolbar failed')
-    const close = b.view.getAllByRole('button', { name: 'Close' })[0]
-    if (close === undefined) throw new Error('Session export dialog has no close button')
-    fireEvent.click(close)
-    await waitFor(() => { expect(b.dismiss).toHaveBeenCalledWith(SID) })
+    expect(b.view.getByRole('alert').textContent).toBe('toolbar failed')
+    expect(b.view.queryByRole('button', { name: 'Close' })).toBeNull()
+    expect(b.dismiss).not.toHaveBeenCalled()
+    await act(async () => { await vi.runOnlyPendingTimersAsync() })
+    expect(b.dismiss).toHaveBeenCalledExactlyOnceWith(SID)
+    expect(b.view.queryByRole('alert')).toBeNull()
   })
 
   it('renders the in-flight state and the settled browser download state', async () => {
     let release!: (response: Response) => void
     const pending = new Promise<Response>((resolve) => { release = resolve })
-    const controller = new SessionLogDownloadController(() => pending, vi.fn())
+    const fetcher = vi.fn(() => pending)
+    const save = vi.fn()
+    const controller = new SessionLogDownloadController(fetcher, save)
     const b = bench(controller)
 
-    const download = controller.download(SID)
-    expect(await b.view.findByRole('dialog', { name: 'Exporting Session' })).toBeTruthy()
-    release(new Response('zip', { status: 200 }))
-    await download
-    expect(await b.view.findByRole('dialog', { name: 'Session download started' })).toBeTruthy()
+    let download!: Promise<void>
+    act(() => { download = controller.download(SID) })
+    expect(b.view.getByRole('alert').textContent).toBe('Preparing a ZIP containing this Session, its sub-Sessions, and attachments.')
+    await act(async () => {
+      release(new Response('zip', { status: 200 }))
+      await download
+    })
+    expect(b.view.getAllByRole('alert')).toHaveLength(1)
+    expect(b.view.getByRole('alert').textContent).toBe('Session download started')
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(save).toHaveBeenCalledOnce()
+    await act(async () => { await vi.runOnlyPendingTimersAsync() })
+    expect(b.dismiss).toHaveBeenCalledExactlyOnceWith(SID)
+    expect(b.view.queryByRole('alert')).toBeNull()
   })
 
   it('uses fallback copy when a failure has no detail', async () => {
@@ -66,11 +81,9 @@ describe('SessionLogDownloadDialog', () => {
         bySession: { [SID]: { open: true, status: 'error', error: '' } },
       })
     })
-    const dialog = await b.view.findByRole('dialog', { name: 'Session export failed' })
-    expect(dialog.textContent).toContain('Could not start the Session export.')
-    const close = b.view.getAllByRole('button', { name: 'Close' }).at(-1)
-    if (close === undefined) throw new Error('Session export dialog has no footer action')
-    fireEvent.click(close)
-    await waitFor(() => { expect(b.dismiss).toHaveBeenCalledWith(SID) })
+    expect(b.view.getByRole('alert').textContent).toBe('Could not start the Session export.')
+    await act(async () => { await vi.runOnlyPendingTimersAsync() })
+    expect(b.dismiss).toHaveBeenCalledExactlyOnceWith(SID)
+    expect(b.view.queryByRole('alert')).toBeNull()
   })
 })

@@ -7,7 +7,9 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const bundleRoot = path.join(root, 'vendor', 'dsh-with-chatgpt');
-const pnpm = path.join(root, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs');
+// Keep the bundle's independent install on the Harness-pinned pnpm rather
+// than migrating it with the desktop's independently versioned manager.
+const pnpm = path.join(root, 'vendor', 'deepseek-harness', 'node_modules', 'pnpm', 'bin', 'pnpm.mjs');
 const outputDirectory = path.join(root, 'dist', 'plugins');
 const env = {
   ...process.env,
@@ -30,12 +32,11 @@ function runPnpm(args) {
 
 try {
   const manifest = JSON.parse(fs.readFileSync(path.join(bundleRoot, 'package.json'), 'utf8'));
-  if (!fs.existsSync(pnpm)) throw new Error('[dsh-with-chatgpt] Run npm ci in the repository first');
-  // pnpm 12 also discovers bridge/package.json; build only the outer bundle,
-  // whose independent lockfile records this directory as importer ".".
+  if (!fs.existsSync(pnpm)) throw new Error('[dsh-with-chatgpt] Install the vendored Harness dependencies first');
+  // Build only the outer bundle, whose independent lockfile records this
+  // directory as importer "."; bridge/package.json is packed, not installed.
   runPnpm([
     'install', '--frozen-lockfile', '--ignore-workspace', '--ignore-scripts',
-    '--workspace-packages', '.', '--lockfile-dir', '.',
   ]);
   // The bundle's prepack compiles bridge/src before pnpm writes the tarball.
   runPnpm(['pack', '--pack-destination', outputDirectory]);

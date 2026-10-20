@@ -272,7 +272,8 @@ function workspaceGroupHalf(e: { clientY: number; currentTarget: HTMLElement }):
 }
 
 /** One inert, session-local collapsed archive section shared by grouped and flat views. */
-function ArchivedSessionSection({ nodes, currentId, now, expanded, onToggle, open, onUnarchive, onDelete, renderSlot, selection, t }: {
+function ArchivedSessionSection({ visible, nodes, currentId, now, expanded, onToggle, open, onUnarchive, onDelete, renderSlot, selection, t }: {
+  visible: boolean
   nodes: readonly SessionNode[]
   currentId: SessionId | undefined
   now: number
@@ -285,10 +286,11 @@ function ArchivedSessionSection({ nodes, currentId, now, expanded, onToggle, ope
   selection?: SessionRowSelection | undefined
   t: WorkspaceBrowserProps['t']
 }) {
-  if (nodes.length === 0) return null
+  if (!visible) return null
   return (
     <div className={css.groupSection} data-row-key="archived-section">
       <ArchivedSectionHeader expanded={expanded} onToggle={onToggle} t={t} />
+      {expanded && nodes.length === 0 && <div className={css.archivedEmpty}>{t('empty.noneArchived')}</div>}
       {expanded && nodes.map(node => (
         <ArchivedSessionNodeItem
           key={node.id}
@@ -337,6 +339,8 @@ type SessionTreeProps = Pick<
   animationResetKey: string
   /** Separate archive management rows, excluding archives already shown in the main list. */
   archivedNodes: readonly SessionNode[]
+  /** The enabled default-filter section stays visible even when no archives exist. */
+  showArchivedSection: boolean
   archivedExpanded: boolean
   onToggleArchived: () => void
   onSessionUnarchive: (sessionId: SessionNode['id']) => void
@@ -385,7 +389,7 @@ function EmptySessions({ rowState, onLeaveArchivedOnly, t }: Pick<SessionTreePro
 /** The scrolling session tree; unmounting drops the sessions subscription and the session watermarks. */
 function SessionTree({
   list, useSessionStatus, startSession, connectNoDirectory, open, workspaces, scratchCwd, ungroupedSessionIds,
-  rowState, archivedNodes, archivedExpanded, onToggleArchived, onSessionUnarchive, onLeaveArchivedOnly,
+  rowState, archivedNodes, showArchivedSection, archivedExpanded, onToggleArchived, onSessionUnarchive, onLeaveArchivedOnly,
   workspaceReady, animationResetKey, usePanelInfo,
   onRenameRequest, onDeleteRequest, onSessionRenameRequest, onSessionDeleteRequest,
   renderSlot, selection,
@@ -767,7 +771,7 @@ function SessionTree({
   }
 
   const groupRows = rootGroups.map(group => renderGroup(group, 0))
-  if (archivedNodes.length > 0) rowKeys.push('archived-section')
+  if (showArchivedSection) rowKeys.push('archived-section')
   return (
     <HoverCardGroup className={clsx(css.treeBody, css.wide)}>
       {workspaceDropAtListStart && <span className={css.listTopDropIndicator} aria-hidden="true" />}
@@ -784,6 +788,7 @@ function SessionTree({
         )}
         {groupRows}
         <ArchivedSessionSection
+          visible={showArchivedSection}
           nodes={archivedNodes}
           currentId={current}
           now={now}
@@ -806,7 +811,7 @@ function SessionTree({
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
   list, sessionIds, rowState, useSessionStatus, open, onSessionRenameRequest, onSessionDeleteRequest,
-  onLeaveArchivedOnly, archivedNodes, archivedExpanded, onToggleArchived, onSessionUnarchive, renderSlot,
+  onLeaveArchivedOnly, archivedNodes, showArchivedSection, archivedExpanded, onToggleArchived, onSessionUnarchive, renderSlot,
   usePanelInfo, setSessionOrder, workspaceReady, animationResetKey,
   revealSessionId, onSessionRevealed, selection, t,
 }: Pick<
@@ -826,6 +831,7 @@ function FlatList({
   | 'onSessionRevealed'
   | 'rowState'
   | 'archivedNodes'
+  | 'showArchivedSection'
   | 'archivedExpanded'
   | 'onToggleArchived'
   | 'onSessionUnarchive'
@@ -863,7 +869,7 @@ function FlatList({
         multiSelect={selection?.enabled}
         rowKeys={[
           ...rows.length === 0 && archivedNodes.length === 0 ? ['empty'] : rows.map(row => `session:${row.id}`),
-          ...archivedNodes.length > 0 ? ['archived-section'] : [],
+          ...showArchivedSection ? ['archived-section'] : [],
         ]}
         ready={list.phase === 'ready' && workspaceReady && drag === null}
         resetKey={animationResetKey}
@@ -924,6 +930,7 @@ function FlatList({
           )
         })}
         <ArchivedSessionSection
+          visible={showArchivedSection}
           nodes={archivedNodes}
           currentId={currentId}
           now={now}
@@ -1197,6 +1204,7 @@ export function WorkspaceBrowser({
     },
     [archivedFilter, showArchivedList, list, workspaces, archivedSessionIds, scratchCwd, t],
   )
+  const showArchivedSection = (archivedFilter === 'default' && showArchivedList) || archivedNodes.length > 0
   const flatMemberIds = useMemo(() => sessionMemberIds(list, workspaces, scratchCwd), [list, workspaces, scratchCwd])
   const orderedWorkspaces = useMemo(() => workspaces.map((workspace) => {
     const memberIds = workspace.sessionIds
@@ -1716,6 +1724,7 @@ export function WorkspaceBrowser({
                 workspaceReady={workspaceReady}
                 animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
                 archivedNodes={archivedNodes}
+                showArchivedSection={showArchivedSection}
                 archivedExpanded={archivedExpanded}
                 onToggleArchived={() => { setArchivedExpanded(value => !value) }}
                 onSessionUnarchive={onSessionUnarchive}
@@ -1749,6 +1758,7 @@ export function WorkspaceBrowser({
                 nestWorkspaces={groupBy === 'workspace-tree'}
                 animationResetKey={`${groupBy}/${orderBy}/${archivedFilter}`}
                 archivedNodes={archivedNodes}
+                showArchivedSection={showArchivedSection}
                 archivedExpanded={archivedExpanded}
                 onToggleArchived={() => { setArchivedExpanded(value => !value) }}
                 onSessionUnarchive={onSessionUnarchive}

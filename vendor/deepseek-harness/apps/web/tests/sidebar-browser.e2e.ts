@@ -77,7 +77,7 @@ describe.skipIf(MODE === 'record')('web e2e: Sidebar Browser', () => {
     expect(await frame.getAttribute('allow')).toBeNull()
     await column.getByRole('button', { name: 'Disable sandbox restrictions' }).click()
     await expect.poll(() => frame.getAttribute('sandbox')).toBeNull()
-    await column.getByText('Sandbox restrictions are disabled; the page can navigate the top-level app and use downloads, modal dialogs, and input locks.', { exact: true }).waitFor()
+    await page.getByRole('alert').getByText('Sandbox restrictions are disabled; the page can navigate the top-level app and use downloads, modal dialogs, and input locks.', { exact: true }).waitFor()
     await column.getByRole('button', { name: 'Restore sandbox restrictions' }).click()
     await expect.poll(() => frame.getAttribute('sandbox')).toBe('allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox')
     await page.frameLocator('[data-sidebar-browser-frame]').getByRole('link', { name: 'Inside navigation' }).click()
@@ -103,7 +103,7 @@ describe.skipIf(MODE === 'record')('web e2e: Sidebar Browser', () => {
 
     await input.fill('file:///work/index.html')
     await input.press('Enter')
-    const blocked = await column.getByRole('alert').innerText()
+    const blocked = await page.getByRole('alert').filter({ hasText: 'Only HTTP and HTTPS addresses are supported' }).innerText()
     expect(blocked).toBe('Only HTTP and HTTPS addresses are supported; use Document Preview for local files.')
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

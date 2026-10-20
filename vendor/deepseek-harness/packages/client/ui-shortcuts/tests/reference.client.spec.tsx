@@ -143,11 +143,11 @@ it('saves individual edits and disables changes when configuration cannot be rea
   await screen.findByText(en.saved)
   expect(screen.getAllByRole('dialog')).toHaveLength(1)
   act(() => { config.set({ ...config.getSnapshot(), status: 'unreadable', error: null }) })
-  expect((await screen.findByRole('alert')).textContent).toContain('this site’s localStorage entry dsh.keybindings.v1')
+  expect(screen.getByRole('alert').textContent).toContain('this site’s localStorage entry dsh.keybindings.v1')
   expect(screen.getByRole('alert').textContent).toContain('Check access permissions, then reload the page.')
   expect(screen.getByRole('alert').textContent).toContain(en['using-defaults'])
   act(() => { config.set({ ...config.getSnapshot(), error: 'future', usingDefaults: false }) })
-  expect((await screen.findByRole('alert')).textContent).toContain('Upgrade Harness and try again.')
+  expect(screen.getByRole('alert').textContent).toContain('Upgrade Harness and try again.')
   expect(screen.getByRole('alert').textContent).toContain(en['using-accepted'])
   expect(screen.getByRole('dialog').contains(screen.getByRole('alert'))).toBe(false)
   expect(screen.getByRole('button', { name: en['reset-all'] }).hasAttribute('disabled')).toBe(true)
@@ -251,11 +251,11 @@ it('keeps product order for tied searches while prioritizing stronger matches', 
 
 it.each((['web', 'desktop'] as const).flatMap(runtime => (['invalid', 'future'] as const)
   .flatMap(error => [{ runtime, error, dictionary: en }, { runtime, error, dictionary: zh }])))
-('identifies the $runtime document and preserves $error data in the selected locale', async ({ runtime, error, dictionary }) => {
+('identifies the $runtime document and preserves $error data in the selected locale', ({ runtime, error, dictionary }) => {
   const f = referenceFixture({ runtime, dictionary })
   act(() => { f.config.set({ ...f.config.getSnapshot(), status: 'unreadable', error, usingDefaults: false,
     document: { schemaVersion: 1, profiles: { [`${runtime}:macos`]: { 'settings.open': null } } } }) })
-  const text = (await screen.findByRole('alert')).textContent
+  const text = screen.getByRole('alert').textContent
   expect(text).toContain(runtime === 'web' ? 'dsh.keybindings.v1' : 'userData/keybindings.json')
   expect(text).toContain(error === 'future'
     ? dictionary === en ? 'Upgrade Harness' : '升级 Harness'
@@ -266,33 +266,6 @@ it.each((['web', 'desktop'] as const).flatMap(runtime => (['invalid', 'future'] 
   fireEvent.click(reset)
   expect(screen.queryByRole('dialog', { name: dictionary['reset-title'] })).toBeNull()
   expect(f.edit).not.toHaveBeenCalled()
-})
-
-it('restores the same unreadable-configuration notice when reopening after the reference exits', async () => {
-  vi.useFakeTimers()
-  try {
-    const f = referenceFixture()
-    act(() => { f.config.set({ ...f.config.getSnapshot(), status: 'unreadable', error: 'invalid', usingDefaults: false }) })
-    await act(async () => { await Promise.resolve() })
-    const notice = screen.getByRole('alert')
-    const firstDialog = screen.getByRole('dialog')
-    fireEvent.click(screen.getByRole('button', { name: en.close }))
-    await act(async () => { vi.advanceTimersByTime(200); await Promise.resolve() })
-    expect(firstDialog.isConnected).toBe(false)
-    expect(screen.queryByRole('alert')).toBeNull()
-    act(() => { f.store.actions.open() })
-    await act(async () => { await Promise.resolve() })
-    expect(screen.getByRole('alert')).toBe(notice)
-    expect(notice.inert).toBe(false)
-    const dismiss = screen.getByRole('button', { name: en['dismiss-feedback'] })
-    dismiss.focus()
-    fireEvent.keyDown(dismiss, { key: 'Tab' })
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: en.close }))
-    fireEvent.click(dismiss)
-    await act(async () => { await Promise.resolve() })
-    expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.getByRole('dialog')).toBeTruthy()
-  } finally { vi.useRealTimers() }
 })
 
 it('shows mounted fixed actions as searchable read-only rows and follows their label and lifetime', () => {
@@ -370,7 +343,7 @@ it('opens the recorder from the application row and retains the editor when rest
   expect(screen.getByRole('group', { name: 'Open settings' })).toBeTruthy()
 })
 
-it('keeps repeated recording errors visible until dismissed and immediately shows changed feedback', async () => {
+it('coalesces repeated recording errors without extending the toast and immediately shows changed feedback', async () => {
   vi.useFakeTimers()
   try {
     const f = referenceFixture()
@@ -381,7 +354,6 @@ it('keeps repeated recording errors visible until dismissed and immediately show
       fireEvent.keyUp(recorder, { key, code, ...modifiers })
     }
     press('z', 'KeyZ')
-    await act(async () => { vi.runAllTicks() })
     const firstError = screen.getByRole('alert')
     expect(firstError.textContent).toBe(en['modifier-required'])
     for (const key of 'hongwen') {
@@ -391,17 +363,13 @@ it('keeps repeated recording errors visible until dismissed and immediately show
       expect(recorder.getAttribute('aria-invalid')).toBe('true')
     }
     act(() => { vi.advanceTimersByTime(500) })
-    expect(screen.getByRole('alert')).toBe(firstError)
-    expect(f.edit).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: en['dismiss-feedback'] }))
     expect(screen.queryByRole('alert')).toBeNull()
+    expect(f.edit).not.toHaveBeenCalled()
     press('i', 'KeyI')
-    await act(async () => { vi.runAllTicks() })
     const nextError = screen.getByRole('alert')
     expect(nextError.textContent).toBe(en['modifier-required'])
     expect(nextError).not.toBe(firstError)
     press('r', 'KeyR', { metaKey: true })
-    await act(async () => { vi.runAllTicks() })
     expect(screen.getByRole('alert').textContent).toBe(en['unsupported-browser'])
     await act(async () => { press('.', 'Period', { metaKey: true, shiftKey: true }) })
     expect(screen.getByRole('alert').textContent).toBe(en.saved)
@@ -411,13 +379,13 @@ it('keeps repeated recording errors visible until dismissed and immediately show
   } finally { cleanup(); vi.useRealTimers() }
 })
 
-it('keeps failed edits open and returns cancelled edits to the dialog', async () => {
+it('keeps failed edits open and returns cancelled edits to the dialog', () => {
   referenceFixture()
   fireEvent.click(screen.getByRole('button', { name: 'Edit shortcut for Open settings' }))
   const recorder = screen.getByRole('button', { name: en.record }); recorder.focus()
   fireEvent.keyDown(recorder, { key: 'r', code: 'KeyR', metaKey: true })
   fireEvent.keyUp(recorder, { code: 'KeyR' })
-  expect((await screen.findByRole('alert')).textContent).toContain(en['unsupported-browser'])
+  expect(screen.getByRole('alert').textContent).toBe(en['unsupported-browser'])
   expect(recorder.getAttribute('aria-invalid')).toBe('true')
   fireEvent.click(screen.getByRole('button', { name: en.close }))
   expect(screen.queryByRole('group')).toBeNull()
@@ -609,18 +577,12 @@ it('preserves a failed draft when its status text is clicked, then retries after
     fireEvent.keyUp(recorder, { key: '.', code: 'Period' })
   })
   const editor = screen.getByRole('group', { name: 'Open settings' })
-  const failedNotice = await screen.findByRole('alert')
-  expect(failedNotice.textContent).toContain(en['write-failed'])
-  fireEvent.pointerDown(failedNotice)
-  expect(screen.getByRole('group', { name: 'Open settings' })).toBe(editor)
-  expect(screen.getByRole('button', { name: en['retry-save'] })).toBeTruthy()
+  fireEvent.pointerDown(within(editor).getByText(en['write-failed']))
+  expect(within(editor).getByRole('button', { name: en['retry-save'] })).toBeTruthy()
   act(() => { f.config.set({ ...f.config.getSnapshot(), revision: initialShortcutConfig().revision }) })
-  const staleNotice = await screen.findByRole('alert')
-  expect(staleNotice.textContent).toContain(en.stale)
-  fireEvent.pointerDown(staleNotice)
-  expect(screen.getByRole('group', { name: 'Open settings' })).toBe(editor)
-  fireEvent.click(screen.getByRole('button', { name: en.review }))
-  await act(async () => { screen.getByRole('button', { name: en['retry-save'] }).click() })
+  fireEvent.pointerDown(within(editor).getByText(en.stale))
+  fireEvent.click(within(editor).getByRole('button', { name: en.review }))
+  await act(async () => { within(editor).getByRole('button', { name: en['retry-save'] }).click() })
   expect(f.edit).toHaveBeenLastCalledWith({ type: 'set', id: 'settings.open', binding: { code: 'Period', modifiers: ['shift', 'meta'] } }, f.config.getSnapshot().revision)
   expect(screen.queryByRole('group', { name: 'Open settings' })).toBeNull()
 })

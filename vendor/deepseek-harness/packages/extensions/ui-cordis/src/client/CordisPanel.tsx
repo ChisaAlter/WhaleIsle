@@ -211,16 +211,15 @@ export function CordisPanel({
   useEffect(() => { setDismissedError(undefined) }, [open, errorText])
 
   const operationNotice = (open || inventory.error !== undefined) && errorText !== ''
-    && (errorText !== dismissedError || inventory.error !== undefined)
+    && errorText !== dismissedError
     ? <Toast
-        text={errorText === dismissedError ? t('panel.retryAvailable') : errorText}
-        holdMs={null}
-        dismissLabel={errorText === dismissedError ? undefined : t('action.dismiss')}
-        actions={inventory.error === undefined ? [] : [{ label: t('action.retry'), onClick: () => { setDismissedError(undefined); onRefresh() } }]}
-        onDone={() => { setDismissedError(errorText) }}
-      /> : null
+      text={errorText}
+      holdMs={null}
+      actions={inventory.error === undefined ? [] : [{ label: t('action.retry'), onClick: () => { setDismissedError(undefined); onRefresh() } }]}
+      onDone={() => { setDismissedError(errorText) }}
+    /> : null
 
-  if (all.length === 0) return operationNotice
+  if (all.length === 0 && inventory.error === undefined) return operationNotice
 
   const runAction = async (pluginId: CordisDynamicPluginId, action: () => Promise<void | { ok: boolean; message?: string }>) => {
     if (pending.has(pluginId)) return
@@ -475,7 +474,13 @@ export function CordisPanel({
           </header>
           <div className={css.body}>
             {!inventory.read && inventory.error === undefined && <span className={css.loading}><StateDot state="ongoing" /></span>}
-            {inventory.read && all.length === 0 && <p className={css.note}>{t('panel.empty')}</p>}
+            {inventory.error !== undefined && (
+              <div className={css.inventoryError}>
+                <p className={css.readError}>{t('panel.readFailed', { message: inventory.error })}</p>
+                <Button size="sm" variant="outline" onClick={onRefresh}>{t('action.retry')}</Button>
+              </div>
+            )}
+            {inventory.read && inventory.error === undefined && all.length === 0 && <p className={css.note}>{t('panel.empty')}</p>}
             {mine.length > 0 && (
               <section>
                 <h3 className={css.group}>{t('panel.group.current')}</h3>

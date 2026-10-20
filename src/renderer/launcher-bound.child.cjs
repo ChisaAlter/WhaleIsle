@@ -493,7 +493,7 @@ app.whenReady().then(async () => {
         button.focus(); button.click();
       })()`);
       const closeNotice = async () => {
-        await win.webContents.executeJavaScript('document.querySelector(".shell-feedback-toast .shell-feedback-close").click()');
+        await win.webContents.executeJavaScript('document.querySelectorAll(".shell-feedback-toast").forEach(node => node.remove())');
         await waitForDom('!document.querySelector(".shell-feedback-toast")');
       };
       const componentProgress = payload => win.webContents.send('shell:components-progress', { id: 'whalebridge', ...payload });

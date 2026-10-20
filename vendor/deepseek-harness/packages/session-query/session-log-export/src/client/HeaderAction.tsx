@@ -5,14 +5,14 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import {
   Button, IconDownloadOutlineRegular,
-  IconEllipsisOutlineRegular, IconPaperPlaneOutlineRegular, Menu,
+  IconEllipsisOutlineRegular, IconPaperPlaneOutlineRegular, Menu, MenuItemButton,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SessionLogDownloadDialog, type SessionLogDownloadDialogProps } from './Dialog.tsx'
 import type { SessionLogDownloadState } from './controller.ts'
 import { NS } from './locales.ts'
 import css from './HeaderAction.module.css'
 
-/** Session-scoped menu state and actions; the titlebar contribution owns the shared download modal. */
+/** Session-scoped menu state and actions; the titlebar contribution owns the shared download feedback. */
 export interface SessionLogDownloadHeaderInjected {
   hooks: {
     sessionLogDownload: ObservableSnapshot<SessionLogDownloadState>
@@ -29,7 +29,7 @@ export type SessionLogDownloadHeaderProps =
   & InjectFace<SessionLogDownloadHeaderInjected>
 
 /**
- * Render the Session's persistent more-actions menu, including feedback while its plugin is available.
+ * Keep the Session's more-actions menu and feedback available while its download action is busy.
  * @param props - current Session, controller state, feedback availability, and copy.
  * @returns the compact Session action following the Agent controls.
  */
@@ -48,15 +48,6 @@ export function SessionLogDownloadHeaderAction(props: SessionLogDownloadHeaderPr
       dense
       portal
       onClose={() => { setOpen(false) }}
-      items={[
-        { id: 'download', label: t('menu.download'), icon: <IconDownloadOutlineRegular />, disabled: busy },
-        ...feedbackAvailable ? [{ id: 'feedback', label: t('menu.feedback'), icon: <IconPaperPlaneOutlineRegular /> }] : [],
-      ]}
-      onSelect={(id) => {
-        setOpen(false)
-        if (id === 'feedback') openFeedback(sessionId)
-        else void request(sessionId)
-      }}
       anchor={(
         <Button
           size="sm"
@@ -64,21 +55,40 @@ export function SessionLogDownloadHeaderAction(props: SessionLogDownloadHeaderPr
           aria-label={t('header.more')}
           aria-haspopup="menu"
           aria-expanded={open}
-          aria-busy={busy}
-          loading={busy}
           onClick={() => { setOpen(value => !value) }}
         >
           <IconEllipsisOutlineRegular />
         </Button>
       )}
-    />
+    >
+      <Button
+        role="menuitem"
+        className={css.downloadItem}
+        icon={<IconDownloadOutlineRegular />}
+        aria-busy={busy}
+        loading={busy}
+        disabled={busy}
+        onClick={() => {
+          setOpen(false)
+          void request(sessionId)
+        }}
+      >
+        {t('menu.download')}
+      </Button>
+      {feedbackAvailable && <MenuItemButton icon={<IconPaperPlaneOutlineRegular />} onSelect={() => {
+        setOpen(false)
+        openFeedback(sessionId)
+      }}>
+        {t('menu.feedback')}
+      </MenuItemButton>}
+    </Menu>
   )
 }
 
 /**
- * Keep the result dialog mounted for menu downloads and the /export command.
+ * Keep the result feedback mounted for menu downloads and the /export command.
  * @param props - current-session list, download controller, and copy.
- * @returns the Session-scoped dialog without an extra titlebar shortcut.
+ * @returns the Session-scoped feedback without an extra titlebar shortcut.
  */
 export function SessionLogDownloadTitlebarAction(props: SessionLogDownloadDialogProps): ReactNode {
   const {

@@ -344,21 +344,24 @@ describe('McpSection', () => {
     expect(screen.getByRole('button', { name: en.refresh })).toBeTruthy()
   })
 
-  it('gives a repeated identical test success a full new display lifetime', async () => {
+  it('keeps repeated test success in its inline status', async () => {
     const test = vi.fn(props().test)
     render(<McpSection {...props({ list: async () => ({ servers: [managedStdio] }), test })} />)
     const button = await screen.findByRole('button', { name: en.testFor.replace('{name}', 'github') })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     await act(async () => { fireEvent.click(button) })
-    const first = screen.getByRole('alert')
+    const first = screen.getByText(en.testSuccess.replace('{count}', '0').replace('{tools}', en.testNoTools))
     expect(first.textContent).toContain(en.testSuccess.replace('{count}', '0').replace('{tools}', en.testNoTools))
 
     await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
     await act(async () => { fireEvent.click(button) })
     expect(test).toHaveBeenCalledTimes(2)
     await act(async () => { await vi.advanceTimersByTimeAsync(2500) })
-    expect(screen.getByRole('alert').textContent).toBe(first.textContent)
+    expect(button.title).toBe(first.textContent)
+    expect(button.getAttribute('aria-describedby')).toBe(first.id)
     await act(async () => { await vi.advanceTimersByTimeAsync(1500) })
+    expect(button.title).toBe(first.textContent)
+    expect(button.getAttribute('aria-describedby')).toBe(first.id)
     expect(screen.queryByRole('alert')).toBeNull()
   })
 

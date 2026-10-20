@@ -7,11 +7,15 @@ import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { projectPackage, harness, cliRequire, resolvePackage, projectUrl, ProjectService } from './harness-runtime.mjs';
-const { boot, loadOverlayPatches, bundlePatchPaths } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-app-boot')).href);
+import { projectPackage, harness, cliRequire, resolvePackage, ProjectService } from './harness-runtime.mjs';
+const { boot, loadOverlayPatches, bundlePatchPaths, composeEntries } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-app-boot')).href);
 const { LlmAdapter, LlmError } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-llm')).href);
 const { provideCmdline } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-cmdline')).href);
 const { disposeProfileApplication } = await import(pathToFileURL(join(harness, 'apps/cli/lib/profile-boot.js')).href);
+const { FiberState } = await import(pathToFileURL(resolvePackage('@deepseek-ai/cordis')).href);
+const { default: TeamService } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-experimental-agent-team')).href);
+const teamUi = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-experimental-client-ui-agent-team')).href);
+const { ensureDesktopDshProject } = cliRequire(join(projectPackage, '../../src/main/dsh-project-desktop.js'));
 const blocks = value => [{ type: 'block-start', index: 0, blockType: 'text' }, { type: 'text-delta', index: 0, text: value }, { type: 'block-end', index: 0, block: { type: 'text', text: value } }, { type: 'finish', reason: { kind: 'stop' } }];
 const call = (id, name, args) => [{ type: 'block-start', index: 0, blockType: 'tool-call' }, { type: 'tool-call-delta', index: 0, id, name, argumentsDelta: JSON.stringify(args) }, { type: 'block-end', index: 0, block: { type: 'tool-call', id, name, arguments: JSON.stringify(args) } }, { type: 'finish', reason: { kind: 'tool-calls' } }];
 const messageText = message => (message.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
@@ -196,7 +200,7 @@ class DependencyModel extends ScriptedModel {
 
 /** Script only user/model decisions; queue admission, notices and deliveries remain native. */
 class QueueModel extends DependencyModel {
-  holdTitles = new Set(); deliveryBarriers = new Set(); barriersReached = new Set(); queueInputs = []; workerAborts = []; streamErrors = [];
+  holdTitles = new Set(); isolateTitles = new Set(); deliveryBarriers = new Set(); barriersReached = new Set(); queueInputs = []; workerAborts = []; streamErrors = [];
   async barrier(name, signal) {
     this.barriersReached.add(name);
     await new Promise((done, reject) => {
@@ -209,7 +213,7 @@ class QueueModel extends DependencyModel {
   row(title) { const row = this.state().requests.find(item => item.title === title); assert.ok(row, title); return row; }
   delegate(row) {
     const work = this.state().workstreams.find(item => item.delegations.at(-1).source.requestId === row.id);
-    return { requestId: row.id, requestRevision: row.revision, ...(work ? { workstreamId: work.id } : { title: `${row.title} work` }), brief: `QUEUE_WORK:${row.title}`, scope: 'development' };
+    return { requestId: row.id, requestRevision: row.revision, ...(work ? { workstreamId: work.id } : { title: `${row.title} work`, ...(this.isolateTitles.has(row.title) ? { isolate: true } : {}) }), brief: `QUEUE_WORK:${row.title}`, scope: 'development' };
   }
   async *stream(options) {
     try { yield* this.queueStream(options); }
@@ -448,15 +452,17 @@ class ReplacementModel extends ScriptedModel {
   }
 }
 
-async function desktopBridge(root) {
+async function desktopBridge(root, handlers = {}) {
   const bindings = new Map(), requests = [];
   const server = createServer(async (req, res) => { try {
     assert.equal(req.headers.authorization, 'Bearer composition-secret'); const chunks = []; for await (const chunk of req) chunks.push(chunk);
     const input = JSON.parse(Buffer.concat(chunks)); requests.push(input); let value;
-    if (input.action === 'select-directory') { const path = await realpath(input.workingDirectory); value = { canonicalPath: path, identity: path.toLowerCase() }; }
-    else if (input.action === 'prepare-workspace') { assert.equal(input.mode, 'existing'); value = { canonicalPath: await realpath(input.workingDirectory), ownership: 'user', receipt: input.workstreamId, isGit: false }; bindings.set(input.workstreamId, value); }
+    if (input.action === 'prepare-workspace') { if (handlers[input.action]) value = await handlers[input.action](input); else { assert.equal(input.mode, 'existing'); value = { canonicalPath: await realpath(input.workingDirectory), ownership: 'user', receipt: input.workstreamId, isGit: false }; } bindings.set(input.workstreamId, value); }
+    else if (handlers[input.action]) value = await handlers[input.action](input);
+    else if (input.action === 'select-directory') { const path = await realpath(input.workingDirectory); value = { canonicalPath: path, identity: path.toLowerCase() }; }
     else if (input.action === 'check-workspace') { assert.deepEqual(input.workspace, bindings.get(input.workstreamId)); value = { valid: true }; }
     else if (input.action === 'snapshot') value = { isGit: false, dirty: null, fingerprint: null };
+    else if (input.action === 'baseline') value = { isGit: false };
     else if (input.action === 'resolve-path') value = { canonicalPath: await realpath(input.path), root: bindings.get(input.workstreamId).canonicalPath };
     else throw new Error(`Unexpected desktop action ${input.action}`);
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(value));
@@ -464,11 +470,15 @@ async function desktopBridge(root) {
   await new Promise(done => server.listen(0, '127.0.0.1', done));
   return { requests, address: `http://127.0.0.1:${server.address().port}`, close: () => new Promise(done => server.close(done)) };
 }
-async function bootHost(home, model, teamConfig, allowUnavailable = false, visualRepliesEnabled = false) {
+async function bootHost(home, model, teamConfig, allowUnavailable = false, visualRepliesEnabled = false, composition = {}) {
   const config = join(home, 'cordis.yml'); await writeFile(config, '[]\n');
   const web = dirname(cliRequire.resolve('@deepseek-ai/dsh-web-app/package.json')), manifest = JSON.parse(readFileSync(join(web, 'package.json'), 'utf8'));
   const patches = [...loadOverlayPatches('project-composition', join(harness, 'packages/bundle/base/cordis.patch.yml')),
-    ...bundlePatchPaths(web, manifest.dsh.bundle).flatMap(path => loadOverlayPatches('project-composition', path)), ...loadOverlayPatches('project-composition', join(projectPackage, 'cordis.patch.yml')).map(patch => !teamConfig || !patch.insert ? patch : { ...patch, insert: [{ id: 'composition-team-limits', name: '@deepseek-ai/dsh-experimental-agent-team', config: teamConfig }, ...patch.insert] }),
+    ...bundlePatchPaths(web, manifest.dsh.bundle).flatMap(path => loadOverlayPatches('project-composition', path)),
+    ...composition.optionalTeams ? loadOverlayPatches('project-composition', join(harness, 'packages/experimental/agent-team-profile/cordis.patch.yml'))
+      : teamConfig ? [{ insert: [{ id: 'agent-team', name: '@deepseek-ai/dsh-experimental-agent-team', config: teamConfig }] }] : [],
+    ...composition.userPatch ? loadOverlayPatches('project-composition', composition.userPatch) : [],
+    ...composition.project === false ? [] : loadOverlayPatches('project-composition', composition.overlayFile ?? join(projectPackage, 'cordis.patch.yml')),
     { id: 'storage-json', config: { root: join(home, 'storages') } }, { id: 'session-persistence-jsonl', config: { root: join(home, 'sessions') } },
     { id: 'mcp-servers-file', config: { path: join(home, 'mcp-servers.yaml'), watch: false } }, { id: 'agent-default-model', config: { provider: 'composition', model: 'project-model' } },
     { id: 'agent-preset-registry', config: { default: 'standard' } },
@@ -480,12 +490,137 @@ async function bootHost(home, model, teamConfig, allowUnavailable = false, visua
   const ctx = await boot('project-composition', config, patches, ctx => {
     ctx.on('tools/result', (exec, result) => { if (result.error) model.failures.push({ name: exec.name, error: result.error }); });
     ctx.provide('connection', { fetch: { register: () => () => {} }, rpc: { intercept: () => () => {} } }); provideCmdline(ctx, { args: [], exit: () => {} });
-    ctx.loader.internal = { version: 'v2', async import(name) { if (name === 'dsh-project' || name.startsWith('dsh-project/')) return import(pathToFileURL(join(projectPackage, 'lib', `${name === 'dsh-project' ? 'index' : name.slice(12)}.js`)).href); if (name.startsWith(projectUrl)) return import(name); return import(pathToFileURL(resolvePackage(name)).href); } };
+    ctx.loader.internal = { version: 'v2', async import(name) {
+      if (name === '@deepseek-ai/dsh-experimental-agent-team' && composition.beforeTeamImport) await composition.beforeTeamImport(ctx);
+      if (name === 'dsh-project' || name.startsWith('dsh-project/')) return import(pathToFileURL(join(projectPackage, 'lib', `${name === 'dsh-project' ? 'index' : name.slice(12)}.js`)).href);
+      if (name.startsWith('file:')) return import(name);
+      return import(pathToFileURL(resolvePackage(name)).href);
+    } };
   });
-  assert.equal(ctx.get('projects')?.available, !allowUnavailable, ctx.get('projects')?.error);
+  if (composition.project === false) assert.equal(ctx.get('projects'), undefined);
+  else assert.equal(ctx.get('projects')?.available, !allowUnavailable, ctx.get('projects')?.error);
   let contextVersion = 0; ctx.systemPrompt.context({ name: 'composition:actual-dynamic-context', order: 99999, text: () => `Runtime context snapshot ${++contextVersion}; it supplies no user authorization.` });
-  ctx.llm.registerAdapter(['composition'], model); model.state = () => ctx.projects.state(); return ctx;
+  ctx.llm.registerAdapter(['composition'], model); model.state = () => ctx.get('projects')?.state(); return ctx;
 }
+test('Project and the optional Agent Teams bundle compose one Team service and one Team UI', () => {
+  const web = dirname(cliRequire.resolve('@deepseek-ai/dsh-web-app/package.json')), manifest = JSON.parse(readFileSync(join(web, 'package.json'), 'utf8'));
+  const layers = [join(harness, 'packages/bundle/base/cordis.patch.yml'), ...bundlePatchPaths(web, manifest.dsh.bundle),
+    join(harness, 'packages/experimental/agent-team-profile/cordis.patch.yml'), join(projectPackage, 'cordis.patch.yml')].map(path => loadOverlayPatches('project-composition', path));
+  const active = rows => rows.flatMap(row => row.disabled === true ? [] : row.group && Array.isArray(row.config) ? [row, ...active(row.config)] : [row]);
+  const rows = active(composeEntries(layers));
+  for (const name of ['@deepseek-ai/dsh-experimental-agent-team', '@deepseek-ai/dsh-experimental-client-ui-agent-team']) {
+    assert.deepEqual(rows.filter(row => row.name === name).map(row => row.id), [name === '@deepseek-ai/dsh-experimental-agent-team' ? 'agent-team' : 'dsh-project-team-ui']);
+  }
+  assert.ok(rows.some(row => row.id === 'tool-agent-team'), 'Agent Teams tools stay mounted on the shared service');
+});
+
+class TeamLimitModel extends LlmAdapter {
+  requests = []; failures = [];
+  async resolveModel(provider, model) { return { provider, id: model, name: model }; }
+  async *stream(options) { this.requests.push(options); yield* blocks('Team member ready.'); }
+}
+
+function assertTeamComposition(ctx, expected, project, optionalTeams) {
+  const activeFibers = plugin => [...(ctx.registry.get(plugin)?.fibers ?? [])].filter(fiber => fiber.state === FiberState.ACTIVE);
+  assert.equal(activeFibers(TeamService).length, expected ? 1 : 0, 'exactly one live TeamService provider');
+  assert.equal(activeFibers(teamUi).length, project || optionalTeams ? 1 : 0, 'exactly one live Team UI plugin');
+  assert.equal([...ctx.loader.entries()].filter(entry => entry.options.name === '@deepseek-ai/dsh-experimental-client-ui-agent-team' && !entry.disabled).length, project || optionalTeams ? 1 : 0);
+  if (!expected) { assert.equal(ctx.get('agentTeams'), undefined); return; }
+  assert.deepEqual(ctx.agentTeams.config, expected, 'the actual shared service retains every effective limit');
+  if (project) assert.equal(ctx.projects.teams.config, ctx.agentTeams.config, 'Project consumes the configured provider instance');
+  if (optionalTeams) {
+    const tool = [...ctx.loader.entries()].find(entry => entry.options.id === 'tool-agent-team');
+    assert.equal(tool.fiber.state, FiberState.ACTIVE, 'optional Team tools remain active on the shared provider');
+  }
+}
+
+async function assertTeamLimits(ctx, expected, id) {
+  const lead = await ctx.agentLoop.create(id, { provider: 'composition', model: 'project-model' });
+  let first;
+  for (let index = 0; index < expected.maxMembers; index++) {
+    const result = await ctx.agentTeams.spawnTeammate(lead, { name: `member-${index}`, description: `Capacity member ${index}`,
+      prompt: [{ type: 'text', text: 'Observe Team capacity.' }], context: 'fresh', provider: 'spawn', signal });
+    first ??= result.member.name;
+  }
+  await waitFor(() => ctx.agentTeams.listMembers(lead).every(member => member.status === 'inactive'), 'capacity members settle through the actual continuable runtime');
+  assert.equal(ctx.agentTeams.listMembers(lead).length, expected.maxMembers + 1, 'the configured teammate limit excludes the Lead');
+  await assert.rejects(ctx.agentTeams.spawnTeammate(lead, { name: 'over-capacity', description: 'Must be rejected before creation',
+    prompt: [{ type: 'text', text: 'Must not run.' }], context: 'fresh', provider: 'spawn', signal }), { code: 'TEAM_MEMBER_LIMIT' });
+  assert.equal(ctx.agentTeams.listMembers(lead).length, expected.maxMembers + 1, 'rejection does not add a member');
+  await assert.rejects(ctx.agentTeams.sendMessage(lead, { target: first, content: [{ type: 'text', text: '鲸'.repeat(expected.maxMessageBytes) }], signal }), { code: 'TEAM_MESSAGE_TOO_LARGE' });
+  if (expected.maxTasks <= 4) {
+    for (let index = 0; index < expected.maxTasks; index++) await ctx.agentTeams.createTask(lead, { subject: `Task ${index}`, description: 'Configured task capacity.' });
+    await assert.rejects(ctx.agentTeams.createTask(lead, { subject: 'Overflow task', description: 'Must not be created.' }), { code: 'TEAM_TASK_LIMIT' });
+  }
+  assert.equal(await ctx.sessions.flush(lead.session), true);
+}
+
+test('real Loader preserves Team limits through cold restart and Project toggle without duplicate providers or UI', { timeout: 180000 }, async t => {
+  const defaults = { maxMembers: 8, maxTasks: 256, maxMessageBytes: 65536, disposalTimeoutMs: 5000 };
+  for (const scenario of [
+    { name: 'optional bundle defaults and delayed provider import', optionalTeams: true, expected: defaults, delayImport: true },
+    { name: 'user limits with desktop overlay', optionalTeams: true, desktop: true, expected: { maxMembers: 2, maxTasks: 3, maxMessageBytes: 1024, disposalTimeoutMs: 750 } },
+    { name: 'Project alone with desktop overlay', optionalTeams: false, desktop: true, expected: { ...defaults, maxMembers: 16 } },
+  ]) await t.test(scenario.name, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'whale-project-team-config-')), home = join(root, 'home'), directory = join(root, 'selected');
+    await mkdir(home); await mkdir(directory); const bridge = await desktopBridge(root); let ctx, mounted, projectId;
+    const userPatch = join(home, 'cordis.patch.yml'), userText = scenario.optionalTeams && scenario.desktop
+      ? '- id: agent-team\n  config:\n    maxMembers: !!js 1 + 1\n    maxTasks: 3\n    maxMessageBytes: 1024\n    disposalTimeoutMs: 750\n' : '[]\n';
+    await writeFile(userPatch, userText);
+    const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+    Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
+    try {
+      for (const [index, stage] of ['initial', 'cold-restart', 'Project-disabled', 'Project-restored'].entries()) {
+        const project = stage !== 'Project-disabled', model = new TeamLimitModel();
+        if (scenario.desktop) {
+          mounted = await ensureDesktopDshProject({ sourceDir: projectPackage, harnessRoot: harness, profileDir: home, enabled: project });
+          assert.equal(mounted.ok, true);
+          if (project) assert.ok(mounted.overlayFile);
+        }
+        let delayed = false;
+        ctx = await bootHost(home, model, undefined, false, false, { optionalTeams: scenario.optionalTeams, project, userPatch,
+          ...(scenario.desktop && project ? { overlayFile: mounted.overlayFile } : {}),
+          ...(scenario.delayImport && project ? { beforeTeamImport: async loading => {
+            await waitFor(() => [...loading.registry.values()].flatMap(runtime => [...runtime.fibers]).some(fiber => fiber.runtime?.name === 'whale-project' && fiber.state === FiberState.LOADING), 'Project starts before the configured Team module import finishes');
+            delayed = true;
+          } } : {}),
+        });
+        assert.equal(model.requests.length, 0, 'boot, restart and toggle start no model work');
+        if (scenario.delayImport && project) assert.equal(delayed, true);
+        const expected = project || scenario.optionalTeams ? scenario.expected : undefined;
+        assertTeamComposition(ctx, expected, project, scenario.optionalTeams);
+        if (project) {
+          if (!projectId) projectId = (await ctx.projects.command('create', { requestId: 'team-config-create', workingDirectory: directory })).project.id;
+          assert.deepEqual(ctx.projects.state().projects.map(row => row.id), [projectId], 'the same Project survives restart and disable/enable');
+        }
+        if (project && scenario.optionalTeams && stage === 'initial') {
+          const entries = [...ctx.loader.entries()], provider = entries.find(entry => entry.options.id === 'agent-team');
+          await provider.fiber.restart();
+          await waitFor(() => ctx.get('projects')?.available && ctx.projects.teams.config === ctx.agentTeams.config, 'Project follows the configured provider restart');
+          assertTeamComposition(ctx, expected, true, true);
+          const teamConfig = ctx.agentTeams.config, projectEntry = entries.find(entry => entry.options.id === 'dsh-project');
+          await projectEntry.update({ disabled: true }); await projectEntry.fiber.await();
+          assert.equal(ctx.get('projects'), undefined);
+          assert.equal(ctx.agentTeams.config, teamConfig, 'live Project disable retains the optional provider instance');
+          assertTeamComposition(ctx, expected, false, true);
+          await projectEntry.update({ disabled: false }); await ctx.loader.await();
+          assert.equal(ctx.projects.available, true, ctx.projects.error);
+          assert.equal(ctx.agentTeams.config, teamConfig, 'live Project re-enable reuses the optional provider');
+          assertTeamComposition(ctx, expected, true, true);
+          assert.equal(model.requests.length, 0, 'live provider restart and Project toggle start no model work');
+        }
+        if (expected) await assertTeamLimits(ctx, expected, `session-team-config-${index}`);
+        assert.equal(await readFile(userPatch, 'utf8'), userText, 'desktop composition never edits the user patch');
+        await disposeProfileApplication(ctx); ctx = undefined;
+      }
+    } finally {
+      if (ctx) await disposeProfileApplication(ctx); await bridge.close();
+      for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+      assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-team-config-`)); await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
 test('native requirement queue keeps discussion separate, preserves edits and order, and relays only a durable whole delivery', { timeout: 120000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'whale-project-native-queue-')), home = join(root, 'home'), directory = join(root, 'selected');
   await mkdir(home); await mkdir(directory); await writeFile(join(directory, 'seed.txt'), 'preserved\n');
@@ -546,6 +681,78 @@ test('native requirement queue keeps discussion separate, preserves edits and or
     for (const gate of model.gates.values()) gate.release(); if (ctx) await ctx.fiber.dispose(); await bridge.close();
     for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
     assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-native-queue-`)); await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('native delivery tracking waits for actual workspace snapshots and excludes another Project writer during revert', { timeout: 120000 }, async () => {
+  // Plain data fixtures stand in for desktop-owned directories: no Git repository,
+  // branch or worktree is created. Real Host tools write and read the data.
+  const root = await mkdtemp(join(tmpdir(), 'whale-project-native-tracking-')), home = join(root, 'home'), directory = join(root, 'selected'), isolated = join(root, 'isolated-data'), child = join(isolated, 'nested-data');
+  await mkdir(home); await mkdir(directory); await mkdir(isolated); await mkdir(child);
+  for (const cwd of [directory, isolated, child]) await writeFile(join(cwd, 'seed.txt'), 'preserved\n');
+  let releaseCapture, captureStarted = false, ctx;
+  const captureGate = new Promise(resolve => { releaseCapture = resolve; }), model = new QueueModel();
+  model.isolateTitles.add('A'); model.holdTitles = new Set(['B', 'Foreign']);
+  const bridge = await desktopBridge(root, {
+    'prepare-workspace': async input => ({ canonicalPath: await realpath(input.mode === 'worktree' ? isolated : input.workingDirectory), ownership: input.mode === 'worktree' ? 'project' : 'user', receipt: input.workstreamId, isGit: true }),
+    baseline: () => ({ isGit: true, tree: 'a'.repeat(40) }),
+    changes: async input => {
+      const title = input.workingDirectory === await realpath(isolated) ? 'A' : 'B';
+      assert.equal(await readFile(join(input.workingDirectory, `${title}.txt`), 'utf8'), `${title} revision 1\n`);
+      if (title === 'A' && !input.end) { captureStarted = true; await captureGate; }
+      return { end: title === 'A' ? 'b'.repeat(40) : 'c'.repeat(40), files: [{ path: `${title}.txt`, status: 'A', added: 1, removed: 0 }], diff: `diff --git a/${title}.txt b/${title}.txt\nnew file mode 100644\n--- /dev/null\n+++ b/${title}.txt\n@@ -0,0 +1 @@\n+${title} revision 1\n` };
+    },
+    revert: async input => {
+      assert.equal(input.workingDirectory, await realpath(isolated));
+      assert.ok(input.workspace.receipt && input.workstreamId);
+      if (!input.checkOnly) await rm(join(isolated, 'A.txt'));
+      return { ok: true, applied: !input.checkOnly };
+    },
+  });
+  const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
+  try {
+    ctx = await bootHost(home, model); const host = ctx.projects;
+    const { project } = await host.command('create', { requestId: 'tracking-primary', workingDirectory: directory }), lead = ctx.agents.get(project.coordinatorSessionId);
+    const prompt = (sessionId, requestId, actions) => ctx.sessionController.prompt({ sessionId, requestId, mode: 'queue', content: [{ type: 'text', text: `QUEUE_ACTIONS:${JSON.stringify(actions)}` }] }, signal);
+    await prompt(lead.id, 'tracking-human', [{ type: 'request', title: 'A' }, { type: 'delegate', title: 'A' }, { type: 'request', title: 'B', disposition: 'discussing' }]);
+    await waitFor(() => { assert.deepEqual(model.streamErrors, []); return captureStarted; }, 'the native completed A reply reaches its delayed end snapshot');
+    const a = () => host.state().requests.find(row => row.title === 'A'), b = () => host.state().requests.find(row => row.title === 'B');
+    const enqueue = host.command('requests/queue', { projectId: project.id, requestId: b().id, requestRevision: 1, action: 'enqueue' });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(host.state().deliveries.find(row => row.requestId === a().id).status, 'draft');
+    assert.equal(host.queue.active(project.id)?.id, a().id); assert.equal(model.workerInputs.some(input => input.context.title === 'B'), false);
+    assert.equal(a().changes.workspaces[0].workingDirectory, await realpath(isolated), 'baseline is in the assigned member cwd, not the bound root');
+    releaseCapture(); await enqueue;
+    await waitFor(() => model.barriersReached.has('worker:B'), 'B starts only after A end tree is saved');
+    assert.equal(a().changes.workspaces[0].end, 'b'.repeat(40));
+    assert.equal(model.workerInputs.find(input => input.context.title === 'A').cwd, await realpath(isolated));
+    const diff = await host.command('requests/changes', { projectId: project.id, requestId: a().id });
+    assert.equal(diff.workspaces[0].workingDirectory, await realpath(isolated)); assert.equal(diff.files[0].path, 'A.txt');
+    const trackedDirectory = diff.workspaces[0].workingDirectory;
+    model.gate('worker:B').release();
+    await waitFor(() => host.state().deliveries.some(row => row.title === 'B' && row.status === 'delivered'), 'ordinary B writes, reads back and completes');
+    await waitFor(() => !host.queue.busy(project.id), 'primary native work drains before testing the foreign directory writer');
+    const { project: foreign } = await host.command('create', { requestId: 'tracking-overlap', workingDirectory: child });
+    await prompt(foreign.coordinatorSessionId, 'tracking-foreign-human', [{ type: 'request', title: 'Foreign' }, { type: 'delegate', title: 'Foreign' }]);
+    await waitFor(() => model.barriersReached.has('worker:Foreign'), 'another Project holds a child-directory writer');
+    assert.equal(host.queue.busy(project.id), false, 'the busy rejection must come from the foreign Project');
+    assert.equal(host.directoryInUse(trackedDirectory), true, 'the canonical recorded area is held by the foreign child-directory writer');
+    await assert.rejects(host.command('requests/revert', { projectId: project.id, requestId: a().id }), { code: 'busy' });
+    assert.equal(bridge.requests.filter(input => input.action === 'revert').length, 0);
+    await host.command('stop', { projectId: foreign.id });
+    // Windows TEMP can use an 8.3 alias; occupancy uses the canonical area saved above.
+    await waitFor(() => !host.queue.busy(project.id) && !host.directoryInUse(trackedDirectory), 'the delivered primary work and stopped foreign member release all actual activity');
+    await host.command('requests/revert', { projectId: project.id, requestId: a().id });
+    await assert.rejects(readFile(join(isolated, 'A.txt')), { code: 'ENOENT' });
+    assert.equal(await readFile(join(directory, 'B.txt'), 'utf8'), 'B revision 1\n');
+    assert.equal(await readFile(join(directory, 'seed.txt'), 'utf8'), 'preserved\n');
+    assert.ok(a().changes.revertedAt); assert.deepEqual(model.failures, []); assert.deepEqual(model.streamErrors, []);
+    assert.deepEqual(bridge.requests.filter(input => input.action === 'baseline').map(input => input.workingDirectory).slice(0, 2), [await realpath(isolated), await realpath(directory)]);
+  } finally {
+    releaseCapture(); for (const gate of model.gates.values()) gate.release(); if (ctx) await ctx.fiber.dispose(); await bridge.close();
+    for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-native-tracking-`)); await rm(root, { recursive: true, force: true });
   }
 });
 
@@ -643,7 +850,8 @@ test('both shipped catalogs migrate before admission while durable authority, hi
     ctx = await bootHost(home, model); const host = ctx.projects;
     const { project } = await host.command('create', { requestId: 'catalog-original-create', workingDirectory: directory }), lead = ctx.agents.get(project.coordinatorSessionId);
     await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'catalog-real-goal', mode: 'queue', content: [{ type: 'text', text: 'GOAL_REPAIR' }] }, signal);
-    await waitFor(() => model.deliveryWaiting, 'actual goal stages reach declaration before its final reply'); model.releaseDelivery();
+    // Both native worker stages and their durable tool reads complete before this migration seed exists.
+    await waitFor(() => { assert.deepEqual(model.failures, []); return model.deliveryWaiting; }, 'actual goal stages reach declaration before its final reply', 60000); model.releaseDelivery();
     await waitFor(() => host.state().deliveries.some(row => row.status === 'delivered'), 'actual durable final reply commits the native handover');
     await lead.whenIdle(); await host.tail;
     assert.deepEqual(model.failures, []); assert.equal(await ctx.sessions.flush(lead.session), true);
@@ -682,6 +890,49 @@ test('both shipped catalogs migrate before admission while durable authority, hi
       return catalog;
     };
     const writeCatalog = async catalog => { const document = structuredClone(envelope); document.tables.state.catalog = catalog; await writeFile(catalogFile, `${JSON.stringify(document, null, 2)}\n`); };
+    const emptyIdentity = () => {
+      const saved = structuredClone(original), id = saved.requests[0].id;
+      saved.projects.forEach(project => { project.paused = true; });
+      const row = saved.requests[0]; row.id = '';
+      for (const version of row.versions) if (version.source?.requestId === id) version.source.requestId = '';
+      for (const work of saved.workstreams) {
+        for (const receipt of work.delegations) if (receipt.source.requestId === id) receipt.source.requestId = '';
+        if (work.replaces?.requestId === id) work.replaces.requestId = '';
+      }
+      for (const delivery of saved.deliveries) if (delivery.requestId === id) delivery.requestId = '';
+      return saved;
+    };
+    await t.test('empty-v2-identity-restores-persists-and-reopens-without-model-execution', async () => {
+      await writeCatalog(emptyIdentity());
+      let restarted = new RequirementModel(); ctx = await bootHost(home, restarted);
+      const restored = ctx.projects.state(), row = restored.requests[0], source = original.requests[0].versions[0].source;
+      assert.equal(row.id, original.requests[0].id);
+      assert.deepEqual(row.identityRecovery, { originalId: '', sessionId: source.sessionId, callId: source.callId });
+      assert.deepEqual(row.versions, original.requests[0].versions, 'original authorization is preserved exactly');
+      assert.deepEqual(restored.workstreams.map(work => work.delegations), original.workstreams.map(work => work.delegations));
+      assert.deepEqual(restored.deliveries, original.deliveries);
+      assert.ok(restored.projects.every(project => project.paused)); assert.equal(restarted.requests.length, 0);
+      assert.equal((await ctx.projects.command('list')).available, true);
+      const disk = JSON.parse(await readFile(catalogFile, 'utf8')).tables.state.catalog;
+      assert.deepEqual(disk.requests[0], row, 'normal recovery commits the restored identity through the real storage domain');
+      await disposeProfileApplication(ctx); ctx = undefined;
+      restarted = new RequirementModel(); ctx = await bootHost(home, restarted);
+      assert.deepEqual(ctx.projects.state().requests[0], row); assert.equal(restarted.requests.length, 0);
+      assert.ok(ctx.projects.state().projects.every(project => project.paused));
+      const handle = await ctx.sessionPersistence.open(lead.id, 'read');
+      try { assert.deepEqual((await handle.read()).events.slice(0, events.length), events, 'identity recovery never rewrites native Session history'); }
+      finally { await handle.close(); }
+      await disposeProfileApplication(ctx); ctx = undefined;
+    });
+    await t.test('ambiguous-empty-v2-reference-remains-unavailable-with-the-original-catalog-intact', async () => {
+      const saved = emptyIdentity(); saved.workstreams[0].delegations[0].source.authorizationCallId = 'unrelated-original-authorization';
+      await writeCatalog(saved); const bytes = await readFile(catalogFile, 'utf8'), restarted = new RequirementModel();
+      ctx = await bootHost(home, restarted, undefined, true);
+      assert.equal(ctx.projects.error, 'Project catalog needs review: An empty requirement reference cannot be matched to its original version and authorization. Original records were not changed.');
+      const listing = await ctx.projects.command('list'); assert.equal(listing.available, false); assert.equal(listing.error, ctx.projects.error);
+      assert.equal(restarted.requests.length, 0); assert.equal(await readFile(catalogFile, 'utf8'), bytes);
+      await disposeProfileApplication(ctx); ctx = undefined;
+    });
     for (const kind of ['final-v1', 'published-v1', 'missing-declaration', 'mismatched-call-id', 'missing-authority']) await t.test(kind, async () => {
       const saved = kind === 'final-v1' ? { ...structuredClone(original), version: 1 } : published();
       if (kind === 'missing-declaration') saved.deliveries[0].callSeq = -1;

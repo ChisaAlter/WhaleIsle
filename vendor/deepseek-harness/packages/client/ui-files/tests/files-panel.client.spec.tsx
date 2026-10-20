@@ -437,16 +437,15 @@ describe('FilesPanel', () => {
     await act(async () => {
       await Promise.resolve()
     })
-    // Copy feedback uses the shared fading Toast; the Refresh control is untouched.
-    const copied = screen.getByRole('alert')
-    expect(within(copied).getByText('Copied')).toBeTruthy()
+    // Copy feedback is its own status marker; the Refresh control is untouched.
+    expect(screen.getByRole('status').textContent).toBe('Copied')
     expect(screen.getByRole('button', { name: 'Refresh' }).getAttribute('aria-busy')).toBeNull()
     await act(async () => {
       vi.advanceTimersByTime(1199)
     })
-    expect(screen.getByRole('alert')).toBe(copied)
-    await act(async () => { vi.advanceTimersByTime(1001) })
-    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('status').textContent).toBe('Copied')
+    await act(async () => { vi.advanceTimersByTime(1) })
+    expect(screen.queryByRole('status')).toBeNull()
     vi.useRealTimers()
   })
 

@@ -241,8 +241,9 @@ it.each([en, zh])('offers settings, contact and sign-in from the signed-out acco
 })
 
 it('reports a failed start once while keeping the login dialog available', async () => {
-  const operations = mount({ status: 'signed-out', attempt: null })
-  cleanup()
+  vi.useFakeTimers()
+  onTestFinished(() => { vi.useRealTimers() })
+  const operations = operationsOf({ status: 'signed-out', attempt: null })
   const { AccountMenu } = await import('../src/client/AccountMenu.tsx')
   const links = { usageUrl: 'http://localhost:8081/usage', topUpUrl: 'http://localhost:8081/top_up' }
   let snapshot: AccountSnapshot = { view: { status: 'signed-out', attempt: null, links }, details: undefined, avatar: undefined, failed: false }
@@ -258,19 +259,25 @@ it('reports a failed start once while keeping the login dialog available', async
   fireEvent.click(screen.getByRole('button', { name: en.menu }))
   await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: en.signIn })) })
   expect(start).toHaveBeenCalledOnce()
-  expect(screen.getByRole('alert').textContent).toBe(en.failed)
+  const dialog = screen.getByRole('dialog', { name: en.failureTitle })
+  expect(within(dialog).getByText(en.failed)).toBeTruthy()
   view.rerender(<AccountMenu {...({} as GlobalStandardProps)} {...operations} settingsOpen={false} start={start}
     useAccount={selector => selector(snapshot)} useTheme={selector => selector(operations.hooks.theme.getSnapshot())}
     wide openOnboarding={() => {}} openSettings={() => {}}
     t={key => key in en ? en[key as AccountKey] : key} />)
-  const dialog = screen.getByRole('dialog')
-  expect(dialog.textContent).toContain(en.loginTitle)
+  // Snapshot replay and transient-notice expiry leave the inline failure and retry available.
+  await act(async () => { await vi.advanceTimersByTimeAsync(7000) })
+  expect(screen.getByRole('dialog', { name: en.failureTitle })).toBe(dialog)
   expect(within(dialog).getByRole<HTMLButtonElement>('button', { name: en.retry }).disabled).toBe(false)
-  // The dialog's result is portaled above it; rerendering the Host snapshot must not duplicate it.
-  expect(screen.getAllByRole('alert')).toHaveLength(1)
-  expect(screen.getByRole('alert').textContent).toBe(en.failed)
-  expect(document.body.textContent.split(en.failed)).toHaveLength(2)
-  await expect(`${document.body.textContent}\n`).toMatchFileSnapshot('./expected/login-failed-en.txt')
+  expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.getAllByText(en.failed)).toHaveLength(1)
+  expect(start).toHaveBeenCalledOnce()
+  await expect(`${dialog.textContent}\n`).toMatchFileSnapshot('./expected/login-failed-en.txt')
+  await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: en.retry })) })
+  expect(start).toHaveBeenCalledTimes(2)
+  expect(screen.getByRole('dialog', { name: en.failureTitle })).toBe(dialog)
+  expect(within(dialog).getByRole<HTMLButtonElement>('button', { name: en.retry }).disabled).toBe(false)
+  expect(screen.getAllByText(en.failed)).toHaveLength(1)
 })
 
 it('keeps the confirmation dialog open after a failed sign-out', async () => {

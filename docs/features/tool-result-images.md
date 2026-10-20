@@ -4,7 +4,7 @@
 | --- | --- |
 | **id** | `tool-result-images` |
 | **status** | `active` |
-| **last verified** | 2026-09-22 — focused `ui-tool` client specs; live app QA pending |
+| **last verified** | 2026-10-17 — focused `ui-tool` specs; source-app `read_image` metadata, gallery/lightbox and history at normal and minimum window sizes |
 
 ## User paths
 
@@ -28,8 +28,9 @@
   forbidden.
 - Malformed image metadata declines the whole gallery to the existing flattened
   text; partial galleries that misrepresent the result are forbidden.
-- `read_image` keeps its path label and envelope text, and non-image results
-  keep their existing text and error output.
+- `read_image` keeps its path label and complete envelope body, including MIME,
+  coordinate-scaling instructions and notes. XML wrappers are not displayed;
+  non-image results keep their existing text and error output.
 
 ## Allowed touch
 

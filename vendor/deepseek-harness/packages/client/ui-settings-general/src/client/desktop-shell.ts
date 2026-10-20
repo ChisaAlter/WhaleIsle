@@ -157,6 +157,8 @@ export type OpenDshHomeResult =
 export type DesktopShell = {
   getConfig?: () => Promise<DesktopConfig>
   saveConfig?: (patch: Partial<DesktopConfig>) => Promise<DesktopConfig>
+  /** Refresh the page through the desktop's active-work confirmation and resource cleanup. */
+  reloadPage?: () => Promise<unknown>
   checkUpdate?: () => Promise<UpdateInfo>
   installUpdate?: () => Promise<UpdateInfo>
   onUpdateProgress?: (handler: (payload: ProgressPayload) => void) => () => void

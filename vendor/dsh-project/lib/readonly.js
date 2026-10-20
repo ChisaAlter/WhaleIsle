@@ -2,7 +2,7 @@
 import fs from 'node:fs/promises';
 import { resolve, relative, join, dirname, isAbsolute } from 'node:path';
 import { defineTool } from '@deepseek-ai/dsh-tools';
-import { checkedRoot, within, atomicText } from './files.js';
+import { checkedRoot, within, atomicText, samePath } from './files.js';
 export const name = 'project-file-scope';
 export const inject = ['tools'];
 const output = { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] };
@@ -35,9 +35,9 @@ export function apply(ctx) {
       const root = await checkedRoot(worker.cwd), target = resolve(root, args.path);
       if (!within(root, target)) throw new Error('Document path is outside the assigned directory.');
       let ancestor = dirname(target);
-      for (;;) { try { const actual = await fs.realpath(ancestor); if (!within(root, actual) || actual !== ancestor) throw new Error('Document directory was replaced with a link.'); break; } catch (error) { if (error.code !== 'ENOENT' || ancestor === root) throw error; ancestor = dirname(ancestor); } }
+      for (;;) { try { const actual = await fs.realpath(ancestor); if (!within(root, actual) || !samePath(actual, ancestor)) throw new Error('Document directory was replaced with a link.'); break; } catch (error) { if (error.code !== 'ENOENT' || ancestor === root) throw error; ancestor = dirname(ancestor); } }
       await fs.mkdir(dirname(target), { recursive: true });
-      try { const actual = await fs.realpath(target); if (actual !== target || !within(root, actual)) throw new Error('Document was replaced with a link.'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      try { const actual = await fs.realpath(target); if (!samePath(actual, target) || !within(root, actual)) throw new Error('Document was replaced with a link.'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
       exec.signal.throwIfAborted(); await atomicText(target, args.text); return { path: target };
     } }));
 }

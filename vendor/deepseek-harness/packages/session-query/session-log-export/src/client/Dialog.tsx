@@ -6,7 +6,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SessionLogDownloadState } from './controller.ts'
 import { NS } from './locales.ts'
 
-/** Browser operations and state injected into the shared download dialog. */
+/** Browser operations and state injected into the shared download feedback. */
 export interface SessionLogDownloadDialogInjected {
   hooks: {
     sessionLogDownload: ObservableSnapshot<SessionLogDownloadState>
@@ -24,7 +24,7 @@ export type SessionLogDownloadDialogProps =
 /**
  * Floating feedback shared by the Session Header download menu item and this browser's `/export` command.
  * @param props - Session runtime, bound controller state, actions, and localized copy.
- * @returns the persistent feedback portal contribution.
+ * @returns a transient alert that dismisses this Session's feedback after fading.
  */
 export function SessionLogDownloadDialog({
   sessionId, useSessionLogDownload, dismiss, t,

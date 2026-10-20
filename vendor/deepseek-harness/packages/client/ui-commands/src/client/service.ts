@@ -293,6 +293,7 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
    * executed.
    */
   private async matchClaim(session: ClientSessionContext, token: string, signal: AbortSignal): Promise<CommandClaim | undefined> {
+    if (this.isDshbotRoom(session)) return undefined
     await this.directory.ensureReady(session.sessionId, signal)
     return this.claimOf(session, token)
   }

@@ -60,7 +60,10 @@ function copyRuntime(source, target) {
   if (info.isDirectory()) {
     if (destination && !destination.isDirectory()) throw new Error(`Project runtime directory contains a file: ${target}`);
     if (!destination) fs.mkdirSync(target);
-    for (const name of fs.readdirSync(source)) copyRuntime(path.join(source, name), path.join(target, name));
+    const names = fs.readdirSync(source);
+    // Drop entries the current source no longer ships so stale modules cannot be imported after an upgrade.
+    for (const name of fs.readdirSync(target)) if (!names.includes(name)) fs.rmSync(path.join(target, name), { recursive: true, force: true });
+    for (const name of names) copyRuntime(path.join(source, name), path.join(target, name));
   } else {
     if (destination && !destination.isFile()) throw new Error(`Project runtime file contains a directory: ${target}`);
     fs.copyFileSync(source, target);
@@ -73,7 +76,10 @@ function projectAvailable(env = process.env) {
   return env.WHALE_PROJECT === '1';
 }
 
-/** Mount this optional feature without changing the profile's Team or user patch. */
+/**
+ * Mount Project without changing the user patch or the configured Team service.
+ * Project supplies Team only when absent and owns the single Team UI row.
+ */
 async function ensureDesktopDshProject(options = {}) {
   const sourceDir = options.sourceDir || path.join(require('./paths').projectRoot(), 'vendor', DSH_PROJECT_PACKAGE);
   const profileDir = options.profileDir || webProfileDir();
@@ -113,10 +119,13 @@ async function ensureDesktopDshProject(options = {}) {
     '# Desktop-owned optional Project overlay.',
     '# The user cordis.patch.yml is never changed by this overlay.',
     '- insert:',
-    '    - id: ui-agent-team',
+    '    - id: dsh-project-team-ui',
     '      name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"',
     '    - id: dsh-project',
     `      name: ${JSON.stringify(pathToFileURL(path.join(runtimeDir, 'lib', 'index.js')).href)}`,
+    '- id: ui-agent-team',
+    '  name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"',
+    '  disabled: true',
     '',
   ].join('\n');
   fs.writeFileSync(`${overlayFile}.tmp`, contents, 'utf8');

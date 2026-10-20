@@ -8,19 +8,29 @@ import { ProjectService } from './service.js';
 import { registerProjectTransport } from './transport.js';
 import { registerProjectPresets } from './presets.js';
 export const name = 'whale-project';
-export const inject = ['storageDomain', 'sessionController', 'sessionPersistence', 'sessions', 'agents', 'subagents', 'agentPresets', 'tools', 'workspaceRegistry'];
+export const inject = ['loader', 'storageDomain', 'sessionController', 'sessionPersistence', 'sessions', 'sessionProjections', 'agents', 'subagents', 'agentPresets', 'tools', 'workspaceRegistry'];
 export const Config = z.object({});
 
-/** Optional Project failure must leave ordinary conversations available. */
+/** Reuse the configured Team provider before mounting the Project consumer. */
 export async function apply(ctx) {
+  if (!ctx.get('agentTeams')) {
+    // Loader imports entries concurrently; an enabled provider may still be importing.
+    const configured = [...ctx.loader.entries()].find(entry => entry.options.name === '@deepseek-ai/dsh-experimental-agent-team' && !entry.disabled);
+    if (configured) { if (!configured.fiber) await configured.init(); await configured.fiber?.await(); }
+    else await ctx.plugin(TeamService);
+  }
+  await ctx.inject(['agentTeams'], mountProject);
+}
+
+/** Optional Project failure must leave ordinary conversations available. */
+async function mountProject(ctx) {
   let releaseWriter, domain, service;
   ctx.effect(() => async () => {
     try { await service?.dispose?.({ persist: false }); }
     finally { try { await domain?.close(); } finally { await releaseWriter?.(); } }
   });
   try {
-    if (!ctx.get('agentTeams')) await ctx.plugin(TeamService);
-    const teams = ctx.get('agentTeams');
+    const teams = ctx.agentTeams;
     const home = process.env.DSH_HOME || process.env.DSHD_HOME;
     if (!home) throw new Error('Project requires the active desktop profile DSH_HOME.');
     releaseWriter = await acquireWriter(home, randomUUID());
@@ -66,9 +76,10 @@ export async function apply(ctx) {
     ctx.inject(['jobs'], host => host.effect(() => host.jobs.events.subscribe({ owners: 'all' }, event => { service.track(service.jobChanged(event), 'Project job observation failed'); })));
     await service.recover();
   } catch (error) {
-    ctx.logger.warn('Project unavailable: %s', error.message);
-    if (service) { service.available = false; service.error = error.message; }
-    else { service = { available: false, error: error.message, async command(endpoint) { if (endpoint === 'list') return { projects: [], available: false, error: this.error }; throw new Error(this.error); } }; ctx.provide('projects', service); }
+    const message = error.cause?.issues?.find(issue => issue.code === 'custom')?.message ?? error.message;
+    ctx.logger.warn('Project unavailable: %s', message);
+    if (service) { service.available = false; service.error = message; }
+    else { service = { available: false, error: message, async command(endpoint) { if (endpoint === 'list') return { projects: [], available: false, error: this.error }; throw new Error(this.error); } }; ctx.provide('projects', service); }
   }
   registerProjectTransport(ctx, service);
 }

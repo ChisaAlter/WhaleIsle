@@ -14,7 +14,10 @@ See `bridge/NOTICE.md` for upstream revision and retained license.
 
 ## Install and use
 
-Requires Node 22.19+ and a DSH host providing tools, skills and Agents. Use the
+Requires Node 22.19+ and a DSH `0.2.1-alpha.1`, `0.2.1-alpha.3` or `0.2.1-rc.2`
+host providing tools, skills and Agents. The development lockfile targets rc.2
+with Cordis `4.0.5` and Schemastery `3.18.5`; later prereleases need their own
+compatibility check. Use the
 host's Plugin Manager `install_bundle` with this built package's absolute
 directory or tarball. From the plugin's own distribution, download the
 `dsh-with-chatgpt-0.1.0.tgz` asset, then ask the DSH agent to install its absolute
@@ -27,8 +30,9 @@ From the WhaleIsle repository root, `npm run prepare:dsh-with-chatgpt-bundle`
 or `node scripts/prepare-dsh-with-chatgpt-bundle.mjs` creates
 `dist/plugins/dsh-with-chatgpt-0.1.0.tgz` from the current source. The plugin is
 published independently; desktop `pack`, `dist`, and `dist:mac` do not prepare
-or distribute it. Build before local
-directory installation (`pnpm install --frozen-lockfile --ignore-workspace --ignore-scripts --workspace-packages . --lockfile-dir .`,
+or distribute it. The repository command uses the installed Harness's pinned
+pnpm for this independent bundle. Build before local directory installation
+(`pnpm install --frozen-lockfile --ignore-workspace --ignore-scripts`,
 `node node_modules/typescript/bin/tsc -p bridge/tsconfig.json`); packed distributions
 include the compiled bridge and need no install-time build script.
 

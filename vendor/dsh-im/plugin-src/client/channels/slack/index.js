@@ -57,8 +57,7 @@ export function SlackCredentialPanel({ busy, error, onSubmit, onCancel }) {
         className: 'ddt-button',
         onClick: () => void copyManifest(),
         disabled: busy || copying, loading: copying,
-      }, '复制 Manifest'),
-      copied ? h(FeedbackToast, { text: '已复制 Manifest', holdMs: 2000 }) : null,
+      }, copied ? h('span', { className: 'dsl-copyState' }, '已复制 Manifest') : '复制 Manifest'),
       copyError ? h(FeedbackToast, { text: copyError, tone: 'error' }) : null,
       h('a', {
         className: 'ddt-button',

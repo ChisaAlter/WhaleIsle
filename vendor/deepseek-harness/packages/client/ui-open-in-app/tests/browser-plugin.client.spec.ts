@@ -12,7 +12,7 @@ import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/c
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import { createElement } from 'react'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -115,10 +115,10 @@ describe('open-in-app browser half', () => {
       await act(async () => { result.run() })
       const alert = await screen.findByRole('alert')
       expect(alert.textContent).toContain(zh['path.openError'])
-      expect(alert.getAttribute('data-persistent')).toBe('true')
       expect(document.activeElement).toBe(focus)
       expect(face.hooks.openShortcutFailure.getSnapshot()).not.toBeNull()
-      await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.close })) })
+      // The notice fades through the same owner callback.
+      await act(async () => { face.dismissShortcutFailure() })
       expect(screen.queryByRole('alert')).toBeNull()
       expect(face.hooks.openShortcutFailure.getSnapshot()).toBeNull()
 

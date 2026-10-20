@@ -1,5 +1,10 @@
+# Project reuses a configured Team service, or supplies one when absent.
+# Its Team UI row replaces the optional bundle's duplicate UI only.
 - insert:
-    - id: ui-agent-team
+    - id: dsh-project-team-ui
       name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"
     - id: dsh-project
       name: dsh-project
+- id: ui-agent-team
+  name: "@deepseek-ai/dsh-experimental-client-ui-agent-team"
+  disabled: true

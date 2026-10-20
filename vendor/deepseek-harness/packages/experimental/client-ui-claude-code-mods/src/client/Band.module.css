@@ -86,17 +86,22 @@
   cursor: pointer;
 }
 
-.band .button:hover,
-.band .button:focus-visible {
+.button:hover,
+.button:focus-visible {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.band .button:disabled {
+.button:disabled {
   cursor: default;
   opacity: 0.6;
 }
 
 .hotkey {
   color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.notice {
+  color: var(--dsw-alias-state-error-primary);
   font-size: 11px;
 }

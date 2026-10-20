@@ -23,7 +23,7 @@ const boundedNotesGenerated = text => {
   while ((bytes[end] & 0xc0) === 0x80) end--;
   return bytes.subarray(0, end).toString('utf8') + notice;
 };
-const charterLimit = 16000, decisionLimit = 4000;
+const charterLimit = 16000, decisionLimit = 4000, preferencesLimit = 256000;
 const policy = 'dsh-project-local';
 const directoryDiagnosticPrefix = root => `Project directory check (${root}): `;
 const isDirectoryDiagnostic = (message, root) => message.startsWith(directoryDiagnosticPrefix(root))
@@ -377,32 +377,98 @@ export class ProjectService {
     const tail = result.then(() => {}, () => {}); this.delegationTails.set(id, tail);
     try { return await result; } finally { if (this.delegationTails.get(id) === tail) this.delegationTails.delete(id); }
   }
-  // Record the working tree before a requirement's first write so its own changes can be shown and reverted.
-  async captureBaseline(projectId, requestId) {
-    const row = (this.state().requests ?? []).find(item => item.id === requestId && item.projectId === projectId);
-    if (!row || row.changes && !row.changes.revertedAt) return;
-    let snapshot;
-    try { snapshot = await this.desktop('baseline', { projectId, workingDirectory: this.project(projectId).canonicalWorkingDirectory }); }
-    catch (error) { this.ctx.logger.warn('Project baseline could not be recorded: %s', error.message); return; }
-    await this.serial(() => this.write(state => { const item = state.requests.find(entry => entry.id === requestId);
-      item.changes = snapshot.isGit ? { isGit: true, baseline: snapshot.tree, capturedAt: Date.now() } : { isGit: false, capturedAt: Date.now() }; }));
+  changeWorkspaces(row) {
+    if (!row.changes) return [];
+    // Catalogs written before per-workspace tracking used the bound directory.
+    return row.changes.workspaces ?? [{ ...row.changes, workingDirectory: this.project(row.projectId).canonicalWorkingDirectory }];
   }
-  // After a durable handover: record the requirement's own changes and append its decision to the log.
+  changePayload(projectId, area) {
+    return { projectId, workingDirectory: area.workingDirectory,
+      ...(area.workstreamId ? { workstreamId: area.workstreamId, workspace: area.workspace } : {}) };
+  }
+  changeSummary(areas) {
+    const git = areas.filter(area => area.isGit), files = git.flatMap(area => (area.files ?? []).map(file => ({ ...file,
+      ...(areas.length > 1 ? { workingDirectory: area.workingDirectory } : {}) })));
+    return { isGit: git.length > 0, fileCount: git.reduce((sum, area) => sum + (area.fileCount ?? 0), 0), files: files.slice(0, 300),
+      added: git.reduce((sum, area) => sum + (area.added ?? 0), 0), removed: git.reduce((sum, area) => sum + (area.removed ?? 0), 0) };
+  }
+  missingLegacyChangeWorkspaces(row) {
+    if (!row.changes || row.changes.workspaces) return [];
+    return [...new Set(this.state().workstreams.filter(work => work.projectId === row.projectId
+      && work.delegations.some(receipt => receipt.source.requestId === row.id && receipt.scope !== 'readonly' && receipt.runId))
+      .map(work => this.worker(work.workerSessionId)).filter(worker => worker.mode === 'worktree' && worker.cwd).map(worker => worker.cwd))];
+  }
+  legacyChangesError(directories) {
+    return `The saved requirement snapshot did not record these isolated execution directories:\n${directories.join('\n')}\nAsk the coordinator to inspect the original work before reverting; their missing starting points cannot be reconstructed by taking a new snapshot.`;
+  }
+  changesRevertible(row) {
+    const areas = this.changeWorkspaces(row);
+    return !(row.changes?.isolated && !row.changes.workspaces) && !this.missingLegacyChangeWorkspaces(row).length && areas.length > 0 && areas.every(area => area.isGit && area.baseline && area.end) && areas.some(area => !area.revertedAt);
+  }
+  // The workspace is prepared and reserved before its first write, including an
+  // explicitly isolated member. All writers in the same cwd share one baseline.
+  async captureBaseline(projectId, requestId, worker) {
+    return this.serial(async () => {
+      const row = (this.state().requests ?? []).find(item => item.id === requestId && item.projectId === projectId);
+      if (!row) return;
+      const missing = this.missingLegacyChangeWorkspaces(row);
+      if (missing.length) { this.ctx.logger.warn('Project baseline remains unavailable: %s', this.legacyChangesError(missing)); return; }
+      const workingDirectory = worker?.cwd || this.project(projectId).canonicalWorkingDirectory;
+      const same = area => process.platform === 'win32' ? area.workingDirectory.toLowerCase() === workingDirectory.toLowerCase() : area.workingDirectory === workingDirectory;
+      if (!row.changes?.revertedAt && this.changeWorkspaces(row).some(same)) return;
+      const scope = { workingDirectory, ...(worker ? { workstreamId: worker.workstreamId, ...(worker.workspace ? { workspace: copy(worker.workspace) } : {}) } : {}) };
+      let snapshot, error;
+      try { snapshot = await this.desktop('baseline', this.changePayload(projectId, scope)); }
+      catch (failure) { error = failure.message; snapshot = { isGit: false }; this.ctx.logger.warn('Project baseline could not be recorded: %s', error); }
+      await this.write(state => {
+        const item = state.requests.find(entry => entry.id === requestId), capturedAt = Date.now();
+        const area = { ...scope, isGit: snapshot.isGit, ...(snapshot.isGit ? { baseline: snapshot.tree } : {}), ...(error ? { error } : {}), capturedAt };
+        // Keep the original single-directory shape usable by older catalogs and
+        // callers; actual worker execution records explicit directory identities.
+        if (!worker && (!item.changes || item.changes.revertedAt)) item.changes = { isGit: area.isGit, ...(area.baseline ? { baseline: area.baseline } : {}), ...(error ? { error } : {}), capturedAt };
+        else {
+          const workspaces = item.changes?.revertedAt ? [] : this.changeWorkspaces(item);
+          workspaces.push(area);
+          item.changes = { isGit: workspaces.some(area => area.isGit), capturedAt: workspaces[0].capturedAt, workspaces };
+        }
+      });
+    });
+  }
+  // Called within the service transaction before a completed delivery releases
+  // its requirement. Session event listeners do not wait for this callback.
+  async captureDeliveryChanges(delivery) {
+    const row = (this.state().requests ?? []).find(item => item.id === delivery.requestId);
+    if (!row?.changes || row.changes.revertedAt || row.changes.deliveryId === delivery.id) return;
+    if (this.missingLegacyChangeWorkspaces(row).length) return;
+    if (row.revision !== delivery.requestRevision || (this.state().deliveries ?? []).findLast(item => item.requestId === row.id && ['draft', 'delivered'].includes(item.status))?.id !== delivery.id) return;
+    const areas = this.changeWorkspaces(row).map(copy);
+    for (const area of areas) {
+      if (!area.isGit || !area.baseline || area.revertedAt) continue;
+      const value = await this.desktop('changes', { ...this.changePayload(delivery.projectId, area), base: area.baseline });
+      Object.assign(area, { end: value.end, endedAt: Date.now(), files: value.files.slice(0, 300), fileCount: value.files.length,
+        added: value.files.reduce((sum, file) => sum + file.added, 0), removed: value.files.reduce((sum, file) => sum + file.removed, 0) });
+    }
+    // Unload may begin while the desktop snapshot is outstanding. Its catalog
+    // is closing; the tracked caller still drains the accepted decision log.
+    if (this.closing && !this.persistOnDispose) return;
+    await this.write(state => {
+      const changes = state.requests.find(item => item.id === row.id).changes;
+      if (changes.workspaces) Object.assign(changes, this.changeSummary(areas), { workspaces: areas, endedAt: Date.now(), deliveryId: delivery.id });
+      else { const { workingDirectory, ...captured } = areas[0]; Object.assign(changes, captured, { deliveryId: delivery.id }); }
+    });
+  }
+  // After a durable handover, append its decision once. Recovery and repeated
+  // callbacks cannot recapture a completed end tree after the next goal writes.
   async afterDelivery(deliveryId) {
     const delivery = (this.state().deliveries ?? []).find(item => item.id === deliveryId);
     if (!delivery || delivery.status !== 'delivered') return;
-    const project = this.project(delivery.projectId), row = (this.state().requests ?? []).find(item => item.id === delivery.requestId);
-    if (row?.changes?.isGit && row.changes.baseline && !row.changes.revertedAt) {
-      try {
-        const value = await this.desktop('changes', { projectId: project.id, workingDirectory: project.canonicalWorkingDirectory, base: row.changes.baseline });
-        await this.serial(() => this.write(state => { const item = state.requests.find(entry => entry.id === row.id);
-          // Writes made in an isolated worktree stay on its own branch and are not part of this directory's diff.
-          const isolated = state.workstreams.some(work => work.delegations.some(receipt => receipt.source?.requestId === row.id && receipt.scope !== 'readonly')
-            && state.workers.find(worker => worker.sessionId === work.workerSessionId)?.mode === 'worktree');
-          item.changes = { ...item.changes, ...(isolated ? { isolated: true } : {}), end: value.end, endedAt: Date.now(), files: value.files.slice(0, 300), fileCount: value.files.length,
-            added: value.files.reduce((sum, file) => sum + file.added, 0), removed: value.files.reduce((sum, file) => sum + file.removed, 0) }; }));
-      } catch (error) { this.ctx.logger.warn('Project requirement changes could not be recorded: %s', error.message); }
-    }
+    // Live delivery records its end trees before release. Unload drains only
+    // the already accepted decision without writing to the closing catalog.
+    if (!this.closing || this.persistOnDispose) await this.serial(() => this.captureDeliveryChanges(delivery));
+    await this.deliveryDecision(delivery);
+  }
+  async deliveryDecision(delivery) {
+    const project = this.project(delivery.projectId);
     const fallback = delivery.summary.split('\n').map(line => line.replace(/^[#>*\-\s]+/, '').trim()).find(Boolean)?.slice(0, 300) ?? '';
     await this.appendDecision(project, { id: delivery.id, title: delivery.title, revision: delivery.requestRevision, outcome: delivery.outcome, text: delivery.decision || fallback })
       .catch(error => this.ctx.logger.warn('Project decision log could not be updated: %s', error.message));
@@ -417,23 +483,56 @@ export class ProjectService {
     await atomicText(path, next);
   }
   async requestChanges(projectId, input) {
-    const project = this.project(projectId), row = this.requirements.get(projectId, required(input.requestId, 'task identity', 200)), changes = row.changes;
-    if (!changes?.isGit || !changes.baseline) fail('changes_unavailable', 'This requirement has no recorded starting point; view the directory changes instead.');
-    const value = await this.desktop('changes', { projectId, workingDirectory: project.canonicalWorkingDirectory, base: changes.baseline, ...(changes.end ? { end: changes.end } : {}), diff: true });
-    return { files: value.files, diff: value.diff, truncated: value.truncated, final: Boolean(changes.end), ...(changes.isolated ? { isolated: true } : {}), ...(changes.revertedAt ? { revertedAt: changes.revertedAt } : {}) };
+    const row = this.requirements.get(projectId, required(input.requestId, 'task identity', 200)), changes = row.changes, scopes = this.changeWorkspaces(row);
+    const legacyMissing = this.missingLegacyChangeWorkspaces(row);
+    if (legacyMissing.length) fail('changes_unavailable', this.legacyChangesError(legacyMissing));
+    const missing = scopes.filter(area => area.error);
+    if (missing.length) fail('changes_unavailable', `The starting point could not be recorded for these directories:\n${missing.map(area => `${area.workingDirectory}: ${area.error}`).join('\n')}\nAsk the coordinator to inspect the actual work; no later snapshot can reconstruct those missing starting points.`);
+    const areas = scopes.filter(area => area.isGit && area.baseline);
+    if (!areas.length) fail('changes_unavailable', 'This requirement has no recorded starting point; view the directory changes instead.');
+    const values = await Promise.all(areas.map(async area => ({ area, value: await this.desktop('changes', {
+      ...this.changePayload(projectId, area), base: area.baseline, ...(area.end ? { end: area.end } : {}), diff: true }) })));
+    return { files: values.flatMap(({ area, value }) => value.files.map(file => ({ ...file, ...(areas.length > 1 ? { workingDirectory: area.workingDirectory } : {}) }))),
+      diff: values.map(({ area, value }) => `${areas.length > 1 ? `# Working directory: ${area.workingDirectory}\n` : ''}${value.diff ?? ''}`).join('\n'),
+      ...(changes.workspaces ? { workspaces: values.map(({ area, value }) => ({ workingDirectory: area.workingDirectory, files: value.files, diff: value.diff, truncated: value.truncated })) } : {}),
+      truncated: values.some(({ value }) => value.truncated), final: areas.every(area => Boolean(area.end)), ...(changes.isolated ? { isolated: true } : {}), ...(changes.revertedAt ? { revertedAt: changes.revertedAt } : {}) };
   }
   async revertRequest(projectId, input) {
     return this.serial(async () => {
       const project = this.project(projectId), row = this.requirements.get(projectId, required(input.requestId, 'task identity', 200)), changes = row.changes;
       if (this.closing || project.lifecycle !== 'ready' || this.archiving.has(projectId)) fail('unavailable', 'Restore this Project before reverting its changes.');
-      if (this.queue.busy(projectId) || this.directoryInUse(project.canonicalWorkingDirectory)) fail('busy', 'Background work is still running in this directory. Wait for it to finish or stop it before reverting.');
-      if (changes?.isolated) fail('revert_unavailable', 'Part of this requirement was developed in an isolated worktree, so its changes cannot be reverted from the Project directory.');
-      if (!changes?.isGit || !changes.baseline || !changes.end || changes.revertedAt) fail('revert_unavailable', 'This requirement has no delivered changes that can be reverted.');
-      const result = await this.desktop('revert', { projectId, workingDirectory: project.canonicalWorkingDirectory, base: changes.baseline, end: changes.end });
-      if (result.conflict) fail('revert_conflict', result.message || 'Files changed after delivery, so the revert does not apply cleanly.');
-      if (!result.applied) fail('revert_unavailable', 'This requirement left no changes in the Project directory to revert.');
-      await this.write(state => { const item = state.requests.find(entry => entry.id === row.id); item.changes = { ...item.changes, revertedAt: Date.now() }; item.updatedAt = Date.now(); });
-      await this.appendDecision(project, { id: `revert-${row.id}-${changes.end.slice(0, 12)}`, title: row.title, outcome: 'reverted', text: '用户撤销了这条需求带来的改动，相关文件已恢复到开始开发前的状态。' })
+      const missing = this.missingLegacyChangeWorkspaces(row);
+      if (missing.length) fail('revert_unavailable', this.legacyChangesError(missing));
+      const areas = this.changeWorkspaces(row);
+      if (this.queue.busy(projectId) || areas.some(area => this.directoryInUse(area.workingDirectory))) fail('busy', 'Background work is still running in this directory. Wait for it to finish or stop it before reverting.');
+      if (changes?.isolated && !changes.workspaces) fail('revert_unavailable', 'Part of this requirement was developed in an isolated worktree, so its changes cannot be reverted from the Project directory.');
+      if (!this.changesRevertible(row) || changes.revertedAt) fail('revert_unavailable', 'This requirement has no delivered changes that can be reverted.');
+      const pending = areas.filter(area => !area.revertedAt), apply = (area, checkOnly = false) => this.desktop('revert', {
+        ...this.changePayload(projectId, area), base: area.baseline, end: area.end, ...(checkOnly ? { checkOnly: true } : {}) });
+      try {
+        if (pending.length > 1) for (const area of pending) {
+          const checked = await apply(area, true);
+          if (checked.conflict) fail('revert_conflict', checked.message || 'Files changed after delivery, so the revert does not apply cleanly.');
+        }
+        for (const area of pending) {
+          const result = await apply(area);
+          if (result.conflict) fail('revert_conflict', result.message || 'Files changed after delivery, so the revert does not apply cleanly.');
+          if (!result.applied) fail('revert_unavailable', 'This requirement left no changes in the recorded directory to revert.');
+          await this.write(state => {
+            const item = state.requests.find(entry => entry.id === row.id), revertedAt = Date.now();
+            if (item.changes.workspaces) {
+              item.changes.workspaces.find(entry => entry.workingDirectory === area.workingDirectory).revertedAt = revertedAt;
+              if (item.changes.workspaces.every(entry => entry.revertedAt)) item.changes.revertedAt = revertedAt;
+            } else item.changes.revertedAt = revertedAt;
+            item.updatedAt = revertedAt;
+          });
+        }
+      } catch (error) {
+        const current = this.changeWorkspaces(this.requirements.get(projectId, row.id)), done = current.filter(area => area.revertedAt);
+        if (done.length) fail('revert_partial', `${error.message}\nReverted directories:\n${done.map(area => area.workingDirectory).join('\n')}\nNot reverted:\n${current.filter(area => !area.revertedAt).map(area => area.workingDirectory).join('\n')}\nResolve the remaining error, then retry to revert only the remaining directories.`);
+        throw error;
+      }
+      await this.appendDecision(project, { id: `revert-${row.id}-${areas.map(area => area.end.slice(0, 12)).join('-')}`, title: row.title, outcome: 'reverted', text: '用户撤销了这条需求带来的改动，相关文件已恢复到开始开发前的状态。' })
         .catch(error => this.ctx.logger.warn('Project decision log could not be updated: %s', error.message));
       await this.notes(projectId);
       return { requestId: row.id, reverted: true };
@@ -448,7 +547,6 @@ export class ProjectService {
     const stopGeneration = existing ? this.workerStops.get(existing.workerSessionId)?.generation ?? 0 : 0;
     if (existing && this.workerStops.get(existing.workerSessionId)?.sourceMessageId === continuationId) fail('stopped', 'The request was stopped; a new actual user message is required.');
     if (!role) fail('invalid_scope', 'Choose readonly, docs or development.');
-    if (role !== 'readonly' && source.requestId) await this.captureBaseline(actor.project.id, source.requestId);
     const blockers = args.blockedBy === undefined ? existing?.blockedBy ?? [] : args.blockedBy;
     if (!Array.isArray(blockers) || blockers.length > 64) fail('dependencies', 'Dependencies must reference existing work in this Project.');
     const validateDependencies = () => {
@@ -606,6 +704,7 @@ export class ProjectService {
       } else await this.desktop('check-workspace', { projectId: project.id, workstreamId: id, workspace: worker.workspace });
       worker = this.worker(worker.sessionId); stream = this.stream(id);
       if (worker.stopped || this.held.has(worker.sessionId) || this.project(project.id).paused || receipt.source.requestId && !this.queue.acceptsWork(this.requirements.get(project.id, receipt.source.requestId), receipt.source.requestRevision, receipt.scope)) return;
+      if (receipt.scope !== 'readonly' && receipt.source.requestId) await this.captureBaseline(project.id, receipt.source.requestId, worker);
       const internal = await safeProjectSubdirectory(this.home, project.id, 'internal', id), docs = await safeProjectSubdirectory(this.home, project.id, 'docs', id);
       const previous = stream.delegations.slice(0, stream.delegations.findIndex(item => item.ref === receipt.ref)).findLast(item => item.report)?.report;
       const requirement = receipt.source.requestId && this.requirements.rows(project.id).find(row => row.id === receipt.source.requestId);
@@ -803,6 +902,8 @@ export class ProjectService {
     const coordinator = this.state().projects.find(item => item.coordinatorSessionId === exec.agent?.id);
     if (coordinator && !['project_request', 'project_queue', 'project_deliver', 'project_delegate', 'project_read_store', 'project_stop', 'list_agents', 'team_task_list', 'send_message', 'html_preview', 'html_render'].includes(exec.name)) return 'The Project coordinator may only organize requirements, read materials, visualize results, delegate, deliver or stop work.';
     const worker = this.state().workers.find(item => item.sessionId === exec.agent?.id); if (!worker) return;
+    // The optional Agent Teams bundle registers these globally; Project work is arranged only by its coordinator host.
+    if (['spawn_teammate', 'wait_agent', 'interrupt_agent', 'team_task_create', 'team_task_get', 'team_task_update'].includes(exec.name)) return 'Project members collaborate through Project tools; the coordinator arranges Team work.';
     if (this.ctx.agents.get(worker.sessionId) !== exec.agent) return 'Project tools require the exact live worker.';
     if (this.closing || this.held.has(worker.sessionId) || worker.stopped || this.project(worker.projectId).paused) return 'This Project worker is stopped.';
     const requestId = latest(this.stream(worker.workstreamId)).source.requestId;
@@ -972,8 +1073,13 @@ export class ProjectService {
   preferencesFor(id) {
     const project = this.state().projects.find(item => item.coordinatorSessionId === id); if (!project) return '';
     if (realpathSync(project.storageRoot) !== project.storageRoot) fail('store_path', 'Project materials directory was replaced with a link.');
-    const path = join(project.storageRoot, 'preferences.md'); if (realpathSync(path) !== path) fail('store_path', 'Preferences was replaced with a link.');
-    const value = readFileSync(path, 'utf8'); if (Buffer.byteLength(value, 'utf8') > 256000) fail('store_size', 'Preferences exceeds the size limit.'); return value ? `Project preferences (current user instructions take precedence):\n${value}` : '';
+    const path = join(project.storageRoot, 'preferences.md'); let value;
+    try { if (realpathSync(path) !== path) fail('store_path', 'Preferences was replaced with a link.'); value = readFileSync(path, 'utf8'); }
+    catch (error) { if (error.code === 'ENOENT') return ''; throw error; }
+    if (!value.trim()) return '';
+    const bytes = Buffer.from(value);
+    if (bytes.length > preferencesLimit) { let end = preferencesLimit; while ((bytes[end] & 0xc0) === 0x80) end--; value = bytes.subarray(0, end).toString('utf8') + '\n[Project preferences truncated at the size limit; ask the user to shorten them.]'; }
+    return `Project preferences (current user instructions take precedence):\n${value}`;
   }
   async notes(id) {
     const project = this.project(id), root = await this.storeRoot(project), path = join(root, 'notes.md'); let user = '';

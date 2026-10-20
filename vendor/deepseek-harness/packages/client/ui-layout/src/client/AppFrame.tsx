@@ -221,6 +221,27 @@ export function AppFrame({
   const viewport = layoutInfo.viewportWidth
   const [landscape, setLandscape] = useState(() => readDeviceLandscape())
   const [trailingWidth, setTrailingWidth] = useState(0)
+  const measureTrailing = useCallback(() => {
+    const trailing = trailingRef.current
+    /* v8 ignore next -- the trailing cluster mounts unconditionally with the frame. */
+    if (trailing === null) return
+    const inset = Number.parseFloat(window.getComputedStyle(trailing).marginRight) || 0
+    // Round up so fractional widths cannot lose the conversation's clearance.
+    setTrailingWidth(Math.max(0, Math.ceil(trailing.getBoundingClientRect().width + inset)))
+  }, [])
+
+  // This seat changes independently of the frame: a Session's Git controls
+  // arrive after navigation. Bind its observer to that Session's lifetime and
+  // publish before paint, rather than queueing it with viewport measurements.
+  useLayoutEffect(() => {
+    const trailing = trailingRef.current
+    /* v8 ignore next -- the trailing cluster mounts unconditionally with the frame. */
+    if (trailing === null) return
+    let disposed = false
+    const observer = new ResizeObserver(() => { if (!disposed) measureTrailing() })
+    observer.observe(trailing)
+    return () => { disposed = true; observer.disconnect() }
+  }, [activeSession, measureTrailing])
 
   // Session switch on phone/tablet: drop the overlay/re-expanded drawer
   // without rewriting the wide-window width preference.
@@ -268,14 +289,6 @@ export function AppFrame({
         : windowWidth
       if (width > 0) actions.setViewportWidth(width)
       else scheduleZeroWidthRetry()
-      const trailing = trailingRef.current
-      /* v8 ignore next -- the trailing cluster mounts unconditionally with the frame. */
-      if (trailing !== null) {
-        // Ceil the measured box: rounding down loses subpixel clearance
-        // between the conversation utilities and this cluster.
-        const inset = Number.parseFloat(window.getComputedStyle(trailing).marginRight) || 0
-        setTrailingWidth(Math.max(0, Math.ceil(trailing.getBoundingClientRect().width + inset)))
-      }
     }
     function apply(): void {
       if (disposed || raf !== null) return
@@ -292,9 +305,6 @@ export function AppFrame({
     measure()
     const observer = new ResizeObserver(apply)
     observer.observe(el)
-    const trailing = trailingRef.current
-    /* v8 ignore next -- the trailing cluster mounts unconditionally with the frame. */
-    if (trailing !== null) observer.observe(trailing)
     window.addEventListener('resize', apply)
     const stopMedia = subscribe(window.matchMedia('(orientation: landscape)'), 'change', apply)
     const stopOrientation = subscribe(window.screen.orientation, 'change', apply)
@@ -312,13 +322,7 @@ export function AppFrame({
     }
   }, [actions])
 
-  useLayoutEffect(() => {
-    const trailing = trailingRef.current
-    /* v8 ignore next -- the trailing cluster mounts unconditionally with the frame. */
-    if (trailing === null) return
-    const inset = Number.parseFloat(window.getComputedStyle(trailing).marginRight) || 0
-    setTrailingWidth(Math.max(0, Math.ceil(trailing.getBoundingClientRect().width + inset)))
-  })
+  useLayoutEffect(measureTrailing)
 
   // Narrow viewports auto-collapse the sidebar; the store mirror keeps
   // toggleSidebar's semantics right (narrow toggles flip the manual

@@ -13,6 +13,8 @@ export function within(root, target) {
   return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`));
 }
 const identity = path => process.platform === 'win32' ? path.toLowerCase() : path;
+/** Windows paths are case-insensitive; realpath may return a different case than the declared path. */
+export const samePath = (a, b) => identity(a) === identity(b);
 const gitMetadata = relativePath => relativePath.split(/[\\/]+/).some(part => part.toLowerCase() === '.git');
 
 /** References in domain records are already canonical; a replacement root cannot widen them. */
@@ -64,6 +66,8 @@ export async function checkedFile(path, roots) {
   for await (const chunk of createReadStream(actual)) hash.update(chunk);
   return { path: actual, size: stat.size, type: 'file', sha256: hash.digest('hex') };
 }
+// A live owner refreshes the lock's mtime; a stale lock whose PID was reused by another program is recoverable.
+const WRITER_HEARTBEAT_MS = 30_000, WRITER_STALE_MS = 5 * 60_000;
 export async function acquireWriter(home, generation) {
   await fs.mkdir(home, { recursive: true });
   const path = join(await fs.realpath(home), 'project-writer.lock');
@@ -86,7 +90,7 @@ export async function acquireWriter(home, generation) {
         || !/^[a-zA-Z0-9_-]{1,100}$/.test(previous.generation)) throw new Error('Project writer lock needs inspection.');
       let alive = true;
       try { process.kill(previous.pid, 0); } catch (probe) { if (probe.code === 'ESRCH') alive = false; else throw probe; }
-      if (alive) throw new Error('Another Host owns this profile’s Project writer.');
+      if (alive && Date.now() - (await fs.stat(path)).mtimeMs <= WRITER_STALE_MS) throw new Error('Another Host owns this profile’s Project writer.');
       await fs.rename(path, `${path}.interrupted-${previous.generation}`);
       await fs.writeFile(path, JSON.stringify(value), { flag: 'wx', mode: 0o600 });
     } finally {
@@ -94,8 +98,16 @@ export async function acquireWriter(home, generation) {
       if (owner.pid === process.pid && owner.generation === generation) await fs.unlink(recoveryPath);
     }
   }
+  const owned = async () => {
+    try { const current = JSON.parse(await fs.readFile(path, 'utf8')); return current.generation === generation && current.pid === process.pid; }
+    catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+  };
+  const heartbeat = setInterval(() => {
+    void owned().then(mine => { if (mine) { const now = new Date(); return fs.utimes(path, now, now); } clearInterval(heartbeat); }).catch(() => {});
+  }, WRITER_HEARTBEAT_MS);
+  heartbeat.unref?.();
   return async () => {
-    const current = JSON.parse(await fs.readFile(path, 'utf8'));
-    if (current.generation === generation && current.pid === process.pid) await fs.unlink(path);
+    clearInterval(heartbeat);
+    if (await owned()) await fs.unlink(path).catch(error => { if (error.code !== 'ENOENT') throw error; });
   };
 }

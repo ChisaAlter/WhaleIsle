@@ -73,6 +73,17 @@ test('targeted plugin recovery forwards names only from the launcher surface', a
   }
 });
 
+test('page reload forwards through the protected Harness-only channel', async () => {
+  const calls = [];
+  const cancelled = { proceeded: false, code: 'cancelled' };
+  const renderer = { ...fakeRenderer(), invoke: async (...args) => { calls.push(args); return cancelled; } };
+  assert.deepEqual(await buildShellApi('harness', renderer).reloadPage(), cancelled);
+  assert.deepEqual(calls, [['shell:reload-page']]);
+  for (const role of ['boot', 'launcher', 'pet', 'pet-live2d']) {
+    assert.equal(buildShellApi(role, renderer).reloadPage, undefined);
+  }
+});
+
 test('OpenUI shell calls forward unchanged only from the harness role', async () => {
   const calls = [];
   const viewer = '<!doctype html><title>trusted viewer</title>';

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { ConversationNodeAssembler, type TurnLocation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionLiveEventEntry } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ChatNode, ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -328,11 +328,12 @@ describe('plan entry points and document', () => {
       useTabInfo: () => ({ tab: { title: 'Plan', navigation: { address: planAddress(target) } } }),
     }
     const view = render(<PlanPreview {...{ ...props, useResource: () => ({ status: 'loading' }) } as unknown as Parameters<typeof PlanPreview>[0]} />)
+    expect(screen.getByRole('status', { name: dictionary['preview.loading'] })).toBeTruthy()
     expect(view.container.querySelector('[aria-busy="true"]')).not.toBeNull()
     expect(view.container.querySelector('[data-state="ongoing"]')).not.toBeNull()
-    expect(screen.queryByRole('alert')).toBeNull()
     view.rerender(<PlanPreview {...{ ...props, useResource: () => ({ status: 'none' }) } as unknown as Parameters<typeof PlanPreview>[0]} />)
     expect(screen.getByRole('status').textContent).toBe(dictionary['preview.unavailable'])
+    expect(view.container.querySelector('[aria-busy="true"]')).toBeNull()
     for (const [code, message] of [
       ['plan/invalid-address', dictionary['preview.invalidAddress']],
       ['plan/unavailable', dictionary['preview.historyUnavailable']],
@@ -340,15 +341,8 @@ describe('plan entry points and document', () => {
       ['plan/read-failed', 'connection lost'],
       ['session/not-found', 'connection lost'],
     ] as const) {
-      // Host snapshots retain their failure identity through local dismissal renders.
-      const failed = { status: 'failed', failure: { code, message: 'connection lost' } }
-      view.rerender(<PlanPreview {...{ ...props, useResource: () => failed } as unknown as Parameters<typeof PlanPreview>[0]} />)
-      const notice = screen.getByRole('alert')
-      expect(within(notice).getByText(`${dictionary['preview.failed']}\n${message}`, { exact: true, normalizer: value => value })).toBeTruthy()
-      expect(view.container.contains(notice)).toBe(false)
-      expect(view.container.querySelector('[aria-busy="true"]')).toBeNull()
-      fireEvent.click(within(notice).getByRole('button', { name: dictionary['notice.dismiss'] }))
-      expect(screen.queryByRole('alert')).toBeNull()
+      view.rerender(<PlanPreview {...{ ...props, useResource: () => ({ status: 'failed', failure: { code, message: 'connection lost' } }) } as unknown as Parameters<typeof PlanPreview>[0]} />)
+      expect(screen.getByRole('status').textContent).toBe(dictionary['preview.failed'] + message)
     }
   })
 })

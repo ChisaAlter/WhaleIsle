@@ -91,6 +91,8 @@ jobs:
         run: npm run setup:harness
       - name: Whale UI behavior tests
         run: npm run test:whale-ui
+      - name: Build optional ChatGPT bundle for native compatibility checks
+        run: npm run prepare:dsh-with-chatgpt-bundle
       - name: Desktop behavior tests
         run: npm test
       - name: Update download network recovery
@@ -148,6 +150,7 @@ jobs:
       - run: npm ci
       - run: node node_modules/electron/install.js
       - run: npm run setup:harness
+      - run: npm run prepare:dsh-with-chatgpt-bundle
       - run: npm test
       - id: mac_package
         run: npm run dist:mac

@@ -3726,7 +3726,7 @@ var DiscordAccountCard = channel.AccountCard;
 // plugin-src/client/channels/feishu/index.js
 var React13 = __toESM(require("react"), 1);
 
-// plugin-src/client/channels/feishu/api.js
+// src/channels/feishu/rpc-protocol.mjs
 var FEISHU_RPC_CHANNEL = "/feishu";
 var FEISHU_ENDPOINTS = Object.freeze({
   status: "connection.status",
@@ -3746,6 +3746,8 @@ var FEISHU_ENDPOINTS = Object.freeze({
   testConnection: "connection.test",
   disconnect: "connection.disconnect"
 });
+
+// plugin-src/client/channels/feishu/api.js
 var FEISHU_REGISTRATION_OPERATIONS = Object.freeze({
   PROVISION: "provision",
   CALLBACK_REPAIR: "callback_repair",
@@ -7315,8 +7317,7 @@ function SlackCredentialPanel({ busy, error, onSubmit, onCancel }) {
           onClick: () => void copyManifest(),
           disabled: busy || copying,
           loading: copying
-        }, "\u590D\u5236 Manifest"),
-        copied ? h(FeedbackToast, { text: "\u5DF2\u590D\u5236 Manifest", holdMs: 2e3 }) : null,
+        }, copied ? h("span", { className: "dsl-copyState" }, "\u5DF2\u590D\u5236 Manifest") : "\u590D\u5236 Manifest"),
         copyError ? h(FeedbackToast, { text: copyError, tone: "error" }) : null,
         h("a", {
           className: "ddt-button",

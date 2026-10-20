@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { Button, IconCloseCircleFillRegular, IconPlanOutlineRegular, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconCloseCircleFillRegular, IconPlanOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: pulls the ui-conversation SlotMap merge (the input.plan seat and
 // its {locked} owner share).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -65,7 +65,7 @@ export function PlanChip({ useProjection, locked, exitPlanMode, t }: PlanChipPro
         </span>
         {t('chip.label')}
       </Button>
-      {error !== null && <Toast text={`${t('chip.exitFailed')}: ${error}`} holdMs={null} dismissLabel={t('notice.dismiss')} onDone={() => { setError(null) }} />}
+      {error !== null && <span className={css.error} role="status" title={error}>{t('chip.exitFailed')}</span>}
     </span>
   )
 }

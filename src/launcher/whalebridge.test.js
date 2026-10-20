@@ -212,7 +212,11 @@ test('a failed start reports the component error line instead of only pointing a
   } });
   const result = await service.install();
   assert.equal(result.ok, false);
-  assert.equal(result.message, '鲸桥启动退出（1）：鲸桥网关端口不可用: listen tcp 127.0.0.1:3427: bind: address already in use');
+  assert.equal(result.message, '鲸桥已安装，但启动失败：鲸桥启动退出（1）：鲸桥网关端口不可用: listen tcp 127.0.0.1:3427: bind: address already in use');
+  assert.equal(service.installed().version, '1.0.0');
+  assert.equal(service.row().state, 'stopped');
+  assert.doesNotMatch(result.message, /an earlier run/);
+  assert.equal((await f.service.start()).ok, true);
 });
 
 test('the component log restarts once it outgrows its limit', async t => {
