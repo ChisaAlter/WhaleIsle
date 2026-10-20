@@ -461,7 +461,8 @@ app.whenReady().then(async () => {
         const toast = [...document.querySelectorAll('.shell-feedback-toast')].at(-1);
         const progress = [...document.querySelectorAll('.shell-feedback-progress')].at(-1);
         return {
-          sameButton: button.isConnected, caption: button.textContent, width: box.width, height: box.height,
+          sameButton: button.isConnected, caption: (button.querySelector('.shell-button-label')?.textContent ?? button.textContent), width: box.width, height: box.height,
+          spinner: !!button.querySelector('.shell-button-spinner'),
           busy: button.getAttribute('aria-busy'), loadingLabel: button.getAttribute('aria-label'),
           homeHeight: document.querySelector('#home-components').getBoundingClientRect().height,
           controls: [...document.querySelectorAll('[data-comp-id="whalebridge"]')].map(control => ({
@@ -530,21 +531,20 @@ app.whenReady().then(async () => {
       const installBefore = await rememberButton('#tab-components [data-comp-action="install"]');
       await click('#tab-components [data-comp-action="install"]');
       await waitFor(() => typeof componentInstallResolve === 'function');
-      await waitForDom('!!document.querySelector(".shell-feedback-progress")');
+      await waitForDom('(window.qaComponentButton.querySelector(".shell-button-label")?.textContent ?? window.qaComponentButton.textContent).startsWith("安装")');
       const installing = await readFeedback();
       componentProgress({ phase: 'download', percent: 42 });
-      await waitForDom('document.querySelector(".shell-feedback-progress p").textContent.includes("42%")');
+      await waitForDom('window.qaComponentButton.title.includes("下载组件 42%")');
       const downloading = await readFeedback();
       await captureBound('bound-component-download.png');
       componentProgress({ phase: 'verify', percent: 60 });
-      await waitForDom('document.querySelector(".shell-feedback-progress p").textContent.includes("校验")');
+      await waitForDom('window.qaComponentButton.title.includes("校验组件 60%")');
       const verifying = await readFeedback();
       componentInstallResolve();
-      await waitForDom('document.querySelector(".shell-feedback-toast .shell-feedback-text")?.textContent.startsWith("鲸桥安装完成：")');
+      await waitForDom('!!document.querySelector("#tab-components [data-comp-action=open]") && !document.querySelector("[data-comp-id=whalebridge][aria-busy=true]")');
       const installed = await readFeedback();
       await captureBound('bound-component-installed.png');
-      await closeNotice();
-      const installDismissed = await readFeedback();
+      const installDismissed = installed;
 
       componentLatest = '1.0.4';
       await win.webContents.executeJavaScript('window.__launcherComponents.refresh()');
@@ -553,7 +553,7 @@ app.whenReady().then(async () => {
       await click('#tab-components [data-comp-action="update"]');
       await waitFor(() => typeof componentUpdateResolve === 'function');
       componentProgress({ phase: 'download', percent: 51 });
-      await waitForDom('document.querySelector(".shell-feedback-progress p").textContent.includes("51%")');
+      await waitForDom('window.qaComponentButton.title.includes("下载组件 51%")');
       const updating = await readFeedback();
       componentProgress({ phase: 'error', percent: 100, message: 'fixture package refused' });
       componentUpdateResolve({ ok: false, message: 'fixture package refused' });
@@ -705,10 +705,10 @@ app.whenReady().then(async () => {
         }
         return {
           duplicateRetry: Boolean(get('btn-recovery-retry')),
-          startText: get('btn-start').textContent, startDisabled: get('btn-start').disabled,
+          startText: (get('btn-start').querySelector('.shell-button-label')?.textContent ?? get('btn-start').textContent), startDisabled: get('btn-start').disabled,
           startBusy: get('btn-start').getAttribute('aria-busy'), startLabel: get('btn-start').getAttribute('aria-label'),
           startHidden: get('btn-start').hidden, stopHidden: get('btn-stop').hidden,
-          stopDisabled: get('btn-stop').disabled, stopText: get('btn-stop').textContent,
+          stopDisabled: get('btn-stop').disabled, stopText: (get('btn-stop').querySelector('.shell-button-label')?.textContent ?? get('btn-stop').textContent),
           stopBusy: get('btn-stop').getAttribute('aria-busy'), stopLabel: get('btn-stop').getAttribute('aria-label'),
           skipDisabled: get('btn-skip').disabled, fullDisabled: get('btn-retry-full').disabled,
           diagnosticsHidden: get('home-recovery').hidden, diagnosticsOpen: get('home-recovery').open === true,

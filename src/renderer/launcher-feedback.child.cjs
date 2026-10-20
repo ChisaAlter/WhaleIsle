@@ -81,8 +81,10 @@ app.whenReady().then(async () => {
     const toastText = toast?.querySelector('.shell-feedback-text').textContent || '';
     const reference = modal.hidden ? document.querySelector('main').getBoundingClientRect() : modal.getBoundingClientRect();
     const surface = modal.hidden ? card : modal.querySelector('.modal-card').getBoundingClientRect();
-    return { button: { width: rect.width, height: rect.height, text: b.textContent, busy: b.getAttribute('aria-busy'), disabled: b.disabled,
-      color: getComputedStyle(b).color, spinner: getComputedStyle(b, '::after').content },
+    return { button: { width: rect.width, height: rect.height, text: (b.querySelector('.shell-button-label')?.textContent ?? b.textContent), busy: b.getAttribute('aria-busy'), disabled: b.disabled,
+      spinner: !!b.querySelector('.shell-button-spinner') },
+      versionsText: (document.getElementById('btn-check-update-versions').querySelector('.shell-button-label')?.textContent ?? document.getElementById('btn-check-update-versions').textContent),
+      scanText: (document.getElementById('btn-scan').querySelector('.shell-button-label')?.textContent ?? document.getElementById('btn-scan').textContent),
       homeTop: document.querySelector('#panel-home .home-heading').getBoundingClientRect().top,
       modalHidden: modal.hidden, title: modal.hidden ? toastText.split('：')[0] : document.getElementById('app-confirm-title').textContent,
       body: modal.hidden ? toastText : document.getElementById('app-confirm-body').textContent,
@@ -119,7 +121,7 @@ app.whenReady().then(async () => {
         await waitFor("document.getElementById('btn-check-update').getAttribute('aria-busy') === 'true'");
         const pending = await read();
         checkResolve({ status: 'current', current: '0.3.3', latest: '0.3.3' });
-        await waitFor("!!document.querySelector('.shell-feedback-toast')");
+        await waitFor("(document.getElementById('btn-check-update').querySelector('.shell-button-label')?.textContent ?? document.getElementById('btn-check-update').textContent) === '已是最新'");
         const current = await read();
         if (scheme === 'light') await capture(`launcher-${width}`);
         await clearNotices();
@@ -137,7 +139,9 @@ app.whenReady().then(async () => {
       while (!checkResolve) await delay(10);
       await delay(20);
       checkResolve(payload);
-      await waitFor(payload?.status === 'available' ? "document.getElementById('home-update').checkVisibility()" : "!!document.querySelector('.shell-feedback-toast')");
+      await waitFor(payload?.status === 'available' ? "document.getElementById('home-update').checkVisibility()"
+        : payload?.status === 'none' ? "(document.getElementById('btn-check-update-versions').querySelector('.shell-button-label')?.textContent ?? document.getElementById('btn-check-update-versions').textContent) === '暂无更新'"
+          : "!!document.querySelector('.shell-feedback-toast')");
       result.outcomes.push({ status: payload?.status || 'invalid', ...await read() });
       await clearNotices();
     }
@@ -156,11 +160,7 @@ app.whenReady().then(async () => {
     await key('Tab');
     await key('Escape');
     result.confirmAnswer = await js('window.confirmAnswer');
-    await js("window.taskProgress = window.appProgress({title:'安装组件',body:'正在校验'}); window.taskProgress.update('正在下载组件 42%'); document.querySelector('.shell-feedback-progress').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
-    result.progress = await js("({ modalHidden:document.getElementById('app-confirm').hidden,summaryVisible:document.querySelector('.shell-feedback-progress').parentElement.querySelector('.shell-feedback-task-summary').checkVisibility(),body:document.querySelector('.shell-feedback-progress p').textContent })");
-    await js("document.querySelector('.shell-feedback-progress').parentElement.querySelector('.shell-feedback-task-summary').click()");
-    result.progress.restored = await js("document.querySelector('.shell-feedback-progress').checkVisibility()");
-    await js("window.taskProgress.close(); document.querySelector('[data-tab=plugins]').click()");
+    await js("document.querySelector('[data-tab=plugins]').click()");
     await waitFor("document.getElementById('btn-refresh-plugins').getAttribute('aria-busy') === 'true'");
     pluginReject(new Error('fixture scan failed'));
     await waitFor("!!document.querySelector('.shell-feedback-toast')");
@@ -169,7 +169,7 @@ app.whenReady().then(async () => {
     await js("document.querySelector('[data-tab=import]').click()");
     await waitFor("!document.getElementById('btn-scan').disabled");
     await js("document.getElementById('btn-scan').click()");
-    await waitFor("!!document.querySelector('.shell-feedback-toast')");
+    await waitFor("(document.getElementById('btn-scan').querySelector('.shell-button-label')?.textContent ?? document.getElementById('btn-scan').textContent) === '扫描完成'");
     result.scan = await read();
     await clearNotices();
     await js("document.querySelector('[data-tab=settings]').click(); document.getElementById('opt-auto').click()");
@@ -193,7 +193,7 @@ app.whenReady().then(async () => {
     await js("document.getElementById('btn-recover-plugins').click()");
     await waitFor("!document.getElementById('app-confirm').hidden");
     await js("document.getElementById('app-confirm-ok').click(); document.getElementById('btn-recover-plugins').click()");
-    await waitFor("!!document.querySelector('.shell-feedback-progress')");
+    await waitFor("(document.getElementById('btn-start').querySelector('.shell-button-label')?.textContent ?? document.getElementById('btn-start').textContent).startsWith('启动')");
     result.recoveryPending = { ...(await read()), calls: recoveryCalls, names: recoveryNames,
       controlsDisabled: await js("['btn-start', 'btn-stop', 'btn-retry-full', 'btn-disable-suspects', 'btn-recover-plugins'].every(id => document.getElementById(id).disabled)") };
     desktopStatus = { ...desktopStatus, desktop: { state: 'ready' }, lastStart: { ok: true, at: 'recovered-1' },
@@ -215,7 +215,7 @@ app.whenReady().then(async () => {
     result.recoveryStickyRefresh = { ...(await read()), calls: recoveryCalls,
       lastStartAt: await js('lastStatus.lastStart.at'), recoveryAt: await js('lastStatus.recovery.at') };
     await js("document.getElementById('app-confirm-ok').click()");
-    await waitFor("!!document.querySelector('.shell-feedback-progress')");
+    await waitFor("(document.getElementById('btn-start').querySelector('.shell-button-label')?.textContent ?? document.getElementById('btn-start').textContent).startsWith('启动')");
     result.recoveryStickyConfirmed = { callsBefore: callsBeforeStickyRefresh, calls: recoveryCalls, names: recoveryNames };
     statusReadFails = true;
     recoveryResolve({ ok: true, harnessRestarted: true, forensics: { recovery: { skipUserPlugins: true } } });
@@ -295,7 +295,7 @@ app.whenReady().then(async () => {
     result.boot.saved = await bootJs("({text:document.querySelector('.shell-feedback-text').textContent,ticker:document.getElementById('ticker-line').textContent,logCount:document.getElementById('log').children.length})");
     result.boot.afterSave = await bootGeometry();
     if (bootOnly) {
-      const buttonState = id => bootJs(`(() => {const b=document.getElementById(${JSON.stringify(id)}),r=b.getBoundingClientRect();return {busy:b.getAttribute('aria-busy'),disabled:b.disabled,hidden:b.hidden,width:r.width,height:r.height,text:b.textContent}})()`);
+      const buttonState = id => bootJs(`(() => {const b=document.getElementById(${JSON.stringify(id)}),r=b.getBoundingClientRect();return {busy:b.getAttribute('aria-busy'),disabled:b.disabled,hidden:b.hidden,width:r.width,height:r.height,text:(b.querySelector('.shell-button-label')?.textContent ?? b.textContent)}})()`);
       const clearBootNotices = async () => {
         await bootJs("document.querySelectorAll('.shell-feedback-toast .shell-feedback-close').forEach(button => button.click())");
         await bootWait("!document.querySelector('.shell-feedback-toast')");

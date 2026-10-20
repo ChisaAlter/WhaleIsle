@@ -343,7 +343,7 @@ The pet Canvas allocates its pixel buffer at the current display's devicePixelRa
 
 ## Desktop launcher
 
-Import is user-opened except for transaction recovery. Home shows only version, state and one start/close action (retry after failure). Busy state shows real elapsed time and locks conflicting actions. Errors and plugin recovery belong in initially collapsed startup diagnostics; omit empty lists.
+Import is user-opened except for transaction recovery. Home shows only version, state and one start/close action (retry after failure). Start, close, update checks, scans and component operations show a spinner and a short label inside the original button, at its original size, with no separate loading notice; the home status line shows elapsed time, and conflicting actions stay locked. Errors and plugin recovery belong in initially collapsed startup diagnostics; omit empty lists.
 
 Diagnostics headings use 16/24. Import bodies keep at least 120px with outer scrolling at zoom. Confirmation cards leave 24px above and below, with scrolling text and non-shrinking headings/actions. Cache failures outrank skip status; do not blame plugins or clear sessions.
 
