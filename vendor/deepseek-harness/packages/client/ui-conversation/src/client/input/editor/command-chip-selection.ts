@@ -14,6 +14,7 @@ import type { LexicalEditor, NodeKey } from 'lexical'
 import {
   $getAdjacentNode, $getSelection, $isRangeSelection, BEFORE_INPUT_COMMAND, BLUR_COMMAND, CLICK_COMMAND,
   COMMAND_PRIORITY_CRITICAL, COMMAND_PRIORITY_HIGH, DELETE_CHARACTER_COMMAND, KEY_DOWN_COMMAND,
+  IS_APPLE, isExactShortcutMatch,
 } from 'lexical'
 import { mergeRegister } from '@lexical/utils'
 import { $isCommandChipNode } from './command-chip-node.tsx'
@@ -24,6 +25,14 @@ import type { CommandChipNode } from './command-chip-node.tsx'
  * IME or virtual-keyboard keys whose deletion arrives later as an input event.
  */
 const PASSIVE_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'Unidentified', 'Process'])
+
+/** The engine's character-deletion keys, including the Apple control shortcuts. */
+function isCharacterDeletionKey(event: KeyboardEvent): boolean {
+  return isExactShortcutMatch(event, 'Backspace', { shiftKey: 'any' })
+    || isExactShortcutMatch(event, 'Delete', {})
+    || IS_APPLE && (isExactShortcutMatch(event, 'h', { ctrlKey: true })
+      || isExactShortcutMatch(event, 'd', { ctrlKey: true }))
+}
 
 /** The chip a collapsed caret deletes next in one direction, or null. */
 function $commandChipBesideCaret(isBackward: boolean): CommandChipNode | null {
@@ -47,8 +56,6 @@ function deletionDirection(inputType: string): boolean | null {
  */
 export function registerCommandChipSelection(editor: LexicalEditor): () => void {
   let selected: { readonly key: NodeKey; readonly isBackward: boolean } | null = null
-  /** A keydown with a selected chip whose dispatch has produced no character deletion yet. */
-  let keyWithoutDeletion = false
   const paint = (next: typeof selected): void => {
     if (selected !== null && selected.key !== next?.key) {
       editor.getElementByKey(selected.key)?.removeAttribute('data-selected')
@@ -69,7 +76,6 @@ export function registerCommandChipSelection(editor: LexicalEditor): () => void 
    * @returns true when the deletion only selected the chip and must be consumed.
    */
   const $decide = (isBackward: boolean, clearOnPass: boolean): boolean => {
-    keyWithoutDeletion = false
     const chip = $commandChipBesideCaret(isBackward)
     if (chip === null) return clear()
     if (selected?.key === chip.getKey() && selected.isBackward === isBackward) return clearOnPass ? clear() : false
@@ -79,22 +85,15 @@ export function registerCommandChipSelection(editor: LexicalEditor): () => void 
   return mergeRegister(
     editor.registerCommand(BEFORE_INPUT_COMMAND, (event) => {
       const isBackward = deletionDirection(event.inputType)
-      if (isBackward === null || !$decide(isBackward, false)) return false
+      if (isBackward === null) return clear()
+      if (!$decide(isBackward, false)) return false
       event.preventDefault()
       return true
     }, COMMAND_PRIORITY_HIGH),
     editor.registerCommand(DELETE_CHARACTER_COMMAND, isBackward => $decide(isBackward, true), COMMAND_PRIORITY_HIGH),
     editor.registerCommand(KEY_DOWN_COMMAND, (event) => {
-      if (selected === null || PASSIVE_KEYS.has(event.key)) return false
-      // Key bindings dispatch their deletion synchronously inside this
-      // keydown, so the microtask sees whether the key deleted anything.
-      keyWithoutDeletion = true
-      queueMicrotask(() => {
-        if (!keyWithoutDeletion) return
-        keyWithoutDeletion = false
-        clear()
-      })
-      return false
+      if (selected === null || PASSIVE_KEYS.has(event.key) || isCharacterDeletionKey(event)) return false
+      return clear()
     }, COMMAND_PRIORITY_CRITICAL),
     editor.registerCommand(CLICK_COMMAND, clear, COMMAND_PRIORITY_CRITICAL),
     editor.registerCommand(BLUR_COMMAND, clear, COMMAND_PRIORITY_CRITICAL),

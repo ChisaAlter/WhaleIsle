@@ -47,6 +47,7 @@
 | --- | --- |
 | `openExternal` | `shell:open-external` |
 | `openSettings` | `shell:open-settings` |
+| `reloadPage` | `shell:reload-page` |
 | `retryFullPlugins` | `shell:retry-full-plugins` |
 | `checkUpdate` / `installUpdate` | `shell:check-update` / `shell:install-update` |
 | `onUpdateProgress` | `shell:update-progress` |

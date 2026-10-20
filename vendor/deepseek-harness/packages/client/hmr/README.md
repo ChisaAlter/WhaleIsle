@@ -27,6 +27,8 @@ English | [中文](README.zh.md)
 
 The shipped Web composition mounts this transport for live plugin changes. During development, a bundle watcher also supplies code rebuilds. Disabling the transport stops graph delivery to open pages.
 
+WhaleIsle opens a native `EventSource` only for a loopback page, keeping phone and relay pages from holding that extra connection. A shell-provided `__DSH_TRANSPORT__.fetch` carries its own stream and remains available off-loopback.
+
 ### Starting the reload chain
 
 Run `pnpm run dev:web`, which starts the host and the rebuild watchers together (`--no-serve` attaches only the watchers to a host started elsewhere, as does any watch process using the shared Client tsdown preset); rebuilt plugins are then swapped into the running browser automatically, one at a time. The preset stamps `lib/client.js` after all package-local chunks are written, so a chunk-only rebuild also advances the package revision without Host-side chunk scanning.

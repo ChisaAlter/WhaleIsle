@@ -386,7 +386,17 @@ export function apply(ctx: ClientContext): void {
   // The page's module system applies no plugin update from another Host release; this dialog offers the reload.
   const releasePromptInjected = (): HostReleasePromptInjected => ({
     dismissRelease: () => { ctx.modules.entries.dismissRelease() },
-    reloadPage: () => { globalThis.location.reload() },
+    reloadPage: () => {
+      if (shell === null) {
+        globalThis.location.reload()
+        return
+      }
+      if (shell.reloadPage === undefined) {
+        ctx.logger.error(new Error('ui-settings-general: desktop page reload bridge is unavailable'))
+        return
+      }
+      void shell.reloadPage().catch((error: unknown) => { ctx.logger.error(error) })
+    },
     hooks: { releaseChange: ctx.modules.entries.releaseChange },
   })
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({

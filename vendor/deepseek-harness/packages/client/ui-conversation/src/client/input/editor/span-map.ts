@@ -61,16 +61,15 @@ function resolvePoint(layout: ComposerLayout, offset: number): ResolvedPoint | n
 }
 
 /**
- * Build and apply a live RangeSelection over one detect span.
+ * Build and apply a live RangeSelection over directed detect endpoints.
  * @param layout - current walk product.
- * @param span - detect span.
+ * @param anchorOffset - detect-coordinate anchor.
+ * @param focusOffset - detect-coordinate focus.
  * @returns the applied selection, or null when either endpoint fails to map.
  */
-function selectSpan(layout: ComposerLayout, span: DetectSpan): RangeSelection | null {
-  if (span.start < 0 || span.start > span.end || span.end > layout.detectLength) return null
-  const anchor = resolvePoint(layout, span.start)
-  const focus = resolvePoint(layout, span.end)
-  /* v8 ignore next -- bounds were checked above; resolvePoint only fails out of bounds. */
+function selectPoints(layout: ComposerLayout, anchorOffset: number, focusOffset: number): RangeSelection | null {
+  const anchor = resolvePoint(layout, anchorOffset)
+  const focus = resolvePoint(layout, focusOffset)
   if (anchor === null || focus === null) return null
   const selection = $createRangeSelection()
   selection.anchor.set(anchor.key, anchor.offset, anchor.type)
@@ -86,7 +85,18 @@ function selectSpan(layout: ComposerLayout, span: DetectSpan): RangeSelection | 
  * @returns whether both endpoints mapped.
  */
 export function $selectDetectSpan(span: DetectSpan): boolean {
-  return selectSpan($composerLayout(), span) !== null
+  if (span.start > span.end) return false
+  return $selectDetectPoints(span.start, span.end)
+}
+
+/**
+ * Restore directed selection endpoints after a projection-only node change.
+ * @param anchor - detect-coordinate anchor.
+ * @param focus - detect-coordinate focus, which may precede the anchor.
+ * @returns whether both endpoints mapped.
+ */
+export function $selectDetectPoints(anchor: number, focus: number): boolean {
+  return selectPoints($composerLayout(), anchor, focus) !== null
 }
 
 /**
@@ -97,7 +107,8 @@ export function $selectDetectSpan(span: DetectSpan): boolean {
  * @returns whether the span mapped and the edit applied.
  */
 export function $replaceDetectSpanWithText(span: DetectSpan, text: string): boolean {
-  const selection = selectSpan($composerLayout(), span)
+  if (span.start > span.end) return false
+  const selection = selectPoints($composerLayout(), span.start, span.end)
   if (selection === null) return false
   if (text === '' && !selection.isCollapsed()) selection.removeText()
   else selection.insertText(text)
@@ -112,7 +123,8 @@ export function $replaceDetectSpanWithText(span: DetectSpan, text: string): bool
  * @returns whether the span mapped and the edit applied.
  */
 export function $replaceDetectSpanWithNodes(span: DetectSpan, nodes: readonly LexicalNode[]): boolean {
-  const selection = selectSpan($composerLayout(), span)
+  if (span.start > span.end) return false
+  const selection = selectPoints($composerLayout(), span.start, span.end)
   if (selection === null) return false
   selection.insertNodes([...nodes])
   return true

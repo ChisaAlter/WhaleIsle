@@ -336,6 +336,10 @@
   caret-color: transparent;
 }
 
+.input[data-composer-chip-selected] ~ [data-typing-fx] [data-typing-fx-caret] {
+  visibility: hidden;
+}
+
 .input[data-composer-composing] + .placeholder {
   visibility: hidden;
 }

@@ -44,7 +44,7 @@ async function readPageTransportEvents(fetch: PageTransportFetch, signal: AbortS
 /**
  * Whether the page authority is loopback. Duplicates the connection-package
  * predicate so this immediately-tier plugin does not import another client
- * plugin; a phone or relay origin must not hold `/plugins/events`.
+ * plugin; a phone or relay origin must not hold a native `/plugins/events` connection.
  */
 function pageIsLoopback(): boolean {
   if (typeof location === 'undefined') return true
@@ -86,10 +86,9 @@ export function apply(ctx: Context): void {
     }
   }
 
-  if (!pageIsLoopback()) return
-
+  const transport = (globalThis as PageTransportGlobal).__DSH_TRANSPORT__
+  if (transport?.fetch === undefined && !pageIsLoopback()) return
   ctx.effect(() => {
-    const transport = (globalThis as PageTransportGlobal).__DSH_TRANSPORT__
     if (transport?.fetch !== undefined) {
       const controller = new AbortController()
       void readPageTransportEvents(transport.fetch, controller.signal, receive).catch((error: unknown) => {

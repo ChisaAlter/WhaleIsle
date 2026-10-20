@@ -183,6 +183,7 @@ export class SessionInputShell implements SessionInput {
         this.deps.inputTriggers?.()?.openReference(source, reference) ?? false,
       lexicon: () => this.lexicon.getSnapshot(),
       resolveLexicon: () => this.deps.inputTriggers?.()?.lexicon,
+      commandsAllowed: () => this.edit === undefined,
     })
     this.unregister = this.draftEditor.register()
     this.state = createSnapshotStore<InputState>(this.compose())
@@ -555,10 +556,10 @@ export class SessionInputShell implements SessionInput {
 
   /**
    * Replace [0, span.end) with the command chip and enter claimed.
-   * @param mergeHistory - merge the edit into the previous history entry.
+   * @param restoring - restore the chip without altering the persisted text or adding an undo step.
    * @returns whether the edit applied.
    */
-  private applyClaim(claim: CommandClaim, span: TokenSpan, mergeHistory: boolean): boolean {
+  private applyClaim(claim: CommandClaim, span: TokenSpan, restoring: boolean): boolean {
     if (this.edit !== undefined) return false
     const phase = this.core.state.phase
     if (phase !== 'plain' && phase !== 'claimed') return false
@@ -567,7 +568,7 @@ export class SessionInputShell implements SessionInput {
     // whitespace prefix is dropped so the chip takes the leading seat.
     if (this.projection.detectText.slice(0, span.start).trim() !== '') return false
     const tail = this.projection.detectText.slice(span.end, span.end + 1)
-    const applied = this.draftEditor.insertCommand({ start: 0, end: span.end }, claim, tail, mergeHistory)
+    const applied = this.draftEditor.insertCommand({ start: 0, end: span.end }, claim, tail, restoring)
     if (!applied) return false
     this.dispatchRun(({ type: 'claim', claim }))
     return true
