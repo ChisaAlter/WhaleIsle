@@ -58,6 +58,40 @@ it('retains the shell reinstall action when the checked release is current', asy
   expect(openDesktopUpdate).not.toHaveBeenCalled()
 })
 
+it('saves the download route and checks again through it', async () => {
+  const saveConfig = vi.fn(async () => ({ downloadRoute: 'cnb' as const }))
+  const checkUpdate = vi.fn(async () => ({ status: 'current', latest: '9.9.9' }))
+  ;(window as Window & { shell?: unknown }).shell = {
+    getConfig: async () => ({ downloadRoute: '' }),
+    saveConfig,
+    checkUpdate,
+  }
+  mount()
+  const select = await screen.findByRole('button', { name: translate('about.route') })
+  await waitFor(() => { expect(checkUpdate).toHaveBeenCalledOnce() })
+  expect(select.textContent).toContain(translate('about.routeGithub'))
+  fireEvent.click(select)
+  fireEvent.click(screen.getByRole('menuitem', { name: translate('about.routeCnb') }))
+  await waitFor(() => { expect(checkUpdate).toHaveBeenCalledTimes(2) })
+  expect(saveConfig).toHaveBeenCalledWith({ downloadRoute: 'cnb' })
+  expect(select.textContent).toContain(translate('about.routeCnb'))
+})
+
+it('restores the previous route when the shell does not save it', async () => {
+  ;(window as Window & { shell?: unknown }).shell = {
+    getConfig: async () => ({ downloadRoute: 'cnb' }),
+    saveConfig: async () => ({ downloadRoute: 'cnb' }),
+    checkUpdate: async () => ({ status: 'current', latest: '9.9.9' }),
+  }
+  mount()
+  const select = await screen.findByRole('button', { name: translate('about.route') })
+  await waitFor(() => { expect(select.textContent).toContain(translate('about.routeCnb')) })
+  fireEvent.click(select)
+  fireEvent.click(screen.getByRole('menuitem', { name: translate('about.routeGithub') }))
+  expect(await screen.findByText(en['feedback.notSaved'])).toBeTruthy()
+  expect(select.textContent).toContain(translate('about.routeCnb'))
+})
+
 const available: UpdateInfo = {
   status: 'available', current: '1.0.0', latest: '9.9.9', assetUrl: 'https://example.test/app.exe',
 }

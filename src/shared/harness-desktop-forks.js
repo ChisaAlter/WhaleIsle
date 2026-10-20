@@ -87,7 +87,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-settings-general/src/client/CloseBehaviorRow.tsx', includes: ['SettingsSelect'] },
   { file: 'packages/client/ui-settings-general/src/client/AutoStartDesktopRow.tsx', includes: ['SettingsSelect'] },
   { file: 'packages/client/ui-settings-general/src/client/HarnessRestartRow.tsx', includes: ['SettingsSelect'] },
-  { file: 'packages/client/ui-settings-general/src/client/AboutSection.tsx', includes: ['openDshHome'] },
+  { file: 'packages/client/ui-settings-general/src/client/AboutSection.tsx', includes: ['openDshHome', 'downloadRoute'] },
   // Remote workspace (SSH) toggle: desktop-only Interface row + config field
   // + dictionaries riding the upstream settings-general files.
   { file: 'packages/client/ui-settings-general/src/client/RemoteWorkspaceRow.tsx', includes: ['remoteWorkspaceEnabled'] },

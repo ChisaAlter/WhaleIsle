@@ -2,14 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, SettingsSelect, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { desktopShell, type UpdateInfo } from './desktop-shell.ts'
+import { desktopShell, type DownloadRoute, type UpdateInfo } from './desktop-shell.ts'
 import css from './AboutSection.module.css'
 
 const HARNESS_URL = 'https://github.com/deepseek-ai/deepseek-harness'
 const REPO_URL = 'https://github.com/ChisaAlter/Deepseek-Harness-Desktop'
 const RELEASES_URL = `${REPO_URL}/releases`
+
+const ROUTES: readonly { id: DownloadRoute; label: 'about.routeGithub' | 'about.routeCnb' }[] = [
+  { id: 'github', label: 'about.routeGithub' },
+  { id: 'cnb', label: 'about.routeCnb' },
+]
 
 type UpdateStatus = 'idle' | 'checking' | 'none' | 'current' | 'available' | 'error' | 'download' | 'install' | 'manual'
 
@@ -52,6 +57,8 @@ export function AboutSection({ t, openDesktopUpdate }: AboutSectionProps): React
   const [percent, setPercent] = useState(0)
   const [status, setStatus] = useState<UpdateStatus>('idle')
   const [info, setInfo] = useState<UpdateInfo | null>(null)
+  const [route, setRoute] = useState<DownloadRoute>('github')
+  const [routeBusy, setRouteBusy] = useState(false)
   const [notice, setNotice] = useState<{ id: number; text: string; success: boolean } | null>(null)
   const noticeId = useRef(0)
   const shell = desktopShell()
@@ -144,10 +151,35 @@ export function AboutSection({ t, openDesktopUpdate }: AboutSectionProps): React
     }
   }, [shell, t])
 
+  // Updates download through the same route the launcher offers; unpicked means GitHub.
+  const pickRoute = useCallback(async (next: DownloadRoute) => {
+    if (!shell?.saveConfig || next === route) return
+    const previous = route
+    setRoute(next)
+    setRouteBusy(true)
+    try {
+      const saved = await shell.saveConfig({ downloadRoute: next })
+      if (saved.downloadRoute !== next) {
+        setRoute(previous)
+        setNotice({ id: ++noticeId.current, text: t('feedback.notSaved'), success: false })
+        return
+      }
+    } catch (error) {
+      setRoute(previous)
+      const message = error instanceof Error ? error.message : String(error)
+      setNotice({ id: ++noticeId.current, text: t('feedback.saveError', { message }), success: false })
+      return
+    } finally {
+      setRouteBusy(false)
+    }
+    void check()
+  }, [check, route, shell, t])
+
   useEffect(() => {
     if (!shell) return undefined
     let cancelled = false
     void shell.getConfig?.().then((config) => {
+      if (!cancelled && config.downloadRoute === 'cnb') setRoute('cnb')
       if (!cancelled && config.appVersion) setVersion(config.appVersion)
       if (!cancelled && typeof config.dshHome === 'string') setHomePath(config.dshHome)
       if (!cancelled && (config.credentialStorage === 'encrypted' || config.credentialStorage === 'plaintext')) {
@@ -192,6 +224,19 @@ export function AboutSection({ t, openDesktopUpdate }: AboutSectionProps): React
           <p className={css.meta}>{t('about.appMeta')}</p>
           {shell ? (
             <>
+              {shell.saveConfig ? (
+                <div className={css.route}>
+                  <span className={css.routeLabel}>{t('about.route')}</span>
+                  <SettingsSelect
+                    aria-label={t('about.route')}
+                    value={route}
+                    loading={routeBusy}
+                    disabled={busy}
+                    options={ROUTES.map(option => ({ id: option.id, label: t(option.label) }))}
+                    onChange={(id) => { void pickRoute(id === 'cnb' ? 'cnb' : 'github') }}
+                  />
+                </div>
+              ) : null}
               <div className={css.actions}>
                 <Button variant="outline" size="sm" disabled={busy} loading={busy && status === 'checking'}
                   title={status === 'error' ? statusCopy(t, status, info, percent) : undefined}

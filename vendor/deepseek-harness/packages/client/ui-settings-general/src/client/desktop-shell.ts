@@ -112,6 +112,9 @@ export type Live2dPetSettingsResult = {
   reason?: string
 }
 
+/** Release download route shared with the launcher; `''` means not picked (GitHub). */
+export type DownloadRoute = 'github' | 'cnb'
+
 /** Public desktop config fields the settings UI reads or writes. */
 export type DesktopConfig = {
   appVersion?: string
@@ -119,6 +122,7 @@ export type DesktopConfig = {
   releasesUrl?: string
   closeToTray?: boolean
   autoStartDesktop?: boolean
+  downloadRoute?: DownloadRoute | ''
   dshHome?: string
   /**
    * Whether the desktop mounts the built-in dshbot Bots plugin; the shell

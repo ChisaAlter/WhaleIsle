@@ -39,7 +39,7 @@ const { buildMenu } = require('./menu');
 const { createTray, invokeTrayAction, refreshTrayMenu } = require('./tray');
 const { DESKTOP_PET_FEATURE, configureDesktopPet, getDesktopPet } = require('./desktop-pet');
 const { LIVE2D_PET_FEATURE, configureLive2dPet, getLive2dPet } = require('./desktop-live2d');
-const { checkUpdate, updateDownloadMethods, setGithubTokenProvider, setUpdateStateSink, currentVersion } = require('./update');
+const { checkUpdate, updateDownloadMethods, setGithubTokenProvider, setUpdateRouteProvider, setUpdateStateSink, currentVersion } = require('./update');
 const { plainReleaseNotes, releaseNotesTabs } = require('../shared/release-notes');
 const { createUpdatesState } = require('./updates-state');
 const { BrowserGuests, installBrowserGuests } = require('./browser-guests');
@@ -1135,6 +1135,7 @@ if (!gotLock) {
     saveConfig({ workspace: config.workspace });
     app.setLoginItemSettings({ openAtLogin: Boolean(config.openAtLogin) });
     setGithubTokenProvider(() => loadConfig().githubToken);
+    setUpdateRouteProvider(() => loadConfig().downloadRoute);
 
     startDesktopInstallControl({
       installPlugin: (spec, options) => installPlugin(spec, {

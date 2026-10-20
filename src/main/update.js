@@ -40,6 +40,24 @@ function setGithubTokenProvider(provider) {
   githubTokenProvider = typeof provider === 'function' ? provider : null;
 }
 
+/**
+ * Lazy shell `config.downloadRoute` source, injected by src/main/index.js.
+ * Unset (tests, source tools) and unpicked both mean GitHub.
+ */
+let routeProvider = null;
+
+function setUpdateRouteProvider(provider) {
+  routeProvider = typeof provider === 'function' ? provider : null;
+}
+
+function updateRoute() {
+  try {
+    return require('../launcher/release-source').normalizeRoute(routeProvider?.()) || 'github';
+  } catch {
+    return 'github';
+  }
+}
+
 function githubToken() {
   if (!githubTokenProvider) {
     return '';
@@ -251,12 +269,14 @@ async function githubJson(url, timeoutMs = CHECK_TIMEOUT_MS, { signal } = {}) {
   return response.json();
 }
 
-function snapshot(extra = {}) {
+function snapshot(extra = {}, route = 'github') {
+  const page = route === 'github' ? RELEASES_PAGE : require('../launcher/release-source').ROUTES[route].page;
   return {
     current: currentVersion(),
     repo: `${GITHUB_OWNER}/${GITHUB_REPO}`,
-    repoUrl: REPO_URL,
-    releasesUrl: RELEASES_PAGE,
+    repoUrl: route === 'github' ? REPO_URL : page.replace(/\/-\/releases$/, ''),
+    releasesUrl: page,
+    route,
     ...extra,
   };
 }
@@ -269,17 +289,26 @@ function snapshot(extra = {}) {
  */
 let checkUpdateInFlight = null;
 
+/** The selected route's newest stable release, assets in GitHub shape. */
+async function latestRelease(route) {
+  if (route === 'github') return githubJson(RELEASES_LATEST);
+  const releaseSource = require('../launcher/release-source');
+  return releaseSource.normalizeAssets(await releaseSource.releaseRaw(route, null));
+}
+
 async function runUpdateCheck() {
+  const route = updateRoute();
+  const page = snapshot({}, route).releasesUrl;
   try {
-    const release = await githubJson(RELEASES_LATEST);
+    const release = await latestRelease(route);
     if (!release) {
       return snapshot({
         status: 'none',
         latest: '',
-        htmlUrl: RELEASES_PAGE,
+        htmlUrl: page,
         assetName: '',
         assetUrl: '',
-      });
+      }, route);
     }
     const latest = normalizeVersion(release.tag_name || release.name);
     const asset = pickInstaller(release.assets);
@@ -289,22 +318,22 @@ async function runUpdateCheck() {
       status: newer ? 'available' : 'current',
       latest,
       tag: release.tag_name || latest,
-      htmlUrl: release.html_url || RELEASES_PAGE,
+      htmlUrl: release.html_url || page,
       notes: typeof release.body === 'string' ? release.body : '',
       assetName: asset?.name || '',
       assetUrl: asset?.browser_download_url || '',
       checksumUrl: checksum?.browser_download_url || '',
       ...installerMetadata(release.assets, asset),
-    });
+    }, route);
   } catch (error) {
     return snapshot({
       status: 'error',
       latest: '',
-      htmlUrl: RELEASES_PAGE,
+      htmlUrl: page,
       assetName: '',
       assetUrl: '',
       message: error.message || String(error),
-    });
+    }, route);
   }
 }
 
@@ -578,9 +607,14 @@ function summarizeRelease(release, current) {
 }
 
 async function listReleases() {
+  const route = updateRoute();
+  const current = currentVersion();
+  if (route !== 'github') {
+    const result = await require('../launcher/release-source').listFor(route, { installedVersion: current });
+    return snapshot({ ...result, installed: getInstalledAppInfo() }, route);
+  }
   try {
     const list = await githubJson(RELEASES_LIST);
-    const current = currentVersion();
     const releases = (Array.isArray(list) ? list : [])
       .map((row) => summarizeRelease(row, current))
       .filter(Boolean);
@@ -788,27 +822,30 @@ async function installRelease(tag, onProgress, options = {}) {
   if (!raw) {
     return snapshot({ status: 'error', message: 'missing-tag', launched: false });
   }
+  const route = updateRoute();
   try {
-    const release = await githubJson(
-      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/${encodeURIComponent(raw)}`,
-    );
-    if (!release) {
-      return snapshot({ status: 'error', message: 'release-not-found', launched: false });
+    let summary;
+    if (route === 'github') {
+      const release = await githubJson(
+        `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/${encodeURIComponent(raw)}`,
+      );
+      summary = release && summarizeRelease(release, currentVersion());
+    } else {
+      summary = await require('../launcher/release-source').releaseFor(route, raw, { installedVersion: currentVersion() });
     }
-    const summary = summarizeRelease(release, currentVersion());
     if (!summary) {
-      return snapshot({ status: 'error', message: 'release-not-found', launched: false });
+      return snapshot({ status: 'error', message: 'release-not-found', launched: false }, route);
     }
     if (!summary.installable) {
-      return snapshot({ ...summary, status: 'error', message: 'no-installer', launched: false });
+      return snapshot({ ...summary, status: 'error', message: 'no-installer', launched: false }, route);
     }
-    return installFromAsset(summary, onProgress, options);
+    return installFromAsset({ ...summary, route }, onProgress, options);
   } catch (error) {
     return snapshot({
       status: 'error',
       message: error.message || String(error),
       launched: false,
-    });
+    }, route);
   }
 }
 
@@ -834,6 +871,7 @@ async function installUpdate(onProgress, options = {}) {
 
 module.exports = {
   setGithubTokenProvider,
+  setUpdateRouteProvider,
   GITHUB_OWNER,
   GITHUB_REPO,
   REPO_URL,

@@ -49,6 +49,7 @@ function fakeAutoUpdater(overrides = {}) {
   updater.autoInstallOnAppQuit = true;
   updater.logger = null;
   updater.getOrCreateDownloadHelper = async () => ({ cacheDir: 'C:/configured-updater-cache' });
+  updater.setFeedURL = (feed) => { updater.feed = feed; };
   updater.checkForUpdates = async () => {
     updater.calls.checkForUpdates += 1;
     if (overrides.failCheck) {
@@ -122,6 +123,24 @@ test('updater path reports no-update when latest.yml resolves nothing', async ()
   assert.deepEqual(result, { ok: false, reason: 'no-update-in-manifest' });
   assert.equal(fake.calls.downloadUpdate, 0);
   assert.equal(fake.listenerCount('download-progress'), 0, 'listeners must be cleaned up');
+});
+
+test('updater feed follows the confirmed route', async () => {
+  const github = fakeAutoUpdater();
+  github.feed = 'previous';
+  github.clientPromise = Promise.resolve('cnb client');
+  await installLatestViaUpdater({ expectedCheck }, null, packagedDeps(github));
+  assert.equal(github.feed, 'previous', 'GitHub keeps the packaged app-update.yml provider');
+  assert.equal(github.clientPromise, null, 'an earlier CNB feed is dropped');
+
+  const cnb = fakeAutoUpdater();
+  await installLatestViaUpdater({ expectedCheck: { ...expectedCheck, route: 'cnb' } }, null, packagedDeps(cnb));
+  // CNB answers one range per request; a multi-range request gets only the first.
+  assert.deepEqual(cnb.feed, {
+    provider: 'generic',
+    url: 'https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v9.9.9/',
+    useMultipleRangeRequest: false,
+  });
 });
 
 test('updater path returns a downloaded installer and reports the real differential share without installing', async () => {
