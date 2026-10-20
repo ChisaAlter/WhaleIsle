@@ -11,6 +11,9 @@ const {
 
 const MAX_READ_BYTES = 1024 * 1024;
 const MAX_WRITE_BYTES = 1024 * 1024;
+// Image bytes are decoded whole; a prefix is never a viewable image, so media
+// reads get their own ceiling rather than the text read limit.
+const MAX_MEDIA_BYTES = 32 * 1024 * 1024;
 
 const IMAGE_MIME = {
   png: 'image/png',
@@ -272,14 +275,14 @@ async function readFileMedia(cwd, relativePath) {
     return fail(error.message || 'Could not read file.');
   }
   if (!stat.isFile()) return fail('Not a file.');
-  const truncated = stat.size > MAX_READ_BYTES;
+  const truncated = stat.size > MAX_MEDIA_BYTES;
   let buf;
   try {
     if (truncated) {
       const handle = await fs.promises.open(realTarget, 'r');
       try {
-        const slice = Buffer.alloc(MAX_READ_BYTES);
-        const { bytesRead } = await handle.read(slice, 0, MAX_READ_BYTES, 0);
+        const slice = Buffer.alloc(MAX_MEDIA_BYTES);
+        const { bytesRead } = await handle.read(slice, 0, MAX_MEDIA_BYTES, 0);
         buf = slice.subarray(0, bytesRead);
       } finally {
         await handle.close();

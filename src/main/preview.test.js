@@ -1957,6 +1957,7 @@ test('native preview attachment preserves capture through menu hide, PiP, and si
       nativeView = this;
       this.setVisible = (visible) => { this.visible = visible; };
       this.setBounds = (bounds) => { this.bounds = bounds; };
+      this.setBorderRadius = (radius) => { this.radius = radius; };
       this.webContents.setWindowOpenHandler = () => {};
       this.webContents.close = () => { this.webContents.destroyed = true; };
       stubWideCapture(this.webContents);
@@ -1991,7 +1992,8 @@ test('native preview attachment preserves capture through menu hide, PiP, and si
     await preview.hide(opened.id); // More menu hides the native overlay first.
     assert.equal(nativeView.visible, false);
     assert.equal(children.has(nativeView), true);
-    assert.equal(nativeView.bounds, bounds, 'hiding must preserve the actual viewport');
+    assert.deepEqual({ ...nativeView.bounds }, bounds, 'hiding must preserve the actual viewport');
+    assert.equal(nativeView.radius, 0, 'docked bounds keep the guest square');
     assert.equal((await preview.captureScreenshot(opened.id)).ok, true);
     await preview.openPictureInPicture(opened.id);
     assert.equal(nativeView.visible, false);
@@ -2004,6 +2006,12 @@ test('native preview attachment preserves capture through menu hide, PiP, and si
     assert.equal(nativeView.visible, true);
     assert.equal(frontView, nativeView, 'restoration brings the native preview above the Harness');
     assert.equal(children.size, 1, 'sidebar restoration reuses the same guest');
+    // The floating mini player rounds the guest to its viewport card.
+    await preview.resize(opened.id, { ...bounds, radius: 22 });
+    assert.deepEqual({ ...nativeView.bounds }, bounds);
+    assert.equal(nativeView.radius, 22);
+    await preview.resize(opened.id, bounds);
+    assert.equal(nativeView.radius, 0);
   } finally {
     await preview.closeAll();
   }

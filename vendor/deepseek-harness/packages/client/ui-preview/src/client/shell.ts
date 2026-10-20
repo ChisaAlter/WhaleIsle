@@ -6,6 +6,8 @@ export interface PreviewBounds {
   y: number
   width: number
   height: number
+  /** Corner radius for the native guest; a floating host matches its frame. */
+  radius?: number
 }
 
 /** previewOpen / previewNavigate result. */

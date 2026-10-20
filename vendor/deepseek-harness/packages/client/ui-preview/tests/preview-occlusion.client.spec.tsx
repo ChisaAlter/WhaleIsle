@@ -128,7 +128,7 @@ describe('PreviewPanel native guest occlusion', () => {
       })
       act(() => { openMiniPlayer('pv-occluded', 'result.html') })
       render(<DshdMiniPlayer {...({ t } as Parameters<typeof DshdMiniPlayer>[0])} />)
-      await waitFor(() => expect(b.previewShow).toHaveBeenLastCalledWith('pv-occluded', { x: 480, y: 68, width: 320, height: 172 }))
+      await waitFor(() => expect(b.previewShow).toHaveBeenLastCalledWith('pv-occluded', { x: 480, y: 68, width: 320, height: 172, radius: 0 }))
     }
     const miniGeometry = readMiniPlayer().geometry
     const modalProps = { title: 'Project results', closeLabel: 'Close', onClose: vi.fn() }
@@ -184,7 +184,7 @@ describe('PreviewPanel native guest occlusion', () => {
     })
     act(() => { openMiniPlayer('pv-occluded', 'result.html') })
     render(<DshdMiniPlayer {...({ t } as Parameters<typeof DshdMiniPlayer>[0])} />)
-    await waitFor(() => expect(current.previewShow).toHaveBeenLastCalledWith('pv-occluded', { x: 480, y: 68, width: 320, height: 172 }))
+    await waitFor(() => expect(current.previewShow).toHaveBeenLastCalledWith('pv-occluded', { x: 480, y: 68, width: 320, height: 172, radius: 0 }))
     const hides = current.previewHide.mock.calls.length
     const modalProps = { title: 'Project results', closeLabel: 'Close', onClose: vi.fn() }
     const overlay = render(<Modal {...modalProps} open>Original results</Modal>)

@@ -32,6 +32,7 @@ describe('component radius scale', () => {
     expect(unscaledRadii('.button { border-radius: 14px; }')).toHaveLength(1)
     expect(unscaledRadii('.card { border-top-left-radius: 18px; }')).toHaveLength(1)
     expect(unscaledRadii('.card { --dsl-code-block-border-radius: 12px; }')).toHaveLength(1)
+    expect(unscaledRadii('.card { border-radius: calc(var(--dsw-radius-panel) - 6px); }')).toHaveLength(1)
     expect(unscaledRadii('.card { border-radius: var(--dsw-radius-missing); }')).toHaveLength(1)
     expect(unscaledRadii('.card { border-radius: var(--dsw-radius-xl); }')).toEqual([])
     expect(unscaledRadii('.dot { border-radius: 2px; } .circle { border-radius: 50%; } .pill { border-radius: 999px; }')).toEqual([])
@@ -47,6 +48,10 @@ describe('component radius scale', () => {
       ],
       'ui-open-in-app/src/client/OpenTargetButton.module.css': [
         ".split[data-open-target='directory']: border-radius: 14px",
+      ],
+      // The mini-player viewport follows the frame radius minus its actual 6px inset.
+      'ui-preview/src/client/PreviewPanel.module.css': [
+        '.miniPlayerViewport: border-radius: calc(var(--dsw-radius-panel) - 6px)',
       ],
     }
     const failures = Object.fromEntries(packageStylesheets()
