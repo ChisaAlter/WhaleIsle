@@ -8,7 +8,6 @@ const path = require('path');
 const fs = require('fs');
 const { app } = require('electron');
 
-let strictUpdater;
 const checkedBases = new Map();
 const preparingBases = new Map();
 
@@ -30,7 +29,13 @@ function assertConfirmedTarget(updateInfoAndProvider, expectedCheck) {
   const provider = updateInfoAndProvider.provider;
   const fileInfo = provider && findFile(provider.resolveFiles(info), 'exe');
   const basename = fileInfo && path.posix.basename(decodeURIComponent(fileInfo.url.pathname));
-  if (basename !== expectedCheck.assetName || fileInfo.packageInfo) {
+  const actualUrl = fileInfo && new URL(fileInfo.url);
+  const expectedUrl = expectedCheck?.assetUrl && new URL(expectedCheck.assetUrl);
+  // Query strings can be cache busters or signed URLs. The confirmed asset's
+  // origin and path must still match, including after a cancelled route switch.
+  const sameAsset = actualUrl && expectedUrl && actualUrl.origin === expectedUrl.origin
+    && decodeURIComponent(actualUrl.pathname) === decodeURIComponent(expectedUrl.pathname);
+  if (basename !== expectedCheck.assetName || !sameAsset || fileInfo.packageInfo) {
     throw Object.assign(new Error('更新清单安装包与确认的版本不一致，请重新检查更新。'), { code: 'asset-changed' });
   }
 }
@@ -75,27 +80,72 @@ function strictNsisUpdaterClass(NsisUpdater) {
 
 function getStrictUpdater(deps) {
   if (deps.autoUpdater) return deps.autoUpdater;
-  if (!strictUpdater) {
-    const { NsisUpdater } = require('electron-updater');
-    strictUpdater = new (strictNsisUpdaterClass(NsisUpdater))();
-    strictUpdater.autoDownload = false;
-    strictUpdater.autoInstallOnAppQuit = false;
-    strictUpdater.disableWebInstaller = true;
-    strictUpdater.disableDifferentialDownload = false;
-  }
-  return strictUpdater;
+  // The library single-flights checks/downloads inside each updater. A stopped
+  // operation must not donate a late GitHub result to a new CNB confirmation.
+  const { NsisUpdater } = require('electron-updater');
+  const updater = new (strictNsisUpdaterClass(NsisUpdater))();
+  updater.autoDownload = false;
+  updater.autoInstallOnAppQuit = false;
+  updater.disableWebInstaller = true;
+  updater.disableDifferentialDownload = false;
+  return updater;
 }
 
-/**
- * The generic feed for a CNB-confirmed release: CNB serves the release
- * directory (latest.yml, installer, blockmaps) and answers single ranges only,
- * so multi-range requests stay off. GitHub uses the packaged app-update.yml.
- */
+/** Cancel the actual requests as well as the library's cancellation token. */
+function bindUpdaterRequests(executor, signal) {
+  if (!executor?.createRequest) return () => {};
+  const createRequest = executor.createRequest;
+  const active = new Set();
+  const abort = () => {
+    for (const { request, response } of active) {
+      const error = Object.assign(new Error('下载已取消'), { name: 'AbortError' });
+      // Single-range requests in 6.8.9 are not directly bound to the token.
+      // Reject their promises and close both streams, even when no data arrives.
+      request.emit('error', error);
+      if (response?.destroy) response.destroy(error);
+      if (request.abort) request.abort();
+      else request.destroy?.(error);
+    }
+  };
+  executor.createRequest = function (options, callback) {
+    if (signal.aborted) throw Object.assign(new Error('下载已取消'), { name: 'AbortError' });
+    const entry = {};
+    const request = createRequest.call(this, options, (response) => {
+      entry.response = response;
+      response.once('end', () => active.delete(entry));
+      response.once('error', () => active.delete(entry));
+      response.once('aborted', () => active.delete(entry));
+      callback(response);
+    });
+    entry.request = request;
+    active.add(entry);
+    // Electron ClientRequest closes its writable side before the response
+    // arrives. Keep it active until the response ends or a real request error.
+    request.once('error', () => active.delete(entry));
+    return request;
+  };
+  signal.addEventListener('abort', abort, { once: true });
+  return (settled) => {
+    signal.removeEventListener('abort', abort);
+    // Error statuses can reject the downloader before their body ends.
+    // Close those leftover responses too, without changing the reported error.
+    for (const { request, response } of active) {
+      response?.destroy?.();
+      if (request.abort) request.abort();
+      else request.destroy?.();
+    }
+    active.clear();
+    // A discarded metadata check can wake late; keep its executor closed.
+    if (!signal.aborted || settled) executor.createRequest = createRequest;
+  };
+}
+
+/** Use the confirmed release directory for both mirrors, including renamed repos. */
 function feedFor(info) {
-  if (info?.route !== 'cnb') return null;
-  const { ROUTES } = require('../launcher/release-source');
-  const tag = String(info.tag || `v${info.latest || info.version || ''}`).trim();
-  return { provider: 'generic', url: `${ROUTES.cnb.page}/download/${encodeURIComponent(tag)}/`, useMultipleRangeRequest: false };
+  if (!info?.updaterMetadataUrl) return null;
+  // Both providers serve latest.yml and its assets in this exact directory.
+  // CNB supports single ranges only; GitHub release assets also use one range.
+  return { provider: 'generic', url: new URL('.', info.updaterMetadataUrl).href, useMultipleRangeRequest: false };
 }
 
 function readPackagedFlag(deps) {
@@ -297,6 +347,10 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
   const CancellationToken = deps.CancellationToken || require('builder-util-runtime').CancellationToken;
   const tracker = makeDifferentialTracker();
   let autoUpdater;
+  let releaseRequests;
+  let pendingPreparation;
+  let pendingCheck;
+  let pendingTransfer;
 
   const onProgressEvent = (progress) => {
     if (typeof onProgress !== 'function') {
@@ -314,7 +368,13 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
   const token = new CancellationToken();
   const controller = new AbortController();
   const requestSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
-  const onAbort = () => token.cancel();
+  const abortSentinel = Symbol('updater-cancelled');
+  let resolveAbort;
+  const abortPromise = new Promise((resolve) => { resolveAbort = resolve; });
+  const onAbort = () => {
+    token.cancel();
+    resolveAbort(abortSentinel);
+  };
   requestSignal.addEventListener('abort', onAbort, { once: true });
   const timeoutPromise = new Promise((resolve) => {
     timeoutHandle = setTimeoutFn(() => {
@@ -328,9 +388,13 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
       resolve(timeoutSentinel);
     }, Math.max(1_000, Number(timeoutMs) || 15 * 60_000));
   });
-  // checkForUpdates has no cancellation-token parameter — only the
-  // race guarantees the wall-clock budget when the manifest fetch stalls.
-  const timed = (pending) => Promise.race([pending, timeoutPromise]);
+  // Metadata checks have no caller-supplied token. Race cancellation too;
+  // the request binding closes their sockets and prevents late requests.
+  const timed = async (pending) => {
+    const result = await Promise.race([pending, timeoutPromise, abortPromise]);
+    if (result === abortSentinel) throw Object.assign(new Error('下载已取消'), { name: 'AbortError' });
+    return result;
+  };
   const timeoutOutcome = () => ({
     ok: false,
     reason: 'timeout',
@@ -339,11 +403,13 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
 
   try {
     if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '下载已取消' };
-    const available = await timed(differentialAvailability(expectedCheck, { ...deps, signal: requestSignal }));
+    pendingPreparation = differentialAvailability(expectedCheck, { ...deps, signal: requestSignal });
+    const available = await timed(pendingPreparation);
     if (available === timeoutSentinel || cancelled) return timeoutOutcome();
     if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '下载已取消' };
     if (!available.ok) return available;
     autoUpdater = available.autoUpdater;
+    releaseRequests = bindUpdaterRequests(autoUpdater.httpExecutor, requestSignal);
     const feed = feedFor(expectedCheck);
     // electron-updater 6.8.9 rebuilds its client from app-update.yml when this is null.
     if (feed) autoUpdater.setFeedURL(feed); else autoUpdater.clientPromise = null;
@@ -355,7 +421,8 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
     autoUpdater.on('download-progress', onProgressEvent);
     // Keep EventEmitter errors observed; promise rejections carry the failure.
     autoUpdater.on('error', onErrorEvent);
-    const check = await timed(autoUpdater.checkForUpdates());
+    pendingCheck = autoUpdater.checkForUpdates();
+    const check = await timed(pendingCheck);
     if (check === timeoutSentinel) {
       return timeoutOutcome();
     }
@@ -370,7 +437,8 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
     assertConfirmedTarget(updateInfoAndProvider, expectedCheck);
     if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '下载已取消' };
     autoUpdater.confirmedDownloadTarget = expectedCheck;
-    const downloaded = await timed(autoUpdater.downloadUpdate(token));
+    pendingTransfer = autoUpdater.downloadUpdate(token);
+    const downloaded = await timed(pendingTransfer);
     if (downloaded === timeoutSentinel) {
       return timeoutOutcome();
     }
@@ -391,6 +459,15 @@ async function downloadLatestViaUpdater({ timeoutMs, expectedCheck, signal } = {
     if (signal?.aborted) return { ok: false, reason: 'cancelled', message: '下载已取消' };
     return { ok: false, reason: error?.code || 'updater-error', message: `${error?.message || String(error)} 增量下载已停止，可重新选择完全下载。` };
   } finally {
+    // Destroyed Range requests must finish library cleanup before an explicit
+    // retry can reuse its pending directory. Late metadata stays on this
+    // operation's discarded updater instance.
+    if (requestSignal.aborted) {
+      await pendingPreparation?.catch(() => {});
+      if (autoUpdater?.httpExecutor?.createRequest) await pendingCheck?.catch(() => {});
+      await pendingTransfer?.catch(() => {});
+    }
+    releaseRequests?.(Boolean(pendingTransfer || autoUpdater?.httpExecutor?.createRequest));
     requestSignal.removeEventListener('abort', onAbort);
     if (autoUpdater) autoUpdater.confirmedDownloadTarget = undefined;
     clearTimeoutFn(timeoutHandle);

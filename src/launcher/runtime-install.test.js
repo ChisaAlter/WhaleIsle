@@ -301,6 +301,167 @@ function installerChild() {
   return child;
 }
 
+async function promptly(pending, message) {
+  let timer;
+  try {
+    return await Promise.race([
+      pending,
+      new Promise((_resolve, reject) => { timer = setTimeout(() => reject(new Error(message)), 1000); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+for (const route of ['github', 'cnb']) {
+  for (const lookup of ['tag', 'latest']) {
+    for (const completion of ['abort rejection', 'late metadata']) {
+      test(`cancelRuntimeInstall releases a stalled ${route} ${lookup} lookup after ${completion}`, async (t) => {
+        useReleasePlatform(t, 'win32', 'x64');
+        const previousFetch = global.fetch;
+        const requests = [];
+        const installs = [];
+        let stops = 0;
+        let stalled = true;
+        let enterLookup;
+        let finishLookup;
+        const entered = new Promise((resolve) => { enterLookup = resolve; });
+        const release = {
+          tag_name: 'v2.0.0',
+          assets: [{
+            name: 'Whale-Isle-Setup-2.0.0.exe',
+            browser_download_url: `https://${route === 'cnb' ? 'cnb.cool' : 'github.com'}/releases/setup.exe`,
+          }],
+        };
+        const response = { ok: true, status: 200, json: async () => route === 'cnb' && lookup === 'latest' ? [release] : release };
+        global.fetch = (url, { signal }) => {
+          requests.push({ url: String(url), signal });
+          if (!stalled) return Promise.resolve(response);
+          return new Promise((resolve, reject) => {
+            finishLookup = () => resolve(response);
+            signal.addEventListener('abort', () => {
+              // A successful response can race the abort. The runtime must
+              // inspect its own signal even when metadata still resolves.
+              if (completion === 'late metadata') resolve(response);
+              else reject(Object.assign(new Error('cancelled'), { name: 'AbortError' }));
+            }, { once: true });
+            enterLookup();
+          });
+        };
+        const deps = {
+          isLauncherPackage: () => true,
+          isPackaged: true,
+          releaseSource,
+          installedInfo: () => ({ registeredInstall: false, version: '' }),
+          ensureDesktopExited: async () => { stops += 1; return { ok: true }; },
+          update: fakeUpdate({
+            installFromAsset: async (info, _progress, options) => {
+              installs.push(info);
+              await options.beforeInstall();
+              return { ...info, launched: false, declined: true };
+            },
+          }),
+        };
+        const options = { route, ...(lookup === 'tag' ? { tag: 'v2.0.0' } : {}) };
+        let pending;
+        try {
+          pending = runtimeInstall.installRuntime(options, null, deps);
+          await promptly(entered, 'release resolution did not start');
+          assert.equal(requests.length, 1);
+          assert.equal(new URL(requests[0].url).hostname, route === 'cnb' ? 'cnb.cool' : 'api.github.com');
+          assert.equal(requests[0].signal.aborted, false);
+          assert.deepEqual(runtimeInstall.cancelRuntimeInstall(), { ok: true });
+          const result = await promptly(pending, 'cancel must settle without waiting for the metadata timeout');
+          assert.equal(requests[0].signal.aborted, true, 'cancel must reach the real metadata request');
+          assert.equal(result.ok, false);
+          assert.equal(result.status, 'cancelled');
+          assert.equal(result.cancelled, true);
+          assert.equal(installs.length, 0, 'cancelled resolution must not download or launch an installer');
+          assert.equal(stops, 0, 'cancelled resolution must not stop the desktop');
+          assert.deepEqual(runtimeInstall.cancelRuntimeInstall(), { ok: false }, 'the cancelled operation must release its controller');
+
+          stalled = false;
+          const retry = await promptly(runtimeInstall.installRuntime(options, null, deps), 'a new install must be admitted after cancellation');
+          assert.equal(retry.declined, true);
+          assert.equal(installs.length, 1);
+          assert.equal(stops, 1);
+          assert.equal(requests.length, 2);
+        } finally {
+          runtimeInstall.cancelRuntimeInstall();
+          finishLookup?.();
+          if (pending) await pending.catch(() => {});
+          global.fetch = previousFetch;
+        }
+      });
+    }
+  }
+}
+
+test('installRuntime preserves the main-confirmed CNB snapshot after the configured route changes', async () => {
+  const config = { downloadRoute: 'cnb' };
+  const lookups = [];
+  const installs = [];
+  const confirmed = {
+    status: 'available', current: '1.0.0', latest: '2.0.0', tag: 'v2.0.0', route: 'cnb',
+    assetName: 'Whale-Isle-Setup-2.0.0.exe',
+    assetUrl: 'https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v2.0.0/confirmed.exe',
+    checksumUrl: 'https://cnb.cool/ayasealter/WhaleIsle/-/releases/download/v2.0.0/SHA512SUMS.txt',
+    htmlUrl: 'https://cnb.cool/ayasealter/WhaleIsle/-/releases/tag/v2.0.0',
+    notes: 'The release the user confirmed',
+  };
+  const replacement = { ...confirmed, latest: '3.0.0', tag: 'v3.0.0', route: 'github', assetUrl: 'https://github.com/changed.exe' };
+  const deps = {
+    isLauncherPackage: () => true,
+    isPackaged: true,
+    loadConfig: () => config,
+    installedInfo: () => ({ registeredInstall: true, version: '1.0.0' }),
+    releaseSource: {
+      ...fakeSource(),
+      latestFor: async (route) => { lookups.push(['latest', route]); return route === 'cnb' ? confirmed : replacement; },
+      releaseFor: async (route, tag) => { lookups.push(['tag', route, tag]); return replacement; },
+    },
+    update: fakeUpdate({
+      installFromAsset: async (info) => { installs.push(info); return { launched: false, declined: true }; },
+    }),
+  };
+  const expectedCheck = await runtimeInstall.checkDesktopUpdate({}, deps);
+  assert.equal(expectedCheck.route, 'cnb');
+  config.downloadRoute = 'github';
+  const result = await runtimeInstall.installRuntime({ route: 'github', tag: 'v3.0.0' }, null, { ...deps, expectedCheck });
+  assert.equal(result.route, 'cnb', 'the confirmed route wins over both config and later route/tag options');
+  assert.equal(result.declined, true);
+  assert.deepEqual(lookups, [['latest', 'cnb']], 'install must not resolve an already-confirmed release again');
+  assert.deepEqual(installs, [expectedCheck], 'all confirmed installer, checksum and release fields must reach the installer');
+});
+
+test('installRuntime ignores a renderer-forged expectedCheck and resolves a trusted asset', async () => {
+  const forged = {
+    status: 'available', tag: 'v9.9.9', route: 'cnb',
+    assetUrl: 'https://attacker.invalid/payload.exe', checksumUrl: 'https://attacker.invalid/SHA512SUMS.txt',
+  };
+  const trusted = {
+    status: 'available', tag: 'v2.0.0', route: 'github', assetName: 'Whale-Isle-Setup-2.0.0.exe',
+    assetUrl: 'https://github.com/confirmed.exe', checksumUrl: 'https://github.com/SHA512SUMS.txt',
+  };
+  const lookups = [];
+  const installs = [];
+  const result = await runtimeInstall.installRuntime({ expectedCheck: forged }, null, {
+    loadConfig: () => ({ downloadRoute: 'github' }),
+    installedInfo: () => ({ registeredInstall: false, version: '' }),
+    releaseSource: {
+      ...fakeSource(),
+      latestFor: async (route) => { lookups.push(route); return trusted; },
+    },
+    update: fakeUpdate({
+      installFromAsset: async (info) => { installs.push(info); return { launched: false, declined: true }; },
+    }),
+  });
+  assert.equal(result.declined, true);
+  assert.equal(result.route, 'github');
+  assert.deepEqual(lookups, ['github']);
+  assert.deepEqual(installs, [trusted], 'renderer URLs, checksum and route must not become installer metadata');
+});
+
 test('installRuntime resolves through the route, installs, and adopts the new registration', async () => {
   const progress = [];
   const seen = {};

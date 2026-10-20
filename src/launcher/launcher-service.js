@@ -393,7 +393,7 @@ function createLauncherService(deps) {
     return harness ? harness.snapshot() : dsh.snapshot();
   }
 
-  function installRuntimeOp(options = {}, onProgress) {
+  function installRuntimeOp(options = {}, onProgress, expectedCheck) {
     // Installing a runtime writes the same destination trees an import
     // protects; the two operations must never overlap.
     const blocked = blockedStartError();
@@ -407,6 +407,7 @@ function createLauncherService(deps) {
     return Promise.resolve()
       .then(() => runtimeInstall.installRuntime(options, onProgress, {
         confirmUnverified: options.confirmUnverified || confirmUnverifiedInstall,
+        expectedCheck,
       }))
       .finally(() => releaseMaintenanceSlot(guard));
   }
@@ -421,9 +422,9 @@ function createLauncherService(deps) {
         return { status: 'error', launched: false, message: '启动器管理的桌面安装暂不支持此增量方式，请选择完全下载。' };
       }
       return installRuntimeOp({
-        tag: options.expectedCheck?.tag, downloadMode: 'full',
+        tag: options.expectedCheck?.tag, route: options.expectedCheck?.route, downloadMode: 'full',
         confirmUnverified: options.confirmUnverified,
-      }, onProgress);
+      }, onProgress, options.expectedCheck);
     }
     if (importGuard.isMaintenanceHeld()) {
       return { status: 'error', launched: false, ok: false, error: 'operation-in-progress', message: '已有其他任务进行中' };

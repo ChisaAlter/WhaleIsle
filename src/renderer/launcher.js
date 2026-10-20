@@ -930,6 +930,11 @@ function installPhaseText(payload) {
     const percent = Number.isFinite(payload.percent) ? ` ${payload.percent}%` : '';
     return `${payload.differential ? '增量下载' : '下载'}${percent}${size}${speed}`;
   }
+  if (payload?.stage === 'checksum' && payload.phase === 'resolve') {
+    return payload.retrying
+      ? `校验清单请求中断，正在重试（${payload.attempt}/${payload.maxAttempts}）…`
+      : '正在获取安装包校验信息…';
+  }
   return phases[payload?.phase] || payload?.phase || '处理中';
 }
 

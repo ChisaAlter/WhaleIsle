@@ -21,6 +21,10 @@ const REPO_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}`;
 const CHECK_TIMEOUT_MS = 10_000;
 /** Whole-download budget for one Setup asset (hundreds of MB on slow links). */
 const DOWNLOAD_TIMEOUT_MS = 2 * 60 * 60_000;
+const RETRYABLE_HTTP_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+const RETRYABLE_NETWORK_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ECONNREFUSED',
+  'ENETUNREACH', 'EHOSTUNREACH', 'ENOTFOUND', 'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_SOCKET']);
 /**
  * Release asset with `sha512sum` lines for every installer. Releases that
  * carry it get mandatory post-download verification; older releases without
@@ -201,38 +205,119 @@ function sha512HexOfFile(file, signal) {
  * @param {string} assetName - original release asset name (manifest key).
  * @param {string} checksumUrl - browser_download_url of SHA512SUMS.txt.
  */
-async function readAssetChecksum(assetName, checksumUrl, { signal } = {}) {
+async function readAssetChecksum(assetName, checksumUrl, {
+  signal, maxAttempts = 3, retryDelayMs = 1000, attemptTimeoutMs = CHECK_TIMEOUT_MS, onRetry,
+} = {}) {
+  return runDownloadAttempts(async (_attempt, remainingMs) => {
+    const requestSignal = AbortSignal.timeout(Math.max(1, Math.min(attemptTimeoutMs, remainingMs)));
+    let response;
+    let text;
+    try {
+      response = await fetch(checksumUrl, {
+        headers: downloadHeaders(true, checksumUrl),
+        signal: signal ? AbortSignal.any([signal, requestSignal]) : requestSignal,
+      });
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw Object.assign(new Error(`校验清单下载失败（HTTP ${response.status}）`), {
+          code: `HTTP_ERROR_${response.status}`, retryable: RETRYABLE_HTTP_STATUSES.has(response.status),
+        });
+      }
+      // The same per-attempt deadline covers both headers and the complete body.
+      text = await response.text();
+    } catch (error) {
+      if (signal?.aborted) throw cancelledError();
+      if (String(error.code || '').startsWith('HTTP_ERROR_')) throw error;
+      const code = error.code || error.cause?.code;
+      const timedOut = requestSignal.aborted || isTimeoutError(error)
+        || ['UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT'].includes(code);
+      throw Object.assign(new Error(timedOut ? '校验清单下载超时' : `校验清单下载失败：${error.message || String(error)}`), {
+        code: timedOut ? 'ETIMEDOUT' : code || 'ERR_UPDATER_CHECKSUM_FETCH_FAILED',
+        retryable: timedOut || RETRYABLE_NETWORK_CODES.has(code),
+      });
+    }
+    if (signal?.aborted) throw cancelledError();
+    const expected = parseSha512Sums(text).get(assetName);
+    if (!expected) {
+      throw Object.assign(new Error(`校验清单缺少 ${assetName} 的条目`), { code: 'ERR_UPDATER_CHECKSUM_ENTRY_MISSING' });
+    }
+    return expected;
+  }, {
+    signal, maxAttempts, retryDelayMs,
+    timeoutMs: maxAttempts * attemptTimeoutMs + retryDelayMs * maxAttempts * (maxAttempts - 1) / 2,
+    onRetry,
+  });
+}
+
+/** Hash the local bytes against the checksum pinned for this one operation. */
+async function verifyFileChecksum(dest, expected, { signal } = {}) {
   if (signal?.aborted) throw cancelledError();
-  let response;
+  let actual;
   try {
-    response = await fetch(checksumUrl, {
-      headers: downloadHeaders(true, checksumUrl),
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(CHECK_TIMEOUT_MS)]) : AbortSignal.timeout(CHECK_TIMEOUT_MS),
-    });
+    actual = await sha512HexOfFile(dest, signal);
   } catch (error) {
     if (signal?.aborted) throw cancelledError();
-    if (isTimeoutError(error)) {
-      throw new Error('校验清单下载超时');
-    }
-    throw new Error(`校验清单下载失败：${error.message || String(error)}`);
+    throw error;
   }
-  if (!response.ok) {
-    throw new Error(`校验清单下载失败（${response.status}）`);
+  if (signal?.aborted) throw cancelledError();
+  if (actual !== expected) {
+    throw Object.assign(new Error('安装包校验失败（sha512 不匹配）'), { code: 'ERR_UPDATER_CHECKSUM_MISMATCH' });
   }
-  const sums = parseSha512Sums(await response.text());
-  const expected = sums.get(assetName);
-  if (!expected) {
-    throw new Error(`校验清单缺少 ${assetName} 的条目`);
-  }
-  return expected;
 }
 
 /** Reject an incomplete or tampered download before the installer can launch. */
-async function verifyAssetChecksum(dest, assetName, checksumUrl, { signal } = {}) {
-  const expected = await readAssetChecksum(assetName, checksumUrl, { signal });
-  const actual = await sha512HexOfFile(dest, signal);
-  if (actual !== expected) {
-    throw Object.assign(new Error('安装包校验失败（sha512 不匹配）'), { code: 'ERR_UPDATER_CHECKSUM_MISMATCH' });
+async function verifyAssetChecksum(dest, assetName, checksumUrl, options = {}) {
+  const expected = await readAssetChecksum(assetName, checksumUrl, options);
+  return verifyFileChecksum(dest, expected, options);
+}
+
+/** Shared by desktop Setup/DMG installs and standalone launcher delta assets. */
+async function downloadReleaseAsset(info, dest, onProgress, options = {}) {
+  info = { ...info };
+  const { signal } = options;
+  let expected;
+  if (signal?.aborted) throw cancelledError();
+  if (info.checksumUrl) {
+    const checksumProgress = (retry = {}) => onProgress?.({ phase: 'resolve', stage: 'checksum', ...retry });
+    checksumProgress();
+    // Resolve before transferring the large asset. A successful operation does
+    // not depend on a second network request after all bytes have arrived.
+    expected = await readAssetChecksum(info.assetName, info.checksumUrl, { signal, onRetry: checksumProgress });
+  }
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  const partial = `${dest}.part`;
+  let complete = fs.existsSync(partial);
+  const verify = async (file, cached) => {
+    onProgress?.({ phase: 'verify', stage: 'checksum', cached });
+    await verifyFileChecksum(file, expected, { signal });
+  };
+  try {
+    onProgress?.({ phase: 'download', percent: 0 });
+    if (expected) {
+      for (const candidate of [dest, partial]) {
+        if (!fs.existsSync(candidate)) continue;
+        try {
+          await verify(candidate, true);
+          if (candidate === partial) fs.renameSync(partial, dest);
+          return dest;
+        } catch (error) {
+          if (error.code !== 'ERR_UPDATER_CHECKSUM_MISMATCH') throw error;
+          cleanupPartial(candidate);
+        }
+      }
+    }
+    complete = false;
+    await downloadFile(info.assetUrl, partial, onProgress, { signal });
+    complete = true;
+    if (expected) await verify(partial, false);
+    if (signal?.aborted) throw cancelledError();
+    fs.renameSync(partial, dest);
+    return dest;
+  } catch (error) {
+    // Never append to a partial. Retain received bytes only for a fresh full
+    // SHA512 check on the next explicit attempt; they are not installable yet.
+    if (!complete || !expected || error.code === 'ERR_UPDATER_CHECKSUM_MISMATCH') cleanupPartial(partial);
+    throw error;
   }
 }
 
@@ -411,28 +496,38 @@ function cleanupPartial(dest) {
 function cancelledError() {
   const error = new Error('下载已取消');
   error.name = 'AbortError';
+  error.code = 'ERR_UPDATER_CANCELLED';
   return error;
 }
 
-async function downloadFile(url, dest, onProgress, options = {}) {
-  const { timeoutMs = DOWNLOAD_TIMEOUT_MS, signal, maxAttempts = 3, retryDelayMs = 1000 } = options;
+async function runDownloadAttempts(run, {
+  timeoutMs, signal, maxAttempts = 3, retryDelayMs = 1000, onRetry,
+}) {
   const deadline = Date.now() + timeoutMs;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (signal?.aborted) throw cancelledError();
     try {
-      return await downloadFileOnce(url, dest,
-        (progress) => onProgress?.({ ...progress, attempt, maxAttempts }),
-        { ...options, signal, timeoutMs: Math.max(1, deadline - Date.now()) });
+      return await run(attempt, Math.max(1, deadline - Date.now()));
     } catch (error) {
       if (signal?.aborted) throw cancelledError();
       if (!error.retryable || attempt === maxAttempts || Date.now() >= deadline) throw error;
-      onProgress?.({ phase: 'download', retrying: true, attempt: attempt + 1, maxAttempts, percent: null });
+      onRetry?.({ retrying: true, attempt: attempt + 1, maxAttempts });
       try {
         await delay(Math.min(retryDelayMs * attempt, Math.max(1, deadline - Date.now())), undefined, { signal });
       } catch { throw cancelledError(); }
     }
   }
   throw new Error('下载重试次数无效');
+}
+
+async function downloadFile(url, dest, onProgress, options = {}) {
+  const { timeoutMs = DOWNLOAD_TIMEOUT_MS, signal, maxAttempts = 3 } = options;
+  return runDownloadAttempts((attempt, remainingMs) => downloadFileOnce(url, dest,
+    (progress) => onProgress?.({ ...progress, attempt, maxAttempts }),
+    { ...options, signal, timeoutMs: remainingMs }), {
+    ...options, timeoutMs, signal, maxAttempts,
+    onRetry: (retry) => onProgress?.({ phase: 'download', ...retry, percent: null }),
+  });
 }
 
 function downloadFileOnce(url, dest, onProgress, {
@@ -513,7 +608,7 @@ function downloadFileOnce(url, dest, onProgress, {
         if (response.statusCode !== 200) {
           response.resume();
           fail(Object.assign(new Error(`下载失败（HTTP ${response.statusCode}）`), {
-            retryable: [408, 429, 500, 502, 503, 504].includes(response.statusCode),
+            code: `HTTP_ERROR_${response.statusCode}`, retryable: RETRYABLE_HTTP_STATUSES.has(response.statusCode),
           }));
           return;
         }
@@ -557,7 +652,7 @@ function downloadFileOnce(url, dest, onProgress, {
       }); } catch (error) { fail(error); return; }
       activeRequest = request;
       request.on('error', (error) => {
-        error.retryable = ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ECONNREFUSED', 'ENETUNREACH', 'EHOSTUNREACH', 'ENOTFOUND'].includes(error.code);
+        error.retryable = RETRYABLE_NETWORK_CODES.has(error.code);
         fail(error);
       });
     };
@@ -630,6 +725,9 @@ async function listReleases() {
 }
 
 async function installFromAsset(info, onProgress, options = {}) {
+  // Keep main's confirmed version, route and asset URLs together throughout
+  // asynchronous checksum preparation, transfer and installation.
+  info = { ...info };
   const downloadMode = options.downloadMode === undefined ? 'full' : options.downloadMode;
   if (downloadMode !== 'delta' && downloadMode !== 'full') {
     throw new Error('更新方式无效，请重新选择增量更新或完全下载。');
@@ -659,15 +757,24 @@ async function installFromAsset(info, onProgress, options = {}) {
   }
   try { journal()?.action('download-requested'); } catch { /* evidence only */ }
   const version = info.latest || info.version;
+  const context = { route: info.route || 'github', downloadMode };
+  let stage = 'checksum';
   const journalProgress = (progress) => {
     let state;
-    if (progress && progress.phase === 'download') {
+    if (progress?.phase === 'resolve') {
+      stage = 'checksum';
+      state = { phase: 'checking', version };
+    } else if (progress?.phase === 'download') {
+      stage = 'transfer';
       state = { phase: 'downloading', version, percent: progress.percent ?? 0 };
-    } else if (progress && progress.phase === 'verify') {
+    } else if (progress?.phase === 'verify') {
+      stage = 'verification';
       state = { phase: 'verifying', version };
-    } else if (progress && progress.phase === 'install') {
+    } else if (progress?.phase === 'install') {
+      stage = 'installation';
       state = { phase: 'installing', version };
     }
+    if (state) state = { ...state, ...context, stage };
     if (state) {
       try { journal()?.state(state); } catch { /* evidence only */ }
       publishState(state);
@@ -675,57 +782,43 @@ async function installFromAsset(info, onProgress, options = {}) {
     if (typeof onProgress === 'function') onProgress(progress);
   };
   let dest;
-  let partial;
   let preparedOptions = options;
   let extra = { downloadMode };
   try {
-    journalProgress({ phase: 'download', percent: 0 });
     if (downloadMode === 'delta') {
+      journalProgress({ phase: 'resolve', stage: 'checksum' });
+      const expected = await readAssetChecksum(info.assetName, info.checksumUrl, {
+        signal: options.signal,
+        onRetry: (retry) => journalProgress({ phase: 'resolve', stage: 'checksum', ...retry }),
+      });
+      journalProgress({ phase: 'download', percent: 0 });
       const outcome = await downloadLatestViaUpdater(
         { timeoutMs: 15 * 60_000, expectedCheck: info, signal: options.signal },
         journalProgress, options.updaterDeps,
       );
       if (!outcome.ok) {
+        if (outcome.reason === 'cancelled') throw cancelledError();
         throw Object.assign(new Error(outcome.message || '增量更新未完成，请重新选择完全下载。'), {
-          code: outcome.reason,
+          code: outcome.reason === 'timeout' ? 'ETIMEDOUT' : outcome.reason,
         });
       }
       dest = outcome.installer;
       journalProgress({ phase: 'verify' });
-      await verifyAssetChecksum(dest, info.assetName, info.checksumUrl, options);
+      try {
+        await verifyFileChecksum(dest, expected, options);
+      } catch (error) {
+        // The pinned updater skips hashing a same-process pending cache hit.
+        // Remove rejected bytes so the next explicit attempt can reconstruct.
+        if (error.code === 'ERR_UPDATER_CHECKSUM_MISMATCH') cleanupPartial(dest);
+        throw error;
+      }
       preparedOptions = { ...options, installerArgs: ['--updated', '/S', '--force-run'] };
       extra = { ...extra, updater: true, differential: Boolean(outcome.differential), downloadPercent: outcome.downloadPercent ?? null };
     } else {
-      dest = fullInstallerPath(info, options);
-      const dir = path.dirname(dest);
-      partial = `${dest}.part`;
-      // Completed downloads survive a cancelled wizard. Reuse only after checking
-      // this release's current manifest again; file name/existence is not trust.
-      let cached = false;
-      fs.mkdirSync(dir, { recursive: true });
-      if (info.checksumUrl && fs.existsSync(dest)) {
-        journalProgress({ phase: 'verify', cached: true });
-        try {
-          await verifyAssetChecksum(dest, info.assetName, info.checksumUrl, options);
-          cached = true;
-        } catch (error) {
-          if (error.code !== 'ERR_UPDATER_CHECKSUM_MISMATCH') throw error;
-          cleanupPartial(dest);
-        }
-      }
-      if (!cached) {
-        await downloadFile(info.assetUrl, partial, journalProgress, { signal: options.signal });
-        if (info.checksumUrl) {
-          journalProgress({ phase: 'verify' });
-          await verifyAssetChecksum(partial, info.assetName, info.checksumUrl, options);
-        }
-        if (options.signal?.aborted) throw cancelledError();
-        fs.renameSync(partial, dest);
-      }
+      dest = await downloadReleaseAsset(info, fullInstallerPath(info, options), journalProgress, options);
     }
   } catch (error) {
-    if (partial) cleanupPartial(partial);
-    const state = { phase: 'error', version, failedOperation: 'download', message: `${error.code || ''} ${error.message}` };
+    const state = { phase: 'error', version, ...context, stage, failedOperation: 'download', message: `${error.code || ''} ${error.message}` };
     try { journal()?.state(state); } catch { /* evidence only */ }
     publishState(state);
     throw error;
@@ -894,6 +987,8 @@ module.exports = {
   parseSha512Sums,
   verifyAssetChecksum,
   readAssetChecksum,
+  verifyFileChecksum,
+  downloadReleaseAsset,
   sha512HexOfFile,
   fullInstallerPath,
   // Release-source (GitHub/CNB mirror routes) builds on these primitives.

@@ -162,21 +162,21 @@ async function releaseRaw(route, tag, { timeoutMs, signal } = {}) {
     return route === 'cnb' && (release?.draft || release?.prerelease) ? null : release;
   }
   if (route === 'cnb') {
-    const list = await fetchJson(route, `${desc.apiBase}/releases?page_size=30`, timeoutMs);
+    const list = await fetchJson(route, `${desc.apiBase}/releases?page_size=30`, timeoutMs, { signal });
     return (Array.isArray(list) ? list : [])
       .filter((row) => row && !row.draft && !row.prerelease)
       .sort((a, b) => update.compareVersions(b.tag_name, a.tag_name))[0] || null;
   }
-  return fetchJson(route, `${desc.apiBase}/releases/latest`, timeoutMs);
+  return fetchJson(route, `${desc.apiBase}/releases/latest`, timeoutMs, { signal });
 }
 
-async function latestFor(route, { installedVersion = '', timeoutMs } = {}) {
+async function latestFor(route, { installedVersion = '', timeoutMs, signal } = {}) {
   const desc = ROUTES[route];
   if (!desc) {
     return routeSnapshot('github', { status: 'error', message: 'unknown-route' });
   }
   try {
-    const release = await releaseRaw(route, null, { timeoutMs });
+    const release = await releaseRaw(route, null, { timeoutMs, signal });
     if (!release) {
       return routeSnapshot(route, { status: 'none', latest: '', assetName: '', assetUrl: '', htmlUrl: desc.page });
     }
