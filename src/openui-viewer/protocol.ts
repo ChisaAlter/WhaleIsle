@@ -24,6 +24,7 @@ export type OpenUiHostMessage = Envelope & (
 export type OpenUiViewerMessage = Envelope & (
   | { type: "ready" }
   | { type: "height"; height: number }
+  | { type: "title"; title: string }
   | { type: "state"; state: OpenUiState }
   | { type: "assistant"; message: string; formState?: unknown; context?: unknown }
   | { type: "open-url"; url: string }
