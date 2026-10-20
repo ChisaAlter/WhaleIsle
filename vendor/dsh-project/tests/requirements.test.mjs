@@ -42,6 +42,38 @@ function fixture() {
   return { service, state, project, actor, session, events, followups, human, activate, exec, result, publish, accept, add, declare, reply, end, queue, flushes: () => flushes, persist(value) { persist = value; }, checkpoint() { durableEvents = structuredClone(events); } };
 }
 
+test('an empty optional request identity creates a stable nonempty requirement and retries remain idempotent', async () => {
+  const f = fixture(); f.human(['Implement the original goal']);
+  const execution = f.exec('project_request'), args = { requestId: '', goal: 'Original goal', title: 'Original goal', conditions: ['Original result'], scopeCeiling: 'development' };
+  const first = await f.service.acceptRequest(f.actor, args, execution), retry = await f.service.acceptRequest(f.actor, args, execution);
+  assert.match(first.id, /^request-[a-f0-9]{64}$/); assert.equal(retry.id, first.id);
+  assert.equal(f.state.requests.length, 1); assert.equal(f.state.requests[0].versions.length, 1);
+  assert.equal(f.state.requests[0].versions[0].source.requestId, first.id);
+  f.human(['A separate user goal']); const { request: separate } = await f.accept({ requestId: '' });
+  assert.notEqual(separate.id, first.id, 'a later blank optional ID cannot silently revise the earlier goal');
+  f.human(['Revise the original goal']); await f.accept({ requestId: first.id, goal: 'Revised original goal' });
+  assert.equal(f.service.requirements.get(f.project.id, first.id).revision, 2);
+  assert.equal(f.state.requests.length, 2);
+});
+
+test('optional identity validation rejects malformed values before any requirement is persisted', async () => {
+  for (const requestId of ['   ', 0, false, {}, 'x'.repeat(201)]) {
+    const f = fixture(); f.human(['A real user request']);
+    await assert.rejects(f.accept({ requestId }), error => error.code === 'invalid_request');
+    assert.equal(f.state.requests, undefined);
+  }
+});
+
+test('a blank delegation identity retains the existing direct-human assignment contract', async () => {
+  const f = fixture(); f.human(['Investigate the original goal']); const { request } = await f.accept({});
+  const execution = f.exec('project_delegate');
+  const assignment = await f.service.requirements.assignment(f.actor, { requestId: '', requestRevision: 1, scope: 'readonly' }, execution);
+  assert.equal(assignment.request.id, request.id); assert.equal(assignment.source.requestId, request.id);
+  assert.equal(assignment.source.authorizationCallId, request.versions[0].source.authorizationCallId);
+  assert.equal(assignment.source.callId, execution.callId); assert.equal(f.state.requests.length, 1);
+  await assert.rejects(f.service.requirements.assignment(f.actor, { requestId: '   ', scope: 'readonly' }, execution), error => error.code === 'invalid_request');
+});
+
 test('delivery end trees finish before public enqueue can activate the next requirement', async () => {
   const f = fixture(); f.human(['Implement A']);
   const { request: a } = await f.accept({ title: 'A' }), work = f.add(a);

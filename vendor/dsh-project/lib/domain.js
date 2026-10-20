@@ -1,6 +1,7 @@
 /** Project indexes complement the existing Session and continuable runtime. */
 import { z } from 'zod';
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain';
+import { recoverEmptyRequestIds } from './catalog-recovery.js';
 const id = z.string().min(1);
 const project = z.object({ id, title: id, workspaceId: id.optional(), canonicalWorkingDirectory: id, directoryIdentity: id,
   coordinatorSessionId: id, storageRoot: id, lifecycle: z.enum(['creating', 'ready', 'archived']),
@@ -23,7 +24,8 @@ const changeWorkspace = z.object({ workingDirectory: id, workstreamId: id.option
 const requestChanges = z.object({ isGit: z.boolean(), error: z.string().optional(), baseline: z.string().optional(), capturedAt: z.number(), end: z.string().optional(), endedAt: z.number().optional(),
   files: z.array(changedFile).optional(), workspaces: z.array(changeWorkspace).optional(), deliveryId: id.optional(),
   fileCount: z.number().optional(), added: z.number().optional(), removed: z.number().optional(), isolated: z.boolean().optional(), revertedAt: z.number().optional() });
-const request = z.object({ id, projectId: id, title: id, revision: z.number().int().positive(), versions: z.array(requestVersion), queue: requestQueue.optional(), archivedAt: z.number().optional(), changes: requestChanges.optional(), createdAt: z.number(), updatedAt: z.number() });
+const request = z.object({ id, projectId: id, title: id, revision: z.number().int().positive(), versions: z.array(requestVersion), queue: requestQueue.optional(), archivedAt: z.number().optional(), changes: requestChanges.optional(),
+  identityRecovery: z.object({ originalId: z.literal(''), sessionId: id, callId: id }).optional(), createdAt: z.number(), updatedAt: z.number() });
 const resultReference = z.object({ workstreamId: id, delegationRef: id, reportId: id.optional() });
 const terminalReference = z.object({ workstreamId: id, delegationRef: id, runId: id });
 const visualReplyPage = z.object({ sessionId: id, callId: id, file: z.object({ attachmentId: id, name: id, bytes: z.number().int().positive() }), title: id, height: z.number().int().min(80).max(2000) });
@@ -61,6 +63,8 @@ export function publishedCatalog(value) {
     || value?.workstreams?.some(row => row.delegations?.some(receipt => Object.hasOwn(receipt, 'requestVersion') || Object.hasOwn(receipt.source ?? {}, 'inputs') || Object.hasOwn(receipt.source ?? {}, 'requestVersion')));
 }
 const catalogSchema = z.unknown().transform((value, context) => {
+  try { value = recoverEmptyRequestIds(value); }
+  catch (error) { context.addIssue({ code: 'custom', message: error.message }); return z.NEVER; }
   const parsed = (value?.version === 2 ? state : publishedCatalog(value) ? publishedV1 : finalV1).safeParse(value);
   if (!parsed.success) { for (const issue of parsed.error.issues) context.addIssue(issue); return z.NEVER; }
   if (parsed.data.version === 2) for (const row of parsed.data.requests ?? []) for (const version of row.versions) {
