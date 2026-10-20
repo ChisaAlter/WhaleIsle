@@ -33,6 +33,10 @@
   background: var(--dsw-alias-bg-base);
 }
 
+.body[data-panel-published] {
+  min-height: 0;
+}
+
 .frame {
   display: block;
   width: 100%;

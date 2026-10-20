@@ -79,17 +79,19 @@ test('OpenUI shell calls forward unchanged only from the harness role', async ()
   const result = { status: 400, body: { error: { message: 'title is required' } } };
   const renderer = { ...fakeRenderer(), invoke: async (channel, ...args) => {
     calls.push([channel, ...args]);
-    return channel === 'shell:openui-viewer' ? viewer : result;
+    return channel === 'shell:openui-viewer' ? viewer : channel === 'shell:openui-bundle' ? 'd2hhbGU=' : result;
   } };
   const api = buildShellApi('harness', renderer);
   const request = { path: '/api/wiki', query: { title: '' } };
   assert.equal(await api.openuiViewer(), viewer);
   assert.deepEqual(await api.openuiApi(request), result);
-  assert.deepEqual(calls, [['shell:openui-viewer'], ['shell:openui-api', request]]);
+  assert.equal(await api.openuiBundle({ name: 'mermaid.js' }), 'd2hhbGU=');
+  assert.deepEqual(calls, [['shell:openui-viewer'], ['shell:openui-api', request], ['shell:openui-bundle', { name: 'mermaid.js' }]]);
   for (const role of ['boot', 'launcher', 'pet', 'pet-live2d']) {
     const other = buildShellApi(role, renderer);
     assert.equal(other.openuiViewer, undefined);
     assert.equal(other.openuiApi, undefined);
+    assert.equal(other.openuiBundle, undefined);
   }
 });
 

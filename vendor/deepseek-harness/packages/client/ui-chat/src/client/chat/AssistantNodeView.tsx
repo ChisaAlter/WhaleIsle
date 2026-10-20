@@ -1,27 +1,34 @@
 import { memo, useCallback, useMemo } from 'react'
-import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsRenderSlots, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChatNodeViewProps, PresentationInjected, TurnTailOwnerProps } from '../contract/slots.ts'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
 import type { AssistantOpenUi, OpenUiInjected } from './openui.ts'
+import type { createWhaleUiStore } from './whale-ui-store.ts'
 
 type AssistantNodeViewProps = ChatNodeViewProps<'assistant-step'> & InjectFace<PresentationInjected & OpenUiInjected>
   & PropsRenderSlots<'conversation.chat.reasoning.body' | 'conversation.chat.message.images'>
+  & PropsStore<ReturnType<typeof createWhaleUiStore>>
 
 /** Streaming, settled, and interrupted Assistant states share one keyed renderer instance. */
 export const AssistantNodeView = memo(function AssistantNodeView({
   node, sessionId, groupPart, useDisclosure, useGroupAction, useTurnData, turnProcess, openFile, loadImage, fileMentions,
   usePresentation, renderSlot, t,
-  useOpenUiTheme, sendOpenUiAction, readOpenUiState, saveOpenUiState,
+  useOpenUiTheme, useOpenUiLocale, sendOpenUiAction, readOpenUiState, saveOpenUiState, actions,
 }: AssistantNodeViewProps) {
   const data = node.data
   const theme = useOpenUiTheme(value => value)
+  const locale = useOpenUiLocale(value => value)
+  const seq = data.finalNode?.seq ?? node.anchorSeq
   const openUi = useMemo<AssistantOpenUi>(() => ({
     identity: `${encodeURIComponent(sessionId)}:${encodeURIComponent(node.id)}`,
     theme,
+    locale,
+    seq,
     send: sendOpenUiAction,
     readState: readOpenUiState,
     saveState: saveOpenUiState,
-  }), [sessionId, node.id, theme, sendOpenUiAction, readOpenUiState, saveOpenUiState])
+    publishPanel: actions.publish,
+  }), [sessionId, node.id, theme, locale, seq, sendOpenUiAction, readOpenUiState, saveOpenUiState, actions.publish])
   const turn = node.location.kind === 'turn' || node.location.kind === 'step'
     ? node.location.turn
     : undefined

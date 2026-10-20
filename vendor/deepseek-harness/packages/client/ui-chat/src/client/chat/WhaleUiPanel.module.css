@@ -1,0 +1,39 @@
+.root {
+  width: 100%;
+  min-width: 0;
+  max-height: 55vh;
+  overflow: auto;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-base);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.error {
+  padding: 8px 12px;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}

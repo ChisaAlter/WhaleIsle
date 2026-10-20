@@ -1,0 +1,35 @@
+{
+  "name": "@whale-isle/whale-ui",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Whale UI source-owned language, components and isolated renderer",
+  "scripts": {
+    "test": "node ../../scripts/prepare-whale-ui.mjs && node --test tests/*.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "echarts": "5.6.0",
+    "echarts-wordcloud": "2.1.0",
+    "katex": "0.16.47",
+    "lucide-react": "0.562.0",
+    "maplibre-gl": "6.13.0",
+    "mdast-util-from-markdown": "2.0.3",
+    "mermaid": "11.16.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "three": "0.180.0",
+    "zod": "4.6.6"
+  },
+  "devDependencies": {
+    "@types/katex": "0.16.8",
+    "@types/node": "24.10.0",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "@types/three": "0.180.0",
+    "esbuild": "0.28.2",
+    "jsdom": "29.0.0",
+    "typescript": "5.9.3"
+  }
+}

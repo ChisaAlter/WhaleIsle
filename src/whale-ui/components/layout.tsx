@@ -1,0 +1,26 @@
+import { t } from "./locale";
+import React, { useEffect, useId, useRef, useState } from "react";
+import { z } from "zod";
+import { alignment, alignSchema, color, colorSchema, content, define, justification, justifySchema, length, nodes, radius, radiusSchema, units, type Render } from "./common";
+
+export const Col = define("Col", { children: nodes, gap: z.number().optional(), align: alignSchema.optional() }, "Vertical layout; gap and padding units are 4px. Default gap follows article spacing.", (p, render) => <div className="whale-col" style={{ gap: units(p.gap, 4), alignItems: alignment(p.align) }}>{render(p.children)}</div>);
+export const Row = define("Row", { children: nodes, gap: z.number().optional(), align: alignSchema.optional(), justify: justifySchema.optional(), wrap: z.boolean().optional() }, "Horizontal layout with vertically centered children.", (p, render) => <div className="whale-row" style={{ gap: units(p.gap, 3), alignItems: alignment(p.align ?? "center"), justifyContent: justification(p.justify), flexWrap: p.wrap ? "wrap" : undefined }}>{render(p.children)}</div>);
+export const Box = define("Box", { children: nodes.optional(), direction: z.enum(["row", "col"]).optional(), gap: z.number().optional(), padding: z.number().optional(), background: colorSchema.optional(), radius: radiusSchema.optional(), border: z.boolean().optional(), width: length.optional(), height: length.optional(), flex: z.number().optional(), align: alignSchema.optional(), justify: justifySchema.optional(), wrap: z.boolean().optional() }, "Flexible container; named background colors use soft theme tints.", (p, render) => <div className="whale-box" style={{ display: "flex", flexDirection: p.direction === "row" ? "row" : "column", gap: units(p.gap, 0), padding: units(p.padding, 0), background: color(p.background, true), borderRadius: p.radius != null ? radius(p.radius) : undefined, border: p.border ? "1px solid var(--whale-border)" : undefined, width: p.width, height: p.height, flex: p.flex, minWidth: 0, overflow: p.radius != null ? "hidden" : undefined, alignItems: alignment(p.align), justifyContent: justification(p.justify), flexWrap: p.wrap ? "wrap" : undefined }}>{render(p.children ?? [])}</div>);
+export const Grid = define("Grid", { children: nodes, columns: z.number().optional(), minChildWidth: z.number().optional(), gap: z.number().optional() }, "Equal columns; minChildWidth enables responsive columns.", (p, render) => <div className="whale-grid" style={{ display: "grid", gap: units(p.gap, 4), gridTemplateColumns: p.minChildWidth ? `repeat(auto-fit,minmax(min(100%,${Math.max(1, p.minChildWidth)}px),1fr))` : `repeat(${Math.max(1, Math.min(24, Math.trunc(p.columns ?? 2)))},minmax(0,1fr))` }}>{render(p.children)}</div>);
+export const Card = define("Card", { children: nodes, variant: z.enum(["outline", "soft"]).optional(), padding: z.number().optional(), gap: z.number().optional() }, "Theme-aligned bordered or soft panel.", (p, render) => <section className="whale-card whale-col" data-variant={p.variant ?? "outline"} style={{ padding: units(p.padding, 4), gap: units(p.gap, 3) }}>{render(p.children)}</section>);
+export const Carousel = define("Carousel", { children: nodes, itemWidth: z.number().optional(), gap: z.number().optional() }, "Horizontal, scrollable list with snap-aligned items.", (p, render) => <div className="whale-carousel" style={{ gap: units(p.gap, 3) }} tabIndex={0} role="region" aria-label={t("scrollableItems")}>{p.children.map((child: unknown, index: number) => <div key={index} style={{ flex: `0 0 min(85vw,${Math.max(80, p.itemWidth ?? 240)}px)`, scrollSnapAlign: "start", minWidth: 0 }}>{render(child)}</div>)}</div>);
+function PopoverView({ trigger, content: body, render }: { trigger: unknown; content: unknown; render: Render }) {
+  const [open, setOpen] = useState(false), id = useId(), root = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape") { setOpen(false); root.current?.querySelector("button")?.focus(); } };
+    document.addEventListener("pointerdown", close); document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", key); };
+  }, [open]);
+  return <span className="whale-popover" ref={root}><button type="button" className="whale-popover-trigger" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>{render(trigger)}</button>{open && <span className="whale-popover-body" id={id} role="dialog" aria-label={t("details")}>{render(body)}</span>}</span>;
+}
+export const Popover = define("Popover", { trigger: content, content }, "Click to show a small details panel; Escape or outside click closes it.", (p, render) => <PopoverView {...p} render={render} />);
+export const Divider = define("Divider", {}, "A subtle horizontal separator.", () => <hr className="whale-divider" />);
+export const Spacer = define("Spacer", {}, "Fill remaining space in a row.", () => <span aria-hidden="true" style={{ flex: 1 }} />);
+export const layoutDefinitions = [Col, Row, Box, Grid, Card, Carousel, Popover, Divider, Spacer];

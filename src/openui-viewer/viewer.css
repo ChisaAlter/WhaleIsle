@@ -1,5 +1,0 @@
-html, body { margin: 0; padding: 0; background: transparent; }
-*, *::before, *::after { box-sizing: border-box; }
-body { font-family: var(--iui-font); font-size: 15px; line-height: 1.5; color: var(--iui-ink); }
-.openui-viewer-root { width: 100%; min-width: 0; display: flow-root; }
-.openui-viewer-error { margin: 0; color: var(--iui-danger); white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -30,7 +30,7 @@
 
 | id | 一句话 | 主入口 | gates 摘要 |
 | --- | --- | --- | --- |
-| [openui](openui.md) | 原聊天内完整 Open Intelligent UI：流式组合页面、本地状态与原会话动作 | `ui-chat` / `src/openui-viewer` / `src/main/openui` | 定向契约与真实聊天操作、正常/窄窗画面 |
+| [Whale UI](openui.md) | 正文、工具卡和会话面板的统一交互页面与原会话动作 | `ui-chat` / `src/whale-ui` / `src/main/openui` | 语言、状态与动作回归，生产构建和实际应用检查 |
 | [release-process](release-process.md) | 固定候选、影响验收、失败分级与原包晋级 | release/publish workflows | 计划、验收记录、CI 资格和工作流测试 |
 | [window-motion](window-motion.md) | 20px 透明圆角与 Windows 原生动画同时验收 | `shellWindowChrome` / window factories | 参数单测 + HWND/IPC 实机 + 可见过渡 |
 | [desktop-branding](desktop-branding.md) | 桌面与 Web 侧栏「鲸屿 · Whale Isle」，保留 Harness 归属 | `ui-brand-official` 品牌槽位 | 定向测试、官方构建、深浅色复核 |
