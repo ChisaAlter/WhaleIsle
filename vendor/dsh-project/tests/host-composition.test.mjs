@@ -729,15 +729,20 @@ test('native delivery tracking waits for actual workspace snapshots and excludes
     assert.equal(model.workerInputs.find(input => input.context.title === 'A').cwd, await realpath(isolated));
     const diff = await host.command('requests/changes', { projectId: project.id, requestId: a().id });
     assert.equal(diff.workspaces[0].workingDirectory, await realpath(isolated)); assert.equal(diff.files[0].path, 'A.txt');
+    const trackedDirectory = diff.workspaces[0].workingDirectory;
     model.gate('worker:B').release();
     await waitFor(() => host.state().deliveries.some(row => row.title === 'B' && row.status === 'delivered'), 'ordinary B writes, reads back and completes');
+    await waitFor(() => !host.queue.busy(project.id), 'primary native work drains before testing the foreign directory writer');
     const { project: foreign } = await host.command('create', { requestId: 'tracking-overlap', workingDirectory: child });
     await prompt(foreign.coordinatorSessionId, 'tracking-foreign-human', [{ type: 'request', title: 'Foreign' }, { type: 'delegate', title: 'Foreign' }]);
     await waitFor(() => model.barriersReached.has('worker:Foreign'), 'another Project holds a child-directory writer');
+    assert.equal(host.queue.busy(project.id), false, 'the busy rejection must come from the foreign Project');
+    assert.equal(host.directoryInUse(trackedDirectory), true, 'the canonical recorded area is held by the foreign child-directory writer');
     await assert.rejects(host.command('requests/revert', { projectId: project.id, requestId: a().id }), { code: 'busy' });
     assert.equal(bridge.requests.filter(input => input.action === 'revert').length, 0);
     await host.command('stop', { projectId: foreign.id });
-    await waitFor(() => !host.queue.busy(project.id) && !host.directoryInUse(isolated), 'the delivered primary work and stopped foreign member release all actual activity');
+    // Windows TEMP can use an 8.3 alias; occupancy uses the canonical area saved above.
+    await waitFor(() => !host.queue.busy(project.id) && !host.directoryInUse(trackedDirectory), 'the delivered primary work and stopped foreign member release all actual activity');
     await host.command('requests/revert', { projectId: project.id, requestId: a().id });
     await assert.rejects(readFile(join(isolated, 'A.txt')), { code: 'ENOENT' });
     assert.equal(await readFile(join(directory, 'B.txt'), 'utf8'), 'B revision 1\n');
