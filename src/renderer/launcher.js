@@ -12,8 +12,11 @@ function setHint(text, opts = {}) {
   if (text) void appNotice({ title: opts.title || '提示', body: text, tone: opts.tone || (opts.fade ? 'success' : 'error') });
 }
 
-// Keep the original caption in the layout; CSS draws the spinner over it.
-function launcherButtonBusy(button, label = '正在处理…') {
+// The pending action reports on its own button (spinner and label), never in
+// a separate floating notice.
+// `label` is the full sentence for assistive tech and the tooltip; the button
+// shows the short form ("正在检查更新…" → "检查中…") so it keeps its size.
+function launcherButtonBusy(button, label = '正在处理…', shortLabel = label.replace(/^正在(.{2}).*$/u, '$1中…')) {
   if (!button) return () => {};
   const disabled = button.disabled;
   const wasFocused = document.activeElement === button;
@@ -22,7 +25,9 @@ function launcherButtonBusy(button, label = '正在处理…') {
   button.setAttribute('aria-busy', 'true');
   button.setAttribute('aria-label', label);
   button.title = label;
+  const restoreLabel = window.shellFeedback.buttonBusy(button, shortLabel);
   return () => {
+    restoreLabel();
     button.disabled = disabled;
     for (const [name, value] of attributes) {
       if (value === null) button.removeAttribute(name);
@@ -144,10 +149,6 @@ function appNotice({ title = '提示', body, tone = 'info', holdMs }) {
   return window.shellFeedback.notice({ title, body, tone, ...(holdMs === undefined ? {} : { holdMs }) });
 }
 
-function appProgress({ title, body }) {
-  return window.shellFeedback.progress({ title, body });
-}
-
 const progressPanels = new Map();
 let importProgressPanel;
 let updateNoticePanel;
@@ -170,7 +171,6 @@ function settleConfirm(ok) {
 
 window.appConfirm = appConfirm;
 window.appNotice = appNotice;
-window.appProgress = appProgress;
 window.launcherButtonBusy = launcherButtonBusy;
 window.dshdErrText = errText;
 
@@ -1026,7 +1026,6 @@ async function installRuntime() {
     if (result?.status === 'installed') {
       paintProgress('install-progress', { phase: 'done' });
       progress.textContent = `安装完成${result?.installed?.version ? `：v${result.installed.version}` : ''}`;
-      setHint('桌面端已安装，可启动。', { fade: true });
       void refreshStatus();
     } else if (result?.cancelled) {
       paintProgress('install-progress', { phase: result.status === 'waiting' ? 'waiting' : 'cancelled' });
@@ -1133,14 +1132,8 @@ async function runDesktopAction(method, kind = 'starting', ...args) {
     syncLauncherState();
   };
   paint();
-  const title = method === 'disableSuspectsAndStart' ? '正在禁用插件并启动鲸屿'
-    : method === 'skipUserPlugins' ? '正在跳过用户插件启动'
-      : kind === 'stopping' ? '关闭桌面端' : '启动桌面端';
-  const progress = appProgress({ title, body: '正在处理，请稍候…' });
-  const timer = setInterval(() => {
-    renderHomeStatus(lastStatus);
-    progress.update(`正在处理，已等待 ${Math.floor((Date.now() - desktopOperation.startedAt) / 1000)} 秒…`);
-  }, 1000);
+  // The start/stop button carries the spinner; the status line counts seconds.
+  const timer = setInterval(() => renderHomeStatus(lastStatus), 1000);
   let result;
   try {
     result = await api[method](...args);
@@ -1153,7 +1146,6 @@ async function runDesktopAction(method, kind = 'starting', ...args) {
     desktopActionError = error?.message || String(error);
   } finally {
     clearInterval(timer);
-    progress.close();
     desktopOperation = null;
     try { await refreshStatus(); }
     catch { setHint('暂时无法读取桌面状态，请稍后重新打开首页。'); }
@@ -1300,6 +1292,20 @@ function launcherState(status) {
   return 'installed';
 }
 
+const desktopButtonLabels = new WeakMap();
+
+// Repaint a start/stop button: its caption, or a spinner and busy label while
+// the desktop operation runs.
+function syncDesktopButton(button, caption, busyLabel) {
+  const current = desktopButtonLabels.get(button);
+  if (current?.label === busyLabel && current?.caption === caption) return;
+  current?.restore();
+  desktopButtonLabels.delete(button);
+  button.textContent = caption;
+  button.setAttribute('aria-busy', busyLabel ? 'true' : 'false');
+  if (busyLabel) desktopButtonLabels.set(button, { caption, label: busyLabel, restore: window.shellFeedback.buttonBusy(button, busyLabel) });
+}
+
 function syncDesktopControls() {
   const busy = desktopActionBusy();
   const stopping = desktopOperation?.kind === 'stopping' || lastStatus?.desktop?.state === 'stopping';
@@ -1311,15 +1317,14 @@ function syncDesktopControls() {
     // a stopped one only 启动 — reopening a dismissed window rides the tray.
     start.hidden = running || stopping;
     start.disabled = busy;
-    start.textContent = desktopActionError || lastStatus?.lastStart?.ok === false ? '重试启动' : '启动桌面端';
-    start.setAttribute('aria-busy', busy && !stopping ? 'true' : 'false');
-    start.setAttribute('aria-label', busy && !stopping ? '正在启动桌面端…' : start.textContent);
+    const caption = desktopActionError || lastStatus?.lastStart?.ok === false ? '重试启动' : '启动桌面端';
+    syncDesktopButton(start, caption, busy && !stopping ? '启动中…' : '');
+    start.setAttribute('aria-label', busy && !stopping ? '正在启动桌面端…' : caption);
   }
   if (stop) {
     stop.hidden = !running && !stopping;
     stop.disabled = busy;
-    stop.textContent = '关闭桌面端';
-    stop.setAttribute('aria-busy', stopping ? 'true' : 'false');
+    syncDesktopButton(stop, '关闭桌面端', stopping ? '关闭中…' : '');
     stop.setAttribute('aria-label', stopping ? '正在关闭桌面端…' : '关闭桌面端');
   }
   for (const id of ['btn-skip', 'btn-retry-full', 'btn-disable-suspects', 'btn-recover-plugins']) {
@@ -1403,10 +1408,12 @@ async function checkUpdateNow() {
     return;
   }
   updateCheckBusy = true;
-  const restore = ['btn-check-update', 'btn-check-update-versions'].map((id) => launcherButtonBusy($(id), '正在检查更新…'));
+  const buttons = ['btn-check-update', 'btn-check-update-versions'].map((id) => $(id));
+  const restore = buttons.map((button) => launcherButtonBusy(button, '正在检查更新…'));
   let notice;
+  let result;
   try {
-    const result = await api.checkUpdate();
+    result = await api.checkUpdate();
     updateNoticeVersion = '';
     renderUpdateCheck(result);
     notice = updateCheckNotice(result);
@@ -1417,7 +1424,15 @@ async function checkUpdateNow() {
     updateCheckBusy = false;
     restore.forEach((done) => done());
   }
-  if (notice.title !== '发现新版本') void appNotice(notice);
+  // A new version opens the inline update card; "nothing to do" outcomes
+  // answer on the buttons themselves. Only failures and hints need a notice.
+  if (notice.title === '发现新版本') return;
+  if (!result?.hint && (result?.status === 'current' || result?.status === 'none')) {
+    const label = result.status === 'current' ? '已是最新' : '暂无更新';
+    buttons.forEach((button) => { if (button) window.shellFeedback.buttonDone(button, label); });
+    return;
+  }
+  void appNotice(notice);
 }
 
 let importSourceHome;
@@ -1889,7 +1904,7 @@ async function refreshImport(options = {}) {
     return;
   }
   const btn = $('btn-scan');
-  const showFeedback = options.silent !== true;
+  let showFeedback = options.silent !== true;
   const savedSelections = captureImportSelections();
   const foldState = captureSessionFoldState();
   if (btn.disabled) return;
@@ -1983,14 +1998,14 @@ async function refreshImport(options = {}) {
     importListRendered = true;
     syncSessionClusters();
     syncImportSummary();
-    if (showFeedback) {
-      void appNotice({ title: '扫描完成', body: `会话 ${sessions.length} · 技能 ${skills.length} · 插件 ${plugins.length} · MCP ${mcp.length} · 设置 ${settings.length} · 预设 ${presets.length}`, tone: 'success' });
-    }
   } catch (error) {
+    showFeedback = false;
     setHint(errText(error));
   } finally {
     restore();
   }
+  // The lists below show what was found; the button only confirms the scan.
+  if (showFeedback) window.shellFeedback.buttonDone(btn, '扫描完成');
 }
 
 async function refreshReleases() {
@@ -2676,7 +2691,7 @@ function bind() {
   if ($('btn-install-cancel')) {
     $('btn-install-cancel').addEventListener('click', async () => {
       const apiNow = pageShell();
-      const restore = launcherButtonBusy($('btn-install-cancel'), '正在请求取消…');
+      const restore = launcherButtonBusy($('btn-install-cancel'), '正在请求取消…', '取消中…');
       try {
         const result = await apiNow?.cancelRuntimeInstall();
         if (result?.ok === false) {

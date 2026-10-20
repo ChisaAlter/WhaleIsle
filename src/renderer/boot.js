@@ -373,11 +373,13 @@ cancelRestartEl.addEventListener('click', async () => {
   if (cancelRestartEl.getAttribute('aria-busy') === 'true') return;
   cancelRestartEl.disabled = true;
   cancelRestartEl.setAttribute('aria-busy', 'true');
+  const restoreLabel = window.shellFeedback.buttonBusy(cancelRestartEl, '取消中…');
   try {
     renderState(await invoke('cancelRestart'));
   } catch (error) {
     actionFeedback(`取消失败：${error.message || String(error)}`);
   } finally {
+    restoreLabel();
     cancelRestartEl.removeAttribute('aria-busy');
     cancelRestartEl.disabled = latestSnapshot?.recovery?.status === 'restarting';
   }
@@ -387,6 +389,7 @@ openLauncherEl.addEventListener('click', async () => {
   if (openLauncherEl.getAttribute('aria-busy') === 'true') return;
   openLauncherEl.disabled = true;
   openLauncherEl.setAttribute('aria-busy', 'true');
+  const restoreLabel = window.shellFeedback.buttonBusy(openLauncherEl, '打开中…');
   try {
     const result = await invoke('openLauncher');
     if (result && result.ok === false) {
@@ -395,6 +398,7 @@ openLauncherEl.addEventListener('click', async () => {
   } catch (error) {
     actionFeedback(`打开启动器失败：${error.message || String(error)}`);
   } finally {
+    restoreLabel();
     openLauncherEl.disabled = false;
     openLauncherEl.removeAttribute('aria-busy');
   }
@@ -404,6 +408,7 @@ saveLogEl.addEventListener('click', async () => {
   if (saveLogEl.getAttribute('aria-busy') === 'true') return;
   saveLogEl.disabled = true;
   saveLogEl.setAttribute('aria-busy', 'true');
+  const restoreLabel = window.shellFeedback.buttonBusy(saveLogEl, '保存中…');
   try {
     const result = await invoke('saveBootLog');
     if (!result || result.canceled) return;
@@ -415,6 +420,7 @@ saveLogEl.addEventListener('click', async () => {
   } catch (error) {
     actionFeedback(`保存日志失败：${error.message || String(error)}`);
   } finally {
+    restoreLabel();
     saveLogEl.disabled = false;
     saveLogEl.removeAttribute('aria-busy');
   }
