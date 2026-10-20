@@ -74,6 +74,18 @@ npm/GitHub/API token 在落盘前脱敏，仍建议分享前复核用户自定�
 - 安装失败要可见失败反馈，不静默；`needsAllowBuilds` 走内联确认后重试。
 - `dsh plugin --profile web` 打进 `userData/dsh-home/profiles/web`，不是官方 `~/.dsh`（[dsh-home.md](dsh-home.md)）。
 - 重启归 HarnessController（`restartAfterProfileWrite`）。
+- 桌面启动 Harness 和运行插件 CLI 时，经 `dsh-cli-runner.mjs` 向官方 `runCli` 传入内置 Node 与 pnpm 入口。两条安装路径均不依赖 `PATH` 中的 pnpm 或包含安装目录的批处理脚本，中文目录不受 Windows 控制台代码页影响。runner 通过 `asarUnpack` 提供给普通 Node 子进程。
+
+## 官方自定义插件市场
+
+官方的实验性「自定义插件市场」与桌面「设置 → 市场」独立：开启后在「插件 → 发现」显示。DSH 不提供官方市场或默认索引源；索引 URL 按当前 profile 保存，开启功能后仍须手工添加。官方机制及索引格式见 [DSH 用户指南](../../../vendor/deepseek-harness/docs/user/guide/plugin-market.zh.md)。
+
+社区项目 [realguan/dsh-plugin-market](https://github.com/realguan/dsh-plugin-market) 提供 `format: 1` 索引，可在「插件 → 发现 → 添加索引源」填写下面任意一个地址；两者是同一份目录的不同分发地址，只需添加一个：
+
+- `https://realguan.github.io/dsh-plugin-market/dsh-index.json`
+- `https://cdn.jsdelivr.net/gh/realguan/dsh-plugin-market@dist/dsh-index.json`
+
+这些是第三方社区源。桌面市场使用的 `https://awesome-dsh-plugin.com/plugins.json` 是旧格式目录，不能填入官方的索引源输入框；官方新格式也不能直接用作桌面的 `DSHD_MARKETPLACE_REGISTRY_URL`。桌面不会自动添加或覆盖用户的官方市场源配置。
 
 ## 门槛
 

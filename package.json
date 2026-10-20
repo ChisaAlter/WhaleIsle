@@ -91,6 +91,7 @@
       "package.json"
     ],
     "asarUnpack": [
+      "src/main/dsh-cli-runner.mjs",
       "src/main/dshd-daemon-runner.mjs",
       "src/main/dshd-daemon-hooks.mjs",
       "src/shared/dshd-host-tunnel.js",
