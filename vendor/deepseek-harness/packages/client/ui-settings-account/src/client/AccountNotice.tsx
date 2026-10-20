@@ -65,7 +65,7 @@ export function AccountNoticeStack({ notices, anchor, title, closeLabel, onShown
     const element = anchor.current
     const update = () => {
       const rect = element.getBoundingClientRect()
-      setPosition({ left: Math.max(8, Math.min(rect.left, window.innerWidth - 288)),
+      setPosition({ left: Math.max(8, Math.min(rect.left, window.innerWidth - 268)),
         bottom: Math.max(8, window.innerHeight - rect.top + 4) })
     }
     update()
