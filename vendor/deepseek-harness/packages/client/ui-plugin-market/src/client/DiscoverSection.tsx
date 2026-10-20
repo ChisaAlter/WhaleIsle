@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Button, IconChevronDownOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconSearchOutlineRegular,
   IconSlidersTwoOutlineRegular, IconTrashOutlineRegular, IconWarningOutlineRegular, Input, Menu, Modal, Pill,
-  PluginArtworkDefault, StateDot, Tag, Tooltip,
+  PluginArtworkDefault, StateDot, Tag, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MarketCompatibility, MarketListingEntry, MarketListingVersion, MarketSearchResult, MarketSort } from '@deepseek-ai/dsh-api-remotes/client'
@@ -276,6 +276,8 @@ function SourcesDialog({ state, t, face }: {
   readonly t: Translate
   readonly face: DiscoverActions
 }): ReactNode {
+  const [dismissedFailure, setDismissedFailure] = useState<SourceFailure | null>(null)
+  const failure = state.sourceFailure
   return (
     <Modal open={state.editing} onClose={face.toggleSources} title={t('sourcesTitle')} closeLabel={t('close')}
       description={t('sourcesDescription')} className={css.dialog as string}>
@@ -300,18 +302,20 @@ function SourcesDialog({ state, t, face }: {
         )}
         <form className={css.sourceForm} onSubmit={(event) => { event.preventDefault(); face.addSource() }}>
           <Input className={css.grow as string} value={state.draft} placeholder={t('sourcePlaceholder')} aria-label={t('sourceUrl')}
+            title={failure === null ? undefined : sourceFailureText(failure, t)}
             aria-invalid={state.sourceFailure !== null} data-modal-autofocus onChange={(event) => { face.editDraft(event.target.value) }} />
           <Button type="submit" variant="primary" size="sm" icon={<IconPlusOutlineRegular size={13} />}
             disabled={state.saving || state.draft.trim() === ''}>
             {t('addSource')}
           </Button>
         </form>
-        {state.sourceFailure === null ? null : <p className={css.error} role="alert">{sourceFailureText(state.sourceFailure, t)}</p>}
         <p className={css.notice} role="note">
           <IconWarningOutlineRegular size={14} aria-hidden="true" />
           <span>{t('sourcesTrust')}</span>
         </p>
       </div>
+      {failure !== null && failure !== dismissedFailure && <Toast text={sourceFailureText(failure, t)} holdMs={null}
+        dismissLabel={t('close')} onDone={() => { setDismissedFailure(failure) }} />}
     </Modal>
   )
 }

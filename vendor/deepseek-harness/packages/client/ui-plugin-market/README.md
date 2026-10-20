@@ -24,7 +24,7 @@ Discover is the second tab of the **Plugins** page, after **Installed**. It list
 <a id="use-this-package"></a>
 ## Use this package
 
-Open **Plugins** and select **Discover**. With no index source, the tab shows an empty state whose **Add index source** button opens the **Index sources** dialog. The dialog lists each source by market title, or by host before the first read, with its URL, the error of its last failed read, and a remove button, and keeps a notice that indexes come from third parties. A refused URL keeps the draft and says why: an unsupported scheme, credentials, or fragment; a URL already listed; or a deployment that cannot save sources. A newly added source becomes the selected market.
+Open **Plugins** and select **Discover**. With no index source, the tab shows an empty state whose **Add index source** button opens the **Index sources** dialog. The dialog lists each source by market title, or by host before the first read, with its URL, the error of its last failed read, and a remove button, and keeps a notice that indexes come from third parties. A refused URL keeps the draft and says why: an unsupported scheme, credentials, or fragment; a URL already listed; or a deployment that cannot save sources. A newly added source becomes the selected market. A refused source shows its reason in a floating notice while its invalid field retains the draft and the same reason in its title after the notice fades.
 
 The toolbar holds the market menu, which switches markets and ends with **Manage index sources…**; the search field; a **Labels** menu with multi-select checkmarks when the market declares labels; the **Sort** menu; and a refresh button. Category pills, with **All** first, follow when the market declares categories.
 

@@ -1085,22 +1085,20 @@ function InstallDialog({
         title={t(problem === null ? 'installConfirmedTitle' : 'installConfirmedRefused')}
         closeLabel={t('close')}
         className={css.installDialog as string}
-        footer={checking ? undefined : (
+        footer={(
           <>
             <Button variant="outline" onClick={onClose}>{t('close')}</Button>
-            <Button variant="primary" autoFocus onClick={onRun}>{t(problem === null ? 'installRun' : 'retry')}</Button>
+            <Button variant="primary" autoFocus disabled={checking} loading={checking} onClick={onRun}>
+              {t(problem === null ? 'installRun' : 'retry')}
+            </Button>
           </>
         )}
       >
         <div className={css.installBody} data-install-phase={phase}>
           <SubjectBlock t={t} lines={{ spec: install.spec, ...install.confirmed, showSpec: true }} />
-          {checking
-            ? <p className={`${css.status} ${css.statusWithDot}`} role="status"><StateDot state="ongoing" />{t('installChecking')}</p>
-            : problem === null
-              ? null
-              : (
-                <p className={css.inputError} role="alert">{inputProblemSentence(problem, t, install.registries?.resolved ?? null)}</p>
-              )}
+          {!checking && problem !== null && (
+            <p className={css.inputError} role="alert">{inputProblemSentence(problem, t, install.registries?.resolved ?? null)}</p>
+          )}
         </div>
       </Modal>
     )

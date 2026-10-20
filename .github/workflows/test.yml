@@ -150,6 +150,7 @@ jobs:
       - run: npm ci
       - run: node node_modules/electron/install.js
       - run: npm run setup:harness
+      - run: npm run prepare:dsh-with-chatgpt-bundle
       - run: npm test
       - id: mac_package
         run: npm run dist:mac
