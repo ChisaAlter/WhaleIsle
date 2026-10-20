@@ -153,6 +153,15 @@
 
 .readError {
   color: var(--dsw-alias-state-error-primary);
+  overflow-wrap: anywhere;
+}
+
+.inventoryError {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-bottom: 8px;
 }
 
 /* Session headings replace per-row ownership markers. */

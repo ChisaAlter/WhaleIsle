@@ -11,8 +11,9 @@ import type { VoiceInputProps } from '../src/client/VoiceInput.tsx'
 import type { SpeechReadiness } from '../src/client/readiness.ts'
 import { Recording } from '../src/client/audio.ts'
 import { zh } from '../src/client/locales.ts'
+import { captureFixture } from './audio-fixture.client.ts'
 
-afterEach(() => { cleanup(); vi.useRealTimers() })
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals() })
 const id = 'local' as SpeechProviderId, t = makeTranslate(zh, commonZh)
 const steps: SpeechPreparationStep[] = [
   { kind: 'check', status: 'complete' }, { kind: 'model', status: 'complete' },
@@ -89,38 +90,52 @@ it('shows waking without an explicit preparation cancellation control', () => {
   expect(screen.getByText('已等待 5 秒')).toBeTruthy()
   expect(screen.queryByRole('button', { name: zh.cancelPrepare })).toBeNull()
 })
-it('explains download failures on the Host machine and retains an actionable retry', async () => {
+it('explains download failures on the Host machine and retains an actionable retry after feedback expires', async () => {
+  vi.useFakeTimers()
   const b = fixture({ phase: 'failed', message: 'fetch failed', download: {
     resource: 'model.int8.onnx', source: 'https://mirror.example', reason: 'dns', code: 'ENOTFOUND',
   } })
-  const alert = await screen.findByRole('alert')
+  const alert = screen.getByRole('alert')
   expect(alert.textContent).toContain('无法下载 model.int8.onnx：无法解析下载地址。')
   expect(alert.textContent).toContain('运行 DSH 的机器的 DNS 和代理设置')
   expect(alert.textContent).toContain('下载来源：https://mirror.example')
   expect(alert.textContent).toContain('错误码：ENOTFOUND')
   expect(alert.textContent).not.toContain('fetch failed')
   expect(alert.textContent).not.toContain('Hugging Face')
-  fireEvent.click(screen.getByRole('button', { name: zh.retryPrepare }))
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.retryPrepare })) })
   expect(b.prepare).toHaveBeenCalledWith(id)
   b.rerender(<PreparationCard {...b.props} provider={{ ...b.props.provider, preparation: {
     phase: 'failed', message: 'download unavailable', download: {
       resource: 'tokens.txt', source: 'https://huggingface.co', reason: 'http', status: 503,
     },
   } }} />)
-  expect((await screen.findByRole('alert')).textContent).toContain('无法下载 tokens.txt：下载服务返回 HTTP 503。')
+  expect(screen.getByRole('alert').textContent).toContain('无法下载 tokens.txt：下载服务返回 HTTP 503。')
   expect(screen.getByRole('alert').textContent).not.toContain('错误码')
   b.rerender(<PreparationCard {...b.props} provider={{ ...b.props.provider,
     preparation: { phase: 'failed', message: 'runtime missing' } }} />)
-  expect((await screen.findByRole('alert')).textContent).toContain(t('providerFeedback', {
-    name: 'SenseVoiceSmall', message: '准备失败：runtime missing',
-  }))
-  fireEvent.click(screen.getByRole('button', { name: zh.dismissFeedback }))
+  const feedback = t('providerFeedback', { name: 'SenseVoiceSmall', message: '准备失败：runtime missing' })
+  expect(screen.getByRole('alert').textContent).toContain(feedback)
+  expect(screen.queryByRole('button', { name: zh.dismissFeedback })).toBeNull()
+  await act(async () => { await vi.advanceTimersByTimeAsync(6_000) })
+  expect(screen.getByRole('alert').textContent).toContain(feedback)
+  await act(async () => { await vi.advanceTimersByTimeAsync(999) })
+  expect(screen.getByRole('alert').textContent).toContain(feedback)
+  await act(async () => { await vi.advanceTimersByTimeAsync(1) })
   expect(screen.queryByRole('alert')).toBeNull()
   expect(screen.getByText(zh['short.failed'])).toBeTruthy()
-  expect(screen.getByRole('button', { name: zh.retryPrepare })).toBeTruthy()
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.retryPrepare }).disabled).toBe(false)
   expect(b.container.textContent).not.toContain('准备失败：runtime missing')
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.retryPrepare })) })
+  expect(b.prepare).toHaveBeenCalledTimes(2)
+  expect(b.prepare).toHaveBeenLastCalledWith(id)
 })
-it('persists settings and reports disconnection in the detail card', async () => {
+it('persists settings after feedback expires and reports disconnection in the detail card', async () => {
+  const audio = captureFixture()
+  const media = Object.assign(new EventTarget(), { getUserMedia: audio.getUserMedia,
+    enumerateDevices: vi.fn(async () => [{ kind: 'audioinput', deviceId: 'default', label: 'Fixture microphone' }]) })
+  vi.stubGlobal('navigator', { mediaDevices: media })
+  vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1))
+  vi.stubGlobal('cancelAnimationFrame', vi.fn())
   const store = createSnapshotStore<SpeechReadiness>({ connected: true, error: null, catalog: {
     selection: { providerId: id, language: 'auto' }, maxAudioBytes: 100, maxDurationSeconds: 120,
     providers: [{ id, name: 'SenseVoiceSmall', location: 'host-local', languages: ['auto', 'zh', 'en', 'ja'], preparation: { phase: 'ready' } },
@@ -132,6 +147,8 @@ it('persists settings and reports disconnection in the detail card', async () =>
     selectMicrophone: vi.fn(), createRecording: () => new Recording(() => {}),
     prepare: vi.fn(async () => {}), cancelPreparation: vi.fn(async () => {}) }
   const view = render(<VoicePreparation {...props} />)
+  await screen.findByRole('img', { name: zh.inputLevel })
+  expect(screen.getByLabelText<HTMLSelectElement>(zh.inputDevice).value).toBe('')
   fireEvent.change(screen.getByLabelText(zh.provider), { target: { value: 'cloud' } })
   await waitFor(() => { expect(configure).toHaveBeenCalledWith({ providerId: 'cloud' }) })
   const current = store.getSnapshot()
@@ -140,16 +157,26 @@ it('persists settings and reports disconnection in the detail card', async () =>
   expect(within(screen.getByLabelText(zh.language)).getAllByRole<HTMLOptionElement>('option').map(item => item.value))
     .toEqual(['auto', 'en', 'zh', 'ja', 'fr'])
   expect(within(screen.getByLabelText(zh.language)).getByRole('option', { name: 'fr' })).toBeTruthy()
+  vi.useFakeTimers()
   configure.mockRejectedValueOnce(new Error('settings are read-only'))
-  fireEvent.change(screen.getByLabelText(zh.language), { target: { value: 'zh' } })
-  expect((await screen.findByRole('alert')).textContent).toContain('语音识别失败：settings are read-only')
+  await act(async () => { fireEvent.change(screen.getByLabelText(zh.language), { target: { value: 'zh' } }) })
+  expect(screen.getByRole('alert').textContent).toContain('语音识别失败：settings are read-only')
   configure.mockRejectedValueOnce('settings are locked')
-  fireEvent.change(screen.getByLabelText(zh.language), { target: { value: 'ja' } })
-  await screen.findByRole('alert')
-  await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('语音识别失败：settings are locked') })
-  fireEvent.click(screen.getByRole('button', { name: zh.dismissFeedback }))
+  await act(async () => { fireEvent.change(screen.getByLabelText(zh.language), { target: { value: 'ja' } }) })
+  expect(screen.getByRole('alert').textContent).toContain('语音识别失败：settings are locked')
+  expect(screen.queryByRole('button', { name: zh.dismissFeedback })).toBeNull()
+  await act(async () => { await vi.advanceTimersByTimeAsync(6_000) })
+  expect(screen.getByRole('alert').textContent).toContain('语音识别失败：settings are locked')
+  await act(async () => { await vi.advanceTimersByTimeAsync(999) })
+  expect(screen.getByRole('alert').textContent).toContain('语音识别失败：settings are locked')
+  await act(async () => { await vi.advanceTimersByTimeAsync(1) })
   expect(screen.queryByRole('alert')).toBeNull()
+  vi.useRealTimers()
+  expect(screen.getByLabelText<HTMLSelectElement>(zh.provider).value).toBe('cloud')
   expect(screen.getByLabelText<HTMLSelectElement>(zh.language).value).toBe('en')
+  expect(screen.getByLabelText<HTMLSelectElement>(zh.inputDevice).value).toBe('')
+  expect(props.selectMicrophone).not.toHaveBeenCalled()
+  expect(screen.getByRole('img', { name: zh.inputLevel })).toBeTruthy()
   fireEvent.change(screen.getByLabelText(zh.language), { target: { value: 'en' } })
   await waitFor(() => { expect(screen.getByLabelText<HTMLSelectElement>(zh.language).disabled).toBe(false) })
   act(() => { store.set({ catalog: null, connected: false, error: null }) })

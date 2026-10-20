@@ -1,6 +1,6 @@
 /** Catalog query states shared by the task list, the detail, and the task tab. */
 import { useEffect, useState, type ReactNode } from 'react'
-import { StateDot, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, StateDot, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './TaskManagerPage.module.css'
 
@@ -20,11 +20,11 @@ export type CatalogFeedbackProps = PropsLocale<'schedule.manager'> & {
 /**
  * Render the catalog's loading and query-failure states.
  *
- * An empty panel centers a bare spinner while loading and the failure with its
- * retry; a panel that already shows content keeps a compact notice for a failed
- * refresh, and stays silent while a refresh loads, so the retained rows remain
- * readable. Deletion outcomes are not catalog states: the app-wide toast
- * announces them.
+ * An empty panel centers a bare spinner while loading. A failed read shows a
+ * transient toast, then keeps an inline retry until the next read starts. An
+ * empty panel centers that recovery; retained content keeps it compact. Refresh
+ * loading stays silent over retained content. The app-wide toast announces
+ * deletion outcomes separately.
  * @param props - query state, whether content is shown, the retry action, and localized copy.
  * @returns the applicable states, or nothing while the catalog is ready.
  */
@@ -35,12 +35,16 @@ export function CatalogFeedback({ status, populated, onRetry, t }: CatalogFeedba
     {status === 'loading' && !populated && <div className={css.empty} role="status" aria-label={t('list.loading')}>
       <StateDot state="ongoing" />
     </div>}
-    {status === 'error' && <Toast
-      text={t(dismissed ? 'list.retryAvailable' : 'list.error')}
-      holdMs={null}
-      dismissLabel={dismissed ? undefined : t('detail.close')}
-      actions={[{ label: t('list.retry'), onClick: () => { setDismissed(false); void onRetry() } }]}
-      onDone={() => { setDismissed(true) }}
-    />}
+    {status === 'error' && (dismissed
+      ? <div className={populated ? css.notice : css.empty} role="status">
+        <p>{t('list.retryAvailable')}</p>
+        <Button variant="outline" size="sm" onClick={() => { void onRetry() }}>{t('list.retry')}</Button>
+      </div>
+      : <Toast
+        text={t('list.error')}
+        holdMs={null}
+        actions={[{ label: t('list.retry'), onClick: () => { void onRetry() } }]}
+        onDone={() => { setDismissed(true) }}
+      />)}
   </>
 }

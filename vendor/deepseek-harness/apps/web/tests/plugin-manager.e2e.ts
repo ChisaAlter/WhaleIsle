@@ -392,7 +392,7 @@ describe('web e2e: plugin manager', () => {
           skeletons: await panel.locator('[data-plugin-loading]').count(),
           alerts: await panel.getByRole('alert').allTextContents(),
           retry: await panel.getByRole('button', { name: '重试', exact: true }).count(),
-          toasts: await probe.locator('body > [role="alert"]').allTextContents(),
+          toasts: await probe.locator('[data-dsh-toast-stack] [role="alert"]').allTextContents(),
         }))
       }
       const bounds = await refresh.boundingBox()
@@ -452,7 +452,7 @@ describe('web e2e: plugin manager', () => {
             expect(await panel.locator('[data-plugin-loading]').count()).toBe(0)
             expect(await tooltip.count()).toBe(0)
             expect(await panel.getByRole('alert').count()).toBe(0)
-            expect(await probe.locator('body > [role="alert"]').count()).toBe(0)
+            expect(await probe.locator('[data-dsh-toast-stack] [role="alert"]').count()).toBe(0)
             await recordRefresh(`${outcome}: pending`)
 
             release.resolve(undefined)
@@ -465,8 +465,8 @@ describe('web e2e: plugin manager', () => {
             expect(await panel.locator('[data-plugin-loading]').count()).toBe(0)
             expect(await panel.getByRole('alert').count()).toBe(0)
             expect(await panel.getByRole('button', { name: '重试', exact: true }).count()).toBe(0)
-            const toasts = probe.locator('body > [role="alert"]')
-            await expect.poll(() => toasts.allTextContents()).toEqual(['刷新失败，请重试'])
+            const toasts = probe.locator('[data-dsh-toast-stack] [role="alert"]')
+            await expect.poll(() => toasts.allTextContents()).toEqual(['刷新失败，请重试重试'])
             await recordRefresh(`${outcome}: settled`)
           } finally {
             release.resolve(undefined)

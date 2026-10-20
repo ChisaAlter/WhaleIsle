@@ -174,17 +174,27 @@ it('clears an open viewer when the settings section unmounts', () => {
   cleanup()
   expect(actions.closeView).toHaveBeenCalledOnce()
 })
-it('shows roster errors without hiding the roster or clearing the failure when its notice is dismissed', async () => {
+it('shows roster errors without hiding the roster or clearing the failure when its notice expires', async () => {
+  vi.useFakeTimers()
   const actions = view({ error: 'Roster stale', rows: [
     { id: 'broken', isDefault: false, broken: 'Missing plugin' },
     { id: 'mine', name: 'Mine', isDefault: false },
   ] })
-  await waitFor(() => { expect(screen.getAllByRole('alert').map(node => node.textContent)).toEqual(['Missing plugin', 'Roster stale']) })
-  fireEvent.click(screen.getByRole('button', { name: en.close }))
+  const rows = actions.store.getSnapshot().rows
+  expect(screen.getAllByRole('alert').map(node => node.textContent)).toEqual(['Missing plugin', 'Roster stale'])
+  expect(screen.queryByRole('button', { name: en.close })).toBeNull()
+  await act(async () => { await vi.advanceTimersByTimeAsync(6999) })
+  expect(screen.getAllByRole('alert').map(node => node.textContent)).toEqual(['Missing plugin', 'Roster stale'])
+  await act(async () => { await vi.advanceTimersByTimeAsync(1) })
   expect(screen.getAllByRole('alert').map(node => node.textContent)).toEqual(['Missing plugin'])
   expect(actions.store.getSnapshot().error).toBe('Roster stale')
-  fireEvent.click(screen.getByRole('button', { name: `${en.setDefault}: Mine` }))
-  expect(actions.makeDefault).toHaveBeenCalledWith('mine')
+  expect(actions.store.getSnapshot().rows).toBe(rows)
+  expect(rowFor('broken')).toBeTruthy()
+  const select = screen.getByRole<HTMLButtonElement>('button', { name: `${en.setDefault}: Mine` })
+  expect(select.disabled).toBe(false)
+  await act(async () => { fireEvent.click(select) })
+  expect(actions.makeDefault).toHaveBeenCalledExactlyOnceWith('mine')
+  expect(within(rowFor('broken')).getByRole('button', { name: `${en.view}: broken` })).toBeTruthy()
 })
 it('keeps a broken card focusable for diagnostics and refuses to select it', () => {
   const actions = view({ rows: [{ id: 'broken', isDefault: false, broken: 'Missing plugin' }] })

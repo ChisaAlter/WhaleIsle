@@ -10,3 +10,15 @@
   width: 16px;
   height: 16px;
 }
+
+.downloadItem {
+  width: 100%;
+  height: auto;
+  min-height: 30px;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  line-height: 20px;
+  text-align: left;
+}

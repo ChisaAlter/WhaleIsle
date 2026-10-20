@@ -238,13 +238,14 @@ describe('web e2e: workspace management (create / rename / grouping / hover affo
     await dialog.waitFor({ timeout: 10_000 })
     const input = dialog.getByLabel('Workspace name')
     // Client pre-check: a name colliding with another live workspace raises
-    // the inline alert and blocks the primary button before any wire call.
+    // transient feedback and blocks the primary button before any wire call.
+    const conflictNotice = page.getByRole('alert').filter({ hasText: 'beta-ws' })
     await input.fill('beta-ws')
-    await expect.poll(() => dialog.getByRole('alert').count(), { timeout: 5_000 }).toBe(1)
+    await expect.poll(() => conflictNotice.count(), { timeout: 5_000 }).toBe(1)
     expect(await dialog.getByRole('button', { name: 'Rename' }).isDisabled()).toBe(true)
     // A fresh name goes through workspace.rename to the durable registry.
     await input.fill('gamma-ws')
-    await expect.poll(() => dialog.getByRole('alert').count(), { timeout: 5_000 }).toBe(0)
+    await expect.poll(() => conflictNotice.count(), { timeout: 5_000 }).toBe(0)
     await dialog.getByRole('button', { name: 'Rename' }).click()
     await expect.poll(() => page.getByRole('dialog', { name: 'Rename workspace' }).count(), { timeout: 10_000 }).toBe(0)
     await expect.poll(() => page.getByText('gamma-ws', { exact: true }).count(), { timeout: 10_000 }).toBeGreaterThanOrEqual(1)

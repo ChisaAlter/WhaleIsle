@@ -60,7 +60,7 @@ function ruleBlock(stylesheet: string, selector: string): string {
 function declaration(stylesheet: string, selector: string, property: string): string {
   return new RegExp(`(?:^|[;\\s])${property}:\\s*([^;]+);`).exec(ruleBlock(stylesheet, selector))?.[1]?.trim() ?? ''
 }
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.useRealTimers() })
 
 // A task zone whose offset at the sampled instant differs from the runner's own,
 // so a task-zone render is distinguishable from a browser-zone render on any
@@ -443,30 +443,47 @@ it.each([
   { page: 'first-page', olderPage: false, mode: 'cursor' },
   { page: 'older-page', olderPage: true, mode: 'remote' },
   { page: 'older-page', olderPage: true, mode: 'cursor' },
-] as const)('keeps recovery available after dismissing a $page $mode failure', async ({ olderPage, mode }) => {
+] as const)('keeps recovery available after a $page $mode failure notice expires', async ({ olderPage, mode }) => {
+  vi.useFakeTimers()
   const failed = mode === 'remote' ? transportFailure : failure('delivery_cursor_not_found')
   const loadHistory = vi.fn<DeliveryHistoryInjected['loadHistory']>().mockResolvedValueOnce(olderPage ? result() : failed)
   if (olderPage) loadHistory.mockResolvedValueOnce(failed)
   const view = render(<DeliveryHistory
     id={id} sessionId={sessionId} latestMessageId={undefined} loadHistory={loadHistory} t={makeTranslate(en)}
   />)
-  if (olderPage) fireEvent.click(await screen.findByRole('button', { name: en['delivery.loadMore'] }))
-  const notice = await screen.findByRole('alert')
-  fireEvent.click(within(notice).getByRole('button', { name: en['detail.close'] }))
-  const recovery = await screen.findByRole('alert')
-  expect(recovery.hasAttribute('data-dsh-toast')).toBe(true)
-  expect(view.container.contains(recovery)).toBe(false)
+  await act(async () => {})
+  if (olderPage) {
+    fireEvent.click(screen.getByRole('button', { name: en['delivery.loadMore'] }))
+    await act(async () => {})
+  }
+  const notice = screen.getByRole('alert')
+  expect(within(notice).queryByRole('button', { name: en['detail.close'] })).toBeNull()
+  act(() => { vi.advanceTimersByTime(6_000) })
+  expect(screen.getByRole('alert')).toBe(notice)
+  act(() => { vi.advanceTimersByTime(1_000) })
+  expect(screen.queryByRole('alert')).toBeNull()
+  const recovery = within(view.container).getByRole('status')
+  expect(recovery.hasAttribute('data-dsh-toast')).toBe(false)
   expect(within(recovery).getByText(en[mode === 'cursor' ? 'delivery.refreshAvailable' : 'delivery.retryAvailable'], { exact: true })).toBeDefined()
-  expect(within(recovery).queryByRole('button', { name: en['detail.close'] })).toBeNull()
+  act(() => { vi.advanceTimersByTime(70_000) })
+  expect(within(view.container).getByRole('status')).toBe(recovery)
   expect(screen.queryByText(en['delivery.empty'])).toBeNull()
   expect(occurrences()).toHaveLength(olderPage ? 20 : 0)
   const append = olderPage && mode === 'remote'
-  loadHistory.mockResolvedValueOnce(append ? result(20, 40) : result())
-  fireEvent.click(within(recovery).getByRole('button', { name: en[mode === 'cursor' ? 'delivery.refresh' : 'delivery.retry'] }))
-  await act(async () => { await loadHistory.mock.results.at(-1)!.value })
+  const pending = Promise.withResolvers<Result>()
+  loadHistory.mockReturnValueOnce(pending.promise)
+  const recoveryAction = within(recovery).getByRole('button', { name: en[mode === 'cursor' ? 'delivery.refresh' : 'delivery.retry'] })
+  expect(recoveryAction.hasAttribute('disabled')).toBe(false)
+  fireEvent.click(recoveryAction)
+  expect(loadHistory).toHaveBeenCalledTimes(olderPage ? 3 : 2)
   expect(loadHistory).toHaveBeenLastCalledWith({ id, sessionId, limit: 20, ...(append ? { before: records[19]!.messageId } : {}) })
+  expect(view.container.querySelector('[aria-busy="true"]')).not.toBeNull()
+  expect(screen.queryByText(en[mode === 'cursor' ? 'delivery.refreshAvailable' : 'delivery.retryAvailable'])).toBeNull()
+  expect(occurrences()).toHaveLength(olderPage ? 20 : 0)
+  await resolve(pending, append ? result(20, 40) : result())
   expect(occurrences()).toEqual(records.slice(0, append ? 40 : 20).map(record => record.scheduledAt))
   expect(screen.queryByRole('alert')).toBeNull()
+  expect(screen.queryByRole('button', { name: en[mode === 'cursor' ? 'delivery.refresh' : 'delivery.retry'] })).toBeNull()
 })
 
 it.each(['success', 'rejection'] as const)('refreshes the newest page while ignoring an older-page late %s', async (outcome) => {

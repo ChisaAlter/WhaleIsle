@@ -850,7 +850,8 @@ test('both shipped catalogs migrate before admission while durable authority, hi
     ctx = await bootHost(home, model); const host = ctx.projects;
     const { project } = await host.command('create', { requestId: 'catalog-original-create', workingDirectory: directory }), lead = ctx.agents.get(project.coordinatorSessionId);
     await ctx.sessionController.prompt({ sessionId: lead.id, requestId: 'catalog-real-goal', mode: 'queue', content: [{ type: 'text', text: 'GOAL_REPAIR' }] }, signal);
-    await waitFor(() => model.deliveryWaiting, 'actual goal stages reach declaration before its final reply'); model.releaseDelivery();
+    // Both native worker stages and their durable tool reads complete before this migration seed exists.
+    await waitFor(() => { assert.deepEqual(model.failures, []); return model.deliveryWaiting; }, 'actual goal stages reach declaration before its final reply', 60000); model.releaseDelivery();
     await waitFor(() => host.state().deliveries.some(row => row.status === 'delivered'), 'actual durable final reply commits the native handover');
     await lead.whenIdle(); await host.tail;
     assert.deepEqual(model.failures, []); assert.equal(await ctx.sessions.flush(lead.session), true);

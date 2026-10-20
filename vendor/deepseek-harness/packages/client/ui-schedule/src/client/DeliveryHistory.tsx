@@ -64,6 +64,8 @@ function SavedPrompt({ prompt, t }: { prompt: string } & PropsLocale<'schedule.m
 /**
  * Render immutable saved deliveries; the parent keys this view by task and Session.
  * Refreshes supersede pending older pages, and unmount ignores both late outcomes.
+ * A failed page keeps its records and retry cursor after its toast fades; an
+ * invalid cursor instead keeps an action to refresh the newest page.
  * @param props - Exact task binding, latest receipt identity, Remote callback, task zone, and locale.
  * @returns Saved records and explicit loading, failure, and pagination actions.
  */
@@ -125,16 +127,19 @@ export function DeliveryHistory({ id, sessionId, latestMessageId, timeZone, load
   const formatOccurrence = (value: string): string => formatScheduleNextRun(value, t('time.locale'), timeZone)
   const hasRecords = page !== undefined && page.records.length > 0
   return <div className={css.deliveryHistory} aria-busy={loading}>
-    {failure !== undefined && <Toast
-      text={t(failureDismissed
-        ? failure.key === 'delivery.cursorError' ? 'delivery.refreshAvailable' : 'delivery.retryAvailable'
-        : failure.key)}
+    {failure !== undefined && !failureDismissed && <Toast
+      text={t(failure.key)}
       holdMs={null}
-      dismissLabel={failureDismissed ? undefined : t('detail.close')}
       actions={[{ label: t(failure.key === 'delivery.cursorError' ? 'delivery.refresh' : 'delivery.retry'), onClick: () => { void load(failure.before) } }]}
       onDone={() => { setFailureDismissed(true) }}
     />}
     <div className={css.detailScroll}>
+      {failure !== undefined && failureDismissed && <div className={hasRecords ? css.notice : css.empty} role="status">
+        <p>{t(failure.key === 'delivery.cursorError' ? 'delivery.refreshAvailable' : 'delivery.retryAvailable')}</p>
+        <Button variant="outline" size="sm" onClick={() => { void load(failure.before) }}>
+          {t(failure.key === 'delivery.cursorError' ? 'delivery.refresh' : 'delivery.retry')}
+        </Button>
+      </div>}
       {loading && !hasRecords && <div className={css.empty} role="status" aria-label={t('delivery.loading')}>
         <StateDot state="ongoing" />
       </div>}

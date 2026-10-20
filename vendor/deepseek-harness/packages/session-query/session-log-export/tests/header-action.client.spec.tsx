@@ -123,7 +123,7 @@ describe('Session export Header action', () => {
     expect(b.request).not.toHaveBeenCalled()
   })
 
-  it('downloads through More with one modal even if an old titlebar hook still returns true', async () => {
+  it('downloads through More with one result alert even if an old titlebar hook still returns true', async () => {
     const b = bench()
     const legacyProps = { useTitlebarAction: vi.fn(() => true) }
     b.view.rerender(<>
@@ -138,8 +138,12 @@ describe('Session export Header action', () => {
     fireEvent.click(button)
     expect(button.getAttribute('aria-expanded')).toBe('true')
     fireEvent.click(b.view.getByRole('menuitem', { name: 'Download session log' }))
-    await waitFor(() => { expect(b.request).toHaveBeenCalledWith(SID) })
-    expect(await b.view.findAllByRole('dialog', { name: 'Session download started' })).toHaveLength(1)
+    await waitFor(() => {
+      expect(b.request).toHaveBeenCalledExactlyOnceWith(SID)
+      expect(b.view.getAllByRole('alert')).toHaveLength(1)
+      expect(b.view.getByRole('alert').textContent).toBe('Session download started')
+    })
+    expect(b.view.queryByRole('menu')).toBeNull()
   })
 
   it('closes the menu on Escape without downloading', () => {
@@ -154,34 +158,51 @@ describe('Session export Header action', () => {
   it('disables download while either entry path downloads this Session, leaving feedback available', async () => {
     let release!: (response: Response) => void
     const pending = new Promise<Response>((resolve) => { release = resolve })
-    const controller = new SessionLogDownloadController(() => pending, vi.fn())
+    const fetcher = vi.fn(() => pending)
+    const save = vi.fn()
+    const controller = new SessionLogDownloadController(fetcher, save)
     const b = bench({ feedbackAvailable: true, controller })
     let download!: Promise<void>
     act(() => { download = controller.download(SID) })
     const button = b.view.getByRole('button', { name: 'More actions' })
-    await waitFor(() => { expect(button.getAttribute('aria-busy')).toBe('true') })
+    expect(button).toHaveProperty('disabled', false)
+    expect(button.getAttribute('aria-busy')).not.toBe('true')
     expect(b.view.queryByRole('button', { name: 'Download session log' })).toBeNull()
     fireEvent.click(button)
-    expect(b.view.getByRole('menuitem', { name: 'Download session log' })).toHaveProperty('disabled', true)
+    const item = b.view.getByRole('menuitem', { name: 'Download session log' })
+    expect(item).toHaveProperty('disabled', true)
+    expect(item.getAttribute('aria-busy')).toBe('true')
+    fireEvent.click(item)
+    expect(b.request).not.toHaveBeenCalled()
+    expect(fetcher).toHaveBeenCalledOnce()
     expect(b.view.getByRole('menuitem', { name: 'Feedback' })).toHaveProperty('disabled', false)
+    fireEvent.click(b.view.getByRole('menuitem', { name: 'Feedback' }))
+    expect(b.openFeedback).toHaveBeenCalledExactlyOnceWith(SID)
+    expect(b.view.queryByRole('menu')).toBeNull()
+    fireEvent.click(button)
     await act(async () => { release(new Response('zip')); await download })
-    await waitFor(() => { expect(button.getAttribute('aria-busy')).toBe('false') })
+    expect(b.view.getByRole('menuitem', { name: 'Download session log' })).toHaveProperty('disabled', false)
+    expect(b.view.getByRole('menuitem', { name: 'Download session log' }).getAttribute('aria-busy')).toBe('false')
+    expect(save).toHaveBeenCalledOnce()
   })
 
   it('shows a command-triggered download result once its Session becomes the main view', async () => {
     const b = bench({ sessionId: undefined, mainViewId: undefined })
     await act(async () => { await b.controller.download(SID) })
-    expect(b.view.queryByRole('dialog')).toBeNull()
+    expect(b.view.queryByRole('alert')).toBeNull()
+    act(() => { b.sessions.set(sessionList(BACKGROUND_SID)) })
+    expect(b.view.queryByRole('alert')).toBeNull()
     act(() => { b.sessions.set(sessionList(SID)) })
-    expect(await b.view.findAllByRole('dialog', { name: 'Session download started' })).toHaveLength(1)
+    expect(await b.view.findAllByRole('alert')).toHaveLength(1)
+    expect(b.view.getByRole('alert').textContent).toBe('Session download started')
     expect(b.view.queryByRole('button', { name: 'Download session log' })).toBeNull()
   })
 
-  it('keeps both entries and the download dialog absent for managed sessions', () => {
+  it('keeps both entries and the download feedback absent for managed sessions', () => {
     const b = bench({ managed: true, feedbackAvailable: true })
     act(() => { b.controller.store.set({ bySession: { [SID]: { open: true, status: 'success', error: null } } }) })
     expect(b.view.queryByRole('button', { name: 'More actions' })).toBeNull()
     expect(b.view.queryByRole('button', { name: 'Download session log' })).toBeNull()
-    expect(b.view.queryByRole('dialog')).toBeNull()
+    expect(b.view.queryByRole('alert')).toBeNull()
   })
 })
