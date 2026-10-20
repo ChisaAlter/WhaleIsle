@@ -56,6 +56,11 @@ async function assertBaselineSucceeded(response: Response, method: string): Prom
   expect(body.result?.ok, `${method} baseline RPC result`).toBe(true)
 }
 
+async function waitForSeedRow(page: Page): Promise<void> {
+  await page.getByRole('tree', { name: 'Sessions', exact: true })
+    .locator(`[data-row-key="session:${SEED_ID}"]`).waitFor({ timeout: 30_000 })
+}
+
 async function ensureSeedOpen(page: Page): Promise<void> {
   const welcome = page.locator('[class*="onboardingOverlay"]')
   if (await welcome.count() > 0) {
@@ -103,7 +108,12 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
       expect(fixtureUserPrompts(raw), 'seed fixture must carry exactly the two drive prompts')
         .toEqual([PROMPT_TURN1, PROMPT_TURN2])
       // The inspector's calendar date must not depend on the day the test runs.
-      await seedSession(scaffold, raw, SEED_ID, undefined, { createdAt: Date.UTC(2026, 0, 1) })
+      const sessionId = await seedSession(scaffold, raw, SEED_ID, undefined, { createdAt: Date.UTC(2026, 0, 1) })
+      // Ordinary sessions are listed only while their cwd has a registered Workspace.
+      const workspace = await scaffold.ctx.workspaceRegistry.create(scaffold.workspaceCwd)
+      expect(workspace.sessionIds).toContain(sessionId)
+    } else {
+      await scaffold.ctx.workspaceRegistry.create(sessionCwd)
     }
     browser = await chromium.launch()
   }, 120_000)
@@ -117,8 +127,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
         slotErrors.push(message.text())
       }
     })
-    // Arm before navigation so the Session response cannot be missed. The
-    // Workspace stream settles through the user-visible Ungrouped barrier.
+    // Arm before navigation so the Session response cannot be missed.
     const sessionBaseline = baselineResponse(page)
     const [, sessionResponse] = await Promise.all([
       page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' }),
@@ -126,11 +135,9 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     ])
     await assertBaselineSucceeded(sessionResponse, 'session.list')
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    // The frame mounts before the asynchronous session-list baseline lands.
-    // Search must target the settled seeded row, not the startup input that
-    // the ready projection replaces (the compact layout dropped group session
-    // counts; the Ungrouped bucket row is the barrier).
-    await page.getByText('Ungrouped', { exact: true }).waitFor({ timeout: 30_000 })
+    // The seeded row appears after both Session and Workspace baselines commit.
+    // Search must use this settled projection rather than the startup input.
+    if (MODE !== 'record') await waitForSeedRow(page)
   }, 120_000)
 
   afterEach(async () => {
@@ -185,10 +192,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
 
   it.skipIf(MODE === 'record')('finds an unopened seeded session by message content and opens it', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-search'))
-    // The API baselines can settle before React commits their projection. The
-    // seeded Ungrouped bucket row is the final user-visible barrier before
-    // editing search (the compact layout dropped group session counts).
-    await page.getByText('Ungrouped', { exact: true }).waitFor({ timeout: 30_000 })
+    await waitForSeedRow(page)
     // Search is a collapsed header action; expand it so the input is actionable.
     const searchButton = page.getByRole('button', { name: 'Search sessions' })
     if (await searchButton.getAttribute('aria-expanded') !== 'true') await searchButton.click()
@@ -316,23 +320,34 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     await compareOrRefreshGolden(TIMING_EXPECTED, snapshot, MODE)
   }, 60_000)
 
-  it.skipIf(MODE === 'record')('downloads through the Session Header and /export with one dialog', async () => {
+  it.skipIf(MODE === 'record')('downloads through the Session Header and /export with one transient result', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-export'))
     await ensureSeedOpen(page)
     const exportButton = page.getByRole('button', { name: 'More actions' })
     expect(await exportButton.isDisabled()).toBe(false)
-    const header = exportButton.locator('xpath=ancestor::header[1]')
-    // The right Sidebar's expand button holds the header's corner; the export
-    // control sits immediately to its left.
-    const sidebarButton = page.getByRole('button', { name: 'Open right sidebar' })
-    const [buttonBox, sidebarBox, headerBox] = await Promise.all([
-      exportButton.boundingBox(), sidebarButton.boundingBox(), header.boundingBox(),
+    const titleRow = page.locator('[data-dshd-caption="title"]').filter({ has: exportButton })
+    const title = titleRow.getByRole('navigation', { name: 'Session hierarchy', exact: true })
+    // More follows the Session title; the Sidebar control holds the row's corner.
+    const sidebarButton = titleRow.getByRole('button', { name: 'Open right sidebar', exact: true })
+    const [buttonBox, sidebarBox, titleBox, rowBox] = await Promise.all([
+      exportButton.boundingBox(), sidebarButton.boundingBox(), title.boundingBox(), titleRow.boundingBox(),
     ])
-    if (buttonBox === null || sidebarBox === null || headerBox === null) {
+    if (buttonBox === null || sidebarBox === null || titleBox === null || rowBox === null) {
       throw new Error('Session Header export geometry is unavailable')
     }
-    expect(headerBox.x + headerBox.width - (sidebarBox.x + sidebarBox.width)).toBeLessThanOrEqual(32)
-    expect(sidebarBox.x - (buttonBox.x + buttonBox.width)).toBeLessThanOrEqual(32)
+    const titleGap = buttonBox.x - (titleBox.x + titleBox.width)
+    expect(titleGap).toBeGreaterThanOrEqual(0)
+    expect(titleGap).toBeLessThanOrEqual(8)
+    expect(Math.abs(buttonBox.y + buttonBox.height / 2 - (sidebarBox.y + sidebarBox.height / 2)))
+      .toBeLessThanOrEqual(1)
+    const cornerReach = sidebarBox.x + sidebarBox.width - (rowBox.x + rowBox.width)
+    expect(cornerReach).toBeGreaterThanOrEqual(0)
+    expect(cornerReach).toBeLessThanOrEqual(16)
+    expect(await exportButton.evaluate((button) => {
+      const rect = button.getBoundingClientRect()
+      return rect.width >= 28 && rect.height >= 27
+        && button.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2))
+    })).toBe(true)
     const responsePromise = page.waitForResponse(response =>
       response.request().method() === 'HEAD'
       && new URL(response.url()).pathname === '/api/session.export', { timeout: 30_000 })
@@ -343,8 +358,10 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     expect(response.status()).toBe(200)
     const download = await downloadPromise
     expect(download.suggestedFilename()).toMatch(/^dsh-session-.+\.zip$/)
-    const dialog = page.getByRole('dialog', { name: 'Session download started' })
-    await dialog.waitFor({ timeout: 30_000 })
+    const resultNotice = page.getByRole('alert').filter({ hasText: 'Session download started' })
+    await resultNotice.waitFor({ timeout: 30_000 })
+    expect(await resultNotice.count()).toBe(1)
+    expect(await page.getByRole('dialog', { name: 'Session download started' }).count()).toBe(0)
     // The real host streamed the ZIP; its root entry is the persisted log
     // text verbatim (the assembled seam: real route, real persistence read).
     const files = unzipSync(await readFile(await download.path()))
@@ -355,7 +372,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     })
     expect(content.split('\n')[0]).toContain(SEED_ID)
     expect(content).toContain('FIRST_DONE')
-    await dialog.getByText('Close', { exact: true }).click()
+    await resultNotice.waitFor({ state: 'detached', timeout: 15_000 })
 
     const observer = await newEnglishPage(browser)
     const observerTripwire = watchConsole(observer)
@@ -373,7 +390,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
       observerSessionBaseline,
     ])
     await assertBaselineSucceeded(observerSessionResponse, 'observer session.list')
-    await observer.getByText('Ungrouped', { exact: true }).waitFor({ timeout: 30_000 })
+    await waitForSeedRow(observer)
     await ensureSeedOpen(observer)
 
     try {
@@ -396,12 +413,16 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
       const exportDone = slashEvents.find(event =>
         event.type === 'command/done' && event.data.commandId === exportRun.data.commandId)
       expect(exportDone?.type).toBe('command/done')
-      await page.getByRole('dialog', { name: 'Session download started' }).waitFor({ timeout: 30_000 })
-      await page.getByRole('dialog', { name: 'Session download started' })
-        .getByText('Close', { exact: true }).click()
-      await observer.getByText('Session log download requested.', { exact: true }).waitFor({ timeout: 30_000 })
+      await resultNotice.waitFor({ timeout: 30_000 })
+      expect(await resultNotice.count()).toBe(1)
+      await resultNotice.waitFor({ state: 'detached', timeout: 15_000 })
+      const observerResult = observer.getByText('Session log download requested.', { exact: true })
+      await observerResult.waitFor({ state: 'attached', timeout: 30_000 })
+      // Another browser receives the durable result inside a collapsed process group.
+      await expandOwningTurnProcess(observer, observerResult)
+      await observerResult.waitFor({ timeout: 30_000 })
       expect(observerDownloads).toBe(0)
-      expect(await observer.getByRole('dialog', { name: 'Session download started' }).count()).toBe(0)
+      expect(await observer.getByRole('alert').filter({ hasText: 'Session download started' }).count()).toBe(0)
       expect({
         pageErrors: observerTripwire.pageErrors,
         slotErrors: observerSlotErrors,
