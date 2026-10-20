@@ -64,7 +64,8 @@ async function marketRuntime(fixture: ReturnType<typeof installation>) {
     import('@deepseek-ai/dsh-config-editor'),
     import('@deepseek-ai/dsh-settings'),
     import('@deepseek-ai/dsh-plugin-market'),
-    import('@deepseek-ai/dsh-client-ui-plugin-market'),
+    // Its Node entry belongs to the Client project; runtime loading keeps Client types out of the Host aggregate.
+    import(MARKET_UI),
   ])
   class EmptyPluginManager extends Service {
     constructor(ctx: Context) { super(ctx, 'pluginManager') }
