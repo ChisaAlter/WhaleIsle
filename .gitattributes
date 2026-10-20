@@ -1,4 +1,6 @@
 # Shell scripts must keep LF on Windows checkouts.
 *.sh text eol=lf
 scripts/git-hooks/* text eol=lf
+# pnpm packs this executable for Unix as well as Windows.
+vendor/dsh-with-chatgpt/bridge/bin/d2c.js text eol=lf
 docs/decisions/archived/** text eol=lf
