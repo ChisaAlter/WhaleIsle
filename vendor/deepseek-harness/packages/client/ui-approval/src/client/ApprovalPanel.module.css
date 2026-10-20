@@ -2,7 +2,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 8px var(--dsh-composer-side-clearance) 12px;
+  /* The insets are the hidden composer card's own offsets inside the composer
+     box (ApprovalPanel.tsx), so the approval card covers the input card's rect. */
+  padding: var(--dsh-approval-card-inset-top, 8px) var(--dsh-composer-side-clearance)
+    var(--dsh-approval-card-inset-bottom, 12px);
 }
 
 .card {

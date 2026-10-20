@@ -225,7 +225,7 @@ export function ConversationContent(props: ConversationContentProps) {
   // Building the row eagerly would still fire the workspace-picker slot for a
   // presentation-owned session, so the JSX only exists while the hero shows.
   const heroWorkspaceRow = !hero ? null : (
-    <div className={css.heroWorkspaceRow}>
+    <div className={css.heroWorkspaceRow} data-composer-flow="">
       <WorkspaceChip
         buttonRef={pickerAnchor}
         label={chipTitle}

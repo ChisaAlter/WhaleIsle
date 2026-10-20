@@ -8,6 +8,9 @@ import css from './ComposerResizeHandles.module.css'
 
 const HEIGHT_VAR = '--dsh-composer-resized-height'
 const WIDTH_VAR = '--dsh-composer-resized-width'
+/** Non-inheriting width for the transcript column and Hero row (ChatView.module.css). */
+const FLOW_VAR = '--dsh-composer-flow-width'
+const FLOW_SELECTOR = '[data-chat-flow], [data-composer-flow]'
 
 const SEAT_SELECTOR = '[data-composer-seat]'
 const SCROLL_SELECTOR = '[data-conversation-scroll]'
@@ -48,20 +51,38 @@ function applyHeight(scroll: HTMLElement, height: number): void {
   }
 }
 
-function applyWidth(card: HTMLElement, width: number): void {
+/**
+ * Drag frames restyle only what changes width: the inherited width goes on the
+ * composer seat (a small subtree) and the non-inheriting flow width on the
+ * transcript column and Hero row. An inherited custom property written on an
+ * ancestor of the transcript restyles every message, so the conversation root
+ * and the column host receive it only when the size settles (drag end, restore),
+ * for columns and Hero rows that mount later.
+ */
+function applyWidth(card: HTMLElement, width: number, settle: boolean): void {
   const value = `${width}px`
-  const seat = widthSeatOf(card)
+  const root = widthSeatOf(card)
+  const seat = seatOf(card)
+  const host = scrollOf(seat ?? root)
   const targets = new Set<HTMLElement>([card])
-  if (seat !== null) {
-    for (const el of seat.querySelectorAll<HTMLElement>('[data-composer-card]')) {
+  if (root !== null) {
+    for (const el of root.querySelectorAll<HTMLElement>('[data-composer-card]')) {
       targets.add(el)
     }
+  }
+  for (const el of (host ?? root)?.querySelectorAll<HTMLElement>(FLOW_SELECTOR) ?? []) {
+    el.style.setProperty(FLOW_VAR, value)
+  }
+  if (seat !== null) {
     seat.style.setProperty(WIDTH_VAR, value)
     seat.dataset.composerResizedWidth = ''
+  }
+  if (settle && root !== null) {
+    root.style.setProperty(WIDTH_VAR, value)
+    root.dataset.composerResizedWidth = ''
     // The transcript column (ChatView .column) is a sibling of the seat under
-    // [data-conversation-scroll] — it cannot read a variable published only on
-    // the seat, so the same width is published on the shared column host.
-    scrollOf(seat)?.style.setProperty(WIDTH_VAR, value)
+    // [data-conversation-scroll]; a column mounted later reads the host value.
+    host?.style.setProperty(WIDTH_VAR, value)
   }
   for (const el of targets) {
     el.style.width = value
@@ -91,9 +112,13 @@ function clearSize(scroll: HTMLElement | null, card: HTMLElement | null): void {
     seat.style.removeProperty(HEIGHT_VAR)
     delete seat.dataset.composerResized
   }
-  if (widthSeat !== null) {
-    widthSeat.style.removeProperty(WIDTH_VAR)
-    delete widthSeat.dataset.composerResizedWidth
+  for (const owner of new Set([seat, widthSeat])) {
+    if (owner === null) continue
+    owner.style.removeProperty(WIDTH_VAR)
+    delete owner.dataset.composerResizedWidth
+  }
+  for (const el of (host ?? widthSeat)?.querySelectorAll<HTMLElement>(FLOW_SELECTOR) ?? []) {
+    el.style.removeProperty(FLOW_VAR)
   }
   host?.style.removeProperty(WIDTH_VAR)
 }
@@ -163,7 +188,7 @@ export function useComposerResizeDrag(
       applyHeight(scroll, persisted.height)
     }
     if (card.dataset.composerResizedWidth === undefined && persisted.width !== null) {
-      applyWidth(card, persisted.width)
+      applyWidth(card, persisted.width, true)
     }
   }, [enabled, cardRef, scrollRef, persisted.height, persisted.width])
 
@@ -213,7 +238,7 @@ export function useComposerResizeDrag(
     }
     applyWidth(card, composerResizeWidth(
       drag.originWidth, drag.originX, e.clientX, drag.edge, drag.maxWidth,
-    ))
+    ), false)
   }, [cardRef, scrollRef])
 
   const onResizePointerUp = useCallback((e: PointerEvent<HTMLDivElement>) => {
@@ -231,7 +256,10 @@ export function useComposerResizeDrag(
       ? Number.parseFloat(card.style.width)
       : Number.NaN
     if (Number.isFinite(height)) patch.height = height
-    if (Number.isFinite(width)) patch.width = width
+    if (Number.isFinite(width)) {
+      patch.width = width
+      if (card !== null) applyWidth(card, width, true)
+    }
     if (patch.height !== undefined || patch.width !== undefined) {
       onCommitRef.current?.(patch)
     }

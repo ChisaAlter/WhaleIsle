@@ -679,7 +679,7 @@ button.crumb:hover {
   align-self: center;
   gap: 2px;
   width: 100%;
-  max-width: var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width));
+  max-width: var(--dsh-composer-flow-width, var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width)));
   min-width: 0;
   margin-top: 4px;
   /* Figma drew px 8; nudged +12 so the folder glyph aligns with the card's

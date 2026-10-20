@@ -35,6 +35,10 @@ function normalize(source) {
  *  with the resting card cap as its fallback. */
 const FOLLOW = /max-width:\s*calc\(\s*var\(--dsh-composer-resized-width,\s*var\(--dsh-composer-card-max-width\)\)/;
 const EXACT_FOLLOW = /max-width:\s*var\(--dsh-composer-resized-width,\s*var\(--dsh-composer-card-max-width\)\)/;
+// Transcript column and Hero row: the drag writes a non-inheriting flow width on
+// them, falling back to the inherited width the host receives when a drag settles.
+const FLOW_FOLLOW = /max-width:\s*calc\(\s*var\(--dsh-composer-flow-width,\s*var\(--dsh-composer-resized-width,\s*var\(--dsh-composer-card-max-width\)\)\)/;
+const EXACT_FLOW_FOLLOW = /max-width:\s*var\(--dsh-composer-flow-width,\s*var\(--dsh-composer-resized-width,\s*var\(--dsh-composer-card-max-width\)\)\)/;
 
 const UI_CHAT = path.join(VENDOR, 'deepseek-harness', 'packages', 'client', 'ui-chat', 'src', 'client');
 const UI_CONVERSATION = path.join(VENDOR, 'deepseek-harness', 'packages', 'client', 'ui-conversation', 'src', 'client');
@@ -61,21 +65,24 @@ test('queue dock follows the drag-resized composer card', () => {
 test('chat flow column follows the drag-resized composer card', () => {
   const css = normalize(readRel(UI_CHAT, 'chat/ChatView.module.css'));
   const rule = ruleOf(css, '\\.column');
-  assert.match(rule, FOLLOW);
+  assert.match(rule, FLOW_FOLLOW);
+  assert.match(css, /@property --dsh-composer-flow-width\s*\{[^}]*inherits:\s*false/);
   assert.match(rule, /var\(--dsh-composer-side-clearance\)/);
 });
 
-test('width is published on the conversation scroll host so the transcript sees it', () => {
+test('drag frames write the flow width on the column; the scroll host receives the width when it settles', () => {
   const source = readRel(UI_CONVERSATION, 'skeleton/ComposerResizeHandles.tsx');
   assert.match(source, /const SCROLL_SELECTOR = '\[data-conversation-scroll\]'/);
-  assert.match(source, /scrollOf\(seat\)\?\.style\.setProperty\(WIDTH_VAR, value\)/);
+  assert.match(source, /const FLOW_SELECTOR = '\[data-chat-flow\], \[data-composer-flow\]'/);
+  assert.match(source, /el\.style\.setProperty\(FLOW_VAR, value\)/);
+  assert.match(source, /if \(settle && root !== null\)[\s\S]*host\?\.style\.setProperty\(WIDTH_VAR, value\)/);
   assert.match(source, /host\?\.style\.removeProperty\(WIDTH_VAR\)/);
 });
 
 test('blank-session Hero controls follow and center on the resized composer card', () => {
   const css = normalize(readRel(UI_CONVERSATION, 'skeleton/ConversationRoot.module.css'));
   const rule = ruleOf(css, '\\.heroWorkspaceRow');
-  assert.match(rule, EXACT_FOLLOW);
+  assert.match(rule, EXACT_FLOW_FOLLOW);
   assert.match(rule, /width:\s*100%/);
   assert.match(rule, /align-self:\s*center/);
   assert.match(rule, /box-sizing:\s*border-box/);
