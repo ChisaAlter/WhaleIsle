@@ -10,7 +10,7 @@ import { isBehindModal } from './useModalLayer.ts'
 import { observeComposition } from './keyboard-composition.ts'
 import { focusWithoutRing } from './focus.ts'
 import { ShortcutKeys } from './ShortcutKeys.tsx'
-import { MenuSurface } from './MenuSurface.tsx'
+import { MenuSurface, type MenuSurfaceProps } from './MenuSurface.tsx'
 import { usePresence } from './usePresence.ts'
 import css from './Menu.module.css'
 
@@ -165,6 +165,7 @@ function inertWhen(inactive: boolean): Record<string, string> {
  * gap and a brief overshoot survivable; coming back cancels the close.
  * @param props.dense - reduce vertical row spacing without changing the standard typography or card width.
  * @param props.compact - use reduced menu typography and spacing.
+ * @param props.material - shared main-menu and submenu background, translucent by default.
  * @param props.getAnchorRect - portal mode only: supply the anchor rect
  * directly (e.g. from a host-owned trigger button) instead of measuring the
  * Menu's own wrapper span. Required when the wrapper isn't itself laid out at
@@ -189,7 +190,7 @@ function inertWhen(inactive: boolean): Record<string, string> {
  * document.body outside the owner's DOM subtree.
  * @returns anchor wrapper with the conditional list.
  */
-export function Menu({ open, anchor, items = [], children, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, autoFocus = false, selection = 'check', getAnchorRect, matchAnchorWidth = false, footer, filter, className, listClassName }: {
+export function Menu({ open, anchor, items = [], children, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, material = 'translucent', autoFocus = false, selection = 'check', getAnchorRect, matchAnchorWidth = false, footer, filter, className, listClassName }: {
   open: boolean
   autoFocus?: boolean
   anchor: ReactNode
@@ -207,6 +208,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
   closeOnPointerLeave?: boolean
   dense?: boolean
   compact?: boolean
+  material?: MenuSurfaceProps['material']
   selection?: 'check' | 'fill'
   getAnchorRect?: () => DOMRect | null
   matchAnchorWidth?: boolean
@@ -522,7 +524,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
           </Tooltip>
         ) : row}
         {subOpen && entry.submenu !== undefined && (
-          <MenuSurface compact={compact} className={clsx(css.submenu, compact && css.compactList)} role="menu">
+          <MenuSurface compact={compact} material={material} className={clsx(css.submenu, compact && css.compactList)} role="menu">
             {entry.submenu.map(sub => (
               <button
                 key={sub.id}
@@ -560,7 +562,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
   // already at the final position (with getAnchorRect returning null the
   // list simply stays hidden).
   const list = mounted && (
-    <MenuSurface compact={compact}
+    <MenuSurface compact={compact} material={material}
       ref={listRef}
       className={clsx(css.list, listClassName, dense && css.denseList, compact && css.compactList, scrollable && css.scrollable, portal && css.portal, side === 'top' && !portal && css.sideTop, align === 'end' && !portal && css.alignEnd)}
       style={portal ? fixedPos ?? MEASURE_STYLE : undefined}
@@ -593,7 +595,7 @@ export function Menu({ open, anchor, items = [], children, selectedId, selectedI
             placeholder={filter.placeholder}
             aria-label={filter.label}
             data-menu-filter=""
-            onChange={event => { filter.onChange(event.target.value) }}
+            onChange={(event) => { filter.onChange(event.target.value) }}
           />
         </label>
       )}

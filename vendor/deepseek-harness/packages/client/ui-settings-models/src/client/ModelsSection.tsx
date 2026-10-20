@@ -533,9 +533,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                       : null}
                 </span>
                 <span className={styles['rowActions']}>
-                  <button
-                    type="button"
-                    className={styles['secondaryButton']}
+                  <Button size="sm" shape="pill" variant="outline"
                     aria-label={providerCopy(t('editProvider'), target)}
                     disabled={!open && state.status !== 'ready'}
                     onClick={() => {
@@ -549,11 +547,10 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                     }}
                   >
                     {t('edit')}
-                  </button>
+                  </Button>
                   {row.removable
                     ? (
-                      <button
-                        type="button"
+                      <Button size="sm" shape="pill"
                         className={styles['dangerButton']}
                         aria-label={providerCopy(t('removeProvider'), target)}
                         disabled={!state.writable || state.status !== 'ready'}
@@ -565,7 +562,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                         }}
                       >
                         {t('remove')}
-                      </button>
+                      </Button>
                     )
                     : null}
                 </span>
@@ -719,8 +716,8 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
               // One entry for both ways to gain a provider; the card behind it
               // splits them. Full width, so it lines up with the rows above.
               <div className={styles['addActions']}>
-                <button
-                  type="button"
+                <Button shape="pill" variant="outline"
+                  icon={<IconPlusOutlineRegular size={16} />}
                   className={styles['addButton']}
                   disabled={!state.writable || state.status !== 'ready' || (!catalogEnabled && !customEnabled)}
                   onClick={() => {
@@ -734,9 +731,8 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                     setAddOpen(true)
                   }}
                 >
-                  <IconPlusOutlineRegular size={14} />
                   {t('add')}
-                </button>
+                </Button>
               </div>
             )
             : null}
@@ -766,14 +762,14 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
               : t('deleteDescriptionWithCredential'),
             deleteTarget,
           )}
-        className={styles['deleteDialog'] as string}
+        className={styles['deleteDialog']}
         footer={(
           <>
-            <Button variant="outline" data-modal-autofocus disabled={deleting} onClick={closeDelete}>
+            <Button shape="pill" variant="outline" data-modal-autofocus disabled={deleting} onClick={closeDelete}>
               {t('cancel')}
             </Button>
             <Button
-              variant="outline"
+              shape="pill" variant="outline"
               className={styles['deleteConfirm']}
               disabled={deleting}
               loading={deleting}
@@ -787,7 +783,9 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
           </>
         )}
       >
-        {deleteFailure === undefined || deleteFailureDismissed ? null : <Toast key={deleteFailureSequence} text={deleteFailure} holdMs={9000} onDone={() => { setDeleteFailureDismissed(true) }} />}
+        {deleteFailure === undefined || deleteFailureDismissed
+          ? null
+          : <Toast key={deleteFailureSequence} text={deleteFailure} holdMs={9000} onDone={() => { setDeleteFailureDismissed(true) }} />}
       </Modal>
     </div>
   )

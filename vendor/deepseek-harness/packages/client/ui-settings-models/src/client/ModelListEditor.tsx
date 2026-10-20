@@ -17,7 +17,7 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { LlmDiscoveredModel } from '@deepseek-ai/dsh-api-remotes/client'
-import { Button, IconPlusOutlineRegular, Modal, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Checkbox, IconPlusOutlineRegular, Input, Modal, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { formatCapacity, parseCapacity, validateDeepSeekModels } from './DeepSeekModelsEditor.tsx'
 import type { ModelsOperations } from './operations.ts'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
@@ -290,7 +290,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
 
   const toggleEffort = (index: number, model: ModelDraft, id: EffortId): void => {
     const dict = effortsOf(model)
-    if (Object.prototype.hasOwnProperty.call(dict, id)) delete dict[id]
+    if (Object.prototype.hasOwnProperty.call(dict, id)) Reflect.deleteProperty(dict, id)
     else dict[id] = id === 'off' ? null : id
     const stillOffers = EFFORT_CHOICES.some(choice => Object.prototype.hasOwnProperty.call(dict, choice.id))
     patch(index, { reasoningEfforts: stillOffers ? dict : undefined })
@@ -404,18 +404,17 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
         </div>
         {props.overridden === true && props.onReset !== undefined
           ? (
-            <button
-              type="button"
+            <Button size="sm" shape="pill"
               className={styles['linkButton']}
               disabled={disabled}
               onClick={props.onReset}
             >
               {t('resetModels')}
-            </button>
+            </Button>
           )
           : null}
         <Button
-          size="sm"
+          size="sm" shape="pill"
           className={styles['linkButton']}
           disabled={disabled || busy || !askable || props.probeBlocked !== undefined}
           aria-describedby={failure === undefined ? undefined : failureId}
@@ -456,28 +455,23 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
             }}
             extra={rowEditsReasoning ? undefined : (
               <Tooltip label={t('effortOffAlone')} disabled={validation?.index !== index || validation.key !== 'effortOffAlone'} portal side="top">
-              <fieldset className={styles['effortGroup']} aria-invalid={validation?.index === index && validation.key === 'effortOffAlone'}
-                tabIndex={validation?.index === index && validation.key === 'effortOffAlone' ? 0 : undefined}
-                aria-label={validation?.index === index && validation.key === 'effortOffAlone' ? t('effortOffAlone') : undefined}>
-                <legend className={styles['modelFieldLabel']}>{t('effortTitle')}</legend>
-                <div className={styles['effortOptions']}>
-                  {EFFORT_CHOICES.map((choice) => {
-                    const checked = Object.prototype.hasOwnProperty.call(effortsOf(model), choice.id)
-                    return (
-                      <label className={styles['effortOption']} key={choice.id}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={disabled}
+                <fieldset className={styles['effortGroup']} aria-invalid={validation?.index === index && validation.key === 'effortOffAlone'}
+                  tabIndex={validation?.index === index && validation.key === 'effortOffAlone' ? 0 : undefined}
+                  aria-label={validation?.index === index && validation.key === 'effortOffAlone' ? t('effortOffAlone') : undefined}>
+                  <legend className={styles['modelFieldLabel']}>{t('effortTitle')}</legend>
+                  <div className={styles['effortOptions']}>
+                    {EFFORT_CHOICES.map((choice) => {
+                      const checked = Object.prototype.hasOwnProperty.call(effortsOf(model), choice.id)
+                      return (
+                        <Checkbox key={choice.id} className={styles['modelCheckbox']}
+                          label={t(choice.key)} checked={checked} disabled={disabled}
                           aria-label={`${t(choice.key)} ${index + 1}`}
                           onChange={() => { toggleEffort(index, model, choice.id) }}
                         />
-                        <span>{t(choice.key)}</span>
-                      </label>
-                    )
-                  })}
-                </div>
-              </fieldset>
+                      )
+                    })}
+                  </div>
+                </fieldset>
               </Tooltip>
             )}
             onFieldChange={(field, value) => { patch(index, { [field]: value }) }}
@@ -498,16 +492,17 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
           />
         ))}
       </div>
-      <button
-        type="button"
+      <Button size="sm" shape="pill" variant="outline"
+        icon={<IconPlusOutlineRegular size={16} />}
         className={styles['addModelButton']}
         disabled={disabled}
         onClick={() => { onChange([...models, { id: '' }]) }}
       >
-        <IconPlusOutlineRegular size={14} />
         {t('addModel')}
-      </button>
-      {failure !== undefined && !failureDismissed ? <Toast key={failureSequence} text={failure} holdMs={9000} onDone={() => { setFailureDismissed(true) }} /> : null}
+      </Button>
+      {failure !== undefined && !failureDismissed
+        ? <Toast key={failureSequence} text={failure} holdMs={9000} onDone={() => { setFailureDismissed(true) }} />
+        : null}
       {failure === undefined ? null : <span className={styles['visuallyHidden']} id={failureId}>{failure}</span>}
       <Modal
         open={candidates !== undefined}
@@ -515,16 +510,17 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
         title={t('fetchTitle')}
         closeLabel={t('close')}
         description={t('fetchDescription')}
-        className={styles['fetchDialog'] as string}
+        className={styles['fetchDialog']}
+        contentClassName={styles['fetchDialogContent']}
         footer={(
           <>
-            <Button variant="outline" onClick={closePicker}>{t('cancel')}</Button>
-            <Button variant="outline" onClick={adoptPicked}>{t('fetchAdopt')}</Button>
+            <Button shape="pill" variant="outline" onClick={closePicker}>{t('cancel')}</Button>
+            <Button shape="pill" variant="primary" onClick={adoptPicked}>{t('fetchAdopt')}</Button>
           </>
         )}
       >
         <div className={styles['candidateToolbar']}>
-          <input
+          <Input variant="form"
             className={`${styles['input']} ${styles['candidateSearch']}`}
             type="search"
             value={candidateQuery}
@@ -533,7 +529,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
             onChange={(event) => { setCandidateQuery(event.target.value) }}
           />
           <Button
-            variant="ghost"
+            variant="ghost" shape="pill"
             size="sm"
             disabled={visibleCandidates.length === 0}
             onClick={toggleVisibleCandidates}
@@ -547,16 +543,9 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
             <ul className={styles['candidateList']}>
               {visibleCandidates.map(candidate => (
                 <li key={candidate.id} className={styles['candidate']}>
-                  <label className={styles['candidateLabel']}>
-                    <input
-                      type="checkbox"
-                      checked={picked.has(candidate.id)}
-                      onChange={() => { toggle(candidate.id) }}
-                    />
-                    <span className={styles['candidateId']} title={candidate.name ?? candidate.id}>
-                      {candidate.id}
-                    </span>
-                  </label>
+                  <Checkbox className={styles['candidateLabel']} label={candidate.id}
+                    title={candidate.name ?? candidate.id} checked={picked.has(candidate.id)}
+                    onChange={() => { toggle(candidate.id) }} />
                 </li>
               ))}
             </ul>

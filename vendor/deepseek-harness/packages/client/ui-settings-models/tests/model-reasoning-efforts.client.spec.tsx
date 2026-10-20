@@ -145,7 +145,9 @@ describe('ModelReasoningEfforts', () => {
   ])('flags %s that the adapter refuses', (_label, stored, level) => {
     renderGroup({ id: 'chat', reasoningEfforts: stored })
     expect(value(level).getAttribute('aria-invalid')).toBe('true')
-    expect(screen.getByText(en.modelReasoningValueRequired)).toBeTruthy()
+    const reason = screen.getByText(en.modelReasoningValueRequired)
+    expect(value(level).getAttribute('aria-describedby')).toBe(reason.id)
+    expect(screen.getByRole('group', { name: `${en.modelReasoning} 1` }).getAttribute('aria-invalid')).toBe('true')
   })
 
   it('repairs a refused value with the level name once its field is left', () => {

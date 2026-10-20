@@ -13,6 +13,23 @@
   border-color: var(--dsw-alias-state-business-primary);
 }
 
+.form {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  border-radius: var(--dsw-radius-sm);
+  padding: 0 12px;
+}
+
+.form:has(.input:disabled) {
+  opacity: 0.6;
+}
+
+.form:has(.input[aria-invalid='true']) {
+  border-color: var(--dsw-alias-state-error-primary);
+}
+
 .icon {
   display: inline-flex;
   width: 16px;

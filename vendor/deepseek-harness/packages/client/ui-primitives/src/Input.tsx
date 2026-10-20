@@ -7,16 +7,19 @@ import css from './Input.module.css'
 
 /**
  * Render a text input with an optional leading icon.
+ * @param props.variant - 'default' compact entry or 'form' full-width 36px field with 8px corners.
  * @param props.icon - optional 16px leading icon node.
  * @param ref - the native input, cleared when it unmounts.
  * @returns wrapper span containing the native input; input attributes pass through.
  */
 export const Input = forwardRef<HTMLInputElement, {
+  /** Form fields fill their layout seat and style native disabled/invalid states. */
+  variant?: 'default' | 'form'
   icon?: ReactNode
   className?: string | undefined
-} & InputHTMLAttributes<HTMLInputElement>>(function Input({ icon, className, ...rest }, ref) {
+} & InputHTMLAttributes<HTMLInputElement>>(function Input({ variant = 'default', icon, className, ...rest }, ref) {
   return (
-    <span className={clsx(css.wrap, className)}>
+    <span className={clsx(css.wrap, variant === 'form' && css.form, className)}>
       {icon != null && <span className={css.icon}>{icon}</span>}
       <input ref={ref} className={css.input} {...rest} />
     </span>

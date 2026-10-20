@@ -34,6 +34,16 @@
   border-radius: var(--dsw-radius-sm);
 }
 
+.pill {
+  border-radius: var(--dsw-radius-button);
+  corner-shape: round;
+}
+
+.pill.sm {
+  border-radius: var(--dsw-radius-button-sm);
+  corner-shape: round;
+}
+
 .primary {
   background: var(--dsw-alias-button-primary-fill);
   color: var(--dsw-alias-label-primary-foreground);

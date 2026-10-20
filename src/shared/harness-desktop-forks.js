@@ -99,6 +99,12 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/locale/src/client/LanguageRow.tsx', includes: ['SettingsSelect'] },
   { file: 'packages/client/ui-conversation/src/client/settings/EnterBehaviorRow.tsx', includes: ['SettingsSelect'] },
   { file: 'packages/client/ui-permission-presets/src/client/PermissionRow.tsx', includes: ['SettingsSelect'] },
+  // Model forms retain the host's capsule, field, and solid selection-menu geometry.
+  { file: 'packages/client/ui-primitives/src/SettingsSelect.tsx', includes: ["material={block ? 'solid' : 'translucent'}"] },
+  { file: 'packages/client/ui-primitives/src/Input.tsx', includes: ["variant?: 'default' | 'form'"] },
+  { file: 'packages/client/ui-primitives/src/Button.tsx', includes: ["shape?: 'rounded' | 'pill'"] },
+  { file: 'packages/client/ui-settings-models/src/client/ModelRow.tsx', includes: ['Input variant="form"'] },
+  { file: 'packages/client/ui-settings-models/src/client/ModelsSection.module.css', includes: ['--dsw-radius-dialog'] },
   { file: 'packages/client/ui-settings-models/src/client/models-dev-metadata.ts', includes: ['models.dev'] },
   { file: 'packages/client/ui-settings-models/scripts/live-fetch-enrich-probe.ts', includes: [] },
   // Standing wallpaper fork on the upstream ui-theme package.
