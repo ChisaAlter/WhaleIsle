@@ -616,7 +616,7 @@ test('native delivery tracking waits for actual workspace snapshots and excludes
     await assert.rejects(host.command('requests/revert', { projectId: project.id, requestId: a().id }), { code: 'busy' });
     assert.equal(bridge.requests.filter(input => input.action === 'revert').length, 0);
     await host.command('stop', { projectId: foreign.id });
-    await waitFor(() => !host.directoryInUse(isolated), 'the stopped foreign member and its actual jobs release the directory');
+    await waitFor(() => !host.queue.busy(project.id) && !host.directoryInUse(isolated), 'the delivered primary work and stopped foreign member release all actual activity');
     await host.command('requests/revert', { projectId: project.id, requestId: a().id });
     await assert.rejects(readFile(join(isolated, 'A.txt')), { code: 'ENOENT' });
     assert.equal(await readFile(join(directory, 'B.txt'), 'utf8'), 'B revision 1\n');
