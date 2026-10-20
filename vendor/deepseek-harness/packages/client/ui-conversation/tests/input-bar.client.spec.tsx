@@ -1977,7 +1977,7 @@ describe('strips and variants', () => {
     }
   })
 
-  it('keeps an information notice visible in the Toast until dismissed without disturbing the draft', () => {
+  it('shows an information notice in the Toast and fades it without disturbing the draft', () => {
     vi.useFakeTimers()
     try {
       const { view, shell, textarea } = bench({ draft: '保留的草稿' })
@@ -1985,14 +1985,13 @@ describe('strips and variants', () => {
       act(() => { shell.notify('info', '命令完成了') })
       const toast = view.getByRole('alert')
       expect(toast.textContent).toBe('命令完成了')
-      expect(toast.getAttribute('data-persistent')).toBe('true')
       expect(toast.closest('[data-dsh-toast-stack]')).not.toBeNull()
       expect(view.queryByRole('status')).toBeNull()
       expect(document.activeElement).toBe(textarea)
       expect(shell.snapshot.draft).toBe('保留的草稿')
       act(() => { vi.advanceTimersByTime(4000) })
       expect(view.getByRole('alert')).toBe(toast)
-      fireEvent.click(view.getByRole('button', { name: '关闭提示' }))
+      act(() => { vi.advanceTimersByTime(3000) })
       expect(view.queryByRole('alert')).toBeNull()
       expect(shell.snapshot.draft).toBe('保留的草稿')
     } finally {

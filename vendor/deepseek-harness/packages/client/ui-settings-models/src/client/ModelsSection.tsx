@@ -450,7 +450,9 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
       {savedIdentity === undefined
         ? null
         : (
-          <Toast text={providerCopy(t('savedProvider'), savedIdentity)} tone="success" onDone={() => { setSavedTarget(undefined) }} />
+          <p className={styles['savedNotice']} role="status" aria-live="polite">
+            {providerCopy(t('savedProvider'), savedIdentity)}
+          </p>
         )}
       <ul className={styles['rows']}>
         {configured.map((row) => {

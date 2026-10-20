@@ -64,7 +64,7 @@ describe('HarnessRestartRow', () => {
     await act(async () => { resolveSave({ harnessAutoRestart: false }) })
     expect(screen.getByRole('switch', { name: 'Enable auto-restart' })).toHaveProperty('checked', false)
     expect(toggle).toHaveProperty('disabled', false)
-    expect((await screen.findByRole('alert')).textContent).toBe(en['feedback.saved'])
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('retains the resting caption while saving and shows the accepted retry count after settlement', async () => {

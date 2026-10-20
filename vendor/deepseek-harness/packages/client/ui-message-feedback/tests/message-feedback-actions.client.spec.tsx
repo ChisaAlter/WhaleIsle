@@ -4,11 +4,11 @@
  * shared view with the filled glyph for a recorded rating, either unrecorded
  * rating opens the Session's dialog, clicking the recorded rating retracts it,
  * the Session's feedback is read on first interaction rather than on mount, and
- * a rejected retraction floats without losing the authoritative state.
+ * a rejected retraction surfaces inline without losing the authoritative state.
  */
 import { useSyncExternalStore } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { MessageId } from '@deepseek-ai/dsh-api-remotes/client'
@@ -185,16 +185,10 @@ describe('MessageFeedbackActions', () => {
 
     fireEvent.click(ui.getByLabelText(zh['action.likeActive']))
 
-    const notice = await ui.findByRole('alert')
-    expect(notice.textContent).toBe(zh['error.conflict'])
-    expect(ui.container.contains(notice)).toBe(false)
-    expect(notice.hasAttribute('data-persistent')).toBe(true)
-    fireEvent.click(within(notice).getByRole('button', { name: commonZh.close }))
-    expect(ui.queryByRole('alert')).toBeNull()
+    await waitFor(() => { expect(ui.getByText(zh['error.conflict'])).toBeTruthy() })
     expect(ui.getByLabelText(zh['action.likeActive']).getAttribute('aria-pressed')).toBe('true')
     fireEvent.click(ui.getByLabelText(zh['action.likeActive']))
-    expect((await ui.findByRole('alert')).textContent).toBe(zh['error.conflict'])
-    expect(ui.retract).toHaveBeenCalledTimes(2)
+    await waitFor(() => { expect(ui.retract).toHaveBeenCalledTimes(2) })
   })
 
   it('reports any other retraction failure with the generic copy', async () => {
@@ -318,15 +312,21 @@ describe('MessageFeedbackActions', () => {
     expect(errors).toEqual([])
   })
 
-  it('floats a failed list read after interaction without changing the rating', async () => {
+  it('shows a failed list read inline after interaction without changing the rating', async () => {
     const ui = mount({ status: 'cold', ensureResult: { ok: false, error: { code: 'session-not-found', message: 'gone' } } })
 
     fireEvent.pointerEnter(ui.getByLabelText(zh['action.like']))
-    const notice = await ui.findByRole('alert')
+    const notice = await ui.findByRole('status')
     expect(notice.textContent).toBe(zh['error.load'])
-    expect(ui.container.contains(notice)).toBe(false)
+    expect(ui.container.contains(notice)).toBe(true)
     expect(ui.ensure).toHaveBeenCalledOnce()
     expect(ui.getByLabelText(zh['action.like']).getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('surfaces a failed list load next to the controls', () => {
+    const ui = mount({ status: 'error' })
+
+    expect(ui.getByText(zh['error.load'])).toBeTruthy()
   })
 
   it('prefers the action failure over the load notice', async () => {

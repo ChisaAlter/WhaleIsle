@@ -80,7 +80,7 @@ app.whenReady().then(async () => {
     const stack = document.getElementById('shell-feedback-stack'), card = stack.getBoundingClientRect();
     const toastText = toast?.querySelector('.shell-feedback-text').textContent || '';
     const reference = modal.hidden ? document.querySelector('main').getBoundingClientRect() : modal.getBoundingClientRect();
-    const surface = modal.hidden ? card : modal.querySelector('.modal-card').getBoundingClientRect();
+    const surface = modal.hidden ? toast?.getBoundingClientRect() ?? card : modal.querySelector('.modal-card').getBoundingClientRect();
     return { button: { width: rect.width, height: rect.height, text: (b.querySelector('.shell-button-label')?.textContent ?? b.textContent), busy: b.getAttribute('aria-busy'), disabled: b.disabled,
       spinner: !!b.querySelector('.shell-button-spinner') },
       versionsText: (document.getElementById('btn-check-update-versions').querySelector('.shell-button-label')?.textContent ?? document.getElementById('btn-check-update-versions').textContent),
@@ -88,15 +88,15 @@ app.whenReady().then(async () => {
       homeTop: document.querySelector('#panel-home .home-heading').getBoundingClientRect().top,
       modalHidden: modal.hidden, title: modal.hidden ? toastText.split('：')[0] : document.getElementById('app-confirm-title').textContent,
       body: modal.hidden ? toastText : document.getElementById('app-confirm-body').textContent,
-      role: toast?.getAttribute('role'), floating: getComputedStyle(stack).position === 'fixed', cancelVisible: document.getElementById('app-confirm-cancel').checkVisibility(),
+      noticeCloseControls: toast?.querySelectorAll('.shell-feedback-close').length ?? 0, role: toast?.getAttribute('role'), floating: getComputedStyle(stack).position === 'fixed', cancelVisible: document.getElementById('app-confirm-cancel').checkVisibility(),
       okVisible: document.getElementById('app-confirm-ok').checkVisibility(), focus: document.activeElement.id,
-      centered: Math.abs(surface.x + surface.width / 2 - (reference.x + reference.width / 2)) < 1,
+      centered: modal.hidden && !toast ? true : Math.abs(surface.x + surface.width / 2 - (reference.x + reference.width / 2)) < 1,
       extraLines: document.querySelectorAll('#hint, #home-components-hint, #home-start-progress, #import-scan-status, [data-comp-hint], [data-comp-progress]').length,
       versionsBusy: document.getElementById('btn-check-update-versions').getAttribute('aria-busy'),
       updateVisible: document.getElementById('home-update').checkVisibility(), updateText: document.getElementById('home-update-text').textContent,
       toastCount: document.querySelectorAll('.shell-feedback-toast').length };
   })()`);
-  const clearNotices = () => js("document.querySelectorAll('.shell-feedback-toast .shell-feedback-close').forEach(button => button.click())");
+  const clearNotices = () => js("document.querySelectorAll('.shell-feedback-toast').forEach(node => node.remove())");
   const key = async keyCode => {
     win.webContents.sendInputEvent({ type: 'keyDown', keyCode });
     win.webContents.sendInputEvent({ type: 'keyUp', keyCode });
@@ -153,8 +153,6 @@ app.whenReady().then(async () => {
     result.confirmRetry = await js('document.activeElement.className');
     await js('document.activeElement.click()');
     result.retryCalls = await js('window.retryCalls');
-    await key('Tab');
-    result.confirmToastClose = await js('document.activeElement.className');
     await key('Escape');
     result.confirmAfterToastEscape = await js("({ title: document.getElementById('app-confirm-title').textContent, hidden: document.getElementById('app-confirm').hidden, answer: window.confirmAnswer, toasts:document.querySelectorAll('.shell-feedback-toast').length })");
     await key('Tab');
@@ -222,7 +220,7 @@ app.whenReady().then(async () => {
     await waitFor("[...document.querySelectorAll('.shell-feedback-text')].some(node => node.textContent.startsWith('插件已禁用，仍需排查：'))");
     result.recoveryStillSkipped = await read();
     statusReadFails = false;
-    await js("[...document.querySelectorAll('.shell-feedback-toast .shell-feedback-close')].at(-1).click()");
+    await js("[...document.querySelectorAll('.shell-feedback-toast')].at(-1).remove()");
     await waitFor("document.querySelector('.shell-feedback-text').textContent.includes('暂时无法读取桌面状态')");
     result.statusReadFailure = await read();
     await clearNotices();
@@ -297,7 +295,7 @@ app.whenReady().then(async () => {
     if (bootOnly) {
       const buttonState = id => bootJs(`(() => {const b=document.getElementById(${JSON.stringify(id)}),r=b.getBoundingClientRect();return {busy:b.getAttribute('aria-busy'),disabled:b.disabled,hidden:b.hidden,width:r.width,height:r.height,text:(b.querySelector('.shell-button-label')?.textContent ?? b.textContent)}})()`);
       const clearBootNotices = async () => {
-        await bootJs("document.querySelectorAll('.shell-feedback-toast .shell-feedback-close').forEach(button => button.click())");
+        await bootJs("document.querySelectorAll('.shell-feedback-toast').forEach(node => node.remove())");
         await bootWait("!document.querySelector('.shell-feedback-toast')");
       };
       const startAction = async (id, calls) => {

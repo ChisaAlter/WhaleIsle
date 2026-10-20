@@ -24,6 +24,7 @@ export function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
   const [nameError, setNameError] = React.useState('')
   const [confirmDel, setConfirmDel] = React.useState(null) // { path, dir }
   const [message, setMessage] = React.useState('')
+  const [copied, setCopied] = React.useState('')
   const [busy, setBusy] = React.useState('')
   const [resolveRetry, setResolveRetry] = React.useState(0)
   const dataRef = React.useRef(data)
@@ -110,13 +111,14 @@ export function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
     } finally { setBusy('') }
   }
 
-  const copyPath = async (text) => {
+  const copyPath = async (text, key) => {
     if (busy) return
     setBusy('copy'); setErr(''); setMessage('')
     try {
       if (!navigator.clipboard) throw new Error(t('explorer.copyFail'))
       await navigator.clipboard.writeText(text)
-      setMessage(t('explorer.copied'))
+      setCopied(key)
+      setTimeout(() => setCopied((c) => (c === key ? '' : c)), 1200)
     } catch (e) { setErr(String((e && e.message) || e)) }
     finally { setBusy('') }
   }
@@ -197,6 +199,7 @@ export function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
           <span className="dshr-treeToggle">{it.type === 'dir' ? (data[it.path] && data[it.path].loading ? <span className="dshr-miniSpinner" aria-hidden="true" /> : expanded.has(it.path) ? '▾' : '▸') : ''}</span>
           {it.type === 'dir' ? <FileTypeIcon kind="folder" size={14} /> : <FileTypeIcon path={it.name} size={14} />}
           <span className="dshr-treeName">{it.name}</span>
+          {copied === it.path ? <span className="dshr-treeBadge">{t('explorer.copied')}</span> : null}
         </button>
         {it.type === 'dir' ? renderRows(it.path, depth + 1) : null}
       </React.Fragment>

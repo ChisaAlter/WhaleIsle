@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GoalActivation, GoalSnapshot } from '@deepseek-ai/dsh-goal/client'
 import {
   IconCheckOutlineRegular, IconCloseOutlineRegular, IconEditOutlineRegular, IconGoalOutlineRegular,
-  Button, IconPauseOutlineRegular, IconPlayOutlineRegular, IconTrashOutlineRegular, InlineEditor, Toast, Tooltip,
+  Button, IconPauseOutlineRegular, IconPlayOutlineRegular, IconTrashOutlineRegular, InlineEditor, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GoalActionResult, GoalBarActions, GoalBarInjected } from './slots.ts'
@@ -99,7 +99,7 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
             onSave={() => { void handleEdit() }}
             onCancel={() => { setEditing(false) }}
           />
-          {actionError !== null && <Toast text={actionError} holdMs={null} dismissLabel={t('action.dismiss')} onDone={() => { setActionError(null) }} />}
+          {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
           <div className={css.actions}>
             <Tooltip portal label={t('action.save')} side="bottom" delayMs={500}>
               <Button
@@ -140,7 +140,7 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
         <span className={css.goalGlyph}><IconGoalOutlineRegular size={14} /></span>
         <span className={css.label}>{label}</span>
         <span className={css.objective}>{goal.objective}</span>
-        {actionError !== null && <Toast text={actionError} holdMs={null} dismissLabel={t('action.dismiss')} onDone={() => { setActionError(null) }} />}
+        {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
         <div className={css.actions}>
           {goal.phase === 'active' && activation === 'armed' && (
             <Tooltip portal label={t('action.pause')} side="bottom" delayMs={500}>

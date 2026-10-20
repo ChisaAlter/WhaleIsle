@@ -120,7 +120,7 @@ describe('OpenPathEmptyAction', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('keeps a failed open visible until dismissed and allows a successful retry', async () => {
+  it('fades a failed open on its own and allows a successful retry', async () => {
     vi.useFakeTimers()
     const b = bench({ openPath: vi.fn(async () => 'openError' as const) })
     render(<OpenPathEmptyAction {...b.props} />)
@@ -129,8 +129,8 @@ describe('OpenPathEmptyAction', () => {
     expect(screen.getAllByRole('alert')).toHaveLength(1)
     expect(screen.getByRole('alert').textContent).toContain(zh['path.openError'])
     act(() => { vi.advanceTimersByTime(4_000) })
-    expect(screen.getByRole('alert').getAttribute('data-persistent')).toBe('true')
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.close })) })
+    expect(screen.getByRole('alert').textContent).toContain(zh['path.openError'])
+    act(() => { vi.advanceTimersByTime(3_000) })
     expect(screen.queryByRole('alert')).toBeNull()
     b.openPath.mockResolvedValue(null)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.open'] })) })
@@ -140,7 +140,7 @@ describe('OpenPathEmptyAction', () => {
   })
 })
 
-it('keeps a failure through rerenders and shows the same error again after dismissal', async () => {
+it('keeps a failure through rerenders and shows the same error again after it fades', async () => {
   vi.useFakeTimers()
   const b = bench({ openPath: vi.fn(async () => 'openError' as const) })
   const view = render(<OpenPathEmptyAction {...b.props} />)
@@ -149,9 +149,9 @@ it('keeps a failure through rerenders and shows the same error again after dismi
   act(() => { vi.advanceTimersByTime(2_000) })
   view.rerender(<OpenPathEmptyAction {...b.props} />)
   await act(async () => {})
-  act(() => { vi.advanceTimersByTime(10_000) })
+  act(() => { vi.advanceTimersByTime(3_000) })
   expect(screen.getByRole('alert').textContent).toContain(zh['path.openError'])
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh.close })) })
+  act(() => { vi.advanceTimersByTime(2_000) })
   expect(screen.queryByRole('alert')).toBeNull()
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['path.open'] })) })
   expect(screen.getAllByRole('alert')).toHaveLength(1)

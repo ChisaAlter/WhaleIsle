@@ -1381,6 +1381,7 @@ function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
   const [nameError, setNameError] = React5.useState("");
   const [confirmDel, setConfirmDel] = React5.useState(null);
   const [message, setMessage] = React5.useState("");
+  const [copied, setCopied] = React5.useState("");
   const [busy, setBusy] = React5.useState("");
   const [resolveRetry, setResolveRetry] = React5.useState(0);
   const dataRef = React5.useRef(data);
@@ -1470,7 +1471,7 @@ function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
       setBusy("");
     }
   };
-  const copyPath = async (text) => {
+  const copyPath = async (text, key) => {
     if (busy) return;
     setBusy("copy");
     setErr("");
@@ -1478,7 +1479,8 @@ function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
     try {
       if (!navigator.clipboard) throw new Error(t("explorer.copyFail"));
       await navigator.clipboard.writeText(text);
-      setMessage(t("explorer.copied"));
+      setCopied(key);
+      setTimeout(() => setCopied((c) => c === key ? "" : c), 1200);
     } catch (e) {
       setErr(String(e && e.message || e));
     } finally {
@@ -1567,7 +1569,8 @@ function RemoteExplorerBody({ useTabInfo, sessionId, useSessions, t }) {
           children: [
             /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dshr-treeToggle", children: it.type === "dir" ? data[it.path] && data[it.path].loading ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dshr-miniSpinner", "aria-hidden": "true" }) : expanded.has(it.path) ? "\u25BE" : "\u25B8" : "" }),
             it.type === "dir" ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.FileTypeIcon, { kind: "folder", size: 14 }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(import_dsh_client_ui_primitives5.FileTypeIcon, { path: it.name, size: 14 }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dshr-treeName", children: it.name })
+            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dshr-treeName", children: it.name }),
+            copied === it.path ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "dshr-treeBadge", children: t("explorer.copied") }) : null
           ]
         }
       ),

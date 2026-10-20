@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type {
@@ -249,8 +249,6 @@ describe('PermissionSelect', () => {
     expect(trigger().disabled).toBe(false)
     const failure = await screen.findByRole('alert')
     expect(failure.textContent).toBe('rejected')
-    fireEvent.click(within(failure).getByRole('button'))
-    expect(screen.queryByRole('alert')).toBeNull()
     expect(triggerText()).toBe('Custom')
     act(() => { selection.set({ value: { currentValue: 'workspace-write' } }) })
     expect(triggerText()).toBe('工作区内修改')

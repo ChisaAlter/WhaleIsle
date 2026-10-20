@@ -452,7 +452,8 @@ export function PluginInventorySettingsTab(
           onDone={() => { setSyncFeedbackDismissed(true) }} />
       ) : null}
       {syncFeedbackDismissed && !clientSync.syncing && (clientSync.failures.length > 0 || retryFailure !== undefined)
-        ? <Toast text="" holdMs={null} actions={[{ label: t('clientSyncRetry'), onClick: () => { void retrySync() } }]} onDone={() => {}} /> : null}
+        ? <Tooltip label={retryFailure ?? syncFailureText} portal><Button className={css.readRetry} size="sm" variant="outline"
+          icon={<IconRefreshOutline16 />} aria-label={t('clientSyncRetry')} onClick={() => { void retrySync() }} /></Tooltip> : null}
       {state.status === 'loading' ? (
         <div className={css.cards} role="status">
           <span className={css.visuallyHidden}>{t('loading')}</span>

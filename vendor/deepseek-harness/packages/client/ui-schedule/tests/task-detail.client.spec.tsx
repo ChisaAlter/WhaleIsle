@@ -960,11 +960,9 @@ describe('TaskDetail records-tab save failure', () => {
     h.updateTiming.mockResolvedValueOnce({ ok: true, value: { id: every.id, updated: false, code: 'schedule_conflict' } })
     await act(async () => { clickSave() })
     const notice = await operationToast(en['rule.error.conflict'])
-    fireEvent.click(within(notice).getByRole('button', { name: en['detail.close'] }))
-    expect(screen.queryByRole('alert')).toBeNull()
     expect(intervalField().value).toBe('600')
     expect(h.updateTiming).toHaveBeenCalledOnce()
-    const save = screen.getByRole('button', { name: en['rule.save'] })
+    const save = screen.getAllByRole('button', { name: en['rule.save'] }).find(button => !notice.contains(button))!
     expect(save.hasAttribute('disabled')).toBe(false)
     h.updateTiming.mockResolvedValueOnce({
       ok: true, value: { id: every.id, updated: true, record: { ...every, everySeconds: 600 } },

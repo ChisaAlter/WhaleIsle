@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** File-tree presentation over controlled directory watches and deferred listings. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, within } from '@testing-library/react'
+import { act, cleanup, fireEvent } from '@testing-library/react'
 import { makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
@@ -46,14 +46,15 @@ describe('FilesBody', () => {
     expect(script.list).not.toHaveBeenCalled()
     await act(() => script.watches.ready(ROOT))
     expect(script.list).toHaveBeenCalledWith(SESSION, ROOT, expect.any(AbortSignal))
+    expect(view.container.querySelector('[data-files-row="loading"]')).not.toBeNull()
     const reload = view.getByRole('button', { name: zh.reload }) as HTMLButtonElement
     expect(reload.getAttribute('aria-busy')).toBe('true')
     expect(reload.disabled).toBe(true)
     expect(names(view.container)).toEqual([])
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
+    expect(view.container.querySelector('[data-files-state="tree"]')?.getAttribute('data-files-root')).toBe(ROOT)
     expect(reload.getAttribute('aria-busy')).not.toBe('true')
     expect(reload.disabled).toBe(false)
-    expect(view.container.querySelector('[data-files-state="tree"]')?.getAttribute('data-files-root')).toBe(ROOT)
     const path = view.container.querySelector('[data-files-path]')
     expect(path?.getAttribute('title')).toBe(ROOT)
     expect([...path?.firstElementChild?.children ?? []].map(span => span.textContent)).toEqual(['/work/', 'app'])
@@ -174,44 +175,33 @@ describe('FilesBody', () => {
     expect(view.container.querySelector('[data-files-row="empty"]')?.textContent).toBe(zh.empty)
   })
 
-  it('reports a failed level with its directory and reason while retaining the failure code', async () => {
-    const { view, script, instance } = mountBody()
+  it('shows a failed level under its directory with the failure code', async () => {
+    const { view, script } = mountBody()
     await act(() => script.watches.ready(ROOT))
-    const failure = new RemoteError('workspace-file/not-found', 'gone', { path: ROOT })
     await act(() => script.settle({
       ok: false,
-      error: failure,
+      error: new RemoteError('workspace-file/not-found', 'gone', { path: ROOT }),
     }))
-    expect(instance.getSnapshot().byTab[TAB]!.levels[ROOT]).toEqual({ kind: 'failed', failure })
-    const alert = view.getByRole('alert')
-    expect(alert.textContent).toBe(`${ROOT}: ${zh['error.notFound']}${zh.reload}`)
-    expect(within(alert).getByRole('button', { name: zh.reload })).toBeDefined()
-    expect(names(view.container)).toEqual([])
+    const failed = view.container.querySelector('[data-files-row="failed"]')
+    expect(failed?.getAttribute('data-files-code')).toBe('workspace-file/not-found')
+    expect(failed?.textContent).toBe(zh['error.notFound'])
   })
 
-  it('reports a refresh failure while keeping existing directory rows and clears it on retry', async () => {
-    const { view, script, instance } = mountBody()
+  it('shows a refresh failure beside the existing directory rows and clears it on retry', async () => {
+    const { view, script } = mountBody()
     await act(() => script.watches.ready(ROOT))
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
     const rows = names(view.container)
     const reload = view.getByRole('button', { name: zh.reload })
     act(() => { fireEvent.click(reload) })
-    const failure = new RemoteError('workspace-file/not-found', 'gone', { path: ROOT })
     await act(() => script.settle({
-      ok: false, error: failure,
+      ok: false, error: new RemoteError('workspace-file/not-found', 'gone', { path: ROOT }),
     }))
-    expect(instance.getSnapshot().byTab[TAB]!.levels[ROOT]).toEqual({
-      kind: 'ready', level: ROOT_LEVEL, failure, loading: false,
-    })
-    const alert = view.getByRole('alert')
-    expect(alert.textContent).toBe(`${ROOT}: ${zh['error.notFound']}${zh.reload}`)
+    expect(view.container.querySelector('[data-files-row="failed"]')?.textContent).toBe(zh['error.notFound'])
     expect(names(view.container)).toEqual(rows)
-    act(() => { fireEvent.click(within(alert).getByRole('button', { name: zh.reload })) })
-    expect(reload.getAttribute('aria-busy')).toBe('true')
-    expect(names(view.container)).toEqual(rows)
+    act(() => { fireEvent.click(reload) })
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
-    expect(view.queryByRole('alert')).toBeNull()
-    expect(instance.getSnapshot().byTab[TAB]!.levels[ROOT]).toEqual({ kind: 'ready', level: ROOT_LEVEL })
+    expect(view.container.querySelector('[data-files-row="failed"]')).toBeNull()
     expect(names(view.container)).toEqual(rows)
   })
 

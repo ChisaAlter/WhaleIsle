@@ -749,7 +749,7 @@ function PackageDetail({
                   className={css.danger}
                   icon={<IconTrashOutlineRegular size={13} />}
                   aria-label={t('uninstallLabel', { name: title })}
-      loading={busy}
+                  loading={busy}
                   disabled={busy || !pkg.removable || pkg.readOnlyReason !== undefined}
                   onClick={onUninstall}
                 >
@@ -983,87 +983,6 @@ function useInstallComposition(active: boolean) {
   }
 }
 
-/** Installation outcomes float independently of the dialog's content and dimensions. */
-function InstallFeedbackToast({ install, t, onReconcile, onRun }: {
-  readonly install: InstallState
-  readonly t: Translate
-  readonly onReconcile: () => void
-  readonly onRun: () => void
-}): ReactNode {
-  const [feedback, setFeedback] = useState<{
-    seq: number; text: string; success: boolean; persistent: boolean; retry: 'check' | 'run' | null
-  } | null>(null)
-  const shown = useRef('')
-  const sequence = useRef(0)
-  const input = install.inputError
-  const resolved = install.registries?.resolved ?? null
-  const attempts = install.attempts
-  const current = attempts?.registries.at(-1)
-  const previous = attempts?.registries.at(-2)
-  const messages: string[] = []
-  let success = false
-  let persistent = true
-  let retry: 'check' | 'run' | null = null
-  if (install.registryError) {
-    messages.push(t('registryCustomInvalid'))
-  } else if (input !== null && install.confirmed === undefined) {
-    // A confirmed version's dialog states its own refusal beside Retry.
-    messages.push(inputProblemSentence(input, t, resolved))
-    retry = 'run'
-  } else if (install.failure?.uncertainty !== undefined) {
-    const uncertainty = install.failure.uncertainty
-    messages.push(t(({
-      result: 'installResultUnconfirmed',
-      cancellation: install.phase === 'applying' ? 'installApplyingCancellationError' : 'installCancelUnconfirmed',
-      acceptance: 'installAwaitingAcceptance',
-    } as const)[uncertainty], { reason: install.failure.reason }))
-    if (uncertainty === 'result') retry = 'check'
-  } else if (isInstallPending(install.phase) && attempts !== null && current !== undefined && previous !== undefined) {
-    messages.push(t('installAttempt', {
-      previous: registryText(previous, t, resolved).name,
-      registry: registryText(current, t, resolved).name,
-      index: String(attempts.registries.length), total: String(attempts.total),
-    }))
-  } else if (install.phase === 'done') {
-    success = true
-    persistent = false
-    if (install.installed === null) messages.push(t('installDoneNothing'))
-    if (install.restartRequired) messages.push(restartText('installDoneRestart', install.restartReason, t))
-    if (install.approvedBuilds.length > 0) messages.push(t('installDoneApproved', { names: install.approvedBuilds.join(', ') }))
-    const subject = install.subject
-    if (subject?.kind === 'registry' && subject.name !== undefined && subject.version !== undefined
-      && install.installedVersion !== null && install.installedVersion !== subject.version
-      && (attempts?.registries.length ?? 1) === 1) {
-      messages.push(t('installDoneOtherVersion', {
-        installed: install.installedVersion, version: subject.version, exact: `${subject.name}@${subject.version}`,
-      }))
-      success = false
-      persistent = true
-    }
-  }
-  const text = install.open ? messages.join(' ') : ''
-  const identity = `${install.requestId ?? ''}:${install.phase}:${text}`
-  useEffect(() => {
-    if (text === '') {
-      shown.current = ''
-      setFeedback(null)
-      return
-    }
-    if (shown.current === identity) return
-    shown.current = identity
-    setFeedback({ seq: ++sequence.current, text, success, persistent, retry })
-  }, [identity, text, success, persistent, retry])
-  if (feedback === null) return null
-  return <Toast key={feedback.seq} text={feedback.text}
-    {...feedback.success ? { tone: 'success' as const } : { icon: <IconWarningOutlineRegular /> }}
-    holdMs={feedback.persistent ? null : toastHoldMs(feedback.text)} dismissLabel={t('close')}
-    actions={feedback.retry === null ? undefined : [{
-      label: t(feedback.retry === 'check' ? 'installReconcile' : 'installRetry'),
-      onClick: feedback.retry === 'check' ? onReconcile : onRun,
-    }]}
-    onDone={() => { setFeedback(null) }} />
-}
-
 /**
  * The install dialog: the spec and its check, then the installing, installed,
  * and failed screens over the same subject card. A failed run that left
@@ -1089,10 +1008,12 @@ function InstallDialog({
   readonly onChangeRegistry: () => void
   readonly onUseGithubMirror: () => void
 }): ReactNode {
+  const errorId = useId()
   const templateHintId = useId()
   const guideId = useId()
   const approvalId = useId()
   const registryId = useId()
+  const registryErrorId = useId()
   const [guideOpen, setGuideOpen] = useState(false)
   const [customRegistryDraft, setCustomRegistryDraft] = useState('')
   const { phase } = install
@@ -1190,7 +1111,7 @@ function InstallDialog({
     const choice = install.registry
     const resolved = install.registries?.resolved ?? null
     const chosenTitle = choice.kind === 'custom' ? t('registryCustom') : registryText(choice.registry, t, resolved).name
-    const inputSentence = install.inputError === null ? undefined : inputProblemSentence(install.inputError, t, resolved)
+    const inputSentence = install.inputError === null ? null : inputProblemSentence(install.inputError, t, resolved)
     const templateHint = install.spec === INSTALL_GIT_EXAMPLE
       ? t('installGitTemplateHint')
       : install.spec === INSTALL_PATH_EXAMPLE ? t('installPathTemplateHint') : null
@@ -1229,8 +1150,7 @@ function InstallDialog({
               disabled={checking}
               aria-label={t(install.mirrorRecovery ? 'installPackageLabel' : 'installSpecLabel')}
               aria-invalid={install.inputError !== null}
-              title={inputSentence}
-              aria-describedby={templateHint !== null ? templateHintId : undefined}
+              aria-describedby={inputSentence !== null ? errorId : templateHint !== null ? templateHintId : undefined}
               onChange={(event) => { onEditSpec(event.currentTarget.value) }}
               onCompositionStart={specComposition.onCompositionStart}
               onCompositionEnd={specComposition.onCompositionEnd}
@@ -1241,7 +1161,10 @@ function InstallDialog({
               }}
             />
           </div>
-          {templateHint !== null
+          {inputSentence === null
+            ? null
+            : <p id={errorId} className={css.inputError} role="alert">{inputSentence}</p>}
+          {inputSentence === null && templateHint !== null
             ? <p id={templateHintId} className={css.templateHint} role="status">{templateHint}</p>
             : null}
           <div className={css.optionsRow}>
@@ -1361,7 +1284,7 @@ function InstallDialog({
                     placeholder={t('registryCustomPlaceholder')}
                     value={choice.kind === 'custom' ? choice.url : customRegistryDraft}
                     aria-invalid={install.registryError}
-                    title={install.registryError ? t('registryCustomInvalid') : undefined}
+                    aria-describedby={install.registryError ? registryErrorId : undefined}
                     onFocus={() => {
                       if (pointerModality() && choice.kind !== 'custom') onChooseRegistry({ kind: 'custom', url: customRegistryDraft })
                     }}
@@ -1374,6 +1297,9 @@ function InstallDialog({
                       if (event.key === 'Enter' && !empty) onRun()
                     }}
                   />
+                  {install.registryError
+                    ? <p id={registryErrorId} className={css.inputError} role="alert">{t('registryCustomInvalid')}</p>
+                    : null}
                   <span className={css.registryHint}>{t('registryCustomHint')}</span>
                 </div>
               </fieldset>,
@@ -1390,12 +1316,25 @@ function InstallDialog({
   const stoppable = cancellable || phase === 'failed' || phase === 'unknown'
   const failure = install.failure
   const uncertainty = failure?.uncertainty
+  const uncertaintyText = failure?.uncertainty === undefined ? null : t(({
+    result: 'installResultUnconfirmed',
+    cancellation: phase === 'applying' ? 'installApplyingCancellationError' : 'installCancelUnconfirmed',
+    acceptance: 'installAwaitingAcceptance',
+  } as const)[failure.uncertainty], { reason: failure.reason })
   const pendingBuilds = phase === 'failed' ? install.failure?.pendingBuilds ?? [] : []
   const approvable = pendingBuilds.length > 0
   const firstRun = install.runs[0]
   // The registries the Host asked, once there is more than one: the attempt under way while it runs, a badge on each run.
   const asked = install.attempts !== null && install.attempts.registries.length > 1 ? install.attempts : null
+  const current = asked === null ? undefined : asked.registries.at(-1)
+  const previous = asked === null ? undefined : asked.registries.at(-2)
   const resolved = install.registries?.resolved ?? null
+  const attemptLine = pending && asked !== null && current !== undefined && previous !== undefined
+    ? t('installAttempt', {
+      previous: registryText(previous, t, resolved).name, registry: registryText(current, t, resolved).name,
+      index: String(asked.registries.length), total: String(asked.total),
+    })
+    : null
   // Another registry is worth offering only for a failure the Host laid at the one it asked.
   const changeable = phase === 'failed' && !approvable && install.failure?.failedAt === 'registry' && install.confirmed === undefined
   const subject = install.subject
@@ -1432,6 +1371,8 @@ function InstallDialog({
             </span>
             <h2 className={css.wizardTitle} role={phase === 'failed' ? 'alert' : 'status'}>{heading}</h2>
             {phase === 'failed' ? <p className={css.wizardSub}>{failureText(install.failure, t, install)}</p> : null}
+            {attemptLine === null ? null : <p className={css.wizardSub}>{attemptLine}</p>}
+            {uncertaintyText === null ? null : <p className={css.wizardSub} role="alert">{uncertaintyText}</p>}
             {phase === 'unknown' ? <p className={css.wizardSub}>{t('installUnknownDescription')}</p> : null}
           </div>
           {subject === null
@@ -1450,6 +1391,27 @@ function InstallDialog({
                 <Button variant="primary" className={css.wide} onClick={onApproveBuilds}>{t('installApproveAndRetry')}</Button>
               </section>
             )
+            : null}
+          {phase === 'done' && install.installed === null
+            ? <p className={css.result} role="status">{t('installDoneNothing')}</p>
+            : null}
+          {phase === 'done' && install.restartRequired
+            ? <p className={css.resultWarn} role="status">{restartText('installDoneRestart', install.restartReason, t)}</p>
+            : null}
+          {phase === 'done' && subject?.kind === 'registry' && subject.name !== undefined && subject.version !== undefined
+            && install.installedVersion !== null && install.installedVersion !== subject.version
+            // A fallback registry can serve another release than the one inspected, so only a single-registry run is explained.
+            && (install.attempts?.registries.length ?? 1) === 1
+            ? (
+              <p className={css.resultWarn} role="status">
+                {t('installDoneOtherVersion', {
+                  installed: install.installedVersion, version: subject.version, exact: `${subject.name}@${subject.version}`,
+                })}
+              </p>
+            )
+            : null}
+          {phase === 'done' && install.approvedBuilds.length > 0
+            ? <p className={css.result} role="status">{t('installDoneApproved', { names: install.approvedBuilds.join(', ') })}</p>
             : null}
           <div className={css.wizardFoot}>
             <button type="button" className={css.detailsToggle} aria-expanded={install.detailsOpen} onClick={onToggleDetails}>
@@ -1570,8 +1532,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
     const timer = setTimeout(clearHighlight, HIGHLIGHT_MS)
     return () => { clearTimeout(timer) }
   }, [highlight, clearHighlight])
-  const noticeLine = state.notice === null || state.notice.kind === 'refresh-failed'
-    || (state.install.open && state.notice.kind === 'install') ? null : noticeText(state.notice, t)
+  const noticeLine = state.notice === null || state.notice.kind === 'refresh-failed' ? null : noticeText(state.notice, t)
 
   // The page manages what the person installed, what the installation ships for them to switch on, and a
   // selected name the Host cannot read; the installation's other bundles are inspected in the Settings
@@ -1731,10 +1692,8 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
           <Toast
             key={state.notice.seq}
             text={noticeLine}
-            {...state.notice.kind === 'install' && state.notice.outcome === 'done'
-              ? { tone: 'success' as const } : { icon: <IconWarningOutlineRegular /> }}
-            holdMs={state.notice.kind === 'failed' ? null : toastHoldMs(noticeLine)}
-            dismissLabel={t('close')}
+            icon={<IconWarningOutlineRegular />}
+            holdMs={toastHoldMs(noticeLine)}
             onDone={props.dismissNotice}
           />
         )}
@@ -1818,7 +1777,6 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         onChangeRegistry={props.changeRegistry}
         onUseGithubMirror={props.useGithubMirror}
       />
-      <InstallFeedbackToast install={state.install} t={t} onReconcile={props.reconcileInstall} onRun={props.runInstall} />
       {state.confirm === null
         ? null
         : (

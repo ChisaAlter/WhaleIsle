@@ -58,6 +58,7 @@ test('real Electron: floating results preserve layout, safe confirmation and tas
   assert.match(outcome('error').body, /^更新检查失败：/);
   assert.match(outcome('error').body, /超时/);
   assert.equal(outcome('error').role, 'alert');
+  assert.equal(outcome('error').noticeCloseControls, 0, 'transient notices have no close control');
   assert.equal(outcome('available').toastCount, 0, 'one actionable update pane supplies the result');
   assert.match(outcome('available').updateText, /0\.3\.4/);
   assert.equal(outcome('available').updateVisible, true);
@@ -65,7 +66,6 @@ test('real Electron: floating results preserve layout, safe confirmation and tas
   assert.deepEqual(result.confirmSafe, { title: '确认删除', focus: 'app-confirm-cancel' });
   assert.equal(result.confirmRetry, 'shell-feedback-action');
   assert.equal(result.retryCalls, 1);
-  assert.equal(result.confirmToastClose, 'shell-feedback-close');
   assert.deepEqual(result.confirmAfterToastEscape, { title: '确认删除', hidden: false, answer: null, toasts: 0 });
   assert.equal(result.confirmAnswer, false);
   assert.deepEqual(result.pluginFailure, { disabled: false, busy: null, body: 'fixture scan failed' });
@@ -74,7 +74,7 @@ test('real Electron: floating results preserve layout, safe confirmation and tas
   assert.equal(result.scan.extraLines, 0);
   assert.match(result.settings.body, /fixture settings save failed/);
   assert.ok(result.installTabTargets.includes('btn-install-cancel'), 'confirmation does not trap a parallel task cancellation');
-  assert.ok(result.installTabTargets.some(target => target.includes('shell-feedback-close')));
+  assert.ok(result.installTabTargets.some(target => target.includes('shell-feedback-close')), 'pending task panel keeps its own hide control');
   assert.equal(result.installCancelCalls, 1);
   assert.equal(result.installSummaryPending, true);
   for (const terminal of [result.installTerminal, result.importTerminal]) {
