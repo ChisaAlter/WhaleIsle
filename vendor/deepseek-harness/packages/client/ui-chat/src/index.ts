@@ -1,6 +1,8 @@
 /** Host registration for browser Chat preferences. */
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import { createRequire } from 'node:module'
 
 import type { Volatile, Context } from '@deepseek-ai/cordis'
 import type { ChatSettings, CollapseTiming, LinkOpening, PerformanceUsageMode } from './chat-settings.ts'
@@ -43,9 +45,17 @@ export function apply(ctx: Context): void {
   ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
   // Only the desktop declares this renderer; ordinary web/headless profiles
   // retain their existing prompt and do not advertise an unavailable surface.
-  if (process.env.DSHD_OPENUI_ENABLED === '1') {
+  if (process.env.DSHD_WHALE_UI_ENABLED === '1') {
     ctx.inject(['systemPrompt'], child => {
-      child.systemPrompt.section({ name: 'openui', order: 79, text: OPENUI_GUIDE, interpolate: false })
+      child.systemPrompt.section({ name: 'whale-ui', order: 79, text: OPENUI_GUIDE, interpolate: false })
+    })
+    ctx.inject(['tools'], child => {
+      child.effect(() => {
+        const filename = process.env.DSHD_WHALE_UI_HOST
+        if (!filename) throw new Error('The desktop Whale UI validator was not supplied.')
+        const runtime: { renderUiTool: ToolDefinition } = createRequire(import.meta.url)(filename)
+        return child.tools.register(runtime.renderUiTool)
+      })
     })
   }
 }

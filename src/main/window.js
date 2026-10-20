@@ -258,7 +258,7 @@ function attachPrivilegedNavigationGuards(contents, options) {
   // Remember the frame identity before its scripts can change window.name.
   const generatedFrames = new Set();
   const isGeneratedFrame = (frame) => frame?.name === 'whale-visual-reply'
-    || (typeof frame?.name === 'string' && frame.name.startsWith('whale-openui:'));
+    || (typeof frame?.name === 'string' && (frame.name.startsWith('whale-openui:') || frame.name.startsWith('whale-ui:')));
   contents.on('frame-created', (_event, { frame }) => {
     if (isGeneratedFrame(frame)) generatedFrames.add(frame.frameTreeNodeId);
   });

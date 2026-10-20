@@ -2,6 +2,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PerformanceUsageMode } from '../../chat-settings.ts'
 import type { ChatPresentationPolicy } from '../presentation-policy.ts'
 import { NS } from '../locale.ts'
@@ -17,6 +19,9 @@ import { TurnProcessNodeView } from './TurnProcessNodeView.tsx'
 import { TurnTailNodeView } from './TurnTailNodeView.tsx'
 import { TurnTriggerNodeView } from './TurnTriggerNodeView.tsx'
 import { openUiActionText, readOpenUiState, saveOpenUiState, type OpenUiInjected } from './openui.ts'
+import { createWhaleUiStore } from './whale-ui-store.ts'
+import { WhaleUiPanel } from './WhaleUiPanel.tsx'
+import { WhaleUiToolView } from './WhaleUiPanelToolView.tsx'
 
 /**
  * Register this package's business renderers behind the keyed Chat Node seat.
@@ -45,6 +50,37 @@ export function registerChatNodeRenderers(
     openUiTheme.set(child.theme.getTheme())
     child.on('theme/change', snapshot => { openUiTheme.set(snapshot) })
   })
+  const openUiLocale = createSnapshotStore<'zh' | 'en'>(ctx.locale.getLocale().active.startsWith('zh') ? 'zh' : 'en')
+  ctx.on('locale/change', snapshot => { openUiLocale.set(snapshot.active.startsWith('zh') ? 'zh' : 'en') })
+  const whaleUiStore = createWhaleUiStore()
+  const injectWhaleUi = (sessionId: SessionId): OpenUiInjected => {
+    const binding = ctx.sessions.binding(sessionId)
+    if (binding === undefined) throw new Error('The Whale UI conversation is no longer available.')
+    return {
+      hooks: { openUiTheme, openUiLocale },
+      readOpenUiState,
+      saveOpenUiState,
+      sendOpenUiAction: async (action) => {
+        if (ctx.sessions.binding(sessionId) !== binding) return { ok: false, error: 'The Whale UI conversation is no longer available.' }
+        const result = await binding.session.prompt([{ type: 'text', text: openUiActionText(action) }], 'queue')
+        return result.ok ? { ok: true } : { ok: false, error: result.error.message }
+      },
+    }
+  }
+  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+    name: 'conversation.input.dock',
+    id: 'whale-ui',
+    order: 30,
+    locale: NS,
+    store: whaleUiStore,
+    inject: injectWhaleUi,
+  }, WhaleUiPanel))
+  ctx.slots.inject('tool.call.whale-ui', () => ctx.slots.register({
+    name: 'tool.call.whale-ui',
+    locale: NS,
+    store: whaleUiStore,
+    inject: injectWhaleUi,
+  }, WhaleUiToolView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
     key: 'user',
@@ -70,16 +106,10 @@ export function registerChatNodeRenderers(
       'conversation.chat.reasoning.body': { kind: 'single', scope: 'session' },
       'conversation.chat.message.images': { kind: 'single', scope: 'session' },
     },
+    store: whaleUiStore,
     inject: (sessionId): OpenUiInjected & { hooks: { presentation: typeof presentation } } => ({
-      hooks: { presentation, openUiTheme },
-      readOpenUiState,
-      saveOpenUiState,
-      sendOpenUiAction: async (action) => {
-        const binding = ctx.sessions.binding(sessionId)
-        if (binding === undefined) throw new Error('The OpenUI conversation is no longer available.')
-        const result = await binding.session.prompt([{ type: 'text', text: openUiActionText(action) }], 'queue')
-        if (!result.ok) throw new Error(result.error.message)
-      },
+      ...injectWhaleUi(sessionId),
+      hooks: { presentation, openUiTheme, openUiLocale },
     }),
   }, AssistantNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({

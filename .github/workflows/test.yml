@@ -89,6 +89,8 @@ jobs:
       - run: node node_modules/electron/install.js
       - name: Build the shipped Harness profile
         run: npm run setup:harness
+      - name: Whale UI behavior tests
+        run: npm run test:whale-ui
       - name: Desktop behavior tests
         run: npm test
       - name: Update download network recovery

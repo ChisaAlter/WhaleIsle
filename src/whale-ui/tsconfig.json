@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "paths": { "@whale-ui/language": ["./language/index.ts"], "@whale-ui/react": ["./react/index.ts"], "@openuidev/lang-core": ["./language/index.ts"], "@openuidev/react-lang": ["./react/index.ts"] },
+    "types": ["node"]
+  },
+  "include": ["**/*.ts", "**/*.tsx", "**/*.d.ts"],
+  "exclude": ["node_modules", "tests"]
+}

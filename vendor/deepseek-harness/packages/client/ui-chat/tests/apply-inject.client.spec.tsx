@@ -167,7 +167,7 @@ describe('Chat inject API', () => {
     }
   })
 
-  it('routes an OpenUI action to its original Session with form and context in the logged prompt', async () => {
+  it('routes a Whale UI action to its original Session with form and context in the logged prompt', async () => {
     const b = await bench()
     const other = sessionFakeFor()
     const otherId = 'other-selected-session' as SessionId
@@ -180,10 +180,12 @@ describe('Chat inject API', () => {
       const original = inject(ROOT)
       const second = inject(otherId)
       await second.sendOpenUiAction({ message: 'Other action' })
-      await original.sendOpenUiAction({ message: 'Apply filter', formState: { selected: ['west'] }, context: { chart: 'sales' } })
-      expect(b.session.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'Apply filter\n\nOpenUI form state:\n{"selected":["west"]}\n\nOpenUI context:\n{"chart":"sales"}' }], 'queue')
+      expect(await original.sendOpenUiAction({ message: 'Apply filter', formState: { selected: ['west'] }, context: { chart: 'sales' } })).toEqual({ ok: true })
+      expect(b.session.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'Apply filter\n\nWhale UI form state:\n{"selected":["west"]}\n\nWhale UI context:\n{"chart":"sales"}' }], 'queue')
       expect(other.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'Other action' }], 'queue')
       expect(b.session.prompt).toHaveBeenCalledOnce()
+      b.session.prompt.mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/bad-request', 'Queue rejected', {}) })
+      expect(await original.sendOpenUiAction({ message: 'Rejected by queue' })).toEqual({ ok: false, error: 'Queue rejected' })
       b.session.prompt.mockRejectedValueOnce(new Error('Original Session unavailable'))
       await expect(original.sendOpenUiAction({ message: 'Rejected action' })).rejects.toThrow('Original Session unavailable')
       reference.release()

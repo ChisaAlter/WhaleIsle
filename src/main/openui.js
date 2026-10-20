@@ -8,7 +8,7 @@ const API_ROUTES = new Map([
 ]);
 
 function openuiViewer() {
-  return fs.promises.readFile(rendererFile('openui/viewer.html'), 'utf8');
+  return fs.promises.readFile(rendererFile('whale-ui/viewer.html'), 'utf8');
 }
 
 function isStringQuery(value) {
@@ -25,13 +25,23 @@ async function openuiApi(input) {
     throw new Error('Invalid OpenUI API request');
   }
 
-  // Route selection and origin are shell-owned. The renderer supplies only
-  // query values; each upstream handler keeps its own validation and cache.
+  // Fixed routes own validation and caching; the renderer supplies query values.
   const url = new URL(input.path, 'https://openui.local');
   url.search = new URLSearchParams(input.query).toString();
-  const { GET } = require(rendererFile(`openui/api/${API_ROUTES.get(input.path)}`));
+  const { GET } = require(rendererFile(`whale-ui/api/${API_ROUTES.get(input.path)}`));
   const response = await GET(new Request(url, { method: 'GET' }));
   return { status: response.status, body: await response.json() };
 }
 
-module.exports = { openuiViewer, openuiApi };
+const WHALE_BUNDLES = new Set(['mermaid.js', 'three.js', 'echarts-core.js', 'echarts-full.js', 'icons.js', 'standalone-runtime.js']);
+
+/** The trusted parent can request only packaged rendering engines, never a filesystem path. */
+async function openuiBundle(input) {
+  if (!input || typeof input !== 'object' || !WHALE_BUNDLES.has(input.name)) {
+    throw new Error('Invalid Whale UI bundle request');
+  }
+  const bytes = await fs.promises.readFile(rendererFile(`whale-ui/assets/${input.name}`));
+  return bytes.toString('base64');
+}
+
+module.exports = { openuiViewer, openuiApi, openuiBundle };

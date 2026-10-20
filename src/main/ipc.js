@@ -43,7 +43,7 @@ const { listDir, readFile, readFileMedia, writeFile } = require('./workspace-fs'
 const { listAvailableEditors, openInEditor, revealInFolder, openWithSystemDefault } = require('./editors');
 const { IPC_ROLES, assertIpcSender } = require('./ipc-authorization');
 const { openDesktopDshHome } = require('./open-dsh-home');
-const { openuiViewer, openuiApi } = require('./openui');
+const { openuiViewer, openuiApi, openuiBundle } = require('./openui');
 
 const BOOT_ONLY = [IPC_ROLES.BOOT];
 const HARNESS_ONLY = [IPC_ROLES.HARNESS];
@@ -153,6 +153,7 @@ function registerIpc({
 
   handle('shell:openui-viewer', HARNESS_ONLY, () => openuiViewer());
   handle('shell:openui-api', HARNESS_ONLY, (_event, input) => openuiApi(input));
+  handle('shell:openui-bundle', HARNESS_ONLY, (_event, input) => openuiBundle(input));
 
   // Boot-page restarts are full desktop starts: record their outcome in
   // last-desktop-start.json so the next cold-start gate sees the truth.

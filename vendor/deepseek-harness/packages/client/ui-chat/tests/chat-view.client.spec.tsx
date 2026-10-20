@@ -320,7 +320,10 @@ function HarnessChatNode({ standard, owner, hookContext, usePerformanceUsage, us
       return <ContextMessageNodeView {...nodeProps} node={owner.node} />
     case 'assistant-step':
       return <AssistantNodeView {...nodeProps} node={owner.node} renderSlot={renderAssistantSlot}
-        useOpenUiTheme={useOpenUiTheme} sendOpenUiAction={async () => {}}
+        useOpenUiTheme={useOpenUiTheme} useOpenUiLocale={selector => selector('zh')}
+        sendOpenUiAction={async () => ({ ok: true })} useStore={selector => selector({
+          snapshot: null, base: null, barrier: null, operations: [], lastSeenSeq: -1, collapsed: false, restoreError: null,
+        })} actions={{ publish: () => {}, collapse: () => {}, clear: () => {} }}
         readOpenUiState={() => ({})} saveOpenUiState={() => {}} />
     case 'command':
       return <CommandNodeView {...nodeProps} node={owner.node} renderSlot={renderCommandSlot} />

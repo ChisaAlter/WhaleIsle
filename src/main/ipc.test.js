@@ -335,6 +335,7 @@ function loadIpc(options = {}) {
   stub('./openui', {
     openuiViewer: options.openuiViewer || (async () => ''),
     openuiApi: options.openuiApi || (async () => ({ status: 200, body: {} })),
+    openuiBundle: options.openuiBundle || (async () => ''),
   });
   stub('./ipc-authorization', {
     IPC_ROLES,
@@ -439,14 +440,16 @@ test('OpenUI IPC accepts only the trusted harness main frame and preserves its r
     getHarnessOrigin: () => mainFrame.url,
     openuiViewer: async () => { calls.push(['viewer']); return viewer; },
     openuiApi: async (input) => { calls.push(['api', input]); return response; },
+    openuiBundle: async (input) => { calls.push(['bundle', input]); return 'd2hhbGU='; },
   });
   try {
     const request = { path: '/api/wiki', query: { title: 'Kyoto' } };
     const trusted = { sender: harness, senderFrame: mainFrame };
     assert.equal(await ipc.invoke('shell:openui-viewer', trusted), viewer);
     assert.deepEqual(await ipc.invoke('shell:openui-api', trusted, request), response);
-    assert.deepEqual(calls, [['viewer'], ['api', request]]);
-    for (const channel of ['shell:openui-viewer', 'shell:openui-api']) {
+    assert.equal(await ipc.invoke('shell:openui-bundle', trusted, { name: 'mermaid.js' }), 'd2hhbGU=');
+    assert.deepEqual(calls, [['viewer'], ['api', request], ['bundle', { name: 'mermaid.js' }]]);
+    for (const channel of ['shell:openui-viewer', 'shell:openui-api', 'shell:openui-bundle']) {
       for (const event of [bootEvent(), launcherEvent(),
         { sender: harness, senderFrame: { url: mainFrame.url } },
         { sender: { ...harness }, senderFrame: mainFrame },
@@ -454,7 +457,7 @@ test('OpenUI IPC accepts only the trusted harness main frame and preserves its r
         await assert.rejects(() => ipc.invoke(channel, event, request), error => error.code === 'ERR_DSH_IPC_SENDER');
       }
     }
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 3);
   } finally {
     ipc.restore();
   }

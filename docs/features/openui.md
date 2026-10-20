@@ -1,40 +1,38 @@
-# 聊天内 Open Intelligent UI
+# Whale UI 交互界面
 
-桌面聊天可以把 assistant 回复中的 `openui` 代码块直接渲染为交互页面。复用 `thesysdev/open-intelligent-ui` 的完整组件库、函数、样式和资源辅助服务，不替换 WhaleIsle 的聊天壳、模型配置、会话记录、工具或权限链路。`openui-lang` 是同一载体的语言别名；其他代码块保持原有源码展示。
+Whale UI 在聊天正文、工具卡和会话面板中渲染生成的交互界面。新程序使用 `whale-ui` 代码围栏；既有 `openui`、`openui-lang` 和 JSON `dsh-ui` 通过同一个自有运行时读取。模型仍由 WhaleIsle 现有 provider 调用，页面不需要独立模型服务或 API key。
 
 ## 使用与状态
 
-让助手制作计算器、交互图表、地图、清单或其他适合在页面内操作的内容。桌面为模型提供完整 OpenUI Lang 指导，模型仍通过现有 provider 生成回复，不需要 Thesys API key。输入、筛选、公式和 `@Set` 在页面本地执行；`@ToAssistant` 和未指定动作的 Button 把用户操作排入**该页面所属会话**，并带上表单值与上下文。
+页面以 `root = Col(...)` 开始，可组合输入、清单、计算、SVG、图表、地图、HTML、数学公式和媒体。专用组件包括函数绘图、Mermaid、3D 场景、ECharts、结构图、测验、文件树、时间线、步骤、差异和 JSON。`render_ui` 工具接收完整程序或已有声明式 spec，在完成验证后把程序记录到工具结果元数据，工具卡和历史回放使用相同 viewer。
 
-卡片标题栏显示页面内容的第一个标题（viewer 渲染后回报），没有标题或仍在发送操作时显示通用文案。页面内容在卡片内留出 16–20px 内边距，不贴边框。程序诊断（如组件参数多余、未知组件）显示在页面下方的文档流中，可关闭，不覆盖页面或卡片后的文字。
+`@Set`、`@Reset`、筛选和计算在本地运行。`@ToAssistant`、未指定动作的按钮和声明式组件的 action 排入**页面所属会话**，等待该会话的队列回执；失败会显示原因并停止后续动作。顺序动作在每一步执行时读取状态，前一步修改可被后一步复制或发送。表单只提交其成员，普通对象的 `value` 字段保留业务含义。
 
-页面随回复流式更新，结束生成和切换源码不会重建 iframe。交互状态按会话、消息、文本块和代码块位置保存在当前浏览器本地存储，历史查看、切换会话和重新加载会恢复；它不提供跨设备状态同步。原始程序保留在既有会话 Markdown 中。
+卡片标题栏显示页面内容的第一个标题（viewer 渲染后回报），没有标题或仍在发送操作时显示通用文案。页面内容在卡片内留出 16–20px 内边距，不贴边框。程序诊断显示在页面下方的文档流中，可关闭宿主诊断提示，不覆盖页面或卡片后的文字。
 
-对象字面量中的中文键需加引号，例如 `{"数量": $quantity, "备注": $note}`；上游 SDK 的裸标识符只支持 ASCII，未引号的中文键会变成 `?`。
+页面随回复流式更新，结束生成、主题变化和源码切换保持 iframe。绑定、普通字段和组件交互状态由该文档的同一 store 保存，已编辑值与仍可更新的默认值分开处理。状态按会话、消息、文本块和代码块位置保存在当前浏览器；重载和会话切换可恢复，不提供跨设备同步。历史存储只读取迁移，不删除原记录；旧字段包装只在明确标记或精确旧格式下识别。无法匹配身份的旧字段仍保留。
 
-## 装配与权限
+声明式 spec 的 `panel:true` 在完整验证后发布到所属会话的输入区面板。面板按真实日志序号及围栏位置排序，`append:true` 在恢复内容后追加；重复来源更新替换该来源，清空后的历史回放不会重新注入。面板折叠状态和内容同步保存，保存失败保持原可见状态并报告原因。面板也使用相同 iframe、状态和动作桥接。
 
-- 原始快照与来源：`vendor/open-intelligent-ui/UPSTREAM.md`。
-- `scripts/prepare-openui.mjs` 从固定依赖构建完整 viewer、内嵌地图 worker/字体和三个资源 handler，随产物保留来源记录及 SDK 许可正文；启动过期检查及打包入口都会准备这些产物。
-- `src/openui-viewer/` 承载独立 React 19 runtime。原聊天仍用 React 18，不升级全局 React，也不引入上游 Next.js 聊天服务或模型代理。
-- `ui-chat` 的 assistant Markdown 提供专用 fence renderer；普通 Markdown、推理和现有 `html_render` 路径保持原约定。只有桌面 Harness 进程通过 `DSHD_OPENUI_ENABLED=1` 宣告这一能力。
-- viewer 使用无 same-origin 的 `allow-scripts` iframe，name 为 `whale-openui:<instanceId>`。主进程固定 frame identity 并阻止其导航离开 srcDoc；生成内容无 Node、preload、会话客户端或凭据。
-- 父桥接核验精确 frame、协议版本和实例，只处理本地状态、尺寸、用户消息、HTTP(S) 外链、复制和三个固定资源操作。资源 IPC 仅供受信任的 harness 主 frame，不能由生成内容指定任意代理 URL。
-- 三个资源 handler 使用 Electron `net.fetch`，与 Harness 的默认 session 共用 Chromium 网络和系统代理；保留上游参数校验、超时、缓存与 HTTP 状态，不改 Node 全局 fetch。
-- 地图、图片、字体、YouTube 和 HtmlView 保留上游外部资源能力，因此页面可能向其资源服务发送请求。它不是离线执行环境；HtmlView 仍有自身独立 sandbox。
+最终回复包含截断、未解析引用、无效字段或丢弃节点时显示诊断，不能只凭已有部分可见就认定完整。当前 viewer 没有业务工具提供器，`Query` 与 `Mutation` 声明会明确报错；数据须先由会话工具获取。Unicode 标识符与对象键可用；含空格等字符的键仍需引号。每个文档有源码、语法深度、展开节点、求值、集合和状态预算，超限给出错误。
 
-## 负责代码
+声明式组件可以导出 JSON 与自包含 HTML，保留当前交互状态；HTML 内的本地控件可独立操作，向会话发送消息需要宿主。导出中的远程图片和媒体仍依赖网络。密码字段不写入状态快照。
 
-桌面桥接在 `src/main/openui.js`、`src/main/ipc.js`、`src/preload/index.js` 与 `src/main/window.js`。客户端入口在 vendored `ui-chat/src/client/chat/OpenUiFrame.tsx`、`openui.ts`、`AssistantMarkdown.tsx`；公共 Markdown 的可选 fence 接口位于 `ui-primitives/src/markdown/`。
+## 源码与装配
 
-## 验证与交付边界（2026-10-16）
+- [自有运行时](../../src/whale-ui/README.md)承载语言、React 适配、基础组件、函数、专用组件、资源、viewer 和验证器。
+- [构建入口](../../scripts/prepare-whale-ui.mjs)从该注册表生成模型指导和运行时，内嵌地图 worker、KaTeX 字体与 CSS，按需打包图形引擎，输出实际依赖许可正文。原 `prepare:openui` 命令保留为构建别名。
+- [许可记录](../../src/whale-ui/THIRD_PARTY_NOTICES.md)列出固定 SDK 与 GenUI 源码版本。基础组件、函数、主题和资源处理器为独立实现，构建不读取 Open Intelligent UI 应用层源文件、样式或媒体。
+- 原聊天使用 React 18，隔离 viewer 使用 React 19；桌面以 `DSHD_WHALE_UI_ENABLED=1` 和固定验证器路径宣告能力，普通 web/headless 不宣告不可用的界面能力。
 
-官方 native-system、host、client、web 及独立 viewer 构建通过；定向检查覆盖 Markdown fence 身份、流式状态、恢复与错误清除、原会话动作、IPC、导航和打包文件契约。Standards 与 Spec 独立评审发现的问题均已修复复核。
+## 隔离与资源
 
-源码 Electron 中，经原 composer、provider、assistant 回复链路验证了流式程序、本地计算、源码切换、重载恢复、发送表单到原会话及生成期间排队；模型请求实际包含完整指导。上述交互验收使用本地 OpenAI-compatible SSE stub。地图矢量底图、拖动缩放、街道路线、标记状态、Wikipedia 图片搜索、SVG 与 HtmlView 交互均已实测；明暗主题与 1440×920 / 960×640 renderer 视口完整画面已检查。
+Viewer 使用 `sandbox="allow-scripts"` 的 opaque iframe，name 为 `whale-ui:<instanceId>`。主进程阻止生成 frame 导航离开 srcDoc；生成内容没有 Node、preload、文件系统、凭据或会话客户端。父桥接核验精确 frame、版本和实例，只处理状态、尺寸、诊断、面板发布及有回执的动作。
 
-追加实机检查对应产品提交 `be0c26f60b`：通过用户指定的本地 Magpie / `gpt/gpt-6.1-sol`，从原 composer 真实生成计算器。本地输入与加一保持一轮一步；点击确认才把数量 5 和中文备注送回所属 Session，真实第二轮回复正确确认。重新加载同一程序后，用目标 iframe 的真实鼠标及输入事件验证 4→5、平方 16→25；再次重载仍保留 5／25 和备注，没有新增模型调用。
+HTTP(S) 链接由宿主打开，复制由宿主剪贴板完成，导出由父页面下载。资源 IPC 只接受三个固定操作：Wikipedia 页面信息、Wikimedia 图片搜索和 OSRM 街道路线；调用方不能指定代理 URL。它们使用 Electron `net.fetch` 与系统代理，校验参数、设置超时并缓存成功结果。图形 bundle IPC 只允许六个固定产物名称。
 
-已实际调整正常与最窄原生窗口，`getBounds()` 分别为 1441×920、961×640（DPI 舍入）。完整画面中的控件、结果及会话回执均可达：[正常窗口](../images/openui-native-normal.png)、[最窄窗口](../images/openui-native-narrow.png)。
+地图、图片、YouTube、媒体和 HtmlView 可使用其资源服务，因此不是离线环境。HtmlView 还有独立的 `allow-scripts` sandbox，外部脚本限于已列出的 CDN，主题通过消息更新而不重建页面。生成内容的动作仍遵守既有工具和权限链路。
 
-完整 `prestart-ensure.mjs`、OpenUI 准备、官方客户端构建及直接源码启动已通过。尚未打包、安装或发布。
+## 验证
+
+基础组件、数据函数、语言与 React 状态、GenUI 解析与专用图形，以及主进程/预加载桥接有定向回归。受控图形工厂和 jsdom 可验证状态、回执和卸载，不能证明 GPU、外部资源或源码 Electron 的端到端结果。当前变更的实际构建与应用验证结果记录在对应 PR。

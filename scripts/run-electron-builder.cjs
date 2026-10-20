@@ -17,7 +17,7 @@ fsPromises.writeFile = async (...args) => {
 }
 
 async function run() {
-  await (await import('./prepare-openui.mjs')).prepareOpenUi()
+  await (await import('./prepare-whale-ui.mjs')).prepareWhaleUi()
   require('./prepare-preview-guest-preload.cjs').preparePreviewGuestPreload()
   if (process.platform === 'win32') {
     // The official NSIS decoder uses BCJ; 7za handles the complete staged directory.
