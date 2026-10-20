@@ -538,7 +538,9 @@ test('release walk types into Lexical composer and matches 0.1.2 chrome copy', (
   assert.match(walk, /stop generating\|停止生成/);
   assert.match(walk, /no 发送消息 \(likely 停止生成 leftover\)/);
   assert.match(walk, /Session 日志/);
-  assert.match(walk, /\^\(discover\|发现\)\$/);
+  assert.match(walk, /buildMarketplaceScript/);
+  assert.match(walk, /id\$="-discover"/);
+  assert.match(walk, /oldMarketHidden/);
   assert.match(walk, /识图模型/);
   assert.match(walk, /add files or run commands\|添加文件或调用指令/);
   assert.match(PAGE_HELPERS, /function composerModelTrigger/);

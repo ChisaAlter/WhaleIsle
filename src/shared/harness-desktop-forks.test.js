@@ -78,6 +78,10 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
   ].join('\n'));
   for (const marker of FORK_FILE_MARKERS) {
     const content = {
+      'packages/experimental/plugin-market-bundle/cordis.patch.yml': 'DSHD_PLUGIN_MARKET_INDEX\n',
+      'packages/client/ui-sidebar/src/client/SidebarRoot.tsx': 'data-dsh-panel={id}\n',
+      'packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx': 'data-plugin-back\n',
+      'packages/client/ui-settings-general/src/client/SettingsRoot.tsx': 'data-dsh-settings-close\n',
       'packages/client/ui-primitives/src/markdown/MarkdownText.tsx': 'renderCodeFence MarkdownCodeFenceRenderer\n',
       'packages/client/ui-chat/src/index.ts': "DSHD_WHALE_UI_ENABLED name: 'whale-ui' renderUiTool\n",
       'packages/client/ui-chat/src/client/chat/AssistantMarkdown.tsx': 'OpenUiFrame renderCodeFence\n',
@@ -171,7 +175,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/api/workspace-controller/tsconfig.host.json': '{"references":[{"path":"../../util/home-paths"}]}\n',
       'packages/api/workspace-controller/package.json': '{"peerDependencies":{"@deepseek-ai/dsh-home-paths":"workspace:^"}}\n',
       'apps/cli/src/args.ts': "program.option('--skip-user-plugins', 'boot the shipped bundle template')\nconst { patches, skipUserPlugins, args } = opts\n",
-      'packages/boot/app-boot/src/profile.ts': "options.bundles === 'template'\ntemplate?.bundles ?? dropRetiredBundles\n",
+      'packages/boot/app-boot/src/profile.ts': "options.bundles === 'template'\ntemplate?.bundles ?? dropRetiredBundles\nDSHD_PLUGIN_MARKET_INDEX .desktop-plugin-market-v1\n",
       'packages/boot/app-boot/src/profile-context.ts': "bundles: context.skipUserPlugins === true ? 'template' : 'manifest'\n",
       'apps/cli/src/dump-config.ts': 'export function dumpConfigLayers(options: { skipUserPlugins?: boolean }) {}\n',
       'tsconfig.host.json': '{"references":[{"path":"packages/host/mcp-servers"},{"path":"packages/host/skill-inventory"},{"path":"packages/llm/llm-vision-fallback"},{"path":"packages/mcp/mcp-servers-file"}],"include":["apps/web/tests/caption-drag-dead-zones.e2e.ts"]}\n',

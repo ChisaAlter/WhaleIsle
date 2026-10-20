@@ -24,7 +24,7 @@ This optional bundle mounts custom plugin markets: the Host [`pluginMarket`](../
 <a id="use-this-package"></a>
 ## Use this package
 
-Open **Plugins** in the Web sidebar, select **More** beside **Experimental plugins**, and switch on **Custom plugin markets**; once on, it also appears on the main list. The page then shows the **Installed** and **Discover** tabs; **Discover** adds index sources and installs their bundles. Switching the bundle off removes the Discover tab and the `plugin_market` tool; the saved index sources stay in the profile.
+Open **Plugins** in the Web sidebar, select **More** beside **Experimental plugins**, and switch on **Custom plugin markets**; once on, it also appears on the main list. The page then shows the **Installed** and **Discover** tabs; **Discover** adds index sources and installs their bundles. Switching the bundle off removes the Discover tab and the `plugin_market` tool; the saved index sources stay in the profile. WhaleIsle desktop enables this bundle by default and supplies its community index through `DSHD_PLUGIN_MARKET_INDEX` in the bundle layer; a saved source list, including an empty list, overrides that default.
 
 -----
 

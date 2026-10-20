@@ -9,7 +9,7 @@ function marketplaceRendererDir() {
 }
 
 function hasMarketSectionScript(scripts) {
-  return scripts.some((script) => script.includes('data-dsh-settings-section') && script.includes('"market"'));
+  return scripts.some((script) => script.includes('data-dsh-panel="plugins"') && script.includes('-discover'));
 }
 
 function loadWindowModule() {
@@ -59,7 +59,7 @@ function loadWindowModule() {
           error: '',
         });
       }
-      if (script.includes('data-dsh-settings-section')) {
+      if (script.includes('data-dsh-panel="plugins"')) {
         return Promise.resolve(this.settingsOpened);
       }
       return Promise.resolve(true);
@@ -241,7 +241,7 @@ test('openMarketplace does not create a window when the main window is missing',
   }
 });
 
-test('openMarketplace jumps to the dsh-market settings section when Harness is ready', async () => {
+test('openMarketplace jumps to official Plugins Discover when Harness is ready', async () => {
   const loaded = loadWindowModule();
   try {
     const { windowMod, windows } = loaded;

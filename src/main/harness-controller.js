@@ -654,16 +654,14 @@ class HarnessController extends EventEmitter {
       }
       throw new Error(`桌面内置 Office 运行时失败：${errorMessage(error)}`);
     }
-    // The marketplace is desktop-owned (settings section `market` +
-    // main-process curated engine); every start only clears legacy
-    // dshmarket preset residue, log-only on failure.
+    // Clear retired dshmarket preset residue without changing user installs.
     try {
       const market = await this.removeDshMarketPreset();
       checkCurrent();
       if (market && market.ok === false) {
         this.dsh.log(`清理 dshmarket 预置残留失败：${market.error || 'unknown'}`, 'app');
       } else if (market && market.changed) {
-        this.dsh.log('已清理 dshmarket 桌面预置残留（市场已内置到桌面设置）', 'app');
+        this.dsh.log('已清理 dshmarket 桌面预置残留', 'app');
       }
     } catch (error) {
       checkCurrent();
@@ -733,13 +731,8 @@ class HarnessController extends EventEmitter {
       }
       throw new Error(`桌面内置 dsh-im 失败：${errorMessage(error)}`);
     }
-    // Marketplace is desktop-owned Settings → 市场 — not a user plugin.
-    // Its overlay rides --patch on every start (including
-    // skipUserPlugins recovery); the disable list never applies; missing
-    // runtime package fails the post-extraction dsh preflight (desktop
-    // runtime damage, skip cannot fix it). Overlay generation itself runs
-    // before dsh.start extracts the packaged Harness, so it must not require
-    // the package directory to exist yet.
+    // Hide the legacy Settings market on full and recovery starts. The
+    // profile enables official Discover with the desktop's default index.
     try {
       const market = await this.ensureDesktopMarket();
       checkCurrent();
@@ -750,7 +743,7 @@ class HarnessController extends EventEmitter {
         patchFiles.push(market.overlayFile);
       }
       if (market && market.ok) {
-        this.dsh.log(market.added ? '已接入桌面内置市场（设置分区）' : '桌面内置市场已就绪', 'app');
+        this.dsh.log('插件市场入口：插件 → 发现；旧设置市场已隐藏', 'app');
       }
     } catch (error) {
       checkCurrent();

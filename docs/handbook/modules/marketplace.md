@@ -2,7 +2,7 @@
 
 ## 职责与非目标
 
-**职责：** 桌面自有市场：设置 section `market`（`ui-settings-market` 桌面 fork 包）+ 主进程精选目录 / 安装引擎；目录浏览、搜索、按 catalog id 安装 / 更新 / 卸载。
+**职责：** 「插件 → 发现」使用官方自定义插件市场浏览和安装，桌面默认启用并提供社区索引源。旧桌面市场设置入口隐藏，主进程精选目录、安装 API 和操作历史保留，继续服务会话内安装与导入。
 **非目标：** 独立 Electron 市场窗；Composer 草稿安装旧路径；预置第三方 `dshmarket` 插件（已废止，见下）。
 
 ## 用户路径
@@ -11,12 +11,7 @@
 
 ## 架构要点
 
-- UI：`vendor/deepseek-harness/packages/client/ui-settings-market`（桌面 fork 包，登记于
-  `src/shared/harness-desktop-forks.js`），仅当 `window.shell` 暴露市场 API 时注册
-  `settings.section` id `market`；纯 `dsh web` 浏览器无此分区。分区为「发现 / 已安装」
-  双页签：发现页是搜索 + 分类 chips + 卡片网格（头像 / 星标 / 分类 / 主页 / 已弃用徽标），
-  已安装页按目录分类分组 profile 插件行并逐行卸载（QA 走查 `market.discover` /
-  `market.installed` 断言这套结构）。
+- UI：官方 `ui-plugin-manager` 的「插件」页承载「已安装 / 发现」，`ui-plugin-market` 提供发现页。托盘和菜单的「插件市场」直接打开此页签；未就绪时保留待跳转意图，不创建独立窗口。旧 `ui-settings-market` 的受管 overlay 带 `disabled: true`，设置里不再注册 `market` 分区。下面的精选目录、收藏、快照和批量更新属于保留的旧桌面引擎；官方发现页使用自身的安装和确认流程。
 - 更新：主进程只检查已安装且仍在目录中的插件。npm 比较已装 package version 与 registry
   `latest`（仅前向 semver），GitHub 比较 profile lockfile commit 与远端 HEAD；任一远端查询失败
   会传播为检查失败，不误报全部最新。更新按 catalog id
@@ -70,10 +65,21 @@ npm/GitHub/API token 在落盘前脱敏，仍建议分享前复核用户自定�
 ## 不变量
 
 - 无独立市场窗口（`TC-EXT-002`）。
-- 只有一个 `market` 分区：桌面自有 section 注册它，`DROPPED` 保证旧 dshmarket 不再挂载。
+- 市场浏览入口统一到「插件 → 发现」，设置内旧 `market` 分区隐藏；`DROPPED` 继续阻止退役的 dshmarket 挂载。
 - 安装失败要可见失败反馈，不静默；`needsAllowBuilds` 走内联确认后重试。
 - `dsh plugin --profile web` 打进 `userData/dsh-home/profiles/web`，不是官方 `~/.dsh`（[dsh-home.md](dsh-home.md)）。
 - 重启归 HarnessController（`restartAfterProfileWrite`）。
+- 桌面启动 Harness 和运行插件 CLI 时，经 `dsh-cli-runner.mjs` 向官方 `runCli` 传入内置 Node 与 pnpm 入口。两条安装路径均不依赖 `PATH` 中的 pnpm 或包含安装目录的批处理脚本，中文目录不受 Windows 控制台代码页影响。runner 通过 `asarUnpack` 提供给普通 Node 子进程。
+
+## 官方自定义插件市场
+
+官方机制与索引格式见 [DSH 用户指南](../../../vendor/deepseek-harness/docs/user/guide/plugin-market.zh.md)。上游不提供官方市场或默认索引；WhaleIsle 为桌面 web profile 默认开启实验性市场 bundle，使用第三方社区项目 [realguan/dsh-plugin-market](https://github.com/realguan/dsh-plugin-market) 的 `https://realguan.github.io/dsh-plugin-market/dsh-index.json`。
+
+桌面启动环境中的 `DSHD_PLUGIN_MARKET_INDEX` 让新 web 模板包含市场 bundle。已有 profile 在首次普通启动时追加该 bundle，并以 profile 内 `.desktop-plugin-market-v1` 记录启用迁移；保留其余 bundle、依赖和用户 patch。之后用户关闭 bundle 不会在普通重启时重新开启。恢复启动的模板仍包含市场。
+
+索引默认值来自 bundle 层 `plugin-market.config.indexes`，用户配置层优先。已有自定义列表或显式空列表不被覆盖；用户可在发现页添加、替换或删除源，清空后重启也不重新填入默认源。桌面环境变量不构成高优先级配置 overlay。纯上游启动没有该环境变量时维持原有模板和空默认源。
+
+`https://cdn.jsdelivr.net/gh/realguan/dsh-plugin-market@dist/dsh-index.json` 是同一份社区目录的另一分发地址，无需重复添加。旧桌面引擎的 `https://awesome-dsh-plugin.com/plugins.json` 格式不兼容官方索引，官方新格式也不能直接用作 `DSHD_MARKETPLACE_REGISTRY_URL`。
 
 ## 门槛
 
