@@ -20,6 +20,7 @@
 ## Invariants
 
 - `SettingsSelect` 是 `ui-primitives` 公开原语（`variant="inline"|"block"`，`align`）。样式只用 `--dsw-alias-*` 与组件局部令牌，无字面颜色。`block` 触发器与打开列表都跟字段同宽（`Menu.matchAnchorWidth`），列表底用 `--dsw-alias-bg-module-platform`（与胶囊相同），不是 218px 玻璃卡片透壁纸。
+- 菜单统一为 12px 圆角，条目使用 14px/22px 字级和 8px 圆角。块级列表通过共享 `MenuSurface material="solid"` 取得字段底色，不在功能样式里覆盖菜单材质。
 - 选项集合与写入语义不变：只换触发器与打开面。
 - 设置里的**值选择**走 `SettingsSelect`。行内操作菜单（删除确认、卡片展开、开关）不是下拉，不改。
 - 触发器标签在选值替换时走 `FlipText`（flip recipe，400ms；减弱动效立即换文案），与 Composer 模型 / 权限芯片同一份动效合同（`docs/motion.md` flip 表）。

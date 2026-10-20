@@ -28,6 +28,11 @@
   pointer-events: none;
 }
 
+.surface[data-menu-material='solid'] > .material {
+  background: var(--dsw-alias-bg-module-platform);
+  backdrop-filter: none;
+}
+
 .backing {
   display: none;
 }

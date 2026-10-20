@@ -50,8 +50,7 @@ export function EditorFooter(props: EditorFooterProps): ReactNode {
   return (
     <div className={styles['editorActions']}>
       <Button
-        variant="outline"
-        className={styles['secondaryButton']}
+        variant="outline" shape="pill"
         disabled={props.busy}
         onClick={props.onCancel}
       >
@@ -60,7 +59,7 @@ export function EditorFooter(props: EditorFooterProps): ReactNode {
       <Tooltip label={props.submitHint ?? ''} disabled={props.submitHint === undefined || props.busy} portal side="top">
         <span className={styles['buttonAnchor']} tabIndex={props.submitDisabled && props.submitHint !== undefined ? 0 : undefined}
           aria-label={props.submitDisabled && props.submitHint !== undefined ? `${t(props.submitLabelKey)}: ${props.submitHint}` : undefined}>
-          <Button variant="primary" className={styles['primaryButton']} disabled={props.submitDisabled}
+          <Button variant="primary" shape="pill" disabled={props.submitDisabled}
             loading={props.busy} feedback={props.busy ? t(props.submitBusyLabelKey) : undefined} title={props.submitHint} onClick={props.onSubmit}>
             {t(props.submitLabelKey)}
           </Button>

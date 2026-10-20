@@ -28,7 +28,7 @@
 import { useEffect, useId, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import { SettingsSelect, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Input, SettingsSelect, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { apiKeyFailure } from './apiKey.ts'
 import { ApiKeyInput } from './ApiKeyInput.tsx'
 import { EditorFooter } from './EditorFooter.tsx'
@@ -224,17 +224,17 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('customRoute')}</span>
         <Tooltip label={t(routeInvalid ? 'customRouteInvalid' : 'customRouteTaken')} disabled={!routeInvalid && !routeTaken} portal side="bottom">
-        <input
-          className={styles['input']}
-          type="text"
-          value={route}
-          placeholder="acme-gateway"
-          aria-label={t('customRoute')}
-          aria-invalid={routeInvalid || routeTaken}
-          aria-describedby={routeInvalid || routeTaken ? `${errorId}-route` : undefined}
-          disabled={profileDisabled}
-          onChange={(event) => { setRoute(event.target.value) }}
-        />
+          <Input variant="form"
+            className={styles['input']}
+            type="text"
+            value={route}
+            placeholder="acme-gateway"
+            aria-label={t('customRoute')}
+            aria-invalid={routeInvalid || routeTaken}
+            aria-describedby={routeInvalid || routeTaken ? `${errorId}-route` : undefined}
+            disabled={profileDisabled}
+            onChange={(event) => { setRoute(event.target.value) }}
+          />
         </Tooltip>
       </div>
       {/* A rejected id reads as a fault, not as guidance — the same split the
@@ -243,7 +243,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
       {routeInvalid || routeTaken ? <span className={styles['visuallyHidden']} id={`${errorId}-route`}>{t(routeInvalid ? 'customRouteInvalid' : 'customRouteTaken')}</span> : null}
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('customDisplayName')}</span>
-        <input
+        <Input variant="form"
           className={styles['input']}
           type="text"
           value={displayName}
@@ -256,19 +256,19 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('baseUrl')}</span>
         <Tooltip label={t('customBaseUrlInvalid')} disabled={!baseUrlInvalid} portal side="bottom">
-        <input
-          className={styles['input']}
-          type="text"
-          value={baseURL}
-          placeholder={t(protocol === 'anthropic-messages'
-            ? 'customAnthropicBaseUrlPlaceholder'
-            : 'customBaseUrlPlaceholder')}
-          aria-label={t('baseUrl')}
-          aria-invalid={baseUrlInvalid}
-          aria-describedby={baseUrlInvalid ? `${errorId}-baseUrl` : undefined}
-          disabled={profileDisabled}
-          onChange={(event) => { setBaseURL(event.target.value) }}
-        />
+          <Input variant="form"
+            className={styles['input']}
+            type="text"
+            value={baseURL}
+            placeholder={t(protocol === 'anthropic-messages'
+              ? 'customAnthropicBaseUrlPlaceholder'
+              : 'customBaseUrlPlaceholder')}
+            aria-label={t('baseUrl')}
+            aria-invalid={baseUrlInvalid}
+            aria-describedby={baseUrlInvalid ? `${errorId}-baseUrl` : undefined}
+            disabled={profileDisabled}
+            onChange={(event) => { setBaseURL(event.target.value) }}
+          />
         </Tooltip>
       </div>
       {baseUrlInvalid ? <span className={styles['visuallyHidden']} id={`${errorId}-baseUrl`}>{t('customBaseUrlInvalid')}</span> : null}
@@ -286,16 +286,16 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
       <div className={styles['field']}>
         <span className={styles['fieldLabel']}>{t('keyInput')}</span>
         <Tooltip label={keyFailure === undefined ? '' : t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure)} disabled={keyFailure === undefined} portal side="bottom">
-        <ApiKeyInput
-          t={t}
-          value={keyDraft}
-          placeholder={t('keyPlaceholder')}
-          aria-label={t('keyInput')}
-          aria-invalid={keyFailure !== undefined}
-          aria-describedby={keyFailure === undefined ? undefined : `${errorId}-key`}
-          disabled={disabled}
-          onChange={(event) => { setKeyDraft(event.target.value) }}
-        />
+          <ApiKeyInput
+            t={t}
+            value={keyDraft}
+            placeholder={t('keyPlaceholder')}
+            aria-label={t('keyInput')}
+            aria-invalid={keyFailure !== undefined}
+            aria-describedby={keyFailure === undefined ? undefined : `${errorId}-key`}
+            disabled={disabled}
+            onChange={(event) => { setKeyDraft(event.target.value) }}
+          />
         </Tooltip>
         {/* A create card has no stored key to keep, so the blank case says
             what a blank field means here instead: this route may authenticate
@@ -322,7 +322,9 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         disabled={profileDisabled}
         onBusyChange={setListBusy}
       />
-      {failure !== undefined && !failureDismissed ? <Toast key={failureSequence} text={failure} holdMs={9000} onDone={() => { setFailureDismissed(true) }} /> : null}
+      {failure !== undefined && !failureDismissed
+        ? <Toast key={failureSequence} text={failure} holdMs={9000} onDone={() => { setFailureDismissed(true) }} />
+        : null}
       {/* Only the gates with something to say render; the route-id gate has its
           own field-level hint, so its blocked state would print an empty line. */}
       <EditorFooter
@@ -333,7 +335,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         submitBusyLabelKey="creating"
         submitHint={failure ?? (routeInvalid || routeTaken ? t(routeInvalid ? 'customRouteInvalid' : 'customRouteTaken')
           : baseUrlInvalid ? t('customBaseUrlInvalid')
-          : keyFailure !== undefined ? t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure) : hint)}
+            : keyFailure !== undefined ? t(keyFailure === 'keyBlank' ? 'keyBlankNew' : keyFailure) : hint)}
         onCancel={() => { props.onClose(committed) }}
         onSubmit={() => { void create() }}
       />

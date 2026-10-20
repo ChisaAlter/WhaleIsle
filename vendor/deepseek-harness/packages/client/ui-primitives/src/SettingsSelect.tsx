@@ -101,6 +101,8 @@ export function SettingsSelect({
         align={align}
         portal
         matchAnchorWidth={block}
+        material={block ? 'solid' : 'translucent'}
+        listClassName={css.list}
         getAnchorRect={getTriggerRect}
         className={block ? css.menuFill : undefined}
         anchor={(

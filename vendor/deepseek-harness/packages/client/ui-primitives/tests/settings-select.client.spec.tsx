@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SettingsSelect } from '../src/SettingsSelect.tsx'
+import css from '../src/SettingsSelect.module.css'
 
 afterEach(cleanup)
 
@@ -28,7 +29,9 @@ describe('SettingsSelect', () => {
     expect(trigger.textContent).toContain('Choose')
     expect(screen.queryByRole('menu')).toBeNull()
     fireEvent.click(trigger)
-    expect(screen.getByRole('menu')).toBeTruthy()
+    const menu = screen.getByRole('menu')
+    expect(menu.getAttribute('data-menu-material')).toBe('translucent')
+    expect(menu.classList.contains(css.list!)).toBe(true)
     fireEvent.click(screen.getByRole('menuitem', { name: 'Alpha' }))
     expect(onChange).toHaveBeenCalledWith('a')
     expect(screen.queryByRole('menu')).toBeNull()
@@ -87,14 +90,15 @@ describe('SettingsSelect', () => {
     expect(screen.getByRole('button', { name: 'Pick' }).textContent).toContain('stale')
   })
 
-  it('sizes a block menu to the trigger width', () => {
+  it('opens a solid block list at the trigger width and keeps keyboard selection and focus return', async () => {
+    const onChange = vi.fn()
     render(
       <SettingsSelect
         variant="block"
         aria-label="Pick"
         value="a"
         options={OPTIONS}
-        onChange={() => {}}
+        onChange={onChange}
       />,
     )
     const trigger = screen.getByRole('button', { name: 'Pick' })
@@ -113,6 +117,17 @@ describe('SettingsSelect', () => {
     const menu = screen.getByRole('menu')
     expect(menu.style.width).toBe('480px')
     expect(menu.style.maxWidth).toBe('none')
+    expect(menu.getAttribute('data-menu-material')).toBe('solid')
+    expect(menu.classList.contains(css.list!)).toBe(true)
+    trigger.focus()
+    fireEvent.keyDown(trigger, { key: 'End' })
+    const alpha = screen.getByRole('menuitem', { name: 'Alpha' })
+    expect(document.activeElement).toBe(alpha)
+    fireEvent.keyDown(alpha, { key: 'Tab' })
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('a')
+    expect(screen.queryByRole('menu')).toBeNull()
+    await Promise.resolve()
+    expect(document.activeElement).toBe(trigger)
   })
 
   it('opens with end-aligned menus', () => {

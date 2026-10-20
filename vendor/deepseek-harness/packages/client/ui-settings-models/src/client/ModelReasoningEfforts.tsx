@@ -1,8 +1,8 @@
 /** Reasoning-level declarations for a model on a hand-declared pi-ai route. */
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import type { ReactNode } from 'react'
-import { IconPlusOutlineRegular, IconTrashOutlineRegular, SettingsSelect, Switch, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconPlusOutlineRegular, IconQuestionOutlineRegular, IconTrashOutlineRegular, Input, SettingsSelect, Switch, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DeepSeekModelDraft, DeepSeekModelsValidationFailure } from './DeepSeekModelsEditor.tsx'
 import { modelDrafts, validateDeepSeekModels } from './DeepSeekModelsEditor.tsx'
 import type { ModelsKey } from './locales.ts'
@@ -122,6 +122,7 @@ interface ModelReasoningEffortsProps {
  */
 export function ModelReasoningEfforts({ model, levels, position, disabled, t, onChange }: ModelReasoningEffortsProps): ReactNode {
   const entries = readEfforts(model)
+  const errorId = useId()
   // Only the focused field keeps its own text, so a field cleared while typing
   // stays empty although its level's name is stored. Leaving the field drops
   // it, and deleting a model, resetting the list, or folding these options all
@@ -171,14 +172,17 @@ export function ModelReasoningEfforts({ model, levels, position, disabled, t, on
 
   const refused = entries?.some(([level, wire]) => !acceptedValue(level, wire)) === true
   const missingLevel = entries !== undefined && !used.some(level => level !== 'off')
+  const error = refused ? t('modelReasoningValueRequired') : missingLevel ? t('modelReasoningNeedsLevel') : undefined
 
   return (
-    <div className={styles['modelReasoning']} role="group" aria-label={label}>
+    <div className={styles['modelReasoning']} role="group" aria-label={label}
+      aria-invalid={error !== undefined} aria-describedby={error === undefined ? undefined : errorId}>
+      {error === undefined ? null : <span className={styles['visuallyHidden']} id={errorId}>{error}</span>}
       <div className={styles['modelReasoningHead']}>
         <span className={`${styles['modelFieldLabel']} ${styles['modelReasoningLabel']}`}>
           {t('modelReasoning')}
           <Tooltip label={t('modelReasoningHelpText')} side="right" delayMs={0} focusDelayMs={0} portal openOnClick>
-            <button type="button" className={styles['helpButton']} aria-label={t('modelReasoningHelp')}>?</button>
+            <Button size="sm" className={styles['helpButton']} icon={<IconQuestionOutlineRegular size={16} />} aria-label={t('modelReasoningHelp')} />
           </Tooltip>
         </span>
         <Switch
@@ -214,42 +218,43 @@ export function ModelReasoningEfforts({ model, levels, position, disabled, t, on
                   onChange={(next) => { changeLevel(entries, index, level, wire, next) }}
                   options={choicesFor(level).map(choice => ({ id: choice, label: choice }))}
                 />
-                <input
-                  className={`${styles['input']} ${styles['modelReasoningValueInput']}`}
-                  type="text"
-                  value={typing?.level === level ? typing.text : typeof wire === 'string' ? wire : ''}
-                  placeholder={level === 'off' ? t('modelReasoningOffValuePlaceholder') : level}
-                  aria-label={`${level} ${t('modelReasoningValue')}`}
-                  aria-invalid={!acceptedValue(level, wire)}
-                  // Off only turns reasoning off; a value stored in cordis.patch.yml is shown and kept.
-                  disabled={disabled || level === 'off'}
-                  onChange={(event) => { editValue(entries, index, level, event.target.value) }}
-                  onBlur={() => { leaveValue(entries, index, level, wire) }}
-                />
-                <button
-                  type="button"
-                  className={`${styles['iconButton']} ${styles['iconButtonDanger']}`}
-                  aria-label={`${t('modelReasoningRemove')} ${level}`}
-                  title={t('modelReasoningRemove')}
-                  disabled={disabled}
-                  onClick={() => { write(entries.filter((_entry, at) => at !== index)) }}
-                >
-                  <IconTrashOutlineRegular size={14} />
-                </button>
+                <Tooltip label={t('modelReasoningValueRequired')} disabled={acceptedValue(level, wire)} portal side="bottom">
+                  <Input variant="form"
+                    className={`${styles['input']} ${styles['modelReasoningValueInput']}`}
+                    type="text"
+                    value={typing?.level === level ? typing.text : typeof wire === 'string' ? wire : ''}
+                    placeholder={level === 'off' ? t('modelReasoningOffValuePlaceholder') : level}
+                    aria-label={`${level} ${t('modelReasoningValue')}`}
+                    aria-invalid={!acceptedValue(level, wire)}
+                    aria-describedby={acceptedValue(level, wire) ? undefined : errorId}
+                    // Off only turns reasoning off; a value stored in cordis.patch.yml is shown and kept.
+                    disabled={disabled || level === 'off'}
+                    onChange={(event) => { editValue(entries, index, level, event.target.value) }}
+                    onBlur={() => { leaveValue(entries, index, level, wire) }}
+                  />
+                </Tooltip>
+                <Tooltip label={t('modelReasoningRemove')} portal>
+                  <Button size="sm"
+                    className={`${styles['iconButton']} ${styles['iconButtonDanger']}`}
+                    icon={<IconTrashOutlineRegular size={16} />}
+                    aria-label={`${t('modelReasoningRemove')} ${level}`}
+                    disabled={disabled}
+                    onClick={() => { write(entries.filter((_entry, at) => at !== index)) }}
+                  />
+                </Tooltip>
               </div>
             ))}
-            {refused
-              ? <p className={styles['error']}>{t('modelReasoningValueRequired')}</p>
-              : missingLevel ? <p className={styles['error']}>{t('modelReasoningNeedsLevel')}</p> : null}
-            <button
-              type="button"
-              className={styles['addModelButton']}
-              disabled={disabled || levels.every(level => used.includes(level))}
-              onClick={() => { addLevel(entries) }}
-            >
-              <IconPlusOutlineRegular size={14} />
-              {t('modelReasoningAdd')}
-            </button>
+            <Tooltip label={error ?? ''} disabled={error === undefined} portal side="top">
+              <Button size="sm" shape="pill" variant="outline"
+                className={styles['addModelButton']}
+                icon={<IconPlusOutlineRegular size={16} />}
+                aria-describedby={error === undefined ? undefined : errorId}
+                disabled={disabled || levels.every(level => used.includes(level))}
+                onClick={() => { addLevel(entries) }}
+              >
+                {t('modelReasoningAdd')}
+              </Button>
+            </Tooltip>
           </>
         )}
     </div>

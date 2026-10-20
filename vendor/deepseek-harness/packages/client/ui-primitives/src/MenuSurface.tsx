@@ -11,17 +11,19 @@ import css from './MenuSurface.module.css'
 export interface MenuSurfaceProps extends ComponentPropsWithoutRef<'div'> {
   /** Match the shared compact menu's smaller outer radius. */
   compact?: boolean
+  /** Translucent glass by default, or an opaque form-field menu background. */
+  material?: 'translucent' | 'solid'
 }
 
 /**
  * Paint a menu and, on macOS, an opaque backing behind the page content within its bounds.
  * CSS anchors keep each backing aligned during placement, resizing, and nested-menu movement.
- * @param props - Div content and placement, and compact geometry.
+ * @param props - Div content and placement, compact geometry, and background material.
  * @param ref - The visible menu div, excluding the non-interactive backing.
  * @returns Menu content plus a backing portal removed with the menu.
  */
 export const MenuSurface = forwardRef<HTMLDivElement, MenuSurfaceProps>(function MenuSurface({
-  compact = false, className, style, children, ...props
+  compact = false, material = 'translucent', className, style, children, ...props
 }, ref) {
   const id = useId()
   const backingRef = useRef<HTMLDivElement>(null)
@@ -39,7 +41,7 @@ export const MenuSurface = forwardRef<HTMLDivElement, MenuSurfaceProps>(function
     '--dsh-menu-anchor': `--dsh-menu-${id.replaceAll(':', '')}`,
   }
   return <>
-    <div {...props} ref={ref} data-menu-material="translucent"
+    <div {...props} ref={ref} data-menu-material={material}
       className={clsx(css.surface, compact && css.compact, className)} style={{ ...style, ...anchorStyle }}>
       <div aria-hidden="true" className={css.material} />
       {children}

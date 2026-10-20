@@ -43,7 +43,7 @@ kind: "package-library"
 | `Button` | 可点击操作；`variant` 选择 `primary`、`ghost`、`outline` 或 `toolbar`。ref 指向原生按钮，供焦点控制与浮层锚定使用。`loading` 阻止重复输入并显示 `StateDot`；`feedback` 覆盖本地化文案，原始文案保留控件尺寸。忙态文案放不下时，文字按钮显示省略号与加载环，并保留完整的可访问名称和悬停说明；较长结果由所属界面的 Toast 展示。 |
 | `Switch` | 36×20 的双态开关。关闭态滑块读取 `--dsw-alias-switch-thumb`，在两种主题下均保持亮色；开启态滑块与品牌色轨道形成对比。禁用控件使用半透明样式。`label` 必填，控件不可能在没有名称的情况下发布。 |
 | `SegmentedControl` | 两段或更多等宽分段加一个滑动指示块的 tablist，用于在几种模式间切换一张卡片或面板；选中项由调用方持有，`label` 为列表命名。`id` 派生每个 tab 的 id（`<id>-<value>`）及其控制的面板 id（`<id>-<value>-panel`），面板由调用方渲染并用 `aria-labelledby` 指回 tab；分段可 `disabled` 并带 `title`，控件级 `disabled` 在当前面板有进行中的操作时锁住全部分段。 |
-| `Checkbox` | 带标签的原生复选框，支持受控状态、键盘交互和禁用样式；调用方提供本地化的 `label` 文本。 |
+| `Checkbox` | 带标签的原生复选框，支持受控状态、键盘交互和禁用样式；调用方提供本地化的 `label` 文本，可用 `aria-label` 区分重复选项。 |
 | `Input` | 单行文本输入，用于搜索框与行内表单。ref 指向原生输入框，供焦点控制使用，并在卸载时清空。 |
 | `InlineEditor` | 自动聚焦的多行行内编辑器，用于排队消息、goal 等短草稿。它随文本和宽度增高，最多六行，之后滚动；Enter 保存，Shift+Enter 换行，输入法组合中的 Enter 不生效，Escape 取消。调用方提供本地化 `label`，并在 elevated 表面上重绑滚动条。 |
 | `Menu`, `MenuItemButton` | 由 `items` 数据行、分隔线与分组标题构成的下拉菜单，支持嵌套子菜单；`children` 在同一列表中加入组件行，每行一个 `MenuItemButton`（`separatorBefore` 开启新分组）。所有行共享样式、键盘走位与焦点归还；两类行的关闭都是 owner 状态的改变。打开期间 `↑`／`↓`（以及 Home、End）在列表中走位，Tab 选定聚焦行，Escape 或 Shift+Tab 关闭并把焦点还给锚点；选定一行同样把键盘还给锚点——除非拥有者自己移动了焦点。只拦截位于锚点或列表内的键盘，`autoFocus` 仅决定打开时是否聚焦首行。 |
@@ -120,11 +120,11 @@ kind: "package-library"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-`Button` 的 `md` 使用 H36/R12，`sm` 使用 H28/R8，包含描边控件。菜单与卡片遵循[共享圆角规则](../../../docs/web-styling.zh.md#corner-radii-and-settings-cards)；功能样式保留控件几何。
+`Button` 默认采用 `shape="rounded"`：`md` 使用 H36/R12，`sm` 使用 H28/R8，包含描边控件。显式设置 `shape="pill"` 时高度不变，使用共享的 R18/R14 按钮令牌和圆弧角。`Input` 默认保留 32px 紧凑输入框；`variant="form"` 以 H36/R8 铺满包装层宽度，水平内边距为 12px，禁用透明度为 0.6，原生 `aria-invalid="true"` 启用错误色描边。包装层接受布局类，输入属性、placeholder 与 ref 仍指向原生 input。菜单与卡片遵循[共享圆角规则](../../../docs/web-styling.zh.md#corner-radii-and-settings-cards)；功能样式保留控件几何。
 
 `Menu.listClassName` 独立控制菜单卡片样式，不影响入口容器，也适用于 portal 模式。前置图标使用 `--dsw-alias-menu-icon` 文本色；破坏性操作图标保留错误色。
 
-`Menu` 将卡片材质交给 `MenuSurface`，自定义菜单也使用该组件。`MenuSurface` 转发 div 属性和 ref，采用透明填充及模糊，`compact` 使用较小圆角。默认相对定位使材质层限制在容器内；调用方的类可以设置 fixed 或 absolute 定位。macOS 上，不接收交互的底层通过 CSS 锚点跟随卡片，并随卡片卸载；该底层要求 Web 外壳隔离 body 的层叠上下文。功能类控制布局和层级，组件负责材质和外圆角（[菜单规则](../../../docs/web-styling.zh.md#component-rules)）。 模态遮罩保留黑色半透明填充，不模糊背景。
+`Menu` 将卡片材质交给 `MenuSurface`，自定义菜单也使用该组件。两者均默认采用 `material="translucent"`；`material="solid"` 在独立背景层上使用 `--dsw-alias-bg-module-platform` 并关闭模糊。`Menu` 将材质传给子菜单。`MenuSurface` 转发 div 属性和 ref，`compact` 使用较小圆角。默认相对定位使材质层限制在容器内；调用方的类可以设置 fixed 或 absolute 定位。两种材质均保留 macOS 上不接收交互的底层，通过 CSS 锚点跟随卡片并随卡片卸载；该底层要求 Web 外壳隔离 body 的层叠上下文。功能类控制布局和层级，组件负责材质和外圆角（[菜单规则](../../../docs/web-styling.zh.md#component-rules)）。`SettingsSelect` 两种变体的列表均使用 R12；`block` 与触发器同宽，并采用实色材质。H36/R18 触发器保留圆弧角和键盘焦点提示。模态遮罩保留黑色半透明填充，不模糊背景。
 
 `MenuGroup` 渲染以本地化标题命名的 `role="group"` 区段，标题 id 由各实例独立持有。自定义菜单与列表框共用其标题字体、间距和吸顶定位。标题原位透明；只有 `data-stuck` 才启用主题在浅／深色模式下的 94% 不透明分组标题填充。`data-platform="darwin"` 以外的标题使用 `--dsw-radius-md` 圆角；外围菜单保留半透明材质。
 

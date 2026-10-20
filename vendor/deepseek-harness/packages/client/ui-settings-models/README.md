@@ -31,6 +31,8 @@ Saving credentials or a custom provider preserves the selected model. The user c
 
 DeepSeek Account appears first and DeepSeek second in the provider list; third-party providers retain their directory order.
 
+Models uses shared Button, Input, Checkbox, SettingsSelect, and Modal controls. Text actions use 36px/18px or compact 28px/14px capsules; form inputs use 8px corners, selection menus use 12px corners, and dialogs use the theme's 24px dialog radius. Narrow columns stack model identity and capacity fields, and long candidate ids wrap inside the scrolling dialog. Validation marks fields and exposes readable reasons through descriptions and tooltips without adding a feedback row.
+
 Open the Models page from the Settings navigation to see every configured provider as a row. A whole-section provider whose key is not configured anywhere renders as its open setup card instead, but only in the first-run posture and only until the user closes that card. Each card kind owns its own open state, so closing one never discards a draft in another.
 
 A provider with a stored catalog error remains visible with its diagnostic and edit/delete actions. Add actions are offered only for registered settings namespaces, so an unavailable namespace cannot leave a button that opens no editor. A rejected save leaves the editor open and displays the Host diagnostic.
