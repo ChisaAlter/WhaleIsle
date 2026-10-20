@@ -9,6 +9,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { parseRules } from '../../ui-theme/tests/stylesheet-scan.ts'
 
 const css = readFileSync(fileURLToPath(new URL('../src/client/ModelsSection.module.css', import.meta.url)), 'utf8')
 // The theme package maps `./styles/*` to `./src/styles/*`, so the declarations
@@ -21,11 +22,13 @@ const tokens = readdirSync(fileURLToPath(new URL('../../ui-theme/src/styles/', i
   .map(name => readFileSync(fileURLToPath(new URL(`../../ui-theme/src/styles/${name}`, import.meta.url)), 'utf8'))
   .join('\n')
 
-/** The declarations of one top-level rule, by selector. */
-function block(selector: string): string {
-  const match = new RegExp(`^\\${selector} \\{([^}]*)\\}`, 'm').exec(css)
-  if (match === null) throw new Error(`ModelsSection.module.css has no \`${selector}\` rule`)
-  return match[1] ?? ''
+const rules = parseRules(css)
+
+/** Declarations for an exact selector, including a comma-separated selector group. */
+function block(selector: string): Record<string, string> {
+  const rule = rules.find(candidate => candidate.selectors.includes(selector))
+  if (rule === undefined) throw new Error(`ModelsSection.module.css has no \`${selector}\` rule`)
+  return Object.fromEntries(rule.declarations)
 }
 
 describe('ModelsSection theme styles', () => {
@@ -53,9 +56,16 @@ describe('ModelsSection theme styles', () => {
   })
 
   it('uses the shared settings card material around the nested editor', () => {
-    expect(block('.editor')).toContain('background: var(--dsw-alias-bg-module-platform)')
-    expect(block('.rowCard')).toContain('border: 0.5px solid var(--dsw-alias-settings-card-stroke)')
-    expect(block('.rowCard')).toContain('background: var(--dsw-alias-settings-card-fill)')
+    expect(block('.rowCard')).toMatchObject({
+      border: '0.5px solid var(--dsw-alias-settings-card-stroke)',
+      background: 'var(--dsw-alias-settings-card-fill)',
+    })
+    for (const selector of ['.editor', '.addCard', '.setupCard']) {
+      expect(block(selector)).toMatchObject({ background: 'var(--dsw-alias-bg-module-platform)' })
+    }
+    for (const selector of ['.addCard .editor', '.setupCard .editor']) {
+      expect(block(selector)).toMatchObject({ background: 'none', padding: '0' })
+    }
   })
 
   it('ships no native select controls in the settings models UI', () => {
@@ -70,14 +80,20 @@ describe('ModelsSection theme styles', () => {
     expect(sources).toEqual([])
   })
 
-  it('lays thinking intensities as wrapping equal chips, not a three-column checkbox grid', () => {
-    const options = block('.effortOptions')
-    expect(options).toMatch(/auto-fit/)
-    expect(options).not.toMatch(/repeat\(3/)
-    const chip = block('.effortOption')
-    expect(chip).toContain('height: 28px')
-    expect(chip).toContain('border-radius: var(--dsw-radius-button-sm)')
-    expect(tokens).toMatch(/--dsw-radius-button-sm:\s*14px;/)
+  it('lays thinking intensities in responsive equal columns while shared Checkbox owns control styling', () => {
+    const editor = readFileSync(new URL('../src/client/ModelListEditor.tsx', import.meta.url), 'utf8')
+    expect(editor).toMatch(/import\s*\{[^}]*\bCheckbox\b[^}]*\}\s*from '@deepseek-ai\/dsh-client-ui-primitives'/)
+    expect(editor).toMatch(/<Checkbox\b[^>]*className=\{styles\['modelCheckbox'\]\}/)
+    expect(block('.effortOptions')).toMatchObject({
+      display: 'grid',
+      'grid-template-columns': 'repeat(auto-fit, minmax(120px, 1fr))',
+      gap: '8px',
+    })
+    expect(block('.modelCheckbox')).toEqual({
+      gap: '8px',
+      'font-size': '14px',
+      'line-height': '22px',
+    })
   })
 
   it('never falls back to a literal colour', () => {
