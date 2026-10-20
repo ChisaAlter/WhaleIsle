@@ -448,6 +448,13 @@
   margin-top: 4px;
 }
 
+.archivedEmpty {
+  padding: 4px 12px 8px 28px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .listTopDropIndicator,
 .workspaceDropBefore::before,
 .workspaceDropAfter::after {

@@ -216,8 +216,8 @@
   overflow-y: auto;
 }
 
-/* Nav cell (figma .Setting-nav-cell 501:29962): 164x40, r12, pad
-   (12,9,16,9), gap 8; label 14/400 lh22; selected fill #EBEEF2. */
+/* Nav cell: keep the shared geometry; selection uses the accent fill and
+   soft elevation rather than an outline. */
 .navCell {
   display: flex;
   align-items: center;
@@ -242,8 +242,10 @@
 }
 
 .navCell.active {
-  background: var(--dsw-specific-sidebar-nav-item-active);
-  font-weight: 500;
+  background: var(--dsw-specific-sidebar-nav-item-active-accent);
+  color: color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 65%, var(--dsw-alias-label-primary));
+  box-shadow: var(--dsw-shadow-lv1);
+  font-weight: 600;
 }
 
 .navCell:focus-visible {
