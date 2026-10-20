@@ -32,7 +32,12 @@ test('optional Project mount preserves user Team settings and data across disabl
   const overlay = fs.readFileSync(first.overlayFile, 'utf8');
   const projectName = JSON.stringify(pathToFileURL(path.join(first.runtimeDir, 'lib', 'index.js')).href);
   assert.equal(overlay.split(`name: ${projectName}`).length - 1, 1);
-  assert.doesNotMatch(fs.readFileSync(first.overlayFile, 'utf8'), /id: agent-team\r?\n|disabled: false/);
+  // Project owns the Team rows under its own ids and only ever disables the optional Agent Teams bundle rows.
+  assert.doesNotMatch(overlay, /disabled: false|- id: (agent-team|ui-agent-team)\r?\n {6}name/);
+  assert.match(overlay, /- id: dsh-project-teams\n {6}name: "@deepseek-ai\/dsh-experimental-agent-team"\n/);
+  assert.match(overlay, /- id: dsh-project-team-ui\n {6}name: "@deepseek-ai\/dsh-experimental-client-ui-agent-team"\n/);
+  assert.match(overlay, /\n- id: agent-team\n  name: "@deepseek-ai\/dsh-experimental-agent-team"\n  disabled: true\n/);
+  assert.match(overlay, /\n- id: ui-agent-team\n  name: "@deepseek-ai\/dsh-experimental-client-ui-agent-team"\n  disabled: true\n/);
   const data = path.join(profileDir, 'projects', 'existing'); fs.mkdirSync(data, { recursive: true });
   fs.writeFileSync(path.join(data, 'notes.md'), 'user material');
   for (const option of [{ enabled: false }, { skipUserPlugins: true }]) {

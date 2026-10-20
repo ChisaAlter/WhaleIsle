@@ -897,6 +897,8 @@ export class ProjectService {
     const coordinator = this.state().projects.find(item => item.coordinatorSessionId === exec.agent?.id);
     if (coordinator && !['project_request', 'project_queue', 'project_deliver', 'project_delegate', 'project_read_store', 'project_stop', 'list_agents', 'team_task_list', 'send_message', 'html_preview', 'html_render'].includes(exec.name)) return 'The Project coordinator may only organize requirements, read materials, visualize results, delegate, deliver or stop work.';
     const worker = this.state().workers.find(item => item.sessionId === exec.agent?.id); if (!worker) return;
+    // The optional Agent Teams bundle registers these globally; Project work is arranged only by its coordinator host.
+    if (['spawn_teammate', 'wait_agent', 'interrupt_agent', 'team_task_create', 'team_task_get', 'team_task_update'].includes(exec.name)) return 'Project members collaborate through Project tools; the coordinator arranges Team work.';
     if (this.ctx.agents.get(worker.sessionId) !== exec.agent) return 'Project tools require the exact live worker.';
     if (this.closing || this.held.has(worker.sessionId) || worker.stopped || this.project(worker.projectId).paused) return 'This Project worker is stopped.';
     const requestId = latest(this.stream(worker.workstreamId)).source.requestId;

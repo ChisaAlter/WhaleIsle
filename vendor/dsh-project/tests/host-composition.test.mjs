@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { projectPackage, harness, cliRequire, resolvePackage, projectUrl, ProjectService } from './harness-runtime.mjs';
-const { boot, loadOverlayPatches, bundlePatchPaths } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-app-boot')).href);
+const { boot, loadOverlayPatches, bundlePatchPaths, composeEntries } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-app-boot')).href);
 const { LlmAdapter, LlmError } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-llm')).href);
 const { provideCmdline } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-cmdline')).href);
 const { disposeProfileApplication } = await import(pathToFileURL(join(harness, 'apps/cli/lib/profile-boot.js')).href);
@@ -470,7 +470,7 @@ async function bootHost(home, model, teamConfig, allowUnavailable = false, visua
   const config = join(home, 'cordis.yml'); await writeFile(config, '[]\n');
   const web = dirname(cliRequire.resolve('@deepseek-ai/dsh-web-app/package.json')), manifest = JSON.parse(readFileSync(join(web, 'package.json'), 'utf8'));
   const patches = [...loadOverlayPatches('project-composition', join(harness, 'packages/bundle/base/cordis.patch.yml')),
-    ...bundlePatchPaths(web, manifest.dsh.bundle).flatMap(path => loadOverlayPatches('project-composition', path)), ...loadOverlayPatches('project-composition', join(projectPackage, 'cordis.patch.yml')).map(patch => !teamConfig || !patch.insert ? patch : { ...patch, insert: [{ id: 'composition-team-limits', name: '@deepseek-ai/dsh-experimental-agent-team', config: teamConfig }, ...patch.insert] }),
+    ...bundlePatchPaths(web, manifest.dsh.bundle).flatMap(path => loadOverlayPatches('project-composition', path)), ...loadOverlayPatches('project-composition', join(projectPackage, 'cordis.patch.yml')), ...teamConfig ? [{ id: 'dsh-project-teams', config: teamConfig }] : [],
     { id: 'storage-json', config: { root: join(home, 'storages') } }, { id: 'session-persistence-jsonl', config: { root: join(home, 'sessions') } },
     { id: 'mcp-servers-file', config: { path: join(home, 'mcp-servers.yaml'), watch: false } }, { id: 'agent-default-model', config: { provider: 'composition', model: 'project-model' } },
     { id: 'agent-preset-registry', config: { default: 'standard' } },
@@ -488,6 +488,18 @@ async function bootHost(home, model, teamConfig, allowUnavailable = false, visua
   let contextVersion = 0; ctx.systemPrompt.context({ name: 'composition:actual-dynamic-context', order: 99999, text: () => `Runtime context snapshot ${++contextVersion}; it supplies no user authorization.` });
   ctx.llm.registerAdapter(['composition'], model); model.state = () => ctx.projects.state(); return ctx;
 }
+test('Project and the optional Agent Teams bundle compose one Team service and one Team UI', () => {
+  const web = dirname(cliRequire.resolve('@deepseek-ai/dsh-web-app/package.json')), manifest = JSON.parse(readFileSync(join(web, 'package.json'), 'utf8'));
+  const layers = [join(harness, 'packages/bundle/base/cordis.patch.yml'), ...bundlePatchPaths(web, manifest.dsh.bundle),
+    join(harness, 'packages/experimental/agent-team-profile/cordis.patch.yml'), join(projectPackage, 'cordis.patch.yml')].map(path => loadOverlayPatches('project-composition', path));
+  const active = rows => rows.flatMap(row => row.disabled === true ? [] : row.group && Array.isArray(row.config) ? [row, ...active(row.config)] : [row]);
+  const rows = active(composeEntries(layers));
+  for (const name of ['@deepseek-ai/dsh-experimental-agent-team', '@deepseek-ai/dsh-experimental-client-ui-agent-team']) {
+    assert.deepEqual(rows.filter(row => row.name === name).map(row => row.id), [name.endsWith('-agent-team') ? 'dsh-project-teams' : 'dsh-project-team-ui']);
+  }
+  assert.ok(rows.some(row => row.id === 'tool-agent-team'), 'Agent Teams tools stay mounted on the shared service');
+});
+
 test('native requirement queue keeps discussion separate, preserves edits and order, and relays only a durable whole delivery', { timeout: 120000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'whale-project-native-queue-')), home = join(root, 'home'), directory = join(root, 'selected');
   await mkdir(home); await mkdir(directory); await writeFile(join(directory, 'seed.txt'), 'preserved\n');
