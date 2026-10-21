@@ -30,7 +30,7 @@ export function define(name: string, shape: Record<string, z.ZodType>, descripti
   return defineComponent({ name, description, props: z.object(shape), component: ({ props, renderNode, statementId }) => <>{view(props, renderNode, statementId)}</> });
 }
 export function Glyph({ name, size = 16, style }: { name: string; size?: number; style?: CSSProperties }) {
-  const key = String(name).replace(/(^|-)([a-z])/g, (_, _gap, c) => c.toUpperCase());
+  const key = String(name).replace(/(^|-)([a-z0-9])/g, (_, _gap, c) => c.toUpperCase());
   const Component = icons[key as keyof typeof icons] ?? iconAliases[key] ?? CircleHelp;
   return <Component size={size} strokeWidth={1.7} aria-hidden="true" style={{ display: "inline-block", verticalAlign: "middle", flexShrink: 0, ...style }} />;
 }

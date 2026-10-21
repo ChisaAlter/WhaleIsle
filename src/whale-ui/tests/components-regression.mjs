@@ -69,8 +69,8 @@ test('real renderer mounts layout, Markdown, table cells, SVG and KaTeX',async()
 });
 
 test('documented and current Lucide names render their intended glyph instead of a help placeholder',async()=>{
- const app=await mounted('root = Col([Icon("check-circle"),Icon("circle-check"),Icon("alert-circle"),Icon("loader-2"),Icon("icon")])');
- try{const glyphs=[...app.element.querySelectorAll('svg')];assert.equal(glyphs.length,5);assert.ok(glyphs[0].classList.contains('lucide-circle-check-big'));assert.ok(glyphs[1].classList.contains('lucide-circle-check'));assert.ok(!glyphs.slice(0,4).some(e=>e.classList.contains('lucide-circle-help')));assert.ok(glyphs[4].classList.contains('lucide-circle-question-mark'));}finally{await app.close();}
+ const app=await mounted('root = Col([Icon("check-circle"),Icon("circle-check"),Icon("alert-circle"),Icon("loader-2"),Icon("icon"),IconButton("trash-2", @Set($deleted, true), "删除任务")])\n$deleted=false');
+ try{const glyphs=[...app.element.querySelectorAll('svg')];assert.equal(glyphs.length,6);assert.ok(glyphs[0].classList.contains('lucide-circle-check-big'));assert.ok(glyphs[1].classList.contains('lucide-circle-check'));assert.ok(glyphs[2].classList.contains('lucide-circle-alert'));assert.ok(glyphs[3].classList.contains('lucide-loader-circle'));assert.ok(glyphs[4].classList.contains('lucide-circle-question-mark'));assert.ok(glyphs[5].classList.contains('lucide-trash-2'));await click(app.element.querySelector('button[aria-label="删除任务"]'));assert.equal(app.states.at(-1)?.$deleted,true);}finally{await app.close();}
 });
 
 test('numeric input follows shared Reset values and clears to null rather than zero',async()=>{
