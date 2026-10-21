@@ -84,6 +84,7 @@ app.whenReady().then(async () => {
     return { button: { width: rect.width, height: rect.height, text: (b.querySelector('.shell-button-label')?.textContent ?? b.textContent), busy: b.getAttribute('aria-busy'), disabled: b.disabled,
       spinner: !!b.querySelector('.shell-button-spinner'),
       labelColor: b.querySelector('.shell-button-label') ? getComputedStyle(b.querySelector('.shell-button-label')).color : '',
+      scrolling: !!b.querySelector('.shell-button-label.is-scrolling'),
       spinnerColor: b.querySelector('.shell-button-spinner') ? getComputedStyle(b.querySelector('.shell-button-spinner')).borderTopColor : '',
       expectedColor: getComputedStyle(document.documentElement).getPropertyValue('--dsw-alias-label-primary').trim() },
       versionsText: (document.getElementById('btn-check-update-versions').querySelector('.shell-button-label')?.textContent ?? document.getElementById('btn-check-update-versions').textContent),
@@ -126,12 +127,24 @@ app.whenReady().then(async () => {
         checkResolve({ status: 'current', current: '0.3.3', latest: '0.3.3' });
         await waitFor("(document.getElementById('btn-check-update').querySelector('.shell-button-label')?.textContent ?? document.getElementById('btn-check-update').textContent) === '已是最新'");
         const current = await read();
+        const overflow = await js(`(() => {
+          const button = document.getElementById('btn-check-update');
+          const restore = window.shellFeedback.buttonBusy(button, '安装中…正在校验组件');
+          const label = button.querySelector('.shell-button-label');
+          const text = label.querySelector('.shell-button-label-text');
+          const box = button.getBoundingClientRect();
+          const result = { scrolling: label.classList.contains('is-scrolling'),
+            animation: getComputedStyle(text).animationName, color: getComputedStyle(text).color,
+            width: box.width, height: box.height };
+          restore();
+          return result;
+        })()`);
         if (scheme === 'light') await capture(`launcher-${width}`);
         await clearNotices();
         await js('refreshStatus()');
         await delay(30);
         const dismissed = await read();
-        result.cases.push({ scheme, width, before, pending, current, dismissed });
+        result.cases.push({ scheme, width, before, pending, current, overflow, dismissed });
       }
     }
     result.checkCalls = checkCalls;

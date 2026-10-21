@@ -26,7 +26,7 @@ function launcherButtonBusy(button, label = '正在处理…', shortLabel = labe
   button.setAttribute('aria-label', label);
   button.title = label;
   const restoreLabel = window.shellFeedback.buttonBusy(button, shortLabel);
-  return () => {
+  const restore = () => {
     restoreLabel();
     button.disabled = disabled;
     for (const [name, value] of attributes) {
@@ -35,6 +35,12 @@ function launcherButtonBusy(button, label = '正在处理…', shortLabel = labe
     }
     if (wasFocused && document.activeElement === document.body && button.isConnected && !button.disabled && button.checkVisibility()) button.focus();
   };
+  restore.update = (nextLabel, nextShortLabel) => {
+    button.setAttribute('aria-label', nextLabel);
+    button.title = nextLabel;
+    restoreLabel.update(nextShortLabel);
+  };
+  return restore;
 }
 
 // Machine codes from launcher-service / runtime-install / update. A bare

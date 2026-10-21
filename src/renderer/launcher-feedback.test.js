@@ -34,6 +34,12 @@ test('real Electron: floating results preserve layout, safe confirmation and tas
     assert.equal(item.pending.versionsBusy, 'true');
     assert.equal(item.pending.button.disabled, true);
     assert.equal(item.pending.button.spinner, true, 'the button carries its own spinner');
+    assert.equal(item.pending.button.scrolling, false, 'labels that fit stay still');
+    assert.equal(item.overflow.scrolling, true, 'overflow scrolls in both themes and window sizes');
+    assert.equal(item.overflow.animation, 'shell-button-scroll');
+    assert.equal(item.overflow.color, item.pending.button.expectedColor);
+    assert.equal(item.overflow.width, item.before.button.width);
+    assert.equal(item.overflow.height, item.before.button.height);
     assert.equal(item.pending.button.labelColor, item.pending.button.expectedColor, 'pending text uses the current theme foreground');
     assert.equal(item.pending.button.spinnerColor, item.pending.button.expectedColor, 'the spinner uses the current theme foreground');
     assert.equal(item.current.button.labelColor, item.current.button.expectedColor, 'completion text stays visible after the busy overlay');

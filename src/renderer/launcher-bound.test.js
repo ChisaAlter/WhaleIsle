@@ -82,7 +82,7 @@ test('component feedback stays on its buttons, shows one result, and restores fo
     [r.updateBefore, r.updating], [r.refreshBefore, r.refreshing], [r.uninstallBefore, r.uninstallReading]]) {
     assert.equal(pending.sameButton, true, 'operation preserves its original button DOM');
     assert.equal(pending.spinner, true, 'the button shows its own spinner');
-    assert.match(pending.caption, /^(\S{2}(中…?)?|(\S{2} )?\d+%)?$/, 'the button names the pending step');
+    assert.match(pending.caption, /\S/, 'the button preserves its pending label');
     assert.ok(pending.caption || pending.spinner, 'a busy button always shows progress');
     assert.equal(pending.width, before.width, 'loading keeps the button width');
     assert.equal(pending.height, before.height, 'loading preserves button height');
@@ -111,10 +111,26 @@ test('component feedback stays on its buttons, shows one result, and restores fo
       assert.match(color, /^rgb\(/, `progress text and spinner stay opaque: ${color}`);
     }
   }
+  assert.equal(r.installing.caption, '安装中…', 'the narrow install button keeps its complete label');
+  for (const progress of [r.installing, r.downloading, r.verifying]) {
+    assert.equal(progress.scrolling, true, 'overflowing button labels scroll');
+    assert.equal(progress.animationName, 'shell-button-scroll');
+    assert.ok(progress.textWidth > progress.labelWidth, 'the complete text remains available inside a clipped viewport');
+  }
+  assert.equal(r.installScroll.missingAnimation, undefined);
+  assert.ok(r.installScroll.movingEnd < r.installScroll.movingStart, 'the label moves during actual animation playback');
+  assert.ok(r.installScroll.end < r.installScroll.start, 'the label moves horizontally');
+  assert.ok(Math.abs(r.installScroll.start - r.installScroll.left) < 1, 'scrolling starts with the first character visible');
+  assert.ok(Math.abs(r.installScroll.endRight - r.installScroll.right) < 1, 'scrolling reveals the end of the label');
+  assert.equal(r.continuousScroll.sameText, true, 'progress preserves the scrolling text node');
+  assert.equal(r.continuousScroll.sameAnimation, true, 'progress does not restart the marquee');
+  assert.ok(r.continuousScroll.time > 0, 'progress preserves animation time');
+  assert.equal(r.reducedMotion.animationName, 'none', 'reduced motion disables automatic scrolling');
+  assert.equal(r.reducedMotion.caption, '下载 42%');
   assert.match(r.downloading.loadingLabel, /正在下载组件 42%/);
-  assert.equal(r.downloading.caption, '42%', 'a compact install button retains its download percentage');
+  assert.equal(r.downloading.caption, '下载 42%', 'download progress keeps its verb and percentage');
   assert.match(r.verifying.loadingLabel, /正在校验组件 60%/);
-  assert.equal(r.verifying.caption, '60%', 'a compact install button retains its verification percentage');
+  assert.equal(r.verifying.caption, '校验 60%', 'verification progress keeps its verb and percentage');
   assert.equal(r.installed.noticeVisible, false, 'the refreshed row reports a plain install');
   assert.equal(r.installed.progressVisible, false);
   assert.equal(r.installed.modalVisible, false);

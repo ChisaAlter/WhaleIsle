@@ -216,17 +216,23 @@
 
   function syncPendingButtons() {
     for (const [id, pending] of state.pending) {
-      pending.restoreButtons.forEach(restore => restore());
-      pending.restoreButtons = [];
+      for (const [button, restore] of pending.restoreButtons) {
+        if (!button.isConnected) {
+          restore();
+          pending.restoreButtons.delete(button);
+        }
+      }
       for (const host of [state.el, state.homeEl]) {
         if (!host) continue;
         host.querySelectorAll(`[data-comp-id="${CSS.escape(id)}"]`).forEach((button) => {
+          const restore = pending.restoreButtons.get(button);
           if (button.dataset.compAction === pending.action) {
-            pending.restoreButtons.push(window.launcherButtonBusy(button, pending.label, buttonLabel(pending.label)));
-          } else {
+            if (restore) restore.update(pending.label, buttonLabel(pending.label));
+            else pending.restoreButtons.set(button, window.launcherButtonBusy(button, pending.label, buttonLabel(pending.label)));
+          } else if (!restore) {
             const disabled = button.disabled;
             button.disabled = true;
-            pending.restoreButtons.push(() => { button.disabled = disabled; });
+            pending.restoreButtons.set(button, () => { button.disabled = disabled; });
           }
         });
       }
@@ -333,7 +339,7 @@
     const pending = {
       action,
       label: action === 'uninstall' && id === 'whalebridge' ? '正在读取鲸桥状态…' : ACTION_LOADING[action],
-      restoreButtons: [],
+      restoreButtons: new Map(),
     };
     state.pending.set(id, pending);
     syncPendingButtons();
