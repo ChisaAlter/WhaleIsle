@@ -1,6 +1,9 @@
 // dsh-usage-panel · KPI cards (all-time). v0.1.0 kept three cards; the cache
 // hit-rate card is the P0-② addition and the cost card is the v0.3 billing
 // addition (estimate only — the totals are model-priced client-side).
+// The main number is uncached input + output (the Magpie gateway's headline);
+// the detail line shows input / output / cache read separately — cache read is
+// never folded into the total or into "input".
 import type { I18n } from '../locales.ts'
 import type { Locale } from '../../shared/format.ts'
 import { fmtTokens, pctOf, pctFull } from '../../shared/format.ts'
@@ -24,8 +27,8 @@ export function KpiCards({ overview, i18n, rpc }: KpiCardsProps): JSX.Element {
   const locale: Locale = i18n.locale
   const allTime = overview.allTime || { totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, sessionCount: 0, byModel: [] }
   const totals = allTime.totals || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+  // Uncached input + output only; the payload already derives it that way.
   const total = totals.total || 0
-  const inputTotal = totals.input + totals.cacheRead + totals.cacheWrite // billed input (v0.1.0)
   const top = allTime.byModel[0] || null
   const rate = hitRate(totals)
   // The session-count KPI's secondary line carries the coverage counts that
@@ -57,8 +60,9 @@ export function KpiCards({ overview, i18n, rpc }: KpiCardsProps): JSX.Element {
 
   // Hooks must stay unconditional (hook-order invariant).
   const animatedTotal = useCountUp(total, 900)
-  const animatedInput = useCountUp(inputTotal, 900)
+  const animatedInput = useCountUp(totals.input, 900)
   const animatedOutput = useCountUp(totals.output, 900)
+  const animatedCacheRead = useCountUp(totals.cacheRead, 900)
   const animatedSessions = useCountUp(allTime.sessionCount, 900)
   const animatedRate = useCountUp(rate === null ? 0 : rate * 100, 900)
   const animatedCost = useCountUp(costTotal === null ? 0 : costTotal, 900)
@@ -71,7 +75,13 @@ export function KpiCards({ overview, i18n, rpc }: KpiCardsProps): JSX.Element {
       <div className="dsw-ust-kpi">
         <div className="l">{t('kpi.total')}</div>
         <div className="v">{fmtTokens(animatedTotal, locale)}</div>
-        <div className="d">{t('kpi.total.detail', { input: fmtTokens(animatedInput, locale), output: fmtTokens(animatedOutput, locale) })}</div>
+        <div className="d">
+          {t('kpi.total.detail', {
+            input: fmtTokens(animatedInput, locale),
+            output: fmtTokens(animatedOutput, locale),
+            cacheRead: fmtTokens(animatedCacheRead, locale),
+          })}
+        </div>
       </div>
       <div className="dsw-ust-kpi">
         <div className="l">{t('kpi.cost')}</div>

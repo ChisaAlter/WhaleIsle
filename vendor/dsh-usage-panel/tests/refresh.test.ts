@@ -11,7 +11,12 @@ import type { Overview, RpcResult } from '../src/shared/contract.ts'
 
 test('overview refresh replaces session totals, observes new usage and removes deleted sessions', async () => {
   const previousHome = process.env.DSH_HOME
-  process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'usage-refresh-'))
+  const previousMagpie = process.env.MAGPIE_USAGE_FILE
+  const home = mkdtempSync(join(tmpdir(), 'usage-refresh-'))
+  process.env.DSH_HOME = home
+  // Pin the optional Magpie source to a file that does not exist: this suite
+  // locks the log-derived totals, and must never read the developer's ledger.
+  process.env.MAGPIE_USAGE_FILE = join(home, 'no-magpie-usage.jsonl')
   const cleanups: Array<() => void> = []
   let handler!: (endpoint: string, payload: unknown) => Promise<RpcResult<Overview>>
   let tokens = 10
@@ -65,5 +70,7 @@ test('overview refresh replaces session totals, observes new usage and removes d
     for (const cleanup of cleanups) cleanup()
     if (previousHome === undefined) delete process.env.DSH_HOME
     else process.env.DSH_HOME = previousHome
+    if (previousMagpie === undefined) delete process.env.MAGPIE_USAGE_FILE
+    else process.env.MAGPIE_USAGE_FILE = previousMagpie
   }
 })

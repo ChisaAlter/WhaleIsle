@@ -155,11 +155,15 @@ interactive = rendererInteractive || cursorInPetFrame
 `src/main/pet-growth.js`，纯逻辑；状态持久化在 `live2dPet.growth`。
 
 - **口粮 = 功能启用后新增的真实 token 消耗**，历史存量不算。首次扫描种下水位线 `baseline = 语料总量 − tokensFed`（升级迁移把旧已喂额度折进去，不对新 token 计"债"）；之后水位线只跟语料**下调**（日志删了天花板就没了），`tokensFed` 永不回退。
-- 可喂量 `feedable = max(0, tokensSeen − baseline) − tokensFed`；**一餐最多填满当前级**——每次投喂是一次升级仪式，不是一口吃满。
+- **token 口径 = 未缓存 input + output**：`usageTokens()` 只加 `inputTokens` 与 `outputTokens`（reasoning 已含在 output）。`cache_read`/`cache_write` 是独立统计，不是新鲜工作量，绝不并入 `tokensSeen`/`today`/food 额度。
+- **来源优先 Magpie**：`~/.config/magpie/usage.jsonl`（`MAGPIE_USAGE_FILE` 环境变量覆盖路径）存在且含 `agent === 'dsh'` 行时是唯一口径——聚合每行的 `in + out` 得 `tokensSeen`，当前本地日的同和得 `today.used`；账本按每次请求的稳定 id（`route_id` → `request_id`/`rid`/`response_id`，都没有时退化为写入身份）哈希成键、`amount = in + out`，每个请求只记一次。文件缺失、不可读或只有其他 agent 的行时回退会话日志。
+- 回退扫描 `dsh-home/sessions/**/session*.jsonl.zstd`：日志按事件追加 zstd 帧（单帧解码只能看到 session 头），逐帧走边界解压。**每个 session 目录只折最高 canonical 代**（`session.jsonl.zstd` = v0，`session.vN.jsonl.zstd` = 第 N 代；与用量面板 `locateSessionArtifact` 同一语法，前导零/`.v0`/`.bak`/`.tmp` 不算），旧代是同一批事件的旧副本，折叠它会重放 `(turn,step)` 键并覆盖子会话自己的槽位；每文件 size+mtime 缓存只保留当前选中的那一代。不同目录之间不去重（不同会话）。`compaction/summary` 用量单列（turn=-1）。**fork/seed 会话先解析 header**：`isSeeded` 为真时取最后一个 `session/end-seed {inherited:true}` 的 `seq` 作继承切点（旧 v1 物理 header 用 `seedLength`），**跳过 `seq < 切点` 的事件**——前缀是父会话的账，跳过它也避免子会话重开的 `(turn,step)` 覆盖父槽位。**只读数字桶，绝不读消息正文**；坏文件计 0 不炸。
+- **状态迁移 `accountingVersion: 2`**：旧账（无版本或 1，且已记录过计数/等级/账本）在首次刷新时保留 `points`（等级随之保留），把 `tokensSeen` 与 `baseline` 重置为新的总量、`tokensFed` 归零、`food` 换成以当前请求摘要播种的空账本（`available = 0`）、`today` 置为当前本地日（有 Magpie 绝对日值时直接用它），然后立即持久化。这消除了旧账面 `tokensFed 1.85B > 新总量 223M` 的投喂死锁。从未记录过计数的空状态（新装）不做迁移，仍走首扫种水位线。
+- `growth.food.source` 记录账本观察键属于哪个来源（`magpie` / `sessions`）；来源切换（Magpie 出现或被移除）只按新来源重播种观察键并保留已赚余额，不把新来源的历史记成口粮。
+- 可喂量 `feedable = max(0, tokensSeen − baseline) − tokensFed`；有账本时直接用 `food.available`。**一餐最多填满当前级**——每次投喂是一次升级仪式，不是一口吃满。
 - 1 token = 1 成长点。十级称号：幼鲸(0) → 小鲸(1亿) → 干饭鲸(3亿) → 鲸鱼娘(6亿) → 大肥鱼(12亿) → 干饭大王(22亿) → 米饭女帝(40亿) → 鲸吞四海(70亿) → 星海饭皇(120亿) → 干饭真神(200亿)。
-- 扫描 `dsh-home/sessions/**/session*.jsonl.zstd`：日志按事件追加 zstd 帧（单帧解码只能看到 session 头），逐帧走边界解压；同一 session 目录内 v1/v2/v3 迁移副本按 `(turn,step)` last-wins 去重，跨目录不去重；`compaction/summary` 用量单列（turn=-1）；usage 桶 = input + cacheRead + cacheWrite + output（reasoning 含在 output）。**只读数字桶，绝不读消息正文**；坏文件计 0 不炸。
-- `growth.today = {day, used}`：本地日口径的当日真实消耗，供面板「今日消耗」。
-- 重扫节奏：窗口起来后每 60s 一次 + `did-finish-load`/`getGrowth`/`feed` 调用时。
+- `growth.today = {day, used}`：本地日口径的当日真实消耗，供面板「今日消耗」。Magpie 来源给绝对值；日志回退按增量累加（fold 里没有逐事件时钟）。
+- 重扫节奏：窗口起来后每 60s 一次 + `did-finish-load`/`getGrowth`/`feed` 调用时。扫描在 worker 线程（`pet-growth-scan-worker.js`）里跑，主线程不付 55MB Magpie 日志或会话语料的解析成本。
 - 投喂表演走 feed FSM 的 `token` 变体（发光晶体替代饭碗）：落物 → 跑去 → 吃 → 收尾；升级庆祝排在进行中的动作之后，不抢戏。台词走 `feedToken/feedTokenEat/feedTokenDone/levelUp` 池。
 
 ## 养成属性（饱食/心情/亲密）
@@ -252,9 +256,15 @@ preload `pet-live2d` 角色只暴露下表面（`window.shell`），主进程对
   "enabled": false,                // 默认关闭；设置或托盘主动开启并持久化
   "x": null, "y": null,            // 屏幕坐标；null 或落不进任何显示器 → 工作区右下角
   "growth": {
-    "points": 0, "tokensFed": 0, "tokensSeen": 0,
-    "baseline": null,              // 水位线，首扫种下
-    "today": { "day": "YYYY-MM-DD", "used": 0 }
+    "accountingVersion": 2,        // 缺失/1 → 首刷迁移：保留 points，重置其余计数
+    "points": 0, "tokensFed": 0, "tokensSeen": 0,   // tokensSeen = input + output
+    "baseline": null,              // 水位线，首扫/迁移种下
+    "today": { "day": "YYYY-MM-DD", "used": 0 },
+    "food": {                      // 版本化投喂账本；没有可用观察时省略
+      "version": 1, "source": "magpie",   // magpie | sessions
+      "available": 0,
+      "seen": { "<sha256>": 1234 }        // 每个请求一次，amount = in + out
+    }
   },
   "stats": {
     "satiety": 70, "mood": 70, "affection": 0,

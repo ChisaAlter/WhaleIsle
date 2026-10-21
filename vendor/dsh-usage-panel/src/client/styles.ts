@@ -16,6 +16,7 @@ export const CSS = [
   '.dsw-ust-head-title{display:flex;align-items:flex-start;gap:8px;min-width:0}',
   '.dsw-ust-page-icon{flex-shrink:0;margin-top:4px;color:var(--dsw-alias-label-secondary)}',
   '.dsw-ust-sub{margin-top:4px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}',
+  '.dsw-ust-source{margin-top:2px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);opacity:.85}',
   '.dsw-ust-repair{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-top:4px;font-size:12px;line-height:18px;color:var(--dsw-alias-state-warn-primary)}',
   '.dsw-ust-repair-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
   '.dsw-ust-repair-hint{white-space:nowrap}',

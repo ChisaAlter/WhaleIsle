@@ -13,6 +13,7 @@ import type { CompactionId } from '@deepseek-ai/dsh-compaction'
 import type { Overview } from '../shared/contract.ts'
 import { emptyAggregate, finalizeOverview, mergeSessionValue, rankSessions, type Aggregate, type SessionAgg } from './aggregate.ts'
 import { applyEvent, initState, type UsagePanelState } from './projection.ts'
+import type { MagpieSource } from './magpie-usage.ts'
 import { scanPacer } from './pacing.ts'
 import type { HostSessionQuery } from './types.ts'
 
@@ -24,6 +25,8 @@ export interface ScanFallbackDeps {
   storeIndex: (sessions: SessionAgg[]) => void
   /** Receive the failed-session ids (repair candidates). */
   storeFailed: (ids: string[]) => void
+  /** Optional Magpie gateway ledger (token totals/days/models source). */
+  magpie?: MagpieSource | null
 }
 
 /** True for events the reducer will count (post-seed usage / retry). */
@@ -70,6 +73,7 @@ export async function scanFallback(deps: ScanFallbackDeps, now: number): Promise
       eventsCounted: 0,
       titles,
       providerNames,
+      magpie: deps.magpie,
     })
   }
 
@@ -156,5 +160,6 @@ export async function scanFallback(deps: ScanFallbackDeps, now: number): Promise
     titles,
     providerNames,
     failedSessionIds: failed,
+    magpie: deps.magpie,
   })
 }

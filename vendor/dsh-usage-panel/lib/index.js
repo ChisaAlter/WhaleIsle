@@ -12,7 +12,7 @@ var DEFAULT_BILLING_SETTINGS = {
   prices: {},
   peakValleyEnabled: true
 };
-var OVERVIEW_VERSION = 4;
+var OVERVIEW_VERSION = 5;
 
 // src/shared/pricing.ts
 var DEEPSEEK_OFFICIAL_PRICES = [
@@ -226,7 +226,10 @@ function emptyTotals() {
   return { ...emptyBuckets(), total: 0 };
 }
 function totalsFrom(b) {
-  return { ...b, total: b.input + b.output + b.cacheRead + b.cacheWrite };
+  return { ...b, total: b.input + b.output };
+}
+function hasUsage(b) {
+  return b.input + b.output + b.cacheRead + b.cacheWrite > 0;
 }
 function sortedModels(map, costs, providers) {
   return Object.keys(map).map((model) => {
@@ -234,7 +237,7 @@ function sortedModels(map, costs, providers) {
     return {
       model,
       ...b,
-      total: b.input + b.output + b.cacheRead + b.cacheWrite,
+      total: b.input + b.output,
       provider: providers && providers[model] ? providers[model] : "unknown",
       cost: costs && costs[model] ? { peak: { ...costs[model].peak }, offPeak: { ...costs[model].offPeak } } : { peak: { ...emptyBuckets() }, offPeak: { ...emptyBuckets() } }
     };
@@ -247,8 +250,8 @@ function totalsFromModels(models) {
     totals.output += item.output;
     totals.cacheRead += item.cacheRead;
     totals.cacheWrite += item.cacheWrite;
-    totals.total += item.total;
   }
+  totals.total = totals.input + totals.output;
   return totals;
 }
 function dayKeyUTC(ts) {
@@ -303,6 +306,29 @@ function buildDayWindow(byDay, now, costByDay) {
 }
 function emptyPhase() {
   return { peak: emptyBuckets(), offPeak: emptyBuckets() };
+}
+function sumDayBuckets(byDay, cutoffKey) {
+  const totals = emptyBuckets();
+  const byModel = {};
+  for (const day of Object.keys(byDay)) {
+    if (day < cutoffKey) continue;
+    const dayMap = byDay[day];
+    for (const model of Object.keys(dayMap)) {
+      const b = dayMap[model];
+      totals.input += b.input;
+      totals.output += b.output;
+      totals.cacheRead += b.cacheRead;
+      totals.cacheWrite += b.cacheWrite;
+      const cur = byModel[model];
+      byModel[model] = cur ? {
+        input: cur.input + b.input,
+        output: cur.output + b.output,
+        cacheRead: cur.cacheRead + b.cacheRead,
+        cacheWrite: cur.cacheWrite + b.cacheWrite
+      } : { ...b };
+    }
+  }
+  return { totals, byModel };
 }
 
 // src/host/projection.ts
@@ -701,7 +727,8 @@ function mergeSessionValue(a, value, sessionId, now, depth = 0, cwd = null) {
       output: a.recentTotals.output + recent.totals.output,
       cacheRead: a.recentTotals.cacheRead + recent.totals.cacheRead,
       cacheWrite: a.recentTotals.cacheWrite + recent.totals.cacheWrite,
-      total: a.recentTotals.total + recent.totals.input + recent.totals.output + recent.totals.cacheRead + recent.totals.cacheWrite
+      // Same rule as totalsFrom: uncached input + output, cache excluded.
+      total: a.recentTotals.total + recent.totals.input + recent.totals.output
     },
     retries: a.retries + value.retries,
     compactionTokens: a.compactionTokens + value.compactionTokens,
@@ -757,7 +784,7 @@ function mergeSessionValue(a, value, sessionId, now, depth = 0, cwd = null) {
   if (recent.totals.input + recent.totals.output + recent.totals.cacheRead + recent.totals.cacheWrite > 0) {
     next.recentSessionCount += 1;
   }
-  if (totals.total > 0) {
+  if (hasUsage(totals)) {
     next.allTimeSessionCount += 1;
     if (depth > 0) next.usageSessionsSubagent += 1;
     else next.usageSessionsMain += 1;
@@ -867,11 +894,25 @@ function pageOf(rows, offset, limit) {
   };
 }
 function finalizeOverview(input) {
-  const { aggregate: a, now, mode, sessionsTotal, sessionsOk, sessionsFailed, sessionsPending, eventsCounted, titles, providerNames } = input;
-  const recentByModel = sortedModels(a.recentByModel, a.recentCostByModel, a.allTimeModelProviders);
-  const allTimeByModel = sortedModels(a.allTimeByModel, a.allTimeCostByModel, a.allTimeModelProviders);
-  const providerRows = Object.keys(a.allTimeByProvider).map((id) => {
-    const b = a.allTimeByProvider[id];
+  const { aggregate: a, now, mode, sessionsTotal, sessionsOk, sessionsFailed, sessionsPending, eventsCounted, titles, providerNames, magpie } = input;
+  const gateway = magpie ?? null;
+  const modelProviders = gateway === null ? a.allTimeModelProviders : { ...gateway.upstreamProviders, ...a.allTimeModelProviders };
+  const recent = gateway === null ? null : sumDayBuckets(gateway.byDay, recentCutoffKey(now));
+  const recentByModel = sortedModels(
+    recent === null ? a.recentByModel : recent.byModel,
+    a.recentCostByModel,
+    modelProviders
+  );
+  const allTimeByModel = sortedModels(
+    gateway === null ? a.allTimeByModel : gateway.byModel,
+    a.allTimeCostByModel,
+    modelProviders
+  );
+  const allTimeByProvider = gateway === null ? a.allTimeByProvider : providerGroups(gateway.byModel, modelProviders);
+  const recentTotals = recent === null ? totalsFromModels(recentByModel) : totalsFrom(recent.totals);
+  const allTimeTotals = gateway === null ? totalsFromModels(allTimeByModel) : totalsFrom(gateway.totals);
+  const providerRows = Object.keys(allTimeByProvider).map((id) => {
+    const b = allTimeByProvider[id];
     return { id, name: providerNames[id] || id, totals: totalsFrom(b) };
   }).sort((x, y) => y.totals.total - x.totals.total);
   const top = rankSessions(a.sessions, 10);
@@ -897,15 +938,19 @@ function finalizeOverview(input) {
     to: a.to,
     usageSessionsMain: a.usageSessionsMain,
     usageSessionsSubagent: a.usageSessionsSubagent,
-    failedSessionIds: input.failedSessionIds ?? []
+    failedSessionIds: input.failedSessionIds ?? [],
+    source: gateway === null ? "logs" : "magpie",
+    ...gateway === null ? {} : { magpie: { file: gateway.file, calls: gateway.calls, from: gateway.from, to: gateway.to } }
   };
   return {
-    days: buildDayWindow(a.byDay, now, a.byDayCost),
-    totals: totalsFromModels(recentByModel),
+    // Day cells stay UTC (declared contract) and keep the log-derived cost
+    // buckets: a gateway row has no billing phase.
+    days: buildDayWindow(gateway === null ? a.byDay : gateway.byDay, now, a.byDayCost),
+    totals: recentTotals,
     sessionCount: a.recentSessionCount,
     byModel: recentByModel,
     allTime: {
-      totals: totalsFromModels(allTimeByModel),
+      totals: allTimeTotals,
       sessionCount: a.allTimeSessionCount,
       byModel: allTimeByModel,
       costTotals: a.allTimeCost
@@ -915,6 +960,18 @@ function finalizeOverview(input) {
     providers: providerRows,
     updatedAt: now
   };
+}
+function recentCutoffKey(now) {
+  return dayKeyUTC(now - RECENT_DAYS * 24 * 3600 * 1e3);
+}
+function providerGroups(byModel, providers) {
+  const out = {};
+  for (const model of Object.keys(byModel)) {
+    const provider = providers[model] ?? "unknown";
+    const cur = out[provider];
+    out[provider] = cur ? mergeB(cur, byModel[model]) : { ...byModel[model] };
+  }
+  return out;
 }
 function emptyOverview(now) {
   return finalizeOverview({
@@ -1022,7 +1079,8 @@ async function scanFallback(deps, now) {
       sessionsPending: 0,
       eventsCounted: 0,
       titles,
-      providerNames
+      providerNames,
+      magpie: deps.magpie
     });
   }
   const pacer = scanPacer((message) => console.log("[dsh-usage-panel]", message));
@@ -1094,8 +1152,134 @@ async function scanFallback(deps, now) {
     eventsCounted,
     titles,
     providerNames,
-    failedSessionIds: failed
+    failedSessionIds: failed,
+    magpie: deps.magpie
   });
+}
+
+// src/host/magpie-usage.ts
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { createInterface } from "node:readline";
+var MAGPIE_AGENT = "dsh";
+var MAGPIE_USAGE_FILE_ENV = "MAGPIE_USAGE_FILE";
+function resolveMagpieUsageFile(env = process.env, home = homedir()) {
+  const explicit = env[MAGPIE_USAGE_FILE_ENV];
+  if (typeof explicit === "string" && explicit.trim() !== "") return explicit.trim();
+  return join(home, ".config", "magpie", "usage.jsonl");
+}
+function count(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+function text(value, fallback) {
+  return typeof value === "string" && value !== "" ? value : fallback;
+}
+function parseMagpieRow(line) {
+  if (line.trim() === "") return null;
+  let raw;
+  try {
+    raw = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (raw === null || typeof raw !== "object") return null;
+  const row = raw;
+  if (row.agent !== MAGPIE_AGENT) return null;
+  const at = typeof row.t === "string" ? Date.parse(row.t) : Number.NaN;
+  return {
+    at: Number.isFinite(at) ? at : null,
+    // `req` is the composite route the harness also logs as its model id
+    // (`codex/gpt-6.1-sol`, `clinepass/cline-pass/deepseek-v4.1-flash-1017`).
+    // `model` (the served id) is a different vocabulary and must not become a
+    // panel key; it is only the fallback for rows without `req`.
+    model: text(row.req, text(row.model, "unknown")),
+    provider: text(row.provider, "unknown"),
+    buckets: {
+      input: count(row.in),
+      output: count(row.out),
+      cacheRead: count(row.cache_read),
+      cacheWrite: count(row.cache_write)
+    }
+  };
+}
+function addInto2(target, key, b) {
+  const cur = target[key];
+  if (cur === void 0) {
+    target[key] = { ...b };
+    return;
+  }
+  cur.input += b.input;
+  cur.output += b.output;
+  cur.cacheRead += b.cacheRead;
+  cur.cacheWrite += b.cacheWrite;
+}
+function createMagpieFolder(file = "") {
+  const source = {
+    file,
+    calls: 0,
+    totals: emptyBuckets(),
+    byModel: {},
+    upstreamProviders: {},
+    byDay: {},
+    from: null,
+    to: null
+  };
+  return {
+    push(line) {
+      const row = parseMagpieRow(line);
+      if (row === null) return;
+      source.calls += 1;
+      const b = row.buckets;
+      source.totals.input += b.input;
+      source.totals.output += b.output;
+      source.totals.cacheRead += b.cacheRead;
+      source.totals.cacheWrite += b.cacheWrite;
+      addInto2(source.byModel, row.model, b);
+      source.upstreamProviders[row.model] = row.provider;
+      if (row.at === null) return;
+      if (source.from === null || row.at < source.from) source.from = row.at;
+      if (source.to === null || row.at > source.to) source.to = row.at;
+      const day = dayKeyUTC(row.at);
+      const dayMap = source.byDay[day] ?? (source.byDay[day] = {});
+      addInto2(dayMap, row.model, b);
+    },
+    result() {
+      return source;
+    }
+  };
+}
+var cachedFold = null;
+async function loadMagpieSource(file = resolveMagpieUsageFile(), warn) {
+  let mtimeMs = 0;
+  let size = 0;
+  try {
+    const info = await stat(file);
+    if (!info.isFile()) return null;
+    mtimeMs = info.mtimeMs;
+    size = info.size;
+  } catch {
+    return null;
+  }
+  if (cachedFold !== null && cachedFold.mtimeMs === mtimeMs && cachedFold.size === size) {
+    return cachedFold.value;
+  }
+  try {
+    const folder = createMagpieFolder(file);
+    const reader = createInterface({ input: createReadStream(file, { encoding: "utf8" }), crlfDelay: Infinity });
+    for await (const line of reader) folder.push(line);
+    const source = folder.result();
+    if (source.calls === 0) {
+      warn?.("magpie usage file has no agent=dsh rows; using session logs: " + file);
+      return null;
+    }
+    cachedFold = { mtimeMs, size, value: source };
+    return source;
+  } catch (err) {
+    warn?.("magpie usage file unreadable; using session logs: " + String(err?.message ?? err));
+    return null;
+  }
 }
 
 // src/host/billing-store.ts
@@ -1366,8 +1550,8 @@ function createPricesRepair(deps) {
 
 // src/host/session-repair.ts
 import { readFile, readdir, rename, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { homedir as homedir2 } from "node:os";
+import { join as join2, resolve } from "node:path";
 
 // src/host/zstd-frames.ts
 import { constants, zstdCompress as nodeZstdCompress, zstdDecompress as nodeZstdDecompress } from "node:zlib";
@@ -1561,7 +1745,7 @@ function decodeStorageRecord(value) {
 function resolveDshHome() {
   const env = process.env.DSH_HOME;
   if (env !== void 0 && env.trim() !== "") return resolve(env.trim());
-  return join(homedir(), ".dsh");
+  return join2(homedir2(), ".dsh");
 }
 function isRepairableSessionId(sessionId, failedSessionIds) {
   return typeof sessionId === "string" && sessionId !== "" && sessionId !== "." && sessionId !== ".." && !/[\x00/\\]/u.test(sessionId) && failedSessionIds.includes(sessionId);
@@ -1574,7 +1758,7 @@ function generationVersion(name2, pattern) {
   return match[1] === void 0 ? 0 : Number(match[1]);
 }
 async function locateSessionArtifact(home, sessionId) {
-  const sessionsRoot = join(home, "sessions");
+  const sessionsRoot = join2(home, "sessions");
   let projects = [];
   try {
     projects = await readdir(sessionsRoot);
@@ -1583,7 +1767,7 @@ async function locateSessionArtifact(home, sessionId) {
   }
   const needles = sessionId.startsWith("session-") ? [sessionId] : [sessionId, "session-" + sessionId];
   for (const needle of needles) for (const project of projects) {
-    const projectDir = join(sessionsRoot, project);
+    const projectDir = join2(sessionsRoot, project);
     let entries = [];
     try {
       entries = await readdir(projectDir, { withFileTypes: true });
@@ -1592,7 +1776,7 @@ async function locateSessionArtifact(home, sessionId) {
     }
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name !== needle) continue;
-      const sessionDir = join(projectDir, entry.name);
+      const sessionDir = join2(projectDir, entry.name);
       let files = [];
       try {
         files = await readdir(sessionDir, { withFileTypes: true });
@@ -1607,7 +1791,7 @@ async function locateSessionArtifact(home, sessionId) {
         if (version === void 0) continue;
         const compressed = compressedVersion !== void 0;
         if (best === void 0 || compressed && !best.compressed || compressed === best.compressed && version > best.version) {
-          best = { path: join(sessionDir, file.name), version, compressed };
+          best = { path: join2(sessionDir, file.name), version, compressed };
         }
       }
       return best?.path ?? null;
@@ -1764,7 +1948,7 @@ async function rebuildSessionLog(bytes, decode) {
 async function repairSessionLog(home, sessionId, decode) {
   const artifact = await locateSessionArtifact(home, sessionId);
   if (artifact === null) {
-    throw new Error("session artifact not found under " + join(home, "sessions"));
+    throw new Error("session artifact not found under " + join2(home, "sessions"));
   }
   const bytes = await readFile(artifact);
   const rebuilt = await rebuildSessionLog(bytes, decode);
@@ -1783,7 +1967,7 @@ async function repairSessionLog(home, sessionId, decode) {
 }
 
 // src/host/stats-cache.ts
-import { join as join2 } from "node:path";
+import { join as join3 } from "node:path";
 function statsCacheKey(watermark) {
   return "v" + OVERVIEW_VERSION + ":s" + PROJECTION_STATE_VERSION + ":n" + watermark.sessionsTotal + ":t" + (watermark.to ?? 0);
 }
@@ -1796,7 +1980,7 @@ async function openStatsCache(home, warn) {
     return null;
   }
   try {
-    const db = new sqlite.DatabaseSync(join2(home, "dsh-usage-panel.sqlite"));
+    const db = new sqlite.DatabaseSync(join3(home, "dsh-usage-panel.sqlite"));
     db.exec(
       "PRAGMA journal_mode = WAL"
       // concurrent reads with the write path + crash recovery
@@ -1939,6 +2123,7 @@ function apply(ctx) {
   let disposed = false;
   let sessionIndex = [];
   let failedSessionIds = [];
+  let reportedSource = "";
   const reportedCostFailures = /* @__PURE__ */ new Set();
   let statsCache = null;
   openStatsCache(resolveDshHome(), (message) => console.warn(tag, message)).then((cache2) => {
@@ -1969,7 +2154,7 @@ function apply(ctx) {
   function logFailure(message) {
     console.warn(tag, message);
   }
-  async function scanProjection(now) {
+  async function scanProjection(now, magpie) {
     let a = emptyAggregate();
     let sessionsTotal = 0;
     let sessionsOk = 0;
@@ -2046,17 +2231,21 @@ function apply(ctx) {
       eventsCounted: 0,
       titles,
       providerNames,
-      failedSessionIds: failed
+      failedSessionIds: failed,
+      magpie
     });
   }
-  async function scan(now) {
+  async function gatewaySource() {
+    return loadMagpieSource(void 0, (message) => console.warn(tag, message));
+  }
+  async function scan(now, magpie) {
     if (disposed) return cache ? cache.payload : emptyOverview(now);
-    if (mode === "projection") return scanProjection(now);
+    if (mode === "projection") return scanProjection(now, magpie);
     return scanFallback({ sq, providerNames, logFailure, storeIndex: (rows) => {
       sessionIndex = rows;
     }, storeFailed: (ids) => {
       failedSessionIds = ids;
-    } }, now);
+    }, magpie }, now);
   }
   async function watermarkKey() {
     const sessions = await sq.listSessions();
@@ -2085,7 +2274,23 @@ function apply(ctx) {
     if (inflight) return inflight;
     const run = (async () => {
       await hydrateFromCache();
-      const payload = await scan(Date.now());
+      const magpie = await gatewaySource();
+      const magpieKey = magpie === null ? "logs" : magpie.file;
+      if (magpieKey !== reportedSource) {
+        reportedSource = magpieKey;
+        if (magpie === null) {
+          console.log(tag, "totals source: session logs (no Magpie usage file at " + resolveMagpieUsageFile() + ")");
+        } else {
+          console.log(
+            tag,
+            "totals source: Magpie gateway ledger (agent=dsh)",
+            "calls=" + magpie.calls,
+            "range=" + (magpie.from === null ? "-" : new Date(magpie.from).toISOString()) + ".." + (magpie.to === null ? "-" : new Date(magpie.to).toISOString()),
+            "file=" + magpie.file
+          );
+        }
+      }
+      const payload = await scan(Date.now(), magpie);
       if (payload !== null && !disposed) {
         cache = { at: Date.now(), payload };
         if (statsCache !== null) {
@@ -2163,7 +2368,8 @@ function apply(ctx) {
       models: sessionModels(value),
       totals: {
         ...value.totals,
-        total: value.totals.input + value.totals.output + value.totals.cacheRead + value.totals.cacheWrite
+        // Same total rule as every other payload: uncached input + output.
+        total: value.totals.input + value.totals.output
       }
     };
   }

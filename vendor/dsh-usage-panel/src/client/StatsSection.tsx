@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Overview } from '../shared/contract.ts'
 import { formatClock } from '../shared/format.ts'
-import { isUsageEmpty } from '../shared/usage.ts'
+import { dayKeyUTC, isUsageEmpty } from '../shared/usage.ts'
 import { callOverview, callRepairSession, loadCached, saveCached } from './api.ts'
 import { useBillingSettings, useI18n, useLatest, type Tip } from './hooks.ts'
 import type { RpcLike } from './ctx.ts'
@@ -25,6 +25,27 @@ import { Button, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import * as React from 'react'
 
 export type Freshness = 'loading' | 'fresh' | 'stale' | 'fallback' | 'error'
+
+/**
+ * Provenance line under the header: which ledger the token totals came from.
+ * The Magpie gateway ledger carries the calls/range the all-time numbers cover;
+ * the log path states the fork-deduped in+out rule. `title` carries the file.
+ */
+function sourceNote(overview: Overview, t: I18n['t']): { text: string; title?: string } {
+  const coverage = overview.coverage
+  const magpie = coverage ? coverage.magpie : undefined
+  if (coverage && coverage.source === 'magpie' && magpie) {
+    return {
+      text: t('source.magpie', {
+        calls: magpie.calls,
+        from: magpie.from === null ? '—' : dayKeyUTC(magpie.from),
+        to: magpie.to === null ? '—' : dayKeyUTC(magpie.to),
+      }),
+      title: magpie.file,
+    }
+  }
+  return { text: t('source.logs') }
+}
 
 interface StatsSectionProps {
   rpc: RpcLike
@@ -128,6 +149,7 @@ export function StatsSection({ rpc, i18n: baseI18n }: StatsSectionProps): JSX.El
   } else if (error) {
     subText = t('status.error', { msg: error })
   }
+  const source = data ? sourceNote(data, t) : null
 
   let body: JSX.Element
   if (!data && !error) {
@@ -185,6 +207,7 @@ export function StatsSection({ rpc, i18n: baseI18n }: StatsSectionProps): JSX.El
           <div>
             <h2>{t('nav.label')}</h2>
             {subText ? <div className="dsw-ust-sub">{subText}</div> : null}
+            {source ? <div className="dsw-ust-source" title={source.title}>{source.text}</div> : null}
             {data && data.coverage.failedSessionIds.length > 0 && (
               <div className="dsw-ust-repair">
                 <div className="dsw-ust-repair-row">

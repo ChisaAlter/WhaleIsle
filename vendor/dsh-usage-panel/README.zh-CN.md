@@ -12,7 +12,7 @@
 
 ## 页面内容
 
-- **汇总数据（全部历史）** —— 计费输入 / 输出 Token、会话数量（次级标注总会话数与主/子代理用量拆分）、最常用模型及其占比。
+- **汇总数据（全部历史）** —— 未缓存输入 **+** 输出 Token（与本地 Magpie 网关的口径一致；缓存读写是独立统计，显示在次级文字里）、会话数量（次级标注总会话数与主/子代理用量拆分）、最常用模型及其占比。
 - **缓存命中率** —— `缓存读 ÷（未缓存输入 + 缓存读 + 缓存写）`，附读写绝对量。
 - **费用合计（估算）** —— 按模型定价的全历史费用，附峰段/谷段拆分；详见「费用与计价」。
 - **活跃热力图** —— 半年数据窗口内按 UTC 自然月展示（列为周、行为星期），‹ › 切换月份。按当月非零日用量的四分位分 4 级色阶。
@@ -61,9 +61,13 @@ Host 半聚合持久化会话日志：
 
 记账规则：`request/header` 与 `request/context` 记录模型（context 打底、header 覆盖）；该步骤的 `assistant/message` 用量**替换**流式暂记用量（同一步重试的消息不会重复累计）；`llm/retry` 事件只计重试次数、不计 Token；`compaction/summary` 用量归属其自身模型并单独披露（且**绝不进入费用桶**）；reasoning token 已含于 output，绝不重复相加。
 
+**总量口径**：载荷里每个 `total`（KPI、热力图/柱图、会话与项目排行、模型环形图、CSV 导出）都是**未缓存输入 + 输出**。缓存读 / 缓存写保留各自的桶并单独展示（KPI 次级文字、命中率卡、CSV 的 `cacheRead`/`cacheWrite` 列），**绝不并入任何 total**。缓存命中率仍是 `缓存读 ÷（未缓存输入 + 缓存读 + 缓存写）`。
+
+**可选 Magpie 数据源**：本机 Magpie 网关保留用量账本时（`$MAGPIE_USAGE_FILE`，否则 `~/.config/magpie/usage.jsonl`），Host 折叠其中 `agent: "dsh"` 的行（即 `magpie usage` 里显示的「DeepSeek Harness」），总量 / 最近窗口 / 日桶 / 模型与 Provider 拆分都取自它。账本比会话日志活得更久，因此页面与 `magpie usage` 一致，而不是只报日志还留着的那段历史。模型键用网关的请求路由（`req`，如 `codex/gpt-6.1-sol`）——它正是 DSH 写进会话日志的模型 id，用实际服务的 id（`gpt-6.1-sol`）会对不上任何费用行。模型的 Provider 仍取日志侧（`magpie`，也就是保存价格的作用域键），仅当日志从未见过该模型时才用网关的上游 id（`codex`、`factory` 等）兜底。Provider 行是同一批模型桶的另一种分组，因此加起来仍等于总量。会话、项目、会话排行与费用桶始终来自日志：网关行没有会话身份，也没有计费时段。页面在标题下标注数据来源（折叠的调用数 + 覆盖的 UTC 区间，悬停可看文件路径）；文件缺失或不可读时直接回退到去重后的日志数字。不经网关的流量（例如直接配置的 Provider 路由）在账本作为数据源时不计入总量——这正是「与 `magpie usage` 一致」的含义；删除/改名账本文件即可切回日志口径。
+
 **子会话（fork）去重**：宿主的 `inheritedEventCount` 精确排除继承前缀，fork 不会重复计算父会话用量。恢复时追加的 `session/end-seed` 不会遮掉本会话已有用量；缺少这份元数据的旧调用者保留标记边界规则。
 
-**时区声明**：日桶与导出一律用 **UTC** 自然日（`YYYY-MM-DD`），热力图副标题声明所选月份与 UTC。计费时段使用**北京时间**（UTC+8、无夏令时）——见「费用与计价」。
+**时区声明**：日桶与导出一律用 **UTC** 自然日（`YYYY-MM-DD`），热力图副标题声明所选月份与 UTC。计费时段使用**北京时间**（UTC+8、无夏令时）——见「费用与计价」。`magpie usage` 自己的按日数字用**本地日**分桶，因此某一天的数字可能相差一个时区偏移，而全历史数字完全一致。
 
 由于从不写回，统计可跨重启存活，并覆盖安装插件之前的会话。
 
@@ -101,6 +105,7 @@ Host 半聚合持久化会话日志：
 | `src/host/index.ts` → `lib/index.js` | Host 半（Cordis 插件）：投影注册、聚合、带预热的 RPC 缓存、fail-soft 回退、计费 RPC 端点 |
 | `src/host/projection.ts` | 纯函数会话投影 reducer（四桶 + 峰谷桶、fork 去重、重试/压缩语义、UTC 日桶、step/start 时段判定） |
 | `src/host/aggregate.ts` | 跨会话合并 → overview 载荷（含费用映射） |
+| `src/host/magpie-usage.ts` | 可选 Magpie 网关账本数据源：路径解析（`MAGPIE_USAGE_FILE` → `~/.config/magpie/usage.jsonl`）、`agent === 'dsh'` 折叠（总量/byModel/byDay/上游 Provider）、mtime+size 缓存、不可用时干净返回 null |
 | `src/host/prices-source.ts` | 价格记录：经 settings 服务读 `ui-conversation.sessionCostPrices`，用 `settings/updated` 保持快照新鲜，并把编辑写回 |
 | `src/host/legacy-billing-import.ts` | 旧域 `dsh_usage_panel_billing` 并入设置段的纯函数合并 + 带前置条件的导入 |
 | `src/host/billing-store.ts` | 已退役的插件自有价格记录：仅作旧记录读取（外加导入的清理写入） |
@@ -113,7 +118,7 @@ Host 半聚合持久化会话日志：
 | `src/shared/contract.ts` | host↔client wire 契约（单一来源） |
 | `cordis.patch.yml` | Bundle patch：向 profile 组合插入 `usage-stats` 行 |
 
-Host 通过 `ctx.connection.rpc.handle('/usage-stats', …, { authority: 'loopback' })` 提供 `overview` 端点，浏览器经 `rpc.call('/usage-stats', 'overview', …)` 调用。overview 载荷包含 `coverage`（总会话数与主/子代理用量拆分，展示于会话数量 KPI 次级文字）、`topSessions`、`providers`，并保留 v0.1.0 形态的 `days` / `totals` / `byModel` / `allTime`。基于 DeepSeek Harness `0.1.0-rc.6` 开发验证。测试使用 Node 内置 test runner（`npm test`）；CI 执行 typecheck + build + test + 打包门禁。
+Host 通过 `ctx.connection.rpc.handle('/usage-stats', …, { authority: 'loopback' })` 提供 `overview` 端点，浏览器经 `rpc.call('/usage-stats', 'overview', …)` 调用。overview 载荷包含 `coverage`（总会话数、主/子代理用量拆分，以及总量来源 `source`/`magpie`）、`topSessions`、`providers`，并保留 v0.1.0 形态的 `days` / `totals` / `byModel` / `allTime`。基于 DeepSeek Harness `0.1.0-rc.6` 开发验证。测试使用 Node 内置 test runner（`npm test`）；CI 执行 typecheck + build + test + 打包门禁。
 
 ## License
 

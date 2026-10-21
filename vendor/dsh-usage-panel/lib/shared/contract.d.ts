@@ -110,6 +110,12 @@ export interface PhaseBuckets {
     peak: Buckets;
     offPeak: Buckets;
 }
+/**
+ * Derived totals. `total` is **uncached input + output only** — the headline
+ * token count the Magpie gateway reports (`in + out`). Cache read and cache
+ * write are separate stats: they stay in their own buckets, are shown on their
+ * own (KPI detail / hit-rate card) and are NEVER folded into a total.
+ */
 export interface UsageTotals extends Buckets {
     total: number;
 }
@@ -139,6 +145,22 @@ export interface DayRecord {
     modelCosts: Record<string, PhaseBuckets>;
 }
 export type AggregationMode = 'projection' | 'scan' | 'none';
+/** Which ledger the token totals came from. */
+export type UsageSource = 'logs' | 'magpie';
+/**
+ * Provenance of the totals when the local Magpie gateway ledger supplied them
+ * (see `host/magpie-usage.ts`). Rows with `agent === 'dsh'` are the ones the
+ * gateway's own `magpie usage` reports as "DeepSeek Harness".
+ */
+export interface MagpieCoverage {
+    /** Absolute path of the folded usage file. */
+    file: string;
+    /** Folded gateway calls (rows with agent === 'dsh'). */
+    calls: number;
+    /** Earliest/latest folded call instant (epoch ms), null for an empty file. */
+    from: number | null;
+    to: number | null;
+}
 /**
  * Honest coverage diagnostics: the overview never claims to be a complete
  * bill when part of the corpus could not be scanned. `sessionsPending` =
@@ -164,6 +186,11 @@ export interface CoverageStats {
     usageSessionsSubagent: number;
     /** Ids of sessions whose log read failed (repairable in place on desktop). */
     failedSessionIds: string[];
+    /** Provenance of the token totals: session logs, or the Magpie gateway
+     *  ledger when it is present. Absent on v4 cached payloads = 'logs'. */
+    source?: UsageSource;
+    /** Present when `source === 'magpie'`. */
+    magpie?: MagpieCoverage;
 }
 /** One session in the drill-down ranking (top-N by all-time total). */
 export interface SessionSummary {
@@ -214,4 +241,4 @@ export interface Overview {
     /** Set when the payload came from a stale cache while a rescan runs. */
     stale?: boolean;
 }
-export declare const OVERVIEW_VERSION = 4;
+export declare const OVERVIEW_VERSION = 5;

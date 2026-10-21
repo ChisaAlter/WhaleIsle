@@ -1,6 +1,7 @@
 import type { Buckets, CoverageStats, DayRecord, Overview, PhaseBuckets, ProjectRow, SessionModelCost, UsageTotals } from '../shared/contract.ts';
 import type { SessionCostPrices } from '../shared/pricing.ts';
 import { type UsagePanelState } from './projection.ts';
+import type { MagpieSource } from './magpie-usage.ts';
 export interface SessionAgg {
     id: string;
     /** Session working directory (the desktop "project" grouping key). */
@@ -68,6 +69,13 @@ export interface FinalizeInput {
     providerNames: Record<string, string>;
     /** Ids of sessions whose log read failed (repair candidates, capped). */
     failedSessionIds?: string[];
+    /**
+     * Folded Magpie gateway ledger, when the local file exists. It then supplies
+     * the token totals / days / model + provider splits (the gateway sees every
+     * request, including logs that are already rotated away). Sessions,
+     * projects, per-session ranking and the cost buckets stay log-derived.
+     */
+    magpie?: MagpieSource | null;
 }
 /** Build the wire Overview from an aggregate (both scan modes converge here). */
 export declare function finalizeOverview(input: FinalizeInput): Overview;

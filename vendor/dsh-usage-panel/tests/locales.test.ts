@@ -106,7 +106,10 @@ test('unknown keys fall back to the local zh dictionary, never the raw key', () 
 
 test('interpolation works through both paths', () => {
   const i18n = createI18n(new FakeLocaleRuntime('zh'))
-  assert.equal(i18n.t('kpi.total.detail', { input: '1 万', output: '2 万' }), '输入 1 万 · 输出 2 万')
+  assert.equal(
+    i18n.t('kpi.total.detail', { input: '1 万', output: '2 万', cacheRead: '3 亿' }),
+    '输入 1 万 · 输出 2 万 · 缓存读 3 亿',
+  )
   const noRuntime = createI18n()
   assert.equal(noRuntime.t('bar.day', { date: '8月15日', tokens: '100' }), '8月15日 · 共 100 Tokens')
 })
