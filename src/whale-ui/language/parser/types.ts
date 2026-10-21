@@ -17,6 +17,8 @@ export interface FunctionSchema {
   params: JSONSchemaDef;
   /** JSON Schema of the return value. */
   returns?: JSONSchemaProperty;
+  /** Explicit function contract: deterministic data output without effects or argument mutation. */
+  pure?: boolean;
 }
 
 /**

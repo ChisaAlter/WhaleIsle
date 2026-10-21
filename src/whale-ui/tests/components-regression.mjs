@@ -113,6 +113,15 @@ test('all chart types preserve labels and numeric series; stacked negative domai
  }
 });
 
+test('chart legend explains its local scope in both host languages without changing page selection or summaries',async()=>{
+ const previousLanguage=document.documentElement.lang;
+ try{for(const [language,scope]of [['en','Only shows or hides series in this chart; page filters and summaries stay unchanged.'],['zh-CN','仅显示或隐藏图中系列，不改变页面筛选或汇总']]){
+  document.documentElement.lang=language;
+  const app=await mounted('root = Col([Checkbox($selected,"河西店"),Text("汇总："+@Sum(rows.河西店)),Chart("line",rows,"week",["河西店","江南店"])])\n$selected = true\nrows = [{week:"第1周",河西店:12,江南店:10},{week:"第2周",河西店:16,江南店:14}]');
+  try{const legend=app.element.querySelector('.whale-chart-key');assert.equal(legend.title,scope);assert.equal(legend.getAttribute('aria-label'),'河西店: '+scope);assert.equal(legend.textContent,'河西店');assert.equal(legend.getAttribute('aria-pressed'),'true');await click(legend);assert.equal(legend.getAttribute('aria-pressed'),'false');assert.equal(app.element.querySelector('input').checked,true);assert.equal(app.element.querySelector('.whale-text').textContent,'汇总：28');assert.equal(app.element.querySelectorAll('.whale-chart-svg circle').length,2);assert.ok(!app.errors.flat().some(error=>error.severity==='error'));}finally{await app.close();}
+ }}finally{document.documentElement.lang=previousLanguage;}
+});
+
 test('natural chart ticks keep real comparison scores readable without changing point values',async()=>{
  const app=await mounted('root = Col([Chart("bar",[{name:"B款",score:8.05},{name:"A款",score:7.85}],"name",["score"])])');
  try{assert.deepEqual([...app.element.querySelectorAll('.whale-chart-tick')].map(e=>e.textContent),['0','2.5','5','7.5','10']);assert.ok(app.element.querySelector('rect[aria-label="B款, score: 8.05"]'));assert.ok(app.element.querySelector('rect[aria-label="A款, score: 7.85"]'));}finally{await app.close();}

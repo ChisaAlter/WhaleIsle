@@ -136,6 +136,70 @@ test('shared expressions keep random calls per consumer and do not evaluate inac
   assert.equal(draws, 2);
 });
 
+test('repeated eight-row aggregates and nested Each retain a single bounded calculation pass', () => {
+  // Reduced from the first rejected analysis: every output reuses enriched rows and per-store changes.
+  const result = parser.parse(`root = Col([${Array.from({ length: 16 }, () => 'Text([@Sum(rows.revenue),@Sum(rows.cost),stats])').join(',')}])
+$start = 1
+$end = 4
+$he = true
+$jn = true
+records = [{week:1,store:"H",revenue:12000,cost:8400},{week:1,store:"J",revenue:10000,cost:7600},{week:2,store:"H",revenue:13500,cost:9200},{week:2,store:"J",revenue:11000,cost:8000},{week:3,store:"H",revenue:12800,cost:9000},{week:3,store:"J",revenue:15000,cost:10200},{week:4,store:"H",revenue:16000,cost:11000},{week:4,store:"J",revenue:14500,cost:10000}]
+enriched = @Each(records,"r",{week:r.week,store:r.store,revenue:r.revenue,cost:r.cost,profit:r.revenue-r.cost,margin:(r.revenue-r.cost)/r.revenue*100,selected:r.store=="H"?$he:$jn})
+rows = @Sort(@Filter(@Filter(@Filter(enriched,"week",">=",$start),"week","<=",$end),"selected","==",true),"week","asc")
+changes = @Each(@Filter(rows,"week",">",$start),"r",{store:r.store,profit:r.profit,rate:r.revenue/@First(@Filter(@Filter(rows,"store","==",r.store),"week","==",r.week-1)).revenue-1})
+stats = @Each(["H","J"],"s",{store:s,revenue:@Sum(@Filter(rows,"store","==",s).revenue),cost:@Sum(@Filter(rows,"store","==",s).cost),rates:@Filter(changes,"store","==",s).rate})`);
+  assert.deepEqual(result.meta.errors, []);
+  const store = core.createStore(); store.initialize(result.stateDeclarations, {});
+  const reads = {}, ctx = { getState: name => { reads[name] = (reads[name] ?? 0) + 1; return store.get(name); }, resolveRef: () => null };
+  let evaluated = core.evaluateRoot(result, { library, store, ctx });
+  for (const child of evaluated.props.children) {
+    assert.deepEqual(child.props.value.slice(0, 2), [104800,73400]);
+    assert.deepEqual(child.props.value[2].map(row => [row.store,row.revenue,row.cost]), [['H',54300,37600],['J',50500,35800]]);
+    assert.equal(child.props.value[2][0].rates.length, 3);
+  }
+  assert.ok(reads.$he <= 2 && reads.$jn <= 2, JSON.stringify(reads));
+  store.set('$he', false); store.set('$start', 3);
+  evaluated = core.evaluateRoot(result, { library, store, ctx });
+  for (const child of evaluated.props.children) assert.deepEqual(child.props.value.slice(0, 2), [29500,20200]);
+  const shadowed = core.parseExpression(core.tokenize('@Each([1,2],"x",@Each([x,x+1],"x",x))'));
+  assert.deepEqual(core.evaluate(shadowed, ctx), [[1,2],[2,3]]);
+});
+
+test('only opted-in pure functions reuse results; volatile calls, mutations and diagnostics remain observable', () => {
+  let pureCalls = 0, reads = 0, state = 4;
+  const pure = core.defineFunction({ name: 'Square', description: 'Pure calculation', pure: true, params: z.object({ n: z.number() }), returns: z.number(), fn: ({n}) => { pureCalls++; return n*n; } });
+  const effect = core.defineFunction({ name: 'Effect', description: 'Effect with no purity opt-in', params: z.object({}), returns: z.number(), fn: () => ++state });
+  const failure = core.defineFunction({ name: 'Failure', description: 'Reports failures', pure: true, params: z.object({ n: z.number() }), returns: z.number(), fn: () => { throw new Error('expected failure'); } });
+  const wrong = core.defineFunction({ name: 'WrongReturn', description: 'Invalid return', pure: true, params: z.object({ n: z.number() }), returns: z.number(), fn: () => 'invalid' });
+  const mutate = core.defineFunction({ name: 'Mutate', description: 'Mutate argument', params: z.object({ items: z.array(z.number()) }), returns: z.number(), fn: ({items}) => { items[0]++; return items[0]; } });
+  const local = core.createLibrary({ root: 'Col', components: [Col, Text], functions: [pure,effect,failure,wrong,mutate] }), schema = local.toJSONSchema();
+  assert.equal(schema.functions.Square.pure, true); assert.equal(schema.functions.Effect.pure, undefined);
+  const functions = Object.fromEntries(Object.entries(local.functions).map(([name,def]) => [name,{...schema.functions[name],fn:def.fn}]));
+  const ctx = { getState: () => { reads++; return state; }, resolveRef: () => null, functions };
+  const source = core.createParser(schema,'Col').parse('root = Col([Text(square),Text(square),Text(effect),Text(square)])\nsquare=@Square($n)\neffect=@Effect()\n$n=4');
+  let output = core.evaluateRoot(source,{library:local,store:null,ctx});
+  assert.deepEqual(output.props.children.map(child=>child.props.value),[16,16,5,25]);
+  assert.equal(pureCalls,2); assert.equal(reads,2);
+  output = core.evaluateRoot(source,{library:local,store:null,ctx});
+  assert.deepEqual(output.props.children.map(child=>child.props.value),[25,25,6,36]);
+  assert.equal(pureCalls,4);
+  const mutated = core.createParser(schema,'Col').parse('root=Col([Text(@Mutate(values)),Text(@Mutate(values)),Text(values)])\nvalues=[$n+0]');
+  assert.deepEqual(core.evaluateRoot(mutated,{library:local,store:null,ctx}).props.children.map(child=>child.props.value),[7,7,[6]]);
+  const invalid = core.createParser(schema,'Col').parse('root=Col([Text(failed+1),Text(failed+1),Text(wrong),Text(wrong)])\nfailed=@Failure($n)\nwrong=@WrongReturn($n)');
+  const errors=[]; core.evaluateRoot(invalid,{library:local,store:null,ctx,errors});
+  assert.equal(errors.length,4); assert.equal(errors.filter(e=>e.message.includes('expected failure')).length,2);
+  const counters = { Random:0, Pick:0, Shuffle:0, Now:0, Today:0 };
+  const volatile = Object.keys(counters).map(name=>core.defineFunction({name,description:'Volatile',params:z.object({}),returns:z.number(),fn:()=>++counters[name]}));
+  const randomLibrary=core.createLibrary({root:'Col',components:[Col,Text],functions:volatile}), randomSchema=randomLibrary.toJSONSchema();
+  const randomSource=core.createParser(randomSchema,'Col').parse('root=Col([Text([draw,draw,pick,pick,shuffle,shuffle,now,now,today,today])])\ndraw=@Random()+10\npick=@Pick()\nshuffle=@Shuffle()\nnow=@Now()\ntoday=@Today()');
+  const randomCtx={...ctx,functions:Object.fromEntries(volatile.map(def=>[def.name,{...randomSchema.functions[def.name],fn:def.fn}]))};
+  for(let i=0;i<2;i++)core.evaluateRoot(randomSource,{library:randomLibrary,store:null,ctx:randomCtx});
+  assert.deepEqual(counters,{Random:4,Pick:4,Shuffle:4,Now:4,Today:4});
+  const extra = core.parseExpression(core.tokenize('$value+1'));
+  assert.equal(core.evaluate(extra,{...ctx,extraScope:{$value:2}}),3);
+  assert.equal(core.evaluate(extra,{...ctx,extraScope:{$value:8}}),9);
+});
+
 test('nested runtime collection evaluation shares a bounded step budget', () => {
   const ast = core.parseExpression(core.tokenize('@Each($items,"x",@Each($items,"y",x+y))'));
   assert.throws(() => core.evaluate(ast, { getState: () => Array.from({ length: 200 }, (_, i) => i), resolveRef: () => null }), error => error.code === 'budget-exceeded' && error.phase === 'evaluation');
