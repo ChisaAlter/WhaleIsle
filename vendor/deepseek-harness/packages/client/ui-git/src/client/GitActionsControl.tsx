@@ -44,6 +44,7 @@ import { CommitDialog, type CommitFileRow, type LargeFileWarning } from './Commi
 import { GitProgressToast, type GitProgressState } from './GitProgressToast.tsx'
 import { PublishDialog } from './PublishDialog.tsx'
 import css from './GitActionsControl.module.css'
+import labelCss from './GitLabel.module.css'
 
 /** Must match ui-surfaces; client packages cannot share a value export. */
 const GIT_INIT_EVENT = 'dshd-git-init'
@@ -233,6 +234,7 @@ export function GitActionsControl({
   const loaded = cwd !== undefined && loadedCwd === cwd
   const [busy, setBusy] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [revealedParts, setRevealedParts] = useState({ branch: false, action: false })
   const [commitOpen, setCommitOpen] = useState(false)
   const [largeFiles, setLargeFiles] = useState<LargeFileWarning[]>([])
   const [commitMessage, setCommitMessage] = useState('')
@@ -786,7 +788,11 @@ export function GitActionsControl({
       onClick={runQuick}
     >
       {iconFor(quickIcon(quickAction))}
-      <span className={css.primaryLabel}>{quickLabel}</span>
+      <span className={labelCss.label}>
+        <span className={labelCss.clip}>
+          <span className={labelCss.text}>{quickLabel}</span>
+        </span>
+      </span>
     </Button>
   )
 
@@ -809,7 +815,20 @@ export function GitActionsControl({
   return managedSession ? null : (
     <>
       {showChrome && loaded && cwd !== undefined && status !== null ? (showInit ? initButton : (
-        <div className={css.split}>
+        <div
+          className={clsx(css.split, labelCss.toolbar)}
+          data-git-toolbar
+          data-git-reveal-branch={revealedParts.branch || undefined}
+          data-git-reveal-action={revealedParts.action || undefined}
+          onPointerOver={(event) => {
+            if (event.pointerType === 'touch' || !(event.target instanceof Element)) return
+            const part = event.target.closest('[data-git-part]')?.getAttribute('data-git-part')
+            if (part === 'branch' || part === 'action') {
+              setRevealedParts(previous => previous[part] ? previous : { ...previous, [part]: true })
+            }
+          }}
+          onPointerLeave={() => { setRevealedParts({ branch: false, action: false }) }}
+        >
           <BranchMenu
             cwd={cwd}
             currentRef={status?.refName ?? null}
@@ -823,69 +842,73 @@ export function GitActionsControl({
             onError={(message, title) => { lastProgressLine.current = null; failProgress(message, title) }}
           />
           <span className={css.rule} aria-hidden="true" />
-          {hint
-            ? <Tooltip label={hint} side="bottom"><span className={css.hintWrap}>{mainButton}</span></Tooltip>
-            : mainButton}
-          <span className={css.rule} aria-hidden="true" />
-          <Menu
-            open={menuOpen}
-            align="end"
-            portal
-            anchor={(
-              <button
-                type="button"
-                className={css.chevron}
-                aria-label={t('menu.options')}
-                disabled={busy}
-                onClick={() => {
-                  const next = !menuOpen
-                  setMenuOpen(next)
-                  if (next && cwd !== undefined) void refresh(cwd)
-                }}
-              >
-                <IconChevronDownOutline14 size={14} />
-              </button>
-            )}
-            items={[
-              ...menuItems.map(item => {
-                const hint = getMenuActionDisabledReason({
-                  item,
-                  gitStatus: status,
-                  isBusy: busy,
-                  hasPrimaryRemote,
-                })
-                return {
-                  id: item.id,
-                  label: localizeGitLabel(item.label, t),
-                  disabled: item.disabled,
-                  icon: iconFor(item.icon),
-                  ...(hint ? { hint } : {}),
-                }
-              }),
-              ...(!canPublish
-                ? []
-                : [{
-                  id: 'publish',
-                  label: t('action.publish'),
-                  disabled: busy,
-                  icon: iconFor('push'),
-                }]),
-            ]}
-            footer={[
-              ...(status?.refName === null
-                ? [{ type: 'label' as const, id: 'detached', text: t('menu.detached') }]
-                : []),
-              ...(status
-                && status.refName !== null
-                && !status.hasWorkingTreeChanges
-                && status.behindCount > 0
-                && status.aheadCount === 0
-                ? [{ type: 'label' as const, id: 'behind', text: t('menu.behind') }]
-                : []),
-            ]}
-            onSelect={onMenuSelect}
-            onClose={() => { setMenuOpen(false) }}
-          />
+          <div className={clsx(css.action, labelCss.part)} data-git-part="action">
+            {hint
+              ? <Tooltip label={hint} side="bottom"><span className={css.hintWrap}>{mainButton}</span></Tooltip>
+              : mainButton}
+            <span className={css.rule} aria-hidden="true" />
+            <Menu
+              open={menuOpen}
+              align="end"
+              portal
+              anchor={(
+                <button
+                  type="button"
+                  className={css.chevron}
+                  aria-label={t('menu.options')}
+                  aria-expanded={menuOpen}
+                  aria-haspopup="menu"
+                  disabled={busy}
+                  onClick={() => {
+                    const next = !menuOpen
+                    setMenuOpen(next)
+                    if (next && cwd !== undefined) void refresh(cwd)
+                  }}
+                >
+                  <IconChevronDownOutline14 size={14} />
+                </button>
+              )}
+              items={[
+                ...menuItems.map(item => {
+                  const hint = getMenuActionDisabledReason({
+                    item,
+                    gitStatus: status,
+                    isBusy: busy,
+                    hasPrimaryRemote,
+                  })
+                  return {
+                    id: item.id,
+                    label: localizeGitLabel(item.label, t),
+                    disabled: item.disabled,
+                    icon: iconFor(item.icon),
+                    ...(hint ? { hint } : {}),
+                  }
+                }),
+                ...(!canPublish
+                  ? []
+                  : [{
+                    id: 'publish',
+                    label: t('action.publish'),
+                    disabled: busy,
+                    icon: iconFor('push'),
+                  }]),
+              ]}
+              footer={[
+                ...(status?.refName === null
+                  ? [{ type: 'label' as const, id: 'detached', text: t('menu.detached') }]
+                  : []),
+                ...(status
+                  && status.refName !== null
+                  && !status.hasWorkingTreeChanges
+                  && status.behindCount > 0
+                  && status.aheadCount === 0
+                  ? [{ type: 'label' as const, id: 'behind', text: t('menu.behind') }]
+                  : []),
+              ]}
+              onSelect={onMenuSelect}
+              onClose={() => { setMenuOpen(false) }}
+            />
+          </div>
         </div>
       )) : null}
 

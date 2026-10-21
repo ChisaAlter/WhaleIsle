@@ -46,6 +46,11 @@
   padding: 0 8px;
 }
 
+.action {
+  display: inline-flex;
+  align-items: stretch;
+}
+
 .primary,
 .chevron {
   display: inline-flex;
@@ -65,7 +70,7 @@
 }
 
 .primary {
-  gap: 4px;
+  gap: 0;
   padding: 0 10px;
   white-space: nowrap;
 }
@@ -73,11 +78,6 @@
 /* A narrow conversation must still leave room for its session actions. */
 :global([data-titlebar-density='compact']) .primary {
   padding: 0 8px;
-}
-
-:global([data-titlebar-density='cozy']) .primary .primaryLabel,
-:global([data-titlebar-density='compact']) .primary .primaryLabel {
-  display: none;
 }
 
 .chevron {
