@@ -92,6 +92,8 @@ textarea.whale-input { height: auto; min-height: 80px; resize: vertical; padding
 .whale-range { width: 100%; margin: 0; min-height: 20px; accent-color: var(--whale-accent); cursor: pointer; }
 .whale-slider-marks { position: relative; min-height: 18px; margin: 0 8px; color: var(--whale-fg-muted); font-size: calc(1rem * 12 / 14); line-height: calc(1rem * 18 / 14); }
 .whale-slider-marks > span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.whale-slider-marks > span[data-edge=min] { transform: translateX(0); }
+.whale-slider-marks > span[data-edge=max] { transform: translateX(-100%); }
 .whale-check { display: inline-flex; gap: 8px; align-items: flex-start; font-size: 1rem; line-height: calc(1rem * 22 / 14); cursor: pointer; }
 .whale-check input { margin: 3px 0 0; width: 16px; height: 16px; accent-color: var(--whale-accent); flex-shrink: 0; }
 .whale-segments { display: inline-flex; align-self: flex-start; border-radius: 8px; padding: 0; background: transparent; border: 1px solid var(--whale-border); max-width: 100%; overflow-x: auto; }

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { JSDOM } from 'jsdom';
@@ -75,6 +76,31 @@ test('documented and current Lucide names render their intended glyph instead of
 test('numeric input follows shared Reset values and clears to null rather than zero',async()=>{
  const app=await mounted('root = Col([Input($n, "Count", "number"), Text($n + ""), Button("Change", @Set($n, 9)), Button("Reset", @Reset($n))])\n$n = 3');
  try{const input=app.element.querySelector('input');assert.equal(input.value,'3');await click(button(app.element,'Change'));assert.equal(input.value,'9');await click(button(app.element,'Reset'));assert.equal(input.value,'3');await typeInput(input,'');assert.equal(input.value,'');assert.equal(app.states.at(-1)?.$n,null);assert.ok(!app.errors.at(-1)?.length,JSON.stringify(app.errors.at(-1)));}finally{await app.close();}
+});
+
+test('adjacent Slider endpoint labels anchor inward by value, independent of supplied mark order',async()=>{
+  const style=document.createElement('style');
+  // JSDOM can verify the real cascade and positional contract; physical bounds are checked in Chromium.
+  style.textContent=readFileSync(path.join(base,'components/styles.css'),'utf8').split('\n').filter(line=>line.startsWith('.whale-slider-marks')).join('\n');
+  document.head.append(style);
+  const source='root = Col([Grid([Slider($start,1,4,1,"起始周",null,[{value:4,label:"第4周"},{value:2,label:"第2周"},{value:1,label:"第1周"}]),Slider($end,1,4,1,"结束周",null,[{value:2,label:"第2周"},{value:1,label:"第1周"},{value:4,label:"第4周"}])],2,240,3),Slider($only,2,2,1,"单点",null,[{value:2,label:"第2周"}])] )\n$start=1\n$end=4\n$only=2';
+  let app;
+  try{
+    app=await mounted(source);
+    for(const width of [320,624]){
+      app.element.style.width=width+'px';
+      const groups=[...app.element.querySelectorAll('.whale-slider-marks')];
+      for(const marks of groups.slice(0,2)){
+        assert.equal(getComputedStyle(marks).marginLeft,'8px');assert.equal(getComputedStyle(marks).marginRight,'8px');
+        const children=[...marks.children],min=children.find(span=>span.textContent==='第1周'),max=children.find(span=>span.textContent==='第4周'),middle=children.find(span=>span.textContent==='第2周');
+        assert.equal(min.style.left,'0%');assert.equal(getComputedStyle(min).transform,'translateX(0)');
+        assert.equal(max.style.left,'100%');assert.equal(getComputedStyle(max).transform,'translateX(-100%)');
+        assert.equal(Number.parseFloat(middle.style.left).toFixed(4),'33.3333');assert.equal(middle.dataset.edge,undefined);assert.equal(getComputedStyle(middle).transform,'translateX(-50%)');
+      }
+      assert.equal(groups[2].firstElementChild.dataset.edge,'min');assert.equal(getComputedStyle(groups[2].firstElementChild).transform,'translateX(0)');
+    }
+    assert.deepEqual(app.errors.at(-1),[]);
+  }finally{if(app)await app.close();style.remove();}
 });
 
 test('ordinary numeric fields retain explicit null after clearing and hydration',async()=>{
