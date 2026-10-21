@@ -105,14 +105,16 @@ test('actual Viewer reports changing content titles and clears the heading on so
   } finally { await app.close(); }
 });
 
-test('transparent host surfaces retain explicit primary button foreground across theme changes', async () => {
+test('transparent host surfaces keep neutral primary actions distinct from business accents across themes', async () => {
   const app = await mount();
   try {
     const program = 'root = Col([Input($count,"Count","number"),Button("Add",@Set($count,$count+1))])\n$count = 2';
     for (const [appearance, accent, foreground] of [['light','#101116','#ffffff'], ['dark','#f1f2f4','#101116']]) {
-      await app.render(program, { theme: { appearance, variables: { '--dsw-alias-bg-base': 'transparent', '--dsw-alias-brand-primary': accent, '--dsw-alias-label-primary-foreground': foreground } } });
+      await app.render(program, { theme: { appearance, variables: { '--dsw-alias-bg-base': 'transparent', '--dsw-alias-brand-primary': accent, '--dsw-alias-state-business-primary': '#4176e6', '--dsw-alias-label-primary-foreground': foreground } } });
       assert.equal(document.documentElement.style.getPropertyValue('--whale-on-accent'), foreground);
-      assert.equal(document.documentElement.style.getPropertyValue('--whale-accent'), accent);
+      assert.equal(document.documentElement.style.getPropertyValue('--whale-accent'), '#4176e6');
+      assert.equal(document.documentElement.style.getPropertyValue('--whale-button'), accent);
+      assert.equal(document.body.style.getPropertyValue('--whale-button'), accent);
       assert.equal(document.documentElement.style.getPropertyValue('--whale-bg'), 'transparent');
     }
     await click(app.element.querySelector('button'));

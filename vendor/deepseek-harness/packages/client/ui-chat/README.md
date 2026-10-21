@@ -181,6 +181,8 @@ When the desktop declares `DSHD_WHALE_UI_ENABLED=1`, its fixed `DSHD_WHALE_UI_HO
 
 One Session-scoped store owns assistant panel publications and the input dock. Publications use real log sequence, block index and source offset; hydration, append, source replacement and a clear barrier are deterministic. Browser-local document state remains versioned and opaque to Chat, and legacy storage is retained. State/panel persistence failures stay visible. Actions await the exact Session's prompt queue result and report failures; unrelated bindings are excluded from Form submissions.
 
+Whale UI content renders without a repeated title or status toolbar. A compact source/preview icon remains keyboard-accessible, appears on hover or focus, and stays visible on touch devices. The iframe retains its content title as its accessible name; source switching preserves the same document and edited values.
+
 The desktop build owns the isolated React19 viewer, resource handlers and fixed engine bundles; the Chat shell remains React18. [Whale UI source](../../../../../src/whale-ui/README.md) and the [product behavior](../../../../../docs/features/openui.md) document the owned runtime and resource limits. Ordinary web/headless profiles do not advertise the desktop surface.
 
 ## Model Experience

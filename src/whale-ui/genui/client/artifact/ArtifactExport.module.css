@@ -3,57 +3,28 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
-  margin: 8px 0 6px;
-  font: 12px/1.4 system-ui, sans-serif;
+  margin: 8px 0;
+  color: var(--dsw-alias-label-secondary);
+  font: 400 12px/18px var(--dsw-font-family);
 }
 
-/* 导出入口：无边框图标按钮。形状照项目里的 chrome 图标按钮 .panelClose
-   （26px 命中区 / 6px 圆角 / 透明底 / 无边框）。 */
 .trigger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--dsw-radius-sm, 8px);
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
 }
-
-/* 悬浮沿用区块内表格行 / .tab / .accHead 那条配方（--dsl-g-hover）：主题文字色
-   4% 淡洗 + 文字色升到 label-primary。不用 rgba(255,255,255,…) 与没带兜底的
-   --dsw-alias-fill-hover —— 浅色主题下两者都看不见。 */
-.trigger:hover,
-.trigger:focus-visible {
-  background: color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent);
-  color: var(--dsw-alias-label-primary);
-}
-
-/* 聚焦轮廓同 .panelClose。 */
-.trigger:focus-visible {
-  outline: 1px solid var(--dsw-alias-state-business-primary, #4f8ef7);
-  outline-offset: 1px;
-}
-
-.item {
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 7px;
-  padding: 5px 9px;
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-}
-
-/* 菜单项沿用宿主的 fill-hover；第三方主题可能没有定义该 token（例如浅色
-   dream-skin），此时回退到区块内那条 4% 文字色淡洗，悬浮不会没有反馈。 */
-.item:hover {
-  background: var(--dsw-alias-fill-hover, color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent));
-  color: var(--dsw-alias-label-primary);
-}
+.trigger:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.trigger:focus-visible, .item:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
 
 .menu {
   position: absolute;
@@ -61,35 +32,29 @@
   top: calc(100% + 4px);
   right: 0;
   display: grid;
-  min-width: 140px;
-  gap: 3px;
-  padding: 5px;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 9px;
-  background: var(--dsw-alias-bg-layer-1);
-  box-shadow: 0 8px 24px #0002;
+  min-width: 144px;
+  max-width: min(280px, 100vw - 32px);
+  gap: 4px;
+  padding: 4px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md, 12px);
+  background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-2));
+  backdrop-filter: var(--dsw-menu-backdrop-filter, none);
+  box-shadow: var(--dsw-shadow-lv3);
 }
-
 .item {
-  border-color: transparent;
+  min-height: 28px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm, 8px);
+  padding: 4px 12px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: 400 12px/18px var(--dsw-font-family);
   text-align: left;
+  cursor: pointer;
 }
-
-.item:disabled {
-  opacity: .5;
-  cursor: not-allowed;
-}
-
-.menuNotice {
-  max-width: 260px;
-  padding: 2px 9px 6px;
-  color: var(--dsw-alias-state-error-primary, #d94848);
-}
-
-.notice {
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.statusError {
-  color: var(--dsw-alias-state-error-primary, #d94848);
-}
+.item:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.item:disabled { opacity: 0.4; cursor: not-allowed; }
+.menuNotice { max-width: 260px; padding: 4px 12px; color: var(--dsw-alias-state-error-primary); }
+.notice { color: var(--dsw-alias-label-tertiary); }
+.statusError { color: var(--dsw-alias-state-error-primary); }

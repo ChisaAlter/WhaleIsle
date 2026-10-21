@@ -31,6 +31,8 @@ function inputDigest(directory) {
   walk(directory);
   hash.update(fs.readFileSync(fileURLToPath(import.meta.url)));
   hash.update(fs.readFileSync(new URL('./whale-ui-dependencies.mjs', import.meta.url)));
+  hash.update(fs.readFileSync(path.join(root, 'src/shared/dsh-webui-tokens.css')));
+  hash.update(fs.readFileSync(path.join(root, 'vendor/deepseek-harness/packages/client/ui-theme/src/styles/scrollbar.css')));
   return hash.digest('hex');
 }
 function ensureDependencies() {

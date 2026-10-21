@@ -76,8 +76,8 @@ function themeColors(el?: HTMLElement | null): {
     // The --dsl-g-* scale is declared on the .block/.panel roots; the chart
     // container inherits it. Detached renders fall back to these literals.
     fontData: readFontSize('--dsl-g-font-data', 12, el),
-    fontMeta: readFontSize('--dsl-g-font-meta', 12.5, el),
-    fontDisplay: readFontSize('--dsl-g-font-display', 28, el),
+    fontMeta: readFontSize('--dsl-g-font-meta', 12, el),
+    fontDisplay: readFontSize('--dsl-g-font-display', 24, el),
   }
 }
 

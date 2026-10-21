@@ -14,9 +14,13 @@ export function generateWhaleGuide(): string {
       'Action steps execute in order. Each step reads state at its execution time. @Set and @Reset stay local. Clipboard, links and conversation submission await the host result; failed steps stop the remaining sequence.',
       'The viewer has no model API, filesystem, shell, credentials or arbitrary business-tool provider. Obtain real data with the conversation tools before creating the interface. Existing permissions still apply.',
       'Incomplete or invalid final programs show diagnostics. Complete all references and components before ending the fence. Use the same field identity for the same user input and a different identity for different inputs.',
+      'Compose a finished Whale Isle interface for the user task. Show one concise content title (Title md), a short explanation only when needed, then the working content. Do not add product names, demo captions, implementation notes, empty status bars or redundant readiness badges.',
+      'Use the shared desktop typography and controls: body text md, secondary copy sm, section title sm, and md for the page title. Use 2xl or 3xl only for one meaningful numeric result, never for a sentence. Let default buttons keep their natural width; place one primary action and related outline/ghost actions together in a Row. Use block only when a deliberate full-width action is needed.',
+      'Plan spacing before composing: 4px units; 5 or 6 between sections, 3 within groups, 2 between label and value. Group related inputs in Grid with minChildWidth 240–280 so a narrow conversation stacks fields. Avoid wide fixed rows, oversized controls, centered prose and dense walls of badges.',
+      'Use Card only for content that belongs together, not around the entire page or inside another card. Prefer plain sections, a restrained table or a chart with a small readable legend; do not stretch short cards to fill a tall neighbor. Use the existing semantic palette without custom CSS, decorative gradients or arbitrary font/colour overrides.',
     ],
     examples: [
-      'root = Col([Title("Quantity"), Input($quantity, "Quantity", "number"), Text("Total: " + @Format(@Default($quantity, 1) * 12, "currency", 2, "USD")), Button("Add one", @Set($quantity, @Default($quantity, 1) + 1))])\n$quantity = 1',
+      'root = Col([Title("Order estimate","md"), Text("Adjust the quantity to update your total.","sm","muted"), Grid([Input($quantity,"Quantity","number"),Input($price,"Unit price","number")],2,240,4), Row([Col([Caption("Estimated total"),Title(@Format(@Clamp(@Default($quantity,1),1,100)*@Clamp(@Default($price,12),0,10000),"currency",2,"USD"),"2xl")],1),Spacer(),Button("Reset",@Reset($quantity,$price),"outline")],3)],5)\n$quantity = 1\n$price = 12',
       'root = Col([Plot({series: [{expr: "sin(x)"}], xMin: -6, xMax: 6})])',
     ],
   });

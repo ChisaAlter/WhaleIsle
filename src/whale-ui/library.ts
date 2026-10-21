@@ -18,6 +18,8 @@ export const promptOptions = {
     "Mutable $variable defaults must be literal values. Use @Set and @Reset for local interactions. Guard empty numeric inputs with @Default and @Clamp.",
     "Use real data from the conversation or tools. SearchImage and street routing are host resources; component action APIs do not grant arbitrary tool access.",
     "Prefer accessible layouts, short text and a useful working interaction. Use drawings for geometry and mechanisms and charts for numerical comparisons.",
+    "Use a single concise md page title, 14px body text, 12px secondary text and one clear primary action. Do not add product names, demo labels, empty status bars or decorative badges.",
+    "Compose sections with 20–24px gaps and related groups with 8–12px gaps. Prefer responsive Grid(minChildWidth 240–280) for inputs. Buttons keep natural width; Card groups related content and should not wrap the whole page or another card.",
   ],
 };
 export function generateWhaleGuide(extraDefinitions: DefinedComponent<any>[] = []) { return createWhaleLibrary(extraDefinitions).prompt(promptOptions); }

@@ -1,0 +1,61 @@
+/* Shared by the isolated viewer and the self-contained exported runtime. */
+.block {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 8px;
+  color: var(--dsw-alias-label-primary);
+  font: 400 14px/22px var(--dsw-font-family);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.actions { justify-content: flex-start; }
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  max-width: 100%;
+  gap: 4px;
+  padding: 4px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
+  border-radius: var(--dsw-radius-button-sm, 14px);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: 400 12px/18px var(--dsw-font-family);
+  cursor: pointer;
+}
+
+.button:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.button:active { background: var(--dsw-alias-interactive-bg-active); }
+.button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+
+.code {
+  margin: 0;
+  max-width: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 12px;
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: var(--dsw-alias-markdown-code-block);
+  color: var(--dsw-alias-label-primary);
+  font: 400 12px/18px var(--ds-font-family-code);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+}
+
+.code code { font: inherit; }
+.diff { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.path { color: var(--dsw-alias-label-primary); font-size: 14px; line-height: 22px; font-weight: 500; overflow-wrap: anywhere; }

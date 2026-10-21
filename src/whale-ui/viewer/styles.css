@@ -1,30 +1,47 @@
-:root {
-  --whale-fg: #20242c;
-  --whale-fg-muted: #626a77;
-  --whale-bg: #fff;
-  --whale-surface: #f6f7f9;
-  --whale-border: #dbe0e7;
-  --whale-accent: #486dce;
-  --whale-ok: #217d55;
-  --whale-warn: #a86b16;
-  --whale-danger: #c94051;
-  --whale-font: system-ui, -apple-system, "Segoe UI", sans-serif;
-  --whale-mono: ui-monospace, Consolas, monospace;
-  --whale-radius: 8px;
-  --whale-purple: #845dc4;
-  --whale-pink: #bb5486;
+@import "../../shared/dsh-webui-tokens.css";
+@import "../../../vendor/deepseek-harness/packages/client/ui-theme/src/styles/scrollbar.css";
+
+/* The isolated document uses the desktop token mirror until the host supplies its theme. */
+:root, body {
+  --whale-fg: var(--dsw-alias-label-primary);
+  --whale-fg-muted: var(--dsw-alias-label-secondary);
+  --whale-fg-faint: var(--dsw-alias-label-tertiary);
+  --whale-bg: var(--dsw-alias-bg-base);
+  --whale-surface: var(--dsw-alias-interactive-bg-hover);
+  --whale-panel: var(--dsw-alias-bg-layer-1);
+  --whale-border: var(--dsw-alias-border-l2);
+  --whale-hover: var(--dsw-alias-interactive-bg-hover);
+  --whale-active: var(--dsw-alias-interactive-bg-active);
+  --whale-accent: var(--dsw-alias-state-business-primary);
+  --whale-on-accent: var(--dsw-alias-label-primary-foreground);
+  --whale-button: var(--dsw-alias-button-primary-fill);
+  --whale-button-hover: var(--dsw-alias-button-primary-hover);
+  --whale-on-button: var(--dsw-alias-label-primary-foreground);
+  --whale-ok: var(--dsw-alias-state-success-primary);
+  --whale-warn: var(--dsw-alias-state-warn-primary, var(--dsw-static-amber-400));
+  --whale-danger: var(--dsw-alias-state-error-primary);
+  --whale-font: var(--dsw-font-family);
+  --whale-mono: var(--ds-font-family-code);
+  --whale-radius: var(--dsw-radius-sm);
+  --whale-radius-surface: var(--dsw-radius-md);
+  --whale-purple: var(--dsw-alias-state-business-primary);
+  --whale-pink: var(--dsw-alias-state-error-primary);
   --whale-chart-1: var(--whale-accent);
   --whale-chart-2: var(--whale-ok);
   --whale-chart-3: var(--whale-warn);
   --whale-chart-4: var(--whale-danger);
-  --whale-chart-5: var(--whale-purple);
-  --whale-chart-6: var(--whale-pink);
+  --whale-chart-5: var(--dsw-static-deepseek-400);
+  --whale-chart-6: var(--whale-fg-muted);
 }
-:root[data-theme="dark"] { --whale-fg: #e8ebf0; --whale-fg-muted: #a2aaba; --whale-bg: #1b1d23; --whale-surface: #252931; --whale-border: #3a414d; --whale-accent: #8ba9ff; --whale-ok: #72c79c; --whale-warn: #e5b35f; --whale-danger: #ee8c99; }
+
 * { box-sizing: border-box; }
-html,body { padding: 0; margin: 0; color: var(--whale-fg); background: transparent; font-family: var(--whale-font); font-size: var(--whale-font-size, 14px); line-height: 1.5; }
-.whale-viewer-root { width: 100%; min-width: 0; display: flow-root; padding: 16px 20px 20px; overflow-wrap: anywhere; }
-.whale-viewer-error { color: var(--whale-danger); white-space: pre-wrap; font-size: .875rem; padding: 8px; border-inline-start: 2px solid var(--whale-danger); }
-.whale-viewer-diagnostics { font: .8rem/1.5 var(--whale-font); color: var(--whale-fg-muted); margin: 8px 0; }
+html { overflow: hidden; }
+body { max-height: 100vh; overflow: auto; }
+html, body { padding: 0; margin: 0; color: var(--whale-fg); background: transparent; font-family: var(--whale-font); font-size: var(--whale-font-size, 14px); line-height: 22px; }
+.whale-viewer-root { container: whale-page / inline-size; width: 100%; min-width: 0; display: flow-root; padding: 20px; overflow-wrap: anywhere; }
+.whale-viewer-root > .whale-col { gap: 20px; }
+.whale-viewer-error { color: var(--whale-danger); white-space: pre-wrap; font-size: 14px; line-height: 22px; padding: 8px 12px; border-inline-start: 2px solid var(--whale-danger); }
+.whale-viewer-diagnostics { font: 12px/18px var(--whale-font); color: var(--whale-fg-muted); margin: 12px 0 0; }
 .whale-viewer-diagnostics summary { cursor: pointer; }
-.whale-viewer-diagnostics ul { padding-inline-start: 1.4em; }
+.whale-viewer-diagnostics ul { padding-inline-start: 20px; }
+@media (max-width: 480px) { .whale-viewer-root { padding: 16px; } }

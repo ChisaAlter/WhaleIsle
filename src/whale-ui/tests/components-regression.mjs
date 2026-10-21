@@ -67,6 +67,11 @@ test('real renderer mounts layout, Markdown, table cells, SVG and KaTeX',async()
  try{assert.match(app.element.textContent,/Overview/);assert.equal(app.element.querySelector('strong')?.textContent,'Bold');assert.equal(app.element.querySelectorAll('.whale-table').length,2);assert.equal(app.element.querySelector('td:nth-child(2)')?.style.textAlign,'right');assert.ok(app.element.querySelector('.katex'));assert.equal(app.element.querySelector('svg.whale-svg rect')?.getAttribute('fill'),'var(--whale-accent)');assert.equal(app.element.querySelectorAll('svg.whale-svg g>*').length,8);assert.ok(!app.errors.flat().some(error=>error.severity==='error'));}finally{await app.close();}
 });
 
+test('documented and current Lucide names render their intended glyph instead of a help placeholder',async()=>{
+ const app=await mounted('root = Col([Icon("check-circle"),Icon("circle-check"),Icon("alert-circle"),Icon("loader-2"),Icon("icon")])');
+ try{const glyphs=[...app.element.querySelectorAll('svg')];assert.equal(glyphs.length,5);assert.ok(glyphs[0].classList.contains('lucide-circle-check-big'));assert.ok(glyphs[1].classList.contains('lucide-circle-check'));assert.ok(!glyphs.slice(0,4).some(e=>e.classList.contains('lucide-circle-help')));assert.ok(glyphs[4].classList.contains('lucide-circle-question-mark'));}finally{await app.close();}
+});
+
 test('numeric input follows shared Reset values and clears to null rather than zero',async()=>{
  const app=await mounted('root = Col([Input($n, "Count", "number"), Text($n + ""), Button("Change", @Set($n, 9)), Button("Reset", @Reset($n))])\n$n = 3');
  try{const input=app.element.querySelector('input');assert.equal(input.value,'3');await click(button(app.element,'Change'));assert.equal(input.value,'9');await click(button(app.element,'Reset'));assert.equal(input.value,'3');await typeInput(input,'');assert.equal(input.value,'');assert.equal(app.states.at(-1)?.$n,null);assert.ok(!app.errors.at(-1)?.length,JSON.stringify(app.errors.at(-1)));}finally{await app.close();}
@@ -106,6 +111,20 @@ test('all chart types preserve labels and numeric series; stacked negative domai
   const app=await mounted(`root = Col([Chart("${type}", [{label:"Jan",x:1,a:2,b:3},{label:"Feb",x:2,a:4,b:5}], "${type==='scatter'?'x':'label'}", ["a","b"])])`);
   try{assert.ok(app.element.querySelector('svg[role=img]'));assert.ok(app.element.querySelectorAll('title').length>=3);if(!['pie','donut'].includes(type)){assert.match(app.element.textContent,type==='scatter'?/1/:/Jan/);await click(app.element.querySelector('.whale-chart-key'));assert.equal(app.element.querySelector('.whale-chart-key').getAttribute('aria-pressed'),'false');}}finally{await app.close();}
  }
+});
+
+test('chart resizes labels to the conversation width and disconnects its observer',async()=>{
+ const originalObserver=globalThis.ResizeObserver;let observe,disconnected=0;
+ globalThis.ResizeObserver=class{constructor(callback){observe=callback;}observe(){}disconnect(){disconnected++;}};
+ const app=await mounted('root = Col([Chart("bar",[{month:"Jan",amount:2},{month:"Feb",amount:3},{month:"Mar",amount:4},{month:"Apr",amount:5},{month:"May",amount:6},{month:"Jun",amount:7}],"month",["amount"])])');
+ try{
+  await act(async()=>observe([{contentRect:{width:300}}]));
+  const svg=app.element.querySelector('svg');assert.equal(svg.getAttribute('viewBox'),'0 0 300 240');
+  assert.ok([...svg.querySelectorAll('text')].every(e=>Number(e.getAttribute('font-size'))>=12));
+  assert.ok([...svg.querySelectorAll('text')].filter(e=>/Jan|Feb|Mar|Apr|May|Jun/.test(e.textContent)).length<=3);
+  await click(app.element.querySelector('.whale-chart-key'));assert.equal(app.element.querySelector('.whale-chart-key').getAttribute('aria-pressed'),'false');
+ }finally{await app.close();globalThis.ResizeObserver=originalObserver;}
+ assert.equal(disconnected,1);
 });
 
 test('HtmlView theme updates keep identical frame/document and send an authenticated child message',async()=>{
