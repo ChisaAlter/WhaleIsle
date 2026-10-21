@@ -463,6 +463,8 @@ app.whenReady().then(async () => {
         return {
           sameButton: button.isConnected, caption: (button.querySelector('.shell-button-label')?.textContent ?? button.textContent), width: box.width, height: box.height,
           spinner: !!button.querySelector('.shell-button-spinner'),
+          labelColor: button.querySelector('.shell-button-label') ? getComputedStyle(button.querySelector('.shell-button-label')).color : '',
+          spinnerColor: button.querySelector('.shell-button-spinner') ? getComputedStyle(button.querySelector('.shell-button-spinner')).borderTopColor : '',
           busy: button.getAttribute('aria-busy'), loadingLabel: button.getAttribute('aria-label'),
           homeHeight: document.querySelector('#home-components').getBoundingClientRect().height,
           controls: [...document.querySelectorAll('[data-comp-id="whalebridge"]')].map(control => ({
@@ -533,6 +535,9 @@ app.whenReady().then(async () => {
       await waitFor(() => typeof componentInstallResolve === 'function');
       await waitForDom('(window.qaComponentButton.querySelector(".shell-button-label")?.textContent ?? window.qaComponentButton.textContent).startsWith("安装")');
       const installing = await readFeedback();
+      // Allow the original caption to become fully transparent before a new
+      // progress event rebuilds its overlay, as during a real download.
+      await delay(250);
       componentProgress({ phase: 'download', percent: 42 });
       await waitForDom('window.qaComponentButton.title.includes("下载组件 42%")');
       const downloading = await readFeedback();

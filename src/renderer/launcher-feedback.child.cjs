@@ -82,7 +82,10 @@ app.whenReady().then(async () => {
     const reference = modal.hidden ? document.querySelector('main').getBoundingClientRect() : modal.getBoundingClientRect();
     const surface = modal.hidden ? toast?.getBoundingClientRect() ?? card : modal.querySelector('.modal-card').getBoundingClientRect();
     return { button: { width: rect.width, height: rect.height, text: (b.querySelector('.shell-button-label')?.textContent ?? b.textContent), busy: b.getAttribute('aria-busy'), disabled: b.disabled,
-      spinner: !!b.querySelector('.shell-button-spinner') },
+      spinner: !!b.querySelector('.shell-button-spinner'),
+      labelColor: b.querySelector('.shell-button-label') ? getComputedStyle(b.querySelector('.shell-button-label')).color : '',
+      spinnerColor: b.querySelector('.shell-button-spinner') ? getComputedStyle(b.querySelector('.shell-button-spinner')).borderTopColor : '',
+      expectedColor: getComputedStyle(document.documentElement).getPropertyValue('--dsw-alias-label-primary').trim() },
       versionsText: (document.getElementById('btn-check-update-versions').querySelector('.shell-button-label')?.textContent ?? document.getElementById('btn-check-update-versions').textContent),
       scanText: (document.getElementById('btn-scan').querySelector('.shell-button-label')?.textContent ?? document.getElementById('btn-scan').textContent),
       homeTop: document.querySelector('#panel-home .home-heading').getBoundingClientRect().top,

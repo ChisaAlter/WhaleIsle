@@ -107,9 +107,14 @@ test('component feedback stays on its buttons, shows one result, and restores fo
     assert.equal(progress.modalVisible, false, 'progress does not occupy the confirmation dialog');
     assert.equal(progress.noticeVisible, false, 'pending progress cannot report a completed result');
     assert.equal(progress.extraFeedbackNodes, 0);
+    for (const color of [progress.labelColor, progress.spinnerColor]) {
+      assert.match(color, /^rgb\(/, `progress text and spinner stay opaque: ${color}`);
+    }
   }
   assert.match(r.downloading.loadingLabel, /正在下载组件 42%/);
+  assert.equal(r.downloading.caption, '42%', 'a compact install button retains its download percentage');
   assert.match(r.verifying.loadingLabel, /正在校验组件 60%/);
+  assert.equal(r.verifying.caption, '60%', 'a compact install button retains its verification percentage');
   assert.equal(r.installed.noticeVisible, false, 'the refreshed row reports a plain install');
   assert.equal(r.installed.progressVisible, false);
   assert.equal(r.installed.modalVisible, false);

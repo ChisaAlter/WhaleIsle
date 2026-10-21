@@ -34,6 +34,9 @@ test('real Electron: floating results preserve layout, safe confirmation and tas
     assert.equal(item.pending.versionsBusy, 'true');
     assert.equal(item.pending.button.disabled, true);
     assert.equal(item.pending.button.spinner, true, 'the button carries its own spinner');
+    assert.equal(item.pending.button.labelColor, item.pending.button.expectedColor, 'pending text uses the current theme foreground');
+    assert.equal(item.pending.button.spinnerColor, item.pending.button.expectedColor, 'the spinner uses the current theme foreground');
+    assert.equal(item.current.button.labelColor, item.current.button.expectedColor, 'completion text stays visible after the busy overlay');
     assert.match(item.pending.button.text, /^检查(中…?)?$/, 'the button names its pending step');
     assert.equal(item.pending.button.width, item.before.button.width, 'loading keeps the button width');
     assert.equal(item.pending.button.height, item.before.button.height);
