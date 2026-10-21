@@ -21,7 +21,7 @@
 - 无页签时使用 DSHD 原有的居中两列方形入口；终端入口选择 shell。
 - Files 由原生 Sidebar 的 `files` / `desktop-file` 类型承载。文件主体 `keepMounted`，树与搜索携带所属 Session 经 `workspaces.openPath`，HTML/PDF 保持 Files 与 Browser 打开链。插件内 `DesktopFileState` 按 Session 资源地址逐次持久化脏草稿，接管关闭/替换确认；`FileSaveCoordinator` 保留串行保存，确认中的保存失败或新增输入不会关闭页签。Sidebar 的一次性 `proceed()` 回调只提交原 occurrence 的移除，过期确认保留恢复页签的草稿。
 - `files` 提供唯一目录 guide，`desktop-file` 只在打开具体文件时使用。旧查看器的 `sidebar://` 等无文件地址不进入编辑器或文件读取；标准 Files 目录主体与本地化标题原位兼容呈现，Session 来自槽位标准 share。没有替换或持久布局重写，pane、展开与浮窗状态不变；有效文件和草稿保留原身份。理由见 [Files 地址恢复](../../decisions/implemented/bug-fix/2026-10-01-sidebar-files-guide-address.md)。
-- Browser 悬浮预览复用同一原生 guest。顶部 28px 窄条展示文件名与右栏、关闭按钮；网页视口从其下方铺满。由于 BrowserView 会盖住网页矩形内的 renderer 事件，四边与四角缩放命中区放在该矩形外侧，使用 pointer capture 并由几何函数限制在聊天可视区。
+- Browser、图片与文件悬浮预览采用[同一磨砂标题栏与全圆角外观](../../design-language.md#视觉锚点)：标题栏展示文件名与右栏、关闭按钮，正文以 6px 内边距和同心圆角裁切。Files 与 Document Preview 浮起时隐藏路径行，原有操作在正文悬浮工具条中保留，鼠标移入或键盘聚焦时显现；返回右栏恢复原工具栏和页面状态。Browser 复用同一原生 guest；由于 BrowserView 会盖住网页矩形内的 renderer 事件，四边与四角缩放命中区放在该矩形外侧，使用 pointer capture 并由几何函数限制在聊天可视区。
 - Feature card：[../../features/surfaces-work-loops.md](../../features/surfaces-work-loops.md)
 
 ## 实现入口

@@ -189,6 +189,7 @@
   border: 0;
   /* The same frame as a dockkit floating panel: corner, surface and shadow. */
   border-radius: var(--dsw-radius-panel);
+  corner-shape: round;
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
   box-shadow: var(--dsw-elevation-prominent);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
@@ -202,6 +203,7 @@
   inset: 0;
   z-index: -1;
   border-radius: inherit;
+  corner-shape: round;
   background: var(--dsw-specific-menu);
   backdrop-filter: var(--dsw-menu-backdrop-filter);
   pointer-events: none;
@@ -214,9 +216,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 4px;
   box-sizing: border-box;
   height: 38px;
-  padding: 10px 10px 0 16px;
+  padding: 10px 6px 0 16px;
   color: var(--dsw-alias-label-primary);
   cursor: grab;
   user-select: none;
@@ -240,11 +243,12 @@
   display: flex;
   flex: none;
   align-items: center;
-  gap: 2px;
-  height: 24px;
+  gap: 4px;
+  height: 28px;
 }
 
-.miniPlayerActions .icon { width: 24px; height: 24px; border-radius: var(--dsw-radius-compact); }
+.miniPlayerActions .icon { width: 28px; height: 28px; border-radius: var(--dsw-radius-sm); }
+.miniPlayerActions .icon svg { width: 16px; height: 16px; }
 
 .miniPlayerViewport {
   position: absolute;
@@ -253,6 +257,7 @@
   inset: 44px 6px 6px;
   overflow: hidden;
   border-radius: calc(var(--dsw-radius-panel) - 6px);
+  corner-shape: round;
   background: var(--dsw-alias-bg-base);
 }
 
