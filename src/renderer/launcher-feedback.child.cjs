@@ -110,6 +110,9 @@ app.whenReady().then(async () => {
     const result = { cases: [], errors: [] };
     if (!bootOnly) {
     await win.loadFile(path.join(__dirname, 'launcher.html'));
+    win.webContents.debugger.attach('1.3');
+    await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+    win.webContents.debugger.detach();
     await waitFor("document.getElementById('home-version').textContent === 'v0.3.3'");
     win.webContents.on('console-message', (_event, ...args) => {
       const details = typeof args[0] === 'object' ? args[0] : { level: args[0], message: args[1] };

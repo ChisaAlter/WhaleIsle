@@ -1,0 +1,110 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mobile button feedback fixture</title>
+<link rel="stylesheet" href="../tokens.css">
+<link rel="stylesheet" href="../app.css">
+<style>
+body { padding: 16px; }
+#fixture { display: flex; flex-direction: column; gap: 16px; max-width: 360px; }
+.fixture-row { display: flex; align-items: center; gap: 8px; }
+</style>
+<div id="fixture">
+  <div class="fixture-row"><button id="long" class="primary-btn">安装</button><button id="neighbor" class="ghost-btn">取消</button></div>
+  <button id="short" class="primary-btn" style="width:240px">保存</button>
+  <div class="fixture-row"><button id="icon" class="send" aria-label="发送消息" title="发送消息"><svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5" fill="none" stroke="currentColor"/></svg></button></div>
+  <button id="scan" class="primary-btn scan-primary"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7V3h4m6 0h4v4" fill="none" stroke="currentColor"/></svg> 扫描二维码</button>
+  <button id="picker" class="sheet-item mode-row"><span class="sheet-item-main"><span>模型名称</span><span class="sheet-hint">保持两行提示与原始内容</span></span><span class="mode-current">✓</span></button>
+  <div class="git-capsule"><button class="cap-branch"><span>main</span></button><span class="divider"></span><button id="git" class="cap-primary"><span>Commit &amp; push</span></button></div>
+</div>
+<output id="result">Ready</output>
+<script type="module">
+import { buttonBusy, clearButtonBusy } from './button-busy.js';
+const nextFrame = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+const box = node => { const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+const eq = (actual, expected, message) => { if (actual !== expected) throw new Error(`${message}: ${actual} !== ${expected}`); };
+const geometry = (actual, expected, message) => { for (const k of Object.keys(expected)) if (Math.abs(actual[k] - expected[k]) > 0.1) throw new Error(`${message}.${k}: ${actual[k]} !== ${expected[k]}`); };
+window.runButtonBusyFixture = async () => {
+  const root = document.querySelector('#fixture');
+  const ids = ['long', 'short', 'icon', 'scan', 'picker', 'git'];
+  const before = Object.fromEntries([...ids, 'neighbor'].map(id => [id, box(document.getElementById(id))]));
+  const icon = document.getElementById('icon'), svg = icon.querySelector('svg');
+  const captions = { long: '正在安装全部组件…', short: '保存中…', scan: '连接中…', picker: '切换中…', git: '正在推送全部更改…' };
+  for (const id of ids) {
+    const button = document.getElementById(id);
+    button.disabled = true;
+    buttonBusy(button, true, { iconOnly: id === 'icon', label: id === 'icon' ? '正在发送消息…' : captions[id] });
+  }
+  await nextFrame();
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  for (const id of ids) geometry(box(document.getElementById(id)), before[id], `${id} busy geometry`);
+  geometry(box(document.getElementById('neighbor')), before.neighbor, 'neighbor busy geometry');
+  const long = document.getElementById('long'), text = long.querySelector('.button-busy-text'), spinner = long.querySelector('.button-busy-spinner');
+  const spinCenter = () => { const r = spinner.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; };
+  const spinPosition = spinCenter(), animation = text.getAnimations()[0];
+  eq(long.getAttribute('aria-label'), captions.long, 'complete accessible caption');
+  eq(long.title, captions.long, 'complete title');
+  eq(long.querySelectorAll('.button-busy-overlay').length, 1, 'single overlay');
+  eq(Boolean(animation), !reduced, 'overflow animation respects motion');
+  eq(document.getElementById('short').querySelector('.button-busy-text').getAnimations().length, 0, 'fitting caption stays still');
+  eq(icon.querySelector('.button-busy-text'), null, 'icon has no visible text');
+  eq(icon.querySelector('svg'), svg, 'icon node retained');
+  let requests = 0;
+  long.addEventListener('click', () => requests++);
+  long.click(); long.click();
+  eq(requests, 0, 'disabled caller blocks duplicate requests');
+  if (animation) {
+    animation.pause();
+    const duration = animation.effect.getTiming().duration;
+    animation.currentTime = 0;
+    await nextFrame();
+    const viewport = long.querySelector('.button-busy-viewport');
+    const start = text.getBoundingClientRect(), clip = viewport.getBoundingClientRect();
+    if (Math.abs(start.left - clip.left) > 1) throw new Error('beginning of full caption is unreachable');
+    animation.currentTime = duration * 0.9;
+    await nextFrame();
+    const end = text.getBoundingClientRect();
+    if (Math.abs(end.right - clip.right) > 1) throw new Error('end of full caption is unreachable');
+    animation.currentTime = duration * 0.5;
+    await nextFrame();
+    const initialPhase = animation.currentTime / duration;
+    const firstTransform = getComputedStyle(text).transform;
+    buttonBusy(long, true, { label: '正在安装全部组件 42%…' });
+    await nextFrame();
+    eq(text.getAnimations()[0], animation, 'progress retains animation instance');
+    if (Math.abs(animation.currentTime / animation.effect.getTiming().duration - initialPhase) > 0.001) throw new Error('progress reset scroll phase');
+    geometry(spinCenter(), spinPosition, 'progress spinner center');
+    const updatedDuration = animation.effect.getTiming().duration;
+    animation.currentTime = updatedDuration * 1.25;
+    await nextFrame();
+    const returningFrom = text.getBoundingClientRect().left;
+    animation.currentTime = updatedDuration * 1.75;
+    await nextFrame();
+    eq(animation.effect.getComputedTiming().currentIteration, 1, 'return iteration runs');
+    if (text.getBoundingClientRect().left <= returningFrom) throw new Error('overflow text did not return toward its beginning');
+    if (firstTransform === 'none') throw new Error('overflow text did not move');
+  }
+  const gitText = document.querySelector('#git .button-busy-text');
+  eq(getComputedStyle(gitText).overflowX, 'visible', 'Git selectors do not clip the text itself');
+  clearButtonBusy(root);
+  await nextFrame();
+  for (const id of ids) {
+    const button = document.getElementById(id);
+    geometry(box(button), before[id], `${id} restored geometry`);
+    eq(button.disabled, true, 'helper preserves disabled ownership');
+    eq(button.getAttribute('aria-busy'), 'false', 'busy state clears');
+    eq(button.querySelector('.button-busy-overlay'), null, 'overlay removed');
+    button.disabled = false;
+  }
+  eq(icon.getAttribute('aria-label'), '发送消息', 'icon accessible name restored');
+  eq(icon.title, '发送消息', 'icon title restored');
+  eq(long.getAttribute('aria-label'), null, 'absent aria restored');
+  eq(long.title, '', 'absent title restored');
+  eq(long.textContent, '安装', 'original text restored');
+  eq(text.getAnimations().length, 0, 'scroll animation cancelled');
+  const result = { ok: true, reducedMotion: reduced, width: innerWidth, controls: ids.length, checks: ['geometry', 'neighbor', 'full-caption', 'fixed-spinner', 'overflow-only', 'progress-phase', 'start-end-visible', 'alternate', 'icon-semantics', 'disabled-owner', 'restore', 'cleanup'] };
+  document.getElementById('result').textContent = JSON.stringify(result);
+  return result;
+};
+window.fixtureReady = true;
+</script>

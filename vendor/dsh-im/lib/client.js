@@ -774,20 +774,16 @@ function h(type, props, ...children) {
 
 // plugin-src/client/feedback.js
 var ActionButton = React2.forwardRef(function ActionButton2({ children, loading = false, className = "", disabled, ...props }, ref) {
-  return React2.createElement(
-    "button",
-    {
-      type: "button",
-      ...props,
-      ref,
-      className: `${className} dim-busyButton`.trim(),
-      disabled: disabled || loading,
-      "aria-busy": loading || props["aria-busy"] || void 0,
-      "data-loading": loading || void 0
-    },
-    React2.createElement("span", { className: "dim-buttonContent" }, children),
-    loading ? React2.createElement("span", { className: "dim-buttonSpinner", "aria-hidden": true }) : null
-  );
+  return React2.createElement(import_dsh_client_ui_primitives.Button, {
+    type: "button",
+    ...props,
+    ref,
+    className: `${className} dim-busyButton`.trim(),
+    loading,
+    disabled: disabled || loading,
+    "aria-busy": loading || props["aria-busy"] || void 0,
+    "data-loading": loading || void 0
+  }, children);
 });
 function BusyIndicator({ busy }) {
   return busy ? React2.createElement("span", { className: "dim-controlSpinner", "aria-hidden": true }) : null;
@@ -2186,7 +2182,7 @@ function DingtalkIcon({ size = 28 }) {
     d: "M37.05 22.783c-6.758-5.216-14.378-12.128-22.73-19.538-.655-.585-1.242-.354-1.536.42-1.88 4.973-.058 9.386 2.889 11.932s7.368 4.912 10.058 6.155c.105.049.013.203-.093.163-4.953-2.182-8.397-3.765-13.07-7.368-.497-.388-1.01-.242-1.07.521-.384 4.748 2.657 8.483 6.058 9.745 2.1.781 4.398 1.212 6.53 1.474.109.015.084.178-.027.178-2.747.01-6.058-.654-8.935-1.751-.606-.233-.818.25-.722.633.491 2.008 2.974 5.076 6.926 5.73a12 12 0 0 0 2.228.115c.164 0 .208.089.154.217q-2.685 4.6-2.803 4.797c-.091.152-.036.275.156.275h3.543c.164 0 .264.106.18.246l-4.958 8.196c-.191.328.035.565.395.301s15.212-11.133 15.636-11.448c.195-.142.148-.327-.124-.327h-3.18c-.206 0-.252-.14-.111-.28.14-.141 3.602-3.594 4.837-4.888 1.283-1.35 1.938-3.825-.231-5.498"
   }));
 }
-var Button = React10.forwardRef(function Button2({ children, kind = "secondary", className = "", ...props }, ref) {
+var Button2 = React10.forwardRef(function Button3({ children, kind = "secondary", className = "", ...props }, ref) {
   return h(ActionButton, {
     ...props,
     ref,
@@ -2212,7 +2208,7 @@ function Heading({ totals, adding, busy, onAdd, onCredential, credentialOpen, ad
       h(
         "div",
         { className: "dim-bindActions" },
-        h(Button, {
+        h(Button2, {
           kind: "primary",
           className: "dim-scanButton",
           onClick: onAdd,
@@ -2221,7 +2217,7 @@ function Heading({ totals, adding, busy, onAdd, onCredential, credentialOpen, ad
           "aria-label": "\u626B\u7801\u63A5\u5165\u9489\u9489\u673A\u5668\u4EBA",
           loading: adding
         }, h(QrActionIcon), "\u626B\u7801\u63A5\u5165\u673A\u5668\u4EBA"),
-        h(Button, {
+        h(Button2, {
           kind: "credential",
           className: "dim-credentialButton",
           onClick: onCredential,
@@ -2268,7 +2264,7 @@ function EmptyView({ busy, onStart }) {
           "div",
           { className: "ddt-actions dim-viewActions" },
           h(
-            Button,
+            Button2,
             { kind: "primary", onClick: onStart, disabled: busy, loading: busy },
             "\u751F\u6210\u9489\u9489\u4E8C\u7EF4\u7801"
           )
@@ -2346,9 +2342,9 @@ function QrPanel({ provision, now, busy, onRefresh, onCancel }) {
         h(
           "div",
           { className: "ddt-actions dim-viewActions" },
-          expired ? h(Button, { kind: "primary", onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801") : null,
-          !expired ? h(Button, { onClick: onRefresh, disabled: busy }, "\u6362\u4E00\u4E2A\u4E8C\u7EF4\u7801") : null,
-          h(Button, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
+          expired ? h(Button2, { kind: "primary", onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801") : null,
+          !expired ? h(Button2, { onClick: onRefresh, disabled: busy }, "\u6362\u4E00\u4E2A\u4E8C\u7EF4\u7801") : null,
+          h(Button2, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
         )
       )
     )
@@ -2366,7 +2362,7 @@ function ProgressPanel({ status, busy, onCancel }) {
     h(
       "div",
       { className: "ddt-actions dim-viewActions", style: { justifyContent: "center", marginTop: 14 } },
-      h(Button, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88\u63A5\u5165")
+      h(Button2, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88\u63A5\u5165")
     )
   );
 }
@@ -2387,8 +2383,8 @@ function ProvisionError({ provision, busy, onRetry, onClose }) {
       h(
         "div",
         { className: "ddt-actions dim-viewActions" },
-        h(Button, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
-        h(Button, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
+        h(Button2, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
+        h(Button2, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
       )
     )
   );
@@ -2427,9 +2423,9 @@ function RemoveConfirmation({ account, busy, error, feedbackSequence, onConfirm,
     h(
       "div",
       { className: "ddt-actions dim-viewActions" },
-      h(Button, { ref: cancelRef, onClick: onCancel, disabled: busy }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
+      h(Button2, { ref: cancelRef, onClick: onCancel, disabled: busy }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
       h(
-        Button,
+        Button2,
         { kind: "danger", onClick: onConfirm, disabled: busy, loading: busy },
         "\u786E\u8BA4\u79FB\u9664\u63A5\u5165"
       )
@@ -2503,12 +2499,12 @@ function AccountCard({
             "div",
             { className: "ddt-actions dim-cardActions" },
             h(
-              Button,
+              Button2,
               { className: "dim-cardAction", onClick: onReconnect, disabled: Boolean(busy), loading: busy === "reconnect" },
               account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"
             ),
             h(
-              Button,
+              Button2,
               { className: "dim-cardAction", kind: "danger", onClick: onRequestRemove, disabled: Boolean(busy) },
               "\u79FB\u9664\u63A5\u5165"
             )
@@ -3089,7 +3085,7 @@ function DingtalkSettingsTab({ rpcCall }) {
         { className: "ddt-inlineError dim-inlineError", role: "alert" },
         h("h3", null, "\u65E0\u6CD5\u8BFB\u53D6\u9489\u9489\u673A\u5668\u4EBA\u72B6\u6001"),
         h("p", null, model.error?.message ?? "\u8BF7\u7A0D\u540E\u91CD\u8BD5"),
-        h(Button, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6")
+        h(Button2, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6")
       )
     ) : h(
       React10.Fragment,
@@ -3214,7 +3210,7 @@ var presentError2 = api.presentError;
 
 // plugin-src/client/channels/shared/token-channel.js
 var React11 = __toESM(require("react"), 1);
-var Button3 = React11.forwardRef(function Button4({ children, kind = "secondary", className = "", ...props }, ref) {
+var Button4 = React11.forwardRef(function Button5({ children, kind = "secondary", className = "", ...props }, ref) {
   return h(ActionButton, {
     ...props,
     ref,
@@ -3329,13 +3325,13 @@ function createTokenChannelSettings(definition) {
             h(
               "div",
               { className: "ddt-actions dim-cardActions" },
-              h(Button3, {
+              h(Button4, {
                 className: "dim-cardAction",
                 onClick: onReconnect,
                 disabled: Boolean(busy),
                 loading: busy === "reconnect"
               }, account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"),
-              h(Button3, {
+              h(Button4, {
                 className: "dim-cardAction",
                 kind: "danger",
                 onClick: onRequestRemove,
@@ -3359,9 +3355,9 @@ function createTokenChannelSettings(definition) {
         h(
           "div",
           { className: "ddt-actions dim-viewActions" },
-          h(Button3, { onClick: onCancelRemove, disabled: Boolean(busy) }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
+          h(Button4, { onClick: onCancelRemove, disabled: Boolean(busy) }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
           h(
-            Button3,
+            Button4,
             { kind: "danger", onClick: onConfirmRemove, disabled: Boolean(busy), loading: busy === "delete" },
             "\u786E\u8BA4\u79FB\u9664\u63A5\u5165"
           )
@@ -3590,7 +3586,7 @@ function createTokenChannelSettings(definition) {
           h(
             "div",
             { className: "dim-bindActions" },
-            h(Button3, {
+            h(Button4, {
               kind: "credential",
               className: "dim-credentialButton",
               onClick: () => {
@@ -3620,7 +3616,7 @@ function createTokenChannelSettings(definition) {
           { className: "ddt-inlineError dim-inlineError" },
           h("h3", null, `\u65E0\u6CD5\u8BFB\u53D6 ${channel4} \u673A\u5668\u4EBA\u72B6\u6001`),
           h("p", null, model.error?.message),
-          h(Button3, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6")
+          h(Button4, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6")
         )
       ) : h(
         React11.Fragment,
@@ -3665,7 +3661,7 @@ function createTokenChannelSettings(definition) {
               h(
                 "div",
                 { className: "ddt-actions dim-viewActions" },
-                h(Button3, {
+                h(Button4, {
                   kind: "primary",
                   onClick: () => setCredentialOpen(true)
                 }, emptyActionLabel)
@@ -4117,7 +4113,7 @@ function QrIcon({ size = 58 }) {
     fill: "currentColor"
   }));
 }
-var Button5 = React13.forwardRef(function Button6({ children, kind = "secondary", size, icon, className = "", ...props }, ref) {
+var Button6 = React13.forwardRef(function Button7({ children, kind = "secondary", size, icon, className = "", ...props }, ref) {
   return h(ActionButton, {
     ...props,
     ref,
@@ -4141,7 +4137,7 @@ function Heading2({ totals, onAdd, onCredential, credentialOpen, adding, busy, a
       h(
         "div",
         { className: "dim-bindActions" },
-        h(Button5, {
+        h(Button6, {
           kind: "primary",
           className: "bxf-bindButton dim-scanButton",
           onClick: onAdd,
@@ -4152,7 +4148,7 @@ function Heading2({ totals, onAdd, onCredential, credentialOpen, adding, busy, a
           icon: h(QrActionIcon),
           loading: adding
         }, "\u626B\u7801\u63A5\u5165\u673A\u5668\u4EBA"),
-        h(Button5, {
+        h(Button6, {
           kind: "credential",
           className: "dim-credentialButton",
           onClick: onCredential,
@@ -4202,7 +4198,7 @@ function EmptyView2({ onStart, busy }) {
         h(
           "div",
           { className: "bxf-actions dim-viewActions" },
-          h(Button5, {
+          h(Button6, {
             kind: "primary",
             onClick: onStart,
             disabled: busy,
@@ -4311,7 +4307,7 @@ function QrPane({ provision, now, onRefresh, onCancel, busy }) {
         h(
           "div",
           { className: "bxf-actions dim-viewActions" },
-          expired ? h(Button5, {
+          expired ? h(Button6, {
             kind: "primary",
             onClick: onRefresh,
             disabled: busy,
@@ -4323,8 +4319,8 @@ function QrPane({ provision, now, onRefresh, onCancel, busy }) {
             target: "_blank",
             rel: "noopener noreferrer"
           }, h("span", null, "\u5728\u98DE\u4E66\u4E2D\u6253\u5F00")) : null,
-          !expired ? h(Button5, { onClick: onRefresh, disabled: busy }, "\u6362\u4E00\u4E2A\u4E8C\u7EF4\u7801") : null,
-          h(Button5, { onClick: onCancel, disabled: busy }, repairing ? "\u53D6\u6D88\u8865\u5168" : grantingGroupMessages ? "\u53D6\u6D88\u6388\u6743" : "\u53D6\u6D88\u6DFB\u52A0")
+          !expired ? h(Button6, { onClick: onRefresh, disabled: busy }, "\u6362\u4E00\u4E2A\u4E8C\u7EF4\u7801") : null,
+          h(Button6, { onClick: onCancel, disabled: busy }, repairing ? "\u53D6\u6D88\u8865\u5168" : grantingGroupMessages ? "\u53D6\u6D88\u6388\u6743" : "\u53D6\u6D88\u6DFB\u52A0")
         )
       )
     )
@@ -4346,7 +4342,7 @@ function ProvisionProgress({ phase, provision, onCancel, busy }) {
     connecting && onCancel ? h(
       "div",
       { className: "bxf-actions dim-viewActions", style: { justifyContent: "center" } },
-      h(Button5, { onClick: onCancel, disabled: busy }, repairing ? "\u53D6\u6D88\u8865\u5168" : grantingGroupMessages ? "\u53D6\u6D88\u6388\u6743" : "\u53D6\u6D88\u6DFB\u52A0")
+      h(Button6, { onClick: onCancel, disabled: busy }, repairing ? "\u53D6\u6D88\u8865\u5168" : grantingGroupMessages ? "\u53D6\u6D88\u6388\u6743" : "\u53D6\u6D88\u6DFB\u52A0")
     ) : null
   );
 }
@@ -4369,11 +4365,11 @@ function ProvisionError2({ error, provision, onRetry, onCancel, busy }) {
           "div",
           { className: "bxf-actions dim-viewActions" },
           h(
-            Button5,
+            Button6,
             { kind: "primary", onClick: onRetry, disabled: busy, loading: busy },
             "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"
           ),
-          h(Button5, { onClick: onCancel, disabled: busy }, "\u5173\u95ED")
+          h(Button6, { onClick: onCancel, disabled: busy }, "\u5173\u95ED")
         )
       )
     )
@@ -4436,9 +4432,9 @@ function RemoveConfirmation2({ bot, busy, error, onConfirm, onCancel }) {
     h(
       "div",
       { className: "bxf-actions dim-viewActions" },
-      h(Button5, { ref: cancelRef, onClick: onCancel, disabled: busy, "data-modal-autofocus": true }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
+      h(Button6, { ref: cancelRef, onClick: onCancel, disabled: busy, "data-modal-autofocus": true }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
       h(
-        Button5,
+        Button6,
         { kind: "danger", onClick: onConfirm, disabled: busy, loading: busy },
         "\u786E\u8BA4\u79FB\u9664\u63A5\u5165"
       )
@@ -4514,7 +4510,7 @@ function GroupResponseModeEditor({
     current === "all" ? h(
       "div",
       { className: "bxf-responseModePermissionAction dim-responseModePermissionAction" },
-      h(Button5, {
+      h(Button6, {
         className: "bxf-responseModePermissionButton",
         size: "small",
         disabled: disabled || authorizationDisabled || saving || authorizing,
@@ -4630,7 +4626,7 @@ function BotCard({
           h(
             "div",
             { className: "bxf-actions bxf-botActions dim-cardActions" },
-            h(Button5, {
+            h(Button6, {
               className: "dim-cardAction",
               onClick: onReconnect,
               disabled: Boolean(busy),
@@ -4641,7 +4637,7 @@ function BotCard({
             h(
               "span",
               { className: "bxf-repairAction" },
-              h(Button5, {
+              h(Button6, {
                 className: "bxf-repairButton dim-cardAction",
                 onClick: onRepairCallback,
                 disabled: Boolean(busy) || repairDisabled,
@@ -4661,7 +4657,7 @@ function BotCard({
                 h("span", null, "\u6700\u591A\u589E\u91CF\u6DFB\u52A0\u5361\u7247\u56DE\u8C03 card.action.trigger\u3001\u8BFB\u53D6\u6D88\u606F\u5185\u56FE\u7247\u6216\u6587\u4EF6\u6240\u9700\u7684 im:message:readonly\uFF08\u98DE\u4E66\u663E\u793A\u4E3A\u201C\u83B7\u53D6\u5355\u804A\u3001\u7FA4\u7EC4\u6D88\u606F\u201D\uFF09\uFF0C\u4EE5\u53CA\u4E0A\u4F20\u673A\u5668\u4EBA\u56FE\u7247\u6216\u6587\u4EF6\u6240\u9700\u7684 im:resource\uFF1B\u786E\u8BA4\u9875\u53EA\u663E\u793A\u5F53\u524D\u7F3A\u5C11\u9879\uFF0C\u4E0D\u4F1A\u521B\u5EFA\u65B0\u5E94\u7528\u3002")
               )
             ),
-            h(Button5, {
+            h(Button6, {
               className: "dim-cardAction",
               kind: "danger",
               onClick: onRequestRemove,
@@ -4750,7 +4746,7 @@ function PageError({ error, onRetry, busy }) {
           "div",
           { className: "bxf-actions dim-viewActions" },
           h(
-            Button5,
+            Button6,
             { kind: "primary", onClick: onRetry, disabled: busy, loading: busy },
             "\u91CD\u65B0\u8BFB\u53D6"
           )
@@ -6186,7 +6182,7 @@ function installQqStyles() {
 
 // plugin-src/client/channels/qq/index.js
 var ACTIVE_STATES = /* @__PURE__ */ new Set(["pending", "refreshing", "connecting"]);
-var Button7 = React14.forwardRef(function Button8({ children, kind = "secondary", className = "", ...props }, ref) {
+var Button8 = React14.forwardRef(function Button9({ children, kind = "secondary", className = "", ...props }, ref) {
   return h(ActionButton, {
     ...props,
     ref,
@@ -6217,7 +6213,7 @@ function Heading3({ totals, adding, busy, onAdd, onCredential, credentialOpen, a
       h(
         "div",
         { className: "dim-bindActions" },
-        h(Button7, {
+        h(Button8, {
           kind: "primary",
           className: "dim-scanButton",
           onClick: onAdd,
@@ -6226,7 +6222,7 @@ function Heading3({ totals, adding, busy, onAdd, onCredential, credentialOpen, a
           "aria-label": "\u626B\u7801\u63A5\u5165 QQ \u673A\u5668\u4EBA",
           loading: adding
         }, h(QrActionIcon), "\u626B\u7801\u63A5\u5165\u673A\u5668\u4EBA"),
-        h(Button7, {
+        h(Button8, {
           kind: "credential",
           className: "dim-credentialButton",
           onClick: onCredential,
@@ -6273,7 +6269,7 @@ function EmptyView3({ busy, onStart }) {
           "div",
           { className: "ddt-actions dim-viewActions" },
           h(
-            Button7,
+            Button8,
             { kind: "primary", onClick: onStart, disabled: busy, loading: busy },
             "\u751F\u6210 QQ \u4E8C\u7EF4\u7801"
           )
@@ -6344,8 +6340,8 @@ function QrPanel2({ provision, now, busy, onRefresh, onCancel }) {
         h(
           "div",
           { className: "ddt-actions dim-viewActions" },
-          h(Button7, { onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
-          h(Button7, { kind: "quiet", onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
+          h(Button8, { onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
+          h(Button8, { kind: "quiet", onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
         )
       )
     )
@@ -6374,8 +6370,8 @@ function ProvisionView({ provision, busy, onRetry, onClose }) {
       h(
         "div",
         { className: "ddt-actions dim-viewActions" },
-        h(Button7, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
-        h(Button7, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
+        h(Button8, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
+        h(Button8, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
       )
     )
   );
@@ -6389,8 +6385,8 @@ function RemoveConfirmation3({ account, busy, error, feedbackSequence, onConfirm
     h(
       "div",
       { className: "ddt-actions dim-viewActions" },
-      h(Button7, { onClick: onCancel, disabled: busy }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
-      h(Button7, { kind: "danger", onClick: onConfirm, disabled: busy, loading: busy }, "\u786E\u8BA4\u79FB\u9664\u63A5\u5165")
+      h(Button8, { onClick: onCancel, disabled: busy }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
+      h(Button8, { kind: "danger", onClick: onConfirm, disabled: busy, loading: busy }, "\u786E\u8BA4\u79FB\u9664\u63A5\u5165")
     )
   );
 }
@@ -6459,8 +6455,8 @@ function AccountCard2({
           h(
             "div",
             { className: "ddt-actions dim-cardActions" },
-            h(Button7, { className: "dim-cardAction", onClick: onReconnect, disabled: Boolean(busy), loading: busy === "reconnect" }, account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"),
-            h(Button7, { className: "dim-cardAction", kind: "danger", onClick: onRequestRemove, disabled: Boolean(busy) }, "\u79FB\u9664\u63A5\u5165")
+            h(Button8, { className: "dim-cardAction", onClick: onReconnect, disabled: Boolean(busy), loading: busy === "reconnect" }, account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"),
+            h(Button8, { className: "dim-cardAction", kind: "danger", onClick: onRequestRemove, disabled: Boolean(busy) }, "\u79FB\u9664\u63A5\u5165")
           ),
           summary ? h("div", { className: "ddt-summary dim-cardSummary" }, summary) : null,
           account.lastMessageError ? h(LastMessageErrorSummary, {
@@ -6810,7 +6806,7 @@ function QqSettingsTab({ rpcCall }) {
       credentialOpen,
       addButtonRef
     }),
-    model.phase === "loading" ? h(LoadingView3) : model.phase === "error" ? h("div", { className: "ddt-card dim-surfaceCard" }, h("div", { className: "ddt-inlineError dim-inlineError" }, h("h3", null, "\u65E0\u6CD5\u8BFB\u53D6 QQ \u673A\u5668\u4EBA\u72B6\u6001"), h("p", null, model.error?.message), h(Button7, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6"))) : h(
+    model.phase === "loading" ? h(LoadingView3) : model.phase === "error" ? h("div", { className: "ddt-card dim-surfaceCard" }, h("div", { className: "ddt-inlineError dim-inlineError" }, h("h3", null, "\u65E0\u6CD5\u8BFB\u53D6 QQ \u673A\u5668\u4EBA\u72B6\u6001"), h("p", null, model.error?.message), h(Button8, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6"))) : h(
       React14.Fragment,
       null,
       credentialView,
@@ -6902,7 +6898,7 @@ function normalizeOfficeStatus(value) {
 // plugin-src/client/channels/office/index.js
 var React15 = __toESM(require("react"), 1);
 var import_dsh_client_ui_primitives3 = require("@deepseek-ai/dsh-client-ui-primitives");
-function Button9({ children, kind = "secondary", ...props }) {
+function Button10({ children, kind = "secondary", ...props }) {
   return h(import_dsh_client_ui_primitives3.Button, { ...props, variant: kind === "primary" ? "primary" : "outline", type: "button", className: "ddt-button", "data-kind": kind }, children);
 }
 function mapText(value) {
@@ -7098,7 +7094,7 @@ function OfficeSettingsTab({ rpcCall, initialStatus }) {
       h(
         "div",
         { className: "dof-actions" },
-        h(Button9, { kind: "primary", disabled: Boolean(busy), onClick: () => void run("save", () => invoke(OFFICE_RPC_ENDPOINTS.configure, {
+        h(Button10, { kind: "primary", disabled: Boolean(busy), onClick: () => void run("save", () => invoke(OFFICE_RPC_ENDPOINTS.configure, {
           baseUrl: form.baseUrl,
           deviceId: form.deviceId,
           ...form.deviceToken ? { deviceToken: form.deviceToken } : {},
@@ -7107,9 +7103,9 @@ function OfficeSettingsTab({ rpcCall, initialStatus }) {
           workspaces: parseMap(form.workspaces, "Workspace \u6620\u5C04"),
           instructionPresets: parseMap(form.instructionPresets, "Instruction Preset \u6620\u5C04")
         })), loading: busy === "save" }, "\u4FDD\u5B58\u5E76\u8FDE\u63A5"),
-        h(Button9, { disabled: !model.configured || Boolean(busy), onClick: () => void run("test", () => invoke(OFFICE_RPC_ENDPOINTS.test)), loading: busy === "test" }, "\u6D4B\u8BD5\u8FDE\u63A5"),
-        h(Button9, { disabled: !model.configured || Boolean(busy), loading: busy === "reconnect", onClick: () => void run("reconnect", () => invoke(OFFICE_RPC_ENDPOINTS.reconnect)) }, "\u91CD\u65B0\u8FDE\u63A5"),
-        h(Button9, { kind: "danger", disabled: !model.configured || Boolean(busy), loading: busy === "remove", onClick: () => void run("remove", () => invoke(OFFICE_RPC_ENDPOINTS.remove, { confirm: true })) }, "\u79FB\u9664\u8FDE\u63A5")
+        h(Button10, { disabled: !model.configured || Boolean(busy), onClick: () => void run("test", () => invoke(OFFICE_RPC_ENDPOINTS.test)), loading: busy === "test" }, "\u6D4B\u8BD5\u8FDE\u63A5"),
+        h(Button10, { disabled: !model.configured || Boolean(busy), loading: busy === "reconnect", onClick: () => void run("reconnect", () => invoke(OFFICE_RPC_ENDPOINTS.reconnect)) }, "\u91CD\u65B0\u8FDE\u63A5"),
+        h(Button10, { kind: "danger", disabled: !model.configured || Boolean(busy), loading: busy === "remove", onClick: () => void run("remove", () => invoke(OFFICE_RPC_ENDPOINTS.remove, { confirm: true })) }, "\u79FB\u9664\u8FDE\u63A5")
       )
     ),
     h(
@@ -7793,7 +7789,7 @@ function installWecomStyles() {
 
 // plugin-src/client/channels/wecom/index.js
 var ACTIVE_STATES2 = /* @__PURE__ */ new Set(["pending", "refreshing", "connecting"]);
-var Button10 = React18.forwardRef(function Button11({ children, kind = "secondary", className = "", ...props }, ref) {
+var Button11 = React18.forwardRef(function Button12({ children, kind = "secondary", className = "", ...props }, ref) {
   return h(ActionButton, {
     ...props,
     ref,
@@ -7824,7 +7820,7 @@ function Heading4({ totals, adding, busy, onAdd, onCredential, credentialOpen, a
       h(
         "div",
         { className: "dim-bindActions" },
-        h(Button10, {
+        h(Button11, {
           kind: "primary",
           className: "dim-scanButton",
           onClick: onAdd,
@@ -7833,7 +7829,7 @@ function Heading4({ totals, adding, busy, onAdd, onCredential, credentialOpen, a
           "aria-label": "\u626B\u7801\u63A5\u5165\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA",
           loading: adding
         }, h(QrActionIcon), "\u626B\u7801\u63A5\u5165\u673A\u5668\u4EBA"),
-        h(Button10, {
+        h(Button11, {
           kind: "credential",
           className: "dim-credentialButton",
           onClick: onCredential,
@@ -7880,7 +7876,7 @@ function EmptyView4({ busy, onStart }) {
           "div",
           { className: "ddt-actions dim-viewActions" },
           h(
-            Button10,
+            Button11,
             { kind: "primary", onClick: onStart, disabled: busy, loading: busy },
             "\u751F\u6210\u4F01\u4E1A\u5FAE\u4FE1\u4E8C\u7EF4\u7801"
           )
@@ -7951,8 +7947,8 @@ function QrPanel3({ provision, now, busy, onRefresh, onCancel }) {
         h(
           "div",
           { className: "ddt-actions dim-viewActions" },
-          h(Button10, { onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
-          h(Button10, { kind: "quiet", onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
+          h(Button11, { onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
+          h(Button11, { kind: "quiet", onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
         )
       )
     )
@@ -7981,8 +7977,8 @@ function ProvisionView2({ provision, busy, onRetry, onClose }) {
       h(
         "div",
         { className: "ddt-actions dim-viewActions" },
-        h(Button10, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
-        h(Button10, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
+        h(Button11, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
+        h(Button11, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
       )
     )
   );
@@ -7996,8 +7992,8 @@ function RemoveConfirmation4({ account, busy, error, feedbackSequence, onConfirm
     h(
       "div",
       { className: "ddt-actions dim-viewActions" },
-      h(Button10, { onClick: onCancel, disabled: busy }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
-      h(Button10, { kind: "danger", onClick: onConfirm, disabled: busy, loading: busy }, "\u786E\u8BA4\u79FB\u9664\u63A5\u5165")
+      h(Button11, { onClick: onCancel, disabled: busy }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
+      h(Button11, { kind: "danger", onClick: onConfirm, disabled: busy, loading: busy }, "\u786E\u8BA4\u79FB\u9664\u63A5\u5165")
     )
   );
 }
@@ -8066,8 +8062,8 @@ function AccountCard3({
           h(
             "div",
             { className: "ddt-actions dim-cardActions" },
-            h(Button10, { className: "dim-cardAction", onClick: onReconnect, disabled: Boolean(busy), loading: busy === "reconnect" }, account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"),
-            h(Button10, { className: "dim-cardAction", kind: "danger", onClick: onRequestRemove, disabled: Boolean(busy) }, "\u79FB\u9664\u63A5\u5165")
+            h(Button11, { className: "dim-cardAction", onClick: onReconnect, disabled: Boolean(busy), loading: busy === "reconnect" }, account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"),
+            h(Button11, { className: "dim-cardAction", kind: "danger", onClick: onRequestRemove, disabled: Boolean(busy) }, "\u79FB\u9664\u63A5\u5165")
           ),
           summary ? h("div", { className: "ddt-summary dim-cardSummary" }, summary) : null,
           account.lastMessageError ? h(LastMessageErrorSummary, {
@@ -8449,7 +8445,7 @@ function WecomSettingsTab({ rpcCall }) {
       addButtonRef
     }),
     notice ? h(FeedbackToast, { text: notice }) : null,
-    model.phase === "loading" ? h(LoadingView4) : model.phase === "error" ? h("div", { className: "ddt-card dim-surfaceCard" }, h("div", { className: "ddt-inlineError dim-inlineError" }, h("h3", null, "\u65E0\u6CD5\u8BFB\u53D6\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA\u72B6\u6001"), h("p", null, model.error?.message), h(Button10, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6"))) : h(
+    model.phase === "loading" ? h(LoadingView4) : model.phase === "error" ? h("div", { className: "ddt-card dim-surfaceCard" }, h("div", { className: "ddt-inlineError dim-inlineError" }, h("h3", null, "\u65E0\u6CD5\u8BFB\u53D6\u4F01\u4E1A\u5FAE\u4FE1\u673A\u5668\u4EBA\u72B6\u6001"), h("p", null, model.error?.message), h(Button11, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6"))) : h(
       React18.Fragment,
       null,
       credentialView,
@@ -8616,7 +8612,7 @@ function formatRemaining5(milliseconds) {
 }
 
 // plugin-src/client/channels/weixin/index.js
-var Button12 = React19.forwardRef(function Button13({ children, kind = "secondary", className = "", ...props }, ref) {
+var Button13 = React19.forwardRef(function Button14({ children, kind = "secondary", className = "", ...props }, ref) {
   return h(ActionButton, {
     ...props,
     ref,
@@ -8632,7 +8628,7 @@ function Heading5({ totals, adding, busy, onAdd, addButtonRef }) {
     h(
       "div",
       { className: "dxw-tools" },
-      h(Button12, {
+      h(Button13, {
         kind: "primary",
         className: "dim-scanButton",
         onClick: onAdd,
@@ -8679,7 +8675,7 @@ function EmptyView5({ onStart, busy }) {
           "div",
           { className: "dxw-actions dim-viewActions" },
           h(
-            Button12,
+            Button13,
             { kind: "primary", onClick: onStart, disabled: busy, loading: busy },
             "\u751F\u6210\u5FAE\u4FE1\u4E8C\u7EF4\u7801"
           )
@@ -8749,15 +8745,15 @@ function QrPanel4({ provision, now, busy, onRefresh, onCancel }) {
         h(
           "div",
           { className: "dxw-actions dim-viewActions" },
-          expired ? h(Button12, { kind: "primary", onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801") : null,
+          expired ? h(Button13, { kind: "primary", onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801") : null,
           href ? h("a", {
             className: "dxw-button",
             href,
             target: "_blank",
             rel: "noopener noreferrer"
           }, "\u6253\u5F00\u5907\u7528\u94FE\u63A5") : null,
-          !expired ? h(Button12, { onClick: onRefresh, disabled: busy }, "\u6362\u4E00\u4E2A\u4E8C\u7EF4\u7801") : null,
-          h(Button12, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
+          !expired ? h(Button13, { onClick: onRefresh, disabled: busy }, "\u6362\u4E00\u4E2A\u4E8C\u7EF4\u7801") : null,
+          h(Button13, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
         )
       )
     )
@@ -8808,7 +8804,7 @@ function VerificationPanel({ provision, busy, onSubmit, onCancel }) {
           loading: busy
         }, "\u7EE7\u7EED\u8FDE\u63A5")
       ),
-      h(Button12, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88\u7ED1\u5B9A")
+      h(Button13, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88\u7ED1\u5B9A")
     )
   );
 }
@@ -8822,7 +8818,7 @@ function ProgressPanel2({ scanned, onCancel, busy }) {
     onCancel ? h(
       "div",
       { className: "dxw-actions dim-viewActions", style: { justifyContent: "center", marginTop: 14 } },
-      h(Button12, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
+      h(Button13, { onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
     ) : null
   );
 }
@@ -8840,8 +8836,8 @@ function ProvisionError3({ provision, busy, onRetry, onClose }) {
       h(
         "div",
         { className: "dxw-actions dim-viewActions" },
-        h(Button12, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
-        h(Button12, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
+        h(Button13, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
+        h(Button13, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
       )
     )
   );
@@ -8919,11 +8915,11 @@ function AccountCard4({
             "div",
             { className: "dxw-actions dim-cardActions" },
             h(
-              Button12,
+              Button13,
               { className: "dim-cardAction", onClick: onReconnect, disabled: Boolean(busy), loading: busy === "reconnect" },
               account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"
             ),
-            h(Button12, { className: "dim-cardAction", kind: "danger", onClick: onRequestRemove, disabled: Boolean(busy) }, "\u79FB\u9664\u63A5\u5165")
+            h(Button13, { className: "dim-cardAction", kind: "danger", onClick: onRequestRemove, disabled: Boolean(busy) }, "\u79FB\u9664\u63A5\u5165")
           ),
           summary ? h("div", { className: "dxw-summary dim-cardSummary" }, summary) : null,
           account.lastMessageError ? h(LastMessageErrorSummary, {
@@ -8942,9 +8938,9 @@ function AccountCard4({
       h(
         "div",
         { className: "dxw-actions dim-viewActions" },
-        h(Button12, { onClick: onCancelRemove, disabled: busy === "delete" }, "\u4FDD\u7559\u8D26\u53F7"),
+        h(Button13, { onClick: onCancelRemove, disabled: busy === "delete" }, "\u4FDD\u7559\u8D26\u53F7"),
         h(
-          Button12,
+          Button13,
           { kind: "danger", onClick: onConfirmRemove, disabled: busy === "delete", loading: busy === "delete" },
           "\u786E\u8BA4\u79FB\u9664"
         )
@@ -9393,7 +9389,7 @@ function WeixinSettingsTab({ rpcCall }) {
         { className: "dxw-error dim-inlineError" },
         h("h3", null, "\u65E0\u6CD5\u8BFB\u53D6\u5FAE\u4FE1\u72B6\u6001"),
         h("p", null, model.error?.message ?? "\u8BF7\u7A0D\u540E\u91CD\u8BD5"),
-        h(Button12, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6")
+        h(Button13, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6")
       )
     ) : h(
       React19.Fragment,
@@ -9861,7 +9857,7 @@ function WhatsappAccessSettings({ account, busy = false, onSave }) {
     )
   );
 }
-var Button14 = React20.forwardRef(function Button15({ children, kind = "secondary", className = "", ...props }, ref) {
+var Button15 = React20.forwardRef(function Button16({ children, kind = "secondary", className = "", ...props }, ref) {
   return h(ActionButton, {
     ...props,
     ref,
@@ -9901,7 +9897,7 @@ function Heading6({ totals, busy, onAdd, addButtonRef }) {
       h(
         "div",
         { className: "dim-bindActions" },
-        h(Button14, {
+        h(Button15, {
           kind: "primary",
           className: "dim-scanButton",
           onClick: onAdd,
@@ -9947,7 +9943,7 @@ function EmptyView6({ busy, onStart }) {
           "div",
           { className: "ddt-actions dim-viewActions" },
           h(
-            Button14,
+            Button15,
             { kind: "primary", onClick: onStart, disabled: busy, loading: busy },
             "\u751F\u6210\u4E8C\u7EF4\u7801"
           )
@@ -10016,8 +10012,8 @@ function QrPanel5({ provision, now, busy, onRefresh, onCancel }) {
         h(
           "div",
           { className: "ddt-actions dim-viewActions" },
-          h(Button14, { onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
-          h(Button14, { kind: "quiet", onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
+          h(Button15, { onClick: onRefresh, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
+          h(Button15, { kind: "quiet", onClick: onCancel, disabled: busy }, "\u53D6\u6D88")
         )
       )
     )
@@ -10053,8 +10049,8 @@ function ProvisionView3({ provision, busy, onRetry, onClose }) {
       h(
         "div",
         { className: "ddt-actions dim-viewActions" },
-        h(Button14, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
-        h(Button14, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
+        h(Button15, { kind: "primary", onClick: onRetry, disabled: busy }, "\u91CD\u65B0\u751F\u6210\u4E8C\u7EF4\u7801"),
+        h(Button15, { onClick: onClose, disabled: busy }, "\u5173\u95ED")
       )
     )
   );
@@ -10068,9 +10064,9 @@ function RemoveConfirmation5({ account, busy, error, feedbackSequence, onConfirm
     h(
       "div",
       { className: "ddt-actions dim-viewActions" },
-      h(Button14, { onClick: onCancel, disabled: busy }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
+      h(Button15, { onClick: onCancel, disabled: busy }, "\u4FDD\u7559\u673A\u5668\u4EBA"),
       h(
-        Button14,
+        Button15,
         { kind: "danger", onClick: onConfirm, disabled: busy, loading: busy },
         "\u786E\u8BA4\u79FB\u9664\u63A5\u5165"
       )
@@ -10152,13 +10148,13 @@ function WhatsappAccountCard({
           h(
             "div",
             { className: "ddt-actions dim-cardActions" },
-            h(Button14, {
+            h(Button15, {
               className: "dim-cardAction",
               onClick: onReconnect,
               disabled: Boolean(busy),
               loading: busy === "reconnect"
             }, account.connected ? "\u68C0\u67E5\u8FDE\u63A5" : "\u91CD\u8BD5\u8FDE\u63A5"),
-            h(Button14, {
+            h(Button15, {
               className: "dim-cardAction",
               kind: "danger",
               onClick: onRequestRemove,
@@ -10484,7 +10480,7 @@ function WhatsappSettingsTab({ rpcCall }) {
         { className: "ddt-inlineError dim-inlineError" },
         h("h3", null, "\u65E0\u6CD5\u8BFB\u53D6 WhatsApp \u673A\u5668\u4EBA\u72B6\u6001"),
         h("p", null, model.error?.message),
-        h(Button14, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6")
+        h(Button15, { onClick: () => void loadStatus() }, "\u91CD\u65B0\u8BFB\u53D6")
       )
     ) : h(
       React20.Fragment,
@@ -11504,10 +11500,7 @@ var CSS11 = String.raw`
   .dim-directoryPickerSpinner { animation-duration: 1.8s; }
 }
 .dim-busyButton { position: relative; }
-.dim-buttonContent { display: contents; }
-.dim-busyButton[data-loading="true"] .dim-buttonContent { visibility: hidden; }
-.dim-buttonSpinner, .dim-controlSpinner { width: 14px; height: 14px; box-sizing: border-box; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: dim-feedback-spin .8s linear infinite; }
-.dim-buttonSpinner { position: absolute; top: 50%; left: 50%; margin: -7px 0 0 -7px; }
+.dim-controlSpinner { width: 14px; height: 14px; box-sizing: border-box; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: dim-feedback-spin .8s linear infinite; }
 .dim-controlSpinner { position: absolute; right: 28px; top: 50%; margin-top: -7px; pointer-events: none; color: var(--dsw-alias-label-secondary); }
 .dim-controlBusy { position: relative; display: block; min-width: 0; }
 .dim-preset > .dim-controlBusy, .dim-responseMode > .dim-controlBusy { grid-column: 1 / -1; grid-row: 2; }
@@ -11521,7 +11514,7 @@ var CSS11 = String.raw`
 .dim-confirmDialog button[data-kind="danger"] { color: var(--dsw-alias-state-error-primary); }
 .dim-confirmDialog button:disabled { opacity: .5; cursor: not-allowed; }
 @keyframes dim-feedback-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .dim-buttonSpinner, .dim-controlSpinner { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .dim-controlSpinner { animation: none; } }
 `;
 function installImStyles() {
   if (typeof document === "undefined") return () => {

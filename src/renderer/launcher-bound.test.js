@@ -267,6 +267,15 @@ test('bound handlers: delayed cancel A->B keeps B live and refuses the stale wri
   assert.match(r.delayedCancel.dom.importResult, /正在导入/, 'B stays in-flight');
   assert.notEqual(r.delayedCancel.opA, r.delayedCancel.opB, 'A and B are distinct operation ids');
   assert.equal(r.delayedCancel.dom.cancelHidden, false, 'cancel stays available for the live run');
+  assert.equal(r.delayedCancel.cancelPending.label, '取消中…');
+  assert.equal(r.delayedCancel.cancelPending.busy, 'true');
+  assert.equal(r.delayedCancel.cancelPending.disabled, true);
+  assert.equal(r.delayedCancel.cancelPending.spinner, true);
+  assert.equal(r.delayedCancel.cancelPending.width, r.delayedCancel.cancelBefore.width);
+  assert.equal(r.delayedCancel.cancelPending.height, r.delayedCancel.cancelBefore.height);
+  assert.equal(r.delayedCancel.dom.cancelBusy, null, 'the next import owns fresh cancellation feedback');
+  assert.equal(r.delayedCancel.dom.cancelDisabled, false);
+  assert.equal(r.delayedCancel.dom.cancelOverlay, false);
 });
 
 test('bound handlers: a resolved {ok:false} route-save is refused and the same route retries', { skip: !hasElectron }, async () => {

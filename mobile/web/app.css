@@ -1078,17 +1078,37 @@ button { cursor: pointer; }
 .toast .icon-btn { width: 24px; height: 24px; border-radius: 4px; color: inherit; }
 .toast .icon-btn:hover { background: rgba(255, 255, 255, .1); }
 .toast :is(.icon-btn, .ghost-btn):focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
-.toast .button-busy::after { border-color: rgba(255, 255, 255, .3); border-top-color: var(--dsw-alias-toast-label); }
-.button-busy { position: relative; color: transparent !important; }
-.button-busy > * { visibility: hidden; }
-.button-busy::after, .surface-busy::after {
+.button-busy { position: relative; }
+/* Original children reserve the exact resting geometry, including multi-line
+   picker rows. Only the overlay paints; it cannot grow a flex/grid track. */
+.button-busy > :not(.button-busy-overlay) { visibility: hidden; }
+.button-busy > .button-busy-overlay {
+  position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; gap: 4px; padding: 0 8px;
+  overflow: hidden; pointer-events: none; visibility: visible;
+  font: inherit; color: inherit;
+}
+.button-busy-overlay > .button-busy-spinner {
+  flex: none; width: 14px; height: 14px; border: 2px solid currentColor;
+  border-right-color: transparent; border-radius: 50%;
+  animation: toast-spin 0.8s linear infinite;
+}
+.button-busy .button-busy-overlay > .button-busy-viewport {
+  flex: 1; min-width: 0; display: block; overflow: hidden;
+  white-space: nowrap; text-overflow: clip; text-align: left;
+}
+.button-busy .button-busy-viewport > .button-busy-text {
+  display: block; width: max-content; max-width: none; margin-inline: auto;
+  white-space: nowrap; text-overflow: clip; overflow: visible;
+}
+.button-busy.button-busy-icon > .button-busy-overlay { padding: 0; justify-content: center; }
+.surface-busy::after {
   content: ''; position: absolute; width: 14px; height: 14px;
   border: 2px solid var(--dsw-alias-border-l2); border-top-color: var(--dsw-alias-label-primary);
   border-radius: 50%; animation: toast-spin 0.8s linear infinite;
   pointer-events: none;
+  top: calc(50% - 7px); left: calc(50% - 7px); z-index: 2;
 }
-.button-busy::after { top: calc(50% - 7px); left: calc(50% - 7px); }
-.surface-busy::after { top: calc(50% - 7px); left: calc(50% - 7px); z-index: 2; }
 .log, .session-list, .slash-pop, .options { position: relative; }
 .slash-pop.surface-busy { min-height: 36px; }
 .toast-main b { display: block; font-size: 14px; line-height: 22px; font-weight: 400; }
@@ -1557,7 +1577,7 @@ button { cursor: pointer; }
 @keyframes bottom-mask-in { from { opacity: 0; } to { opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .button-busy::after, .surface-busy::after { animation: none; }
+  .button-busy-overlay > .button-busy-spinner, .surface-busy::after { animation: none; }
   .drawer { transition: none; }
   .switch, .switch::after { transition: none; }
   .toast .spin { animation: none; }

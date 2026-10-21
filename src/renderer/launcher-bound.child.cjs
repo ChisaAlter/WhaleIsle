@@ -168,7 +168,7 @@ app.whenReady().then(async () => {
     show: false,
     webPreferences: {
       backgroundThrottling: false,
-      offscreen: !visualOnly && Boolean(process.env.QA_HOME_ARTIFACTS),
+      offscreen: !visualOnly,
       preload: PRELOAD,
       contextIsolation: true,
       nodeIntegration: false,
@@ -178,6 +178,9 @@ app.whenReady().then(async () => {
   });
   try {
     await win.loadFile(LAUNCHER_HTML);
+    win.webContents.debugger.attach('1.3');
+    await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+    win.webContents.debugger.detach();
     const ready = await win.webContents.executeJavaScript(`new Promise((r) => {
       if (document.readyState === 'complete') return r('ready');
       document.addEventListener('DOMContentLoaded', () => r('ready'));
@@ -580,7 +583,7 @@ app.whenReady().then(async () => {
         await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
         reducedMotion = await readFeedback();
       } finally {
-        await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [] });
+        await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
         win.webContents.debugger.detach();
       }
       componentProgress({ phase: 'verify', percent: 60 });
@@ -847,8 +850,10 @@ app.whenReady().then(async () => {
       await win.webContents.executeJavaScript(`document.getElementById('btn-import').click()`);
       await new Promise((r) => setTimeout(r, 60));
       const opA = results.calls.find((c) => c.op === 'run-import')?.opts?.opId;
+      const cancelBefore = await win.webContents.executeJavaScript(`(() => { const b = document.getElementById('btn-import-cancel'), r = b.getBoundingClientRect(); return { width: r.width, height: r.height }; })()`);
       // Click cancel for A (handler captures opA and awaits cancel reply).
       await win.webContents.executeJavaScript(`document.getElementById('btn-import-cancel').click()`);
+      const cancelPending = await win.webContents.executeJavaScript(`(() => { const b = document.getElementById('btn-import-cancel'), r = b.getBoundingClientRect(); return { width: r.width, height: r.height, label: b.querySelector('.shell-button-label-text')?.textContent, busy: b.getAttribute('aria-busy'), disabled: b.disabled, spinner: Boolean(b.querySelector('.shell-button-spinner')) }; })()`);
       // Start B: mark a new active op by clicking import again after A's
       // handler finishes? A is still pending — instead simulate B by forcing
       // the shared state: dispatch progress for opB and a stale progress for opA.
@@ -866,9 +871,12 @@ app.whenReady().then(async () => {
       const dom = await win.webContents.executeJavaScript(`({
         importResult: document.getElementById('import-result').textContent,
         cancelHidden: document.getElementById('btn-import-cancel').hidden,
+        cancelBusy: document.getElementById('btn-import-cancel').getAttribute('aria-busy'),
+        cancelDisabled: document.getElementById('btn-import-cancel').disabled,
+        cancelOverlay: document.getElementById('btn-import-cancel').hasAttribute('data-button-label'),
       })`);
       delayedCancel = {
-        opA, opB, dom,
+        opA, opB, dom, cancelBefore, cancelPending,
         staleWriteRefused: !/取消被拒绝|取消请求被拒绝/.test(dom.importResult),
       };
     }

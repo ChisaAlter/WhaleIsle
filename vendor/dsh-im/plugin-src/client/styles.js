@@ -942,10 +942,7 @@ const CSS = String.raw`
   .dim-directoryPickerSpinner { animation-duration: 1.8s; }
 }
 .dim-busyButton { position: relative; }
-.dim-buttonContent { display: contents; }
-.dim-busyButton[data-loading="true"] .dim-buttonContent { visibility: hidden; }
-.dim-buttonSpinner, .dim-controlSpinner { width: 14px; height: 14px; box-sizing: border-box; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: dim-feedback-spin .8s linear infinite; }
-.dim-buttonSpinner { position: absolute; top: 50%; left: 50%; margin: -7px 0 0 -7px; }
+.dim-controlSpinner { width: 14px; height: 14px; box-sizing: border-box; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: dim-feedback-spin .8s linear infinite; }
 .dim-controlSpinner { position: absolute; right: 28px; top: 50%; margin-top: -7px; pointer-events: none; color: var(--dsw-alias-label-secondary); }
 .dim-controlBusy { position: relative; display: block; min-width: 0; }
 .dim-preset > .dim-controlBusy, .dim-responseMode > .dim-controlBusy { grid-column: 1 / -1; grid-row: 2; }
@@ -959,7 +956,7 @@ const CSS = String.raw`
 .dim-confirmDialog button[data-kind="danger"] { color: var(--dsw-alias-state-error-primary); }
 .dim-confirmDialog button:disabled { opacity: .5; cursor: not-allowed; }
 @keyframes dim-feedback-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .dim-buttonSpinner, .dim-controlSpinner { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .dim-controlSpinner { animation: none; } }
 `;
 
 export function installImStyles() {
