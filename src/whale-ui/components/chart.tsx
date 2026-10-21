@@ -18,6 +18,21 @@ export function chartDomain(data: ChartRow[], series: string[], stacked: boolean
   const span = max - min;
   return { min: min < 0 ? min - span * .05 : min, max: max + span * .05 };
 }
+export function chartTicks(domain: { min: number; max: number }) {
+  const rough = (domain.max - domain.min) / 4;
+  const magnitude = 10 ** Math.floor(Math.log10(rough));
+  const fraction = rough / magnitude;
+  const unit = [1, 2, 2.5, 5, 10].find(value => value >= fraction) ?? 10;
+  const step = unit * magnitude;
+  const first = Math.floor(domain.min / step), last = Math.ceil(domain.max / step);
+  const precision = Math.max(0, -Math.floor(Math.log10(step)) + (unit === 2.5 ? 1 : 0));
+  // Integer indices avoid cumulative floating-point drift across fractional ticks.
+  const ticks = Array.from({ length: last - first + 1 }, (_, index) => {
+    const value = (first + index) * step;
+    return value === 0 ? 0 : Number(value.toPrecision(12));
+  });
+  return { min: ticks[0], max: ticks[ticks.length - 1], step, precision, ticks };
+}
 const seriesColor = (index: number) => color(`chart${index % 6 + 1}`);
 function pieArc(cx: number, cy: number, radius: number, start: number, end: number, inner = 0) {
   // A circle requires two arcs: one full SVG arc has coincident endpoints.
@@ -57,11 +72,17 @@ function ChartView(p: any) {
     graphic = total <= 0 ? <Feedback>{t("noPositiveValues")}</Feedback> : <svg viewBox={`0 0 ${width} ${height}`} className="whale-chart-svg" role="img" aria-label={`${p.type} chart of ${key}`}><title>{`${key}: ${format(total)}`}</title>{values.map((value: number, index: number) => { const start = angle; angle += value / total * Math.PI * 2; return value <= 0 ? null : <path key={index} d={pieArc(width / 2, height / 2, radius, start, angle, p.type === "donut" ? radius * .62 : 0)} fill={seriesColor(index)} stroke="var(--whale-bg)" strokeWidth={2} tabIndex={0} aria-label={`${category(p.data[index], index)}: ${format(value)}`}><title>{`${category(p.data[index], index)}: ${format(value)} (${dataFunctions.Format({ value: value / total * 100, kind: "percent", decimals: 1 })})`}</title></path>; })}{p.type === "donut" && <text x={width / 2} y={height / 2} textAnchor="middle" dominantBaseline="middle" fill="var(--whale-fg)" fontSize={22} fontWeight={600}>{format(total)}</text>}</svg>;
   } else {
     const left = 68, right = 22, top = 18, bottom = 40, plotWidth = width - left - right, plotHeight = height - top - bottom;
-    const domain = chartDomain(p.data, series, !!p.stacked), y = (value: number) => top + (domain.max - value) / (domain.max - domain.min) * plotHeight;
+    const domain = chartTicks(chartDomain(p.data, series, !!p.stacked)), y = (value: number) => top + (domain.max - value) / (domain.max - domain.min) * plotHeight;
+    const tickFormat = (value: number) => new Intl.NumberFormat(undefined, {
+      style: p.format === "currency" ? "currency" : p.format === "percent" ? "percent" : "decimal",
+      ...(p.format === "currency" ? { currency: p.currency ?? "USD" } : {}),
+      notation: domain.precision > 6 || Math.abs(value) >= 1e9 ? "scientific" : "standard",
+      minimumFractionDigits: 0, maximumFractionDigits: domain.precision > 6 || Math.abs(value) >= 1e9 ? 2 : domain.precision,
+    }).format(p.format === "percent" ? value / 100 : value);
     const xNumbers = p.data.map((row: ChartRow, index: number) => columns.x ? Number(row[columns.x]) || 0 : index + 1), xMin = Math.min(...xNumbers), xMax = Math.max(...xNumbers);
     const x = (index: number) => p.type === "scatter" ? left + (xNumbers[index] - xMin) / (xMax - xMin || 1) * plotWidth : left + (index + .5) / p.data.length * plotWidth;
     const positive = p.data.map(() => 0), negative = p.data.map(() => 0);
-    graphic = <svg viewBox={`0 0 ${width} ${height}`} className="whale-chart-svg" role="img" aria-label={`${p.type} chart of ${series.join(", ")}`}><title>{`${p.type} chart with ${p.data.length} rows`}</title>{Array.from({ length: 5 }, (_, index) => { const value = domain.min + (domain.max - domain.min) * index / 4, pos = y(value); return <g key={index}><line x1={left} y1={pos} x2={width - right} y2={pos} stroke="var(--whale-border)" strokeDasharray="3 4" /><text x={left - 9} y={pos} dy=".35em" textAnchor="end" fill="var(--whale-fg-muted)" fontSize={12}>{format(value)}</text></g>; })}<line x1={left} y1={y(0)} x2={width - right} y2={y(0)} stroke="var(--whale-fg-muted)" opacity={.5} />{p.data.map((row: ChartRow, index: number) => index % Math.max(1, Math.ceil(p.data.length / Math.max(2, Math.floor(plotWidth / 72)))) === 0 ? <text key={index} x={x(index)} y={height - 12} textAnchor="middle" fill="var(--whale-fg-muted)" fontSize={12}>{category(row, index).length > 14 ? category(row, index).slice(0, 13) + "…" : category(row, index)}</text> : null)}{series.map((key, seriesIndex) => {
+    graphic = <svg viewBox={`0 0 ${width} ${height}`} className="whale-chart-svg" role="img" aria-label={`${p.type} chart of ${series.join(", ")}`}><title>{`${p.type} chart with ${p.data.length} rows`}</title>{domain.ticks.map((value, index) => { const pos = y(value); return <g key={index}><line x1={left} y1={pos} x2={width - right} y2={pos} stroke="var(--whale-border)" strokeDasharray="3 4" /><text className="whale-chart-tick" x={left - 9} y={pos} dy=".35em" textAnchor="end" fill="var(--whale-fg-muted)" fontSize={12}>{tickFormat(value)}</text></g>; })}<line x1={left} y1={y(0)} x2={width - right} y2={y(0)} stroke="var(--whale-fg-muted)" opacity={.5} />{p.data.map((row: ChartRow, index: number) => index % Math.max(1, Math.ceil(p.data.length / Math.max(2, Math.floor(plotWidth / 72)))) === 0 ? <text key={index} x={x(index)} y={height - 12} textAnchor="middle" fill="var(--whale-fg-muted)" fontSize={12}>{category(row, index).length > 14 ? category(row, index).slice(0, 13) + "…" : category(row, index)}</text> : null)}{series.map((key, seriesIndex) => {
       const points: { x: number; y: number; base: number; value: number; index: number }[] = p.data.map((row: ChartRow, index: number) => { const value = Number(row[key]) || 0, totals = value >= 0 ? positive : negative, base = p.stacked ? totals[index] : 0; if (p.stacked) totals[index] += value; return { x: x(index), y: y(base + value), base: y(base), value, index }; });
       const shade = seriesColor(columns.series.indexOf(key));
       if (p.type === "bar") { const band = plotWidth / p.data.length * .78, barWidth = p.stacked ? band : band / Math.max(1, series.length); return <g key={key}>{points.map(point => <rect key={point.index} x={point.x - band / 2 + (p.stacked ? 0 : seriesIndex * barWidth)} y={Math.min(point.y, point.base)} width={Math.max(.5, barWidth - 1)} height={Math.max(.5, Math.abs(point.y - point.base))} fill={shade} rx={2} tabIndex={0} aria-label={`${category(p.data[point.index], point.index)}, ${key}: ${format(point.value)}`}><title>{`${category(p.data[point.index], point.index)} · ${key}: ${format(point.value)}`}</title></rect>)}</g>; }

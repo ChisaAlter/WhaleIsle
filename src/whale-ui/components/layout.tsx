@@ -1,6 +1,7 @@
 import { t } from "./locale";
 import React, { useEffect, useId, useRef, useState } from "react";
 import { z } from "zod";
+import { useComponentState } from "@whale-ui/react";
 import { alignment, alignSchema, color, colorSchema, content, define, justification, justifySchema, length, nodes, radius, radiusSchema, units, type Render } from "./common";
 
 export const Col = define("Col", { children: nodes, gap: z.number().optional(), align: alignSchema.optional() }, "Vertical layout; gap and padding units are 4px. Default gap follows article spacing.", (p, render) => <div className="whale-col" style={{ gap: p.gap == null ? undefined : units(p.gap, 4), alignItems: alignment(p.align) }}>{render(p.children)}</div>);
@@ -21,6 +22,14 @@ function PopoverView({ trigger, content: body, render }: { trigger: unknown; con
   return <span className="whale-popover" ref={root}><button type="button" className="whale-popover-trigger" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>{render(trigger)}</button>{open && <span className="whale-popover-body" id={id} role="dialog" aria-label={t("details")}>{render(body)}</span>}</span>;
 }
 export const Popover = define("Popover", { trigger: content, content }, "Click to show a small details panel; Escape or outside click closes it.", (p, render) => <PopoverView {...p} render={render} />);
+function DetailsView({ label, children, defaultOpen, render }: { label: string; children: unknown[]; defaultOpen?: boolean; render: Render }) {
+  const [open, setOpen] = useComponentState("open", defaultOpen ?? false);
+  return <details className="whale-details" open={open} onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary className="whale-details-summary">{label}</summary>
+    <div className="whale-details-content">{render(children)}</div>
+  </details>;
+}
+export const Details = define("Details", { label: z.string(), children: nodes, defaultOpen: z.boolean().optional() }, "Expandable secondary content, closed by default. Native keyboard disclosure; child inputs remain mounted and retain edits. Use for fee breakdowns, row editing and explanations after the main result.", (p, render) => <DetailsView {...p} render={render} />);
 export const Divider = define("Divider", {}, "A subtle horizontal separator.", () => <hr className="whale-divider" />);
 export const Spacer = define("Spacer", {}, "Fill remaining space in a row.", () => <span aria-hidden="true" style={{ flex: 1 }} />);
-export const layoutDefinitions = [Col, Row, Box, Grid, Card, Carousel, Popover, Divider, Spacer];
+export const layoutDefinitions = [Col, Row, Box, Grid, Card, Carousel, Popover, Details, Divider, Spacer];

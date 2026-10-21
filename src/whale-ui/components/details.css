@@ -1,0 +1,5 @@
+.whale-details { min-width: 0; border-block-start: 1px solid var(--whale-border); }
+.whale-details-summary { min-height: 36px; padding-block: 8px; color: var(--whale-fg-muted); font: 500 calc(1rem * 12 / 14)/calc(1rem * 20 / 14) var(--whale-font); cursor: pointer; overflow-wrap: anywhere; }
+.whale-details-summary:hover { color: var(--whale-fg); }
+.whale-details-summary:focus-visible { outline: 2px solid var(--whale-fg); outline-offset: 2px; border-radius: var(--whale-radius); }
+.whale-details-content { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding-block: 4px 12px; }

@@ -13,9 +13,11 @@ import { renderContextSnapshot, renderPrompt } from '@deepseek-ai/dsh-system-pro
 import * as HarnessDevContext from '../src/index.ts'
 
 const SOURCE_PROMPT = 'The runtime context names the DeepSeek Harness implementation checkout. The checkout location and current working directory are separate values and may differ; never infer the working directory from the checkout path. Use pwd to determine the current working directory. Use this checkout only to inspect or extend DSH itself.'
-const WEB_GUIDANCE = 'When the user refers to "this page", "this GUI", or "this app" without naming another target, they mean this GUI. '
+const WEB_GUIDANCE = 'References to the existing Harness page, GUI or app mean this host GUI. '
+  + 'Requests to create an interactive page, calculator, chart or other answer content refer to conversation output '
+  + 'unless the user explicitly asks to change the host application. '
   + 'The browser provides no implicit DOM, route, or screenshot context. '
-  + 'The client-plugin HMR receiver is active, but client-plugin changes reload without a refresh only while '
+  + 'For changes to the host application, the client-plugin HMR receiver is active, but client-plugin changes reload without a refresh only while '
   + '`pnpm run dev:web` is also running from this same checkout to rebuild their bundles; verify that watcher before promising automatic updates. '
   + 'Every other change — the apps/web shell and plain packages — requires rebuilding the affected Web artifacts and verifying this existing URL after a page refresh. '
   + 'Starting another server does not update this GUI. '

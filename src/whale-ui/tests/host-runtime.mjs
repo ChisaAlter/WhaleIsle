@@ -26,6 +26,14 @@ test('built validator retains complete programs and emits durable presentation m
   assert.equal((await tool.execute({ program: 'root = Col([Plot({series:[{expr:"sin(x)"}],xMin:-6,xMax:6})])' })).version, 1);
 });
 
+test('documented complete page patterns run through the built tool validator', async () => {
+  const guideModule = readFileSync(new URL('../../../vendor/deepseek-harness/packages/client/ui-chat/src/openui-guide.ts', import.meta.url), 'utf8');
+  const guide = JSON.parse(guideModule.slice(guideModule.indexOf(' = ') + 3).trim());
+  const examples = guide.split('## Examples')[1].split('## Important Rules')[0].match(/^root = .*\n(?:[^\n]+\n?)*/gm) ?? [];
+  assert.ok(examples.length >= 4);
+  for (const program of examples) assert.equal((await tool.execute({ program: program.trim() })).program, program.trim());
+});
+
 test('built validator rejects incomplete final source, missing references, budgets and dropped specialized nodes', async () => {
   for (const program of ['root = Col([missing])', 'root = Col([Text("ready")', 'root = Col([Text(@Range(0, 1000000))])', 'root = Col([Mermaid({})])', 'root = Col([Input($n)])\n$n = @Sum([1,2])']) {
     await assert.rejects(tool.execute({ program }), /incomplete|invalid|budget|literal/i, program);

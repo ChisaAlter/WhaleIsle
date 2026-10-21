@@ -1,3 +1,5 @@
+@import "./details.css";
+
 /* First-party controls mirror the desktop's typography, geometry and semantic roles. */
 .whale-col, .whale-form { display: flex; flex-direction: column; min-width: 0; gap: 16px; }
 .whale-row { display: flex; min-width: 0; }
@@ -115,10 +117,12 @@ textarea.whale-input { height: auto; min-height: 80px; resize: vertical; padding
 .whale-image { width: 100%; position: relative; overflow: hidden; background: var(--whale-surface); min-width: 0; }
 .whale-image img { width: 100%; height: 100%; display: block; }
 .whale-image-status { display: flex; align-items: center; justify-content: center; flex-direction: column; height: 100%; gap: 8px; padding: 16px; color: var(--whale-fg-muted); text-align: center; }
-.whale-table-scroll { max-width: 100%; overflow: auto; border: 1px solid var(--whale-border); border-radius: var(--whale-radius-surface); }
-.whale-table { width: 100%; border-collapse: collapse; line-height: calc(1rem * 22 / 14); font-size: 1rem; text-align: start; font-variant-numeric: tabular-nums; }
-.whale-table th { background: var(--whale-surface); font-weight: 500; font-size: calc(1rem * 12 / 14); line-height: calc(1rem * 18 / 14); white-space: nowrap; color: var(--whale-fg-muted); }
+.whale-table-scroll { min-width: 0; max-width: 100%; overflow: auto; overscroll-behavior-inline: contain; border: 1px solid var(--whale-border); border-radius: var(--whale-radius-surface); }
+.whale-table { width: 100%; border-collapse: collapse; line-height: calc(1rem * 22 / 14); font-size: 1rem; text-align: start; font-variant-numeric: tabular-nums; overflow-wrap: normal; }
+.whale-table th { background: var(--whale-surface); font-weight: 500; font-size: calc(1rem * 12 / 14); line-height: calc(1rem * 18 / 14); color: var(--whale-fg-muted); }
 .whale-table th, .whale-table td { padding: 12px 16px; text-align: start; vertical-align: middle; border-bottom: 1px solid var(--whale-border); }
+.whale-table-cell { min-inline-size: 4em; max-inline-size: 24em; white-space: normal; overflow-wrap: anywhere; word-break: normal; }
+.whale-table-cell[data-short=true] { white-space: nowrap; overflow-wrap: normal; }
 .whale-table tr:last-child td { border-bottom: 0; }
 .whale-table td .whale-button { white-space: nowrap; }
 .whale-youtube { border: 0; border-radius: var(--whale-radius-surface); width: 100%; aspect-ratio: 16 / 9; background: var(--whale-surface); }
