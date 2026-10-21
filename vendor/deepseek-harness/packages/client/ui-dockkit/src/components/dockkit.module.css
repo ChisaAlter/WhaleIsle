@@ -843,8 +843,8 @@
 /* File titles share the Browser preview's filename and control row. */
 .float:has([data-file-preview], [data-textpreview-state]) .floatHeader {
   box-sizing: border-box;
-  height: 38px;
-  padding: 10px 6px 0 16px;
+  height: 48px;
+  padding: 10px 10px 10px 16px;
 }
 
 .float:has([data-file-preview], [data-textpreview-state]) .floatTitle {
@@ -878,7 +878,7 @@
 }
 
 .float:has([data-file-preview], [data-textpreview-state]) > .floatBody {
-  margin: 6px;
+  margin: 0 6px 6px;
   overflow: hidden;
   border-radius: calc(var(--dsw-radius-panel) - 6px);
   corner-shape: round;

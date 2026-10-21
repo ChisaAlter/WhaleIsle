@@ -209,7 +209,7 @@
   pointer-events: none;
 }
 
-/* The dockkit float header's metrics: a 28px row under a 10px top inset. */
+/* The 28px controls keep 10px clear above, beside and below the close button. */
 .miniPlayerChrome {
   position: relative;
   z-index: 2;
@@ -218,8 +218,8 @@
   justify-content: space-between;
   gap: 4px;
   box-sizing: border-box;
-  height: 38px;
-  padding: 10px 6px 0 16px;
+  height: 48px;
+  padding: 10px 10px 10px 16px;
   color: var(--dsw-alias-label-primary);
   cursor: grab;
   user-select: none;
@@ -254,7 +254,7 @@
   position: absolute;
   /* An inset card concentric with the frame; the native guest takes this
      radius from the computed style, since CSS cannot clip a native view. */
-  inset: 44px 6px 6px;
+  inset: 48px 6px 6px;
   overflow: hidden;
   border-radius: calc(var(--dsw-radius-panel) - 6px);
   corner-shape: round;
@@ -272,10 +272,11 @@
 .miniPlayerResizeHandle[data-resize-side='e'] { right: -8px; top: 16px; bottom: 16px; width: 8px; cursor: ew-resize; }
 .miniPlayerResizeHandle[data-resize-side='s'] { left: 16px; right: 16px; bottom: -8px; height: 8px; cursor: ns-resize; }
 .miniPlayerResizeHandle[data-resize-side='w'] { left: -8px; top: 16px; bottom: 16px; width: 8px; cursor: ew-resize; }
-.miniPlayerResizeHandle[data-resize-side='ne'] { right: -4px; top: -4px; width: 20px; height: 20px; cursor: nesw-resize; }
-.miniPlayerResizeHandle[data-resize-side='nw'] { left: -4px; top: -4px; width: 20px; height: 20px; cursor: nwse-resize; }
-.miniPlayerResizeHandle[data-resize-side='se'] { right: -4px; bottom: -4px; width: 20px; height: 20px; cursor: nwse-resize; }
-.miniPlayerResizeHandle[data-resize-side='sw'] { left: -4px; bottom: -4px; width: 20px; height: 20px; cursor: nesw-resize; }
+/* Corner targets stay clear of the inset title buttons. */
+.miniPlayerResizeHandle[data-resize-side='ne'] { right: -8px; top: -8px; width: 16px; height: 16px; cursor: nesw-resize; }
+.miniPlayerResizeHandle[data-resize-side='nw'] { left: -8px; top: -8px; width: 16px; height: 16px; cursor: nwse-resize; }
+.miniPlayerResizeHandle[data-resize-side='se'] { right: -8px; bottom: -8px; width: 16px; height: 16px; cursor: nwse-resize; }
+.miniPlayerResizeHandle[data-resize-side='sw'] { left: -8px; bottom: -8px; width: 16px; height: 16px; cursor: nesw-resize; }
 
 .miniPlayerPlaceholder {
   display: grid;
