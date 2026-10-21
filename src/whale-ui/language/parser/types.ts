@@ -153,6 +153,8 @@ export interface MaterializeCtx {
   currentStatementId?: string;
   /** Statement IDs not yet reached — delete as they're touched. Remaining = orphaned. */
   unreached?: Set<string>;
+  /** Shared runtime expressions per declaration, kept separate from component value lowering. */
+  expressions?: Record<"value" | "expr", Map<string, ASTNode>>;
 }
 
 /**

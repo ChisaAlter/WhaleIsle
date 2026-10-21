@@ -62,6 +62,80 @@ test('bounded AST depth and reference expansion fail with structured budget diag
   assert.ok(expanded.meta.errors.some(error => error.code === 'budget-exceeded'));
 });
 
+test('the eight-row analysis reference graph materializes once per expression without enlarging budgets', () => {
+  // Reduced from the emitted store comparison: four KPIs reuse the same range and row expressions.
+  const program = `root = Col([${Array.from({ length: 18 }, () => 'Text([combRev,combProfit,combMargin,combAOV])').join(',')}])
+$he = true
+$jn = true
+$fw = "第 1 周"
+$ew = "第 4 周"
+fwNum = $fw == "第 1 周" ? 1 : ($fw == "第 2 周" ? 2 : ($fw == "第 3 周" ? 3 : 4))
+ewNum = $ew == "第 1 周" ? 1 : ($ew == "第 2 周" ? 2 : ($ew == "第 3 周" ? 3 : 4))
+start = @Min([fwNum, ewNum])
+end = @Max([fwNum, ewNum])
+data = [{w:1,s:"H",r:12000,c:8400,o:200},{w:1,s:"J",r:10000,c:7600,o:160},{w:2,s:"H",r:13500,c:9200,o:225},{w:2,s:"J",r:11000,c:8000,o:175},{w:3,s:"H",r:12800,c:9000,o:205},{w:3,s:"J",r:15000,c:10200,o:230},{w:4,s:"H",r:16000,c:11000,o:250},{w:4,s:"J",r:14500,c:10000,o:220}]
+rangeRows = @Filter(@Filter(data,"w",">=",start),"w","<=",end)
+rowsH = @Filter(rangeRows,"s","==","H")
+rowsJ = @Filter(rangeRows,"s","==","J")
+revH = @Sum(rowsH.r)
+costH = @Sum(rowsH.c)
+profitH = revH - costH
+ordersH = @Sum(rowsH.o)
+revJ = @Sum(rowsJ.r)
+costJ = @Sum(rowsJ.c)
+profitJ = revJ - costJ
+ordersJ = @Sum(rowsJ.o)
+combRev = ($he ? revH : 0) + ($jn ? revJ : 0)
+combProfit = ($he ? profitH : 0) + ($jn ? profitJ : 0)
+combOrders = ($he ? ordersH : 0) + ($jn ? ordersJ : 0)
+combMargin = combRev > 0 ? combProfit / combRev * 100 : 0
+combAOV = combOrders > 0 ? combRev / combOrders : 0`;
+  const result = parser.parse(program);
+  assert.deepEqual(result.meta.errors, []);
+  assert.deepEqual(result.meta.orphaned, []);
+  const store = core.createStore(); store.initialize(result.stateDeclarations, {});
+  const evalContext = { library, store, ctx: { getState: store.get, resolveRef: () => null } };
+  const evaluated = core.evaluateRoot(result, evalContext);
+  assert.equal(evaluated.props.children.length, 18);
+  for (const child of evaluated.props.children) assert.deepEqual(child.props.value, [104800, 31400, 31400 / 104800 * 100, 104800 / 1665]);
+  store.set('$he', false); store.set('$fw', '第 3 周');
+  const changed = core.evaluateRoot(result, evalContext);
+  for (const child of changed.props.children) assert.deepEqual(child.props.value, [29500, 9300, 9300 / 29500 * 100, 29500 / 450]);
+});
+
+test('shared expression normalization preserves component value lowering, lexical Each scopes and cycles', () => {
+  const mixed = parser.parse('root = Col([Text($show ? panel : panel),panel])\npanel = Text("child")\n$show = true');
+  assert.deepEqual(mixed.meta.errors, []);
+  assert.equal(mixed.root.props.children[1].typeName, 'Text');
+  assert.equal(mixed.root.props.children[1].statementId, 'panel');
+  const scoped = parser.parse('root = Col([Text(item),Text(@Each([1,2],"item",item+shared)),Text(@Each([3,4],"item",item+shared))])\nitem = 100\nshared = $n+1\n$n = 4');
+  assert.deepEqual(scoped.meta.errors, []);
+  assert.deepEqual(scoped.meta.orphaned, []);
+  const store = core.createStore(); store.initialize(scoped.stateDeclarations, {});
+  const output = core.evaluateRoot(scoped, { library, store, ctx: { getState: store.get, resolveRef: () => null } });
+  assert.deepEqual(output.props.children.map(child => child.props.value), [100, [6,7], [8,9]]);
+  const circular = parser.parse('root = Col([Text(a),Text(a)])\na = b+1\nb = a+1');
+  assert.ok(circular.meta.errors.some(error => error.code === 'unresolved-reference'));
+  const stream = core.createStreamingParser(library.toJSONSchema(), 'Col');
+  stream.set('root = Col([Text(a),Text(a)])\na = $n+1\n$n = 1', true);
+  const replaced = stream.set('root = Col([Text(a),Text(a)])\na = $n+2\n$n = 1', true);
+  store.initialize(replaced.stateDeclarations, {});
+  assert.deepEqual(core.evaluateRoot(replaced, { library, store, ctx: { getState: store.get, resolveRef: () => null } }).props.children.map(child => child.props.value), [3,3]);
+});
+
+test('shared expressions keep random calls per consumer and do not evaluate inactive runtime branches', () => {
+  let draws = 0;
+  const Draw = core.defineFunction({ name: 'Random', description: 'Count random evaluations', params: z.object({}), returns: z.number(), fn: () => ++draws });
+  const localLibrary = core.createLibrary({ root: 'Col', components: [Col, Text], functions: [Draw] });
+  const result = core.createParser(localLibrary.toJSONSchema(), 'Col').parse('root = Col([Text(draw),Text(draw),Text($active?draw:0)])\ndraw = @Random()\n$active = false');
+  assert.deepEqual(result.meta.errors, []);
+  const store = core.createStore(); store.initialize(result.stateDeclarations, {});
+  const functions = { Random: { ...localLibrary.toJSONSchema().functions.Random, fn: Draw.fn } };
+  const evaluated = core.evaluateRoot(result, { library: localLibrary, store, ctx: { getState: store.get, resolveRef: () => null, functions } });
+  assert.deepEqual(evaluated.props.children.map(child => child.props.value), [1,2,0]);
+  assert.equal(draws, 2);
+});
+
 test('nested runtime collection evaluation shares a bounded step budget', () => {
   const ast = core.parseExpression(core.tokenize('@Each($items,"x",@Each($items,"y",x+y))'));
   assert.throws(() => core.evaluate(ast, { getState: () => Array.from({ length: 200 }, (_, i) => i), resolveRef: () => null }), error => error.code === 'budget-exceeded' && error.phase === 'evaluation');

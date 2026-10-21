@@ -114,6 +114,29 @@ test('ordered steps read latest state, await host acknowledgements, and stop on 
   await failed.close();
 });
 
+test('shared declaration expressions read fresh state after ACK and capture separate Each items', async () => {
+  const store = createStore(), observed = [];
+  let release;
+  const acknowledgement = new Promise(resolve => { release = resolve; });
+  const mounted = await mount('root = Col([Probe(next),Probe(next),Button("Go",Action([@Set($n,next),@Copy(next+""),@Set($n,next),@ToAssistant(next+"")])),Col(@Each([{id:"a",n:2},{id:"b",n:5}],"item",Button(item.id,@Set($n,item.n+next))))])\nnext = $n+1\n$n = 1', {
+    store, onAction: async event => { observed.push(event); if (event.type === 'Copy') await acknowledgement; return { ok: true }; },
+  });
+  try {
+    assert.deepEqual([...mounted.element.querySelectorAll('output')].map(node => node.textContent), ['2','2']);
+    await click(mounted.element.querySelector('[data-action="Go"]'));
+    assert.equal(store.get('$n'), 2);
+    assert.equal(observed[0].params.text, '3');
+    await act(async () => release());
+    assert.equal(store.get('$n'), 3);
+    assert.equal(observed[1].humanFriendlyMessage, '4');
+    await click(mounted.element.querySelector('[data-action="a"]'));
+    assert.equal(store.get('$n'), 6);
+    await click(mounted.element.querySelector('[data-action="b"]'));
+    assert.equal(store.get('$n'), 12);
+    assert.deepEqual(mounted.errors.at(-1), []);
+  } finally { await mounted.close(); }
+});
+
 test('pending old actions stop after source replacement or unmount and survive ordinary value changes', async () => {
   const source = 'root = Col([Button("Old",Action([@Copy("a"),@Set($n,$n+1),@ToAssistant("after")]))])\n$n = 1';
   for (const change of ['source', 'unmount', 'store']) {
