@@ -74,7 +74,7 @@ describe('desktop fork: typing keeps the reader position', () => {
       reading = top
       return settled
     }, { timeout: 5_000, interval: 300 }).toBe(true)
-    const max = await page.evaluate(selector => {
+    const max = await page.evaluate((selector) => {
       const el = document.querySelector(selector)!
       return el.scrollHeight - el.clientHeight
     }, SCROLLER)
@@ -84,6 +84,20 @@ describe('desktop fork: typing keeps the reader position', () => {
     await page.keyboard.type('hello')
     await page.waitForTimeout(300)
     expect(await transcriptTop(page), 'one typed line').toBe(reading)
+
+    await page.keyboard.press('Backspace')
+    await expect.poll(() => page.locator('[data-composer-input]').first().innerText()).toBe('hell')
+    await page.waitForTimeout(300)
+    expect(await transcriptTop(page), 'Backspace in one line').toBe(reading)
+
+    for (let offset = 0; offset < 4; offset++) await page.keyboard.press('ArrowLeft')
+    await page.waitForTimeout(300)
+    await page.keyboard.press('Delete')
+    await expect.poll(() => page.locator('[data-composer-input]').first().innerText()).toBe('ell')
+    await page.waitForTimeout(300)
+    expect(await transcriptTop(page), 'Delete in one line').toBe(reading)
+    for (let offset = 0; offset < 3; offset++) await page.keyboard.press('ArrowRight')
+    await page.waitForTimeout(300)
 
     for (let line = 0; line < 3; line++) {
       await page.keyboard.press('Shift+Enter')
@@ -105,6 +119,39 @@ describe('desktop fork: typing keeps the reader position', () => {
       return { inside: range.top >= box.top - 1 && range.bottom <= box.bottom + 1, scrolled: scrollport.scrollTop > 0 }
     })
     expect(caret, 'caret stays visible in the draft scrollport').toEqual({ inside: true, scrolled: true })
+
+    await page.keyboard.press('Backspace')
+    await expect.poll(() => page.locator('[data-composer-input]').first().innerText()).toBe([
+      'ell', 'line 0', 'line 1', 'line 2',
+      ...Array.from({ length: 29 }, (_, line) => `overflow ${line}`), 'overflow 2',
+    ].join('\n'))
+    await page.waitForTimeout(300)
+    expect(await transcriptTop(page), 'Backspace inside an overflowing draft').toBe(reading)
+
+    await page.keyboard.press('Home')
+    await page.waitForTimeout(300)
+    await page.keyboard.press('Backspace')
+    await expect.poll(() => page.locator('[data-composer-input]').first().innerText()).toBe([
+      'ell', 'line 0', 'line 1', 'line 2',
+      ...Array.from({ length: 28 }, (_, line) => `overflow ${line}`), 'overflow 28overflow 2',
+    ].join('\n'))
+    await page.waitForTimeout(300)
+    expect(await transcriptTop(page), 'Backspace removed a line break').toBe(reading)
+
+    const heightBefore = await page.locator('[data-input-scroll]').first().evaluate(el => el.clientHeight)
+    await page.locator('[data-composer-input]').first().evaluate((root) => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      const text = walker.nextNode()!
+      let tail = text
+      for (let next = walker.nextNode(); next !== null; next = walker.nextNode()) tail = next
+      getSelection()!.setBaseAndExtent(text, 3, tail, tail.textContent!.length)
+    })
+    await page.waitForTimeout(300)
+    await page.keyboard.press('Backspace')
+    await expect.poll(() => page.locator('[data-composer-input]').first().innerText()).toBe('ell')
+    await page.waitForTimeout(300)
+    expect(await page.locator('[data-input-scroll]').first().evaluate(el => el.clientHeight)).toBeLessThan(heightBefore)
+    expect(await transcriptTop(page), 'deleting lines shrank the draft below its cap').toBe(reading)
     expect(tripwire.pageErrors).toEqual([])
   }, 120_000)
 })
