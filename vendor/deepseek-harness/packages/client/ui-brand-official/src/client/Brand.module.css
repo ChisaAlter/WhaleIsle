@@ -20,6 +20,15 @@
   object-fit: contain;
 }
 
+.heroMark {
+  display: block;
+  flex: none;
+  background-color: currentColor;
+  mask: url('/whale-isle-head.png') center / contain no-repeat;
+  mask-mode: alpha;
+  forced-color-adjust: none;
+}
+
 .nameBlock {
   display: inline-flex;
   flex-direction: column;

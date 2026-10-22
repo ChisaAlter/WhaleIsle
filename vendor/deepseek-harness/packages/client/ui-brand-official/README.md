@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package fills the sidebar brand slots in an `official` client build with the transparent whale-girl head, a wordmark on one line that follows the interface language: the matching name leads in larger type and the other name follows in smaller type, and “BASED ON DEEPSEEK HARNESS” beneath on desktop and Web. The leading name’s 屿 glyph (Chinese) or ISLE word (English) uses brand blue; the head has no square background. Its mark occupant supplies the same head to the collapsed rail's upper-left expand button, which swaps to the panel icon on hover or keyboard focus; the expanded sidebar hides that duplicate mark. Other build profiles keep the shell's fish mark and local-build label, while the conversation hero always uses the animated fish. It has no runtime state and does not affect model requests.
+This package fills the sidebar brand slots in an `official` client build with the transparent whale-girl head, a wordmark on one line that follows the interface language: the matching name leads in larger type and the other name follows in smaller type, and “BASED ON DEEPSEEK HARNESS” beneath on desktop and Web. The leading name’s 屿 glyph (Chinese) or ISLE word (English) uses brand blue; the head has no square background. Its mark occupant supplies the same head to the collapsed rail's upper-left expand button, which swaps to the panel icon on hover or keyboard focus; the expanded sidebar hides that duplicate mark. Other build profiles keep the shell's fish mark and local-build label, while the official conversation hero uses a monochrome mask of the same head, inheriting the headline's theme color; other profiles keep the animated fish. It has no runtime state and does not affect model requests.
 
 ## Table of Contents
 
@@ -29,11 +29,11 @@ Mount this plugin in the browser roster of a Whale Isle deployment, then build t
 
 ### Choosing the profile
 
-`DSH_CLIENT_BUILD_PROFILE` selects whether these brand slots are occupied. In an `official` build, both desktop and Web show Whale Isle. Any other build profile leaves the shell fallbacks — the fish mark and local-build label — in place. The conversation hero shows the animated hero fish from `dsh-client-ui-conversation` regardless of profile. The plugin still loads and validates in both cases; only registration is profile-gated.
+`DSH_CLIENT_BUILD_PROFILE` selects whether these brand slots are occupied. In an `official` build, both desktop and Web show Whale Isle. Any other build profile leaves the shell fallbacks — the fish mark and local-build label — in place. The official conversation hero uses the same head as an alpha mask filled with the headline's primary ink, dark in light themes and light in dark themes. Other profiles keep the animated hero fish from `dsh-client-ui-conversation`. The plugin still loads and validates in both cases; only registration is profile-gated.
 
 ### Replacing the brand
 
-A deployment with its own identity leaves this package out and composes another package that occupies the sidebar slots — and the hero slot, which this package leaves on its fallback. Occupying a slot is the only composition route; there is no brand configuration surface here.
+A deployment with its own identity leaves this package out and composes another package that occupies the sidebar and hero slots. Occupying a slot is the only composition route; there is no brand configuration surface here.
 
 -----
 
@@ -43,7 +43,7 @@ A deployment with its own identity leaves this package out and composes another 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The two occupants install as one declaration-aware registration set: nested `ctx.slots.inject()` calls wait on the sidebar declaration, so the set works whether this row activates before or after the declarer, withdraws both occupants when the declaration collapses, and leaves no partial brand mix during HMR. The browser half is [`src/client/index.ts`](src/client/index.ts); the node half is an empty Loader seat. The browser title is a build-environment concern (`DSH_CLIENT_TITLE`), outside the slot system.
+The two sidebar occupants install as one declaration-aware registration set: nested `ctx.slots.inject()` calls wait on the sidebar declaration and withdraw both occupants when it collapses. The hero mark registers independently through its own `ctx.slots.inject()` and follows the conversation declaration's lifetime. Both registration sets support late declaration and HMR. The browser half is [`src/client/index.ts`](src/client/index.ts); the node half is an empty Loader seat. The browser title is a build-environment concern (`DSH_CLIENT_TITLE`), outside the slot system.
 
 </details>
 

@@ -5,6 +5,7 @@ import { cleanup, render } from '@testing-library/react'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { apply, inject } from '../src/client/index.ts'
 import { OfficialBrandMark, OfficialBrandName } from '../src/client/Brand.tsx'
+import { OfficialHeroBrandMark } from '../src/client/HeroBrandMark.tsx'
 import { apply as hostApply } from '../src/index.ts'
 
 afterEach(() => {
@@ -16,9 +17,8 @@ afterEach(() => {
 const HOLES = [
   'sidebar.brand.mark',
   'sidebar.brand.name',
+  'conversation.hero.brand.mark',
 ] as const
-
-const HERO_HOLE = 'conversation.hero.brand.mark'
 
 async function bench(declare = true) {
   const ctx = new Context()
@@ -26,7 +26,7 @@ async function bench(declare = true) {
   const slots = ctx.get('slots') as SlotRegistry
   const declareHoles = () => slots.register({
     name: 'root',
-    children: Object.fromEntries([...HOLES, HERO_HOLE].map(name => [name, { kind: 'single', scope: 'root' }])),
+    children: Object.fromEntries(HOLES.map(name => [name, { kind: 'single', scope: 'root' }])),
   } as never, () => null)
   const disposeHoles = declare ? declareHoles() : undefined
   return { ctx, slots, declareHoles, disposeHoles }
@@ -72,11 +72,36 @@ describe('official browser-brand plugin', () => {
     for (const hole of HOLES) expect(after.slots.entries(hole)).toHaveLength(1)
   })
 
-  it('leaves the conversation hero on its declaring fallback even in official builds', async () => {
+  it('fills the hero independently of the sidebar declaration', async () => {
     vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'official')
-    const subject = await bench()
-    await subject.ctx.plugin({ inject: [...inject], apply }).await()
-    expect(subject.slots.entries(HERO_HOLE)).toHaveLength(0)
+    const subject = await bench(false)
+    const fiber = subject.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const declareHero = () => subject.slots.register({
+      name: 'root',
+      children: { 'conversation.hero.brand.mark': { kind: 'single', scope: 'root' } },
+    } as never, () => null)
+    const disposeHero = declareHero()
+    await Promise.resolve()
+    expect(subject.slots.entries('conversation.hero.brand.mark')).toHaveLength(1)
+    expect(subject.slots.entries('sidebar.brand.mark')).toHaveLength(0)
+    disposeHero()
+    expect(subject.slots.entries('conversation.hero.brand.mark')).toHaveLength(0)
+    declareHero()
+    await Promise.resolve()
+    expect(subject.slots.entries('conversation.hero.brand.mark')).toHaveLength(1)
+    await fiber.dispose()
+    expect(subject.slots.entries('conversation.hero.brand.mark')).toHaveLength(0)
+  })
+
+  it('renders a decorative hero mark at the requested size with the host theme class', () => {
+    const view = render(<OfficialHeroBrandMark size={34} className="hero-theme-ink" />)
+    const mark = view.container.querySelector('[data-whale-isle-brand="hero-mark"]')
+    expect(mark?.getAttribute('aria-hidden')).toBe('true')
+    expect(mark?.classList.contains('hero-theme-ink')).toBe(true)
+    expect(mark?.getAttribute('style')).toContain('width: 34px; height: 34px;')
+    view.rerender(<OfficialHeroBrandMark size={24} />)
+    expect(mark?.getAttribute('style')).toContain('width: 24px; height: 24px;')
   })
 
   it('renders Whale Isle in Web without a desktop preload', () => {

@@ -25,6 +25,8 @@ UI 改动先读本文。工程细则（CSS Modules、token 分层、动效 recip
 
 应用对外称 Whale Isle；侧栏保留「鲸屿 / WHALE ISLE」字标与 DeepSeek Harness 来源说明。桌面与 Web 侧栏左侧使用透明头像 [`assets/whale-head.png`](../assets/whale-head.png)，字标下方是「BASED ON DEEPSEEK HARNESS」。字标随界面语言交换顺序与主副字级：中文模式「鲸屿」在前为大字、「WHALE ISLE」在后为小字，仅「屿」使用品牌蓝；英文模式「WHALE ISLE」在前为大字、「鲸屿」在后为小字，仅「ISLE」使用品牌蓝。头像不带方形底板；收起时左上角的展开按钮保留头像，悬停或键盘聚焦时换显面板图标，点击仍展开侧栏。明暗色只从主题 token 取得，不绘制独立光晕。应用图标沿用白色圆角方形底板（半径为边长 22%），头像居中并四边各内缩 4%；安装器读取相同的生成图标 `assets/icon.png`。窗口、任务栏、托盘和安装器共享此源；`assets/icon.svg` 包装此图，`npm run icon` 生成 `assets/icon.png` 与多尺寸 `assets/icon.ico`。Windows 窗口首次显示前显式声明既有 AppUserModelID、同源图标、成对的重启命令与产品名；源码使用真实 ICO 与绝对项目入口，安装版使用 EXE 内嵌图标及该 EXE 重启命令。原始 Electron 源码运行保留应用内提示，禁止系统通知注册同身份的 Electron 快捷方式。启动时将旧通知自动生成的同身份 Electron 开始菜单条目原字节移到唯一的 `Electron.lnk.backup` 可恢复备份，备份不保留 `.lnk` 扩展名：必须同时匹配固定文件名、应用 ID、Electron 目标、空参数及默认图标；不改用户固定项或其它应用条目。移动成功后仅异步通知 Shell 旧开始菜单入口已移除，使用 SHCNE_DELETE（旧路径，NULL）与 SHCNF_PATHW | SHCNF_FLUSH，不向 Shell 登记备份为新启动入口；原生回调最多等待 500ms，通知失败或超时保留备份并继续启动，不清全局缓存或重启 Explorer。FLUSH 只等待事件投递，不证明任务栏像素正确；首次启动须另行验收。宠物立绘生成器不再拥有应用图标。
 
+新会话首屏使用鲸鱼娘品牌头像的单色标记，与标题共用主文字色：浅色为近黑，深色为近白。中文标题为「探索未至之鲸」，徽标为「大肥鱼版」；Codex 皮肤继续隐藏标记与徽标。
+
 关闭遮罩沿用同一主题、文案和动效。等待首次绘制属于尽力显示：主进程最多等待 500ms，隐藏页面不产帧或 renderer 没有响应时继续正常关停，不让视觉反馈阻断已经获准的退出。
 
 设置面板使用 `--dsw-alias-bg-layer-2`，随玻璃透明度设置调整填充，并复用 `--dsw-menu-backdrop-filter` 模糊底层内容。菜单与对话框同样响应玻璃透明度；透明主题仍遵循壁纸门控与滑块禁用契约。
