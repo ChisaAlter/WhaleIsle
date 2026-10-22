@@ -25,6 +25,7 @@ import {
 } from './branches.ts'
 import { CreateBranchDialog } from './CreateBranchDialog.tsx'
 import css from './BranchMenu.module.css'
+import labelCss from './GitLabel.module.css'
 
 /** Branch methods the picker needs from the desktop shell. */
 export interface BranchMenuOps {
@@ -47,7 +48,7 @@ export interface BranchMenuProps extends BranchMenuOps {
   onError: (message: string, title: string) => void
   /** True while a stacked Git action holds the titlebar. */
   disabled?: boolean
-  /** Hide the ref name; keep the branch icon and chevron. */
+  /** Use tighter padding while retaining the revealable ref name. */
   compact?: boolean
 }
 
@@ -208,16 +209,22 @@ export function BranchMenu({ cwd, currentRef, t, onChanged, onError, disabled = 
         anchor={(
           <button
             type="button"
-            className={clsx(css.trigger, compact && css.triggerCompact)}
+            className={clsx(css.trigger, labelCss.part, compact && css.triggerCompact)}
             aria-label={t('branch.open')}
+            title={label}
+            data-git-part="branch"
             aria-expanded={open}
             disabled={disabled || busy || cwd === undefined}
             aria-busy={busy || listing}
             onClick={() => { setOpen(next => !next) }}
           >
             {busy || listing ? <StateDot state="ongoing" size={14} /> : <IconBranchOutline16 size={14} />}
-            {compact ? null : <FlipText text={label} className={css.name} />}
-            <IconChevronDownOutline14 size={14} />
+            <span className={labelCss.label}>
+              <span className={labelCss.clip}>
+                <span className={labelCss.text}><FlipText text={label} className={css.name} /></span>
+              </span>
+            </span>
+            <IconChevronDownOutline14 size={14} className={css.arrow} />
           </button>
         )}
       />

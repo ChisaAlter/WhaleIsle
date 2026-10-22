@@ -3,7 +3,7 @@
 /**
  * Titlebar Menu open detection shared by packaged/source smoke.
  * React 18 serializes aria-expanded={true} as "" ; React 19 uses "true".
- * Git actions has no aria-expanded — the portaled list is role="menu".
+ * Portaled Git lists also expose role="menu" while they are open.
  */
 function isAriaExpanded(value) {
   if (value == null) {

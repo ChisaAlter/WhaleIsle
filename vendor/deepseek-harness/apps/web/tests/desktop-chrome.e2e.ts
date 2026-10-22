@@ -127,6 +127,59 @@ describe('web e2e: titlebar cluster and right sidebar guide', () => {
     expect(tripwire.pageErrors, tripwire.pageErrors.join('\n')).toEqual([])
   })
 
+  it('reveals Git labels on hover and keeps pointer targets stable between segments', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-desktop-chrome-git-reveal'))
+    const toolbar = page.locator('[data-git-toolbar]')
+    const branch = toolbar.getByRole('button', { name: 'Switch branch' })
+    const action = toolbar.getByRole('button', { name: 'Git actions' })
+    const branchLabel = branch.locator('[class*="_label"]').first()
+    const actionLabel = toolbar.locator('[data-git-part="action"] [class*="_label"]').first()
+    const opacity = (label: typeof branchLabel) => label.evaluate(element => getComputedStyle(element).opacity)
+    for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+      await page.emulateMedia({ reducedMotion })
+      await page.mouse.click(800, 400)
+      await expect.poll(() => opacity(branchLabel)).toBe('0')
+      await expect.poll(() => opacity(actionLabel)).toBe('0')
+      expect(await branchLabel.evaluate(element => element.getBoundingClientRect().width)).toBe(0)
+      const actionBox = await action.boundingBox()
+      if (actionBox === null) throw new Error('Git action trigger missing')
+      await page.mouse.move(actionBox.x + actionBox.width / 2, actionBox.y + actionBox.height / 2)
+      await expect.poll(() => opacity(actionLabel)).toBe('1')
+      expect(await opacity(branchLabel)).toBe('0')
+      const branchBox = await branch.boundingBox()
+      if (branchBox === null) throw new Error('Branch trigger missing')
+      const point = { x: branchBox.x + 2, y: branchBox.y + branchBox.height / 2 }
+      await page.mouse.move(point.x, point.y)
+      const stable = await page.evaluate(async ({ x, y }) => {
+        const results: boolean[] = []
+        for (let frame = 0; frame < 20; frame += 1) {
+          await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+          results.push(document.elementFromPoint(x, y)?.closest('[data-git-part]')?.getAttribute('data-git-part') === 'branch')
+        }
+        return results.every(Boolean)
+      }, point)
+      expect(stable).toBe(true)
+      await expect.poll(() => opacity(branchLabel)).toBe('1')
+      expect(await opacity(actionLabel)).toBe('1')
+      await branch.click()
+      await page.getByRole('searchbox', { name: 'Search branches…' }).hover()
+      await expect.poll(() => opacity(branchLabel)).toBe('1')
+      await page.keyboard.press('Escape')
+      await page.mouse.move(800, 400)
+      await expect.poll(() => opacity(branchLabel)).toBe('0')
+      await expect.poll(() => opacity(actionLabel)).toBe('0')
+      await page.keyboard.press('Tab')
+      await expect.poll(() => opacity(actionLabel)).toBe('1')
+      await action.click()
+      await page.getByRole('menuitem', { name: 'Commit', exact: true }).hover({ force: true })
+      await expect.poll(() => opacity(actionLabel)).toBe('1')
+      await page.keyboard.press('Escape')
+      await page.mouse.click(800, 400)
+      await expect.poll(() => opacity(actionLabel)).toBe('0')
+    }
+    await page.emulateMedia({ reducedMotion: null })
+  })
+
   it('keeps disabled Commit legible in light and dark titlebars', async () => {
     const git = page.getByRole('button', { name: 'Commit', exact: true })
     try {
