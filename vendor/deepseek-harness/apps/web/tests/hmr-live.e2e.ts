@@ -112,8 +112,8 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', {
   // both the awaited text and the HMR-edited source needle target the zh
   // hero entry (line ~87), not the en one. Do not pin en-US via newEnglishPage:
   // that locale would render the English hero and miss this needle.
-  const oldText = '探索未至之境'
-  const sourceNeedle = "'hero.headline': '探索未至之境'"
+  const oldText = '探索未至之鲸'
+  const sourceNeedle = "'hero.headline': '探索未至之鲸'"
   const newText = `HMR UPDATED ${'x'.repeat(80)}`
   const updatedSource = originalSource.toString().replace(sourceNeedle, `'hero.headline': '${newText}'`)
   if (updatedSource === originalSource.toString()) throw new Error(`HMR source lacks ${JSON.stringify(sourceNeedle)}`)

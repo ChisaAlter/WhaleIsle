@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包在 `official` profile 构建中填充侧栏品牌槽位，让桌面与 Web 都显示透明鲸鱼娘头像、首行随界面语言排列字标：中文模式「鲸屿」大字在前、「WHALE ISLE」小字在后；英文模式交换顺序与字级及下一行「BASED ON DEEPSEEK HARNESS」。中文模式仅「屿」使用品牌蓝，英文模式仅「ISLE」使用品牌蓝；头像不带方形底板。标志槽位提供同一头像供收起态左上角展开按钮显示，悬停或键盘聚焦时切换为面板图标；展开态不重复显示标志槽位头像。其他构建 profile 保留外壳的鱼形标志与本地构建标签，会话首屏始终使用动画鱼。本包不保留运行时状态，也不影响模型请求。
+本包在 `official` profile 构建中填充侧栏品牌槽位，让桌面与 Web 都显示透明鲸鱼娘头像、首行随界面语言排列字标：中文模式「鲸屿」大字在前、「WHALE ISLE」小字在后；英文模式交换顺序与字级及下一行「BASED ON DEEPSEEK HARNESS」。中文模式仅「屿」使用品牌蓝，英文模式仅「ISLE」使用品牌蓝；头像不带方形底板。标志槽位提供同一头像供收起态左上角展开按钮显示，悬停或键盘聚焦时切换为面板图标；展开态不重复显示标志槽位头像。其他构建 profile 保留外壳的鱼形标志与本地构建标签，官方构建的会话首屏使用同一头像的单色蒙版，跟随标题的主题文字色；其他构建保留动画鱼。本包不保留运行时状态，也不影响模型请求。
 
 ## 目录
 
@@ -29,11 +29,11 @@ kind: "package-reference"
 
 ### 选择 profile
 
-`DSH_CLIENT_BUILD_PROFILE` 决定是否填充这些品牌槽位。`official` 构建让桌面与 Web 都显示鲸屿品牌。其他取值让外壳回退——鱼形标志与本地构建标签——保持原样。会话首屏无论 profile 如何都显示来自 `dsh-client-ui-conversation` 的动画首屏鱼。两种情况下插件都会照常加载并通过校验；只有注册受 profile 门控。
+`DSH_CLIENT_BUILD_PROFILE` 决定是否填充这些品牌槽位。`official` 构建让桌面与 Web 都显示鲸屿品牌。其他取值让外壳回退——鱼形标志与本地构建标签——保持原样。官方构建的会话首屏将同一头像用作 alpha 蒙版，以标题主文字色填充，浅色主题为深色、深色主题为浅色；其他 profile 保留 `dsh-client-ui-conversation` 的动画首屏鱼。两种情况下插件都会照常加载并通过校验；只有注册受 profile 门控。
 
 ### 替换品牌
 
-自有身份的部署不组合本包，而是组合另一个占据侧栏 slot——以及本包留给回退的首屏 slot——的包。占据 slot 是唯一的组合路径；这里不存在任何品牌配置面。
+自有身份的部署不组合本包，而是组合另一个占据侧栏与首屏 slot 的包。占据 slot 是唯一的组合路径；这里不存在任何品牌配置面。
 
 -----
 
@@ -43,7 +43,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-两个填充作为一组声明感知的注册安装：嵌套的 `ctx.slots.inject()` 调用等待侧栏声明，因此无论本行在声明者之前还是之后激活，这组注册都能工作；声明消失时两个填充一并撤回，HMR 期间也不会留下残缺的品牌混合。浏览器半部是 [`src/client/index.ts`](src/client/index.ts)；node 半部是一个空 Loader 座位。浏览器标题是构建环境的事（`DSH_CLIENT_TITLE`），不在 slot 系统之内。
+两个侧栏填充作为一组声明感知的注册安装：嵌套的 `ctx.slots.inject()` 调用等待侧栏声明，声明消失时一并撤回。首屏标记通过独立的 `ctx.slots.inject()` 跟随会话声明的生命周期。两组注册都支持延迟声明与 HMR。浏览器半部是 [`src/client/index.ts`](src/client/index.ts)；node 半部是一个空 Loader 座位。浏览器标题是构建环境的事（`DSH_CLIENT_TITLE`），不在 slot 系统之内。
 
 </details>
 
