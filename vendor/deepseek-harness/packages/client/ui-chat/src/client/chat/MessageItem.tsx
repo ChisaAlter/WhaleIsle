@@ -198,6 +198,7 @@ function UserStyleBubble({
   return (
     <div
       className={css.userRow}
+      data-dsh-message-role="user"
       data-pending-steering={pending || undefined}
       data-submission-echo={echo || undefined}
       data-actions-reveal={reveal}

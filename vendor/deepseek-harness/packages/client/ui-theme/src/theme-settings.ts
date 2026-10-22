@@ -68,6 +68,9 @@ export const THEME_SIDEBAR_MASK_FIELD = 'sidebarMaskHidden'
 /** Field carrying the wallpaper data URL. */
 export const THEME_WALLPAPER_IMAGE_FIELD = 'wallpaperImage'
 
+/** Field toggling a family-provided wallpaper while the user has no image. */
+export const THEME_SKIN_WALLPAPER_FIELD = 'skinWallpaperEnabled'
+
 /** Field carrying wallpaper frosted-glass blur. */
 export const THEME_WALLPAPER_BLUR_FIELD = 'wallpaperBlur'
 
@@ -313,6 +316,8 @@ export interface ThemeSettings {
   sidebarMaskHidden: boolean
   /** Wallpaper data URL; empty means no wallpaper. */
   wallpaperImage: string
+  /** Whether a family-provided wallpaper may paint while no user image is set. */
+  skinWallpaperEnabled: boolean
   /** Frosted-glass blur on the wallpaper, 0–100. */
   wallpaperBlur: number
   /** Pixelation on the wallpaper, 0–100. */
@@ -396,6 +401,7 @@ export const DEFAULT_THEME_SETTINGS: ThemeSettings = {
   transparentTheme: false,
   sidebarMaskHidden: true,
   wallpaperImage: '',
+  skinWallpaperEnabled: true,
   wallpaperBlur: DEFAULT_WALLPAPER_EFFECT,
   wallpaperPixelate: DEFAULT_WALLPAPER_EFFECT,
   wallpaperBingEnabled: false,
@@ -460,6 +466,7 @@ export const ThemeSettingsFields = {
   [THEME_TRANSPARENT_FIELD]: z.boolean().default(false),
   [THEME_SIDEBAR_MASK_FIELD]: z.boolean().default(true),
   [THEME_WALLPAPER_IMAGE_FIELD]: z.string().default(''),
+  [THEME_SKIN_WALLPAPER_FIELD]: z.boolean().default(true),
   [THEME_WALLPAPER_BLUR_FIELD]: z.number().min(MIN_WALLPAPER_EFFECT).max(MAX_WALLPAPER_EFFECT)
     .default(DEFAULT_WALLPAPER_EFFECT),
   [THEME_WALLPAPER_PIXELATE_FIELD]: z.number().min(MIN_WALLPAPER_EFFECT).max(MAX_WALLPAPER_EFFECT)

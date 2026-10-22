@@ -225,6 +225,15 @@ Project 的资料、只读过程及确认弹窗沿用 `Modal`，内容面取 `--
 - **无法 import 主题包的壳层**（远程登录页、手机 Web SPA、Android Compose）：复用同一套语义色和几何。手机 SPA 把 `--dsw-alias-*` 抄进 `mobile/web/tokens.css`；Android 抄进 `mobile/android` 的 Compose `DshTokens` / `Color` 表。都不挂官方 CSS Modules，也不把启动页 `--boot-*` 带过去。禁止再开 `--bg` / `--accent` 平行色板，禁止 Material 默认紫或动态取色覆盖语义表。Git 胶囊上的 Commit / Push / Pull 等 action 标签保持英文。
 - **桌面启动页**：整页海平线画布与独立 `--boot-*` 表，详见 [桌面启动页](#桌面启动页)。
 
+### 主题皮肤（skin）
+
+外观设置可为主题族附加族级 `skin`（`data-dsh-skin`）。皮肤只切换已批准的整机视觉语言，不新增组件库、不改交互和信息架构；默认皮肤仍完整遵守上文全部规则。皮肤的几何与材质可以覆写圆角、阴影、栏间距、输入条与卡片结构，但颜色仍只来自该家族的语义 token 表，功能 CSS 仍不得写明暗分支，结构规则只放在 `ui-theme/src/styles/skins.css`（后续按皮肤拆分时保持同目录）。功能包只暴露稳定的 `data-dsh-*` 钩子（`data-dsh-frame`、`data-dsh-sidebar`、`data-dsh-chat`、`data-dsh-composer`、`data-dsh-artifact`、`data-dsh-header`、`data-dsh-message-role`、`data-dsh-tool` 等），不写皮肤判断。
+
+- **Codex**：平面桌面应用语言。左侧是浅灰导航列，右侧是一张白色内容面板，只在左上角做 12px 圆角，两栏之间一条发丝线；没有壁纸、玻璃、悬浮卡片或外框留白。输入框是 18px 描边大卡片，用户消息右对齐浅灰块，助手为纯文本，内容列 760px，侧栏 13px/30–34px 行高。侧栏沿用 Codex 的浏览结构：`新对话` 行、`项目` 与 `最近` 两个可折叠分区、32px 行高与 10px 内边距，只在 Codex 皮肤下接管；切到 Claude 或默认皮肤时释放回产品侧栏。品牌行只显示 `Whale Isle` 文字与下拉标记，不显示头像；底部账号行保持产品原设计（登录后显示用户头像，未登录显示设置入口）。空态标题为 “What should we work on in Whale Isle?”，预览徽标隐藏。强调蓝只用于链接、选中态和状态，浅色 `#2563EB`、深色 `#338CFF`，表面是中性白/浅灰/深灰，不由 accent 混色；启动页不参与。
+- **Claude**：暖纸画布，贴边侧栏，正文与标题使用衬线（系统衬线回退，中文按目标稿回退宋体），用户消息右对齐暖块，输入框为 22px 描边卡片；不使用壁纸、玻璃或重阴影，强调色为陶土橙（浅色 `#C96442`、深色 `#D97757`）。
+
+皮肤变更先在本节登记目标与例外，再改代码；未登记的皮肤不得作为产品主题发布。
+
 ## 手机远程交互
 
 远程 Web 与 Android 原生聊天的已配对页面结构参照 Claude 移动端；连接前入口采用受控的鲸屿海平线画布。Android 的 Compose 聊天主路径暂复用不可见的同源 Web 客户端作加密传输，复杂工作页保留明确的过渡入口；颜色、字体栈与明暗仍只取同值语义 token 表，不引入第二套产品皮肤，桌面端不受影响。完整契约见 [design-language-mobile.md](design-language-mobile.md)；决策见[手机远程 Claude 式结构](decisions/implemented/product/2026-09-24-mobile-remote-claude-structure.md)。

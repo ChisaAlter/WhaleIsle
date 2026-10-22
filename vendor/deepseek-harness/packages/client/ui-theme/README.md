@@ -41,6 +41,10 @@ Three rows set the text font (interface and conversation text), the code font (c
 
 A composition can register a third-party theme id with alias-token overrides through `ctx.theme`; the override layer folds into the active snapshot's tokens in registration order. Removing one never overwrites the last durable built-in preference. Third-party theme ids remain an in-process extension and do not cross the built-in settings schema.
 
+### Presentation skins
+
+A built-in family may name a `skin` (`codex` or `claude`) and carry an optional wallpaper data URL. The resolved snapshot carries the active half's skin, the ui-layout presenter mirrors it to `html[data-dsh-skin]`, and the bootstrap payload carries each half's skin and canvas color so the first paint does not flash the default chrome. A family wallpaper paints only while the user has no image and the Appearance "Theme wallpaper" switch is on; the user's own wallpaper always wins. `src/styles/skins.css` owns the structural rules; feature components expose stable `data-dsh-*` hooks and never branch on a skin. Families without a skin keep the product default and publish no attribute.
+
 ### Pre-plugin palette
 
 When the host composition includes an HTTP server, the host half embeds the registered `ui-theme` settings, or schema defaults, into each index response. Head CSS selects the document canvas color scheme before any script runs, including a `prefers-color-scheme` query for the `system` preference. A body script then sets `body[data-ds-dark-theme]`, `--dsh-content-font-size`, `--dsh-code-font-size`, `--dsh-terminal-font-size`, and each non-empty `--dsh-font-family-<role>` list before the loading page and application scripts, so the first paint uses the selected palette and text and code sizes, and `ThemeRuntime` starts from the saved sizes and fonts instead of rendering the defaults first.
@@ -132,6 +136,8 @@ These limits define the theme extension surface and the color authority; they ar
 
 - **Third-party themes are an extension point, not a product** — registering one means overriding same-named alias variables; no validation exists that an override set is complete.
 - **The token sheets are the sole color authority** — values absent from the design system are deliberately not appended; the nearest semantic token wins, and design-owner-approved additions enter as a static step plus a semantic alias in the same change.
+- **The Codex family is a flat desktop layout** — light-gray navigation column plus one white content sheet with a rounded top-left corner; no family wallpaper, glass or floating cards. The sidebar browsing region is the vendored `ui-codex-sidebar` package (adapted from `ice-ai-lab/dsh-plugin-codex-ui`, MIT): New chat, Projects and Recents, installed only while `data-dsh-skin='codex'` and disposed when another skin takes over. Sidebar content and the empty-session hero otherwise keep the product information architecture.
+- **Claude uses the installed serif stack** — Georgia, Times New Roman, Songti SC and SimSun in that order; a bundled or licensed serif family is deferred, so Windows/Linux font availability determines the exact face.
 
 <a id="dev-note"></a>
 ### Dev Note

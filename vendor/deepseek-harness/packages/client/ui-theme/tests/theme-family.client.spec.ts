@@ -75,16 +75,31 @@ describe('theme-family helpers', () => {
     expect(canonical.origin).toBe('custom')
     expect(canonical.light.overrides).toBeUndefined()
   })
+
+  it('round-trips a non-default skin and omits the default one', () => {
+    const codex = canonicalizeThemeFamily({ ...SAMPLE, skin: 'codex' }, 'custom')
+    expect(codex.skin).toBe('codex')
+    expect(parseThemeFamilyJson(serializeThemeFamily(codex)).skin).toBe('codex')
+    expect(canonicalizeThemeFamily(SAMPLE, 'custom').skin).toBeUndefined()
+    expect(parseThemeFamilyJson(serializeThemeFamily(SAMPLE)).skin).toBe('default')
+    const wallpapered = canonicalizeThemeFamily({ ...SAMPLE, wallpaper: 'data:image/png;base64,AA==' }, 'custom')
+    expect(wallpapered.wallpaper).toBe('data:image/png;base64,AA==')
+    expect(canonicalizeThemeFamily(SAMPLE, 'custom').wallpaper).toBeUndefined()
+  })
 })
 
 describe('builtin families', () => {
   it('ships DeepSeek plus the desktop palettes', () => {
     expect(BUILTIN_THEME_FAMILIES.map(family => family.id)).toEqual([
-      'deepseek', 'midnight', 'celadon', 'violet', 'amber', 'paper', 'contrast',
+      'deepseek', 'codex', 'claude', 'midnight', 'celadon', 'violet', 'amber', 'paper', 'contrast',
     ])
     expect(isBuiltinFamilyId('celadon')).toBe(true)
     expect(getBuiltinFamily('missing')).toBeUndefined()
+    expect(getBuiltinFamily('codex')?.skin).toBe('codex')
+    expect(getBuiltinFamily('claude')?.skin).toBe('claude')
     expect(getReservedThemeIds().has('paper')).toBe(true)
+    expect(getReservedThemeIds().has('codex')).toBe(true)
+    expect(getReservedThemeIds().has('claude')).toBe(true)
   })
 
   it('resolves unknown ids to DeepSeek and lists custom families after builtins', () => {

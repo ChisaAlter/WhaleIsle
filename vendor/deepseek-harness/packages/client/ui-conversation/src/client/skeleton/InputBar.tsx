@@ -520,6 +520,7 @@ export const InputBar = memo(function InputBar({
           workspaceTrigger && css.cardWorkspaceTrigger,
         )}
         data-composer-card
+        data-dsh-composer
         data-beam={showBeam || undefined}
         onClick={workspaceTrigger ? onRequestWorkspace : undefined}
         onPointerDown={workspaceTrigger ? (e) => { e.stopPropagation() } : undefined}

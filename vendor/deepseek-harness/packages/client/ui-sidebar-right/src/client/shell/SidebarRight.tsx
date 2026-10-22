@@ -311,6 +311,7 @@ function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<H
       style={{ width: fullscreen ? '100vw' : width,
         '--dsh-sidebar-width': fullscreen ? '100vw' : `${width}px` } as CSSProperties}
       data-sidebar-right-session={sessionId}
+      data-dsh-artifact
       data-sidebar-right-guide-only={Object.values(surface.layout.tabs).every(tab => tab.kind === 'guide') || undefined}
       data-sidebar-right-panel={fullscreen ? 'fullscreen' : 'push'}
       data-sidebar-right-open={expanded || undefined}

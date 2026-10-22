@@ -67,6 +67,7 @@ function PanelRow({ id, label, wide, usePanelInfo, selectPanel, renderSlot }: Pa
         className={clsx(css.panelRow, active && css.panelActive)}
         aria-label={label}
         data-dsh-panel={id}
+        data-dsh-sidebar-row
         aria-current={active ? 'page' : undefined}
         onClick={() => { selectPanel(id) }}
       >
@@ -216,6 +217,7 @@ export function SidebarRoot({
         collapsed && wide && css.fading, !pointerInside && css.quietBars,
       )}
       style={wide ? { width: collapsed ? lastWideWidth.current : width } : undefined}
+      data-dsh-sidebar
       onPointerEnter={() => {
         cancelLinger()
         setPointerInside(true)
@@ -225,14 +227,14 @@ export function SidebarRoot({
       {/* macOS hiddenInset titlebar: the strip shares the row with the
           traffic lights and keeps the toggle at the sidebar's top-right. */}
       {darwinDesktop && <div className={css.topStrip} data-window-drag>{toggle}</div>}
-      <div className={css.logoRow} data-window-drag>
+      <div className={css.logoRow} data-window-drag data-dsh-sidebar-brand>
         {/* Expanded, the brand doubles as a New Session shortcut — except on
             macOS, where it stays part of the logo row's window-drag surface
             (a button would subtract itself through the global no-drag rule);
             the collapsed rail's logo is the expand toggle below instead. */}
         {wide && (() => {
           const identity = (
-            <span className={css.brandIdentity} aria-hidden="true">
+            <span className={css.brandIdentity} aria-hidden="true" data-dsh-sidebar-brand-identity>
               <span className={css.brandMark}>
                 {renderSlot('sidebar.brand.mark', { size: 24 }, { fallback: <FishLogo size={24} /> })}
               </span>
@@ -303,6 +305,7 @@ export function SidebarRoot({
         <button
           type="button"
           className={css.newSession}
+          data-dsh-sidebar-new
           aria-label={t('session.new.label')}
           aria-keyshortcuts={newShortcut?.aria}
           onClick={() => { startSession() }}

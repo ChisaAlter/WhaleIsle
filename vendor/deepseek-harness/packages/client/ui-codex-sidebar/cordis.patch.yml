@@ -1,0 +1,22 @@
+# The composition layer contributed by dsh-plugin-codex-ui.
+#
+# This one file plays both roles:
+#
+#   1. It is the bundle patch `dsh.bundle.patch` points at. Because the package
+#      declares `dsh.bundle`, `dsh plugin --profile web add <path>` appends the
+#      package to `dsh.profile.bundles`, and this layer applies automatically on
+#      the next `dsh web` boot — no manual editing.
+#
+#   2. It is a patch fragment you can apply yourself when you would rather not
+#      restart:
+#        dsh --profile web --patch ./node_modules/dsh-plugin-codex-ui/cordis.patch.yml
+#
+# Pick ONE route. Applying this layer by hand while the package also sits in
+# `dsh.profile.bundles` inserts the same row id twice.
+#
+# The row is an ordinary Loader entry: the package's main entry (`lib/index.js`)
+# is the node half, and its `dsh.client` declaration composes the browser half
+# into `window.__DSH_BOOT__` with no further wiring.
+- insert:
+    - id: codex-ui
+      name: 'dsh-plugin-codex-ui'

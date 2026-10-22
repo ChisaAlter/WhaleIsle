@@ -25,7 +25,7 @@
      keeps narrow windows sane. */
   max-width: 100%;
   background: var(--dsw-specific-bubble);
-  border-radius: var(--dsw-radius-xl);
+  border-radius: var(--dsh-bubble-radius, var(--dsw-radius-xl));
   /* 42px single-line bubble at the default size: 22 line + 10 vertical
      padding each side; the Settings font-size preference moves size and line
      height together through the body-published axis. */

@@ -101,6 +101,9 @@ function snap(overrides: Partial<AppearanceSyncSnapshot> = {}): AppearanceSyncSn
     transparentTheme: false,
     sidebarMaskHidden: DEFAULT_THEME_SETTINGS.sidebarMaskHidden,
     wallpaperImage: '',
+    skinWallpaperImage: '',
+    skinWallpaperEnabled: true,
+    effectiveWallpaperImage: overrides.effectiveWallpaperImage ?? overrides.wallpaperImage ?? '',
     wallpaperBlur: 0,
     wallpaperPixelate: 0,
     backgroundEffect: DEFAULT_THEME_SETTINGS.backgroundEffect,
@@ -479,6 +482,16 @@ describe('AppearanceSection', () => {
     expect(b.setWallpaper).toHaveBeenCalledWith({ wallpaperImage: '' })
     fireEvent.click(screen.getAllByRole('button', { name: '重置' })[0]!)
     expect(b.setWallpaper).toHaveBeenCalledWith({ wallpaperBlur: 0, wallpaperPixelate: 0 })
+  })
+
+  it('shows the theme wallpaper switch only when the active family carries one', () => {
+    const withoutSkin = mount('system')
+    expect(screen.queryByRole('switch', { name: COPY['wallpaper.skin'] })).toBeNull()
+    const b = mount('system', { skinWallpaperImage: PNG, skinWallpaperEnabled: true })
+    const toggle = screen.getByRole('switch', { name: COPY['wallpaper.skin'] })
+    expect((toggle as HTMLInputElement).checked).toBe(true)
+    fireEvent.click(toggle)
+    expect(b.setWallpaper).toHaveBeenCalledWith({ skinWallpaperEnabled: false })
   })
 
   it('opens crop for a local pick and persists cropWallpaper output', async () => {

@@ -446,6 +446,47 @@ describe('ThemeRuntime', () => {
     expect(() => { theme.setThemeHalf('dark', 'missing') }).toThrow('not registered')
   })
 
+  it('carries the Codex skin and flat canvas through the active half and mixed halves', () => {
+    const { theme } = makeBare()
+    theme.setTheme('light')
+    theme.setThemeHalf('light', 'codex')
+    expect(theme.getTheme().active.skin).toBe('codex')
+    expect(theme.getTheme().skinWallpaperImage).toBe('')
+    expect(theme.getTheme().effectiveWallpaperImage).toBe('')
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toBe('#ffffff')
+    theme.setTheme('dark')
+    theme.setThemeHalf('dark', 'codex')
+    expect(theme.getTheme().active.skin).toBe('codex')
+    expect(theme.getTheme().effectiveWallpaperImage).toBe('')
+    // Light Codex + dark Celadon keeps each half's own skin.
+    theme.setTheme('light')
+    theme.setThemeHalf('dark', 'celadon')
+    expect(theme.getTheme().active.skin).toBe('codex')
+    theme.setTheme('dark')
+    expect(theme.getTheme().active.skin).toBe('default')
+    expect(theme.getTheme().effectiveWallpaperImage).toBe('')
+    const userWallpaper = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    theme.setTheme('light')
+    theme.setThemeHalf('light', 'codex')
+    theme.setWallpaper({ wallpaperImage: userWallpaper })
+    expect(theme.getTheme().effectiveWallpaperImage).toBe(userWallpaper)
+    theme.setWallpaper({ wallpaperImage: '' })
+    expect(theme.getTheme().effectiveWallpaperImage).toBe('')
+  })
+
+  it('carries the Claude skin with a paper canvas and no family wallpaper', () => {
+    const { theme } = makeBare()
+    theme.setTheme('light')
+    theme.setThemeHalf('light', 'claude')
+    expect(theme.getTheme().active.skin).toBe('claude')
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toBe('#faf9f5')
+    expect(theme.getTheme().effectiveWallpaperImage).toBe('')
+    theme.setTheme('dark')
+    theme.setThemeHalf('dark', 'claude')
+    expect(theme.getTheme().active.skin).toBe('claude')
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toBe('#262624')
+  })
+
   it('previews a transient family without writing the scope, and clears back', () => {
     const { theme, events, host } = make()
     theme.setTheme('light')

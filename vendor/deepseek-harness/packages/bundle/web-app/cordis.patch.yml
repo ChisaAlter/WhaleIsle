@@ -292,6 +292,11 @@
     - id: ui-sidebar
       name: '@deepseek-ai/dsh-client-ui-sidebar'
 
+    # Codex presentation skin: the vendored Codex sidebar takes the browsing
+    # cell only while html[data-dsh-skin='codex'] is active.
+    - id: ui-codex-sidebar
+      name: 'dsh-plugin-codex-ui'
+
     # The right Sidebar: one docking surface per session over ui-dockkit.
     - id: ui-sidebar-right
       name: '@deepseek-ai/dsh-client-ui-sidebar-right'

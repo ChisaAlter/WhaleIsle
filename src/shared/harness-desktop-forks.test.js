@@ -79,6 +79,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
   for (const marker of FORK_FILE_MARKERS) {
     const content = {
       'packages/experimental/plugin-market-bundle/cordis.patch.yml': 'DSHD_PLUGIN_MARKET_INDEX\n',
+      'packages/client/ui-conversation/src/client/skeleton/EmptyHero.tsx': 'data-dsh-hero-headline\ndata-dsh-hero-preview\n',
       'packages/client/ui-sidebar/src/client/SidebarRoot.tsx': 'data-dsh-panel={id}\n',
       'packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx': 'data-plugin-back\n',
       'packages/client/ui-settings-general/src/client/SettingsRoot.tsx': 'data-dsh-settings-close\n',
@@ -276,7 +277,43 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/api/session-controller/src/index.ts': "'session/before-cancel'\ncancel(request: SessionCancelRequest): Promise<SessionCancelValue>\n",
       'packages/client/ui-sidebar/src/client/index.ts': 'selectTab\n',
     };
-    writeFile(root, marker.file, projectSeams[marker.file] ?? content[marker.file] ?? 'export {}\n');
+    // Presentation-skin fork: every marker snippet lives in these files.
+    const skinSeams = {
+      'packages/client/ui-theme/src/theme-family.ts': 'ThemeSkinId\nskin?: ThemeSkinId\nwallpaper?: string\n',
+      'packages/client/ui-theme/src/builtin-families.ts': 'CODEX_FAMILY\nCLAUDE_FAMILY\n--dsh-codex-panel\n',
+      'packages/client/ui-theme/src/theme-settings.ts': 'THEME_SKIN_WALLPAPER_FIELD\nskinWallpaperEnabled\n',
+      'packages/client/ui-theme/src/index.ts': 'skinWallpaperEnabled\n',
+      'packages/client/ui-theme/src/client/index.ts': 'DEFAULT_THEME_SKIN\nskin: family.skin\nskinWallpaperEnabled\n',
+      'packages/client/ui-theme/src/client/settings-store.ts': 'skinWallpaperImage\nskinWallpaperEnabled\n',
+      'packages/client/ui-theme/src/client/locales.ts': 'wallpaper.skin\n',
+      'packages/client/ui-theme/src/client/WallpaperRow.tsx': 'skinWallpaperImage\nwallpaper.skin\n',
+      'packages/client/ui-theme/src/client/AppearanceSection.tsx': 'skinWallpaperImage\neffectiveWallpaperImage\n',
+      'packages/client/ui-theme/src/boot-theme.ts': 'lightSkin\ndata-dsh-skin\n',
+      'packages/client/ui-theme/src/client/styles.ts': 'skins.css\n',
+      'packages/client/ui-theme/src/styles/base.css': '--dsh-bubble-radius\n',
+      'packages/client/ui-theme/src/styles/skins.css': "data-dsh-skin='codex'\ndata-dsh-skin='claude'\nborder-radius: 12px 0 0 0\ndata-dsh-hero-headline\ndata-dsh-sidebar-brand-identity\n",
+      'packages/client/ui-codex-sidebar/package.json': 'dsh-plugin-codex-ui\nplatform\n',
+      'packages/client/ui-codex-sidebar/lib/client.js': "data-dsh-skin\nreturn 'Whale Isle'\ninstallNow\n",
+      'packages/client/ui-codex-sidebar/VENDORED.md': 'ice-ai-lab/dsh-plugin-codex-ui\nMIT\n',
+      'packages/client/ui-theme/tests/theme-family.client.spec.ts': "'codex'\n'claude'\nskin\n",
+      'packages/client/ui-theme/tests/boot-theme.client.spec.ts': 'data-dsh-skin\nlightSkin\n',
+      'packages/client/ui-theme/tests/client-styles.client.spec.ts': 'skins.css\n',
+      'packages/client/ui-theme/tests/theme.client.spec.ts': 'carries the Codex skin\n',
+      'packages/client/ui-layout/src/client/theme-presenter.ts': 'SKIN_ATTRIBUTE\n',
+      'packages/client/ui-layout/src/client/AppFrame.tsx': 'data-dsh-frame\nhorizontalPadding\n',
+      'packages/client/ui-layout/tests/theme-presenter.client.spec.ts': 'SKIN_ATTRIBUTE\n',
+      'packages/client/ui-sidebar/src/client/SidebarRoot.tsx': 'data-dsh-sidebar\ndata-dsh-sidebar-new\ndata-dsh-sidebar-brand-identity\n',
+      'packages/client/ui-conversation/src/client/skeleton/ConversationMainPanel.tsx': 'data-dsh-chat\n',
+      'packages/client/ui-conversation/src/client/skeleton/ConversationHeader.tsx': 'data-dsh-header\n',
+      'packages/client/ui-conversation/src/client/skeleton/InputBar.tsx': 'data-dsh-composer\n',
+      'packages/client/ui-chat/src/client/chat/MessageItem.tsx': 'data-dsh-message-role\n',
+      'packages/client/ui-chat/src/client/chat/MessageItem.module.css': '--dsh-bubble-radius\n',
+      'packages/client/ui-chat/src/client/chat/AssistantMarkdown.tsx': 'data-dsh-message-role\n',
+      'packages/client/ui-sidebar-right/src/client/shell/SidebarRight.tsx': 'data-dsh-artifact\n',
+      'packages/client/ui-theme/README.md': 'Presentation skins\ndata-dsh-skin\n',
+    };
+    const seamContent = projectSeams[marker.file] ?? content[marker.file] ?? 'export {}\n';
+    writeFile(root, marker.file, `${seamContent}${skinSeams[marker.file] ?? ''}`);
   }
   return root;
 }
