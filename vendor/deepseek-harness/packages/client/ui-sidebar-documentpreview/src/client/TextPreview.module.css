@@ -32,6 +32,63 @@
   margin-right: 12px;
 }
 
+/* The floating frame already names the document. Keep the original actions
+   reachable over its viewport without reserving another header row. */
+:global([data-dockkit-float]) .preview {
+  position: relative;
+}
+
+:global([data-dockkit-float]) .header {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  max-width: calc(100% - 16px);
+  z-index: 2;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  height: auto;
+  min-height: 28px;
+  max-height: calc(100% - 16px);
+  padding: 4px;
+  overflow: auto;
+  isolation: isolate;
+  border: 0;
+  border-radius: var(--dsw-radius-md);
+  box-shadow: var(--dsw-elevation-panel);
+  opacity: 0;
+  pointer-events: none;
+}
+
+:global([data-dockkit-float]) .header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  pointer-events: none;
+}
+
+:global([data-dockkit-float]) .preview:hover .header,
+:global([data-dockkit-float]) .preview:focus-within .header,
+:global([data-dockkit-float]) .header:has([aria-expanded='true']) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+:global([data-dockkit-float]) .path,
+:global([data-dockkit-float]) .titleIcon {
+  display: none;
+}
+
+@media (hover: none) {
+  :global([data-dockkit-float]) .header {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 /* Announced, not applied: the reader keeps the text they are looking at. */
 .changed {
   display: flex;

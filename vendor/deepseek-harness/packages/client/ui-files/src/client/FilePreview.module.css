@@ -129,3 +129,77 @@
   max-width: 100%;
   height: auto;
 }
+
+/* The float header owns the filename; retain editor actions without a second
+   permanent row or a different viewport inset. */
+:global([data-dockkit-float]) .root {
+  position: relative;
+  background: transparent;
+}
+
+:global([data-dockkit-float]) .toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  max-width: calc(100% - 16px);
+  z-index: 2;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-height: calc(100% - 16px);
+  padding: 4px;
+  overflow: auto;
+  isolation: isolate;
+  border-radius: var(--dsw-radius-md);
+  box-shadow: var(--dsw-elevation-panel);
+  opacity: 0;
+  pointer-events: none;
+}
+
+:global([data-dockkit-float]) .toolbar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  pointer-events: none;
+}
+
+:global([data-dockkit-float]) .root:hover .toolbar,
+:global([data-dockkit-float]) .root:focus-within .toolbar {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+:global([data-dockkit-float]) .crumbs {
+  display: none;
+}
+
+:global([data-dockkit-float]) .body {
+  padding: 12px;
+}
+
+:global([data-dockkit-float]) .body:has(> .image) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  overflow: hidden;
+}
+
+:global([data-dockkit-float]) .image {
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+@media (hover: none) {
+  :global([data-dockkit-float]) .toolbar {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
