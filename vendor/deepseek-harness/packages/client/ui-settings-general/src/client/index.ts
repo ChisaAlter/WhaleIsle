@@ -40,6 +40,7 @@ import { InterfaceSection } from './InterfaceSection.tsx'
 import { CloseBehaviorRow } from './CloseBehaviorRow.tsx'
 import { AutoStartDesktopRow } from './AutoStartDesktopRow.tsx'
 import { DshbotRow } from './DshbotRow.tsx'
+import { ProjectRow } from './ProjectRow.tsx'
 import { RemoteWorkspaceRow } from './RemoteWorkspaceRow.tsx'
 import { PetSection, type PetSectionInjected } from './PetSection.tsx'
 import { AboutSection, type AboutSectionInjected } from './AboutSection.tsx'
@@ -326,6 +327,12 @@ export function apply(ctx: ClientContext): void {
       order: 26,
       locale: NS,
     }, AutoStartDesktopRow))
+    ctx.slots.inject('settings.interface.item', () => ctx.slots.register({
+      name: 'settings.interface.item',
+      id: 'project',
+      order: 79,
+      locale: NS,
+    }, ProjectRow))
     ctx.slots.inject('settings.interface.item', () => ctx.slots.register({
       name: 'settings.interface.item',
       id: 'dshbot',

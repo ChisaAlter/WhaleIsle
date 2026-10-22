@@ -130,6 +130,11 @@ export type DesktopConfig = {
    */
   dshbotEnabled?: boolean
   /**
+   * Whether the desktop mounts the built-in Project plugin (default off);
+   * the shell restarts Harness after this field changes.
+   */
+  projectEnabled?: boolean
+  /**
    * Whether the desktop mounts the built-in dsh-whale assistant plugin;
    * the shell restarts Harness after this field changes.
    */

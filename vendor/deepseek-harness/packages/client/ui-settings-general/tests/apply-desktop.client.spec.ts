@@ -9,6 +9,7 @@ import { apply, inject } from '@deepseek-ai/dsh-client-ui-settings-general/clien
 import { CloseBehaviorRow } from '../src/client/CloseBehaviorRow.tsx'
 import { AutoStartDesktopRow } from '../src/client/AutoStartDesktopRow.tsx'
 import { DshbotRow } from '../src/client/DshbotRow.tsx'
+import { ProjectRow } from '../src/client/ProjectRow.tsx'
 import { RemoteWorkspaceRow } from '../src/client/RemoteWorkspaceRow.tsx'
 import { PetSection } from '../src/client/PetSection.tsx'
 import type { PetSectionInjected } from '../src/client/PetSection.tsx'
@@ -74,6 +75,11 @@ describe('ui-settings-general desktop close-behavior row', () => {
     const autoStartRow = rows.find(row => row.options.id === 'auto-start-desktop')!
     expect(autoStartRow.component).toBe(AutoStartDesktopRow)
     expect(autoStartRow.options).toMatchObject({ id: 'auto-start-desktop', order: 26 })
+    const projectRow = b.slots.entries('settings.interface.item')
+      .find(row => row.options.id === 'project')!
+    expect(projectRow.component).toBe(ProjectRow)
+    expect(projectRow.options).toMatchObject({ id: 'project', order: 79 })
+    expect(projectRow.locale).toBe('settings')
     const botRow = b.slots.entries('settings.interface.item')
       .find(row => row.options.id === 'dshbot')!
     expect(botRow.component).toBe(DshbotRow)

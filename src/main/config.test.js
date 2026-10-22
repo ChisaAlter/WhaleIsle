@@ -67,6 +67,7 @@ test('Harness recovery defaults are bounded and enabled', () => {
   assert.equal(DEFAULTS.harnessRestartMaxAttempts, 3);
   assert.equal(DEFAULTS.harnessRestartBaseDelayMs, 1000);
   assert.equal(DEFAULTS.dshbotEnabled, false);
+  assert.equal(DEFAULTS.projectEnabled, false);
   assert.deepEqual(normalizeHarnessRecovery({}), {
     harnessAutoRestart: true,
     harnessRestartMaxAttempts: 3,
@@ -97,6 +98,7 @@ test('renderer config patch only accepts safe typed fields', () => {
     harnessRestartMaxAttempts: 4,
     githubToken: ' token ',
     dshbotEnabled: true,
+    projectEnabled: true,
     remoteWorkspaceEnabled: false,
   }), {
     closeToTray: false,
@@ -105,6 +107,7 @@ test('renderer config patch only accepts safe typed fields', () => {
     harnessRestartMaxAttempts: 4,
     githubToken: 'token',
     dshbotEnabled: true,
+    projectEnabled: true,
     remoteWorkspaceEnabled: false,
   });
   for (const patch of [
@@ -114,6 +117,7 @@ test('renderer config patch only accepts safe typed fields', () => {
     { baseUrl: 'https://attacker.invalid' },
     { closeToTray: 'yes' },
     { dshbotEnabled: 'yes' },
+    { projectEnabled: 'yes' },
     { remoteWorkspaceEnabled: 'yes' },
     { harnessRestartMaxAttempts: 99 },
   ]) {

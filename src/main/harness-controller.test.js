@@ -238,6 +238,16 @@ test('a held-back Project is not mounted even when its plugin is enabled', async
   await f.controller.shutdown();
 });
 
+test('the Project switch reaches the mount decision through the start config', async () => {
+  const calls = [], seen = [], f = fixture({ initialConfig: { projectEnabled: true },
+    projectAvailable: (_env, config) => { seen.push(config.projectEnabled); return config.projectEnabled === true; },
+    ensureDshProjectPlugin: async options => { calls.push(options); return { ok: true, disabled: !options.enabled }; } });
+  await f.controller.start();
+  assert.deepEqual(seen, [true]);
+  assert.equal(calls[0].enabled, true);
+  await f.controller.shutdown();
+});
+
 test('writes the desktop install plugin before launching Harness', async () => {
   const calls = [];
   const f = fixture({

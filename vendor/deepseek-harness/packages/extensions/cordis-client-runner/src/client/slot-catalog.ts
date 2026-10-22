@@ -3424,6 +3424,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-conversation CostSettingsRow id \'session-cost\'',
       'client-ui-conversation ViewTabsRow id \'view-tabs\'',
       'client-ui-git GitChromeRow id \'titlebar-git\'',
+      'client-ui-settings-general ProjectRow id \'project\'',
       'client-ui-settings-general DshbotRow id \'dshbot\'',
       'client-ui-settings-general RemoteWorkspaceRow id \'remote-workspace\'',
       'client-ui-titlebar TerminalToggleRow id \'terminal-toggle\'',
