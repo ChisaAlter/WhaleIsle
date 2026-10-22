@@ -1,15 +1,22 @@
 /** Desktop-only Interface row: toggle the built-in Project plugin mount (default off). */
 import { useEffect, useRef, useState } from 'react'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { Button, IconQuestionOutlineRegular, Switch, Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { desktopShell, type DesktopConfig } from './desktop-shell.ts'
 import css from './ProjectRow.module.css'
 
+/** Navigation supplied by the settings owner. */
+export interface ProjectRowInjected {
+  /** Move the main view off a Project Lead, which the next start no longer lists. */
+  leaveProjectLead(): Promise<void>
+}
+
 /** Full Settings-row props. */
 export type ProjectRowProps =
   PropsRuntime<'settings.interface.item'>
   & PropsLocale<'settings'>
+  & InjectFace<ProjectRowInjected>
 
 /**
  * Render the Project enable switch with a help tip explaining the feature;
@@ -18,7 +25,7 @@ export type ProjectRowProps =
  * @param props - composed Settings slot props.
  * @returns the preference row.
  */
-export function ProjectRow({ t }: ProjectRowProps) {
+export function ProjectRow({ leaveProjectLead, t }: ProjectRowProps) {
   const [enabled, setEnabled] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -62,11 +69,13 @@ export function ProjectRow({ t }: ProjectRowProps) {
         title={error || undefined}
         onChange={(next: boolean) => {
           if (!shell?.saveConfig) return
+          const saveConfig = shell.saveConfig.bind(shell)
           const previous = enabled
           setEnabled(next)
           setBusy(true)
-          // A failed write reverts the switch so it never misstates the mount.
-          void shell.saveConfig({ projectEnabled: next }).then(saved => {
+          // Leave a Lead before the restart hides it, then write; a failure
+          // at either step reverts the switch so it never misstates the mount.
+          void (next ? Promise.resolve() : leaveProjectLead()).then(() => saveConfig({ projectEnabled: next })).then(saved => {
             if (saved.projectEnabled !== next) {
               setEnabled(typeof saved.projectEnabled === 'boolean' ? saved.projectEnabled : previous)
               setError(t('feedback.notSaved'))

@@ -40,7 +40,7 @@ import { InterfaceSection } from './InterfaceSection.tsx'
 import { CloseBehaviorRow } from './CloseBehaviorRow.tsx'
 import { AutoStartDesktopRow } from './AutoStartDesktopRow.tsx'
 import { DshbotRow } from './DshbotRow.tsx'
-import { ProjectRow } from './ProjectRow.tsx'
+import { ProjectRow, type ProjectRowInjected } from './ProjectRow.tsx'
 import { RemoteWorkspaceRow } from './RemoteWorkspaceRow.tsx'
 import { PetSection, type PetSectionInjected } from './PetSection.tsx'
 import { AboutSection, type AboutSectionInjected } from './AboutSection.tsx'
@@ -96,6 +96,21 @@ const NS = 'settings'
  */
 export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.settings', 'remote.session', 'configForms', 'shortcuts', 'modules']
 
+/** The session, Workspace and navigation faces the Project switch reads, typed locally. */
+interface ProjectLeadServices {
+  sessions: {
+    retain(sessionId: string, options: { source: 'mainView' }): { ready: Promise<unknown>; release(): void }
+    list: { getSnapshot(): { byId: Record<string, {
+      id: string
+      cwd?: string
+      retainedBy: { mainView?: number }
+      presentation?: { owner?: string; workingDirectory?: string }
+    }> } }
+  }
+  workspaces: { list: { getSnapshot(): { items: readonly { workspaceId: string; path: string }[] } } }
+  uiWorkspace: { openWorkspace(workspaceId: string): Promise<void>; openNoDirectory(): Promise<void> }
+}
+
 /**
  * Register the `settings` dictionaries, the chrome content, and the General
  * section, each once its slot declaration is on the ledger.
@@ -103,6 +118,32 @@ export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.settin
  */
 export function apply(ctx: ClientContext): void {
   const settingsNavigation = new SettingsNavigationService(ctx)
+  // Turning Project off restarts Harness without it, so a Lead left open
+  // would come back unlisted: leave it for its directory's New Session first.
+  let leaveProjectLead: (() => Promise<void>) | undefined
+  ctx.inject(['sessions', 'workspaces', 'uiWorkspace'], (scope: ClientContext) => {
+    const services = scope as unknown as ProjectLeadServices
+    scope.effect(() => {
+      leaveProjectLead = async () => {
+        const lead = Object.values(services.sessions.list.getSnapshot().byId)
+          .find(session => (session.retainedBy.mainView ?? 0) > 0 && session.presentation?.owner === 'project')
+        if (lead === undefined) return
+        const directory = lead.presentation?.workingDirectory ?? lead.cwd
+        const workspace = services.workspaces.list.getSnapshot().items.find(item => item.path === directory)
+        await (workspace === undefined
+          ? services.uiWorkspace.openNoDirectory()
+          : services.uiWorkspace.openWorkspace(workspace.workspaceId))
+        // Let the new Session finish opening: the restart that follows would
+        // otherwise find its requests in flight and stop to ask for confirmation.
+        const opened = Object.values(services.sessions.list.getSnapshot().byId)
+          .find(session => (session.retainedBy.mainView ?? 0) > 0 && session.id !== lead.id)
+        if (opened === undefined) return
+        const reference = services.sessions.retain(opened.id, { source: 'mainView' })
+        try { await reference.ready } finally { reference.release() }
+      }
+      return () => { leaveProjectLead = undefined }
+    }, 'ui-settings-general: Project Lead exit')
+  })
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item', id: 'developer-tools', order: 15, locale: NS,
     inject: (): DeveloperToolsRowInjected => ({
@@ -332,6 +373,7 @@ export function apply(ctx: ClientContext): void {
       id: 'project',
       order: 79,
       locale: NS,
+      inject: (): ProjectRowInjected => ({ leaveProjectLead: () => leaveProjectLead?.() ?? Promise.resolve() }),
     }, ProjectRow))
     ctx.slots.inject('settings.interface.item', () => ctx.slots.register({
       name: 'settings.interface.item',

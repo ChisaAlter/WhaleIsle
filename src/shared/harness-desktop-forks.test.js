@@ -127,7 +127,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-settings-general/src/client/RemoteWorkspaceRow.module.css': '.row { display: flex; }\n',
       'packages/client/ui-settings-general/src/client/ProjectRow.tsx': "export const project = () => shell.saveConfig({ projectEnabled: next }) && t('project.help')\n",
       'packages/client/ui-settings-general/src/client/ProjectRow.module.css': '.row { display: flex; }\n',
-      'packages/client/ui-settings-general/src/client/index.ts': "import { RemoteWorkspaceRow } from './RemoteWorkspaceRow.tsx'\nimport { ProjectRow } from './ProjectRow.tsx'\n",
+      'packages/client/ui-settings-general/src/client/index.ts': "import { RemoteWorkspaceRow } from './RemoteWorkspaceRow.tsx'\nimport { ProjectRow } from './ProjectRow.tsx'\nleaveProjectLead\n",
       'packages/client/ui-settings-general/src/client/locales.ts': "'remoteWorkspace.title': '远程工作区（SSH）',\n'project.help': 'Project',\n",
       'packages/client/ui-settings-general/src/client/desktop-shell.ts': 'remoteWorkspaceEnabled?: boolean\nprojectEnabled?: boolean\n',
       'packages/client/locale/src/client/LanguageRow.tsx': 'export const language = () => <SettingsSelect aria-label="language" />\n',

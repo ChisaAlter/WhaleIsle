@@ -15,7 +15,7 @@ afterEach(() => {
 
 const unusedHook = (() => { throw new Error('unused by ProjectRow') }) as never
 
-function mount(dict: Record<string, string> = en) {
+function mount(dict: Record<string, string> = en, leaveProjectLead: () => Promise<void> = async () => {}) {
   const props: ProjectRowProps = {
     ...allowAllAccess,
     usePanelInfo: panelInfoStub,
@@ -24,6 +24,7 @@ function mount(dict: Record<string, string> = en) {
     useSessionStatus: unusedHook,
     useSessionRetainInfo: () => undefined,
     useWorkspaces: unusedHook,
+    leaveProjectLead,
     t: (key, params) => Object.entries(params ?? {}).reduce(
       (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), dict[key] ?? key),
   }
@@ -39,7 +40,7 @@ describe('ProjectRow', () => {
     await waitFor(() => { expect(toggle).toHaveProperty('disabled', false) })
     expect(toggle.getAttribute('aria-checked')).toBe('false')
     fireEvent.click(toggle)
-    expect(saveConfig).toHaveBeenCalledWith({ projectEnabled: true })
+    await waitFor(() => { expect(saveConfig).toHaveBeenCalledWith({ projectEnabled: true }) })
     await waitFor(() => { expect(screen.getByRole('switch', { name: 'Project' }).getAttribute('aria-checked')).toBe('true') })
   })
 
@@ -62,6 +63,34 @@ describe('ProjectRow', () => {
     mount()
     fireEvent.click(screen.getByRole('button', { name: 'What is Project?' }))
     expect((await screen.findByRole('tooltip')).textContent).toBe(en['project.help'])
+  })
+
+  it('leaves an open Lead before writing the off state, and only when turning off', async () => {
+    const order: string[] = []
+    const leave = vi.fn(async () => { order.push('leave') })
+    const saveConfig = vi.fn(async (patch: { projectEnabled: boolean }) => { order.push(`save:${patch.projectEnabled}`); return patch })
+    ;(window as Window & { shell?: unknown }).shell = { getConfig: async () => ({ projectEnabled: true }), saveConfig }
+    mount(en, leave)
+    const toggle = screen.getByRole('switch', { name: 'Project' })
+    await waitFor(() => { expect(toggle.getAttribute('aria-checked')).toBe('true') })
+    fireEvent.click(toggle)
+    await waitFor(() => { expect(order).toEqual(['leave', 'save:false']) })
+    await waitFor(() => { expect(toggle).toHaveProperty('disabled', false) })
+    fireEvent.click(toggle)
+    await waitFor(() => { expect(order).toEqual(['leave', 'save:false', 'save:true']) })
+    expect(leave).toHaveBeenCalledOnce()
+  })
+
+  it('keeps Project on without writing when leaving the Lead fails', async () => {
+    const saveConfig = vi.fn(async () => ({ projectEnabled: false }))
+    ;(window as Window & { shell?: unknown }).shell = { getConfig: async () => ({ projectEnabled: true }), saveConfig }
+    mount(en, async () => { throw new Error('navigation failed') })
+    const toggle = screen.getByRole('switch', { name: 'Project' })
+    await waitFor(() => { expect(toggle.getAttribute('aria-checked')).toBe('true') })
+    fireEvent.click(toggle)
+    expect((await screen.findByRole('alert')).textContent).toBe('Could not save settings: navigation failed')
+    expect(screen.getByRole('switch', { name: 'Project' }).getAttribute('aria-checked')).toBe('true')
+    expect(saveConfig).not.toHaveBeenCalled()
   })
 
   it('reverts the switch when the write is refused', async () => {

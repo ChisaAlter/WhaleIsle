@@ -96,6 +96,46 @@ describe('ui-settings-general desktop close-behavior row', () => {
     expect(b.slots.entries('settings.interface.item').find(row => row.options.id === 'remote-workspace')).toBeUndefined()
   })
 
+  it('turning Project off leaves an open Lead for its Workspace or the no-directory Session', async () => {
+    ;(window as Window & { shell?: unknown }).shell = {
+      getConfig: async () => ({ projectEnabled: true }),
+      saveConfig: async () => ({ projectEnabled: false }),
+    }
+    const b = await bench()
+    declare(b.slots)
+    const opened: string[] = []
+    let byId: Record<string, unknown> = {
+      lead: { id: 'lead', cwd: '/repo', retainedBy: { mainView: 1 }, presentation: { owner: 'project', workingDirectory: '/repo' } },
+    }
+    const settled: string[] = []
+    b.ctx.provide('sessions', {
+      list: { getSnapshot: () => ({ byId }) },
+      retain: (id: string) => ({ ready: Promise.resolve().then(() => { settled.push(id) }), release: () => {} }),
+    } as never)
+    b.ctx.provide('workspaces', { list: { getSnapshot: () => ({ items: [{ workspaceId: 'ws-repo', path: '/repo' }] }) } } as never)
+    b.ctx.provide('uiWorkspace', {
+      openWorkspace: async (id: string) => {
+        opened.push(`workspace:${id}`)
+        byId = { ...byId, lead: { ...byId.lead as object, retainedBy: {} }, blank: { id: 'blank', cwd: '/repo', retainedBy: { mainView: 1 } } }
+      },
+      openNoDirectory: async () => { opened.push('no-directory') },
+    } as never)
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const row = b.slots.entries('settings.interface.item').find(entry => entry.options.id === 'project')!
+    const leave = () => (row.inject as unknown as () => { leaveProjectLead(): Promise<void> })().leaveProjectLead()
+    await leave()
+    expect(opened).toEqual(['workspace:ws-repo'])
+    expect(settled).toEqual(['blank'])
+    byId = { lead: { id: 'lead', cwd: '/elsewhere', retainedBy: { mainView: 1 }, presentation: { owner: 'project', workingDirectory: '/elsewhere' } } }
+    await leave()
+    expect(opened).toEqual(['workspace:ws-repo', 'no-directory'])
+    byId = { chat: { id: 'chat', cwd: '/repo', retainedBy: { mainView: 1 } }, lead: { id: 'lead', cwd: '/repo', retainedBy: {}, presentation: { owner: 'project' } } }
+    await leave()
+    expect(opened).toHaveLength(2)
+    await fiber.dispose()
+  })
+
   it('withholds the row without a persistable desktop shell', async () => {
     const b = await bench()
     declare(b.slots)

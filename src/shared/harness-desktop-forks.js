@@ -106,7 +106,7 @@ const FORK_FILE_MARKERS = [
   // Project toggle (default off) with its help tip, in the same Interface section.
   { file: 'packages/client/ui-settings-general/src/client/ProjectRow.tsx', includes: ['projectEnabled', "t('project.help')"] },
   { file: 'packages/client/ui-settings-general/src/client/ProjectRow.module.css', includes: [] },
-  { file: 'packages/client/ui-settings-general/src/client/index.ts', includes: ['ProjectRow'] },
+  { file: 'packages/client/ui-settings-general/src/client/index.ts', includes: ['ProjectRow', 'leaveProjectLead'] },
   { file: 'packages/client/ui-settings-general/src/client/locales.ts', includes: ['project.help'] },
   { file: 'packages/client/ui-settings-general/src/client/desktop-shell.ts', includes: ['projectEnabled'] },
   { file: 'packages/client/locale/src/client/LanguageRow.tsx', includes: ['SettingsSelect'] },
