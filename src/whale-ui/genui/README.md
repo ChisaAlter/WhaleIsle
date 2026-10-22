@@ -103,11 +103,13 @@ engines needed by its real component tree and embeds them as non-executable
 Base64 payloads, then executes Blob script URLs under its CSP. JSON remains a
 versioned `dsh-genui` v1 artifact for compatibility. Model actions are disabled
 in an independent HTML artifact; local controls, quizzes, plots and sorting
-continue to work.
+continue to work. The standalone runtime embeds KaTeX CSS and data-URL fonts;
+mathematical notation remains styled offline and its MathML stays accessible
+without appearing twice.
 
-Direct runtime dependencies are React 19, ReactDOM 19, KaTeX 0.16.47 and
-mdast-util-from-markdown 2.0.3. Engine builds use Mermaid 11.16.0, three 0.180.0,
-ECharts 5.6.0 and echarts-wordcloud 2.1.0. All are supplied by the owning package.
+Direct runtime dependencies are React 19, ReactDOM 19, KaTeX 0.18.2 and
+mdast-util-from-markdown 2.0.3. Engine builds use Mermaid 11.16.1, three 0.180.0,
+ECharts 6.1.0 and echarts-wordcloud 2.1.0. All are supplied by the owning package.
 The primitive adapter is the donor's original standalone implementation, with
 no cross-feature DSH UI value imports. Theme CSS retains scoped `--dsl-g-*`
 tokens and consumes the host's `--dsw-*` token mapping. Localization uses the

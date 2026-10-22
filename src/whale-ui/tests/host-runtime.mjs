@@ -1,9 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 import { createResourceHandlers } from '../resources/handlers.mjs';
 const require = createRequire(import.meta.url);
 const { renderUiTool: tool } = require('../../renderer/whale-ui/host.cjs');
+
+test('built standalone artifact embeds KaTeX accessibility styles and offline fonts', () => {
+  const runtime = readFileSync(new URL('../../renderer/whale-ui/assets/standalone-runtime.js', import.meta.url), 'utf8');
+  const rule = /\.katex\s+\.katex-mathml\{([^}]+)\}/.exec(runtime)?.[1] ?? '';
+  assert.match(rule, /position:absolute/);
+  assert.match(rule, /clip-path:inset\(50%\)/);
+  assert.match(rule, /width:1px/);
+  assert.match(rule, /height:1px/);
+  assert.match(runtime, /data:font\/woff2;base64,/);
+});
 
 test('built validator retains complete programs and emits durable presentation metadata', async () => {
   const program = 'root = Col([Text("ready"), Input($n, "Number", "number"), Text(@Format($n * 2))])\n$n = 2';
