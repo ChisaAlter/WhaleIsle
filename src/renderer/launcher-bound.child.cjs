@@ -178,9 +178,10 @@ app.whenReady().then(async () => {
   });
   try {
     await win.loadFile(LAUNCHER_HTML);
+    // Media emulation belongs to the debugger session; detaching restores the
+    // host preference. Keep it attached until this fixture window is destroyed.
     win.webContents.debugger.attach('1.3');
     await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
-    win.webContents.debugger.detach();
     const ready = await win.webContents.executeJavaScript(`new Promise((r) => {
       if (document.readyState === 'complete') return r('ready');
       document.addEventListener('DOMContentLoaded', () => r('ready'));
@@ -577,14 +578,12 @@ app.whenReady().then(async () => {
           time: text.getAnimations()[0]?.currentTime || 0 };
       })()`);
       await captureBound('bound-component-download.png');
-      win.webContents.debugger.attach('1.3');
       let reducedMotion;
       try {
         await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
         reducedMotion = await readFeedback();
       } finally {
         await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
-        win.webContents.debugger.detach();
       }
       componentProgress({ phase: 'verify', percent: 60 });
       await waitForDom('window.qaComponentButton.title.includes("校验组件 60%")');

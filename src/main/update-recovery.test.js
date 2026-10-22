@@ -40,11 +40,39 @@ test('checksum retries transient HTTP and a broken response body on the same URL
 });
 
 test('checksum deadline covers a stalled body and reports a stable timeout code', async (t) => {
-  let requests = 0;
-  const url = await checksumServer(t, (_req, res) => { requests++; res.writeHead(200); res.write('never ends'); });
-  await assert.rejects(readAssetChecksum('Setup.exe', url,
-    { maxAttempts: 2, attemptTimeoutMs: 30, retryDelayMs: 1 }), { code: 'ETIMEDOUT' });
-  assert.equal(requests, 2);
+  const url = 'https://example.test/SHA512SUMS.txt';
+  const controllers = [];
+  const timeouts = [];
+  const retries = [];
+  let bodyReads = 0;
+  // Drive each deadline after headers arrive, without spending the retry budget
+  // on real networking or CI scheduling. Real HTTP retries are covered above.
+  t.mock.method(Date, 'now', () => 0);
+  t.mock.method(AbortSignal, 'timeout', ms => {
+    timeouts.push(ms);
+    const controller = new AbortController();
+    controllers.push(controller);
+    return controller.signal;
+  });
+  t.mock.method(global, 'fetch', async (requestedUrl, { signal }) => {
+    assert.equal(requestedUrl, url);
+    const controller = controllers.at(-1);
+    assert.equal(signal, controller.signal);
+    return { ok: true, text: () => new Promise((_resolve, reject) => {
+      bodyReads++;
+      assert.equal(signal.aborted, false, 'the body starts before the deadline');
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      queueMicrotask(() => controller.abort(new DOMException('The operation was aborted', 'AbortError')));
+    }) };
+  });
+  await assert.rejects(readAssetChecksum('Setup.exe', url, {
+    maxAttempts: 2, attemptTimeoutMs: 30, retryDelayMs: 0, onRetry: p => retries.push(p),
+  }), { code: 'ETIMEDOUT' });
+  assert.deepEqual(timeouts, [30, 30]);
+  assert.equal(bodyReads, 2, 'both attempts reach and abort the stalled body');
+  assert.notEqual(controllers[0].signal, controllers[1].signal);
+  assert.ok(controllers.every(controller => controller.signal.aborted));
+  assert.deepEqual(retries.map(p => p.attempt), [2]);
 });
 
 test('permanent checksum errors are not retried and never start the large transfer', async (t) => {
