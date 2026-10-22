@@ -138,6 +138,8 @@
 }
 
 :global([data-dockkit-float]) .toolbar {
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   position: absolute;
   top: 8px;
   right: 8px;
