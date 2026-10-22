@@ -88,6 +88,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-settings-general/src/client/AutoStartDesktopRow.tsx', includes: ['SettingsSelect'] },
   { file: 'packages/client/ui-settings-general/src/client/HarnessRestartRow.tsx', includes: ['SettingsSelect'] },
   { file: 'packages/client/ui-settings-general/src/client/AboutSection.tsx', includes: ['openDshHome'] },
+  { file: 'packages/client/ui-settings-general/src/client/SettingsRoot.module.css', includes: ['.navCell.active', '--dsw-specific-sidebar-nav-item-active-accent'] },
   // Remote workspace (SSH) toggle: desktop-only Interface row + config field
   // + dictionaries riding the upstream settings-general files.
   { file: 'packages/client/ui-settings-general/src/client/RemoteWorkspaceRow.tsx', includes: ['remoteWorkspaceEnabled'] },
@@ -158,7 +159,10 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-workspace/src/client/navigation.ts', includes: ['connectNoDirectory', 'connectScratchCwd', 'deleteWorkspace', 'scratchCwd', 'registerDirectoryAction'] },
   { file: 'packages/client/ui-workspace/src/client/tree.ts', includes: ['isNoDirectorySession', 'currentGroupKey'] },
   { file: 'packages/client/ui-workspace/src/client/WorkspacePicker.tsx', includes: ['NO_DIRECTORY', 'onPickNoDirectory'] },
-  { file: 'packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx', includes: ['TasksSectionHeader', 'connectNoDirectory', 'GroupSessionRun'] },
+  // Archive visibility is separate from row count: an enabled empty manager
+  // remains discoverable. Behavior coverage lives in workspace-browser tests.
+  { file: 'packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx', includes: ['TasksSectionHeader', 'connectNoDirectory', 'GroupSessionRun', 'showArchivedSection'] },
+  { file: 'packages/client/ui-workspace/src/client/ShowArchivedListRow.tsx', includes: ['showArchivedList'] },
   { file: 'packages/client/ui-workspace/src/client/locales.ts', includes: ['menu.noDirectory'], excludes: ['Ungrouped'] },
   { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx', includes: ['selectNoDirectory', 'noDirectorySession'] },
   { file: 'packages/client/ui-conversation/src/client/apply.ts', includes: ['selectNoDirectory', 'openNoDirectory'] },
