@@ -72,6 +72,8 @@ expect(view.getByRole('alert')).toHaveTextContent('goal/not-found')
 
 ### Whole-client tier
 
+The committed Codex sidebar has a browser-factory entry rather than ESM source. Its `/client` test alias uses [`scripts/vitest-codex-ui.ts`](../../../scripts/vitest-codex-ui.ts) to evaluate that factory with React and the source UI primitives, exposing its real `apply` and `inject` exports to the assembly.
+
 The slot tier above mounts one feature against doubles. The whole-client tier boots the real assembly: `TestClient.start(plan, mock, options)` imports every roster row's `/client` module in-process (or takes the plan's `provide` replacement), binds `{ rpc: mock.rpc }` to that client's Connection module, synthesizes the boot graph with `graphFromRoster` and hands the loaded modules to the production module system, boots through the production `bootClient`, optionally mounts `uiRenderer`, and waits for `ctx.connection.state === 'connected'`. It lives behind a deep import so slot-tier specs never load it:
 
 ```text

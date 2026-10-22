@@ -28,6 +28,7 @@
     // not declaration path aliases, keep each package/vendor source compiled
     // under its own tsconfig boundary.
     "paths": {
+      "dsh-plugin-codex-ui/client": ["./scripts/vitest-codex-ui.ts"],
       "@deepseek-ai/dsh-client-ui-visual-replies": ["./packages/client/ui-visual-replies/src"],
       "@deepseek-ai/dsh-client-ui-visual-replies/client": ["./packages/client/ui-visual-replies/src/client"],
       "@deepseek-ai/dsh-experimental-session-search": ["./packages/experimental/session-search/src/index.ts"],

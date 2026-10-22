@@ -2,7 +2,7 @@
  * In-process module arrival: dynamic `/client` imports resolve through the
  * repository path aliases, provided rows replace them, the bootstrap row is the
  * static namespace, and the resulting module system serves the vendored Loader
- * without ever loading a bundle.
+ * without fetching browser bundles.
  */
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
@@ -41,6 +41,13 @@ describe('loadPluginModules', () => {
     expect(modules.get(MODULES_PACKAGE)).toBe(modulesClient)
     expect(modules.get(BRAND)).toBe(provided)
   })
+
+  it('loads the committed Codex browser factory through its source-test entry', async () => {
+    const name = 'dsh-plugin-codex-ui'
+    const modules = await loadPluginModules({ roster: ClientRoster.of([row(name)]) })
+    expect(typeof modules.get(name)?.apply).toBe('function')
+    expect(modules.get(name)?.inject).toEqual(['slots', 'locale', 'sessions', 'workspaces', 'uiWorkspace'])
+  }, 60_000)
 
   it('prefixes the package name when a /client import fails', async () => {
     const roster = ClientRoster.of([row(MISSING)])
