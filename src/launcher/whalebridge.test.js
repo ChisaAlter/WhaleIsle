@@ -6,7 +6,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { createHash } = require('node:crypto');
 const { EventEmitter } = require('node:events');
-const { createWhaleBridgeService, validateManifest } = require('./whalebridge');
+const { createWhaleBridgeService, validateManifest, detachDshChannel } = require('./whalebridge');
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'whalebridge-unit-'));
@@ -274,3 +274,105 @@ test('non-Windows hosts show WhaleBridge as unsupported without fetching a catal
   assert.equal(fetched, false);
   assert.match((await service.install()).message, /Windows x64/);
 });
+
+const CHANNEL_BLOCK = [
+  '      whalebridge:',
+  '        displayName: 鲸桥',
+  '        apiKeyEnv: WHALEBRIDGE_GATEWAY_KEY',
+  '        api: openai-completions',
+  '        baseURL: http://127.0.0.1:3427/v1',
+  '        models:',
+  '          - id: group/auto',
+  '            name: Auto',
+  '            contextWindow: 922000',
+].join('\n');
+const PROFILE_PATCH = [
+  '# profile comment',
+  '- id: llm-pi-ai',
+  '  config:',
+  '    providers:',
+  '      existing:',
+  '        api: openai-completions',
+  '        baseURL: https://existing.invalid/v1',
+  '        models: []',
+  CHANNEL_BLOCK,
+  '- id: agent-default-model',
+  '  name: "@deepseek-ai/dsh-agent-default-model"',
+  '  config:',
+  '    provider: whalebridge',
+  '    model: group/auto',
+  '- id: unrelated',
+  '  config:',
+  '    value: !!js "1 + 2"',
+  '',
+].join('\n');
+const CREDENTIALS = 'version: 1\nrecords: {}\nrefs:\n  EXISTING_KEY: existing-secret\n  WHALEBRIDGE_GATEWAY_KEY: gateway-secret\n';
+function seedChannel(t, dshHome, patch = PROFILE_PATCH, location = 'profile') {
+  const file = location === 'home' ? path.join(dshHome, 'cordis.patch.yml') : path.join(dshHome, 'profiles', 'web', 'cordis.patch.yml');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, patch, 'utf8');
+  fs.writeFileSync(path.join(dshHome, '.credentials.yaml'), CREDENTIALS, 'utf8');
+  return file;
+}
+
+test('closing the component removes its models channel but keeps other providers and the stored preference', async t => {
+  const f = fixture(t);
+  const patch = seedChannel(t, f.deps.dshHome);
+  assert.equal((await f.service.install()).ok, true);
+  assert.equal((await f.service.stop()).ok, true);
+  const text = fs.readFileSync(patch, 'utf8');
+  assert.doesNotMatch(text, /apiKeyEnv: WHALEBRIDGE_GATEWAY_KEY/);
+  assert.doesNotMatch(text, /^\s+whalebridge:\s*$/m);
+  assert.match(text, /# profile comment/);
+  assert.match(text, /existing:\n {8}api: openai-completions/);
+  assert.match(text, /id: unrelated/);
+  assert.match(text, /!!js "1 \+ 2"/);
+  assert.match(text, /provider: whalebridge\n {4}model: group\/auto/, 'the default selection stays the stored preference');
+  assert.equal(fs.readFileSync(path.join(f.deps.dshHome, '.credentials.yaml'), 'utf8'),
+    'version: 1\nrecords: {}\nrefs:\n  EXISTING_KEY: existing-secret\n');
+});
+
+test('a user-owned provider named whalebridge is never detached and keeps its credential', async t => {
+  const f = fixture(t);
+  const owned = PROFILE_PATCH.replace('        apiKeyEnv: WHALEBRIDGE_GATEWAY_KEY\n', '');
+  const patch = seedChannel(t, f.deps.dshHome, owned);
+  assert.equal((await f.service.install()).ok, true);
+  assert.equal((await f.service.stop()).ok, true);
+  assert.equal(fs.readFileSync(patch, 'utf8'), owned);
+  assert.match(fs.readFileSync(path.join(f.deps.dshHome, '.credentials.yaml'), 'utf8'), /WHALEBRIDGE_GATEWAY_KEY: gateway-secret/);
+});
+
+test('detach also clears a home-patch channel and empties the providers and refs mappings', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whalebridge-home-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const home = path.join(dir, 'dsh');
+  const homePatch = ['- id: llm-pi-ai', '  config:', '    providers:', CHANNEL_BLOCK, ''].join('\n');
+  seedChannel(t, home, homePatch, 'home');
+  fs.mkdirSync(path.join(home, 'profiles', 'web'), { recursive: true });
+  fs.writeFileSync(path.join(home, 'profiles', 'web', 'cordis.patch.yml'), '# untouched\n', 'utf8');
+  assert.deepEqual(detachDshChannel(home), { changed: true });
+  assert.equal(read('cordis.patch.yml'), '- id: llm-pi-ai\n  config:\n    providers: {}\n');
+  assert.equal(read('.credentials.yaml'), 'version: 1\nrecords: {}\nrefs:\n  EXISTING_KEY: existing-secret\n');
+  assert.equal(fs.readFileSync(path.join(home, 'profiles', 'web', 'cordis.patch.yml'), 'utf8'), '# untouched\n');
+  assert.deepEqual(detachDshChannel(home), { changed: false }, 'a second close is a no-op');
+
+  // The managed reference is the only one left: the mapping stays a mapping.
+  fs.writeFileSync(path.join(home, 'cordis.patch.yml'), homePatch, 'utf8');
+  fs.writeFileSync(path.join(home, '.credentials.yaml'), 'version: 1\nrecords: {}\nrefs:\n  WHALEBRIDGE_GATEWAY_KEY: gateway-secret\n', 'utf8');
+  assert.deepEqual(detachDshChannel(home), { changed: true });
+  assert.equal(read('.credentials.yaml'), 'version: 1\nrecords: {}\nrefs: {}\n');
+
+  function read(name) { return fs.readFileSync(path.join(home, name), 'utf8'); }
+});
+
+test('a failing channel rewrite still leaves the component stopped and reports the cause', async t => {
+  const f = fixture(t);
+  seedChannel(t, f.deps.dshHome, PROFILE_PATCH, 'home');
+  fs.mkdirSync(path.join(f.deps.dshHome, 'profiles', 'web', 'cordis.patch.yml'), { recursive: true });
+  assert.equal((await f.service.install()).ok, true);
+  const result = await f.service.stop();
+  assert.equal(result.ok, true);
+  assert.equal(f.service.state(), null);
+  assert.match(result.message, /未能从模型选择中移除鲸桥渠道/);
+});
+
