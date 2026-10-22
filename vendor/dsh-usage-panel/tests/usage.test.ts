@@ -16,9 +16,11 @@ import {
   monthKeyUTC,
   parseDayKeyUTC,
   sortedModels,
+  sumDayBuckets,
   totalsFrom,
   totalsFromModels,
   isUsageEmpty,
+  hasUsage,
   HEAT_DAYS,
 } from '../src/shared/usage.ts'
 import type { CoverageStats, DayRecord, Overview } from '../src/shared/contract.ts'
@@ -41,11 +43,31 @@ test('parseDayKeyUTC round-trips through UTC midnight', () => {
   assert.equal(d.getUTCHours(), 0)
 })
 
-test('totalsFrom sums the four disjoint buckets', () => {
-  // DSH TokenUsage buckets are disjoint: input is uncached only, so the total
-  // is a plain sum (v0.1.0 semantic, now backed by the documented contract).
+test('totalsFrom sets total = uncached input + output (cache excluded)', () => {
+  // DSH TokenUsage buckets are disjoint: input is uncached only. The displayed
+  // total is the Magpie gateway's headline `in + out` — cache read/write are
+  // separate stats and must never be folded in.
   const t = totalsFrom({ input: 10, output: 20, cacheRead: 30, cacheWrite: 5 })
-  assert.deepEqual(t, { input: 10, output: 20, cacheRead: 30, cacheWrite: 5, total: 65 })
+  assert.deepEqual(t, { input: 10, output: 20, cacheRead: 30, cacheWrite: 5, total: 30 })
+})
+
+test('hasUsage counts cache-only buckets as usage', () => {
+  assert.equal(hasUsage({ input: 1, output: 0, cacheRead: 0, cacheWrite: 0 }), true)
+  assert.equal(hasUsage({ input: 0, output: 0, cacheRead: 900, cacheWrite: 0 }), true)
+  assert.equal(hasUsage({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }), false)
+})
+
+test('sumDayBuckets sums only days at or after the cutoff key', () => {
+  const byDay = {
+    '2026-08-01': { a: { input: 1, output: 1, cacheRead: 1, cacheWrite: 0 } },
+    '2026-08-14': { a: { input: 10, output: 5, cacheRead: 100, cacheWrite: 0 }, b: { input: 2, output: 3, cacheRead: 0, cacheWrite: 0 } },
+    '2026-08-15': { b: { input: 4, output: 0, cacheRead: 0, cacheWrite: 1 } },
+  }
+  const recent = sumDayBuckets(byDay, '2026-08-02')
+  assert.deepEqual(recent.totals, { input: 16, output: 8, cacheRead: 100, cacheWrite: 1 })
+  assert.deepEqual(recent.byModel['a'], { input: 10, output: 5, cacheRead: 100, cacheWrite: 0 })
+  assert.deepEqual(recent.byModel['b'], { input: 6, output: 3, cacheRead: 0, cacheWrite: 1 })
+  assert.deepEqual(sumDayBuckets(byDay, '2026-08-16'), { totals: emptyBuckets(), byModel: {} })
 })
 
 test('emptyTotals and mergeInto are additive and idempotent', () => {
@@ -68,7 +90,7 @@ test('sortedModels ranks by total desc and preserves buckets', () => {
     ['model-a', 'model-b', 'unknown'],
   )
   assert.equal(rows[0]!.total, 100)
-  assert.equal(rows[1]!.total, 20)
+  assert.equal(rows[1]!.total, 10) // 5 in + 5 out; cache read/write excluded
   assert.equal(rows[2]!.total, 0)
 })
 
@@ -77,8 +99,9 @@ test('totalsFromModels aggregates a ranking back into totals', () => {
     a: { input: 10, output: 10, cacheRead: 10, cacheWrite: 10 },
     b: { input: 1, output: 1, cacheRead: 1, cacheWrite: 1 },
   })
-  assert.equal(totalsFromModels(rows).total, 44)
+  assert.equal(totalsFromModels(rows).total, 22)
   assert.equal(totalsFromModels(rows).input, 11)
+  assert.equal(totalsFromModels(rows).cacheRead, 11)
 })
 
 test('hitRate = read / (uncached + read + write); null when nothing billed', () => {
@@ -109,8 +132,8 @@ test('buildDayWindow merges per-model buckets into the right day', () => {
   const now = Date.UTC(2026, 7, 15, 12, 0, 0)
   const days = buildDayWindow(byDay, now)
   const d14 = days.find((d) => d.date === '2026-08-14')!
-  assert.equal(d14.total, 18)
-  assert.deepEqual(d14.models['model-a'], { input: 3, output: 4, cacheRead: 5, cacheWrite: 6, total: 18 })
+  assert.equal(d14.total, 7) // 3 in + 4 out; cache 5/6 excluded
+  assert.deepEqual(d14.models['model-a'], { input: 3, output: 4, cacheRead: 5, cacheWrite: 6, total: 7 })
   const d1 = days.find((d) => d.date === '2026-07-01')!
   assert.equal(d1.total, 1)
 })

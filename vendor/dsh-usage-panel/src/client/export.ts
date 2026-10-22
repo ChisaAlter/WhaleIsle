@@ -2,6 +2,8 @@
 // CSV cells follow RFC 4180 and are guarded against spreadsheet formula
 // injection (=, +, -, @ prefixes get a leading '), and files carry a UTF-8 BOM
 // so Excel detects UTF-8. Dates are the UTC day keys from the payload.
+// The `total` column is uncached input + output (the Magpie headline rule), so
+// it never includes `cacheRead` / `cacheWrite` — those stay separate columns.
 // Cost columns are ESTIMATES: integer cents; per-model priced (daily rows sum
 // their models), empty when a row's model is unpriced — never a guessed 0.
 import type { DayRecord, ModelItem, Overview, PhaseBuckets } from '../shared/contract.ts'
@@ -50,7 +52,6 @@ export function buildDailyCsv(
 ): string {
   const rows = ['date,total,input,output,cacheRead,cacheWrite,costPeakCents,costOffPeakCents,costTotalCents']
   for (const d of days) {
-    if (d.total <= 0) continue
     let input = 0
     let output = 0
     let cacheRead = 0
@@ -72,10 +73,12 @@ export function buildDailyCsv(
       idle = (idle ?? 0) + row.idle!
       total = (total ?? 0) + row.total
     }
+    // A cache-only day still carries data (its in+out total is 0 by definition).
+    if (input + output + cacheRead + cacheWrite <= 0) continue
     rows.push(
       [
         csvCell(d.date),
-        csvCell(d.total),
+        csvCell(input + output),
         csvCell(input),
         csvCell(output),
         csvCell(cacheRead),
@@ -97,7 +100,7 @@ export function buildModelCsv(byModel: ModelItem[], prices: SessionCostPrices = 
       [
         csvCell(m.model),
         csvCell(m.provider),
-        csvCell(m.total),
+        csvCell(m.input + m.output),
         csvCell(m.input),
         csvCell(m.output),
         csvCell(m.cacheRead),

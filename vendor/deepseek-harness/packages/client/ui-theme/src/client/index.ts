@@ -28,8 +28,8 @@ import { en, zh, type ThemeKey } from './locales.ts'
 import { wallpaperShell } from './wallpaper-shell.ts'
 import { deriveThemeTokens } from '../derive.ts'
 import {
-  DEFAULT_FAMILY_ID, SIDEBAR_RAIL_FILL_TOKEN, SIDEBAR_UNMASKED_FILL,
-  type ThemeFamily, type ThemeTokens as FamilyTokens,
+  DEFAULT_FAMILY_ID, DEFAULT_THEME_SKIN, SIDEBAR_RAIL_FILL_TOKEN, SIDEBAR_UNMASKED_FILL,
+  type ThemeFamily, type ThemeSkinId, type ThemeTokens as FamilyTokens,
 } from '../theme-family.ts'
 import { listThemeFamilies, resolveThemeFamily } from '../builtin-families.ts'
 import {
@@ -62,6 +62,7 @@ import {
   THEME_TERMINAL_OPACITY_FIELD, THEME_TRANSPARENT_FIELD,
   THEME_WALLPAPER_BLUR_FIELD, THEME_WALLPAPER_BING_FIELD, THEME_WALLPAPER_CATALOGS_FIELD,
   THEME_WALLPAPER_FAVORITES_FIELD, THEME_WALLPAPER_IMAGE_FIELD, THEME_WALLPAPER_PIXELATE_FIELD,
+  THEME_SKIN_WALLPAPER_FIELD,
   THEME_WALLPAPER_SOURCES_FIELD,
   resolveThemeSettings,
   sanitizeWallpaperCatalogUrls,
@@ -118,6 +119,8 @@ export interface ThemeDefinition {
   colorScheme: 'light' | 'dark'
   /** Alias-layer overrides applied as inline CSS variables over the base palette. */
   tokens: ThemeTokens
+  /** Presentation skin applied alongside the palette; absent means the product default. */
+  skin?: ThemeSkinId
 }
 
 /** Immutable theme state published on every change. */
@@ -155,6 +158,12 @@ export interface ThemeSnapshot {
   sidebarMaskHidden: boolean
   /** Wallpaper data URL; empty means no wallpaper. */
   wallpaperImage: string
+  /** Wallpaper painted this frame: the user's image, else the family's image. */
+  effectiveWallpaperImage?: string
+  /** The active family's optional wallpaper data URL. */
+  skinWallpaperImage?: string
+  /** Whether the active family's wallpaper may paint while no user image is set. */
+  skinWallpaperEnabled?: boolean
   /** Frosted-glass blur on the wallpaper, 0–100. */
   wallpaperBlur: number
   /** Pixelation on the wallpaper, 0–100. */
@@ -608,12 +617,12 @@ export class ThemeRuntime {
   setWallpaper(patch: Partial<Pick<ThemeSettings,
     'wallpaperImage' | 'wallpaperBlur' | 'wallpaperPixelate' | 'backgroundEffect'
     | 'backgroundEffectColors' | 'backgroundEffectSpeed' | 'backgroundEffectCount'
-    | 'backgroundEffectPreset' | 'backgroundEffectVariant'
+    | 'backgroundEffectPreset' | 'backgroundEffectVariant' | 'skinWallpaperEnabled'
   >>): void {
     const next: Pick<ThemeSettings,
       'wallpaperImage' | 'wallpaperBlur' | 'wallpaperPixelate' | 'backgroundEffect'
       | 'backgroundEffectColors' | 'backgroundEffectSpeed' | 'backgroundEffectCount'
-      | 'backgroundEffectPreset' | 'backgroundEffectVariant'
+      | 'backgroundEffectPreset' | 'backgroundEffectVariant' | 'skinWallpaperEnabled'
     > = {
       wallpaperImage: this.settings.wallpaperImage,
       wallpaperBlur: this.settings.wallpaperBlur,
@@ -624,6 +633,7 @@ export class ThemeRuntime {
       backgroundEffectCount: this.settings.backgroundEffectCount,
       backgroundEffectPreset: this.settings.backgroundEffectPreset,
       backgroundEffectVariant: this.settings.backgroundEffectVariant,
+      skinWallpaperEnabled: this.settings.skinWallpaperEnabled,
     }
     if (patch.wallpaperImage !== undefined) {
       next.wallpaperImage = patch.wallpaperImage === '' || isWallpaperDataUrl(patch.wallpaperImage)
@@ -632,6 +642,7 @@ export class ThemeRuntime {
     }
     if (patch.wallpaperBlur !== undefined) next.wallpaperBlur = clampWallpaperEffect(patch.wallpaperBlur)
     if (patch.wallpaperPixelate !== undefined) next.wallpaperPixelate = clampWallpaperEffect(patch.wallpaperPixelate)
+    if (patch.skinWallpaperEnabled !== undefined) next.skinWallpaperEnabled = patch.skinWallpaperEnabled
     if (patch.backgroundEffect !== undefined) {
       next.backgroundEffect = (BACKGROUND_EFFECTS as readonly string[]).includes(patch.backgroundEffect)
         ? patch.backgroundEffect
@@ -659,6 +670,7 @@ export class ThemeRuntime {
     if (next.wallpaperImage === this.settings.wallpaperImage
       && next.wallpaperBlur === this.settings.wallpaperBlur
       && next.wallpaperPixelate === this.settings.wallpaperPixelate
+      && next.skinWallpaperEnabled === this.settings.skinWallpaperEnabled
       && next.backgroundEffect === this.settings.backgroundEffect
       && JSON.stringify(next.backgroundEffectColors) === JSON.stringify(this.settings.backgroundEffectColors)
       && next.backgroundEffectSpeed === this.settings.backgroundEffectSpeed
@@ -667,13 +679,23 @@ export class ThemeRuntime {
       && next.backgroundEffectVariant === this.settings.backgroundEffectVariant) {
       return
     }
-    const becameEffective = this.settings.transparentTheme
-      && isWallpaperDataUrl(next.wallpaperImage)
-      && !isWallpaperDataUrl(this.settings.wallpaperImage)
+    const mode = this.resolvedMode()
+    const family = this.previewedFamily
+      ?? resolveThemeFamily(mode === 'dark' ? this.settings.activeDarkThemeId : this.settings.activeLightThemeId,
+        this.settings.customThemes)
+    const skinWallpaper = family.wallpaper ?? ''
+    const currentEffective = isWallpaperDataUrl(this.settings.wallpaperImage)
+      || (this.settings.skinWallpaperEnabled && isWallpaperDataUrl(skinWallpaper))
+    const nextEffective = isWallpaperDataUrl(next.wallpaperImage)
+      || (next.skinWallpaperEnabled && isWallpaperDataUrl(skinWallpaper))
+    const becameEffective = this.settings.transparentTheme && nextEffective && !currentEffective
     this.settings = { ...this.settings, ...next }
     if (patch.wallpaperImage !== undefined) this.queueWrite(THEME_WALLPAPER_IMAGE_FIELD, next.wallpaperImage)
     if (patch.wallpaperBlur !== undefined) this.queueWrite(THEME_WALLPAPER_BLUR_FIELD, next.wallpaperBlur)
     if (patch.wallpaperPixelate !== undefined) this.queueWrite(THEME_WALLPAPER_PIXELATE_FIELD, next.wallpaperPixelate)
+    if (patch.skinWallpaperEnabled !== undefined) {
+      this.queueWrite(THEME_SKIN_WALLPAPER_FIELD, next.skinWallpaperEnabled)
+    }
     if (patch.backgroundEffect !== undefined) this.queueWrite(THEME_BACKGROUND_EFFECT_FIELD, next.backgroundEffect)
     if (patch.backgroundEffectColors !== undefined) {
       this.queueWrite(THEME_BACKGROUND_EFFECT_COLORS_FIELD, next.backgroundEffectColors)
@@ -897,14 +919,21 @@ export class ThemeRuntime {
     const base: ThemeDefinition = registered ?? {
       id: family.id,
       colorScheme: mode,
+      skin: family.skin ?? DEFAULT_THEME_SKIN,
       tokens: family.id === DEFAULT_FAMILY_ID ? {} : deriveThemeTokens(family[mode]),
     }
+    const skinWallpaperImage = family.wallpaper ?? ''
+    const effectiveWallpaperImage = this.settings.wallpaperImage !== ''
+      ? this.settings.wallpaperImage
+      : this.settings.skinWallpaperEnabled && isWallpaperDataUrl(skinWallpaperImage)
+        ? skinWallpaperImage
+        : ''
     return Object.freeze({
       preference: isThemePreference(this.preference) ? this.preference : this.settings.preference,
       fontSize: this.fontSize,
       fontSizes: this.fontSizes,
       fontFamilies: this.fontFamilies,
-      active: this.composeActive(base, mode),
+      active: this.composeActive(base, mode, effectiveWallpaperImage),
       themes: Object.freeze([...this.themes]),
       families: Object.freeze(listThemeFamilies(this.settings.customThemes)),
       activeLightThemeId: this.settings.activeLightThemeId,
@@ -915,6 +944,9 @@ export class ThemeRuntime {
       transparentTheme: this.settings.transparentTheme,
       sidebarMaskHidden: this.settings.sidebarMaskHidden,
       wallpaperImage: this.settings.wallpaperImage,
+      effectiveWallpaperImage,
+      skinWallpaperImage,
+      skinWallpaperEnabled: this.settings.skinWallpaperEnabled,
       wallpaperBlur: this.settings.wallpaperBlur,
       wallpaperPixelate: this.settings.wallpaperPixelate,
       wallpaperBingEnabled: this.settings.wallpaperBingEnabled,
@@ -948,9 +980,9 @@ export class ThemeRuntime {
    * Fold family tokens, glass/font extras, and override layers into the
    * active definition.
    */
-  private composeActive(active: ThemeDefinition, mode: 'light' | 'dark'): ThemeDefinition {
+  private composeActive(active: ThemeDefinition, mode: 'light' | 'dark', effectiveWallpaperImage: string): ThemeDefinition {
     const tokens: ThemeTokens = { ...active.tokens }
-    const wallpapered = isWallpaperDataUrl(this.settings.wallpaperImage)
+    const wallpapered = isWallpaperDataUrl(effectiveWallpaperImage)
     // The ambient gradient is a backdrop too: while it is live (and no image
     // covers it) chrome surfaces mix to the same glass solidity so the blooms
     // show through like a wallpaper does.
@@ -1006,6 +1038,7 @@ function sameSettings(left: ThemeSettings, right: ThemeSettings): boolean {
     && left.transparentTheme === right.transparentTheme
     && left.sidebarMaskHidden === right.sidebarMaskHidden
     && left.wallpaperImage === right.wallpaperImage
+    && left.skinWallpaperEnabled === right.skinWallpaperEnabled
     && left.wallpaperBlur === right.wallpaperBlur
     && left.wallpaperPixelate === right.wallpaperPixelate
     && left.wallpaperBingEnabled === right.wallpaperBingEnabled
@@ -1179,7 +1212,7 @@ export function apply(ctx: ClientContext): void {
       fontSizeCode: snapshot.fontSizeCode,
       fontFamilyComposer: snapshot.fontFamilyComposer,
       fontFamilyTerminal: snapshot.fontFamilyTerminal,
-      wallpaperImage: snapshot.wallpaperImage,
+      wallpaperImage: snapshot.effectiveWallpaperImage ?? '',
       wallpaperBlur: snapshot.wallpaperBlur,
       wallpaperPixelate: snapshot.wallpaperPixelate,
       backgroundEffect: snapshot.backgroundEffect,

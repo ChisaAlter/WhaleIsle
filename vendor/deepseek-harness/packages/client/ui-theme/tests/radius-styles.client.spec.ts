@@ -49,7 +49,10 @@ describe('component radius scale', () => {
       'ui-open-in-app/src/client/OpenTargetButton.module.css': [
         ".split[data-open-target='directory']: border-radius: 14px",
       ],
-      // The mini-player viewport follows the frame radius minus its actual 6px inset.
+      // File and Browser floating viewports follow the same frame radius minus their 6px inset.
+      'ui-dockkit/src/components/dockkit.module.css': [
+        '.float:has([data-file-preview], [data-textpreview-state]) > .floatBody: border-radius: calc(var(--dsw-radius-panel) - 6px)',
+      ],
       'ui-preview/src/client/PreviewPanel.module.css': [
         '.miniPlayerViewport: border-radius: calc(var(--dsw-radius-panel) - 6px)',
       ],

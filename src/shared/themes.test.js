@@ -51,6 +51,40 @@ test('resolveTheme uses the dark half of a named family', () => {
   assert.equal(theme.accent, FAMILY_SEEDS.celadon.dark.accent);
 });
 
+test('resolveTheme carries the Codex skin and palette', () => {
+  const light = resolveTheme({}, {
+    harness: { preference: 'light', activeLightThemeId: 'codex' },
+    systemDark: false,
+  });
+  assert.equal(light.skin, 'codex');
+  assert.equal(light.bg, '#ffffff');
+  assert.equal(light.accent, '#2563eb');
+  const dark = resolveTheme({}, {
+    harness: { preference: 'dark', activeDarkThemeId: 'codex' },
+    systemDark: false,
+  });
+  assert.equal(dark.skin, 'codex');
+  assert.equal(dark.bg, '#181818');
+  assert.equal(dark.accent, '#338cff');
+});
+
+test('resolveTheme carries the Claude skin and paper palette', () => {
+  const light = resolveTheme({}, {
+    harness: { preference: 'light', activeLightThemeId: 'claude' },
+    systemDark: false,
+  });
+  assert.equal(light.skin, 'claude');
+  assert.equal(light.bg, '#faf9f5');
+  assert.equal(light.accent, '#c96442');
+  const dark = resolveTheme({}, {
+    harness: { preference: 'dark', activeDarkThemeId: 'claude' },
+    systemDark: false,
+  });
+  assert.equal(dark.skin, 'claude');
+  assert.equal(dark.bg, '#262624');
+  assert.equal(dark.accent, '#d97757');
+});
+
 test('resolveTheme follows system preference and lists builtin families', () => {
   const light = resolveTheme({}, { harness: { preference: 'system' }, systemDark: false });
   assert.equal(light.scheme, 'light');

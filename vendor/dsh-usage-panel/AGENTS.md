@@ -53,6 +53,8 @@ npm pack --dry-run   # 发布前人工确认清单
 5. **只读承诺**：永不写回原始会话日志；投影机制的落盘是框架对派生缓存的落盘，不触碰原始日志。**唯一例外(用户授权的自动修复)**：仅当框架报告某会话日志损坏(如 seq gap)时，用户从统计页显式点击「自动修复」→ 只重写该损坏工件(解码全部行→0 基连续重编号→重打包→原子替换)，先落 `.bak-<ts>` 备份；解码/序列化任一失败即中止不写；健康日志永不触碰。
 6. **安全边界**：RPC `{ authority: 'loopback' }`，不开放裸 HTTP 端口。
 7. **入口稳定**：`settings.section` id `usage-stats`、order 25、RPC 通道 `/usage-stats`——这些 id 被宿主配置引用，改名即破坏安装。
+8. **总量口径 = 未缓存输入 + 输出**（`totalsFrom` / `sortedModels` / `buildDayWindow` / `recentTotals` / 手动 total / 会话排行 / 环形图 / CSV 导出）。缓存读/写只保留在自己的桶里单独展示，**绝不并入任何 total**；`UsageTotals` 的四个桶与费用数学不变，命中率公式不变。派生 total 只能出现在视图/派生层，投影状态里仍然没有 `total` 字段。
+9. **Magpie 账本（可选源）不改变归因规则**：模型键必须是 DSH 日志里的模型 id（网关 `req`，如 `codex/gpt-6.1-sol`），Provider 取日志侧映射（如 `magpie`，即价格作用域键），网关上游 id 只作日志未见模型的兜底；账本不可用时干净回退日志，`coverage.source` 明示来源。
 
 ## 6. 踩坑记录（本项目真实踩过/分析确认的坑）
 
@@ -173,6 +175,24 @@ npm pack --dry-run   # 发布前人工确认清单
 真实会话已产生 14,284 token，恢复后日志尾追加 `session/end-seed`；旧 reducer 等这个标记才武装，投影与回退扫描都得零。现行宿主 `init(header, inheritedEventCount)` 与 `readSession().inheritedEventCount` 才是准确边界。显式前缀优先，忽略后续标记，旧调用者仍兼容标记语义。新增 `explicitSeedBoundary` 状态并升 stateVersion 3，同时失效 checkpoint 与聚合缓存；不得通过改健康日志来修插件的计数错误。回归必须包含「已有用量后才出现标记」和「fork 前缀排除、边界上的事件计入」。
 
 同轮发现 `deltaScan` 将整份投影再次加到上次聚合，刷新后数字翻倍。现每次扫描从空聚合开始，每会话合并一次（仍复用框架 checkpoint）；不能把 `mergeSessionValue` 当作替换接口。回归走实际 overview RPC，覆盖重复刷新、新用量和删除。
+
+### 6.12 总量口径 6.9B vs 网关 223M，以及账本模型键的坑（2026-10-21 实机事故）
+
+**症状**：用户对比 设置 → 用量统计 的「Token 总用量」≈6.9B 与 `magpie usage` 的 223M，相差 30 倍；面板还会漏掉 2026-10-12 之前的全部历史。
+
+**机理（两件事叠加，缺一都不解释现象）**：
+1. 旧 `totalsFrom` 把**四桶全加**（未缓存输入 + 输出 + 缓存读 + 缓存写）。本机账本里缓存读 10.7B 远超 in+out 的 0.22B，所以「总量」实际上被缓存读主导——**同一批请求的两种口径**，不是数据错。Magpie 的头条 token 恒为 `in + out`，缓存读/写是独立统计。
+2. 面板只能读磁盘上还留着的会话日志（本机从 2026-10-12 起），更早的 DSH 用量只有网关账本还有。
+
+**现行合同**：
+- 派生 total 一律 `input + output`（`totalsFrom` / `sortedModels` / `totalsFromModels` / `buildDayWindow` / `recentTotals` / `sessionCost` 手动 total / CSV 导出）。缓存读写只在自己的桶里露出（KPI 次级文字第三段、命中率卡、CSV 列）。
+- 账本折叠在 `src/host/magpie-usage.ts`：`$MAGPIE_USAGE_FILE` → `~/.config/magpie/usage.jsonl`，只取 `agent === 'dsh'`，`stat` 失败/解析失败/无 dsh 行 → `null` 回退日志；成功时按 mtime+size 缓存（账本每次请求都追加，缓存键必须含 size）。
+- **模型键 = 行的 `req`（请求路由），不是 `model`（实际服务的 id）**。DSH 日志写的是 `codex/gpt-6.1-sol`、`clinepass/cline-pass/deepseek-v4.1-flash-1017`，而账本的 `model` 是 `gpt-6.1-sol`——用 `model` 当键会让 `sortedModels(gateway.byModel, a.allTimeCostByModel, …)` 一行也对不上，KPI 费用卡直接变「—」。本机真实日志模型 id 是从 `dsh-usage-panel.sqlite` 的缓存载荷里核对出来的。
+- **Provider 取日志侧映射**（本机是 `magpie`，也正是用户价格的作用域键 `magpie/<model>`），网关的上游 id（`codex`/`factory`/`minimax-cn`…）只作为「日志从未见过该模型」的兜底；Provider 行由同一批模型桶按该映射分组，因此 `Σ providers == Σ byModel == allTime.total`（单测锁）。
+- 账本口径下**不经网关的流量不计入总量**（本机 `stepfun/step-5-preview` 35.7M 就不在账本里）——这正是「与 `magpie usage` 一致」的含义，README/来源行必须写清；删/改名账本文件即回到日志口径。
+- 账本按 UTC 日重分桶（面板契约），`magpie usage` 按本地日，所以单日数字可能差一个时区偏移，全历史完全一致。
+
+**回归**：`tests/magpie-usage.test.ts`（agent 过滤、req 键、四桶、UTC 日桶、mtime+size 缓存、缺失/无 dsh 行/半行回退）、`tests/aggregate.test.ts`（账本覆盖总量/日桶/模型，日志 Provider 胜出，费用行 join 后 `sumCostCents` 非 null，`Σ providers` 守恒）、`tests/refresh.test.ts`（用 `MAGPIE_USAGE_FILE` 指向不存在文件，单测绝不可读开发者本机账本）。
 
 ## 7. 文档同步义务
 

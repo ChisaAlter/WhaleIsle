@@ -36,6 +36,7 @@
 
 - `vendor/deepseek-harness/**`、Harness DOM 注入、插件/会话数据结构。
 - 全窗口透明 BrowserView、宠物商店/喂养/等级/AI 对话/声音/多宠物。独立宠物窗形态归 [desktop-live2d-pet](desktop-live2d-pet.md) 卡，不在本卡演进。
+- token 投喂/成长口径归 [desktop-live2d-pet](desktop-live2d-pet.md) 卡：token = 未缓存 input + output（缓存读写单列，不计口粮），优先聚合 `~/.config/magpie/usage.jsonl` 的 `agent==='dsh'` 行，`growth.accountingVersion: 2` 管迁移。本卡只描述停用的 Codex 立绘形态，不涉及 token 记账。
 
 ## Gates
 

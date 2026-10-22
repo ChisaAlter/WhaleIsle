@@ -35,6 +35,12 @@ export interface AppearanceSyncSnapshot {
   sidebarMaskHidden: boolean
   /** Wallpaper data URL; empty means no wallpaper. */
   wallpaperImage: string
+  /** The active family's optional wallpaper data URL. */
+  skinWallpaperImage?: string
+  /** Whether the active family's wallpaper may paint while no user image is set. */
+  skinWallpaperEnabled?: boolean
+  /** Wallpaper actually painted this frame (user image, else family image). */
+  effectiveWallpaperImage?: string
   /** Frosted-glass blur on the wallpaper, 0–100. */
   wallpaperBlur: number
   /** Pixelation on the wallpaper, 0–100. */
@@ -111,6 +117,12 @@ export interface AppearanceRowState {
   sidebarMaskHidden: boolean
   /** Wallpaper data URL; empty means no wallpaper. */
   wallpaperImage: string
+  /** The active family's optional wallpaper data URL. */
+  skinWallpaperImage?: string
+  /** Whether the active family's wallpaper may paint while no user image is set. */
+  skinWallpaperEnabled?: boolean
+  /** Wallpaper actually painted this frame (user image, else family image). */
+  effectiveWallpaperImage?: string
   /** Frosted-glass blur on the wallpaper, 0–100. */
   wallpaperBlur: number
   /** Pixelation on the wallpaper, 0–100. */
@@ -182,6 +194,9 @@ const EMPTY: Omit<AppearanceRowState, 'revision'> = {
   transparentTheme: DEFAULT_THEME_SETTINGS.transparentTheme,
   sidebarMaskHidden: DEFAULT_THEME_SETTINGS.sidebarMaskHidden,
   wallpaperImage: '',
+  skinWallpaperImage: '',
+  skinWallpaperEnabled: true,
+  effectiveWallpaperImage: '',
   wallpaperBlur: DEFAULT_THEME_SETTINGS.wallpaperBlur,
   wallpaperPixelate: DEFAULT_THEME_SETTINGS.wallpaperPixelate,
   wallpaperBingEnabled: false,
@@ -230,6 +245,9 @@ export function createAppearanceRowStore(): EngineStoreHandle<AppearanceRowState
         d.transparentTheme = snapshot.transparentTheme
         d.sidebarMaskHidden = snapshot.sidebarMaskHidden
         d.wallpaperImage = snapshot.wallpaperImage
+        d.skinWallpaperImage = snapshot.skinWallpaperImage ?? ''
+        d.skinWallpaperEnabled = snapshot.skinWallpaperEnabled ?? true
+        d.effectiveWallpaperImage = snapshot.effectiveWallpaperImage ?? snapshot.wallpaperImage
         d.wallpaperBlur = snapshot.wallpaperBlur
         d.wallpaperPixelate = snapshot.wallpaperPixelate
         d.wallpaperBingEnabled = snapshot.wallpaperBingEnabled ?? false

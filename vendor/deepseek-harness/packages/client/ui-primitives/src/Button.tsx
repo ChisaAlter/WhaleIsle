@@ -1,9 +1,8 @@
 // Button: token-styled button atom. Variants map to the --dsw-alias-button-*
 // fill families; no framework imports, all behavior via props.
 
-import { forwardRef, useCallback, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import { Children, forwardRef, isValidElement, useCallback, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { FlipText } from './FlipText.tsx'
 import { StateDot } from './StateDot.tsx'
 import css from './Button.module.css'
 
@@ -20,9 +19,17 @@ type ButtonProps = {
   children?: ReactNode
   /** Show a busy indicator inside the normal caption's seat. */
   loading?: boolean | undefined
-  /** Localized transient result, overlaid without changing the button's size. */
+  /** Localized busy or result label; overflowing text scrolls without resizing the button. */
   feedback?: string | undefined
 } & ButtonHTMLAttributes<HTMLButtonElement>
+
+function captionText(children: ReactNode): string {
+  return Children.toArray(children).map(child => {
+    if (typeof child === 'string' || typeof child === 'number') return String(child)
+    if (!isValidElement<{ children?: ReactNode }>(child) || child.type === 'svg') return ''
+    return captionText(child.props.children)
+  }).join('')
+}
 
 /**
  * Render a button.
@@ -41,7 +48,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   const buttonRef = useRef<HTMLButtonElement | null>(null)
   const overlayRef = useRef<HTMLSpanElement>(null)
   const measureRef = useRef<HTMLSpanElement>(null)
-  const [labelFits, setLabelFits] = useState(false)
+  const [scrollDistance, setScrollDistance] = useState(0)
   const attachButton = useCallback((element: HTMLButtonElement | null) => {
     buttonRef.current = element
     if (typeof ref === 'function') {
@@ -59,9 +66,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   }, [busy, showingFeedback, children, icon])
   const caption = busy || showingFeedback ? resting.current.children : children
   const shownIcon = busy || showingFeedback ? resting.current.icon : icon
-  const hasCaption = typeof caption === 'string' ? caption !== '' : typeof caption === 'number'
-  const statusLabel = feedback ?? rest['aria-label'] ?? (typeof children === 'string' ? children : undefined)
-  const feedbackLabel = feedback ?? (hasCaption ? statusLabel : undefined)
+  const restingLabel = captionText(caption)
+  const hasCaption = restingLabel !== ''
+  const statusLabel = feedback ?? rest['aria-label'] ?? (captionText(children) || undefined)
+  const feedbackLabel = feedback ?? (hasCaption ? statusLabel ?? restingLabel : undefined)
   useLayoutEffect(() => {
     const button = buttonRef.current
     const overlay = overlayRef.current
@@ -71,8 +79,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       const style = getComputedStyle(overlay)
       const available = overlay.clientWidth - parseFloat(style.paddingLeft || '0') - parseFloat(style.paddingRight || '0')
       const indicator = busy ? 12 + parseFloat(style.columnGap || '0') : 0
-      setLabelFits(feedbackLabel !== undefined && available > 0
-        && measure.scrollWidth + indicator <= available)
+      setScrollDistance(feedbackLabel !== undefined && available > 0
+        ? Math.max(0, measure.scrollWidth + indicator - available) : 0)
     }
     fit()
     const observer = new ResizeObserver(fit)
@@ -80,22 +88,26 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     observer.observe(measure)
     return () => { observer.disconnect() }
   }, [busy, showingFeedback, feedbackLabel])
-  const compact = (busy || showingFeedback) && !labelFits
+  const scrolling = (busy || showingFeedback) && scrollDistance > 1
+  const scrollStyle = {
+    '--button-feedback-distance': `${-scrollDistance}px`,
+    '--button-feedback-duration': `${Math.max(3600, scrollDistance / 24 * 2000 + 1600)}ms`,
+  } as CSSProperties
   return (
     <button ref={attachButton} type="button" className={clsx(css.button, css[variant], css[size], shape === 'pill' && css.pill, className)} {...rest}
       disabled={rest.disabled || busy} aria-busy={busy ? true : rest['aria-busy']}
       aria-label={busy || showingFeedback ? statusLabel : rest['aria-label']}
-      title={compact && statusLabel !== undefined ? statusLabel : rest.title}
-      data-feedback-display={busy || showingFeedback ? compact ? busy ? hasCaption ? 'compact-label' : 'indicator' : 'caption' : 'label' : undefined}>
+      title={(scrolling || !hasCaption) && (busy || showingFeedback) && statusLabel !== undefined ? statusLabel : rest.title}
+      data-feedback-display={busy || showingFeedback ? feedbackLabel === undefined ? 'indicator' : scrolling ? 'scrolling-label' : 'label' : undefined}>
       {shownIcon != null && <span className={clsx(css.icon, busy && css.busyIcon)}>{shownIcon}</span>}
       {busy || showingFeedback ? <span className={css.caption}>
-        <span className={clsx(css.reserve, compact && !busy && css.reserveVisible)} aria-hidden={statusLabel !== undefined}>{caption}</span>
+        <span className={css.reserve} aria-hidden={statusLabel !== undefined}>{caption}</span>
         <span ref={overlayRef} className={css.feedback}>
           {busy && <StateDot state="ongoing" size={12} />}
-          {busy && compact && hasCaption && <span aria-hidden="true">…</span>}
-          {feedbackLabel !== undefined && <span ref={measureRef}
-            className={clsx(css.feedbackLabel, !labelFits && css.feedbackLabelHidden)} aria-hidden={!labelFits}>
-            <FlipText text={feedbackLabel} />
+          {feedbackLabel !== undefined && <span className={css.feedbackViewport}>
+            <span ref={measureRef} style={scrollStyle} className={clsx(css.feedbackLabel, scrolling && css.feedbackLabelScrolling)}>
+              {feedbackLabel}
+            </span>
           </span>}
         </span>
       </span> : children}

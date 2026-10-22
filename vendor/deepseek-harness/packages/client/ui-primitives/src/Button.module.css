@@ -103,10 +103,6 @@
   pointer-events: none;
 }
 
-.reserveVisible {
-  opacity: 1;
-}
-
 .feedback {
   position: absolute;
   inset: 0;
@@ -123,17 +119,30 @@
   visibility: hidden;
 }
 
+.feedbackViewport {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .feedbackLabel {
-  flex-shrink: 0;
+  display: inline-block;
   width: max-content;
   white-space: nowrap;
 }
 
-/* Hidden copy retains its natural measurement without clipping a partial caption. */
-.feedbackLabelHidden {
-  position: absolute;
-  visibility: hidden;
-  pointer-events: none;
+.feedbackLabelScrolling {
+  animation: button-feedback-scroll var(--button-feedback-duration) linear infinite;
+}
+
+@keyframes button-feedback-scroll {
+  0%, 15%, 90%, 100% { transform: translateX(0); }
+  45%, 60% { transform: translateX(var(--button-feedback-distance)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feedbackViewport { overflow-x: auto; scrollbar-width: none; pointer-events: auto; }
+  .feedbackLabelScrolling { animation: none; }
 }
 
 .feedback > svg {

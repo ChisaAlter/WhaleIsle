@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { FontFamilies, ThemePreference, ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { fontFamilyVariable } from '@deepseek-ai/dsh-client-ui-theme/src/theme-settings.ts'
-import { DARK_ATTRIBUTE, THEME_SOURCE_ATTRIBUTE, ThemePresenter } from '@deepseek-ai/dsh-client-ui-layout/src/client/theme-presenter.ts'
+import { DARK_ATTRIBUTE, SKIN_ATTRIBUTE, THEME_SOURCE_ATTRIBUTE, ThemePresenter } from '@deepseek-ai/dsh-client-ui-layout/src/client/theme-presenter.ts'
 
 const LIGHT_THEME_COLOR = 'rgb(255, 255, 255)'
 const DARK_THEME_COLOR = 'rgb(21, 21, 23)'
@@ -74,6 +74,7 @@ beforeEach(() => {
   clearThemePresentation()
   document.documentElement.style.removeProperty('color-scheme')
   document.documentElement.removeAttribute(THEME_SOURCE_ATTRIBUTE)
+  document.documentElement.removeAttribute(SKIN_ATTRIBUTE)
   document.body.removeAttribute(DARK_ATTRIBUTE)
   document.body.removeAttribute('style')
   const style = document.createElement('style')
@@ -159,6 +160,18 @@ describe('ThemePresenter', () => {
     expect(document.documentElement.getAttribute(THEME_SOURCE_ATTRIBUTE)).toBe('dark')
     presenter.dispose()
     expect(document.documentElement.hasAttribute(THEME_SOURCE_ATTRIBUTE)).toBe(false)
+  })
+
+  it('publishes and retracts the presentation skin', () => {
+    const presenter = new ThemePresenter()
+    const base = snapshot('light')
+    presenter.apply({ ...base, active: { ...base.active, skin: 'codex' } })
+    expect(document.documentElement.getAttribute(SKIN_ATTRIBUTE)).toBe('codex')
+    presenter.apply(snapshot('light'))
+    expect(document.documentElement.hasAttribute(SKIN_ATTRIBUTE)).toBe(false)
+    presenter.apply({ ...base, active: { ...base.active, skin: 'codex' } })
+    presenter.dispose()
+    expect(document.documentElement.hasAttribute(SKIN_ATTRIBUTE)).toBe(false)
   })
 
   it('dispose removes color-scheme, the attribute, the font-size axis, and every applied variable, sparing foreign inline styles', () => {

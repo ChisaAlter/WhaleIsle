@@ -26,7 +26,7 @@ function launcherButtonBusy(button, label = '正在处理…', shortLabel = labe
   button.setAttribute('aria-label', label);
   button.title = label;
   const restoreLabel = window.shellFeedback.buttonBusy(button, shortLabel);
-  return () => {
+  const restore = () => {
     restoreLabel();
     button.disabled = disabled;
     for (const [name, value] of attributes) {
@@ -35,6 +35,12 @@ function launcherButtonBusy(button, label = '正在处理…', shortLabel = labe
     }
     if (wasFocused && document.activeElement === document.body && button.isConnected && !button.disabled && button.checkVisibility()) button.focus();
   };
+  restore.update = (nextLabel, nextShortLabel) => {
+    button.setAttribute('aria-label', nextLabel);
+    button.title = nextLabel;
+    restoreLabel.update(nextShortLabel);
+  };
+  return restore;
 }
 
 // Machine codes from launcher-service / runtime-install / update. A bare
@@ -2515,6 +2521,12 @@ function bind() {
   const importCancelBtn = $('btn-import-cancel');
   let importOpSeq = 0;
   let activeImportOpId = '';
+  let restoreImportCancel = null;
+  const clearImportCancelFeedback = () => {
+    if (!restoreImportCancel) return;
+    restoreImportCancel();
+    restoreImportCancel = null;
+  };
   importRunBtn.addEventListener('click', async () => {
     const opSeq = ++importOpSeq;
     const myOpId = `ui-import-${Date.now().toString(36)}-${opSeq}`;
@@ -2556,16 +2568,15 @@ function bind() {
     } finally {
       if (opSeq === importOpSeq) {
         restoreImport();
+        clearImportCancelFeedback();
         importCancelBtn.hidden = true;
-        importCancelBtn.removeAttribute('aria-busy');
         activeImportOpId = '';
         importProgressPanel.show({ active: false });
       }
     }
   });
   importCancelBtn.addEventListener('click', async () => {
-    importCancelBtn.disabled = true;
-    importCancelBtn.setAttribute('aria-busy', 'true');
+    restoreImportCancel = launcherButtonBusy(importCancelBtn, '正在请求取消…', '取消中…');
     // Capture the op we're cancelling BEFORE awaiting. `activeImportOpId`
     // is shared mutable state the run handler clears on completion — reading
     // it after an await could name a different (or no) operation.
@@ -2586,8 +2597,7 @@ function bind() {
       if (reply && reply.ok === false && stillOwns()) {
         $('import-result').textContent = `取消被拒绝：${errText(reply.error, '无法取消')}`;
         setHint($('import-result').textContent);
-        importCancelBtn.disabled = false;
-        importCancelBtn.removeAttribute('aria-busy');
+        clearImportCancelFeedback();
       }
     } catch (error) {
       // A rejected cancellation is itself a terminal diagnostic — surface it
@@ -2595,8 +2605,7 @@ function bind() {
       if (stillOwns()) {
         $('import-result').textContent = `取消请求被拒绝：${errText(error, '无法取消')}`;
         setHint($('import-result').textContent);
-        importCancelBtn.disabled = false;
-        importCancelBtn.removeAttribute('aria-busy');
+        clearImportCancelFeedback();
       }
     }
   });

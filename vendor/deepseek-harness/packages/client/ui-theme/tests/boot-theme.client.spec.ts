@@ -23,6 +23,7 @@ afterEach(() => {
   document.documentElement.style.removeProperty('color-scheme')
   document.documentElement.style.fontSize = ''
   delete document.documentElement.dataset.dsThemeSource
+  document.documentElement.removeAttribute('data-dsh-skin')
   document.body.removeAttribute(DARK_ATTRIBUTE)
   document.body.style.cssText = ''
   document.body.style.removeProperty('--dsh-content-font-size')
@@ -48,7 +49,7 @@ describe('theme bootstrap row', () => {
     mockSystemDark(true)
     const [head] = bootThemeInjections('light')
     if (head?.kind !== 'style') throw new Error('theme head bootstrap row is not a style')
-    expect(head.text).toBe(':root{color-scheme:light}body{background-color:#fff;--dsh-boot-bg:#fff}')
+    expect(head.text).toBe(':root{color-scheme:light}body{background-color:#ffffff;--dsh-boot-bg:#ffffff}')
     executeBootstrap('light')
     expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(false)
   })
@@ -67,9 +68,27 @@ describe('theme bootstrap row', () => {
     const [head] = bootThemeInjections('system')
     if (head?.kind !== 'style') throw new Error('theme head bootstrap row is not a style')
     expect(head.text).toBe(
-      ':root{color-scheme:light}body{background-color:#fff;--dsh-boot-bg:#fff}'
+      ':root{color-scheme:light}body{background-color:#ffffff;--dsh-boot-bg:#ffffff}'
       + '@media(prefers-color-scheme:dark){:root{color-scheme:dark}body{background-color:#151517;--dsh-boot-bg:#151517}}',
     )
+  })
+
+  it('carries the Codex skin and canvas into the bootstrap and clears it for the default family', () => {
+    const payload = buildThemeBootPayload({
+      ...DEFAULT_THEME_SETTINGS,
+      activeLightThemeId: 'codex',
+      activeDarkThemeId: 'codex',
+    })
+    expect(payload.lightSkin).toBe('codex')
+    expect(payload.darkSkin).toBe('codex')
+    expect(payload.lightBackground).toBe('#ffffff')
+    expect(payload.darkBackground).toBe('#181818')
+    const [head, body] = bootThemeInjections(payload)
+    if (head?.kind !== 'style') throw new Error('theme head bootstrap row is not a style')
+    expect(head.text).toContain('body{background-color:#ffffff')
+    if (body?.kind !== 'script') throw new Error('theme body bootstrap row is not a script')
+    runInNewContext(body.text, { document, matchMedia: globalThis.matchMedia })
+    expect(document.documentElement.getAttribute('data-dsh-skin')).toBe('codex')
   })
 
   it('defaults to system and falls back to light when matchMedia is unavailable', () => {

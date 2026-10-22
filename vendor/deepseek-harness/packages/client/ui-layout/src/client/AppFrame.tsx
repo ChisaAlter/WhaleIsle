@@ -44,7 +44,7 @@ export type AppFrameProps =
 
 /** Center column grid item (session-body building block). */
 function CenterColumn(props: { children?: ReactNode }) {
-  return <div className={css.centerCol}>{props.children}</div>
+  return <div className={css.centerCol} data-dsh-frame-region="center">{props.children}</div>
 }
 
 /** Subscribe to the main key without subscribing the column frame to each panel id. */
@@ -65,12 +65,12 @@ function MainPanel({ usePanelInfo, renderSlot }: Pick<PropsRuntime<'root'>, 'use
  * when there is no track (AppFrame.module.css `.detailsCol`).
  */
 function RightbarColumn(props: { children?: ReactNode }) {
-  return <div className={css.detailsCol} data-rightbar-col>{props.children}</div>
+  return <div className={css.detailsCol} data-rightbar-col data-dsh-frame-region="rightbar">{props.children}</div>
 }
 
 /** Terminal drawer under the conversation column; height 0 keeps the subtree mounted. */
 function TerminalDrawerTrack(props: { children?: ReactNode }) {
-  return <div className={css.terminalDrawerCol}>{props.children}</div>
+  return <div className={css.terminalDrawerCol} data-dsh-frame-region="terminal">{props.children}</div>
 }
 
 /**
@@ -283,9 +283,15 @@ export function AppFrame({
       raf = null
       setLandscape(readDeviceLandscape())
       const frameWidth = el.getBoundingClientRect().width
+      // The layout solver fits the frame's content box: a skin may inset the
+      // grid from a wallpaper, and fixed columns must not overflow that inset.
+      const computed = window.getComputedStyle(el)
+      const horizontalPadding = (Number.parseFloat(computed.paddingLeft) || 0)
+        + (Number.parseFloat(computed.paddingRight) || 0)
+      const contentWidth = Math.max(0, frameWidth - horizontalPadding)
       const windowWidth = window.innerWidth
-      const width = frameWidth > 0
-        ? Math.min(frameWidth, windowWidth > 0 ? windowWidth : frameWidth)
+      const width = contentWidth > 0
+        ? Math.min(contentWidth, windowWidth > 0 ? windowWidth : contentWidth)
         : windowWidth
       if (width > 0) actions.setViewportWidth(width)
       else scheduleZeroWidthRetry()
@@ -422,6 +428,7 @@ export function AppFrame({
         '--dshd-titlebar-conversation-reserve': `${conversationReserve}px`,
       } as CSSProperties}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
+      data-dsh-frame
       data-details-collapsed={rightbarTracked ? undefined : true}
       data-rightbar-collapsed={cols.rightbar === 0 || undefined}
       data-rightbar-fullscreen={layoutInfo.rightbarFullscreen || undefined}
@@ -468,7 +475,7 @@ export function AppFrame({
           onClick={() => { actions.toggleSidebar() }}
         />
       )}
-      <div className={css.sidebarCol}>
+      <div className={css.sidebarCol} data-dsh-frame-region="sidebar">
         {/* Render-site slot call with live concession output: a closed
             sidebar keeps the mounted slot at the compact-rail width, and the
             component sees its rendered state as owner params decided here
@@ -488,7 +495,7 @@ export function AppFrame({
           {renderSlot('rightbar', { width: normal.rightbar, viewportWidth: viewport, canShow: normal.rightbar > 0 })}
         </RightbarColumn>
       </>
-      <div className={css.bottomRow} data-shell-bottom>
+      <div className={css.bottomRow} data-shell-bottom data-dsh-frame-region="bottom">
         {renderSlot('shell.bottom', {})}
       </div>
       <div className={css.overlayLayer} data-shell-overlay>

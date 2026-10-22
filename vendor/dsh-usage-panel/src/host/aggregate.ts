@@ -9,12 +9,15 @@ import {
   buildDayWindow,
   dayKeyUTC,
   emptyTotals,
+  hasUsage,
   mergeInto,
   sortedModels,
+  sumDayBuckets,
   totalsFrom,
   totalsFromModels,
 } from '../shared/usage.ts'
 import { recentOf, type UsagePanelState } from './projection.ts'
+import type { MagpieSource } from './magpie-usage.ts'
 
 export interface SessionAgg {
   id: string
@@ -101,12 +104,8 @@ export function mergeSessionValue(a: Aggregate, value: UsagePanelState, sessionI
       output: a.recentTotals.output + recent.totals.output,
       cacheRead: a.recentTotals.cacheRead + recent.totals.cacheRead,
       cacheWrite: a.recentTotals.cacheWrite + recent.totals.cacheWrite,
-      total:
-        a.recentTotals.total +
-        recent.totals.input +
-        recent.totals.output +
-        recent.totals.cacheRead +
-        recent.totals.cacheWrite,
+      // Same rule as totalsFrom: uncached input + output, cache excluded.
+      total: a.recentTotals.total + recent.totals.input + recent.totals.output,
     },
     retries: a.retries + value.retries,
     compactionTokens: a.compactionTokens + value.compactionTokens,
@@ -163,7 +162,9 @@ export function mergeSessionValue(a: Aggregate, value: UsagePanelState, sessionI
   if (recent.totals.input + recent.totals.output + recent.totals.cacheRead + recent.totals.cacheWrite > 0) {
     next.recentSessionCount += 1
   }
-  if (totals.total > 0) {
+  // Presence test uses all four buckets: a session whose traffic was cache-only
+  // still counts as a session with usage (its `total` is 0 by definition).
+  if (hasUsage(totals)) {
     next.allTimeSessionCount += 1
     if (depth > 0) next.usageSessionsSubagent += 1
     else next.usageSessionsMain += 1
@@ -313,16 +314,46 @@ export interface FinalizeInput {
   providerNames: Record<string, string>
   /** Ids of sessions whose log read failed (repair candidates, capped). */
   failedSessionIds?: string[]
+  /**
+   * Folded Magpie gateway ledger, when the local file exists. It then supplies
+   * the token totals / days / model + provider splits (the gateway sees every
+   * request, including logs that are already rotated away). Sessions,
+   * projects, per-session ranking and the cost buckets stay log-derived.
+   */
+  magpie?: MagpieSource | null
 }
 
 /** Build the wire Overview from an aggregate (both scan modes converge here). */
 export function finalizeOverview(input: FinalizeInput): Overview {
-  const { aggregate: a, now, mode, sessionsTotal, sessionsOk, sessionsFailed, sessionsPending, eventsCounted, titles, providerNames } = input
-  const recentByModel = sortedModels(a.recentByModel, a.recentCostByModel, a.allTimeModelProviders)
-  const allTimeByModel = sortedModels(a.allTimeByModel, a.allTimeCostByModel, a.allTimeModelProviders)
-  const providerRows: ProviderItem[] = Object.keys(a.allTimeByProvider)
+  const { aggregate: a, now, mode, sessionsTotal, sessionsOk, sessionsFailed, sessionsPending, eventsCounted, titles, providerNames, magpie } = input
+  // The gateway ledger wins for the top-level token numbers when present: same
+  // `in + out` definition, complete history.
+  const gateway = magpie ?? null
+  // Provider attribution stays the PANEL's: the log-derived model→provider map
+  // (usually `magpie`, the route the user's prices are scoped to) wins; the
+  // gateway's upstream id is only a fallback for models the logs never saw.
+  // Using the upstream id for a logged model would leave its cost row unpriced.
+  const modelProviders = gateway === null ? a.allTimeModelProviders : { ...gateway.upstreamProviders, ...a.allTimeModelProviders }
+  const recent = gateway === null ? null : sumDayBuckets(gateway.byDay, recentCutoffKey(now))
+  const recentByModel = sortedModels(
+    recent === null ? a.recentByModel : recent.byModel,
+    a.recentCostByModel,
+    modelProviders,
+  )
+  const allTimeByModel = sortedModels(
+    gateway === null ? a.allTimeByModel : gateway.byModel,
+    a.allTimeCostByModel,
+    modelProviders,
+  )
+  // Provider rows are the same model buckets regrouped by that attribution, so
+  // the card adds up to the same all-time total instead of reporting a second,
+  // gateway-side provider dimension.
+  const allTimeByProvider = gateway === null ? a.allTimeByProvider : providerGroups(gateway.byModel, modelProviders)
+  const recentTotals = recent === null ? totalsFromModels(recentByModel) : totalsFrom(recent.totals)
+  const allTimeTotals = gateway === null ? totalsFromModels(allTimeByModel) : totalsFrom(gateway.totals)
+  const providerRows: ProviderItem[] = Object.keys(allTimeByProvider)
     .map((id) => {
-      const b = a.allTimeByProvider[id]!
+      const b = allTimeByProvider[id]!
       return { id, name: providerNames[id] || id, totals: totalsFrom(b) }
     })
     .sort((x, y) => y.totals.total - x.totals.total)
@@ -350,14 +381,20 @@ export function finalizeOverview(input: FinalizeInput): Overview {
     usageSessionsMain: a.usageSessionsMain,
     usageSessionsSubagent: a.usageSessionsSubagent,
     failedSessionIds: input.failedSessionIds ?? [],
+    source: gateway === null ? 'logs' : 'magpie',
+    ...(gateway === null
+      ? {}
+      : { magpie: { file: gateway.file, calls: gateway.calls, from: gateway.from, to: gateway.to } }),
   }
   return {
-    days: buildDayWindow(a.byDay, now, a.byDayCost),
-    totals: totalsFromModels(recentByModel),
+    // Day cells stay UTC (declared contract) and keep the log-derived cost
+    // buckets: a gateway row has no billing phase.
+    days: buildDayWindow(gateway === null ? a.byDay : gateway.byDay, now, a.byDayCost),
+    totals: recentTotals,
     sessionCount: a.recentSessionCount,
     byModel: recentByModel,
     allTime: {
-      totals: totalsFromModels(allTimeByModel),
+      totals: allTimeTotals,
       sessionCount: a.allTimeSessionCount,
       byModel: allTimeByModel,
       costTotals: a.allTimeCost,
@@ -367,6 +404,25 @@ export function finalizeOverview(input: FinalizeInput): Overview {
     providers: providerRows,
     updatedAt: now,
   }
+}
+
+/** First UTC day key inside the rolling recent window (same rule as the logs). */
+function recentCutoffKey(now: number): string {
+  return dayKeyUTC(now - RECENT_DAYS * 24 * 3600 * 1000)
+}
+
+/** Regroup model buckets by provider route (unknown when unattributed). */
+function providerGroups(
+  byModel: Readonly<Record<string, Buckets>>,
+  providers: Readonly<Record<string, string>>,
+): Record<string, Buckets> {
+  const out: Record<string, Buckets> = {}
+  for (const model of Object.keys(byModel)) {
+    const provider = providers[model] ?? 'unknown'
+    const cur = out[provider]
+    out[provider] = cur ? mergeB(cur, byModel[model]!) : { ...byModel[model]! }
+  }
+  return out
 }
 
 export function emptyOverview(now: number): Overview {

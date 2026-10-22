@@ -8,6 +8,15 @@ export type ThemeTokens = Record<string, string>
 /** Default built-in family; empty derived tokens keep the CSS sheets. */
 export const DEFAULT_FAMILY_ID = 'deepseek'
 
+/** Presentation skins a family may carry; `default` keeps the product chrome. */
+export const THEME_SKINS = ['default', 'claude', 'codex'] as const
+
+/** One presentation skin id. */
+export type ThemeSkinId = typeof THEME_SKINS[number]
+
+/** Skin used by every family that does not name one. */
+export const DEFAULT_THEME_SKIN: ThemeSkinId = 'default'
+
 /** Contrast slider default, matching a mid-range mix. */
 export const DEFAULT_CONTRAST = 46
 
@@ -73,6 +82,10 @@ export interface ThemeFamily {
   name: string
   /** Whether the family ships with the product or was created by the user. */
   origin: 'builtin' | 'custom'
+  /** Presentation skin this family paints; absent means the product default. */
+  skin?: ThemeSkinId
+  /** Optional family wallpaper data URL, used while the user has no image. */
+  wallpaper?: string
   /** Seeds for the light half. */
   light: ThemeSeeds
   /** Seeds for the dark half. */
@@ -92,6 +105,8 @@ export const ThemeFamilySchema: z<ThemeFamily> = z.object({
   id: z.string().required(),
   name: z.string().required(),
   origin: z.union(['builtin', 'custom'] as const).default('custom'),
+  skin: z.union([...THEME_SKINS]).default(DEFAULT_THEME_SKIN),
+  wallpaper: z.string().max(1_800_000).default(''),
   light: ThemeSeedsSchema,
   dark: ThemeSeedsSchema,
 })
@@ -197,6 +212,8 @@ export function canonicalizeThemeFamily(
     id: family.id,
     name: family.name,
     origin,
+    ...(family.skin !== undefined && family.skin !== DEFAULT_THEME_SKIN ? { skin: family.skin } : {}),
+    ...(family.wallpaper !== undefined && family.wallpaper !== '' ? { wallpaper: family.wallpaper } : {}),
     light: canonicalizeSeeds(family.light),
     dark: canonicalizeSeeds(family.dark),
   }

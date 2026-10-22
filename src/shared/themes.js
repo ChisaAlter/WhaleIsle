@@ -35,6 +35,18 @@ const FAMILY_SEEDS = {
     light: { accent: '#0f766e', background: '#f3efe6', foreground: '#1c1915' },
     dark: { accent: '#5eead4', background: '#1a1712', foreground: '#f6efe4' },
   },
+  codex: {
+    name: 'Codex',
+    skin: 'codex',
+    light: { accent: '#2563eb', background: '#ffffff', foreground: '#0d0d0d' },
+    dark: { accent: '#338cff', background: '#181818', foreground: '#f5f5f5' },
+  },
+  claude: {
+    name: 'Claude',
+    skin: 'claude',
+    light: { accent: '#c96442', background: '#faf9f5', foreground: '#262624' },
+    dark: { accent: '#d97757', background: '#262624', foreground: '#f5f4ef' },
+  },
   contrast: {
     name: '对比',
     light: { accent: '#111111', background: '#ffffff', foreground: '#050505' },
@@ -272,7 +284,10 @@ function resolveTheme(config = {}, options = {}) {
     : (harness.activeLightThemeId || fallbackId);
   const family = findFamily(familyId, harness.customThemes);
   const seeds = family[mode] || FAMILY_SEEDS[DEFAULT_FAMILY_ID][mode];
-  return tokensFromSeeds(family.id || familyId, family.name || familyId, mode, seeds);
+  return {
+    ...tokensFromSeeds(family.id || familyId, family.name || familyId, mode, seeds),
+    skin: family.skin || 'default',
+  };
 }
 
 function officialShellBackground(theme = {}) {

@@ -48,6 +48,7 @@ import { emptyAggregate, emptyOverview, finalizeOverview, mergeSessionValue, pag
 import { usagePanelProjectionDefinition } from './projection-unit.ts'
 import { USAGE_PANEL_KEY, type UsagePanelState } from './projection.ts'
 import { scanFallback } from './scan.ts'
+import { loadMagpieSource, resolveMagpieUsageFile, type MagpieSource } from './magpie-usage.ts'
 import { BillingStore, openBillingMedium } from './billing-store.ts'
 import { createLegacyBillingImport } from './legacy-billing-import.ts'
 import { CONVERSATION_SETTINGS_NS, createPricesSource } from './prices-source.ts'
@@ -137,6 +138,8 @@ export function apply(ctx: Context): void {
   let sessionIndex: SessionAgg[] = []
   // Failed-session ids (repair candidates) discovered by the last scan.
   let failedSessionIds: string[] = []
+  // Logged once per totals source (path), not on every keep-warm rescan.
+  let reportedSource = ''
   // Sessions whose `session.cost` read already failed once (log dedupe).
   const reportedCostFailures = new Set<string>()
   // SQLite aggregate cache (guarded): lets a cold start serve the previous
@@ -195,7 +198,7 @@ export function apply(ctx: Context): void {
     console.warn(tag, message)
   }
 
-  async function scanProjection(now: number): Promise<Overview> {
+  async function scanProjection(now: number, magpie: MagpieSource | null): Promise<Overview> {
     let a = emptyAggregate()
     let sessionsTotal = 0
     let sessionsOk = 0
@@ -281,13 +284,25 @@ export function apply(ctx: Context): void {
       titles,
       providerNames,
       failedSessionIds: failed,
+      magpie,
     })
   }
 
-  async function scan(now: number): Promise<Overview> {
+  /**
+   * The optional Magpie gateway ledger: when present it supplies the token
+   * totals / day buckets / model + provider splits, so the page reports the
+   * same headline as `magpie usage` (in + out, cache excluded) even for
+   * sessions whose logs are gone. Absent/unreadable → null and the log
+   * aggregate is used unchanged.
+   */
+  async function gatewaySource(): Promise<MagpieSource | null> {
+    return loadMagpieSource(undefined, (message) => console.warn(tag, message))
+  }
+
+  async function scan(now: number, magpie: MagpieSource | null): Promise<Overview> {
     if (disposed) return cache ? cache.payload : emptyOverview(now)
-    if (mode === 'projection') return scanProjection(now)
-    return scanFallback({ sq, providerNames, logFailure, storeIndex: (rows) => { sessionIndex = rows }, storeFailed: (ids) => { failedSessionIds = ids } }, now)
+    if (mode === 'projection') return scanProjection(now, magpie)
+    return scanFallback({ sq, providerNames, logFailure, storeIndex: (rows) => { sessionIndex = rows }, storeFailed: (ids) => { failedSessionIds = ids }, magpie }, now)
   }
 
   /** Watermark of an overview for the SQLite cache (corpus shape). */
@@ -322,9 +337,27 @@ export function apply(ctx: Context): void {
     if (inflight) return inflight
     const run = (async (): Promise<Overview> => {
       await hydrateFromCache()
+      // Optional gateway ledger (mtime+size cached inside). Loading it must not
+      // break the scan: loadMagpieSource never throws (null = log-only).
+      const magpie = await gatewaySource()
+      const magpieKey = magpie === null ? 'logs' : magpie.file
+      if (magpieKey !== reportedSource) {
+        reportedSource = magpieKey
+        if (magpie === null) {
+          console.log(tag, 'totals source: session logs (no Magpie usage file at ' + resolveMagpieUsageFile() + ')')
+        } else {
+          console.log(
+            tag,
+            'totals source: Magpie gateway ledger (agent=dsh)',
+            'calls=' + magpie.calls,
+            'range=' + (magpie.from === null ? '-' : new Date(magpie.from).toISOString()) + '..' + (magpie.to === null ? '-' : new Date(magpie.to).toISOString()),
+            'file=' + magpie.file,
+          )
+        }
+      }
       // Each projection is a whole-session value, never an additive delta.
       // Rebuild the aggregate; coldSnapshot still reuses per-session checkpoints.
-      const payload = await scan(Date.now())
+      const payload = await scan(Date.now(), magpie)
       if (payload !== null && !disposed) {
         cache = { at: Date.now(), payload }
         // Cache write off the response path: serialize + SQLite round-trip is
@@ -425,7 +458,8 @@ export function apply(ctx: Context): void {
       models: sessionModels(value),
       totals: {
         ...value.totals,
-        total: value.totals.input + value.totals.output + value.totals.cacheRead + value.totals.cacheWrite,
+        // Same total rule as every other payload: uncached input + output.
+        total: value.totals.input + value.totals.output,
       },
     }
   }

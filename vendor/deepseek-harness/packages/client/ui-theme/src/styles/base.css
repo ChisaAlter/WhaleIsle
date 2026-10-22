@@ -38,6 +38,12 @@
   --dsw-radius-button: 18px;
   --dsw-radius-composer: 22px;
   --dsw-radius-composer-frame: 26px;
+  /* Skin geometry defaults: the product chrome keeps its shipped values until
+     a skin rebinds them on the root. */
+  --dsh-frame-gap: 0px;
+  --dsh-panel-radius: var(--dsw-radius-xl);
+  --dsh-composer-radius: var(--dsw-radius-panel);
+  --dsh-bubble-radius: var(--dsw-radius-xl);
 }
 
 @media (prefers-reduced-motion: reduce) {

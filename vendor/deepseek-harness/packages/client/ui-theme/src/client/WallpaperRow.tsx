@@ -2,7 +2,7 @@
  * Appearance wallpaper row: pick or browse, crop to window aspect, then frost and pixelate.
  */
 import { useRef, useState } from 'react'
-import { Button, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Switch, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   DEFAULT_WALLPAPER_EFFECT, MAX_WALLPAPER_EFFECT, MIN_WALLPAPER_EFFECT,
   MAX_WALLPAPER_FILE_BYTES, WALLPAPER_EFFECT_STEP, WALLPAPER_HIGH_GLASS_HINT,
@@ -21,7 +21,7 @@ export type SetWallpaper = (
   patch: Partial<Pick<ThemeSettings,
     'wallpaperImage' | 'wallpaperBlur' | 'wallpaperPixelate' | 'backgroundEffect'
     | 'backgroundEffectColors' | 'backgroundEffectSpeed' | 'backgroundEffectCount'
-    | 'backgroundEffectPreset' | 'backgroundEffectVariant'
+    | 'backgroundEffectPreset' | 'backgroundEffectVariant' | 'skinWallpaperEnabled'
   >>,
 ) => void
 
@@ -37,6 +37,8 @@ export function WallpaperRow({
   glassOpacity,
   wallpaperSources,
   wallpaperFavorites,
+  skinWallpaperImage,
+  skinWallpaperEnabled,
   t,
   setWallpaper,
   setWallpaperSources,
@@ -48,6 +50,8 @@ export function WallpaperRow({
   glassOpacity: number
   wallpaperSources: readonly WallpaperSource[]
   wallpaperFavorites: readonly WallpaperFavorite[]
+  skinWallpaperImage: string
+  skinWallpaperEnabled: boolean
   t: (key: ThemeKey) => string
   setWallpaper: SetWallpaper
   setWallpaperSources?: (patch: { wallpaperSources: WallpaperSource[] }) => void
@@ -129,6 +133,19 @@ export function WallpaperRow({
         <h2 id="appearance-wallpaper-heading" className={css.heading}>{t('wallpaper.title')}</h2>
       </div>
       <p className={css.hint}>{t('wallpaper.description')}</p>
+      {skinWallpaperImage !== '' ? (
+        <>
+          <label className={css.switchRow}>
+            <Switch
+              checked={skinWallpaperEnabled}
+              aria-label={t('wallpaper.skin')}
+              onChange={(event) => { setWallpaper({ skinWallpaperEnabled: event.currentTarget.checked }) }}
+            />
+            <span>{t('wallpaper.skin')}</span>
+          </label>
+          <p className={css.hint}>{t('wallpaper.skinHint')}</p>
+        </>
+      ) : null}
       {hasImage && glassOpacity >= WALLPAPER_HIGH_GLASS_HINT ? (
         <p className={css.hint}>{t('wallpaper.glassHint')}</p>
       ) : null}

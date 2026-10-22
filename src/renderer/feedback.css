@@ -31,7 +31,10 @@ button[aria-busy='true']:not(.shell-feedback-task-summary):not([data-button-labe
   animation: shell-feedback-spin 700ms linear infinite;
 }
 button.primary[aria-busy='true']:not(.shell-feedback-task-summary):not([data-button-label])::after { border-color: var(--dsw-alias-label-primary-foreground); border-right-color: transparent; }
-button[data-button-label]:not([data-button-label='measure']) { position: relative; color: transparent !important; }
+/* Include the measurement state: a color transition would otherwise return
+   the previous transparent caption color when progress replaces an overlay. */
+button[data-button-label] { position: relative; transition: none; }
+button[data-button-label]:not([data-button-label='measure']) { color: transparent !important; }
 button[data-button-label]:not([data-button-label='measure']) > :not(.shell-button-overlay) { visibility: hidden; }
 .shell-button-overlay {
   position: absolute;
@@ -45,7 +48,15 @@ button[data-button-label]:not([data-button-label='measure']) > :not(.shell-butto
   white-space: nowrap;
   pointer-events: none;
 }
-.shell-button-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.shell-button-label { display: block; min-width: 0; overflow: hidden; }
+.shell-button-label-text { display: inline-block; white-space: nowrap; }
+.shell-button-label.is-scrolling .shell-button-label-text {
+  animation: shell-button-scroll var(--shell-button-scroll-duration) linear infinite;
+}
+@keyframes shell-button-scroll {
+  0%, 15%, 90%, 100% { transform: translateX(0); }
+  45%, 60% { transform: translateX(var(--shell-button-scroll-distance)); }
+}
 .shell-button-spinner {
   flex: none;
   width: 12px;
@@ -220,4 +231,6 @@ button[data-button-label]:not([data-button-label='measure']) > :not(.shell-butto
   .shell-feedback-pane[aria-busy='true']::before { animation: none; }
   button[aria-busy='true']:not(.shell-feedback-task-summary):not([data-button-label])::after { animation: none; }
   .shell-button-spinner { animation: none; }
+  .shell-button-label.is-scrolling { overflow-x: auto; scrollbar-width: none; pointer-events: auto; }
+  .shell-button-label.is-scrolling .shell-button-label-text { animation: none; }
 }

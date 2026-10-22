@@ -822,7 +822,21 @@ test('native requirement queue survives cold restart without model calls and exp
     assert.deepEqual(host.queue.pending(project.id).map(row => row.title), ['B']);
     await host.command('detail', { projectId: project.id }); await host.queue.pump(project.id); assert.equal(restarted.requests.length, 0, 'reading and scheduling a recovered Project cannot silently resume work');
     await prompt([{ type: 'queue', title: 'A', action: 'resume' }]);
-    await waitFor(() => { assert.deepEqual(restarted.streamErrors, []); assert.deepEqual(restarted.failures, []); return host.state().deliveries.some(row => row.status === 'delivered' && row.title === 'B'); }, 'explicit continuation resumes the original A worker, delivers A and automatically develops B');
+    try {
+      await waitFor(() => { assert.deepEqual(restarted.streamErrors, []); assert.deepEqual(restarted.failures, []); return host.state().deliveries.some(row => row.status === 'delivered' && row.title === 'B'); }, 'explicit continuation resumes the original A worker, delivers A and automatically develops B');
+    } catch (error) {
+      const state = host.state(), restoredLead = ctx.agents.get(project.coordinatorSessionId);
+      console.error('Cold restart continuation state:', JSON.stringify({
+        paused: host.project(project.id).paused, leadStatus: restoredLead.status,
+        requests: state.requests.map(({ title, queue }) => ({ title, queue })),
+        deliveries: state.deliveries.map(({ title, status, error }) => ({ title, status, error })),
+        workstreams: state.workstreams.map(work => ({ title: work.title, status: work.status, blockedReason: work.blockedReason,
+          delegation: work.delegations.at(-1), worker: host.worker(work.workerSessionId), summaryFailure: work.summaryFailure })),
+        queueInputs: restarted.queueInputs, actions: [...restarted.actions],
+        leadTurns: restoredLead.session.snapshotEvents().filter(event => event.type === 'turn/end').slice(-4).map(event => event.data),
+      }, null, 2));
+      throw error;
+    }
     const restoredLead = ctx.agents.get(project.coordinatorSessionId); await restoredLead.whenIdle(); await host.tail;
     const resumed = host.stream(a.id), second = resumed.delegations.at(-1), aRequest = host.state().requests.find(row => row.title === 'A');
     assert.equal(resumed.workerSessionId, originalWorker); assert.equal(resumed.delegations.length, 2); assert.notEqual(second.ref, a.currentDelegationRef);

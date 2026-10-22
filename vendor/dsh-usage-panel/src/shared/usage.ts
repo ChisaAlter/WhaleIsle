@@ -31,8 +31,19 @@ export function mergeInto(target: Buckets, src: Buckets): void {
   target.cacheWrite += src.cacheWrite
 }
 
+/**
+ * Derived totals. `total` is **uncached input + output only** — the headline
+ * the Magpie gateway reports for this agent (`in + out`, cache excluded).
+ * Cache read/write stay their own buckets; adding them in would inflate the
+ * total by the cache-read magnitude (10.7B vs 0.22B on a real ledger).
+ */
 export function totalsFrom(b: Buckets): UsageTotals {
-  return { ...b, total: b.input + b.output + b.cacheRead + b.cacheWrite }
+  return { ...b, total: b.input + b.output }
+}
+
+/** Any token activity at all, cache included (session/usage presence test). */
+export function hasUsage(b: Buckets): boolean {
+  return b.input + b.output + b.cacheRead + b.cacheWrite > 0
 }
 
 /** Sorted model ranking, most usage first (v0.1.0 semantic; cost/provider added). */
@@ -47,7 +58,7 @@ export function sortedModels(
       return {
         model,
         ...b,
-        total: b.input + b.output + b.cacheRead + b.cacheWrite,
+        total: b.input + b.output,
         provider: providers && providers[model] ? providers[model]! : 'unknown',
         cost:
           costs && costs[model]
@@ -65,8 +76,10 @@ export function totalsFromModels(models: ModelItem[]): UsageTotals {
     totals.output += item.output
     totals.cacheRead += item.cacheRead
     totals.cacheWrite += item.cacheWrite
-    totals.total += item.total
   }
+  // Re-derive instead of summing the rows' totals: a caller passing a stale
+  // row total can never make the four buckets and the total disagree.
+  totals.total = totals.input + totals.output
   return totals
 }
 
@@ -234,6 +247,40 @@ function emptyPhase(): PhaseBuckets {
   return { peak: emptyBuckets(), offPeak: emptyBuckets() }
 }
 
+/**
+ * Sum a `day → model → buckets` map over the days at or after `cutoffKey`
+ * (the rolling recent window). Shared by the log-derived recent slice
+ * (`recentOf`) and the Magpie-derived recent slice, so both use one rule.
+ */
+export function sumDayBuckets(
+  byDay: Readonly<Record<string, Readonly<Record<string, Buckets>>>>,
+  cutoffKey: string,
+): { totals: Buckets; byModel: Record<string, Buckets> } {
+  const totals = emptyBuckets()
+  const byModel: Record<string, Buckets> = {}
+  for (const day of Object.keys(byDay)) {
+    if (day < cutoffKey) continue
+    const dayMap = byDay[day]!
+    for (const model of Object.keys(dayMap)) {
+      const b = dayMap[model]!
+      totals.input += b.input
+      totals.output += b.output
+      totals.cacheRead += b.cacheRead
+      totals.cacheWrite += b.cacheWrite
+      const cur = byModel[model]
+      byModel[model] = cur
+        ? {
+            input: cur.input + b.input,
+            output: cur.output + b.output,
+            cacheRead: cur.cacheRead + b.cacheRead,
+            cacheWrite: cur.cacheWrite + b.cacheWrite,
+          }
+        : { ...b }
+    }
+  }
+  return { totals, byModel }
+}
+
 /** Cache hit rate over the four disjoint buckets: read / (uncached + read + write). */
 export function hitRate(b: Buckets): number | null {
   const denominator = b.input + b.cacheRead + b.cacheWrite
@@ -241,7 +288,10 @@ export function hitRate(b: Buckets): number | null {
   return b.cacheRead / denominator
 }
 
-/** Billed input (uncached + cache read + cache write) — the v0.1.0 "输入" number. */
+/**
+ * Billed input (uncached + cache read + cache write) — the v0.1.0 "输入"
+ * number. This is NOT the displayed total: totals are in + out only.
+ */
 export function billedInput(b: Buckets): number {
   return b.input + b.cacheRead + b.cacheWrite
 }

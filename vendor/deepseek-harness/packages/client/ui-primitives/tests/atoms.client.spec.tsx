@@ -130,8 +130,9 @@ describe('Button', () => {
     try {
       const button = screen.getByRole('button', { name: busyLabel })
       expect(ref.current).toBe(button)
-      expect(button.dataset.feedbackDisplay).toBe('compact-label')
-      expect(button.contains(screen.getByText('…'))).toBe(true)
+      expect(button.dataset.feedbackDisplay).toBe('scrolling-label')
+      expect(screen.queryByText('…')).toBeNull()
+      expect(screen.getByText(busyLabel).closest('[aria-hidden="true"]')).toBeNull()
       expect(button.querySelector('[data-state="ongoing"]')).not.toBeNull()
       expect(button.textContent).toContain('Save')
       expect(button.title).toBe(busyLabel)
@@ -142,7 +143,8 @@ describe('Button', () => {
 
       view.rerender(<Button ref={ref} style={seat} feedback={resultLabel} onClick={onClick}>Save</Button>)
       expect(screen.getByRole('button', { name: resultLabel })).toBe(button)
-      expect(button.dataset.feedbackDisplay).toBe('caption')
+      expect(button.dataset.feedbackDisplay).toBe('scrolling-label')
+      expect(screen.getByText(resultLabel).closest('[aria-hidden="true"]')).toBeNull()
       expect(button.title).toBe(resultLabel)
       expect(button.textContent).toContain('Save')
       expect(button.querySelector('[data-state="ongoing"]')).toBeNull()
@@ -164,7 +166,7 @@ describe('Button', () => {
     }
   })
 
-  it('switches between full busy copy and an ellipsis as the same button resizes', () => {
+  it('scrolls complete feedback only while it overflows the same button', () => {
     const geometry = feedbackGeometry(90, 66)
     const ref = vi.fn()
     const label = 'Saving configuration'
@@ -173,23 +175,38 @@ describe('Button', () => {
       const button = screen.getByRole('button', { name: label })
       expect(button.dataset.feedbackDisplay).toBe('label')
       expect(button.querySelector('[data-state="ongoing"]')).not.toBeNull()
-      expect(button.querySelector('[data-dsh-motion-part="current"]')?.textContent).toBe(label)
+      expect(button.querySelector(`.${buttonCss.feedbackLabel}`)?.textContent).toBe(label)
       const observer = geometry.observer()
       if (observer === undefined) throw new Error('expected feedback size observation')
       expect(observer.observe).toHaveBeenCalledWith(button)
 
       geometry.resize(88)
       expect(screen.getByRole('button', { name: label })).toBe(button)
-      expect(button.dataset.feedbackDisplay).toBe('compact-label')
+      expect(button.dataset.feedbackDisplay).toBe('scrolling-label')
       expect(button.title).toBe(label)
       geometry.resize(120)
       expect(button.dataset.feedbackDisplay).toBe('label')
-      expect(button.querySelector('[data-dsh-motion-part="current"]')?.textContent).toBe(label)
+      expect(button.querySelector(`.${buttonCss.feedbackLabel}`)?.textContent).toBe(label)
       expect(button.textContent).toContain('Save')
       expect(ref).toHaveBeenLastCalledWith(button)
       view.unmount()
       expect(observer.disconnect).toHaveBeenCalledOnce()
       expect(ref).toHaveBeenLastCalledWith(null)
+    } finally {
+      view.unmount()
+      geometry.restore()
+    }
+  })
+
+  it('keeps text beside child icons visible while busy', () => {
+    const geometry = feedbackGeometry(50, 90)
+    const view = render(<Button><svg /><span>Open settings</span></Button>)
+    try {
+      view.rerender(<Button loading aria-label="Opening settings"><svg /><span>Open settings</span></Button>)
+      const button = screen.getByRole('button', { name: 'Opening settings' })
+      expect(button.dataset.feedbackDisplay).toBe('scrolling-label')
+      expect(button.querySelector(`.${buttonCss.feedbackLabel}`)?.textContent).toBe('Opening settings')
+      expect(button.querySelector(`.${buttonCss.feedbackLabel}`)?.closest('[aria-hidden="true"]')).toBeNull()
     } finally {
       view.unmount()
       geometry.restore()
@@ -215,10 +232,10 @@ describe('Button', () => {
       view.rerender(<Button loading aria-label={label} feedback={feedback}><svg data-testid="refresh-icon" /></Button>)
       expect(screen.getByRole('button', { name: feedback })).toBe(button)
       expect(button.dataset.feedbackDisplay).toBe('label')
-      expect(button.querySelector('[data-dsh-motion-part="current"]')?.textContent).toBe(feedback)
+      expect(button.querySelector(`.${buttonCss.feedbackLabel}`)?.textContent).toBe(feedback)
       expect(screen.getAllByText(feedback)).toHaveLength(1)
       geometry.resize(32)
-      expect(button.dataset.feedbackDisplay).toBe('indicator')
+      expect(button.dataset.feedbackDisplay).toBe('scrolling-label')
       expect(button.title).toBe(feedback)
       expect(screen.getByRole('button', { name: feedback })).toBe(button)
     } finally {

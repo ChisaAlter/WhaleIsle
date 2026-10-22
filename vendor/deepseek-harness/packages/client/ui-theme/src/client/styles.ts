@@ -3,6 +3,7 @@ import base from '../styles/base.css?inline'
 import motion from '../styles/motion.css?inline'
 import cornerShape from '../styles/corner-shape.css?inline'
 import designPlatform from '../styles/design-platform.css?inline'
+import skins from '../styles/skins.css?inline'
 import focus from '../styles/focus.css?inline'
 import onboarding from '../styles/onboarding.css?inline'
 import wallpaper from '../styles/wallpaper.css?inline'
@@ -21,6 +22,7 @@ const STYLES = [
   ['motion.css', motion],
   ['corner-shape.css', cornerShape],
   ['design-platform.css', designPlatform],
+  ['skins.css', skins],
   ['focus.css', focus],
   ['onboarding.css', onboarding],
   ['wallpaper.css', wallpaper],

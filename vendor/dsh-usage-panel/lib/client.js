@@ -54,7 +54,7 @@ window.__ModuleLoader__.load({
       "nav.label": "\u7528\u91CF\u7EDF\u8BA1",
       "nav.subtitle": "\u53EA\u8BFB\u91CD\u7B97\u4F1A\u8BDD\u65E5\u5FD7 \xB7 \u6C38\u4E0D\u5199\u56DE",
       "kpi.total": "Token \u603B\u7528\u91CF",
-      "kpi.total.detail": "\u8F93\u5165 {input} \xB7 \u8F93\u51FA {output}",
+      "kpi.total.detail": "\u8F93\u5165 {input} \xB7 \u8F93\u51FA {output} \xB7 \u7F13\u5B58\u8BFB {cacheRead}",
       "kpi.sessions": "\u603B\u4F1A\u8BDD\u6570\u91CF",
       "kpi.sessions.detail": "\u603B\u4F1A\u8BDD {total} \xB7 \u6709\u7528\u91CF\u4F1A\u8BDD\uFF1A\u4E3B {main} \xB7 \u5B50\u4EE3\u7406 {subagent}",
       "kpi.topModel": "\u6700\u5E38\u7528\u6A21\u578B",
@@ -136,6 +136,8 @@ window.__ModuleLoader__.load({
       "status.repairRefreshFailed": "\u5DF2\u4FEE\u590D\u5E76\u6062\u590D {count} \u6761\u4E8B\u4EF6\uFF08\u539F\u4EF6\u5DF2\u5907\u4EFD\uFF09\uFF1B\u7EDF\u8BA1\u5237\u65B0\u5931\u8D25\uFF0C\u8BF7\u5237\u65B0\u91CD\u8BD5",
       "status.repairStill": "\u4FEE\u590D\u5DF2\u751F\u6548(\u6587\u4EF6\u5DF2\u91CD\u5199);\u82E5\u63D0\u793A\u4ECD\u663E\u793A,\u8BF7\u91CD\u542F dsh \u6E05\u9664\u5BBF\u4E3B\u5185\u5B58\u72B6\u6001",
       "status.repairFailed": "\u4FEE\u590D\u5931\u8D25\uFF1A{msg}",
+      "source.magpie": "\u603B\u8BA1\u53E3\u5F84\uFF1AMagpie \u7F51\u5173\u7528\u91CF\uFF08{calls} \u6B21\u8C03\u7528 \xB7 {from} \u2013 {to} UTC\uFF09\xB7 \u8F93\u5165+\u8F93\u51FA",
+      "source.logs": "\u603B\u8BA1\u53E3\u5F84\uFF1A\u4F1A\u8BDD\u65E5\u5FD7\uFF08\u8F93\u5165+\u8F93\u51FA\uFF0Cfork \u7EE7\u627F\u524D\u7F00\u5DF2\u53BB\u91CD\uFF09",
       "empty.title": "\u6682\u65E0\u7EDF\u8BA1\u6570\u636E",
       "empty.hint": "\u5F00\u59CB\u4F7F\u7528 DeepSeek Harness \u540E\uFF0C\u8FD9\u91CC\u4F1A\u5C55\u793A Token \u6D88\u8017\u60C5\u51B5",
       "error.title": "\u7EDF\u8BA1\u9762\u677F\u5D29\u6E83\u4E86",
@@ -199,7 +201,7 @@ window.__ModuleLoader__.load({
       "nav.label": "Usage stats",
       "nav.subtitle": "Read-only session log stats \xB7 never writes back",
       "kpi.total": "Total tokens",
-      "kpi.total.detail": "In {input} \xB7 Out {output}",
+      "kpi.total.detail": "In {input} \xB7 Out {output} \xB7 Cache read {cacheRead}",
       "kpi.sessions": "Sessions",
       "kpi.sessions.detail": "Total {total} \xB7 with usage: main {main} \xB7 subagent {subagent}",
       "kpi.topModel": "Top model",
@@ -281,6 +283,8 @@ window.__ModuleLoader__.load({
       "status.repairRefreshFailed": "Repaired and restored {count} events (original backed up); statistics failed to refresh. Please refresh again.",
       "status.repairStill": "Repair is durable; if the hint persists, restart dsh to clear host in-memory state",
       "status.repairFailed": "Repair failed: {msg}",
+      "source.magpie": "Totals: Magpie gateway ledger ({calls} calls \xB7 {from} \u2013 {to} UTC) \xB7 input + output",
+      "source.logs": "Totals: session logs (input + output, fork prefix excluded)",
       "empty.title": "No statistics yet",
       "empty.hint": "Start using DeepSeek Harness and token usage will show up here",
       "error.title": "The usage panel crashed",
@@ -431,6 +435,7 @@ window.__ModuleLoader__.load({
       ".dsw-ust-head-title{display:flex;align-items:flex-start;gap:8px;min-width:0}",
       ".dsw-ust-page-icon{flex-shrink:0;margin-top:4px;color:var(--dsw-alias-label-secondary)}",
       ".dsw-ust-sub{margin-top:4px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}",
+      ".dsw-ust-source{margin-top:2px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);opacity:.85}",
       ".dsw-ust-repair{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-top:4px;font-size:12px;line-height:18px;color:var(--dsw-alias-state-warn-primary)}",
       ".dsw-ust-repair-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}",
       ".dsw-ust-repair-hint{white-space:nowrap}",
@@ -613,6 +618,10 @@ window.__ModuleLoader__.load({
     var import_react9 = require("react");
 
     // src/shared/usage.ts
+    function dayKeyUTC(ts) {
+      const d = new Date(ts);
+      return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0");
+    }
     function parseDayKeyUTC(key) {
       const p = key.split("-");
       return new Date(Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2])));
@@ -738,7 +747,7 @@ window.__ModuleLoader__.load({
     var RPC_SESSIONS_MORE = "sessions.more";
     var RPC_PROJECTS_MORE = "projects.more";
     var RPC_REPAIR_SESSION = "repair.session";
-    var OVERVIEW_VERSION = 4;
+    var OVERVIEW_VERSION = 5;
 
     // src/client/api.ts
     function withTimeout(source, ms, label) {
@@ -1156,7 +1165,6 @@ window.__ModuleLoader__.load({
       const allTime = overview.allTime || { totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, sessionCount: 0, byModel: [] };
       const totals = allTime.totals || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
       const total = totals.total || 0;
-      const inputTotal = totals.input + totals.cacheRead + totals.cacheWrite;
       const top = allTime.byModel[0] || null;
       const rate = hitRate(totals);
       const coverage = overview.coverage;
@@ -1179,14 +1187,19 @@ window.__ModuleLoader__.load({
         return any ? { peak, offPeak } : null;
       }, [billing, allTime.byModel]);
       const animatedTotal = useCountUp(total, 900);
-      const animatedInput = useCountUp(inputTotal, 900);
+      const animatedInput = useCountUp(totals.input, 900);
       const animatedOutput = useCountUp(totals.output, 900);
+      const animatedCacheRead = useCountUp(totals.cacheRead, 900);
       const animatedSessions = useCountUp(allTime.sessionCount, 900);
       const animatedRate = useCountUp(rate === null ? 0 : rate * 100, 900);
       const animatedCost = useCountUp(costTotal === null ? 0 : costTotal, 900);
       const costValue = costTotal === null ? "\u2014" : formatCost(animatedCost);
       const costDetail = split === null ? t("kpi.cost.none") : t("kpi.cost.detail", { peak: formatCost(split.peak), idle: formatCost(split.offPeak) });
-      return /* @__PURE__ */ React2.createElement("div", { className: "dsw-ust-kpis" }, /* @__PURE__ */ React2.createElement("div", { className: "dsw-ust-kpi" }, /* @__PURE__ */ React2.createElement("div", { className: "l" }, t("kpi.total")), /* @__PURE__ */ React2.createElement("div", { className: "v" }, fmtTokens(animatedTotal, locale)), /* @__PURE__ */ React2.createElement("div", { className: "d" }, t("kpi.total.detail", { input: fmtTokens(animatedInput, locale), output: fmtTokens(animatedOutput, locale) }))), /* @__PURE__ */ React2.createElement("div", { className: "dsw-ust-kpi" }, /* @__PURE__ */ React2.createElement("div", { className: "l" }, t("kpi.cost")), /* @__PURE__ */ React2.createElement("div", { className: "v v-sm", title: t("strip.estimate") }, costValue), /* @__PURE__ */ React2.createElement("div", { className: "d" }, costDetail)), /* @__PURE__ */ React2.createElement("div", { className: "dsw-ust-kpi" }, /* @__PURE__ */ React2.createElement("div", { className: "l" }, t("kpi.sessions")), /* @__PURE__ */ React2.createElement("div", { className: "v" }, String(Math.round(animatedSessions))), /* @__PURE__ */ React2.createElement("div", { className: "d" }, t("kpi.sessions.detail", {
+      return /* @__PURE__ */ React2.createElement("div", { className: "dsw-ust-kpis" }, /* @__PURE__ */ React2.createElement("div", { className: "dsw-ust-kpi" }, /* @__PURE__ */ React2.createElement("div", { className: "l" }, t("kpi.total")), /* @__PURE__ */ React2.createElement("div", { className: "v" }, fmtTokens(animatedTotal, locale)), /* @__PURE__ */ React2.createElement("div", { className: "d" }, t("kpi.total.detail", {
+        input: fmtTokens(animatedInput, locale),
+        output: fmtTokens(animatedOutput, locale),
+        cacheRead: fmtTokens(animatedCacheRead, locale)
+      }))), /* @__PURE__ */ React2.createElement("div", { className: "dsw-ust-kpi" }, /* @__PURE__ */ React2.createElement("div", { className: "l" }, t("kpi.cost")), /* @__PURE__ */ React2.createElement("div", { className: "v v-sm", title: t("strip.estimate") }, costValue), /* @__PURE__ */ React2.createElement("div", { className: "d" }, costDetail)), /* @__PURE__ */ React2.createElement("div", { className: "dsw-ust-kpi" }, /* @__PURE__ */ React2.createElement("div", { className: "l" }, t("kpi.sessions")), /* @__PURE__ */ React2.createElement("div", { className: "v" }, String(Math.round(animatedSessions))), /* @__PURE__ */ React2.createElement("div", { className: "d" }, t("kpi.sessions.detail", {
         total: coverage.sessionsTotal,
         main: coverage.usageSessionsMain,
         subagent: coverage.usageSessionsSubagent
@@ -1692,7 +1705,6 @@ window.__ModuleLoader__.load({
     function buildDailyCsv(days, prices = {}, peakValley = true, modelProviders = {}) {
       const rows = ["date,total,input,output,cacheRead,cacheWrite,costPeakCents,costOffPeakCents,costTotalCents"];
       for (const d of days) {
-        if (d.total <= 0) continue;
         let input = 0;
         let output = 0;
         let cacheRead = 0;
@@ -1714,10 +1726,11 @@ window.__ModuleLoader__.load({
           idle = (idle ?? 0) + row.idle;
           total = (total ?? 0) + row.total;
         }
+        if (input + output + cacheRead + cacheWrite <= 0) continue;
         rows.push(
           [
             csvCell(d.date),
-            csvCell(d.total),
+            csvCell(input + output),
             csvCell(input),
             csvCell(output),
             csvCell(cacheRead),
@@ -1738,7 +1751,7 @@ window.__ModuleLoader__.load({
           [
             csvCell(m.model),
             csvCell(m.provider),
-            csvCell(m.total),
+            csvCell(m.input + m.output),
             csvCell(m.input),
             csvCell(m.output),
             csvCell(m.cacheRead),
@@ -2149,6 +2162,21 @@ window.__ModuleLoader__.load({
     // src/client/StatsSection.tsx
     var import_dsh_client_ui_primitives4 = require("@deepseek-ai/dsh-client-ui-primitives");
     var React12 = __toESM(require("react"), 1);
+    function sourceNote(overview, t) {
+      const coverage = overview.coverage;
+      const magpie = coverage ? coverage.magpie : void 0;
+      if (coverage && coverage.source === "magpie" && magpie) {
+        return {
+          text: t("source.magpie", {
+            calls: magpie.calls,
+            from: magpie.from === null ? "\u2014" : dayKeyUTC(magpie.from),
+            to: magpie.to === null ? "\u2014" : dayKeyUTC(magpie.to)
+          }),
+          title: magpie.file
+        };
+      }
+      return { text: t("source.logs") };
+    }
     function StatsSection({ rpc, i18n: baseI18n }) {
       const i18n = useI18n(baseI18n);
       const t = i18n.t;
@@ -2225,6 +2253,7 @@ window.__ModuleLoader__.load({
       } else if (error) {
         subText = t("status.error", { msg: error });
       }
+      const source = data ? sourceNote(data, t) : null;
       let body;
       if (!data && !error) {
         body = /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-empty" }, /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-empty-title" }, t("status.loading")), /* @__PURE__ */ React12.createElement("div", null, t("status.loading.hint")));
@@ -2247,7 +2276,7 @@ window.__ModuleLoader__.load({
           }
         ), /* @__PURE__ */ React12.createElement(BarChart, { days, byModel: recentByModel, i18n, onTip: setBarTip }), /* @__PURE__ */ React12.createElement(SessionsCard, { sessions: overview.topSessions, i18n, rpc }), /* @__PURE__ */ React12.createElement(ProjectRankCard, { i18n, rpc }), /* @__PURE__ */ React12.createElement(ProvidersCard, { providers: overview.providers, i18n }), /* @__PURE__ */ React12.createElement(ModelDonut, { byModel: allTime.byModel, total: allTimeTotal, i18n, onTip: setDonutTip }));
       }
-      return /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-root" }, /* @__PURE__ */ React12.createElement(Tooltip, { tip: barTip }), /* @__PURE__ */ React12.createElement(Tooltip, { tip: donutTip }), /* @__PURE__ */ React12.createElement(Tooltip, { tip: heatTip }), /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-head" }, /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-head-title" }, /* @__PURE__ */ React12.createElement("svg", { className: "dsw-ust-page-icon", width: 16, height: 16, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", "aria-hidden": "true" }, /* @__PURE__ */ React12.createElement("path", { d: "M3 13V9.5" }), /* @__PURE__ */ React12.createElement("path", { d: "M8 13V5.5" }), /* @__PURE__ */ React12.createElement("path", { d: "M13 13V3" }), /* @__PURE__ */ React12.createElement("path", { d: "M2 13.5h12" })), /* @__PURE__ */ React12.createElement("div", null, /* @__PURE__ */ React12.createElement("h2", null, t("nav.label")), subText ? /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-sub" }, subText) : null, data && data.coverage.failedSessionIds.length > 0 && /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-repair" }, /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-repair-row" }, /* @__PURE__ */ React12.createElement("span", { className: "dsw-ust-repair-hint" }, t("status.repairHint", { count: data.coverage.failedSessionIds.length })), /* @__PURE__ */ React12.createElement(import_dsh_client_ui_primitives4.Button, { size: "sm", className: "dsw-ust-more", onClick: repairFirst, disabled: repairing, loading: repairing }, t("status.repair")))))), /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-head-actions" }, data ? /* @__PURE__ */ React12.createElement(ExportMenu, { overview: data, i18n, rpc }) : null, /* @__PURE__ */ React12.createElement(
+      return /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-root" }, /* @__PURE__ */ React12.createElement(Tooltip, { tip: barTip }), /* @__PURE__ */ React12.createElement(Tooltip, { tip: donutTip }), /* @__PURE__ */ React12.createElement(Tooltip, { tip: heatTip }), /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-head" }, /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-head-title" }, /* @__PURE__ */ React12.createElement("svg", { className: "dsw-ust-page-icon", width: 16, height: 16, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", "aria-hidden": "true" }, /* @__PURE__ */ React12.createElement("path", { d: "M3 13V9.5" }), /* @__PURE__ */ React12.createElement("path", { d: "M8 13V5.5" }), /* @__PURE__ */ React12.createElement("path", { d: "M13 13V3" }), /* @__PURE__ */ React12.createElement("path", { d: "M2 13.5h12" })), /* @__PURE__ */ React12.createElement("div", null, /* @__PURE__ */ React12.createElement("h2", null, t("nav.label")), subText ? /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-sub" }, subText) : null, source ? /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-source", title: source.title }, source.text) : null, data && data.coverage.failedSessionIds.length > 0 && /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-repair" }, /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-repair-row" }, /* @__PURE__ */ React12.createElement("span", { className: "dsw-ust-repair-hint" }, t("status.repairHint", { count: data.coverage.failedSessionIds.length })), /* @__PURE__ */ React12.createElement(import_dsh_client_ui_primitives4.Button, { size: "sm", className: "dsw-ust-more", onClick: repairFirst, disabled: repairing, loading: repairing }, t("status.repair")))))), /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-head-actions" }, data ? /* @__PURE__ */ React12.createElement(ExportMenu, { overview: data, i18n, rpc }) : null, /* @__PURE__ */ React12.createElement(
         import_dsh_client_ui_primitives4.Button,
         {
           variant: "outline",

@@ -7,10 +7,16 @@
 // numeric usage buckets on usage-bearing events.
 
 const fs = require('node:fs');
+const os = require('node:os');
 const { createHash } = require('node:crypto');
 const path = require('node:path');
 const zlib = require('node:zlib');
 const { Worker } = require('node:worker_threads');
+
+// Accounting generation of `live2dPet.growth`. Version 2 counts uncached
+// input + output only and prefers Magpie's usage log; a state written under
+// version 1 is reset on its first refresh (see needsAccountingMigration).
+const ACCOUNTING_VERSION = 2;
 
 // 1 fed token = 1 growth point. Thresholds are cumulative points.
 // Growth ladder — each tier carries a theme color used across the status
@@ -51,15 +57,16 @@ function levelName(points) {
   return LEVELS[levelFor(points) - 1].name;
 }
 
-// Sum of a provider usage bucket set. Reasoning is already inside output
-// (same convention as the usage panel).
+// Usage that counts as food: uncached input + output. Cache reads and writes
+// are metered separately by the provider (and by Magpie) — they are re-read
+// context, not fresh work, and adding them multiplied the pet's total over the
+// real spend. Reasoning is already inside output (same convention as the
+// usage panel), so it is not added twice.
 function usageTokens(usage) {
   if (!usage || typeof usage !== 'object') {
     return 0;
   }
   return (usage.inputTokens || 0)
-    + (usage.cacheReadTokens || 0)
-    + (usage.cacheWriteTokens || 0)
     + (usage.outputTokens || 0);
 }
 
@@ -92,10 +99,58 @@ function usageSampleOf(event) {
   return undefined;
 }
 
+// A seeded (forked) session log replays its parent's prefix byte-for-byte, so
+// folding the whole file bills the parent's work again and, worse, the child's
+// own (turn,step) slots collide with the prefix keys and overwrite them.
+// The host exposes the exact prefix length as inheritedEventCount; in the log
+// its durable equivalent is the LAST `session/end-seed` marker carrying
+// `inherited: true`, whose seq is that cut (session.md § the end-seed
+// boundary). Legacy v1 headers carry the length as `seedLength` instead.
+// Returns 0 — count every event — for unseeded logs and for fixtures without a
+// session header.
+function inheritedCut(text) {
+  const lines = text.split('\n');
+  let header;
+  for (const line of lines) {
+    if (!line || line.charCodeAt(0) !== 123) {
+      continue;
+    }
+    try {
+      header = JSON.parse(line);
+    } catch {
+      header = undefined;
+    }
+    break;
+  }
+  if (!header || header.type !== 'session' || header.isSeeded !== true) {
+    return 0;
+  }
+  let cut = Number.isSafeInteger(header.seedLength) && header.seedLength > 0
+    ? header.seedLength : 0;
+  for (const line of lines) {
+    if (!line || line.indexOf('session/end-seed') === -1) {
+      continue;
+    }
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (event?.type === 'session/end-seed' && event.data?.inherited === true
+        && Number.isSafeInteger(event.seq) && event.seq > cut) {
+      cut = event.seq;
+    }
+  }
+  return cut;
+}
+
 // Fold one decoded log body into `lastWins`: last sample wins per
 // (turn,step) — a retried attempt's later settlement replaces the earlier
 // one, and a streamed usage chunk never outranks the final settlement.
-function foldLogInto(text, lastWins) {
+// Events below the inherited cut belong to the parent session and are skipped
+// before they can claim a key.
+function foldLogInto(text, lastWins, cut = 0) {
   for (const line of text.split('\n')) {
     if (!line || line.charCodeAt(0) !== 123) {
       continue;
@@ -104,6 +159,9 @@ function foldLogInto(text, lastWins) {
     try {
       event = JSON.parse(line);
     } catch {
+      continue;
+    }
+    if (cut > 0 && typeof event.seq === 'number' && event.seq < cut) {
       continue;
     }
     const sample = usageSampleOf(event);
@@ -116,7 +174,7 @@ function foldLogInto(text, lastWins) {
 
 function tokensInLog(text) {
   const lastWins = new Map();
-  foldLogInto(text, lastWins);
+  foldLogInto(text, lastWins, inheritedCut(text));
   let total = 0;
   for (const n of lastWins.values()) {
     total += n;
@@ -183,17 +241,41 @@ function zstdDecompressAll(buf) {
   return Buffer.concat(parts);
 }
 
+// Decode one generation file into its per-(turn,step) usage map. The fork cut
+// is per file: each generation carries its own header and inherited marker.
+function unpackLog(text) {
+  const usageMap = new Map();
+  foldLogInto(text, usageMap, inheritedCut(text));
+  return usageMap;
+}
+
+// Canonical storage names one session's log generation: generation 0 is
+// `session.jsonl.zstd`, a format migration leaves `session.v<N>.jsonl.zstd`
+// behind as the new authoritative copy (same grammar as the usage panel's
+// session-repair locator: no leading zeros, v0 keeps the plain name).
+const CANONICAL_LOG_NAME = /^session(?:\.v([1-9][0-9]*))?\.jsonl\.zstd$/;
+
+function logGeneration(name) {
+  const match = CANONICAL_LOG_NAME.exec(name);
+  if (!match) {
+    return -1;
+  }
+  return match[1] === undefined ? 0 : Number(match[1]);
+}
+
 // Cumulative tokens across every session under `sessionsDir`
-// (<workspace>/<session-id>/session*.jsonl.zstd). A migrated session leaves
-// both a v1 and a v2 log of the SAME events, so dedup keys are per session
-// directory — summing files naively double-counts migrated sessions.
+// (<workspace>/<session-id>/session*.jsonl.zstd). Exactly one generation per
+// session directory counts — the highest canonical one. Older generations are
+// earlier copies of the SAME events, so folding them would replay (turn,step)
+// keys the newest copy already settles (and can overwrite child-owned slots).
 // Unreadable or empty files count as zero — the bowl never breaks on a
 // half-written log.
 //
 // `cache` (optional) is a Map<filePath, {size, mtimeMs, usage:Map}> owned by
 // the caller across scans: a file whose size+mtime are unchanged replays its
 // folded usage map without re-reading or re-decompressing — the steady-state
-// 60s rescan costs one stat per log instead of a full corpus decode.
+// 60s rescan costs one stat per log instead of a full corpus decode. Entries
+// for superseded or deleted generations are evicted.
 // includeSamples adds hashed settlement identities for durable food accounting;
 // the ordinary total-only scanner interface remains available to other callers.
 function scanSessionTokens(sessionsDir, cache, includeSamples = false) {
@@ -211,42 +293,39 @@ function scanSessionTokens(sessionsDir, cache, includeSamples = false) {
     } catch {
       continue;
     }
-    const lastWins = new Map();
-    let files = 0;
+    let chosen = '';
+    let chosenGeneration = -1;
     for (const ent of entries) {
       const p = path.join(dir, ent.name);
       if (ent.isDirectory()) {
         stack.push(p);
         continue;
       }
-      if (!ent.isFile() || !/^session(?:\.v\d+)?\.jsonl\.zstd$/.test(ent.name)) {
+      if (!ent.isFile()) {
         continue;
       }
-      let usageMap = null;
-      if (fileCache) {
-        seen.add(p);
-        let st = null;
-        try {
-          st = fs.statSync(p);
-        } catch {
-          continue; // vanished between readdir and stat
-        }
-        const hit = fileCache.get(p);
-        if (hit && hit.size === st.size && hit.mtimeMs === st.mtimeMs) {
-          usageMap = hit.usage;
-          files += 1;
-        } else {
-          let text;
-          try {
-            text = zstdDecompressAll(fs.readFileSync(p)).toString('utf8');
-          } catch {
-            continue;
-          }
-          usageMap = new Map();
-          foldLogInto(text, usageMap);
-          fileCache.set(p, { size: st.size, mtimeMs: st.mtimeMs, usage: usageMap });
-          files += 1;
-        }
+      const generation = logGeneration(ent.name);
+      if (generation > chosenGeneration) {
+        chosen = ent.name;
+        chosenGeneration = generation;
+      }
+    }
+    if (!chosen) {
+      continue;
+    }
+    const p = path.join(dir, chosen);
+    let lastWins = null;
+    if (fileCache) {
+      let st = null;
+      try {
+        st = fs.statSync(p);
+      } catch {
+        continue; // vanished between readdir and stat
+      }
+      seen.add(p);
+      const hit = fileCache.get(p);
+      if (hit && hit.size === st.size && hit.mtimeMs === st.mtimeMs) {
+        lastWins = hit.usage;
       } else {
         let text;
         try {
@@ -254,26 +333,26 @@ function scanSessionTokens(sessionsDir, cache, includeSamples = false) {
         } catch {
           continue;
         }
-        usageMap = new Map();
-        foldLogInto(text, usageMap);
-        files += 1;
+        lastWins = unpackLog(text);
+        fileCache.set(p, { size: st.size, mtimeMs: st.mtimeMs, usage: lastWins });
       }
-      // Merge per-file maps in directory order — a later log's sample wins
-      // on a shared (turn,step) key, same as folding raw text did.
-      for (const [k, v] of usageMap) {
-        lastWins.set(k, v);
+    } else {
+      let text;
+      try {
+        text = zstdDecompressAll(fs.readFileSync(p)).toString('utf8');
+      } catch {
+        continue;
       }
+      lastWins = unpackLog(text);
     }
-    if (files > 0) {
-      sessions += 1;
-      for (const [key, n] of lastWins) {
-        total += n;
-        if (includeSamples) {
-          // Session identity remains stable when its workspace is moved.
-          const id = createHash('sha256')
-            .update(JSON.stringify([path.basename(dir), key])).digest('hex');
-          sampleTotals[id] = n;
-        }
+    sessions += 1;
+    for (const [key, n] of lastWins) {
+      total += n;
+      if (includeSamples) {
+        // Session identity remains stable when its workspace is moved.
+        const id = createHash('sha256')
+          .update(JSON.stringify([path.basename(dir), key])).digest('hex');
+        sampleTotals[id] = n;
       }
     }
   }
@@ -295,15 +374,159 @@ function dayKey(now = Date.now()) {
     + `-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// ── Magpie usage (preferred source) ──
+//
+// The local Magpie gateway writes one JSON row per completed model call to
+// ~/.config/magpie/usage.jsonl: `in` / `out` are its headline "tokens", while
+// `cache_read` / `cache_write` are separate stats that never join that number.
+// Rows for other agents (codex, …) are not the harness's spend. When this file
+// exists it is the accounting source of truth: it already bills a forked
+// subagent's work once, per request.
+const MAGPIE_AGENT = 'dsh';
+const MAGPIE_USAGE_DEFAULT = path.join(os.homedir(), '.config', 'magpie', 'usage.jsonl');
+
+function magpieUsageFile(env = process.env) {
+  const override = env?.MAGPIE_USAGE_FILE;
+  return typeof override === 'string' && override.trim() ? override : MAGPIE_USAGE_DEFAULT;
+}
+
+// Stable identity for one credited request. `route_id` is unique per routed
+// call; rejected calls (no route) fall back to their written identity.
+function magpieRequestId(row) {
+  const id = row.route_id ?? row.request_id ?? row.rid ?? row.response_id;
+  if (id !== undefined && id !== null && id !== '') {
+    return `route:${String(id)}`;
+  }
+  if (typeof row.t === 'string' && row.t) {
+    return `row:${row.t}|${row.session ?? ''}|${row.status ?? ''}|${row.model ?? ''}`;
+  }
+  return null;
+}
+
+// One credited sample per request: the ledger never has to guess which part of
+// a cumulative total it already ate, and two calls with the same size cannot
+// cancel each other out.
+function sampleKey(scope, id) {
+  return createHash('sha256').update(JSON.stringify([scope, id])).digest('hex');
+}
+
+function tokenCount(value) {
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+// Aggregate the gateway log. Returns null when the file is absent or
+// unreadable so callers fall back to the session-log scan.
+function readMagpieUsage(file, { now = Date.now() } = {}) {
+  if (!file) {
+    return null;
+  }
+  let text;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+  const day = dayKey(now);
+  let total = 0;
+  let todayUsed = 0;
+  let calls = 0;
+  const sessions = new Set();
+  const sampleTotals = {};
+  for (const line of text.split('\n')) {
+    if (!line || line.charCodeAt(0) !== 123) {
+      continue;
+    }
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (row?.agent !== MAGPIE_AGENT) {
+      continue;
+    }
+    const amount = tokenCount(row.in) + tokenCount(row.out);
+    calls += 1;
+    total += amount;
+    if (typeof row.session === 'string' && row.session) {
+      sessions.add(row.session);
+    }
+    const at = typeof row.t === 'string' ? Date.parse(row.t) : NaN;
+    if (Number.isFinite(at) && dayKey(at) === day) {
+      todayUsed += amount;
+    }
+    const id = amount > 0 ? magpieRequestId(row) : null;
+    if (id) {
+      sampleTotals[sampleKey('magpie', id)] = amount;
+    }
+  }
+  // A log with no dsh rows (another tool's gateway traffic, or a file Magpie
+  // has just created) says nothing about this harness — let the session logs
+  // answer instead of reporting zero.
+  if (calls === 0) {
+    return null;
+  }
+  return { total, todayUsed, calls, sessions: sessions.size, sampleTotals };
+}
+
+// The scan interface shared by the tracker and its worker: Magpie first (the
+// gateway's own billing), session logs second. A Magpie answer carries the
+// absolute `todayUsed` and its `source`; the log fallback keeps `today`
+// incremental because it has no per-event clock in the fold.
+function scanUsage({ sessionsDir, usageFile, cache, includeSamples = false } = {}) {
+  const magpie = readMagpieUsage(usageFile);
+  if (magpie) {
+    return {
+      total: magpie.total,
+      sessions: magpie.sessions,
+      ...(includeSamples ? { sampleTotals: magpie.sampleTotals } : {}),
+      todayUsed: magpie.todayUsed,
+      source: 'magpie',
+    };
+  }
+  return scanSessionTokens(sessionsDir, cache, includeSamples);
+}
+
+// Validate and copy the versioned food ledger in one pass. It is the largest
+// object in the config (one key per observed request), so repeated norms must
+// not walk it four times.
+function normalizeLedger(ledger) {
+  if (!ledger || typeof ledger !== 'object' || Array.isArray(ledger)) {
+    return null;
+  }
+  if (ledger.version !== 1 || !Number.isFinite(ledger.available) || ledger.available < 0) {
+    return null;
+  }
+  if (!ledger.seen || typeof ledger.seen !== 'object' || Array.isArray(ledger.seen)) {
+    return null;
+  }
+  const seen = {};
+  for (const [key, amount] of Object.entries(ledger.seen)) {
+    if (!/^[a-f0-9]{64}$/.test(key) || !Number.isFinite(amount) || amount < 0) {
+      return null;
+    }
+    seen[key] = Math.floor(amount);
+  }
+  return {
+    version: 1,
+    // Which accounting source the observed keys belong to; '' when the ledger
+    // predates the marker.
+    source: typeof ledger.source === 'string' ? ledger.source : '',
+    available: Math.floor(ledger.available),
+    seen,
+  };
+}
+
 function normalizeGrowthState(value) {
   const source = value && typeof value === 'object' ? value : {};
   const num = (v) => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0);
   const todaySrc = source.today && typeof source.today === 'object' ? source.today : null;
-  const ledger = source.food;
-  const validLedger = ledger?.version === 1 && Number.isFinite(ledger.available) && ledger.available >= 0
-    && ledger.seen && typeof ledger.seen === 'object' && !Array.isArray(ledger.seen)
-    && Object.entries(ledger.seen).every(([key, amount]) => /^[a-f0-9]{64}$/.test(key) && Number.isFinite(amount) && amount >= 0);
+  const food = normalizeLedger(source.food);
   return {
+    // Present only after the v2 migration; absence marks legacy accounting and
+    // is preserved as absent so config normalization cannot fake a migration.
+    ...(source.accountingVersion === ACCOUNTING_VERSION
+      ? { accountingVersion: ACCOUNTING_VERSION } : {}),
     points: num(source.points),
     tokensFed: num(source.tokensFed),
     tokensSeen: num(source.tokensSeen),
@@ -314,8 +537,7 @@ function normalizeGrowthState(value) {
     // first refresh plants it (the historical corpus is NOT today's burn).
     today: todaySrc && typeof todaySrc.day === 'string' && todaySrc.day
       ? { day: todaySrc.day, used: num(todaySrc.used) } : null,
-    ...(validLedger ? { food: { version: 1, available: num(ledger.available),
-      seen: Object.fromEntries(Object.entries(ledger.seen).map(([key, amount]) => [key, num(amount)])) } } : {}),
+    ...(food ? { food } : {}),
   };
 }
 
@@ -358,7 +580,14 @@ function createScanWorker({ workerFile } = {}) {
       }
       pending.delete(msg.id);
       if (msg.ok) {
-        p.resolve({ total: msg.total, sessions: msg.sessions, ...(msg.sampleTotals ? { sampleTotals: msg.sampleTotals } : {}) });
+        p.resolve({
+          total: msg.total,
+          sessions: msg.sessions,
+          ...(msg.sampleTotals ? { sampleTotals: msg.sampleTotals } : {}),
+          // Optional extras: present only when Magpie's usage log answered.
+          ...(Number.isFinite(msg.todayUsed) ? { todayUsed: msg.todayUsed } : {}),
+          ...(msg.source === 'magpie' ? { source: 'magpie' } : {}),
+        });
       } else {
         p.reject(new Error(msg.error || 'session scan failed'));
       }
@@ -376,7 +605,8 @@ function createScanWorker({ workerFile } = {}) {
   }
 
   return {
-    scan(sessionsDir) {
+    // `usageFile` is Magpie's usage log; '' forces the session-log fallback.
+    scan(sessionsDir, usageFile) {
       if (closed) {
         return Promise.reject(new Error('pet scan worker closed'));
       }
@@ -391,7 +621,9 @@ function createScanWorker({ workerFile } = {}) {
         const id = ++seq;
         pending.set(id, { resolve, reject });
         try {
-          w.postMessage({ type: 'scan', id, sessionsDir: sessionsDir || '' });
+          w.postMessage({
+            type: 'scan', id, sessionsDir: sessionsDir || '', usageFile: usageFile || '',
+          });
         } catch (err) {
           pending.delete(id);
           reject(err);
@@ -411,6 +643,18 @@ function createScanWorker({ workerFile } = {}) {
   };
 }
 
+// A version-1 state recorded totals with the cache-inclusive, prefix-doubling
+// scan and may hold a food debt (tokensFed) larger than the corrected corpus —
+// that state can never become feedable again. A state that never recorded any
+// accounting (fresh install, or a bare pre-planted baseline) has nothing stale
+// to reset, so the normal first-scan watermark planting applies to it.
+function needsAccountingMigration(g) {
+  if (g.accountingVersion === ACCOUNTING_VERSION) {
+    return false;
+  }
+  return g.tokensSeen > 0 || g.tokensFed > 0 || g.points > 0 || Boolean(g.food);
+}
+
 // Lifetime feeding and current log totals have different units. Versioned
 // food accounting retains an available balance and observed settlement maxima;
 // removing/restoring logs cannot revoke earned food or credit it twice.
@@ -419,11 +663,13 @@ function createScanWorker({ workerFile } = {}) {
 // `scanTokens` (optional) injects the corpus scan — sync or Promise of
 // {total, sessions}. Production default is the worker-backed scanner so the
 // Electron main thread never pays the decode; tests inject the in-process
-// scan for determinism.
-function createGrowthTracker({ sessionsDir, getGrowth, saveGrowth, scanTokens }) {
+// scan for determinism. `usageFile` names Magpie's usage log ('' disables the
+// preferred source).
+function createGrowthTracker({ sessionsDir, getGrowth, saveGrowth, scanTokens, usageFile }) {
   const scanner = scanTokens
     ? { scan: (dir) => scanTokens(dir) }
     : createScanWorker();
+  const magpieFile = usageFile === undefined ? magpieUsageFile() : usageFile;
   function read() {
     return normalizeGrowthState(getGrowth?.());
   }
@@ -439,40 +685,87 @@ function createGrowthTracker({ sessionsDir, getGrowth, saveGrowth, scanTokens })
   function refresh() {
     if (!inFlight) {
       inFlight = (async () => {
-        const { total, sampleTotals } = await scanner.scan(sessionsDir);
+        const scan = await scanner.scan(sessionsDir, magpieFile);
+        const total = Number.isFinite(scan?.total) && scan.total > 0 ? Math.floor(scan.total) : 0;
+        const sampleTotals = scan?.sampleTotals && typeof scan.sampleTotals === 'object'
+          ? scan.sampleTotals : null;
+        // A Magpie scan knows the exact local-day figure; the log fallback is
+        // incremental (no clock in the fold), so it keeps the running counter.
+        const source = scan?.source === 'magpie' ? 'magpie' : 'sessions';
+        const absoluteToday = Number.isFinite(scan?.todayUsed)
+          ? Math.max(0, Math.floor(scan.todayUsed)) : null;
         const g = read();
-        // First scan plants the watermark at corpus-minus-eaten so already-fed
-        // credit survives the upgrade; later the watermark only follows the
-        // corpus DOWN (logs deleted → that ceiling is gone for good).
-        const baseline = g.baseline === null
-          ? Math.max(0, total - g.tokensFed)
-          : Math.min(g.baseline, total);
-        let delta = Math.max(0, total - g.tokensSeen);
-        let food = g.food;
-        if (sampleTotals) {
-          if (!food) {
-            // Seed historical buckets without retroactive food. Preserve only
-            // the legacy balance; neither growth nor lifetime feeding resets.
-            food = { version: 1, available: Math.max(0, total - baseline - g.tokensFed), seen: { ...sampleTotals } };
-          } else {
-            const seen = { ...food.seen };
-            delta = 0;
-            for (const [key, amount] of Object.entries(sampleTotals)) {
-              const previous = seen[key] || 0;
-              delta += Math.max(0, amount - previous);
-              seen[key] = Math.max(previous, amount);
-            }
-            food = { version: 1, available: food.available + delta, seen };
-          }
-        }
         const day = dayKey();
-        const today = g.baseline === null
-          ? { day, used: 0 }
-          : { day, used: (g.today && g.today.day === day ? g.today.used : 0) + delta };
-        const next = { ...g, tokensSeen: total, baseline, today, ...(food ? { food } : {}) };
-        if (next.tokensSeen !== g.tokensSeen || next.baseline !== g.baseline
-            || !g.today || next.today.used !== g.today.used || next.today.day !== g.today.day
-            || (food && (!g.food || delta > 0))) {
+        let next;
+        let dirty;
+        if (needsAccountingMigration(g)) {
+          // Keep earned growth, drop every stale counter and the old ledger:
+          // the new total becomes the watermark, so nothing already spent is
+          // retroactively edible and the old tokensFed debt cannot lock the bowl.
+          next = {
+            ...g,
+            accountingVersion: ACCOUNTING_VERSION,
+            tokensSeen: total,
+            baseline: total,
+            tokensFed: 0,
+            today: { day, used: absoluteToday ?? 0 },
+          };
+          if (sampleTotals) {
+            next.food = { version: 1, source, available: 0, seen: { ...sampleTotals } };
+          } else {
+            delete next.food;
+          }
+          dirty = true;
+        } else {
+          // First scan plants the watermark at corpus-minus-eaten so already-fed
+          // credit survives the upgrade; later the watermark only follows the
+          // corpus DOWN (logs deleted → that ceiling is gone for good).
+          const baseline = g.baseline === null
+            ? Math.max(0, total - g.tokensFed)
+            : Math.min(g.baseline, total);
+          let delta = Math.max(0, total - g.tokensSeen);
+          let food = g.food;
+          let foodChanged = false;
+          if (sampleTotals) {
+            if (!food) {
+              // Seed historical buckets without retroactive food. Preserve only
+              // the legacy balance; neither growth nor lifetime feeding resets.
+              food = { version: 1, source, available: Math.max(0, total - baseline - g.tokensFed), seen: { ...sampleTotals } };
+              foodChanged = true;
+            } else if (food.source && food.source !== source) {
+              // The accounting source flipped (Magpie appeared or went away).
+              // The observed keys belong to the other source, so rebase them
+              // without minting that source's whole history as food.
+              food = { version: 1, source, available: food.available, seen: { ...sampleTotals } };
+              delta = 0;
+              foodChanged = true;
+            } else {
+              const seen = { ...food.seen };
+              delta = 0;
+              for (const [key, amount] of Object.entries(sampleTotals)) {
+                const previous = seen[key] || 0;
+                delta += Math.max(0, amount - previous);
+                seen[key] = Math.max(previous, amount);
+              }
+              food = { version: 1, source, available: food.available + delta, seen };
+              foodChanged = delta > 0 || !g.food.source;
+            }
+          }
+          const today = absoluteToday !== null
+            ? { day, used: absoluteToday }
+            : g.baseline === null
+              ? { day, used: 0 }
+              : { day, used: (g.today && g.today.day === day ? g.today.used : 0) + delta };
+          next = { ...g, accountingVersion: ACCOUNTING_VERSION, tokensSeen: total, baseline, today, ...(food ? { food } : {}) };
+          dirty = next.tokensSeen !== g.tokensSeen
+            || next.baseline !== g.baseline
+            || next.accountingVersion !== g.accountingVersion
+            || !g.today
+            || next.today.used !== g.today.used
+            || next.today.day !== g.today.day
+            || (food ? !g.food || foodChanged : Boolean(g.food));
+        }
+        if (dirty) {
           write(next);
         }
         return next;
@@ -561,6 +854,11 @@ module.exports = {
   usageSampleOf,
   tokensInLog,
   scanSessionTokens,
+  scanUsage,
+  readMagpieUsage,
+  magpieUsageFile,
+  inheritedCut,
+  ACCOUNTING_VERSION,
   normalizeGrowthState,
   createGrowthTracker,
   createScanWorker,

@@ -29,9 +29,9 @@ test('buildDailyCsv has BOM, header and per-day rows', () => {
     { date: '2026-08-15', total: 0, models: {}, cost: { peak: { ...ZERO }, offPeak: { ...ZERO } }, modelCosts: {} },
     {
       date: '2026-08-14',
-      total: 30,
+      total: 25,
       models: {
-        'model-a': { input: 10, output: 5, cacheRead: 3, cacheWrite: 2, total: 20 },
+        'model-a': { input: 10, output: 5, cacheRead: 3, cacheWrite: 2, total: 15 },
         'model-b': { input: 10, output: 0, cacheRead: 0, cacheWrite: 0, total: 10 },
       },
       cost: { peak: { ...ZERO }, offPeak: { ...ZERO } },
@@ -42,8 +42,23 @@ test('buildDailyCsv has BOM, header and per-day rows', () => {
   assert.ok(csv.startsWith('\uFEFF'), 'must start with BOM')
   const lines = csv.slice(1).split('\n')
   assert.equal(lines[0], 'date,total,input,output,cacheRead,cacheWrite,costPeakCents,costOffPeakCents,costTotalCents')
-  assert.equal(lines[1], '2026-08-14,30,20,5,3,2,,,')
-  assert.equal(lines.length, 2, 'zero-total day is skipped')
+  // total = input + output (20 + 5); cache read/write stay in their own columns.
+  assert.equal(lines[1], '2026-08-14,25,20,5,3,2,,,')
+  assert.equal(lines.length, 2, 'day without any token activity is skipped')
+})
+
+test('buildDailyCsv keeps a cache-only day (its in+out total is 0)', () => {
+  const days: DayRecord[] = [
+    {
+      date: '2026-08-13',
+      total: 0,
+      models: { 'model-a': { input: 0, output: 0, cacheRead: 4096, cacheWrite: 0, total: 0 } },
+      cost: { peak: { ...ZERO }, offPeak: { ...ZERO } },
+      modelCosts: {},
+    },
+  ]
+  const lines = buildDailyCsv(days).slice(1).split('\n')
+  assert.equal(lines[1], '2026-08-13,0,0,0,4096,0,,,')
 })
 
 test('buildDailyCsv prices per model: flash peak 1M + pro idle 500k with custom prices', () => {
@@ -81,18 +96,19 @@ test('buildModelCsv rows are formula-guarded, ordered as given, cost columns pri
   const lines = csv.slice(1).split('\n')
   assert.equal(lines[0], 'model,provider,total,input,output,cacheRead,cacheWrite,costPeakCents,costOffPeakCents,costTotalCents')
   // official flash: 1M peak × 3.0 = 300 cents peak; no off-peak usage → idle col 0.
-  assert.equal(lines[1], 'deepseek-v4-flash,deepseek-official,10,1,0,0,0,300,0,300')
-  assert.equal(lines[2], "'=EVIL,p1,10,1,2,3,4,,,")
+  // total column = input + output (1 + 0), never including cache read/write.
+  assert.equal(lines[1], 'deepseek-v4-flash,deepseek-official,1,1,0,0,0,300,0,300')
+  assert.equal(lines[2], "'=EVIL,p1,3,1,2,3,4,,,")
   // '=EVIL' provider resolves nothing → unpriced columns are empty, never 0.
 })
 
 test('buildJson round-trips the overview payload', () => {
   const overview: Overview = {
     days: [],
-    totals: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4, total: 10 },
+    totals: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4, total: 3 },
     sessionCount: 1,
     byModel: [],
-    allTime: { totals: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4, total: 10 }, sessionCount: 1, byModel: [], costTotals: { peak: { ...ZERO }, offPeak: { ...ZERO } } },
+    allTime: { totals: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4, total: 3 }, sessionCount: 1, byModel: [], costTotals: { peak: { ...ZERO }, offPeak: { ...ZERO } } },
     coverage: {
       mode: 'scan',
       timezone: 'UTC',
@@ -111,6 +127,6 @@ test('buildJson round-trips the overview payload', () => {
     updatedAt: 123,
   }
   const parsed = JSON.parse(buildJson(overview)) as Overview
-  assert.equal(parsed.totals.total, 10)
+  assert.equal(parsed.totals.total, 3)
   assert.equal(parsed.coverage.sessionsTotal, 1)
 })

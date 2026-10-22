@@ -12,6 +12,7 @@ import { isUntitledBlank, sessionTitle } from './conversation/title.js';
 import { switchDraft } from './conversation/draft-switch.js';
 import { muxPatch, titleFromProjection } from './conversation/live.js';
 import { visibleScreen } from './ui/chrome.js';
+import { buttonBusy, clearButtonBusy } from './ui/button-busy.js?v=20261021-button-feedback';
 import { backTarget, createNavigation } from './ui/navigation.js?v=20260906-interaction';
 import { createSurface, createFocusScope } from './ui/surfaces.js?v=20260907-desktop-mobile';
 import { sessionOwner } from './ui/session-owner.js?v=20260906-interaction';
@@ -306,6 +307,7 @@ const state = {
   newSession: null,
   gitStatus: parseVcsStatus(null),
   gitBusy: false,
+  gitPendingRef: '',
   gitAuthError: '',
   gitToast: '',
   toastTone: 'info',
@@ -476,12 +478,6 @@ function showError(message) {
   if (message) setToast(message, { tone: 'error', holdMs: null });
 }
 
-function buttonBusy(button, busy) {
-  button.classList.toggle('button-busy', Boolean(busy));
-  button.setAttribute('aria-busy', String(Boolean(busy)));
-  return button;
-}
-
 function surfaceBusy(content, busy) {
   const panel = content.closest('.surface-panel') || content;
   panel.classList.toggle('surface-busy', Boolean(busy));
@@ -513,27 +509,29 @@ function setPasteExpanded(expanded, { focus = false } = {}) {
 // —— 已保存的电脑（多台 sticky 选择，纯本地状态） —— //
 
 let connectBusy = false;
+let connectingServerId = '';
 let pendingConnect = null;
 
 async function connectSaved(serverId) {
   return runInitialConnect(async (signal) => {
     const api = await loadChisaCodeApi();
     await finishChisaCodeConnect(await reconnectSticky(api, serverId, { signal }), true, signal);
-  });
+  }, { serverId });
 }
 
-async function runInitialConnect(attempt, { replace = false } = {}) {
+async function runInitialConnect(attempt, { replace = false, serverId = '' } = {}) {
   if (connectBusy && !replace) return;
   pendingConnect?.abort(new Error('连接已被新的配对替换'));
   const controller = new AbortController();
   pendingConnect = controller;
   if (state.chisacode) forceLogout('', { forget: false });
   connectBusy = true;
+  connectingServerId = serverId;
   renderSavedComputers();
   el('paste-enter').disabled = true;
   el('scan-open').disabled = true;
-  buttonBusy(el('paste-enter'), true);
-  buttonBusy(el('scan-open'), true);
+  buttonBusy(el('paste-enter'), true, { label: '连接中…' });
+  buttonBusy(el('scan-open'), true, { label: '连接中…' });
   deviceLine.textContent = '正在连接电脑…';
   showError('');
   try {
@@ -543,11 +541,12 @@ async function runInitialConnect(attempt, { replace = false } = {}) {
     if (state.chisacode) forceLogout('', { forget: false });
     deviceLine.textContent = '连接失败';
     const reason = /timed? out/i.test(error?.message || '') ? '连接超时' : (error?.message || '电脑没有响应');
-    operationError(`${reason}。确认电脑端远程已开启，再重试或重新扫码。`, () => runInitialConnect(attempt, { replace: true }));
+    operationError(`${reason}。确认电脑端远程已开启，再重试或重新扫码。`, () => runInitialConnect(attempt, { replace: true, serverId }));
   } finally {
     if (pendingConnect === controller) {
       pendingConnect = null;
       connectBusy = false;
+      connectingServerId = '';
       el('paste-enter').disabled = false;
       el('scan-open').disabled = false;
       buttonBusy(el('paste-enter'), false);
@@ -560,6 +559,7 @@ async function runInitialConnect(attempt, { replace = false } = {}) {
 function renderSavedComputers() {
   const rows = savedComputerRows(loadSecrets());
   savedComputersEl.classList.toggle('hidden', rows.length === 0);
+  clearButtonBusy(savedComputersEl);
   savedComputersEl.replaceChildren();
   if (!rows.length) return;
   const heading = document.createElement('p');
@@ -589,6 +589,7 @@ function renderSavedComputers() {
     ].filter(Boolean).join(' · ');
     main.append(name, desc);
     open.append(tile, main, svgNode('<svg width="14" height="14" viewBox="0 0 16 16" fill="none" class="chev"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'));
+    buttonBusy(open, connectBusy && connectingServerId === entry.serverId, { label: '连接中…' });
     open.addEventListener('click', () => { void connectSaved(entry.serverId); });
     const forget = document.createElement('button');
     forget.type = 'button';
@@ -739,7 +740,7 @@ function renderComposer({ nativeSnapshot = true } = {}) {
   composerBehavior.refresh();
   const canSend = Boolean(draft.value.trim()) || state.attachments.length > 0;
   sendBtn.disabled = !canSend || composerOffline() || state.sendBusy;
-  buttonBusy(sendBtn, state.sendBusy);
+  buttonBusy(sendBtn, state.sendBusy, { iconOnly: true, label: '正在发送消息…' });
   const accessLabel = currentModeState().currentLabel || '权限';
   // #access-chip's first child is a whitespace text node; the visually-hidden
   // .chip-label span is the label slot (the shield icon stays visible alone).
@@ -1609,13 +1610,14 @@ function renderLog({ anchor = 'auto' } = {}) {
     older.className = 'load-older';
     older.disabled = state.timelineLoadingOlder;
     older.textContent = '加载更早消息';
-    buttonBusy(older, state.timelineLoadingOlder);
+    buttonBusy(older, state.timelineLoadingOlder, { label: '加载中…' });
     older.addEventListener('click', () => loadOlderMessages());
     nodes.push(older);
   }
   if (!state.timelineError) {
     nodes.push(...rows.map(logRowNode));
   }
+  clearButtonBusy(logEl);
   logEl.replaceChildren(...nodes);
   renderBlankHero();
   scheduleNativeSnapshot();
@@ -1723,6 +1725,7 @@ function renderApproval() {
     button.disabled = Boolean(pending.responding);
     buttonBusy(button, pending.responding && button.dataset.approvalAction === pending.respondingAction);
   }
+  clearButtonBusy(approvalActions);
   approvalActions.replaceChildren(...buttons);
   renderDrawer();
 }
@@ -3062,7 +3065,7 @@ async function cancelRun() {
   if (!state.sessionId) return;
   if (stopBtn.disabled) return;
   stopBtn.disabled = true;
-  buttonBusy(stopBtn, true);
+  buttonBusy(stopBtn, true, { iconOnly: true, label: '正在停止运行…' });
   try {
     await call('session.cancel', { sessionId: state.sessionId });
   } catch (error) {
@@ -3376,11 +3379,10 @@ async function toggleTorch() {
   if (!track) return;
   if (scanTorch.disabled) return;
   scanTorch.disabled = true;
-  buttonBusy(scanTorch, true);
+  buttonBusy(scanTorch, true, { label: '切换中…' });
   try {
     torchOn = !torchOn;
     await track.applyConstraints({ advanced: [{ torch: torchOn }] });
-    scanTorch.textContent = torchOn ? '关闭手电' : '手电筒';
     scanTorch.classList.toggle('is-on', torchOn);
   } catch {
     torchOn = false;
@@ -3389,6 +3391,7 @@ async function toggleTorch() {
   } finally {
     scanTorch.disabled = false;
     buttonBusy(scanTorch, false);
+    scanTorch.textContent = torchOn ? '关闭手电' : '手电筒';
   }
 }
 
@@ -3448,7 +3451,23 @@ function currentQuick() {
   if (state.gitStatus.isRepo === false) {
     return { label: 'Initialize Git', disabled: state.gitBusy, kind: 'run_init', action: null, hint: '' };
   }
-  return resolveGitQuick(state.gitStatus, state.gitBusy);
+  // Keep the resting caption while pending so feedback cannot resize it.
+  return resolveGitQuick(state.gitStatus, false);
+}
+
+function gitBusyLabel() {
+  const labels = {
+    commit: '提交中…', push: '推送中…', pull: '拉取中…', init: '初始化中…',
+    'create-branch': '创建分支中…', 'switch-branch': '切换分支中…',
+    publish: '发布中…', 'create-change-request': '创建 PR 中…',
+  };
+  return labels[state.gitProgress] || 'Git 操作进行中…';
+}
+
+function refreshGitButtonFeedback() {
+  for (const button of phone.querySelectorAll('[data-git-feedback]')) {
+    buttonBusy(button, state.gitBusy, { label: gitBusyLabel() });
+  }
 }
 
 async function refreshGit() {
@@ -3509,12 +3528,15 @@ async function gitAction(name, extra = {}) {
   const retry = extra.retry === true ? state.gitRetry : null;
   if (retry && (retry.cwd !== cwd || retry.client !== owner.client)) return;
   state.gitBusy = true;
+  state.gitProgress = gitTunnelAction(name).replace('git-', '');
+  state.gitPendingRef = name === 'gitSwitchBranch' ? extra.ref || '' : '';
   state.gitProgressDismissed = false;
   state.gitToast = '';
   clearTimeout(toastTimer);
   state.gitError = '';
   renderToast();
   renderSettings();
+  renderSheet();
   renderDialog();
   let stacked = '';
   let payload;
@@ -3540,7 +3562,11 @@ async function gitAction(name, extra = {}) {
         stacked,
         {},
         { completed: retry?.completed || [], onProgress: (step) => {
-          if (owner.owns()) { state.gitProgress = step.replace('git-', ''); renderToast(); }
+          if (owner.owns()) {
+            state.gitProgress = step.replace('git-', '');
+            refreshGitButtonFeedback();
+            renderToast();
+          }
         } },
       );
     } else {
@@ -3595,6 +3621,7 @@ function maybeConfirm(name, extra = {}) {
 
 function runGitPrimary() {
   const quick = currentQuick();
+  if (state.gitBusy) return;
   if (quick.disabled) {
     setToast(quick.hint);
     return;
@@ -4353,6 +4380,8 @@ function gitCapsuleNode() {
   const primaryLabel = document.createElement('span');
   primaryLabel.textContent = quick.label;
   primary.append(primaryLabel);
+  primary.dataset.gitFeedback = '';
+  buttonBusy(primary, state.gitBusy, { label: gitBusyLabel() });
   primary.addEventListener('click', () => runGitPrimary());
   const menu = document.createElement('button');
   menu.type = 'button';
@@ -4657,7 +4686,6 @@ function renderModePane() {
     button.type = 'button';
     button.className = 'sheet-item mode-row';
     button.disabled = state.modeBusy;
-    buttonBusy(button, state.modeBusy && mode.id === state.permission.current);
     button.setAttribute('aria-pressed', String(mode.id === state.permission.current));
     const main = document.createElement('span');
     main.className = 'sheet-item-main';
@@ -4671,6 +4699,7 @@ function renderModePane() {
       mark.textContent = '当前';
       button.append(mark);
     }
+    buttonBusy(button, state.modeBusy && mode.id === state.permission.current, { label: '切换中…' });
     button.addEventListener('click', () => changeAgentMode(mode.id));
     group.append(button);
   }
@@ -4770,7 +4799,6 @@ function renderModelPane() {
     button.className = 'sheet-item mode-row';
     const routable = isRoutable(row);
     button.disabled = state.modelBusy || !routable;
-    buttonBusy(button, state.modelBusy && current?.provider === row.provider && current?.model === row.id);
     button.setAttribute('aria-pressed', String(current?.provider === row.provider && current?.model === row.id));
     const main = document.createElement('span');
     main.className = 'sheet-item-main';
@@ -4785,6 +4813,7 @@ function renderModelPane() {
     ].filter(Boolean).join(' · ');
     main.append(hint);
     button.append(main);
+    buttonBusy(button, state.modelBusy && current?.provider === row.provider && current?.model === row.id, { label: '切换中…' });
     if (routable) button.addEventListener('click', () => changeAgentModel(row.provider, row.id));
     group.append(button);
   }
@@ -4799,7 +4828,6 @@ function renderModelPane() {
       button.className = 'sheet-item mode-row';
       button.setAttribute('aria-pressed', String(current?.reasoningEffort === effort.id));
       button.disabled = state.modelBusy;
-      buttonBusy(button, state.modelBusy && current?.reasoningEffort === effort.id);
       const main = document.createElement('span');
       main.className = 'sheet-item-main';
       main.textContent = effort.name || effort.id;
@@ -4810,6 +4838,7 @@ function renderModelPane() {
         mark.textContent = '当前';
         button.append(mark);
       }
+      buttonBusy(button, state.modelBusy && current?.reasoningEffort === effort.id, { label: '切换中…' });
       button.addEventListener('click', () => {
         if (current) changeAgentModel(current.provider, current.model, effort.id);
       });
@@ -4885,6 +4914,7 @@ function renderSettings() {
   settingsTitle.textContent = pane || '设置';
   settingsBack.classList.toggle('hidden', !pane);
   el('close-settings').classList.toggle('hidden', Boolean(pane));
+  clearButtonBusy(options);
   options.replaceChildren();
   surfaceBusy(options, false);
   if (!pane) {
@@ -5083,7 +5113,7 @@ function renderNewSessionSheet() {
     const actions = document.createElement('footer');
     actions.className = 'task-actions';
     const createFolder = ghostButton('新建文件夹', startFolderCreate);
-    const useDirectory = buttonBusy(primaryButton('使用此目录作为工作区', createBrowsedWorkspace), session.creating);
+    const useDirectory = buttonBusy(primaryButton('使用此目录作为工作区', createBrowsedWorkspace), session.creating, { label: '创建中…' });
     createFolder.disabled = session.loading;
     useDirectory.disabled = session.loading;
     actions.append(createFolder, useDirectory);
@@ -5138,7 +5168,7 @@ function renderHistorySheet() {
       hint: '点按取消归档',
       enabled: !view.busyId && !view.loading,
       onClick: () => unarchiveFromHistory(row),
-    }), busy));
+    }), busy, { label: '取消归档中…' }));
     sheet.append(sheetItem({
       label: `删除「${sessionTitle(row)}」`,
       hint: '仅已归档会话可删除',
@@ -5169,7 +5199,6 @@ function pickerRow({ label, hint = '', current = false, enabled = true, busy = f
   button.type = 'button';
   button.className = 'sheet-item mode-row';
   button.disabled = !enabled;
-  buttonBusy(button, busy);
   button.setAttribute('aria-pressed', String(current));
   const main = document.createElement('span');
   main.className = 'sheet-item-main';
@@ -5189,6 +5218,7 @@ function pickerRow({ label, hint = '', current = false, enabled = true, busy = f
     mark.textContent = '✓';
     button.append(mark);
   }
+  buttonBusy(button, busy, { label: '切换中…' });
   if (enabled) button.addEventListener('click', onClick);
   return button;
 }
@@ -5349,6 +5379,7 @@ function renderModelPickerMore(sheet, { current, rows, pane }) {
   const list = document.createElement('div');
   list.className = 'card model-results';
   function renderRows() {
+    clearButtonBusy(list);
     list.replaceChildren();
     const query = state.modelQuery.trim().toLocaleLowerCase();
     const matches = rows.filter((row) => !query || `${row.name} ${row.id} ${row.providerName}`.toLocaleLowerCase().includes(query));
@@ -5415,6 +5446,7 @@ function openPicker(kind) {
 function renderSheet() {
   scheduleNavigation();
   preserveSurfaceInput(sheetRoot);
+  clearButtonBusy(sheetRoot);
   sheetRoot.replaceChildren();
   if (state.newSession) {
     renderNewSessionSheet();
@@ -5516,8 +5548,11 @@ function renderSheet() {
       divider.className = 'sheet-divider';
       sheet.append(divider);
     }
+    const primary = sheetItem({ label: state.gitRetry ? '继续未完成操作' : quick.label, enabled: !state.gitBusy && (!quick.disabled || Boolean(state.gitRetry)), onClick: () => state.gitRetry ? gitAction('gitCommit', { retry: true }) : runGitPrimary() });
+    primary.dataset.gitFeedback = '';
+    buttonBusy(primary, state.gitBusy, { label: gitBusyLabel() });
     sheet.append(
-      sheetItem({ label: state.gitRetry ? '继续未完成操作' : quick.label, enabled: !state.gitBusy && (!quick.disabled || Boolean(state.gitRetry)), onClick: () => state.gitRetry ? gitAction('gitCommit', { retry: true }) : runGitPrimary() }),
+      primary,
       sheetItem({ label: 'Pull', enabled: !state.gitBusy, onClick: () => gitAction('gitPull') }),
       sheetItem({
         label: 'Commit',
@@ -5587,19 +5622,23 @@ function renderSheet() {
       for (const branch of rows) {
         const current = branch.isCurrent && !branch.isRemote;
         const switchable = branch.switchable !== false;
-        nodes.push(sheetItem({
+        const button = sheetItem({
           label: branch.name,
           enabled: !state.gitBusy && !state.branchLoading && !current && switchable,
           hint: !switchable
             ? '名称含桌面无法安全传给 git 的字符'
             : (branch.isRemote ? '远程' : current ? '当前' : ''),
           onClick: () => switchBranch(branch.isRemote ? branch.name.replace(/^origin\//, '') : branch.name),
-        }));
+        });
+        const switching = state.gitBusy && state.gitProgress === 'switch-branch' && state.gitPendingRef === (branch.isRemote ? branch.name.replace(/^origin\//, '') : branch.name);
+        if (switching) button.dataset.gitFeedback = '';
+        buttonBusy(button, switching, { label: gitBusyLabel() });
+        nodes.push(button);
       }
       const canCreate = Boolean(query) && !state.branches.some((branch) => branch.name === query && !branch.isRemote);
       nodes.push(sheetItem({
         label: canCreate ? `创建并检出分支「${query}」` : '创建并检出新分支…',
-        enabled: !state.branchLoading,
+        enabled: !state.gitBusy && !state.branchLoading,
         onClick: () => {
           if (canCreate) state.newBranchName = query;
           state.gitDialog = 'create-branch';
@@ -5607,6 +5646,7 @@ function renderSheet() {
           renderDialog();
         },
       }));
+      clearButtonBusy(list);
       list.replaceChildren(...nodes);
     };
     sheet.append(fieldInput(state.branchQuery, '搜索分支…', (value) => {
@@ -5676,7 +5716,7 @@ function renderNamedDialog({ title, hint, field, placeholder, saveLabel, busy, o
     onSave.draft(value);
   }));
   dialog.append(body);
-  const saveBtn = buttonBusy(primaryButton(saveLabel, () => onSave.submit()), busy);
+  const saveBtn = buttonBusy(primaryButton(saveLabel, () => onSave.submit()), busy, { label: saveLabel === '创建' ? '创建中…' : '保存中…' });
   saveBtn.disabled = busy || !String(field || '').trim();
   const cancelBtn = ghostButton('取消', close);
   cancelBtn.disabled = busy;
@@ -5740,7 +5780,7 @@ function renderSessionRenameDialog() {
     saveBtn.disabled = rename.busy || !value.trim();
   }));
   dialog.append(body);
-  const saveBtn = buttonBusy(primaryButton('保存', () => submitSessionRename()), rename.busy);
+  const saveBtn = buttonBusy(primaryButton('保存', () => submitSessionRename()), rename.busy, { label: '保存中…' });
   saveBtn.disabled = rename.busy || !rename.value.trim();
   const cancelBtn = ghostButton('取消', close);
   cancelBtn.disabled = rename.busy;
@@ -5773,7 +5813,7 @@ function renderSessionConfirmDialog() {
   okBtn.type = 'button';
   okBtn.className = isDelete || isWorkspace ? 'danger-btn' : 'primary-btn';
   okBtn.textContent = isWorkspace ? '移除' : isDelete ? '删除' : '归档';
-  buttonBusy(okBtn, confirm.busy);
+  buttonBusy(okBtn, confirm.busy, { label: isWorkspace ? '移除中…' : isDelete ? '删除中…' : '归档中…' });
   okBtn.disabled = confirm.busy;
   okBtn.addEventListener('click', () => runSessionConfirm());
   dialogFoot(dialog, [cancelBtn, okBtn]);
@@ -5783,6 +5823,7 @@ function renderSessionConfirmDialog() {
 function renderDialog() {
   scheduleNavigation();
   preserveSurfaceInput(dialogRoot);
+  clearButtonBusy(dialogRoot);
   dialogRoot.replaceChildren();
   if (state.sessionConfirm) {
     renderSessionConfirmDialog();
@@ -5846,7 +5887,8 @@ function renderDialog() {
     const files = state.commitFiles;
     const submit = primaryButton(state.pendingStacked === 'commit_push_pr' ? 'Commit, push & PR' : state.pendingStacked === 'commit_push' ? 'Commit & push' : '提交',
       () => gitAction('gitCommit', state.gitRetry ? { retry: true } : { message: state.commitMessage }));
-    buttonBusy(submit, state.gitBusy || files?.loading);
+    submit.dataset.gitFeedback = '';
+    buttonBusy(submit, state.gitBusy || files?.loading, { label: state.gitBusy ? gitBusyLabel() : '加载中…' });
     const updateSubmit = () => {
       submit.disabled = state.gitBusy || Boolean(!state.gitRetry && (files?.loading || files?.error || (files?.entries.length && !files.selected.size)));
     };
@@ -5882,7 +5924,8 @@ function renderDialog() {
     input.disabled = state.gitBusy || Boolean(state.gitRetry);
     body.append(input);
     dialog.append(body);
-    const createBtn = buttonBusy(primaryButton('Create branch', () => createBranch()), state.gitBusy);
+    const createBtn = buttonBusy(primaryButton('Create branch', () => createBranch()), state.gitBusy, { label: gitBusyLabel() });
+    createBtn.dataset.gitFeedback = '';
     createBtn.disabled = state.gitBusy || !state.newBranchName.trim();
     dialogFoot(dialog, [ghostButton('取消', closeGitLayer), createBtn]);
     dialogRoot.append(layer);
@@ -5914,7 +5957,8 @@ function renderDialog() {
       gitAction('gitPublishRepository', { input: { name: state.publishName, visibility: state.publishVisibility, remoteUrl: state.publishRemoteUrl } });
     });
     publish.disabled = state.gitBusy;
-    buttonBusy(publish, state.gitBusy);
+    publish.dataset.gitFeedback = '';
+    buttonBusy(publish, state.gitBusy, { label: gitBusyLabel() });
     dialogFoot(dialog, [
       ghostButton('取消', closeGitLayer),
       publish,
@@ -5949,6 +5993,7 @@ function renderDialog() {
 }
 
 function renderToast() {
+  clearButtonBusy(toastRoot);
   toastRoot.replaceChildren();
   const busy = state.gitBusy && !state.gitProgressDismissed;
   if (!state.gitBusy && !state.gitToast) return;
@@ -6170,7 +6215,7 @@ accessChip.addEventListener('click', () => openPicker('mode'));
 planChip.addEventListener('click', () => {
   if (!state.sessionId || planChip.disabled) return;
   planChip.disabled = true;
-  buttonBusy(planChip, true);
+  buttonBusy(planChip, true, { label: '关闭中…' });
   runHostCommand('/plan off').then(() => {
     renderComposer();
   }).catch((error) => showBanner(error.message || '无法关闭计划')).finally(() => {

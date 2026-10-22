@@ -10,7 +10,8 @@
 import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import { deriveThemeTokens } from './derive.ts'
 import {
-  DEFAULT_FAMILY_ID, SIDEBAR_RAIL_FILL_TOKEN, SIDEBAR_UNMASKED_FILL, type ThemeTokens,
+  DEFAULT_FAMILY_ID, DEFAULT_THEME_SKIN, SIDEBAR_RAIL_FILL_TOKEN, SIDEBAR_UNMASKED_FILL,
+  type ThemeSkinId, type ThemeTokens,
 } from './theme-family.ts'
 import { resolveThemeFamily } from './builtin-families.ts'
 import {
@@ -34,20 +35,40 @@ export interface ThemeBootPayload {
   lightTokens: ThemeTokens
   /** Derived tokens for the dark half (empty for the DeepSeek family). */
   darkTokens: ThemeTokens
+  /** Presentation skin for the light half. */
+  lightSkin?: ThemeSkinId
+  /** Presentation skin for the dark half. */
+  darkSkin?: ThemeSkinId
+  /** Canvas color for the light half before the token sheet paints. */
+  lightBackground?: string
+  /** Canvas color for the dark half before the token sheet paints. */
+  darkBackground?: string
   /** Interface font size in px. */
   fontSizeInterface: number
   /** Overlay solidity percent. */
   glassOpacity: number
 }
 
-function tokensFor(settings: ThemeSettings, mode: 'light' | 'dark'): ThemeTokens {
+function familyFor(settings: ThemeSettings, mode: 'light' | 'dark') {
   const familyId = mode === 'dark' ? settings.activeDarkThemeId : settings.activeLightThemeId
-  const family = resolveThemeFamily(familyId, settings.customThemes)
+  return resolveThemeFamily(familyId, settings.customThemes)
+}
+
+function tokensFor(settings: ThemeSettings, mode: 'light' | 'dark'): ThemeTokens {
+  const family = familyFor(settings, mode)
   const tokens: ThemeTokens = family.id === DEFAULT_FAMILY_ID ? {} : deriveThemeTokens(family[mode])
   // Same rewrite composeActive applies; the pre-plugin interval must not
   // flash the masked rail back.
   if (settings.sidebarMaskHidden) tokens[SIDEBAR_RAIL_FILL_TOKEN] = SIDEBAR_UNMASKED_FILL
   return tokens
+}
+
+function skinFor(settings: ThemeSettings, mode: 'light' | 'dark'): ThemeSkinId {
+  return familyFor(settings, mode).skin ?? DEFAULT_THEME_SKIN
+}
+
+function backgroundFor(settings: ThemeSettings, mode: 'light' | 'dark'): string {
+  return familyFor(settings, mode)[mode].background
 }
 
 /**
@@ -67,6 +88,10 @@ export function buildThemeBootPayload(section: ThemeSettings | undefined): Theme
     fontFamilies: { text: settings.fontFamilySans, code: settings.fontFamilyCode, terminal: settings.fontFamilyTerminal },
     lightTokens: tokensFor(settings, 'light'),
     darkTokens: tokensFor(settings, 'dark'),
+    lightSkin: skinFor(settings, 'light'),
+    darkSkin: skinFor(settings, 'dark'),
+    lightBackground: backgroundFor(settings, 'light'),
+    darkBackground: backgroundFor(settings, 'dark'),
     fontSizeInterface: settings.fontSizeInterface,
     glassOpacity: transparent ? TRANSPARENT_GLASS_SOLIDITY : settings.glassOpacity,
   }
@@ -92,9 +117,12 @@ const LIGHT_BACKGROUND = '#fff'
 const DARK_BACKGROUND = '#151517'
 
 /** CSS that colors the document canvas before any script executes. */
-function bootThemeStyle(preference: ThemePreference): string {
-  const light = `:root{color-scheme:light}body{background-color:${LIGHT_BACKGROUND};--dsh-boot-bg:${LIGHT_BACKGROUND}}`
-  const dark = `:root{color-scheme:dark}body{background-color:${DARK_BACKGROUND};--dsh-boot-bg:${DARK_BACKGROUND}}`
+function bootThemeStyle(payload: ThemeBootPayload): string {
+  const preference = payload.preference
+  const lightBackground = payload.lightBackground ?? LIGHT_BACKGROUND
+  const darkBackground = payload.darkBackground ?? DARK_BACKGROUND
+  const light = `:root{color-scheme:light}body{background-color:${lightBackground};--dsh-boot-bg:${lightBackground}}`
+  const dark = `:root{color-scheme:dark}body{background-color:${darkBackground};--dsh-boot-bg:${darkBackground}}`
   if (preference === 'light') return light
   if (preference === 'dark') return dark
   return `${light}@media(prefers-color-scheme:dark){${dark}}`
@@ -113,15 +141,20 @@ function bootThemeScript(payload: ThemeBootPayload): string {
   const preference = ${JSON.stringify(payload.preference)}
   const lightTokens = ${JSON.stringify(payload.lightTokens)}
   const darkTokens = ${JSON.stringify(payload.darkTokens)}
+  const lightSkin = ${JSON.stringify(payload.lightSkin ?? DEFAULT_THEME_SKIN)}
+  const darkSkin = ${JSON.stringify(payload.darkSkin ?? DEFAULT_THEME_SKIN)}
   const fontSizeInterface = ${JSON.stringify(payload.fontSizeInterface)}
   const glassOpacity = ${JSON.stringify(payload.glassOpacity)}
   const systemDark = preference === 'system'
     && typeof matchMedia !== 'undefined'
     && matchMedia('(prefers-color-scheme: dark)').matches
   const dark = preference === 'dark' || systemDark
+  const skin = dark ? darkSkin : lightSkin
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
   document.documentElement.style.fontSize = fontSizeInterface + 'px'
   document.documentElement.dataset.dsThemeSource = preference
+  if (skin === 'default') document.documentElement.removeAttribute('data-dsh-skin')
+  else document.documentElement.setAttribute('data-dsh-skin', skin)
   document.body.toggleAttribute('data-ds-dark-theme', dark)
   const tokens = dark ? darkTokens : lightTokens
   for (const [name, value] of Object.entries(tokens)) {
@@ -188,7 +221,7 @@ export function bootThemeInjections(
 ): IndexInjection[] {
   const payload = resolveBootPayload(preferenceOrPayload, fontSize, fontFamilies)
   return [
-    { kind: 'style', text: bootThemeStyle(payload.preference) },
+    { kind: 'style', text: bootThemeStyle(payload) },
     { kind: 'script', placement: 'body', text: bootThemeScript(payload) },
   ]
 }

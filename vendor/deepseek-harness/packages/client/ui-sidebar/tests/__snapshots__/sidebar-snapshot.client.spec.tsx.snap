@@ -7,10 +7,12 @@ exports[`sidebar shell snapshots > renders Windows caption controls in expanded 
 >
   <div
     class="root collapsed railIn quietBars"
+    data-dsh-sidebar="true"
     style=""
   >
     <div
       class="logoRow"
+      data-dsh-sidebar-brand="true"
       data-window-drag="true"
     >
       <button
@@ -56,6 +58,7 @@ exports[`sidebar shell snapshots > renders Windows caption controls in expanded 
     <button
       aria-label="New session"
       class="newSession"
+      data-dsh-sidebar-new="true"
       type="button"
     >
       <span
@@ -116,10 +119,12 @@ exports[`sidebar shell snapshots > renders Windows caption controls in expanded 
 >
   <div
     class="root quietBars"
+    data-dsh-sidebar="true"
     style="width: 300px;"
   >
     <div
       class="logoRow"
+      data-dsh-sidebar-brand="true"
       data-window-drag="true"
     >
       <button
@@ -130,6 +135,7 @@ exports[`sidebar shell snapshots > renders Windows caption controls in expanded 
         <span
           aria-hidden="true"
           class="brandIdentity"
+          data-dsh-sidebar-brand-identity="true"
         >
           <span
             class="brandMark"
@@ -194,6 +200,7 @@ exports[`sidebar shell snapshots > renders Windows caption controls in expanded 
     <button
       aria-label="New session"
       class="newSession"
+      data-dsh-sidebar-new="true"
       type="button"
     >
       <span
@@ -259,10 +266,12 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
 >
   <div
     class="root collapsed railIn quietBars"
+    data-dsh-sidebar="true"
     style=""
   >
     <div
       class="logoRow"
+      data-dsh-sidebar-brand="true"
       data-window-drag="true"
     >
       <button
@@ -308,6 +317,7 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
     <button
       aria-label="New session"
       class="newSession"
+      data-dsh-sidebar-new="true"
       type="button"
     >
       <span
@@ -368,10 +378,12 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
 >
   <div
     class="root quietBars"
+    data-dsh-sidebar="true"
     style="width: 300px;"
   >
     <div
       class="logoRow"
+      data-dsh-sidebar-brand="true"
       data-window-drag="true"
     >
       <button
@@ -382,6 +394,7 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
         <span
           aria-hidden="true"
           class="brandIdentity"
+          data-dsh-sidebar-brand-identity="true"
         >
           <span
             class="brandMark"
@@ -446,6 +459,7 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
     <button
       aria-label="New session"
       class="newSession"
+      data-dsh-sidebar-new="true"
       type="button"
     >
       <span
@@ -511,10 +525,12 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
 >
   <div
     class="root quietBars"
+    data-dsh-sidebar="true"
     style="width: 300px;"
   >
     <div
       class="logoRow"
+      data-dsh-sidebar-brand="true"
       data-window-drag="true"
     >
       <button
@@ -525,6 +541,7 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
         <span
           aria-hidden="true"
           class="brandIdentity"
+          data-dsh-sidebar-brand-identity="true"
         >
           <span
             class="brandMark"
@@ -589,6 +606,7 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
     <button
       aria-label="新建会话"
       class="newSession"
+      data-dsh-sidebar-new="true"
       type="button"
     >
       <span

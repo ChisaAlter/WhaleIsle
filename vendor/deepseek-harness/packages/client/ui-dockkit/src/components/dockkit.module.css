@@ -835,11 +835,54 @@
   user-select: none;
 }
 
-/* The one tab, drawn as its chip would be in a strip but never selected,
-   hovered, or closable from here: the frame's controls do that. */
 .floatTitle {
   flex: 0 1 auto;
   cursor: inherit;
+}
+
+/* File titles share the Browser preview's filename and control row. */
+.float:has([data-file-preview], [data-textpreview-state]) .floatHeader {
+  box-sizing: border-box;
+  height: 48px;
+  padding: 10px 10px 10px 16px;
+}
+
+.float:has([data-file-preview], [data-textpreview-state]) .floatTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+}
+
+.float:has([data-file-preview], [data-textpreview-state]) .stripFill {
+  display: none;
+}
+
+.float:has([data-file-preview], [data-textpreview-state]) .floatHeader .iconButton svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* File previews use the same inset viewport as the native Browser guest.
+   Other floating tools and content-owned Project surfaces keep their layout. */
+.float:has([data-file-preview], [data-textpreview-state]) {
+  corner-shape: round;
+}
+
+.float:has([data-file-preview], [data-textpreview-state])::before {
+  corner-shape: round;
+}
+
+.float:has([data-file-preview], [data-textpreview-state]) > .floatBody {
+  margin: 0 6px 6px;
+  overflow: hidden;
+  border-radius: calc(var(--dsw-radius-panel) - 6px);
+  corner-shape: round;
+  background: var(--dsw-alias-bg-base);
 }
 
 .tab.floatTitle:hover {

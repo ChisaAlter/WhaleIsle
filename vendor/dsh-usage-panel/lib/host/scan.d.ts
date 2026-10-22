@@ -1,5 +1,6 @@
 import type { Overview } from '../shared/contract.ts';
 import { type SessionAgg } from './aggregate.ts';
+import type { MagpieSource } from './magpie-usage.ts';
 import type { HostSessionQuery } from './types.ts';
 export interface ScanFallbackDeps {
     sq: HostSessionQuery;
@@ -9,5 +10,7 @@ export interface ScanFallbackDeps {
     storeIndex: (sessions: SessionAgg[]) => void;
     /** Receive the failed-session ids (repair candidates). */
     storeFailed: (ids: string[]) => void;
+    /** Optional Magpie gateway ledger (token totals/days/models source). */
+    magpie?: MagpieSource | null;
 }
 export declare function scanFallback(deps: ScanFallbackDeps, now: number): Promise<Overview>;

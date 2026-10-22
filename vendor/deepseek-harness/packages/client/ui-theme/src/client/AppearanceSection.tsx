@@ -77,7 +77,7 @@ export interface AppearanceSectionInjected {
     patch: Partial<Pick<ThemeSettings,
       'wallpaperImage' | 'wallpaperBlur' | 'wallpaperPixelate' | 'backgroundEffect'
       | 'backgroundEffectColors' | 'backgroundEffectSpeed' | 'backgroundEffectCount'
-      | 'backgroundEffectPreset' | 'backgroundEffectVariant'
+      | 'backgroundEffectPreset' | 'backgroundEffectVariant' | 'skinWallpaperEnabled'
     >>,
   ) => void
   /** Persist the pointer decoration: enabled flag, chosen effect, and tunables. */
@@ -144,6 +144,9 @@ export function AppearanceSection({
   const transparentTheme = useStore(s => s.transparentTheme)
   const sidebarMaskHidden = useStore(s => s.sidebarMaskHidden)
   const wallpaperImage = useStore(s => s.wallpaperImage)
+  const effectiveWallpaperImage = useStore(s => s.effectiveWallpaperImage) ?? ''
+  const skinWallpaperImage = useStore(s => s.skinWallpaperImage) ?? ''
+  const skinWallpaperEnabled = useStore(s => s.skinWallpaperEnabled) ?? true
   const wallpaperBlur = useStore(s => s.wallpaperBlur)
   const wallpaperPixelate = useStore(s => s.wallpaperPixelate)
   const wallpaperSources = useStore(s => s.wallpaperSources)
@@ -202,6 +205,8 @@ export function AppearanceSection({
         glassOpacity={glassOpacity}
         wallpaperSources={wallpaperSources}
         wallpaperFavorites={wallpaperFavorites}
+        skinWallpaperImage={skinWallpaperImage}
+        skinWallpaperEnabled={skinWallpaperEnabled}
         t={t}
         setWallpaper={setWallpaper}
         {...(setWallpaperSources === undefined ? {} : { setWallpaperSources })}
@@ -215,7 +220,7 @@ export function AppearanceSection({
         backgroundEffectCount={backgroundEffectCount}
         backgroundEffectPreset={backgroundEffectPreset}
         backgroundEffectVariant={backgroundEffectVariant}
-        wallpaperSet={wallpaperImage.length > 0}
+        wallpaperSet={effectiveWallpaperImage.length > 0}
         t={t}
         setWallpaper={setWallpaper}
       />
@@ -255,7 +260,7 @@ export function AppearanceSection({
           aria-valuemax={MAX_GLASS_OPACITY}
           aria-valuenow={glassOpacity}
           aria-label={t('glass.title')}
-          disabled={transparentTheme && wallpaperImage !== ''}
+          disabled={transparentTheme && effectiveWallpaperImage !== ''}
           onChange={(event) => { setGlassOpacity(Number(event.currentTarget.value)) }}
         />
         <Button type="button" variant="ghost" onClick={() => { setGlassOpacity(DEFAULT_GLASS_OPACITY) }}>
@@ -282,7 +287,7 @@ export function AppearanceSection({
           />
         </label>
         <p className={css.hint}>
-          {wallpaperImage === '' && backgroundEffect !== 'gradient'
+          {effectiveWallpaperImage === '' && backgroundEffect !== 'gradient'
             ? t('glass.terminalNeedsBackdrop')
             : terminalOpacity < TERMINAL_PANE_MIN_SOLIDITY
               ? t('glass.terminalDeepHint')
@@ -297,7 +302,7 @@ export function AppearanceSection({
           <span>{t('glass.transparent')}</span>
         </label>
         <p className={css.hint}>
-          {transparentTheme && wallpaperImage === ''
+          {transparentTheme && effectiveWallpaperImage === ''
             ? t('glass.transparentNeedsWallpaper')
             : transparentTheme && wallpaperBlur < TRANSPARENT_MIN_BLUR
               ? t('glass.transparentBlurHint')

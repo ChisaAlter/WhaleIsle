@@ -1,0 +1,76 @@
+{
+  "name": "dsh-plugin-codex-ui",
+  "version": "0.2.0",
+  "description": "Codex-style sidebar for Whale Isle: New chat, Projects and Recents, adapted from ice-ai-lab/dsh-plugin-codex-ui (MIT).",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-workspace",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-api-workspace-controller"
+      ]
+    }
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "README.i18n.yaml"
+  ],
+  "scripts": {
+    "check": "node --check lib/index.js && node --check lib/client.js"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "deepseek",
+    "cordis",
+    "cordis-plugin",
+    "web-ui",
+    "sidebar",
+    "skin",
+    "theme",
+    "codex",
+    "session-list",
+    "workspace",
+    "client-plugin"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ice-ai-lab/dsh-plugin-codex-ui.git"
+  },
+  "homepage": "https://github.com/ice-ai-lab/dsh-plugin-codex-ui#readme",
+  "bugs": {
+    "url": "https://github.com/ice-ai-lab/dsh-plugin-codex-ui/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "private": true
+}

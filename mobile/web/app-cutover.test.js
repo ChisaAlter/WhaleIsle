@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
+import { clearButtonBusy } from './ui/button-busy.js';
+import { gitTunnelAction, gitCommitPayload } from './git/bridge.js';
 
 const app = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'app.js'), 'utf8');
 const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'app.css'), 'utf8');
@@ -123,6 +125,7 @@ test('closing Git progress keeps a reachable view of the running operation and i
     append(...children) { this.children.push(...children); },
     replaceChildren(...children) { this.children = children; },
     setAttribute() {},
+    querySelectorAll() { return []; },
     addEventListener(name, handler) { this.listeners[name] = handler; },
   });
   const toastRoot = element('root');
@@ -130,7 +133,7 @@ test('closing Git progress keeps a reachable view of the running operation and i
     gitBusy: true, gitProgressDismissed: false, gitProgress: 'push',
     gitToast: '', toastActions: [], toastTone: 'info', gitDialog: 'commit',
   };
-  const context = { state, toastRoot, document: { createElement: element }, svgNode: () => element('svg'), clearTimeout, toastTimer: null };
+  const context = { state, toastRoot, clearButtonBusy, document: { createElement: element }, svgNode: () => element('svg'), clearTimeout, toastTimer: null };
   runInNewContext(app.slice(app.indexOf('function renderToast()'), app.indexOf('function renderLightbox()')), context);
   const toast = () => toastRoot.children[0].children[0];
   context.renderToast();
@@ -152,6 +155,42 @@ test('closing Git progress keeps a reachable view of the running operation and i
   context.renderToast();
   assert.equal(toast().tag, 'div', 'completion replaces the pending recovery entry');
   assert.equal(toast().children[1].children[0].textContent, '完成');
+});
+
+test('Git starts with locked visible controls, advances feedback, and sends each step once', async () => {
+  const calls = [], renders = [];
+  let finish;
+  const state = {
+    cwd: '/fixture', gitBusy: false, gitRetry: null, pendingStacked: 'commit_push',
+    commitMessage: 'fixture', commitOnNewBranch: false, commitFiles: null,
+  };
+  const owner = { client: {}, sessionId: 'fixture', owns: () => true };
+  const context = {
+    state, gitTunnelAction, gitCommitPayload, sessionOwner: () => owner,
+    clearTimeout, toastTimer: null,
+    renderToast: () => renders.push('toast'), renderSettings: () => renders.push('settings'),
+    renderSheet: () => renders.push('sheet'), renderDialog: () => renders.push('dialog'),
+    refreshGitButtonFeedback: () => calls.push(`feedback:${state.gitProgress}`),
+    setToast: () => {}, refreshGit: async () => {}, operationError: message => { throw new Error(message); },
+    gitCall: async (_client, action) => { calls.push(action); },
+    runStackedGit: async (run, _stacked, _body, { onProgress }) => {
+      onProgress('git-commit');
+      await run('git-commit');
+      await new Promise(resolve => { finish = resolve; });
+      onProgress('git-push');
+      await run('git-push');
+    },
+  };
+  runInNewContext(app.slice(app.indexOf('async function gitAction('), app.indexOf('function maybeConfirm(')), context);
+  const pending = context.gitAction('gitCommit');
+  assert.equal(state.gitBusy, true);
+  assert.deepEqual(renders.slice(0, 4), ['toast', 'settings', 'sheet', 'dialog']);
+  assert.equal(await context.gitAction('gitCommit'), false, 'second activation cannot start another request');
+  await Promise.resolve();
+  finish();
+  assert.equal(await pending, true);
+  assert.deepEqual(calls, ['feedback:commit', 'git-commit', 'feedback:push', 'git-push']);
+  assert.equal(state.gitBusy, false);
 });
 
 test('drawer hides untitled blank rows that arrive live via host/session-added', () => {

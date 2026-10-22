@@ -51,7 +51,8 @@ test('fallback scan uses the read snapshot boundary, not the last marker', async
   const result = await scanFallback({
     sq, providerNames: {}, logFailure: assert.fail, storeIndex: () => {}, storeFailed: () => {},
   }, now)
-  assert.equal(result.allTime.totals.total, 14284)
+  // Total = uncached input + output (cache read 512 stays its own bucket).
+  assert.equal(result.allTime.totals.total, 13772)
   assert.equal(result.coverage.sessionsOk, 1)
   assert.equal(result.coverage.eventsCounted, 1)
 })

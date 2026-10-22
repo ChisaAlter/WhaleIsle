@@ -7,7 +7,15 @@ export declare function emptyTotals(): UsageTotals;
 export declare function addBuckets(target: Buckets, usage: Partial<Buckets> | null | undefined): void;
 /** Merge one bucket set into another (values already normalized). */
 export declare function mergeInto(target: Buckets, src: Buckets): void;
+/**
+ * Derived totals. `total` is **uncached input + output only** — the headline
+ * the Magpie gateway reports for this agent (`in + out`, cache excluded).
+ * Cache read/write stay their own buckets; adding them in would inflate the
+ * total by the cache-read magnitude (10.7B vs 0.22B on a real ledger).
+ */
 export declare function totalsFrom(b: Buckets): UsageTotals;
+/** Any token activity at all, cache included (session/usage presence test). */
+export declare function hasUsage(b: Buckets): boolean;
 /** Sorted model ranking, most usage first (v0.1.0 semantic; cost/provider added). */
 export declare function sortedModels(map: Record<string, Buckets>, costs?: Record<string, PhaseBuckets>, providers?: Record<string, string>): ModelItem[];
 export declare function totalsFromModels(models: ModelItem[]): UsageTotals;
@@ -62,9 +70,21 @@ export declare function graphMonthLabels(weeks: readonly GraphWeek[], minGap?: n
  * @param costByDay - per-day per-model period buckets, optional (zero-filled when absent).
  */
 export declare function buildDayWindow(byDay: Record<string, Record<string, Buckets>>, now: number, costByDay?: Record<string, Record<string, PhaseBuckets>>): DayRecord[];
+/**
+ * Sum a `day → model → buckets` map over the days at or after `cutoffKey`
+ * (the rolling recent window). Shared by the log-derived recent slice
+ * (`recentOf`) and the Magpie-derived recent slice, so both use one rule.
+ */
+export declare function sumDayBuckets(byDay: Readonly<Record<string, Readonly<Record<string, Buckets>>>>, cutoffKey: string): {
+    totals: Buckets;
+    byModel: Record<string, Buckets>;
+};
 /** Cache hit rate over the four disjoint buckets: read / (uncached + read + write). */
 export declare function hitRate(b: Buckets): number | null;
-/** Billed input (uncached + cache read + cache write) — the v0.1.0 "输入" number. */
+/**
+ * Billed input (uncached + cache read + cache write) — the v0.1.0 "输入"
+ * number. This is NOT the displayed total: totals are in + out only.
+ */
 export declare function billedInput(b: Buckets): number;
 /** Empty UI only when no billed-usage sessions and the scan did not fail. */
 export declare function isUsageEmpty(overview: Pick<Overview, 'allTime' | 'coverage'>): boolean;

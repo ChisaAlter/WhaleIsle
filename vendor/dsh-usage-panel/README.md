@@ -12,7 +12,7 @@ Token usage statistics for [DeepSeek Harness](https://github.com/deepseek-ai/dee
 
 ## What it shows
 
-- **Cumulative totals (all time)** — billed input / output tokens, session count (with the grand total of session records and the main/subagent usage split beneath it), and the most-used model with its share.
+- **Cumulative totals (all time)** — uncached input **+** output tokens (the same headline the local Magpie gateway reports; cache read/write are separate stats, shown on the detail line), session count (with the grand total of session records and the main/subagent usage split beneath it), and the most-used model with its share.
 - **Cache hit rate** — `cache read ÷ (uncached input + cache read + cache write)`, with the read/write magnitudes.
 - **Estimated cost (all time)** — a per-model priced estimate with a peak/off-peak split; see [Costs and pricing](#costs-and-pricing).
 - **Activity heatmap** — one UTC calendar month at a time (GitHub-contribution layout: weeks as columns, weekdays as rows), with ‹ › to pick any month inside the last-six-months data window. Days are colored by quartile over that month's non-zero usage.
@@ -61,9 +61,13 @@ The host half aggregates persisted session logs:
 
 Accounting rules: `request/header` and `request/context` events record the model (context base, header override); the step's `assistant/message` usage replaces streamed provisional usage (a retried same-step message never double-counts); `llm/retry` events are counted as retries, not tokens; `compaction/summary` usage is attributed to its own model and reported separately (and never enters the cost buckets); reasoning tokens are already inside output and are never added again.
 
+**Token total definition**: every `total` in the payload — KPIs, heatmap/bars, session and project ranking, model donut, CSV exports — is **uncached input + output**. Cache read and cache write keep their own buckets and are displayed separately (the KPI detail line, the hit-rate card, the `cacheRead`/`cacheWrite` CSV columns); they are never added into a total. Hit rate stays `cache read ÷ (uncached input + cache read + cache write)`.
+
+**Optional Magpie source**: when the local Magpie gateway keeps its usage ledger (`$MAGPIE_USAGE_FILE`, else `~/.config/magpie/usage.jsonl`), the host folds its `agent: "dsh"` rows — the ones `magpie usage` shows as "DeepSeek Harness" — and takes the all-time and recent totals, the day buckets, and the model/provider splits from it. That ledger survives session-log rotation, so the page matches `magpie usage` instead of under-reporting history its logs no longer contain. Models are keyed by the gateway's requested route (`req`, e.g. `codex/gpt-6.1-sol`), which is exactly the model id DSH writes into its session logs; the served id (`gpt-6.1-sol`) would match no cost row. A model's provider still comes from the logs (`magpie`) — the route the saved prices are scoped to — with the gateway's upstream id (`codex`, `factory`, …) used only for history the logs never saw. Provider rows regroup those same model buckets, so they add up to the all-time total. Sessions, projects, the per-session ranking and the cost buckets always stay log-derived: a gateway row carries no session identity and no billing phase. The page names the source under the header (folded call count + covered UTC range, hover for the file path); when the file is missing or unusable it falls back to the deduped log numbers. Traffic that never passes the gateway (a provider route configured directly) is outside these totals while the ledger is the source — that is what "matching `magpie usage`" means, and deleting/renaming the ledger file switches the page back to the log numbers.
+
 **Fork dedup**: the host's `inheritedEventCount` excludes the exact inherited prefix, so forks do not double-bill their parents. Later restore-time `session/end-seed` markers cannot hide owned usage. Legacy callers without this metadata retain marker-based boundaries.
 
-**Timezone declaration**: day buckets and exports use **UTC** calendar days (`YYYY-MM-DD`); the heatmap subtitle declares the selected month and UTC (e.g. "Aug 2026 · UTC"). Billing phases use **Beijing wall time** (UTC+8, DST-free) — see [Costs and pricing](#costs-and-pricing).
+**Timezone declaration**: day buckets and exports use **UTC** calendar days (`YYYY-MM-DD`); the heatmap subtitle declares the selected month and UTC (e.g. "Aug 2026 · UTC"). Billing phases use **Beijing wall time** (UTC+8, DST-free) — see [Costs and pricing](#costs-and-pricing). `magpie usage` buckets its own per-day figures by **local** day, so one day cell can differ by the timezone offset while the all-time figures are identical.
 
 Because nothing is written back, statistics survive restarts and cover sessions from before the plugin was installed.
 
@@ -101,6 +105,7 @@ Source is TypeScript (strict) in `src/`, built with esbuild; the `lib/` outputs 
 | `src/host/index.ts` → `lib/index.js` | Host half (Cordis plugin): projection registration, aggregation, cached RPC with warm-up, fail-soft fallback, billing RPC endpoints |
 | `src/host/projection.ts` | Pure per-session projection reducer (four buckets + period buckets, fork dedup, retry/compaction semantics, UTC days, step/start phase) |
 | `src/host/aggregate.ts` | Cross-session merge → overview payload (cost maps included) |
+| `src/host/magpie-usage.ts` | Optional Magpie gateway ledger source: path resolution (`MAGPIE_USAGE_FILE` → `~/.config/magpie/usage.jsonl`), `agent === 'dsh'` fold (totals/byModel/byProvider/byDay), mtime+size cache, clean null fallback |
 | `src/host/prices-source.ts` | The price record: reads `ui-conversation.sessionCostPrices` through the settings service, keeps the snapshot fresh from `settings/updated`, writes edits back |
 | `src/host/legacy-billing-import.ts` | Pure merge of the retired `dsh_usage_panel_billing` record into that section + the gated one-time import |
 | `src/host/billing-store.ts` | Retired plugin-owned price record: legacy reader (+ the import's cleanup write) |
@@ -112,7 +117,7 @@ Source is TypeScript (strict) in `src/`, built with esbuild; the `lib/` outputs 
 | `src/shared/cost.ts` | Integer cost math (micro-yuan → cents) |
 | `cordis.patch.yml` | Bundle patch: inserts the `usage-stats` row into the profile composition |
 
-The host serves an `overview` endpoint through `ctx.connection.rpc.handle('/usage-stats', …, { authority: 'loopback' })`; the browser calls it via `rpc.call('/usage-stats', 'overview', …)`. The overview carries `coverage` (session-record totals and the main/subagent usage split, shown beneath the sessions KPI), `topSessions`, `providers`, plus the v0.1.0-shaped `days` / `totals` / `byModel` / `allTime`. Developed against DeepSeek Harness `0.1.0-rc.6`. Tests run on the Node built-in test runner (`npm test`); CI runs typecheck + build + test + the pack gate.
+The host serves an `overview` endpoint through `ctx.connection.rpc.handle('/usage-stats', …, { authority: 'loopback' })`; the browser calls it via `rpc.call('/usage-stats', 'overview', …)`. The overview carries `coverage` (session-record totals, the main/subagent usage split, plus `source`/`magpie` provenance for the token totals), `topSessions`, `providers`, plus the v0.1.0-shaped `days` / `totals` / `byModel` / `allTime`. Developed against DeepSeek Harness `0.1.0-rc.6`. Tests run on the Node built-in test runner (`npm test`); CI runs typecheck + build + test + the pack gate.
 
 ## License
 

@@ -10,6 +10,8 @@ Workspace root is the owning Session's `cwd` from `useSessions`. Listing and fil
 
 The native Sidebar file body stays mounted while hidden, preserving its 500ms save queue across tab and Session switches. The Files owner records every dirty edit in localStorage under its stable Session resource address; reload or quit does not depend on an unload event. Closing or replacing a dirty file uses the shared Modal with Keep editing, Discard, and Save and close. Failed Save or characters entered during Save preserve the tab and draft. Successful Save clears the persistent draft. Discard removes the confirmed draft and cancels its remaining debounce; a late completed write cannot recreate it. A stale close confirmation cannot close a restored occurrence or discard its draft.
 
+In a floating pane, the shared frosted title bar owns the filename and the viewport uses the Browser preview's 6px inset and concentric round corners. The editor hides its breadcrumb row and shows its existing actions in an overlay on pointer hover or keyboard focus; touch devices keep the actions visible. Images fit completely inside the available viewport at their original aspect ratio. Docking restores the ordinary toolbar without remounting the editor or replacing its draft.
+
 The `/client` exports are the plugin body (`apply`/`inject`) plus the contract types only; FilesPanel, FilePreview, and FileTree remain package-internal behind the slot registration.
 
 Search filters the local file list by name or path subsequence before applying the result limit. Nonmatching files are omitted; an empty query keeps file order.

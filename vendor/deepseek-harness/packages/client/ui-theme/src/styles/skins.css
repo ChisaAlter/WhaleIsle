@@ -1,0 +1,291 @@
+/* Presentation skins. Feature CSS keeps consuming semantic tokens and stable
+ * data hooks; every structural rule that a skin needs lives here, scoped by
+ * html[data-dsh-skin]. The product default renders these rules inert.
+ *
+ * Codex: flat desktop chrome. Light-gray navigation column, one white content
+ * sheet with a rounded top-left corner, and a bordered composer. No wallpaper,
+ * glass, floating cards or outer frame inset.
+ */
+
+html[data-dsh-skin='codex'] {
+  --dsh-frame-gap: 0px;
+  --dsh-panel-radius: 12px;
+  --dsh-composer-radius: 18px;
+  --dsh-bubble-radius: 18px;
+}
+
+html[data-dsh-skin='codex'] [data-dsh-frame]:not([data-phone]) {
+  box-sizing: border-box;
+  padding: 0;
+  border-radius: 0;
+  background: var(--dsw-alias-bg-base);
+}
+
+html[data-windows-titlebar][data-dsh-skin='codex'] [data-dsh-frame]:not([data-phone]) {
+  padding-top: var(--dsh-windows-titlebar-height);
+}
+
+/* The navigation column is one flat surface; the center paints the light-gray
+ * gutter that the white content sheet's rounded corner reveals. */
+html[data-dsh-skin='codex'] [data-dsh-frame-region='sidebar'] {
+  padding: 0;
+  background: var(--dsw-specific-sidebar-fill);
+  border: 0;
+  border-right: 0.5px solid var(--dsw-alias-border-l1);
+}
+
+html[data-dsh-skin='codex'] [data-dsh-frame-region='center'] {
+  padding: 0;
+  background: var(--dsw-specific-sidebar-fill);
+}
+
+html[data-dsh-skin='codex'] [data-dsh-frame-region='rightbar'] {
+  padding: 0;
+  background: var(--dsw-specific-sidebar-fill);
+}
+
+html[data-dsh-skin='codex'] [data-dsh-frame-region='bottom'] {
+  background: transparent;
+}
+
+html[data-dsh-skin='codex'] [data-dsh-sidebar] {
+  width: 100% !important;
+  --dsh-sidebar-inline-padding: 10px;
+  overflow: clip;
+  border: 0;
+  border-radius: 0;
+  background: var(--dsw-specific-sidebar-fill);
+  box-shadow: none;
+  font-size: 13px;
+}
+
+/* Codex's new-chat affordance is a flat 32px list row. */
+html[data-dsh-skin='codex'] [data-dsh-sidebar-new] {
+  height: 32px;
+  margin: 2px 0 6px;
+  padding: 0 8px;
+  gap: 8px;
+  justify-content: flex-start;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+html[data-dsh-skin='codex'] [data-dsh-sidebar-new]:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+html[data-dsh-skin='codex'] [data-dsh-sidebar-brand] {
+  height: 44px;
+  margin-bottom: 4px;
+  padding: 0 10px;
+}
+
+html[data-dsh-skin='codex'] [data-dsh-sidebar-brand-identity] {
+  transform: none;
+  gap: 2px;
+}
+
+/* Codex's top-left mark is the wordmark itself, not a mascot avatar. */
+html[data-dsh-skin='codex'] [data-dsh-sidebar-brand] [data-slot='sidebar.brand.mark'] {
+  display: none !important;
+}
+
+html[data-dsh-skin='codex'] [data-dsh-sidebar-brand] img[data-whale-isle-brand='mark'] {
+  display: none;
+}
+
+html[data-dsh-skin='codex'] [data-dsh-sidebar-brand] [data-slot='sidebar.brand.name'] {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+html[data-dsh-skin='codex'] [data-dsh-sidebar-brand-identity]::after {
+  content: '⌄';
+  margin-left: 2px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 1;
+}
+
+html[data-dsh-skin='codex'] [data-dsh-sidebar] [role='tab'] {
+  height: 30px;
+  padding: 0 10px;
+  gap: 6px;
+  font-size: 13px;
+}
+
+html[data-dsh-skin='codex'] [data-dsh-sidebar-row] {
+  min-height: 32px;
+  padding: 6px 8px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+/* One white content sheet: rounded only where it meets the gray navigation. */
+html[data-dsh-skin='codex'] [data-dsh-chat] {
+  overflow: clip;
+  border: 0;
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
+  border-left: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 12px 0 0 0;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: none;
+  --dsh-chat-content-width: 760px;
+}
+
+html[data-dsh-skin='codex'] [data-dsh-header] {
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+/* Whale Isle English wordmark replaces the product headline in Codex. */
+html[data-dsh-skin='codex'] [data-dsh-hero-headline] {
+  font-size: 0;
+}
+
+html[data-dsh-skin='codex'] [data-dsh-hero-headline]::after {
+  content: "What should we work on in Whale Isle?";
+  display: inline-block;
+  max-width: 760px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+}
+
+html[data-dsh-skin='codex'] [data-dsh-hero-preview] {
+  display: none;
+}
+
+/* ChatGPT/Codex right-align the user prompt. */
+html[data-dsh-skin='codex'] [data-dsh-message-role='user'],
+html[data-dsh-skin='codex'] [data-dsh-message-role='user'] > * {
+  align-items: flex-end;
+}
+
+html[data-dsh-skin='codex'] [data-dsh-message-role='user'] > * {
+  border-radius: 18px 18px 4px 18px;
+}
+
+/* Large bordered composer card, not a floating pill. */
+html[data-dsh-skin='codex'] [data-dsh-composer] {
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsh-composer-radius);
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 1px 2px rgba(13, 13, 13, 0.04);
+}
+
+/* Right column is a flat editor surface, not a floating card. */
+html[data-dsh-skin='codex'] [data-dsh-artifact] {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  overflow: clip;
+  border: 0;
+  border-left: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 0;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: none;
+}
+
+/* A collapsed rightbar keeps its surface subtree mounted; the skin card must
+ * not paint a detached blank panel over the chat. */
+html[data-dsh-skin='codex'] [data-dsh-frame][data-rightbar-collapsed] [data-dsh-artifact],
+html[data-dsh-skin='claude'] [data-dsh-frame][data-rightbar-collapsed] [data-dsh-artifact] {
+  display: none;
+}
+
+/* Claude: warm-paper chrome, edge-to-edge columns, serif prose and a
+ * low-contrast bordered composer. No floating cards, glass or heavy shadow. */
+html[data-dsh-skin='claude'] {
+  --dsh-frame-gap: 0px;
+  --dsh-panel-radius: 12px;
+  --dsh-composer-radius: 22px;
+  --dsh-bubble-radius: 18px;
+}
+
+html[data-dsh-skin='claude'] [data-dsh-frame]:not([data-phone]) {
+  box-sizing: border-box;
+  padding: 0;
+  background: var(--dsh-claude-paper);
+}
+
+html[data-windows-titlebar][data-dsh-skin='claude'] [data-dsh-frame]:not([data-phone]) {
+  padding-top: var(--dsh-windows-titlebar-height);
+}
+
+html[data-dsh-skin='claude'] [data-dsh-frame-region='sidebar'],
+html[data-dsh-skin='claude'] [data-dsh-frame-region='center'],
+html[data-dsh-skin='claude'] [data-dsh-frame-region='rightbar'],
+html[data-dsh-skin='claude'] [data-dsh-frame-region='bottom'] {
+  padding: 0;
+  background: var(--dsh-claude-paper);
+  border: 0;
+}
+
+html[data-dsh-skin='claude'] [data-dsh-sidebar] {
+  width: 100% !important;
+  border: 0;
+  border-right: 1px solid var(--dsh-claude-border);
+  border-radius: 0;
+  background: var(--dsw-specific-sidebar-fill);
+  box-shadow: none;
+  font-size: 13px;
+}
+
+html[data-dsh-skin='claude'] [data-dsh-chat] {
+  border: 0;
+  border-radius: 0;
+  background: var(--dsh-claude-paper);
+  box-shadow: none;
+  --dsh-chat-content-width: 720px;
+}
+
+html[data-dsh-skin='claude'] [data-dsh-header] {
+  border-bottom: 1px solid var(--dsh-claude-border);
+  background: var(--dsh-claude-paper);
+}
+
+html[data-dsh-skin='claude'] [data-dsh-composer] {
+  border: 1px solid var(--dsh-claude-border);
+  border-radius: var(--dsh-composer-radius);
+  background: var(--dsh-claude-panel);
+  box-shadow: none;
+}
+
+html[data-dsh-skin='claude'] [data-dsh-message-role='user'],
+html[data-dsh-skin='claude'] [data-dsh-message-role='user'] > * {
+  align-items: flex-end;
+}
+
+html[data-dsh-skin='claude'] [data-dsh-message-role='user'] > * {
+  background: var(--dsh-claude-bubble);
+  border-radius: 18px 18px 4px 18px;
+}
+
+html[data-dsh-skin='claude'] [data-dsh-message-role='assistant'] {
+  font-family: var(--dsh-claude-prose-font);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+html[data-dsh-skin='claude'] [data-dsh-message-role='assistant'] code,
+html[data-dsh-skin='claude'] [data-dsh-message-role='assistant'] pre {
+  font-family: var(--ds-font-family-code);
+}
+
+html[data-dsh-skin='claude'] [data-dsh-artifact] {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  border: 0;
+  border-left: 1px solid var(--dsh-claude-border);
+  border-radius: 0;
+  background: var(--dsh-claude-paper);
+  box-shadow: none;
+}
