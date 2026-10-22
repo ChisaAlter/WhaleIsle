@@ -62,8 +62,9 @@ export function RemoteWorkspaceRow({ t }: RemoteWorkspaceRowProps) {
           void shell.saveConfig({ remoteWorkspaceEnabled: next }).then(saved => {
             if (saved.remoteWorkspaceEnabled !== next) {
               setEnabled(typeof saved.remoteWorkspaceEnabled === 'boolean' ? saved.remoteWorkspaceEnabled : previous)
-              setError(t('feedback.notSaved'))
-              setNotice({ id: ++noticeId.current, text: t('feedback.notSaved') })
+              const text = t(saved.restartCancelled === true ? 'feedback.restartCancelled' : 'feedback.notSaved')
+              setError(text)
+              setNotice({ id: ++noticeId.current, text })
               return
             }
             setError('')

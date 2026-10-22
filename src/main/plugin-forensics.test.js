@@ -35,10 +35,12 @@ test('optional shipped Project remains disableable and is not desktop runtime da
   const project = report.plugins.find(row => row.name === 'dsh-project');
   assert.equal(project.disabled, true); assert.equal(project.preset, true); assert.equal(project.orphan, false);
   assert.equal(isInBoxPackageName('dsh-project'), false); assert.equal(report.desktopRuntimeDamage, false);
-  // Held back from the release, Project is never mounted, so the board does not offer it.
+  // Switched off in Settings, Project is never mounted, so the board does not offer it.
   delete process.env.WHALE_PROJECT;
   const hidden = inspectPlugins({ plugins: [], disabledPlugins: [], logs: '' });
   assert.equal(hidden.plugins.some(row => row.name === 'dsh-project'), false); assert.equal(hidden.desktopRuntimeDamage, false);
+  const enabled = inspectPlugins({ plugins: [], disabledPlugins: [], logs: '', projectEnabled: true });
+  assert.equal(enabled.plugins.some(row => row.name === 'dsh-project'), true, 'The Settings switch mounts Project, so the board offers it');
 });
 
 test('generic crashes are not blamed on a plugin', () => {

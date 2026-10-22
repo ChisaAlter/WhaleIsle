@@ -10,6 +10,7 @@
 ## User paths
 
 1. 全新桌面默认附带但不挂载 dshbot：在 设置 → 界面设置 打开「机器人（Bots）」（默认关闭、带「测试中」徽标）后自动重启 Harness，侧栏出现 Bots tab，无需任何安装步骤。
+   - 切换开关时设置窗口等待重启结果，期间开关显示忙碌。如果重启前确认被取消，或重启被其他维护操作拒绝，配置会写回原值，开关退回原状态，并提示「已取消重启，设置未更改」。Project、鲸鱼助手、远程工作区开关同样如此。
 2. 旧桌面升级：受管 patch 块与指向旧预置副本的链接被迁移清理，由内置 overlay 接管；机器人设置、记忆、房间 preset、会话全部保留。
 3. dshbot 作为桌面内置不可经插件禁用名单/卸载（Recovery Board 不提供该行的禁用入口）；是否挂载只由界面设置「机器人（Bots）」开关控制。源码缺损归为内置组件损坏，走重装 / `setup:harness`。
 4. 独立插件仓 `ChisaAlter/dshbot` 继续存在，但桌面运行时不依赖它；`dshbot` 已入 `DROPPED`/`DROPPED_BASENAMES`（与 dsh-im 同例）——市场目录隐藏、安装与 in-chat `install_dsh_plugin` 均拒绝，`stripDroppedPlugins` 每次启动剥离 profile manifest 中的同名依赖/bundle 行（仅清单行，机器人设置/记忆/会话等用户数据不动）。

@@ -154,6 +154,8 @@ function mount(
     summaryCwd?: string
     /** No-directory pick callback injected by apply. */
     selectNoDirectory?: () => Promise<void>
+    /** Draft-carrying open injected by apply. */
+    openWithDraft?: (sessionId: SessionId) => void
   } = {},
 ) {
   const sessionId = 'sessionId' in options ? options.sessionId : SID
@@ -215,6 +217,7 @@ function mount(
   /** Owner share handed to the two composer tool-row seats, per render. */
   const seatOwners: { key: string; owner: unknown }[] = []
   let pickerOwner: unknown
+  let heroOptionsOwner: unknown
   const renderSlot = ((key: string, owner: object, opts?: { only?: string; fallback?: ReactNode }) => {
     slotCalls.push(key)
     if (key === 'conversation.input.model' || key === 'conversation.input.plan'
@@ -222,6 +225,7 @@ function mount(
       seatOwners.push({ key, owner })
     }
     if (key === 'conversation.hero.workspace') { pickerOwner = owner; return null }
+    if (key === 'conversation.hero.options') heroOptionsOwner = owner
     if (key === 'conversation.session.header.lineage') {
       lineageOwners.push(owner as ConversationHeaderLineageOwnerProps)
       return opts?.fallback ?? null
@@ -392,6 +396,7 @@ function mount(
       renderFactorySlot,
       selectWorkspace: retargetWorkspace,
       selectNoDirectory: options.selectNoDirectory ?? vi.fn(async () => {}),
+      openWithDraft: options.openWithDraft ?? vi.fn(),
       t,
     }
     const useFactorySlot = ((name: string, fallback: (props: never) => ReactNode) => (
@@ -425,6 +430,7 @@ function mount(
     view, store, wiring, sink, retargetWorkspace, session, conversation, slotCalls, composerSlotCalls, lineageOwners, seatOwners, open,
     workspaces,
     pickerOwner: () => pickerOwner,
+    heroOptionsOwner: () => heroOptionsOwner,
     sessionBodyChainOwner: () => sessionBodyChainOwner,
     rerender: () => { view.rerender(<ConversationMainPanel {...props} />) },
   }
@@ -1076,6 +1082,14 @@ describe('ConversationRoot resident composer', () => {
     const cold = mount(sessionSnapshotOf(), [], undefined, { sessionId: undefined })
     expect(cold.slotCalls).toContain('conversation.hero.agentPreset')
     expect(cold.slotCalls).not.toContain('conversation.hero.options')
+  })
+
+  it('hands the New Session options the draft-carrying open', () => {
+    const openWithDraft = vi.fn()
+    const b = mount(sessionSnapshotOf({ blank: true }), undefined, undefined, { openWithDraft })
+    const owner = b.heroOptionsOwner() as { openWithDraft(sessionId: SessionId): void }
+    owner.openWithDraft(sid('lead'))
+    expect(openWithDraft).toHaveBeenCalledWith(sid('lead'))
   })
 
   it('prompt failure renders the promptError strip (ordinary failure, no transaction UI)', () => {

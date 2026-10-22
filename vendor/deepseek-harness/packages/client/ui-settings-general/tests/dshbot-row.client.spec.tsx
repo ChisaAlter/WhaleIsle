@@ -99,6 +99,19 @@ describe('DshbotRow', () => {
     expect((await screen.findByRole('alert')).textContent).toBe('Could not save settings: write failed')
   })
 
+  it('reverts with the cancellation notice when the restart was cancelled', async () => {
+    ;(window as Window & { shell?: unknown }).shell = {
+      getConfig: async () => ({ dshbotEnabled: false }),
+      saveConfig: async () => ({ dshbotEnabled: false, restartCancelled: true }),
+    }
+    mount()
+    const toggle = screen.getByRole('switch', { name: 'Bots' })
+    await waitFor(() => { expect(toggle).toHaveProperty('disabled', false) })
+    fireEvent.click(toggle)
+    expect((await screen.findByRole('alert')).textContent).toBe('Restart cancelled; the setting was not changed.')
+    expect(screen.getByRole('switch', { name: 'Bots' }).getAttribute('aria-checked')).toBe('false')
+  })
+
   it('stays off when the desktop config cannot be read', async () => {
     ;(window as Window & { shell?: unknown }).shell = {
       getConfig: async () => { throw new Error('unavailable') },

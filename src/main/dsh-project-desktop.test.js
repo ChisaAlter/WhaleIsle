@@ -117,9 +117,11 @@ test('mount refuses unknown package data and linked runtime files without modify
   assert.equal(fs.readFileSync(path.join(unknown, 'sentinel'), 'utf8'), 'keep');
 });
 
-test('Project is held back from releases unless development opts in', () => {
+test('Project mounts only when enabled in settings or by development opt-in', () => {
   const { projectAvailable } = require('./dsh-project-desktop');
-  assert.equal(projectAvailable({}), false);
-  assert.equal(projectAvailable({ WHALE_PROJECT: '0' }), false);
-  assert.equal(projectAvailable({ WHALE_PROJECT: '1' }), true);
+  assert.equal(projectAvailable({}, {}), false, 'Project is off by default');
+  assert.equal(projectAvailable({}, { projectEnabled: false }), false);
+  assert.equal(projectAvailable({ WHALE_PROJECT: '0' }, {}), false);
+  assert.equal(projectAvailable({}, { projectEnabled: true }), true);
+  assert.equal(projectAvailable({ WHALE_PROJECT: '1' }, { projectEnabled: false }), true);
 });

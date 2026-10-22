@@ -168,6 +168,7 @@ function inspectPlugins({
   plugins,
   bundles,
   disabledPlugins,
+  projectEnabled = false,
 } = {}) {
   const logText = Array.isArray(logs) ? logs.join('\n') : String(logs || '');
   const corpus = [logText, lastStartError, recovery?.reason].filter(Boolean).join('\n');
@@ -192,7 +193,7 @@ function inspectPlugins({
   // Project is shipped through an overlay, but remains disableable in the existing board
   // whenever it is mounted at all.
   const listed = [...(plugins || [])];
-  if (projectAvailable() && !listed.some(row => DSH_PROJECT_ALIASES.includes(row.name || row))) listed.push({ name: 'dsh-project', spec: 'desktop' });
+  if (projectAvailable(process.env, { projectEnabled }) && !listed.some(row => DSH_PROJECT_ALIASES.includes(row.name || row))) listed.push({ name: 'dsh-project', spec: 'desktop' });
   const rows = listed.map((row) => {
     const name = row.name || row;
     return {

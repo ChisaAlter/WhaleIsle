@@ -800,7 +800,7 @@ class HarnessController extends EventEmitter {
     const prepareProjectPlugin = async ({ harnessRoot } = {}) => {
       try {
         const project = await this.ensureDshProjectPlugin({ skipUserPlugins,
-          enabled: this.projectAvailable() && !(startConfig.disabledPlugins || []).includes('dsh-project'),
+          enabled: this.projectAvailable(process.env, startConfig) && !(startConfig.disabledPlugins || []).includes('dsh-project'),
           ...(harnessRoot ? { harnessRoot } : {}) });
         checkCurrent();
         if (project?.ok === false) this.dsh.log(`Project 不可用：${project.error || 'missing runtime'}`, 'app');

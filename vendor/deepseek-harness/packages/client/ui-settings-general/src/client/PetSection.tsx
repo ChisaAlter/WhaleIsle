@@ -236,8 +236,9 @@ export function PetSection({ t, modelCatalog, renderSlot }: PetSectionProps): Re
     void shell.saveConfig({ whaleAssistantEnabled: next }).then(saved => {
       if (saved.whaleAssistantEnabled !== next) {
         setWhaleAssistant(typeof saved.whaleAssistantEnabled === 'boolean' ? saved.whaleAssistantEnabled : previous)
-        setWhaleError(t('feedback.notSaved'))
-        setNotice({ id: ++noticeId.current, text: t('feedback.notSaved') })
+        const text = t(saved.restartCancelled === true ? 'feedback.restartCancelled' : 'feedback.notSaved')
+        setWhaleError(text)
+        setNotice({ id: ++noticeId.current, text })
         return
       }
       setWhaleError('')

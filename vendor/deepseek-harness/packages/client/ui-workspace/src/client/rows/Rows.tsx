@@ -60,15 +60,16 @@ type RowTranslate = WorkspaceBrowserProps['t']
 
 /**
  * Child-seat renderer threaded from the browser root: the row's action lists,
- * its leading decoration, and its hover-card section. The leading seat is
- * rendered only while the row's primary state is idle, so a status dot and a
- * leading occupant never share the row; the hover seat only while the row's
- * card is open.
+ * its leading decoration, its title badge, and its hover-card section. The
+ * leading seat is rendered only while the row's primary state is idle, so a
+ * status dot and a leading occupant never share the row; the badge seat in
+ * every state; the hover seat only while the row's card is open.
  */
 type RowRenderSlots = PropsRenderSlots<
   | 'sidebar.workspaces.session.menu.item'
   | 'sidebar.workspaces.session.row.action'
   | 'sidebar.session.row.leading'
+  | 'sidebar.session.row.badge'
   | 'sidebar.session.row.hover'
 >['renderSlot']
 
@@ -269,7 +270,7 @@ export function GroupSessionRun({ open, children }: { open: boolean; children: R
  * @param props.t - the browser root's locale seat.
  * @returns the row element.
  */
-export function ProjectRowItem({ group, containsCurrentDescendant = false, onToggle, onCreate, actions, drag, home, newShortcut, t }: {
+export function ProjectRowItem({ group, containsCurrentDescendant = false, onToggle, onCreate, actions, directoryItems = [], drag, home, newShortcut, t }: {
   group: GroupNode
   newShortcut?: ShortcutCatalogEntry | undefined
   containsCurrentDescendant?: boolean
@@ -277,6 +278,8 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
   onCreate?: (() => void) | undefined
   /** Real-Workspace actions; absent for the ungrouped bucket (no menu shown). */
   actions?: { rename: () => void; delete: () => void } | undefined
+  /** Composed directory actions offered for this row's directory, above rename. */
+  directoryItems?: readonly { id: string; label: string; run: () => void }[] | undefined
   /** Present only for real Workspace rows in the grouped view. */
   drag?: WorkspaceRowDragProps | undefined
   /** Host account home; POSIX home-rooted hover paths display as `~`. */
@@ -289,6 +292,7 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
   const active = containsCurrentDescendant || (group.expanded && group.containsCurrent)
   const [menuOpen, setMenuOpen] = useState(false)
   const workspaceMenuItems = [
+    ...directoryItems.map(item => ({ id: `::directory:${item.id}`, label: item.label, icon: <IconPlusOutlineRegular /> })),
     { id: 'rename', label: t('rename'), icon: <IconEditOutlineRegular /> },
     { id: 'delete', label: t('delete.workspace'), icon: <IconTrashOutlineRegular />, danger: true },
   ]
@@ -326,9 +330,11 @@ export function ProjectRowItem({ group, containsCurrentDescendant = false, onTog
             items={workspaceMenuItems}
             onSelect={(id) => {
               setMenuOpen(false)
+              const directoryItem = directoryItems.find(item => id === `::directory:${item.id}`)
+              if (directoryItem !== undefined) { directoryItem.run(); return }
               // Unknown ids leave before the dispatch: a future menu row must
               // not inherit the destructive branch as an else fallback.
-              /* v8 ignore next -- Menu can emit only the rename and delete rows supplied above. */
+              /* v8 ignore next -- Menu can emit only the directory, rename and delete rows supplied above. */
               if (id !== 'rename' && id !== 'delete') return
               if (id === 'rename') actions.rename()
               else actions.delete()
@@ -613,6 +619,7 @@ export function SearchResultItem({ result, currentId, onOpen, onUnarchive, onDel
           )}
         </span>
         <span className={css.searchResultTitle}>{title}</span>
+        {renderSlot('sidebar.session.row.badge', { sessionId: result.id })}
         {(result.archived || result.owner !== undefined) && !selection?.enabled && (
           <span className={css.rowActions} onClick={(e) => { e.stopPropagation() }}>
             <Menu
@@ -696,6 +703,7 @@ export function SessionNodeItem({
   | 'sidebar.workspaces.session.menu.item'
   | 'sidebar.workspaces.session.row.action'
   | 'sidebar.session.row.leading'
+  | 'sidebar.session.row.badge'
   | 'sidebar.session.row.hover'
 >) {
   const row = node
@@ -786,6 +794,7 @@ export function SessionNodeItem({
       >
         {title}
       </span>
+      {!row.blank && renderSlot('sidebar.session.row.badge', { sessionId: node.id })}
       {/* A blank New Session row is a provisional placeholder: nothing has
           happened in it yet, so a "now" timestamp and the row verbs
           (rename/fork/archive) would all act on content that does not
@@ -941,6 +950,7 @@ export function ArchivedSessionNodeItem({ node, currentId, now, onOpen, onUnarch
           : showStatus && <SessionStatusDots statuses={statuses} />}
       </span>
       <span className={css.title}>{title}</span>
+      {!row.blank && renderSlot('sidebar.session.row.badge', { sessionId: node.id })}
       {!row.blank && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
       {!row.blank && !selection?.enabled && (
         <span className={css.rowActions} onClick={(event) => { event.stopPropagation() }}>

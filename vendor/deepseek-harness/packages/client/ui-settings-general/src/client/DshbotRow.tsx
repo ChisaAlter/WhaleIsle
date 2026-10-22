@@ -88,8 +88,9 @@ export function DshbotRow({ t }: DshbotRowProps) {
           void shell.saveConfig({ dshbotEnabled: next }).then(saved => {
             if (saved.dshbotEnabled !== next) {
               setEnabled(typeof saved.dshbotEnabled === 'boolean' ? saved.dshbotEnabled : previous)
-              setError(t('feedback.notSaved'))
-              setNotice({ id: ++noticeId.current, text: t('feedback.notSaved') })
+              const text = t(saved.restartCancelled === true ? 'feedback.restartCancelled' : 'feedback.notSaved')
+              setError(text)
+              setNotice({ id: ++noticeId.current, text })
               return
             }
             setError('')

@@ -57,6 +57,11 @@ export interface WorkspaceDirectoryAction {
   readonly order?: number
   /** Accept the selected path without creating an ordinary Session. */
   readonly adopt: (path: string) => Promise<void>
+  /**
+   * Menu label offered on a listed directory's row for that directory, which
+   * `adopt` then receives; omitted or undefined keeps the action off the row.
+   */
+  readonly rowLabel?: (path: string) => string | undefined
 }
 
 /** Optional content preparation for the resolved target Session. */
@@ -108,8 +113,10 @@ export interface UiWorkspace {
   /**
    * Select a Session and show its Conversation as one UI navigation action.
    * @param target - known Session identity or durable direct-parent subagent address to display.
+   * @param beforeOpen - optional synchronous preparation for the retained Session
+   * before it is shown; a throw aborts the open and releases the reference.
    */
-  openSession(target: SessionTarget): void
+  openSession(target: SessionTarget, beforeOpen?: (sessionId: SessionId) => void): void
   /**
    * Connect a Workspace and open its Session unless a later navigation supersedes it.
    * @param workspaceId - target Workspace.
@@ -430,8 +437,8 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     }
   }
 
-  openSession(target: SessionTarget): void {
-    this.replaceMain(target, this.lifetime.signal, 'reveal')
+  openSession(target: SessionTarget, beforeOpen?: (sessionId: SessionId) => void): void {
+    this.replaceMain(target, this.lifetime.signal, 'reveal', beforeOpen)
   }
 
   openWorkspace(

@@ -56,6 +56,7 @@ const DEFAULTS = {
   downloadRoute: '',
   disabledPlugins: [],
   dshbotEnabled: false,
+  projectEnabled: false,
   // Built-in assistant is available on first launch; persisted opt-outs win.
   whaleAssistantEnabled: true,
   // Remote workspaces (SSH) — on by default; toggling restarts Harness so
@@ -136,7 +137,7 @@ function normalizeRendererConfigPatch(patch) {
   }
   const next = {};
   for (const [key, value] of Object.entries(patch)) {
-    if (['closeToTray', 'openAtLogin', 'openDevTools', 'harnessAutoRestart', 'autoStartDesktop', 'dshbotEnabled', 'whaleAssistantEnabled', 'remoteWorkspaceEnabled'].includes(key)) {
+    if (['closeToTray', 'openAtLogin', 'openDevTools', 'harnessAutoRestart', 'autoStartDesktop', 'dshbotEnabled', 'projectEnabled', 'whaleAssistantEnabled', 'remoteWorkspaceEnabled'].includes(key)) {
       if (typeof value !== 'boolean') {
         throw new TypeError(`${key} must be a boolean`);
       }

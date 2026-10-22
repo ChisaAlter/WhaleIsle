@@ -113,7 +113,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
     locale: { bind: scope => key => language ? locales.get(scope)?.[language]?.[key] ?? key : key,
       register: (scope, translations) => { locales.set(scope, translations); return () => locales.delete(scope); }, subscribe: () => () => {} },
     slots: { inject: (_key, install) => install(), register: (options, component) => { const entry = { options, component, active: true }; entries.push(entry); return () => { entry.active = false; }; } },
-    workspaces: { create: async input => { requests.push({ method: 'workspace/create', input }); return { path: project.canonicalWorkingDirectory, workspaceId: project.workspaceId }; }, openPath: async (path, options) => { if (previewOverride) await previewOverride(path, options); opened.push({ path, options }); } },
+    workspaces: { list: projection({ scratchCwd: 'C:/scratch' }), create: async input => { requests.push({ method: 'workspace/create', input }); return { path: project.canonicalWorkingDirectory, workspaceId: project.workspaceId }; }, openPath: async (path, options) => { if (previewOverride) await previewOverride(path, options); opened.push({ path, options }); } },
     uiWorkspace: { registerDirectoryAction: action => { directoryAction = action; return () => { directoryAction = undefined; }; }, registerSessionActions: (owner, actions) => { assert.equal(sessionActions.has(owner), false); sessionActions.set(owner, actions); return () => sessionActions.delete(owner); }, registerSessionNavigation: (owner, source) => { assert.equal(sessionNavigation.has(owner), false); sessionNavigation.set(owner, source); return () => sessionNavigation.delete(owner); }, openSession: id => navigation.push(['session', id]) },
     uiSidebar: { selectTab: id => navigation.push(['tab', id]) },
     uiSession: { sessionStatus },
@@ -179,7 +179,8 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
     const matched = entry.options.select?.({ sessionId });
     if (entry.options.select && matched === null) return null;
     return h(entry.component, { ...injected, useProjects: selectHook(injected.hooks.projects), useProjectSessions: selectHook(injected.hooks.projectSessions),
-      useProjectSessionStatus: selectHook(injected.hooks.projectSessionStatus), useRequestModes: selectHook(injected.hooks.requestModes), useDismissals: selectHook(injected.hooks.dismissals), useProjectView: selectHook(injected.hooks.projectView),
+      useProjectSessionStatus: selectHook(injected.hooks.projectSessionStatus), useWorkspaceList: selectHook(injected.hooks.workspaceList),
+      openWithDraft: sessionId => navigation.push(['draft', sessionId]), useRequestModes: selectHook(injected.hooks.requestModes), useDismissals: selectHook(injected.hooks.dismissals), useProjectView: selectHook(injected.hooks.projectView),
       renderFactorySlot: (name, props, options) => { factoryCalls.push({ name, props, options }); return factoryRenderer ? factoryRenderer(name, props, options) : options?.fallback ?? null; },
       ...(store ? { useStore: selectHook(store), actions: store.actions } : {}),
       matched, sessionId, wide: true, t: ctx.locale.bind(entry.options.locale ?? 'dsh-project') });
@@ -253,22 +254,26 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
   };
 }
 
+// Plugin snapshots come from the client realm; compare them as plain data.
+const navigationEntries = b => JSON.parse(JSON.stringify(b.sessionNavigation.get('project')?.getSnapshot() ?? null));
+
 test('the actual directory action is gated by availability, makes nothing before confirmation and resumes the unique coordinator', async () => {
   const unavailable = bench({ available: false });
   try { await unavailable.flush(); assert.equal(unavailable.action, undefined); assert.deepEqual(unavailable.requests.map(request => request.method), ['list']);
-    await unavailable.mount(); assert.equal(unavailable.document.querySelector('.dsh-project-page'), null); }
+    await unavailable.mount(); assert.equal(unavailable.document.querySelector('.dsh-project-row-badge'), null); }
   finally { await unavailable.dispose(); }
   const b = bench();
   try {
     await b.flush(); assert.ok(b.action); assert.deepEqual(b.requests.map(request => request.method), ['list']); assert.deepEqual(b.navigation, []);
     assert.equal(b.entries.some(entry => entry.options.name === 'sidebar.nav.tab'), false);
-    assert.equal(b.entries.filter(entry => entry.options.name === 'sidebar.workspaces.sections').length, 1);
-    await b.mount(); assert.ok(b.document.querySelector('.dsh-project-page')); assert.equal(b.document.querySelectorAll('.dsh-project-row').length, 0);
-    assert.ok(b.button('add'), 'Project has its own creation entry in the category');
+    assert.equal(b.entries.some(entry => entry.options.name === 'sidebar.workspaces.sections'), false, 'Project has no separate sidebar category');
+    assert.equal(b.entries.filter(entry => entry.options.name === 'sidebar.session.row.badge').length, 1);
+    await b.mount(); assert.equal(b.document.querySelector('.dsh-project-row-badge'), null);
+    assert.deepEqual(navigationEntries(b), []);
     // Cancelling a chooser never calls adopt; no draft/session transition occurs.
     await b.flush(); assert.deepEqual(b.navigation, []); assert.equal(b.requests.some(request => request.method === 'workspace/create'), false);
     await b.adopt();
-    const rootStores = new Set(b.entries.filter(entry => ['shell.overlay', 'sidebar.workspaces.sections'].includes(entry.options.name)).map(entry => entry.options.store).filter(Boolean));
+    const rootStores = new Set(b.entries.filter(entry => entry.options.name === 'shell.overlay').map(entry => entry.options.store).filter(Boolean));
     assert.ok(rootStores.size > 0);
     assert.deepEqual(b.entries.filter(entry => entry.options.name.startsWith('conversation.') && rootStores.has(entry.options.store)).map(entry => entry.options.name), [], 'native slots require one scope per store handle; root viewing stores cannot mount under a session');
     assert.deepEqual(b.requests.filter(request => ['workspace/create', 'create'].includes(request.method)).map(request => request.method), ['create']);
@@ -277,15 +282,56 @@ test('the actual directory action is gated by availability, makes nothing before
     assert.equal(b.document.querySelector('[data-testid=project-progress]'), null);
     assert.ok(b.document.querySelector('.dsh-project-header button')); assert.equal(b.panel('requests'), null);
     assert.equal(b.requests.some(request => ['delegate', 'prompt', 'message', 'store/write'].includes(request.method)), false);
-    await b.adopt(); assert.equal(b.sessionNavigation.size, 0, 'Project must not publish a Lead or directory into ordinary workspace navigation');
-    assert.equal(b.document.querySelectorAll('.dsh-project-row').length, 1);
-    const row = b.document.querySelector('.dsh-project-row');
-    assert.equal(row.title, 'Project\nC:/workspace/real');
-    await act(async () => { row.click(); await new Promise(resolve => setImmediate(resolve)); });
-    assert.deepEqual(b.navigation.at(-1), ['session', 'coordinator-existing']);
-    assert.equal(b.document.querySelectorAll('.dsh-project-row').length, 1, 'Reopening resumes the unique coordinator without a duplicate row');
+    await b.adopt(); assert.deepEqual(b.navigation.at(-1), ['session', 'coordinator-existing']);
+    assert.deepEqual(navigationEntries(b), [{ sessionId: 'coordinator-existing', workingDirectory: 'C:/workspace/real', archived: false }],
+      'The Lead lists once among the ordinary conversations of its directory');
+    await b.mountSession('coordinator-existing'); assert.equal(b.document.querySelector('.dsh-project-row-badge')?.textContent, 'tab');
+    await b.mountSession('ordinary-session'); assert.equal(b.document.querySelector('.dsh-project-row-badge'), null, 'Only Project Leads carry the Project tag');
     assert.equal(b.entries.some(entry => ['sidebar.nav.tab', 'sidebar.page'].includes(entry.options.name)), false);
     assert.equal(b.requests.some(request => request.method === 'session/create'), false);
+  } finally { await b.dispose(); }
+});
+
+test('a listed directory row offers New Project, then Open Project for the same directory', async () => {
+  const b = bench();
+  try {
+    await b.flush();
+    assert.equal(b.action.rowLabel('C:/workspace/real'), 'rowCreate');
+    await b.action.adopt('C:/workspace/real'); await b.flush();
+    assert.deepEqual(b.navigation.at(-1), ['session', 'coordinator-existing']);
+    assert.equal(b.action.rowLabel('C:/workspace/real'), 'rowOpen');
+    assert.equal(b.action.rowLabel('C:\\workspace\\real\\'), 'rowOpen', 'Separators and a trailing slash do not hide the existing Project');
+    assert.equal(b.action.rowLabel('C:/workspace/other'), 'rowCreate');
+  } finally { await b.dispose(); }
+});
+
+test('the New Session option starts the directory Project and carries the draft into its Lead', async () => {
+  const blank = 'blank-session', scratch = 'scratch-session';
+  const b = bench({ runtimeSessions: { [blank]: { id: blank, blank: true, cwd: 'C:/workspace/real' }, [scratch]: { id: scratch, blank: true, cwd: 'C:/scratch' } } });
+  try {
+    await b.flush(); await b.mount();
+    await b.mountSession(scratch); assert.equal(b.document.querySelector('.dsh-project-hero-option'), null, 'A no-directory Session cannot become a Project');
+    await b.mountSession(blank);
+    const option = b.document.querySelector('.dsh-project-hero-option');
+    assert.ok(option && isVisible(option)); assert.equal(option.textContent, 'tab'); assert.equal(option.title, 'heroHint');
+    await act(async () => { option.click(); await new Promise(resolve => setImmediate(resolve)); }); await b.flush();
+    const creation = b.requests.find(request => request.method === 'create'); assert.equal(creation.input.workingDirectory, 'C:/workspace/real');
+    assert.deepEqual(b.navigation.slice(-2), [['tab', 'sessions'], ['draft', 'coordinator-existing']], 'The Lead opens through the draft-carrying navigation');
+    assert.equal(b.navigation.some(([kind]) => kind === 'session'), false);
+    assert.equal(b.requests.some(request => ['delegate', 'prompt', 'message'].includes(request.method)), false, 'Starting sends nothing on the user\'s behalf');
+    assert.equal(b.document.querySelector('.dsh-project-hero-option').title, 'heroOpenHint');
+  } finally { await b.dispose(); }
+});
+
+test('a failed New Session Project start stays on the blank Session with a visible reason', async () => {
+  const blank = 'blank-session';
+  const b = bench({ rejectCreation: true, runtimeSessions: { [blank]: { id: blank, blank: true, cwd: 'C:/workspace/real' } } });
+  try {
+    await b.flush(); await b.mount(); await b.mountSession(blank);
+    await act(async () => { b.document.querySelector('.dsh-project-hero-option').click(); await new Promise(resolve => setImmediate(resolve)); }); await b.flush();
+    assert.match(b.document.body.textContent, /Creation failed/);
+    assert.deepEqual(b.navigation, []);
+    assert.equal(b.document.querySelector('.dsh-project-hero-option').disabled, false);
   } finally { await b.dispose(); }
 });
 
@@ -293,8 +339,8 @@ test('a rejected creation preserves the previous conversation and publishes no p
   const b = bench({ rejectCreation: true });
   try { await b.flush(); await assert.rejects(b.action.adopt('C:/workspace/alias'), /Creation failed/); assert.deepEqual(b.navigation, []);
     assert.equal(b.entries.some(entry => entry.options.name === 'sidebar.nav.tab'), false); assert.equal(b.requests.some(request => request.method === 'detail'), false);
-    await b.mount(); assert.ok(b.document.querySelector('.dsh-project-page')); assert.equal(b.document.querySelector('.dsh-project-row'), null);
-    assert.equal(b.sessionNavigation.size, 0); }
+    await b.mount(); assert.equal(b.document.querySelector('.dsh-project-row-badge'), null);
+    assert.deepEqual(navigationEntries(b), []); }
   finally { await b.dispose(); }
 });
 
@@ -944,7 +990,7 @@ test('already-open Materials refreshes committed delivery pages by detail revisi
   } finally { await b.dispose(); }
 });
 
-test('the Project category updates exact coordinator archive state and unregisters on dispose', async () => {
+test('Project navigation publishes exact coordinator archive state and unregisters on dispose', async () => {
   let listed = true;
   const b = bench({ rpcOverride: (method, _input, project) => {
     if (method === 'list') return { ok: true, value: { available: true, projects: listed ? [project] : [] } };
@@ -952,20 +998,17 @@ test('the Project category updates exact coordinator archive state and unregiste
   } });
   try {
     await b.flush(); await b.mount();
-    const row = () => b.document.querySelector('.dsh-project-row');
-    assert.equal(row().title, 'Project\nC:/workspace/real');
-    assert.equal(b.sessionNavigation.size, 0);
+    const entries = () => navigationEntries(b);
+    const entry = archived => [{ sessionId: b.project.coordinatorSessionId, workingDirectory: 'C:/workspace/real', archived }];
+    assert.deepEqual(entries(), entry(false));
     await act(async () => { await b.face().command(b.project.id, 'archive'); });
-    assert.equal(row(), null);
-    await b.press('tab: more'); await b.press('history');
-    assert.equal(row().closest('.dsh-project-row-wrap').dataset.archived, 'true');
+    assert.deepEqual(entries(), entry(true));
     await act(async () => { b.sessionActions.get('project').restore(b.project.coordinatorSessionId); await new Promise(resolve => setImmediate(resolve)); });
-    assert.equal(row(), null); assert.equal(b.requests.filter(request => request.method === 'restore').at(-1).input.projectId, b.project.id);
-    await b.press('tab: more'); await b.press('tab');
-    assert.equal(row().closest('.dsh-project-row-wrap').dataset.archived, 'false');
-    listed = false; await b.poll(); assert.equal(row(), null);
+    assert.equal(b.requests.filter(request => request.method === 'restore').at(-1).input.projectId, b.project.id);
+    assert.deepEqual(entries(), entry(false));
+    listed = false; await b.poll(); assert.deepEqual(entries(), []);
   } finally { await b.dispose(); }
-  assert.equal(b.sessionActions.size, 0);
+  assert.equal(b.sessionActions.size, 0); assert.equal(b.sessionNavigation.size, 0);
 });
 
 test('opening a Project material uses the native mini preview and leaves unrelated requirements unchanged', async () => {
@@ -1851,7 +1894,7 @@ test('same-named results retain distinct source locations and open the exact rec
   } finally { await b.dispose(); }
 });
 
-test('same-named Projects show their exact directories and retain their own coordinator destination', async () => {
+test('same-named Projects list under their exact directories with their own coordinator', async () => {
   let other;
   const b = bench({ rpcOverride: (method, input, project) => {
     if (method === 'list') { other = { ...project, id: 'other-project', coordinatorSessionId: 'other-lead', canonicalWorkingDirectory: 'C:/another/real' }; return { ok: true, value: { available: true, projects: [project, other] } }; }
@@ -1859,12 +1902,10 @@ test('same-named Projects show their exact directories and retain their own coor
   } });
   try {
     await b.flush(); await b.mount();
-    const rows = [...b.document.querySelectorAll('button.dsh-project-row')];
-    assert.equal(rows.length, 2); assert.equal(b.sessionNavigation.size, 0);
-    assert.deepEqual(rows.map(row => row.title), ['Project\nC:/workspace/real', 'Project\nC:/another/real']);
-    assert.deepEqual(rows.map(row => row.querySelector('.dsh-project-row-meta').textContent), ['…/workspace/real', '…/another/real']);
-    await act(async () => { rows[1].click(); await new Promise(resolve => setImmediate(resolve)); });
-    assert.deepEqual(b.navigation.at(-1), ['session', 'other-lead']);
+    assert.deepEqual(navigationEntries(b), [
+      { sessionId: 'coordinator-existing', workingDirectory: 'C:/workspace/real', archived: false },
+      { sessionId: 'other-lead', workingDirectory: 'C:/another/real', archived: false }]);
+    for (const sessionId of ['coordinator-existing', 'other-lead']) { await b.mountSession(sessionId); assert.equal(b.document.querySelector('.dsh-project-row-badge')?.textContent, 'tab'); }
     assert.equal(b.requests.some(r => ['create', 'delegate', 'resume'].includes(r.method)), false);
   } finally { await b.dispose(); }
 });

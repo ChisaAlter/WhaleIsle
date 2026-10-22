@@ -32,9 +32,9 @@
  * client plugin's action lands beside them by `order` and needs nothing from
  * the browser beyond the row identity.
  *
- * The browser entry additionally declares two `list` seats per Session row
- * (`sidebar.session.row.leading` / `sidebar.session.row.hover`) for ambient
- * row decorations. Both take the row's Session identity and nothing else: a
+ * The browser entry additionally declares three `list` seats per Session row
+ * (`sidebar.session.row.leading` / `sidebar.session.row.badge` /
+ * `sidebar.session.row.hover`) for ambient row decorations. Both take the row's Session identity and nothing else: a
  * session-scoped seat would force a Session binding, which would activate and
  * retain every listed Session.
  */
@@ -105,9 +105,9 @@ export const menuOpenStateFactory: SlotHookFactory<'sidebar.workspaces.session.m
   (_standard, state) => () => state
 
 /**
- * Owner share of the two Session-row schedule seats. Both receive only the
- * row's Session identity: the occupant reads that Session's own scheduled
- * tasks, and reading them activates nothing.
+ * Owner share of the Session-row decoration seats. Each receives only the
+ * row's Session identity: the occupant reads that Session's own data (such
+ * as its scheduled tasks), and reading it activates nothing.
  */
 export interface SessionRowScheduleOwnerProps {
   /** Session this row shows; the occupant addresses its own data by this id. */
@@ -132,6 +132,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * seat renders there, and its live status appears on the hover card only.
      */
     'sidebar.session.row.leading': { kind: 'list'; scope: 'root'; owner: SessionRowScheduleOwnerProps }
+    /**
+     * Compact tag right after a Session row's title, such as the owning
+     * feature's kind. Unlike the leading seat it stays mounted in every row
+     * state, including archived rows and search results; blank rows omit it.
+     */
+    'sidebar.session.row.badge': { kind: 'list'; scope: 'root'; owner: SessionRowScheduleOwnerProps }
     /**
      * Section of the Session row's hover card between its relative time and
      * its trailing status line. Mounted only while that card is open.
@@ -234,6 +240,8 @@ export type WorkspaceBrowserInjected = {
     workspaceShortcuts: HostObservable<WorkspaceShortcutState>
     shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>
     sessionNavigation: HostObservable<readonly import('../navigation.ts').OwnedSessionNavigation[]>
+    /** Composed directory actions; those with a row label join the directory row menu. */
+    directoryActions: HostObservable<readonly WorkspaceDirectoryAction[]>
   }
   /** Open the browser search and focus its input. */
   requestSearch: () => void
@@ -500,6 +508,7 @@ export type WorkspaceBrowserProps =
     | 'sidebar.workspaces.session.menu.item'
     | 'sidebar.workspaces.session.row.action'
     | 'sidebar.session.row.leading'
+    | 'sidebar.session.row.badge'
     | 'sidebar.session.row.hover'
   >
   & PropsStore<WorkspaceViewStoreHandle>

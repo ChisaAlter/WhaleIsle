@@ -33,6 +33,7 @@ type RowSlotName =
   | 'sidebar.workspaces.session.menu.item'
   | 'sidebar.workspaces.session.row.action'
   | 'sidebar.session.row.leading'
+  | 'sidebar.session.row.badge'
   | 'sidebar.session.row.hover'
 type RowRenderSlot = PropsRenderSlots<RowSlotName>['renderSlot']
 type SessionNodeItemProps = ComponentProps<typeof SessionNodeItemComponent>
@@ -500,6 +501,26 @@ describe('workspace browser rows', () => {
       currentId={undefined} onOpen={vi.fn()} onUnarchive={vi.fn()} onDelete={vi.fn()} renderSlot={renderNoRowEntries} t={t}
     />)
     expect(screen.getByRole('treeitem').querySelector('[data-state="done"]')).not.toBeNull()
+  })
+
+  it('workspace row menu lists composed directory actions above rename', () => {
+    const run = vi.fn()
+    const onToggle = vi.fn()
+    const group: GroupNode = {
+      key: 'project', workspaceId: wid('project'), cwd: '/projects/project', createdAt: 0, label: 'Project',
+      sessionCount: 0, expanded: false, containsCurrent: false, sessions: [],
+    }
+    render(<ProjectRowItem
+      group={group} onToggle={onToggle} onCreate={vi.fn()}
+      actions={{ rename: vi.fn(), delete: vi.fn() }}
+      directoryItems={[{ id: 'feature', label: 'New feature here', run }]} t={t}
+    />)
+    fireEvent.click(screen.getByRole('button', { name: '工作区“Project”的操作' }))
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['New feature here', '重命名', '删除工作区'])
+    fireEvent.click(screen.getByRole('menuitem', { name: 'New feature here' }))
+    expect(run).toHaveBeenCalledOnce()
+    expect(onToggle).not.toHaveBeenCalled()
+    expect(screen.queryByRole('menu')).toBeNull()
   })
 
   it('workspace row menu opens on the ellipsis, renames, and shows the danger delete row', () => {
@@ -1235,7 +1256,9 @@ describe('session row schedule seats', () => {
         .querySelector('[data-seat="sidebar.session.row.leading"]')?.parentElement
       expect(cell?.previousElementSibling ?? null).toBeNull()
       expect(cell?.nextElementSibling?.textContent).toBe('Idle Session')
-      expect(cell?.nextElementSibling?.nextElementSibling?.textContent).toBe('刚刚')
+      const badge = cell?.nextElementSibling?.nextElementSibling
+      expect(badge?.getAttribute('data-seat')).toBe('sidebar.session.row.badge')
+      expect(badge?.nextElementSibling?.textContent).toBe('刚刚')
     }
     assertPlacement()
     // Rerender through the same row: the seat stays leading without the flat
@@ -1280,6 +1303,19 @@ describe('session row schedule seats', () => {
     const renderSlot = seatSpy()
     renderRow({ ...idle, blank: true }, renderSlot)
     expect(renderSlot).not.toHaveBeenCalledWith('sidebar.session.row.leading', expect.anything())
+    expect(renderSlot).not.toHaveBeenCalledWith('sidebar.session.row.badge', expect.anything())
+  })
+
+  it.each<[string, SessionNode]>([
+    ['an idle row', idle],
+    ['a row with live activity', { ...idle, running: true }],
+    ['an archived row', { ...idle, archived: true }],
+  ])('keeps the title badge right after the title on %s', (_label, node) => {
+    const renderSlot = seatSpy()
+    renderRow(node, renderSlot)
+    const badge = screen.getByRole('treeitem').querySelector('[data-seat="sidebar.session.row.badge"]')
+    expect(badge?.previousElementSibling?.textContent).toBe('Idle Session')
+    expect(renderSlot).toHaveBeenCalledWith('sidebar.session.row.badge', { sessionId: idle.id })
   })
 
   it('renders the schedule section between the relative time and the trailing status line', () => {

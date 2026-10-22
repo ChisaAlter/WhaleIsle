@@ -341,9 +341,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Workspace archive and directory operations consumed by Client UI domains.',
     methods: [
       {
-        signature: 'openSession(target: SessionTarget): void',
+        signature: 'openSession(target: SessionTarget, beforeOpen?: (sessionId: SessionId) => void): void',
         description: 'Select a Session and show its Conversation as one UI navigation action.',
-        parameters: [{ name: 'target', description: 'known Session identity or durable direct-parent subagent address to display.' }],
+        parameters: [{ name: 'target', description: 'known Session identity or durable direct-parent subagent address to display.' }, { name: 'beforeOpen', description: 'optional synchronous preparation for the retained Session before it is shown; a throw aborts the open and releases the reference.' }],
       },
       {
         signature: 'openWorkspace( workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void, options?: Pick<StartSessionOptions, \'agentPreset\'>, ): Promise<void>',
@@ -1080,11 +1080,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ThemeDefinition',
-    declaration: 'export interface ThemeDefinition {\n    id: string;\n    colorScheme: \'light\' | \'dark\';\n    tokens: ThemeTokens;\n}',
+    declaration: 'export interface ThemeDefinition {\n    id: string;\n    colorScheme: \'light\' | \'dark\';\n    tokens: ThemeTokens;\n    skin?: ThemeSkinId;\n}',
   },
   {
     name: 'ThemeFamily',
-    declaration: 'export interface ThemeFamily {\n    id: string;\n    name: string;\n    origin: \'builtin\' | \'custom\';\n    light: ThemeSeeds;\n    dark: ThemeSeeds;\n}',
+    declaration: 'export interface ThemeFamily {\n    id: string;\n    name: string;\n    origin: \'builtin\' | \'custom\';\n    skin?: ThemeSkinId;\n    wallpaper?: string;\n    light: ThemeSeeds;\n    dark: ThemeSeeds;\n}',
   },
   {
     name: 'ThemePreference',
@@ -1096,11 +1096,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ThemeSettings',
-    declaration: 'export interface ThemeSettings {\n    preference: ThemePreference;\n    fontSize: number;\n    terminalFontSize: number;\n    activeLightThemeId: string;\n    activeDarkThemeId: string;\n    customThemes: ThemeFamily[];\n    glassOpacity: number;\n    terminalOpacity: number;\n    transparentTheme: boolean;\n    sidebarMaskHidden: boolean;\n    wallpaperImage: string;\n    wallpaperBlur: number;\n    wallpaperPixelate: number;\n    wallpaperBingEnabled: boolean;\n    wallpaperCatalogUrls: string[];\n    wallpaperSources: WallpaperSource[];\n    wallpaperFavorites: WallpaperFavorite[];\n    backgroundEffect: BackgroundEffect;\n    backgroundEffectColors: string[];\n    backgroundEffectSpeed: number;\n    backgroundEffectCount: number;\n    backgroundEffectPreset: BackgroundEffectPreset;\n    backgroundEffectVariant: BackgroundEffectVariant;\n    cursorEffectEnabled: boolean;\n    cursorEffect: CursorEffect;\n    cursorEffectColors: string[];\n    cursorEffectSpeed: number;\n    cursorEffectSize: number;\n    cursorEffectPreset: CursorEffectPreset;\n    metallicPaintEnabled: boolean;\n    fontFamilySans: string;\n    fontFamilyCode: string;\n    fontSizeInterface: number;\n    fontSizeCode: number;\n    fontFamilyComposer: string;\n    fontFamilyTerminal: string;\n}',
+    declaration: 'export interface ThemeSettings {\n    preference: ThemePreference;\n    fontSize: number;\n    terminalFontSize: number;\n    activeLightThemeId: string;\n    activeDarkThemeId: string;\n    customThemes: ThemeFamily[];\n    glassOpacity: number;\n    terminalOpacity: number;\n    transparentTheme: boolean;\n    sidebarMaskHidden: boolean;\n    wallpaperImage: string;\n    skinWallpaperEnabled: boolean;\n    wallpaperBlur: number;\n    wallpaperPixelate: number;\n    wallpaperBingEnabled: boolean;\n    wallpaperCatalogUrls: string[];\n    wallpaperSources: WallpaperSource[];\n    wallpaperFavorites: WallpaperFavorite[];\n    backgroundEffect: BackgroundEffect;\n    backgroundEffectColors: string[];\n    backgroundEffectSpeed: number;\n    backgroundEffectCount: number;\n    backgroundEffectPreset: BackgroundEffectPreset;\n    backgroundEffectVariant: BackgroundEffectVariant;\n    cursorEffectEnabled: boolean;\n    cursorEffect: CursorEffect;\n    cursorEffectColors: string[];\n    cursorEffectSpeed: number;\n    cursorEffectSize: number;\n    cursorEffectPreset: CursorEffectPreset;\n    metallicPaintEnabled: boolean;\n    fontFamilySans: string;\n    fontFamilyCode: string;\n    fontSizeInterface: number;\n    fontSizeCode: number;\n    fontFamilyComposer: string;\n    fontFamilyTerminal: string;\n}',
+  },
+  {
+    name: 'ThemeSkinId',
+    declaration: 'export type ThemeSkinId = typeof THEME_SKINS[number];',
   },
   {
     name: 'ThemeSnapshot',
-    declaration: 'export interface ThemeSnapshot {\n    preference: ThemePreference;\n    fontSize: number;\n    fontSizes: FontSizes;\n    fontFamilies: FontFamilies;\n    active: ThemeDefinition;\n    themes: readonly ThemeDefinition[];\n    families: readonly ThemeFamily[];\n    activeLightThemeId: string;\n    activeDarkThemeId: string;\n    customThemes: readonly ThemeFamily[];\n    glassOpacity: number;\n    terminalOpacity: number;\n    transparentTheme: boolean;\n    sidebarMaskHidden: boolean;\n    wallpaperImage: string;\n    wallpaperBlur: number;\n    wallpaperPixelate: number;\n    wallpaperBingEnabled: boolean;\n    wallpaperCatalogUrls: readonly string[];\n    wallpaperSources: readonly WallpaperSource[];\n    wallpaperFavorites: readonly WallpaperFavorite[];\n    backgroundEffect: BackgroundEffect;\n    backgroundEffectColors: readonly string[];\n    backgroundEffectSpeed: number;\n    backgroundEffectCount: number;\n    backgroundEffectPreset: ThemeSettings[\'backgroundEffectPreset\'];\n    backgroundEffectVariant: ThemeSettings[\'backgroundEffectVariant\'];\n    cursorEffectEnabled: boolean;\n    cursorEffect: ThemeSettings[\'cursorEffect\'];\n    cursorEffectColors: readonly string[];\n    cursorEffectSpeed: number;\n    cursorEffectSize: number;\n    cursorEffectPreset: ThemeSettings[\'cursorEffectPreset\'];\n    metallicPaintEnabled: boolean;\n    fontFamilySans: string;\n    fontFamilyCode: string;\n    fontSizeInterface: number;\n    fontSizeCode: number;\n    fontFamilyComposer: string;\n    fontFamilyTerminal: string;\n    revision: number;\n}',
+    declaration: 'export interface ThemeSnapshot {\n    preference: ThemePreference;\n    fontSize: number;\n    fontSizes: FontSizes;\n    fontFamilies: FontFamilies;\n    active: ThemeDefinition;\n    themes: readonly ThemeDefinition[];\n    families: readonly ThemeFamily[];\n    activeLightThemeId: string;\n    activeDarkThemeId: string;\n    customThemes: readonly ThemeFamily[];\n    glassOpacity: number;\n    terminalOpacity: number;\n    transparentTheme: boolean;\n    sidebarMaskHidden: boolean;\n    wallpaperImage: string;\n    effectiveWallpaperImage?: string;\n    skinWallpaperImage?: string;\n    skinWallpaperEnabled?: boolean;\n    wallpaperBlur: number;\n    wallpaperPixelate: number;\n    wallpaperBingEnabled: boolean;\n    wallpaperCatalogUrls: readonly string[];\n    wallpaperSources: readonly WallpaperSource[];\n    wallpaperFavorites: readonly WallpaperFavorite[];\n    backgroundEffect: BackgroundEffect;\n    backgroundEffectColors: readonly string[];\n    backgroundEffectSpeed: number;\n    backgroundEffectCount: number;\n    backgroundEffectPreset: ThemeSettings[\'backgroundEffectPreset\'];\n    backgroundEffectVariant: ThemeSettings[\'backgroundEffectVariant\'];\n    cursorEffectEnabled: boolean;\n    cursorEffect: ThemeSettings[\'cursorEffect\'];\n    cursorEffectColors: readonly string[];\n    cursorEffectSpeed: number;\n    cursorEffectSize: number;\n    cursorEffectPreset: ThemeSettings[\'cursorEffectPreset\'];\n    metallicPaintEnabled: boolean;\n    fontFamilySans: string;\n    fontFamilyCode: string;\n    fontSizeInterface: number;\n    fontSizeCode: number;\n    fontFamilyComposer: string;\n    fontFamilyTerminal: string;\n    revision: number;\n}',
   },
   {
     name: 'ThemeTokenModes',
