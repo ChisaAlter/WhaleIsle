@@ -12,6 +12,8 @@ const ID = 'whalebridge';
 const MANIFEST = 'WhaleBridge-component.json';
 const ASSET = 'WhaleBridge-win32-x64.exe';
 const TAG_PREFIX = 'whalebridge-v';
+const GATEWAY_REF = 'WHALEBRIDGE_GATEWAY_KEY';
+const PROFILE_PATCH = ['profiles', 'web', 'cordis.patch.yml'];
 // The component owns its GitHub releases. CNB keeps the existing shared
 // distribution mirror, including releases used by already-installed clients.
 const GITHUB_RELEASES = 'https://github.com/ChisaAlter/WhaleBridge/releases';
@@ -53,6 +55,113 @@ async function jsonRequest(url, init = {}) {
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(20_000) });
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${(await response.text()).slice(0, 250)}`);
   return response.json();
+}
+
+function readText(file) {
+  try { return fs.readFileSync(file, 'utf8'); }
+  catch (error) { if (error.code === 'ENOENT') return ''; throw error; }
+}
+function writeTextAtomic(file, text, mode) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tmp, text, mode === undefined ? undefined : { mode });
+    fs.renameSync(tmp, file);
+  } catch (error) {
+    try { fs.unlinkSync(tmp); } catch { /* the temp file may never exist */ }
+    throw error;
+  }
+}
+function lineIndent(line) { return /^[ \t]*/.exec(line)[0].length; }
+/** Whether the mapping opened by `lines[index]` has no child lines left. */
+function mappingEmpty(lines, index) {
+  const indent = lineIndent(lines[index]);
+  for (let i = index + 1; i < lines.length; i++) {
+    const line = lines[i], trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    return lineIndent(line) <= indent;
+  }
+  return true;
+}
+/**
+ * Locate the component-owned `providers.whalebridge` block inside `llm-pi-ai`.
+ * A same-named provider without the component's gateway credential is user
+ * configuration and is left alone, matching the component's own takeover rule.
+ */
+function channelBlock(lines) {
+  for (let start = 0; start < lines.length; start++) {
+    if (!/^[ \t]*"?whalebridge"?\s*:\s*$/.test(lines[start])) continue;
+    const indent = lineIndent(lines[start]);
+    let parent = -1;
+    for (let i = start - 1; i >= 0; i--) {
+      const trimmed = lines[i].trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      if (lineIndent(lines[i]) < indent) { parent = i; break; }
+    }
+    if (parent === -1 || !/^[ \t]*providers\s*:\s*$/.test(lines[parent])) continue;
+    let entry = -1;
+    for (let i = parent - 1; i >= 0; i--) {
+      if (/^[ \t]*- id\s*:/.test(lines[i])) { entry = i; break; }
+    }
+    if (entry === -1 || !/^[ \t]*- id\s*:\s*"?llm-pi-ai"?\s*$/.test(lines[entry])) continue;
+    let end = lines.length;
+    for (let i = start + 1; i < lines.length; i++) {
+      if (lines[i].trim() && lineIndent(lines[i]) <= indent) { end = i; break; }
+    }
+    const marker = new RegExp(`apiKeyEnv:\\s*"?${GATEWAY_REF}"?\\s*$`);
+    if (!lines.slice(start, end).some(line => marker.test(line))) continue;
+    return { start, end, parent };
+  }
+  return null;
+}
+/** Remove the component's provider block; null when it is not present. */
+function removeChannelBlock(text) {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = text.split(/\r?\n/);
+  const block = channelBlock(lines);
+  if (!block) return null;
+  const next = [...lines.slice(0, block.start), ...lines.slice(block.end)];
+  if (mappingEmpty(next, block.parent)) next[block.parent] = next[block.parent].replace(/:\s*$/, ': {}');
+  const joined = next.join(eol);
+  // A block at the end of the file takes the trailing empty line with it.
+  return /\r?\n$/.test(text) && joined !== '' && !joined.endsWith(eol) ? joined + eol : joined;
+}
+/** Remove the managed gateway credential; null when it is not present. */
+function removeGatewayRef(text) {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = text.split(/\r?\n/);
+  const pattern = new RegExp(`^[ \\t]*${GATEWAY_REF}\\s*:`);
+  const index = lines.findIndex(line => pattern.test(line));
+  if (index === -1) return null;
+  const next = lines.filter((line, position) => position !== index);
+  const refs = next.findIndex(line => /^[ \t]*refs\s*:\s*$/.test(line));
+  if (refs !== -1 && mappingEmpty(next, refs)) next[refs] = next[refs].replace(/:\s*$/, ': {}');
+  return next.join(eol);
+}
+/**
+ * Detach the desktop's DSH channel without touching the component's data.
+ * The component re-syncs the channel on every start, so a later start restores
+ * the provider; the stored default-model selection is left as the user's
+ * preference for that channel.
+ * @param dshHome - Harness home holding the profile patch and credentials.
+ * @returns whether a patch or credential changed.
+ */
+function detachDshChannel(dshHome) {
+  if (typeof dshHome !== 'string' || !dshHome.trim()) return { changed: false };
+  let changed = false;
+  for (const file of [path.join(dshHome, 'cordis.patch.yml'), path.join(dshHome, ...PROFILE_PATCH)]) {
+    const text = readText(file);
+    const next = text ? removeChannelBlock(text) : null;
+    if (next === null) continue;
+    writeTextAtomic(file, next);
+    changed = true;
+  }
+  if (!changed) return { changed: false };
+  const credentials = path.join(dshHome, '.credentials.yaml');
+  const text = readText(credentials);
+  const next = text ? removeGatewayRef(text) : null;
+  if (next !== null) writeTextAtomic(credentials, next, 0o600);
+  return { changed: true };
 }
 
 function createWhaleBridgeService(deps = {}) {
@@ -368,7 +477,12 @@ function createWhaleBridgeService(deps = {}) {
     try { await terminate(current); }
     catch (error) { await unfreeze(current); throw error; }
     emit(progress, 'done', 100);
-    return { ok: true };
+    // A closed component must not leave its models selectable: the channel is
+    // removed here and the component re-syncs it on the next start.
+    let message = '';
+    try { detachDshChannel(dshHome); }
+    catch (error) { message = `鲸桥已关闭，但未能从模型选择中移除鲸桥渠道：${error.message}`; }
+    return { ok: true, ...(message ? { message } : {}) };
   }); }
   async function switchVersion(version, previous, progress) {
     const old = installed(), current = await freeze();
@@ -453,4 +567,4 @@ async function ensureWhaleBridgeRuntime() {
   const result = await svc.start();
   if (!result.ok) throw new Error(result.message || '鲸桥启动失败');
 }
-module.exports = { ID, createWhaleBridgeService, whaleBridgeService, ensureWhaleBridgeRuntime, validateManifest };
+module.exports = { ID, createWhaleBridgeService, whaleBridgeService, ensureWhaleBridgeRuntime, validateManifest, detachDshChannel };
