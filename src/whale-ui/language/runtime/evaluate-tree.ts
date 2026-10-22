@@ -20,7 +20,7 @@ import {
   type ParseResult,
 } from "../parser/types";
 import { evaluatePropCore } from "./evaluate-prop";
-import { evaluate, type EvaluationContext, type SchemaContext } from "./evaluator";
+import { createEvaluationPass, evaluate, type EvaluationContext, type SchemaContext } from "./evaluator";
 import type { Store } from "./store";
 
 /** Context passed through the evaluation chain — no module-level state. */
@@ -123,7 +123,7 @@ export function evaluateRoot(
   result: Pick<ParseResult, "root" | "rootExpression">,
   evalCtx: EvalContext,
 ): ElementNode | null {
-  const bounded = { ...evalCtx, renderBudget: createBudget("render", DEFAULT_LIMITS.renderNodes), ctx: { ...evalCtx.ctx, budget: createBudget("evaluation", DEFAULT_LIMITS.evaluationSteps) } };
+  const bounded = { ...evalCtx, renderBudget: createBudget("render", DEFAULT_LIMITS.renderNodes), ctx: createEvaluationPass({ ...evalCtx.ctx, budget: createBudget("evaluation", DEFAULT_LIMITS.evaluationSteps) }) };
   const root = evaluateRootInternal(result, bounded);
   assertValueBudget(root, "render output", DEFAULT_LIMITS.sourceChars * 4);
   const pending: unknown[] = [root]; let count = 0;

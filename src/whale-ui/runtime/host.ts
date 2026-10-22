@@ -7,7 +7,7 @@ const languages = new Set<SourceLanguage>(['whale-ui', 'openui', 'openui-lang', 
 /** A complete program is persisted as tool-owned presentation metadata for replay. */
 export const renderUiTool = {
   name: 'render_ui',
-  description: 'Display a self-contained interactive interface in the current conversation. Pass a complete Whale UI program or an existing declarative spec. Use real data already obtained with the available tools. Local controls run locally; message actions return to this conversation.',
+  description: 'Create the interactive answer in this conversation. When the user asks for a calculator, analysis, editable plan, comparison or learning page, pass the complete Whale UI program here using the supplied data. This tool validates and displays it; no application source inspection, file creation or server is needed. Local controls run locally. After success, finish with at most one short sentence.',
   parameters: { type: 'object', properties: {
     program: { type: 'string', description: 'A complete Whale UI language program, starting with root = Col(...).' },
     language: { type: 'string', enum: ['whale-ui', 'openui', 'openui-lang', 'dsh-ui'], description: 'Defaults to whale-ui for a program and dsh-ui for a spec.' },
@@ -15,7 +15,7 @@ export const renderUiTool = {
   }, additionalProperties: false },
   output: {
     schema: { type: 'object', properties: { version: { type: 'integer', const: 1 }, language: { type: 'string' }, program: { type: 'string' } }, required: ['version', 'language', 'program'], additionalProperties: false },
-    render(_args: unknown, _value: unknown) { return [{ type: 'text', text: 'The interactive interface is ready in this conversation.' }]; },
+    render(_args: unknown, _value: unknown) { return [{ type: 'text', text: 'The interactive interface is ready in this conversation. Finish now with at most one short sentence; the page already contains the results. Do not render it again or repeat its figures and instructions in prose.' }]; },
     presentationMeta(_args: unknown, value: unknown) { return { whaleUi: value }; },
   },
   async execute(args: unknown) {

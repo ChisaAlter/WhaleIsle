@@ -1,171 +1,71 @@
-/* PlotBlock: SVG function plot inside a genui block. Design system v2
-   (0.5.0): same token vocabulary as GenuiBlock.module.css — this root
-   carries its own copy because the plot can also mount standalone. */
-
+/* Plot geometry stays local; text, controls and surfaces use the host scale. */
 .block {
-  --dsl-g-radius-surface: 12px;
-  --dsl-g-radius-control: 8px;
-
-  --dsl-g-font-title: 13px;
+  --dsl-g-radius-surface: var(--dsw-radius-md, 12px);
+  --dsl-g-radius-control: var(--dsw-radius-sm, 8px);
+  --dsl-g-font-title: 14px;
   --dsl-g-font-meta: 12px;
-  --dsl-g-font-data: 11px;
-
+  --dsl-g-font-data: 12px;
   --dsl-g-gap-md: 12px;
   --dsl-g-gap-sm: 8px;
   --dsl-g-gap-xs: 4px;
-
-  --dsl-g-border: var(--dsw-alias-border-l1, var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.12)));
-  --dsl-g-accent: var(--dsw-alias-state-business-primary, #4f8ef7);
-  --dsl-g-accent-soft: color-mix(in srgb, var(--dsl-g-accent) var(--dsl-g-tint), transparent);
-  --dsl-g-tint: 8%;
-  --dsl-g-tint-strong: 14%;
-  --dsl-g-font-mono: var(--ds-font-family-code, ui-monospace, 'SF Mono', monospace);
-
-  padding: 14px 16px;
-  background: var(--dsw-alias-bg-layer-1, var(--dsw-alias-markdown-code-block));
+  --dsl-g-border: var(--dsw-alias-border-l2);
+  --dsl-g-accent: var(--dsw-alias-state-business-primary);
+  --dsl-g-accent-soft: var(--dsw-alias-state-business-tertiary);
+  --dsl-g-font-mono: var(--ds-font-family-code);
+  padding: 12px;
+  background: var(--dsw-alias-bg-layer-1);
   border: 1px solid var(--dsl-g-border);
   border-radius: var(--dsl-g-radius-surface);
   display: flex;
   flex-direction: column;
-  gap: var(--dsl-g-gap-sm);
-}
-
-.title {
-  font-size: var(--dsl-g-font-title);
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  min-width: 0;
+  gap: 8px;
   color: var(--dsw-alias-label-primary);
+  font: 400 14px/22px var(--dsw-font-family);
 }
 
-.gridLine {
-  stroke: var(--dsw-alias-border-l1, rgba(255, 255, 255, 0.07));
-  stroke-width: 1;
-}
-
-.axis {
-  stroke: var(--dsw-alias-label-tertiary);
-  stroke-width: 1;
-}
-
-.tick {
-  fill: var(--dsw-alias-label-tertiary);
-  font-size: var(--dsl-g-font-data);
-  font-family: var(--dsl-g-font-mono);
-}
-
-.line {
-  fill: none;
-  stroke: var(--dsl-g-accent);
-  stroke-width: 2;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-}
-
-/* v2.9 draw shapes */
-.area {
-  stroke: none;
-  fill-opacity: 0.16;
-}
-.scatterDot {
-  stroke: var(--dsw-alias-bg-base, #17171a);
-  stroke-width: 1;
-}
-
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--dsl-g-gap-md);
-}
-
-.legendItem {
+.title { font-size: 14px; line-height: 22px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.gridLine { stroke: var(--dsw-alias-border-l1); stroke-width: 1; }
+.axis { stroke: var(--dsw-alias-label-tertiary); stroke-width: 1; }
+.tick { fill: var(--dsw-alias-label-tertiary); font-size: 12px; font-family: var(--dsl-g-font-mono); }
+.line { fill: none; stroke: var(--dsl-g-accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.area { stroke: none; fill-opacity: 0.16; }
+.scatterDot { stroke: var(--dsw-alias-bg-base); stroke-width: 1; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; }
+.legendItem { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-secondary); }
+.legendSwatch { width: 12px; height: 4px; border-radius: 2px; background: var(--dsl-g-accent); }
+.empty { padding: 12px 0; color: var(--dsw-alias-label-tertiary); font-size: 14px; line-height: 22px; display: flex; flex-direction: column; gap: 4px; }
+.emptyRow { font-family: var(--dsl-g-font-mono); }
+.surface { cursor: grab; touch-action: pan-y; max-width: 100%; }
+.surface:active { cursor: grabbing; }
+.plotTools { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin: 0 0 4px; }
+.plotHint { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary); font-variant-numeric: tabular-nums; }
+.plotReset, .playBtn, .resetBtn {
   display: inline-flex;
   align-items: center;
-  gap: var(--dsl-g-gap-xs);
-  font-size: var(--dsl-g-font-meta);
-  color: var(--dsw-alias-label-secondary);
-}
-
-.legendSwatch {
-  width: 10px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--dsl-g-accent);
-}
-
-.empty {
-  padding: 14px 0;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: var(--dsl-g-font-title);
-  display: flex;
-  flex-direction: column;
-  gap: var(--dsl-g-gap-xs);
-}
-
-.emptyRow {
-  font-family: var(--dsl-g-font-mono);
-}
-
-.surface { cursor: grab; touch-action: pan-y; }
-/* The current x-domain only shows when it differs from the initial one, next
-   to the way back. Without this, an accidental zoom left the reader with a
-   domain nobody asked for and no visible affordance to restore it. */
-.plotTools { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 4px; }
-.plotHint { font-size: 12.5px; color: var(--dsw-alias-label-tertiary); font-variant-numeric: tabular-nums; }
-.plotReset {
-  padding: 2px 9px;
-  border: 1px solid var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.12));
-  border-radius: 999px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-family: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.plotReset:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-state-business-primary, #4f8ef7); }
-.surface:active { cursor: grabbing; }
-
-.sliders { display: flex; flex-direction: column; gap: var(--dsl-g-gap-sm); }
-.sliderRow { display: flex; align-items: center; gap: var(--dsl-g-gap-sm); font-size: var(--dsl-g-font-meta); }
-.sliderName { color: var(--dsw-alias-label-secondary); min-width: 90px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.slider { flex: 1; accent-color: var(--dsl-g-accent); height: 4px; cursor: pointer; }
-.sliderValue { color: var(--dsw-alias-label-primary); font-family: var(--dsl-g-font-mono); min-width: 34px; text-align: right; }
-
-/* ---------- animation bar ---------- */
-
-.animBar { display: flex; align-items: center; gap: var(--dsl-g-gap-md); }
-.playBtn {
+  justify-content: center;
+  align-self: flex-start;
+  min-height: 28px;
   width: fit-content;
-  background: var(--dsl-g-accent-soft);
-  border: 1px solid color-mix(in srgb, var(--dsl-g-accent) 30%, transparent);
-  color: var(--dsl-g-accent);
-  border-radius: var(--dsl-g-radius-control);
-  padding: 6px 14px;
-  font-size: var(--dsl-g-font-title);
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-}
-.playBtn:hover { filter: brightness(1.1); }
-.animTrack {
-  flex: 1;
-  height: 5px;
-  border-radius: 999px;
-  background: var(--dsw-alias-bg-layer-1);
-  box-shadow: inset 0 0 0 1px var(--dsl-g-border);
-  overflow: hidden;
-}
-.animFill { height: 100%; border-radius: 999px; background: var(--dsl-g-accent); }
-.resetBtn {
-  width: fit-content;
+  padding: 4px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l3, var(--dsl-g-border));
+  border-radius: var(--dsw-radius-button-sm, 14px);
   background: transparent;
-  border: 1px solid var(--dsl-g-border);
-  color: var(--dsw-alias-label-secondary);
-  border-radius: var(--dsl-g-radius-control);
-  padding: 6px 14px;
-  font-size: var(--dsl-g-font-title);
-  font-family: inherit;
+  color: var(--dsw-alias-label-primary);
+  font: 400 12px/18px var(--dsw-font-family);
   cursor: pointer;
 }
-.resetBtn:hover { border-color: var(--dsl-g-accent); color: var(--dsl-g-accent); }
-.slidersHead { display: flex; align-items: center; justify-content: space-between; }
-.slidersTitle { font-size: var(--dsl-g-font-meta); color: var(--dsw-alias-label-tertiary); }
+.plotReset:hover, .resetBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.playBtn { background: var(--dsw-alias-button-primary-fill); border-color: transparent; color: var(--dsw-alias-label-primary-foreground); }
+.playBtn:hover { background: var(--dsw-alias-button-primary-hover); }
+.plotReset:focus-visible, .playBtn:focus-visible, .resetBtn:focus-visible, .slider:focus-visible { outline: 2px solid var(--dsl-g-accent); outline-offset: 2px; }
+.sliders { display: flex; flex-direction: column; gap: 8px; }
+.sliderRow { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: 12px; line-height: 18px; }
+.sliderName { color: var(--dsw-alias-label-secondary); min-width: 0; flex-basis: 88px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.slider { flex: 1; min-width: 0; margin: 0; accent-color: var(--dsl-g-accent); height: 4px; cursor: pointer; }
+.sliderValue { color: var(--dsw-alias-label-primary); font-family: var(--dsl-g-font-mono); min-width: 36px; text-align: right; }
+.animBar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.animTrack { flex: 1; height: 4px; min-width: 48px; border-radius: 4px; background: var(--dsw-alias-interactive-bg-active); overflow: hidden; }
+.animFill { height: 100%; border-radius: 4px; background: var(--dsl-g-accent); }
+.slidersHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.slidersTitle { font-size: 12px; line-height: 18px; color: var(--dsw-alias-label-tertiary); }

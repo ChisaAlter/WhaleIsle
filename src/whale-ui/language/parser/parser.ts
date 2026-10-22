@@ -243,6 +243,7 @@ function buildResult(
     partial: wasIncomplete,
     currentStatementId: entry?.id,
     unreached,
+    expressions: { value: new Map(), expr: new Map() },
     budget: createBudget("materialization", DEFAULT_LIMITS.materializedNodes),
   };
 

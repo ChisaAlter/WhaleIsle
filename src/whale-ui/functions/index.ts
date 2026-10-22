@@ -70,6 +70,8 @@ const specs = {
 
 export const functionDefinitions = Object.entries(specs).map(([name, spec]) => defineFunction({
   name, description: spec.description, params: z.object(spec.params), returns: spec.returns,
+  // These audited data functions copy their inputs; random/time reads retain per-call behavior.
+  pure: !["Pick", "Shuffle", "Random", "Now", "Today"].includes(name),
   fn: dataFunctions[name as keyof typeof dataFunctions] as (args: any) => any,
 }));
 export { dataFunctions } from "./data";

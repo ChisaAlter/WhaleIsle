@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { JSDOM } from 'jsdom';
@@ -25,7 +26,7 @@ export class LngLatBounds {constructor(){this.points=[];}extend(point){this.poin
 export class Marker {constructor(options){this.options=options;probe.markers.push(this);}setLngLat(point){this.point=point;return this;}addTo(map){map.options.container.append(this.options.element);return this;}remove(){this.removed=true;this.options.element.remove();}}
 `;
 const mapPlugin = {name:'map-contract-fixture',setup(builder){builder.onResolve({filter:/^maplibre-gl$/},()=>({path:'mock-map',namespace:'map-fixture'}));builder.onLoad({filter:/.*/,namespace:'map-fixture'},()=>({contents:mapFixture,loader:'js'}));}};
-const bundle = await build({ plugins:[mapPlugin], stdin: { contents: `export * from './library'; export * from './react'; export {chartColumns, chartDomain} from './components/chart'; export {htmlDocument} from './components/drawing'; export {routeCoordinates,markerData} from './components/map'; export {youtubeId} from './components/media';`, sourcefile:'component-tests.ts', resolveDir:base, loader:'ts' }, write:false, bundle:true, platform:'node', format:'cjs', jsx:'automatic', packages:'external', tsconfigRaw:{compilerOptions:{jsx:'react-jsx'}}, alias:{'@whale-ui/react':path.join(base,'react/index.ts')}, logLevel:'silent' });
+const bundle = await build({ plugins:[mapPlugin], stdin: { contents: `export * from './library'; export * from './react'; export {chartColumns, chartDomain, chartTicks} from './components/chart'; export {htmlDocument} from './components/drawing'; export {routeCoordinates,markerData} from './components/map'; export {youtubeId} from './components/media';`, sourcefile:'component-tests.ts', resolveDir:base, loader:'ts' }, write:false, bundle:true, platform:'node', format:'cjs', jsx:'automatic', packages:'external', tsconfigRaw:{compilerOptions:{jsx:'react-jsx'}}, alias:{'@whale-ui/react':path.join(base,'react/index.ts')}, logLevel:'silent' });
 const loaded = {exports:{}};
 new Function('require','module','exports', bundle.outputFiles[0].text)(require,loaded,loaded.exports);
 const ui = loaded.exports;
@@ -51,14 +52,14 @@ async function typeInput(input,value) {
   await act(async()=>{Object.getOwnPropertyDescriptor(prototype,'value').set.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));});
 }
 
-test('registry retains 55 components, 59 data functions, ordered argument schemas and extensibility',()=>{
-  assert.equal(ui.componentDefinitions.length,55);assert.equal(ui.functionDefinitions.length,59);
-  const names=ui.componentDefinitions.map(c=>c.name); assert.equal(new Set(names).size,55);
-  for(const name of ['Table','Chart','Svg','Map','MapMarker','SearchImage','HtmlView','YouTube','Math','Timer','Flashcard'])assert.ok(names.includes(name));
+test('registry retains 56 components, 59 data functions, ordered argument schemas and extensibility',()=>{
+  assert.equal(ui.componentDefinitions.length,56);assert.equal(ui.functionDefinitions.length,59);
+  const names=ui.componentDefinitions.map(c=>c.name); assert.equal(new Set(names).size,56);
+  for(const name of ['Table','Chart','Svg','Map','MapMarker','SearchImage','HtmlView','YouTube','Math','Timer','Flashcard','Details'])assert.ok(names.includes(name));
   assert.deepEqual(Object.keys(ui.library.components.Input.props.shape),['value','label','type','placeholder']);
   assert.deepEqual(Object.keys(ui.library.components.Chart.props.shape),['type','data','x','series','format','currency','stacked','height']);
   const extra=ui.defineComponent({name:'Extra',props:ui.library.components.Label.props,description:'test',component:()=>null});
-  assert.equal(Object.keys(ui.createWhaleLibrary([extra]).components).length,56);assert.equal(Object.keys(ui.library.components).length,55);
+  assert.equal(Object.keys(ui.createWhaleLibrary([extra]).components).length,57);assert.equal(Object.keys(ui.library.components).length,56);
   const guide=ui.generateWhaleGuide();assert.match(guide,/Whale UI/);assert.match(guide,/HtmlView/);assert.match(guide,/@Allocate/);
 });
 
@@ -67,9 +68,39 @@ test('real renderer mounts layout, Markdown, table cells, SVG and KaTeX',async()
  try{assert.match(app.element.textContent,/Overview/);assert.equal(app.element.querySelector('strong')?.textContent,'Bold');assert.equal(app.element.querySelectorAll('.whale-table').length,2);assert.equal(app.element.querySelector('td:nth-child(2)')?.style.textAlign,'right');assert.ok(app.element.querySelector('.katex'));assert.equal(app.element.querySelector('svg.whale-svg rect')?.getAttribute('fill'),'var(--whale-accent)');assert.equal(app.element.querySelectorAll('svg.whale-svg g>*').length,8);assert.ok(!app.errors.flat().some(error=>error.severity==='error'));}finally{await app.close();}
 });
 
+test('documented and current Lucide names render their intended glyph instead of a help placeholder',async()=>{
+ const app=await mounted('root = Col([Icon("check-circle"),Icon("circle-check"),Icon("alert-circle"),Icon("loader-2"),Icon("icon"),IconButton("trash-2", @Set($deleted, true), "删除任务")])\n$deleted=false');
+ try{const glyphs=[...app.element.querySelectorAll('svg')];assert.equal(glyphs.length,6);assert.ok(glyphs[0].classList.contains('lucide-circle-check-big'));assert.ok(glyphs[1].classList.contains('lucide-circle-check'));assert.ok(glyphs[2].classList.contains('lucide-circle-alert'));assert.ok(glyphs[3].classList.contains('lucide-loader-circle'));assert.ok(glyphs[4].classList.contains('lucide-circle-question-mark'));assert.ok(glyphs[5].classList.contains('lucide-trash-2'));await click(app.element.querySelector('button[aria-label="删除任务"]'));assert.equal(app.states.at(-1)?.$deleted,true);}finally{await app.close();}
+});
+
 test('numeric input follows shared Reset values and clears to null rather than zero',async()=>{
  const app=await mounted('root = Col([Input($n, "Count", "number"), Text($n + ""), Button("Change", @Set($n, 9)), Button("Reset", @Reset($n))])\n$n = 3');
  try{const input=app.element.querySelector('input');assert.equal(input.value,'3');await click(button(app.element,'Change'));assert.equal(input.value,'9');await click(button(app.element,'Reset'));assert.equal(input.value,'3');await typeInput(input,'');assert.equal(input.value,'');assert.equal(app.states.at(-1)?.$n,null);assert.ok(!app.errors.at(-1)?.length,JSON.stringify(app.errors.at(-1)));}finally{await app.close();}
+});
+
+test('adjacent Slider endpoint labels anchor inward by value, independent of supplied mark order',async()=>{
+  const style=document.createElement('style');
+  // JSDOM can verify the real cascade and positional contract; physical bounds are checked in Chromium.
+  style.textContent=readFileSync(path.join(base,'components/styles.css'),'utf8').split('\n').filter(line=>line.startsWith('.whale-slider-marks')).join('\n');
+  document.head.append(style);
+  const source='root = Col([Grid([Slider($start,1,4,1,"起始周",null,[{value:4,label:"第4周"},{value:2,label:"第2周"},{value:1,label:"第1周"}]),Slider($end,1,4,1,"结束周",null,[{value:2,label:"第2周"},{value:1,label:"第1周"},{value:4,label:"第4周"}])],2,240,3),Slider($only,2,2,1,"单点",null,[{value:2,label:"第2周"}])] )\n$start=1\n$end=4\n$only=2';
+  let app;
+  try{
+    app=await mounted(source);
+    for(const width of [320,624]){
+      app.element.style.width=width+'px';
+      const groups=[...app.element.querySelectorAll('.whale-slider-marks')];
+      for(const marks of groups.slice(0,2)){
+        assert.equal(getComputedStyle(marks).marginLeft,'8px');assert.equal(getComputedStyle(marks).marginRight,'8px');
+        const children=[...marks.children],min=children.find(span=>span.textContent==='第1周'),max=children.find(span=>span.textContent==='第4周'),middle=children.find(span=>span.textContent==='第2周');
+        assert.equal(min.style.left,'0%');assert.equal(getComputedStyle(min).transform,'translateX(0)');
+        assert.equal(max.style.left,'100%');assert.equal(getComputedStyle(max).transform,'translateX(-100%)');
+        assert.equal(Number.parseFloat(middle.style.left).toFixed(4),'33.3333');assert.equal(middle.dataset.edge,undefined);assert.equal(getComputedStyle(middle).transform,'translateX(-50%)');
+      }
+      assert.equal(groups[2].firstElementChild.dataset.edge,'min');assert.equal(getComputedStyle(groups[2].firstElementChild).transform,'translateX(0)');
+    }
+    assert.deepEqual(app.errors.at(-1),[]);
+  }finally{if(app)await app.close();style.remove();}
 });
 
 test('ordinary numeric fields retain explicit null after clearing and hydration',async()=>{
@@ -106,6 +137,48 @@ test('all chart types preserve labels and numeric series; stacked negative domai
   const app=await mounted(`root = Col([Chart("${type}", [{label:"Jan",x:1,a:2,b:3},{label:"Feb",x:2,a:4,b:5}], "${type==='scatter'?'x':'label'}", ["a","b"])])`);
   try{assert.ok(app.element.querySelector('svg[role=img]'));assert.ok(app.element.querySelectorAll('title').length>=3);if(!['pie','donut'].includes(type)){assert.match(app.element.textContent,type==='scatter'?/1/:/Jan/);await click(app.element.querySelector('.whale-chart-key'));assert.equal(app.element.querySelector('.whale-chart-key').getAttribute('aria-pressed'),'false');}}finally{await app.close();}
  }
+});
+
+test('chart legend explains its local scope in both host languages without changing page selection or summaries',async()=>{
+ const previousLanguage=document.documentElement.lang;
+ try{for(const [language,scope]of [['en','Only shows or hides series in this chart; page filters and summaries stay unchanged.'],['zh-CN','仅显示或隐藏图中系列，不改变页面筛选或汇总']]){
+  document.documentElement.lang=language;
+  const app=await mounted('root = Col([Checkbox($selected,"河西店"),Text("汇总："+@Sum(rows.河西店)),Chart("line",rows,"week",["河西店","江南店"])])\n$selected = true\nrows = [{week:"第1周",河西店:12,江南店:10},{week:"第2周",河西店:16,江南店:14}]');
+  try{const legend=app.element.querySelector('.whale-chart-key');assert.equal(legend.title,scope);assert.equal(legend.getAttribute('aria-label'),'河西店: '+scope);assert.equal(legend.textContent,'河西店');assert.equal(legend.getAttribute('aria-pressed'),'true');await click(legend);assert.equal(legend.getAttribute('aria-pressed'),'false');assert.equal(app.element.querySelector('input').checked,true);assert.equal(app.element.querySelector('.whale-text').textContent,'汇总：28');assert.equal(app.element.querySelectorAll('.whale-chart-svg circle').length,2);assert.ok(!app.errors.flat().some(error=>error.severity==='error'));}finally{await app.close();}
+ }}finally{document.documentElement.lang=previousLanguage;}
+});
+
+test('natural chart ticks keep real comparison scores readable without changing point values',async()=>{
+ const app=await mounted('root = Col([Chart("bar",[{name:"B款",score:8.05},{name:"A款",score:7.85}],"name",["score"])])');
+ try{assert.deepEqual([...app.element.querySelectorAll('.whale-chart-tick')].map(e=>e.textContent),['0','2.5','5','7.5','10']);assert.ok(app.element.querySelector('rect[aria-label="B款, score: 8.05"]'));assert.ok(app.element.querySelector('rect[aria-label="A款, score: 7.85"]'));}finally{await app.close();}
+});
+
+test('natural tick ranges cover negative and small decimal data without duplicate labels',async()=>{
+ for(const [data,series,stacked]of [[[{a:3.25,b:-7.125},{a:4.5,b:5.75}],['a','b'],true],[[{a:.00162},{a:.00081}],['a'],false],[[{a:-.012},{a:-.003}],['a'],false]]){
+  const raw=ui.chartDomain(data,series,stacked),axis=ui.chartTicks(raw);assert.ok(axis.min<=raw.min&&axis.max>=raw.max);assert.ok(axis.ticks.length>=3&&axis.ticks.length<=7);assert.ok(axis.ticks.every(Number.isFinite));assert.ok(axis.ticks.includes(0));
+ }
+ const app=await mounted('root = Col([Chart("line",[{x:1,y:0.00162},{x:2,y:0.00081}],"x",["y"])])');
+ try{const ticks=[...app.element.querySelectorAll('.whale-chart-tick')].map(e=>e.textContent);assert.equal(new Set(ticks).size,ticks.length);assert.ok(ticks.includes('0.0005'));assert.ok(ticks.includes('0.002'));}finally{await app.close();}
+});
+
+test('tables preserve short Chinese labels and allow long content to wrap without losing nested controls',async()=>{
+ const long='这是一段需要在有限列宽内换行的说明文字，不能因为保护短标签而把整个表格撑成一条无限宽的长行。';
+ const app=await mounted(`root = Col([Table(["环境","g (m/s²)","说明","操作"],[["地球",9.8,${JSON.stringify(long)},Button("修改",@Set($n,2))],["月球",1.62,"https://example.test/"+"segment"+"segment"+"segment",Text($n+"")]])])\n$n = 1`);
+ try{const region=app.element.querySelector('.whale-table-scroll');assert.equal(region.tabIndex,0);assert.equal(region.getAttribute('role'),'region');const cells=app.element.querySelectorAll('td');assert.equal(cells[0].querySelector('.whale-table-cell').dataset.short,'true');assert.equal(cells[1].style.textAlign,'right');assert.equal(cells[2].querySelector('.whale-table-cell').dataset.short,undefined);assert.equal(cells[2].textContent,long);assert.equal(cells[4].textContent,'月球');await click(button(app.element,'修改'));assert.equal(cells[7].textContent,'2');assert.ok(!app.errors.flat().some(e=>e.severity==='error'));}finally{await app.close();}
+});
+
+test('chart resizes labels to the conversation width and disconnects its observer',async()=>{
+ const originalObserver=globalThis.ResizeObserver;let observe,disconnected=0;
+ globalThis.ResizeObserver=class{constructor(callback){observe=callback;}observe(){}disconnect(){disconnected++;}};
+ const app=await mounted('root = Col([Chart("bar",[{month:"Jan",amount:2},{month:"Feb",amount:3},{month:"Mar",amount:4},{month:"Apr",amount:5},{month:"May",amount:6},{month:"Jun",amount:7}],"month",["amount"])])');
+ try{
+  await act(async()=>observe([{contentRect:{width:300}}]));
+  const svg=app.element.querySelector('svg');assert.equal(svg.getAttribute('viewBox'),'0 0 300 240');
+  assert.ok([...svg.querySelectorAll('text')].every(e=>Number(e.getAttribute('font-size'))>=12));
+  assert.ok([...svg.querySelectorAll('text')].filter(e=>/Jan|Feb|Mar|Apr|May|Jun/.test(e.textContent)).length<=3);
+  await click(app.element.querySelector('.whale-chart-key'));assert.equal(app.element.querySelector('.whale-chart-key').getAttribute('aria-pressed'),'false');
+ }finally{await app.close();globalThis.ResizeObserver=originalObserver;}
+ assert.equal(disconnected,1);
 });
 
 test('HtmlView theme updates keep identical frame/document and send an authenticated child message',async()=>{

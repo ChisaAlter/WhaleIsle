@@ -1,7 +1,9 @@
 import React, { type CSSProperties, type ReactNode } from "react";
 import { z } from "zod";
 import { defineComponent } from "@whale-ui/react";
-import { icons, CircleHelp } from "lucide-react";
+import { icons, CircleHelp, CheckCircle, CheckCircle2, AlertCircle, HelpCircle, XCircle, PlusCircle, MinusCircle, Loader2, type LucideIcon } from "lucide-react";
+
+const iconAliases: Record<string, LucideIcon> = { CheckCircle, CheckCircle2, AlertCircle, HelpCircle, XCircle, PlusCircle, MinusCircle, Loader2 };
 
 export type Render = (value: unknown) => ReactNode;
 export const nodes = z.array(z.any());
@@ -27,9 +29,9 @@ export const justification = (value?: string) => value === "between" ? "space-be
 export function define(name: string, shape: Record<string, z.ZodType>, description: string, view: (props: any, renderNode: Render, statementId?: string) => ReactNode) {
   return defineComponent({ name, description, props: z.object(shape), component: ({ props, renderNode, statementId }) => <>{view(props, renderNode, statementId)}</> });
 }
-export function Glyph({ name, size = 20, style }: { name: string; size?: number; style?: CSSProperties }) {
-  const key = String(name).replace(/(^|-)([a-z])/g, (_, _gap, c) => c.toUpperCase());
-  const Component = icons[key as keyof typeof icons] ?? CircleHelp;
+export function Glyph({ name, size = 16, style }: { name: string; size?: number; style?: CSSProperties }) {
+  const key = String(name).replace(/(^|-)([a-z0-9])/g, (_, _gap, c) => c.toUpperCase());
+  const Component = icons[key as keyof typeof icons] ?? iconAliases[key] ?? CircleHelp;
   return <Component size={size} strokeWidth={1.7} aria-hidden="true" style={{ display: "inline-block", verticalAlign: "middle", flexShrink: 0, ...style }} />;
 }
 export function webUrl(value: string): string | undefined {

@@ -352,6 +352,7 @@ export function createLibrary<C = unknown, A extends AnyAction = never>(
           description: def.description,
           params: toCallJSONSchema(def.params) as JSONSchemaDef,
           ...("returns" in def && def.returns ? { returns: toCallJSONSchema(def.returns) } : {}),
+          ...("pure" in def && def.pure !== undefined ? { pure: def.pure } : {}),
         },
       ]),
     );

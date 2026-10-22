@@ -114,6 +114,68 @@ test('ordered steps read latest state, await host acknowledgements, and stop on 
   await failed.close();
 });
 
+test('shared declaration expressions read fresh state after ACK and capture separate Each items', async () => {
+  const store = createStore(), observed = [];
+  let release;
+  const acknowledgement = new Promise(resolve => { release = resolve; });
+  const mounted = await mount('root = Col([Probe(next),Probe(next),Button("Go",Action([@Set($n,next),@Copy(next+""),@Set($n,next),@ToAssistant(next+"")])),Col(@Each([{id:"a",n:2},{id:"b",n:5}],"item",Button(item.id,@Set($n,item.n+next))))])\nnext = $n+1\n$n = 1', {
+    store, onAction: async event => { observed.push(event); if (event.type === 'Copy') await acknowledgement; return { ok: true }; },
+  });
+  try {
+    assert.deepEqual([...mounted.element.querySelectorAll('output')].map(node => node.textContent), ['2','2']);
+    await click(mounted.element.querySelector('[data-action="Go"]'));
+    assert.equal(store.get('$n'), 2);
+    assert.equal(observed[0].params.text, '3');
+    await act(async () => release());
+    assert.equal(store.get('$n'), 3);
+    assert.equal(observed[1].humanFriendlyMessage, '4');
+    await click(mounted.element.querySelector('[data-action="a"]'));
+    assert.equal(store.get('$n'), 6);
+    await click(mounted.element.querySelector('[data-action="b"]'));
+    assert.equal(store.get('$n'), 12);
+    assert.deepEqual(mounted.errors.at(-1), []);
+  } finally { await mounted.close(); }
+});
+
+test('pure calculations in nested editable collections retain item capture and fresh save arguments', async () => {
+  const Update = ui.defineFunction({name:'Update',description:'Copy updated items',pure:true,params:z.object({list:z.array(z.any()),field:z.string(),value:z.any(),setField:z.string(),setValue:z.any()}),returns:z.array(z.any()),fn:({list,field,value,setField,setValue})=>list.map(item=>item[field]===value?{...item,[setField]:setValue}:item)});
+  const pureLibrary = library.extend({functions:{add:[Update]}}), store=createStore();
+  const app=await mount('root=Col([Probe($tasks),Probe(total),Probe(total),Col(@Each([1,2],"day",Col(@Each(@Filter($tasks,"day","==",day),"t",Col([Button("Edit"+t.id,Action([@Set($selected,t.id),@Set($minutes,t.min)])),Button("Done"+t.id,@Set($tasks,@Update($tasks,"id",t.id,"done",!t.done))),save]))))),Input($minutes,"Minutes")])\n$tasks=[{id:1,day:1,min:20,done:false},{id:2,day:2,min:30,done:false}]\n$selected=1\n$minutes=20\ntotal=@Sum($tasks.min)\nsave=Button("Save",Action([@Set($tasks,@Update(@Update($tasks,"id",$selected,"min",$minutes),"id",$selected,"day",1)),@Copy(total+"")]))',{library:pureLibrary,store});
+  try {
+    await click(app.element.querySelector('[data-action="Done1"]'));
+    await click(app.element.querySelector('[data-action="Edit2"]'));
+    await type(app.element.querySelector('input'),'55');
+    // Store the numeric edit independently of this minimal text-only test Input.
+    await act(async()=>store.set('$minutes',55));
+    await click(app.element.querySelector('[data-action="Save"]'));
+    assert.deepEqual(store.get('$tasks'),[{id:1,day:1,min:20,done:true},{id:2,day:1,min:55,done:false}]);
+    assert.equal(app.events.at(-1).params.text,'75');
+    assert.deepEqual(app.errors.at(-1),[]);
+  }finally{await app.close();}
+});
+
+test('real native inputs in a named editor inside nested Each keep bindings intact when edited and saved', async () => {
+  // Same nested day/task editor and chained save as the publicly emitted DS008 plan.
+  const bundled=await build({stdin:{contents:'export * from "./library.ts";export * from "./react/index.ts";export {createStore} from "./language/index.ts";',resolveDir:rootPath,loader:'ts'},bundle:true,write:false,format:'cjs',platform:'node',jsx:'automatic',packages:'external',tsconfigRaw:{},alias:{'@whale-ui/react':path.join(rootPath,'react/index.ts')},logLevel:'silent'});
+  const mod={exports:{}};new Function('require','module','exports',bundled.outputFiles[0].text)(require,mod,mod.exports);const real=mod.exports;
+  const store=real.createStore(),element=document.createElement('div');document.body.append(element);const root=createRoot(element),errors=[];
+  const tasks=Array.from({length:10},(_,i)=>({id:i+1,day:i===3?'2':'1',min:20+i,cost:i===3?80:0,note:'task '+(i+1)}));
+  const source='root=Col([Col(@Each(["1","2","7"],"day",Col(@Each(@Filter($tasks,"day","==",day),"task",Col([Button("Edit"+task.id,Action([@Set($selected,task.id),@Set($editDay,task.day),@Set($editMin,task.min),@Set($editCost,task.cost)])),$selected==task.id?editor:Col([])])))))])\n$tasks='+JSON.stringify(tasks)+'\n$selected=0\n$editDay="1"\n$editMin=20\n$editCost=0\neditor=Col([Select($editDay,[{value:"1",label:"Day 1"},{value:"2",label:"Day 2"},{value:"7",label:"Day 7"}],"Edit day"),Input($editMin,"Edit minutes","number"),Input($editCost,"Edit cost","number"),Button("Save",@Set($tasks,@Update(@Update(@Update($tasks,"id",$selected,"min",$editMin),"id",$selected,"cost",$editCost),"id",$selected,"day",$editDay)))])';
+  try{
+    await act(async()=>root.render(h(real.Renderer,{response:source,library:real.library,store,onError:value=>errors.push(value)})));
+    await click([...element.querySelectorAll('button')].find(button=>button.textContent==='Edit4'));
+    const select=element.querySelector('select[aria-label="Edit day"]');assert.equal(select.value,'2');
+    await act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype,'value').set.call(select,'7');select.dispatchEvent(new Event('change',{bubbles:true}));});
+    await type(element.querySelector('input[aria-label="Edit minutes"]'),'55');
+    await type(element.querySelector('input[aria-label="Edit cost"]'),'95');
+    assert.equal(store.get('$editDay'),'7');assert.equal(select.value,'7');assert.equal(store.get('$editMin'),55);assert.equal(store.get('$editCost'),95);
+    await click([...element.querySelectorAll('button')].find(button=>button.textContent==='Save'));
+    assert.deepEqual(store.get('$tasks'),tasks.map(task=>task.id===4?{...task,day:'7',min:55,cost:95}:task));
+    assert.equal(element.querySelector('select[aria-label="Edit day"]').value,'7');
+    assert.deepEqual(errors.at(-1),[]);
+  }finally{await act(async()=>root.unmount());element.remove();}
+});
+
 test('pending old actions stop after source replacement or unmount and survive ordinary value changes', async () => {
   const source = 'root = Col([Button("Old",Action([@Copy("a"),@Set($n,$n+1),@ToAssistant("after")]))])\n$n = 1';
   for (const change of ['source', 'unmount', 'store']) {

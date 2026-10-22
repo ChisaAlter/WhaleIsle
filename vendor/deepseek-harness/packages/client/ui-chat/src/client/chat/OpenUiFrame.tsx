@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { Button, CodeBlock, IconCloseOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, CodeBlock, IconBrowseOutlineRegular, IconCloseOutlineRegular, IconCodeOutlineRegular, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import type { AssistantOpenUi, WhaleActionResult, WhaleSourceLanguage } from './openui.ts'
 import type { WhalePanelOrder } from './whale-ui-store.ts'
+import a11yCss from './accessibility.module.css'
 import css from './OpenUiFrame.module.css'
 
 const CHANNEL = 'whale-ui'
@@ -284,13 +285,9 @@ export function OpenUiFrame({ instanceId, program, language = 'whale-ui', stream
     ? actionError.error : null) ?? viewerError
   const published = publishedProgram === program
 
+  const sourceLabel = t(source ? 'openui.preview' : 'openui.source')
+
   return <section className={css.root} data-whale-ui-instance={instanceId} aria-busy={(!loaded && error === null) || pending > 0}>
-    <header className={css.toolbar}>
-      <span className={css.label} role="status">{pending > 0 ? t('openui.sending') : published ? t('openui.panelPublished') : title || t('openui.title')}</span>
-      <Button size="sm" onClick={() => setSource(value => !value)} aria-pressed={source}>
-        {t(source ? 'openui.preview' : 'openui.source')}
-      </Button>
-    </header>
     <div className={css.body} data-panel-published={published && !source && visibleError === null || undefined}>
       {html !== null && <iframe
         ref={frame}
@@ -314,5 +311,13 @@ export function OpenUiFrame({ instanceId, program, language = 'whale-ui', stream
           aria-label={t('openui.dismiss')} icon={<IconCloseOutlineRegular />} />}
       </div>}
     </div>
+    <Tooltip label={sourceLabel} side="left" portal>
+      <Button className={css.sourceToggle} variant="ghost" size="sm" onClick={() => setSource(value => !value)}
+        aria-label={sourceLabel} aria-pressed={source}
+        icon={source ? <IconBrowseOutlineRegular /> : <IconCodeOutlineRegular />} />
+    </Tooltip>
+    <span className={a11yCss.visuallyHidden} role="status" aria-live="polite" aria-atomic="true">
+      {pending > 0 ? t('openui.sending') : published ? t('openui.panelPublished') : null}
+    </span>
   </section>
 }

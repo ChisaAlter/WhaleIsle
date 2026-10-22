@@ -33,6 +33,18 @@ import { EMPTY_CONVERSATION_SNAPSHOT } from '@deepseek-ai/dsh-client-ui-conversa
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { PartialArguments } from '@deepseek-ai/dsh-util-values'
+import { createAssistantMessage, createToolResultMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
+import type { SessionEventLikeEntry } from '@deepseek-ai/dsh-api-session-controller/client'
+import { ConversationNodeAssembler } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { assistantDefinition } from '../src/client/conversation-nodes/assistant.ts'
+import { toolDefinition } from '../src/client/conversation-nodes/tool.ts'
+import { turnProcessDefinition } from '../src/client/conversation-nodes/turn-process.ts'
+import { chatViewDefinition } from '../src/client/conversation-nodes/chat-snapshot-builder.ts'
+import { processGroupDefinition } from '../src/client/conversation-nodes/process-groups.ts'
+import { WhaleUiToolView } from '../src/client/chat/WhaleUiPanelToolView.tsx'
+import { createWhaleUiStore } from '../src/client/chat/whale-ui-store.ts'
+import { readOpenUiState, saveOpenUiState, type OpenUiInjected } from '../src/client/chat/openui.ts'
 import { createChatStore } from '../src/client/stores.ts'
 import { derivePresentationPolicy, type CollapseTiming } from '../src/client/presentation-policy.ts'
 import { CHAT_FLOW_INJECT, CHAT_NODE_INJECT } from '../src/client/apply.ts'
@@ -3653,6 +3665,127 @@ describe('ChatView', () => {
     expect(turnProcessControl(view.container)).toBeNull()
     expect(runningContent(view.container)?.textContent).toMatch(/^深度求索中，用时 \d+秒 ···$/)
   }))
+
+  it('keeps the render_ui iframe visible and interactive when completed work folds and the next Turn starts', async () => {
+    const previousShell = Object.getOwnPropertyDescriptor(window, 'shell')
+    const openuiViewer = vi.fn(async () => '<!doctype html><main id="whale-ui"></main>')
+    Object.defineProperty(window, 'shell', { configurable: true, value: { openuiViewer } })
+    try {
+      const entry = (event: SessionEvent): SessionEventLikeEntry => ({ type: 'event', event })
+      const callId = ToolCallId('whale-answer')
+      const readId = ToolCallId('ordinary-read')
+      const program = 'root = Col([Input($quantity,"Quantity","number"),Button("Submit")])\n$quantity = 12'
+      const assembler = new ConversationNodeAssembler(
+        { entries: () => [assistantDefinition, toolDefinition, turnProcessDefinition], fallbackEntry: () => undefined },
+        { entries: () => [chatViewDefinition] },
+        { entries: () => [processGroupDefinition], forTarget: target => target === 'chat' ? processGroupDefinition : undefined },
+      )
+      assembler.replaceWindow([
+        entry({ type: 'turn/start', seq: SessionSeq(1), time: 1_000, data: { turn: 1 } }),
+        entry({ type: 'step/start', seq: SessionSeq(2), time: 2_000, data: { turn: 1, step: 1 } }),
+        entry({ type: 'tool/call', seq: SessionSeq(3), time: 3_000,
+          data: { turn: 1, step: 1, callId: readId, name: 'read', arguments: '{"file_path":"order.json"}' } }),
+        entry({ type: 'tool/result', seq: SessionSeq(4), time: 4_000, surfaceOp: 'append', data: {
+          turn: 1, step: 1, message: createToolResultMessage({ callId: readId, content: [], isError: false }),
+        } }),
+        entry({ type: 'tool/call', seq: SessionSeq(5), time: 5_000,
+          data: { turn: 1, step: 1, callId, name: 'render_ui', arguments: JSON.stringify({ program }) } }),
+      ], false)
+      assembler.activateTarget('chat')
+      const snapshot = () => { assembler.flush(); return assembler.snapshot('chat') as ChatSnapshot }
+      const h = makeHarness({ chat: snapshot(), running: true })
+      h.setGrouped(assembler.grouped('chat'))
+      const whaleStore = createWhaleUiStore().create(SID)
+      const useWhaleStore = bindSnapshotSelector(whaleStore)
+      const useTheme = bindSnapshotSelector(createSnapshotStore<ThemeSnapshot | null>(null))
+      const useLocale = bindSnapshotSelector(createSnapshotStore<'zh' | 'en'>('en'))
+      const send = vi.fn<OpenUiInjected['sendOpenUiAction']>().mockResolvedValue({ ok: true })
+      h.setNodeRenderer((slot, owner, opts) => {
+        if (slot !== 'conversation.chat.node') return null
+        if (owner.node.kind === 'turn-process') return <TurnProcessNodeView {...h.props} {...owner} node={owner.node}
+          useTurnData={CHAT_NODE_INJECT.hooks.turnData(h.props, opts.hookContext)}
+          useDisclosure={CHAT_NODE_INJECT.hooks.disclosure(h.props, opts.hookContext)}
+          useGroupAction={CHAT_NODE_INJECT.hooks.groupAction(h.props, opts.hookContext)} />
+        if (owner.node.kind !== 'tool-call') return opts.fallback ?? null
+        const root = owner.node.data.root
+        if (root.name !== 'render_ui') return <span data-testid="ordinary-read">Read order data</span>
+        return 'kind' in root && !root.isError
+          ? <WhaleUiToolView {...h.props} callId={root.callId} seq={root.seq} metadata={root.meta}
+            useStore={useWhaleStore} actions={whaleStore.actions} useOpenUiTheme={useTheme} useOpenUiLocale={useLocale}
+            sendOpenUiAction={send} readOpenUiState={readOpenUiState} saveOpenUiState={saveOpenUiState} t={h.props.t} />
+          : <span>Generating interface</span>
+      })
+      const view = render(<h.ChatView {...h.props} />)
+      const callNode = snapshot().nodes.values().find((node): node is ChatNode<'tool-call'> => node.kind === 'tool-call' && node.id === callId)!
+      const row = view.container.querySelector(`[data-chat-node-key='${callNode.key}']`)!
+      expect(callNode.groupTree).toBe('turn')
+      expect(row.closest('[data-chat-group-key]')).toBeNull()
+      const update = (events: readonly SessionEvent[], running: boolean) => {
+        act(() => {
+          for (const event of events) assembler.append(entry(event))
+          h.set({ chat: snapshot(), running })
+          h.setGrouped(assembler.grouped('chat'))
+        })
+      }
+      update([{ type: 'tool/result', seq: SessionSeq(6), time: 6_000, surfaceOp: 'append', data: {
+        turn: 1, step: 1, message: createToolResultMessage({ callId, content: [], isError: false }),
+        meta: { whaleUi: { version: 1, language: 'whale-ui', program } },
+      } }], true)
+      await waitFor(() => { expect(view.container.querySelector('iframe')).not.toBeNull() })
+      const frame = view.container.querySelector('iframe')!
+      const outbound = vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation(() => {})
+      const instanceId = `${SID}:tool:${callId}`
+      const emit = (data: Record<string, unknown>) => act(() => {
+        window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow,
+          data: { channel: 'whale-ui', version: 2, instanceId, ...data } }))
+      })
+      emit({ type: 'ready' })
+      emit({ type: 'state', state: { quantity: 42 } })
+      const stableParent = frame.parentElement
+      update([
+        { type: 'step/end', seq: SessionSeq(7), time: 7_000, data: { turn: 1, step: 1 } },
+        { type: 'step/start', seq: SessionSeq(8), time: 8_000, data: { turn: 1, step: 2 } },
+        { type: 'assistant/message', seq: SessionSeq(9), time: 9_000, surfaceOp: 'append', data: {
+          turn: 1, step: 2, stream: [], message: createAssistantMessage({ source: { provider: 'test', model: 'test' },
+            content: [{ type: 'text', text: 'The interactive page is ready.' }] }),
+        } },
+        { type: 'step/end', seq: SessionSeq(10), time: 10_000, data: { turn: 1, step: 2 } },
+        { type: 'turn/end', seq: SessionSeq(11), time: 11_000, data: { turn: 1, reason: { kind: 'completed' } } },
+      ], false)
+      const assertVisible = () => {
+        expect(view.container.querySelectorAll('iframe')).toHaveLength(1)
+        expect(view.container.querySelector('iframe')).toBe(frame)
+        expect(frame.parentElement).toBe(stableParent)
+        expect(frame.closest('[hidden], [data-chat-group-key], [data-step-process-body], [data-turn-process-hidden]')).toBeNull()
+        expect(view.container.querySelector(`[data-chat-node-key='${callNode.key}']`)).toBe(row)
+        expect(readOpenUiState(instanceId)).toEqual({ quantity: 42 })
+      }
+      assertVisible()
+      expect(view.getByTestId('ordinary-read').closest('[hidden]')).not.toBeNull()
+      const disclosure = turnProcessControl(view.container)!
+      expect(disclosure.getAttribute('aria-expanded')).toBe('false')
+      fireEvent.click(disclosure)
+      assertVisible()
+      fireEvent.click(disclosure)
+      assertVisible()
+      for (const mode of ['standard', 'detailed', 'verbose', 'compact'] as const) {
+        act(() => { h.setTranscriptView(mode) })
+        assertVisible()
+      }
+      update([
+        { type: 'turn/start', seq: SessionSeq(12), time: 12_000, data: { turn: 2 } },
+        { type: 'step/start', seq: SessionSeq(13), time: 13_000, data: { turn: 2, step: 1 } },
+      ], true)
+      assertVisible()
+      expect(openuiViewer).toHaveBeenCalledOnce()
+      emit({ type: 'action', action: 'assistant', requestId: 'same-session-submit', message: 'Submit', formState: { quantity: 42 } })
+      await waitFor(() => { expect(send).toHaveBeenCalledWith({ message: 'Submit', formState: { quantity: 42 } }) })
+      expect(outbound).toHaveBeenCalledWith(expect.objectContaining({ type: 'action-response', requestId: 'same-session-submit', result: { ok: true } }), '*')
+    } finally {
+      if (previousShell === undefined) Reflect.deleteProperty(window, 'shell')
+      else Object.defineProperty(window, 'shell', previousShell)
+    }
+  })
 
   it('keeps the Tool renderer mounted when a running call settles into log order', () => {
     const mounted = vi.fn()

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
+import { synchronizeWhaleUiDependencies, whaleUiInstallEnvironment } from './whale-ui-dependencies.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = path.join(root, 'src/whale-ui');
@@ -29,17 +30,30 @@ function inputDigest(directory) {
   };
   walk(directory);
   hash.update(fs.readFileSync(fileURLToPath(import.meta.url)));
+  hash.update(fs.readFileSync(new URL('./whale-ui-dependencies.mjs', import.meta.url)));
+  hash.update(fs.readFileSync(path.join(root, 'src/shared/dsh-webui-tokens.css')));
+  hash.update(fs.readFileSync(path.join(root, 'vendor/deepseek-harness/packages/client/ui-theme/src/styles/scrollbar.css')));
   return hash.digest('hex');
 }
 function ensureDependencies() {
-  const resolve = createRequire(path.join(source, 'package.json'));
-  try { resolve.resolve('esbuild'); resolve.resolve('react-dom/client'); resolve.resolve('mermaid'); return resolve; }
-  catch (error) { if (error.code !== 'MODULE_NOT_FOUND') throw error; }
-  const harness = path.join(root, 'vendor/deepseek-harness/node_modules/pnpm/bin/pnpm.mjs');
-  if (!fs.existsSync(harness)) throw new Error('Whale UI dependencies are missing. Install the Harness dependencies first.');
-  const result = spawnSync(process.execPath, [harness, 'install', '--dir', source, '--ignore-workspace', '--frozen-lockfile', '--ignore-scripts'], { cwd: root, stdio: 'inherit' });
-  if (result.status !== 0) throw new Error('Whale UI dependency installation failed.');
-  return resolve;
+  const manifest = JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8'));
+  const installed = synchronizeWhaleUiDependencies({
+    manifest,
+    installedVersion(name) {
+      try { return JSON.parse(fs.readFileSync(path.join(source, 'node_modules', name, 'package.json'), 'utf8')).version; }
+      catch (error) { if (error.code === 'ENOENT') return undefined; throw error; }
+    },
+    install() {
+      const harness = path.join(root, 'vendor/deepseek-harness/node_modules/pnpm/bin/pnpm.mjs');
+      if (!fs.existsSync(harness)) throw new Error('Whale UI dependencies are missing or stale. Install the Harness dependencies first.');
+      const result = spawnSync(process.execPath, [harness, 'install', '--dir', source, '--ignore-workspace', '--frozen-lockfile', '--ignore-scripts'], {
+        cwd: root, stdio: 'inherit', env: whaleUiInstallEnvironment(process.env, process.stdin.isTTY === true),
+      });
+      if (result.error) throw result.error;
+      if (result.status !== 0) throw new Error('Whale UI dependency installation failed.');
+    },
+  });
+  return { resolve: createRequire(path.join(source, 'package.json')), installed };
 }
 function licenseText(resolve) {
   const notices = [
@@ -85,7 +99,7 @@ function licenseText(resolve) {
 }
 
 export async function prepareWhaleUi({ force = false, promptOnly = false } = {}) {
-  const dependency = ensureDependencies();
+  const { resolve: dependency, installed } = ensureDependencies();
   const esbuild = require(dependency.resolve('esbuild'));
   const aliases = {
     '@whale-ui/language': path.join(source, 'language/index.ts'),
@@ -99,7 +113,7 @@ export async function prepareWhaleUi({ force = false, promptOnly = false } = {})
   const shared = { bundle: true, alias: aliases, logLevel: 'warning', jsx: 'automatic', tsconfig: path.join(source, 'tsconfig.json'), loader: { '.woff': 'dataurl', '.woff2': 'dataurl', '.ttf': 'dataurl', '.svg': 'dataurl', '.png': 'dataurl' } };
   const digest = inputDigest(source);
   const stamp = path.join(output, 'build.json');
-  if (!force && !promptOnly && fs.existsSync(stamp) && fs.existsSync(guideFile)) {
+  if (!force && !promptOnly && !installed && fs.existsSync(stamp) && fs.existsSync(guideFile)) {
     const record = JSON.parse(fs.readFileSync(stamp, 'utf8'));
     if (record.digest === digest && record.products?.every(file => fs.existsSync(path.join(output, file)))) return;
   }

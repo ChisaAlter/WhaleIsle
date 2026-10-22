@@ -21,6 +21,8 @@ export interface DefinedFunction<
   params: T;
   /** z.string() -> the return type in the prompt signature, checked at runtime */
   returns?: R;
+  /** Opt in to reuse within one evaluation: deterministic data output, no effects or argument mutation. */
+  pure?: boolean;
   /** `@Percent(3, 4)` -> fn({part: 3, total: 4}); bad args or result, or a throw -> null */
   fn: (args: z.infer<T>) => R extends z.$ZodType ? z.infer<R> : unknown;
 }

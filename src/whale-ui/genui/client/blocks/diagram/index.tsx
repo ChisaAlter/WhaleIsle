@@ -16,8 +16,8 @@ import { resolveLayout } from './layout.ts'
 import { routeEdge, labelGeometry, type Box } from './geometry.ts'
 import { resolvePalette, nodeTreatment, edgeStroke, inkAt } from './theme.ts'
 
-const FONT_SANS = "'Geist', -apple-system, 'Segoe UI', sans-serif"
-const FONT_MONO = "'Geist Mono', ui-monospace, 'SF Mono', monospace"
+const FONT_SANS = 'var(--dsw-font-family)'
+const FONT_MONO = 'var(--ds-font-family-code)'
 
 /** Editorial constants (diagram-design §5–7). */
 const NODE_H = 64 // node box height (48→64 for the editorial ramp)
@@ -240,7 +240,7 @@ export function DiagramNode({ node }: { node: GenuiDiagram }) {
   return (
     <figure className="genui-diagram" data-genui-diagram>
       {node.title !== undefined && (
-        <figcaption id={captionId} style={{ fontFamily: "Instrument Serif, 'Times New Roman', serif", fontSize: 20, marginBottom: 8, color: palette.ink }}>
+        <figcaption id={captionId} style={{ fontFamily: FONT_SANS, fontSize: 14, lineHeight: '22px', fontWeight: 600, marginBottom: 8, color: palette.ink }}>
           {renderInline(node.title)}
         </figcaption>
       )}

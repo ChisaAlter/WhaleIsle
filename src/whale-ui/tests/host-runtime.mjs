@@ -1,9 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 import { createResourceHandlers } from '../resources/handlers.mjs';
 const require = createRequire(import.meta.url);
 const { renderUiTool: tool } = require('../../renderer/whale-ui/host.cjs');
+
+test('built standalone artifact embeds KaTeX accessibility styles and offline fonts', () => {
+  const runtime = readFileSync(new URL('../../renderer/whale-ui/assets/standalone-runtime.js', import.meta.url), 'utf8');
+  const rule = /\.katex\s+\.katex-mathml\{([^}]+)\}/.exec(runtime)?.[1] ?? '';
+  assert.match(rule, /position:absolute/);
+  assert.match(rule, /clip-path:inset\(50%\)/);
+  assert.match(rule, /width:1px/);
+  assert.match(rule, /height:1px/);
+  assert.match(runtime, /data:font\/woff2;base64,/);
+});
 
 test('built validator retains complete programs and emits durable presentation metadata', async () => {
   const program = 'root = Col([Text("ready"), Input($n, "Number", "number"), Text(@Format($n * 2))])\n$n = 2';
@@ -13,6 +24,14 @@ test('built validator retains complete programs and emits durable presentation m
   assert.match(tool.output.render({}, value)[0].text, /ready/);
   assert.equal((await tool.execute({ spec: { items: [{ type: 'text', content: 'ready' }] } })).language, 'dsh-ui');
   assert.equal((await tool.execute({ program: 'root = Col([Plot({series:[{expr:"sin(x)"}],xMin:-6,xMax:6})])' })).version, 1);
+});
+
+test('documented complete page patterns run through the built tool validator', async () => {
+  const guideModule = readFileSync(new URL('../../../vendor/deepseek-harness/packages/client/ui-chat/src/openui-guide.ts', import.meta.url), 'utf8');
+  const guide = JSON.parse(guideModule.slice(guideModule.indexOf(' = ') + 3).trim());
+  const examples = guide.split('## Examples')[1].split('## Important Rules')[0].match(/^root = .*\n(?:[^\n]+\n?)*/gm) ?? [];
+  assert.ok(examples.length >= 4);
+  for (const program of examples) assert.equal((await tool.execute({ program: program.trim() })).program, program.trim());
 });
 
 test('built validator rejects incomplete final source, missing references, budgets and dropped specialized nodes', async () => {
