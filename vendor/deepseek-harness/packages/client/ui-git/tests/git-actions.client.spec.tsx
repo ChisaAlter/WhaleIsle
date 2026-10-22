@@ -620,10 +620,10 @@ describe('GitActionsControl', () => {
     expect(screen.queryByRole('button', { name: 'Git actions' })).toBeNull()
   })
 
-  it('hides the branch ref name at compact density', async () => {
+  it('retains the branch ref and action labels for reveal at compact density', async () => {
     mount({ cwd: '/work', git: status({ refName: 'master' }), density: 'compact' })
     const trigger = await screen.findByRole('button', { name: 'Switch branch' })
-    expect(trigger.textContent).not.toContain('master')
+    expect(trigger.textContent).toContain('master')
     expect(screen.getByRole('button', { name: 'Commit' }).textContent).toContain('Commit')
   })
 

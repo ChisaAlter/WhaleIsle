@@ -286,10 +286,10 @@ describe('BranchMenu', () => {
     expect(screen.queryByRole('menuitem')).toBeNull()
   })
 
-  it('hides the ref name on the compact trigger and keeps the accessible name', () => {
+  it('retains the ref name for reveal on the compact trigger and keeps the accessible name', () => {
     mountMenu({ compact: true, currentRef: 'master' })
     const trigger = screen.getByRole('button', { name: 'Switch branch' })
-    expect(trigger.textContent).not.toContain('master')
+    expect(trigger.textContent).toContain('master')
     fireEvent.click(trigger)
   })
 })

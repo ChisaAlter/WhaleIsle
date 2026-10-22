@@ -1,0 +1,41 @@
+/* Pointer reveals stay open until it leaves the toolbar, keeping hit areas stable. */
+.label {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 0fr;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    grid-template-columns var(--ds-transition-duration) var(--ds-ease-in-out),
+    opacity var(--ds-transition-duration) var(--ds-ease-in-out),
+    transform var(--ds-transition-duration) var(--ds-ease-in-out);
+}
+
+.clip {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.text {
+  display: block;
+  overflow: hidden;
+  padding-left: 4px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.part:is(:hover, :focus-visible:not([data-dsh-automatic-focus]), :has(:focus-visible:not([data-dsh-automatic-focus])), [aria-expanded='true'], :has([aria-expanded='true'])) .label,
+.toolbar[data-git-reveal-branch] [data-git-part='branch'] .label,
+.toolbar[data-git-reveal-action] [data-git-part='action'] .label {
+  grid-template-columns: 1fr;
+  opacity: 1;
+  transform: translateX(0);
+}
+
+@media (hover: none), (pointer: coarse) {
+  .label {
+    grid-template-columns: 1fr;
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
