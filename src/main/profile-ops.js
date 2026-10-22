@@ -166,7 +166,9 @@ async function alignHarnessAfterProfileChange(startHarness, downError, ownerToke
     // protection funnel cancelled, or a foreign maintenance owner blocked it.
     // A resolved non-proceed is not a successful restart.
     if (outcome && (outcome.proceeded === false || outcome.ok === false)) {
-      return { harnessRestarted: false, error: outcome.error || outcome.code || downError };
+      // `refused`: the restart stopped before tearing anything down (cancelled
+      // confirmation, busy maintenance), so the running Harness is unchanged.
+      return { harnessRestarted: false, refused: outcome.proceeded === false, error: outcome.error || outcome.code || downError };
     }
     return { harnessRestarted: true };
   } catch {
@@ -276,13 +278,20 @@ async function enablePlugin(name, { dsh, startHarness, configIO } = {}) {
   }
 }
 
+/** Config fields that choose which built-in plugin overlays the next Harness start composes. */
+const BUILT_IN_PLUGIN_TOGGLES = ['dshbotEnabled', 'projectEnabled', 'whaleAssistantEnabled', 'remoteWorkspaceEnabled'];
+
 /**
  * Apply a renderer-writable config patch with the same normalization and
  * side effects as shell:save-config: login item, theme apply, Harness
- * restart-policy refresh, and a deferred profile-align restart when a
- * built-in plugin toggle changed. Returns the saved config.
+ * restart-policy refresh, and a profile-align restart when a built-in plugin
+ * toggle changed. A refused restart (cancelled confirmation, busy
+ * maintenance) writes the toggles back, so the config keeps matching what
+ * the running Harness mounts.
+ * Returns the saved config; with `waitForRestart`, a promise of the config
+ * after that restart settles, marked `restartCancelled` when it was refused.
  */
-function applyRendererConfigPatch(patch, { app, applyAppTheme, harness, startHarness, log } = {}) {
+function applyRendererConfigPatch(patch, { app, applyAppTheme, harness, startHarness, log, waitForRestart = false, configIO } = {}) {
   // A config write mutates the destination the import journal protects.
   // Acquire the slot for the synchronous write; when the patch also triggers
   // a deferred align restart, hold ownership until that work settles.
@@ -293,8 +302,12 @@ function applyRendererConfigPatch(patch, { app, applyAppTheme, harness, startHar
   }
   let transferred = false;
   try {
+  const io = configIO || { load: loadConfig, save: saveConfig };
   const safePatch = normalizeRendererConfigPatch(patch || {});
-  const next = saveConfig(safePatch);
+  const toggles = BUILT_IN_PLUGIN_TOGGLES.filter((key) => Object.prototype.hasOwnProperty.call(safePatch, key));
+  const before = toggles.length ? io.load() : {};
+  const previous = Object.fromEntries(toggles.map((key) => [key, before[key]]));
+  const next = io.save(safePatch);
   if (app && typeof app.setLoginItemSettings === 'function') {
     app.setLoginItemSettings({ openAtLogin: Boolean(next.openAtLogin) });
   }
@@ -308,28 +321,27 @@ function applyRendererConfigPatch(patch, { app, applyAppTheme, harness, startHar
   ].some((key) => Object.prototype.hasOwnProperty.call(safePatch, key))) {
     harness.refreshPolicy();
   }
-  if (
-    harness
-    && typeof startHarness === 'function'
-    && (Object.prototype.hasOwnProperty.call(safePatch, 'dshbotEnabled')
-      || Object.prototype.hasOwnProperty.call(safePatch, 'projectEnabled')
-      || Object.prototype.hasOwnProperty.call(safePatch, 'whaleAssistantEnabled')
-      || Object.prototype.hasOwnProperty.call(safePatch, 'remoteWorkspaceEnabled'))
-  ) {
-    // The Bots / Project / whale-assistant / remote-workspace toggles change which overlays the next
-    // start composes: return the saved config first, then restart Harness
-    // off-thread.
-    setImmediate(() => {
-      void holdThrough(token, enqueueProfileAlign(() => alignHarnessAfterProfileChange(startHarness, 'built-in plugin toggle restart failed', token)))
-        .then((result) => {
-          if (result && result.harnessRestarted !== true && typeof log === 'function') {
-            log(`切换内置插件后重启 Harness 失败：${result.error || 'unknown'}`);
-          }
-        })
-        .catch(() => {});
+  if (harness && typeof startHarness === 'function' && toggles.length) {
+    // The Bots / Project / whale-assistant / remote-workspace toggles change
+    // which overlays the next start composes, so Harness restarts. The revert
+    // stays inside the maintenance slot the write acquired.
+    const restart = () => holdThrough(token, enqueueProfileAlign(async () => {
+      const result = await alignHarnessAfterProfileChange(startHarness, 'built-in plugin toggle restart failed', token);
+      if (result.refused) return { ...result, config: io.save(previous) };
+      return result;
+    })).then((result) => {
+      if (result.harnessRestarted !== true && typeof log === 'function') {
+        log(`切换内置插件后重启 Harness 失败：${result.error || 'unknown'}`);
+      }
+      return result.config ? { ...result.config, restartCancelled: true } : next;
     });
-    // Ownership transfers to the deferred align; do not release it here.
+    // Ownership transfers to the align; do not release it here.
     transferred = true;
+    // The Settings window waits, keeping its switch busy through a
+    // confirmation. Other callers (the desktop-control channel, whose own
+    // request is in flight) get the saved config first and restart off-thread.
+    if (waitForRestart) return restart();
+    setImmediate(() => { void restart().catch(() => {}); });
     return next;
   }
   releaseMaintenance(token);

@@ -108,7 +108,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-settings-general/src/client/ProjectRow.module.css', includes: [] },
   { file: 'packages/client/ui-settings-general/src/client/index.ts', includes: ['ProjectRow', 'leaveProjectLead'] },
   { file: 'packages/client/ui-settings-general/src/client/locales.ts', includes: ['project.help'] },
-  { file: 'packages/client/ui-settings-general/src/client/desktop-shell.ts', includes: ['projectEnabled'] },
+  { file: 'packages/client/ui-settings-general/src/client/desktop-shell.ts', includes: ['projectEnabled', 'restartCancelled'] },
   { file: 'packages/client/locale/src/client/LanguageRow.tsx', includes: ['SettingsSelect'] },
   { file: 'packages/client/ui-conversation/src/client/settings/EnterBehaviorRow.tsx', includes: ['SettingsSelect'] },
   { file: 'packages/client/ui-permission-presets/src/client/PermissionRow.tsx', includes: ['SettingsSelect'] },

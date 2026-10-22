@@ -78,8 +78,9 @@ export function ProjectRow({ leaveProjectLead, t }: ProjectRowProps) {
           void (next ? Promise.resolve() : leaveProjectLead()).then(() => saveConfig({ projectEnabled: next })).then(saved => {
             if (saved.projectEnabled !== next) {
               setEnabled(typeof saved.projectEnabled === 'boolean' ? saved.projectEnabled : previous)
-              setError(t('feedback.notSaved'))
-              setNotice({ id: ++noticeId.current, text: t('feedback.notSaved') })
+              const text = t(saved.restartCancelled === true ? 'feedback.restartCancelled' : 'feedback.notSaved')
+              setError(text)
+              setNotice({ id: ++noticeId.current, text })
               return
             }
             setError('')

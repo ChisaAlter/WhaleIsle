@@ -133,14 +133,15 @@ function registerIpc({
     // The desktop-control channel (dsh-whale tools) mutates config through
     // the same profile-ops implementation so both surfaces share the one
     // serialized align chain.
-    const next = applyRendererConfigPatch(patch, {
+    const next = await applyRendererConfigPatch(patch, {
       app,
       applyAppTheme,
       harness,
       startHarness,
       log: (line) => dsh.log(line, 'app'),
+      waitForRestart: true,
     });
-    return configPayload(next);
+    return next.restartCancelled ? { ...configPayload(next), restartCancelled: true } : configPayload(next);
   });
 
   handle('shell:open-external', CONFIG_SURFACES, async (_event, url) => {

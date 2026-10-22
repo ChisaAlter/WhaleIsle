@@ -93,6 +93,19 @@ describe('ProjectRow', () => {
     expect(saveConfig).not.toHaveBeenCalled()
   })
 
+  it('tells the user when the restart was cancelled and the setting stayed', async () => {
+    ;(window as Window & { shell?: unknown }).shell = {
+      getConfig: async () => ({ projectEnabled: false }),
+      saveConfig: async () => ({ projectEnabled: false, restartCancelled: true }),
+    }
+    mount(zh)
+    const toggle = screen.getByRole('switch', { name: 'Project' })
+    await waitFor(() => { expect(toggle).toHaveProperty('disabled', false) })
+    fireEvent.click(toggle)
+    expect((await screen.findByRole('alert')).textContent).toBe('已取消重启，设置未更改。')
+    expect(screen.getByRole('switch', { name: 'Project' }).getAttribute('aria-checked')).toBe('false')
+  })
+
   it('reverts the switch when the write is refused', async () => {
     const pending = Promise.withResolvers<object>()
     ;(window as Window & { shell?: unknown }).shell = { getConfig: async () => ({ projectEnabled: false }), saveConfig: vi.fn(() => pending.promise) }

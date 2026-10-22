@@ -135,6 +135,12 @@ export type DesktopConfig = {
    */
   projectEnabled?: boolean
   /**
+   * Set on a save answer when a built-in plugin toggle's Harness restart was
+   * refused (cancelled confirmation, busy maintenance) and the toggle was
+   * written back.
+   */
+  restartCancelled?: boolean
+  /**
    * Whether the desktop mounts the built-in dsh-whale assistant plugin;
    * the shell restarts Harness after this field changes.
    */
