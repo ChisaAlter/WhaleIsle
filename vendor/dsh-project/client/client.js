@@ -6,7 +6,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   const { teamEnglish, teamChinese } = require('@deepseek-ai/dsh-experimental-client-ui-agent-team');
   const NS = 'dsh-project';
   const zh = {
-    diffTruncated: '差异过长，仅显示前一部分；请打开目录查看完整改动。', tab: 'Project', more: '更多', rename: '重命名', cancel: '取消', archiveActive: '停止后台工作并归档', archiveHint: '后台工作会停止，工作目录、对话和成果将保留。', team: '团队', add: '添加 Project…', loading: '正在读取…', close: '关闭', refresh: '刷新',
+    diffTruncated: '差异过长，仅显示前一部分；请打开目录查看完整改动。', tab: 'Project', more: '更多', rename: '重命名', cancel: '取消', archiveActive: '停止后台工作并归档', archiveHint: '后台工作会停止，工作目录、对话和成果将保留。', team: '团队', add: '添加 Project…', rowCreate: '在此目录新建 Project', rowOpen: '打开 Project', heroHint: '以当前目录开启 Project，已输入的内容会一起带过去', heroOpenHint: '打开此目录的 Project，已输入的内容会一起带过去', loading: '正在读取…', close: '关闭', refresh: '刷新',
     requirements: '需求', requirementGoal: '完整目标', requirementConstraints: '约束', requirementConditions: '完成条件', noRequirementConstraints: '未记录约束。', noRequirementConditions: '未记录完成条件。',
     requestRoleDevelopment: '开发', requestRoleReview: '检查', requestRoleDocs: '文档', requestHandover: '等待协调者交付', requestArranging: '正在安排', requestArrangingHint: '协调者正在安排团队开发。', deleted: '已移除', requestDiscussing: '讨论中', requestQueued: '等待开发', requestCancelled: '已取消', requestQueuePosition: '队列第 {position} 项', requestQueueCount: '{count} 项排队', requestEnqueue: '加入开发队列', requestMoveUp: '上移一位', requestMoveDown: '下移一位', requestCancel: '取消需求', requestRejoin: '重新加入队列', requestResume: '继续当前需求', requestResumeQueue: '继续队列', requestRestarted: '应用已重启，等待你继续当前需求', requestQueuePaused: '队列已暂停', requestQueueWaiting: '前一项需求交付后自动开始', requestQueueReady: '等待协调者安排开发', requestDiscussingHint: '需求仍在讨论，确认后加入开发队列。', requestCancelledHint: '已从开发队列取消，要求和已有成果仍保留。', taskCancelled: '已取消需求', taskCancelledEmpty: '还没有取消的需求。',
     archivedHint: '项目已归档。恢复后可继续对话，旧工作不会自动启动。', archiving: '正在停止后台工作并归档…', queued: '排队中', archived: '已归档',
@@ -45,7 +45,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   const en = {
     requirements: 'Requests', requirementGoal: 'Full goal', requirementConstraints: 'Constraints', requirementConditions: 'Completion conditions', noRequirementConstraints: 'No constraints recorded.', noRequirementConditions: 'No completion conditions recorded.',
     requestRoleDevelopment: 'Development', requestRoleReview: 'Review', requestRoleDocs: 'Documentation', requestHandover: 'Awaiting coordinator delivery', requestArranging: 'Arranging work', requestArrangingHint: 'The coordinator is arranging development with the team.', deleted: 'Removed', requestDiscussing: 'Discussing', requestQueued: 'Awaiting development', requestCancelled: 'Cancelled', requestQueuePosition: 'Queue position {position}', requestQueueCount: '{count} queued', requestEnqueue: 'Add to development queue', requestMoveUp: 'Move up', requestMoveDown: 'Move down', requestCancel: 'Cancel request', requestRejoin: 'Rejoin queue', requestResume: 'Continue current request', requestResumeQueue: 'Continue queue', requestRestarted: 'Application restarted; waiting for explicit continuation.', requestQueuePaused: 'Queue paused', requestQueueWaiting: 'Starts automatically after the previous request is delivered', requestQueueReady: 'Waiting for the coordinator to arrange development', requestDiscussingHint: 'This request is being discussed. Add it to the development queue when ready.', requestCancelledHint: 'Removed from the development queue. Requirements and existing results are retained.', taskCancelled: 'Cancelled requests', taskCancelledEmpty: 'No cancelled requests yet.',
-    diffTruncated: 'The diff is truncated. Open the directory for the complete changes.', tab: 'Project', more: 'More', rename: 'Rename', cancel: 'Cancel', archiveActive: 'Stop work and archive', archiveHint: 'Background work will stop. Files, conversation and results are retained.', team: 'Team', add: 'Add Project…', loading: 'Loading…', close: 'Close', refresh: 'Refresh',
+    diffTruncated: 'The diff is truncated. Open the directory for the complete changes.', tab: 'Project', more: 'More', rename: 'Rename', cancel: 'Cancel', archiveActive: 'Stop work and archive', archiveHint: 'Background work will stop. Files, conversation and results are retained.', team: 'Team', add: 'Add Project…', rowCreate: 'New Project here', rowOpen: 'Open Project', heroHint: 'Start a Project in this directory; your draft comes along', heroOpenHint: 'Open this directory’s Project; your draft comes along', loading: 'Loading…', close: 'Close', refresh: 'Refresh',
     archivedHint: 'This Project is archived. Restore it to continue; previous work will not restart automatically.', archiving: 'Stopping work and archiving…', queued: 'Queued', archived: 'Archived',
     directory: 'Project working directory', openDirectory: 'Open project directory', materials: 'Project materials', progress: 'Work progress',
     noWork: 'Describe what you need here, and continue the same work later.', process: 'Member history', viewProcess: 'View history', viewResult: 'View results', workDetails: 'Details', executionInfo: 'Execution details', earlierWork: 'Earlier work',
@@ -375,6 +375,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   const requestLabel = (t, request) => request ? `${request.title} · ${t('requestVersion')} ${request.revision}` : '';
   const isLive = worker => Boolean(worker.activeRunId || worker.jobs?.length || worker.phase === 'stopping');
   const fileName = path => path.split(/[\\/]/).at(-1);
+  const comparablePath = path => path.replaceAll('\\', '/').replace(/\/$/, '');
   const directoryParts = project => project.canonicalWorkingDirectory.replaceAll('\\', '/').replace(/\/$/, '').split('/').filter(Boolean);
   function Artifact({ file, open, busy, t }) {
     const [menu, setMenu] = useState(false), [locationOpen, setLocationOpen] = useState(false);
@@ -414,6 +415,20 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   function ProjectRowBadge({ sessionId, useProjects, t }) {
     const project = useProjects(value => value.projects.some(item => item.coordinatorSessionId === sessionId));
     return project ? h('span', { className: 'dsh-project-row-badge' }, t('tab')) : null;
+  }
+
+  // New Session option: start (or reopen) the selected directory's Project and carry the draft into its Lead.
+  function ProjectHeroOption({ sessionId, openWithDraft, startProject, useProjects, useProjectSessions, useWorkspaceList, t }) {
+    const available = useProjects(value => value.available), cwd = useProjectSessions(value => value.byId[sessionId]?.cwd);
+    const scratch = useWorkspaceList(value => value.scratchCwd);
+    const existing = useProjects(value => Boolean(cwd) && value.projects.some(project => project.lifecycle !== 'archived' && comparablePath(project.canonicalWorkingDirectory) === comparablePath(cwd)));
+    const [busy, setBusy] = useState(false), [error, setError] = useState('');
+    if (!available || !cwd || cwd === scratch) return null;
+    const start = async () => { setBusy(true); setError(''); try { await startProject(cwd, openWithDraft); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
+    return h(Fragment, null,
+      h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-hero-option', title: t(existing ? 'heroOpenHint' : 'heroHint'), 'aria-busy': busy || undefined, disabled: busy, onClick: () => { void start(); } },
+        h(IconChecklistOutlineRegular, { size: 16 }), t('tab')),
+      error ? h(Toast, { text: error, holdMs: 6000, onDone: () => setError('') }) : null);
   }
 
   // One header trigger with an anchored panel, matching the native Team action:
@@ -1649,10 +1664,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       const registerAction = () => {
         disposeAction?.(); disposeAction = undefined;
         if (!snapshot.getSnapshot().available) return;
-        disposeAction = ctx.uiWorkspace.registerDirectoryAction({ id: NS, label: t('add'), order: 20, adopt: async path => {
-          const result = await rpc('create', { workingDirectory: path, requestId: requestId() });
-          acceptDetail({ project: result.project }); await openProject(result.project.id);
-        } });
+        disposeAction = ctx.uiWorkspace.registerDirectoryAction({ id: NS, label: t('add'), order: 20, adopt: path => startProject(path),
+          rowLabel: path => t(projectAt(path) ? 'rowOpen' : 'rowCreate') });
       };
       const refresh = () => {
         if (refreshing) return refreshing;
@@ -1670,13 +1683,18 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         })();
         return refreshing;
       };
-      const openProject = async projectId => {
+      // Callers surface failures: the directory picker, a directory row or the New Session option.
+      const openProject = async (projectId, open = sessionId => ctx.uiWorkspace.openSession(sessionId)) => {
         const navigation = ++navigationGeneration;
-        try {
-          const detail = await readDetail(projectId);
-          if (!alive || navigation !== navigationGeneration) return;
-          viewInstance.actions.selectProject(projectId); ctx.uiSidebar.selectTab('sessions'); ctx.uiWorkspace.openSession(detail.project.coordinatorSessionId);
-        } catch (failure) { if (alive && navigation === navigationGeneration) snapshot.set({ ...snapshot.getSnapshot(), error: errorText(failure) }); }
+        const detail = await readDetail(projectId);
+        if (!alive || navigation !== navigationGeneration) return;
+        viewInstance.actions.selectProject(projectId); ctx.uiSidebar.selectTab('sessions'); open(detail.project.coordinatorSessionId);
+      };
+      const projectAt = path => snapshot.getSnapshot().projects.some(project => project.lifecycle !== 'archived' && comparablePath(project.canonicalWorkingDirectory) === comparablePath(path));
+      // Creating an existing directory's Project resumes its original Lead.
+      const startProject = async (path, open) => {
+        const result = await rpc('create', { workingDirectory: path, requestId: requestId() });
+        acceptDetail({ project: result.project }); await openProject(result.project.id, open);
       };
       const show = (kind, projectId, workstreamId, context = {}) => { viewInstance.actions.setModal({ kind, projectId, workstreamId, ...context }); };
       const openLifecycle = async (projectId, action) => {
@@ -1715,7 +1733,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         const before = requestModes.getSnapshot();
         requestModes.set({ ...before, [sessionId]: { requests: { ...before[sessionId]?.requests, [id]: { mode, completed } } } });
       };
-      const face = () => ({ hooks: { projects: snapshot, projectSessions: ctx.sessions.list, projectSessionStatus: ctx.uiSession.sessionStatus, projectView: viewInstance, requestModes, dismissals }, read, command, refresh, openProject, openLifecycle, readDetail, sendUserRequest, getFileReturn: () => fileReturn, teamT: ctx.locale.bind('project-team'),
+      const face = () => ({ startProject, hooks: { projects: snapshot, projectSessions: ctx.sessions.list, workspaceList: ctx.workspaces.list, projectSessionStatus: ctx.uiSession.sessionStatus, projectView: viewInstance, requestModes, dismissals }, read, command, refresh, openProject, openLifecycle, readDetail, sendUserRequest, getFileReturn: () => fileReturn, teamT: ctx.locale.bind('project-team'),
         setRequestMode,
         trackActiveProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; }; },
         openModelSettings: () => ctx.settingsNavigation.open('models'),
@@ -1724,6 +1742,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         trackProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; }; },
         retainProcess: (project, work) => ctx.sessions.retain({ parentSessionId: project.coordinatorSessionId, childSessionId: work.workerSessionId, mode: 'continuable' }, { source: 'projectPreview' }),
       });
+      ctx.slots.inject('conversation.hero.options', () => ctx.slots.register({ name: 'conversation.hero.options', id: NS, locale: NS, inject: face }, ProjectHeroOption));
       ctx.slots.inject('sidebar.session.row.badge', () => ctx.slots.register({ name: 'sidebar.session.row.badge', id: NS, locale: NS, inject: face }, ProjectRowBadge));
       ctx.slots.inject('conversation.composer', () => {
         const mounted = new Map();

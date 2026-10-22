@@ -1048,8 +1048,13 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
         doc: 'Display text where the owner projects one (nav rows, tabs). A thunk is re-read on every projection, so localized text follows the active locale without re-registering.',
       },
     ],
-    ownerProps: [],
-    ownerPropsReferences: [],
+    ownerProps: [
+      '/** Owner share common to blank-session Workspace pickers. */\n/** Owner share of the New Session row\'s compact options. */\nexport interface HeroOptionsOwnerProps {\n  /** Open another Session in place of this blank one, carrying its typed draft and staged images. */\n  openWithDraft: (sessionId: SessionId) => void\n}',
+    ],
+    ownerPropsReferences: [
+      'SessionId',
+      'Workspace',
+    ],
     standardProps: [
       'useRemoteAccess: (action: RemoteEndpoint) => boolean',
       'useResource: UseResource',
@@ -1087,7 +1092,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: 'Workspace picker shown by the blank-session Hero.',
     registerOptions: [],
     ownerProps: [
-      '/** Owner share common to blank-session Workspace pickers. */\nexport interface EmptyWorkspaceOwnerProps {\n  open: boolean\n  anchorRef?: RefObject<HTMLElement>\n  /** Currently selected Workspace, when available. */\n  selectedId?: WorkspaceId | undefined\n  /** True when the current or pending target is a no-directory Session. */\n  noDirectorySelected?: boolean | undefined\n  onPick: (workspaceId: WorkspaceId) => void\n  /** Adopt a Session that is not a Workspace member (Host scratch cwd). */\n  onPickNoDirectory: () => void\n  onClose: () => void\n}',
+      'export interface EmptyWorkspaceOwnerProps {\n  open: boolean\n  anchorRef?: RefObject<HTMLElement>\n  /** Currently selected Workspace, when available. */\n  selectedId?: WorkspaceId | undefined\n  /** True when the current or pending target is a no-directory Session. */\n  noDirectorySelected?: boolean | undefined\n  onPick: (workspaceId: WorkspaceId) => void\n  /** Adopt a Session that is not a Workspace member (Host scratch cwd). */\n  onPickNoDirectory: () => void\n  onClose: () => void\n}',
     ],
     ownerPropsReferences: [
       'Workspace',

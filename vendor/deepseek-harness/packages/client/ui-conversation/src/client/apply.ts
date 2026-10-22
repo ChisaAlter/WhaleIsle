@@ -142,7 +142,7 @@ function hostPathBridge(): HostPathBridge | undefined {
 }
 
 interface WorkspaceNavigation {
-  openSession(sessionId: SessionId): void
+  openSession(sessionId: SessionId, beforeOpen?: (sessionId: SessionId) => void): void
   openWorkspace(
     workspaceId: Parameters<ConversationInjected['selectWorkspace']>[0],
     beforeOpen: (sessionId: SessionId) => void,
@@ -546,6 +546,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
           (nextId) => { openCarryingDraft(nextId) },
         ),
         selectNoDirectory: () => workspaceNavigation.openNoDirectory(openCarryingDraft),
+        openWithDraft: (nextId) => { workspaceNavigation.openSession(nextId, openCarryingDraft) },
       }
     },
   }, ConversationContent)

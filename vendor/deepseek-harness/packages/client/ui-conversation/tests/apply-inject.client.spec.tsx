@@ -86,7 +86,7 @@ async function bench() {
     opened(id)
     transferOrder.push('opened')
   }
-  const openSession = vi.fn((id: SessionId) => { replaceMain(id) })
+  const openSession = vi.fn((id: SessionId, beforeOpen?: (id: SessionId) => void) => { replaceMain(id, beforeOpen) })
   const openNoDirectory = vi.fn(async (beforeOpen?: (id: SessionId) => void) => {
     const id = await connectNoDirectory()
     replaceMain(id, beforeOpen)
@@ -598,6 +598,23 @@ describe('Conversation inject API', () => {
     b.connectNoDirectory.mockRejectedValueOnce(new Error('offline'))
     await expect(b.residentApi(undefined).selectNoDirectory()).rejects.toThrow('offline')
     expect(b.opened.mock.calls).toHaveLength(opens)
+  })
+
+  it('opens an existing Session from the Hero carrying the typed draft', async () => {
+    const b = await bench()
+    const { state, actions } = b.inputApi(ROOT)
+    actions.setDraft('project draft')
+    const lead = 'lead-1' as SessionId
+    await b.runtime.sessions.add({ id: lead })
+    b.residentApi(ROOT).openWithDraft(lead)
+    expect(b.opened).toHaveBeenCalledWith(lead)
+    expect(b.transferOrder.slice(-5)).toEqual([
+      'target-retained', 'target-bound', 'draft-transferred', 'old-released',
+      'opened',
+    ])
+    expect(state.getSnapshot().draft).toBe('')
+    expect(b.inputApi(lead).state.getSnapshot().draft).toBe('project draft')
+    await b.runtime.dispose()
   })
 
   it('carries structured references through Workspace selection without flattening them', async () => {

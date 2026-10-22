@@ -274,7 +274,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** Agent-preset control staged for a New Session. */
     'conversation.hero.agentPreset': { kind: 'single'; scope: 'session-maybe'; owner: HeroAgentPresetOwnerProps }
     /** Compact options right-aligned in the New Session row after the workspace and preset controls; rendered only with a Session. */
-    'conversation.hero.options': { kind: 'list'; scope: 'session' }
+    'conversation.hero.options': { kind: 'list'; scope: 'session'; owner: HeroOptionsOwnerProps }
     /** Full-width entries above the composer card. */
     'conversation.input.dock': { kind: 'list'; scope: 'session'; owner: InputZone }
     /** Floating entries rendered inside the resident composer card. */
@@ -422,6 +422,8 @@ export interface ConversationInjected {
   selectWorkspace: (workspaceId: WorkspaceId) => Promise<void>
   /** Connect and open a blank Session that belongs to no Workspace (Host scratch cwd). */
   selectNoDirectory: () => Promise<void>
+  /** Open an existing Session, carrying the Hero's typed draft and staged images into it. */
+  openWithDraft: (sessionId: SessionId) => void
   /** Session-addressed composer block source, or the stable absent source. */
   hooks: { composerBlock: ObservableSnapshot<ComposerBlock | undefined> }
 }
@@ -642,6 +644,12 @@ export type ComposerAttachmentsProps =
   PropsRuntime<'conversation.input.attachments'> & PropsLocale<'conversation'>
 
 /** Owner share common to blank-session Workspace pickers. */
+/** Owner share of the New Session row's compact options. */
+export interface HeroOptionsOwnerProps {
+  /** Open another Session in place of this blank one, carrying its typed draft and staged images. */
+  openWithDraft: (sessionId: SessionId) => void
+}
+
 export interface EmptyWorkspaceOwnerProps {
   open: boolean
   anchorRef?: RefObject<HTMLElement>

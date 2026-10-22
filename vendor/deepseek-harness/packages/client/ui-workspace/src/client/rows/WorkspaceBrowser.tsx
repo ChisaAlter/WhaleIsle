@@ -14,7 +14,7 @@
  * are slot entries with their own behavior, so this component threads no
  * action callbacks and hosts no action surface.
  */
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   Button, HoverCardGroup, IconArchiveCheckOutlineRegular, IconArchiveOffOutlineRegular, IconArchiveOutlineRegular,
@@ -361,6 +361,8 @@ type SessionTreeProps = Pick<
   onRenameRequest: (workspaceId: WorkspaceId, currentTitle: string) => void
   /** Open the browser-owned delete-confirmation dialog for a real Workspace group. */
   onDeleteRequest: (workspaceId: WorkspaceId, currentTitle: string) => void
+  /** Composed directory actions offered on a Workspace row for its directory. */
+  directoryItems: (path: string) => readonly { id: string; label: string; run: () => void }[]
   /** Open the rename dialog from a row title double-click. */
   onSessionRenameRequest: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** Open the delete confirmation for an archived Session. */
@@ -392,7 +394,7 @@ function SessionTree({
   list, useSessionStatus, startSession, connectNoDirectory, open, workspaces, scratchCwd, ungroupedSessionIds,
   rowState, archivedNodes, showArchivedSection, archivedExpanded, onToggleArchived, onSessionUnarchive, onLeaveArchivedOnly,
   workspaceReady, animationResetKey, usePanelInfo,
-  onRenameRequest, onDeleteRequest, onSessionRenameRequest, onSessionDeleteRequest,
+  onRenameRequest, onDeleteRequest, directoryItems, onSessionRenameRequest, onSessionDeleteRequest,
   renderSlot, selection,
   insertWorkspaceBefore,
   nestWorkspaces, groupExpansion, setGroupExpanded,
@@ -661,6 +663,7 @@ function SessionTree({
             }
           }}
           drag={workspaceDragProps}
+          directoryItems={workspaceId === undefined || group.cwd === undefined ? undefined : directoryItems(group.cwd)}
           actions={workspaceId === undefined
             ? undefined
             : {
@@ -1076,6 +1079,7 @@ export function WorkspaceBrowser({
   useSessionStatus,
   useWorkspaces,
   useSessionNavigation,
+  useDirectoryActions,
   useStore,
   actions,
   startSession,
@@ -1113,6 +1117,17 @@ export function WorkspaceBrowser({
   // Ordering remains live while the rail or search replaces the list body.
   const sessionList = useSessions(state => state)
   const sessionNavigation = useSessionNavigation(entries => entries)
+  const directoryActions = useDirectoryActions(actions => actions)
+  const [directoryActionError, setDirectoryActionError] = useState<string | null>(null)
+  const directoryItems = useCallback((path: string) => directoryActions.flatMap((action) => {
+    const label = action.rowLabel?.(path)
+    return label === undefined ? [] : [{ id: action.id, label, run: () => {
+      setDirectoryActionError(null)
+      void action.adopt(path).catch((reason: unknown) => {
+        setDirectoryActionError(reason instanceof Error ? reason.message : String(reason))
+      })
+    } }]
+  }), [directoryActions])
   const storedWorkspaces = useWorkspaces(state => state.items)
   // The resolved name, not `t`, is the memo dependency: the bound seat keeps
   // its identity across a language switch.
@@ -1775,6 +1790,7 @@ export function WorkspaceBrowser({
                 onSessionRevealed={acknowledgeSessionReveal}
                 home={home}
                 t={t}
+                directoryItems={directoryItems}
                 onRenameRequest={(workspaceId, displayTitle) => {
                   setRenameTarget({
                     workspaceId,
@@ -1874,6 +1890,7 @@ export function WorkspaceBrowser({
         {sessionDeleteError !== null && <Toast text={sessionDeleteError} holdMs={null} dismissLabel={t('close')} onDone={() => { setSessionDeleteError(null) }} />}
       </Modal>
       <SessionSelectionDialogs selection={selection} />
+      {directoryActionError !== null && <Toast text={directoryActionError} holdMs={null} dismissLabel={t('close')} onDone={() => { setDirectoryActionError(null) }} />}
     </div>
   )
 }

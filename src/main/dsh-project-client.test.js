@@ -113,7 +113,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
     locale: { bind: scope => key => language ? locales.get(scope)?.[language]?.[key] ?? key : key,
       register: (scope, translations) => { locales.set(scope, translations); return () => locales.delete(scope); }, subscribe: () => () => {} },
     slots: { inject: (_key, install) => install(), register: (options, component) => { const entry = { options, component, active: true }; entries.push(entry); return () => { entry.active = false; }; } },
-    workspaces: { create: async input => { requests.push({ method: 'workspace/create', input }); return { path: project.canonicalWorkingDirectory, workspaceId: project.workspaceId }; }, openPath: async (path, options) => { if (previewOverride) await previewOverride(path, options); opened.push({ path, options }); } },
+    workspaces: { list: projection({ scratchCwd: 'C:/scratch' }), create: async input => { requests.push({ method: 'workspace/create', input }); return { path: project.canonicalWorkingDirectory, workspaceId: project.workspaceId }; }, openPath: async (path, options) => { if (previewOverride) await previewOverride(path, options); opened.push({ path, options }); } },
     uiWorkspace: { registerDirectoryAction: action => { directoryAction = action; return () => { directoryAction = undefined; }; }, registerSessionActions: (owner, actions) => { assert.equal(sessionActions.has(owner), false); sessionActions.set(owner, actions); return () => sessionActions.delete(owner); }, registerSessionNavigation: (owner, source) => { assert.equal(sessionNavigation.has(owner), false); sessionNavigation.set(owner, source); return () => sessionNavigation.delete(owner); }, openSession: id => navigation.push(['session', id]) },
     uiSidebar: { selectTab: id => navigation.push(['tab', id]) },
     uiSession: { sessionStatus },
@@ -179,7 +179,8 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
     const matched = entry.options.select?.({ sessionId });
     if (entry.options.select && matched === null) return null;
     return h(entry.component, { ...injected, useProjects: selectHook(injected.hooks.projects), useProjectSessions: selectHook(injected.hooks.projectSessions),
-      useProjectSessionStatus: selectHook(injected.hooks.projectSessionStatus), useRequestModes: selectHook(injected.hooks.requestModes), useDismissals: selectHook(injected.hooks.dismissals), useProjectView: selectHook(injected.hooks.projectView),
+      useProjectSessionStatus: selectHook(injected.hooks.projectSessionStatus), useWorkspaceList: selectHook(injected.hooks.workspaceList),
+      openWithDraft: sessionId => navigation.push(['draft', sessionId]), useRequestModes: selectHook(injected.hooks.requestModes), useDismissals: selectHook(injected.hooks.dismissals), useProjectView: selectHook(injected.hooks.projectView),
       renderFactorySlot: (name, props, options) => { factoryCalls.push({ name, props, options }); return factoryRenderer ? factoryRenderer(name, props, options) : options?.fallback ?? null; },
       ...(store ? { useStore: selectHook(store), actions: store.actions } : {}),
       matched, sessionId, wide: true, t: ctx.locale.bind(entry.options.locale ?? 'dsh-project') });
@@ -288,6 +289,49 @@ test('the actual directory action is gated by availability, makes nothing before
     await b.mountSession('ordinary-session'); assert.equal(b.document.querySelector('.dsh-project-row-badge'), null, 'Only Project Leads carry the Project tag');
     assert.equal(b.entries.some(entry => ['sidebar.nav.tab', 'sidebar.page'].includes(entry.options.name)), false);
     assert.equal(b.requests.some(request => request.method === 'session/create'), false);
+  } finally { await b.dispose(); }
+});
+
+test('a listed directory row offers New Project, then Open Project for the same directory', async () => {
+  const b = bench();
+  try {
+    await b.flush();
+    assert.equal(b.action.rowLabel('C:/workspace/real'), 'rowCreate');
+    await b.action.adopt('C:/workspace/real'); await b.flush();
+    assert.deepEqual(b.navigation.at(-1), ['session', 'coordinator-existing']);
+    assert.equal(b.action.rowLabel('C:/workspace/real'), 'rowOpen');
+    assert.equal(b.action.rowLabel('C:\\workspace\\real\\'), 'rowOpen', 'Separators and a trailing slash do not hide the existing Project');
+    assert.equal(b.action.rowLabel('C:/workspace/other'), 'rowCreate');
+  } finally { await b.dispose(); }
+});
+
+test('the New Session option starts the directory Project and carries the draft into its Lead', async () => {
+  const blank = 'blank-session', scratch = 'scratch-session';
+  const b = bench({ runtimeSessions: { [blank]: { id: blank, blank: true, cwd: 'C:/workspace/real' }, [scratch]: { id: scratch, blank: true, cwd: 'C:/scratch' } } });
+  try {
+    await b.flush(); await b.mount();
+    await b.mountSession(scratch); assert.equal(b.document.querySelector('.dsh-project-hero-option'), null, 'A no-directory Session cannot become a Project');
+    await b.mountSession(blank);
+    const option = b.document.querySelector('.dsh-project-hero-option');
+    assert.ok(option && isVisible(option)); assert.equal(option.textContent, 'tab'); assert.equal(option.title, 'heroHint');
+    await act(async () => { option.click(); await new Promise(resolve => setImmediate(resolve)); }); await b.flush();
+    const creation = b.requests.find(request => request.method === 'create'); assert.equal(creation.input.workingDirectory, 'C:/workspace/real');
+    assert.deepEqual(b.navigation.slice(-2), [['tab', 'sessions'], ['draft', 'coordinator-existing']], 'The Lead opens through the draft-carrying navigation');
+    assert.equal(b.navigation.some(([kind]) => kind === 'session'), false);
+    assert.equal(b.requests.some(request => ['delegate', 'prompt', 'message'].includes(request.method)), false, 'Starting sends nothing on the user\'s behalf');
+    assert.equal(b.document.querySelector('.dsh-project-hero-option').title, 'heroOpenHint');
+  } finally { await b.dispose(); }
+});
+
+test('a failed New Session Project start stays on the blank Session with a visible reason', async () => {
+  const blank = 'blank-session';
+  const b = bench({ rejectCreation: true, runtimeSessions: { [blank]: { id: blank, blank: true, cwd: 'C:/workspace/real' } } });
+  try {
+    await b.flush(); await b.mount(); await b.mountSession(blank);
+    await act(async () => { b.document.querySelector('.dsh-project-hero-option').click(); await new Promise(resolve => setImmediate(resolve)); }); await b.flush();
+    assert.match(b.document.body.textContent, /Creation failed/);
+    assert.deepEqual(b.navigation, []);
+    assert.equal(b.document.querySelector('.dsh-project-hero-option').disabled, false);
   } finally { await b.dispose(); }
 });
 

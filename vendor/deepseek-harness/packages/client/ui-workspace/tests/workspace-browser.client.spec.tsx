@@ -128,6 +128,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     usePanelInfo, useResource,
     useWorkspaces: hook(workspaceState([])),
     useSessionNavigation: hook([]),
+    useDirectoryActions: hook([]),
     ...allowAllAccess,
     useStore: bindSnapshotSelector(store),
     actions: store.actions,
@@ -2399,6 +2400,24 @@ describe('WorkspaceBrowser', () => {
     expect(outsideDrop.defaultPrevented).toBe(true)
     fireEvent.dragEnd(one)
     expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['two', 'one'])
+  })
+
+  it('offers labelled directory actions on a Workspace row and shows an adoption failure', async () => {
+    const adopt = vi.fn(async (_path: string) => { throw new Error('Project unavailable') })
+    const rowLabel = vi.fn((path: string) => path === workspace('alpha', []).path ? 'New Project here' : undefined)
+    mount({
+      useWorkspaces: hook(workspaceState([workspace('alpha', []), workspace('beta', [])])),
+      useDirectoryActions: hook([{ id: 'project', label: 'Add Project…', adopt, rowLabel },
+        { id: 'picker-only', label: 'Picker only', adopt: vi.fn(async () => {}) }]),
+    })
+    fireEvent.click(screen.getByRole('button', { name: '工作区“beta”的操作' }))
+    expect(screen.queryByRole('menuitem', { name: 'New Project here' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Picker only' })).toBeNull()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: '工作区“alpha”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'New Project here' }))
+    expect(adopt).toHaveBeenCalledWith(workspace('alpha', []).path)
+    expect(await screen.findByText('Project unavailable')).toBeTruthy()
   })
 
   it('labels an unrenamed default Workspace in the reader’s language and every other title verbatim', () => {

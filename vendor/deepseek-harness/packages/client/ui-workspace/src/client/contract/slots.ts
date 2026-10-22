@@ -240,6 +240,8 @@ export type WorkspaceBrowserInjected = {
     workspaceShortcuts: HostObservable<WorkspaceShortcutState>
     shortcuts: HostObservable<readonly ShortcutCatalogEntry[]>
     sessionNavigation: HostObservable<readonly import('../navigation.ts').OwnedSessionNavigation[]>
+    /** Composed directory actions; those with a row label join the directory row menu. */
+    directoryActions: HostObservable<readonly WorkspaceDirectoryAction[]>
   }
   /** Open the browser search and focus its input. */
   requestSearch: () => void

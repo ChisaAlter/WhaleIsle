@@ -12,7 +12,13 @@ The right-side Request observer and ordinary-profile startup repair are included
 
 ## User behavior
 
-A Project's Lead conversation appears among the ordinary conversations of its directory in the sidebar, with a Project tag after its title; there is no separate Project category. Projects are created from **Add Project…** in the new-conversation directory menu. Selecting the row opens its unique continuing Lead conversation bound to the authoritative local directory. Creation performs no model run, delegation, Git initialization or branch creation. Non-Git directories are supported. The ordinary conversation controls select the model and permissions; Project has no separate model setup or workbench. The conversation header distinguishes the real directory action from the Project overview action.
+A Project's Lead conversation appears among the ordinary conversations of its directory in the sidebar, with a Project tag after its title; there is no separate Project category. A Project starts from three places, all of which reopen an existing Project for the same directory instead of creating a second one:
+
+- **Project** on the New Session row, beside the directory and mode controls, uses the selected directory and carries the typed draft and staged images into the Lead without sending them. A no-directory Session does not offer it.
+- A Workspace row's menu offers **New Project here**, or **Open Project** when that directory already has one. A failure is shown as a notice in the sidebar.
+- **Add Project…** in the New Session directory menu picks any directory.
+
+Selecting the row opens its unique continuing Lead conversation bound to the authoritative local directory. Creation performs no model run, delegation, Git initialization or branch creation. Non-Git directories are supported. The ordinary conversation controls select the model and permissions; Project has no separate model setup or workbench. The conversation header distinguishes the real directory action from the Project overview action.
 
 A Project-owned Lead is listed once under its directory; it is not duplicated as a second ordinary conversation, and listing it does not register the directory as a Workspace. Registered directories retain their ordinary membership and actions. An archived Project's Lead moves to the ordinary Archived group with its tag. Project entries use their own rename, archive and restore actions while retaining the original Lead identity and execution cwd.
 

@@ -211,7 +211,7 @@ const FORK_FILE_MARKERS = [
   // The no-directory pick may be made while the Workspace list still shows its
   // loading status: connectScratchCwd waits for the baseline instead of
   // rejecting, so the chip does not silently fall back.
-  { file: 'packages/client/ui-workspace/src/client/navigation.ts', includes: ['connectNoDirectory', 'connectScratchCwd', 'deleteWorkspace', 'scratchCwd', 'registerDirectoryAction'] },
+  { file: 'packages/client/ui-workspace/src/client/navigation.ts', includes: ['connectNoDirectory', 'connectScratchCwd', 'deleteWorkspace', 'scratchCwd', 'registerDirectoryAction', 'rowLabel'] },
   { file: 'packages/client/ui-workspace/src/client/tree.ts', includes: ['isNoDirectorySession', 'currentGroupKey'] },
   { file: 'packages/client/ui-workspace/src/client/WorkspacePicker.tsx', includes: ['NO_DIRECTORY', 'onPickNoDirectory'] },
   // Archive visibility is separate from row count: an enabled empty manager
@@ -221,7 +221,10 @@ const FORK_FILE_MARKERS = [
   // Project Leads list among ordinary conversations; the row's title badge
   // seat carries their Project tag in every row state.
   { file: 'packages/client/ui-workspace/src/client/contract/slots.ts', includes: ["'sidebar.session.row.badge'"] },
-  { file: 'packages/client/ui-workspace/src/client/rows/Rows.tsx', includes: ["renderSlot('sidebar.session.row.badge'"] },
+  { file: 'packages/client/ui-workspace/src/client/rows/Rows.tsx', includes: ["renderSlot('sidebar.session.row.badge'", 'directoryItems'] },
+  // Project starts: Workspace rows list labelled directory actions, and the
+  // New Session option opens a Lead carrying the typed draft.
+  { file: 'packages/client/ui-conversation/src/client/contract/slots.ts', includes: ['HeroOptionsOwnerProps', 'openWithDraft'] },
   { file: 'packages/client/ui-workspace/src/client/locales.ts', includes: ['menu.noDirectory'], excludes: ['Ungrouped'] },
   { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx', includes: ['selectNoDirectory', 'noDirectorySession'] },
   // First send: the glide starts in the send commit (no timer-released hold),

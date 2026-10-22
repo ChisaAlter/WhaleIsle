@@ -481,6 +481,17 @@ describe('UiWorkspaceService', () => {
     expect(b.sessions.refreshProjections).not.toHaveBeenCalled()
   })
 
+  it('prepares an explicit main target after retaining it and before revealing it', () => {
+    const b = bench()
+    const beforeOpen = vi.fn((id: SessionId) => {
+      expect(b.sessions.retain).toHaveBeenCalledWith(id, { source: 'mainView' })
+      expect(b.selectPanel).not.toHaveBeenCalled()
+    })
+    b.uiWorkspace.openSession(sid('target'), beforeOpen)
+    expect(beforeOpen).toHaveBeenCalledWith(sid('target'))
+    expect(b.selectPanel).toHaveBeenCalledWith(null)
+  })
+
   it('keeps the current panel when retaining the target fails', () => {
     const b = bench()
     b.sessions.retain.mockImplementationOnce(() => { throw new Error('open failed') })

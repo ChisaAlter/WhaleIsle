@@ -25,7 +25,7 @@ export function ConversationContent(props: ConversationContentProps) {
   const {
     sessionId, phase, hero, useSession, useSessions, useConversation, useSessionStatus,
     useWorkspaces, useInput, useComposerBlock, renderSlot, renderSlotChain,
-    selectWorkspace, selectNoDirectory, t, useFactorySlot,
+    selectWorkspace, selectNoDirectory, openWithDraft, t, useFactorySlot,
   } = props
   const session = useSession(snapshot => snapshot)
   const conversation = useConversation(snapshot => snapshot)
@@ -255,7 +255,7 @@ export function ConversationContent(props: ConversationContentProps) {
         onClose: () => { setPickerOpen(false) },
       })}
       {renderSlot('conversation.hero.agentPreset', {})}
-      {sessionId === undefined ? null : <div className={css.heroOptions}>{renderSlot('conversation.hero.options', {})}</div>}
+      {sessionId === undefined ? null : <div className={css.heroOptions}>{renderSlot('conversation.hero.options', { openWithDraft })}</div>}
     </div>
   )
 
