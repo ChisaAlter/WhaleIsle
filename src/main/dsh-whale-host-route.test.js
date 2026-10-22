@@ -42,7 +42,7 @@ test('whale settings persist despite desktop plugin overlay and reject stale wri
   assert.equal(scope.get().name, '小鲸');
 });
 
-test('enabled whale host registers its RPC route on its own fiber', async () => {
+test('enabled whale host registers its RPC route on its own fiber', async (t) => {
   const { apply, inject } = await import(whaleModule);
   assert.ok(inject.includes('connection'));
   assert.ok(inject.includes('webServer'));
@@ -50,7 +50,10 @@ test('enabled whale host registers its RPC route on its own fiber', async () => 
   const routes = [];
   const effects = [];
   const presets = [];
+  const disposers = [];
+  t.after(() => { for (const dispose of disposers.reverse()) dispose(); });
   const ctx = {
+    on: () => () => {},
     settings: { describe: () => [] },
     systemPrompt: { section() {} },
     connection: { requestRejection: () => 401 },
@@ -58,7 +61,11 @@ test('enabled whale host registers its RPC route on its own fiber', async () => 
     agentPresets: { register: async (definition) => { presets.push(definition); return async () => {}; } },
     sessionController: {},
     inject: (_deps, start) => { start(ctx); },
-    effect: (start) => { effects.push(Promise.resolve(start())); },
+    effect: (start) => {
+      effects.push(Promise.resolve(start()).then(dispose => {
+        if (typeof dispose === 'function') disposers.push(dispose);
+      }));
+    },
   };
   apply(ctx);
   await Promise.all(effects);
