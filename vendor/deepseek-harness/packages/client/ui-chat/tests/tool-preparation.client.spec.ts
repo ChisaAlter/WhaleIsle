@@ -364,6 +364,34 @@ describe('Tool preparation and durable replay', () => {
     expect(h.material()).toEqual(replay.material())
   })
 
+  it('keeps named render_ui calls outside process groups through preparation, success, failure, and replay', () => {
+    const h = harness()
+    h.assembler.append(delta(2.1, first, '', 'render_ui'))
+    const initial = h.tools()[0]!
+    const groups = h.assembler.grouped('chat')!
+    const assertPlacement = () => {
+      expect(h.tools()[0]).toMatchObject({ key: initial.key, groupTree: 'turn' })
+      expect(groups.entries).toContainEqual({ kind: 'node', key: initial.key })
+      expect(groups.entries.every(reference => reference.kind !== 'group')).toBe(true)
+    }
+    assertPlacement()
+    h.assembler.append(call(6, first, 'render_ui', '{"program":"root = Col([])"}'))
+    assertPlacement()
+    const completed = result(7)
+    h.assembler.append(completed)
+    assertPlacement()
+    const replay = harness([...opening, call(6, first, 'render_ui'), completed])
+    expect(replay.tools()[0]?.groupTree).toBe('turn')
+    const failed = entry({ type: 'tool/result', seq: SessionSeq(9), time: 9, surfaceOp: 'append', data: {
+      turn: 1, step: 1, message: createToolResultMessage({ callId: first, content: [{ type: 'text', text: 'Invalid program' }], isError: true }),
+    } })
+    const failure = harness([...opening, call(8, first, 'render_ui'), failed])
+    expect(failure.tools()[0]).toMatchObject({ groupTree: 'turn', data: { root: { isError: true } } })
+    const ordinary = harness([...opening, call(6), completed])
+    expect(ordinary.tools()[0]?.groupTree).toBeUndefined()
+    expect(ordinary.assembler.grouped('chat')?.entries.some(reference => reference.kind === 'group')).toBe(true)
+  })
+
   it('abandons one attempt and lets a subsequent live attempt create its own preparation', () => {
     const h = harness()
     h.assembler.append(delta(2.1))

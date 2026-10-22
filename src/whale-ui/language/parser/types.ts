@@ -17,6 +17,8 @@ export interface FunctionSchema {
   params: JSONSchemaDef;
   /** JSON Schema of the return value. */
   returns?: JSONSchemaProperty;
+  /** Explicit function contract: deterministic data output without effects or argument mutation. */
+  pure?: boolean;
 }
 
 /**
@@ -153,6 +155,8 @@ export interface MaterializeCtx {
   currentStatementId?: string;
   /** Statement IDs not yet reached — delete as they're touched. Remaining = orphaned. */
   unreached?: Set<string>;
+  /** Shared runtime expressions per declaration, kept separate from component value lowering. */
+  expressions?: Record<"value" | "expr", Map<string, ASTNode>>;
 }
 
 /**

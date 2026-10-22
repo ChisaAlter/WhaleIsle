@@ -42,7 +42,7 @@ describe('Whale UI host opt-in and result projection', () => {
     const result = await h.execute({ program })
     const value = { version: 1, language: 'whale-ui', program }
     expect(result).toEqual({ isError: false, value, meta: { whaleUi: value },
-      content: [{ type: 'text', text: 'The interactive interface is ready in this conversation.' }] })
+      content: [{ type: 'text', text: 'The interactive interface is ready in this conversation. Finish now with at most one short sentence; the page already contains the results. Do not render it again or repeat its figures and instructions in prose.' }] })
     const spec = { title: 'Restored panel', panel: true, items: [{ type: 'text', text: 'A saved result' }] }
     expect(await h.execute({ spec })).toMatchObject({ isError: false,
       value: { version: 1, language: 'dsh-ui', program: JSON.stringify(spec) },

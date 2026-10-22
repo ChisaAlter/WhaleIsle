@@ -51,6 +51,12 @@ function evaluatePropValue(
   if (value == null) return value;
   if (typeof value !== "object") return value;
 
+  // A binding is already lowered. Its expression runs only when the user edits,
+  // even when Each/inline component traversal evaluates the same prop again.
+  if (isReactiveAssign(value)) {
+    return reactiveSchema && isReactiveSchema(reactiveSchema) ? value : context.getState(value.target) ?? null;
+  }
+
   // AST node — evaluate with schema context
   if (isASTNode(value)) {
     // StateRef on reactive prop → ReactiveAssign marker

@@ -29,6 +29,16 @@ import { getSchemaDefaultValue, INVALID, validateSchemaValue } from "../parser/v
 import { isReactiveSchema } from "../reactive";
 import { evaluatePropCore } from "./evaluate-prop";
 
+const evaluationPass = Symbol("evaluationPass");
+interface ExpressionInfo { pure: boolean; refs: ReadonlySet<string> }
+interface EvaluationPass {
+  values: WeakMap<ASTNode, unknown>;
+  info: WeakMap<ASTNode, ExpressionInfo>;
+  data: WeakMap<object, boolean>;
+  errors: number;
+  suspended: number;
+}
+
 /** Optional schema context for reactive-aware evaluation. */
 export interface SchemaContext {
   /** Component library — used to look up reactive schemas per prop. */
@@ -37,6 +47,8 @@ export interface SchemaContext {
 
 export interface EvaluationContext {
   budget?: Budget;
+  /** Internal, never attached to the caller's context or carried by deferred actions. */
+  [evaluationPass]?: EvaluationPass;
   /** Read $variable from the store */
   getState(name: string): unknown;
   /** Resolve a reference to another declaration's evaluated value */
@@ -74,9 +86,88 @@ export function evaluate(
   context: EvaluationContext,
   schemaCtx?: SchemaContext,
 ): unknown {
-  const bounded = context.budget ? context : { ...context, budget: createBudget("evaluation", DEFAULT_LIMITS.evaluationSteps) };
+  const bounded = context[evaluationPass] ? context : createEvaluationPass(context);
+  const pass = bounded[evaluationPass]!;
   const leave = bounded.budget!.enter(node.k);
-  try { return evaluateInternal(node, bounded, schemaCtx); } finally { leave(); }
+  try {
+    const info = expressionInfo(node, bounded);
+    const reusable = pass.suspended === 0 && info.pure && info.refs.size === 0;
+    if (reusable && pass.values.has(node)) return pass.values.get(node);
+    const errorsBefore = pass.errors;
+    const value = evaluateInternal(node, bounded, schemaCtx);
+    if (reusable && pass.errors === errorsBefore && isDataValue(value, pass)) pass.values.set(node, value);
+    return value;
+  } finally { leave(); }
+}
+
+/** One synchronous root/expression pass; callers and later action steps never inherit its values. */
+export function createEvaluationPass(context: EvaluationContext): EvaluationContext {
+  return {
+    ...context,
+    budget: context.budget ?? createBudget("evaluation", DEFAULT_LIMITS.evaluationSteps),
+    [evaluationPass]: { values: new WeakMap(), info: new WeakMap(), data: new WeakMap(), errors: 0, suspended: 0 },
+  };
+}
+
+function eachVariable(node: Extract<ASTNode, { k: "Comp" }>): string | null {
+  const arg = node.args[1];
+  return arg?.k === "Ref" ? arg.n : arg?.k === "Str" ? arg.v : null;
+}
+
+/** Free lexical refs also tell Each exactly which branches need item substitution. */
+function expressionInfo(node: ASTNode, context: EvaluationContext): ExpressionInfo {
+  const cache = context[evaluationPass]!.info;
+  const cached = cache.get(node);
+  if (cached) return cached;
+  let pure = true;
+  const refs = new Set<string>();
+  const include = (child: ASTNode, bound?: string | null) => {
+    const info = expressionInfo(child, context);
+    pure = pure && info.pure;
+    for (const ref of info.refs) if (ref !== bound) refs.add(ref);
+  };
+  switch (node.k) {
+    case "Ref": refs.add(node.n); break;
+    case "Ph": case "RuntimeRef": case "Assign": pure = false; if (node.k === "Assign") include(node.value); break;
+    case "Arr": node.els.forEach(child => include(child)); break;
+    case "Obj": node.entries.forEach(([, child]) => include(child)); break;
+    case "Member": include(node.obj); break;
+    case "Index": include(node.obj); include(node.index); break;
+    case "BinOp": include(node.left); include(node.right); break;
+    case "UnaryOp": include(node.operand); break;
+    case "Ternary": include(node.cond); include(node.then); include(node.else); break;
+    case "Comp": {
+      pure = !!BUILTINS[node.name] || context.functions?.[node.name]?.pure === true;
+      if (node.name === "Each" && BUILTINS.Each && node.args.length >= 3) {
+        include(node.args[0]);
+        include(node.args[2], eachVariable(node));
+      } else {
+        for (const child of Object.values(node.mappedProps ?? node.args)) include(child);
+      }
+      break;
+    }
+  }
+  const info = { pure, refs };
+  cache.set(node, info);
+  return info;
+}
+
+/** Even an opted-in function or a state value cannot make shared component/action instances. */
+function isDataValue(value: unknown, pass: EvaluationPass): boolean {
+  if (!value || typeof value !== "object") return typeof value !== "function";
+  const cached = pass.data.get(value);
+  if (cached !== undefined) return cached;
+  pass.data.set(value, false);
+  const data = !isElementNode(value) && !isActionPlan(value) && !isReactiveAssign(value) && !isASTNode(value)
+    && Object.values(value).every(child => isDataValue(child, pass));
+  pass.data.set(value, data);
+  return data;
+}
+
+function reportError(context: EvaluationContext, message: string): void {
+  const pass = context[evaluationPass];
+  if (pass) pass.errors++;
+  context.reportError?.(message);
 }
 
 function evaluateInternal(node: ASTNode, context: EvaluationContext, schemaCtx?: SchemaContext): unknown {
@@ -369,7 +460,7 @@ function checkValue(
 ): unknown {
   const ctx = { errors: [], partial: false } as unknown as MaterializeCtx;
   const checked = validateSchemaValue(value, schema, name, path, ctx);
-  for (const e of ctx.errors) context.reportError?.(`@${name}: ${e.message}`);
+  for (const e of ctx.errors) reportError(context, `@${name}: ${e.message}`);
   return strict && ctx.errors.length > 0 ? INVALID : checked;
 }
 
@@ -387,6 +478,23 @@ function callFunction(
   node: ASTNode & { k: "Comp" },
   context: EvaluationContext,
 ): unknown {
+  const pass = context[evaluationPass]!;
+  if (def.pure === true) return callFunctionBody(name, def, node, context);
+  // An extension without the pure contract can mutate arguments or external state.
+  // Its arguments must be fresh, and values read before the call cannot outlive it.
+  pass.suspended++;
+  pass.values = new WeakMap();
+  pass.data = new WeakMap();
+  try { return callFunctionBody(name, def, node, context); }
+  finally { pass.suspended--; pass.values = new WeakMap(); pass.data = new WeakMap(); }
+}
+
+function callFunctionBody(
+  name: string,
+  def: RuntimeFunction,
+  node: ASTNode & { k: "Comp" },
+  context: EvaluationContext,
+): unknown {
   const raw = callArgs(node, context, def.params);
   if (missesRequired(raw, def.params)) return null;
   const args = checkValue(raw, def.params, name, "", context);
@@ -395,7 +503,7 @@ function callFunction(
   try {
     result = def.fn(args);
   } catch (e) {
-    context.reportError?.(`@${name} threw: ${e instanceof Error ? e.message : String(e)}`);
+    reportError(context, `@${name} threw: ${e instanceof Error ? e.message : String(e)}`);
     return null;
   }
   assertValueBudget(result, `function @${name}`);
@@ -500,14 +608,17 @@ function evaluateLazyStep(name: string, args: ASTNode[]): ActionStep | null {
  * This pre-resolves loop variables so deferred expressions (like Action steps)
  * don't lose scope when evaluated later at click time.
  */
-function substituteRef(node: ASTNode, varName: string, value: unknown): ASTNode {
+function substituteRef(node: ASTNode, varName: string, value: unknown, context: EvaluationContext): ASTNode {
+  // Keep loop-independent declaration subgraphs shared instead of copying them for every item.
+  if (!expressionInfo(node, context).refs.has(varName)) return node;
+  const substitute = (child: ASTNode) => substituteRef(child, varName, value, context);
   switch (node.k) {
     case "Ref":
       return node.n === varName ? toLiteralAST(value) : node;
     case "Member": {
       // Member access on the loop var: t.id → resolve t, then access .id
       if (isASTNode(node.obj)) {
-        const subObj = substituteRef(node.obj as ASTNode, varName, value);
+        const subObj = substitute(node.obj as ASTNode);
         // If obj resolved to a literal, we can inline the member access result
         if (subObj.k === "Obj") {
           const entry = subObj.entries.find(([k]) => k === node.field);
@@ -520,43 +631,44 @@ function substituteRef(node: ASTNode, varName: string, value: unknown): ASTNode 
     case "Index":
       return {
         ...node,
-        obj: isASTNode(node.obj) ? substituteRef(node.obj as ASTNode, varName, value) : node.obj,
+        obj: isASTNode(node.obj) ? substitute(node.obj as ASTNode) : node.obj,
         index: isASTNode(node.index)
-          ? substituteRef(node.index as ASTNode, varName, value)
+          ? substitute(node.index as ASTNode)
           : node.index,
       };
     case "BinOp":
       return {
         ...node,
-        left: substituteRef(node.left, varName, value),
-        right: substituteRef(node.right, varName, value),
+        left: substitute(node.left),
+        right: substitute(node.right),
       };
     case "UnaryOp":
-      return { ...node, operand: substituteRef(node.operand, varName, value) };
+      return { ...node, operand: substitute(node.operand) };
     case "Ternary":
       return {
         ...node,
-        cond: substituteRef(node.cond, varName, value),
-        then: substituteRef(node.then, varName, value),
-        else: substituteRef(node.else, varName, value),
+        cond: substitute(node.cond),
+        then: substitute(node.then),
+        else: substitute(node.else),
       };
     case "Arr":
-      return { ...node, els: node.els.map((e) => substituteRef(e, varName, value)) };
+      return { ...node, els: node.els.map((e) => substitute(e)) };
     case "Obj":
       return {
         ...node,
         entries: node.entries.map(
-          ([k, v]) => [k, substituteRef(v, varName, value)] as [string, ASTNode],
+          ([k, v]) => [k, substitute(v)] as [string, ASTNode],
         ),
       };
     case "Comp": {
-      const sub = (a: ASTNode) => substituteRef(a, varName, value);
-      const result = { ...node, args: node.args.map(sub) };
-      if (node.mappedProps) result.mappedProps = mapValues(node.mappedProps, sub);
+      // A nested Each binds only its template; its array still sees the outer item.
+      const shadowed = node.name === "Each" && eachVariable(node) === varName;
+      const result = { ...node, args: node.args.map((arg, index) => shadowed && index > 0 ? arg : substitute(arg)) };
+      if (node.mappedProps) result.mappedProps = mapValues(node.mappedProps, substitute);
       return result;
     }
     case "Assign":
-      return { ...node, value: substituteRef(node.value, varName, value) };
+      return { ...node, value: substitute(node.value) };
     default:
       return node;
   }
@@ -598,7 +710,7 @@ function evaluateLazyBuiltin(
     return arr.map((item, _idx) => {
       // Pre-substitute loop variable refs with concrete values in the template AST.
       // This captures the item for deferred expressions (Action steps evaluated at click time).
-      const substituted = substituteRef(template, varName, item);
+      const substituted = substituteRef(template, varName, item, context);
       const childCtx: EvaluationContext = {
         ...context,
         resolveRef: (refName: string) => {

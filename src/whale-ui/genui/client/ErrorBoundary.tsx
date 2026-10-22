@@ -30,12 +30,12 @@ const fallbackStyle: Record<string, string | number> = {
   padding: '8px 12px',
   margin: '4px 0',
   borderRadius: '8px',
-  border: '1px solid rgba(127,127,127,0.35)',
-  background: 'rgba(127,127,127,0.08)',
-  color: 'inherit',
+  border: '1px solid var(--dsw-alias-border-l2)',
+  background: 'var(--dsw-alias-bg-layer-1)',
+  color: 'var(--dsw-alias-label-primary)',
   fontSize: '12px',
-  lineHeight: 1.5,
-  fontFamily: 'inherit',
+  lineHeight: '18px',
+  fontFamily: 'var(--dsw-font-family)',
 }
 
 /**

@@ -341,9 +341,11 @@ export const toolDefinition: ConversationNodeDefinition<ToolState> = {
     const visibility = preparing && interruptedAt !== undefined ? 'hidden' : 'visible'
     const location = contextLocation(context)
     const data = current?.data.root === projected ? current.data : { root: projected } satisfies ToolChatData
-    if (current?.data === data && current.anchorSeq === anchor
+    // Generated interfaces are answer content. Keep their parent stable from the named call onward.
+    const groupTree = projected.name === 'render_ui' ? 'turn' : undefined
+    if (current?.data === data && current.anchorSeq === anchor && current.groupTree === groupTree
       && current.visibility === visibility && current.location === location) return current
-    return chatNode(context, 'tool-call', anchor, data, { visibility, location })
+    return chatNode(context, 'tool-call', anchor, data, { visibility, location, groupTree })
   },
 }
 

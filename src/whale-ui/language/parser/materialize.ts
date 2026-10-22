@@ -52,7 +52,10 @@ function resolveRef(name: string, ctx: MaterializeCtx, mode: "value" | "expr"): 
       target.name === RESERVED_CALLS.Mutation ? ("mutation" as const) : ("query" as const);
     return { k: "RuntimeRef", n: name, refType };
   }
+  const cached = ctx.expressions?.[mode].get(name);
+  if (cached) return cached;
   ctx.visited.add(name);
+  const unresolvedBefore = ctx.unres.length;
   const prevStatementId = ctx.currentStatementId;
   ctx.currentStatementId = name;
   try {
@@ -61,6 +64,9 @@ function resolveRef(name: string, ctx: MaterializeCtx, mode: "value" | "expr"): 
     if (mode === "value" && isElementNode(result)) {
       result.statementId = name;
     }
+    // Repeated consumers share normalized expression nodes; component instances still
+    // materialize separately, so their identities and actual expansion budget remain intact.
+    if (isASTNode(result) && ctx.unres.length === unresolvedBefore) ctx.expressions?.[mode].set(name, result);
     return result;
   } finally {
     ctx.currentStatementId = prevStatementId;
