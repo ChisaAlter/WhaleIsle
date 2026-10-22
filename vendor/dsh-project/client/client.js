@@ -1,7 +1,7 @@
 window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   const { createElement: h, useState, useEffect, useLayoutEffect, useRef, useCallback, Fragment } = require('react');
   const { createPortal } = require('react-dom');
-  const { Button, Input, Menu, Modal, Pill, SegmentedTabs, Tag, MarkdownText, Toast, IconFolderCloseRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconChevronRightOutlineRegular, IconPlusOutlineRegular, IconEllipsisOutlineRegular, IconUsersOutlineRegular, IconChecklistOutlineRegular, useAnchoredPosition } = require('@deepseek-ai/dsh-client-ui-primitives');
+  const { Button, Input, Menu, Modal, Pill, SegmentedTabs, Tag, MarkdownText, Toast, IconFolderCloseRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconChevronRightOutlineRegular, IconEllipsisOutlineRegular, IconUsersOutlineRegular, IconChecklistOutlineRegular, useAnchoredPosition } = require('@deepseek-ai/dsh-client-ui-primitives');
   const { createSnapshotStore, defineStore } = require('@deepseek-ai/dsh-client-store');
   const { teamEnglish, teamChinese } = require('@deepseek-ai/dsh-experimental-client-ui-agent-team');
   const NS = 'dsh-project';
@@ -9,7 +9,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     diffTruncated: '差异过长，仅显示前一部分；请打开目录查看完整改动。', tab: 'Project', more: '更多', rename: '重命名', cancel: '取消', archiveActive: '停止后台工作并归档', archiveHint: '后台工作会停止，工作目录、对话和成果将保留。', team: '团队', add: '添加 Project…', loading: '正在读取…', close: '关闭', refresh: '刷新',
     requirements: '需求', requirementGoal: '完整目标', requirementConstraints: '约束', requirementConditions: '完成条件', noRequirementConstraints: '未记录约束。', noRequirementConditions: '未记录完成条件。',
     requestRoleDevelopment: '开发', requestRoleReview: '检查', requestRoleDocs: '文档', requestHandover: '等待协调者交付', requestArranging: '正在安排', requestArrangingHint: '协调者正在安排团队开发。', deleted: '已移除', requestDiscussing: '讨论中', requestQueued: '等待开发', requestCancelled: '已取消', requestQueuePosition: '队列第 {position} 项', requestQueueCount: '{count} 项排队', requestEnqueue: '加入开发队列', requestMoveUp: '上移一位', requestMoveDown: '下移一位', requestCancel: '取消需求', requestRejoin: '重新加入队列', requestResume: '继续当前需求', requestResumeQueue: '继续队列', requestRestarted: '应用已重启，等待你继续当前需求', requestQueuePaused: '队列已暂停', requestQueueWaiting: '前一项需求交付后自动开始', requestQueueReady: '等待协调者安排开发', requestDiscussingHint: '需求仍在讨论，确认后加入开发队列。', requestCancelledHint: '已从开发队列取消，要求和已有成果仍保留。', taskCancelled: '已取消需求', taskCancelledEmpty: '还没有取消的需求。',
-    archivedHint: '项目已归档。恢复后可继续对话，旧工作不会自动启动。', archiving: '正在停止后台工作并归档…', queued: '排队中', empty: '添加项目目录，开始持续对话。', emptyArchived: '暂无归档 Project。', archived: '已归档', history: '显示归档项目',
+    archivedHint: '项目已归档。恢复后可继续对话，旧工作不会自动启动。', archiving: '正在停止后台工作并归档…', queued: '排队中', archived: '已归档',
     directory: 'Project 工作目录', openDirectory: '打开项目目录', materials: '项目资料', progress: '工作进度',
     noWork: '在这里提出需求，后续可以继续同一项工作。', process: '成员记录', viewProcess: '查看记录', viewResult: '查看成果', workDetails: '详情', executionInfo: '执行信息', earlierWork: '更早工作',
     processHint: '需要调整这项工作时，在主对话中继续说明。', noProcess: '暂无记录。', priorWorkFailed: '此前工作失败', priorWorkStopped: '此前工作已停止', priorReportPending: '此前报告待汇总', priorWorkPending: '此前工作尚未完成',
@@ -46,7 +46,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     requirements: 'Requests', requirementGoal: 'Full goal', requirementConstraints: 'Constraints', requirementConditions: 'Completion conditions', noRequirementConstraints: 'No constraints recorded.', noRequirementConditions: 'No completion conditions recorded.',
     requestRoleDevelopment: 'Development', requestRoleReview: 'Review', requestRoleDocs: 'Documentation', requestHandover: 'Awaiting coordinator delivery', requestArranging: 'Arranging work', requestArrangingHint: 'The coordinator is arranging development with the team.', deleted: 'Removed', requestDiscussing: 'Discussing', requestQueued: 'Awaiting development', requestCancelled: 'Cancelled', requestQueuePosition: 'Queue position {position}', requestQueueCount: '{count} queued', requestEnqueue: 'Add to development queue', requestMoveUp: 'Move up', requestMoveDown: 'Move down', requestCancel: 'Cancel request', requestRejoin: 'Rejoin queue', requestResume: 'Continue current request', requestResumeQueue: 'Continue queue', requestRestarted: 'Application restarted; waiting for explicit continuation.', requestQueuePaused: 'Queue paused', requestQueueWaiting: 'Starts automatically after the previous request is delivered', requestQueueReady: 'Waiting for the coordinator to arrange development', requestDiscussingHint: 'This request is being discussed. Add it to the development queue when ready.', requestCancelledHint: 'Removed from the development queue. Requirements and existing results are retained.', taskCancelled: 'Cancelled requests', taskCancelledEmpty: 'No cancelled requests yet.',
     diffTruncated: 'The diff is truncated. Open the directory for the complete changes.', tab: 'Project', more: 'More', rename: 'Rename', cancel: 'Cancel', archiveActive: 'Stop work and archive', archiveHint: 'Background work will stop. Files, conversation and results are retained.', team: 'Team', add: 'Add Project…', loading: 'Loading…', close: 'Close', refresh: 'Refresh',
-    archivedHint: 'This Project is archived. Restore it to continue; previous work will not restart automatically.', archiving: 'Stopping work and archiving…', queued: 'Queued', empty: 'Add a project directory to start a continuing conversation.', emptyArchived: 'No archived Projects.', archived: 'Archived', history: 'Show archived projects',
+    archivedHint: 'This Project is archived. Restore it to continue; previous work will not restart automatically.', archiving: 'Stopping work and archiving…', queued: 'Queued', archived: 'Archived',
     directory: 'Project working directory', openDirectory: 'Open project directory', materials: 'Project materials', progress: 'Work progress',
     noWork: 'Describe what you need here, and continue the same work later.', process: 'Member history', viewProcess: 'View history', viewResult: 'View results', workDetails: 'Details', executionInfo: 'Execution details', earlierWork: 'Earlier work',
     processHint: 'Continue in the main conversation to request changes to this work.', noProcess: 'No records yet.', priorWorkFailed: 'Earlier work failed', priorWorkStopped: 'Earlier work stopped', priorReportPending: 'Earlier report awaits handover', priorWorkPending: 'Earlier work is unfinished',
@@ -129,53 +129,17 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     decisionLog: 'Decision log', decisionLogEmpty: 'After deliveries, the coordinator’s key decisions are recorded here automatically.',
   });
   const CSS = `
-    .dsh-project-page{padding:8px 0;display:flex;flex-direction:column;gap:4px;min-width:0}
-    .dsh-project-page>.dsh-project-empty{text-align:left;padding:8px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
-    .dsh-project-row-wrap{position:relative;display:flex;align-items:center;gap:4px;min-width:0;min-height:36px;padding:0 4px 0 8px;box-sizing:border-box;border-radius:var(--dsw-radius-md);color:var(--dsw-alias-label-primary)}
-    .dsh-project-row-wrap>.dsh-project-row{flex:1}
-    .dsh-project-row-wrap:hover,.dsh-project-row-wrap:focus-within,.dsh-project-row-wrap[data-menu-open=true]{background:var(--dsw-alias-interactive-bg-hover)}
-    .dsh-project-row-wrap[aria-current=page]{background:var(--dsw-alias-interactive-bg-active)}
-    .dsh-project-row-wrap[aria-current=page] .dsh-project-row-title{font-weight:500}
-    .dsh-project-row-wrap[aria-current=page] .dsh-project-row>svg{color:var(--dsw-alias-label-primary)}
-    .dsh-project-category{flex:1;min-width:0;display:flex;align-items:center;gap:4px;height:36px;padding:0 4px;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;line-height:20px;text-align:left;cursor:pointer}
-    .dsh-project-category:hover{color:var(--dsw-alias-label-secondary)}
-    .dsh-project-category>svg{flex:none;transition:transform var(--ds-transition-duration-fast) var(--ds-ease-in-out)}
-    .dsh-project-category>span{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .dsh-project-category-count{flex:none;min-width:18px;padding:0 6px;box-sizing:border-box;border-radius:9px;background:var(--dsw-alias-interactive-bg-hover);font-size:11px;line-height:18px;font-weight:500;text-align:center;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}
-    .dsh-project-empty-add{display:flex;align-items:flex-start;gap:12px;width:100%;margin:4px 0;padding:12px;box-sizing:border-box;border:1px dashed var(--dsw-alias-border-l3);border-radius:12px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;text-align:left;cursor:pointer;transition:background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out)}
-    .dsh-project-empty-add:hover{background:var(--dsw-alias-interactive-bg-hover)}
-    .dsh-project-empty-add-icon{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary)}
-    .dsh-project-empty-add-text{display:flex;flex-direction:column;gap:2px;min-width:0}
-    .dsh-project-empty-add-text>strong{font-size:14px;line-height:20px;font-weight:500}
-    .dsh-project-empty-add-text>span{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
+    .dsh-project-row-badge{flex:none;margin-left:6px;padding:0 5px;border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:10px;line-height:16px;font-weight:500;white-space:nowrap}
     .dsh-project-heading,.dsh-project-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     .dsh-project-heading{justify-content:space-between;gap:4px;flex-wrap:nowrap}
     .dsh-project-list{display:flex;flex-direction:column;gap:2px}
-    .dsh-project-sidebar-button{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-height:28px;padding:0;border:0;border-radius:var(--dsw-radius-sm);color:var(--dsw-alias-label-secondary)}
-    .dsh-project-sidebar-button:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-    .dsh-project-row-menu{display:none;flex:none}
-    .dsh-project-row-wrap:hover .dsh-project-row-menu,.dsh-project-row-wrap:focus-within .dsh-project-row-menu,.dsh-project-row-wrap[data-menu-open=true] .dsh-project-row-menu{display:block}
-    .dsh-project-page button:focus-visible,.dsh-project-empty-add:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
     .dsh-project-header{display:flex;align-items:center;flex:0 0 auto;white-space:nowrap}
     .dsh-project-header-directory{min-width:0;max-width:100%}
     .dsh-project-header-path{min-width:0;max-width:280px;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .dsh-project-return-materials{max-width:min(240px,25vw);min-width:0}
     .dsh-project-return-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .dsh-project-materials-frame{display:flex;flex:1;min-height:0;overflow:hidden}
-    .dsh-project-row{border:0;border-radius:var(--dsw-radius-md);background:transparent;color:var(--dsw-alias-label-primary);padding:6px 0;min-height:36px;box-sizing:border-box;display:flex;align-items:center;gap:8px;font:inherit;font-size:14px;line-height:20px;text-align:left;cursor:pointer;min-width:0}
-    .dsh-project-row>svg{flex:none;color:var(--dsw-alias-label-secondary)}
-    .dsh-project-row-text{display:flex;flex:1;flex-direction:column;min-width:0}
-    .dsh-project-row-title,.dsh-project-row-text>.dsh-project-muted{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .dsh-project-row-meta{font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
-    .dsh-project-row-meta>.dsh-project-muted{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .dsh-project-row-state{flex:none;display:inline-flex;align-items:center;gap:4px;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
-    .dsh-project-row-state[data-tone=info]{color:var(--dsw-alias-state-business-primary)}
-    .dsh-project-row-state[data-tone=warning]{color:var(--dsw-alias-state-warn-primary)}
-    .dsh-project-row-state[data-tone=neutral]>.dsh-project-tone-dot{background:var(--dsw-alias-label-tertiary)}
-    .dsh-project-row-wrap:hover .dsh-project-row-state,.dsh-project-row-wrap:focus-within .dsh-project-row-state,.dsh-project-row-wrap[data-menu-open=true] .dsh-project-row-state{display:none}
-    .dsh-project-row-wrap[data-archived=true] .dsh-project-row,.dsh-project-row-wrap[data-archived=true] .dsh-project-row-state{color:var(--dsw-alias-label-caption)}
     .dsh-project-archive-notice{padding:16px 20px;border:1px solid var(--dsw-alias-border-l2);border-radius:16px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.5}
-    .dsh-project-row small{flex-shrink:0;font-size:11px;color:var(--dsw-alias-label-tertiary)}
     .dsh-project-muted{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:1.5}
     .dsh-project-error{color:var(--dsw-alias-state-error-primary);white-space:pre-wrap;font-size:13px}
     .dsh-project-progress{max-height:180px;overflow:auto;display:flex;flex-direction:column;gap:8px;color:var(--dsw-alias-label-primary);font-size:13px}
@@ -412,17 +376,6 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   const isLive = worker => Boolean(worker.activeRunId || worker.jobs?.length || worker.phase === 'stopping');
   const fileName = path => path.split(/[\\/]/).at(-1);
   const directoryParts = project => project.canonicalWorkingDirectory.replaceAll('\\', '/').replace(/\/$/, '').split('/').filter(Boolean);
-  function projectDirectoryLabel(project, projects) {
-    const peers = projects.filter(other => other.id !== project.id && other.title === project.title);
-    if (!peers.length) return '';
-    const parts = directoryParts(project);
-    for (let count = 1; count < parts.length; count++) {
-      const label = parts.slice(-count).join('/');
-      if (peers.every(other => directoryParts(other).slice(-count).join('/') !== label)) return `…/${label}`;
-    }
-    return project.canonicalWorkingDirectory;
-  }
-
   function Artifact({ file, open, busy, t }) {
     const [menu, setMenu] = useState(false), [locationOpen, setLocationOpen] = useState(false);
     const name = fileName(file.path), location = { materials: 'artifactMaterials', existing: 'artifactExisting', worktree: 'artifactWorktree' }[file.location];
@@ -457,49 +410,10 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       error ? h('p', { role: 'alert', className: 'dsh-project-error' }, error) : null);
   }
 
-  function ProjectRow({ project, directoryLabel, currentSession, openProject, command, read, openLifecycle, t }) {
-    const [menu, setMenu] = useState(false);
-    const [busy, setBusy] = useState(false), [error, setError] = useState(null);
-    const fail = failure => setError(previous => ({ seq: (previous?.seq ?? 0) + 1, text: errorText(failure) }));
-    const execute = async (action, input) => { setBusy(true); setError(null); try { await command(project.id, action, input); } catch (failure) { fail(failure); } finally { setBusy(false); } };
-    const select = async action => {
-      setMenu(false); setError(null);
-      try {
-        if (action === 'rename' || action === 'archive') { await openLifecycle(project.id, action); return; }
-        if (action === 'openDirectory') { await read(project.id, 'open'); return; }
-        await execute(action);
-      } catch (failure) { fail(failure); }
-    };
-    const activity = project.activity?.state;
-    const status = project.lifecycle === 'archived' ? t('archived') : activity && !['idle', 'done'].includes(activity) ? t({ summaryFailed: 'sidebarSummaryFailed', pendingSummary: 'sidebarPendingSummary' }[activity] ?? activity) : '';
-    const tone = project.lifecycle === 'archived' ? 'neutral' : ['running', 'arranging', 'active', 'queued'].includes(activity) ? 'info' : ['blocked', 'paused', 'summaryFailed', 'pendingSummary', 'needsReview'].includes(activity) ? 'warning' : 'neutral';
-    return h(Fragment, null,
-      h('div', { className: 'dsh-project-row-wrap', 'aria-current': currentSession === project.coordinatorSessionId ? 'page' : undefined, 'data-menu-open': menu, 'data-archived': project.lifecycle === 'archived', onContextMenu: event => { event.preventDefault(); setMenu(true); }, onKeyDown: event => { if (event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10') { event.preventDefault(); setMenu(true); } } },
-        h('button', { type: 'button', className: 'dsh-project-row', title: `${project.title}\n${project.canonicalWorkingDirectory}`, 'aria-current': currentSession === project.coordinatorSessionId ? 'page' : undefined, onClick: () => { void openProject(project.id); } },
-          h(IconFolderCloseRegular, { size: 16 }), h('span', { className: 'dsh-project-row-text' }, h('span', { className: 'dsh-project-row-title' }, project.title), directoryLabel ? h('span', { className: 'dsh-project-row-meta' }, h('span', { className: 'dsh-project-muted' }, directoryLabel)) : null),
-          status ? h('span', { className: 'dsh-project-row-state', 'data-tone': tone, title: `${stateLabel(t, activity)} · ${project.activity?.running ?? 0} ${t('running')} · ${project.activity?.queued ?? 0} ${t('queued')}` }, h('span', { className: 'dsh-project-tone-dot', 'data-tone': tone, 'aria-hidden': true }), status) : null),
-        h('span', { className: 'dsh-project-row-menu' }, h(Menu, { open: menu, onClose: () => setMenu(false), portal: true, align: 'end', compact: true, onSelect: action => { void select(action); }, items: [{ id: 'rename', label: t('rename') }, { id: 'openDirectory', label: t('openDirectory') }, { id: project.lifecycle === 'archived' ? 'restore' : 'archive', label: t(project.lifecycle === 'archived' ? 'restore' : 'archive') }], anchor: h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-sidebar-button', 'aria-label': `${t('more')}: ${project.title}`, 'aria-expanded': menu, disabled: busy, onClick: () => setMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) }))),
-      error ? h(Toast, { key: error.seq, text: error.text, holdMs: 6000, onDone: () => setError(null) }) : null);
-  }
-
-  function SidebarPage({ query = '', useProjects, useProjectSessions, useStore, actions, openProject, command, read, openLifecycle, addProject, t }) {
-    const snapshot = useProjects(value => value), view = useStore(value => value);
-    const currentSession = useProjectSessions(value => Object.values(value.byId).find(session => (session.retainedBy.mainView ?? 0) > 0)?.id);
-    const [expanded, setExpanded] = useState(true), [menu, setMenu] = useState(false);
-    const projects = snapshot.projects.filter(project => (view.history ? project.lifecycle === 'archived' : project.lifecycle !== 'archived') && (!query || project.title.toLocaleLowerCase().includes(query.toLocaleLowerCase())));
-    if (!snapshot.available && !snapshot.projects.length) return null;
-    return h('section', { className: 'dsh-project-page', 'aria-label': t('tab') },
-      h('div', { className: 'dsh-project-heading' }, h('button', { type: 'button', className: 'dsh-project-category', 'aria-expanded': expanded, onClick: () => setExpanded(value => !value) },
-        h(expanded ? IconChevronDownOutlineRegular : IconChevronRightOutlineRegular, { size: 14 }), h('span', null, t('tab'), view.history ? ' · ' + t('archived') : ''), projects.length ? h('small', { className: 'dsh-project-category-count' }, projects.length) : null),
-        h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-sidebar-button', 'aria-label': t('add'), title: t('add'), disabled: !snapshot.available, onClick: () => { void addProject(); } }, h(IconPlusOutlineRegular, { size: 16 })),
-        h(Menu, { open: menu, onClose: () => setMenu(false), portal: true, compact: true, items: [{ id: 'history', label: t(view.history ? 'tab' : 'history') }], onSelect: () => { actions.setHistory(!view.history); setExpanded(true); setMenu(false); }, anchor: h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-sidebar-button', 'aria-label': `${t('tab')}: ${t('more')}`, 'aria-expanded': menu, onClick: () => setMenu(value => !value) }, h(IconEllipsisOutlineRegular, { size: 16 })) })),
-      expanded ? h(Fragment, null,
-        snapshot.error ? h('p', { role: 'alert', className: 'dsh-project-error' }, snapshot.error) : null,
-        snapshot.loading && !snapshot.projects.length ? h('p', { role: 'status' }, t('loading')) : null,
-        !snapshot.loading && !projects.length ? view.history || !snapshot.available || query ? h('p', { className: 'dsh-project-empty' }, t(view.history ? 'emptyArchived' : 'empty'))
-          : h('button', { type: 'button', className: 'dsh-project-empty-add', onClick: () => { void addProject(); } }, h('span', { className: 'dsh-project-empty-add-icon', 'aria-hidden': true }, h(IconPlusOutlineRegular, { size: 16 })),
-            h('span', { className: 'dsh-project-empty-add-text' }, h('strong', null, t('add')), h('span', null, t('empty')))) : null,
-        h('div', { className: 'dsh-project-list' }, projects.map(project => h(ProjectRow, { key: project.id, project, directoryLabel: projectDirectoryLabel(project, projects), currentSession, openProject, command, read, openLifecycle, t })))) : null);
+  // Project Leads list among ordinary conversations; this tag marks them.
+  function ProjectRowBadge({ sessionId, useProjects, t }) {
+    const project = useProjects(value => value.projects.some(item => item.coordinatorSessionId === sessionId));
+    return project ? h('span', { className: 'dsh-project-row-badge' }, t('tab')) : null;
   }
 
   // One header trigger with an anchored panel, matching the native Team action:
@@ -1658,7 +1572,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       const dismissals = createSnapshotStore(0);
       const dismissPanels = () => dismissals.set(dismissals.getSnapshot() + 1);
       const archiveRequests = new Set();
-      const viewHandle = defineStore({ init: () => ({ selected: null, modal: null, modalDirty: false, pendingModal: null, modalRevision: 0, materialsPreview: false, lifecycle: null, history: false }), actions: {
+      const viewHandle = defineStore({ init: () => ({ selected: null, modal: null, modalDirty: false, pendingModal: null, modalRevision: 0, materialsPreview: false, lifecycle: null }), actions: {
         selectProject: (draft, id) => { draft.selected = id; },
         setModal: (draft, modal) => {
           if (draft.modal?.kind === modal?.kind && draft.modal?.projectId === modal?.projectId && draft.modal?.workstreamId === modal?.workstreamId && draft.modal?.workerSessionId === modal?.workerSessionId && draft.modal?.delegationRef === modal?.delegationRef && draft.modal?.requestId === modal?.requestId) return;
@@ -1671,7 +1585,6 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         setModalDirty: (draft, dirty) => { draft.modalDirty = dirty; },
         cancelModalTransition: draft => { draft.pendingModal = null; },
         completeModalTransition: draft => { if (!draft.pendingModal) return; draft.modal = draft.pendingModal.target; draft.modalDirty = false; draft.pendingModal = null; draft.materialsPreview = false; draft.modalRevision++; },
-        setHistory: (draft, value) => { draft.history = value; },
       } });
       const viewInstance = viewHandle.create(), viewStore = { ...viewHandle, create: () => viewInstance };
       let alive = true, refreshing, disposeAction, trackedProject, fileReturn;
@@ -1782,6 +1695,15 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         archive: sessionId => { const project = snapshot.getSnapshot().projects.find(item => item.coordinatorSessionId === sessionId); void openLifecycle(project?.id, 'archive'); },
         restore: sessionId => { const project = snapshot.getSnapshot().projects.find(item => item.coordinatorSessionId === sessionId); if (project) return command(project.id, 'restore'); },
       }), 'dsh-project: Project lifecycle commands');
+      ctx.effect(() => {
+        const entries = createSnapshotStore([]);
+        const sync = () => entries.set(snapshot.getSnapshot().projects.map(project => ({ sessionId: project.coordinatorSessionId,
+          workingDirectory: project.canonicalWorkingDirectory, archived: project.lifecycle === 'archived' })));
+        sync();
+        const off = snapshot.subscribe(sync);
+        const unregister = ctx.uiWorkspace.registerSessionNavigation('project', entries);
+        return () => { off(); unregister(); };
+      }, 'dsh-project: workspace navigation');
       const sendUserRequest = async (projectId, text) => {
         const project = snapshot.getSnapshot().projects.find(item => item.id === projectId);
         if (!project || project.lifecycle !== 'ready' || project.archiving) throw new Error(t('unavailable'));
@@ -1797,13 +1719,12 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         setRequestMode,
         trackActiveProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; }; },
         openModelSettings: () => ctx.settingsNavigation.open('models'),
-        addProject: async () => { try { const path = await ctx.uiWorkspace.selectDirectory(); if (!path) return; const result = await rpc('create', { workingDirectory: path, requestId: requestId() }); acceptDetail({ project: result.project }); await openProject(result.project.id); } catch (failure) { snapshot.set({ ...snapshot.getSnapshot(), error: errorText(failure) }); } },
         showMaterials: (projectId, workstreamId, context) => { const view = viewInstance.getSnapshot(); if (!workstreamId && view.materialsPreview && view.modal?.projectId === projectId) viewInstance.actions.returnMaterials(projectId); else show('materials', projectId, workstreamId, context); }, showProcess: (projectId, workstreamId, member = false, context = {}) => { viewInstance.actions.setModal({ kind: 'process', projectId, ...(member ? { workerSessionId: workstreamId } : { workstreamId }), ...context }); }, showDiff: (projectId, workstreamId) => show('diff', projectId, workstreamId),
         showReport: (projectId, workstreamId, context) => show('report', projectId, workstreamId, context), showRequestDiff: (projectId, requestId) => show('requestDiff', projectId, undefined, { requestId }),
         trackProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; }; },
         retainProcess: (project, work) => ctx.sessions.retain({ parentSessionId: project.coordinatorSessionId, childSessionId: work.workerSessionId, mode: 'continuable' }, { source: 'projectPreview' }),
       });
-      ctx.slots.inject('sidebar.workspaces.sections', () => ctx.slots.register({ name: 'sidebar.workspaces.sections', id: NS, order: 20, locale: NS, store: viewStore, inject: face }, SidebarPage));
+      ctx.slots.inject('sidebar.session.row.badge', () => ctx.slots.register({ name: 'sidebar.session.row.badge', id: NS, locale: NS, inject: face }, ProjectRowBadge));
       ctx.slots.inject('conversation.composer', () => {
         const mounted = new Map();
         const sync = () => {

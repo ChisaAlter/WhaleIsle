@@ -33,6 +33,7 @@ type RowSlotName =
   | 'sidebar.workspaces.session.menu.item'
   | 'sidebar.workspaces.session.row.action'
   | 'sidebar.session.row.leading'
+  | 'sidebar.session.row.badge'
   | 'sidebar.session.row.hover'
 type RowRenderSlot = PropsRenderSlots<RowSlotName>['renderSlot']
 type SessionNodeItemProps = ComponentProps<typeof SessionNodeItemComponent>
@@ -1235,7 +1236,9 @@ describe('session row schedule seats', () => {
         .querySelector('[data-seat="sidebar.session.row.leading"]')?.parentElement
       expect(cell?.previousElementSibling ?? null).toBeNull()
       expect(cell?.nextElementSibling?.textContent).toBe('Idle Session')
-      expect(cell?.nextElementSibling?.nextElementSibling?.textContent).toBe('刚刚')
+      const badge = cell?.nextElementSibling?.nextElementSibling
+      expect(badge?.getAttribute('data-seat')).toBe('sidebar.session.row.badge')
+      expect(badge?.nextElementSibling?.textContent).toBe('刚刚')
     }
     assertPlacement()
     // Rerender through the same row: the seat stays leading without the flat
@@ -1280,6 +1283,19 @@ describe('session row schedule seats', () => {
     const renderSlot = seatSpy()
     renderRow({ ...idle, blank: true }, renderSlot)
     expect(renderSlot).not.toHaveBeenCalledWith('sidebar.session.row.leading', expect.anything())
+    expect(renderSlot).not.toHaveBeenCalledWith('sidebar.session.row.badge', expect.anything())
+  })
+
+  it.each<[string, SessionNode]>([
+    ['an idle row', idle],
+    ['a row with live activity', { ...idle, running: true }],
+    ['an archived row', { ...idle, archived: true }],
+  ])('keeps the title badge right after the title on %s', (_label, node) => {
+    const renderSlot = seatSpy()
+    renderRow(node, renderSlot)
+    const badge = screen.getByRole('treeitem').querySelector('[data-seat="sidebar.session.row.badge"]')
+    expect(badge?.previousElementSibling?.textContent).toBe('Idle Session')
+    expect(renderSlot).toHaveBeenCalledWith('sidebar.session.row.badge', { sessionId: idle.id })
   })
 
   it('renders the schedule section between the relative time and the trailing status line', () => {

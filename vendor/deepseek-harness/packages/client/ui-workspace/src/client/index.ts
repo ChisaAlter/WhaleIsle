@@ -358,6 +358,7 @@ export function apply(ctx: Context): void {
         },
         'sidebar.workspaces.session.row.action': { kind: 'list', scope: 'root' },
         'sidebar.session.row.leading': { kind: 'list', scope: 'root' },
+        'sidebar.session.row.badge': { kind: 'list', scope: 'root' },
         'sidebar.session.row.hover': { kind: 'list', scope: 'root' },
       },
       store: viewStore,

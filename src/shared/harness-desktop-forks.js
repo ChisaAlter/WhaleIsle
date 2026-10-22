@@ -218,6 +218,10 @@ const FORK_FILE_MARKERS = [
   // remains discoverable. Behavior coverage lives in workspace-browser tests.
   { file: 'packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx', includes: ['TasksSectionHeader', 'connectNoDirectory', 'GroupSessionRun', 'showArchivedSection'] },
   { file: 'packages/client/ui-workspace/src/client/ShowArchivedListRow.tsx', includes: ['showArchivedList'] },
+  // Project Leads list among ordinary conversations; the row's title badge
+  // seat carries their Project tag in every row state.
+  { file: 'packages/client/ui-workspace/src/client/contract/slots.ts', includes: ["'sidebar.session.row.badge'"] },
+  { file: 'packages/client/ui-workspace/src/client/rows/Rows.tsx', includes: ["renderSlot('sidebar.session.row.badge'"] },
   { file: 'packages/client/ui-workspace/src/client/locales.ts', includes: ['menu.noDirectory'], excludes: ['Ungrouped'] },
   { file: 'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx', includes: ['selectNoDirectory', 'noDirectorySession'] },
   // First send: the glide starts in the send commit (no timer-released hold),

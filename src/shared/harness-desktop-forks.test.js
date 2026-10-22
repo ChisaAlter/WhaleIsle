@@ -170,6 +170,8 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-workspace/src/client/WorkspacePicker.tsx': "const NO_DIRECTORY = '::no-directory'\nonPickNoDirectory?.()\n",
       'packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx': '<TasksSectionHeader onCreate={() => { connectNoDirectory() }} /><GroupSessionRun open={group.expanded} /><ArchivedSessionSection visible={showArchivedSection} />\n',
       'packages/client/ui-workspace/src/client/ShowArchivedListRow.tsx': 'const checked = showArchivedList\n',
+      'packages/client/ui-workspace/src/client/contract/slots.ts': "'sidebar.session.row.badge': { kind: 'list' }\n",
+      'packages/client/ui-workspace/src/client/rows/Rows.tsx': "renderSlot('sidebar.session.row.badge', { sessionId })\n",
       'packages/client/ui-workspace/src/client/locales.ts': "'menu.noDirectory': 'No workspace folder',\n",
       'packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx': "const noDirectorySession = false\nvoid selectNoDirectory()\nstack.dataset.composerEntering = ''\n<div data-composer-flow=\"\">\n",
       'packages/client/ui-chat/src/client/chat/TurnTailNodeView.tsx': 'function revealTurn() {}\nif (revealTurn(snapshot) !== data.turn) {}\n',

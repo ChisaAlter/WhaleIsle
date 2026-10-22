@@ -60,15 +60,16 @@ type RowTranslate = WorkspaceBrowserProps['t']
 
 /**
  * Child-seat renderer threaded from the browser root: the row's action lists,
- * its leading decoration, and its hover-card section. The leading seat is
- * rendered only while the row's primary state is idle, so a status dot and a
- * leading occupant never share the row; the hover seat only while the row's
- * card is open.
+ * its leading decoration, its title badge, and its hover-card section. The
+ * leading seat is rendered only while the row's primary state is idle, so a
+ * status dot and a leading occupant never share the row; the badge seat in
+ * every state; the hover seat only while the row's card is open.
  */
 type RowRenderSlots = PropsRenderSlots<
   | 'sidebar.workspaces.session.menu.item'
   | 'sidebar.workspaces.session.row.action'
   | 'sidebar.session.row.leading'
+  | 'sidebar.session.row.badge'
   | 'sidebar.session.row.hover'
 >['renderSlot']
 
@@ -613,6 +614,7 @@ export function SearchResultItem({ result, currentId, onOpen, onUnarchive, onDel
           )}
         </span>
         <span className={css.searchResultTitle}>{title}</span>
+        {renderSlot('sidebar.session.row.badge', { sessionId: result.id })}
         {(result.archived || result.owner !== undefined) && !selection?.enabled && (
           <span className={css.rowActions} onClick={(e) => { e.stopPropagation() }}>
             <Menu
@@ -696,6 +698,7 @@ export function SessionNodeItem({
   | 'sidebar.workspaces.session.menu.item'
   | 'sidebar.workspaces.session.row.action'
   | 'sidebar.session.row.leading'
+  | 'sidebar.session.row.badge'
   | 'sidebar.session.row.hover'
 >) {
   const row = node
@@ -786,6 +789,7 @@ export function SessionNodeItem({
       >
         {title}
       </span>
+      {!row.blank && renderSlot('sidebar.session.row.badge', { sessionId: node.id })}
       {/* A blank New Session row is a provisional placeholder: nothing has
           happened in it yet, so a "now" timestamp and the row verbs
           (rename/fork/archive) would all act on content that does not
@@ -941,6 +945,7 @@ export function ArchivedSessionNodeItem({ node, currentId, now, onOpen, onUnarch
           : showStatus && <SessionStatusDots statuses={statuses} />}
       </span>
       <span className={css.title}>{title}</span>
+      {!row.blank && renderSlot('sidebar.session.row.badge', { sessionId: node.id })}
       {!row.blank && <span className={css.time}>{timeLabel(row.updatedAt, now, t)}</span>}
       {!row.blank && !selection?.enabled && (
         <span className={css.rowActions} onClick={(event) => { event.stopPropagation() }}>
