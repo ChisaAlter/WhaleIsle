@@ -196,7 +196,7 @@ class DependencyModel extends ScriptedModel {
 
 /** Script only user/model decisions; queue admission, notices and deliveries remain native. */
 class QueueModel extends DependencyModel {
-  holdTitles = new Set(); deliveryBarriers = new Set(); barriersReached = new Set(); queueInputs = []; workerAborts = []; streamErrors = [];
+  holdTitles = new Set(); isolateTitles = new Set(); deliveryBarriers = new Set(); barriersReached = new Set(); queueInputs = []; workerAborts = []; streamErrors = [];
   async barrier(name, signal) {
     this.barriersReached.add(name);
     await new Promise((done, reject) => {
@@ -209,7 +209,7 @@ class QueueModel extends DependencyModel {
   row(title) { const row = this.state().requests.find(item => item.title === title); assert.ok(row, title); return row; }
   delegate(row) {
     const work = this.state().workstreams.find(item => item.delegations.at(-1).source.requestId === row.id);
-    return { requestId: row.id, requestRevision: row.revision, ...(work ? { workstreamId: work.id } : { title: `${row.title} work` }), brief: `QUEUE_WORK:${row.title}`, scope: 'development' };
+    return { requestId: row.id, requestRevision: row.revision, ...(work ? { workstreamId: work.id } : { title: `${row.title} work`, ...(this.isolateTitles.has(row.title) ? { isolate: true } : {}) }), brief: `QUEUE_WORK:${row.title}`, scope: 'development' };
   }
   async *stream(options) {
     try { yield* this.queueStream(options); }
@@ -448,15 +448,17 @@ class ReplacementModel extends ScriptedModel {
   }
 }
 
-async function desktopBridge(root) {
+async function desktopBridge(root, handlers = {}) {
   const bindings = new Map(), requests = [];
   const server = createServer(async (req, res) => { try {
     assert.equal(req.headers.authorization, 'Bearer composition-secret'); const chunks = []; for await (const chunk of req) chunks.push(chunk);
     const input = JSON.parse(Buffer.concat(chunks)); requests.push(input); let value;
-    if (input.action === 'select-directory') { const path = await realpath(input.workingDirectory); value = { canonicalPath: path, identity: path.toLowerCase() }; }
-    else if (input.action === 'prepare-workspace') { assert.equal(input.mode, 'existing'); value = { canonicalPath: await realpath(input.workingDirectory), ownership: 'user', receipt: input.workstreamId, isGit: false }; bindings.set(input.workstreamId, value); }
+    if (input.action === 'prepare-workspace') { if (handlers[input.action]) value = await handlers[input.action](input); else { assert.equal(input.mode, 'existing'); value = { canonicalPath: await realpath(input.workingDirectory), ownership: 'user', receipt: input.workstreamId, isGit: false }; } bindings.set(input.workstreamId, value); }
+    else if (handlers[input.action]) value = await handlers[input.action](input);
+    else if (input.action === 'select-directory') { const path = await realpath(input.workingDirectory); value = { canonicalPath: path, identity: path.toLowerCase() }; }
     else if (input.action === 'check-workspace') { assert.deepEqual(input.workspace, bindings.get(input.workstreamId)); value = { valid: true }; }
     else if (input.action === 'snapshot') value = { isGit: false, dirty: null, fingerprint: null };
+    else if (input.action === 'baseline') value = { isGit: false };
     else if (input.action === 'resolve-path') value = { canonicalPath: await realpath(input.path), root: bindings.get(input.workstreamId).canonicalPath };
     else throw new Error(`Unexpected desktop action ${input.action}`);
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(value));
@@ -546,6 +548,72 @@ test('native requirement queue keeps discussion separate, preserves edits and or
     for (const gate of model.gates.values()) gate.release(); if (ctx) await ctx.fiber.dispose(); await bridge.close();
     for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
     assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-native-queue-`)); await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('native delivery tracking waits for actual workspace snapshots and excludes another Project writer during revert', { timeout: 120000 }, async () => {
+  // Plain data fixtures stand in for desktop-owned directories: no Git repository,
+  // branch or worktree is created. Real Host tools write and read the data.
+  const root = await mkdtemp(join(tmpdir(), 'whale-project-native-tracking-')), home = join(root, 'home'), directory = join(root, 'selected'), isolated = join(root, 'isolated-data'), child = join(isolated, 'nested-data');
+  await mkdir(home); await mkdir(directory); await mkdir(isolated); await mkdir(child);
+  for (const cwd of [directory, isolated, child]) await writeFile(join(cwd, 'seed.txt'), 'preserved\n');
+  let releaseCapture, captureStarted = false, ctx;
+  const captureGate = new Promise(resolve => { releaseCapture = resolve; }), model = new QueueModel();
+  model.isolateTitles.add('A'); model.holdTitles = new Set(['B', 'Foreign']);
+  const bridge = await desktopBridge(root, {
+    'prepare-workspace': async input => ({ canonicalPath: await realpath(input.mode === 'worktree' ? isolated : input.workingDirectory), ownership: input.mode === 'worktree' ? 'project' : 'user', receipt: input.workstreamId, isGit: true }),
+    baseline: () => ({ isGit: true, tree: 'a'.repeat(40) }),
+    changes: async input => {
+      const title = input.workingDirectory === await realpath(isolated) ? 'A' : 'B';
+      assert.equal(await readFile(join(input.workingDirectory, `${title}.txt`), 'utf8'), `${title} revision 1\n`);
+      if (title === 'A' && !input.end) { captureStarted = true; await captureGate; }
+      return { end: title === 'A' ? 'b'.repeat(40) : 'c'.repeat(40), files: [{ path: `${title}.txt`, status: 'A', added: 1, removed: 0 }], diff: `diff --git a/${title}.txt b/${title}.txt\nnew file mode 100644\n--- /dev/null\n+++ b/${title}.txt\n@@ -0,0 +1 @@\n+${title} revision 1\n` };
+    },
+    revert: async input => {
+      assert.equal(input.workingDirectory, await realpath(isolated));
+      assert.ok(input.workspace.receipt && input.workstreamId);
+      if (!input.checkOnly) await rm(join(isolated, 'A.txt'));
+      return { ok: true, applied: !input.checkOnly };
+    },
+  });
+  const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
+  try {
+    ctx = await bootHost(home, model); const host = ctx.projects;
+    const { project } = await host.command('create', { requestId: 'tracking-primary', workingDirectory: directory }), lead = ctx.agents.get(project.coordinatorSessionId);
+    const prompt = (sessionId, requestId, actions) => ctx.sessionController.prompt({ sessionId, requestId, mode: 'queue', content: [{ type: 'text', text: `QUEUE_ACTIONS:${JSON.stringify(actions)}` }] }, signal);
+    await prompt(lead.id, 'tracking-human', [{ type: 'request', title: 'A' }, { type: 'delegate', title: 'A' }, { type: 'request', title: 'B', disposition: 'discussing' }]);
+    await waitFor(() => { assert.deepEqual(model.streamErrors, []); return captureStarted; }, 'the native completed A reply reaches its delayed end snapshot');
+    const a = () => host.state().requests.find(row => row.title === 'A'), b = () => host.state().requests.find(row => row.title === 'B');
+    const enqueue = host.command('requests/queue', { projectId: project.id, requestId: b().id, requestRevision: 1, action: 'enqueue' });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(host.state().deliveries.find(row => row.requestId === a().id).status, 'draft');
+    assert.equal(host.queue.active(project.id)?.id, a().id); assert.equal(model.workerInputs.some(input => input.context.title === 'B'), false);
+    assert.equal(a().changes.workspaces[0].workingDirectory, await realpath(isolated), 'baseline is in the assigned member cwd, not the bound root');
+    releaseCapture(); await enqueue;
+    await waitFor(() => model.barriersReached.has('worker:B'), 'B starts only after A end tree is saved');
+    assert.equal(a().changes.workspaces[0].end, 'b'.repeat(40));
+    assert.equal(model.workerInputs.find(input => input.context.title === 'A').cwd, await realpath(isolated));
+    const diff = await host.command('requests/changes', { projectId: project.id, requestId: a().id });
+    assert.equal(diff.workspaces[0].workingDirectory, await realpath(isolated)); assert.equal(diff.files[0].path, 'A.txt');
+    model.gate('worker:B').release();
+    await waitFor(() => host.state().deliveries.some(row => row.title === 'B' && row.status === 'delivered'), 'ordinary B writes, reads back and completes');
+    const { project: foreign } = await host.command('create', { requestId: 'tracking-overlap', workingDirectory: child });
+    await prompt(foreign.coordinatorSessionId, 'tracking-foreign-human', [{ type: 'request', title: 'Foreign' }, { type: 'delegate', title: 'Foreign' }]);
+    await waitFor(() => model.barriersReached.has('worker:Foreign'), 'another Project holds a child-directory writer');
+    await assert.rejects(host.command('requests/revert', { projectId: project.id, requestId: a().id }), { code: 'busy' });
+    assert.equal(bridge.requests.filter(input => input.action === 'revert').length, 0);
+    await host.command('stop', { projectId: foreign.id });
+    await host.command('requests/revert', { projectId: project.id, requestId: a().id });
+    await assert.rejects(readFile(join(isolated, 'A.txt')), { code: 'ENOENT' });
+    assert.equal(await readFile(join(directory, 'B.txt'), 'utf8'), 'B revision 1\n');
+    assert.equal(await readFile(join(directory, 'seed.txt'), 'utf8'), 'preserved\n');
+    assert.ok(a().changes.revertedAt); assert.deepEqual(model.failures, []); assert.deepEqual(model.streamErrors, []);
+    assert.deepEqual(bridge.requests.filter(input => input.action === 'baseline').map(input => input.workingDirectory).slice(0, 2), [await realpath(isolated), await realpath(directory)]);
+  } finally {
+    releaseCapture(); for (const gate of model.gates.values()) gate.release(); if (ctx) await ctx.fiber.dispose(); await bridge.close();
+    for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-native-tracking-`)); await rm(root, { recursive: true, force: true });
   }
 });
 
@@ -682,6 +750,48 @@ test('both shipped catalogs migrate before admission while durable authority, hi
       return catalog;
     };
     const writeCatalog = async catalog => { const document = structuredClone(envelope); document.tables.state.catalog = catalog; await writeFile(catalogFile, `${JSON.stringify(document, null, 2)}\n`); };
+    const emptyIdentity = () => {
+      const saved = structuredClone(original), id = saved.requests[0].id;
+      saved.projects.forEach(project => { project.paused = true; });
+      const row = saved.requests[0]; row.id = '';
+      for (const version of row.versions) if (version.source?.requestId === id) version.source.requestId = '';
+      for (const work of saved.workstreams) {
+        for (const receipt of work.delegations) if (receipt.source.requestId === id) receipt.source.requestId = '';
+        if (work.replaces?.requestId === id) work.replaces.requestId = '';
+      }
+      for (const delivery of saved.deliveries) if (delivery.requestId === id) delivery.requestId = '';
+      return saved;
+    };
+    await t.test('empty-v2-identity-restores-persists-and-reopens-without-model-execution', async () => {
+      await writeCatalog(emptyIdentity());
+      let restarted = new RequirementModel(); ctx = await bootHost(home, restarted);
+      const restored = ctx.projects.state(), row = restored.requests[0], source = original.requests[0].versions[0].source;
+      assert.equal(row.id, original.requests[0].id);
+      assert.deepEqual(row.identityRecovery, { originalId: '', sessionId: source.sessionId, callId: source.callId });
+      assert.deepEqual(row.versions, original.requests[0].versions, 'original authorization is preserved exactly');
+      assert.deepEqual(restored.workstreams.map(work => work.delegations), original.workstreams.map(work => work.delegations));
+      assert.deepEqual(restored.deliveries, original.deliveries);
+      assert.ok(restored.projects.every(project => project.paused)); assert.equal(restarted.requests.length, 0);
+      assert.equal((await ctx.projects.command('list')).available, true);
+      const disk = JSON.parse(await readFile(catalogFile, 'utf8')).tables.state.catalog;
+      assert.deepEqual(disk.requests[0], row, 'normal recovery commits the restored identity through the real storage domain');
+      await disposeProfileApplication(ctx); ctx = undefined;
+      restarted = new RequirementModel(); ctx = await bootHost(home, restarted);
+      assert.deepEqual(ctx.projects.state().requests[0], row); assert.equal(restarted.requests.length, 0);
+      assert.ok(ctx.projects.state().projects.every(project => project.paused));
+      const handle = await ctx.sessionPersistence.open(lead.id, 'read');
+      try { assert.deepEqual((await handle.read()).events.slice(0, events.length), events, 'identity recovery never rewrites native Session history'); }
+      finally { await handle.close(); }
+      await disposeProfileApplication(ctx); ctx = undefined;
+    });
+    await t.test('ambiguous-empty-v2-reference-remains-unavailable-with-the-original-catalog-intact', async () => {
+      const saved = emptyIdentity(); saved.workstreams[0].delegations[0].source.authorizationCallId = 'unrelated-original-authorization';
+      await writeCatalog(saved); const bytes = await readFile(catalogFile, 'utf8'), restarted = new RequirementModel();
+      ctx = await bootHost(home, restarted, undefined, true);
+      assert.match(ctx.projects.error, /catalog needs review/); assert.equal((await ctx.projects.command('list')).available, false);
+      assert.equal(restarted.requests.length, 0); assert.equal(await readFile(catalogFile, 'utf8'), bytes);
+      await disposeProfileApplication(ctx); ctx = undefined;
+    });
     for (const kind of ['final-v1', 'published-v1', 'missing-declaration', 'mismatched-call-id', 'missing-authority']) await t.test(kind, async () => {
       const saved = kind === 'final-v1' ? { ...structuredClone(original), version: 1 } : published();
       if (kind === 'missing-declaration') saved.deliveries[0].callSeq = -1;
@@ -1324,7 +1434,16 @@ test('native Team dependency changes preserve continuing identity, reject cycles
       await waitFor(() => drainReached, 'internal dependency change reaches native drain boundary'); await host.tail;
       const race = work('Stop storage race'), originalRef = race.currentDelegationRef, failuresBeforeStop = model.failures.length;
       let failWrite = true;
-      host.write = async function (change) { if (failWrite) { failWrite = false; throw new Error('User stop persistence fault'); } return originalWrite.call(this, change); };
+      host.write = async function (change) {
+        return originalWrite.call(this, state => {
+          const previousHold = state.workers.find(item => item.sessionId === race.workerSessionId).holdSourceMessageId;
+          change(state);
+          const member = state.workers.find(item => item.sessionId === race.workerSessionId);
+          // Native settlement may enqueue its own save after drain returns. Fail
+          // the actual user-stop cutoff write, not an unrelated first save.
+          if (failWrite && member.stopped && member.holdSourceMessageId !== previousHold) { failWrite = false; throw new Error('User stop persistence fault'); }
+        });
+      };
       await assert.rejects(() => host.command('stop', { projectId: project.id, workstreamId: race.id }), /User stop persistence fault/);
       assert.equal(failWrite, false, 'the injected failure reached the actual stop persistence boundary'); host.write = originalWrite;
       releaseDrain(); await lead.whenIdle(); await Promise.all([...host.stops.values()]);

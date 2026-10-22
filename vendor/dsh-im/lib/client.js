@@ -3726,7 +3726,7 @@ var DiscordAccountCard = channel.AccountCard;
 // plugin-src/client/channels/feishu/index.js
 var React13 = __toESM(require("react"), 1);
 
-// plugin-src/client/channels/feishu/api.js
+// src/channels/feishu/rpc-protocol.mjs
 var FEISHU_RPC_CHANNEL = "/feishu";
 var FEISHU_ENDPOINTS = Object.freeze({
   status: "connection.status",
@@ -3746,6 +3746,8 @@ var FEISHU_ENDPOINTS = Object.freeze({
   testConnection: "connection.test",
   disconnect: "connection.disconnect"
 });
+
+// plugin-src/client/channels/feishu/api.js
 var FEISHU_REGISTRATION_OPERATIONS = Object.freeze({
   PROVISION: "provision",
   CALLBACK_REPAIR: "callback_repair",

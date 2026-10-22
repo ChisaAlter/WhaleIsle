@@ -2236,6 +2236,67 @@ test('a delivered requirement shows its own changes, reverts after confirmation 
   } finally { await b.dispose(); }
 });
 
+test('requirement diffs distinguish same-named files in actual workspaces and report a partial revert without claiming no changes', async () => {
+  const task = taskCard('multi-directory-changes', 'Primary and isolated results', 'completed');
+  task.changes = { isGit: true, revertible: true, fileCount: 3, added: 3, removed: 1 };
+  const patch = value => ['diff --git a/result.txt b/result.txt', '--- a/result.txt', '+++ b/result.txt', '@@ -1 +1 @@', '-old', `+${value}`, ''].join('\n');
+  const partial = 'Isolated file is locked. Reverted directories: C:/workspace/real. Not reverted: C:/profile/project-worktrees/isolated. Retry touches only the remaining directory.';
+  const b = bench({ cards: [task], rpcOverride: method => method === 'requests/changes' ? { ok: true, value: { final: true, files: [], diff: '', workspaces: [
+    { workingDirectory: 'C:/workspace/real', files: [{ path: 'result.txt', status: 'M', added: 1, removed: 1 }], diff: patch('primary') },
+    { workingDirectory: 'C:/profile/project-worktrees/isolated', files: [{ path: 'result.txt', status: 'M', added: 1, removed: 1 }, { path: 'binary.png', status: 'A', added: 0, removed: 0, binary: true }], diff: patch('isolated') },
+  ] } } : method === 'requests/revert' ? { ok: false, error: { code: 'revert_partial', message: partial } } : undefined });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    await b.openRequest(task.id, false); await b.flush(); await b.press('viewChanges'); await b.flush();
+    const files = [...b.document.querySelectorAll('.dsh-project-diff-file')];
+    assert.deepEqual(files.map(file => [file.dataset.diffDirectory, file.dataset.diffPath]), [
+      ['C:/workspace/real', 'result.txt'], ['C:/profile/project-worktrees/isolated', 'result.txt'], ['C:/profile/project-worktrees/isolated', 'binary.png'],
+    ]);
+    assert.match(files[0].textContent, /result\.txt · …\/real.*\+primary/s);
+    assert.match(files[1].textContent, /result\.txt · …\/isolated.*\+isolated/s);
+    assert.equal(files[2].querySelector('.dsh-project-diff-name').title, 'diffWorkingDirectory: C:/profile/project-worktrees/isolated\ndiffRepositoryPath: binary.png');
+    await b.press('revertChanges'); await b.press('revertConfirm'); await b.flush();
+    assert.equal(b.document.querySelector('[role=dialog]'), null);
+    assert.ok([...b.document.querySelectorAll('[role=alert]')].some(item => item.textContent === partial));
+    assert.doesNotMatch(visibleText(b.document.body), /revertConflictBody|revertDone/, 'a partially applied revert is neither an all-or-nothing conflict nor success');
+  } finally { await b.dispose(); }
+});
+
+test('a requirement bound to a repository subdirectory keeps repository-relative paths separate from its workspace label', async () => {
+  const task = taskCard('subdirectory-changes', 'App directory result', 'completed');
+  task.changes = { isGit: true, revertible: true, fileCount: 1, added: 1, removed: 0 };
+  const diff = ['diff --git a/app/result.txt b/app/result.txt', 'new file mode 100644', '--- /dev/null', '+++ b/app/result.txt', '@@ -0,0 +1 @@', '+result', ''].join('\n');
+  const b = bench({ cards: [task], rpcOverride: method => method === 'requests/changes' ? { ok: true, value: { final: true,
+    workspaces: [{ workingDirectory: 'C:/repo/app', files: [{ path: 'app/result.txt', status: 'A', added: 1, removed: 0 }], diff }] } } : undefined });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    await b.openRequest(task.id, false); await b.flush(); await b.press('viewChanges'); await b.flush();
+    const file = b.document.querySelector('.dsh-project-diff-file');
+    assert.equal(file.dataset.diffPath, 'app/result.txt'); assert.equal(file.dataset.diffDirectory, 'C:/repo/app');
+    const name = file.querySelector('.dsh-project-diff-name');
+    assert.equal(name.textContent, 'app/result.txt · …/app');
+    assert.equal(name.title, 'diffWorkingDirectory: C:/repo/app\ndiffRepositoryPath: app/result.txt');
+    assert.doesNotMatch(file.textContent + name.title, /C:\/repo\/app\/app\/result\.txt/, 'the workspace cwd is not the repository-relative path root');
+    assert.match(file.textContent, /\+result/);
+  } finally { await b.dispose(); }
+});
+
+test('diff scope labels use unique directory suffixes when final components match and preserve roots', async () => {
+  const task = taskCard('matching-directory-names', 'Distinct app scopes', 'completed');
+  task.changes = { isGit: true, revertible: true, fileCount: 4, added: 4, removed: 0 };
+  const directories = ['C:/repo/primary/app', 'C:/repo/isolated/app', 'C:\\', '/'];
+  const b = bench({ cards: [task], rpcOverride: method => method === 'requests/changes' ? { ok: true, value: { final: true,
+    workspaces: directories.map(workingDirectory => ({ workingDirectory, files: [{ path: 'result.txt', status: 'A', added: 1, removed: 0 }], diff: '' })) } } : undefined });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.openObserver();
+    await b.openRequest(task.id, false); await b.flush(); await b.press('viewChanges'); await b.flush();
+    const names = [...b.document.querySelectorAll('.dsh-project-diff-name')];
+    assert.deepEqual(names.map(name => name.textContent), ['result.txt · …/primary/app', 'result.txt · …/isolated/app', 'result.txt · C:\\', 'result.txt · /']);
+    assert.deepEqual(names.map(name => name.title), directories.map(directory => `diffWorkingDirectory: ${directory}\ndiffRepositoryPath: result.txt`));
+    assert.deepEqual([...b.document.querySelectorAll('.dsh-project-diff-file')].map(file => file.dataset.diffPath), directories.map(() => 'result.txt'));
+  } finally { await b.dispose(); }
+});
+
 test('notes show the Project decision log without its internal markers', async () => {
   const b = bench({ rpcOverride: (method, input, _project, stored) => {
     if (method === 'store/read' && input.path === 'decisions.md') stored['decisions.md'] = '# 决策日志\n\n## 2026-10-16 · Remember me（第 1 版）\n<!-- decision:delivery-a -->\n- 结果：完整交付\n- 决策：Use an HttpOnly cookie.\n';

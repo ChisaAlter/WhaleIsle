@@ -28,7 +28,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     openFile: '打开文件', fileMore: '文件操作', diff: '当前目录改动', diffScope: '可能包含原有改动及其他工作的修改。',
     fileLocation: '文件位置', artifactMaterials: '项目资料', artifactExisting: '项目目录', artifactWorktree: '独立分支', errorDetails: '错误详情', modelSettings: '模型设置',
     summaryCredentialHint: '当前模型未配置凭据。请补充凭据，或在输入框选择已配置的模型，再重新汇总。', summaryErrorHint: '本次汇总未完成。请查看错误详情，处理原因后重新汇总。', sidebarSummaryFailed: '汇总失败', sidebarPendingSummary: '等待汇总',
-    noDiff: '当前没有文件差异。', branch: '分支', readonly: '查看项目文件，不修改文件', docsScope: '修改已授权的文档', developmentScope: '执行已授权的开发工作', worktree: '独立分支', existing: '项目目录',
+    noDiff: '当前没有文件差异。', diffWorkingDirectory: '工作目录', diffRepositoryPath: '仓库内路径', branch: '分支', readonly: '查看项目文件，不修改文件', docsScope: '修改已授权的文档', developmentScope: '执行已授权的开发工作', worktree: '独立分支', existing: '项目目录',
     copy: '复制', copied: '已复制', footnotes: '脚注', unavailable: 'Project 暂不可用',
     evidence: '验证记录', pendingSummary: '正在汇总', pendingDelivery: '交付未完成', needsReview: '结果需复核', roundDelivered: '本轮已交付', summaryFailed: '成果已保存，汇总未完成', retrySummary: '重新汇总', resultUpdated: '结果已更新，请查看最新结果。', handoverErrorHint: '本次交付未完成。已有成果仍保留，处理错误后可重新汇总。', authorityErrorHint: '这项要求缺少可核对的原始授权记录。请在主对话中重新说明或修订要求，再继续工作。',
     retrySummaryPrompt: '请重新汇总以下已保存结果，说明成果、验证和剩余问题；只读取已有报告，不重新执行后台工作：', waitingDependencies: '等待前置工作完成', waitingDirectory: '等待其他工作释放目录', waitingCapacity: '等待团队空出执行名额', prerequisitesChanged: '依据已变化', prerequisitesHint: '前置工作已收到新要求。这份报告保留原有结果，需按当前要求复核。', deliveryChangedHint: '要求或依据已变化。这份交付保留原版本结果，需按当前要求复核。',
@@ -65,7 +65,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     openFile: 'Open file', fileMore: 'File actions', diff: 'Current directory changes', diffScope: 'May include pre-existing changes and changes from other work.',
     fileLocation: 'File location', artifactMaterials: 'Project materials', artifactExisting: 'Project directory', artifactWorktree: 'Independent branch', errorDetails: 'Error details', modelSettings: 'Model settings',
     summaryCredentialHint: 'The current model has no credentials. Add credentials or choose a configured model in the composer, then summarize again.', summaryErrorHint: 'The summary did not finish. Review the error details, address the cause, then summarize again.', sidebarSummaryFailed: 'Summary failed', sidebarPendingSummary: 'Awaiting summary',
-    noDiff: 'There are no current file changes.', branch: 'Branch', readonly: 'Inspect Project files without modifying them', docsScope: 'Edit authorized documents', developmentScope: 'Perform authorized development', worktree: 'Independent branch', existing: 'Project directory',
+    noDiff: 'There are no current file changes.', diffWorkingDirectory: 'Working directory', diffRepositoryPath: 'Repository path', branch: 'Branch', readonly: 'Inspect Project files without modifying them', docsScope: 'Edit authorized documents', developmentScope: 'Perform authorized development', worktree: 'Independent branch', existing: 'Project directory',
     copy: 'Copy', copied: 'Copied', footnotes: 'Footnotes', unavailable: 'Project is currently unavailable',
     evidence: 'Verification records', pendingSummary: 'Preparing summary', pendingDelivery: 'Delivery incomplete', needsReview: 'Results need review', roundDelivered: 'This request is delivered', summaryFailed: 'Results saved; summary incomplete', retrySummary: 'Summarize again', resultUpdated: 'The result changed. View the latest result.', handoverErrorHint: 'The handover did not complete. Saved results remain available; resolve the error and summarize again.', authorityErrorHint: 'The original authorization for this request cannot be verified. Restate or revise the request in the main conversation before continuing.',
     retrySummaryPrompt: 'Summarize the following saved result again, including changes, verification and remaining issues. Read the existing report without rerunning background work:', waitingDependencies: 'Waiting for prerequisite work', waitingDirectory: 'Waiting for other work to release the directory', waitingCapacity: 'Waiting for an available team slot', prerequisitesChanged: 'Prerequisites changed', prerequisitesHint: 'Prerequisite work has received a new request. This report retains the original result and needs review against the current request.', deliveryChangedHint: 'The request or its prerequisites changed. This delivery retains its original version and needs review against the current request.',
@@ -1509,11 +1509,23 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     return files;
   }
   const diffTone = { added: 'success', deleted: 'danger', renamed: 'info', untracked: 'outline', modified: 'neutral' };
-  function DiffFile({ file, open, t }) {
+  function diffDirectoryLabel(directory, directories) {
+    const parts = directoryParts({ canonicalWorkingDirectory: directory });
+    if (!parts.length || /^[a-z]:[\\/]*$/i.test(directory)) return directory;
+    const peers = directories.filter(other => other !== directory).map(other => directoryParts({ canonicalWorkingDirectory: other }));
+    for (let count = 1; count < parts.length; count++) {
+      const label = parts.slice(-count).join('/');
+      if (peers.every(other => other.slice(-count).join('/') !== label)) return `…/${label}`;
+    }
+    return directory;
+  }
+  function DiffFile({ file, directoryLabel, open, t }) {
     const slash = file.path.lastIndexOf('/'), shown = file.lines.slice(0, diffLineLimit);
-    return h('details', { className: 'dsh-project-diff-file', open, 'data-diff-path': file.path },
+    const location = file.workingDirectory ? `${t('diffWorkingDirectory')}: ${file.workingDirectory}\n${t('diffRepositoryPath')}: ${file.path}` : file.path;
+    return h('details', { className: 'dsh-project-diff-file', open, 'data-diff-path': file.path, 'data-diff-directory': file.workingDirectory },
       h('summary', null, h(Tag, { tone: diffTone[file.kind] }, t(`diff_${file.kind}`)),
-        h('span', { className: 'dsh-project-diff-name', title: file.path }, slash >= 0 ? h('span', null, file.path.slice(0, slash + 1)) : null, file.path.slice(slash + 1)),
+        h('span', { className: 'dsh-project-diff-name', title: location }, slash >= 0 ? h('span', null, file.path.slice(0, slash + 1)) : null, file.path.slice(slash + 1),
+          file.workingDirectory ? h('span', null, ` · ${directoryLabel}`) : null),
         file.added ? h('span', { className: 'dsh-project-diff-add' }, `+${file.added}`) : null, file.removed ? h('span', { className: 'dsh-project-diff-del' }, `−${file.removed}`) : null),
       file.kind === 'untracked' ? h('p', { className: 'dsh-project-diff-note' }, t('diffUntrackedHint'))
         : file.binary ? h('p', { className: 'dsh-project-diff-note' }, t('diffBinary'))
@@ -1524,10 +1536,12 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
 
   function DiffView({ files, truncated, t }) {
     const added = files.reduce((sum, file) => sum + file.added, 0), removed = files.reduce((sum, file) => sum + file.removed, 0);
+    const directories = [...new Set(files.map(file => file.workingDirectory).filter(Boolean))];
+    const labels = new Map(directories.map(directory => [directory, diffDirectoryLabel(directory, directories)]));
     return !files.length ? h('p', { className: 'dsh-project-muted' }, t('noDiff')) : h(Fragment, null,
       h('div', { className: 'dsh-project-diff-summary' }, h('strong', null, t('diffFileCount').replace('{count}', files.length)),
         h('span', { className: 'dsh-project-diff-add' }, `+${added}`), h('span', { className: 'dsh-project-diff-del' }, `−${removed}`)),
-      files.map((file, index) => h(DiffFile, { key: file.path, file, open: index < 3, t })),
+      files.map((file, index) => h(DiffFile, { key: `${file.workingDirectory ?? ''}:${file.path}`, file, directoryLabel: labels.get(file.workingDirectory), open: index < 3, t })),
       truncated ? h('p', { className: 'dsh-project-muted' }, t('diffTruncated')) : null);
   }
 
@@ -1558,8 +1572,11 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     }, [projectId, requestId]);
     if (error) return h('div', { className: 'dsh-project-body' }, h('p', { role: 'alert', className: 'dsh-project-error' }, error));
     if (!value) return h('div', { className: 'dsh-project-body' }, h('p', { role: 'status' }, t('loading')));
-    const parsed = parseUnifiedDiff(value.diff), known = new Set(parsed.map(file => file.path));
-    const files = [...parsed, ...(value.files ?? []).filter(file => !known.has(file.path)).map(file => ({ path: file.path, lines: [], added: file.added, removed: file.removed, binary: file.binary, kind: diffStatusKind(file.status) }))];
+    const files = (value.workspaces ?? [value]).flatMap(scope => {
+      const parsed = parseUnifiedDiff(scope.diff), known = new Set(parsed.map(file => file.path));
+      return [...parsed, ...(scope.files ?? []).filter(file => !known.has(file.path)).map(file => ({ path: file.path, lines: [], added: file.added, removed: file.removed, binary: file.binary, kind: diffStatusKind(file.status) }))]
+        .map(file => ({ ...file, ...(scope.workingDirectory ? { workingDirectory: scope.workingDirectory } : {}) }));
+    });
     return h('div', { className: 'dsh-project-body dsh-project-diff', 'data-request-diff': requestId },
       h('p', { className: 'dsh-project-muted' }, t(value.final ? 'requestDiffScope' : 'requestDiffLive'), value.revertedAt ? ` ${t('requestDiffReverted')}` : ''),
       h(DiffView, { files, truncated: value.truncated, t }));

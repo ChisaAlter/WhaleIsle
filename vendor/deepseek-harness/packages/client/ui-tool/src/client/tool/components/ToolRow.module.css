@@ -288,8 +288,8 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* Text blocks other than the envelope (for example, appended by a post-execute
-   hook), in the muted tone the search recovery footer uses. */
+/* Complete image-envelope body and other result text, in the muted tone the
+   search recovery footer uses. */
 .imageExtra {
   margin-top: 4px;
   white-space: pre-wrap;
