@@ -197,7 +197,9 @@
     overlay.style.color = getComputedStyle(button).color;
     const text = document.createElement('span');
     text.className = 'shell-button-label';
-    text.textContent = label;
+    const track = document.createElement('span');
+    track.className = 'shell-button-label-text';
+    text.append(track);
     if (busy) {
       const spinner = document.createElement('span');
       spinner.className = 'shell-button-spinner';
@@ -206,20 +208,29 @@
     }
     overlay.append(text);
     button.append(overlay);
-    // A narrow button sheds the ellipsis, then the "中", keeps a percentage
-    // without its verb, and a busy button finally keeps only its spinner; the
-    // full sentence stays in aria-label.
-    const forms = [label, label.replace(/…$/u, ''), label.replace(/中?…$/u, ''), label.replace(/^.*?(\d+%)$/u, '$1'), ...(busy ? [''] : [])];
-    for (const form of forms.filter((value, index) => forms.indexOf(value) === index)) {
-      text.textContent = form;
-      text.hidden = form === '';
-      if (form === '' || text.scrollWidth <= text.clientWidth) break;
-    }
+    const measure = () => {
+      const distance = Math.max(0, track.scrollWidth - text.clientWidth);
+      text.style.setProperty('--shell-button-scroll-distance', `${-distance}px`);
+      text.style.setProperty('--shell-button-scroll-duration', `${Math.max(3600, distance / 24 * 2000 + 1600)}ms`);
+      text.classList.toggle('is-scrolling', text.clientWidth > 0 && distance > 1);
+    };
+    const update = value => {
+      if (track.textContent !== value) track.textContent = value;
+      measure();
+    };
+    update(label);
+    // Hidden component controls are measured again when their tab is shown.
+    const observer = new ResizeObserver(measure);
+    observer.observe(text);
     button.dataset.buttonLabel = busy ? 'busy' : 'done';
-    return () => {
+    const restore = () => {
+      observer.disconnect();
       overlay.remove();
       if (!button.querySelector(':scope > .shell-button-overlay')) delete button.dataset.buttonLabel;
     };
+    // Keep the text node and its animation alive across progress updates.
+    restore.update = update;
+    return restore;
   }
 
   function buttonBusy(button, label) {

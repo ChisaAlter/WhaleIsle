@@ -168,7 +168,7 @@ app.whenReady().then(async () => {
     show: false,
     webPreferences: {
       backgroundThrottling: false,
-      offscreen: !visualOnly && Boolean(process.env.QA_HOME_ARTIFACTS),
+      offscreen: !visualOnly,
       preload: PRELOAD,
       contextIsolation: true,
       nodeIntegration: false,
@@ -178,6 +178,9 @@ app.whenReady().then(async () => {
   });
   try {
     await win.loadFile(LAUNCHER_HTML);
+    win.webContents.debugger.attach('1.3');
+    await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+    win.webContents.debugger.detach();
     const ready = await win.webContents.executeJavaScript(`new Promise((r) => {
       if (document.readyState === 'complete') return r('ready');
       document.addEventListener('DOMContentLoaded', () => r('ready'));
@@ -457,12 +460,19 @@ app.whenReady().then(async () => {
       const readFeedback = () => win.webContents.executeJavaScript(`(() => {
         const button = window.qaComponentButton;
         const box = button.getBoundingClientRect();
+        const label = button.querySelector('.shell-button-label');
+        const track = label?.querySelector('.shell-button-label-text');
         const mask = document.querySelector('#app-confirm');
         const toast = [...document.querySelectorAll('.shell-feedback-toast')].at(-1);
         const progress = [...document.querySelectorAll('.shell-feedback-progress')].at(-1);
         return {
           sameButton: button.isConnected, caption: (button.querySelector('.shell-button-label')?.textContent ?? button.textContent), width: box.width, height: box.height,
           spinner: !!button.querySelector('.shell-button-spinner'),
+          labelColor: label ? getComputedStyle(label).color : '',
+          scrolling: label?.classList.contains('is-scrolling') || false,
+          labelWidth: label?.clientWidth || 0, textWidth: track?.scrollWidth || 0,
+          animationName: track ? getComputedStyle(track).animationName : '',
+          spinnerColor: button.querySelector('.shell-button-spinner') ? getComputedStyle(button.querySelector('.shell-button-spinner')).borderTopColor : '',
           busy: button.getAttribute('aria-busy'), loadingLabel: button.getAttribute('aria-label'),
           homeHeight: document.querySelector('#home-components').getBoundingClientRect().height,
           controls: [...document.querySelectorAll('[data-comp-id="whalebridge"]')].map(control => ({
@@ -533,10 +543,49 @@ app.whenReady().then(async () => {
       await waitFor(() => typeof componentInstallResolve === 'function');
       await waitForDom('(window.qaComponentButton.querySelector(".shell-button-label")?.textContent ?? window.qaComponentButton.textContent).startsWith("安装")');
       const installing = await readFeedback();
+      const installScroll = await win.webContents.executeJavaScript(`(async () => {
+        const button = window.qaComponentButton;
+        const label = button.querySelector('.shell-button-label');
+        const text = label.querySelector('.shell-button-label-text');
+        const animation = text.getAnimations()[0];
+        window.qaScrollText = text;
+        if (!animation) return { missingAnimation: true };
+        const duration = animation.effect.getTiming().duration;
+        animation.currentTime = duration * .2;
+        animation.play();
+        const movingStart = text.getBoundingClientRect().x;
+        await new Promise(resolve => setTimeout(resolve, 120));
+        const movingEnd = text.getBoundingClientRect().x;
+        animation.pause();
+        const box = label.getBoundingClientRect();
+        animation.currentTime = 0;
+        const atStart = text.getBoundingClientRect();
+        animation.currentTime = duration / 2;
+        const atEnd = text.getBoundingClientRect();
+        window.qaScrollAnimation = animation;
+        return { start: atStart.x, end: atEnd.x, left: box.left, right: box.right,
+          movingStart, movingEnd, startRight: atStart.right, endRight: atEnd.right };
+      })()`);
+      await captureBound('bound-component-install-scrolling.png');
       componentProgress({ phase: 'download', percent: 42 });
       await waitForDom('window.qaComponentButton.title.includes("下载组件 42%")');
       const downloading = await readFeedback();
+      const continuousScroll = await win.webContents.executeJavaScript(`(() => {
+        const text = window.qaComponentButton.querySelector('.shell-button-label-text');
+        return { sameText: text === window.qaScrollText,
+          sameAnimation: text.getAnimations()[0] === window.qaScrollAnimation,
+          time: text.getAnimations()[0]?.currentTime || 0 };
+      })()`);
       await captureBound('bound-component-download.png');
+      win.webContents.debugger.attach('1.3');
+      let reducedMotion;
+      try {
+        await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+        reducedMotion = await readFeedback();
+      } finally {
+        await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+        win.webContents.debugger.detach();
+      }
       componentProgress({ phase: 'verify', percent: 60 });
       await waitForDom('window.qaComponentButton.title.includes("校验组件 60%")');
       const verifying = await readFeedback();
@@ -610,7 +659,7 @@ app.whenReady().then(async () => {
       await waitForDom('!!document.querySelector("#tab-components [data-comp-action=install]")');
       const finalState = await readFeedback();
       process.stdout.write('BOUND_RESULT:' + JSON.stringify({ startBefore, starting, failedPhase, failed, failureDismissed, switchedTab,
-        installBefore, installing, downloading, verifying, installed, installDismissed, updateBefore, updating, updateFailed, updateDismissed,
+        installBefore, installing, installScroll, downloading, continuousScroll, reducedMotion, verifying, installed, installDismissed, updateBefore, updating, updateFailed, updateDismissed,
         persistentErrorInline, statusDetails, refreshBefore, refreshing, refreshed, uninstallBefore,
         uninstallReading, uninstallConfirm, uninstallCancelled, uninstallsAfterCancel, keepDataConfirm, finalState, calls: results.calls }));
       app.exit(0);
@@ -801,8 +850,10 @@ app.whenReady().then(async () => {
       await win.webContents.executeJavaScript(`document.getElementById('btn-import').click()`);
       await new Promise((r) => setTimeout(r, 60));
       const opA = results.calls.find((c) => c.op === 'run-import')?.opts?.opId;
+      const cancelBefore = await win.webContents.executeJavaScript(`(() => { const b = document.getElementById('btn-import-cancel'), r = b.getBoundingClientRect(); return { width: r.width, height: r.height }; })()`);
       // Click cancel for A (handler captures opA and awaits cancel reply).
       await win.webContents.executeJavaScript(`document.getElementById('btn-import-cancel').click()`);
+      const cancelPending = await win.webContents.executeJavaScript(`(() => { const b = document.getElementById('btn-import-cancel'), r = b.getBoundingClientRect(); return { width: r.width, height: r.height, label: b.querySelector('.shell-button-label-text')?.textContent, busy: b.getAttribute('aria-busy'), disabled: b.disabled, spinner: Boolean(b.querySelector('.shell-button-spinner')) }; })()`);
       // Start B: mark a new active op by clicking import again after A's
       // handler finishes? A is still pending — instead simulate B by forcing
       // the shared state: dispatch progress for opB and a stale progress for opA.
@@ -820,9 +871,12 @@ app.whenReady().then(async () => {
       const dom = await win.webContents.executeJavaScript(`({
         importResult: document.getElementById('import-result').textContent,
         cancelHidden: document.getElementById('btn-import-cancel').hidden,
+        cancelBusy: document.getElementById('btn-import-cancel').getAttribute('aria-busy'),
+        cancelDisabled: document.getElementById('btn-import-cancel').disabled,
+        cancelOverlay: document.getElementById('btn-import-cancel').hasAttribute('data-button-label'),
       })`);
       delayedCancel = {
-        opA, opB, dom,
+        opA, opB, dom, cancelBefore, cancelPending,
         staleWriteRefused: !/取消被拒绝|取消请求被拒绝/.test(dom.importResult),
       };
     }

@@ -1,18 +1,17 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
-import { Toast, IconWarningOutlineRegular, useModalLayer } from '@deepseek-ai/dsh-client-ui-primitives';
+import { Button, Toast, IconWarningOutlineRegular, useModalLayer } from '@deepseek-ai/dsh-client-ui-primitives';
 import { localizeText } from './i18n.js';
 
 export const ActionButton = React.forwardRef(function ActionButton({ children, loading = false, className = '', disabled, ...props }, ref) {
-  return React.createElement('button', {
+  return React.createElement(Button, {
     type: 'button', ...props, ref,
     className: `${className} dim-busyButton`.trim(),
+    loading,
     disabled: disabled || loading,
     'aria-busy': loading || props['aria-busy'] || undefined,
     'data-loading': loading || undefined,
-  },
-  React.createElement('span', { className: 'dim-buttonContent' }, children),
-  loading ? React.createElement('span', { className: 'dim-buttonSpinner', 'aria-hidden': true }) : null);
+  }, children);
 });
 
 export function BusyIndicator({ busy }) {

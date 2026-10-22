@@ -164,6 +164,7 @@ composer 上四个浮层共用此时长：加号斜杠菜单、权限 `Menu`、�
 | 骨架扫光 | ReasoningRow / ToolRow / SkillRow / GenericCommandCard / bash-sample 的行扫光 2.6s；`MenuView` 菜单骨架 2s |
 | Composer 光束 | `InputBar`：`beam-spin` 默认 1.96s（设置可调顺/逆/往返方向与 0.8～60s 周期）、`beam-hue` 默认 12s（可关闭并调整范围/周期）、呼吸可独立开关；模式、色板、色相、夜间时段和缓动只作用于运行态视觉 profile。stroke track width 可调 0.5～4px，bloom blur 可调 0～12px；1.5px bloom 光源、4px 圆角裁切壳、22px 圆角、两层 ring mask 与强度窗口保持固定；不做重复 `clip-path`。`mobile/web` 手机端仍复刻默认时间值，不跟随桌面自定义 |
 | Spinner | `TodoPanel` 1s、`GitProgressToast` 0.7s、`AppearanceSection` 图库 0.7s、`TrajectoryTable` 历史加载 700ms、`TurnNavigator` busy 1s、`ChatView` 回合状态 1.8s、`MessageItem` 重试 1.6s、`InputBar` 待发 1s |
+| 按钮溢出文案 | 桌面壳 `feedback.js` / `feedback.css` 与共享 `ui-primitives/Button`：超宽短文案通过 `transform: translateX` 在固定裁切区内往返，首尾停留，周期按溢出距离计算且至少 3.6s。手机 Web `ui/button-busy.js` 使用同类往返，单程至少 1.8s。加载圈与按钮几何固定，连续进度复用文字及动画；减弱动效关闭自动滚动，保留静态文案与完整 aria-label / title，桌面文字区可手动滚动 |
 | 指示灯 | `StateDot` 追逐 1s（行内 `-125ms` 错相）、`ConnectionIndicator` 点阵 1.5s step-end |
 | 手机 flow | `mobile/web`：`flow-dot-spin` 0.9s、`flow-sweep` 2.6s、`flow-caret` 1s steps(2) |
 | 背景特效光斑 | Appearance「背景特效 · 流动渐变」：1–5 光斑 transform 循环，基准 ÷ 用户速度系数（20–300%）；形态变体 orbs 光球（20s/30s/40s）/ aurora 飘带（30–48s 横向 drift）/ chaos（11–18s 多轴乱序 + scale 脉动）/ rays（24–40s conic 楔形旋转）；reduced-motion 全部停（`wallpaper.css`） |
