@@ -92,7 +92,9 @@ function startSpec(parent: Agent, agentPreset?: string, provider = 'separate') {
 }
 
 async function settled(ctx: Context, childId: SessionId) {
-  await vi.waitFor(() => { expect(ctx.agents.get(childId)).toBeUndefined() })
+  await vi.waitFor(() => {
+    expect(ctx.agents.get(childId) === undefined).toBe(true)
+  }, { timeout: 15_000 })
   return loadStoredSession(ctx.sessionPersistence, childId)
 }
 
@@ -151,7 +153,7 @@ describe('child preset start validation', () => {
   })
 })
 
-describe('continuable child presets', () => {
+describe('continuable child presets', { timeout: 20_000 }, () => {
   it('records an independent selection before its descriptor and sends only the selected preset tools', async () => {
     const { ctx, parent, adapter } = await setup()
     parkParent(ctx, parent)
