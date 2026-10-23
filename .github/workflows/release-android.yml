@@ -53,7 +53,7 @@ jobs:
           test -n "$ANDROID_SIGNING_CERT_SHA256"
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
           chmod 600 "$ANDROID_KEYSTORE_PATH"
-          sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
       - name: Build independent desktop protocol observer
         working-directory: mobile/android/protocol/test-support
         run: |
