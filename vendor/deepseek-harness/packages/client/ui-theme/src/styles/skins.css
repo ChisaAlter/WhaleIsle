@@ -3,7 +3,7 @@
  * html[data-dsh-skin]. The product default renders these rules inert.
  *
  * Codex: flat desktop chrome. Light-gray navigation column, a white content
- * sheet flush with the window, one 1px column divider, and a bordered composer.
+ * sheet flush with the window, one hairline column divider, and a bordered composer.
  * No wallpaper, glass, floating cards, gutter or outer frame inset.
  */
 
@@ -53,7 +53,7 @@ html[data-dsh-skin='codex'] [data-dsh-frame-region='sidebar'] {
   padding: 0;
   background: var(--dsw-specific-sidebar-fill);
   border: 0;
-  border-right: 1px solid var(--dsw-alias-border-l1);
+  border-right: 0.5px solid var(--dsw-alias-border-l1);
 }
 
 html[data-dsh-skin='codex'] [data-dsh-frame-region='center'] {
@@ -207,7 +207,7 @@ html[data-dsh-skin='codex'] [data-dsh-message-role='user'] [data-dsh-message-bub
 
 /* Large bordered composer card, not a floating pill. */
 html[data-dsh-skin='codex'] [data-dsh-composer] {
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: var(--dsh-composer-radius);
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: 0 1px 2px rgba(13, 13, 13, 0.04);
@@ -220,7 +220,7 @@ html[data-dsh-skin='codex'] [data-dsh-artifact] {
   bottom: 0;
   overflow: clip;
   border: 0;
-  border-left: 1px solid var(--dsw-alias-border-l1);
+  border-left: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: 0;
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: none;
