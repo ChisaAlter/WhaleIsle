@@ -345,6 +345,19 @@ test('a folder the desktop refuses disables the New Session option and drops the
   } finally { await b.dispose(); }
 });
 
+test('background list failures surface as a notice and clear when the list recovers', async () => {
+  let failure = 'Project Host stopped responding';
+  const b = bench({ language: 'zh', rpcOverride: (method, _input, project) => method === 'list' ? (failure ? { ok: false, error: { code: 'project/unavailable', message: failure } } : { ok: true, value: { projects: [project], available: true } }) : undefined });
+  try {
+    await b.flush(); await b.mount(); await b.flush();
+    const alerts = () => [...b.document.querySelectorAll('[role=alert]')].map(alert => alert.textContent);
+    assert.deepEqual(alerts(), [`Project 出错：${failure}`]);
+    await b.poll(); assert.equal(alerts().length, 1, 'A repeated failure is not stacked');
+    failure = ''; await b.poll(); assert.deepEqual(alerts(), [], 'A recovered list clears the notice');
+    failure = 'Project catalog is unreadable'; await b.poll(); assert.deepEqual(alerts(), [`Project 出错：${failure}`]);
+  } finally { await b.dispose(); }
+});
+
 test('a failed New Session Project start stays on the blank Session with a visible reason', async () => {
   const blank = 'blank-session';
   const b = bench({ rejectCreation: true, runtimeSessions: { [blank]: { id: blank, blank: true, cwd: 'C:/workspace/real' } } });
