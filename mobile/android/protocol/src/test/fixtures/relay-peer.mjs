@@ -1,8 +1,8 @@
 import {createRequire} from 'node:module';
 import {createHmac} from 'node:crypto';
 import readline from 'node:readline';
-import {createDaemonChannel} from '../../../../../../vendor/chisacode-remote/packages/relay/dist/e2ee.js';
-const require=createRequire(new URL('../../../../../../vendor/chisacode-remote/package.json',import.meta.url));
+import {createDaemonChannel} from '../../../build/test-peer/e2ee.mjs';
+const require=createRequire(new URL('../../../test-support/package.json',import.meta.url));
 const nacl=require('tweetnacl');
 const {WebSocketServer}=require('ws');
 const keys=nacl.box.keyPair.fromSecretKey(Uint8Array.from({length:32},(_,i)=>i+1));

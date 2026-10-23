@@ -28,7 +28,8 @@ jobs:
     if: >-
       github.repository == 'ChisaAlter/WhaleIsle' &&
       (github.event_name == 'push' ||
-       (github.event_name == 'release' && !github.event.release.prerelease && !github.event.release.draft) ||
+       (github.event_name == 'release' && !startsWith(github.event.release.tag_name, 'android-v') &&
+        !github.event.release.prerelease && !github.event.release.draft) ||
        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.macos_run_id == '') ||
        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.head_branch == 'main' &&

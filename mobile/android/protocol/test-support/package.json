@@ -1,0 +1,11 @@
+{
+  "name": "whale-isle-android-test-peer",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "base64-js": "1.5.1",
+    "esbuild": "0.25.12",
+    "tweetnacl": "1.0.3",
+    "ws": "8.21.0"
+  }
+}

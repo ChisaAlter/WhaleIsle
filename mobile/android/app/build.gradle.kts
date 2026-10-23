@@ -11,12 +11,24 @@ android {
         applicationId = "ai.deepseek.harness.mobile"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.2.0"
+        versionCode = 4
+        versionName = "0.3.10"
         testInstrumentationRunner = "ai.deepseek.harness.mobile.NativeUpgradeInstrumentation"
+    }
+    signingConfigs {
+        val signingStore = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull
+        if (!signingStore.isNullOrBlank()) {
+            create("distribution") {
+                storeFile = file(signingStore)
+                storePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").get()
+                keyPassword = storePassword
+            }
+        }
     }
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("distribution")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

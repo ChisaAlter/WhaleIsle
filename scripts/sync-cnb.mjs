@@ -38,7 +38,7 @@ export function cnbClient(token, fetchImpl = fetch) {
   }
 }
 
-async function verifyDownload(asset, expected, fetchImpl) {
+export async function verifyDownload(asset, expected, fetchImpl) {
   const url = asset?.browser_download_url
   if (!url || new URL(url).protocol !== 'https:' || new URL(url).hostname !== 'cnb.cool') {
     throw new Error('CNB asset has no anonymous download URL: ' + expected.name)
@@ -57,7 +57,7 @@ async function verifyDownload(asset, expected, fetchImpl) {
   }
 }
 
-async function uploadMirrorAsset({ file, overwrite, targetId, prefix, request, fetchImpl }) {
+export async function uploadMirrorAsset({ file, overwrite, targetId, prefix, request, fetchImpl }) {
   const upload = await request(prefix + '/releases/' + targetId + '/asset-upload-url', {
     method: 'POST', body: { asset_name: file.name, size: file.size, overwrite, ttl: 0 },
   })
