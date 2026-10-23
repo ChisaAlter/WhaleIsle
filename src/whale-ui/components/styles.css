@@ -26,6 +26,12 @@
 .whale-text[data-size=lg] { font-size: calc(1rem * 16 / 14); line-height: calc(1rem * 24 / 14); }
 .whale-caption { display: block; font-size: calc(1rem * 12 / 14); line-height: calc(1rem * 18 / 14); color: var(--whale-fg-muted); }
 .whale-label { font-size: calc(1rem * 12 / 14); font-weight: 500; line-height: calc(1rem * 18 / 14); }
+.whale-progress { display: flex; flex-direction: column; gap: 4px; width: 100%; min-width: 0; align-self: stretch; }
+.whale-row > .whale-progress { flex: 1 1 160px; width: auto; }
+.whale-progress-head { display: flex; justify-content: space-between; gap: 8px; font-size: calc(1rem * 12 / 14); line-height: calc(1rem * 18 / 14); color: var(--whale-fg-muted); }
+.whale-progress-track { height: 6px; border-radius: 9999px; background: color-mix(in srgb, var(--whale-fg-muted) 18%, transparent); overflow: hidden; }
+.whale-progress-fill { height: 100%; border-radius: inherit; transition: width .2s ease; }
+@media (prefers-reduced-motion: reduce) { .whale-progress-fill { transition: none; } }
 .whale-badge { display: inline-flex; align-items: center; align-self: flex-start; gap: 4px; padding: 2px 8px; border-radius: 8px; font-size: calc(1rem * 12 / 14); line-height: calc(1rem * 18 / 14); vertical-align: middle; font-weight: 500; white-space: nowrap; }
 .whale-link, .whale-markdown a, .whale-text a { color: var(--whale-accent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
 .whale-list { padding-inline-start: 20px; margin: 0; display: flex; flex-direction: column; gap: 8px; }
