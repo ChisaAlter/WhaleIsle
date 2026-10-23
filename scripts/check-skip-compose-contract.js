@@ -47,6 +47,7 @@ const {
   DSH_REMOTE_BEGIN,
   DSH_REMOTE_END,
 } = require('../src/main/dsh-remote-desktop');
+const { ensureDesktopDshPad } = require('../src/main/dsh-pad-desktop');
 const {
   ensureSessionSearchOverlay,
 } = require('../src/main/session-search-overlay');
@@ -88,6 +89,7 @@ const MARKET_ID = DSH_MARKET_INSERT_ID;
 const BOT_ID = DSHBOT_INSERT_ID;
 const WHALE_ID = DSH_WHALE_INSERT_ID;
 const REMOTE_ID = DSH_REMOTE_INSERT_ID;
+const PAD_ID = 'dsh-pad';
 const WORKSPACE_DEPS_ID = 'workspace-dependencies';
 const SKILL_OFFICE_ID = 'skill-office';
 const SESSION_SEARCH_ID = 'session-query-sqlite';
@@ -352,6 +354,7 @@ function composeContractProblems(round, stdout) {
     [REMOTE_ID, '桌面内置 dsh-remote'],
     [WORKSPACE_DEPS_ID, '桌面内置 Office 工作区依赖'],
     [SKILL_OFFICE_ID, '桌面内置 Office 技能'],
+    [PAD_ID, '桌面内置 dsh-pad'],
   ];
   for (const [id, label] of requiredRows) {
     const count = countRows(text, id);
@@ -499,6 +502,17 @@ async function runSkipComposeContract(harnessRoot, options = {}) {
     if (!remoteEnsure || remoteEnsure.ok !== true) {
       throw new Error(`skip compose 契约门禁：ensureDesktopDshRemote 失败（${(remoteEnsure && remoteEnsure.error) || 'unknown'}）`);
     }
+    const padSource = path.join(home, 'fixtures', 'dsh-pad');
+    fs.mkdirSync(path.join(padSource, 'lib'), { recursive: true });
+    fs.writeFileSync(path.join(padSource, 'package.json'), JSON.stringify({
+      name: PAD_ID, version: '0.0.0-contract', type: 'module',
+      exports: { '.': './lib/index.js', './client': './lib/client.js' },
+    }));
+    fs.writeFileSync(path.join(padSource, 'lib', 'index.js'), 'export function apply() {}\n');
+    fs.writeFileSync(path.join(padSource, 'lib', 'client.js'), 'export function apply() {}\n');
+    fs.writeFileSync(path.join(padSource, 'cordis.patch.yml'), '- insert:\n    - id: dsh-pad\n      name: dsh-pad\n');
+    const padEnsure = ensureDesktopDshPad({ sourceDir: padSource, profileDir });
+    if (padEnsure.ok !== true) throw new Error(`skip compose 契约：dsh-pad 失败（${padEnsure.error}）`);
     const searchEnsure = ensureSessionSearchOverlay({ profileDir, dshHome: home });
     if (!searchEnsure || searchEnsure.ok !== true) {
       throw new Error(`skip compose 契约门禁：ensureSessionSearchOverlay 失败（${(searchEnsure && searchEnsure.error) || 'unknown'}）`);
@@ -531,6 +545,7 @@ async function runSkipComposeContract(harnessRoot, options = {}) {
       botEnsure.overlayFile,
       whaleEnsure.overlayFile,
       remoteEnsure.overlayFile,
+      padEnsure.overlayFile,
     ];
     const fullOverlayFiles = [
       taskControlEnsure.overlayFile,
@@ -543,6 +558,7 @@ async function runSkipComposeContract(harnessRoot, options = {}) {
       botEnsure.overlayFile,
       whaleEnsure.overlayFile,
       remoteEnsure.overlayFile,
+      padEnsure.overlayFile,
     ];
     for (const { round, args } of composeContractRounds(binJs, overlayFiles, fullOverlayFiles)) {
       log(`dump-config ${round} 轮…`);
@@ -582,6 +598,7 @@ module.exports = {
   BOT_ID,
   WHALE_ID,
   REMOTE_ID,
+  PAD_ID,
   WORKSPACE_DEPS_ID,
   SKILL_OFFICE_ID,
   SESSION_SEARCH_ID,

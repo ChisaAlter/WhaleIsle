@@ -735,6 +735,26 @@ test('dsh-im, usage-panel, market, dshbot, and remote overlays ride --patch on f
   assert.deepEqual(skipped.dsh.startOptions[0].patchFiles, [installOverlay, usageOverlay, imOverlay, marketOverlay, botOverlay, remoteOverlay]);
 });
 
+test('pad overlay loads by default on both normal and recovery starts', async () => {
+  for (const skip of [false, true]) {
+    const overlayFile = 'C:/profiles/web/desktop-plugins/dsh-pad/desktop-dsh-pad.patch.yml';
+    const f = fixture({ ensureDshPadPlugin: async () => ({ ok: true, overlayFile }) });
+    if (skip) f.controller.writePluginSkip(new Error('recovery'));
+    await f.controller.start();
+    assert.equal(f.dsh.startOptions[0].skipUserPlugins, skip);
+    assert.equal(f.dsh.startOptions[0].patchFiles.filter(file => file === overlayFile).length, 1);
+  }
+});
+
+test('broken pad runtime prevents normal and recovery starts before spawning Harness', async () => {
+  for (const skip of [false, true]) {
+    const f = fixture({ ensureDshPadPlugin: async () => ({ ok: false, error: 'missing-source:lib/client.js' }) });
+    if (skip) f.controller.writePluginSkip(new Error('recovery'));
+    await assert.rejects(f.controller.start(), /桌面内置 dsh-pad 失败：missing-source:lib\/client.js/);
+    assert.equal(f.dsh.startCalls, 0);
+  }
+});
+
 test('remote workspace can be disabled without mounting its overlay', async () => {
   const remoteOverlay = 'C:/profiles/web/desktop-plugins/dsh-remote/desktop-dsh-remote.patch.yml';
   let args;
