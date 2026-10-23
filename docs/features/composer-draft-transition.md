@@ -21,7 +21,7 @@
 - 动效只属于首次草稿发送，不影响滚动、浮层定位和持久化尺寸。
 - 普通输入框的底部预留统计行高度，准入、运行状态和统计投影分别更新时不得折叠；首次发送使用共享慢速 token 和合成层位移；内置 fixed 浮层保留页面 portal，滑行结束清除 transform。
 - Dock 预留统计行和峰谷行的高度，滑动期间终点不随投影更新移动；这是取消发送后停留的前提。
-- 输入不滚动对话：输入框座位渲染在对话滚动容器内、但位于其盒子下方，Lexical 自带的「光标滚入视野」会逐级滚动祖先，曾让上翻阅读中的对话每次按键都往下滑。草稿编辑器的内容变更与光标移动都带 `skip-scroll-into-view`，光标只在草稿自身滚动区（`[data-input-scroll]`）内保持可见（`input/editor/runtime.ts`）。`composer-typing-keeps-reading.e2e.ts` 在上翻后输入、换行增高、超出草稿上限，以及按 Backspace / Delete 删除单行字符、删除换行、选中多行并删到草稿上限以下，断言对话 `scrollTop` 不变且溢出草稿的光标留在草稿区内。
+- 输入不滚动对话：输入框座位渲染在对话滚动容器内、但位于其盒子下方，Lexical 自带的「光标滚入视野」会逐级滚动祖先，曾让上翻阅读中的对话每次按键都往下滑。草稿编辑器的内容变更、光标移动和删除命令都带 `skip-scroll-into-view`（每个命令单独提交一次更新，草稿已空时的 Backspace / Delete 既不改内容也不动光标，因此删除命令单独加标记），光标只在草稿自身滚动区（`[data-input-scroll]`）内保持可见（`input/editor/runtime.ts`）。`composer-typing-keeps-reading.e2e.ts` 在上翻后输入、换行增高、超出草稿上限，以及按 Backspace / Delete 删除单行字符、删除换行、选中多行并删到草稿上限以下，以及草稿删空后继续按 Backspace / Delete / 方向键，断言对话 `scrollTop` 不变且溢出草稿的光标留在草稿区内。
 
 ## Allowed touch
 

@@ -152,6 +152,14 @@ describe('desktop fork: typing keeps the reader position', () => {
     await page.waitForTimeout(300)
     expect(await page.locator('[data-input-scroll]').first().evaluate(el => el.clientHeight)).toBeLessThan(heightBefore)
     expect(await transcriptTop(page), 'deleting lines shrank the draft below its cap').toBe(reading)
+
+    // Keys that change neither the text nor the caret still commit an editor
+    // update: an emptied draft must not scroll the transcript on each press.
+    for (let index = 0; index < 3; index++) await page.keyboard.press('Backspace')
+    await expect.poll(() => page.locator('[data-composer-input]').first().innerText()).toMatch(/^\n?$/)
+    for (const key of ['Backspace', 'Backspace', 'Backspace', 'Delete', 'ArrowUp', 'ArrowDown', 'Backspace']) await page.keyboard.press(key)
+    await page.waitForTimeout(300)
+    expect(await transcriptTop(page), 'keys in an empty draft').toBe(reading)
     expect(tripwire.pageErrors).toEqual([])
   }, 120_000)
 })
