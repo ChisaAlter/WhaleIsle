@@ -26,7 +26,7 @@ export class LngLatBounds {constructor(){this.points=[];}extend(point){this.poin
 export class Marker {constructor(options){this.options=options;probe.markers.push(this);}setLngLat(point){this.point=point;return this;}addTo(map){map.options.container.append(this.options.element);return this;}remove(){this.removed=true;this.options.element.remove();}}
 `;
 const mapPlugin = {name:'map-contract-fixture',setup(builder){builder.onResolve({filter:/^maplibre-gl$/},()=>({path:'mock-map',namespace:'map-fixture'}));builder.onLoad({filter:/.*/,namespace:'map-fixture'},()=>({contents:mapFixture,loader:'js'}));}};
-const bundle = await build({ plugins:[mapPlugin], stdin: { contents: `export * from './library'; export * from './react'; export {chartColumns, chartDomain, chartTicks} from './components/chart'; export {htmlDocument} from './components/drawing'; export {routeCoordinates,markerData} from './components/map'; export {youtubeId} from './components/media';`, sourcefile:'component-tests.ts', resolveDir:base, loader:'ts' }, write:false, bundle:true, platform:'node', format:'cjs', jsx:'automatic', packages:'external', tsconfigRaw:{compilerOptions:{jsx:'react-jsx'}}, alias:{'@whale-ui/react':path.join(base,'react/index.ts')}, logLevel:'silent' });
+const bundle = await build({ plugins:[mapPlugin], stdin: { contents: `export * from './library'; export * from './react'; export {chartColumns, chartDomain, chartTicks} from './components/chart'; export {balancedColumns} from './components/layout'; export {htmlDocument} from './components/drawing'; export {routeCoordinates,markerData} from './components/map'; export {youtubeId} from './components/media';`, sourcefile:'component-tests.ts', resolveDir:base, loader:'ts' }, write:false, bundle:true, platform:'node', format:'cjs', jsx:'automatic', packages:'external', tsconfigRaw:{compilerOptions:{jsx:'react-jsx'}}, alias:{'@whale-ui/react':path.join(base,'react/index.ts')}, logLevel:'silent' });
 const loaded = {exports:{}};
 new Function('require','module','exports', bundle.outputFiles[0].text)(require,loaded,loaded.exports);
 const ui = loaded.exports;
@@ -52,15 +52,15 @@ async function typeInput(input,value) {
   await act(async()=>{Object.getOwnPropertyDescriptor(prototype,'value').set.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));});
 }
 
-test('registry retains 56 components, 59 data functions, ordered argument schemas and extensibility',()=>{
-  assert.equal(ui.componentDefinitions.length,56);assert.equal(ui.functionDefinitions.length,59);
-  const names=ui.componentDefinitions.map(c=>c.name); assert.equal(new Set(names).size,56);
-  for(const name of ['Table','Chart','Svg','Map','MapMarker','SearchImage','HtmlView','YouTube','Math','Timer','Flashcard','Details'])assert.ok(names.includes(name));
+test('registry retains 57 components, 59 data functions, ordered argument schemas and extensibility',()=>{
+  assert.equal(ui.componentDefinitions.length,57);assert.equal(ui.functionDefinitions.length,59);
+  const names=ui.componentDefinitions.map(c=>c.name); assert.equal(new Set(names).size,57);
+  for(const name of ['Table','Chart','Svg','Map','MapMarker','SearchImage','HtmlView','YouTube','Math','Timer','Flashcard','Details','Progress'])assert.ok(names.includes(name));
   assert.deepEqual(Object.keys(ui.library.components.Input.props.shape),['value','label','type','placeholder']);
   assert.deepEqual(Object.keys(ui.library.components.Chart.props.shape),['type','data','x','series','format','currency','stacked','height']);
   const extra=ui.defineComponent({name:'Extra',props:ui.library.components.Label.props,description:'test',component:()=>null});
-  assert.equal(Object.keys(ui.createWhaleLibrary([extra]).components).length,57);assert.equal(Object.keys(ui.library.components).length,56);
-  const guide=ui.generateWhaleGuide();assert.match(guide,/Whale UI/);assert.match(guide,/HtmlView/);assert.match(guide,/@Allocate/);
+  assert.equal(Object.keys(ui.createWhaleLibrary([extra]).components).length,58);assert.equal(Object.keys(ui.library.components).length,57);
+  const guide=ui.generateWhaleGuide();assert.match(guide,/Whale UI/);assert.match(guide,/HtmlView/);assert.match(guide,/@Allocate/);assert.match(guide,/Progress\(/);assert.match(guide,/never leaving one item alone/);
 });
 
 test('real renderer mounts layout, Markdown, table cells, SVG and KaTeX',async()=>{
@@ -165,6 +165,30 @@ test('tables preserve short Chinese labels and allow long content to wrap withou
  const long='这是一段需要在有限列宽内换行的说明文字，不能因为保护短标签而把整个表格撑成一条无限宽的长行。';
  const app=await mounted(`root = Col([Table(["环境","g (m/s²)","说明","操作"],[["地球",9.8,${JSON.stringify(long)},Button("修改",@Set($n,2))],["月球",1.62,"https://example.test/"+"segment"+"segment"+"segment",Text($n+"")]])])\n$n = 1`);
  try{const region=app.element.querySelector('.whale-table-scroll');assert.equal(region.tabIndex,0);assert.equal(region.getAttribute('role'),'region');const cells=app.element.querySelectorAll('td');assert.equal(cells[0].querySelector('.whale-table-cell').dataset.short,'true');assert.equal(cells[1].style.textAlign,'right');assert.equal(cells[2].querySelector('.whale-table-cell').dataset.short,undefined);assert.equal(cells[2].textContent,long);assert.equal(cells[4].textContent,'月球');await click(button(app.element,'修改'));assert.equal(cells[7].textContent,'2');assert.ok(!app.errors.flat().some(e=>e.severity==='error'));}finally{await app.close();}
+});
+
+test('balanced grid columns never leave a single item on the last row',()=>{
+ const cases=[[4,4,4],[4,3,2],[5,4,3],[6,4,3],[8,3,3],[7,4,4],[10,4,4],[4,1,1],[4,0.5,1],[2,6,2],[3,2,2]];
+ for(const [count,fit,expected] of cases)assert.equal(ui.balancedColumns(count,fit),expected,`${count} items, ${fit} fitting`);
+});
+
+test('a measured Grid reflows four metrics to two columns instead of three plus one, and Progress spans the row',async()=>{
+ const originalObserver=globalThis.ResizeObserver;let observe;
+ globalThis.ResizeObserver=class{constructor(callback){observe=callback;}observe(){}disconnect(){}};
+ const app=await mounted('root = Col([Grid([Label("A"),Label("B"),Label("C"),Label("D")],4,170,4),Progress(4,14,"整体进度","success"),Progress(150)])');
+ try{
+  const grid=app.element.querySelector('.whale-grid');
+  for(const [width,columns] of [[652,2],[760,4],[300,1]]){
+   Object.defineProperty(grid,'clientWidth',{value:width,configurable:true});
+   await act(async()=>observe([]));
+   assert.equal(grid.style.gridTemplateColumns,`repeat(${columns}, minmax(0,1fr))`.replace(', ',','),`${width}px`);
+  }
+  const [labelled,bare]=app.element.querySelectorAll('[role=progressbar]');
+  assert.equal(labelled.getAttribute('aria-valuenow'),'4');assert.equal(labelled.getAttribute('aria-valuemax'),'14');
+  assert.equal(labelled.querySelector('.whale-progress-head').textContent,'整体进度29%');
+  assert.equal(labelled.querySelector('.whale-progress-fill').style.width,'29%');
+  assert.equal(bare.querySelector('.whale-progress-head'),null);assert.equal(bare.querySelector('.whale-progress-fill').style.width,'100%','Values above max are capped');
+ }finally{await app.close();globalThis.ResizeObserver=originalObserver;}
 });
 
 test('chart resizes labels to the conversation width and disconnects its observer',async()=>{

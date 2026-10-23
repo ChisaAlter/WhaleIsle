@@ -72,4 +72,12 @@ export const MathComponent = define("Math", { tex: z.string(), inline: z.boolean
   try { const html = katex.renderToString(p.tex, { displayMode: !p.inline, throwOnError: true, trust: false, strict: "warn", maxExpand: 1000 }); return <span className="whale-math" data-inline={p.inline || undefined} dangerouslySetInnerHTML={{ __html: html }} />; }
   catch (error) { return <Feedback error>{error instanceof Error ? error.message : textValue(error)}</Feedback>; }
 });
-export const textDefinitions = [Title, Text, Caption, Label, Badge, Link, List, ListItem, Markdown, Quote, Code, MathComponent];
+export const Progress = define("Progress", { value: z.number(), max: z.number().optional(), label: z.string().optional(), color: z.enum(["info", "success", "warning", "danger", "neutral"]).optional() }, "Full-width progress bar for completion or a share of a goal: value out of max (default 100). With a label it shows the label and the percentage above the bar. Use it instead of drawing a bar from Box widths.", p => {
+  const max = Number.isFinite(p.max) && p.max > 0 ? p.max : 100, value = Number.isFinite(p.value) ? Math.min(max, Math.max(0, p.value)) : 0;
+  const percent = Math.round(value / max * 100);
+  return <div className="whale-progress" role="progressbar" aria-valuemin={0} aria-valuemax={max} aria-valuenow={value} aria-label={p.label}>
+    {p.label != null && <div className="whale-progress-head"><span>{p.label}</span><span>{percent}%</span></div>}
+    <div className="whale-progress-track"><div className="whale-progress-fill" style={{ width: `${percent}%`, background: color(p.color ?? "info") }} /></div>
+  </div>;
+});
+export const textDefinitions = [Title, Text, Caption, Label, Badge, Link, List, ListItem, Markdown, Quote, Code, MathComponent, Progress];
