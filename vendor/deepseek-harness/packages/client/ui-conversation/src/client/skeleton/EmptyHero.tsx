@@ -140,6 +140,7 @@ export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
           {/* figma 34:10412: fish 34×25 leading the headline, gap 10. */}
           <span
             className={css.fishHitbox}
+            data-dsh-hero-mark
             onMouseEnter={() => {
               if (window.matchMedia('(hover: hover) and (prefers-reduced-motion: no-preference)').matches) {
                 setHovering(true)

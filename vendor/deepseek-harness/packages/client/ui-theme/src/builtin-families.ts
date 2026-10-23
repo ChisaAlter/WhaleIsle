@@ -347,8 +347,6 @@ const CLAUDE_LIGHT_OVERRIDES: Record<string, string> = {
   '--dsh-claude-paper': '#faf9f5',
   '--dsh-claude-panel': '#fffdf8',
   '--dsh-claude-border': '#e5e1d8',
-  '--dsh-claude-bubble': '#efe9df',
-  '--dsh-claude-prose-font': "Georgia, 'Times New Roman', 'Songti SC', SimSun, serif",
 }
 
 /** Dark warm-paper Claude palette. */
@@ -445,8 +443,6 @@ const CLAUDE_DARK_OVERRIDES: Record<string, string> = {
   '--dsh-claude-paper': '#262624',
   '--dsh-claude-panel': '#2c2c2a',
   '--dsh-claude-border': '#3d3b36',
-  '--dsh-claude-bubble': '#3a3733',
-  '--dsh-claude-prose-font': "Georgia, 'Times New Roman', 'Songti SC', SimSun, serif",
 }
 
 /** Warm-paper Claude family; prose typography and edges come from `skins.css`. */

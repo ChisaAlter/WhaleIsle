@@ -44,7 +44,7 @@ FactoryComponentPropsOf<'conversation.chat.user.content'>) {
             ))}
         </div>
       )}
-      {showBubble && <div className={css.bubble}>
+      {showBubble && <div className={css.bubble} data-dsh-message-bubble>
         {renderFactorySlot('conversation.user.text', { text, facts, interactive, ellipsis })}
         {extraBlocks.map((block, index) => (
           <JsonBlock key={index} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />

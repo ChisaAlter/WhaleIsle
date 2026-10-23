@@ -195,6 +195,7 @@ export function SidebarRoot({
         className={clsx(css.iconButton, css.toggle)}
         aria-label={toggleLabel}
         aria-keyshortcuts={shortcut?.aria}
+        data-dsh-sidebar-toggle
         onClick={() => { toggleSidebar() }}
       >
         {!wide && (

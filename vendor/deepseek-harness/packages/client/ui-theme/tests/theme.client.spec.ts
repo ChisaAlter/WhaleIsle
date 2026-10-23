@@ -454,6 +454,9 @@ describe('ThemeRuntime', () => {
     expect(theme.getTheme().skinWallpaperImage).toBe('')
     expect(theme.getTheme().effectiveWallpaperImage).toBe('')
     expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toBe('#ffffff')
+    // A flat skin ignores the glass slider and keeps its solid chrome.
+    expect(theme.getTheme().active.tokens['--dsw-alias-glass-opacity']).toBe('100%')
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-layer-1']).toBe('#ffffff')
     theme.setTheme('dark')
     theme.setThemeHalf('dark', 'codex')
     expect(theme.getTheme().active.skin).toBe('codex')
@@ -470,6 +473,10 @@ describe('ThemeRuntime', () => {
     theme.setThemeHalf('light', 'codex')
     theme.setWallpaper({ wallpaperImage: userWallpaper })
     expect(theme.getTheme().effectiveWallpaperImage).toBe(userWallpaper)
+    // The wallpaper stays recorded but cannot make the flat chrome translucent.
+    expect(theme.getTheme().active.tokens['--dsw-alias-glass-opacity']).toBe('100%')
+    expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toBe('#ffffff')
+    expect(theme.getTheme().active.tokens['--dsw-specific-sidebar-fill']).toBe('#f7f7f8')
     theme.setWallpaper({ wallpaperImage: '' })
     expect(theme.getTheme().effectiveWallpaperImage).toBe('')
   })

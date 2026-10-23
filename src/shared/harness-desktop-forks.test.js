@@ -79,8 +79,8 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
   for (const marker of FORK_FILE_MARKERS) {
     const content = {
       'packages/experimental/plugin-market-bundle/cordis.patch.yml': 'DSHD_PLUGIN_MARKET_INDEX\n',
-      'packages/client/ui-conversation/src/client/skeleton/EmptyHero.tsx': 'data-dsh-hero-headline\ndata-dsh-hero-preview\n',
-      'packages/client/ui-sidebar/src/client/SidebarRoot.tsx': 'data-dsh-panel={id}\n',
+      'packages/client/ui-conversation/src/client/skeleton/EmptyHero.tsx': 'data-dsh-hero-headline\ndata-dsh-hero-preview\ndata-dsh-hero-mark\n',
+      'packages/client/ui-sidebar/src/client/SidebarRoot.tsx': 'data-dsh-panel={id}\ndata-dsh-sidebar\ndata-dsh-sidebar-new\ndata-dsh-sidebar-brand-identity\ndata-dsh-sidebar-toggle\n',
       'packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx': 'data-plugin-back\n',
       'packages/client/ui-settings-general/src/client/SettingsRoot.tsx': 'data-dsh-settings-close\n',
       'packages/client/ui-primitives/src/markdown/MarkdownText.tsx': 'renderCodeFence MarkdownCodeFenceRenderer\n',
@@ -296,7 +296,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-theme/src/boot-theme.ts': 'lightSkin\ndata-dsh-skin\n',
       'packages/client/ui-theme/src/client/styles.ts': 'skins.css\n',
       'packages/client/ui-theme/src/styles/base.css': '--dsh-bubble-radius\n',
-      'packages/client/ui-theme/src/styles/skins.css': "data-dsh-skin='codex'\ndata-dsh-skin='claude'\nborder-radius: 12px 0 0 0\ndata-dsh-hero-headline\ndata-dsh-sidebar-brand-identity\n",
+      'packages/client/ui-theme/src/styles/skins.css': "data-dsh-skin='codex'\ndata-dsh-skin='claude'\n--dsh-windows-sidebar-width\ndata-dsh-hero-headline\ndata-dsh-message-bubble\ndata-dsh-sidebar-brand-identity\n",
       'packages/client/ui-codex-sidebar/package.json': 'dsh-plugin-codex-ui\nplatform\n',
       'packages/client/ui-codex-sidebar/lib/client.js': "data-dsh-skin\nreturn 'Whale Isle'\ninstallNow\n",
       'packages/client/ui-codex-sidebar/VENDORED.md': 'ice-ai-lab/dsh-plugin-codex-ui\nMIT\n',
@@ -313,6 +313,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-conversation/src/client/skeleton/InputBar.tsx': 'data-dsh-composer\n',
       'packages/client/ui-chat/src/client/chat/MessageItem.tsx': 'data-dsh-message-role\n',
       'packages/client/ui-chat/src/client/chat/MessageItem.module.css': '--dsh-bubble-radius\n',
+      'packages/client/ui-chat/src/client/chat/UserContent.tsx': 'data-dsh-message-bubble\n',
       'packages/client/ui-chat/src/client/chat/AssistantMarkdown.tsx': 'data-dsh-message-role\n',
       'packages/client/ui-sidebar-right/src/client/shell/SidebarRight.tsx': 'data-dsh-artifact\n',
       'packages/client/ui-theme/README.md': 'Presentation skins\ndata-dsh-skin\n',
