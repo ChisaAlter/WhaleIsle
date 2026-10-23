@@ -1939,6 +1939,8 @@ module.exports = async function afterPack(context) {
   // the closure assert still proves the packaged copy ships its lib/.
   assertVendoredPluginRuntimeDeps(resources, 'dsh-task-control');
   assertVendoredPluginRuntimeDeps(resources, 'dsh-platform-session');
+  // dsh-pad peers are supplied by Harness's linked-plugin resolver at startup.
+  assertVendoredPluginRuntimeDeps(resources, 'dsh-pad');
   for (const name of ['dsh-usage-panel', 'dsh-im', 'dshbot', 'dsh-whale', 'dsh-remote']) {
     const root = path.join(resources, 'vendor', name);
     const removed = prunePluginDevDependencies(root, resolvePackageFrom, runtimeDependencyEntries, target);

@@ -67,6 +67,8 @@ jobs:
         run: npm run setup:harness
       - name: Install the Chromium build apps/web's Playwright pins
         run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness/apps/web exec playwright install --with-deps chromium
+      - name: Desktop profile defaults and package reload
+        run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run packages/boot/app-boot/tests/desktop-pad.spec.ts packages/boot/hmr/tests/package-reload.spec.ts --maxWorkers 2
       - name: Desktop web composition lanes
         run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run --config vitest.web.config.ts apps/web/tests/caption-drag-dead-zones.e2e.ts apps/web/tests/approval-resize-geometry.e2e.ts apps/web/tests/composer-typing-keeps-reading.e2e.ts
   windows:
@@ -102,7 +104,7 @@ jobs:
         run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness run test:gui
       - name: Core behavior tests
         if: needs.scope.outputs.vendor == 'true'
-        run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run packages/core/agent-loop packages/core/session packages/core/tools packages/llm packages/api/session-controller packages/api/workspace-controller packages/fs/tool-fs packages/workspace packages/session/session-projection-cache packages/subagent/subagent packages/boot/app-boot/tests/desktop-market.spec.ts --maxWorkers 2
+        run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run packages/core/agent-loop packages/core/session packages/core/tools packages/llm packages/api/session-controller packages/api/workspace-controller packages/fs/tool-fs packages/workspace packages/session/session-projection-cache packages/subagent/subagent packages/boot/app-boot/tests/desktop-market.spec.ts packages/boot/app-boot/tests/desktop-pad.spec.ts --maxWorkers 2
       - name: Malformed tool recovery
         if: needs.scope.outputs.vendor == 'true'
         run: node node_modules/pnpm/bin/pnpm.mjs --dir vendor/deepseek-harness exec vitest run --config vitest.snapshot.config.ts snapshots/session/headless.snapshot.ts -t "replays malformed-tool-call-retry"

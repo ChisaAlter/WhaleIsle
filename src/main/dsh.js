@@ -866,6 +866,9 @@ class DshManager extends EventEmitter {
       env.DSH_HARNESS_ROOT = root;
     }
     Object.assign(env, desktopInstallEnv());
+    // Default rows precede user patches so plugin management can configure and disable them.
+    delete env.DSHD_PROFILE_DEFAULT_PATCH;
+    if (config.defaultPatchFile) env.DSHD_PROFILE_DEFAULT_PATCH = config.defaultPatchFile;
     // Carrier declaration for Office rows in any profile layer that reads it;
     // the desktop overlay already carries absolute paths, so a missing
     // payload simply leaves this unset.
@@ -1019,7 +1022,7 @@ class DshManager extends EventEmitter {
     const readiness = deferred();
     let child = null;
     try {
-      const env = this.spawnEnv(config, launch.nodeBin);
+      const env = this.spawnEnv({ ...config, defaultPatchFile: options.defaultPatchFile }, launch.nodeBin);
       this.log(`子进程 DSH_HOME ${env.DSH_HOME}`);
       if (!isCurrent()) throw cancelledError();
       child = this._spawnHarness(launch.command, launch.args, {

@@ -141,6 +141,7 @@ describe('loadLayeredEnv', () => {
     ['the executable search path', 'PATH=/tmp/evil\n'],
     ['a module preload', 'NODE_OPTIONS=--require /tmp/evil.js\n'],
     ['a skill root', 'DSH_AGENTS_HOME=/tmp/injected\n'],
+    ['a desktop default patch', 'DSHD_PROFILE_DEFAULT_PATCH=/tmp/injected.patch.yml\n'],
     ['a network proxy', 'HTTPS_PROXY=http://attacker.example\n'],
     ['a lowercase network proxy', 'https_proxy=http://attacker.example\n'],
     ['a browser command', 'BROWSER=./script\n'],

@@ -68,6 +68,8 @@ class HarnessController extends EventEmitter {
       || (async () => ({ ok: true, added: false }));
     this.ensureDshRemotePlugin = options.ensureDshRemotePlugin
       || (async () => ({ ok: true, added: false }));
+    this.ensureDshPadPlugin = options.ensureDshPadPlugin
+      || (async () => ({ ok: true, added: false }));
     this.ensureDesktopMarket = options.ensureDesktopMarket
       || (async () => ({ ok: true, added: false }));
     this.ensureDesktopOfficeRuntime = options.ensureDesktopOfficeRuntime
@@ -870,6 +872,21 @@ class HarnessController extends EventEmitter {
       }
       throw new Error(`桌面内置 dsh-remote 失败：${errorMessage(error)}`);
     }
+    let defaultPatchFile;
+    try {
+      const pad = await this.ensureDshPadPlugin({ skipUserPlugins, disabledPlugins: startConfig.disabledPlugins });
+      checkCurrent();
+      if (pad?.ok === false) throw new Error(`桌面内置 dsh-pad 失败：${pad.error || 'unknown'}`);
+      defaultPatchFile = pad?.overlayFile;
+      if (pad?.userProvided) this.dsh.log('已保留用户安装的 dsh-pad 及其配置', 'app');
+      else if (pad?.disabled) this.dsh.log('dsh-pad 已按用户设置关闭', 'app');
+      else if (pad?.ok) this.dsh.log(pad.added ? '已接入桌面内置 dsh-pad（悬浮面板）' : '桌面内置 dsh-pad 已就绪', 'app');
+    } catch (error) {
+      checkCurrent();
+      if (isCancellation(error)) throw error;
+      if (error instanceof Error && error.message.startsWith('桌面内置 dsh-pad 失败：')) throw error;
+      throw new Error(`桌面内置 dsh-pad 失败：${errorMessage(error)}`);
+    }
     try {
       const disabled = this.applyDisabledBundles(startConfig.disabledPlugins);
       if (disabled && disabled.changed) {
@@ -886,6 +903,7 @@ class HarnessController extends EventEmitter {
       configSnapshot: startConfig,
       skipUserPlugins,
       patchFiles,
+      defaultPatchFile,
       prepareProjectPlugin,
     };
     checkCurrent();

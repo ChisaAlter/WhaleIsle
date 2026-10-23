@@ -52,6 +52,10 @@ const LAYOUT_MARKERS = ['surfaces', 'shell.titlebar.trailing', 'shell.terminalDr
 // cannot see these: sync:harness keeps them only via git merge, so a conflict
 // resolved towards upstream would drop them without failing any other assert.
 const FORK_FILE_MARKERS = [
+  // Desktop panel defaults remain configurable beneath profile and home patches.
+  { file: 'packages/boot/app-boot/src/profile-context.ts', includes: ['DSHD_PROFILE_DEFAULT_PATCH', 'readProfileDefaultPatches'] },
+  { file: 'apps/cli/src/dump-config.ts', includes: ['readProfileDefaultPatches'] },
+  { file: 'packages/boot/config-editor/src/index.ts', includes: ['readBundlePatches'] },
   // Desktop default Discover source and stable menu navigation targets.
   { file: 'packages/boot/app-boot/src/profile.ts', includes: ['DSHD_PLUGIN_MARKET_INDEX', '.desktop-plugin-market-v1'] },
   { file: 'packages/experimental/plugin-market-bundle/cordis.patch.yml', includes: ['DSHD_PLUGIN_MARKET_INDEX'] },

@@ -1240,6 +1240,33 @@ test('start passes desktop DSH_HOME to spawnHarness even when dsh_home is inheri
   assert.equal('dsh_home' in h.calls.spawn.options.env, false);
 });
 
+test('start passes its default patch to the actual child environment', async (t) => {
+  const h = makeHarness();
+  t.after(h.cleanup);
+  h.setReachable(true);
+  const defaultPatchFile = 'C:/desktop/pad.patch.yml';
+  await h.manager.start({ defaultPatchFile });
+  assert.equal(h.calls.spawn.options.env.DSHD_PROFILE_DEFAULT_PATCH, defaultPatchFile);
+});
+
+test('spawnEnv supplies only the selected desktop default patch', () => {
+  const desktopHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-default-patch-home-'));
+  setDesktopDshHome(desktopHome);
+  const previous = process.env.DSHD_PROFILE_DEFAULT_PATCH;
+  process.env.DSHD_PROFILE_DEFAULT_PATCH = '/stale/pad.patch.yml';
+  try {
+    const manager = new DshManager({ loadConfig: () => ({}) });
+    assert.equal(manager.spawnEnv({}, null).DSHD_PROFILE_DEFAULT_PATCH, undefined);
+    assert.equal(manager.spawnEnv({ defaultPatchFile: 'C:/desktop/pad.patch.yml' }, null).DSHD_PROFILE_DEFAULT_PATCH, 'C:/desktop/pad.patch.yml');
+  } finally {
+    if (previous === undefined) delete process.env.DSHD_PROFILE_DEFAULT_PATCH;
+    else process.env.DSHD_PROFILE_DEFAULT_PATCH = previous;
+    clearDesktopDshHome();
+    assert.ok(path.resolve(desktopHome).startsWith(path.join(os.tmpdir(), 'dsh-default-patch-home-')));
+    fs.rmSync(desktopHome, { recursive: true, force: true });
+  }
+});
+
 test('spawnEnv overwrites inherited DSH_HOME with the desktop home', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-desktop-home-'));
   const previous = process.env.DSH_HOME;

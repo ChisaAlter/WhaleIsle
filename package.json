@@ -121,7 +121,8 @@
           "dsh-task-control/**",
           "dsh-platform-session/**",
           "dsh-whale/**",
-          "dsh-remote/**"
+          "dsh-remote/**",
+          "dsh-pad/**"
         ]
       },
       {

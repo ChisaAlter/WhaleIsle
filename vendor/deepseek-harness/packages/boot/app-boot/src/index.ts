@@ -17,7 +17,7 @@ import Include, { applyEntryPatches, entryListSchema, type PatchOptions } from '
 import Group from '@deepseek-ai/cordis-plugin-group'
 import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-export { readBundlePatches, readProfilePatches, resolveTelemetryPatch, type ProfileContext, type ProfilePnpmInvocation } from './profile-context.ts'
+export { readBundlePatches, readProfileDefaultPatches, readProfilePatches, resolveTelemetryPatch, type ProfileContext, type ProfilePnpmInvocation } from './profile-context.ts'
 export { sanitizeProfile } from './profile-sanitize.ts'
 export { getDshRuntimeVersion, evaluatePluginCompatibility, pluginCompatibilityWarning, type PluginCompatibility } from './plugin-compatibility.ts'
 export {
@@ -137,6 +137,7 @@ const BOOTSTRAP_NAMES = new Set([
   // Process launch and module resolution.
   'PATH', 'HOME', 'USERPROFILE', 'SHELL',
   'NODE_OPTIONS', 'NODE_PATH', 'NODE_EXTRA_CA_CERTS',
+  'DSHD_PROFILE_DEFAULT_PATCH',
   'LD_PRELOAD', 'LD_LIBRARY_PATH', 'LD_AUDIT',
   // Interpreter startup hooks.
   'BASH_ENV', 'ENV', 'SHELLOPTS', 'BASHOPTS',
@@ -349,14 +350,15 @@ async function recompose(
     const current = withResolution ? ctx.get('pluginPackages')?.resolution : undefined
     // A plain-data resolution has no inputs to recompute from.
     const successor = current instanceof ProfileRuntimeResolution ? await current.computeLatestResolution() : undefined
-    if (successor !== undefined) {
-      // Rows the generation no longer lists stop, and their disposal finishes, while their packages are still mapped.
-      const listed = rowIds(structuredClone(patches))
-      const composed = rowIds(structuredClone(previous))
+    {
+      // Removed rows and rows selecting another module stop while their previous packages are still mapped.
+      const listed = rowModules(structuredClone(patches))
+      const composed = rowModules(structuredClone(previous))
       // Only rows of the root Include's tree; a nested Include file has its own ids.
       const tree = entry.subgroup?.tree
       const dropped = [...ctx.loader.entries()]
-        .filter(row => row.parent.tree === tree && composed.has(row.options.id) && !listed.has(row.options.id))
+        .filter(row => row.parent.tree === tree && composed.has(row.options.id)
+          && listed.get(row.options.id) !== composed.get(row.options.id))
       // A dropped group takes its rows with it.
       const ids = new Set(dropped.map(row => row.options.id))
       const topmost = dropped.filter(row => !ids.has(row.parent.ctx.fiber.entry?.options.id as string))
@@ -375,12 +377,14 @@ async function recompose(
         await Promise.allSettled(fibers.map(fiber => fiber.await()))
         await ctx.loader.await()
       }
-      try {
-        publish(ctx, successor)
-      } catch (error) {
-        if (!(error instanceof ResolutionRestartRequired)) throw error
-        // The generation waits for the mappings the rejected publication would change.
-        return { warnings: [], restartReason: 'package-moved' }
+      if (successor !== undefined) {
+        try {
+          publish(ctx, successor)
+        } catch (error) {
+          if (!(error instanceof ResolutionRestartRequired)) throw error
+          // The generation waits for the mappings the rejected publication would change.
+          return { warnings: [], restartReason: 'package-moved' }
+        }
       }
     }
     // The recomposition judges the rows the launch judged, resolved from the file this Include read.
@@ -459,19 +463,19 @@ interface StoppedRow {
   index: number
 }
 
-/** The ids of the rows a patch list inserts, including the rows of groups. */
-function rowIds(patches: readonly PatchOptions[]): Set<string> {
-  const ids = new Set<string>()
+/** The selected module for each row, including the rows of groups. */
+function rowModules(patches: readonly PatchOptions[]): Map<string, string> {
+  const modules = new Map<string, string>()
   const visit = (rows: readonly EntryOptions[]): void => {
     for (const row of rows) {
-      ids.add(row.id)
+      modules.set(row.id, row.name)
       // A group keeps its rows in its configuration.
       if ((row.group === true || row.name === 'cordis:group') && Array.isArray(row.config)) visit(row.config as EntryOptions[])
     }
   }
   // Patch warnings are logged when the generation itself is prepared.
   visit(applyEntryPatches([], patches as PatchOptions[], () => {}))
-  return ids
+  return modules
 }
 
 /** Publish a generation unless it maps exactly what is published, which would only drop the package caches. */

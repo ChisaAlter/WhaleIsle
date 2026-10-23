@@ -24,6 +24,7 @@ const { createTaskProtection, installTaskProtection, getTaskProtection } = requi
 const { createTaskControlPeer } = require('./task-control-peer');
 const { ensureDesktopDshWhale } = require('./dsh-whale-desktop');
 const { ensureDesktopDshRemote } = require('./dsh-remote-desktop');
+const { ensureDesktopDshPad } = require('./dsh-pad-desktop');
 const { ensureDesktopMarket } = require('./dsh-market-desktop');
 const { ensureDesktopOfficeRuntime } = require('./office-runtime');
 const { removeLegacyDshbotPreset } = require('./legacy-dshbot-preset');
@@ -645,6 +646,7 @@ const harness = new HarnessController({
   ensureDesktopPlatformSession,
   ensureDshWhalePlugin: ensureDesktopDshWhale,
   ensureDshRemotePlugin: ensureDesktopDshRemote,
+  ensureDshPadPlugin: ensureDesktopDshPad,
   ensureDesktopMarket,
   ensureDesktopOfficeRuntime: async () => ensureDesktopOfficeRuntime(),
   removeLegacyDshbotPreset,

@@ -47,6 +47,7 @@ const {
   DSH_REMOTE_BEGIN,
   DSH_REMOTE_END,
 } = require('../src/main/dsh-remote-desktop');
+const { ensureDesktopDshPad } = require('../src/main/dsh-pad-desktop');
 const {
   ensureSessionSearchOverlay,
 } = require('../src/main/session-search-overlay');
@@ -88,6 +89,7 @@ const MARKET_ID = DSH_MARKET_INSERT_ID;
 const BOT_ID = DSHBOT_INSERT_ID;
 const WHALE_ID = DSH_WHALE_INSERT_ID;
 const REMOTE_ID = DSH_REMOTE_INSERT_ID;
+const PAD_ID = 'dsh-pad';
 const WORKSPACE_DEPS_ID = 'workspace-dependencies';
 const SKILL_OFFICE_ID = 'skill-office';
 const SESSION_SEARCH_ID = 'session-query-sqlite';
@@ -352,6 +354,7 @@ function composeContractProblems(round, stdout) {
     [REMOTE_ID, '桌面内置 dsh-remote'],
     [WORKSPACE_DEPS_ID, '桌面内置 Office 工作区依赖'],
     [SKILL_OFFICE_ID, '桌面内置 Office 技能'],
+    [PAD_ID, '桌面内置 dsh-pad'],
   ];
   for (const [id, label] of requiredRows) {
     const count = countRows(text, id);
@@ -364,6 +367,19 @@ function composeContractProblems(round, stdout) {
   const marketRow = text.split(new RegExp(`^- id: ${MARKET_ID}\\r?$`, 'm'))[1]?.split(/^\- id:/m)[0];
   if (marketRow !== undefined && !/^\s+disabled: true\s*$/m.test(marketRow)) {
     problems.push(`${round}: 旧设置市场行 ${MARKET_ID} 必须禁用`);
+  }
+  const padRow = text.split(new RegExp(`^- id: ${PAD_ID}\\r?$`, 'm'))[1]?.split(/^\- id:/m)[0];
+  if (padRow !== undefined) {
+    if (round === 'full' && (!/^\s+disabled: true\s*$/m.test(padRow)
+      || !/^\s+dataFile: home-panels\.json\s*$/m.test(padRow)
+      || !/^\s+agentRefresh: false\s*$/m.test(padRow))) {
+      problems.push(`${round}: dsh-pad 默认行未保留用户禁用或 profile/home 配置优先级`);
+    }
+    if (round === 'skip' && (/^\s+disabled: true\s*$/m.test(padRow)
+      || /^\s+dataFile:/m.test(padRow))) {
+      problems.push(`${round}: dsh-pad 恢复启动不应读取用户禁用和配置补丁`);
+    }
+    if (!/^\s+updateCheck: false\s*$/m.test(padRow)) problems.push(`${round}: dsh-pad 默认更新检查应关闭`);
   }
   // The base Web bundle always has session-query-sqlite with openAt: never;
   // only the desktop overlay changes it to first-search on full starts.
@@ -499,6 +515,19 @@ async function runSkipComposeContract(harnessRoot, options = {}) {
     if (!remoteEnsure || remoteEnsure.ok !== true) {
       throw new Error(`skip compose 契约门禁：ensureDesktopDshRemote 失败（${(remoteEnsure && remoteEnsure.error) || 'unknown'}）`);
     }
+    const padSource = path.join(home, 'fixtures', 'dsh-pad');
+    fs.mkdirSync(path.join(padSource, 'lib'), { recursive: true });
+    fs.writeFileSync(path.join(padSource, 'package.json'), JSON.stringify({
+      name: PAD_ID, version: '0.0.0-contract', type: 'module',
+      exports: { '.': './lib/index.js', './client': './lib/client.js' },
+    }));
+    fs.writeFileSync(path.join(padSource, 'lib', 'index.js'), 'export function apply() {}\n');
+    fs.writeFileSync(path.join(padSource, 'lib', 'client.js'), 'export function apply() {}\n');
+    fs.writeFileSync(path.join(padSource, 'cordis.patch.yml'), '- insert:\n    - id: dsh-pad\n      name: dsh-pad\n');
+    const padEnsure = ensureDesktopDshPad({ sourceDir: padSource, profileDir });
+    if (padEnsure.ok !== true) throw new Error(`skip compose 契约：dsh-pad 失败（${padEnsure.error}）`);
+    fs.appendFileSync(path.join(profileDir, 'cordis.patch.yml'), '\n- id: dsh-pad\n  disabled: true\n  config:\n    dataFile: profile-panels.json\n    agentRefresh: false\n    updateCheck: false\n');
+    fs.writeFileSync(path.join(home, 'cordis.patch.yml'), '- id: dsh-pad\n  config:\n    dataFile: home-panels.json\n    agentRefresh: false\n    updateCheck: false\n');
     const searchEnsure = ensureSessionSearchOverlay({ profileDir, dshHome: home });
     if (!searchEnsure || searchEnsure.ok !== true) {
       throw new Error(`skip compose 契约门禁：ensureSessionSearchOverlay 失败（${(searchEnsure && searchEnsure.error) || 'unknown'}）`);
@@ -514,7 +543,7 @@ async function runSkipComposeContract(harnessRoot, options = {}) {
     }
     // The child must compose against the throwaway home only — never an
     // inherited desktop/official home (dsh-home rule).
-    const env = { ...process.env, DSH_HOME: home };
+    const env = { ...process.env, DSH_HOME: home, DSHD_PROFILE_DEFAULT_PATCH: padEnsure.overlayFile };
     delete env.DSHD_HOME;
     delete env.DSH_HARNESS_ROOT;
     const problems = [];
@@ -582,6 +611,7 @@ module.exports = {
   BOT_ID,
   WHALE_ID,
   REMOTE_ID,
+  PAD_ID,
   WORKSPACE_DEPS_ID,
   SKILL_OFFICE_ID,
   SESSION_SEARCH_ID,

@@ -1,7 +1,7 @@
 /** Launcher-owned profile locations and composition inputs. */
 import { join } from 'node:path'
-import { composeEntries, loadProfileDirectory, PROFILE_PATCH_FILENAME, type Profile } from './profile.ts'
-import { loadOptionalPatches } from './index.ts'
+import { composeEntries, loadProfileDirectory, readProfileManifest, PROFILE_PATCH_FILENAME, type Profile } from './profile.ts'
+import { loadOptionalPatches, loadOverlayPatches } from './index.ts'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 
 /** Application-owned package manager executable; environment applies only to package operations. */
@@ -56,7 +56,23 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
   return { id: TELEMETRY_ROW_ID, disabled: true }
 }
 
-/** Read the selected bundles' patches, which apply before the profile patch file.
+/** Read desktop defaults for Web before user patches; other launches have none.
+ * @param binName Diagnostic prefix for a missing or malformed desktop patch.
+ * @param profile Loaded profile whose manifest records user pad installation and bundle selection.
+ * @param skipUserPlugins Recovery omits user bundle choices; normal reads honor installation and explicit bundle removal.
+ * @returns Parsed desktop defaults for Web without a user pad installation; otherwise an empty list.
+ */
+export function readProfileDefaultPatches(binName: string, profile: Pick<Profile, 'name' | 'dir'>, skipUserPlugins = false): PatchOptions[] {
+  const path = process.env.DSHD_PROFILE_DEFAULT_PATCH
+  if (profile.name !== 'web' || !path) return []
+  if (!skipUserPlugins) {
+    const manifest = readProfileManifest(binName, profile.dir)
+    if (Object.hasOwn(manifest.dependencies ?? {}, 'dsh-pad') || manifest.dsh?.profile?.bundles?.includes('dsh-pad')) return []
+  }
+  return loadOverlayPatches(binName, path)
+}
+
+/** Read the selected bundles and desktop defaults before the profile patch file.
  * @param binName Diagnostic prefix for malformed or missing configuration.
  * @param context Data supplied by the profile launcher.
  * @param initialProfile Already loaded startup profile; omitted reads the current files.
@@ -66,7 +82,7 @@ export function readBundlePatches(binName: string, context: ProfileContext, init
   const profile = initialProfile ?? loadProfileDirectory(binName, context.dir, context.installAnchor, {
     userLayer: false, bundles: context.skipUserPlugins === true ? 'template' : 'manifest',
   })
-  return profile.layers.flatMap(layer => layer.patches)
+  return [...profile.layers.flatMap(layer => layer.patches), ...readProfileDefaultPatches(binName, profile, context.skipUserPlugins === true)]
 }
 
 /** Read current bundle and user layers with the launch-time overlays.

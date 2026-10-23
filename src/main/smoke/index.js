@@ -576,7 +576,13 @@ function createSmokeRunner(deps) {
         const titlebar = document.querySelector('#dshd-shell-titlebar-trailing');
         const buttons = titlebar ? Array.from(titlebar.querySelectorAll('button')).map(b => (b.getAttribute('aria-label') || b.textContent || '').trim()) : [];
         const api = window.shell;
+        for (let i = 0; i < 40 && !document.querySelector('.dshpad-root'); i += 1) await sleep(250);
+        const padResponse = await fetch('/api/dsh-pad.panels');
+        const padBody = await padResponse.json();
+        const padUpdate = await fetch('/api/dsh-pad.update').then(response => response.json());
         return {
+          padReady: Boolean(document.querySelector('.dshpad-root')) && padResponse.ok && Array.isArray(padBody.panels)
+            && padUpdate.reason === 'disabled' && padUpdate.canApply === false,
           hasFrame: Boolean(frame),
           gridColumns: frame ? getComputedStyle(frame).gridTemplateColumns : null,
           hasTitlebar: Boolean(titlebar),
@@ -952,6 +958,7 @@ function createSmokeRunner(deps) {
         && titlebarHits.error == null
       );
       const ok = result.hasFrame
+        && result.padReady === true
         && result.hasTitlebar
         && result.hasTerminalToggle
         && result.hasSurfacesToggle
