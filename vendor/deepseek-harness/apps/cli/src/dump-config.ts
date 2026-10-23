@@ -11,6 +11,7 @@ import { join, resolve } from 'node:path'
 import {
   loadOptionalPatches,
   loadOverlayPatches,
+  readProfileDefaultPatches,
   renderConfigDump,
   type ConfigDumpLayer,
   type Profile,
@@ -42,6 +43,8 @@ export function dumpConfigLayers(profile: string, options: DumpConfigOptions): {
     label: layer.packageName,
     patches: layer.patches,
   }))
+  const defaults = readProfileDefaultPatches(NAME, loaded, skipUserPlugins)
+  if (defaults.length) layers.push({ label: 'desktop defaults', patches: defaults })
   if (!options.defaultOnly) {
     if (!skipUserPlugins && existsSync(loaded.patchPath)) {
       layers.push({ label: loaded.patchPath, patches: loaded.patches })
@@ -100,6 +103,8 @@ export function collectConfigDumpLayers(
     label: layer.packageName,
     patches: layer.patches,
   }))
+  const defaults = readProfileDefaultPatches(NAME, loaded)
+  if (defaults.length) layers.push({ label: 'desktop defaults', patches: defaults })
   if (!defaultOnly) {
     if (existsSync(loaded.patchPath)) {
       layers.push({ label: loaded.patchPath, patches: loaded.patches })

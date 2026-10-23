@@ -579,8 +579,10 @@ function createSmokeRunner(deps) {
         for (let i = 0; i < 40 && !document.querySelector('.dshpad-root'); i += 1) await sleep(250);
         const padResponse = await fetch('/api/dsh-pad.panels');
         const padBody = await padResponse.json();
+        const padUpdate = await fetch('/api/dsh-pad.update').then(response => response.json());
         return {
-          padReady: Boolean(document.querySelector('.dshpad-root')) && padResponse.ok && Array.isArray(padBody.panels),
+          padReady: Boolean(document.querySelector('.dshpad-root')) && padResponse.ok && Array.isArray(padBody.panels)
+            && padUpdate.reason === 'disabled' && padUpdate.canApply === false,
           hasFrame: Boolean(frame),
           gridColumns: frame ? getComputedStyle(frame).gridTemplateColumns : null,
           hasTitlebar: Boolean(titlebar),

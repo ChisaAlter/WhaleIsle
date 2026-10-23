@@ -742,7 +742,8 @@ test('pad overlay loads by default on both normal and recovery starts', async ()
     if (skip) f.controller.writePluginSkip(new Error('recovery'));
     await f.controller.start();
     assert.equal(f.dsh.startOptions[0].skipUserPlugins, skip);
-    assert.equal(f.dsh.startOptions[0].patchFiles.filter(file => file === overlayFile).length, 1);
+    assert.equal(f.dsh.startOptions[0].defaultPatchFile, overlayFile);
+    assert.equal(f.dsh.startOptions[0].patchFiles.includes(overlayFile), false);
   }
 });
 

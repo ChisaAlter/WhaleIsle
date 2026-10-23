@@ -32,8 +32,10 @@ const {
   runSkipComposeContract,
 } = require('../../scripts/check-skip-compose-contract');
 
-const DESKTOP_ROWS = `- id: ${TASK_CONTROL_ID}\n- id: ${INSTALL_ID}\n- id: ${WORKSPACE_DEPS_ID}\n- id: ${SKILL_OFFICE_ID}\n- id: ${USAGE_ID}\n- id: ${IM_ID}\n- id: ${MARKET_ID}\n  disabled: true\n- id: ${BOT_ID}\n- id: ${WHALE_ID}\n- id: ${REMOTE_ID}\n- id: ${PAD_ID}\n`;
-const PAD_ROW = `- id: ${PAD_ID}\n`;
+const PAD_ROW = `- id: ${PAD_ID}\n  config:\n    updateCheck: false\n`;
+const DESKTOP_ROWS = `- id: ${TASK_CONTROL_ID}\n- id: ${INSTALL_ID}\n- id: ${WORKSPACE_DEPS_ID}\n- id: ${SKILL_OFFICE_ID}\n- id: ${USAGE_ID}\n- id: ${IM_ID}\n- id: ${MARKET_ID}\n  disabled: true\n- id: ${BOT_ID}\n- id: ${WHALE_ID}\n- id: ${REMOTE_ID}\n${PAD_ROW}`;
+const FULL_PAD_ROW = `- id: ${PAD_ID}\n  disabled: true\n  config:\n    dataFile: home-panels.json\n    agentRefresh: false\n    updateCheck: false\n`;
+const FULL_DESKTOP_ROWS = DESKTOP_ROWS.replace(PAD_ROW, FULL_PAD_ROW);
 const FULL_ONLY_ROWS = `- id: ${SESSION_SEARCH_ID}\n  config:\n    openAt: first-search\n`;
 
 test('composeContractProblems demands positive evidence before canary absence', () => {
@@ -41,7 +43,7 @@ test('composeContractProblems demands positive evidence before canary absence', 
   assert.deepEqual(composeContractProblems('skip', DESKTOP_ROWS), []);
   // Healthy full dump: all present.
   assert.deepEqual(
-    composeContractProblems('full', `- id: ${CANARY_ID}\n${DESKTOP_ROWS}${FULL_ONLY_ROWS}`),
+    composeContractProblems('full', `- id: ${CANARY_ID}\n${FULL_DESKTOP_ROWS}${FULL_ONLY_ROWS}`),
     [],
   );
   // Empty/truncated dump must fail on the missing desktop rows, not pass
@@ -61,15 +63,15 @@ test('composeContractProblems demands positive evidence before canary absence', 
   assert.equal(resurrect.length, 1);
   assert.match(resurrect[0], /--skip-user-plugins 未生效/);
   // Full round without the canary means the canary probe itself is broken.
-  const brokenProbe = composeContractProblems('full', `${DESKTOP_ROWS}${FULL_ONLY_ROWS}`);
+  const brokenProbe = composeContractProblems('full', `${FULL_DESKTOP_ROWS}${FULL_ONLY_ROWS}`);
   assert.equal(brokenProbe.length, 1);
   assert.match(brokenProbe[0], /canary/);
   // A second desktop row means a stale managed block composed next to the
   // overlay — the CLI's insert does not dedupe by id.
-  const doubledInstall = composeContractProblems('full', `- id: ${CANARY_ID}\n${DESKTOP_ROWS}${FULL_ONLY_ROWS}- id: ${INSTALL_ID}\n`);
+  const doubledInstall = composeContractProblems('full', `- id: ${CANARY_ID}\n${FULL_DESKTOP_ROWS}${FULL_ONLY_ROWS}- id: ${INSTALL_ID}\n`);
   assert.equal(doubledInstall.length, 1);
   assert.match(doubledInstall[0], /双挂载/);
-  const doubledIm = composeContractProblems('full', `- id: ${CANARY_ID}\n${DESKTOP_ROWS}${FULL_ONLY_ROWS}- id: ${IM_ID}\n`);
+  const doubledIm = composeContractProblems('full', `- id: ${CANARY_ID}\n${FULL_DESKTOP_ROWS}${FULL_ONLY_ROWS}- id: ${IM_ID}\n`);
   assert.equal(doubledIm.length, 1);
   assert.match(doubledIm[0], /dsh-im/);
   assert.match(doubledIm[0], /双挂载/);
@@ -96,23 +98,66 @@ test('composeContractProblems demands positive evidence before canary absence', 
   const missingRemote = composeContractProblems('skip', `- id: ${TASK_CONTROL_ID}\n- id: ${INSTALL_ID}\n- id: ${WORKSPACE_DEPS_ID}\n- id: ${SKILL_OFFICE_ID}\n- id: ${USAGE_ID}\n- id: ${IM_ID}\n- id: ${MARKET_ID}\n  disabled: true\n- id: ${BOT_ID}\n- id: ${WHALE_ID}\n${PAD_ROW}`);
   assert.equal(missingRemote.length, 1);
   assert.match(missingRemote[0], new RegExp(REMOTE_ID));
-  const doubledWhale = composeContractProblems('full', `- id: ${CANARY_ID}\n${DESKTOP_ROWS}${FULL_ONLY_ROWS}- id: ${WHALE_ID}\n`);
+  const doubledWhale = composeContractProblems('full', `- id: ${CANARY_ID}\n${FULL_DESKTOP_ROWS}${FULL_ONLY_ROWS}- id: ${WHALE_ID}\n`);
   assert.equal(doubledWhale.length, 1);
   assert.match(doubledWhale[0], /dsh-whale/);
   assert.match(doubledWhale[0], /双挂载/);
-  const doubledBot = composeContractProblems('full', `- id: ${CANARY_ID}\n${DESKTOP_ROWS}${FULL_ONLY_ROWS}- id: ${BOT_ID}\n`);
+  const doubledBot = composeContractProblems('full', `- id: ${CANARY_ID}\n${FULL_DESKTOP_ROWS}${FULL_ONLY_ROWS}- id: ${BOT_ID}\n`);
   assert.equal(doubledBot.length, 1);
   assert.match(doubledBot[0], /dshbot/);
   assert.match(doubledBot[0], /双挂载/);
   const searchOnSkip = composeContractProblems('skip', `${DESKTOP_ROWS}${FULL_ONLY_ROWS}`);
   assert.equal(searchOnSkip.length, 1);
   assert.match(searchOnSkip[0], /session-search/);
-  assert.deepEqual(composeContractProblems('full', `${CANARY_ID}\n${DESKTOP_ROWS}${FULL_ONLY_ROWS}`), []);
+  assert.deepEqual(composeContractProblems('full', `${CANARY_ID}\n${FULL_DESKTOP_ROWS}${FULL_ONLY_ROWS}`), []);
 });
 
 test('compose contract rejects missing or duplicate default pad mounts', () => {
   assert.match(composeContractProblems('skip', DESKTOP_ROWS.replace(PAD_ROW, '')).join('\n'), /缺少.*dsh-pad/);
   assert.match(composeContractProblems('skip', DESKTOP_ROWS + PAD_ROW).join('\n'), /dsh-pad.*双挂载/);
+});
+
+test('compose contract preserves pad disablement and home configuration on full starts', () => {
+  const full = healthyStdout([]);
+  const cases = [
+    ['missing disablement', FULL_PAD_ROW.replace('  disabled: true\n', '')],
+    ['overridden disablement', FULL_PAD_ROW.replace('  disabled: true\n', '  disabled: false\n')],
+    ['missing data file', FULL_PAD_ROW.replace('    dataFile: home-panels.json\n', '')],
+    ['profile overrides home', FULL_PAD_ROW.replace('home-panels.json', 'profile-panels.json')],
+    ['default overrides home', FULL_PAD_ROW.replace('home-panels.json', 'panels.json')],
+    ['missing refresh setting', FULL_PAD_ROW.replace('    agentRefresh: false\n', '')],
+    ['overridden refresh setting', FULL_PAD_ROW.replace('    agentRefresh: false\n', '    agentRefresh: true\n')],
+  ];
+  for (const [label, row] of cases) {
+    assert.deepEqual(composeContractProblems('full', full.replace(FULL_PAD_ROW, row)), [
+      'full: dsh-pad 默认行未保留用户禁用或 profile/home 配置优先级',
+    ], label);
+  }
+});
+
+test('compose contract rejects pad user disablement and configuration leaking into recovery', () => {
+  const cases = [
+    ['profile disablement', PAD_ROW.replace(`- id: ${PAD_ID}\n`, `- id: ${PAD_ID}\n  disabled: true\n`)],
+    ['profile data file', PAD_ROW.replace('  config:\n', '  config:\n    dataFile: profile-panels.json\n')],
+    ['home data file', PAD_ROW.replace('  config:\n', '  config:\n    dataFile: home-panels.json\n')],
+    ['full user configuration', FULL_PAD_ROW],
+  ];
+  for (const [label, row] of cases) {
+    assert.deepEqual(composeContractProblems('skip', DESKTOP_ROWS.replace(PAD_ROW, row)), [
+      'skip: dsh-pad 恢复启动不应读取用户禁用和配置补丁',
+    ], label);
+  }
+});
+
+test('compose contract requires disabled pad update checks on both rounds', () => {
+  for (const round of ['skip', 'full']) {
+    const stdout = healthyStdout(round === 'skip' ? ['--skip-user-plugins'] : []);
+    for (const updateCheck of ['', '    updateCheck: true\n']) {
+      assert.deepEqual(composeContractProblems(round, stdout.replace('    updateCheck: false\n', updateCheck)), [
+        `${round}: dsh-pad 默认更新检查应关闭`,
+      ], `${round}: ${updateCheck || 'missing updateCheck'}`);
+    }
+  }
 });
 
 test('compose contract rejects an enabled legacy Settings market', () => {
@@ -130,7 +175,6 @@ test('composeContractRounds mirrors production overlay order on skip and full st
     '/p/desktop-dshbot.patch.yml',
     '/p/desktop-dsh-whale.patch.yml',
     '/p/desktop-dsh-remote.patch.yml',
-    '/p/desktop-dsh-pad.patch.yml',
   ], [
     '/p/desktop-task-control.patch.yml',
     '/p/desktop-install.patch.yml',
@@ -141,7 +185,6 @@ test('composeContractRounds mirrors production overlay order on skip and full st
     '/p/desktop-dshbot.patch.yml',
     '/p/desktop-dsh-whale.patch.yml',
     '/p/desktop-dsh-remote.patch.yml',
-    '/p/desktop-dsh-pad.patch.yml',
   ]);
   assert.deepEqual(rounds.map((row) => row.round), ['skip', 'full']);
   assert.deepEqual(rounds[0].args, [
@@ -154,7 +197,6 @@ test('composeContractRounds mirrors production overlay order on skip and full st
     '--patch', '/p/desktop-dshbot.patch.yml',
     '--patch', '/p/desktop-dsh-whale.patch.yml',
     '--patch', '/p/desktop-dsh-remote.patch.yml',
-    '--patch', '/p/desktop-dsh-pad.patch.yml',
     '--dump-config',
   ]);
   assert.deepEqual(rounds[1].args, [
@@ -168,7 +210,6 @@ test('composeContractRounds mirrors production overlay order on skip and full st
     '--patch', '/p/desktop-dshbot.patch.yml',
     '--patch', '/p/desktop-dsh-whale.patch.yml',
     '--patch', '/p/desktop-dsh-remote.patch.yml',
-    '--patch', '/p/desktop-dsh-pad.patch.yml',
     '--dump-config',
   ]);
 });
@@ -183,7 +224,7 @@ function fakeHarnessRoot(t) {
 
 function healthyStdout(args) {
   const skip = args.includes('--skip-user-plugins');
-  return skip ? DESKTOP_ROWS : `- id: ${CANARY_ID}\n${DESKTOP_ROWS}${FULL_ONLY_ROWS}`;
+  return skip ? DESKTOP_ROWS : `- id: ${CANARY_ID}\n${FULL_DESKTOP_ROWS}${FULL_ONLY_ROWS}`;
 }
 
 test('runSkipComposeContract replays the managed-block migration and passes overlays on both rounds', async (t) => {
@@ -191,7 +232,14 @@ test('runSkipComposeContract replays the managed-block migration and passes over
   const calls = [];
   const result = await runSkipComposeContract(root, {
     spawnSync: (nodeBin, args, options) => {
-      calls.push({ nodeBin, args, options });
+      calls.push({
+        nodeBin,
+        args,
+        options,
+        profilePatch: fs.readFileSync(path.join(options.env.DSH_HOME, 'profiles', 'web', 'cordis.patch.yml'), 'utf8'),
+        homePatch: fs.readFileSync(path.join(options.env.DSH_HOME, 'cordis.patch.yml'), 'utf8'),
+        padDefaultPatch: fs.readFileSync(options.env.DSHD_PROFILE_DEFAULT_PATCH, 'utf8'),
+      });
       return { status: 0, stdout: healthyStdout(args) };
     },
   });
@@ -218,6 +266,16 @@ test('runSkipComposeContract replays the managed-block migration and passes over
   const remoteOverlay = path.join(home, 'profiles', 'web', 'desktop-plugins', 'dsh-remote', 'desktop-dsh-remote.patch.yml');
   const searchOverlay = path.join(home, 'profiles', 'web', 'desktop-plugins', 'session-search', 'desktop-session-search.patch.yml');
   const padOverlay = path.join(home, 'profiles', 'web', 'desktop-plugins', 'dsh-pad', 'desktop-dsh-pad.patch.yml');
+  assert.equal(skipCall.options.env.DSHD_PROFILE_DEFAULT_PATCH, padOverlay);
+  assert.equal(fullCall.options.env.DSHD_PROFILE_DEFAULT_PATCH, padOverlay);
+  for (const call of calls) {
+    assert.equal(call.options.env.DSH_HOME, home);
+    assert.equal(call.args.includes(padOverlay), false);
+    assert.match(call.profilePatch, /\n- id: dsh-pad\n  disabled: true\n  config:\n    dataFile: profile-panels\.json\n    agentRefresh: false\n    updateCheck: false\n/);
+    assert.equal(call.homePatch, '- id: dsh-pad\n  config:\n    dataFile: home-panels.json\n    agentRefresh: false\n    updateCheck: false\n');
+    assert.match(call.padDefaultPatch, /- insert:\n    - id: dsh-pad\n/);
+    assert.match(call.padDefaultPatch, /\n      config:\n        updateCheck: false\n/);
+  }
   assert.equal(skipCall.args[4], taskControlOverlay);
   assert.equal(skipCall.args[5], '--patch');
   assert.equal(skipCall.args[6], installOverlay);
@@ -235,9 +293,8 @@ test('runSkipComposeContract replays the managed-block migration and passes over
   assert.equal(skipCall.args[18], whaleOverlay);
   assert.equal(skipCall.args[19], '--patch');
   assert.equal(skipCall.args[20], remoteOverlay);
-  assert.equal(skipCall.args[21], '--patch');
-  assert.equal(skipCall.args[22], padOverlay);
-  assert.equal(skipCall.args[23], '--dump-config');
+  assert.equal(skipCall.args[21], '--dump-config');
+  assert.equal(skipCall.args.length, 22);
   // dsh-home rule: the child composes only against the throwaway home.
   assert.equal(skipCall.options.env.DSHD_HOME, undefined);
   assert.equal(skipCall.options.env.DSH_HARNESS_ROOT, undefined);
@@ -254,7 +311,6 @@ test('runSkipComposeContract replays the managed-block migration and passes over
     '--patch', botOverlay,
     '--patch', whaleOverlay,
     '--patch', remoteOverlay,
-    '--patch', padOverlay,
     '--dump-config',
   ]);
   // The throwaway home is removed after the run.
@@ -271,7 +327,7 @@ test('runSkipComposeContract fails when the full round composes the install row 
           status: 0,
           stdout: skip
             ? DESKTOP_ROWS
-            : `- id: ${CANARY_ID}\n${DESKTOP_ROWS}- id: ${INSTALL_ID}\n`,
+            : `- id: ${CANARY_ID}\n${FULL_DESKTOP_ROWS}${FULL_ONLY_ROWS}- id: ${INSTALL_ID}\n`,
         };
       },
     }),
@@ -287,7 +343,7 @@ test('runSkipComposeContract fails when the skip round drops the dsh-im row', as
         const skip = args.includes('--skip-user-plugins');
         return {
           status: 0,
-          stdout: skip ? `- id: ${INSTALL_ID}\n` : `- id: ${CANARY_ID}\n${DESKTOP_ROWS}`,
+          stdout: skip ? `- id: ${INSTALL_ID}\n` : healthyStdout(args),
         };
       },
     }),
@@ -299,7 +355,12 @@ test('runSkipComposeContract fails on user-layer resurrection under skip', async
   const root = fakeHarnessRoot(t);
   await assert.rejects(
     () => runSkipComposeContract(root, {
-      spawnSync: () => ({ status: 0, stdout: `${DESKTOP_ROWS}- id: ${CANARY_ID}\n` }),
+      spawnSync: (nodeBin, args) => ({
+        status: 0,
+        stdout: args.includes('--skip-user-plugins')
+          ? `${DESKTOP_ROWS}- id: ${CANARY_ID}\n`
+          : healthyStdout(args),
+      }),
     }),
     /--skip-user-plugins 未生效/,
   );

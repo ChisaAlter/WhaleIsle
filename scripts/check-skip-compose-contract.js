@@ -368,6 +368,19 @@ function composeContractProblems(round, stdout) {
   if (marketRow !== undefined && !/^\s+disabled: true\s*$/m.test(marketRow)) {
     problems.push(`${round}: 旧设置市场行 ${MARKET_ID} 必须禁用`);
   }
+  const padRow = text.split(new RegExp(`^- id: ${PAD_ID}\\r?$`, 'm'))[1]?.split(/^\- id:/m)[0];
+  if (padRow !== undefined) {
+    if (round === 'full' && (!/^\s+disabled: true\s*$/m.test(padRow)
+      || !/^\s+dataFile: home-panels\.json\s*$/m.test(padRow)
+      || !/^\s+agentRefresh: false\s*$/m.test(padRow))) {
+      problems.push(`${round}: dsh-pad 默认行未保留用户禁用或 profile/home 配置优先级`);
+    }
+    if (round === 'skip' && (/^\s+disabled: true\s*$/m.test(padRow)
+      || /^\s+dataFile:/m.test(padRow))) {
+      problems.push(`${round}: dsh-pad 恢复启动不应读取用户禁用和配置补丁`);
+    }
+    if (!/^\s+updateCheck: false\s*$/m.test(padRow)) problems.push(`${round}: dsh-pad 默认更新检查应关闭`);
+  }
   // The base Web bundle always has session-query-sqlite with openAt: never;
   // only the desktop overlay changes it to first-search on full starts.
   const searchCount = countConfigLines(text, 'openAt: first-search');
@@ -513,6 +526,8 @@ async function runSkipComposeContract(harnessRoot, options = {}) {
     fs.writeFileSync(path.join(padSource, 'cordis.patch.yml'), '- insert:\n    - id: dsh-pad\n      name: dsh-pad\n');
     const padEnsure = ensureDesktopDshPad({ sourceDir: padSource, profileDir });
     if (padEnsure.ok !== true) throw new Error(`skip compose 契约：dsh-pad 失败（${padEnsure.error}）`);
+    fs.appendFileSync(path.join(profileDir, 'cordis.patch.yml'), '\n- id: dsh-pad\n  disabled: true\n  config:\n    dataFile: profile-panels.json\n    agentRefresh: false\n    updateCheck: false\n');
+    fs.writeFileSync(path.join(home, 'cordis.patch.yml'), '- id: dsh-pad\n  config:\n    dataFile: home-panels.json\n    agentRefresh: false\n    updateCheck: false\n');
     const searchEnsure = ensureSessionSearchOverlay({ profileDir, dshHome: home });
     if (!searchEnsure || searchEnsure.ok !== true) {
       throw new Error(`skip compose 契约门禁：ensureSessionSearchOverlay 失败（${(searchEnsure && searchEnsure.error) || 'unknown'}）`);
@@ -528,7 +543,7 @@ async function runSkipComposeContract(harnessRoot, options = {}) {
     }
     // The child must compose against the throwaway home only — never an
     // inherited desktop/official home (dsh-home rule).
-    const env = { ...process.env, DSH_HOME: home };
+    const env = { ...process.env, DSH_HOME: home, DSHD_PROFILE_DEFAULT_PATCH: padEnsure.overlayFile };
     delete env.DSHD_HOME;
     delete env.DSH_HARNESS_ROOT;
     const problems = [];
@@ -545,7 +560,6 @@ async function runSkipComposeContract(harnessRoot, options = {}) {
       botEnsure.overlayFile,
       whaleEnsure.overlayFile,
       remoteEnsure.overlayFile,
-      padEnsure.overlayFile,
     ];
     const fullOverlayFiles = [
       taskControlEnsure.overlayFile,
@@ -558,7 +572,6 @@ async function runSkipComposeContract(harnessRoot, options = {}) {
       botEnsure.overlayFile,
       whaleEnsure.overlayFile,
       remoteEnsure.overlayFile,
-      padEnsure.overlayFile,
     ];
     for (const { round, args } of composeContractRounds(binJs, overlayFiles, fullOverlayFiles)) {
       log(`dump-config ${round} 轮…`);

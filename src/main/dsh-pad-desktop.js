@@ -13,8 +13,9 @@ const DSH_PAD_OVERLAY_FILENAME = 'desktop-dsh-pad.patch.yml';
 
 /**
  * Load the shipped pad by default without replacing a user's pad installation.
- * Full starts retain an existing pad bundle and its profile/home configuration;
- * recovery starts use the shipped runtime through a separate package link.
+ * The returned patch supplies defaults before profile/home configuration.
+ * Full starts retain an existing pad bundle; recovery starts use the shipped
+ * runtime through a separate package link and omit user configuration.
  * Desktop releases own the shipped copy's updates. Panel data remains under DSH_HOME.
  * @param {{ sourceDir?: string, profileDir?: string, skipUserPlugins?: boolean, disabledPlugins?: string[] }} [options]
  */

@@ -2224,7 +2224,7 @@ async function start(ctx, config) {
   const update = new UpdateService({
     current: await readPluginVersion(root),
     root,
-    enabled: config.updateCheck,
+    enabled: false, // The bundled copy is updated by desktop releases.
     checkHours: config.updateCheckHours
   });
   ctx.effect(() => {
