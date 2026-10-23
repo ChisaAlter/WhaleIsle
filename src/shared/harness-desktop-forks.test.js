@@ -216,7 +216,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-approval/src/client/ApprovalPanel.tsx': "root.style.setProperty('--dsh-approval-card-inset-top', '0px')\n",
       'packages/client/ui-approval/src/client/ApprovalPanel.module.css': '.root { padding: var(--dsh-approval-card-inset-top, 8px) 0; }\n',
       'apps/web/tests/approval-resize-geometry.e2e.ts': "it('places the approval card on the input card rect')\n",
-      'packages/client/ui-conversation/src/client/input/editor/runtime.ts': "$addUpdateTag(SKIP_SCROLL_INTO_VIEW_TAG)\nkeepCaretInDraft(root)\n",
+      'packages/client/ui-conversation/src/client/input/editor/runtime.ts': "$addUpdateTag(SKIP_SCROLL_INTO_VIEW_TAG)\nkeepCaretInDraft(root)\nregisterCommand(DELETE_CHARACTER_COMMAND, scrollOnlyDraft, COMMAND_PRIORITY_CRITICAL)\n",
       'apps/web/tests/composer-typing-keeps-reading.e2e.ts': "it('types, grows, and overflows the draft without moving the transcript')\n",
       'apps/web/tests/snapshots/agent-preset-selection/header.expected.md': '- navigation "Session hierarchy"\n',
       'package.json': '"build:lib:client": "node packages/client/ui-user-terminal/scripts/copy-ghostty-assets.mjs"\n',

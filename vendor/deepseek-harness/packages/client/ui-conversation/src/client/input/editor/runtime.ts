@@ -3,7 +3,7 @@ import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { LexicalEditor, NodeKey } from 'lexical'
 import {
   $addUpdateTag, $createParagraphNode, $createTextNode, $getRoot, $getSelection, $isRangeSelection, $nodesOfType, $setSelection,
-  BLUR_COMMAND, CLEAR_HISTORY_COMMAND, COMMAND_PRIORITY_CRITICAL, createEditor, HISTORY_MERGE_TAG, PASTE_TAG,
+  BLUR_COMMAND, CLEAR_HISTORY_COMMAND, COMMAND_PRIORITY_CRITICAL, createEditor, DELETE_CHARACTER_COMMAND, DELETE_LINE_COMMAND, DELETE_WORD_COMMAND, HISTORY_MERGE_TAG, PASTE_TAG,
   RootNode, SELECTION_CHANGE_COMMAND, SKIP_DOM_SELECTION_TAG, SKIP_SCROLL_INTO_VIEW_TAG,
 } from 'lexical'
 import { registerPlainText } from '@lexical/plain-text'
@@ -118,6 +118,12 @@ export class DraftEditorRuntime {
       // Content edits mark the root dirty; caret moves arrive as selection changes.
       this.editor.registerNodeTransform(RootNode, scrollOnlyDraft),
       this.editor.registerCommand(SELECTION_CHANGE_COMMAND, scrollOnlyDraft, COMMAND_PRIORITY_CRITICAL),
+      // Each command commits its own update: a deletion that changes neither
+      // the text nor the caret (Backspace in an empty draft) still commits one
+      // with a selection, which would scroll the transcript too.
+      this.editor.registerCommand(DELETE_CHARACTER_COMMAND, scrollOnlyDraft, COMMAND_PRIORITY_CRITICAL),
+      this.editor.registerCommand(DELETE_WORD_COMMAND, scrollOnlyDraft, COMMAND_PRIORITY_CRITICAL),
+      this.editor.registerCommand(DELETE_LINE_COMMAND, scrollOnlyDraft, COMMAND_PRIORITY_CRITICAL),
       this.editor.registerUpdateListener(({ dirtyElements, dirtyLeaves, prevEditorState, editorState }) => {
         const root = this.editor.getRootElement()
         if (root === null) return
