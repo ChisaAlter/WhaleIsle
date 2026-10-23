@@ -30,15 +30,25 @@ function clientDocumentTitle(): Plugin {
   }
 }
 
-/** Keep the redistribution license beside the bundled brand font. */
-function brandFontLicense(): Plugin {
+/** Keep the redistribution licenses beside the bundled fonts. */
+function fontLicenses(): Plugin {
   return {
-    name: 'dsh-brand-font-license',
+    name: 'dsh-font-licenses',
     async generateBundle() {
       this.emitFile({
         type: 'asset',
         fileName: 'assets/fonts/Montserrat-OFL.txt',
         source: await readFile(src('../../packages/client/ui-theme/src/styles/Montserrat-OFL.txt')),
+      })
+      this.emitFile({
+        type: 'asset',
+        fileName: 'assets/fonts/SourceSerif4-OFL.txt',
+        source: await readFile(src('../../packages/client/ui-theme/src/styles/SourceSerif4-OFL.txt')),
+      })
+      this.emitFile({
+        type: 'asset',
+        fileName: 'assets/fonts/Inter-OFL.txt',
+        source: await readFile(src('../../packages/client/ui-theme/src/styles/Inter-OFL.txt')),
       })
     },
   }
@@ -171,7 +181,7 @@ export default defineConfig({
   // directory, and the served index resolves identically from the site root.
   base: './',
   plugins: [
-    rejectStandaloneServe(), clientDocumentTitle(), brandFontLicense(), katexWoff2Fonts(), react(), emitPreviewPage(),
+    rejectStandaloneServe(), clientDocumentTitle(), fontLicenses(), katexWoff2Fonts(), react(), emitPreviewPage(),
     productWebBundleIsolation(src('../..'), src('.')),
   ],
   build: {

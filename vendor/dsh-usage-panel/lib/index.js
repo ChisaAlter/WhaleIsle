@@ -1317,6 +1317,7 @@ var BillingStore = class {
     this.medium = medium;
     this.mode = medium === void 0 ? "memory" : "durable";
   }
+  warn;
   cache = null;
   medium;
   mode;

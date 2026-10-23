@@ -990,19 +990,27 @@ export class ThemeRuntime {
     // 透明主题 needs the wallpaper: fully transparent chrome over an opaque
     // canvas would leave menus and dialogs invisible, so the flag is inert
     // until an image is set.
-    const solidity = this.settings.transparentTheme && wallpapered
-      ? TRANSPARENT_GLASS_SOLIDITY
-      : this.settings.glassOpacity
+    // A flat skin (Codex) opts out of glass and the backdrop entirely: its
+    // chrome is opaque, so neither the wallpaper nor the ambient gradient may
+    // wash the surfaces, and the family's own solid tokens stay authoritative.
+    const flatChrome = active.skin === 'codex'
+    const solidity = flatChrome
+      ? 100
+      : this.settings.transparentTheme && wallpapered
+        ? TRANSPARENT_GLASS_SOLIDITY
+        : this.settings.glassOpacity
     tokens['--dsw-alias-glass-opacity'] = `${solidity}%`
-    if (backdropLive) {
-      Object.assign(tokens, mixWallpaperSurfaces(tokens, mode, solidity, this.settings.terminalOpacity))
-    } else {
-      // The base sheet mixes DeepSeek's raised fills directly. Custom
-      // families supply their own colors, so apply the same glass value here.
-      for (const name of ['--dsw-alias-bg-layer-1', '--dsw-alias-bg-layer-2']) {
-        const color = tokens[name]
-        if (color !== undefined && solidity < 100) {
-          tokens[name] = `color-mix(in srgb, ${color} ${solidity}%, transparent)`
+    if (!flatChrome) {
+      if (backdropLive) {
+        Object.assign(tokens, mixWallpaperSurfaces(tokens, mode, solidity, this.settings.terminalOpacity))
+      } else {
+        // The base sheet mixes DeepSeek's raised fills directly. Custom
+        // families supply their own colors, so apply the same glass value here.
+        for (const name of ['--dsw-alias-bg-layer-1', '--dsw-alias-bg-layer-2']) {
+          const color = tokens[name]
+          if (color !== undefined && solidity < 100) {
+            tokens[name] = `color-mix(in srgb, ${color} ${solidity}%, transparent)`
+          }
         }
       }
     }

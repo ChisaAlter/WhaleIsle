@@ -79,6 +79,10 @@ Desktop 的固定快捷键 `Cmd`/`Ctrl` + `+`（或 `=`）和 `Cmd`/`Ctrl` + `-`
 
 `brand-font.css` 导出本地 Montserrat Light、Regular 和 Medium 字体（正体、字重 300、400 和 500），`lib/styles/` 同时提供 `montserrat-light.woff2`、`montserrat-regular.woff2`、`montserrat-medium.woff2` 及其 SIL Open Font License。Desktop 将同一份样式表、字体和许可证打包，用于欢迎页品牌文字的离线显示；普通界面保留系统字体栈。
 
+`editorial-font.css` 导出随包提供的 Source Serif 4 字体（可变字重 400–700，正体与斜体，Latin 与 Latin Extended 子集），`lib/styles/` 同时提供 `source-serif-4-*.woff2` 及其 SIL Open Font License。Claude 皮肤用它排版会话正文、用户气泡、输入框草稿与空态标题；它替代无法再分发的 Claude 授权字体 Copernicus/Tiempos。源文件来自 Google Fonts 的 Source Serif 4 发布，使用其提供的子集文件而非自行改动的构建。Web 入口导入包的 `./editorial-font.css` 导出，由 Vite 输出并解析 WOFF2 资源，Web 构建同时输出许可证，字体可离线加载。
+
+`interface-font.css` 导出随包提供的 Inter 字体（可变字重 100–900，Latin 与 Latin Extended 子集），`lib/styles/` 同时提供 `inter-*.woff2` 及其 SIL Open Font License。Claude 皮肤通过一条 `body` token 覆盖把它设为界面字体，中文继续回退到平台中文字体，代码保留等宽字体栈；产品品牌行会重置回产品正文字体，字标外观不参与皮肤。源文件来自 Google Fonts 的 Inter 发布，Web 入口与其他随包字体一同导入 `./interface-font.css`。
+
 `corner-shape.css` 平滑所有圆角：在 `@supports (corner-shape: superellipse(1.5))` 内定义 `--dsw-corner-shape`，并通过通配选择器应用到所有元素及其 `::before`/`::after`，因此不支持 `corner-shape` 的引擎保持普通圆弧。正圆形状——`border-radius: 50%` 的圆与胶囊半径——因超级椭圆会使其变形，须在所属组件样式表中把 `corner-shape: round` 与半径声明配对；corner-shape 样式表 spec 跨全部包样式表强制这一配对。
 
 `gradient-shadow-text.css` 从 `--dsh-content-font-size` 派生 `--dsh-content-font-delta`，并以该增量移动 Markdown 标题与基础文本阶梯。它同时派生低一档变量 `--dsh-content-font-size-secondary`（设置 ≤14 时为设置值 −1，>14 时为设置值 −2；默认设置下为 13 px）及配套的 `--dsh-content-font-delta-secondary`，供表格变体与比正文低一档的流内行使用。紧凑的小号文本变体保持固定字号。代码变体（`--dsw-font-markdown-code`、`-code-block`、`-code-block-small`）按 `--dsh-code-font-delta`（`--dsh-code-font-size` 与保留的 13 px 默认值之差）调整字号与行高。阶梯之外，用户气泡与 composer 草稿直接读取正文字号变量对，流内行的标题及摘要读取低一档变量对。该表还持有阴影阶（`--dsw-shadow-lv*`）、半透明菜单使用的 `--dsw-menu-backdrop-filter` 与 elevation token：`--dsw-elevation-stroke` 经可重绑的 `--dsw-elevation-stroke-color` 画 0.5 px 发丝描边，`--dsw-elevation-panel`/`--dsw-elevation-prominent`/`--dsw-elevation-soft`（composer 专用的更大模糊、更低透明度档）在描边之上叠两层极淡柔光，因此高层级表面设 `border: 0`，不会产生占布局的轮廓；派生 token 逐元素重声明，使表面对描边色的重绑真实生效。绘制 `--dsw-specific-menu` 的高层级表面还会应用 `backdrop-filter: var(--dsw-menu-backdrop-filter)`（[样式参考](../../../docs/web-styling.zh.md#component-rules)）。 深色菜单使用不透明度为 45% 的灰色底与 `border-l3` 描边；浅色菜单保留 `border-l1` 描边。
@@ -132,6 +136,8 @@ Desktop 的固定快捷键 `Cmd`/`Ctrl` + `+`（或 `=`）和 `Cmd`/`Ctrl` + `-`
 
 - **第三方主题是扩展点，不是产品**：注册主题意味着覆盖同名别名变量；目前不会验证一组覆盖是否完整。
 - **token 样式表是颜色值的唯一权威来源**：设计系统中缺失的值会有意不补入；一律采用最接近的语义 token，设计负责人批准的新增值须在同一变更中以一个静态尺度层级与一个语义别名的形式进入。
+- **Claude 正文随包提供 Source Serif 4**：`editorial-font.css` 打包的 SIL OFL 字体替代无法再分发的 Claude 授权衬线 Copernicus/Tiempos。拉丁字形回退 Iowan Old Style、Charter、Georgia、Cambria、Times New Roman，中文回退 Songti SC、Noto Serif SC / Source Han Serif SC、SimSun，字体未覆盖的字形仍由系统字体决定。只有会话正文、用户气泡、输入框草稿与空态标题使用该字体；代码保持产品等宽字体。
+- **Claude 界面字体是随包 Inter，品牌行除外**：`interface-font.css` 提供的 Inter 由一条 `body` token 应用到界面 chrome、元信息行与控件。侧栏品牌行重置回产品正文字体，鲸屿字标保持出厂外观与用户选择的正文家族；中文回退到平台中文字体。
 
 <a id="dev-note"></a>
 ### 开发备注
