@@ -1,11 +1,15 @@
-# Whale Isle 0.3.9
+# Whale Isle 0.3.10
 
-- **DeepSeek Harness 0.2.1-rc.2**: The bundled Harness is upgraded to `dsh-v0.2.1-rc.2`, keeping existing desktop features and settings.
-- **Smoother first send**: Sending the first message from the draft page glides the composer straight to the bottom instead of pausing mid-page, and the session header and transcript fade in instead of flashing.
-- **Reply actions stay visible**: After sending a new message, the previous reply keeps its copy and feedback buttons until the new reply completes.
-- **Interactive pages in chat**: The assistant can render calculators, charts, maps, checklists and other interactive pages directly in a reply, with their state saved per conversation.
-- **More reliable WhaleBridge startup**: The launcher recognizes stale running state and recovers, shows the end of the component log when startup fails, and removes extra old versions.
-- **Project temporarily hidden**: Project is being refined, so this release does not show its entry. Existing Project data stays on this computer and will be available again when Project returns.
-- **App updates**: When the local incremental-update cache is missing or for a different version, it is verified and restored from the saved installer of the current version instead of downloading the full package again. Update notes are split into 中文 / English tabs.
+- **Project returns, off by default**: Turn on **Project** in Settings → Interface; its **?** button explains what it does. A Project's lead conversation is listed with the ordinary conversations of its directory and carries a Project tag. Start one with **Project** on the New Session row (your draft comes along) or **New Project here** in a Workspace row menu. Requirement and team progress live in the Requests and Team panels in the conversation header, and you can keep adding requirements to the queue. Whale Isle’s data folder, the user home, system configuration folders and drive roots cannot host a Project, and the entries say why; background failures show their reason at the top. Turning it off hides the entries and keeps the data.
+- **Generated interfaces unified as Whale UI**: OpenUI SDK and GenUI are adopted so generated interfaces, tool cards and composer panels share one runtime. Cards are named after their content, have better spacing, and show errors inside the card. Metric grids reflow into balanced rows instead of leaving one item alone when space runs short, and a new full-width progress bar component is available.
+- **Plugin discovery**: Plugins → Discover now includes the official plugin market and a community source by default. Fixed plugin installs failing when the install directory contains Chinese characters.
+- **New theme skins**: Appearance adds Codex and Claude skins, each with light and dark variants. Codex uses a flat layout with a collapsible sidebar; Claude sets conversation text in the bundled Source Serif 4 and the interface in Inter.
+- **New Session screen**: Uses the monochrome Whale Isle logo with updated wording.
+- **Previews**: Image, web and file floating previews share one frosted, rounded style. Fixed large images not appearing in previews.
+- **Composer and conversation**: The composer resizes more smoothly and the approval card lines up with it. Typing or deleting, including pressing Backspace in an emptied draft, no longer scrolls you back to the bottom while you read earlier messages.
+- **Launcher**: Starting or stopping the desktop app and similar actions show their text and progress on the button instead of loading pop-ups. Button status text is no longer clipped or blank. After WhaleBridge is turned off, its route no longer remains in model selection.
+- **Titlebar**: All blank titlebar space drags the window. The Git controls show icons by default and expand their labels on hover.
+- **Settings**: Model settings and pop-up menus follow the shared design rules. If you cancel the restart confirmation after switching Bots, Project, the whale assistant or remote workspaces, the switch and setting return to their previous state.
+- **App updates**: The desktop app follows the selected download route. Update verification, cancelling incremental updates and recovery after interrupted downloads are more reliable.
 
-This release provides the Windows 10+ x64 installer and a macOS 14+ Apple Silicon ARM64 DMG. The Mac package retains native window buttons, titlebar safe areas and fullscreen support; it is unsigned and not notarized. WhaleBridge and the ChatGPT plugin are installed and updated independently and are not bundled with the desktop package; the latest WhaleBridge is 1.3.0 and can be updated from the launcher.
+This release provides the Windows 10+ x64 installer. WhaleBridge and the ChatGPT plugin are installed and updated independently and are not bundled with the desktop package; the latest WhaleBridge is 1.3.0 and can be updated from the launcher.
