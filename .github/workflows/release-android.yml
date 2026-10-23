@@ -40,6 +40,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            mobile/android/**/*.gradle.kts
+            mobile/android/gradle.properties
+            mobile/android/gradle/wrapper/gradle-wrapper.properties
       - name: Prepare SDK and signing key
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
