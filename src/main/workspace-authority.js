@@ -447,6 +447,39 @@ function isHighRiskWorkspaceRoot(real, anchors = highRiskAnchorPaths()) {
 }
 
 /**
+ * Why `dir` cannot be a trusted workspace root, or '' when it can. The
+ * reasons follow the same anchors as `isHighRiskWorkspaceRoot`, most
+ * specific first, so a refusal can name what the folder would expose:
+ * 'missing' (unresolvable), 'not-directory', 'root' (volume root), 'home'
+ * (the user home or an ancestor), 'system-data' (another per-user config
+ * tree or an ancestor) and 'app-data' (this app's userData/dsh-home or an
+ * ancestor).
+ * @param {string} dir
+ * @returns {'' | 'missing' | 'not-directory' | 'root' | 'home' | 'system-data' | 'app-data'}
+ */
+function workspaceRootRefusal(dir) {
+  let real;
+  try {
+    real = fs.realpathSync.native(path.resolve(dir));
+    if (!fs.statSync(real).isDirectory()) return 'not-directory';
+  } catch {
+    return 'missing';
+  }
+  if (isFilesystemRoot(real)) return 'root';
+  const canonical = (candidate) => {
+    try { return fs.realpathSync.native(path.resolve(candidate)); } catch { return ''; }
+  };
+  const home = os.homedir() ? canonical(os.homedir()) : '';
+  if (home && containedIn(real, home)) return 'home';
+  const desktopHome = tryGetDesktopDshHome();
+  const appData = desktopHome ? [desktopHome, path.dirname(desktopHome)].map(canonical).filter(Boolean) : [];
+  const systemData = highRiskAnchorPaths().filter((anchor) => anchor !== home && !appData.includes(anchor));
+  if (systemData.some((anchor) => containedIn(real, anchor))) return 'system-data';
+  if (appData.some((anchor) => containedIn(real, anchor))) return 'app-data';
+  return '';
+}
+
+/**
  * Harness `workspace.json` is plugin-writable. Keep user-opened project
  * folders (including siblings of the boot workspace); drop volume roots and
  * high-risk ancestors (user home, `%APPDATA%` / Application Support,
@@ -502,6 +535,7 @@ module.exports = {
   readProjectRegisteredPaths,
   filterRegisteredWorkspaceRoots,
   isHighRiskWorkspaceRoot,
+  workspaceRootRefusal,
   highRiskAnchorPaths,
   scratchWorkspacePath,
   hasGitDirSegment,

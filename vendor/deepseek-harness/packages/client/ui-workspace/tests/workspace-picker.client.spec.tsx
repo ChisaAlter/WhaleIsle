@@ -169,6 +169,14 @@ describe('WorkspacePicker', () => {
     expect(createWorkspace).not.toHaveBeenCalled()
   })
 
+  it('leaves out a directory action that opts out of the picker', () => {
+    render(<WorkspacePickFlow t={t} open anchorRef={anchor()} useWorkspaces={hook(workspaceState([workspace('alpha', 'Alpha')]))}
+      createWorkspace={vi.fn()} useDirectoryFlow={occupancySource().useDirectoryFlow} renderDirectoryFlow={flowProbe().renderFlow}
+      onPick={vi.fn()} onPickNoDirectory={vi.fn()} onClose={vi.fn()}
+      directoryActions={[{ id: 'project', label: '添加 Project…', adopt: vi.fn(), picker: false }]} />)
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Alpha', '无工作目录', '添加工作区…'])
+  })
+
   it('lists same-title Workspaces separately and forwards the selected id', () => {
     const b = mount([workspace('alpha', 'Shared'), workspace('beta', 'Shared')])
     const entries = screen.getAllByRole('menuitem', { name: 'Shared' })

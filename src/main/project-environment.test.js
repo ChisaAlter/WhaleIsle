@@ -49,6 +49,33 @@ test('a selected Project directory gains authority from its own persisted regist
   await assert.rejects(environment.dispatch({ action: 'select-directory', workingDirectory: path.parse(selected).root }), /不能作为/);
 });
 
+test('a folder that cannot host a Project is refused with its reason, before and at creation', async t => {
+  const { directory, home } = await fixture(t, false);
+  const { setDesktopDshHome, clearDesktopDshHome } = require('../shared/dsh-home');
+  const userData = path.join(directory, 'user-data'), config = path.join(directory, 'xdg-config'), ordinary = path.join(directory, 'repo'), file = path.join(directory, 'note.txt');
+  for (const dir of [path.join(userData, 'dsh-home'), config, ordinary]) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(file, 'x');
+  const previousConfig = process.env.XDG_CONFIG_HOME;
+  setDesktopDshHome(path.join(userData, 'dsh-home')); process.env.XDG_CONFIG_HOME = config;
+  t.after(() => { clearDesktopDshHome(); if (previousConfig === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = previousConfig; });
+  const environment = createProjectEnvironment({ home, authority: createWorkspaceAuthority({ workspace: '' }) });
+  const check = workingDirectory => environment.dispatch({ action: 'check-directory', workingDirectory });
+  assert.deepEqual(await check(ordinary), { ok: true, allowed: true });
+  for (const [target, reason, message] of [
+    [path.parse(ordinary).root, 'root', /磁盘根目录/],
+    [os.homedir(), 'home', /用户主目录/],
+    [config, 'system-data', /系统配置目录/],
+    [userData, 'app-data', /鲸屿自己的数据目录/],
+    [path.join(userData, 'dsh-home'), 'app-data', /鲸屿自己的数据目录/],
+    [file, 'not-directory', /不是文件夹/],
+    [path.join(directory, 'absent'), 'missing', /找不到/],
+  ]) {
+    assert.deepEqual(await check(target), { ok: true, allowed: false, reason }, target);
+    await assert.rejects(environment.dispatch({ action: 'select-directory', workingDirectory: target }), error => message.test(error.message) && error.code === `project/directory-${reason}`);
+  }
+  assert.deepEqual(await check('relative/path'), { ok: true, allowed: false, reason: 'missing' });
+});
+
 test('explicit real Git worktrees preserve dirty user data and retain committed branches after cleanup', async t => {
   const { source, home, git, environment } = await fixture(t);
   fs.writeFileSync(path.join(source, 'file.txt'), 'user draft\n');

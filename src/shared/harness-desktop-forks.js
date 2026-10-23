@@ -219,7 +219,7 @@ const FORK_FILE_MARKERS = [
   // rejecting, so the chip does not silently fall back.
   { file: 'packages/client/ui-workspace/src/client/navigation.ts', includes: ['connectNoDirectory', 'connectScratchCwd', 'deleteWorkspace', 'scratchCwd', 'registerDirectoryAction', 'rowLabel'] },
   { file: 'packages/client/ui-workspace/src/client/tree.ts', includes: ['isNoDirectorySession', 'currentGroupKey'] },
-  { file: 'packages/client/ui-workspace/src/client/WorkspacePicker.tsx', includes: ['NO_DIRECTORY', 'onPickNoDirectory'] },
+  { file: 'packages/client/ui-workspace/src/client/WorkspacePicker.tsx', includes: ['NO_DIRECTORY', 'onPickNoDirectory', 'action.picker !== false'] },
   // Archive visibility is separate from row count: an enabled empty manager
   // remains discoverable. Behavior coverage lives in workspace-browser tests.
   { file: 'packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx', includes: ['TasksSectionHeader', 'connectNoDirectory', 'GroupSessionRun', 'showArchivedSection'] },

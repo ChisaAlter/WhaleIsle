@@ -1,12 +1,12 @@
 window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   const { createElement: h, useState, useEffect, useLayoutEffect, useRef, useCallback, Fragment } = require('react');
   const { createPortal } = require('react-dom');
-  const { Button, Input, Menu, Modal, Pill, SegmentedTabs, Tag, MarkdownText, Toast, IconFolderCloseRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconChevronRightOutlineRegular, IconEllipsisOutlineRegular, IconUsersOutlineRegular, IconChecklistOutlineRegular, useAnchoredPosition } = require('@deepseek-ai/dsh-client-ui-primitives');
+  const { Button, Input, Menu, Modal, Pill, SegmentedTabs, Tag, MarkdownText, Toast, Tooltip, IconFolderCloseRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconChevronRightOutlineRegular, IconEllipsisOutlineRegular, IconUsersOutlineRegular, IconChecklistOutlineRegular, useAnchoredPosition } = require('@deepseek-ai/dsh-client-ui-primitives');
   const { createSnapshotStore, defineStore } = require('@deepseek-ai/dsh-client-store');
   const { teamEnglish, teamChinese } = require('@deepseek-ai/dsh-experimental-client-ui-agent-team');
   const NS = 'dsh-project';
   const zh = {
-    diffTruncated: '差异过长，仅显示前一部分；请打开目录查看完整改动。', tab: 'Project', more: '更多', rename: '重命名', cancel: '取消', archiveActive: '停止后台工作并归档', archiveHint: '后台工作会停止，工作目录、对话和成果将保留。', team: '团队', add: '添加 Project…', rowCreate: '在此目录新建 Project', rowOpen: '打开 Project', heroHint: '以当前目录开启 Project，已输入的内容会一起带过去', heroOpenHint: '打开此目录的 Project，已输入的内容会一起带过去', loading: '正在读取…', close: '关闭', refresh: '刷新',
+    diffTruncated: '差异过长，仅显示前一部分；请打开目录查看完整改动。', tab: 'Project', more: '更多', rename: '重命名', cancel: '取消', archiveActive: '停止后台工作并归档', archiveHint: '后台工作会停止，工作目录、对话和成果将保留。', team: '团队', add: '添加 Project…', rowCreate: '在此目录新建 Project', dirMissing: '找不到这个目录。', dirNotDirectory: '这个路径不是文件夹。', dirRoot: '磁盘根目录不能作为 Project 目录，请选择具体的项目文件夹。', dirHome: '用户主目录不能作为 Project 目录，请选择其中具体的项目文件夹。', dirSystemData: '系统配置目录（如 AppData、.config、.ssh）不能作为 Project 目录，请选择你的项目文件夹。', dirAppData: '这是鲸屿自己的数据目录，不能作为 Project 目录，请选择你的项目文件夹。', rowOpen: '打开 Project', heroHint: '以当前目录开启 Project，已输入的内容会一起带过去', heroOpenHint: '打开此目录的 Project，已输入的内容会一起带过去', loading: '正在读取…', close: '关闭', refresh: '刷新',
     requirements: '需求', requirementGoal: '完整目标', requirementConstraints: '约束', requirementConditions: '完成条件', noRequirementConstraints: '未记录约束。', noRequirementConditions: '未记录完成条件。',
     requestRoleDevelopment: '开发', requestRoleReview: '检查', requestRoleDocs: '文档', requestHandover: '等待协调者交付', requestArranging: '正在安排', requestArrangingHint: '协调者正在安排团队开发。', deleted: '已移除', requestDiscussing: '讨论中', requestQueued: '等待开发', requestCancelled: '已取消', requestQueuePosition: '队列第 {position} 项', requestQueueCount: '{count} 项排队', requestEnqueue: '加入开发队列', requestMoveUp: '上移一位', requestMoveDown: '下移一位', requestCancel: '取消需求', requestRejoin: '重新加入队列', requestResume: '继续当前需求', requestResumeQueue: '继续队列', requestRestarted: '应用已重启，等待你继续当前需求', requestQueuePaused: '队列已暂停', requestQueueWaiting: '前一项需求交付后自动开始', requestQueueReady: '等待协调者安排开发', requestDiscussingHint: '需求仍在讨论，确认后加入开发队列。', requestCancelledHint: '已从开发队列取消，要求和已有成果仍保留。', taskCancelled: '已取消需求', taskCancelledEmpty: '还没有取消的需求。',
     archivedHint: '项目已归档。恢复后可继续对话，旧工作不会自动启动。', archiving: '正在停止后台工作并归档…', queued: '排队中', archived: '已归档',
@@ -45,7 +45,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   const en = {
     requirements: 'Requests', requirementGoal: 'Full goal', requirementConstraints: 'Constraints', requirementConditions: 'Completion conditions', noRequirementConstraints: 'No constraints recorded.', noRequirementConditions: 'No completion conditions recorded.',
     requestRoleDevelopment: 'Development', requestRoleReview: 'Review', requestRoleDocs: 'Documentation', requestHandover: 'Awaiting coordinator delivery', requestArranging: 'Arranging work', requestArrangingHint: 'The coordinator is arranging development with the team.', deleted: 'Removed', requestDiscussing: 'Discussing', requestQueued: 'Awaiting development', requestCancelled: 'Cancelled', requestQueuePosition: 'Queue position {position}', requestQueueCount: '{count} queued', requestEnqueue: 'Add to development queue', requestMoveUp: 'Move up', requestMoveDown: 'Move down', requestCancel: 'Cancel request', requestRejoin: 'Rejoin queue', requestResume: 'Continue current request', requestResumeQueue: 'Continue queue', requestRestarted: 'Application restarted; waiting for explicit continuation.', requestQueuePaused: 'Queue paused', requestQueueWaiting: 'Starts automatically after the previous request is delivered', requestQueueReady: 'Waiting for the coordinator to arrange development', requestDiscussingHint: 'This request is being discussed. Add it to the development queue when ready.', requestCancelledHint: 'Removed from the development queue. Requirements and existing results are retained.', taskCancelled: 'Cancelled requests', taskCancelledEmpty: 'No cancelled requests yet.',
-    diffTruncated: 'The diff is truncated. Open the directory for the complete changes.', tab: 'Project', more: 'More', rename: 'Rename', cancel: 'Cancel', archiveActive: 'Stop work and archive', archiveHint: 'Background work will stop. Files, conversation and results are retained.', team: 'Team', add: 'Add Project…', rowCreate: 'New Project here', rowOpen: 'Open Project', heroHint: 'Start a Project in this directory; your draft comes along', heroOpenHint: 'Open this directory’s Project; your draft comes along', loading: 'Loading…', close: 'Close', refresh: 'Refresh',
+    diffTruncated: 'The diff is truncated. Open the directory for the complete changes.', tab: 'Project', more: 'More', rename: 'Rename', cancel: 'Cancel', archiveActive: 'Stop work and archive', archiveHint: 'Background work will stop. Files, conversation and results are retained.', team: 'Team', add: 'Add Project…', rowCreate: 'New Project here', dirMissing: 'This folder cannot be found.', dirNotDirectory: 'This path is not a folder.', dirRoot: 'A drive root cannot be a Project folder. Choose a specific project folder.', dirHome: 'Your home folder cannot be a Project folder. Choose a specific project folder inside it.', dirSystemData: 'System configuration folders (such as AppData, .config or .ssh) cannot be Project folders. Choose your project folder.', dirAppData: 'This is Whale Isle’s own data folder and cannot be a Project folder. Choose your project folder.', rowOpen: 'Open Project', heroHint: 'Start a Project in this directory; your draft comes along', heroOpenHint: 'Open this directory’s Project; your draft comes along', loading: 'Loading…', close: 'Close', refresh: 'Refresh',
     archivedHint: 'This Project is archived. Restore it to continue; previous work will not restart automatically.', archiving: 'Stopping work and archiving…', queued: 'Queued', archived: 'Archived',
     directory: 'Project working directory', openDirectory: 'Open project directory', materials: 'Project materials', progress: 'Work progress',
     noWork: 'Describe what you need here, and continue the same work later.', process: 'Member history', viewProcess: 'View history', viewResult: 'View results', workDetails: 'Details', executionInfo: 'Execution details', earlierWork: 'Earlier work',
@@ -129,6 +129,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     decisionLog: 'Decision log', decisionLogEmpty: 'After deliveries, the coordinator’s key decisions are recorded here automatically.',
   });
   const CSS = `
+    .dsh-project-hero-option-wrap{display:inline-flex;border-radius:var(--dsw-radius-sm)}
+    .dsh-project-hero-option-wrap:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}
     .dsh-project-row-badge{flex:none;margin-left:6px;padding:0 5px;border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:10px;line-height:16px;font-weight:500;white-space:nowrap}
     .dsh-project-heading,.dsh-project-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     .dsh-project-heading{justify-content:space-between;gap:4px;flex-wrap:nowrap}
@@ -375,6 +377,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   const requestLabel = (t, request) => request ? `${request.title} · ${t('requestVersion')} ${request.revision}` : '';
   const isLive = worker => Boolean(worker.activeRunId || worker.jobs?.length || worker.phase === 'stopping');
   const fileName = path => path.split(/[\\/]/).at(-1);
+  // Why the desktop refuses a folder (see the desktop directory check), as locale keys.
+  const DIRECTORY_REFUSALS = { missing: 'dirMissing', 'not-directory': 'dirNotDirectory', root: 'dirRoot', home: 'dirHome', 'system-data': 'dirSystemData', 'app-data': 'dirAppData' };
   const comparablePath = path => path.replaceAll('\\', '/').replace(/\/$/, '');
   const directoryParts = project => project.canonicalWorkingDirectory.replaceAll('\\', '/').replace(/\/$/, '').split('/').filter(Boolean);
   function Artifact({ file, open, busy, t }) {
@@ -418,16 +422,22 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   }
 
   // New Session option: start (or reopen) the selected directory's Project and carry the draft into its Lead.
-  function ProjectHeroOption({ sessionId, openWithDraft, startProject, useProjects, useProjectSessions, useWorkspaceList, t }) {
+  // A folder the desktop refuses keeps the option visible but disabled, with its reason.
+  function ProjectHeroOption({ sessionId, openWithDraft, startProject, checkDirectory, useProjects, useProjectSessions, useWorkspaceList, useDirectoryChecks, t }) {
     const available = useProjects(value => value.available), cwd = useProjectSessions(value => value.byId[sessionId]?.cwd);
     const scratch = useWorkspaceList(value => value.scratchCwd);
     const existing = useProjects(value => Boolean(cwd) && value.projects.some(project => project.lifecycle !== 'archived' && comparablePath(project.canonicalWorkingDirectory) === comparablePath(cwd)));
+    const refusal = useDirectoryChecks(value => cwd ? value[comparablePath(cwd)]?.reason : undefined);
     const [busy, setBusy] = useState(false), [error, setError] = useState('');
+    useEffect(() => { if (available && cwd && cwd !== scratch) checkDirectory(cwd); }, [available, cwd, scratch]);
     if (!available || !cwd || cwd === scratch) return null;
     const start = async () => { setBusy(true); setError(''); try { await startProject(cwd, openWithDraft); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
+    const reason = refusal ? t(DIRECTORY_REFUSALS[refusal] ?? 'unavailable') : '';
+    const option = h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-hero-option', title: reason ? undefined : t(existing ? 'heroOpenHint' : 'heroHint'), 'aria-busy': busy || undefined, 'aria-description': reason || undefined, disabled: busy || Boolean(reason), onClick: () => { void start(); } },
+      h(IconChecklistOutlineRegular, { size: 16 }), t('tab'));
     return h(Fragment, null,
-      h(Button, { variant: 'ghost', size: 'sm', className: 'dsh-project-hero-option', title: t(existing ? 'heroOpenHint' : 'heroHint'), 'aria-busy': busy || undefined, disabled: busy, onClick: () => { void start(); } },
-        h(IconChecklistOutlineRegular, { size: 16 }), t('tab')),
+      // A disabled button receives no pointer events, so the reason's tooltip anchors on a focusable wrapper.
+      reason ? h(Tooltip, { label: reason, side: 'bottom', align: 'end', portal: true, maxWidth: 280 }, h('span', { className: 'dsh-project-hero-option-wrap', tabIndex: 0 }, option)) : option,
       error ? h(Toast, { text: error, holdMs: 6000, onDone: () => setError('') }) : null);
   }
 
@@ -1583,6 +1593,21 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       ctx.effect(() => ctx.locale.register('project-team', { zh: teamChinese, en: teamEnglish }), 'dsh-project: team locale');
       const snapshot = createSnapshotStore({ projects: [], details: {}, available: false, loading: true, error: '' });
       const requestModes = createSnapshotStore({}, { persist: { name: 'dsh-project.request-modes' } });
+      // Desktop verdicts on whether a folder may host a Project, keyed by comparable path.
+      const directoryChecks = createSnapshotStore({});
+      const checkDirectory = path => {
+        const key = comparablePath(path);
+        if (directoryChecks.getSnapshot()[key] !== undefined) return;
+        directoryChecks.set({ ...directoryChecks.getSnapshot(), [key]: { pending: true } });
+        void rpc('directory/check', { workingDirectory: path }).then(
+          result => {
+            directoryChecks.set({ ...directoryChecks.getSnapshot(), [key]: result.allowed === false ? { reason: result.reason } : {} });
+            // Republish so Workspace rows drop the entry for a refused folder.
+            if (result.allowed === false) registerAction();
+          },
+          // An unavailable check leaves the entry; creation still enforces the rule.
+          () => directoryChecks.set({ ...directoryChecks.getSnapshot(), [key]: {} }));
+      };
       // Bumped to close the header panels when a native file preview takes over.
       const dismissals = createSnapshotStore(0);
       const dismissPanels = () => dismissals.set(dismissals.getSnapshot() + 1);
@@ -1664,8 +1689,14 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       const registerAction = () => {
         disposeAction?.(); disposeAction = undefined;
         if (!snapshot.getSnapshot().available) return;
-        disposeAction = ctx.uiWorkspace.registerDirectoryAction({ id: NS, label: t('add'), order: 20, adopt: path => startProject(path),
-          rowLabel: path => t(projectAt(path) ? 'rowOpen' : 'rowCreate') });
+        // Projects start from the New Session option or a Workspace row, not the directory picker.
+        disposeAction = ctx.uiWorkspace.registerDirectoryAction({ id: NS, label: t('add'), order: 20, picker: false, adopt: path => startProject(path),
+          rowLabel: path => {
+            if (projectAt(path)) return t('rowOpen');
+            const check = directoryChecks.getSnapshot()[comparablePath(path)];
+            if (check === undefined) checkDirectory(path);
+            return check?.reason ? undefined : t('rowCreate');
+          } });
       };
       const refresh = () => {
         if (refreshing) return refreshing;
@@ -1733,7 +1764,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         const before = requestModes.getSnapshot();
         requestModes.set({ ...before, [sessionId]: { requests: { ...before[sessionId]?.requests, [id]: { mode, completed } } } });
       };
-      const face = () => ({ startProject, hooks: { projects: snapshot, projectSessions: ctx.sessions.list, workspaceList: ctx.workspaces.list, projectSessionStatus: ctx.uiSession.sessionStatus, projectView: viewInstance, requestModes, dismissals }, read, command, refresh, openProject, openLifecycle, readDetail, sendUserRequest, getFileReturn: () => fileReturn, teamT: ctx.locale.bind('project-team'),
+      const face = () => ({ startProject, checkDirectory, hooks: { directoryChecks, projects: snapshot, projectSessions: ctx.sessions.list, workspaceList: ctx.workspaces.list, projectSessionStatus: ctx.uiSession.sessionStatus, projectView: viewInstance, requestModes, dismissals }, read, command, refresh, openProject, openLifecycle, readDetail, sendUserRequest, getFileReturn: () => fileReturn, teamT: ctx.locale.bind('project-team'),
         setRequestMode,
         trackActiveProject: projectId => { trackedProject = projectId; return () => { if (trackedProject === projectId) trackedProject = undefined; }; },
         openModelSettings: () => ctx.settingsNavigation.open('models'),

@@ -121,7 +121,7 @@ export function WorkspacePickFlow({
   const addEntries: MenuEntry[] = flowAvailable
     ? [
       { id: ADD_WORKSPACE, label: t('menu.addWorkspace'), icon: <IconPlusOutlineRegular size={16} />, disabled: flowBusy },
-      ...directoryActions.map(action => ({ id: `::feature:${action.id}`, label: action.label, icon: <IconPlusOutlineRegular size={16} />, disabled: flowBusy })),
+      ...directoryActions.filter(action => action.picker !== false).map(action => ({ id: `::feature:${action.id}`, label: action.label, icon: <IconPlusOutlineRegular size={16} />, disabled: flowBusy })),
     ]
     : []
   // Working without a folder is a target like any Workspace, so it sits with

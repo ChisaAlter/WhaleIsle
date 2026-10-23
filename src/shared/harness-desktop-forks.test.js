@@ -169,7 +169,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/workspace/workspace/src/index.ts': 'private async readoptableSessionIds(canonical: string) {} workspace/session-before-archive\n',
       'packages/client/ui-workspace/src/client/navigation.ts': 'connectNoDirectory() { return this.workspaces.list.getSnapshot().scratchCwd }\nconnectScratchCwd() { return this.workspaces.list.getSnapshot().scratchCwd }\ndeleteWorkspace() {}\nregisterDirectoryAction() {}\nrowLabel\n',
       'packages/client/ui-workspace/src/client/tree.ts': 'export function isNoDirectorySession() {}\nexport function currentGroupKey() {}\n',
-      'packages/client/ui-workspace/src/client/WorkspacePicker.tsx': "const NO_DIRECTORY = '::no-directory'\nonPickNoDirectory?.()\n",
+      'packages/client/ui-workspace/src/client/WorkspacePicker.tsx': "const NO_DIRECTORY = '::no-directory'\nonPickNoDirectory?.()\naction.picker !== false\n",
       'packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx': '<TasksSectionHeader onCreate={() => { connectNoDirectory() }} /><GroupSessionRun open={group.expanded} /><ArchivedSessionSection visible={showArchivedSection} />\n',
       'packages/client/ui-workspace/src/client/ShowArchivedListRow.tsx': 'const checked = showArchivedList\n',
       'packages/client/ui-workspace/src/client/contract/slots.ts': "'sidebar.session.row.badge': { kind: 'list' }\n",

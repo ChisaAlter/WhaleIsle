@@ -62,6 +62,8 @@ export interface WorkspaceDirectoryAction {
    * `adopt` then receives; omitted or undefined keeps the action off the row.
    */
   readonly rowLabel?: (path: string) => string | undefined
+  /** False keeps the action out of the New Session directory picker; it is listed there by default. */
+  readonly picker?: boolean
 }
 
 /** Optional content preparation for the resolved target Session. */

@@ -12,11 +12,12 @@ The right-side Request observer and ordinary-profile startup repair are included
 
 ## User behavior
 
-A Project's Lead conversation appears among the ordinary conversations of its directory in the sidebar, with a Project tag after its title; there is no separate Project category. A Project starts from three places, all of which reopen an existing Project for the same directory instead of creating a second one:
+A Project's Lead conversation appears among the ordinary conversations of its directory in the sidebar, with a Project tag after its title; there is no separate Project category. A Project starts from two places, both of which reopen an existing Project for the same directory instead of creating a second one. To use another folder, add it as a Workspace first; the New Session directory menu has no separate Project entry.
 
 - **Project** on the New Session row, beside the directory and mode controls, uses the selected directory and carries the typed draft and staged images into the Lead without sending them. A no-directory Session does not offer it.
 - A Workspace row's menu offers **New Project here**, or **Open Project** when that directory already has one. A failure is shown as a notice in the sidebar.
-- **Add Project…** in the New Session directory menu picks any directory.
+
+A folder that would expose protected data cannot host a Project: a drive root, the user home, a system configuration tree (AppData, `.config`, `.ssh`, Application Support) or Whale Isle's own data folder, or any folder containing one of them. The desktop checks the folder once in advance. The New Session option then stays visible but disabled, and its tooltip gives the reason; a Workspace row does not offer a Project entry. Creation applies the same rule and reports the same reason.
 
 Selecting the row opens its unique continuing Lead conversation bound to the authoritative local directory. Creation performs no model run, delegation, Git initialization or branch creation. Non-Git directories are supported. The ordinary conversation controls select the model and permissions; Project has no separate model setup or workbench. The conversation header distinguishes the real directory action from the Project overview action.
 
