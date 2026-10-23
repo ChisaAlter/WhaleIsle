@@ -30,7 +30,7 @@
 
 ## Android
 
-工程在 `mobile/android/`（包名 `ai.deepseek.harness.mobile`，minSdk 26，compileSdk/targetSdk 36，versionCode 3 / versionName 0.2.0）。CameraX 扫码、粘贴与系统 VIEW handoff 解析同一条 offer v2 URL；页面地址仅用于识别配对链接，通信直接连接 offer 的中继。
+工程在 `mobile/android/`（包名 `ai.deepseek.harness.mobile`，minSdk 26，compileSdk/targetSdk 36，versionCode 4 / versionName 0.3.10）。CameraX 扫码、粘贴与系统 VIEW handoff 解析同一条 offer v2 URL；页面地址仅用于识别配对链接，通信直接连接 offer 的中继。
 
 Kotlin `protocol` 模块以 OkHttp WebSocket、TweetNaCl Java 的 Curve25519 / XSalsa20-Poly1305、HMAC-SHA256 实现现有桌面 wire 协议，校验消息认证、salt 和单调序号。首次配对保存设备凭据，后续连接用新挑战证明，不重放一次性 token。凭据与文字草稿使用 Android 加密存储，草稿按电脑/会话隔离；图片附件在进程内按同样归属保留。
 
@@ -39,11 +39,16 @@ Compose 提供会话列表、分页历史、运行中的回复更新、原生 Ma
 APK 不内嵌 SPA、JavaScript bundle 或 WebView 传输桥。覆盖升级首次启动时，唯一临时 WebView 只在原稳定 asset origin 的空白页读取旧 localStorage 凭据和文字草稿，禁用网络后迁移至原生加密存储，随后销毁；不运行旧 SPA、不清除旧数据。迁移失败显示错误，不标记成功。
 
 ```text
-cd mobile/android
+cd mobile/android/protocol/test-support
+npm ci --ignore-scripts
+node build.mjs
+cd ../..
 ./gradlew :protocol:test :app:testDebugUnitTest
 ./gradlew :app:assembleDebug
 ```
 
-需要 Java 17 和 Android SDK。协议互通测试调用仓库 vendored JavaScript NaCl/加密通道作为独立桌面端观察器，因此开发测试还需要 Node 与 `vendor/chisacode-remote` 依赖；Android 构建及运行不依赖 Node。JVM 测试覆盖配对解析、真实 WebSocket 加密互通、错误凭据/重放/篡改、历史分页、草稿与迟到附件归属、数据迁移；它们不代替真机操作。
+需要 Java 17 和 Android SDK。协议互通测试调用仓库 vendored JavaScript NaCl/加密通道作为独立桌面端观察器，因此开发测试还需要 Node 与 `protocol/test-support` 的锁定依赖；观察器从 vendored relay 源码独立构建，不要求安装整套桌面开发依赖，Android 构建及运行不依赖 Node。JVM 测试覆盖配对解析、真实 WebSocket 加密互通、错误凭据/重放/篡改、历史分页、草稿与迟到附件归属、数据迁移；它们不代替真机操作。
 
-覆盖升级必须同签名且 versionCode 递增；使用 `adb install -r` 保留数据。debug APK 不建立正式签名更新的验收结论。实际验证范围和未测项在 PR 中如实说明，历史结果不自动继承。
+正式 APK 使用独立 `android-v<版本>` 标签，由 [Release Android](../.github/workflows/release-android.yml) 手动构建和发布到 GitHub/CNB，发布不会替换桌面 latest。签名从 Actions secrets 注入，证书指纹在 `android-release.json` 中公开，私钥不进仓库。工作分支 `publish=false` 可仅验证；main `publish=true` 会在 JVM、lint、正式 APK 签名与模拟器启动检查后发布。
+
+覆盖升级必须同签名且 versionCode 递增；使用 `adb install -r` 保留数据。历史 debug APK 与首次正式签名不同，不能据此声称可直接覆盖升级；不通过卸载或清数据伪造升级通过。模拟器检查不等于真机相机、扫码配对和公网 AI 对话验收，实际验证范围和未测项在 PR 和 Android 发布说明中如实记录。

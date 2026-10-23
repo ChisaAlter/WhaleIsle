@@ -1,0 +1,115 @@
+name: Release Android
+on:
+  push:
+    branches: ['release/android-*']
+    paths:
+      - mobile/android/**
+      - scripts/*android*
+      - .github/workflows/release-android.yml
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish checked signed APK to GitHub and CNB (main only)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: release-android
+  cancel-in-progress: false
+jobs:
+  android:
+    if: github.repository == 'ChisaAlter/WhaleIsle' && (!inputs.publish || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ vars.ANDROID_KEY_ALIAS }}
+      ANDROID_SIGNING_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/setup-java@816722acf8fd27c9d1e9ae6ee6085da07e0d44c1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            mobile/android/**/*.gradle.kts
+            mobile/android/gradle.properties
+            mobile/android/gradle/wrapper/gradle-wrapper.properties
+      - name: Prepare SDK and signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/android-release.p12"
+          echo "ANDROID_KEYSTORE_PATH=$ANDROID_KEYSTORE_PATH" >> "$GITHUB_ENV"
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_SIGNING_CERT_SHA256"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          chmod 600 "$ANDROID_KEYSTORE_PATH"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Build independent desktop protocol observer
+        working-directory: mobile/android/protocol/test-support
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          node build.mjs
+      - name: Test and build signed release
+        working-directory: mobile/android
+        run: |
+          bash gradlew :protocol:test :app:testDebugUnitTest :app:lintRelease :app:assembleRelease -Pkotlin.compiler.execution.strategy=in-process --no-parallel --console=plain
+          mkdir -p ../../dist/android/release
+          cp app/build/outputs/apk/release/app-release.apk ../../dist/android/release/Whale-Isle-0.3.10-android.apk
+      - name: Enable emulator hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install and inspect signed APK in Android emulator
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: node scripts/smoke-android.mjs dist/android/release/Whale-Isle-0.3.10-android.apk
+      - name: Record APK identity and completed checks
+        env:
+          ANDROID_SOURCE_SHA: ${{ github.sha }}
+        run: node scripts/record-android-release.mjs
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: Whale-Isle-android
+          path: |
+            dist/android/
+            mobile/android/app/build/reports/lint-results-release.*
+            mobile/android/app/build/test-results/
+            mobile/android/protocol/build/test-results/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish verified original Android package
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+          CNB_REPO: ${{ vars.CNB_REPO }}
+          ANDROID_VERSION: 0.3.10
+          ANDROID_SOURCE_SHA: ${{ github.sha }}
+          ANDROID_ASSET_DIR: dist/android/release
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          node scripts/publish-android.mjs
+      - name: Remove runner signing key
+        if: always()
+        run: rm -f "$ANDROID_KEYSTORE_PATH"
