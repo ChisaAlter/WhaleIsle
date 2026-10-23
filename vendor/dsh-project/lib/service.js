@@ -1264,6 +1264,7 @@ export class ProjectService {
     if (!this.available || this.closing) fail('unavailable', this.error || 'Project Host is unavailable.');
     if (endpoint === 'list') return copy({ projects: this.state().projects.map(project => this.projectView(project)).sort((a,b) => b.updatedAt - a.updatedAt), available: true });
     if (endpoint === 'create') return this.create(input);
+    if (endpoint === 'directory/check') return this.desktop('check-directory', { workingDirectory: required(input.workingDirectory, 'working directory', 32768) });
     const project = this.project(input.projectId);
     if (endpoint === 'detail') return this.detail(project.id, input);
     if (endpoint === 'requests/list') return this.requirements.listCards(project.id, input);

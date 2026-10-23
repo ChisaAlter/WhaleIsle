@@ -48,7 +48,7 @@ function visibleText(element) {
 // The shipped browser module executes in a VM, but its components and hooks
 // use real React and DOM events. Host RPC, slots and primitive appearance are
 // the boundaries substituted here; model execution and desktop UI are separate.
-function bench({ available = true, rejectCreation = false, detail = {}, cards = [], queue, team = null, runtimeSessions = {}, sessionStatuses = {}, factoryRenderer, rpcOverride, previewOverride, approvalActive = false, language } = {}) {
+function bench({ available = true, rejectCreation = false, detail = {}, cards = [], queue, team = null, runtimeSessions = {}, sessionStatuses = {}, factoryRenderer, rpcOverride, previewOverride, approvalActive = false, language, refusedDirectories = {} } = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><main></main></body></html>', { url: 'http://localhost', pretendToBeVisual: true });
   const savedGlobals = Object.fromEntries(['window', 'document', 'navigator', 'IS_REACT_ACT_ENVIRONMENT'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   for (const [key, value] of Object.entries({ window: dom.window, document: dom.window.document, navigator: dom.window.navigator, IS_REACT_ACT_ENVIRONMENT: true })) {
@@ -88,7 +88,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
   const SegmentedTabs = ({ items, value, onChange, label }) => h('div', { role: 'tablist', 'aria-label': label }, items.map(item => h('button', {
     key: item.value, id: item.id, role: 'tab', 'aria-selected': item.value === value, 'aria-controls': item.panelId, onClick: () => onChange(item.value),
   }, item.label)));
-  const primitives = { Button, Modal, TaskDock, Menu, SegmentedTabs, Toast: ({ text }) => clientRequire('react-dom').createPortal(h('div', { role: 'alert' }, text), dom.window.document.body), Input: props => h('input', props), IconCheckOutlineRegular: () => null, IconChevronUpOutlineRegular: () => null, IconChevronDownOutlineRegular: () => null, IconChevronRightOutlineRegular: () => null, IconPlusOutlineRegular: () => null, IconEllipsisOutlineRegular: () => null, Pill: ({ children, onClick, active, ...rest }) => onClick ? h('button', { ...rest, type: 'button', 'aria-pressed': active, onClick }, children) : h('span', null, children), Tag: ({ children }) => h('span', null, children), MarkdownText: ({ text }) => h('div', { 'data-markdown': true }, text), IconFolderCloseRegular: () => h('span', { 'aria-hidden': true }) , IconUsersOutlineRegular: () => null, IconChecklistOutlineRegular: () => null, useAnchoredPosition: () => ({ left: 0, top: 0 }) };
+  const primitives = { Button, Modal, TaskDock, Menu, SegmentedTabs, Toast: ({ text }) => clientRequire('react-dom').createPortal(h('div', { role: 'alert' }, text), dom.window.document.body), Input: props => h('input', props), IconCheckOutlineRegular: () => null, IconChevronUpOutlineRegular: () => null, IconChevronDownOutlineRegular: () => null, IconChevronRightOutlineRegular: () => null, IconPlusOutlineRegular: () => null, IconEllipsisOutlineRegular: () => null, Pill: ({ children, onClick, active, ...rest }) => onClick ? h('button', { ...rest, type: 'button', 'aria-pressed': active, onClick }, children) : h('span', null, children), Tag: ({ children }) => h('span', null, children), MarkdownText: ({ text }) => h('div', { 'data-markdown': true }, text), IconFolderCloseRegular: () => h('span', { 'aria-hidden': true }) , IconUsersOutlineRegular: () => null, IconChecklistOutlineRegular: () => null, Tooltip: ({ label, children }) => h('span', { 'data-tooltip': label }, children), useAnchoredPosition: () => ({ left: 0, top: 0 }) };
   const mounted = projection(project.coordinatorSessionId);
   const plugin = registration.factory(spec => {
     if (spec === 'react') return React;
@@ -126,6 +126,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
       return structuredClone(await (async () => {
       const override = rpcOverride?.(method, input, project, stored);
       if (override !== undefined) return await override;
+      if (method === 'directory/check') return { ok: true, value: refusedDirectories[input.workingDirectory] ? { ok: true, allowed: false, reason: refusedDirectories[input.workingDirectory] } : { ok: true, allowed: true } };
       if (method === 'list') return { ok: true, value: { projects: adopted ? [project] : [], available } };
       if (method === 'create') { if (!rejectCreation) adopted = true; return rejectCreation ? { ok: false, error: { code: 'project/rejected', message: 'Creation failed' } } : { ok: true, value: { project, reused: true } }; }
       if (method === 'detail') return { ok: true, value: { project, workstreams: [], workers: [], revision: 'revision-1', ...detail, ...(detail?.workstreams ? { workstreams: detail.workstreams.map(({ latestReport, ...work }) => ({ ...work, hasReport: Boolean(latestReport) })) } : {}) } };
@@ -179,7 +180,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
     const matched = entry.options.select?.({ sessionId });
     if (entry.options.select && matched === null) return null;
     return h(entry.component, { ...injected, useProjects: selectHook(injected.hooks.projects), useProjectSessions: selectHook(injected.hooks.projectSessions),
-      useProjectSessionStatus: selectHook(injected.hooks.projectSessionStatus), useWorkspaceList: selectHook(injected.hooks.workspaceList),
+      useProjectSessionStatus: selectHook(injected.hooks.projectSessionStatus), useWorkspaceList: selectHook(injected.hooks.workspaceList), useDirectoryChecks: selectHook(injected.hooks.directoryChecks),
       openWithDraft: sessionId => navigation.push(['draft', sessionId]), useRequestModes: selectHook(injected.hooks.requestModes), useDismissals: selectHook(injected.hooks.dismissals), useProjectView: selectHook(injected.hooks.projectView),
       renderFactorySlot: (name, props, options) => { factoryCalls.push({ name, props, options }); return factoryRenderer ? factoryRenderer(name, props, options) : options?.fallback ?? null; },
       ...(store ? { useStore: selectHook(store), actions: store.actions } : {}),
@@ -320,6 +321,27 @@ test('the New Session option starts the directory Project and carries the draft 
     assert.equal(b.navigation.some(([kind]) => kind === 'session'), false);
     assert.equal(b.requests.some(request => ['delegate', 'prompt', 'message'].includes(request.method)), false, 'Starting sends nothing on the user\'s behalf');
     assert.equal(b.document.querySelector('.dsh-project-hero-option').title, 'heroOpenHint');
+  } finally { await b.dispose(); }
+});
+
+test('a folder the desktop refuses disables the New Session option and drops the Workspace row entry, and Project leaves the directory picker', async () => {
+  const blank = 'blank-session', appData = 'C:/Users/me/AppData/Roaming/Deepseek-Harness-Desktop';
+  const b = bench({ refusedDirectories: { [appData]: 'app-data' }, runtimeSessions: { [blank]: { id: blank, blank: true, cwd: appData } } });
+  try {
+    await b.flush(); await b.mount();
+    assert.equal(b.action.picker, false, 'Projects start from the New Session option or a Workspace row');
+    assert.equal(b.action.rowLabel(appData), 'rowCreate', 'Unknown until the desktop answers; creation still enforces the rule');
+    await b.flush();
+    assert.equal(b.action.rowLabel(appData), undefined, 'A refused folder offers no Project entry on its row');
+    assert.equal(b.action.rowLabel('C:/workspace/real'), 'rowCreate');
+    await b.mountSession(blank); await b.flush();
+    const option = b.document.querySelector('.dsh-project-hero-option');
+    assert.ok(option && isVisible(option)); assert.equal(option.disabled, true); assert.equal(option.getAttribute('aria-description'), 'dirAppData');
+    assert.ok(option.closest('.dsh-project-hero-option-wrap'), 'The reason tooltip anchors on a focusable wrapper');
+    assert.equal(option.closest('[data-tooltip]').dataset.tooltip, 'dirAppData');
+    await act(async () => { option.click(); await new Promise(resolve => setImmediate(resolve)); });
+    assert.equal(b.requests.some(request => request.method === 'create'), false);
+    assert.equal(b.requests.filter(request => request.method === 'directory/check' && request.input.workingDirectory === appData).length, 1, 'Each folder is checked once');
   } finally { await b.dispose(); }
 });
 

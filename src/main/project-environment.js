@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
 const { getDesktopDshHome } = require('../shared/dsh-home');
-const { loadWorkspaceAuthority, createWorkspaceAuthority, isPathInside, filterRegisteredWorkspaceRoots } = require('./workspace-authority');
+const { loadWorkspaceAuthority, createWorkspaceAuthority, isPathInside, workspaceRootRefusal } = require('./workspace-authority');
 const { run, runGit, safeRefName, gitFailureMessage, GH_TIMEOUT_MS } = require('./git-exec');
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,100}$/;
@@ -16,6 +16,17 @@ const identifier = (value, label) => {
 };
 const identity = value => process.platform === 'win32' ? value.toLowerCase() : value;
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
+// Why a folder cannot host a Project; the entries show the same reason before
+// creation is attempted.
+const DIRECTORY_REFUSALS = {
+  missing: '找不到这个目录。',
+  'not-directory': '这个路径不是文件夹。',
+  root: '磁盘根目录不能作为 Project 目录，请选择具体的项目文件夹。',
+  home: '用户主目录不能作为 Project 目录，请选择其中具体的项目文件夹。',
+  'system-data': '系统配置目录（如 AppData、.config、.ssh）不能作为 Project 目录，请选择你的项目文件夹。',
+  'app-data': '这是鲸屿自己的数据目录，不能作为 Project 目录，请选择你的项目文件夹。',
+};
+
 function redact(value) {
   return String(value || '').replace(/(https?:\/\/)[^\s/@]+(?::[^\s/@]*)?@/gi, '$1[redacted]@')
     .replace(/([?&](?:token|key|api_key|access_token|auth|password)=)[^\s&#]+/gi, '$1[redacted]')
@@ -368,9 +379,17 @@ function createProjectEnvironment(options = {}) {
       // boundary. Later file/Git operations still require a persisted root.
       case 'select-directory': {
         if (typeof payload.workingDirectory !== 'string' || !path.isAbsolute(payload.workingDirectory)) throw new Error('请选择本机绝对目录');
+        const refusal = workspaceRootRefusal(payload.workingDirectory);
+        if (refusal) throw Object.assign(new Error(DIRECTORY_REFUSALS[refusal]), { code: `project/directory-${refusal}` });
         const canonicalPath = fs.realpathSync.native(payload.workingDirectory);
-        if (!fs.statSync(canonicalPath).isDirectory() || !filterRegisteredWorkspaceRoots([canonicalPath]).length) throw new Error('此目录不能作为项目工作目录');
         return { ok: true, canonicalPath, identity: identity(canonicalPath) };
+      }
+      // Read-only preflight for the Project entries: why a folder cannot host
+      // a Project, without creating anything.
+      case 'check-directory': {
+        if (typeof payload.workingDirectory !== 'string' || !path.isAbsolute(payload.workingDirectory)) return { ok: true, allowed: false, reason: 'missing' };
+        const refusal = workspaceRootRefusal(payload.workingDirectory);
+        return refusal ? { ok: true, allowed: false, reason: refusal } : { ok: true, allowed: true };
       }
       case 'canonicalize': return canonicalize(payload.workingDirectory);
       case 'repository': return repository(payload.workingDirectory);
