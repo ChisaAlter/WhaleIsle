@@ -40,6 +40,9 @@ jobs:
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       LEFTHOOK: '0'
+      # Match Development CI: the hosted ARM64 runner defaults to a ~2 GB Node heap,
+      # below the Harness client aggregate type check's requirement.
+      NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Select tagged product source and record build tools
