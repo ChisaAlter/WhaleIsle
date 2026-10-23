@@ -6,7 +6,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   const { teamEnglish, teamChinese } = require('@deepseek-ai/dsh-experimental-client-ui-agent-team');
   const NS = 'dsh-project';
   const zh = {
-    diffTruncated: '差异过长，仅显示前一部分；请打开目录查看完整改动。', tab: 'Project', more: '更多', rename: '重命名', cancel: '取消', archiveActive: '停止后台工作并归档', archiveHint: '后台工作会停止，工作目录、对话和成果将保留。', team: '团队', add: '添加 Project…', rowCreate: '在此目录新建 Project', dirMissing: '找不到这个目录。', dirNotDirectory: '这个路径不是文件夹。', dirRoot: '磁盘根目录不能作为 Project 目录，请选择具体的项目文件夹。', dirHome: '用户主目录不能作为 Project 目录，请选择其中具体的项目文件夹。', dirSystemData: '系统配置目录（如 AppData、.config、.ssh）不能作为 Project 目录，请选择你的项目文件夹。', dirAppData: '这是鲸屿自己的数据目录，不能作为 Project 目录，请选择你的项目文件夹。', rowOpen: '打开 Project', heroHint: '以当前目录开启 Project，已输入的内容会一起带过去', heroOpenHint: '打开此目录的 Project，已输入的内容会一起带过去', loading: '正在读取…', close: '关闭', refresh: '刷新',
+    diffTruncated: '差异过长，仅显示前一部分；请打开目录查看完整改动。', tab: 'Project', more: '更多', rename: '重命名', cancel: '取消', archiveActive: '停止后台工作并归档', archiveHint: '后台工作会停止，工作目录、对话和成果将保留。', team: '团队', add: '添加 Project…', rowCreate: '在此目录新建 Project', backgroundError: 'Project 出错：{message}', dirMissing: '找不到这个目录。', dirNotDirectory: '这个路径不是文件夹。', dirRoot: '磁盘根目录不能作为 Project 目录，请选择具体的项目文件夹。', dirHome: '用户主目录不能作为 Project 目录，请选择其中具体的项目文件夹。', dirSystemData: '系统配置目录（如 AppData、.config、.ssh）不能作为 Project 目录，请选择你的项目文件夹。', dirAppData: '这是鲸屿自己的数据目录，不能作为 Project 目录，请选择你的项目文件夹。', rowOpen: '打开 Project', heroHint: '以当前目录开启 Project，已输入的内容会一起带过去', heroOpenHint: '打开此目录的 Project，已输入的内容会一起带过去', loading: '正在读取…', close: '关闭', refresh: '刷新',
     requirements: '需求', requirementGoal: '完整目标', requirementConstraints: '约束', requirementConditions: '完成条件', noRequirementConstraints: '未记录约束。', noRequirementConditions: '未记录完成条件。',
     requestRoleDevelopment: '开发', requestRoleReview: '检查', requestRoleDocs: '文档', requestHandover: '等待协调者交付', requestArranging: '正在安排', requestArrangingHint: '协调者正在安排团队开发。', deleted: '已移除', requestDiscussing: '讨论中', requestQueued: '等待开发', requestCancelled: '已取消', requestQueuePosition: '队列第 {position} 项', requestQueueCount: '{count} 项排队', requestEnqueue: '加入开发队列', requestMoveUp: '上移一位', requestMoveDown: '下移一位', requestCancel: '取消需求', requestRejoin: '重新加入队列', requestResume: '继续当前需求', requestResumeQueue: '继续队列', requestRestarted: '应用已重启，等待你继续当前需求', requestQueuePaused: '队列已暂停', requestQueueWaiting: '前一项需求交付后自动开始', requestQueueReady: '等待协调者安排开发', requestDiscussingHint: '需求仍在讨论，确认后加入开发队列。', requestCancelledHint: '已从开发队列取消，要求和已有成果仍保留。', taskCancelled: '已取消需求', taskCancelledEmpty: '还没有取消的需求。',
     archivedHint: '项目已归档。恢复后可继续对话，旧工作不会自动启动。', archiving: '正在停止后台工作并归档…', queued: '排队中', archived: '已归档',
@@ -45,7 +45,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   const en = {
     requirements: 'Requests', requirementGoal: 'Full goal', requirementConstraints: 'Constraints', requirementConditions: 'Completion conditions', noRequirementConstraints: 'No constraints recorded.', noRequirementConditions: 'No completion conditions recorded.',
     requestRoleDevelopment: 'Development', requestRoleReview: 'Review', requestRoleDocs: 'Documentation', requestHandover: 'Awaiting coordinator delivery', requestArranging: 'Arranging work', requestArrangingHint: 'The coordinator is arranging development with the team.', deleted: 'Removed', requestDiscussing: 'Discussing', requestQueued: 'Awaiting development', requestCancelled: 'Cancelled', requestQueuePosition: 'Queue position {position}', requestQueueCount: '{count} queued', requestEnqueue: 'Add to development queue', requestMoveUp: 'Move up', requestMoveDown: 'Move down', requestCancel: 'Cancel request', requestRejoin: 'Rejoin queue', requestResume: 'Continue current request', requestResumeQueue: 'Continue queue', requestRestarted: 'Application restarted; waiting for explicit continuation.', requestQueuePaused: 'Queue paused', requestQueueWaiting: 'Starts automatically after the previous request is delivered', requestQueueReady: 'Waiting for the coordinator to arrange development', requestDiscussingHint: 'This request is being discussed. Add it to the development queue when ready.', requestCancelledHint: 'Removed from the development queue. Requirements and existing results are retained.', taskCancelled: 'Cancelled requests', taskCancelledEmpty: 'No cancelled requests yet.',
-    diffTruncated: 'The diff is truncated. Open the directory for the complete changes.', tab: 'Project', more: 'More', rename: 'Rename', cancel: 'Cancel', archiveActive: 'Stop work and archive', archiveHint: 'Background work will stop. Files, conversation and results are retained.', team: 'Team', add: 'Add Project…', rowCreate: 'New Project here', dirMissing: 'This folder cannot be found.', dirNotDirectory: 'This path is not a folder.', dirRoot: 'A drive root cannot be a Project folder. Choose a specific project folder.', dirHome: 'Your home folder cannot be a Project folder. Choose a specific project folder inside it.', dirSystemData: 'System configuration folders (such as AppData, .config or .ssh) cannot be Project folders. Choose your project folder.', dirAppData: 'This is Whale Isle’s own data folder and cannot be a Project folder. Choose your project folder.', rowOpen: 'Open Project', heroHint: 'Start a Project in this directory; your draft comes along', heroOpenHint: 'Open this directory’s Project; your draft comes along', loading: 'Loading…', close: 'Close', refresh: 'Refresh',
+    diffTruncated: 'The diff is truncated. Open the directory for the complete changes.', tab: 'Project', more: 'More', rename: 'Rename', cancel: 'Cancel', archiveActive: 'Stop work and archive', archiveHint: 'Background work will stop. Files, conversation and results are retained.', team: 'Team', add: 'Add Project…', rowCreate: 'New Project here', backgroundError: 'Project error: {message}', dirMissing: 'This folder cannot be found.', dirNotDirectory: 'This path is not a folder.', dirRoot: 'A drive root cannot be a Project folder. Choose a specific project folder.', dirHome: 'Your home folder cannot be a Project folder. Choose a specific project folder inside it.', dirSystemData: 'System configuration folders (such as AppData, .config or .ssh) cannot be Project folders. Choose your project folder.', dirAppData: 'This is Whale Isle’s own data folder and cannot be a Project folder. Choose your project folder.', rowOpen: 'Open Project', heroHint: 'Start a Project in this directory; your draft comes along', heroOpenHint: 'Open this directory’s Project; your draft comes along', loading: 'Loading…', close: 'Close', refresh: 'Refresh',
     archivedHint: 'This Project is archived. Restore it to continue; previous work will not restart automatically.', archiving: 'Stopping work and archiving…', queued: 'Queued', archived: 'Archived',
     directory: 'Project working directory', openDirectory: 'Open project directory', materials: 'Project materials', progress: 'Work progress',
     noWork: 'Describe what you need here, and continue the same work later.', process: 'Member history', viewProcess: 'View history', viewResult: 'View results', workDetails: 'Details', executionInfo: 'Execution details', earlierWork: 'Earlier work',
@@ -419,6 +419,16 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   function ProjectRowBadge({ sessionId, useProjects, t }) {
     const project = useProjects(value => value.projects.some(item => item.coordinatorSessionId === sessionId));
     return project ? h('span', { className: 'dsh-project-row-badge' }, t('tab')) : null;
+  }
+
+  // Background failures (list refresh, detail reload) have no panel of their own;
+  // each distinct message is shown once, and a recovery lets it show again.
+  function ProjectErrorNotice({ useProjects, t }) {
+    const error = useProjects(value => value.error);
+    const [dismissed, setDismissed] = useState('');
+    useEffect(() => { if (!error) setDismissed(''); }, [error]);
+    if (!error || error === dismissed) return null;
+    return h(Toast, { key: error, text: t('backgroundError').replace('{message}', error), holdMs: 8000, onDone: () => setDismissed(error) });
   }
 
   // New Session option: start (or reopen) the selected directory's Project and carry the draft into its Lead.
@@ -1706,7 +1716,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
             const result = await rpc('list');
             if (!alive || generation !== refreshGeneration) return;
             const previous = snapshot.getSnapshot();
-            snapshot.set({ ...previous, projects: result.projects, available: result.available === true, loading: false, error: result.error ?? previous.error });
+            snapshot.set({ ...previous, projects: result.projects, available: result.available === true, loading: false, error: result.error ?? '' });
             if (previous.available !== (result.available === true)) registerAction();
             if (trackedProject && result.projects.some(project => project.id === trackedProject)) await readDetail(trackedProject, true);
           } catch (failure) { if (alive) snapshot.set({ ...snapshot.getSnapshot(), loading: false, error: errorText(failure) }); }
@@ -1790,6 +1800,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       ctx.slots.inject('conversation.approval.actions', () => ctx.slots.register({ name: 'conversation.approval.actions', id: NS, locale: NS, inject: face }, ProjectApprovalStop));
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: NS, locale: NS, store: viewStore, inject: face }, ProjectOverlay));
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: NS + '-lifecycle', locale: NS, store: viewStore, inject: face }, ProjectLifecycleDialog));
+      ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: NS + '-errors', locale: NS, inject: face }, ProjectErrorNotice));
       ctx.effect(() => {
         const style = document.createElement('style'); style.dataset.dshProject = ''; style.textContent = CSS; document.head.append(style);
         const offLocale = ctx.locale.subscribe(registerAction), offReset = ctx.on('connection/reset', () => {
