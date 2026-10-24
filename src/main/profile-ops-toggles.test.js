@@ -22,13 +22,13 @@ test('a cancelled toggle restart writes the toggle back and reports it to the Se
   assert.equal(importGuard.isMaintenanceHeld(), false);
 });
 
-test('a completed toggle restart keeps the new value', async () => {
+test('a completed toggle restart keeps the new value without asking again', async () => {
   const config = store({ dshbotEnabled: false });
-  let restarts = 0;
+  const restarts = [];
   const saved = await applyRendererConfigPatch({ dshbotEnabled: true }, {
-    harness: {}, configIO: config.io, waitForRestart: true, startHarness: async () => { restarts++; },
+    harness: {}, configIO: config.io, waitForRestart: true, startHarness: async (_token, options) => { restarts.push(options); },
   });
-  assert.equal(restarts, 1);
+  assert.deepEqual(restarts, [{ preConfirmed: true }]);
   assert.equal(saved.dshbotEnabled, true);
   assert.equal(saved.restartCancelled, undefined);
   assert.equal(config.read().dshbotEnabled, true);
