@@ -734,7 +734,11 @@ class DshdRemote extends EventEmitter {
       const daemonConfig = {
         listen,
         chisacodeHome: home,
-        corsAllowedOrigins: ['*'],
+        // The daemon has no password on loopback, so a browser page from any
+        // other site must not reach it. Phones and the pairing page use the
+        // encrypted relay; the daemon itself still admits its own loopback
+        // origins and Origin-less local clients.
+        corsAllowedOrigins: [],
         staticDir: fs.existsSync(staticDir) ? staticDir : home,
         mcpDebug: false,
         agentClients: {},

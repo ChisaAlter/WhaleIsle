@@ -474,6 +474,9 @@ test('startDaemon spawns the runner child and restarts it when relay config chan
   const launch1 = JSON.parse(fs.readFileSync(path.join(home, 'daemon-launch.json'), 'utf8'));
   assert.equal(launch1.daemonConfig.relayEndpoint, 'ayase.cn:443');
   assert.equal(launch1.daemonConfig.relayUseTls, true);
+  // The passwordless loopback daemon admits no foreign browser origin.
+  assert.deepEqual(launch1.daemonConfig.corsAllowedOrigins, []);
+  assert.deepEqual(launch1.daemonConfig.auth, {});
   // No credentials may ever land in the launch file.
   assert.doesNotMatch(JSON.stringify(launch1), /apiKey|DEEPSEEK/);
 
