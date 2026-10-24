@@ -813,7 +813,7 @@ class HarnessController extends EventEmitter {
     // dsh-remote is the desktop built-in SSH remote-workspace host — same
     // contract as dsh-whale: its overlay rides --patch on every start
     // (including skipUserPlugins recovery) while `remoteWorkspaceEnabled` is on in
-    // 界面设置 (default ON); the disable list never applies; a missing
+    // 内置功能 (default ON); the disable list never applies; a missing
     // vendor copy fails start (desktop runtime damage, skip cannot fix it).
     try {
       const remotePlugin = await this.ensureDshRemotePlugin({

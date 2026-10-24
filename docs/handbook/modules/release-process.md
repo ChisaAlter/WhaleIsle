@@ -32,6 +32,14 @@
 
 Mac 更新走完整 DMG 下载并使用 `SHA512SUMS.txt` 校验，不生成 `latest-mac.yml`。当前提供 Apple Silicon arm64 包，未签名、未公证。
 
+### Android 独立发布
+
+[Release Android](../../../.github/workflows/release-android.yml) 手动构建原生 Android APK；`publish=false` 可检查工作分支，`publish=true` 只允许 main。执行协议与应用 JVM 测试、release lint、正式签名和模拟器安装/启动/连接入口检查，再记录 APK 版本、来源提交、摘要及签名证书。
+
+Android 使用 `android-v<版本>` 独立标签，初次版本为 0.3.10 / versionCode 4，包名 `ai.deepseek.harness.mobile`，最低 Android 8.0。发布脚本只上传 APK、`android-release.json` 和独立 `SHA512SUMS.txt`，GitHub 与 CNB 均不设为桌面 latest，不改原桌面附件或校验清单。CNB 先预发布，匿名下载校验后公开；上传失败复用匹配原字节的未完成版本，冲突失败。
+
+正式私钥由 `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` Actions secrets 提供；`ANDROID_KEY_ALIAS` / `ANDROID_SIGNING_CERT_SHA256` 为公开配置。私钥不进 Git，更新须保留同签名并递增 versionCode；历史 debug 签名不等于正式签名。模拟器结果不证明真机相机、扫码配对、公网流式对话或旧签名升级，实际未测范围写在 Android 发布说明中。
+
 ## CNB 国内镜像
 
 [CNB mirror](../../../.github/workflows/cnb-mirror.yml) 在 main 推送后同步 main 与标签；正式 GitHub Release 发布后同步原始附件。自动 Release 使用 GitHub 内置 token，其发布事件不会启动第二个工作流，因此也监听 Release 的成功完成。手动运行 CNB mirror，可指定已有正式版本（例如 `v0.3.3`），留空同步 GitHub latest。实现为 `scripts/sync-cnb.mjs`，不重新编译。

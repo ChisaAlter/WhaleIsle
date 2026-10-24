@@ -26,8 +26,14 @@ function parseCookies(header) {
     }
     const key = part.slice(0, index).trim();
     const value = part.slice(index + 1).trim();
-    if (key) {
+    if (!key) {
+      continue;
+    }
+    // A malformed escape is an invalid credential, not a server error.
+    try {
       out[key] = decodeURIComponent(value);
+    } catch {
+      continue;
     }
   }
   return out;

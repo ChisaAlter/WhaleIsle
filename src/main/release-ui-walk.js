@@ -369,7 +369,7 @@ const QA_REQUIRED_STEPS = [
   'market.discover',
   'market.installed',
   'usage-stats.section',
-  'interface.botsRemoved',
+  'features.botsRemoved',
   'interface.sessionLogMenu',
   'plugin.botsRemoved',
 ];
@@ -1972,21 +1972,25 @@ async function runReleaseUiWalk(wc, helpers) {
   await dismiss();
   await sleep(300);
 
-  const interfaceOpened = await openSettings('interface');
-  const botsSetting = await pageEval(wc, () => {
+  // Bots is removed: the Built-in features page lists no Bots switch.
+  const featuresOpened = await openSettings('features');
+  const botsSetting = await waitUntil(() => pageEval(wc, () => {
     const dialog = dshDialogNamed('^设置$|^settings$');
-    const nav = document.querySelector('[data-dsh-settings-section="interface"]');
+    const nav = document.querySelector('[data-dsh-settings-section="features"]');
     const control = dialog && Array.from(dialog.querySelectorAll('[role="switch"]'))
       .find((el) => /(bots|机器人)/i.test(dshLabel(el)));
     return {
       nav: Boolean(dialog && nav?.getAttribute('aria-current') === 'true'),
       switchPresent: Boolean(control),
     };
-  });
-  rec('interface.botsRemoved', Boolean(interfaceOpened && botsSetting?.nav && !botsSetting?.switchPresent),
+  }), 10_000, 200, (state) => state?.nav);
+  rec('features.botsRemoved', Boolean(featuresOpened && botsSetting?.nav && !botsSetting?.switchPresent),
     `nav=${botsSetting?.nav} switch=${botsSetting?.switchPresent}`);
 
   // The single Session-menu entry no longer has an Interface visibility switch.
+  await dismiss();
+  await sleep(300);
+  const interfaceOpened = await openSettings('interface');
   const sessionLogSwitchRemoved = await pageEval(wc, () => {
     const dialog = dshDialog();
     const control = dialog && Array.from(dialog.querySelectorAll('[role="switch"]'))

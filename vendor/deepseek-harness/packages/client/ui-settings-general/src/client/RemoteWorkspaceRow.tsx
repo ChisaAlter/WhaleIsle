@@ -1,4 +1,4 @@
-/** Desktop-only Interface row: toggle the built-in dsh-remote remote-workspace mount. */
+/** Desktop-only Built-in features row: toggle the built-in dsh-remote remote-workspace mount. */
 import { useEffect, useRef, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -8,7 +8,7 @@ import css from './RemoteWorkspaceRow.module.css'
 
 /** Full Settings-row props. */
 export type RemoteWorkspaceRowProps =
-  PropsRuntime<'settings.interface.item'>
+  PropsRuntime<'settings.features.item'>
   & PropsLocale<'settings'>
 
 /**

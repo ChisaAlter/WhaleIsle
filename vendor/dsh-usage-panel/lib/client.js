@@ -51,7 +51,7 @@ window.__ModuleLoader__.load({
     // src/client/locales.ts
     var NS = "usage-panel";
     var zhCN = {
-      "nav.label": "\u7528\u91CF\u7EDF\u8BA1",
+      "nav.label": "\u7528\u91CF\u4E0E\u8D39\u7528",
       "nav.subtitle": "\u53EA\u8BFB\u91CD\u7B97\u4F1A\u8BDD\u65E5\u5FD7 \xB7 \u6C38\u4E0D\u5199\u56DE",
       "kpi.total": "Token \u603B\u7528\u91CF",
       "kpi.total.detail": "\u8F93\u5165 {input} \xB7 \u8F93\u51FA {output} \xB7 \u7F13\u5B58\u8BFB {cacheRead}",
@@ -198,7 +198,7 @@ window.__ModuleLoader__.load({
       "billing.err.invalidSingle": "\u300C{key}\u300D\u4EF7\u683C\u65E0\u6548\uFF1A\u4E09\u4E2A\u4EF7\u683C\u90FD\u5FC5\u987B\u662F\u975E\u8D1F\u6570\u5B57"
     };
     var enUS = {
-      "nav.label": "Usage stats",
+      "nav.label": "Usage & costs",
       "nav.subtitle": "Read-only session log stats \xB7 never writes back",
       "kpi.total": "Total tokens",
       "kpi.total.detail": "In {input} \xB7 Out {output} \xB7 Cache read {cacheRead}",
@@ -431,6 +431,7 @@ window.__ModuleLoader__.load({
       ".dsw-ust-tooltip-row .dsw-ust-tooltip-label{flex:1;color:var(--dsw-alias-label-primary)}",
       ".dsw-ust-tooltip-row .dsw-ust-tooltip-value{color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}",
       ".dsw-ust-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}",
+      ".dsw-ust-settings{display:flex;flex-direction:column;margin-top:8px}",
       ".dsw-ust-head h2{margin:0;font-size:16px;line-height:24px;font-weight:600;color:var(--dsw-alias-label-primary)}",
       ".dsw-ust-head-title{display:flex;align-items:flex-start;gap:8px;min-width:0}",
       ".dsw-ust-page-icon{flex-shrink:0;margin-top:4px;color:var(--dsw-alias-label-secondary)}",
@@ -2177,7 +2178,7 @@ window.__ModuleLoader__.load({
       }
       return { text: t("source.logs") };
     }
-    function StatsSection({ rpc, i18n: baseI18n }) {
+    function StatsSection({ rpc, i18n: baseI18n, settingsRows }) {
       const i18n = useI18n(baseI18n);
       const t = i18n.t;
       const locale = i18n.locale;
@@ -2298,7 +2299,7 @@ window.__ModuleLoader__.load({
           icon: /* @__PURE__ */ React12.createElement("svg", { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" }, /* @__PURE__ */ React12.createElement("path", { d: "M21 12a9 9 0 1 1-2.64-6.36" }), /* @__PURE__ */ React12.createElement("polyline", { points: "21 3 21 9 15 9" }))
         },
         t("refresh.button")
-      ))), body, /* @__PURE__ */ React12.createElement(BillingSettingsModal, { rpc, i18n, open: billingOpen, onClose: () => setBillingOpen(false) }), repairFeedback !== null && /* @__PURE__ */ React12.createElement(
+      ))), settingsRows ? /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-settings" }, settingsRows) : null, body, /* @__PURE__ */ React12.createElement(BillingSettingsModal, { rpc, i18n, open: billingOpen, onClose: () => setBillingOpen(false) }), repairFeedback !== null && /* @__PURE__ */ React12.createElement(
         import_dsh_client_ui_primitives4.Toast,
         {
           key: repairFeedback.id,
@@ -2372,9 +2373,20 @@ window.__ModuleLoader__.load({
             name: "settings.section",
             id: "usage-stats",
             order: 25,
-            label: () => i18n.t("nav.label")
+            label: () => i18n.t("nav.label"),
+            // The session cost and peak/valley switches (ui-conversation) sit
+            // above the statistics they relate to.
+            children: { "settings.usage.item": { kind: "list", scope: "root" } }
           },
-          () => (0, import_react11.createElement)(Boundary, { i18n }, (0, import_react11.createElement)(StatsSection, { rpc: ctx.connection.rpc, i18n }))
+          (props) => (0, import_react11.createElement)(
+            Boundary,
+            { i18n },
+            (0, import_react11.createElement)(StatsSection, {
+              rpc: ctx.connection.rpc,
+              i18n,
+              settingsRows: props?.renderSlot?.("settings.usage.item", {})
+            })
+          )
         )
       );
       ctx.effect(() => () => {

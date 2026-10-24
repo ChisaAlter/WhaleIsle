@@ -13,10 +13,10 @@ import { VisualRepliesRow, type VisualRepliesRowInjected } from './settings/Visu
  */
 export function installVisualRepliesSettings(ctx: Context): void {
   const settings = ctx.configForms.get<VisualRepliesSettings>(NS)
-  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
-    name: 'settings.general.item',
+  ctx.slots.inject('settings.conversation.item', () => ctx.slots.register({
+    name: 'settings.conversation.item',
     id: 'visual-replies',
-    order: 35,
+    order: 50,
     locale: NS,
     inject: (): VisualRepliesRowInjected => ({
       hooks: { settings },

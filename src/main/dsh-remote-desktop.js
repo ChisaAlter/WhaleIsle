@@ -123,7 +123,7 @@ function ensureDesktopDshRemote(options = {}) {
   const patchChanged = stripBlockFromFile(patchFile, DSH_REMOTE_BEGIN, DSH_REMOTE_END);
 
   if (options.enabled === false) {
-    // Toggled off in 界面设置: drop the overlay so the next start composes no
+    // Toggled off in 内置功能: drop the overlay so the next start composes no
     // dsh-remote row. The profile node_modules junction stays — harmless
     // without an insert — and the vendor copy is not validated while disabled.
     removeLinkOrDir(path.join(profileDir, 'desktop-plugins', 'dsh-remote', DSH_REMOTE_OVERLAY_FILENAME));

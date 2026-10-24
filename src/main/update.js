@@ -898,7 +898,15 @@ async function commitPreparedInstaller(info, dest, onProgress, options = {}, ext
     // admission and never latches the coordinator into a shutdown state.
     const result = await protection.coordinate('update', { terminal: quitAfterInstall, preConfirmed: true, commit: launch });
     if (!result.proceeded) {
-      return { ...info, launched: false, cancelled: true, code: result.code || 'cancelled' };
+      return {
+        ...info,
+        launched: false,
+        cancelled: true,
+        code: result.code || 'cancelled',
+        ...(result.code === 'dshd/drain-timeout' ? {
+          message: `仍有 ${result.pendingCount || 1} 个请求未在 30 秒内结束，已取消安装，请稍后重试。`,
+        } : {}),
+      };
     }
   } else await launch();
   // Self-update semantics quit the packaged app so the installer can replace

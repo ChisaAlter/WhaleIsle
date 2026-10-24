@@ -3,7 +3,7 @@
 // (refresh failed, cached payload kept with last success timestamp) / error.
 // localStorage SWR cache makes a refresh render instantly (P1-⑨); the header
 // keeps the v0.1.0 refresh button and gains the export menu (P1-⑧).
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { Overview } from '../shared/contract.ts'
 import { formatClock } from '../shared/format.ts'
 import { dayKeyUTC, isUsageEmpty } from '../shared/usage.ts'
@@ -50,9 +50,11 @@ function sourceNote(overview: Overview, t: I18n['t']): { text: string; title?: s
 interface StatsSectionProps {
   rpc: RpcLike
   i18n: I18n
+  /** Cost display switches other features place above the statistics. */
+  settingsRows?: ReactNode
 }
 
-export function StatsSection({ rpc, i18n: baseI18n }: StatsSectionProps): JSX.Element {
+export function StatsSection({ rpc, i18n: baseI18n, settingsRows }: StatsSectionProps): JSX.Element {
   const i18n = useI18n(baseI18n)
   const t = i18n.t
   const locale = i18n.locale
@@ -254,6 +256,7 @@ export function StatsSection({ rpc, i18n: baseI18n }: StatsSectionProps): JSX.El
           </Button>
         </div>
       </div>
+      {settingsRows ? <div className="dsw-ust-settings">{settingsRows}</div> : null}
       {body}
       <BillingSettingsModal rpc={rpc} i18n={i18n} open={billingOpen} onClose={() => setBillingOpen(false)} />
       {repairFeedback !== null && (

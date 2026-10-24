@@ -883,7 +883,7 @@ async function cleanupDesktopResources() {
  * restart). Only the live owner token passes — a bare kind string, a stale
  * token, or an unrelated caller still refuses.
  */
-function restartWithCleanup(delegatedToken, options = {}) {
+function restartWithCleanup(delegatedToken, { preConfirmed = false, ...options } = {}) {
   // The shared maintenance slot admits only one mutating operation at a time.
   // An import, install, or start that already holds it owns the destination
   // trees — a restart must refuse rather than prompt and tear down under it,
@@ -916,6 +916,7 @@ function restartWithCleanup(delegatedToken, options = {}) {
   const releaseAcquired = () => { if (acquired) importGuard.releaseMaintenance(acquired); };
   try {
     return taskProtection.coordinate('restart', {
+      preConfirmed,
       commit: async () => {
         await cleanupDesktopResources();
         return recordLastDesktopStart(app.getPath('userData'), () => harness.restart(options), () => kernelLogTail(dsh));

@@ -18,7 +18,7 @@
 
 import { admit, createControlState } from './state.js';
 import { CONTROL_PREFIX, createControlHandler } from './http.js';
-import { disposeGuards, wrapJobs, wrapSessionController, wrapWebServer } from './wrap.js';
+import { admittedBefore, disposeGuards, markAdmitted, undrained, wrapJobs, wrapSessionController, wrapWebServer } from './wrap.js';
 
 export const name = 'dsh-task-control';
 export const inject = [];
@@ -78,11 +78,17 @@ export function apply(ctx) {
   // before this plugin loaded, so it cannot be gated solely by the wrapped
   // registration path in compositions where the route table is rebuilt.
   ctx.on('connection/request', async (request, response, next) => {
+    if (admittedBefore(request)) return next();
     const admission = admit(state, `conn ${request.method} ${request.url}`);
     if (!admission.accepted) {
       response.writeHead(503, { 'content-type': 'application/json; charset=utf-8' });
       response.end(JSON.stringify({ error: { code: admission.code } }));
       return;
+    }
+    markAdmitted(request);
+    if (undrained(request)) {
+      admission.done();
+      return next();
     }
     try {
       await next();

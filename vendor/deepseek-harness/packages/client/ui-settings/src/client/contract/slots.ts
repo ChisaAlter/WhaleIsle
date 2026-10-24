@@ -146,6 +146,31 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * `ctx.settingsScope`.
      */
     'settings.pet.item': { kind: 'list'; scope: 'root'; owner: SettingsPetItemOwnerProps }
+    /**
+     * One switch row inside the Built-in features section — the single place
+     * where a desktop feature that ships with the app (Project, the whale
+     * assistant, remote workspaces) is turned on or off. Options: `id`
+     * (row key), `order` (row position). Rows draw their own label and own
+     * their write path, exactly like General rows. Declared at runtime by
+     * ui-settings-general's Built-in features entry.
+     */
+    'settings.features.item': { kind: 'list'; scope: 'root'; owner: SettingsFeaturesItemOwnerProps }
+    /**
+     * One preference row inside the Conversation section — how sessions
+     * behave: permission default, sending while busy, work details, links,
+     * suggestions, visual replies, custom instructions. Same contract as
+     * General rows (`id`, `order`; the row draws its own label and owns its
+     * write path). Declared at runtime by ui-settings-general's Conversation
+     * entry.
+     */
+    'settings.conversation.item': { kind: 'list'; scope: 'root'; owner: SettingsConversationItemOwnerProps }
+    /**
+     * One preference row above the usage statistics — the switches for the
+     * per-session cost and official peak/valley lines. Same contract as
+     * General rows. Declared at runtime by the usage-stats section owner; with
+     * that section absent the rows are not shown.
+     */
+    'settings.usage.item': { kind: 'list'; scope: 'root'; owner: SettingsUsageItemOwnerProps }
   }
 }
 /** Owner share of a General preference row (the section supplies nothing). */
@@ -168,6 +193,24 @@ export interface SettingsInterfaceItemOwnerProps {
 
 /** Owner share of an Appearance preference row (the section supplies nothing). */
 export interface SettingsAppearanceItemOwnerProps {
+  /** Marker field: item owner props are intentionally empty. */
+  children?: never
+}
+
+/** Owner share of a Conversation row (the section supplies nothing). */
+export interface SettingsConversationItemOwnerProps {
+  /** Marker field: item owner props are intentionally empty. */
+  children?: never
+}
+
+/** Owner share of a usage row (the section supplies nothing). */
+export interface SettingsUsageItemOwnerProps {
+  /** Marker field: item owner props are intentionally empty. */
+  children?: never
+}
+
+/** Owner share of a Built-in features row (the section supplies nothing). */
+export interface SettingsFeaturesItemOwnerProps {
   /** Marker field: item owner props are intentionally empty. */
   children?: never
 }

@@ -348,17 +348,32 @@ function credentialsPath() {
   return path.join(app.getPath('userData'), 'credentials.json');
 }
 
-function readJson(file, fallback) {
+/**
+ * Read the settings file. A missing file is empty; a file that does not parse
+ * is moved aside so its contents survive the defaults written after it. Any
+ * other read failure marks the file unreadable: a save must not replace
+ * settings it could not see.
+ */
+function readSettingsFile(file) {
+  let text;
   try {
-    return { ...fallback, ...JSON.parse(fs.readFileSync(file, 'utf8')) };
+    text = fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    return error.code === 'ENOENT' ? { stored: {} } : { stored: {}, unreadable: error };
+  }
+  try {
+    const parsed = JSON.parse(text);
+    return { stored: isPlainObject(parsed) ? parsed : {} };
   } catch {
-    return { ...fallback };
+    try { fs.renameSync(file, `${file}.corrupt-${Date.now()}`); } catch (error) { return { stored: {}, unreadable: error }; }
+    return { stored: {} };
   }
 }
 
 function writeJson(file, data) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
+  // The launcher and the desktop are separate processes writing the same files.
+  const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
   fs.renameSync(tmp, file);
 }
@@ -401,24 +416,29 @@ function isEncryptedCredentialsFile(raw) {
  * A legacy plaintext file that can now be encrypted is migrated in place
  * (one-time rewrite) so secrets do not stay on disk in the clear.
  */
+/**
+ * Credentials that exist but cannot be read or decrypted right now (a locked
+ * keyring, a denied keychain prompt, a file held by another program) are
+ * `unreadable`: reads see none, and saves leave the file untouched.
+ */
 function readCredentials() {
   const file = credentialsPath();
   let raw;
   try {
     raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return { creds: {}, needsWrite: true };
+  } catch (error) {
+    return error.code === 'ENOENT' ? { creds: {}, needsWrite: true } : { creds: {}, needsWrite: false, unreadable: true };
   }
   if (isEncryptedCredentialsFile(raw)) {
     if (!canEncryptCredentials()) {
-      return { creds: {}, needsWrite: true };
+      return { creds: {}, needsWrite: false, unreadable: true };
     }
     try {
       const json = safeStorageImpl.decryptString(Buffer.from(raw.payload, 'base64'));
       const parsed = JSON.parse(json);
       return { creds: parsed && typeof parsed === 'object' ? parsed : {}, needsWrite: false };
     } catch {
-      return { creds: {}, needsWrite: true };
+      return { creds: {}, needsWrite: false, unreadable: true };
     }
   }
   const plain = raw && typeof raw === 'object' ? raw : {};
@@ -474,8 +494,8 @@ function defaultWorkspace() {
 }
 
 function readConfigLayers() {
-  const stored = readJson(configPath(), {});
-  const { creds, needsWrite } = readCredentials();
+  const { stored, unreadable: configUnreadable } = readSettingsFile(configPath());
+  const { creds, needsWrite, unreadable: credentialsUnreadable = false } = readCredentials();
   let config = {
     ...DEFAULTS,
     ...stored,
@@ -499,7 +519,7 @@ function readConfigLayers() {
   delete config.pluginGenUi;
   delete config.dshbotEnabled;
   delete config.dshbotPreset;
-  return { config, stored, creds, credentialsNeedWrite: needsWrite };
+  return { config, stored, creds, credentialsNeedWrite: needsWrite, configUnreadable, credentialsUnreadable };
 }
 
 function loadConfig() {
@@ -526,8 +546,17 @@ function readConfigSnapshot() {
   return { config: loadConfig(), revision };
 }
 
+const CREDENTIAL_KEYS = ['apiKey', 'baseUrl', 'githubToken', 'remoteToken', 'remoteRelayToken', 'remoteDevices'];
+
 function saveConfig(next) {
-  const { config: current, stored, creds, credentialsNeedWrite } = readConfigLayers();
+  const { config: current, stored, creds, credentialsNeedWrite, configUnreadable, credentialsUnreadable } = readConfigLayers();
+  if (configUnreadable) {
+    throw new Error(`设置文件暂时无法读取，未保存：${configUnreadable.code || configUnreadable.message}`);
+  }
+  const credentialPatch = CREDENTIAL_KEYS.some((key) => Object.prototype.hasOwnProperty.call(next || {}, key));
+  if (credentialsUnreadable && credentialPatch) {
+    throw new Error('凭据暂时无法读取（系统钥匙串不可用或文件被占用），未保存，原有凭据保持不变');
+  }
   const merged = normalizeLauncherSettings(
     normalizePetStateInConfig(normalizeLive2dPetStateInConfig(normalizeRemoteConfig(normalizePluginRecovery(normalizeHarnessRecovery({ ...current, ...next }))))),
   );
@@ -554,7 +583,7 @@ function saveConfig(next) {
     remoteRelayToken: remoteRelayToken || '',
     remoteDevices: Array.isArray(remoteDevices) ? remoteDevices : [],
   };
-  if (credentialsNeedWrite || !isDeepStrictEqual(creds, credentials)) {
+  if (!credentialsUnreadable && (credentialsNeedWrite || !isDeepStrictEqual(creds, credentials))) {
     writeCredentials(credentials);
   }
   configRevisionValue += 1;

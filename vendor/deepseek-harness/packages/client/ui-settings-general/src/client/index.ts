@@ -37,6 +37,9 @@ import { DesktopUpdateSource } from './desktop-update-source.ts'
 import { CloseLabel, HeaderContent, TriggerContent } from './chrome.tsx'
 import { GeneralSection } from './GeneralSection.tsx'
 import { InterfaceSection } from './InterfaceSection.tsx'
+import { ConversationSection } from './ConversationSection.tsx'
+import { FeaturesSection } from './FeaturesSection.tsx'
+import { WhaleAssistantRow } from './WhaleAssistantRow.tsx'
 import { CloseBehaviorRow } from './CloseBehaviorRow.tsx'
 import { AutoStartDesktopRow } from './AutoStartDesktopRow.tsx'
 import { ProjectRow, type ProjectRowInjected } from './ProjectRow.tsx'
@@ -354,7 +357,24 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     children: { 'settings.interface.item': { kind: 'list', scope: 'root' } },
   }, InterfaceSection))
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'conversation',
+    order: 7,
+    label: () => t('conversation.nav'),
+    locale: NS,
+    children: { 'settings.conversation.item': { kind: 'list', scope: 'root' } },
+  }, ConversationSection))
   if (canPersistCloseBehavior()) {
+    // Built-in features are desktop mounts; a plain browser has none to switch.
+    ctx.slots.inject('settings.section', () => ctx.slots.register({
+      name: 'settings.section',
+      id: 'features',
+      order: 30,
+      label: () => t('features.nav'),
+      locale: NS,
+      children: { 'settings.features.item': { kind: 'list', scope: 'root' } },
+    }, FeaturesSection))
     ctx.slots.inject('settings.general.item', () => ctx.slots.register({
       name: 'settings.general.item',
       id: 'close-behavior',
@@ -367,19 +387,25 @@ export function apply(ctx: ClientContext): void {
       order: 26,
       locale: NS,
     }, AutoStartDesktopRow))
-    ctx.slots.inject('settings.interface.item', () => ctx.slots.register({
-      name: 'settings.interface.item',
+    ctx.slots.inject('settings.features.item', () => ctx.slots.register({
+      name: 'settings.features.item',
       id: 'project',
       order: 79,
       locale: NS,
       inject: (): ProjectRowInjected => ({ leaveProjectLead: () => leaveProjectLead?.() ?? Promise.resolve() }),
     }, ProjectRow))
-    ctx.slots.inject('settings.interface.item', () => ctx.slots.register({
-      name: 'settings.interface.item',
+    ctx.slots.inject('settings.features.item', () => ctx.slots.register({
+      name: 'settings.features.item',
       id: 'remote-workspace',
       order: 81,
       locale: NS,
     }, RemoteWorkspaceRow))
+    ctx.slots.inject('settings.features.item', () => ctx.slots.register({
+      name: 'settings.features.item',
+      id: 'whale-assistant',
+      order: 78,
+      locale: NS,
+    }, WhaleAssistantRow))
   }
   // The desktop-only Harness auto-recovery row: registered only when the
   // desktop bridge exposes both config directions — a plain browser has no

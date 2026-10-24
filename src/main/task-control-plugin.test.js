@@ -348,6 +348,54 @@ test('gated http handler returns 503 while locked and drains on finish', async (
   assert.ok(calls.length === 0);
 });
 
+test('a pending next-prompt suggestion does not block drain but is refused while locked', async () => {
+  const { createControlState, acquireLock } = await load('state.js');
+  const { wrapWebServer } = await load('wrap.js');
+  const state = createControlState();
+  const webServer = {
+    prefixes: new Map(),
+    exact: new Map(),
+    register(route) { this.prefixes.set(route.path, route); return () => {}; },
+  };
+  assert.equal(wrapWebServer(state, webServer), true);
+  let finish;
+  webServer.register({ kind: 'prefix', path: '/api', handler: () => new Promise((resolve) => { finish = resolve; }) });
+  const suggestion = webServer.prefixes.get('/api').handler(
+    { method: 'POST', url: '/api/conversation.next-prompt' }, fakeRes());
+
+  const acquired = await acquireLock(state, { owner: 'desktop-update', drainTimeoutMs: 50 });
+  assert.equal(acquired.ok, true);
+  assert.equal(acquired.drainedPending, 0);
+  const refused = fakeRes();
+  await webServer.prefixes.get('/api').handler({ method: 'POST', url: '/api/conversation.next-prompt' }, refused);
+  assert.equal(refused.status, 503);
+  finish();
+  await suggestion;
+});
+
+test('an open watch stream does not block drain but new reads are refused while locked', async () => {
+  const { createControlState, acquireLock } = await load('state.js');
+  const { wrapWebServer } = await load('wrap.js');
+  const state = createControlState();
+  const webServer = {
+    prefixes: new Map(),
+    exact: new Map(),
+    register(route) { this.prefixes.set(route.path, route); return () => {}; },
+  };
+  assert.equal(wrapWebServer(state, webServer), true);
+  let close;
+  webServer.register({ kind: 'prefix', path: '/api', handler: () => new Promise((resolve) => { close = resolve; }) });
+  const stream = webServer.prefixes.get('/api').handler({ method: 'GET', url: '/api/dsh-pad.stream?watch=' }, fakeRes());
+
+  const acquired = await acquireLock(state, { owner: 'desktop-stop', drainTimeoutMs: 50 });
+  assert.equal(acquired.ok, true);
+  const refused = fakeRes();
+  await webServer.prefixes.get('/api').handler({ method: 'GET', url: '/api/dsh-pad.stream?watch=' }, refused);
+  assert.equal(refused.status, 503);
+  close();
+  await stream;
+});
+
 test('an open upgrade socket does not block drain; new upgrades 503 while locked', async () => {
   const { createControlState, acquireLock } = await load('state.js');
   const { wrapWebServer } = await load('wrap.js');
@@ -536,6 +584,31 @@ test('service replacement registers a fresh control route while preserving the h
   assert.equal(second.prefixes.has('/dshd-task-control'), false);
 });
 
+test('a request passing both the connection waterfall and its route counts once', async (t) => {
+  withLifecycleToken(t);
+  const { apply } = await load('index.js');
+  const webServer = lifecycleWebServer();
+  const ctx = lifecycleContext({ webServer });
+  t.after(() => ctx.dispose());
+  apply(ctx);
+  let finish;
+  const held = new Promise((resolve) => { finish = resolve; });
+  webServer.register({ kind: 'exact', path: '/api/slow', handler: async (_req, res) => { await held; res.end('done'); } });
+  const request = { method: 'POST', url: '/api/slow' };
+  const response = fakeRes();
+  let served;
+  ctx.emit('connection/request', request, response, () => {
+    served = webServer.exact.get('/api/slow').handler(request, response);
+    return served;
+  });
+  const inspection = await controlReply(webServer, 'inspect');
+  assert.deepEqual(inspection.activeWork, [{ kind: 'request', id: 'pending-requests', count: 1 }]);
+  finish();
+  await served;
+  assert.equal(response.body, 'done');
+  assert.deepEqual((await controlReply(webServer, 'inspect')).activeWork, []);
+});
+
 test('plugin unload and reload retain later wrappers and gate every entry with fresh state', async (t) => {
   withLifecycleToken(t);
   const { apply } = await load('index.js');
@@ -678,6 +751,6 @@ test('response lifecycle setup failure does not leak admission', async () => {
   const failure = new Error('response lifecycle unavailable');
   const route = { kind: 'exact', path: '/probe', handler() { assert.fail('must not dispatch'); } };
   wrapWebServer(state, { exact: new Map([[route.path, route]]), prefixes: new Map(), register() {} });
-  await assert.rejects(route.handler({ method: 'GET', url: '/probe' }, { once() { throw failure; } }), failure);
+  await assert.rejects(route.handler({ method: 'POST', url: '/probe' }, { once() { throw failure; } }), failure);
   assert.equal(state.pending.size, 0);
 });

@@ -12,6 +12,12 @@ function setHint(text, opts = {}) {
   if (text) void appNotice({ title: opts.title || '提示', body: text, tone: opts.tone || (opts.fade ? 'success' : 'error') });
 }
 
+// Results already written into a visible progress pane are not repeated in a
+// floating notice; a dismissed pane still gets one.
+function hintUnlessShown(id, text) {
+  if (!$(id)?.checkVisibility()) setHint(text);
+}
+
 // The pending action reports on its own button (spinner and label), never in
 // a separate floating notice.
 // `label` is the full sentence for assistive tech and the tooltip; the button
@@ -68,6 +74,8 @@ const ERROR_LABELS = {
   'config-unreadable': '桌面配置无法读取，已停止恢复操作。请先恢复配置文件或读取权限。',
   'delta-not-found': '没有可用的增量包，请改用完整更新。',
   'install-in-progress': '已有安装任务进行中。',
+  'dshd/drain-timeout': '桌面端仍有请求未在 30 秒内结束，已取消本次操作，请稍后重试。',
+  'dshd/lock-held': '桌面端正在执行其他关闭或更新操作，请稍后重试。',
 };
 
 const ERROR_MESSAGE_PATTERNS = [
@@ -90,6 +98,11 @@ function errText(input, fallback = '操作失败，请重试。') {
     .replace(/^Error invoking remote method '[^']*':\s*/i, '')
     .replace(/^Error:\s*/, '')
     .trim();
+  // Exact machine codes first: `dshd/drain-timeout` must not read as a
+  // network timeout.
+  if (ERROR_LABELS[text]) {
+    return ERROR_LABELS[text];
+  }
   for (const [pattern, label] of ERROR_MESSAGE_PATTERNS) {
     if (pattern.test(text)) {
       return label;
@@ -97,9 +110,6 @@ function errText(input, fallback = '操作失败，请重试。') {
   }
   if (text && !/^[A-Za-z][\w./:-]*$/.test(text)) {
     return text;
-  }
-  if (ERROR_LABELS[text]) {
-    return ERROR_LABELS[text];
   }
   if (ERROR_LABELS[code]) {
     return ERROR_LABELS[code];
@@ -604,7 +614,7 @@ function renderHomeRecovery(status) {
     board.open = false;
     return;
   }
-  const verdict = desktopActionError || (recoveryApi?.recoveryVerdict
+  const verdict = (desktopActionError && errText(desktopActionError, '启动或关闭未完成')) || (recoveryApi?.recoveryVerdict
     ? recoveryApi.recoveryVerdict(status?.lastStart, recovery, forensics) : '');
   if ($('home-recovery-verdict').textContent !== verdict) board.open = false;
   $('home-recovery-verdict').textContent = verdict;
@@ -1047,12 +1057,12 @@ async function installRuntime() {
     } else {
       paintProgress('install-progress', { phase: result?.status === 'waiting' ? 'waiting' : 'error' });
       progress.textContent = errText(result, '安装失败');
-      if (result?.status !== 'waiting') setHint(progress.textContent);
+      if (result?.status !== 'waiting') hintUnlessShown('install-progress', progress.textContent);
     }
   } catch (error) {
     paintProgress('install-progress', { phase: 'error' });
     progress.textContent = errText(error, '安装失败');
-    setHint(progress.textContent);
+    hintUnlessShown('install-progress', progress.textContent);
   } finally {
     installBusy = false;
     restoreInstall();
@@ -1161,6 +1171,8 @@ async function runDesktopAction(method, kind = 'starting', ...args) {
     try { await refreshStatus(); }
     catch { setHint('暂时无法读取桌面状态，请稍后重新打开首页。'); }
     paint();
+    // One floating result; the status line stays short and the raw detail
+    // lives in the folded startup diagnostics.
     if (desktopActionError) setHint(errText(desktopActionError, '启动或关闭未完成'));
   }
   return result;
@@ -1190,10 +1202,8 @@ async function askPluginRecovery(guidance) {
     const result = guidance.kind === 'disable'
       ? await runDesktopAction('disableSuspectsAndStart', 'starting', guidance.names)
       : await runDesktopAction('skipUserPlugins');
-    if (!result && desktopActionError) {
-      await appNotice({ title: '启动未完成', body: errText(desktopActionError) });
-      return;
-    }
+    // runDesktopAction already raised the failure notice.
+    if (!result && desktopActionError) return;
     if (guidance.kind !== 'disable' || !result) return;
     if (result.ok === false) {
       await appNotice({ title: '未能禁用插件', body: errText(result.error) });
@@ -2183,24 +2193,7 @@ async function installTag(tag, kind) {
   if (!api || !tag || updateBusy) {
     return;
   }
-  const launcherPackage = lastStatus?.launcherPackage === true;
-  let title = '安装版本';
-  let message = `将下载 ${tag} 安装包并替换当前安装。`;
-  let confirmText = '安装';
-  if (launcherPackage) {
-    message = `将下载并安装 ${tag} 桌面端，期间桌面端会短暂关闭。`;
-  } else if (kind === 'update') {
-    title = '更新桌面端';
-    message = `将下载 ${tag} 的完整安装包，安装程序会替换当前版本。`;
-    confirmText = '完全下载';
-  } else if (kind === 'switch') {
-    title = '切换版本';
-    message = `${tag} 早于当前版本，安装程序将覆盖当前安装。`;
-    confirmText = '切换';
-  }
-  if (!(await appConfirm({ title, body: message, confirmText }))) {
-    return;
-  }
+  // The version button names its action; clicking it is the consent.
   updateBusy = true;
   progressPanels.get('update-progress')?.show({ reset: true });
   const progressTitle = $('update-progress-title');
@@ -2237,12 +2230,12 @@ async function installTag(tag, kind) {
     if (result && (result.status === 'error' || result.ok === false)) {
       paintProgress('update-progress', { phase: 'error' });
       $('update-progress').textContent = errText(result, '安装失败');
-      setHint($('update-progress').textContent);
+      hintUnlessShown('update-progress', $('update-progress').textContent);
     }
   } catch (error) {
     paintProgress('update-progress', { phase: 'error' });
     $('update-progress').textContent = errText(error, '安装失败');
-    setHint($('update-progress').textContent);
+    hintUnlessShown('update-progress', $('update-progress').textContent);
   } finally {
     updateBusy = false;
   }
@@ -2251,13 +2244,6 @@ async function installTag(tag, kind) {
 async function installDelta(tag) {
   const api = pageShell();
   if (!api || typeof api.installDelta !== 'function' || !tag || updateBusy) {
-    return;
-  }
-  if (!(await appConfirm({
-    title: '增量更新',
-    body: `将通过增量包更新到 ${tag}，只下载变更部分。下载失败会停止，可返回选择完全下载。`,
-    confirmText: '增量更新',
-  }))) {
     return;
   }
   updateBusy = true;
@@ -2293,11 +2279,11 @@ async function installDelta(tag) {
     }
     paintProgress('update-progress', { phase: 'error', mode: 'delta' });
     $('update-progress').textContent = `${errText(result, '增量更新失败')}。可返回版本列表选择完全下载。`;
-    setHint($('update-progress').textContent);
+    hintUnlessShown('update-progress', $('update-progress').textContent);
   } catch (error) {
     paintProgress('update-progress', { phase: 'error' });
     $('update-progress').textContent = errText(error, '增量更新失败');
-    setHint($('update-progress').textContent);
+    hintUnlessShown('update-progress', $('update-progress').textContent);
   } finally {
     updateBusy = false;
   }
@@ -2422,22 +2408,8 @@ function bind() {
   });
   $('btn-scan').addEventListener('click', () => refreshImport());
   $('btn-uninstall-app').addEventListener('click', async () => {
+    // The Windows uninstaller asks for its own confirmation.
     const usesSettings = $('btn-uninstall-app').textContent === '打开应用设置';
-    const ok = await appConfirm(usesSettings
-      ? {
-        title: '卸载 Whale Isle',
-        body: '将打开 Windows「设置 → 应用」，请在列表中完成卸载。',
-        confirmText: '打开设置',
-      }
-      : {
-        title: '卸载 Whale Isle',
-        body: '将启动 Windows 卸载程序并移除本机桌面端，其运行数据保留在本机。此操作不可撤销。',
-        confirmText: '卸载',
-        danger: true,
-      });
-    if (!ok) {
-      return;
-    }
     const restore = launcherButtonBusy($('btn-uninstall-app'), usesSettings ? '正在打开应用设置…' : '正在启动卸载程序…');
     try {
       const result = await api?.uninstallApp();
@@ -2539,7 +2511,7 @@ function bind() {
     try {
       if (!api || typeof api.runImport !== 'function') {
         $('import-result').textContent = '导入不可用：桌面桥接未连接。';
-        setHint($('import-result').textContent);
+        hintUnlessShown('import-result', $('import-result').textContent);
         return;
       }
       const result = await api?.runImport({
@@ -2557,13 +2529,13 @@ function bind() {
       if (opSeq === importOpSeq) {
         $('import-result').textContent = summarizeImport(result);
         if (result?.ok === false && !result.cancelled) {
-          void appNotice({ title: '导入未完成', body: $('import-result').textContent, tone: 'error' });
+          if (!$('import-result').checkVisibility()) void appNotice({ title: '导入未完成', body: $('import-result').textContent, tone: 'error' });
         }
       }
     } catch (error) {
       if (opSeq === importOpSeq) {
         $('import-result').textContent = `导入失败：${errText(error, '调用被拒绝')}`;
-        setHint($('import-result').textContent);
+        hintUnlessShown('import-result', $('import-result').textContent);
       }
     } finally {
       if (opSeq === importOpSeq) {
@@ -2596,7 +2568,7 @@ function bind() {
       // Surface it instead of silently showing a cancel that did nothing.
       if (reply && reply.ok === false && stillOwns()) {
         $('import-result').textContent = `取消被拒绝：${errText(reply.error, '无法取消')}`;
-        setHint($('import-result').textContent);
+        hintUnlessShown('import-result', $('import-result').textContent);
         clearImportCancelFeedback();
       }
     } catch (error) {
@@ -2604,7 +2576,7 @@ function bind() {
       // instead of leaving an unhandled rejection and a stuck-looking state.
       if (stillOwns()) {
         $('import-result').textContent = `取消请求被拒绝：${errText(error, '无法取消')}`;
-        setHint($('import-result').textContent);
+        hintUnlessShown('import-result', $('import-result').textContent);
         clearImportCancelFeedback();
       }
     }

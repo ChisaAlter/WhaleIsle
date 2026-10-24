@@ -5,7 +5,7 @@
 // switches re-render through the i18n subscription wired to 'locale/change'.
 import { createElement } from 'react'
 import * as uiPrimitives from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ClientCtx } from './ctx.ts'
+import type { ChildRenderProps, ClientCtx } from './ctx.ts'
 import { createI18n } from './locales.ts'
 import { CSS, STYLE_ID } from './styles.ts'
 import { StatsSection } from './StatsSection.tsx'
@@ -54,8 +54,19 @@ export function apply(ctx: ClientCtx): void {
         id: 'usage-stats',
         order: 25,
         label: () => i18n.t('nav.label'),
+        // The session cost and peak/valley switches (ui-conversation) sit
+        // above the statistics they relate to.
+        children: { 'settings.usage.item': { kind: 'list', scope: 'root' } },
       },
-      () => createElement(Boundary, { i18n }, createElement(StatsSection, { rpc: ctx.connection.rpc, i18n })),
+      (props?: unknown) => createElement(
+        Boundary,
+        { i18n },
+        createElement(StatsSection, {
+          rpc: ctx.connection.rpc,
+          i18n,
+          settingsRows: (props as ChildRenderProps | undefined)?.renderSlot?.('settings.usage.item', {}),
+        }),
+      ),
     ),
   )
 

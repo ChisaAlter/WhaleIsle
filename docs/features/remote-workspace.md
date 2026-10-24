@@ -12,7 +12,7 @@
 2. Add workspace 弹窗 = 「本机 / 远程」双 tab：本机保持页内浏览；远程选机器 → 路径实时补全 / 浏览浮层 → 「设为远程工作区」→ `$DSH_HOME/remote-workspaces/<host>-<user>-<port>/<basename>` 镜像被收养为真实 workspace 并持久化。
 3. 会话 cwd 位于镜像内时，system prompt 注入 remote 段，模型可调 20 个 `rw_*` 工具（ls/stat/read/write/edit/append/mkdir/remove/move/exec/search/download/upload/forward/sync/push/connect/pick/info/disconnect）；写/删/移/转发落 `audit.log`。
 4. 侧栏「远程文件」tab 直接读/写远端文件（mtime 乐观锁、409 重读/保存）。
-5. 界面设置「远程工作区」开关（`remoteWorkspaceEnabled`，默认开）翻转即重启 Harness；关闭后启动无插件行、无 overlay、无残留受管块。
+5. 内置功能「远程工作区」开关（`remoteWorkspaceEnabled`，默认开）翻转即重启 Harness；关闭后启动无插件行、无 overlay、无残留受管块。
 
 ## Invariants
 

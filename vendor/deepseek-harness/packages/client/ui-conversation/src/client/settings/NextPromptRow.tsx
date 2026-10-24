@@ -19,7 +19,7 @@ export interface NextPromptRowInjected {
 
 /** Full Settings-row props. */
 export type NextPromptRowProps =
-  PropsRuntime<'settings.interface.item'>
+  PropsRuntime<'settings.conversation.item'>
   & PropsLocale<'conversation'>
   & InjectFace<NextPromptRowInjected>
 

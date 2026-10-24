@@ -427,7 +427,7 @@ test('release walk helpers stay injectable into the harness page', () => {
   assert.ok(QA_REQUIRED_STEPS.includes('gallery.sources'));
   assert.ok(QA_REQUIRED_STEPS.includes('market.discover'));
   assert.ok(QA_REQUIRED_STEPS.includes('browser.url'));
-  assert.ok(QA_REQUIRED_STEPS.includes('interface.botsRemoved'));
+  assert.ok(QA_REQUIRED_STEPS.includes('features.botsRemoved'));
   assert.ok(QA_REQUIRED_STEPS.includes('plugin.botsRemoved'));
   assert.ok(QA_REQUIRED_STEPS.includes('rightbar.open'));
   assert.ok(QA_REQUIRED_STEPS.includes('rightbar.legacyDormant'));

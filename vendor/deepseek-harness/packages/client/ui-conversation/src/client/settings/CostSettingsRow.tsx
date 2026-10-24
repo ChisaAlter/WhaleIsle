@@ -23,7 +23,7 @@ export interface CostSettingsRowInjected {
 
 /** Full Settings-row props. */
 export type CostSettingsRowProps =
-  PropsRuntime<'settings.interface.item'>
+  PropsRuntime<'settings.usage.item'>
   & PropsLocale<'conversation'>
   & InjectFace<CostSettingsRowInjected>
 

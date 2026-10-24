@@ -73,14 +73,14 @@ test('registers dictionaries under the real runtime ids zh/en', () => {
 
 test('zh active resolves Chinese text (no raw keys)', () => {
   const i18n = createI18n(new FakeLocaleRuntime('zh'))
-  assert.equal(i18n.t('nav.label'), '用量统计')
+  assert.equal(i18n.t('nav.label'), '用量与费用')
   assert.equal(i18n.t('kpi.hitRate'), '缓存命中率')
   assert.equal(i18n.t('kpi.sessions.detail', { total: 58, main: 1, subagent: 2 }), '总会话 58 · 有用量会话：主 1 · 子代理 2')
 })
 
 test('en active resolves English text', () => {
   const i18n = createI18n(new FakeLocaleRuntime('en'))
-  assert.equal(i18n.t('nav.label'), 'Usage stats')
+  assert.equal(i18n.t('nav.label'), 'Usage & costs')
   assert.equal(i18n.t('kpi.hitRate'), 'Cache hit rate')
 })
 
@@ -88,11 +88,11 @@ test('locale switch propagates through subscribe/update', () => {
   const fake = new FakeLocaleRuntime('zh')
   const i18n = createI18n(fake)
   assert.equal(i18n.locale, 'zh-CN')
-  assert.equal(i18n.t('nav.label'), '用量统计')
+  assert.equal(i18n.t('nav.label'), '用量与费用')
   fake.switchTo('en')
   i18n.update()
   assert.equal(i18n.locale, 'en-US')
-  assert.equal(i18n.t('nav.label'), 'Usage stats')
+  assert.equal(i18n.t('nav.label'), 'Usage & costs')
 })
 
 test('unknown keys fall back to the local zh dictionary, never the raw key', () => {
@@ -101,7 +101,7 @@ test('unknown keys fall back to the local zh dictionary, never the raw key', () 
   // (e.g. the runtime lost the registration): the local lookup must win.
   const i18n = createI18n(fake)
   assert.notEqual(i18n.t('nav.label'), 'nav.label')
-  assert.equal(i18n.t('nav.label'), 'Usage stats') // en dict via our local fallback
+  assert.equal(i18n.t('nav.label'), 'Usage & costs') // en dict via our local fallback
 })
 
 test('interpolation works through both paths', () => {
