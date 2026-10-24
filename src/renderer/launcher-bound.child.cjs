@@ -239,10 +239,8 @@ app.whenReady().then(async () => {
       ]) {
         deltaResolve = undefined;
         await js('document.querySelector("#ver-cta [data-delta-tag]").focus(); document.querySelector("#ver-cta [data-delta-tag]").click()');
-        await waitFor('!document.getElementById("app-confirm").hidden');
-        const confirmationFocus = await js('document.activeElement.id');
-        await js('document.getElementById("app-confirm-ok").click()');
         await waitFor('document.getElementById("update-progress-card").getAttribute("aria-busy") === "true"');
+        const confirmHidden = await js('document.getElementById("app-confirm").hidden');
         const pending = await read();
         const readsBefore = { status: statusReads, releases: releaseReads };
         deltaResolve(reply);
@@ -251,7 +249,7 @@ app.whenReady().then(async () => {
         const terminal = await read();
         const readsAfter = { status: statusReads, releases: releaseReads };
         await captureBound(`bound-delta-${name}.png`);
-        cases.push({ name, confirmationFocus, pending, terminal, readsBefore, readsAfter });
+        cases.push({ name, confirmHidden, pending, terminal, readsBefore, readsAfter });
       }
       process.stdout.write('BOUND_RESULT:' + JSON.stringify({ cases, calls: results.calls }));
       app.exit(0);
