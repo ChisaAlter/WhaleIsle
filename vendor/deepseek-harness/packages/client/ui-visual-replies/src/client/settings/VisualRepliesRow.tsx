@@ -20,7 +20,7 @@ export interface VisualRepliesRowInjected {
 
 /** Derived settings-slot props; components receive no Context or service. */
 export type VisualRepliesRowProps =
-  PropsRuntime<'settings.general.item'>
+  PropsRuntime<'settings.conversation.item'>
   & PropsLocale<'visual-replies'>
   & InjectFace<VisualRepliesRowInjected>
 

@@ -20,7 +20,7 @@ export interface CustomInstructionsRowInjected {
 
 /** Full Settings-row props. */
 export type CustomInstructionsRowProps =
-  PropsRuntime<'settings.general.item'>
+  PropsRuntime<'settings.conversation.item'>
   & PropsLocale<'conversation'>
   & InjectFace<CustomInstructionsRowInjected>
 

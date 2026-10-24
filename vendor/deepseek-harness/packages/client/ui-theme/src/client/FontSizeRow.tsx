@@ -25,7 +25,7 @@ export interface FontSizeRowInjected {
 
 /** Full component props: runtime share + store share + locale seat + injected face. */
 export type FontSizeRowComponentProps =
-  PropsRuntime<'settings.general.item'> & PropsStore<ReturnType<typeof createFontRowStore>>
+  PropsRuntime<'settings.appearance.item'> & PropsStore<ReturnType<typeof createFontRowStore>>
   & PropsLocale<'settings.theme'> & FontSizeRowInjected & {
     /** Disclosure button after the unit label; the font settings group passes it for the text row. */
     expander?: FontSizeRowExpander | undefined

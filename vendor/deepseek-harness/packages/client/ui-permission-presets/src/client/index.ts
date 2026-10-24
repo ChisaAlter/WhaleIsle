@@ -156,10 +156,10 @@ export function apply(ctx: ClientContext): void {
 
   ctx.effect(() => () => { controller.dispose() }, 'ui-permission: settings row directory')
 
-  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
-    name: 'settings.general.item',
+  ctx.slots.inject('settings.conversation.item', () => ctx.slots.register({
+    name: 'settings.conversation.item',
     id: 'permission',
-    order: -20,
+    order: 0,
     locale: 'settings.permission',
     inject: injected,
   }, PermissionRow))

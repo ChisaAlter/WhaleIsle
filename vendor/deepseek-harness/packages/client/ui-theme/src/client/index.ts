@@ -1296,10 +1296,10 @@ export function apply(ctx: ClientContext): void {
       setFontFamily: (role, value) => { theme.setFontFamily(role, value) },
     }
   }
-  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
-    name: 'settings.general.item',
+  ctx.slots.inject('settings.appearance.item', () => ctx.slots.register({
+    name: 'settings.appearance.item',
     id: 'font-size',
-    order: 11,
+    order: 5,
     store: fontSizeStore,
     locale: SETTINGS_NS,
     inject: fontSizeInjected,

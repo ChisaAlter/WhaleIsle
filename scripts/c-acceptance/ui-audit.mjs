@@ -94,7 +94,7 @@ await step('03-settings-general', async () => {
   await page.waitForTimeout(1200)
   await page.getByText('通用设置', { exact: true }).click()
 })
-const sections = ['外观', '界面设置', '模型', '内置插件', '技能', '市场', '远程', 'MCP', 'Agent 预设', '用量统计', '鲸鱼娘', '远程工作区', '关于', '账号与余额']
+const sections = ['外观', '界面设置', '对话', '模型', '内置插件', '技能', '市场', '手机远程', 'MCP', 'Agent 预设', '用量与费用', '内置功能', '鲸鱼娘', '远程工作区', '关于', '账号与余额']
 for (const s of sections) {
   await step(`03-settings-${s}`, async () => {
     await page.getByText(s, { exact: true }).click()

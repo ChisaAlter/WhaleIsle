@@ -4,7 +4,7 @@
 export const zh = {
   trigger: '远程',
   heading: '远程',
-  nav: '远程',
+  nav: '手机远程',
   title: '远程',
   intro: '手机在侧栏扫码配对：Android App 内扫码＝链接设备，相机 / 浏览器扫码＝打开 web 端。此处只改连接方式与中继。',
   tabs: '远程分区标签',
@@ -96,7 +96,7 @@ export type RemoteLocaleKey = keyof typeof zh
 export const en = {
   trigger: 'Remote',
   heading: 'Remote',
-  nav: 'Remote',
+  nav: 'Phone remote',
   title: 'Remote',
   intro: 'Pair from the sidebar: scanning inside the Android app links the device; a camera / browser scan opens the web client. Set LAN / Server and the relay here.',
   tabs: 'Remote section tabs',

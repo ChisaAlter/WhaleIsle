@@ -20,7 +20,7 @@ export interface PeakValleySettingsRowInjected {
 
 /** Full Settings-row props. */
 export type PeakValleySettingsRowProps =
-  PropsRuntime<'settings.interface.item'>
+  PropsRuntime<'settings.usage.item'>
   & PropsLocale<'conversation'>
   & InjectFace<PeakValleySettingsRowInjected>
 

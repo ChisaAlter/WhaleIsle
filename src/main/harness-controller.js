@@ -770,7 +770,7 @@ class HarnessController extends EventEmitter {
     }
     // dshbot is desktop built-in sidebar Bots — not a user plugin. Its
     // overlay rides --patch on every start (including skipUserPlugins
-    // recovery) only while `dshbotEnabled` is on in 界面设置 (default off);
+    // recovery) only while `dshbotEnabled` is on in 内置功能 (default off);
     // the disable list never applies; a missing vendor copy fails start
     // (desktop runtime damage, skip cannot fix it).
     try {
@@ -846,7 +846,7 @@ class HarnessController extends EventEmitter {
     // dsh-remote is the desktop built-in SSH remote-workspace host — same
     // contract as dshbot/dsh-whale: its overlay rides --patch on every start
     // (including skipUserPlugins recovery) while `remoteWorkspaceEnabled` is on in
-    // 界面设置 (default ON); the disable list never applies; a missing
+    // 内置功能 (default ON); the disable list never applies; a missing
     // vendor copy fails start (desktop runtime damage, skip cannot fix it).
     try {
       const remotePlugin = await this.ensureDshRemotePlugin({

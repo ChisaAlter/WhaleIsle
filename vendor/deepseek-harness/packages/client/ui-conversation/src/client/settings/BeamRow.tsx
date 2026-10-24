@@ -32,7 +32,7 @@ export interface BeamRowInjected {
 
 /** Full Settings-row props. */
 export type BeamRowProps =
-  PropsRuntime<'settings.interface.item'>
+  PropsRuntime<'settings.appearance.item'>
   & PropsLocale<'conversation'>
   & InjectFace<BeamRowInjected>
 

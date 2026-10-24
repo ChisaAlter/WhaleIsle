@@ -304,7 +304,7 @@ test('repo vendors the restyled dsh-usage-panel snapshot', () => {
   assert.match(client, /missingPrimitives/);
   assert.doesNotMatch(client, /#4f8cff|#8b5cf6|#eef2f7|#22c55e/);
   assert.doesNotMatch(client, /data-ds-dark-theme/);
-  assert.match(client, /Usage stats/);
+  assert.match(client, /Usage & costs/);
 });
 
 test('gitignore does not ignore usage-panel zod entry files', () => {

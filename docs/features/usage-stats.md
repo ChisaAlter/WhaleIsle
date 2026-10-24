@@ -11,7 +11,7 @@
 > 2026-09-22 补充（挂载改链接）：`ensureDesktopUsagePanel` 不再把 ~6k 文件 bundle 复制进 profile，改为把 `profiles/web/node_modules/dsh-usage-panel` 链到 runtime 目录；实测稳态 1129 ms → 9 ms（首次 13928 ms → 9.5 ms）。`usage-panel-preset.test.js` 14/14（含「稳态不重建链接」「运行时不复制」「legacy 副本迁移」「缺依赖仍 fail closed」）。附带：`desktop-plugins/dsh-usage-panel/` 现在只存 overlay。
 
 1. 设置 → 「用量统计」（`usage-stats`）：KPI（含估算费用卡）、182 天 UTC 窗口的贡献图热力图（周列×星期行，月份标签置顶；单击选日、Shift+单击选段、方向键导航）、按模型柱/环、Top 会话（含费用列）、导出（含费用列）、「设置」弹层（模型多选 + 峰谷开关 + 自定义价）。热力图点选范围只影响本卡汇总；KPI 和排行榜继续展示全部历史，独立每日图保留自己的 7/14/30 天切换。
-2. 会话输入框下方的峰谷状态 / 当前会话费用行**不属于本插件**：由 harness 侧 `PeakValleyRow` 独占（[session-cost-display](session-cost-display.md)，界面设置「会话累计费用」开关）。本插件不得再向 `conversation.composer.dock` 注册条目，否则同一信息会出现两行。
+2. 会话输入框下方的峰谷状态 / 当前会话费用行**不属于本插件**：由 harness 侧 `PeakValleyRow` 独占（[session-cost-display](session-cost-display.md)，「会话累计费用」开关在本分区顶部）。本插件不得再向 `conversation.composer.dock` 注册条目，否则同一信息会出现两行。
 3. 无计费用量（含仅空白会话）走空态文案；扫描失败仍出仪表盘，不挡启动。
 4. 刷新从 host RPC 重扫；每轮从空聚合合并当前会话投影各一次，重复刷新不得累加旧总数，不写回日志。
 

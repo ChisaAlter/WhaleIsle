@@ -12,6 +12,7 @@ export const CSS = [
   '.dsw-ust-tooltip-row .dsw-ust-tooltip-label{flex:1;color:var(--dsw-alias-label-primary)}',
   '.dsw-ust-tooltip-row .dsw-ust-tooltip-value{color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}',
   '.dsw-ust-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}',
+  '.dsw-ust-settings{display:flex;flex-direction:column;margin-top:8px}',
   '.dsw-ust-head h2{margin:0;font-size:16px;line-height:24px;font-weight:600;color:var(--dsw-alias-label-primary)}',
   '.dsw-ust-head-title{display:flex;align-items:flex-start;gap:8px;min-width:0}',
   '.dsw-ust-page-icon{flex-shrink:0;margin-top:4px;color:var(--dsw-alias-label-secondary)}',

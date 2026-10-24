@@ -369,7 +369,7 @@ const QA_REQUIRED_STEPS = [
   'market.discover',
   'market.installed',
   'usage-stats.section',
-  'interface.dshbotSwitch',
+  'features.dshbotSwitch',
   'interface.sessionLogMenu',
   'plugin.dshbot.defaultOff',
 ];
@@ -1973,12 +1973,12 @@ async function runReleaseUiWalk(wc, helpers) {
   await sleep(300);
 
   // The source-QA fixture uses the desktop default (dshbotEnabled: false).
-  // Prove that the Interface setting exposes the opt-in switch and that the
+  // Prove that Built-in features exposes the opt-in switch and that the
   // disabled plugin has not silently mounted a Bots sidebar tab.
-  const interfaceOpened = await openSettings('interface');
+  const featuresOpened = await openSettings('features');
   const botsSetting = await waitUntil(() => pageEval(wc, () => {
     const dialog = dshDialogNamed('^设置$|^settings$');
-    const nav = document.querySelector('[data-dsh-settings-section="interface"]');
+    const nav = document.querySelector('[data-dsh-settings-section="features"]');
     const control = dialog && Array.from(dialog.querySelectorAll('[role="switch"]'))
       .find((el) => /(bots|机器人)/i.test(dshLabel(el)));
     if (!dialog || !nav || !control) return null;
@@ -1989,11 +1989,14 @@ async function runReleaseUiWalk(wc, helpers) {
       beta: Boolean(dialog && /测试中|beta/i.test(dialog.innerText || '')),
     };
   }), 10_000, 200, (state) => state?.nav && state?.switchPresent);
-  rec('interface.dshbotSwitch', Boolean(interfaceOpened && botsSetting?.nav
+  rec('features.dshbotSwitch', Boolean(featuresOpened && botsSetting?.nav
     && botsSetting?.switchPresent && botsSetting?.off && botsSetting?.beta),
   `nav=${botsSetting?.nav} switch=${botsSetting?.switchPresent} off=${botsSetting?.off} beta=${botsSetting?.beta}`);
 
   // The single Session-menu entry no longer has an Interface visibility switch.
+  await dismiss();
+  await sleep(300);
+  const interfaceOpened = await openSettings('interface');
   const sessionLogSwitchRemoved = await pageEval(wc, () => {
     const dialog = dshDialog();
     const control = dialog && Array.from(dialog.querySelectorAll('[role="switch"]'))

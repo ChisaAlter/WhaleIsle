@@ -13,13 +13,13 @@
  * to the step, so a mounted-but-deciding step paints nothing here. Callers can
  * open the shell before this component mounts.
  */
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import {
   ConnectionIndicator, Tooltip, useModalLayer,
   IconAgentPresetOutline16, IconArchiveOutline20, IconBrowseOutline16, IconChartOutline16,
-  IconCloseOutline16, IconDataOutline16, IconDeviceOutline16,
+  IconCloseOutline16, IconDataOutline16, IconDeviceOutline16, IconSearchOutline16,
   IconInfoOutline16, IconLightOutline16, IconPanelLeftOutline16,
   IconPersonalizationOutline16, IconServerOutline16, IconSettingsOutline16,
   IconSkillOutline16,
@@ -29,6 +29,8 @@ import type { ConnectionIndicatorState, PresenceState } from '@deepseek-ai/dsh-c
 import type { SettingsRootComponentProps, SettingsSectionRow } from './shell-contract.ts'
 import css from './SettingsRoot.module.css'
 import { DesktopUpdateIndicator } from './DesktopUpdateIndicator.tsx'
+import { groupSections } from './settings-placement.ts'
+import { indexSection, revealSetting, searchSettings, type SearchEntry } from './settings-search.ts'
 
 const RECOVERY_CONFIRMATION_MS = 2_000
 
@@ -50,7 +52,12 @@ const NAV_ICONS: Readonly<Record<string, typeof IconSettingsOutline16>> = {
   'usage-stats': IconChartOutline16,
   // 20-native glyph in the rail's 16px icon slot, as on the Session row menu.
   'archived-sessions': IconArchiveOutline20,
+  conversation: IconBrowseOutline16,
+  features: IconPersonalizationOutline16,
 }
+
+/** How long a search result stays highlighted after the jump. */
+const HIT_HIGHLIGHT_MS = 1_600
 
 /** Nav glyph by section id; unknown ids fall back to the settings gear. */
 function navIcon(id: string) {
@@ -66,6 +73,7 @@ type PanelProps = {
   open: boolean
   onSelect: (id: string) => void
   onClose: () => void
+  t: SettingsRootComponentProps['t']
 }
 
 /**
@@ -73,7 +81,7 @@ type PanelProps = {
  * header button, a mask click, and document-level Escape (mounted only while
  * open, so the listener lifetime is the panel's).
  */
-function SettingsPanel({ rows, renderSlot, activeId, motionState, open, onSelect, onClose }: PanelProps) {
+function SettingsPanel({ rows, renderSlot, activeId, motionState, open, onSelect, onClose, t }: PanelProps) {
   // Entries can unmount underneath the requested id, so the render-time
   // projection falls back to the first row when the id is gone.
   const active = rows.find(r => r.id === activeId)?.id ?? rows[0]?.id
@@ -87,6 +95,59 @@ function SettingsPanel({ rows, renderSlot, activeId, motionState, open, onSelect
   // through that window would keep the rest of the UI yielding keyboard input
   // (isBehindModal) after the shell was already logically closed.
   useModalLayer(panel, open, onClose)
+
+  const groups = useMemo(() => groupSections(rows), [rows])
+  const labelOf = useCallback((id: string) => rows.find(row => row.id === id)?.label ?? '', [rows])
+  const [query, setQuery] = useState('')
+  // The index renders every page once, hidden, from the first keystroke
+  // until the panel closes; pages that load data re-index as they settle.
+  const [indexing, setIndexing] = useState(false)
+  const [entries, setEntries] = useState<readonly SearchEntry[]>([])
+  const indexRoot = useRef<HTMLDivElement>(null)
+  const [pending, setPending] = useState<string | null>(null)
+  useEffect(() => { if (!open) { setQuery(''); setIndexing(false); setEntries([]) } }, [open])
+  useEffect(() => {
+    const root = indexRoot.current
+    if (!indexing || root === null) return
+    let timer = 0
+    const read = () => {
+      setEntries([
+        ...rows.map(row => ({ sectionId: row.id, title: row.label, desc: '' })),
+        ...[...root.querySelectorAll<HTMLElement>('[data-settings-index]')]
+          .flatMap(page => indexSection(page.dataset.settingsIndex ?? '', page)),
+      ])
+    }
+    read()
+    const observer = new MutationObserver(() => { window.clearTimeout(timer); timer = window.setTimeout(read, 150) })
+    observer.observe(root, { subtree: true, childList: true, characterData: true })
+    return () => { observer.disconnect(); window.clearTimeout(timer) }
+  }, [indexing, rows])
+  const hits = useMemo(() => searchSettings(entries, query, labelOf).slice(0, 50), [entries, query, labelOf])
+  const searching = query.trim() !== ''
+
+  // After a result opens its page, find the setting there and flash it. The
+  // flash outlives this effect (clearing `pending` re-runs it), so its timer
+  // lives in a ref.
+  const hitTimer = useRef(0)
+  useEffect(() => () => { window.clearTimeout(hitTimer.current) }, [])
+  useEffect(() => {
+    if (pending === null || searching) return
+    const page = options.current
+    if (page === null) return
+    let scroll = 0
+    const frame = window.requestAnimationFrame(() => {
+      const block = revealSetting(page, pending)
+      if (block === null) { setPending(null); return }
+      scroll = window.requestAnimationFrame(() => {
+        setPending(null)
+        block.scrollIntoView({ block: 'center' })
+        block.setAttribute('data-dsh-settings-hit', '')
+        window.clearTimeout(hitTimer.current)
+        hitTimer.current = window.setTimeout(() => { block.removeAttribute('data-dsh-settings-hit') }, HIT_HIGHLIGHT_MS)
+      })
+    })
+    return () => { window.cancelAnimationFrame(frame); window.cancelAnimationFrame(scroll) }
+  }, [pending, searching, active])
 
   // Portalled beside #root like the Modal primitive: a covering surface mounted
   // inside the root would precede the columns' chrome in document order, so a
@@ -106,20 +167,43 @@ function SettingsPanel({ rows, renderSlot, activeId, motionState, open, onSelect
         <nav className={css.nav}>
           <div className={css.navTitle} id={titleId} tabIndex={-1}
             data-modal-autofocus={active === undefined ? '' : undefined}>{renderSlot('settings.header', {})}</div>
-          <div className={css.navList}>
-            {rows.map(row => (
-              <button
-                key={row.id}
-                type="button"
-                className={clsx(css.navCell, row.id === active && css.active)}
-                data-dsh-settings-section={row.id}
-                aria-current={row.id === active ? 'true' : undefined}
-                data-modal-autofocus={row.id === active ? '' : undefined}
-                onClick={() => { onSelect(row.id) }}
-              >
-                {navIcon(row.id)}
-                <span className={css.navLabel}>{row.label}</span>
+          <div className={css.search}>
+            <IconSearchOutline16 className={css.searchIcon} size={16} />
+            <input
+              type="search"
+              className={css.searchInput}
+              value={query}
+              placeholder={t('search.placeholder')}
+              aria-label={t('search.placeholder')}
+              data-dsh-settings-search
+              onChange={(event) => { setQuery(event.target.value); setIndexing(true) }}
+            />
+            {query !== '' && (
+              <button type="button" className={css.searchClear} onClick={() => { setQuery('') }}>
+                <IconCloseOutline16 size={12} />
+                <span className={css.hiddenLabel}>{t('search.clear')}</span>
               </button>
+            )}
+          </div>
+          <div className={css.navList}>
+            {groups.map(group => (
+              <div key={group.id} className={css.navGroup} role="group" aria-labelledby={`${titleId}-${group.id}`}>
+                <div className={css.navGroupLabel} id={`${titleId}-${group.id}`}>{t(`nav.group.${group.id}`)}</div>
+                {group.rows.map(row => (
+                  <button
+                    key={row.id}
+                    type="button"
+                    className={clsx(css.navCell, !searching && row.id === active && css.active)}
+                    data-dsh-settings-section={row.id}
+                    aria-current={!searching && row.id === active ? 'true' : undefined}
+                    data-modal-autofocus={row.id === active ? '' : undefined}
+                    onClick={() => { setQuery(''); onSelect(row.id) }}
+                  >
+                    {navIcon(row.id)}
+                    <span className={css.navLabel}>{row.label}</span>
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
         </nav>
@@ -131,13 +215,44 @@ function SettingsPanel({ rows, renderSlot, activeId, motionState, open, onSelect
               <span className={css.hiddenLabel}>{renderSlot('settings.close', {})}</span>
             </button>
           </div>
-          <div ref={options} className={css.options}>
+          <div ref={options} className={css.options} hidden={searching}>
             {active !== undefined && (
               <div key={active} data-dsh-motion="swap">
                 {renderSlot('settings.section', { close: onClose }, { only: active })}
               </div>
             )}
           </div>
+          {searching && (
+            <div className={css.results} role="region" aria-label={t('search.results')} data-dsh-settings-results>
+              {hits.length === 0 && <p className={css.resultsEmpty}>{t('search.empty', { query: query.trim() })}</p>}
+              {hits.map(hit => (
+                <button
+                  key={`${hit.sectionId}:${hit.title}`}
+                  type="button"
+                  className={css.result}
+                  onClick={() => {
+                    setQuery('')
+                    if (hit.title !== labelOf(hit.sectionId)) setPending(hit.title)
+                    onSelect(hit.sectionId)
+                  }}
+                >
+                  <span className={css.resultTitle}>{hit.title}</span>
+                  <span className={css.resultMeta}>
+                    {labelOf(hit.sectionId)}{hit.desc !== '' ? ` · ${hit.desc}` : ''}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          {indexing && (
+            <div ref={indexRoot} className={css.index} hidden aria-hidden="true" {...{ inert: '' }}>
+              {rows.map(row => (
+                <div key={row.id} data-settings-index={row.id}>
+                  {renderSlot('settings.section', { close: onClose }, { only: row.id })}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -339,6 +454,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
           open={open}
           onSelect={openSection}
           onClose={close}
+          t={t}
         />
       )}
       {/* Dialog chrome and `#root` inert ownership live inside each step's

@@ -9,7 +9,7 @@ import type { Locale } from '../shared/format.ts'
 export const NS = 'usage-panel'
 
 export const zhCN: Record<string, string> = {
-  'nav.label': '用量统计',
+  'nav.label': '用量与费用',
   'nav.subtitle': '只读重算会话日志 · 永不写回',
   'kpi.total': 'Token 总用量',
   'kpi.total.detail': '输入 {input} · 输出 {output} · 缓存读 {cacheRead}',
@@ -157,7 +157,7 @@ export const zhCN: Record<string, string> = {
 }
 
 export const enUS: Record<string, string> = {
-  'nav.label': 'Usage stats',
+  'nav.label': 'Usage & costs',
   'nav.subtitle': 'Read-only session log stats · never writes back',
   'kpi.total': 'Total tokens',
   'kpi.total.detail': 'In {input} · Out {output} · Cache read {cacheRead}',
