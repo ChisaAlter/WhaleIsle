@@ -70,13 +70,37 @@ for (const kind of ['directory', 'pnpm-link']) {
   });
 }
 
-test('desktop ships dshbot built-in via vendor + overlay, with no preset or publish flow', () => {
+test('retired Bots implementation and mount are absent from the desktop', () => {
   const root = path.join(__dirname, '..', '..');
-  assert.equal(fs.existsSync(path.join(root, 'vendor/dshbot/package.json')), true);
-  for (const file of ['src/main/dshbot-preset.js', 'scripts/export-dshbot-standalone.mjs', '.github/workflows/publish-dshbot.yml']) {
+  for (const file of ['vendor/dshbot', 'src/main/dshbot-desktop.js', 'src/main/dshbot-preset.js', 'scripts/export-dshbot-standalone.mjs', '.github/workflows/publish-dshbot.yml']) {
     assert.equal(fs.existsSync(path.join(root, file)), false, file);
   }
   const source = fs.readFileSync(path.join(__dirname, 'harness-controller.js'), 'utf8');
-  assert.match(source, /ensureDshbotPlugin/);
-  assert.doesNotMatch(source, /isDshbotPresetEnabled/);
+  assert.doesNotMatch(source, /ensureDshbotPlugin/);
 });
+
+for (const targetExists of [true, false]) {
+  test(`cleanup removes a bundled Bots link and overlay when the target is ${targetExists ? 'present' : 'gone'}`, t => {
+    const { root, profileDir } = fixture(t);
+    const sourceDir = path.join(root, 'resources', 'vendor', 'dshbot');
+    const overlay = path.join(profileDir, 'desktop-plugins', 'dshbot', 'desktop-dshbot.patch.yml');
+    const linked = path.join(profileDir, 'node_modules', 'dshbot');
+    fs.mkdirSync(sourceDir, { recursive: true });
+    fs.mkdirSync(path.dirname(linked), { recursive: true });
+    fs.mkdirSync(path.dirname(overlay), { recursive: true });
+    fs.writeFileSync(overlay, '- insert:\n    - id: dsh-bot\n      name: dshbot\n');
+    fs.writeFileSync(path.join(root, 'dshbot-catalog.json'), '{"items":[{"id":"kept"}]}');
+    fs.mkdirSync(path.join(root, 'dshbot-memory'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'dshbot-memory', 'kept.md'), 'memory');
+    fs.symlinkSync(sourceDir, linked, process.platform === 'win32' ? 'junction' : 'dir');
+    if (!targetExists) fs.rmdirSync(sourceDir);
+    const result = removeLegacyDshbotPreset({ profileDir, sourceDir });
+    assert.equal(result.removedLink, true);
+    assert.equal(result.removedOverlay, true);
+    assert.equal(fs.existsSync(overlay), false);
+    assert.throws(() => fs.lstatSync(linked), { code: 'ENOENT' });
+    assert.equal(fs.readFileSync(path.join(root, 'dshbot-catalog.json'), 'utf8'), '{"items":[{"id":"kept"}]}');
+    assert.equal(fs.readFileSync(path.join(root, 'dshbot-memory', 'kept.md'), 'utf8'), 'memory');
+    assert.equal(removeLegacyDshbotPreset({ profileDir, sourceDir }).changed, false);
+  });
+}

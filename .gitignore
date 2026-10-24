@@ -6,8 +6,6 @@ src/renderer/whale-ui/
 !vendor/dsh-usage-panel/node_modules/**
 !vendor/dsh-im/node_modules/
 !vendor/dsh-im/node_modules/**
-!vendor/dshbot/node_modules/
-!vendor/dshbot/node_modules/**
 !vendor/dsh-whale/node_modules/
 !vendor/dsh-whale/node_modules/**
 !vendor/dsh-remote/node_modules/
@@ -40,8 +38,6 @@ dist/
 !vendor/dsh-usage-panel/node_modules/**/dist/**
 !vendor/dsh-im/node_modules/**/dist/
 !vendor/dsh-im/node_modules/**/dist/**
-!vendor/dshbot/node_modules/**/dist/
-!vendor/dshbot/node_modules/**/dist/**
 !vendor/dsh-whale/node_modules/**/dist/
 !vendor/dsh-whale/node_modules/**/dist/**
 !vendor/dsh-remote/node_modules/**/dist/

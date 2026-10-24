@@ -18,15 +18,15 @@
    - 桌面：`whale_desktop_state`（版本/kernel/插件清单/disabled/非密配置）/ `whale_marketplace`（目录浏览）/ `whale_desktop_config`（renderer 白名单键补丁）/ `whale_desktop_plugin`（list/install/remove/enable/disable）——全部经 `/desktop/*` 回环通道。
    - 桌宠：`whale_pet_say` / `whale_notify`（写 `data/whale/pet-outbox.jsonl`）。
 5. IM 接入默认开启（`imDefault=true`）：未显式选其他预设的 IM bot 每次发问都解析 `data/whale/settings.json` 里的常驻 `sessionId`，不同 IM 聊天与桌面共用这一条会话；不会因新聊天、`/new` 或绑定丢失创建第二条。显式选择其他预设的 bot 保留独立会话。各渠道沿用自身既有的访问规则；用户关闭 IM 接入、助理关闭或常驻会话丢失时拒绝进入鲸鱼娘会话。
-6. 宠物「找她办事」→ 主窗口聚焦 + 侧栏「新会话」下方的「{名字}」面板行直达她的常驻会话，或会话列表里直接进入。宠物「聊聊」对话卡（助理开启时）即共享此会话：卡内模型/推理下拉写会话本地选择，↗ 钮跳转到同一会话，消息双向互通（卡内发送进会话日志、DSHD 侧消息经 3s 轮询回填进卡）。侧栏入口走 `sidebar.panellist`（list slot，位于新会话按钮与工作区之间，label 跟随配置名——改名后经 ledger 重注册即时换行文字）+ `main` keyed slot 注册一个重定向组件（`assistant/ensure` → `openSession`（优先 `uiWorkspace.openSession`，0.1.5 宿主回退 `sessions.open`）→ `selectPanel(null)`，选中即开会话不驻留中间页）——不用 `sidebar.nav.tab`，不与 会话/机器人 抢顶部 tab 位。会话头部标题右侧有 ⚙ 齿轮（`conversation.session.header.actions` 项，按 `presentation.owner` 门控仅她的会话显示）→ `settingsNavigation.open('pet')` 直达 `pet` 分区（她的字段在「助理」组内）。
+6. 宠物「找她办事」→ 主窗口聚焦 + 侧栏「新会话」下方的「{名字}」面板行直达她的常驻会话，或会话列表里直接进入。宠物「聊聊」对话卡（助理开启时）即共享此会话：卡内模型/推理下拉写会话本地选择，↗ 钮跳转到同一会话，消息双向互通（卡内发送进会话日志、DSHD 侧消息经 3s 轮询回填进卡）。侧栏入口走 `sidebar.panellist`（list slot，位于新会话按钮与工作区之间，label 跟随配置名——改名后经 ledger 重注册即时换行文字）+ `main` keyed slot 注册一个重定向组件（`assistant/ensure` → `openSession`（优先 `uiWorkspace.openSession`，0.1.5 宿主回退 `sessions.open`）→ `selectPanel(null)`，选中即开会话不驻留中间页）——入口不占用 `sidebar.nav.tab` 顶部区域切换位。会话头部标题右侧有 ⚙ 齿轮（`conversation.session.header.actions` 项，按 `presentation.owner` 门控仅她的会话显示）→ `settingsNavigation.open('pet')` 直达 `pet` 分区（她的字段在「助理」组内）。
 
 ## Invariants
 
-- `vendor/dsh-whale` 是随包发布的实现源，`build.extraResources` 含 `dsh-whale/**`；`vendor/dsh-whale/node_modules` 随仓跟踪（`.gitignore` 例外，与 dshbot/dsh-im 同例）。
+- `vendor/dsh-whale` 是随包发布的实现源，`build.extraResources` 含 `dsh-whale/**`；`vendor/dsh-whale/node_modules` 随仓跟踪（`.gitignore` 例外，与 dsh-im 同例）。
 - 挂载只经桌面自有 overlay `desktop-plugins/dsh-whale/desktop-dsh-whale.patch.yml`，仅 `whaleAssistantEnabled`（默认 true）为 true 时随每次启动（全量+skip）经 `--patch` 传入；false 时 ensure 删 overlay、不校验 vendor、不阻断启动。绝不写用户层 `cordis.patch.yml`；受管块残留每次启动 strip。
 - 包名解析走 `profiles/web/node_modules/dsh-whale` junction → vendor 源；junction 指向错误时重建。
 - ensure 失败（源缺失/声明入口或运行时依赖不全）在启用时阻断启动。
-- `dsh-whale` 入 `DROPPED`/`DROPPED_BASENAMES`（市场目录隐藏、安装拒绝、manifest 剥离）与 `dshbot` 别名名单同例；disable 名单免疫（`withoutDshWhaleAliases`）。
+- `dsh-whale` 入 `DROPPED`/`DROPPED_BASENAMES`（市场目录隐藏、安装拒绝、manifest 剥离）；disable 名单免疫（`withoutDshWhaleAliases`）。
 - 插件 `inject` 明确声明 `systemPrompt`、`connection`、`webServer`；`/dsh-whale` RPC 由已注入的宿主根 ctx 直接登记 Web 路由，使用 `connection.requestRejection` 鉴权和有界 JSON 体。`agentPresets`、`sessionController` 则在显式注入的子 ctx 上注册并清理。桌面 `--patch` 注入的插件受 SettingsForms 只读覆盖约束，因此可编辑设置由插件独立持久化；首次 apply 不依赖 STARTING 状态不可见的 `settings.describe()`。
 - 客户端 `SettingsSelect` 的 options 契约是 `{id, label}`（`options.find(o => o.id === value)`），**不是 `{value, label}`**——传错字段时选中态静默丢失、菜单项 `entry.id` 全为 `undefined`，选择不落 form state。
 - `whale-girl` preset 通过 `agentPresets.register` 显式登记，声明 `hidden: true`：它只为本插件/dsh-im 按 id 挂载的会话存在，不出现在 preset 选择器或设置名单；`agentPreset:'whale-girl'` 的会话创建与 IM per-bot 选择照常。旧 `.agent-presets` 文件只作历史兼容，不是新版 registry 的加载入口。
@@ -65,8 +65,7 @@
 
 - `vendor/deepseek-harness/**`（ui-settings-general 的 `settings.interface.item` 不加 whale 行——开关走主窗 `pet` 设置分区，经通用 `shell:save-config`）
 - 其他 IM 预设的独立会话行为
-- `vendor/dshbot/**`、dshbot 的 catalog/会话/RPC 面
-- 其他会话的行为与宿主通用契约（presentation 不识别 `dsh-whale` 包名）；注意 `composer:'managed'` 会裁掉 composer dock + header actions/utilities + `conversation.input.model` 座——本特性**故意不用** managed（她要模型/推理强度可选；代价是 composer 里选模型会写全局默认，同普通会话）。`conversation.input.managed` 是 single slot 且被 dshbot 占用，不可复用。
+- 其他会话的行为与宿主通用契约（presentation 不识别 `dsh-whale` 包名）；注意 `composer:'managed'` 会裁掉 composer dock + header actions/utilities + `conversation.input.model` 座——本特性**故意不用** managed（她要模型/推理强度可选；代价是 composer 里选模型会写全局默认，同普通会话）。`conversation.input.managed` 是给显式 managed 会话的 single slot，本特性不使用。
 - `live2dPet.*` 的宠物层职责——助理不代替桌宠循环；桌宠**写** `dsh-whale` catalog 必须经 loopback RPC（`settings/update` 镜像），仅离线 fallback 提示词允许只读 `data/whale/settings.json`
 
 ## Gates
@@ -92,6 +91,6 @@
 
 - Decision: [隐藏预置在显式注册契约下保持不可选](../decisions/implemented/bug-fix/2026-09-29-hidden-agent-preset-regression.md)
 
-- 蓝本：`vendor/dshbot`（catalog scope / systemPrompt section / preset 播种 / sessionController / RPC+webServer 注入模式）、`src/main/dshbot-desktop.js`（overlay 挂载机）、`docs/features/dshbot.md`
+- 实现：`vendor/dsh-whale`（人格、preset、Session 与 RPC）、`src/main/dsh-whale-desktop.js`（overlay 挂载）；通用展示合同见[插件会话导航](plugin-session-navigation.md)。
 - 计划：`C:\Users\48818\.devin\plans\plan-982243d12396a533.md` Part C
 - 上游契约：`vendor/deepseek-harness` 的 `settings.pet.item`（`pet` 分区子座）/`sidebar.panellist`/`main`（keyed）/`tools.register`/`skill-filesystem.customSkillDirs`/session presentation/`settingsNavigation` 服务

@@ -59,8 +59,6 @@ class HarnessController extends EventEmitter {
       || (async () => ({ ok: true }));
     this.ensureDshImPlugin = options.ensureDshImPlugin
       || (async () => ({ ok: true, added: false }));
-    this.ensureDshbotPlugin = options.ensureDshbotPlugin
-      || (async () => ({ ok: true, added: false }));
     this.ensureDshProjectPlugin = options.ensureDshProjectPlugin
       || (async () => ({ ok: true, added: false }));
     this.projectAvailable = options.projectAvailable || (() => true);
@@ -578,12 +576,12 @@ class HarnessController extends EventEmitter {
     // managed blocks). Never pass that file to --patch: overlays still apply
     // under --skip-user-plugins, so it would re-mount every user row the
     // skip exists to bypass. The install, usage-panel, dsh-im, and market
-    // overlays are required on all starts (dshbot only while `dshbotEnabled`
-    // is on); full starts insert session-search before dsh-im.
+    // overlays are required on all starts; full starts insert session-search
+    // before dsh-im.
     const patchFiles = [];
     // Task control mounts first among the overlay plugins so its webServer /
-    // resolveAgent guards are installed before later overlay plugins (dshbot,
-    // dsh-im, remote) register their routes during apply.
+    // resolveAgent guards are installed before dsh-im and remote plugins
+    // register their routes during apply.
     try {
       const taskControl = await this.ensureTaskControlPlugin();
       checkCurrent();
@@ -768,35 +766,6 @@ class HarnessController extends EventEmitter {
       if (isCancellation(error)) throw error;
       this.dsh.log(`清理 dshbot 预置残留失败：${errorMessage(error)}`, 'app');
     }
-    // dshbot is desktop built-in sidebar Bots — not a user plugin. Its
-    // overlay rides --patch on every start (including skipUserPlugins
-    // recovery) only while `dshbotEnabled` is on in 界面设置 (default off);
-    // the disable list never applies; a missing vendor copy fails start
-    // (desktop runtime damage, skip cannot fix it).
-    try {
-      const bots = await this.ensureDshbotPlugin({
-        enabled: startConfig.dshbotEnabled === true,
-      });
-      checkCurrent();
-      if (bots && bots.ok === false) {
-        throw new Error(`桌面内置 dshbot 失败：${bots.error || 'unknown'}`);
-      }
-      if (bots?.overlayFile) {
-        patchFiles.push(bots.overlayFile);
-      }
-      if (bots && bots.ok && bots.disabled) {
-        this.dsh.log('桌面内置 dshbot 已按设置关闭', 'app');
-      } else if (bots && bots.ok) {
-        this.dsh.log(bots.added ? '已接入桌面内置 dshbot（Bots）' : '桌面内置 dshbot 已就绪', 'app');
-      }
-    } catch (error) {
-      checkCurrent();
-      if (isCancellation(error)) throw error;
-      if (error instanceof Error && error.message.startsWith('桌面内置 dshbot 失败：')) {
-        throw error;
-      }
-      throw new Error(`桌面内置 dshbot 失败：${errorMessage(error)}`);
-    }
     // Project shares the actual Harness peer instances. A fresh packaged
     // runtime must be extracted before those instances can be linked.
     const prepareProjectPlugin = async ({ harnessRoot } = {}) => {
@@ -815,10 +784,8 @@ class HarnessController extends EventEmitter {
         return null;
       }
     };
-    // dsh-whale is the desktop built-in whale-girl assistant — same contract
-    // as dshbot: overlay on every start only while `whaleAssistantEnabled`
-    // (default off, toggled from the pet settings page) is true; the disable
-    // list never applies; a missing vendor copy fails the start.
+    // The built-in whale assistant mounts on every start while enabled;
+    // the disable list never applies and missing vendor files fail the start.
     try {
       const whale = await this.ensureDshWhalePlugin({
         enabled: startConfig.whaleAssistantEnabled === true,
@@ -844,7 +811,7 @@ class HarnessController extends EventEmitter {
       throw new Error(`桌面内置 dsh-whale 失败：${errorMessage(error)}`);
     }
     // dsh-remote is the desktop built-in SSH remote-workspace host — same
-    // contract as dshbot/dsh-whale: its overlay rides --patch on every start
+    // contract as dsh-whale: its overlay rides --patch on every start
     // (including skipUserPlugins recovery) while `remoteWorkspaceEnabled` is on in
     // 界面设置 (default ON); the disable list never applies; a missing
     // vendor copy fails start (desktop runtime damage, skip cannot fix it).

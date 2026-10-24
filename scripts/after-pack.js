@@ -1926,9 +1926,6 @@ module.exports = async function afterPack(context) {
     run: (dir) => defaultNpmInstall(dir, { includeOptional: true }),
   });
   assertVendoredPluginRuntimeDeps(resources, 'dsh-im');
-  restoreVendoredPluginNodeModules(projectDir, resources, 'dshbot');
-  installPluginRuntimeDeps(path.join(resources, 'vendor', 'dshbot'), { skipIfComplete: true });
-  assertVendoredPluginRuntimeDeps(resources, 'dshbot');
   restoreVendoredPluginNodeModules(projectDir, resources, 'dsh-whale');
   installPluginRuntimeDeps(path.join(resources, 'vendor', 'dsh-whale'), { skipIfComplete: true });
   assertVendoredPluginRuntimeDeps(resources, 'dsh-whale');
@@ -1941,7 +1938,7 @@ module.exports = async function afterPack(context) {
   assertVendoredPluginRuntimeDeps(resources, 'dsh-platform-session');
   // dsh-pad peers are supplied by Harness's linked-plugin resolver at startup.
   assertVendoredPluginRuntimeDeps(resources, 'dsh-pad');
-  for (const name of ['dsh-usage-panel', 'dsh-im', 'dshbot', 'dsh-whale', 'dsh-remote']) {
+  for (const name of ['dsh-usage-panel', 'dsh-im', 'dsh-whale', 'dsh-remote']) {
     const root = path.join(resources, 'vendor', name);
     const removed = prunePluginDevDependencies(root, resolvePackageFrom, runtimeDependencyEntries, target);
     assertVendoredPluginRuntimeDeps(resources, name);
@@ -1988,8 +1985,8 @@ module.exports = async function afterPack(context) {
   // Skip compose contract against the REAL packaged CLI: unit tests mock
   // dsh.start, so this dist-path gate is the only automated place where the
   // shipped runtime proves `--skip-user-plugins` drops the user layer while
-  // the desktop-owned overlays mount install + usage + dsh-im + market +
-  // dshbot on every start and session-search only on full starts.
+  // the desktop-owned overlays mount task-control + install + Office + usage +
+  // dsh-im + market + whale + remote on every start and session-search only on full starts.
   console.log('校验 skip compose 契约（真实 CLI dump-config，skip + full 双轮）…');
   await runSkipComposeContract(harnessDest, { log: (line) => console.log(line) });
 

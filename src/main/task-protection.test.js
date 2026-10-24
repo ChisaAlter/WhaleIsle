@@ -242,7 +242,7 @@ test('commit cleanups run on terminal ops only, never on stop/restart', async ()
 test('inspectionClean treats unknown coverage as blocking', () => {
   assert.equal(inspectionClean(CLEAN_INSPECTION), true);
   assert.equal(inspectionClean({ ...CLEAN_INSPECTION, coverage: { jobs: 'unavailable' } }), false);
-  assert.equal(inspectionClean({ ...CLEAN_INSPECTION, coverage: { bots: 'intentional-disabled' } }), true);
+  assert.equal(inspectionClean({ ...CLEAN_INSPECTION, coverage: { schedule: 'intentional-disabled' } }), true);
   assert.equal(inspectionClean(DIRTY_INSPECTION), false);
 });
 

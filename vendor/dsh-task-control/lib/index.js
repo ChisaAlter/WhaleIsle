@@ -7,9 +7,9 @@
  * HTTP and upgrade) is gated while a lock is held; the connection `/api`
  * waterfall carries a second gate because that route predates this plugin in
  * the composition. `sessionController.resolveAgent` and `jobs.start` are
- * wrapped so Schedule delivery, dshbot routines, IM channels, and Typert
- * lookups cannot start work while locked — delivery refusals keep the armed
- * schedule/bot state for the next window, which `onUnlock` re-drives.
+ * wrapped so Schedule delivery, IM channels, and Typert lookups cannot start
+ * work while locked — delivery refusals keep schedules armed for the next
+ * window, which `onUnlock` re-drives.
  *
  * Control surface: `POST /dshd-task-control/<inspect|acquire|renew|release|
  * cancel|status>` gated by the per-boot Bearer token from

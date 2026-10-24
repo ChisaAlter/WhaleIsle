@@ -27,7 +27,7 @@ Typing a `/` command opens a registered popup, a client action, a host command's
 
 Mount this plugin alongside `ui-input-trigger` and `ui-conversation`; the `/` source then appears in the trigger menu, and business packages register their command surfaces through `ctx.commandUi`. Typing `/model` opens the registered popup; a host command with an argument claim opens its input or executes directly. The popup holds composer focus: typing filters the loaded rows locally, `↑`/`↓` walk them, Enter and `Tab` accept the highlighted row, and Escape and `Shift+Tab` return to the composer. The highlight opens on the row the options mark as the session's current value, so accepting on a freshly opened panel confirms it. The composer's `+` button and a typed `/` open the same menu: an Add section (File, Goal, Plan, Feedback) and a Commands section (Compact, Permission, Model, Export) in usage order, each row with a glyph, a localized title and description, and the command name as an alias where the localized title differs from it.
 
-WhaleIsle's dshbot room Sessions withhold this package's command candidates, Space and Enter dispatch, and saved-claim restoration without fetching the command catalog. Room-owned command sources keep their own behavior.
+Plugin-managed conversations marked with `presentation.composer: 'managed'` use the same command catalog and argument claims. Selecting `/new` or `/reset` from the menu, or entering either bare command, runs `/compact` in the same Session so its plugin-owned identity remains intact.
 
 ### Kinds and decorations
 

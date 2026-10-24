@@ -1,15 +1,13 @@
 /**
  * Work inspection for task control: aggregates the same active-task
  * predicate as upstream `hasDesktopActiveTasks` plus Host-independent
- * producers (schedule catalog, dshbot routine catalog, upgraded sockets,
- * admitted-but-unsettled requests). Coverage marks a producer
+ * producers (schedule catalog, upgraded sockets, admitted-but-unsettled
+ * requests). Coverage marks a producer
  * `intentional-disabled` only when the desktop composition declares it off;
  * anything else unreadable reports `unavailable`, which the shell treats as
  * blocking for unattended commits.
  */
 
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { BlockList, isIP } from 'node:net';
 
 const LOOPBACK = new BlockList();
@@ -121,54 +119,6 @@ async function collectSchedule(ctx, scheduledWork, coverage) {
   }
 }
 
-async function readDshbotCatalog() {
-  const home = process.env.DSH_HOME || process.env.DSHD_HOME || '';
-  if (!home) return null;
-  try {
-    const raw = await readFile(join(home, 'dshbot-catalog.json'), 'utf8');
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-async function collectBots(scheduledWork, activeWork, coverage) {
-  if (!envFlag('DSHD_DSHBOT_ENABLED')) {
-    coverage.bots = 'intentional-disabled';
-    return;
-  }
-  const catalog = await readDshbotCatalog();
-  coverage.bots = 'ok';
-  if (catalog === null) return;
-  const items = Array.isArray(catalog.items) ? catalog.items : [];
-  for (const routine of Array.isArray(catalog.routines) ? catalog.routines : []) {
-    if (routine === null || typeof routine !== 'object' || routine.enabled === false) continue;
-    const pendingMail = items.some((item) => Array.isArray(item?.inbox)
-      && item.inbox.some((mail) => mail && mail.routineId === routine.id
-        && mail.runId === routine.pendingRunId));
-    const occupied = ['queued', 'running'].includes(routine.lastOutcome)
-      || (!['completed', 'failed'].includes(routine.lastOutcome) && Boolean(routine.pendingRunId))
-      || pendingMail;
-    if (occupied) {
-      activeWork.push({
-        kind: 'bot-routine',
-        id: String(routine.id ?? 'routine'),
-        owner: 'dshbot',
-        detail: typeof routine.lastOutcome === 'string' && routine.lastOutcome
-          ? routine.lastOutcome : 'pending',
-      });
-    }
-  }
-  let inboxCount = 0;
-  for (const item of items) {
-    if (Array.isArray(item?.inbox)) inboxCount += item.inbox.length;
-  }
-  if (inboxCount > 0) {
-    scheduledWork.push({ kind: 'bot-inbox', id: 'dshbot-inbox', owner: 'dshbot', count: inboxCount });
-  }
-}
-
 function collectSockets(webServer, activeWork) {
   const sockets = webServer && webServer.upgradedSockets;
   if (!(sockets instanceof Set)) return 0;
@@ -203,7 +153,6 @@ export async function collectInspection(ctx, state, options = {}) {
     activeWork.push({ kind: 'request', id: 'pending-requests', count: state.pending.size });
   }
   await collectSchedule(ctx, scheduledWork, coverage);
-  await collectBots(scheduledWork, activeWork, coverage);
   return {
     ok: true,
     hostGeneration: state.hostGeneration,

@@ -37,7 +37,7 @@
 
 ### A. 对话列表
 
-- 同一批活会话：`session.list`。隐藏 `origin:'dshbot'`。`blank: true` **不出现在列表**（桌面复用 blank 作 New Session）。
+- 同一批活会话：`session.list`。保留对旧版 `origin:'dshbot'` 会话的隐藏，移除 Bots 不删除这些会话。`blank: true` **不出现在列表**（桌面复用 blank 作 New Session）。
 - 按工作区分组 + 平铺：`workspace.list`。无用户自建「文件夹」。
 - 工作区行：展开；`+` = `session.create({ workspaceId })`；⋯ 重命名 / 删除工作区 = `workspace.rename` / `workspace.delete`（unlist，不删磁盘）。
 - 无目录：`session.create` 不带 workspaceId/cwd。

@@ -62,11 +62,28 @@ test('whale assistant defaults on while an explicit opt-out persists', () => {
   assert.equal(loadConfig().whaleAssistantEnabled, true);
 });
 
+test('retired Bots flags are discarded on load and save', () => {
+  const before = loadConfig();
+  try {
+    const saved = saveConfig({ dshbotEnabled: true, dshbotPreset: true });
+    assert.equal(Object.hasOwn(saved, 'dshbotEnabled'), false);
+    assert.equal(Object.hasOwn(saved, 'dshbotPreset'), false);
+    const loaded = loadConfig();
+    assert.equal(Object.hasOwn(loaded, 'dshbotEnabled'), false);
+    assert.equal(Object.hasOwn(loaded, 'dshbotPreset'), false);
+    const stored = JSON.parse(fs.readFileSync(path.join(userData, 'config.json'), 'utf8'));
+    assert.equal(Object.hasOwn(stored, 'dshbotEnabled'), false);
+    assert.equal(Object.hasOwn(stored, 'dshbotPreset'), false);
+  } finally {
+    saveConfig(before);
+  }
+});
+
 test('Harness recovery defaults are bounded and enabled', () => {
   assert.equal(DEFAULTS.harnessAutoRestart, true);
   assert.equal(DEFAULTS.harnessRestartMaxAttempts, 3);
   assert.equal(DEFAULTS.harnessRestartBaseDelayMs, 1000);
-  assert.equal(DEFAULTS.dshbotEnabled, false);
+  assert.equal(Object.hasOwn(DEFAULTS, 'dshbotEnabled'), false);
   assert.equal(DEFAULTS.projectEnabled, false);
   assert.deepEqual(normalizeHarnessRecovery({}), {
     harnessAutoRestart: true,
@@ -97,7 +114,6 @@ test('renderer config patch only accepts safe typed fields', () => {
     locale: 'en',
     harnessRestartMaxAttempts: 4,
     githubToken: ' token ',
-    dshbotEnabled: true,
     projectEnabled: true,
     remoteWorkspaceEnabled: false,
   }), {
@@ -106,7 +122,6 @@ test('renderer config patch only accepts safe typed fields', () => {
     locale: 'en',
     harnessRestartMaxAttempts: 4,
     githubToken: 'token',
-    dshbotEnabled: true,
     projectEnabled: true,
     remoteWorkspaceEnabled: false,
   });
@@ -116,7 +131,7 @@ test('renderer config patch only accepts safe typed fields', () => {
     { workspace: 'C:\\' },
     { baseUrl: 'https://attacker.invalid' },
     { closeToTray: 'yes' },
-    { dshbotEnabled: 'yes' },
+    { dshbotEnabled: true },
     { projectEnabled: 'yes' },
     { remoteWorkspaceEnabled: 'yes' },
     { harnessRestartMaxAttempts: 99 },

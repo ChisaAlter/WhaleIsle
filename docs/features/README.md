@@ -54,7 +54,6 @@
 | [mobile-remote](mobile-remote.md) | 侧栏远程弹窗 + `mobile/web` SPA；入口开放，配对默认关闭 | `DshdRemote` / `ui-settings-remote` | 卡内实机矩阵为准 |
 | [remote-settings](remote-settings.md) | 设置→远程双标签（网关 + dsh-im）；未配置时默认服务器模式 | `ui-settings-remote` / `dsh-im-desktop` | 桌面装配回归；真实账号绑定/收发按卡内门槛验收 |
 | [remote-workspace](remote-workspace.md) | SSH 机器管理、远程目录选择与镜像工作区 | `dsh-remote-desktop` / `vendor/dsh-remote` | ensure/overlay/skip-compose + 负路径测试 |
-| [dshbot](dshbot.md) | 桌面内置 Bots：vendor 快照 + overlay 每次启动挂载（含 skip） | `dshbot-desktop` / `legacy-dshbot-preset` | 升级 / 用户数据保留 |
 | [plugin-session-navigation](plugin-session-navigation.md) | 插件固定会话的持久化标题、列表隔离与空会话布局 | vendor session-controller / ui-workspace | 投影、导航与真实插件链路 |
 | [dsh-home](dsh-home.md) | 桌面 `userData/dsh-home`；Harness 不读官方 `~/.dsh` | `dsh-home.js` / spawnEnv | TC-INST-009、011；TC-WS-006 |
 | [desktop-launcher](desktop-launcher.md) | 冷启动闸门：更新询问、启停桌面、版本、插件问诊 | `launcher.*` / launcher-gate | TC-LAUNCH-001…007 |

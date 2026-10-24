@@ -47,9 +47,8 @@
 | `plugins.js` / `plugin-runtime-files.js` | 插件列表、禁用 bundles、运行时文件 |
 | `plugin-forensics.js` | 不启内核解析日志嫌疑包 |
 | `plugin-tree-failure.js` / `plugin-recovery-actions.js` | 启动失败恢复 |
-| `dshbot-desktop.js` | 桌面内置模块：Bots（dsh-im 模式，每轮都挂含 skip，不可禁用） |
 | `dsh-remote-desktop.js` | 桌面内置模块：SSH 远程工作区 overlay 与 profile junction |
-| `legacy-dshbot-preset.js` | 旧版 dshbot 受管块/预置链接迁移清理 |
+| `legacy-dshbot-preset.js` | Bots 移除后清理旧桌面受管块、overlay 文件及可确认归属的 junction；保留用户数据 |
 | `harness-extract.js` | 打包 harness 提取 |
 
 ## 壁纸 / 远程 / 桌面壳

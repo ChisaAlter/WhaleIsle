@@ -127,9 +127,10 @@ test('manifest packages the built-in dsh-remote vendor tree', () => {
     ?.find((entry) => entry.from === 'vendor' && entry.to === 'vendor')
     ?.filter;
   assert.equal(Array.isArray(vendorFilter), true, 'vendor extraResources entry is missing');
-  for (const pattern of ['dsh-usage-panel/**', 'dsh-im/**', 'dshbot/**', 'dsh-whale/**', 'dsh-remote/**', 'dsh-task-control/**', 'dsh-platform-session/**', 'dsh-project/**']) {
+  for (const pattern of ['dsh-usage-panel/**', 'dsh-im/**', 'dsh-whale/**', 'dsh-remote/**', 'dsh-task-control/**', 'dsh-platform-session/**', 'dsh-project/**']) {
     assert.equal(vendorFilter.includes(pattern), true, `vendor filter lost ${pattern}`);
   }
+  assert.equal(vendorFilter.includes('dshbot/**'), false, 'retired bots runtime must not be packaged');
   const remoteRuntime = pkg.build.extraResources.find((entry) => entry.to === 'vendor/dshd-remote/node_modules');
   assert.equal(remoteRuntime?.from, 'vendor/chisacode-remote/.tmp/desktop-runtime/node_modules');
 });
