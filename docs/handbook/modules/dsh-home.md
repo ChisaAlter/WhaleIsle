@@ -35,6 +35,8 @@ macOS：`~/Library/Application Support/Deepseek-Harness-Desktop/`
 | 壳层默认 API key | `userData/credentials.json` |
 | 官方 CLI（桌面不读写） | `~/.dsh` |
 
+`config.json` 解析失败时先改名为 `config.json.corrupt-<时间戳>` 再写默认值；其他读取失败时保存报错，不用默认值覆盖。`credentials.json` 存在但读不出或解不开（钥匙串锁定、拒绝访问、文件被占用）时，读取视为空，普通保存不写它，保存凭据字段报错，原文件保持不变。
+
 启动日志有一行 `Harness 家目录`，路径必须含 `dsh-home`。
 
 ## 实现入口
