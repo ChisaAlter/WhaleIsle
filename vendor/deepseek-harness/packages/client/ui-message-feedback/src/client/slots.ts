@@ -57,7 +57,7 @@ export type MessageFeedbackActionProps =
 /** Injected business face of the Session's feedback dialog entry. */
 export interface FeedbackDialogInjected {
   hooks: {
-    /** The Session's dialog and toast state. */
+    /** The Session's dialog state. */
     dialog: HostObservable<FeedbackDialogState>
   }
   /**
@@ -71,11 +71,6 @@ export interface FeedbackDialogInjected {
   dismiss: () => void
   /** Retire the current submission-failure toast without closing its draft. */
   dismissFailure: () => void
-  /**
-   * Retire the toast the view finished showing.
-   * @param seq - the toast sequence.
-   */
-  dismissToast: (seq: number) => void
 }
 
 /** Full props of the feedback dialog overlay entry. */

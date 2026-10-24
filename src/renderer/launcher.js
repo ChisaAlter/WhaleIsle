@@ -12,6 +12,12 @@ function setHint(text, opts = {}) {
   if (text) void appNotice({ title: opts.title || '提示', body: text, tone: opts.tone || (opts.fade ? 'success' : 'error') });
 }
 
+// Results already written into a visible progress pane are not repeated in a
+// floating notice; a dismissed pane still gets one.
+function hintUnlessShown(id, text) {
+  if (!$(id)?.checkVisibility()) setHint(text);
+}
+
 // The pending action reports on its own button (spinner and label), never in
 // a separate floating notice.
 // `label` is the full sentence for assistive tech and the tooltip; the button
@@ -608,7 +614,7 @@ function renderHomeRecovery(status) {
     board.open = false;
     return;
   }
-  const verdict = desktopActionError || (recoveryApi?.recoveryVerdict
+  const verdict = (desktopActionError && errText(desktopActionError, '启动或关闭未完成')) || (recoveryApi?.recoveryVerdict
     ? recoveryApi.recoveryVerdict(status?.lastStart, recovery, forensics) : '');
   if ($('home-recovery-verdict').textContent !== verdict) board.open = false;
   $('home-recovery-verdict').textContent = verdict;
@@ -1051,12 +1057,12 @@ async function installRuntime() {
     } else {
       paintProgress('install-progress', { phase: result?.status === 'waiting' ? 'waiting' : 'error' });
       progress.textContent = errText(result, '安装失败');
-      if (result?.status !== 'waiting') setHint(progress.textContent);
+      if (result?.status !== 'waiting') hintUnlessShown('install-progress', progress.textContent);
     }
   } catch (error) {
     paintProgress('install-progress', { phase: 'error' });
     progress.textContent = errText(error, '安装失败');
-    setHint(progress.textContent);
+    hintUnlessShown('install-progress', progress.textContent);
   } finally {
     installBusy = false;
     restoreInstall();
@@ -1165,6 +1171,8 @@ async function runDesktopAction(method, kind = 'starting', ...args) {
     try { await refreshStatus(); }
     catch { setHint('暂时无法读取桌面状态，请稍后重新打开首页。'); }
     paint();
+    // One floating result; the status line stays short and the raw detail
+    // lives in the folded startup diagnostics.
     if (desktopActionError) setHint(errText(desktopActionError, '启动或关闭未完成'));
   }
   return result;
@@ -1194,10 +1202,8 @@ async function askPluginRecovery(guidance) {
     const result = guidance.kind === 'disable'
       ? await runDesktopAction('disableSuspectsAndStart', 'starting', guidance.names)
       : await runDesktopAction('skipUserPlugins');
-    if (!result && desktopActionError) {
-      await appNotice({ title: '启动未完成', body: errText(desktopActionError) });
-      return;
-    }
+    // runDesktopAction already raised the failure notice.
+    if (!result && desktopActionError) return;
     if (guidance.kind !== 'disable' || !result) return;
     if (result.ok === false) {
       await appNotice({ title: '未能禁用插件', body: errText(result.error) });
@@ -2224,12 +2230,12 @@ async function installTag(tag, kind) {
     if (result && (result.status === 'error' || result.ok === false)) {
       paintProgress('update-progress', { phase: 'error' });
       $('update-progress').textContent = errText(result, '安装失败');
-      setHint($('update-progress').textContent);
+      hintUnlessShown('update-progress', $('update-progress').textContent);
     }
   } catch (error) {
     paintProgress('update-progress', { phase: 'error' });
     $('update-progress').textContent = errText(error, '安装失败');
-    setHint($('update-progress').textContent);
+    hintUnlessShown('update-progress', $('update-progress').textContent);
   } finally {
     updateBusy = false;
   }
@@ -2273,11 +2279,11 @@ async function installDelta(tag) {
     }
     paintProgress('update-progress', { phase: 'error', mode: 'delta' });
     $('update-progress').textContent = `${errText(result, '增量更新失败')}。可返回版本列表选择完全下载。`;
-    setHint($('update-progress').textContent);
+    hintUnlessShown('update-progress', $('update-progress').textContent);
   } catch (error) {
     paintProgress('update-progress', { phase: 'error' });
     $('update-progress').textContent = errText(error, '增量更新失败');
-    setHint($('update-progress').textContent);
+    hintUnlessShown('update-progress', $('update-progress').textContent);
   } finally {
     updateBusy = false;
   }
@@ -2505,7 +2511,7 @@ function bind() {
     try {
       if (!api || typeof api.runImport !== 'function') {
         $('import-result').textContent = '导入不可用：桌面桥接未连接。';
-        setHint($('import-result').textContent);
+        hintUnlessShown('import-result', $('import-result').textContent);
         return;
       }
       const result = await api?.runImport({
@@ -2523,13 +2529,13 @@ function bind() {
       if (opSeq === importOpSeq) {
         $('import-result').textContent = summarizeImport(result);
         if (result?.ok === false && !result.cancelled) {
-          void appNotice({ title: '导入未完成', body: $('import-result').textContent, tone: 'error' });
+          if (!$('import-result').checkVisibility()) void appNotice({ title: '导入未完成', body: $('import-result').textContent, tone: 'error' });
         }
       }
     } catch (error) {
       if (opSeq === importOpSeq) {
         $('import-result').textContent = `导入失败：${errText(error, '调用被拒绝')}`;
-        setHint($('import-result').textContent);
+        hintUnlessShown('import-result', $('import-result').textContent);
       }
     } finally {
       if (opSeq === importOpSeq) {
@@ -2562,7 +2568,7 @@ function bind() {
       // Surface it instead of silently showing a cancel that did nothing.
       if (reply && reply.ok === false && stillOwns()) {
         $('import-result').textContent = `取消被拒绝：${errText(reply.error, '无法取消')}`;
-        setHint($('import-result').textContent);
+        hintUnlessShown('import-result', $('import-result').textContent);
         clearImportCancelFeedback();
       }
     } catch (error) {
@@ -2570,7 +2576,7 @@ function bind() {
       // instead of leaving an unhandled rejection and a stuck-looking state.
       if (stillOwns()) {
         $('import-result').textContent = `取消请求被拒绝：${errText(error, '无法取消')}`;
-        setHint($('import-result').textContent);
+        hintUnlessShown('import-result', $('import-result').textContent);
         clearImportCancelFeedback();
       }
     }

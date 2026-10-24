@@ -38,6 +38,7 @@ const handlers = {
   'shell:scan-import': () => ({ ok: true, sourceHome: 'C:\\fixture\\source', homeDir: 'C:\\fixture\\target', sessions: [{ rel: 'fixture/session', title: 'fixture session' }], skills: [], plugins: [], mcp: [], settings: [], presets: [] }),
   'shell:check-update': () => { checkCalls++; return new Promise(resolve => { checkResolve = resolve; }); },
   'shell:install-runtime': () => new Promise(resolve => { installResolve = resolve; }),
+  'shell:stop-desktop': () => ({ ok: false, error: 'busy' }),
   'shell:cancel-runtime-install': () => { installCancelCalls++; return { ok: true }; },
   'shell:run-import': (_event, opts) => { importCalls.push(opts.opId); return new Promise(resolve => { importResolve = resolve; }); },
   'shell:cancel-import': (_event, opts) => { importCancelCalls.push(opts.opId); return { ok: false, error: 'fixture cancellation refused' }; },
@@ -251,6 +252,12 @@ app.whenReady().then(async () => {
     await delay(100);
     result.nonPluginFailure = { ...(await read()), guidanceVisible: await js("!document.getElementById('home-plugin-guidance').hidden") };
     await clearNotices();
+    desktopStatus = { ...desktopStatus, desktop: { state: 'ready' }, lastStart: { ok: true, at: 'stop-1' }, forensics: { plugins: [] } };
+    await js("void runDesktopAction('stopDesktop', 'stopping')");
+    await waitFor("[...document.querySelectorAll('.shell-feedback-text')].some(node => node.textContent.includes('桌面端正在处理任务'))");
+    await delay(100);
+    result.stopFailure = await js("({status:document.getElementById('home-status').textContent,verdict:document.getElementById('home-recovery-verdict').textContent,toastCount:document.querySelectorAll('.shell-feedback-toast').length})");
+    await clearNotices();
     // Closing pending tasks retains their terminal result and actual cancel entry.
     await js("document.querySelector('[data-tab=home]').click(); void installRuntime()");
     await waitFor("document.getElementById('btn-install-cancel').checkVisibility()");
@@ -274,8 +281,8 @@ app.whenReady().then(async () => {
     await js("document.getElementById('btn-import').click()");
     await waitFor("document.getElementById('btn-import-cancel').checkVisibility()");
     await js("document.getElementById('btn-import-cancel').click()");
-    await waitFor("!!document.querySelector('.shell-feedback-toast')");
-    result.importRefused = await js("({feedback:document.querySelector('.shell-feedback-text').textContent,retryable:!document.getElementById('btn-import-cancel').disabled,buttonBusy:document.getElementById('btn-import').getAttribute('aria-busy')})");
+    await waitFor("document.getElementById('import-result').textContent.startsWith('取消被拒绝')");
+    result.importRefused = await js("({feedback:document.getElementById('import-result').textContent,toastCount:document.querySelectorAll('.shell-feedback-toast').length,retryable:!document.getElementById('btn-import-cancel').disabled,buttonBusy:document.getElementById('btn-import').getAttribute('aria-busy')})");
     await clearNotices();
     await js("document.getElementById('import-progress-card').querySelector('.shell-feedback-close').click()");
     importResolve({ ok: false, error: 'import-recovery-blocked' });

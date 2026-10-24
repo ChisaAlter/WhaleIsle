@@ -2730,8 +2730,8 @@ describe('WorkspaceBrowser batch selection', () => {
     await act(async () => { fireEvent.click(confirm) })
     fireEvent.click(confirm)
     expect(archiveSessionForBatch.mock.calls).toEqual([[sid('first'), { stopActivity: true }]])
-    expect(screen.getByRole('alert').textContent).toBe('正在处理 0/2…')
-    expect(dialog.contains(screen.getByRole('alert'))).toBe(false)
+    // The busy confirm button carries progress; no floating counter.
+    expect(screen.queryByRole('alert')).toBeNull()
     expect(confirm.getAttribute('aria-busy')).toBe('true')
     expect(confirm.disabled).toBe(true)
     expect(within(dialog).getByRole<HTMLButtonElement>('button', { name: '取消' }).disabled).toBe(true)
@@ -2748,12 +2748,13 @@ describe('WorkspaceBrowser batch selection', () => {
       [sid('first'), { stopActivity: true }],
       [sid('second'), { stopActivity: true }],
     ])
-    expect(screen.getByRole('alert').textContent).toBe('正在处理 1/2…')
+    expect(screen.queryByRole('alert')).toBeNull()
     // The first Host echo may change rows before the second RPC finishes.
     rerender(b, { useWorkspaces: hook(workspaceState([], [sid('first')])) })
     await act(async () => { resolveSecond() })
     expect(screen.queryByRole('dialog')).toBeNull()
-    expect(screen.getByRole('alert').textContent).toBe('已归档 2 个会话')
+    // Sessions leaving the list confirm a clean run.
+    expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByText('已选 0 项')).toBeTruthy()
     expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '选择会话“second”' }).checked).toBe(false)
     expect(b.props.deleteSessionForBatch).not.toHaveBeenCalled()
@@ -2890,7 +2891,7 @@ describe('WorkspaceBrowser batch selection', () => {
     expect(screen.queryByRole('checkbox', { name: '选择会话“active”' })).toBeNull()
     expect(screen.queryByRole('checkbox', { name: '选择会话“stored”' })).toBeNull()
     expect(screen.getByRole<HTMLInputElement>('checkbox', { name: '选择会话“survivor”' }).checked).toBe(false)
-    expect(screen.getByRole('alert').textContent).toBe('已删除 2 个会话')
+    expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByText('已选 0 项')).toBeTruthy()
     expect(b.props.open).not.toHaveBeenCalled()
     expect(b.props.unarchiveSession).not.toHaveBeenCalled()
@@ -2933,7 +2934,7 @@ describe('WorkspaceBrowser batch selection', () => {
       await act(async () => { fireEvent.click(screen.getByRole('button', { name: '永久删除' })) })
       expect(deleteSessionForBatch.mock.calls).toEqual([[sid('needle-title')], [sid('stored-content')]])
       expect(results.queryByRole('treeitem')).toBeNull()
-      expect(screen.getByRole('alert').textContent).toBe('已删除 2 个会话')
+      expect(screen.queryByRole('alert')).toBeNull()
       expect(screen.getByText('已选 0 项')).toBeTruthy()
       expect(b.props.open).not.toHaveBeenCalled()
       expect(b.props.notifyArchivedNotOpenable).not.toHaveBeenCalled()
