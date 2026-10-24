@@ -37,3 +37,9 @@ test('isAuthorized accepts a matching cookie', () => {
   assert.equal(isAuthorized({}, '/', ''), false);
   assert.equal(isAuthorized({}, '/', []), false);
 });
+
+test('a malformed cookie escape is rejected as a missing token, not thrown', () => {
+  const headers = { cookie: `other=%E0%A4%A; ${COOKIE_NAME}=%E0%A4%A` };
+  assert.equal(tokenFromHeaders(headers, '/'), '');
+  assert.equal(isAuthorized(headers, '/', ['a'.repeat(32)]), false);
+});

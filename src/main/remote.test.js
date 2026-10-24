@@ -1137,3 +1137,38 @@ test('login page auto-login rejection re-serves the form with the error line int
   await gateway.stop();
   await close(upstream);
 });
+
+test('relay answers a host upgrade with a malformed cookie instead of crashing', async () => {
+  const relay = insecureRelay(generateToken() + generateToken());
+  const port = await relay.listen(0, '127.0.0.1');
+  try {
+    const reply = await new Promise((resolve, reject) => {
+      const socket = net.connect(port, '127.0.0.1', () => socket.write(
+        'GET /__dsh__/host HTTP/1.1\r\nHost: relay\r\nConnection: Upgrade\r\nUpgrade: dsh-relay\r\nCookie: dsh_remote=%E0%A4%A\r\n\r\n',
+      ));
+      socket.once('data', (data) => { resolve(data.toString().split('\r\n')[0]); socket.destroy(); });
+      socket.once('error', reject);
+    });
+    assert.equal(reply, 'HTTP/1.1 401 Unauthorized');
+  } finally {
+    await relay.close();
+  }
+});
+
+test('gateway answers a malformed cookie with 401 instead of an uncaught error', async () => {
+  const upstream = http.createServer((_req, res) => res.end('ok'));
+  const upstreamPort = await listen(upstream);
+  const token = generateToken();
+  const gateway = new RemoteGateway({
+    getTarget: () => ({ port: upstreamPort }),
+    getConfig: () => ({ remoteEnabled: true, remoteToken: token, remoteMode: 'lan' }),
+  });
+  try {
+    await gateway.start({ port: 0, token, target: { port: upstreamPort }, bindAddress: '127.0.0.1' });
+    const reply = await request(gateway.server.address().port, '/api/x', { headers: { cookie: 'dsh_remote=%E0%A4%A' } });
+    assert.equal(reply.status, 401);
+  } finally {
+    await gateway.stop();
+    await close(upstream);
+  }
+});

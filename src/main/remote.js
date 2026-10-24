@@ -595,14 +595,25 @@ class RemoteGateway extends EventEmitter {
       this.tlsFingerprint = tlsMaterial.fingerprint256 || '';
     }
     await new Promise((resolve, reject) => {
+      // A request the gateway cannot handle ends with a response, never as an
+      // uncaught error in the main process.
       const handler = (req, res) => {
-        this.handleHttp(req, res);
+        this.handleHttp(req, res).catch((error) => {
+          this.emit('request-error', error);
+          if (!res.headersSent) this.send(res, 400, { 'content-type': 'text/plain; charset=utf-8' }, 'bad request');
+          else res.destroy();
+        });
       };
       const server = this.tlsActive
         ? https.createServer({ key: tlsMaterial.key, cert: tlsMaterial.cert }, handler)
         : http.createServer(handler);
       server.on('upgrade', (req, socket, head) => {
-        this.handleUpgrade(req, socket, head);
+        try {
+          this.handleUpgrade(req, socket, head);
+        } catch (error) {
+          this.emit('request-error', error);
+          socket.destroy();
+        }
       });
       server.on('error', (error) => {
         this.error = error.message;
