@@ -35,9 +35,17 @@ function resetTaskControlToken() {
 /** Coverage verdicts that do not block an unattended commit. */
 const CLEAN_COVERAGE = new Set(['ok', 'intentional-disabled']);
 
+/**
+ * Work that ends by itself. The drain after the Host lock waits for in-flight
+ * requests, so they never need the user's consent: a background connection
+ * must not turn a Settings switch into a restart prompt.
+ */
+const SELF_ENDING_WORK = new Set(['request']);
+
 function inspectionClean(inspection) {
   if (!inspection || inspection.ok !== true) return false;
-  if (inspection.activeWork.length > 0 || inspection.scheduledWork.length > 0) return false;
+  if (inspection.activeWork.some((item) => !SELF_ENDING_WORK.has(item?.kind))) return false;
+  if (inspection.scheduledWork.length > 0) return false;
   return Object.values(inspection.coverage || {}).every((value) => CLEAN_COVERAGE.has(value));
 }
 

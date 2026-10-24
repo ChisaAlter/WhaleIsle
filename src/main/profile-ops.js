@@ -161,7 +161,9 @@ async function alignHarnessAfterProfileChange(startHarness, downError, ownerToke
     return { harnessRestarted: false, error: downError };
   }
   try {
-    const outcome = await startHarness(ownerToken);
+    // The switch or plugin action the user clicked is the consent; the
+    // restart still locks and drains Host work but does not ask again.
+    const outcome = await startHarness(ownerToken, { preConfirmed: true });
     // The restart may resolve a refusal rather than reject — e.g. the task
     // protection funnel cancelled, or a foreign maintenance owner blocked it.
     // A resolved non-proceed is not a successful restart.
