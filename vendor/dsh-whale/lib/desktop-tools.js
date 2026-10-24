@@ -167,9 +167,9 @@ export function registerDesktopTools(ctx) {
     name: 'whale_desktop_config',
     description:
       'Patch renderer-writable desktop settings (same whitelist as the Settings UI: theme, '
-      + 'locale, openAtLogin, closeToTray, dshbotEnabled, whaleAssistantEnabled, harness* '
+      + 'locale, openAtLogin, closeToTray, projectEnabled, whaleAssistantEnabled, harness* '
       + 'policy keys, githubToken). Built-in plugin toggles and theme apply immediately; '
-      + 'toggling whaleAssistantEnabled or dshbotEnabled restarts Harness — your own session '
+      + 'toggling a built-in plugin restarts Harness — your own session '
       + 'goes with it, so tell the user first.',
     timeoutMs: CONTROL_TIMEOUT_MS,
     parameters: {
@@ -177,7 +177,7 @@ export function registerDesktopTools(ctx) {
         type: 'object',
         required: true,
         additionalProperties: true,
-        description: 'Config patch, e.g. {theme:"dark"} or {dshbotEnabled:true}.',
+        description: 'Config patch, e.g. {theme:"dark"} or {projectEnabled:true}.',
       },
     },
     output: genericOutput,

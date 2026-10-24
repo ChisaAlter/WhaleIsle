@@ -125,11 +125,6 @@ export type DesktopConfig = {
   downloadRoute?: DownloadRoute | ''
   dshHome?: string
   /**
-   * Whether the desktop mounts the built-in dshbot Bots plugin; the shell
-   * restarts Harness after this field changes.
-   */
-  dshbotEnabled?: boolean
-  /**
    * Whether the desktop mounts the built-in Project plugin (default off);
    * the shell restarts Harness after this field changes.
    */

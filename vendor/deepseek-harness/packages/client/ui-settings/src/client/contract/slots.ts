@@ -148,8 +148,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'settings.pet.item': { kind: 'list'; scope: 'root'; owner: SettingsPetItemOwnerProps }
     /**
      * One switch row inside the Built-in features section — the single place
-     * where a desktop feature that ships with the app (Project, Bots, the
-     * whale assistant, remote workspaces) is turned on or off. Options: `id`
+     * where a desktop feature that ships with the app (Project, the whale
+     * assistant, remote workspaces) is turned on or off. Options: `id`
      * (row key), `order` (row position). Rows draw their own label and own
      * their write path, exactly like General rows. Declared at runtime by
      * ui-settings-general's Built-in features entry.

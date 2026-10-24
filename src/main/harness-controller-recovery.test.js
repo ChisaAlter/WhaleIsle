@@ -234,7 +234,7 @@ const recoverySteps = [
   'resolveLaunchTarget', 'ensureTaskControlPlugin', 'ensureDesktopPlatformSession',
   'ensureDesktopOfficeRuntime', 'removeDshMarketPreset', 'ensureUsagePanelPlugin',
   'ensureDshImPlugin', 'ensureDesktopMarket', 'removeLegacyDshbotPreset',
-  'ensureDshbotPlugin', 'ensureDshProjectPlugin', 'ensureDshWhalePlugin', 'ensureDshRemotePlugin',
+  'ensureDshProjectPlugin', 'ensureDshWhalePlugin', 'ensureDshRemotePlugin',
   'ensureWorkspace', 'showHarness',
 ];
 for (const step of recoverySteps) {

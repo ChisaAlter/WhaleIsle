@@ -4,7 +4,7 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { Switch, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import { desktopShell, type DesktopConfig } from './desktop-shell.ts'
-import css from './DshbotRow.module.css'
+import css from './WhaleAssistantRow.module.css'
 
 /** Full Settings-row props. */
 export type WhaleAssistantRowProps =

@@ -21,8 +21,7 @@ const DROPPED = [
   // Settings → 用量统计 ships first-party from vendor/dsh-usage-panel.
   // Reject marketplace installs of the same package to avoid a second mount.
   'dsh-usage-panel',
-  // Bots ships first-party from vendor/dshbot.
-  // Reject marketplace installs of the same package to avoid a second mount.
+  // Bots was removed; keep old profile installs out of the composition.
   'dshbot',
   'dsh-project',
   // The whale-girl assistant ships first-party from vendor/dsh-whale.

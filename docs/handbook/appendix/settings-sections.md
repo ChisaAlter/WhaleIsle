@@ -7,7 +7,7 @@
 | `general` | 通用设置 | `IconSettingsOutline16` | harness 设置 shell |
 | `interface` | 界面设置 | `IconPanelLeftOutline16` | harness 设置 shell |
 | `conversation` | 对话：权限、发送、工作详情、链接、下一句提示、可视化回复、自定义指令 | `IconBrowseOutline16` | `settings.conversation.item`，各功能包注册行 |
-| `features` | 内置功能：鲸鱼娘助理、Project、Bots、远程工作区开关 | `IconPersonalizationOutline16` | `settings.features.item`；仅桌面 |
+| `features` | 内置功能：鲸鱼娘助理、Project、远程工作区开关 | `IconPersonalizationOutline16` | `settings.features.item`；仅桌面 |
 | `appearance` | 外观、主题、壁纸行 | `IconLightOutline16` | `ui-theme` |
 | `models` | 提供方与模型 | `IconDataOutline16` | QA §2 |
 | `agent-presets` | Agent 预设 | `IconAgentPresetOutline16` | 组合模型与能力 |

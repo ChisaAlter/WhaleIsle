@@ -233,8 +233,8 @@ function gateFallback(state, guard, handler) {
 }
 
 /**
- * Wrap the Agent-resolution chokepoint shared by Schedule delivery, dshbot
- * routines, IM channels, and Typert lookups. Locked calls fail with the
+ * Wrap the Agent-resolution chokepoint shared by Schedule delivery, IM
+ * channels, and Typert lookups. Locked calls fail with the
  * stable `session/agent-busy` result shape so producers keep their armed
  * state instead of crashing.
  */

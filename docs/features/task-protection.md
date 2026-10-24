@@ -17,8 +17,8 @@
 
 ## User paths
 
-1. 显式退出（主窗配置为退出、托盘、菜单、IPC、最后 Launcher 关闭）直接进入关闭流程，不再弹工作清单或「退出未完成」确认；关闭到托盘按用户设置。正常退出保留 inspect→acquire→drain→复查，检查或关停失败则记录诊断并自动清理退出。菜单/托盘的重启、重载遇到活动任务仍确认，取消无副作用；设置里的内置插件开关（Bots / Project / 鲸鱼娘 / 远程工作区）和插件启用/禁用引起的重启是 `preConfirmed`，不弹确认。在途请求会在加锁后的 drain 中自然结束，不单独触发确认。
-2. 更新 / 重装前锁定任务接纳，排空已接纳请求，复查无活动后放行安装器 / 差量写入；锁中 Schedule、Bots、外部 hook 的到期/触发保留状态不丢。安装/更新入口（更新询问、版本卡、「在线安装」、增量更新、runtime 安装、peer prepare-install）本身即用户显式同意，`preConfirmed` 下不再弹第二道确认。
+1. 显式退出（主窗配置为退出、托盘、菜单、IPC、最后 Launcher 关闭）直接进入关闭流程，不再弹工作清单或「退出未完成」确认；关闭到托盘按用户设置。正常退出保留 inspect→acquire→drain→复查，检查或关停失败则记录诊断并自动清理退出。菜单/托盘的重启、重载遇到活动任务仍确认，取消无副作用；设置里的内置插件开关（Project / 鲸鱼娘 / 远程工作区）和插件启用/禁用引起的重启是 `preConfirmed`，不弹确认。在途请求会在加锁后的 drain 中自然结束，不单独触发确认。
+2. 更新 / 重装前锁定任务接纳，排空已接纳请求，复查无活动后放行安装器 / 差量写入；锁中 Schedule 与外部 hook 的到期/触发保留状态不丢。安装/更新入口（更新询问、版本卡、「在线安装」、增量更新、runtime 安装、peer prepare-install）本身即用户显式同意，`preConfirmed` 下不再弹第二道确认。
 3. Launcher 侧的「停止桌面」与运行时装对**外部桌面**先走同义握手；旧桌面无握手时要求正常退出并确认进程结束，不回退直接 taskkill /F。launcher 发起的停止带 `preConfirmed`——点击即同意，inspect→acquire→commit 照跑但两道确认门整体跳过，永远零弹窗。
 
 ## Invariants
@@ -40,7 +40,7 @@
 - 保护发生在第一个副作用之前：`quitting` 标志、`cleanupDesktopResources`、`harness.shutdown()`、`app.quit()`、`quitAndInstall`、拉起安装器、`taskkill` 都排在决策之后。
 - 接纳锁按 `hostGeneration` + `owner` 计数；inspect→acquire→drain→inspect 完成前不得放行，drain 中不得把 pending 当空。drain 集合只含会结束的准入（HTTP/fallback 写/resolveAgent/jobs.start/connection 瀑布）——升级 socket 只做连接期准入（锁内新升级 503、存量不进 drain，socket 上交付的工作由服务 chokepoint 拦截）。中断无损的请求同样锁内 503、存量不进 drain：GET/HEAD/OPTIONS 读请求（包括 `GET /api/dsh-pad.stream` 这类窗口打开期间一直保持的 watch 流），以及 `/api/conversation.next-prompt` 的下一句建议（POST，单次最长约 30 秒模型时间）。
 - `before-quit` 的 preventDefault 不拦截其他监听者（`ipc-components.js` 的 svc.shutdown、main-launcher tray.destroy）——附属清理由协调器 commit 钩子统一触发。
-- Schedule 与 Bots 同按声明开关取覆盖：flag 未设报 `intentional-disabled`，已设而服务缺失即 `unavailable`（fail closed）；加载失败/未知/超时一律阻止自动提交。
+- Schedule 按声明开关取覆盖：flag 未设报 `intentional-disabled`，已设而服务缺失即 `unavailable`（fail closed）；加载失败/未知/超时一律阻止自动提交。Bots/dshbot 已移除，不再列为生产者覆盖项，保留的旧 catalog 不触发工作检查。
 - 壳侧 PTY/preview/components 关停视为「受影响工作」计入确认面，但不算 Host 任务。
 - `preConfirmed` 用于显式同意的入口（统一 quit、peer `stop-desktop`、launcher `stopOp`、全部 install/update 链、peer `prepare-install`）：inspect、Host 接纳锁与 drain 照常。quit 不再弹工作清单及故障恢复确认；正常流程等待上限 30 秒，失败后附加清理最多等待 5 秒再结束桌面进程。Windows 组件树的同步 taskkill 单次另有 5 秒系统调用时限，期间 JavaScript 定时器会等待主线程恢复。restart/reload 确认不变。
 
@@ -48,7 +48,7 @@
 
 - 2026-10-01 用户全面修复授权下的安装版退出本地修复：`src/main/closing-overlay.js` 与对应测试 — 只限制遮罩绘制等待，不改变主题、任务检查、接纳锁、排空和 Harness 正常关停合同。
 
-- 本次启动链接修复（2026-09-29 用户确认）：`src/main/desktop-plugin-link.js` 与共用测试、`task-control-overlay.js`、`platform-session-overlay.js`、`usage-panel-preset.js`、`dsh-im-desktop.js`、`dshbot-desktop.js`、`dsh-whale-desktop.js`、`dsh-remote-desktop.js` 的链接处理；本卡、配套决策与 QA 证据。
+- 本次启动链接修复（2026-09-29 用户确认）：`src/main/desktop-plugin-link.js` 与共用测试、`task-control-overlay.js`、`platform-session-overlay.js`、`usage-panel-preset.js`、`dsh-im-desktop.js`、`dsh-whale-desktop.js`、`dsh-remote-desktop.js` 的链接处理；本卡、配套决策与 QA 证据。
 
 - `src/main/task-protection*.js`（新，协调器 + 与入口接线）
 - `src/main/index.js` / `launcher-service.js` / `update.js` / `update-updater.js` / `runtime-install.js` / `ipc-delta.js` / `delta/install.js` / `ipc-components.js` / `main-launcher/index.js`（只加协调器调用 + 挪副作用时机）
@@ -59,7 +59,7 @@
 
 - 不放开 `cordis.patch.yml` 用户面；不引入第二条插件装载通道。
 - 不改 `desktop-install-control` 既有路由语义；协调器用同环回 + Bearer 模式新增端点。
-- 不静默启用 schedule / dshbot / 任何上游能力。
+- 不静默启用 schedule / 任何上游能力。
 - 不把 `taskkill /F` 作为「无握手」回退——旧桌面走正常退出确认。
 
 ## Gates

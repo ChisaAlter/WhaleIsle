@@ -13,7 +13,6 @@ const { removeDshMarketPreset } = require('./dshmarket-preset');
 const { ensureUsagePanelPlugin } = require('./usage-panel-preset');
 const { ensureSessionSearchOverlay } = require('./session-search-overlay');
 const { ensureDshImPlugin } = require('./dsh-im-desktop');
-const { ensureDshbotPlugin } = require('./dshbot-desktop');
 const { ensureDesktopDshProject, projectAvailable } = require('./dsh-project-desktop');
 const { createProjectEnvironment } = require('./project-environment');
 const { ensureDesktopTaskControl } = require('./task-control-overlay');
@@ -639,7 +638,6 @@ const harness = new HarnessController({
   ensureUsagePanelPlugin,
   ensureSessionSearchOverlay,
   ensureDshImPlugin,
-  ensureDshbotPlugin,
   ensureDshProjectPlugin: ensureDesktopDshProject,
   projectAvailable,
   ensureTaskControlPlugin: ensureDesktopTaskControl,
@@ -686,10 +684,6 @@ function describeWorkItem(item) {
       return `${item.count || 1} 条已建立的远程连接`;
     case 'schedule-task':
       return `定时提醒${item.due ? '已到期' : '待触发'}：${item.title || item.id}`;
-    case 'bot-routine':
-      return `机器人例程${item.detail === 'running' ? '运行中' : '待执行'}（${item.id}）`;
-    case 'bot-inbox':
-      return `机器人收件箱有 ${item.count || ''} 条待处理消息`;
     case 'pty':
       return `${item.count || 1} 个打开的终端会话`;
     default:

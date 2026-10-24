@@ -17,7 +17,6 @@ const {
   OFFICIAL_TEMPLATE_BUNDLES,
 } = require('./plugins');
 const { DSH_IM_ALIASES } = require('./dsh-im-desktop');
-const { DSHBOT_ALIASES } = require('./dshbot-desktop');
 const { DSH_PROJECT_ALIASES } = require('./dsh-project-desktop');
 const { DSH_MARKET_ALIASES } = require('./dsh-market-desktop');
 const { DSH_WHALE_ALIASES } = require('./dsh-whale-desktop');
@@ -101,7 +100,6 @@ function pluginDisableGuardError(name) {
   }
   if (DSH_IM_ALIASES.includes(name)
     || DSH_MARKET_ALIASES.includes(name)
-    || DSHBOT_ALIASES.includes(name)
     || DSH_WHALE_ALIASES.includes(name)
     || DSH_REMOTE_ALIASES.includes(name)
     || USAGE_PANEL_ALIASES.includes(name)) {
@@ -281,7 +279,7 @@ async function enablePlugin(name, { dsh, startHarness, configIO } = {}) {
 }
 
 /** Config fields that choose which built-in plugin overlays the next Harness start composes. */
-const BUILT_IN_PLUGIN_TOGGLES = ['dshbotEnabled', 'projectEnabled', 'whaleAssistantEnabled', 'remoteWorkspaceEnabled'];
+const BUILT_IN_PLUGIN_TOGGLES = ['projectEnabled', 'whaleAssistantEnabled', 'remoteWorkspaceEnabled'];
 
 /**
  * Apply a renderer-writable config patch with the same normalization and
@@ -324,7 +322,7 @@ function applyRendererConfigPatch(patch, { app, applyAppTheme, harness, startHar
     harness.refreshPolicy();
   }
   if (harness && typeof startHarness === 'function' && toggles.length) {
-    // The Bots / Project / whale-assistant / remote-workspace toggles change
+    // The Project / whale-assistant / remote-workspace toggles change
     // which overlays the next start composes, so Harness restarts. The revert
     // stays inside the maintenance slot the write acquired.
     const restart = () => holdThrough(token, enqueueProfileAlign(async () => {

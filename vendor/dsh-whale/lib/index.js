@@ -126,8 +126,7 @@ export function whaleDisplayName(settings) {
 /**
  * Find-or-create the persistent assistant session. The session id lives in
  * the settings catalog so restarts reuse the same conversation; a missing
- * or dead session id falls through to a fresh create exactly once, under
- * the same stable-id contract the dshbot room sessions use.
+ * or dead session id falls through to a fresh create exactly once.
  */
 const pendingEnsures = new WeakMap();
 

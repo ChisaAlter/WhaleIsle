@@ -369,9 +369,9 @@ const QA_REQUIRED_STEPS = [
   'market.discover',
   'market.installed',
   'usage-stats.section',
-  'features.dshbotSwitch',
+  'features.botsRemoved',
   'interface.sessionLogMenu',
-  'plugin.dshbot.defaultOff',
+  'plugin.botsRemoved',
 ];
 
 function gitHeadSubject(workspacePath) {
@@ -1972,26 +1972,20 @@ async function runReleaseUiWalk(wc, helpers) {
   await dismiss();
   await sleep(300);
 
-  // The source-QA fixture uses the desktop default (dshbotEnabled: false).
-  // Prove that Built-in features exposes the opt-in switch and that the
-  // disabled plugin has not silently mounted a Bots sidebar tab.
+  // Bots is removed: the Built-in features page lists no Bots switch.
   const featuresOpened = await openSettings('features');
   const botsSetting = await waitUntil(() => pageEval(wc, () => {
     const dialog = dshDialogNamed('^设置$|^settings$');
     const nav = document.querySelector('[data-dsh-settings-section="features"]');
     const control = dialog && Array.from(dialog.querySelectorAll('[role="switch"]'))
       .find((el) => /(bots|机器人)/i.test(dshLabel(el)));
-    if (!dialog || !nav || !control) return null;
     return {
-      nav: Boolean(nav && nav.getAttribute('aria-current') === 'true'),
-      switchPresent: Boolean(control && dshShown(control)),
-      off: control?.getAttribute('aria-checked') === 'false',
-      beta: Boolean(dialog && /测试中|beta/i.test(dialog.innerText || '')),
+      nav: Boolean(dialog && nav?.getAttribute('aria-current') === 'true'),
+      switchPresent: Boolean(control),
     };
-  }), 10_000, 200, (state) => state?.nav && state?.switchPresent);
-  rec('features.dshbotSwitch', Boolean(featuresOpened && botsSetting?.nav
-    && botsSetting?.switchPresent && botsSetting?.off && botsSetting?.beta),
-  `nav=${botsSetting?.nav} switch=${botsSetting?.switchPresent} off=${botsSetting?.off} beta=${botsSetting?.beta}`);
+  }), 10_000, 200, (state) => state?.nav);
+  rec('features.botsRemoved', Boolean(featuresOpened && botsSetting?.nav && !botsSetting?.switchPresent),
+    `nav=${botsSetting?.nav} switch=${botsSetting?.switchPresent}`);
 
   // The single Session-menu entry no longer has an Interface visibility switch.
   await dismiss();
@@ -2011,7 +2005,7 @@ async function runReleaseUiWalk(wc, helpers) {
       dshShown(el) && /(bots|机器人)/i.test(dshLabel(el)));
     return Boolean(tab);
   });
-  rec('plugin.dshbot.defaultOff', !botsTab, botsTab ? 'Bots tab mounted while default switch is off' : 'Bots tab absent');
+  rec('plugin.botsRemoved', !botsTab, botsTab ? 'Retired Bots tab is still mounted' : 'Bots tab absent');
 
   } catch (error) {
     rec('walk.uncaught', false, error && error.stack ? error.stack : String(error));

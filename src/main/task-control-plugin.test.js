@@ -6,6 +6,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
+const fs = require('node:fs');
+const os = require('node:os');
 const { pathToFileURL } = require('url');
 const { execFileSync } = require('node:child_process');
 const { Readable } = require('node:stream');
@@ -215,6 +217,48 @@ test('schedule coverage honors the declared enabled flag', async () => {
   } finally {
     delete process.env.DSHD_SCHEDULE_ENABLED;
   }
+});
+
+test('inspection ignores retired bots flags and catalog while preserving the supported schema', async (t) => {
+  const { createControlState } = await load('state.js');
+  const { collectInspection } = await load('inspection.js');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'task-control-retired-bots-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const names = ['DSH_HOME', 'DSHD_DSHBOT_ENABLED', 'DSHD_SCHEDULE_ENABLED'];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  t.after(() => {
+    for (const name of names) {
+      if (previous[name] === undefined) delete process.env[name];
+      else process.env[name] = previous[name];
+    }
+  });
+  process.env.DSH_HOME = home;
+  delete process.env.DSHD_SCHEDULE_ENABLED;
+  const catalog = JSON.stringify({
+    routines: [{ id: 'retired-routine', lastOutcome: 'queued', pendingRunId: 'run-1' }],
+    items: [{ inbox: [{ routineId: 'retired-routine', runId: 'run-1' }] }],
+  });
+  const catalogFile = path.join(home, 'dshbot-catalog.json');
+  fs.writeFileSync(catalogFile, catalog);
+  const state = createControlState();
+  const ctx = { get: (name) => ({
+    agents: { list: () => [{ id: 'ordinary-session', status: 'running' }] },
+    jobs: { list: () => [] },
+  })[name] };
+  for (const flag of [undefined, '1']) {
+    if (flag === undefined) delete process.env.DSHD_DSHBOT_ENABLED;
+    else process.env.DSHD_DSHBOT_ENABLED = flag;
+    assert.deepEqual(await collectInspection(ctx, state, { now: () => 42 }), {
+      ok: true,
+      hostGeneration: state.hostGeneration,
+      observedAt: 42,
+      locked: false,
+      activeWork: [{ kind: 'agent', id: 'ordinary-session', detail: 'running' }],
+      scheduledWork: [],
+      coverage: { agents: 'ok', jobs: 'ok', schedule: 'intentional-disabled' },
+    });
+  }
+  assert.equal(fs.readFileSync(catalogFile, 'utf8'), catalog);
 });
 
 function fakeRes() {

@@ -33,8 +33,8 @@ function linkIntoProfileModules(sourceDir, profileDir) {
  * Wire the desktop-owned `dsh-task-control` Host plugin: a `--patch` overlay
  * (`desktop-plugins/dsh-task-control/desktop-task-control.patch.yml`) carries
  * the package-name insert, and a profile node_modules junction to vendor
- * makes the name resolvable. Unlike dshbot there is no settings toggle — task
- * protection is required on EVERY start (full and skip) because quit/update
+ * makes the name resolvable. Task protection is required on EVERY start
+ * (full and skip) because quit/update
  * admission is not a user option. Missing vendor files fail the start as
  * desktop runtime damage.
  *

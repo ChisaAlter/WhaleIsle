@@ -55,7 +55,6 @@ const DEFAULTS = {
   // enum mirrors src/launcher/release-source.js ROUTES keys).
   downloadRoute: '',
   disabledPlugins: [],
-  dshbotEnabled: false,
   projectEnabled: false,
   // Built-in assistant is available on first launch; persisted opt-outs win.
   whaleAssistantEnabled: true,
@@ -137,7 +136,7 @@ function normalizeRendererConfigPatch(patch) {
   }
   const next = {};
   for (const [key, value] of Object.entries(patch)) {
-    if (['closeToTray', 'openAtLogin', 'openDevTools', 'harnessAutoRestart', 'autoStartDesktop', 'dshbotEnabled', 'projectEnabled', 'whaleAssistantEnabled', 'remoteWorkspaceEnabled'].includes(key)) {
+    if (['closeToTray', 'openAtLogin', 'openDevTools', 'harnessAutoRestart', 'autoStartDesktop', 'projectEnabled', 'whaleAssistantEnabled', 'remoteWorkspaceEnabled'].includes(key)) {
       if (typeof value !== 'boolean') {
         throw new TypeError(`${key} must be a boolean`);
       }
@@ -285,16 +284,15 @@ function normalizePluginRecovery(config) {
 
 function normalizeDisabledPlugins(list) {
   const { withoutDshImAliases } = require('./dsh-im-desktop');
-  const { withoutDshbotAliases } = require('./dshbot-desktop');
   const { withoutDshWhaleAliases } = require('./dsh-whale-desktop');
   const { withoutDshRemoteAliases } = require('./dsh-remote-desktop');
   const { withoutUsagePanelAliases } = require('./usage-panel-preset');
   const { withoutTaskControlAliases } = require('./task-control-overlay');
-  return [...new Set(withoutTaskControlAliases(withoutDshWhaleAliases(withoutDshbotAliases(withoutDshRemoteAliases(withoutUsagePanelAliases(withoutDshImAliases(
+  return [...new Set(withoutTaskControlAliases(withoutDshWhaleAliases(withoutDshRemoteAliases(withoutUsagePanelAliases(withoutDshImAliases(
     (Array.isArray(list) ? list : [])
       .map((name) => String(name || '').trim())
       .filter(Boolean),
-  )))))))];
+  ))))))];
 }
 
 function normalizeLauncherSettings(config) {
@@ -519,6 +517,8 @@ function readConfigLayers() {
   }
   delete config.pluginSubagent;
   delete config.pluginGenUi;
+  delete config.dshbotEnabled;
+  delete config.dshbotPreset;
   return { config, stored, creds, credentialsNeedWrite: needsWrite, configUnreadable, credentialsUnreadable };
 }
 
@@ -569,6 +569,8 @@ function saveConfig(next) {
   merged.locale = merged.locale === 'en' ? 'en' : 'zh';
   delete merged.pluginSubagent;
   delete merged.pluginGenUi;
+  delete merged.dshbotEnabled;
+  delete merged.dshbotPreset;
   const { apiKey, baseUrl, githubToken, remoteToken, remoteRelayToken, remoteDevices, ...publicLayer } = merged;
   if (!isDeepStrictEqual(stored, publicLayer)) {
     writeJson(configPath(), publicLayer);

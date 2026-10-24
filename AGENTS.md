@@ -22,7 +22,7 @@ Read the relevant module, not every document. Update changed product facts in th
 
 ## Running the app
 
-`npm start` rebuilds stale client output before launching Electron. Remove `ELECTRON_RUN_AS_NODE` from the launch environment if the host sets it. After product runtime changes, restart the repository app; documentation and tooling changes do not require launching it. `vendor/dshbot` is linked into the runtime, so its changes need a restart.
+`npm start` rebuilds stale client output before launching Electron. Remove `ELECTRON_RUN_AS_NODE` from the launch environment if the host sets it. After product runtime changes, restart the repository app; documentation and tooling changes do not require launching it.
 
 Source Electron accepts `--background` to show initial main/launcher windows without activation. Later user entries retain normal focus behavior; recovery, update confirmations and normal quit can still require attention. An older already-running owner does not support this flag, so quit that owner normally before starting the new source.
 

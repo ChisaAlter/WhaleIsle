@@ -16,7 +16,7 @@ Windows 安装包由 [Development CI](../../.github/workflows/test.yml) 的 wind
 
 ### 0.3 失败与数据边界
 
-区分产品故障、测试工具错误和环境缺失；未执行不记为通过。保护用户数据、权限和密钥，造障使用获准的隔离环境。源码检查通过不能否定安装版真实故障。dshbot 的随包、默认关闭、启用重启和 Bots 页签行为见 [dshbot 功能说明](../features/dshbot.md)。
+区分产品故障、测试工具错误和环境缺失；未执行不记为通过。保护用户数据、权限和密钥，造障使用获准的隔离环境。源码检查通过不能否定安装版真实故障。Bots/dshbot 已移除；功能缺席、旧受管挂载清理和用户数据保留见 [移除说明](../features/dshbot.md)。
 
 ### 0.4 历史模型网关配置示例
 
@@ -721,7 +721,7 @@ Windows 安装包由 [Development CI](../../.github/workflows/test.yml) 的 wind
 
 ---
 
-## 10. 扩展、市场与 dshbot
+## 10. 扩展、市场与旧版迁移
 
 ### TC-EXT-001 · 设置分区可达 · P0
 
@@ -759,16 +759,16 @@ Windows 安装包由 [Development CI](../../.github/workflows/test.yml) 的 wind
 
 **期望：** 可进入；取消无坏状态。
 
-### TC-EXT-007 · dshbot 桌面内置与升级迁移 · P0
+### TC-EXT-007 · Bots 移除与升级数据保留 · P0
 
 **步骤：**
 
-1. 全新安装使用默认设置，确认「机器人（Bots）」关闭，侧栏不出现 Bots 页签；随包已有 dshbot，无需安装任何插件。
-2. 在 设置 → 界面设置 打开带「测试中」徽标的「机器人（Bots）」，确认 Harness 自动重启、重新就绪后 Bots 页签出现并可打开。保持开启，正常重启及「跳过用户插件」恢复启动后页签仍在。
-3. 旧预置升级确认受管装载块被迁移清理、开启时由内置 overlay 接管；机器人设置、记忆、房间 preset、会话保留。关闭 Bots 后确认 Harness 自动重启、页签消失，既有数据仍保留；重新开启后原数据可读。
-4. 确认插件排查不提供 dshbot 的禁用/卸载入口（desktop-builtin）；挂载只由上述设置开关控制。造障时核对缺损归因为内置组件损坏：关闭状态不因 dshbot vendor 缺损阻断启动，开启状态的源、声明入口或运行时依赖缺损须阻断启动，「跳过用户插件」不得绕过。按造障类 P0 约定保留证据并恢复现场，不能安全执行的子路径如实标 Blocked。
+1. 全新安装后确认界面设置没有「机器人（Bots）」开关，侧栏没有 Bots 页签及联系人、群聊、任务、例程入口；安装资源不包含 `vendor/dshbot`，全量和「跳过用户插件」恢复启动均不传 dshbot overlay。
+2. 在隔离的旧版环境预留 `dshbotEnabled: true`、`dshbotPreset: true`、受管 patch 块、桌面 overlay 与桌面 junction，并记录 catalog、记忆、例程笔记、房间 preset、会话日志及附件的文件清单和摘要。升级后旧开关不生效，旧 Bots 工作不再执行。
+3. 确认只清理旧桌面受管 patch 块、overlay 文件及明确指向旧 `desktop-plugins/dshbot` 或当前安装 `vendor/dshbot` 的 profile junction。其他用户 patch、真实安装目录、pnpm 链接及旧目录内其他内容保留；前述用户数据与升级前一致。`DROPPED` 继续剥离同名 profile 装载行，市场和聊天安装通道不能恢复 dshbot。
+4. 再次正常和 skip 启动，确认不重新挂载、不因 dshbot 缺席误报内置组件损坏，数据仍保留。按影响验证普通会话、插件受管 Session、Project、鲸鱼娘、IM 和既有 schedule。
 
-**期望：** 桌面随包交付 `vendor/dshbot`，`dshbotEnabled` 默认 false；关闭时移除受管旧块 / overlay，不校验 vendor、不阻断启动、不删用户数据。开启时 `desktop-dshbot.patch.yml` overlay 在每次启动（全量及 skip）挂载，切换自动重启 Harness，Bots 页签可达且旧数据保全；启用时 vendor 源、声明入口或运行时依赖缺损必须 fail closed。契约见 [dshbot feature 卡](../features/dshbot.md)及[内置插件适配决定](../decisions/implemented/bug-fix/2026-09-25-vendored-plugins-017-contract-drift.md)。默认关闭不是本条 Pass 的充分证据，启用、升级、skip、排查归因与数据保全子路径均须按实测记录。
+**期望：** 功能、设置开关、源码快照、打包运行时与桌面挂载全部移除；迁移只清理受管装载残留，保留用户数据与通用插件能力。精确边界见[移除说明](../features/dshbot.md)，执行细节见[安装包手册](tc-ext-007-dshbot-install-smoke.md)。本段为当前验收要求，未执行的路径不记为通过；下方旧报告及汇总表中的历史结果只对应其原版本。
 
 **2026-08-26 源码实机（不填本表 Pass）：** 云端 Linux X11 GUI 对源码 Electron 完整轮换 A/B(自动)/C 三相：未装分支 walk 全绿 → `dsh plugin add github:…#path:/vendor/dshbot`（钉到 `7972a34`）后探针翻转（Bots 页签出现、已安装列出、`dshbot-room` preset 自装）→ remove + 重启回未装分支且三处残留全净。9 个 dshbot 套件 95/95、全仓 1099/0。B 相手工建群因无 `DEEPSEEK_API_KEY` BLOCKED；Windows 安装包三相维持 BLOCKED。报告：[results/2026-08-26/tc-ext-007-dshbot.md](results/2026-08-26/tc-ext-007-dshbot.md)。
 

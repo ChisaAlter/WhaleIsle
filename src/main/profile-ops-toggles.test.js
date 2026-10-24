@@ -10,7 +10,7 @@ function store(initial) {
 }
 
 test('a cancelled toggle restart writes the toggle back and reports it to the Settings window', async () => {
-  const config = store({ projectEnabled: true, dshbotEnabled: false }), logs = [];
+  const config = store({ projectEnabled: true, whaleAssistantEnabled: false }), logs = [];
   const saved = await applyRendererConfigPatch({ projectEnabled: false }, {
     harness: {}, configIO: config.io, waitForRestart: true, log: line => logs.push(line),
     startHarness: async () => ({ proceeded: false, code: 'cancelled' }),
@@ -23,15 +23,15 @@ test('a cancelled toggle restart writes the toggle back and reports it to the Se
 });
 
 test('a completed toggle restart keeps the new value without asking again', async () => {
-  const config = store({ dshbotEnabled: false });
+  const config = store({ whaleAssistantEnabled: false });
   const restarts = [];
-  const saved = await applyRendererConfigPatch({ dshbotEnabled: true }, {
+  const saved = await applyRendererConfigPatch({ whaleAssistantEnabled: true }, {
     harness: {}, configIO: config.io, waitForRestart: true, startHarness: async (_token, options) => { restarts.push(options); },
   });
   assert.deepEqual(restarts, [{ preConfirmed: true }]);
-  assert.equal(saved.dshbotEnabled, true);
+  assert.equal(saved.whaleAssistantEnabled, true);
   assert.equal(saved.restartCancelled, undefined);
-  assert.equal(config.read().dshbotEnabled, true);
+  assert.equal(config.read().whaleAssistantEnabled, true);
 });
 
 test('a restart that fails after teardown is not mistaken for a refusal', async () => {
