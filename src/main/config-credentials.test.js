@@ -173,3 +173,40 @@ test('selective saves still observe external config and credential changes', () 
   assert.equal(loadConfig().locale, 'en');
   assert.equal(loadConfig().apiKey, 'external-key');
 });
+
+test('a save while the keychain is unavailable leaves the credentials untouched', () => {
+  resetDisk();
+  setSafeStorageForTests(fakeSafeStorage());
+  saveConfig({ apiKey: 'sk-kept', githubToken: 'gh-kept', workspace: userData });
+  const before = fs.readFileSync(credentialsPath());
+  setSafeStorageForTests(fakeSafeStorage({ available: false }));
+
+  saveConfig({ theme: 'midnight' });
+  assert.throws(() => saveConfig({ apiKey: 'sk-new' }), /凭据暂时无法读取/);
+  assert.deepEqual(fs.readFileSync(credentialsPath()), before);
+
+  setSafeStorageForTests(fakeSafeStorage());
+  const config = loadConfig();
+  assert.equal(config.apiKey, 'sk-kept');
+  assert.equal(config.githubToken, 'gh-kept');
+  assert.equal(config.theme, 'midnight');
+});
+
+test('an unparsable config file is moved aside before defaults are saved', () => {
+  resetDisk();
+  const file = path.join(userData, 'config.json');
+  fs.writeFileSync(file, '{"projectEnabled": tru', 'utf8');
+
+  saveConfig({ theme: 'midnight' });
+  const aside = fs.readdirSync(userData).filter(name => name.startsWith('config.json.corrupt-'));
+  assert.equal(aside.length, 1);
+  assert.equal(fs.readFileSync(path.join(userData, aside[0]), 'utf8'), '{"projectEnabled": tru');
+  assert.equal(loadConfig().theme, 'midnight');
+});
+
+test('an unreadable config file refuses the save instead of writing defaults over it', () => {
+  resetDisk();
+  fs.mkdirSync(path.join(userData, 'config.json'));
+  assert.throws(() => saveConfig({ theme: 'midnight' }), /设置文件暂时无法读取/);
+  assert.equal(fs.statSync(path.join(userData, 'config.json')).isDirectory(), true);
+});
