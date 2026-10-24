@@ -5,6 +5,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SidebarRightGuideBox } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { EmptyState } from './EmptyState.tsx'
 import { NS } from './locales.ts'
@@ -93,9 +94,10 @@ function renderOccupant(
 
 function currentCwd(useSessions: SurfacesRootProps['useSessions']): string | undefined {
   return useSessions((s) => {
+    // A presented working directory (a Project's repository) outranks the
+    // Session's own cwd, matching the terminal and open-in-app targets.
     const mainView = Object.values(s.byId).find(session => (session.retainedBy.mainView ?? 0) > 0)
-    const next = mainView?.cwd
-    return next ? next : undefined
+    return sessionWorkingDirectory(mainView)
   })
 }
 
