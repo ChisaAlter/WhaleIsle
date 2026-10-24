@@ -60,13 +60,16 @@ function exempt(path) {
 }
 
 // Requests whose interruption loses nothing. They are still refused while
-// locked, but a lock does not wait for them: the composer's next-prompt
-// suggestion holds its request open for up to 30 s of model time, which is
-// the whole default drain window.
+// locked, but a lock does not wait for them. Reads have no side effect to
+// protect, and watch streams such as `GET /api/dsh-pad.stream` stay open for
+// as long as the window shows them. The composer's next-prompt suggestion is
+// a POST that holds its request open for up to 30 s of model time, the whole
+// default drain window.
 const UNDRAINED_PATHS = new Set(['/api/conversation.next-prompt']);
 
-export function undrained(url) {
-  const path = String(url || '').split('?', 1)[0];
+export function undrained(req) {
+  if (isReadMethod(req)) return true;
+  const path = String(req.url || '').split('?', 1)[0];
   return UNDRAINED_PATHS.has(path);
 }
 
@@ -81,7 +84,7 @@ function gateHttpHandler(state, guard, path, handler) {
       res.end(JSON.stringify({ error: { code: admission.code } }));
       return;
     }
-    if (undrained(req.url)) {
+    if (undrained(req)) {
       admission.done();
       return handler(req, res);
     }

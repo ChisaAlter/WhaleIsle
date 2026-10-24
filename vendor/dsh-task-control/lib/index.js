@@ -84,7 +84,7 @@ export function apply(ctx) {
       response.end(JSON.stringify({ error: { code: admission.code } }));
       return;
     }
-    if (undrained(request.url)) {
+    if (undrained(request)) {
       admission.done();
       return next();
     }

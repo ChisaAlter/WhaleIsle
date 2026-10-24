@@ -329,6 +329,29 @@ test('a pending next-prompt suggestion does not block drain but is refused while
   await suggestion;
 });
 
+test('an open watch stream does not block drain but new reads are refused while locked', async () => {
+  const { createControlState, acquireLock } = await load('state.js');
+  const { wrapWebServer } = await load('wrap.js');
+  const state = createControlState();
+  const webServer = {
+    prefixes: new Map(),
+    exact: new Map(),
+    register(route) { this.prefixes.set(route.path, route); return () => {}; },
+  };
+  assert.equal(wrapWebServer(state, webServer), true);
+  let close;
+  webServer.register({ kind: 'prefix', path: '/api', handler: () => new Promise((resolve) => { close = resolve; }) });
+  const stream = webServer.prefixes.get('/api').handler({ method: 'GET', url: '/api/dsh-pad.stream?watch=' }, fakeRes());
+
+  const acquired = await acquireLock(state, { owner: 'desktop-stop', drainTimeoutMs: 50 });
+  assert.equal(acquired.ok, true);
+  const refused = fakeRes();
+  await webServer.prefixes.get('/api').handler({ method: 'GET', url: '/api/dsh-pad.stream?watch=' }, refused);
+  assert.equal(refused.status, 503);
+  close();
+  await stream;
+});
+
 test('an open upgrade socket does not block drain; new upgrades 503 while locked', async () => {
   const { createControlState, acquireLock } = await load('state.js');
   const { wrapWebServer } = await load('wrap.js');
@@ -659,6 +682,6 @@ test('response lifecycle setup failure does not leak admission', async () => {
   const failure = new Error('response lifecycle unavailable');
   const route = { kind: 'exact', path: '/probe', handler() { assert.fail('must not dispatch'); } };
   wrapWebServer(state, { exact: new Map([[route.path, route]]), prefixes: new Map(), register() {} });
-  await assert.rejects(route.handler({ method: 'GET', url: '/probe' }, { once() { throw failure; } }), failure);
+  await assert.rejects(route.handler({ method: 'POST', url: '/probe' }, { once() { throw failure; } }), failure);
   assert.equal(state.pending.size, 0);
 });
