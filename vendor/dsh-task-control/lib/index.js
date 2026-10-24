@@ -18,7 +18,7 @@
 
 import { admit, createControlState } from './state.js';
 import { CONTROL_PREFIX, createControlHandler } from './http.js';
-import { disposeGuards, wrapJobs, wrapSessionController, wrapWebServer } from './wrap.js';
+import { disposeGuards, undrained, wrapJobs, wrapSessionController, wrapWebServer } from './wrap.js';
 
 export const name = 'dsh-task-control';
 export const inject = [];
@@ -83,6 +83,10 @@ export function apply(ctx) {
       response.writeHead(503, { 'content-type': 'application/json; charset=utf-8' });
       response.end(JSON.stringify({ error: { code: admission.code } }));
       return;
+    }
+    if (undrained(request.url)) {
+      admission.done();
+      return next();
     }
     try {
       await next();

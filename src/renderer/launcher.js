@@ -68,6 +68,8 @@ const ERROR_LABELS = {
   'config-unreadable': '桌面配置无法读取，已停止恢复操作。请先恢复配置文件或读取权限。',
   'delta-not-found': '没有可用的增量包，请改用完整更新。',
   'install-in-progress': '已有安装任务进行中。',
+  'dshd/drain-timeout': '桌面端仍有请求未在 30 秒内结束，已取消本次操作，请稍后重试。',
+  'dshd/lock-held': '桌面端正在执行其他关闭或更新操作，请稍后重试。',
 };
 
 const ERROR_MESSAGE_PATTERNS = [
@@ -90,6 +92,11 @@ function errText(input, fallback = '操作失败，请重试。') {
     .replace(/^Error invoking remote method '[^']*':\s*/i, '')
     .replace(/^Error:\s*/, '')
     .trim();
+  // Exact machine codes first: `dshd/drain-timeout` must not read as a
+  // network timeout.
+  if (ERROR_LABELS[text]) {
+    return ERROR_LABELS[text];
+  }
   for (const [pattern, label] of ERROR_MESSAGE_PATTERNS) {
     if (pattern.test(text)) {
       return label;
@@ -97,9 +104,6 @@ function errText(input, fallback = '操作失败，请重试。') {
   }
   if (text && !/^[A-Za-z][\w./:-]*$/.test(text)) {
     return text;
-  }
-  if (ERROR_LABELS[text]) {
-    return ERROR_LABELS[text];
   }
   if (ERROR_LABELS[code]) {
     return ERROR_LABELS[code];

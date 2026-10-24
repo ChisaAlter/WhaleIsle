@@ -36,7 +36,7 @@
 
 - 被调用方等待的 drain 截止 timer 必须保持事件循环，完成后清除；没有其他活动句柄时也须返回排空或超时结果。
 - 保护发生在第一个副作用之前：`quitting` 标志、`cleanupDesktopResources`、`harness.shutdown()`、`app.quit()`、`quitAndInstall`、拉起安装器、`taskkill` 都排在决策之后。
-- 接纳锁按 `hostGeneration` + `owner` 计数；inspect→acquire→drain→inspect 完成前不得放行，drain 中不得把 pending 当空。drain 集合只含会结束的准入（HTTP/fallback 写/resolveAgent/jobs.start/connection 瀑布）——升级 socket 只做连接期准入（锁内新升级 503、存量不进 drain，socket 上交付的工作由服务 chokepoint 拦截）。
+- 接纳锁按 `hostGeneration` + `owner` 计数；inspect→acquire→drain→inspect 完成前不得放行，drain 中不得把 pending 当空。drain 集合只含会结束的准入（HTTP/fallback 写/resolveAgent/jobs.start/connection 瀑布）——升级 socket 只做连接期准入（锁内新升级 503、存量不进 drain，socket 上交付的工作由服务 chokepoint 拦截）。中断无损的请求（目前只有 `/api/conversation.next-prompt` 的下一句建议，单次最长约 30 秒模型时间）同样锁内 503、存量不进 drain。
 - `before-quit` 的 preventDefault 不拦截其他监听者（`ipc-components.js` 的 svc.shutdown、main-launcher tray.destroy）——附属清理由协调器 commit 钩子统一触发。
 - Schedule 与 Bots 同按声明开关取覆盖：flag 未设报 `intentional-disabled`，已设而服务缺失即 `unavailable`（fail closed）；加载失败/未知/超时一律阻止自动提交。
 - 壳侧 PTY/preview/components 关停视为「受影响工作」计入确认面，但不算 Host 任务。

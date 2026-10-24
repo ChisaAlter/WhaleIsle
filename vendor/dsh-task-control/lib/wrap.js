@@ -59,6 +59,17 @@ function exempt(path) {
   return path === CONTROL_PREFIX || path.startsWith(`${CONTROL_PREFIX}/`);
 }
 
+// Requests whose interruption loses nothing. They are still refused while
+// locked, but a lock does not wait for them: the composer's next-prompt
+// suggestion holds its request open for up to 30 s of model time, which is
+// the whole default drain window.
+const UNDRAINED_PATHS = new Set(['/api/conversation.next-prompt']);
+
+export function undrained(url) {
+  const path = String(url || '').split('?', 1)[0];
+  return UNDRAINED_PATHS.has(path);
+}
+
 function gateHttpHandler(state, guard, path, handler) {
   return async function gatedRoute(req, res) {
     if (!guard.active) return handler(req, res);
@@ -69,6 +80,10 @@ function gateHttpHandler(state, guard, path, handler) {
       }
       res.end(JSON.stringify({ error: { code: admission.code } }));
       return;
+    }
+    if (undrained(req.url)) {
+      admission.done();
+      return handler(req, res);
     }
     let finished = false;
     const done = () => {

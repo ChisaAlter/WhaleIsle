@@ -304,6 +304,31 @@ test('gated http handler returns 503 while locked and drains on finish', async (
   assert.ok(calls.length === 0);
 });
 
+test('a pending next-prompt suggestion does not block drain but is refused while locked', async () => {
+  const { createControlState, acquireLock } = await load('state.js');
+  const { wrapWebServer } = await load('wrap.js');
+  const state = createControlState();
+  const webServer = {
+    prefixes: new Map(),
+    exact: new Map(),
+    register(route) { this.prefixes.set(route.path, route); return () => {}; },
+  };
+  assert.equal(wrapWebServer(state, webServer), true);
+  let finish;
+  webServer.register({ kind: 'prefix', path: '/api', handler: () => new Promise((resolve) => { finish = resolve; }) });
+  const suggestion = webServer.prefixes.get('/api').handler(
+    { method: 'POST', url: '/api/conversation.next-prompt' }, fakeRes());
+
+  const acquired = await acquireLock(state, { owner: 'desktop-update', drainTimeoutMs: 50 });
+  assert.equal(acquired.ok, true);
+  assert.equal(acquired.drainedPending, 0);
+  const refused = fakeRes();
+  await webServer.prefixes.get('/api').handler({ method: 'POST', url: '/api/conversation.next-prompt' }, refused);
+  assert.equal(refused.status, 503);
+  finish();
+  await suggestion;
+});
+
 test('an open upgrade socket does not block drain; new upgrades 503 while locked', async () => {
   const { createControlState, acquireLock } = await load('state.js');
   const { wrapWebServer } = await load('wrap.js');
