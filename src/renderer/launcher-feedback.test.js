@@ -134,8 +134,9 @@ test('real Electron: floating results preserve layout, safe confirmation and tas
   assert.match(result.statusReadFailure.body, /暂时无法读取桌面状态/);
   assert.equal(result.nonPluginFailure.modalHidden, true);
   assert.equal(result.nonPluginFailure.guidanceVisible, false, 'port failures never suggest disabling plugins');
-  assert.match(result.stopFailure.status, /桌面端正在处理任务，请稍后重试。/, 'a failed close names its reason in the status line');
-  assert.equal(result.stopFailure.toastCount, 0, 'the status line is not repeated in a floating notice');
+  assert.equal(result.stopFailure.toastCount, 1, 'a failed close raises one floating result');
+  assert.doesNotMatch(result.stopFailure.status, /busy|桌面端正在处理任务/, 'the status line stays short');
+  assert.equal(result.stopFailure.verdict, '桌面端正在处理任务，请稍后重试。', 'diagnostics show the translated reason, not the code');
 });
 
 test('real Electron: boot controls keep async feedback in place and preserve cancellation', { skip: !electron }, async () => {

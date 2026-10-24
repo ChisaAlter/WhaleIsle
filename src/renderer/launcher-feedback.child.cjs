@@ -254,9 +254,10 @@ app.whenReady().then(async () => {
     await clearNotices();
     desktopStatus = { ...desktopStatus, desktop: { state: 'ready' }, lastStart: { ok: true, at: 'stop-1' }, forensics: { plugins: [] } };
     await js("void runDesktopAction('stopDesktop', 'stopping')");
-    await waitFor("document.getElementById('home-status').textContent.includes('桌面端正在处理任务')");
+    await waitFor("[...document.querySelectorAll('.shell-feedback-text')].some(node => node.textContent.includes('桌面端正在处理任务'))");
     await delay(100);
-    result.stopFailure = await js("({status:document.getElementById('home-status').textContent,toastCount:document.querySelectorAll('.shell-feedback-toast').length})");
+    result.stopFailure = await js("({status:document.getElementById('home-status').textContent,verdict:document.getElementById('home-recovery-verdict').textContent,toastCount:document.querySelectorAll('.shell-feedback-toast').length})");
+    await clearNotices();
     // Closing pending tasks retains their terminal result and actual cancel entry.
     await js("document.querySelector('[data-tab=home]').click(); void installRuntime()");
     await waitFor("document.getElementById('btn-install-cancel').checkVisibility()");

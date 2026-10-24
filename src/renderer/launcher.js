@@ -1087,9 +1087,7 @@ function renderHomeStatus(status) {
   if (recovery?.skipUserPlugins) {
     bits.push('当前跳过用户插件');
   }
-  if (!desktopActionBusy() && desktopActionError) {
-    bits.push(errText(desktopActionError, '启动或关闭未完成'));
-  } else if (!desktopActionBusy() && !desktopIsRunning(desktop) && last?.ok === false) {
+  if (!desktopActionBusy() && (desktopActionError || (!desktopIsRunning(desktop) && last?.ok === false))) {
     bits.push('启动或关闭未完成，详见启动诊断');
   }
   if (desktopOperation) bits.push(`已等待 ${Math.floor((Date.now() - desktopOperation.startedAt) / 1000)} 秒`);
@@ -1169,6 +1167,9 @@ async function runDesktopAction(method, kind = 'starting', ...args) {
     try { await refreshStatus(); }
     catch { setHint('暂时无法读取桌面状态，请稍后重新打开首页。'); }
     paint();
+    // One floating result; the status line stays short and the raw detail
+    // lives in the folded startup diagnostics.
+    if (desktopActionError) setHint(errText(desktopActionError, '启动或关闭未完成'));
   }
   return result;
 }
@@ -1197,7 +1198,7 @@ async function askPluginRecovery(guidance) {
     const result = guidance.kind === 'disable'
       ? await runDesktopAction('disableSuspectsAndStart', 'starting', guidance.names)
       : await runDesktopAction('skipUserPlugins');
-    // The home status line already names a failed start.
+    // runDesktopAction already raised the failure notice.
     if (!result && desktopActionError) return;
     if (guidance.kind !== 'disable' || !result) return;
     if (result.ok === false) {
