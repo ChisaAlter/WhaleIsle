@@ -2183,24 +2183,7 @@ async function installTag(tag, kind) {
   if (!api || !tag || updateBusy) {
     return;
   }
-  const launcherPackage = lastStatus?.launcherPackage === true;
-  let title = '安装版本';
-  let message = `将下载 ${tag} 安装包并替换当前安装。`;
-  let confirmText = '安装';
-  if (launcherPackage) {
-    message = `将下载并安装 ${tag} 桌面端，期间桌面端会短暂关闭。`;
-  } else if (kind === 'update') {
-    title = '更新桌面端';
-    message = `将下载 ${tag} 的完整安装包，安装程序会替换当前版本。`;
-    confirmText = '完全下载';
-  } else if (kind === 'switch') {
-    title = '切换版本';
-    message = `${tag} 早于当前版本，安装程序将覆盖当前安装。`;
-    confirmText = '切换';
-  }
-  if (!(await appConfirm({ title, body: message, confirmText }))) {
-    return;
-  }
+  // The version button names its action; clicking it is the consent.
   updateBusy = true;
   progressPanels.get('update-progress')?.show({ reset: true });
   const progressTitle = $('update-progress-title');
@@ -2251,13 +2234,6 @@ async function installTag(tag, kind) {
 async function installDelta(tag) {
   const api = pageShell();
   if (!api || typeof api.installDelta !== 'function' || !tag || updateBusy) {
-    return;
-  }
-  if (!(await appConfirm({
-    title: '增量更新',
-    body: `将通过增量包更新到 ${tag}，只下载变更部分。下载失败会停止，可返回选择完全下载。`,
-    confirmText: '增量更新',
-  }))) {
     return;
   }
   updateBusy = true;
@@ -2422,22 +2398,8 @@ function bind() {
   });
   $('btn-scan').addEventListener('click', () => refreshImport());
   $('btn-uninstall-app').addEventListener('click', async () => {
+    // The Windows uninstaller asks for its own confirmation.
     const usesSettings = $('btn-uninstall-app').textContent === '打开应用设置';
-    const ok = await appConfirm(usesSettings
-      ? {
-        title: '卸载 Whale Isle',
-        body: '将打开 Windows「设置 → 应用」，请在列表中完成卸载。',
-        confirmText: '打开设置',
-      }
-      : {
-        title: '卸载 Whale Isle',
-        body: '将启动 Windows 卸载程序并移除本机桌面端，其运行数据保留在本机。此操作不可撤销。',
-        confirmText: '卸载',
-        danger: true,
-      });
-    if (!ok) {
-      return;
-    }
     const restore = launcherButtonBusy($('btn-uninstall-app'), usesSettings ? '正在打开应用设置…' : '正在启动卸载程序…');
     try {
       const result = await api?.uninstallApp();

@@ -219,11 +219,11 @@ test('home uses one guarded start action and hides stale diagnostics throughout 
   assert.ok(r.layouts[1].width < r.layouts[0].width, 'zoom changes actual viewport geometry');
 });
 
-test('real Electron: delta fallback waits for confirmed installation and only actual success refreshes', { skip: !hasElectron }, async () => {
+test('real Electron: delta update starts on click, waits for confirmed installation and only actual success refreshes', { skip: !hasElectron }, async () => {
   const r = await runBound({ QA_DELTA_FEEDBACK: '1' });
   assert.equal(r.calls.filter(call => call.op === 'install-delta').length, 3);
   for (const item of r.cases) {
-    assert.equal(item.confirmationFocus, 'app-confirm-cancel', 'safe choice receives confirmation focus');
+    assert.equal(item.confirmHidden, true, 'the delta button starts the update without a second confirmation');
     assert.equal(item.pending.progressVisible, true);
     assert.equal(item.pending.busy, 'true');
     assert.equal(item.pending.modalHidden, true);
