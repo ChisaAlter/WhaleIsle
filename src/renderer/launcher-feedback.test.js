@@ -95,6 +95,7 @@ test('real Electron: floating results preserve layout, safe confirmation and tas
   assert.match(result.installTerminal.failure, /fixture install failure/);
   assert.match(result.importTerminal.failure, /未完成的导入事务/);
   assert.match(result.importRefused.feedback, /取消被拒绝：.*fixture cancellation refused/);
+  assert.equal(result.importRefused.toastCount, 0, 'the visible import pane carries the refusal');
   assert.equal(result.importRefused.retryable, true);
   assert.equal(result.importRefused.buttonBusy, 'true', 'a cancellation refusal does not finish the import');
   assert.equal(result.importCalls.length, 1);
@@ -133,6 +134,8 @@ test('real Electron: floating results preserve layout, safe confirmation and tas
   assert.match(result.statusReadFailure.body, /暂时无法读取桌面状态/);
   assert.equal(result.nonPluginFailure.modalHidden, true);
   assert.equal(result.nonPluginFailure.guidanceVisible, false, 'port failures never suggest disabling plugins');
+  assert.match(result.stopFailure.status, /桌面端正在处理任务，请稍后重试。/, 'a failed close names its reason in the status line');
+  assert.equal(result.stopFailure.toastCount, 0, 'the status line is not repeated in a floating notice');
 });
 
 test('real Electron: boot controls keep async feedback in place and preserve cancellation', { skip: !electron }, async () => {
