@@ -27,7 +27,7 @@ export interface PermissionRowInjected {
 
 /** Full component props. */
 export type PermissionRowProps =
-  PropsRuntime<'settings.general.item'>
+  PropsRuntime<'settings.conversation.item'>
   & PropsLocale<'settings.permission'>
   & InjectFace<PermissionRowInjected>
 

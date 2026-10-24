@@ -46,6 +46,8 @@ async function bench() {
     'settings.general.item': { kind: 'list', scope: 'root' },
     'settings.interface.item': { kind: 'list', scope: 'root' },
     'settings.appearance.item': { kind: 'list', scope: 'root' },
+    'settings.conversation.item': { kind: 'list', scope: 'root' },
+    'settings.usage.item': { kind: 'list', scope: 'root' },
   }, (_p: { renderSlot?: unknown }) => null)
 
   const feature = await runtime.mount({ inject: [...inject], apply })
@@ -60,14 +62,18 @@ describe('conversation apply wiring (desktop peak/valley + session cost)', () =>
     await b.runtime.dispose()
   })
 
-  it('registers interface rows including session-cost and official peak/valley', async () => {
+  it('registers its settings rows on the Conversation, Interface, Appearance and usage pages', async () => {
     const b = await bench()
-    expect(b.slots.entries('settings.general.item').map(entry => entry.options.id))
-      .toEqual(['composer-enter', 'custom-instructions'])
-    expect(b.slots.entries('settings.interface.item').map(entry => entry.options.id)).toEqual([
-      'composer-beam', 'composer-resize', 'stats-line', 'session-cost', 'official-peak-valley', 'view-tabs', 'next-prompt',
-    ])
-    const beam = b.slots.entries('settings.interface.item')[0]
+    const row = (slot: 'settings.interface.item' | 'settings.appearance.item' | 'settings.usage.item', id: string) =>
+      b.slots.entries(slot).find(entry => entry.options.id === id)
+    expect(b.slots.entries('settings.general.item')).toHaveLength(0)
+    expect(b.slots.entries('settings.conversation.item').map(entry => entry.options.id))
+      .toEqual(['composer-enter', 'next-prompt', 'custom-instructions'])
+    expect(b.slots.entries('settings.interface.item').map(entry => entry.options.id))
+      .toEqual(['composer-resize', 'stats-line', 'view-tabs'])
+    expect(b.slots.entries('settings.usage.item').map(entry => entry.options.id))
+      .toEqual(['session-cost', 'official-peak-valley'])
+    const beam = row('settings.appearance.item', 'composer-beam')
     const beamInjected = (beam?.inject as unknown as () => BeamRowInjected)()
     expect(beamInjected.hooks.composerBeam.getSnapshot()).toBe(true)
     expect(beamInjected.hooks.composerBeamStyle.getSnapshot()).toEqual(DEFAULT_COMPOSER_BEAM_STYLE)
@@ -75,28 +81,29 @@ describe('conversation apply wiring (desktop peak/valley + session cost)', () =>
     expect(beamInjected.hooks.composerBeam.getSnapshot()).toBe(false)
     beamInjected.setComposerBeamStyle({ ...DEFAULT_COMPOSER_BEAM_STYLE, hue: 90 })
     expect(beamInjected.hooks.composerBeamStyle.getSnapshot().hue).toBe(90)
-    const resize = b.slots.entries('settings.interface.item')[1]
+    const resize = row('settings.interface.item', 'composer-resize')
     const resizeInjected = (resize?.inject as unknown as () => ResizeRowInjected)()
     expect(resizeInjected.hooks.composerResize.getSnapshot()).toBe(false)
     resizeInjected.setComposerResize(true)
     expect(resizeInjected.hooks.composerResize.getSnapshot()).toBe(true)
-    const stats = b.slots.entries('settings.interface.item')[2]
+    const stats = row('settings.interface.item', 'stats-line')
     const statsInjected = (stats?.inject as unknown as () => StatsLineRowInjected)()
     expect(statsInjected.hooks.statsLine.getSnapshot()).toBe(true)
     statsInjected.setStatsLine(false)
     expect(statsInjected.hooks.statsLine.getSnapshot()).toBe(false)
-    const tabs = b.slots.entries('settings.interface.item')[5]
+    const tabs = row('settings.interface.item', 'view-tabs')
     const tabsInjected = (tabs?.inject as unknown as () => ViewTabsRowInjected)()
     expect(tabsInjected.hooks.viewTabs.getSnapshot()).toBe(true)
     tabsInjected.setViewTabs(false)
     expect(tabsInjected.hooks.viewTabs.getSnapshot()).toBe(false)
-    const peakValley = b.slots.entries('settings.interface.item')[4]
+    const peakValley = row('settings.usage.item', 'official-peak-valley')
     const peakValleyInjected = (peakValley?.inject as unknown as () => PeakValleySettingsRowInjected)()
     expect(peakValleyInjected.hooks.peakValley.getSnapshot()).toBe(false)
     peakValleyInjected.setPeakValley(true)
     expect(peakValleyInjected.hooks.peakValley.getSnapshot()).toBe(true)
-    const typingFx = b.slots.entries('settings.appearance.item')
-    expect(typingFx.map(entry => entry.options.id)).toEqual(['composer-typing-fx'])
+    const typingFx = b.slots.entries('settings.appearance.item').filter(entry => entry.options.id === 'composer-typing-fx')
+    expect(b.slots.entries('settings.appearance.item').map(entry => entry.options.id).sort())
+      .toEqual(['composer-beam', 'composer-typing-fx'])
     const typingFxInjected = (typingFx[0]?.inject as unknown as () => TypingFxRowInjected)()
     expect(typingFxInjected.hooks.typingFx.getSnapshot()).toBe(false)
     expect(typingFxInjected.hooks.typingFxStyle.getSnapshot()).toEqual(DEFAULT_TYPING_FX_STYLE)
@@ -124,6 +131,8 @@ describe('conversation apply wiring (desktop peak/valley + session cost)', () =>
     expect(b.slots.entries('settings.general.item')).toHaveLength(0)
     expect(b.slots.entries('settings.interface.item')).toHaveLength(0)
     expect(b.slots.entries('settings.appearance.item')).toHaveLength(0)
+    expect(b.slots.entries('settings.conversation.item')).toHaveLength(0)
+    expect(b.slots.entries('settings.usage.item')).toHaveLength(0)
     expect(b.runtime.ctx.get('conversation')).toBeUndefined()
     await b.runtime.dispose()
   })

@@ -224,10 +224,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
 
   ctx.effect(() => () => { submissionPolicy.dispose() })
 
-  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
-    name: 'settings.general.item',
+  ctx.slots.inject('settings.conversation.item', () => ctx.slots.register({
+    name: 'settings.conversation.item',
     id: 'composer-enter',
-    order: 20,
+    order: 10,
     locale: NS,
     inject: (): EnterBehaviorRowInjected => ({
       hooks: { busyEnter: submissionPolicy.busyEnter },
@@ -235,10 +235,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     }),
   }, EnterBehaviorRow))
 
-  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
-    name: 'settings.general.item',
+  ctx.slots.inject('settings.conversation.item', () => ctx.slots.register({
+    name: 'settings.conversation.item',
     id: 'custom-instructions',
-    order: 30,
+    order: 60,
     locale: NS,
     inject: (): CustomInstructionsRowInjected => ({
       hooks: {
@@ -249,10 +249,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     }),
   }, CustomInstructionsRow))
 
-  ctx.slots.inject('settings.interface.item', () => ctx.slots.register({
-    name: 'settings.interface.item',
+  ctx.slots.inject('settings.appearance.item', () => ctx.slots.register({
+    name: 'settings.appearance.item',
     id: 'composer-beam',
-    order: 50,
+    order: 20,
     locale: NS,
     inject: (): BeamRowInjected => ({
       hooks: {
@@ -290,10 +290,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     }),
   }, StatsLineRow))
 
-  ctx.slots.inject('settings.interface.item', () => ctx.slots.register({
-    name: 'settings.interface.item',
+  ctx.slots.inject('settings.conversation.item', () => ctx.slots.register({
+    name: 'settings.conversation.item',
     id: 'next-prompt',
-    order: 85,
+    order: 40,
     locale: NS,
     inject: (): NextPromptRowInjected => ({
       hooks: { nextPrompt: submissionPolicy.nextPrompt, writable: submissionPolicy.writable },
@@ -301,10 +301,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     }),
   }, NextPromptRow))
 
-  ctx.slots.inject('settings.interface.item', () => ctx.slots.register({
-    name: 'settings.interface.item',
+  ctx.slots.inject('settings.usage.item', () => ctx.slots.register({
+    name: 'settings.usage.item',
     id: 'official-peak-valley',
-    order: 75, // directly below the session-stats row (70), above view-tabs (80)
+    order: 20, // below the session-cost row
     locale: NS,
     inject: (): PeakValleySettingsRowInjected => ({
       hooks: { peakValley: submissionPolicy.officialPeakValley, writable: submissionPolicy.writable },
@@ -315,10 +315,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   // The session-cost Interface row: the switch sits directly below the
   // session-stats row and gates the whole peak/valley dock row; its price
   // panel lives beside the figure on the composer dock.
-  ctx.slots.inject('settings.interface.item', () => ctx.slots.register({
-    name: 'settings.interface.item',
+  ctx.slots.inject('settings.usage.item', () => ctx.slots.register({
+    name: 'settings.usage.item',
     id: 'session-cost',
-    order: 72, // directly below the session-stats row (70), above peak/valley (75)
+    order: 10, // above the peak/valley row
     locale: NS,
     inject: (): CostSettingsRowInjected => ({
       hooks: {

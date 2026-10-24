@@ -17,7 +17,7 @@
 - 字段 `ui-conversation.customInstructions`：`z.string().max(1500)`，默认 `''`；`applies: live`（每次 `systemPrompt.assemble` 现读 `settings.get`）。
 - 空白（含纯空格）文本不产生 prompt 内容；非空文本前有一行说明性引导句。
 - 仅注册全局层 section/variable：对所有 scope（含子智能体）生效，除非该 scope 存在 `complete` section 或同名 shadow。
-- 设置在 General section 以 `settings.general.item` 块行注册（id `custom-instructions`），不新增独立 section 页、不新增窗口。
+- 设置在「对话」分区以 `settings.conversation.item` 块行注册（id `custom-instructions`），不新增独立 section 页、不新增窗口。
 - 文本框样式只用 `--dsw-alias-*` 令牌；文案经 `conversation` locale 命名空间（zh/en 双语键齐全）。
 
 ## Allowed touch
@@ -29,7 +29,7 @@
 ## Do not touch
 
 - `agent-instructions`（AGENTS.md 工作区指令）与 persona prefix/suffix 语义；本功能是用户设置项，不是工作区文件，不是部署人设。
-- 其他 settings.general.item 条目的 id/order；系统提示词其他 section 的内容与排序。
+- 其他 settings.conversation.item 条目的 id/order；系统提示词其他 section 的内容与排序。
 - 桌面覆盖层与 `cordis.patch.yml`（本功能不新增插件行）。
 
 ## Gates
