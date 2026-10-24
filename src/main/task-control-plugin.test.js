@@ -540,6 +540,31 @@ test('service replacement registers a fresh control route while preserving the h
   assert.equal(second.prefixes.has('/dshd-task-control'), false);
 });
 
+test('a request passing both the connection waterfall and its route counts once', async (t) => {
+  withLifecycleToken(t);
+  const { apply } = await load('index.js');
+  const webServer = lifecycleWebServer();
+  const ctx = lifecycleContext({ webServer });
+  t.after(() => ctx.dispose());
+  apply(ctx);
+  let finish;
+  const held = new Promise((resolve) => { finish = resolve; });
+  webServer.register({ kind: 'exact', path: '/api/slow', handler: async (_req, res) => { await held; res.end('done'); } });
+  const request = { method: 'POST', url: '/api/slow' };
+  const response = fakeRes();
+  let served;
+  ctx.emit('connection/request', request, response, () => {
+    served = webServer.exact.get('/api/slow').handler(request, response);
+    return served;
+  });
+  const inspection = await controlReply(webServer, 'inspect');
+  assert.deepEqual(inspection.activeWork, [{ kind: 'request', id: 'pending-requests', count: 1 }]);
+  finish();
+  await served;
+  assert.equal(response.body, 'done');
+  assert.deepEqual((await controlReply(webServer, 'inspect')).activeWork, []);
+});
+
 test('plugin unload and reload retain later wrappers and gate every entry with fresh state', async (t) => {
   withLifecycleToken(t);
   const { apply } = await load('index.js');

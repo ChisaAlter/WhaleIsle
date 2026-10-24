@@ -73,9 +73,22 @@ export function undrained(req) {
   return UNDRAINED_PATHS.has(path);
 }
 
+// One HTTP request passes two gates: the `connection/request` waterfall and
+// the route or fallback wrapper behind it. The first gate to admit it owns the
+// admission, so the request counts once in inspection and drain.
+const ADMITTED = Symbol('dsh-task-control.admitted');
+
+export function admittedBefore(req) {
+  return Boolean(req && req[ADMITTED]);
+}
+
+export function markAdmitted(req) {
+  if (req && typeof req === 'object') req[ADMITTED] = true;
+}
+
 function gateHttpHandler(state, guard, path, handler) {
   return async function gatedRoute(req, res) {
-    if (!guard.active) return handler(req, res);
+    if (!guard.active || admittedBefore(req)) return handler(req, res);
     const admission = admit(state, `http ${req.method} ${req.url}`);
     if (!admission.accepted) {
       if (!res.headersSent) {
@@ -84,6 +97,7 @@ function gateHttpHandler(state, guard, path, handler) {
       res.end(JSON.stringify({ error: { code: admission.code } }));
       return;
     }
+    markAdmitted(req);
     if (undrained(req)) {
       admission.done();
       return handler(req, res);
@@ -204,13 +218,14 @@ function gateFallback(state, guard, handler) {
     // The fallback serves SPA assets; locking it would white-out a visible
     // window during the confirmation wait. Mutating methods on unmatched
     // paths are still gated — they are not reads.
-    if (isReadMethod(req)) return handler(req, res);
+    if (isReadMethod(req) || admittedBefore(req)) return handler(req, res);
     const admission = admit(state, `fallback ${req.method} ${req.url}`);
     if (!admission.accepted) {
       res.writeHead(503, { 'content-type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: { code: admission.code } }));
       return undefined;
     }
+    markAdmitted(req);
     return Promise.resolve(handler(req, res)).finally(() => admission.done());
   };
   replaceOwnedProperty(guard, gated, WRAPPED, guard);

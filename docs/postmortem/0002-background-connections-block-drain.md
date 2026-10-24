@@ -16,6 +16,8 @@
 | 点「仍然重启」无效 | 开关转圈 30 秒，drain 超时，重启被拒，开关被写回原值 |
 | 关上再打开 Project 没了 | 上面两种都把 `projectEnabled` 写回关闭 |
 
+刚打开、什么都没操作也显示「2 个在途请求」，其实是同一条浮动面板连接被算了两次：一个请求先经过 `connection/request` 瀑布，再经过路由包装，两道门各自登记一次（标签 `conn GET /api/dsh-pad.stream?watch=` 与 `http GET /api/dsh-pad.stream?watch=`）。
+
 0.3.9 已有同类但间歇的问题：回复结束后的「下一句提示」`POST /api/conversation.next-prompt` 最长约 30 秒，正好撞上 drain 上限。
 
 ## Timeline
@@ -23,6 +25,7 @@
 - 0.3.9：下一句提示进入 drain 集合，更新与关闭桌面端间歇失败。
 - 0.3.10（#247）：浮动面板的 watch 流常驻，上述操作每次必失败。
 - 2026-10-24：用户报告更新失败、关闭失效、Project 开关弹窗与消失。本地以 main（等同 0.3.10）复现：Project 开关弹出「2 个在途请求」；点「仍然重启」后 30 秒被拒并回写；关闭主窗口约 31 秒后进程才退出。
+- 用 1 秒排空探针读出 0.3.10 刚启动时的两项在途请求：`http GET /api/dsh-pad.stream?watch=`、`conn GET /api/dsh-pad.stream?watch=`，同一连接被重复计数；修复后刚启动的在途工作为空，加锁立即成功。
 - 修复（#253）后同一脚本：开关不再弹窗、立即重启并保持开启；关闭主窗口 2 秒退出；drain 检查 8/8 通过，「关闭桌面端」3 秒完成。
 
 ## Root cause
@@ -47,6 +50,7 @@ drain 的本意是等「会结束、中断有损」的请求结束。实现上�
 
 - `vendor/dsh-task-control/lib/wrap.js`：GET/HEAD/OPTIONS 读请求与 `/api/conversation.next-prompt` 锁内仍返回 503，但不进入 drain 集合。
 - `src/main/task-control-plugin.test.js`：挂起的下一句提示、打开的 `GET /api/dsh-pad.stream` 都不阻塞 drain，且锁内新请求返回 503。
+- `vendor/dsh-task-control/lib/wrap.js` / `index.js`：先登记请求的那道门标记它，后一道门直接放行，一个请求只计一次；`task-control-plugin.test.js` 覆盖（修复前计 2）。
 - `src/main/task-protection.js`：在途请求不触发确认，由加锁后的 drain 等待；`task-protection.test.js` 覆盖。
 - `src/main/profile-ops.js` / `src/main/index.js`：内置插件开关与插件启用/禁用引起的重启带 `preConfirmed`，不弹确认；`profile-ops-toggles.test.js` 覆盖。
 
