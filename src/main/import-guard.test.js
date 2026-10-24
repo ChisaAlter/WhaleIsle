@@ -94,7 +94,7 @@ test('profile mutations ACQUIRE the slot while running and release on settle', a
   await disablePlugins([], { dsh, configIO: io });
   assert.equal(importGuard.isMaintenanceHeld(), false, 'early-return path releases the slot');
   // A guard-rejected name (builtin) also releases before returning.
-  await disablePlugins(['dshbot'], { dsh, configIO: io });
+  await disablePlugins(['dsh-whale'], { dsh, configIO: io });
   assert.equal(importGuard.isMaintenanceHeld(), false, 'guard-rejected path releases the slot');
   // slot is free again for a fresh operation.
   const token = importGuard.acquireMaintenance('import');

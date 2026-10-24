@@ -29,9 +29,9 @@ Socket work counts exclude destroyed transports and known loopback peers
 Agents, jobs and admitted requests are inspected independently, including work
 originating over local connections. This filter changes reporting, not admission.
 
-`coverage.*` ∈ `ok | intentional-disabled | unavailable`. `intentional-disabled`
-requires the desktop-declared off state (`DSHD_SCHEDULE_ENABLED` /
-`DSHD_DSHBOT_ENABLED` unset). `unavailable` blocks unattended commits.
+`coverage.*` ∈ `ok | intentional-disabled | unavailable`. Schedule coverage is
+`intentional-disabled` when the desktop declares it off (`DSHD_SCHEDULE_ENABLED`
+unset). `unavailable` blocks unattended commits.
 
 See `docs/features/task-protection.md` and
 `docs/superpowers/plans/2026-09-25-upstream-adoption-plan.md`.

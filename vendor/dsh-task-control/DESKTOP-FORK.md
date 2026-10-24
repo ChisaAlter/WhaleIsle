@@ -16,9 +16,8 @@ Upstream seams consumed (do not casually re-shape):
   registerFallback` — HTTP/WS admission gates (`packages/host/webserver`,
   `packages/client/connection`).
 - `sessionController.resolveAgent` / `jobs.start` — the chokepoints Schedule
-  runtime, dshbot routines, IM channels, and Typert lookups all pass through.
+  runtime, IM channels, and Typert lookups all pass through.
 - `schedule.catalog()` + `schedule.runtime.requestDrive()` — inspection and
   post-unlock re-drive of refused due deliveries.
 - `workspace/session-activity` — parity with upstream quit-inspection for
   loaded-session reminders.
-- `$DSH_HOME/dshbot-catalog.json` — read-only routine/inbox inspection.

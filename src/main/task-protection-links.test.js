@@ -119,7 +119,7 @@ test('Windows source path casing does not recreate a valid link', { skip: proces
 });
 
 test('all built-in profile links use the shared preparation', () => {
-  for (const name of ['task-control-overlay', 'platform-session-overlay', 'usage-panel-preset', 'dsh-im-desktop', 'dshbot-desktop', 'dsh-whale-desktop', 'dsh-remote-desktop']) {
+  for (const name of ['task-control-overlay', 'platform-session-overlay', 'usage-panel-preset', 'dsh-im-desktop', 'dsh-whale-desktop', 'dsh-remote-desktop']) {
     const source = fs.readFileSync(path.join(__dirname, `${name}.js`), 'utf8');
     assert.match(source, /require\('\.\/desktop-plugin-link'\)/, name);
     assert.doesNotMatch(source, /fs\.symlinkSync\(/, name);

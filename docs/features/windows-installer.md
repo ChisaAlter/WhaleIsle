@@ -10,7 +10,7 @@
 ## User paths
 
 1. 双击 Setup（GUI）：欢迎页（品牌侧栏：官方浅色侧栏底 `rgb(249,250,251)` + 鲸鱼娘大头徽标 + 产品名 `Whale Isle` + 细蓝强调线 + 右缘发丝线，MUI 本地化中文/英文文案）→ MIT 许可页 → 安装模式/目录选择（可改目录）→ 安装进度（右上白底鲸鱼娘大头徽标 header）→ 完成页（默认勾选「运行 Whale Isle」+ 产品仓库链接）。
-2. 静默安装 `Whale-Isle-Setup-<version>.exe /S`：跳过全部页面直接装完；同版本覆盖与升级通过目录事务替换应用文件，保留用户数据（QA TC-INST-009/012、dshbot smoke 依赖）。
+2. 静默安装 `Whale-Isle-Setup-<version>.exe /S`：跳过全部页面直接装完；同版本覆盖与升级通过目录事务替换应用文件，保留用户数据（QA TC-INST-009/012、TC-EXT-007 数据保留场景）。
 3. 卸载（设置 → 应用 / 开始菜单）：品牌化卸载向导，灰阶侧栏区分移除语境；不删 `userData`（桌面 dsh-home、会话都在那里）。
 
 ## Invariants

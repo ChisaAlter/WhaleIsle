@@ -12,7 +12,7 @@
 3. 浏览器用系统相机、SPA 内扫码或粘贴完整链接；Android 原生扫码/粘贴后由 APK 内的同一份 SPA 在 `https://appassets.androidplatform.net` WebView origin 打开 offer。
 4. SPA 用 `parseConnectionOfferFromUrl` 校验 offer，创建 `DaemonClient`，以 `role=client` 连中继，并用桌面 daemon 公钥建立端到端加密会话。首次配对用短期 pairing token 换取 `deviceSecret`；后续从稳定 origin 的 localStorage sticky 重连。
 5. 配对之后 SPA 是正在跑的 `dsh web` 第二客户端。ChisaCode 只负责配对 / E2EE / sticky。之后两条已配对通道：host RPC（白名单 unary + `respond`）进 loopback `dsh web`；Git 进 Electron `git.js`。禁止 `fetchAgents` / `createAgent`。Harness 未就绪时抽屉明示「桌面端未启动」。
-6. 抽屉对齐桌面侧栏：`session.list` + `workspace.list`（隐藏 blank 与 `origin:'dshbot'`）；按工作区分组 / 一个列表；搜索 `session.search`（snippet）；行 ⋯ 重命名 / Fork / 上移下移 / 归档（活会话无删除）；已归档取消归档或 `session.delete`；子智能体只读。
+6. 抽屉对齐桌面侧栏：`session.list` + `workspace.list`（隐藏 blank 与旧版保留的 `origin:'dshbot'` 会话）；按工作区分组 / 一个列表；搜索 `session.search`（snippet）；行 ⋯ 重命名 / Fork / 上移下移 / 归档（活会话无删除）；已归档取消归档或 `session.delete`；子智能体只读。
 7. 新会话：已有工作区、无工作区文件夹、浏览本机（`host.listDirectory` / `createDirectory` / `workspace.create` / `session.create`）。禁止 `host.pickDirectory`。
 8. Composer：`session.models` / `session.selectModel`（含 reasoningEffort）；权限与 Plan / 斜杠走 Typert `commands/execute`；发送 `session.prompt`、停止 `session.cancel`；审批 `respond` → `POST /api/respond`。
 9. 顶栏 Git 对齐 `git-titlebar`：Init、分支搜索/切换/创建并检出、stacked Commit & push / Publish / View PR。执行走 `dshd.git.rpc` → `shell:git-*`。不转发 stage / pty / writeFile。

@@ -880,7 +880,6 @@ class DshManager extends EventEmitter {
     // Producer-coverage declarations: the control plugin reports these as
     // `unavailable` (not `intentional-disabled`) when the flag is set but the
     // service is missing — a load failure must never read as "deliberately off".
-    if (config.dshbotEnabled === true) env.DSHD_DSHBOT_ENABLED = '1';
     if (config.scheduleEnabled === true) env.DSHD_SCHEDULE_ENABLED = '1';
     return env;
   }

@@ -18,7 +18,7 @@
 
 - 挂载只经桌面自有 overlay `desktop-plugins/dsh-remote/desktop-dsh-remote.patch.yml`，`remoteWorkspaceEnabled`（默认 true）为 true 时随**每次**启动（全量 + skip）经 `--patch` 传入；为 false 时 ensure 删除 overlay 并 strip 残留受管块，不校验 vendor、不阻断启动。绝不写用户层 `cordis.patch.yml`。
 - 包名保持 `dsh-remote` 并入 `DROPPED_BASENAMES`：市场目录隐藏、in-chat `install_dsh_plugin` 拒绝、`stripDroppedPlugins` 每次启动剥 profile manifest 同名行——内置为唯一供给；用户既有第三方安装的 `$DSH_HOME/remote-workspaces` 数据被内置接管。
-- 包名解析走 `profiles/web/node_modules/dsh-remote` junction → `vendor/dsh-remote` 源；运行时依赖（`ssh2`/`schemastery`/`iconv-lite`）随 `vendor/dsh-remote/node_modules` git 跟踪（`.gitignore` 例外，dshbot/dsh-im 同例）；`cpu-features` 可选原生面不跟踪、不放宽构建白名单。
+- 包名解析走 `profiles/web/node_modules/dsh-remote` junction → `vendor/dsh-remote` 源；运行时依赖（`ssh2`/`schemastery`/`iconv-lite`）随 `vendor/dsh-remote/node_modules` git 跟踪（`.gitignore` 例外，与 dsh-im 同例）；`cpu-features` 可选原生面不跟踪、不放宽构建白名单。
 - `vendor/dsh-remote` 砍 `update.js`：插件不做自更新，桌面统一管更新。
 - 目录选择器远程入口：`ui-directory-picker-browse` 声明新 `single` 远程 flow 子孔并渲染「本机 / 远程」tab 条；远程 client 占孔，孔空（开关 off / 未挂载）时弹窗退回本机-only；插件原 `-100` 抢孔机制随 client 重写移除，本机 tab 行为不变。
 - 凭据（密码/私钥引用）、`known_hosts.json`、镜像、审计、`audit.log` 全部落 `$DSH_HOME/remote-workspaces`，不碰官方 `~/.dsh`。密码按机器可选写入 OS secret store：Windows 走 DPAPI（CurrentUser，`.secrets/*.bin`），Linux 走 `secret-tool`，失败时回退明文并在机器记录/UI 上报 `secret-store-failed`；强制加密、既有明文迁移与失效 keychain 恢复策略仍属独立决策，当前默认保留上游的可选加密模型。
@@ -56,4 +56,4 @@
 - Design: 会话内方案评审（picker 合并 + 全量 port + 默认开 + 新 section + 保名）
 - Decision: [SSH 远程工作区以代码级合并为桌面内置功能](../decisions/implemented/product/2026-09-19-remote-workspace.md)
 - Upstream source: `github.com/flymysql/dsh-remote` v0.8.21（MIT）；上游 `packages/ssh/*` 仅作对照，不复用
-- 相关卡：`dshbot`（vendor 插件 + overlay + 开关管线同型）、`directory-picker-drives`（picker fork 现状）、`usage-stats`（desktop-plugins 覆盖同名市场安装先例）、`remote-settings`（手机 remote section，区分用）
+- 相关卡：`whale-assistant`（vendor 插件 + overlay + 开关管线）、`directory-picker-drives`（picker fork 现状）、`usage-stats`（desktop-plugins 覆盖同名市场安装先例）、`remote-settings`（手机 remote section，区分用）

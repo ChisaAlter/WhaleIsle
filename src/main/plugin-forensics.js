@@ -3,7 +3,6 @@
 const { OFFICIAL_TEMPLATE_BUNDLES } = require('./plugins');
 const { DESKTOP_PACKAGES } = require('../shared/harness-desktop-forks');
 const { DSH_IM_ALIASES } = require('./dsh-im-desktop');
-const { DSHBOT_ALIASES } = require('./dshbot-desktop');
 const { DSH_PROJECT_ALIASES, projectAvailable } = require('./dsh-project-desktop');
 const { DSH_WHALE_ALIASES } = require('./dsh-whale-desktop');
 const { DSH_REMOTE_ALIASES } = require('./dsh-remote-desktop');
@@ -29,21 +28,20 @@ const WEB_BOOT_AUDIT_ENTRY = /^\s*(?:\[(?:app|error|dsh)\]\s*)?(@?[\w.-]+(?:\/[\
 
 // Preset plugins stay here to block `shell:remove-plugin` on a same-named
 // profile row (the built-in itself never appears in the profile list — it
-// mounts via the desktop overlay). dsh-usage-panel, dsh-im, and dshbot are
+// mounts via the desktop overlay). dsh-usage-panel, dsh-im, and dsh-whale are
 // desktop built-in modules, but the `preset` marker
 // only gates removal; disable is blocked separately via IPC and config
 // alias-stripping. Project retains this removal guard while honoring disable.
-const PRESET_PLUGINS = new Set(['dsh-usage-panel', '@xmanrui/dsh-im', 'dsh-im', 'xmanrui-dsh-im', ...DSHBOT_ALIASES, ...DSH_PROJECT_ALIASES, ...DSH_WHALE_ALIASES, ...DSH_REMOTE_ALIASES]);
+const PRESET_PLUGINS = new Set(['dsh-usage-panel', '@xmanrui/dsh-im', 'dsh-im', 'xmanrui-dsh-im', ...DSH_PROJECT_ALIASES, ...DSH_WHALE_ALIASES, ...DSH_REMOTE_ALIASES]);
 const EVIDENCE_LINE_MAX = 240;
 
 // In-box names cover the harness fork packages plus the desktop built-in
-// modules (dsh-im, dsh-usage-panel, and dshbot, all overlay-mounted from
+// modules (dsh-im, dsh-usage-panel, and dsh-whale, all overlay-mounted from
 // vendor): breakage in any is desktop runtime damage — disable and
 // skip-user-plugins cannot repair it.
 const IN_BOX_PACKAGE_NAMES = new Set([
   ...DESKTOP_PACKAGES.map((pkg) => pkg.name),
   ...DSH_IM_ALIASES,
-  ...DSHBOT_ALIASES,
   ...DSH_WHALE_ALIASES,
   ...DSH_REMOTE_ALIASES,
   ...USAGE_PANEL_ALIASES,

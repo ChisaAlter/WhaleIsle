@@ -1,7 +1,6 @@
 /**
  * Self-provisioning of the `whale-girl` agent preset and the whale home
- * directory — mirrors dshbot's room-preset self-provisioning so a packaged
- * desktop runtime needs no manual install step.
+ * directory so a packaged desktop runtime needs no manual install step.
  *
  * Two artifacts under $DSH_HOME:
  *   .agent-presets/whale-girl/   the agent-plane composition (refreshed

@@ -34,7 +34,7 @@ Touching: `mobile-remote`。公约、视口阈值、非法证据沿用 [mobile-r
 | 审批 | pending 有无 + 命令/工具名 | 同有同无、同名 |
 | 工作区 | path 列表 | 集合相等 |
 
-**允许不一样（备注写明，不许装对齐）：** 单栏 vs 四栏几何；Files/Diff 写、Stage、PTY、Browser、MCP/技能写、市场、壁纸（冻结/NEVER）；手机藏 blank/dshbot（故意）；手机本地外观主题。
+**允许不一样（备注写明，不许装对齐）：** 单栏 vs 四栏几何；Files/Diff 写、Stage、PTY、Browser、MCP/技能写、市场、壁纸（冻结/NEVER）；手机藏 blank/旧版 dshbot 会话（故意，保留数据）；手机本地外观主题。
 
 ### 0.3 证据纪律
 
@@ -196,8 +196,8 @@ Touching: `mobile-remote`。公约、视口阈值、非法证据沿用 [mobile-r
 ### LIST-006 · blank 隐藏 · P0 · 空（故意不一样）
 - **期望：** 桌面 blank New Session 槽不出现在手机活列表；过滤后为空也不得画假「新会话」行。
 
-### LIST-007 · dshbot 隐藏 · P0 · 空
-- **期望：** `origin:'dshbot'` 行手机不出现（无此类数据填 N/A(前置)+说明查过）。
+### LIST-007 · 旧版 dshbot 会话保留并隐藏 · P0 · 空
+- **期望：** 已移除 Bots 的旧 `origin:'dshbot'` 会话数据保留，手机列表继续不展示；不为准备此用例重新启用或安装 Bots（无此类数据填 N/A(前置)+说明查过）。
 
 ### LIST-008 · 全量无假分页 · P0 · 边界
 - **期望：** 无「加载更多」；桌面「其余 N」那 N 条手机一次可滚到。

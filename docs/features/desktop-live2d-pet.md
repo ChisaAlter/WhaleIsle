@@ -67,7 +67,7 @@
 - 审批桥接（R3：**无现行代码路径**）：本仓 harness 无 `/api/respond` REST 端点（审批走 typert Remote 进程内协议），审批桥接由 `dsh-whale` 插件落地为 jsonl 事件桥。`shell:live2d-respond` IPC 形状已预留；相关 R3 模块（规划名 `pet-dsh-mux`）尚未实现，实现落地前不列入本卡 touch 面。
 - `src/main/pet-chat.js`, `src/main/pet-chat.test.js` — 对话/视觉请求封装（聊聊=whale `pet/chat` 优先、直连兜底；看看=whale `pet/look` 按所选 provider 路由，providerless 才直连）。
 - `src/renderer/pet-live2d.html`, `src/renderer/pet-live2d.js`, `src/renderer/pet-live2d/**` — THA4 ONNX 渲染器、ORT/WebGPU 资产、模型与角色图、鲸鱼娘 fallback 资产、聊聊对话卡。
-- `vendor/deepseek-harness/packages/client/ui-settings-general/src/client/PetSection*`、`desktop-shell.ts`、`locales.ts`、`index.ts` — 桌面自有 `pet` 设置分区（主窗 Settings shell），仅限该分区的增量改动（同 `dshbot`/`close-behavior` 行的桌面破例模式）；`vendor/deepseek-harness/packages/client/ui-settings/src/client/contract/slots.ts` 的 `settings.pet.item` 槽型登记（与其它 `settings.*.item` 同例）。
+- `vendor/deepseek-harness/packages/client/ui-settings-general/src/client/PetSection*`、`desktop-shell.ts`、`locales.ts`、`index.ts` — 桌面自有 `pet` 设置分区（主窗 Settings shell），仅限该分区的增量改动（同 `close-behavior` 行的桌面破例模式）；`vendor/deepseek-harness/packages/client/ui-settings/src/client/contract/slots.ts` 的 `settings.pet.item` 槽型登记（与其它 `settings.*.item` 同例）。
 - `src/renderer/pet-physics.js`, `src/renderer/pet-dialogue.js`, `src/renderer/pet-wander.js`, `src/renderer/dialogue/**` 及对应 `*.test.js` — 拖拽/抛掷纯物理层、台词数据与 sayer、自主乱逛纯逻辑层。
 - `src/preload/index.js`（`pet-live2d` 角色）、`src/main/config.js`（`live2dPet` 段）、`src/main/index.js`（协议注册 + 生命周期接入 + watcher/mux 装配）、`src/main/tray-menu.js`（开关项）与 `src/main/tray.js`（菜单重建 `refreshTrayMenu`）。
 - 对应 focused tests、`scripts/measure-whale-cdp.mjs`、`scripts/measure-whale-runtime.ps1` 与 `docs/qa/` 验收条目，仅用于复现性能样本。

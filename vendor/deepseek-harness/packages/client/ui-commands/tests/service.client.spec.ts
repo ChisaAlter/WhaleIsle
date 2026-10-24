@@ -47,7 +47,6 @@ interface BenchOptions {
   addressed?: SessionId
   initialOpen?: SessionFixture['initialOpen']
   snapshot?: SessionFixture['snapshot']
-  roomSessionIds?: readonly SessionId[]
   managedSessionIds?: readonly SessionId[]
 }
 
@@ -124,10 +123,6 @@ async function bench(opts: BenchOptions = {}) {
     })
   }
   sessions.list.update((draft) => {
-    for (const id of opts.roomSessionIds ?? []) {
-      const row = draft.byId[id]
-      if (row !== undefined) draft.byId[id] = { ...row, agentPreset: 'dshbot-room' } as typeof row
-    }
     for (const id of opts.managedSessionIds ?? []) {
       const row = draft.byId[id]
       if (row !== undefined) row.presentation = { owner: 'fixture', title: 'Managed', composer: 'managed' }
@@ -289,14 +284,16 @@ describe('candidates', () => {
     expect(list).toEqual([{ name: 'goal', description: 'leadingInput kind', hint: 'goal text' }])
   })
 
-  it('returns no candidates in a dshbot-room session', async () => {
-    const { source, listCalls } = await bench({ roomSessionIds: [sid('s1')] })
-    await expect(source.candidates(proj('s1'), req(''))).resolves.toEqual([])
-    expect(listCalls).toEqual([])
-    expect(source.matchSpace!(proj('s1'), '/goal')).toBeUndefined()
-    await expect(source.matchClaim!(proj('s1'), '/goal', new AbortController().signal)).resolves.toBeUndefined()
-    await expect(source.matchEnter!(proj('s1'), '/goal', new AbortController().signal, { attachments: 0 })).resolves.toBeUndefined()
-    expect(listCalls).toEqual([])
+  it('managed conversations expose command candidates and leading-input claims', async () => {
+    const { source, listCalls, executeCalls } = await bench({ managedSessionIds: [sid('s1')] })
+    const candidates = await source.candidates(proj('s1'), req(''))
+    expect(candidates.map(row => row.name)).toEqual(['goal', 'plan'])
+    const claim = { name: 'goal', token: '/goal ', hint: 'goal text' }
+    expect(source.matchSpace!(proj('s1'), '/goal')).toMatchObject({ claim })
+    await expect(source.matchClaim!(proj('s1'), '/goal', new AbortController().signal)).resolves.toMatchObject(claim)
+    await expect(source.matchEnter!(proj('s1'), '/goal', new AbortController().signal, { attachments: 0 })).resolves.toMatchObject({ claim })
+    expect(listCalls).toEqual([{ sessionId: sid('s1') }])
+    expect(executeCalls).toEqual([])
   })
 
   it('ranks rows through the shared name ranker: prefixes first, then alignment, then source order', async () => {

@@ -222,7 +222,6 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
    * shared name-and-label ranking for a typed one.
    */
   private async candidates(session: ClientSessionContext, req: CandidateRequest): Promise<readonly InputTriggerCandidate[]> {
-    if (this.isDshbotRoom(session)) return []
     const list = await this.directory.ensureReady(session.sessionId, req.signal)
     const rows: InputTriggerCandidate[] = []
     const seen = new Set<string>()
@@ -293,14 +292,12 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
    * executed.
    */
   private async matchClaim(session: ClientSessionContext, token: string, signal: AbortSignal): Promise<CommandClaim | undefined> {
-    if (this.isDshbotRoom(session)) return undefined
     await this.directory.ensureReady(session.sessionId, signal)
     return this.claimOf(session, token)
   }
 
   /** The host leadingInput claim a token names in the hot catalog; popup and action kinds never claim. */
   private claimOf(session: ClientSessionContext, token: string): CommandClaim | undefined {
-    if (this.isDshbotRoom(session)) return undefined
     if (!token.startsWith('/')) return undefined
     if (this.live.contributions.has(token.slice(1))) return undefined
     const desc = this.directory.resolve(session.sessionId, token.slice(1))
@@ -330,7 +327,6 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     signal: AbortSignal,
     envelope: SubmitEnvelope,
   ): Promise<PickOutcome> {
-    if (this.isDshbotRoom(session)) return undefined
     const trimmed = line.trim()
     if (!trimmed.startsWith('/')) return undefined
     const ws = trimmed.search(/\s/)
@@ -538,12 +534,5 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     const sessions = this.ctx.get('sessions')
     if (sessions === undefined) throw new Error('ui-commands: sessions service unavailable')
     return sessions
-  }
-
-  /** Room sessions hide slash commands; the catalog plugin stamps `dshbot-room` on the list row. */
-  private isDshbotRoom(session: ClientSessionContext): boolean {
-    const row = this.sessions().list.getSnapshot().byId[session.sessionId] as
-      { agentPreset?: string } | undefined
-    return row?.agentPreset === 'dshbot-room'
   }
 }

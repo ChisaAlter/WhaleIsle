@@ -57,7 +57,6 @@
 - [用量统计](modules/usage-stats.md)
 - [桌面宠物（Live2D 鲸鱼娘）](modules/desktop-pet.md)
 - [壁纸与外观桥接](modules/wallpaper.md)
-- [dshbot](modules/dshbot.md)
 - [鲸鱼娘助理（dsh-whale）](modules/whale-assistant.md)
 - [托盘、关闭与更新](modules/tray-update.md)
 - [远程设置](modules/remote-settings.md)

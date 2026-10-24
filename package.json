@@ -116,7 +116,6 @@
         "filter": [
           "dsh-usage-panel/**",
           "dsh-im/**",
-          "dshbot/**",
           "dsh-project/**",
           "dsh-task-control/**",
           "dsh-platform-session/**",
