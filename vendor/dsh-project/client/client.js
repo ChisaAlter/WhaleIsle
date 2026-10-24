@@ -132,6 +132,8 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     .dsh-project-hero-option-wrap{display:inline-flex;border-radius:var(--dsw-radius-sm)}
     .dsh-project-hero-option-wrap:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}
     .dsh-project-row-badge{flex:none;margin-left:6px;padding:0 5px;border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);font-size:10px;line-height:16px;font-weight:500;white-space:nowrap}
+    /* The badge sits against the row's time; a fixed time width keeps every badge in one column ("刚刚" is 20px, "59分钟" 34px). */
+    :has(>.dsh-project-row-badge)+span{min-width:36px;text-align:right}
     .dsh-project-heading,.dsh-project-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     .dsh-project-heading{justify-content:space-between;gap:4px;flex-wrap:nowrap}
     .dsh-project-list{display:flex;flex-direction:column;gap:2px}
