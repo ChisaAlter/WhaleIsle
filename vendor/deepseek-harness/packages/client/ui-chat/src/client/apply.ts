@@ -164,10 +164,10 @@ export function apply(ctx: Context): void {
       getSnapshot: () => tabs.get('browser') !== undefined,
       subscribe: listener => tabs.subscribe(listener),
     }
-    scope.slots.inject('settings.general.item', () => scope.slots.register({
-      name: 'settings.general.item',
+    scope.slots.inject('settings.conversation.item', () => scope.slots.register({
+      name: 'settings.conversation.item',
       id: 'link-opening',
-      order: 17,
+      order: 30,
       locale: NS,
       inject: (): LinkOpeningRowInjected => ({
         hooks: { linkOpening, browserAvailable },
@@ -202,10 +202,10 @@ export function apply(ctx: Context): void {
     }),
   }, PerformanceUsageRow))
 
-  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
-    name: 'settings.general.item',
+  ctx.slots.inject('settings.conversation.item', () => ctx.slots.register({
+    name: 'settings.conversation.item',
     id: 'transcript-view',
-    order: 12,
+    order: 20,
     locale: NS,
     inject: (): TranscriptViewRowInjected => ({
       hooks: { transcriptView: transcriptView.mode, collapseTiming: transcriptView.collapseTiming },

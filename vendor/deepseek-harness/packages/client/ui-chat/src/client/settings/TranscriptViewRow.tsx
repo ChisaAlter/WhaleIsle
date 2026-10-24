@@ -23,7 +23,7 @@ export interface TranscriptViewRowInjected {
 
 /** Full Settings-row props. */
 export type TranscriptViewRowProps =
-  PropsRuntime<'settings.general.item'>
+  PropsRuntime<'settings.conversation.item'>
   & PropsLocale<'chat'>
   & InjectFace<TranscriptViewRowInjected>
 

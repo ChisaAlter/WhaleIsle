@@ -208,12 +208,90 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* Cell stack (figma 501:29961): gap 4. */
+/* Cell stack: groups of cells under small headings; the stack scrolls on
+   its own so the title and search stay put. */
 .navList {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 12px;
+  padding-bottom: 12px;
   overflow-y: auto;
+}
+
+.navGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.navGroupLabel {
+  padding: 0 12px 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Search field: the nav's own input row, 32px, under the title. */
+.search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  height: 32px;
+  padding: 0 28px 0 32px;
+  box-sizing: border-box;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  outline: none;
+}
+
+.searchInput::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.searchInput::-webkit-search-cancel-button {
+  display: none;
+}
+
+.searchInput:focus-visible {
+  border-color: var(--dsw-alias-border-l4);
+}
+
+.searchClear {
+  position: absolute;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.searchClear:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 /* Nav cell: keep the shared geometry; selection uses the accent fill and
@@ -222,8 +300,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 40px;
-  padding: 9px 16px 9px 12px;
+  flex: none;
+  height: 36px;
+  padding: 7px 16px 7px 12px;
   box-sizing: border-box;
   border: none;
   border-radius: var(--dsw-radius-md);
@@ -320,6 +399,86 @@
   min-height: 0;
   padding: 0 24px 24px;
   overflow-y: auto;
+}
+
+/* Search results replace the options column while a query is typed. */
+.results {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 24px 24px;
+  overflow-y: auto;
+}
+
+.resultsEmpty {
+  margin: 24px 0 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.result {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: none;
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--dsw-radius-md);
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.result:hover {
+  background: var(--dsw-specific-sidebar-nav-item-hover);
+}
+
+.result:focus-visible {
+  --dsw-focus-ring-color: var(--dsw-alias-label-primary);
+  outline: 2px solid var(--dsw-focus-ring-color);
+  outline-offset: -2px;
+}
+
+.resultTitle {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.resultMeta {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Hidden render of every page, read by the search index only. */
+.index {
+  display: none;
+}
+
+/* The setting a search result opened: a brief fill, no layout change. */
+:global([data-dsh-settings-hit]) {
+  border-radius: var(--dsw-radius-md);
+  animation: settingsHit 1.6s ease-out;
+}
+
+@keyframes settingsHit {
+  0%, 40% { background: var(--dsw-specific-sidebar-nav-item-active-accent); }
+  100% { background: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global([data-dsh-settings-hit]) {
+    animation: none;
+    background: var(--dsw-specific-sidebar-nav-item-active-accent);
+  }
 }
 
 /* Visually-hidden text seat (close button accessible name from slot content). */

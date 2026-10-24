@@ -21,7 +21,8 @@ import { ShortcutRegistry } from '../../shortcuts/src/client/registry.ts'
 // FALLBACK_LOCALE (en); bench stages zh explicitly on the locale instead.
 
 const SECTION_SLOT = 'settings.section'
-const ITEM_SLOT = 'settings.general.item'
+// The font-size row lives on the Appearance page, whose section declares this slot.
+const ITEM_SLOT = 'settings.appearance.item'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -68,14 +69,13 @@ async function bench(isLoopback = true) {
   }
 }
 
-/** Stand in for the settings shell: declare Appearance section + General item slots. */
+/** Stand in for the settings shell: declare the section slot. */
 function declareSlots(slots: SlotRegistry): () => void {
   return slots.register(
     {
       name: 'root',
       children: {
         [SECTION_SLOT]: { kind: 'list', scope: 'root' },
-        [ITEM_SLOT]: { kind: 'list', scope: 'root' },
       },
     } as never,
     () => null,
@@ -325,7 +325,7 @@ describe('ui-theme apply', () => {
     const entry = before.slots.entries(SECTION_SLOT).find(e => e.options.id === 'appearance')!
     expect(entry.options).toMatchObject({ id: 'appearance', order: 5 })
     const fontEntry = before.slots.entries(ITEM_SLOT).find(e => e.options.id === 'font-size')!
-    expect(fontEntry.options).toMatchObject({ id: 'font-size', order: 11 })
+    expect(fontEntry.options).toMatchObject({ id: 'font-size', order: 5 })
     expect(fontEntry.locale).toBe(SETTINGS_NS)
 
     const after = await bench()

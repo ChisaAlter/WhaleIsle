@@ -20,6 +20,7 @@ import { CloseLabel, HeaderContent, TriggerContent } from '../src/client/chrome.
 import { GeneralSection } from '../src/client/GeneralSection.tsx'
 import { InterfaceSection } from '../src/client/InterfaceSection.tsx'
 import { AboutSection } from '../src/client/AboutSection.tsx'
+import { ConversationSection } from '../src/client/ConversationSection.tsx'
 import { HarnessRestartRow } from '../src/client/HarnessRestartRow.tsx'
 import { SettingsDocumentAction } from '../src/client/SettingsDocumentAction.tsx'
 import type { SettingsNavigation } from '../src/client/settings-navigation.ts'
@@ -85,9 +86,9 @@ function actionInjectedOf(c: TestClient): SettingsDocumentActionInjected {
 function expectSeated(c: TestClient): void {
   for (const [name, component] of SEATS) {
     if (name === 'settings.section') {
-      // The desktop chrome adds the Interface and About sections beside General.
+      // The chrome adds the Interface, Conversation and About sections beside General.
       expect(ownEntries(c, name).map(entry => entry.component))
-        .toEqual([GeneralSection, InterfaceSection, AboutSection])
+        .toEqual([GeneralSection, InterfaceSection, ConversationSection, AboutSection])
     } else {
       expect(ownEntries(c, name).map(entry => entry.component)).toEqual([component])
     }
@@ -183,7 +184,7 @@ describe('ui-settings-general apply', () => {
     SEATS.forEach(([name], i) => {
       expect(c.ctx.slots.getVersion(name)).toBe(zhVersions[i]!)
       if (name === 'settings.section') {
-        expect(ownEntries(c, name)).toHaveLength(3)
+        expect(ownEntries(c, name)).toHaveLength(4)
       } else {
         expect(ownEntries(c, name)).toHaveLength(1)
       }

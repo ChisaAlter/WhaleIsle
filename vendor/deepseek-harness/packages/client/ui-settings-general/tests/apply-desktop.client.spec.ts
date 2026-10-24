@@ -11,6 +11,7 @@ import { AutoStartDesktopRow } from '../src/client/AutoStartDesktopRow.tsx'
 import { DshbotRow } from '../src/client/DshbotRow.tsx'
 import { ProjectRow } from '../src/client/ProjectRow.tsx'
 import { RemoteWorkspaceRow } from '../src/client/RemoteWorkspaceRow.tsx'
+import { WhaleAssistantRow } from '../src/client/WhaleAssistantRow.tsx'
 import { PetSection } from '../src/client/PetSection.tsx'
 import type { PetSectionInjected } from '../src/client/PetSection.tsx'
 
@@ -75,25 +76,30 @@ describe('ui-settings-general desktop close-behavior row', () => {
     const autoStartRow = rows.find(row => row.options.id === 'auto-start-desktop')!
     expect(autoStartRow.component).toBe(AutoStartDesktopRow)
     expect(autoStartRow.options).toMatchObject({ id: 'auto-start-desktop', order: 26 })
-    const projectRow = b.slots.entries('settings.interface.item')
+    const projectRow = b.slots.entries('settings.features.item')
       .find(row => row.options.id === 'project')!
     expect(projectRow.component).toBe(ProjectRow)
     expect(projectRow.options).toMatchObject({ id: 'project', order: 79 })
     expect(projectRow.locale).toBe('settings')
-    const botRow = b.slots.entries('settings.interface.item')
+    const botRow = b.slots.entries('settings.features.item')
       .find(row => row.options.id === 'dshbot')!
     expect(botRow.component).toBe(DshbotRow)
     expect(botRow.options).toMatchObject({ id: 'dshbot', order: 80 })
     expect(botRow.locale).toBe('settings')
-    const remoteWorkspaceRow = b.slots.entries('settings.interface.item')
+    const remoteWorkspaceRow = b.slots.entries('settings.features.item')
       .find(row => row.options.id === 'remote-workspace')!
     expect(remoteWorkspaceRow.component).toBe(RemoteWorkspaceRow)
     expect(remoteWorkspaceRow.options).toMatchObject({ id: 'remote-workspace', order: 81 })
     expect(remoteWorkspaceRow.locale).toBe('settings')
+    const whaleRow = b.slots.entries('settings.features.item')
+      .find(row => row.options.id === 'whale-assistant')!
+    expect(whaleRow.component).toBe(WhaleAssistantRow)
+    expect(b.slots.entries('settings.features.item').map(row => row.options.id))
+      .toEqual(['whale-assistant', 'project', 'dshbot', 'remote-workspace'])
     await fiber.dispose()
     expect(b.slots.entries('settings.general.item')).toEqual([])
     expect(b.slots.entries('settings.interface.item')).toEqual([])
-    expect(b.slots.entries('settings.interface.item').find(row => row.options.id === 'remote-workspace')).toBeUndefined()
+    expect(b.slots.entries('settings.features.item')).toEqual([])
   })
 
   it('turning Project off leaves an open Lead for its Workspace or the no-directory Session', async () => {
@@ -122,7 +128,7 @@ describe('ui-settings-general desktop close-behavior row', () => {
     } as never)
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    const row = b.slots.entries('settings.interface.item').find(entry => entry.options.id === 'project')!
+    const row = b.slots.entries('settings.features.item').find(entry => entry.options.id === 'project')!
     const leave = () => (row.inject as unknown as () => { leaveProjectLead(): Promise<void> })().leaveProjectLead()
     await leave()
     expect(opened).toEqual(['workspace:ws-repo'])
@@ -143,6 +149,7 @@ describe('ui-settings-general desktop close-behavior row', () => {
     expect(b.slots.entries('settings.general.item').some(row =>
       row.options.id === 'close-behavior' || row.options.id === 'auto-start-desktop')).toBe(false)
     expect(b.slots.entries('settings.interface.item')).toEqual([])
+    expect(b.slots.entries('settings.section').some(row => row.options.id === 'features')).toBe(false)
   })
 })
 

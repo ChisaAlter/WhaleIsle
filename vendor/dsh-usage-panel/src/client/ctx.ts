@@ -15,6 +15,13 @@ export interface SlotRegisterOptions {
   label?: string | (() => string)
   /** Locale namespace bound to the entry's `t` (list-slot entries). */
   locale?: string
+  /** Child slots this entry declares and renders. */
+  children?: Record<string, { kind: 'list'; scope: 'root' }>
+}
+
+/** The render share the host passes to an entry that declares children. */
+export interface ChildRenderProps {
+  renderSlot?: (key: string, props: object) => ReactNode
 }
 
 export interface RpcResultLike<T> {

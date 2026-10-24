@@ -428,7 +428,7 @@ test('release walk helpers stay injectable into the harness page', () => {
   assert.ok(QA_REQUIRED_STEPS.includes('market.discover'));
   assert.ok(QA_REQUIRED_STEPS.includes('browser.url'));
   // Source QA uses default-off config: the switch must be present and the tab absent.
-  assert.ok(QA_REQUIRED_STEPS.includes('interface.dshbotSwitch'));
+  assert.ok(QA_REQUIRED_STEPS.includes('features.dshbotSwitch'));
   assert.ok(QA_REQUIRED_STEPS.includes('plugin.dshbot.defaultOff'));
   assert.ok(QA_REQUIRED_STEPS.includes('rightbar.open'));
   assert.ok(QA_REQUIRED_STEPS.includes('rightbar.legacyDormant'));

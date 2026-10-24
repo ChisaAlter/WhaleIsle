@@ -115,7 +115,7 @@ function ensureDesktopDshbot(options = {}) {
   const patchChanged = stripBlockFromFile(patchFile, DSHBOT_BEGIN, DSHBOT_END);
 
   if (options.enabled === false) {
-    // Toggled off in 界面设置: drop the overlay so the next start composes no
+    // Toggled off in 内置功能: drop the overlay so the next start composes no
     // dshbot row. The profile node_modules junction stays — harmless without
     // an insert — and the vendor copy is not validated while disabled.
     removeLinkOrDir(path.join(profileDir, 'desktop-plugins', 'dshbot', DSHBOT_OVERLAY_FILENAME));
