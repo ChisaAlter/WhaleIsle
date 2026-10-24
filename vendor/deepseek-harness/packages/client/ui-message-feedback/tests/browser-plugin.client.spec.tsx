@@ -142,7 +142,7 @@ describe('ui-message-feedback browser plugin', () => {
 
     expect(b.dialogEntry()).toMatchObject({ id: 'feedback-dialog', order: 2, locale: 'feedback' })
     const face = b.dialogEntry()!.inject!(sid('s1'))
-    expect(face.hooks.dialog.getSnapshot()).toMatchObject({ target: null, toast: 0 })
+    expect(face.hooks.dialog.getSnapshot()).toMatchObject({ target: null })
     expect(face.dismissFailure).toBeTypeOf('function')
   })
 
@@ -161,7 +161,7 @@ describe('ui-message-feedback browser plugin', () => {
     decoration.ui.run({ sessionId: sid('s1') })
     expect(dialog.hooks.dialog.getSnapshot().target).toEqual({ kind: 'session' })
 
-    expect(b.dialogEntry()!.inject!(sid('s2')).hooks.dialog.getSnapshot()).toMatchObject({ target: null, toast: 0 })
+    expect(b.dialogEntry()!.inject!(sid('s2')).hooks.dialog.getSnapshot()).toMatchObject({ target: null })
   })
 
   it('opens the shared Session dialog through feedbackUi without recording anything', async () => {
@@ -191,7 +191,7 @@ describe('ui-message-feedback browser plugin', () => {
     await dialog.submit()
     expect(b.calls.filter(call => call.method === 'record')[0]?.request)
       .toEqual({ sessionId: 's1', text: 'timed out', category: 'service-stability' })
-    expect(dialog.hooks.dialog.getSnapshot()).toMatchObject({ target: null, toast: 1 })
+    expect(dialog.hooks.dialog.getSnapshot()).toMatchObject({ target: null })
 
     message.openDialog(MSG, 'positive')
     dialog.edit({ category: 'task-result' })
@@ -199,9 +199,7 @@ describe('ui-message-feedback browser plugin', () => {
     expect(b.calls.filter(call => call.method === 'put')[0]?.request).toMatchObject({
       sessionId: 's1', messageId: MSG, rating: 'positive', category: 'task-result', ifVersion: 'v1',
     })
-    expect(dialog.hooks.dialog.getSnapshot().toast).toBe(2)
-    dialog.dismissToast(2)
-    expect(dialog.hooks.dialog.getSnapshot().toast).toBe(0)
+    expect(dialog.hooks.dialog.getSnapshot().target).toBeNull()
   })
 
   it('keeps the dialog open with the carrier code when the record call itself fails', async () => {
@@ -214,7 +212,7 @@ describe('ui-message-feedback browser plugin', () => {
 
     await dialog.submit()
 
-    expect(dialog.hooks.dialog.getSnapshot()).toMatchObject({ target: { kind: 'session' }, failure: 'gateway/internal', toast: 0 })
+    expect(dialog.hooks.dialog.getSnapshot()).toMatchObject({ target: { kind: 'session' }, failure: 'gateway/internal' })
     dialog.dismissFailure()
     expect(dialog.hooks.dialog.getSnapshot()).toMatchObject({ target: { kind: 'session' }, failure: null })
   })

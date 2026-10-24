@@ -10,7 +10,7 @@ export interface UploadSettings {
 /** Mutation state shared by the preference row and shell notice. */
 export interface UploadMutation {
   busy: boolean
-  notice: 'saved' | 'failed' | null
+  notice: 'failed' | null
   sequence: number
 }
 
@@ -36,9 +36,10 @@ export class UploadPreference {
     } catch (_error) {
       // The shell notice reports the failed write while the form retains accepted state.
     }
+    // The Switch shows an accepted value; only a failed write needs a notice.
     this.state.update((state) => {
       state.busy = false
-      state.notice = accepted ? 'saved' : 'failed'
+      state.notice = accepted ? null : 'failed'
       state.sequence++
     })
   }

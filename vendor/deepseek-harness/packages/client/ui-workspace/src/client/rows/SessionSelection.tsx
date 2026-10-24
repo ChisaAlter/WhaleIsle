@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   Button, IconArchiveOutlineRegular, IconChecklistOutlineRegular,
-  IconTrashOutlineRegular, Modal, StateDot, Toast, Tooltip,
+  IconTrashOutlineRegular, Modal, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { WorkspaceBrowserProps } from '../contract/slots.ts'
 import css from './SessionSelection.module.css'
@@ -52,7 +52,6 @@ export interface SessionSelectionController extends SessionRowSelection {
   closeDialog: () => void
   confirm: () => Promise<void>
   dialog: BatchDialog | null
-  progress: { attempted: number; total: number } | null
   result: BatchResult | null
   resultVisible: boolean
   dismissResult: () => void
@@ -95,7 +94,6 @@ export function useSessionSelection({ scopeKey, archiveSessionForBatch, deleteSe
   const [choices, setChoices] = useState<ReadonlyMap<SessionId, string>>(() => new Map())
   const [busy, setBusy] = useState(false)
   const [dialog, setDialog] = useState<BatchDialog | null>(null)
-  const [progress, setProgress] = useState<SessionSelectionController['progress']>(null)
   const [result, setResult] = useState<BatchResult | null>(null)
   const [resultVisible, setResultVisible] = useState(false)
   const registry = useRef(new Map<SessionId, Map<HTMLElement, string>>())
@@ -181,10 +179,9 @@ export function useSessionSelection({ scopeKey, archiveSessionForBatch, deleteSe
     const operationScope = scopeKey
     executing.current = true
     setBusy(true)
-    setProgress({ attempted: 0, total: operation.targets.length })
     const successes = new Set<SessionId>()
     const failures: BatchFailure[] = []
-    for (const [index, target] of operation.targets.entries()) {
+    for (const target of operation.targets) {
       try {
         if (operation.kind === 'archive') await archiveSessionForBatch(target.id, { stopActivity: true })
         else await deleteSessionForBatch(target.id)
@@ -192,7 +189,6 @@ export function useSessionSelection({ scopeKey, archiveSessionForBatch, deleteSe
       } catch (reason) {
         failures.push({ ...target, message: batchErrorText(reason, t) })
       }
-      setProgress({ attempted: index + 1, total: operation.targets.length })
     }
     setChoices(value => {
       if (currentScope.current !== operationScope) return new Map()
@@ -204,13 +200,12 @@ export function useSessionSelection({ scopeKey, archiveSessionForBatch, deleteSe
     setResult({ kind: operation.kind, succeeded: successes.size, failures })
     setResultVisible(true)
     setDialog(value => value === null ? null : { ...value, open: false })
-    setProgress(null)
     executing.current = false
     setBusy(false)
   }
 
   const selected = useMemo(() => new Set(choices.keys()), [choices])
-  return { enabled, busy, selected, toggle, register, t, toggleEnabled, selectVisible, clear, request, closeDialog, confirm, dialog, progress, result, resultVisible, dismissResult: () => { setResultVisible(false) } }
+  return { enabled, busy, selected, toggle, register, t, toggleEnabled, selectVisible, clear, request, closeDialog, confirm, dialog, result, resultVisible, dismissResult: () => { setResultVisible(false) } }
 }
 
 /** A persistent, compact entry beside the browser's section controls. */
@@ -257,7 +252,7 @@ export function SessionSelectionToolbar({ selection }: { selection: SessionSelec
 
 /** The target list is frozen when confirmation opens and throughout the actual RPC batch. */
 export function SessionSelectionDialogs({ selection }: { selection: SessionSelectionController }) {
-  const { dialog, busy, progress, result, resultVisible, t } = selection
+  const { dialog, busy, result, resultVisible, t } = selection
   const kind = dialog?.kind ?? 'archive'
   const targets = dialog?.targets ?? []
   const title = t(kind === 'archive' ? 'selection.confirm.archive.title' : 'selection.confirm.delete.title', { n: targets.length })
@@ -274,8 +269,6 @@ export function SessionSelectionDialogs({ selection }: { selection: SessionSelec
         <ul className={css.targets} aria-label={t('selection.confirm.targets')}>
           {targets.map(target => <li key={target.id}>{target.title}</li>)}
         </ul>
-        {progress !== null && <Toast text={t('selection.progress', { n: progress.attempted, total: progress.total })}
-          icon={<StateDot state="ongoing" />} holdMs={null} onDone={() => {}} />}
       </div>
       <div className={css.dialogFooter}>
         <Button variant="outline" disabled={busy} onClick={selection.closeDialog} data-modal-autofocus>{t('cancel')}</Button>
@@ -284,10 +277,8 @@ export function SessionSelectionDialogs({ selection }: { selection: SessionSelec
         </Button>
       </div>
     </Modal>
-    {result !== null && resultVisible && <Toast text={resultText}
-      tone={result.failures.length === 0 ? 'success' : undefined}
-      holdMs={result.failures.length > 0 ? null : undefined}
-      dismissLabel={result.failures.length > 0 ? t('close') : undefined}
-      onDone={selection.dismissResult} />}
+    {/* Sessions leaving the list confirm a clean run; only failures need a notice. */}
+    {result !== null && resultVisible && result.failures.length > 0 && <Toast text={resultText}
+      holdMs={null} dismissLabel={t('close')} onDone={selection.dismissResult} />}
   </>)
 }

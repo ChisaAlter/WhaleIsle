@@ -76,7 +76,6 @@ describe('web e2e: durable per-message feedback', () => {
     await dialog.getByRole('textbox', { name: 'Feedback details' }).fill(POSITIVE_NOTE)
     await dialog.getByRole('button', { name: 'Submit', exact: true }).click()
     await expect.poll(() => dialog.count(), { timeout: 10_000 }).toBe(0)
-    await page.getByRole('alert').filter({ hasText: 'Thanks for your feedback' }).waitFor({ timeout: 10_000 })
     const rated = page.getByRole('button', { name: 'Remove rating' }).first()
     await expect.poll(() => rated.getAttribute('aria-pressed'), { timeout: 10_000 }).toBe('true')
 
@@ -172,7 +171,8 @@ describe('web e2e: durable per-message feedback', () => {
     await dialog.getByRole('textbox', { name: 'Feedback details' }).fill('Feedback from the Session menu.')
     await dialog.getByRole('button', { name: 'Submit', exact: true }).click()
     await expect.poll(() => dialog.count()).toBe(0)
-    await page.getByRole('alert').filter({ hasText: 'Thanks for your feedback' }).waitFor()
+    // Closing the dialog is the acknowledgement; no toast follows it.
+    expect(await page.getByRole('alert').count()).toBe(0)
     expect(feedbackEvents().slice(before)).toMatchObject([
       { type: 'feedback/record', data: { category: 'product-interaction', text: 'Feedback from the Session menu.' } },
     ])

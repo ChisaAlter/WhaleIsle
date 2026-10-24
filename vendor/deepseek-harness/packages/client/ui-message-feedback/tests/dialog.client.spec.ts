@@ -1,8 +1,7 @@
 /**
  * FeedbackDialogController: one draft per open, submission routed by target,
- * success closes and acknowledges, failure keeps the draft with its code, a
- * settlement from a superseded open closes nothing, and the toast sequence
- * retires only the toast the view finished showing.
+ * success closes the dialog, failure keeps the draft with its code, and a
+ * settlement from a superseded open closes nothing.
  */
 import { describe, expect, it, vi } from 'vitest'
 import type { MessageId } from '@deepseek-ai/dsh-api-remotes/client'
@@ -18,11 +17,11 @@ function bench(result: () => Promise<MessageFeedbackActionResult> = () => Promis
 }
 
 describe('FeedbackDialogController', () => {
-  it('starts closed with no toast', () => {
+  it('starts closed', () => {
     const { controller } = bench()
 
     expect(controller.state.getSnapshot()).toEqual({
-      target: null, category: null, text: '', submitting: false, failure: null, toast: 0,
+      target: null, category: null, text: '', submitting: false, failure: null,
     })
   })
 
@@ -50,7 +49,7 @@ describe('FeedbackDialogController', () => {
     controller.edit({ text: 'x' })
     await controller.submitDraft()
 
-    expect(controller.state.getSnapshot()).toMatchObject({ category: null, text: '', toast: 0 })
+    expect(controller.state.getSnapshot()).toMatchObject({ category: null, text: '' })
     expect(submit).not.toHaveBeenCalled()
   })
 
@@ -63,7 +62,7 @@ describe('FeedbackDialogController', () => {
     await controller.submitDraft()
 
     expect(submit).toHaveBeenCalledWith({ kind: 'session' }, { text: 'timed out twice', category: 'service-stability' })
-    expect(controller.state.getSnapshot()).toMatchObject({ target: null, toast: 1 })
+    expect(controller.state.getSnapshot()).toMatchObject({ target: null })
   })
 
   it('submits an empty draft as an entry with neither text nor category', async () => {
@@ -85,7 +84,7 @@ describe('FeedbackDialogController', () => {
     await controller.submitDraft()
 
     expect(submit).toHaveBeenCalledWith(MESSAGE_TARGET, { text: 'wrong file', category: 'task-result' })
-    expect(controller.state.getSnapshot()).toMatchObject({ target: null, toast: 1 })
+    expect(controller.state.getSnapshot()).toMatchObject({ target: null })
   })
 
   it('keeps the draft open with the failure code when the submission is rejected', async () => {
@@ -97,7 +96,7 @@ describe('FeedbackDialogController', () => {
 
     expect(controller.state.getSnapshot()).toMatchObject({
       target: MESSAGE_TARGET, text: 'draft', submitting: false,
-      failure: 'version-conflict', toast: 0,
+      failure: 'version-conflict',
     })
   })
 
@@ -127,10 +126,10 @@ describe('FeedbackDialogController', () => {
     release()
     await first
     expect(submit).toHaveBeenCalledTimes(1)
-    expect(controller.state.getSnapshot()).toMatchObject({ target: null, toast: 1 })
+    expect(controller.state.getSnapshot()).toMatchObject({ target: null })
   })
 
-  it('acknowledges a success that lands after a reopen without closing the new draft', async () => {
+  it('keeps the new draft open when a success lands after a reopen', async () => {
     let release = (): void => {}
     const gate = new Promise<MessageFeedbackActionResult>((resolve) => { release = () => { resolve({ ok: true }) } })
     const { controller } = bench(() => gate)
@@ -143,7 +142,7 @@ describe('FeedbackDialogController', () => {
     await pending
 
     expect(controller.state.getSnapshot()).toMatchObject({
-      target: MESSAGE_TARGET, text: 'new draft', toast: 1,
+      target: MESSAGE_TARGET, text: 'new draft',
     })
   })
 
@@ -160,37 +159,16 @@ describe('FeedbackDialogController', () => {
     release()
     await pending
 
-    expect(controller.state.getSnapshot()).toMatchObject({ target: null, failure: null, submitting: false, toast: 0 })
+    expect(controller.state.getSnapshot()).toMatchObject({ target: null, failure: null, submitting: false })
   })
 
-  it('retires only the toast the view finished showing', async () => {
-    const { controller } = bench()
-
-    controller.open({ kind: 'session' })
-    await controller.submitDraft()
-    controller.open({ kind: 'session' })
-    await controller.submitDraft()
-    expect(controller.state.getSnapshot().toast).toBe(2)
-
-    controller.dismissToast(1)
-    expect(controller.state.getSnapshot().toast).toBe(2)
-    controller.dismissToast(2)
-    expect(controller.state.getSnapshot().toast).toBe(0)
-  })
-
-  it('keeps a toast on screen across a dismiss and drops everything on dispose', async () => {
+  it('drops everything on dispose', () => {
     const { controller } = bench()
     controller.open({ kind: 'session' })
-    await controller.submitDraft()
-    controller.open({ kind: 'session' })
-
-    controller.dismiss()
-    expect(controller.state.getSnapshot()).toMatchObject({ target: null, toast: 1 })
-
-    controller.open({ kind: 'session' })
+    controller.edit({ text: 'draft' })
     controller.dispose()
     expect(controller.state.getSnapshot()).toEqual({
-      target: null, category: null, text: '', submitting: false, failure: null, toast: 0,
+      target: null, category: null, text: '', submitting: false, failure: null,
     })
   })
 })

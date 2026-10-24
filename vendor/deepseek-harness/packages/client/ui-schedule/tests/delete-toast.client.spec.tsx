@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** The app-wide deletion toast: one outcome store behind one overlay banner. */
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import {
@@ -56,12 +56,9 @@ describe('ScheduleDeleteToast', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('shows the success banner for a confirmed deletion and dismisses once done', () => {
-    vi.useFakeTimers()
-    const { dismiss } = mount({ kind: 'deleted', seq: 1 })
-    expect(screen.getByRole('alert').textContent).toBe(en['toast.deleted'])
-    act(() => { vi.runAllTimers() })
-    expect(dismiss).toHaveBeenCalledOnce()
+  it('shows nothing for a confirmed deletion: the task leaves the list', () => {
+    mount({ kind: 'deleted', seq: 1 })
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('shows the warning banner for a deletion that could not be confirmed', () => {

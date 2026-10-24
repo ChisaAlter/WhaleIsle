@@ -69,20 +69,18 @@ export type ScheduleDeleteToastProps = PropsRuntime<'shell.overlay'>
   & InjectFace<Omit<DeleteToastSource, 'report'>>
 
 /**
- * Render the current deletion notice: a success banner for a confirmed
- * deletion, a warning for one that could not be confirmed, or nothing.
+ * Render a warning for a deletion that could not be confirmed. A confirmed
+ * deletion needs no banner: the task leaves the list.
  * @param props - the notice hook, its dismissal, and the locale seat.
  * @returns the banner on display, or null.
  */
 export function ScheduleDeleteToast({ useToast, dismiss, t }: ScheduleDeleteToastProps): ReactNode {
   const toast = useToast(current => current)
-  if (toast === null) return null
-  return toast.kind === 'deleted'
-    ? <Toast key={`schedule-delete-${String(toast.seq)}`} text={t('toast.deleted')} tone="success" onDone={dismiss} />
-    : <Toast
-      key={`schedule-delete-${String(toast.seq)}`}
-      text={t('toast.deleteFailed')}
-      icon={<IconWarningOutlineRegular />}
-      onDone={dismiss}
-    />
+  if (toast === null || toast.kind === 'deleted') return null
+  return <Toast
+    key={`schedule-delete-${String(toast.seq)}`}
+    text={t('toast.deleteFailed')}
+    icon={<IconWarningOutlineRegular />}
+    onDone={dismiss}
+  />
 }

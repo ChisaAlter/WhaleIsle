@@ -45,6 +45,5 @@ export function UploadRow({ useUpload, useMutation, setEnabled, t }: PropsRuntim
 export function UploadToast({ useMutation, dismiss, t }: PropsRuntime<'shell.overlay'> & Face) {
   const state = useMutation(value => value)
   if (state.notice === null) return null
-  return <Toast key={state.sequence} text={t(state.notice)} onDone={dismiss}
-    {...state.notice === 'saved' ? { tone: 'success' as const } : {}} />
+  return <Toast key={state.sequence} text={t(state.notice)} onDone={dismiss} />
 }

@@ -3,9 +3,7 @@
  * FeedbackDialog rendering: the modal shows the seven category chips, the
  * detail box, and the hint while a target is open; a chip toggles the
  * category through the injected verb; Submit routes to the controller and
- * stays enabled with an empty draft; a failure code renders a warning toast;
- * and the acknowledgement toast mounts from the toast sequence and retires
- * through dismissToast once its fade completes.
+ * stays enabled with an empty draft; and a failure code renders a warning toast.
  */
 import { useSyncExternalStore } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -24,7 +22,7 @@ const t = makeTranslate(zh, commonZh)
 /** Render the entry over a fixed state and recording verbs. */
 function mount(overrides: Partial<FeedbackDialogState> = {}) {
   const state: FeedbackDialogState = {
-    target: { kind: 'session' }, category: null, text: '', submitting: false, failure: null, toast: 0,
+    target: { kind: 'session' }, category: null, text: '', submitting: false, failure: null,
     ...overrides,
   }
   const verbs = {
@@ -32,7 +30,6 @@ function mount(overrides: Partial<FeedbackDialogState> = {}) {
     submit: vi.fn(() => Promise.resolve()),
     dismiss: vi.fn(),
     dismissFailure: vi.fn(),
-    dismissToast: vi.fn(),
   }
   const useDialog = (<T,>(select: (v: FeedbackDialogState) => T): T =>
     useSyncExternalStore(() => () => {}, () => select(state))) as never
@@ -48,7 +45,7 @@ describe('FeedbackDialog', () => {
     expect(en['category.service-stability']).toBe('Stability and speed')
   })
 
-  it('renders nothing but the probe while closed with no toast', () => {
+  it('renders nothing but the probe while closed', () => {
     const ui = mount({ target: null })
 
     expect(ui.queryByRole('dialog')).toBeNull()
@@ -132,29 +129,6 @@ describe('FeedbackDialog', () => {
       act(() => { vi.advanceTimersByTime(1) })
 
       expect(ui.dismissFailure).toHaveBeenCalledTimes(1)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('retires the toast when the entry unmounts, so a Session switch does not replay it', () => {
-    const ui = mount({ target: null, toast: 3 })
-
-    ui.unmount()
-
-    expect(ui.dismissToast).toHaveBeenCalledWith(3)
-  })
-
-  it('shows the acknowledgement toast and retires it after the fade', () => {
-    vi.useFakeTimers()
-    try {
-      const ui = mount({ target: null, toast: 3 })
-
-      expect(ui.getByRole('alert').textContent).toBe(zh['toast.recorded'])
-      act(() => { vi.advanceTimersByTime(3999) })
-      expect(ui.dismissToast).not.toHaveBeenCalled()
-      act(() => { vi.advanceTimersByTime(1) })
-      expect(ui.dismissToast).toHaveBeenCalledWith(3)
     } finally {
       vi.useRealTimers()
     }
