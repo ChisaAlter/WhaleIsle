@@ -1,7 +1,7 @@
 /**
  * Feedback surface plugin, browser half: the Like/Dislike entry in the
  * conversation.chat.assistant-actions strip, the feedback dialog and its
- * acknowledgement and failure toasts in conversation.input.overlay, and the `/feedback`
+ * failure toast in conversation.input.overlay, and the `/feedback`
  * decoration that opens the dialog from the composer menu or a bare typed
  * command. The feedbackUi service opens the same dialog for other plugins.
  * One FeedbackSurface per Session backs every entry in that Session.
@@ -125,7 +125,6 @@ export function apply(ctx: ClientContext): void {
         submit: () => dialog.submitDraft(),
         dismiss: () => { dialog.dismiss() },
         dismissFailure: () => { dialog.dismissFailure() },
-        dismissToast: (seq) => { dialog.dismissToast(seq) },
       }
     },
   }, FeedbackDialog))

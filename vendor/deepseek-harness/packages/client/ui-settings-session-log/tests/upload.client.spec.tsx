@@ -33,15 +33,13 @@ function fixture(writable = true) {
   return { formState, set, preference, props }
 }
 
-it('shows a saved preference and keeps its notice after the row unmounts', async () => {
+it('shows a saved preference on the switch without a notice', async () => {
   const { props, set } = fixture()
-  const row = render(<UploadRow {...props} />)
-  render(<UploadToast {...props} />)
+  render(<><UploadRow {...props} /><UploadToast {...props} /></>)
   fireEvent.click(screen.getByRole('switch', { name: en.title }))
   await waitFor(() => { expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false') })
   expect(set).toHaveBeenCalledWith('enabled', false)
-  row.unmount()
-  expect(screen.getByText(en.saved)).toBeTruthy()
+  expect(screen.queryByRole('alert')).toBeNull()
 })
 
 it.each(['refused', 'rejected'] as const)('retains accepted state after a %s write', async (failure) => {
