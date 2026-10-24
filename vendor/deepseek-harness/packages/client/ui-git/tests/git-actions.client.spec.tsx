@@ -218,6 +218,15 @@ describe('GitActionsControl', () => {
     expect(b.gitStatus).not.toHaveBeenCalledWith('/background')
   })
 
+  it('reads the presented working directory of a Project conversation, not its materials cwd', async () => {
+    const state = sessionList('/app-data/projects/p1')
+    state.byId[SID] = { ...state.byId[SID]!, presentation: { owner: 'project', title: 'p1', workingDirectory: '/repo' } }
+    const b = mount({ sessionState: state, git: status() })
+    await waitFor(() => { expect(b.gitStatus).toHaveBeenCalledWith('/repo') })
+    expect(b.gitStatus).not.toHaveBeenCalledWith('/app-data/projects/p1')
+    expect(await screen.findByRole('button', { name: 'Git actions' })).toBeTruthy()
+  })
+
   it('hides the entire Git group when status is null', async () => {
     mount({ cwd: '/work', git: null })
     await waitFor(() => {

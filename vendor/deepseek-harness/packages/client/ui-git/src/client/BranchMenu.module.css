@@ -6,9 +6,14 @@
   flex: none;
   align-items: center;
   gap: 0;
-  max-width: 180px;
+  --trigger-max: 180px;
+  --trigger-pad: 10px;
+  /* Room left for the branch name beside the 14px branch glyph and the 4px +
+     14px chevron; the name is laid out at this width before it is revealed. */
+  --git-label-room: calc(var(--trigger-max) - 2 * var(--trigger-pad) - 32px);
+  max-width: var(--trigger-max);
   height: 100%;
-  padding: 0 10px;
+  padding: 0 var(--trigger-pad);
   border: none;
   border-radius: 0;
   background: transparent;
@@ -25,7 +30,7 @@
 }
 
 :global([data-titlebar-density='cozy']) .trigger {
-  max-width: 120px;
+  --trigger-max: 120px;
 }
 
 .trigger:hover {
@@ -39,7 +44,7 @@
 }
 
 .triggerCompact {
-  padding: 0 8px;
+  --trigger-pad: 8px;
 }
 
 .arrow {

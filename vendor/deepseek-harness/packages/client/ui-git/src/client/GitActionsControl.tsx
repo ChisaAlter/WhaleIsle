@@ -14,6 +14,7 @@ import {
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import { sessionWorkingDirectory } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {
   DefaultBranchConfirmableAction,
   GitActionIconName,
@@ -224,9 +225,10 @@ export function GitActionsControl({
   t,
 }: GitActionsProps): ReactNode {
   const cwd = useSessions((s) => {
+    // A presented working directory (a Project's repository) outranks the
+    // Session's own cwd, matching the terminal and open-in-app targets.
     const mainView = Object.values(s.byId).find(session => (session.retainedBy.mainView ?? 0) > 0)
-    const next = mainView?.cwd
-    return next ? next : undefined
+    return sessionWorkingDirectory(mainView)
   })
   const showChrome = useTitlebarGit(value => value)
   const [status, setStatus] = useState<VcsStatus | null>(null)

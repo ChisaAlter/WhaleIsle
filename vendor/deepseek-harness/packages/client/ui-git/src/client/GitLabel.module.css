@@ -16,8 +16,13 @@
   overflow: hidden;
 }
 
+/* The text keeps its final width while the clip widens, so the reveal wipes
+   across settled glyphs instead of re-ellipsizing the label every frame. */
 .text {
   display: block;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: var(--git-label-room, none);
   overflow: hidden;
   padding-left: 4px;
   text-overflow: ellipsis;
