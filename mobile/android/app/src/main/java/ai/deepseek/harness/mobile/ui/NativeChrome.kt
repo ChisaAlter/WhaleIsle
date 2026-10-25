@@ -96,12 +96,13 @@ internal fun NativeIconButton(
     glyph: NativeGlyph,
     description: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     enabled: Boolean = true,
     primary: Boolean = false,
     avatar: Boolean = false,
 ) {
     val colors = dsh()
-    Box(Modifier.size(48.dp).clip(RoundedCornerShape(8.dp))
+    Box(modifier.size(48.dp).clip(RoundedCornerShape(8.dp))
         .semantics { contentDescription = description }
         .clickable(enabled = enabled, role = Role.Button, onClick = onClick), contentAlignment = Alignment.Center) {
         if (avatar) WhaleAvatar(Modifier.size(30.dp)) else {

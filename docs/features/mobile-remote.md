@@ -134,7 +134,7 @@
 - Android 的连接代次隔离迟到回复，Compose 重组不重复配对；返回前台用保存凭据恢复连接与目录同步，不重放一次性 offer。旧 localStorage 迁移失败必须可见，原数据保留。
 - 手机目录转发保留全部 `session.list` 行和原始会话字段，投影只传 `title` / `sessionListMetadata`。模型、权限、计划与用量详情通过打开会话时的 history 按需获取，不能为每次首屏同步重复传输所有会话的详情；history、创建与搜索响应不受目录裁剪影响。目录失败必须可重试，不能假空列表。
 - **非 secure context 兼容**：`http://<LAN-IP>:3180` 禁止裸用 `crypto.randomUUID` / `crypto.subtle`；uuid 走 `getRandomValues` fallback；E2EE 保持 tweetnacl。
-- 手机端采用[桌面鲸屿窄屏布局](../design-language.md#手机远程交互)：同源透明鲸鱼娘头像和鲸屿字标、贴边直角侧栏、品牌下新会话和工作区分组目录、底部账户与设置；22px / 22dp 细边无外投影输入卡适配竖屏和 IME。模型、权限、附件、重命名、新会话选择和简短设置在紧凑 Modal / Menu 内完成，长目录、搜索与复杂 Git 任务保留可返回表面。颜色只取同值语义 token，海天画布止于连接入口，不使用简笔鲸鱼或展示衬线替代品牌。
+- 手机端采用[桌面鲸屿窄屏布局](../design-language.md#手机远程交互)：同源透明鲸鱼娘头像和鲸屿字标、贴边直角侧栏、品牌下新会话和工作区分组目录、底部账户与设置；22px / 22dp 细边无外投影输入卡适配竖屏和 IME。模型、思考、权限与附件来源跟随触发按钮展开锚定菜单，优先向上并右对齐，随可视窗口变化避让，根层没有对话框标题或灰色遮罩；下钻原位切页并保留返回。重命名、新会话选择和简短设置使用紧凑 Modal，长目录、搜索与复杂 Git 任务保留可返回表面。颜色只取同值语义 token，海天画布止于连接入口，不使用简笔鲸鱼或展示衬线替代品牌。
 - 全量启动才启用内容搜索：`--patch` `desktop-session-search.patch.yml` 覆写 `session-query-sqlite` 为 `openAt: first-search` 与 `dsh-home/session-query.sqlite`。禁止把这次 opt-in 写进用户 `cordis.patch.yml`。skip 启动保持发版 `openAt: never`。
 
 ## Allowed touch

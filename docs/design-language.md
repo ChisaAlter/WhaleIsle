@@ -224,7 +224,7 @@ Git 标题栏的分支与主操作平常只显示图标和下拉箭头；鼠标�
 
 ## 手机远程交互
 
-远程 Web 与 Android 原生聊天采用桌面鲸屿的窄屏布局：侧栏贴边直角，按品牌、新会话、工作区与分组会话目录、底部账户组织；输入卡沿用桌面 22px 圆角、细边和无外投影，并适配竖屏、缩窄与软键盘。模型、权限、附件、重命名和简短设置在紧凑弹窗内完成，目录浏览、搜索结果和复杂 Git 任务保留可返回的长任务面。Android 使用 Kotlin 协议客户端与 Compose，不内嵌聊天 WebView。颜色、字体栈与明暗仍只取同值语义 token 表。完整契约见 [design-language-mobile.md](design-language-mobile.md)；2026-10-25 用户要求取代[旧 Claude 式结构](decisions/implemented/product/2026-09-24-mobile-remote-claude-structure.md)的导航与几何。
+远程 Web 与 Android 原生聊天采用桌面鲸屿的窄屏布局：侧栏贴边直角，按品牌、新会话、工作区与分组会话目录、底部账户组织；输入卡沿用桌面 22px 圆角、细边和无外投影，并适配竖屏、缩窄与软键盘。模型、思考、权限和附件来源采用跟随触发按钮的锚定菜单；模型菜单优先向上展开并右对齐，窄屏、旋转和软键盘变化时避让可视边缘，不使用居中 Modal 或灰色模糊遮罩。重命名和简短设置使用紧凑弹窗，目录浏览、搜索结果和复杂 Git 任务保留可返回的长任务面。Android 使用 Kotlin 协议客户端与 Compose，不内嵌聊天 WebView。颜色、字体栈与明暗仍只取同值语义 token 表。完整契约见 [design-language-mobile.md](design-language-mobile.md)；2026-10-25 用户要求取代[旧 Claude 式结构](decisions/implemented/product/2026-09-24-mobile-remote-claude-structure.md)的导航与几何。
 
 ## 桌面欢迎窗
 

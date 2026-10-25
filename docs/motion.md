@@ -146,7 +146,7 @@ composer 上四个浮层共用此时长：加号斜杠菜单、权限 `Menu`、�
 
 | 产品面 | 当前行为与源码 |
 | --- | --- |
-| 输入框触发的紧凑弹窗（附件来源、模型／思考、权限） | `ui/surfaces.js` 的 Menu / Modal 变体；`app.css` 的 `mobile-surface-in` 仅在 `prefers-reduced-motion: no-preference` 下以 opacity 与 translateY(8px) 入场，使用既有 overlay 时长与缓动；同面板内下钻和结果刷新不重播入场 |
+| 输入框触发的锚定菜单（附件来源、模型／思考、权限） | `ui/surfaces.js` 的 Menu 变体，跟随触发按钮定位，不绘制模态遮罩；`app.css` 的 `mobile-surface-in` 仅在 `prefers-reduced-motion: no-preference` 下以 opacity 与 translateY(8px) 入场，使用既有 overlay 时长与缓动；同菜单内下钻和结果刷新不重播入场 |
 | 行菜单与 Git 菜单短面板；目录、Git 表单与完整会话列表全屏任务、确认层 | `ui/surfaces.js` 生成 `.surface-panel`；`app.css` 的 `mobile-surface-in` 仅在 `prefers-reduced-motion: no-preference` 下入场：opacity + translateY(8px)，使用 `--ds-motion-duration-overlay`（回退 `--ds-transition-duration`）和 `--ds-ease-in-out`。全屏任务无浮卡边框，头部与操作区不参与正文滚动 |
 | 同一表面刷新/异步结果 | `app.js` 保持 surface identity，设置 `data-refreshed`；CSS 禁止重复入场，避免模型选中、查询结果等更新使整个面板重播。焦点与滚动恢复不是动效 |
 | 关闭与返回 | `ui/navigation.js` 与 `app.js` 按当前层处理按钮、浏览器及 Android 返回；当前树直接隐藏/移除，没有官方 Presence 的 200ms 退场挂载，不声称已具备完整 overlay 退场 recipe。返回不能借动画完成事件重放业务写请求 |

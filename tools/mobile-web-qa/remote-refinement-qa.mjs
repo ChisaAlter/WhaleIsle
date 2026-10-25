@@ -98,7 +98,7 @@ try {
         await page.screenshot({ path: resolve(output, `drawer-${label}.png`) });
         await page.locator('#drawer-close').click();
       });
-      await check(`${label}: composer and compact model dialog retain draft`, async () => {
+      await check(`${label}: model menu follows its trigger and retains draft`, async () => {
         await backToChat(page);
         await page.locator('#draft').fill('竖屏草稿\n第二行，保留模型选择前的编辑内容。');
         await withinViewport(page, '#composer');
@@ -107,13 +107,19 @@ try {
         await page.screenshot({ path: resolve(output, `composer-${label}.png`) });
         await page.locator('#model-chip').click();
         await page.locator('#sheet-root .surface-panel').waitFor();
-        const layer = page.locator('#sheet-root .modal-layer');
-        assert.equal(await layer.count(), 1, 'model picker should be a compact dialog');
+        assert.equal(await page.locator('#sheet-root .menu-layer').count(), 1, 'model picker must be an anchored menu');
+        assert.equal(await page.locator('#sheet-root .modal-layer, #sheet-root .surface-head').count(), 0, 'root menu has modal chrome');
         const panel = await withinViewport(page, '#sheet-root .surface-panel');
-        assert.ok(panel.width < viewport.width, 'model picker occupies the full page');
+        const trigger = await page.locator('#model-chip').boundingBox();
+        assert.ok(Math.abs(panel.y + panel.height + 8 - trigger.y) < 2, 'menu did not open 8px above trigger');
+        const edge = Math.max(12 + panel.width, Math.min(trigger.x + trigger.width, viewport.width - 12));
+        assert.ok(Math.abs(panel.x + panel.width - edge) < 2, 'menu did not align to trigger right edge or viewport margin');
+        const mask = await page.locator('#sheet-root .sheet-mask').evaluate((node) => ({ fill: getComputedStyle(node).backgroundColor, blur: getComputedStyle(node).backdropFilter }));
+        assert.equal(mask.fill, 'rgba(0, 0, 0, 0)', 'menu dims background like a modal');
+        assert.equal(mask.blur, 'none', 'menu blurs background like a modal');
         await page.screenshot({ path: resolve(output, `model-${label}.png`) });
         await page.keyboard.press('Escape');
-        assert.equal(await page.locator('#draft').inputValue(), old, 'dialog lost the draft');
+        assert.equal(await page.locator('#draft').inputValue(), old, 'menu lost the draft');
         const horizontal = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
         assert.equal(horizontal, false, 'horizontal page overflow');
       });
@@ -152,7 +158,7 @@ try {
     await page.screenshot({ path: resolve(output, 'empty-directory.png') });
     await context.close();
   });
-  await check('model no-match remains recoverable inside the dialog', async () => {
+  await check('model no-match remains recoverable inside the anchored menu', async () => {
     const { context, page } = await setup({ width: 320, height: 640 }, 'dark');
     await page.locator('#model-chip').click();
     await page.locator('#sheet-root button').filter({ hasText: '更多模型' }).click();
