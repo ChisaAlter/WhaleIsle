@@ -1,6 +1,7 @@
 package ai.deepseek.harness.mobile
 
 import android.app.Instrumentation
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.os.Build
@@ -95,6 +96,8 @@ class NativeUpgradeInstrumentation : Instrumentation() {
             runOnMainSync {
                 activity?.finish()
                 store.scheme = originalScheme
+                // Instrumentation can exit before apply() reaches disk; flush its pending restore.
+                check(targetContext.getSharedPreferences("dsh_remote_device", Context.MODE_PRIVATE).edit().commit())
             }
         }
     }
