@@ -19,6 +19,8 @@
   --dsw-shadow-lv3:
     0 0 1px 0 rgba(0, 0, 0, 0.2), 0 0 4px 0 rgba(0, 0, 0, 0.02), 0 12px 32px 0 rgba(0, 0, 0, 0.08);
   --dsw-mask-blur: blur(2px);
+  --dsw-menu-backdrop-filter: blur(20px);
+  --dsw-composer-rim: inset 0 0 12px 1px rgba(255, 255, 255, 0.25);
   --dsw-alias-glass-opacity: 80%;
   --dsw-alias-bg-base: rgb(255, 255, 255);
   --dsw-alias-bg-layer-1: rgb(255, 255, 255);
@@ -63,6 +65,7 @@
      composer / menus would otherwise render with no background at all. */
   --dsw-specific-input-major: rgba(255, 255, 255, 0.8);
   --dsw-specific-menu: rgba(255, 255, 255, 0.8);
+  --dsw-specific-dialog: rgba(255, 255, 255, 0.8);
   --dsw-specific-sidebar-fill: rgb(249, 250, 251);
   --dsw-specific-sidebar-nav-item-active: rgb(235, 238, 242);
   --dsw-specific-sidebar-nav-item-active-accent: rgb(228, 237, 253);
@@ -139,6 +142,7 @@ body[data-ds-dark-theme] {
   --dsw-specific-bubble: rgb(44, 44, 46);
   --dsw-specific-input-major: rgba(44, 44, 46, 0.8);
   --dsw-specific-menu: rgba(53, 54, 56, 0.8);
+  --dsw-specific-dialog: rgba(44, 44, 46, 0.8);
   --dsw-specific-sidebar-fill: rgb(27, 27, 28);
   --dsw-specific-sidebar-nav-item-active: rgb(67, 69, 74);
   --dsw-specific-sidebar-nav-item-active-accent: rgb(53, 54, 56);
@@ -180,6 +184,14 @@ body[data-ds-dark-theme] {
     radial-gradient(1px 1px at 15% 38%, rgba(175, 212, 230, 0.48) 50%, transparent 60%),
     radial-gradient(1px 1px at 68% 56%, rgba(175, 212, 230, 0.4) 50%, transparent 60%),
     radial-gradient(1px 1px at 42% 82%, rgba(175, 212, 230, 0.32) 50%, transparent 60%);
+}
+
+@supports (color: color-mix(in srgb, currentColor, transparent)) {
+  :root, html[data-ds-dark-theme], body[data-ds-dark-theme] {
+    --dsw-specific-input-major: color-mix(in srgb, var(--dsw-alias-bg-layer-2) var(--dsw-alias-glass-opacity), transparent);
+    --dsw-specific-menu: color-mix(in srgb, var(--dsw-alias-bg-module-platform) var(--dsw-alias-glass-opacity), transparent);
+    --dsw-specific-dialog: color-mix(in srgb, var(--dsw-alias-bg-layer-2) var(--dsw-alias-glass-opacity), transparent);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

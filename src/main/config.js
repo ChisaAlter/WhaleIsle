@@ -621,6 +621,9 @@ function parkRemoteSnapshot(snap) {
     listening: false,
     urls: [],
     token: '',
+    pairingQr: '',
+    pairingLinkUrl: '',
+    pairingExpiresAtMs: null,
   };
 }
 

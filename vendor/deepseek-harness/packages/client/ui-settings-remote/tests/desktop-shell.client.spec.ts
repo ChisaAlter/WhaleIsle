@@ -18,6 +18,7 @@ describe('desktopShell', () => {
       getRemote: async () => ({ enabled: false }),
       saveRemote: async () => ({ enabled: true }),
       rotateRemoteToken: async () => ({ enabled: true }),
+      revokeRemotePairingLink: async () => ({ enabled: true }),
       unbindRemoteDevice: async () => ({ enabled: true, devices: [] }),
       renameRemoteDevice: async () => ({ enabled: true, devices: [] }),
     }

@@ -3,6 +3,8 @@ package ai.deepseek.harness.mobile
 import ai.deepseek.harness.mobile.store.EncryptedDeviceStore
 import ai.deepseek.harness.mobile.ui.DshRoot
 import ai.deepseek.harness.mobile.ui.NativeRemoteScreen
+import ai.deepseek.harness.mobile.ui.NativeDialog
+import ai.deepseek.harness.mobile.ui.NativeChoiceRow
 import ai.deepseek.harness.mobile.ui.ScanScreen
 import ai.deepseek.harness.mobile.ui.theme.DshTheme
 import android.Manifest
@@ -13,16 +15,12 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Bundle
 import android.provider.Settings
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
@@ -70,7 +68,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             DshTheme(dark) {
-                Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.union(WindowInsets.ime))) {
                     when (vm.route) {
                         Route.Scan -> ScanScreen(vm::onScanned, { vm.route = Route.Connect }, vm::openPasteEntry)
                         Route.Chat -> NativeRemoteScreen(vm) { attachmentSource = true }
@@ -79,11 +77,10 @@ class MainActivity : ComponentActivity() {
                         })
                     }
                 }
-                if (attachmentSource) AlertDialog(onDismissRequest = { attachmentSource = false }, title = { Text("添加图片") },
-                    text = { Column {
-                        TextButton(onClick = { attachmentSource = false; images.selectGallery() }) { Text("从相册选择") }
-                        TextButton(onClick = { attachmentSource = false; images.takePhoto() }) { Text("拍照") }
-                    } }, confirmButton = { TextButton(onClick = { attachmentSource = false }) { Text("取消") } })
+                if (attachmentSource) NativeDialog("添加图片", onDismiss = { attachmentSource = false }) {
+                    NativeChoiceRow("从相册选择", onClick = { attachmentSource = false; images.selectGallery() })
+                    NativeChoiceRow("拍照", onClick = { attachmentSource = false; images.takePhoto() })
+                }
             }
         }
     }

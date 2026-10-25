@@ -82,6 +82,7 @@ describe('ui-settings-remote settings section', () => {
       getRemote: vi.fn(async () => SNAP),
       saveRemote: vi.fn(async () => SNAP),
       rotateRemoteToken: vi.fn(async () => SNAP),
+      revokeRemotePairingLink: vi.fn(async () => SNAP),
       unbindRemoteDevice: vi.fn(async () => SNAP),
       renameRemoteDevice: vi.fn(async () => SNAP),
     }

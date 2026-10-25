@@ -44,25 +44,32 @@ export async function runInteractionCases() {
     assert(document.activeElement?.id !== 'draft', 'unexpected editor focus');
   });
   await check('model search, selection and effort stay in one panel', async () => {
-    await click('#model-chip'); await wait(() => document.querySelector('.model-results .mode-row'));
+    await click('#model-chip'); await wait(() => textButton('#sheet-root', '更多模型'));
+    assert(document.querySelector('#sheet-root .modal-layer'), 'model picker must stay compact');
+    await click(textButton('#sheet-root', '更多模型'));
     input('.model-search', 'Lite'); await pause();
     assert(document.querySelectorAll('.model-results .mode-row').length === 1, 'search not applied');
     await click('.model-results .mode-row');
-    await wait(() => document.querySelector('.model-current')?.textContent.includes('Lite'));
+    await wait(() => document.querySelector('#model-chip')?.textContent.includes('Lite'));
     assert(document.querySelector('#sheet-root .surface-panel'), 'picker closed after selection');
-    assert(!document.querySelector('.picker-controls .effort-segment'), 'non-reasoning model shows efforts');
     input('.model-search', 'R3'); await click('.model-results .mode-row');
-    await wait(() => document.querySelector('.picker-controls .effort-option'));
-    await click(textButton('.picker-controls', 'Low'));
-    await wait(() => document.querySelector('.picker-controls [aria-pressed="true"]')?.textContent === 'Low');
+    await wait(() => document.querySelector('#model-chip')?.textContent.includes('R3'));
+    await click('#sheet-root .surface-head [aria-label="返回"]');
+    const effortDrill = [...document.querySelectorAll('#sheet-root .drill')].find((node) => node.querySelector('.drill-title')?.textContent === '思考强度');
+    assert(effortDrill, 'reasoning model must expose the effort drill');
+    await click(effortDrill);
+    await click(textButton('#sheet-root', 'Low'));
+    await wait(() => document.querySelector('#sheet-root [aria-pressed="true"]')?.textContent.includes('Low'));
   });
   await check('failed model switch leaves retryable error without changing session', async () => {
     window.__qa.setFail('session.selectModel', 'QA model offline');
     try {
-      await click('#model-chip'); await wait(() => document.querySelector('.model-results .mode-row'));
+      await click('#model-chip'); await wait(() => textButton('#sheet-root', '更多模型'));
+      await click(textButton('#sheet-root', '更多模型'));
       await click([...document.querySelectorAll('.model-results .mode-row')].find((node) => node.textContent.includes('Lite')));
-      await wait(() => document.querySelector('.picker-controls .error')?.textContent.includes('QA model offline'));
-      assert(document.querySelector('.model-current').textContent.includes('R3'), 'failed selection did not roll back');
+      await wait(() => document.querySelector('#toast-root')?.textContent.includes('QA model offline'));
+      assert(document.querySelector('#model-chip').textContent.includes('R3'), 'failed selection did not roll back');
+      assert(!document.querySelector('#toast-root .icon-btn'), 'error feedback gained a close button');
     } finally { window.__qa.setFail('session.selectModel', null); }
   });
   await check('keyboard Tab never enters the hidden mask', async () => {
@@ -73,7 +80,7 @@ export async function runInteractionCases() {
     assert(document.querySelector('#screen-chat').inert, 'background is interactive');
   });
   await check('settings Back restores directory, Close returns to chat', async () => {
-    await drawer(); await click('#open-settings');
+    await drawer(); await click('#nav-settings');
     await click(textButton('#options', '外观'));
     assert(!document.querySelector('#settings-back').classList.contains('hidden'), 'no Back in detail');
     await click('#settings-back');
@@ -104,8 +111,10 @@ export async function runInteractionCases() {
     input('#sheet-root input', 'qa-no-create'); await pause();
     const before = window.__qa.calls.length;
     await click(textButton('#sheet-root', '创建并检出'));
-    assert(document.querySelector('#dialog-root .task-layer'), 'branch creation is not a task');
-    await click('#dialog-root .surface-head [aria-label="返回"]');
+    assert(document.querySelector('#dialog-root .modal-layer'), 'branch name entry must be a compact modal');
+    assert(!document.querySelector('#dialog-root .task-layer'), 'branch name entry unexpectedly fills the screen');
+    assert(window.__dshdNavigation.back() === 'handled', 'Back did not close branch name entry');
+    await wait(() => document.querySelector('#sheet-root .task-layer input'));
     assert(document.querySelector('#sheet-root input').value === 'qa-no-create', 'branch query lost');
     assert(!window.__qa.calls.slice(before).some((call) => call.method === 'gitRpc' && call.args[0] === 'git-create-branch'), 'Back created a branch');
   });
@@ -145,7 +154,7 @@ export async function runInteractionCases() {
       await chooseSession('s-3'); await chooseSession('s-2');
       await click('#git-pill'); await click(textButton('#sheet-root', 'Push & create PR'));
       await wait(() => textButton('#sheet-root', '继续未完成操作'));
-      assert(document.querySelector('#sheet-root .error')?.textContent.includes('已完成 push'), 'completed step missing');
+      assert(document.querySelector('#toast-root')?.textContent.includes('已完成 push'), 'completed step missing');
       await click(textButton('#sheet-root', '继续未完成操作'));
       await wait(() => !document.querySelector('#sheet-root .surface-panel'));
       assert(JSON.stringify(writes) === JSON.stringify(['git-push', 'git-create-change-request', 'git-create-change-request']), 'retry repeated push or skipped PR');
@@ -155,9 +164,21 @@ export async function runInteractionCases() {
   await check('composer and visible task controls fit the viewport', async () => {
     const nodes = ['#menu', '#attach-toggle', '#model-chip', '#access-chip', '#send-btn'];
     for (const selector of nodes) {
-      const rect = document.querySelector(selector).getBoundingClientRect();
-      assert(rect.width >= 43.9 && rect.height >= 43.9, `${selector} touch target too small`);
+      const node = document.querySelector(selector);
+      const rect = node.getBoundingClientRect();
+      const hit = getComputedStyle(node, '::before');
+      const horizontal = hit.content === 'none' ? 0 : Math.max(0, -(parseFloat(hit.left) || 0)) + Math.max(0, -(parseFloat(hit.right) || 0));
+      const vertical = hit.content === 'none' ? 0 : Math.max(0, -(parseFloat(hit.top) || 0)) + Math.max(0, -(parseFloat(hit.bottom) || 0));
+      assert(rect.width + horizontal >= 43.9 && rect.height + vertical >= 43.9, `${selector} touch target too small`);
       assert(rect.left >= -1 && rect.right <= innerWidth + 1 && rect.bottom <= innerHeight + 1, `${selector} overflows`);
+      if (selector === '#menu') {
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        for (const [x, y] of [[centerX - 21.5, centerY], [centerX + 21.5, centerY], [centerX, centerY - 21.5], [centerX, centerY + 21.5]]) {
+          const target = document.elementFromPoint(x, y);
+          assert(target === node || node.contains(target), `${selector} 44px edge is not pointer-reachable at ${x},${y}`);
+        }
+      }
     }
     assert(document.documentElement.scrollWidth <= innerWidth + 1, 'document overflows horizontally');
   });

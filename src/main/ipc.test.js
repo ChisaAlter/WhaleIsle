@@ -946,6 +946,31 @@ test('shell:get-remote reports available for a live gateway snapshot', async () 
   }
 });
 
+test('pairing link revocation is limited to the authorized Harness surface', async () => {
+  let revocations = 0;
+  const snapshot = { enabled: true, listening: true, pairingLinkUrl: 'https://example.test/#offer=replacement' };
+  const remote = { snapshot: () => snapshot, async revokePairingLink() { revocations += 1; return snapshot; } };
+  const ipc = loadIpc({ remote, remoteFeatureEnabled: true });
+  try {
+    const unauthorized = (error) => error.code === 'ERR_DSH_IPC_SENDER';
+    await assert.rejects(() => ipc.invoke('shell:revoke-remote-pairing-link', bootEvent()), unauthorized);
+    await assert.rejects(() => ipc.invoke('shell:revoke-remote-pairing-link', launcherEvent()), unauthorized);
+    assert.equal(revocations, 0);
+    assert.deepEqual(await ipc.invoke('shell:revoke-remote-pairing-link', harnessEvent()), snapshot);
+    assert.equal(revocations, 1);
+  } finally {
+    ipc.restore();
+  }
+  const parked = loadIpc({ remote });
+  try {
+    const result = await parked.invoke('shell:revoke-remote-pairing-link', harnessEvent());
+    assert.equal(result.enabled, false);
+    assert.equal(revocations, 1, 'parked remote must not mutate pairing credentials');
+  } finally {
+    parked.restore();
+  }
+});
+
 test('shell:save-remote refuses credential and workspace fields', async () => {
   const remote = {
     snapshot() {

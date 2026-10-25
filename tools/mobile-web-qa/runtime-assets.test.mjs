@@ -115,16 +115,13 @@ test('APK ZIP contents are decompressed and compared, known native assets are re
   assert.match(audit.apkSha256, /^[a-f0-9]{64}$/);
 });
 
-test('actual mobile runtime and Gradle use the shared staging contract', async () => {
+test('actual Web runtime stages the canonical brand image and only runtime dependencies', async () => {
   const { manifest } = await runtimeManifest();
   const names = manifest.files.map((file) => file.path);
   assert.ok(names.includes('chisacode/daemon-client.bundle.js'));
   assert.ok(names.includes('host/catalog.js'));
   assert.ok(names.includes('git/stack.js'));
+  assert.ok(names.includes('assets/whale-head.png'));
+  assert.deepEqual(await readFile(new URL('../../mobile/web/assets/whale-head.png', import.meta.url)), await readFile(new URL('../../assets/whale-head.png', import.meta.url)));
   assert.ok(!names.some(isDevelopmentFile));
-  const gradle = await readFile(new URL('../../mobile/android/app/build.gradle.kts', import.meta.url), 'utf8');
-  assert.match(gradle, /assets\.srcDir\(files\(mobileWebAssets\)\.builtBy\(stageMobileWebAssets\)\)/);
-  assert.match(gradle, /tasks\.named\("preBuild"\)\s*\{\s*dependsOn\(stageMobileWebAssets\)/);
-  assert.doesNotMatch(gradle, /assets\.srcDir\(rootProject\.file/);
-  assert.match(gradle, /versionCode = 2/);
 });

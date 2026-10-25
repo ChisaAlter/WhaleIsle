@@ -9,9 +9,11 @@ Connection choices are LAN / Server. Server (`relay`) is selected when no mode i
 1. Account menu Remote action (`settings.launcher.action` id `remote`) — on/off, pairing QR, bound devices with inline rename. When the account launcher is absent, the sidebar footer control (`sidebar.footer.action`) provides the same popup.
 2. Settings section id `remote` with tabs (`settings.remote.tab`) — **gateway** (LAN/relay mode, port, bind, LAN TLS, relay URL/token, rotate pairing token) and **channels** (preset `@xmanrui/dsh-im`).
 
-Registration requires Electron `window.shell` `getRemote` / `saveRemote` / `rotateRemoteToken` / `unbindRemoteDevice` / `renameRemoteDevice`. Plain `dsh web` has neither surface.
+Registration requires Electron `window.shell` `getRemote` / `saveRemote` / `rotateRemoteToken` / `revokeRemotePairingLink` / `unbindRemoteDevice` / `renameRemoteDevice`. Plain `dsh web` has neither surface.
 
-The pairing popup keeps a QR-sized loading frame while enabling, while the snapshot reports daemon startup, or while the relay handshake has no result. The QR and copy controls appear only after the listener, relay, and pairing offer are ready. Settled service or relay failures retain their retry controls and localized Toast; failed status reads leave loading and remain retryable. A read started before a mutation cannot overwrite that mutation's result.
+The pairing popup keeps a QR-sized loading frame while enabling, while the snapshot reports daemon startup, or while the relay handshake has no result. The QR and copy controls appear only after the listener, relay, and pairing offer are ready. Settled service or relay failures remain visible in the QR frame with a retry control; their localized Toast disappears after five seconds. Failed status reads leave loading and remain retryable. A read started before a mutation cannot overwrite that mutation's result.
+
+The QR uses a short-lived, single-use offer and refreshes after expiry or enrollment. Copy uses `pairingLinkUrl`, an independently persisted enrollment credential that remains valid across QR refresh and desktop restart. Device management can revoke the old link and generate a replacement without revoking already enrolled devices.
 
 See desktop feature cards `remote-settings` and `mobile-remote`.
 

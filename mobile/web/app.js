@@ -14,10 +14,9 @@ import { muxPatch, titleFromProjection } from './conversation/live.js';
 import { visibleScreen } from './ui/chrome.js';
 import { buttonBusy, clearButtonBusy } from './ui/button-busy.js?v=20261021-button-feedback';
 import { backTarget, createNavigation } from './ui/navigation.js?v=20260906-interaction';
-import { createSurface, createFocusScope } from './ui/surfaces.js?v=20260907-desktop-mobile';
+import { createSurface, createFocusScope } from './ui/surfaces.js?v=20261025-remote-refinement';
 import { sessionOwner } from './ui/session-owner.js?v=20260906-interaction';
 import { blankGreeting } from './ui/greeting.js';
-import { recentSessionRows } from './ui/recents.js';
 import { installComposerBehavior } from './ui/composer-behavior.js?v=20260906-interaction';
 import {
   channelLabel,
@@ -124,11 +123,15 @@ const phone = el('phone');
  * keyboard and rotation without changing the desktop browser path.
  */
 function syncViewportHeight() {
-  const height = Math.round(window.visualViewport?.height || window.innerHeight || 0);
+  const viewport = window.visualViewport;
+  const height = Math.round(viewport?.height || window.innerHeight || 0);
+  const offset = Math.round(viewport?.offsetTop || 0);
   if (height > 0) phone.style.setProperty('--dsh-viewport-height', `${height}px`);
+  phone.style.setProperty('--dsh-viewport-offset', `${offset}px`);
 }
 window.addEventListener('resize', syncViewportHeight);
 window.visualViewport?.addEventListener('resize', syncViewportHeight);
+window.visualViewport?.addEventListener('scroll', syncViewportHeight);
 syncViewportHeight();
 
 const screenConnect = el('screen-connect');
@@ -153,9 +156,11 @@ const gitPillLabel = el('git-pill-label');
 const gitPillCount = el('git-pill-count');
 const sessionsPage = el('sessions-page');
 const drawerStatus = el('drawer-status');
-const drawerRecents = el('drawer-recents');
+const drawerDirectory = el('drawer-directory');
 const navSessionsCount = el('nav-sessions-count');
 const drawerAccount = el('drawer-account');
+const drawerAvatar = el('drawer-avatar');
+const drawerAccountName = el('drawer-account-name');
 const blankGreetingEl = el('blank-greeting');
 const blankWorkspaceChipLabel = el('blank-workspace-chip-label');
 const connBanner = el('conn-banner');
@@ -202,8 +207,9 @@ function readPhoneStore() {
   try {
     const rawScheme = localStorage.getItem(PHONE_KEYS.scheme);
     if (rawScheme === 'light' || rawScheme === 'dark' || rawScheme === 'system') scheme = rawScheme;
-    const rawGlass = Number(localStorage.getItem(PHONE_KEYS.glass));
-    if (Number.isFinite(rawGlass) && rawGlass >= 0 && rawGlass <= 100) glass = rawGlass;
+    const storedGlass = localStorage.getItem(PHONE_KEYS.glass);
+    const rawGlass = Number(storedGlass);
+    if (storedGlass !== null && Number.isFinite(rawGlass) && rawGlass >= 0 && rawGlass <= 100) glass = rawGlass;
     uiFont = localStorage.getItem(PHONE_KEYS.uiFont) || '';
     if (localStorage.getItem(PHONE_KEYS.gitTitle) === 'false') gitTitle = false;
   } catch { /* storage unavailable → session memory */ }
@@ -416,6 +422,9 @@ function scheduleNavigation() {
     }
     if (active === el('drawer')) backdrop.inert = false;
     if (!state.drawerOpen) el('drawer').inert = true;
+    el('attach-toggle').setAttribute('aria-expanded', String(state.attachOpen));
+    accessChip.setAttribute('aria-expanded', String(state.pickerSheet === 'mode'));
+    modelChip.setAttribute('aria-expanded', String(state.pickerSheet === 'model'));
     const target = backTarget(state);
     if (active?.querySelector('.surface-panel') && lastSurfaceKey === surfaceIdentity()) active.querySelector('.surface-panel').dataset.refreshed = '';
     lastSurfaceKey = active ? surfaceIdentity() : '';
@@ -475,7 +484,7 @@ darkQuery.addEventListener?.('change', () => {
 function showError(message) {
   connectError.textContent = '';
   connectError.classList.add('hidden');
-  if (message) setToast(message, { tone: 'error', holdMs: null });
+  if (message) setToast(message, { tone: 'error', holdMs: 5000 });
 }
 
 function surfaceBusy(content, busy) {
@@ -487,7 +496,7 @@ function surfaceBusy(content, busy) {
 function operationError(message, retry, actions = []) {
   const owner = sessionOwner(state);
   setToast(message, {
-    tone: 'error', holdMs: null,
+    tone: 'error', holdMs: retry || actions.length ? 6000 : 5000,
     actions: [...(retry ? [{ label: '重试', onClick: async () => {
       if (!owner.owns()) {
         operationError('会话或连接已切换，请从原入口重试');
@@ -541,7 +550,7 @@ async function runInitialConnect(attempt, { replace = false, serverId = '' } = {
     if (state.chisacode) forceLogout('', { forget: false });
     deviceLine.textContent = '连接失败';
     const reason = /timed? out/i.test(error?.message || '') ? '连接超时' : (error?.message || '电脑没有响应');
-    operationError(`${reason}。确认电脑端远程已开启，再重试或重新扫码。`, () => runInitialConnect(attempt, { replace: true, serverId }));
+    operationError(`${reason}。请确认电脑端远程已开启。`, () => runInitialConnect(attempt, { replace: true, serverId }));
   } finally {
     if (pendingConnect === controller) {
       pendingConnect = null;
@@ -564,9 +573,9 @@ function renderSavedComputers() {
   if (!rows.length) return;
   const heading = document.createElement('p');
   heading.className = 'saved-title';
-  heading.textContent = '继续连接';
+  heading.textContent = '已保存的电脑';
   savedComputersEl.append(heading);
-  for (const entry of rows) {
+  for (const [index, entry] of rows.entries()) {
     const row = document.createElement('div');
     row.className = 'saved-row';
     const open = document.createElement('button');
@@ -583,10 +592,13 @@ function renderSavedComputers() {
     name.textContent = entry.computerName;
     const desc = document.createElement('span');
     desc.className = 'saved-desc';
+    const sameName = rows.filter((item) => item.computerName === entry.computerName).length > 1;
     desc.textContent = [
+      sameName ? `连接 ${index + 1}` : '',
       entry.relayEndpoint,
       entry.savedAt ? new Date(entry.savedAt).toLocaleDateString('zh-CN') : '',
     ].filter(Boolean).join(' · ');
+    open.setAttribute('aria-label', `${entry.computerName} · ${desc.textContent}`);
     main.append(name, desc);
     open.append(tile, main, svgNode('<svg width="14" height="14" viewBox="0 0 16 16" fill="none" class="chev"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'));
     buttonBusy(open, connectBusy && connectingServerId === entry.serverId, { label: '连接中…' });
@@ -741,17 +753,22 @@ function renderComposer({ nativeSnapshot = true } = {}) {
   const canSend = Boolean(draft.value.trim()) || state.attachments.length > 0;
   sendBtn.disabled = !canSend || composerOffline() || state.sendBusy;
   buttonBusy(sendBtn, state.sendBusy, { iconOnly: true, label: '正在发送消息…' });
+  const choiceDisabled = !state.sessionId || composerOffline() || Boolean(currentReadOnlyReason());
+  accessChip.disabled = choiceDisabled;
+  modelChip.disabled = choiceDisabled;
+  const choiceHint = !state.sessionId ? '先打开或新建一个会话' : composerOffline() ? '等待连接恢复' : currentReadOnlyReason();
   const accessLabel = currentModeState().currentLabel || '权限';
   // #access-chip's first child is a whitespace text node; the visually-hidden
   // .chip-label span is the label slot (the shield icon stays visible alone).
   accessChip.querySelector('.chip-label').textContent = accessLabel;
-  accessChip.title = `权限：${accessLabel}`;
+  accessChip.title = choiceDisabled ? choiceHint : `权限：${accessLabel}`;
   accessChip.setAttribute('aria-label', `权限：${accessLabel}`);
   const modelLabel = currentModelState().label || '模型';
   // The label span (not a bare text node) is what lets the chip ellipsize
   // "model · effort" on a narrow phone instead of wrapping the tool row.
   modelChip.querySelector('.chip-label').textContent = modelLabel;
-  modelChip.title = modelLabel;
+  modelChip.title = choiceDisabled ? choiceHint : modelLabel;
+  modelChip.setAttribute('aria-label', choiceDisabled ? `模型：${choiceHint}` : `模型：${modelLabel}`);
   planChip.classList.toggle('hidden', !state.permission.planOn || Boolean(currentReadOnlyReason()));
   attachRail.classList.toggle('hidden', state.attachments.length === 0);
   attachRail.replaceChildren(...state.attachments.map((image, index) => {
@@ -823,12 +840,21 @@ function sessionRowNode(row, { child = false, subagentTag = false } = {}) {
   const title = document.createElement('b');
   title.textContent = sessionTitle(row);
   const meta = document.createElement('span');
+  meta.className = 'session-meta';
   meta.textContent = [
     child || subagentTag ? '子智能体' : '',
     row.running ? '运行中' : '',
     row.searchSnippet || '',
   ].filter(Boolean).join(' · ');
-  button.append(title, meta);
+  const status = row.sessionId === state.sessionId && state.pendingApprovals.length
+    ? 'wait' : row.running ? 'run' : '';
+  wrap.dataset.state = status;
+  const dot = document.createElement('span');
+  dot.className = 'session-state';
+  dot.setAttribute('aria-hidden', 'true');
+  button.append(dot, title);
+  if (meta.textContent) button.append(meta);
+  button.setAttribute('aria-label', [sessionTitle(row), meta.textContent, status === 'wait' ? '等待审批' : ''].filter(Boolean).join(' · '));
   button.addEventListener('click', () => {
     if (row.archived) return;
     openSession(row.sessionId).catch((error) => showBanner(error.message));
@@ -1015,34 +1041,52 @@ function renderSessions() {
   scheduleNativeSnapshot();
 }
 
-/** Drawer: status rows, 「最近」single-line sessions, nav count, account avatar. */
+/** The sidebar mirrors the desktop workspace tree and keeps every row action. */
 function renderDrawer(visibleRows) {
   const rows = Array.isArray(visibleRows)
     ? visibleRows
     : state.sessions.filter((row) => !row.archived && !isUntitledBlank(row));
   navSessionsCount.textContent = String(rows.length);
-  drawerAccount.textContent = (state.hostName || '电').trim().charAt(0) || '电';
+  const host = (state.hostName || '我的电脑').trim() || '我的电脑';
+  drawerAvatar.textContent = host.charAt(0);
+  drawerAccountName.textContent = host;
+  drawerAccount.title = `${host} · 连接详情`;
   drawerStatus.replaceChildren();
-  el('drawer').classList.toggle('surface-busy', state.catalogBusy === true);
-  el('drawer').setAttribute('aria-busy', String(state.catalogBusy === true));
-  drawerRecents.replaceChildren(...recentSessionRows(rows).map((row) => {
-    const item = document.createElement('button');
-    item.type = 'button';
-    item.className = `recent${row.sessionId === state.sessionId ? ' active' : ''}`;
-    const bullet = document.createElement('span');
-    bullet.className = 'bullet';
-    if (row.running === true) bullet.dataset.state = 'run';
-    else if (row.sessionId === state.sessionId && state.pendingApprovals.length) bullet.dataset.state = 'wait';
-    const title = document.createElement('span');
-    title.className = 'r-title';
-    title.textContent = sessionTitle(row);
-    item.append(bullet, title);
-    item.addEventListener('click', () => {
-      setDrawerOpen(false);
-      openSession(row.sessionId).catch((error) => showBanner(error.message));
-    });
-    return item;
-  }));
+  const busy = state.catalogBusy === true;
+  drawerDirectory.classList.toggle('surface-busy', busy);
+  drawerDirectory.setAttribute('aria-busy', String(busy));
+  const nodes = [];
+  const { sections, ungrouped } = workspaceDrawerSections(rows, state.workspaces);
+  for (const section of sections) {
+    const group = document.createElement('div');
+    group.className = 'drawer-workspace';
+    group.append(workspaceHeadNode(section.workspace, { count: section.rows.length }));
+    if (state.expandedWorkspaces[section.workspace.workspaceId] !== false) {
+      const children = [];
+      appendGroupedRows(children, section.rows, { inWorkspace: true });
+      if (children.length) group.append(...children);
+      else group.append(descNode('暂无会话', 'row-desc drawer-empty'));
+    }
+    nodes.push(group);
+  }
+  if (ungrouped.length) {
+    nodes.push(descNode('无工作区文件夹', 'row-desc session-section-label'));
+    appendGroupedRows(nodes, ungrouped);
+  }
+  if (!busy && !sections.length && !ungrouped.length && !state.sessionsError) {
+    nodes.push(descNode('还没有会话，选择工作区或开始新会话。', 'row-desc drawer-empty'));
+  }
+  if (state.sessionsError) {
+    const retry = drawerFootButton('重试加载会话', { disabled: busy, onClick: () => runReconnectResync() });
+    retry.title = state.sessionsError;
+    nodes.push(retry);
+  }
+  if (state.transport === 'chisacode') {
+    nodes.push(drawerFootButton('已归档会话', { onClick: () => openHistorySheet() }));
+  }
+  const scroll = drawerDirectory.scrollTop;
+  drawerDirectory.replaceChildren(...nodes);
+  drawerDirectory.scrollTop = scroll;
 }
 
 async function runSessionSearch(query) {
@@ -3506,7 +3550,7 @@ async function refreshGit() {
   if (state.settingsOpen) renderSettings();
 }
 
-function setToast(message, { tone = 'info', holdMs = 2400, actions = [] } = {}) {
+function setToast(message, { tone = 'info', holdMs = 4000, actions = [] } = {}) {
   state.gitToast = message || '';
   state.toastTone = tone;
   state.toastHoldMs = holdMs;
@@ -4192,6 +4236,13 @@ function settingsRowIcon(pane) {
 }
 
 function openSettingsRow(pane) {
+  if (pane === '模型' || pane === '权限') {
+    state.settingsOpen = false;
+    state.settingsPane = '';
+    renderScreen();
+    openPicker(pane === '模型' ? 'model' : 'mode');
+    return;
+  }
   state.settingsPane = pane;
   if (pane === '工作区') {
     refreshGit();
@@ -4911,9 +4962,10 @@ function renderSettings() {
   queueMicrotask(() => { options.scrollTop = savedScroll; });
   if (!state.settingsOpen) return;
   const pane = state.settingsPane;
+  settings.toggleAttribute('data-task', pane === '工作区' || pane === '文件');
   settingsTitle.textContent = pane || '设置';
   settingsBack.classList.toggle('hidden', !pane);
-  el('close-settings').classList.toggle('hidden', Boolean(pane));
+  el('close-settings').classList.remove('hidden');
   clearButtonBusy(options);
   options.replaceChildren();
   surfaceBusy(options, false);
@@ -5032,17 +5084,34 @@ function sheetItem({ label, hint = '', enabled = true, onClick }) {
 }
 
 function sheetLayer(title, closeSheet) {
-  const task = Boolean(state.newSession || state.history || state.gitDialog === 'branch');
-  const bottom = !task && Boolean(state.pickerSheet || state.attachOpen);
-  const anchor = state.pickerSheet ? 'composer' : state.gitDialog === 'menu' ? 'header' : 'viewport';
+  const task = Boolean(state.newSession?.step === 'browse' || state.history || state.gitDialog === 'branch');
+  const modal = !task && Boolean(state.newSession || state.pickerSheet === 'model');
+  const anchor = state.pickerSheet || state.attachOpen ? 'composer' : state.gitDialog === 'menu' ? 'header' : 'viewport';
   const result = createSurface(document, {
-    title, task, variant: task ? 'task' : bottom ? 'bottom' : 'menu', anchor,
+    title, task, variant: task ? 'task' : modal ? 'modal' : 'menu', anchor,
     onClose: () => { if (!navigationBusy()) closeSheet(); },
-    onBack: (task || (bottom && state.pickerSheet === 'model' && state.pickerPage))
+    onBack: (task || (modal && state.pickerSheet === 'model' && state.pickerPage))
       ? () => navigation.back()
       : null,
   });
   result.panel.setAttribute('aria-label', title);
+  if (!task && !modal) {
+    const trigger = state.attachOpen ? el('attach-toggle') : state.pickerSheet === 'mode' ? accessChip
+      : state.gitDialog === 'menu' ? gitPill
+      : state.sessionMenu ? [...el('drawer').querySelectorAll('.session-row')].find((node) => node.dataset.sessionId === state.sessionMenu)?.querySelector('.session-more')
+      : state.workspaceMenu ? [...el('drawer').querySelectorAll('.workspace-head')].find((node) => node.dataset.workspaceId === state.workspaceMenu)?.querySelector('.session-more:last-child')
+      : null;
+    const bounds = trigger?.getBoundingClientRect?.();
+    const frame = phone.getBoundingClientRect();
+    if (bounds) {
+      const above = anchor === 'composer' || frame.bottom - bounds.bottom < Math.min(240, frame.height / 2);
+      result.layer.dataset.placement = above ? 'above' : 'below';
+      result.layer.style.setProperty('--menu-x', `${Math.max(12, Math.min(bounds.left - frame.left, frame.width - 292))}px`);
+      result.layer.style.setProperty('--menu-y', `${Math.max(12, bounds.bottom - frame.top + 8)}px`);
+      result.layer.style.setProperty('--menu-bottom', `${Math.max(12, frame.bottom - bounds.top + 8)}px`);
+      result.layer.style.setProperty('--menu-height', `${Math.max(80, above ? bounds.top - frame.top - 20 : frame.bottom - bounds.bottom - 20)}px`);
+    }
+  }
   return { layer: result.layer, sheet: result.content };
 }
 
@@ -5995,33 +6064,16 @@ function renderDialog() {
 function renderToast() {
   clearButtonBusy(toastRoot);
   toastRoot.replaceChildren();
-  const busy = state.gitBusy && !state.gitProgressDismissed;
-  if (!state.gitBusy && !state.gitToast) return;
+  // Running Git operations already report progress on their locked controls.
+  if (state.gitBusy || !state.gitToast) return;
   const layer = document.createElement('div');
   layer.className = 'toast-layer';
-  if (state.gitBusy && state.gitProgressDismissed) {
-    const summary = document.createElement('button');
-    summary.type = 'button';
-    summary.className = 'toast';
-    summary.textContent = state.gitProgress ? `查看 Git 进度 · ${state.gitProgress}` : '查看 Git 进度';
-    summary.addEventListener('click', () => {
-      state.gitProgressDismissed = false;
-      renderToast();
-    });
-    layer.append(summary);
-    toastRoot.append(layer);
-    return;
-  }
   const toast = document.createElement('div');
   toast.className = 'toast';
-  toast.dataset.tone = busy ? 'info' : state.toastTone;
-  toast.setAttribute('role', !busy && state.toastTone === 'error' ? 'alert' : 'status');
+  toast.dataset.tone = state.toastTone;
+  toast.setAttribute('role', state.toastTone === 'error' ? 'alert' : 'status');
   toast.setAttribute('aria-atomic', 'true');
-  if (busy) {
-    const spin = document.createElement('span');
-    spin.className = 'spin';
-    toast.append(spin);
-  } else {
+  {
     const bad = state.toastTone === 'error';
     const mark = document.createElement('span');
     mark.className = `mark ${bad ? 'bad' : state.toastTone === 'success' ? 'ok' : ''}`;
@@ -6037,9 +6089,9 @@ function renderToast() {
   const main = document.createElement('span');
   main.className = 'toast-main';
   const title = document.createElement('b');
-  title.textContent = busy ? (state.gitProgress ? `Git: ${state.gitProgress}` : 'Git 操作进行中') : state.gitToast;
+  title.textContent = state.gitToast;
   main.append(title);
-  if (!busy && state.toastActions.length) {
+  if (state.toastActions.length) {
     const actions = document.createElement('div');
     actions.className = 'toast-actions';
     for (const action of state.toastActions) {
@@ -6054,18 +6106,7 @@ function renderToast() {
     }
     main.append(actions);
   }
-  const close = document.createElement('button');
-  close.type = 'button';
-  close.className = 'icon-btn';
-  close.setAttribute('aria-label', '关闭');
-  close.append(svgNode('<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 2.5L13.5 13.5M13.5 2.5L2.5 13.5" stroke="currentColor"/></svg>'));
-  close.addEventListener('click', () => {
-    state.gitToast = '';
-    state.gitProgressDismissed = true;
-    clearTimeout(toastTimer);
-    renderToast();
-  });
-  toast.append(main, close);
+  toast.append(main);
   layer.append(toast);
   toastRoot.append(layer);
 }
@@ -6133,8 +6174,7 @@ el('paste-enter').addEventListener('click', () => {
   }
   connect(outcome.offerUrl).catch((error) => showError(error.message || '连接失败'));
 });
-// The menu button stays above the open drawer and doubles as its close
-// control; the drawer's search field is inset so the two never overlap.
+// The drawer owns its close control and shares the normal Back hierarchy.
 function setDrawerOpen(open) {
   state.drawerOpen = open;
   phone.toggleAttribute('data-drawer', open);
@@ -6146,6 +6186,11 @@ el('menu').addEventListener('click', () => {
   setDrawerOpen(!phone.hasAttribute('data-drawer'));
 });
 backdrop.addEventListener('click', () => setDrawerOpen(false));
+el('drawer-close').addEventListener('click', () => setDrawerOpen(false));
+el('drawer-add-workspace').addEventListener('click', () => {
+  startNewSessionChooser();
+  void openDirectoryBrowse();
+});
 function openWorkspacePane() {
   openSettings('工作区');
   refreshGit();
@@ -6172,6 +6217,7 @@ settingsBack.addEventListener('click', () => {
   navigation.back();
 });
 el('close-settings').addEventListener('click', () => closeSettings());
+el('settings-mask').addEventListener('click', () => closeSettings());
 let searchTimer = 0;
 search.addEventListener('input', () => {
   state.query = search.value;

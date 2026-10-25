@@ -212,6 +212,14 @@
   min-width: 0;
 }
 
+.linkManagement {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
 .devicesChevron {
   display: inline-flex;
   color: var(--dsw-alias-label-tertiary);

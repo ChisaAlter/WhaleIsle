@@ -342,6 +342,9 @@ test('parkRemoteSnapshot forces unavailable shape for IPC park path', () => {
     enabled: true,
     listening: true,
     token: 'secret',
+    pairingQr: '<svg>secret</svg>',
+    pairingLinkUrl: 'https://example.test/#offer=persistent-secret',
+    pairingExpiresAtMs: 12345,
     urls: [{ pairingUrl: 'http://10.0.0.4:3180/#offer=secret' }],
   });
   assert.equal(parked.available, false);
@@ -349,6 +352,9 @@ test('parkRemoteSnapshot forces unavailable shape for IPC park path', () => {
   assert.equal(parked.listening, false);
   assert.deepEqual(parked.urls, []);
   assert.equal(parked.token, '');
+  assert.equal(parked.pairingQr, '');
+  assert.equal(parked.pairingLinkUrl, '');
+  assert.equal(parked.pairingExpiresAtMs, null);
 });
 
 test('saveConfig persists normalized recovery settings', () => {

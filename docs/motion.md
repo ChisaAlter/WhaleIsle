@@ -141,17 +141,17 @@ composer 上四个浮层共用此时长：加号斜杠菜单、权限 `Menu`、�
 
 ### 手机交互 inventory
 
-`mobile/web` 是[设计语言的手机承载面](design-language.md#手机远程交互)，Android WebView 加载同一份源码；不引入另一套主题或动画库。下表记录当前实现，不把共享 token 等同于已接入官方 React `usePresence`。
+`mobile/web` 是[设计语言的手机承载面](design-language.md#手机远程交互)，Android 使用原生 Compose；两端不引入另一套主题或动画库。下表记录当前实现，不把共享 token 等同于已接入官方 React `usePresence`。
 
 | 产品面 | 当前行为与源码 |
 | --- | --- |
-| 输入框触发的底部面板（附件来源、模型／思考、权限） | `ui/surfaces.js` 的 `bottom` 变体（`data-surface="bottom"`）；`app.css` 的 `bottom-sheet-in` 仅在 `prefers-reduced-motion: no-preference` 下入场：面板 translateY(100%)→0、遮罩 opacity 0→1，使用 `--ds-motion-duration-overlay` 与 `--ds-ease-in-out`；同面板内下钻换页不重播入场 |
+| 输入框触发的紧凑弹窗（附件来源、模型／思考、权限） | `ui/surfaces.js` 的 Menu / Modal 变体；`app.css` 的 `mobile-surface-in` 仅在 `prefers-reduced-motion: no-preference` 下以 opacity 与 translateY(8px) 入场，使用既有 overlay 时长与缓动；同面板内下钻和结果刷新不重播入场 |
 | 行菜单与 Git 菜单短面板；目录、Git 表单与完整会话列表全屏任务、确认层 | `ui/surfaces.js` 生成 `.surface-panel`；`app.css` 的 `mobile-surface-in` 仅在 `prefers-reduced-motion: no-preference` 下入场：opacity + translateY(8px)，使用 `--ds-motion-duration-overlay`（回退 `--ds-transition-duration`）和 `--ds-ease-in-out`。全屏任务无浮卡边框，头部与操作区不参与正文滚动 |
 | 同一表面刷新/异步结果 | `app.js` 保持 surface identity，设置 `data-refreshed`；CSS 禁止重复入场，避免模型选中、查询结果等更新使整个面板重播。焦点与滚动恢复不是动效 |
 | 关闭与返回 | `ui/navigation.js` 与 `app.js` 按当前层处理按钮、浏览器及 Android 返回；当前树直接隐藏/移除，没有官方 Presence 的 200ms 退场挂载，不声称已具备完整 overlay 退场 recipe。返回不能借动画完成事件重放业务写请求 |
 | 会话抽屉 | `.drawer` 使用 transform 与 `--ds-transition-duration-slow` / `--ds-ease-in-out`；减弱动效关闭 transition。此项不代表已接入或验收拖动手势 |
 | 设置目录/详情、草稿阅读/编辑、灯箱 | 当前为内容/可见状态切换；不登记未实现的 `swap` / `flip` 或高度动画。键盘、viewport 与焦点恢复另行验收 |
-| Android 系统返回/IME、媒体选择和前后台恢复 | `RemoteWebScreen.kt` / `RemoteWebBack.kt` / `WebFileChooser.kt` 负责原生承载，不新增网页 motion recipe；系统键盘和活动切换需真机证据 |
+| Android 系统返回/IME、媒体选择和前后台恢复 | `NativeChatScreen.kt` / `NativeRemoteScreen.kt` / `NativeImagePicker.kt` 负责原生 Compose、Dialog 与媒体归属，不新增网页 motion recipe；系统键盘和活动切换需真机证据 |
 
 减弱动效由 `mobile/web/tokens.css` 将 duration token 归零，并由 `app.css` 的媒体查询关闭入场、抽屉与持续指示。入场/刷新抑制和减弱动效均须在实际动画模式复测。截至 2026-09-06，**早期候选的 60/60 受控 DOM 检查覆盖六种尺寸，不认证最新修订**；snap 动画状态只证明当时的 DOM/几何，不能当作播放时序、退场、焦点时序或真机键盘/手势证据。之后源码已修改，最终源复测因 T3 Code preview 的 evaluate/snapshot/navigate 工具超时未完成。当前 debug APK 已构建，但公网与物理设备尚未验收，不等于 T3 Pass；详见[本轮证据](../tools/mobile-web-qa/results/2026-09-06-interaction/README.md)。
 

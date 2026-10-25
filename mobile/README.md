@@ -16,7 +16,7 @@
 4. 配对后是桌面 `dsh web` 的同协议第二客户端：daemon 白名单 host 隧道转发 `session.list` / `workspace.list` / `session.history` / `session.prompt` / `session.cancel`，审批走 `respond` → `POST /api/respond`。新会话走 `session.create`，支持已有工作区、无工作目录，以及 `host.listDirectory` / `host.createDirectory` / `workspace.create` 浏览和登记目录；不是 ACP `fetchAgents` / `createAgent`。
 5. 模型与思考档走 `session.models` / `session.selectModel`；权限、Plan 与斜杠命令走 Typert `commands/execute`，不能作为聊天文本发送。草稿、附件与异步结果保留设备/会话归属。
 6. Git 走 daemon 隧道 `shell:git-*` 到桌面 Electron Git dispatch，不是 ACP checkout/file RPC。支持 Init、分支搜索/切换/跟踪、**创建并检出分支**、Commit/Push/PR 组合动作、Pull、Publish 与 View PR；具体白名单与恢复边界见 feature card。Files / Diff / MCP / 技能仍显示冻结说明，不提供假文件列表；打开电脑路径与受限设置不开放。
-7. 权限、模型、附件来源与行菜单用短面板；目录浏览和 Git 表单用全屏任务，设置按目录/详情分层。屏幕返回、浏览器返回和 Android 返回共用网页导航决策；交互样式与动效见[设计语言](../docs/design-language.md#手机远程交互)及[手机动效 inventory](../docs/motion.md#手机交互-inventory)。
+7. 侧栏贴边直角，使用桌面鲸屿头像与字标，直接显示工作区分组目录；输入卡以 22px 圆角、细边和无外投影适配竖屏与软键盘。权限、模型、附件、重命名、新会话选择和简短设置用紧凑弹窗，目录浏览和复杂 Git 表单保留长任务面。屏幕返回、浏览器返回共用网页导航决策；交互样式与动效见[设计语言](../docs/design-language.md#手机远程交互)及[手机动效 inventory](../docs/motion.md#手机交互-inventory)。
 8. 开发测试：`node --test "mobile/web/**/*.test.js"`；构建资源与 QA 服务测试：`node --test tools/mobile-web-qa/server.test.mjs tools/mobile-web-qa/runtime-assets.test.mjs`。命令从仓库根目录执行。
 
 应用内扫码的降级（如实呈现，不 vendor 第三方解码库）：

@@ -4,12 +4,17 @@ import { createConnectionOfferV2, encodeOfferToFragmentUrl } from "./connection-
 import { loadOrCreateDaemonKeyPair } from "./daemon-keypair.js";
 import { renderPairingQr } from "./pairing-qr.js";
 import { RelayDeviceCredentialStore } from "./relay-device-credential-store.js";
+import { RelayPairingLinkStore } from "./relay-pairing-link-store.js";
 import { getOrCreateServerId } from "./server-id.js";
 
 export interface LocalPairingOffer {
   relayEnabled: boolean;
   url: string | null;
   qr: string | null;
+  /** One-time QR expiry; the raw token stays only in the private offer URL. */
+  expiresAtMs?: number;
+  /** Reusable offer, independently revocable from all enrolled devices. */
+  linkUrl?: string;
 }
 
 export async function generateLocalPairingOffer(args: {
@@ -21,6 +26,10 @@ export async function generateLocalPairingOffer(args: {
   relayPublicUseTls?: boolean;
   appBaseUrl?: string;
   includeQr?: boolean;
+  /** Desktop copy-link action uses a separately revocable enrollment credential. */
+  includePersistentLink?: boolean;
+  /** Cancel before writing credentials when the owning desktop startup was replaced. */
+  assertCurrent?: () => void;
   logger?: Logger;
 }): Promise<LocalPairingOffer> {
   const relayEnabled = args.relayEnabled ?? true;
@@ -39,6 +48,7 @@ export async function generateLocalPairingOffer(args: {
   const appBaseUrl = args.appBaseUrl ?? "https://app.chisacode.sh";
   const serverId = getOrCreateServerId(args.chisacodeHome, { logger: args.logger });
   const daemonKeyPair = await loadOrCreateDaemonKeyPair(args.chisacodeHome, args.logger);
+  args.assertCurrent?.();
   // Issue a short-lived one-time pairing bootstrap token for handshake v2.
   // Old clients ignore authBootstrap; new clients use it for first device bind.
   const deviceStore = new RelayDeviceCredentialStore(args.chisacodeHome);
@@ -55,12 +65,32 @@ export async function generateLocalPairingOffer(args: {
     relay: { endpoint: relayPublicEndpoint, useTls: relayPublicUseTls },
   });
   const url = encodeOfferToFragmentUrl({ offer, appBaseUrl });
+  let linkUrl: string | undefined;
+  if (args.includePersistentLink) {
+    args.assertCurrent?.();
+    const link = new RelayPairingLinkStore(args.chisacodeHome).getOrCreate();
+    const linkOffer = await createConnectionOfferV2({
+      serverId,
+      daemonPublicKeyB64: daemonKeyPair.publicKeyB64,
+      relayAuthPublicKeyB64: daemonKeyPair.relayAuthPublicKeyB64,
+      authBootstrap: {
+        version: 1,
+        kind: "persistent",
+        pairingToken: link.token,
+        expiresAtMs: link.expiresAtMs,
+      },
+      relay: { endpoint: relayPublicEndpoint, useTls: relayPublicUseTls },
+    });
+    linkUrl = encodeOfferToFragmentUrl({ offer: linkOffer, appBaseUrl });
+  }
+  const metadata = { expiresAtMs: pairing.expiresAtMs, ...(linkUrl ? { linkUrl } : {}) };
 
   if (args.includeQr === false) {
     return {
       relayEnabled: true,
       url,
       qr: null,
+      ...metadata,
     };
   }
 
@@ -75,5 +105,6 @@ export async function generateLocalPairingOffer(args: {
     relayEnabled: true,
     url,
     qr,
+    ...metadata,
   };
 }

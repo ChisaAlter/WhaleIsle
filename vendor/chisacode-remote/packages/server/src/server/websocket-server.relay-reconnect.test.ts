@@ -1,4 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { RelayPairingLinkStore } from "./relay-pairing-link-store.js";
+import { RelayDeviceCredentialStore } from "./relay-device-credential-store.js";
+import { computeRelayDeviceAuthProof } from "./relay-device-auth.js";
 import type { Server as HTTPServer } from "http";
 import type pino from "pino";
 import type { AgentManager } from "./agent/agent-manager.js";
@@ -112,6 +119,7 @@ import { summarizeUntrustedLogIdentifier } from "./log-metadata.js";
 
 interface WebSocketServerInternals {
   attachSocket(ws: unknown, req: unknown): Promise<void>;
+  sessions: Map<MockSocket, { session: unknown; authenticatedDeviceId: string | null }>;
 }
 
 const TEST_DAEMON_VERSION = "1.2.3-test";
@@ -416,6 +424,162 @@ describe("relay external socket reconnect behavior", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  test("persistent link enrolls separate devices, rejects after revoke, and keeps device proofs working", async () => {
+    const home = mkdtempSync(join(tmpdir(), "relay-persistent-gate-"));
+    const server = createServer();
+    const sockets: MockSocket[] = [];
+    try {
+      const links = new RelayPairingLinkStore(home);
+      const persistent = links.getOrCreate();
+      const metadata = {
+        transport: "relay" as const,
+        requireDeviceAuth: true,
+        chisacodeHome: home,
+        serverId: "srv_test",
+        daemonPublicKeyB64: "daemon-key",
+        relayClientPublicKeyB64: "client-key",
+        relayAuthChallenge: "challenge-persistent-enrollment",
+      };
+      const enroll = async (
+        deviceId: string,
+        token: string,
+        challenge = metadata.relayAuthChallenge,
+        clientId = `cid-${deviceId}`,
+      ) => {
+        const socket = new MockSocket();
+        sockets.push(socket);
+        await server.attachExternalSocket(socket, metadata);
+        socket.emit(
+          "message",
+          JSON.stringify({
+            ...createHelloMessage(clientId),
+            relayDeviceAuth: {
+              version: 1,
+              deviceId,
+              pairingToken: token,
+              challenge,
+              clientPublicKeyB64: "client-key",
+            },
+          }),
+        );
+        await Promise.resolve();
+        return socket;
+      };
+      const first = await enroll("dev_first_phone", persistent.token);
+      const second = await enroll("dev_first_phone", persistent.token);
+      const resultSchema = z.object({
+        type: z.literal("relay_device_auth_result"),
+        ok: z.literal(true),
+        deviceId: z.string(),
+        deviceSecret: z.string().min(32),
+      });
+      const firstResult = resultSchema.parse(JSON.parse(String(first.sent[0])));
+      const secondResult = resultSchema.parse(JSON.parse(String(second.sent[0])));
+      expect(first.readyState).toBe(1);
+      expect(second.readyState).toBe(1);
+      expect(firstResult.deviceId).not.toBe(secondResult.deviceId);
+      expect(firstResult.deviceSecret).not.toBe(secondResult.deviceSecret);
+      expect(sessionMock.instances).toHaveLength(2);
+      const unbound = await enroll("dev_wrong_channel", persistent.token, "different-challenge");
+      expect(unbound.readyState).toBe(3);
+      expect(sessionMock.instances).toHaveLength(2);
+      const staleStore = new RelayDeviceCredentialStore(home);
+      links.revoke();
+      staleStore.verifyDeviceSecret(firstResult.deviceId, firstResult.deviceSecret);
+      const revoked = await enroll("dev_revoked_link", persistent.token);
+      expect(revoked.readyState).toBe(3);
+      expect(sessionMock.instances).toHaveLength(2);
+      const reconnect = new MockSocket();
+      sockets.push(reconnect);
+      const challenge = "fresh-reconnect-after-link-revocation";
+      await server.attachExternalSocket(reconnect, { ...metadata, relayAuthChallenge: challenge });
+      const proof = computeRelayDeviceAuthProof(firstResult.deviceSecret, {
+        serverId: "srv_test",
+        daemonPublicKeyB64: "daemon-key",
+        clientPublicKeyB64: "client-key",
+        deviceId: firstResult.deviceId,
+        challenge,
+      });
+      reconnect.emit(
+        "message",
+        JSON.stringify({
+          ...createHelloMessage("cid-dev_first_phone"),
+          relayDeviceAuth: {
+            version: 1,
+            deviceId: firstResult.deviceId,
+            proof,
+            challenge,
+            clientPublicKeyB64: "client-key",
+          },
+        }),
+      );
+      await Promise.resolve();
+      expect(reconnect.readyState).toBe(1);
+      expect(parseSentEnvelope(reconnect.sent[0]).type).toBe("session");
+      expect(sessionMock.instances).toHaveLength(2);
+      const connections = asInternals<WebSocketServerInternals>(server).sessions;
+      expect(connections.get(reconnect)).toBe(connections.get(first));
+      expect(connections.get(reconnect)?.authenticatedDeviceId).toBe(firstResult.deviceId);
+      const secondReconnect = new MockSocket();
+      sockets.push(secondReconnect);
+      const secondChallenge = "second-device-reconnect-after-reenrollment";
+      await server.attachExternalSocket(secondReconnect, {
+        ...metadata,
+        relayAuthChallenge: secondChallenge,
+      });
+      const secondProof = computeRelayDeviceAuthProof(secondResult.deviceSecret, {
+        serverId: "srv_test",
+        daemonPublicKeyB64: "daemon-key",
+        clientPublicKeyB64: "client-key",
+        deviceId: secondResult.deviceId,
+        challenge: secondChallenge,
+      });
+      secondReconnect.emit(
+        "message",
+        JSON.stringify({
+          ...createHelloMessage("cid-dev_first_phone"),
+          relayDeviceAuth: {
+            version: 1,
+            deviceId: secondResult.deviceId,
+            proof: secondProof,
+            challenge: secondChallenge,
+            clientPublicKeyB64: "client-key",
+          },
+        }),
+      );
+      await Promise.resolve();
+      expect(secondReconnect.readyState).toBe(1);
+      expect(parseSentEnvelope(secondReconnect.sent[0]).type).toBe("session");
+      expect(sessionMock.instances).toHaveLength(2);
+      expect(connections.get(secondReconnect)).toBe(connections.get(second));
+      expect(connections.get(secondReconnect)?.authenticatedDeviceId).toBe(secondResult.deviceId);
+      expect(connections.get(secondReconnect)).not.toBe(connections.get(reconnect));
+      const replacement = await enroll("dev_replacement_link", links.getOrCreate().token);
+      expect(replacement.readyState).toBe(1);
+      expect(sessionMock.instances).toHaveLength(3);
+      // Pre-extension QR tokens were arbitrary base64url, including this prefix.
+      staleStore.issuePairingToken();
+      const legacyToken = "link_legacy-random-short-token";
+      const legacyHash = createHash("sha256").update(legacyToken).digest("hex");
+      writeFileSync(
+        join(home, "relay-pairing-tokens", `${legacyHash}.json`),
+        JSON.stringify({
+          tokenHash: legacyHash,
+          expiresAtMs: Date.now() + 600_000,
+          consumedAt: null,
+          createdAt: new Date().toISOString(),
+        }),
+      );
+      const legacy = await enroll("dev_legacy_prefix", legacyToken);
+      expect(legacy.readyState).toBe(1);
+      expect(sessionMock.instances).toHaveLength(4);
+    } finally {
+      for (const socket of sockets) socket.close();
+      await server.close();
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
   test("keeps the same session when relay reconnects within grace window", async () => {
