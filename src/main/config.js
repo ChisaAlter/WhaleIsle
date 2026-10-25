@@ -108,6 +108,7 @@ function normalizePetStateInConfig(config) {
 }
 
 function normalizeLive2dPetState(value) {
+  if (value !== undefined && value === settingsCache?.config.live2dPet) return value;
   const source = isPlainObject(value) ? value : {};
   return {
     enabled: source.enabled === true,
@@ -493,32 +494,65 @@ function defaultWorkspace() {
   return projectRoot();
 }
 
-function readConfigLayers() {
-  const { stored, unreadable: configUnreadable } = readSettingsFile(configPath());
+// The pet ledger can contain tens of thousands of entries. Reuse only the
+// normalized settings of an unchanged file; credentials remain a live read.
+let settingsCache = null;
+
+function settingsFileKey(file) {
+  try {
+    const stat = fs.statSync(file, { bigint: true });
+    return [file, stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
+  } catch {
+    return null;
+  }
+}
+
+function freezeSettings(value) {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value)) freezeSettings(child);
+  return Object.freeze(value);
+}
+
+function readConfigLayers(fresh = false) {
+  const file = configPath();
+  const key = settingsFileKey(file);
+  let stored;
+  let configUnreadable;
+  let settings;
+  if (!fresh && key !== null && settingsCache?.key === key) {
+    ({ stored, config: settings } = settingsCache);
+  } else {
+    settingsCache = null;
+    ({ stored, unreadable: configUnreadable } = readSettingsFile(file));
+    settings = normalizeLauncherSettings(
+      normalizePetStateInConfig(normalizeLive2dPetStateInConfig(normalizeRemoteConfig(normalizePluginRecovery(normalizeHarnessRecovery({ ...DEFAULTS, ...stored }))))),
+    );
+    if (!settings.workspace || isUnsafeWorkspace(settings.workspace)) {
+      settings.workspace = defaultWorkspace();
+    }
+    if (settings.locale !== 'en' && settings.locale !== 'zh') {
+      settings.locale = DEFAULTS.locale;
+    }
+    delete settings.pluginSubagent;
+    delete settings.pluginGenUi;
+    delete settings.dshbotEnabled;
+    delete settings.dshbotPreset;
+    // A missing, unreadable, corrupt, or concurrently replaced file must be
+    // read again. In particular, never let cached defaults authorize a save.
+    if (key !== null && !configUnreadable && key === settingsFileKey(file)) {
+      settingsCache = { key, stored: freezeSettings(stored), config: freezeSettings(settings) };
+    }
+  }
   const { creds, needsWrite, unreadable: credentialsUnreadable = false } = readCredentials();
-  let config = {
-    ...DEFAULTS,
-    ...stored,
+  const config = {
+    ...settings,
     apiKey: typeof creds.apiKey === 'string' ? creds.apiKey : stored.apiKey || '',
     baseUrl: typeof creds.baseUrl === 'string' ? creds.baseUrl : stored.baseUrl || '',
     githubToken: typeof creds.githubToken === 'string' ? creds.githubToken : stored.githubToken || '',
     remoteToken: typeof creds.remoteToken === 'string' ? creds.remoteToken : stored.remoteToken || '',
-    remoteRelayToken: typeof creds.remoteRelayToken === 'string' ? creds.remoteRelayToken : '',
+    remoteRelayToken: normalizeRelayHostToken(typeof creds.remoteRelayToken === 'string' ? creds.remoteRelayToken : ''),
     remoteDevices: Array.isArray(creds.remoteDevices) ? creds.remoteDevices : [],
   };
-  config = normalizeLauncherSettings(
-    normalizePetStateInConfig(normalizeLive2dPetStateInConfig(normalizeRemoteConfig(normalizePluginRecovery(normalizeHarnessRecovery(config))))),
-  );
-  if (!config.workspace || isUnsafeWorkspace(config.workspace)) {
-    config.workspace = defaultWorkspace();
-  }
-  if (config.locale !== 'en' && config.locale !== 'zh') {
-    config.locale = DEFAULTS.locale;
-  }
-  delete config.pluginSubagent;
-  delete config.pluginGenUi;
-  delete config.dshbotEnabled;
-  delete config.dshbotPreset;
   return { config, stored, creds, credentialsNeedWrite: needsWrite, configUnreadable, credentialsUnreadable };
 }
 
@@ -549,7 +583,7 @@ function readConfigSnapshot() {
 const CREDENTIAL_KEYS = ['apiKey', 'baseUrl', 'githubToken', 'remoteToken', 'remoteRelayToken', 'remoteDevices'];
 
 function saveConfig(next) {
-  const { config: current, stored, creds, credentialsNeedWrite, configUnreadable, credentialsUnreadable } = readConfigLayers();
+  const { config: current, stored, creds, credentialsNeedWrite, configUnreadable, credentialsUnreadable } = readConfigLayers(true);
   if (configUnreadable) {
     throw new Error(`设置文件暂时无法读取，未保存：${configUnreadable.code || configUnreadable.message}`);
   }

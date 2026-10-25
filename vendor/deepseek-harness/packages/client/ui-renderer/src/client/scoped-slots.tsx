@@ -1086,7 +1086,6 @@ function SlotOutlet({ slotKey, ownerProps, opts, declaredInline }: {
   // Locale revision tick: a locale switch re-renders every outlet, and entry
   // bodies re-derive their `t` seat at the new revision (fresh identity).
   useLocaleRevision(host.locale)
-  const scopeBinding = useScopeBinding()
   const spec = host.specOf(slotKey)
   // Retained elements keep their declaration's anchor after unload, but never
   // use that declaration to dispatch entries while the live spec is absent.
@@ -1099,9 +1098,24 @@ function SlotOutlet({ slotKey, ownerProps, opts, declaredInline }: {
   // never flickers with registration churn.
   return (
     <Anchor data-slot={slotKey} style={ANCHOR_STYLE}>
-      {spec === undefined ? null : renderOutletContent(host, slotKey, ownerProps, opts, scopeBinding, spec)}
+      {spec === undefined ? null : spec.scope === 'root'
+        ? renderOutletContent(host, slotKey, ownerProps, opts, undefined, spec)
+        : <ScopedSlotContent host={host} slotKey={slotKey} ownerProps={ownerProps} opts={opts} spec={spec} />}
     </Anchor>
   )
+}
+
+// Root outlets inherit the Provider for their scoped descendants without
+// subscribing their own occupants to changes of the selected Session.
+function ScopedSlotContent({ host, slotKey, ownerProps, opts, spec }: {
+  host: SlotRendererHost
+  slotKey: string
+  ownerProps: object
+  opts: (RenderOpts & ChainRenderOpts) | undefined
+  spec: SlotSpec<SlotEntryDef>
+}) {
+  const scopeBinding = useScopeBinding()
+  return renderOutletContent(host, slotKey, ownerProps, opts, scopeBinding, spec)
 }
 
 /** Kind dispatch behind the outlet anchor (single/keyed/list/chain, fallbacks, crash faces). */
@@ -1110,14 +1124,14 @@ function renderOutletContent(
   slotKey: string,
   ownerProps: object,
   opts: (RenderOpts & ChainRenderOpts) | undefined,
-  scopeBinding: StandardSourceBinding,
+  scopeBinding: StandardSourceBinding | undefined,
   spec: SlotSpec<SlotEntryDef>,
 ): ReactNode {
   const Anchor = spec.inline === true ? 'span' : 'div'
   if (spec.kind === 'chain' && opts?.fallbackOnly === true) {
     return renderChainResult(slotKey, null, opts, Anchor)
   }
-  if (spec.scope === 'session' && scopeBinding.key === undefined) {
+  if (spec.scope === 'session' && scopeBinding?.key === undefined) {
     throw new SlotAssemblyError(`strict session slot '${slotKey}' rendered without a scope binding`)
   }
   const entries = host.entriesOf(slotKey)

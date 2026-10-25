@@ -55,6 +55,8 @@ The plugin activates after `slots`, `sessions`, and `layout`; it installs `creat
 
 ### Identity
 
+Root-scoped ordinary Slot outlets do not subscribe to the selected Session binding. Their Session-scoped descendants inherit and observe that binding independently, so navigation updates those descendants without rerendering unrelated root occupants.
+
 React, React DOM, Cordis, ui-slots, and ui-primitives retain one browser identity through the web shell's static module table; this package arrives as a dynamic client bundle.
 
 </details>
