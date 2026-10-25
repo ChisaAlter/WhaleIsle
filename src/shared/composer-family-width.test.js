@@ -95,7 +95,7 @@ test('todo panel follows the drag-resized composer card', () => {
   const primitives = path.join(VENDOR, 'deepseek-harness', 'packages', 'client', 'ui-primitives', 'src');
   const task = readRel(primitives, 'TaskDock.tsx');
   assert.match(task, /import css from '\.\/TaskDock\.module\.css'/);
-  assert.match(task, /<section className=\{css\.root\}/);
+  assert.match(task, /<section\s+className=\{css\.root\}/);
   const css = normalize(readRel(primitives, 'TaskDock.module.css'));
   const rule = ruleOf(css, '\\.root');
   assert.match(rule, FOLLOW);
