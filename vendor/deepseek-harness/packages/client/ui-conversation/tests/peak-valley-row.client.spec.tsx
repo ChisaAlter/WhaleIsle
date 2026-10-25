@@ -72,6 +72,17 @@ describe('PeakValleyRow visibility', () => {
     expect(textOf(mount({ peakValley: true, provider: 'deepseek-official' }))).toBe('')
   })
 
+  it('reserves the enabled cost row while provider and usage projections are pending', () => {
+    const view = mount({ sessionCost: true })
+    expect(textOf(view)).toBe('')
+    expect(view.view.container.querySelector('[data-composer-cost-placeholder]')?.getAttribute('aria-hidden')).toBe('true')
+    view.setProvider('deepseek-official')
+    expect(view.view.container.querySelector('[data-composer-cost-placeholder]')).toBeNull()
+    expect(view.view.container.querySelector('[data-phase]')).not.toBeNull()
+    view.setSessionCost(false)
+    expect(view.view.container.firstChild).toBeNull()
+  })
+
   it('renders for a detected DeepSeek route while session cost is on and the peak/valley switch is off', () => {
     const view = mount({ provider: 'deepseek-official', sessionCost: true })
     expect(view.view.container.querySelector('[data-phase="peak"]')).not.toBeNull()

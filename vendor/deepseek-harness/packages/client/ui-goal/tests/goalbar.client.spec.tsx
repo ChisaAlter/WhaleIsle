@@ -72,10 +72,38 @@ describe('GoalBar', () => {
     expect(clear.disabled).toBe(true)
 
     await act(async () => { resolveClear({ ok: true, value: undefined }) })
-    expect(container.firstChild).toBeNull()
+    expect(screen.queryByRole('button', { name: '清除目标' })).toBeNull()
+    expect(container.firstElementChild?.hasAttribute('inert')).toBe(true)
+    expect(screen.getByText('Ship the redesign')).toBeTruthy()
+    await waitFor(() => { expect(container.firstChild).toBeNull() })
 
     rerender(<GoalBar goal={makeGoal({ id: 'g2' as GoalSnapshot['id'], objective: 'Next goal' })} {...actions} t={t} />)
     expect(screen.getByText('Next goal')).toBeTruthy()
+  })
+
+  it('retains the last active goal while completing and cancels removal when reopened', async () => {
+    const actions = makeActions()
+    const goal = makeGoal()
+    const { container, rerender } = render(<GoalBar goal={goal} activation="armed" {...actions} t={t} />)
+    rerender(<GoalBar goal={makeGoal({ phase: 'complete' })} {...actions} t={t} />)
+    expect(screen.queryByRole('button', { name: '编辑目标' })).toBeNull()
+    expect(screen.getByText('Ship the redesign')).toBeTruthy()
+    expect(container.firstElementChild?.hasAttribute('inert')).toBe(true)
+    rerender(<GoalBar goal={goal} activation="armed" {...actions} t={t} />)
+    await waitFor(() => { expect(container.firstElementChild?.getAttribute('data-state')).toBe('open') })
+    expect(screen.getByRole('button', { name: '暂停目标' })).toBeTruthy()
+    expect(container.firstElementChild?.hasAttribute('inert')).toBe(false)
+  })
+
+  it('removes a completed strip immediately when reduced motion is requested', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }))
+    try {
+      const { container, rerender } = render(<GoalBar goal={makeGoal()} {...makeActions()} t={t} />)
+      rerender(<GoalBar goal={null} {...makeActions()} t={t} />)
+      expect(container.firstChild).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('edit swaps the strip for a prefilled form; Enter saves, empty stays disabled', async () => {
@@ -196,7 +224,8 @@ describe('GoalBar', () => {
     expect(screen.getByText('New goal')).toBeTruthy()
 
     rerender(<GoalBar goal={null} {...actions} t={t} />)
-    expect(screen.queryByText('进行中的目标')).toBeNull()
+    expect(screen.queryByRole('button', { name: '编辑目标' })).toBeNull()
+    expect(screen.getByText('New goal').closest('[aria-hidden="true"]')?.hasAttribute('inert')).toBe(true)
   })
 
   it('blocked goal: "受阻的目标" with the block reason as the strip tooltip', () => {

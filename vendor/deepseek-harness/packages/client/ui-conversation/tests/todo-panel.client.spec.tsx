@@ -4,7 +4,7 @@
  * including several `in_progress` at once, collapse), and its TodoDock
  * adapter (selects the plan off the session snapshot and follows changes).
  */
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -78,9 +78,35 @@ describe('TodoPanel', () => {
     expect(screen.queryByRole('list')).toBeNull()
     // Collapsed header is title + progress only (no in-progress content hint).
     expect(screen.getByText('1 已完成 · 1 进行中 · 1 待处理')).toBeTruthy()
-    expect(screen.queryByText('写组件')).toBeNull()
+    expect(screen.getByText('写组件').closest('[aria-hidden="true"]')?.hasAttribute('inert')).toBe(true)
     fireEvent.click(screen.getByRole('button', { expanded: false }))
     expect(screen.getAllByRole('listitem')).toHaveLength(3)
+  })
+
+  it('reopens during exit with the current plan and retains the expanded disclosure', async () => {
+    const { rerender } = render(<TodoPanel todos={LIST} t={t} />)
+    fireEvent.click(screen.getByRole('button', { expanded: false }))
+    rerender(<TodoPanel todos={[]} t={t} />)
+    expect(screen.queryByRole('list')).toBeNull()
+    expect(screen.getByText('写组件')).toBeTruthy()
+    rerender(<TodoPanel todos={PARALLEL} t={t} />)
+    await waitFor(() => { expect(screen.getByTestId('todo-panel').getAttribute('data-state')).toBe('open') })
+    expect(screen.getByRole('button', { expanded: true })).toBeTruthy()
+    expect(screen.getAllByRole('listitem')).toHaveLength(PARALLEL.length)
+  })
+
+  it('skips retained strip and disclosure exits when reduced motion is requested', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }))
+    try {
+      const { container, rerender } = render(<TodoPanel todos={LIST} t={t} />)
+      fireEvent.click(screen.getByRole('button', { expanded: false }))
+      fireEvent.click(screen.getByRole('button', { expanded: true }))
+      expect(screen.queryByText('写组件')).toBeNull()
+      rerender(<TodoPanel todos={[]} t={t} />)
+      expect(container.firstChild).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('marks every parallel active item, and counts them all in the header', () => {
@@ -112,16 +138,18 @@ function dockProps(store: ReturnType<typeof createSnapshotStore<{ value: readonl
 }
 
 describe('TodoDock', () => {
-  it('reads the host-computed todos projection and follows pushed updates', () => {
+  it('reads the host-computed todos projection and retains a deactivated exit before removal', async () => {
     const store = createSnapshotStore<{ value: readonly TodoItem[] | null | undefined }>({ value: undefined })
     render(<TodoDock {...dockProps(store)} />)
     // Capability absent (no baseline/frame yet) renders nothing.
     expect(screen.queryByTestId('todo-panel')).toBeNull()
     act(() => { store.set({ value: LIST }) })
     expect(screen.getByText('1 已完成 · 1 进行中 · 1 待处理')).toBeTruthy()
-    // The pre-first-write whole value (null) retires the strip (the panel owns no data).
     act(() => { store.set({ value: null }) })
-    expect(screen.queryByTestId('todo-panel')).toBeNull()
+    expect(screen.queryByRole('region', { name: '任务' })).toBeNull()
+    expect(screen.getByTestId('todo-panel').hasAttribute('inert')).toBe(true)
+    expect(screen.getByText('1 已完成 · 1 进行中 · 1 待处理')).toBeTruthy()
+    await waitFor(() => { expect(screen.queryByTestId('todo-panel')).toBeNull() })
   })
 
   it('registers before the goal and queue entries', () => {

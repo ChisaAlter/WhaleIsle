@@ -1,11 +1,12 @@
 - banner:
-  - navigation "Session hierarchy": workspace
-  - text: Standard mode
-  - button "More actions"
-  - button "Open right sidebar"
-  - tablist:
-    - tab "Chat" [selected]
-    - tab "Trajectory"
+  - banner:
+    - navigation "Session hierarchy": workspace
+    - text: Standard mode
+    - button "More actions"
+    - button "Open right sidebar"
+    - tablist:
+      - tab "Chat" [selected]
+      - tab "Trajectory"
 - group "Command input": /goal Keep the composer context panels aligned
 - 'button "goal Goal created Status: active Objective: Keep the composer context panels aligned Rounds: 0/256 Activation: armed Commands: /goal edit <objective>, /goal pause, /goal clear"'
 - button "Continuing goal {{clock}}":

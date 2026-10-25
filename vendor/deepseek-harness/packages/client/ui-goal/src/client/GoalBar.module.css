@@ -3,6 +3,12 @@
    the Queue panel. */
 
 .dock {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows var(--ds-transition-duration) var(--ds-ease-in-out),
+    margin-bottom var(--ds-transition-duration) var(--ds-ease-in-out);
   box-sizing: border-box;
   width: calc(
     100% -
@@ -14,6 +20,28 @@
     var(--dsh-composer-dock-inset)
   );
   margin: 0 auto;
+}
+
+.dock[data-state='closed'] {
+  grid-template-rows: 0fr;
+  margin-bottom: calc(-1 * var(--dsh-composer-stack-gap, 6px));
+  pointer-events: none;
+}
+
+.clip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.surface {
+  transform: none;
+  transition:
+    opacity var(--ds-transition-duration) var(--ds-ease-in-out),
+    transform var(--ds-transition-duration) var(--ds-ease-in-out);
+}
+
+.surface[data-state='closed'] {
+  transform: translateY(var(--ds-motion-distance-popover));
 }
 
 .bar {

@@ -11,9 +11,10 @@
 }
 
 .dock {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, max-content);
   align-items: center;
+  align-content: start;
   justify-content: center;
   gap: 4px 12px;
   width: 100%;
@@ -21,8 +22,18 @@
   padding-top: 4px;
 }
 
+/* Statistics share one stable row; late usage figures shrink inside it. */
 .dock[data-composer-footer] {
+  grid-template-rows: minmax(calc(24px + var(--dsh-content-font-delta-secondary, 0px)), auto);
   min-height: calc(24px + var(--dsh-content-font-delta-secondary, 0px));
+}
+
+.dock[data-composer-footer] :global([data-composer-stats]) {
+  grid-row: 1;
+}
+
+.dock[data-composer-footer]:empty {
+  display: grid;
 }
 
 .dock:empty {

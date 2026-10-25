@@ -33,7 +33,7 @@ Each durable `/goal` run projects as a right-aligned user-style bubble labeled `
 
 ### Failures
 
-A rejected mutation surfaces the Remote error inline on the strip; loading, absent, completed, and successfully cleared goals render nothing.
+A rejected mutation surfaces the Remote error inline on the strip. Loading, absent, completed, and successfully cleared goals have no interactive strip; a previously visible strip retains its last content through a short fade and height collapse, with keyboard and accessibility access disabled immediately. Reduced motion removes it directly.
 
 -----
 

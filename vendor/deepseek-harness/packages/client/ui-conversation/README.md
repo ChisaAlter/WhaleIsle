@@ -69,6 +69,8 @@ The shared image slot props keep display choices separate from durable reference
 
 The composer measures its expanded control groups after size, content, visibility, or font-loading changes. If they cannot share a line, the row sets `--dsh-composer-model-text-display: none` and `--dsh-composer-model-icon-display: block` for the model seat; their defaults are `block` and `none`. Wrapping remains available if even the icon cannot fit.
 
+Todo strips retain their last visible plan while smoothly collapsing out of the composer stack. The input card stays bottom-anchored as the upper strips appear, disappear, or expand; their retained exits immediately leave keyboard and accessibility access. Footer statistics use one row, with cost and peak/valley content on a separate second row. Enabling session cost reserves that row while its provider and usage projections are pending.
+
 The context meter follows the [statistics-control radius](../../../docs/ui-radius.md#radius-scale).
 
 The context-occupancy button shows a ring and percentage inside the input toolbar, before the model selector, with the same 28px control height. Clicking it opens the token breakdown above the button in a panel kept inside the viewport. Its position is independent of Session statistics; the button stays hidden until context usage and capacity are available.
