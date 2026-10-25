@@ -7,10 +7,10 @@
 1. 设置 → 远程 → 网关选择局域网或外出；侧栏底部手机图标打开配对弹窗并开启远程。两种模式的协议相同，传输都经过配置的 dshd 中继。
 2. 桌面生成包含 dshd offer 的 `#offer=` 二维码，包装纸按模式不同：
    - **局域网**：`appBaseUrl` = `preferredLanIp():3180`，本机 `mobile/web` SPA。
-   - **外出**：`appBaseUrl` = `DEFAULT_PUBLIC_APP_BASE_URL`（公网 nginx `https://ayase.cn/dshd/`），系统相机打开浏览器公网页；App 内扫走 APK 内置 SPA（`appassets.androidplatform.net`），不加载公网 origin。
+   - **外出**：`appBaseUrl` = `DEFAULT_PUBLIC_APP_BASE_URL`（公网 nginx `https://ayase.cn/dshd/`），系统相机打开浏览器公网页；Android App 内扫由 Kotlin 解析，不加载公网 origin。
    中继地址只在 offer 内用作 TLS 传输端点（`ayase.cn:443` 的 `/ws`），不充当页面地址。公网配对页为 HTTPS；`#offer=` hash 不随 HTTP 请求发送到服务器。sticky 三 origin（公网 `/dshd`、LAN `:3180`、`appassets.androidplatform.net`）不互通。
-3. 浏览器用系统相机、SPA 内扫码或粘贴完整链接；Android 原生扫码/粘贴后由 APK 内的同一份 SPA 在 `https://appassets.androidplatform.net` WebView origin 打开 offer。
-4. SPA 用 `parseConnectionOfferFromUrl` 校验 offer，创建 `DaemonClient`，以 `role=client` 连中继，并用桌面 daemon 公钥建立端到端加密会话。首次配对用短期 pairing token 换取 `deviceSecret`；后续从稳定 origin 的 localStorage sticky 重连。
+3. 浏览器用系统相机、SPA 内扫码或粘贴完整链接；Android 原生扫码/粘贴后由 Kotlin 协议客户端直接解析 offer。二维码为短期一次性凭证，到期或使用后自动补发；桌面「复制链接」使用独立长期凭证，应用重启与二维码轮换不使其过期。「撤销配对链接」废止旧链接并生成新链接，已配对设备保留。
+4. SPA 用 `parseConnectionOfferFromUrl` 校验 offer，创建 `DaemonClient`，以 `role=client` 连中继，并用桌面 daemon 公钥建立端到端加密会话。短期二维码或长期链接首次认证后都为该设备换发独立 `deviceSecret`；后续浏览器从该 origin 的 localStorage sticky、Android 从加密存储读取设备证明重连。
 5. 配对之后 SPA 是正在跑的 `dsh web` 第二客户端。ChisaCode 只负责配对 / E2EE / sticky。之后两条已配对通道：host RPC（白名单 unary + `respond`）进 loopback `dsh web`；Git 进 Electron `git.js`。禁止 `fetchAgents` / `createAgent`。Harness 未就绪时抽屉明示「桌面端未启动」。
 6. 抽屉对齐桌面侧栏：`session.list` + `workspace.list`（隐藏 blank 与旧版保留的 `origin:'dshbot'` 会话）；按工作区分组 / 一个列表；搜索 `session.search`（snippet）；行 ⋯ 重命名 / Fork / 上移下移 / 归档（活会话无删除）；已归档取消归档或 `session.delete`；子智能体只读。
 7. 新会话：已有工作区、无工作区文件夹、浏览本机（`host.listDirectory` / `createDirectory` / `workspace.create` / `session.create`）。禁止 `host.pickDirectory`。
@@ -22,7 +22,7 @@
 
 ```mermaid
 sequenceDiagram
-  participant Phone as Phone SPA / Android WebView
+  participant Phone as Phone SPA / Kotlin client
   participant Relay as dshd relay
   participant Daemon as Desktop dshd daemon
   participant Host as dsh web loopback
@@ -44,7 +44,7 @@ sequenceDiagram
 
 - 自动门槛：`node --test "mobile/web/**/*.test.js"`、`src/shared/dshd-host-tunnel.test.js`、`src/main/dshd-git-dispatch.test.js`、`src/main/dshd-remote.test.js`。
 - 浏览器集成：`node tools/mobile-web-qa/run-qa.mjs`（fake **host** 会话 + 真实 SPA 栈，需 `npm i --no-save puppeteer-core` 与本机 Chrome）。
-- Android：有 SDK 时运行 `mobile/android/gradlew test` 与 `assembleDebug`。配对后 WebView 功能集必须与公网 SPA 相同。
+- Android：有 SDK 时运行 `mobile/android/gradlew test` 与 `assembleDebug`。原生 Compose 路径独立验证配对、会话、审批、Git、草稿和返回，不以 Web SPA 检查替代。
 - 真机门（本轮 Web）：[docs/qa/mobile-remote-live-acceptance.md](../../qa/mobile-remote-live-acceptance.md) T1。T3 Android Deferred。缺一条 P0、或列表 `D ≠ P`、或用非法证据顶替，都不算完成。
 
 ## 入口

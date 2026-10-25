@@ -21,14 +21,16 @@ export const RELAY_AUTH_CLOSE_CODE = {
 export const RelayAuthBootstrapSchema = z.object({
   version: z.literal(RELAY_DEVICE_AUTH_VERSION),
   /**
-   * Short-lived one-time pairing token. Present only on fresh pairing offers.
-   * Old clients ignore this optional object entirely.
+   * Enrollment credential from a one-time QR or a revocable persistent link.
+   * Both exchange for an independent device secret over the encrypted channel.
    */
   pairingToken: z.string().min(16).max(256),
   /**
    * Absolute expiry as unix epoch milliseconds.
    */
   expiresAtMs: z.number().int().positive(),
+  /** Missing means a short-lived one-time QR. Persistent links require explicit revocation. */
+  kind: z.enum(["persistent"]).optional(),
 });
 
 export type RelayAuthBootstrap = z.infer<typeof RelayAuthBootstrapSchema>;

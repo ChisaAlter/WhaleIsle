@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod/v3";
 
@@ -63,10 +63,12 @@ function safeEqualHex(a: string, b: string): boolean {
  */
 export class RelayDeviceCredentialStore {
   private readonly filePath: string;
+  private readonly pairingTokenDir: string;
   private data: DeviceStore;
 
   constructor(chisacodeHome: string) {
     this.filePath = path.join(chisacodeHome, DEVICE_STORE_FILENAME);
+    this.pairingTokenDir = path.join(chisacodeHome, "relay-pairing-tokens");
     this.data = this.load();
   }
 
@@ -86,14 +88,26 @@ export class RelayDeviceCredentialStore {
   issuePairingToken(ttlMs = 10 * 60_000): { token: string; expiresAtMs: number } {
     const token = randomToken(32);
     const expiresAtMs = Date.now() + ttlMs;
-    this.data.pairingTokens.push({
+    const record = {
       tokenHash: sha256Hex(token),
       expiresAtMs,
       consumedAt: null,
       createdAt: new Date().toISOString(),
-    });
-    this.data.pairingTokens = this.data.pairingTokens.slice(-50);
-    this.persist();
+    };
+    // The desktop mints beside the daemon, which writes devices. Separate files
+    // prevent either process from restoring a stale copy of the other's data.
+    mkdirSync(this.pairingTokenDir, { recursive: true, mode: 0o700 });
+    for (const name of readdirSync(this.pairingTokenDir)) {
+      if (!/^[a-f0-9]{64}\.json$/.test(name)) continue;
+      const file = path.join(this.pairingTokenDir, name);
+      try {
+        const previous = PairingTokenRecordSchema.parse(JSON.parse(readFileSync(file, "utf8")));
+        if (previous.expiresAtMs <= Date.now()) unlinkSync(file);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    writePrivateFileAtomicSync(this.pairingTokenPath(token), `${JSON.stringify(record)}\n`);
     return { token, expiresAtMs };
   }
 
@@ -103,16 +117,53 @@ export class RelayDeviceCredentialStore {
    */
   consumePairingToken(token: string): boolean {
     const tokenHash = sha256Hex(token);
-    const now = Date.now();
-    const record = this.data.pairingTokens.find((entry) =>
+    const record = this.readPairingToken(token);
+    if (!record || record.consumedAt || record.expiresAtMs <= Date.now()) return false;
+    const file = this.pairingTokenPath(token);
+    if (existsSync(file)) {
+      // unlink is the claim: two processes may read, but only one can consume.
+      try {
+        unlinkSync(file);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+        throw error;
+      }
+      return true;
+    }
+    // COMPAT(pairingTokenFiles): accept pre-2026-10-25 offers in relay-devices.json.
+    // Remove after the supported desktop floor includes per-token files.
+    this.data = this.load();
+    const legacy = this.data.pairingTokens.find((entry) =>
       safeEqualHex(entry.tokenHash, tokenHash),
     );
-    if (!record || record.consumedAt || record.expiresAtMs < now) {
-      return false;
-    }
-    record.consumedAt = new Date().toISOString();
+    if (!legacy || legacy.consumedAt || legacy.expiresAtMs <= Date.now()) return false;
+    legacy.consumedAt = new Date().toISOString();
     this.persist();
     return true;
+  }
+
+  /** Whether the displayed QR remains unexpired and has not been used. */
+  isPairingTokenActive(token: string): boolean {
+    const record = this.readPairingToken(token);
+    return Boolean(record && !record.consumedAt && record.expiresAtMs > Date.now());
+  }
+
+  private pairingTokenPath(token: string): string {
+    return path.join(this.pairingTokenDir, `${sha256Hex(token)}.json`);
+  }
+
+  private readPairingToken(token: string): z.infer<typeof PairingTokenRecordSchema> | null {
+    try {
+      return PairingTokenRecordSchema.parse(
+        JSON.parse(readFileSync(this.pairingTokenPath(token), "utf8")),
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    const tokenHash = sha256Hex(token);
+    return (
+      this.load().pairingTokens.find((entry) => safeEqualHex(entry.tokenHash, tokenHash)) ?? null
+    );
   }
 
   /**

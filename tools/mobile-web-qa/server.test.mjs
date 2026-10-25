@@ -26,7 +26,7 @@ test('prefix serves assets and fake bundle with MIME, keeps root unavailable', a
   const server = await serverFor(t, { port: 0, prefix: '/dshd/' });
   const base = qaServerUrl(server);
   assert.ok(base.endsWith('/dshd/'));
-  for (const [path, mime] of [['', 'text/html'], ['app.js?v=qa', 'text/javascript'], ['app.css', 'text/css'], ['tokens.css', 'text/css']]) {
+  for (const [path, mime] of [['', 'text/html'], ['app.js?v=qa', 'text/javascript'], ['app.css', 'text/css'], ['tokens.css', 'text/css'], ['assets/whale-head.png', 'image/png']]) {
     const response = await fetch(`${base}${path}`);
     assert.equal(response.status, 200, path);
     assert.ok(response.headers.get('content-type').startsWith(mime));

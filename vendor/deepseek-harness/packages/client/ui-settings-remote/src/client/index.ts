@@ -59,6 +59,7 @@ export function apply(ctx: Context): void {
     getRemote: () => shell.getRemote(),
     saveRemote: patch => shell.saveRemote(patch),
     rotateRemoteToken: () => shell.rotateRemoteToken(),
+    revokeRemotePairingLink: () => shell.revokeRemotePairingLink(),
     unbindRemoteDevice: id => shell.unbindRemoteDevice(id),
     renameRemoteDevice: (id, name) => shell.renameRemoteDevice(id, name),
   })

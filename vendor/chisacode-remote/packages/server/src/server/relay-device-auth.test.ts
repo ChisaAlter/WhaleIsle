@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
   RELAY_DEVICE_AUTH_VERSION,
@@ -66,6 +66,40 @@ describe("RelayDeviceCredentialStore", () => {
     expect(store.consumePairingToken(token)).toBe(false);
   });
 
+  test("desktop token mint and stale daemon device writes do not discard each other", () => {
+    const home = mkdtempSync(join(tmpdir(), "relay-dev-store-"));
+    cleanup.push(home);
+    const daemon = new RelayDeviceCredentialStore(home);
+    const desktop = new RelayDeviceCredentialStore(home);
+    const first = desktop.issuePairingToken();
+    const device = daemon.issueDevice("phone", "dev_independent");
+    const second = desktop.issuePairingToken();
+    const reopened = new RelayDeviceCredentialStore(home);
+    expect(reopened.verifyDeviceSecret(device.deviceId, device.deviceSecret)).toBe(true);
+    expect(reopened.isPairingTokenActive(first.token)).toBe(true);
+    expect(daemon.consumePairingToken(first.token)).toBe(true);
+    expect(desktop.consumePairingToken(first.token)).toBe(false);
+    expect(reopened.consumePairingToken(second.token)).toBe(true);
+  });
+
+  test("rejects QR at the exact expiry boundary and reports consumed tokens inactive", () => {
+    vi.useFakeTimers();
+    try {
+      const home = mkdtempSync(join(tmpdir(), "relay-dev-store-"));
+      cleanup.push(home);
+      const store = new RelayDeviceCredentialStore(home);
+      const expiring = store.issuePairingToken(600_000);
+      vi.advanceTimersByTime(600_000);
+      expect(store.isPairingTokenActive(expiring.token)).toBe(false);
+      expect(store.consumePairingToken(expiring.token)).toBe(false);
+      const used = store.issuePairingToken();
+      expect(store.consumePairingToken(used.token)).toBe(true);
+      expect(store.isPairingTokenActive(used.token)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("issues device with preferred id and verifies secret/proof", () => {
     const home = mkdtempSync(join(tmpdir(), "relay-dev-store-"));
     cleanup.push(home);
@@ -127,7 +161,7 @@ describe("RelayDeviceCredentialStore", () => {
     const labels = new Map(store.listDevices().map((device) => [device.deviceId, device.label]));
     expect(labels.get("dev_label_short")).toBe("iPhone · iOS 18.2");
     expect(labels.get("dev_label_long")).toBe("x".repeat(120));
-    expect(labels.has("dev_label_blank")).toBe(false);
+    expect(labels.get("dev_label_blank")).toBeUndefined();
   });
 
   test("renames a bound device, rejects revoked or missing targets", () => {

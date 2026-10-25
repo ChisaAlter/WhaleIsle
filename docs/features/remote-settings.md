@@ -27,7 +27,7 @@
 - 连接方式文案为「局域网 / 服务器」；未设置时默认服务器（内部值 `relay`），局域网仅在明确选择 `lan` 时使用。既有显式选择保留，不自动开启远程。
 - 新安装与空配置使用 `ayase.cn:443` + TLS。升级时，只有精确匹配旧内置中继 `125.124.85.212:8411` 的保存值迁移到新默认；其他自定义中继地址及其 TLS 选择保持不变。旧内置公网页 override `http://125.124.85.212:3389/dshd` 清回默认解析，使二维码落到新公网页。
 
-- **停放开关：** `src/main/config.js` `REMOTE_FEATURE_ENABLED`。false 时 preload 不暴露 `getRemote`/`saveRemote`/`rotateRemoteToken`/`unbindRemoteDevice`/`renameRemoteDevice`，`ui-settings-remote` 不注册侧栏与设置入口；`normalizeRemoteConfig` 把 `remoteEnabled` 钉死为 false；IPC `shell:save-remote` 无法打开。解禁只翻这一处（window argv `--dshd-remote-feature` 跟它走）。
+- **停放开关：** `src/main/config.js` `REMOTE_FEATURE_ENABLED`。false 时 preload 不暴露 `getRemote`/`saveRemote`/`rotateRemoteToken`/`revokeRemotePairingLink`/`unbindRemoteDevice`/`renameRemoteDevice`，`ui-settings-remote` 不注册侧栏与设置入口；`normalizeRemoteConfig` 把 `remoteEnabled` 钉死为 false；IPC `shell:save-remote` 无法打开。解禁只翻这一处（window argv `--dshd-remote-feature` 跟它走）。
 - **配对协议 = dshd offer**（实现为 vendored ChisaCode offer v2）：全量 `createChisaCodeDaemon` 跑在 `dshd-daemon-runner.mjs` 子进程（**禁止**回迁主进程）；主进程 `DshdRemote` 只是进程管理面 + file-backed 配对/快照；QR `appBaseUrl`：局域网 = `preferredLanIp():3180`，服务器 = `DEFAULT_PUBLIC_APP_BASE_URL`（`https://ayase.cn/dshd/`），**禁止**把中继 `/ws` 当 SPA。用户可见文案称 dshd daemon / dshd 配对，不出现 ChisaCode 品牌名。
 - **主进程窄 import**：`loadServerApi` 只引 `pairing-offer.js` + `relay-device-credential-store.js` 两个兄弟模块并镜像 `DSH_VENDOR_PACKAGES`（parity 测试钉住 vendored 源）；`exports.js` 全量 barrel（数万模块，ESM 同步加载会冻结主线程）只允许经 launch file 进 daemon 子进程。
 - **daemon 子进程契约**：runner 在 `asarUnpack`；stdout 只有 JSON 行（控制行 + pino json）；stdin `stop` 与 stdin 关闭都必须优雅停（孤儿零容忍）；意外退出必须落 `snapshot.error` 并保留弹窗重试；不做自动退避重启循环（对齐上游）。
@@ -36,6 +36,7 @@
 - 源码启动若缺 `dist` 会构建 ChisaCode server；pack/dist 额外组装并验证 production daemon 依赖，禁止靠构建机残留产物。
 - 侧栏 QR 仅客户端 `qrSvg(pairingUrl)`（`includeQr: false`）。
 - 服务器中继禁止 `chisacode.sh` / 上游 `account_id`。AGPL：`AGPL-SHIPPING.md`。内置 `ayase.cn:443` 是 **TLS 传输默认**，不可作 SPA；公网 SPA 由同域 nginx 提供 `https://ayase.cn/dshd/`，中继只占精确 `/ws` 与 `/health` 路由。
+- 二维码使用短期、一次性的 pairing token；`pairingExpiresAtMs` 到期后自动补发，启动与状态轮询不得并发铸码或把已就绪的码清空。复制链接使用独立 `pairingLinkUrl` 长期凭证，不随二维码刷新、首次使用或应用重启过期；显式「撤销配对链接」废止旧链接并生成新链接。链接仍通过 offer v2 / E2EE 配对，每台新设备各自取得 `deviceSecret`；撤销链接不解除已经配对的设备。
 - 粘性：`deviceSecret` 直至用户解除配对；刷新 QR 只换短期 pairing token。Cloudflare 中继替换 daemon 数据连接时，现有客户端重新连接并进行加密握手、设备证明；旧数据连接迟到的 close 回调不能断开正在使用替代连接的客户端。
 - **设备名（2026-09-04 起）：** 配对 hello 的 `relayDeviceAuth.deviceName`（append-only 协议字段，trim 后 1–120）是客户端自报的设备名——手机配对页从 UA 派生（`iPhone · iOS 18.2` / `Android 15 · Pixel 8` / `电脑`，兜底 `设备`，见 `mobile/web/chisacode/session.js#deviceNameFromUa`），daemon 存为 device label（旧客户端兜底 `relay-pair`）。改名走 IPC `shell:rename-remote-device` → `DshdRemote.renameDevice` → `RelayDeviceCredentialStore.renameDevice`（文件落盘、幂等、封顶 120、拒绝已吊销）；两条标签写入路径（签发/改名）都归一 120 预算——`DeviceRecordSchema` 在加载时封顶 `label`，超长持久化标签会让整个 store 文件加载失败。存量 `relay-pair` 行不自动改，用户手动改名即迁移。fork 合同见 `vendor/chisacode-remote/DESKTOP-FORK.md`。
 - dsh-im 桌面内置：insert 在自有 overlay `desktop-plugins/dsh-im/desktop-dsh-im.patch.yml`，`--patch` 叠加（full+skip）；`cordis.patch.yml` 不写受管块（只 strip 迁移）；禁插件 / Recovery 不可关（IPC 返回 `desktop-builtin`，config 归一化剔除别名）；vendor 运行时缺损 fail start（skip 修不了）。

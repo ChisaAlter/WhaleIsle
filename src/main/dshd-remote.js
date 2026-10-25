@@ -52,6 +52,7 @@ const SERVER_DIR = path.dirname(SERVER_EXPORT);
 // Narrow main-process entries next to the barrel (see loadServerApi).
 const PAIRING_OFFER_EXPORT = path.join(SERVER_DIR, 'pairing-offer.js');
 const DEVICE_STORE_EXPORT = path.join(SERVER_DIR, 'relay-device-credential-store.js');
+const PAIRING_LINK_STORE_EXPORT = path.join(SERVER_DIR, 'relay-pairing-link-store.js');
 
 /**
  * Plain-node children cannot read app.asar; the runner ships via asarUnpack.
@@ -144,7 +145,7 @@ const DSH_VENDOR_PACKAGES = [
  * thread, which freezes the Electron main process on a cold install. It
  * stays the completeness canary and the daemon child's entry; never import
  * it here.
- * @returns {Promise<{ generateLocalPairingOffer: Function, RelayDeviceCredentialStore: Function, DSH_VENDOR_PACKAGES: readonly string[] }>}
+ * @returns {Promise<{ generateLocalPairingOffer: Function, RelayDeviceCredentialStore: Function, RelayPairingLinkStore: Function, DSH_VENDOR_PACKAGES: readonly string[] }>}
  */
 async function loadServerApi() {
   if (!fs.existsSync(SERVER_EXPORT)) {
@@ -152,13 +153,15 @@ async function loadServerApi() {
       `dshd remote runtime missing at ${SERVER_EXPORT}. Run vendor sync / build packages/server.`,
     );
   }
-  const [pairing, store] = await Promise.all([
+  const [pairing, store, links] = await Promise.all([
     import(pathToFileURL(PAIRING_OFFER_EXPORT).href),
     import(pathToFileURL(DEVICE_STORE_EXPORT).href),
+    import(pathToFileURL(PAIRING_LINK_STORE_EXPORT).href),
   ]);
   return {
     generateLocalPairingOffer: pairing.generateLocalPairingOffer,
     RelayDeviceCredentialStore: store.RelayDeviceCredentialStore,
+    RelayPairingLinkStore: links.RelayPairingLinkStore,
     DSH_VENDOR_PACKAGES,
   };
 }
@@ -457,6 +460,7 @@ class DshdRemote extends EventEmitter {
     this.mobileWebStarting = null;
     this.serverApi = null;
     this.pairing = { relayEnabled: false, url: null, qr: null };
+    this.pairingOperation = null;
     this.relayState = { connected: false, lastError: '' };
     this.error = '';
     this.starting = null;
@@ -628,13 +632,39 @@ class DshdRemote extends EventEmitter {
       target: null,
       devices,
       pairingQr: '',
+      pairingExpiresAtMs: this.pairing.expiresAtMs || null,
+      pairingLinkUrl: this.pairing.linkUrl || '',
       urls: pairingUrl
         ? [{ address: snapshotAddress, url: pairingUrl, pairingUrl }]
         : [],
     };
   }
 
-  async refreshPairing() {
+  async refreshPairing({ revokeLink = false } = {}) {
+    const generation = this.startGeneration;
+    // Startup, status polls, manual refresh and link revocation share one writer.
+    // A revoke waits for the current mint, then commits its own new link.
+    const running = this.pairingOperation;
+    if (running) {
+      if (!revokeLink && running.generation === generation) return running.promise;
+      try {
+        await running.promise;
+      } catch (error) {
+        if (running.generation === generation || error?.code !== 'DSHD_REMOTE_CANCELLED') throw error;
+      }
+      if (generation !== this.startGeneration) throw daemonStartCancelled();
+      return this.refreshPairing({ revokeLink });
+    }
+    const operation = { generation, promise: this.generatePairing({ revokeLink }) };
+    this.pairingOperation = operation;
+    try {
+      return await operation.promise;
+    } finally {
+      if (this.pairingOperation === operation) this.pairingOperation = null;
+    }
+  }
+
+  async generatePairing({ revokeLink }) {
     const generation = this.startGeneration;
     const assertCurrent = () => {
       if (generation !== this.startGeneration) throw daemonStartCancelled();
@@ -646,6 +676,11 @@ class DshdRemote extends EventEmitter {
     const relayEndpoint = (config.remoteRelayEndpoint || config.remoteRelayUrl || defaults.relayEndpoint || '').trim();
     const useTls = relayUseTls(config, relayEndpoint);
     const appBaseUrl = this.pairingAppBaseUrl();
+    if (revokeLink) {
+      new api.RelayPairingLinkStore(this.homeDir()).revoke();
+      // Never publish a revoked link if creating its replacement fails.
+      this.pairing = { ...this.pairing, linkUrl: '' };
+    }
 
     const pairing = await api.generateLocalPairingOffer({
       chisacodeHome: this.homeDir(),
@@ -656,6 +691,8 @@ class DshdRemote extends EventEmitter {
       relayPublicUseTls: useTls,
       appBaseUrl,
       includeQr: false,
+      includePersistentLink: true,
+      assertCurrent,
     });
     assertCurrent();
     this.pairing = pairing;
@@ -669,8 +706,14 @@ class DshdRemote extends EventEmitter {
    * @returns {object} current snapshot
    */
   async ensurePairing() {
-    if (!this.daemon || (this.pairing && this.pairing.url) || this.pairingEnsureBlocked) {
-      return this.snapshot();
+    if (!this.daemon || this.starting || this.pairingEnsureBlocked) return this.snapshot();
+    if (this.pairing.url) {
+      const expired = this.pairing.expiresAtMs && this.pairing.expiresAtMs <= Date.now();
+      const token = this.pairingToken();
+      const store = this.deviceStore();
+      const consumed = token && typeof store?.isPairingTokenActive === 'function'
+        && !store.isPairingTokenActive(token);
+      if (!expired && !consumed) return this.snapshot();
     }
     try {
       await this.refreshPairing();
@@ -681,6 +724,19 @@ class DshdRemote extends EventEmitter {
       if (!this.error) this.error = msg;
     }
     return this.snapshot();
+  }
+
+  pairingToken() {
+    const url = this.pairing.url;
+    if (!url) return '';
+    try {
+      const fragment = new URL(url).hash.slice('#offer='.length);
+      const offer = JSON.parse(Buffer.from(fragment, 'base64url').toString('utf8'));
+      return offer.authBootstrap?.pairingToken || '';
+    } catch {
+      // Only legacy test/host offers may lack the v2 bootstrap payload.
+      return '';
+    }
   }
 
   async startDaemon() {
@@ -900,7 +956,9 @@ class DshdRemote extends EventEmitter {
       return;
     }
     const status = relayStatusFromLogRecord(record, this.relayState);
-    if (status && !handle.stopping) {
+    // exit can precede stdio drain. An old child's final log must not hide a
+    // replacement daemon's QR after its one connected notification has arrived.
+    if (status && !handle.stopping && (this.daemon === handle || this.pendingDaemon === handle)) {
       this.setRelayState(status);
     }
     const msg = typeof record.msg === 'string' ? record.msg : '';
@@ -994,7 +1052,9 @@ class DshdRemote extends EventEmitter {
       } catch (error) {
         killError = error;
       }
-      if ((process.platform === 'win32' && killError) || !await waitForExit(child, 2_000)) {
+      // The child can exit gracefully while taskkill is starting. A failed kill
+      // command is not a live process; reconcile the owned child's exit first.
+      if (!await waitForExit(child, 2_000)) {
         const error = new Error(`远程守护进程未停止（pid ${child.pid}）${killError ? `：${killError.message}` : ''}`);
         error.code = 'DSHD_REMOTE_STOP_FAILED';
         if (killError) error.cause = killError;
@@ -1072,8 +1132,13 @@ class DshdRemote extends EventEmitter {
     }
   }
 
+  async revokePairingLink() {
+    await this.refreshPairing({ revokeLink: true });
+    return this.snapshot();
+  }
+
   rotateToken() {
-    // Offer TTL is re-issued; sticky device secrets stay until unbind.
+    // Only the one-time QR changes; persistent links and devices stay bound.
     return this.refreshPairing().then((pairing) => {
       this.pairingEnsureBlocked = false;
       return this.snapshot();

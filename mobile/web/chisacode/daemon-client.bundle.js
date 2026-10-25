@@ -40,9 +40,9 @@ var require_crypto = __commonJS({
   }
 });
 
-// vendor/chisacode-remote/node_modules/tweetnacl/nacl-fast.js
+// ../../vendor/chisacode-remote/node_modules/tweetnacl/nacl-fast.js
 var require_nacl_fast = __commonJS({
-  "vendor/chisacode-remote/node_modules/tweetnacl/nacl-fast.js"(exports, module) {
+  "../../vendor/chisacode-remote/node_modules/tweetnacl/nacl-fast.js"(exports, module) {
     (function(nacl3) {
       "use strict";
       var gf = function(init) {
@@ -2264,9 +2264,9 @@ var require_nacl_fast = __commonJS({
   }
 });
 
-// vendor/chisacode-remote/node_modules/base64-js/index.js
+// ../../vendor/chisacode-remote/node_modules/base64-js/index.js
 var require_base64_js = __commonJS({
-  "vendor/chisacode-remote/node_modules/base64-js/index.js"(exports) {
+  "../../vendor/chisacode-remote/node_modules/base64-js/index.js"(exports) {
     "use strict";
     exports.byteLength = byteLength;
     exports.toByteArray = toByteArray3;
@@ -2365,7 +2365,7 @@ var require_base64_js = __commonJS({
   }
 });
 
-// vendor/chisacode-remote/node_modules/zod/v3/external.js
+// ../../vendor/chisacode-remote/node_modules/zod/v3/external.js
 var external_exports = {};
 __export(external_exports, {
   BRAND: () => BRAND,
@@ -2477,7 +2477,7 @@ __export(external_exports, {
   void: () => voidType
 });
 
-// vendor/chisacode-remote/node_modules/zod/v3/helpers/util.js
+// ../../vendor/chisacode-remote/node_modules/zod/v3/helpers/util.js
 var util;
 (function(util2) {
   util2.assertEqual = (_) => {
@@ -2611,7 +2611,7 @@ var getParsedType = (data) => {
   }
 };
 
-// vendor/chisacode-remote/node_modules/zod/v3/ZodError.js
+// ../../vendor/chisacode-remote/node_modules/zod/v3/ZodError.js
 var ZodIssueCode = util.arrayToEnum([
   "invalid_type",
   "invalid_literal",
@@ -2729,7 +2729,7 @@ ZodError.create = (issues) => {
   return error;
 };
 
-// vendor/chisacode-remote/node_modules/zod/v3/locales/en.js
+// ../../vendor/chisacode-remote/node_modules/zod/v3/locales/en.js
 var errorMap = (issue, _ctx) => {
   let message;
   switch (issue.code) {
@@ -2832,7 +2832,7 @@ var errorMap = (issue, _ctx) => {
 };
 var en_default = errorMap;
 
-// vendor/chisacode-remote/node_modules/zod/v3/errors.js
+// ../../vendor/chisacode-remote/node_modules/zod/v3/errors.js
 var overrideErrorMap = en_default;
 function setErrorMap(map) {
   overrideErrorMap = map;
@@ -2841,7 +2841,7 @@ function getErrorMap() {
   return overrideErrorMap;
 }
 
-// vendor/chisacode-remote/node_modules/zod/v3/helpers/parseUtil.js
+// ../../vendor/chisacode-remote/node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
   const { data, path, errorMaps, issueData } = params;
   const fullPath = [...path, ...issueData.path || []];
@@ -2951,14 +2951,14 @@ var isDirty = (x) => x.status === "dirty";
 var isValid = (x) => x.status === "valid";
 var isAsync = (x) => typeof Promise !== "undefined" && x instanceof Promise;
 
-// vendor/chisacode-remote/node_modules/zod/v3/helpers/errorUtil.js
+// ../../vendor/chisacode-remote/node_modules/zod/v3/helpers/errorUtil.js
 var errorUtil;
 (function(errorUtil2) {
   errorUtil2.errToObj = (message) => typeof message === "string" ? { message } : message || {};
   errorUtil2.toString = (message) => typeof message === "string" ? message : message?.message;
 })(errorUtil || (errorUtil = {}));
 
-// vendor/chisacode-remote/node_modules/zod/v3/types.js
+// ../../vendor/chisacode-remote/node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
   constructor(parent, value, path, key) {
     this._cachedPath = [];
@@ -18533,14 +18533,16 @@ var RELAY_DEVICE_AUTH_VERSION2 = 1;
 var RelayAuthBootstrapSchema = external_exports.object({
   version: external_exports.literal(RELAY_DEVICE_AUTH_VERSION2),
   /**
-   * Short-lived one-time pairing token. Present only on fresh pairing offers.
-   * Old clients ignore this optional object entirely.
+   * Enrollment credential from a one-time QR or a revocable persistent link.
+   * Both exchange for an independent device secret over the encrypted channel.
    */
   pairingToken: external_exports.string().min(16).max(256),
   /**
    * Absolute expiry as unix epoch milliseconds.
    */
-  expiresAtMs: external_exports.number().int().positive()
+  expiresAtMs: external_exports.number().int().positive(),
+  /** Missing means a short-lived one-time QR. Persistent links require explicit revocation. */
+  kind: external_exports.enum(["persistent"]).optional()
 });
 var RelayDeviceAuthChallengeSchema = external_exports.object({
   type: external_exports.literal("relay_device_auth_challenge"),

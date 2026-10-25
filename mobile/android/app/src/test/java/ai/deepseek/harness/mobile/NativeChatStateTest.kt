@@ -6,6 +6,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NativeChatStateTest {
+    @Test fun sidebarGroupsPreserveWorkspaceOrderEmptyDirectoriesAndUnregisteredSessions() {
+        val workspaces = listOf(NativeWorkspace("w2", "Second", "C:/two"), NativeWorkspace("w1", "", "C:\\first"), NativeWorkspace("empty", "Empty", "/empty"))
+        val sessions = listOf(
+            NativeSession("s1", "One", "", false, false, cwd = "C:\\first", workspaceId = "w1"),
+            NativeSession("s2", "Two", "Second", true, false, cwd = "C:/two", workspaceId = "w2"),
+            NativeSession("loose", "Loose", "", false, false, cwd = "/old/directory", workspaceId = "old"),
+            NativeSession("scratch", "Scratch", "", false, false),
+            NativeSession("archived", "Archived", "", false, true, workspaceId = "w1", archived = true),
+        )
+        val groups = nativeSessionGroups(workspaces, sessions)
+        assertEquals(listOf("Second", "first", "Empty", "directory", "无工作目录"), groups.map { it.title })
+        assertEquals(listOf("s2", "s1", "loose", "scratch"), groups.flatMap { it.sessions }.map { it.id })
+        assertTrue(groups[2].sessions.isEmpty())
+        assertTrue(nativeSessionGroups(emptyList(), emptyList()).isEmpty())
+    }
     private fun event(seq:Long,type:String,data:kotlinx.serialization.json.JsonObject=obj())=obj("event" to obj("seq" to seq,"type" to type,"data" to data))
     private fun user(seq:Long)=event(seq,"user/message",obj("id" to "user-$seq","source" to obj("kind" to "user"),"content" to listOf(obj("type" to "text","text" to "message-$seq"))))
     @Test fun olderPagesRemainVisibleBeyondTwoHundredRowsAndRefreshDeduplicatesOverlap() {

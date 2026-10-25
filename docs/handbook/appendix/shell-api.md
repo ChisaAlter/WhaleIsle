@@ -59,6 +59,10 @@
 | `openMarketplace` | `shell:open-marketplace` |
 | `onPluginProgress` | `shell:plugin-progress` |
 
+### 手机远程
+
+仅远程功能开启且角色为 Harness 时暴露：`getRemote` / `saveRemote`、`rotateRemoteToken`（`shell:rotate-remote-token`，刷新短期二维码）、`revokeRemotePairingLink`（`shell:revoke-remote-pairing-link`，撤销长期配对链接）、`unbindRemoteDevice` / `renameRemoteDevice`。撤销链接不解除既有设备配对。
+
 ### Git
 
 `gitStatus`、`gitFetchForStatus`、`gitReadPullRequest`、`gitInit`、`gitDiff`、`gitCommit`、`gitPush`、`gitPull`、`gitCreateChangeRequest`、`gitPublishRepository`、`gitStage`、`gitUnstage`、`gitDiscard`、`gitStatusEntries`、`gitBranchList`、`gitSwitchBranch`、`gitCreateBranch`、`onGitProgress`、`onGitWorkspacesChanged` — channel 前缀 `shell:git-*` / `shell:git-progress` / `shell:git-workspaces-changed`（主进程监视 `dsh-home/storages/workspace.json`，登记变更后推送，标题栏据此立即刷新状态）。

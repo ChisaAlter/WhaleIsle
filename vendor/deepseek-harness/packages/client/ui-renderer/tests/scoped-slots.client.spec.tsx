@@ -274,6 +274,40 @@ const SINGLE_SESSION: DeclaredSpec = { kind: 'single', scope: 'session' }
 const CHAIN_ROOT: DeclaredSpec = { kind: 'chain', scope: 'root' }
 const CHAIN_SESSION: DeclaredSpec = { kind: 'chain', scope: 'session' }
 
+describe('Session navigation render isolation', () => {
+  it('keeps root occupants idle while their scoped descendants follow Session changes', () => {
+    const h = makeHost()
+    h.addSession('a')
+    h.addSession('b')
+    const rootRender = vi.fn()
+    h.declare('k.root', SINGLE_ROOT)
+    h.declare('k.maybe', { kind: 'single', scope: 'session-maybe' })
+    h.add('k.root', {
+      component: (props: { renderSlot: RenderSlotFn }) => {
+        rootRender()
+        return <section><input defaultValue="draft" />{props.renderSlot('k.maybe', {})}</section>
+      },
+      children: { 'k.maybe': { kind: 'single', scope: 'session-maybe' } },
+    })
+    h.add('k.maybe', {
+      component: (props: { sessionId?: string }) => <output>{props.sessionId ?? 'none'}</output>,
+    })
+    const { view } = mountRoot(h, { 'k.root': SINGLE_ROOT }, rs => rs('k.root', {}))
+    const input = view.container.querySelector('input')!
+    fireEvent.change(input, { target: { value: 'keep this draft' } })
+    expect(view.container.querySelector('output')?.textContent).toBe('none')
+    act(() => { h.current.set('a') })
+    expect(view.container.querySelector('output')?.textContent).toBe('a')
+    act(() => { h.current.set('b') })
+    expect(view.container.querySelector('output')?.textContent).toBe('b')
+    act(() => { h.current.set(undefined) })
+    expect(view.container.querySelector('output')?.textContent).toBe('none')
+    expect(rootRender).toHaveBeenCalledOnce()
+    expect(view.container.querySelector('input')).toBe(input)
+    expect(input.value).toBe('keep this draft')
+  })
+})
+
 /** Chain entry literal: top-level select, priority in the options bag (the StoredEntry chain shape). */
 const chainEntryOf = (partial: {
   component: unknown

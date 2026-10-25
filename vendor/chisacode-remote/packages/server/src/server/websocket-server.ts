@@ -61,6 +61,7 @@ import {
 import { summarizeUntrustedLogIdentifier } from "./log-metadata.js";
 import { isWebSocketPayloadWithinLimit, WEBSOCKET_MAX_PAYLOAD_BYTES } from "./websocket-limits.js";
 import { RelayDeviceCredentialStore } from "./relay-device-credential-store.js";
+import { RelayPairingLinkStore } from "./relay-pairing-link-store.js";
 import { MessageLaneExecutor, classifySessionMessageLane } from "./websocket-message-lanes.js";
 
 const WS_CLOSE_DAEMON_AUTH_FAILED = 4401;
@@ -1037,7 +1038,10 @@ export class VoiceAssistantWebSocketServer {
       );
       return false;
     }
-    if (!store.consumePairingToken(auth.pairingToken)) {
+    const accepted =
+      store.consumePairingToken(auth.pairingToken) ||
+      new RelayPairingLinkStore(pending.chisacodeHome!).accepts(auth.pairingToken);
+    if (!accepted) {
       this.rejectRelayAuth(
         ws,
         pending,
@@ -1050,7 +1054,10 @@ export class VoiceAssistantWebSocketServer {
       // deviceName is the client-reported label from the pairing hello
       // (append-only, trimmed by the hello schema); legacy clients keep the
       // generic relay-pair label and can be renamed from the desktop UI.
-      const issued = store.issueDevice(auth.deviceName || "relay-pair", auth.deviceId);
+      // Reopening a reusable link is a new enrollment, even when the client
+      // sends its saved device id. Never replace or disclose that device's secret.
+      const preferredId = store.getDevice(auth.deviceId) ? undefined : auth.deviceId;
+      const issued = store.issueDevice(auth.deviceName || "relay-pair", preferredId);
       pending.authenticatedDeviceId = issued.deviceId;
       this.sendToClient(ws, {
         type: "relay_device_auth_result",
@@ -1118,7 +1125,7 @@ export class VoiceAssistantWebSocketServer {
 
     const store = new RelayDeviceCredentialStore(pending.chisacodeHome);
 
-    // First pairing: consume one-time bootstrap token and issue/bind device secret.
+    // Enrollment credentials issue independent device secrets; QR tokens are single-use.
     if (auth.pairingToken) {
       return this.authorizeRelayPairingToken(ws, pending, store, auth);
     }
@@ -1227,7 +1234,9 @@ export class VoiceAssistantWebSocketServer {
     const authenticatedDeviceId = pending.authenticatedDeviceId ?? null;
     const transport = pending.transport;
     this.clearPendingConnection(ws);
-    const existing = this.externalSessionsByKey.get(clientId);
+    const existing = this.externalSessionsByKey.get(
+      this.externalSessionKey(clientId, authenticatedDeviceId),
+    );
     if (existing) {
       this.resumeExistingSessionFromHello({
         ws,
@@ -1245,6 +1254,12 @@ export class VoiceAssistantWebSocketServer {
       authenticatedDeviceId,
       connectionLogger: pending.connectionLogger,
     });
+  }
+
+  private externalSessionKey(clientId: string, deviceId: string | null): string {
+    // A re-enrollment can retain the browser clientId while receiving a fresh
+    // device identity. Resume only the session owned by the proven identity.
+    return JSON.stringify([clientId, deviceId]);
   }
 
   private resumeExistingSessionFromHello(params: {
@@ -1330,7 +1345,10 @@ export class VoiceAssistantWebSocketServer {
       authenticatedDeviceId,
     });
     this.sessions.set(ws, connection);
-    this.externalSessionsByKey.set(clientId, connection);
+    this.externalSessionsByKey.set(
+      this.externalSessionKey(clientId, authenticatedDeviceId),
+      connection,
+    );
     this.sendToClient(ws, this.createServerInfoMessage());
     connection.connectionLogger.trace(
       {
@@ -1525,9 +1543,10 @@ export class VoiceAssistantWebSocketServer {
       this.sessions.delete(socket);
     }
     connection.sockets.clear();
-    const existing = this.externalSessionsByKey.get(connection.clientId);
+    const key = this.externalSessionKey(connection.clientId, connection.authenticatedDeviceId);
+    const existing = this.externalSessionsByKey.get(key);
     if (existing === connection) {
-      this.externalSessionsByKey.delete(connection.clientId);
+      this.externalSessionsByKey.delete(key);
     }
 
     connection.connectionLogger.trace(

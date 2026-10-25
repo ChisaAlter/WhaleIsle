@@ -183,6 +183,7 @@ function harnessApi(renderer, remoteFeature) {
       getRemote: invoke(renderer, 'shell:get-remote'),
       saveRemote: invoke(renderer, 'shell:save-remote'),
       rotateRemoteToken: invoke(renderer, 'shell:rotate-remote-token'),
+      revokeRemotePairingLink: invoke(renderer, 'shell:revoke-remote-pairing-link'),
       unbindRemoteDevice: invoke(renderer, 'shell:unbind-remote-device'),
       renameRemoteDevice: invoke(renderer, 'shell:rename-remote-device'),
     } : {}),

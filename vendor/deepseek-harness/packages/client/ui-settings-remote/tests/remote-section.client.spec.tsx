@@ -36,6 +36,7 @@ const SNAP: RemoteSnapshot = {
   relayUrl: 'https://relay.example',
   relayConfigured: true,
   relayConnected: false,
+  pairingLinkUrl: 'http://10.0.0.4:3180/#offer=persistent',
   urls: [
     { address: '10.0.0.4', url: 'http://10.0.0.4:3180/', pairingUrl: 'http://10.0.0.4:3180/#offer=abc' },
   ],
@@ -52,6 +53,7 @@ function renderRemote(overrides: Partial<RemoteSectionProps> = {}) {
     getRemote: vi.fn(async () => SNAP),
     saveRemote: vi.fn(async () => SNAP),
     rotateRemoteToken: vi.fn(async () => SNAP),
+    revokeRemotePairingLink: vi.fn(async () => SNAP),
     unbindRemoteDevice: vi.fn(async () => SNAP),
     renameRemoteDevice: vi.fn(async () => SNAP),
     ...overrides,
@@ -159,7 +161,7 @@ describe('RemoteSection', () => {
       getRemote: vi.fn(async () => snap({ relayConnected: false, relayError: 'Unexpected server response: 401' })),
     })
     fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
-    await screen.findByText(en.relayDown)
+    await within(screen.getByRole('alert')).findByText(en.relayDown)
     expect(screen.queryByText(/401/)).toBeNull()
     expect(screen.queryByText(/Unexpected/)).toBeNull()
     expect(screen.queryByRole('img', { name: en.qr })).toBeNull()
@@ -171,7 +173,7 @@ describe('RemoteSection', () => {
       })),
     })
     fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
-    await screen.findByText(en.relayUnavailable)
+    await within(screen.getByRole('alert')).findByText(en.relayUnavailable)
     expect(screen.queryByRole('img', { name: en.qr })).toBeNull()
     cleanup()
     renderRemote({ getRemote: vi.fn(async () => snap({ relayConnected: true })) })
@@ -189,7 +191,7 @@ describe('RemoteSection', () => {
       })),
     })
     fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
-    await screen.findByText(en.relayDownDisconnected)
+    await within(screen.getByRole('alert')).findByText(en.relayDownDisconnected)
     expect(screen.queryByText(/relay_control/)).toBeNull()
     expect(screen.queryByRole('img', { name: en.qr })).toBeNull()
   })
@@ -432,17 +434,17 @@ describe('RemoteSection', () => {
     fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
     fireEvent.click(await screen.findByRole('radio', { name: en.enabledOff }))
     await waitFor(() => { expect(props.saveRemote).toHaveBeenCalled() })
-    await screen.findByText(en.statusErrorGeneric)
+    await within(screen.getByRole('alert')).findByText(en.statusErrorGeneric)
     cleanup()
     const fromSnap = renderRemote({
       getRemote: vi.fn(async () => snap({ error: 'gateway down', relayConnected: true })),
       saveRemote: vi.fn(async () => { throw new Error('save exploded') }),
     })
     fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
-    await screen.findByText(en.statusErrorGeneric)
+    await within(screen.getByRole('alert')).findByText(en.statusErrorGeneric)
     fireEvent.click(screen.getByRole('radio', { name: en.enabledOff }))
     await waitFor(() => { expect(fromSnap.saveRemote).toHaveBeenCalled() })
-    await screen.findByText(en.statusErrorGeneric)
+    await within(screen.getByRole('alert')).findByText(en.statusErrorGeneric)
   })
 
   it('closes on mask click and Escape', async () => {
@@ -528,7 +530,7 @@ describe('RemoteSection', () => {
     fireEvent.click(screen.getByRole('radio', { name: en.enabledOn }))
     await waitFor(() => { expect(props.saveRemote).toHaveBeenCalledTimes(2) })
     expect(props.saveRemote).toHaveBeenLastCalledWith({ remoteEnabled: true })
-    expect(screen.getByText(en.errorPortInUse)).toBeTruthy()
+    expect(within(screen.getByRole('alert')).getByText(en.errorPortInUse)).toBeTruthy()
   })
 
   it('rotateRemoteToken only on refresh control click not on open', async () => {
@@ -549,7 +551,7 @@ describe('RemoteSection', () => {
     fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
     fireEvent.click(await screen.findByRole('button', { name: en.copyLink }))
     await waitFor(() => {
-      expect(writeText).toHaveBeenCalledWith('http://10.0.0.4:3180/#offer=abc')
+      expect(writeText).toHaveBeenCalledWith('http://10.0.0.4:3180/#offer=persistent')
     })
     await screen.findByRole('button', { name: en.copiedLink })
   })
@@ -572,6 +574,49 @@ describe('RemoteSection', () => {
     expect(screen.getByRole('img', { name: en.qr })).toBe(qr)
     expect(screen.getByRole('button', { name: en.copyLink })).toBe(copy)
     expect(screen.getByRole('dialog', { name: en.heading })).toBe(dialog)
+  })
+
+  it('keeps the local retry state after the error toast expires without repeating it on polls', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      renderRemote({ getRemote: vi.fn(async () => snap({ relayError: 'Unexpected server response: 503' })) })
+      fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
+      const dialog = await screen.findByRole('dialog', { name: en.heading })
+      const status = within(dialog).getByRole('status')
+      expect(status.textContent).toContain(en.relayUnavailable)
+      expect(within(status).getByRole('button', { name: en.retry })).toBeTruthy()
+      expect(status.hasAttribute('data-dsh-remote-qr-status')).toBe(true)
+      await screen.findByRole('alert')
+      await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(within(dialog).getByRole('status')).toBe(status)
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+      expect(screen.queryByRole('alert')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('revokes only the persistent link after explicit confirmation and copies its replacement', async () => {
+    const replacement = 'http://10.0.0.4:3180/#offer=replacement-link'
+    const device = { id: 'dev_existing', name: 'Phone' }
+    const revokeRemotePairingLink = vi.fn(async () => snap({ relayConnected: true, pairingLinkUrl: replacement, devices: [device] }))
+    const props = renderRemote({ getRemote: vi.fn(async () => snap({ relayConnected: true, devices: [device] })), revokeRemotePairingLink })
+    fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
+    fireEvent.click(await screen.findByRole('button', { name: `${en.devices} 1` }))
+    fireEvent.click(await screen.findByRole('button', { name: en.revokeLink }))
+    expect(revokeRemotePairingLink).not.toHaveBeenCalled()
+    expect(screen.getByText(en.revokeLinkConfirm)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.renameCancel }))
+    expect(revokeRemotePairingLink).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: en.revokeLink }))
+    fireEvent.click(screen.getByRole('button', { name: en.revokeLinkAction }))
+    await waitFor(() => { expect(revokeRemotePairingLink).toHaveBeenCalledOnce() })
+    expect(screen.getByText(device.name)).toBeTruthy()
+    expect(props.unbindRemoteDevice).not.toHaveBeenCalled()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.click(await screen.findByRole('button', { name: en.copyLink }))
+    await waitFor(() => { expect(writeText).toHaveBeenCalledWith(replacement) })
   })
 
   it('renders the rail trigger without a text label', async () => {
@@ -729,7 +774,7 @@ describe('RemoteSection', () => {
     expect(screen.getByText(en.devicesSeen.replace('{time}', en.devicesSeenUnknown))).toBeTruthy()
     fireEvent.click(screen.getAllByRole('button', { name: en.unbind })[0]!)
     await waitFor(() => { expect(props.unbindRemoteDevice).toHaveBeenCalledWith('dev-2') })
-    await screen.findByText(en.statusErrorGeneric)
+    await within(screen.getByRole('alert')).findByText(en.statusErrorGeneric)
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: en.devicesManage })).toBeNull()
     expect(screen.getByRole('dialog', { name: en.heading })).toBeTruthy()
@@ -747,7 +792,7 @@ describe('RemoteSection', () => {
     fireEvent.click(await screen.findByRole('button', { name: `${en.devices} 1` }))
     fireEvent.click(screen.getByRole('button', { name: en.unbind }))
     await waitFor(() => { expect(exploded.unbindRemoteDevice).toHaveBeenCalledWith('dev-4') })
-    await screen.findByText(en.statusErrorGeneric)
+    await within(screen.getByRole('alert')).findByText(en.statusErrorGeneric)
     cleanup()
     renderRemote({
       getRemote: vi.fn(async () => snap({ devices: [], relayConnected: true })),

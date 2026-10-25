@@ -29,7 +29,16 @@ class DshViewModel(private val store: DeviceStore) : ViewModel() {
         private set
     internal var allSessions by mutableStateOf(emptyList<NativeSession>())
         private set
-    internal var panel by mutableStateOf("")
+    private var panelRevision = 0L
+    private var panelValue by mutableStateOf("")
+    internal var panel: String
+        get() = panelValue
+        set(value) {
+            if (panelValue != value) { panelRevision++; panelError = "" }
+            panelValue = value
+        }
+    internal var panelError by mutableStateOf("")
+        private set
     internal var panelData by mutableStateOf(obj())
         private set
     internal var panelBusy by mutableStateOf(false)
@@ -115,7 +124,7 @@ class DshViewModel(private val store: DeviceStore) : ViewModel() {
         connectionJob?.cancel(); observerJob?.cancel(); pollJob?.cancel(); client?.close(); client = null
         selectedServer = offer.serverId; store.selectedComputer = selectedServer
         history = emptyList(); beforeSeq = null; approvalRpcIds.clear(); liveApprovals.clear(); panel = ""; panelBusy = false; refreshingHistory = false; historyDirty = false
-        chat = NativeChatState(route = "chat", offline = true, connLabel = "正在连接电脑…", hostName = saved?.computerName.orEmpty())
+        chat = NativeChatState(epoch = epoch.toString(), route = "chat", offline = true, connLabel = "正在连接电脑…", hostName = saved?.computerName.orEmpty())
         error = ""; route = Route.Chat
         val connection = try { RelayClient(offer, saved, "${Build.MANUFACTURER} ${Build.MODEL}", { record -> if (epoch == generation) persist(record) },
             onMux = { payload -> viewModelScope.launch { if (epoch == generation) onMux(payload) } },
@@ -503,8 +512,21 @@ class DshViewModel(private val store: DeviceStore) : ViewModel() {
     }
     private fun panelAction(work: suspend (RelayClient, Long) -> Unit) {
         if (panelBusy || chat.offline || client == null) return
+        val originPanel = panel
+        val originPanelRevision = panelRevision
+        val originSession = chat.sessionId
+        panelError = ""
         panelBusy = true
-        action { connection, epoch -> try { work(connection, epoch) } finally { if (epoch == generation) panelBusy = false } }
+        action { connection, epoch ->
+            try { work(connection, epoch) }
+            catch (failure: Throwable) {
+                // Short task dialogs own failures from create/browse/openGit; other actions retain their existing feedback.
+                if (failure is CancellationException || originPanel !in setOf("new", "work")) throw failure
+                if (epoch == generation && chat.sessionId == originSession && panel == originPanel && panelRevision == originPanelRevision) {
+                    panelError = failure.message ?: "电脑没有响应"
+                }
+            } finally { if (epoch == generation) panelBusy = false }
+        }
     }
     fun persistScheme(value: String) { scheme = value; store.scheme = value }
     internal fun importLegacy(raw: String) {

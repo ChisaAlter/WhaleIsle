@@ -12,13 +12,13 @@
 
 ## 架构要点
 
-- 配对：vendored ChisaCode offer v2 / sticky / 中继 E2EE。QR 落地页局域网 `:3180`、外出 `https://ayase.cn/dshd/`；传输走 `ayase.cn:443` 的 `/ws`，不把中继路由当页面。成功握手的 `server_info.hostname` 作为可选 `computerName` 写入手机 sticky，供保存电脑行与已连接主机名称使用；旧 sticky 无此字段时显示「我的电脑」，不得展示内部 `serverId`。
+- 配对：vendored ChisaCode offer v2 / sticky / 中继 E2EE。短期二维码到期或已使用时自动补发；复制链接使用独立可撤销的长期凭证，不随二维码轮换失效，撤销不解除既有设备。QR 落地页局域网 `:3180`、外出 `https://ayase.cn/dshd/`；传输走 `ayase.cn:443` 的 `/ws`，不把中继路由当页面。成功握手的 `server_info.hostname` 作为可选 `computerName` 写入手机 sticky，供保存电脑行与已连接主机名称使用；旧 sticky 无此字段时显示「我的电脑」，不得展示内部 `serverId`。
 - 已配对 host：daemon 白名单 unary 转发 loopback `dsh web`（剥 Origin / sec-fetch，Host 钉 loopback）。当前 Gateway 审批从 `$events` waterfall 转换为手机审批帧，回复保留 clientId/eventId 经 `/api/$events/result` 返回；旧格式 rpcId 仍走原 `/api/respond`。
 - Android 使用 `session.projections` 读取完整模型、权限及 Plan 投影；历史页不携带这些状态。Host 白名单仅新增这一只读方法。
 - 会话与工作区：`session.list` / `workspace.list` 是目录真相，`session.history` 供时间线；新会话走 `session.create`，目录浏览/创建/登记走 `host.listDirectory` / `host.createDirectory` / `workspace.create`。模型/思考走 `session.models` / `session.selectModel`，权限、Plan 和斜杠走 Typert `commands/execute`，不回退 ACP agents。
 - 已配对 Git：daemon 回调 Electron `git.js`（`dshd-git-dispatch.js`），同一套 `workspace-authority.js`。不在 daemon 里再实现一套 git CLI。
 - Git 用户路径：分支搜索/切换/远端跟踪、创建并检出分支、Commit/Push/PR 组合动作与 Publish 均走 `shell:git-*` 白名单；不是「创建分支请到电脑端」。修复已进入当前本地候选，构建通过不代替整轨行为验收。
-- Web：`mobile/web` + `--dsw-alias-*` tokens。短面板与全屏任务复用 `ui/surfaces.js` 的头部/正文和焦点范围；`ui/navigation.js` 协调网页与原生返回。按钮忙碌反馈由 `ui/button-busy.js` 保留原内容占位，加载圈固定，完整短状态文案溢出时在按钮内部往返滚动，减弱动态时静止；纯图标控件保留图标语义，调用者负责禁用与恢复。Files / Diff / MCP / 技能仍为冻结条。
+- Web：`mobile/web` + `--dsw-alias-*` tokens。贴边直角侧栏直接呈现工作区分组会话，品牌使用同源鲸鱼娘头像和鲸屿字标；22px 无外投影输入卡适配竖屏与软键盘。模型、权限、附件、重命名、新会话选择与简短设置使用紧凑弹窗，长目录、搜索和复杂 Git 任务保留任务面。短面板与长任务复用 `ui/surfaces.js` 的头部/正文和焦点范围；`ui/navigation.js` 协调网页与原生返回。按钮忙碌反馈由 `ui/button-busy.js` 保留原内容占位，加载圈固定，完整短状态文案溢出时在按钮内部往返滚动，减弱动态时静止；纯图标控件保留图标语义，调用者负责禁用与恢复。Files / Diff / MCP / 技能仍为冻结条。
 - Android：`mobile/android` 的 Kotlin `protocol` 模块实现 offer、挑战凭据认证与中继 E2EE；Compose 负责聊天、分页/增量历史、审批、工作区/会话/目录、Git 和设置。加密存储按电脑/会话保留凭据与文字草稿，系统媒体请求校验归属。IME 返回先收键盘，前台恢复同步目录和连接；一次性 offer 不用于重连。
 - Android 升级：包名保持稳定，versionCode 4 / versionName 0.3.10；不再打包 Web SPA。唯一临时 WebView 在原 asset origin 的空白页读取旧 localStorage 后销毁，禁止网络，不执行 SPA 或协议，旧数据不删除。迁移完成前不写成功标记。正式签名升级需要独立确认。
 
