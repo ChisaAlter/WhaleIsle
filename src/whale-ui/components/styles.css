@@ -5,7 +5,7 @@
 .whale-row { display: flex; min-width: 0; }
 .whale-row > :is(.whale-button,.whale-badge,.whale-segments) { align-self: auto; }
 .whale-grid { align-items: start; }
-.whale-card { border: 1px solid var(--whale-border); border-radius: var(--whale-radius-surface); min-width: 0; background: var(--whale-panel); }
+.whale-card { border: 1px solid var(--whale-border); border-radius: var(--whale-radius-surface); min-width: 0; background: transparent; }
 .whale-card[data-variant=soft] { background: var(--whale-surface); border-color: transparent; }
 .whale-carousel { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; padding-block: 4px 12px; overscroll-behavior-inline: contain; }
 .whale-divider { border: 0; border-top: 1px solid var(--whale-border); margin: 4px 0; width: 100%; }
@@ -147,7 +147,7 @@ textarea.whale-input { height: auto; min-height: 80px; resize: vertical; padding
 .whale-celebration { position: fixed; pointer-events: none; inset: 0; z-index: 50; overflow: hidden; }
 .whale-celebration i { position: absolute; top: -20px; width: 8px; height: 14px; border-radius: 2px; animation: whale-confetti 1.5s ease-in forwards; }
 .whale-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.whale-html-view { display: block; width: 100%; border: 1px solid var(--whale-border); border-radius: var(--whale-radius-surface); background: var(--whale-bg); }
+.whale-html-view { display: block; width: 100%; border: 0; background: transparent; }
 .whale-svg { display: block; color: var(--whale-fg); font-family: var(--whale-font); }
 
 .whale-map { border: 1px solid var(--whale-border); border-radius: var(--whale-radius-surface); overflow: hidden; background: var(--whale-surface); }

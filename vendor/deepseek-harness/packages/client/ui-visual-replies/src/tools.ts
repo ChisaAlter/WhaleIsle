@@ -12,7 +12,7 @@ export const VISUAL_REPLY_PAGE_GUIDE = 'Use a complete self-contained HTML page 
   + 'Use data: images or absolute local PNG/JPEG/GIF/WebP/SVG/AVIF/BMP/ICO paths; readable local images are embedded before capture or publication. '
   + 'WhaleIsle supplies live CSS variables on :root: --bg/--background (conversation background), --surface (panel background), '
   + '--text, --text-secondary, --border, and --accent. Use these variables for page colors; do not redefine them or hard-code a light/dark page background. '
-  + 'The page sits inside an existing reply card. Keep html/body and the outer wrapper transparent, use fluid width and modest spacing, and avoid a second outer card or app navigation. '
+  + 'The host provides 20px content padding (16px in reply columns up to 480px) and the expanded dialog provides its own padding. Keep html/body and the outer wrapper transparent with no extra page padding; use fluid width and 12–24px gaps between content groups. Present headings, explanations, metrics and ordinary diagrams directly on the conversation canvas. Do not add background strips behind text, a filled SVG canvas, nested cards, a second outer card or app navigation; reserve theme surfaces for meaningful groups, controls, state highlights and diagram nodes. '
   + 'Let content determine height; avoid 100vh, viewport-based heights, or height:100% on html/body. Make grids, SVGs, labels, and controls fit a narrow reply column without horizontal clipping. '
   + 'Use labeled keyboard-accessible controls and readable chart labels; a useful interaction must update its visible result. '
   + 'Maximum input is 512 KiB UTF-8, one local image 10 MiB, and the prepared page 25 MiB. '

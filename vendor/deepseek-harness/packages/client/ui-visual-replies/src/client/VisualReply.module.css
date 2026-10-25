@@ -1,10 +1,11 @@
 .card {
+  container: visual-reply / inline-size;
   width: 100%;
   min-width: 0;
   overflow: hidden;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: var(--dsw-radius-panel);
-  background: var(--dsw-alias-bg-layer-1);
+  background: transparent;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -13,7 +14,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 4px 12px;
-  padding: 6px 10px;
+  padding: 8px 20px 0;
 }
 
 .title {
@@ -27,8 +28,12 @@
 }
 
 .actions { display: flex; flex-wrap: wrap; gap: 2px; }
-.inlineHost { min-height: var(--visual-reply-placeholder-height, 0px); }
-.frame, .expandedFrame { display: block; width: 100%; border: 0; background: var(--dsw-alias-bg-base); }
+.inlineHost { box-sizing: border-box; min-height: var(--visual-reply-placeholder-height, 0px); padding: 20px; }
+@container visual-reply (max-width: 480px) {
+  .header { padding-inline: 16px; }
+  .inlineHost { padding: 16px; }
+}
+.frame, .expandedFrame { display: block; width: 100%; border: 0; background: transparent; }
 .frame { height: var(--visual-reply-height); max-height: 2000px; }
 .expandedFrame { height: min(72vh, 900px); }
 .status { display: flex; align-items: center; gap: 12px; padding: 16px; color: var(--dsw-alias-label-secondary); }
