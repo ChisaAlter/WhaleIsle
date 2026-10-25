@@ -280,7 +280,11 @@ export const PeakValleyRow = memo(function PeakValleyRow({
   // is what the strip's reminder used to say through its hover title.
   const hint = !priced || partial ? t('sessionCost.noPriceHint') : null
   const card = useSessionCostCard()
-  if (!phaseVisible && !costVisible) return null
+  if (!phaseVisible && !costVisible) {
+    return costEnabled
+      ? <div className={`${css.root} ${css.placeholder}`} data-composer-cost-placeholder aria-hidden />
+      : null
+  }
   const state = peakValleyState(now)
   const peak = state.phase === 'peak'
   const phaseLabel = t(peak ? 'peakValley.peak' : 'peakValley.offPeak')

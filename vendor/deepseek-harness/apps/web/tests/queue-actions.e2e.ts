@@ -352,22 +352,155 @@ describe('web e2e: queue row actions', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-context-layout'))
 
     const input = page.locator('[data-composer-input]').first()
-    const settled = scaffold.whenTurnSettled()
     await page.locator('[data-composer-input][contenteditable="true"]').first().waitFor({ timeout: 10_000 })
     await input.fill('/goal Keep the composer context panels aligned')
     await input.press('Enter')
     await expect.poll(() => existsSync(readyFile), { timeout: 15_000 }).toBe(true)
     await page.locator('[data-goal-bar]').waitFor({ timeout: 10_000 })
+    await page.locator('[data-phase="active"] [data-composer-input]').waitFor({ timeout: 10_000 })
+    await page.locator('[data-composer-entering]').waitFor({ state: 'detached', timeout: 10_000 })
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
 
+    const activeInput = await input.elementHandle()
+    if (activeInput === null) throw new Error('active composer input is missing')
+    const todoPanel = page.getByTestId('todo-panel')
+    const todoHeader = todoPanel.getByRole('button')
     const sessions = scaffold.ctx.sessions.list()
     expect(sessions).toHaveLength(1)
-    sessions[0]!.append('todo/write', {
+    const writeTodos = () => sessions[0]!.append('todo/write', {
       todos: [
         { content: 'Confirm the panel order', status: 'completed' },
         { content: 'Align the panel widths', status: 'in_progress' },
       ],
     })
-    await page.locator('[data-testid="todo-panel"]').waitFor({ timeout: 10_000 })
+
+    const sampleContextMotion = async (label: string, selector: string, action: () => Promise<void>) => {
+      const probe = await page.evaluateHandle(async ({ originalInput, selector }) => {
+        const card = originalInput.closest<HTMLElement>('[data-composer-card]')!
+        const seat = card.closest<HTMLElement>('[data-composer-seat]')!
+        const measure = () => {
+          const box = card.getBoundingClientRect()
+          const seatBox = seat.getBoundingClientRect()
+          const panel = seat.querySelector<HTMLElement>(selector)
+          let layoutParent = panel?.parentElement ?? null
+          while (layoutParent !== null && getComputedStyle(layoutParent).display === 'contents') {
+            layoutParent = layoutParent.parentElement
+          }
+          return {
+            top: box.top, bottom: box.bottom, left: box.left, width: box.width,
+            seatTop: seatBox.top, seatHeight: seatBox.height,
+            panelHeight: panel?.getBoundingClientRect().height ?? 0,
+            panelGap: layoutParent === null ? 0 : Number.parseFloat(getComputedStyle(layoutParent).rowGap),
+            hidden: panel?.getAttribute('aria-hidden') === 'true',
+            inert: panel?.hasAttribute('inert') === true,
+            sameInput: originalInput.isConnected
+              && document.querySelector('[data-phase="active"] [data-composer-input]') === originalInput
+              && originalInput.closest('[data-composer-card]') === card,
+          }
+        }
+        const settle = async () => {
+          const deadline = performance.now() + 5_000
+          let previous = measure()
+          let stable = 0
+          while (performance.now() < deadline) {
+            await new Promise<void>(resolve => requestAnimationFrame(() => { resolve() }))
+            const current = measure()
+            const animating = seat.getAnimations({ subtree: true }).some(animation =>
+              (animation.playState === 'running' || animation.pending)
+              && animation.effect?.getComputedTiming().iterations !== Infinity)
+            stable = !animating && (['top', 'bottom', 'left', 'width', 'seatTop', 'seatHeight', 'panelHeight'] as const)
+              .every(key => Math.abs(current[key] - previous[key]) < 0.01) ? stable + 1 : 0
+            if (stable >= 6) return
+            previous = current
+          }
+          throw new Error('composer context geometry did not settle')
+        }
+        await settle()
+        const frames = [measure()]
+        let frame = 0
+        const sampledTransitions = new WeakSet<Animation>()
+        const sample = () => {
+          cancelAnimationFrame(frame)
+          const panel = seat.querySelector<HTMLElement>(selector)
+          // Sample each real height track at its midpoint as well: busy hosts can
+          // deliver rAF callbacks less frequently than the 200ms transition.
+          for (const animation of panel?.getAnimations({ subtree: true }) ?? []) {
+            if (!(animation instanceof CSSTransition) || animation.transitionProperty !== 'grid-template-rows'
+              || sampledTransitions.has(animation)) continue
+            sampledTransitions.add(animation)
+            const currentTime = animation.currentTime
+            const duration = Number(animation.effect?.getTiming().duration)
+            if (duration > 0) {
+              animation.currentTime = duration / 2
+              frames.push(measure())
+              animation.currentTime = currentTime
+            }
+          }
+          frames.push(measure())
+          frame = requestAnimationFrame(sample)
+        }
+        const observer = new MutationObserver(sample)
+        observer.observe(seat, { subtree: true, attributes: true, attributeFilter: ['data-state'] })
+        const cancel = () => { cancelAnimationFrame(frame); observer.disconnect() }
+        // Resolve only after a real sampled frame, before the Host write or click.
+        await new Promise<void>(resolve => requestAnimationFrame(() => { sample(); resolve() }))
+        return {
+          finish: async () => { await settle(); cancel(); return frames },
+          cancel,
+        }
+      }, { originalInput: activeInput, selector })
+      try {
+        await action()
+        const frames = await probe.evaluate(capture => capture.finish())
+        const first = frames[0]!
+        const last = frames.at(-1)!
+        expect(frames.every(frame => frame.sameInput), `${label}: retains the active input DOM`).toBe(true)
+        expect(Math.max(...frames.map(frame => Math.abs(frame.top - first.top))), `${label}: input card top`)
+          .toBeLessThanOrEqual(1)
+        expect(Math.max(...frames.map(frame => Math.abs(frame.bottom - first.bottom))), `${label}: input card bottom`)
+          .toBeLessThanOrEqual(1)
+        const low = Math.min(first.panelHeight, last.panelHeight)
+        const high = Math.max(first.panelHeight, last.panelHeight)
+        expect(high - low, `${label}: changes the context panel height`).toBeGreaterThan(2)
+        expect(frames.some(frame => frame.panelHeight > low + 1 && frame.panelHeight < high - 1),
+          `${label}: includes an intermediate panel height`).toBe(true)
+        if (first.panelHeight === 0 || last.panelHeight === 0) {
+          const gap = first.panelHeight === 0 ? last.panelGap : -first.panelGap
+          expect(Math.abs(last.seatHeight - first.seatHeight - (last.panelHeight - first.panelHeight + gap)),
+            `${label}: reserves exactly the panel and one stack gap`).toBeLessThanOrEqual(1)
+        }
+        if (last.panelHeight === 0) {
+          expect(frames.some(frame => frame.hidden && frame.inert && frame.panelHeight > 1),
+            `${label}: closing content leaves keyboard and accessibility access before unmount`).toBe(true)
+        }
+        return { first, last }
+      } finally {
+        await probe.evaluate((capture) => { capture.cancel() })
+        await probe.dispose()
+      }
+    }
+    const addTodos = async () => {
+      writeTodos()
+      await todoPanel.waitFor({ timeout: 10_000 })
+    }
+    const clearTodos = async () => {
+      sessions[0]!.append('todo/write', { todos: [] })
+      await expect.poll(() => page.getByRole('region', { name: 'To-dos', exact: true }).count(), { timeout: 10_000 }).toBe(0)
+      await todoPanel.waitFor({ state: 'detached', timeout: 10_000 })
+    }
+    const toggleTodos = async (expanded: boolean) => {
+      await todoHeader.click()
+      await expect.poll(() => todoHeader.getAttribute('aria-expanded')).toBe(String(expanded))
+      await expect.poll(() => todoPanel.getByRole('listitem').count()).toBe(expanded ? 2 : 0)
+    }
+    const todoSelector = '[data-testid="todo-panel"]'
+    const initialTodo = await sampleContextMotion('Todo added', todoSelector, addTodos)
+    await sampleContextMotion('Todo expanded', todoSelector, () => toggleTodos(true))
+    await sampleContextMotion('Todo collapsed', todoSelector, () => toggleTodos(false))
+    const clearedTodo = await sampleContextMotion('Todo cleared', todoSelector, clearTodos)
+    expect(Math.abs(clearedTodo.last.seatTop - initialTodo.first.seatTop)).toBeLessThanOrEqual(1)
+    expect(Math.abs(clearedTodo.last.seatHeight - initialTodo.first.seatHeight)).toBeLessThanOrEqual(1)
+    await sampleContextMotion('Todo added again', todoSelector, addTodos)
 
     for (const text of ['Layout queue first', 'Layout queue second']) {
       // A just-submitted composer is read-only for the prompt round-trip.
@@ -389,26 +522,40 @@ describe('web e2e: queue row actions', () => {
 
     const expectAlignedContextPanels = async () => {
       // Sample one layout: the responsive grid can move between separate browser round trips.
-      const [queuePanelBox, todoBox, goalBox] = await page.evaluate(() => [
-        '[data-queue-dock] > div', '[data-testid="todo-panel"]', '[data-goal-bar] > div',
-      ].map((selector) => {
-        const box = document.querySelector(selector)?.getBoundingClientRect()
-        return box === undefined ? null : { x: box.x, y: box.y, width: box.width }
-      }))
-      expect(queuePanelBox).not.toBeNull()
-      expect(todoBox).not.toBeNull()
-      expect(goalBox).not.toBeNull()
-      expect(todoBox!.y).toBeLessThan(goalBox!.y)
-      expect(goalBox!.y).toBeLessThan(queuePanelBox!.y)
-      expect(Math.abs(todoBox!.x - goalBox!.x)).toBeLessThanOrEqual(CONTEXT_PANEL_PX)
-      expect(Math.abs(todoBox!.x - queuePanelBox!.x)).toBeLessThanOrEqual(CONTEXT_PANEL_PX)
-      expect(Math.abs(todoBox!.width - goalBox!.width)).toBeLessThanOrEqual(CONTEXT_PANEL_PX)
-      expect(Math.abs(todoBox!.width - queuePanelBox!.width)).toBeLessThanOrEqual(CONTEXT_PANEL_PX)
+      await vi.waitFor(async () => {
+        const [queuePanelBox, todoBox, goalBox] = await page.evaluate(() => [
+          document.querySelector('[data-queue-dock] > div'),
+          document.querySelector('[data-testid="todo-panel"]'),
+          // The action row belongs to the visible card, inside its height clip.
+          document.querySelector('[data-goal-bar] button[aria-label="Clear goal"]')?.parentElement?.parentElement,
+        ].map((element) => {
+          const box = element?.getBoundingClientRect()
+          return box === undefined ? null : { x: box.x, y: box.y, width: box.width }
+        }))
+        expect(queuePanelBox).not.toBeNull()
+        expect(todoBox).not.toBeNull()
+        expect(goalBox).not.toBeNull()
+        expect(todoBox!.y).toBeLessThan(goalBox!.y)
+        expect(goalBox!.y).toBeLessThan(queuePanelBox!.y)
+        expect(Math.abs(todoBox!.x - goalBox!.x)).toBeLessThanOrEqual(CONTEXT_PANEL_PX)
+        expect(Math.abs(todoBox!.x - queuePanelBox!.x)).toBeLessThanOrEqual(CONTEXT_PANEL_PX)
+        expect(Math.abs(todoBox!.width - goalBox!.width)).toBeLessThanOrEqual(CONTEXT_PANEL_PX)
+        expect(Math.abs(todoBox!.width - queuePanelBox!.width)).toBeLessThanOrEqual(CONTEXT_PANEL_PX)
+      }, { timeout: 10_000 })
     }
     await expectAlignedContextPanels()
     await page.setViewportSize({ width: 640, height: 1000 })
+    await page.locator('[data-sidebar-collapsed="true"]').waitFor({ timeout: 10_000 })
+    await expectAlignedContextPanels()
+    const narrowTodo = await sampleContextMotion('Narrow Todo cleared', todoSelector, clearTodos)
+    const narrowReadded = await sampleContextMotion('Narrow Todo added again', todoSelector, addTodos)
+    expect(Math.abs(narrowReadded.last.seatHeight - narrowTodo.first.seatHeight)).toBeLessThanOrEqual(1)
+    await sampleContextMotion('Narrow Todo expanded', todoSelector, () => toggleTodos(true))
+    await sampleContextMotion('Narrow Todo collapsed', todoSelector, () => toggleTodos(false))
     await expectAlignedContextPanels()
     await page.setViewportSize({ width: 1680, height: 1000 })
+    await page.locator('[data-sidebar-collapsed="true"]').waitFor({ state: 'detached', timeout: 10_000 })
+    await expectAlignedContextPanels()
 
     await queueHeader.click()
     const removeButtons = page.getByRole('button', { name: 'Remove queued message' })
@@ -417,8 +564,21 @@ describe('web e2e: queue row actions', () => {
     await expect.poll(() => removeButtons.count(), { timeout: 10_000 }).toBe(1)
     await removeButtons.first().click()
     await expect.poll(() => page.locator('[data-queue-dock]').count(), { timeout: 10_000 }).toBe(0)
-    await page.getByRole('button', { name: 'Clear goal' }).click()
-    await expect.poll(() => page.locator('[data-goal-bar]').count(), { timeout: 10_000 }).toBe(0)
+    const finalTodo = await sampleContextMotion('Final Todo cleared', todoSelector, clearTodos)
+    expect(Math.abs(finalTodo.last.seatTop - initialTodo.first.seatTop)).toBeLessThanOrEqual(1)
+    expect(Math.abs(finalTodo.last.seatHeight - initialTodo.first.seatHeight)).toBeLessThanOrEqual(1)
+    await sampleContextMotion('Goal cleared', '[data-goal-bar]', async () => {
+      await page.getByRole('button', { name: 'Clear goal', exact: true }).click()
+      await expect.poll(() => page.getByRole('button', { name: 'Clear goal', exact: true }).count(), { timeout: 10_000 }).toBe(0)
+      await page.locator('[data-goal-bar]').waitFor({ state: 'detached', timeout: 10_000 })
+    })
+    expect(await todoPanel.count()).toBe(0)
+    expect(await page.locator('[data-goal-bar]').count()).toBe(0)
+    expect(await page.locator('[data-queue-dock]').count()).toBe(0)
+    expect(await activeInput.evaluate(element => element.isConnected
+      && document.querySelector('[data-phase="active"] [data-composer-input]') === element)).toBe(true)
+    await activeInput.dispose()
+    const settled = scaffold.whenTurnSettled()
     await page.getByRole('button', { name: 'Stop generating' }).click()
     await settled
 

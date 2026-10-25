@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // The domain's client-namespace pure-type outlet: one import edge delivers
@@ -62,12 +63,15 @@ function progressLabel(todos: readonly TodoItem[], t: TodoPanelProps['t']): stri
 }
 
 export function TodoPanel({ todos, t }: TodoPanelProps) {
-  if (todos.length === 0) return null
+  const retained = useRef(todos)
+  const open = todos.length > 0
+  if (open) retained.current = todos
+  const displayed = open ? todos : retained.current
 
   return (
-    <TaskDock title={t('todo.title')} summary={progressLabel(todos, t)} testId="todo-panel">
+    <TaskDock open={open} title={t('todo.title')} summary={progressLabel(displayed, t)} testId="todo-panel">
       <ul className={css.list}>
-        {todos.map(item => (
+        {displayed.map(item => (
           <li key={item.content} className={css.item} data-status={item.status}>
             <span className={css.glyph} role="img" aria-label={statusLabel(item.status, t)}>
               <StateDot state={statusDotState(item.status)} />

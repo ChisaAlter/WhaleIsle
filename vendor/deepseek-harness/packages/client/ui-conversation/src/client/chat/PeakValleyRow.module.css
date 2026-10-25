@@ -6,8 +6,8 @@
 
 .root {
   display: flex;
-  order: 1;
-  flex-basis: 100%;
+  grid-column: 1 / -1;
+  grid-row: 2;
   /* The box syncs with the composer card's width (see StatsLine.module.css);
      the content centers on the shared axis. */
   align-items: center;
@@ -15,6 +15,7 @@
   gap: 6px;
   max-width: var(--dsh-composer-resized-width, var(--dsh-composer-card-max-width));
   width: 100%;
+  min-height: 20px;
   margin: 0 auto;
   box-sizing: border-box;
   padding: 0 16px;
@@ -23,6 +24,10 @@
   color: var(--dsw-alias-label-tertiary);
   white-space: nowrap;
   overflow: hidden;
+}
+
+.placeholder {
+  visibility: hidden;
 }
 
 /* Phase group: dot + label + countdown share one hover anchor (the tooltip). */

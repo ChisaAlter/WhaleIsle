@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GoalActivation, GoalSnapshot } from '@deepseek-ai/dsh-goal/client'
 import {
   IconCheckOutlineRegular, IconCloseOutlineRegular, IconEditOutlineRegular, IconGoalOutlineRegular,
-  Button, IconPauseOutlineRegular, IconPlayOutlineRegular, IconTrashOutlineRegular, InlineEditor, Tooltip,
+  Button, IconPauseOutlineRegular, IconPlayOutlineRegular, IconTrashOutlineRegular, InlineEditor, Tooltip, usePresence,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { GoalActionResult, GoalBarActions, GoalBarInjected } from './slots.ts'
@@ -85,93 +85,100 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
     if (result?.ok) setClearedGoalId(clearedId)
   }, [onClear, runAction])
 
-  // Loading, absent, and complete goals have no strip at all.
-  if (goal === undefined || goal === null || goal.phase === 'complete' || goal.id === clearedGoalId) return null
+  const open = goal !== undefined && goal !== null && goal.phase !== 'complete' && goal.id !== clearedGoalId
+  const presence = usePresence(open)
+  const retained = useRef<{ goal: GoalSnapshot; label: string; showResume: boolean; activation: GoalActivation | undefined } | null>(null)
+  const current = open ? {
+    goal,
+    label: goal.phase === 'active' ? activeLabel(activation, t) : t(PHASE_LABELS[goal.phase]),
+    showResume: goal.phase === 'paused' || (goal.phase === 'active' && activation === 'disarmed'),
+    activation,
+  } : null
+  if (current !== null) retained.current = current
+  const displayed = current ?? retained.current
+  if (!presence.mounted || displayed === null) return null
+  const visibleGoal = displayed.goal
 
-  if (editing) {
-    return (
-      <div className={css.dock} data-goal-bar>
-        <div className={`${css.bar} ${css.editBar}`}>
-          <InlineEditor
-            value={draft}
-            label={t('objective.aria')}
-            onChange={setDraft}
-            onSave={() => { void handleEdit() }}
-            onCancel={() => { setEditing(false) }}
-          />
-          {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
-          <div className={css.actions}>
-            <Tooltip portal label={t('action.save')} side="bottom" delayMs={500}>
-              <Button
-                type="button"
-                className={css.iconBtn}
-                onClick={() => { void handleEdit() }}
-                disabled={pending || draft.trim() === ''}
-                loading={pendingAction === 'save'}
-                aria-label={t('action.save')}
-              >
-                <IconCheckOutlineRegular size={14} />
-              </Button>
-            </Tooltip>
-            <Tooltip portal label={t('action.cancel')} side="bottom" delayMs={500}>
-              <button
-                type="button"
-                className={css.iconBtn}
-                onClick={() => { setEditing(false) }}
-                disabled={pending}
-                aria-label={t('action.cancel')}
-              >
-                <IconCloseOutlineRegular size={14} />
-              </button>
-            </Tooltip>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  const title = goal.phase === 'blocked' ? goal.blockedReason?.message : undefined
-  const label = goal.phase === 'active' ? activeLabel(activation, t) : t(PHASE_LABELS[goal.phase])
-  const showResume = goal.phase === 'paused'
-    || (goal.phase === 'active' && activation === 'disarmed')
   return (
-    <div className={css.dock} data-goal-bar>
-      <div className={css.bar} title={title}>
-        <span className={css.goalGlyph}><IconGoalOutlineRegular size={14} /></span>
-        <span className={css.label}>{label}</span>
-        <span className={css.objective}>{goal.objective}</span>
-        {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
-        <div className={css.actions}>
-          {goal.phase === 'active' && activation === 'armed' && (
-            <Tooltip portal label={t('action.pause')} side="bottom" delayMs={500}>
-              <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'pause'} onClick={() => { void runAction('pause', onPause) }} aria-label={t('action.pause')}>
-                <IconPauseOutlineRegular size={14} />
-              </Button>
-            </Tooltip>
+    <div className={css.dock} data-goal-bar data-state={presence.state} aria-hidden={open ? undefined : true} {...open ? {} : { inert: '' }}>
+      <div className={css.clip}>
+        <div className={css.surface} data-dsh-motion="fade" data-state={presence.state}>
+          {editing && open ? (
+            <div className={`${css.bar} ${css.editBar}`}>
+              <InlineEditor
+                value={draft}
+                label={t('objective.aria')}
+                onChange={setDraft}
+                onSave={() => { void handleEdit() }}
+                onCancel={() => { setEditing(false) }}
+              />
+              {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
+              <div className={css.actions}>
+                <Tooltip portal label={t('action.save')} side="bottom" delayMs={500}>
+                  <Button
+                    type="button"
+                    className={css.iconBtn}
+                    onClick={() => { void handleEdit() }}
+                    disabled={pending || draft.trim() === ''}
+                    loading={pendingAction === 'save'}
+                    aria-label={t('action.save')}
+                  >
+                    <IconCheckOutlineRegular size={14} />
+                  </Button>
+                </Tooltip>
+                <Tooltip portal label={t('action.cancel')} side="bottom" delayMs={500}>
+                  <button
+                    type="button"
+                    className={css.iconBtn}
+                    onClick={() => { setEditing(false) }}
+                    disabled={pending}
+                    aria-label={t('action.cancel')}
+                  >
+                    <IconCloseOutlineRegular size={14} />
+                  </button>
+                </Tooltip>
+              </div>
+            </div>
+          ) : (
+            <div className={css.bar} title={visibleGoal.phase === 'blocked' ? visibleGoal.blockedReason?.message : undefined}>
+              <span className={css.goalGlyph}><IconGoalOutlineRegular size={14} /></span>
+              <span className={css.label}>{displayed.label}</span>
+              <span className={css.objective}>{visibleGoal.objective}</span>
+              {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
+              <div className={css.actions}>
+                {visibleGoal.phase === 'active' && displayed.activation === 'armed' && (
+                  <Tooltip portal label={t('action.pause')} side="bottom" delayMs={500}>
+                    <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'pause'} onClick={() => { void runAction('pause', onPause) }} aria-label={t('action.pause')}>
+                      <IconPauseOutlineRegular size={14} />
+                    </Button>
+                  </Tooltip>
+                )}
+                {displayed.showResume && (
+                  <Tooltip portal label={t('action.resume')} side="bottom" delayMs={500}>
+                    <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'resume'} onClick={() => { void runAction('resume', onResume) }} aria-label={t('action.resume')}>
+                      <IconPlayOutlineRegular size={14} />
+                    </Button>
+                  </Tooltip>
+                )}
+                <Tooltip portal label={t('action.edit')} side="bottom" delayMs={500}>
+                  <button
+                    type="button"
+                    className={css.iconBtn}
+                    disabled={pending}
+                    onClick={() => { setDraft(visibleGoal.objective); setEditing(true) }}
+                    aria-label={t('action.edit')}
+                  >
+                    <IconEditOutlineRegular size={14} />
+                  </button>
+                </Tooltip>
+                <Tooltip portal label={t('action.clear')} side="bottom" delayMs={500}>
+                  <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'clear'} onClick={() => { void handleClear(visibleGoal.id) }} aria-label={t('action.clear')}>
+                    <IconTrashOutlineRegular size={14} />
+                  </Button>
+                </Tooltip>
+              </div>
+            </div>
           )}
-          {showResume && (
-            <Tooltip portal label={t('action.resume')} side="bottom" delayMs={500}>
-              <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'resume'} onClick={() => { void runAction('resume', onResume) }} aria-label={t('action.resume')}>
-                <IconPlayOutlineRegular size={14} />
-              </Button>
-            </Tooltip>
-          )}
-          <Tooltip portal label={t('action.edit')} side="bottom" delayMs={500}>
-            <button
-              type="button"
-              className={css.iconBtn}
-              disabled={pending}
-              onClick={() => { setDraft(goal.objective); setEditing(true) }}
-              aria-label={t('action.edit')}
-            >
-              <IconEditOutlineRegular size={14} />
-            </button>
-          </Tooltip>
-          <Tooltip portal label={t('action.clear')} side="bottom" delayMs={500}>
-            <Button type="button" className={css.iconBtn} disabled={pending} loading={pendingAction === 'clear'} onClick={() => { void handleClear(goal.id) }} aria-label={t('action.clear')}>
-              <IconTrashOutlineRegular size={14} />
-            </Button>
-          </Tooltip>
         </div>
       </div>
     </div>
