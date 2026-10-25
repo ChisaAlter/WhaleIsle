@@ -900,7 +900,7 @@ export class ProjectService {
   guard(exec) {
     if (this.closing) return 'Project is unloading.';
     const coordinator = this.state().projects.find(item => item.coordinatorSessionId === exec.agent?.id);
-    if (coordinator && !['project_request', 'project_queue', 'project_deliver', 'project_delegate', 'project_read_store', 'project_stop', 'list_agents', 'team_task_list', 'send_message', 'html_preview', 'html_render'].includes(exec.name)) return 'The Project coordinator may only organize requirements, read materials, visualize results, delegate, deliver or stop work.';
+    if (coordinator && !['project_request', 'project_queue', 'project_deliver', 'project_delegate', 'project_read_store', 'project_stop', 'list_agents', 'team_task_list', 'send_message', 'html_preview', 'html_render', 'todo_write'].includes(exec.name)) return 'The Project coordinator may only organize requirements, keep its plan, read materials, visualize results, delegate, deliver or stop work.';
     const worker = this.state().workers.find(item => item.sessionId === exec.agent?.id); if (!worker) return;
     // The optional Agent Teams bundle registers these globally; Project work is arranged only by its coordinator host.
     if (['spawn_teammate', 'wait_agent', 'interrupt_agent', 'team_task_create', 'team_task_get', 'team_task_update'].includes(exec.name)) return 'Project members collaborate through Project tools; the coordinator arranges Team work.';

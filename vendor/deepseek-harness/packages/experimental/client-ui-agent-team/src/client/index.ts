@@ -1,12 +1,15 @@
-/** Browser entry registering the Agent Teams conversation-header action. */
+/** Browser entry registering the Agent Teams conversation-header action and Sidebar page. */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { registerAgentTeamUi } from './mount.ts'
 
-export { TeamAction } from './TeamAction.tsx'
+export { TeamAction, TeamBody } from './TeamAction.tsx'
+export { TeamSidebar } from './TeamSidebar.tsx'
 export { en as teamEnglish, zh as teamChinese } from './locales.ts'
-export { inject } from './mount.ts'
-export type { TeamActionInjected, TeamActionProps } from './TeamAction.tsx'
+export { inject, TEAM_SIDEBAR_ID, TEAM_SIDEBAR_KIND } from './mount.ts'
+export type { TeamActionInjected, TeamActionProps, TeamBodyProps, TeamTaskScopesProps } from './TeamAction.tsx'
+export type { TeamTaskScopeMap, TeamTaskScopes } from './mount.ts'
+export type { TeamSidebarProps } from './TeamSidebar.tsx'
 export type { TeamKey } from './locales.ts'
 
 /**

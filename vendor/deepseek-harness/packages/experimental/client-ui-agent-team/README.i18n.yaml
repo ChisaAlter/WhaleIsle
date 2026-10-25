@@ -9,8 +9,8 @@
   en: 447e3c2bbf1ea3c6
   zh: 25bba08497976d12
 /deepseek-ai-dsh-experimental-client-ui-agent-team/summary:
-  en: a30d7bbb951ed3ec
-  zh: 8b12eca1138820f0
+  en: 6f5a4c840ea2d96c
+  zh: 4226dba60307e1b5
 /deepseek-ai-dsh-experimental-client-ui-agent-team/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
@@ -20,12 +20,18 @@
 /deepseek-ai-dsh-experimental-client-ui-agent-team/use-this-package/inspect-and-navigate-the-roster:
   en: 62778e911a4ee9e9
   zh: dff1dbbc3d5e4af6
+/deepseek-ai-dsh-experimental-client-ui-agent-team/use-this-package/keep-the-team-beside-the-conversation:
+  en: 720cdff2d49d5a1d
+  zh: f125c1cb0611a17a
+/deepseek-ai-dsh-experimental-client-ui-agent-team/use-this-package/scope-the-current-view-to-the-owner-s-work:
+  en: f52a937940ff3779
+  zh: 98781596e1c84346
 /deepseek-ai-dsh-experimental-client-ui-agent-team/use-this-package/inspect-the-task-board:
   en: cf09faa436dad9fd
   zh: e7423f4111eb88f9
 /deepseek-ai-dsh-experimental-client-ui-agent-team/understand-the-implementation:
-  en: 3ea723e7ea467be7
-  zh: dba02b20bef0fd7f
+  en: 1dd6c8450684cb8b
+  zh: 998009db95624ca9
 /deepseek-ai-dsh-experimental-client-ui-agent-team/further-exploration:
   en: 71ac041029c64d5a
   zh: fef2e4c5dccb8d1b

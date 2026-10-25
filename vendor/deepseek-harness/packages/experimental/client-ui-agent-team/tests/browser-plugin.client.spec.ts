@@ -4,15 +4,28 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { TeamAction, type TeamActionInjected } from '../src/client/TeamAction.tsx'
-import { apply, inject } from '../src/client/index.ts'
+import { TeamSidebar } from '../src/client/TeamSidebar.tsx'
+import { apply, inject, TEAM_SIDEBAR_ID, TEAM_SIDEBAR_KIND } from '../src/client/index.ts'
 import { apply as nodeApply } from '../src/index.ts'
 
 const SESSION = 'team-session' as SessionId
 const CHILD = 'team-child' as SessionId
 
-async function bench(options: { addressed?: boolean } = {}) {
+async function bench(options: { addressed?: boolean; sidebar?: boolean } = {}) {
   const ctx = new Context()
   const navigation: unknown[] = []
+  const tabTypes = new Set<{ id: string; kind: string; title: () => string }>()
+  if (options.sidebar === true) {
+    ctx.provide('sidebarRight', {
+      openResource: (address: string, opening: unknown) => { navigation.push(['aside', address, opening]) },
+    } as never)
+    ctx.provide('sidebarRightTabs', {
+      register: (definition: { id: string; kind: string; title: () => string }) => {
+        tabTypes.add(definition)
+        return () => { tabTypes.delete(definition) }
+      },
+    } as never)
+  }
   let mainSessionId = options.addressed === true ? CHILD : SESSION
   ctx.provide('sessions', {
     binding: (id: SessionId) => options.addressed === true && id === CHILD
@@ -46,7 +59,10 @@ async function bench(options: { addressed?: boolean } = {}) {
   await ctx.plugin(SlotRegistry).await()
   const collapseHeader = ctx.slots.register({
     name: 'root',
-    children: { 'conversation.session.header.actions': { kind: 'list', scope: 'session' } },
+    children: {
+      'conversation.session.header.actions': { kind: 'list', scope: 'session' },
+      'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' },
+    },
   } as never, () => null)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
@@ -62,10 +78,14 @@ async function bench(options: { addressed?: boolean } = {}) {
       openTeammate: openTeammate as TeamActionInjected['openTeammate'],
     }
   }
+  const page = () => ctx.slots.entries('sidebar.right.pane.tab')
+    .find(candidate => candidate.component === TeamSidebar)
   return {
     ctx,
     fiber,
     navigation,
+    tabTypes,
+    page,
     entry,
     actions,
     collapseHeader,
@@ -131,6 +151,46 @@ describe('ui-team browser plugin', () => {
     } as never, () => null)
     await Promise.resolve()
     expect(b.entry()).toBeDefined()
+  })
+
+  it('registers a disposable Team Sidebar page only when the Sidebar is present', async () => {
+    const without = await bench()
+    expect(without.page()).toBeUndefined()
+
+    const b = await bench({ sidebar: true })
+    expect([...b.tabTypes].map(type => [type.id, type.kind, type.title()]))
+      .toEqual([[TEAM_SIDEBAR_ID, TEAM_SIDEBAR_KIND, 'Agent Team']])
+    expect(b.page()).toMatchObject({ locale: 'agent-team' })
+
+    await b.fiber.dispose()
+    expect(b.tabTypes.size).toBe(0)
+    expect(b.page()).toBeUndefined()
+  })
+
+  it('opens a member beside the Team page and the Lead in the main view', async () => {
+    const b = await bench({ sidebar: true })
+    const aside = b.page()!.inject!() as unknown as TeamActionInjected
+    aside.openTeammate(SESSION, CHILD)
+    aside.openTeammate(SESSION, SESSION)
+    expect(b.navigation).toEqual([
+      ['aside', `dsh-resource://subagentchat/session/${CHILD}?parent=${SESSION}&mode=continuable`,
+        { kind: 'subagentchat' }],
+      ['open', SESSION],
+    ])
+  })
+
+  it('provides owner task scopes that every Team view reads and that dispose with the plugin', async () => {
+    const b = await bench({ sidebar: true })
+    const scopes = b.ctx.get('agentTeamScopes')!
+    const header = (b.entry()!.inject!() as unknown as { hooks: { teamTaskScopes: { getSnapshot: () => Record<string, readonly string[]> } } }).hooks.teamTaskScopes
+    const aside = (b.page()!.inject!() as unknown as { hooks: { teamTaskScopes: typeof header } }).hooks.teamTaskScopes
+    scopes.set(SESSION, ['task-b', 'task-a'])
+    expect(header.getSnapshot()).toEqual({ [SESSION]: ['task-b', 'task-a'] })
+    expect(aside.getSnapshot()).toBe(header.getSnapshot())
+    scopes.set(SESSION, undefined)
+    expect(header.getSnapshot()).toEqual({})
+    await b.fiber.dispose()
+    expect(b.ctx.get('agentTeamScopes')).toBeUndefined()
   })
 
   it('keeps the node half inert', () => {

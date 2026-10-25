@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package adds an Agent Teams action to the Web conversation header, where a user can inspect the current roster, inspect the shared task board, and navigate into a teammate's conversation. It reads the Lead Session's `agentTeam` projection from the shared Session store, where Host projection frames keep it current without a refresh control, and keeps ordinary child-history navigation on the stable addressed-subagent path. Choose it through the published experimental Agent Teams bundle. The browser projection does not extend the stable API Proxy, store Team state, or register model-facing input.
+This package adds an Agent Teams action to the Web conversation header and the same Team as a right Sidebar page, where a user can inspect the current roster, inspect the shared task board, and navigate into a teammate's conversation. It reads the Lead Session's `agentTeam` projection from the shared Session store, where Host projection frames keep it current without a refresh control, and keeps ordinary child-history navigation on the stable addressed-subagent path. Choose it through the published experimental Agent Teams bundle. The browser projection does not extend the stable API Proxy, store Team state, or register model-facing input.
 
 ## Table of Contents
 
@@ -33,6 +33,14 @@ The panel shows the Lead Session's roster and task board from the shared Session
 
 Roster rows show durable names and phases. Provisioning and running members use the shared ongoing loader, inactive members use a person icon, and failed members use error. Live Session status supplies running activity; the shared `modelSelection` projection supplies a model when available. The current conversation carries a Current chat tag and cannot be selected. Selecting the Lead from a teammate conversation opens the Lead Session directly. Selecting an active teammate opens its ordinary continuable child address. The Host validates the parent, child, and mode when history opens; later human prompts use the same addressed-subagent conversation.
 
+### Keep the Team beside the conversation
+
+When the right Sidebar is composed, the package registers the `agent-team` page kind (`TEAM_SIDEBAR_KIND`). The page renders the same roster and task board as the header panel, with members stacked in the narrow column. Selecting a teammate there opens its addressed conversation as a `subagentchat` Sidebar tab in the Team page's pane, so the Lead conversation stays in view and the Team is one tab away; selecting the Lead opens the Lead Session. A failed opening shows inline above the roster. Another plugin can open the page for a Session through `sidebarRight.openTabIn(sessionId, TEAM_SIDEBAR_KIND)`; Project opens it once per Lead.
+
+### Scope the Current view to the owner's work
+
+The package provides `ctx.agentTeamScopes`. A conversation owner calls `set(leadSessionId, taskIds)` with the task ids of its current work, most relevant first, and `set(leadSessionId, undefined)` to clear them. In a Project Lead, the Current view of the header panel and the Sidebar page then lists only those tasks, live members and their owners, so members and open tasks from earlier or cancelled work stay under All records. Without a scope, the Current view keeps its live-work rule.
+
 ### Inspect the task board
 
 Ready pending tasks use idle, blocked pending tasks use warning, in-progress tasks use ongoing, and completed tasks use done.
@@ -47,14 +55,15 @@ The read-only task board shows task identity, owner, blockers, readiness, adviso
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The Client export registers its locale dictionaries and one conversation-header slot through Cordis effects; it mounts no Remote namespace. Disposing the plugin fiber removes both registrations.
+The Client export registers its locale dictionaries and one conversation-header slot through Cordis effects, plus the Sidebar page type and body when `sidebarRight` and `sidebarRightTabs` are present; it mounts no Remote namespace. Disposing the plugin fiber removes every registration.
 
 The panel renders outside the conversation container and stays within the viewport. Member cards use the shared elevation stroke for their outlines in resting, selected, and hover states. Hovering the trigger opens the panel after 150ms; leaving both trigger and panel closes it after a 120ms grace period. Clicking the trigger pins the panel and moves focus into it. Outside clicks and Escape dismiss the panel; Escape returns focus to the trigger only when focus was inside the panel. In a narrow header, the trigger becomes an icon and opens only on click. The component derives every row from the `useSessions`, `useSessionStatus`, and `useSession` seats: the Lead identity comes from the current Session's subagent address, the Team view from `projectionsBySession[lead].values.agentTeam`, member activity from Session status with the list summary as fallback, and the model from `projectionsBySession[member].values.modelSelection.next`. Each roster row selects its own running state. The only injected callback opens a roster Session using the current and target Session ids. Switching conversations closes the panel and clears a navigation failure.
 
 | File | Role |
 |---|---|
 | [`src/client/mount.ts`](src/client/mount.ts) | Locale, navigation, and slot registrations |
-| [`src/client/TeamAction.tsx`](src/client/TeamAction.tsx) | Projection-derived roster and task board with panel interaction state |
+| [`src/client/TeamAction.tsx`](src/client/TeamAction.tsx) | `TeamBody`: projection-derived roster and task board; `TeamAction`: the header popover around it |
+| [`src/client/TeamSidebar.tsx`](src/client/TeamSidebar.tsx) | Sidebar page around `TeamBody` with inline navigation failures |
 | [`src/client/locales.ts`](src/client/locales.ts) | English and Chinese panel copy |
 | [`src/index.ts`](src/index.ts) | Inert Host entry |
 

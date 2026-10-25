@@ -39,6 +39,9 @@ class ScriptedModel extends LlmAdapter {
   async *stream(options) {
     this.requests.push(options); const names = (options.tools ?? []).map(tool => tool.name);
     if (names.includes('project_delegate')) {
+      // The Lead keeps the requirement plan in the native todo list the composer pins.
+      assert.ok(names.includes('todo_write'), 'the real Lead receives the native todo tool');
+      assert.equal(names.some(name => ['bash', 'pwsh', 'write_file', 'edit_file'].includes(name)), false, 'the todo tool adds no repository tools to the Lead');
       const input = options.messages.findLast(message => message.role === 'user' && ['user', 'subagent-settled'].includes(message.source.kind));
       const key = `coordinator:${input?.id}`, rawStage = this.stages.get(key) ?? 0; this.stages.set(key, rawStage + 1);
       const text = input ? messageText(input) : '';
@@ -301,8 +304,13 @@ class RequirementModel extends ScriptedModel {
       const text = messageText(input);
       if (text === 'HOLD_LEAD_FOR_BATCH') { this.batchWaiting = true; await this.batchGate; yield* blocks('Ready for the queued inputs.'); return; }
       if (text === 'RETRY_PARTIAL_HANDOVER') {
-        if (!stage) yield* call(`partial-read-${++this.counter}`, 'project_read_store', { path: 'notes.md' });
+        // The Lead's native plan passes the coordinator guard before the handover continues.
+        if (!stage) yield* call(`partial-plan-${++this.counter}`, 'todo_write', { todos: [{ content: 'Hand over the saved results', status: 'in_progress' }] });
         else if (stage === 1) {
+          const result = options.messages.findLast(message => message.role === 'tool');
+          assert.equal(result.isError ?? false, false, messageText(result));
+          yield* call(`partial-read-${++this.counter}`, 'project_read_store', { path: 'notes.md' });
+        } else if (stage === 2) {
           const view = toolFacts(options).requests.find(item => item.title === 'Repair goal');
           const declaration = handover(view, 'Saved development results are available; external acceptance remains unverified.');
           declaration.reportRefs.unshift(...this.priorReports);

@@ -522,7 +522,9 @@ button.crumb:hover {
   --dsh-composer-dock-inset: 8px;
 }
 
+/* An embedded occurrence has no grid parent; it fills its host's flex box. */
 .embeddedBody {
+  flex: 1;
   overflow: hidden;
   --dsh-chat-content-width: min(calc(100% - 32px), 920px);
   --dsh-composer-card-max-width: min(calc(100% - 16px), 952px);
