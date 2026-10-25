@@ -68,11 +68,18 @@ Successful project_report ends this turn; native settlement handles the Lead not
 /** Project Lead and teammates retain independent repository capabilities. */
 export async function registerProjectPresets(ctx) {
   const persona = prefix => ({ id: 'persona', name: '@deepseek-ai/dsh-persona', config: { includeRuntimeContext: true, complete: false, prefix } });
-  const worker = [persona(workerPersona),
+  const compaction = () => ({ id: 'compaction', name: 'cordis:group', group: true,
+    isolate: { compaction: true, toolResultPruner: true }, config: [
+      { id: 'compaction-basic', name: '@deepseek-ai/dsh-compaction-basic' },
+      { id: 'command-compact', name: '@deepseek-ai/dsh-command-compact' },
+      { id: 'tool-result-pruner', name: '@deepseek-ai/dsh-compaction-tool-result-pruner',
+        config: { thresholdChars: 8192, headChars: 4096, tailChars: 1024 } },
+    ] });
+  const worker = [persona(workerPersona), compaction(),
     { id: 'instructions', name: '@deepseek-ai/dsh-agent-instructions', config: { maxBytes: 65536 } }, { id: 'project-worker', name: new URL('./worker.js', import.meta.url).href }];
   const definitions = [
     { id: 'project-coordinator', name: 'Project coordinator', hidden: true, plugins: [
-      persona(leadPersona),
+      persona(leadPersona), compaction(),
       { id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo', config: { allowParallelInProgress: true } },
       { id: 'project-coordinator', name: new URL('./lead.js', import.meta.url).href } ] },
     { id: 'project-worker', name: 'Project worker', hidden: true, plugins: [...worker,

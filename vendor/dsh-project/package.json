@@ -17,6 +17,9 @@
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/dsh-compaction-basic": "*",
+    "@deepseek-ai/dsh-command-compact": "*",
+    "@deepseek-ai/dsh-compaction-tool-result-pruner": "*",
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-storage-domain": "*",
     "@deepseek-ai/dsh-tools": "*",
