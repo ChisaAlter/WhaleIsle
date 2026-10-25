@@ -216,6 +216,7 @@ export type TeamTaskAction =
   | 'reopen'
   | 'reassign'
   | 'delete'
+  | 'restore'
 
 /** Compare-and-set mutation of one shared task. */
 export interface UpdateTeamTaskRequest {

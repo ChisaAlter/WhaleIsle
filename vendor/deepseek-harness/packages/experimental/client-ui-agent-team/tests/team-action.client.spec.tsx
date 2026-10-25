@@ -13,6 +13,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { TeamAction, type TeamActionInjected, type TeamActionProps } from '../src/client/TeamAction.tsx'
+import { TeamSidebar, type TeamSidebarProps } from '../src/client/TeamSidebar.tsx'
 import { zh } from '../src/client/locales.ts'
 
 afterEach(() => {
@@ -653,4 +654,46 @@ it('updates expansion availability on paragraph resize and disconnects its obser
   expect(screen.queryByRole('button', { name: zh['task.expand'] })).toBeNull()
   view.unmount()
   expect(observer.disconnect).toHaveBeenCalledOnce()
+})
+
+describe('TeamSidebar', () => {
+  it('shows the Project roster and work in place and reports a failed member opening inline', () => {
+    const b = bench({ project: true, running: { [WORKER]: true }, projections: {
+      [SESSION]: { state: 'ready', error: null, values: { agentTeam: {
+        members: [lead, worker],
+        tasks: [{ ...task, subject: '修复登录', ownerName: worker.name, writeScopeWarnings: [] }],
+      } } },
+    } })
+    vi.mocked(b.injected.openTeammate).mockImplementation(() => { throw new Error('成员会话不可用') })
+    const { container } = render(<TeamSidebar {...(b.props as unknown as TeamSidebarProps)} />)
+    const page = container.querySelector('[data-team-sidebar]') as HTMLElement
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(within(page).getByRole('heading', { name: /成员/u })).toBeTruthy()
+    const member = within(page).getAllByRole('button').find(button => button.textContent?.includes('修复登录') && button.textContent.includes('运行中'))!
+    fireEvent.click(member)
+    expect(b.injected.openTeammate).toHaveBeenCalledWith(SESSION, WORKER)
+    expect(within(page).getByRole('alert').textContent).toContain('成员会话不可用')
+  })
+})
+
+describe('owner task scopes', () => {
+  it('limit the Project Current view to the owner\'s current work', () => {
+    const older: TeamMemberProjection = { id: 'older-worker' as SessionId, name: 'older', role: 'teammate', phase: 'active' }
+    const b = bench({ project: true, running: { [WORKER]: true }, projections: {
+      [SESSION]: { state: 'ready', error: null, values: { agentTeam: {
+        members: [lead, worker, older],
+        tasks: [
+          { ...task, subject: '当前工作', ownerName: worker.name, writeScopeWarnings: [] },
+          { ...task, id: TASK_2, subject: '已取消的旧工作', ownerName: older.name, writeScopeWarnings: [] },
+        ],
+      } } },
+    } })
+    const scopes = createSnapshotStore<Readonly<Record<string, readonly string[]>>>({ [SESSION]: [TASK_1] })
+    const { container } = render(<TeamSidebar {...(b.props as unknown as TeamSidebarProps)} useTeamTaskScopes={bindSnapshotSelector(scopes)} />)
+    const page = container.querySelector('[data-team-sidebar]') as HTMLElement
+    expect(page.textContent).toContain('当前工作')
+    expect(page.textContent).not.toContain('已取消的旧工作')
+    act(() => { scopes.set({}) })
+    expect(page.textContent).toContain('已取消的旧工作')
+  })
 })

@@ -29,6 +29,8 @@ export type {
 export type {
   SubagentReadOnlyComposerProps, SubagentReadOnlyMatch,
 } from './SubagentReadOnlyComposer.tsx'
+/** Sidebar chat address of one subagent Session, for callers opening it beside its parent. */
+export { subagentChatAddress }
 
 /** Required services for subagent presentation and navigation. */
 export const inject = ['sessions', 'uiWorkspace', 'slots', 'locale', 'sidebarRight']

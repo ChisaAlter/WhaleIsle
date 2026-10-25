@@ -185,6 +185,25 @@
   overflow-wrap: anywhere;
 }
 
+/* The Sidebar page fills its pane; the shared body scrolls inside it and
+   members stack in the narrow column. */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  padding-top: 8px;
+}
+
+.sidebar .roster {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.sidebar > .error {
+  margin: 0 14px 8px;
+}
+
 @media (max-width: 560px) {
   .projectPanel .roster {
     grid-template-columns: minmax(0, 1fr);

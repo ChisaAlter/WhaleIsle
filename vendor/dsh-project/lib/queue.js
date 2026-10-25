@@ -79,6 +79,7 @@ export class ProjectQueue {
     });
     for (const workId of cancelWork) await service.stop(projectId, workId, { recordHold: false });
     await Promise.all(cancelWork.map(workId => service.stops.get(service.stream(workId).workerSessionId)).filter(Boolean));
+    await service.closeCancelledTasks(projectId, cancelWork);
     await this.pump(projectId);
     await service.notes(projectId);
     return { requestId, queue: this.view(service.requirements.get(projectId, requestId)), projectQueue: this.summary(projectId) };

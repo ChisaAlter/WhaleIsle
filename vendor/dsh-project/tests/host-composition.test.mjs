@@ -39,6 +39,9 @@ class ScriptedModel extends LlmAdapter {
   async *stream(options) {
     this.requests.push(options); const names = (options.tools ?? []).map(tool => tool.name);
     if (names.includes('project_delegate')) {
+      // The Lead keeps the requirement plan in the native todo list the composer pins.
+      assert.ok(names.includes('todo_write'), 'the real Lead receives the native todo tool');
+      assert.equal(names.some(name => ['bash', 'pwsh', 'write_file', 'edit_file'].includes(name)), false, 'the todo tool adds no repository tools to the Lead');
       const input = options.messages.findLast(message => message.role === 'user' && ['user', 'subagent-settled'].includes(message.source.kind));
       const key = `coordinator:${input?.id}`, rawStage = this.stages.get(key) ?? 0; this.stages.set(key, rawStage + 1);
       const text = input ? messageText(input) : '';
@@ -301,8 +304,13 @@ class RequirementModel extends ScriptedModel {
       const text = messageText(input);
       if (text === 'HOLD_LEAD_FOR_BATCH') { this.batchWaiting = true; await this.batchGate; yield* blocks('Ready for the queued inputs.'); return; }
       if (text === 'RETRY_PARTIAL_HANDOVER') {
-        if (!stage) yield* call(`partial-read-${++this.counter}`, 'project_read_store', { path: 'notes.md' });
+        // The Lead's native plan passes the coordinator guard before the handover continues.
+        if (!stage) yield* call(`partial-plan-${++this.counter}`, 'todo_write', { todos: [{ content: 'Hand over the saved results', status: 'in_progress' }] });
         else if (stage === 1) {
+          const result = options.messages.findLast(message => message.role === 'tool');
+          assert.equal(result.isError ?? false, false, messageText(result));
+          yield* call(`partial-read-${++this.counter}`, 'project_read_store', { path: 'notes.md' });
+        } else if (stage === 2) {
           const view = toolFacts(options).requests.find(item => item.title === 'Repair goal');
           const declaration = handover(view, 'Saved development results are available; external acceptance remains unverified.');
           declaration.reportRefs.unshift(...this.priorReports);
@@ -784,6 +792,7 @@ test('native requirement cancellation drains its active member before the next r
     } finally { releaseDrain(); host.drainWorker = drain; }
     const stopped = host.worker(aId);
     assert.equal(stopped.phase, 'idle'); assert.equal(stopped.activeRunId, ''); assert.equal(stopped.directoryHeld, false); assert.deepEqual(host.jobs(aId), []);
+    assert.equal(host.teams.listTasks(lead).some(task => task.id === a.id), false, 'the cancelled requirement\'s unfinished task leaves the Team board');
     model.gate('worker:A').release(); await host.queue.pump(project.id); await host.tail;
     assert.equal(host.stream(a.id).currentDelegationRef, oldRef); assert.equal(host.stream(a.id).latestReport, undefined);
     assert.equal(host.state().deliveries.some(row => row.requestId === a.delegations[0].source.requestId), false);
@@ -792,6 +801,10 @@ test('native requirement cancellation drains its active member before the next r
     await waitFor(() => host.state().deliveries.some(row => row.status === 'delivered' && row.title === 'B'), 'B completes normally after active A cancellation'); await lead.whenIdle(); await host.tail;
     assert.deepEqual(model.queueInputs.map(item => item.title), ['B']); assert.equal(await readFile(join(directory, 'B.txt'), 'utf8'), 'B revision 1\n');
     assert.equal(host.state().requests.find(row => row.title === 'A').queue.state, 'cancelled'); assert.deepEqual(model.failures, []);
+    await assert.rejects(host.ensureTask(host.stream(a.id)), { code: 'team_task' }, 'a still-cancelled requirement cannot bring its task back');
+    await prompt([{ type: 'queue', title: 'A', action: 'enqueue' }]); await lead.whenIdle();
+    await waitFor(() => host.teams.listTasks(lead).some(task => task.id === a.id && task.status !== 'deleted'), 'rejoining A delegates its original work and restores the same task');
+    assert.equal(host.stream(a.id).workerSessionId, aId);
   } finally {
     releaseDrain(); for (const gate of model.gates.values()) gate.release(); if (ctx) await ctx.fiber.dispose(); await bridge.close();
     for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];

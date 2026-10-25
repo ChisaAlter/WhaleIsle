@@ -802,6 +802,24 @@ describe('Team shared task DAG', () => {
       action: 'edit',
       subject: 'late',
     })).rejects.toMatchObject({ code: 'TEAM_TASK_DELETED' })
+    await expect(ctx.agentTeams.updateTask(owner, {
+      taskId: task.id,
+      expectedRevision: deleted.revision,
+      action: 'restore',
+    })).rejects.toMatchObject({ code: 'TEAM_LEAD_REQUIRED' })
+    const restored = await ctx.agentTeams.updateTask(lead, {
+      taskId: task.id,
+      expectedRevision: deleted.revision,
+      action: 'restore',
+    })
+    expect(restored).toMatchObject({ id: task.id, status: 'pending' })
+    expect(restored).not.toHaveProperty('ownerName')
+    expect(ctx.agentTeams.listTasks(lead).map(item => item.id)).toEqual([task.id])
+    await expect(ctx.agentTeams.updateTask(lead, {
+      taskId: task.id,
+      expectedRevision: restored.revision,
+      action: 'restore',
+    })).rejects.toMatchObject({ code: 'TEAM_TASK_INVALID_TRANSITION' })
     ctx.agentTeams.interrupt(lead, 'owner')
     await waitNoAgent(ctx, owner.id)
   })

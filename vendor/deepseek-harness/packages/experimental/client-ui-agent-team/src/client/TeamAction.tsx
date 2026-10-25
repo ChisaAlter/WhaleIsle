@@ -53,9 +53,15 @@ function TeamPagination({ page, total, pageSize, onChange, label, t }: {
 /** Durable lifecycle overlaid with the member Session's live turn activity. */
 type MemberStatus = 'running' | 'inactive' | 'provisioning' | 'failed'
 
+/** Owner-supplied current task ids by Lead Session id, read through the injected `teamTaskScopes` hook. */
+export interface TeamTaskScopesProps {
+  /** Select from the current scopes; absent where no scope service is composed. */
+  useTeamTaskScopes?: <R>(selector: (scopes: Readonly<Record<string, readonly string[]>>) => R) => R
+}
+
 /** Full props of the Team conversation-header action. */
 export type TeamActionProps =
-  PropsRuntime<'conversation.session.header.actions'> & TeamActionInjected & PropsLocale<typeof NS>
+  PropsRuntime<'conversation.session.header.actions'> & TeamActionInjected & TeamTaskScopesProps & PropsLocale<typeof NS>
 
 function statusKey(status: TeamTask['status']): TeamKey {
   switch (status) {
@@ -211,17 +217,202 @@ function TaskCard({ task, project, ownerLabel, dependencyLabels, t }: {
   )
 }
 
-/** Render the Team roster and read-only task board. */
-export function TeamAction({
-  sessionId, useSession, useSessions, useSessionStatus, openTeammate, projectTaskIds, t,
-}: TeamActionProps) {
-  const [open, setOpen] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+/** Props shared by every Team presentation: the runtime seats, navigation and localized copy. */
+export type TeamBodyProps = Pick<TeamActionProps,
+  'sessionId' | 'useSession' | 'useSessions' | 'useSessionStatus' | 'openTeammate' | 'projectTaskIds' | 'useTeamTaskScopes' | 't'
+> & {
+  /** Report a navigation failure, or clear it with null. */
+  onError: (message: string | null) => void
+}
+
+/** Whether the Team view of a Session is still arriving with its conversation or list. */
+function useTeamLoading({ sessionId, useSession, useSessions }: Pick<TeamBodyProps, 'sessionId' | 'useSession' | 'useSessions'>): boolean {
+  const leadSessionId = useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? sessionId
+  const team = useSessions(state => state.projectionsBySession[leadSessionId]?.values.agentTeam)
+  const opening = useSession(snapshot => snapshot.openState === 'loading')
+  const listing = useSessions(state => state.phase === 'pending')
+  return team === undefined && (opening || listing)
+}
+
+/** Render the Team roster and read-only task board without its surrounding surface. */
+export function TeamBody({
+  sessionId, useSession, useSessions, useSessionStatus, openTeammate, projectTaskIds: injectedTaskIds, useTeamTaskScopes, onError, t,
+}: TeamBodyProps) {
   const [view, setView] = useState<'current' | 'history'>('current')
   const [query, setQuery] = useState('')
   const [memberPage, setMemberPage] = useState(0)
   const [taskPage, setTaskPage] = useState(0)
   const viewId = useId()
+  const leadSessionId = useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? sessionId
+  const team = useSessions(state => state.projectionsBySession[leadSessionId]?.values.agentTeam)
+  const project = useSessions(state => state.byId[leadSessionId]?.presentation?.owner === 'project')
+  // The conversation owner's current work, when it names one, scopes the Current view.
+  const projectTaskIds = useTeamTaskScopes?.(scopes => scopes[leadSessionId]) ?? injectedTaskIds
+  const liveMembers = useSessionStatus(state => project
+    ? team?.members.filter(member => state.get(member.id)?.running === true).map(member => member.id).join('\n') ?? ''
+    : '')
+  const inactiveMembers = useSessionStatus(state => project
+    ? team?.members.filter(member => state.get(member.id)?.running === false).map(member => member.id).join('\n') ?? ''
+    : '')
+  const summaryLiveMembers = useSessions(state => project
+    ? team?.members.filter(member => state.byId[member.id]?.running === true).map(member => member.id).join('\n') ?? ''
+    : '')
+  const loadingTeam = useTeamLoading({ sessionId, useSession, useSessions })
+
+  useEffect(() => {
+    setView('current')
+    setQuery('')
+    setMemberPage(0)
+    setTaskPage(0)
+  }, [sessionId])
+
+  const compact = team !== undefined && team.members.length === 1 && team.tasks.length === 0
+  const taskById = new Map<string, TeamTask>(team?.tasks.map(task => [task.id, task]))
+  const taskByOwner = new Map<string, TeamTask>()
+  // Prefer the Project's real current task when a native member has older tasks too.
+  for (const task of [...(projectTaskIds?.flatMap(id => taskById.get(id) ?? []) ?? []), ...(team?.tasks ?? [])]) {
+    if (task.ownerName !== undefined && !taskByOwner.has(task.ownerName)) taskByOwner.set(task.ownerName, task)
+  }
+  const memberLabel = (member: TeamMemberProjection): string => {
+    if (!project) return member.name
+    if (member.role === 'lead') return t('project.lead')
+    return taskByOwner.get(member.name)?.subject ?? member.description ?? member.name
+  }
+  const memberByName = new Map(team?.members.map(member => [member.name, member]))
+  const inactiveMemberIds = new Set(inactiveMembers.split('\n'))
+  const liveMemberIds = new Set([...liveMembers.split('\n'), ...summaryLiveMembers.split('\n').filter(id => !inactiveMemberIds.has(id))])
+  const activeOwnerNames = new Set(team?.members.filter(member => liveMemberIds.has(member.id) || member.phase === 'provisioning').map(member => member.name))
+  const taskOrder = new Map(projectTaskIds?.map((id, index) => [id, index]))
+  const activeTasks = (team?.tasks.filter(task => projectTaskIds === undefined
+    ? task.status === 'pending' || task.status === 'in_progress'
+    : task.ownerName !== undefined && activeOwnerNames.has(task.ownerName)) ?? [])
+    .sort((a, b) => (taskOrder.get(a.id) ?? taskOrder.size) - (taskOrder.get(b.id) ?? taskOrder.size))
+  // Old Projects have no request association. Only their recent recorded completions
+  // supplement live work; insertion order never stands in for a current Request.
+  const relatedTasks = projectTaskIds?.flatMap(id => taskById.get(id) ?? [])
+    ?? [...(team?.tasks ?? [])].reverse().filter(task => task.status === 'completed').slice(0, 3)
+  const currentTasks = [...new Map([...activeTasks, ...relatedTasks].map(task => [task.id, task])).values()]
+  const currentOwners = new Set(currentTasks.flatMap(task => task.ownerName === undefined ? [] : [task.ownerName]))
+  const search = query.trim().toLocaleLowerCase()
+  const matchingTasks = new Set(team?.tasks.filter(task => `${task.subject}\n${task.description}`.toLocaleLowerCase().includes(search)).map(task => task.id))
+  const matchingOwners = new Set(team?.tasks.filter(task => matchingTasks.has(task.id)).map(task => task.ownerName))
+  const taskCandidates = !project ? team?.tasks ?? [] : view === 'history'
+    ? [...(team?.tasks ?? [])].reverse().filter(task => {
+      const owner = task.ownerName === undefined ? undefined : memberByName.get(task.ownerName)
+      return matchingTasks.has(task.id) || owner !== undefined && memberLabel(owner).toLocaleLowerCase().includes(search)
+    })
+    : currentTasks
+  const memberCandidates = !project ? team?.members ?? [] : view === 'history'
+    ? [...(team?.members ?? [])].reverse().filter(member => memberLabel(member).toLocaleLowerCase().includes(search)
+      || (member.description ?? '').toLocaleLowerCase().includes(search) || matchingOwners.has(member.name))
+    : (team?.members ?? []).filter(member => member.role === 'lead' || currentOwners.has(member.name)
+      || liveMemberIds.has(member.id) || member.phase === 'provisioning')
+  const visibleMemberPage = Math.min(memberPage, Math.max(0, Math.ceil(memberCandidates.length / memberPageSize) - 1))
+  const visibleTaskPage = Math.min(taskPage, Math.max(0, Math.ceil(taskCandidates.length / taskPageSize) - 1))
+  const visibleMembers = project ? memberCandidates.slice(visibleMemberPage * memberPageSize, (visibleMemberPage + 1) * memberPageSize) : memberCandidates
+  const visibleTasks = project ? taskCandidates.slice(visibleTaskPage * taskPageSize, (visibleTaskPage + 1) * taskPageSize) : taskCandidates
+
+  useEffect(() => { setMemberPage(visibleMemberPage) }, [visibleMemberPage])
+  useEffect(() => { setTaskPage(visibleTaskPage) }, [visibleTaskPage])
+
+  return (
+    <>
+    {project && team !== undefined && !compact && (
+      <div className={css.projectToolbar}>
+        <SegmentedTabs
+          label={t('project.view')}
+          value={view}
+          items={[
+            { value: 'current', label: t('project.recent'), id: `${viewId}-current`, panelId: `${viewId}-panel` },
+            { value: 'history', label: t('project.history'), id: `${viewId}-history`, panelId: `${viewId}-panel` },
+          ]}
+          onChange={next => { setView(next); setQuery(''); setMemberPage(0); setTaskPage(0) }}
+        />
+        {view === 'history' && <label className={css.searchLabel}>
+          <span>{t('project.search')}</span>
+          <Input type="search" value={query} placeholder={t('project.searchHint')}
+            onChange={event => { setQuery(event.target.value); setMemberPage(0); setTaskPage(0) }} />
+        </label>}
+      </div>
+    )}
+    <div className={css.body} aria-busy={loadingTeam} data-team-loading={loadingTeam || undefined}
+      id={project && team !== undefined && !compact ? `${viewId}-panel` : undefined}
+      role={project && team !== undefined && !compact ? 'tabpanel' : undefined}
+      aria-labelledby={project && team !== undefined && !compact ? `${viewId}-${view}` : undefined}>
+      {loadingTeam && <span className={css.loading} aria-hidden="true"><StateDot state="ongoing" /></span>}
+      {team === undefined && !loadingTeam && (
+        <div className={css.notice} role="status">
+          <StateDot state="warning" />
+          {t('unavailable')}
+        </div>
+      )}
+      {team !== undefined && (
+        <>
+          {team.failure !== undefined && (
+            <div className={css.error} role="alert"><StateDot state="error" />{t('failure', { message: team.failure })}</div>
+          )}
+          <section>
+            <h3>
+              {t('roster')}
+              {memberCandidates.length > 1 && <span className={css.count}>{memberCandidates.length}</span>}
+            </h3>
+            <div className={css.roster}>
+              {visibleMembers.map(member => (
+                <TeamMemberRow
+                  key={member.id}
+                  member={member}
+                  label={memberLabel(member)}
+                  project={project}
+                  memberCount={team.members.length}
+                  sessionId={sessionId}
+                  useSessions={useSessions}
+                  useSessionStatus={useSessionStatus}
+                  openTeammate={openTeammate}
+                  onError={onError}
+                  t={t}
+                />
+              ))}
+            </div>
+            {project && memberCandidates.length === 0 && <p className={css.emptyNotice}>{t('project.noMembers')}</p>}
+            {project && <TeamPagination page={visibleMemberPage} total={memberCandidates.length} pageSize={memberPageSize}
+              onChange={setMemberPage} label={t('project.memberPages')} t={t} />}
+          </section>
+          <section>
+            {taskCandidates.length === 0
+              ? <p className={css.emptyNotice}>{t(!project ? 'empty' : view === 'history' && search ? 'project.noTasks' : team.tasks.length === 0 ? 'project.empty' : 'project.noCurrentWork')}</p>
+              : (
+                <>
+                  <h3>{t(project ? 'project.work' : 'tasks')}<span className={css.count}>{taskCandidates.length}</span></h3>
+                  {project && view === 'current' && projectTaskIds === undefined && relatedTasks.length > 0
+                    && <p className={css.collectionHint}>{t('project.legacyRecent')}</p>}
+                  <div className={css.tasks}>
+                    {visibleTasks.map(task => {
+                      const owner = task.ownerName === undefined ? undefined : memberByName.get(task.ownerName)
+                      return <TaskCard key={task.id} task={task} project={project}
+                        ownerLabel={project && owner !== undefined ? memberLabel(owner) : task.ownerName ?? t('unowned')}
+                        dependencyLabels={task.blockedBy.map(id => project
+                          ? taskById.get(id)?.subject ?? t('project.missingDependency')
+                          : id)}
+                        t={t} />
+                    })}
+                  </div>
+                  {project && <TeamPagination page={visibleTaskPage} total={taskCandidates.length} pageSize={taskPageSize}
+                    onChange={setTaskPage} label={t('project.workPages')} t={t} />}
+                </>
+              )}
+          </section>
+        </>
+      )}
+    </div>
+    </>
+  )
+}
+
+/** Render the Team header action: a hover or pinned popover around {@link TeamBody}. */
+export function TeamAction(props: TeamActionProps) {
+  const { sessionId, useSession, useSessions, t } = props
+  const [open, setOpen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [errorDismissed, setErrorDismissed] = useState(false)
   const [errorSequence, setErrorSequence] = useState(0)
   const [loadingDismissed, setLoadingDismissed] = useState(false)
@@ -236,18 +427,9 @@ export function TeamAction({
   const leadSessionId = useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? sessionId
   const team = useSessions(state => state.projectionsBySession[leadSessionId]?.values.agentTeam)
   const project = useSessions(state => state.byId[leadSessionId]?.presentation?.owner === 'project')
-  const liveMembers = useSessionStatus(state => project
-    ? team?.members.filter(member => state.get(member.id)?.running === true).map(member => member.id).join('\n') ?? ''
-    : '')
-  const inactiveMembers = useSessionStatus(state => project
-    ? team?.members.filter(member => state.get(member.id)?.running === false).map(member => member.id).join('\n') ?? ''
-    : '')
-  const summaryLiveMembers = useSessions(state => project
-    ? team?.members.filter(member => state.byId[member.id]?.running === true).map(member => member.id).join('\n') ?? ''
-    : '')
+  const loadingTeam = useTeamLoading({ sessionId, useSession, useSessions })
   const opening = useSession(snapshot => snapshot.openState === 'loading')
   const listing = useSessions(state => state.phase === 'pending')
-  const loadingTeam = team === undefined && (opening || listing)
   useEffect(() => { setLoadingDismissed(false) }, [opening, listing, open])
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const pinnedRef = useRef(false)
@@ -264,10 +446,6 @@ export function TeamAction({
     hoverDismissedRef.current = false
     setOpen(false)
     setError(null)
-    setView('current')
-    setQuery('')
-    setMemberPage(0)
-    setTaskPage(0)
     setErrorDismissed(false)
   }, [sessionId])
 
@@ -328,54 +506,6 @@ export function TeamAction({
   }, [open])
 
   const compact = team !== undefined && team.members.length === 1 && team.tasks.length === 0
-  const taskById = new Map<string, TeamTask>(team?.tasks.map(task => [task.id, task]))
-  const taskByOwner = new Map<string, TeamTask>()
-  // Prefer the Project's real current task when a native member has older tasks too.
-  for (const task of [...(projectTaskIds?.flatMap(id => taskById.get(id) ?? []) ?? []), ...(team?.tasks ?? [])]) {
-    if (task.ownerName !== undefined && !taskByOwner.has(task.ownerName)) taskByOwner.set(task.ownerName, task)
-  }
-  const memberLabel = (member: TeamMemberProjection): string => {
-    if (!project) return member.name
-    if (member.role === 'lead') return t('project.lead')
-    return taskByOwner.get(member.name)?.subject ?? member.description ?? member.name
-  }
-  const memberByName = new Map(team?.members.map(member => [member.name, member]))
-  const inactiveMemberIds = new Set(inactiveMembers.split('\n'))
-  const liveMemberIds = new Set([...liveMembers.split('\n'), ...summaryLiveMembers.split('\n').filter(id => !inactiveMemberIds.has(id))])
-  const activeOwnerNames = new Set(team?.members.filter(member => liveMemberIds.has(member.id) || member.phase === 'provisioning').map(member => member.name))
-  const taskOrder = new Map(projectTaskIds?.map((id, index) => [id, index]))
-  const activeTasks = (team?.tasks.filter(task => projectTaskIds === undefined
-    ? task.status === 'pending' || task.status === 'in_progress'
-    : task.ownerName !== undefined && activeOwnerNames.has(task.ownerName)) ?? [])
-    .sort((a, b) => (taskOrder.get(a.id) ?? taskOrder.size) - (taskOrder.get(b.id) ?? taskOrder.size))
-  // Old Projects have no request association. Only their recent recorded completions
-  // supplement live work; insertion order never stands in for a current Request.
-  const relatedTasks = projectTaskIds?.flatMap(id => taskById.get(id) ?? [])
-    ?? [...(team?.tasks ?? [])].reverse().filter(task => task.status === 'completed').slice(0, 3)
-  const currentTasks = [...new Map([...activeTasks, ...relatedTasks].map(task => [task.id, task])).values()]
-  const currentOwners = new Set(currentTasks.flatMap(task => task.ownerName === undefined ? [] : [task.ownerName]))
-  const search = query.trim().toLocaleLowerCase()
-  const matchingTasks = new Set(team?.tasks.filter(task => `${task.subject}\n${task.description}`.toLocaleLowerCase().includes(search)).map(task => task.id))
-  const matchingOwners = new Set(team?.tasks.filter(task => matchingTasks.has(task.id)).map(task => task.ownerName))
-  const taskCandidates = !project ? team?.tasks ?? [] : view === 'history'
-    ? [...(team?.tasks ?? [])].reverse().filter(task => {
-      const owner = task.ownerName === undefined ? undefined : memberByName.get(task.ownerName)
-      return matchingTasks.has(task.id) || owner !== undefined && memberLabel(owner).toLocaleLowerCase().includes(search)
-    })
-    : currentTasks
-  const memberCandidates = !project ? team?.members ?? [] : view === 'history'
-    ? [...(team?.members ?? [])].reverse().filter(member => memberLabel(member).toLocaleLowerCase().includes(search)
-      || (member.description ?? '').toLocaleLowerCase().includes(search) || matchingOwners.has(member.name))
-    : (team?.members ?? []).filter(member => member.role === 'lead' || currentOwners.has(member.name)
-      || liveMemberIds.has(member.id) || member.phase === 'provisioning')
-  const visibleMemberPage = Math.min(memberPage, Math.max(0, Math.ceil(memberCandidates.length / memberPageSize) - 1))
-  const visibleTaskPage = Math.min(taskPage, Math.max(0, Math.ceil(taskCandidates.length / taskPageSize) - 1))
-  const visibleMembers = project ? memberCandidates.slice(visibleMemberPage * memberPageSize, (visibleMemberPage + 1) * memberPageSize) : memberCandidates
-  const visibleTasks = project ? taskCandidates.slice(visibleTaskPage * taskPageSize, (visibleTaskPage + 1) * taskPageSize) : taskCandidates
-
-  useEffect(() => { setMemberPage(visibleMemberPage) }, [visibleMemberPage])
-  useEffect(() => { setTaskPage(visibleTaskPage) }, [visibleTaskPage])
-
   return (
     <div
       ref={rootRef}
@@ -421,93 +551,11 @@ export function TeamAction({
           onFocusCapture={() => { if (project) pinnedRef.current = true }}
           onPointerDownCapture={() => { if (project) pinnedRef.current = true }}
         >
-          {project && team !== undefined && !compact && (
-            <div className={css.projectToolbar}>
-              <SegmentedTabs
-                label={t('project.view')}
-                value={view}
-                items={[
-                  { value: 'current', label: t('project.recent'), id: `${viewId}-current`, panelId: `${viewId}-panel` },
-                  { value: 'history', label: t('project.history'), id: `${viewId}-history`, panelId: `${viewId}-panel` },
-                ]}
-                onChange={next => { setView(next); setQuery(''); setMemberPage(0); setTaskPage(0) }}
-              />
-              {view === 'history' && <label className={css.searchLabel}>
-                <span>{t('project.search')}</span>
-                <Input type="search" value={query} placeholder={t('project.searchHint')}
-                  onChange={event => { setQuery(event.target.value); setMemberPage(0); setTaskPage(0) }} />
-              </label>}
-            </div>
-          )}
-          <div className={css.body} aria-busy={loadingTeam} data-team-loading={loadingTeam || undefined}
-            id={project && team !== undefined && !compact ? `${viewId}-panel` : undefined}
-            role={project && team !== undefined && !compact ? 'tabpanel' : undefined}
-            aria-labelledby={project && team !== undefined && !compact ? `${viewId}-${view}` : undefined}>
-            {loadingTeam && <span className={css.loading} aria-hidden="true"><StateDot state="ongoing" /></span>}
-            {team === undefined && !loadingTeam && (
-              <div className={css.notice} role="status">
-                <StateDot state="warning" />
-                {t('unavailable')}
-              </div>
-            )}
-            {team !== undefined && (
-              <>
-                {team.failure !== undefined && (
-                  <div className={css.error} role="alert"><StateDot state="error" />{t('failure', { message: team.failure })}</div>
-                )}
-                <section>
-                  <h3>
-                    {t('roster')}
-                    {memberCandidates.length > 1 && <span className={css.count}>{memberCandidates.length}</span>}
-                  </h3>
-                  <div className={css.roster}>
-                    {visibleMembers.map(member => (
-                      <TeamMemberRow
-                        key={member.id}
-                        member={member}
-                        label={memberLabel(member)}
-                        project={project}
-                        memberCount={team.members.length}
-                        sessionId={sessionId}
-                        useSessions={useSessions}
-                        useSessionStatus={useSessionStatus}
-                        openTeammate={openTeammate}
-                        onError={(message) => { setError(message); setErrorDismissed(false); setErrorSequence(sequence => sequence + 1) }}
-                        t={t}
-                      />
-                    ))}
-                  </div>
-                  {project && memberCandidates.length === 0 && <p className={css.emptyNotice}>{t('project.noMembers')}</p>}
-                  {project && <TeamPagination page={visibleMemberPage} total={memberCandidates.length} pageSize={memberPageSize}
-                    onChange={setMemberPage} label={t('project.memberPages')} t={t} />}
-                </section>
-                <section>
-                  {taskCandidates.length === 0
-                    ? <p className={css.emptyNotice}>{t(!project ? 'empty' : view === 'history' && search ? 'project.noTasks' : team.tasks.length === 0 ? 'project.empty' : 'project.noCurrentWork')}</p>
-                    : (
-                      <>
-                        <h3>{t(project ? 'project.work' : 'tasks')}<span className={css.count}>{taskCandidates.length}</span></h3>
-                        {project && view === 'current' && projectTaskIds === undefined && relatedTasks.length > 0
-                          && <p className={css.collectionHint}>{t('project.legacyRecent')}</p>}
-                        <div className={css.tasks}>
-                          {visibleTasks.map(task => {
-                            const owner = task.ownerName === undefined ? undefined : memberByName.get(task.ownerName)
-                            return <TaskCard key={task.id} task={task} project={project}
-                              ownerLabel={project && owner !== undefined ? memberLabel(owner) : task.ownerName ?? t('unowned')}
-                              dependencyLabels={task.blockedBy.map(id => project
-                                ? taskById.get(id)?.subject ?? t('project.missingDependency')
-                                : id)}
-                              t={t} />
-                          })}
-                        </div>
-                        {project && <TeamPagination page={visibleTaskPage} total={taskCandidates.length} pageSize={taskPageSize}
-                          onChange={setTaskPage} label={t('project.workPages')} t={t} />}
-                      </>
-                    )}
-                </section>
-              </>
-            )}
-          </div>
+          <TeamBody {...props} onError={(message) => {
+            setError(message)
+            setErrorDismissed(false)
+            setErrorSequence(sequence => sequence + 1)
+          }} />
         </div>,
         document.body,
       )}

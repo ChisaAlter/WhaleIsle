@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包向 Web 会话页头添加 Agent Teams action，让用户检查当前 roster、查看共享任务板并导航到 teammate 会话。它从共享 Session store 读取 Lead Session 的 `agentTeam` 投影，Host 投影 frame 使其保持最新而无需刷新控件，并让普通 child history 导航继续使用稳定的 addressed-subagent 路径。通过公开发布的实验性 Agent Teams bundle 选择本包。这个浏览器 projection 不扩展稳定 API Proxy、不存储 Team 状态，也不注册面向模型的输入。
+本包向 Web 会话页头添加 Agent Teams action，并在右侧 Sidebar 提供同一个 Team 页面，让用户检查当前 roster、查看共享任务板并导航到 teammate 会话。它从共享 Session store 读取 Lead Session 的 `agentTeam` 投影，Host 投影 frame 使其保持最新而无需刷新控件，并让普通 child history 导航继续使用稳定的 addressed-subagent 路径。通过公开发布的实验性 Agent Teams bundle 选择本包。这个浏览器 projection 不扩展稳定 API Proxy、不存储 Team 状态，也不注册面向模型的输入。
 
 ## 目录
 
@@ -33,6 +33,14 @@ kind: "package-reference"
 
 Roster 行展示持久名称与阶段。provisioning 和 running 成员使用共享 ongoing loading，inactive 成员使用人物图标，failed 成员使用 error 红点。实时 Session 状态提供运行活动；共享 `modelSelection` 投影在可用时提供模型。当前会话带有“当前会话”标签且不可选择。在 teammate 会话中选择 Lead 会直接打开 Lead Session。选择 active teammate 会打开其普通 continuable 子会话地址。Host 在打开历史时校验 parent、child 与 mode；后续人类提示词使用同一 addressed-subagent 会话。
 
+### 让 Team 留在会话旁
+
+组合了右侧 Sidebar 时，本包注册 `agent-team` 页面类型（`TEAM_SIDEBAR_KIND`）。页面渲染与页头面板相同的 roster 和任务板，成员在窄列中单列排列。在页面中选择 teammate 会以 `subagentchat` Sidebar 标签在 Team 页面所在窗格中打开其 addressed 会话，使 Lead 会话保持可见、Team 只隔一个标签；选择 Lead 则打开 Lead Session。打开失败时在 roster 上方内联显示。其他插件可通过 `sidebarRight.openTabIn(sessionId, TEAM_SIDEBAR_KIND)` 为某个 Session 打开该页面；Project 对每个 Lead 打开一次。
+
+### 按所有者的当前工作限定当前视图
+
+本包提供 `ctx.agentTeamScopes`。会话所有者调用 `set(leadSessionId, taskIds)` 传入其当前工作的任务 id（最相关的在前），调用 `set(leadSessionId, undefined)` 清除。在 Project Lead 中，页头面板与 Sidebar 页面的当前视图随后只列出这些任务、运行中的成员及其负责人，较早或已取消工作的成员与未关闭任务保留在全部记录中。没有 scope 时，当前视图保持原有的运行中工作规则。
+
 ### 查看任务板
 
 可开始的 pending 任务使用 idle 灰点，被依赖阻塞的 pending 任务使用 warning 橙点，in-progress 任务使用 ongoing loading，completed 任务使用 done 绿点。
@@ -47,14 +55,15 @@ Roster 行展示持久名称与阶段。provisioning 和 running 成员使用共
 <details>
 <summary>实现细节——点击展开</summary>
 
-Client export 通过 Cordis effect 注册 locale dictionary 与一个 conversation-header slot；它不挂载任何 Remote namespace。Dispose plugin fiber 会移除这两项 registration。
+Client export 通过 Cordis effect 注册 locale dictionary 与一个 conversation-header slot，并在存在 `sidebarRight` 与 `sidebarRightTabs` 时注册 Sidebar 页面类型与页面 body；它不挂载任何 Remote namespace。Dispose plugin fiber 会移除全部 registration。
 
 面板渲染在会话容器外，并保持在视口范围内。成员卡片在静止、选中和悬停状态下均使用共享 elevation 描边绘制轮廓。悬停触发按钮 150ms 后打开面板；指针离开触发按钮和面板后，经过 120ms 宽限关闭。点击触发按钮会固定面板并将焦点移入其中。点击外部或按 Escape 可关闭面板；仅当焦点原本位于面板内时，Escape 才将焦点返回触发按钮。页头较窄时触发按钮折叠为图标，只响应点击打开。组件从 `useSessions`、`useSessionStatus` 与 `useSession` 座位派生每一行：Lead 身份来自当前 Session 的 subagent address，Team 视图来自 `projectionsBySession[lead].values.agentTeam`，成员活动来自 Session 状态并以列表摘要为后备，model 来自 `projectionsBySession[member].values.modelSelection.next`。每个 roster 行只选择自己的运行状态。唯一的注入回调通过当前与目标 Session 的 id 打开 roster Session。切换会话会关闭面板并清除导航失败。
 
 | 文件 | 职责 |
 |---|---|
 | [`src/client/mount.ts`](src/client/mount.ts) | locale、导航与 slot registration |
-| [`src/client/TeamAction.tsx`](src/client/TeamAction.tsx) | 由投影派生的 roster 与任务板及面板交互状态 |
+| [`src/client/TeamAction.tsx`](src/client/TeamAction.tsx) | `TeamBody`：由投影派生的 roster 与任务板；`TeamAction`：包裹它的页头弹出面板 |
+| [`src/client/TeamSidebar.tsx`](src/client/TeamSidebar.tsx) | 包裹 `TeamBody` 的 Sidebar 页面，内联显示导航失败 |
 | [`src/client/locales.ts`](src/client/locales.ts) | 中英文 panel 文案 |
 | [`src/index.ts`](src/index.ts) | 不执行行为的 Host entry |
 
