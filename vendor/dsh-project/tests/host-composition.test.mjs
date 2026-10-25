@@ -792,6 +792,7 @@ test('native requirement cancellation drains its active member before the next r
     } finally { releaseDrain(); host.drainWorker = drain; }
     const stopped = host.worker(aId);
     assert.equal(stopped.phase, 'idle'); assert.equal(stopped.activeRunId, ''); assert.equal(stopped.directoryHeld, false); assert.deepEqual(host.jobs(aId), []);
+    assert.equal(host.teams.listTasks(lead).some(task => task.id === a.id), false, 'the cancelled requirement\'s unfinished task leaves the Team board');
     model.gate('worker:A').release(); await host.queue.pump(project.id); await host.tail;
     assert.equal(host.stream(a.id).currentDelegationRef, oldRef); assert.equal(host.stream(a.id).latestReport, undefined);
     assert.equal(host.state().deliveries.some(row => row.requestId === a.delegations[0].source.requestId), false);
@@ -800,6 +801,10 @@ test('native requirement cancellation drains its active member before the next r
     await waitFor(() => host.state().deliveries.some(row => row.status === 'delivered' && row.title === 'B'), 'B completes normally after active A cancellation'); await lead.whenIdle(); await host.tail;
     assert.deepEqual(model.queueInputs.map(item => item.title), ['B']); assert.equal(await readFile(join(directory, 'B.txt'), 'utf8'), 'B revision 1\n');
     assert.equal(host.state().requests.find(row => row.title === 'A').queue.state, 'cancelled'); assert.deepEqual(model.failures, []);
+    await assert.rejects(host.ensureTask(host.stream(a.id)), { code: 'team_task' }, 'a still-cancelled requirement cannot bring its task back');
+    await prompt([{ type: 'queue', title: 'A', action: 'enqueue' }]); await lead.whenIdle();
+    await waitFor(() => host.teams.listTasks(lead).some(task => task.id === a.id && task.status !== 'deleted'), 'rejoining A delegates its original work and restores the same task');
+    assert.equal(host.stream(a.id).workerSessionId, aId);
   } finally {
     releaseDrain(); for (const gate of model.gates.values()) gate.release(); if (ctx) await ctx.fiber.dispose(); await bridge.close();
     for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];

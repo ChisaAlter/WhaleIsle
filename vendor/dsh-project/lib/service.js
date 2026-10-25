@@ -106,6 +106,8 @@ export class ProjectService {
     await this.teams.bindPolicy(root, policy);
     if (!this.recovering && work.blockedBy?.length) { const tasks = this.teams.listTasks(root); if (work.blockedBy.some(id => !tasks.some(task => task.id === id))) return; }
     let task = await this.teams.createTask(root, { taskId: work.id, subject: work.title.slice(0, 200), description: work.brief.slice(0, 16384), blockedBy: work.blockedBy ?? [] });
+    // Work of a cancelled requirement left the board; delegating it again brings back the same task.
+    if (!this.recovering && task.status === 'deleted') task = await this.teams.updateTask(root, { taskId: task.id, expectedRevision: task.revision, action: 'restore' });
     if (!this.recovering && (task.subject !== work.title.slice(0, 200) || task.description !== work.brief.slice(0, 16384))) task = await this.teams.updateTask(root, { taskId: task.id, expectedRevision: task.revision, action: 'edit', subject: work.title.slice(0, 200), description: work.brief.slice(0, 16384) });
     if (!this.recovering && JSON.stringify(task.blockedBy) !== JSON.stringify(work.blockedBy ?? [])) task = await this.teams.updateTask(root, { taskId: task.id, expectedRevision: task.revision, action: 'set_dependencies', blockedBy: work.blockedBy ?? [] });
     if (!this.recovering && task.status === 'completed' && !latest(work).report && latest(work).phase === 'queued') task = await this.teams.updateTask(root, { taskId: task.id, expectedRevision: task.revision, action: 'reopen' });
@@ -131,6 +133,23 @@ export class ProjectService {
       if (worker.materialized) await this.teams.setCold(root, worker.sessionId, work.id, true);
     }
   }
+  // A cancelled requirement's unfinished Team tasks leave the board; completed ones keep their result.
+  async closeCancelledTasks(projectId, workIds) {
+    const root = this.ctx.agents.get(this.project(projectId).coordinatorSessionId);
+    if (!root || !workIds.length) return;
+    const ids = new Set(workIds);
+    let open = this.teams.listTasks(root).filter(task => ids.has(task.id) && ['pending', 'in_progress'].includes(task.status));
+    // Dependents close first. A task that still blocks other requirements' work stays open.
+    while (open.length) {
+      const leaves = open.filter(task => !open.some(other => other.blockedBy.includes(task.id)));
+      if (!leaves.length) break;
+      for (const task of leaves) {
+        try { await this.teams.updateTask(root, { taskId: task.id, expectedRevision: task.revision, action: 'delete' }); }
+        catch (error) { if (error.code !== 'TEAM_TASK_HAS_DEPENDENTS') throw error; }
+      }
+      open = open.filter(task => !leaves.includes(task));
+    }
+  }
   async coldFailedLaunch(work) {
     const worker = this.worker(work.workerSessionId), root = this.ctx.agents.get(this.project(work.projectId).coordinatorSessionId);
     if (!root || latest(work).phase !== 'failed' || worker.activeRunId || worker.reservationRef || worker.directoryHeld
@@ -148,7 +167,11 @@ export class ProjectService {
     }
     if (operation === 'task') {
       const { caller, request } = value, work = this.stream(request.taskId, project.id);
-      if (caller !== root || !['edit', 'set_dependencies', 'reassign', 'reopen', 'complete'].includes(request.action)) fail('team_task', 'Project task transitions are owned by the coordinator host.');
+      if (caller !== root || !['edit', 'set_dependencies', 'reassign', 'reopen', 'complete', 'delete', 'restore'].includes(request.action)) fail('team_task', 'Project task transitions are owned by the coordinator host.');
+      const requestId = latest(work).source.requestId, row = requestId && this.requirements.get(project.id, requestId);
+      const cancelled = Boolean(row) && this.queue.state(row) === 'cancelled';
+      if (request.action === 'delete' && (!cancelled || this.worker(work.workerSessionId).activeRunId || this.jobs(work.workerSessionId).length)) fail('team_task', 'Only drained work of a cancelled requirement leaves the Team board.');
+      if (request.action === 'restore' && cancelled) fail('team_task', 'A cancelled requirement\'s work stays off the Team board until it is accepted again.');
       if (request.action === 'edit' && (request.subject !== work.title.slice(0, 200) || request.description !== work.brief.slice(0, 16384))) fail('team_task', 'Task text must match the accepted Project assignment.');
       if (request.action === 'set_dependencies' && JSON.stringify(request.blockedBy) !== JSON.stringify(work.blockedBy ?? [])) fail('team_task', 'Task dependencies must match the accepted Project assignment.');
       if (request.action === 'reopen' && (project.paused || this.held.has(work.workerSessionId) || latest(work).report)) fail('stopped', 'Reopening needs a current accepted continuation.');

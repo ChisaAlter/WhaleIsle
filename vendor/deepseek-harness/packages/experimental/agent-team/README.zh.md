@@ -73,7 +73,7 @@ Steer 让 running target 在最近的步骤边界接收消息，并启动或冷�
 
 任何成员都可以添加任务，包含标题、详情、对其他任务的可选依赖，以及可选的文件触及提示。只有其全部依赖完成后，任务才可 claim。
 
-任务有 owner：成员 claim 任务开始工作，完成后标记完成、释放回板或重新打开；Lead 可以把任务分配给任意成员。每次变更都是 compare-and-set：基于过期副本的更新会被拒绝，因此两个成员不会悄悄覆盖彼此的成果。
+任务有 owner：成员 claim 任务开始工作，完成后标记完成、释放回板或重新打开；Lead 可以把任务分配给任意成员。被删除的任务离开任务板，只有 Lead 可以按原 id 把它恢复为无 owner 的待处理任务；面向模型的任务工具不提供恢复。每次变更都是 compare-and-set：基于过期副本的更新会被拒绝，因此两个成员不会悄悄覆盖彼此的成果。
 
 当两个 in-progress 任务计划触及重叠路径时，文件提示会产生警告——它们绝不阻止任何操作。已删除任务保留在历史中，但从活动列表中消失。
 
@@ -103,7 +103,7 @@ Lead 可以停止 teammate 的当前轮次，而不会删除其排队的消息�
 
 - **持久日志，派生状态。** Lead 日志拥有 roster 与任务，各目标 Agent 拥有其接收的消息。
 - **进程内归属。** Continuation 投递拥有目标锁、冷恢复和生命周期授权。
-- **显式权限。** 每个服务方法都接收确切的实时调用方 `Agent`；只有 Lead 可以 spawn、reassign 或 interrupt。
+- **显式权限。** 每个服务方法都接收确切的实时调用方 `Agent`；只有 Lead 可以 spawn、reassign、restore 或 interrupt。
 - **超出上限时明确失败。** 每个限制都是经过校验的部署值，耗尽时报告类型化错误，而不是复用 id 或名字。
 
 [Agent Teams Agent Note](../../../.agents/notes/implemented/feature/2026-08-05-agent-teams.zh.md)负责 roster、mailbox、任务与共享 checkout 决策。[runtime-context 身份决策](../../../.agents/notes/implemented/architecture/2026-10-13-team-identity-runtime-context.zh.md)负责面向模型的身份。

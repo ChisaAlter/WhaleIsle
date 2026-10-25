@@ -122,7 +122,7 @@ export class TeamTaskBoard {
           'TEAM_TASK_STALE_REVISION',
         )
       }
-      if (current.status === 'deleted') throw new TeamError(`team task "${current.id}" is deleted`, 'TEAM_TASK_DELETED')
+      if (current.status === 'deleted' && request.action !== 'restore') throw new TeamError(`team task "${current.id}" is deleted`, 'TEAM_TASK_DELETED')
       const lead = membership.role === 'lead'
       const owner = current.ownerId === caller.id
       const authorizeOwner = (): void => {
@@ -200,6 +200,15 @@ export class TeamTaskBoard {
           next = { ...current, status: 'deleted' }
           break
         }
+        case 'restore':
+          // The Lead returns a deleted task to the board under its original id, unowned.
+          if (!lead) throw new TeamError('only the Team Lead can restore tasks', 'TEAM_LEAD_REQUIRED')
+          if (current.status !== 'deleted') throw new TeamError('only a deleted task can be restored', 'TEAM_TASK_INVALID_TRANSITION')
+          if (state.tasks.filter(task => task.status !== 'deleted' && !this.management.state(root).coldTasks.has(task.id)).length >= this.maxTasks) {
+            throw new TeamError(`Team task limit ${this.maxTasks} reached`, 'TEAM_TASK_LIMIT')
+          }
+          next = this.withoutOwner({ ...current, status: 'pending' })
+          break
         /* v8 ignore next 2 -- TeamTaskAction is closed and every member is handled above. */
         default:
           throw new TeamError(`unsupported task action ${String(request.action)}`, 'TEAM_INVALID_ARGUMENT')

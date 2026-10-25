@@ -77,7 +77,7 @@ WhaleIsle managed Teams retain durable assignment-message facts, Host operation 
 
 Any member can add a task with a title, details, optional dependencies on other tasks, and optional hints about which files it will touch. A task is claimable only when everything it depends on is complete.
 
-Tasks have an owner: a member claims a task to start work, completes it when done, releases it back, or reopens it; the Lead can assign a task to any member. Every change is compare-and-set: an update based on an outdated copy is rejected, so two members cannot silently overwrite each other's work.
+Tasks have an owner: a member claims a task to start work, completes it when done, releases it back, or reopens it; the Lead can assign a task to any member. A deleted task leaves the board, and only the Lead can restore it under its original id as an unowned pending task; the model-facing task tool does not offer restore. Every change is compare-and-set: an update based on an outdated copy is rejected, so two members cannot silently overwrite each other's work.
 
 File hints produce warnings when two in-progress tasks plan to touch overlapping paths — they never block anything. Deleted tasks remain in history but disappear from the active list.
 
@@ -107,7 +107,7 @@ The service is built on one separation and three commitments:
 
 - **Durable log, derived state.** The Lead log owns roster and tasks; each target Agent owns its accepted messages.
 - **Process-local ownership.** Continuation delivery owns target locking, cold recovery, and lifecycle authorization.
-- **Explicit authority.** Every service method takes the exact live calling `Agent`; only the Lead spawns, reassigns, or interrupts.
+- **Explicit authority.** Every service method takes the exact live calling `Agent`; only the Lead spawns, reassigns, restores, or interrupts.
 - **Bounds that fail loud.** Every limit is a validated deployment value, and exhaustion reports a typed error instead of reusing an id or name.
 
 The [Agent Teams Agent Note](../../../.agents/notes/implemented/feature/2026-08-05-agent-teams.md) owns the roster, mailbox, task, and shared-checkout decisions. The [runtime-context identity decision](../../../.agents/notes/implemented/architecture/2026-10-13-team-identity-runtime-context.md) owns model-facing identity.
