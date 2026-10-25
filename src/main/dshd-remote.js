@@ -609,6 +609,7 @@ class DshdRemote extends EventEmitter {
       protocol: 'chisacode-v2',
       enabled,
       listening,
+      starting: Boolean(this.starting),
       port: Number(daemonListen(config).split(':').pop()),
       token: '',
       mode: away ? 'relay' : 'lan',
@@ -706,6 +707,8 @@ class DshdRemote extends EventEmitter {
       return;
     }
     const generation = ++this.startGeneration;
+    this.error = '';
+    this.relayState = { connected: false, lastError: '' };
     const assertCurrent = () => {
       if (generation !== this.startGeneration) throw daemonStartCancelled();
     };

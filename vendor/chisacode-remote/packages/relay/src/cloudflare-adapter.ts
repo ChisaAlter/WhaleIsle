@@ -271,7 +271,15 @@ export class RelayDurableObject {
         ws.close(1008, "Replaced by new connection");
       }
     } else if (args.isServerData) {
-      for (const ws of this.state.getWebSockets(`server:${args.resolvedConnectionId}`)) {
+      const previous = this.state.getWebSockets(`server:${args.resolvedConnectionId}`);
+      if (previous.length > 0) {
+        // A replacement starts a fresh encrypted channel. Existing clients must
+        // reconnect before the old socket's delayed close callback can arrive.
+        for (const client of this.state.getWebSockets(`client:${args.resolvedConnectionId}`)) {
+          client.close(1012, "Server disconnected");
+        }
+      }
+      for (const ws of previous) {
         ws.close(1008, "Replaced by new connection");
       }
     }
@@ -727,6 +735,11 @@ export class RelayDurableObject {
     }
 
     if (role === "server" && connectionId) {
+      const replacementIsOpen = this.state
+        .getWebSockets(`server:${connectionId}`)
+        .some((socket) => socket !== ws && socket.readyState === WebSocket.OPEN);
+      if (replacementIsOpen) return;
+
       // Force the client to reconnect and re-handshake when the daemon side drops.
       for (const clientWs of this.state.getWebSockets(`client:${connectionId}`)) {
         try {

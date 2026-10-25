@@ -156,10 +156,25 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.qr :global(svg) {
+.qr > :global(svg) {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+.qrLoading {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.qrLoading > :global(svg) {
+  flex: none;
+  width: 24px;
+  height: 24px;
 }
 
 .devices {

@@ -565,6 +565,35 @@ test('daemon child crash is visible (snapshot.error) and never resolves to liste
   assert.ok(logs.some((line) => /异常退出/.test(line)));
 });
 
+test('a retry publishes startup until ready and clears the previous failure', async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-starting-'));
+  const f = fakeRemote({ home });
+  const api = f.remote.serverApi;
+  let releaseApi;
+  f.remote.ensureApi = () => new Promise((resolve) => { releaseApi = resolve; });
+  f.remote.error = 'previous startup failure';
+  f.remote.relayState = { connected: false, lastError: 'previous relay failure' };
+  t.after(async () => {
+    await f.remote.stopDaemon();
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(path.dirname(f.remote.runnerPath), { recursive: true, force: true });
+  });
+
+  const starting = f.remote.startDaemon();
+  const pending = f.remote.snapshot();
+  assert.equal(pending.starting, true);
+  assert.equal(pending.listening, false);
+  assert.equal(pending.error, '');
+  assert.equal(pending.relayError, '');
+  // Both API preparation and offer generation use ensureApi.
+  f.remote.ensureApi = async () => api;
+  releaseApi(api);
+  await starting;
+  assert.equal(f.remote.snapshot().starting, false);
+  assert.equal(f.remote.snapshot().listening, true);
+  assert.equal(f.remote.snapshot().error, '');
+});
+
 test('daemon start failure surfaces the child error and stderr tail', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-'));
   const failBody = [
@@ -574,6 +603,7 @@ test('daemon start failure surfaces the child error and stderr tail', async () =
   const f = fakeRemote({ home, runnerBody: failBody });
   await assert.rejects(f.remote.startDaemon(), /EADDRINUSE :6767/);
   const snap = f.remote.snapshot();
+  assert.equal(snap.starting, false);
   assert.equal(snap.listening, false);
   assert.match(snap.error, /EADDRINUSE/);
 });
@@ -785,6 +815,7 @@ test('stop invalidates pending API preparation without waiting or allowing a lat
   releaseApi(api);
   await cancelled;
   assert.equal(f.remote.daemon, null);
+  assert.equal(f.remote.snapshot().starting, false);
   assert.equal(f.remote.snapshot().listening, false);
   assert.equal(fs.existsSync(path.join(home, 'runner-spawns.log')), false);
 });

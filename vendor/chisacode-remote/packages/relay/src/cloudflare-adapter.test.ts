@@ -385,6 +385,88 @@ describe("RelayDurableObject control nudge/reset behavior", () => {
     });
   });
 
+  it("reconnects existing clients before replacing their encrypted server data channel", async () => {
+    const connectionId = "conn_encrypted_replacement";
+    const previousServer = createMockSocket();
+    const client = createMockSocket();
+    const { state, setTagSockets } = createMockState();
+    setTagSockets(`server:${connectionId}`, [previousServer]);
+    setTagSockets(`client:${connectionId}`, [client]);
+    const relay = new RelayDurableObject(state as unknown as DurableObjectStateArg);
+
+    await withMockWebSocketPair(async () => {
+      await relay
+        .fetch(
+          new Request(signedServerUrl({ connectionId }), {
+            headers: { Upgrade: "websocket" },
+          }),
+        )
+        .catch(swallow);
+    });
+
+    expect(client.close).toHaveBeenCalledWith(1012, "Server disconnected");
+    expect(previousServer.close).toHaveBeenCalledWith(1008, "Replaced by new connection");
+    expect(client.close.mock.invocationCallOrder[0]).toBeLessThan(
+      previousServer.close.mock.invocationCallOrder[0]!,
+    );
+    expect(state.acceptWebSocket).toHaveBeenCalled();
+  });
+
+  it("keeps the replacement client connected when a displaced server data socket closes", () => {
+    const connectionId = "conn_replaced";
+    const previousServer = createMockSocket({
+      version: "2",
+      role: "server",
+      connectionId,
+      serverId: "srv_test",
+      createdAt: 1,
+    });
+    const replacement = createMockSocket({
+      version: "2",
+      role: "server",
+      connectionId,
+      serverId: "srv_test",
+      createdAt: 2,
+    });
+    Object.defineProperty(replacement, "readyState", { value: WebSocket.OPEN });
+    const client = createMockSocket();
+    const { state, setTagSockets } = createMockState();
+    setTagSockets(`server:${connectionId}`, [replacement]);
+    setTagSockets(`client:${connectionId}`, [client]);
+    const relay = new RelayDurableObject(state as unknown as DurableObjectStateArg);
+
+    relay.webSocketClose(previousServer, 1008, "Replaced by new connection", true);
+
+    expect(client.close).not.toHaveBeenCalled();
+    relay.webSocketMessage(replacement, "new server data");
+    expect(client.send).toHaveBeenCalledWith("new server data");
+  });
+
+  it.each([false, true])(
+    "closes the client when no open server data socket remains (closing replacement: %s)",
+    (closingReplacement) => {
+      const connectionId = "conn_dropped";
+      const server = createMockSocket({
+        version: "2",
+        role: "server",
+        connectionId,
+        serverId: "srv_test",
+        createdAt: 1,
+      });
+      const replacement = createMockSocket();
+      Object.defineProperty(replacement, "readyState", { value: WebSocket.CLOSING });
+      const client = createMockSocket();
+      const { state, setTagSockets } = createMockState();
+      setTagSockets(`server:${connectionId}`, closingReplacement ? [server, replacement] : []);
+      setTagSockets(`client:${connectionId}`, [client]);
+      const relay = new RelayDurableObject(state as unknown as DurableObjectStateArg);
+
+      relay.webSocketClose(server, 1006, "Connection lost", false);
+
+      expect(client.close).toHaveBeenCalledWith(1012, "Server disconnected");
+    },
+  );
+
   it("keeps server data socket alive while at least one client socket remains", () => {
     const clientId = "clt_multi";
     const disconnectedClient = createMockSocket({
