@@ -56,6 +56,10 @@ export type RemoteSnapshot = {
   relayError?: string
   error?: string
   urls?: RemoteUrl[]
+  /** Expiry of the displayed one-time QR; status reads replace used/expired codes. */
+  pairingExpiresAtMs?: number | null
+  /** Reusable enrollment link, valid until explicitly revoked on the desktop. */
+  pairingLinkUrl?: string
   devices?: RemoteDevice[]
 }
 
@@ -76,6 +80,7 @@ export type DesktopShell = {
   getRemote?: () => Promise<RemoteSnapshot | null>
   saveRemote?: (patch: RemotePatch) => Promise<RemoteSnapshot | null>
   rotateRemoteToken?: () => Promise<RemoteSnapshot | null>
+  revokeRemotePairingLink?: () => Promise<RemoteSnapshot | null>
   unbindRemoteDevice?: (id: string) => Promise<RemoteSnapshot | null>
   renameRemoteDevice?: (id: string, name: string) => Promise<RemoteSnapshot | null>
 }
@@ -92,7 +97,7 @@ export function desktopShell(): DesktopShell | null {
 }
 
 /** Desktop shell object that actually implements the Remote IPC methods. */
-type RemoteDesktopApi = Required<Pick<DesktopShell, 'getRemote' | 'saveRemote' | 'rotateRemoteToken' | 'unbindRemoteDevice' | 'renameRemoteDevice'>>
+type RemoteDesktopApi = Required<Pick<DesktopShell, 'getRemote' | 'saveRemote' | 'rotateRemoteToken' | 'revokeRemotePairingLink' | 'unbindRemoteDevice' | 'renameRemoteDevice'>>
 
 /**
  * Whether the preload object can drive the Remote popup.
@@ -104,6 +109,7 @@ export function hasRemoteApi(shell: DesktopShell | null): shell is RemoteDesktop
     shell?.getRemote
       && shell.saveRemote
       && shell.rotateRemoteToken
+      && shell.revokeRemotePairingLink
       && shell.unbindRemoteDevice
       && shell.renameRemoteDevice,
   )

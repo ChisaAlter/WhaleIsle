@@ -15,6 +15,8 @@ export interface RemoteSectionInjected {
   saveRemote: (patch: RemotePatch) => Promise<RemoteSnapshot | null>
   /** Re-mint the short-lived pairing offer; sticky devices stay bound. */
   rotateRemoteToken: () => Promise<RemoteSnapshot | null>
+  /** Revoke the reusable link and replace it; existing devices stay bound. */
+  revokeRemotePairingLink: () => Promise<RemoteSnapshot | null>
   /** Drop one bound device; its cookie stops authorizing. */
   unbindRemoteDevice: (id: string) => Promise<RemoteSnapshot | null>
   /** Overwrite one bound device's display name. */
@@ -38,7 +40,7 @@ export function RemoteMenuAction({ close, ...props }: RemoteMenuActionProps): Re
 }
 
 const REFRESH_MS = 2000
-type RemoteAction = { kind: 'load' | 'enable' | 'disable' | 'rotate' | 'rename' | 'unbind'; id?: string }
+type RemoteAction = { kind: 'load' | 'enable' | 'disable' | 'rotate' | 'revokeLink' | 'rename' | 'unbind'; id?: string }
 type Notice = { id: number; text: string }
 
 function remoteErrorText(error: string, t: RemoteSectionProps['t']): string {
@@ -73,6 +75,7 @@ export function RemoteSection({
   getRemote,
   saveRemote,
   rotateRemoteToken,
+  revokeRemotePairingLink,
   unbindRemoteDevice,
   renameRemoteDevice,
   menuMode = false,
@@ -86,6 +89,7 @@ export function RemoteSection({
   const [devicesOpen, setDevicesOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [copying, setCopying] = useState(false)
+  const [confirmRevoke, setConfirmRevoke] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [healFired, setHealFired] = useState(false)
@@ -175,6 +179,7 @@ export function RemoteSection({
       healAttemptedRef.current = false
       setHealFired(false)
       setCopied(false)
+      setConfirmRevoke(false)
       setRenamingId(null)
       setNotice(null)
       setStatusNotice(null)
@@ -219,6 +224,25 @@ export function RemoteSection({
     }
   }, [applySnap, beginAction, finishAction, rotateRemoteToken, showNotice, t])
 
+  const revokeLink = useCallback(async () => {
+    const action: RemoteAction = { kind: 'revokeLink' }
+    if (!beginAction(action)) return
+    setNotice(null)
+    try {
+      if (applySnap(await revokeRemotePairingLink())) {
+        setConfirmRevoke(false)
+        setCopied(false)
+        showNotice(t('linkRevoked'))
+      } else showNotice(t('error'))
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : String(caught)
+      setError(message)
+      showNotice(remoteErrorText(message, t))
+    } finally {
+      finishAction(action)
+    }
+  }, [applySnap, beginAction, finishAction, revokeRemotePairingLink, showNotice, t])
+
   const unbind = useCallback(async (id: string) => {
     const action: RemoteAction = { kind: 'unbind', id }
     if (!beginAction(action)) return
@@ -252,6 +276,7 @@ export function RemoteSection({
   }, [applySnap, beginAction, finishAction, renameRemoteDevice, showNotice, t])
 
   const pairingUrl = snap?.urls?.[0]?.pairingUrl || ''
+  const pairingLinkUrl = snap?.pairingLinkUrl || ''
   const qr = useMemo(() => qrSvg(pairingUrl), [pairingUrl])
   const enabling = pending?.kind === 'enable'
   const daemonStarting = Boolean(snap?.starting)
@@ -301,7 +326,7 @@ export function RemoteSection({
       <span ref={devicesOwnerRef} hidden data-dsh-modal-owner="" />
       {open && (notice || visibleStatusNotice) ? (
         <Toast key={notice ? `notice-${String(notice.id)}` : `status-${visibleStatusNotice}`}
-          text={notice?.text ?? visibleStatusNotice ?? ''} holdMs={null} dismissLabel={t('dismiss')}
+          text={notice?.text ?? visibleStatusNotice ?? ''} holdMs={5000} dismissLabel={t('dismiss')}
           onDone={() => { setNotice(null); setStatusNotice(null) }} />
       ) : null}
       {!menuMode && <button
@@ -400,11 +425,12 @@ export function RemoteSection({
                         className={css.footerButton}
                         data-dsh-remote-copy-link=""
                         loading={copying}
+                        disabled={!pairingLinkUrl || busy}
                         {...copied ? { feedback: t('copiedLink') } : {}}
                         onClick={() => {
-                          if (copying) return
+                          if (copying || !pairingLinkUrl) return
                           setCopying(true)
-                          void writeClipboard(pairingUrl).then((ok) => {
+                          void writeClipboard(pairingLinkUrl).then((ok) => {
                             if (!ok) { showNotice(t('copyFailed')); return }
                             setCopied(true)
                             window.setTimeout(() => { setCopied(false) }, FLIP_TEXT_MS)
@@ -425,10 +451,16 @@ export function RemoteSection({
                         {t('rotateToken')}
                       </Button>
                     </div>
+                    <p className={css.hint}>{t('pairingLifetimeHint')}</p>
                   </>
                 ) : !enabled ? (
                   <p className={css.hint}>{t('offHint')}</p>
-                ) : null}
+                ) : (
+                  <div className={`${css.qr} ${css.qrLoading}`} role="status" data-dsh-remote-qr-status="">
+                    <span className={css.hint}>{statusText || t('noQr')}</span>
+                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => { void save({ remoteEnabled: true }) }}>{t('retry')}</Button>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -532,6 +564,15 @@ export function RemoteSection({
                     ))}
                   </ul>
                 )}
+                {pairingLinkUrl ? (
+                  <div className={css.linkManagement}>
+                    <p className={css.hint}>{confirmRevoke ? t('revokeLinkConfirm') : t('persistentLinkHint')}</p>
+                    <div className={css.footer}>
+                      <Button size="sm" variant="ghost" disabled={busy} loading={pending?.kind === 'revokeLink'} data-dsh-remote-revoke-link="" onClick={() => { if (confirmRevoke) void revokeLink(); else setConfirmRevoke(true) }}>{t(confirmRevoke ? 'revokeLinkAction' : 'revokeLink')}</Button>
+                      {confirmRevoke ? <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setConfirmRevoke(false) }}>{t('renameCancel')}</Button> : null}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : null}

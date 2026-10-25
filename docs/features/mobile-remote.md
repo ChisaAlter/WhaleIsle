@@ -124,7 +124,7 @@
 - **sticky 三 origin 不互通**。外出配对页使用 HTTPS，fragment 不发送到服务器；LAN `http://<LAN>:3180` 仍是明文，同网段 MITM 可读完整导航链接中的 `#offer=`。
 - **一码两入口**：同一张 QR——Android App 内扫＝链接设备；相机 / 浏览器扫＝打开落地页自动连入 web 端。
 - Offer v1 / `POST /__remote__/login` / RemoteGateway 配对 **退役**。
-- 远程弹窗 QR 闸门只认 `[data-dsh-remote-qr]`；仅 `enabled && relayConnected && pairingUrl` 时提供二维码、复制与刷新。
+- 远程弹窗 QR 闸门只认 `[data-dsh-remote-qr]`；仅 `enabled && relayConnected && pairingUrl` 时提供二维码、复制与刷新。二维码到期或使用后自动补发，复制的 `pairingLinkUrl` 是独立可撤销长期凭证；刷新二维码不改变链接和既有 `deviceSecret`，撤销链接不解除既有设备。
 - Android Compose 接管全部已开放移动端界面，Kotlin 直接使用白名单 Host/Git 隧道；设备凭据只进入加密存储与认证层，不传给 UI。异步回复、媒体结果和草稿校验电脑/会话归属。
 - 助手 Markdown 禁止 `innerHTML` 注入：结构化 block → createElement；链接仅 http/https。
 - 时间线向上分页按 seq 去重并保持滚动锚点。打开会话失败必须清掉上一会话 rows。
@@ -134,7 +134,7 @@
 - Android 的连接代次隔离迟到回复，Compose 重组不重复配对；返回前台用保存凭据恢复连接与目录同步，不重放一次性 offer。旧 localStorage 迁移失败必须可见，原数据保留。
 - 手机目录转发保留全部 `session.list` 行和原始会话字段，投影只传 `title` / `sessionListMetadata`。模型、权限、计划与用量详情通过打开会话时的 history 按需获取，不能为每次首屏同步重复传输所有会话的详情；history、创建与搜索响应不受目录裁剪影响。目录失败必须可重试，不能假空列表。
 - **非 secure context 兼容**：`http://<LAN-IP>:3180` 禁止裸用 `crypto.randomUUID` / `crypto.subtle`；uuid 走 `getRandomValues` fallback；E2EE 保持 tweetnacl。
-- 已配对页颜色仍只取 `--dsw-alias-*` / `--dsw-specific-*` 同值表，不另起产品皮肤；连接／权限／扫码入口可用文档化的 `--mobile-connect-*` 与 Compose `DshConnectionPalette` 复述鲸屿海天语义，并仅在品牌字标使用展示衬线，禁止读取 `--boot-*` 或把该例外扩散进聊天。已配对页面结构按[设计语言「手机远程交互」](../design-language.md#手机远程交互)的 Claude 式结构：48px 顶栏、浮动输入卡、抽屉只做导航与「最近」、完整会话列表为全屏任务、输入框触发的选择用底部面板、设置为分组卡片。顶栏／行菜单仍是贴近触发器的 Menu，破坏性确认仍是居中 Modal。
+- 手机端采用[桌面鲸屿窄屏布局](../design-language.md#手机远程交互)：同源透明鲸鱼娘头像和鲸屿字标、贴边直角侧栏、品牌下新会话和工作区分组目录、底部账户与设置；22px / 22dp 细边无外投影输入卡适配竖屏和 IME。模型、权限、附件、重命名、新会话选择和简短设置在紧凑 Modal / Menu 内完成，长目录、搜索与复杂 Git 任务保留可返回表面。颜色只取同值语义 token，海天画布止于连接入口，不使用简笔鲸鱼或展示衬线替代品牌。
 - 全量启动才启用内容搜索：`--patch` `desktop-session-search.patch.yml` 覆写 `session-query-sqlite` 为 `openAt: first-search` 与 `dsh-home/session-query.sqlite`。禁止把这次 opt-in 写进用户 `cordis.patch.yml`。skip 启动保持发版 `openAt: never`。
 
 ## Allowed touch

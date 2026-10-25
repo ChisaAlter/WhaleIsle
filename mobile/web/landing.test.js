@@ -16,6 +16,13 @@ test('landing page explains the one-QR entry split (App = link device, browser =
   assert.match(indexHtml, /Android App 内扫同一张码会链接设备/);
 });
 
+test('connection and sidebar use the canonical transparent avatar and desktop wordmark', () => {
+  assert.match(indexHtml, /src="\.\/assets\/whale-head\.png"/);
+  assert.equal((indexHtml.match(/BASED ON DEEPSEEK HARNESS/g) || []).length, 3);
+  assert.doesNotMatch(indexHtml, /class="whale-mark"/);
+  assert.deepEqual(fs.readFileSync(path.join(root, 'assets', 'whale-head.png')), fs.readFileSync(path.join(root, '..', '..', 'assets', 'whale-head.png')));
+});
+
 test('landing exposes one primary scan action and a themed Web scanner', () => {
   assert.match(indexHtml, /id="scan-open"/);
   assert.match(indexHtml, /id="screen-scan"[^>]*connect-canvas|connect-canvas[^>]*id="screen-scan"/);

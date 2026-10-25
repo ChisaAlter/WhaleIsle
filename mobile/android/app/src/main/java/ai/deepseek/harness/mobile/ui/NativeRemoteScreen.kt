@@ -8,143 +8,205 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.serialization.json.*
 
 @Composable
 internal fun NativeRemoteScreen(vm: DshViewModel, onAttachment: () -> Unit) {
-    if (vm.panel.isBlank()) {
-        NativeChatScreen(vm.chat, vm::onChatAction, { vm.panel = "work" }, onAttachment, vm::removeImage, vm::leaveComputer)
-        return
-    }
-    val keyboard = LocalSoftwareKeyboardController.current
-    val ime = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    BackHandler { if (ime) keyboard?.hide() else vm.panel = if (vm.panel == "work") "" else "work" }
-    var input by remember(vm.panel) { mutableStateOf("") }
-    var selectedSession by remember { mutableStateOf<NativeSession?>(null) }
-    var selectedWorkspace by remember { mutableStateOf<NativeWorkspace?>(null) }
-    var confirmation by remember { mutableStateOf("") }
-    Column(Modifier.fillMaxSize().background(dsh().sidebarFill).imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = { vm.panel = if (vm.panel == "work") "" else "work" }) { Text("返回") }
-            Text(when(vm.panel) { "new" -> "新会话"; "browse" -> "选择电脑上的目录"; "git" -> "Git";
-                "sessions" -> "会话管理"; "settings" -> "设置"; else -> "工作区" }, Modifier.padding(12.dp), color = dsh().labelPrimary)
-            if (vm.panelBusy) CircularProgressIndicator(Modifier.size(24.dp))
+    var selectedSession by remember(vm.chat.epoch) { mutableStateOf<NativeSession?>(null) }
+    var selectedWorkspace by remember(vm.chat.epoch) { mutableStateOf<NativeWorkspace?>(null) }
+    var name by remember(vm.chat.epoch) { mutableStateOf("") }
+    var confirmation by remember(vm.chat.epoch) { mutableStateOf("") }
+    val chatUiState = rememberSaveableStateHolder()
+    val taskPage = vm.panel in setOf("browse", "sessions", "git")
+    if (taskPage) {
+        NativeTaskPage(vm, onSessionMenu = { selectedSession = it; name = it.title })
+    } else {
+        // The registry belongs to one connection and session, including scroll and draft selection.
+        chatUiState.SaveableStateProvider("chat:${vm.chat.epoch}:${vm.chat.sessionId}") {
+            NativeChatScreen(state = vm.chat, workspaces = vm.workspaces, onAction = vm::onChatAction,
+                onPanel = { vm.panel = it },
+                onWorkspaceMenu = { selectedWorkspace = it; name = it.title },
+                onSessionMenu = { selectedSession = it; name = it.title },
+                onAttachment = onAttachment, onRemoveAttachment = vm::removeImage, onLeave = vm::leaveComputer,
+                showConnectionNotice = vm.panel.isBlank() && selectedSession == null && selectedWorkspace == null && confirmation.isBlank())
         }
-        if (vm.chat.banner.isNotBlank()) SelectionContainer { Text(vm.chat.banner, Modifier.padding(12.dp), color = dsh().error) }
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            when(vm.panel) {
-                "work" -> {
-                    item { WorkButton("新会话 · 选择工作区", !vm.chat.offline) { vm.panel = "new" } }
-                    item { WorkButton("会话管理与内容搜索", !vm.chat.offline) { vm.panel = "sessions" } }
-                    item { WorkButton("Git · 分支 / 提交 / 推送 / PR", !vm.chat.offline && vm.currentSession()?.cwd?.isNotBlank() == true) { vm.openGit() } }
-                    item { WorkButton("设置与已配对电脑") { vm.panel = "settings" } }
-                    items(vm.workspaces, key = { it.id }) { workspace ->
-                        Row { Text(workspace.title.ifBlank { workspace.path }, Modifier.weight(1f).padding(12.dp), color = dsh().labelPrimary)
-                            TextButton(onClick = { selectedWorkspace = workspace; input = workspace.title }) { Text("管理") } }
-                    }
-                    item { Text("文件与更改：远程网关尚未提供文件浏览；请在电脑端查看。", color = dsh().labelSecondary) }
-                    item { Text("MCP 与技能：远程端暂未接入管理；请在电脑端操作。", color = dsh().labelSecondary) }
-                }
-                "new" -> {
-                    item { WorkButton("无工作目录的新会话", !vm.panelBusy) { vm.createSession() } }
-                    items(vm.workspaces, key = { it.id }) { ws -> WorkButton(ws.title.ifBlank { ws.path }, !vm.panelBusy) { vm.createSession(ws.id) } }
-                    item { WorkButton("浏览电脑目录…", !vm.panelBusy) { vm.browse() } }
-                }
-                "browse" -> {
-                    item { Text(vm.panelData.string("path"), color = dsh().labelPrimary) }
-                    val crumbs = vm.panelData.objects("crumbs")
-                    item { WorkButton("上一级", !vm.panelBusy && crumbs.size > 1) { vm.browse(crumbs[crumbs.size - 2].string("path")) } }
-                    if (vm.panelData["truncated"].flag()) item { Text("此目录内容较多，电脑端返回的列表已截断。", color = dsh().labelSecondary) }
-                    items(vm.panelData.objects("entries"), key = { it.string("path") }) { entry ->
-                        WorkButton(entry.string("name"), !vm.panelBusy) { vm.browse(entry.string("path")) }
-                    }
-                    item { OutlinedTextField(input, { input = it }, label = { Text("新文件夹名称") }, modifier = Modifier.fillMaxWidth()) }
-                    item { WorkButton("创建文件夹", input.isNotBlank() && !vm.panelBusy) { vm.createDirectory(input.trim()) } }
-                    item { WorkButton("使用当前目录创建会话", vm.panelData.string("path").isNotBlank() && !vm.panelBusy) { vm.registerDirectory() } }
-                }
-                "sessions" -> {
-                    item { OutlinedTextField(input, { input = it }, label = { Text("搜索标题或消息内容") }, modifier = Modifier.fillMaxWidth()) }
-                    item { WorkButton("搜索内容", input.isNotBlank() && !vm.panelBusy) { vm.findSessions(input) } }
-                    if (vm.panelData.objects("items").isNotEmpty()) items(vm.panelData.objects("items")) { result ->
-                        WorkButton(result.string("title").ifBlank { result.string("snippet") }) {
-                            vm.panel = ""; vm.openSession(result.string("sessionId"))
-                        }
-                    }
-                    items(vm.allSessions.filter { input.isBlank() || it.title.contains(input, true) }, key = { it.id }) { row ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            TextButton(onClick = { vm.panel = ""; vm.openSession(row.id) }, modifier = Modifier.weight(1f)) {
-                                Text((if (row.archived) "已归档 · " else "") + row.title)
-                            }
-                            TextButton(onClick = { selectedSession = row; input = row.title }) { Text("管理") }
-                        }
-                    }
-                }
-                "settings" -> {
-                    item { Text("外观", color = dsh().labelPrimary) }
-                    item { Row { listOf("system" to "跟随系统", "light" to "浅色", "dark" to "深色").forEach { (key, label) ->
-                        TextButton(onClick = { vm.persistScheme(key) }) { Text(label + if (vm.scheme == key) " ✓" else "") }
-                    } } }
-                    item { Text("已配对电脑", color = dsh().labelPrimary) }
-                    items(vm.computers, key = { it.serverId }) { computer ->
-                        Row { TextButton(onClick = { vm.reopenComputer(computer.serverId) }, modifier = Modifier.weight(1f)) { Text(computer.computerName) }
-                            TextButton(onClick = { confirmation = computer.serverId }) { Text("移除") } }
-                    }
-                    item { WorkButton("断开连接", true, vm::leaveComputer) }
-                }
-                "git" -> item { NativeGitPage(vm) }
+    }
+    val colors = dsh()
+    when (vm.panel) {
+        "new" -> NativeDialog("新会话", onDismiss = { vm.panel = "" }, feedback = vm.panelError, feedbackHint = "选择工作区，或浏览电脑上的目录。") {
+            NativeChoiceRow(if (vm.panelBusy) "正在创建会话…" else "无工作目录", enabled = !vm.panelBusy && !vm.chat.offline, glyph = NativeGlyph.Plus, onClick = { vm.createSession() })
+            vm.workspaces.forEach { workspace ->
+                NativeChoiceRow(workspace.title.ifBlank { workspace.path }, detail = workspace.path,
+                    enabled = !vm.panelBusy && !vm.chat.offline, glyph = NativeGlyph.Folder, onClick = { vm.createSession(workspace.id) })
             }
+            NativeChoiceRow(if (vm.panelBusy) "正在读取目录…" else "浏览电脑目录…", enabled = !vm.panelBusy && !vm.chat.offline, glyph = NativeGlyph.Folder, onClick = { vm.browse() })
+        }
+        "work" -> NativeDialog("会话与工作区", onDismiss = { vm.panel = "" }, feedback = vm.panelError, feedbackHint = "管理当前会话与工作区；搜索和 Git 将打开任务页。") {
+            NativeChoiceRow("新会话", glyph = NativeGlyph.Plus, enabled = !vm.chat.offline, onClick = { vm.panel = "new" })
+            NativeChoiceRow("会话管理与内容搜索", glyph = NativeGlyph.Search, enabled = !vm.chat.offline, onClick = { vm.panel = "sessions" })
+            NativeChoiceRow(if (vm.panelBusy) "正在读取 Git…" else "Git · 分支 / Commit / Push / PR", enabled = !vm.panelBusy && !vm.chat.offline && vm.currentSession()?.cwd?.isNotBlank() == true,
+                onClick = { vm.openGit() })
+            NativeChoiceRow("设置与已配对电脑", onClick = { vm.panel = "settings" })
+            NativeChoiceRow(if (vm.chat.offline) "重新连接电脑" else "重新同步目录与会话", onClick = { vm.onChatAction(NativeChatAction("refresh")); vm.panel = "" })
+            if (vm.workspaces.isNotEmpty()) {
+                HorizontalDivider(color = colors.borderHair, modifier = Modifier.padding(vertical = 4.dp))
+                vm.workspaces.forEach { workspace ->
+                    NativeChoiceRow(workspace.title.ifBlank { workspace.path }, detail = workspace.path, glyph = NativeGlyph.Folder,
+                        onClick = { vm.panel = ""; selectedWorkspace = workspace; name = workspace.title })
+                }
+            }
+            Text("文件与更改：远程网关尚未提供文件浏览；请在电脑端查看。", Modifier.padding(12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
+            Text("MCP 与技能：远程端暂未接入管理；请在电脑端操作。", Modifier.padding(horizontal = 12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
+        }
+        "settings" -> NativeDialog("设置", onDismiss = { vm.panel = "" }) {
+            Text("外观", Modifier.padding(12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(colors.bgModule)) {
+                listOf("system" to "跟随系统", "light" to "浅色", "dark" to "深色").forEach { (key, label) ->
+                    Box(Modifier.weight(1f)) { NativeChoiceRow(label, selected = vm.scheme == key, onClick = { vm.persistScheme(key) }) }
+                }
+            }
+            Text("已配对电脑", Modifier.padding(12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
+            vm.computers.forEach { computer ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { NativeChoiceRow(computer.computerName, detail = computer.relayEndpoint, onClick = { vm.reopenComputer(computer.serverId) }) }
+                    TextButton(onClick = { confirmation = computer.serverId }, modifier = Modifier.heightIn(min = 48.dp)) { Text("移除", color = colors.labelSecondary, fontSize = 12.sp) }
+                }
+            }
+            NativeChoiceRow("断开这台设备", danger = true, onClick = vm::leaveComputer)
         }
     }
     selectedSession?.let { row ->
-        AlertDialog(onDismissRequest = { selectedSession = null }, title = { Text(row.title) }, text = {
-            Column {
-                OutlinedTextField(input, { input = it }, label = { Text("会话名称") })
-                WorkButton("重命名", !vm.panelBusy && input.isNotBlank()) { vm.sessionAction("session.rename", row, input.trim()); selectedSession = null }
-                WorkButton("Fork", !vm.panelBusy) { vm.sessionAction("session.fork", row); selectedSession = null }
-                if (!row.archived && row.workspaceId.isNotBlank()) {
-                    WorkButton("上移", !vm.panelBusy) { vm.moveSession(row, -1); selectedSession = null }
-                    WorkButton("下移", !vm.panelBusy) { vm.moveSession(row, 1); selectedSession = null }
-                }
-                WorkButton(if (row.archived) "取消归档" else "归档", !vm.panelBusy) {
-                    vm.sessionAction(if (row.archived) "workspace.unarchiveSession" else "workspace.archiveSession", row); selectedSession = null
-                }
-                if (row.archived) WorkButton("永久删除", !vm.panelBusy) { confirmation = "delete:${row.id}" }
+        NativeDialog("管理会话", onDismiss = { selectedSession = null }) {
+            NativeField(name, { name = it }, "会话名称", enabled = !vm.panelBusy)
+            NativeChoiceRow("重命名", enabled = !vm.panelBusy && !vm.chat.offline && name.isNotBlank(), onClick = { vm.sessionAction("session.rename", row, name.trim()); selectedSession = null })
+            NativeChoiceRow("Fork", enabled = !vm.panelBusy && !vm.chat.offline, onClick = { vm.sessionAction("session.fork", row); selectedSession = null; vm.panel = "" })
+            if (!row.archived && row.workspaceId.isNotBlank()) {
+                NativeChoiceRow("上移", enabled = !vm.panelBusy && !vm.chat.offline, onClick = { vm.moveSession(row, -1); selectedSession = null })
+                NativeChoiceRow("下移", enabled = !vm.panelBusy && !vm.chat.offline, onClick = { vm.moveSession(row, 1); selectedSession = null })
             }
-        }, confirmButton = { TextButton(onClick = { selectedSession = null }) { Text("关闭") } })
+            NativeChoiceRow(if (row.archived) "取消归档" else "归档", enabled = !vm.panelBusy && !vm.chat.offline, onClick = {
+                vm.sessionAction(if (row.archived) "workspace.unarchiveSession" else "workspace.archiveSession", row); selectedSession = null
+            })
+            if (row.archived) NativeChoiceRow("永久删除", enabled = !vm.panelBusy && !vm.chat.offline, danger = true, onClick = { confirmation = "delete:${row.id}" })
+        }
     }
     selectedWorkspace?.let { workspace ->
-        AlertDialog(onDismissRequest = { selectedWorkspace = null }, title = { Text(workspace.title.ifBlank { workspace.path }) }, text = {
-            Column {
-                OutlinedTextField(input, { input = it }, label = { Text("工作区名称") })
-                WorkButton("重命名", input.isNotBlank() && !vm.panelBusy) {
-                    vm.workspaceAction("workspace.rename", workspace, input.trim()); selectedWorkspace = null
-                }
-                WorkButton("从列表移除工作区", !vm.panelBusy) { confirmation = "workspace:${workspace.id}" }
-            }
-        }, confirmButton = { TextButton(onClick = { selectedWorkspace = null }) { Text("关闭") } })
+        NativeDialog("管理工作区", onDismiss = { selectedWorkspace = null }) {
+            Text(workspace.path, Modifier.padding(horizontal = 12.dp, vertical = 4.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
+            NativeChoiceRow("在此目录新建会话", glyph = NativeGlyph.Plus, enabled = !vm.panelBusy && !vm.chat.offline, onClick = { vm.createSession(workspace.id); selectedWorkspace = null })
+            NativeField(name, { name = it }, "工作区名称", enabled = !vm.panelBusy)
+            NativeChoiceRow("重命名", enabled = name.isNotBlank() && !vm.panelBusy && !vm.chat.offline, onClick = { vm.workspaceAction("workspace.rename", workspace, name.trim()); selectedWorkspace = null })
+            NativeChoiceRow("从列表移除工作区", enabled = !vm.panelBusy && !vm.chat.offline, danger = true, onClick = { confirmation = "workspace:${workspace.id}" })
+        }
     }
-    if (confirmation.isNotBlank()) AlertDialog(onDismissRequest = { confirmation = "" }, title = { Text("确认移除？") },
-        text = { Text(when { confirmation.startsWith("delete:") -> "永久删除电脑上的归档会话，此操作不可恢复。"
+    if (confirmation.isNotBlank()) NativeDialog("确认移除？", onDismiss = { confirmation = "" }, actions = {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = { confirmation = "" }) { Text("取消") }
+            TextButton(enabled = !vm.panelBusy, onClick = {
+                when {
+                    confirmation.startsWith("delete:") -> vm.allSessions.find { it.id == confirmation.removePrefix("delete:") }?.let { vm.sessionAction("session.delete", it) }
+                    confirmation.startsWith("workspace:") -> vm.workspaces.find { it.id == confirmation.removePrefix("workspace:") }?.let { vm.workspaceAction("workspace.delete", it) }
+                    else -> vm.forgetComputer(confirmation)
+                }
+                confirmation = ""; selectedSession = null; selectedWorkspace = null
+            }) { Text("确认移除", color = colors.error) }
+        }
+    }) {
+        Text(when {
+            confirmation.startsWith("delete:") -> "永久删除电脑上的归档会话，此操作不可恢复。"
             confirmation.startsWith("workspace:") -> "移除工作区登记，目录与文件会保留。"
-            else -> "移除本机保存的配对凭据。重新连接需要扫码，草稿会保留。" }) },
-        confirmButton = { TextButton(onClick = {
-            if (confirmation.startsWith("delete:")) vm.allSessions.find { it.id == confirmation.removePrefix("delete:") }?.let { vm.sessionAction("session.delete", it) }
-            else if (confirmation.startsWith("workspace:")) vm.workspaces.find { it.id == confirmation.removePrefix("workspace:") }?.let { vm.workspaceAction("workspace.delete", it) }
-            else vm.forgetComputer(confirmation)
-            confirmation = ""; selectedSession = null; selectedWorkspace = null
-        }) { Text("确认") } }, dismissButton = { TextButton(onClick = { confirmation = "" }) { Text("取消") } })
+            else -> "移除本机保存的配对凭据。重新连接需要扫码，草稿会保留。"
+        }, Modifier.padding(12.dp), color = colors.labelPrimary, fontSize = 14.sp, lineHeight = 22.sp)
+    }
+}
+
+@Composable
+private fun NativeTaskPage(vm: DshViewModel, onSessionMenu: (NativeSession) -> Unit) {
+    val colors = dsh()
+    val keyboard = LocalSoftwareKeyboardController.current
+    val ime = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    fun goBack() { vm.panel = if (vm.panel == "browse") "new" else "" }
+    BackHandler { if (ime) keyboard?.hide() else goBack() }
+    var query by remember(vm.panel) { mutableStateOf("") }
+    var newDirectory by remember(vm.panelData.string("path")) { mutableStateOf("") }
+    var searched by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize().background(colors.bgBase)) {
+        Row(Modifier.fillMaxWidth().height(56.dp).padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            NativeIconButton(NativeGlyph.Back, "返回聊天", ::goBack)
+            Text(when (vm.panel) { "browse" -> "选择电脑上的目录"; "git" -> "Git"; else -> "会话管理与搜索" }, Modifier.weight(1f), color = colors.labelPrimary, fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold)
+            if (vm.panelBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = colors.labelSecondary)
+        }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                when (vm.panel) {
+                    "browse" -> {
+                        item { SelectionContainer { Text(vm.panelData.string("path"), color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp) } }
+                        val crumbs = vm.panelData.objects("crumbs")
+                        item { NativeChoiceRow("上一级", enabled = !vm.panelBusy && crumbs.size > 1, glyph = NativeGlyph.Back, onClick = { vm.browse(crumbs[crumbs.size - 2].string("path")) }) }
+                        if (vm.panelData["truncated"].flag()) item { Text("此目录内容较多，电脑端返回的列表已截断。", color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp) }
+                        items(vm.panelData.objects("entries"), key = { it.string("path") }) { entry ->
+                            NativeChoiceRow(entry.string("name"), enabled = !vm.panelBusy, glyph = NativeGlyph.Folder, onClick = { vm.browse(entry.string("path")) })
+                        }
+                        item { NativeField(newDirectory, { newDirectory = it }, "新文件夹名称", enabled = !vm.panelBusy) }
+                        item { WorkButton("创建文件夹", newDirectory.isNotBlank() && !vm.panelBusy) { vm.createDirectory(newDirectory.trim()) } }
+                    }
+                    "sessions" -> {
+                        item { NativeField(query, { query = it; searched = false }, "搜索标题或消息内容") }
+                        item { WorkButton(if (vm.panelBusy) "正在搜索…" else "搜索内容", query.isNotBlank() && !vm.panelBusy) { searched = true; vm.findSessions(query) } }
+                        if (searched) {
+                            val results = vm.panelData.objects("items")
+                            if (!vm.panelBusy && results.isEmpty()) item { Text("没有匹配的消息内容", color = colors.labelSecondary, fontSize = 14.sp, lineHeight = 22.sp) }
+                            items(results) { result -> NativeChoiceRow(result.string("title").ifBlank { result.string("snippet") }, detail = result.string("snippet"), onClick = { vm.panel = ""; vm.openSession(result.string("sessionId")) }) }
+                        }
+                        val rows = vm.allSessions.filter { query.isBlank() || it.title.contains(query, true) }
+                        if (rows.isEmpty() && !searched) item { Text("没有匹配的会话", color = colors.labelSecondary, fontSize = 14.sp, lineHeight = 22.sp) }
+                        items(rows, key = { it.id }) { row ->
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.weight(1f)) { NativeChoiceRow((if (row.archived) "已归档 · " else "") + row.title, detail = row.workspace, onClick = { vm.panel = ""; vm.openSession(row.id) }) }
+                                NativeIconButton(NativeGlyph.More, "管理会话${row.title}", { onSessionMenu(row) })
+                            }
+                        }
+                    }
+                    "git" -> item { NativeGitPage(vm) }
+                }
+            }
+            NativeTaskNotice(vm)
+        }
+        if (vm.panel == "browse") Box(Modifier.fillMaxWidth().background(colors.bgLayer1).padding(horizontal = 16.dp, vertical = 8.dp)) {
+            NativePill(if (vm.panelBusy) "正在创建会话…" else "使用当前目录创建会话", { vm.registerDirectory() }, primary = true, enabled = vm.panelData.string("path").isNotBlank() && !vm.panelBusy)
+        }
+    }
+}
+
+@Composable
+private fun NativeTaskNotice(vm: DshViewModel) {
+    val colors = dsh()
+    val message = vm.chat.banner
+    var shown by remember(message) { mutableStateOf(message.isNotBlank()) }
+    LaunchedEffect(message) { if (message.isNotBlank()) { kotlinx.coroutines.delay(6_000); shown = false } }
+    if (shown) Surface(Modifier.fillMaxWidth().padding(12.dp), shape = RoundedCornerShape(12.dp), color = colors.bgLayer2, border = BorderStroke(1.dp, colors.borderL2), shadowElevation = 4.dp) {
+        SelectionContainer { Text(message, Modifier.padding(12.dp), color = colors.labelPrimary, fontSize = 12.sp, lineHeight = 18.sp) }
+    }
 }
 
 @Composable
 private fun WorkButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
-    OutlinedButton(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(label) }
+    OutlinedButton(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, dsh().borderL2)) { Text(label, fontSize = 14.sp, lineHeight = 22.sp) }
 }
 
 @Composable
@@ -168,63 +230,64 @@ private fun NativeGitPage(vm: DshViewModel) {
         if (status["isDefaultRef"].flag() && steps.any { it in setOf("git-commit", "git-push", "git-create-change-request") } && !featureBranch) defaultConfirmation = steps
         else vm.gitAction(steps, payload)
     }
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (vm.gitRemaining.isNotEmpty() && !vm.panelBusy) {
-            Text("已完成：${vm.gitCompleted.joinToString().ifBlank { "无" }}", color = dsh().labelSecondary)
+            Text("已完成：${vm.gitCompleted.joinToString().ifBlank { "无" }}", color = dsh().labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
             WorkButton("继续剩余操作：${vm.gitRemaining.joinToString()}", available) { vm.retryGit() }
         }
-        Text("分支：${status.string("refName").ifBlank { "尚未初始化" }}", color = dsh().labelPrimary)
+        Text("分支：${status.string("refName").ifBlank { "尚未初始化" }}", color = dsh().labelPrimary, fontSize = 14.sp, lineHeight = 22.sp)
         if (!status["isRepo"].flag() && status.string("refName").isBlank()) WorkButton("初始化 Git", available) { vm.gitAction(listOf("git-init")) }
-        OutlinedTextField(branch, { branch = it }, label = { Text("搜索分支 / 新分支名称") }, modifier = Modifier.fillMaxWidth())
+        NativeField(branch, { branch = it }, "搜索分支 / 新分支名称", enabled = !vm.panelBusy)
         branches.filter { branch.isBlank() || it.string("name").contains(branch, true) }.forEach { row ->
-            WorkButton(row.string("name"), available && row["switchable"]?.flag() != false) { vm.gitAction(listOf("git-switch-branch"), obj("ref" to row.string("name"))) }
+            NativeChoiceRow(row.string("name"), selected = row.string("name") == status.string("refName"), enabled = available && row["switchable"]?.flag() != false, onClick = { vm.gitAction(listOf("git-switch-branch"), obj("ref" to row.string("name"))) })
         }
         WorkButton("创建并切换分支", available && branch.isNotBlank()) { vm.gitAction(listOf("git-create-branch"), obj("name" to branch.trim())) }
-        OutlinedTextField(message, { message = it }, label = { Text("提交说明（可留空由桌面生成）") }, modifier = Modifier.fillMaxWidth())
-        Row { Checkbox(featureBranch, { featureBranch = it }); Text("在新工作分支提交", Modifier.padding(top = 12.dp), color = dsh().labelPrimary) }
+        NativeField(message, { message = it }, "提交说明（可留空由桌面生成）", enabled = !vm.panelBusy, minLines = 2)
+        Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(featureBranch, { featureBranch = it }); Text("在新工作分支提交", color = dsh().labelPrimary, fontSize = 14.sp, lineHeight = 22.sp) }
         files.forEach { file -> val path = file.string("path")
-            Row { Checkbox(path in selectedFiles, { selectedFiles = if (it) selectedFiles + path else selectedFiles - path }); Text(path, Modifier.padding(top = 12.dp), color = dsh().labelSecondary) }
+            Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(path in selectedFiles, { selectedFiles = if (it) selectedFiles + path else selectedFiles - path }); Text(path, color = dsh().labelSecondary, fontSize = 12.sp, lineHeight = 18.sp) }
         }
         val canCommit = available && (files.isEmpty() || selectedFiles.isNotEmpty())
-        WorkButton("提交", canCommit) { execute(listOf("git-commit")) }
-        WorkButton("提交并推送", canCommit) { execute(listOf("git-commit", "git-push")) }
-        WorkButton("提交、推送并创建 PR", canCommit) { execute(listOf("git-commit", "git-push", "git-create-change-request")) }
-        WorkButton("推送", available) { execute(listOf("git-push")) }
-        WorkButton("推送并创建 PR", available) { execute(listOf("git-push", "git-create-change-request")) }
-        if (diverged) Text("分支已分叉，请在电脑端合并或变基后同步。", color = dsh().labelSecondary)
-        WorkButton("拉取", available && !diverged) { vm.gitAction(listOf("git-pull")) }
-        WorkButton("查看 PR", available) { vm.viewPullRequest() }
-        OutlinedTextField(remote, { remote = it }, label = { Text("发布到已有仓库 URL（留空创建私有仓库）") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(repositoryName, { repositoryName = it }, label = { Text("新仓库名称") }, modifier = Modifier.fillMaxWidth())
-        WorkButton("发布仓库", available && !status["hasPrimaryRemote"].flag() && (remote.isNotBlank() || repositoryName.isNotBlank())) {
+        WorkButton("Commit", canCommit) { execute(listOf("git-commit")) }
+        WorkButton("Commit & Push", canCommit) { execute(listOf("git-commit", "git-push")) }
+        WorkButton("Commit, Push & PR", canCommit) { execute(listOf("git-commit", "git-push", "git-create-change-request")) }
+        WorkButton("Push", available) { execute(listOf("git-push")) }
+        WorkButton("Push & PR", available) { execute(listOf("git-push", "git-create-change-request")) }
+        if (diverged) Text("分支已分叉，请在电脑端合并或变基后同步。", color = dsh().labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
+        WorkButton("Pull", available && !diverged) { vm.gitAction(listOf("git-pull")) }
+        WorkButton("View PR", available) { vm.viewPullRequest() }
+        NativeField(remote, { remote = it }, "发布到已有仓库 URL（留空创建私有仓库）", enabled = !vm.panelBusy)
+        NativeField(repositoryName, { repositoryName = it }, "新仓库名称", enabled = !vm.panelBusy)
+        WorkButton("Publish", available && !status["hasPrimaryRemote"].flag() && (remote.isNotBlank() || repositoryName.isNotBlank())) {
             vm.gitAction(listOf("git-publish"), obj("remoteUrl" to remote, "name" to repositoryName, "visibility" to "private"))
         }
     }
-    if (vm.gitReview) AlertDialog(
-        onDismissRequest = { vm.cancelGitReview() },
-        title = { Text("确认 PR / MR 标题与正文") },
-        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("生成只准备草稿。确认后才创建请求；已完成的提交与推送不会重复。")
-            Text("工作区：${vm.currentSession()?.cwd.orEmpty()}")
-            OutlinedTextField(vm.gitDraftTitle, { vm.gitDraftTitle = it }, label = { Text("标题") }, enabled = !vm.panelBusy)
-            OutlinedTextField(vm.gitDraftBody, { vm.gitDraftBody = it }, label = { Text("正文（Markdown）") }, enabled = !vm.panelBusy, minLines = 4)
-            WorkButton("生成 / 重新生成草稿", available) { vm.generateGitDraft() }
-            vm.gitDraftCandidate?.let { candidate ->
-                SelectionContainer { Text(candidate.string("title") + "\n\n" + candidate.string("body")) }
-                WorkButton("应用生成草稿", available) { vm.applyGitDraft() }
-            }
-        } },
-        confirmButton = { TextButton(onClick = { vm.confirmGitReview() }, enabled = available && vm.gitDraftTitle.isNotBlank()) { Text("确认并创建 PR / MR") } },
-        dismissButton = { TextButton(onClick = { vm.cancelGitReview() }) { Text("取消并保留草稿") } },
-    )
-    defaultConfirmation?.let { steps -> AlertDialog(onDismissRequest = { defaultConfirmation = null }, title = { Text("在默认分支继续？") },
-        text = { Text("当前分支是默认分支。可返回创建工作分支，或确认继续此操作。") },
-        confirmButton = { TextButton(onClick = { defaultConfirmation = null; vm.gitAction(steps, payload) }) { Text("继续") } },
-        dismissButton = { Column {
+    if (vm.gitReview) NativeDialog("确认 PR / MR", onDismiss = vm::cancelGitReview, actions = {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = vm::cancelGitReview) { Text("保留草稿") }
+            TextButton(onClick = vm::confirmGitReview, enabled = available && vm.gitDraftTitle.isNotBlank()) { Text("确认创建") }
+        }
+    }) {
+        Text("确认后才创建请求；已完成的 Commit 与 Push 不会重复。", Modifier.padding(12.dp), color = dsh().labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
+        Text("工作区：${vm.currentSession()?.cwd.orEmpty()}", Modifier.padding(horizontal = 12.dp), color = dsh().labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
+        NativeField(vm.gitDraftTitle, { vm.gitDraftTitle = it }, "标题", enabled = !vm.panelBusy)
+        NativeField(vm.gitDraftBody, { vm.gitDraftBody = it }, "正文（Markdown）", enabled = !vm.panelBusy, minLines = 4)
+        NativeChoiceRow("生成 / 重新生成草稿", enabled = available, onClick = vm::generateGitDraft)
+        vm.gitDraftCandidate?.let { candidate ->
+            SelectionContainer { Text(candidate.string("title") + "\n\n" + candidate.string("body"), color = dsh().labelPrimary, fontSize = 14.sp, lineHeight = 22.sp) }
+            NativeChoiceRow("应用生成草稿", enabled = available, onClick = vm::applyGitDraft)
+        }
+    }
+    defaultConfirmation?.let { steps -> NativeDialog("在默认分支继续？", onDismiss = { defaultConfirmation = null }, actions = {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = { defaultConfirmation = null }) { Text("返回") }
-            if (branch.isNotBlank()) TextButton(onClick = {
-                defaultConfirmation = null
-                vm.gitAction(listOf("git-create-branch") + steps, JsonObject(payload + ("name" to JsonPrimitive(branch.trim()))))
-            }) { Text("创建工作分支并继续") }
-        } }) }
+            TextButton(onClick = { defaultConfirmation = null; vm.gitAction(steps, payload) }) { Text("继续") }
+        }
+    }) {
+        Text("当前分支是默认分支。可返回创建工作分支，或确认继续此操作。", Modifier.padding(12.dp), color = dsh().labelPrimary, fontSize = 14.sp, lineHeight = 22.sp)
+        if (branch.isNotBlank()) NativeChoiceRow("创建工作分支并继续", onClick = {
+            defaultConfirmation = null
+            vm.gitAction(listOf("git-create-branch") + steps, JsonObject(payload + ("name" to JsonPrimitive(branch.trim()))))
+        })
+    } }
 }

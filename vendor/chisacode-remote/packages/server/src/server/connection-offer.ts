@@ -1,4 +1,5 @@
 import os from "node:os";
+import type { RelayAuthBootstrap } from "@chisacode/protocol/relay-device-auth";
 
 import {
   ConnectionOfferV2Schema,
@@ -35,11 +36,7 @@ export async function createConnectionOfferV2(args: {
   daemonPublicKeyB64: string;
   relayAuthPublicKeyB64?: string;
   relay: { endpoint: string; useTls?: boolean };
-  authBootstrap?: {
-    version: 1;
-    pairingToken: string;
-    expiresAtMs: number;
-  };
+  authBootstrap?: RelayAuthBootstrap;
 }): Promise<ConnectionOffer> {
   return ConnectionOfferV2Schema.parse({
     v: 2,

@@ -74,6 +74,20 @@ class OfferTest {
     }
 
     @Test
+    fun persistentLinkExtensionKeepsV2HandshakeAndSavedCredentialOfferCompatible() {
+        val raw = b64url(
+            """{"v":2,"serverId":"server-persistent","daemonPublicKeyB64":"daemon-key","relay":{"endpoint":"ayase.cn:443","useTls":true},"authBootstrap":{"version":1,"kind":"persistent","pairingToken":"persistent-test-link-token","expiresAtMs":253402300799999}}""",
+        )
+        val offer = OfferCodec.parsePairingLink("https://ayase.cn/dshd/#offer=$raw")?.offer
+        assertEquals("server-persistent", offer?.serverId)
+        assertEquals("persistent-test-link-token", offer?.authBootstrap?.pairingToken)
+        assertEquals(253402300799999L, offer?.authBootstrap?.expiresAtMs)
+        val saved = ai.deepseek.harness.mobile.remote.SavedComputer("server-persistent", "device", "device-secret", "daemon-key", "ayase.cn:443", true)
+        assertNull(saved.offer().authBootstrap)
+        assertEquals(offer?.relay, saved.offer().relay)
+    }
+
+    @Test
     fun decodeRejectsMalformedV2SchemaFields() {
         assertNull(
             OfferCodec.decode(

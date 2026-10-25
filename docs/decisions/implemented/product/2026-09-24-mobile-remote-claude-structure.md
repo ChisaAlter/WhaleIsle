@@ -1,6 +1,6 @@
 # Decision: 手机远程改用 Claude 式页面结构
 
-Status: implemented
+Status: superseded — 2026-10-25 用户要求侧栏、品牌、输入区和短操作尽量接近桌面鲸屿；当前规则见[手机远程设计语言](../../../design-language-mobile.md)。下文保留原选择的历史原因。
 
 中文 | [English](2026-09-24-mobile-remote-claude-structure.en.md)
 

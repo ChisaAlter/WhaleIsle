@@ -485,6 +485,16 @@ function registerIpc({
     return null;
   });
 
+  handle('shell:revoke-remote-pairing-link', HARNESS_ONLY, async () => {
+    if (!REMOTE_FEATURE_ENABLED) {
+      return parkRemoteSnapshot(remote && typeof remote.snapshot === 'function' ? remote.snapshot() : {});
+    }
+    if (remote && typeof remote.revokePairingLink === 'function') {
+      return remote.revokePairingLink();
+    }
+    return null;
+  });
+
   handle('shell:unbind-remote-device', HARNESS_ONLY, async (_event, id) => {
     if (!REMOTE_FEATURE_ENABLED) {
       return parkRemoteSnapshot(remote && typeof remote.snapshot === 'function' ? remote.snapshot() : {});

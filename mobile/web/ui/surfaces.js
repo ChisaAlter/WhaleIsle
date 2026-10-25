@@ -17,6 +17,7 @@ export function createSurface(document, {
   const panel = document.createElement('section');
   panel.className = `${family} surface-panel`;
   panel.setAttribute('role', surfaceVariant === 'menu' ? 'menu' : 'dialog');
+  panel.setAttribute('aria-label', title);
   if (surfaceVariant !== 'menu') panel.setAttribute('aria-modal', 'true');
   const header = document.createElement('header');
   header.className = 'surface-head';
@@ -42,18 +43,7 @@ export function createSurface(document, {
     button.addEventListener('click', action);
     return button;
   };
-  if (surfaceVariant === 'bottom') {
-    // Composer-triggered bottom sheet: back (or close) on the left, a
-    // centered title, and a matching spacer on the right.
-    header.append(
-      onBack ? icon('返回', 'M10 3 5 8l5 5', onBack) : icon('关闭', 'M4 4l8 8M12 4l-8 8', onClose),
-      heading,
-    );
-    const spacer = document.createElement('span');
-    spacer.className = 'surface-spacer';
-    spacer.setAttribute('aria-hidden', 'true');
-    header.append(spacer);
-  } else if (surfaceVariant !== 'menu') {
+  if (surfaceVariant !== 'menu') {
     if (onBack) header.append(icon('返回', 'M10 3 5 8l5 5', onBack));
     header.append(heading, icon('关闭', 'M4 4l8 8M12 4l-8 8', onClose));
   }

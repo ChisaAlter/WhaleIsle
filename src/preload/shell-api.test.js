@@ -219,6 +219,7 @@ test('harness preload keeps work loops and remote controls', () => {
   assert.equal(typeof api.getRemote, 'function');
   assert.equal(typeof api.saveRemote, 'function');
   assert.equal(typeof api.rotateRemoteToken, 'function');
+  assert.equal(typeof api.revokeRemotePairingLink, 'function');
   assert.equal(typeof api.unbindRemoteDevice, 'function');
   assert.equal(typeof api.renameRemoteDevice, 'function');
   assert.equal(api.saveBootLog, undefined);
@@ -269,6 +270,17 @@ test('remote flag reaches the preload via additionalArguments, not a copy', () =
   assert.equal(remoteFeatureEnabled(['electron']), false);
 });
 
+test('long-lived pairing link revocation forwards only from the Harness bridge', async () => {
+  const calls = [];
+  const renderer = { ...fakeRenderer(), invoke: async (...args) => { calls.push(args); return { enabled: true }; } };
+  const api = buildShellApi('harness', renderer, true);
+  assert.deepEqual(await api.revokeRemotePairingLink(), { enabled: true });
+  assert.deepEqual(calls, [['shell:revoke-remote-pairing-link']]);
+  for (const role of ['boot', 'launcher', 'pet', 'pet-live2d']) {
+    assert.equal(buildShellApi(role, renderer, true)?.revokeRemotePairingLink, undefined);
+  }
+});
+
 test('harness preload omits remote controls when the feature flag is off', () => {
   for (const api of [
     buildShellApi('harness', fakeRenderer(), false),
@@ -278,6 +290,7 @@ test('harness preload omits remote controls when the feature flag is off', () =>
     assert.equal(api.getRemote, undefined);
     assert.equal(api.saveRemote, undefined);
     assert.equal(api.rotateRemoteToken, undefined);
+    assert.equal(api.revokeRemotePairingLink, undefined);
     assert.equal(api.unbindRemoteDevice, undefined);
     assert.equal(api.renameRemoteDevice, undefined);
     assert.equal(typeof api.writeFile, 'function');

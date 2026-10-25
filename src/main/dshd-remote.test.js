@@ -703,6 +703,33 @@ test('stop before the real child ready line cancels startup and leaves no owned 
   assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
 });
 
+test('Windows stop accepts the observed child exit when taskkill loses the exit race', { skip: process.platform !== 'win32' }, async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-stop-race-'));
+  let child;
+  const f = fakeRemote({ home, options: {
+    stopTimeoutMs: 20,
+    execFile: (_command, _args, _options, callback) => {
+      child.once('exit', () => callback(new Error('taskkill: process not found')));
+      child.kill('SIGKILL');
+    },
+  }, runnerBody: [
+    "process.stdin.removeAllListeners('data');",
+    'emit({ msg: "dshd_daemon_ready", listen: launch.daemonConfig.listen });',
+  ].join('\n') });
+  t.after(async () => {
+    f.remote.execFile = execFile;
+    await f.remote.stopDaemon();
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(path.dirname(f.remote.runnerPath), { recursive: true, force: true });
+  });
+  await f.remote.startDaemon();
+  child = f.remote.daemon.child;
+  await f.remote.stopDaemon();
+  assert.equal(f.remote.daemon, null);
+  assert.equal(f.remote.snapshot().error, '');
+  assert.throws(() => process.kill(child.pid, 0), { code: 'ESRCH' });
+});
+
 test('a refused daemon kill retains the real handle and stop retry observes its exit', async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-cc-stop-refused-'));
   const f = fakeRemote({ home, options: {
@@ -1051,6 +1078,117 @@ test('quit cancels a configuration restart or leftover-handle cleanup waiting on
     await Promise.all([quit, cancelled]);
     assert.equal(starts, 0, kind);
   }
+});
+
+test('late logs from an exited daemon cannot hide a replacement daemon pairing QR', () => {
+  const remote = new DshdRemote({ getConfig: () => ({ remoteEnabled: true }) });
+  const stale = { stopping: false, readyResolve() {}, readyReject() {} };
+  const current = { stopping: false, readyResolve() {}, readyReject() {} };
+  remote.daemon = stale;
+  remote.handleDaemonExit(stale, 7, null);
+  remote.daemon = current;
+  remote.error = '';
+  remote.pairing = { url: 'https://example.com/#offer=healthy' };
+  remote.handleDaemonLogLine(current, JSON.stringify({ msg: 'relay_control_connected' }));
+  assert.equal(remote.snapshot().relayConnected, true);
+  for (const record of [
+    { msg: 'relay_control_disconnected', reason: 'old child drained' },
+    { msg: 'relay_error', err: { message: 'old child failed' } },
+  ]) remote.handleDaemonLogLine(stale, JSON.stringify(record));
+  assert.equal(remote.snapshot().relayConnected, true);
+  assert.equal(remote.snapshot().relayError, '');
+  assert.equal(remote.snapshot().urls[0].pairingUrl, 'https://example.com/#offer=healthy');
+  remote.handleDaemonLogLine(current, JSON.stringify({ msg: 'relay_control_disconnected', reason: 'real outage' }));
+  assert.equal(remote.snapshot().relayConnected, false);
+  assert.equal(remote.snapshot().relayError, 'real outage');
+});
+
+test('concurrent status reads and manual refresh share one pairing mint', async () => {
+  const remote = new DshdRemote({ getConfig: () => ({ remoteEnabled: true }) });
+  remote.daemon = {};
+  let calls = 0;
+  let finish;
+  remote.serverApi = { generateLocalPairingOffer() {
+    calls++;
+    return new Promise(resolve => { finish = resolve; });
+  } };
+  const first = remote.ensurePairing();
+  const second = remote.ensurePairing();
+  const manual = remote.rotateToken();
+  await new Promise(setImmediate);
+  assert.equal(calls, 1);
+  finish({ url: 'https://example.com/#offer=single', linkUrl: 'https://example.com/#offer=long', expiresAtMs: Date.now() + 600_000 });
+  await Promise.all([first, second, manual]);
+  assert.equal(calls, 1);
+  assert.equal(remote.snapshot().pairingLinkUrl, 'https://example.com/#offer=long');
+});
+
+test('expired and consumed QR codes refresh while the persistent link remains unchanged', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_800_000_000_000 });
+  const remote = new DshdRemote({ getConfig: () => ({ remoteEnabled: true }) });
+  remote.daemon = {};
+  let calls = 0;
+  let active = true;
+  const url = (token) => `https://example.com/#offer=${Buffer.from(JSON.stringify({ authBootstrap: { pairingToken: token } })).toString('base64url')}`;
+  remote.serverApi = {
+    generateLocalPairingOffer: async () => ({ url: url(`qr-${++calls}`), linkUrl: 'https://example.com/#offer=persistent', expiresAtMs: Date.now() + 600_000 }),
+    RelayDeviceCredentialStore: class { listDevices() { return []; } isPairingTokenActive() { return active; } },
+  };
+  await remote.ensurePairing();
+  const initial = remote.snapshot();
+  t.mock.timers.tick(600_000);
+  await remote.ensurePairing();
+  assert.equal(calls, 2);
+  assert.notEqual(remote.snapshot().urls[0].pairingUrl, initial.urls[0].pairingUrl);
+  active = false;
+  await remote.ensurePairing();
+  assert.equal(calls, 3);
+  assert.equal(remote.snapshot().pairingLinkUrl, initial.pairingLinkUrl);
+  assert.equal(remote.snapshot().pairingExpiresAtMs, Date.now() + 600_000);
+});
+
+test('a replacement generation waits for stale mint cancellation then generates its own offer', async () => {
+  const remote = new DshdRemote({ getConfig: () => ({ remoteEnabled: true }) });
+  let finish;
+  let calls = 0;
+  remote.serverApi = { generateLocalPairingOffer() {
+    calls++;
+    if (calls === 1) return new Promise(resolve => { finish = resolve; });
+    return { url: 'https://example.com/#offer=current', linkUrl: 'https://example.com/#offer=current-long' };
+  } };
+  const first = remote.refreshPairing();
+  const staleOutcome = first.catch(error => error);
+  await new Promise(setImmediate);
+  await remote.stopDaemon();
+  const replacement = remote.refreshPairing();
+  finish({ url: 'https://example.com/#offer=stale', linkUrl: 'https://example.com/#offer=stale-long' });
+  assert.equal((await staleOutcome).code, 'DSHD_REMOTE_CANCELLED');
+  await replacement;
+  assert.equal(calls, 2);
+  assert.equal(remote.snapshot().urls[0].pairingUrl, 'https://example.com/#offer=current');
+});
+
+test('stop cancels an in-flight pairing mint and queued revocation before publishing', async () => {
+  const remote = new DshdRemote({ getConfig: () => ({ remoteEnabled: true }) });
+  let finish;
+  let revokes = 0;
+  remote.serverApi = {
+    generateLocalPairingOffer: () => new Promise(resolve => { finish = resolve; }),
+    RelayPairingLinkStore: class { revoke() { revokes++; } },
+  };
+  const mint = remote.refreshPairing();
+  const revoke = remote.revokePairingLink();
+  const outcomes = Promise.allSettled([mint, revoke]);
+  await new Promise(setImmediate);
+  await remote.stopDaemon();
+  finish({ url: 'https://example.com/#offer=stale', linkUrl: 'https://example.com/#offer=stale-long' });
+  for (const result of await outcomes) {
+    assert.equal(result.status, 'rejected');
+    assert.equal(result.reason.code, 'DSHD_REMOTE_CANCELLED');
+  }
+  assert.equal(revokes, 0);
+  assert.equal(remote.snapshot().pairingLinkUrl, '');
+  assert.deepEqual(remote.snapshot().urls, []);
 });
 
 test('DshdRemote snapshot is chisacode-v2 and has no host-token wall', () => {

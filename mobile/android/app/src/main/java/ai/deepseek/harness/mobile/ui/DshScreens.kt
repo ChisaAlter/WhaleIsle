@@ -39,22 +39,18 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Matrix
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val Capsule = RoundedCornerShape(20.dp)
-private val FieldShape = RoundedCornerShape(12.dp)
+private val Capsule = RoundedCornerShape(18.dp)
+private val FieldShape = RoundedCornerShape(8.dp)
 private val ConnectionDockShape = RoundedCornerShape(24.dp)
 private val ConnectionStars = listOf(
     0.09f to 0.18f,
@@ -71,29 +67,6 @@ private val ConnectionParticles = listOf(
     0.42f to 0.91f,
 )
 
-/** Whale brand mark, drawn from the same SVG path as the shared mobile entry. */
-private const val WHALE_PATH =
-    "M6 27c0-8.3 7.6-15 17-15 7 0 12.5 3.6 15 9 2.3-.9 4.2-2.6 5.2-4.8" +
-        ".8 4-1 8-4.3 10.2C36.6 33.2 30.6 37 23 37 13.6 37 6 33.3 6 27Z"
-
-@Composable
-private fun WhaleMark(modifier: Modifier = Modifier) {
-    val connection = dsh().connection
-    val path = remember { PathParser().parsePathString(WHALE_PATH).toPath() }
-    Canvas(modifier) {
-        val scale = size.width / 48f
-        val scaled = Path().apply {
-            addPath(path)
-            transform(Matrix().apply { scale(scale, scale) })
-        }
-        drawPath(scaled, color = connection.mark)
-        drawCircle(
-            connection.markCutout,
-            radius = 1.8f * scale,
-            center = Offset(16f * scale, 24f * scale),
-        )
-    }
-}
 @Composable
 internal fun ConnectionScene(modifier: Modifier = Modifier) {
     val connection = dsh().connection
@@ -159,18 +132,8 @@ internal fun ConnectionScene(modifier: Modifier = Modifier) {
 private fun ConnectionBrand(compact: Boolean, supportingText: String?) {
     val connection = dsh().connection
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        WhaleMark(Modifier.size(if (compact) 34.dp else 42.dp))
-        Spacer(Modifier.height(if (compact) 6.dp else 10.dp))
-        Text(
-            "Whale Isle",
-            color = connection.ink,
-            fontFamily = FontFamily.Serif,
-            fontSize = if (compact) 30.sp else 38.sp,
-            lineHeight = if (compact) 36.sp else 44.sp,
-            fontWeight = FontWeight.Normal,
-            letterSpacing = 0.4.sp,
-        )
-        Spacer(Modifier.height(4.dp))
+        WhaleWordmark()
+        Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(28.dp).height(1.dp).background(connection.hairline))
             Text(

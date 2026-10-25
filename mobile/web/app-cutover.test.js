@@ -29,32 +29,62 @@ test('composer and drawer gaps follow the 4px spacing grid', () => {
   assert.equal(css.includes('.composer-side { display: flex; align-items: center; gap: 2px; }'), false);
 });
 
+test('unsaved appearance keeps the default glass value while an explicit zero remains valid', () => {
+  const context = { localStorage: { getItem: () => null } };
+  runInNewContext(app.slice(app.indexOf('const PHONE_KEYS = '), app.indexOf('function persistPhoneStore(')), context);
+  assert.equal(context.readPhoneStore().glass, 80);
+  context.localStorage.getItem = (key) => key === 'dsh-phone-glass' ? '0' : null;
+  assert.equal(context.readPhoneStore().glass, 0);
+  context.localStorage.getItem = (key) => key === 'dsh-phone-glass' ? '101' : null;
+  assert.equal(context.readPhoneStore().glass, 80);
+});
+
 test('Android WebView receives a measured viewport-height fallback for the app shell', () => {
   assert.match(css, /height: var\(--dsh-viewport-height, 100dvh\)/);
   assert.match(app, /syncViewportHeight/);
   assert.match(app, /--dsh-viewport-height/);
 });
 
-test('mobile surfaces keep the desktop Menu, Modal, and task roles', () => {
+test('mobile surfaces keep desktop Menu, Modal and full-task roles', () => {
   assert.match(surfaces, /surfaceVariant === 'menu' \? 'menu' : 'dialog'/);
   assert.match(surfaces, /if \(surfaceVariant === 'menu'\) panel\.append\(content\)/);
-  assert.match(app, /const task = Boolean\(state\.newSession \|\| state\.history \|\| state\.gitDialog === 'branch'\)/);
   assert.match(app, /const task = !compact/);
   assert.match(css, /\.menu-layer > \.sheet-mask \{ background: transparent; backdrop-filter: none; \}/);
-  assert.match(css, /border-radius: 20px; background: var\(--dsw-specific-menu\)/);
+  assert.match(css, /border-radius: 12px; background: var\(--dsw-specific-menu\)/);
   assert.match(css, /width: min\(380px, 100%\)/);
-  assert.equal(css.includes('.dialog-layer[data-compact]'), false);
 });
 
-test('composer-triggered choices use the bottom-sheet surface variant', () => {
-  // surfaces.js: 'bottom' renders a dialog panel with back/close-left header.
-  assert.match(surfaces, /surfaceVariant === 'bottom'/);
-  assert.match(surfaces, /surface-spacer/);
-  // sheetLayer routes picker + attach surfaces to 'bottom'; Git/session menus stay 'menu'.
-  assert.match(app, /const bottom = !task && Boolean\(state\.pickerSheet \|\| state\.attachOpen\)/);
-  assert.match(app, /variant: task \? 'task' : bottom \? 'bottom' : 'menu'/);
-  assert.match(css, /\.bottom-layer > \.sheet \{[\s\S]*?border-radius: 24px 24px 0 0;/);
-  assert.match(css, /@keyframes bottom-sheet-in/);
+test('short choices stay compact while directory, archive and branch lists keep task navigation', () => {
+  const capture = [];
+  const state = {};
+  const context = {
+    state, document: {}, navigationBusy: () => false, navigation: { back() {} },
+    el: () => ({ querySelectorAll: () => [] }), accessChip: {}, gitPill: {},
+    phone: { getBoundingClientRect: () => ({ width: 390, height: 844, top: 0, bottom: 844, left: 0 }) },
+    createSurface: (_document, options) => {
+      capture.push(options);
+      return { layer: { dataset: {}, style: { setProperty() {} } }, panel: { setAttribute() {} }, content: {} };
+    },
+  };
+  runInNewContext(app.slice(app.indexOf('function sheetLayer('), app.indexOf('function closeGitLayer(')), context);
+  for (const [patch, variant, anchor] of [
+    [{ pickerSheet: 'model' }, 'modal', 'composer'],
+    [{ pickerSheet: 'mode' }, 'menu', 'composer'],
+    [{ attachOpen: true }, 'menu', 'composer'],
+    [{ newSession: { step: 'workspace' } }, 'modal', 'viewport'],
+    [{ newSession: { step: 'browse' } }, 'task', 'viewport'],
+    [{ history: { rows: [] } }, 'task', 'viewport'],
+    [{ gitDialog: 'branch' }, 'task', 'viewport'],
+    [{ gitDialog: 'menu' }, 'menu', 'header'],
+    [{ sessionMenu: 's-1' }, 'menu', 'viewport'],
+  ]) {
+    Object.assign(state, { pickerSheet: '', attachOpen: false, newSession: null, history: null, gitDialog: '', sessionMenu: '', pickerPage: '' }, patch);
+    context.sheetLayer('Choice', () => {});
+    const options = capture.at(-1);
+    assert.equal(options.variant, variant);
+    assert.equal(options.task, variant === 'task');
+    assert.equal(options.anchor, anchor);
+  }
 });
 
 test('narrow composer remains one desktop-style tool row', () => {
@@ -119,7 +149,7 @@ test('non-repo Git pill stays visible so Initialize Git is reachable', () => {
   assert.match(app, /Initialize Git/);
 });
 
-test('closing Git progress keeps a reachable view of the running operation and its latest step', () => {
+test('Git progress stays on operation controls and failure feedback has no close button', () => {
   const element = tag => ({
     tag, children: [], dataset: {}, listeners: {}, textContent: '',
     append(...children) { this.children.push(...children); },
@@ -137,24 +167,16 @@ test('closing Git progress keeps a reachable view of the running operation and i
   runInNewContext(app.slice(app.indexOf('function renderToast()'), app.indexOf('function renderLightbox()')), context);
   const toast = () => toastRoot.children[0].children[0];
   context.renderToast();
-  toast().children.at(-1).listeners.click();
-  assert.equal(state.gitBusy, true, 'closing progress does not finish the operation');
-  assert.equal(state.gitDialog, 'commit');
-  assert.equal(toast().tag, 'button', 'recovery remains available while the Git dialog is pending');
-  assert.equal(toast().textContent, '查看 Git 进度 · push');
-  state.gitProgress = 'create-change-request';
-  context.renderToast();
-  assert.equal(toast().textContent, '查看 Git 进度 · create-change-request');
-  toast().listeners.click();
+  assert.equal(toastRoot.children.length, 0, 'running operation must not create a second progress surface');
   assert.equal(state.gitBusy, true);
-  assert.equal(state.gitProgressDismissed, false);
-  assert.equal(toast().children[1].children[0].textContent, 'Git: create-change-request');
+  assert.equal(state.gitDialog, 'commit');
   state.gitBusy = false;
-  state.gitToast = '完成';
-  state.toastTone = 'success';
+  state.gitToast = '推送失败';
+  state.toastTone = 'error';
   context.renderToast();
-  assert.equal(toast().tag, 'div', 'completion replaces the pending recovery entry');
-  assert.equal(toast().children[1].children[0].textContent, '完成');
+  assert.equal(toast().tag, 'div');
+  assert.equal(toast().children[1].children[0].textContent, '推送失败');
+  assert.equal(toast().children.length, 2, 'only status icon and message; no close X');
 });
 
 test('Git starts with locked visible controls, advances feedback, and sends each step once', async () => {

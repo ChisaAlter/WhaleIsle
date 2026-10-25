@@ -25,6 +25,31 @@ internal data class NativeRow(
 internal data class NativeImage(val mediaType: String, val data: String)
 internal data class NativeWorkspace(val id: String, val title: String, val path: String)
 
+internal data class NativeSessionGroup(
+    val id: String,
+    val title: String,
+    val workspace: NativeWorkspace?,
+    val sessions: List<NativeSession>,
+)
+
+/** Preserve catalog order and every non-archived session, including legacy ungrouped rows. */
+internal fun nativeSessionGroups(workspaces: List<NativeWorkspace>, sessions: List<NativeSession>): List<NativeSessionGroup> {
+    val visible = sessions.filterNot { it.archived }
+    val knownIds = workspaces.map { it.id }.toSet()
+    val groups = workspaces.map { workspace ->
+        NativeSessionGroup("workspace:${workspace.id}", workspace.title.ifBlank {
+            workspace.path.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\').ifBlank { workspace.path }
+        }, workspace, visible.filter { it.workspaceId == workspace.id })
+    }
+    val remaining = visible.filter { it.workspaceId !in knownIds }
+    return groups + remaining.groupBy { it.workspaceId.ifBlank { it.cwd } }.map { (key, rows) ->
+        val first = rows.first()
+        NativeSessionGroup("other:$key", first.workspace.ifBlank {
+            first.cwd.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\').ifBlank { "无工作目录" }
+        }, null, rows)
+    }
+}
+
 internal data class NativeApprovalAction(val id: String, val label: String)
 internal data class NativeModelEffort(val id: String, val label: String)
 internal data class NativeModelOption(

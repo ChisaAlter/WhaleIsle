@@ -12,31 +12,44 @@ val LocalDshPalette = staticCompositionLocalOf { DshTokens.Light }
 @Composable
 fun DshTheme(dark: Boolean, content: @Composable () -> Unit) {
     val palette = if (dark) DshTokens.Dark else DshTokens.Light
-    val scheme = if (dark) {
-        darkColorScheme(
-            primary = palette.buttonPrimaryFill,
-            onPrimary = palette.labelPrimaryForeground,
-            secondary = palette.buttonInfoFill,
-            background = palette.bgBase,
-            surface = palette.bgLayer1,
-            onBackground = palette.labelPrimary,
-            onSurface = palette.labelPrimary,
-            error = palette.error,
-            outline = palette.borderL2,
-        )
-    } else {
-        lightColorScheme(
-            primary = palette.buttonPrimaryFill,
-            onPrimary = palette.labelPrimaryForeground,
-            secondary = palette.buttonInfoFill,
-            background = palette.bgBase,
-            surface = palette.bgLayer1,
-            onBackground = palette.labelPrimary,
-            onSurface = palette.labelPrimary,
-            error = palette.error,
-            outline = palette.borderL2,
-        )
-    }
+    val scheme = (if (dark) darkColorScheme() else lightColorScheme()).copy(
+        primary = palette.buttonPrimaryFill,
+        onPrimary = palette.labelPrimaryForeground,
+        primaryContainer = palette.navActive,
+        onPrimaryContainer = palette.labelPrimary,
+        secondary = palette.buttonInfoFill,
+        onSecondary = palette.labelPrimaryForeground,
+        secondaryContainer = palette.navActive,
+        onSecondaryContainer = palette.labelPrimary,
+        tertiary = palette.buttonInfoFill,
+        onTertiary = palette.labelPrimaryForeground,
+        tertiaryContainer = palette.navHover,
+        onTertiaryContainer = palette.labelPrimary,
+        background = palette.bgBase,
+        onBackground = palette.labelPrimary,
+        surface = palette.bgLayer1,
+        onSurface = palette.labelPrimary,
+        surfaceVariant = palette.bgModule,
+        onSurfaceVariant = palette.labelSecondary,
+        surfaceTint = androidx.compose.ui.graphics.Color.Transparent,
+        surfaceBright = palette.bgLayer2,
+        surfaceDim = palette.bgBase,
+        surfaceContainer = palette.bgLayer1,
+        surfaceContainerLow = palette.bgLayer1,
+        surfaceContainerLowest = palette.bgBase,
+        surfaceContainerHigh = palette.bgLayer2,
+        surfaceContainerHighest = palette.bgModule,
+        inverseSurface = palette.buttonPrimaryFill,
+        inverseOnSurface = palette.labelPrimaryForeground,
+        inversePrimary = palette.buttonInfoFill,
+        error = palette.error,
+        onError = palette.labelPrimaryForeground,
+        errorContainer = palette.hoverDanger,
+        onErrorContainer = palette.error,
+        outline = palette.borderL2,
+        outlineVariant = palette.borderL1,
+        scrim = palette.mask,
+    )
     CompositionLocalProvider(LocalDshPalette provides palette) {
         MaterialTheme(colorScheme = scheme, content = content)
     }
