@@ -148,7 +148,8 @@ describe('RemoteSection', () => {
     renderRemote()
     fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
     await screen.findByRole('dialog', { name: en.heading })
-    expect(screen.getByText(en.relayDown)).toBeTruthy()
+    expect(screen.getByRole('status', { name: en.relayConnectingHint }).getAttribute('aria-busy')).toBe('true')
+    expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.queryByRole('img', { name: en.qr })).toBeNull()
     expect(screen.queryByRole('button', { name: en.copyLink })).toBeNull()
     expect(screen.queryByRole('button', { name: en.rotateToken })).toBeNull()
@@ -216,6 +217,179 @@ describe('RemoteSection', () => {
     expect(screen.queryByRole('radio', { name: en.transportTls })).toBeNull()
     expect(screen.queryByText(en.lanPlaintextWarning)).toBeNull()
     expect(screen.queryByText('10.0.0.4')).toBeNull()
+  })
+
+  it('keeps the QR frame and On state while enable is slow and ignores an older poll', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      const off = snap({ enabled: false, listening: false, urls: [] })
+      const stalePoll = Promise.withResolvers<RemoteSnapshot>()
+      const enable = Promise.withResolvers<RemoteSnapshot>()
+      const getRemote = vi.fn(async () => off)
+      const saveRemote = vi.fn(() => enable.promise)
+      renderRemote({ getRemote, saveRemote })
+      fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
+      await screen.findByText(en.offHint)
+      getRemote.mockReturnValueOnce(stalePoll.promise)
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      const readsBeforeEnable = getRemote.mock.calls.length
+      fireEvent.click(screen.getByRole('radio', { name: en.enabledOn }))
+      const on = screen.getByRole('radio', { name: en.enabledOn }) as HTMLButtonElement
+      expect(on.getAttribute('aria-checked')).toBe('true')
+      expect(on.getAttribute('aria-busy')).toBe('true')
+      expect(on.disabled).toBe(true)
+      expect(screen.getByRole('radio', { name: en.enabledOff }).getAttribute('aria-checked')).toBe('false')
+      expect(screen.getByRole('status', { name: en.startingHint }).getAttribute('aria-busy')).toBe('true')
+      expect(screen.queryByText(en.offHint)).toBeNull()
+      expect(screen.queryByRole('img', { name: en.qr })).toBeNull()
+      expect(screen.queryByRole('button', { name: en.copyLink })).toBeNull()
+      await act(async () => { stalePoll.resolve(snap({ listening: false, error: 'EADDRINUSE :3180', urls: [] })) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+      expect(getRemote).toHaveBeenCalledTimes(readsBeforeEnable)
+      expect(saveRemote).toHaveBeenCalledTimes(1)
+      expect(on.getAttribute('aria-busy')).toBe('true')
+      expect(screen.getByRole('status', { name: en.startingHint })).toBeTruthy()
+      expect(screen.queryByRole('alert')).toBeNull()
+      await act(async () => { enable.resolve(snap({ starting: false, relayConnected: true })) })
+      await screen.findByRole('img', { name: en.qr })
+      expect(screen.queryByRole('status', { name: en.startingHint })).toBeNull()
+      expect(screen.getByRole('button', { name: en.copyLink })).toBeTruthy()
+      expect(on.disabled).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not resurrect a stale poll error after enabling succeeds', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      const stalePoll = Promise.withResolvers<RemoteSnapshot>()
+      const getRemote = vi.fn(async () => snap({ enabled: false, listening: false, urls: [] }))
+      renderRemote({ getRemote, saveRemote: vi.fn(async () => snap({ relayConnected: true })) })
+      fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
+      await screen.findByText(en.offHint)
+      getRemote.mockReturnValueOnce(stalePoll.promise)
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      fireEvent.click(screen.getByRole('radio', { name: en.enabledOn }))
+      await screen.findByRole('img', { name: en.qr })
+      await act(async () => { stalePoll.resolve(snap({ enabled: false, listening: false, error: 'EADDRINUSE', urls: [] })) })
+      expect(screen.getByRole('img', { name: en.qr })).toBeTruthy()
+      expect(screen.getByRole('radio', { name: en.enabledOn }).getAttribute('aria-checked')).toBe('true')
+      expect(screen.queryByRole('alert')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('accepts a status poll slower than the polling interval without overlapping reads', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      const slowPoll = Promise.withResolvers<RemoteSnapshot>()
+      const getRemote = vi.fn(async () => snap({ starting: true, listening: false, urls: [] }))
+      renderRemote({ getRemote })
+      fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
+      await screen.findByRole('status', { name: en.startingHint })
+      getRemote.mockReturnValueOnce(slowPoll.promise)
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      const reads = getRemote.mock.calls.length
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+      expect(getRemote).toHaveBeenCalledTimes(reads)
+      await act(async () => { slowPoll.resolve(snap({ starting: false, relayConnected: true })) })
+      await screen.findByRole('img', { name: en.qr })
+      expect(screen.queryByRole('alert')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('follows daemon startup and relay handshake polls until the QR is ready', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      const getRemote = vi.fn(async () => snap({ starting: true, listening: false, error: 'previous failure', urls: [] }))
+      const props = renderRemote({ getRemote })
+      fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
+      const frame = await screen.findByRole('status', { name: en.startingHint })
+      expect(frame.getAttribute('data-dsh-remote-qr-loading')).toBe('')
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(props.saveRemote).not.toHaveBeenCalled()
+      getRemote.mockResolvedValue(snap({ starting: false, relayConnected: false }))
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(screen.getByRole('status', { name: en.relayConnectingHint })).toBe(frame)
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(screen.queryByRole('img', { name: en.qr })).toBeNull()
+      expect(screen.queryByRole('button', { name: en.copyLink })).toBeNull()
+      getRemote.mockResolvedValue(snap({ starting: false, relayConnected: true }))
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      await screen.findByRole('img', { name: en.qr })
+      expect(screen.queryByRole('status', { name: en.relayConnectingHint })).toBeNull()
+      expect(screen.getByRole('button', { name: en.copyLink })).toBeTruthy()
+      expect(props.saveRemote).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ends startup loading for a terminal daemon error and keeps On retryable', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      const getRemote = vi.fn(async () => snap({ starting: true, listening: false, urls: [] }))
+      const props = renderRemote({ getRemote, saveRemote: vi.fn(async () => snap({ relayConnected: true })) })
+      fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
+      await screen.findByRole('status', { name: en.startingHint })
+      getRemote.mockResolvedValue(snap({ starting: false, listening: false, error: 'EADDRINUSE :3180', urls: [] }))
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect((await screen.findByRole('alert')).textContent).toBe(en.errorPortInUse)
+      expect(screen.queryByRole('status', { name: en.startingHint })).toBeNull()
+      expect(screen.queryByRole('img', { name: en.qr })).toBeNull()
+      expect(props.saveRemote).not.toHaveBeenCalled()
+      const on = screen.getByRole('radio', { name: en.enabledOn }) as HTMLButtonElement
+      expect(on.disabled).toBe(false)
+      fireEvent.click(on)
+      await screen.findByRole('img', { name: en.qr })
+      expect(props.saveRemote).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('leaves relay loading when a terminal handshake error arrives', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      const getRemote = vi.fn(async () => snap({ relayConnected: false }))
+      renderRemote({ getRemote })
+      fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
+      await screen.findByRole('status', { name: en.relayConnectingHint })
+      getRemote.mockResolvedValue(snap({ relayConnected: false, relayError: 'Unexpected server response: 503' }))
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect((await screen.findByRole('alert')).textContent).toBe(en.relayUnavailable)
+      expect(screen.queryByRole('status', { name: en.relayConnectingHint })).toBeNull()
+      expect(screen.queryByRole('button', { name: en.copyLink })).toBeNull()
+      expect((screen.getByRole('radio', { name: en.enabledOn }) as HTMLButtonElement).disabled).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['reject', 'unavailable'] as const)('leaves stale startup loading after a %s status read', async (failure) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      const getRemote = vi.fn(async (): Promise<RemoteSnapshot | null> => snap({ starting: true, listening: false, urls: [] }))
+      renderRemote({ getRemote })
+      fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
+      await screen.findByRole('status', { name: en.startingHint })
+      if (failure === 'reject') getRemote.mockRejectedValue(new Error('status IPC failed'))
+      else getRemote.mockResolvedValue({ available: false })
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect((await screen.findByRole('alert')).textContent).toBe(failure === 'reject' ? en.statusErrorGeneric : en.error)
+      expect(screen.queryByRole('status', { name: en.startingHint })).toBeNull()
+      const retry = failure === 'reject'
+        ? screen.getByRole('radio', { name: en.enabledOn })
+        : screen.getByRole('button', { name: en.retry })
+      expect((retry as HTMLButtonElement).disabled).toBe(false)
+      expect(retry.getAttribute('aria-busy')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('shows loading while the first read is in flight', async () => {
@@ -307,7 +481,7 @@ describe('RemoteSection', () => {
       saveRemote: vi.fn(async () => snap({ relayConnected: true })),
     })
     fireEvent.click(await screen.findByRole('button', { name: en.trigger }))
-    await screen.findByText(en.errorPortInUse)
+    expect(screen.queryByText(en.errorPortInUse)).toBeNull()
     expect(screen.queryByText(/EADDRINUSE/)).toBeNull()
     await waitFor(() => { expect(props.saveRemote).toHaveBeenCalledWith({ remoteEnabled: true }) })
     await screen.findByRole('img', { name: en.qr })
@@ -589,6 +763,7 @@ describe('RemoteSection', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     try {
       const getRemote = vi.fn()
+        .mockResolvedValueOnce(snap({ relayConnected: true }))
         .mockResolvedValueOnce(snap({ relayConnected: true }))
         .mockResolvedValueOnce(snap({
           relayConnected: true,

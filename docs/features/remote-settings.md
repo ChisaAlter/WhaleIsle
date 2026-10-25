@@ -32,16 +32,16 @@
 - **主进程窄 import**：`loadServerApi` 只引 `pairing-offer.js` + `relay-device-credential-store.js` 两个兄弟模块并镜像 `DSH_VENDOR_PACKAGES`（parity 测试钉住 vendored 源）；`exports.js` 全量 barrel（数万模块，ESM 同步加载会冻结主线程）只允许经 launch file 进 daemon 子进程。
 - **daemon 子进程契约**：runner 在 `asarUnpack`；stdout 只有 JSON 行（控制行 + pino json）；stdin `stop` 与 stdin 关闭都必须优雅停（孤儿零容忍）；意外退出必须落 `snapshot.error` 并保留弹窗重试；不做自动退避重启循环（对齐上游）。
 - **DSHD_* 命名桥**：桌面对外只有 `DSHD_CHISACODE_HOME`（打包需 `DSHD_ALLOW_ENV_HOME=1`，同 dsh-home 守卫）与 `DSHD_DSH_VENDOR_DIR`；`CHISACODE_*` 只允许出现在 daemon 子进程 env 注入处，主进程自身 env 与 PTY / `dsh web` 子进程永不携带；字面量 `DSHD_HOME` 属 dsh-home 卡，不可占用。DEEPSEEK 凭据只经 `official-deepseek-env` 白名单入子进程 env，launch JSON 永不含密钥。
-- `snapshot.relayConnected` / `relayError` 反映真实 relay control；未连接时弹窗明示且不展示配对码。
+- `snapshot.starting` 表示 daemon 启动请求尚未结束；`relayConnected` / `relayError` 反映真实 relay control。开启、daemon 启动和首次中继握手期间，二维码位置显示 196×196 加载框；listener、中继和配对链接就绪后显示二维码。最终启动失败、明确的中继错误和状态读取失败退出加载，保留错误与重试入口。
 - 源码启动若缺 `dist` 会构建 ChisaCode server；pack/dist 额外组装并验证 production daemon 依赖，禁止靠构建机残留产物。
 - 侧栏 QR 仅客户端 `qrSvg(pairingUrl)`（`includeQr: false`）。
 - 服务器中继禁止 `chisacode.sh` / 上游 `account_id`。AGPL：`AGPL-SHIPPING.md`。内置 `ayase.cn:443` 是 **TLS 传输默认**，不可作 SPA；公网 SPA 由同域 nginx 提供 `https://ayase.cn/dshd/`，中继只占精确 `/ws` 与 `/health` 路由。
-- 粘性：`deviceSecret` 直至用户解除配对；刷新 QR 只换短期 pairing token。
+- 粘性：`deviceSecret` 直至用户解除配对；刷新 QR 只换短期 pairing token。Cloudflare 中继替换 daemon 数据连接时，现有客户端重新连接并进行加密握手、设备证明；旧数据连接迟到的 close 回调不能断开正在使用替代连接的客户端。
 - **设备名（2026-09-04 起）：** 配对 hello 的 `relayDeviceAuth.deviceName`（append-only 协议字段，trim 后 1–120）是客户端自报的设备名——手机配对页从 UA 派生（`iPhone · iOS 18.2` / `Android 15 · Pixel 8` / `电脑`，兜底 `设备`，见 `mobile/web/chisacode/session.js#deviceNameFromUa`），daemon 存为 device label（旧客户端兜底 `relay-pair`）。改名走 IPC `shell:rename-remote-device` → `DshdRemote.renameDevice` → `RelayDeviceCredentialStore.renameDevice`（文件落盘、幂等、封顶 120、拒绝已吊销）；两条标签写入路径（签发/改名）都归一 120 预算——`DeviceRecordSchema` 在加载时封顶 `label`，超长持久化标签会让整个 store 文件加载失败。存量 `relay-pair` 行不自动改，用户手动改名即迁移。fork 合同见 `vendor/chisacode-remote/DESKTOP-FORK.md`。
 - dsh-im 桌面内置：insert 在自有 overlay `desktop-plugins/dsh-im/desktop-dsh-im.patch.yml`，`--patch` 叠加（full+skip）；`cordis.patch.yml` 不写受管块（只 strip 迁移）；禁插件 / Recovery 不可关（IPC 返回 `desktop-builtin`，config 归一化剔除别名）；vendor 运行时缺损 fail start（skip 修不了）。
 - 渠道主操作 36px（飞书扫码无 `size=small`）。
 - **断管不崩**：vendored `resolveDshVendorDir` 的 `execSync` 必须携带显式 `stdio`（tripwire 在 `remote-epipe.test.js`）；主进程 stdout/stderr 常驻 `stdio-guard`（断管类流错误吞掉，uncaughtException 仅吞断管写入、其余复刻 Electron 默认对话框）。
-- 弹窗失败态可见：启动中 `startingHint`；持久失败人话（端口占用 / 监听地址失效 `bindGone` / 通用）；On 对 `!listening` 或无 pairingUrl 可重试；打开弹窗立刻 refresh 且缺码时至多一次 sync 自愈；弹窗无 raw relay code、无裸 `#offer=` 文本；`HarnessController` 关停走 `stopDaemon()`，引导期 sync 失败必进 dsh 日志。
+- 弹窗失败态可见：持久失败人话（端口占用 / 监听地址失效 `bindGone` / 通用）；未就绪时 On 可重试；打开弹窗立刻 refresh 且缺码时至多一次 sync 自愈，已有启动不重复 sync。启动期间不显示上轮错误，旧轮询不能覆盖操作结果；慢轮询不重叠。弹窗无 raw relay code、无裸 `#offer=` 文本；`HarnessController` 关停走 `stopDaemon()`，引导期 sync 失败必进 dsh 日志。
 - 持久化单网卡监听地址失效（`EADDRNOTAVAIL`/`EACCES`）时报人话并指回「监听范围」改选；禁止静默回落 `0.0.0.0` 扩大监听面、禁止归一化时改写仍为合法 IPv4 的已存地址；下拉里已失效的已存地址标注「已失效」。
 - `qa:remote` 必含 `cold.openShowsQr` / `cold.noBareOfferText` / `cold.copyAndRotateControls`；第二 Electron 冷 boot（`DSH_QA_REMOTE=cold`，开窗前禁止 `setRemote`）；QR 只认 `[data-dsh-remote-qr]`；中继未连时这三条断言「无码 + 无复制/刷新 + 有 status」。`prestart-ensure` 校验 `copyLink` / `data-dsh-remote-copy-link`。
 - 桌面 harness 完备（12 个 dsh vendor 包均有 `lib/index.js`）时才向**子进程**注入 `CHISACODE_DSH_VENDOR_DIR`；优先级 `DSHD_DSH_VENDOR_DIR` > 继承的 `CHISACODE_DSH_VENDOR_DIR` > 完备自带目录 > 不设（子进程内保留已加固的 npm 全局回退）。

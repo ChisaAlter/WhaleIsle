@@ -31,6 +31,8 @@ export type RemoteSnapshot = {
   /** False when the desktop has parked or cannot supply the remote gateway. */
   available?: boolean
   enabled?: boolean
+  /** True while the daemon startup attempt is running; absent means no startup is reported. */
+  starting?: boolean
   listening?: boolean
   port?: number
   token?: string

@@ -11,6 +11,8 @@ Connection choices are LAN / Server. Server (`relay`) is selected when no mode i
 
 Registration requires Electron `window.shell` `getRemote` / `saveRemote` / `rotateRemoteToken` / `unbindRemoteDevice` / `renameRemoteDevice`. Plain `dsh web` has neither surface.
 
+The pairing popup keeps a QR-sized loading frame while enabling, while the snapshot reports daemon startup, or while the relay handshake has no result. The QR and copy controls appear only after the listener, relay, and pairing offer are ready. Settled service or relay failures retain their retry controls and localized Toast; failed status reads leave loading and remain retryable. A read started before a mutation cannot overwrite that mutation's result.
+
 See desktop feature cards `remote-settings` and `mobile-remote`.
 
 With the `chisacode-v2` gateway, retired host credentials appear only in a collapsed legacy-cleanup row. `legacyRelayTokenSet` indicates whether there is a stored token to clear; the normal gateway form has no host-token input or save action. Other protocols retain their existing credential controls.

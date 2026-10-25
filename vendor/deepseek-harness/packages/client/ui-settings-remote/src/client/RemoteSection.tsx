@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Button, FLIP_TEXT_MS, IconChevronRightOutline14, Toast, useModalLayer, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, FLIP_TEXT_MS, IconChevronRightOutline14, StateDot, Toast, useModalLayer, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type { RemotePatch, RemoteSnapshot } from './desktop-shell.ts'
@@ -81,6 +81,7 @@ export function RemoteSection({
   const [snap, setSnap] = useState<RemoteSnapshot | null>(null)
   const [error, setError] = useState('')
   const [pending, setPending] = useState<RemoteAction | null>(null)
+  const requestRef = useRef<{ action: RemoteAction | null; version: number; reading: boolean }>({ action: null, version: 0, reading: false })
   const [open, setOpen] = useState(menuMode)
   const [devicesOpen, setDevicesOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -109,30 +110,58 @@ export function RemoteSection({
 
   const applySnap = useCallback((next: RemoteSnapshot | null) => {
     if (next === null || next.available === false) {
+      setSnap(null)
       setError(t('error'))
       return false
     }
+    if (next.starting) {
+      healAttemptedRef.current = true
+      setHealFired(true)
+    }
     setSnap(next)
-    setError(next.error || '')
+    setError('')
     return true
   }, [t])
 
+  const beginAction = useCallback((action: RemoteAction) => {
+    if (requestRef.current.action !== null) return false
+    requestRef.current.action = action
+    requestRef.current.version += 1
+    requestRef.current.reading = false
+    setPending(action)
+    setError('')
+    return true
+  }, [])
+
+  const finishAction = useCallback((action: RemoteAction) => {
+    if (requestRef.current.action !== action) return
+    requestRef.current.action = null
+    setPending(null)
+  }, [])
+
   const load = useCallback(async () => {
-    setPending({ kind: 'load' })
+    const action: RemoteAction = { kind: 'load' }
+    if (!beginAction(action)) return
     try {
       applySnap(await getRemote())
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
-      setPending(null)
+      finishAction(action)
     }
-  }, [applySnap, getRemote])
+  }, [applySnap, beginAction, finishAction, getRemote])
 
   const refresh = useCallback(async () => {
+    if (requestRef.current.action !== null || requestRef.current.reading) return
+    const version = ++requestRef.current.version
+    requestRef.current.reading = true
     try {
-      applySnap(await getRemote())
+      const next = await getRemote()
+      if (version === requestRef.current.version) applySnap(next)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      if (version === requestRef.current.version) setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      if (version === requestRef.current.version) requestRef.current.reading = false
     }
   }, [applySnap, getRemote])
 
@@ -157,8 +186,12 @@ export function RemoteSection({
   }, [open, refresh])
 
   const save = useCallback(async (patch: RemotePatch) => {
-    if (busy) return
-    setPending({ kind: patch.remoteEnabled ? 'enable' : 'disable' })
+    const action: RemoteAction = { kind: patch.remoteEnabled ? 'enable' : 'disable' }
+    if (!beginAction(action)) return
+    if (patch.remoteEnabled) {
+      healAttemptedRef.current = true
+      setHealFired(true)
+    }
     setNotice(null)
     try {
       if (!applySnap(await saveRemote(patch))) showNotice(t('error'))
@@ -167,13 +200,13 @@ export function RemoteSection({
       setError(message)
       showNotice(remoteErrorText(message, t))
     } finally {
-      setPending(null)
+      finishAction(action)
     }
-  }, [applySnap, busy, saveRemote, showNotice, t])
+  }, [applySnap, beginAction, finishAction, saveRemote, showNotice, t])
 
   const rotate = useCallback(async () => {
-    if (busy) return
-    setPending({ kind: 'rotate' })
+    const action: RemoteAction = { kind: 'rotate' }
+    if (!beginAction(action)) return
     setNotice(null)
     try {
       if (!applySnap(await rotateRemoteToken())) showNotice(t('error'))
@@ -182,13 +215,13 @@ export function RemoteSection({
       setError(message)
       showNotice(remoteErrorText(message, t))
     } finally {
-      setPending(null)
+      finishAction(action)
     }
-  }, [applySnap, busy, rotateRemoteToken, showNotice, t])
+  }, [applySnap, beginAction, finishAction, rotateRemoteToken, showNotice, t])
 
   const unbind = useCallback(async (id: string) => {
-    if (busy) return
-    setPending({ kind: 'unbind', id })
+    const action: RemoteAction = { kind: 'unbind', id }
+    if (!beginAction(action)) return
     setNotice(null)
     try {
       if (!applySnap(await unbindRemoteDevice(id))) showNotice(t('error'))
@@ -197,13 +230,14 @@ export function RemoteSection({
       setError(message)
       showNotice(remoteErrorText(message, t))
     } finally {
-      setPending(null)
+      finishAction(action)
     }
-  }, [applySnap, busy, unbindRemoteDevice, showNotice, t])
+  }, [applySnap, beginAction, finishAction, unbindRemoteDevice, showNotice, t])
 
   const rename = useCallback(async (id: string, name: string) => {
-    if (busy || !name.trim()) return
-    setPending({ kind: 'rename', id })
+    if (!name.trim()) return
+    const action: RemoteAction = { kind: 'rename', id }
+    if (!beginAction(action)) return
     setNotice(null)
     try {
       if (applySnap(await renameRemoteDevice(id, name))) setRenamingId(null)
@@ -213,43 +247,49 @@ export function RemoteSection({
       setError(message)
       showNotice(remoteErrorText(message, t))
     } finally {
-      setPending(null)
+      finishAction(action)
     }
-  }, [applySnap, busy, renameRemoteDevice, showNotice, t])
+  }, [applySnap, beginAction, finishAction, renameRemoteDevice, showNotice, t])
 
   const pairingUrl = snap?.urls?.[0]?.pairingUrl || ''
   const qr = useMemo(() => qrSvg(pairingUrl), [pairingUrl])
-  const enabled = Boolean(snap?.enabled)
+  const enabling = pending?.kind === 'enable'
+  const daemonStarting = Boolean(snap?.starting)
+  const enabled = Boolean(snap?.enabled) || enabling || daemonStarting
   const listening = Boolean(snap?.listening)
   const devices = snap?.devices ?? []
   const relayConnected = Boolean(snap?.relayConnected)
   const relayError = typeof snap?.relayError === 'string' ? snap.relayError : ''
+  const healEligible = open && Boolean(snap?.enabled) && !busy && !daemonStarting
+    && !error && !relayError && !healFired && (!listening || !pairingUrl)
+  const startupPending = enabling || daemonStarting || healEligible
+  const snapshotError = snap?.error || ''
+  const qrLoadingText = error ? null
+    : startupPending ? t(listening && !enabling && !daemonStarting ? 'mintingHint' : 'startingHint')
+      : enabled && listening && !snapshotError && !relayConnected && !relayError ? t('relayConnectingHint') : null
+  const pairingReady = enabled && !qrLoadingText && !error && !snapshotError && listening && relayConnected && Boolean(qr)
 
   useEffect(() => {
-    if (!open || !snap || busy) return
-    if (!enabled) return
-    if (listening && pairingUrl) return
-    if (healAttemptedRef.current) return
-    healAttemptedRef.current = true
-    setHealFired(true)
+    if (!healEligible || healAttemptedRef.current) return
     void save({ remoteEnabled: true })
-  }, [open, snap, enabled, listening, pairingUrl, busy, save])
+  }, [healEligible, save])
 
   let statusText: string | null = null
   if (!snap) {
-    statusText = error ? t('error') : t('loading')
+    statusText = error ? t('error') : null
   } else if (error) {
     statusText = remoteErrorText(error, t)
-  } else if (enabled && !relayConnected) {
-    const relayKind = humanizeRelayError(relayError)
-    if (relayKind === 'disconnected') statusText = t('relayDownDisconnected')
-    else if (relayKind === 'unavailable') statusText = t('relayUnavailable')
-    else statusText = t('relayDown')
-  } else if (enabled && !listening) {
-    statusText = t('startingHint')
+  } else if (!startupPending) {
+    if (snapshotError) statusText = remoteErrorText(snapshotError, t)
+    else if (enabled && !listening) statusText = t('notListening')
+    else if (enabled && !relayConnected && relayError) {
+      const relayKind = humanizeRelayError(relayError)
+      if (relayKind === 'disconnected') statusText = t('relayDownDisconnected')
+      else if (relayKind === 'unavailable') statusText = t('relayUnavailable')
+      else statusText = t('relayDown')
+    } else if (enabled && relayConnected && !qr) statusText = t('noQr')
   }
-
-  if (statusText === null && enabled && !qr && listening) statusText = healFired ? t('noQr') : t('mintingHint')
+  const visibleStatusNotice = statusNotice === statusText ? statusNotice : null
 
   useEffect(() => {
     setStatusNotice(open ? statusText : null)
@@ -259,9 +299,9 @@ export function RemoteSection({
     <div className={wide ? css.layer : `${css.layer} ${css.rail}`}>
       <span ref={popupOwnerRef} hidden data-dsh-modal-owner="" />
       <span ref={devicesOwnerRef} hidden data-dsh-modal-owner="" />
-      {open && (notice || statusNotice) ? (
-        <Toast key={notice ? `notice-${String(notice.id)}` : `status-${statusNotice}`}
-          text={notice?.text ?? statusNotice ?? ''} holdMs={null} dismissLabel={t('dismiss')}
+      {open && (notice || visibleStatusNotice) ? (
+        <Toast key={notice ? `notice-${String(notice.id)}` : `status-${visibleStatusNotice}`}
+          text={notice?.text ?? visibleStatusNotice ?? ''} holdMs={null} dismissLabel={t('dismiss')}
           onDone={() => { setNotice(null); setStatusNotice(null) }} />
       ) : null}
       {!menuMode && <button
@@ -302,9 +342,9 @@ export function RemoteSection({
                     role="radio"
                     aria-checked={enabled}
                     disabled={busy}
-                    loading={pending?.kind === 'enable'}
+                    loading={enabling || (daemonStarting && !error)}
                     onClick={() => {
-                      if (!enabled || !listening || !pairingUrl) void save({ remoteEnabled: true })
+                      if (!pairingReady) void save({ remoteEnabled: true })
                     }}
                   >
                     {t('enabledOn')}
@@ -332,7 +372,19 @@ export function RemoteSection({
                     <IconChevronRightOutline14 />
                   </span>
                 </button>
-                {enabled && relayConnected && qr ? (
+                {qrLoadingText ? (
+                  <div
+                    className={`${css.qr} ${css.qrLoading}`}
+                    role="status"
+                    aria-live="polite"
+                    aria-busy="true"
+                    aria-label={qrLoadingText}
+                    data-dsh-remote-qr-loading=""
+                  >
+                    <StateDot state="ongoing" size={24} />
+                    <span className={css.hint}>{qrLoadingText}</span>
+                  </div>
+                ) : pairingReady ? (
                   <>
                     <div
                       className={css.qr}
