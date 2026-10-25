@@ -36,6 +36,8 @@ Kotlin `protocol` 模块以 OkHttp WebSocket、TweetNaCl Java 的 Curve25519 / X
 
 Compose 提供会话列表、分页历史、运行中的回复更新、原生 Markdown、工具详情、审批、发送/停止、模型/思考、权限与斜杠命令，以及目录浏览/创建、工作区和会话管理、搜索、Git 与外观设置。Files / Diff / MCP / 技能保留与 Web 相同的未接入说明。系统相册/相机通过受控 URI 返回附件；IME 返回先收键盘，前台恢复重新同步或用保存凭据连接。
 
+系统状态栏与导航栏使用透明背景，由根布局在安全区 padding 外绘制当前主题底色；两类系统图标随应用浅色/深色或跟随系统的结果一同切换。API 29+ 关闭系统额外的导航栏对比遮罩，兼容 Android 15+ 强制 edge-to-edge；内容仍使用现有 safeDrawing/IME insets。系统栏回归可构建 `:app:assembleDebugAndroidTest`，在指定测试设备安装应用与测试 APK 后运行 `adb -s <serial> shell am instrument -w -e systemBars true ai.deepseek.harness.mobile.test/ai.deepseek.harness.mobile.NativeUpgradeInstrumentation`；该入口检查浅色/深色的系统栏 Window 属性并恢复原外观设置，不执行旧数据迁移测试。还需分别检查浅色/深色横竖屏的三键按钮与状态栏图标截图，Android 15+ 另查手势导航；JVM 测试不能代替这些设备操作。
+
 APK 不内嵌 SPA、JavaScript bundle 或 WebView 传输桥。覆盖升级首次启动时，唯一临时 WebView 只在原稳定 asset origin 的空白页读取旧 localStorage 凭据和文字草稿，禁用网络后迁移至原生加密存储，随后销毁；不运行旧 SPA、不清除旧数据。迁移失败显示错误，不标记成功。
 
 ```text

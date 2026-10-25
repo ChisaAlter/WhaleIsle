@@ -4,7 +4,7 @@
 // piped through the SSH channel to <targetHost>:<targetPort> on the remote.
 // Reverse forward: ask the remote to listen on 127.0.0.1:<listenPort> and pipe
 // incoming connections back to <targetHost>:<targetPort> on the LOCAL side
-// (ssh2 `forwardIn` + the client `tcpip` event; requires AllowTcpForwarding on
+// (ssh2 `forwardIn` + the client `tcp connection` event; requires AllowTcpForwarding on
 // the remote sshd).
 //
 // Definitions persist in forwards.json; forwards become active only while the
@@ -50,7 +50,7 @@ export class ForwardManager {
     if (this.client === client) return
     this.client = client
     this.onTcpip = (info, accept, reject) => this._handleTcpip(info, accept, reject)
-    client.on('tcpip', this.onTcpip)
+    client.on('tcp connection', this.onTcpip)
     this.onClose = () => this.stopAll()
     client.on('close', this.onClose)
     for (const d of this.defs) {
@@ -63,7 +63,7 @@ export class ForwardManager {
   detach() {
     this.stopAll()
     if (this.client) {
-      if (this.onTcpip) this.client.removeListener('tcpip', this.onTcpip)
+      if (this.onTcpip) this.client.removeListener('tcp connection', this.onTcpip)
       if (this.onClose) this.client.removeListener('close', this.onClose)
     }
     this.client = null

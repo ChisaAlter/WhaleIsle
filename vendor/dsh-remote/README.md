@@ -43,7 +43,7 @@ Real capture (host scrubbed to a placeholder):
 - **Windows path auto-conversion** — typing `C:\Users\dev\project` (or `C:/…`, `/c/…`, `/C:/…`) is normalized underneath to the Git Bash form `/c/Users/dev/project` for shell commands, while workspaces are stored and shown Windows-style (`C:\Users\dev\project`). All model tools accept and report both forms; SFTP access uses the Win32-OpenSSH `/D:/…` form (see `toSftpPath`).
 - **Bidirectional SFTP sync, conflict-aware** — `rw_sync` (remote → mirror) and `rw_push` (mirror → remote) are **three-way** (remote vs local vs last-synced snapshot): files changed on both sides are **reported as conflicts and never silently overwritten** (`force=true` overrides). Defaults are **depth 8 / 2000 files**; hitting a cap is reported as **`TRUNCATED`**. Both support **dry-run**, **background tasks**, and honor **gitignore-style ignore rules**.
 - **Model tools** — 20 tools, all Windows/POSIX portable via SFTP: `rw_info`, `rw_connect` (with `save`), `rw_pick_workspace`, `rw_list_dir` (size+mtime), `rw_stat`, `rw_read_file` (encoding-aware: utf-8/gbk), `rw_write_file`, **`rw_edit`** (literal replace + mtime optimistic lock), `rw_append`, `rw_mkdir`, `rw_remove` (recursive, bounded), `rw_move`, `rw_exec` (pty/env), **`rw_search`** (SFTP tree walk — works on Windows too, honors ignore rules, context lines), `rw_download`/`rw_upload` (streaming fastGet/fastPut + size caps), **`rw_forward`** (SSH tunnels), `rw_sync`, `rw_push`, `rw_disconnect`.
-- **Port forwarding panel** — create/start/stop/remove **local** (`127.0.0.1:port → remote`) and **reverse** (`remote → local`) tunnels in the Settings page or via `rw_forward`; definitions persist, auto-restart on reconnect when enabled, all tunnels stop on disconnect.
+- **Port forwarding panel** — create/start/stop/remove **local** (`127.0.0.1:port → remote`) and **reverse** (`remote → local`) tunnels in the Settings page or via `rw_forward`. Both listen only on `127.0.0.1`. Definitions persist; only local tunnels with `autoStart` restart on reconnect. Reverse tunnels require an explicit start and use ssh2 `forwardIn` plus the client `tcp connection` event to reach the configured local target. Stop/remove cancels the remote listener; disconnect stops all tunnels and detach removes the client event listener.
 - **Sidebar remote editing** — the remote file tab is **editable**: click **编辑** → edit → **保存到远程** with an mtime optimistic lock (409 + "重新读取" on concurrent change). File ops are **session-bound** (v0.8.19): the explorer sends `sessionId` so two conversations on different hosts do not share the active-machine pool. The explorer rows show file sizes and have a **right-click menu** (下载到本地镜像 / 重命名 / 删除 / 新建目录).
 - **Command audit log** — every `rw_exec`/write/remove/move/forward is appended to `$DSH_HOME/remote-workspaces/audit.log` (time · user@host · op · exit code · command); the Settings page shows the last 30.
 - **Async long tasks** — `rw_sync`/`rw_push` with `async: true` return a `taskId`; progress/result/cancel via `/dsh-remote/task` (single-flight queue).
@@ -216,6 +216,13 @@ scripts/dev-run.sh --status    # is it running?
 
 Deploying to a product profile is a separate, explicit action (`./sync.sh`)
 and should be done only when you intend to release.
+
+Focused forwarding regression: run `node --test lib/forwards.test.js` from this
+package. It uses the installed ssh2 client/server on owned random loopback ports,
+verifies the host key and authentication, echoes binary TCP payloads through a
+real reverse SSH channel, and checks stop/remove/detach and error boundaries.
+The remote host is simulated in the test process; it does not run a host shell,
+an OS sshd, an external physical host or the desktop UI.
 
 ## Configuration
 

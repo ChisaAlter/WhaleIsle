@@ -13,14 +13,17 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.Network
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
@@ -57,7 +60,12 @@ class MainActivity : ComponentActivity() {
             val dark = when (vm.scheme) { "dark" -> true; "light" -> false; else -> isSystemInDarkTheme() }
             var attachmentSource by remember { mutableStateOf(false) }
             DisposableEffect(dark) {
-                WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = !dark
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
+                }
+                // The root paints both transparent system bars, including Android 15+ edge-to-edge.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.isNavigationBarContrastEnforced = false
                 onDispose { }
             }
             LaunchedEffect(vm.externalUrl) {
@@ -68,7 +76,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             DshTheme(dark) {
-                Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.union(WindowInsets.ime))) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).windowInsetsPadding(WindowInsets.safeDrawing.union(WindowInsets.ime))) {
                     when (vm.route) {
                         Route.Scan -> ScanScreen(vm::onScanned, { vm.route = Route.Connect }, vm::openPasteEntry)
                         Route.Chat -> NativeRemoteScreen(vm) { attachmentSource = true }
