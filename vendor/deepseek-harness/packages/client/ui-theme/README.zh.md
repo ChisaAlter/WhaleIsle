@@ -95,6 +95,8 @@ Desktop 的固定快捷键 `Cmd`/`Ctrl` + `+`（或 `=`）和 `Cmd`/`Ctrl` + `-`
 
 ### 滚动条重新绑定
 
+浅色滑块在透明轨道上使用 18% 的主中性色阶，悬停时提高到 30%，使其在半透明表面仍清晰可见。深色层级配色保留既有中性色阶。
+
 `scrollbar.css` 在 `body` 上把 `--dsh-scrollbar-thumb` 与 `--dsh-scrollbar-thumb-hover` 绑定到 l1 基础表面 token；高层级表面（菜单、浮层、对话框）在自己的容器上把它们重新绑定为 l2 token；这组变量的另一个合法目标是 `transparent`（ui-sidebar 在指针不在栏内时就这样重新绑定自己的列）。WebKit 系浏览器默认使用 5px 的 `--dsh-scrollbar-width`，并读取 `--dsh-scrollbar-thumb-border` 与 `--dsh-scrollbar-track-margin`；滚动表面可重新绑定它们，在较窄的可见滑块外保留较宽的拖动区域，或让轨道避开圆角两端。两条渲染路径在构造上互斥：Firefox 走 `@supports not selector(::-webkit-scrollbar)` 内的标准细滚动条，WebKit 系引擎走伪元素，因此几何与 hover 定制只经由伪元素路径生效。
 
 ### 偏好持久化

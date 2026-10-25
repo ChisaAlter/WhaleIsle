@@ -234,10 +234,10 @@ body {
   --dsw-alias-markdown-inline-code: rgba(38, 49, 72, 0.06);
   --dsw-alias-markdown-placeholder: var(--dsw-static-neutral-bluish-60);
   --dsw-alias-markdown-tag: var(--dsw-static-neutral-bluish-75);
-  --dsw-alias-scrollbar-bg-l1: var(--dsw-static-neutral-200);
-  --dsw-alias-scrollbar-bg-l2: var(--dsw-static-neutral-200);
-  --dsw-alias-scrollbar-hover-l1: var(--dsw-static-neutral-300);
-  --dsw-alias-scrollbar-hover-l2: var(--dsw-static-neutral-300);
+  --dsw-alias-scrollbar-bg-l1: color-mix(in srgb, var(--dsw-static-neutral-bluish-1000) 18%, transparent);
+  --dsw-alias-scrollbar-bg-l2: color-mix(in srgb, var(--dsw-static-neutral-bluish-1000) 18%, transparent);
+  --dsw-alias-scrollbar-hover-l1: color-mix(in srgb, var(--dsw-static-neutral-bluish-1000) 30%, transparent);
+  --dsw-alias-scrollbar-hover-l2: color-mix(in srgb, var(--dsw-static-neutral-bluish-1000) 30%, transparent);
   --dsw-alias-state-business-primary: var(--dsw-static-deepseek-500);
   --dsw-alias-state-business-tertiary: var(--dsw-static-deepseek-100);
   --dsw-alias-code-diff-added: var(--dsw-static-green-500-a08);

@@ -25,6 +25,8 @@ Whale Isle is the public application name; the sidebar wordmark follows the inte
 
 The closing overlay retains the shared theme, copy and motion. First-paint waiting is best effort: the main process waits at most 500ms, then continues normal shutdown when a hidden page produces no frame or the renderer does not respond. Visual feedback must not block an approved quit.
 
+Selected Settings navigation uses the neutral `--dsw-alias-interactive-bg-active` fill, primary text color and 500 weight, without a blue fill or shadow. Shared light-theme scrollbars use primary text at 18% opacity, increasing to 30% on hover, over a transparent track so the thumb blends with glass surfaces.
+
 ## Scope
 
 Any change to a visible surface is in scope, including:

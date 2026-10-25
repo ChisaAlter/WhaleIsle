@@ -24,7 +24,7 @@ The browser service `ctx.settingsNavigation` opens this existing shell from ordi
 
 -----
 
-The Settings panel uses a shared 800 × 800 layout, bounded by the viewport. Longer sections scroll inside the content column; the Account entry uses the account icon. The panel portals beside `#root` rather than inside it, so a macOS window drag region a chrome row declares later in document order cannot swallow its controls.
+The Settings panel uses a shared 800 × 800 layout, bounded by the viewport. Longer sections scroll inside the content column; the Account entry uses the account icon. Selected navigation uses the neutral interactive active fill, primary text and medium weight, without a shadow. The panel portals beside `#root` rather than inside it, so a macOS window drag region a chrome row declares later in document order cannot swallow its controls.
 
 <a id="use-this-package"></a>
 ## Use this package

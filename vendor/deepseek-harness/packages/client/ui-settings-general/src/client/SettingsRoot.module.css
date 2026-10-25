@@ -294,8 +294,7 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* Nav cell: keep the shared geometry; selection uses the accent fill and
-   soft elevation rather than an outline. */
+/* Nav cells share a flat, neutral selection across theme families. */
 .navCell {
   display: flex;
   align-items: center;
@@ -321,10 +320,9 @@
 }
 
 .navCell.active {
-  background: var(--dsw-specific-sidebar-nav-item-active-accent);
-  color: color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 65%, var(--dsw-alias-label-primary));
-  box-shadow: var(--dsw-shadow-lv1);
-  font-weight: 600;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
 }
 
 .navCell:focus-visible {
