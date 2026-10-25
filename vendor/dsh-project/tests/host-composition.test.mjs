@@ -9,7 +9,7 @@ import { dirname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { projectPackage, harness, cliRequire, resolvePackage, ProjectService } from './harness-runtime.mjs';
 const { boot, loadOverlayPatches, bundlePatchPaths, composeEntries } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-app-boot')).href);
-const { LlmAdapter, LlmError } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-llm')).href);
+const { LlmAdapter, LlmError, CONTEXT_WINDOW_EXCEEDED_CODE } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-llm')).href);
 const { provideCmdline } = await import(pathToFileURL(resolvePackage('@deepseek-ai/dsh-cmdline')).href);
 const { disposeProfileApplication } = await import(pathToFileURL(join(harness, 'apps/cli/lib/profile-boot.js')).href);
 const { FiberState } = await import(pathToFileURL(resolvePackage('@deepseek-ai/cordis')).href);
@@ -520,6 +520,101 @@ test('Project and the optional Agent Teams bundle compose one Team service and o
     assert.deepEqual(rows.filter(row => row.name === name).map(row => row.id), [name === '@deepseek-ai/dsh-experimental-agent-team' ? 'agent-team' : 'dsh-project-team-ui']);
   }
   assert.ok(rows.some(row => row.id === 'tool-agent-team'), 'Agent Teams tools stay mounted on the shared service');
+});
+
+/** Real preset composition and loop; the external provider alone is scripted. */
+class ProjectCompactionModel extends LlmAdapter {
+  requests = []; failures = []; summaries = []; attempts = new Map(); pressure = false; phase = '';
+  async resolveModel(provider, model) {
+    return { provider, id: model, name: model, defaultMaxTokens: 1024,
+      context: { contextWindow: this.pressure ? 100000 : 1000000 } };
+  }
+  async *stream(options) {
+    if (options.purpose === 'compaction') {
+      this.summaries.push(options);
+      yield* blocks('Previous Project findings are retained. Continue the latest requested work.'); return;
+    }
+    this.requests.push(options);
+    const phase = this.phase;
+    if (phase === 'WARM') { yield* blocks(`Historical Project findings. ${'Retained evidence and completed work. '.repeat(1500)}`); return; }
+    const key = `${options.sessionId}:${phase}`, attempt = this.attempts.get(key) ?? 0; this.attempts.set(key, attempt + 1);
+    if (phase === 'REPEAT' || phase === 'OVERFLOW' && !attempt) {
+      yield { type: 'finish', reason: { kind: 'error', failure: {
+        code: CONTEXT_WINDOW_EXCEEDED_CODE, message: 'pi-ai detected context overflow for model "codex/gpt-6.1-sol"',
+      } } }; return;
+    }
+    yield* blocks('The same conversation continued after context compaction.');
+  }
+}
+
+test('Project presets compact long history, recover overflow and restore the original role Sessions', { timeout: 120000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'whale-project-compaction-')), home = join(root, 'home'), directory = join(root, 'selected');
+  await mkdir(home); await mkdir(directory); const bridge = await desktopBridge(root); let ctx;
+  const keys = ['DSH_HOME', 'DSHD_HOME', 'DSH_DESKTOP_INSTALL_URL', 'DSH_DESKTOP_INSTALL_TOKEN', 'DSH_TELEMETRY_DISABLED'], prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { DSH_HOME: home, DSHD_HOME: home, DSH_DESKTOP_INSTALL_URL: bridge.address, DSH_DESKTOP_INSTALL_TOKEN: 'composition-secret', DSH_TELEMETRY_DISABLED: '1' });
+  try {
+    let model = new ProjectCompactionModel(); ctx = await bootHost(home, model); let number = 0;
+    const roles = [];
+    for (const agentPreset of ['project-coordinator', 'project-worker']) {
+      const created = await ctx.sessionController.create({ cwd: directory, agentPreset });
+      roles.push({ agentPreset, sessionId: created.sessionId });
+    }
+    const prompt = async (agent, text) => {
+      model.phase = text;
+      await ctx.sessionController.prompt({ sessionId: agent.id, requestId: `context-human-${++number}`, mode: 'queue', content: [{ type: 'text', text }] }, signal);
+      await agent.whenIdle();
+    };
+    const assertScoped = agent => {
+      assert.ok(ctx.agentPresets.serviceFor(agent, 'compaction'), 'both independent Project presets have native compaction');
+      assert.ok(ctx.agentPresets.serviceFor(agent, 'toolResultPruner'), 'both presets have tool-result pruning');
+      assert.ok(ctx.commands.list(agent).some(command => command.name === 'compact'));
+      assert.equal(ctx.get('compaction'), undefined, 'preset services never leak into the Host');
+      assert.deepEqual(ctx.agentPresets.inspectCompositions(agent.ctx)[0].leakedServices, []);
+    };
+    assert.notEqual(ctx.agentPresets.serviceFor(ctx.agents.get(roles[0].sessionId), 'compaction'), ctx.agentPresets.serviceFor(ctx.agents.get(roles[1].sessionId), 'compaction'));
+    for (const role of roles) {
+      const agent = ctx.agents.get(role.sessionId); assertScoped(agent);
+      for (let index = 0; index < 3; index++) await prompt(agent, 'WARM');
+      const generation = agent.session.surface.replaceGeneration, before = model.requests.length;
+      await prompt(agent, 'OVERFLOW');
+      const requests = model.requests.slice(before);
+      assert.equal(requests.length, 2, 'exactly one rebuilt request follows overflow');
+      assert.ok(agent.session.surface.replaceGeneration > generation, 'durable context reduction precedes the retry');
+      assert.ok(requests[1].messages.some(message => messageText(message).includes('<compacted-summary>')));
+      const recoveredReason = agent.session.snapshotEvents().findLast(event => event.type === 'turn/end').data.reason;
+      assert.equal(recoveredReason.kind, 'completed', JSON.stringify(recoveredReason));
+
+      for (let index = 0; index < 3; index++) await prompt(agent, 'WARM');
+      model.pressure = true; const summaries = model.summaries.length;
+      await prompt(agent, 'PRESSURE'); model.pressure = false;
+      assert.ok(model.summaries.length > summaries, 'pre-step pressure compacts without a provider error');
+
+      for (let index = 0; index < 2; index++) await prompt(agent, 'WARM');
+      const repeated = model.requests.length; await prompt(agent, 'REPEAT');
+      assert.equal(model.requests.length - repeated, 2, 'a repeated overflow exhausts the native retry budget');
+      const events = agent.session.snapshotEvents();
+      assert.equal(events.findLast(event => event.type === 'turn/end').data.reason.kind, 'error');
+      assert.ok(events.some(event => event.type === 'compaction/summary'));
+      assert.equal(events.filter(event => event.type === 'compaction/start').length, events.filter(event => event.type === 'compaction/end').length);
+      assert.equal(await ctx.sessions.flush(agent.session), true);
+    }
+    await disposeProfileApplication(ctx); ctx = undefined;
+    model = new ProjectCompactionModel(); ctx = await bootHost(home, model);
+    assert.equal(model.requests.length + model.summaries.length, 0, 'cold recovery starts no model');
+    for (const role of roles) {
+      const agent = (await ctx.sessionController.resolveAgent(role.sessionId)).agent;
+      assert.equal(agent.id, role.sessionId); assert.equal(ctx.agentPresets.composedPreset(agent.ctx), role.agentPreset); assertScoped(agent);
+      const before = model.summaries.length, manual = await ctx.commands.execute(agent, '/compact', [], signal);
+      assert.equal(manual.result.kind, 'success', JSON.stringify(manual));
+      assert.ok(model.summaries.length > before, 'the restored role can compact its original saved history');
+      await prompt(agent, 'CONTINUE');
+      assert.equal(agent.session.snapshotEvents().findLast(event => event.type === 'turn/end').data.reason.kind, 'completed');
+    }
+  } finally {
+    if (ctx) await disposeProfileApplication(ctx); await bridge.close();
+    for (const key of keys) if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key];
+    assert.ok(resolve(root).startsWith(`${resolve(tmpdir())}${sep}whale-project-compaction-`)); await rm(root, { recursive: true, force: true });
+  }
 });
 
 class TeamLimitModel extends LlmAdapter {
