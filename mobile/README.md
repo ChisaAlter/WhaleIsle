@@ -16,7 +16,7 @@
 4. 配对后是桌面 `dsh web` 的同协议第二客户端：daemon 白名单 host 隧道转发 `session.list` / `workspace.list` / `session.history` / `session.prompt` / `session.cancel`，审批走 `respond` → `POST /api/respond`。新会话走 `session.create`，支持已有工作区、无工作目录，以及 `host.listDirectory` / `host.createDirectory` / `workspace.create` 浏览和登记目录；不是 ACP `fetchAgents` / `createAgent`。
 5. 模型与思考档走 `session.models` / `session.selectModel`；权限、Plan 与斜杠命令走 Typert `commands/execute`，不能作为聊天文本发送。草稿、附件与异步结果保留设备/会话归属。
 6. Git 走 daemon 隧道 `shell:git-*` 到桌面 Electron Git dispatch，不是 ACP checkout/file RPC。支持 Init、分支搜索/切换/跟踪、**创建并检出分支**、Commit/Push/PR 组合动作、Pull、Publish 与 View PR；具体白名单与恢复边界见 feature card。Files / Diff / MCP / 技能仍显示冻结说明，不提供假文件列表；打开电脑路径与受限设置不开放。
-7. 侧栏贴边直角，使用桌面鲸屿头像与字标，直接显示工作区分组目录；输入卡以 22px 圆角、细边和无外投影适配竖屏与软键盘。权限、模型、附件、重命名、新会话选择和简短设置用紧凑弹窗，目录浏览和复杂 Git 表单保留长任务面。屏幕返回、浏览器返回共用网页导航决策；交互样式与动效见[设计语言](../docs/design-language.md#手机远程交互)及[手机动效 inventory](../docs/motion.md#手机交互-inventory)。
+7. 侧栏贴边直角，使用桌面鲸屿头像与字标，直接显示工作区分组目录；输入卡以 22px 圆角、细边和无外投影适配竖屏与软键盘。权限、模型、思考及附件来源用跟随触发按钮的锚定菜单，菜单随窗口和软键盘可视区域变化避让；重命名、新会话选择和简短设置用紧凑弹窗，目录浏览和复杂 Git 表单保留长任务面。屏幕返回、浏览器返回共用网页导航决策；交互样式与动效见[设计语言](../docs/design-language.md#手机远程交互)及[手机动效 inventory](../docs/motion.md#手机交互-inventory)。
 8. 开发测试：`node --test "mobile/web/**/*.test.js"`；构建资源与 QA 服务测试：`node --test tools/mobile-web-qa/server.test.mjs tools/mobile-web-qa/runtime-assets.test.mjs`。命令从仓库根目录执行。
 
 应用内扫码的降级（如实呈现，不 vendor 第三方解码库）：
@@ -36,6 +36,8 @@ Kotlin `protocol` 模块以 OkHttp WebSocket、TweetNaCl Java 的 Curve25519 / X
 
 Compose 提供会话列表、分页历史、运行中的回复更新、原生 Markdown、工具详情、审批、发送/停止、模型/思考、权限与斜杠命令，以及目录浏览/创建、工作区和会话管理、搜索、Git 与外观设置。Files / Diff / MCP / 技能保留与 Web 相同的未接入说明。系统相册/相机通过受控 URI 返回附件；IME 返回先收键盘，前台恢复重新同步或用保存凭据连接。
 
+系统状态栏与导航栏使用透明背景，由根布局在安全区 padding 外绘制当前主题底色；两类系统图标随应用浅色/深色或跟随系统的结果一同切换。API 29+ 关闭系统额外的导航栏对比遮罩，兼容 Android 15+ 强制 edge-to-edge；内容仍使用现有 safeDrawing/IME insets。系统栏回归可构建 `:app:assembleDebugAndroidTest`，在指定测试设备安装应用与测试 APK 后运行 `adb -s <serial> shell am instrument -w -e systemBars true ai.deepseek.harness.mobile.test/ai.deepseek.harness.mobile.NativeUpgradeInstrumentation`；该入口检查浅色/深色的系统栏 Window 属性并恢复原外观设置，不执行旧数据迁移测试。还需分别检查浅色/深色横竖屏的三键按钮与状态栏图标截图，Android 15+ 另查手势导航；JVM 测试不能代替这些设备操作。
+
 APK 不内嵌 SPA、JavaScript bundle 或 WebView 传输桥。覆盖升级首次启动时，唯一临时 WebView 只在原稳定 asset origin 的空白页读取旧 localStorage 凭据和文字草稿，禁用网络后迁移至原生加密存储，随后销毁；不运行旧 SPA、不清除旧数据。迁移失败显示错误，不标记成功。
 
 ```text
@@ -48,6 +50,8 @@ cd ../..
 ```
 
 需要 Java 17 和 Android SDK。协议互通测试调用仓库 vendored JavaScript NaCl/加密通道作为独立桌面端观察器，因此开发测试还需要 Node 与 `protocol/test-support` 的锁定依赖；观察器从 vendored relay 源码独立构建，不要求安装整套桌面开发依赖，Android 构建及运行不依赖 Node。JVM 测试覆盖配对解析、真实 WebSocket 加密互通、错误凭据/重放/篡改、历史分页、草稿与迟到附件归属、数据迁移；它们不代替真机操作。
+
+锚定菜单的 Compose 运行时回归使用独立的显式 runner：先运行 `./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PdshTestRunner=ai.deepseek.harness.mobile.NativeAnchoredMenuInstrumentation`，安装生成的 debug 与 androidTest APK 后，再运行 `adb -s <测试设备> shell am instrument -w -r ai.deepseek.harness.mobile.test/ai.deepseek.harness.mobile.NativeAnchoredMenuInstrumentation`。测试仅在 debug 空白 Activity 注入本地聊天状态，不读配对存储或连接网络；覆盖紧凑/普通输入区切换后的菜单实时位置、权限选择、返回键及可见触发按钮的焦点恢复。它直接改变可用高度模拟 IME 收起后的约束变化，并用键盘输入模式检查按钮焦点，不代替系统键盘或真机验收。默认的存储迁移与系统栏 instrumentation 独立保留。
 
 正式 APK 使用独立 `android-v<版本>` 标签，由 [Release Android](../.github/workflows/release-android.yml) 手动构建和发布到 GitHub/CNB，发布不会替换桌面 latest。签名从 Actions secrets 注入，证书指纹在 `android-release.json` 中公开，私钥不进仓库。工作分支 `publish=false` 可仅验证；main `publish=true` 会在 JVM、lint、正式 APK 签名与模拟器启动检查后发布。
 

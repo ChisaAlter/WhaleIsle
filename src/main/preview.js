@@ -769,6 +769,7 @@ function createPreviewController(options = {}) {
         const png = image && typeof image.toPNG === 'function' ? image.toPNG() : null;
         if (!png) return { ok: false, message: 'screenshot capture failed' };
         const bytes = toBuffer(png);
+        if (bytes.length === 0) return { ok: false, message: 'screenshot capture returned an empty image' };
         const userData = resolveUserDataPath();
         if (!userData) return { ok: false, message: 'userData path is unavailable' };
         const rawUrl = typeof contents.getURL === 'function' ? contents.getURL() : session.url;

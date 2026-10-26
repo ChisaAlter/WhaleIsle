@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Whale Isle · 手机远程</title>
     <link rel="stylesheet" href="./tokens.css?v=20261025-remote-refinement" />
-    <link rel="stylesheet" href="./app.css?v=20261025-remote-refinement" />
+    <link rel="stylesheet" href="./app.css?v=20261025-anchored-menus" />
 </head>
 <body>
   <div class="phone" id="phone">
@@ -156,7 +156,7 @@
               <span class="chip-label sr-only">权限</span>
               <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.5 4 5v4.5c0 3.6 2.6 6.6 6 8 3.4-1.4 6-4.4 6-8V5l-6-2.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
             </button>
-            <button class="chip chip-shrink" type="button" id="model-chip" aria-haspopup="dialog" aria-expanded="false"><span class="chip-label">模型</span><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="chip chip-shrink" type="button" id="model-chip" aria-haspopup="menu" aria-expanded="false"><span class="chip-label">模型</span><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             <button class="send" type="submit" id="send-btn" aria-label="发送消息">
               <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
@@ -252,6 +252,6 @@
     <input type="file" accept="image/*" capture="environment" id="file-camera" hidden />
     <input type="file" accept="image/*" multiple id="file-gallery" hidden />
   </div>
-    <script type="module" src="./app.js?v=20261025-remote-refinement"></script>
+    <script type="module" src="./app.js?v=20261025-anchored-menus"></script>
 </body>
 </html>

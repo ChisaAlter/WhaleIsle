@@ -14,7 +14,7 @@ import { muxPatch, titleFromProjection } from './conversation/live.js';
 import { visibleScreen } from './ui/chrome.js';
 import { buttonBusy, clearButtonBusy } from './ui/button-busy.js?v=20261021-button-feedback';
 import { backTarget, createNavigation } from './ui/navigation.js?v=20260906-interaction';
-import { createSurface, createFocusScope } from './ui/surfaces.js?v=20261025-remote-refinement';
+import { createSurface, createFocusScope, createMenuPositioner } from './ui/surfaces.js?v=20261025-anchored-menus';
 import { sessionOwner } from './ui/session-owner.js?v=20260906-interaction';
 import { blankGreeting } from './ui/greeting.js';
 import { installComposerBehavior } from './ui/composer-behavior.js?v=20260906-interaction';
@@ -360,6 +360,7 @@ let muxUnsub = null;
 let navigationQueued = false;
 let lastSurfaceKey = '';
 const focusScope = createFocusScope(document);
+const menuPositioner = createMenuPositioner(document, phone);
 const composerBehavior = installComposerBehavior({ document, composer, input: draft, readingArea: logEl });
 let fileSelectionOwner = null;
 const settingsScroll = new Map();
@@ -382,6 +383,7 @@ function navigationBusy() {
 
 function backOneSurface() {
   const target = backTarget(state);
+  const pickerPage = state.pickerSheet === 'model' ? state.pickerPage : '';
   if (target === 'lightbox') state.lightbox = null;
   else if (['sessionConfirm', 'workspaceRename', 'folderCreate', 'sessionRename'].includes(target)) state[target] = null;
   else if (target === 'git') {
@@ -407,6 +409,9 @@ function backOneSurface() {
   else if (target === 'sessionMenu' || target === 'workspaceMenu') state[target] = '';
   else if (target === 'sessions') state.sessionsOpen = false;
   renderSheet(); renderDialog(); renderLightbox(); renderScreen();
+  if (pickerPage && state.pickerSheet === 'model' && !state.pickerPage) {
+    queueMicrotask(() => sheetRoot.querySelector(`[data-picker-page="${pickerPage}"]`)?.focus({ preventScroll: true }));
+  }
   if (state.settingsOpen) renderSettings();
 }
 
@@ -426,15 +431,20 @@ function scheduleNavigation() {
     accessChip.setAttribute('aria-expanded', String(state.pickerSheet === 'mode'));
     modelChip.setAttribute('aria-expanded', String(state.pickerSheet === 'model'));
     const target = backTarget(state);
-    if (active?.querySelector('.surface-panel') && lastSurfaceKey === surfaceIdentity()) active.querySelector('.surface-panel').dataset.refreshed = '';
-    lastSurfaceKey = active ? surfaceIdentity() : '';
+    const menu = active?.matches('.menu-layer') ? active : null;
+    menuPositioner.sync(menu, menu ? sheetTrigger() : null, {
+      preferAbove: menu?.dataset.anchor === 'composer', alignEnd: Boolean(state.pickerSheet),
+    });
+    const motionKey = state.pickerSheet ? `picker:${state.pickerSheet}` : surfaceIdentity();
+    if (active?.querySelector('.surface-panel') && lastSurfaceKey === motionKey) active.querySelector('.surface-panel').dataset.refreshed = '';
+    lastSurfaceKey = active ? motionKey : '';
     focusScope.sync(active, active ? surfaceIdentity() : '');
     navigation.sync();
   });
 }
 
 function surfaceIdentity() {
-  return `${backTarget(state)}:${state.gitDialog}:${state.settingsPane}:${state.pickerSheet}:${state.newSession?.step || ''}`;
+  return `${backTarget(state)}:${state.gitDialog}:${state.settingsPane}:${state.pickerSheet}:${state.pickerPage}:${state.newSession?.step || ''}`;
 }
 
 function preserveSurfaceInput(root) {
@@ -799,6 +809,7 @@ function renderComposer({ nativeSnapshot = true } = {}) {
     return wrap;
   }));
   if (nativeSnapshot) scheduleNativeSnapshot();
+  if (state.pickerSheet || state.attachOpen) scheduleNavigation();
 }
 
 function headerHostLabel() {
@@ -819,6 +830,7 @@ function renderHeader() {
   phone.dataset.sessionId = row?.sessionId || '';
   const showPill = store.gitTitle && (state.gitStatus.refName != null || state.gitStatus.isRepo === false);
   gitPill.classList.toggle('hidden', !showPill);
+  if (!showPill && state.gitDialog === 'menu') { state.gitDialog = ''; renderSheet(); }
   // The center slot is either the Git pill or the session title, never both.
   chatTitle.classList.toggle('hidden', showPill);
   if (showPill) {
@@ -1087,6 +1099,11 @@ function renderDrawer(visibleRows) {
   const scroll = drawerDirectory.scrollTop;
   drawerDirectory.replaceChildren(...nodes);
   drawerDirectory.scrollTop = scroll;
+  if (state.sessionMenu || state.workspaceMenu) {
+    const trigger = sheetTrigger();
+    if (trigger) scheduleNavigation();
+    else { state.sessionMenu = ''; state.workspaceMenu = ''; renderSheet(); }
+  }
 }
 
 async function runSessionSearch(query) {
@@ -1723,6 +1740,10 @@ function renderApproval() {
   readonlyNote.classList.toggle('hidden', !readOnly);
   composer.classList.toggle('hidden', Boolean(pending) || Boolean(readOnly));
   approval.classList.toggle('hidden', !pending);
+  if ((pending || readOnly) && (state.pickerSheet || state.attachOpen)) {
+    state.pickerSheet = ''; state.pickerPage = ''; state.attachOpen = false;
+    renderSheet();
+  }
   // Always re-render the slash popup: it must hide itself when an approval
   // arrives mid-typing and may return once the approval resolves.
   renderSlashPop();
@@ -5083,34 +5104,43 @@ function sheetItem({ label, hint = '', enabled = true, onClick }) {
   return button;
 }
 
+function sheetTrigger() {
+  if (state.attachOpen) return el('attach-toggle');
+  if (state.pickerSheet === 'model') return modelChip;
+  if (state.pickerSheet === 'mode') return accessChip;
+  if (state.gitDialog === 'menu') return gitPill;
+  const directory = state.sessionsOpen ? sessionList : drawerDirectory;
+  if (state.sessionMenu) return [...directory.querySelectorAll('.session-row')]
+    .find((node) => node.dataset.sessionId === state.sessionMenu)?.querySelector('.session-more');
+  if (state.workspaceMenu) return [...directory.querySelectorAll('.workspace-head')]
+    .find((node) => node.dataset.workspaceId === state.workspaceMenu)?.querySelector('.session-more:last-child');
+  return null;
+}
+
 function sheetLayer(title, closeSheet) {
   const task = Boolean(state.newSession?.step === 'browse' || state.history || state.gitDialog === 'branch');
-  const modal = !task && Boolean(state.newSession || state.pickerSheet === 'model');
+  const modal = !task && Boolean(state.newSession);
   const anchor = state.pickerSheet || state.attachOpen ? 'composer' : state.gitDialog === 'menu' ? 'header' : 'viewport';
   const result = createSurface(document, {
     title, task, variant: task ? 'task' : modal ? 'modal' : 'menu', anchor,
     onClose: () => { if (!navigationBusy()) closeSheet(); },
-    onBack: (task || (modal && state.pickerSheet === 'model' && state.pickerPage))
+    onBack: (task || (state.pickerSheet === 'model' && state.pickerPage))
       ? () => navigation.back()
       : null,
   });
-  result.panel.setAttribute('aria-label', title);
-  if (!task && !modal) {
-    const trigger = state.attachOpen ? el('attach-toggle') : state.pickerSheet === 'mode' ? accessChip
-      : state.gitDialog === 'menu' ? gitPill
-      : state.sessionMenu ? [...el('drawer').querySelectorAll('.session-row')].find((node) => node.dataset.sessionId === state.sessionMenu)?.querySelector('.session-more')
-      : state.workspaceMenu ? [...el('drawer').querySelectorAll('.workspace-head')].find((node) => node.dataset.workspaceId === state.workspaceMenu)?.querySelector('.session-more:last-child')
-      : null;
-    const bounds = trigger?.getBoundingClientRect?.();
-    const frame = phone.getBoundingClientRect();
-    if (bounds) {
-      const above = anchor === 'composer' || frame.bottom - bounds.bottom < Math.min(240, frame.height / 2);
-      result.layer.dataset.placement = above ? 'above' : 'below';
-      result.layer.style.setProperty('--menu-x', `${Math.max(12, Math.min(bounds.left - frame.left, frame.width - 292))}px`);
-      result.layer.style.setProperty('--menu-y', `${Math.max(12, bounds.bottom - frame.top + 8)}px`);
-      result.layer.style.setProperty('--menu-bottom', `${Math.max(12, frame.bottom - bounds.top + 8)}px`);
-      result.layer.style.setProperty('--menu-height', `${Math.max(80, above ? bounds.top - frame.top - 20 : frame.bottom - bounds.bottom - 20)}px`);
-    }
+  if (result.layer.dataset.surface === 'menu') {
+    result.panel.addEventListener('keydown', (event) => {
+      if (event.target.matches('input,textarea')) return;
+      const rows = [...result.panel.querySelectorAll('button:not([disabled])')];
+      let index = rows.indexOf(document.activeElement);
+      if (event.key === 'ArrowDown') index = index < 0 ? 0 : (index + 1) % rows.length;
+      else if (event.key === 'ArrowUp') index = index < 0 ? rows.length - 1 : (index - 1 + rows.length) % rows.length;
+      else if (event.key === 'Home') index = 0;
+      else if (event.key === 'End') index = rows.length - 1;
+      else if (event.key === 'ArrowLeft' && state.pickerPage) { event.preventDefault(); navigation.back(); return; }
+      else return;
+      if (rows[index]) { event.preventDefault(); rows[index].focus({ preventScroll: true }); rows[index].scrollIntoView({ block: 'nearest' }); }
+    });
   }
   return { layer: result.layer, sheet: result.content };
 }
@@ -5331,8 +5361,9 @@ const DRILL_ICONS = {
 };
 const DRILL_CHEVRON = '<svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
-function drillRow({ icon, title, value, accent = false, enabled = true, onClick }) {
+function drillRow({ icon, title, value, page = '', accent = false, enabled = true, onClick }) {
   const button = document.createElement('button');
+  if (page) button.dataset.pickerPage = page;
   button.type = 'button';
   button.className = 'drill';
   button.disabled = !enabled;
@@ -5389,7 +5420,7 @@ function renderModelPickerRoot(sheet, { current, rows }) {
     const drillCard = document.createElement('div');
     drillCard.className = 'card';
     drillCard.append(drillRow({
-      icon: DRILL_ICONS.effort,
+      icon: DRILL_ICONS.effort, page: 'effort',
       title: '思考强度',
       value: effortName,
       accent: true,
@@ -5400,7 +5431,7 @@ function renderModelPickerRoot(sheet, { current, rows }) {
   const modeCard = document.createElement('div');
   modeCard.className = 'card';
   modeCard.append(drillRow({
-    icon: DRILL_ICONS.mode,
+    icon: DRILL_ICONS.mode, page: 'mode',
     title: '权限',
     value: currentModeState().currentLabel,
     onClick: () => setPickerPage('mode'),
@@ -5410,7 +5441,7 @@ function renderModelPickerRoot(sheet, { current, rows }) {
   const moreCard = document.createElement('div');
   moreCard.className = 'card';
   moreCard.append(drillRow({
-    icon: DRILL_ICONS.more,
+    icon: DRILL_ICONS.more, page: 'more',
     title: '更多模型',
     value: `按提供方浏览 · ${routableCount} 个`,
     onClick: () => setPickerPage('more'),
