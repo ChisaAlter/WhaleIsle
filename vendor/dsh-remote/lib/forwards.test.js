@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import net from 'node:net'
@@ -63,7 +63,13 @@ async function listen(server, port = 0) {
 async function reverseFixture(t) {
   // Only the remote host is simulated: TCP, SSH authentication, host-key
   // verification and forwarded-tcpip channels use the installed ssh2 runtime.
-  const hostKey = utils.generateKeyPairSync('ed25519').private
+  // Use OpenSSL's PEM encoding directly. ssh2's Ed25519 key generator can
+  // strip a leading zero from the public key and produce an invalid fixture.
+  const hostKey = generateKeyPairSync('ec', {
+    namedCurve: 'prime256v1',
+    privateKeyEncoding: { type: 'sec1', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  }).privateKey
   const fingerprint = createHash('sha256').update(utils.parseKey(hostKey).getPublicSSH()).digest('hex')
   const secret = randomBytes(24).toString('hex')
   const authMethod = 'pass' + 'word'
@@ -295,6 +301,68 @@ test('reverse forwarding carries real TCP bytes over an authenticated SSH channe
   ])
   t.diagnostic('stop, remove and detach sent cancel-tcpip-forward; all reverse listeners refused new connections; detach removed client listeners')
 })
+
+for (const action of ['stop', 'remove', 'detach']) {
+  test(`${action} closes every established reverse connection before reporting it stopped`, { timeout: 10000 }, async (t) => {
+    const fixture = await reverseFixture(t)
+    const manager = new ForwardManager(fakePool(fixture.client))
+    t.after(() => manager.detach())
+    const port = await freePort()
+    const def = manager.define({ direction: 'reverse', listenPort: port, targetHost: '127.0.0.1', targetPort: fixture.echoPort })
+    assert.equal((await manager.start(def)).ok, true)
+    const entry = manager.servers.get(def.id)
+    const connections = []
+    for (let index = 0; index < 2; index++) {
+      const socket = net.connect({ host: '127.0.0.1', port })
+      socket.on('error', () => {})
+      t.after(() => socket.destroy())
+      const payload = Buffer.from(`held reverse connection ${index}`)
+      await new Promise((resolve, reject) => {
+        const chunks = []
+        let length = 0
+        const timer = setTimeout(() => finish(new Error('held reverse echo deadline')), 3000)
+        const finish = (error) => {
+          clearTimeout(timer)
+          socket.removeListener('data', receive)
+          if (error) reject(error)
+          else resolve()
+        }
+        const receive = (chunk) => {
+          chunks.push(chunk)
+          length += chunk.length
+          if (length >= payload.length) {
+            try { assert.deepEqual(Buffer.concat(chunks), payload); finish() }
+            catch (error) { finish(error) }
+          }
+        }
+        socket.on('data', receive)
+        socket.once('connect', () => socket.write(payload))
+        socket.once('error', finish)
+      })
+      connections.push(socket)
+    }
+    assert.equal(entry.sockets.size, 2, 'both local target sockets must stay open before revocation')
+    const targets = [...entry.sockets]
+    const closed = Promise.all([...connections, ...targets].map((socket) => new Promise((resolve) => socket.once('close', resolve))))
+    const cancelled = new Promise((resolve) => fixture.cancelled.once('cancel', resolve))
+    if (action === 'stop') manager.stop(def.id)
+    else if (action === 'remove') assert.equal(manager.remove(def.id), true)
+    else manager.detach()
+    await cancelled
+    await assertPortClosed(port)
+    // Listener cancellation alone must not leave the accepted data paths alive.
+    assert.ok(targets.every((socket) => socket.destroyed), 'revocation must destroy established local target sockets')
+    assert.equal(entry.sockets.size, 0, 'revocation must release all tracked sockets')
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('established reverse channels did not close')), 3000)
+      closed.then(() => { clearTimeout(timer); resolve() }, reject)
+    })
+    assert.ok(connections.every((socket) => socket.destroyed), 'the remote peers must observe their SSH channels closing')
+    assert.equal(manager.list().some((row) => row.id === def.id && row.active), false)
+    if (action === 'remove') assert.equal(manager.list().some((row) => row.id === def.id), false)
+    t.diagnostic(`${action}: two live SSH channels and local targets closed; new reverse connections refused`)
+  })
+}
 
 test('reverse forwarding rejects unmatched ports and closes failed local targets', { timeout: 10000 }, async (t) => {
   const fixture = await reverseFixture(t)

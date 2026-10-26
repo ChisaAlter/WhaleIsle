@@ -204,12 +204,15 @@ export class ForwardManager {
     try {
       if (entry.kind === 'local') {
         entry.server.close()
-        for (const s of entry.sockets) { try { s.destroy() } catch {} }
       } else if (entry.client && typeof entry.client.unforwardIn === 'function') {
         const d = this._defFor(entry)
         entry.client.unforwardIn('127.0.0.1', d.listenPort, () => {})
       }
     } catch {}
+    // unforwardIn cancels new connections only; revoke accepted channels too.
+    // Each target socket's close handler also closes its SSH channel.
+    for (const socket of entry.sockets) { try { socket.destroy() } catch {} }
+    entry.sockets.clear()
     this.servers.delete(id)
   }
 
