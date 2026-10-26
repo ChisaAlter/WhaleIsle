@@ -1,0 +1,17 @@
+{
+  "parent": [
+    {
+      "sessionId": "session-ed28c351-49f1-40ae-a7f2-5ea79168e295",
+      "title": "Physical QA A",
+      "cwd": "C:\\AI\\WhaleIsle-AndroidQA-20261026"
+    }
+  ],
+  "forks": [
+    {
+      "sessionId": "session-e7f2d5af-efc9-4b3c-b2ef-f9dc78fec2aa",
+      "title": "Physical QA A",
+      "parentSessionId": "session-ed28c351-49f1-40ae-a7f2-5ea79168e295",
+      "origin": null
+    }
+  ]
+}

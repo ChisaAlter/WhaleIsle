@@ -13,7 +13,8 @@ android {
         targetSdk = 36
         versionCode = 4
         versionName = "0.3.10"
-        testInstrumentationRunner = "ai.deepseek.harness.mobile.NativeUpgradeInstrumentation"
+        testInstrumentationRunner = providers.gradleProperty("dshTestRunner")
+            .orElse("ai.deepseek.harness.mobile.NativeUpgradeInstrumentation").get()
     }
     signingConfigs {
         val signingStore = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull
@@ -56,6 +57,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("io.noties.markwon:core:4.6.2")
     implementation("io.noties.markwon:linkify:4.6.2")
+    implementation("io.noties.markwon:ext-tables:4.6.2")
+    implementation("io.noties.markwon:ext-latex:4.6.2")
+    implementation("io.noties.markwon:inline-parser:4.6.2")
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")

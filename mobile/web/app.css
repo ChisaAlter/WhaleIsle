@@ -1000,11 +1000,17 @@ html[lang|="en"] .brand-isle-word { color: var(--dsw-alias-state-business-primar
 .menu-layer[data-anchor="composer"] > .sheet { bottom: calc(112px + env(safe-area-inset-bottom)); }
 .menu-layer[data-anchor="header"] > .sheet { top: calc(48px + env(safe-area-inset-top)); bottom: auto; }
 .menu-layer > .sheet > .surface-content { padding: 4px; overflow-y: auto; }
-.menu-layer[data-placement] > .sheet { left: var(--menu-x, 12px); right: auto; width: min(280px, calc(100% - 24px)); max-height: min(480px, var(--menu-height, 60%)); }
-.menu-layer[data-placement="above"] > .sheet { top: auto; bottom: var(--menu-bottom, 12px); }
-.menu-layer[data-placement="below"] > .sheet { top: var(--menu-y, 48px); bottom: auto; }
+.menu-layer[data-placement] > .sheet { left: var(--menu-x, 12px); right: auto; top: var(--menu-y, 12px); bottom: auto; width: var(--menu-width, 280px); max-height: var(--menu-height, 480px); }
 .menu-layer .card { border: 0; border-radius: 0; background: transparent; }
-.menu-layer .card > .sheet-item { min-height: 40px; padding: 8px; border-radius: 8px; }
+.menu-layer .card + .card { margin-top: 4px; border-top: 1px solid var(--dsw-alias-border-l1); }
+.menu-layer .card > .sheet-item { min-height: 44px; padding: 8px; border-radius: 8px; }
+.menu-layer .drill { min-height: 44px; padding: 6px 8px; gap: 8px; border-radius: 8px; }
+.menu-layer .drill-icon { width: 24px; height: 24px; background: transparent; }
+.menu-layer .drill-title { font-size: 14px; line-height: 22px; }
+.menu-layer .menu-head { flex: none; gap: 4px; padding: 2px 8px 2px 4px; border-bottom: 1px solid var(--dsw-alias-border-l1); }
+.menu-layer .menu-head .surface-title { font-size: 14px; line-height: 22px; }
+.menu-layer .menu-head .surface-control { flex: none; }
+.menu-layer .model-search { width: calc(100% - 8px); margin: 4px; }
 .sheet-layer.modal-layer { display: flex; align-items: center; justify-content: center; padding: 16px; }
 .sheet-layer.modal-layer > .sheet { position: relative; inset: auto; width: min(380px, 100%); max-height: min(78%, 560px); border-radius: 24px; background: var(--dsw-specific-dialog); border: 1px solid var(--dsw-alias-border-l2); }
 .sheet-layer.modal-layer .card { border: 0; border-radius: 0; background: transparent; }

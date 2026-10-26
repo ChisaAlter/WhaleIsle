@@ -5,7 +5,12 @@ import css from './Brand.module.css'
  * Supply the transparent head to the collapsed sidebar's brand-mark slot.
  */
 export function OfficialBrandMark({ size }: SidebarBrandMarkOwnerProps) {
-  return <img className={css.railAvatar} src="/whale-isle-head.png" width={size} height={size} alt="" data-whale-isle-brand="mark" />
+  return (
+    <>
+      <img className={css.railAvatar} src="/whale-isle-head.png" width={size} height={size} alt="" data-whale-isle-brand="mark" data-dsh-mascot="default" />
+      <img className={css.railAvatar} src="claude-isle-head.png" width={size} height={size} alt="" data-whale-isle-brand="mark" data-dsh-mascot="claude" />
+    </>
+  )
 }
 
 /**
@@ -15,7 +20,8 @@ export function OfficialBrandMark({ size }: SidebarBrandMarkOwnerProps) {
 export function OfficialBrandName() {
   return (
     <span className={css.wordmark} data-whale-isle-brand="name">
-      <img className={css.avatar} src="/whale-isle-head.png" alt="" />
+      <img className={css.avatar} src="/whale-isle-head.png" alt="" data-dsh-mascot="default" />
+      <img className={css.avatar} src="claude-isle-head.png" alt="" data-dsh-mascot="claude" />
       <span className={css.nameBlock}>
         <span className={css.titleRow}>
           <span className={css.chineseName}><span>鲸</span><span className={css.isleGlyph}>屿</span></span>

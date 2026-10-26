@@ -32,7 +32,7 @@ const {
 } = require('../../scripts/check-skip-compose-contract');
 
 const PAD_ROW = `- id: ${PAD_ID}\n  config:\n    updateCheck: false\n`;
-const DESKTOP_ROWS = `- id: ${TASK_CONTROL_ID}\n- id: ${INSTALL_ID}\n- id: ${WORKSPACE_DEPS_ID}\n- id: ${SKILL_OFFICE_ID}\n- id: ${USAGE_ID}\n- id: ${IM_ID}\n- id: ${MARKET_ID}\n  disabled: true\n- id: ${WHALE_ID}\n- id: ${REMOTE_ID}\n${PAD_ROW}`;
+const DESKTOP_ROWS = `- id: ${TASK_CONTROL_ID}\n- id: ${INSTALL_ID}\n- id: ${WORKSPACE_DEPS_ID}\n- id: ${SKILL_OFFICE_ID}\n- id: ${USAGE_ID}\n- id: ${IM_ID}\n- id: ${MARKET_ID}\n- id: ${WHALE_ID}\n- id: ${REMOTE_ID}\n${PAD_ROW}`;
 const FULL_PAD_ROW = `- id: ${PAD_ID}\n  disabled: true\n  config:\n    dataFile: home-panels.json\n    agentRefresh: false\n    updateCheck: false\n`;
 const FULL_DESKTOP_ROWS = DESKTOP_ROWS.replace(PAD_ROW, FULL_PAD_ROW);
 const FULL_ONLY_ROWS = `- id: ${SESSION_SEARCH_ID}\n  config:\n    openAt: first-search\n`;
@@ -74,22 +74,22 @@ test('composeContractProblems demands positive evidence before canary absence', 
   assert.match(doubledIm[0], /dsh-im/);
   assert.match(doubledIm[0], /双挂载/);
   // Missing task-control alone is a violation (it rides every start).
-  const missingTaskControl = composeContractProblems('skip', `- id: ${INSTALL_ID}\n- id: ${WORKSPACE_DEPS_ID}\n- id: ${SKILL_OFFICE_ID}\n- id: ${USAGE_ID}\n- id: ${IM_ID}\n- id: ${MARKET_ID}\n  disabled: true\n- id: ${WHALE_ID}\n- id: ${REMOTE_ID}\n${PAD_ROW}`);
+  const missingTaskControl = composeContractProblems('skip', `- id: ${INSTALL_ID}\n- id: ${WORKSPACE_DEPS_ID}\n- id: ${SKILL_OFFICE_ID}\n- id: ${USAGE_ID}\n- id: ${IM_ID}\n- id: ${MARKET_ID}\n- id: ${WHALE_ID}\n- id: ${REMOTE_ID}\n${PAD_ROW}`);
   assert.equal(missingTaskControl.length, 1);
   assert.match(missingTaskControl[0], new RegExp(TASK_CONTROL_ID));
   // Missing dsh-im alone is a violation too (built-in must ride every start).
-  const missingIm = composeContractProblems('skip', `- id: ${TASK_CONTROL_ID}\n- id: ${INSTALL_ID}\n- id: ${WORKSPACE_DEPS_ID}\n- id: ${SKILL_OFFICE_ID}\n- id: ${USAGE_ID}\n- id: ${MARKET_ID}\n  disabled: true\n- id: ${WHALE_ID}\n- id: ${REMOTE_ID}\n${PAD_ROW}`);
+  const missingIm = composeContractProblems('skip', `- id: ${TASK_CONTROL_ID}\n- id: ${INSTALL_ID}\n- id: ${WORKSPACE_DEPS_ID}\n- id: ${SKILL_OFFICE_ID}\n- id: ${USAGE_ID}\n- id: ${MARKET_ID}\n- id: ${WHALE_ID}\n- id: ${REMOTE_ID}\n${PAD_ROW}`);
   assert.equal(missingIm.length, 1);
   assert.match(missingIm[0], new RegExp(IM_ID));
   // Missing dsh-whale alone is a violation too (the contract run always
   // mounts its overlay with enabled:true — production gates it on config).
-  const missingWhale = composeContractProblems('skip', `- id: ${TASK_CONTROL_ID}\n- id: ${INSTALL_ID}\n- id: ${WORKSPACE_DEPS_ID}\n- id: ${SKILL_OFFICE_ID}\n- id: ${USAGE_ID}\n- id: ${IM_ID}\n- id: ${MARKET_ID}\n  disabled: true\n- id: ${REMOTE_ID}\n${PAD_ROW}`);
+  const missingWhale = composeContractProblems('skip', `- id: ${TASK_CONTROL_ID}\n- id: ${INSTALL_ID}\n- id: ${WORKSPACE_DEPS_ID}\n- id: ${SKILL_OFFICE_ID}\n- id: ${USAGE_ID}\n- id: ${IM_ID}\n- id: ${MARKET_ID}\n- id: ${REMOTE_ID}\n${PAD_ROW}`);
   assert.equal(missingWhale.length, 1);
   assert.match(missingWhale[0], new RegExp(WHALE_ID));
   // Missing dsh-remote alone is a violation too (the contract run always
   // mounts its overlay — production gates it on remoteWorkspaceEnabled,
   // default ON).
-  const missingRemote = composeContractProblems('skip', `- id: ${TASK_CONTROL_ID}\n- id: ${INSTALL_ID}\n- id: ${WORKSPACE_DEPS_ID}\n- id: ${SKILL_OFFICE_ID}\n- id: ${USAGE_ID}\n- id: ${IM_ID}\n- id: ${MARKET_ID}\n  disabled: true\n- id: ${WHALE_ID}\n${PAD_ROW}`);
+  const missingRemote = composeContractProblems('skip', `- id: ${TASK_CONTROL_ID}\n- id: ${INSTALL_ID}\n- id: ${WORKSPACE_DEPS_ID}\n- id: ${SKILL_OFFICE_ID}\n- id: ${USAGE_ID}\n- id: ${IM_ID}\n- id: ${MARKET_ID}\n- id: ${WHALE_ID}\n${PAD_ROW}`);
   assert.equal(missingRemote.length, 1);
   assert.match(missingRemote[0], new RegExp(REMOTE_ID));
   const doubledWhale = composeContractProblems('full', `- id: ${CANARY_ID}\n${FULL_DESKTOP_ROWS}${FULL_ONLY_ROWS}- id: ${WHALE_ID}\n`);
@@ -150,9 +150,14 @@ test('compose contract requires disabled pad update checks on both rounds', () =
   }
 });
 
-test('compose contract rejects an enabled legacy Settings market', () => {
-  const enabled = DESKTOP_ROWS.replace(`- id: ${MARKET_ID}\n  disabled: true\n`, `- id: ${MARKET_ID}\n`);
-  assert.match(composeContractProblems('skip', enabled).join('\n'), /旧设置市场.*必须禁用/);
+test('compose contract rejects a disabled Settings market on full and recovery starts', () => {
+  for (const round of ['skip', 'full']) {
+    const stdout = healthyStdout(round === 'skip' ? ['--skip-user-plugins'] : []);
+    const disabled = stdout.replace(`- id: ${MARKET_ID}\n`, `- id: ${MARKET_ID}\n  disabled: true\n`);
+    assert.deepEqual(composeContractProblems(round, disabled), [
+      `${round}: 桌面设置市场行 ${MARKET_ID} 必须启用`,
+    ]);
+  }
 });
 
 test('composeContractRounds mirrors production overlay order on skip and full starts', () => {

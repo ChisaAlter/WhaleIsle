@@ -357,12 +357,15 @@ test('whale slots use the project head and keep normal sessions untouched', () =
   assert.ok(registeredNames(registrations).includes('conversation.session.header.leading:'));
 
   const glyph = registrations.find((entry) => entry.decl.name === 'sidebar.panellist');
-  const image = glyph.component({ size: 18 });
-  assert.equal(image.type, 'img');
-  assert.equal(image.props.src, '/whale-isle-head.png');
-  assert.equal(image.props.width, 18);
-  assert.equal(image.props.height, 18);
-  assert.equal(image.props.alt, '');
+  const images = glyph.component({ size: 18 }).children;
+  assert.deepEqual(Array.from(images, image => image.props.src), ['/whale-isle-head.png', 'claude-isle-head.png']);
+  assert.deepEqual(Array.from(images, image => image.props['data-dsh-mascot']), ['default', 'claude']);
+  for (const image of images) {
+    assert.equal(image.type, 'img');
+    assert.equal(image.props.width, 18);
+    assert.equal(image.props.height, 18);
+    assert.equal(image.props.alt, '');
+  }
 
   const mark = registrations.find((entry) => entry.decl.name === 'conversation.session.header.leading');
   const mine = mark.component({

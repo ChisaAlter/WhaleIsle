@@ -70,6 +70,17 @@ export class ChatReading {
     this.sampled = null
   }
 
+  /** Save the outgoing view's actual position without moving it or publishing unmount-time state. */
+  rememberPosition(): void {
+    const scroll = this.viewport.readScroll()
+    if (scroll === null) return
+    const following = this.follow.nearBottom(scroll.metrics)
+      || (this.state.followingTail && (this.follow.animating || !scroll.movedByReader))
+    const position = following ? null : this.viewport.capturePosition()
+    if (following || position !== null) this.store.save(position)
+    this.cancelPending()
+  }
+
   /** Release bottom follow and pending sampling for an explicit navigation. */
   pauseFollowing(): void {
     this.cancelPending()

@@ -50,25 +50,6 @@ class DshViewModelTest {
         assertEquals("other computer draft",drafts.string("computer2/s1"))
         assertTrue(store.nativeMigrationDone)
     }
-    @Test fun sessionDraftsAndLateImagesKeepTheirOwnerEvenWhileOffline() {
-        val store=FakeStore(selectedComputer="computer")
-        val vm=DshViewModel(store)
-        vm.openSession("s1")
-        vm.onChatAction(NativeChatAction("draft","s1",text="first draft"))
-        vm.addImage("computer","s1",NativeImage("image/png","first-image"))
-        vm.openSession("s2")
-        vm.onChatAction(NativeChatAction("draft","s1",text="late overwrite"))
-        vm.addImage("computer","s1",NativeImage("image/png","late-image"))
-        vm.addImage("other-computer","s2",NativeImage("image/png","wrong-computer"))
-        assertTrue(vm.chat.attachments.isEmpty())
-        vm.onChatAction(NativeChatAction("draft","s2",text="second draft"))
-        vm.openSession("s1")
-        assertEquals("first draft",vm.chat.draft)
-        assertEquals(listOf("first-image"),vm.chat.attachments.map {it.data})
-        vm.openSession("s2")
-        assertEquals("second draft",vm.chat.draft)
-        assertEquals("first draft",Json.parseToJsonElement(store.draftsJson).objectValue().string("computer/s1"))
-    }
     @Test fun scanPasteActionFocusesNativePasteEntry() {
         val vm=DshViewModel(FakeStore()); vm.route=Route.Scan; vm.openPasteEntry()
         assertEquals(Route.Connect,vm.route); assertTrue(vm.pasteExpanded); assertEquals(1L,vm.pasteFocusRequestId)

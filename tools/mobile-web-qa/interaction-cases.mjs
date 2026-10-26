@@ -45,7 +45,7 @@ export async function runInteractionCases() {
   });
   await check('model search, selection and effort stay in one panel', async () => {
     await click('#model-chip'); await wait(() => textButton('#sheet-root', '更多模型'));
-    assert(document.querySelector('#sheet-root .modal-layer'), 'model picker must stay compact');
+    assert(document.querySelector('#sheet-root .menu-layer[data-placement]'), 'model picker must be anchored');
     await click(textButton('#sheet-root', '更多模型'));
     input('.model-search', 'Lite'); await pause();
     assert(document.querySelectorAll('.model-results .mode-row').length === 1, 'search not applied');
@@ -74,7 +74,7 @@ export async function runInteractionCases() {
   });
   await check('keyboard Tab never enters the hidden mask', async () => {
     await click('#model-chip');
-    document.querySelector('.surface-title').focus();
+    document.querySelector('#sheet-root .surface-panel button').focus();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
     assert(!document.activeElement.classList.contains('sheet-mask'), 'mask received focus');
     assert(document.querySelector('#screen-chat').inert, 'background is interactive');

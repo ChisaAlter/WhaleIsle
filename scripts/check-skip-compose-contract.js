@@ -333,8 +333,8 @@ function composeContractProblems(round, stdout) {
     }
   }
   const marketRow = text.split(new RegExp(`^- id: ${MARKET_ID}\\r?$`, 'm'))[1]?.split(/^\- id:/m)[0];
-  if (marketRow !== undefined && !/^\s+disabled: true\s*$/m.test(marketRow)) {
-    problems.push(`${round}: 旧设置市场行 ${MARKET_ID} 必须禁用`);
+  if (marketRow !== undefined && /^\s+disabled: true\s*$/m.test(marketRow)) {
+    problems.push(`${round}: 桌面设置市场行 ${MARKET_ID} 必须启用`);
   }
   const padRow = text.split(new RegExp(`^- id: ${PAD_ID}\\r?$`, 'm'))[1]?.split(/^\- id:/m)[0];
   if (padRow !== undefined) {

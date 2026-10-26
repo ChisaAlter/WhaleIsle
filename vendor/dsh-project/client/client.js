@@ -1,7 +1,8 @@
 window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
   const { createElement: h, useState, useEffect, useLayoutEffect, useRef, useCallback, Fragment } = require('react');
-  const { createPortal } = require('react-dom');
+  const { createPortal, flushSync } = require('react-dom');
   const { Button, Input, Menu, Modal, Pill, SegmentedTabs, StateDot, Tag, MarkdownText, Toast, Tooltip, IconFolderCloseRegular, IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronUpOutlineRegular, IconChevronRightOutlineRegular, IconEllipsisOutlineRegular, IconUsersOutlineRegular, IconChecklistOutlineRegular, useAnchoredPosition } = require('@deepseek-ai/dsh-client-ui-primitives');
+  const { TEAM_SIDEBAR_KIND } = require('@deepseek-ai/dsh-experimental-client-ui-agent-team');
   const { createSnapshotStore, defineStore } = require('@deepseek-ai/dsh-client-store');
   const { subagentChatAddress } = require('@deepseek-ai/dsh-client-ui-subagent');
   const NS = 'dsh-project';
@@ -20,7 +21,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     pause: '暂停后台工作', resume: '解除暂停', resumeHint: '在主对话中提出新的要求，即可继续原工作。',
     checklistTitle: '任务清单', checklistProgress: '{done}/{total} 已完成',
     membersWorking: '{count} 个成员工作中', membersWaiting: '{count} 项工作等待中', openTeam: '打开智能体团队',
-    memberComposerHint: '这是 Project 成员的工作过程。要安排或调整工作，请回到协调者对话里说明。', backToLead: '回到协调者',
+    memberRecordTitle: '成员工作记录', memberComposerHint: '在这里查看成员的执行过程。安排或调整工作，请回到协调者对话。', backToLead: '回到协调者',
     stop: '停止后台工作', stopWork: '停止这项工作', archive: '归档项目', restore: '恢复项目',
     notes: '笔记', preferences: '项目要求', docs: '全部文档', allResults: '全部成果', noDocs: '暂无项目文档。', noResults: '完成工作后，成果会保存在这里。',
     generatedNotes: '工作记录', userNotes: '项目笔记', remainingIssues: '待处理事项', reportDetails: '报告详情', reportSource: '成员报告',
@@ -60,7 +61,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     pause: 'Pause background work', resume: 'Unpause', resumeHint: 'Give a new instruction in the main conversation to continue the original work.',
     checklistTitle: 'Checklist', checklistProgress: '{done}/{total} done',
     membersWorking: 'Working: {count}', membersWaiting: 'Waiting: {count}', openTeam: 'Open Agent Team',
-    memberComposerHint: 'This is a Project member’s work. To assign or change work, tell the coordinator in its conversation.', backToLead: 'Back to coordinator',
+    memberRecordTitle: 'Member work records', memberComposerHint: 'View this member’s progress here. Return to the coordinator to assign or change work.', backToLead: 'Back to coordinator',
     stop: 'Stop background work', stopWork: 'Stop this work', archive: 'Archive project', restore: 'Restore project',
     notes: 'Notes', preferences: 'Project instructions', docs: 'All documents', allResults: 'All results', noDocs: 'No Project documents yet.', noResults: 'Results will be saved here when work is completed.',
     generatedNotes: 'Work history', userNotes: 'Project notes', remainingIssues: 'Open issues', reportDetails: 'Report details', reportSource: 'Member report',
@@ -151,7 +152,12 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     .dsh-project-return-materials{max-width:min(240px,25vw);min-width:0}
     .dsh-project-return-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .dsh-project-materials-frame{display:flex;flex:1;min-height:0;overflow:hidden}
-    .dsh-project-archive-notice{padding:16px 20px;border:1px solid var(--dsw-alias-border-l2);border-radius:16px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.5}
+    .dsh-project-composer-notice{display:flex;flex-direction:column;gap:12px;align-self:center;width:var(--dsh-composer-card-max-width);min-width:0;max-width:calc(100% - 16px);margin:8px auto;box-sizing:border-box;padding:12px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md);corner-shape:round;background:var(--dsw-alias-bg-panel-solid);color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxs-12)}
+    .dsh-project-composer-notice-copy{display:flex;flex-direction:column;gap:4px;min-width:0}
+    .dsh-project-composer-notice-copy>strong{color:var(--dsw-alias-label-primary);font:var(--dsw-font-s-strong-14)}
+    .dsh-project-composer-notice p{margin:0;overflow-wrap:anywhere}
+    .dsh-project-composer-notice .dsh-project-actions{gap:8px}
+    .dsh-project-composer-notice .dsh-project-actions>button{flex:none;max-width:100%}
     .dsh-project-muted{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:1.5}
     .dsh-project-error{color:var(--dsw-alias-state-error-primary);white-space:pre-wrap;font-size:13px}
     .dsh-project-progress{max-height:180px;overflow:auto;display:flex;flex-direction:column;gap:8px;color:var(--dsw-alias-label-primary);font-size:13px}
@@ -356,7 +362,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     .dsh-project-request-refresh{width:28px;min-width:28px;padding:0;font-size:18px}
     [data-composer-seat]:has([data-project-composer-takeover]) [data-chain-overlay-fallback='conversation.composer']{display:block!important;position:absolute;inset:0 0 auto;visibility:hidden;pointer-events:none}
     .dsh-project-composer-frame{display:flex;align-items:center;flex-direction:column;padding:var(--project-composer-top,0px) var(--dsh-composer-side-clearance,16px) var(--project-composer-bottom,32px);min-width:0}
-    .dsh-project-composer-frame>.dsh-project-archive-notice{box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;gap:8px;width:var(--project-composer-width,100%);max-width:100%;height:var(--project-composer-height,128px);min-height:0;overflow:auto;border-radius:var(--dsw-radius-xl);background:var(--dsw-specific-input-major);box-shadow:var(--dsw-shadow-lv2);padding:12px 16px}
+    .dsh-project-composer-frame>.dsh-project-archive-notice{box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between;gap:8px;width:var(--project-composer-width,100%);max-width:100%;height:var(--project-composer-height,128px);min-height:0;margin:0;overflow:auto;border-radius:var(--dsw-radius-md);background:var(--dsw-specific-input-major);box-shadow:var(--dsw-shadow-lv2);padding:12px}
     .dsh-project-composer-frame p{margin:0;font-size:12px;overflow-wrap:anywhere}
     .dsh-project-composer-frame button{flex:none;min-height:28px;align-self:flex-start}
     .dsh-project-requests [data-error=true],.dsh-project-materials [data-error=true]{color:var(--dsw-alias-state-error-primary)}
@@ -936,7 +942,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     } });
   }
 
-  function ProjectComposerFrame({ children }) {
+  function ProjectComposerFrame({ children, label }) {
     const rootRef = useRef(null);
     useLayoutEffect(() => {
       const root = rootRef.current, seat = root?.closest('[data-composer-seat]');
@@ -957,7 +963,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
       const observer = new ResizeObserver(measure); observer.observe(card); if (frame) observer.observe(frame); measure();
       return () => observer.disconnect();
     }, []);
-    return h('div', { ref: rootRef, className: 'dsh-project-composer-frame', 'data-project-composer-takeover': true }, h('div', { className: 'dsh-project-archive-notice', role: 'status' }, children));
+    return h('div', { ref: rootRef, className: 'dsh-project-composer-frame', 'data-project-composer-takeover': true }, h('div', { className: 'dsh-project-archive-notice dsh-project-composer-notice', role: 'note', 'aria-label': label }, children));
   }
 
   // A member's conversation is read for its progress; work reaches it through the Lead.
@@ -966,9 +972,11 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const worker = useProjects(value => value.details[matched.projectId]?.workers?.find(item => item.sessionId === matched.workerSessionId));
     const [busy, setBusy] = useState(false), [error, setError] = useState('');
     const stop = async () => { setBusy(true); setError(''); try { await command(matched.projectId, 'stop', { workstreamId: worker.workstreamId }); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
-    return h(ProjectComposerFrame, null, h('p', null, t('memberComposerHint')),
-      h('div', { className: 'dsh-project-actions' }, project ? h(Button, { variant: 'ghost', size: 'sm', onClick: () => openLead(project.coordinatorSessionId) }, t('backToLead')) : null,
-        worker && !worker.stopped && isLive(worker) && project?.lifecycle === 'ready' ? h(Button, { variant: 'outline', loading: busy, title: error || undefined, 'data-error': Boolean(error), disabled: busy || worker.phase === 'stopping', onClick: stop }, t('stopWork')) : null),
+    const back = event => { try { openLead(project.coordinatorSessionId, event.currentTarget); } catch (failure) { setError(errorText(failure)); } };
+    return h(ProjectComposerFrame, { label: t('memberRecordTitle') },
+      h('div', { className: 'dsh-project-composer-notice-copy' }, h('strong', null, t('memberRecordTitle')), h('p', null, t('memberComposerHint'))),
+      h('div', { className: 'dsh-project-actions' }, project ? h(Button, { variant: 'outline', size: 'sm', shape: 'pill', onClick: back }, t('backToLead')) : null,
+        worker && !worker.stopped && isLive(worker) && project?.lifecycle === 'ready' ? h(Button, { variant: 'ghost', size: 'sm', shape: 'pill', loading: busy, disabled: busy || worker.phase === 'stopping', 'aria-busy': busy || worker.phase === 'stopping', onClick: stop }, t('stopWork')) : null),
       error ? h(OperationToast, { text: error }) : null);
   }
 
@@ -976,7 +984,10 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
     const project = useProjects(value => value.projects.find(item => item.id === matched.projectId));
     const [busy, setBusy] = useState(false), [error, setError] = useState('');
     const restore = async () => { setBusy(true); setError(''); try { await command(project.id, 'restore'); } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); } };
-    return h(ProjectComposerFrame, null, h('p', null, t(project?.archiving ? 'archiving' : 'archivedHint')), h(Button, { variant: 'outline', disabled: busy || project?.lifecycle !== 'archived', title: error || undefined, 'data-error': Boolean(error), onClick: restore }, t('restore')), error ? h(OperationToast, { text: error }) : null);
+    return h(ProjectComposerFrame, { label: t(project?.archiving ? 'archiving' : 'archived') },
+      h('p', null, t(project?.archiving ? 'archiving' : 'archivedHint')),
+      h('div', { className: 'dsh-project-actions' }, h(Button, { variant: 'outline', size: 'sm', shape: 'pill', loading: busy, disabled: busy || project?.lifecycle !== 'archived', onClick: restore }, t('restore'))),
+      error ? h(OperationToast, { text: error }) : null);
   }
 
   function RequestAuthority({ request, className = 'dsh-project-work', t }) {
@@ -1506,6 +1517,27 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         if (sidebar?.mounted.getSnapshot() === sessionId && sidebar.isExpanded()
           && !sidebar.openTabs.getSnapshot().some(tab => tab.sessionId === sessionId && tab.kind !== 'guide')) sidebar.toggleExpanded();
       };
+      const openLead = (sessionId, origin) => {
+        const target = sidebar?.focusedTarget(origin);
+        const fullscreen = origin.closest('[data-sidebar-right-panel="fullscreen"]') !== null;
+        // Commit the destination before restoring its editor's retained caret.
+        flushSync(() => {
+          if (target?.sessionId === sessionId) {
+            if (target.host === 'float') sidebar.closeTarget(target);
+            else {
+              sidebar.openTabIn(sessionId, TEAM_SIDEBAR_KIND, { paneId: target.paneId, replaceTab: target.tabId });
+            }
+          }
+          ctx.uiSidebar.selectTab('sessions');
+          ctx.uiWorkspace.openSession(sessionId);
+        });
+        // The destination may restore its own fullscreen Sidebar when leaving a main member.
+        const coveringSidebar = fullscreen || [...document.querySelectorAll('[data-sidebar-right-panel="fullscreen"][data-sidebar-right-open]')].some(panel => panel.dataset.sidebarRightSession === sessionId);
+        if (coveringSidebar && sidebar?.isExpanded()) flushSync(() => sidebar.toggleExpanded());
+        const scope = ctx.sessions.scope(sessionId);
+        if (!scope) throw new Error(t('unavailable'));
+        ctx.conversation.input.for(scope).focus();
+      };
       // A member's live conversation opens beside the Lead instead of replacing it.
       const openMember = (project, workerSessionId) => sidebar?.openResource(subagentChatAddress({
         parentSessionId: project.coordinatorSessionId, childSessionId: workerSessionId, mode: 'continuable' }), { kind: 'subagentchat' });
@@ -1716,7 +1748,7 @@ window.__ModuleLoader__.load({ id: 'dsh-project', factory: (require) => {
         return () => { off(); for (const dispose of mounted.values()) dispose(); };
       });
       ctx.slots.inject('conversation.composer', () => ctx.slots.register({ name: 'conversation.composer', id: NS + '-member', priority: 90, locale: NS,
-        inject: () => ({ ...face(), openLead: sessionId => ctx.uiWorkspace.openSession(sessionId) }),
+        inject: () => ({ ...face(), openLead }),
         select: owner => {
           const parent = owner.session?.subagent?.address.parentSessionId;
           const project = parent && snapshot.getSnapshot().projects.find(item => item.coordinatorSessionId === parent);

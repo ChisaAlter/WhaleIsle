@@ -617,9 +617,19 @@ function turnProcessControl(container: HTMLElement): HTMLButtonElement | null {
   return container.querySelector<HTMLButtonElement>('[data-turn-process]')
 }
 
-function runningContent(container: HTMLElement): HTMLElement | null {
-  return container.querySelector<HTMLElement>('[data-chat-running] > :last-child')
+function runningContent(container: HTMLElement, mascot: 'default' | 'claude' = 'default'): HTMLElement | null {
+  return container.querySelector<HTMLElement>(`[data-chat-running] > :last-child > [data-dsh-mascot="${mascot}"]`)
 }
+
+function expectRunningStatusLabels(status: HTMLElement): void {
+  expect(status.querySelector('[data-dsh-mascot="default"]')?.textContent).toBe('深度求索中')
+  expect(status.querySelector('[data-dsh-mascot="claude"]')?.textContent).toBe('正在思考')
+}
+
+const runningStatusCases = [
+  { mascot: 'default', minutes: /^深度求索中，用时 \d+分\d+秒 ···$/, hours: /^深度求索中，用时 \d+小时\d+分\d+秒 ···$/ },
+  { mascot: 'claude', minutes: /^正在思考，用时 \d+分\d+秒 ···$/, hours: /^正在思考，用时 \d+小时\d+分\d+秒 ···$/ },
+] as const
 
 function withClock(time: number, run: () => void): () => void {
   return () => {
@@ -2596,7 +2606,8 @@ describe('ChatView', () => {
       const useTurnData = CHAT_NODE_INJECT.hooks.turnData(h.props, opts.hookContext)
       const useDisclosure = CHAT_NODE_INJECT.hooks.disclosure(h.props, opts.hookContext)
       const useGroupAction = CHAT_NODE_INJECT.hooks.groupAction(h.props, opts.hookContext)
-      return <TurnProcessNodeView {...h.props} {...nodeOwner} useTurnData={useTurnData} useDisclosure={useDisclosure} useGroupAction={useGroupAction} node={node} />
+      return <TurnProcessNodeView {...h.props} {...nodeOwner} useTurnData={useTurnData}
+        useDisclosure={useDisclosure} useGroupAction={useGroupAction} node={node} />
     })
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByRole('button', { name: label })).toBeTruthy()
@@ -3661,7 +3672,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByTestId('tool-seat-r1')).toBeTruthy()
     expect(h.toolOwners[0]?.block).toMatchObject({ callId: 'r1', argsRaw: '{"command":"cmd-r1"}' })
-    expect(view.getByRole('status').textContent).toBe('深度求索中')
+    expectRunningStatusLabels(view.getByRole('status'))
     expect(turnProcessControl(view.container)).toBeNull()
     expect(runningContent(view.container)?.textContent).toMatch(/^深度求索中，用时 \d+秒 ···$/)
   }))
@@ -3735,10 +3746,12 @@ describe('ChatView', () => {
       const frame = view.container.querySelector('iframe')!
       const outbound = vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation(() => {})
       const instanceId = `${SID}:tool:${callId}`
-      const emit = (data: Record<string, unknown>) => act(() => {
-        window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow,
-          data: { channel: 'whale-ui', version: 2, instanceId, ...data } }))
-      })
+      const emit = (data: Record<string, unknown>) => {
+        act(() => {
+          window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow,
+            data: { channel: 'whale-ui', version: 2, instanceId, ...data } }))
+        })
+      }
       emit({ type: 'ready' })
       emit({ type: 'state', state: { quantity: 42 } })
       const stableParent = frame.parentElement
@@ -3834,7 +3847,7 @@ describe('ChatView', () => {
     expect(unmounted).not.toHaveBeenCalled()
   })
 
-  it('the running clock uses turn/start, ignores steering, and stays out of the live region', withClock(126_000, () => {
+  it.each(runningStatusCases)('the $mascot running clock uses turn/start, ignores steering, and stays out of the live region', ({ mascot, minutes }) => withClock(126_000, () => {
     const startTime = 1_000
     const trigger = { ...userInTurn(1, 'go', 1), time: 120_000 }
     const h = makeHarness(
@@ -3843,10 +3856,10 @@ describe('ChatView', () => {
     )
     const view = render(<h.ChatView {...h.props} />)
     const status = view.getByRole('status')
-    const content = runningContent(view.container)!
-    expect(content.textContent).toMatch(/^深度求索中，用时 \d+分\d+秒 ···$/)
+    const content = runningContent(view.container, mascot)!
+    expect(content.textContent).toMatch(minutes)
     expect(turnProcessControl(view.container)).toBeNull()
-    expect(status.textContent).toBe('深度求索中')
+    expectRunningStatusLabels(status)
     expect(status.getAttribute('aria-live')).toBe('polite')
     expect(status.getAttribute('aria-atomic')).toBe('true')
     expect(content.closest('[aria-live]')).toBeNull()
@@ -3859,28 +3872,28 @@ describe('ChatView', () => {
         role: 'user', source: { kind: 'user' },
       }] } })
     })
-    expect(content.textContent).toMatch(/^深度求索中，用时 \d+分\d+秒 ···$/)
+    expect(content.textContent).toMatch(minutes)
     const beforeTick = content.textContent
     act(() => { vi.advanceTimersByTime(2_000) })
-    expect(content.textContent).toMatch(/^深度求索中，用时 \d+分\d+秒 ···$/)
+    expect(content.textContent).toMatch(minutes)
     expect(content.textContent).not.toBe(beforeTick)
     expect(view.getByRole('status')).toBe(status)
-    expect(status.textContent).toBe('深度求索中')
+    expectRunningStatusLabels(status)
     act(() => {
       h.setSession({ testInbox: { 'next-turn': [], 'next-step': [] } })
       h.setChat({ nodes: [trigger, { ...steering(2, 'also', 1), time: 128_000 }] })
     })
-    expect(runningContent(view.container)).toBe(content)
-    expect(content.textContent).toMatch(/^深度求索中，用时 \d+分\d+秒 ···$/)
+    expect(runningContent(view.container, mascot)).toBe(content)
+    expect(content.textContent).toMatch(minutes)
     expect(view.getByText('also').closest('[data-pending-steering]')).toBeNull()
     act(() => { vi.advanceTimersByTime(1_000) })
-    expect(content.textContent).toMatch(/^深度求索中，用时 \d+分\d+秒 ···$/)
-    expect(status.textContent).toBe('深度求索中')
+    expect(content.textContent).toMatch(minutes)
+    expectRunningStatusLabels(status)
     view.unmount()
     expect(vi.getTimerCount()).toBe(0)
-  }))
+  })())
 
-  it('the running clock reads hours once the turn passes an hour', withClock(3_600_000, () => {
+  it.each(runningStatusCases)('the $mascot running clock reads hours once the turn passes an hour', ({ mascot, minutes, hours }) => withClock(3_600_000, () => {
     const startTime = 1_000
     const trigger = { ...userInTurn(1, 'go', 1), time: startTime + 1 }
     const h = makeHarness(
@@ -3888,18 +3901,18 @@ describe('ChatView', () => {
       { running: true },
     )
     const view = render(<h.ChatView {...h.props} />)
-    const content = runningContent(view.container)!
-    expect(content.textContent).toMatch(/^深度求索中，用时 \d+分\d+秒 ···$/)
+    const content = runningContent(view.container, mascot)!
+    expect(content.textContent).toMatch(minutes)
     act(() => { vi.advanceTimersByTime(1_000) })
-    expect(content.textContent).toMatch(/^深度求索中，用时 \d+小时\d+分\d+秒 ···$/)
+    expect(content.textContent).toMatch(hours)
     const hourlyText = content.textContent
     act(() => { vi.advanceTimersByTime(303_000) })
-    expect(content.textContent).toMatch(/^深度求索中，用时 \d+小时\d+分\d+秒 ···$/)
+    expect(content.textContent).toMatch(hours)
     expect(content.textContent).not.toBe(hourlyText)
-    expect(view.getByRole('status').textContent).toBe('深度求索中')
+    expectRunningStatusLabels(view.getByRole('status'))
     view.unmount()
     expect(vi.getTimerCount()).toBe(0)
-  }))
+  })())
 
   it('hands each ordered root call to the keyed business-node slot', () => {
     const block = toolResult(3, 'a')
@@ -4495,6 +4508,47 @@ describe('ChatView', () => {
     }
   })
 
+  it.each([
+    { name: 'bottom before its scroll event', top: 1_500, delivered: false },
+    { name: 'history before its scroll event', top: 900, delivered: false },
+    { name: 'history before its sample', top: 900, delivered: true },
+  ])('retains the final $name across a Session round trip', ({ top, delivered }) => {
+    vi.useFakeTimers()
+    const host = document.createElement('div')
+    host.setAttribute('data-conversation-scroll', '')
+    installScrollMetrics(host, 2_000, 500)
+    document.body.appendChild(host)
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this === host) return new DOMRect(0, 0, 800, 500)
+      const offset = this.dataset.chatAnchorKey === 'fixture:user:1' ? 180 : 1_000
+      return new DOMRect(0, offset - host.scrollTop, 800, 200)
+    })
+    try {
+      const a = makeHarness({ nodes: [user(1, 'session A'), assistant(2, 'reply A')] })
+      const b = makeHarness({ nodes: [user(1, 'session B'), assistant(2, 'reply B')] })
+      const view = render(<a.ChatView {...a.props} />, { container: host })
+      readerScroll(host, 100)
+      expect(a.chatScroll.read()?.scrollTop).toBe(100)
+      fireEvent.wheel(host)
+      host.scrollTop = top
+      if (delivered) fireEvent.scroll(host)
+      view.rerender(<b.ChatView key="B" {...b.props} />)
+      expect(b.chatScroll.read()).toBeNull()
+      view.rerender(<a.ChatView key="A" {...a.props} />)
+      expect(host.scrollTop).toBe(top)
+      if (top === 1_500) expect(a.chatScroll.read()).toBeNull()
+      else expect(a.chatScroll.read()?.scrollTop).toBe(top)
+      expect(view.queryByLabelText('回到底部') === null).toBe(top === 1_500)
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(host.scrollTop).toBe(top)
+    } finally {
+      cleanup()
+      rect.mockRestore()
+      host.remove()
+      vi.useRealTimers()
+    }
+  })
+
   it('normalizes a semantic restore clamped to the bottom before an immediate remount', () => {
     const host = document.createElement('div')
     host.setAttribute('data-conversation-scroll', '')
@@ -4696,12 +4750,16 @@ describe('ChatView', () => {
     const column = view.container.querySelector('[data-chat-flow]')!
     const status = column.querySelector('[data-chat-running]')
     expect(column.lastElementChild).toBe(status)
-    expect(within(status as HTMLElement).getByRole('status').textContent).toBe('深度求索中')
-    expect(status?.lastElementChild?.textContent).toBe('深度求索中')
+    expectRunningStatusLabels(within(status as HTMLElement).getByRole('status'))
+    expect(runningContent(view.container)?.textContent).toBe('深度求索中')
+    expect(runningContent(view.container, 'claude')?.textContent).toBe('正在思考')
     const icon = status?.lastElementChild?.firstElementChild
     expect(icon?.getAttribute('aria-hidden')).toBe('true')
-    expect(icon?.firstElementChild?.tagName).toBe('SPAN')
-    expect(icon?.children).toHaveLength(1)
+    expect(icon?.querySelector('[data-dsh-mascot="default"]')?.tagName).toBe('SPAN')
+    const portrait = icon?.querySelector('img[data-dsh-mascot="claude"]')
+    expect(portrait?.getAttribute('src')).toBe('claude-isle-reading.png')
+    expect(portrait?.getAttribute('alt')).toBe('')
+    expect(icon?.children).toHaveLength(2)
     expect(icon?.querySelector('svg')).toBeNull()
     expect(icon?.getAttribute('style')).toBeNull()
     expect(status?.querySelector('animate')).toBeNull()

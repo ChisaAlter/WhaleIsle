@@ -47,7 +47,7 @@ test('Android WebView receives a measured viewport-height fallback for the app s
 
 test('mobile surfaces keep desktop Menu, Modal and full-task roles', () => {
   assert.match(surfaces, /surfaceVariant === 'menu' \? 'menu' : 'dialog'/);
-  assert.match(surfaces, /if \(surfaceVariant === 'menu'\) panel\.append\(content\)/);
+  assert.match(surfaces, /if \(surfaceVariant === 'menu' && !onBack\) panel\.append\(content\)/);
   assert.match(app, /const task = !compact/);
   assert.match(css, /\.menu-layer > \.sheet-mask \{ background: transparent; backdrop-filter: none; \}/);
   assert.match(css, /border-radius: 12px; background: var\(--dsw-specific-menu\)/);
@@ -68,7 +68,7 @@ test('short choices stay compact while directory, archive and branch lists keep 
   };
   runInNewContext(app.slice(app.indexOf('function sheetLayer('), app.indexOf('function closeGitLayer(')), context);
   for (const [patch, variant, anchor] of [
-    [{ pickerSheet: 'model' }, 'modal', 'composer'],
+    [{ pickerSheet: 'model' }, 'menu', 'composer'],
     [{ pickerSheet: 'mode' }, 'menu', 'composer'],
     [{ attachOpen: true }, 'menu', 'composer'],
     [{ newSession: { step: 'workspace' } }, 'modal', 'viewport'],

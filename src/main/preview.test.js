@@ -1701,6 +1701,22 @@ test('captureScreenshot writes a png under preview-recordings', async () => {
   assert.deepEqual(written, Buffer.from('png'));
 });
 
+test('captureScreenshot rejects an empty native image without writing an artifact', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dshd-preview-empty-shot-'));
+  const fake = fakeAttach();
+  const preview = createPreviewController({ attach: fake.attach, userDataPath: dir });
+  try {
+    const opened = await preview.open({ url: 'http://127.0.0.1:3000' });
+    fake.views[0].webContents.capturePage = () => ({ toPNG: () => Buffer.alloc(0) });
+    const shot = await preview.captureScreenshot(opened.id);
+    assert.deepEqual(shot, { ok: false, message: 'screenshot capture returned an empty image' });
+    assert.deepEqual(await fs.readdir(dir), []);
+  } finally {
+    await preview.closeAll();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('captureScreenshot unknown id returns ok false', async () => {
   const preview = createPreviewController({
     attach: fakeAttach().attach,

@@ -26,6 +26,8 @@ interface ViewportEvents {
   interact: () => void
   /** Any reading gesture, before paging ownership is consulted. */
   intent?: () => void
+  /** Commit outgoing reading memory while the scrollport and rows remain attached. */
+  beforeDetach?: () => void
 }
 
 interface ViewportElements {
@@ -106,8 +108,9 @@ export class ChatViewport {
     }
   }
 
-  /** Disconnect DOM resources and clear observations for the detached view. */
+  /** Commit outgoing reading memory before disconnecting DOM resources and clearing observations. */
   detach(): void {
+    if (this.elements !== null) this.events?.beforeDetach?.()
     this.stopPreserving()
     this.motion.clear()
     if (this.elements !== null) this.elements.scroller.style.overflowAnchor = ''

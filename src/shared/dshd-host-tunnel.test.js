@@ -484,6 +484,30 @@ test('forwardHostRpc maps session.history onto session/page and retries throughS
   assert.deepEqual(result.value.events.map((entry) => entry.event.type), ['user/message']);
 });
 
+test('session history preserves a durable subagent address when correcting the cursor', async () => {
+  const address = { kind: 'subagent', parentSessionId: 'parent', childSessionId: 'child', mode: 'unknown' };
+  const requests = [];
+  const result = await forwardHostRpc({
+    origin: 'http://127.0.0.1:3080', method: 'session.history', payload: { sessionId: 'child', address, beforeSeq: 9, maxMessages: 50 },
+    fetchImpl: async (_url, init) => {
+      const body = JSON.parse(init.body);
+      requests.push(body.payload.args.request);
+      return new Response(JSON.stringify({ type: 'server-response', rpcId: body.rpcId,
+        result: requests.length === 1
+          ? { ok: false, error: { code: 'gateway/bad-request', message: 'session page through seq 1000000000 is past cursor 20' } }
+          : { ok: true, value: { records: [], hasMore: true } } }));
+    },
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(requests, [
+    { address, throughSeq: 1_000_000_000, beforeSeq: 9, maxMessages: 50 },
+    { address, throughSeq: 20, beforeSeq: 9, maxMessages: 50 },
+  ]);
+  await assert.rejects(() => forwardHostRpc({ origin: 'http://127.0.0.1:3080', method: 'session.history',
+    payload: { address: { kind: 'subagent', childSessionId: 'child', mode: 'unknown' } },
+    fetchImpl: () => { throw new Error('invalid addresses must not reach the host'); } }), /无效的会话历史地址/);
+});
+
 test('forwardHostRpc slims session.history before returning to the phone', async () => {
   const result = await forwardHostRpc({
     origin: 'http://127.0.0.1:3080',

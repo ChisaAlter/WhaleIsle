@@ -1,0 +1,100 @@
+{
+  "finalCandidate": "r6",
+  "artifacts": [
+    {
+      "file": "desktop-parity-nativeqa-r4.apk",
+      "sha256": "3B92BBA2682E47F04C434FBEF3405D15CFB49CEDF8DBC3C681AD075FE91BEBCF",
+      "bytes": 38632170
+    },
+    {
+      "file": "desktop-parity-nativeqa-r5.apk",
+      "sha256": "83B7E7814931BC9C0106B72F33FB2FF40A5B6354E1DA67577DF3DA1BF5D77733",
+      "bytes": 39031447
+    },
+    {
+      "file": "desktop-parity-nativeqa-r6.apk",
+      "sha256": "D949B9ABA40C11C5819EAB8B343CB259EBF2BE170B723871F226F83FD2E59F19",
+      "bytes": 38648554
+    },
+    {
+      "file": "WhaleIsle-0.3.10-debug-desktop-parity-r6.apk",
+      "sha256": "F0A2347DBC4DAE620B3940762ACBC69E6C1D8008E3C125D876D12ACB91A7BD37",
+      "bytes": 38648550
+    }
+  ],
+  "debugCertificateSha256": "14d5f33de2d182088f220f393693eda8468d9d4b1398f748c37bcfe01ca58222",
+  "appSuites": [
+    {
+      "suite": "ai.deepseek.harness.mobile.DshViewModelRemoteTest",
+      "tests": 39,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "timestampUtc": "2026-10-26T12:46:03"
+    },
+    {
+      "suite": "ai.deepseek.harness.mobile.DshViewModelTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "timestampUtc": "2026-10-26T12:46:06"
+    },
+    {
+      "suite": "ai.deepseek.harness.mobile.NativeChatStateTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "timestampUtc": "2026-10-26T12:46:06"
+    },
+    {
+      "suite": "ai.deepseek.harness.mobile.NativeMarkdownTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "timestampUtc": "2026-10-26T12:46:06"
+    },
+    {
+      "suite": "ai.deepseek.harness.mobile.NativeSessionDataTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "timestampUtc": "2026-10-26T12:46:06"
+    }
+  ],
+  "lint": {
+    "Error": 0,
+    "Warning": 17,
+    "Information": 2
+  },
+  "protocol": "15 prior effective; current :protocol:test up-to-date cache, not fresh execution",
+  "physical": {
+    "model": "23127PN0CC",
+    "serial": "1836e17d",
+    "androidApi": 36,
+    "portraitOnly": true,
+    "r4Install": "adb install -r -t Success",
+    "r4ColdStartMs": 1098,
+    "r5Install": "adb install -r -t Success",
+    "r5ColdStartMs": 853,
+    "r6Install": "not performed; adb devices empty before install",
+    "queueRealUi": "not performed; test stopped at first ADB tree before any prompt submission"
+  },
+  "phonePreferencesAtDisconnect": {
+    "scheme": "dark",
+    "showReasoning": false,
+    "expandToolDetails": true,
+    "sendWithEnter": false,
+    "runningSendMode": "queue"
+  },
+  "systemValuesLastRead": {
+    "fontScale": 1.0,
+    "autoRotation": 0,
+    "userRotation": 0
+  },
+  "deviceDisconnectedObservedLocal": "2026-10-26T20:45+08:00",
+  "userData": "no uninstall or clear; original source3080/3181 untouched"
+}

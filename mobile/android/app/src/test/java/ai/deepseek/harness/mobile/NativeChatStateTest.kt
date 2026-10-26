@@ -43,6 +43,58 @@ class NativeChatStateTest {
         assertEquals(listOf("final answer","shell","Provider disconnected"),rows.map {it.text})
         assertTrue(rows[1].detail.contains("C:/repo")); assertTrue(rows.none {it.running})
     }
+    @Test fun rawToolTextAndUserStoppedTurnsRemainDistinctFromFailures() {
+        val events = listOf(event(1, "turn/start"),
+            event(2, "tool/call", obj("callId" to "actual-tool", "name" to "pwsh", "arguments" to "Start-Sleep -Seconds 50")),
+            event(3, "tool/result", obj("message" to obj("source" to obj("callId" to "actual-tool"), "content" to listOf(obj("type" to "text", "text" to "Error: tool call aborted"))))),
+            event(4, "turn/end", obj("reason" to obj("kind" to "aborted", "reason" to obj("kind" to "user")))))
+        val rows = foldNativeHistory(events)
+        assertTrue(rows.first().detail.contains("Error: tool call aborted"))
+        assertEquals("meta", rows.last().role)
+        assertEquals("已停止", rows.last().text)
+        assertTrue(rows.none { it.running || it.role == "error" })
+        val failed = foldNativeHistory(listOf(event(5, "turn/end", obj("reason" to obj("kind" to "error", "error" to obj("message" to "Provider disconnected"))))))
+        assertEquals("error", failed.single().role)
+        assertEquals("Provider disconnected", failed.single().text)
+    }
+    @Test fun durableImagesInRawAndProjectedHistoryResolveOncePerAttachment() = kotlinx.coroutines.runBlocking {
+        val image = obj("type" to "image", "attachment" to obj("attachmentId" to "sha256:test-image", "mediaType" to "image/png"))
+        val rows = foldNativeHistory(listOf(event(1, "user/message", obj("id" to "raw", "source" to obj("kind" to "user"), "content" to listOf(image))),
+            obj("seqStart" to 2, "item" to obj("type" to "assistant_message", "messageId" to "projected", "content" to listOf(image)))))
+        assertEquals(listOf("sha256:test-image", "sha256:test-image"), rows.flatMap { it.images }.map { it.attachmentId })
+        val reads = mutableListOf<String>()
+        val loaded = resolveHistoryImages(rows) { id ->
+            reads += id
+            obj("attachment" to obj("attachmentId" to id, "mediaType" to "image/png"), "data" to "image-bytes")
+        }
+        assertEquals(listOf("sha256:test-image"), reads)
+        assertTrue(loaded.flatMap { it.images }.all { it.data == "image-bytes" && it.mediaType == "image/png" })
+    }
+    @Test fun failedImageDoesNotDiscardAnotherImageAndResolutionPublishesEachResult() = kotlinx.coroutines.runBlocking {
+        val rows = listOf(NativeRow("images", "user", "", false, listOf(NativeImage("image/png", "", "bad"), NativeImage("image/png", "", "good"))))
+        val published = mutableListOf<NativeImage>()
+        val loaded = resolveHistoryImages(rows, { published += it }) { id ->
+            if (id == "bad") error("Image bytes missing")
+            obj("attachment" to obj("attachmentId" to id, "mediaType" to "image/png"), "data" to "image-bytes")
+        }
+        assertEquals(listOf("bad", "good"), published.map { it.attachmentId })
+        assertEquals("Image bytes missing", loaded.single().images[0].error)
+        assertEquals("image-bytes", loaded.single().images[1].data)
+        val readAgain = resolveHistoryImages(loaded) { error("completed images must not be fetched again") }
+        assertEquals(loaded, readAgain)
+    }
+    @Test fun historyImageCancellationStopsBeforeTheNextImageAndIsNotRenderedAsFailure() = kotlinx.coroutines.runBlocking {
+        val rows = listOf(NativeRow("images", "user", "", false, listOf(NativeImage("image/png", "", "first"), NativeImage("image/png", "", "second"))))
+        val reads = mutableListOf<String>()
+        val published = mutableListOf<NativeImage>()
+        val canceled = kotlinx.coroutines.CancellationException("session switched")
+        try {
+            resolveHistoryImages(rows, { published += it }) { id -> reads += id; throw canceled }
+            fail("image cancellation was swallowed")
+        } catch (failure: kotlinx.coroutines.CancellationException) { assertSame(canceled, failure) }
+        assertEquals(listOf("first"), reads)
+        assertTrue(published.isEmpty())
+    }
     @Test fun historyApprovalsResolveIndividuallyAndProjectedItemsHaveStableIds() {
         val pending=listOf(event(1,"approval/asked",obj("id" to "a","toolName" to "shell","reason" to "rm file")),
             event(2,"approval/asked",obj("id" to "b","toolName" to "write")),event(3,"approval/decided",obj("id" to "a")))

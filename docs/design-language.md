@@ -31,7 +31,7 @@ UI 改动先读本文。工程细则（CSS Modules、token 分层、动效 recip
 
 设置面板使用 `--dsw-alias-bg-layer-2`，随玻璃透明度设置调整填充，并复用 `--dsw-menu-backdrop-filter` 模糊底层内容。菜单与对话框同样响应玻璃透明度；透明主题仍遵循壁纸门控与滑块禁用契约。设置导航选中项采用 `--dsw-alias-interactive-bg-active` 的中性底色、主文字色和 500 字重，不叠加蓝色填充或阴影。浅色主题的共享滚动条使用主文字色 18% 的半透明滑块，悬停时提高到 30%，轨道保持透明，以适应玻璃背景。
 
-Project 的资料与浮窗内容使用 `--dsw-alias-bg-panel-solid`：保留当前高层背景的主题色，以不透明内容面分离表单与底层聊天文字；不修改全局玻璃透明度设置或普通设置面板的配方。确认面板沿用共享 Modal 的玻璃效果。
+Project 的资料与浮窗内容使用 `--dsw-alias-bg-panel-solid`：保留当前高层背景的主题色，以不透明内容面分离表单与底层聊天文字；不修改全局玻璃透明度设置或普通设置面板的配方。确认面板沿用共享 Modal 的玻璃效果。成员只读与归档提示是输入区内的常驻说明面，使用同一不透明底色、12px 圆弧（`radius-md`、`corner-shape: round`）、12px 内留白与 12/18 辅助正文；与原输入卡共用宽轴，四周至少留出 8px，标题 14/22，动作复用 28px 胶囊按钮。说明与动作分组、窄栏自动换行，操作失败沿用 Toast，不撑高说明面。
 
 Project 主对话就是普通会话行，列在其目录下，标题后多一个「Project」标签：10px 字号、`radius-sm`、`interactive-bg-hover` 底和 `label-secondary` 文字，在空闲、运行、归档和搜索结果中都保留。没有单独的 Project 分类。新建入口有两处：新会话首屏目录与模式控件之后的「Project」幽灵按钮（以选中目录开启并带上已输入的草稿，不自动发送）；工作区目录行菜单中的「在此目录新建 Project」（已有时为「打开 Project」，位于重命名之上）。新会话目录菜单不再单列 Project。不能作为 Project 的目录（磁盘根、用户主目录、系统配置目录、鲸屿数据目录）中，首屏按钮保持可见但禁用，悬停提示原因；目录行菜单不提供该项。需求与团队沿用顶部入口，资料与只读过程沿用现有对话框。
 
@@ -218,13 +218,13 @@ Git 标题栏的分支与主操作平常只显示图标和下拉箭头；鼠标�
 外观设置可为主题族附加族级 `skin`（`data-dsh-skin`）。皮肤只切换已批准的整机视觉语言，不新增组件库、不改交互和信息架构；默认皮肤仍完整遵守上文全部规则。皮肤的几何与材质可以覆写圆角、阴影、栏间距、输入条与卡片结构，但颜色仍只来自该家族的语义 token 表，功能 CSS 仍不得写明暗分支，结构规则只放在 `ui-theme/src/styles/skins.css`（后续按皮肤拆分时保持同目录）。功能包只暴露稳定的 `data-dsh-*` 钩子（`data-dsh-frame`、`data-dsh-sidebar`、`data-dsh-sidebar-toggle`、`data-dsh-chat`、`data-dsh-composer`、`data-dsh-artifact`、`data-dsh-header`、`data-dsh-hero-headline`、`data-dsh-hero-mark`、`data-dsh-message-role`、`data-dsh-message-bubble`、`data-dsh-tool` 等），不写皮肤判断。
 
 - **Codex**：平面桌面应用语言。左侧是浅灰导航列，右侧是白色、与窗口齐平的内容面，两栏之间一条 0.5px 细分隔线（与全局中性描边一致）；没有圆角内容卡、灰缝、壁纸、玻璃、悬浮卡片或外框留白。侧栏折叠后为 56px 图标轨，轨道与内容同白，只留分隔线。输入框是 18px 描边大卡片，用户消息右对齐浅灰块，助手为纯文本，内容列 720px，侧栏 13px/30–34px 行高。侧栏沿用 Codex 的浏览结构：`新对话` 行、`项目` 与 `最近` 两个可折叠分区、32px 行高与 10px 内边距，只在 Codex 皮肤下接管；切到 Claude 或默认皮肤时释放回产品侧栏。品牌行只显示 `Whale Isle` 文字，不带下拉标记、不显示头像；底部账号行保持产品原设计（登录后显示用户头像，未登录显示设置入口）。空态使用产品本地化标题（28px、字重 600），隐藏吉祥物与预览徽标。Windows 标题栏按导航列与内容列各自的表面续色，内容列不留 20px 圆角。强调蓝只用于链接、选中态和状态，浅色 `#2563EB`、深色 `#338CFF`，表面是中性白/浅灰/深灰，不由 accent 混色；启动页不参与。
-- **Claude**：暖纸画布，贴边侧栏；会话正文、用户气泡、输入框与空态标题使用随包 Source Serif 4（SIL OFL，替代无法再分发的 Claude 授权衬线 Copernicus/Tiempos；拉丁回退 Iowan Old Style / Charter / Georgia / Cambria / Times New Roman，中文回退 Songti SC / Noto Serif SC / SimSun），界面标签、元信息行与控件使用随包 Inter（SIL OFL），代码保持等宽，左上角品牌字标保持产品字体、不参与皮肤；用户消息只有正文气泡是暖块（12px 对称圆角），气泡下方的时间与操作行直接落在纸面上、不加底色；输入框为 22px 描边卡片；不使用壁纸、玻璃或重阴影，强调色为陶土橙（浅色 `#C96442`、深色 `#D97757`）。
+- **Claude**：主题内以橘发、橙花黑缎带、捧书的 Claude 大小姐同人形象替换鲸鱼娘：展开与收起侧栏、助理入口和会话顶栏共用透明头肩像，运行状态用读书半身像和「正在思考」文案，新会话页用彩色头像与「今天想一起探索什么？」问候，隐藏「大肥鱼版」徽标；切换主题立即恢复对应形象，不改助理名称、模型或会话数据。美术来源与使用范围随 Web 静态资源提供署名文件。暖纸画布，贴边侧栏；会话正文、用户气泡、输入框与空态标题使用随包 Source Serif 4（SIL OFL，替代无法再分发的 Claude 授权衬线 Copernicus/Tiempos；拉丁回退 Iowan Old Style / Charter / Georgia / Cambria / Times New Roman，中文回退 Songti SC / Noto Serif SC / SimSun），界面标签、元信息行与控件使用随包 Inter（SIL OFL），代码保持等宽，左上角品牌字标保持产品字体、不参与皮肤；用户消息只有正文气泡是暖块（12px 对称圆角），气泡下方的时间与操作行直接落在纸面上、不加底色；输入框为 22px 描边卡片；不使用壁纸、玻璃或重阴影，强调色为陶土橙（浅色 `#C96442`、深色 `#D97757`）。
 
 皮肤变更先在本节登记目标与例外，再改代码；未登记的皮肤不得作为产品主题发布。
 
 ## 手机远程交互
 
-远程 Web 与 Android 原生聊天采用桌面鲸屿的窄屏布局：侧栏贴边直角，按品牌、新会话、工作区与分组会话目录、底部账户组织；输入卡沿用桌面 22px 圆角、细边和无外投影，并适配竖屏、缩窄与软键盘。模型、权限、附件、重命名和简短设置在紧凑弹窗内完成，目录浏览、搜索结果和复杂 Git 任务保留可返回的长任务面。Android 使用 Kotlin 协议客户端与 Compose，不内嵌聊天 WebView。颜色、字体栈与明暗仍只取同值语义 token 表。完整契约见 [design-language-mobile.md](design-language-mobile.md)；2026-10-25 用户要求取代[旧 Claude 式结构](decisions/implemented/product/2026-09-24-mobile-remote-claude-structure.md)的导航与几何。
+远程 Web 与 Android 原生聊天采用桌面鲸屿的窄屏布局：侧栏贴边直角，按品牌、新会话、工作区与分组会话目录、底部账户组织；输入卡沿用桌面 22px 圆角、细边和无外投影，并适配竖屏、缩窄与软键盘。模型、思考、权限和附件来源采用跟随触发按钮的锚定菜单；模型菜单优先向上展开并右对齐，窄屏、旋转和软键盘变化时避让可视边缘，不使用居中 Modal 或灰色模糊遮罩。重命名和简短设置使用紧凑弹窗，目录浏览、搜索结果和复杂 Git 任务保留可返回的长任务面。Android 使用 Kotlin 协议客户端与 Compose，不内嵌聊天 WebView。颜色、字体栈与明暗仍只取同值语义 token 表。完整契约见 [design-language-mobile.md](design-language-mobile.md)；2026-10-25 用户要求取代[旧 Claude 式结构](decisions/implemented/product/2026-09-24-mobile-remote-claude-structure.md)的导航与几何。
 
 ## 桌面欢迎窗
 

@@ -20,12 +20,11 @@ vi.mock('node:fs', async (importOriginal) => {
   }
 })
 
-// Vite is owned by the Web app rather than the repository's scripting dependencies.
-const vite = createRequire(new URL('../apps/web/package.json', import.meta.url))('vite') as {
-  build(config: Record<string, unknown>): Promise<unknown>
-}
+type ViteBuild = { build(config: Record<string, unknown>): Promise<unknown> }
+const webVite = createRequire(new URL('../apps/web/package.json', import.meta.url))('vite') as ViteBuild
+const repositoryVite = createRequire(new URL('../package.json', import.meta.url))('vite') as ViteBuild
 
-function fixture() {
+function fixture(vite: ViteBuild = webVite) {
   // Vite resolves inputs with native realpath, which expands Windows short names.
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-web-bundle-isolation-')))
   const web = join(root, 'apps/web')
@@ -187,23 +186,6 @@ describe('default Web bundle input isolation', () => {
     await expect(test.run()).resolves.toBeDefined()
   })
 
-  it.each([
-    ['URL worker', 'new Worker(new URL("./worker.js", import.meta.url), { type: "module" })'],
-    ['inline worker', 'import Worker from "./worker.js?worker&inline"; new Worker()'],
-  ])('checks %s subbuild inputs when the product loads it', async (_name, source) => {
-    const test = fixture()
-    test.write('apps/web/src/main.js', source)
-    test.write('apps/web/src/worker.js', 'import "../../../packages/experimental/prototype/index.js"')
-    await expect(test.run()).rejects.toThrow(/Web product isolation: experimental input/)
-  })
-
-  it('allows an experimental worker loaded only by preview', async () => {
-    const test = fixture()
-    test.write('apps/web/src/preview.js', 'new Worker(new URL("./worker.js", import.meta.url), { type: "module" })')
-    test.write('apps/web/src/worker.js', 'import "../../../packages/experimental/prototype/index.js"')
-    await expect(test.run()).resolves.toBeDefined()
-  })
-
   it('rejects an emitted entry without its original HTML input', () => {
     const test = fixture()
     const inputs = new WebProductBundleIsolation(test.root, test.web)
@@ -218,6 +200,52 @@ describe('default Web bundle input isolation', () => {
       'index.html': { type: 'asset', fileName: 'index.html', names: ['index.html'], originalFileNames: ['index.html'] },
       'worker.js': { type: 'asset', fileName: 'worker.js', names: [], originalFileNames: [] },
     }, () => null) }).toThrow(/worker.js has no recorded original files/)
+  })
+})
+
+describe.each([
+  ['Web app', webVite],
+  ['repository', repositoryVite],
+] as const)('%s Vite worker input isolation', (_name, vite) => {
+  it.each([
+    ['URL worker', 'new Worker(new URL("./worker.js", import.meta.url), { type: "module" })'],
+    ['inline worker', 'import Worker from "./worker.js?worker&inline"; new Worker()'],
+  ])('checks %s subbuild inputs when the product loads it', async (_worker, source) => {
+    const test = fixture(vite)
+    test.write('apps/web/src/main.js', source)
+    test.write('apps/web/src/worker.js', 'import "../../../packages/experimental/prototype/index.js"')
+    await expect(test.run()).rejects.toThrow(/Web product isolation: experimental input/)
+  })
+
+  it.each(['buildStart', 'load', 'transform', 'generateBundle'] as const)('checks extra worker files registered by %s', async (hook) => {
+    const test = fixture(vite)
+    test.write('apps/web/src/main.js', 'new Worker(new URL("./worker.js", import.meta.url), { type: "module" })')
+    test.write('apps/web/src/worker.js', 'globalThis.productWorker = true')
+    const file = join(test.root, 'packages/experimental/prototype/index.js')
+    await expect(test.run({ worker: { plugins: () => [{
+      name: 'fixture-worker-file-dependency',
+      [hook]: {
+        order: 'pre',
+        handler(this: { addWatchFile(file: string): void }) {
+          this.addWatchFile(file)
+          return null
+        },
+      },
+    }] } })).rejects.toThrow(/Web product isolation: experimental input/)
+  })
+
+  it('allows a product worker without experimental inputs', async () => {
+    const test = fixture(vite)
+    test.write('apps/web/src/main.js', 'new Worker(new URL("./worker.js", import.meta.url), { type: "module" })')
+    test.write('apps/web/src/worker.js', 'globalThis.productWorker = true')
+    await expect(test.run()).resolves.toBeDefined()
+  })
+
+  it('allows an experimental worker loaded only by preview', async () => {
+    const test = fixture(vite)
+    test.write('apps/web/src/preview.js', 'new Worker(new URL("./worker.js", import.meta.url), { type: "module" })')
+    test.write('apps/web/src/worker.js', 'import "../../../packages/experimental/prototype/index.js"')
+    await expect(test.run()).resolves.toBeDefined()
   })
 })
 

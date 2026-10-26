@@ -5,20 +5,25 @@ import ai.deepseek.harness.mobile.ui.DshRoot
 import ai.deepseek.harness.mobile.ui.NativeRemoteScreen
 import ai.deepseek.harness.mobile.ui.NativeDialog
 import ai.deepseek.harness.mobile.ui.NativeChoiceRow
+import ai.deepseek.harness.mobile.ui.MobilePreferences
+import ai.deepseek.harness.mobile.ui.LocalMobilePreferences
 import ai.deepseek.harness.mobile.ui.ScanScreen
 import ai.deepseek.harness.mobile.ui.theme.DshTheme
+import ai.deepseek.harness.mobile.ui.theme.dsh
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.Network
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
@@ -34,6 +39,7 @@ import kotlinx.coroutines.withTimeout
 class MainActivity : ComponentActivity() {
     private val store by lazy { EncryptedDeviceStore(applicationContext) }
     private val vm: DshViewModel by viewModels { DshVmFactory(store) }
+    private val interfacePreferences by lazy { MobilePreferences(applicationContext) }
     private lateinit var images: NativeImagePicker
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) { runOnUiThread { vm.onNetworkAvailable() } }
@@ -56,9 +62,20 @@ class MainActivity : ComponentActivity() {
         setContent {
             val dark = when (vm.scheme) { "dark" -> true; "light" -> false; else -> isSystemInDarkTheme() }
             var attachmentSource by remember { mutableStateOf(false) }
-            DisposableEffect(dark) {
-                WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = !dark
-                onDispose { }
+            SideEffect {
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
+                }
+                @Suppress("DEPRECATION")
+                window.statusBarColor = android.graphics.Color.TRANSPARENT
+                @Suppress("DEPRECATION")
+                window.navigationBarColor = android.graphics.Color.TRANSPARENT
+                // The root paints both transparent system bars, including Android 15+ edge-to-edge.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    window.isStatusBarContrastEnforced = false
+                    window.isNavigationBarContrastEnforced = false
+                }
             }
             LaunchedEffect(vm.externalUrl) {
                 if (vm.externalUrl.isNotBlank()) {
@@ -68,18 +85,20 @@ class MainActivity : ComponentActivity() {
                 }
             }
             DshTheme(dark) {
-                Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.union(WindowInsets.ime))) {
-                    when (vm.route) {
-                        Route.Scan -> ScanScreen(vm::onScanned, { vm.route = Route.Connect }, vm::openPasteEntry)
-                        Route.Chat -> NativeRemoteScreen(vm) { attachmentSource = true }
-                        else -> DshRoot(vm, ::requestScan, {
-                            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
-                        })
+                CompositionLocalProvider(LocalMobilePreferences provides interfacePreferences) {
+                    Box(Modifier.fillMaxSize().background(dsh().bgBase).windowInsetsPadding(WindowInsets.safeDrawing.union(WindowInsets.ime))) {
+                        when (vm.route) {
+                            Route.Scan -> ScanScreen(vm::onScanned, { vm.route = Route.Connect }, vm::openPasteEntry)
+                            Route.Chat -> NativeRemoteScreen(vm) { attachmentSource = true }
+                            else -> DshRoot(vm, ::requestScan, {
+                                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+                            })
+                        }
                     }
-                }
-                if (attachmentSource) NativeDialog("添加图片", onDismiss = { attachmentSource = false }) {
-                    NativeChoiceRow("从相册选择", onClick = { attachmentSource = false; images.selectGallery() })
-                    NativeChoiceRow("拍照", onClick = { attachmentSource = false; images.takePhoto() })
+                    if (attachmentSource) NativeDialog("添加图片", onDismiss = { attachmentSource = false }) {
+                        NativeChoiceRow("从相册选择", onClick = { attachmentSource = false; images.selectGallery() })
+                        NativeChoiceRow("拍照", onClick = { attachmentSource = false; images.takePhoto() })
+                    }
                 }
             }
         }

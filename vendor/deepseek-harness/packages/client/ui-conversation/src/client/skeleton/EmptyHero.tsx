@@ -154,7 +154,10 @@ export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
           </span>
           <span className={css.titleGroup}>
             {/* Own element: keeps the headline text addressable apart from the badge. */}
-            <span data-dsh-hero-headline>{t('hero.headline')}</span>
+            <span data-dsh-hero-headline>
+              <span data-dsh-mascot="default">{t('hero.headline')}</span>
+              <span data-dsh-mascot="claude">{t('hero.claudeHeadline')}</span>
+            </span>
             <span className={css.previewBadge} data-dsh-hero-preview>{t('hero.preview')}</span>
           </span>
         </div>

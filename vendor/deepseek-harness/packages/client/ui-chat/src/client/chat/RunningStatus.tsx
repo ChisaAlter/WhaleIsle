@@ -15,7 +15,7 @@ interface RunningStatusProps {
 /**
  * Show live elapsed time after the current Turn's content without announcing ticks.
  * @param props - Current Turn start time and localized copy.
- * @returns the blue running indicator; mount only while the Session is running.
+ * @returns the skin-selected running indicator; mount only while the Session is running.
  */
 export const RunningStatus = memo(function RunningStatus({ startTime, t }: RunningStatusProps) {
   const [now, setNow] = useState(Date.now)
@@ -25,16 +25,20 @@ export const RunningStatus = memo(function RunningStatus({ startTime, t }: Runni
     const timer = setInterval(() => { setNow(Date.now()) }, LIVE_RUN_CLOCK_INTERVAL_MS)
     return () => { clearInterval(timer) }
   }, [startTime])
-  const label = startTime === undefined ? t('chat.deepDiving') : t('chat.deepDivingFor', {
-    duration: formatRunDuration(Math.max(1000, now - startTime), t).map(part => part.text).join(''),
-  })
+  const params = { duration: formatRunDuration(Math.max(1000, now - (startTime ?? now)), t).map(part => part.text).join('') }
+  const label = startTime === undefined ? t('chat.deepDiving') : t('chat.deepDivingFor', params)
+  const thinkingLabel = startTime === undefined ? t('chat.thinking') : t('chat.thinkingFor', params)
   return (
     <div className={css.running} data-chat-running>
-      <span className={a11yCss.visuallyHidden} role="status" aria-live="polite" aria-atomic="true">{t('chat.deepDiving')}</span>
+      <span className={a11yCss.visuallyHidden} role="status" aria-live="polite" aria-atomic="true">
+        <span data-dsh-mascot="default">{t('chat.deepDiving')}</span>
+        <span data-dsh-mascot="claude">{t('chat.thinking')}</span>
+      </span>
       <span className={css.runningDivider} aria-hidden="true" />
       <span className={css.runningContent}>
         <RunningWhaleGirl />
-        <TextShimmer active className={css.runningText}>{label}</TextShimmer>
+        <span data-dsh-mascot="default"><TextShimmer active className={css.runningText}>{label}</TextShimmer></span>
+        <span data-dsh-mascot="claude"><TextShimmer active className={css.runningText}>{thinkingLabel}</TextShimmer></span>
       </span>
     </div>
   )

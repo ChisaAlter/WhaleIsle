@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ai.deepseek.harness.mobile.NativeMarkdownTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-10-26T12:46:06" hostname="AYASE" time="0.079">
+  <properties/>
+  <testcase name="actualDeviceResponseSeparatesTableCodeAndSingleDollarMathWithoutChangingSource" classname="ai.deepseek.harness.mobile.NativeMarkdownTest" time="0.067"/>
+  <testcase name="incompleteFencePreservesLiteralTextAndInlineBackticksDoNotCreateScrollableBlocks" classname="ai.deepseek.harness.mobile.NativeMarkdownTest" time="0.001"/>
+  <testcase name="nestedCodeAndTablesKeepQuoteAndListContextAndResolvedReferenceLinks" classname="ai.deepseek.harness.mobile.NativeMarkdownTest" time="0.001"/>
+  <testcase name="singleAndOfficialDoubleDollarMathBothParseWithoutSwallowingCurrencyEscapesOrCode" classname="ai.deepseek.harness.mobile.NativeMarkdownTest" time="0.001"/>
+  <testcase name="tableCellsRetainTextAndParserPluginDoesNotInstallConsumingTextViewVisitors" classname="ai.deepseek.harness.mobile.NativeMarkdownTest" time="0.007"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,16 @@
+{
+  "sessionId": "session-e7f2d5af-efc9-4b3c-b2ef-f9dc78fec2aa",
+  "completedBeforeRichtextInstall": true,
+  "lastTurn": {
+    "kind": "completed"
+  },
+  "assistantText": "# PORTRAIT_RICH_OK\n\n| Item | Value | Detail |\n| --- | ---: | --- |\n| A | 1 | Visible table cell |\n| B | 2 | A longer table cell for portrait scrolling |\n\n- First bullet item\n- Second bullet item\n\n```text\nSTART_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_END\n```\n\nInline math: $E = mc^2$\n\n$$\n\\frac{a+b}{c}=2\n$$\n\nPrice: $12.50 and $20.00. Code: `$HOME`.\n\n[example.com](https://example.com)",
+  "fixtureContentChecks": {
+    "heading": true,
+    "table": true,
+    "longCode": true,
+    "singleMath": true,
+    "displayMath": true,
+    "currency": true
+  }
+}

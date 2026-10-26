@@ -549,7 +549,7 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
         current.lifecycle = 'archived'
         current.paused = true
       }))
-      const takeover = page.locator('[data-project-composer-takeover] > [role="status"]')
+      const takeover = page.locator('[data-project-composer-takeover] > [role="note"]')
       await takeover.waitFor({ timeout: 15_000 })
       await expect.poll(() => takeover.evaluate((element, reference) => {
         const box = element.getBoundingClientRect()
@@ -626,13 +626,13 @@ describe('web e2e: Project composer stays fixed while status changes', () => {
     await settleViewport(page, 800)
     await page.locator('[data-team-action] button[aria-haspopup="dialog"]').click()
     await page.locator('[data-team-panel]:not([hidden])').getByRole('button').filter({ hasText: 'Verify stable Project status' }).first().click()
-    const takeover = page.locator('[data-project-composer-takeover] > [role="status"]')
+    const takeover = page.locator('[data-project-composer-takeover] > [role="note"]')
     await takeover.waitFor({ timeout: 15_000 })
     for (const width of WIDTHS) {
       await settleViewport(page, width)
       await expect.poll(() => page.evaluate(() => {
         const card = document.querySelector('[data-composer-seat] [data-chain-overlay-fallback="conversation.composer"] [data-composer-card]')
-        const managed = document.querySelector('[data-project-composer-takeover] > [role="status"]')
+        const managed = document.querySelector('[data-project-composer-takeover] > [role="note"]')
         if (card === null || managed === null) return Number.POSITIVE_INFINITY
         const input = card.getBoundingClientRect(), output = managed.getBoundingClientRect()
         return Math.max(...(['left', 'top', 'width', 'height'] as const).map(key => Math.abs(input[key] - output[key])))

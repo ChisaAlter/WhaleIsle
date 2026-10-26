@@ -22,8 +22,10 @@ import java.util.concurrent.TimeUnit
     fun offer() = Offer(2, serverId, daemonPublicKeyB64, RelayOffer(relayEndpoint, relayUseTls), null)
 }
 
+class RelayAuthenticationException(message: String) : IllegalArgumentException(message)
+
 /** One authenticated connection. Reconnects explicitly reuse a saved secret, never an offer token. */
-class RelayClient(
+open class RelayClient(
     private val offer: Offer,
     saved: SavedComputer?,
     private val deviceName: String,
@@ -38,17 +40,20 @@ class RelayClient(
     private var name = saved?.computerName ?: "我的电脑"
     private var socket: WebSocket? = null
     private val ready = CompletableDeferred<Unit>()
+    private val ended = CompletableDeferred<Throwable>()
     private val pending = ConcurrentHashMap<String, CompletableDeferred<JsonElement>>()
     private val _status = MutableStateFlow("未连接")
-    val status = _status.asStateFlow()
-    @Volatile var connected = false
-        private set
+    open val status = _status.asStateFlow()
+    @Volatile open var connected = false
+        protected set
+    @Volatile private var disposed = false
     private var authenticated = false
     private var serverInfo = false
     @Volatile private var helloSent = false
     @Volatile private var transportOpen = false
 
-    suspend fun connect() {
+    open suspend fun connect() {
+        check(!disposed) { "连接已关闭" }
         val bootstrap = offer.authBootstrap
         require(bootstrap == null || bootstrap.expiresAtMs > System.currentTimeMillis()) { "配对码已过期，请在电脑端刷新后重新扫码" }
         require(bootstrap != null || secret.isNotEmpty()) { "需要扫码配对" }
@@ -74,12 +79,14 @@ class RelayClient(
     }
 
     override fun onOpen(webSocket: WebSocket, response: Response) {
+        if (disposed || ended.isCompleted) { webSocket.close(1000, "Client closed"); return }
         socket = webSocket
         transportOpen = true
         webSocket.send(keyHandshake())
     }
     override fun onMessage(webSocket: WebSocket, bytes: ByteString) = onMessage(webSocket, bytes.utf8())
     override fun onMessage(webSocket: WebSocket, text: String) {
+        if (disposed || ended.isCompleted) return
         try {
             if (text.startsWith("{")) {
                 val frame = Json.parseToJsonElement(text).objectValue()
@@ -105,7 +112,7 @@ class RelayClient(
             val payload = frame["payload"].objectValue()
             when (frame.string("type")) {
                 "relay_device_auth_result" -> {
-                    require(frame["ok"].flag()) { "配对授权已失效，请重新扫码" }
+                    if (!frame["ok"].flag()) throw RelayAuthenticationException("配对授权已失效，请重新扫码")
                     if (frame.string("deviceId").isNotEmpty()) deviceId = frame.string("deviceId")
                     if (frame.string("deviceSecret").isNotEmpty()) secret = frame.string("deviceSecret")
                     require(secret.isNotEmpty()) { "电脑未返回设备凭据" }
@@ -159,23 +166,31 @@ class RelayClient(
             return withTimeout(timeout) { answer.await() }
         } finally { pending.remove(id) }
     }
-    suspend fun host(method: String, payload: JsonObject = obj()): JsonElement =
+    open suspend fun host(method: String, payload: JsonObject = obj()): JsonElement =
         rpc("dshd.host.rpc.request", obj("method" to method, "payload" to payload), 30_000)
-    suspend fun git(action: String, cwd: String, payload: JsonObject = obj()): JsonElement =
+    open suspend fun git(action: String, cwd: String, payload: JsonObject = obj()): JsonElement =
         rpc("dshd.git.rpc.request", obj("action" to action, "cwd" to cwd, "payload" to payload), 120_000)
-    fun subscribe() = sendSession(obj("type" to "dshd.host.mux.subscribe", "requestId" to UUID.randomUUID().toString()))
+    open fun subscribe() = sendSession(obj("type" to "dshd.host.mux.subscribe", "requestId" to UUID.randomUUID().toString()))
+    open suspend fun awaitDisconnect(): Throwable = ended.await()
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = fail(t)
-    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = fail(IllegalStateException(reason.ifBlank { "连接已断开，草稿已保留" }))
-    override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, reason) }
-    private fun fail(error: Throwable) {
+    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = fail(closeError(code, reason))
+    override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+        fail(closeError(code, reason)); webSocket.close(code, reason)
+    }
+    private fun closeError(code: Int, reason: String): Throwable = if (code == 4401)
+        RelayAuthenticationException("配对授权已失效，请重新扫码") else IllegalStateException(reason.ifBlank { "连接已断开，草稿已保留" })
+    @Synchronized private fun fail(error: Throwable) {
+        if (ended.isCompleted) return
         connected = false
         transportOpen = false
         _status.value = error.message ?: "连接失败"
         ready.completeExceptionally(error)
         pending.values.forEach { it.completeExceptionally(error) }
         pending.clear()
+        ended.complete(error)
     }
-    fun close() {
+    open fun close() {
+        disposed = true
         fail(CancellationException("连接已关闭"))
         socket?.close(1000, "Client closed")
         socket = null

@@ -10,6 +10,11 @@ const { forwardHostRpc, forwardHostRespond, sanitizeHarnessCookie } = require('.
 const { openMuxSse, shouldForwardMuxEnvelope } = require('../shared/dshd-mux-sse.js');
 
 const muxListeners = new Set();
+const pendingApprovals = new Map();
+
+function approvalKey(payload) {
+  return JSON.stringify([payload.sessionId, payload.approvalId]);
+}
 let muxAbort = null;
 let muxOrigin = '';
 let muxCookie = '';
@@ -30,11 +35,15 @@ function closeMux() {
     muxAbort = null;
   }
   muxRunning = false;
+  pendingApprovals.clear();
 }
 
 function dispatchMux(envelope) {
   if (!shouldForwardMuxEnvelope(envelope)) return;
   const frame = { rpcId: envelope.rpcId, envelope };
+  const payload = envelope.payload;
+  if (payload?.type === 'approval/requested') pendingApprovals.set(approvalKey(payload), frame);
+  else if (payload?.type === 'approval/resolved') pendingApprovals.delete(approvalKey(payload));
   for (const listener of muxListeners) {
     try { listener(frame); } catch { /* ignore */ }
   }
@@ -57,7 +66,8 @@ function ensureMux() {
   void openMuxSse({
     origin,
     cookie,
-    onEnvelope: dispatchMux,
+    onEnvelope: (envelope) => { if (!signal.aborted) dispatchMux(envelope); },
+    onDisconnect: () => { if (!signal.aborted) pendingApprovals.clear(); },
     signal,
   }).catch(() => {
     if (muxAbort?.signal === signal) {
@@ -99,12 +109,22 @@ export function installDesktopRpcHooks() {
       return forwardHostRpc({ origin: currentOrigin(), cookie: currentCookie(), method, payload });
     },
     async respond({ rpcId, value }) {
-      return forwardHostRespond({ origin: currentOrigin(), cookie: currentCookie(), rpcId, value });
+      const pending = [...pendingApprovals.values()].find((frame) => frame.rpcId === rpcId);
+      const result = await forwardHostRespond({ origin: currentOrigin(), cookie: currentCookie(), rpcId, value });
+      if (pending && pendingApprovals.get(approvalKey(pending.envelope.payload)) === pending) {
+        const { sessionId, approvalId } = pending.envelope.payload;
+        // The Gateway omits cancel for the stream that supplied the decision.
+        dispatchMux({ type: 'server-request', rpcId, payload: { type: 'approval/resolved', sessionId, approvalId } });
+      }
+      return result;
     },
     gitRpc,
     subscribeMux(onFrame) {
       muxListeners.add(onFrame);
       ensureMux();
+      for (const frame of pendingApprovals.values()) {
+        try { onFrame(frame); } catch { /* isolate a subscriber from the shared stream */ }
+      }
       return () => {
         muxListeners.delete(onFrame);
         if (muxListeners.size === 0) closeMux();

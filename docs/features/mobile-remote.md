@@ -22,7 +22,7 @@
 
 1. 桌面开启配对且中继已连接 → 账户菜单「远程」打开 `#offer=` v2 二维码弹窗（账户入口未注册时从原侧栏「远程」行打开；局域网 `http://<LAN>:3180/` 本机 `mobile/web` SPA；外出 `DEFAULT_PUBLIC_APP_BASE_URL` 公网 nginx `https://ayase.cn/dshd/`）。系统相机打开浏览器公网页；App 内扫由 Kotlin 解析 offer，不加载公网 origin。浏览器 `DaemonClient` 与 Kotlin 客户端 经 `ayase.cn:443` TLS 中继完成 E2EE 握手 → `deviceSecret` 落盘（sticky）→ 已配对态。中继未连接时弹窗只显示状态，不展示二维码 / 复制链接 / 刷新配对码。
 2. 再次打开手机 SPA（无 hash）：用最近一台已存 `deviceSecret` sticky 重连。「已保存的电脑」点选 / 忘记。跨 origin（公网 `/dshd`、LAN `:3180`、APK asset）不互通 sticky。
-3. Android：原生扫码或粘贴完整配对 URL → Kotlin 客户端完成握手并保存加密凭据 → Compose 绘制聊天、会话列表、审批、工作区、Git 与设置。浏览器继续使用 SPA。
+3. Android：主 Activity 固定竖屏。原生扫码、粘贴完整配对 URL 或入口保存电脑重连，先在连接页显示认证/同步进度；完成握手、目录及所选会话历史和控制项加载后，才由 Compose 绘制聊天。失败在连接页就地报错并提供显式重试/取消，保留配对与草稿；已有 Chat 的同电脑断线恢复继续保留任务。浏览器继续使用 SPA。
 4. 配对之后 SPA 是正在跑的 `dsh web` 第二客户端（与桌面 BrowserView 同一进程）。LAN 与外出都走隧道（公网页碰不到 loopback）。Harness 未就绪：抽屉明示「桌面端未启动」，禁止画空的「新会话」假装已对齐。
 5. 抽屉对齐桌面侧栏：`session.list` + `workspace.list`；按工作区分组 / 一个列表；搜索 `session.search`（snippet）；行 ⋯ 重命名 / Fork / 上移下移 / 归档；活会话 **没有删除**；已归档取消归档或删除；子智能体只读。
 6. 新会话：已有工作区、无工作区文件夹、浏览本机目录（`host.listDirectory` / `host.createDirectory` / `workspace.create` / `session.create`）。禁止 `host.pickDirectory`、禁止 `createAgent`。
@@ -66,7 +66,7 @@
 - 斜杠：`/` 拉取 `commands/list`；以 `/` 开头由 `commands/execute` 执行。禁止再打 daemon `listCommands` 当真相。
 - 发送 / 停止：`session.prompt`（queue）+ `session.cancel`。
 - 附件：image parts 进 host。
-- Queue：history/projections 有队列才接 `session.updateQueue`；没有则不画假 dock。
+- Android Queue：从 `session.projections.values.inbox` 读取有身份的用户 `next-turn` / `next-step` 消息，有数据才显示。支持 `session.updateQueue` 的非空纯文本编辑、移除，以及回复运行中将 `next-turn` 转入当前回复；含附件不允许文字替换，失败/未知确认不先清本地列表。手机本地偏好可选择运行中 `queue` 或 `steer`，空闲仍 `queue`；没有重新排序操作。
 - 只读子智能体 / 审批接管：替换输入区，不得在只读会话仍显示 Send。
 
 ### D. 顶栏 Git
@@ -131,10 +131,14 @@
 - 「已保存的电脑」是纯本地 sticky；「忘记」只清本机 secret。用户可见名称优先使用握手 `server_info.hostname` 并以可选 `computerName` 增量保存；历史 sticky 无名称时显示「我的电脑」，内部 `serverId` 只作连接键且不得显示为电脑名。
 - 保存设备自动 / 手动重连与 offer 首连共用互斥连接入口；连接中显示状态，首次握手失败 / 超时关闭客户端并恢复按钮，不清 sticky。只有成功建立连接后才启用后台自动重连，避免初次失败永久占用选择器。
 - 新 offer 取消未完成的旧连接，旧连接结果不得覆盖新连接。配对认证成功后，当前客户端立即改用 deviceSecret，自动重连不得复用一次性 pairingToken；消费后的 offer 从页面 fragment 清除。认证失败停止后台重试但不静默删除保存凭据。
-- Android 的连接代次隔离迟到回复，Compose 重组不重复配对；返回前台用保存凭据恢复连接与目录同步，不重放一次性 offer。旧 localStorage 迁移失败必须可见，原数据保留。
+- Android 完整设置从侧栏固定齿轮入口和连接页进入，提供分类与搜索；新电脑配对在电脑与连接内。消息字号、思考过程、工具展开、Enter 发送和运行中发送方式只存手机且由实际渲染/输入消费。模型与权限只修改当前会话（模型请求 `saveAsDefault:false`）；当前会话用量读取可选 `usagePanel.totals`，输入+输出为 headline，缓存分别列出，缺失不伪造零值，不代表账户账单。供应商密钥、MCP、技能/插件管理和完整账户用量尚无原生远程控制。
+- Android 的连接代次隔离迟到回复，Compose 重组不重复配对；已连接时返回前台刷新目录与历史并保留搜索、目录和 Git 任务页。成功连接后的断线用保存凭据自动重连，不重放一次性 offer；同电脑、同会话恢复保留新建、设置、搜索和目录面板、查询和名称输入，离线或会话同步期间禁用远端提交，未完成的写操作不自动重放。Git 面板和审阅在断线时关闭；切电脑、离开或重新配对会重置任务归属。旧 localStorage 迁移失败必须可见，原数据保留。
+- Android 以 `origin: 'subagent'` 判断只读子会话，分页历史通过 `session.history` 携带直接父会话和子会话的 `address` 转到 `session/page`；普通 Fork 的父会话字段不使它变只读。历史图片通过 `session.attachment` 按张读取，失败不阻断同页其它图片，错误占位不随轮询重复请求；当前会话缓存和在途任务在切换时释放。
+- daemon 的共享 mux 为新连接的手机重放当前待处理审批及原 Gateway 回复标识；审批解决、Gateway 断开或电脑来源变化时移除旧记录。共享连接自己作出决策时也广播解决状态，不依赖 Gateway 给答复者回发取消。
 - 手机目录转发保留全部 `session.list` 行和原始会话字段，投影只传 `title` / `sessionListMetadata`。模型、权限、计划与用量详情通过打开会话时的 history 按需获取，不能为每次首屏同步重复传输所有会话的详情；history、创建与搜索响应不受目录裁剪影响。目录失败必须可重试，不能假空列表。
 - **非 secure context 兼容**：`http://<LAN-IP>:3180` 禁止裸用 `crypto.randomUUID` / `crypto.subtle`；uuid 走 `getRandomValues` fallback；E2EE 保持 tweetnacl。
-- 手机端采用[桌面鲸屿窄屏布局](../design-language.md#手机远程交互)：同源透明鲸鱼娘头像和鲸屿字标、贴边直角侧栏、品牌下新会话和工作区分组目录、底部账户与设置；22px / 22dp 细边无外投影输入卡适配竖屏和 IME。模型、权限、附件、重命名、新会话选择和简短设置在紧凑 Modal / Menu 内完成，长目录、搜索与复杂 Git 任务保留可返回表面。颜色只取同值语义 token，海天画布止于连接入口，不使用简笔鲸鱼或展示衬线替代品牌。
+- 手机端采用[桌面鲸屿窄屏布局](../design-language.md#手机远程交互)：同源透明鲸鱼娘头像和鲸屿字标、贴边直角侧栏、品牌下新会话和工作区分组目录、底部账户与设置；22px / 22dp 细边无外投影输入卡适配竖屏和 IME。模型、思考、权限与附件来源跟随触发按钮展开锚定菜单，优先向上并右对齐，随可视窗口变化避让，根层没有对话框标题或灰色遮罩；下钻原位切页并保留返回。重命名、新会话选择和简短设置使用紧凑 Modal，长目录、搜索、完整设置与复杂 Git 任务保留可返回表面。颜色只取同值语义 token，海天画布止于连接入口，不使用简笔鲸鱼或展示衬线替代品牌。
+- Android 原生 Markdown 的表格采用独立单元格布局，表格和代码块分别水平滚动；单/双美元数学公式原生排版，普通价格和代码内美元保留原文。正文保持窄屏自然换行，颜色跟随同一主题。配对页软键盘可见时缩减品牌区并将“连接”固定在滚动内容之外，长错误与保存电脑列表仍可滚动。
 - 全量启动才启用内容搜索：`--patch` `desktop-session-search.patch.yml` 覆写 `session-query-sqlite` 为 `openAt: first-search` 与 `dsh-home/session-query.sqlite`。禁止把这次 opt-in 写进用户 `cordis.patch.yml`。skip 启动保持发版 `openAt: never`。
 
 ## Allowed touch
