@@ -21,6 +21,43 @@ function requireNonWritingAnalysis(write: boolean): void {
   if (write !== false) throw new Error('browser dependency analysis requires build.write: false')
 }
 
+/** Observe worker file dependencies where plugins register them, including inputs absent from chunks. */
+function workerBuildInputs(inputs: WebProductBundleIsolation): Plugin {
+  const watchedFiles = new Set<string>()
+  return {
+    name: 'dsh-worker-build-inputs',
+    applyToEnvironment(environment) {
+      for (const plugin of environment.getTopLevelConfig().plugins) {
+        for (const hookName of ['buildStart', 'resolveId', 'resolveDynamicImport', 'load', 'transform',
+          'moduleParsed', 'buildEnd', 'renderStart', 'renderChunk', 'generateBundle'] as const) {
+          const hook = plugin[hookName]
+          if (hook === undefined) continue
+          const handler = typeof hook === 'function' ? hook : hook.handler
+          const wrapped = function (this: { addWatchFile(file: string): void }, ...args: unknown[]): unknown {
+            const context = new Proxy(this, {
+              get(target, property) {
+                if (property === 'addWatchFile') return (file: string): void => {
+                  watchedFiles.add(file)
+                  target.addWatchFile(file)
+                }
+                const value: unknown = Reflect.get(target, property, target)
+                return typeof value === 'function' ? value.bind(target) : value
+              },
+            })
+            return Reflect.apply(handler, context, args)
+          }
+          Reflect.set(plugin, hookName, typeof hook === 'function' ? wrapped : { ...hook, handler: wrapped })
+        }
+      }
+      return true
+    },
+    generateBundle: {
+      order: 'post',
+      handler(_options, bundle) { inputs.workerBundle(bundle, [...this.getModuleIds(), ...watchedFiles]) },
+    },
+  }
+}
+
 /**
  * Reject experimental inputs reachable from the built default Web page.
  * @param repository - repository root supplying package ownership.
@@ -54,13 +91,7 @@ export function productWebBundleIsolation(repository: string, webRoot: string): 
           },
         },
         worker: {
-          plugins: () => [...workerPlugins?.() ?? [], {
-            name: 'dsh-worker-build-inputs',
-            generateBundle: {
-              order: 'post',
-              handler(_options, bundle) { inputs.workerBundle(bundle, this.getWatchFiles()) },
-            },
-          }],
+          plugins: () => [...workerPlugins?.() ?? [], workerBuildInputs(inputs)],
         },
       }
     },
