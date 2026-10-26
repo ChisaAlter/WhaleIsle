@@ -410,6 +410,26 @@ test('an explicit no-worker explanation preserves prior evidence while new requi
   assert.equal(f.state.deliveries[1].status, 'obsolete'); assert.match(f.state.deliveries[1].error, /Required work changed/);
 });
 
+test('Project activity and request work expose only owned live Jobs after the member turn stops', async () => {
+  const f = fixture(); f.human(['Keep tracking the background verification']);
+  const { request } = await f.accept(), result = f.add(request), worker = f.state.workers[0];
+  f.service.ctx.agents.get('lead').status = 'idle';
+  const jobs = [{ owner: worker.sessionId, status: 'running' }, { owner: worker.sessionId, status: 'stopping' },
+    { owner: 'another-member', status: 'running' }, { owner: worker.sessionId, status: 'completed' }];
+  f.service.ctx.get = name => name === 'jobs' ? { list: () => jobs } : undefined;
+  let project = f.service.projectView(f.project);
+  assert.equal(project.activity.running, 1, 'two Jobs count as one working member');
+  assert.deepEqual(project.activity.runningJobSessionIds, [worker.sessionId]);
+  let card = (await f.service.command('requests/get', { projectId: f.project.id, requestId: request.id })).card;
+  assert.equal(card.work[0].runningJob, true); assert.equal(card.work[0].status, 'running');
+  jobs[0].status = 'completed'; jobs[1].status = 'completed';
+  project = f.service.projectView(f.project);
+  assert.equal(project.activity.running, 0); assert.deepEqual(project.activity.runningJobSessionIds, []);
+  card = (await f.service.command('requests/get', { projectId: f.project.id, requestId: request.id })).card;
+  assert.equal(card.work[0].runningJob, false);
+  assert.equal(card.status, 'pendingDelivery', 'a drained member report still awaits a durable whole-request delivery');
+});
+
 test('task cards group an actual request, team work and delivery; archive only changes their presentation', async () => {
   const f = fixture(); f.human(['Repair login and verify it']);
   const { request } = await f.accept({ title: 'Repair login' }), result = f.add(request);

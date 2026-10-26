@@ -84,13 +84,18 @@ export function TodoPanel({ todos, t }: TodoPanelProps) {
   )
 }
 
-/** Props for the projected todo dock. */
-export type TodoDockProps = PropsRuntime<'conversation.input.dock'> & PropsLocale<'conversation'>
+/** Session metadata and projected plan read by the native todo dock. */
+export type TodoDockProps = Pick<PropsRuntime<'conversation.input.dock'>,
+  'sessionId' | 'useSessions' | 'useProjection'> & PropsLocale<'conversation'>
 
-/** Renders the current todo projection, or nothing when it is absent. */
-export function TodoDock({ useProjection, t }: TodoDockProps) {
+/** Project Leads expose the same plan in their requirement details instead of above the input. */
+export function TodoDock({ sessionId, useSessions, useProjection, t }: TodoDockProps) {
+  const projectLead = useSessions((value) => {
+    const presentation = value.byId[sessionId]?.presentation
+    return presentation?.owner === 'project' && presentation.composer !== 'managed'
+  })
   const todos = useProjection('todos')
-  return <TodoPanel todos={todos ?? []} t={t} />
+  return projectLead ? null : <TodoPanel todos={todos ?? []} t={t} />
 }
 
 /** Registers the projected todo dock. */

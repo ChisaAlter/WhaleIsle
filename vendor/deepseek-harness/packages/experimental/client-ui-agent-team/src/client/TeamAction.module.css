@@ -25,6 +25,28 @@
   flex: none;
 }
 
+.projectTrigger {
+  box-sizing: border-box;
+  flex: none;
+  width: 102px;
+  height: 28px;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 8px;
+}
+
+.projectTrigger .triggerLabel {
+  flex: 1 1 auto;
+}
+
+.triggerCount {
+  flex: none;
+  width: 3ch;
+  overflow: hidden;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .triggerLabel {
   min-width: 0;
   overflow: hidden;
@@ -49,6 +71,21 @@
     justify-content: center;
     padding: 0;
   }
+
+  .trigger.projectTrigger {
+    width: 58px;
+    gap: 4px;
+    padding: 3px 8px;
+  }
+}
+
+.surfaceToolbar {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 14px 8px;
 }
 
 .count {
@@ -80,6 +117,10 @@
   border-radius: 12px;
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   box-shadow: var(--dsw-elevation-prominent);
+}
+
+.panel[hidden] {
+  display: none;
 }
 
 /* The menu skin lives on a pseudo-element: backdrop-filter on the panel
@@ -194,6 +235,7 @@
   height: 100%;
   min-height: 0;
   padding-top: 8px;
+  overflow: hidden;
 }
 
 .sidebar .roster {
@@ -274,6 +316,11 @@
 .member:not(:disabled):focus-visible {
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
   box-shadow: var(--dsw-elevation-panel);
+}
+
+.member[data-error] {
+  --dsw-elevation-stroke-color: var(--dsw-alias-state-error-primary);
+  box-shadow: var(--dsw-elevation-stroke);
 }
 
 /* Seat height 1lh tracks the member name's first text line, so any dot

@@ -1,6 +1,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SidebarRightOpenTab } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { TeamAction, type TeamActionInjected } from '../src/client/TeamAction.tsx'
@@ -15,9 +17,17 @@ async function bench(options: { addressed?: boolean; sidebar?: boolean } = {}) {
   const ctx = new Context()
   const navigation: unknown[] = []
   const tabTypes = new Set<{ id: string; kind: string; title: () => string }>()
+  const openTabs = createSnapshotStore<readonly SidebarRightOpenTab[]>([])
+  const mounted = createSnapshotStore<SessionId | undefined>(SESSION)
+  let expanded = true
   if (options.sidebar === true) {
     ctx.provide('sidebarRight', {
+      openTabs,
+      mounted,
+      isExpanded: () => expanded,
+      toggleExpanded: () => { expanded = !expanded; navigation.push(['sidebar-expanded', expanded]) },
       openResource: (address: string, opening: unknown) => { navigation.push(['aside', address, opening]) },
+      openTabIn: (sessionId: SessionId, kind: string) => { navigation.push(['team-sidebar', sessionId, kind]); return true },
     } as never)
     ctx.provide('sidebarRightTabs', {
       register: (definition: { id: string; kind: string; title: () => string }) => {
@@ -89,6 +99,9 @@ async function bench(options: { addressed?: boolean; sidebar?: boolean } = {}) {
     entry,
     actions,
     collapseHeader,
+    openTabs,
+    mounted,
+    setExpanded: (next: boolean) => { expanded = next },
     select: (sessionId: SessionId) => { mainSessionId = sessionId },
   }
 }
@@ -191,6 +204,62 @@ describe('ui-team browser plugin', () => {
     expect(header.getSnapshot()).toEqual({})
     await b.fiber.dispose()
     expect(b.ctx.get('agentTeamScopes')).toBeUndefined()
+  })
+
+  it('publishes owner Job activity independently of task scopes and shares it with both Team views', async () => {
+    const b = await bench({ sidebar: true })
+    const scopes = b.ctx.get('agentTeamScopes')!
+    const header = b.entry()!.inject!()
+    const aside = b.page()!.inject!()
+    expect(header.hooks).toMatchObject({ teamActivity: scopes.activitySource })
+    expect(aside.hooks).toMatchObject({ teamActivity: scopes.activitySource })
+    scopes.set(SESSION, ['current-task'])
+    scopes.setActivity(SESSION, { state: 'ready', runningJobSessionIds: [CHILD] })
+    expect(scopes.activitySource.getSnapshot()).toEqual({ [SESSION]: { state: 'ready', runningJobSessionIds: [CHILD] } })
+    scopes.setActivity(SESSION, { state: 'unavailable', runningJobSessionIds: [CHILD] })
+    expect(scopes.activitySource.getSnapshot()[SESSION]?.state).toBe('unavailable')
+    expect(scopes.source.getSnapshot()).toEqual({ [SESSION]: ['current-task'] })
+    scopes.setActivity(SESSION, undefined)
+    expect(scopes.activitySource.getSnapshot()).toEqual({})
+    await b.fiber.dispose()
+    expect(b.ctx.get('agentTeamScopes')).toBeUndefined()
+  })
+
+  it('offers manual Team Sidebar opening without opening it during registration and shares the view handle', async () => {
+    const without = await bench()
+    expect(without.entry()!.inject!().openTeamSidebar).toBeUndefined()
+    const b = await bench({ sidebar: true })
+    expect(b.navigation).toEqual([])
+    const header = b.entry()!.inject!()
+    expect(header.openTeamSidebar).toBeTypeOf('function')
+    const open = header.openTeamSidebar as NonNullable<TeamActionInjected['openTeamSidebar']>
+    expect(open(SESSION)).toBe(true)
+    expect(b.navigation).toEqual([['team-sidebar', SESSION, TEAM_SIDEBAR_KIND]])
+    expect(b.entry()!.store).toBe(b.page()!.store)
+  })
+
+  it('collapses a returned observer dock only when the mounted Session has no other content tabs', async () => {
+    const b = await bench({ sidebar: true })
+    const collapse = b.page()!.inject!().collapseEmptyObserver as NonNullable<TeamActionInjected['collapseEmptyObserver']>
+    const guide: SidebarRightOpenTab = { sessionId: SESSION, tabId: 'guide-tab' as SidebarRightOpenTab['tabId'], kind: 'guide', contentId: 'sidebar://guide' }
+    const content: SidebarRightOpenTab = { sessionId: SESSION, tabId: 'member-tab' as SidebarRightOpenTab['tabId'], kind: 'subagentchat', contentId: 'dsh-resource://subagentchat/session/member' }
+    b.openTabs.set([guide, content])
+    collapse(SESSION)
+    expect(b.navigation).toEqual([])
+    b.openTabs.set([guide])
+    b.mounted.set(CHILD)
+    collapse(SESSION)
+    expect(b.navigation).toEqual([])
+    b.mounted.set(SESSION)
+    b.setExpanded(false)
+    collapse(SESSION)
+    expect(b.navigation).toEqual([])
+    b.setExpanded(true)
+    b.openTabs.set([guide, { ...content, sessionId: CHILD }])
+    collapse(SESSION)
+    expect(b.navigation).toEqual([['sidebar-expanded', false]])
+    collapse(SESSION)
+    expect(b.navigation).toEqual([['sidebar-expanded', false]])
   })
 
   it('keeps the node half inert', () => {

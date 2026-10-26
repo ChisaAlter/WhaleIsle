@@ -69,7 +69,7 @@ The shared image slot props keep display choices separate from durable reference
 
 The composer measures its expanded control groups after size, content, visibility, or font-loading changes. If they cannot share a line, the row sets `--dsh-composer-model-text-display: none` and `--dsh-composer-model-icon-display: block` for the model seat; their defaults are `block` and `none`. Wrapping remains available if even the icon cannot fit.
 
-Todo strips retain their last visible plan while smoothly collapsing out of the composer stack. The input card stays bottom-anchored as the upper strips appear, disappear, or expand; their retained exits immediately leave keyboard and accessibility access. Footer statistics use one row, with cost and peak/valley content on a separate second row. Enabling session cost reserves that row while its provider and usage projections are pending.
+Todo strips retain their last visible plan while smoothly collapsing out of the composer stack. The input card stays bottom-anchored as the upper strips appear, disappear, or expand; their retained exits immediately leave keyboard and accessibility access. Project Lead Sessions expose their native `todos` projection in Project requirement details instead of mounting this strip above the input; ordinary Sessions and managed member Sessions retain the native dock. Footer statistics use one row, with cost and peak/valley content on a separate second row. Enabling session cost reserves that row while its provider and usage projections are pending.
 
 The context meter follows the [statistics-control radius](../../../docs/ui-radius.md#radius-scale).
 
