@@ -8,6 +8,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { TodoDockProps } from '../src/client/skeleton/TodoPanel.tsx'
@@ -130,11 +132,29 @@ describe('TodoPanel', () => {
   })
 })
 
-/** Dock props stub: the adapter reads the 'todos' projection only; the rest of the owner share is unused. */
-function dockProps(store: ReturnType<typeof createSnapshotStore<{ value: readonly TodoItem[] | null | undefined }>>): TodoDockProps {
-  const useProjection = (_key: string, selector?: (v: unknown) => unknown) =>
-    bindSnapshotSelector(store)(s => (selector ?? (v => v))(s.value))
-  return { useProjection, t } as unknown as TodoDockProps
+const SID = 'todo-session' as SessionId
+
+/** Live list metadata is independent of the Session's todo projection. */
+function sessionList(presentation?: SessionSummary['presentation']): SessionListState {
+  return {
+    ids: [SID], phase: 'ready', projectionsBySession: {},
+    byId: {
+      [SID]: {
+        id: SID, displayTitle: 'Current session', running: false,
+        retainedBy: {}, blank: false, updatedAt: 1, ...presentation ? { presentation } : {},
+      },
+    },
+  }
+}
+
+/** Bind the adapter's actual Session metadata and projected-plan inputs. */
+function dockProps(
+  store: ReturnType<typeof createSnapshotStore<{ value: readonly TodoItem[] | null | undefined }>>,
+  sessions = createSnapshotStore(sessionList()),
+): TodoDockProps {
+  const useProjection = ((_key: string, selector?: (v: unknown) => unknown) =>
+    bindSnapshotSelector(store)(s => (selector ?? (v => v))(s.value))) as TodoDockProps['useProjection']
+  return { sessionId: SID, useSessions: bindSnapshotSelector(sessions), useProjection, t }
 }
 
 describe('TodoDock', () => {
@@ -150,6 +170,48 @@ describe('TodoDock', () => {
     expect(screen.getByTestId('todo-panel').hasAttribute('inert')).toBe(true)
     expect(screen.getByText('1 已完成 · 1 进行中 · 1 待处理')).toBeTruthy()
     await waitFor(() => { expect(screen.queryByTestId('todo-panel')).toBeNull() })
+  })
+
+  it('keeps a Project Lead plan available without mounting a composer strip', () => {
+    const store = createSnapshotStore<{ value: readonly TodoItem[] | null | undefined }>({ value: LIST })
+    const sessions = createSnapshotStore(sessionList({ owner: 'project', title: 'Project Lead' }))
+    render(<TodoDock {...dockProps(store, sessions)} />)
+    expect(screen.queryByTestId('todo-panel')).toBeNull()
+    expect(store.getSnapshot().value).toBe(LIST)
+
+    act(() => { store.set({ value: PARALLEL }) })
+    expect(screen.queryByTestId('todo-panel')).toBeNull()
+    expect(store.getSnapshot().value).toBe(PARALLEL)
+
+    act(() => { sessions.set(sessionList()) })
+    expect(screen.getByText('1 已完成 · 3 进行中 · 1 待处理')).toBeTruthy()
+  })
+
+  it('removes the native strip as soon as the Session acquires Project Lead presentation', () => {
+    const store = createSnapshotStore<{ value: readonly TodoItem[] | null | undefined }>({ value: LIST })
+    const sessions = createSnapshotStore<SessionListState>({ ids: [], byId: {}, phase: 'pending', projectionsBySession: {} })
+    render(<TodoDock {...dockProps(store, sessions)} />)
+    fireEvent.click(screen.getByRole('button', { expanded: false }))
+    expect(screen.getByText('写组件')).toBeTruthy()
+
+    act(() => { sessions.set(sessionList({ owner: 'project', title: 'Project Lead' })) })
+    expect(screen.queryByTestId('todo-panel')).toBeNull()
+    expect(screen.queryByText('写组件')).toBeNull()
+
+    act(() => { store.set({ value: null }) })
+    expect(screen.queryByTestId('todo-panel')).toBeNull()
+  })
+
+  it.each([
+    { owner: 'project', title: 'Project member', composer: 'managed' as const },
+    { owner: 'another-plugin', title: 'Other presentation' },
+  ])('keeps the native plan for $title', (presentation) => {
+    const store = createSnapshotStore<{ value: readonly TodoItem[] | null | undefined }>({ value: LIST })
+    const sessions = createSnapshotStore(sessionList(presentation))
+    render(<TodoDock {...dockProps(store, sessions)} />)
+    expect(screen.getByText('1 已完成 · 1 进行中 · 1 待处理')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { expanded: false }))
+    expect(screen.getAllByRole('listitem')).toHaveLength(3)
   })
 
   it('registers before the goal and queue entries', () => {

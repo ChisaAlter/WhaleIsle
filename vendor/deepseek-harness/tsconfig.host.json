@@ -141,6 +141,7 @@
     "apps/web/tests/present-svg.e2e.ts",
     "apps/web/tests/composer-draft-scroll.e2e.ts",
     "apps/web/tests/composer-draft-transition.e2e.ts",
+    "apps/web/tests/project-composer-stability.e2e.ts",
     "apps/web/tests/composer-focus.e2e.ts",
     "apps/web/tests/composer-placeholder.e2e.ts",
     "apps/web/tests/context-meter.e2e.ts",

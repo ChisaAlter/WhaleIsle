@@ -15,6 +15,8 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 import { TeamAction, type TeamActionInjected, type TeamActionProps } from '../src/client/TeamAction.tsx'
 import { TeamSidebar, type TeamSidebarProps } from '../src/client/TeamSidebar.tsx'
 import { zh } from '../src/client/locales.ts'
+import type { TeamActivityMap } from '../src/client/mount.ts'
+import { createTeamViewStore } from '../src/client/view-state.ts'
 
 afterEach(() => {
   cleanup()
@@ -656,8 +658,193 @@ it('updates expansion availability on paragraph resize and disconnects its obser
   expect(observer.disconnect).toHaveBeenCalledOnce()
 })
 
+describe('Project Team entry', () => {
+  it('counts distinct running members across live turns and owned Jobs, excluding the Coordinator', () => {
+    const jobOnly = { ...worker, id: 'job-only' as SessionId, name: 'job-only' }
+    const failed = { ...worker, id: 'failed-job' as SessionId, name: 'failed-job', phase: 'failed' as const, error: 'Turn failed' }
+    const provisioning = { ...worker, id: 'preparing' as SessionId, name: 'preparing', phase: 'provisioning' as const }
+    const b = bench({ project: true, running: { [SESSION]: true, [WORKER]: true }, projections: {
+      [SESSION]: { state: 'ready', error: null, values: { agentTeam: { members: [lead, worker, jobOnly, failed, provisioning], tasks: [] } } },
+    } })
+    const activity = createSnapshotStore<TeamActivityMap>({ [SESSION]: {
+      state: 'ready', runningJobSessionIds: [SESSION, WORKER, WORKER, jobOnly.id, failed.id, 'not-in-team' as SessionId],
+    } })
+    render(<TeamAction {...b.props} useTeamActivity={bindSnapshotSelector(activity)} />)
+    expect(screen.getByRole('button', { name: '智能体团队，3 名成员运行中' })).toBeTruthy()
+    openPanel()
+    expect(screen.getByRole('button', { name: /job-only运行中.*后台命令运行中/u })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /failed-job失败.*后台命令运行中.*Turn failed/u })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /preparing准备中/u })).toBeTruthy()
+    act(() => { activity.set({ [SESSION]: { state: 'ready', runningJobSessionIds: [] } }) })
+    expect(screen.getByRole('button', { name: '智能体团队，1 名成员运行中' })).toBeTruthy()
+    act(() => { b.statuses.set(new Map([
+      [WORKER, { running: true, pendingInteraction: undefined, completionUnread: false }],
+      [failed.id, { running: true, pendingInteraction: undefined, completionUnread: false }],
+    ])) })
+    expect(screen.getByRole('button', { name: '智能体团队，2 名成员运行中' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /failed-job失败.*回合运行中.*Turn failed/u })).toBeTruthy()
+    act(() => { b.statuses.set(new Map([[WORKER, { running: false, pendingInteraction: undefined, completionUnread: false }]])) })
+    expect(screen.getByRole('button', { name: '智能体团队，0 名成员运行中' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: zh['project.history'] }))
+    expect(screen.getByRole('button', { name: /^worker空闲/u })).toBeTruthy()
+  })
+
+  it('keeps the count slot and retained details when activity is missing, loading, unavailable, or the Team record fails', () => {
+    const b = bench({ project: true })
+    const activity = createSnapshotStore<TeamActivityMap>({})
+    const { container } = render(<TeamAction {...b.props} useTeamActivity={bindSnapshotSelector(activity)} />)
+    const counter = container.querySelector('[data-team-running-count]')
+    expect(counter?.textContent).toBe('?')
+    act(() => { activity.set({ [SESSION]: { state: 'ready', runningJobSessionIds: [WORKER] } }) })
+    expect(counter?.textContent).toBe('1')
+    openPanel()
+    for (const state of ['loading', 'unavailable'] as const) {
+      act(() => { activity.set({ [SESSION]: { state, runningJobSessionIds: [WORKER] } }) })
+      expect(container.querySelector('[data-team-running-count]')).toBe(counter)
+      expect(counter?.textContent).toBe('?')
+      expect(screen.getByText(zh['project.activityStale'])).toBeTruthy()
+      expect(screen.getByRole('button', { name: /worker空闲.*后台命令上次仍在运行/u })).toBeTruthy()
+    }
+    act(() => { activity.set({ [SESSION]: { state: 'ready', runningJobSessionIds: [] } }) })
+    setProjection(b.sessions, SESSION, { ...team, failure: 'invalid record' })
+    expect(counter?.textContent).toBe('?')
+    expect(screen.getByText('Implement runtime')).toBeTruthy()
+    setProjection(b.sessions, SESSION, { members: [lead], tasks: [] })
+    expect(counter?.textContent).toBe('0')
+  })
+
+  it('marks a cached Team count unknown while native reads load or fail and restores it on recovery', () => {
+    const b = bench({ project: true, openState: 'loading', running: { [WORKER]: true } })
+    const activity = createSnapshotStore<TeamActivityMap>({ [SESSION]: { state: 'ready', runningJobSessionIds: [] } })
+    const { container } = render(<TeamAction {...b.props} useTeamActivity={bindSnapshotSelector(activity)} />)
+    const counter = container.querySelector('[data-team-running-count]')
+    expect(counter?.textContent).toBe('?')
+    for (const openState of ['error', 'cold', 'loading'] as const) {
+      act(() => { b.session.set({ ...b.session.getSnapshot(), openState }) })
+      expect(counter?.textContent).toBe('?')
+    }
+    act(() => { b.session.set({ ...b.session.getSnapshot(), openState: 'open' }) })
+    expect(counter?.textContent).toBe('1')
+    act(() => { b.sessions.set({ ...b.sessions.getSnapshot(), phase: 'pending' }) })
+    expect(counter?.textContent).toBe('?')
+    act(() => { b.sessions.set({ ...b.sessions.getSnapshot(), phase: 'ready' }) })
+    expect(counter?.textContent).toBe('1')
+    for (const state of ['loading', 'error', 'migration-required'] as const) {
+      setProjectionSnapshot(b.sessions, SESSION, { state, error: null, values: { agentTeam: team } })
+      expect(counter?.textContent).toBe('?')
+    }
+    openPanel()
+    expect(screen.getByText('Implement runtime')).toBeTruthy()
+    setProjection(b.sessions, SESSION, team)
+    expect(container.querySelector('[data-team-running-count]')).toBe(counter)
+    expect(counter?.textContent).toBe('1')
+  })
+
+  it('keeps a capped visual count and an exact accessible count for a large roster', () => {
+    const members = Array.from({ length: 105 }, (_, index) => ({ ...worker, id: `worker-${index}` as SessionId, name: `worker-${index}` }))
+    const b = bench({ project: true, projections: { [SESSION]: { state: 'ready', error: null, values: { agentTeam: { members: [lead, ...members], tasks: [] } } } } })
+    const activity = createSnapshotStore<TeamActivityMap>({ [SESSION]: { state: 'ready', runningJobSessionIds: members.map(member => member.id) } })
+    const { container } = render(<TeamAction {...b.props} useTeamActivity={bindSnapshotSelector(activity)} />)
+    expect(container.querySelector('[data-team-running-count]')?.textContent).toBe('99+')
+    expect(screen.getByRole('button', { name: '智能体团队，105 名成员运行中' })).toBeTruthy()
+  })
+
+  it('opens the Project panel only on click, ignores hover-out, and toggles closed accessibly', async () => {
+    vi.useFakeTimers()
+    render(<TeamAction {...bench({ project: true }).props} />)
+    const trigger = screen.getByRole('button', { name: /智能体团队/u })
+    fireEvent.mouseEnter(trigger)
+    await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(trigger)
+    const panel = screen.getByRole('dialog')
+    fireEvent.mouseLeave(panel)
+    await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+    expect(screen.getByRole('dialog')).toBe(panel)
+    fireEvent.click(trigger)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('button', { name: zh['project.close'] }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it.each(['dock', 'float'] as const)('moves to the native Sidebar and returns from %s with search and task expansion intact', (host) => {
+    const b = bench({ project: true })
+    const view = createTeamViewStore().create(SESSION)
+    const shared = { useStore: bindSnapshotSelector(view), actions: view.actions }
+    const openTeamSidebar = vi.fn(() => true)
+    const header = render(<TeamAction {...b.props} {...shared} openTeamSidebar={openTeamSidebar} />)
+    expect(openTeamSidebar).not.toHaveBeenCalled()
+    openPanel()
+    fireEvent.click(screen.getByRole('tab', { name: zh['project.history'] }))
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Implement' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['task.expand'] }))
+    const floating = screen.getByRole('dialog')
+    const floatingBody = within(floating).getByRole('tabpanel')
+    floatingBody.scrollTop = 125
+    fireEvent.scroll(floatingBody)
+    fireEvent.click(screen.getByRole('button', { name: zh['project.close'] }))
+    openPanel()
+    expect(screen.getByRole('dialog')).toBe(floating)
+    expect(floatingBody.scrollTop).toBe(125)
+    fireEvent.click(screen.getByRole('button', { name: zh['project.pin'] }))
+    expect(openTeamSidebar).toHaveBeenCalledOnce()
+    expect(openTeamSidebar).toHaveBeenCalledWith(SESSION)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    const closed: string[] = []
+    const close = vi.fn(() => { closed.push('close') })
+    const collapseEmptyObserver = vi.fn(() => { closed.push('collapse') })
+    const tabInfo: ReturnType<TeamSidebarProps['useTabInfo']> = {
+      sidebar: { expanded: true, fullscreen: false },
+      panel: { id: 'team-pane' as ReturnType<TeamSidebarProps['useTabInfo']>['panel']['id'], host, rect: undefined },
+      tab: {
+        id: 'team-tab' as ReturnType<TeamSidebarProps['useTabInfo']>['tab']['id'], kind: 'agent-team', title: 'Team', contentId: 'sidebar://agent-team', visible: true,
+        navigation: { address: 'sidebar://agent-team', params: undefined, revision: 1 },
+        signal: new AbortController().signal,
+        actions: { close, openResource: vi.fn(), openTab: vi.fn(), bindCommands: () => () => {} },
+      },
+    }
+    const sidebar = render(<TeamSidebar {...(b.props as TeamSidebarProps)} {...shared} collapseEmptyObserver={collapseEmptyObserver} useTabInfo={() => tabInfo} />)
+    expect(screen.getByRole<HTMLInputElement>('searchbox').value).toBe('Implement')
+    const sidebarPage = sidebar.container.querySelector('[data-team-sidebar]') as HTMLElement
+    expect(within(sidebarPage).getByText(task.description)).toBeTruthy()
+    const sidebarBody = within(sidebarPage).getByRole('tabpanel')
+    expect(sidebarBody.scrollTop).toBe(125)
+    sidebarBody.scrollTop = 225
+    fireEvent.scroll(sidebarBody)
+    fireEvent.click(screen.getByRole('button', { name: zh['project.unpin'] }))
+    expect(close).toHaveBeenCalledOnce()
+    expect(closed).toEqual(host === 'dock' ? ['close', 'collapse'] : ['close'])
+    if (host === 'dock') expect(collapseEmptyObserver).toHaveBeenCalledWith(SESSION)
+    else expect(collapseEmptyObserver).not.toHaveBeenCalled()
+    sidebar.unmount()
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.getByRole<HTMLInputElement>('searchbox').value).toBe('Implement')
+    expect(screen.getByText(task.description)).toBeTruthy()
+    expect(floatingBody.scrollTop).toBe(225)
+    fireEvent.click(screen.getByRole('button', { name: zh['task.collapse'] }))
+    expect(screen.queryByText(task.description)).toBeNull()
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'no matching task' } })
+    expect(screen.getByText(zh['project.noMembers'])).toBeTruthy()
+    expect(screen.getByText(zh['project.noTasks'])).toBeTruthy()
+    header.unmount()
+  })
+
+  it('retains the Project panel and its actions when opening the Sidebar is unavailable', async () => {
+    const b = bench({ project: true })
+    const openTeamSidebar = vi.fn(() => false)
+    render(<TeamAction {...b.props} openTeamSidebar={openTeamSidebar} />)
+    openPanel()
+    fireEvent.click(screen.getByRole('button', { name: zh['project.pin'] }))
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect((await screen.findByRole('alert')).textContent).toContain(zh['project.sidebarUnavailable'])
+    expect(screen.getByRole('button', { name: zh['project.pin'] })).toBeTruthy()
+  })
+})
+
 describe('TeamSidebar', () => {
-  it('shows the Project roster and work in place and reports a failed member opening inline', () => {
+  it('shows the Project roster and reports a failed member opening without a flow alert', async () => {
     const b = bench({ project: true, running: { [WORKER]: true }, projections: {
       [SESSION]: { state: 'ready', error: null, values: { agentTeam: {
         members: [lead, worker],
@@ -670,9 +857,26 @@ describe('TeamSidebar', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(within(page).getByRole('heading', { name: /成员/u })).toBeTruthy()
     const member = within(page).getAllByRole('button').find(button => button.textContent?.includes('修复登录') && button.textContent.includes('运行中'))!
+    vi.useFakeTimers()
     fireEvent.click(member)
     expect(b.injected.openTeammate).toHaveBeenCalledWith(SESSION, WORKER)
-    expect(within(page).getByRole('alert').textContent).toContain('成员会话不可用')
+    expect(screen.getByRole('alert').textContent).toContain('成员会话不可用')
+    expect(within(page).queryByRole('alert')).toBeNull()
+    expect(member.getAttribute('data-error')).toBe('true')
+    expect(member.getAttribute('title')).toBe('成员会话不可用')
+    const contents = member.innerHTML
+    await act(async () => { await vi.advanceTimersByTimeAsync(4500) })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(member.innerHTML).toBe(contents)
+    expect(member.getAttribute('data-error')).toBe('true')
+    expect(member.getAttribute('title')).toBe('成员会话不可用')
+    fireEvent.click(member)
+    expect(screen.getByRole('alert').textContent).toContain('成员会话不可用')
+    vi.mocked(b.injected.openTeammate).mockImplementation(() => {})
+    fireEvent.click(member)
+    expect(member.getAttribute('data-error')).toBeNull()
+    expect(member.getAttribute('title')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })
 

@@ -385,7 +385,7 @@ export class ProjectRequirements {
         : worker.stopped || project.paused ? 'paused' : receipt.report || terminal ? 'pendingDelivery' : 'blocked';
       return { workstreamId: item.id, delegationRef: receipt.ref, runId: reference.runId, title: item.title,
         workerSessionId: worker.sessionId, memberName: service.memberName(worker), memberRole: worker.role, memberPhase: worker.phase,
-        status, current, phase: receipt.phase, ...(receipt.waitingReason ? { waitingReason: receipt.waitingReason } : {}), ...(item.blockedReason ? { blockedReason: item.blockedReason } : {}),
+        status, current, runningJob: current && Boolean(record?.jobs.length ?? service.jobs(worker.sessionId).length), phase: receipt.phase, ...(receipt.waitingReason ? { waitingReason: receipt.waitingReason } : {}), ...(item.blockedReason ? { blockedReason: item.blockedReason } : {}),
         createdAt: item.createdAt, updatedAt: item.updatedAt, assignmentAt: receipt.createdAt,
         ...(receipt.report ? { reportId: receipt.report.callId, outcome: receipt.report.outcome, reportAt: receipt.report.at,
           ...(full ? { summary: receipt.report.summary } : {}) } : {}),

@@ -1,8 +1,11 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { PropsStore } from '@deepseek-ai/dsh-client-store'
+import type { TeamActivityMap } from './mount.ts'
+import type { createTeamViewStore } from './view-state.ts'
 import type {
-  TeamMemberProjection,
+  TeamMemberProjection, TeamProjection,
   TeamTaskView as TeamTask,
 } from '@deepseek-ai/dsh-experimental-agent-team/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
@@ -22,6 +25,10 @@ import css from './TeamAction.module.css'
 export interface TeamActionInjected {
   /** Open a roster Session from the current conversation. */
   openTeammate: (sessionId: SessionId, childSessionId: SessionId) => void
+  /** Open the existing Team Sidebar page; false means the conversation cannot receive it. */
+  openTeamSidebar?: (sessionId: SessionId) => boolean
+  /** Collapse the current Session's dock after its observer closes when only guide tabs remain. */
+  collapseEmptyObserver?: (sessionId: SessionId) => void
   /** Project-owned current/recent task identities, ordered by actual business activity. */
   projectTaskIds?: readonly string[]
 }
@@ -57,11 +64,16 @@ type MemberStatus = 'running' | 'inactive' | 'provisioning' | 'failed'
 export interface TeamTaskScopesProps {
   /** Select from the current scopes; absent where no scope service is composed. */
   useTeamTaskScopes?: <R>(selector: (scopes: Readonly<Record<string, readonly string[]>>) => R) => R
+  /** Read owner-confirmed background Jobs and freshness through the bound activity source. */
+  useTeamActivity?: <R>(selector: (activity: TeamActivityMap) => R) => R
 }
+
+/** Shared Project panel state; standalone renderers can omit the registered store. */
+export type TeamViewProps = Partial<PropsStore<ReturnType<typeof createTeamViewStore>>>
 
 /** Full props of the Team conversation-header action. */
 export type TeamActionProps =
-  PropsRuntime<'conversation.session.header.actions'> & TeamActionInjected & TeamTaskScopesProps & PropsLocale<typeof NS>
+  PropsRuntime<'conversation.session.header.actions'> & TeamActionInjected & TeamTaskScopesProps & TeamViewProps & PropsLocale<typeof NS>
 
 function statusKey(status: TeamTask['status']): TeamKey {
   switch (status) {
@@ -107,34 +119,39 @@ type TeamMemberRowProps = Pick<TeamActionProps,
   label: string
   project: boolean
   memberCount: number
-  onError: (message: string | null) => void
+  runningJob: boolean
+  activityStale: boolean
+  navigationFailure: string | undefined
+  onError: (message: string | null, memberSessionId?: SessionId) => void
 }
 
 function TeamMemberRow({
-  member, label, project, memberCount, sessionId, useSessions, useSessionStatus, openTeammate, onError, t,
+  member, label, project, memberCount, runningJob, activityStale, navigationFailure, sessionId, useSessions, useSessionStatus, openTeammate, onError, t,
 }: TeamMemberRowProps) {
   const model = useSessions(state => state.projectionsBySession[member.id]?.values.modelSelection?.next?.model)
   const running = useSessionStatus(state => state.get(member.id)?.running)
   const summaryRunning = useSessions(state => state.byId[member.id]?.running)
   const status: MemberStatus = member.phase === 'active'
-    ? (running ?? summaryRunning) === true ? 'running' : 'inactive'
+    ? (running ?? summaryRunning) === true || runningJob && !activityStale ? 'running' : 'inactive'
     : member.phase
   const isCurrent = member.id === sessionId
   const highlightCurrent = isCurrent && memberCount > 1
   const inert = isCurrent || status === 'failed' || status === 'provisioning'
 
   return (
-    <Tooltip label={t(project ? 'project.open' : 'open')} side="bottom" gap={4} disabled={inert}>
+    <Tooltip label={navigationFailure ?? t(project ? 'project.open' : 'open')} side="bottom" gap={4} disabled={inert}>
       <button
         type="button"
         className={highlightCurrent ? `${css.member} ${css.memberCurrent}` : css.member}
         disabled={inert}
+        title={navigationFailure}
+        data-error={navigationFailure !== undefined || undefined}
         onClick={() => {
-          onError(null)
           try {
             openTeammate(sessionId, member.id)
+            onError(null, member.id)
           } catch (reason) {
-            onError(reason instanceof Error ? reason.message : String(reason))
+            onError(reason instanceof Error ? reason.message : String(reason), member.id)
           }
         }}
       >
@@ -150,6 +167,8 @@ function TeamMemberRow({
           </span>
           <small>
             {t(project && status === 'inactive' ? 'project.memberIdle' : memberStatusKey(status))}
+            {project && status !== 'running' && (running ?? summaryRunning) === true && <span>{` · ${t('project.turnRunning')}`}</span>}
+            {runningJob && <span>{` · ${t(activityStale ? 'project.jobLastConfirmed' : 'project.jobRunning')}`}</span>}
             {model !== undefined && (
               <span className={css.memberModel}>{` · ${t('model')}: ${model}`}</span>
             )}
@@ -162,14 +181,21 @@ function TeamMemberRow({
 }
 
 /** Project assignments disclose their execution brief; ordinary Teams retain the two-line preview. */
-function TaskCard({ task, project, ownerLabel, dependencyLabels, t }: {
+function TaskCard({ task, project, ownerLabel, dependencyLabels, expanded: sharedExpanded, onExpandedChange, t }: {
   task: TeamTask
   project: boolean
   ownerLabel: string
   dependencyLabels: string[]
+  expanded?: boolean | undefined
+  onExpandedChange?: ((expanded: boolean) => void) | undefined
   t: TranslateNS<typeof NS>
 }) {
-  const [expanded, setExpanded] = useState(false)
+  const [localExpanded, setLocalExpanded] = useState(false)
+  const expanded = sharedExpanded ?? localExpanded
+  const setExpanded = (next: boolean): void => {
+    if (onExpandedChange !== undefined) onExpandedChange(next)
+    else setLocalExpanded(next)
+  }
   const [clamped, setClamped] = useState(false)
   const textRef = useRef<HTMLParagraphElement>(null)
   useLayoutEffect(() => {
@@ -200,7 +226,7 @@ function TaskCard({ task, project, ownerLabel, dependencyLabels, t }: {
             type="button"
             className={css.expandToggle}
             aria-expanded={expanded}
-            onClick={() => { setExpanded(current => !current) }}
+            onClick={() => { setExpanded(!expanded) }}
           >
             {t(expanded ? 'task.collapse' : 'task.expand')}
             <IconChevronDownOutlineRegular size={12} className={expanded ? css.expandToggleOpen : undefined} />
@@ -219,10 +245,14 @@ function TaskCard({ task, project, ownerLabel, dependencyLabels, t }: {
 
 /** Props shared by every Team presentation: the runtime seats, navigation and localized copy. */
 export type TeamBodyProps = Pick<TeamActionProps,
-  'sessionId' | 'useSession' | 'useSessions' | 'useSessionStatus' | 'openTeammate' | 'projectTaskIds' | 'useTeamTaskScopes' | 't'
-> & {
+  'sessionId' | 'useSession' | 'useSessions' | 'useSessionStatus' | 'openTeammate' | 'projectTaskIds' | 'useTeamTaskScopes' | 'useTeamActivity' | 't'
+> & TeamViewProps & {
   /** Report a navigation failure, or clear it with null. */
-  onError: (message: string | null) => void
+  onError: (message: string | null, memberSessionId?: SessionId) => void
+  /** Retained navigation failure for the original member's retry control. */
+  memberFailure?: { sessionId: SessionId; message: string } | null
+  /** Whether this retained presentation is visible and may restore or publish its reading position. */
+  surfaceActive?: boolean
 }
 
 /** Whether the Team view of a Session is still arriving with its conversation or list. */
@@ -234,37 +264,61 @@ function useTeamLoading({ sessionId, useSession, useSessions }: Pick<TeamBodyPro
   return team === undefined && (opening || listing)
 }
 
+/** Live member turns, with explicit runtime inactivity taking precedence over cached summaries. */
+function useLiveMemberIds({ useSessions, useSessionStatus }: Pick<TeamBodyProps, 'useSessions' | 'useSessionStatus'>, team: TeamProjection | undefined): Set<string> {
+  const running = useSessionStatus(state => team?.members.filter(member => state.get(member.id)?.running === true).map(member => member.id).join('\n') ?? '')
+  const inactive = useSessionStatus(state => team?.members.filter(member => state.get(member.id)?.running === false).map(member => member.id).join('\n') ?? '')
+  const summaryRunning = useSessions(state => team?.members.filter(member => state.byId[member.id]?.running === true).map(member => member.id).join('\n') ?? '')
+  const inactiveIds = new Set(inactive.split('\n'))
+  return new Set([...running.split('\n'), ...summaryRunning.split('\n').filter(id => !inactiveIds.has(id))].filter(Boolean))
+}
+
 /** Render the Team roster and read-only task board without its surrounding surface. */
 export function TeamBody({
-  sessionId, useSession, useSessions, useSessionStatus, openTeammate, projectTaskIds: injectedTaskIds, useTeamTaskScopes, onError, t,
+  sessionId, useSession, useSessions, useSessionStatus, openTeammate, projectTaskIds: injectedTaskIds, useTeamTaskScopes, useTeamActivity, useStore, actions, onError, memberFailure, surfaceActive = true, t,
 }: TeamBodyProps) {
-  const [view, setView] = useState<'current' | 'history'>('current')
-  const [query, setQuery] = useState('')
-  const [memberPage, setMemberPage] = useState(0)
-  const [taskPage, setTaskPage] = useState(0)
+  const [localView, setLocalView] = useState<'current' | 'history'>('current')
+  const [localQuery, setLocalQuery] = useState('')
+  const [localMemberPage, setLocalMemberPage] = useState(0)
+  const [localTaskPage, setLocalTaskPage] = useState(0)
+  const sharedView = useStore?.(state => state.view)
+  const sharedQuery = useStore?.(state => state.query)
+  const sharedMemberPage = useStore?.(state => state.memberPage)
+  const sharedTaskPage = useStore?.(state => state.taskPage)
+  const expandedTaskIds = useStore?.(state => state.expandedTaskIds)
+  const scrollTop = useStore?.(state => state.scrollTop)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const view = sharedView ?? localView
+  const query = sharedQuery ?? localQuery
+  const memberPage = sharedMemberPage ?? localMemberPage
+  const taskPage = sharedTaskPage ?? localTaskPage
+  useLayoutEffect(() => {
+    if (surfaceActive && scrollTop !== undefined && bodyRef.current !== null) bodyRef.current.scrollTop = scrollTop
+  }, [surfaceActive, scrollTop])
+  const setView = actions?.setView ?? setLocalView
+  const setQuery = actions?.setQuery ?? setLocalQuery
+  const setMemberPage = actions?.setMemberPage ?? setLocalMemberPage
+  const setTaskPage = actions?.setTaskPage ?? setLocalTaskPage
   const viewId = useId()
   const leadSessionId = useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? sessionId
   const team = useSessions(state => state.projectionsBySession[leadSessionId]?.values.agentTeam)
   const project = useSessions(state => state.byId[leadSessionId]?.presentation?.owner === 'project')
   // The conversation owner's current work, when it names one, scopes the Current view.
   const projectTaskIds = useTeamTaskScopes?.(scopes => scopes[leadSessionId]) ?? injectedTaskIds
-  const liveMembers = useSessionStatus(state => project
-    ? team?.members.filter(member => state.get(member.id)?.running === true).map(member => member.id).join('\n') ?? ''
-    : '')
-  const inactiveMembers = useSessionStatus(state => project
-    ? team?.members.filter(member => state.get(member.id)?.running === false).map(member => member.id).join('\n') ?? ''
-    : '')
-  const summaryLiveMembers = useSessions(state => project
-    ? team?.members.filter(member => state.byId[member.id]?.running === true).map(member => member.id).join('\n') ?? ''
-    : '')
+  const activity = useTeamActivity?.(facts => facts[leadSessionId])
+  const runningJobIds = new Set(project ? activity?.runningJobSessionIds : [])
+  const activityStale = project && useTeamActivity !== undefined && activity?.state !== 'ready'
+  const liveMemberIds = useLiveMemberIds({ useSessions, useSessionStatus }, project ? team : undefined)
+  if (!activityStale) for (const id of runningJobIds) liveMemberIds.add(id)
   const loadingTeam = useTeamLoading({ sessionId, useSession, useSessions })
 
   useEffect(() => {
-    setView('current')
-    setQuery('')
-    setMemberPage(0)
-    setTaskPage(0)
-  }, [sessionId])
+    if (useStore !== undefined) return
+    setLocalView('current')
+    setLocalQuery('')
+    setLocalMemberPage(0)
+    setLocalTaskPage(0)
+  }, [sessionId, useStore])
 
   const compact = team !== undefined && team.members.length === 1 && team.tasks.length === 0
   const taskById = new Map<string, TeamTask>(team?.tasks.map(task => [task.id, task]))
@@ -279,8 +333,6 @@ export function TeamBody({
     return taskByOwner.get(member.name)?.subject ?? member.description ?? member.name
   }
   const memberByName = new Map(team?.members.map(member => [member.name, member]))
-  const inactiveMemberIds = new Set(inactiveMembers.split('\n'))
-  const liveMemberIds = new Set([...liveMembers.split('\n'), ...summaryLiveMembers.split('\n').filter(id => !inactiveMemberIds.has(id))])
   const activeOwnerNames = new Set(team?.members.filter(member => liveMemberIds.has(member.id) || member.phase === 'provisioning').map(member => member.name))
   const taskOrder = new Map(projectTaskIds?.map((id, index) => [id, index]))
   const activeTasks = (team?.tasks.filter(task => projectTaskIds === undefined
@@ -306,7 +358,7 @@ export function TeamBody({
     ? [...(team?.members ?? [])].reverse().filter(member => memberLabel(member).toLocaleLowerCase().includes(search)
       || (member.description ?? '').toLocaleLowerCase().includes(search) || matchingOwners.has(member.name))
     : (team?.members ?? []).filter(member => member.role === 'lead' || currentOwners.has(member.name)
-      || liveMemberIds.has(member.id) || member.phase === 'provisioning')
+      || liveMemberIds.has(member.id) || runningJobIds.has(member.id) || member.phase === 'provisioning')
   const visibleMemberPage = Math.min(memberPage, Math.max(0, Math.ceil(memberCandidates.length / memberPageSize) - 1))
   const visibleTaskPage = Math.min(taskPage, Math.max(0, Math.ceil(taskCandidates.length / taskPageSize) - 1))
   const visibleMembers = project ? memberCandidates.slice(visibleMemberPage * memberPageSize, (visibleMemberPage + 1) * memberPageSize) : memberCandidates
@@ -335,7 +387,8 @@ export function TeamBody({
         </label>}
       </div>
     )}
-    <div className={css.body} aria-busy={loadingTeam} data-team-loading={loadingTeam || undefined}
+    <div ref={bodyRef} className={css.body} aria-busy={loadingTeam} data-team-loading={loadingTeam || undefined}
+      onScroll={event => { if (project && surfaceActive) actions?.setScrollTop(event.currentTarget.scrollTop) }}
       id={project && team !== undefined && !compact ? `${viewId}-panel` : undefined}
       role={project && team !== undefined && !compact ? 'tabpanel' : undefined}
       aria-labelledby={project && team !== undefined && !compact ? `${viewId}-${view}` : undefined}>
@@ -346,6 +399,7 @@ export function TeamBody({
           {t('unavailable')}
         </div>
       )}
+      {project && activityStale && <p className={css.collectionHint} role="status">{t('project.activityStale')}</p>}
       {team !== undefined && (
         <>
           {team.failure !== undefined && (
@@ -364,6 +418,9 @@ export function TeamBody({
                   label={memberLabel(member)}
                   project={project}
                   memberCount={team.members.length}
+                  runningJob={runningJobIds.has(member.id)}
+                  activityStale={activityStale}
+                  navigationFailure={memberFailure?.sessionId === member.id ? memberFailure.message : undefined}
                   sessionId={sessionId}
                   useSessions={useSessions}
                   useSessionStatus={useSessionStatus}
@@ -393,6 +450,8 @@ export function TeamBody({
                         dependencyLabels={task.blockedBy.map(id => project
                           ? taskById.get(id)?.subject ?? t('project.missingDependency')
                           : id)}
+                        expanded={project && expandedTaskIds !== undefined ? expandedTaskIds.includes(task.id) : undefined}
+                        onExpandedChange={project && actions !== undefined ? next => { actions.setTaskExpanded(task.id, next) } : undefined}
                         t={t} />
                     })}
                   </div>
@@ -410,8 +469,18 @@ export function TeamBody({
 
 /** Render the Team header action: a hover or pinned popover around {@link TeamBody}. */
 export function TeamAction(props: TeamActionProps) {
-  const { sessionId, useSession, useSessions, t } = props
-  const [open, setOpen] = useState(false)
+  const { sessionId, useSession, useSessions, useTeamActivity, useStore, actions, openTeamSidebar, t } = props
+  const leadSessionId = useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? sessionId
+  const team = useSessions(state => state.projectionsBySession[leadSessionId]?.values.agentTeam)
+  const project = useSessions(state => state.byId[leadSessionId]?.presentation?.owner === 'project')
+  const [localOpen, setLocalOpen] = useState(false)
+  const sharedOpen = useStore?.(state => state.floatingOpen)
+  const floatingVisited = useStore?.(state => state.floatingVisited) ?? false
+  const open = project ? sharedOpen ?? localOpen : localOpen
+  const setOpen = (next: boolean): void => {
+    if (project && actions !== undefined) actions.setFloating(next)
+    else setLocalOpen(next)
+  }
   const [error, setError] = useState<string | null>(null)
   const [errorDismissed, setErrorDismissed] = useState(false)
   const [errorSequence, setErrorSequence] = useState(0)
@@ -424,12 +493,21 @@ export function TeamAction(props: TeamActionProps) {
     open, anchorRef: triggerRef, panelRef, gap: 5, margin: 16,
   })
   const positioned = position !== null
-  const leadSessionId = useSession(snapshot => snapshot.subagent?.address.parentSessionId) ?? sessionId
-  const team = useSessions(state => state.projectionsBySession[leadSessionId]?.values.agentTeam)
-  const project = useSessions(state => state.byId[leadSessionId]?.presentation?.owner === 'project')
-  const loadingTeam = useTeamLoading({ sessionId, useSession, useSessions })
-  const opening = useSession(snapshot => snapshot.openState === 'loading')
+  const activity = useTeamActivity?.(facts => facts[leadSessionId])
+  const liveMemberIds = useLiveMemberIds(props, project ? team : undefined)
+  const jobIds = new Set(activity?.runningJobSessionIds)
+  const runningCount = new Set(team?.members.filter(member => member.role !== 'lead'
+    && (liveMemberIds.has(member.id) || jobIds.has(member.id))).map(member => member.id)).size
+  const countReadState = useSessions(state => state.projectionsBySession[leadSessionId]?.state)
+  const openState = useSession(snapshot => snapshot.openState)
+  const opening = openState === 'loading'
   const listing = useSessions(state => state.phase === 'pending')
+  const countKnown = team !== undefined && team.failure === undefined && openState === 'open' && !listing
+    && countReadState !== 'loading' && countReadState !== 'error' && countReadState !== 'migration-required'
+    && (useTeamActivity === undefined || activity?.state === 'ready')
+  const countText = countKnown ? runningCount > 99 ? '99+' : String(runningCount) : '?'
+  const triggerLabel = project ? t('project.trigger', { count: countKnown ? runningCount : '?' }) : t('trigger')
+  const loadingTeam = useTeamLoading({ sessionId, useSession, useSessions })
   useEffect(() => { setLoadingDismissed(false) }, [opening, listing, open])
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const pinnedRef = useRef(false)
@@ -444,16 +522,17 @@ export function TeamAction(props: TeamActionProps) {
     cancelHoverChange()
     pinnedRef.current = false
     hoverDismissedRef.current = false
-    setOpen(false)
+    setLocalOpen(false)
     setError(null)
     setErrorDismissed(false)
   }, [sessionId])
 
   useEffect(() => cancelHoverChange, [])
+  useEffect(() => () => { actions?.setFloating(false) }, [sessionId, actions])
 
   useLayoutEffect(() => {
-    if (open && positioned && pinnedRef.current) panelRef.current?.focus()
-  }, [open, positioned])
+    if (open && positioned && (project || pinnedRef.current)) panelRef.current?.focus()
+  }, [open, positioned, project])
 
   const changeOpen = (next: boolean): void => {
     cancelHoverChange()
@@ -463,7 +542,7 @@ export function TeamAction(props: TeamActionProps) {
 
   const scheduleHoverOpen = (): void => {
     cancelHoverChange()
-    if (open || hoverDismissedRef.current) return
+    if (project || open || hoverDismissedRef.current) return
     const label = triggerLabelRef.current
     /* v8 ignore next -- the label mounts with the trigger that received the hover. */
     if (label === null) return
@@ -479,7 +558,7 @@ export function TeamAction(props: TeamActionProps) {
   const scheduleHoverClose = (): void => {
     cancelHoverChange()
     hoverDismissedRef.current = false
-    if (pinnedRef.current) return
+    if (project || pinnedRef.current) return
     hoverTimer.current = setTimeout(() => {
       hoverTimer.current = undefined
       changeOpen(false)
@@ -513,31 +592,36 @@ export function TeamAction(props: TeamActionProps) {
       data-team-action
       onMouseLeave={scheduleHoverClose}
     >
+      <Tooltip label={t(countKnown ? 'project.tooltip' : 'project.tooltipUnknown', { count: runningCount })}
+        disabled={!project || open} side="bottom" delayMs={350} portal maxWidth={260}>
       <button
         type="button"
         ref={triggerRef}
         onMouseEnter={scheduleHoverOpen}
-        className={css.trigger}
-        aria-label={t('trigger')}
-        title={t('trigger')}
+        className={`${css.trigger}${project ? ` ${css.projectTrigger}` : ''}`}
+        aria-label={triggerLabel}
+        title={project ? undefined : t('trigger')}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => {
           cancelHoverChange()
           hoverDismissedRef.current = false
           pinnedRef.current = true
-          if (!open) changeOpen(true)
+          if (project) changeOpen(!open)
+          else if (!open) changeOpen(true)
           else panelRef.current?.focus()
         }}
       >
         <IconUsersOutlineRegular size={14} />
-        <span ref={triggerLabelRef} className={css.triggerLabel}>{t('trigger')}</span>
+        <span ref={triggerLabelRef} className={css.triggerLabel}>{t(project ? 'project.triggerLabel' : 'trigger')}</span>
+        {project && <span className={css.triggerCount} aria-hidden="true" data-team-running-count>{countText}</span>}
       </button>
+      </Tooltip>
       {open && error !== null && !errorDismissed ? <Toast key={errorSequence} text={error} holdMs={null}
         dismissLabel={t('dismissFeedback')} onDone={() => { setErrorDismissed(true) }} />
         : open && loadingTeam && !loadingDismissed ? <Toast text={t('loading')} icon={<StateDot state="ongoing" />}
           holdMs={null} dismissLabel={t('dismissFeedback')} onDone={() => { setLoadingDismissed(true) }} /> : null}
-      {open && createPortal(
+      {(open || project && floatingVisited) && createPortal(
         <div
           ref={panelRef}
           className={`${css.panel}${compact ? ` ${css.panelCompact}` : ''}${project ? ` ${css.projectPanel}` : ''}`}
@@ -546,12 +630,26 @@ export function TeamAction(props: TeamActionProps) {
           tabIndex={-1}
           aria-label={t('trigger')}
           data-team-panel
+          hidden={!open}
           onMouseEnter={cancelHoverChange}
           onMouseLeave={scheduleHoverClose}
           onFocusCapture={() => { if (project) pinnedRef.current = true }}
           onPointerDownCapture={() => { if (project) pinnedRef.current = true }}
         >
-          <TeamBody {...props} onError={(message) => {
+          {project && <div className={css.surfaceToolbar}>
+            {openTeamSidebar !== undefined && <Button size="sm" onClick={() => {
+              try {
+                if (!openTeamSidebar(sessionId)) throw new Error(t('project.sidebarUnavailable'))
+                changeOpen(false)
+              } catch (reason) {
+                setError(reason instanceof Error ? reason.message : String(reason))
+                setErrorDismissed(false)
+                setErrorSequence(sequence => sequence + 1)
+              }
+            }}>{t('project.pin')}</Button>}
+            <Button size="sm" onClick={() => { changeOpen(false); triggerRef.current?.focus() }}>{t('project.close')}</Button>
+          </div>}
+          <TeamBody {...props} surfaceActive={open} onError={(message) => {
             setError(message)
             setErrorDismissed(false)
             setErrorSequence(sequence => sequence + 1)
