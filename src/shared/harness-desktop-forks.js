@@ -125,7 +125,7 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-settings-models/src/client/models-dev-metadata.ts', includes: ['models.dev'] },
   { file: 'packages/client/ui-settings-models/scripts/live-fetch-enrich-probe.ts', includes: [] },
   // Presentation skins (Claude / Codex): a family-level skin id and the
-  // pre-paint root attribute.
+  // pre-paint root attribute and skin-selected mascot seats.
   { file: 'packages/client/ui-theme/src/theme-family.ts', includes: ['ThemeSkinId', 'skin?: ThemeSkinId', 'wallpaper?: string'] },
   { file: 'packages/client/ui-theme/src/builtin-families.ts', includes: ['CODEX_FAMILY', 'CLAUDE_FAMILY', '--dsh-codex-panel'] },
   { file: 'packages/client/ui-theme/src/theme-settings.ts', includes: ['THEME_SKIN_WALLPAPER_FIELD', 'skinWallpaperEnabled'] },
@@ -136,7 +136,10 @@ const FORK_FILE_MARKERS = [
   { file: 'packages/client/ui-theme/src/boot-theme.ts', includes: ['lightSkin', "data-dsh-skin"] },
   { file: 'packages/client/ui-theme/src/client/styles.ts', includes: ['skins.css'] },
   { file: 'packages/client/ui-theme/src/styles/base.css', includes: ['--dsh-bubble-radius'] },
-  { file: 'packages/client/ui-theme/src/styles/skins.css', includes: ["data-dsh-skin='codex'", "data-dsh-skin='claude'", '--dsh-windows-sidebar-width', 'data-dsh-hero-headline', 'data-dsh-message-bubble', 'data-dsh-sidebar-brand-identity'] },
+  { file: 'packages/client/ui-theme/src/styles/skins.css', includes: ["data-dsh-skin='codex'", "data-dsh-skin='claude'", '--dsh-windows-sidebar-width', 'data-dsh-hero-headline', 'data-dsh-message-bubble', 'data-dsh-sidebar-brand-identity', 'data-dsh-mascot'] },
+  { file: 'packages/client/ui-brand-official/src/client/Brand.tsx', includes: ['claude-isle-head.png', 'data-dsh-mascot'] },
+  { file: 'packages/client/ui-chat/src/client/chat/RunningWhaleGirl.tsx', includes: ['claude-isle-reading.png', 'data-dsh-mascot'] },
+  { file: 'apps/web/public/Claude-Artwork-NOTICES.txt', includes: ['Ancean', 'ZipZipPipe'] },
   { file: 'packages/client/ui-codex-sidebar/package.json', includes: ['dsh-plugin-codex-ui', 'platform'] },
   { file: 'packages/client/ui-codex-sidebar/lib/client.js', includes: ['data-dsh-skin', "return 'Whale Isle'", 'installNow'] },
   { file: 'packages/client/ui-codex-sidebar/VENDORED.md', includes: ['ice-ai-lab/dsh-plugin-codex-ui', 'MIT'] },

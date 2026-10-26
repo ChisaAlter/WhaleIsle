@@ -7,6 +7,32 @@
  * No wallpaper, glass, floating cards, gutter or outer frame inset.
  */
 
+/* Mascot seats follow the resolved skin, including cold boot and previews. */
+html:not([data-dsh-skin='claude']) [data-dsh-mascot='claude'],
+html[data-dsh-skin='claude'] [data-dsh-mascot='default'] {
+  display: none !important;
+}
+
+html[data-dsh-skin='claude'] img[data-dsh-mascot='claude'] {
+  display: block;
+  object-fit: contain;
+  flex: none;
+}
+
+html[data-dsh-skin='claude'] [data-chat-running] img[data-dsh-mascot='claude'] {
+  width: 100%;
+  height: 100%;
+}
+
+html[data-dsh-skin='claude'] [data-chat-running] {
+  --dsw-alias-label-deep-diving: var(--dsw-alias-state-business-primary);
+  --dsw-alias-label-deep-diving-shimmer: var(--dsw-alias-label-primary);
+}
+
+html[data-dsh-skin='claude'] [data-dsh-hero-preview] {
+  display: none;
+}
+
 html[data-dsh-skin='codex'] {
   --dsh-frame-gap: 0px;
   --dsh-panel-radius: 12px;

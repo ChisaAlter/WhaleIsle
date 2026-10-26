@@ -100,6 +100,7 @@ describe('official browser-brand plugin', () => {
     expect(mark?.getAttribute('aria-hidden')).toBe('true')
     expect(mark?.classList.contains('hero-theme-ink')).toBe(true)
     expect(mark?.getAttribute('style')).toContain('width: 34px; height: 34px;')
+    expect(mark?.querySelector('img[data-dsh-mascot="claude"]')?.getAttribute('src')).toBe('claude-isle-head.png')
     view.rerender(<OfficialHeroBrandMark size={24} />)
     expect(mark?.getAttribute('style')).toContain('width: 24px; height: 24px;')
   })
@@ -111,6 +112,7 @@ describe('official browser-brand plugin', () => {
     expect(name.container.textContent!.indexOf('鲸屿')).toBeLessThan(name.container.textContent!.indexOf('WHALE ISLE'))
     expect(name.getByText('BASED ON DEEPSEEK HARNESS')).toBeTruthy()
     expect(name.container.querySelector('img')?.getAttribute('src')).toBe('/whale-isle-head.png')
+    expect(name.container.querySelector('img[data-dsh-mascot="claude"]')?.getAttribute('src')).toBe('claude-isle-head.png')
     name.unmount()
 
     const mark = render(<OfficialBrandMark size={34} />)
@@ -127,6 +129,7 @@ describe('official browser-brand plugin', () => {
     expect(name.container.textContent).toContain('WHALE ISLE')
     expect(name.getByText('BASED ON DEEPSEEK HARNESS')).toBeTruthy()
     expect(name.container.querySelector('img')?.getAttribute('src')).toBe('/whale-isle-head.png')
+    expect(name.container.querySelector('img[data-dsh-mascot="claude"]')?.getAttribute('src')).toBe('claude-isle-head.png')
     name.unmount()
 
     const mark = render(<OfficialBrandMark size={24} />)

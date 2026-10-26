@@ -16,7 +16,7 @@ function statusHarness(startTime?: number) {
   const view = render(<RunningStatus startTime={startTime} t={t} />)
   return {
     ...view,
-    content: () => view.container.querySelector('[data-chat-running] > :last-child'),
+    content: () => view.container.querySelector('[data-chat-running] > :last-child > [data-dsh-mascot="default"]'),
     set: (nextStartTime?: number) => { view.rerender(<RunningStatus startTime={nextStartTime} t={t} />) },
   }
 }
@@ -52,7 +52,8 @@ describe('RunningStatus', () => {
     expect(content?.textContent).toMatch(/^深度求索中，用时 \d+秒 ···$/)
     expect(content?.textContent).not.toBe(nextTurnText)
     expect(view.getByRole('status')).toBe(status)
-    expect(status.textContent).toBe('深度求索中')
+    expect(status.querySelector('[data-dsh-mascot="default"]')?.textContent).toBe('深度求索中')
+    expect(status.querySelector('[data-dsh-mascot="claude"]')?.textContent).toBe('正在思考')
     view.unmount()
     expect(vi.getTimerCount()).toBe(0)
   })

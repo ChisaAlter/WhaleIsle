@@ -189,15 +189,18 @@ window.__ModuleLoader__.load({
     // asset is byte-identical to assets/whale-head.png.
     function WhalePanelGlyph({ size }) {
       const px = size ?? 18;
-      return h("img", {
+      const imageProps = {
         className: "dsh-whale-head",
-        src: WHALE_HEAD_URL,
         width: px,
         height: px,
         alt: "",
         "aria-hidden": "true",
         draggable: false,
-      });
+      };
+      return h(Fragment, null,
+        h("img", { ...imageProps, src: WHALE_HEAD_URL, "data-dsh-mascot": "default" }),
+        h("img", { ...imageProps, src: "claude-isle-head.png", "data-dsh-mascot": "claude" }),
+      );
     }
 
     // The panel row label follows the configured assistant name:
