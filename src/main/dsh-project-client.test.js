@@ -48,7 +48,7 @@ function visibleText(element) {
 // The shipped browser module executes in a VM, but its components and hooks
 // use real React and DOM events. Host RPC, slots and primitive appearance are
 // the boundaries substituted here; model execution and desktop UI are separate.
-function bench({ available = true, rejectCreation = false, detail = {}, cards = [], queue, team = null, runtimeSessions = {}, sessionStatuses = {}, factoryRenderer, rpcOverride, previewOverride, approvalActive = false, language, refusedDirectories = {}, memberSessions = {}, leadTodos } = {}) {
+function bench({ available = true, rejectCreation = false, detail = {}, cards = [], queue, team = null, runtimeSessions = {}, sessionStatuses = {}, factoryRenderer, rpcOverride, previewOverride, approvalActive = false, language, refusedDirectories = {}, memberSessions = {}, leadTodos, navigateSessions = false } = {}) {
   const dom = new JSDOM('<!doctype html><html><head></head><body><main></main></body></html>', { url: 'http://localhost', pretendToBeVisual: true });
   const savedGlobals = Object.fromEntries(['window', 'document', 'navigator', 'IS_REACT_ACT_ENVIRONMENT'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   for (const [key, value] of Object.entries({ window: dom.window, document: dom.window.document, navigator: dom.window.navigator, IS_REACT_ACT_ENVIRONMENT: true })) {
@@ -80,8 +80,8 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
     requestAnimationFrame: callback => setTimeout(callback, 0), cancelAnimationFrame: clearTimeout, setTimeout, clearTimeout,
     setInterval: callback => { timer = callback; return 1; }, clearInterval() {} };
   vm.runInNewContext(fs.readFileSync(clientPath, 'utf8'), sandbox, { filename: clientPath });
-  const Button = React.forwardRef(function Button({ variant, children, loading, feedback, ...props }, ref) {
-    return h('button', { type: 'button', ref, ...props, ...(loading ? { 'aria-busy': true } : {}), ...(feedback ? { 'data-feedback': feedback } : {}) }, children);
+  const Button = React.forwardRef(function Button({ variant, shape, children, loading, feedback, ...props }, ref) {
+    return h('button', { type: 'button', ref, ...props, disabled: props.disabled || loading, 'aria-busy': loading || props['aria-busy'] || undefined, ...(feedback ? { 'data-feedback': feedback } : {}) }, children);
   });
   const Modal = ({ open, title, closeLabel, onClose, children, footer }) => !open ? null : h('section', { role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
     h('button', { type: 'button', 'aria-label': closeLabel, onClick: onClose }, closeLabel), children, footer);
@@ -131,13 +131,24 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
   } };
   const sidebarRight = {
     openTabs, mounted,
-    isExpanded: () => sidebarExpanded,
-    toggleExpanded: () => { sidebarExpanded = !sidebarExpanded; sidebarToggles.push(sidebarExpanded); },
-    openTabIn: (sessionId, kind) => {
-      asides.push(['tab', sessionId, kind]); sidebarExpanded = true;
-      if (!openTabs.getSnapshot().some(tab => tab.sessionId === sessionId && tab.kind === kind)) openTabs.set([...openTabs.getSnapshot(), { sessionId, kind, tabId: `${kind}-${sessionId}` }]);
+    openTabIn: (sessionId, kind, placement) => {
+      asides.push(['tab', sessionId, kind, ...(placement ? [{ ...placement }] : [])]); sidebarExpanded = true;
+      const next = openTabs.getSnapshot().filter(tab => !(tab.sessionId === sessionId && tab.tabId === placement?.replaceTab));
+      if (!next.some(tab => tab.sessionId === sessionId && tab.kind === kind)) next.push({ sessionId, kind, tabId: `${kind}-${sessionId}` });
+      openTabs.set(next);
       return true;
     },
+    focusedTarget: element => {
+      const page = element?.closest('[data-sidebar-right-session]');
+      return page ? { sessionId: page.dataset.sidebarRightSession, paneId: page.dataset.dockkitPane, tabId: page.dataset.sidebarRightTab, host: page.dataset.dockkitHost ?? 'dock' } : undefined;
+    },
+    closeTarget: target => {
+      asides.push(['close', target.sessionId, target.tabId]);
+      openTabs.set(openTabs.getSnapshot().filter(tab => tab.sessionId !== target.sessionId || tab.tabId !== target.tabId));
+      return 'closed';
+    },
+    isExpanded: () => sidebarExpanded,
+    toggleExpanded: () => { sidebarExpanded = !sidebarExpanded; sidebarToggles.push(sidebarExpanded); asides.push(['expanded', sidebarExpanded]); },
     openResource: (address, options) => { asides.push(['resource', address, options.kind]); },
   };
   const ctx = {
@@ -153,11 +164,15 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
       register: (scope, translations) => { locales.set(scope, translations); return () => locales.delete(scope); }, subscribe: () => () => {} },
     slots: { inject: (_key, install) => install(), register: (options, component) => { const entry = { options, component, active: true }; entries.push(entry); return () => { entry.active = false; }; } },
     workspaces: { list: projection({ scratchCwd: 'C:/scratch' }), create: async input => { requests.push({ method: 'workspace/create', input }); return { path: project.canonicalWorkingDirectory, workspaceId: project.workspaceId }; }, openPath: async (path, options) => { if (previewOverride) await previewOverride(path, options); opened.push({ path, options }); } },
-    uiWorkspace: { registerDirectoryAction: action => { directoryAction = action; return () => { directoryAction = undefined; }; }, registerSessionActions: (owner, actions) => { assert.equal(sessionActions.has(owner), false); sessionActions.set(owner, actions); return () => sessionActions.delete(owner); }, registerSessionNavigation: (owner, source) => { assert.equal(sessionNavigation.has(owner), false); sessionNavigation.set(owner, source); return () => sessionNavigation.delete(owner); }, openSession: id => navigation.push(['session', id]) },
+    uiWorkspace: { registerDirectoryAction: action => { directoryAction = action; return () => { directoryAction = undefined; }; }, registerSessionActions: (owner, actions) => { assert.equal(sessionActions.has(owner), false); sessionActions.set(owner, actions); return () => sessionActions.delete(owner); }, registerSessionNavigation: (owner, source) => { assert.equal(sessionNavigation.has(owner), false); sessionNavigation.set(owner, source); return () => sessionNavigation.delete(owner); }, openSession: id => { navigation.push(['session', id]); if (navigateSessions) mounted.set(id); } },
     uiSidebar: { selectTab: id => navigation.push(['tab', id]) },
     uiSession: { sessionStatus },
+    conversation: { input: { for: scope => ({ focus: () => {
+      navigation.push(['focus', scope.sessionId]);
+      dom.window.document.querySelector('[data-lead-composer]')?.focus();
+    } }) } },
     settingsNavigation: { open: id => navigation.push(['settings', id]) },
-    sessions: { scope: sessionId => ({ get: name => { assert.equal(name, 'conversation'); return { send: async text => sent.push({ sessionId, text }) }; } }), list: projection({ byId: { [project.coordinatorSessionId]: { id: project.coordinatorSessionId, retainedBy: { mainView: 1 } }, ...Object.fromEntries(Object.entries(runtimeSessions).map(([id, session]) => [id, { retainedBy: { mainView: id === project.coordinatorSessionId ? 1 : 0 }, ...session }])) },
+    sessions: { scope: sessionId => ({ sessionId, get: name => { assert.equal(name, 'conversation'); return { send: async text => sent.push({ sessionId, text }) }; } }), list: projection({ byId: { [project.coordinatorSessionId]: { id: project.coordinatorSessionId, retainedBy: { mainView: 1 } }, ...Object.fromEntries(Object.entries(runtimeSessions).map(([id, session]) => [id, { retainedBy: { mainView: id === project.coordinatorSessionId ? 1 : 0 }, ...session }])) },
       projectionsBySession: { [project.coordinatorSessionId]: { values: { agentTeam: team, ...(leadTodos !== undefined ? { todos: leadTodos } : {}) } } } }), retain: (address, options) => { retained.push({ address, options }); return { ready: Promise.resolve(binding), release: () => released.push(address.childSessionId) }; } },
     connection: { rpc: { call: async (prefix, method, input) => {
       assert.equal(prefix, '/dsh-project'); requests.push({ method, input });
@@ -245,7 +260,8 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
     const sessionId = useSyncExternalStore(mounted.subscribe, mounted.getSnapshot, mounted.getSnapshot);
     return h(React.Fragment, null, entries.filter(entry => entry.active && entry.options.name !== 'sidebar.nav.tab'
       && (approvalActive ? !['conversation.input.right', 'conversation.input.dock'].includes(entry.options.name) : entry.options.name !== 'conversation.approval.actions'))
-      .map(entry => h(Slot, { key: `${entry.options.name}:${entry.options.id ?? entry.options.key}`, entry, sessionId })));
+      .map(entry => h(Slot, { key: `${entry.options.name}:${entry.options.id ?? entry.options.key}`, entry, sessionId })),
+      navigateSessions && sessionId === project.coordinatorSessionId ? h('textarea', { 'data-lead-composer': true, defaultValue: 'Unsent coordinator draft' }) : null);
   }
   const render = () => root.render(h(Slots));
   const flush = async () => { await act(async () => { await new Promise(resolve => setImmediate(resolve)); }); };
@@ -2140,13 +2156,81 @@ test('a member conversation explains that work goes through the coordinator and 
     rpcOverride: (method, _input, project) => method === 'list' ? { ok: true, value: { projects: [project], available: true } } : undefined });
   try {
     await b.flush(); await b.adopt(); await b.mount(); await act(async () => { await b.face().readDetail('project-one'); }); await b.mountSession('worker-one'); await b.flush();
-    const notice = b.document.querySelector('.dsh-project-archive-notice'); assert.ok(notice);
+    const notice = b.document.querySelector('.dsh-project-composer-notice'); assert.ok(notice);
     assert.match(visibleText(notice), /memberComposerHint/);
     await b.press('stopWork');
     assert.deepEqual({ ...b.requests.filter(request => request.method === 'stop').at(-1).input }, { projectId: 'project-one', workstreamId: 'work-one',
       requestId: b.requests.filter(request => request.method === 'stop').at(-1).input.requestId });
-    await b.press('backToLead'); assert.deepEqual(b.navigation.at(-1), ['session', 'coordinator-existing']);
-    await b.mountSession('unrelated-child'); assert.equal(b.document.querySelector('.dsh-project-archive-notice'), null, 'Children of other Leads keep their own composer');
+    await b.press('backToLead'); assert.deepEqual(b.navigation.slice(-3), [['tab', 'sessions'], ['session', 'coordinator-existing'], ['focus', 'coordinator-existing']]);
+    await b.mountSession('unrelated-child'); assert.equal(b.document.querySelector('.dsh-project-composer-notice'), null, 'Children of other Leads keep their own composer');
+  } finally { await b.dispose(); }
+});
+
+test('returning from the main member view mounts the coordinator before focusing its unchanged draft', async () => {
+  const b = bench({ detail: workDetail(), memberSessions: { 'worker-one': 'coordinator-existing' }, navigateSessions: true });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.mountSession('worker-one');
+    assert.equal(b.document.querySelector('[data-lead-composer]'), null);
+    await b.press('backToLead');
+    const editor = b.document.querySelector('[data-lead-composer]');
+    assert.ok(editor); assert.equal(b.document.activeElement, editor);
+    assert.equal(editor.value, 'Unsent coordinator draft');
+    assert.equal(b.document.querySelector('.dsh-project-composer-notice'), null);
+    assert.equal(b.requests.some(request => ['stop', 'prompt', 'delegate'].includes(request.method)), false);
+    assert.equal(b.sent.length, 0);
+  } finally { await b.dispose(); }
+});
+
+test('returning from a main member also uncovers the coordinator when its fullscreen Sidebar is restored', async () => {
+  const b = bench({ detail: workDetail(), memberSessions: { 'worker-one': 'coordinator-existing' }, navigateSessions: true });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await b.mountSession('worker-one');
+    const restored = b.document.createElement('aside');
+    Object.assign(restored.dataset, { sidebarRightPanel: 'fullscreen', sidebarRightOpen: '', sidebarRightSession: 'coordinator-existing' });
+    b.document.body.append(restored);
+    await b.press('backToLead');
+    assert.equal(b.document.activeElement, b.document.querySelector('[data-lead-composer]'));
+    assert.deepEqual(b.asides.at(-1), ['expanded', false]);
+  } finally { await b.dispose(); }
+});
+
+test('returning from a sidebar member replaces only that page and exposes the coordinator in fullscreen', async () => {
+  for (const presentation of ['push', 'fullscreen', 'float', 'float-fullscreen']) {
+    const b = bench({ detail: workDetail(), memberSessions: { 'worker-one': 'coordinator-existing' } });
+    try {
+      await b.flush(); await b.adopt(); await b.mount(); await b.mountSession('worker-one');
+      const notice = b.document.querySelector('.dsh-project-composer-notice');
+      const page = notice.parentElement;
+      Object.assign(page.dataset, { sidebarRightSession: 'coordinator-existing', sidebarRightTab: 'member-tab', dockkitPane: 'member-pane', dockkitHost: presentation.startsWith('float') ? 'float' : 'dock', sidebarRightPanel: presentation.includes('fullscreen') ? 'fullscreen' : 'push' });
+      await act(async () => { b.openTabs.set([
+        { sessionId: 'coordinator-existing', tabId: 'agent-team-coordinator-existing', kind: 'agent-team' },
+        { sessionId: 'coordinator-existing', tabId: 'member-tab', kind: 'subagentchat' },
+        { sessionId: 'coordinator-existing', tabId: 'other-member', kind: 'subagentchat' },
+        { sessionId: 'other-lead', tabId: 'other-project-member', kind: 'subagentchat' },
+      ]); });
+      const editor = b.document.createElement('textarea'); editor.value = 'Keep my draft'; editor.dataset.leadComposer = ''; b.document.body.append(editor);
+      await b.press('backToLead');
+      assert.equal(b.document.activeElement, editor); assert.equal(editor.value, 'Keep my draft');
+      assert.equal(b.openTabs.getSnapshot().some(tab => tab.tabId === 'member-tab'), false);
+      assert.deepEqual(b.openTabs.getSnapshot().map(tab => tab.tabId), ['agent-team-coordinator-existing', 'other-member', 'other-project-member']);
+      if (presentation.startsWith('float')) assert.deepEqual(b.asides.findLast(entry => entry[0] === 'close'), ['close', 'coordinator-existing', 'member-tab']);
+      else assert.deepEqual(b.asides.findLast(entry => entry[0] === 'tab'), ['tab', 'coordinator-existing', 'agent-team', { paneId: 'member-pane', replaceTab: 'member-tab' }]);
+      assert.equal(b.asides.some(entry => entry[0] === 'expanded'), presentation.includes('fullscreen'));
+      assert.equal(b.requests.some(request => ['stop', 'prompt', 'delegate'].includes(request.method)), false);
+    } finally { await b.dispose(); }
+  }
+});
+
+test('member stop failures stay outside the notice and leave return navigation available', async () => {
+  const b = bench({ detail: workDetail(), memberSessions: { 'worker-one': 'coordinator-existing' }, rpcOverride: method => method === 'stop' ? { ok: false, error: { message: 'Stop failed, try again' } } : undefined });
+  try {
+    await b.flush(); await b.adopt(); await b.mount(); await act(async () => { await b.face().readDetail('project-one'); }); await b.mountSession('worker-one');
+    const notice = b.document.querySelector('.dsh-project-composer-notice'), before = visibleText(notice);
+    await b.press('stopWork');
+    assert.equal(visibleText(notice), before);
+    assert.match(b.document.querySelector('[role=alert]').textContent, /Stop failed, try again/);
+    assert.equal(notice.contains(b.document.querySelector('[role=alert]')), false);
+    assert.equal(b.button('backToLead').disabled, false); assert.equal(b.button('stopWork').disabled, false);
   } finally { await b.dispose(); }
 });
 
