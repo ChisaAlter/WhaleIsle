@@ -1,6 +1,10 @@
 package ai.deepseek.harness.mobile.ui
 
 import ai.deepseek.harness.mobile.remote.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.json.*
 
 internal fun historyEvent(entry: JsonObject): JsonObject = (entry["event"] as? JsonObject) ?: entry
@@ -11,7 +15,35 @@ internal fun mergeHistory(older: List<JsonObject>, current: List<JsonObject>): L
 }
 private fun blocksText(blocks: List<JsonObject>): String = blocks.joinToString("") { it.string("text") }
 private fun images(blocks: List<JsonObject>): List<NativeImage> = blocks.filter { it.string("type") == "image" }
-    .map { NativeImage(it.string("mediaType"), it.string("data")) }
+    .map { block ->
+        val attachment = block["attachment"].objectValue()
+        NativeImage(attachment.string("mediaType").ifBlank { block.string("mediaType") }, block.string("data"), attachment.string("attachmentId"))
+    }
+
+internal suspend fun resolveHistoryImages(
+    rows: List<NativeRow>,
+    onResolved: (NativeImage) -> Unit = {},
+    read: suspend (String) -> JsonObject,
+): List<NativeRow> {
+    val resolved = mutableMapOf<String, NativeImage>()
+    return rows.map { row -> row.copy(images = row.images.map { image ->
+        currentCoroutineContext().ensureActive()
+        if (image.data.isNotEmpty() || image.error.isNotEmpty() || image.attachmentId.isBlank()) image else resolved.getOrPut(image.attachmentId) {
+            val result = try {
+                val value = read(image.attachmentId)
+                val attachment = value["attachment"].objectValue()
+                require(attachment.string("attachmentId") == image.attachmentId && value.string("data").isNotBlank()) { "图片附件响应无效" }
+                image.copy(mediaType = attachment.string("mediaType").ifBlank { image.mediaType }, data = value.string("data"))
+            } catch (failure: Exception) {
+                currentCoroutineContext().ensureActive()
+                if (failure is CancellationException && failure !is TimeoutCancellationException) throw failure
+                image.copy(error = failure.message ?: "无法读取历史图片")
+            }
+            onResolved(result)
+            result
+        }
+    }) }
+}
 
 /** Fold the host's raw events and projected items without discarding loaded pages. */
 internal fun foldNativeHistory(entries: List<JsonObject>): List<NativeRow> {

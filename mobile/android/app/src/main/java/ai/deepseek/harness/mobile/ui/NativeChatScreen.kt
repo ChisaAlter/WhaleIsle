@@ -2,9 +2,11 @@ package ai.deepseek.harness.mobile.ui
 
 import ai.deepseek.harness.mobile.ui.theme.dsh
 import android.graphics.BitmapFactory
+import android.graphics.Typeface
 import android.widget.TextView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -27,6 +29,8 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
@@ -36,15 +40,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import io.noties.markwon.AbstractMarkwonPlugin
 import io.noties.markwon.Markwon
+import io.noties.markwon.core.MarkwonTheme
 import io.noties.markwon.linkify.LinkifyPlugin
 import java.util.Base64
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 /** Compose owns conversation state; opening a short modal never unmounts the chat. */
@@ -88,6 +96,8 @@ internal fun NativeChatScreen(
     BoxWithConstraints(Modifier.fillMaxSize().background(colors.bgBase)) {
         val narrow = maxWidth < 360.dp || state.running && state.planOn && maxWidth < 440.dp
         val compactHeight = maxHeight < 480.dp
+        val editLineHeight = with(LocalDensity.current) { 24.sp.toDp() }
+        val tightIme = imeVisible && maxHeight < 160.dp + editLineHeight
         ModalNavigationDrawer(
             drawerState = drawer,
             gesturesEnabled = drawer.isOpen,
@@ -114,27 +124,34 @@ internal fun NativeChatScreen(
             },
         ) {
             Column(Modifier.fillMaxSize()) {
-                Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().heightIn(min = if (tightIme) 48.dp else 52.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     NativeIconButton(NativeGlyph.Panel, "展开侧栏", { keyboard?.hide(); scope.launch { drawer.open() } }, avatar = true)
-                    Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                    Column(Modifier.weight(1f).padding(4.dp)) {
                         Text(state.title, color = colors.labelPrimary, fontSize = 16.sp, lineHeight = 24.sp,
                             fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (state.hostName.isNotBlank()) Text(state.hostName, color = colors.labelTertiary,
+                        if (!tightIme && state.hostName.isNotBlank()) Text(state.hostName, color = colors.labelTertiary,
                             fontSize = 12.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     NativeIconButton(NativeGlyph.More, "会话与工作区操作", { keyboard?.hide(); onPanel("work") })
                     NativeIconButton(NativeGlyph.Plus, "新会话", { keyboard?.hide(); onPanel("new") }, enabled = !state.offline)
                 }
-                Box(Modifier.weight(1f).fillMaxWidth()) {
-                    NativeTimeline(state, onAction, compactHeight)
-                    if (showConnectionNotice && picker.isBlank()) NativeConnectionNotice(state, onAction, Modifier.align(Alignment.TopCenter))
-                }
-                when {
-                    state.approval != null -> NativeApprovalCard(state, onAction, compactHeight)
-                    state.readOnly.isNotBlank() -> Text(state.readOnly, Modifier.fillMaxWidth().padding(16.dp), color = colors.labelSecondary, fontSize = 13.sp, lineHeight = 20.sp)
-                    else -> NativeComposer(state, onAction, onAttachment, onRemoveAttachment,
-                        onModel = { openPicker("model") }, onPermission = { openPicker("permission") }, onTools = { openPicker("tools") },
-                        narrow = narrow, compactHeight = compactHeight)
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                    // This is the height left after the actual, font-scaled header and IME insets.
+                    val controlsHeight = if (compactHeight) maxHeight else maxHeight * 0.65f
+                    Column(Modifier.fillMaxSize()) {
+                        Box(Modifier.weight(1f).fillMaxWidth()) {
+                            NativeTimeline(state, onAction, compactHeight)
+                            if (showConnectionNotice && picker.isBlank()) NativeConnectionNotice(state, onAction, Modifier.align(Alignment.TopCenter))
+                        }
+                        when {
+                            state.approval != null -> NativeApprovalCard(state, onAction, compactHeight, controlsHeight)
+                            state.readOnly.isNotBlank() -> Text(state.readOnly, Modifier.fillMaxWidth().heightIn(max = controlsHeight)
+                                .verticalScroll(rememberScrollState()).padding(16.dp), color = colors.labelSecondary, fontSize = 13.sp, lineHeight = 20.sp)
+                            else -> NativeComposer(state, onAction, onAttachment, onRemoveAttachment,
+                                onModel = { openPicker("model") }, onPermission = { openPicker("permission") }, onTools = { openPicker("tools") },
+                                narrow = narrow, compactHeight = compactHeight, maxHeight = controlsHeight, tightHeight = tightIme)
+                        }
+                    }
                 }
             }
         }
@@ -148,7 +165,7 @@ internal fun NativeChatScreen(
                 Text(chosen.label, Modifier.padding(horizontal = 12.dp, vertical = 4.dp), color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
                 chosen.efforts.forEach { effort ->
                     NativeChoiceRow(effort.label, selected = chosen.provider == state.modelCurrentProvider && chosen.id == state.modelCurrentId && effort.id == state.modelCurrentEffort,
-                        enabled = !state.busy && !state.offline, onClick = {
+                        enabled = !state.busy && !state.offline && !state.loading, onClick = {
                             onAction(NativeChatAction("model", sessionId, provider = chosen.provider, model = chosen.id, reasoningEffort = effort.id))
                             picker = ""; selectedModel = null
                         })
@@ -161,17 +178,17 @@ internal fun NativeChatScreen(
                     Text(provider, Modifier.padding(horizontal = 12.dp, vertical = 8.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
                     models.forEach { model ->
                         NativeChoiceRow(model.label, selected = model.provider == state.modelCurrentProvider && model.id == state.modelCurrentId,
-                            enabled = !state.busy && !state.offline, onClick = {
+                            enabled = !state.busy && !state.offline && !state.loading, onClick = {
                                 if (model.efforts.isNotEmpty()) { keyboard?.hide(); selectedModel = model }
                                 else { onAction(NativeChatAction("model", sessionId, provider = model.provider, model = model.id)); picker = "" }
                             })
                     }
                 }
             } else {
-                if (picker == "tools" && state.planOn) NativeChoiceRow("关闭 Plan", enabled = !state.busy && !state.offline, onClick = { onAction(NativeChatAction("planOff", sessionId)); picker = "" })
+                if (picker == "tools" && state.planOn) NativeChoiceRow("关闭 Plan", enabled = !state.busy && !state.offline && !state.loading, onClick = { onAction(NativeChatAction("planOff", sessionId)); picker = "" })
                 if (picker == "tools") Text("权限", Modifier.padding(12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
                 state.permissionOptions.forEach { option ->
-                    NativeChoiceRow(option.label, selected = option.id == state.permissionCurrent, enabled = !state.busy && !state.offline, glyph = NativeGlyph.Shield, onClick = {
+                    NativeChoiceRow(option.label, selected = option.id == state.permissionCurrent, enabled = !state.busy && !state.offline && !state.loading, glyph = NativeGlyph.Shield, onClick = {
                         onAction(NativeChatAction("permission", sessionId, id = option.id)); picker = ""
                     })
                 }
@@ -271,14 +288,29 @@ private fun NativeTimeline(state: NativeChatState, onAction: (NativeChatAction) 
     val colors = dsh()
     val list = rememberSaveable(state.sessionId, saver = LazyListState.Saver) { LazyListState() }
     var initialShown by rememberSaveable(state.sessionId) { mutableStateOf(false) }
-    LaunchedEffect(state.sessionId, state.loading, state.rows.size, state.rows.lastOrNull()?.text) {
-        if (!state.olderLoading && state.rows.isNotEmpty()) {
-            val bottom = state.rows.lastIndex + if (state.hasOlder) 1 else 0
-            if (!initialShown && !state.loading) { list.scrollToItem(bottom); initialShown = true }
-            else if (initialShown && list.firstVisibleItemIndex >= (state.rows.size - 5).coerceAtLeast(0)) list.scrollToItem(bottom)
+    var followTail by rememberSaveable(state.sessionId) { mutableStateOf(true) }
+    var lastSize by remember(state.sessionId) { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    var viewportSize by remember(state.sessionId) { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    LaunchedEffect(list) {
+        list.interactionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Start) followTail = false
         }
     }
-    LazyColumn(state = list, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    LaunchedEffect(list) {
+        snapshotFlow { !list.isScrollInProgress && !list.canScrollForward && list.layoutInfo.visibleItemsInfo.isNotEmpty() }
+            .collect { atBottom -> if (atBottom) followTail = true }
+    }
+    LaunchedEffect(state.sessionId, state.loading, state.olderLoading, state.rows.size, state.rows.lastOrNull()?.id,
+        state.rows.lastOrNull()?.text, state.rows.lastOrNull()?.detail, lastSize, viewportSize, followTail) {
+        if (!state.olderLoading && !state.loading && state.rows.isNotEmpty() && (!initialShown || followTail)) {
+            // A tiny final item is a real end anchor, even when the last message is taller than the viewport.
+            val bottom = state.rows.size + if (state.hasOlder) 1 else 0
+            list.scrollToItem(bottom)
+            initialShown = true
+        }
+    }
+    LazyColumn(state = list, modifier = Modifier.fillMaxSize().onSizeChanged { viewportSize = it },
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (state.hasOlder) item(key = "older") {
             NativeChoiceRow(if (state.olderLoading) "正在加载…" else "加载更早消息", enabled = !state.olderLoading, onClick = { onAction(NativeChatAction("older", state.sessionId)) })
         }
@@ -290,7 +322,10 @@ private fun NativeTimeline(state: NativeChatState, onAction: (NativeChatAction) 
                 if (!compactHeight) Text(if (state.sessionId.isBlank()) "选择工作区，开始新会话" else "接着电脑上的工作", color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
             }
         }
-        items(state.rows, key = { it.id }) { row -> NativeMessage(row) }
+        items(state.rows, key = { it.id }) { row ->
+            Box(if (row.id == state.rows.lastOrNull()?.id) Modifier.onSizeChanged { lastSize = it } else Modifier) { NativeMessage(row) }
+        }
+        if (state.rows.isNotEmpty()) item(key = "tail") { Spacer(Modifier.height(1.dp)) }
     }
 }
 
@@ -311,17 +346,20 @@ private fun NativeConnectionNotice(state: NativeChatState, onAction: (NativeChat
 
 @Composable
 private fun NativeComposer(state: NativeChatState, onAction: (NativeChatAction) -> Unit, onAttachment: () -> Unit, onRemoveAttachment: (Int) -> Unit,
-    onModel: () -> Unit, onPermission: () -> Unit, onTools: () -> Unit, narrow: Boolean, compactHeight: Boolean) {
+    onModel: () -> Unit, onPermission: () -> Unit, onTools: () -> Unit, narrow: Boolean, compactHeight: Boolean, maxHeight: Dp, tightHeight: Boolean) {
     val colors = dsh()
+    val editLineHeight = with(LocalDensity.current) { 24.sp.toDp() }
+    val editableHeight = (maxHeight - 48.dp - if (tightHeight) 0.dp else if (compactHeight) 16.dp else 28.dp).coerceAtLeast(0.dp)
     val draft = state.draft
     val sessionId = state.sessionId
     var fieldValue by rememberSaveable(state.epoch, sessionId, stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(draft, TextRange(draft.length))) }
     LaunchedEffect(draft) { if (fieldValue.text != draft) fieldValue = TextFieldValue(draft, TextRange(draft.length)) }
-    val available = sessionId.isNotBlank() && !state.offline && !state.busy
+    val editable = sessionId.isNotBlank() && !state.loading
+    val available = editable && !state.offline && !state.busy
     val modelLabel = state.modelOptions.find { it.provider == state.modelCurrentProvider && it.id == state.modelCurrentId }?.label ?: state.model.ifBlank { if (state.loading) "正在同步模型…" else "选择模型" }
     val effortLabel = state.modelOptions.find { it.provider == state.modelCurrentProvider && it.id == state.modelCurrentId }?.efforts?.find { it.id == state.modelCurrentEffort }?.label ?: state.modelCurrentEffort
     var slashDismissed by remember(draft) { mutableStateOf(false) }
-    val commands = if (!slashDismissed && draft.startsWith('/') && !draft.contains(' ')) state.slashCommands.filter { "/${it.name}".startsWith(draft, true) } else emptyList()
+    val commands = if (editable && !slashDismissed && draft.startsWith('/') && !draft.contains(' ')) state.slashCommands.filter { "/${it.name}".startsWith(draft, true) } else emptyList()
     Box(Modifier.fillMaxWidth()) {
     if (commands.isNotEmpty()) Box(Modifier.align(Alignment.TopCenter)) {
         Popup(onDismissRequest = { slashDismissed = true },
@@ -329,27 +367,31 @@ private fun NativeComposer(state: NativeChatState, onAction: (NativeChatAction) 
             Surface(Modifier.widthIn(max = 440.dp).fillMaxWidth().padding(horizontal = 12.dp), shape = RoundedCornerShape(12.dp), color = colors.bgLayer2,
                 border = BorderStroke(1.dp, colors.borderL2), shadowElevation = 8.dp) {
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = if (compactHeight) 96.dp else 192.dp)) {
-                    items(commands, key = { it.name }) { command -> NativeChoiceRow("/${command.name} ${command.hint}", detail = command.description, onClick = { onAction(NativeChatAction("draft", sessionId, text = "/${command.name} ")) }) }
+                    items(commands, key = { it.name }) { command -> NativeChoiceRow("/${command.name} ${command.hint}", detail = command.description, enabled = editable, onClick = { onAction(NativeChatAction("draft", sessionId, text = "/${command.name} ")) }) }
                 }
             }
         }
     }
     Surface(shape = RoundedCornerShape(22.dp), color = colors.inputMajor, border = BorderStroke(1.dp, colors.borderL2),
-        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp)) {
-        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 12.dp, bottom = 4.dp)) {
-            if (state.attachments.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-                items(state.attachments.size) { index ->
-                    Column(Modifier.clickable(role = Role.Button, onClickLabel = "移除图片附件") { onRemoveAttachment(index) }) {
-                        NativeImagePreview(state.attachments[index], Modifier.size(if (compactHeight) 40.dp else 56.dp).clip(RoundedCornerShape(8.dp)))
-                        Text("移除", color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
+        modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight)
+            .padding(start = 12.dp, end = 12.dp, top = if (tightHeight) 0.dp else 4.dp, bottom = if (tightHeight) 0.dp else if (compactHeight) 4.dp else 8.dp)) {
+        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = if (tightHeight) 0.dp else if (compactHeight) 4.dp else 12.dp, bottom = if (tightHeight) 0.dp else 4.dp)) {
+            Column(Modifier.weight(1f, fill = false).fillMaxWidth()
+                .heightIn(min = minOf(editLineHeight, editableHeight)).verticalScroll(rememberScrollState())) {
+                if (state.attachments.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                    items(state.attachments.size) { index ->
+                        Column(Modifier.heightIn(min = 48.dp).clickable(enabled = editable && !state.busy, role = Role.Button, onClickLabel = "移除图片附件") { onRemoveAttachment(index) }) {
+                            NativeImagePreview(state.attachments[index], Modifier.size(if (compactHeight) 40.dp else 56.dp).clip(RoundedCornerShape(8.dp)))
+                            Text("移除", color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
+                        }
                     }
                 }
+                BasicTextField(value = fieldValue, onValueChange = { if (editable) { fieldValue = it; if (it.text != draft) onAction(NativeChatAction("draft", sessionId, text = it.text)) } }, enabled = editable,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.labelPrimary, fontSize = 16.sp, lineHeight = 24.sp), cursorBrush = SolidColor(colors.buttonInfoFill),
+                    keyboardOptions = KeyboardOptions.Default, minLines = if (compactHeight) 1 else 2, maxLines = if (compactHeight) 3 else 6,
+                    decorationBox = { inner -> Box { if (draft.isEmpty()) Text(if (sessionId.isBlank()) "新建会话后开始对话…" else "给电脑发送消息…", fontSize = 16.sp, lineHeight = 24.sp, color = colors.labelTertiary); inner() } },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = if (compactHeight) 24.dp else 48.dp).padding(end = 12.dp).semantics { contentDescription = "消息" })
             }
-            BasicTextField(value = fieldValue, onValueChange = { if (sessionId.isNotBlank()) { fieldValue = it; if (it.text != draft) onAction(NativeChatAction("draft", sessionId, text = it.text)) } }, enabled = sessionId.isNotBlank(),
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.labelPrimary, fontSize = 16.sp, lineHeight = 24.sp), cursorBrush = SolidColor(colors.buttonInfoFill),
-                keyboardOptions = KeyboardOptions.Default, minLines = if (compactHeight) 1 else 2, maxLines = if (compactHeight) 3 else 6,
-                decorationBox = { inner -> Box { if (draft.isEmpty()) Text(if (sessionId.isBlank()) "新建会话后开始对话…" else "给电脑发送消息…", fontSize = 16.sp, lineHeight = 24.sp, color = colors.labelTertiary); inner() } },
-                modifier = Modifier.fillMaxWidth().heightIn(min = if (compactHeight) 24.dp else 48.dp, max = if (compactHeight) 72.dp else 144.dp).padding(end = 12.dp).semantics { contentDescription = "消息" })
 
             @Composable fun modelControl(modifier: Modifier) {
                 Row(modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(14.dp)).clickable(enabled = available && state.modelOptions.isNotEmpty(), role = Role.Button, onClick = onModel).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -358,7 +400,7 @@ private fun NativeComposer(state: NativeChatState, onAction: (NativeChatAction) 
                 }
             }
             @Composable fun RowScope.actions() {
-                NativeIconButton(NativeGlyph.Plus, "添加图片", onAttachment, enabled = sessionId.isNotBlank() && !state.busy)
+                NativeIconButton(NativeGlyph.Plus, "添加图片", onAttachment, enabled = editable && !state.busy)
                 if (state.planOn) Text("Plan", Modifier.widthIn(min = 48.dp).heightIn(min = 48.dp).clickable(enabled = available) { onAction(NativeChatAction("planOff", sessionId)) }.wrapContentHeight().padding(horizontal = 8.dp), color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
                 Spacer(Modifier.weight(1f))
                 NativeIconButton(NativeGlyph.Shield, "切换权限：${state.permission}", onPermission, enabled = available && state.permissionOptions.isNotEmpty())
@@ -367,7 +409,7 @@ private fun NativeComposer(state: NativeChatState, onAction: (NativeChatAction) 
             }
             if (compactHeight) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    NativeIconButton(NativeGlyph.Plus, "添加图片", onAttachment, enabled = sessionId.isNotBlank() && !state.busy)
+                    NativeIconButton(NativeGlyph.Plus, "添加图片", onAttachment, enabled = editable && !state.busy)
                     modelControl(Modifier.weight(1f))
                     NativeIconButton(NativeGlyph.More, "权限与 Plan 选项", onTools, enabled = available)
                     if (state.running) NativeIconButton(NativeGlyph.Stop, "停止生成", { onAction(NativeChatAction("cancel", sessionId)) }, enabled = available, primary = true)
@@ -378,7 +420,7 @@ private fun NativeComposer(state: NativeChatState, onAction: (NativeChatAction) 
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { actions() }
             } else {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    NativeIconButton(NativeGlyph.Plus, "添加图片", onAttachment, enabled = sessionId.isNotBlank() && !state.busy)
+                    NativeIconButton(NativeGlyph.Plus, "添加图片", onAttachment, enabled = editable && !state.busy)
                     modelControl(Modifier.weight(1f))
                     if (state.planOn) Text("Plan", Modifier.widthIn(min = 48.dp).heightIn(min = 48.dp).clickable(enabled = available) { onAction(NativeChatAction("planOff", sessionId)) }.wrapContentHeight().padding(horizontal = 8.dp), color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
                     NativeIconButton(NativeGlyph.Shield, "切换权限：${state.permission}", onPermission, enabled = available && state.permissionOptions.isNotEmpty())
@@ -400,18 +442,29 @@ private class ComposerPopupPosition : androidx.compose.ui.window.PopupPositionPr
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun NativeApprovalCard(state: NativeChatState, onAction: (NativeChatAction) -> Unit, compactHeight: Boolean) {
+private fun NativeApprovalCard(state: NativeChatState, onAction: (NativeChatAction) -> Unit, compactHeight: Boolean, maxHeight: Dp) {
     val approval = state.approval ?: return
     val colors = dsh()
-    Surface(shape = RoundedCornerShape(22.dp), color = colors.inputMajor, border = BorderStroke(1.dp, colors.borderL2), modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(approval.title.ifBlank { "需要审批" }, fontWeight = FontWeight.SemiBold, color = colors.labelPrimary, fontSize = 14.sp, lineHeight = 22.sp)
-            Column(Modifier.heightIn(max = if (compactHeight) 64.dp else 160.dp).verticalScroll(rememberScrollState())) {
+    Surface(shape = RoundedCornerShape(22.dp), color = colors.inputMajor, border = BorderStroke(1.dp, colors.borderL2),
+        modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight)
+            .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = if (compactHeight) 4.dp else 8.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = if (compactHeight) 4.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.weight(1f, fill = false).heightIn(max = if (compactHeight) 96.dp else 208.dp)
+                .verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(approval.title.ifBlank { "需要审批" }, fontWeight = FontWeight.SemiBold, color = colors.labelPrimary, fontSize = 14.sp, lineHeight = 22.sp)
                 if (approval.command.isNotBlank()) SelectionContainer { Text(approval.command, color = colors.labelSecondary, fontSize = 13.sp, lineHeight = 20.sp) }
                 if (approval.error.isNotBlank()) Text(approval.error, color = colors.error, fontSize = 13.sp, lineHeight = 20.sp)
             }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                approval.actions.forEach { action -> TextButton(onClick = { onAction(NativeChatAction("approve", state.sessionId, approvalId = approval.id, actionId = action.id)) }, enabled = !state.busy && !state.offline, modifier = Modifier.heightIn(min = 48.dp)) { Text(action.label, fontSize = 14.sp) } }
+            @Composable fun approvalAction(action: NativeApprovalAction) {
+                TextButton(onClick = { onAction(NativeChatAction("approve", state.sessionId, approvalId = approval.id, actionId = action.id)) },
+                    enabled = !state.busy && !state.offline && !state.loading && approval.rpcId.isNotBlank(), modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text(action.label, fontSize = 14.sp, lineHeight = 22.sp)
+                }
+            }
+            if (compactHeight) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(approval.actions, key = { it.id }) { action -> approvalAction(action) }
+            } else FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                approval.actions.forEach { action -> approvalAction(action) }
             }
         }
     }
@@ -440,7 +493,7 @@ private fun NativeMessage(row: NativeRow) {
         if (row.role !in setOf("user", "assistant")) Text(when (row.role) { "tool" -> "工具"; "error" -> "运行失败"; else -> "过程" }, Modifier.padding(start = 8.dp, bottom = 4.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
         Surface(shape = RoundedCornerShape(12.dp), color = background) {
             Column(Modifier.padding(horizontal = if (user) 12.dp else 0.dp, vertical = if (user) 10.dp else 4.dp)) {
-                if (row.role == "assistant") NativeMarkdown(row.text, colors.labelPrimary.toArgb())
+                if (row.role == "assistant") NativeMarkdown(row.text)
                 else SelectionContainer { Text(row.text.ifBlank { if (row.running) "正在思考…" else " " }, color = colors.labelPrimary, fontSize = 14.sp, lineHeight = 22.sp) }
                 row.images.forEach { NativeImagePreview(it, Modifier.fillMaxWidth().heightIn(max = 280.dp)) }
                 if (row.detail.isNotBlank()) {
@@ -462,13 +515,37 @@ internal fun NativeImagePreview(image: NativeImage, modifier: Modifier) {
         val options = BitmapFactory.Options().apply { inSampleSize = (maxOf(bounds.outWidth, bounds.outHeight) / 1024).coerceAtLeast(1) }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
     }.getOrNull() }
-    if (bitmap != null) Image(bitmap, "图片附件", modifier) else Text("图片无法预览", color = dsh().labelSecondary)
+    if (bitmap != null) Image(bitmap, "图片附件", modifier) else Text(image.error.ifBlank { "图片无法预览" }, color = dsh().labelSecondary)
 }
 
 @Composable
-private fun NativeMarkdown(text: String, color: Int) {
-    AndroidView(factory = { context -> TextView(context).apply {
-        textSize = 14f; setLineSpacing(0f, 1.35f); setTextIsSelectable(true)
-        tag = Markwon.builder(context).usePlugin(LinkifyPlugin.create()).build()
-    } }, update = { view -> view.setTextColor(color); (view.tag as Markwon).setMarkdown(view, text) })
+private fun NativeMarkdown(text: String) {
+    val colors = dsh()
+    val context = LocalContext.current
+    val lineHeight = with(LocalDensity.current) { 22.sp.toPx() }
+    val markdown = remember(context, colors) {
+        Markwon.builder(context).usePlugin(LinkifyPlugin.create())
+            .usePlugin(object : AbstractMarkwonPlugin() {
+                override fun configureTheme(builder: MarkwonTheme.Builder) {
+                    builder.linkColor(colors.buttonInfoFill.toArgb())
+                        .codeTextColor(colors.labelPrimary.toArgb())
+                        .codeBlockTextColor(colors.labelPrimary.toArgb())
+                        .codeBackgroundColor(colors.bgModule.toArgb())
+                        .codeBlockBackgroundColor(colors.bgModule.toArgb())
+                        .codeTypeface(Typeface.MONOSPACE)
+                        .codeBlockTypeface(Typeface.MONOSPACE)
+                        .blockQuoteColor(colors.labelTertiary.toArgb())
+                        .headingBreakColor(colors.borderL2.toArgb())
+                        .thematicBreakColor(colors.borderL2.toArgb())
+                }
+            }).build()
+    }
+    AndroidView(factory = { viewContext -> TextView(viewContext).apply {
+        textSize = 14f; includeFontPadding = false; setTextIsSelectable(true)
+    } }, update = { view ->
+        view.setTextColor(colors.labelPrimary.toArgb())
+        view.setLinkTextColor(colors.buttonInfoFill.toArgb())
+        view.setLineSpacing((lineHeight - view.paint.fontSpacing).coerceAtLeast(0f), 1f)
+        markdown.setMarkdown(view, text)
+    })
 }

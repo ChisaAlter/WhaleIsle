@@ -131,7 +131,9 @@
 - 「已保存的电脑」是纯本地 sticky；「忘记」只清本机 secret。用户可见名称优先使用握手 `server_info.hostname` 并以可选 `computerName` 增量保存；历史 sticky 无名称时显示「我的电脑」，内部 `serverId` 只作连接键且不得显示为电脑名。
 - 保存设备自动 / 手动重连与 offer 首连共用互斥连接入口；连接中显示状态，首次握手失败 / 超时关闭客户端并恢复按钮，不清 sticky。只有成功建立连接后才启用后台自动重连，避免初次失败永久占用选择器。
 - 新 offer 取消未完成的旧连接，旧连接结果不得覆盖新连接。配对认证成功后，当前客户端立即改用 deviceSecret，自动重连不得复用一次性 pairingToken；消费后的 offer 从页面 fragment 清除。认证失败停止后台重试但不静默删除保存凭据。
-- Android 的连接代次隔离迟到回复，Compose 重组不重复配对；返回前台用保存凭据恢复连接与目录同步，不重放一次性 offer。旧 localStorage 迁移失败必须可见，原数据保留。
+- Android 的连接代次隔离迟到回复，Compose 重组不重复配对；已连接时返回前台刷新目录与历史并保留搜索、目录和 Git 任务页；成功连接后的断线用保存凭据自动重连，不重放一次性 offer。旧 localStorage 迁移失败必须可见，原数据保留。
+- Android 以 `origin: 'subagent'` 判断只读子会话，分页历史通过 `session.history` 携带直接父会话和子会话的 `address` 转到 `session/page`；普通 Fork 的父会话字段不使它变只读。历史图片通过 `session.attachment` 按张读取，失败不阻断同页其它图片，错误占位不随轮询重复请求；当前会话缓存和在途任务在切换时释放。
+- daemon 的共享 mux 为新连接的手机重放当前待处理审批及原 Gateway 回复标识；审批解决、Gateway 断开或电脑来源变化时移除旧记录。共享连接自己作出决策时也广播解决状态，不依赖 Gateway 给答复者回发取消。
 - 手机目录转发保留全部 `session.list` 行和原始会话字段，投影只传 `title` / `sessionListMetadata`。模型、权限、计划与用量详情通过打开会话时的 history 按需获取，不能为每次首屏同步重复传输所有会话的详情；history、创建与搜索响应不受目录裁剪影响。目录失败必须可重试，不能假空列表。
 - **非 secure context 兼容**：`http://<LAN-IP>:3180` 禁止裸用 `crypto.randomUUID` / `crypto.subtle`；uuid 走 `getRandomValues` fallback；E2EE 保持 tweetnacl。
 - 手机端采用[桌面鲸屿窄屏布局](../design-language.md#手机远程交互)：同源透明鲸鱼娘头像和鲸屿字标、贴边直角侧栏、品牌下新会话和工作区分组目录、底部账户与设置；22px / 22dp 细边无外投影输入卡适配竖屏和 IME。模型、权限、附件、重命名、新会话选择和简短设置在紧凑 Modal / Menu 内完成，长目录、搜索与复杂 Git 任务保留可返回表面。颜色只取同值语义 token，海天画布止于连接入口，不使用简笔鲸鱼或展示衬线替代品牌。

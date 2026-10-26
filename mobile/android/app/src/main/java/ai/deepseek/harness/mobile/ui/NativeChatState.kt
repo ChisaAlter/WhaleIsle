@@ -11,6 +11,8 @@ internal data class NativeSession(
     val cwd: String = "",
     val workspaceId: String = "",
     val archived: Boolean = false,
+    val origin: String = "",
+    val parentSessionId: String = "",
 )
 
 internal data class NativeRow(
@@ -22,7 +24,7 @@ internal data class NativeRow(
     val detail: String = "",
 )
 
-internal data class NativeImage(val mediaType: String, val data: String)
+internal data class NativeImage(val mediaType: String, val data: String, val attachmentId: String = "", val error: String = "")
 internal data class NativeWorkspace(val id: String, val title: String, val path: String)
 
 internal data class NativeSessionGroup(
@@ -67,6 +69,8 @@ internal data class NativeApproval(
     val command: String,
     val error: String,
     val actions: List<NativeApprovalAction>,
+    val rpcId: String = "",
+    val sessionId: String = "",
 )
 
 /** Kotlin-owned UI state. Device secrets live only in the encrypted credential store. */

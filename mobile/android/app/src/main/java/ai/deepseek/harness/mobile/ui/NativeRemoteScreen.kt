@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,21 +27,23 @@ import kotlinx.serialization.json.*
 
 @Composable
 internal fun NativeRemoteScreen(vm: DshViewModel, onAttachment: () -> Unit) {
-    var selectedSession by remember(vm.chat.epoch) { mutableStateOf<NativeSession?>(null) }
-    var selectedWorkspace by remember(vm.chat.epoch) { mutableStateOf<NativeWorkspace?>(null) }
-    var name by remember(vm.chat.epoch) { mutableStateOf("") }
-    var confirmation by remember(vm.chat.epoch) { mutableStateOf("") }
+    var selectedSessionId by rememberSaveable(vm.chat.epoch) { mutableStateOf("") }
+    var selectedWorkspaceId by rememberSaveable(vm.chat.epoch) { mutableStateOf("") }
+    var name by rememberSaveable(vm.chat.epoch) { mutableStateOf("") }
+    var confirmation by rememberSaveable(vm.chat.epoch) { mutableStateOf("") }
+    val selectedSession = vm.allSessions.find { it.id == selectedSessionId }
+    val selectedWorkspace = vm.workspaces.find { it.id == selectedWorkspaceId }
     val chatUiState = rememberSaveableStateHolder()
     val taskPage = vm.panel in setOf("browse", "sessions", "git")
     if (taskPage) {
-        NativeTaskPage(vm, onSessionMenu = { selectedSession = it; name = it.title })
+        NativeTaskPage(vm, onSessionMenu = { selectedSessionId = it.id; name = it.title })
     } else {
         // The registry belongs to one connection and session, including scroll and draft selection.
         chatUiState.SaveableStateProvider("chat:${vm.chat.epoch}:${vm.chat.sessionId}") {
             NativeChatScreen(state = vm.chat, workspaces = vm.workspaces, onAction = vm::onChatAction,
                 onPanel = { vm.panel = it },
-                onWorkspaceMenu = { selectedWorkspace = it; name = it.title },
-                onSessionMenu = { selectedSession = it; name = it.title },
+                onWorkspaceMenu = { selectedWorkspaceId = it.id; name = it.title },
+                onSessionMenu = { selectedSessionId = it.id; name = it.title },
                 onAttachment = onAttachment, onRemoveAttachment = vm::removeImage, onLeave = vm::leaveComputer,
                 showConnectionNotice = vm.panel.isBlank() && selectedSession == null && selectedWorkspace == null && confirmation.isBlank())
         }
@@ -66,7 +69,7 @@ internal fun NativeRemoteScreen(vm: DshViewModel, onAttachment: () -> Unit) {
                 HorizontalDivider(color = colors.borderHair, modifier = Modifier.padding(vertical = 4.dp))
                 vm.workspaces.forEach { workspace ->
                     NativeChoiceRow(workspace.title.ifBlank { workspace.path }, detail = workspace.path, glyph = NativeGlyph.Folder,
-                        onClick = { vm.panel = ""; selectedWorkspace = workspace; name = workspace.title })
+                        onClick = { vm.panel = ""; selectedWorkspaceId = workspace.id; name = workspace.title })
                 }
             }
             Text("文件与更改：远程网关尚未提供文件浏览；请在电脑端查看。", Modifier.padding(12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
@@ -90,26 +93,26 @@ internal fun NativeRemoteScreen(vm: DshViewModel, onAttachment: () -> Unit) {
         }
     }
     selectedSession?.let { row ->
-        NativeDialog("管理会话", onDismiss = { selectedSession = null }) {
+        NativeDialog("管理会话", onDismiss = { selectedSessionId = "" }) {
             NativeField(name, { name = it }, "会话名称", enabled = !vm.panelBusy)
-            NativeChoiceRow("重命名", enabled = !vm.panelBusy && !vm.chat.offline && name.isNotBlank(), onClick = { vm.sessionAction("session.rename", row, name.trim()); selectedSession = null })
-            NativeChoiceRow("Fork", enabled = !vm.panelBusy && !vm.chat.offline, onClick = { vm.sessionAction("session.fork", row); selectedSession = null; vm.panel = "" })
+            NativeChoiceRow("重命名", enabled = !vm.panelBusy && !vm.chat.offline && name.isNotBlank(), onClick = { vm.sessionAction("session.rename", row, name.trim()); selectedSessionId = "" })
+            NativeChoiceRow("Fork", enabled = !vm.panelBusy && !vm.chat.offline, onClick = { vm.sessionAction("session.fork", row); selectedSessionId = ""; vm.panel = "" })
             if (!row.archived && row.workspaceId.isNotBlank()) {
-                NativeChoiceRow("上移", enabled = !vm.panelBusy && !vm.chat.offline, onClick = { vm.moveSession(row, -1); selectedSession = null })
-                NativeChoiceRow("下移", enabled = !vm.panelBusy && !vm.chat.offline, onClick = { vm.moveSession(row, 1); selectedSession = null })
+                NativeChoiceRow("上移", enabled = !vm.panelBusy && !vm.chat.offline, onClick = { vm.moveSession(row, -1); selectedSessionId = "" })
+                NativeChoiceRow("下移", enabled = !vm.panelBusy && !vm.chat.offline, onClick = { vm.moveSession(row, 1); selectedSessionId = "" })
             }
             NativeChoiceRow(if (row.archived) "取消归档" else "归档", enabled = !vm.panelBusy && !vm.chat.offline, onClick = {
-                vm.sessionAction(if (row.archived) "workspace.unarchiveSession" else "workspace.archiveSession", row); selectedSession = null
+                vm.sessionAction(if (row.archived) "workspace.unarchiveSession" else "workspace.archiveSession", row); selectedSessionId = ""
             })
             if (row.archived) NativeChoiceRow("永久删除", enabled = !vm.panelBusy && !vm.chat.offline, danger = true, onClick = { confirmation = "delete:${row.id}" })
         }
     }
     selectedWorkspace?.let { workspace ->
-        NativeDialog("管理工作区", onDismiss = { selectedWorkspace = null }) {
+        NativeDialog("管理工作区", onDismiss = { selectedWorkspaceId = "" }) {
             Text(workspace.path, Modifier.padding(horizontal = 12.dp, vertical = 4.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
-            NativeChoiceRow("在此目录新建会话", glyph = NativeGlyph.Plus, enabled = !vm.panelBusy && !vm.chat.offline, onClick = { vm.createSession(workspace.id); selectedWorkspace = null })
+            NativeChoiceRow("在此目录新建会话", glyph = NativeGlyph.Plus, enabled = !vm.panelBusy && !vm.chat.offline, onClick = { vm.createSession(workspace.id); selectedWorkspaceId = "" })
             NativeField(name, { name = it }, "工作区名称", enabled = !vm.panelBusy)
-            NativeChoiceRow("重命名", enabled = name.isNotBlank() && !vm.panelBusy && !vm.chat.offline, onClick = { vm.workspaceAction("workspace.rename", workspace, name.trim()); selectedWorkspace = null })
+            NativeChoiceRow("重命名", enabled = name.isNotBlank() && !vm.panelBusy && !vm.chat.offline, onClick = { vm.workspaceAction("workspace.rename", workspace, name.trim()); selectedWorkspaceId = "" })
             NativeChoiceRow("从列表移除工作区", enabled = !vm.panelBusy && !vm.chat.offline, danger = true, onClick = { confirmation = "workspace:${workspace.id}" })
         }
     }
@@ -122,7 +125,7 @@ internal fun NativeRemoteScreen(vm: DshViewModel, onAttachment: () -> Unit) {
                     confirmation.startsWith("workspace:") -> vm.workspaces.find { it.id == confirmation.removePrefix("workspace:") }?.let { vm.workspaceAction("workspace.delete", it) }
                     else -> vm.forgetComputer(confirmation)
                 }
-                confirmation = ""; selectedSession = null; selectedWorkspace = null
+                confirmation = ""; selectedSessionId = ""; selectedWorkspaceId = ""
             }) { Text("确认移除", color = colors.error) }
         }
     }) {
@@ -141,13 +144,13 @@ private fun NativeTaskPage(vm: DshViewModel, onSessionMenu: (NativeSession) -> U
     val ime = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     fun goBack() { vm.panel = if (vm.panel == "browse") "new" else "" }
     BackHandler { if (ime) keyboard?.hide() else goBack() }
-    var query by remember(vm.panel) { mutableStateOf("") }
-    var newDirectory by remember(vm.panelData.string("path")) { mutableStateOf("") }
-    var searched by remember { mutableStateOf(false) }
+    var query by rememberSaveable(vm.chat.epoch, vm.panel) { mutableStateOf("") }
+    var newDirectory by rememberSaveable(vm.chat.epoch, vm.panelData.string("path")) { mutableStateOf("") }
+    var searched by rememberSaveable(vm.chat.epoch, vm.panel) { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(colors.bgBase)) {
-        Row(Modifier.fillMaxWidth().height(56.dp).padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             NativeIconButton(NativeGlyph.Back, "返回聊天", ::goBack)
-            Text(when (vm.panel) { "browse" -> "选择电脑上的目录"; "git" -> "Git"; else -> "会话管理与搜索" }, Modifier.weight(1f), color = colors.labelPrimary, fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold)
+            Text(when (vm.panel) { "browse" -> "选择电脑上的目录"; "git" -> "Git"; else -> "会话管理与搜索" }, Modifier.weight(1f).padding(vertical = 4.dp), color = colors.labelPrimary, fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (vm.panelBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = colors.labelSecondary)
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -216,13 +219,14 @@ private fun NativeGitPage(vm: DshViewModel) {
     val branches = if (branchData is JsonArray) branchData.map { it.objectValue() } else branchData.objectValue().objects("branches")
     val fileData = vm.panelData["entries"]
     val files = if (fileData is JsonArray) fileData.map { it.objectValue() } else fileData.objectValue().objects("entries")
-    var branch by remember { mutableStateOf("") }
-    var message by remember { mutableStateOf("") }
-    var remote by remember { mutableStateOf("") }
-    var repositoryName by remember { mutableStateOf(vm.currentSession()?.cwd?.trimEnd('/', '\\')?.substringAfterLast('/')?.substringAfterLast('\\').orEmpty()) }
-    var featureBranch by remember { mutableStateOf(false) }
-    var selectedFiles by remember { mutableStateOf(files.map { it.string("path") }.toSet()) }
-    var defaultConfirmation by remember { mutableStateOf<List<String>?>(null) }
+    val cwd = vm.currentSession()?.cwd.orEmpty()
+    var branch by rememberSaveable(vm.chat.epoch, vm.chat.sessionId, cwd) { mutableStateOf("") }
+    var message by rememberSaveable(vm.chat.epoch, vm.chat.sessionId, cwd) { mutableStateOf("") }
+    var remote by rememberSaveable(vm.chat.epoch, vm.chat.sessionId, cwd) { mutableStateOf("") }
+    var repositoryName by rememberSaveable(vm.chat.epoch, vm.chat.sessionId, cwd) { mutableStateOf(cwd.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\')) }
+    var featureBranch by rememberSaveable(vm.chat.epoch, vm.chat.sessionId, cwd) { mutableStateOf(false) }
+    var selectedFiles by rememberSaveable(vm.chat.epoch, vm.chat.sessionId, cwd) { mutableStateOf(files.map { it.string("path") }) }
+    var defaultConfirmation by rememberSaveable(vm.chat.epoch, vm.chat.sessionId, cwd) { mutableStateOf<List<String>?>(null) }
     val available = !vm.panelBusy && !vm.chat.offline
     val diverged = (status["aheadCount"].number() ?: 0) > 0 && (status["behindCount"].number() ?: 0) > 0
     val payload = obj("message" to message, "filePaths" to selectedFiles.toList(), "options" to obj("featureBranch" to featureBranch))

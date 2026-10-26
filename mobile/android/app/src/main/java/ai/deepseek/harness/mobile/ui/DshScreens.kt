@@ -184,8 +184,8 @@ private fun ConnectionLayout(
             }
             Box(
                 Modifier
-                    .fillMaxWidth()
                     .widthIn(max = 440.dp)
+                    .fillMaxWidth()
                     .heightIn(max = maxDockHeight)
                     .shadow(
                         elevation = 16.dp,

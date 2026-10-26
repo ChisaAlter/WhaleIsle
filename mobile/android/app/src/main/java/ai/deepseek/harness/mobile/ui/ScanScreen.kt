@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -119,7 +120,7 @@ fun ScanScreen(onFound: (String) -> Unit, onClose: () -> Unit, onPaste: () -> Un
                 .padding(bottom = 12.dp),
         ) {
             Row(
-                Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 12.dp),
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
@@ -132,19 +133,23 @@ fun ScanScreen(onFound: (String) -> Unit, onClose: () -> Unit, onPaste: () -> Un
                         drawLine(connection.ink, Offset(size.width * 0.22f, size.height * 0.5f), Offset(size.width * 0.62f, size.height), stroke.width, StrokeCap.Round)
                     }
                 }
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
                     Text(
                         "扫描配对二维码",
                         color = connection.ink,
                         fontSize = 16.sp,
-                        lineHeight = 22.sp,
+                        lineHeight = 24.sp,
                         fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         "Whale Isle · 鲸屿 MOBILE",
                         color = connection.muted,
                         fontSize = 12.sp,
-                        lineHeight = 16.sp,
+                        lineHeight = 18.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 Box(Modifier.width(48.dp).height(48.dp))
@@ -159,8 +164,8 @@ fun ScanScreen(onFound: (String) -> Unit, onClose: () -> Unit, onPaste: () -> Un
             ) {
                 Box(
                     Modifier
-                        .fillMaxSize()
                         .widthIn(max = 520.dp)
+                        .fillMaxSize()
                         .clip(RoundedCornerShape(20.dp))
                         .background(connection.cameraSurface)
                         .border(1.dp, connection.panelBorder, RoundedCornerShape(20.dp)),

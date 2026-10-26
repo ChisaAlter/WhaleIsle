@@ -2,6 +2,7 @@ package ai.deepseek.harness.mobile.ui
 
 import ai.deepseek.harness.mobile.R
 import ai.deepseek.harness.mobile.ui.theme.dsh
+import android.os.Build
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -24,10 +25,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -39,6 +42,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
 
 @Composable
 internal fun WhaleAvatar(modifier: Modifier = Modifier) {
@@ -151,6 +156,24 @@ internal fun NativeDialog(title: String, onDismiss: () -> Unit, onBack: (() -> U
     val ime = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val dismissLayer: () -> Unit = { if (ime) keyboard?.hide() else if (onBack != null) onBack() else onDismiss(); Unit }
     Dialog(onDismissRequest = dismissLayer, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+        SideEffect {
+            dialogWindow?.let { window ->
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    val light = colors.bgBase.luminance() > 0.5f
+                    isAppearanceLightStatusBars = light
+                    isAppearanceLightNavigationBars = light
+                }
+                @Suppress("DEPRECATION")
+                window.statusBarColor = android.graphics.Color.TRANSPARENT
+                @Suppress("DEPRECATION")
+                window.navigationBarColor = android.graphics.Color.TRANSPARENT
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    window.isStatusBarContrastEnforced = false
+                    window.isNavigationBarContrastEnforced = false
+                }
+            }
+        }
         BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.union(WindowInsets.ime)).padding(16.dp), contentAlignment = Alignment.Center) {
             Box(Modifier.matchParentSize().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss))
             Surface(Modifier.widthIn(max = 440.dp).fillMaxWidth().heightIn(max = maxHeight), shape = RoundedCornerShape(24.dp),
@@ -158,15 +181,17 @@ internal fun NativeDialog(title: String, onDismiss: () -> Unit, onBack: (() -> U
                 Column {
                     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = if (onBack == null) 20.dp else 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (onBack != null) NativeIconButton(NativeGlyph.Back, "返回", onBack)
-                        Text(title, Modifier.weight(1f), color = colors.labelPrimary, fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(title, Modifier.weight(1f).padding(vertical = 4.dp), color = colors.labelPrimary, fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         NativeIconButton(NativeGlyph.Close, "关闭$title", onDismiss)
                     }
-                    if (feedbackHint.isNotBlank()) Box(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 20.dp, vertical = 8.dp)) {
-                        Text(feedback.ifBlank { feedbackHint }, Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-                            color = if (feedback.isBlank()) colors.labelTertiary else colors.error, fontSize = 12.sp, lineHeight = 18.sp)
-                    }
                     Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp), content = content)
+                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (feedbackHint.isNotBlank()) Box(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 8.dp, vertical = 8.dp)) {
+                            Text(feedback.ifBlank { feedbackHint }, Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                                color = if (feedback.isBlank()) colors.labelTertiary else colors.error, fontSize = 12.sp, lineHeight = 18.sp)
+                        }
+                        content()
+                    }
                     if (actions != null) Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) { actions() }
                 }
             }

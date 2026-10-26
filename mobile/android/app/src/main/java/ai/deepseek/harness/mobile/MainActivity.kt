@@ -7,18 +7,21 @@ import ai.deepseek.harness.mobile.ui.NativeDialog
 import ai.deepseek.harness.mobile.ui.NativeChoiceRow
 import ai.deepseek.harness.mobile.ui.ScanScreen
 import ai.deepseek.harness.mobile.ui.theme.DshTheme
+import ai.deepseek.harness.mobile.ui.theme.dsh
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.Network
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
@@ -56,9 +59,19 @@ class MainActivity : ComponentActivity() {
         setContent {
             val dark = when (vm.scheme) { "dark" -> true; "light" -> false; else -> isSystemInDarkTheme() }
             var attachmentSource by remember { mutableStateOf(false) }
-            DisposableEffect(dark) {
-                WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = !dark
-                onDispose { }
+            SideEffect {
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
+                }
+                @Suppress("DEPRECATION")
+                window.statusBarColor = android.graphics.Color.TRANSPARENT
+                @Suppress("DEPRECATION")
+                window.navigationBarColor = android.graphics.Color.TRANSPARENT
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    window.isStatusBarContrastEnforced = false
+                    window.isNavigationBarContrastEnforced = false
+                }
             }
             LaunchedEffect(vm.externalUrl) {
                 if (vm.externalUrl.isNotBlank()) {
@@ -68,7 +81,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             DshTheme(dark) {
-                Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.union(WindowInsets.ime))) {
+                Box(Modifier.fillMaxSize().background(dsh().bgBase).windowInsetsPadding(WindowInsets.safeDrawing.union(WindowInsets.ime))) {
                     when (vm.route) {
                         Route.Scan -> ScanScreen(vm::onScanned, { vm.route = Route.Connect }, vm::openPasteEntry)
                         Route.Chat -> NativeRemoteScreen(vm) { attachmentSource = true }
