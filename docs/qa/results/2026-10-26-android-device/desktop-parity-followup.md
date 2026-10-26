@@ -30,6 +30,8 @@ versionName 0.3.10 / versionCode 4，minSdk26 / target36。两个 debug 身份�
 
 r4、r5、r6按实际代码变化顺序各执行相关构建，不把某次测试认证为另一包的手机通过。首次 apksigner 命令未带 JAVA_HOME 报环境错误；设置本机JDK17后，两最终包实际验签通过。
 
+`npm run docs:check` 实际失败1项：既有研究文档 `docs/research/2026-10-08-project-team-runtime-research.md` 指向已不存在的 `vendor/deepseek-harness/packages/experimental/agent-team/src/mailbox.ts`；本轮新增引用未报错。没有修改无关研究记录或将全库文档检查说成通过。
+
 ## Android16 竖屏实测
 
 设备 `23127PN0CC`，ADB `1836e17d`，1200×2670、density480、font_scale1.0，约400dp。测试使用隔离包，配对 lead 独立桌面53876/53878，未停止或改动用户3080/6767、3181/6768服务。进入已有只读会话时只导航，随后明确搜索并选择专用 `Physical QA Fork`（`session-e7f2d5af-efc9-4b3c-b2ef-f9dc78fec2aa`），未向原用户对话发送测试消息。
