@@ -51,4 +51,4 @@ r2原任务`:app:testDebugUnitTest`与两身份assemble/lint均BUILD SUCCESSFUL�
 
 ## CI归属
 
-前一提交521cc3a9dd的[Windows CI](https://github.com/ChisaAlter/WhaleIsle/actions/runs/40306509243)已成功结束，scope/windows成功，macOS/tools/web跳过。这不认证之后尚未推送的富文本与连接页修改；Android定向构建和真机结果独立记账。
+前一提交521cc3a9dd的[Windows CI](https://github.com/ChisaAlter/WhaleIsle/actions/runs/40306509243)已成功结束，scope/windows成功，macOS/tools/web跳过。当前富文本与连接页修复已推送为80f833a93c，[本次CI](https://github.com/ChisaAlter/WhaleIsle/actions/runs/40315796727)在收尾读取时scope成功、Windows进行中，其余三项跳过；不以旧提交成功替代新提交状态。Android定向构建和真机结果独立记账。
