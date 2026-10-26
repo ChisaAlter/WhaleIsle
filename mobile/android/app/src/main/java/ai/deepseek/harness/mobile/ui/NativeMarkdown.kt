@@ -137,8 +137,9 @@ internal fun NativeMarkdown(text: String) {
     val context = LocalContext.current
     val colors = dsh()
     val density = LocalDensity.current
-    val textSize = with(density) { 14.sp.toPx() }
-    val lineHeight = with(density) { 22.sp.toPx() }
+    val scale = LocalMobilePreferences.current?.messageScale ?: 1f
+    val textSize = with(density) { (14 * scale).sp.toPx() }
+    val lineHeight = with(density) { (22 * scale).sp.toPx() }
     val source by rememberUpdatedState(text)
     val mathExecutor = remember(context) { Executors.newSingleThreadExecutor() }
     DisposableEffect(mathExecutor) { onDispose { mathExecutor.shutdownNow() } }
@@ -174,17 +175,17 @@ internal fun NativeMarkdown(text: String) {
             }).build()
     }
     val parts = remember(markdown, text) { nativeMarkdownParts(markdown.parse(text)) }
-    NativeMarkdownParts(parts, markdown, colors, lineHeight)
+    NativeMarkdownParts(parts, markdown, colors, lineHeight, scale)
 }
 
 @Composable
-private fun NativeMarkdownParts(parts: List<NativeMarkdownPart>, markdown: Markwon, colors: DshPalette, lineHeight: Float) {
+private fun NativeMarkdownParts(parts: List<NativeMarkdownPart>, markdown: Markwon, colors: DshPalette, lineHeight: Float, scale: Float) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         parts.forEach { part -> when (part) {
             is NativeMarkdownPart.Prose -> {
                 val rendered = remember(markdown, part) { markdown.render(part.document) }
-                AndroidView(modifier = Modifier.fillMaxWidth(), factory = { nativeText(it, colors, lineHeight) }, update = { view ->
-                    styleText(view, colors, lineHeight)
+                AndroidView(modifier = Modifier.fillMaxWidth(), factory = { nativeText(it, colors, lineHeight, scale) }, update = { view ->
+                    styleText(view, colors, lineHeight, scale)
                     if (view.tag !== rendered) { markdown.setParsedMarkdown(view, rendered); view.tag = rendered }
                 })
             }
@@ -192,7 +193,7 @@ private fun NativeMarkdownParts(parts: List<NativeMarkdownPart>, markdown: Markw
                 HorizontalScrollView(context).apply {
                     isFillViewport = true
                     isHorizontalScrollBarEnabled = true
-                    addView(nativeText(context, colors, lineHeight).apply {
+                    addView(nativeText(context, colors, lineHeight, scale).apply {
                         typeface = Typeface.MONOSPACE
                         setHorizontallyScrolling(true)
                         val pad = dp(context, 12)
@@ -202,7 +203,7 @@ private fun NativeMarkdownParts(parts: List<NativeMarkdownPart>, markdown: Markw
             }, update = { scroll ->
                 scroll.setBackgroundColor(colors.bgModule.toArgb())
                 val view = scroll.getChildAt(0) as TextView
-                styleText(view, colors, lineHeight)
+                styleText(view, colors, lineHeight, scale)
                 if (view.text.toString() != part.text) view.text = part.text
             })
             is NativeMarkdownPart.Grid -> {
@@ -222,7 +223,7 @@ private fun NativeMarkdownParts(parts: List<NativeMarkdownPart>, markdown: Markw
                             val tableRow = TableRow(layout.context).apply { isBaselineAligned = false }
                             tableRow.setBackgroundColor((if (row.header()) colors.bgModule else colors.bgBase).toArgb())
                             row.columns().forEach { column ->
-                                val cell = nativeText(layout.context, colors, lineHeight).apply {
+                                val cell = nativeText(layout.context, colors, lineHeight, scale).apply {
                                     minWidth = dp(layout.context, 80)
                                     maxWidth = dp(layout.context, 240)
                                     gravity = Gravity.TOP or when (column.alignment()) {
@@ -249,27 +250,27 @@ private fun NativeMarkdownParts(parts: List<NativeMarkdownPart>, markdown: Markw
             }
             is NativeMarkdownPart.Quote -> Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                 Box(Modifier.width(3.dp).fillMaxHeight().background(colors.borderL2))
-                Box(Modifier.weight(1f).padding(start = 10.dp)) { NativeMarkdownParts(part.parts, markdown, colors, lineHeight) }
+                Box(Modifier.weight(1f).padding(start = 10.dp)) { NativeMarkdownParts(part.parts, markdown, colors, lineHeight, scale) }
             }
             is NativeMarkdownPart.Items -> Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 part.items.forEachIndexed { index, item -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                     Text(part.start?.let { "${it + index}${part.delimiter}" } ?: "•", Modifier.widthIn(min = 24.dp).padding(end = 6.dp),
-                        color = colors.labelPrimary, fontSize = 14.sp, lineHeight = 22.sp)
-                    Box(Modifier.weight(1f)) { NativeMarkdownParts(item, markdown, colors, lineHeight) }
+                        color = colors.labelPrimary, fontSize = (14 * scale).sp, lineHeight = (22 * scale).sp)
+                    Box(Modifier.weight(1f)) { NativeMarkdownParts(item, markdown, colors, lineHeight, scale) }
                 } }
             }
         } }
     }
 }
 
-private fun nativeText(context: Context, colors: DshPalette, lineHeight: Float) = TextView(context).apply {
+private fun nativeText(context: Context, colors: DshPalette, lineHeight: Float, scale: Float) = TextView(context).apply {
     includeFontPadding = false
     setTextIsSelectable(true)
-    styleText(this, colors, lineHeight)
+    styleText(this, colors, lineHeight, scale)
 }
 
-private fun styleText(view: TextView, colors: DshPalette, lineHeight: Float) {
-    view.textSize = 14f
+private fun styleText(view: TextView, colors: DshPalette, lineHeight: Float, scale: Float) {
+    view.textSize = 14f * scale
     view.setTextColor(colors.labelPrimary.toArgb())
     view.setLinkTextColor(colors.buttonInfoFill.toArgb())
     view.setLineSpacing((lineHeight - view.paint.fontSpacing).coerceAtLeast(0f), 1f)

@@ -60,6 +60,10 @@ internal data class NativeModelOption(
     val label: String,
     val efforts: List<NativeModelEffort>,
     val supportsImages: Boolean? = null,
+    val providerLabel: String = "",
+    val description: String = "",
+    val contextWindow: Long? = null,
+    val maxTokens: Long? = null,
 )
 internal data class NativePermissionOption(val id: String, val label: String)
 internal data class NativeSlashCommand(val name: String, val description: String, val hint: String)
@@ -85,6 +89,8 @@ internal data class NativeChatState(
     val sessionId: String = "",
     val title: String = "新会话",
     val rows: List<NativeRow> = emptyList(),
+    val queue: List<NativeQueuedMessage> = emptyList(),
+    val usage: NativeSessionUsage? = null,
     val loading: Boolean = false,
     val error: String = "",
     val hasOlder: Boolean = false,

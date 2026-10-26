@@ -44,6 +44,170 @@ class DshViewModelRemoteTest {
         return vm to clients
     }
 
+    @Test fun firstConnectionStaysOnConnectThroughAuthenticationCatalogHistoryAndControls() = remoteTest {
+        val connect = CompletableDeferred<Unit>()
+        val catalog = CompletableDeferred<Unit>()
+        val history = CompletableDeferred<Unit>()
+        val models = CompletableDeferred<Unit>()
+        val commands = CompletableDeferred<Unit>()
+        val (vm, clients) = model { _, relay ->
+            relay.connectGate = connect; relay.catalogGate = catalog; relay.historyGates["s1"] = history
+            relay.modelGate = models; relay.commandsGate = commands
+        }
+        vm.start(); runCurrent()
+        assertEquals(Route.Connect, vm.route)
+        assertTrue(vm.connecting)
+        assertFalse(vm.canRetryConnection)
+        vm.start(); vm.reopenComputer(); vm.connectFromPaste(); runCurrent()
+        assertEquals(1, clients.size)
+        connect.complete(Unit); runCurrent()
+        assertEquals(Route.Connect, vm.route)
+        assertTrue(vm.connectionStatus.contains("同步"))
+        assertEquals(1, clients.single().subscriptions)
+        catalog.complete(Unit); runCurrent()
+        assertEquals(Route.Connect, vm.route)
+        assertTrue(vm.connectionStatus.contains("控制项"))
+        assertTrue(vm.chat.modelOptions.isEmpty())
+        vm.openSession("s2"); assertEquals("s1", vm.chat.sessionId)
+        history.complete(Unit); runCurrent()
+        assertEquals(Route.Connect, vm.route)
+        models.complete(Unit); runCurrent()
+        assertEquals(Route.Connect, vm.route)
+        assertTrue(vm.connecting)
+        commands.complete(Unit); runCurrent()
+        assertEquals(Route.Chat, vm.route)
+        assertFalse(vm.connecting)
+        assertEquals("s1", vm.chat.sessionId)
+        assertFalse(vm.chat.loading)
+        assertTrue(vm.error.isEmpty())
+        assertFalse(vm.canRetryConnection)
+    }
+
+    @Test fun initialFailuresAtEveryRemoteStageBelongToConnectAndDoNotAutomaticallyRetry() = remoteTest {
+        for (stage in listOf("connect", "subscribe", "session.list", "workspace.list", "session.history", "session.projections", "session.models", "commands/list")) {
+            val (vm, clients) = model { _, relay ->
+                when (stage) {
+                    "connect" -> relay.connectFailure = IllegalStateException("failed $stage")
+                    "subscribe" -> relay.subscribeFailure = IllegalStateException("failed $stage")
+                    else -> relay.hostFailures[stage] = IllegalStateException("failed $stage")
+                }
+            }
+            vm.reopenComputer(); runCurrent()
+            assertEquals(stage, Route.Connect, vm.route)
+            assertFalse(vm.connecting)
+            assertTrue(vm.error.contains("failed $stage"))
+            assertTrue(vm.chat.error.isEmpty())
+            assertTrue(vm.chat.offline)
+            assertFalse(vm.chat.loading)
+            assertTrue(vm.canRetryConnection)
+            vm.start(); vm.onForeground(); vm.onNetworkAvailable(); advanceTimeBy(60_000); runCurrent()
+            assertEquals(stage, 1, clients.size)
+            vm.leaveComputer()
+        }
+    }
+
+    @Test fun cancelRetiresLateFirstConnectionAndStartCannotReenterBeforeExplicitRetry() = remoteTest {
+        val late = CompletableDeferred<Unit>()
+        val store = FakeStore()
+        val (vm, clients) = model(store) { index, relay ->
+            if (index == 0) relay.connectAttempt = { withContext(NonCancellable) { late.await() } }
+        }
+        vm.start(); runCurrent()
+        assertTrue(vm.connecting)
+        val remembered = store.computersJson
+        vm.cancelConnecting()
+        assertEquals(Route.Connect, vm.route)
+        assertFalse(vm.connecting)
+        assertTrue(vm.canRetryConnection)
+        assertEquals(remembered, store.computersJson)
+        vm.start(); vm.onForeground(); vm.onNetworkAvailable(); runCurrent()
+        assertEquals(1, clients.size)
+        late.complete(Unit); runCurrent()
+        clients[0].emitApproval("s1", "late", "retired"); runCurrent()
+        assertEquals(Route.Connect, vm.route)
+        assertNull(vm.chat.approval)
+        assertEquals(0, clients[0].subscriptions)
+        vm.retryConnection(); runCurrent()
+        assertEquals(Route.Chat, vm.route)
+        assertEquals(2, clients.size)
+        assertTrue(clients[1].usedSavedSecret)
+    }
+
+    @Test fun freshPairingRetryAfterCatalogFailureUsesIssuedSecretInsteadOfBootstrap() = remoteTest {
+        val store = FakeStore(computersJson = "[]")
+        val (vm, clients) = model(store) { index, relay -> if (index == 0) relay.catalogFailures = 1 }
+        val offer = obj("v" to 2, "serverId" to "computer", "daemonPublicKeyB64" to KEY,
+            "relay" to obj("endpoint" to "127.0.0.1:1", "useTls" to false),
+            "authBootstrap" to obj("version" to 1, "pairingToken" to "fresh-pairing-token-for-test", "expiresAtMs" to (System.currentTimeMillis() + 60_000)))
+        vm.onScanned("https://example.test/#offer=" + Base64.getUrlEncoder().withoutPadding().encodeToString(offer.toString().toByteArray())); runCurrent()
+        assertEquals(Route.Connect, vm.route)
+        assertFalse(clients.single().usedSavedSecret)
+        assertTrue(store.computersJson.contains("test-device-secret"))
+        vm.retryConnection(); runCurrent()
+        assertEquals(Route.Chat, vm.route)
+        assertTrue(clients.last().usedSavedSecret)
+        assertNull(clients.last().usedOffer.authBootstrap)
+    }
+
+    @Test fun pairingFromSettingsPreservesComputersAndDraftsButRequiresExplicitSelection() = remoteTest {
+        val gate = CompletableDeferred<Unit>()
+        val store = FakeStore(computersJson = Json.encodeToString(listOf(saved(), saved("other"))))
+        val (vm, clients) = model(store) { index, relay -> if (index == 1) relay.connectGate = gate }
+        vm.start(); runCurrent()
+        vm.onChatAction(NativeChatAction("draft", "s1", text = "preserved text"))
+        vm.addImage("computer", "s1", NativeImage("image/png", "preserved image"))
+        vm.openSettings(); assertEquals("settings", vm.panel)
+        assertEquals("computer", vm.selectedComputerId)
+        assertTrue(vm.isCurrentComputer("computer"))
+        val remembered = store.computersJson
+        vm.beginPairing()
+        assertEquals(Route.Connect, vm.route)
+        assertEquals("", vm.panel)
+        assertEquals(remembered, store.computersJson)
+        assertTrue(store.draftsJson.contains("preserved text"))
+        vm.start(); vm.onForeground(); vm.onNetworkAvailable(); runCurrent()
+        assertEquals(1, clients.size)
+        vm.openSettings(); vm.reopenComputer("other"); runCurrent()
+        assertEquals(Route.Connect, vm.route)
+        assertTrue(vm.connecting)
+        assertEquals("", vm.panel)
+        assertTrue(vm.isCurrentComputer("other"))
+        gate.complete(Unit); runCurrent()
+        assertEquals(Route.Chat, vm.route)
+        vm.reopenComputer("computer"); runCurrent()
+        assertEquals("preserved text", vm.chat.draft)
+        assertEquals(listOf("preserved image"), vm.chat.attachments.map { it.data })
+    }
+
+    @Test fun emptyInitialCatalogIsReadyWithoutOpeningAnInventedSession() = remoteTest {
+        val (vm, clients) = model { _, relay -> relay.sessions = emptyList() }
+        vm.start(); runCurrent()
+        assertEquals(Route.Chat, vm.route)
+        assertFalse(vm.connecting)
+        assertFalse(vm.chat.loading)
+        assertEquals("", vm.chat.sessionId)
+        assertTrue(clients.single().hostCalls.none { it.first in setOf("session.history", "session.models", "commands/list") })
+    }
+
+    @Test fun sessionModelSelectionDoesNotSaveDesktopDefaultAndRunningSendHonorsChosenMode() = remoteTest {
+        val (vm, clients) = model { _, relay -> relay.modelCatalog = obj("groups" to listOf(obj("id" to "provider", "models" to listOf(obj("id" to "model"))))) }
+        vm.reopenComputer(); runCurrent()
+        val relay = clients.single()
+        vm.onChatAction(NativeChatAction("model", "s1", provider = "provider", model = "model")); runCurrent()
+        val selection = relay.hostCalls.single { it.first == "session.selectModel" }.second
+        assertEquals(false, (selection["saveAsDefault"] as JsonPrimitive).boolean)
+        vm.update { copy(running = true) }
+        vm.onChatAction(NativeChatAction("send", "s1", text = "steer now", mode = "steer")); runCurrent()
+        assertEquals("steer", relay.hostCalls.last { it.first == "session.prompt" }.second.string("mode"))
+        vm.update { copy(running = false) }
+        vm.onChatAction(NativeChatAction("send", "s1", text = "idle normal send", mode = "steer")); runCurrent()
+        assertEquals("queue", relay.hostCalls.last { it.first == "session.prompt" }.second.string("mode"))
+        val count = relay.hostCalls.count { it.first == "session.prompt" }
+        vm.onChatAction(NativeChatAction("send", "s1", text = "invalid mode", mode = "unsupported")); runCurrent()
+        assertEquals(count, relay.hostCalls.count { it.first == "session.prompt" })
+        assertTrue(vm.chat.banner.contains("未知发送方式"))
+    }
+
     @Test fun readySessionDraftsKeepTheirOwnerAndOfflineEditsCannotSwitchSessions() = remoteTest {
         val store = FakeStore()
         val (vm, clients) = model(store)
@@ -173,22 +337,29 @@ class DshViewModelRemoteTest {
         assertNull(vm.chat.approval)
     }
 
-    @Test fun firstCatalogFailureBlocksTasksUntilForegroundRetryLoadsSessionAndControls() = remoteTest {
-        val (vm, clients) = model { _, relay -> relay.catalogFailures = 1 }
+    @Test fun firstCatalogFailureStaysOnConnectAndOnlyExplicitRetryLoadsSessionAndControls() = remoteTest {
+        val (vm, clients) = model { index, relay -> if (index == 0) relay.catalogFailures = 1 }
         vm.reopenComputer(); runCurrent()
-        val relay = clients.single()
-        assertEquals(1, relay.subscriptions)
-        assertTrue(vm.chat.error.contains("catalog unavailable"))
-        assertTrue(vm.chat.loading)
+        val failed = clients.single()
+        assertEquals(1, failed.subscriptions)
+        assertEquals(Route.Connect, vm.route)
+        assertFalse(vm.connecting)
+        assertTrue(vm.error.contains("catalog unavailable"))
+        assertTrue(vm.chat.error.isEmpty())
+        assertTrue(vm.canRetryConnection)
         vm.panel = "new"; vm.createSession(); runCurrent()
-        assertTrue(relay.hostCalls.none { it.first == "session.create" })
-        vm.onForeground(); runCurrent()
+        assertTrue(failed.hostCalls.none { it.first == "session.create" })
+        vm.start(); vm.onForeground(); vm.onNetworkAvailable(); advanceTimeBy(60_000); runCurrent()
+        assertEquals(1, clients.size)
+        vm.retryConnection(); runCurrent()
+        val relay = clients.last()
+        assertEquals(Route.Chat, vm.route)
         assertEquals("s1", vm.chat.sessionId)
         assertEquals(listOf("s1", "s2", "created"), vm.chat.sessions.map { it.id })
         assertEquals(1, relay.hostCalls.count { it.first == "session.models" })
         assertEquals(1, relay.hostCalls.count { it.first == "commands/list" })
         assertEquals(1, relay.subscriptions)
-        assertTrue(vm.chat.error.isEmpty())
+        assertTrue(vm.error.isEmpty())
         assertFalse(vm.chat.loading)
         relay.emitApproval("s1", "a", "reply-address"); runCurrent()
         assertEquals("reply-address", vm.chat.approval!!.rpcId)
@@ -499,19 +670,22 @@ class DshViewModelRemoteTest {
         val oldGate = CompletableDeferred<Unit>()
         val newGate = CompletableDeferred<Unit>()
         val (vm, clients) = model { index, relay ->
-            if (index == 0) relay.catalogFailures = 1
-            if (index == 1) relay.catalogGate = newGate
+            if (index == 1) relay.catalogFailures = 1
+            if (index == 2) relay.catalogGate = newGate
         }
         vm.reopenComputer(); runCurrent()
+        assertEquals(Route.Chat, vm.route)
+        vm.reopenComputer(); runCurrent()
+        assertEquals(Route.Chat, vm.route)
         assertTrue(vm.chat.error.contains("catalog unavailable"))
-        val old = clients.single()
+        val old = clients[1]
         old.catalogGate = oldGate; old.catalogFailures = 1
         vm.onForeground(); runCurrent()
         val oldCallCount = old.hostCalls.count { it.first == "session.list" }
         repeat(3) { vm.onForeground(); runCurrent() }
         assertEquals(oldCallCount, old.hostCalls.count { it.first == "session.list" })
         vm.reopenComputer(); runCurrent()
-        val current = clients[1]
+        val current = clients[2]
         assertTrue(vm.chat.loading)
         assertFalse(vm.chat.offline)
         assertTrue(vm.chat.error.isEmpty())
@@ -774,6 +948,95 @@ class DshViewModelRemoteTest {
         assertEquals("s1", request.string("sessionId")); assertEquals("image-id", request.string("attachmentId"))
     }
 
+    @Test fun queueUsesCurrentProjectionAndBlocksBlankAttachmentAndUnavailableSteeringMutations() = remoteTest {
+        val (vm, clients) = model { _, relay ->
+            relay.projections["s1"] = queueProjection(
+                nextTurn = listOf(queueMessage("plain", "original"), queueMessage("photo", "caption", image = true)),
+                nextStep = listOf(queueMessage("step", "next step")))
+        }
+        vm.reopenComputer(); runCurrent()
+        val relay = clients.single()
+        assertEquals(listOf("plain", "photo", "step"), vm.chat.queue.map { it.id })
+        assertEquals(NativeSessionUsage(100, 20, 5, 2), vm.chat.usage)
+        val before = relay.hostCalls.size
+        listOf(
+            NativeChatAction("queue", "s2", id = "plain", line = "remove"),
+            NativeChatAction("queue", "s1", id = "plain", line = "edit", text = "  "),
+            NativeChatAction("queue", "s1", id = "photo", line = "edit", text = "drop attachment"),
+            NativeChatAction("queue", "s1", id = "missing", line = "remove"),
+            NativeChatAction("queue", "s1", id = "plain", line = "steer"),
+            NativeChatAction("queue", "s1", id = "plain", line = "reorder"),
+        ).forEach { vm.onChatAction(it); runCurrent() }
+        assertEquals(before, relay.hostCalls.size)
+        vm.update { copy(running = true) }
+        vm.onChatAction(NativeChatAction("queue", "s1", id = "step", line = "steer")); runCurrent()
+        assertEquals(before, relay.hostCalls.size)
+        relay.queueReply = { payload ->
+            assertEquals("s1", payload.string("sessionId")); assertEquals("plain", payload.string("itemId"))
+            assertEquals(obj("kind" to "steer"), payload["action"])
+            relay.projections["s1"] = queueProjection(nextStep = listOf(queueMessage("step", "next step")))
+            obj("accepted" to true)
+        }
+        vm.onChatAction(NativeChatAction("queue", "s1", id = "plain", line = "steer")); runCurrent()
+        assertEquals(listOf("step"), vm.chat.queue.map { it.id })
+        vm.openSession("s2"); runCurrent()
+        assertTrue(vm.chat.queue.isEmpty()); assertNull(vm.chat.usage)
+    }
+
+    @Test fun queueAcknowledgementRereadsServerTruthAndFailuresNeverOptimisticallyDeleteOrClearDrafts() = remoteTest {
+        val (vm, clients) = model { _, relay -> relay.projections["s1"] = queueProjection(nextTurn = listOf(queueMessage("q", "original"))) }
+        vm.reopenComputer(); runCurrent()
+        val relay = clients.single()
+        vm.onChatAction(NativeChatAction("draft", "s1", text = "keep draft"))
+        vm.addImage("computer", "s1", NativeImage("image/png", "keep image"))
+        relay.queueReply = { error("queue acknowledgement lost") }
+        vm.onChatAction(NativeChatAction("queue", "s1", id = "q", line = "remove")); runCurrent()
+        assertEquals("original", vm.chat.queue.single().text)
+        assertEquals("queue acknowledgement lost", vm.chat.banner)
+        relay.queueReply = { obj("accepted" to false) }
+        vm.onChatAction(NativeChatAction("queue", "s1", id = "q", line = "remove")); runCurrent()
+        assertEquals("q", vm.chat.queue.single().id)
+        relay.queueReply = { payload ->
+            assertEquals(obj("kind" to "edit", "content" to listOf(obj("type" to "text", "text" to "edited"))), payload["action"])
+            relay.projections["s1"] = queueProjection(nextTurn = listOf(queueMessage("q", "server-edited")))
+            obj("accepted" to true)
+        }
+        vm.onChatAction(NativeChatAction("queue", "s1", id = "q", line = "edit", text = "edited")); runCurrent()
+        assertEquals("server-edited", vm.chat.queue.single().text)
+        assertEquals("keep draft", vm.chat.draft); assertEquals("keep image", vm.chat.attachments.single().data)
+        assertFalse(vm.chat.busy)
+        relay.queueReply = { payload ->
+            assertEquals(obj("kind" to "remove"), payload["action"])
+            relay.projections["s1"] = queueProjection()
+            obj("accepted" to true)
+        }
+        vm.onChatAction(NativeChatAction("queue", "s1", id = "q", line = "remove")); runCurrent()
+        assertTrue(vm.chat.queue.isEmpty())
+        assertEquals("keep draft", vm.chat.draft); assertEquals("keep image", vm.chat.attachments.single().data)
+    }
+
+    @Test fun retiredQueueAcknowledgementCannotReplaceAnotherComputerAndOfflineActionsDoNotWrite() = remoteTest {
+        val receipt = CompletableDeferred<Unit>()
+        val (vm, clients) = model(FakeStore(computersJson = Json.encodeToString(listOf(saved(), saved("other"))))) { index, relay ->
+            relay.projections["s1"] = queueProjection(nextTurn = listOf(queueMessage(if (index == 0) "old" else "new", "pending")))
+        }
+        vm.reopenComputer("computer"); runCurrent()
+        val old = clients.single()
+        old.queueReply = { withContext(NonCancellable) { receipt.await() }; obj("accepted" to true) }
+        vm.onChatAction(NativeChatAction("queue", "s1", id = "old", line = "remove")); runCurrent()
+        assertTrue(vm.chat.busy)
+        vm.reopenComputer("other"); runCurrent()
+        assertEquals("new", vm.chat.queue.single().id)
+        val current = vm.chat
+        receipt.complete(Unit); runCurrent()
+        assertSame(current, vm.chat)
+        clients.last().disconnect(IllegalStateException("offline queue")); runCurrent()
+        val count = clients.last().hostCalls.size
+        vm.onChatAction(NativeChatAction("queue", "s1", id = "new", line = "remove")); runCurrent()
+        assertEquals(count, clients.last().hostCalls.size)
+        assertEquals("new", vm.chat.queue.single().id)
+    }
+
     private class FakeRelay(
         val usedOffer: Offer,
         credential: SavedComputer?,
@@ -793,6 +1056,8 @@ class DshViewModelRemoteTest {
         var modelCatalog = obj("groups" to emptyList<JsonObject>())
         var commandsGate: CompletableDeferred<Unit>? = null
         var subscriptions = 0
+        var subscribeFailure: Throwable? = null
+        val hostFailures = mutableMapOf<String, Throwable>()
         var catalogFailures = 0
         var catalogGate: CompletableDeferred<Unit>? = null
         var connectGate: CompletableDeferred<Unit>? = null
@@ -800,6 +1065,7 @@ class DshViewModelRemoteTest {
         var connectAttempt: (suspend () -> Unit)? = null
         var gitReply: suspend (String, String) -> JsonElement = { _, _ -> obj("isRepo" to true) }
         var attachmentReply: suspend (String) -> JsonObject = { error("unexpected image read") }
+        var queueReply: suspend (JsonObject) -> JsonElement = { obj("accepted" to true) }
         var searchReply: suspend (String) -> JsonObject = { query -> obj("items" to listOf(obj("sessionId" to "s1", "snippet" to query))) }
         private val ended = CompletableDeferred<Throwable>()
         override suspend fun connect() {
@@ -813,9 +1079,10 @@ class DshViewModelRemoteTest {
         override suspend fun awaitDisconnect() = ended.await()
         fun disconnect(failure: Throwable) { connected = false; status.value = failure.message.orEmpty(); ended.complete(failure) }
         override fun close() { connected = false; ended.complete(CancellationException("closed")); super.close() }
-        override fun subscribe() { subscriptions++ }
+        override fun subscribe() { subscriptions++; subscribeFailure?.let { throw it } }
         override suspend fun host(method: String, payload: JsonObject): JsonElement {
             hostCalls += method to payload
+            hostFailures[method]?.let { throw it }
             return when (method) {
                 "session.list" -> {
                     catalogGate?.await()
@@ -836,12 +1103,13 @@ class DshViewModelRemoteTest {
                     obj("events" to histories[owner].orEmpty(), "hasMore" to false)
                 }
                 "session.projections" -> obj("values" to (projections[payload.string("sessionId")] ?: obj()))
+                "session.updateQueue" -> queueReply(payload)
                 "session.models" -> { modelGate?.await(); modelCatalog }
                 "commands/list" -> { commandsGate?.await(); JsonArray(emptyList()) }
                 "host.listDirectory" -> obj("path" to "C:/new", "entries" to emptyList<JsonObject>())
                 "workspace.create" -> obj("workspace" to obj("workspaceId" to "new-workspace"))
                 "session.attachment" -> attachmentReply(payload.string("attachmentId"))
-                "respond", "session.prompt" -> obj()
+                "respond", "session.prompt", "session.selectModel" -> obj()
                 else -> error("unexpected host method $method")
             }
         }
@@ -864,6 +1132,11 @@ class DshViewModelRemoteTest {
         private fun asked(id: String) = obj("event" to obj("seq" to 1, "type" to "approval/asked", "data" to obj("id" to id, "toolName" to "pwsh")))
         private fun sessionRow(id: String, origin: String = "", parent: String = "") = obj("sessionId" to id, "cwd" to "C:/repo", "origin" to origin,
             "parentSessionId" to parent, "projections" to obj("values" to obj("title" to id)))
+        private fun queueMessage(id: String, text: String, image: Boolean = false) = obj("id" to id, "source" to obj("kind" to "user"),
+            "content" to (listOf(obj("type" to "text", "text" to text)) + if (image) listOf(obj("type" to "image", "attachment" to obj("attachmentId" to "photo"))) else emptyList()))
+        private fun queueProjection(nextTurn: List<JsonObject> = emptyList(), nextStep: List<JsonObject> = emptyList()) = obj(
+            "inbox" to obj("next-turn" to nextTurn, "next-step" to nextStep),
+            "usagePanel" to obj("totals" to obj("input" to 100, "output" to 20, "cacheRead" to 5, "cacheWrite" to 2)))
         private fun imageEvent(vararg ids: String) = obj("event" to obj("seq" to 1, "type" to "user/message", "data" to obj(
             "id" to "images", "source" to obj("kind" to "user"), "content" to ids.map { id ->
                 obj("type" to "image", "attachment" to obj("attachmentId" to id, "mediaType" to "image/png"))

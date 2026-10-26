@@ -5,6 +5,8 @@ import ai.deepseek.harness.mobile.ui.DshRoot
 import ai.deepseek.harness.mobile.ui.NativeRemoteScreen
 import ai.deepseek.harness.mobile.ui.NativeDialog
 import ai.deepseek.harness.mobile.ui.NativeChoiceRow
+import ai.deepseek.harness.mobile.ui.MobilePreferences
+import ai.deepseek.harness.mobile.ui.LocalMobilePreferences
 import ai.deepseek.harness.mobile.ui.ScanScreen
 import ai.deepseek.harness.mobile.ui.theme.DshTheme
 import ai.deepseek.harness.mobile.ui.theme.dsh
@@ -37,6 +39,7 @@ import kotlinx.coroutines.withTimeout
 class MainActivity : ComponentActivity() {
     private val store by lazy { EncryptedDeviceStore(applicationContext) }
     private val vm: DshViewModel by viewModels { DshVmFactory(store) }
+    private val interfacePreferences by lazy { MobilePreferences(applicationContext) }
     private lateinit var images: NativeImagePicker
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) { runOnUiThread { vm.onNetworkAvailable() } }
@@ -81,18 +84,20 @@ class MainActivity : ComponentActivity() {
                 }
             }
             DshTheme(dark) {
-                Box(Modifier.fillMaxSize().background(dsh().bgBase).windowInsetsPadding(WindowInsets.safeDrawing.union(WindowInsets.ime))) {
-                    when (vm.route) {
-                        Route.Scan -> ScanScreen(vm::onScanned, { vm.route = Route.Connect }, vm::openPasteEntry)
-                        Route.Chat -> NativeRemoteScreen(vm) { attachmentSource = true }
-                        else -> DshRoot(vm, ::requestScan, {
-                            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
-                        })
+                CompositionLocalProvider(LocalMobilePreferences provides interfacePreferences) {
+                    Box(Modifier.fillMaxSize().background(dsh().bgBase).windowInsetsPadding(WindowInsets.safeDrawing.union(WindowInsets.ime))) {
+                        when (vm.route) {
+                            Route.Scan -> ScanScreen(vm::onScanned, { vm.route = Route.Connect }, vm::openPasteEntry)
+                            Route.Chat -> NativeRemoteScreen(vm) { attachmentSource = true }
+                            else -> DshRoot(vm, ::requestScan, {
+                                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+                            })
+                        }
                     }
-                }
-                if (attachmentSource) NativeDialog("添加图片", onDismiss = { attachmentSource = false }) {
-                    NativeChoiceRow("从相册选择", onClick = { attachmentSource = false; images.selectGallery() })
-                    NativeChoiceRow("拍照", onClick = { attachmentSource = false; images.takePhoto() })
+                    if (attachmentSource) NativeDialog("添加图片", onDismiss = { attachmentSource = false }) {
+                        NativeChoiceRow("从相册选择", onClick = { attachmentSource = false; images.selectGallery() })
+                        NativeChoiceRow("拍照", onClick = { attachmentSource = false; images.takePhoto() })
+                    }
                 }
             }
         }

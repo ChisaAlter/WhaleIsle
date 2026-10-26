@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,9 +33,12 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -223,14 +227,24 @@ private fun NativeSidebar(state: NativeChatState, workspaces: List<NativeWorkspa
                 }
                 if (group.id !in collapsed) {
                     if (group.sessions.isEmpty()) item(key = "empty:${group.id}") {
-                        Text("还没有会话", Modifier.padding(start = 32.dp, bottom = 12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
+                        Text("还没有会话", Modifier.padding(start = 44.dp, bottom = 12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
                     }
                     items(group.sessions, key = { "session:${it.id}" }) { row ->
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if (row.id == state.sessionId) colors.navActive else Color.Transparent), verticalAlignment = Alignment.CenterVertically) {
-                            Row(Modifier.weight(1f).heightIn(min = 48.dp).clickable(enabled = !state.offline && !state.loading, role = Role.Button) { onOpen(row) }
-                                .padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                if (row.running || row.id == state.sessionId && state.approval != null) Box(Modifier.size(6.dp).background(if (row.id == state.sessionId && state.approval != null) colors.warn else colors.success, CircleShape))
-                                Text(row.title, color = colors.labelPrimary, fontSize = 14.sp, lineHeight = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            val awaitingApproval = state.approval?.let { it.sessionId.ifBlank { state.sessionId } == row.id } == true
+                            val isRunning = if (row.id == state.sessionId) state.running else row.running
+                            val rowStatus = when { awaitingApproval -> "等待审批"; isRunning -> "正在进行"; else -> "空闲" }
+                            Row(Modifier.weight(1f).heightIn(min = 48.dp)
+                                .semantics(mergeDescendants = true) { stateDescription = rowStatus }
+                                .clickable(enabled = !state.offline && !state.loading, role = Role.Button) { onOpen(row) }
+                                .padding(start = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Box(Modifier.size(16.dp), contentAlignment = Alignment.Center) {
+                                    when {
+                                        awaitingApproval -> Box(Modifier.size(6.dp).background(colors.warn, CircleShape))
+                                        isRunning -> CircularProgressIndicator(Modifier.size(14.dp), color = colors.labelTertiary, strokeWidth = 1.5.dp)
+                                    }
+                                }
+                                Text(row.title, Modifier.weight(1f), color = colors.labelPrimary, fontSize = 14.sp, lineHeight = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             NativeIconButton(NativeGlyph.More, "管理会话${row.title}", { onSessionMenu(row) })
                         }
@@ -241,17 +255,19 @@ private fun NativeSidebar(state: NativeChatState, workspaces: List<NativeWorkspa
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.borderHair))
         Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Row(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button, onClick = onSettings).padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(Modifier.size(32.dp).background(colors.navHover, CircleShape), contentAlignment = Alignment.Center) {
-                    Text(state.hostName.ifBlank { "电脑" }.take(1), color = colors.labelPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                }
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp))
+                .clickable(role = Role.Button, onClick = onSettings).padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                NativeIcon(NativeGlyph.Settings, tint = colors.labelSecondary)
                 Column(Modifier.weight(1f)) {
-                    Text(state.hostName.ifBlank { "我的电脑" }, color = colors.labelPrimary, fontSize = 14.sp, lineHeight = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(if (state.offline) "连接已断开 · 设置" else "已连接 · 设置", color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
+                    Text("设置", color = colors.labelPrimary, fontSize = 14.sp, lineHeight = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(state.hostName.ifBlank { "我的电脑" } + " · " + when {
+                        state.offline -> "连接已断开"
+                        state.loading -> "正在同步"
+                        else -> "已连接"
+                    }, color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            NativeIconButton(NativeGlyph.More, "电脑与外观设置", onSettings)
         }
     }
 }
@@ -277,6 +293,8 @@ internal fun NativePill(label: String, onClick: () -> Unit, primary: Boolean = f
 @Composable
 private fun NativeTimeline(state: NativeChatState, onAction: (NativeChatAction) -> Unit, compactHeight: Boolean) {
     val colors = dsh()
+    val preferences = LocalMobilePreferences.current
+    val rows = state.rows.filter { it.role != "reasoning" || preferences?.showReasoning != false }
     val list = rememberSaveable(state.sessionId, saver = LazyListState.Saver) { LazyListState() }
     var initialShown by rememberSaveable(state.sessionId) { mutableStateOf(false) }
     var followTail by rememberSaveable(state.sessionId) { mutableStateOf(true) }
@@ -291,11 +309,11 @@ private fun NativeTimeline(state: NativeChatState, onAction: (NativeChatAction) 
         snapshotFlow { !list.isScrollInProgress && !list.canScrollForward && list.layoutInfo.visibleItemsInfo.isNotEmpty() }
             .collect { atBottom -> if (atBottom) followTail = true }
     }
-    LaunchedEffect(state.sessionId, state.loading, state.olderLoading, state.rows.size, state.rows.lastOrNull()?.id,
-        state.rows.lastOrNull()?.text, state.rows.lastOrNull()?.detail, lastSize, viewportSize, followTail) {
-        if (!state.olderLoading && !state.loading && state.rows.isNotEmpty() && (!initialShown || followTail)) {
+    LaunchedEffect(state.sessionId, state.loading, state.olderLoading, rows.size, rows.lastOrNull()?.id,
+        rows.lastOrNull()?.text, rows.lastOrNull()?.detail, state.queue, lastSize, viewportSize, followTail) {
+        if (!state.olderLoading && !state.loading && (rows.isNotEmpty() || state.queue.isNotEmpty()) && (!initialShown || followTail)) {
             // A tiny final item is a real end anchor, even when the last message is taller than the viewport.
-            val bottom = state.rows.size + if (state.hasOlder) 1 else 0
+            val bottom = rows.size + (if (state.hasOlder) 1 else 0) + (if (state.queue.isNotEmpty()) 1 else 0)
             list.scrollToItem(bottom)
             initialShown = true
         }
@@ -305,18 +323,26 @@ private fun NativeTimeline(state: NativeChatState, onAction: (NativeChatAction) 
         if (state.hasOlder) item(key = "older") {
             NativeChoiceRow(if (state.olderLoading) "正在加载…" else "加载更早消息", enabled = !state.olderLoading, onClick = { onAction(NativeChatAction("older", state.sessionId)) })
         }
-        if (state.loading && state.rows.isEmpty()) item(key = "loading") { Text("正在载入会话…", color = colors.labelSecondary, fontSize = 14.sp, lineHeight = 22.sp) }
-        if (!state.loading && state.rows.isEmpty() && state.error.isEmpty()) item(key = "empty") {
+        if (state.loading && rows.isEmpty()) item(key = "loading") { Text("正在载入会话…", color = colors.labelSecondary, fontSize = 14.sp, lineHeight = 22.sp) }
+        if (!state.loading && rows.isEmpty() && state.running) item(key = "replying") {
+            Text("正在回复…", color = colors.labelSecondary, fontSize = 14.sp, lineHeight = 22.sp)
+        }
+        if (!state.loading && state.rows.isEmpty() && !state.running && state.queue.isEmpty() && state.error.isEmpty()) item(key = "empty") {
             Column(Modifier.fillMaxWidth().heightIn(min = if (compactHeight) 88.dp else 220.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                 if (!compactHeight) { WhaleAvatar(Modifier.size(64.dp)); Spacer(Modifier.height(16.dp)) }
                 Text("探索未至之鲸", fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold, color = colors.labelPrimary)
                 if (!compactHeight) Text(if (state.sessionId.isBlank()) "选择工作区，开始新会话" else "接着电脑上的工作", color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
             }
         }
-        items(state.rows, key = { it.id }) { row ->
-            Box(if (row.id == state.rows.lastOrNull()?.id) Modifier.onSizeChanged { lastSize = it } else Modifier) { NativeMessage(row) }
+        items(rows, key = { it.id }) { row ->
+            Box(if (row.id == rows.lastOrNull()?.id) Modifier.onSizeChanged { lastSize = it } else Modifier) { NativeMessage(row) }
         }
-        if (state.rows.isNotEmpty()) item(key = "tail") { Spacer(Modifier.height(1.dp)) }
+        if (state.queue.isNotEmpty()) item(key = "queue") {
+            NativeQueuePanel(state.queue, state.running, !state.offline && !state.loading && !state.busy && state.readOnly.isBlank(), state.banner) { kind, id, text ->
+                onAction(NativeChatAction("queue", state.sessionId, text = text, id = id, line = kind))
+            }
+        }
+        if (rows.isNotEmpty() || state.queue.isNotEmpty()) item(key = "tail") { Spacer(Modifier.height(1.dp)) }
     }
 }
 
@@ -341,12 +367,16 @@ private fun NativeComposer(state: NativeChatState, onAction: (NativeChatAction) 
     val colors = dsh()
     val editLineHeight = with(LocalDensity.current) { 24.sp.toDp() }
     val editableHeight = (maxHeight - 48.dp - if (tightHeight) 0.dp else if (compactHeight) 16.dp else 28.dp).coerceAtLeast(0.dp)
+    val preferences = LocalMobilePreferences.current
     val draft = state.draft
+    val sendMode = if (state.running && preferences?.runningSendMode == "steer") "steer" else "queue"
+    val sendLabel = if (!state.running) "发送消息" else if (sendMode == "steer") "发送到当前回复" else "排队发送消息"
     val sessionId = state.sessionId
     var fieldValue by rememberSaveable(state.epoch, sessionId, stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(draft, TextRange(draft.length))) }
     LaunchedEffect(draft) { if (fieldValue.text != draft) fieldValue = TextFieldValue(draft, TextRange(draft.length)) }
     val editable = sessionId.isNotBlank() && !state.loading
     val available = editable && !state.offline && !state.busy
+    fun send() { if (available && state.approval == null && (draft.isNotBlank() || state.attachments.isNotEmpty())) onAction(NativeChatAction("send", sessionId, text = draft, mode = sendMode)) }
     val modelLabel = state.modelOptions.find { it.provider == state.modelCurrentProvider && it.id == state.modelCurrentId }?.label ?: state.model.ifBlank { if (state.loading) "正在同步模型…" else "选择模型" }
     val effortLabel = state.modelOptions.find { it.provider == state.modelCurrentProvider && it.id == state.modelCurrentId }?.efforts?.find { it.id == state.modelCurrentEffort }?.label ?: state.modelCurrentEffort
     var slashDismissed by remember(draft) { mutableStateOf(false) }
@@ -379,9 +409,16 @@ private fun NativeComposer(state: NativeChatState, onAction: (NativeChatAction) 
                 }
                 BasicTextField(value = fieldValue, onValueChange = { if (editable) { fieldValue = it; if (it.text != draft) onAction(NativeChatAction("draft", sessionId, text = it.text)) } }, enabled = editable,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.labelPrimary, fontSize = 16.sp, lineHeight = 24.sp), cursorBrush = SolidColor(colors.buttonInfoFill),
-                    keyboardOptions = KeyboardOptions.Default, minLines = if (compactHeight) 1 else 2, maxLines = if (compactHeight) 3 else 6,
+                    keyboardOptions = KeyboardOptions.Default.copy(imeAction = if (preferences?.sendWithEnter == true) ImeAction.Send else ImeAction.Default),
+                    keyboardActions = KeyboardActions(onSend = { send() }), minLines = if (compactHeight) 1 else 2, maxLines = if (compactHeight) 3 else 6,
                     decorationBox = { inner -> Box { if (draft.isEmpty()) Text(if (sessionId.isBlank()) "新建会话后开始对话…" else "给电脑发送消息…", fontSize = 16.sp, lineHeight = 24.sp, color = colors.labelTertiary); inner() } },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = if (compactHeight) 24.dp else 48.dp).padding(end = 12.dp).semantics { contentDescription = "消息" })
+                    modifier = Modifier.fillMaxWidth().heightIn(min = if (compactHeight) 24.dp else 48.dp).padding(end = 12.dp)
+                        .onPreviewKeyEvent { event ->
+                            if (preferences?.sendWithEnter == true && event.key == Key.Enter && !event.isShiftPressed) {
+                                if (event.type == KeyEventType.KeyDown) send()
+                                true
+                            } else false
+                        }.semantics { contentDescription = "消息" })
             }
 
             @Composable fun modelControl(modifier: Modifier) {
@@ -396,7 +433,7 @@ private fun NativeComposer(state: NativeChatState, onAction: (NativeChatAction) 
                 Spacer(Modifier.weight(1f))
                 NativeIconButton(NativeGlyph.Shield, "切换权限：${state.permission}", onPermission, enabled = available && state.permissionOptions.isNotEmpty())
                 if (state.running) NativeIconButton(NativeGlyph.Stop, "停止生成", { onAction(NativeChatAction("cancel", sessionId)) }, enabled = available, primary = true)
-                NativeIconButton(NativeGlyph.Send, if (state.running) "排队发送消息" else "发送消息", { onAction(NativeChatAction("send", sessionId, text = draft)) }, enabled = available && (draft.isNotBlank() || state.attachments.isNotEmpty()), primary = true)
+                NativeIconButton(NativeGlyph.Send, sendLabel, ::send, enabled = available && (draft.isNotBlank() || state.attachments.isNotEmpty()), primary = true)
             }
             if (compactHeight) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -404,7 +441,7 @@ private fun NativeComposer(state: NativeChatState, onAction: (NativeChatAction) 
                     modelControl(Modifier.weight(1f))
                     NativeIconButton(NativeGlyph.More, "权限与 Plan 选项", onTools, enabled = available)
                     if (state.running) NativeIconButton(NativeGlyph.Stop, "停止生成", { onAction(NativeChatAction("cancel", sessionId)) }, enabled = available, primary = true)
-                    NativeIconButton(NativeGlyph.Send, if (state.running) "排队发送消息" else "发送消息", { onAction(NativeChatAction("send", sessionId, text = draft)) }, enabled = available && (draft.isNotBlank() || state.attachments.isNotEmpty()), primary = true)
+                    NativeIconButton(NativeGlyph.Send, sendLabel, ::send, enabled = available && (draft.isNotBlank() || state.attachments.isNotEmpty()), primary = true)
                 }
             } else if (narrow) {
                 modelControl(Modifier.fillMaxWidth().padding(end = 12.dp))
@@ -416,7 +453,7 @@ private fun NativeComposer(state: NativeChatState, onAction: (NativeChatAction) 
                     if (state.planOn) Text("Plan", Modifier.widthIn(min = 48.dp).heightIn(min = 48.dp).clickable(enabled = available) { onAction(NativeChatAction("planOff", sessionId)) }.wrapContentHeight().padding(horizontal = 8.dp), color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
                     NativeIconButton(NativeGlyph.Shield, "切换权限：${state.permission}", onPermission, enabled = available && state.permissionOptions.isNotEmpty())
                     if (state.running) NativeIconButton(NativeGlyph.Stop, "停止生成", { onAction(NativeChatAction("cancel", sessionId)) }, enabled = available, primary = true)
-                    NativeIconButton(NativeGlyph.Send, if (state.running) "排队发送消息" else "发送消息", { onAction(NativeChatAction("send", sessionId, text = draft)) }, enabled = available && (draft.isNotBlank() || state.attachments.isNotEmpty()), primary = true)
+                    NativeIconButton(NativeGlyph.Send, sendLabel, ::send, enabled = available && (draft.isNotBlank() || state.attachments.isNotEmpty()), primary = true)
                 }
             }
         }
@@ -473,11 +510,14 @@ internal data class NativeChatAction(
     val reasoningEffort: String = "",
     val id: String = "",
     val line: String = "",
+    val mode: String = "queue",
 )
 
 @Composable
 private fun NativeMessage(row: NativeRow) {
     val colors = dsh()
+    val preferences = LocalMobilePreferences.current
+    val scale = preferences?.messageScale ?: 1f
     val user = row.role == "user"
     val background = when { user -> colors.bubble; row.role == "error" -> colors.warnTertiary; else -> Color.Transparent }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
@@ -485,10 +525,10 @@ private fun NativeMessage(row: NativeRow) {
         Surface(shape = RoundedCornerShape(12.dp), color = background) {
             Column(Modifier.padding(horizontal = if (user) 12.dp else 0.dp, vertical = if (user) 10.dp else 4.dp)) {
                 if (row.role == "assistant") NativeMarkdown(row.text)
-                else SelectionContainer { Text(row.text.ifBlank { if (row.running) "正在思考…" else " " }, color = colors.labelPrimary, fontSize = 14.sp, lineHeight = 22.sp) }
+                else SelectionContainer { Text(row.text.ifBlank { if (row.running) "正在思考…" else " " }, color = colors.labelPrimary, fontSize = (14 * scale).sp, lineHeight = (22 * scale).sp) }
                 row.images.forEach { NativeImagePreview(it, Modifier.fillMaxWidth().heightIn(max = 280.dp)) }
                 if (row.detail.isNotBlank()) {
-                    var expanded by remember(row.id) { mutableStateOf(false) }
+                    var expanded by remember(row.id, preferences?.expandToolDetails) { mutableStateOf(row.role == "tool" && preferences?.expandToolDetails == true) }
                     Text(if (expanded) "收起详情" else "查看详情", Modifier.clickable { expanded = !expanded }.padding(vertical = 8.dp), color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
                     if (expanded) SelectionContainer { Text(row.detail, color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp) }
                 }

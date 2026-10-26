@@ -35,7 +35,9 @@ internal fun NativeRemoteScreen(vm: DshViewModel, onAttachment: () -> Unit) {
     val selectedWorkspace = vm.workspaces.find { it.id == selectedWorkspaceId }
     val chatUiState = rememberSaveableStateHolder()
     val taskPage = vm.panel in setOf("browse", "sessions", "git")
-    if (taskPage) {
+    if (vm.panel == "settings") {
+        NativeSettingsScreen(vm, onClose = { vm.panel = "" })
+    } else if (taskPage) {
         NativeTaskPage(vm, onSessionMenu = { selectedSessionId = it.id; name = it.title })
     } else {
         // Keep the same computer/session registry across transport recovery.
@@ -71,7 +73,6 @@ internal fun NativeRemoteScreen(vm: DshViewModel, onAttachment: () -> Unit) {
             NativeChoiceRow("会话管理与内容搜索", glyph = NativeGlyph.Search, enabled = !vm.chat.offline, onClick = { vm.panel = "sessions" })
             NativeChoiceRow(if (vm.panelBusy) "正在读取 Git…" else "Git · 分支 / Commit / Push / PR", enabled = remoteAvailable && vm.currentSession()?.cwd?.isNotBlank() == true,
                 onClick = { vm.openGit() })
-            NativeChoiceRow("设置与已配对电脑", onClick = { vm.panel = "settings" })
             NativeChoiceRow(if (vm.chat.offline) "重新连接电脑" else "重新同步目录与会话", onClick = vm::onForeground)
             if (vm.workspaces.isNotEmpty()) {
                 HorizontalDivider(color = colors.borderHair, modifier = Modifier.padding(vertical = 4.dp))
@@ -82,22 +83,6 @@ internal fun NativeRemoteScreen(vm: DshViewModel, onAttachment: () -> Unit) {
             }
             Text("文件与更改：远程网关尚未提供文件浏览；请在电脑端查看。", Modifier.padding(12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
             Text("MCP 与技能：远程端暂未接入管理；请在电脑端操作。", Modifier.padding(horizontal = 12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
-        }
-        "settings" -> NativeDialog("设置", onDismiss = { vm.panel = "" }, feedback = connectionFeedback, feedbackHint = connectionFeedback) {
-            Text("外观", Modifier.padding(12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(colors.bgModule)) {
-                listOf("system" to "跟随系统", "light" to "浅色", "dark" to "深色").forEach { (key, label) ->
-                    Box(Modifier.weight(1f)) { NativeChoiceRow(label, selected = vm.scheme == key, onClick = { vm.persistScheme(key) }) }
-                }
-            }
-            Text("已配对电脑", Modifier.padding(12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
-            vm.computers.forEach { computer ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) { NativeChoiceRow(computer.computerName, detail = computer.relayEndpoint, onClick = { vm.reopenComputer(computer.serverId) }) }
-                    TextButton(onClick = { confirmation = computer.serverId }, modifier = Modifier.heightIn(min = 48.dp)) { Text("移除", color = colors.labelSecondary, fontSize = 12.sp) }
-                }
-            }
-            NativeChoiceRow("断开这台设备", danger = true, onClick = vm::leaveComputer)
         }
     }
     selectedSession?.let { row ->

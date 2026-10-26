@@ -29,6 +29,9 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -261,7 +264,8 @@ fun DshRoot(
 ) {
     val palette = dsh()
     Box(Modifier.fillMaxSize().background(palette.bgBase)) {
-        when (vm.route) {
+        if (vm.panel == "settings") NativeSettingsScreen(vm, onClose = { vm.panel = "" })
+        else when (vm.route) {
             Route.Connect -> ConnectScreen(
                 vm = vm,
                 onRequestScan = onRequestScan,
@@ -288,62 +292,43 @@ private fun ConnectScreen(
 ) {
     val palette = dsh()
     val pasteFocusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    val pinnedConnect: (@Composable () -> Unit)? = if (imeVisible && pasteExpanded) {
-        { ConnectionButton(label = "连接", onClick = vm::connectFromPaste) }
-    } else null
-    LaunchedEffect(pasteFocusRequestId, pasteExpanded) {
-        if (pasteExpanded && pasteFocusRequestId > 0L) pasteFocusRequester.requestFocus()
+    BackHandler(enabled = vm.connecting) { vm.cancelConnecting() }
+    @Composable fun attemptControls() {
+        if (vm.connecting) {
+            ConnectionButton(vm.connectionStatus.ifBlank { "正在连接电脑…" }, enabled = false, busy = true) {}
+            ConnectionButton("取消连接", onClick = vm::cancelConnecting)
+        } else {
+            ConnectionButton("连接", enabled = vm.paste.isNotBlank(), onClick = { keyboard?.hide(); vm.connectFromPaste() })
+        }
     }
-    ConnectionLayout(
-        supportingText = "扫一下，接着电脑上的工作。",
-        dockActions = pinnedConnect,
-    ) {
-        if (vm.error.isNotEmpty()) {
-            Text(
-                vm.error,
-                color = palette.error,
-                fontSize = 12.sp,
-                lineHeight = 18.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(FieldShape)
-                    .background(palette.error.copy(alpha = 0.08f))
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-            )
+    val pinnedConnect: (@Composable () -> Unit)? = if (imeVisible && (pasteExpanded || vm.connecting)) ({ attemptControls() }) else null
+    LaunchedEffect(pasteFocusRequestId, pasteExpanded) {
+        if (pasteExpanded && pasteFocusRequestId > 0L && !vm.connecting) pasteFocusRequester.requestFocus()
+    }
+    LaunchedEffect(vm.connecting) { if (vm.connecting) keyboard?.hide() }
+    ConnectionLayout(supportingText = "扫一下，接着电脑上的工作。", dockActions = pinnedConnect) {
+        if (vm.error.isNotEmpty()) Text(vm.error, color = palette.error, fontSize = 12.sp, lineHeight = 18.sp,
+            fontWeight = FontWeight.Medium, modifier = Modifier.fillMaxWidth().clip(FieldShape)
+                .background(palette.error.copy(alpha = 0.08f)).padding(horizontal = 12.dp, vertical = 8.dp))
+        if (vm.connecting) {
+            if (!imeVisible) attemptControls()
+        } else {
+            if (vm.canRetryConnection) ConnectionButton("重试连接", onClick = vm::retryConnection)
+            for (computer in vm.computers.sortedByDescending { it.savedAt }) {
+                SavedComputerRow(computer.computerName, onClick = { vm.reopenComputer(computer.serverId) })
+            }
+            ConnectionButton("扫描二维码", primary = true, onClick = onRequestScan)
+            ConnectionButton(if (pasteExpanded) "收起粘贴输入" else "粘贴配对链接", onClick = { onPasteExpandedChange(!pasteExpanded) })
+            if (pasteExpanded) {
+                ConnectionField(vm.paste, { vm.paste = it }, "粘贴含 #offer= 的完整链接", Modifier.focusRequester(pasteFocusRequester))
+                if (!imeVisible) attemptControls()
+            }
         }
-        for (computer in vm.computers.sortedByDescending { it.savedAt }) {
-            SavedComputerRow(computer.computerName, onClick = { vm.reopenComputer(computer.serverId) })
-        }
-        ConnectionButton(
-            label = "扫描二维码",
-            primary = true,
-            onClick = onRequestScan,
-        )
-        ConnectionButton(
-            label = if (pasteExpanded) "收起粘贴输入" else "粘贴配对链接",
-            onClick = { onPasteExpandedChange(!pasteExpanded) },
-        )
-        if (pasteExpanded) {
-            ConnectionField(
-                value = vm.paste,
-                onValueChange = { vm.paste = it },
-                placeholder = "粘贴含 #offer= 的完整链接",
-                modifier = Modifier.focusRequester(pasteFocusRequester),
-            )
-            if (!imeVisible) ConnectionButton(label = "连接", onClick = vm::connectFromPaste)
-        }
-        Text(
-            "端到端加密，只连接你的电脑",
-            color = palette.connection.muted,
-            fontSize = 12.sp,
-            lineHeight = 18.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        ConnectionButton("设置", enabled = !vm.connecting, onClick = vm::openSettings)
+        Text("端到端加密，只连接你的电脑", color = palette.connection.muted, fontSize = 12.sp, lineHeight = 18.sp,
+            textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -418,6 +403,7 @@ private fun ConnectionButton(
     label: String,
     primary: Boolean = false,
     enabled: Boolean = true,
+    busy: Boolean = false,
     onClick: () -> Unit,
 ) {
     val connection = dsh().connection
@@ -432,7 +418,7 @@ private fun ConnectionButton(
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = 40.dp)
-                .alpha(if (enabled) 1f else 0.45f)
+                .alpha(if (enabled || busy) 1f else 0.45f)
                 .clip(Capsule)
                 .background(if (primary) connection.primary else Color.Transparent)
                 .border(
@@ -443,13 +429,11 @@ private fun ConnectionButton(
                 .padding(horizontal = 18.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                label,
-                color = if (primary) connection.primaryInk else connection.ink,
-                fontSize = 14.sp,
-                lineHeight = 22.sp,
-                fontWeight = FontWeight.Medium,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (busy) CircularProgressIndicator(Modifier.size(16.dp), color = connection.ink, strokeWidth = 1.5.dp)
+                Text(label, color = if (primary) connection.primaryInk else connection.ink,
+                    fontSize = 14.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
+            }
         }
     }
 }
