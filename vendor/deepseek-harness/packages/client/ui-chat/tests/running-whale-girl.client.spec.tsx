@@ -30,6 +30,7 @@ describe('RunningWhaleGirl', () => {
     expect(view.container.firstElementChild?.getAttribute('aria-hidden')).toBe('true')
     expect(view.container.querySelector('[role]')).toBeNull()
     expect(view.container.querySelector('[style]')).toBeNull()
+    expect(view.container.querySelector('img[data-dsh-mascot="claude"]')?.getAttribute('src')).toBe('claude-isle-reading.png')
   })
 
   it('ships the transparent whale-girl running cycle with infinite playback', () => {

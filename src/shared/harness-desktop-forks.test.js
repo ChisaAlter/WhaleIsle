@@ -298,7 +298,7 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-theme/src/boot-theme.ts': 'lightSkin\ndata-dsh-skin\n',
       'packages/client/ui-theme/src/client/styles.ts': 'skins.css\n',
       'packages/client/ui-theme/src/styles/base.css': '--dsh-bubble-radius\n',
-      'packages/client/ui-theme/src/styles/skins.css': "data-dsh-skin='codex'\ndata-dsh-skin='claude'\n--dsh-windows-sidebar-width\ndata-dsh-hero-headline\ndata-dsh-message-bubble\ndata-dsh-sidebar-brand-identity\n",
+      'packages/client/ui-theme/src/styles/skins.css': "data-dsh-skin='codex'\ndata-dsh-skin='claude'\n--dsh-windows-sidebar-width\ndata-dsh-hero-headline\ndata-dsh-message-bubble\ndata-dsh-sidebar-brand-identity\ndata-dsh-mascot\n",
       'packages/client/ui-codex-sidebar/package.json': 'dsh-plugin-codex-ui\nplatform\n',
       'packages/client/ui-codex-sidebar/lib/client.js': "data-dsh-skin\nreturn 'Whale Isle'\ninstallNow\n",
       'packages/client/ui-codex-sidebar/VENDORED.md': 'ice-ai-lab/dsh-plugin-codex-ui\nMIT\n',
@@ -319,6 +319,9 @@ function makeFixture(t, npmVersion = '0.1.0-rc.5') {
       'packages/client/ui-chat/src/client/chat/AssistantMarkdown.tsx': 'data-dsh-message-role\n',
       'packages/client/ui-sidebar-right/src/client/shell/SidebarRight.tsx': 'data-dsh-artifact\n',
       'packages/client/ui-theme/README.md': 'Presentation skins\ndata-dsh-skin\n',
+      'packages/client/ui-brand-official/src/client/Brand.tsx': '/claude-isle-head.png\ndata-dsh-mascot\n',
+      'packages/client/ui-chat/src/client/chat/RunningWhaleGirl.tsx': '/claude-isle-reading.png\ndata-dsh-mascot\n',
+      'apps/web/public/Claude-Artwork-NOTICES.txt': 'Ancean\nZipZipPipe\n',
     };
     const seamContent = projectSeams[marker.file] ?? content[marker.file] ?? 'export {}\n';
     writeFile(root, marker.file, `${seamContent}${skinSeams[marker.file] ?? ''}`);
