@@ -731,8 +731,7 @@ class HarnessController extends EventEmitter {
       }
       throw new Error(`桌面内置 dsh-im 失败：${errorMessage(error)}`);
     }
-    // Hide the legacy Settings market on full and recovery starts. The
-    // profile enables official Discover with the desktop's default index.
+    // Keep the built-in Settings market available on full and recovery starts.
     try {
       const market = await this.ensureDesktopMarket();
       checkCurrent();
@@ -743,7 +742,7 @@ class HarnessController extends EventEmitter {
         patchFiles.push(market.overlayFile);
       }
       if (market && market.ok) {
-        this.dsh.log('插件市场入口：插件 → 发现；旧设置市场已隐藏', 'app');
+        this.dsh.log('桌面内置插件市场已就绪：设置 → 市场', 'app');
       }
     } catch (error) {
       checkCurrent();

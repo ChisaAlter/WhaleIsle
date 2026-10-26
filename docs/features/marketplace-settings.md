@@ -1,6 +1,6 @@
 # Feature: Plugin Marketplace
 
-当前浏览入口为「插件 → 发现」，旧「设置 → 市场」隐藏。桌面默认启用官方市场和 realguan 社区索引；既有源、后续源编辑及停用选择保留。当前路径与配置规则见[市场安装流程](../handbook/flows/marketplace-install.md)和[插件市场模块](../handbook/modules/marketplace.md)。下文记录旧桌面引擎的保留功能及原设置 UI 的历史交付，不代表官方发现页具有全部旧界面功能。
+桌面商店恢复「设置 → 市场」入口，托盘 / 菜单「插件市场」跳转到该分区；原有发现、已安装、收藏、操作记录和安装 / 更新 / 卸载 UI 恢复使用。官方「插件 → 发现」同时保留，桌面仍默认启用官方市场和 realguan 社区索引，既有源、后续源编辑及停用选择不变。当前路径与配置规则见[市场安装流程](../handbook/flows/marketplace-install.md)和[插件市场模块](../handbook/modules/marketplace.md)。下文的桌面商店功能与不变量适用于设置市场；官方发现页使用自身的 UI 和安装流程。
 
 | Field | Value |
 | --- | --- |
@@ -20,10 +20,11 @@
 8. 详情弹窗显示来源、目录截图、按需获取的仓库 README 和 npm 作者依赖声明；声明不构成兼容性保证。
 9. 安装 / 卸载须确认来源和重启影响；已安装页可筛选可更新 / 检查失败，批量更新前列出目录 id 并确认。
 10. 操作记录显示最近 30 项操作及脱敏日志，离开市场和 Harness 重启不丢失；桌面进程中断的操作标为已中断。
+11. 官方「插件 → 发现」继续提供独立的索引浏览与安装流程；源配置层优先级、已有自定义源和显式空列表保持不变。停用官方自定义插件市场会隐藏其发现页签、保留源配置，普通重启不重新启用；不影响桌面「设置 → 市场」。
 
 ## Invariants
 
-- **市场是桌面自有代码**：UI 是 `vendor/deepseek-harness/packages/client/ui-settings-market`
+- **桌面设置商店是桌面自有代码**：UI 是 `vendor/deepseek-harness/packages/client/ui-settings-market`
   （桌面 fork 包，登记于 `harness-desktop-forks.js`），引擎是主进程
   `marketplace-catalog.js` / `marketplace-install.js`。不再预置安装第三方 `dshmarket`
   插件；`vendor/dshmarket` 只剩 attribution stub（LICENSE + `DESKTOP-FORK.md` +
@@ -31,7 +32,8 @@
 - `dshmarket` 在 `DROPPED` 名单：Loader 不挂载它（含用户旧装副本），保证只有一个
   `market` 分区；磁盘文件不删除。启动时 `removeDshMarketPreset` 只清理桌面预置残留
   （受管 patch 块、`desktop-plugins/dshmarket` 副本、预置 symlink）。
-- 市场是设置内 section，**无**独立 Electron 市场窗。
+- 桌面启动时启用 `ui-settings-market` 的受管 overlay，恢复设置内 `market` section 及其原有 UI；托盘 / 菜单「插件市场」跳转该分区，**无**独立 Electron 市场窗。
+- 官方「插件 → 发现」与桌面设置商店并存；其 bundle 启用迁移、索引配置层优先级和用户停用行为不因恢复设置商店而改变。
 - 安装走桌面 IPC / catalog id（`shell:install-marketplace-plugin`），不往 Composer 塞安装草稿。
 - 未安装卡片只在可安装时提供「安装」按钮：`deprecated` 或空 `installSpec` 的行不出安装入口；
   主进程 `installMarketplacePlugin` 在进 CLI 之前同样拒绝已弃用行与无法解析的规格
@@ -110,6 +112,8 @@ Gate：`src/host/install-dsh-plugin-client.test.js`、`src/main/desktop-install-
 `marketplace-install.test.js` 的 `installPlugin` 拒绝面。
 
 ## Deferred（明确不移植 — 产品裁剪）
+
+以下裁剪仅适用于桌面设置商店；官方「插件 → 发现」的索引源管理保持不变。
 
 主题商店、备份 / Gist、诊断面板、无需重启的插件热替换、多 registry 源管理、试用通道：
 **won't port**，不是待办。桌面自有市场提供精选目录浏览 / 搜索 / 安装 / 版本更新 / 卸载；

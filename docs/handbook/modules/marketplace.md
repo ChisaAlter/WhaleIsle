@@ -2,7 +2,7 @@
 
 ## 职责与非目标
 
-**职责：** 「插件 → 发现」使用官方自定义插件市场浏览和安装，桌面默认启用并提供社区索引源。旧桌面市场设置入口隐藏，主进程精选目录、安装 API 和操作历史保留，继续服务会话内安装与导入。
+**职责：** 「设置 → 市场」提供桌面自有插件商店，恢复原有的目录浏览、收藏、操作记录和安装 / 更新 / 卸载 UI；托盘 / 菜单的「插件市场」跳转到该设置分区。官方「插件 → 发现」同时保留，桌面默认启用并提供社区索引源，其索引配置与停用行为不变。
 **非目标：** 独立 Electron 市场窗；Composer 草稿安装旧路径；预置第三方 `dshmarket` 插件（已废止，见下）。
 
 ## 用户路径
@@ -11,7 +11,7 @@
 
 ## 架构要点
 
-- UI：官方 `ui-plugin-manager` 的「插件」页承载「已安装 / 发现」，`ui-plugin-market` 提供发现页。托盘和菜单的「插件市场」直接打开此页签；未就绪时保留待跳转意图，不创建独立窗口。旧 `ui-settings-market` 的受管 overlay 带 `disabled: true`，设置里不再注册 `market` 分区。下面的精选目录、收藏、快照和批量更新属于保留的旧桌面引擎；官方发现页使用自身的安装和确认流程。
+- UI：桌面启动时启用 `ui-settings-market` 的受管 overlay，在设置中注册 `market` 分区，恢复「发现 / 已安装 / 收藏 / 操作记录」及其原有交互。托盘和菜单的「插件市场」打开「设置 → 市场」；未就绪时保留待跳转意图，不创建独立窗口。官方 `ui-plugin-manager` 的「插件」页继续承载「已安装 / 发现」，`ui-plugin-market` 提供官方发现页。下述精选目录、收藏、快照和批量更新属于桌面设置商店；官方发现页仍使用自身的安装和确认流程。
 - 更新：主进程只检查已安装且仍在目录中的插件。npm 比较已装 package version 与 registry
   `latest`（仅前向 semver），GitHub 比较 profile lockfile commit 与远端 HEAD；任一远端查询失败
   会传播为检查失败，不误报全部最新。更新按 catalog id
@@ -65,7 +65,7 @@ npm/GitHub/API token 在落盘前脱敏，仍建议分享前复核用户自定�
 ## 不变量
 
 - 无独立市场窗口（`TC-EXT-002`）。
-- 市场浏览入口统一到「插件 → 发现」，设置内旧 `market` 分区隐藏；`DROPPED` 继续阻止退役的 dshmarket 挂载。
+- 「设置 → 市场」由桌面 `ui-settings-market` 注册，托盘 / 菜单跳转该分区；官方「插件 → 发现」并存，保留自身的索引配置和停用行为。`DROPPED` 继续阻止退役的 dshmarket 挂载。
 - 安装失败要可见失败反馈，不静默；`needsAllowBuilds` 走内联确认后重试。
 - `dsh plugin --profile web` 打进 `userData/dsh-home/profiles/web`，不是官方 `~/.dsh`（[dsh-home.md](dsh-home.md)）。
 - 重启归 HarnessController（`restartAfterProfileWrite`）。
@@ -79,7 +79,9 @@ npm/GitHub/API token 在落盘前脱敏，仍建议分享前复核用户自定�
 
 索引默认值来自 bundle 层 `plugin-market.config.indexes`，用户配置层优先。已有自定义列表或显式空列表不被覆盖；用户可在发现页添加、替换或删除源，清空后重启也不重新填入默认源。桌面环境变量不构成高优先级配置 overlay。纯上游启动没有该环境变量时维持原有模板和空默认源。
 
-`https://cdn.jsdelivr.net/gh/realguan/dsh-plugin-market@dist/dsh-index.json` 是同一份社区目录的另一分发地址，无需重复添加。旧桌面引擎的 `https://awesome-dsh-plugin.com/plugins.json` 格式不兼容官方索引，官方新格式也不能直接用作 `DSHD_MARKETPLACE_REGISTRY_URL`。
+恢复桌面设置商店不改变上述官方市场规则：在「插件 → 已安装」停用官方自定义插件市场后，其「发现」页签消失；保存的索引源仍在，再次启用后恢复。此操作不隐藏桌面「设置 → 市场」。
+
+`https://cdn.jsdelivr.net/gh/realguan/dsh-plugin-market@dist/dsh-index.json` 是同一份社区目录的另一分发地址，无需重复添加。桌面设置商店目录的 `https://awesome-dsh-plugin.com/plugins.json` 格式不兼容官方索引，官方新格式也不能直接用作 `DSHD_MARKETPLACE_REGISTRY_URL`。
 
 ## 门槛
 

@@ -1939,26 +1939,39 @@ async function runReleaseUiWalk(wc, helpers) {
   }), 10_000, 200, (state) => state?.nav || state?.heading);
   rec('plugins.heading', Boolean(pluginsOpened && (plugins?.heading || plugins?.nav)), '');
 
-  const oldMarketHidden = await pageEval(wc, () => !document.querySelector('[data-dsh-settings-section="market"]'));
   await dismiss();
   const { buildMarketplaceScript } = require('./marketplace-jump');
   const marketOpened = await wc.executeJavaScript(buildMarketplaceScript());
-  rec('market.section', oldMarketHidden && marketOpened, 'official Discover replaces the hidden Settings market');
+  const marketSection = await pageEval(wc, () => {
+    const nav = document.querySelector('[data-dsh-settings-section="market"]');
+    return Boolean(dshDialogNamed('^设置$|^settings$') && nav?.getAttribute('aria-current') === 'true');
+  });
+  rec('market.section', Boolean(marketOpened && marketSection), 'desktop Settings market');
   const discover = await waitUntil(() => pageEval(wc, () => {
-    const panel = document.querySelector('[data-plugin-panel]');
-    const tab = panel?.querySelector('[role="tab"][id$="-discover"]');
-    return tab?.getAttribute('aria-selected') === 'true' ? { ready: true } : null;
-  }), 10_000);
-  rec('market.discover', Boolean(discover), '');
-
-  await pageEval(wc, () => document.querySelector('[data-plugin-panel] [role="tab"][id$="-installed"]')?.click());
-  const installed = await waitUntil(() => pageEval(wc, () => {
-    const panel = document.querySelector('[data-plugin-panel]');
-    const tab = panel?.querySelector('[role="tab"][id$="-installed"]');
+    const tab = document.getElementById('market-tab-discover');
+    const panel = document.getElementById('market-panel-discover');
     return tab?.getAttribute('aria-selected') === 'true'
-      && panel?.getAttribute('aria-busy') === 'false' ? { ready: true } : null;
+      && panel?.querySelector('input[type="search"]')
+      && panel?.querySelector('[data-market-count]') ? { ready: true } : null;
   }), 10_000);
-  rec('market.installed', Boolean(installed), installed ? '' : 'Installed tab missing or incomplete');
+  rec('market.discover', Boolean(discover), discover ? '' : 'Settings market catalog or search missing');
+
+  await pageEval(wc, () => document.getElementById('market-tab-installed')?.click());
+  const installedInventory = await pageEval(wc, async () => {
+    const result = await window.shell.listInstalledPlugins();
+    return { ok: result.ok === true, names: (result.plugins || []).map(plugin => plugin.name) };
+  });
+  const installed = installedInventory?.ok && await waitUntil(() => pageEval(wc, (names) => {
+    const tab = document.getElementById('market-tab-installed');
+    const panel = document.getElementById('market-panel-installed');
+    const rows = Array.from(panel?.querySelectorAll('li') || []);
+    const contentReady = names.length > 0
+      ? rows.length === names.length && names.every(name => rows.some(row => row.textContent.includes(name)))
+      : /还没有装过社区插件|No community plugins yet/.test(panel?.textContent || '');
+    return tab?.getAttribute('aria-selected') === 'true'
+      && contentReady ? { ready: true } : null;
+  }, installedInventory.names), 10_000);
+  rec('market.installed', Boolean(installed), installed ? '' : 'Settings market installed inventory failed or does not match its panel');
 
   const usageOpened = await openSettings('usage-stats');
   const usage = await waitUntil(() => pageEval(wc, () => {

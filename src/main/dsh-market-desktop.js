@@ -34,9 +34,9 @@ function defaultSourceDir() {
 }
 
 /**
- * Keep the legacy Settings market disabled through a desktop-owned overlay.
- * The official Plugins → Discover page owns browsing; existing desktop
- * installation APIs and stored operation history remain available.
+ * Mount the desktop Settings market on full and recovery starts through a
+ * desktop-owned overlay. Catalog, installation and saved UI state use the
+ * existing desktop APIs.
  *
  * @param {{ sourceDir?: string, profileDir?: string }} [options]
  * @returns {{
@@ -54,18 +54,16 @@ function ensureDesktopMarket(options = {}) {
   }
   const profileDir = options.profileDir || webProfileDir();
 
-  // Retain the managed row id for older profiles, but never mount its UI.
   const destDir = path.join(profileDir, 'desktop-plugins', 'dsh-market');
   fs.mkdirSync(destDir, { recursive: true });
   const overlayFile = path.join(destDir, DSH_MARKET_OVERLAY_FILENAME);
   const overlayContents = [
     '# Desktop-managed overlay passed to EVERY start (full and skip) via',
-    '# --patch: the legacy Settings market stays disabled.',
-    '# Browsing lives in Plugins > Discover. Regenerated; do not edit.',
+    '# --patch: Settings > Market stays available during recovery.',
+    '# Regenerated; do not edit.',
     '- insert:',
     `    - id: ${DSH_MARKET_INSERT_ID}`,
     `      name: ${JSON.stringify(DSH_MARKET_PACKAGE)}`,
-    '      disabled: true',
     '',
   ].join('\n');
   const existed = fs.existsSync(overlayFile);
