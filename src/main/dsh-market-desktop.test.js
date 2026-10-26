@@ -66,7 +66,7 @@ test('packaged startup writes the market overlay before the runtime is extracted
   }
 });
 
-test('ensureDesktopMarket keeps the legacy settings market disabled', () => {
+test('ensureDesktopMarket mounts the built-in settings market', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-market-'));
   try {
     const source = makeSource(root);
@@ -80,7 +80,7 @@ test('ensureDesktopMarket keeps the legacy settings market disabled', () => {
     const overlay = fs.readFileSync(result.overlayFile, 'utf8');
     assert.match(overlay, new RegExp(`id: ${DSH_MARKET_INSERT_ID}`));
     assert.match(overlay, /@deepseek-ai\/dsh-client-ui-settings-market/);
-    assert.match(overlay, /disabled: true/);
+    assert.doesNotMatch(overlay, /disabled: true/);
     assert.doesNotMatch(overlay, /file:\/\//);
 
     // The user-owned cordis.patch.yml is never written by the market module.
@@ -95,18 +95,18 @@ test('ensureDesktopMarket keeps the legacy settings market disabled', () => {
   }
 });
 
-test('ensureDesktopMarket regenerates the overlay when its content drifts', () => {
+test('ensureDesktopMarket re-enables the previously disabled managed overlay', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dshd-market-drift-'));
   try {
     const source = makeSource(root);
     const profileDir = path.join(root, 'profile');
     ensureDesktopMarket({ sourceDir: source, profileDir });
-    // A stale managed overlay (e.g. an older id) is rewritten to the contract.
-    fs.writeFileSync(overlayPath(profileDir), '- insert:\n    - id: old-market-id\n      name: "@deepseek-ai/dsh-client-ui-settings-market"\n', 'utf8');
+    fs.writeFileSync(overlayPath(profileDir), '- insert:\n    - id: ui-settings-market\n      name: "@deepseek-ai/dsh-client-ui-settings-market"\n      disabled: true\n', 'utf8');
     ensureDesktopMarket({ sourceDir: source, profileDir });
     const overlay = fs.readFileSync(overlayPath(profileDir), 'utf8');
     assert.match(overlay, new RegExp(`id: ${DSH_MARKET_INSERT_ID}`));
-    assert.doesNotMatch(overlay, /old-market-id/);
+    assert.doesNotMatch(overlay, /disabled: true/);
+    assert.equal(overlay.match(/id: ui-settings-market/g)?.length, 1);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
