@@ -2596,7 +2596,8 @@ describe('ChatView', () => {
       const useTurnData = CHAT_NODE_INJECT.hooks.turnData(h.props, opts.hookContext)
       const useDisclosure = CHAT_NODE_INJECT.hooks.disclosure(h.props, opts.hookContext)
       const useGroupAction = CHAT_NODE_INJECT.hooks.groupAction(h.props, opts.hookContext)
-      return <TurnProcessNodeView {...h.props} {...nodeOwner} useTurnData={useTurnData} useDisclosure={useDisclosure} useGroupAction={useGroupAction} node={node} />
+      return <TurnProcessNodeView {...h.props} {...nodeOwner} useTurnData={useTurnData}
+        useDisclosure={useDisclosure} useGroupAction={useGroupAction} node={node} />
     })
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByRole('button', { name: label })).toBeTruthy()
@@ -3735,10 +3736,12 @@ describe('ChatView', () => {
       const frame = view.container.querySelector('iframe')!
       const outbound = vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation(() => {})
       const instanceId = `${SID}:tool:${callId}`
-      const emit = (data: Record<string, unknown>) => act(() => {
-        window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow,
-          data: { channel: 'whale-ui', version: 2, instanceId, ...data } }))
-      })
+      const emit = (data: Record<string, unknown>) => {
+        act(() => {
+          window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow,
+            data: { channel: 'whale-ui', version: 2, instanceId, ...data } }))
+        })
+      }
       emit({ type: 'ready' })
       emit({ type: 'state', state: { quantity: 42 } })
       const stableParent = frame.parentElement
@@ -4492,6 +4495,47 @@ describe('ChatView', () => {
     } finally {
       rect.mockRestore()
       host.remove()
+    }
+  })
+
+  it.each([
+    { name: 'bottom before its scroll event', top: 1_500, delivered: false },
+    { name: 'history before its scroll event', top: 900, delivered: false },
+    { name: 'history before its sample', top: 900, delivered: true },
+  ])('retains the final $name across a Session round trip', ({ top, delivered }) => {
+    vi.useFakeTimers()
+    const host = document.createElement('div')
+    host.setAttribute('data-conversation-scroll', '')
+    installScrollMetrics(host, 2_000, 500)
+    document.body.appendChild(host)
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this === host) return new DOMRect(0, 0, 800, 500)
+      const offset = this.dataset.chatAnchorKey === 'fixture:user:1' ? 180 : 1_000
+      return new DOMRect(0, offset - host.scrollTop, 800, 200)
+    })
+    try {
+      const a = makeHarness({ nodes: [user(1, 'session A'), assistant(2, 'reply A')] })
+      const b = makeHarness({ nodes: [user(1, 'session B'), assistant(2, 'reply B')] })
+      const view = render(<a.ChatView {...a.props} />, { container: host })
+      readerScroll(host, 100)
+      expect(a.chatScroll.read()?.scrollTop).toBe(100)
+      fireEvent.wheel(host)
+      host.scrollTop = top
+      if (delivered) fireEvent.scroll(host)
+      view.rerender(<b.ChatView key="B" {...b.props} />)
+      expect(b.chatScroll.read()).toBeNull()
+      view.rerender(<a.ChatView key="A" {...a.props} />)
+      expect(host.scrollTop).toBe(top)
+      if (top === 1_500) expect(a.chatScroll.read()).toBeNull()
+      else expect(a.chatScroll.read()?.scrollTop).toBe(top)
+      expect(view.queryByLabelText('回到底部') === null).toBe(top === 1_500)
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(host.scrollTop).toBe(top)
+    } finally {
+      cleanup()
+      rect.mockRestore()
+      host.remove()
+      vi.useRealTimers()
     }
   })
 

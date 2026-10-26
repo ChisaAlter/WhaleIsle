@@ -203,6 +203,8 @@ async function launchScrollWorld(options: ScrollWorldOptions): Promise<ScrollWor
       scaffold = await launchWebScaffold({})
     }
     for (const seed of options.seeds) await seedSession(scaffold, seed.fixture.log, seed.id)
+    const workspace = await scaffold.ctx.workspaceRegistry.create(scaffold.workspaceCwd)
+    for (const seed of options.seeds) await workspace.attachSession(SessionId(seed.id))
     const events: SessionEvent[] = []
     const assistantFrames: AssistantStreamFrame[] = []
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { events.push(event) })
@@ -212,11 +214,8 @@ async function launchScrollWorld(options: ScrollWorldOptions): Promise<ScrollWor
     const tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    // Session-list bootstrap can replace the controlled search state. Wait
-    // for the seeded baseline before openSeed starts the lazy content query
-    // (the compact layout dropped group session counts; the Ungrouped bucket
-    // row is the barrier).
-    await page.getByText('Ungrouped', { exact: true }).waitFor({ timeout: 30_000 })
+    // Workspace membership, rather than cwd alone, exposes seeded Sessions to search.
+    await page.locator(`[data-row-key="workspace:${workspace.id}"]`).waitFor({ timeout: 30_000 })
     return {
       assistantFrames,
       events,
@@ -309,6 +308,9 @@ async function loadedFlowRows(page: Page): Promise<number> {
 }
 
 async function openSeed(page: Page, fixture: ChatScrollFixture, tailMarker?: string): Promise<void> {
+  const drawerToggle = page.getByRole('button', { name: 'Open sidebar', exact: true })
+    .and(page.locator(':not([data-dsh-sidebar-toggle])'))
+  if (await drawerToggle.isVisible()) await drawerToggle.click()
   // Search collapsed into a header action; expand it before filling.
   const searchButton = page.getByRole('button', { name: 'Search sessions' })
   if (await searchButton.getAttribute('aria-expanded') !== 'true') await searchButton.click()
@@ -1678,6 +1680,50 @@ describe('web e2e: long Chat scroll contract', () => {
     })
   }, 180_000)
 
+  it.skipIf(MODE === 'record')('retains manual bottom arrival when switching Sessions before scroll delivery', async () => {
+    await withScrollWorld({
+      failureShot: 'web-e2e-chat-scroll-manual-session-restore',
+      seeds: [
+        { fixture: RESTORE_FIXTURE_A, id: RESTORE_SESSION_A_ID },
+        { fixture: RESTORE_FIXTURE_B, id: RESTORE_SESSION_B_ID },
+      ],
+    }, async (world) => {
+      const { page } = world
+      await openSeed(page, RESTORE_FIXTURE_A, RESTORE_FIXTURE_A.markers.assistant(RESTORE_FIXTURE_A.turns))
+      await wheelTranscript(page, -1_200)
+      await page.getByRole('button', { name: 'Back to bottom', exact: true }).waitFor()
+      await openSeed(page, RESTORE_FIXTURE_B, RESTORE_FIXTURE_B.markers.assistant(RESTORE_FIXTURE_B.turns))
+      await wheelTranscript(page, -800)
+      await page.getByRole('button', { name: 'Back to bottom', exact: true }).waitFor()
+      const bPosition = await visibleFlowAnchor(page)
+      await openSeed(page, RESTORE_FIXTURE_A)
+      await page.getByRole('button', { name: 'Back to bottom', exact: true }).waitFor()
+
+      const search = page.getByRole('textbox', { name: 'Search session names', exact: true })
+      await search.fill(RESTORE_FIXTURE_B.markers.user(1))
+      const result = page.getByRole('tree', { name: 'Search results' }).getByRole('treeitem')
+      await expect.poll(() => result.count()).toBe(1)
+      // Raw geometry can advance before Chromium delivers the final scroll event.
+      // Choose the other Session in the same task so no event/sample can save the floor first.
+      const beforeSwitch = await result.evaluate((item) => {
+        const host = document.querySelector<HTMLElement>('[data-conversation-scroll]')
+        if (host === null || !(item instanceof HTMLElement)) throw new Error('Missing Session switch target')
+        host.dispatchEvent(new WheelEvent('wheel', { deltaY: host.scrollHeight, bubbles: true }))
+        host.scrollTop = host.scrollHeight
+        const floor = host.scrollHeight - host.clientHeight
+        const top = host.scrollTop
+        item.click()
+        return { floor, top }
+      })
+      expect(Math.abs(beforeSwitch.floor - beforeSwitch.top)).toBeLessThanOrEqual(GEOMETRY_TOLERANCE)
+      await expectSameFlowTop(page, bPosition)
+      await openSeed(page, RESTORE_FIXTURE_A, RESTORE_FIXTURE_A.markers.assistant(RESTORE_FIXTURE_A.turns))
+      await expectBottom(page)
+      expect(await page.getByRole('button', { name: 'Back to bottom', exact: true }).count()).toBe(0)
+      assertClean(world)
+    })
+  })
+
   it.skipIf(MODE === 'record')('keeps composer resizing on the correct scroll owner across reopened Sessions', async () => {
     await withScrollWorld({
       failureShot: 'web-e2e-chat-scroll-restore-composer',
@@ -1700,9 +1746,11 @@ describe('web e2e: long Chat scroll contract', () => {
       await world.page.getByRole('tab', { name: 'Trajectory', exact: true }).click()
       await world.page.getByLabel('Trajectory timeline').waitFor({ timeout: 30_000 })
       await world.page.setViewportSize({ width: 700, height: 900 })
-      // The narrow breakpoint auto-collapses the sidebar. Re-open it because
-      // this scenario switches sessions while pinning the narrow Chat scroll owner.
-      await world.page.getByRole('button', { name: 'Open sidebar', exact: true }).click()
+      // The phone drawer opens only while choosing another Session, keeping its backdrop out of the Chat controls.
+      await world.page.getByRole('button', { name: 'Open sidebar', exact: true })
+        .and(world.page.locator(':not([data-dsh-sidebar-toggle])')).click()
+      await world.page.getByRole('button', { name: 'Close sidebar', exact: true })
+        .and(world.page.locator(':not([data-dsh-sidebar-toggle])')).click()
       await world.page.getByRole('tab', { name: 'Chat', exact: true }).click()
       await nextPaint(world.page)
       await expectSameFlowTop(world.page, sessionAnchor, RESPONSIVE_REFLOW_TOLERANCE)
