@@ -148,7 +148,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
       return 'closed';
     },
     isExpanded: () => sidebarExpanded,
-    toggleExpanded: () => { sidebarExpanded = !sidebarExpanded; sidebarToggles.push(sidebarExpanded); asides.push(['expanded', sidebarExpanded]); },
+    toggleExpanded: () => { sidebarExpanded = !sidebarExpanded; sidebarToggles.push(sidebarExpanded); },
     openResource: (address, options) => { asides.push(['resource', address, options.kind]); },
   };
   const ctx = {
@@ -263,6 +263,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
       .map(entry => h(Slot, { key: `${entry.options.name}:${entry.options.id ?? entry.options.key}`, entry, sessionId })),
       navigateSessions && sessionId === project.coordinatorSessionId ? h('textarea', { 'data-lead-composer': true, defaultValue: 'Unsent coordinator draft' }) : null);
   }
+  const setSidebarExpanded = async expanded => { await act(async () => { sidebarExpanded = expanded; }); };
   const render = () => root.render(h(Slots));
   const flush = async () => { await act(async () => { await new Promise(resolve => setImmediate(resolve)); }); };
   const findButton = label => [...dom.window.document.querySelectorAll('button')].find(element => isVisible(element) && (element.textContent === label || element.getAttribute('aria-label') === label));
@@ -321,7 +322,7 @@ function bench({ available = true, rejectCreation = false, detail = {}, cards = 
     get action() { return directoryAction; }, flush,
     mount: async () => { root = createRoot(dom.window.document.querySelector('main')); await act(async () => { render(); }); },
     render: async () => { await act(async () => { render(); }); },
-    mountSession: async sessionId => { await act(async () => { mounted.set(sessionId); }); },
+    mountSession: async sessionId => { await act(async () => { mounted.set(sessionId); }); }, setSidebarExpanded,
     press, click, openObserver, expandObserver, openTaskList, openRequest, selectRequestTab, requestElement, sessionStatus,
     disclose: async (label, scope = dom.window.document) => { const target = [...scope.querySelectorAll('summary')].find(element => isVisible(element) && element.textContent === label); assert.ok(target, `Missing disclosure ${label}`); if (!target.parentElement.open) await act(async () => { target.click(); await new Promise(resolve => setTimeout(resolve, 10)); }); },
     changeNotes: async text => { const editor = dom.window.document.querySelector('textarea'); assert.ok(editor); await act(async () => {
@@ -2187,10 +2188,10 @@ test('returning from a main member also uncovers the coordinator when its fullsc
     await b.flush(); await b.adopt(); await b.mount(); await b.mountSession('worker-one');
     const restored = b.document.createElement('aside');
     Object.assign(restored.dataset, { sidebarRightPanel: 'fullscreen', sidebarRightOpen: '', sidebarRightSession: 'coordinator-existing' });
-    b.document.body.append(restored);
+    b.document.body.append(restored); await b.setSidebarExpanded(true);
     await b.press('backToLead');
     assert.equal(b.document.activeElement, b.document.querySelector('[data-lead-composer]'));
-    assert.deepEqual(b.asides.at(-1), ['expanded', false]);
+    assert.equal(b.isSidebarExpanded(), false); assert.deepEqual(b.sidebarToggles, [false]);
   } finally { await b.dispose(); }
 });
 
@@ -2208,6 +2209,7 @@ test('returning from a sidebar member replaces only that page and exposes the co
         { sessionId: 'coordinator-existing', tabId: 'other-member', kind: 'subagentchat' },
         { sessionId: 'other-lead', tabId: 'other-project-member', kind: 'subagentchat' },
       ]); });
+      await b.setSidebarExpanded(true);
       const editor = b.document.createElement('textarea'); editor.value = 'Keep my draft'; editor.dataset.leadComposer = ''; b.document.body.append(editor);
       await b.press('backToLead');
       assert.equal(b.document.activeElement, editor); assert.equal(editor.value, 'Keep my draft');
@@ -2215,7 +2217,8 @@ test('returning from a sidebar member replaces only that page and exposes the co
       assert.deepEqual(b.openTabs.getSnapshot().map(tab => tab.tabId), ['agent-team-coordinator-existing', 'other-member', 'other-project-member']);
       if (presentation.startsWith('float')) assert.deepEqual(b.asides.findLast(entry => entry[0] === 'close'), ['close', 'coordinator-existing', 'member-tab']);
       else assert.deepEqual(b.asides.findLast(entry => entry[0] === 'tab'), ['tab', 'coordinator-existing', 'agent-team', { paneId: 'member-pane', replaceTab: 'member-tab' }]);
-      assert.equal(b.asides.some(entry => entry[0] === 'expanded'), presentation.includes('fullscreen'));
+      assert.equal(b.isSidebarExpanded(), !presentation.includes('fullscreen'));
+      assert.deepEqual(b.sidebarToggles, presentation.includes('fullscreen') ? [false] : []);
       assert.equal(b.requests.some(request => ['stop', 'prompt', 'delegate'].includes(request.method)), false);
     } finally { await b.dispose(); }
   }
