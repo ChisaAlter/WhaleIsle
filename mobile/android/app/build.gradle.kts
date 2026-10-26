@@ -13,7 +13,8 @@ android {
         targetSdk = 36
         versionCode = 4
         versionName = "0.3.10"
-        testInstrumentationRunner = "ai.deepseek.harness.mobile.NativeUpgradeInstrumentation"
+        testInstrumentationRunner = providers.gradleProperty("dshTestRunner")
+            .orElse("ai.deepseek.harness.mobile.NativeUpgradeInstrumentation").get()
     }
     signingConfigs {
         val signingStore = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull

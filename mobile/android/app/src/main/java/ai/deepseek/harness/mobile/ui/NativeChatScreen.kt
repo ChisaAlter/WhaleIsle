@@ -72,8 +72,8 @@ internal fun NativeChatScreen(
     var selectedModel by remember { mutableStateOf<NativeModelOption?>(null) }
     var modelQuery by rememberSaveable { mutableStateOf("") }
     val modelAnchor = remember { NativeMenuAnchor() }
+    // Compact More and normal Shield are the same menu origin across IME-driven layout changes.
     val permissionAnchor = remember { NativeMenuAnchor() }
-    val toolsAnchor = remember { NativeMenuAnchor() }
     var menuViewport by remember { mutableStateOf(IntRect.Zero) }
     var focusAfterPicker by remember { mutableStateOf<NativeMenuAnchor?>(null) }
     val sessionId = state.sessionId
@@ -83,7 +83,7 @@ internal fun NativeChatScreen(
     fun openPicker(value: String) { keyboard?.hide(); focusAfterPicker = null; selectedModel = null; modelQuery = ""; picker = value }
     fun closePicker() {
         keyboard?.hide()
-        focusAfterPicker = when (picker) { "model" -> modelAnchor; "permission" -> permissionAnchor; else -> toolsAnchor }
+        focusAfterPicker = if (picker == "model") modelAnchor else permissionAnchor
         picker = ""; selectedModel = null
     }
     LaunchedEffect(picker, focusAfterPicker) {
@@ -151,14 +151,14 @@ internal fun NativeChatScreen(
                     state.readOnly.isNotBlank() -> Text(state.readOnly, Modifier.fillMaxWidth().padding(16.dp), color = colors.labelSecondary, fontSize = 13.sp, lineHeight = 20.sp)
                     else -> NativeComposer(state, onAction, onAttachment, onRemoveAttachment,
                         onModel = { openPicker("model") }, onPermission = { openPicker("permission") }, onTools = { openPicker("tools") },
-                        narrow = narrow, compactHeight = compactHeight, modelAnchor = modelAnchor, permissionAnchor = permissionAnchor, toolsAnchor = toolsAnchor)
+                        narrow = narrow, compactHeight = compactHeight, modelAnchor = modelAnchor, permissionAnchor = permissionAnchor)
                 }
             }
         }
     }
     if (picker.isNotBlank()) {
         val chosen = selectedModel
-        NativeAnchoredMenu(anchor = when (picker) { "model" -> modelAnchor; "permission" -> permissionAnchor; else -> toolsAnchor }, viewport = menuViewport,
+        NativeAnchoredMenu(anchor = if (picker == "model") modelAnchor else permissionAnchor, viewport = menuViewport,
             title = if (chosen != null) "思考强度" else if (picker == "model") "选择模型" else if (picker == "tools") "输入选项" else "权限",
             onDismiss = ::closePicker,
             onBack = if (chosen == null) null else ({ selectedModel = null })) {
@@ -330,7 +330,7 @@ private fun NativeConnectionNotice(state: NativeChatState, onAction: (NativeChat
 @Composable
 private fun NativeComposer(state: NativeChatState, onAction: (NativeChatAction) -> Unit, onAttachment: () -> Unit, onRemoveAttachment: (Int) -> Unit,
     onModel: () -> Unit, onPermission: () -> Unit, onTools: () -> Unit, narrow: Boolean, compactHeight: Boolean,
-    modelAnchor: NativeMenuAnchor, permissionAnchor: NativeMenuAnchor, toolsAnchor: NativeMenuAnchor) {
+    modelAnchor: NativeMenuAnchor, permissionAnchor: NativeMenuAnchor) {
     val colors = dsh()
     val draft = state.draft
     val sessionId = state.sessionId
@@ -388,7 +388,7 @@ private fun NativeComposer(state: NativeChatState, onAction: (NativeChatAction) 
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     NativeIconButton(NativeGlyph.Plus, "添加图片", onAttachment, enabled = sessionId.isNotBlank() && !state.busy)
                     modelControl(Modifier.weight(1f))
-                    NativeIconButton(NativeGlyph.More, "权限与 Plan 选项", onTools, enabled = available, modifier = Modifier.nativeMenuAnchor(toolsAnchor))
+                    NativeIconButton(NativeGlyph.More, "权限与 Plan 选项", onTools, enabled = available, modifier = Modifier.nativeMenuAnchor(permissionAnchor))
                     if (state.running) NativeIconButton(NativeGlyph.Stop, "停止生成", { onAction(NativeChatAction("cancel", sessionId)) }, enabled = available, primary = true)
                     NativeIconButton(NativeGlyph.Send, if (state.running) "排队发送消息" else "发送消息", { onAction(NativeChatAction("send", sessionId, text = draft)) }, enabled = available && (draft.isNotBlank() || state.attachments.isNotEmpty()), primary = true)
                 }

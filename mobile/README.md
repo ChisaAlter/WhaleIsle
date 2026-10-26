@@ -49,6 +49,8 @@ cd ../..
 
 需要 Java 17 和 Android SDK。协议互通测试调用仓库 vendored JavaScript NaCl/加密通道作为独立桌面端观察器，因此开发测试还需要 Node 与 `protocol/test-support` 的锁定依赖；观察器从 vendored relay 源码独立构建，不要求安装整套桌面开发依赖，Android 构建及运行不依赖 Node。JVM 测试覆盖配对解析、真实 WebSocket 加密互通、错误凭据/重放/篡改、历史分页、草稿与迟到附件归属、数据迁移；它们不代替真机操作。
 
+锚定菜单的 Compose 运行时回归使用独立的显式 runner：先运行 `./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PdshTestRunner=ai.deepseek.harness.mobile.NativeAnchoredMenuInstrumentation`，安装生成的 debug 与 androidTest APK 后，再运行 `adb -s <测试设备> shell am instrument -w -r ai.deepseek.harness.mobile.test/ai.deepseek.harness.mobile.NativeAnchoredMenuInstrumentation`。测试仅在 debug 空白 Activity 注入本地聊天状态，不读配对存储或连接网络；覆盖紧凑/普通输入区切换后的菜单实时位置、权限选择、返回键及可见触发按钮的焦点恢复。它直接改变可用高度模拟 IME 收起后的约束变化，并用键盘输入模式检查按钮焦点，不代替系统键盘或真机验收。默认的存储迁移与系统栏 instrumentation 独立保留。
+
 正式 APK 使用独立 `android-v<版本>` 标签，由 [Release Android](../.github/workflows/release-android.yml) 手动构建和发布到 GitHub/CNB，发布不会替换桌面 latest。签名从 Actions secrets 注入，证书指纹在 `android-release.json` 中公开，私钥不进仓库。工作分支 `publish=false` 可仅验证；main `publish=true` 会在 JVM、lint、正式 APK 签名与模拟器启动检查后发布。
 
 覆盖升级必须同签名且 versionCode 递增；使用 `adb install -r` 保留数据。历史 debug APK 与首次正式签名不同，不能据此声称可直接覆盖升级；不通过卸载或清数据伪造升级通过。模拟器检查不等于真机相机、扫码配对和公网 AI 对话验收，实际验证范围和未测项在 PR 和 Android 发布说明中如实记录。
