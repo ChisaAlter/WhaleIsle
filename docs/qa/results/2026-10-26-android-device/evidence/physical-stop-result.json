@@ -1,0 +1,19 @@
+{
+  "sessionId": "session-ed28c351-49f1-40ae-a7f2-5ea79168e295",
+  "toolStartedSeq": 129,
+  "turnEnd": {
+    "type": "turn/end",
+    "seq": 134,
+    "time": 1793001547801,
+    "data": {
+      "turn": 9,
+      "reason": {
+        "kind": "aborted",
+        "reason": {
+          "kind": "user"
+        }
+      }
+    }
+  },
+  "cancelled": true
+}

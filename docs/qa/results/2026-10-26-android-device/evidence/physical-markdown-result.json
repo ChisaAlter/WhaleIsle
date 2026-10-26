@@ -1,0 +1,15 @@
+{
+  "sessionId": "session-e7f2d5af-efc9-4b3c-b2ef-f9dc78fec2aa",
+  "lastTurn": {
+    "kind": "completed"
+  },
+  "assistantBlocks": [
+    {
+      "type": "reasoning"
+    },
+    {
+      "type": "text",
+      "text": "# PORTRAIT_FINAL_OK\n\n| Item | Value |\n| --- | --- |\n| A | 1 |\n| B | 2 |\n\n- First bullet item\n- Second bullet item\n\n```\n0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789\n```\n\n$E = mc^2$\n\n[example.com](https://example.com)"
+    }
+  ]
+}

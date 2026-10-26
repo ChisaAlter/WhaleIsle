@@ -1,0 +1,9 @@
+{
+  "sessionId": "session-e7f2d5af-efc9-4b3c-b2ef-f9dc78fec2aa",
+  "candidate": "4A756ED75A019729F5AB8BF8971CE58CBCDF48C1DF1A9E528EEEB426F19CF6C3",
+  "turnEnd": {
+    "kind": "completed"
+  },
+  "assistantText": "R2_NATIVE_OK",
+  "exact": true
+}

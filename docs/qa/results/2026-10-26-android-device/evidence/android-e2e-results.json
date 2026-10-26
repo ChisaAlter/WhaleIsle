@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "events": 28,
+  "firstReply": true,
+  "imageReply": true,
+  "imageAttachmentIds": [
+    "sha256:ce41275f9fd78520adfe028985a22ce864c0679b892c2ef6e5eb7e274ad27e16"
+  ],
+  "source": "actual current host tunnel and isolated source desktop"
+}

@@ -1,0 +1,148 @@
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\build.gradle.kts:68: Warning: A newer version of androidx.activity:activity-compose than 1.9.3 is available: 1.13.0 [GradleDependency]
+    implementation("androidx.activity:activity-compose:1.9.3")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\build.gradle.kts:69: Warning: A newer version of androidx.lifecycle:lifecycle-runtime-compose than 2.8.7 is available: 2.11.0 [GradleDependency]
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\build.gradle.kts:70: Warning: A newer version of androidx.lifecycle:lifecycle-viewmodel-compose than 2.8.7 is available: 2.11.0 [GradleDependency]
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\build.gradle.kts:71: Warning: A newer version of androidx.security:security-crypto than 1.1.0-alpha06 is available: 1.1.0 [GradleDependency]
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\build.gradle.kts:72: Warning: A newer version of androidx.camera:camera-core than 1.4.1 is available: 1.6.2 [GradleDependency]
+    implementation("androidx.camera:camera-core:1.4.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\build.gradle.kts:73: Warning: A newer version of androidx.camera:camera-camera2 than 1.4.1 is available: 1.6.2 [GradleDependency]
+    implementation("androidx.camera:camera-camera2:1.4.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\build.gradle.kts:74: Warning: A newer version of androidx.camera:camera-lifecycle than 1.4.1 is available: 1.6.2 [GradleDependency]
+    implementation("androidx.camera:camera-lifecycle:1.4.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\build.gradle.kts:75: Warning: A newer version of androidx.camera:camera-view than 1.4.1 is available: 1.6.2 [GradleDependency]
+    implementation("androidx.camera:camera-view:1.4.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "GradleDependency":
+   This detector looks for usages of libraries where the version you are using
+   is not the current stable release. Using older versions is fine, and there
+   are cases where you deliberately want to stick with an older version.
+   However, you may simply not be aware that a more recent version is
+   available, and that is what this lint check helps find.
+
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\src\main\AndroidManifest.xml:27: Warning: Expecting android:screenOrientation="unspecified" or "fullSensor" for this activity so the user can use the application in any orientation and provide a great experience on Chrome OS devices [LockedOrientationActivity]
+            android:screenOrientation="portrait"
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "LockedOrientationActivity":
+   The <activity> element should not be locked to any orientation so that
+   users can take advantage of the multi-window environments and larger
+   screens available on Android. To fix the issue, consider declaring the
+   corresponding activity element with `screenOrientation="unspecified"`or
+   fullSensor attribute.
+
+   https://developer.android.com/topic/arc/window-management
+
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\src\main\java\ai\deepseek\harness\mobile\ui\DshMotion.kt:36: Warning: Modifier factory functions should be extensions on Modifier [ModifierFactoryExtensionFunction from androidx.compose.ui]
+fun dshClickable(enabled: Boolean = true, ripple: Boolean = true, onClick: () -> Unit): Modifier {
+    ~~~~~~~~~~~~
+
+   Explanation for issues of type "ModifierFactoryExtensionFunction":
+   Modifier factory functions should be defined as extension functions on
+   Modifier to allow modifiers to be fluently chained.
+
+   Vendor: Jetpack Compose
+   Identifier: androidx.compose.ui
+   Feedback: https://issuetracker.google.com/issues/new?component=612128
+
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\src\main\AndroidManifest.xml:27: Warning: Should not restrict activity to fixed orientation. This may not be suitable for different form factors, causing the app to be letterboxed. [DiscouragedApi]
+            android:screenOrientation="portrait"
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "DiscouragedApi":
+   Discouraged APIs are allowed and are not deprecated, but they may be unfit
+   for common use (e.g. due to slow performance or subtle behavior).
+
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\src\main\java\ai\deepseek\harness\mobile\LegacyStorageMigration.kt:19: Warning: Using setJavaScriptEnabled can introduce XSS vulnerabilities into your application, review carefully [SetJavaScriptEnabled]
+    view.settings.apply { javaScriptEnabled = true; domStorageEnabled = true; allowFileAccess = false; allowContentAccess = false; blockNetworkLoads = true }
+                          ~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "SetJavaScriptEnabled":
+   Your code should not invoke setJavaScriptEnabled if you are not sure that
+   your app really requires JavaScript support.
+
+   https://goo.gle/SetJavaScriptEnabled
+   https://developer.android.com/training/articles/security-tips
+
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\src\main\AndroidManifest.xml:8: Warning: The attribute android:allowBackup is deprecated from Android 12 and higher and may be removed in future versions. Consider adding the attribute android:dataExtractionRules specifying an @xml resource which configures cloud backups and device transfers on Android 12 and higher. [DataExtractionRules]
+        android:allowBackup="false"
+                             ~~~~~
+
+   Explanation for issues of type "DataExtractionRules":
+   Before Android 12, the attributes android:allowBackup and
+   android:fullBackupContent were used to configure all forms of backup,
+   including cloud backups, device-to-device transfers and adb backup.
+
+   In Android 12 and higher, these attributes have been deprecated and will
+   only apply to cloud backups. You should instead use the attribute
+   android:dataExtractionRules, specifying an @xml resource that configures
+   which files to back up, for cloud backups and for device-to-device
+   transfers, separately. If your minSdkVersion supports older versions,
+   you'll still want to specify an android:fullBackupContent resource if the
+   default behavior is not right for your app.
+
+   https://developer.android.com/about/versions/12/backup-restore#xml-changes
+   https://goo.gle/DataExtractionRules
+
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\src\main\java\ai\deepseek\harness\mobile\DshViewModel.kt:26: Information: Prefer mutableLongStateOf instead of mutableStateOf [AutoboxingStateCreation from androidx.compose.runtime]
+    var pasteFocusRequestId by mutableStateOf(0L)
+                               ~~~~~~~~~~~~~~
+
+   Explanation for issues of type "AutoboxingStateCreation":
+   Calling mutableStateOf<T>() when T is either backed by a primitive type on
+   the JVM or is a value class results in a state implementation that requires
+   all state values to be boxed. This usually causes an additional allocation
+   for each state write, and adds some additional work to auto-unbox values
+   when reading the value of the state. Instead, prefer to use a specialized
+   primitive state implementation for Int, Long, Float, and Double when the
+   state does not need to track null values and does not override the default
+   SnapshotMutationPolicy. See mutableIntStateOf(), mutableLongStateOf(),
+   mutableFloatStateOf(), and mutableDoubleStateOf() for more information.
+
+   Vendor: Jetpack Compose
+   Identifier: androidx.compose.runtime
+   Feedback: https://issuetracker.google.com/issues/new?component=612128
+
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\src\main\java\ai\deepseek\harness\mobile\ui\NativeMarkdown.kt:220: Warning: Use "Gravity.END" instead of "Gravity.RIGHT" to ensure correct behavior in right-to-left locales [RtlHardcoded]
+                                        Table.Alignment.RIGHT -> Gravity.RIGHT
+                                                                         ~~~~~
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\src\main\java\ai\deepseek\harness\mobile\ui\NativeMarkdown.kt:220: Warning: Use "Gravity.END" instead of "Gravity.RIGHT" to ensure correct behavior in right-to-left locales [RtlHardcoded]
+                                        Table.Alignment.RIGHT -> Gravity.RIGHT
+                                                                         ~~~~~
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\src\main\java\ai\deepseek\harness\mobile\ui\NativeMarkdown.kt:221: Warning: Use "Gravity.START" instead of "Gravity.LEFT" to ensure correct behavior in right-to-left locales [RtlHardcoded]
+                                        else -> Gravity.LEFT
+                                                        ~~~~
+C:\AI\Deepseek-Harness-Desktop\mobile\android\app\src\main\java\ai\deepseek\harness\mobile\ui\NativeMarkdown.kt:221: Warning: Use "Gravity.START" instead of "Gravity.LEFT" to ensure correct behavior in right-to-left locales [RtlHardcoded]
+                                        else -> Gravity.LEFT
+                                                        ~~~~
+
+   Explanation for issues of type "RtlHardcoded":
+   Using Gravity#LEFT and Gravity#RIGHT can lead to problems when a layout is
+   rendered in locales where text flows from right to left. Use Gravity#START
+   and Gravity#END instead. Similarly, in XML gravity and layout_gravity
+   attributes, use start rather than left.
+
+   For XML attributes such as paddingLeft and layout_marginLeft, use
+   paddingStart and layout_marginStart. NOTE: If your minSdkVersion is less
+   than 17, you should add both the older left/right attributes as well as the
+   new start/end attributes. On older platforms, where RTL is not supported
+   and the start/end attributes are unknown and therefore ignored, you need
+   the older left/right attributes. There is a separate lint check which
+   catches that type of error.
+
+   (Note: For Gravity#LEFT and Gravity#START, you can use these constants even
+   when targeting older platforms, because the start bitmask is a superset of
+   the left bitmask. Therefore, you can use gravity="start" rather than
+   gravity="left|start".)
+
+0 errors, 17 warnings

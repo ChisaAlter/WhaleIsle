@@ -1,0 +1,10 @@
+﻿{
+    "errors":  0,
+    "warnings":  13,
+    "orientation":  "portrait",
+    "appTests":  39,
+    "protocolTests":  15,
+    "protocolLatestTask":  "UP-TO-DATE",
+    "qaSha256":  "43894DF05EC4666479BD71B6ED3B2470438F35C551574B05A17B261260DF44F5",
+    "standardSha256":  "2F786E472F1E3DB44183D70167C615E7BF7380634E35D5E2F418CBB760AAAFC6"
+}

@@ -1,0 +1,8 @@
+{
+  "queryRetained": true,
+  "searchPageRetained": true,
+  "remoteReady": true,
+  "observedOffline": true,
+  "pauseTargetSeconds": 12,
+  "pauseActual": "remote toggle restore required a second enable; do not claim exact 12sec roundtrip"
+}

@@ -1,0 +1,34 @@
+﻿[
+    {
+        "name":  "ai.deepseek.harness.mobile.DshViewModelRemoteTest",
+        "tests":  29,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0,
+        "timestamp":  "2026-10-26T10:59:05"
+    },
+    {
+        "name":  "ai.deepseek.harness.mobile.DshViewModelTest",
+        "tests":  3,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0,
+        "timestamp":  "2026-10-26T10:59:07"
+    },
+    {
+        "name":  "ai.deepseek.harness.mobile.NativeChatStateTest",
+        "tests":  8,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0,
+        "timestamp":  "2026-10-26T10:59:07"
+    },
+    {
+        "name":  "ai.deepseek.harness.mobile.NativeMarkdownTest",
+        "tests":  4,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0,
+        "timestamp":  "2026-10-26T10:59:04"
+    }
+]

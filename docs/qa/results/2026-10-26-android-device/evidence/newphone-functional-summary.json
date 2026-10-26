@@ -1,0 +1,55 @@
+{
+  "sessionId": "session-ed28c351-49f1-40ae-a7f2-5ea79168e295",
+  "userTurns": 9,
+  "markers": [
+    {
+      "marker": "PHYS_QA_ONE",
+      "replyCount": 1
+    },
+    {
+      "marker": "PHYS_QA_TWO",
+      "replyCount": 1
+    },
+    {
+      "marker": "PHYS_IMAGE_OK",
+      "replyCount": 1
+    },
+    {
+      "marker": "PHYS_ALLOWED_DONE",
+      "replyCount": 1
+    },
+    {
+      "marker": "PHYS_HOLD_DONE",
+      "replyCount": 1
+    },
+    {
+      "marker": "PHYS_QUEUE_DRAIN",
+      "replyCount": 1
+    }
+  ],
+  "approvals": [
+    {
+      "id": "2c14bf9d-437c-4a4f-abf7-5bae5481cb3f",
+      "outcome": "rejected"
+    },
+    {
+      "id": "ba07384c-b462-4e9e-a986-214394d78138",
+      "outcome": "allowed-once"
+    }
+  ],
+  "stop": [
+    {
+      "turn": 9,
+      "reason": {
+        "kind": "aborted",
+        "reason": {
+          "kind": "user"
+        }
+      },
+      "seq": 134
+    }
+  ],
+  "imageIds": [
+    "sha256:d6e1a66b04cbc3fa390cdf534be389e0e3027027fbf41220339aed3fc98026d5"
+  ]
+}

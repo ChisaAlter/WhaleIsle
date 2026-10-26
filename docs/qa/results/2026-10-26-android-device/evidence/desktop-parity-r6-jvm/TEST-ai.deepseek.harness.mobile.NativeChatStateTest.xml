@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ai.deepseek.harness.mobile.NativeChatStateTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-26T12:46:06" hostname="AYASE" time="0.15">
+  <properties/>
+  <testcase name="durableImagesInRawAndProjectedHistoryResolveOncePerAttachment" classname="ai.deepseek.harness.mobile.NativeChatStateTest" time="0.026"/>
+  <testcase name="rawToolTextAndUserStoppedTurnsRemainDistinctFromFailures" classname="ai.deepseek.harness.mobile.NativeChatStateTest" time="0.0"/>
+  <testcase name="sidebarGroupsPreserveWorkspaceOrderEmptyDirectoriesAndUnregisteredSessions" classname="ai.deepseek.harness.mobile.NativeChatStateTest" time="0.003"/>
+  <testcase name="historyApprovalsResolveIndividuallyAndProjectedItemsHaveStableIds" classname="ai.deepseek.harness.mobile.NativeChatStateTest" time="0.001"/>
+  <testcase name="streamedReasoningAndTextAreReplacedByFinalMessageAndToolOutputRemainsVisible" classname="ai.deepseek.harness.mobile.NativeChatStateTest" time="0.003"/>
+  <testcase name="failedImageDoesNotDiscardAnotherImageAndResolutionPublishesEachResult" classname="ai.deepseek.harness.mobile.NativeChatStateTest" time="0.054"/>
+  <testcase name="historyImageCancellationStopsBeforeTheNextImageAndIsNotRenderedAsFailure" classname="ai.deepseek.harness.mobile.NativeChatStateTest" time="0.034"/>
+  <testcase name="olderPagesRemainVisibleBeyondTwoHundredRowsAndRefreshDeduplicatesOverlap" classname="ai.deepseek.harness.mobile.NativeChatStateTest" time="0.028"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

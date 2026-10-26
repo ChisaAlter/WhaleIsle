@@ -1,0 +1,19 @@
+{
+  "at": "2026-10-26T15:12:04+08:00",
+  "serial": "1836e17d",
+  "model": "23127PN0CC",
+  "android": "16",
+  "api": 36,
+  "size": "1200x2670",
+  "density": 480,
+  "package": "ai.deepseek.harness.mobile.nativeqa",
+  "versionCode": 4,
+  "versionName": "0.3.10",
+  "debuggable": true,
+  "sha256": "04CA34D91EA700472453C705645217159C0CD01F8FF5819151A01046B5691C86",
+  "install": "adb -s 1836e17d install -r -t fixed-nativeqa.apk",
+  "result": "Success",
+  "coldLaunch": "Status: ok; LaunchState: COLD; TotalTime:1055ms; first landing visible",
+  "firstAttempt": "INSTALL_FAILED_USER_RESTRICTED; both USB install and USB debug security toggles subsequently visibly enabled; second attempt returned Success",
+  "upgrade": "fresh isolated QA package, no production signature/migration claim"
+}

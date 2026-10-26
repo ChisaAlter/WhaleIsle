@@ -138,7 +138,7 @@ function sleep(ms, signal) {
  * when the socket closes. Resolves only on abort; rejects only on a bad origin.
  * Approval waterfalls retain the Gateway event generation for their unary reply.
  */
-async function openMuxSse({ origin, cookie, onEnvelope, signal, WebSocketImpl, fetchImpl, reconnectDelayMs = 1_000 }) {
+async function openMuxSse({ origin, cookie, onEnvelope, onDisconnect, signal, WebSocketImpl, fetchImpl, reconnectDelayMs = 1_000 }) {
   const { assertLoopbackHarnessOrigin, sanitizeHarnessCookie, forwardRemoteEventResult } = require('./dshd-host-tunnel.js');
   const originUrl = new URL(assertLoopbackHarnessOrigin(origin));
   const target = new URL('/api/remote.mux', `${originUrl.origin}/`);
@@ -164,6 +164,7 @@ async function openMuxSse({ origin, cookie, onEnvelope, signal, WebSocketImpl, f
         if (closed) return;
         closed = true;
         if (signal) signal.removeEventListener('abort', onAbort);
+        onDisconnect?.();
         resolve();
       };
       function onAbort() {

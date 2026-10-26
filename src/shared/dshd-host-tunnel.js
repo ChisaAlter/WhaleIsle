@@ -164,8 +164,21 @@ const REMOTE_STREAM_MUX_PATH = '/api/remote.mux';
 const WORKSPACE_FOLLOW_TIMEOUT_MS = 8_000;
 
 function spaHistoryRequest(payload) {
+  let address = { kind: 'session', sessionId: payload?.sessionId };
+  if (payload?.address != null) {
+    const supplied = payload.address;
+    if (supplied.kind === 'session' && typeof supplied.sessionId === 'string' && supplied.sessionId) {
+      address = { kind: 'session', sessionId: supplied.sessionId };
+    } else if (supplied.kind === 'subagent' && typeof supplied.parentSessionId === 'string' && supplied.parentSessionId
+        && typeof supplied.childSessionId === 'string' && supplied.childSessionId
+        && ['one-shot', 'continuable', 'unknown'].includes(supplied.mode)) {
+      address = { kind: 'subagent', parentSessionId: supplied.parentSessionId, childSessionId: supplied.childSessionId, mode: supplied.mode };
+    } else {
+      throw new Error('无效的会话历史地址');
+    }
+  }
   const request = {
-    address: { kind: 'session', sessionId: payload?.sessionId },
+    address,
     throughSeq: Number.isInteger(payload?.throughSeq) ? payload.throughSeq : 1_000_000_000,
   };
   if (Number.isInteger(payload?.beforeSeq)) request.beforeSeq = payload.beforeSeq;

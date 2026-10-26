@@ -1,0 +1,19 @@
+﻿{
+    "at":  "2026-10-26T18:03:49.0100449+08:00",
+    "device":  "1836e17d",
+    "android":  "16",
+    "package":  "ai.deepseek.harness.mobile.nativeqa",
+    "versionName":  "0.3.10",
+    "versionCode":  4,
+    "qaSha256":  "9881887992A555D449867CA31A213899D5B9297A5E61C02C7E1C1DB91B683A3F",
+    "standardSha256":  "86DA2D0ECD80D2DC19043A42FAE2434F2DA7A7322C0E18E88AC90302AC7149B6",
+    "install":  "Success preserving nativeqa data",
+    "coldLaunchMs":  1091,
+    "orientation":  "SCREEN_ORIENTATION_PORTRAIT",
+    "appTests":  40,
+    "protocolTests":  15,
+    "protocolUsedCache":  true,
+    "lintErrors":  0,
+    "lintWarnings":  13,
+    "nodeTests":  33
+}

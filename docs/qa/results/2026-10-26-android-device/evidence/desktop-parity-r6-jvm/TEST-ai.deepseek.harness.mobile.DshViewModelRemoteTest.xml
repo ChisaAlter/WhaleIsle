@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ai.deepseek.harness.mobile.DshViewModelRemoteTest" tests="39" skipped="0" failures="0" errors="0" timestamp="2026-10-26T12:46:03" hostname="AYASE" time="2.844">
+  <properties/>
+  <testcase name="initialFailuresAtEveryRemoteStageBelongToConnectAndDoNotAutomaticallyRetry" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="1.083"/>
+  <testcase name="firstConnectionStaysOnConnectThroughAuthenticationCatalogHistoryAndControls" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.045"/>
+  <testcase name="initialConnectionFailureDoesNotEnableAutomaticRetries" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.03"/>
+  <testcase name="queueAcknowledgementRereadsServerTruthAndFailuresNeverOptimisticallyDeleteOrClearDrafts" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.119"/>
+  <testcase name="switchingSessionResetsPermissionPlanAndBlocksActionsUntilAllControlsAreLoaded" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.04"/>
+  <testcase name="subagentFirstInCatalogUsesDurableDirectParentAddressAndSkipsComposerCatalogs" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.037"/>
+  <testcase name="nonRepositoryOpensInitializeWithoutReadingBranchesOrEntries" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.047"/>
+  <testcase name="sessionModelSelectionDoesNotSaveDesktopDefaultAndRunningSendHonorsChosenMode" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.037"/>
+  <testcase name="approvalsFromOtherSessionsKeepTheirReplyAddressAndResolvedHistoryDoesNotReturn" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.035"/>
+  <testcase name="closingDuringRecoveryDoesNotResurrectPageAndGitReviewIsNotRetained" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.052"/>
+  <testcase name="reconnectReplacesApprovalReplyAddressAndIgnoresThePreviousClientsFrames" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.038"/>
+  <testcase name="delayedGitForAnotherSessionOrDismissedPanelCannotReopenThePage" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.07"/>
+  <testcase name="emptyInitialCatalogIsReadyWithoutOpeningAnInventedSession" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.031"/>
+  <testcase name="changingComputersClearsCatalogImmediatelyAndRetainsEachComputersImageDraft" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.048"/>
+  <testcase name="pairingFromSettingsPreservesComputersAndDraftsButRequiresExplicitSelection" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.056"/>
+  <testcase name="freshPairingRetryAfterCatalogFailureUsesIssuedSecretInsteadOfBootstrap" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.057"/>
+  <testcase name="browseDataCatalogAndDraftSurviveRecoveryAndOfflineActionsDoNotRun" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.054"/>
+  <testcase name="failedImageKeepsReadableErrorWhileGoodImageLoadsAndPollingDoesNotRepeatReads" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.076"/>
+  <testcase name="catalogSyncCoalescesForegroundAndOldFailureCannotClearTheNewEpochOwner" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.055"/>
+  <testcase name="freshPairingRecoveryUsesIssuedCredentialAndAuthenticationFailureStopsRetry" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.04"/>
+  <testcase name="recoveryBlocksTaskRpcsUntilCatalogAndSessionControlsHaveLoaded" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.061"/>
+  <testcase name="cancelRetiresLateFirstConnectionAndStartCannotReenterBeforeExplicitRetry" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.06"/>
+  <testcase name="automaticRecoveryRetriesSavedSecretAndRestoresTheOpenedSessionAndDraft" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.07"/>
+  <testcase name="connectedForegroundRefreshKeepsGitReviewCandidateAndEditedDraft" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.048"/>
+  <testcase name="failedRecoveryCatalogCanRetryWithoutDroppingTheTaskAndEmptyCatalogFinishesLoading" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.038"/>
+  <testcase name="queueUsesCurrentProjectionAndBlocksBlankAttachmentAndUnavailableSteeringMutations" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.046"/>
+  <testcase name="createAndRegisterOpenWithoutCopyingThePreviousSessionsImages" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.025"/>
+  <testcase name="manualSameComputerRecoveryKeepsTaskButSwitchAndLeaveResetItsOwner" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.035"/>
+  <testcase name="modelProjectionClearsMissingEffortButAnAbsentSelectionKeepsTheCurrentEffort" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.032"/>
+  <testcase name="successfulImageIsVisibleBeforeTheNextReadEndsAndIsReadAgainAfterSessionReopen" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.051"/>
+  <testcase name="connectedForegroundRefreshKeepsBrowseAndSearchStateWithoutReopeningSession" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.034"/>
+  <testcase name="retiredQueueAcknowledgementCannotReplaceAnotherComputerAndOfflineActionsDoNotWrite" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.063"/>
+  <testcase name="readySessionDraftsKeepTheirOwnerAndOfflineEditsCannotSwitchSessions" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.022"/>
+  <testcase name="sameComputerRecoveryKeepsWhitelistedDialogsAndUiOwnerAcrossEveryTransport" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.033"/>
+  <testcase name="forkWithParentIdentityAndOrdinaryOriginKeepsAnEditableComposer" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.026"/>
+  <testcase name="durableHistoryImagesAreLoadedByAttachmentAndLateImagesCannotReachAnotherSession" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.049"/>
+  <testcase name="historyOnlyApprovalNeverSendsAnEmptyReplyAddress" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.025"/>
+  <testcase name="searchSnapshotSurvivesRecoveryWhileOldTransportRepliesCannotReplaceIt" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.041"/>
+  <testcase name="firstCatalogFailureStaysOnConnectAndOnlyExplicitRetryLoadsSessionAndControls" classname="ai.deepseek.harness.mobile.DshViewModelRemoteTest" time="0.028"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
