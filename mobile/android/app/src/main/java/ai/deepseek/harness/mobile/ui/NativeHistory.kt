@@ -126,7 +126,7 @@ internal fun foldNativeHistory(entries: List<JsonObject>): List<NativeRow> {
                 flush()
                 val message = data["message"].objectValue()
                 val callId = message["source"].objectValue().string("callId").ifBlank { data.string("callId") }
-                val result = blocksText(message.objects("content").flatMap { it.objects("content") })
+                val result = blocksText(message.objects("content").flatMap { if (it.string("type") == "tool-result") it.objects("content") else listOf(it) })
                 val index = tools[callId]
                 if(index != null) rows[index] = rows[index].copy(running = false,detail = rows[index].detail + "\n" + result)
                 else if(callId.isNotBlank()) rows += NativeRow(callId,"tool",message["source"].objectValue().string("name"),false,detail=result)
@@ -135,7 +135,8 @@ internal fun foldNativeHistory(entries: List<JsonObject>): List<NativeRow> {
                 flush(); running = false
                 for (index in tools.values) rows[index] = rows[index].copy(running = false)
                 val reason = data["reason"].objectValue()
-                if (reason.string("kind") in setOf("error", "aborted")) rows += NativeRow(id, "error",
+                if (reason.string("kind") == "aborted" && reason["reason"].objectValue().string("kind") == "user") rows += NativeRow(id, "meta", "已停止", false)
+                else if (reason.string("kind") in setOf("error", "aborted")) rows += NativeRow(id, "error",
                     reason["error"].objectValue().string("message").ifBlank { reason.string("message").ifBlank { "本轮运行失败" } }, false)
                 else if(reason.string("kind") == "max-tokens") rows += NativeRow(id,"meta","输出达到长度上限",false)
             }

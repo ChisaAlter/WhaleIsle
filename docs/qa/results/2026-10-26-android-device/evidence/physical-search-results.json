@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "rpcId": "a9f8010c-874b-4886-8dc5-5fd2c2b8c6b0",
+  "value": {
+    "items": [
+      {
+        "sessionId": "session-ed28c351-49f1-40ae-a7f2-5ea79168e295",
+        "snippet": "PHYS_QA_TWO"
+      }
+    ],
+    "hasMore": false
+  }
+}

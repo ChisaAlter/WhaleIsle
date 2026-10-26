@@ -1,0 +1,58 @@
+﻿[
+    {
+        "suite":  "ai.deepseek.harness.mobile.DshViewModelRemoteTest",
+        "tests":  29,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0,
+        "written":  "2026-10-26T17:52:12.0997289+08:00"
+    },
+    {
+        "suite":  "ai.deepseek.harness.mobile.DshViewModelTest",
+        "tests":  3,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0,
+        "written":  "2026-10-26T17:52:12.1011442+08:00"
+    },
+    {
+        "suite":  "ai.deepseek.harness.mobile.NativeChatStateTest",
+        "tests":  8,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0,
+        "written":  "2026-10-26T17:52:12.1011442+08:00"
+    },
+    {
+        "suite":  "ai.deepseek.harness.mobile.pair.OfferTest",
+        "tests":  7,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0,
+        "written":  "2026-10-26T12:40:51.7072739+08:00"
+    },
+    {
+        "suite":  "ai.deepseek.harness.mobile.pair.PairingIntentTest",
+        "tests":  4,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0,
+        "written":  "2026-10-26T12:40:51.7072739+08:00"
+    },
+    {
+        "suite":  "ai.deepseek.harness.mobile.remote.RelayInteropTest",
+        "tests":  2,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0,
+        "written":  "2026-10-26T12:40:51.7072739+08:00"
+    },
+    {
+        "suite":  "ai.deepseek.harness.mobile.remote.RelayLifecycleTest",
+        "tests":  2,
+        "failures":  0,
+        "errors":  0,
+        "skipped":  0,
+        "written":  "2026-10-26T12:40:51.7072739+08:00"
+    }
+]

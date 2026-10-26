@@ -44,6 +44,44 @@ class DshViewModelRemoteTest {
         return vm to clients
     }
 
+    @Test fun readySessionDraftsKeepTheirOwnerAndOfflineEditsCannotSwitchSessions() = remoteTest {
+        val store = FakeStore()
+        val (vm, clients) = model(store)
+        vm.reopenComputer(); runCurrent()
+        vm.onChatAction(NativeChatAction("draft", "s1", text = "first draft"))
+        vm.addImage("computer", "s1", NativeImage("image/png", "first-image"))
+        vm.openSession("s2"); runCurrent()
+        vm.onChatAction(NativeChatAction("draft", "s1", text = "late overwrite"))
+        vm.addImage("computer", "s1", NativeImage("image/png", "late-image"))
+        vm.addImage("other-computer", "s2", NativeImage("image/png", "wrong-computer"))
+        assertTrue(vm.chat.attachments.isEmpty())
+        vm.onChatAction(NativeChatAction("draft", "s2", text = "second draft"))
+        vm.openSession("s1"); runCurrent()
+        assertEquals("first draft", vm.chat.draft)
+        assertEquals(listOf("first-image"), vm.chat.attachments.map { it.data })
+        vm.openSession("s2"); runCurrent()
+        assertEquals("second draft", vm.chat.draft)
+        assertEquals("first draft", Json.parseToJsonElement(store.draftsJson).objectValue().string("computer/s1"))
+        clients.single().disconnect(IllegalStateException("offline draft test")); runCurrent()
+        assertTrue(vm.chat.offline)
+        val offline = vm.chat
+        val calls = clients.single().hostCalls.size
+        vm.openSession("s1")
+        vm.onChatAction(NativeChatAction("open", "s1"))
+        assertSame(offline, vm.chat)
+        vm.onChatAction(NativeChatAction("draft", "s2", text = "second offline draft"))
+        vm.onChatAction(NativeChatAction("draft", "s1", text = "offline late overwrite"))
+        vm.addImage("computer", "s1", NativeImage("image/png", "offline late-image"))
+        runCurrent()
+        assertEquals(calls, clients.single().hostCalls.size)
+        assertEquals("s2", vm.chat.sessionId)
+        assertEquals("second offline draft", vm.chat.draft)
+        assertTrue(vm.chat.attachments.isEmpty())
+        val drafts = Json.parseToJsonElement(store.draftsJson).objectValue()
+        assertEquals("first draft", drafts.string("computer/s1"))
+        assertEquals("second offline draft", drafts.string("computer/s2"))
+    }
+
     @Test fun createAndRegisterOpenWithoutCopyingThePreviousSessionsImages() = remoteTest {
         val (vm, _) = model()
         vm.reopenComputer(); runCurrent()
@@ -135,19 +173,23 @@ class DshViewModelRemoteTest {
         assertNull(vm.chat.approval)
     }
 
-    @Test fun firstCatalogFailureStillSubscribesAndForegroundRetryRefreshesCatalogWithoutOpeningSession() = remoteTest {
+    @Test fun firstCatalogFailureBlocksTasksUntilForegroundRetryLoadsSessionAndControls() = remoteTest {
         val (vm, clients) = model { _, relay -> relay.catalogFailures = 1 }
         vm.reopenComputer(); runCurrent()
         val relay = clients.single()
         assertEquals(1, relay.subscriptions)
         assertTrue(vm.chat.error.contains("catalog unavailable"))
+        assertTrue(vm.chat.loading)
+        vm.panel = "new"; vm.createSession(); runCurrent()
+        assertTrue(relay.hostCalls.none { it.first == "session.create" })
         vm.onForeground(); runCurrent()
-        assertEquals("", vm.chat.sessionId)
+        assertEquals("s1", vm.chat.sessionId)
         assertEquals(listOf("s1", "s2", "created"), vm.chat.sessions.map { it.id })
-        assertTrue(relay.hostCalls.none { it.first in setOf("session.history", "session.models", "commands/list") })
+        assertEquals(1, relay.hostCalls.count { it.first == "session.models" })
+        assertEquals(1, relay.hostCalls.count { it.first == "commands/list" })
         assertEquals(1, relay.subscriptions)
         assertTrue(vm.chat.error.isEmpty())
-        vm.openSession("s1"); runCurrent()
+        assertFalse(vm.chat.loading)
         relay.emitApproval("s1", "a", "reply-address"); runCurrent()
         assertEquals("reply-address", vm.chat.approval!!.rpcId)
     }
@@ -242,6 +284,247 @@ class DshViewModelRemoteTest {
         assertEquals(listOf("kept image"), vm.chat.attachments.map { it.data })
         assertFalse(vm.chat.offline)
         assertEquals(1, clients.last().subscriptions)
+    }
+
+    @Test fun sameComputerRecoveryKeepsWhitelistedDialogsAndUiOwnerAcrossEveryTransport() = remoteTest {
+        val (vm, clients) = model()
+        vm.reopenComputer(); runCurrent()
+        val owner = vm.uiOwnerEpoch
+        for (page in listOf("work", "new", "settings")) {
+            vm.panel = page
+            val transport = vm.chat.epoch
+            clients.last().disconnect(IllegalStateException("network lost")); runCurrent()
+            assertEquals(page, vm.panel)
+            assertEquals(owner, vm.uiOwnerEpoch)
+            assertNotEquals(transport, vm.chat.epoch)
+            assertTrue(vm.chat.offline)
+            assertFalse(vm.panelBusy)
+            advanceTimeBy(1_000); runCurrent()
+            assertEquals(page, vm.panel)
+            assertEquals(owner, vm.uiOwnerEpoch)
+            assertFalse(vm.chat.offline)
+            assertEquals("s1", vm.chat.sessionId)
+            assertTrue(clients.last().hostCalls.none { it.first in setOf("session.create", "workspace.create", "host.createDirectory") })
+        }
+    }
+
+    @Test fun browseDataCatalogAndDraftSurviveRecoveryAndOfflineActionsDoNotRun() = remoteTest {
+        val gate = CompletableDeferred<Unit>()
+        val (vm, clients) = model { index, relay -> if (index == 1) relay.connectGate = gate }
+        vm.reopenComputer(); runCurrent()
+        vm.openSession("s2"); runCurrent()
+        vm.onChatAction(NativeChatAction("draft", "s2", text = "kept draft"))
+        vm.addImage("computer", "s2", NativeImage("image/png", "kept picture"))
+        vm.panel = "new"; vm.browse("C:/new"); runCurrent()
+        val data = vm.panelData
+        val sessions = vm.allSessions
+        val workspaces = vm.workspaces
+        val owner = vm.uiOwnerEpoch
+        clients.single().disconnect(IllegalStateException("network lost")); runCurrent()
+        val previousCalls = clients.single().hostCalls.size
+        vm.browse("C:/should-not-read"); vm.createDirectory("offline"); vm.registerDirectory(); vm.findSessions("offline"); runCurrent()
+        assertEquals(previousCalls, clients.single().hostCalls.size)
+        assertEquals("browse", vm.panel)
+        assertEquals(data, vm.panelData)
+        assertSame(sessions, vm.allSessions)
+        assertSame(workspaces, vm.workspaces)
+        assertEquals(owner, vm.uiOwnerEpoch)
+        advanceTimeBy(1_000); runCurrent()
+        assertTrue(vm.chat.offline)
+        assertEquals("s2", vm.chat.sessionId)
+        assertEquals("browse", vm.panel)
+        gate.complete(Unit); runCurrent()
+        assertFalse(vm.chat.offline)
+        assertFalse(vm.chat.loading)
+        assertEquals("browse", vm.panel)
+        assertEquals(data, vm.panelData)
+        assertEquals(owner, vm.uiOwnerEpoch)
+        assertEquals("kept draft", vm.chat.draft)
+        assertEquals(listOf("kept picture"), vm.chat.attachments.map { it.data })
+        assertTrue(clients[1].hostCalls.none { it.first in setOf("host.listDirectory", "host.createDirectory", "workspace.create", "session.create", "session.search") })
+    }
+
+    @Test fun searchSnapshotSurvivesRecoveryWhileOldTransportRepliesCannotReplaceIt() = remoteTest {
+        val lateSearch = CompletableDeferred<JsonObject>()
+        val (vm, clients) = model { _, relay -> relay.projections["s1"] = obj("title" to "refreshed") }
+        vm.reopenComputer(); runCurrent()
+        vm.panel = "sessions"; vm.findSessions("retained query"); runCurrent()
+        val snapshot = vm.panelData
+        val owner = vm.uiOwnerEpoch
+        clients[0].searchReply = { lateSearch.await() }
+        vm.findSessions("late old query"); runCurrent()
+        assertTrue(vm.panelBusy)
+        clients[0].disconnect(IllegalStateException("network lost")); runCurrent()
+        assertFalse(vm.panelBusy)
+        assertEquals("sessions", vm.panel)
+        advanceTimeBy(1_000); runCurrent()
+        assertEquals(snapshot, vm.panelData)
+        assertEquals(owner, vm.uiOwnerEpoch)
+        assertEquals("refreshed", vm.chat.title)
+        lateSearch.complete(obj("items" to listOf(obj("sessionId" to "s1", "snippet" to "stale"))))
+        clients[0].emitApproval("s1", "stale", "old transport")
+        runCurrent()
+        assertEquals(snapshot, vm.panelData)
+        assertNull(vm.chat.approval)
+        assertTrue(clients[1].hostCalls.none { it.first == "session.search" })
+    }
+
+    @Test fun closingDuringRecoveryDoesNotResurrectPageAndGitReviewIsNotRetained() = remoteTest {
+        val gate = CompletableDeferred<Unit>()
+        val (vm, clients) = model { index, relay -> if (index == 1) relay.connectGate = gate }
+        vm.reopenComputer(); runCurrent()
+        vm.panel = "new"; vm.browse(); runCurrent()
+        clients[0].disconnect(IllegalStateException("network lost")); runCurrent()
+        vm.panel = ""
+        advanceTimeBy(1_000); runCurrent()
+        gate.complete(Unit); runCurrent()
+        assertEquals("", vm.panel)
+        vm.panel = "git"; vm.gitAction(listOf("git-create-change-request")); runCurrent()
+        assertTrue(vm.gitReview)
+        clients[1].disconnect(IllegalStateException("network lost again")); runCurrent()
+        assertEquals("", vm.panel)
+        assertFalse(vm.gitReview)
+        assertTrue(vm.panelData.isEmpty())
+        advanceTimeBy(1_000); runCurrent()
+        assertEquals("", vm.panel)
+        assertTrue(clients.last().gitCalls.isEmpty())
+    }
+
+    @Test fun manualSameComputerRecoveryKeepsTaskButSwitchAndLeaveResetItsOwner() = remoteTest {
+        val store = FakeStore(computersJson = Json.encodeToString(listOf(saved(), saved("other"))))
+        val (vm, _) = model(store)
+        vm.reopenComputer(); runCurrent()
+        vm.panel = "sessions"; vm.findSessions("saved query"); runCurrent()
+        val snapshot = vm.panelData
+        val owner = vm.uiOwnerEpoch
+        vm.reopenComputer(); runCurrent()
+        assertEquals(owner, vm.uiOwnerEpoch)
+        assertEquals("sessions", vm.panel)
+        assertEquals(snapshot, vm.panelData)
+        vm.openSession("s2"); runCurrent()
+        assertEquals("", vm.panel)
+        vm.panel = "new"; vm.browse(); runCurrent()
+        vm.reopenComputer("other")
+        assertNotEquals(owner, vm.uiOwnerEpoch)
+        assertEquals("", vm.panel)
+        assertTrue(vm.panelData.isEmpty())
+        assertTrue(vm.allSessions.isEmpty())
+        runCurrent()
+        val otherOwner = vm.uiOwnerEpoch
+        vm.panel = "settings"; vm.leaveComputer()
+        assertNotEquals(otherOwner, vm.uiOwnerEpoch)
+        assertEquals("", vm.panel)
+        assertTrue(vm.panelData.isEmpty())
+    }
+
+    @Test fun recoveryBlocksTaskRpcsUntilCatalogAndSessionControlsHaveLoaded() = remoteTest {
+        for (manual in listOf(false, true)) {
+            val catalog = CompletableDeferred<Unit>()
+            val controls = CompletableDeferred<Unit>()
+            val (vm, clients) = model { index, relay ->
+                if (index == 1) { relay.catalogGate = catalog; relay.modelGate = controls }
+            }
+            vm.reopenComputer(); runCurrent()
+            vm.panel = "new"; vm.browse(); runCurrent()
+            val snapshot = vm.panelData
+            if (manual) vm.reopenComputer() else {
+                clients[0].disconnect(IllegalStateException("network lost")); runCurrent()
+                advanceTimeBy(1_000)
+            }
+            runCurrent()
+            val recovered = clients[1]
+            assertFalse(vm.chat.offline)
+            assertTrue(vm.chat.loading)
+            repeat(3) { vm.onForeground(); runCurrent() }
+            assertEquals(1, recovered.hostCalls.count { it.first == "session.list" })
+            val before = recovered.hostCalls.size
+            vm.onChatAction(NativeChatAction("open", "s2"))
+            vm.browse("C:/not-ready"); vm.findSessions("not-ready"); vm.registerDirectory(); runCurrent()
+            assertEquals(before, recovered.hostCalls.size)
+            assertEquals("browse", vm.panel)
+            assertEquals(snapshot, vm.panelData)
+            catalog.complete(Unit); runCurrent()
+            assertTrue(vm.chat.loading)
+            val duringControls = recovered.hostCalls.size
+            vm.createSession(); vm.browse(); runCurrent()
+            assertEquals(duringControls, recovered.hostCalls.size)
+            controls.complete(Unit); runCurrent()
+            assertFalse(vm.chat.loading)
+            assertEquals("browse", vm.panel)
+            vm.findSessions("now-ready"); runCurrent()
+            assertEquals("now-ready", recovered.hostCalls.last { it.first == "session.search" }.second.string("query"))
+        }
+    }
+
+    @Test fun failedRecoveryCatalogCanRetryWithoutDroppingTheTaskAndEmptyCatalogFinishesLoading() = remoteTest {
+        val (vm, clients) = model { index, relay -> if (index == 1) relay.catalogFailures = 1 }
+        vm.reopenComputer(); runCurrent()
+        vm.panel = "new"; vm.browse(); runCurrent()
+        val snapshot = vm.panelData
+        clients[0].disconnect(IllegalStateException("network lost")); runCurrent()
+        advanceTimeBy(1_000); runCurrent()
+        assertFalse(vm.chat.offline)
+        assertTrue(vm.chat.loading)
+        assertTrue(vm.chat.error.contains("catalog unavailable"))
+        val failedCalls = clients[1].hostCalls.size
+        val failedError = vm.chat.error
+        vm.onChatAction(NativeChatAction("open", "s2"))
+        vm.openSession("s2")
+        vm.onChatAction(NativeChatAction("send", "s1", text = "must not bypass catalog"))
+        vm.findSessions("blocked"); runCurrent()
+        assertEquals(failedCalls, clients[1].hostCalls.size)
+        assertEquals("s1", vm.chat.sessionId)
+        assertEquals("browse", vm.panel)
+        assertEquals(snapshot, vm.panelData)
+        assertEquals(failedError, vm.chat.error)
+        assertTrue(vm.chat.loading)
+        clients[1].emitProjection("s1"); runCurrent()
+        assertTrue(vm.chat.loading)
+        assertTrue(vm.chat.error.contains("catalog unavailable"))
+        vm.onForeground(); runCurrent()
+        assertFalse(vm.chat.loading)
+        assertTrue(vm.chat.error.isEmpty())
+        assertEquals("browse", vm.panel)
+        assertEquals(snapshot, vm.panelData)
+        assertEquals("s1", vm.chat.sessionId)
+        assertEquals(1, clients[1].hostCalls.count { it.first == "session.models" })
+        val (empty, emptyClients) = model { _, relay -> relay.sessions = emptyList() }
+        empty.reopenComputer(); runCurrent()
+        assertFalse(empty.chat.loading)
+        assertEquals("", empty.chat.sessionId)
+        assertTrue(emptyClients.single().hostCalls.none { it.first == "session.models" })
+    }
+
+    @Test fun catalogSyncCoalescesForegroundAndOldFailureCannotClearTheNewEpochOwner() = remoteTest {
+        val oldGate = CompletableDeferred<Unit>()
+        val newGate = CompletableDeferred<Unit>()
+        val (vm, clients) = model { index, relay ->
+            if (index == 0) relay.catalogFailures = 1
+            if (index == 1) relay.catalogGate = newGate
+        }
+        vm.reopenComputer(); runCurrent()
+        assertTrue(vm.chat.error.contains("catalog unavailable"))
+        val old = clients.single()
+        old.catalogGate = oldGate; old.catalogFailures = 1
+        vm.onForeground(); runCurrent()
+        val oldCallCount = old.hostCalls.count { it.first == "session.list" }
+        repeat(3) { vm.onForeground(); runCurrent() }
+        assertEquals(oldCallCount, old.hostCalls.count { it.first == "session.list" })
+        vm.reopenComputer(); runCurrent()
+        val current = clients[1]
+        assertTrue(vm.chat.loading)
+        assertFalse(vm.chat.offline)
+        assertTrue(vm.chat.error.isEmpty())
+        oldGate.complete(Unit); runCurrent()
+        assertTrue(vm.chat.loading)
+        assertTrue(vm.chat.error.isEmpty())
+        repeat(3) { vm.onForeground(); runCurrent() }
+        assertEquals(1, current.hostCalls.count { it.first == "session.list" })
+        newGate.complete(Unit); runCurrent()
+        assertFalse(vm.chat.loading)
+        assertTrue(vm.chat.error.isEmpty())
+        assertEquals("s1", vm.chat.sessionId)
+        assertEquals(1, current.hostCalls.count { it.first == "session.models" })
     }
 
     @Test fun freshPairingRecoveryUsesIssuedCredentialAndAuthenticationFailureStopsRetry() = remoteTest {
@@ -511,11 +794,13 @@ class DshViewModelRemoteTest {
         var commandsGate: CompletableDeferred<Unit>? = null
         var subscriptions = 0
         var catalogFailures = 0
+        var catalogGate: CompletableDeferred<Unit>? = null
         var connectGate: CompletableDeferred<Unit>? = null
         var connectFailure: Throwable? = null
         var connectAttempt: (suspend () -> Unit)? = null
         var gitReply: suspend (String, String) -> JsonElement = { _, _ -> obj("isRepo" to true) }
         var attachmentReply: suspend (String) -> JsonObject = { error("unexpected image read") }
+        var searchReply: suspend (String) -> JsonObject = { query -> obj("items" to listOf(obj("sessionId" to "s1", "snippet" to query))) }
         private val ended = CompletableDeferred<Throwable>()
         override suspend fun connect() {
             connectGate?.await()
@@ -533,12 +818,13 @@ class DshViewModelRemoteTest {
             hostCalls += method to payload
             return when (method) {
                 "session.list" -> {
+                    catalogGate?.await()
                     if (catalogFailures-- > 0) error("catalog unavailable")
                     obj("items" to sessions)
                 }
                 "workspace.list" -> obj("items" to listOf(obj("workspaceId" to "w", "title" to "Workspace", "path" to "C:/repo", "sessionIds" to (workspaceSessionIds ?: sessions.map { it.string("sessionId") }))))
                 "session.create" -> obj("sessionId" to "created")
-                "session.search" -> obj("items" to listOf(obj("sessionId" to "s1", "snippet" to payload.string("query"))))
+                "session.search" -> searchReply(payload.string("query"))
                 "session.history" -> {
                     val owner = payload.string("sessionId")
                     sessions.find { it.string("sessionId") == owner && it.string("origin") == "subagent" }?.let { child ->

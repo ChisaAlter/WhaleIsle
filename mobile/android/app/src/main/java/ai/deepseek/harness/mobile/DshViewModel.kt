@@ -29,6 +29,8 @@ class DshViewModel(
     internal var externalUrl by mutableStateOf("")
     internal var chat by mutableStateOf(NativeChatState())
         private set
+    internal var uiOwnerEpoch by mutableStateOf("0")
+        private set
     internal var workspaces by mutableStateOf(emptyList<NativeWorkspace>())
         private set
     internal var allSessions by mutableStateOf(emptyList<NativeSession>())
@@ -77,6 +79,8 @@ class DshViewModel(
     private var foreground = true
     private var reconnectEnabled = false
     private var authenticationRejected = false
+    private var catalogReady = false
+    private var catalogSyncEpoch: Long? = null
     private var refreshingHistory = false
     private var historyDirty = false
     private val imageDrafts = mutableMapOf<String, List<NativeImage>>()
@@ -110,12 +114,12 @@ class DshViewModel(
     }
     fun reopenComputer(serverId: String = selectedServer) {
         val saved = computers.find { it.serverId == serverId } ?: computers.maxByOrNull { it.savedAt } ?: return
-        connect(saved.offer(), saved)
+        connect(saved.offer(), saved, preserveTasks = route == Route.Chat && selectedServer == saved.serverId)
     }
     fun leaveComputer() {
         saveImageDraft()
         cancelGitReview()
-        generation++; reconnectEnabled = false
+        generation++; uiOwnerEpoch = generation.toString(); reconnectEnabled = false; catalogReady = false
         connectionJob?.cancel(); observerJob?.cancel(); pollJob?.cancel(); client?.close(); client = null
         workspaces = emptyList(); allSessions = emptyList(); history = emptyList(); beforeSeq = null
         liveApprovals.clear(); resolvedApprovals.clear(); historyImages.clear(); historyImageReads.values.forEach { it.cancel() }; historyImageReads.clear(); refreshingHistory = false; historyDirty = false
@@ -130,24 +134,30 @@ class DshViewModel(
         synchronized(store) { store.computersJson = Json.encodeToString(computerSerializer, readComputers().filterNot { it.serverId == saved.serverId } + saved) }
         viewModelScope.launch { computers = readComputers() }
     }
-    private fun connect(offer: Offer, saved: SavedComputer?) {
-        val restoredSession = chat.sessionId.takeIf { selectedServer == offer.serverId }.orEmpty()
+    private fun connect(offer: Offer, saved: SavedComputer?, preserveTasks: Boolean = false) {
+        val sameComputer = selectedServer == offer.serverId
+        val keepTasks = preserveTasks && sameComputer
+        val restoredSession = chat.sessionId.takeIf { sameComputer }.orEmpty()
         saveImageDraft()
         cancelGitReview()
         generation++
+        if (!keepTasks) uiOwnerEpoch = generation.toString()
         connectionJob?.cancel(); observerJob?.cancel(); pollJob?.cancel(); client?.close(); client = null
-        reconnectEnabled = false; authenticationRejected = false
+        reconnectEnabled = false; authenticationRejected = false; catalogReady = false
         selectedServer = offer.serverId; store.selectedComputer = selectedServer
-        workspaces = emptyList(); allSessions = emptyList(); history = emptyList(); beforeSeq = null
+        if (!keepTasks) { workspaces = emptyList(); allSessions = emptyList() }
+        history = emptyList(); beforeSeq = null
         liveApprovals.clear(); resolvedApprovals.clear(); historyImages.clear(); historyImageReads.values.forEach { it.cancel() }; historyImageReads.clear()
-        panel = ""; panelData = obj(); panelBusy = false; refreshingHistory = false; historyDirty = false
-        chat = NativeChatState(epoch = generation.toString(), route = "chat", offline = true, connLabel = "正在连接电脑…", hostName = saved?.computerName.orEmpty(),
-            sessionId = restoredSession, draft = draftData.string(draftKey(restoredSession)), attachments = imageDrafts[draftKey(restoredSession)].orEmpty())
+        if (!keepTasks || panel !in RETAINED_TASK_PANELS) { panel = ""; panelData = obj() }
+        panelBusy = false; refreshingHistory = false; historyDirty = false
+        chat = NativeChatState(epoch = generation.toString(), route = "chat", offline = true, loading = true, connLabel = "正在连接电脑…", hostName = saved?.computerName.orEmpty(),
+            sessionId = restoredSession, sessions = if (keepTasks) chat.sessions else emptyList(), draft = draftData.string(draftKey(restoredSession)), attachments = imageDrafts[draftKey(restoredSession)].orEmpty())
         error = ""; route = Route.Chat
         connectionJob = viewModelScope.launch {
             var nextOffer = offer
             var nextSaved = saved
             var retryDelay = 1_000L
+            var restoringTasks = keepTasks
             while (isActive) {
                 val epoch = generation
                 val connection = try {
@@ -167,13 +177,10 @@ class DshViewModel(
                     if (epoch != generation) return@launch
                     reconnectEnabled = true
                     retryDelay = 1_000L
-                    update { copy(connected = true, offline = false, error = "") }
+                    update { copy(connected = true, offline = false, loading = true, error = "") }
                     connection.subscribe()
                     startPoll()
-                    try { syncCatalog(connection, epoch) } catch (catalogFailure: Throwable) {
-                        if (catalogFailure is CancellationException && catalogFailure !is TimeoutCancellationException) throw catalogFailure
-                        if (epoch == generation) update { copy(error = catalogFailure.message ?: "无法同步电脑上的会话") }
-                    }
+                    syncCatalog(connection, epoch, restoringTasks)
                     connection.awaitDisconnect()
                 } catch (failure: Throwable) {
                     if (failure is CancellationException && failure !is TimeoutCancellationException) throw failure
@@ -193,8 +200,9 @@ class DshViewModel(
                 val recoveryEpoch = generation
                 liveApprovals.clear(); resolvedApprovals.clear(); history = emptyList(); beforeSeq = null; refreshingHistory = false; historyDirty = false
                 historyImageReads.values.forEach { it.cancel() }; historyImageReads.clear(); historyImages.clear()
-                panel = ""; panelBusy = false; cancelGitReview()
-                update { copy(epoch = recoveryEpoch.toString(), approval = null, busy = false, olderLoading = false, loading = false, connLabel = "正在重新连接电脑…") }
+                if (panel !in RETAINED_TASK_PANELS) { panel = ""; panelData = obj() }
+                panelBusy = false; cancelGitReview(); restoringTasks = true; catalogReady = false
+                update { copy(epoch = recoveryEpoch.toString(), approval = null, busy = false, olderLoading = false, loading = true, connLabel = "正在重新连接电脑…") }
                 delay(retryDelay)
                 retryDelay = (retryDelay * 2).coerceAtMost(15_000L)
                 if (recoveryEpoch != generation) return@launch
@@ -203,11 +211,28 @@ class DshViewModel(
             }
         }
     }
-    private suspend fun syncCatalog(connection: RelayClient, epoch: Long) {
-        refreshCatalog(connection, epoch)
-        if (epoch != generation) return
-        if (chat.sessionId.isNotBlank()) openSession(chat.sessionId)
-        else chat.sessions.firstOrNull()?.let { openSession(it.id) }
+    private suspend fun syncCatalog(connection: RelayClient, epoch: Long, preserveTasks: Boolean = false) {
+        val restoredSession = chat.sessionId
+        if (epoch != generation || catalogSyncEpoch == epoch) return
+        catalogSyncEpoch = epoch
+        update { copy(loading = true, error = "") }
+        try {
+            refreshCatalog(connection, epoch)
+            if (epoch != generation) return
+            catalogReady = true
+            if (chat.sessionId != restoredSession) return
+            val session = restoredSession.ifBlank { chat.sessions.firstOrNull()?.id.orEmpty() }
+            if (session.isBlank()) update { copy(loading = false) }
+            else openSession(session, preservePanel = preserveTasks)
+        } catch (failure: Throwable) {
+            if (failure is CancellationException && failure !is TimeoutCancellationException) throw failure
+            if (epoch == generation) {
+                catalogReady = false
+                update { copy(loading = true, error = failure.message ?: "无法同步电脑上的会话") }
+            }
+        } finally {
+            if (catalogSyncEpoch == epoch) catalogSyncEpoch = null
+        }
     }
     internal fun update(transform: NativeChatState.() -> NativeChatState) { chat = chat.transform().copy(seq = chat.seq + 1) }
     internal fun report(message: String) { update { copy(banner = message) } }
@@ -243,7 +268,7 @@ class DshViewModel(
             .map { NativeSession(it, "缺失会话", "", false, true, archived = true) }
         val current = currentSession()
         update { copy(sessions = allSessions.filterNot { it.archived }, title = current?.title ?: title,
-            running = current?.running ?: running, readOnly = if (current?.readOnly == true) "只读会话" else "", error = "") }
+            running = current?.running ?: running, readOnly = if (current?.readOnly == true) "只读会话" else "", error = if (catalogReady) "" else error) }
     }
     internal fun currentSession() = allSessions.find { it.id == chat.sessionId }
     private fun draftKey(sessionId: String) = "$selectedServer/$sessionId"
@@ -256,11 +281,12 @@ class DshViewModel(
     private fun saveImageDraft() {
         if (chat.sessionId.isNotBlank()) imageDrafts[draftKey(chat.sessionId)] = chat.attachments
     }
-    internal fun openSession(id: String) {
-        if (chat.busy) return
+    internal fun openSession(id: String, preservePanel: Boolean = false) {
+        if (chat.busy || chat.offline || !catalogReady) return
+        val keepPanel = preservePanel && chat.sessionId == id && panel in RETAINED_TASK_PANELS
         saveImageDraft()
         cancelGitReview()
-        panel = ""
+        if (!keepPanel) panel = ""
         sessionRevision++
         val revision = sessionRevision
         historyImageReads.values.forEach { it.cancel() }; historyImageReads.clear(); historyImages.clear()
@@ -330,7 +356,7 @@ class DshViewModel(
         val permissions = values["permissions"].objectValue().string("currentValue")
         val plan = values["plan"].objectValue()
         val lastTurn = history.lastOrNull { historyEvent(it).string("type") in setOf("turn/start", "turn/end") }
-        update { copy(rows = nativeHistoryRows(), olderLoading = false, error = "",
+        update { copy(rows = nativeHistoryRows(), olderLoading = false, error = if (catalogReady) "" else error,
             title = values.string("title").ifBlank { title },
             running = lastTurn?.let { historyEvent(it).string("type") == "turn/start" } ?: running,
             hasOlder = if (older || beforeSeq == minSeq) result["hasMore"].flag() && minSeq != null else hasOlder,
@@ -450,10 +476,13 @@ class DshViewModel(
             return
         }
         action { connection, epoch ->
-            refreshCatalog(connection, epoch)
-            if (epoch != generation) return@action
-            refreshHistory()
-            startPoll()
+            if (!catalogReady) syncCatalog(connection, epoch, preserveTasks = true)
+            else {
+                refreshCatalog(connection, epoch)
+                if (epoch != generation) return@action
+                refreshHistory()
+            }
+            if (epoch == generation) startPoll()
         }
     }
     fun onBackground() { foreground = false; pollJob?.cancel() }
@@ -464,8 +493,8 @@ class DshViewModel(
         if (request.type == "new") { panel = "new"; return }
         if (request.type == "open") { openSession(request.sessionId); return }
         if (request.sessionId != chat.sessionId) return
-        if (request.type == "retry") { if (chat.offline) onForeground() else openSession(request.sessionId); return }
-        if (chat.offline || chat.busy || chat.loading || chat.readOnly.isNotBlank() && request.type != "older") return
+        if (request.type == "retry") { if (chat.offline || !catalogReady) onForeground() else openSession(request.sessionId); return }
+        if (chat.offline || !catalogReady || chat.busy || chat.loading || chat.readOnly.isNotBlank() && request.type != "older") return
         val id = request.sessionId
         val submitted = request.text
         update { copy(busy = true, banner = "") }
@@ -534,8 +563,11 @@ class DshViewModel(
         panel = ""; openSession(id); refreshCatalog(connection, epoch)
     }
     internal fun browse(path: String = "") = panelAction { connection, epoch ->
+        val revision = panelRevision
+        val opened = sessionRevision
+        val owner = chat.sessionId
         val data = connection.host("host.listDirectory", if (path.isBlank()) obj() else obj("path" to path)).objectValue()
-        if (epoch == generation) { panelData = data; panel = "browse" }
+        if (epoch == generation && chat.sessionId == owner && sessionRevision == opened && panelRevision == revision) { panelData = data; panel = "browse" }
     }
     internal fun createDirectory(name: String) = panelAction { connection, epoch ->
         val path = panelData.string("path")
@@ -578,8 +610,11 @@ class DshViewModel(
         if (epoch == generation) refreshCatalog(connection, epoch)
     }
     internal fun findSessions(query: String) = panelAction { connection, epoch ->
+        val revision = panelRevision
+        val opened = sessionRevision
+        val owner = chat.sessionId
         val data = connection.host("session.search", obj("query" to query)).objectValue()
-        if (epoch == generation) panelData = data
+        if (epoch == generation && chat.sessionId == owner && sessionRevision == opened && panelRevision == revision) panelData = data
     }
     internal fun openGit() = panelAction { connection, epoch ->
         val owner = chat.sessionId
@@ -663,7 +698,7 @@ class DshViewModel(
         gitAction(remaining, gitPayload, completed)
     }
     private fun panelAction(work: suspend (RelayClient, Long) -> Unit) {
-        if (panelBusy || chat.offline || client == null) return
+        if (panelBusy || chat.offline || chat.loading || !catalogReady || client == null) return
         val originPanel = panel
         val originPanelRevision = panelRevision
         val originSessionRevision = sessionRevision
@@ -704,6 +739,7 @@ class DshViewModel(
     }
     override fun onCleared() { client?.close(); super.onCleared() }
     companion object {
+        private val RETAINED_TASK_PANELS = setOf("work", "new", "settings", "sessions", "browse")
         internal val PERMISSIONS = listOf(NativePermissionOption("read-only", "仅可查看"),
             NativePermissionOption("workspace-write", "可写入工作区"), NativePermissionOption("danger-full-access", "完全权限"))
     }

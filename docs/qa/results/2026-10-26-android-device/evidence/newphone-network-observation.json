@@ -1,0 +1,224 @@
+{
+  "serial": "1836e17d",
+  "package": "ai.deepseek.harness.mobile.nativeqa",
+  "started_at": "2026-10-26T07:44:03.609+00:00",
+  "interval_seconds": 5,
+  "requested_samples": 15,
+  "read_only": true,
+  "raw_dumpsys_saved": false,
+  "samples": [
+    {
+      "index": 1,
+      "at": "2026-10-26T07:44:08.612+00:00",
+      "elapsed_seconds": 5.016,
+      "default_net_id": 327,
+      "transports": [
+        "CELLULAR"
+      ],
+      "validated": true,
+      "parse": "ok",
+      "app_pids": [
+        3422
+      ]
+    },
+    {
+      "index": 2,
+      "at": "2026-10-26T07:44:13.602+00:00",
+      "elapsed_seconds": 10.0,
+      "default_net_id": 327,
+      "transports": [
+        "CELLULAR"
+      ],
+      "validated": true,
+      "parse": "ok",
+      "app_pids": [
+        3422
+      ]
+    },
+    {
+      "index": 3,
+      "at": "2026-10-26T07:44:18.597+00:00",
+      "elapsed_seconds": 15.0,
+      "default_net_id": 327,
+      "transports": [
+        "CELLULAR"
+      ],
+      "validated": true,
+      "parse": "ok",
+      "app_pids": [
+        3422
+      ]
+    },
+    {
+      "index": 4,
+      "at": "2026-10-26T07:44:23.607+00:00",
+      "elapsed_seconds": 20.0,
+      "default_net_id": 327,
+      "transports": [
+        "CELLULAR"
+      ],
+      "validated": true,
+      "parse": "ok",
+      "app_pids": [
+        3422
+      ]
+    },
+    {
+      "index": 5,
+      "at": "2026-10-26T07:44:28.603+00:00",
+      "elapsed_seconds": 25.0,
+      "default_net_id": 327,
+      "transports": [
+        "CELLULAR"
+      ],
+      "validated": true,
+      "parse": "ok",
+      "app_pids": [
+        3422
+      ]
+    },
+    {
+      "index": 6,
+      "at": "2026-10-26T07:44:33.610+00:00",
+      "elapsed_seconds": 30.016,
+      "default_net_id": 327,
+      "transports": [
+        "CELLULAR"
+      ],
+      "validated": true,
+      "parse": "ok",
+      "app_pids": [
+        3422
+      ]
+    },
+    {
+      "index": 7,
+      "at": "2026-10-26T07:44:38.613+00:00",
+      "elapsed_seconds": 35.016,
+      "default_net_id": 327,
+      "transports": [
+        "CELLULAR"
+      ],
+      "validated": true,
+      "parse": "ok",
+      "app_pids": [
+        3422
+      ]
+    },
+    {
+      "index": 8,
+      "at": "2026-10-26T07:44:43.600+00:00",
+      "elapsed_seconds": 40.0,
+      "default_net_id": 327,
+      "transports": [
+        "CELLULAR"
+      ],
+      "validated": true,
+      "parse": "ok",
+      "app_pids": [
+        3422
+      ]
+    },
+    {
+      "index": 9,
+      "at": "2026-10-26T07:44:48.604+00:00",
+      "elapsed_seconds": 45.0,
+      "default_net_id": 327,
+      "transports": [
+        "CELLULAR"
+      ],
+      "validated": true,
+      "parse": "ok",
+      "app_pids": [
+        3422
+      ]
+    },
+    {
+      "index": 10,
+      "at": "2026-10-26T07:44:53.597+00:00",
+      "elapsed_seconds": 50.0,
+      "default_net_id": 327,
+      "transports": [
+        "CELLULAR"
+      ],
+      "validated": true,
+      "parse": "ok",
+      "app_pids": [
+        3422
+      ]
+    },
+    {
+      "index": 11,
+      "at": "2026-10-26T07:44:58.606+00:00",
+      "elapsed_seconds": 55.0,
+      "default_net_id": 327,
+      "transports": [
+        "CELLULAR"
+      ],
+      "validated": true,
+      "parse": "ok",
+      "app_pids": [
+        3422
+      ]
+    },
+    {
+      "index": 12,
+      "at": "2026-10-26T07:45:03.606+00:00",
+      "elapsed_seconds": 60.0,
+      "default_net_id": 327,
+      "transports": [
+        "CELLULAR"
+      ],
+      "validated": true,
+      "parse": "ok",
+      "app_pids": [
+        3422
+      ]
+    },
+    {
+      "index": 13,
+      "at": "2026-10-26T07:45:08.610+00:00",
+      "elapsed_seconds": 65.016,
+      "default_net_id": 327,
+      "transports": [
+        "CELLULAR"
+      ],
+      "validated": true,
+      "parse": "ok",
+      "app_pids": [
+        3422
+      ]
+    },
+    {
+      "index": 14,
+      "at": "2026-10-26T07:45:13.644+00:00",
+      "elapsed_seconds": 70.047,
+      "default_net_id": 327,
+      "transports": [
+        "CELLULAR"
+      ],
+      "validated": true,
+      "parse": "ok",
+      "app_pids": [
+        3422
+      ]
+    },
+    {
+      "index": 15,
+      "at": "2026-10-26T07:45:18.602+00:00",
+      "elapsed_seconds": 75.0,
+      "default_net_id": 327,
+      "transports": [
+        "CELLULAR"
+      ],
+      "validated": true,
+      "parse": "ok",
+      "app_pids": [
+        3422
+      ]
+    }
+  ],
+  "finished_at": "2026-10-26T07:45:19.007+00:00",
+  "duration_seconds": 75.407,
+  "complete": true
+}

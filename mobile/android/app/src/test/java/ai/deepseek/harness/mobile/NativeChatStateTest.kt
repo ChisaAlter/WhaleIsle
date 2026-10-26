@@ -43,6 +43,20 @@ class NativeChatStateTest {
         assertEquals(listOf("final answer","shell","Provider disconnected"),rows.map {it.text})
         assertTrue(rows[1].detail.contains("C:/repo")); assertTrue(rows.none {it.running})
     }
+    @Test fun rawToolTextAndUserStoppedTurnsRemainDistinctFromFailures() {
+        val events = listOf(event(1, "turn/start"),
+            event(2, "tool/call", obj("callId" to "actual-tool", "name" to "pwsh", "arguments" to "Start-Sleep -Seconds 50")),
+            event(3, "tool/result", obj("message" to obj("source" to obj("callId" to "actual-tool"), "content" to listOf(obj("type" to "text", "text" to "Error: tool call aborted"))))),
+            event(4, "turn/end", obj("reason" to obj("kind" to "aborted", "reason" to obj("kind" to "user")))))
+        val rows = foldNativeHistory(events)
+        assertTrue(rows.first().detail.contains("Error: tool call aborted"))
+        assertEquals("meta", rows.last().role)
+        assertEquals("已停止", rows.last().text)
+        assertTrue(rows.none { it.running || it.role == "error" })
+        val failed = foldNativeHistory(listOf(event(5, "turn/end", obj("reason" to obj("kind" to "error", "error" to obj("message" to "Provider disconnected"))))))
+        assertEquals("error", failed.single().role)
+        assertEquals("Provider disconnected", failed.single().text)
+    }
     @Test fun durableImagesInRawAndProjectedHistoryResolveOncePerAttachment() = kotlinx.coroutines.runBlocking {
         val image = obj("type" to "image", "attachment" to obj("attachmentId" to "sha256:test-image", "mediaType" to "image/png"))
         val rows = foldNativeHistory(listOf(event(1, "user/message", obj("id" to "raw", "source" to obj("kind" to "user"), "content" to listOf(image))),

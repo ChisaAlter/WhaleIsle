@@ -27,10 +27,10 @@ import kotlinx.serialization.json.*
 
 @Composable
 internal fun NativeRemoteScreen(vm: DshViewModel, onAttachment: () -> Unit) {
-    var selectedSessionId by rememberSaveable(vm.chat.epoch) { mutableStateOf("") }
-    var selectedWorkspaceId by rememberSaveable(vm.chat.epoch) { mutableStateOf("") }
-    var name by rememberSaveable(vm.chat.epoch) { mutableStateOf("") }
-    var confirmation by rememberSaveable(vm.chat.epoch) { mutableStateOf("") }
+    var selectedSessionId by rememberSaveable(vm.uiOwnerEpoch, vm.chat.sessionId) { mutableStateOf("") }
+    var selectedWorkspaceId by rememberSaveable(vm.uiOwnerEpoch, vm.chat.sessionId) { mutableStateOf("") }
+    var name by rememberSaveable(vm.uiOwnerEpoch, vm.chat.sessionId) { mutableStateOf("") }
+    var confirmation by rememberSaveable(vm.uiOwnerEpoch, vm.chat.sessionId) { mutableStateOf("") }
     val selectedSession = vm.allSessions.find { it.id == selectedSessionId }
     val selectedWorkspace = vm.workspaces.find { it.id == selectedWorkspaceId }
     val chatUiState = rememberSaveableStateHolder()
@@ -38,8 +38,8 @@ internal fun NativeRemoteScreen(vm: DshViewModel, onAttachment: () -> Unit) {
     if (taskPage) {
         NativeTaskPage(vm, onSessionMenu = { selectedSessionId = it.id; name = it.title })
     } else {
-        // The registry belongs to one connection and session, including scroll and draft selection.
-        chatUiState.SaveableStateProvider("chat:${vm.chat.epoch}:${vm.chat.sessionId}") {
+        // Keep the same computer/session registry across transport recovery.
+        chatUiState.SaveableStateProvider("chat:${vm.uiOwnerEpoch}:${vm.chat.sessionId}") {
             NativeChatScreen(state = vm.chat, workspaces = vm.workspaces, onAction = vm::onChatAction,
                 onPanel = { vm.panel = it },
                 onWorkspaceMenu = { selectedWorkspaceId = it.id; name = it.title },
@@ -49,22 +49,30 @@ internal fun NativeRemoteScreen(vm: DshViewModel, onAttachment: () -> Unit) {
         }
     }
     val colors = dsh()
+    val remoteAvailable = !vm.panelBusy && !vm.chat.offline && !vm.chat.loading
+    val connectionFeedback = when {
+        vm.chat.offline -> vm.chat.error.ifBlank { vm.chat.connLabel }.ifBlank { "连接已断开，正在等待重连" }
+        vm.chat.loading -> vm.chat.error
+        else -> ""
+    }
+    val syncFailed = !vm.chat.offline && vm.chat.loading && vm.chat.error.isNotBlank()
     when (vm.panel) {
-        "new" -> NativeDialog("新会话", onDismiss = { vm.panel = "" }, feedback = vm.panelError, feedbackHint = "选择工作区，或浏览电脑上的目录。") {
-            NativeChoiceRow(if (vm.panelBusy) "正在创建会话…" else "无工作目录", enabled = !vm.panelBusy && !vm.chat.offline, glyph = NativeGlyph.Plus, onClick = { vm.createSession() })
+        "new" -> NativeDialog("新会话", onDismiss = { vm.panel = "" }, feedback = connectionFeedback.ifBlank { vm.panelError }, feedbackHint = "选择工作区，或浏览电脑上的目录。") {
+            if (syncFailed) NativeChoiceRow("重试同步", onClick = vm::onForeground)
+            NativeChoiceRow(if (vm.panelBusy) "正在创建会话…" else "无工作目录", enabled = remoteAvailable, glyph = NativeGlyph.Plus, onClick = { vm.createSession() })
             vm.workspaces.forEach { workspace ->
                 NativeChoiceRow(workspace.title.ifBlank { workspace.path }, detail = workspace.path,
-                    enabled = !vm.panelBusy && !vm.chat.offline, glyph = NativeGlyph.Folder, onClick = { vm.createSession(workspace.id) })
+                    enabled = remoteAvailable, glyph = NativeGlyph.Folder, onClick = { vm.createSession(workspace.id) })
             }
-            NativeChoiceRow(if (vm.panelBusy) "正在读取目录…" else "浏览电脑目录…", enabled = !vm.panelBusy && !vm.chat.offline, glyph = NativeGlyph.Folder, onClick = { vm.browse() })
+            NativeChoiceRow(if (vm.panelBusy) "正在读取目录…" else "浏览电脑目录…", enabled = remoteAvailable, glyph = NativeGlyph.Folder, onClick = { vm.browse() })
         }
-        "work" -> NativeDialog("会话与工作区", onDismiss = { vm.panel = "" }, feedback = vm.panelError, feedbackHint = "管理当前会话与工作区；搜索和 Git 将打开任务页。") {
+        "work" -> NativeDialog("会话与工作区", onDismiss = { vm.panel = "" }, feedback = connectionFeedback.ifBlank { vm.panelError }, feedbackHint = "管理当前会话与工作区；搜索和 Git 将打开任务页。") {
             NativeChoiceRow("新会话", glyph = NativeGlyph.Plus, enabled = !vm.chat.offline, onClick = { vm.panel = "new" })
             NativeChoiceRow("会话管理与内容搜索", glyph = NativeGlyph.Search, enabled = !vm.chat.offline, onClick = { vm.panel = "sessions" })
-            NativeChoiceRow(if (vm.panelBusy) "正在读取 Git…" else "Git · 分支 / Commit / Push / PR", enabled = !vm.panelBusy && !vm.chat.offline && vm.currentSession()?.cwd?.isNotBlank() == true,
+            NativeChoiceRow(if (vm.panelBusy) "正在读取 Git…" else "Git · 分支 / Commit / Push / PR", enabled = remoteAvailable && vm.currentSession()?.cwd?.isNotBlank() == true,
                 onClick = { vm.openGit() })
             NativeChoiceRow("设置与已配对电脑", onClick = { vm.panel = "settings" })
-            NativeChoiceRow(if (vm.chat.offline) "重新连接电脑" else "重新同步目录与会话", onClick = { vm.onChatAction(NativeChatAction("refresh")); vm.panel = "" })
+            NativeChoiceRow(if (vm.chat.offline) "重新连接电脑" else "重新同步目录与会话", onClick = vm::onForeground)
             if (vm.workspaces.isNotEmpty()) {
                 HorizontalDivider(color = colors.borderHair, modifier = Modifier.padding(vertical = 4.dp))
                 vm.workspaces.forEach { workspace ->
@@ -75,7 +83,7 @@ internal fun NativeRemoteScreen(vm: DshViewModel, onAttachment: () -> Unit) {
             Text("文件与更改：远程网关尚未提供文件浏览；请在电脑端查看。", Modifier.padding(12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
             Text("MCP 与技能：远程端暂未接入管理；请在电脑端操作。", Modifier.padding(horizontal = 12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
         }
-        "settings" -> NativeDialog("设置", onDismiss = { vm.panel = "" }) {
+        "settings" -> NativeDialog("设置", onDismiss = { vm.panel = "" }, feedback = connectionFeedback, feedbackHint = connectionFeedback) {
             Text("外观", Modifier.padding(12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(colors.bgModule)) {
                 listOf("system" to "跟随系统", "light" to "浅色", "dark" to "深色").forEach { (key, label) ->
@@ -93,33 +101,33 @@ internal fun NativeRemoteScreen(vm: DshViewModel, onAttachment: () -> Unit) {
         }
     }
     selectedSession?.let { row ->
-        NativeDialog("管理会话", onDismiss = { selectedSessionId = "" }) {
+        NativeDialog("管理会话", onDismiss = { selectedSessionId = "" }, feedback = connectionFeedback, feedbackHint = connectionFeedback) {
             NativeField(name, { name = it }, "会话名称", enabled = !vm.panelBusy)
-            NativeChoiceRow("重命名", enabled = !vm.panelBusy && !vm.chat.offline && name.isNotBlank(), onClick = { vm.sessionAction("session.rename", row, name.trim()); selectedSessionId = "" })
-            NativeChoiceRow("Fork", enabled = !vm.panelBusy && !vm.chat.offline, onClick = { vm.sessionAction("session.fork", row); selectedSessionId = ""; vm.panel = "" })
+            NativeChoiceRow("重命名", enabled = remoteAvailable && name.isNotBlank(), onClick = { vm.sessionAction("session.rename", row, name.trim()); selectedSessionId = "" })
+            NativeChoiceRow("Fork", enabled = remoteAvailable, onClick = { vm.sessionAction("session.fork", row); selectedSessionId = ""; vm.panel = "" })
             if (!row.archived && row.workspaceId.isNotBlank()) {
-                NativeChoiceRow("上移", enabled = !vm.panelBusy && !vm.chat.offline, onClick = { vm.moveSession(row, -1); selectedSessionId = "" })
-                NativeChoiceRow("下移", enabled = !vm.panelBusy && !vm.chat.offline, onClick = { vm.moveSession(row, 1); selectedSessionId = "" })
+                NativeChoiceRow("上移", enabled = remoteAvailable, onClick = { vm.moveSession(row, -1); selectedSessionId = "" })
+                NativeChoiceRow("下移", enabled = remoteAvailable, onClick = { vm.moveSession(row, 1); selectedSessionId = "" })
             }
-            NativeChoiceRow(if (row.archived) "取消归档" else "归档", enabled = !vm.panelBusy && !vm.chat.offline, onClick = {
+            NativeChoiceRow(if (row.archived) "取消归档" else "归档", enabled = remoteAvailable, onClick = {
                 vm.sessionAction(if (row.archived) "workspace.unarchiveSession" else "workspace.archiveSession", row); selectedSessionId = ""
             })
-            if (row.archived) NativeChoiceRow("永久删除", enabled = !vm.panelBusy && !vm.chat.offline, danger = true, onClick = { confirmation = "delete:${row.id}" })
+            if (row.archived) NativeChoiceRow("永久删除", enabled = remoteAvailable, danger = true, onClick = { confirmation = "delete:${row.id}" })
         }
     }
     selectedWorkspace?.let { workspace ->
-        NativeDialog("管理工作区", onDismiss = { selectedWorkspaceId = "" }) {
+        NativeDialog("管理工作区", onDismiss = { selectedWorkspaceId = "" }, feedback = connectionFeedback, feedbackHint = connectionFeedback) {
             Text(workspace.path, Modifier.padding(horizontal = 12.dp, vertical = 4.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
-            NativeChoiceRow("在此目录新建会话", glyph = NativeGlyph.Plus, enabled = !vm.panelBusy && !vm.chat.offline, onClick = { vm.createSession(workspace.id); selectedWorkspaceId = "" })
+            NativeChoiceRow("在此目录新建会话", glyph = NativeGlyph.Plus, enabled = remoteAvailable, onClick = { vm.createSession(workspace.id); selectedWorkspaceId = "" })
             NativeField(name, { name = it }, "工作区名称", enabled = !vm.panelBusy)
-            NativeChoiceRow("重命名", enabled = name.isNotBlank() && !vm.panelBusy && !vm.chat.offline, onClick = { vm.workspaceAction("workspace.rename", workspace, name.trim()); selectedWorkspaceId = "" })
-            NativeChoiceRow("从列表移除工作区", enabled = !vm.panelBusy && !vm.chat.offline, danger = true, onClick = { confirmation = "workspace:${workspace.id}" })
+            NativeChoiceRow("重命名", enabled = name.isNotBlank() && remoteAvailable, onClick = { vm.workspaceAction("workspace.rename", workspace, name.trim()); selectedWorkspaceId = "" })
+            NativeChoiceRow("从列表移除工作区", enabled = remoteAvailable, danger = true, onClick = { confirmation = "workspace:${workspace.id}" })
         }
     }
     if (confirmation.isNotBlank()) NativeDialog("确认移除？", onDismiss = { confirmation = "" }, actions = {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = { confirmation = "" }) { Text("取消") }
-            TextButton(enabled = !vm.panelBusy, onClick = {
+            TextButton(enabled = if (confirmation.startsWith("delete:") || confirmation.startsWith("workspace:")) remoteAvailable else !vm.panelBusy, onClick = {
                 when {
                     confirmation.startsWith("delete:") -> vm.allSessions.find { it.id == confirmation.removePrefix("delete:") }?.let { vm.sessionAction("session.delete", it) }
                     confirmation.startsWith("workspace:") -> vm.workspaces.find { it.id == confirmation.removePrefix("workspace:") }?.let { vm.workspaceAction("workspace.delete", it) }
@@ -144,14 +152,24 @@ private fun NativeTaskPage(vm: DshViewModel, onSessionMenu: (NativeSession) -> U
     val ime = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     fun goBack() { vm.panel = if (vm.panel == "browse") "new" else "" }
     BackHandler { if (ime) keyboard?.hide() else goBack() }
-    var query by rememberSaveable(vm.chat.epoch, vm.panel) { mutableStateOf("") }
-    var newDirectory by rememberSaveable(vm.chat.epoch, vm.panelData.string("path")) { mutableStateOf("") }
-    var searched by rememberSaveable(vm.chat.epoch, vm.panel) { mutableStateOf(false) }
+    var query by rememberSaveable(vm.uiOwnerEpoch, vm.chat.sessionId, vm.panel) { mutableStateOf("") }
+    var newDirectory by rememberSaveable(vm.uiOwnerEpoch, vm.chat.sessionId, vm.panelData.string("path")) { mutableStateOf("") }
+    var searched by rememberSaveable(vm.uiOwnerEpoch, vm.chat.sessionId, vm.panel) { mutableStateOf(false) }
+    val remoteAvailable = !vm.panelBusy && !vm.chat.offline && !vm.chat.loading
     Column(Modifier.fillMaxSize().background(colors.bgBase)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             NativeIconButton(NativeGlyph.Back, "返回聊天", ::goBack)
             Text(when (vm.panel) { "browse" -> "选择电脑上的目录"; "git" -> "Git"; else -> "会话管理与搜索" }, Modifier.weight(1f).padding(vertical = 4.dp), color = colors.labelPrimary, fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (vm.panelBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = colors.labelSecondary)
+        }
+        if (vm.chat.offline) {
+            Text(vm.chat.error.ifBlank { vm.chat.connLabel }.ifBlank { "连接已断开，正在等待重连" } + "\n内容已保留，连接恢复后可继续操作。",
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
+        } else if (vm.chat.loading) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Text(vm.chat.error.ifBlank { "正在同步会话，请稍候…" }, color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
+                if (vm.chat.error.isNotBlank()) TextButton(onClick = vm::onForeground) { Text("重试同步") }
+            }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -159,27 +177,27 @@ private fun NativeTaskPage(vm: DshViewModel, onSessionMenu: (NativeSession) -> U
                     "browse" -> {
                         item { SelectionContainer { Text(vm.panelData.string("path"), color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp) } }
                         val crumbs = vm.panelData.objects("crumbs")
-                        item { NativeChoiceRow("上一级", enabled = !vm.panelBusy && crumbs.size > 1, glyph = NativeGlyph.Back, onClick = { vm.browse(crumbs[crumbs.size - 2].string("path")) }) }
+                        item { NativeChoiceRow("上一级", enabled = remoteAvailable && crumbs.size > 1, glyph = NativeGlyph.Back, onClick = { vm.browse(crumbs[crumbs.size - 2].string("path")) }) }
                         if (vm.panelData["truncated"].flag()) item { Text("此目录内容较多，电脑端返回的列表已截断。", color = colors.labelSecondary, fontSize = 12.sp, lineHeight = 18.sp) }
                         items(vm.panelData.objects("entries"), key = { it.string("path") }) { entry ->
-                            NativeChoiceRow(entry.string("name"), enabled = !vm.panelBusy, glyph = NativeGlyph.Folder, onClick = { vm.browse(entry.string("path")) })
+                            NativeChoiceRow(entry.string("name"), enabled = remoteAvailable, glyph = NativeGlyph.Folder, onClick = { vm.browse(entry.string("path")) })
                         }
                         item { NativeField(newDirectory, { newDirectory = it }, "新文件夹名称", enabled = !vm.panelBusy) }
-                        item { WorkButton("创建文件夹", newDirectory.isNotBlank() && !vm.panelBusy) { vm.createDirectory(newDirectory.trim()) } }
+                        item { WorkButton("创建文件夹", newDirectory.isNotBlank() && remoteAvailable) { vm.createDirectory(newDirectory.trim()) } }
                     }
                     "sessions" -> {
                         item { NativeField(query, { query = it; searched = false }, "搜索标题或消息内容") }
-                        item { WorkButton(if (vm.panelBusy) "正在搜索…" else "搜索内容", query.isNotBlank() && !vm.panelBusy) { searched = true; vm.findSessions(query) } }
+                        item { WorkButton(if (vm.panelBusy) "正在搜索…" else "搜索内容", query.isNotBlank() && remoteAvailable) { searched = true; vm.findSessions(query) } }
                         if (searched) {
                             val results = vm.panelData.objects("items")
-                            if (!vm.panelBusy && results.isEmpty()) item { Text("没有匹配的消息内容", color = colors.labelSecondary, fontSize = 14.sp, lineHeight = 22.sp) }
-                            items(results) { result -> NativeChoiceRow(result.string("title").ifBlank { result.string("snippet") }, detail = result.string("snippet"), onClick = { vm.panel = ""; vm.openSession(result.string("sessionId")) }) }
+                            if (remoteAvailable && results.isEmpty()) item { Text("没有匹配的消息内容", color = colors.labelSecondary, fontSize = 14.sp, lineHeight = 22.sp) }
+                            items(results) { result -> NativeChoiceRow(result.string("title").ifBlank { result.string("snippet") }, detail = result.string("snippet"), enabled = remoteAvailable, onClick = { vm.panel = ""; vm.openSession(result.string("sessionId")) }) }
                         }
                         val rows = vm.allSessions.filter { query.isBlank() || it.title.contains(query, true) }
-                        if (rows.isEmpty() && !searched) item { Text("没有匹配的会话", color = colors.labelSecondary, fontSize = 14.sp, lineHeight = 22.sp) }
+                        if (rows.isEmpty() && !searched && !vm.chat.offline && !vm.chat.loading) item { Text("没有匹配的会话", color = colors.labelSecondary, fontSize = 14.sp, lineHeight = 22.sp) }
                         items(rows, key = { it.id }) { row ->
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.weight(1f)) { NativeChoiceRow((if (row.archived) "已归档 · " else "") + row.title, detail = row.workspace, onClick = { vm.panel = ""; vm.openSession(row.id) }) }
+                                Box(Modifier.weight(1f)) { NativeChoiceRow((if (row.archived) "已归档 · " else "") + row.title, detail = row.workspace, enabled = remoteAvailable, onClick = { vm.panel = ""; vm.openSession(row.id) }) }
                                 NativeIconButton(NativeGlyph.More, "管理会话${row.title}", { onSessionMenu(row) })
                             }
                         }
@@ -190,7 +208,7 @@ private fun NativeTaskPage(vm: DshViewModel, onSessionMenu: (NativeSession) -> U
             NativeTaskNotice(vm)
         }
         if (vm.panel == "browse") Box(Modifier.fillMaxWidth().background(colors.bgLayer1).padding(horizontal = 16.dp, vertical = 8.dp)) {
-            NativePill(if (vm.panelBusy) "正在创建会话…" else "使用当前目录创建会话", { vm.registerDirectory() }, primary = true, enabled = vm.panelData.string("path").isNotBlank() && !vm.panelBusy)
+            NativePill(if (vm.panelBusy) "正在创建会话…" else "使用当前目录创建会话", { vm.registerDirectory() }, primary = true, enabled = vm.panelData.string("path").isNotBlank() && remoteAvailable)
         }
     }
 }

@@ -211,7 +211,7 @@ private fun NativeSidebar(state: NativeChatState, workspaces: List<NativeWorkspa
             NativeIconButton(NativeGlyph.Panel, "收起侧栏", onClose)
         }
         Box(Modifier.padding(horizontal = 12.dp)) {
-            NativePill("新会话", onNew, primary = true, glyph = NativeGlyph.Plus, enabled = !state.offline)
+            NativePill("新会话", onNew, primary = true, glyph = NativeGlyph.Plus, enabled = !state.offline && !state.loading)
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) { NativeChoiceRow("搜索会话", onSearch, glyph = NativeGlyph.Search) }
@@ -236,7 +236,7 @@ private fun NativeSidebar(state: NativeChatState, workspaces: List<NativeWorkspa
                     }
                     items(group.sessions, key = { "session:${it.id}" }) { row ->
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if (row.id == state.sessionId) colors.navActive else Color.Transparent), verticalAlignment = Alignment.CenterVertically) {
-                            Row(Modifier.weight(1f).heightIn(min = 48.dp).clickable(role = Role.Button) { onOpen(row) }
+                            Row(Modifier.weight(1f).heightIn(min = 48.dp).clickable(enabled = !state.offline && !state.loading, role = Role.Button) { onOpen(row) }
                                 .padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 if (row.running || row.id == state.sessionId && state.approval != null) Box(Modifier.size(6.dp).background(if (row.id == state.sessionId && state.approval != null) colors.warn else colors.success, CircleShape))
                                 Text(row.title, color = colors.labelPrimary, fontSize = 14.sp, lineHeight = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
