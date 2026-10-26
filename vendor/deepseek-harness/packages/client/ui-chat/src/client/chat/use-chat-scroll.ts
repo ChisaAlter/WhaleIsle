@@ -100,6 +100,7 @@ export function useChatScroll(input: ChatScrollInput): ChatScrollState {
 
   useLayoutEffect(() => {
     const disconnectViewport = viewport.connect({
+      beforeDetach: () => { if (content.current.opened) reading.rememberPosition() },
       scroll: (event) => {
         if (!content.current.opened) return
         if (!event.movedByReader && viewport.motion.foldActive()) return
