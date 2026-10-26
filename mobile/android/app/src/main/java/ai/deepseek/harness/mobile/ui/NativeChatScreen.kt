@@ -2,8 +2,6 @@ package ai.deepseek.harness.mobile.ui
 
 import ai.deepseek.harness.mobile.ui.theme.dsh
 import android.graphics.BitmapFactory
-import android.graphics.Typeface
-import android.widget.TextView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.DragInteraction
@@ -28,9 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
@@ -43,13 +39,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
-import io.noties.markwon.AbstractMarkwonPlugin
-import io.noties.markwon.Markwon
-import io.noties.markwon.core.MarkwonTheme
-import io.noties.markwon.linkify.LinkifyPlugin
 import java.util.Base64
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
@@ -516,36 +507,4 @@ internal fun NativeImagePreview(image: NativeImage, modifier: Modifier) {
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
     }.getOrNull() }
     if (bitmap != null) Image(bitmap, "图片附件", modifier) else Text(image.error.ifBlank { "图片无法预览" }, color = dsh().labelSecondary)
-}
-
-@Composable
-private fun NativeMarkdown(text: String) {
-    val colors = dsh()
-    val context = LocalContext.current
-    val lineHeight = with(LocalDensity.current) { 22.sp.toPx() }
-    val markdown = remember(context, colors) {
-        Markwon.builder(context).usePlugin(LinkifyPlugin.create())
-            .usePlugin(object : AbstractMarkwonPlugin() {
-                override fun configureTheme(builder: MarkwonTheme.Builder) {
-                    builder.linkColor(colors.buttonInfoFill.toArgb())
-                        .codeTextColor(colors.labelPrimary.toArgb())
-                        .codeBlockTextColor(colors.labelPrimary.toArgb())
-                        .codeBackgroundColor(colors.bgModule.toArgb())
-                        .codeBlockBackgroundColor(colors.bgModule.toArgb())
-                        .codeTypeface(Typeface.MONOSPACE)
-                        .codeBlockTypeface(Typeface.MONOSPACE)
-                        .blockQuoteColor(colors.labelTertiary.toArgb())
-                        .headingBreakColor(colors.borderL2.toArgb())
-                        .thematicBreakColor(colors.borderL2.toArgb())
-                }
-            }).build()
-    }
-    AndroidView(factory = { viewContext -> TextView(viewContext).apply {
-        textSize = 14f; includeFontPadding = false; setTextIsSelectable(true)
-    } }, update = { view ->
-        view.setTextColor(colors.labelPrimary.toArgb())
-        view.setLinkTextColor(colors.buttonInfoFill.toArgb())
-        view.setLineSpacing((lineHeight - view.paint.fontSpacing).coerceAtLeast(0f), 1f)
-        markdown.setMarkdown(view, text)
-    })
 }

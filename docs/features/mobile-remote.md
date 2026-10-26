@@ -137,6 +137,7 @@
 - 手机目录转发保留全部 `session.list` 行和原始会话字段，投影只传 `title` / `sessionListMetadata`。模型、权限、计划与用量详情通过打开会话时的 history 按需获取，不能为每次首屏同步重复传输所有会话的详情；history、创建与搜索响应不受目录裁剪影响。目录失败必须可重试，不能假空列表。
 - **非 secure context 兼容**：`http://<LAN-IP>:3180` 禁止裸用 `crypto.randomUUID` / `crypto.subtle`；uuid 走 `getRandomValues` fallback；E2EE 保持 tweetnacl。
 - 手机端采用[桌面鲸屿窄屏布局](../design-language.md#手机远程交互)：同源透明鲸鱼娘头像和鲸屿字标、贴边直角侧栏、品牌下新会话和工作区分组目录、底部账户与设置；22px / 22dp 细边无外投影输入卡适配竖屏和 IME。模型、权限、附件、重命名、新会话选择和简短设置在紧凑 Modal / Menu 内完成，长目录、搜索与复杂 Git 任务保留可返回表面。颜色只取同值语义 token，海天画布止于连接入口，不使用简笔鲸鱼或展示衬线替代品牌。
+- Android 原生 Markdown 的表格采用独立单元格布局，表格和代码块分别水平滚动；单/双美元数学公式原生排版，普通价格和代码内美元保留原文。正文保持窄屏自然换行，颜色跟随同一主题。配对页软键盘可见时缩减品牌区并将“连接”固定在滚动内容之外，长错误与保存电脑列表仍可滚动。
 - 全量启动才启用内容搜索：`--patch` `desktop-session-search.patch.yml` 覆写 `session-query-sqlite` 为 `openAt: first-search` 与 `dsh-home/session-query.sqlite`。禁止把这次 opt-in 写进用户 `cordis.patch.yml`。skip 启动保持发版 `openAt: never`。
 
 ## Allowed touch

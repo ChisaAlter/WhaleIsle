@@ -1,4 +1,6 @@
-# Android 16 最终竖屏候选执行结果
+# Android 16 竖屏候选9881执行结果（前阶段）
+
+后续已继续修复本文记录的表格/数学/长代码与配对键盘问题；当前r2结果见[富文本与键盘续测](portrait-richtext-followup.md)。本文保留9881阶段事实，不作为最新包的未修复清单。
 
 2026-10-26，物理机 `23127PN0CC` / Android16/API36 / 1200×2670 / density480（约400dp），隔离包名 `ai.deepseek.harness.mobile.nativeqa`。本次按用户最终要求固定竖屏，不再执行或要求横屏验收。
 

@@ -1,0 +1,12 @@
+﻿{
+    "at":  "2026-10-26T19:25:30.4193068+08:00",
+    "device":  "1836e17d",
+    "package":  "ai.deepseek.harness.mobile.nativeqa",
+    "appTheme":  "system",
+    "font_scale":  "1.0",
+    "accelerometer_rotation":  "0",
+    "user_rotation":  "0",
+    "stay_on_while_plugged_in":  "15",
+    "ui_night_mode":  "1",
+    "defaultImeUnchanged":  true
+}

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -42,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -162,9 +164,11 @@ private fun ConnectionBrand(compact: Boolean, supportingText: String?) {
 @Composable
 private fun ConnectionLayout(
     supportingText: String?,
+    dockActions: (@Composable () -> Unit)? = null,
     dockContent: @Composable () -> Unit,
 ) {
     val connection = dsh().connection
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxHeight < 540.dp
         val maxDockHeight = maxHeight * if (compact) 0.58f else 0.46f
@@ -175,18 +179,22 @@ private fun ConnectionLayout(
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Bottom,
         ) {
-            Box(
-                Modifier.weight(1f).fillMaxWidth(),
-                contentAlignment = Alignment.Center,
-            ) {
-                ConnectionBrand(compact = compact, supportingText = supportingText)
+            if (!imeVisible) {
+                Box(
+                    Modifier.weight(1f).fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ConnectionBrand(compact = compact, supportingText = supportingText)
+                }
             }
-            Box(
+            Column(
                 Modifier
                     .widthIn(max = 440.dp)
                     .fillMaxWidth()
-                    .heightIn(max = maxDockHeight)
+                    // MainActivity already consumes IME/safeDrawing; use its remaining height.
+                    .then(if (imeVisible) Modifier else Modifier.heightIn(max = maxDockHeight))
                     .shadow(
                         elevation = 16.dp,
                         shape = ConnectionDockShape,
@@ -200,12 +208,18 @@ private fun ConnectionLayout(
             ) {
                 Column(
                     Modifier
+                        .weight(1f, fill = false)
                         .fillMaxWidth()
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     content = { dockContent() },
                 )
+                if (dockActions != null) {
+                    Box(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 14.dp)) {
+                        dockActions()
+                    }
+                }
             }
         }
     }
@@ -274,11 +288,16 @@ private fun ConnectScreen(
 ) {
     val palette = dsh()
     val pasteFocusRequester = remember { FocusRequester() }
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val pinnedConnect: (@Composable () -> Unit)? = if (imeVisible && pasteExpanded) {
+        { ConnectionButton(label = "连接", onClick = vm::connectFromPaste) }
+    } else null
     LaunchedEffect(pasteFocusRequestId, pasteExpanded) {
         if (pasteExpanded && pasteFocusRequestId > 0L) pasteFocusRequester.requestFocus()
     }
     ConnectionLayout(
         supportingText = "扫一下，接着电脑上的工作。",
+        dockActions = pinnedConnect,
     ) {
         if (vm.error.isNotEmpty()) {
             Text(
@@ -315,7 +334,7 @@ private fun ConnectScreen(
                 placeholder = "粘贴含 #offer= 的完整链接",
                 modifier = Modifier.focusRequester(pasteFocusRequester),
             )
-            ConnectionButton(label = "连接", onClick = vm::connectFromPaste)
+            if (!imeVisible) ConnectionButton(label = "连接", onClick = vm::connectFromPaste)
         }
         Text(
             "端到端加密，只连接你的电脑",

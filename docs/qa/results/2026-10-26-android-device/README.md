@@ -1,6 +1,6 @@
 # Android 原生客户端 QA：2026-10-26
 
-替换后的 Android 16 真机已成功调试安装，并实际完成公网配对、文字/图片对话、真实审批拒绝/允许、跨会话返回审批、排队发送、停止、重命名、全文搜索和 Fork。最终候选按用户要求固定竖屏，已保留数据覆盖安装，设备运行时确认portrait；用户停止现正确显示“已停止”。真机另完成新目录登记、模型切换、归档/恢复/删除、本地Git分支/提交，以及1/2倍字体的正常竖屏键盘编辑。本轮 App **40/40** 自动回归通过，协议 **15/15** 已通过（末次任务使用有效缓存），定向 Node **33/33**；两种 debug 身份构建成功，lint **0 error / 13 warning**。API26 补充测试与 Android15 旧机安装失败分开记录。全量边界及桌面已有差异仍有未覆盖项，不据此宣称全部功能通过。
+替换后的 Android 16 真机已成功调试安装，并实际完成公网配对、文字/图片对话、真实审批拒绝/允许、跨会话返回审批、排队发送、停止、重命名、全文搜索和 Fork。最终候选按用户要求固定竖屏，已保留数据覆盖安装，设备运行时确认portrait；用户停止现正确显示“已停止”。真机另完成新目录登记、模型切换、归档/恢复/删除、本地Git分支/提交，以及1/2倍字体的正常竖屏键盘编辑。后续继续完成本机裸仓Publish/Pull/Commit & Push，修复表格、数学、代码横滚和配对键盘裁切；当前r2包已保留数据安装，冷启1253ms，深浅主题表格与公式、代码读到END及原生短消息回复已真机核对。本轮App末次45项通过；协议15项与定向Node33项沿用此前有效结果，未在富文本末轮重跑。两种debug身份构建成功，lint **0 error / 17 warning**。API26 补充测试与 Android15 旧机安装失败分开记录。全量边界及桌面已有差异仍有未覆盖项，不据此宣称全部功能通过。
 
 报告汇总 android-state 的源码与 JVM 回归、android-ui 的模拟器和替换真机 UI 操作，以及 lead 的构建、安装和真实业务执行记录。每项按实际执行环境与证据归属记录，未做内存压测。原始静态审计中的候选与旧行号不代表最终代码仍有相同问题，处置以本报告和修订审查为准。
 
@@ -9,11 +9,11 @@
 | 环境 | 本轮事实 | 验收边界 |
 | --- | --- | --- |
 | 物理机 `23124RN87C`，Android 15，ADB `9TUCYX8TBI6DLRMZ` | MIUI/HyperOS 的“USB 安装”开关仍关闭；尝试开启提示“请先插入 SIM 卡”，双 SIM 均 `ABSENT`；`adb install` 与 `pm install` 返回 `INSTALL_FAILED_USER_RESTRICTED`。见[实际开关画面](evidence/25-usb-install-toggle.png)。 | 本轮 APK **未安装**；保留原 0.1.1 应用及数据，未卸载、清数据或绕过系统认证。标准包签名也不能据此视作可覆盖旧包。真机功能/布局/升级均未通过。 |
-| 替换物理机 `23127PN0CC`，Android16/API36，ADB `1836e17d` | 1200×2670，density480，约400dp；SIM可用，ADB首次系统拒绝后成功新装 QA 包，1055ms冷启；最终竖屏包 `install -r -t` 成功，1091ms冷启，配对/草稿保留。 | 初装与同debug身份覆盖均真实执行；不代表正式包签名升级、旧Web迁移、全部硬件和极端边界通过。 |
+| 替换物理机 `23127PN0CC`，Android16/API36，ADB `1836e17d` | 1200×2670，density480，约400dp；SIM可用，ADB首次系统拒绝后成功新装 QA 包，1055ms冷启；当前r2竖屏包 `install -r -t` 成功，1253ms冷启，配对/草稿保留。 | 初装与同debug身份覆盖均真实执行；不代表正式包签名升级、旧Web迁移、全部硬件和极端边界通过。 |
 | 隔离模拟器 `emulator-5580`，Android 8 / API 26 | 1080×1920，density 480，竖屏约 360dp；安装包 `ai.deepseek.harness.mobile.nativeqa`，Activity 为 `ai.deepseek.harness.mobile.MainActivity`；最新 QA 包 `install -r` 成功。 | 属补充实跑，不能替代 Android 15、硬件相机、其它密度/宽高或正式包覆盖升级。UI 字体重点为 1.3/2.0，未完成全部字号/输入法/导航组合。 |
 | UI 前阶段 | 使用保存的公网 Ayase 配对，连接已有 source 3181；仅新建 QA 会话，原只读会话仅查看。 | 旧宿主不支持最新 flat 子智能体地址，不能用它认证新地址。部分早期截图在 tight-IME 补修前。 |
 | lead 当前源码隔离桌面 | 独立 Electron userData；Harness 53876、daemon 53878，与既有 3080/3181 分开。Android 重新配对当前源码宿主；实际 Gateway、host tunnel 与公网中继参与请求。 | 当前源码宿主配合已有 Web 产物运行；完整桌面重建另有失败，见构建节。 |
-| 业务写入范围 | 本轮新会话及仓库外专用 `C:/AI/WhaleIsle-AndroidQA-20261026`；Git 作者仅对该临时仓设置 `--local`。 | 未向原有用户会话发送测试消息，未在产品仓做 Git 写操作，未 Publish/Push 测试仓。repo 内 `.tmp` 目录可向上找到产品仓，未用它冒充独立非仓目录。 |
+| 业务写入范围 | 本轮新会话及仓库外专用 `C:/AI/WhaleIsle-AndroidQA-20261026`；Git 作者仅对该临时仓设置 `--local`。 | 未向原有用户会话发送测试消息，未在产品仓做Git写操作；只Publish/Push到本机专用裸仓，没有向外部仓库发布测试内容。repo 内 `.tmp` 目录可向上找到产品仓，未用它冒充独立非仓目录。 |
 
 ## 构建、检查与可定位产物
 
@@ -21,17 +21,17 @@
 
 | 产物 | SHA-256 | 本轮设备状态 |
 | --- | --- | --- |
-| 最终标准 debug APK `WhaleIsle-0.3.10-debug-portrait-final.apk`，包名 `ai.deepseek.harness.mobile` | `86DA2D0ECD80D2DC19043A42FAE2434F2DA7A7322C0E18E88AC90302AC7149B6` | 构建完成；真机使用隔离身份，未覆盖原正式包。 |
-| 最终隔离 QA APK `portrait-nativeqa-final.apk`，包名 `ai.deepseek.harness.mobile.nativeqa` | `9881887992A555D449867CA31A213899D5B9297A5E61C02C7E1C1DB91B683A3F` | Android16保留数据覆盖成功、冷启动1091ms；Activity运行请求portrait。 |
+| 当前标准debug APK `WhaleIsle-0.3.10-debug-portrait-richtext-r2.apk`，包名 `ai.deepseek.harness.mobile` | `82A1C4A43D5D09B63135418E3F4408C801ECBA87AF79B00A48D8BFB97DDAAA7B` | 构建完成；真机仍使用隔离身份，没有覆盖原正式包。 |
+| 当前隔离QA APK `portrait-richtext-nativeqa-r2.apk`，包名 `ai.deepseek.harness.mobile.nativeqa` | `4A756ED75A019729F5AB8BF8971CE58CBCDF48C1DF1A9E528EEEB426F19CF6C3` | Android16保留数据覆盖成功、冷启动1253ms；Activity运行请求portrait。 |
 | 早期隔离 QA APK `fixed-nativeqa.apk` | `04CA34D91EA700472453C705645217159C0CD01F8FF5819151A01046B5691C86` | API26与Android16早期业务/主题/扫码；这些早期截图不认证后续修复。 |
 
-APK为本机运行产物，未提交到Git；lead核对exact文件摘要、debug签名、Manifest和真机安装。早期04CA包完成消息/审批/Queue/Stop等业务，4389包补做真实重连/目录/CRUD/Git/键盘，最终9881包加入目录同步旁路保护后覆盖安装并执行保存配对、Plan关闭和Markdown请求；没有把早期截图全部认证为最终包重跑。详见[最终竖屏收尾](portrait-final-results.md)。
+APK为本机运行产物，未提交到Git；lead核对exact文件摘要、debug签名、Manifest和真机安装。早期04CA包完成消息/审批/Queue/Stop等业务，4389包补做真实重连/目录/CRUD/Git/键盘，9881包加入目录同步旁路保护后覆盖安装并执行保存配对、Plan关闭和Markdown请求；其后6259包修复富文本/配对键盘，发现表格空白后r2修正并再次安装。没有把早期截图全部认证为当前包重跑。[前一竖屏收尾](portrait-final-results.md)保留历史，[富文本与键盘续测](portrait-richtext-followup.md)记录当前r2与精确摘要。
 
 | 检查 | 实际结果 | 证据/不能推导的结论 |
 | --- | --- | --- |
-| `:protocol:test :app:testDebugUnitTest` | **55项有效通过结果**：App末次执行40（Remote29、基础VM3、NativeChatState8），0 failure / error / skipped；协议15（Offer7、PairingIntent4、Interop2、Lifecycle2）此前执行通过，最终调用为UP-TO-DATE。 | [最终 JVM 汇总](evidence/recovery-jvm-results.json)。protocol15 + app40；其中受控 FakeRelay/延迟测试不是手机端到端。 |
-| `:app:assembleDebug` | standard 与 nativeqa 构建成功。 | 本轮 lead 执行；未认证 release、生产签名兼容或旧 Web 数据迁移。 |
-| `:app:lintDebug` | **0 error / 13 warning**，另有信息项。 | [最终 lint 文本](evidence/portrait-lint-results-debug.txt)：依赖版本提示8、Modifier factory1、迁移WebView JavaScript1、数据提取规则1，加上用户要求固定竖屏对应 LockedOrientationActivity/DiscouragedApi各1；不是零警告。 |
+| App JVM / protocol | **App末轮45项通过**（Remote29、基础VM3、NativeChatState8、NativeMarkdown5），0 failure/error/skipped；协议15项沿用此前有效执行，本轮富文本未重新运行。 | [r2构建/回归摘要](evidence/richtext-r2-build-summary.json)；此前[40+15汇总](evidence/recovery-jvm-results.json)。原r2逐suite XML未单独快照，后来取消的实验覆盖XML，不将其时间归r2；原r2任务成功输出与当时读取的19:10:56结果有效。受控测试不是手机E2E。 |
+| `:app:assembleDebug` | standard 与 nativeqa 构建成功。 | 前期lead执行，富文本/r2由android-state执行，lead核对身份/签名并安装；未认证release、生产签名兼容或旧Web数据迁移。 |
+| `:app:lintDebug` | **0 error / 17 warning**，另有信息项。 | [富文本lint文本](evidence/richtext-lint-results-debug.txt)。旧13项外，新增4条表格物理LEFT/RIGHT对齐的RtlHardcoded重复提示；固定竖屏的两条提示按用户要求保留，不是零警告。 |
 | host tunnel / daemon hooks / mux 定向 Node | **33/33 通过**（lead 执行记录）。 | 覆盖真实 Remote payload 适配、flat durable address/游标纠正、审批重放/解决等，不等于整个 desktop 或全部 Web 测试。 |
 | 真实 Gateway mux | 收到 `session/projection`。 | [真实 mux 结果](evidence/real-mux-results.json)；不是审批事件通过。 |
 | 真实子智能体历史 | 当前 host tunnel 用直接父/子地址读取 **252 events**，`hasMore:false`。 | [真实 child-history 结果](evidence/real-child-history-results.json)；只读，无 child prompt/树形目录验收。 |
@@ -120,10 +120,10 @@ Android 发出短请求后得到 `ANDROID_QA_20261026`，并清空已提交草�
 
 - **Git 与会话导航**：没有桌面顶栏快速主动作、ahead/behind/脏态摘要及完整 resolveGitQuick 禁用表；页内操作后/桌面切分支缺自动快照同步；默认分支新分支选择有输入前置；child 虽地址正确仍无树/标记/父下折叠；列表无完整平铺及工作区头独立 +，移动端点控制未对齐；归档未完整遵守独立默认折叠、点击不打开等合同。
 - **新建、目录与搜索**：首条前工作区chip/blank复用未对齐；目录起点不是登记目录父级；正文搜索、新目录登记已真机完成，cap20/hasMore/全部筛选仍未完整覆盖。搜索/浏览迟到归属本轮加session/panel revision回归，未设备全竞态注入。
-- **对话与富内容**：真实 Queue 管理尚未接；长草稿阅读收起、图片 lightbox、代码水平滚动未齐；真机确认表格没有表格布局、数学保留源码、代码长行软换行；其余图示/Markdown图片/交互内容未完整验收。Generative UI 引导到电脑，未知类型诚实占位，不算支持。Files/Diff/MCP/技能是冻结说明；消息 edit/rewind、Trajectory、Context meter、日志/终端等 DEFER/NEVER 范围不能当完成项；禁止 Stage/Unstage/Discard、任意 shell、凭据/MCP 写等仍需保持边界。
+- **对话与富内容**：真实 Queue 管理尚未接；长草稿阅读收起、图片lightbox未齐；9881包表格/数学/长代码差距已在r2定向修复并真机复测，其余图示/Markdown图片/交互内容未完整验收。Generative UI 引导到电脑，未知类型诚实占位，不算支持。Files/Diff/MCP/技能是冻结说明；消息 edit/rewind、Trajectory、Context meter、日志/终端等 DEFER/NEVER 范围不能当完成项；禁止 Stage/Unstage/Discard、任意 shell、凭据/MCP 写等仍需保持边界。
 - **失败语义与硬件**：B10 接收成功但 ACK 丢失后重发可能重复，未故障注入/未修；B11 “断开”与忘记本机配对语义不等同，冷启行为未验收；B12 无后摄/CameraX 失败/退出迟到绑定及可选电脑名写盘失败仍是待测候选。链接 scheme 安全需设备验证，不能凭 Markwon 默认行为声称安全通过或已存在漏洞。
 - **设置、连接与布局**：设置 Hub 仅主题/电脑，连接详情/通用/关于及 endpoint/独立忘记入口未齐；首次连接/目录失败、长错误提示与空态区分仍需完整UI走查；竖屏1/2倍字体normaldockedIME已实测，多行草稿/发送轨可达；极紧凑高度编辑当前主要一行，极小高度、长审批、短弹层按钮换行、焦点/Back/TalkBack、320dp/平板/其它密度未通过。系统栏和 Markdown 主题修复不等于全部富文本一致。
-- **资源与平台**：R1/R2 已关闭，但当前会话多页图片可增长，没有字节上限/LRU/内存压力测试；API26通过不能覆盖Android15；Android16的局部实跑也不能覆盖所有Android版本。正式签名升级、旧 Web 迁移 instrumentation、生产包、真实拍照、QR识码和完整桌面重建均未认证。
+- **资源与平台**：R1/R2 已关闭，但当前会话多页图片可增长，没有字节上限/LRU/内存压力测试；API26通过不能覆盖Android15；Android16的局部实跑也不能覆盖所有Android版本。正式签名升级、旧 Web 迁移 instrumentation、生产包、真实拍照和QR识码未认证；本地完整桌面重建失败仍保留，前一521cc提交Windows CI构建已成功，不互相覆盖。
 
 早期一次审批尝试直接被sandbox拒绝，未产生Gateway事件；之后Android16在read-only+ask下按系统要求exact operation携单次workspace-write升级，真实形成两个Gateway审批并裁决，未更改全局策略。UI 自动化中同名标题误点、selector/content-desc 不匹配、控制键/空参数与超时等失败已由执行人保留，不计作成功产品动作。上述负向结果同样属于本轮交付事实。
 
@@ -196,9 +196,9 @@ Stop 首次点击太晚，turn 已 completed，**不算 Stop 成功**。第二�
 
 已落码的新修复：传输generation继续递增；独立uiOwnerEpoch对同电脑同会话auto/manual重连保持；work/new/settings/sessions/browse及panelData/catalog保留，离线主动关闭不复活；Git/review关闭。dial/catalog/控制加载期间禁止远端任务；目录失败保留错误并可手动重试，空目录解除loading；同代目录同步只在途一次，旧会话点击不能绕开catalogReady。旧连接、session和panel revision隔离迟到结果。**4389竖屏候选真实断开/恢复已通过搜索页与query保留、离线禁用和恢复重新可用**（[结果](evidence/physical-reconnect-result.json)，[离线](evidence/newphone-61-search-during-disconnect.png)→[恢复](evidence/newphone-62-search-after-reconnect.png)）。宿主恢复需第二次enable，实际长于预设12秒，不将其记为精确12秒往返。最终9881加入后续readiness保护，JVM覆盖失败旁路/重复同步/旧代失败；未在手机注入catalog RPC单点失败。
 
-### 本次检查实际归属
+### 9881阶段检查归属（历史）
 
-最后App JVM执行17秒、BUILD SUCCESSFUL，40/40（Remote29+基础VM3+Native8），XML17:52:12（UTC+8），全部0失败/错误/跳过。旧无连接fixture任意open的草稿用例与新就绪保护冲突，第一次40项有1失败；迁到真实ready FakeRelay fixture后保留全部原归属断言并增加离线编辑当前草稿/禁止切会话断言，最终40项通过，没有放宽产品保护。协议15是此前12:40执行的有效结果，最终未重新执行；定向Node33同样是此前执行。最终两身份assemble和nativeqa lint成功，0error/13warning，未冒称55项都在最后一轮重新运行。
+该阶段App JVM执行17秒、BUILD SUCCESSFUL，40/40（Remote29+基础VM3+Native8），XML17:52:12（UTC+8），全部0失败/错误/跳过。旧无连接fixture任意open的草稿用例与新就绪保护冲突，第一次40项有1失败；迁到真实ready FakeRelay fixture后保留全部原归属断言并增加离线编辑当前草稿/禁止切会话断言，最终40项通过，没有放宽产品保护。协议15是此前12:40执行的有效结果，最终未重新执行；定向Node33同样是此前执行。最终两身份assemble和nativeqa lint成功，0error/13warning，未冒称55项都在最后一轮重新运行。
 
 ### F01–F42 新机增补矩阵
 
@@ -206,7 +206,7 @@ Stop 首次点击太晚，turn 已 completed，**不算 Stop 成功**。第二�
 
 | ID | 功能 | Android16新机事实及未完成范围 |
 | --- | --- | --- |
-| F01 | 安装/升级/冷启 | 部分实跑：nativeqa新装、COLD首屏成功；最终9881竖屏候选覆盖安装成功、冷启1091ms、配对保留。正式签名升级、旧Web迁移未跑。 |
+| F01 | 安装/升级/冷启 | 部分实跑：nativeqa新装、COLD首屏成功；9881阶段冷启1091ms；当前r2覆盖成功、冷启1253ms、配对与历史保留，并完成实际发送。正式签名升级、旧Web迁移未跑。 |
 | F02 | offer解析 | 部分实跑：真实offer连入；无效文本有明确错误。过期/各类畸形未逐项跑。 |
 | F03 | 原生扫码 | 部分实跑：权限弹层→允许→预览、torch UI往返；真实QR解码、拒绝、无后摄及失败生命周期未跑。 |
 | F04 | VIEW handoff | 部分实跑：保存配对VIEW intent实际连当前宿主；全部冷热/非法参数组合未跑。 |
@@ -241,17 +241,19 @@ Stop 首次点击太晚，turn 已 completed，**不算 Stop 成功**。第二�
 | F33 | Git初始/授权 | 本机实际打开已初始化QA专仓status/branch/文件清单，后续创建分支和commit；无仓init仍为API26实跑，不转认证本机initialize。 |
 | F34 | Git分支 | 实际手机创建并切physical-portrait-qa-1754，host分支核对；非法名/远端tracking未覆盖。 |
 | F35 | Git Commit | 实际手机Commit临时fixture，host commit53b977ef、说明一致、statusclean；未push/publish。见[Git结果](evidence/physical-git-result.json)。 |
-| F36 | Git Stack | 本机未跑push→PR/中途失败重试；新断线关闭Git/review为明确行为，非保留Git草稿。 |
-| F37 | Git同步/默认分支 | 本机未跑；ahead/behind/default等原parity缺口保留。 |
-| F38 | Publish/View PR | 本机未跑，未Publish/Push/建PR；无真实远端授权证据。 |
+| F36 | Git Stack | 本机裸仓Commit & Push及默认分支确认真实通过，local/remote3f11585d一致；PR阶段和中途失败重试未跑。断线关闭Git/review是明确行为，非保留Git草稿。 |
+| F37 | Git同步/默认分支 | 本机裸仓Pull实际快进53b977ef→164e4aa，文件到账；Commit & Push默认分支确认继续有效。ahead/behind界面摘要、分叉和全三选择仍有缺口。 |
+| F38 | Publish/View PR | 手机Publish到显式本机裸仓成功，origin建立且精确HEAD推送；没有外部鉴权或创建/查看PR/MR。见[本机Git传输](evidence/physical-git-remote-result.json)。 |
 | F39 | 设置/主题 | 深/浅/跟随系统有实际点击及图；font2/font1.3竖屏局部可读。最终包portrait已核；4389包1/2倍字体normaldockedIME实测，设置Hub/全部密度矩阵未全验收。 |
 | F40 | 只读/冻结/NEVER | read-only实际sandbox拒绝后显式单次升级审批有效；未逐个尝试全部受限接口，说明页不算能力通过。 |
-| F41 | 文本/Markdown/工具 | 最终9881手机请求Markdown并hostcompleted：H1/列表/链接有样式，表格竖线普通文本、公式源码原样、长代码软换行，属于确认的桌面体验差距；Stop已显示“已停止”。链接打开/恶意scheme未验收。 |
+| F41 | 文本/Markdown/工具 | 9881旧差距保留；当前r2深浅主题三列表格9cells/数字对齐/长格换行及横滚、行内/块公式、价格美元、代码滚到END已真机通过；Stop已显示“已停止”。链接打开/恶意scheme、全部富内容与选择复制未全验收。 |
 | F42 | 多端并行 | 手机真实操作与host消息/marker/图片ID/审批裁决/文件结果/Fork parent局部对账；桌面Web原生并发写/审批竞争/归档全状态未验收。 |
 
 
-## 最终竖屏收尾与遗留结论
+## 前一竖屏候选与当前收尾
 
 [最终收尾记录](portrait-final-results.md)汇总exact包、同ID对账、目录/CRUD/Git/IME、错误配对滚动和Markdown实际差距；[构建安装摘要](evidence/portrait-final-build-summary.json)、[设备恢复读数](evidence/physical-final-restoration.json)保留最后状态。正常字体1.0、自动旋转0、user_rotation0、USB常亮15、系统night1、原输入法与app跟随系统均恢复。
 
-最终Markdown检查可见H1/列表/链接样式，但表格未布局、数学仍源码、100字符代码软换行；[底部截图](evidence/newphone-121-final-markdown-bottom.png)为实测缺口。配对页错误与键盘同时存在时，连接按钮初始半裁；[卡内滚动后按钮完整](evidence/newphone-114-final-invalid-ime-scrolled.png)，没有据此认证布局完全通过。真实QR、实际拍照提交、远端Git、全部分页/竞争/资源边界和正式签名升级仍未完成，Issue保留OPEN，PR供审查不自动合并。
+9881包Markdown的[旧底部图](evidence/newphone-121-final-markdown-bottom.png)和[旧配对页滚动图](evidence/newphone-114-final-invalid-ime-scrolled.png)保留为修复前失败。当前r2已完成表格/数学/代码与配对IME按钮定向修复和复测，详见[续测报告](portrait-richtext-followup.md)，不能再把这些旧失败当当前缺陷。真实QR、实际拍照提交、外部Git鉴权/PR、全部分页/竞争/资源边界和正式签名升级仍未完成，Issue保持OPEN，PR供审查不自动合并。
+
+当前r2精确身份、45项回归归属、1253ms安装启动与明暗主题/横滚图证见[续测结果](portrait-richtext-followup.md)。本轮审查已区分通过、修复前失败及未覆盖范围；不是发布签收或全矩阵通过。
