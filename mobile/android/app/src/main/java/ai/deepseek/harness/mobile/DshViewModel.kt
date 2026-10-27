@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.*
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.*
+import java.util.UUID
 
 enum class Route { Connect, Permission, Scan, Chat }
 class DshViewModel(
@@ -93,6 +94,8 @@ class DshViewModel(
     private var refreshingHistory = false
     private var historyDirty = false
     private val imageDrafts = mutableMapOf<String, List<NativeImage>>()
+    private data class PendingPrompt(val requestId: String, val text: String, val images: List<NativeImage>, val mode: String)
+    private val unconfirmedPrompts = mutableMapOf<String, PendingPrompt>()
     private val historyImages = mutableMapOf<String, NativeImage>()
     private val historyImageReads = mutableMapOf<String, Deferred<Result<JsonObject>>>()
     private var history: List<JsonObject> = emptyList()
@@ -597,9 +600,17 @@ class DshViewModel(
                         }
                         require(request.mode in setOf("queue", "steer")) { "未知发送方式" }
                         if (submitted.trim().startsWith('/')) command(connection, id, submitted.trim(), attachments)
-                        else connection.host("session.prompt", obj("sessionId" to id, "mode" to if (chat.running) request.mode else "queue", "content" to
-                            listOfNotNull(submitted.takeIf { it.isNotBlank() }?.let { obj("type" to "text", "text" to it) }) +
-                            attachments.map { obj("type" to "image", "mediaType" to it.mediaType, "data" to it.data) }))
+                        else {
+                            val owner = draftKey(id)
+                            val mode = if (chat.running) request.mode else "queue"
+                            val pending = unconfirmedPrompts[owner]?.takeIf { it.text == submitted && it.images == attachments && it.mode == mode }
+                                ?: PendingPrompt(UUID.randomUUID().toString(), submitted, attachments.toList(), mode).also { unconfirmedPrompts[owner] = it }
+                            val receipt = connection.host("session.prompt", obj("sessionId" to id, "requestId" to pending.requestId, "mode" to pending.mode, "content" to
+                                listOfNotNull(submitted.takeIf { it.isNotBlank() }?.let { obj("type" to "text", "text" to it) }) +
+                                attachments.map { obj("type" to "image", "mediaType" to it.mediaType, "data" to it.data) })).objectValue()
+                            check(receipt["accepted"].flag()) { "未能确认消息发送，请同步后重试" }
+                            if (unconfirmedPrompts[owner] === pending) unconfirmedPrompts.remove(owner)
+                        }
                         if (epoch == generation && chat.sessionId == id) {
                             if (chat.draft == submitted) saveDraft(id, "")
                             imageDrafts.remove(draftKey(id)); update { copy(attachments = emptyList(), running = true) }; loadHistory(connection, epoch, id)
