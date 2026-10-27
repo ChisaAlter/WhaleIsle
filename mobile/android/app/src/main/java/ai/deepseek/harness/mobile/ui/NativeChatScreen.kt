@@ -434,8 +434,17 @@ private fun NativeComposer(state: NativeChatState, onAction: (NativeChatAction) 
                     decorationBox = { inner -> Box { if (draft.isEmpty()) Text(if (sessionId.isBlank()) "新建会话后开始对话…" else "给电脑发送消息…", fontSize = 16.sp, lineHeight = 24.sp, color = colors.labelTertiary); inner() } },
                     modifier = Modifier.fillMaxWidth().heightIn(min = if (compactHeight) 24.dp else 48.dp).padding(end = 12.dp)
                         .onPreviewKeyEvent { event ->
-                            if (preferences?.sendWithEnter == true && event.key == Key.Enter && !event.isShiftPressed) {
-                                if (event.type == KeyEventType.KeyDown) send()
+                            if (preferences?.sendWithEnter == true && event.key == Key.Enter) {
+                                if (event.type == KeyEventType.KeyDown) {
+                                     if (event.isShiftPressed) {
+                                         // Consume the chord before the editor maps Enter to ImeAction.Send.
+                                         val start = fieldValue.selection.min
+                                         val end = fieldValue.selection.max
+                                         val text = fieldValue.text.replaceRange(start, end, "\n")
+                                         fieldValue = TextFieldValue(text, TextRange(start + 1))
+                                         onAction(NativeChatAction("draft", sessionId, text = text))
+                                     } else send()
+                                 }
                                 true
                             } else false
                         }.semantics { contentDescription = "消息" })
