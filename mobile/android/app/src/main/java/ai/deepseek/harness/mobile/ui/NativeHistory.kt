@@ -126,10 +126,11 @@ internal fun foldNativeHistory(entries: List<JsonObject>): List<NativeRow> {
                 flush()
                 val message = data["message"].objectValue()
                 val callId = message["source"].objectValue().string("callId").ifBlank { data.string("callId") }
-                val result = blocksText(message.objects("content").flatMap { if (it.string("type") == "tool-result") it.objects("content") else listOf(it) })
+                val content = message.objects("content").flatMap { if (it.string("type") == "tool-result") it.objects("content") else listOf(it) }
+                val result = blocksText(content)
                 val index = tools[callId]
-                if(index != null) rows[index] = rows[index].copy(running = false,detail = rows[index].detail + "\n" + result)
-                else if(callId.isNotBlank()) rows += NativeRow(callId,"tool",message["source"].objectValue().string("name"),false,detail=result)
+                if(index != null) rows[index] = rows[index].copy(running = false, detail = rows[index].detail + "\n" + result, images = images(content))
+                else if(callId.isNotBlank()) rows += NativeRow(callId,"tool",message["source"].objectValue().string("name"),false,images = images(content),detail=result)
             }
             "turn/end", "turn/completed" -> {
                 flush(); running = false

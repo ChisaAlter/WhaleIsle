@@ -37,6 +37,8 @@ internal fun NativeRemoteScreen(vm: DshViewModel, onAttachment: () -> Unit) {
     val taskPage = vm.panel in setOf("browse", "sessions", "git")
     if (vm.panel == "settings") {
         NativeSettingsScreen(vm, onClose = { vm.panel = "" })
+    } else if (vm.panel == "desktop") {
+        NativeDesktopScreen(vm)
     } else if (taskPage) {
         NativeTaskPage(vm, onSessionMenu = { selectedSessionId = it.id; name = it.title })
     } else {
@@ -81,8 +83,8 @@ internal fun NativeRemoteScreen(vm: DshViewModel, onAttachment: () -> Unit) {
                         onClick = { vm.panel = ""; selectedWorkspaceId = workspace.id; name = workspace.title })
                 }
             }
-            Text("文件与更改：远程网关尚未提供文件浏览；请在电脑端查看。", Modifier.padding(12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
-            Text("MCP 与技能：远程端暂未接入管理；请在电脑端操作。", Modifier.padding(horizontal = 12.dp), color = colors.labelTertiary, fontSize = 12.sp, lineHeight = 18.sp)
+            NativeChoiceRow("文件", glyph = NativeGlyph.Folder, enabled = remoteAvailable && vm.currentSession()?.cwd?.isNotBlank() == true, onClick = { vm.openDesktop("files") })
+            NativeChoiceRow("更改 / Diff", enabled = remoteAvailable && vm.currentSession()?.cwd?.isNotBlank() == true, onClick = { vm.openDesktop("diff") })
         }
     }
     selectedSession?.let { row ->
@@ -243,6 +245,12 @@ private fun NativeGitPage(vm: DshViewModel) {
             WorkButton("继续剩余操作：${vm.gitRemaining.joinToString()}", available) { vm.retryGit() }
         }
         Text("分支：${status.string("refName").ifBlank { "尚未初始化" }}", color = dsh().labelPrimary, fontSize = 14.sp, lineHeight = 22.sp)
+        val quick = nativeGitQuick(status)
+        WorkButton(quick.label, available && quick.hint.isBlank()) {
+            when (quick.target) { "pr" -> vm.viewPullRequest(); "publish" -> vm.report("填写下方仓库 URL 或名称后选择 Publish"); else -> execute(quick.steps) }
+        }
+        if (quick.hint.isNotBlank()) Text(quick.hint, color = dsh().labelSecondary, fontSize = 12.sp, lineHeight = 18.sp)
+        WorkButton("Fetch", available) { vm.gitAction(listOf("git-fetch-status")) }
         if (!status["isRepo"].flag() && status.string("refName").isBlank()) WorkButton("初始化 Git", available) { vm.gitAction(listOf("git-init")) }
         NativeField(branch, { branch = it }, "搜索分支 / 新分支名称", enabled = !vm.panelBusy)
         branches.filter { branch.isBlank() || it.string("name").contains(branch, true) }.forEach { row ->

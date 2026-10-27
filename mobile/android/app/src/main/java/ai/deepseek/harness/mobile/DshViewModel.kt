@@ -101,6 +101,20 @@ class DshViewModel(
     private val resolvedApprovals = mutableSetOf<Pair<String, String>>()
     private var draftData = Json.parseToJsonElement(store.draftsJson).objectValue()
     private val computerSerializer = ListSerializer(SavedComputer.serializer())
+    internal val desktop = NativeDesktopController(viewModelScope,
+        owner = { "$generation/$sessionRevision/${chat.sessionId}" }, sessionId = { chat.sessionId }, cwd = { currentSession()?.cwd.orEmpty() },
+        host = { method, payload ->
+            check(!chat.offline && !chat.loading && catalogReady) { "连接已断开或正在同步，请恢复后重试" }
+            (client ?: error("请先连接电脑")).host(method, payload)
+        }, git = { method, payload ->
+            check(!chat.offline && !chat.loading && catalogReady) { "连接已断开或正在同步，请恢复后重试" }
+            val root = currentSession()?.cwd?.takeIf { it.isNotBlank() } ?: error("当前会话没有工作目录")
+            (client ?: error("请先连接电脑")).git(method, root, payload)
+        })
+    internal fun openDesktop(section: String) { panel = "desktop"; desktop.open(section) }
+    internal fun openExternal(url: String) {
+        if (url.startsWith("https://") || url.startsWith("http://")) externalUrl = url else report("链接不是可打开的网页")
+    }
 
     private fun readComputers() = Json.decodeFromString(ListSerializer(SavedComputer.serializer()), store.computersJson)
     init { store.clearLegacyHttpCredentials() }
@@ -154,6 +168,7 @@ class DshViewModel(
         connectionJob?.cancel(); observerJob?.cancel(); pollJob?.cancel(); client?.close(); client = null
         workspaces = emptyList(); allSessions = emptyList(); history = emptyList(); beforeSeq = null
         liveApprovals.clear(); resolvedApprovals.clear(); historyImages.clear(); historyImageReads.values.forEach { it.cancel() }; historyImageReads.clear(); refreshingHistory = false; historyDirty = false
+        desktop.reset()
         chat = NativeChatState(); panel = ""; panelData = obj(); panelBusy = false; route = Route.Connect
     }
     fun forgetComputer(serverId: String) {
@@ -173,7 +188,7 @@ class DshViewModel(
         saveImageDraft()
         cancelGitReview()
         generation++
-        if (!keepTasks) uiOwnerEpoch = generation.toString()
+        if (!keepTasks) { uiOwnerEpoch = generation.toString(); desktop.reset() }
         connectionJob?.cancel(); observerJob?.cancel(); pollJob?.cancel(); client?.close(); client = null
         reconnectEnabled = false; authenticationRejected = false; catalogReady = false; catalogSyncEpoch = null
         selectedServer = offer.serverId; store.selectedComputer = selectedServer
@@ -359,7 +374,7 @@ class DshViewModel(
         val keepPanel = preservePanel && chat.sessionId == id && panel in RETAINED_TASK_PANELS
         saveImageDraft()
         cancelGitReview()
-        if (!keepPanel) panel = ""
+        if (!keepPanel) { panel = ""; desktop.reset() }
         sessionRevision++
         val revision = sessionRevision
         historyImageReads.values.forEach { it.cancel() }; historyImageReads.clear(); historyImages.clear()
@@ -827,7 +842,7 @@ class DshViewModel(
     }
     override fun onCleared() { client?.close(); super.onCleared() }
     companion object {
-        private val RETAINED_TASK_PANELS = setOf("work", "new", "settings", "sessions", "browse")
+        private val RETAINED_TASK_PANELS = setOf("work", "new", "settings", "sessions", "browse", "desktop")
         internal val PERMISSIONS = listOf(NativePermissionOption("read-only", "仅可查看"),
             NativePermissionOption("workspace-write", "可写入工作区"), NativePermissionOption("danger-full-access", "完全权限"))
     }
