@@ -84,6 +84,31 @@ test('page reload forwards through the protected Harness-only channel', async ()
   }
 });
 
+test('workspace directory picker forwards options and path/null results only from the Harness role', async (t) => {
+  withMainFrame(t, true);
+  const calls = [];
+  const selected = path.join(__dirname, 'workspace');
+  const options = { defaultPath: path.dirname(selected), title: 'Choose a workspace' };
+  const failure = new Error('Native picker failed');
+  const renderer = { ...fakeRenderer(), invoke: async (...args) => {
+    calls.push(args);
+    if (calls.length === 3) throw failure;
+    return calls.length === 1 ? selected : null;
+  } };
+  const { exposures } = loadPreload(['electron', '--dshd-shell-role=harness'], { ipcRenderer: renderer });
+  assert.equal(await exposures.shell.pickWorkspaceDirectory(options), selected);
+  assert.equal(await exposures.shell.pickWorkspaceDirectory(), null);
+  await assert.rejects(() => exposures.shell.pickWorkspaceDirectory({}), error => error === failure);
+  assert.deepEqual(calls, [
+    ['shell:pick-workspace-directory', options],
+    ['shell:pick-workspace-directory'],
+    ['shell:pick-workspace-directory', {}],
+  ]);
+  for (const role of ['boot', 'launcher', 'pet', 'pet-live2d']) {
+    assert.equal(buildShellApi(role, renderer).pickWorkspaceDirectory, undefined);
+  }
+});
+
 test('OpenUI shell calls forward unchanged only from the harness role', async () => {
   const calls = [];
   const viewer = '<!doctype html><title>trusted viewer</title>';

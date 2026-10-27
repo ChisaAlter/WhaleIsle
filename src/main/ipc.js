@@ -1,4 +1,5 @@
 const fs = require('node:fs');
+const path = require('node:path');
 const { ipcMain, dialog, app, shell } = require('electron');
 const { formatBootLogDump, saveBootLog } = require('./boot-log-dump');
 const {
@@ -109,6 +110,7 @@ function registerIpc({
     });
   };
   const authorizeHarness = (event) => assertIpcSender(event, HARNESS_ONLY);
+  let pendingWorkspaceDirectoryDialog = null;
   // Launcher orchestration lives in the service; handlers below stay thin
   // authorization + renderer-transport delegates so the same service can sit
   // behind a different boundary later.
@@ -234,6 +236,51 @@ function registerIpc({
       writeFile: fs.promises.writeFile,
       defaultDirectory: app.getPath('downloads'),
     });
+  });
+
+  handle('shell:pick-workspace-directory', HARNESS_ONLY, (_event, options = {}) => {
+    if (options === null || typeof options !== 'object'
+      || (Object.getPrototypeOf(options) !== Object.prototype && Object.getPrototypeOf(options) !== null)) {
+      throw new Error('Workspace directory options must be a plain object');
+    }
+    if (options.title !== undefined && typeof options.title !== 'string') {
+      throw new Error('Workspace directory title must be a string');
+    }
+    if (options.defaultPath !== undefined && (typeof options.defaultPath !== 'string'
+      || options.defaultPath.includes('\0') || !path.isAbsolute(options.defaultPath))) {
+      throw new Error('Workspace directory defaultPath must be an absolute path without NUL');
+    }
+
+    const mainWindow = getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      throw new Error('Workspace directory picker requires a live main window');
+    }
+    if (pendingWorkspaceDirectoryDialog?.window === mainWindow) {
+      // A replacement flow must not adopt a result requested by an older flow.
+      return pendingWorkspaceDirectoryDialog.promise.then(() => null);
+    }
+    const dialogOptions = {
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: options.defaultPath ?? (loadConfig().workspace || app.getPath('home')),
+      ...(options.title === undefined ? {} : { title: options.title }),
+    };
+    // The BrowserWindow owns the native dialog; the authorized caller lives in
+    // its Harness BrowserView. Only the initiating request receives its selection.
+    const pending = { window: mainWindow, promise: null };
+    pending.promise = Promise.resolve().then(async () => {
+      if (mainWindow.isDestroyed()) return null;
+      try {
+        const result = await dialog.showOpenDialog(mainWindow, dialogOptions);
+        return mainWindow.isDestroyed() || result.canceled ? null : (result.filePaths[0] || null);
+      } catch (error) {
+        if (mainWindow.isDestroyed()) return null;
+        throw error;
+      }
+    }).finally(() => {
+      if (pendingWorkspaceDirectoryDialog === pending) pendingWorkspaceDirectoryDialog = null;
+    });
+    pendingWorkspaceDirectoryDialog = pending;
+    return pending.promise;
   });
 
   handle('shell:open-settings', HARNESS_ONLY, (_event, sectionId) => openHarnessSettings(sectionId));

@@ -7,7 +7,8 @@ import { createElement } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 import type { DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
 import type { Translate } from '@deepseek-ai/dsh-client-locale/client'
-import type { HostObservable, PropsHooks, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { HostObservable, PropsHooks, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type { createPickerPreferenceStore } from './store.ts'
 // Type-only: pulls the SlotMap merge declaring the directory-flow holes.
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { RemoteFlowOwnerProps } from './contract/slots.ts'
@@ -19,6 +20,8 @@ export interface BrowseFlowInjected {
   listDirectory: (path?: string, signal?: AbortSignal) => Promise<DirectoryListing>
   /** Create one child directory under an existing parent. */
   createDirectory: (path: string, name: string) => Promise<string>
+  /** Windows desktop chooser, absent in browsers and on other platforms. */
+  pickNativeDirectory?: ((options: { defaultPath?: string; title: string }) => Promise<string | null>) | undefined
   hooks: {
     /** True while this entry's remote-workspace child hole is occupied. */
     remoteFlow: HostObservable<boolean>
@@ -37,12 +40,14 @@ type HeroFlowProps =
   PropsRuntime<'conversation.hero.workspace.directoryFlow'>
   & Omit<BrowseFlowInjected, 'hooks'>
   & BrowseFlowHooks
+  & PropsStore<ReturnType<typeof createPickerPreferenceStore>>
   & PropsRenderSlots<HeroRemoteSlot>
 
 type SidebarFlowProps =
   PropsRuntime<'sidebar.workspaces.directoryFlow'>
   & Omit<BrowseFlowInjected, 'hooks'>
   & BrowseFlowHooks
+  & PropsStore<ReturnType<typeof createPickerPreferenceStore>>
   & PropsRenderSlots<SidebarRemoteSlot>
 
 /**
@@ -59,11 +64,17 @@ function TabbedDirectoryFlow(props: (HeroFlowProps | SidebarFlowProps) & {
   renderRemote: (owner: RemoteFlowOwnerProps) => ReactNode
 }): ReactElement {
   const remoteAvailable = props.useRemoteFlow(occupied => occupied)
+  const useNative = props.useStore(state => state.useNative)
   return createElement(DirectoryBrowser, {
     open: props.open,
     busy: props.busy,
     listDirectory: props.listDirectory,
     createDirectory: props.createDirectory,
+    nativePicker: props.pickNativeDirectory === undefined ? undefined : {
+      enabled: useNative,
+      setEnabled: props.actions.setUseNative,
+      pick: props.pickNativeDirectory,
+    },
     t: props.t,
     onOpen: props.onPicked,
     onClose: props.onCancel,

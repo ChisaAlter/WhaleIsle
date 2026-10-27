@@ -39,7 +39,7 @@ import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import {
   Button, IconCheckOutline16, IconChevronRightOutline14, IconEditOutline16, IconFolderClose16, IconFolderOpen16,
-  IconPlusOutline16, IconWarningOutline16, Modal, Pill, Toast,
+  IconPlusOutline16, IconWarningOutline16, Modal, Pill, Switch, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DirectoryEntry, DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
 import type { Translate } from '@deepseek-ai/dsh-client-locale/client'
@@ -79,6 +79,12 @@ export interface DirectoryBrowserProps {
   remote?: {
     /** Render the remote pane; `active` is false while the local tab shows or the dialog is closed. */
     render: (active: boolean) => ReactNode
+  } | undefined
+  /** Windows desktop chooser and its shared, persisted preference. */
+  nativePicker?: {
+    enabled: boolean
+    setEnabled: (enabled: boolean) => void
+    pick: (options: { defaultPath?: string; title: string }) => Promise<string | null>
   } | undefined
   /** Localized copy. */
   t: Translate
@@ -298,7 +304,11 @@ function LevelColumn({ entries, selectedPath, busy, onPick, showHidden, filterPr
  * @param props - owner-controlled browser props.
  * @returns the dialog element (null while closed, via Modal).
  */
-export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen, onClose, busy, remote, t }: DirectoryBrowserProps) {
+export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen, onClose, busy, remote, nativePicker, t }: DirectoryBrowserProps) {
+  const nativeMode = nativePicker?.enabled === true
+  const [nativeBusy, setNativeBusy] = useState(false)
+  const nativeOperation = useRef<symbol | null>(null)
+  const nativeOpened = useRef(false)
   // The local/remote tab strip (rendered only while a remote flow occupies
   // the hole). `remoteVisited` turns the first remote pick into a permanent
   // mount: the occupant keeps its SSH/machine state alive across tab
@@ -349,6 +359,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
   useEffect(() => () => {
     requestSeq.current += 1
     openGeneration.current += 1
+    nativeOperation.current = null
     scanController.current?.abort()
   }, [])
   const compositionGuard = {
@@ -621,7 +632,12 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
       setCreatingFolder(false)
       setShowHidden(false)
       setTab('local')
-      navigate()
+      if (nativeMode) {
+        supersede()
+        setLoading(false)
+        setError(null)
+        setPathDraft(null)
+      } else navigate()
       return
     }
     supersede()
@@ -638,7 +654,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
     // flags armed; retire them so a later render cannot consume them.
     refocusPick.current = false
     refocusEditZone.current = false
-  }, [open, navigate, supersede])
+  }, [open, nativeMode, navigate, supersede])
 
   /** The folder a create or Open acts on: the selection, else the listed level. */
   const targetPath = selected?.path ?? parent?.path ?? null
@@ -821,6 +837,47 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
     setTab(next)
   }
 
+  const nativePick = nativePicker?.pick
+  const nativeTitle = t('browser.title')
+  const nativeDefaultPath = targetPath === null || isVolumeRoot(targetPath) ? undefined : targetPath
+  const openNative = useCallback((): void => {
+    if (nativePick === undefined || nativeOperation.current !== null || busy || !open) return
+    const operation = Symbol('native-directory-pick')
+    nativeOperation.current = operation
+    setNativeBusy(true)
+    setError(null)
+    void Promise.resolve().then(() => {
+      if (nativeOperation.current !== operation) return null
+      return nativePick({
+        title: nativeTitle,
+        ...(nativeDefaultPath === undefined ? {} : { defaultPath: nativeDefaultPath }),
+      })
+    }).then((path) => {
+      if (nativeOperation.current !== operation) return
+      if (path !== null) onOpen(path)
+    }).catch((reason: unknown) => {
+      if (nativeOperation.current === operation) setError(failureText(reason))
+    }).finally(() => {
+      if (nativeOperation.current !== operation) return
+      nativeOperation.current = null
+      setNativeBusy(false)
+    })
+  }, [nativePick, nativeDefaultPath, nativeTitle, onOpen, busy, open])
+
+  // One automatic invocation per open or switch to native mode. Cancellation
+  // keeps the wrapper available without immediately opening another OS dialog.
+  useEffect(() => {
+    if (!open || !nativeMode) {
+      nativeOpened.current = false
+      nativeOperation.current = null
+      setNativeBusy(false)
+      return
+    }
+    if (busy || activeTab !== 'local' || nativeOpened.current) return
+    nativeOpened.current = true
+    openNative()
+  }, [open, nativeMode, busy, activeTab, openNative])
+
   if (!open) {
     return remoteNode === null ? null : <div className={css.paneHidden}>{remoteNode}</div>
   }
@@ -828,7 +885,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
   // The nested create dialog owns the interaction while open: Modal has no
   // focus trap, so every parent control goes inert (Shift-Tab or AT must not
   // close, adopt, or retarget underneath the child).
-  const parentInert = busy || folderDraft !== null
+  const parentInert = busy || nativeBusy || folderDraft !== null
   // An uncommitted path draft makes targetPath stale relative to the header:
   // committing actions must not act on the previous selection/listing while
   // a different path is displayed.
@@ -843,7 +900,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
       // (its own guard keeps an in-flight creation open), and an in-flight
       // adoption pins the flow — dismissing it would leave the owner's
       // createWorkspace to land after an apparent cancel.
-      onClose={() => { if (folderDraft === null && !busy) onClose() }}
+      onClose={() => { if (!parentInert) onClose() }}
       title={t('browser.title')}
       className={clsx(css.dialog)}
       headless
@@ -920,7 +977,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
                 </Pill>
               </span>
             )}
-            {activeTab === 'local' && (
+            {activeTab === 'local' && !nativeMode && (
               <button
                 type="button"
                 className={css.homeJump}
@@ -933,7 +990,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
               </button>
             )}
           </div>
-          {activeTab === 'local' && (
+          {activeTab === 'local' && !nativeMode && (
             <div className={css.crumbBar}>
               {pathDraft === null
                 ? (
@@ -1048,7 +1105,15 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
             id={`${tabsId}-panel-local`}
             aria-labelledby={`${tabsId}-tab-local`}
           >
-            <div className={css.content}>
+            {nativeMode ? (
+              <div className={clsx(css.content, css.nativeContent)}>
+                <IconFolderOpen16 size={24} />
+                <p className={css.nativeDescription}>{t('browser.nativeDescription')}</p>
+                <Button variant="outline" disabled={parentInert} loading={nativeBusy} feedback={nativeBusy ? t('browser.openingNative') : undefined} onClick={openNative}>
+                  {t('browser.openNative')}
+                </Button>
+              </div>
+            ) : <div className={css.content}>
               <div className={css.millerRow} ref={millerRowRef}>
                 {parent !== null && (
                   <LevelColumn
@@ -1082,8 +1147,9 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
           * on every navigation away from it. */}
               {(parent?.truncated === true || child?.truncated === true)
           && <div className={css.status} role="status">{t('browser.truncated')}</div>}
-            </div>
+            </div>}
             <div className={css.footerBar} data-dsh-modal-footer="">
+              {!nativeMode && <div className={css.browseActions}>
               <Button
                 variant="outline"
                 icon={<IconPlusOutline16 size={14} />}
@@ -1112,9 +1178,15 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
               * shifts when the pressed state toggles. */}
                 {showHidden && <IconCheckOutline16 size={14} />}
               </button>
+              </div>}
+              {nativePicker !== undefined && <label className={css.nativeToggle}>
+                <span>{t('browser.nativePicker')}</span>
+                <Switch checked={nativeMode} label={t('browser.nativePicker')} disabled={parentInert} onChange={nativePicker.setEnabled} />
+              </label>}
               <span className={css.footerGap} />
+              <div className={css.confirmActions}>
               <Button variant="outline" className={clsx(css.footerAction)} disabled={parentInert} onClick={onClose}>{t('browser.cancel')}</Button>
-              <Button
+              {!nativeMode && <Button
                 variant="primary"
                 className={clsx(css.footerAction)}
                 disabled={confirmBlocked}
@@ -1123,7 +1195,8 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
                 onClick={() => { if (targetPath !== null) onOpen(targetPath) }}
               >
                 {t('browser.open')}
-              </Button>
+              </Button>}
+              </div>
             </div>
           </div>
         )}
@@ -1195,7 +1268,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
         icon={<IconWarningOutline16 />}
         holdMs={null}
         dismissLabel={t('browser.dismiss')}
-        actions={[{ label: t('browser.retry'), onClick: () => { retryBrowse.current() } }]}
+        actions={[{ label: t('browser.retry'), onClick: () => { if (nativeMode) openNative(); else retryBrowse.current() } }]}
         onDone={() => { setError(null) }}
       />}
     </Modal>

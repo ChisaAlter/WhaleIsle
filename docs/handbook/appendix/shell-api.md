@@ -71,6 +71,10 @@
 
 `openWorkspacePath`、`listDir`、`readFile`、`readFileMedia`、`writeFile`、`listEditors`、`openInEditor`、`showItemInFolder`、`openWithSystemDefault`。
 
+`pickWorkspaceDirectory(options?: { defaultPath?: string; title?: string }): Promise<string | null>` → `shell:pick-workspace-directory`。仅向 Harness 主 frame 暴露；main 按可信 Harness BrowserView sender、主 frame 和 origin 鉴权，原生目录对话框由 `getMainWindow()` 返回的 BrowserWindow 持有，使用 `['openDirectory', 'createDirectory']`，不支持多选。同一窗口只保留一个未完成的对话框，采用首次请求的选项并仅向首次调用返回选择；后来的并发调用等待该窗口结束后返回 `null`，避免新建或重挂载的选择流程收养旧结果。完成或失败后释放，失败向调用方 reject，之后可再次调用。
+
+`options` 可省略，传入时须为普通对象；`title` 若提供须为字符串，`defaultPath` 若提供须为不含 NUL 的绝对路径。未指定 `defaultPath` 时使用 `loadConfig().workspace || app.getPath('home')`。选中后只返回第一个目录路径；取消、无选择或等待结果期间所属窗口已销毁时返回 `null`。打开前主窗口不存在或已销毁则 reject。此 API 不写配置、不切换或登记工作区，也不重启 Harness；调用方收到路径后自行处理。
+
 ### PTY
 
 `ptyCreate`、`ptyWrite`、`ptyResize`、`ptyKill`、`onPtyData`、`onPtyExit`。

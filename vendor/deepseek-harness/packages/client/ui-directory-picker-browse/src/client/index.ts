@@ -21,6 +21,7 @@ import type {} from './contract/slots.ts'
 import type { BrowseFlowInjected } from './flow.ts'
 import { BrowseDirectoryFlowHero, BrowseDirectoryFlowSidebar } from './flow.ts'
 import type { RemoteFlowSlotName } from './contract/slots.ts'
+import { createPickerPreferenceStore } from './store.ts'
 export type { RemoteFlowOwnerProps, RemoteFlowSlotName } from './contract/slots.ts'
 
 /** Locale namespace owning the browser dialog's copy. */
@@ -62,6 +63,10 @@ export function apply(ctx: ClientContext): void {
         'browser.showHidden': '显示隐藏文件',
         'browser.tabLocal': '本机',
         'browser.tabRemote': '远程',
+        'browser.nativePicker': 'Windows 系统选择器',
+        'browser.nativeDescription': '使用 Windows 默认窗口选择本机工作区目录。关闭下方开关可返回应用内浏览。',
+        'browser.openNative': '选择文件夹',
+        'browser.openingNative': '选择中…',
       }],
       ['en', {
         'browser.title': 'Select Workspace Directory',
@@ -83,6 +88,10 @@ export function apply(ctx: ClientContext): void {
         'browser.showHidden': 'Show hidden files',
         'browser.tabLocal': 'Local',
         'browser.tabRemote': 'Remote',
+        'browser.nativePicker': 'Windows folder picker',
+        'browser.nativeDescription': 'Choose a local workspace folder with the Windows dialog. Turn off the switch below to browse in the app.',
+        'browser.openNative': 'Choose folder',
+        'browser.openingNative': 'Choosing…',
       }],
     ]
     try {
@@ -104,9 +113,20 @@ export function apply(ctx: ClientContext): void {
     getSnapshot: () => ctx.slots.entries(hole).length > 0,
     subscribe: listener => ctx.slots.subscribe(hole, listener),
   })
+  const preferenceHandle = createPickerPreferenceStore()
+  const preferenceInstance = preferenceHandle.create()
+  const preferences: typeof preferenceHandle = { ...preferenceHandle, create: () => preferenceInstance }
+  const shell = (globalThis as typeof globalThis & { shell?: {
+    platform?: string
+    pickWorkspaceDirectory?: (options: { defaultPath?: string; title: string }) => Promise<string | null>
+  } }).shell
+  const pickNativeDirectory = shell?.platform === 'win32' && typeof shell.pickWorkspaceDirectory === 'function'
+    ? shell.pickWorkspaceDirectory.bind(shell)
+    : undefined
   const injected = (remoteHole: RemoteFlowSlotName) => (): BrowseFlowInjected => ({
     listDirectory: (path, signal) => ctx.uiWorkspace.listDirectory(path, signal),
     createDirectory: (path, name) => ctx.uiWorkspace.createDirectory(path, name),
+    pickNativeDirectory,
     hooks: { remoteFlow: remoteFlowSource(remoteHole) },
     t: ctx.locale.bind(LOCALE_NS),
   })
@@ -120,6 +140,7 @@ export function apply(ctx: ClientContext): void {
         children: {
           'conversation.hero.workspace.directoryFlow.remote': { kind: 'single', scope: 'root' },
         },
+        store: preferences,
         inject: injected('conversation.hero.workspace.directoryFlow.remote'),
       }, BrowseDirectoryFlowHero)
       yield ctx.slots.register({
@@ -127,6 +148,7 @@ export function apply(ctx: ClientContext): void {
         children: {
           'sidebar.workspaces.directoryFlow.remote': { kind: 'single', scope: 'root' },
         },
+        store: preferences,
         inject: injected('sidebar.workspaces.directoryFlow.remote'),
       }, BrowseDirectoryFlowSidebar)
     }))

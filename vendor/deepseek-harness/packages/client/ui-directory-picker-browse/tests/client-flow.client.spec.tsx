@@ -17,12 +17,13 @@ import { apply, inject } from '../src/client/index.ts'
 import { BrowseDirectoryFlowHero, BrowseDirectoryFlowSidebar } from '../src/client/flow.ts'
 import type { RemoteFlowOwnerProps } from '../src/client/contract/slots.ts'
 import { apply as nodeApply } from '../src/index.ts'
+import { createPickerPreferenceStore } from '../src/client/store.ts'
 
 // The service reads its initial locale from the browser; these specs assert
 // the shipped Chinese copy, so they state the browser they assume.
 usePinnedBrowserLanguages('zh-CN')
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); localStorage.clear(); vi.unstubAllGlobals() })
 
 const HOLES = ['conversation.hero.workspace.directoryFlow', 'sidebar.workspaces.directoryFlow'] as const
 const REMOTE_HOLES = [
@@ -92,7 +93,8 @@ function standardProps(): GlobalStandardProps {
 function slotProps<C extends typeof BrowseDirectoryFlowHero | typeof BrowseDirectoryFlowSidebar>(overrides: {
   occupied?: boolean
   renderSlot?: (share: RemoteFlowOwnerProps) => ReactNode
-} = {}): Pick<ComponentProps<C>, 'useRemoteFlow' | 'renderSlot'> & { remoteOwners: RemoteFlowOwnerProps[] } {
+} = {}): Pick<ComponentProps<C>, 'useRemoteFlow' | 'renderSlot' | 'useStore' | 'actions'> & { remoteOwners: RemoteFlowOwnerProps[] } {
+  const preference = createPickerPreferenceStore().create()
   const remoteOwners: RemoteFlowOwnerProps[] = []
   const renderSlot = ((_key: string, share: RemoteFlowOwnerProps): ReactNode => {
     remoteOwners.push(share)
@@ -100,7 +102,7 @@ function slotProps<C extends typeof BrowseDirectoryFlowHero | typeof BrowseDirec
   }) as ComponentProps<C>['renderSlot']
   const useRemoteFlow = (<S,>(selector: (snapshot: boolean) => S): S =>
     selector(overrides.occupied ?? false))
-  return { useRemoteFlow, renderSlot, remoteOwners }
+  return { useRemoteFlow, renderSlot, remoteOwners, useStore: bindSnapshotSelector(preference), actions: preference.actions }
 }
 
 describe('directory-picker-browse client half', () => {
@@ -245,6 +247,22 @@ describe('directory-picker-browse client half', () => {
     expect(injected.t('browser.showHidden')).toBe('显示隐藏文件')
     expect(injected.t('browser.tabLocal')).toBe('本机')
     expect(injected.t('browser.tabRemote')).toBe('远程')
+  })
+
+  it('shares the Windows preference across entry points and injects only an available Windows chooser', async () => {
+    const pickWorkspaceDirectory = vi.fn(async () => 'D:\\project')
+    vi.stubGlobal('shell', { platform: 'win32', pickWorkspaceDirectory })
+    const b = await bench()
+    b.declare()
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const hero = b.slots.entries(HOLES[0])[0]!
+    const sidebar = b.slots.entries(HOLES[1])[0]!
+    const injected = (hero.inject as () => { pickNativeDirectory: (options: { title: string }) => Promise<string | null> })()
+    await expect(injected.pickNativeDirectory({ title: 'Choose directory' })).resolves.toBe('D:\\project')
+    expect(pickWorkspaceDirectory).toHaveBeenCalledExactlyOnceWith({ title: 'Choose directory' })
+    expect(hero.store).toBe(sidebar.store)
+    await fiber.dispose()
   })
 
   it('drives the injected browse calls through the hole entry', async () => {
