@@ -1,0 +1,8 @@
+gradle.beforeProject { p ->
+    p.plugins.withId('com.android.application') {
+        p.extensions.getByName('androidComponents').finalizeDsl { android ->
+            android.defaultConfig.applicationId = 'ai.deepseek.harness.mobile.migrationqa'
+            if (p.findProperty('dshTestRunner')) android.defaultConfig.testInstrumentationRunner = p.findProperty('dshTestRunner')
+        }
+    }
+}

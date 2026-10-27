@@ -16,7 +16,11 @@ import kotlinx.serialization.json.*
 /** On-device storage migration comparison, or opt-in system-bar regression checks. */
 class NativeUpgradeInstrumentation : Instrumentation() {
     private var systemBars = false
+    private var expectedComputers: Int? = null
+    private var expectedDrafts: Int? = null
     override fun onCreate(arguments: Bundle?) {
+        expectedComputers = arguments?.getString("expectedComputers")?.toInt()?.also { require(it >= 0) }
+        expectedDrafts = arguments?.getString("expectedDrafts")?.toInt()?.also { require(it >= 0) }
         systemBars = arguments?.getString("systemBars") == "true"
         super.onCreate(arguments)
         start()
@@ -48,6 +52,9 @@ class NativeUpgradeInstrumentation : Instrumentation() {
                 for((server,value) in legacy["drafts"].objectValue()) for((session,text) in Json.parseToJsonElement(value.text()).objectValue()) {
                     check(currentDrafts["$server/$session"]==text) { "Legacy draft changed" }; drafts++
                 }
+                check(computers > 0 || drafts > 0) { "Legacy fixture is empty; migration comparison requires persisted data" }
+                expectedComputers?.let { check(computers == it) { "Expected $it legacy computers, found $computers" } }
+                expectedDrafts?.let { check(drafts == it) { "Expected $it legacy drafts, found $drafts" } }
                 result.putString("stream","PASS: preserved $computers legacy computers and $drafts drafts in encrypted native storage\n")
             }
             finish(-1,result)

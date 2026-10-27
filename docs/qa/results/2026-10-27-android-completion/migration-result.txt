@@ -1,0 +1,10 @@
+Historical source: e840f28e0c5ff6502b783fde7c687a387afcdca1
+Isolated package: ai.deepseek.harness.mobile.migrationqa
+Old Web versionCode: 2; native versionCode: 4; same standard debug certificate.
+Old seed after WebView destroy: PASS: historical WebView seeded 2 computers and 3 drafts with nonempty storage
+Old independent cold process: PASS: cold historical WebView read exactly 2 computers and 3 drafts
+Native overlay install -r: Success; no uninstall/data clear between the verified old cold read and native overlay.
+NativeUpgradeInstrumentation: PASS: preserved 2 legacy computers and 3 drafts in encrypted native storage
+Instrumentation code: -1
+Visible native saved computers: QA Legacy A; QA Legacy B. Synthetic localhost:1 credentials deliberately do not authenticate.
+The published android-v0.3.10 is already native and is not this historical Web fixture.
