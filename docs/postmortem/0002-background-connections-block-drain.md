@@ -28,6 +28,18 @@
 - 用 1 秒排空探针读出 0.3.10 刚启动时的两项在途请求：`http GET /api/dsh-pad.stream?watch=`、`conn GET /api/dsh-pad.stream?watch=`，同一连接被重复计数；修复后刚启动的在途工作为空，加锁立即成功。
 - 修复（#253）后同一脚本：开关不再弹窗、立即重启并保持开启；关闭主窗口 2 秒退出；drain 检查 8/8 通过，「关闭桌面端」3 秒完成。
 
+## 托盘退出复核（2026-10-27）
+
+截图反馈「退出要点几次」后，对当前安装程序、源码和关闭事件作了单独审查。只读检查确认运行的是 0.3.10 / Electron 44.5.0，安装目录的 `dsh-task-control` 仍是本页所述旧实现，当前面板 watch 持续贡献两个在途请求。没有对正在工作的安装进程执行 acquire、退出或修改配置。
+
+用安装目录的原始插件分别经过 `connection/request` 和 HTTP 路由处理同一 watch，独立探针精确返回 `conn GET /api/dsh-pad.stream?watch=` 与 `http GET /api/dsh-pad.stream?watch=`，排空超时；同一探针换成 #253 后的源码插件，pending 为零并立即取得锁。
+
+另一隔离 Electron 场景使用安装程序的生产 `before-quit`、`finalizeQuit`、主窗 close 绑定和任务保护协调器，连接真实 HTTP watch 并保留默认三十秒期限。一次退出请求后，首次 `before-quit` 被生产协调器有意取消；三十秒后记录 `dshd/shutdown-timeout`，约 33.05 秒后自动退出。整个等待期间没有发生窗口 close 或 `will-prevent-unload`。这确认了可复现的阻塞处于排空阶段，而非页面拒绝最终关闭；该场景是原生产函数的隔离装配，不是原安装包完整 UI 验收。
+
+包含 #253 与 PR #296 的完整源码应用开启面板，独立配置下 acquire 用时 17ms，一次托盘退出在 2.14 秒完成。最终主窗、启动器 close 和 `will-quit` 均未取消，也未触发强制退出。安装版在全新隔离配置中的完整 UI 本次未进入可验收状态，未将其计为通过。
+
+主进程、preload、内置页面和随包插件审查未发现额外的内置最终关闭 veto。主窗关闭到托盘、清理期间的 close 保护以及首次 `before-quit` 都是明确的产品流程；前台键盘关闭文件标签的未保存确认不等于应用退出拦截。PR #296 补的是后台停止后最终 Electron 关闭阶段缺少期限的问题，其人为注入的 close / beforeunload veto 回归不能作为本次截图现场存在这些 veto 的证据。
+
 ## Root cause
 
 drain 的本意是等「会结束、中断有损」的请求结束。实现上把所有经过 HTTP 准入的请求都放进 drain 集合，包括：

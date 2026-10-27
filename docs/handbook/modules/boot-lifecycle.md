@@ -36,7 +36,7 @@
 
 ## 退出/更新保护（P1）
 
-显式 quit 现与安装/启动器停止一样跳过工作清单二次确认，但保留检查、接纳锁和 drain；锁/排空失败仍显示故障恢复提示。Host 不把本地回环空闲长连接计作远程工作，agent/job/在途请求仍独立检查，见[退出修复](../../decisions/implemented/bug-fix/2026-09-29-quit-transport-false-positive.md)。重启/重载仍需活动任务确认。
+显式 quit 与安装/启动器停止一样跳过工作清单二次确认，但保留检查、接纳锁和 drain；检查、排空或关停失败会记录诊断并自动清理退出，不追加故障恢复确认。最终窗口关闭的期限见[托盘、关闭与更新](tray-update.md#用户路径)。Host 不把本地回环空闲长连接计作远程工作，agent/job/在途请求仍独立检查，见[退出修复](../../decisions/implemented/bug-fix/2026-09-29-quit-transport-false-positive.md)。重启/重载仍需活动任务确认。
 
 关闭遮罩的 CSS / 脚本 / 两帧等待在主进程有 500ms 期限。隐藏页面的 requestAnimationFrame 可以不执行，因此它只负责尽力显示反馈，超时或 renderer 出错后照常进入 `harness.shutdown()`；任务保护和正常资源清理不跳过。见[绘制等待决定](../../decisions/implemented/bug-fix/2026-10-01-closing-overlay-paint-deadline.md)。
 
