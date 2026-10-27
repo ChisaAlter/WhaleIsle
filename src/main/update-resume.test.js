@@ -201,6 +201,25 @@ test('final disconnect and cancellation during retry remove retained partials', 
   }
 });
 
+test('disk failure while draining a disconnected response stops retries with the disk error', async t => {
+  const { Writable } = require('node:stream');
+  const f = fixture(t, response => {
+    response.headers = { 'content-length': String(bytes.length), etag: '"installer-v1"' };
+    response.once('ready', () => {
+      response.write(bytes.subarray(0, 10));
+      response.emit('error', Object.assign(new Error('network reset'), { code: 'ECONNRESET' }));
+    });
+  });
+  t.mock.method(fs, 'createWriteStream', () => new Writable({
+    write(_chunk, _encoding, callback) {
+      setImmediate(() => callback(Object.assign(new Error('disk full during queued write'), { code: 'ENOSPC' })));
+    },
+  }));
+  await assert.rejects(downloadFile('https://example.test/Setup.exe', f.dest, null, options), { code: 'ENOSPC' });
+  assert.equal(f.requests.length, 1, 'permanent disk errors must not start another request');
+  assert.equal(fs.existsSync(f.dest), false);
+});
+
 test('matching Range metadata cannot bypass final SHA512 verification', async t => {
   const f = fixture(t, (response, attempt, headers) => {
     if (attempt === 1) broken(response);

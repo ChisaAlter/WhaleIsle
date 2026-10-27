@@ -549,6 +549,7 @@ function downloadFileOnce(url, dest, onProgress, {
     const offset = resumeState?.offset || 0;
     let file;
     let settled = false;
+    let failureError;
     let activeRequest = null;
     let activeResponse = null;
     let inactivityTimer;
@@ -568,6 +569,7 @@ function downloadFileOnce(url, dest, onProgress, {
         return;
       }
       settled = true;
+      failureError = error;
       clearTimeout(deadline);
       clearTimeout(inactivityTimer);
       releaseSignal();
@@ -577,12 +579,12 @@ function downloadFileOnce(url, dest, onProgress, {
       const finish = () => {
         // Wait until writes close: network data events can be ahead of the
         // actual file. The next Range starts at bytes safely written to disk.
-        if (resumeState && error.retryable && !signal?.aborted && resumeState.total > 0) {
+        if (resumeState && failureError.retryable && !signal?.aborted && resumeState.total > 0) {
           try { resumeState.offset = fs.statSync(dest).size; } catch { resumeState.offset = 0; }
           if (resumeState.offset >= resumeState.total) resumeState.offset = 0;
         } else if (resumeState) resumeState.offset = 0;
         if (!resumeState?.offset) cleanupPartial(dest);
-        reject(error);
+        reject(failureError);
       };
       if (file) {
         file.once('close', finish);
@@ -669,7 +671,13 @@ function downloadFileOnce(url, dest, onProgress, {
         }
         try { if (total > 0) checkInstallSpace(path.dirname(dest), total - initial); } catch (error) { fail(error); return; }
         file = fs.createWriteStream(dest, { flags: resumed ? 'a' : 'w' });
-        file.on('error', fail);
+        file.on('error', (error) => {
+          // A network failure may already be draining queued writes for resume.
+          // Disk failure during that drain is terminal and must replace the
+          // retryable transport error before close decides whether to retry.
+          if (failureError) failureError = error;
+          else fail(error);
+        });
         armInactivity(idleTimeoutMs, '下载连接长时间无数据，请检查网络或切换下载线路');
         let received = initial;
         let lastProgressAt = 0;
