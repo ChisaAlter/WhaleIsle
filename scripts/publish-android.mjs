@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { cnbClient, uploadMirrorAsset, verifyDownload } from './sync-cnb.mjs'
+import { readAndroidVersion } from './android-version.mjs'
 
 const metadataName = 'android-release.json'
 const sumsName = 'SHA512SUMS.txt'
@@ -39,12 +40,15 @@ function exactKeys(value, keys) {
 
 // apksigner verifies the APK during the build. This binds those build results to
 // the exact bytes being published; it does not replace signature verification.
-export async function validateAndroidAssets({ assetDir, version, sha, expectedCertificateSha256,
-  expectedVersionCode = version === '0.3.10' ? 4 : undefined }) {
+export async function validateAndroidAssets({ assetDir, version, sha, expectedCertificateSha256, expectedVersionCode }) {
   const certificate = typeof expectedCertificateSha256 === 'string' ? expectedCertificateSha256.trim().replaceAll(':', '').toLowerCase() : ''
   if (!validVersion(version) || !sourceSha.test(sha) || !fingerprint.test(certificate)) {
     throw new Error('Android stable version, source SHA and ANDROID_SIGNING_CERT_SHA256 are required')
   }
+  // Keep the published 0.3.10 identity fixed when validating historical assets.
+  // The current candidate's expected code comes from the same Gradle file as its build.
+  const current = await readAndroidVersion()
+  const requiredVersionCode = version === '0.3.10' ? 4 : version === current.version ? current.versionCode : expectedVersionCode
   if (typeof assetDir !== 'string' || !assetDir) throw new Error('ANDROID_ASSET_DIR is required')
   const directory = resolve(assetDir)
   const info = await lstat(directory)
@@ -75,6 +79,7 @@ export async function validateAndroidAssets({ assetDir, version, sha, expectedCe
       metadata.schemaVersion !== 1 || metadata.version !== version || metadata.sourceSha !== sha ||
       metadata.applicationId !== 'ai.deepseek.harness.mobile' || metadata.minSdk !== 26 || metadata.targetSdk !== 36 ||
       !Number.isSafeInteger(metadata.versionCode) || metadata.versionCode <= 0 || metadata.versionCode > 2100000000 ||
+      (requiredVersionCode !== undefined && metadata.versionCode !== requiredVersionCode) ||
       (expectedVersionCode !== undefined && metadata.versionCode !== expectedVersionCode) ||
       !exactKeys(metadata.apk, ['name', 'size', 'sha256', 'sha512', 'signingCertificateSha256']) ||
       metadata.apk.name !== apkName || metadata.apk.size !== apkInfo.size ||
@@ -103,12 +108,12 @@ export async function validateAndroidAssets({ assetDir, version, sha, expectedCe
 export function androidReleaseBody(version) {
   return `# 鲸屿 Android ${version}\n\n` +
     `- 支持 Android 8.0 及以上（API 26+）。\n` +
-    `- 安装 APK 后，扫描鲸屿 v${version} 桌面端提供的连接二维码。手机端是桌面的移动客户端，AI 会话与工具任务由连接的桌面端运行。\n` +
+    `- 安装 APK 后，扫描鲸屿桌面端提供的连接二维码。手机端是桌面的移动客户端，AI 会话与工具任务由连接的桌面端运行。\n` +
     `- 本次构建通过 JVM 测试、Android Lint 与模拟器检查；尚无物理 Android 设备扫码连接桌面并完成 AI 会话的全链路验证证据。\n` +
     `- APK 与构建记录的 SHA-512 校验值见 SHA512SUMS.txt。\n\n` +
     `<details>\n<summary>English</summary>\n\n` +
     `Whale Isle Android ${version} requires Android 8.0 or newer (API 26+).\n\n` +
-    `Install the APK and scan the connection QR code shown by Whale Isle desktop v${version}. This is a mobile client for the connected desktop, which runs the AI sessions and tools.\n\n` +
+    `Install the APK and scan the connection QR code shown by Whale Isle desktop. This is a mobile client for the connected desktop, which runs the AI sessions and tools.\n\n` +
     `JVM tests, Android Lint and emulator checks passed. There is no physical-device end-to-end evidence yet for scanning the desktop QR code and completing an AI session.\n\n` +
     `SHA512SUMS.txt contains SHA-512 checksums for the APK and build metadata.\n\n</details>\n`
 }
@@ -334,6 +339,10 @@ export async function publishAndroid({ repo, mirrorRepo, version, sha, assetDir,
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
+    const current = await readAndroidVersion()
+    if (process.env.ANDROID_VERSION && process.env.ANDROID_VERSION !== current.version) {
+      throw new Error('ANDROID_VERSION must match the current Android Gradle version')
+    }
     const token = process.env.GH_TOKEN
     if (!token) throw new Error('GH_TOKEN is required')
     const mirrorToken = process.env.CNB_TOKEN
@@ -347,7 +356,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       return response.json()
     }
     await publishAndroid({ repo: process.env.GITHUB_REPOSITORY, mirrorRepo: process.env.CNB_REPO,
-      version: process.env.ANDROID_VERSION, sha: process.env.ANDROID_SOURCE_SHA, assetDir: process.env.ANDROID_ASSET_DIR,
+      version: current.version, sha: process.env.ANDROID_SOURCE_SHA, assetDir: process.env.ANDROID_ASSET_DIR,
       expectedCertificateSha256: process.env.ANDROID_SIGNING_CERT_SHA256, request, mirrorRequest,
       gh: args => execFileSync(process.env.GH_PATH || 'gh', args, { stdio: 'inherit' }),
       syncTag: options => syncAndroidTag({ ...options, token: mirrorToken }),

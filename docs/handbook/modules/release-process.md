@@ -36,9 +36,9 @@ Mac 更新走完整 DMG 下载并使用 `SHA512SUMS.txt` 校验，不生成 `lat
 
 [Release Android](../../../.github/workflows/release-android.yml) 手动构建原生 Android APK；`publish=false` 可检查工作分支，`publish=true` 只允许 main。执行协议与应用 JVM 测试、release lint、正式签名和模拟器安装/启动/连接入口检查，再记录 APK 版本、来源提交、摘要及签名证书。
 
-Android 使用 `android-v<版本>` 独立标签，初次版本为 0.3.10 / versionCode 4，包名 `ai.deepseek.harness.mobile`，最低 Android 8.0。发布脚本只上传 APK、`android-release.json` 和独立 `SHA512SUMS.txt`，GitHub 与 CNB 均不设为桌面 latest，不改原桌面附件或校验清单。CNB 先预发布，匿名下载校验后公开；上传失败复用匹配原字节的未完成版本，冲突失败。
+Android 使用 `android-v<版本>` 独立标签，已发布的首版为 0.3.10 / versionCode 4，包名 `ai.deepseek.harness.mobile`，最低 Android 8.0。[Gradle 应用配置](../../../mobile/android/app/build.gradle.kts) 是当前 Android 版本与 versionCode 的唯一源码；`scripts/android-version.mjs` 供工作流文件名、smoke 默认路径、APK manifest 记录与发布校验读取，Android 版本不推导桌面版本。发布校验保留首版 code 4 的历史约束。当前候选状态见[手机远程模块](mobile-remote.md#架构要点)。发布脚本只上传 APK、`android-release.json` 和独立 `SHA512SUMS.txt`，GitHub 与 CNB 均不设为桌面 latest，不改原桌面附件或校验清单。CNB 先预发布，匿名下载校验后公开；上传失败复用匹配原字节的未完成版本，冲突失败。
 
-正式私钥由 `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` Actions secrets 提供；`ANDROID_KEY_ALIAS` / `ANDROID_SIGNING_CERT_SHA256` 为公开配置。私钥不进 Git，更新须保留同签名并递增 versionCode；历史 debug 签名不等于正式签名。模拟器结果不证明真机相机、扫码配对、公网流式对话或旧签名升级，实际未测范围写在 Android 发布说明中。
+正式私钥由 `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` Actions secrets 提供；`ANDROID_KEY_ALIAS` / `ANDROID_SIGNING_CERT_SHA256` 为公开配置。私钥不进 Git，更新须保留同签名并递增 versionCode；历史 debug 签名不等于正式签名。先集成原生功能，再以 `publish=false` 运行工作分支构建，下载 `Whale-Isle-android` artifact 中的已签名候选。升级模拟器以 `.tmp/android-0.3.10/published/Whale-Isle-0.3.10-android.apk` 为已发布旧 Web 基线，核对两包证书相同及 code 递增后用 `adb install -r` 保留数据升级；不要卸载或清数据。连接入口 smoke 不等于旧 Web 数据迁移通过，须另行确认迁移、重启及数据保留。模拟器结果不证明真机相机、扫码配对或公网流式对话，实际未测范围写在 Android 发布说明中。
 
 ## CNB 国内镜像
 

@@ -30,7 +30,7 @@
 
 ## Android
 
-工程在 `mobile/android/`（包名 `ai.deepseek.harness.mobile`，minSdk 26，compileSdk/targetSdk 36，versionCode 4 / versionName 0.3.10）。CameraX 扫码、粘贴与系统 VIEW handoff 解析同一条 offer v2 URL；页面地址仅用于识别配对链接，通信直接连接 offer 的中继。
+工程在 `mobile/android/`（包名 `ai.deepseek.harness.mobile`，minSdk 26，compileSdk/targetSdk 36）。当前版本与候选状态见[手机远程模块](../docs/handbook/modules/mobile-remote.md#架构要点)，构建和发布工具统一读取 `app/build.gradle.kts` 的版本。CameraX 扫码、粘贴与系统 VIEW handoff 解析同一条 offer v2 URL；页面地址仅用于识别配对链接，通信直接连接 offer 的中继。
 
 Kotlin `protocol` 模块以 OkHttp WebSocket、TweetNaCl Java 的 Curve25519 / XSalsa20-Poly1305、HMAC-SHA256 实现现有桌面 wire 协议，校验消息认证、salt 和单调序号。首次配对保存设备凭据，后续连接用新挑战证明，不重放一次性 token。凭据与文字草稿使用 Android 加密存储，草稿按电脑/会话隔离；图片附件在进程内按同样归属保留。
 
