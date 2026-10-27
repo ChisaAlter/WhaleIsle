@@ -199,6 +199,7 @@ async function setRemoteFromQa(patch) {
 let quitting = false;
 let stoppingForQuit = false;
 let quitInProgress = false;
+let nativeQuitReady = false;
 // Shell-owned input block for the shortcut bridge: while the closing overlay
 // owns the window, bound chords and menu dispatch must not run commands.
 let closingOverlayActive = false;
@@ -314,9 +315,8 @@ function bindMainClose(win) {
   mainCloseBound.add(win);
   win.on('close', (event) => {
     if (quitting) {
-      // A protection prompt may be in flight — swallow the close instead of
-      // destroying a window the user just cancelled quitting over.
-      if (quitInProgress || !stoppingForQuit) event.preventDefault();
+      // Keep windows alive until cleanup authorizes the final native close.
+      if (!nativeQuitReady) event.preventDefault();
       return;
     }
     if (hideOnClose(loadConfig(), quitting)) {
@@ -353,7 +353,7 @@ function bindLauncherClose(win) {
   });
   win.on('close', (event) => {
     if (quitting) {
-      if (quitInProgress || !stoppingForQuit) event.preventDefault();
+      if (!nativeQuitReady) event.preventDefault();
       return;
     }
     if (getMainWindow()) {
@@ -1455,14 +1455,12 @@ if (!gotLock) {
   });
 
   app.on('before-quit', (event) => {
+    if (nativeQuitReady) return;
     if (quitInProgress) {
       event.preventDefault();
       return;
     }
     quitting = true;
-    if (stoppingForQuit) {
-      return;
-    }
     event.preventDefault();
     void finalizeQuit();
   });
@@ -1529,7 +1527,15 @@ if (!gotLock) {
         clearTimeout(shutdownTimer);
       }
       if (result.proceeded) {
-        quitInProgress = false;
+        // app.quit() can be cancelled by close/beforeunload or stall waiting
+        // for a renderer. Keep the original attempt latched until the process
+        // actually quits, with a deadline after resources have stopped.
+        nativeQuitReady = true;
+        const nativeQuitTimer = setTimeout(() => {
+          dsh.log('退出：窗口关闭等待超时，结束桌面进程', 'error');
+          app.exit(0);
+        }, 5000);
+        app.once('quit', () => clearTimeout(nativeQuitTimer));
         app.quit();
         return;
       }
@@ -1553,7 +1559,7 @@ if (!gotLock) {
       }
       app.exit(0);
     } finally {
-      quitInProgress = false;
+      if (!nativeQuitReady) quitInProgress = false;
     }
   }
 

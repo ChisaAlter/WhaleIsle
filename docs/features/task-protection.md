@@ -42,7 +42,7 @@
 - `before-quit` 的 preventDefault 不拦截其他监听者（`ipc-components.js` 的 svc.shutdown、main-launcher tray.destroy）——附属清理由协调器 commit 钩子统一触发。
 - Schedule 按声明开关取覆盖：flag 未设报 `intentional-disabled`，已设而服务缺失即 `unavailable`（fail closed）；加载失败/未知/超时一律阻止自动提交。Bots/dshbot 已移除，不再列为生产者覆盖项，保留的旧 catalog 不触发工作检查。
 - 壳侧 PTY/preview/components 关停视为「受影响工作」计入确认面，但不算 Host 任务。
-- `preConfirmed` 用于显式同意的入口（统一 quit、peer `stop-desktop`、launcher `stopOp`、全部 install/update 链、peer `prepare-install`）：inspect、Host 接纳锁与 drain 照常。quit 不再弹工作清单及故障恢复确认；正常流程等待上限 30 秒，失败后附加清理最多等待 5 秒再结束桌面进程。Windows 组件树的同步 taskkill 单次另有 5 秒系统调用时限，期间 JavaScript 定时器会等待主线程恢复。restart/reload 确认不变。
+- `preConfirmed` 用于显式同意的入口（统一 quit、peer `stop-desktop`、launcher `stopOp`、全部 install/update 链、peer `prepare-install`）：inspect、Host 接纳锁与 drain 照常。quit 不再弹工作清单及故障恢复确认；正常流程等待上限 30 秒，失败后附加清理最多等待 5 秒再结束桌面进程。后台清理完成后，最终 Electron 窗口关闭另有 5 秒期限；被 close / beforeunload 拦截或未响应时自动结束进程。退出请求持续合并到实际退出，重复点击不重启清理或重置期限。Windows 组件树的同步 taskkill 单次另有 5 秒系统调用时限，期间 JavaScript 定时器会等待主线程恢复。restart/reload 确认不变。
 
 ## Allowed touch
 

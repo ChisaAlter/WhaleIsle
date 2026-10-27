@@ -273,9 +273,12 @@ function productionQuit(overrides = {}) {
   assert.ok(start >= 0 && end > start);
   const requestStart = source.indexOf('function quitApp()');
   const requestEnd = source.indexOf('function ignoreFailure(', requestStart);
-  let beforeQuit;
+  const appEvents = new (require('node:events').EventEmitter)();
+  const closeStart = source.indexOf('function bindMainClose(');
+  const closeEnd = source.indexOf('async function openLauncher(', closeStart);
+  assert.ok(closeStart >= 0 && closeEnd > closeStart);
   const context = {
-    quitting: true, stoppingForQuit: false, closingOverlayActive: false, quitInProgress: false,
+    quitting: true, stoppingForQuit: false, closingOverlayActive: false, quitInProgress: false, nativeQuitReady: false,
     dsh: { log: () => {} },
     stopDesktopInstallControl: () => {}, taskControlPeer: { stop: async () => {} },
     cleanupDesktopResources: async () => {},
@@ -287,13 +290,17 @@ function productionQuit(overrides = {}) {
     confirmDialog: async () => assert.fail('explicit quit must never open a second confirmation'),
     app: { quit: () => assert.fail('unexpected quit'), exit: () => assert.fail('unexpected force exit') },
     qaEnv: () => false, process,
+    mainCloseBound: new WeakSet(), launcherCloseBound: new WeakSet(),
+    hideOnClose: require('./close-behavior').hideOnClose,
     setTimeout, clearTimeout,
     ...overrides,
   };
-  context.app.on = (name, handler) => { assert.equal(name, 'before-quit'); beforeQuit = handler; };
+  context.app.on = appEvents.on.bind(appEvents);
+  context.app.once = appEvents.once.bind(appEvents);
   const functions = vm.runInNewContext(source.slice(start, end) + '\n' + source.slice(requestStart, requestEnd)
-    + '; ({ quit: finalizeQuit, request: quitApp })', context);
-  return { ...functions, beforeQuit, context };
+    + '\n' + source.slice(closeStart, closeEnd)
+    + '; ({ quit: finalizeQuit, request: quitApp, bindMainClose, bindLauncherClose })', context);
+  return { ...functions, beforeQuit: event => appEvents.emit('before-quit', event), appEvents, context };
 }
 
 test('production quit skips all prompts and retains inspection, lock and all resource cleanup', async () => {
@@ -303,19 +310,113 @@ test('production quit skips all prompts and retains inspection, lock and all res
     confirm: async () => assert.fail('explicit quit must not ask again'),
   });
   protection.onCommitCleanup(() => events.push('services-stop'));
-  const { quit } = productionQuit({
+  const { quit, appEvents } = productionQuit({
     taskProtection: protection,
     harness: { shutdown: async () => events.push('shutdown') },
     cleanupDesktopResources: async () => events.push('cleanup'),
     getLive2dPet: () => ({ dispose: async () => events.push('pet-dispose') }),
     stopDesktopInstallControl: () => events.push('control-stop'),
     taskControlPeer: { stop: async () => events.push('peer-stop') },
-    app: { quit: () => events.push('quit'), exit: () => assert.fail('healthy shutdown uses app.quit') },
+    app: { quit: () => { events.push('quit'); appEvents.emit('quit', {}, 0); }, exit: () => assert.fail('healthy shutdown uses app.quit') },
   });
   await quit();
   assert.deepEqual(events, ['shutdown', 'cleanup', 'pet-dispose', 'control-stop', 'peer-stop', 'services-stop', 'quit']);
   assert.deepEqual(calls.map(call => call.op), ['inspect', 'acquire', 'inspect']);
   assert.equal(protection.isCommitted(), true);
+});
+
+function nativeQuitLifecycle({ blocked = '', pendingShutdown = false } = {}) {
+  const { EventEmitter } = require('node:events');
+  const clock = fakeQuitTimers();
+  const windows = ['main', 'launcher'].map(name => Object.assign(new EventEmitter(), { name }));
+  const events = [];
+  const { protection } = makeProtection();
+  let finishShutdown;
+  let shutdowns = 0;
+  let fixture;
+  const app = {
+    quit() {
+      events.push('app.quit');
+      const event = () => ({ defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } });
+      const before = event();
+      fixture.appEvents.emit('before-quit', before);
+      if (before.defaultPrevented) return;
+      if (blocked === 'unresponsive') return;
+      for (const win of windows) {
+        const close = event();
+        win.emit('close', close);
+        if (blocked === 'close-veto') close.preventDefault();
+        if (close.defaultPrevented) return;
+      }
+      if (blocked === 'beforeunload-veto') return;
+      const willQuit = event();
+      fixture.appEvents.emit('will-quit', willQuit);
+      if (blocked === 'will-quit-veto') willQuit.preventDefault();
+      if (willQuit.defaultPrevented) return;
+      events.push('quit');
+      fixture.appEvents.emit('quit', {}, 0);
+    },
+    exit(code) {
+      assert.equal(code, 0);
+      events.push('app.exit');
+      fixture.appEvents.emit('quit', {}, code);
+    },
+  };
+  fixture = productionQuit({
+    quitting: false,
+    taskProtection: protection,
+    getMainWindow: () => windows[0],
+    harness: { shutdown: () => {
+      shutdowns++;
+      return pendingShutdown ? new Promise(resolve => { finishShutdown = resolve; }) : Promise.resolve();
+    } },
+    app,
+    dsh: { log: message => events.push(message) },
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout,
+  });
+  fixture.bindMainClose(windows[0]);
+  fixture.bindLauncherClose(windows[1]);
+  const { trayMenuTemplate } = require('./tray-menu');
+  const clickQuit = trayMenuTemplate({ onQuit: fixture.request }).find(item => item.label === '退出').click;
+  return { ...fixture, clock, events, windows, clickQuit, get shutdowns() { return shutdowns; }, finishShutdown: () => finishShutdown() };
+}
+
+test('one tray click closes main and launcher after cleanup; repeated clicks do not restart quit', async () => {
+  const fixture = nativeQuitLifecycle({ pendingShutdown: true });
+  fixture.clickQuit();
+  await new Promise(setImmediate);
+  fixture.clickQuit();
+  const close = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+  fixture.windows[0].emit('close', close);
+  assert.equal(close.defaultPrevented, true, 'windows remain until cleanup completes');
+  assert.equal(fixture.shutdowns, 1);
+  fixture.finishShutdown();
+  await new Promise(setImmediate);
+  assert.deepEqual(fixture.events, ['app.quit', 'app.quit', 'quit']);
+  assert.equal(fixture.context.quitInProgress, true, 'one explicit attempt stays latched through native exit');
+  assert.equal(fixture.clock.timers.size, 0, 'actual quit clears the final deadline');
+});
+
+test('a vetoed or unresponsive final native close exits automatically without another tray click', async () => {
+  for (const blocked of ['close-veto', 'beforeunload-veto', 'will-quit-veto', 'unresponsive']) {
+    const fixture = nativeQuitLifecycle({ blocked });
+    fixture.clickQuit();
+    await new Promise(setImmediate);
+    assert.equal(fixture.shutdowns, 1, blocked);
+    assert.equal(fixture.context.quitInProgress, true, blocked);
+    assert.equal(fixture.context.nativeQuitReady, true, blocked);
+    assert.equal(fixture.clock.timers.size, 1, blocked);
+    const deadline = fixture.clock.timers.get(5000);
+    assert.equal(typeof deadline, 'function', blocked);
+    fixture.clickQuit();
+    fixture.clickQuit();
+    assert.equal(fixture.clock.timers.get(5000), deadline, 'repeated clicks must not postpone exit');
+    assert.equal(fixture.events.filter(event => event === 'app.quit').length, 2, blocked);
+    deadline();
+    assert.equal(fixture.events.filter(event => event === 'app.exit').length, 1, blocked);
+    assert.equal(fixture.clock.timers.size, 0, blocked);
+  }
 });
 
 test('failed Host admission automatically cleans supervised services and exits without a prompt', async () => {
