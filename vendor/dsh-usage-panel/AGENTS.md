@@ -194,6 +194,10 @@ npm pack --dry-run   # 发布前人工确认清单
 
 **回归**：`tests/magpie-usage.test.ts`（agent 过滤、req 键、四桶、UTC 日桶、mtime+size 缓存、缺失/无 dsh 行/半行回退）、`tests/aggregate.test.ts`（账本覆盖总量/日桶/模型，日志 Provider 胜出，费用行 join 后 `sumCostCents` 非 null，`Σ providers` 守恒）、`tests/refresh.test.ts`（用 `MAGPIE_USAGE_FILE` 指向不存在文件，单测绝不可读开发者本机账本）。
 
+### 6.13 启动与设置搜索不得全量扫描历史（2026-10-27）
+
+601 份约 1.17GB 日志的实机副本中，启动扫描占用 Host 解码、整份日志复制和回放校验，使新会话与历史读取排队数秒。现仅统计数据请求触发扫描，并用 `sessionQuery.observeSession` 的投影及 disposable 租约复用精确读取，不读其完整 events；首次冷读仍有解码校验成本。设置搜索传 `indexOnly`，统计页只渲染可搜索标题和偏好行，不挂载发起 RPC 的内容。刷新仍精确读取，不能把仅按 header 校验的缓存投影当作日志末尾或健康性证明。
+
 ## 7. 文档同步义务
 
 - 改功能必同步 README.md + README.zh-CN.md（双语等价、口径声明、安装方式不变）。

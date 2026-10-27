@@ -56,7 +56,7 @@ dsh plugin --profile web remove dsh-usage-panel
 
 The host half aggregates persisted session logs:
 
-- **Primary path (incremental)**: a session projection (registered through `ctx.sessionProjections`, `stateVersion`-checked) folds every committed event into four disjoint buckets — uncached input, output, cache read, cache write — plus per-model, per-provider and per-day (UTC) maps. Checkpoints are durable, so restarts and keep-warm passes cost almost no replay.
+- **Primary path (incremental)**: a session projection (registered through `ctx.sessionProjections`, `stateVersion`-checked) folds every committed event into four disjoint buckets — uncached input, output, cache read, cache write — plus per-model, per-provider and per-day (UTC) maps. Scans consume the host's exact Session observations and release each lease after reading its projections. They share the host's prepared reads instead of cloning the complete log and replaying it a second time; a first cold read still decodes and validates the stored history.
 - **Fallback path (full rescan)**: when the projection services are unavailable, the same reducer replays every session log through the read-only `sessionQuery` service.
 
 Accounting rules: `request/header` and `request/context` events record the model (context base, header override); the step's `assistant/message` usage replaces streamed provisional usage (a retried same-step message never double-counts); `llm/retry` events are counted as retries, not tokens; `compaction/summary` usage is attributed to its own model and reported separately (and never enters the cost buckets); reasoning tokens are already inside output and are never added again.
@@ -90,7 +90,7 @@ All money figures are **estimates, never a bill** — the plugin has no access t
 
 ## Loading behavior
 
-The first scan starts as soon as the plugin loads, so the page usually renders straight from cache. A payload is considered fresh for 10 minutes; older ones are returned immediately with a `stale` flag (the page shows "updating in background") while a rescan refreshes the cache. A keep-warm timer rescans every 10 minutes, and the refresh button always forces a synchronous scan. The browser additionally keeps the last successful payload in `localStorage` (versioned and structure-validated), so a page refresh renders instantly; a failed refresh keeps the cached numbers and says so instead of faking freshness.
+The first scan starts when the statistics page requests data. App startup, idle time and hidden settings-search renders do not scan the conversation corpus. Concurrent overview and ranking requests share the same scan; completed data is reused for 10 minutes. An older result or the refresh button waits for a fresh exact scan, so totals, rankings and repair candidates belong to the same completed read. The browser keeps its last successful payload in `localStorage` (versioned and structure-validated) and displays it while loading; a failed refresh keeps the cached numbers and says so instead of faking freshness. Search renders the page's headings and preference rows without loading statistics.
 
 ## Units
 

@@ -21,16 +21,29 @@ test('overview refresh replaces session totals, observes new usage and removes d
   let handler!: (endpoint: string, payload: unknown) => Promise<RpcResult<Overview>>
   let tokens = 10
   let deleted = false
+  let listed = 0
+  let observed = 0
+  let released = 0
   const header = { id: 'session-test', createdAt: 1, isSeeded: false }
   const services: Record<string, unknown> = {
     settings: { describe: () => [{ ns: 'ui-conversation', value: {} }] },
     sessionProjections: { register: () => () => {} },
     sessionQuery: {
-      listSessions: async () => deleted ? [] : [{ header, persisted: true }],
-      readSession: async () => ({ session: header, inheritedEventCount: 0, events: [
-        { type: 'assistant/message', seq: 0, time: Date.now(), data: { turn: 1, step: 1, usage: { inputTokens: tokens } } },
-        { type: 'step/end', seq: 1, time: Date.now(), data: { turn: 1, step: 1 } },
-      ] }),
+      listSessions: async () => { listed += 1; return deleted ? [] : [{ header, persisted: true }] },
+      observeSession: async () => {
+        observed += 1
+        const events: SessionEvent[] = [
+          { type: 'assistant/message', seq: 0, time: Date.now(), data: { turn: 1, step: 1, usage: { inputTokens: tokens } } },
+          { type: 'step/end', seq: 1, time: Date.now(), data: { turn: 1, step: 1 } },
+        ]
+        return {
+          header,
+          projections: { asOfSeq: 1, values: { usagePanel: events.reduce(applyEvent, initState(undefined, 0)) } },
+          get events() { throw new Error('projection reads must not materialize the complete log') },
+          [Symbol.dispose]: () => { released += 1 },
+        }
+      },
+      readSession: async () => { throw new Error('statistics must use the shared observation') },
       readTitle: async () => ({ title: 'test' }),
     },
     sessionProjectionCache: {
@@ -52,6 +65,10 @@ test('overview refresh replaces session totals, observes new usage and removes d
   } as unknown as Context
   try {
     apply(ctx)
+    // A full event-loop turn lets any boot microtasks run before the first request.
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.equal(listed, 0)
+    assert.equal(observed, 0)
     const read = async () => {
       const result = await handler('overview', { force: true })
       assert.equal(result.ok, true)
@@ -66,6 +83,8 @@ test('overview refresh replaces session totals, observes new usage and removes d
     assert.equal((await read()).allTime.totals.total, 17)
     deleted = true
     assert.equal((await read()).allTime.totals.total, 0)
+    assert.equal(observed, 3)
+    assert.equal(released, observed)
   } finally {
     for (const cleanup of cleanups) cleanup()
     if (previousHome === undefined) delete process.env.DSH_HOME

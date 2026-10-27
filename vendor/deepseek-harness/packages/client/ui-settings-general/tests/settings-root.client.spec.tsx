@@ -395,6 +395,15 @@ describe('SettingsRoot trigger', () => {
 })
 
 describe('SettingsPanel chrome seats', () => {
+  it('marks hidden search renders so sections can leave data loading to their visible page', () => {
+    const { renderSlot } = mount()
+    openPanel()
+    expect(renderSlot).toHaveBeenCalledWith('settings.section', { close: expect.any(Function) }, { only: 'general' })
+    renderSlot.mockClear()
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'model' } })
+    expect(renderSlot).toHaveBeenCalledWith('settings.section', { close: expect.any(Function), indexOnly: true }, { only: 'models' })
+  })
+
   it('names the dialog via aria-labelledby pointing at the header seat node', () => {
     mount()
     openPanel()

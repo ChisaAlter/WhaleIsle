@@ -248,7 +248,7 @@ function SettingsPanel({ rows, renderSlot, activeId, motionState, open, onSelect
             <div ref={indexRoot} className={css.index} hidden aria-hidden="true" {...{ inert: '' }}>
               {rows.map(row => (
                 <div key={row.id} data-settings-index={row.id}>
-                  {renderSlot('settings.section', { close: onClose }, { only: row.id })}
+                  {renderSlot('settings.section', { close: onClose, indexOnly: true }, { only: row.id })}
                 </div>
               ))}
             </div>

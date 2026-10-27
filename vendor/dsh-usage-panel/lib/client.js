@@ -124,7 +124,7 @@ window.__ModuleLoader__.load({
       "refresh.loading": "\u5237\u65B0\u4E2D\u2026",
       "refresh.title": "\u91CD\u65B0\u62C9\u53D6\u6700\u65B0\u7EDF\u8BA1",
       "status.loading": "\u6B63\u5728\u7EDF\u8BA1\u4F1A\u8BDD\u65E5\u5FD7\u2026",
-      "status.loading.hint": "\u63D2\u4EF6\u52A0\u8F7D\u65F6\u5DF2\u5F00\u59CB\u9884\u70ED\uFF0C\u901A\u5E38\u53EA\u9700\u7B49\u5F85\u7247\u523B",
+      "status.loading.hint": "\u9996\u6B21\u6253\u5F00\u6216\u5237\u65B0\u65F6\u8BFB\u53D6\u4F1A\u8BDD\u65E5\u5FD7\uFF0C\u5386\u53F2\u8F83\u591A\u65F6\u53EF\u80FD\u9700\u8981\u4E00\u4E9B\u65F6\u95F4",
       "status.fresh": "\u6570\u636E\u66F4\u65B0\u4E8E {time} \xB7 UTC",
       "status.stale": "\u6570\u636E\u66F4\u65B0\u4E8E {time} \xB7 \u540E\u53F0\u66F4\u65B0\u4E2D\u2026",
       "status.fallback": "\u663E\u793A\u7F13\u5B58\u6570\u636E\uFF08\u66F4\u65B0\u5931\u8D25\u4E8E {time}\uFF09",
@@ -271,7 +271,7 @@ window.__ModuleLoader__.load({
       "refresh.loading": "Refreshing\u2026",
       "refresh.title": "Fetch the latest statistics",
       "status.loading": "Scanning session logs\u2026",
-      "status.loading.hint": "A warm-up scan started when the plugin loaded; this usually takes a moment",
+      "status.loading.hint": "Opening or refreshing reads session logs; a large history can take some time",
       "status.fresh": "Updated at {time} \xB7 UTC",
       "status.stale": "Updated at {time} \xB7 refreshing in background\u2026",
       "status.fallback": "Showing cached data (last refresh failed at {time})",
@@ -2178,7 +2178,14 @@ window.__ModuleLoader__.load({
       }
       return { text: t("source.logs") };
     }
-    function StatsSection({ rpc, i18n: baseI18n, settingsRows }) {
+    function StatsSection(props) {
+      if (props.indexOnly) {
+        const t = props.i18n.t;
+        return /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-root" }, props.settingsRows, ["nav.label", "billing.title", "heat.title", "bar.title", "donut.title", "sessions.title", "projects.title", "providers.title", "refresh.title"].map((key) => /* @__PURE__ */ React12.createElement("div", { key }, /* @__PURE__ */ React12.createElement("h3", null, t(key)), /* @__PURE__ */ React12.createElement("p", null, t("nav.label")))));
+      }
+      return /* @__PURE__ */ React12.createElement(StatsContent, { ...props });
+    }
+    function StatsContent({ rpc, i18n: baseI18n, settingsRows }) {
       const i18n = useI18n(baseI18n);
       const t = i18n.t;
       const locale = i18n.locale;
@@ -2275,7 +2282,7 @@ window.__ModuleLoader__.load({
             peakValley: billing?.peakValleyEnabled !== false,
             modelProviders
           }
-        ), /* @__PURE__ */ React12.createElement(BarChart, { days, byModel: recentByModel, i18n, onTip: setBarTip }), /* @__PURE__ */ React12.createElement(SessionsCard, { sessions: overview.topSessions, i18n, rpc }), /* @__PURE__ */ React12.createElement(ProjectRankCard, { i18n, rpc }), /* @__PURE__ */ React12.createElement(ProvidersCard, { providers: overview.providers, i18n }), /* @__PURE__ */ React12.createElement(ModelDonut, { byModel: allTime.byModel, total: allTimeTotal, i18n, onTip: setDonutTip }));
+        ), /* @__PURE__ */ React12.createElement(BarChart, { days, byModel: recentByModel, i18n, onTip: setBarTip }), /* @__PURE__ */ React12.createElement(SessionsCard, { sessions: overview.topSessions, i18n, rpc }), !loading && freshness === "fresh" && /* @__PURE__ */ React12.createElement(ProjectRankCard, { key: overview.updatedAt, i18n, rpc }), /* @__PURE__ */ React12.createElement(ProvidersCard, { providers: overview.providers, i18n }), /* @__PURE__ */ React12.createElement(ModelDonut, { byModel: allTime.byModel, total: allTimeTotal, i18n, onTip: setDonutTip }));
       }
       return /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-root" }, /* @__PURE__ */ React12.createElement(Tooltip, { tip: barTip }), /* @__PURE__ */ React12.createElement(Tooltip, { tip: donutTip }), /* @__PURE__ */ React12.createElement(Tooltip, { tip: heatTip }), /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-head" }, /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-head-title" }, /* @__PURE__ */ React12.createElement("svg", { className: "dsw-ust-page-icon", width: 16, height: 16, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", "aria-hidden": "true" }, /* @__PURE__ */ React12.createElement("path", { d: "M3 13V9.5" }), /* @__PURE__ */ React12.createElement("path", { d: "M8 13V5.5" }), /* @__PURE__ */ React12.createElement("path", { d: "M13 13V3" }), /* @__PURE__ */ React12.createElement("path", { d: "M2 13.5h12" })), /* @__PURE__ */ React12.createElement("div", null, /* @__PURE__ */ React12.createElement("h2", null, t("nav.label")), subText ? /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-sub" }, subText) : null, source ? /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-source", title: source.title }, source.text) : null, data && data.coverage.failedSessionIds.length > 0 && /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-repair" }, /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-repair-row" }, /* @__PURE__ */ React12.createElement("span", { className: "dsw-ust-repair-hint" }, t("status.repairHint", { count: data.coverage.failedSessionIds.length })), /* @__PURE__ */ React12.createElement(import_dsh_client_ui_primitives4.Button, { size: "sm", className: "dsw-ust-more", onClick: repairFirst, disabled: repairing, loading: repairing }, t("status.repair")))))), /* @__PURE__ */ React12.createElement("div", { className: "dsw-ust-head-actions" }, data ? /* @__PURE__ */ React12.createElement(ExportMenu, { overview: data, i18n, rpc }) : null, /* @__PURE__ */ React12.createElement(
         import_dsh_client_ui_primitives4.Button,
@@ -2384,6 +2391,7 @@ window.__ModuleLoader__.load({
             (0, import_react11.createElement)(StatsSection, {
               rpc: ctx.connection.rpc,
               i18n,
+              indexOnly: props?.indexOnly,
               settingsRows: props?.renderSlot?.("settings.usage.item", {})
             })
           )

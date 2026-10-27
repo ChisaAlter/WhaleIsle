@@ -52,9 +52,23 @@ interface StatsSectionProps {
   i18n: I18n
   /** Cost display switches other features place above the statistics. */
   settingsRows?: ReactNode
+  indexOnly?: boolean
 }
 
-export function StatsSection({ rpc, i18n: baseI18n, settingsRows }: StatsSectionProps): JSX.Element {
+export function StatsSection(props: StatsSectionProps): JSX.Element {
+  if (props.indexOnly) {
+    const t = props.i18n.t
+    return <div className="dsw-ust-root">
+      {props.settingsRows}
+      {['nav.label', 'billing.title', 'heat.title', 'bar.title', 'donut.title', 'sessions.title', 'projects.title', 'providers.title', 'refresh.title'].map(key => (
+        <div key={key}><h3>{t(key)}</h3><p>{t('nav.label')}</p></div>
+      ))}
+    </div>
+  }
+  return <StatsContent {...props} />
+}
+
+function StatsContent({ rpc, i18n: baseI18n, settingsRows }: StatsSectionProps): JSX.Element {
   const i18n = useI18n(baseI18n)
   const t = i18n.t
   const locale = i18n.locale
@@ -186,7 +200,7 @@ export function StatsSection({ rpc, i18n: baseI18n, settingsRows }: StatsSection
         />
         <BarChart days={days} byModel={recentByModel} i18n={i18n} onTip={setBarTip} />
         <SessionsCard sessions={overview.topSessions} i18n={i18n} rpc={rpc} />
-        <ProjectRankCard i18n={i18n} rpc={rpc} />
+        {!loading && freshness === 'fresh' && <ProjectRankCard key={overview.updatedAt} i18n={i18n} rpc={rpc} />}
         <ProvidersCard providers={overview.providers} i18n={i18n} />
         <ModelDonut byModel={allTime.byModel} total={allTimeTotal} i18n={i18n} onTip={setDonutTip} />
       </>
