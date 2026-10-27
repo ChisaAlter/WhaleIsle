@@ -34,7 +34,7 @@ Android 旧 `session.prompt` 不传业务 `requestId`；桌面 tunnel 每次补�
 - 真实丢ACK：仅专用QA daemon runner在 `session.prompt` 原真实Host成功入账后拦截首回复；日志09:52:55.675Z记录 `receiptOk:true`、业务ID `de6f541b-2b7d-43e7-83ac-020142a2445b`。Android真实30秒等待超时保留草稿；显式重发、确认接受后清草稿，真实持久history始终仅1条该文本。生产runner、加密和transport代码未替换。
 - 第一次用例因构建耗尽预取offer而正确拒绝过期配对；随后改为测试执行时从专用host立即取当前offer再跑通过。没有放宽过期检查。
 
-可核查[精简结果](relay-result.json)。网络断开与跨会话回调竞争仍继续补实测，不能用单纯丢回复覆盖它。
+可核查[精简结果](relay-result.json)。实际网络断开与跨会话迟到ACK竞争已在后续独立段落分别验收，未用单纯丢回复替代。
 
 ## 正式同签 code4→code5 升级
 
@@ -82,4 +82,14 @@ AVD `emulator-5556` 上先安装真实正式 `android-v0.3.10` 原生APK，使�
 
 最后force-stop/冷启正式包：原保存电脑凭据自动重连，默认打开目录首会话External Git并恢复该会话草稿 `QA_OFFLINE_DRAFT_20261027`；显式选择LongHistory后仍有原 `QA_FORMA`。[冷启重连](evidence/final-2212-cold-reconnected.png)、[另一会话原草稿](evidence/final-2212-original-draft-preserved.png)。产品当前没有持久化‘最后所选会话’，不将此描述为冷启回到上次会话。最终这轮于2026-10-27 18:55（Asia/Shanghai）完成。
 
-物理光学扫码/真实拍照仍按用户‘手机先跳过’明确跳过；公网Kotlin加密通道、正式签名AVD UI、迁移fixture及各自范围分别记录，不作一项全能通过。跨会话回调归属有定向单测，但本轮没有再造真实socket跨会话竞争用例。
+物理光学扫码/真实拍照仍按用户‘手机先跳过’明确跳过；公网Kotlin加密通道、正式签名AVD UI、迁移fixture及各自范围分别记录，不作一项全能通过。跨会话真实迟到ACK竞争随后按下节完成。
+
+## 真实同连接跨会话迟到 ACK
+
+仅新增 opt-in `AndroidRelaySessionRaceTest`，输入环境变量 `DSH_ANDROID_RACE_INPUT` 必须指向显式专用QA配置；没有默认用户Host。测试运行时即时取新offer，复用官方Electron44.9.1隔离Host、公网TLS加密relay、真实 `DshViewModel` 和 `RelayClient`，在独立合成工作区创建A/B两会话。没有再次启动AVD或重跑分页、既有丢ACK和其它管理用例。
+
+仅专用忽略QA runner在真实Host返回 `accepted:true` 后门控A的成功ACK，并记录 `hostAccepted`，设60秒自动释放上限。按实际产品路径，A忙时切B被拒；等待真实30秒RPC超时、保留A草稿后才切B，写入B未发送草稿。B加载完成后显式释放A成功ACK，实际门控 **32,118毫秒**，未触发自动释放。
+
+测试只读观察真实密文副本中的ACK，随后始终调用原 `super.onMessage`，不修改生产认证、解密重放序列或pending处理。实际确认A的成功帧抵达原来仍存活的socket，抵达前该超时传输requestId已从pending移除；全程仅一个RelayClient和一次onOpen。释放后同连接B的history往返成功，B的session/title/草稿/rows/附件/approval/running均未被A迟到回复改变。真实持久history中A标记 **1条**、B中该标记 **0条**，手工业务提交仅1次，未靠关闭旧socket或假造迟到帧得到通过。
+
+2026-10-27 19:12–19:13（Asia/Shanghai）仅运行该定向真实用例：**1 test / 0 skipped / 0 failures / 0 errors，59.081秒**；Gradle包含编译共5分49秒。检查 [脱敏结果](race-result.json) 与 [定向JUnit XML](race-test-result.xml)。生产代码未变，新增均为opt-in测试和证据；结束后测试取消本次A、归档合成会话并移除工作区登记，专用Host再次正常退出。

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="ai.deepseek.harness.mobile.AndroidRelaySessionRaceTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-10-27T11:12:34" hostname="AYASE" time="59.081">
+  <properties/>
+  <testcase name="lateAcceptedReplyAfterTimeoutDoesNotClearAnotherSessionsDraft" classname="ai.deepseek.harness.mobile.AndroidRelaySessionRaceTest" time="59.081"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
