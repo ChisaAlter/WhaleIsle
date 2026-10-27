@@ -20,6 +20,7 @@ class NativeDesktopControllerTest {
         controller.open("files"); runCurrent()
         assertTrue(controller.state.loaded)
         assertEquals("session", requests.first().second["args"].objectValue().string("workspaceFileScopeId"))
+        assertEquals(".", requests.first().second["args"].objectValue().string("path"))
         controller.readFile("file.kt", 201); runCurrent()
         val read = requests.last()
         assertEquals("workspaceFiles.read", read.first)

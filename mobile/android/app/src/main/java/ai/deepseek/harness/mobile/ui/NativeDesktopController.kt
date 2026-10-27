@@ -50,7 +50,7 @@ internal class NativeDesktopController(
     private fun clientMetadata() = obj("version" to appVersion, "locale" to "zh", "timezoneOffsetSeconds" to TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 1000)
     private fun skillScope() = obj("cwd" to cwd()).let { if (sessionId().isBlank()) it else JsonObject(it + ("sessionId" to JsonPrimitive(sessionId()))) }
     private fun args(vararg values: Pair<String, Any?>) = obj("args" to obj(*values))
-    private fun fileArgs(path: String, vararg values: Pair<String, Any?>) = args("workspaceFileScopeId" to sessionId(), "path" to path, *values)
+    private fun fileArgs(path: String, vararg values: Pair<String, Any?>) = args("workspaceFileScopeId" to sessionId(), "path" to path.ifBlank { "." }, *values)
     fun reset() { revision++; loginJob?.cancel(); loginJob = null; login?.close(); login = null; loginAttemptId = ""; installRequestId = ""; installUncertain = false; uncertainInstallRequestId = ""; state = NativeDesktopState() }
     fun open(section: String) { revision++; state = NativeDesktopState(section = section); refresh() }
     fun dismissDetail() { revision++; state = state.copy(detail = obj(), busy = false, error = "", notice = "") }
