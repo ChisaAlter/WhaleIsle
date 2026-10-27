@@ -1,0 +1,72 @@
+{
+  "date": "2026-10-27",
+  "issue": 303,
+  "pullRequest": 305,
+  "method": {
+    "pairedRuns": 1,
+    "platform": "Windows",
+    "electron": "44.9.1",
+    "freshHostProcessPerRun": true,
+    "samePrivateProfileAndCorpus": true,
+    "otherBuildsAndEmulatorStopped": true,
+    "exactOverviewForced": true,
+    "candidateRuntimePrototypeVerified": true,
+    "memorySampleIntervalSeconds": 5,
+    "memoryPeaksAreSampled": true
+  },
+  "corpus": {
+    "currentGenerationLogFiles": 604,
+    "physicalBytes": 1173672902,
+    "decodedEvents": 2407971
+  },
+  "before": {
+    "overviewElapsedMs": 179416.9,
+    "sessionsOk": 604,
+    "sessionsFailed": 0,
+    "sessionsPending": 0,
+    "mainSessionsWithUsage": 593,
+    "retries": 162,
+    "compactionTokens": 91088433,
+    "sampledPeakRssBytes": 2736099328,
+    "sampledPeakHeapUsedBytes": 1966730512,
+    "settledRssBytes": 2364948480,
+    "settledHeapUsedBytes": 327215184,
+    "duringScan": {
+      "newSessionMs": 901,
+      "openSettingsMs": 114,
+      "openGeneralSettingsMs": 247,
+      "maximumPageGapMs": 194.1
+    }
+  },
+  "after": {
+    "overviewElapsedMs": 160552,
+    "sessionsOk": 604,
+    "sessionsFailed": 0,
+    "sessionsPending": 0,
+    "mainSessionsWithUsage": 593,
+    "retries": 162,
+    "compactionTokens": 91088433,
+    "sampledPeakRssBytes": 2524274688,
+    "sampledPeakHeapUsedBytes": 1918842344,
+    "settledRssBytes": 2286669824,
+    "settledHeapUsedBytes": 315632656,
+    "duringScan": {
+      "newSessionMs": 120,
+      "openSettingsMs": 87,
+      "openGeneralSettingsMs": 209,
+      "maximumPageGapMs": 103.1
+    }
+  },
+  "interpretation": {
+    "elapsedReductionMs": 18864.9,
+    "elapsedReductionPercent": 10.51,
+    "sampledPeakRssReductionPercent": 7.74,
+    "sampledPeakHeapUsedReductionPercent": 2.43,
+    "settledRssReductionPercent": 3.31,
+    "settledHeapUsedReductionPercent": 3.54,
+    "gatewayTotalsComparedForEquality": false,
+    "older573SecondRunIsComparable": false,
+    "remainingLatencySeconds": 160.552,
+    "limitation": "One paired measurement; not a guaranteed speedup or a true instantaneous memory peak. The optional live gateway ledger changes between runs."
+  }
+}
