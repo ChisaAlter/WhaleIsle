@@ -22,8 +22,11 @@ test('allowlist includes session/workspace/host browse and excludes privileged m
   assert.equal(isAllowedHostMethod('host.createDirectory'), true);
   assert.equal(isAllowedHostMethod('host.pickDirectory'), false);
   assert.equal(isAllowedHostMethod('host.openPath'), false);
-  assert.equal(isAllowedHostMethod('settings.describe'), false);
-  assert.equal(isAllowedHostMethod('credentials.set'), false);
+  assert.equal(isAllowedHostMethod('settings.describe'), true);
+  assert.equal(isAllowedHostMethod('credentials.set'), true);
+  assert.equal(isAllowedHostMethod('credentials.get'), false);
+  assert.equal(isAllowedHostMethod('workspaceFiles.readBytes'), false);
+  assert.equal(isAllowedHostMethod('workspaceFiles.readImage'), true);
   assert.equal(isAllowedHostMethod('llm.discoverModels'), false);
   assert.equal(isAllowedHostMethod('mcpServers/list'), false);
   assert.equal(isAllowedHostMethod('commands/list'), true);
@@ -92,7 +95,7 @@ test('forwardHostRpc rejects methods outside the allowlist without calling fetch
   await assert.rejects(
     () => forwardHostRpc({
       origin: 'http://127.0.0.1:3080',
-      method: 'settings.describe',
+      method: 'credentials.get',
       payload: {},
       fetchImpl: async () => {
         called += 1;

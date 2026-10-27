@@ -29,7 +29,7 @@
 7. Composer：模型 + 思考 `session.models` / `session.selectModel`；权限与 Plan / 斜杠走 Typert `commands/execute`（`/permission <id>`、`/plan off`）；发送 `session.prompt`、停止 `session.cancel`；附件进 host；审批保持线协议 `respond`，由 daemon 将当前 Gateway 的 clientId/eventId 回复到 `/api/$events/result`。
 8. 顶栏 Git 对齐桌面 titlebar：Init、分支搜索/切换/跟踪远端/**创建并检出**、stacked Commit/Push/PR、Publish、View PR。执行走隧道 `shell:git-*`，不是 ACP checkout。
 9. 时间线：`session.history`（`beforeSeq` 向上分页）+ mux 或 1.5s 轮询（running / pending 时）。断线横幅 + 草稿；重连后 `session.list` + 当前 `history`。
-10. Files / Diff / MCP / 技能：**冻结条**（「下一轮接 host/gitDiff；请暂时用电脑端」），禁止空列表装做成功能。
+10. Files / Diff / MCP / 技能：浏览器 SPA 保留旧冻结条；2026-10-27 原生 Android 补全轮接入文件读取、Git diff 与正式管理服务，真实无数据和请求失败分别显示。
 
 ## MUST 矩阵（本轮交付物；缺一行不算完成）
 
@@ -98,18 +98,18 @@
 
 「请在电脑端操作」**只允许**出现在本段或 NEVER。
 
-- 工作区「文件」「更改」tab 与设置里 MCP/技能：冻结条「下一轮接 host/gitDiff；请暂时用电脑端」。禁止转圈后空列表、禁止残留 ACP 错误当「没有文件」。
+- 浏览器 SPA 的工作区「文件」「更改」tab 与设置里 MCP/技能保留冻结条。原生 Android 补全轮使用独立 Compose 页面接正式服务；禁止把请求失败画成没有文件/没有服务器。
 - 只读 Files/Diff 的旧契约（不写盘、不 Stage）下一轮仍有效；本轮不转发 `git-stage` / `unstage` / `discard`。
-- MCP/技能写操作仍 NEVER（privileged）。
+- 2026-10-27 原生 Android 补全轮已接入 MCP/技能正式管理服务；写入与只读 composition 的判断由 Host 服务决定。浏览器 SPA 的旧冻结入口不据此声称已实现。
 - 消息编辑/rewind、Trajectory、Context meter、Session log 下载、标题栏终端/表面开关、Generative UI：本轮不声称对齐。
 
 ## NEVER
 
-- `host.pickDirectory`、`host.openPath`、全部 `PRIVILEGED_METHODS`（settings / credentials / `llm.discoverModels` / MCP 写 / skillInventory）
+- `host.pickDirectory`、`host.openPath`、`llm.discoverModels`；credentials 的原始读取、导出与通用 `/api` 转发。已配对的原生客户端可使用下述明确列出的正式管理服务，仍由 Host 执行权限、密钥遮蔽和配置 revision 校验。
 - 任意 `shell:*`：`pty*`、`writeFile`、打开本机路径（Git 对话框「在资源管理器打开」远程不做，用禁用 + 电脑端）
 - 开放 `/api/*` 代理、恢复 HTTP offer v1、把 `:8411` 当 SPA、官方 `dsh web` 整页当手机 UI
 - 给 daemon 注入 `DSH_HOME`、双写 `dsh-home`
-- PTY 终端、Browser 预览、壁纸图库、市场安装、窗口外观、关闭窗口策略
+- PTY 终端、Browser 预览、壁纸图库、桌面市场窗口、窗口外观、关闭窗口策略。原生插件包安装仅走上述正式 `pluginManager`，不开放任意 shell。
 - Android Bearer `/api`、与桌面 wire 不兼容的 E2EE 或设备凭证格式；未接真实 host 的原生假 Git／模型控件
 - 把 `fetchAgents` / `createAgent` 当产品目录或新会话
 
@@ -118,6 +118,9 @@
 - 手机 = **同协议客户端**（`mobile/web/chisacode/` + `@chisacode/client` bundle）。用户可见名称是 **dshd daemon / dshd offer / dshd 远程**；协议实现仍是 vendored ChisaCode offer v2，不改 pairing wire、包名或 sticky localStorage 键。配对之后两条已配对通道：host RPC（白名单 unary + `respond`）进 loopback `dsh web`；Git 进 Electron `git.js`（host **没有** Git API）。
 - 白名单 unary：`host.describe` / `host.listDirectory` / `host.createDirectory`；`session.list|search|create|history|models|selectModel|rename|fork|prompt|attachment|updateQueue|cancel|delete`；`subagent.list|history|prompt|interrupt`；`workspace.list|create|rename|delete|insertBefore|insertSessionBefore|archiveSession|unarchiveSession`；`skill.list`、`agentPreset.list`、`llm.models` / `llm.providers`；Typert `commands/list`、`commands/execute`。外加 `/api/respond`。
 - Git 白名单（进 main）：`git-status`、`git-fetch-status`、`git-pull-request`、`git-init`、`git-diff`、`git-commit`、`git-push`、`git-pull`、`git-create-change-request`、`git-publish`、`git-status-entries`、`git-branch-list`、`git-switch-branch`、`git-create-branch`。本轮不转发 stage/unstage/discard。
+- 原生管理服务白名单补充：`workspaceFiles.list|read|stat`（会话文件作用域）；`mcpServers.list|upsert|delete|setEnabled|retry|test|authorize`；`skillInventory.list|get|create|update|delete|setInvocation|searchHub|installHub`；`pluginInventory.list`；`pluginManager.listPlugins|listBundles|registries|inspect|setPluginEnabled|setBundleEnabled|installBundle|removeBundle|cancelInstall`；`settings.describe|update|replace|mutate`（带 revision）；`credentials.describe|set|unset`（只返回配置状态，不能读值）；账户状态、资料、余额、奖励确认、退出与取消登录。所有操作仍走已配对 E2EE 和正式 Host 服务，无通用 namespace 代理。
+- `workspaceFiles.readImage` 是有限图片预览：沿正式 `readBytes` 的会话作用域读取最多 2 MiB，验证 multipart 关联、长度、EOF 和 PNG/JPEG/GIF/WebP/BMP 魔数后转 base64；拒绝 SVG 与超限/变化文件，不向客户端开放任意二进制读取。
+- 原生账户 `account.startSignIn` 复用正式 OAuth/PKCE。Android 浏览器回调到手机本地回环监听器后，以 E2EE `account.completeSignIn({code,state})` 转发到当前 Host 固定 `/oauth/callback`；state 与授权码校验、交换和凭据保存仍由账户服务承担。桥只返回授权成功地址或安全错误，不转发令牌与回调响应正文。
 - 转发剥 Origin / Referer / 手机 Cookie / sec-fetch-*；Host = `127.0.0.1:<port>`；JSON 不 gzip；URL 必须仍是该 harness loopback。0.1.2 Host API：daemon 带桌面兑到的 `dsh.sessionCookie`（stdin `harness-cookie`），不得把手机 Cookie 转给 loopback；SPA 点名 `session.list` 落到 `/api/session/list`，payload 为 `{ args: { _request } }`。`workspace.list` 在 unary 404 时从 `/api/remote.mux` 的 `workspace/follow` 首帧 baseline 合成 `{ items, archivedSessionIds }`，禁止空目录冒充「没有工作区」。未配对拒绝。`getHarnessOrigin()` 随端口热更新。
 - SPA 不得从 `host/offer.js` / `host/login.js` 进入 v1 Cookie 登录；扫描结果保留完整 `#offer=` URL。
 - QR **落地页**：局域网 = `preferredLanIp():3180`；外出 = `DEFAULT_PUBLIC_APP_BASE_URL`（`https://ayase.cn/dshd/`），**不是**中继 `/ws`。
@@ -131,7 +134,7 @@
 - 「已保存的电脑」是纯本地 sticky；「忘记」只清本机 secret。用户可见名称优先使用握手 `server_info.hostname` 并以可选 `computerName` 增量保存；历史 sticky 无名称时显示「我的电脑」，内部 `serverId` 只作连接键且不得显示为电脑名。
 - 保存设备自动 / 手动重连与 offer 首连共用互斥连接入口；连接中显示状态，首次握手失败 / 超时关闭客户端并恢复按钮，不清 sticky。只有成功建立连接后才启用后台自动重连，避免初次失败永久占用选择器。
 - 新 offer 取消未完成的旧连接，旧连接结果不得覆盖新连接。配对认证成功后，当前客户端立即改用 deviceSecret，自动重连不得复用一次性 pairingToken；消费后的 offer 从页面 fragment 清除。认证失败停止后台重试但不静默删除保存凭据。
-- Android 完整设置从侧栏固定齿轮入口和连接页进入，提供分类与搜索；新电脑配对在电脑与连接内。消息字号、思考过程、工具展开、Enter 发送和运行中发送方式只存手机且由实际渲染/输入消费。模型与权限只修改当前会话（模型请求 `saveAsDefault:false`）；当前会话用量读取可选 `usagePanel.totals`，输入+输出为 headline，缓存分别列出，缺失不伪造零值，不代表账户账单。供应商密钥、MCP、技能/插件管理和完整账户用量尚无原生远程控制。
+- Android 完整设置从侧栏固定齿轮入口和连接页进入，提供分类与搜索；新电脑配对在电脑与连接内。消息字号、思考过程、工具展开、Enter 发送和运行中发送方式只存手机且由实际渲染/输入消费。模型与权限只修改当前会话（模型请求 `saveAsDefault:false`）；当前会话用量读取可选 `usagePanel.totals`，输入+输出为 headline，缓存分别列出，缺失不伪造零值，不代表账户账单。供应商凭据配置、MCP、技能/插件与账户资料/余额由本轮原生管理页面接正式 Host 服务；密钥只写不读，账单/充值打开账户服务提供的安全链接，不把会话 token 当作账单。
 - Android 的连接代次隔离迟到回复，Compose 重组不重复配对；已连接时返回前台刷新目录与历史并保留搜索、目录和 Git 任务页。成功连接后的断线用保存凭据自动重连，不重放一次性 offer；同电脑、同会话恢复保留新建、设置、搜索和目录面板、查询和名称输入，离线或会话同步期间禁用远端提交，未完成的写操作不自动重放。Git 面板和审阅在断线时关闭；切电脑、离开或重新配对会重置任务归属。旧 localStorage 迁移失败必须可见，原数据保留。
 - Android 以 `origin: 'subagent'` 判断只读子会话，分页历史通过 `session.history` 携带直接父会话和子会话的 `address` 转到 `session/page`；普通 Fork 的父会话字段不使它变只读。历史图片通过 `session.attachment` 按张读取，失败不阻断同页其它图片，错误占位不随轮询重复请求；当前会话缓存和在途任务在切换时释放。
 - daemon 的共享 mux 为新连接的手机重放当前待处理审批及原 Gateway 回复标识；审批解决、Gateway 断开或电脑来源变化时移除旧记录。共享连接自己作出决策时也广播解决状态，不依赖 Gateway 给答复者回发取消。

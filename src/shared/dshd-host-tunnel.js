@@ -37,6 +37,52 @@ const HOST_RPC_METHODS = new Set([
   'agentPreset.list',
   'llm.models',
   'llm.providers',
+  'workspaceFiles.list',
+  'workspaceFiles.read',
+  'workspaceFiles.stat',
+  'workspaceFiles.readImage',
+  'mcpServers.list',
+  'mcpServers.upsert',
+  'mcpServers.delete',
+  'mcpServers.setEnabled',
+  'mcpServers.retry',
+  'mcpServers.test',
+  'mcpServers.authorize',
+  'skillInventory.list',
+  'skillInventory.get',
+  'skillInventory.create',
+  'skillInventory.update',
+  'skillInventory.delete',
+  'skillInventory.setInvocation',
+  'skillInventory.searchHub',
+  'skillInventory.installHub',
+  'pluginInventory.list',
+  'pluginManager.listPlugins',
+  'pluginManager.listBundles',
+  'pluginManager.registries',
+  'pluginManager.inspect',
+  'pluginManager.setPluginEnabled',
+  'pluginManager.setBundleEnabled',
+  'pluginManager.installBundle',
+  'pluginManager.removeBundle',
+  'pluginManager.cancelInstall',
+  'settings.describe',
+  'settings.update',
+  'settings.replace',
+  'settings.mutate',
+  'credentials.describe',
+  'credentials.set',
+  'credentials.unset',
+  'account.getState',
+  'account.getProfile',
+  'account.getBalance',
+  'account.getUnnotifiedBonuses',
+  'account.ackBonusNotified',
+  'account.hasRunningAccountTasks',
+  'account.cancelSignIn',
+  'account.signOut',
+  'account.startSignIn',
+  'account.completeSignIn',
   'commands/list',
   'commands/execute',
 ]);
@@ -158,6 +204,20 @@ const HOST_RPC_ARG_WIRE = {
   'workspace.archiveSession': 'request',
   'workspace.unarchiveSession': 'request',
   'host.describe': '_request',
+  'mcpServers.upsert': 'request',
+  'mcpServers.delete': 'request',
+  'mcpServers.setEnabled': 'request',
+  'mcpServers.retry': 'request',
+  'mcpServers.test': 'request',
+  'mcpServers.authorize': 'request',
+  'skillInventory.list': 'request',
+  'skillInventory.get': 'request',
+  'skillInventory.create': 'request',
+  'skillInventory.update': 'request',
+  'skillInventory.delete': 'request',
+  'skillInventory.setInvocation': 'request',
+  'skillInventory.searchHub': 'request',
+  'skillInventory.installHub': 'request',
 };
 
 const REMOTE_STREAM_MUX_PATH = '/api/remote.mux';
@@ -434,6 +494,14 @@ async function postHarnessJson({ origin, path, body, cookie, fetchImpl, signal }
 async function forwardHostRpc({ origin, method, payload, cookie, fetchImpl, signal, WebSocketImpl }) {
   if (!isAllowedHostMethod(method)) {
     throw new Error(`host 方法不允许转发：${method}`);
+  }
+  if (method === 'workspaceFiles.readImage') {
+    const { forwardWorkspaceImage } = require('./dshd-workspace-image');
+    return forwardWorkspaceImage({ origin, payload: hostRpcPayload(method, payload ?? {}).args, cookie, fetchImpl, signal });
+  }
+  if (method === 'account.completeSignIn') {
+    const { completeAccountSignIn } = require('./dshd-account-callback');
+    return completeAccountSignIn({ origin, payload: hostRpcPayload(method, payload ?? {}).args, fetchImpl, signal });
   }
   const rpcId = mintRpcId();
   const target = hostRpcTarget(method);

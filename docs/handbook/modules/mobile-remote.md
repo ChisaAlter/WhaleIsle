@@ -14,7 +14,7 @@
 
 - 配对：vendored ChisaCode offer v2 / sticky / 中继 E2EE。短期二维码到期或已使用时自动补发；复制链接使用独立可撤销的长期凭证，不随二维码轮换失效，撤销不解除既有设备。QR 落地页局域网 `:3180`、外出 `https://ayase.cn/dshd/`；传输走 `ayase.cn:443` 的 `/ws`，不把中继路由当页面。成功握手的 `server_info.hostname` 作为可选 `computerName` 写入手机 sticky，供保存电脑行与已连接主机名称使用；旧 sticky 无此字段时显示「我的电脑」，不得展示内部 `serverId`。
 - 已配对 host：daemon 白名单 unary 转发 loopback `dsh web`（剥 Origin / sec-fetch，Host 钉 loopback）。当前 Gateway 审批从 `$events` waterfall 转换为手机审批帧，回复保留 clientId/eventId 经 `/api/$events/result` 返回；旧格式 rpcId 仍走原 `/api/respond`。
-- Android 使用 `session.projections` 读取完整模型、权限及 Plan 投影；历史页不携带这些状态。Host 白名单仅新增这一只读方法。
+- Android 使用 `session.projections` 读取完整模型、权限及 Plan 投影；历史页不携带这些状态。原生 Files、MCP、技能、插件与账户设置使用已配对管理白名单和正式服务；密钥只写不读、配置带 revision、文件读取保留会话作用域。图片预览有 2 MiB 界限，OAuth 回调经 E2EE 送到 Host 的固定端点。具体方法与权限边界由 Feature 卡维护。
 - 会话与工作区：`session.list` / `workspace.list` 是目录真相，`session.history` 供时间线；新会话走 `session.create`，目录浏览/创建/登记走 `host.listDirectory` / `host.createDirectory` / `workspace.create`。模型/思考走 `session.models` / `session.selectModel`，权限、Plan 和斜杠走 Typert `commands/execute`，不回退 ACP agents。
 - 已配对 Git：daemon 回调 Electron `git.js`（`dshd-git-dispatch.js`），同一套 `workspace-authority.js`。不在 daemon 里再实现一套 git CLI。
 - Git 用户路径：分支搜索/切换/远端跟踪、创建并检出分支、Commit/Push/PR 组合动作与 Publish 均走 `shell:git-*` 白名单；不是「创建分支请到电脑端」。修复已进入当前本地候选，构建通过不代替整轨行为验收。
