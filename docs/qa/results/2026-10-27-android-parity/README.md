@@ -1,6 +1,6 @@
 # Android 原生桌面功能补齐
 
-本轮实现来自 `origin/main` 的 `b871710607`，使用独立工作树 `C:/AI/WhaleIsle-android-parity-20261027`、分支 `feat/android-parity-20261027`。Android 原生代码提交为 `db66668c54` 和 `f6015e885f`。Host 白名单、图片和账户回调桥由 lead 的 `ee4808d16b`、`09ed3341b7` 提供；发送 ACK 和插件长操作超时由 android-qa 的 `0d64d1b1a9`、`2709841a9c` 提供，各自检查以负责者报告为准。
+本轮实现来自 `origin/main` 的 `b871710607`，使用独立工作树 `C:/AI/WhaleIsle-android-parity-20261027`、分支 `feat/android-parity-20261027`。Android 原生代码提交为 `db66668c54`、`f6015e885f` 和文件根目录修复 `04d6ddecac`。Host 白名单、图片和账户回调桥由 lead 的 `ee4808d16b`、`09ed3341b7` 提供；发送 ACK 和插件长操作超时由 android-qa 的 `0d64d1b1a9`、`2709841a9c` 提供，各自检查以负责者报告为准。
 
 ## 原需求与边界
 
@@ -35,6 +35,27 @@
 
 20 项新增回归包括真实 lookup/分页参数、跨电脑迟到回复隔离、缺插件管理服务只读、设置 revision 冲突、Diff 失败/真空区分、活动登录重复点击、延迟登录返回原电脑取消、安装重连/人工恢复/无结果不重放、创建 MCP ID 文法、Git 零文件选择、已推送分支 Create PR、Schemastery 引用解析和 secret sidecar、目录路径约束、工具图片、子会话折叠/孤儿/循环/Fork 与工作区继承。
 
+## 真实公网中继验收
+
+`NativeDesktopRealHostTest` 以环境变量 `DSH_ANDROID_E2E_INPUT` 显式选择 android-qa 的独立官方 Electron Host。配对码在测试运行时刷新，使用实际 Kotlin `RelayClient` 经公网 TLS 中继和 E2EE 认证，实际 `NativeDesktopController` 消费 Host/Git 正式服务；没有 MockHost、预设响应或服务替代。夹具使用独立注册目录和新会话，不借用 ACK/Git 验收会话，不发模型 prompt。测试只写自有 MCP/项目技能/临时凭据/无脚本插件包，账户只读，不退出、授权或撤销现有账户。设置只选非 secret 字段，读取新 revision 后按原 user 层路径恢复。会话归档删除与 workspace 注销没有返回清理错误。
+
+首轮完整执行 3 分 41 秒，实际案例执行 158.433 秒：8 项中的 7 项通过，Files 根目录失败并与最终 APK 的模拟器报错一致。根因是 Android 将 UI 的空根目录路径直接传给 Host，而正式服务要求非空路径。`04d6ddecac` 仅在 wire 参数中将空路径转换为 `.`，保留 UI 相对路径语义。只重跑受影响 Files 和原 lookup/分页参数回归，合计 1 分 42 秒通过，真实 Files 用时 26.498 秒，JVM 参数回归 0.224 秒，2 项 0 跳过、0 失败。其他 7 项没有重复执行写操作。
+
+| 真实案例 | 结果与实际断言 |
+| --- | --- |
+| Files 根目录、分页、图片 | 修复后通过。实际根目录列出 pages.txt，450 行按偏移 1、201、401 读取，与原始行逐字一致，第三页 EOF；pixel.png 返回 image/png，base64 解码后的字节与原 PNG 完全一致。 |
+| Diff | 首轮通过。实际未跟踪文件出现于 Git 差异；不存在的 Git 引用使 controller 显示失败；切回工作区差异可恢复。 |
+| MCP | 首轮通过。32 字符新 ID 经过真实服务文法，创建 disabled stdio 配置、修改名称/超时、禁用、删除并逐步读取确认；没有连接外部服务器。 |
+| 项目技能 | 首轮通过。创建、正文读取、修改正文与分组、修改调用标志、删除，列表和详情确认各步结果。 |
+| 设置 | 首轮通过。真实 describe 的 schema/值用于字段编辑，写后读取一致；旧 expectedRevision 被拒绝；按新 revision 恢复原 user 层单字段。 |
+| 凭据 | 首轮通过。新 QA_ONLY 引用 set → describe configured → unset；状态响应不包含写入的合成值，未读回真实密钥。 |
+| 插件 | 首轮通过。此官方 QA Host 实际挂载 pluginManager；自有无 scripts 本地 bundle 的 inspect、安装、停用、启用、移除以及清单确认均通过，没有以只读缺服务代替写入验收。 |
+| 账户 | 首轮通过。实际 account.getState 的状态存在，未创建登录请求，没有执行 signOut。 |
+
+脱敏汇总为同目录 `real-host-results.json`，结果来自首轮 7 项通过加修复后 1 项受影响复验。独立真实测试提交 `b791aa035a` 默认在没有显式 QA 环境输入时跳过；CI 的该跳过不能替代上述实际执行。此前云候选的 103 项测试、lint 和签名结果由 lead 提供；根目录修复与新增 opt-in 测试加入后，最终云签名和设备结果以 lead/android-qa 的最新记录为准。
+
+旧实现工作树在修复提交后变为不可用。已提交的产品代码与 QA 私有运行报告仍在；未提交的测试源码从本会话完整写入及增量编辑记录恢复到新的独立证据工作树，不重跑已通过的真实写操作，不改原用户工作区。
+
 ## 验证限制
 
-本报告只陈述上述源码、JVM 行为和本地构建结果。真实远程服务的安装/外部鉴权、OAuth 平台授权、最终签名 APK 的逐项原生操作必须结合 lead/android-qa 后续记录，不能用 20 项自动测试替代。物理手机按用户要求暂跳过；本轮未重启或修改安装中的用户 GUI。
+上述真实验收验证管理动作在公网加密通道中实际执行，不认证外部 MCP 服务互操作、OAuth 平台完整授权或任何真机硬件行为。账户完整 OAuth、最终签名 APK 的原生逐项操作结合 lead/android-qa 的后续记录。物理手机按用户要求暂跳过；本轮未重启或修改安装中的用户 GUI。

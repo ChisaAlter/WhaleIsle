@@ -1,0 +1,23 @@
+{
+  "transport": "NativeDesktopController -> real Kotlin RelayClient -> public TLS E2EE -> dedicated official Electron Host",
+  "verification": "Seven cases passed in the initial eight-case run; the only failed Files case passed after the workspace root fix in a focused rerun. Other writes were not repeated.",
+  "productCommits": ["db66668c54", "f6015e885f", "04d6ddecac"],
+  "testCommit": "b791aa035a",
+  "runs": [
+    { "selection": "all-eight", "cases": 8, "passed": 7, "failed": 1, "failedCase": "workspace-files-paging-and-image", "failure": "Root wire path was empty; actual Host replied path is required", "testSeconds": 158.433 },
+    { "selection": "workspace-files-paging-and-image", "cases": 1, "passed": 1, "failed": 0, "skipped": 0, "testSeconds": 26.498, "focusedJvmCases": 1, "focusedJvmFailures": 0, "focusedJvmSkipped": 0, "focusedJvmSeconds": 0.224 }
+  ],
+  "cases": [
+    { "id": "workspace-files-paging-and-image", "passedIn": "focused-rerun", "checks": ["real root listing", "450 lines at offsets 1, 201 and 401", "exact text and final EOF", "PNG content type and decoded byte equality"] },
+    { "id": "git-diff-and-invalid-reference", "passedIn": "initial-run", "checks": ["actual untracked file diff", "invalid reference is failure", "working tree diff recovers"] },
+    { "id": "mcp-create-edit-disable-delete", "passedIn": "initial-run", "checks": ["valid 32-character identifier", "disabled stdio create", "name and timeout edit", "disable", "delete", "readback"] },
+    { "id": "skills-create-read-update-invocation-delete", "passedIn": "initial-run", "checks": ["project skill create", "body read", "body and groups update", "invocation update", "delete", "readback"] },
+    { "id": "settings-write-readback-and-stale-revision", "passedIn": "initial-run", "checks": ["real schema field write", "readback", "stale revision rejection", "original user field restored by path with fresh revision"] },
+    { "id": "synthetic-credential-write-describe-unset", "passedIn": "initial-run", "checks": ["new synthetic reference set", "configured status", "value absent from response", "unset"] },
+    { "id": "plugin-inventory-and-owned-bundle-lifecycle", "passedIn": "initial-run", "checks": ["real manager available", "script-free local bundle inspect", "install", "disable", "enable", "remove", "list readback"] },
+    { "id": "account-read-only-state", "passedIn": "initial-run", "checks": ["nonempty actual account state", "no login attempt started", "no sign-out"] }
+  ],
+  "cleanup": { "dedicatedSessionArchivedAndDeleted": true, "dedicatedWorkspaceUnregistered": true, "reportedErrors": 0 },
+  "notVerified": ["physical phone hardware", "complete platform OAuth authorization", "external MCP interoperability", "final signed APK UI flow in this test"],
+  "privateRuntimeValuesIncluded": false
+}
