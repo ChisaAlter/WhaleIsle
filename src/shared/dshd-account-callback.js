@@ -1,7 +1,7 @@
 'use strict';
 
 const { randomUUID } = require('node:crypto');
-const { assertLoopbackHarnessOrigin } = require('./dshd-host-tunnel');
+const { assertLoopbackHarnessOrigin } = require('./dshd-host-tunnel.js');
 
 /** Forward only the local OAuth callback; the account provider owns state and PKCE validation. */
 async function completeAccountSignIn({ origin, payload, fetchImpl = globalThis.fetch, signal }) {

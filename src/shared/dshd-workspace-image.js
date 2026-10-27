@@ -1,7 +1,7 @@
 'use strict';
 
 const { randomUUID } = require('node:crypto');
-const { assertLoopbackHarnessOrigin, sanitizeHarnessCookie } = require('./dshd-host-tunnel');
+const { assertLoopbackHarnessOrigin, sanitizeHarnessCookie } = require('./dshd-host-tunnel.js');
 
 const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const RESPONSE_MAX_BYTES = IMAGE_MAX_BYTES + 64 * 1024;

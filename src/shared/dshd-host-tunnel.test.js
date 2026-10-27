@@ -27,6 +27,9 @@ test('allowlist includes session/workspace/host browse and excludes privileged m
   assert.equal(isAllowedHostMethod('credentials.get'), false);
   assert.equal(isAllowedHostMethod('workspaceFiles.readBytes'), false);
   assert.equal(isAllowedHostMethod('workspaceFiles.readImage'), true);
+  assert.equal(isAllowedHostMethod('pluginManager.waitForInstall'), true);
+  assert.deepEqual(hostRpcPayload('pluginManager.waitForInstall', { args: { requestId: 'pending-install' } }),
+    { args: { requestId: 'pending-install' } });
   assert.equal(isAllowedHostMethod('llm.discoverModels'), false);
   assert.equal(isAllowedHostMethod('mcpServers/list'), false);
   assert.equal(isAllowedHostMethod('commands/list'), true);

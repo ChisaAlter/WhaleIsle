@@ -66,6 +66,7 @@ const HOST_RPC_METHODS = new Set([
   'pluginManager.installBundle',
   'pluginManager.removeBundle',
   'pluginManager.cancelInstall',
+  'pluginManager.waitForInstall',
   'settings.describe',
   'settings.update',
   'settings.replace',
@@ -496,11 +497,11 @@ async function forwardHostRpc({ origin, method, payload, cookie, fetchImpl, sign
     throw new Error(`host 方法不允许转发：${method}`);
   }
   if (method === 'workspaceFiles.readImage') {
-    const { forwardWorkspaceImage } = require('./dshd-workspace-image');
+    const { forwardWorkspaceImage } = require('./dshd-workspace-image.js');
     return forwardWorkspaceImage({ origin, payload: hostRpcPayload(method, payload ?? {}).args, cookie, fetchImpl, signal });
   }
   if (method === 'account.completeSignIn') {
-    const { completeAccountSignIn } = require('./dshd-account-callback');
+    const { completeAccountSignIn } = require('./dshd-account-callback.js');
     return completeAccountSignIn({ origin, payload: hostRpcPayload(method, payload ?? {}).args, fetchImpl, signal });
   }
   const rpcId = mintRpcId();
