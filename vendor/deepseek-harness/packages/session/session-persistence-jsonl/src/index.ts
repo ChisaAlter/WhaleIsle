@@ -103,8 +103,8 @@ export interface Config {
   /** Physical encoding; defaults to checksummed Zstandard frames. */
   compression?: JsonlCompression
   /**
-   * Maximum discovery reads in flight across listings and per-session project
-   * lookups. Listing header and stat reads share this bound. Defaults to 3.
+   * Concurrency limit shared by per-session project checks and listing
+   * directory, header, and stat tasks. Defaults to 3.
    */
   listConcurrency?: number
 }
@@ -310,8 +310,7 @@ class JsonlSessionPersistence extends SessionPersistence {
   private root: string
   private compression: JsonlCompression
   /**
-   * Bounds discovery I/O across listings and per-session project lookups.
-   * Listing header and stat reads use this same limiter.
+   * Bounds per-session project checks and listing directory, header, and stat tasks.
    * Queued tasks of a cancelled listing run and reject at their signal check.
    */
   private readonly listLimit: LimitFunction

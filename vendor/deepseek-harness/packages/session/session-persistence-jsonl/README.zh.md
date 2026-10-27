@@ -46,7 +46,7 @@ kind: "package-reference"
 |---|---|---|
 | `root` | 必填 | 所有会话文件的根目录 |
 | `compression` | `'zstd'` | 物理编码：`'zstd'` 带校验和帧，或 `'none'` 换行分隔 UTF-8 文本 |
-| `listConcurrency` | `3` | 列举与逐会话查找共用的发现读取并发上限；列举内的 header 与 stat 读取也使用同一限制 |
+| `listConcurrency` | `3` | 逐会话查找的项目检查与列举中的目录、header 和 stat 任务共用的并发上限 |
 
 实时事件的写入批处理不是配置：批处理窗口是该 seam 在每个写句柄内部的调度策略。
 
