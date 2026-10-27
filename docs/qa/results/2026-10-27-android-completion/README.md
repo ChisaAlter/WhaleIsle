@@ -88,7 +88,7 @@ AVD `emulator-5556` 上先安装真实正式 `android-v0.3.10` 原生APK，使�
 
 仅新增 opt-in `AndroidRelaySessionRaceTest`，输入环境变量 `DSH_ANDROID_RACE_INPUT` 必须指向显式专用QA配置；没有默认用户Host。测试运行时即时取新offer，复用官方Electron44.9.1隔离Host、公网TLS加密relay、真实 `DshViewModel` 和 `RelayClient`，在独立合成工作区创建A/B两会话。没有再次启动AVD或重跑分页、既有丢ACK和其它管理用例。
 
-仅专用忽略QA runner在真实Host返回 `accepted:true` 后门控A的成功ACK，并记录 `hostAccepted`，设60秒自动释放上限。按实际产品路径，A忙时切B被拒；等待真实30秒RPC超时、保留A草稿后才切B，写入B未发送草稿。B加载完成后显式释放A成功ACK，实际门控 **32,118毫秒**，未触发自动释放。
+仅专用忽略QA runner（[实际运行源码审计副本](fixtures/daemon-fault-runner.mjs)，不接入生产入口）在真实Host返回 `accepted:true` 后门控A的成功ACK，并记录 `hostAccepted`，设60秒自动释放上限。按实际产品路径，A忙时切B被拒；等待真实30秒RPC超时、保留A草稿后才切B，写入B未发送草稿。B加载完成后显式释放A成功ACK，实际门控 **32,118毫秒**，未触发自动释放。
 
 测试只读观察真实密文副本中的ACK，随后始终调用原 `super.onMessage`，不修改生产认证、解密重放序列或pending处理。实际确认A的成功帧抵达原来仍存活的socket，抵达前该超时传输requestId已从pending移除；全程仅一个RelayClient和一次onOpen。释放后同连接B的history往返成功，B的session/title/草稿/rows/附件/approval/running均未被A迟到回复改变。真实持久history中A标记 **1条**、B中该标记 **0条**，手工业务提交仅1次，未靠关闭旧socket或假造迟到帧得到通过。
 
