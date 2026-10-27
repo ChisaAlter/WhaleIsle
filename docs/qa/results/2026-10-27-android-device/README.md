@@ -39,3 +39,9 @@ Enter 发送开启时，旧代码只拦截不带 Shift 的 Enter，把 Shift+Ent
 原生 scanner已真实打开；用户一次光学扫描旧码返回“配对码已过期”，能证明读取到码，但不能记新配对成功。随后独立桌面卡改为每60秒通过自有 host rotateRemoteToken自动生成新码，固定窗口显示生成时刻与有效秒数，未把URL/token输出聊天。重开scanner后尚无新码成功结果，不能将VIEW intent配对替代光学扫码。真实拍照发送也未执行；需用户后摄对准无私人背景的专用蓝圆/ANDROID QA测试卡后，继续系统相机拍摄、预览和发送/attachmentId对账。
 
 外部Git鉴权/PR/MR、ACK幂等、完整历史分页/竞争/资源上限、正式签名升级/旧Web迁移仍未完成。Files/Diff/MCP/技能/插件、lightbox、子会话树、桌面Git快速动作、完整账户设置等既有差异没有在本轮删减或宣称完成。需要专用外部测试仓库/分支与写权限，正式签名需同证书和递增versionCode；这些前提交lead处理。
+
+## 最终收尾
+
+移除临时 instrumentation/QA Activity 后，独立 worktree 再次 `:app:assembleDebug` 成功。最终 nativeqa SHA256 `B84B9B7108C237412CA32B59CCAD81BADF252C760DB6D0DBEA8B40E7A1346E54`，保留数据覆盖 Success，冷启 COLD907ms / Status ok。含临时空 Activity 的前一手机实测包为 `DF0FC6E3226E431A48E8C04A6C8A94C1046C70740921B4E10D7ADE99B97373FF`；两包生产输入代码相同。最终收尾不把空 Activity 的运行失败改写为通过。
+
+已通过手机设置恢复本轮初始本机偏好，并实际读回：messageScale1.0、showReasoningfalse、expandToolDetailstrue、sendWithEnterfalse，运行发送模式未修改（默认queue）。系统font_scale1.0、accelerometer_rotation0、user_rotation0保持原值，输入法没有修改；原配对、文字草稿与标准应用未清除。自有自动刷新测试卡已正常关闭；相机预览未存档，新码光学配对和拍照发送没有新结果，仍未覆盖。
